@@ -1,0 +1,209 @@
+/* src/ui/modals — заменяемая ТЕМА модальной системы.
+   Структурные правила и transition-хуки живут в lib/modals/modals-base.css. */
+
+.modal-backdrop {
+  background: color-mix(in oklab, var(--foreground) 50%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.modal-backdrop-close {
+  display: flex;
+  height: 36px;
+  width: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 10px 25px -12px color-mix(in oklab, var(--foreground) 45%, transparent);
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+.modal-backdrop-close:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.modal-backdrop-close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.modal-tail {
+  border: 1px solid var(--border);
+  box-shadow:
+    0 18px 40px -24px color-mix(in oklab, var(--foreground) 50%, transparent),
+    0 4px 12px -4px color-mix(in oklab, var(--foreground) 30%, transparent);
+}
+
+.modal-popup {
+  border: 1px solid var(--border);
+  color: var(--card-foreground);
+  box-shadow:
+    0 24px 50px -16px color-mix(in oklab, var(--foreground) 32%, transparent),
+    0 8px 18px -10px color-mix(in oklab, var(--foreground) 22%, transparent);
+}
+.modal-popup:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Содержимое после скелетона проявляется без layout jump. */
+.modal-reveal {
+  animation: modal-reveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes modal-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-reveal {
+    animation: none;
+  }
+}
+
+.modal-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+.modal-skeleton-line {
+  height: 12px;
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--muted);
+  animation: modal-pulse 1.4s ease-in-out infinite;
+}
+.modal-skeleton-title {
+  height: 20px;
+  width: 55%;
+}
+.modal-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 4px;
+}
+.modal-skeleton-card {
+  height: 64px;
+  border-radius: var(--radius);
+  background: var(--muted);
+  animation: modal-pulse 1.4s ease-in-out infinite;
+}
+@keyframes modal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.modal-error {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  color: var(--destructive);
+}
+.modal-error-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.modal-error-hint {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--destructive) 78%, var(--muted-foreground));
+}
+
+.modal-spinner {
+  height: 14px;
+  width: 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: modal-spin 0.7s linear infinite;
+}
+@keyframes modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.modal-trigger,
+.modal-btn {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+.modal-trigger:focus-visible,
+.modal-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.modal-trigger {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.modal-trigger:hover {
+  background: color-mix(in oklab, var(--primary) 90%, var(--background));
+}
+.modal-trigger[data-state='loading'],
+.modal-trigger[data-state='error'] {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.modal-trigger[data-state='open'] {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.modal-trigger[data-state='error'] {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.modal-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.modal-btn-quiet {
+  border: 1px solid var(--input);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+.modal-btn-quiet:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.modal-btn-danger {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+.modal-btn-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--destructive) 88%, var(--foreground));
+}

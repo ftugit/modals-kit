@@ -1,0 +1,6 @@
+export { default as LogoSlot } from './LogoSlot.svelte'
+export { default as NavSlot } from './NavSlot.svelte'
+export { default as ThemeToggleSlot } from './ThemeToggleSlot.svelte'
+export { default as PageTitleSlot } from './PageTitleSlot.svelte'
+export { default as SiteFooter } from './SiteFooter.svelte'
+export { NAV_ITEMS, type NavItem } from './nav'
