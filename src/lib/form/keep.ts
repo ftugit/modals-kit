@@ -1,0 +1,17 @@
+// Правило повторного объявления, общее для всех реестров.
+//
+// Повторное объявление ТОГО ЖЕ — не конфликт: модуль мог выполниться заново
+// (так происходит при горячей замене и при раздельных графах сервера и клиента).
+// Другое содержимое под тем же ключом — настоящий конфликт: в сборке это
+// ошибка, при разработке — замена с предупреждением, иначе страница падала бы
+// на каждом сохранении.
+export function keep<T>(map: Map<string, T>, key: string, value: T, what: string): void {
+  const existing = map.get(key)
+  if (existing === value) return
+  if (existing !== undefined) {
+    const message = `[form] ${what} '${key}' уже объявлен с другим содержимым`
+    if (!import.meta.env?.DEV) throw new Error(message)
+    console.warn(`${message} — заменяю (горячая замена)`)
+  }
+  map.set(key, value)
+}
