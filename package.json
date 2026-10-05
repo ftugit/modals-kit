@@ -13,17 +13,19 @@
     "test": "vitest run && node --test tooling/",
     "test:unit": "vitest run",
     "test:guard": "node --test tooling/",
-    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs",
+    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
     "test:browser:modals": "node test/browser/modals.mjs",
     "test:browser:shell": "node test/browser/shell.mjs",
-    "test:browser:forms": "node test/browser/forms.mjs"
+    "test:browser:forms": "node test/browser/forms.mjs",
+    "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "^26.6.3",
+    "axe-core": "^4.13.0",
     "playwright": "^1.63.0",
     "svelte": "^5.56.1",
     "svelte-check": "^4.6.0",

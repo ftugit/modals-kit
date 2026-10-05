@@ -25,7 +25,10 @@
       title={o.hint}
       class="rounded-md px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors {o.value === value
         ? 'bg-background text-foreground shadow-sm'
-        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+        // не muted-foreground: на подложке bg-muted он даёт 4.39:1 — ниже порога
+        // 4.5:1 для мелкого текста. Полупрозрачный цвет чернил держит контраст
+        // в обеих темах и остаётся зрительно тише выбранной опции.
+        : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground'}"
     >
       {o.label}
     </button>

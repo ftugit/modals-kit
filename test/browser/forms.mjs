@@ -201,7 +201,10 @@ async function run(jsEnabled) {
     __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
     __form_submission: '0192f3c1-4b8e-7c2a-9d1f-6e5a4b3c2d10', intent: 'submit',
   }
+  // preview-сервер строже dev: POST без Origin считается межсайтовым и
+  // отвергается CSRF-защитой. Браузер Origin шлёт всегда — шлём и мы.
   const post = (extra = {}) => ctx.request.post(new URL('/form/submit', BASE).href, {
+    headers: { origin: new URL(BASE).origin },
     multipart: { ...envelope, ...extra },
   })
   const unexpected = await (await post({ ghost: 'x' })).json()

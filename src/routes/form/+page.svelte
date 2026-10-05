@@ -383,7 +383,9 @@
           </tbody>
         </table>
       {:else}
-        <pre class="rounded-lg border border-destructive/40 bg-destructive/5 p-2 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
+        <!-- без bg-подложки: text-destructive на 5%-тонированном фоне даёт 4.36:1,
+             на фоне карты контраст держится в обеих темах -->
+        <pre class="rounded-lg border border-destructive/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
       {/if}
 
       <p class="mt-2 text-xs text-muted-foreground">
@@ -429,7 +431,11 @@
     <!-- ── отчёт: собирается обходом реестра ─────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
       <div class="mb-2 text-sm font-semibold">Ограничения → атрибуты</div>
-      <div class="overflow-x-auto">
+      <!-- tabindex: без него узкий экран делает регион прокручиваемым,
+             но недоступным с клавиатуры (scrollable-region-focusable).
+             Линтер это не знает — для него region неинтерактивен. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Ограничения и атрибуты">
         <table class="w-full text-left text-xs">
           <thead class="text-muted-foreground">
             <tr>
@@ -467,14 +473,18 @@
     <!-- ── факт против показа ────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
       <div class="mb-2 text-sm font-semibold">Факт и показ</div>
-      <div class="rounded-lg bg-muted p-2 font-mono text-xs text-muted-foreground">
+      <!-- text-foreground/70, а не muted-foreground: на bg-muted у того 4.39:1 -->
+      <div class="rounded-lg bg-muted p-2 font-mono text-xs text-foreground/70">
         статус: {form.state.status} · в полёте: {form.state.pendingIntent ?? '—'} ·
         исход: {form.state.outcome ?? '—'} ·
         фактов: {form.state.facts.length} · показано: {form.state.shown.length} ·
         убрано обработчиком: {form.state.removed}
       </div>
       {#if form.state.facts.length}
-        <div class="mt-2 overflow-x-auto">
+        <!-- клавиатурный доступ к прокручиваемому региону (scrollable-region-focusable);
+             ignore нужен внутри блока: снаружи {#if} он не действует -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div class="mt-2 overflow-x-auto" tabindex="0" role="region" aria-label="Факт и показ">
           <table class="w-full text-left text-xs">
             <thead class="text-muted-foreground">
               <tr>
