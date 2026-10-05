@@ -341,7 +341,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   const intent = useCallback((id: string) => {
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(id).action)
     return {
-      name: 'intent',
+      name: desc.policy.envelopeKeys.intent,
       value: id,
       formNoValidate: descriptor?.validate === 'none' || undefined,
       disabled: state.pending || undefined,
@@ -371,9 +371,9 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
    * @param data Данные формы с намерением.
    */
   const submit = useCallback(async (data: FormData): Promise<Result | undefined> => {
-    const raw = String(data.get('intent') ?? 'submit')
+    const raw = String(data.get(desc.policy.envelopeKeys.intent) ?? 'submit')
     machine.policy = oRef.current.parallel ?? cfg.config.parallel ?? 'block'
-    const begun = machine.begin(desc.revision, raw, holder.sid)
+    const begun = await machine.acquire(desc.revision, raw, holder.sid)
     if (!begun.go) return undefined
 
     store.set((s) => ({
@@ -393,6 +393,10 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     if (stale) return result
 
     applyResult(result)
+    // Идемпотентность относится к одной логической отправке, а не ко всей
+    // жизни формы. Иначе повторная осмысленная отправка получит старый кэш.
+    if (result.outcome === 'committed' || result.outcome === 'unknown')
+      holder.sid = crypto.randomUUID()
     return result
   }, [applyResult, cfg, desc, holder, instance, machine, render, store])
 

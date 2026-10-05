@@ -282,6 +282,9 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   const formProps = () => ({
     method: 'post' as const,
     action,
+    // Регистрация формы не должна зависеть от отдельного ручного вызова:
+    // без неё live- и async-проверки молча не работали.
+    ref: (el: HTMLFormElement) => { formEl = el; if (el) assertEnvelope(el) },
     enctype: 'multipart/form-data' as const,
     novalidate: (o.intercept ?? true) || undefined,
     'aria-busy': (state().pending ? true : undefined) as true | undefined,
@@ -308,7 +311,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     const desc = description()
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(id).action)
     return {
-      name: 'intent',
+      name: description().policy.envelopeKeys.intent,
       value: id,
       formnovalidate: descriptor?.validate === 'none' || undefined,
       disabled: state().pending || undefined,
@@ -335,9 +338,9 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
 
   const submit = async (data: FormData): Promise<Result | undefined> => {
     const desc = description()
-    const raw = String(data.get('intent') ?? 'submit')
+    const raw = String(data.get(desc.policy.envelopeKeys.intent) ?? 'submit')
     machine.policy = o.parallel ?? cfg.config.parallel ?? 'block'
-    const begun = machine.begin(desc.revision, raw, submissionId)
+    const begun = await machine.acquire(desc.revision, raw, submissionId)
     if (!begun.go) return undefined
 
     store.set((s) => ({
@@ -357,6 +360,9 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     if (stale) return result
 
     applyResult(result)
+    // Новый пользовательский submit — новая идемпотентная операция.
+    if (result.outcome === 'committed' || result.outcome === 'unknown')
+      submissionId = crypto.randomUUID()
     return result
   }
 

@@ -37,6 +37,8 @@ export interface Result<TData = unknown> {
   readonly outcome: Outcome
   /** Ошибки ПОКАЗА: уже через обработчик. */
   readonly errors: readonly FormError[]
+  /** Некритичные серверные сбои после фиксации (например, after()). */
+  readonly warnings?: readonly FormError[]
   /** Значения без секретных полей. */
   readonly values: Record<string, unknown>
   /** Данные успешного действия. */

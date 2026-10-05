@@ -83,5 +83,22 @@ export async function handleSignup(
                    message: 'Запрос отклонён: не хватает конверта', origin: 'server' }],
       },
     }
-  return handlerFor(expandFor(description, probe))(request, from)
+  let expanded: FormDescription
+  try {
+    expanded = expandFor(description, probe)
+  } catch (error) {
+    // Чужое тело не должно превращать превышение лимитов схемы в HTTP 500.
+    return {
+      status: 413,
+      result: {
+        v: 1, formId: description.id, instance: 'unknown:new', from,
+        submissionId: '00000000-0000-4000-8000-000000000000', revision: description.revision,
+        values: {}, ok: false, status: 413, outcome: 'not-applied',
+        errors: [{ id: '*:request.too-large:0', code: 'request.too-large',
+          message: 'Запрос содержит слишком много динамических полей', origin: 'server',
+          params: { detail: error instanceof Error ? error.message : String(error) } }],
+      },
+    }
+  }
+  return handlerFor(expanded)(request, from)
 }

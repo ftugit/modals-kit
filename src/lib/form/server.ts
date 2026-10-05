@@ -287,11 +287,14 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
     bodyLayer,
     namesLayer,
   ]
+  if (!layers.includes(bodyLayer) || !layers.includes(namesLayer))
+    throw new Error('[form] order обязан содержать bodyLayer и namesLayer')
 
   return async function handle(request: Request, from: 'action' | 'fetch' = 'action'):
     Promise<Handled<T>> {
     const started = Date.now()
     const ctx: Ctx = { request, description: base, limits, reached: 'rejected', warnings: [] }
+    let currentIntent = 'submit'
     const status = base.policy.status
 
     const make = (
@@ -317,7 +320,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
     const finish = (handled: Handled<T>): Handled<T> => {
       // обработчик ошибок проходят ОБА пути
       const ectx: ErrorContext = {
-        from, intent: 'submit', outcome: handled.result.outcome,
+        from, intent: currentIntent, outcome: handled.result.outcome,
       }
       const shown = applyHandler(handled.result.errors, ectx, o.onErrors)
       o.observe?.({
@@ -325,7 +328,11 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
         ms: Date.now() - started, errors: handled.result.errors.length,
         removed: shown.removed, reached: ctx.reached,
       })
-      return { ...handled, result: { ...handled.result, errors: shown.errors } }
+      return { ...handled, result: {
+        ...handled.result,
+        errors: shown.errors,
+        warnings: ctx.warnings.length ? [...ctx.warnings] : handled.result.warnings,
+      } }
     }
 
     try {
@@ -354,6 +361,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
       const ev = evaluate(ctx.form!, ctx.description, { render, instance: o.instance })
       if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
 
+      currentIntent = ev.intent
       const submissionId = ev.envelope!.submissionId
       const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
         make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues })

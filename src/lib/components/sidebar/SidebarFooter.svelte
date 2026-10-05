@@ -8,7 +8,7 @@
     <span>Dock:</span>
     <button
       type="button"
-      class="underline hover:text-foreground cursor-pointer text-[11px]"
+      class="min-h-6 min-w-6 px-1 text-right underline hover:text-foreground cursor-pointer text-[11px]"
       onclick={() => shell.setDock(shell.dock === 'top' ? 'bottom' : 'top')}
     >
       {shell.dock}
@@ -18,7 +18,7 @@
     <span>Side:</span>
     <button
       type="button"
-      class="underline hover:text-foreground cursor-pointer text-[11px]"
+      class="min-h-6 min-w-6 px-1 text-right underline hover:text-foreground cursor-pointer text-[11px]"
       onclick={() => shell.setSide(shell.side === 'left' ? 'right' : 'left')}
     >
       {shell.side}

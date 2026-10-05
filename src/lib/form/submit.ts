@@ -129,7 +129,7 @@ export class SubmitMachine {
     if (this.#current) {
       if (this.policy === 'block') return { go: false, reason: 'blocked' }
       if (this.policy === 'replace') this.#current.controller.abort('superseded')
-      if (this.policy === 'queue') { this.#queue.push(() => undefined); return { go: false, reason: 'queued' } }
+      if (this.policy === 'queue') return { go: false, reason: 'queued' }
     }
     const next = newSubmission(rev, intent, id)
     this.#current = next
@@ -141,6 +141,21 @@ export class SubmitMachine {
    * @param s Ручка отправки.
    * @param revision Ревизия на момент сверки.
    */
+  /**
+   * Асинхронно занять слот. В режиме queue ожидает реального освобождения,
+   * поэтому отложенная отправка не теряется.
+   */
+  async acquire(rev: Revision, intent: string, id?: string): Promise<
+    { go: true; submission: SubmissionHandle } | { go: false; reason: 'blocked' }
+  > {
+    for (;;) {
+      const begun = this.begin(rev, intent, id)
+      if (begun.go) return begun
+      if (begun.reason === 'blocked') return { go: false, reason: 'blocked' }
+      await new Promise<void>((resolve) => this.#queue.push(resolve))
+    }
+  }
+
   stale(s: SubmissionHandle, revision: Revision): boolean {
     return this.#current !== s || s.controller.signal.aborted || s.rev !== revision
   }

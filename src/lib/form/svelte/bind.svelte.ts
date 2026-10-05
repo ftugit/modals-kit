@@ -34,7 +34,7 @@ export interface FormProps {
 export interface HiddenProps { type: 'hidden'; name: string; value: string; readonly: true }
 
 export interface IntentProps {
-  name: 'intent'
+  name: string
   value: string
   formnovalidate?: boolean
   disabled?: boolean
@@ -309,7 +309,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   function intent(id: string): IntentProps {
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(id).action)
     return {
-      name: 'intent', value: id,
+      name: desc.policy.envelopeKeys.intent, value: id,
       ...(descriptor?.validate === 'none' ? { formnovalidate: true } : {}),
       ...(snapshot.pending ? { disabled: true, 'aria-busy': true as const } : {}),
     }
@@ -390,8 +390,8 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
    * @param data Данные формы с намерением.
    */
   async function submit(data: FormData): Promise<Result | undefined> {
-    const raw = String(data.get('intent') ?? 'submit')
-    const begun = machine.begin(desc.revision, raw, submissionId)
+    const raw = String(data.get(desc.policy.envelopeKeys.intent) ?? 'submit')
+    const begun = await machine.acquire(desc.revision, raw, submissionId)
     if (!begun.go) return undefined
 
     store.set((s) => ({
@@ -413,6 +413,11 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     if (stale) return result
 
     applyResult(result)
+    // Один id защищает только одну логическую отправку. После окончательного
+    // исхода следующая отправка должна получить новый id, иначе сервер вернёт
+    // кэш предыдущей операции.
+    if (result.outcome === 'committed' || result.outcome === 'unknown')
+      submissionId = crypto.randomUUID()
     return result
   }
 

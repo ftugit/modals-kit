@@ -6,6 +6,7 @@ import {
   makeContinuation, makeRenderer, normalizeErrors, projectAttrs, reconcile, ru,
   addressedTo, assertQueuedProtocol, effectiveMode, hasError, invalidFromFor,
   applyHandler, split, makeFieldSugar, normalizeService, policyWith, QueuedWithoutProtocolError,
+  SubmitMachine,
   type ErrorContext, type FieldSpec, type FormError, type Result,
 } from './index'
 
@@ -24,6 +25,28 @@ const body = (values: Record<string, string>, env = envelope()) => {
   for (const [k, x] of Object.entries({ ...env, ...values })) fd.set(k, x)
   return fd
 }
+
+suite('SubmitMachine', () => {
+  test('queue действительно передаёт слот следующей отправке', async () => {
+    const machine = new SubmitMachine('queue')
+    const first = await machine.acquire(1, 'submit', 'first')
+    expect(first.go).toBe(true)
+    if (!first.go) return
+
+    let acquired = false
+    const secondPromise = machine.acquire(1, 'submit', 'second').then((x) => {
+      acquired = x.go
+      return x
+    })
+    await Promise.resolve()
+    expect(acquired).toBe(false)
+
+    machine.finish(first.submission)
+    const second = await secondPromise
+    expect(second.go).toBe(true)
+    expect(acquired).toBe(true)
+  })
+})
 
 const signup = defineForm({
   id: 'signup',
@@ -57,7 +80,7 @@ suite('описание и ограничения', () => {
 
   test('атрибуты выводит тип, а не центральная таблица', () => {
     expect(signup.attrsOf('email').attrs).toMatchObject({ type: 'email', required: true, maxlength: 320 })
-    expect(signup.attrsOf('age').attrs).toMatchObject({ type: 'number', min: 18 })
+    expect(signup.attrsOf('age').attrs).toMatchObject({ type: 'number', min: 18, step: 'any' })
   })
 
   test('правило без вида даёт opaque и названную причину', () => {
@@ -70,6 +93,112 @@ suite('описание и ограничения', () => {
     const d = defineForm({ id: 'x', fields: { n: field.number({ validate: [v.minValue(18, true)] }) } })
     expect(d.attrsOf('n').attrs['min']).toBeUndefined()
     expect(d.attrsOf('n').skipped[0]!.why).toMatch(/исключающая/)
+  })
+
+  test('неизвестный или сломанный именованный валидатор — дефект описания, а не молчание', () => {
+    expect(() => defineForm({ id: 'bad', fields: { a: field.text({ validate: [{ name: 'missing' }] }) } }))
+      .toThrow(/валидатор не зарегистрирован/)
+    expect(() => defineForm({ id: 'bad', fields: { a: field.text({ validate: [{ name: 'pattern', arg: { source: '[' } }] }) } }))
+      .toThrow(/Invalid regular expression|SyntaxError|Unterminated/)
+    expect(() => defineForm({ id: 'bad', fields: { a: field.text({ validate: [{ name: 'minLength', arg: -1 }] }) } }))
+      .toThrow(/неотрицательное/)
+  })
+
+  test('именованные встроенные file-валидаторы регистрируются тем же путём', () => {
+    const d = defineForm({
+      id: 'upload',
+      fields: {
+        doc: field.file({ validate: [{ name: 'accept', arg: ['.pdf'] }, { name: 'maxSize', arg: 1024 }] }),
+      },
+    })
+    expect(d.attrsOf('doc').attrs).toMatchObject({ type: 'file', accept: '.pdf' })
+    expect(d.attrsOf('doc').skipped.some((x) => x.kind === 'maxSize')).toBe(true)
+  })
+
+  test('лимиты описания применяются к help и pattern source', () => {
+    const limited = policyWith({ limits: { helpLength: 4, patternLength: 4 } })
+    expect(() => defineForm({
+      id: 'bad-help', policy: limited,
+      fields: { a: field.text({ help: 'слишком длинно' }) },
+    })).toThrow(/подсказка слишком длинная/)
+    expect(() => defineForm({
+      id: 'bad-pattern', policy: limited,
+      fields: { a: field.text({ validate: [v.pattern({ source: '[a-z]+' })] }) },
+    })).toThrow(/шаблон длиннее предела/)
+  })
+
+  test('числовой step сверяется от min так же, как HTML constraint validation', () => {
+    const d = defineForm({ id: 'stepn', fields: { n: field.number({ validate: [v.minValue(18), v.step(5)] }) } })
+    expect(d.attrsOf('n').attrs).toMatchObject({ type: 'number', min: 18, step: 5 })
+    expect(evaluate(body({ n: '18' }, envelope('stepn')), d, { render }).errors).toHaveLength(0)
+    expect(evaluate(body({ n: '23' }, envelope('stepn')), d, { render }).errors).toHaveLength(0)
+    expect(evaluate(body({ n: '20' }, envelope('stepn')), d, { render }).errors[0]!.code).toBe('step')
+  })
+
+  test('дробные числа без step-валидатора не блокируются HTML step=1', () => {
+    const d = defineForm({ id: 'decimal', fields: { n: field.number({ validate: [v.minValue(0)] }) } })
+    expect(d.attrsOf('n').attrs).toMatchObject({ type: 'number', min: 0, step: 'any' })
+    expect(evaluate(body({ n: '1.5' }, envelope('decimal')), d, { render }).errors).toHaveLength(0)
+  })
+
+  test('ядро не обещает HTML-атрибуты, которые браузер игнорирует на данном input', () => {
+    const d = defineForm({
+      id: 'native',
+      fields: {
+        c: field.color({ validate: [v.required(), v.pattern({ source: '#[0-9a-fA-F]{6}' })] }),
+        h: field.hidden({ validate: [v.required(), v.maxLength(8)] }),
+        r: field.range({ validate: [v.required(), v.minValue(1), v.maxValue(5)] }),
+      },
+    })
+
+    expect(d.attrsOf('c').attrs).toMatchObject({ type: 'color' })
+    expect(d.attrsOf('c').attrs['required']).toBeUndefined()
+    expect(d.attrsOf('c').attrs['pattern']).toBeUndefined()
+    expect(d.attrsOf('c').skipped.map((x) => x.kind)).toEqual(expect.arrayContaining(['required', 'pattern']))
+
+    expect(d.attrsOf('h').attrs).toMatchObject({ type: 'hidden' })
+    expect(d.attrsOf('h').attrs['required']).toBeUndefined()
+    expect(d.attrsOf('h').attrs['maxlength']).toBeUndefined()
+
+    expect(d.attrsOf('r').attrs).toMatchObject({ type: 'range', min: 1, max: 5, step: 'any' })
+    expect(d.attrsOf('r').attrs['required']).toBeUndefined()
+  })
+
+  test('integer не ставит опасный step=1 при дробном min', () => {
+    const d = defineForm({ id: 'intmin', fields: { n: field.number({ validate: [v.minValue(18.5), v.integer()] }) } })
+    expect(d.attrsOf('n').attrs).toMatchObject({ type: 'number', min: 18.5, step: 'any' })
+    expect(d.attrsOf('n').skipped.some((x) => x.kind === 'step' && /дробным min/.test(x.why))).toBe(true)
+    expect(evaluate(body({ n: '19' }, envelope('intmin')), d, { render }).errors).toHaveLength(0)
+    expect(evaluate(body({ n: '19.5' }, envelope('intmin')), d, { render }).errors[0]!.code).toBe('integer')
+  })
+
+  test('time/datetime не получают HTML default step=60 без явного step-валидатора', () => {
+    const time = defineForm({ id: 'timeform', fields: { t: field.time({ validate: [] }) } })
+    expect(time.attrsOf('t').attrs).toMatchObject({ type: 'time', step: 'any' })
+    expect(evaluate(body({ t: '12:00:30' }, envelope('timeform')), time, { render }).errors).toHaveLength(0)
+  })
+
+  test('date/time step работает с тем же base, который попадёт в HTML', () => {
+    const date = defineForm({ id: 'dateform', fields: { d: field.date({ validate: [v.minDate('2024-01-01'), v.step(2, 'day')] }) } })
+    expect(date.attrsOf('d').attrs).toMatchObject({ type: 'date', min: '2024-01-01', step: 2 })
+    expect(evaluate(body({ d: '2024-01-03' }, envelope('dateform')), date, { render }).errors).toHaveLength(0)
+    expect(evaluate(body({ d: '2024-01-02' }, envelope('dateform')), date, { render }).errors[0]!.code).toBe('step')
+
+    const time = defineForm({ id: 'timeform2', fields: { t: field.time({ validate: [v.minDate('12:00'), v.step(15, 'second')] }) } })
+    expect(time.attrsOf('t').attrs).toMatchObject({ type: 'time', min: '12:00', step: 15 })
+    expect(evaluate(body({ t: '12:00:30' }, envelope('timeform2')), time, { render }).errors).toHaveLength(0)
+    expect(evaluate(body({ t: '12:00:31' }, envelope('timeform2')), time, { render }).errors[0]!.code).toBe('step')
+  })
+
+  test('серверный decode не принимает даты и время, которые HTML input тоже не примет', () => {
+    const date = defineForm({ id: 'datebad', fields: { d: field.date({}) } })
+    expect(evaluate(body({ d: '2024-02-31' }, envelope('datebad')), date, { render }).errors[0]!.code).toBe('type.date')
+
+    const time = defineForm({ id: 'timebad', fields: { t: field.time({}) } })
+    expect(evaluate(body({ t: '25:00' }, envelope('timebad')), time, { render }).errors[0]!.code).toBe('type.time')
+
+    const dateTime = defineForm({ id: 'dtbad', fields: { dt: field['datetime-local']({}) } })
+    expect(evaluate(body({ dt: '2024-02-31T10:00' }, envelope('dtbad')), dateTime, { render }).errors[0]!.code).toBe('type.datetime')
   })
 
   test('свой тип регистрируется и проецирует свои виды', () => {
@@ -125,6 +254,10 @@ suite('разбор и проверка', () => {
     const mk = (path: string, code: string): FormError => ({ id: '', code, path, origin: 'core' })
     const out = normalizeErrors([mk('b', 'x'), mk('a', 'y'), mk('b', 'x')], render)
     expect(out.map((e) => e.path)).toEqual(['a', 'b'])
+  })
+
+  test('код ошибки step имеет встроенное сообщение', () => {
+    expect(render('step', { step: 5 })).toBe('Шаг 5')
   })
 })
 
@@ -369,7 +502,7 @@ suite('проекция атрибутов', () => {
   test('тип, не знающий вида, называет причину', () => {
     const registry = createRegistry()
     const type = registry.types.get('checkbox')
-    const { skipped } = projectAttrs(type, [{ kind: 'minLength', value: 3 }], { input: 'checkbox', name: 'a' })
+    const { skipped } = projectAttrs(type, [{ kind: 'minLength', value: 3 }], { input: 'checkbox', name: 'a', constraints: [{ kind: 'minLength', value: 3 }], attrs: {} })
     expect(skipped[0]!.why).toMatch(/не знает вида/)
   })
 })
