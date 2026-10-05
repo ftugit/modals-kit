@@ -17,6 +17,12 @@ export interface Decoded {
   structural: Structural[]
 }
 
+/**
+ * Разобрать записи в значения по типам полей. Один код-путь для браузера и сервера.
+ * @param form Источник записей: `FormData` или тестовый объект.
+ * @param d Описание формы.
+ * @returns Значения по именам и структурные ошибки разбора.
+ */
 export function decode(form: EntrySource, d: FormDescription): Decoded {
   const values = safeObject<unknown>()
   const structural: Structural[] = []
@@ -29,6 +35,11 @@ export function decode(form: EntrySource, d: FormDescription): Decoded {
   return { values, structural }
 }
 
+/**
+ * Собрать FormData из значений: обратный разбору ход.
+ * @param values Значения по именам полей.
+ * @param d Описание формы.
+ */
 export function encode(values: Record<string, unknown>, d: FormDescription): FormData {
   const out = new FormData()
   for (const f of d.fields) {
@@ -41,7 +52,12 @@ export function encode(values: Record<string, unknown>, d: FormDescription): For
   return out
 }
 
-/** Значения без secret-полей: пароль не возвращается наружу. */
+/**
+ * Значения без secret-полей: пароль не возвращается наружу.
+ * @param values Полные значения.
+ * @param d Описание формы.
+ * @returns Копия без секретных полей.
+ */
 export function stripSecret(values: Record<string, unknown>, d: FormDescription) {
   const out = safeObject<unknown>()
   for (const f of d.fields) if (!f.secret && f.name in values) out[f.name] = values[f.name]

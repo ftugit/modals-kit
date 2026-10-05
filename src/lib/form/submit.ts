@@ -6,18 +6,29 @@ import { normalizeErrors, stableId, type FormError, type RenderMessage, type Res
 import { validateForm, type ValidateOptions } from './validate'
 import type { Revision } from './types'
 
+/** Настройки evaluate. */
 export interface EvaluateOptions extends ValidateOptions {
+  /** Словарь текстов для нормализации ошибок. */
   render: RenderMessage
+  /** Ожидаемый экземпляр формы. */
   instance?: string
+  /** `false` — для локальной перепроверки, где конверта может не быть. */
   requireEnvelope?: boolean
 }
 
+/** Вердикт evaluate: конверт, значения и ошибки. */
 export interface Evaluation {
+  /** Проверенный конверт, если требовался. */
   envelope?: Envelope
+  /** Полные значения по типам полей. */
   values: Record<string, unknown>
+  /** Значения без секретных полей. */
   publicValues: Record<string, unknown>
+  /** Нормализованные ошибки проверки. */
   errors: readonly FormError[]
+  /** Намерение из конверта. */
   intent: string
+  /** Отказ конверта: дальше разбирать нечего. */
   fatal?: FormError
 }
 
@@ -90,6 +101,12 @@ export interface SubmissionHandle {
   controller: AbortController
 }
 
+/**
+ * Новая ручка отправки: идентификатор идемпотентности и контроллер отмены.
+ * @param rev Ревизия описания на старте.
+ * @param intent Намерение отправки.
+ * @param id Заданный идентификатор (например, из продолжения).
+ */
 export const newSubmission = (rev: Revision, intent: string, id?: string): SubmissionHandle =>
   ({ id: id ?? crypto.randomUUID(), intent, rev, startedAt: Date.now(), controller: new AbortController() })
 
@@ -103,6 +120,10 @@ export class SubmitMachine {
   constructor(public policy: ParallelPolicy = 'block') {}
   get current() { return this.#current }
 
+  /**
+   * Занять слот отправки согласно политике параллелизма.
+   * @returns `go` — можно отправлять, `blocked`/`queued` — политика отказала.
+   */
   begin(rev: Revision, intent: string, id?: string):
     { go: true; submission: SubmissionHandle } | { go: false; reason: 'blocked' | 'queued' } {
     if (this.#current) {
@@ -115,11 +136,19 @@ export class SubmitMachine {
     return { go: true, submission: next }
   }
 
-  /** Ревизия входит в сверку: набор полей мог смениться за время ожидания. */
+  /**
+   * Устарела ли отправка: отменена, вытеснена или описание сменило ревизию.
+   * @param s Ручка отправки.
+   * @param revision Ревизия на момент сверки.
+   */
   stale(s: SubmissionHandle, revision: Revision): boolean {
     return this.#current !== s || s.controller.signal.aborted || s.rev !== revision
   }
 
+  /**
+   * Освободить слот и разбудить очередь.
+   * @param s Ручка завершённой отправки.
+   */
   finish(s: SubmissionHandle) {
     if (this.#current === s) this.#current = undefined
     this.#queue.shift()?.()
@@ -133,17 +162,31 @@ export class SubmitMachine {
 
 /* ── конвейер ──────────────────────────────────────────────────────── */
 
+/** Вход конвейера отправки. */
 export interface RunSubmitInput<T = unknown> {
+  /** Описание на момент отправки. */
   description: FormDescription
+  /** Данные формы, включая конверт. */
   data: FormData
+  /** Экземпляр формы. */
   instance: string
+  /** Ручка отправки от `SubmitMachine.begin`. */
   submission: SubmissionHandle
+  /** Транспорт: сеть делает движок, ядро — нет. */
   transport: Transport<T>
+  /** Словарь текстов. */
   render: RenderMessage
+  /** Намерение, если известно заранее. */
   intent?: string
+  /** Заголовок Accept для транспорта. */
   accept?: readonly string[]
 }
 
+/**
+ * Конвейер отправки: конверт → локальная проверка тем же `evaluate` →
+ * транспорт → результат. Прервано и сеть дают честные исходы.
+ * @param input Описание, данные, ручка отправки и транспорт.
+ */
 export async function runSubmit<T>(input: RunSubmitInput<T>): Promise<Result<T>> {
   const { description: d, data, instance, submission, render } = input
   const intent = input.intent ?? 'submit'

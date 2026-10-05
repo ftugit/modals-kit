@@ -27,6 +27,12 @@ export interface ContinuationStore {
 
 export const CONTINUATION_TTL_MS = 15 * 60 * 1000
 
+/**
+ * Собрать продолжение с метками времени.
+ * @param args Полное содержимое без `iat`/`exp`.
+ * @param now Часы — для тестов.
+ * @param ttl Время жизни.
+ */
 export function makeContinuation(
   args: Omit<Continuation, 'iat' | 'exp'>, now = Date.now(), ttl = CONTINUATION_TTL_MS,
 ): Continuation {
@@ -42,6 +48,13 @@ export const continuationKey = (c: Pick<Continuation, 'formId' | 'instance'>) =>
 /**
  * Продолжение — АДРЕСОВАННОЕ сообщение. Носителю не доверяют: кука общая
  * на весь сайт, ссылку с токеном можно переслать.
+ */
+/**
+ * Продолжение — АДРЕСОВАННОЕ сообщение: форма и экземпляр обязаны совпасть,
+ * и срок не истёк.
+ * @param c Продолжение.
+ * @param to Адресат.
+ * @param now Часы — для тестов.
  */
 export function addressedTo(
   c: Continuation | undefined, to: { formId: FormId; instance: InstanceId },
@@ -65,6 +78,13 @@ const sizeOf = (c: Continuation) => new TextEncoder().encode(JSON.stringify(c)).
  * Деградация строго упорядочена: «потерять можно удобство, нельзя — гарантию».
  * ЗАПРЕЩЁННЫЙ уровень — отбросить ошибки ради значений: так форма становится
  * немой ради экономии нескольких килобайт.
+ */
+/**
+ * Деградация строго упорядочена: терять можно удобство, нельзя гарантию.
+ * Уровень 1 — укоротить значения, уровень 3 — отбросить их, сохранив ошибки.
+ * Отбросить ошибки ради значений ЗАПРЕЩЁН.
+ * @param c Продолжение.
+ * @param o Предел байт и длина значения для укорачивания.
  */
 export function degrade(
   c: Continuation, o: { maxBytes: number; maxValueLength?: number },

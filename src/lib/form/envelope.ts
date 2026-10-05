@@ -35,6 +35,13 @@ export function buildEnvelope(e: Omit<Envelope, 'intent'>,
   return out
 }
 
+/**
+ * Проверить конверт в присланных данных. Отказ, а не молчаливая починка.
+ * @param form Данные запроса.
+ * @param d Описание формы.
+ * @param expect Ожидаемый экземпляр, если форма адресована.
+ * @returns Либо конверт, либо код отказа с подробностью.
+ */
 export function verifyEnvelope(
   form: EntrySource, d: FormDescription, expect: { instance?: InstanceId } = {},
 ): EnvelopeVerdict {

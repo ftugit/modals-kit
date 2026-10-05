@@ -17,14 +17,26 @@ export type SchemaOp =
   | { op: 'remove-row'; group: string; rowKey: RowKey }
   | { op: 'move-row'; group: string; rowKey: RowKey; dir: 'up' | 'down' }
 
+/**
+ * Конструкторы операций над набором полей. Операция — данные:
+ * один и тот же `SchemaOp` применяется в памяти и на сервере.
+ */
 export const editor = {
+  /** Добавить поле. Станет `fresh`: обязательность в первом круге не навязывается. */
   add: (field: FieldDescriptor): SchemaOp => ({ op: 'add-field', field }),
+  /** Убрать поле; составные пути убираются префиксом. */
   remove: (name: string): SchemaOp => ({ op: 'remove-field', name }),
+  /** Заменить поле целиком: значение переживёт замену только при том же типе. */
   replace: (name: string, next: FieldDescriptor): SchemaOp => ({ op: 'replace-field', name, next }),
+  /** Поправить метаданные поля, не трогая значение. */
   patch: (name: string, part: Partial<FieldDescriptor>): SchemaOp => ({ op: 'patch-field', name, part }),
+  /** Задать порядок полей списком имён. */
   reorder: (order: readonly string[]): SchemaOp => ({ op: 'reorder', order }),
+  /** Добавить строку повторяемой группы по стабильному ключу. */
   addRow: (group: string, rowKey: RowKey): SchemaOp => ({ op: 'add-row', group, rowKey }),
+  /** Убрать строку группы: адресация по ключу, соседние строки не съезжают. */
   removeRow: (group: string, rowKey: RowKey): SchemaOp => ({ op: 'remove-row', group, rowKey }),
+  /** Сдвинуть строку группы вверх или вниз. */
   moveRow: (group: string, rowKey: RowKey, dir: 'up' | 'down'): SchemaOp =>
     ({ op: 'move-row', group, rowKey, dir }),
 }
@@ -56,6 +68,14 @@ function rowTemplate(fields: readonly FieldDescriptor[], group: string): FieldDe
  * АТОМАРНОСТЬ: сначала целиком строится следующий набор, потом один пересчёт.
  * Иначе подписчики увидят промежуточное состояние, а мета-валидация
  * отработает на половинчатом наборе.
+ */
+/**
+ * Применить пакет операций атомарно: сначала целиком строится следующий
+ * набор, потом один пересчёт. Ревизия увеличивается.
+ * @param d Текущее описание.
+ * @param ops Пакет операций.
+ * @returns Новое описание.
+ * @throws {SchemaOpError} Операция невыполнима: дубль, нет группы.
  */
 export function applyOps(d: FormDescription, ops: readonly SchemaOp[]): FormDescription {
   let fields = [...d.fields]
@@ -137,7 +157,10 @@ export function applyOps(d: FormDescription, ops: readonly SchemaOp[]): FormDesc
   })
 }
 
-/** Снять пометку свежести: со второго круга поле обычное. */
+/**
+ * Снять пометку свежести: со второго круга поле обычное.
+ * @param d Описание с `fresh`-полями.
+ */
 export function ageFields(d: FormDescription): FormDescription {
   if (!d.fields.some((f) => f.fresh)) return d
   return applyOps(d, d.fields.filter((f) => f.fresh)
@@ -146,7 +169,13 @@ export function ageFields(d: FormDescription): FormDescription {
 
 export class InvariantError extends Error {}
 
-/** Инвариант согласованности. Проверяется ПОСЛЕ каждой операции. */
+/**
+ * Инвариант согласованности: нет осиротевших ошибок и значений,
+ * у свежих полей не висит обязательность.
+ * @param d Описание.
+ * @param s Состояние формы.
+ * @throws {InvariantError} Рассогласование.
+ */
 export function assertConsistent(d: FormDescription, s: {
   facts: readonly FormError[]
   values: Readonly<Record<string, unknown>>
@@ -169,7 +198,14 @@ export interface Reconciled {
   incompatible: string[]
 }
 
-/** Судьба состояния при изменении набора: §«что со значениями и ошибками». */
+/**
+ * Судьба состояния при изменении набора: значения и ошибки сохраняются
+ * по именам, пока правила не менялись; несовместимая замена сбрасывает
+ * значение и даёт общую ошибку.
+ * @param next Новое описание.
+ * @param prev Прежнее описание.
+ * @param s Состояние на момент перехода.
+ */
 export function reconcile(next: FormDescription, prev: FormDescription, s: {
   values: Readonly<Record<string, unknown>>
   facts: readonly FormError[]

@@ -15,21 +15,29 @@ export interface SpecRule {
   readonly arg?: string | number | readonly string[]
 }
 
+/** Сериализуемое описание поля для рантайма: функции запрещены. */
 export interface FieldSpec {
+  /** Короткое имя без точек: живёт в пространстве имён префикса. */
   readonly name: string
+  /** Тип значения; без него — по представлению. */
   readonly kind?: ValueKind
   readonly input: InputMode
+  /** Подпись обязательна: без неё поле немое. */
   readonly label: string
   readonly help?: string
   readonly placeholder?: string
+  /** Значение по умолчанию строкой. */
   readonly defaultAsString?: string
   readonly required?: boolean
+  /** Правила именами из реестра: `{ rule: 'pattern', arg: 'e164' }`. */
   readonly rules?: readonly SpecRule[]
   readonly options?: readonly Option[]
   readonly visibleWhen?: VisibilityCondition
 }
 
+/** Настройка компиляции спецификации. */
 export interface CompileOptions {
+  /** Префикс пространства имён: `u_` по умолчанию. */
   prefix?: string
   registry?: Registry
   policy?: FormPolicy
@@ -47,6 +55,13 @@ const UNSAFE_PATTERN = /\([^)]*[+*{][^)]*\)\s*[+*{]/
 const defect = (code: FieldDefect['code'], at: string, message: string): FieldDefect =>
   ({ code, severity: 'error', at, message })
 
+/**
+ * Скомпилировать одну спецификацию в дескриптор поля. Функции в
+ * спецификации — дефект: поле из рантайма не исполняет чужой код.
+ * @param spec Сериализуемое описание.
+ * @param o Префикс, реестр, политика.
+ * @returns Либо готовое поле, либо список дефектов.
+ */
 export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): CompileResult {
   const registry = o.registry ?? defaultRegistry
   const policy = o.policy ?? defaultPolicy
@@ -124,6 +139,11 @@ export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): Compi
     : { ok: true, field }
 }
 
+/**
+ * Скомпилировать набор спецификаций: проверка дублей и предела всего набора.
+ * @param specs Список спецификаций.
+ * @param o Префикс, реестр, политика.
+ */
 export function compileFieldSpecs(specs: readonly FieldSpec[], o: CompileOptions = {}):
   { ok: true; fields: FieldDescriptor[] } | { ok: false; defects: FieldDefect[] } {
   const policy = o.policy ?? defaultPolicy

@@ -12,12 +12,22 @@ import type { Constraint, ConstraintKind } from './constraints'
 import { keep } from './keep'
 import type { HtmlAttrs, InputMode, ValueKind } from './types'
 
-export interface DecodeContext { path: string; input: InputMode }
+/** Контекст разбора записей в значение. */
+export interface DecodeContext {
+  /** Поле — для кодов ошибок. */
+  path: string
+  /** Представление — разбор может от него зависеть. */
+  input: InputMode
+}
 export type DecodeResult<V> =
   | { ok: true; value: V }
   | { ok: false; code: string; params?: Record<string, unknown> }
 
-export interface ProjectContext { input: InputMode; name: string }
+/** Контекст проекции ограничений в атрибуты. */
+export interface ProjectContext {
+  input: InputMode
+  name: string
+}
 
 /** Проекция вида ограничения в атрибуты. */
 export type Projection =
@@ -43,19 +53,30 @@ export interface FieldType<V = unknown> {
 export class FieldTypeRegistry {
   #types = new Map<string, FieldType<any>>()
 
+  /** Зарегистрировать тип значения. */
   register<V>(type: FieldType<V>): this {
     keep(this.#types, type.kind, type as FieldType<any>, 'тип значения')
     return this
   }
+  /** Есть ли такой тип значения. */
   has = (kind: ValueKind) => this.#types.has(kind)
+  /** Все зарегистрированные виды. */
   kinds = () => [...this.#types.keys()]
+  /** Все типы в порядке регистрации. */
   all = () => [...this.#types.values()]
+  /**
+   * Тип значения по виду.
+   * @throws Не зарегистрирован.
+   */
   get(kind: ValueKind): FieldType<unknown> {
     const t = this.#types.get(kind)
     if (!t) throw new Error(`[form] тип значения не зарегистрирован: ${kind}`)
     return t
   }
-  /** Тип, обслуживающий представление. Нужен сахару `field.*`. */
+  /**
+   * Тип, обслуживающий представление. Нужен сахару `field.*`.
+   * @param input Представление: `text`, `number`, `rating`…
+   */
   byInput(input: InputMode): FieldType<unknown> | undefined {
     return this.all().find((t) => t.inputs.includes(input))
   }

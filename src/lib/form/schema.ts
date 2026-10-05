@@ -18,9 +18,18 @@ export type StandardResult<T> =
         readonly path?: readonly (string | { key: string })[]
       }[] }
 
+/**
+ * Проверка на контракт Standard Schema (`~standard`).
+ * @param x Что угодно.
+ */
 export const isStandardSchema = (x: unknown): x is StandardSchemaLike =>
   !!x && typeof x === 'object' && '~standard' in x
 
+/**
+ * Перевести issues схемы в ошибки формы: путь склеивается в `path`,
+ * текст становится сообщением.
+ * @param result Результат `~standard.validate`.
+ */
 export function schemaErrors(result: StandardResult<unknown>): FormError[] {
   if (!result.issues) return []
   return result.issues.map((i) => {
@@ -34,6 +43,11 @@ export function schemaErrors(result: StandardResult<unknown>): FormError[] {
 }
 
 /** Прогон схемы над значениями формы. Асинхронные схемы тоже допустимы. */
+/**
+ * Прогнать внешнюю схему над значениями формы: источник ошибок, но не атрибутов.
+ * @param schema Схема с контрактом Standard Schema.
+ * @param values Значения формы.
+ */
 export async function runSchema(
   schema: StandardSchemaLike, values: Record<string, unknown>,
 ): Promise<FormError[]> {

@@ -13,11 +13,17 @@ import { evaluate } from './submit'
 import { nameProblem } from './policy'
 import type { SubmissionId } from './types'
 
+/** Пределы приёма: защита тела запроса, а не настройка поведения. */
 export interface Limits {
+  /** Предел всего тела — по счётчику потока, а не по заголовку. */
   readonly maxBytes: number
+  /** Предел числа различных ключей. */
   readonly maxKeys: number
+  /** Предел на КАЖДЫЙ файл отдельно. */
   readonly maxFileSize: number
+  /** Предел значений одного ключа. */
   readonly maxValuesPerKey: number
+  /** Общий таймаут приёма. */
   readonly timeoutMs: number
 }
 
@@ -47,6 +53,10 @@ export type Layer = (ctx: Ctx) => Promise<Rejection | undefined> | Rejection | u
 /* ── слои ──────────────────────────────────────────────────────────── */
 
 /** Слой 01. Только объявленные методы. Отказ БЕЗ ЧТЕНИЯ ТЕЛА. */
+/**
+ * Слой 01. Только объявленные методы. Отказ БЕЗ ЧТЕНИЯ ТЕЛА.
+ * @param allowed Разрешённые HTTP-методы.
+ */
 export const methodLayer = (allowed: readonly string[] = ['POST']): Layer => (ctx) =>
   allowed.includes(ctx.request.method) ? undefined : reject(405, 'method.not-allowed')
 
@@ -178,6 +188,11 @@ export interface Throttle {
 }
 
 /** Отказ по частоте идёт ДО чтения тела: иначе отказ расходует предел. */
+/**
+ * Ограничение частоты скользящим окном в памяти процесса.
+ * @param o Лимит, окно и функция ключа (по умолчанию `x-forwarded-for`).
+ * @param now Часы — для тестов.
+ */
 export function windowThrottle(
   o: { limit: number; windowMs: number; key?: (r: Request) => string },
   now: () => number = Date.now,
@@ -221,29 +236,46 @@ export class ExecuteFailure extends Error {
   }
 }
 
+/** Настройка приёма запроса формой. */
 export interface HandlerOptions<T = unknown> {
+  /** Описание формы: изоморфный модуль, импортированный и сервером. */
   description: FormDescription
   /** Источник описания для полей из рантайма. */
   source?: DescriptionSource
+  /** Экземпляр формы, если адресован. */
   instance?: string
+  /** Слой Origin: список разрешённых, `strict` запрещает запрос без заголовков. */
   origin?: OriginOptions
+  /** Правки пределов приёма поверх умолчаний. */
   limits?: Partial<Limits>
+  /** Тексты поверх словаря формы. */
   messages?: MessageDictionary
   /** Асинхронные проверки: на сервере выполняются ВСЕГДА. */
   checks?: CheckRegistry
+  /** Внешняя схема: ещё один источник ошибок. */
   schema?: StandardSchemaLike
+  /** Хранилище идемпотентности: повтор не выполняется заново. */
   idempotency?: IdempotencyStore
+  /** Ограничение частоты: отказ ДО чтения тела. */
   throttle?: Throttle
   /** Обработчик ошибок проекта. Проходят оба пути. */
   onErrors?: ErrorHandler
+  /** Телеметрия: одна запись на запрос. */
   observe?: (e: Record<string, unknown>) => void
+  /** Своий порядок слоёв. Обязательные выбрасывать нельзя. */
   order?: readonly Layer[]
+  /** Бизнес-действие: обязано позвать `commit()` или `fail()`. */
   execute(ctx: ExecuteContext): Promise<{ data?: T; redirect?: string }> | { data?: T; redirect?: string }
 }
 
 export interface Handled<T = unknown> { result: Result<T>; status: number }
 
 /** Приём запроса. Возвращает РЕЗУЛЬТАТ, кодировку выбирает маршрут. */
+/**
+ * Собрать приёмник запроса из переставляемых слоёв.
+ * @param o Описание, слои, проверки и бизнес-действие.
+ * @returns Функция `Request → { result, status }`: кодировку выбирает маршрут.
+ */
 export function createFormHandler<T>(o: HandlerOptions<T>) {
   const base = o.description
   const render = makeRenderer([o.messages, base.messages as never, ru], base.policy.interpolate)

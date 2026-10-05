@@ -41,12 +41,22 @@ export type Revision = number
 
 export type HtmlAttrs = Record<string, unknown>
 
-/** Корень пути: нужен проверке согласованности состояния. */
+/**
+ * Корень составного пути: `items.r1.sku` → `items`. Нужен проверке
+ * согласованности состояния группы.
+ * @param path Составной путь поля.
+ * @returns Имя корневого сегмента.
+ */
 export function root(path: FieldPath): string {
   return path.split('.')[0]!
 }
 
-/** Индексное представление — ПРОИЗВОДНОЕ. Ошибка адресуется ключом, не индексом. */
+/**
+ * Индексное представление — ПРОИЗВОДНОЕ. Ошибка адресуется ключом, не индексом.
+ * @param path Путь с ключами строк: `items.r1.sku`.
+ * @param rowKeys Ключи строк группы в порядке объявления.
+ * @returns Путь с индексами строк: `items.0.sku`.
+ */
 export function toIndexPath(path: FieldPath, rowKeys: readonly RowKey[]): string {
   return path.split('.').map((p) => {
     const i = rowKeys.indexOf(p)
@@ -54,7 +64,11 @@ export function toIndexPath(path: FieldPath, rowKeys: readonly RowKey[]): string
   }).join('.')
 }
 
-/** Объекты без прототипа — на всей линии разбора. */
+/**
+ * Объект без прототипа: `__proto__` в нём — обычный ключ.
+ * Используется на всей линии разбора чужих данных.
+ * @returns Пустой объект с прототипом `null`.
+ */
 export function safeObject<T>(): Record<string, T> {
   return Object.create(null) as Record<string, T>
 }

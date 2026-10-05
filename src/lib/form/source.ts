@@ -34,11 +34,23 @@ export class SpecSourceError extends Error {
   }
 }
 
+/**
+ * Добавить поля к описанию одним пакетом операций.
+ * @param d Базовое описание.
+ * @param fields Готовые дескрипторы.
+ */
 export function appendFields(d: FormDescription, fields: readonly FieldDescriptor[]) {
   return fields.length ? applyOps(d, fields.map((f) => editor.add(f))) : d
 }
 
 /** Базовое описание из кода плюс поля из хранилища приложения. */
+/**
+ * Источник описания: база из кода плюс поля из хранилища приложения.
+ * Набор полей поднимает сервер — клиент назначать себе проверки не может.
+ * @param base Объявленные формы по идентификаторам.
+ * @param store Хранилище спецификаций пользовательских полей.
+ * @param o Разрешение произвольных шаблонов.
+ */
 export function createAppSource(
   base: Readonly<Record<FormId, FormDescription>>,
   store: UserFieldStore,
@@ -90,6 +102,12 @@ export type StaleVerdict =
  * Страница открыта, набор полей сменился, форма отправлена.
  * Ошибки сбрасываются, значения переносятся по именам, новые поля помечены
  * свежими — обязательность им в этом круге не навязывается.
+ */
+/**
+ * Сверить набор полей страницы с серверным: страница открыта, набор сменился.
+ * @param server Свежее описание сервера.
+ * @param claimed Ревизия и хэш состава из конверта.
+ * @param values Значения формы на странице.
  */
 export function checkStale(
   server: FormDescription,

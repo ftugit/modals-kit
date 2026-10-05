@@ -21,24 +21,39 @@ export interface FormError {
   readonly retryable?: boolean
 }
 
+/** Итог отправки: общий язык браузера, сервера и показа. */
 export interface Result<TData = unknown> {
+  /** Версия контракта. */
   readonly v: 1
   readonly formId: FormId
   readonly instance: InstanceId
+  /** Идентификатор отправки: ключ идемпотентности. */
   readonly submissionId: SubmissionId
+  /** Прошла ли проверка и фиксация. */
   readonly ok: boolean
+  /** HTTP-код из политики статусов. */
   readonly status: number
+  /** Четыре значения, и ни одного «наверное». */
   readonly outcome: Outcome
+  /** Ошибки ПОКАЗА: уже через обработчик. */
   readonly errors: readonly FormError[]
+  /** Значения без секретных полей. */
   readonly values: Record<string, unknown>
+  /** Данные успешного действия. */
   readonly data?: TData
+  /** Переход: только относительный и только из проверенных значений. */
   readonly redirect?: string
+  /** Ревизия описания, которой соответствует результат. */
   readonly revision: Revision
-  /** Как пришёл результат. Свойство результата, а не момента отрисовки. */
+  /** Как пришёл результат. Свойство результата, а не момент отрисовки. */
   readonly from: 'action' | 'fetch'
 }
 
 
+/**
+ * FNV-1a по стабильной сериализации: одинаковые параметры — одинаковый `id`.
+ * @param x Любое сериализуемое значение.
+ */
 export function hash(x: unknown): string {
   const s = stableStringify(x)
   let h = 2166136261
@@ -46,6 +61,10 @@ export function hash(x: unknown): string {
   return (h >>> 0).toString(36)
 }
 
+/**
+ * Сериализация с сортировкой ключей: два равных объекта дают равные строки.
+ * @param x Любое значение.
+ */
 export function stableStringify(x: unknown): string {
   if (x === null || typeof x !== 'object') return JSON.stringify(x) ?? 'null'
   if (Array.isArray(x)) return `[${x.map(stableStringify).join(',')}]`
@@ -64,6 +83,13 @@ const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)
 /**
  * Порядок стабилен — по пути, затем по коду: иначе два пути отправки давали бы
  * разные списки, и сравнение путей ловило бы шум вместо расхождения.
+ */
+/**
+ * Присвоить тексты по словарю, убрать дубли, обрезать по пределам и
+ * отсортировать стабильно — по пути, затем по коду.
+ * @param errors Ошибки-факты с кодами.
+ * @param render Словарь текстов.
+ * @param limits Пределы количества и длины сообщения.
  */
 export function normalizeErrors(
   errors: readonly FormError[], render: RenderMessage,

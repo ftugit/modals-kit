@@ -62,16 +62,22 @@ export const defaultUi: UiPolicy = {
   },
 }
 
+/** Однократная настройка проекта: то, что не повторяется на каждой форме. */
 export interface FormsConfig {
   /**
    * Соответствие «представление → компонент приложения». ФУНКЦИЯ, не таблица.
    * Вернула `undefined` — это ДЕФЕКТ КОНФИГУРАЦИИ: умолчаний у библиотеки нет.
    */
   resolve(f: ResolveTarget): FieldComponent | undefined
+  /** Тексты поверх словаря формы. */
   messages?: MessageDictionary
+  /** Транспорт по умолчанию для всех форм. */
   transport?: Transport
+  /** Префикс адресов нативной отправки. */
   actionBase?: string
+  /** Режим живой проверки по умолчанию. */
   live?: LiveMode
+  /** Политика параллельных отправок. */
   parallel?: ParallelPolicy
   /** Обработчик ошибок проекта. Форма может задать свой. */
   onErrors?: ErrorHandler
@@ -80,7 +86,7 @@ export interface FormsConfig {
   /** Реестр и политика проекта: по умолчанию общие. */
   registry?: Registry
   policy?: FormPolicy
-  /** Политика разметки адаптера. */
+  /** Политика разметки адаптера: идентификаторы, `aria-describedby`, эскалация. */
   ui?: Partial<UiPolicy>
 }
 
@@ -90,6 +96,11 @@ export interface BoundConfig {
   resolveView(f: ResolveTarget): FieldComponent
 }
 
+/**
+ * Настройка проекта форм: компоненты полей, транспорт и политики.
+ * @param config Соответствие «представление → компонент» и умолчания.
+ * @returns Конфигурация для `bind`.
+ */
 export function createConfig(config: FormsConfig): BoundConfig {
   return {
     config,

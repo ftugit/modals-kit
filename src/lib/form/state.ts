@@ -26,6 +26,11 @@ export interface FormState {
   readonly outcome?: Outcome
 }
 
+/**
+ * Начальное состояние формы.
+ * @param revision Ревизия описания на момент связывания.
+ * @param values Начальные значения (например, из продолжения).
+ */
 export const initialState = (revision: Revision, values: Record<string, unknown> = {}): FormState => ({
   revision, status: 'idle', pending: false, values,
   dirty: {}, touched: {}, submitCount: 0, facts: [], shown: [], removed: 0,
@@ -36,6 +41,13 @@ export const initialState = (revision: Revision, values: Record<string, unknown>
  * Структурное разделение: неизменившаяся часть обязана сохранить ссылку.
  * Это не оптимизация, а условие корректности — иначе гранулярная
  * реактивность вырождается в полную перерисовку.
+ */
+/**
+ * Структурное разделение: неизменившаяся часть обязана сохранить ссылку.
+ * Это условие корректности гранулярной реактивности, а не оптимизация.
+ * @param prev Прошлое значение.
+ * @param next Новое значение.
+ * @returns `prev`, если ничего не изменилось, иначе новое дерево с общими ветвями.
  */
 export function share<T>(prev: T, next: T): T {
   if (Object.is(prev, next)) return prev
@@ -62,10 +74,18 @@ export class FormStore {
 
   constructor(initial: FormState) { this.#state = initial }
 
-  /** НЕ ПЕРЕСЧИТЫВАЕТ: снимок обязан быть стабилен по ссылке. */
+  /**
+   * Снимок для рендера. НЕ ПЕРЕСЧИТЫВАЕТ: обязан быть стабилен по ссылке,
+   * иначе `useSyncExternalStore` зациклится.
+   */
   getSnapshot = (): FormState => this.#state
   subscribe = (l: () => void) => { this.#listeners.add(l); return () => { this.#listeners.delete(l) } }
 
+  /**
+   * Применить обновление через структурное разделение.
+   * Пустое обновление подписчиков не будит.
+   * @param next Функция текущего состояния → нового.
+   */
   set(next: (s: FormState) => FormState): void {
     const merged = share(this.#state, next(this.#state))
     if (merged === this.#state) return          // пустое обновление не будит подписчиков
@@ -73,6 +93,11 @@ export class FormStore {
     for (const l of [...this.#listeners]) l()
   }
 
+  /**
+   * Селектор с кэшем по ссылке состояния: для точечных подписок.
+   * @param sel Проекция состояния.
+   * @returns Геттер, стабильный пока состояние то же.
+   */
   select<T>(sel: (s: FormState) => T): () => T {
     let last: FormState | undefined
     let value: T

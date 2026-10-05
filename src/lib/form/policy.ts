@@ -13,6 +13,7 @@ export interface NamePolicy {
   readonly maxSegments: number
 }
 
+/** Пределы описания: защита от раздутых форм, а не настройка поведения. */
 export interface LimitPolicy {
   readonly fields: number
   readonly constraintsPerField: number
@@ -24,6 +25,7 @@ export interface LimitPolicy {
   readonly messageLength: number
 }
 
+/** Имена ключей конверта в FormData. Приложение вправе их переименовать. */
 export interface EnvelopeKeys {
   readonly id: string
   readonly rev: string
@@ -33,6 +35,7 @@ export interface EnvelopeKeys {
   readonly intent: string
 }
 
+/** Канонические HTTP-коды исходов: ок, проверка не прошла, «неизвестно», прервано. */
 export interface StatusPolicy {
   readonly ok: number
   readonly validationFailed: number
@@ -90,7 +93,12 @@ type Patch<T> = {
     : T[K] extends object ? Partial<T[K]> : T[K]
 }
 
-/** Политика с правками поверх умолчаний. */
+/**
+ * Политика с правками поверх умолчаний: незаданные разделы остаются
+ * умолчальными, вложенные — сливаются послойно.
+ * @param patch Правки одного или нескольких разделов.
+ * @returns Полная политика.
+ */
 export function policyWith(patch: Patch<FormPolicy> = {}): FormPolicy {
   return {
     names: { ...defaultPolicy.names, ...patch.names },
@@ -102,7 +110,12 @@ export function policyWith(patch: Patch<FormPolicy> = {}): FormPolicy {
   }
 }
 
-/** Имя составное: каждый сегмент проверяется отдельно. */
+/**
+ * Проверка составного имени: каждый сегмент проверяется отдельно.
+ * @param name Имя поля, возможно составное: `items.r1.sku`.
+ * @param p Политика имён.
+ * @returns `'forbidden'` — зарезервировано, `'format'` — не совпало с шаблоном, `null` — порядок.
+ */
 export function nameProblem(name: string, p: NamePolicy = defaultPolicy.names):
   'format' | 'forbidden' | null {
   if (p.forbidden.has(name)) return 'forbidden'

@@ -50,6 +50,11 @@ export interface NormalizeInput {
  * без него «увести в канал именно эту службу» или «не показывать вот этот
  * код» пришлось бы делать, разбирая тело заново.
  */
+/**
+ * Ответ чужой службы → наши ошибки: имена полей через `aliases`, тексты
+ * через `messages`. Нормализованная ошибка хранит `source`.
+ * @param input Статус, тело и инструкция.
+ */
 export function normalizeService(input: NormalizeInput): FormError[] {
   const { status, body, instruction } = input
   const raws = instruction.parse({ status, body })

@@ -75,9 +75,13 @@ export interface FieldView {
   onInput(raw: unknown): void
 }
 
+/** Настройка связывания: перекрывает проектную конфигурацию. */
 export interface BindOptions {
+  /** Адрес нативной отправки. По умолчанию — `actionBase/id`. */
   action?: string
+  /** Экземпляр формы: адресует продолжение. Умолчание — `id:new`. */
   instance?: string
+  /** Версия спецификации для источника описания. */
   specVersion?: number
   /**
    * Накопленное после нативной отправки: у SvelteKit это свойство `form`.
@@ -86,11 +90,15 @@ export interface BindOptions {
    */
   continuation?: Result | null
   submissionId?: string
+  /** Перехватывать отправку. `false` — обычный POST, разметка без `novalidate`. */
   intercept?: boolean
+  /** Режим живой проверки. */
   live?: LiveMode
+  /** Транспорт: сеть делает движок. */
   transport?: Transport
   /** Обработчик ошибок формы. Перекрывает проектный. */
   onErrors?: ErrorHandler
+  /** Источник подсветки: по факту или по показу. */
   invalidFrom?: InvalidFrom
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
   checks?: CheckRegistry
@@ -106,6 +114,13 @@ export interface RowsView {
   rowProps(key: RowKey): { 'data-row': string }
 }
 
+/**
+ * Связать описание формы с реактивностью Svelte.
+ * @param cfg Настройка проекта из `createConfig`.
+ * @param initial Описание формы.
+ * @param o Перекрытия для этой формы.
+ * @returns Связка: состояние, поля, отправка, операции над набором.
+ */
 export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions = {}) {
   // описание изменяемо: операции над набором полей строят НОВОЕ описание
   let desc = $state.raw<FormDescription>(initial)
@@ -367,6 +382,11 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
   })
 
+  /**
+   * Отправка через перехват: конверт → локальная проверка тем же `evaluate`
+   * → транспорт → применение результата. Устаревшая отправка отбрасывается.
+   * @param data Данные формы с намерением.
+   */
   async function submit(data: FormData): Promise<Result | undefined> {
     const raw = String(data.get('intent') ?? 'submit')
     const begun = machine.begin(desc.revision, raw, submissionId)

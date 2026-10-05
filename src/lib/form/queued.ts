@@ -29,6 +29,11 @@ export class QueuedWithoutProtocolError extends Error {
   }
 }
 
+/**
+ * @param r Результат с исходом `queued`.
+ * @throws {QueuedWithoutProtocolError} Нет ни `pollUrl`, ни `statusUrl`:
+ *   без скрипта исход становится тупиком.
+ */
 export function assertQueuedProtocol(r: Result): void {
   if (isQueued(r) && !queuedData(r)) throw new QueuedWithoutProtocolError(r.submissionId)
 }
@@ -38,6 +43,12 @@ export type PollOutcome =
   | { done: false; retryAfterMs: number }
 
 /** Опрос до терминального исхода. Существует только при скрипте. */
+/**
+ * Опрос до терминального исхода. Существует только при скрипте.
+ * @param d Адреса опроса из данных результата.
+ * @param poll Транспорт опроса.
+ * @param o Предел попыток и сигнал отмены.
+ */
 export async function pollUntilDone(
   d: QueuedData,
   poll: (url: string, signal?: AbortSignal) => Promise<PollOutcome>,

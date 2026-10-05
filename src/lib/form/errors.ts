@@ -31,6 +31,12 @@ export interface Shown {
   readonly removed: number
 }
 
+/**
+ * Пропустить факты через обработчик: что вернулось — то и показывается.
+ * @param facts Ошибки как есть.
+ * @param ctx Как пришёл результат и с каким исходом.
+ * @param handler Обработчик формы или проекта. Не задан — показ как есть.
+ */
 export function applyHandler(
   facts: readonly FormError[], ctx: ErrorContext, handler?: ErrorHandler,
 ): Shown {
@@ -46,7 +52,10 @@ export interface Split {
   readonly byField: Readonly<Record<string, readonly FormError[]>>
 }
 
-/** Разделение на общие и поля — после обработчика. Других правил нет. */
+/**
+ * Разделение на общие и поля — после обработчика. Других правил нет.
+ * @param errors Ошибки показа.
+ */
 export function split(errors: readonly FormError[]): Split {
   const common: FormError[] = []
   const byField = safeObject<FormError[]>()
@@ -61,6 +70,13 @@ export function split(errors: readonly FormError[]): Split {
  * Откуда берётся «поле невалидно». Побеждает самый узкий уровень:
  * ошибка → поле → форма → библиотека.
  */
+/**
+ * Источник подсветки поля: побеждает самый узкий уровень — поле, потом форма.
+ * @param name Имя поля.
+ * @param d Описание формы.
+ * @param libDefault Умолчание библиотеки/проекта.
+ * @returns Настройка поля, иначе формы.
+ */
 export function invalidFromFor(
   name: string, d: FormDescription, libDefault: InvalidFrom = 'fact',
 ): InvalidFrom {
@@ -70,6 +86,14 @@ export function invalidFromFor(
 /**
  * Поле знает, что было невалидно, даже если текст забрали.
  * Ошибка с пометкой `silent` подсветки не даёт на любом уровне настройки.
+ */
+/**
+ * Поле знает, что было невалидно, даже если текст забрали.
+ * @param name Имя поля.
+ * @param facts Ошибки-факты.
+ * @param shown Ошибки показа.
+ * @param mode Откуда считать: по факту или по показу.
+ * @returns Подсвечивать ли поле. `silent`-ошибка подсветки не даёт.
  */
 export function hasError(
   name: string,

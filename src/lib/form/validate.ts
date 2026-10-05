@@ -16,18 +16,29 @@ export function isVisible(c: VisibilityCondition | undefined, values: Record<str
   return values[c.field] !== c.notEquals
 }
 
+/**
+ * Имена видимых полей при данных значениях.
+ * @param d Описание формы.
+ * @param values Значения всех полей.
+ * @returns Множество имён видимых полей.
+ */
 export function visibleFields(d: FormDescription, values: Record<string, unknown>): Set<string> {
   const out = new Set<string>()
   for (const f of d.fields) if (isVisible(f.visibleWhen, values)) out.add(f.name)
   return out
 }
 
+/** Настройки одного прогона проверки. */
 export interface ValidateOptions {
   /** Виды ограничений, снятые действием. */
   relax?: readonly ConstraintKind[]
+  /** Проверять только эти поля. */
   subset?: readonly string[]
+  /** Ошибки разбора значений: правила поверх мусора не гоняются. */
   structural?: readonly Structural[]
+  /** Сколько ошибок на поле: первая или все. */
   cardinality?: 'first' | 'all'
+  /** Проверка уровня формы: межполевое над мусором бессмысленно. */
   formValidator?: (values: Record<string, unknown>) => readonly Issue[]
 }
 
@@ -40,6 +51,13 @@ const toError = (i: Issue, path: string, f: FieldDescriptor): FormError => ({
   origin: 'core',
 })
 
+/**
+ * Прогнать правила формы над значениями. Один и тот же код — в браузере и на сервере.
+ * @param d Описание формы.
+ * @param values Значения полей.
+ * @param opts Действие, подмножество, структурные ошибки.
+ * @returns Ошибки без текстов: тексты подставит нормализация по словарю.
+ */
 export function validateForm(
   d: FormDescription, values: Record<string, unknown>, opts: ValidateOptions = {},
 ): FormError[] {

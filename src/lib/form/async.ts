@@ -10,7 +10,15 @@ import { stableId } from './result'
 import { describe, type Issue, type Validator } from './validators'
 import type { FieldPath } from './types'
 
-export interface CheckContext { path: FieldPath; values: Record<string, unknown>; signal: AbortSignal }
+/** Контекст асинхронной проверки. */
+export interface CheckContext {
+  /** Проверяемое поле. */
+  path: FieldPath
+  /** Значения всей формы: для межполевых проверок. */
+  values: Record<string, unknown>
+  /** Сигнал отмены: новая проверка того же поля отменяет предыдущую. */
+  signal: AbortSignal
+}
 export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | null>
 
 export interface AsyncPolicy {
@@ -33,6 +41,13 @@ export class CheckRegistry {
 /**
  * Валидатор-обёртка: синхронно он всегда пропускает, настоящая проверка идёт
  * отдельно. Вида ограничения у него нет и быть не может — отсюда `opaque`.
+ */
+/**
+ * Валидатор-обёртка асинхронной проверки: синхронно всегда пропускает,
+ * настоящая проверка идёт отдельно — в браузере с подавлением частых
+ * вызовов, на сервере всегда.
+ * @param name Имя проверки в `CheckRegistry`.
+ * @param policy Дебаунс, кэш по значению, таймаут.
  */
 export function check(name: string, policy: Partial<AsyncPolicy> = {}): Validator<unknown> {
   const v = describe<unknown>(() => null, [opaque('асинхронная проверка не выражается атрибутом')])
@@ -61,6 +76,13 @@ const toError = (i: Issue, path: string): FormError => ({
 })
 
 /** Прогон всех асинхронных проверок формы. Сервер делает это ВСЕГДА. */
+/**
+ * Прогон всех асинхронных проверок формы. Сервер делает это ВСЕГДА.
+ * @param d Описание формы.
+ * @param values Проверенные значения.
+ * @param checks Реестр проверок.
+ * @param signal Сигнал отмены всего прогона.
+ */
 export async function runAsyncChecks(
   d: FormDescription, values: Record<string, unknown>, checks: CheckRegistry,
   signal: AbortSignal = new AbortController().signal,
@@ -95,6 +117,13 @@ export class AsyncRunner {
 
   get pending(): number { return this.#inflight.size }
 
+  /**
+   * Запланировать проверку поля с дебаунсом.
+   * @param d Описание формы.
+   * @param path Поле.
+   * @param values Значения формы.
+   * @param onResult Колбэк с ошибкой или `null`.
+   */
   schedule(
     d: FormDescription, path: FieldPath, values: Record<string, unknown>,
     onResult: (e: FormError | null) => void,
@@ -144,6 +173,10 @@ export class AsyncRunner {
     }
   }
 
+  /**
+   * Отменить таймеры и полёты одного поля или всех.
+   * @param path Поле; без него — все.
+   */
   cancel(path?: FieldPath): void {
     if (path) {
       clearTimeout(this.#timers.get(path)); this.#timers.delete(path)

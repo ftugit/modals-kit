@@ -89,6 +89,12 @@ function longestRun(value: string): number {
 /** Основа без цифр и знаков по краям: `testtest1` → `testtest`. */
 const baseOf = (value: string) => value.toLowerCase().replace(/^[\d\W_]+|[\d\W_]+$/gu, '')
 
+/**
+ * Приблизительная оценка стойкости строки в битах с поправкой на повторы,
+ * последовательности и словарные основы.
+ * @param value Пароль как есть.
+ * @returns Биты, уровень и список причин просадки.
+ */
 export function strengthOf(value: string): Strength {
   if (!value) return { bits: 0, level: 'weak', notes: ['short'] }
 
@@ -127,5 +133,10 @@ export function strengthOf(value: string): Strength {
   return { bits: Math.round(bits), level, notes }
 }
 
+/**
+ * @param got Достигнутый уровень.
+ * @param need Требуемый уровень.
+ * @returns Достаточен ли достигнутый уровень.
+ */
 export const meetsLevel = (got: StrengthLevel, need: StrengthLevel) =>
   LEVEL_ORDER.indexOf(got) >= LEVEL_ORDER.indexOf(need)

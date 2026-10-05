@@ -21,12 +21,18 @@ export class Registry {
   }
   /** Инструкция разбора ответа чужой службы. */
   registerInstruction(i: ErrorInstruction): this { this.instructions.register(i); return this }
-  /** Именованные шаблоны: белый список расширяется, а не правится в ядре. */
+  /**
+   * Именованный шаблон: белый список расширяется регистрацией, а не правкой ядра.
+   * @param name Имя шаблона в ссылках `{ rule: 'pattern', arg: name }`.
+   * @param source Исходник регулярного выражения без якорей.
+   */
   registerPattern(name: string, source: string): this {
     keep(this.#patterns, name, source, 'шаблон')
     return this
   }
+  /** Исходник именованного шаблона либо `undefined`. */
   pattern(name: string): string | undefined { return this.#patterns.get(name) }
+  /** Все зарегистрированные имена шаблонов. */
   patterns(): readonly string[] { return [...this.#patterns.keys()] }
 }
 

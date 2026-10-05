@@ -19,30 +19,55 @@ export type VisibilityCondition =
 export type InvalidFrom = 'fact' | 'shown'
 
 export interface FieldDescriptor<V = unknown> {
+  /** Имя-путь: сегменты через точку, ключ строки — не индекс. */
   readonly name: string
+  /** Тип значения: решает разбор и проекцию ограничений. */
   readonly kind: ValueKind
+  /** Представление в разметке: `text`, `number`, `select`… */
   readonly input: InputMode
+  /** Позиция в порядке объявления. Производное, назначает `defineForm`. */
   readonly order: number
+  /** Подпись для человека. */
   readonly label?: string
+  /** Постоянная подсказка под полем. */
   readonly help?: string
   readonly placeholder?: string
+  /** Значение до первого ввода. */
   readonly defaultValue?: V
+  /** Не возвращается наружу: пароль в разметку не едет. */
   readonly secret?: boolean
+  /** Правила проверки: функции или сериализуемые ссылки `{ name, arg }`. */
   readonly validators: readonly ValidatorRef[]
+  /** Варианты для `select`/`radio`/`multiselect`. */
   readonly options?: readonly Option[]
+  /** Условие видимости — данные: сервер считает его без скрипта. */
   readonly visibleWhen?: VisibilityCondition
+  /** Сколько ошибок на поле: первая или все. Перебивает форму. */
   readonly cardinality?: 'first' | 'all'
+  /** Источник подсветки этого поля: по факту или по показу. */
   readonly invalidFrom?: InvalidFrom
+  /** Создано в этом круге: обязательность в первом круге не навязывается. */
   readonly fresh?: boolean
 }
 
+/**
+ * Кнопка формы. Намерение `action[:arg]` из конверта выбирает действие.
+ */
 export interface ActionDescriptor {
+  /** Идентификатор в намерении: `submit`, `save-draft`, `add-row`. */
   readonly id: string
+  /** Подпись кнопки для приложения. */
   readonly label?: string
+  /**
+   * Объём проверки: `full` — все правила, `partial` — без снятых видов,
+   * `none` — без проверки (операции над набором полей).
+   */
   readonly validate: 'full' | 'partial' | 'none'
   /** Виды ограничений, снятые действием: черновик снимает обязательность. */
   readonly relax?: readonly ConstraintKind[]
+  /** Проверять только эти поля. */
   readonly subset?: readonly FieldPath[]
+  /** Побочный эффект действия: изменение схемы или отправка. */
   readonly sideEffect?: 'mutate-schema' | 'submit' | 'none'
 }
 
@@ -74,16 +99,26 @@ export class FormDefinitionError extends Error {
 
 /* ── сахар field.* ─────────────────────────────────────────────────── */
 
+/** Опции сахара `field.*`: всё, кроме правил, — метаданные поля. */
 export interface FieldOptions<V = unknown> {
+  /** Подпись для человека. */
   label?: string
+  /** Постоянная подсказка под полем. */
   help?: string
   placeholder?: string
+  /** Значение до первого ввода. */
   defaultValue?: V
+  /** Не возвращать значение наружу. У `password` — умолчание. */
   secret?: boolean
+  /** Правила проверки. */
   validate?: readonly ValidatorRef[]
+  /** Варианты: строка превращается в `{ value, label }`. */
   options?: readonly (string | Option)[]
+  /** Условие видимости. */
   visibleWhen?: VisibilityCondition
+  /** Сколько ошибок на поле: первая или все. */
   cardinality?: 'first' | 'all'
+  /** Источник подсветки поля. */
   invalidFrom?: InvalidFrom
   /** Тип значения, если представление обслуживают несколько типов. */
   kind?: ValueKind
@@ -123,6 +158,14 @@ export const field = makeFieldSugar()
 
 /* ── мета-валидация ────────────────────────────────────────────────── */
 
+/**
+ * Мета-валидация одного поля: имена, пределы, применимость видов,
+ * противоречия и дубли границ.
+ * @param f Готовый дескриптор.
+ * @param registry Реестр типов и правил.
+ * @param policy Политика имён и пределов.
+ * @returns Дефекты: `error` рушит `defineForm`, `warn` — только отчёт.
+ */
 export function checkFieldDefinition(
   f: FieldDescriptor,
   registry: Registry = defaultRegistry,
@@ -187,15 +230,25 @@ export function checkFieldDefinition(
 
 /* ── объявление формы ──────────────────────────────────────────────── */
 
+/** Вход `defineForm`: черновик, из которого собирается описание. */
 export interface FormDefinition {
+  /** Идентификатор формы. */
   id: FormId
+  /** Версия набора полей: смена набора — новая ревизия. */
   revision?: Revision
+  /** Черновики полей по имени. */
   fields: Record<string, FieldDraft<any>>
+  /** Кнопки. Умолчание — один `submit`. */
   actions?: readonly ActionDescriptor[]
+  /** Тексты поверх словаря: код → шаблон. */
   messages?: Record<string, string>
+  /** Сколько ошибок на поле по всей форме. */
   cardinality?: 'first' | 'all'
+  /** Источник подсветки по всей форме. */
   invalidFrom?: InvalidFrom
+  /** Свои реестры типов и правил. Умолчание — общие. */
   registry?: Registry
+  /** Своя политика имён, пределов и ключей конверта. */
   policy?: FormPolicy
 }
 
@@ -221,6 +274,13 @@ const DEFAULT_ACTIONS: readonly ActionDescriptor[] = [
   { id: 'submit', validate: 'full', sideEffect: 'submit' },
 ]
 
+/**
+ * Собрать описание формы из черновика: назначает имена и порядок,
+ * мета-валидирует каждое поле и кэширует проекцию атрибутов.
+ * @param def Черновик объявления.
+ * @returns Неизменяемое описание.
+ * @throws {FormDefinitionError} Найден дефект уровня `error`.
+ */
 export function defineForm(def: FormDefinition): FormDescription {
   const registry = def.registry ?? defaultRegistry
   const policy = def.policy ?? defaultPolicy
