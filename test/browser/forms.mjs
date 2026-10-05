@@ -104,6 +104,18 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   ok('подсветка по показу погасла',
     await pg.locator('#signup-password').getAttribute('aria-invalid') === null)
 
+  // Переключатель обязан переразложить уже показанные ошибки сразу, без
+  // повторной отправки. Это и есть наглядный контракт панели демо.
+  await click(pg, 'всё в общий')
+  await pg.waitForTimeout(50)
+  const demoStatus = await pg.locator('[aria-live="polite"]:has-text("Фактов:")').innerText()
+  ok('«всё в общий» сразу переносит текущие ошибки наверх',
+    /общих: [1-9]/.test(demoStatus)
+    && await pg.locator('div:has(> input#signup-password) p.text-destructive').count() === 0,
+    demoStatus)
+  ok('активная опция доступна через aria-pressed',
+    await pg.getByText('всё в общий', { exact: true }).getAttribute('aria-pressed') === 'true')
+
   /* ── 7. песочница ───────────────────────────────────────────── */
   const sandbox = pg.locator('section:has-text("Расширение на лету")')
   const text = await sandbox.innerText()

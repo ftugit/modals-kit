@@ -155,6 +155,22 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     return shown
   }
 
+  /** Повторно применить текущий обработчик к сохранённым фактам.
+   * Полезно для интерактивных настроек демо и devtools: сеть и валидация
+   * повторно не запускаются, меняется только слой показа.
+   */
+  function redisplay() {
+    const s = store.getSnapshot()
+    const result = s.result
+    const ctx: ErrorContext = {
+      from: result?.from ?? 'fetch',
+      intent: desc.policy.intent.parse(s.pendingIntent ?? 'submit').action,
+      outcome: result?.outcome ?? s.outcome ?? 'not-applied',
+    }
+    const shown = display(s.facts, ctx)
+    store.set((current) => ({ ...current, shown: shown.errors, removed: shown.removed }))
+  }
+
   function applyResult(result: Result) {
     const ctx: ErrorContext = {
       from: result.from,
@@ -431,7 +447,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     get common() { return split(snapshot.shown).common },
     get facts() { return snapshot.facts },
     get shown() { return snapshot.shown },
-    formProps, hidden, intent, submit, lift, apply, rows,
+    formProps, hidden, intent, submit, lift, redisplay, apply, rows,
     /** Поля, созданные в рантайме: отличаются только префиксом имени. */
     custom: (prefix = 'u_') => desc.fields.filter((f) => f.name.startsWith(prefix)).map(viewOf),
     get f() { return fieldProxy },

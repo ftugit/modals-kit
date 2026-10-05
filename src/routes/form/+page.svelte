@@ -31,11 +31,10 @@
   const handler: ErrorHandler = (errors, ctx) => {
     switch (mode) {
       case 'one-block':
-        // режим PHP: стереть имена полей — всё уедет в общий блок.
-        // Только для серверного пути, в браузере поведение обычное.
-        return ctx.from === 'action'
-          ? errors.map((e) => ({ ...e, path: undefined }))
-          : errors
+        // Стереть имена полей — всё уедет в общий блок на обоих путях.
+        // Раньше это работало только после native POST и выглядело сломанным
+        // при включённом по умолчанию fetch-перехвате.
+        return errors.map((e) => ({ ...e, path: undefined }))
       case 'drop-code':
         // ошибку просто не показываем; поле всё равно знает, что было невалидно
         return errors.filter((e) => e.code !== 'minLength')
@@ -178,10 +177,16 @@
       <Control label="Обработчик ошибок">
         <Segmented
           value={mode}
-          onChange={(x) => (mode = x as Mode)}
+          onChange={(x) => {
+            mode = x as Mode
+            // В режиме общего блока поля не должны продолжать выглядеть так,
+            // будто сообщение осталось возле них.
+            if (mode === 'one-block') opts.invalidFrom = 'shown'
+            form.redisplay()
+          }}
           options={[
             { value: 'as-is', label: 'как есть' },
-            { value: 'one-block', label: 'всё в общий', hint: 'только при пути action: стираем path' },
+            { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
             { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
             { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
           ]}
@@ -256,6 +261,18 @@
           ]}
         />
       </Control>
+
+      <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
+        <b>Сейчас демо настроено так:</b>
+        ошибки
+        {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
+        на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
+        {#if form.facts.length === 0}
+          <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
+        {:else}
+          <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
+        {/if}
+      </div>
     </section>
 
     <!-- ── форма ─────────────────────────────────────────────────── -->
