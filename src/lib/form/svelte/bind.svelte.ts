@@ -131,7 +131,9 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
                               initial.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
 
-  const store = new FormStore(initialState(desc.revision))
+  // начальное состояние — из начального описания: локальное чтение $state.raw
+  // захватывает только начальное значение (предупреждение компилятора)
+  const store = new FormStore(initialState(initial.revision))
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
 
   let submissionId = o.submissionId ?? crypto.randomUUID()
@@ -415,7 +417,8 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   return {
-    description: desc,
+    // геттер: apply() строит новое описание, связка отдаёт актуальное
+    get description() { return desc },
     instance,
     get state() { return snapshot },
     get values() { return snapshot.values },

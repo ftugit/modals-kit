@@ -7,6 +7,7 @@
 import {
   createFormHandler, MemoryIdempotencyStore, windowThrottle, type Handled,
 } from '$lib/form/server'
+import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '$lib/form'
 import './extend'
 import { checks } from './extend'
 import { resolveDescription, signup } from './signup'
@@ -16,6 +17,38 @@ const throttle = windowThrottle({ limit: 30, windowMs: 60_000, key: () => 'demo'
 
 const created: string[] = []
 export const createdCount = () => created.length
+
+/**
+ * Разворот описания по фактическому составу данных — серверная половина
+ * операций клиента (README библиотеки: «тот же SchemaOp применяется в памяти
+ * при перехвате и на сервере при нативной отправке»). Строка повторяемой
+ * группы и пользовательское `u_`-поле приходят в теле, когда клиент уже
+ * применил операции до отправки. Валидаторы строк — из СЕРВЕРНОГО шаблона
+ * группы, клиент передаёт только ключ; `u_`-поля принимаются как значения
+ * без серверной проверки: их правила живут в реестре клиента, постоянное
+ * хранение — `createAppSource` с `UserFieldStore`.
+ */
+function expandFor(base: FormDescription, form: FormData | null): FormDescription {
+  if (!form) return base
+  const ops: SchemaOp[] = []
+  const rows = new Set<string>()
+  const groups = new Set(Object.keys(groupRows(base.fields)))
+  let order = base.fields.length
+  for (const key of form.keys()) {
+    if (typeof key !== 'string' || base.byName[key]) continue
+    const m = /^([a-z][a-z0-9_]*)\.([a-z0-9_]+)\./.exec(key)
+    if (m && groups.has(m[1]!) && !rows.has(m[2]!)) {
+      rows.add(m[2]!)
+      ops.push(editor.addRow(m[1]!, m[2]!))
+    } else if (key.startsWith('u_')) {
+      ops.push(editor.add({
+        name: key, kind: 'text', input: 'text', label: key,
+        order: ++order, validators: [],
+      }))
+    }
+  }
+  return ops.length ? applyOps(base, ops) : base
+}
 
 function handlerFor(description: typeof signup) {
   return createFormHandler({
@@ -50,5 +83,5 @@ export async function handleSignup(
                    message: 'Запрос отклонён: не хватает конверта', origin: 'server' }],
       },
     }
-  return handlerFor(description)(request, from)
+  return handlerFor(expandFor(description, probe))(request, from)
 }
