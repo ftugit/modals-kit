@@ -5,6 +5,7 @@ import type { FieldPath, FormId, InstanceId, Revision, SubmissionId } from './ty
 /** Четыре значения, и ни одного «наверное». */
 export type Outcome = 'not-applied' | 'committed' | 'unknown' | 'queued'
 
+/** Нормализованная ошибка формы. */
 export interface FormError {
   readonly id: string            // стабильный: `${path|'*'}:${code}:${hash(params)}`
   readonly code: string
@@ -21,6 +22,7 @@ export interface FormError {
   readonly retryable?: boolean
 }
 
+/** Сериализуемый результат действия формы. */
 export interface Result<TData = unknown> {
   readonly v: 1
   readonly formId: FormId
@@ -39,6 +41,7 @@ export interface Result<TData = unknown> {
 }
 
 
+/** Стабильный короткий хэш значения. */
 export function hash(x: unknown): string {
   const s = stableStringify(x)
   let h = 2166136261
@@ -46,6 +49,7 @@ export function hash(x: unknown): string {
   return (h >>> 0).toString(36)
 }
 
+/** JSON-подобная сериализация с устойчивым порядком ключей. */
 export function stableStringify(x: unknown): string {
   if (x === null || typeof x !== 'object') return JSON.stringify(x) ?? 'null'
   if (Array.isArray(x)) return `[${x.map(stableStringify).join(',')}]`
@@ -54,9 +58,11 @@ export function stableStringify(x: unknown): string {
     .join(',')}}`
 }
 
+/** Создаёт стабильный id ошибки. */
 export const stableId = (e: { path?: string; code: string; params?: unknown }) =>
   `${e.path ?? '*'}:${e.code}:${hash(e.params ?? null)}`
 
+/** Функция получения текста ошибки по коду и параметрам. */
 export type RenderMessage = (code: string, params?: Record<string, unknown>) => string
 
 const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`)

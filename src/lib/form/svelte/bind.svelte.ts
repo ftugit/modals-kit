@@ -22,6 +22,7 @@ import type { BoundConfig, LiveMode } from './config'
  */
 const ATTACH = createAttachmentKey()
 
+/** Пропсы элемента form, которые отдаёт Svelte-адаптер. */
 export interface FormProps {
   method: 'post'
   action: string
@@ -31,10 +32,12 @@ export interface FormProps {
   [key: symbol]: unknown
 }
 
+/** Пропсы hidden-поля конверта. */
 export interface HiddenProps { type: 'hidden'; name: string; value: string; readonly: true }
 
+/** Пропсы submit-кнопки с intent. */
 export interface IntentProps {
-  name: 'intent'
+  name: string
   value: string
   formnovalidate?: boolean
   disabled?: boolean
@@ -75,6 +78,7 @@ export interface FieldView {
   onInput(raw: unknown): void
 }
 
+/** Опции привязки конкретной формы. */
 export interface BindOptions {
   action?: string
   instance?: string
@@ -106,6 +110,7 @@ export interface RowsView {
   rowProps(key: RowKey): { 'data-row': string }
 }
 
+/** Связывает FormDescription с Svelte-реактивностью и возвращает view API. */
 export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions = {}) {
   // описание изменяемо: операции над набором полей строят НОВОЕ описание
   let desc = $state.raw<FormDescription>(initial)
@@ -116,7 +121,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
                               initial.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
 
-  const store = new FormStore(initialState(desc.revision))
+  const store = new FormStore(initialState(initial.revision))
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
 
   let submissionId = o.submissionId ?? crypto.randomUUID()
@@ -292,7 +297,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   function intent(id: string): IntentProps {
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(id).action)
     return {
-      name: 'intent', value: id,
+      name: desc.policy.envelopeKeys.intent, value: id,
       ...(descriptor?.validate === 'none' ? { formnovalidate: true } : {}),
       ...(snapshot.pending ? { disabled: true, 'aria-busy': true as const } : {}),
     }
@@ -368,7 +373,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   })
 
   async function submit(data: FormData): Promise<Result | undefined> {
-    const raw = String(data.get('intent') ?? 'submit')
+    const raw = String(data.get(desc.policy.envelopeKeys.intent) ?? 'submit')
     const begun = machine.begin(desc.revision, raw, submissionId)
     if (!begun.go) return undefined
 
@@ -395,7 +400,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   return {
-    description: desc,
+    get description() { return desc },
     instance,
     get state() { return snapshot },
     get values() { return snapshot.values },
@@ -412,6 +417,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 }
 
+/** Тип результата bind(). */
 export type BoundForm = ReturnType<typeof bind>
 
 const notConfigured: Transport = async () =>

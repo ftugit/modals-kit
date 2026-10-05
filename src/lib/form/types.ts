@@ -4,7 +4,7 @@
 // в интерфейсах ниже, приложение добавляет свои расширением:
 //
 //     declare module '$lib/form' {
-//       interface FieldValues { rating: number | null }
+//       interface FieldValues { money: number | null }
 //     }
 
 /** Тип значения → что он декодирует. Расширяется потребителем. */
@@ -20,6 +20,7 @@ export interface FieldValues {
   file: File | null
   files: readonly File[]
 }
+/** Ключ типа значения. */
 export type ValueKind = (keyof FieldValues & string) | (string & {})
 
 /** Представление → как поле выглядит в разметке. Расширяется потребителем. */
@@ -30,15 +31,23 @@ export interface InputModes {
   select: true; multiselect: true; radio: true; checkbox: true
   file: true; files: true
 }
+/** Ключ представления поля. */
 export type InputMode = (keyof InputModes & string) | (string & {})
 
+/** Путь поля в форме. */
 export type FieldPath = string
+/** Стабильный ключ строки повторяемой группы. */
 export type RowKey = string        // выдаёт ядро или сервер, НИКОГДА не индекс массива
+/** Идентификатор формы. */
 export type FormId = string
+/** Идентификатор экземпляра формы на странице. */
 export type InstanceId = string
+/** Идентификатор отправки. */
 export type SubmissionId = string
+/** Ревизия описания формы. */
 export type Revision = number
 
+/** Словарь HTML-атрибутов, который адаптер разворачивает на элемент. */
 export type HtmlAttrs = Record<string, unknown>
 
 /** Корень пути: нужен проверке согласованности состояния. */

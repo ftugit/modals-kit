@@ -9,12 +9,14 @@ import { defaultRegistry, type Registry } from './registry'
 import type { InputMode, ValueKind } from './types'
 import type { ValidatorRef } from './validators'
 
+/** Сериализуемое правило runtime-спецификации поля. */
 export interface SpecRule {
   /** Имя зарегистрированного валидатора. */
   readonly rule: string
   readonly arg?: string | number | readonly string[]
 }
 
+/** Сериализуемая спецификация runtime-поля. */
 export interface FieldSpec {
   readonly name: string
   readonly kind?: ValueKind
@@ -29,6 +31,7 @@ export interface FieldSpec {
   readonly visibleWhen?: VisibilityCondition
 }
 
+/** Настройки компиляции FieldSpec в FieldDescriptor. */
 export interface CompileOptions {
   prefix?: string
   registry?: Registry
@@ -37,6 +40,7 @@ export interface CompileOptions {
   allowCustomPattern?: boolean
 }
 
+/** Успех или список ошибок компиляции FieldSpec. */
 export type CompileResult =
   | { ok: true; field: FieldDescriptor }
   | { ok: false; defects: readonly FieldDefect[] }
@@ -47,6 +51,7 @@ const UNSAFE_PATTERN = /\([^)]*[+*{][^)]*\)\s*[+*{]/
 const defect = (code: FieldDefect['code'], at: string, message: string): FieldDefect =>
   ({ code, severity: 'error', at, message })
 
+/** Компилирует одну runtime-спецификацию поля. */
 export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): CompileResult {
   const registry = o.registry ?? defaultRegistry
   const policy = o.policy ?? defaultPolicy
@@ -124,6 +129,7 @@ export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): Compi
     : { ok: true, field }
 }
 
+/** Компилирует список runtime-спецификаций. */
 export function compileFieldSpecs(specs: readonly FieldSpec[], o: CompileOptions = {}):
   { ok: true; fields: FieldDescriptor[] } | { ok: false; defects: FieldDefect[] } {
   const policy = o.policy ?? defaultPolicy

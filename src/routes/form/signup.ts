@@ -32,8 +32,8 @@ function make(cardinality: 'first' | 'all') {
       // между «первая ошибка» и «все ошибки».
       password: field.password({
         label: 'Пароль',
-        help: 'Не короче восьми символов и хотя бы одна цифра',
-        validate: [v.required(), v.minLength(8), v.pattern({ source: '(?=.*\\d).*' })],
+        help: 'Не короче десяти символов и не слабее уровня good',
+        validate: [v.required(), v.minLength(10), v.strength('good')],
       }),
       // sameAs не имеет вида ограничения: браузер не умеет сравнивать поля.
       // Поэтому проверяет сервер — и это работает без скрипта.

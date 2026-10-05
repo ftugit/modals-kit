@@ -5,6 +5,7 @@ import type { FormDescription } from './describe'
 import { defaultPolicy, type FormPolicy } from './policy'
 import type { FormId, InstanceId, Revision, SubmissionId } from './types'
 
+/** Служебный конверт отправки: форма, ревизия, экземпляр, submission и intent. */
 export interface Envelope {
   formId: FormId
   revision: Revision
@@ -14,6 +15,7 @@ export interface Envelope {
   specVersion?: number
 }
 
+/** Результат проверки конверта. */
 export type EnvelopeVerdict =
   | { ok: true; envelope: Envelope }
   | { ok: false; code: string; detail: string }
@@ -35,6 +37,7 @@ export function buildEnvelope(e: Omit<Envelope, 'intent'>,
   return out
 }
 
+/** Проверяет конверт во входящем FormData. */
 export function verifyEnvelope(
   form: EntrySource, d: FormDescription, expect: { instance?: InstanceId } = {},
 ): EnvelopeVerdict {

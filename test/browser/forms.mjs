@@ -22,7 +22,7 @@
  */
 import { chromium } from 'playwright'
 
-const BASE = process.env.FORMS_BASE ?? 'http://127.0.0.1:5173/form'
+const BASE = process.env.FORMS_BASE ?? 'http://127.0.0.1:4173/form'
 let failed = 0
 const ok = (name, cond, extra = '') => {
   console.log(`${cond ? '  ok  ' : ' FAIL '} ${name}${extra ? ` — ${extra}` : ''}`)
@@ -201,7 +201,9 @@ async function run(jsEnabled) {
     __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
     __form_submission: '0192f3c1-4b8e-7c2a-9d1f-6e5a4b3c2d10', intent: 'submit',
   }
-  const post = (extra = {}) => ctx.request.post(new URL('/form/submit', BASE).href, {
+  const submitUrl = new URL('/form/submit', BASE)
+  const post = (extra = {}) => ctx.request.post(submitUrl.href, {
+    headers: { Origin: submitUrl.origin },
     multipart: { ...envelope, ...extra },
   })
   const unexpected = await (await post({ ghost: 'x' })).json()

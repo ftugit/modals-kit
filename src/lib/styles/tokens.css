@@ -18,10 +18,12 @@ html[data-theme="lemonade"] {
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  /* Достаточно тёмный для мелкого текста на --muted (#f4f4f5): axe требует 4.5:1. */
+  --muted-foreground: oklch(0.46 0.016 285.938);
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* Тёмнее стандартного красного: мелкий diagnostic text на destructive/5 проходит 4.5:1. */
+  --destructive: oklch(0.5 0.22 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --success: oklch(0.527 0.154 150.069);
   --success-foreground: oklch(0.985 0 0);

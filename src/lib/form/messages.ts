@@ -2,8 +2,10 @@
 // Как только текст появится в валидаторе хотя бы раз, он начнёт размножаться.
 import { defaultPolicy } from './policy'
 
+/** Словарь сообщений: строковый шаблон или функция от параметров. */
 export type MessageDictionary = Record<string, string | ((p: Record<string, unknown>) => string)>
 
+/** Русские сообщения по умолчанию для встроенных кодов ошибок. */
 export const ru: MessageDictionary = {
   required: 'Обязательное поле',
   email: 'Введите корректный адрес почты',
@@ -18,6 +20,7 @@ export const ru: MessageDictionary = {
   minDate: (p) => `Не раньше ${p['min']}`,
   maxDate: (p) => `Не позже ${p['max']}`,
   integer: 'Введите целое число',
+  step: (p) => `Шаг ${p['step']}`,
   multipleOf: (p) => `Шаг ${p['step']}`,
   oneOf: 'Выберите значение из списка',
   sameAs: 'Значения не совпадают',

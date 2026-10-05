@@ -8,6 +8,7 @@ import type { FieldDescriptor, FormDescription } from './describe'
 import { compileFieldSpecs, type FieldSpec } from './spec'
 import type { FormId, InstanceId, Revision } from './types'
 
+/** Контекст выбора описания формы по id и версии спецификации. */
 export interface DescriptionContext {
   readonly formId: FormId
   readonly instance: InstanceId
@@ -17,16 +18,19 @@ export interface DescriptionContext {
   readonly signal?: AbortSignal
 }
 
+/** Источник описаний формы для сервера. */
 export interface DescriptionSource {
   resolve(ctx: DescriptionContext): Promise<FormDescription>
   revision(ctx: DescriptionContext): Promise<Revision>
 }
 
+/** Хранилище пользовательских runtime-полей. */
 export interface UserFieldStore {
   load(formId: FormId, version?: number): Promise<readonly FieldSpec[]>
   currentVersion(formId: FormId): Promise<number>
 }
 
+/** Ошибка получения описания формы. */
 export class SpecSourceError extends Error {
   constructor(public readonly defects: readonly unknown[]) {
     super('[form] спецификация пользовательских полей отклонена')
@@ -34,6 +38,7 @@ export class SpecSourceError extends Error {
   }
 }
 
+/** Добавляет поля к описанию и пересобирает форму. */
 export function appendFields(d: FormDescription, fields: readonly FieldDescriptor[]) {
   return fields.length ? applyOps(d, fields.map((f) => editor.add(f))) : d
 }
@@ -74,6 +79,7 @@ export function fieldSetHash(d: FormDescription): string {
   return (h >>> 0).toString(36)
 }
 
+/** Вердикт проверки устаревания открытой страницы формы. */
 export type StaleVerdict =
   | { stale: false }
   | {

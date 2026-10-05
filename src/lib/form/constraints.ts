@@ -41,8 +41,10 @@ export interface Constraints {
   opaque: { why: string }
 }
 
+/** Ключ вида ограничения. */
 export type ConstraintKind = (keyof Constraints & string) | (string & {})
 
+/** Данные ограничения, которые валидатор сообщает типу поля. */
 export type Constraint<K extends keyof Constraints = keyof Constraints> = {
   kind: K | (string & {})
   /**
@@ -61,6 +63,7 @@ export const BOUND_PAIRS: readonly (readonly [ConstraintKind, ConstraintKind])[]
   ['minCount', 'maxCount'],
 ]
 
+/** Создаёт ограничение, которое намеренно не проецируется в HTML. */
 export const opaque = (why: string): Constraint<'opaque'> =>
   ({ kind: 'opaque', why, safeAsAttr: false })
 

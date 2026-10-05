@@ -5,6 +5,7 @@ import type { ConstraintKind } from './constraints'
 import type { FormError } from './result'
 import type { Outcome } from './result'
 
+/** Строка отчёта: какое ограничение стало каким HTML-атрибутом. */
 export interface AttrRow {
   readonly field: string
   readonly input: string
@@ -13,12 +14,14 @@ export interface AttrRow {
   readonly skipped: readonly { kind: ConstraintKind; why: string }[]
 }
 
+/** Строка матрицы применимости ограничения к типу поля. */
 export interface MatrixRow {
   readonly kind: string
   /** Виды ограничений, которые тип умеет проецировать или хотя бы принимает. */
   readonly accepts: readonly ConstraintKind[]
 }
 
+/** Запись журнала отправок для диагностики. */
 export interface SubmitLogEntry {
   readonly submissionId: string
   readonly at: number
@@ -30,6 +33,7 @@ export interface SubmitLogEntry {
   readonly shown: number
 }
 
+/** Сводка здоровья описания формы. */
 export interface Health {
   /** Доля ограничений, давших хотя бы один атрибут. Падает — словарь перестаёт справляться. */
   readonly projected: number
@@ -38,6 +42,7 @@ export interface Health {
   readonly defects: number
 }
 
+/** Отчёт для devtools/страницы диагностики: атрибуты, матрица, дефекты и отправки. */
 export class DevReport {
   #log: SubmitLogEntry[] = []
   constructor(private readonly description: FormDescription) {}

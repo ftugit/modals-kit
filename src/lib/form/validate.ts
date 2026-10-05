@@ -16,12 +16,14 @@ export function isVisible(c: VisibilityCondition | undefined, values: Record<str
   return values[c.field] !== c.notEquals
 }
 
+/** Возвращает множество видимых полей формы. */
 export function visibleFields(d: FormDescription, values: Record<string, unknown>): Set<string> {
   const out = new Set<string>()
   for (const f of d.fields) if (isVisible(f.visibleWhen, values)) out.add(f.name)
   return out
 }
 
+/** Опции validateForm. */
 export interface ValidateOptions {
   /** Виды ограничений, снятые действием. */
   relax?: readonly ConstraintKind[]
@@ -40,6 +42,7 @@ const toError = (i: Issue, path: string, f: FieldDescriptor): FormError => ({
   origin: 'core',
 })
 
+/** Выполняет структурную, полевую и формовую валидацию. */
 export function validateForm(
   d: FormDescription, values: Record<string, unknown>, opts: ValidateOptions = {},
 ): FormError[] {
@@ -75,6 +78,7 @@ export function validateForm(
     const collected = structuralByPath.get(f.name) ?? []
     if (collected.length === 0) {
       const mode = f.cardinality ?? opts.cardinality ?? d.cardinality
+      const constraints = d.constraintsOf(f.name)
       for (const ref of f.validators) {
         const kinds = kindsOf(ref)
         if (kinds.some((k) => relax.has(k))) continue
@@ -82,7 +86,7 @@ export function validateForm(
         if (f.fresh && kinds.includes('required')) continue
         let fn
         try { fn = d.registry.validators.resolve(ref) } catch { continue }
-        const issue = fn(values[f.name], { path: f.name, values })
+        const issue = fn(values[f.name], { path: f.name, values, constraints })
         if (!issue) continue
         collected.push(toError(issue, issue.path ?? f.name, f))
         if (mode === 'first') break

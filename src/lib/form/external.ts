@@ -17,6 +17,7 @@ export interface RawError {
   message?: string
 }
 
+/** Инструкция нормализации ответа внешней службы. */
 export interface ErrorInstruction {
   readonly id: string
   /** Сырой ответ → плоский список. Вернула `null` — формат не её. */
@@ -29,6 +30,7 @@ export interface ErrorInstruction {
   readonly messages?: Readonly<Record<string, string>>
 }
 
+/** Реестр инструкций нормализации внешних ошибок. */
 export class InstructionRegistry {
   #byId = new Map<string, ErrorInstruction>()
   register(i: ErrorInstruction): this {
@@ -39,6 +41,7 @@ export class InstructionRegistry {
   ids(): readonly string[] { return [...this.#byId.keys()] }
 }
 
+/** Вход normalizeService. */
 export interface NormalizeInput {
   status: number
   body: unknown

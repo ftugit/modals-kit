@@ -17,12 +17,29 @@ const num = (c: Constraint) => (c as { value: number }).value
  * Принимай ядро такие строки — браузер блокировал бы отправку там, где сервер её принял.
  */
 const HTML_FLOAT = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-const ISO_TIME = /^\d{2}:\d{2}(:\d{2})?$/
-const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+const ISO_TIME = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/
+const ISO_DATETIME = /^(\d{4}-\d{2}-\d{2})T(([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?)$/
+
+const validDate = (raw: string) => {
+  const m = ISO_DATE.exec(raw)
+  if (!m) return false
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3])
+  const d = new Date(Date.UTC(year, month - 1, day))
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day
+}
+const validTime = (raw: string) => ISO_TIME.test(raw)
+const validDateTime = (raw: string) => {
+  const m = ISO_DATETIME.exec(raw)
+  return !!m && validDate(m[1]!) && validTime(m[2]!)
+}
 
 const required: Projection = () => ({ required: true })
 
+const TEXT_PATTERN_INPUTS = new Set<InputMode>(['text', 'email', 'password', 'tel', 'url', 'search'])
+const TEXT_LENGTH_INPUTS = new Set<InputMode>([...TEXT_PATTERN_INPUTS, 'textarea'])
+
+/** Встроенный тип строкового значения для text-like представлений. */
 export const textType: FieldType<string> = {
   kind: 'text',
   inputs: ['text', 'email', 'password', 'tel', 'url', 'search', 'color', 'hidden', 'textarea'],
@@ -30,16 +47,22 @@ export const textType: FieldType<string> = {
   decode: (e) => ok(first(e)),
   encode: (v, n, out) => { out.push([n, v]) },
   constraints: {
-    required: (_c, ctx) =>
-      // обязательность скрытого поля заблокировала бы отправку всей формы
-      ctx.input === 'hidden' ? { skip: 'обязательность на скрытом поле блокирует форму' } : { required: true },
-    minLength: (c) => ({ minlength: num(c) }),
-    maxLength: (c) => ({ maxlength: num(c) }),
-    pattern: (c, ctx) =>
-      // браузер игнорирует шаблон на многострочном поле
-      ctx.input === 'textarea'
-        ? { skip: 'браузер игнорирует шаблон в многострочном поле' }
-        : { pattern: (c as { source: string }).source },
+    required: (_c, ctx) => {
+      // обязательность скрытого поля заблокировала бы отправку всей формы;
+      // color всегда имеет значение, поэтому required там не несёт проверки.
+      if (ctx.input === 'hidden') return { skip: 'обязательность на скрытом поле блокирует форму' }
+      if (ctx.input === 'color') return { skip: 'required не применим к color: у него всегда есть значение' }
+      return { required: true }
+    },
+    minLength: (c, ctx) => TEXT_LENGTH_INPUTS.has(ctx.input)
+      ? { minlength: num(c) }
+      : { skip: `браузер не применяет minlength к ${ctx.input}` },
+    maxLength: (c, ctx) => TEXT_LENGTH_INPUTS.has(ctx.input)
+      ? { maxlength: num(c) }
+      : { skip: `браузер не применяет maxlength к ${ctx.input}` },
+    pattern: (c, ctx) => TEXT_PATTERN_INPUTS.has(ctx.input)
+      ? { pattern: (c as { source: string }).source }
+      : { skip: `браузер не применяет pattern к ${ctx.input}` },
     oneOf: true,
     opaque: true,
   },
@@ -47,6 +70,7 @@ export const textType: FieldType<string> = {
   degradation: { withoutJs: 'обычное текстовое поле' },
 }
 
+/** Встроенный тип числового значения: пустое поле становится null. */
 export const numberType: FieldType<number | null> = {
   kind: 'number', inputs: ['number', 'range'], multiple: false, empty: null,
   decode: (e) => {
@@ -58,17 +82,30 @@ export const numberType: FieldType<number | null> = {
   },
   encode: (v, n, out) => { if (v !== null) out.push([n, String(v)]) },
   constraints: {
-    required,
+    required: (_c, ctx) => ctx.input === 'range'
+      ? { skip: 'required не применим к range: у него всегда есть значение' }
+      : { required: true },
     minMagnitude: (c) => ({ min: num(c) }),
     maxMagnitude: (c) => ({ max: num(c) }),
-    step: (c) => ({ step: num(c) }),
+    step: (c, ctx) => {
+      const min = (ctx.constraints ?? []).find((x) => x.kind === 'minMagnitude' && x.safeAsAttr !== false) as
+        | (Constraint & { value: number | string })
+        | undefined
+      if ((c as { unit?: string }).unit === 'number' && num(c) === 1 &&
+          typeof min?.value === 'number' && !Number.isInteger(min.value))
+        return { skip: 'step=1 с дробным min в HTML считает шаг от min и отклоняет целые значения' }
+      return { step: num(c) }
+    },
     oneOf: true,
     opaque: true,
   },
-  attrs: (input) => ({ type: input === 'range' ? 'range' : 'number', inputmode: 'numeric' }),
+  // У number/range шаг по умолчанию в HTML равен 1, а ядро принимает дроби.
+  // Поэтому базовая разметка ставит step=any; валидатор step/integer переопределит.
+  attrs: (input) => ({ type: input === 'range' ? 'range' : 'number', inputmode: 'numeric', step: 'any' }),
   degradation: { withoutJs: 'поле ввода числа' },
 }
 
+/** Встроенный тип boolean-значения для checkbox. */
 export const checkboxType: FieldType<boolean> = {
   kind: 'checkbox', inputs: ['checkbox'], multiple: false, empty: false,
   // отсутствие записи = не отмечен. Нативная семантика, а не ошибка.
@@ -79,13 +116,13 @@ export const checkboxType: FieldType<boolean> = {
   degradation: { withoutJs: 'флажок' },
 }
 
-function temporal(kind: ValueKind, re: RegExp, input: InputMode, unit: string, label: string): FieldType<string | null> {
+function temporal(kind: ValueKind, check: (raw: string) => boolean, input: InputMode, unit: string, label: string): FieldType<string | null> {
   return {
     kind, inputs: [input], multiple: false, empty: null,
     decode: (e) => {
       const raw = first(e).trim()
       if (raw === '') return ok(null)
-      return re.test(raw) ? ok(raw) : bad(`type.${kind}`, { raw })
+      return check(raw) ? ok(raw) : bad(`type.${kind}`, { raw })
     },
     encode: (v, n, out) => { if (v !== null) out.push([n, v]) },
     constraints: {
@@ -101,15 +138,21 @@ function temporal(kind: ValueKind, re: RegExp, input: InputMode, unit: string, l
       },
       opaque: true,
     },
-    attrs: () => ({ type: input }),
+    // У time/datetime-local HTML-шаг по умолчанию — 60 секунд, а ядро принимает секунды.
+    // Ставим any, пока явный v.step не переопределит значение.
+    attrs: () => (input === 'date' ? { type: input } : { type: input, step: 'any' }),
     degradation: { withoutJs: label },
   }
 }
 
-export const dateType = temporal('date', ISO_DATE, 'date', 'day', 'поле даты')
-export const timeType = temporal('time', ISO_TIME, 'time', 'second', 'поле времени')
-export const datetimeType = temporal('datetime', ISO_DATETIME, 'datetime-local', 'second', 'поле даты и времени')
+/** Встроенный ISO date тип. */
+export const dateType = temporal('date', validDate, 'date', 'day', 'поле даты')
+/** Встроенный ISO time тип. */
+export const timeType = temporal('time', validTime, 'time', 'second', 'поле времени')
+/** Встроенный ISO datetime-local тип. */
+export const datetimeType = temporal('datetime', validDateTime, 'datetime-local', 'second', 'поле даты и времени')
 
+/** Встроенный тип одиночного select. */
 export const selectType: FieldType<string | null> = {
   kind: 'select', inputs: ['select', 'radio'], multiple: false, empty: null,
   decode: (e) => { const raw = first(e); return ok(raw === '' ? null : raw) },
@@ -120,6 +163,7 @@ export const selectType: FieldType<string | null> = {
   degradation: { withoutJs: 'обычный список', lost: 'поиск по вариантам' },
 }
 
+/** Встроенный тип множественного select. */
 export const multiselectType: FieldType<readonly string[]> = {
   kind: 'multiselect', inputs: ['multiselect'], multiple: true, empty: [],
   decode: (e) => ok(e.filter((x): x is string => typeof x === 'string' && x !== '')),
@@ -143,6 +187,7 @@ const fileConstraints = {
   opaque: true as const,
 }
 
+/** Встроенный тип одного файла. */
 export const fileType: FieldType<File | null> = {
   kind: 'file', inputs: ['file'], multiple: false, empty: null,
   decode: (e) => { const f = e[0]; return ok(f && typeof f !== 'string' ? f : null) },
@@ -152,6 +197,7 @@ export const fileType: FieldType<File | null> = {
   degradation: { withoutJs: 'выбор файла', lost: 'перетаскивание, индикатор загрузки' },
 }
 
+/** Встроенный тип списка файлов. */
 export const filesType: FieldType<readonly File[]> = {
   kind: 'files', inputs: ['files'], multiple: true, empty: [],
   decode: (e) => ok(e.filter((x): x is File => typeof x !== 'string')),
@@ -165,6 +211,7 @@ export const filesType: FieldType<readonly File[]> = {
   degradation: { withoutJs: 'выбор нескольких файлов', lost: 'перетаскивание' },
 }
 
+/** Все встроенные типы значения, регистрируемые createRegistry(). */
 export const BUILTIN_TYPES = [
   textType, numberType, checkboxType, dateType, timeType, datetimeType,
   selectType, multiselectType, fileType, filesType,

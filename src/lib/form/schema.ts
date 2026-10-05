@@ -5,12 +5,14 @@
 import type { FormError } from './result'
 import { stableId } from './result'
 
+/** Минимальный контракт Standard Schema-подобного валидатора. */
 export interface StandardSchemaLike<T = unknown> {
   readonly '~standard': {
     validate(value: unknown): StandardResult<T> | Promise<StandardResult<T>>
   }
 }
 
+/** Результат Standard Schema-подобной проверки. */
 export type StandardResult<T> =
   | { readonly value: T; readonly issues?: undefined }
   | { readonly issues: readonly {
@@ -18,9 +20,11 @@ export type StandardResult<T> =
         readonly path?: readonly (string | { key: string })[]
       }[] }
 
+/** Проверяет, похож ли объект на Standard Schema. */
 export const isStandardSchema = (x: unknown): x is StandardSchemaLike =>
   !!x && typeof x === 'object' && '~standard' in x
 
+/** Преобразует issues схемы в FormError. */
 export function schemaErrors(result: StandardResult<unknown>): FormError[] {
   if (!result.issues) return []
   return result.issues.map((i) => {

@@ -16,6 +16,7 @@ import type { FieldView } from './bind.svelte'
 /** Компонент поля пишет ПРИЛОЖЕНИЕ. Он получает FieldView и ничего больше. */
 export type FieldComponent = Component<FieldView>
 
+/** Режим живой проверки поля. */
 export type LiveMode = 'on-submit' | 'on-blur' | 'on-input' | 'after-touched'
 
 /** Минимум, которого довольно для выбора компонента. */
@@ -45,6 +46,7 @@ export interface UiPolicy {
   valueAttrs(f: { kind: ValueKind; defaultValue?: unknown }, value: unknown): HtmlAttrs
 }
 
+/** UiPolicy по умолчанию. */
 export const defaultUi: UiPolicy = {
   fieldId: (formId, name) => `${formId}-${name.replace(/\./g, '-')}`,
   describedBy: ({ help, error }) => [help, error].filter(Boolean).join(' ') || undefined,
@@ -62,34 +64,43 @@ export const defaultUi: UiPolicy = {
   },
 }
 
+/** Настройки проекта для Svelte-адаптера. */
 export interface FormsConfig {
   /**
    * Соответствие «представление → компонент приложения». ФУНКЦИЯ, не таблица.
    * Вернула `undefined` — это ДЕФЕКТ КОНФИГУРАЦИИ: умолчаний у библиотеки нет.
    */
   resolve(f: ResolveTarget): FieldComponent | undefined
+  /** Словарь сообщений проекта. Сообщения формы имеют приоритет выше. */
   messages?: MessageDictionary
+  /** Транспорт перехваченной отправки: fetch, server function, RPC или тестовый mock. */
   transport?: Transport
+  /** База action URL для нативного POST без JavaScript. */
   actionBase?: string
+  /** Когда выполнять живую повторную проверку поля. */
   live?: LiveMode
+  /** Что делать с повторной отправкой, пока предыдущая не завершилась. */
   parallel?: ParallelPolicy
   /** Обработчик ошибок проекта. Форма может задать свой. */
   onErrors?: ErrorHandler
   /** Откуда берётся «поле невалидно» по умолчанию. */
   invalidFrom?: InvalidFrom
-  /** Реестр и политика проекта: по умолчанию общие. */
+  /** Реестр типов, валидаторов, внешних инструкций и named patterns. */
   registry?: Registry
+  /** Политика имён, лимитов, envelope, intent и сообщений. */
   policy?: FormPolicy
   /** Политика разметки адаптера. */
   ui?: Partial<UiPolicy>
 }
 
+/** Нормализованная конфигурация Svelte-адаптера. */
 export interface BoundConfig {
   readonly config: FormsConfig
   readonly ui: UiPolicy
   resolveView(f: ResolveTarget): FieldComponent
 }
 
+/** Создаёт BoundConfig и проверяет resolveView. */
 export function createConfig(config: FormsConfig): BoundConfig {
   return {
     config,

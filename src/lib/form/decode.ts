@@ -9,14 +9,17 @@ export interface EntrySource {
   keys(): IterableIterator<string> | Iterable<string>
 }
 
+/** Структурная ошибка декодирования поля до валидации. */
 export interface Structural { path: FieldPath; code: string; params?: Record<string, unknown> }
 
+/** Результат декодирования формы в значения и структурные ошибки. */
 export interface Decoded {
   values: Record<string, unknown>
   /** Значение не разбирается в тип: переносится даже на непосещённое поле. */
   structural: Structural[]
 }
 
+/** Декодирует FormData согласно описанию формы. */
 export function decode(form: EntrySource, d: FormDescription): Decoded {
   const values = safeObject<unknown>()
   const structural: Structural[] = []
@@ -29,6 +32,7 @@ export function decode(form: EntrySource, d: FormDescription): Decoded {
   return { values, structural }
 }
 
+/** Кодирует значения обратно в FormData согласно типам полей. */
 export function encode(values: Record<string, unknown>, d: FormDescription): FormData {
   const out = new FormData()
   for (const f of d.fields) {

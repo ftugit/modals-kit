@@ -9,6 +9,7 @@ import { FieldTypeRegistry, type FieldType } from './field-types'
 import { InstructionRegistry, type ErrorInstruction } from './external'
 import { BUILTIN_VALIDATORS, ValidatorRegistry, type Validator } from './validators'
 
+/** Изолированный набор типов, валидаторов, инструкций и named patterns. */
 export class Registry {
   readonly types = new FieldTypeRegistry()
   readonly validators = new ValidatorRegistry()
@@ -30,6 +31,7 @@ export class Registry {
   patterns(): readonly string[] { return [...this.#patterns.keys()] }
 }
 
+/** Именованные регулярные шаблоны по умолчанию. */
 export const BUILTIN_PATTERNS: Readonly<Record<string, string>> = {
   e164: '\\+[1-9]\\d{7,14}',
   slug: '[a-z0-9]+(?:-[a-z0-9]+)*',

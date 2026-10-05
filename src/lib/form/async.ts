@@ -10,16 +10,21 @@ import { stableId } from './result'
 import { describe, type Issue, type Validator } from './validators'
 import type { FieldPath } from './types'
 
+/** Контекст одной асинхронной проверки поля: путь, текущие значения и AbortSignal. */
 export interface CheckContext { path: FieldPath; values: Record<string, unknown>; signal: AbortSignal }
+/** Асинхронный валидатор поля. Возвращает Issue или null, если значение принято. */
 export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | null>
 
+/** Настройки debounce, кеширования и таймаута для асинхронных проверок. */
 export interface AsyncPolicy {
   readonly debounceMs: number
   readonly cacheByValue: boolean
   readonly timeoutMs: number
 }
+/** Политика асинхронных проверок по умолчанию. */
 export const DEFAULT_ASYNC: AsyncPolicy = { debounceMs: 400, cacheByValue: true, timeoutMs: 5000 }
 
+/** Реестр асинхронных проверок приложения. */
 export class CheckRegistry {
   #byName = new Map<string, AsyncCheck>()
   register(name: string, fn: AsyncCheck): this {
@@ -39,6 +44,7 @@ export function check(name: string, policy: Partial<AsyncPolicy> = {}): Validato
   return Object.assign(v, { asyncCheck: { name, policy: { ...DEFAULT_ASYNC, ...policy } } })
 }
 
+/** Нормализованная ссылка на асинхронную проверку с уже разрешённой политикой. */
 export interface AsyncRef { name: string; policy: AsyncPolicy }
 
 /** Асинхронные проверки поля — их надо прогнать и на сервере, и в браузере. */

@@ -6,12 +6,14 @@ import { normalizeErrors, stableId, type FormError, type RenderMessage, type Res
 import { validateForm, type ValidateOptions } from './validate'
 import type { Revision } from './types'
 
+/** Опции единой локальной/серверной оценки FormData. */
 export interface EvaluateOptions extends ValidateOptions {
   render: RenderMessage
   instance?: string
   requireEnvelope?: boolean
 }
 
+/** Результат evaluate(): значения, публичные значения, intent и ошибки. */
 export interface Evaluation {
   envelope?: Envelope
   values: Record<string, unknown>
@@ -72,12 +74,14 @@ export type TransportOutcome<T = unknown> =
   | { kind: 'network'; code: string; detail?: string }
   | { kind: 'abort'; reason: string }
 
+/** Запрос транспорта формы. */
 export interface TransportRequest {
   envelope: Envelope
   data: FormData
   accept: readonly string[]
   signal?: AbortSignal
 }
+/** Функция транспорта, которую предоставляет адаптер/приложение. */
 export type Transport<T = unknown> = (req: TransportRequest) => Promise<TransportOutcome<T>>
 
 /* ── гонки ─────────────────────────────────────────────────────────── */
@@ -90,9 +94,11 @@ export interface SubmissionHandle {
   controller: AbortController
 }
 
+/** Создаёт SubmissionHandle. */
 export const newSubmission = (rev: Revision, intent: string, id?: string): SubmissionHandle =>
   ({ id: id ?? crypto.randomUUID(), intent, rev, startedAt: Date.now(), controller: new AbortController() })
 
+/** Политика параллельных отправок формы. */
 export type ParallelPolicy = 'block' | 'replace' | 'queue'
 
 /** Объект отправки вместо счётчиков: сравнение ссылок однозначно. */
@@ -144,6 +150,7 @@ export interface RunSubmitInput<T = unknown> {
   accept?: readonly string[]
 }
 
+/** Локально валидирует FormData, вызывает transport и нормализует Result. */
 export async function runSubmit<T>(input: RunSubmitInput<T>): Promise<Result<T>> {
   const { description: d, data, instance, submission, render } = input
   const intent = input.intent ?? 'submit'

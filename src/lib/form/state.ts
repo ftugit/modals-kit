@@ -3,6 +3,7 @@
 import type { FormError, Outcome, Result } from './result'
 import type { FieldPath, Revision } from './types'
 
+/** Снимок состояния формы в адаптере. */
 export interface FormState {
   readonly revision: Revision
   readonly status: 'idle' | 'validating' | 'submitting' | 'queued' | 'success' | 'error'
@@ -26,6 +27,7 @@ export interface FormState {
   readonly outcome?: Outcome
 }
 
+/** Создаёт начальный FormState для ревизии. */
 export const initialState = (revision: Revision, values: Record<string, unknown> = {}): FormState => ({
   revision, status: 'idle', pending: false, values,
   dirty: {}, touched: {}, submitCount: 0, facts: [], shown: [], removed: 0,
@@ -56,6 +58,7 @@ export function share<T>(prev: T, next: T): T {
   return changed ? (out as T) : prev
 }
 
+/** Минимальный подписываемый store без привязки к фреймворку. */
 export class FormStore {
   #state: FormState
   #listeners = new Set<() => void>()

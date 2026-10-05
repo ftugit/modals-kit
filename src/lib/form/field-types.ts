@@ -12,18 +12,29 @@ import type { Constraint, ConstraintKind } from './constraints'
 import { keep } from './keep'
 import type { HtmlAttrs, InputMode, ValueKind } from './types'
 
+/** Контекст декодирования значения поля. */
 export interface DecodeContext { path: string; input: InputMode }
+/** Результат decode() типа поля. */
 export type DecodeResult<V> =
   | { ok: true; value: V }
   | { ok: false; code: string; params?: Record<string, unknown> }
 
-export interface ProjectContext { input: InputMode; name: string }
+/** Контекст проекции ограничения в HTML-атрибуты. */
+export interface ProjectContext {
+  input: InputMode
+  name: string
+  /** Полный набор ограничений поля: нужен, когда HTML-семантика зависит от соседнего атрибута. */
+  constraints?: readonly Constraint[]
+  /** Уже собранные атрибуты поля. Проекция может учитывать базовые attrs типа. */
+  attrs?: HtmlAttrs
+}
 
 /** Проекция вида ограничения в атрибуты. */
 export type Projection =
   | true                                   // применимо, атрибута нет
   | ((c: Constraint, ctx: ProjectContext) => HtmlAttrs | { skip: string } | undefined)
 
+/** Контракт типа значения: decode/encode, представления, ограничения и деградация. */
 export interface FieldType<V = unknown> {
   readonly kind: ValueKind
   /** Представления, которые обслуживает тип. Первое — умолчание сахара. */
@@ -40,6 +51,7 @@ export interface FieldType<V = unknown> {
   readonly degradation: { withoutJs: string; lost?: string }
 }
 
+/** Реестр типов значения. */
 export class FieldTypeRegistry {
   #types = new Map<string, FieldType<any>>()
 
@@ -61,6 +73,7 @@ export class FieldTypeRegistry {
   }
 }
 
+/** HTML-атрибуты поля и причины непроставленных ограничений. */
 export interface ProjectedAttrs {
   attrs: HtmlAttrs
   skipped: { kind: ConstraintKind; why: string }[]
@@ -92,7 +105,7 @@ export function projectAttrs(
     }
     if (projection === true) { skip(c.kind, `вид '${c.kind}' не выражается атрибутом`); continue }
 
-    const out = projection(c, ctx)
+    const out = projection(c, { ...ctx, constraints, attrs })
     if (!out) { skip(c.kind, `вид '${c.kind}' не выражается в представлении '${ctx.input}'`); continue }
     if ('skip' in out) { skip(c.kind, String(out.skip)); continue }
     Object.assign(attrs, out)

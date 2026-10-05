@@ -6,8 +6,10 @@ import { createRegistry, defaultRegistry, type Registry } from './registry'
 import { safeObject, type FieldPath, type FormId, type InputMode, type Revision, type ValueKind } from './types'
 import { constraintsOf, type ValidatorRef } from './validators'
 
+/** Один вариант выбора для select/radio-like поля. */
 export interface Option { value: string; label: string; disabled?: boolean }
 
+/** Декларативное условие видимости поля. */
 export type VisibilityCondition =
   | { field: FieldPath; equals: string | number | boolean | null }
   | { field: FieldPath; notEquals: string | number | boolean | null }
@@ -18,6 +20,7 @@ export type VisibilityCondition =
 /** Откуда берётся «поле невалидно»: по факту ошибки или по тому, что показано. */
 export type InvalidFrom = 'fact' | 'shown'
 
+/** Полное описание поля после defineForm: имя, тип, представление и правила. */
 export interface FieldDescriptor<V = unknown> {
   readonly name: string
   readonly kind: ValueKind
@@ -36,6 +39,7 @@ export interface FieldDescriptor<V = unknown> {
   readonly fresh?: boolean
 }
 
+/** Описание submit-намерения формы. */
 export interface ActionDescriptor {
   readonly id: string
   readonly label?: string
@@ -51,8 +55,9 @@ export interface ActionDescriptor {
 export type DefectCode =
   | 'constraint.not-applicable' | 'constraint.conflict' | 'constraint.unreachable'
   | 'constraint.duplicate' | 'spec.name-invalid' | 'spec.limit' | 'spec.unknown-kind'
-  | 'spec.pattern-unsafe'
+  | 'spec.pattern-unsafe' | 'spec.validator-invalid'
 
+/** Один дефект описания формы, найденный мета-валидацией. */
 export interface FieldDefect {
   code: DefectCode
   severity: 'error' | 'warn'
@@ -64,6 +69,7 @@ const defect = (code: DefectCode, at: string, message: string,
                 severity: FieldDefect['severity'] = 'error'): FieldDefect =>
   ({ code, severity, at, message })
 
+/** Ошибка объявления формы с полным списком дефектов. */
 export class FormDefinitionError extends Error {
   constructor(readonly defects: readonly FieldDefect[], formId: string) {
     super(`[form] форма '${formId}' не объявлена:\n` +
@@ -75,25 +81,36 @@ export class FormDefinitionError extends Error {
 /* ── сахар field.* ─────────────────────────────────────────────────── */
 
 export interface FieldOptions<V = unknown> {
+  /** Текст подписи поля. Адаптер обычно рендерит его в `<label>`. */
   label?: string
+  /** Подсказка поля. Адаптер должен включить её id в `aria-describedby`. */
   help?: string
+  /** Placeholder для нативного поля, если представление его поддерживает. */
   placeholder?: string
+  /** Начальное значение поля до ввода пользователя. */
   defaultValue?: V
+  /** Не возвращать значение в публичном `Result.values`; полезно для паролей и токенов. */
   secret?: boolean
+  /** Валидаторы поля: функции или сериализуемые ссылки на реестр. */
   validate?: readonly ValidatorRef[]
+  /** Варианты выбора. Строка превращается в `{ value, label }`. */
   options?: readonly (string | Option)[]
+  /** Условие, при котором поле участвует в показе и обычной валидации. */
   visibleWhen?: VisibilityCondition
+  /** Переопределение режима «первая ошибка» / «все ошибки» на уровне поля. */
   cardinality?: 'first' | 'all'
+  /** Переопределение источника `aria-invalid` на уровне поля. */
   invalidFrom?: InvalidFrom
-  /** Тип значения, если представление обслуживают несколько типов. */
+  /** Тип значения, если одно input-представление обслуживают несколько типов. */
   kind?: ValueKind
 }
 
+/** Черновик поля до присвоения имени и порядка. */
 export type FieldDraft<V = unknown> = Omit<FieldDescriptor<V>, 'name' | 'order'>
 
 /**
  * Сахар — Proxy, а не кодогенерация. Тип значения ищется в реестре по
- * представлению, поэтому `field.rating(...)` работает сразу после регистрации
+ * представлению, поэтому `field.customInput(...)` работает сразу после регистрации
  * своего типа — без правки библиотеки.
  */
 export function makeFieldSugar(registry: Registry = defaultRegistry) {
@@ -119,6 +136,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
   })
 }
 
+/** field.* на defaultRegistry для краткого описания встроенных полей. */
 export const field = makeFieldSugar()
 
 /* ── мета-валидация ────────────────────────────────────────────────── */
@@ -143,17 +161,31 @@ export function checkFieldDefinition(
     return out
   }
   const type = types.get(f.kind)
+  for (const [i, ref] of f.validators.entries()) {
+    try { validators.resolve(ref) } catch (e) {
+      const label = typeof ref === 'function' ? `#${i}` : ref.name
+      out.push(defect('spec.validator-invalid', `${f.name}.validators[${i}]`,
+        `валидатор '${label}' не разрешён: ${e instanceof Error ? e.message : String(e)}`))
+    }
+  }
   const constraints = constraintsOf(f.validators, validators)
 
   if (constraints.length > limits.constraintsPerField)
     out.push(defect('spec.limit', f.name, `ограничений ${constraints.length}, предел ${limits.constraintsPerField}`))
   if (f.label && f.label.length > limits.labelLength)
     out.push(defect('spec.limit', `${f.name}.label`, 'подпись слишком длинная'))
+  if (f.help && f.help.length > limits.helpLength)
+    out.push(defect('spec.limit', `${f.name}.help`, 'подсказка слишком длинная'))
   if (f.options && f.options.length > limits.options)
     out.push(defect('spec.limit', `${f.name}.options`, 'вариантов слишком много'))
 
   // применимость спрашивается у ТИПА, центральной матрицы нет
   constraints.forEach((c, i) => {
+    if (c.kind === 'pattern') {
+      const source = (c as { source?: unknown }).source
+      if (typeof source === 'string' && source.length > limits.patternLength)
+        out.push(defect('spec.pattern-unsafe', `${f.name}.constraints[${i}]`, 'шаблон длиннее предела'))
+    }
     if (!applies(type, c.kind))
       out.push(defect('constraint.not-applicable', `${f.name}.constraints[${i}]`,
         `вид ограничения '${c.kind}' неприменим к типу значения '${f.kind}'`))
@@ -188,32 +220,53 @@ export function checkFieldDefinition(
 /* ── объявление формы ──────────────────────────────────────────────── */
 
 export interface FormDefinition {
+  /** Стабильный id формы: входит в envelope, Result и имена DOM id. */
   id: FormId
+  /** Ревизия описания. Повышайте при несовместимом изменении набора полей. */
   revision?: Revision
+  /** Словарь `имя поля → черновик поля`; имя станет `FieldDescriptor.name`. */
   fields: Record<string, FieldDraft<any>>
+  /** Список submit-намерений. Если не задан, создаётся `submit/full`. */
   actions?: readonly ActionDescriptor[]
+  /** Сообщения формы поверх словаря приложения и встроенного словаря. */
   messages?: Record<string, string>
+  /** Режим ошибки по умолчанию для полей формы. */
   cardinality?: 'first' | 'all'
+  /** Источник невалидности по умолчанию: факты или только показанные ошибки. */
   invalidFrom?: InvalidFrom
+  /** Изолированный реестр типов/валидаторов/инструкций для этой формы. */
   registry?: Registry
+  /** Политика имён, лимитов, envelope и intent для этой формы. */
   policy?: FormPolicy
 }
 
+/** Нормализованное и проверенное описание формы, используемое клиентом и сервером. */
 export interface FormDescription {
+  /** Стабильный id формы. */
   readonly id: FormId
+  /** Ревизия нормализованного описания. */
   readonly revision: Revision
+  /** Поля в порядке объявления. */
   readonly fields: readonly FieldDescriptor[]
+  /** Быстрый доступ к полю по имени. */
   readonly byName: Readonly<Record<string, FieldDescriptor>>
+  /** Доступные submit-намерения. */
   readonly actions: readonly ActionDescriptor[]
+  /** Словарь сообщений, заданный на форме. */
   readonly messages: Readonly<Record<string, string>>
+  /** Режим количества ошибок по умолчанию. */
   readonly cardinality: 'first' | 'all'
+  /** Источник невалидности по умолчанию. */
   readonly invalidFrom: InvalidFrom
+  /** Предупреждения описания; ошибки не допускаются до создания FormDescription. */
   readonly defects: readonly FieldDefect[]
+  /** Реестр, которым была собрана форма. */
   readonly registry: Registry
+  /** Политика, которой была собрана форма. */
   readonly policy: FormPolicy
   /** Атрибуты считает ядро: примитив получает готовый набор, а не правила. */
   attrsOf(name: string): ProjectedAttrs
-  /** Ограничения поля — для отчёта. */
+  /** Ограничения поля — для отчёта, devtools и диагностики. */
   constraintsOf(name: string): readonly Constraint[]
 }
 
@@ -221,6 +274,7 @@ const DEFAULT_ACTIONS: readonly ActionDescriptor[] = [
   { id: 'submit', validate: 'full', sideEffect: 'submit' },
 ]
 
+/** Проверяет и компилирует FormDefinition в FormDescription. */
 export function defineForm(def: FormDefinition): FormDescription {
   const registry = def.registry ?? defaultRegistry
   const policy = def.policy ?? defaultPolicy
@@ -265,8 +319,9 @@ export function defineForm(def: FormDefinition): FormDescription {
       const hit = attrCache.get(name)
       if (hit) return hit
       const f = byName[name]!
-      const projected = projectAttrs(registry.types.get(f.kind), constraintsFor(name),
-                                     { input: f.input, name })
+      const constraints = constraintsFor(name)
+      const projected = projectAttrs(registry.types.get(f.kind), constraints,
+                                     { input: f.input, name, constraints, attrs: {} })
       if (f.placeholder) projected.attrs['placeholder'] = f.placeholder
       attrCache.set(name, projected)
       return projected

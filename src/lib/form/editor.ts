@@ -7,6 +7,7 @@ import { defineForm, type FieldDescriptor, type FormDescription } from './descri
 import { stableStringify, type FormError } from './result'
 import type { FieldPath, RowKey } from './types'
 
+/** Операция изменения набора полей формы. */
 export type SchemaOp =
   | { op: 'add-field'; field: FieldDescriptor }
   | { op: 'remove-field'; name: string }
@@ -17,6 +18,7 @@ export type SchemaOp =
   | { op: 'remove-row'; group: string; rowKey: RowKey }
   | { op: 'move-row'; group: string; rowKey: RowKey; dir: 'up' | 'down' }
 
+/** Фабрики операций над схемой формы. */
 export const editor = {
   add: (field: FieldDescriptor): SchemaOp => ({ op: 'add-field', field }),
   remove: (name: string): SchemaOp => ({ op: 'remove-field', name }),
@@ -29,6 +31,7 @@ export const editor = {
     ({ op: 'move-row', group, rowKey, dir }),
 }
 
+/** Ошибка применения операции изменения схемы. */
 export class SchemaOpError extends Error {
   constructor(message: string) { super(`[form] ${message}`); this.name = 'SchemaOpError' }
 }
@@ -144,6 +147,7 @@ export function ageFields(d: FormDescription): FormDescription {
     .map((f) => editor.patch(f.name, { fresh: false })))
 }
 
+/** Ошибка несогласованности состояния с описанием формы. */
 export class InvariantError extends Error {}
 
 /** Инвариант согласованности. Проверяется ПОСЛЕ каждой операции. */
@@ -161,6 +165,7 @@ export function assertConsistent(d: FormDescription, s: {
       throw new InvariantError(`обязательность у свежесозданного поля: ${f.name}`)
 }
 
+/** Состояние, перенесённое на новую ревизию формы. */
 export interface Reconciled {
   values: Record<string, unknown>
   facts: FormError[]

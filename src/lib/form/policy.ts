@@ -6,6 +6,7 @@
 // То, что не влияет на приём (внутренние коды, порядок сортировки ошибок),
 // остаётся в ядре.
 
+/** Правила имён полей и служебных ключей. */
 export interface NamePolicy {
   /** Каждый СЕГМЕНТ имени обязан совпасть. */
   readonly pattern: RegExp
@@ -13,6 +14,7 @@ export interface NamePolicy {
   readonly maxSegments: number
 }
 
+/** Лимиты описания формы и результата. */
 export interface LimitPolicy {
   readonly fields: number
   readonly constraintsPerField: number
@@ -24,6 +26,7 @@ export interface LimitPolicy {
   readonly messageLength: number
 }
 
+/** Имена служебных hidden-полей конверта. */
 export interface EnvelopeKeys {
   readonly id: string
   readonly rev: string
@@ -33,6 +36,7 @@ export interface EnvelopeKeys {
   readonly intent: string
 }
 
+/** Канонические HTTP/status-коды результата. */
 export interface StatusPolicy {
   readonly ok: number
   readonly validationFailed: number
@@ -40,12 +44,14 @@ export interface StatusPolicy {
   readonly aborted: number
 }
 
+/** Форматирование и разбор submit intent. */
 export interface IntentPolicy {
   /** Намерение «действие[:аргумент]» — формат переопределяем. */
   format(action: string, arg?: string): string
   parse(raw: string): { action: string; arg?: string }
 }
 
+/** Все заменяемые константы ядра формы. */
 export interface FormPolicy {
   readonly names: NamePolicy
   readonly limits: LimitPolicy
@@ -56,6 +62,7 @@ export interface FormPolicy {
   interpolate(template: string, params: Record<string, unknown>): string
 }
 
+/** Политика по умолчанию. */
 export const defaultPolicy: FormPolicy = {
   names: {
     pattern: /^[a-z][a-z0-9_]{0,31}$/,

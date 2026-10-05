@@ -5,6 +5,7 @@
 import type { Result } from './result'
 import type { SubmissionId } from './types'
 
+/** Данные отложенного результата. */
 export interface QueuedData {
   /** Опрос при скрипте. */
   readonly pollUrl: string
@@ -13,14 +14,17 @@ export interface QueuedData {
   readonly etaMs?: number
 }
 
+/** Проверяет, что Result находится в исходе queued. */
 export const isQueued = (r: Result): boolean => r.outcome === 'queued'
 
+/** Достаёт данные очереди из Result.data. */
 export function queuedData(r: Result): QueuedData | undefined {
   if (!isQueued(r)) return undefined
   const d = r.data as QueuedData | undefined
   return d && typeof d.pollUrl === 'string' && typeof d.statusUrl === 'string' ? d : undefined
 }
 
+/** Ошибка: сервер вернул queued без протокола опроса. */
 export class QueuedWithoutProtocolError extends Error {
   constructor(id: SubmissionId) {
     super(`[form] исход queued у отправки ${id} без pollUrl и statusUrl: ` +
@@ -29,10 +33,12 @@ export class QueuedWithoutProtocolError extends Error {
   }
 }
 
+/** Проверяет наличие протокола для queued-результата. */
 export function assertQueuedProtocol(r: Result): void {
   if (isQueued(r) && !queuedData(r)) throw new QueuedWithoutProtocolError(r.submissionId)
 }
 
+/** Итог одного шага опроса queued-задачи. */
 export type PollOutcome =
   | { done: true; result: Result }
   | { done: false; retryAfterMs: number }

@@ -11,6 +11,7 @@
 // Оценка — ЭВРИСТИКА и заменяема: `v.strength(level, { score })`. Ядро не
 // притворяется, что знает единственно верную меру стойкости.
 
+/** Уровень сложности пароля. */
 export type StrengthLevel = 'weak' | 'fair' | 'good' | 'strong'
 
 /** Почему оценка просела. Приложение может показать это подсказкой. */
@@ -21,12 +22,14 @@ export type StrengthNote =
   | 'sequence'   // подряд идущие символы: abcdef, 123456
   | 'common'     // известный пароль или словарная основа
 
+/** Результат оценки сложности пароля. */
 export interface Strength {
   readonly bits: number
   readonly level: StrengthLevel
   readonly notes: readonly StrengthNote[]
 }
 
+/** Порядок уровней сложности. */
 export const LEVEL_ORDER: readonly StrengthLevel[] = ['weak', 'fair', 'good', 'strong']
 
 /** Нижняя граница длины для уровня. Единственное, что выражается в разметке. */
@@ -89,6 +92,7 @@ function longestRun(value: string): number {
 /** Основа без цифр и знаков по краям: `testtest1` → `testtest`. */
 const baseOf = (value: string) => value.toLowerCase().replace(/^[\d\W_]+|[\d\W_]+$/gu, '')
 
+/** Оценивает сложность пароля эвристикой. */
 export function strengthOf(value: string): Strength {
   if (!value) return { bits: 0, level: 'weak', notes: ['short'] }
 
@@ -127,5 +131,6 @@ export function strengthOf(value: string): Strength {
   return { bits: Math.round(bits), level, notes }
 }
 
+/** Проверяет, достигнут ли требуемый уровень сложности. */
 export const meetsLevel = (got: StrengthLevel, need: StrengthLevel) =>
   LEVEL_ORDER.indexOf(got) >= LEVEL_ORDER.indexOf(need)

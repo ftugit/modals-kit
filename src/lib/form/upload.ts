@@ -8,8 +8,10 @@
 //
 // Индикатор прогресса существует только в режиме reference при скрипте:
 // нативная отправка его не даёт.
+/** Способ передачи файла: inline или reference. */
 export type UploadMode = 'inline' | 'reference'
 
+/** Политика загрузки файлов. */
 export interface UploadStrategy {
   readonly mode: UploadMode
   readonly maxBytes: number
@@ -17,10 +19,13 @@ export interface UploadStrategy {
   readonly endpoint?: string
 }
 
+/** Стратегия inline-загрузки по умолчанию. */
 export const INLINE: UploadStrategy = { mode: 'inline', maxBytes: 8 * 1024 * 1024 }
 
+/** Сериализуемая ссылка на загруженный файл. */
 export interface UploadRef { readonly fileId: string; readonly name: string; readonly size: number }
 
+/** Проверяет, является ли значение UploadRef. */
 export const isUploadRef = (x: unknown): x is UploadRef =>
   !!x && typeof x === 'object' && typeof (x as UploadRef).fileId === 'string'
 

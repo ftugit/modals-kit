@@ -1,0 +1,27 @@
+{
+  "name": "tanstack-solid-start-lib-form-demo",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev --host 0.0.0.0 --port 3002",
+    "generate-routes": "tsr generate",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3002"
+  },
+  "dependencies": {
+    "@tanstack/solid-router": "1.170.38",
+    "@tanstack/solid-start": "1.168.57",
+    "nitro": "3.0.260610-beta",
+    "solid-js": "^1.9.15"
+  },
+  "devDependencies": {
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}

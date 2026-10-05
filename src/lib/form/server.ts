@@ -13,6 +13,7 @@ import { evaluate } from './submit'
 import { nameProblem } from './policy'
 import type { SubmissionId } from './types'
 
+/** Лимиты защитных серверных слоёв. */
 export interface Limits {
   readonly maxBytes: number
   readonly maxKeys: number
@@ -21,6 +22,7 @@ export interface Limits {
   readonly timeoutMs: number
 }
 
+/** Серверные лимиты по умолчанию. */
 export const DEFAULT_LIMITS: Limits = {
   maxBytes: 2 * 1024 * 1024, maxKeys: 256, maxFileSize: 8 * 1024 * 1024,
   maxValuesPerKey: 64, timeoutMs: 15_000,
@@ -29,10 +31,13 @@ export const DEFAULT_LIMITS: Limits = {
 /** Различение «дошёл / не дошёл» — основа семантики исхода. */
 export type Reached = 'rejected' | 'validating' | 'executing' | 'committed'
 
+/** Отказ защитного слоя до выполнения действия. */
 export interface Rejection { status: number; code: string; params?: Record<string, unknown> }
+/** Создаёт Rejection. */
 export const reject = (status: number, code: string, params?: Record<string, unknown>): Rejection =>
   ({ status, code, params })
 
+/** Контекст серверного конвейера обработки формы. */
 export interface Ctx {
   readonly request: Request
   description: FormDescription
@@ -42,6 +47,7 @@ export interface Ctx {
   warnings: FormError[]
 }
 
+/** Защитный слой серверной обработки. */
 export type Layer = (ctx: Ctx) => Promise<Rejection | undefined> | Rejection | undefined
 
 /* ── слои ──────────────────────────────────────────────────────────── */
@@ -50,6 +56,7 @@ export type Layer = (ctx: Ctx) => Promise<Rejection | undefined> | Rejection | u
 export const methodLayer = (allowed: readonly string[] = ['POST']): Layer => (ctx) =>
   allowed.includes(ctx.request.method) ? undefined : reject(405, 'method.not-allowed')
 
+/** Настройки проверки Origin/Referer. */
 export interface OriginOptions {
   readonly allowed: readonly string[]
   /** По умолчанию ВЫКЛЮЧЕН: корпоративные прокси вырезают заголовки. */
@@ -155,8 +162,10 @@ export interface IdempotencyStore {
   put(key: SubmissionId, result: Result, ttlMs: number): Promise<void> | void
 }
 
+/** TTL идемпотентного результата. */
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
+/** In-memory хранилище идемпотентности для локальной разработки и тестов. */
 export class MemoryIdempotencyStore implements IdempotencyStore {
   #map = new Map<string, { result: Result; exp: number }>()
   constructor(private readonly now: () => number = Date.now) {}
@@ -172,7 +181,9 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   get size() { return this.#map.size }
 }
 
+/** Результат проверки throttling. */
 export interface ThrottleVerdict { allowed: boolean; retryAfterMs?: number }
+/** Функция ограничения частоты отправок. */
 export interface Throttle {
   check(ctx: { request: Request }): Promise<ThrottleVerdict> | ThrottleVerdict
 }
@@ -214,6 +225,7 @@ export interface ExecuteContext<V = Record<string, unknown>> {
   fail(errors: readonly FormError[], outcome?: Outcome): never
 }
 
+/** Исключение бизнес-обработчика, превращаемое в FormError. */
 export class ExecuteFailure extends Error {
   constructor(readonly errors: readonly FormError[], readonly outcome?: Outcome) {
     super('[form] обработчик вернул ошибки полей')
@@ -221,6 +233,7 @@ export class ExecuteFailure extends Error {
   }
 }
 
+/** Настройки createFormHandler. */
 export interface HandlerOptions<T = unknown> {
   description: FormDescription
   /** Источник описания для полей из рантайма. */
@@ -241,6 +254,7 @@ export interface HandlerOptions<T = unknown> {
   execute(ctx: ExecuteContext): Promise<{ data?: T; redirect?: string }> | { data?: T; redirect?: string }
 }
 
+/** Результат createFormHandler: Result плюс HTTP status. */
 export interface Handled<T = unknown> { result: Result<T>; status: number }
 
 /** Приём запроса. Возвращает РЕЗУЛЬТАТ, кодировку выбирает маршрут. */

@@ -5,6 +5,7 @@
 import type { FormError, Result } from './result'
 import type { FormId, InstanceId, Revision, RowKey, SubmissionId } from './types'
 
+/** Сохранённый результат нативной отправки для последующего показа в форме. */
 export interface Continuation {
   readonly formId: FormId
   readonly instance: InstanceId
@@ -19,20 +20,24 @@ export interface Continuation {
   readonly truncated?: 'values'
 }
 
+/** Хранилище continuation между запросом формы и повторной отрисовкой. */
 export interface ContinuationStore {
   read(ctx: unknown): Promise<Continuation | undefined> | Continuation | undefined
   write(c: Continuation, ctx: unknown): Promise<unknown> | unknown
   clear(ref: unknown, ctx: unknown): Promise<void> | void
 }
 
+/** Срок жизни continuation по умолчанию. */
 export const CONTINUATION_TTL_MS = 15 * 60 * 1000
 
+/** Создаёт continuation из результата отправки. */
 export function makeContinuation(
   args: Omit<Continuation, 'iat' | 'exp'>, now = Date.now(), ttl = CONTINUATION_TTL_MS,
 ): Continuation {
   return { ...args, iat: now, exp: now + ttl }
 }
 
+/** Проверяет, истёк ли срок жизни continuation. */
 export const isExpired = (c: Continuation, now = Date.now()) => now > c.exp
 
 /** Ключ изоляции: две одинаковые формы не делят продолжение. */
@@ -52,6 +57,7 @@ export function addressedTo(
   return !isExpired(c, now)
 }
 
+/** Описание возможностей, потерянных при работе без JavaScript. */
 export interface Degraded {
   readonly continuation: Continuation
   /** 0 — влезло, 1 — значения урезаны, 3 — значения отброшены. */
