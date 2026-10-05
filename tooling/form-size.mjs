@@ -10,15 +10,16 @@
  *           цифры знает только сборка приложения; прокси нужен, чтобы
  *           замечать рост без сборки.
  *
- * Отдельная строка — адаптер Svelte. Обещание архитектуры: ядро не знает
- * фреймворка, адапвер тонкий. Рост адаптера означает, что логика утекла
- * из ядра в обвязку — это видно ещё до ревью.
+ * Отдельные строки — адаптеры движков (svelte/, react/, solid/). Обещание
+ * архитектуры: ядро не знает фреймворка, адаптер тонкий. Рост адаптера
+ * означает, что логика утекла из ядра в обвязку — это видно ещё до ревью.
  *
  * Бюджет — не догма, а протокол: расти можно, но сознательно — новой
  * строкой в коммите с причиной. Молчащие +10% вот чего нельзя.
  *
  * Зависимости: рантайм формы не импортирует ни одного пакета. Разрешены
- * только относительные пути, а 'svelte' — только внутри svelte/.
+ * только относительные пути, а пакет движка ('svelte', 'react', 'solid-js')
+ * — только внутри своей зоны адаптера.
  */
 import { gzipSync } from 'node:zlib'
 
@@ -26,27 +27,44 @@ import { gzipSync } from 'node:zlib'
 export const BUDGETS = {
   /**
    * Вес чтения: байты исходников рантайма (без тестов и документации).
-   * Повышено до 214 КБ: комментарии функций и опций приведены к JSDoc,
-   * чтобы IDE показывал их на наведении и в подсказках.
+   * Повышено до 270 КБ: адаптеры React и Solid переехали в библиотеку из
+   * TanStack-демо — теперь обвязки всех трёх движков живут здесь.
    */
-  raw: 214_000,
+  raw: 270_000,
   /**
    * Вес доставки: gzip конкатенации тех же файлов.
-   * Повышено синхронно с raw по той же причине (JSDoc).
+   * Повышено синхронно с raw по той же причине (адаптеры React/Solid).
    */
-  gzip: 61_500,
+  gzip: 68_000,
   /**
-   * Адаптер Svelte: gzip только svelte/. Тонкая обвязка обязана оставаться тонкой.
-   * Повышено: JSDoc у BindOptions и submit.
+   * Адаптеры движков: gzip только своей зоны. Тонкая обвязка обязана
+   * оставаться тонкой. Повышено для svelte: JSDoc у BindOptions и submit.
+   * react/solid — первые значения после переезда адаптеров в библиотеку.
    */
-  adapterGzip: 8_600,
+  adapters: { svelte: 8_600, react: 9_000, solid: 7_900 },
 }
 
 /** Рантайм-файл: код на TypeScript или Svelte, но не тест и не документация. */
 export const isRuntimeFile = (name) => /\.(ts|svelte)$/.test(name) && !/\.test\./.test(name)
 
+/** Зоны адаптеров: единственные места, где форме известен фреймворк. */
+export const ADAPTER_ZONES = ['svelte', 'react', 'solid']
+
+/** Зона адаптера по пути от корня библиотеки; ядро — null. */
+export const zoneOf = (relPath) => {
+  const top = relPath.replace(/\\/g, '/').split('/')[0]
+  return ADAPTER_ZONES.includes(top) ? top : null
+}
+
 /** Зона адаптера: единственное место, где форме известен фреймворк. */
-export const isAdapterZone = (relPath) => relPath.replace(/\\/g, '/').startsWith('svelte/')
+export const isAdapterZone = (relPath) => zoneOf(relPath) !== null
+
+/** Пакет движка и зона, где он разрешён. */
+const ENGINE_PACKAGES = [
+  { zone: 'svelte', re: /^svelte(\/|$)/ },
+  { zone: 'react', re: /^react(\/|$)/ },
+  { zone: 'solid', re: /^solid-js(\/|$)/ },
+]
 
 /**
  * @param {string} source
@@ -65,25 +83,31 @@ export function collectSpecifiers(source) {
 
 /**
  * Внешние зависимости рантайма. Разрешены относительные пути всегда,
- * 'svelte' — только в зоне адаптера. Всё остальное — нарушение.
+ * пакет движка — только в своей зоне адаптера. Всё остальное — нарушение.
  *
  * @param {string} relPath путь от корня библиотеки
  * @param {string[]} specs
  * @returns {Array<{spec: string, reason: string}>}
  */
 export function checkImports(relPath, specs) {
+  const zone = zoneOf(relPath)
   const problems = []
   for (const spec of specs) {
     if (spec.startsWith('.') || spec.startsWith('/')) continue
-    const isSvelte = /^svelte(\/|$)/.test(spec)
-    if (isSvelte && isAdapterZone(relPath)) continue
+    const engine = ENGINE_PACKAGES.find((p) => p.re.test(spec))
+    if (engine) {
+      if (engine.zone === zone) continue
+      problems.push({
+        spec,
+        reason: `'${spec}' вне зоны ${engine.zone}/: ядро формы обязано собираться `
+          + 'без фреймворка — иначе «одно ядро, много фреймворков» перестаёт быть правдой.',
+      })
+      continue
+    }
     problems.push({
       spec,
-      reason: isSvelte
-        ? "'svelte' вне svelte/: ядро формы обязано собираться без фреймворка — "
-          + 'иначе «одно ядро, много фреймворков» перестаёт быть правдой.'
-        : 'внешний пакет в рантайме формы. Библиотека не тянет зависимостей: '
-          + 'всё, что нужно, либо уже есть в ядре, либо принадлежит приложению.',
+      reason: 'внешний пакет в рантайме формы. Библиотека не тянет зависимостей: '
+        + 'всё, что нужно, либо уже есть в ядре, либо принадлежит приложению.',
     })
   }
   return problems
@@ -93,9 +117,9 @@ export function checkImports(relPath, specs) {
  * @param {Array<{path: string, source: string}>} files пути — от корня библиотеки
  */
 export function measure(files) {
-  const byZone = (f) => (isAdapterZone(f.path) ? 'adapter' : 'core')
-  const parts = { core: [], adapter: [] }
-  for (const f of files) parts[byZone(f)].push(f.source)
+  const parts = { core: [] }
+  for (const z of ADAPTER_ZONES) parts[z] = []
+  for (const f of files) parts[zoneOf(f.path) ?? 'core'].push(f.source)
 
   // пустой набор весит ноль, а не 20 байт gzip-заголовка пустого потока
   const gz = (list) => (list.length ? gzipSync(Buffer.from(list.join('\n'), 'utf8')).length : 0)
@@ -105,14 +129,15 @@ export function measure(files) {
     .map((f) => ({ path: f.path, raw: Buffer.byteLength(f.source, 'utf8') }))
     .sort((a, b) => b.raw - a.raw)
 
+  const adapters = {}
+  for (const z of ADAPTER_ZONES) adapters[z] = { raw: raw(parts[z]), gzip: gz(parts[z]) }
   return {
     files: files.length,
-    raw: raw(parts.core) + raw(parts.adapter),
-    gzip: gz(parts.core.concat(parts.adapter)),
+    raw: Object.values(parts).reduce((acc, list) => acc + raw(list), 0),
+    gzip: gz(Object.values(parts).flat()),
     coreRaw: raw(parts.core),
     coreGzip: gz(parts.core),
-    adapterRaw: raw(parts.adapter),
-    adapterGzip: gz(parts.adapter),
+    adapters,
     heaviest,
   }
 }
@@ -125,17 +150,20 @@ export function measure(files) {
 export function checkBudgets(m, budgets = BUDGETS) {
   const over = (got, max, line, why) =>
     got > max ? [{ line: `${line}: ${got} > ${max}`, why }] : []
-  return [
+  const problems = [
     ...over(m.raw, budgets.raw, 'вес чтения (raw)',
       'Библиотека выросла. Если рост осознанный — подними BUDGETS.raw '
       + 'в tooling/form-size.mjs отдельным коммитом и назови причину. '
       + 'Если нет — самое тяжёлое смотри в отчёте ниже.'),
     ...over(m.gzip, budgets.gzip, 'вес доставки (gzip)',
       'Прокси веса в браузере вырос. Тот же протокол: причина — или худеть.'),
-    ...over(m.adapterGzip, budgets.adapterGzip, 'адаптер svelte (gzip)',
-      'Обвязка растёт быстрее ядра: логика утекает из ядра в слой фреймворка. '
-      + 'Верни её в src/lib/form/*.ts — переносимой для всех обвязок.'),
   ]
+  for (const z of ADAPTER_ZONES) {
+    problems.push(...over(m.adapters[z].gzip, budgets.adapters[z], `адаптер ${z} (gzip)`,
+      'Обвязка растёт быстрее ядра: логика утекает из ядра в слой фреймворка. '
+      + `Верни её в src/lib/form/*.ts — переносимой для всех обвязок, а ${z}-слой оставь тонким.`))
+  }
+  return problems
 }
 
 /** Человекочитаемый отчёт: цифры сегодня и пороги. */
@@ -144,9 +172,10 @@ export function report(m, budgets = BUDGETS) {
   const lines = [
     `[form-size] файлов: ${m.files}`,
     `  ядро:      ${kb(m.coreRaw)} raw · ${kb(m.coreGzip)} gzip`,
-    `  адаптер:   ${kb(m.adapterRaw)} raw · ${kb(m.adapterGzip)} gzip`,
+    ...ADAPTER_ZONES.map((z) =>
+      `  адаптер ${z.padEnd(6)} ${kb(m.adapters[z].raw)} raw · ${kb(m.adapters[z].gzip)} gzip · бюджет ${kb(budgets.adapters[z])}`),
     `  итого:     ${kb(m.raw)} raw · ${kb(m.gzip)} gzip`,
-    `  бюджеты:   ${kb(budgets.raw)} raw · ${kb(budgets.gzip)} gzip · адаптер ${kb(budgets.adapterGzip)} gzip`,
+    `  бюджеты:   ${kb(budgets.raw)} raw · ${kb(budgets.gzip)} gzip`,
     '  самое тяжёлое:',
     ...m.heaviest.slice(0, 5).map((f) => `    ${kb(f.raw).padStart(9)}  ${f.path}`),
   ]

@@ -9,16 +9,16 @@
 описание(поля, правила) → связывание(настройка) → наборы пропсов → ваша разметка
 ```
 
-Проверяется: `npm run check`, `npx vitest run src/lib/form` (51 тест),
-`node --test tooling/` (45 стражей), браузерные прогоны `test/browser/forms*.mjs`
-(29 функциональных проверок + 12 доступности через axe-core, обе темы, узкий экран,
-путь без скрипта). Бюджеты веса — `tooling/form-size.mjs`.
+Готовые адаптеры движков: `svelte/`, `react/`, `solid/` (см. [Адаптеры движков](#адаптеры-движков)).
+Ядро покрыто модульными тестами, а вес и чистоту слоёв охраняют автоматические
+стражи: бюджет каждого адаптера — отдельной строкой.
 
 ## Содержание
 
 - [Быстрый старт](#быстрый-старт)
 - [Как это устроено](#как-это-устроено)
 - [Как подключить к своему движку](#как-подключить-к-своему-движку)
+- [Адаптеры движков](#адаптеры-движков)
 - [Как создать свой хук](#как-создать-свой-хук)
 - [Фронтенд и бэкенд одновременно](#фронтенд-и-бэкенд-одновременно)
 - [Каталог валидаторов](#каталог-валидаторов)
@@ -42,7 +42,7 @@
 ноль Svelte — чистый TypeScript.
 
 ```ts
-// src/routes/form/signup.ts — описание
+// signup.ts — описание: изоморфный модуль, его импортируют обе стороны
 import { defineForm, field, v } from '$lib/form'
 
 export const signup = defineForm({
@@ -67,7 +67,7 @@ export const signup = defineForm({
 Связывание в Svelte (проектная настройка один раз, форма — одной строкой):
 
 ```ts
-// src/routes/form/forms.config.ts — настройка проекта
+// forms.config.ts — настройка проекта: один раз на приложение
 import { createConfig } from '$lib/form/svelte'
 import TextField from './ui/TextField.svelte'   // компоненты пишет приложение
 import CheckboxField from './ui/CheckboxField.svelte'
@@ -121,13 +121,14 @@ export const forms = createConfig({
 | отправка | `envelope.ts`, `submit.ts`, `state.ts` | конверт, конвейер, гонки, состояние |
 | приём | `server.ts` | переставляемые слои, идемпотентность, частота |
 | динамика | `editor.ts`, `spec.ts`, `source.ts` | операции над набором полей, рантайм, устаревание |
-| обвязки | `svelte/` | единственное место, где ядро встречается с фреймворком |
+| обвязки | `svelte/`, `react/`, `solid/` | единственные места, где ядро встречается с фреймворком |
 
 Три правила, которые не нарушаются:
 
-1. **Ядро не знает фреймворка.** В `src/lib/form/*.ts` нет ни одного импорта вне
-   относительных путей; `svelte/` — отдельный слой. Страж `tooling/form-size.test.mjs`
-   проверяет это на каждом прогоне.
+1. **Ядро не знает фреймворка.** В файлах ядра нет ни одного импорта вне
+   относительных путей; зоны адаптеров (`svelte/`, `react/`, `solid/`) — отдельные
+   слои, и пакет движка разрешён только в своей зоне. Страж проверяет это на
+   каждом прогоне.
 2. **Граница «разметка — данные».** Библиотека не создаёт элементов и не знает,
    как выглядит поле. Она даёт готовый набор пропсов.
 3. **Один код-путь.** Перехваченная отправка в браузере и нативный POST на сервере
@@ -141,11 +142,17 @@ export const forms = createConfig({
 
    ```ts
    // vite.config.ts вашего приложения
-   resolve: { alias: { '@form': '../modals-kit/src/lib/form/index.ts' } }
+   // form — путь к исходникам библиотеки
+   resolve: { alias: [
+     { find: /^@form$/, replacement: `${form}/index.ts` },
+     // суффиксы — зоны библиотеки: адаптеры движков и серверная половина
+     { find: /^@form\/(.+)$/, replacement: `${form}/$1` },
+   ] }
    ```
 
-   В `index.ts` нет Svelte: точка входа ядра чиста. Адаптер Svelte живёт в
-   `svelte/` и в алиас не входит.
+   В `index.ts` нет ни одного фреймворка: точка входа ядра чиста. Суффиксные
+   алиасы открывают зоны библиотеки: `@form/svelte`, `@form/react`,
+   `@form/solid`, `@form/server`.
 
 2. **Реализовать транспорт** — единственное место, где ядро касается сети:
 
@@ -171,16 +178,127 @@ export const forms = createConfig({
    | операции над набором | `applyOps`, `reconcile` (`editor.ts`) |
    | конверт | `buildEnvelope` (`envelope.ts`) |
 
-4. **Написать слой реактивности** — см. следующий раздел. Эталонная реализация:
-   [`svelte/bind.svelte.ts`](./svelte/bind.svelte.ts) (~400 строк, половина — комментарии).
-   Готовые адаптеры вне Svelte: **`form-react/`** и **`form-solid/`** рядом с репозиторием —
-   TanStack Start проекты с хуками `useForm` и `createForm` и той же демо-страницей.
+4. **Взять готовый слой реактивности** — для Svelte, React и Solid он уже написан:
+   см. [Адаптеры движков](#адаптеры-движков). Для другого движка — следующий раздел;
+   эталонная реализация: [`svelte/bind.svelte.ts`](./svelte/bind.svelte.ts)
+   (~400 строк, половина — комментарии).
+
+## Адаптеры движков
+
+Три зоны — `svelte/`, `react/`, `solid/` — повторяют один и тот же контракт.
+Настройка проекта один раз (`createConfig` → `BoundConfig`), связка одной
+строкой, дальше — наборы пропсов для вашей разметки:
+
+| | Svelte | React | Solid |
+|---|---|---|---|
+| импорт | `@form/svelte` | `@form/react` | `@form/solid` |
+| связка | `bind(forms, signup, opts)` | `useForm(forms, signup, opts)` | `createForm(forms, signup, opts)` |
+| состояние | руны | `useSyncExternalStore` | `createSignal` + `batch` |
+| поле | `form.f.email` | `form.f.email` | `form.f.email` |
+| `labelProps` | `for` | `htmlFor` | `for` |
+| атрибуты | HTML-имена (`minlength`) | camelCase-пропсы (`minLength`) | HTML-имена (`minlength`) |
+| выбор компонента поля | `resolve` в настройке | приложение по `f.input` | приложение по `f.input` |
+
+Настройка `createConfig` одинакова у всех трёх (`transport`, `live`, `parallel`,
+`onErrors`, `invalidFrom`, `ui`); у Svelte-адаптера есть ещё `resolve` —
+«представление → компонент». React и Solid не навязывают компоненты: приложение
+само выбирает их по `f.input` из `FieldView`.
+
+### React
+
+```ts
+// forms.config.ts — настройка проекта: один раз на приложение
+import { createConfig } from '@form/react'
+import { fetchTransport } from './transport'
+
+export const forms = createConfig({
+  transport: fetchTransport,
+  live: 'after-touched',
+})
+```
+
+```tsx
+// SignupForm.tsx — разметку пишет приложение
+import { useForm } from '@form/react'
+import { signup } from './signup'
+
+export function SignupForm() {
+  const form = useForm(forms, signup)
+  const email = form.f.email
+
+  return (
+    <form {...form.formProps()}>
+      {form.hidden().map((h) => <input key={h.name} {...h} />)}
+
+      {form.common[0] && <div role="alert">{form.common[0].message}</div>}
+
+      <label {...email.labelProps()}>{email.label}</label>
+      <input {...email.attrs}
+             onInput={(e) => email.onInput(e.currentTarget.value)}
+             onBlur={() => email.setTouched()} />
+      {email.errors[0] && <p {...email.errorProps()}>{email.errors[0].message}</p>}
+
+      <button {...form.intent('submit')}>Создать аккаунт</button>
+    </form>
+  )
+}
+```
+
+Перевод HTML-имён в camelCase-пропсы (`maxlength` → `maxLength`) — внутри
+адаптера: ядро говорит на языке разметки, React — на языке пропсов. Номер
+отправки в конверте рождается на каждой стороне свой, поэтому для него
+адаптер отдаёт `defaultValue`, а не `value`: React не сверяет
+неконтролируемое поле при оживлении, и в DOM остаётся номер сервера.
+
+### Solid
+
+```ts
+// forms.config.ts — настройка проекта: один раз на приложение
+import { createConfig } from '@form/solid'
+import { fetchTransport } from './transport'
+
+export const forms = createConfig({
+  transport: fetchTransport,
+  live: 'after-touched',
+})
+```
+
+```tsx
+// SignupForm.tsx — разметку пишет приложение
+import { createForm } from '@form/solid'
+import { signup } from './signup'
+
+export function SignupForm() {
+  const form = createForm(forms, signup)
+
+  return (
+    <form {...form.formProps()}>
+      <For each={form.hidden()}>{(h) => <input {...h} />}</For>
+
+      <label {...form.f.email.labelProps()}>{form.f.email.label}</label>
+      <input {...form.f.email.attrs}
+             onInput={(e) => form.f.email.onInput(e.currentTarget.value)}
+             onBlur={() => form.f.email.setTouched()} />
+      <Show when={form.f.email.errors[0]}>
+        <p {...form.f.email.errorProps()}>{form.f.email.errors[0].message}</p>
+      </Show>
+
+      <button {...form.intent('submit')}>Создать аккаунт</button>
+    </form>
+  )
+}
+```
+
+Компонент Solid живёт один раз, поэтому связка создаётся один раз, а настройки
+читаются лениво — объект опций с геттерами, а не снимок. Атрибуты остаются
+HTML-ными: Solid пишет их в разметку как есть, перекладки имён нет.
 
 ## Как создать свой хук
 
 Хук приложения — тонкая обёртка над адаптером, чтобы не повторять настройку на каждой
 форме. Библиотека фабрики хуков не поставляет: это право приложения. Ниже — полный
-каркас адаптера на React (боевой вариант — `form-react/src/form/use-form.ts`):
+каркас адаптера на React (готовые варианты — [`react/bind.ts`](./react/bind.ts) и
+[`solid/bind.ts`](./solid/bind.ts)):
 
 ```ts
 // form/use-form.ts — адаптер React: useState над FormStore
@@ -207,12 +325,13 @@ export function useForm(description, opts) {
 }
 ```
 
-Свои настройки, которые хук обычно выставляет (все — из `FormsConfig` в
-[`svelte/config.ts`](./svelte/config.ts), для своего движка повторите их форму):
+Свои настройки, которые хук обычно выставляет (все — из `FormsConfig` в `config.ts`
+зоны адаптера: [`svelte/`](./svelte/config.ts), [`react/`](./react/config.ts),
+[`solid/`](./solid/config.ts)):
 
 | Настройка | Тип | Что решает |
 |---|---|---|
-| `resolve` | функция | «представление → компонент». Умолчаний нет: забыли — ошибка конфигурации |
+| `resolve` | функция | «представление → компонент», только в svelte-адаптере. Умолчаний нет: забыли — ошибка конфигурации |
 | `transport` | `Transport` | как уезжает перехваченная отправка |
 | `live` | `'on-submit' \| 'on-blur' \| 'on-input' \| 'after-touched'` | когда поле перепроверяется |
 | `parallel` | `'block' \| 'replace' \| 'queue'` | поведение при двойном клике |
@@ -222,8 +341,8 @@ export function useForm(description, opts) {
 
 Про `ui`-политику: `fieldId`, `describedBy`, `shouldValidate`, `valueAttrs` — четыре
 функции, которые раньше были зашиты в сборке пропсов. Подмените их в настройке,
-если нужны свои идентификаторы или другое правило перепроверки — демо показывает
-обе крайности (`default` и `custom`).
+если нужны свои идентификаторы или другое правило перепроверки: настройка принимает
+`Partial<UiPolicy>`, а не применяется целиком — умолчания остальных функций живут.
 
 ## Фронтенд и бэкенд одновременно
 
@@ -266,7 +385,8 @@ const handle = createFormHandler({
 
 Приём в SvelteKit: `+page.server.ts` вызывает `handle(request, 'action')` и
 отдаёт `result` в `form`, `+server.ts` — `handle(request, 'fetch')` и `json(...)`.
-В TanStack Start то же самое — серверная функция, см. `form-react/src/routes/form.tsx`.
+В других движках — серверная функция или роут того же движка: адрес один,
+контракт `Result` тот же.
 
 ## Каталог валидаторов
 
@@ -529,17 +649,16 @@ defineForm({ id: 'signup', policy, fields: { /* … */ } })
 
 ## Проверки и бюджеты
 
-| Прогон | Что ловит |
-|---|---|
-| `npx vitest run src/lib/form` | модульные: ядро, правила, редактор, конверт |
-| `node --test tooling/` | стражи: вес, чистота импортов, слои |
-| `node test/browser/forms.mjs` | оба пути, без скрипта, идемпотентность, слои имён |
-| `node test/browser/forms-a11y.mjs` | axe-core: 8 состояний, обе темы, узкий экран |
+Библиотеку охраняют два вида автоматических проверок:
 
-Бюджеты веса (`tooling/form-size.mjs`): raw — «вес чтения», gzip — «вес
-доставки», адаптер — отдельно. Рост бюджета — отдельным коммитом с причиной.
-Текущие: 214 КБ raw / 60 КБ gzip / адаптер 8.6 КБ.
+- **Модульные тесты ядра.** Описание, правила, проверка, показ, конверт, редактор,
+  повторяемые группы, рантайм-поля — поведение ядра, одинаковое для всех движков.
+- **Стражи.** Вес библиотеки, чистота импортов, границы слоёв: ядро не импортирует
+  пакетов, пакет движка разрешён только в своей зоне, адаптер не растёт быстрее
+  ядра.
 
-Подробности плана и причин каждого решения — [REFACTOR.md](./REFACTOR.md).
-Примеры адаптеров на других движках: `form-react/`, `form-solid/` (TanStack Start,
-лежат рядом с репозиторием).
+Бюджеты веса: raw — «вес чтения» (сколько байтов обязан прочитать тот, кто правит
+библиотеку), gzip — «вес доставки» (прокси того, что уедет в браузер), адаптеры
+движков — отдельной строкой каждый. Рост бюджета — осознанный: отдельным
+изменением с причиной; молчаливые +10% невозможны. Текущие: 270 КБ raw /
+68 КБ gzip / адаптеры: svelte 8.6 · react 8.8 · solid 7.7 КБ.
