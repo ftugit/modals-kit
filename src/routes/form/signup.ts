@@ -26,7 +26,9 @@ function make(cardinality: 'first' | 'all') {
         label: 'Почта',
         placeholder: 'вы@почта.рф',
         help: 'Попробуйте taken@example.com — проверка уходит на сервер',
-        validate: [v.required(), v.maxLength(320), emailTaken()],
+        // type="email" защищает только нативный путь. При fetch-перехвате
+        // форма использует novalidate, поэтому формат обязан проверять core.
+        validate: [v.required(), v.email('html5'), v.maxLength(320), emailTaken()],
       }),
       // Два правила нарушаются одновременно — на этом поле видна разница
       // между «первая ошибка» и «все ошибки». Шаблона нет принципиально:

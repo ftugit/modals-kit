@@ -89,6 +89,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
 
   const render = makeRenderer([initial.messages as never, ru], initial.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
+  const asyncErrorIds = new Map<string, string>()
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
 
   /** Продолжение входит в НАЧАЛЬНОЕ состояние: SSR рисует ошибки на местах. */
@@ -191,7 +192,12 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]
-        const facts = [...s.facts.filter((e) => e.path !== name), ...(error ? [error] : [])]
+        // Асинхронный ответ заменяет только предыдущую async-ошибку.
+        // Синхронные ошибки того же поля (email/minLength/…) сохраняются.
+        const previous = asyncErrorIds.get(name)
+        const facts = s.facts.filter((e) => e.id !== previous && e.id !== error?.id)
+        if (error) { facts.push(error); asyncErrorIds.set(name, error.id) }
+        else asyncErrorIds.delete(name)
         const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
         return { ...s, checking, facts, shown: display(facts, ctx).errors }
       })

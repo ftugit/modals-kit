@@ -117,6 +117,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   }, [])
   const machine = useMemo(() => new SubmitMachine(cfg.config.parallel ?? 'block'), [])
   const runner = useMemo(() => (o.checks ? new AsyncRunner(o.checks) : undefined), [])
+  const asyncErrorIds = useMemo(() => new Map<string, string>(), [])
 
   // описание изменяемо: операции над набором полей строят НОВОЕ описание
   const [desc, bump] = useReducer((d: FormDescription, ops: readonly SchemaOp[]) => applyOps(d, ops), initial)
@@ -196,7 +197,12 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]
-        const facts = [...s.facts.filter((e) => e.path !== name), ...(error ? [error] : [])]
+        // Асинхронный ответ заменяет только предыдущую async-ошибку.
+        // Синхронные ошибки того же поля (email/minLength/…) сохраняются.
+        const previous = asyncErrorIds.get(name)
+        const facts = s.facts.filter((e) => e.id !== previous && e.id !== error?.id)
+        if (error) { facts.push(error); asyncErrorIds.set(name, error.id) }
+        else asyncErrorIds.delete(name)
         const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
         return { ...s, checking, facts, shown: display(facts, ctx).errors }
       })

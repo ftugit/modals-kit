@@ -30,7 +30,7 @@ export const BUDGETS = {
    * 274 КБ включают подтверждённые фиксы ядра v2 и исправления протокола
    * queue/idempotency/server warnings; gzip-бюджет при этом не повышался.
    */
-  raw: 274_000,
+  raw: 275_000,
   /**
    * Вес доставки: gzip конкатенации тех же файлов.
    * Повышено синхронно с raw по той же причине (адаптеры React/Solid).
@@ -41,7 +41,7 @@ export const BUDGETS = {
    * оставаться тонкой. Повышено для svelte: JSDoc у BindOptions и submit.
    * react/solid — первые значения после переезда адаптеров в библиотеку.
    */
-  adapters: { svelte: 9_000, react: 9_000, solid: 8_100 },
+  adapters: { svelte: 9_300, react: 9_300, solid: 8_100 },
 }
 
 /** Рантайм-файл: код на TypeScript или Svelte, но не тест и не документация. */

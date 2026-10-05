@@ -64,6 +64,15 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const report = await pg.locator('section:has-text("Ограничения → атрибуты") tbody').innerText()
   ok('причина отказа названа', report.includes('валидатор не описал себя'))
 
+  // type=email недостаточно: fetch-путь ставит novalidate и обязан получить
+  // тот же вердикт из общего ядра.
+  await pg.fill('#signup-email', 'fffffffff')
+  await click(pg, 'Создать аккаунт')
+  await pg.waitForTimeout(1500)
+  const emailErrors = await pg.locator('p.text-destructive').allInnerTexts()
+  ok('fetch-путь отклоняет строку без формата email',
+    emailErrors.some((t) => /корректный адрес почты|email/i.test(t)), emailErrors.join(' | '))
+
   /* ── 5–6. факт против показа ────────────────────────────────── */
   /* ── 13. сложность пароля ───────────────────────────────────── */
   ok('у пароля нет шаблона в разметке',
