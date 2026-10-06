@@ -13,12 +13,13 @@
     "test": "vitest run && node --test tooling/",
     "test:unit": "vitest run",
     "test:guard": "node --test tooling/",
-    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs",
+    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/paginate.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
     "test:browser:modals": "node test/browser/modals.mjs",
     "test:browser:shell": "node test/browser/shell.mjs",
     "test:browser:forms": "node test/browser/forms.mjs",
-    "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs"
+    "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs",
+    "test:browser:paginate": "node test/browser/paginate.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
