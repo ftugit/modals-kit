@@ -1,0 +1,418 @@
+// URL-адаптер: GET (?page) — хранилище указателя страницы (R5, R11).
+// Порт adapter-tanstack.ts React-версии на роутер FastEdge (TanStack-семантика validateSearch).
+// D6: НЕ импортирует server-only модули — url запроса передаёт loader через ctx.
+// Enforcement пути 3: ОДИН парсер ?page для validateSearch роута и чтения в адаптере (deny-safe).
+// Без zod: тот же контракт, что и z.coerce.number().int().min(1).catch(1).
+//
+// Формат — как у модалок (`?modal=card&modal.1.id=7`): базовый ключ + точечные подключи:
+//   ?page=3            — указатель страницы (нативно)
+//   ?page.size=5       — размер страницы (нативно)
+//   ?page.<key>=<v>    — ключи потребителя (RestorableState.extra), объявленные в extraSearch
+// Один пагинатор = один базовый ключ (pageParam), несколько пагинаторов — разные ключи.
+import type {
+  Extra,
+  ExtraValue,
+  HrefContext,
+  PaginatorAdapter,
+  PaginatorState,
+  Source,
+} from './types'
+
+/** Строгий целочисленный парсер: любой мусор («2.7», «abc», «../../etc») → 1 (deny-safe). */
+export function parsePageValue(raw: unknown): number {
+  if (raw == null || raw === '') return 1
+  const v = Array.isArray(raw) ? raw[0] : raw
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isInteger(n) && n >= 1 ? n : 1
+}
+
+/** Разбор скаляра из URL: true/false/null/число/строка (как decodeScalar у модалок). */
+export function decodeExtraValue(raw: string): ExtraValue {
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  if (raw === 'null') return null
+  if (raw !== '' && /^-?\d*\.?\d+$/.test(raw) && !Number.isNaN(Number(raw))) return Number(raw)
+  return raw
+}
+
+export function encodeExtraValue(v: ExtraValue): string {
+  return v === null ? 'null' : String(v)
+}
+
+/**
+ * Объявленный тип extra-ключа. Адресный слой декодирует скаляр жадно
+ * («9» → 9, «true» → true): смысл значения знает только ПОТРЕБИТЕЛЬ, поэтому
+ * нормализация к объявленному типу живёт здесь, в одном хелпере, а не
+ * россыпью `typeof raw === 'string' ? … : ''` в каждом валидаторе (именно на
+ * этом ключ молча исчезал — см. диагноз b1 § 3.1 плана).
+ */
+export type ExtraFieldType = 'text' | 'number' | 'boolean' | 'list'
+
+/**
+ * Нормализация ExtraValue к объявленному типу (undefined = мусор/отсутствие).
+ * `text`: число 9 → обратно строка '9'; `number`: конечное число;
+ * `boolean`: только настоящий boolean; `list`: строка «a, b,,c» → каноничная
+ * «a,b,c» (ExtraValue массивов не содержит — список ездит одной строкой).
+ */
+export function coerceExtraValue(raw: ExtraValue, type: ExtraFieldType): ExtraValue | undefined {
+  switch (type) {
+    case 'text':
+      return raw == null ? undefined : String(raw)
+    case 'number': {
+      if (raw == null || raw === '' || typeof raw === 'boolean') return undefined
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      return Number.isFinite(n) ? n : undefined
+    }
+    case 'boolean':
+      return typeof raw === 'boolean' ? raw : undefined
+    case 'list': {
+      if (raw == null) return undefined
+      const items = String(raw)
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+      return items.length ? items.join(',') : undefined
+    }
+  }
+}
+
+/**
+ * Валидатор ключа с объявленным типом: сначала `coerceExtraValue`, затем
+ * опциональный предикат-домен. Эмитит `undefined` = ключ отброшен (в dev
+ * адресный слой предупреждает с именем ключа и причиной — молчание запрещено).
+ */
+export function extraField(
+  type: ExtraFieldType,
+  validate?: (value: ExtraValue) => boolean,
+): (raw: ExtraValue) => ExtraValue | undefined {
+  return (raw) => {
+    const value = coerceExtraValue(raw, type)
+    if (value === undefined) return undefined
+    return validate && !validate(value) ? undefined : value
+  }
+}
+
+/**
+ * Спецификация ключей потребителя в URL: имя → валидатор (raw → значение | undefined).
+ * undefined = ключ отсутствует/мусор → в extra не попадает (дефолт роута остаётся).
+ * Рекомендуемый строитель — `extraField` с объявленным типом (§ 3.1 плана).
+ */
+export type ExtraSearchSpec = Record<string, (raw: ExtraValue) => ExtraValue | undefined>
+
+/**
+ * Dev-режим адресного слоя: нет process (браузер) — считаем dev; предупреждения
+ * глушит только явный production. Изоморфно с остальными гвардами библиотеки.
+ */
+export function isDevAddressLayer(): boolean {
+  return (
+    typeof process === 'undefined' ||
+    !process.env ||
+    process.env.NODE_ENV !== 'production'
+  )
+}
+
+/** Единая точка dev-предупреждений адресного слоя (§ 3.1: молчаливый отброс запрещён). */
+export function warnExtraDropped(base: string, key: string, raw: string, reason: string): void {
+  if (!isDevAddressLayer()) return
+  console.warn(
+    `[paginate] extra-ключ "${base}.${key}" отброшен: ${reason}; сырое значение: ${JSON.stringify(raw)}`,
+  )
+}
+
+export type PaginatorSearchOptions = {
+  /** Базовый ключ (default 'page'). */
+  pageParam?: string
+  /** Допустимые размеры страницы; иное значение → undefined (адаптер возьмёт свой default). */
+  pageSizes?: readonly number[]
+  extra?: ExtraSearchSpec
+}
+
+/** Восстанавливаемая из URL часть: page, pageSize (если задан), extra (только валидные). */
+export type UrlRestorable = {
+  page: number | undefined
+  pageSize: number | undefined
+  extra: Extra
+}
+
+/** Разбор всех ключей пагинатора из URLSearchParams (единый парсер роута и адаптера). */
+export function readPaginatorSearch(
+  params: URLSearchParams,
+  opts: PaginatorSearchOptions = {},
+): UrlRestorable {
+  const base = opts.pageParam ?? 'page'
+  const rawPage = params.get(base)
+  const page = rawPage == null || rawPage === '' ? undefined : parsePageValue(rawPage)
+  let pageSize: number | undefined
+  const rawSize = params.get(`${base}.size`)
+  if (rawSize != null && rawSize !== '') {
+    const n = Number(rawSize)
+    if (Number.isInteger(n) && n >= 1 && (!opts.pageSizes || opts.pageSizes.includes(n)))
+      pageSize = n
+  }
+  const extra: Extra = {}
+  const spec = opts.extra ?? {}
+  for (const [key, validate] of Object.entries(spec)) {
+    // Последнее значение побеждает: форма без JS шлёт hidden=false + checkbox=true.
+    const all = params.getAll(`${base}.${key}`)
+    const raw = all.length ? all[all.length - 1] : null
+    if (raw == null) continue
+    const v = validate(decodeExtraValue(raw))
+    if (v !== undefined) extra[key] = v
+    else warnExtraDropped(base, key, raw, 'значение не прошло валидатор')
+  }
+  // Молчаливый отброс запрещён (§ 3.1): неизвестный ключ нашего префикса в dev виден.
+  if (isDevAddressLayer()) {
+    for (const key of new Set(params.keys())) {
+      if (!key.startsWith(`${base}.`)) continue
+      const suffix = key.slice(base.length + 1)
+      if (suffix === 'size' || suffix in spec) continue
+      warnExtraDropped(base, suffix, params.get(key) ?? '', 'неизвестный ключ (нет в extraSearch)')
+    }
+  }
+  return { page, pageSize, extra }
+}
+
+/**
+ * validateSearch роута — ЕДИНСТВЕННАЯ дефиниция ?page / ?page.size / ?page.<key> (роут + адаптер).
+ * Возвращает плоские ключи search в том же виде, что и в адресе (`page`, `page.size`, …):
+ * так `app.search` роутера остаётся симметричен URL, а stringifySearch собирает его обратно.
+ * Раунд-8: отсутствующий ключ остаётся отсутствующим (URL принадлежит url-адаптеру, персистом).
+ */
+export function paginatorSearch(
+  opts: PaginatorSearchOptions | readonly PaginatorSearchOptions[] = {},
+): (params: URLSearchParams) => Record<string, unknown> {
+  // Несколько пагинаторов на странице — массив спецификаций: каждая разбирает СВОЙ префикс,
+  // чужие ключи проходят как есть только если не принадлежат ни одной из спецификаций
+  // (иначе строка из URL затёрла бы уже распарсенное число соседа).
+  const specs = Array.isArray(opts)
+    ? (opts as readonly PaginatorSearchOptions[])
+    : [opts as PaginatorSearchOptions]
+  const bases = specs.map((o) => o.pageParam ?? 'page')
+  const owned = (key: string) => bases.some((b) => key === b || key.startsWith(`${b}.`))
+  return (params: URLSearchParams) => {
+    const out: Record<string, unknown> = {}
+    specs.forEach((o, i) => {
+      const base = bases[i]
+      const r = readPaginatorSearch(params, o)
+      if (r.page !== undefined) out[base] = r.page
+      if (r.pageSize !== undefined) out[`${base}.size`] = r.pageSize
+      for (const [k, v] of Object.entries(r.extra)) out[`${base}.${k}`] = v
+    })
+    // Прочие (чужие) ключи — как есть, чтобы не терять их при navigate/hrefFor.
+    for (const key of new Set(params.keys())) {
+      if (owned(key)) continue
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue
+      const all = params.getAll(key)
+      out[key] = all.length > 1 ? all : all[0]
+    }
+    return out
+  }
+}
+
+/** Совместимость: только ?page (без size/extra). */
+export function pageSearch(
+  pageParam = 'page',
+): (params: URLSearchParams) => Record<string, unknown> {
+  return paginatorSearch({ pageParam })
+}
+
+/** URL → номер страницы; любой мусор/отсутствие → 1 (deny-safe). */
+export function parsePageFromUrl(url: string, pageParam = 'page'): number {
+  try {
+    const raw = new URL(url, 'http://localhost').searchParams.get(pageParam)
+    return parsePageValue(raw ?? undefined)
+  } catch {
+    return 1
+  }
+}
+
+/** Минимальный срез роутера, нужный адаптеру (привязку делает PaginatorHost, D2). */
+export type MinimalRouter = {
+  navigate(opts: {
+    search: (prev: Record<string, unknown>) => Record<string, unknown>
+    replace?: boolean
+  }): void | Promise<unknown>
+  currentSearch?: () => Record<string, unknown>
+}
+
+function searchToParams(search: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(search)) {
+    if (value == null) continue
+    if (Array.isArray(value)) for (const v of value) params.append(key, String(v))
+    else params.set(key, String(value))
+  }
+  return params
+}
+
+export function createUrlAdapter<T>(opts: {
+  name: string
+  source: Source<T>
+  pageSize?: number
+  append?: boolean
+  pageParam?: string
+  pageSizes?: readonly number[]
+  extraSearch?: ExtraSearchSpec
+  /** Дефолты extra: ключи со значением === default НЕ пишутся в URL (чистый адрес). */
+  extraDefaults?: Extra
+  /** Получить url запроса на SSR (альтернатива ctx.url в getInitial). */
+  getUrl?: () => string | undefined
+}): PaginatorAdapter<T> & {
+  setRouter(router: MinimalRouter | null): void
+  /** Спецификация ключей адреса — хост читает её вместо дублирующих пропсов. */
+  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[] }
+} {
+  const pageSize = opts.pageSize ?? 20
+  const pageParam = opts.pageParam ?? 'page'
+  const append = opts.append ?? true
+  const searchOpts: PaginatorSearchOptions = {
+    pageParam,
+    pageSizes: opts.pageSizes,
+    extra: opts.extraSearch,
+  }
+  const extraKeys = Object.keys(opts.extraSearch ?? {})
+  let router: MinimalRouter | null = null
+  // Раунд-6: поиск последнего getInitial(ctx.url) — href-ы на SSR, где роутера нет.
+  let lastInitSearch: Record<string, unknown> | null = null
+  // Полётный navigate (URL ещё НЕ применился). Echo-guard обязан видеть его иначе класс:
+  // reportAnchor(A)→navigate(A); reportAnchor(B≈URL)→echo-skip; navigate(A) садится ПОЗЖЕ
+  // → URL отстаёт от пагинатора → внешняя страница (не-эхо) → лишний REPLACE/прыжок скролла
+  // (всплывает при смене раскладки: IO-шторм reportAnchor как раз такой реверанс делает).
+  // Сравнивается сериализованный «отпечаток» {page,size,extra}.
+  let inflight: string | null = null
+
+  function currentSearch(): Record<string, unknown> | null {
+    return (
+      router?.currentSearch?.() ??
+      lastInitSearch ??
+      (typeof window !== 'undefined'
+        ? Object.fromEntries(new URLSearchParams(window.location.search))
+        : null)
+    )
+  }
+
+  /**
+   * Ключи пагинатора для записи в search роутера: size/extra — только отличные
+   * от дефолта. Значения — типизированные (как их отдаёт validateSearch), а не строки.
+   * Указатель первой страницы — тоже дефолт: `?page=1`/`?search=1` в адрес не
+   * пишутся (§ 3.5 плана: чистый канонический адрес; отсутствие ключа == 1).
+   */
+  function ownKeys(
+    state: Pick<PaginatorState<T>, 'page' | 'pageSize' | 'extra'>,
+  ): Record<string, ExtraValue> {
+    const out: Record<string, ExtraValue> = {}
+    if (state.page !== 1) out[pageParam] = state.page
+    if (state.pageSize !== pageSize) out[`${pageParam}.size`] = state.pageSize
+    for (const key of extraKeys) {
+      const v = state.extra[key]
+      if (v === undefined) continue
+      if (opts.extraDefaults && key in opts.extraDefaults && opts.extraDefaults[key] === v) continue
+      out[`${pageParam}.${key}`] = v
+    }
+    return out
+  }
+
+  /** Отпечаток собственных ключей в произвольном search (для echo-guard). */
+  function fingerprintOf(search: Record<string, unknown> | null): string {
+    if (!search) return ''
+    const r = readPaginatorSearch(searchToParams(search), searchOpts)
+    return JSON.stringify(
+      ownKeys({ page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: r.extra }),
+    )
+  }
+
+  function mergeSearch(
+    prev: Record<string, unknown>,
+    own: Record<string, ExtraValue>,
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(prev)) {
+      if (k === pageParam || k.startsWith(`${pageParam}.`)) continue
+      next[k] = v
+    }
+    return { ...next, ...own }
+  }
+
+  return {
+    pageParam,
+    /**
+     * Спецификация ключей адреса — чтобы хосту не передавали её вторым экземпляром.
+     * Транспорт объявляет себя сам: хост читает отсюда `pageParam`/`extra`/`pageSizes`
+     * для разбора back/forward и не может разойтись с адаптером.
+     */
+    searchSpec: { pageParam, extra: opts.extraSearch, pageSizes: opts.pageSizes },
+    /**
+     * Разбор внешнего состояния живёт ЗДЕСЬ: адрес — хранилище этого адаптера.
+     * Все объявленные ключи присутствуют в `extra` явно; ключ, исчезнувший из
+     * адреса, отдаётся как `undefined` (= снять), иначе дифф хоста слеп к снятию
+     * фильтра и список остаётся суженным.
+     */
+    observeExternal(search) {
+      const params = searchToParams(search ?? {})
+      const r = readPaginatorSearch(params, searchOpts)
+      // Как раньше в хосте: restorable считаем, только если транспорт вообще
+      // чем-то управляет извне (объявлены extra-ключи или размеры страницы).
+      let restorable: { pageSize?: number; extra: Extra } | null = null
+      if (extraKeys.length > 0 || opts.pageSizes != null) {
+        const extra: Extra = { ...(opts.extraDefaults ?? {}) }
+        const w = extra as Record<string, ExtraValue | undefined>
+        for (const key of extraKeys) w[key] = key in r.extra ? r.extra[key] : w[key]
+        for (const [k, v] of Object.entries(r.extra)) if (!(k in extra)) w[k] = v
+        restorable = { pageSize: r.pageSize ?? pageSize, extra }
+      }
+      return { page: r.page ?? null, restorable }
+    },
+
+    getInitial(ctx) {
+      const url =
+        ctx?.url ?? opts.getUrl?.() ?? (typeof window !== 'undefined' ? window.location.search : '')
+      const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : url
+      const params = new URLSearchParams(query)
+      lastInitSearch = Object.fromEntries(params)
+      const r = readPaginatorSearch(params, searchOpts)
+      return { page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: r.extra }
+    },
+    hrefFor(page, ctx?: HrefContext) {
+      const search = ctx?.search ?? currentSearch()
+      if (!search) return null
+      const params = new URLSearchParams()
+      let seen = false
+      for (const [key, value] of Object.entries(search)) {
+        if (key === pageParam) {
+          // Канонический адрес: указатель первой страницы не пишется (§ 3.5).
+          if (page !== 1) params.set(pageParam, String(page))
+          seen = true
+        } else if (value != null) {
+          params.set(key, String(value))
+        }
+      }
+      if (!seen && page !== 1) params.set(pageParam, String(page))
+      return `?${params.toString()}`
+    },
+    loadPage: (req) => opts.source(req),
+    persist(state: PaginatorState<T>) {
+      if (!router) return // сервер / роутер не привязан — URL уже источник истины
+      const own = ownKeys(state)
+      const want = JSON.stringify(own)
+      const current = fingerprintOf(router.currentSearch?.() ?? null)
+      // Эхо: URL уже показывает то же самое И полётный navigate (если был) нёс то же.
+      if (current === want && (inflight == null || inflight === want)) return
+      // Уже объявлено такое же значение и оно в полёте — дождаться применения.
+      if (inflight === want && current !== want) return
+      // Остальное — ПОСЛЕДНИЙ persist побеждает: перезаписываем и полётный navigate.
+      inflight = want
+      void Promise.resolve(
+        router.navigate({
+          search: (prev) => mergeSearch(prev, own),
+          replace: true,
+        }),
+      ).finally(() => {
+        if (inflight === want) inflight = null
+      })
+    },
+    capabilities: { append },
+    setRouter(next) {
+      router = next
+    },
+  }
+}
