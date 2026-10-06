@@ -40,5 +40,9 @@ export function validateItemsQuery(raw: unknown): ItemsQuery {
 
 export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoItem>> {
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  if (typeof window !== 'undefined') {
+    await new Promise((r) => setTimeout(r, 20))
+  }
+  if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize })
 }

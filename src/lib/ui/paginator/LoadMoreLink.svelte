@@ -1,102 +1,71 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { canLoadMore } from '$lib/paginate'
-  import {
-    usePageHref,
-    usePaginatorActions,
-    usePaginatorOptions,
-    usePaginatorState,
-  } from '$lib/paginate/svelte'
+  import { LoadMoreSlot, type LoadMoreSlotRender } from '$lib/paginate/svelte'
+  import { buttonVariants } from '$lib/ui/primitives'
   import Spinner from './Spinner.svelte'
 
   interface Props {
     dir: 1 | -1
     name?: string
-    label?: string
-    loadingLabel?: string
+    action?: 'auto' | 'load' | 'go'
+    always?: boolean
+    label?: (p: LoadMoreSlotRender) => string
     class?: string
-    children?: Snippet<[{ targetPage: number; loading: boolean; disabled: boolean }]>
+    children?: Snippet<[LoadMoreSlotRender]>
   }
 
   let {
     dir,
     name,
+    action = 'auto',
+    always = false,
     label,
-    loadingLabel = 'Загрузка…',
     class: className,
     children,
   }: Props = $props()
 
-  const pagState = usePaginatorState(name)
-  const options = usePaginatorOptions(name)
-  const actions = usePaginatorActions(name)
-
-  const isManual = $derived(
-    dir === 1 ? options().bottomTrigger === 'manual' : options().topTrigger === 'manual'
-  )
-
-  const minLoaded = $derived.by(() => {
-    const pages = pagState().loadedPages
-    return pages.length > 0 ? pages[0] : pagState().page
-  })
-
-  const maxLoaded = $derived.by(() => {
-    const pages = pagState().loadedPages
-    return pages.length > 0 ? pages[pages.length - 1] : pagState().page
-  })
-
-  const targetPage = $derived(dir === 1 ? maxLoaded + 1 : minLoaded - 1)
-  const hrefGetter = usePageHref(() => targetPage, name)
-  const href = $derived(hrefGetter())
-
-  const loading = $derived.by(() => {
-    const s = pagState()
-    return s.status === 'loading' && s.pending?.page === targetPage
-  })
-
-  const disabled = $derived(loading || !canLoadMore(dir, pagState()))
-  const defaultLabel = $derived(
-    dir === 1 ? 'Показать ещё (следующие)' : 'Показать предыдущие'
-  )
-  const currentLabel = $derived(loading ? loadingLabel : label ?? defaultLabel)
+  function defaultText(p: LoadMoreSlotRender): string {
+    if (label) return label(p)
+    return p.dir === -1
+      ? `↑ показать предыдущую страницу (${p.page})`
+      : `↓ показать следующую страницу (${p.page})`
+  }
 </script>
 
-{#if isManual && (canLoadMore(dir, pagState()) || loading)}
-  {#if children}
-    {@render children({ targetPage, loading, disabled })}
-  {:else}
-    <div class="my-2 flex justify-center">
-      {#if disabled && !loading}
-        <span
-          class="inline-flex items-center gap-2 rounded-lg border border-border/50 px-4 py-2 text-sm text-muted-foreground/60 select-none"
-          aria-disabled="true"
-        >
-          {currentLabel}
-        </span>
-      {:else}
-        <a
-          href={href ?? '#'}
-          data-testid={`load-more-${dir === 1 ? 'bottom' : 'top'}`}
-          aria-busy={loading ? 'true' : undefined}
-          class={className ??
-            'inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-xs transition hover:bg-accent hover:text-accent-foreground active:scale-[0.98]'}
-          onclick={(e) => {
-            e.preventDefault()
-            if (!disabled) actions.loadMore(dir)
-          }}
-          onmouseenter={() => {
-            if (!disabled && targetPage > 0) actions.prefetchPage(targetPage)
-          }}
-          onfocus={() => {
-            if (!disabled && targetPage > 0) actions.prefetchPage(targetPage)
-          }}
-        >
-          {#if loading}
-            <Spinner size={14} />
-          {/if}
-          <span>{currentLabel}</span>
-        </a>
-      {/if}
-    </div>
-  {/if}
-{/if}
+<LoadMoreSlot {dir} {name} {action} {always}>
+  {#snippet children(p)}
+    {#if children}
+      {@render children(p)}
+    {:else}
+      <div class="flex justify-center py-1">
+        {#if p.href !== null}
+          <a
+            href={p.href}
+            data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
+            class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
+            aria-busy={p.loading}
+            onclick={p.onClick}
+          >
+            {#if p.loading}
+              <Spinner />
+            {/if}
+            {defaultText(p)}
+          </a>
+        {:else}
+          <button
+            type="button"
+            data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
+            class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
+            disabled={p.loading}
+            onclick={() => p.load()}
+          >
+            {#if p.loading}
+              <Spinner />
+            {/if}
+            {defaultText(p)}
+          </button>
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
+</LoadMoreSlot>
