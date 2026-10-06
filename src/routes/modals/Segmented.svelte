@@ -1,3 +1,22 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '$lib/ui/cn'
+
+  export const segmentedItemVariants = variants(
+    'rounded-md px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors',
+    {
+      active: {
+        true: 'bg-background text-foreground shadow-sm font-semibold',
+        false: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+      },
+    },
+    {
+      active: false,
+    },
+  )
+
+  export type SegmentedItemVariants = VariantProps<typeof segmentedItemVariants>
+</script>
+
 <script lang="ts">
   // Порт Segmented из src/features/modals/ModalsDemo.tsx оригинала.
   // Дженерик-типы Solid здесь не нужны: значение всегда строка, а тип
@@ -25,9 +44,7 @@
       type="button"
       onclick={() => onChange(o.value)}
       title={o.hint}
-      class="rounded-md px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors {o.value === value
-        ? 'bg-background text-foreground shadow-sm'
-        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+      class={segmentedItemVariants({ active: o.value === value })}
     >
       {o.label}
     </button>

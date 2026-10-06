@@ -1,3 +1,22 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '../cn'
+
+  export const separatorVariants = variants(
+    '',
+    {
+      orientation: {
+        horizontal: 'my-4 flex items-center gap-3 text-xs text-muted-foreground',
+        vertical: 'mx-2 w-px self-stretch bg-border',
+      },
+    },
+    {
+      orientation: 'horizontal',
+    },
+  )
+
+  export type SeparatorVariants = VariantProps<typeof separatorVariants>
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { HTMLAttributes } from 'svelte/elements'
@@ -15,19 +34,16 @@
 <div
   role="separator"
   aria-orientation={vertical ? 'vertical' : undefined}
-  class={cn(
-    vertical
-      ? 'mx-2 w-px self-stretch bg-border'
-      : 'my-4 flex items-center gap-3 text-xs text-muted-foreground',
-    cls,
-  )}
+  class={cn(separatorVariants({ orientation }), cls)}
   {...rest}
 >
-  {#if !vertical}
-    <span class="h-px flex-1 bg-border"></span>
-    {#if children}
-      <span>{@render children()}</span>
-      <span class="h-px flex-1 bg-border"></span>
-    {/if}
+  {#if vertical}
+    <!-- vertical separator has no inner text -->
+  {:else if children}
+    <div class="h-px flex-1 bg-border"></div>
+    <span>{@render children()}</span>
+    <div class="h-px flex-1 bg-border"></div>
+  {:else}
+    <div class="h-px w-full bg-border"></div>
   {/if}
 </div>

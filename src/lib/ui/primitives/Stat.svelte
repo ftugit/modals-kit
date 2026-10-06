@@ -1,3 +1,23 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '../cn'
+
+  export const statVariants = variants(
+    'flex flex-col gap-1 rounded-lg border border-border bg-card p-4',
+    {
+      size: {
+        sm: 'p-3',
+        md: 'p-4',
+        lg: 'p-5',
+      },
+    },
+    {
+      size: 'md',
+    },
+  )
+
+  export type StatVariants = VariantProps<typeof statVariants>
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { HTMLAttributes } from 'svelte/elements'
@@ -7,13 +27,14 @@
     title: string | Snippet
     value: string | number | Snippet
     description?: string | Snippet
+    size?: StatVariants['size']
   }
 
-  let { title, value, description, class: cls, ...rest }: Props = $props()
+  let { title, value, description, size = 'md', class: cls, ...rest }: Props = $props()
 </script>
 
 <div
-  class={cn('flex flex-col gap-1 rounded-lg border border-border bg-card p-4', cls)}
+  class={cn(statVariants({ size }), cls)}
   {...rest}
 >
   <div class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -23,7 +44,7 @@
       {@render title()}
     {/if}
   </div>
-  <div class="text-2xl font-bold tabular-nums">
+  <div class="text-2xl font-bold tracking-tight text-foreground">
     {#if typeof value === 'string' || typeof value === 'number'}
       {value}
     {:else}

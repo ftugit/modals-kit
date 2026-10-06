@@ -1,3 +1,22 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '$lib/ui/cn'
+
+  export const sidebarNavItemVariants = variants(
+    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    {
+      active: {
+        true: 'bg-primary text-primary-foreground font-semibold',
+        false: 'text-foreground/80 hover:bg-accent hover:text-accent-foreground',
+      },
+    },
+    {
+      active: false,
+    },
+  )
+
+  export type SidebarNavItemVariants = VariantProps<typeof sidebarNavItemVariants>
+</script>
+
 <script lang="ts">
   import { page } from '$app/state'
   import { NAV_ITEMS } from '../header/nav'
@@ -11,11 +30,7 @@
     {@const active = page.url.pathname === item.to}
     <a
       href={item.to}
-      class={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-        active
-          ? 'bg-primary text-primary-foreground'
-          : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground'
-      }`}
+      class={sidebarNavItemVariants({ active })}
       aria-current={active ? 'page' : undefined}
     >
       <span>{item.label}</span>

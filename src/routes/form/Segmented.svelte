@@ -1,3 +1,22 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '$lib/ui/cn'
+
+  export const formSegmentedItemVariants = variants(
+    'rounded-md border px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors',
+    {
+      active: {
+        true: 'border-primary bg-background text-foreground shadow-sm ring-1 ring-primary/30 font-semibold',
+        false: 'border-transparent text-foreground/70 hover:bg-accent hover:text-accent-foreground',
+      },
+    },
+    {
+      active: false,
+    },
+  )
+
+  export type FormSegmentedItemVariants = VariantProps<typeof formSegmentedItemVariants>
+</script>
+
 <script lang="ts">
   // Тот же Segmented, что у демонстрации модалок: переключатель вариантов.
   let {
@@ -24,12 +43,7 @@
       onclick={() => onChange(o.value)}
       title={o.hint}
       aria-pressed={o.value === value}
-      class="rounded-md border px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors {o.value === value
-        ? 'border-primary bg-background text-foreground shadow-sm ring-1 ring-primary/30'
-        // не muted-foreground: на подложке bg-muted он даёт 4.39:1 — ниже порога
-        // 4.5:1 для мелкого текста. Полупрозрачный цвет чернил держит контраст
-        // в обеих темах и остаётся зрительно тише выбранной опции.
-        : 'border-transparent text-foreground/70 hover:bg-accent hover:text-accent-foreground'}"
+      class={formSegmentedItemVariants({ active: o.value === value })}
     >
       {o.label}
     </button>

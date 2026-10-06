@@ -6,8 +6,19 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-type VariantMap = Record<string, Record<string, string>>;
-type VariantProps<V extends VariantMap> = { [K in keyof V]?: keyof V[K] | null | false };
+export type VariantMap = Record<string, Record<string, string>>;
+
+export type VariantValue<T> = T extends 'true' | 'false'
+  ? boolean | 'true' | 'false'
+  : T | null | false | undefined;
+
+export type VariantProps<T> = T extends (props?: infer P) => string
+  ? P extends object
+    ? { [K in keyof Omit<P, 'class'>]?: P[K] }
+    : Record<string, never>
+  : T extends VariantMap
+    ? { [K in keyof T]?: VariantValue<keyof T[K]> }
+    : Record<string, never>;
 
 /**
  * Мини-cva: базовые классы + словарь вариантов + значения по умолчанию.
@@ -17,12 +28,13 @@ type VariantProps<V extends VariantMap> = { [K in keyof V]?: keyof V[K] | null |
 export function variants<V extends VariantMap>(
   base: string,
   map: V,
-  defaults: { [K in keyof V]: keyof V[K] },
+  defaults: { [K in keyof V]: keyof V[K] | boolean },
 ) {
-  const fn = (props?: VariantProps<V> & { class?: ClassValue | null | undefined }): string => {
+  const fn = (props?: { [K in keyof V]?: VariantValue<keyof V[K]> } & { class?: ClassValue | null | undefined }): string => {
     const parts: ClassValue[] = [base];
     for (const key in map) {
-      const picked = (props?.[key] ?? defaults[key]) as string;
+      const rawVal = props?.[key] ?? defaults[key];
+      const picked = (typeof rawVal === 'boolean' ? String(rawVal) : rawVal) as string;
       if (picked && map[key]?.[picked]) parts.push(map[key][picked]);
     }
     if (props?.class) parts.push(props.class);
@@ -30,5 +42,3 @@ export function variants<V extends VariantMap>(
   };
   return fn;
 }
-
-export type { VariantProps };
