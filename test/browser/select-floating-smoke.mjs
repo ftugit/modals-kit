@@ -301,6 +301,7 @@ try {
 
     // Ниже порога хоста (768) поведение прежнее: слой.
     await page.setViewportSize({ width: 600, height: 800 })
+    await page.waitForTimeout(300)
     await clickSelect(page.locator('[data-select-root]').first())
     await page.waitForFunction(
       () => document.querySelector('[data-host-floating]')?.getAttribute('data-layout') === 'sheet',

@@ -1,6 +1,5 @@
 <script lang="ts">
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
-  import '$lib/styles/tokens.css'
 
   let { data }: { data: import('./$types').PageData } = $props()
 </script>

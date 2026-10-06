@@ -1,12 +1,27 @@
-/* src/ui/modals — заменяемая ТЕМА модальной системы.
-   Структурные правила и transition-хуки живут в lib/modals/modals-base.css. */
+/* ==========================================================================
+   modals.css — единый CSS-файл модальной системы (структура + тема)
+   ========================================================================== */
+
+/* ---------- 1. Структурные правила хоста ---------- */
 
 .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  transition: opacity 220ms ease;
   background: color-mix(in oklab, var(--foreground) 50%, transparent);
   backdrop-filter: blur(2px);
 }
+.modal-backdrop[data-starting-style],
+.modal-backdrop[data-ending-style] {
+  opacity: 0;
+}
 
 .modal-backdrop-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 220;
   display: flex;
   height: 36px;
   width: 36px;
@@ -30,26 +45,194 @@
   outline-offset: 2px;
 }
 
+.modal-viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  padding: 0;
+}
+.modal-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+}
+.modal-stage[data-anchor='top'],
+.modal-stage[data-anchor='bottom'] {
+  width: 100%;
+}
+.modal-stage[data-anchor='left'],
+.modal-stage[data-anchor='right'] {
+  height: 100%;
+}
+.modal-stage[data-fullpage] {
+  width: 100%;
+  height: 100%;
+}
+
 .modal-tail {
   border: 1px solid var(--border);
   box-shadow:
     0 18px 40px -24px color-mix(in oklab, var(--foreground) 50%, transparent),
     0 4px 12px -4px color-mix(in oklab, var(--foreground) 30%, transparent);
+  transform-origin: bottom center;
+  transition:
+    transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 260ms ease,
+    background 200ms ease;
+}
+.modal-stage[data-anchor='bottom'] .modal-tail {
+  transform-origin: top center;
+}
+.modal-stage[data-anchor='top'] .modal-tail {
+  transform-origin: bottom center;
+}
+.modal-stage[data-anchor='left'] .modal-tail {
+  transform-origin: right center;
+}
+.modal-stage[data-anchor='right'] .modal-tail {
+  transform-origin: left center;
 }
 
 .modal-popup {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--border);
   color: var(--card-foreground);
   box-shadow:
     0 24px 50px -16px color-mix(in oklab, var(--foreground) 32%, transparent),
     0 8px 18px -10px color-mix(in oklab, var(--foreground) 22%, transparent);
+  transition:
+    width 280ms cubic-bezier(0.32, 0.72, 0, 1),
+    height 280ms cubic-bezier(0.32, 0.72, 0, 1),
+    background 240ms ease,
+    border-radius 240ms ease,
+    transform 280ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 240ms ease;
 }
 .modal-popup:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
-/* Содержимое после скелетона проявляется без layout jump. */
+.modal-popup[data-stack-role='tail'] {
+  transform-origin: top center;
+  transform: scale(0.94) translateY(-7px) !important;
+  opacity: 0.85 !important;
+  pointer-events: none !important;
+}
+.modal-stage[data-anchor='top'] .modal-popup[data-stack-role='tail'] {
+  transform-origin: bottom center;
+  transform: scale(0.94) translateY(7px) !important;
+}
+.modal-stage[data-anchor='left'] .modal-popup[data-stack-role='tail'] {
+  transform-origin: right center;
+  transform: scale(0.94) translateX(7px) !important;
+}
+.modal-stage[data-anchor='right'] .modal-popup[data-stack-role='tail'] {
+  transform-origin: left center;
+  transform: scale(0.94) translateX(-7px) !important;
+}
+
+.modal-layer {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+}
+
+.modal-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ---------- 2. Анимации открытия / закрытия ---------- */
+
+.modal-open-fade[data-starting-style] {
+  opacity: 0;
+}
+.modal-open-scale[data-starting-style] {
+  opacity: 0;
+  transform: scale(0.94);
+}
+.modal-open-slide-up[data-starting-style] {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.modal-open-none[data-starting-style] {
+  transition: none;
+}
+
+.modal-close-fade[data-ending-style] {
+  opacity: 0;
+}
+.modal-close-scale[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.94);
+}
+.modal-close-slide-down[data-ending-style] {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.modal-close-none[data-ending-style] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-popup,
+  .modal-tail,
+  .modal-backdrop {
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ---------- 3. Host-owned floating / sheet containers ---------- */
+
+.modal-host-floating,
+.modal-host-popup {
+  pointer-events: auto;
+}
+
+.modal-host-floating[data-layout='sheet'] {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-height: none;
+}
+.modal-host-floating[data-layout='sheet'][data-mobile-anchor='bottom'] {
+  inset: auto 0 0 0;
+  height: auto;
+  max-height: 85dvh;
+}
+.modal-host-floating[data-layout='sheet'][data-mobile-anchor='top'] {
+  inset: 0 0 auto 0;
+  height: auto;
+  max-height: 85dvh;
+}
+.modal-host-floating[data-layout='sheet'][data-mobile-anchor='left'] {
+  inset: 0 auto 0 0;
+  width: min(90vw, 24rem);
+  height: 100dvh;
+}
+.modal-host-floating[data-layout='sheet'][data-mobile-anchor='right'] {
+  inset: 0 0 0 auto;
+  width: min(90vw, 24rem);
+  height: 100dvh;
+}
+
+/* ---------- 4. Skeleton, Spinner, Error, Trigger ---------- */
+
 .modal-reveal {
   animation: modal-reveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }

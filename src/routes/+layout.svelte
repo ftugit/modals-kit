@@ -37,10 +37,8 @@
     SidebarFooter,
   } from '$lib/components/sidebar'
   import 'virtual:uno.css'
-  import '$lib/styles/tokens.css'
-  import '$lib/styles/shell.css'
-  import '$lib/modals/css/modals-base.css'
-  import '$lib/modals/css/modals-theme.css'
+  import '../app.css'
+  import '$lib/modals/css/modals.css'
 
   let { children } = $props()
 

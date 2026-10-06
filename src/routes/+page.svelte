@@ -1,7 +1,6 @@
 <script lang="ts">
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.
-  import '$lib/styles/tokens.css'
 
   const demos = [
     {
