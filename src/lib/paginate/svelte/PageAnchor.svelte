@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { useCtx } from './context.svelte'
   import type { Snippet } from 'svelte'
+  import { useCtx } from './context.svelte'
 
   interface Props {
     page: number
     class?: string
     name?: string
+    /** false — блок без маркера начала страницы (колонки: маркер только у рана с первой карточкой). */
     marker?: boolean
     children?: Snippet
   }
@@ -18,15 +19,12 @@
 
   $effect(() => {
     const p = page
-    const el = anchorEl
-    const mEl = marker ? markerEl : null
+    const el = marker !== false ? markerEl : null
     if (!el) return
     const key = `page:${p}`
     anchors.observe(key, el, { type: 'page', page: p })
-    if (mEl) anchors.observe(key, mEl, { type: 'page', page: p })
     return () => {
       anchors.unobserve(key, el)
-      if (mEl) anchors.unobserve(key, mEl)
     }
   })
 </script>

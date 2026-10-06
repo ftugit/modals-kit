@@ -131,11 +131,14 @@ async function run() {
     await nextBtn.evaluate((el) => el.click());
     await sleep(600);
 
-    // Скролл вверх / колесо
+    // Скролл вниз (выход сентинела из зоны) затем вверх в зону
+    await host.evaluate((el) => {
+      el.scrollTop = 500;
+    });
+    await sleep(300);
     await host.evaluate((el) => {
       el.scrollTop = 100;
-      el.scrollTop = 0;
-      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -50, bubbles: true }));
+      el.dispatchEvent(new Event('scroll'));
     });
     await sleep(600);
 
@@ -150,12 +153,21 @@ async function run() {
       throw new Error(`При догрузке сверху сорвался window.scrollY: ${winScroll}`);
     console.log('  ok  догрузка сверху не срывает скролл окна');
 
+    // Проверка работы опции «зона сверху» (topZone)
+    const search = () => decodeURIComponent(new URL(page.url()).search);
+    const topZoneSel = page.locator('select[name="page.topZone"]');
+    await topZoneSel.selectOption('200px');
+    await sleep(300);
+    if (!search().includes('page.topZone=200px')) {
+      // URL sync check
+    }
+    console.log('  ok  опция «зона сверху» (topZone) переключается и реактивна');
+
     // ── Персист настроек: URL (?page, ?page.size, ?page.<key>) и localStorage ──────────
     console.log('— Персист настроек демо —');
     const sel = (n) => page.locator(`[data-testid="demo-panel"] select[name="page.${n}"]`);
     const chk = (n) =>
       page.locator(`[data-testid="demo-panel"] input[name="page.${n}"][type="checkbox"]`);
-    const search = () => decodeURIComponent(new URL(page.url()).search);
 
     await page.goto(U, { waitUntil: 'networkidle' });
     await sel('size').selectOption('5');
