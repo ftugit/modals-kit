@@ -35,7 +35,8 @@ async function ensureServer() {
   if (await isServerUp(U)) return;
   console.log(`Starting preview server on port ${PORT}...`);
   serverProc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--host', '127.0.0.1'], {
-    stdio: 'inherit',
+    stdio: 'ignore',
+    detached: true,
     cwd: process.cwd(),
   });
   for (let i = 0; i < 30; i++) {
@@ -43,6 +44,18 @@ async function ensureServer() {
     if (await isServerUp(U)) return;
   }
   throw new Error(`Server failed to start on port ${PORT}`);
+}
+
+function killServer() {
+  if (serverProc && serverProc.pid) {
+    try {
+      process.kill(-serverProc.pid, 'SIGKILL');
+    } catch {
+      try {
+        serverProc.kill('SIGKILL');
+      } catch {}
+    }
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -326,13 +339,7 @@ async function run() {
     );
   } finally {
     await browser.close();
-    if (serverProc) {
-      try {
-        process.kill(-serverProc.pid);
-      } catch {
-        serverProc.kill('SIGKILL');
-      }
-    }
+    killServer();
   }
 }
 
@@ -342,12 +349,6 @@ run()
   })
   .catch((err) => {
     console.error('FAIL browser test:', err);
-    if (serverProc) {
-      try {
-        process.kill(-serverProc.pid);
-      } catch {
-        serverProc.kill('SIGKILL');
-      }
-    }
+    killServer();
     process.exit(1);
   });
