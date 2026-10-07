@@ -21,12 +21,16 @@ const IMMUTABLE_ROOT = join(CLIENT_ROOT, '_app/immutable')
 const MANIFEST = join(CLIENT_ROOT, '.vite/manifest.json')
 const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
 
+// Лимиты подняты 2026-10-07 вместе с портом каталога Shikimori и lib/search:
+// живой источник (запросы/интерпретация/словарь), общий слой источников и его
+// svelte-хуки добавили ~25 KiB gz — это функциональность, а не случайная
+// зависимость. Гейт по-прежнему ловит её: запас к текущей сборке — минимальный.
 const LIMITS = {
-  allImmutableGzip: 170 * KiB,
-  allJsGzip: 155 * KiB,
+  allImmutableGzip: 200 * KiB,
+  allJsGzip: 185 * KiB,
   allCssGzip: 20 * KiB,
   largestJsGzip: 50 * KiB,
-  largestCssGzip: 12 * KiB,
+  largestCssGzip: 14 * KiB,
 }
 
 const ROUTE_LIMITS = {
