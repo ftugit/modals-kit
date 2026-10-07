@@ -68,6 +68,7 @@
    * Сам список вынесен в SelectList.svelte; его состояние остаётся здесь.
    */
   import { Portal } from '@ark-ui/svelte/portal'
+  import type { HTMLSelectAttributes } from 'svelte/elements'
   import { useInteractionModality } from '@ark-ui/svelte/interaction'
   import { onMount, type Snippet } from 'svelte'
   import { cn } from '../cn'
@@ -77,7 +78,19 @@
   import { inputVariants } from './field'
   import SelectList from './SelectList.svelte'
 
-  interface Props {
+  /**
+   * Пропы нативного контрола едут как есть: `id`, `aria-describedby`,
+   * `aria-invalid`, `title`, `form`, `autocomplete`, `tabindex`…
+   *
+   * Раньше списка атрибутов не было вовсе — и вместе с ними молча пропадал
+   * `id`: `<label for>` не находил адресата, а форма проекта (`$lib/form`)
+   * не могла положить в поле свои `f.attrs` (тот же `id` плюс связи
+   * доступности). Видимый «триггер» ниже — только рисунок (`aria-hidden`,
+   * `tabindex="-1"`), поэтому атрибуты принадлежат нативному `select`: он и
+   * есть контрол формы, и он же — элемент для подписи.
+   */
+  interface Props
+    extends Omit<HTMLSelectAttributes, 'size' | 'multiple' | 'value' | 'class' | 'onchange' | 'children'> {
     options: readonly SelectOption[]
     value?: string | string[]
     placeholder?: string
@@ -113,6 +126,7 @@
     disabled = false, name, required, wrapperClass, listWidth = 'trigger',
     closeOnSelect,
     class: cls, config: cfgProp, onchange,
+    ...rest
   }: Props = $props()
 
   const config = $derived({
@@ -476,6 +490,7 @@
   <select
     bind:this={nativeEl}
     data-select-native=""
+    {...rest}
     {name}
     {required}
     {disabled}

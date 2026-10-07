@@ -53,6 +53,28 @@
       .filter((item) => item !== '')
   }
 
+  /**
+   * Идентификатор контрола: `catalog-filter-` + имя поля, точки — дефисами.
+   * Правило то же, что у адаптера форм проекта (`defaultUi.fieldId`), чтобы
+   * `<label for>` указывал на существующий узел. Несущий это правило узел —
+   * нативный контрол: у `Select` он же и есть поле формы, а видимый «триггер»
+   * — рисунок (`aria-hidden`, `tabindex="-1"`).
+   */
+  const idOf = (control: CatalogFilterControl): string =>
+    `catalog-filter-${control.name.replace(/\./g, '-')}`
+
+  /** Идентификатор пояснения к полю: причина связки или усечённый список. */
+  const noteId = (control: CatalogFilterControl, kind: 'reason' | 'more'): string =>
+    `${idOf(control)}-${kind}`
+
+  /** Связи доступности: подсказка поля — то, что реально нарисовано рядом. */
+  function describedBy(control: CatalogFilterControl): string | undefined {
+    const ids: string[] = []
+    if (control.kind === 'multiselect' && control.truncated) ids.push(noteId(control, 'more'))
+    if (control.disabled && control.reason) ids.push(noteId(control, 'reason'))
+    return ids.length ? ids.join(' ') : undefined
+  }
+
   function submit(event: SubmitEvent) {
     if (!onApply) return
     const form = formEl ?? (event.currentTarget as HTMLFormElement)
@@ -86,52 +108,67 @@
   <div class="grid gap-3 sm:grid-cols-2">
     {#each controls as control (control.path)}
       <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={control.path}>
-        <!--
-          Подпись — обёрткой, а не `<label for="…">`: у прогрессивного `Select`
-          (нативный `select` + надстройка) нет `id`, поэтому `for` не находил
-          адресата — клик по подписи не попадал в контрол, и скринридер не
-          связывал подпись с полем. Тот же приём, что у полей панели настроек.
-        -->
-        <label class="block space-y-1 text-xs font-medium text-muted-foreground">
-          <span>{control.label}</span>
-          {#if control.kind === 'select'}
-            <Select
-              options={control.options}
-              name={control.name}
-              value={control.value}
-              disabled={control.disabled}
-              placeholder="Любое"
-            />
-          {:else if control.kind === 'multiselect'}
-            <Select
-              options={control.options}
-              name={control.name}
-              multiple
-              value={[...control.value]}
-              disabled={control.disabled}
-              placeholder="Не выбрано"
-            />
-          {:else if control.kind === 'number'}
-            <Input
-              type="number"
-              name={control.name}
-              value={control.value}
-              placeholder={control.placeholder}
-              min={control.min}
-              max={control.max}
-              disabled={control.disabled}
-            />
-          {:else}
-            <Input type="text" name={control.name} value={control.value} disabled={control.disabled} />
-          {/if}
+        <label class="block text-xs font-medium text-muted-foreground" for={idOf(control)}>
+          {control.label}
         </label>
+        {#if control.kind === 'select'}
+          <Select
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
+            options={control.options}
+            name={control.name}
+            value={control.value}
+            disabled={control.disabled}
+            placeholder="Любое"
+          />
+        {:else if control.kind === 'multiselect'}
+          <Select
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
+            options={control.options}
+            name={control.name}
+            multiple
+            value={[...control.value]}
+            disabled={control.disabled}
+            placeholder="Не выбрано"
+          />
+        {:else if control.kind === 'number'}
+          <Input
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
+            type="number"
+            name={control.name}
+            value={control.value}
+            placeholder={control.placeholder}
+            min={control.min}
+            max={control.max}
+            disabled={control.disabled}
+          />
+        {:else}
+          <Input
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
+            type="text"
+            name={control.name}
+            value={control.value}
+            disabled={control.disabled}
+          />
+        {/if}
         {#if control.kind === 'multiselect' && control.truncated}
-          <p class="text-xs text-muted-foreground" data-testid="catalog-filter-truncated">
+          <p
+            class="text-xs text-muted-foreground"
+            id={noteId(control, 'more')}
+            data-testid="catalog-filter-truncated"
+          >
             Показаны не все значения: у источника их больше на {control.truncated}.
           </p>
         {/if}
         {#if control.disabled && control.reason}
-          <p class="text-xs text-muted-foreground" data-testid="catalog-filter-reason">
+          <p
+            class="text-xs text-muted-foreground"
+            id={noteId(control, 'reason')}
+            data-testid="catalog-filter-reason"
+          >
             {control.reason}
           </p>
         {/if}

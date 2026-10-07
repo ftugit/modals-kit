@@ -71,7 +71,6 @@ export type CatalogFilterControl =
       /** Имя в адресе: `page.filters.kind` (то, что читает URL-слой и no-JS форма). */
       name: string
       label: string
-      help?: string
       value: string
       options: readonly { value: string; label: string }[]
       /** Поле гасит связка: показать выключенным и сказать почему. */
@@ -83,7 +82,6 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: readonly string[]
       options: readonly { value: string; label: string }[]
       /** Показ списка обрезан лимитом: часть значений есть у источника, но не здесь. */
@@ -96,7 +94,6 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: string
       min?: number
       max?: number
@@ -116,7 +113,6 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: string
       placeholder?: string
       disabled: boolean

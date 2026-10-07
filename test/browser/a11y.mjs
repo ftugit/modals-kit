@@ -8,8 +8,18 @@
  *
  * База настраивается переменной A11Y_BASE, по умолчанию http://127.0.0.1:4173.
  */
-import { AxeBuilder } from '@axe-core/playwright'
+import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
+
+/**
+ * axe берётся из ЗАВИСИМОСТЕЙ ПРОЕКТА (`axe-core`) и вкладывается в страницу,
+ * как в `forms-a11y.mjs`: пакет `@axe-core/playwright` в package.json не
+ * объявлен, и с чистого `npm ci` этот файл просто не запускался
+ * (`ERR_MODULE_NOT_FOUND`). Вложение скрипта — тот же приём, что уже принят
+ * в наборе, и никаких новых зависимостей не требует.
+ */
+const require = createRequire(import.meta.url)
+const AXE = require.resolve('axe-core/axe.min.js')
 
 const BASE = (process.env.A11Y_BASE ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 
@@ -42,9 +52,11 @@ async function check(page, name, path, prepare) {
   await prepare?.(page)
   await page.waitForTimeout(250)
 
-  const result = await new AxeBuilder({ page })
-    .withTags(wcagTags)
-    .analyze()
+  await page.addScriptTag({ path: AXE })
+  const result = await page.evaluate(
+    (tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags } }),
+    wcagTags,
+  )
 
   if (result.violations.length === 0) {
     console.log(`  ok   ${name}`)
@@ -73,6 +85,30 @@ await check(page, 'демо модалок: открытая карточка', 
   await pg.getByRole('link', { name: 'Открыть карточку' }).first().click()
   await pg.waitForTimeout(900)
 })
+
+// Пагинатор — самая насыщенная формами страница: панель настроек с селектами,
+// поле запроса, навигация. Панель фильтров живёт только у живого источника,
+// поэтому её проверка включается, лишь когда бэкенд отвечает: оффлайн-набор
+// остаётся оффлайновым.
+await check(page, 'пагинатор: настройки, поиск, выдача', '/paginator?page.src=products&page.size=5')
+
+const live = await fetch(new URL('/api/shikimori/filters', `${BASE}/`).href)
+  .then((r) => r.ok)
+  .catch(() => false)
+if (live) {
+  await check(
+    page,
+    'пагинатор: панель фильтров живого источника',
+    '/paginator?page.src=animes&page.size=5&page.filters.status=anons&page.filters.score.min=5',
+    async (pg) => {
+      await pg.waitForSelector('[data-testid="filters-panel"]', { timeout: 20000 })
+      await pg.locator('[data-testid="filters-toggle"]').click()
+      await pg.waitForTimeout(400)
+    },
+  )
+} else {
+  console.log('  --   панель фильтров: пропущено (живой источник недоступен)')
+}
 
 await context.close()
 await browser.close()
