@@ -67,23 +67,24 @@
   }
 
   /**
-   * Идентификатор контрола: `catalog-filter-` + имя поля, точки — дефисами.
-   * Правило то же, что у адаптера форм проекта (`defaultUi.fieldId`), чтобы
-   * `<label for>` указывал на существующий узел. Несущий это правило узел —
-   * нативный контрол: у `Select` он же и есть поле формы, а видимый «триггер»
-   * — рисунок (`aria-hidden`, `tabindex="-1"`).
+   * Идентификатор контрола — его КАНОНИЧЕСКОЕ имя (`page.filters.kind`).
+   * Так решено в b1 (`bd52745`), и это же проверяет браузерный набор: `<label for>`
+   * указывает на существующий узел, а id читается так же, как имя поля формы.
+   * Точки в id допустимы (HTML5 запрещает только пробелы), поэтому «имя = id» не
+   * приходится переводить в другой алфавит — связи нечему разъезжаться. Несущий
+   * id узел — нативный контрол: у `Select` он же и есть поле формы, а видимый
+   * «триггер» — рисунок (`aria-hidden`, `tabindex="-1"`).
    */
-  const idOf = (control: CatalogFilterControl): string =>
-    `catalog-filter-${control.name.replace(/\./g, '-')}`
+  const idOf = (control: CatalogFilterControl): string => control.name
 
   /** Идентификатор пояснения к полю: причина связки или усечённый список. */
-  const noteId = (control: CatalogFilterControl, kind: 'reason' | 'more'): string =>
+  const noteId = (control: CatalogFilterControl, kind: 'reason' | 'truncated'): string =>
     `${idOf(control)}-${kind}`
 
   /** Связи доступности: подсказка поля — то, что реально нарисовано рядом. */
   function describedBy(control: CatalogFilterControl): string | undefined {
     const ids: string[] = []
-    if (control.kind === 'multiselect' && control.truncated) ids.push(noteId(control, 'more'))
+    if (control.kind === 'multiselect' && control.truncated) ids.push(noteId(control, 'truncated'))
     if (control.disabled && control.reason) ids.push(noteId(control, 'reason'))
     return ids.length ? ids.join(' ') : undefined
   }
@@ -178,7 +179,7 @@
         {#if control.kind === 'multiselect' && control.truncated}
           <p
             class="text-xs text-muted-foreground"
-            id={noteId(control, 'more')}
+            id={noteId(control, 'truncated')}
             data-testid="catalog-filter-truncated"
           >
             Показаны не все значения: у источника их больше на {control.truncated}.
