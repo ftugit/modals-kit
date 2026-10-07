@@ -35,6 +35,7 @@ import {
 } from '$lib/paginate/source'
 import type { Extra, PageRequest, PageResponse } from '$lib/paginate/types'
 import { createLazyCorrector } from './dictionary'
+import { reportSearchStats } from './stats'
 import { prepareQuery, prepareTexts, scorePrepared, type PreparedText } from './fuzzy'
 
 /** Живая статистика перехватчика для демо-панелей и отладки. */
@@ -106,7 +107,16 @@ export type SearchInterceptorOptions<T> = {
  * ПОТРЕБИТЕЛЬ гасит lib/search (демо: `ls`): при `false` перехват не работает,
  * источник отдаёт каталог как есть.
  */
-export type LibSearchOptions<T> = Omit<SearchInterceptorOptions<T>, 'source'> & { gate?: string }
+export type LibSearchOptions<T> = Omit<SearchInterceptorOptions<T>, 'source'> & {
+  gate?: string
+  /**
+   * Имя поиска (как у пагинатора): с ним живая статистика перехвата попадает в
+   * ОБЩИЙ канал lib/search (`getSearchStats`/`onSearchStats`), и панели не нужен
+   * собственный реестр. Без имени статистика идёт только в потребительский
+   * `onStats`.
+   */
+  name?: string
+}
 
 type Accumulated<T> = {
   key: string
@@ -395,7 +405,18 @@ export function withLibSearch<T>(
   source: AdaptedSource<T>,
   opts: LibSearchOptions<T> = {},
 ): AdaptedSource<T> {
+  const { name: searchName, onStats: userOnStats, ...rest } = opts
   const minLength = opts.minLength ?? 2
+  /**
+   * Публикация статистики — ОДНА точка на все контуры: и активный перехват
+   * (аккумулятор), и «перехват не в цепочке» (`inactive`) идут через неё,
+   * поэтому канал lib/search и потребительский `onStats` гасят счётчики
+   * вместе, а не расходятся.
+   */
+  const publishStats = (stats: SearchInterceptStats | null): void => {
+    if (searchName) reportSearchStats(searchName, stats)
+    userOnStats?.(stats)
+  }
   // Коррекция опечаток: либо её дал потребитель, либо lib/search берёт СЛОВАРЬ
   // у самого источника (`dictionary` в спеке `defineSource`) — корректор при
   // этом строится один раз и лениво, а роут не дублирует ни загрузку, ни разбор.
@@ -415,10 +436,14 @@ export function withLibSearch<T>(
         }
       : undefined)
   const config: SearchInterceptorOptions<T> = {
-    ...opts,
+    ...rest,
     source,
     minLength,
     ...(correct ? { correct } : {}),
+    // Статистика идёт ОБЩИМ каналом: публикует её одна точка (см. `publishStats`),
+    // поэтому подписка панели (`useSearchStats`) и потребительский `onStats`
+    // видят одни и те же числа — и одинаково гаснут, когда перехвата нет.
+    ...(searchName || userOnStats ? { onStats: publishStats } : {}),
   }
   const accumulate = createAccumulatingSource<T>(config)
 
@@ -433,7 +458,7 @@ export function withLibSearch<T>(
 
   const inactive = (): void => {
     opts.onCorrection?.(null)
-    opts.onStats?.(null) // перехват неактивен — панель гасит живые счётчики
+    publishStats(null) // перехват неактивен — панель гасит живые счётчики (канал включительно)
   }
 
   return decorateSource<T>({

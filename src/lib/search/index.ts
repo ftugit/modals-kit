@@ -20,6 +20,7 @@ export {
   resetSearchRegistry,
 } from './registry'
 export { setSearchQuery, clearSearchQuery, resyncSearch, normalizeSearchQuery } from './core'
+export { reportSearchStats, getSearchStats, onSearchStats, resetSearchStats } from './stats'
 export {
   withLibSearch,
   createAccumulatingSource,

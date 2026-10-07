@@ -15,8 +15,11 @@
         parse?: (raw: string) => ExtraValue
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
-        /** Возможность ИСТОЧНИКА, без которой параметр не работает (панель гасит поле). */
-        requires?: FeatureGate
+        /**
+         * Возможность(и) ИСТОЧНИКА, без которых параметр не работает: панель гасит
+         * поле И ПОКАЗЫВАЕТ ПРИЧИНУ, а не «включает и молчит».
+         */
+        requires?: FeatureGate | readonly FeatureGate[]
       }
     | {
         key: keyof V & string
@@ -24,8 +27,11 @@
         type: 'toggle'
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
-        /** Возможность ИСТОЧНИКА, без которой параметр не работает (панель гасит поле). */
-        requires?: FeatureGate
+        /**
+         * Возможность(и) ИСТОЧНИКА, без которых параметр не работает: панель гасит
+         * поле И ПОКАЗЫВАЕТ ПРИЧИНУ, а не «включает и молчит».
+         */
+        requires?: FeatureGate | readonly FeatureGate[]
       }
     | {
         type: 'divider'
@@ -45,7 +51,13 @@
     }
     renderField?: (
       field: SettingsField<V>,
-      ctx: { value: ExtraValue; set(v: ExtraValue): void; disabled: boolean }
+      ctx: {
+        value: ExtraValue
+        set(v: ExtraValue): void
+        disabled: boolean
+        /** Причина выключения (нет возможности источника) — её видит пользователь. */
+        reason: string | null
+      }
     ) => Snippet | undefined
     footer?: Snippet<[{ pageSize: number; page: number }]>
     class?: string
@@ -59,6 +71,7 @@
     fields = [],
     values: valuesMapper,
     store: storeProp,
+    renderField,
     footer,
     class: className,
     applyLabel = 'Применить',
@@ -104,13 +117,34 @@
     return out
   })
 
-  function fieldDisabled(f: SettingsField<V>): boolean {
-    if ('key' in f) {
-      if (f.requires && !gates[f.requires]) return true // источник так не умеет
-      if ((f.jsOnly ?? false) && js) return true
-      if (f.enabledWhen && !f.enabledWhen(currentValues)) return true
+  /** Подписи возможностей для причины «источник не поддерживает …». */
+  const GATE_LABEL: Record<FeatureGate, string> = {
+    nativeSearch: 'родной поиск',
+    libSearch: 'lib/search',
+    filters: 'фильтры',
+    totals: 'число страниц',
+    dictionary: 'словарь опечаток',
+  }
+
+  /**
+   * Доступность поля И ПРИЧИНА отказа: пользователь видит, почему параметр
+   * серый. Возможности приходят от источника, поэтому текст — факт о текущем
+   * выборе, а не догадка панели; для выключений по JS/связям причины нет.
+   */
+  function fieldState(f: SettingsField<V>): { disabled: boolean; reason: string | null } {
+    if (!('key' in f)) return { disabled: false, reason: null }
+    const required: readonly FeatureGate[] =
+      f.requires === undefined ? [] : Array.isArray(f.requires) ? f.requires : [f.requires]
+    const missing = required.filter((gate) => !gates[gate])
+    if (missing.length > 0) {
+      return {
+        disabled: true,
+        reason: `источник не поддерживает ${missing.map((gate) => GATE_LABEL[gate]).join(' и ')}`,
+      }
     }
-    return false
+    if ((f.jsOnly ?? false) && js) return { disabled: true, reason: null }
+    if (f.enabledWhen && !f.enabledWhen(currentValues)) return { disabled: true, reason: null }
+    return { disabled: false, reason: null }
   }
 
   function setValue(key: string, v: ExtraValue) {
@@ -163,20 +197,29 @@
         </div>
       {:else if 'key' in f}
         {@const val = currentValues[f.key]}
-        {@const dis = fieldDisabled(f)}
-        {#if f.type === 'toggle'}
+        {@const st = fieldState(f)}
+        {#if renderField}
+          {@const custom = renderField(f, {
+            value: val,
+            set: (v: ExtraValue) => setValue(f.key, v),
+            disabled: st.disabled,
+            reason: st.reason,
+          })}
+          {#if custom}{@render custom()}{/if}
+        {:else if f.type === 'toggle'}
           <Toggle
             name={`${pageParam}.${f.key}`}
             label={f.label}
             checked={val === true}
-            disabled={dis}
+            disabled={st.disabled}
+            hint={st.reason ?? undefined}
             onChange={(v) => setValue(f.key, v)}
           />
         {:else if f.type === 'select'}
-          <Field label={f.label}>
+          <Field label={f.label} hint={st.reason ?? undefined}>
             <Select
               name={`${pageParam}.${f.key}`}
-              disabled={dis}
+              disabled={st.disabled}
               value={String(val ?? '')}
               onChange={(raw) => setValue(f.key, f.parse ? f.parse(raw) : raw)}
               options={f.options}

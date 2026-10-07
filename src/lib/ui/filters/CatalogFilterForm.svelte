@@ -20,6 +20,7 @@
    * (`page.filters.<поле>.<режим>`), чужие ключи адреса едут скрытыми полями.
    * Ровно эти ключи читает адресный слой после перехода.
    */
+  import { onMount } from 'svelte'
   import { Button, Input, Select } from '$lib/ui/primitives'
   import type { CatalogFilterControl } from '$lib/filters'
 
@@ -41,6 +42,18 @@
   let formEl = $state<HTMLFormElement | null>(null)
 
   /**
+   * Гашение недоступных полей — работа JavaScript, а не разметки: без JS форму
+   * нельзя «подкручивать» (выключенный контрол браузер не отправляет, и запрос
+   * пользователя пропал бы молча). До гидратации поля остаются живыми, а
+   * причина (««Статус» блокирует поле: …») видна всегда — там же говорит
+   * валидатор связок. Канон тот же, что у панели настроек (`js = !hydrated`).
+   */
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
+
+  /**
    * Значения одного контрола из формы. Числовая граница и одиночный выбор —
    * одно значение, мультивыбор — список (нативный `select multiple` шлёт их
    * под одним именем). Пустые значения отбрасываются: «ничего не выбрано» —
@@ -51,6 +64,29 @@
       .getAll(control.name)
       .map((item) => String(item).trim())
       .filter((item) => item !== '')
+  }
+
+  /**
+   * Идентификатор контрола — его КАНОНИЧЕСКОЕ имя (`page.filters.kind`).
+   * Так решено в b1 (`bd52745`), и это же проверяет браузерный набор: `<label for>`
+   * указывает на существующий узел, а id читается так же, как имя поля формы.
+   * Точки в id допустимы (HTML5 запрещает только пробелы), поэтому «имя = id» не
+   * приходится переводить в другой алфавит — связи нечему разъезжаться. Несущий
+   * id узел — нативный контрол: у `Select` он же и есть поле формы, а видимый
+   * «триггер» — рисунок (`aria-hidden`, `tabindex="-1"`).
+   */
+  const idOf = (control: CatalogFilterControl): string => control.name
+
+  /** Идентификатор пояснения к полю: причина связки или усечённый список. */
+  const noteId = (control: CatalogFilterControl, kind: 'reason' | 'truncated'): string =>
+    `${idOf(control)}-${kind}`
+
+  /** Связи доступности: подсказка поля — то, что реально нарисовано рядом. */
+  function describedBy(control: CatalogFilterControl): string | undefined {
+    const ids: string[] = []
+    if (control.kind === 'multiselect' && control.truncated) ids.push(noteId(control, 'truncated'))
+    if (control.disabled && control.reason) ids.push(noteId(control, 'reason'))
+    return ids.length ? ids.join(' ') : undefined
   }
 
   function submit(event: SubmitEvent) {
@@ -93,71 +129,57 @@
 
   <div class="grid gap-3 sm:grid-cols-2">
     {#each controls as control (control.path)}
-      {@const describedBy =
-        [
-          control.kind === 'multiselect' && control.truncated ? `${control.name}-truncated` : null,
-          control.disabled && control.reason ? `${control.name}-reason` : null,
-        ]
-          .filter(Boolean)
-          .join(' ') || undefined}
       <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={control.path}>
-        <!--
-          Подпись ссылается на `id`, который получает сам контрол (`id={control.name}`),
-          а не на «имя, которое когда-нибудь совпадёт»: до этого `<label for>` указывал
-          в пустоту (у примитива `Select` не было `id`), и подпись молча ничего не
-          фокусировала. `name` и `id` здесь совпадают намеренно — и то и другое
-          выводится из пути поля, поэтому связь нельзя разъехать незаметно.
-        -->
-        <label class="block text-xs font-medium text-muted-foreground" for={control.name}>
+        <label class="block text-xs font-medium text-muted-foreground" for={idOf(control)}>
           {control.label}
         </label>
         {#if control.kind === 'select'}
           <Select
-            id={control.name}
-            aria-describedby={describedBy}
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
             options={control.options}
             name={control.name}
             value={control.value}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
             placeholder="Любое"
           />
         {:else if control.kind === 'multiselect'}
           <Select
-            id={control.name}
-            aria-describedby={describedBy}
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
             options={control.options}
             name={control.name}
             multiple
             value={[...control.value]}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
             placeholder="Не выбрано"
           />
         {:else if control.kind === 'number'}
           <Input
-            id={control.name}
-            aria-describedby={describedBy}
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
             type="number"
             name={control.name}
             value={control.value}
             placeholder={control.placeholder}
             min={control.min}
             max={control.max}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
           />
         {:else}
           <Input
-            id={control.name}
-            aria-describedby={describedBy}
+            id={idOf(control)}
+            aria-describedby={describedBy(control)}
             type="text"
             name={control.name}
             value={control.value}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
           />
         {/if}
         {#if control.kind === 'multiselect' && control.truncated}
           <p
-            id={`${control.name}-truncated`}
             class="text-xs text-muted-foreground"
+            id={noteId(control, 'truncated')}
             data-testid="catalog-filter-truncated"
           >
             Показаны не все значения: у источника их больше на {control.truncated}.
@@ -165,8 +187,8 @@
         {/if}
         {#if control.disabled && control.reason}
           <p
-            id={`${control.name}-reason`}
             class="text-xs text-muted-foreground"
+            id={noteId(control, 'reason')}
             data-testid="catalog-filter-reason"
           >
             {control.reason}

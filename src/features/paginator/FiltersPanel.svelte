@@ -78,12 +78,6 @@
   <div class="flex flex-wrap items-center justify-between gap-2">
     <div class="flex flex-wrap items-center gap-2">
       <h2 class="font-medium">Фильтры каталога</h2>
-      {#if view.count}
-        <span
-          class="inline-flex items-center rounded-md border border-transparent bg-secondary px-2 py-0.5 text-xs font-medium"
-          data-testid="filters-count">{view.count}</span
-        >
-      {/if}
       {#if view.builtAt}
         <span class="text-xs text-muted-foreground" data-testid="filters-built-at"
           >схема собрана {new Date(view.builtAt).toLocaleString('ru-RU')}</span
@@ -116,25 +110,22 @@
     </div>
   </details>
 
-  {#if view.suppressed.length}
-    <ul class="mt-3 space-y-1" data-testid="filters-suppressed">
-      {#each view.suppressed as item (item.key)}
-        <li class="text-xs text-muted-foreground" data-filter-path={item.key}>
-          «{item.label}» не применяется: {item.reason}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
-  {#if view.violations.length}
+  <!--
+    Списком показываем только то, чему НЕ нашлось места у поля: связка без
+    «drop» (например, одно значение и в «все из», и в «кроме») не гасит никакой
+    контрол, поэтому её предупреждение живёт здесь. Всё, что гасит конкретное
+    поле, говорит само поле — своей причиной (««Статус» блокирует поле: …»);
+    повторять это ещё и списком значит забивать панель дублями.
+  -->
+  {#if view.violations.some((violation) => !violation.drop)}
     <ul class="mt-2 space-y-1" data-testid="filters-violations">
-      {#each view.violations as violation (violation.id + violation.keys.join(','))}
+      {#each view.violations.filter((violation) => !violation.drop) as violation (violation.id + violation.keys.join(','))}
         <li class="text-xs text-destructive" data-violation-id={violation.id}>{violation.message}</li>
       {/each}
     </ul>
   {/if}
 
   <div class="mt-3">
-    <ActiveFilters chips={view.chips} onRemove={remove} />
+    <ActiveFilters chips={view.chips} count={view.count} onRemove={remove} />
   </div>
 </section>

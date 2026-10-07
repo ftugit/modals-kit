@@ -92,5 +92,5 @@
   - Columns layout & dynamic item heights.
   - Независимость второго пагинатора (`?gallery.*`).
 - [x] `npm run check` (0 errors).
-- [x] `npm test` (все unit-тесты и tooling guards проходят, 313 + 45 = 358 тестов).
+- [x] `npm test` (все unit-тесты и tooling guards проходят, 477 + 64 = 541 тестов).
 - [x] `npm run build` (production build успешен, клиент и сервер собраны).

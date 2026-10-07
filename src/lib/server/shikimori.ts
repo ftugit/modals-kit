@@ -171,13 +171,19 @@ export function buildUpstreamUrl(query: AnimesQuery): string {
   url.searchParams.set('limit', String(Math.min(query.limit, SHIKIMORI_LIMIT_MAX)))
   url.searchParams.set('order', query.order ?? SHIKIMORI_ORDER)
   if (query.search) url.searchParams.set('search', query.search)
-  // Фильтры каталога: повторяющийся параметр у API значит «и», отрицание —
-  // префикс `!` (проверено живьём: `genre_v2=27&genre_v2=!133`).
+  // Фильтры каталога — ОДНИМ параметром, значения через запятую: у API «и» —
+  // это список в значении, а ПОВТОР параметра значит «последний побеждает».
+  // Проверено живьём 2026-10-07 (REST `/api/animes`, order=popularity):
+  //   • `genre_v2=27&genre_v2=1` тождественно `genre_v2=1` (последнее значение);
+  //   • `genre_v2=27,1` оставляет работы с ОБОИМИ жанрами (`27,!1` — с 27 без 1);
+  //   • `studio=1,858` → пусто (работ обеих студий нет), `studio=1,!1998` —
+  //     работы студии 1 без работ 1998; `studio=1&studio=858` ≡ `studio=858`.
+  // Отрицание — префикс `!` у значения списка; одиночное `!id` тоже работает.
   for (const [key, value] of [
     ['genre_v2', query.genre_v2],
     ['studio', query.studio],
   ] as const) {
-    for (const item of value ?? []) url.searchParams.append(key, item)
+    if (value?.length) url.searchParams.set(key, value.join(','))
   }
   for (const [key, value] of [
     ['kind', query.kind],

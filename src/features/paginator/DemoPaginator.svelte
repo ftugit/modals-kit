@@ -8,8 +8,7 @@
     PaginatorHost,
     usePaginatorState,
   } from '$lib/paginate/svelte'
-  import type { SearchInterceptStats } from '$lib/search'
-  import { useSearchCorrection } from '$lib/search/svelte'
+  import { useSearchCorrection, useSearchStats } from '$lib/search/svelte'
   import {
     EmptyState,
     EndRow,
@@ -33,7 +32,6 @@
     demoPreservedSearch,
     demoQueryOf,
     loadFilterSchema,
-    onInterceptStats,
     type DemoExtra,
     type DemoStore,
   } from './definition'
@@ -243,19 +241,56 @@
   // разметка панели обязана появиться уже в первом рендере (иначе без JS формы
   // фильтров не будет вовсе).
   let filterSchema = $state<CatalogFilterSchema | null>(schema)
+  /**
+   * Причина, по которой фильтров нет. Молчание тут было бы худшим ответом:
+   * источник фильтры объявляет (`gates.filters`), значит пользователь ждёт
+   * панель и обязан узнать, что схема не приехала и можно повторить.
+   */
+  let filterSchemaError = $state<string | null>(null)
+
+  function loadSchema(options: { retry?: boolean } = {}): void {
+    if (options.retry) filterSchemaError = null
+    void loadFilterSchema()
+      .then((loaded) => {
+        filterSchema = loaded
+        filterSchemaError = null
+      })
+      .catch((error) => {
+        filterSchema = null
+        filterSchemaError = `схема фильтров не загрузилась: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      })
+  }
+
   $effect(() => {
     // Пересборка схемы у сервера — на изменения выбранного источника: сам
-    // выбор читается из extra (гейт `filters`), а не из имени.
-    if (!gates.filters || filterSchema) return
-    void loadFilterSchema()
-      .then((loaded) => (filterSchema = loaded))
-      .catch(() => {})
+    // выбор читается из extra (гейт `filters`), а не из имени. Состояние уже
+    // загружено/уже провалилось — повтор только по кнопке, а не в цикле.
+    if (!gates.filters || filterSchema || filterSchemaError) return
+    loadSchema()
   })
 
-  /** Живая статистика перехвата lib search (канал источника, не реестра). */
-  let stats = $state<SearchInterceptStats | null>(null)
-  // Подписка сразу отдаёт текущее значение (см. `onInterceptStats`).
-  $effect(() => onInterceptStats(name, (next) => (stats = next)))
+  /**
+   * Запрос некуда применить — поле гаснет; причина у поля обязательна и говорит
+   * именно то, что случилось: у источника нет механизма поиска ЛИБО механизм
+   * есть, но выключен тумблером панели. Формулировку даёт слой возможностей
+   * (`gates`), а не догадка разметки.
+   */
+  const searchOff = $derived(!(gates.nativeSearch && cfg.srch) && !(gates.libSearch && cfg.ls))
+  const searchOffReason = $derived(
+    !searchOff
+      ? null
+      : !gates.nativeSearch && !gates.libSearch
+        ? 'источник не поддерживает поиск — запрос некуда применить'
+        : 'поиск выключен опциями панели'
+  )
+
+  /**
+   * Живая статистика перехвата — хук ОБЩЕГО канала lib/search (тот же слой, что
+   * подпись коррекции): числом владеет поиск, а не разметка страницы.
+   */
+  const stats = useSearchStats(name)
 
   /**
    * Deep-link с запросом и включённым lib/search: SSR-выдача пришла от
@@ -322,11 +357,7 @@
         либо не объявлен источником (`gates`), либо выключен своим тумблером.
         Оба слоя независимы: lib/search работает и при выключенном родном.
       -->
-      <SearchQueryForm
-        {name}
-        path="page.q"
-        disabled={!(gates.nativeSearch && cfg.srch) && !(gates.libSearch && cfg.ls)}
-      />
+      <SearchQueryForm {name} path="page.q" disabled={searchOff} hint={searchOffReason ?? undefined} />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
         {#if gates.nativeSearch}
           Родной поиск ищет сам источник — подстрокой по названию (у живого каталога это
@@ -358,6 +389,21 @@
             preserved={demoPreservedSearch(page.url.search)}
           />
         </div>
+      {:else if gates.filters && filterSchemaError}
+        <p
+          class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-testid="filters-schema-error"
+        >
+          {filterSchemaError}
+          <button
+            type="button"
+            class="rounded-md border border-border px-2 py-0.5 hover:bg-muted"
+            data-testid="filters-schema-retry"
+            onclick={() => loadSchema({ retry: true })}
+          >
+            Повторить
+          </button>
+        </p>
       {/if}
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
         Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · lib/search:
@@ -367,10 +413,10 @@
             >искали «{correction()?.query}», показываем «{correction()?.corrected}»</span
           >
         {/if}
-        {#if cfg.ls && stats}
+        {#if cfg.ls && stats.current}
           · <span data-testid="search-stats"
-            >просмотрено {stats?.scanned}, совпало {stats?.matched}, выдано {stats?.emitted}{#if stats?.exhausted}{' '}·
-              каталог исчерпан{/if}</span
+            >просмотрено {stats.current?.scanned}, совпало {stats.current?.matched}, выдано {stats
+              .current?.emitted}{#if stats.current?.exhausted}{' '}· каталог исчерпан{/if}</span
           >
         {:else if !gates.totals}
           · <span data-testid="search-stats"

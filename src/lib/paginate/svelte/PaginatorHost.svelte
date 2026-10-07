@@ -554,12 +554,20 @@
   {@render toolbar()}
 {/if}
 
+<!--
+  Роль хоста — `region`, а НЕ `feed`: `feed` по ARIA требует, чтобы все его
+  дети были `article`, а внутри хоста живут ещё индикатор загрузки
+  (role="status"), строка «конец», навигация по страницам и оверлей
+  prepend-retention. Axe ловит это как critical (`aria-required-children`);
+  объявления для скринридера и так идут через `role="status"` внутри.
+  `region` с `aria-label` — честная именованная область, дети у неё любые.
+-->
 <div
   bind:this={containerRef}
   class={className}
   id={effectiveHashAnchor ?? undefined}
   data-paginator-host={name}
-  role="feed"
+  role="region"
   aria-busy={currentState.status === 'loading'}
   aria-label={ariaLabel ?? `Пагинатор ${name}`}
   onscroll={handleScroll}

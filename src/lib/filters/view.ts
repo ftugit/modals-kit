@@ -33,6 +33,7 @@ import {
   stripDefaultCatalogFilterValues,
   type ActiveCatalogFilter,
   type CatalogFilterField,
+  type CatalogFilterRule,
   type CatalogFilterSchema,
 } from './catalog-filter'
 import {
@@ -71,7 +72,6 @@ export type CatalogFilterControl =
       /** Имя в адресе: `page.filters.kind` (то, что читает URL-слой и no-JS форма). */
       name: string
       label: string
-      help?: string
       value: string
       options: readonly { value: string; label: string }[]
       /** Поле гасит связка: показать выключенным и сказать почему. */
@@ -83,7 +83,6 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: readonly string[]
       options: readonly { value: string; label: string }[]
       /** Показ списка обрезан лимитом: часть значений есть у источника, но не здесь. */
@@ -96,7 +95,6 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: string
       min?: number
       max?: number
@@ -116,14 +114,17 @@ export type CatalogFilterControl =
       path: string
       name: string
       label: string
-      help?: string
       value: string
       placeholder?: string
       disabled: boolean
       reason?: string
     }
 
-/** Состояние поля: доступно ли и что говорит связка. */
+/**
+ * Состояние поля: доступно ли и что говорит связка. `reason` называет
+ * поле-виновника — ««Статус» блокирует поле: …», а не просто повторяет
+ * объявленную причину.
+ */
 export type CatalogFilterFieldState = {
   key: string
   label: string
@@ -165,21 +166,45 @@ function optionsOf(field: CatalogFilterField): { value: string; label: string }[
 }
 
 /**
- * Состояние полей при текущих значениях: гасит ли поле связка.
- * Причина приходит из схемы — UI её только показывает.
+ * Кто заблокировал поле: подписи полей из условий связки. Пользователю нужен
+ * не «список невозможного», а ответ на вопрос «что именно мешает этому полю» —
+ * поэтому причина называет поле-виновника (`«Статус» блокирует поле: …`).
+ */
+function ruleBlocker(schema: CatalogFilterSchema, rule: CatalogFilterRule): string {
+  const labels: string[] = []
+  for (const condition of rule.when) {
+    const label = schema.fields.find((field) => field.key === condition.field)?.label ?? condition.field
+    if (!labels.includes(label)) labels.push(label)
+  }
+  const quoted = labels.map((label) => `«${label}»`).join(' и ')
+  return labels.length > 1 ? `${quoted} блокируют` : `${quoted} блокирует`
+}
+
+/**
+ * Состояние полей при текущих значениях: гасит ли поле связка. Причина
+ * приходит из схемы — UI её только показывает.
+ *
+ * Список здесь ровно тот, что просят контролы: у связки с `drop === 'q'` поля
+ * не гасятся (её причина — про поиск, и живёт в предупреждениях панели).
  */
 export function catalogFilterFieldStates(
   schema: CatalogFilterSchema | undefined,
   values: Record<string, unknown> | undefined,
 ): CatalogFilterFieldState[] {
+  if (!schema) return []
   const map = catalogFilterValueMap(values)
   const suppressed = catalogFilterSuppressedFields(schema, map)
   const reasons = new Map<string, { id: string; reason: string }>()
-  for (const rule of schema?.rules ?? []) {
+  for (const rule of schema.rules ?? []) {
     if (rule.drop === 'q') continue
-    if (suppressed.has(rule.drop.field)) reasons.set(rule.drop.field, { id: rule.id, reason: rule.reason })
+    if (suppressed.has(rule.drop.field)) {
+      reasons.set(rule.drop.field, {
+        id: rule.id,
+        reason: `${ruleBlocker(schema, rule)} поле: ${rule.reason}`,
+      })
+    }
   }
-  return (schema?.fields ?? []).map((field) => {
+  return schema.fields.map((field) => {
     const hit = reasons.get(field.key)
     return {
       key: field.key,

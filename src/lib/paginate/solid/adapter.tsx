@@ -575,12 +575,15 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
   return (
     <PaginatorCtx.Provider value={ctx}>
       {props.toolbar}
+      {/* Роль `region`, а не `feed`: `feed` требует детей только `article`,
+          а в хосте живут индикатор загрузки, навигация и строка «конец»
+          (axe: aria-required-children). Паритет с Svelte-хостом. */}
       <div
         ref={containerRef}
         class={props.class}
         id={hashAnchor() ?? undefined}
         data-paginator-host={props.name}
-        role="feed"
+        role="region"
         aria-busy={state().status === 'loading'}
         aria-label={props.ariaLabel ?? `Пагинатор ${props.name}`}
         onScroll={handleScroll}

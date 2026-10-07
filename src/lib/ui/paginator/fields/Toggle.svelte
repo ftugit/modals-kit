@@ -7,9 +7,11 @@
     checked: boolean
     onChange?: (v: boolean) => void
     disabled?: boolean
+    /** ПОЧЕМУ переключатель выключен (возможности источника), см. `Field`. */
+    hint?: string
   }
 
-  let { name, label, checked = $bindable(false), onChange, disabled = false }: Props = $props()
+  let { name, label, checked = $bindable(false), onChange, disabled = false, hint }: Props = $props()
 
   function handleChange(e: Event & { currentTarget: HTMLInputElement }) {
     const next = e.currentTarget.checked
@@ -18,7 +20,7 @@
   }
 </script>
 
-<label class="flex items-center gap-2 self-end pb-1.5 text-xs">
+<label class="flex items-center gap-2 self-end pb-1.5 text-xs" title={hint}>
   {#if name && !disabled}
     <input type="hidden" {name} value="false" />
   {/if}
@@ -30,5 +32,7 @@
     {disabled}
     onchange={handleChange}
   />
-  <span class={disabled ? 'text-muted-foreground' : ''}>{label}</span>
+  <span class={disabled ? 'text-muted-foreground' : ''}
+    >{label}{#if hint}<span class="ml-1 text-muted-foreground/80" data-field-hint>{hint}</span>{/if}</span
+  >
 </label>

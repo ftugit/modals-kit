@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { currentPathname, currentSearch } from '$lib/router/sveltekit'
   import { getClientStore, setExtra } from '$lib/paginate'
   import { normalizeSearchQuery } from '$lib/search'
@@ -12,9 +13,30 @@
     debounce?: number
     /** Запрос выключен опцией панели — поле не принимает ввод. */
     disabled?: boolean
+    /**
+     * ПОЧЕМУ запрос выключен: «источник не поддерживает поиск», «поиск выключен
+     * опциями панели». Причина — часть выключенного поля, а не только проза под
+     * формой: пользователь видит её там же, где пытается вводить.
+     */
+    hint?: string
   }
 
-  let { name, path, maxLength = 120, debounce = 300, disabled = false }: Props = $props()
+  let {
+    name,
+    path,
+    maxLength = 120,
+    debounce = 300,
+    disabled = false,
+    hint,
+  }: Props = $props()
+
+  // Гашение поля — работа JS (тот же канон, что у панели настроек): без
+  // JavaScript контрол остаётся живым, иначе браузер не отправит его значение и
+  // запрос пользователя пропал бы молча. Причина видна в обоих случаях.
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
 
   // Запись запроса — штатный `setExtra` пагинатора (строка как у исходника,
   // `ShikimoriPage.tsx`): `q` — restorable-ключ extra, он же входит в
@@ -101,14 +123,20 @@
     type="search"
     data-testid="search-input"
     name={path}
-    {disabled}
+    disabled={hydrated && disabled}
     maxlength={maxLength}
     {value}
     placeholder="Тайтл: «наруто», «naruto», «нарута»"
     aria-label="Поиск по каталогу"
+    title={disabled ? hint : undefined}
     class="h-9 min-w-56 flex-1 rounded-lg border border-border bg-background px-3 text-sm shadow-xs placeholder:text-muted-foreground disabled:opacity-50"
     oninput={onInput}
   />
+  {#if disabled && hint}
+    <!-- Причина стоит в потоке формы последней строкой: видно рядом с полем,
+         которое не принимает ввод. -->
+    <span class="order-last w-full text-xs text-muted-foreground" data-field-hint>{hint}</span>
+  {/if}
   <button
     type="submit"
     data-testid="search-submit"

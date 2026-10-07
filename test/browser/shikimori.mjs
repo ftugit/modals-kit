@@ -91,6 +91,23 @@ async function api(path) {
   return { status: res.status, body };
 }
 
+/**
+ * Ожидаемые пути контролов из схемы источника — ровно то, что обязана нарисовать
+ * панель: мультивыбор даёт по контролу на каждый объявленный режим (`and`/`not`),
+ * числовое поле — на каждую границу (`min`/`max`), одиночное — один. Числа
+ * контролов в проверках не хардкодятся: состав полей меняется вместе со схемой
+ * (так добавился `filters.studios.not`, и это не должно ломать набор).
+ */
+function expectedFilterPaths(schema) {
+  return schema.fields.flatMap((field) =>
+    field.type === 'multiselect'
+      ? (field.modes ?? ['or']).map((mode) => `filters.${field.key}.${mode}`)
+      : field.type === 'number'
+        ? (field.bounds ?? ['min', 'max']).map((bound) => `filters.${field.key}.${bound}`)
+        : [`filters.${field.key}`],
+  );
+}
+
 async function checkApi() {
   console.log('— Бэкенд: /api/shikimori/animes (клэмп limit, search, словарь) —');
   const big = await api('/api/shikimori/animes?page=1&limit=100');
@@ -249,13 +266,7 @@ async function openFilters(page) {
 async function checkFiltersUi(browser) {
   console.log('— Панель фильтров: схема в контролах, снятие чипом, связки —');
   const schema = (await api('/api/shikimori/filters')).body;
-  const expected = schema.fields.flatMap((field) =>
-    field.type === 'multiselect'
-      ? (field.modes ?? ['or']).map((mode) => `filters.${field.key}.${mode}`)
-      : field.type === 'number'
-        ? (field.bounds ?? ['min', 'max']).map((bound) => `filters.${field.key}.${bound}`)
-        : [`filters.${field.key}`],
-  );
+  const expected = expectedFilterPaths(schema);
 
   const context = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
   const page = await context.newPage();
@@ -446,9 +457,25 @@ async function checkFiltersNoJs(browser) {
 
   try {
     await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
+    // Переадресация на канонический адрес — ОТДЕЛЬНАЯ навигация: дожидаемся
+    // именно чистой строки запроса. Без page.evaluate (в контексте без JS он
+    // недоступен) — опросом адреса со стороны драйвера.
+    const waitCanonical = async () => {
+      for (let i = 0; i < 100; i += 1) {
+        const params = new URL(page.url()).searchParams;
+        const dirty = [...params.entries()].some(
+          ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+        );
+        if (!dirty) return;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error(`адрес не пришёл к каноническому виду: ${page.url()}`);
+    };
     const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
-    const count = await fields.count();
-    if (count !== 10) throw new Error(`без JS в разметке ${count} контролов вместо 10`);
+    const ssrPaths = await fields.evaluateAll((els) => els.map((el) => el.dataset.filterPath));
+    const expectedPaths = expectedFilterPaths((await api('/api/shikimori/filters')).body);
+    if (ssrPaths.join(',') !== expectedPaths.join(','))
+      throw new Error(`без JS контролы не совпали со схемой:\n ${ssrPaths}\n ${expectedPaths}`);
     // Значения приходят из адреса: применим фильтр и вернёмся на адрес со фильтром.
     await openFilters(page);
     await page.locator('select[data-select-native][name="page.filters.kind"]').selectOption('movie');
@@ -456,18 +483,38 @@ async function checkFiltersNoJs(browser) {
       page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
       page.locator('[data-testid="catalog-filter-submit"]').click(),
     ]);
+    await waitCanonical();
     const url = new URL(page.url());
     if (url.searchParams.get('page.filters.kind') !== 'movie')
       throw new Error(`нативный GET не донёс фильтр: ${page.url()}`);
-    // Форма уходит как её отправляет браузер: незаполненные поля дают ключи с
-    // ПУСТЫМ значением (`page.filters.status=`). Адресный слой такие значения
-    // считает отсутствием фильтра (deny-safe), поэтому важно другое: среди
-    // ключей нет ни одного ЗНАЧИМОГО, которого пользователь не выбирал.
+    // Форма отправляет ВСЕ свои контролы (включая незаполненные), поэтому
+    // адрес приводится к каноническому виду слоем адреса: пустые значения
+    // объявленных ключей уходят (`canonicalPaginatorSearch`), и в адресе остался
+    // ровно один выбранный фильтр, а не список полей с пустыми значениями.
     const filled = [...url.searchParams.entries()].filter(
       ([key, value]) => key.startsWith('page.filters.') && value !== '',
     );
     if (filled.length !== 1 || filled[0][0] !== 'page.filters.kind')
       throw new Error(`нативный GET принёс лишние фильтры: ${JSON.stringify(filled)}`);
+    const empties = [...url.searchParams.entries()].filter(
+      ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+    );
+    if (empties.length)
+      throw new Error(`в адресе остались пустые ключи пагинатора: ${JSON.stringify(empties)}`);
+    // И повторное «Применить» без изменений адрес не засоряет: адрес уже
+    // канонический, а форма снова шлёт все поля — их отсекает тот же слой.
+    await openFilters(page);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    await waitCanonical();
+    const again = new URL(page.url());
+    const emptiesAgain = [...again.searchParams.entries()].filter(
+      ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+    );
+    if (emptiesAgain.length)
+      throw new Error(`повторное «Применить» засорило адрес: ${JSON.stringify(emptiesAgain)}`);
     for (const [key, value] of [
       ['page.src', 'animes'],
       ['page.size', '5'],
@@ -486,7 +533,7 @@ async function checkFiltersNoJs(browser) {
     if ((await chips.count()) !== 1)
       throw new Error(`без JS после одного фильтра ждали один чип, их ${await chips.count()}`);
     const chip = await chips.innerText();
-    console.log(`  ok  без JS: контролов 10, GET донёс «Тип: Фильм», чужие ключи целы, выдача — ${ids.length} фильмов`);
+    console.log(`  ok  без JS: контролов ${ssrPaths.length}, GET донёс «Тип: Фильм», чужие ключи целы, выдача — ${ids.length} фильмов`);
     console.log(`      чип из схемы: ${chip.replace(/\s+/g, ' ').trim()}`);
 
     // Снятие чипа — настоящая ссылка: без JS это обычный переход.

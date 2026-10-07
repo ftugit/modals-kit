@@ -168,7 +168,7 @@ describe('фильтры каталога: разбор и адрес запро
     expect(res.filters).toEqual({ 'filters.kind': 'tv' })
   })
 
-  it('параметры фильтров едут в адрес API: повторение — «и», `!` — «кроме»', () => {
+  it('параметры фильтров едут в адрес API: список через запятую — «и», `!` — «кроме»', () => {
     const url = new URL(
       buildUpstreamUrl({
         page: 1,
@@ -183,7 +183,9 @@ describe('фильтры каталога: разбор и адрес запро
         season: '1990_2010',
       }),
     )
-    expect(url.searchParams.getAll('genre_v2')).toEqual(['27', '!133'])
+    // ОДНИМ значением: повтор параметра API читает как «последний побеждает»
+    // (проверено живьём), а список через запятую — как «и» с `!` внутри.
+    expect(url.searchParams.getAll('genre_v2')).toEqual(['27,!133'])
     expect(url.searchParams.getAll('studio')).toEqual(['858'])
     expect(url.searchParams.get('score')).toBe('8')
     expect(url.searchParams.get('season')).toBe('1990_2010')
