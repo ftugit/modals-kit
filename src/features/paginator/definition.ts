@@ -4,7 +4,28 @@
 //   demo-url        — URL-адаптер: ?page, ?page.size, ?page.<key> (формат как у модалок)
 //   demo-local-ls   — local-адаптер + localStorage (ключ pag:demo-local-ls)
 //   demo-local-mem  — local-адаптер + память (сбрасывается при reload)
-import { getItemsPage, type DemoItem, type ItemKind } from '../../content/items'
+//
+// Раздел ОДИН и на каталог, и на поиск (как страница Shikimori в исходнике):
+// источник выбирается опцией панели (`extra.kind`) — товары, фото или каталог
+// Shikimori; поиск подключается туда же надстройкой lib search:
+//   extra.search=false — поиска нет (поля нет, `q` до источника не доходит);
+//   extra.fuzzy=false  — родной поиск ИСТОЧНИКА (у Shikimori — подстрока на
+//                        нашем бэкенде), lib search в цепочку не встаёт;
+//   оба включены       — перехват источника lib search (fuzzy на клиенте).
+import {
+  createLazyCorrector,
+  type QueryCorrector,
+} from '$lib/search/dictionary'
+import {
+  createSearchInterceptor,
+  type SearchCorrectionInfo,
+  type SearchInterceptStats,
+  type SearchInterceptorOptions,
+} from '$lib/search/accumulator'
+import {
+  reportSearchCorrection,
+  searchQueryValidator,
+} from '$lib/search/registry'
 import {
   createLocalStorageStorage,
   createUrlAdapter,
@@ -13,20 +34,25 @@ import {
   hasPaginator,
   type EdgeTrigger,
   type Extra,
-  type ExtraValue,
   type ExtraSearchSpec,
-  type PrependBehavior,
+  type ExtraValue,
   type PageRequest,
   type PageResponse,
+  type PrependBehavior,
   type Source,
 } from '$lib/paginate'
+import { getItemsPage, type DemoEntry, type DemoItem, type ItemKind } from '../../content/items'
+import { ANIME_MAX_QUERY, loadAnimePage } from '../../content/anime'
+import { isAnimeRecord } from './item-views'
 
 export type DemoStore = 'url' | 'local' | 'none'
+/** Источник данных пагинатора: демо-наборы или каталог Shikimori. */
+export type DemoKind = ItemKind | 'anime'
 
 /** Ключи потребителя, живущие в хранилище пагинатора (RestorableState.extra). */
 export type DemoExtra = {
-  /** Тип содержимого (источник): товары или фото. */
-  kind: ItemKind
+  /** Тип содержимого (источник): товары, фото или аниме (Shikimori API). */
+  kind: DemoKind
   /** Раскладка (UI): список или 4 колонки round-robin. */
   layout: 'list' | 'columns'
   /** accumulate — страницы складываются (подгрузка); single — классическая смена (REPLACE). */
@@ -53,6 +79,12 @@ export type DemoExtra = {
   colW: DemoColW
   /** Авто-колонки: допуск вписывания (сжать/растянуть), % от colW. */
   colFit: DemoColFit
+  /** Запрос поиска (`?page.q`) — ключ extra пагинатора, как у lib search. */
+  q: string
+  /** Поиск включён: поле запроса на странице и учёт `q` источником. */
+  search: boolean
+  /** lib search включён: fuzzy-перехват источника; иначе — родной поиск источника. */
+  fuzzy: boolean
 }
 
 export type DemoHoldMs = 0 | 200 | 300 | 600 | 900
@@ -89,6 +121,9 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   cols: 'auto',
   colW: 220,
   colFit: 25,
+  q: '',
+  search: true,
+  fuzzy: true,
 }
 
 export const DEFAULT_DEMO_CONFIG: DemoConfig = {
@@ -97,8 +132,12 @@ export const DEFAULT_DEMO_CONFIG: DemoConfig = {
   pageSize: 20,
 }
 
-/** Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1). */
-export const DEMO_RELOAD_KEYS = ['kind', 'total'] as const
+/**
+ * Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1):
+ * `q` — как в lib search (reloadKeys запроса), `search`/`fuzzy` меняют контур
+ * поиска, `kind`/`total` — сам источник и форму его ответа.
+ */
+export const DEMO_RELOAD_KEYS = ['kind', 'total', 'q', 'search', 'fuzzy'] as const
 
 const oneOf =
   (...values: readonly string[]) =>
@@ -108,7 +147,7 @@ const bool = extraField('boolean')
 
 /** Спецификация `?page.<key>` — ОДНА для validateSearch роута, адаптера и хоста (deny-safe). */
 export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
-  kind: extraField('text', oneOf('products', 'photos')),
+  kind: extraField('text', oneOf('products', 'photos', 'anime')),
   layout: extraField('text', oneOf('list', 'columns')),
   mode: extraField('text', oneOf('accumulate', 'single')),
   total: bool,
@@ -123,6 +162,11 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   cols: (v) => (v === 'auto' || v === 2 || v === 3 || v === 4 ? v : undefined),
   colW: extraField('number', (v) => v === 160 || v === 220 || v === 300 || v === 400),
   colFit: extraField('number', (v) => v === 0 || v === 10 || v === 25 || v === 50),
+  // Запрос — тот же валидатор, что у `defineSearch`: сырой q из адреса
+  // нормализуется централизованно (управляющие, длина), пустой = «ключа нет».
+  q: searchQueryValidator(ANIME_MAX_QUERY),
+  search: bool,
+  fuzzy: bool,
 }
 
 /** extra из state → типизированный DemoExtra (мусор/отсутствие → дефолт). */
@@ -139,13 +183,58 @@ export function demoName(store: DemoStore): string {
   return store === 'url' ? 'demo-url' : store === 'local' ? 'demo-local-ls' : 'demo-local-mem'
 }
 
-/** Источник читает kind/total из req.extra — один пагинатор обслуживает все варианты. */
-const demoSource: Source<DemoItem> = async ({
+// ── Каталог Shikimori: родной поиск бэкенда и словарь для fuzzy ─────────────
+
+/**
+ * Ленивый корректор опечаток (lib search): артефакт `display\tdf` собирает наш
+ * бэкенд из образца популярного каталога — fuzzy-сопоставление исполняется
+ * только здесь, на клиенте, и никогда на сервере.
+ */
+const loadAnimeCorrector: () => Promise<QueryCorrector | null> = createLazyCorrector(async () => {
+  const response = await fetch('/api/anime/terms')
+  return response.ok ? response.text() : ''
+})
+
+/**
+ * Коррекция запроса для каталога Shikimori. Если словарь недоступен или
+ * термина рядом нет — отдаём «исправлять нечего» с СЫРЫМ запросом: контур
+ * становится серверным сужением (родной поиск), а не слепым сканированием
+ * живого API (демо-источник товаров/фото сканируется без опаски — там данные
+ * локальные, счёт идёт на единицы запросов).
+ */
+async function correctAnimeQuery(query: string): Promise<SearchCorrectionInfo | null> {
+  if (typeof window === 'undefined') return null // fuzzy никогда не на сервере
+  const corrector = await loadAnimeCorrector()
+  const result = corrector?.correct(query)
+  const corrected = result?.correctedQuery.trim()
+  if (!result || !corrected) return { query, corrected: query, changed: false }
+  return { query, corrected, changed: result.changed }
+}
+
+// ── Базовый источник: «дай страницу N размера M» у выбранного источника ─────
+
+/** Поля ранжирования lib search: у аниме — название и синонимы, у демо — подпись. */
+function searchTexts(record: DemoEntry): readonly string[] {
+  if (isAnimeRecord(record)) return [record.title, ...record.aliases]
+  if ('caption' in record) return [String(record.caption ?? `Photo ${record.id}`)]
+  return [String(record.title ?? record.id)]
+}
+
+const baseSource: Source<DemoEntry> = async ({
   page,
   pageSize,
   extra,
-}: PageRequest): Promise<PageResponse<DemoItem>> => {
+  signal,
+}: PageRequest): Promise<PageResponse<DemoEntry>> => {
   const cfg = demoExtraOf(extra ?? {})
+  // Поиск выключен опцией панели — запрос до источника не доходит вообще.
+  const q = cfg.search ? String(extra?.q ?? '').trim() : ''
+  if (cfg.kind === 'anime') {
+    // Каталог Shikimori: с `q` сервер сужает выдачу подстрокой (родной поиск),
+    // без `q` — обычная страница каталога. `totalItems` API не отдаёт → стрелки.
+    const result = await loadAnimePage({ page, limit: pageSize, q: q || undefined }, { signal })
+    return { items: result.items, hasNext: result.hasNext }
+  }
   const r = await getItemsPage({ kind: cfg.kind, page, pageSize })
   if (cfg.total) {
     return { items: r.items, totalItems: r.totalItems, totalPages: r.totalPages }
@@ -153,18 +242,102 @@ const demoSource: Source<DemoItem> = async ({
   return { items: r.items, hasNext: page * pageSize < (r.totalItems ?? 0) }
 }
 
+// ── Перехват источника lib search (по опции панели) ─────────────────────────
+
+/**
+ * Границы добора у живого API жёстче локальных: батч — потолок самого API
+ * (50), бюджет вызова — считанные запросы, чтобы «поиск» не превращался в
+ * скачивание всего каталога Shikimori.
+ */
+const ANIME_INTERCEPT = {
+  batchSize: 50,
+  maxBatchesPerCall: 2,
+  maxBatchesDeepLink: 4,
+  parallelBatches: 2,
+} as const
+
+/** Перехватчик на пару (имя пагинатора, источник): у каждого свой буфер ранжирования. */
+const interceptors = new Map<string, Source<DemoEntry>>()
+
+function interceptorFor(name: string, kind: DemoKind): Source<DemoEntry> {
+  const key = `${name}\u0000${kind}`
+  const cached = interceptors.get(key)
+  if (cached) return cached
+  const options: SearchInterceptorOptions<DemoEntry> = {
+    source: baseSource,
+    id: (record) => String(record.id),
+    texts: searchTexts,
+    onCorrection: (info) => reportSearchCorrection(name, info),
+    onStats: (stats) => reportSearchStats(name, stats),
+    ...(kind === 'anime' ? ANIME_INTERCEPT : {}),
+  }
+  if (kind === 'anime') options.correct = correctAnimeQuery
+  const source = createSearchInterceptor(options)
+  interceptors.set(key, source)
+  return source
+}
+
+/**
+ * Источник демо-пагинатора: базовый источник плюс (по опциям панели) перехват
+ * lib search. Опции живут в extra пагинатора, поэтому восстанавливаются из
+ * адреса/localStorage/памяти вместе со страницей.
+ */
+function demoSourceFor(name: string): Source<DemoEntry> {
+  return (req) => {
+    const cfg = demoExtraOf(req.extra ?? {})
+    if (!cfg.search || !cfg.fuzzy) {
+      // Перехвата в цепочке нет: живые счётчики гасим, а подпись коррекции НЕ
+      // трогаем — панель прячет её по флагам, а реестр lib search обновится сам
+      // (перехватчик докладывает коррекцию один раз на аккумулятор, и после
+      // возврата флага тот же запрос повторно её не прислал бы).
+      if (getSearchStats(name)) reportSearchStats(name, null)
+      return baseSource(req)
+    }
+    return interceptorFor(name, cfg.kind)(req)
+  }
+}
+
+// ── Живая статистика перехвата и подпись коррекции для демо-панели ──────────
+
+export type DemoSearchStats = SearchInterceptStats | null
+
+const statsById = new Map<string, DemoSearchStats>()
+const statsListeners = new Map<string, Set<(stats: DemoSearchStats) => void>>()
+
+/** Живая статистика перехвата выбранного пагинатора (null — перехват неактивен). */
+export function getSearchStats(name: string): DemoSearchStats {
+  return statsById.get(name) ?? null
+}
+
+export function onSearchStats(name: string, listener: (stats: DemoSearchStats) => void): () => void {
+  let set = statsListeners.get(name)
+  if (!set) {
+    set = new Set()
+    statsListeners.set(name, set)
+  }
+  set.add(listener)
+  return () => set.delete(listener)
+}
+
+function reportSearchStats(name: string, stats: DemoSearchStats): void {
+  statsById.set(name, stats)
+  for (const listener of statsListeners.get(name) ?? []) listener(stats)
+}
+
+// ── Регистрация пагинаторов ─────────────────────────────────────────────────
+
 /** Get-or-create: зарегистрировать пагинатор под способ хранения и вернуть его имя. */
 export function ensureDemoPaginator(store: DemoStore): string {
   const name = demoName(store)
   if (hasPaginator(name)) return name
   if (store === 'url') {
-    definePaginator<DemoItem>({
+    definePaginator<DemoEntry>({
       name,
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
-      adapter: createUrlAdapter<DemoItem>({
+      adapter: createUrlAdapter<DemoEntry>({
         name,
-        source: demoSource,
+        source: demoSourceFor(name),
         pageSize: DEFAULT_DEMO_CONFIG.pageSize,
         pageSizes: DEMO_PAGE_SIZES,
         pageParam: 'page',
@@ -173,9 +346,9 @@ export function ensureDemoPaginator(store: DemoStore): string {
       }),
     })
   } else {
-    definePaginator<DemoItem>({
+    definePaginator<DemoEntry>({
       name,
-      source: demoSource,
+      source: demoSourceFor(name),
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
       storage: store === 'local' ? createLocalStorageStorage() : undefined,

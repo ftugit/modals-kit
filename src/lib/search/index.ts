@@ -1,6 +1,8 @@
 // Публичная поверхность lib search. Serverless-часть (fuzzy, dictionary,
-// accumulator) изоморфна; хуки подписи коррекции — по слоям фреймворков:
-// `$lib/search/svelte` (порт) и `./solid.tsx` (референс исходника).
+// accumulator) изоморфна; хук подписи коррекции — Svelte-слой
+// (`$lib/search/svelte`, реэкспорт ниже). `./solid.tsx` — референс исходника,
+// в баррель не входит (как `$lib/paginate/solid`): иначе solid-js попадал бы
+// в клиентскую сборку SvelteKit.
 export type { SearchConfig, SearchInstance } from './types'
 export {
   defineSearch,

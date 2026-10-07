@@ -44,6 +44,19 @@
           компоненты из <code class="rounded bg-muted/70 px-1">ui/paginator</code>: уберите
           ненужные.
         </p>
+        <p class="mt-2 max-w-2xl text-muted-foreground">
+          Раздел один и на каталог, и на поиск — как страница Shikimori в исходнике. Источник
+          выбирается опцией панели (товары, фото или каталог Shikimori: с его API разговаривает
+          наш бэкенд, браузер ходит только на <code class="rounded bg-muted/70 px-1"
+            >/api/anime</code
+          >). Поиск — надстройка lib search, и его можно выключить двумя разными способами:
+          целиком (<code class="rounded bg-muted/70 px-1">?page.search=false</code> — поля нет,
+          запрос не учитывается) или только fuzzy-перехват (<code class="rounded bg-muted/70 px-1"
+            >?page.fuzzy=false</code
+          > — тогда запрос сужает выдачу родным поиском источника, у Shikimori это подстрока на
+          бэкенде). Рядом с полем видно, что делает lib search: исправленный запрос и счётчики
+          перехвата.
+        </p>
       </div>
       <a
         href="/"

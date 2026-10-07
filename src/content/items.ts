@@ -1,9 +1,16 @@
 import type { PageRequest, PageResponse } from '$lib/paginate/types'
+import type { AnimeRecord } from './anime'
 
 export interface Product { id: number; title: string; price: number }
 export interface Photo { id: number; caption: string }
 export type ItemKind = 'products' | 'photos'
 export type DemoItem = Product | Photo
+/**
+ * Запись демо-пагинатора: товары/фото ИЛИ тайтл аниме (источник Shikimori,
+ * `content/anime.ts`). Один пагинатор обслуживает все источники — переключает
+ * опция панели (`extra.kind`), разметка различает записи по форме.
+ */
+export type DemoEntry = DemoItem | AnimeRecord
 export type ItemsQuery = { kind: ItemKind } & PageRequest
 
 export const PRODUCTS: Product[] = Array.from({ length: 299 }, (_, i) => ({

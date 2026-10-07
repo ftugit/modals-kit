@@ -1,4 +1,4 @@
-import type { DemoItem } from '../../content/items'
+import type { DemoEntry } from '../../content/items'
 import {
   createPaginatorStore,
   initServerPaginator,
@@ -11,9 +11,12 @@ import {
   ensureGalleryPaginator,
 } from './definition'
 
+import type { DemoItem } from '../../content/items'
+
 export interface PaginatorLoaderData {
   defaultName: string
-  snapshot: PaginatorState<DemoItem>
+  /** Снапшот основного раздела: товары/фото ИЛИ каталог Shikimori (опция `kind`). */
+  snapshot: PaginatorState<DemoEntry>
   gallerySnapshot: PaginatorState<DemoItem>
 }
 
@@ -26,7 +29,7 @@ export async function loadPaginatorDemo(ctx: {
 }): Promise<PaginatorLoaderData> {
   const store = createPaginatorStore()
   const defaultName = ensureDemoPaginator('url')
-  store.update<DemoItem>(defaultName, (state) => ({
+  store.update<DemoEntry>(defaultName, (state) => ({
     ...state,
     extra: { ...DEFAULT_DEMO_EXTRA },
   }))
@@ -57,7 +60,7 @@ export async function loadPaginatorDemo(ctx: {
   }))
 
   const [snapshot, gallerySnapshot] = await Promise.all([
-    initServerPaginator<DemoItem>(store, defaultName, { url }),
+    initServerPaginator<DemoEntry>(store, defaultName, { url }),
     initServerPaginator<DemoItem>(store, galleryName, { url }),
   ]);
 

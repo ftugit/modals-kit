@@ -153,7 +153,7 @@ applyUrl серверной формы — отдельная задача (v2).
 | Что | Как перенесено |
 | --- | --- |
 | `types.ts`, `core.ts`, `registry.ts`, `accumulator.ts`, `fuzzy.ts`, `dictionary.ts` | 1:1; изменены только пути импортов (`@/lib/paginate` → `$lib/paginate`) |
-| Хук `useSearchCorrection` | `svelte/correction.svelte.ts` — та же семантика на `$state.raw` + подписке реестра, возврат-геттер как у хуков `$lib/paginate/svelte`; `solid.tsx` оставлен рядом как референс исходника |
+| Хук `useSearchCorrection` | `svelte/correction.svelte.ts` — та же семантика на `$state.raw` + подписке реестра, возврат-геттер как у хуков `$lib/paginate/svelte`; `solid.tsx` оставлен рядом как референс исходника (в баррель не входит) |
 | Проверки ядра | `search.test.ts` — все проверки гейта `test/checks/search-fuzzy.mjs` (foldKey, DL, словарь, скоринг, rankFuzzy, collectFuzzyPage, SSR-граница перехвата, бюджет deep-link/параллельность) |
 | `catalog-filter.ts` | **не перенесён**: это слой КАТАЛОГА приложения поверх lib form предыдущего поколения (`defineForm`/`field.*`/`validators.*`/`Definition`/`Result` из `@/lib/form/core`). В modals-kit lib form уже другого поколения (`FormDefinition`/`FieldDraft`/`Result` c `v/instance/errors`), поэтому честный перенос требует моста совместимости, а не переписывания на глаз |
 | Слой приложения исходника (`features/search/*`: `useSearchQuery`, `SearchQueryForm`, `CatalogFilterForm`, `ActiveFilters`; роут каталога) | не входит в `lib/search` и не переносился |

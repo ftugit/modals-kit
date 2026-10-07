@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import {
     EdgeSentinel,
     PaginatorHost,
@@ -6,6 +7,7 @@
     usePaginatorState,
     useScopeStore,
   } from '$lib/paginate/svelte'
+  import { fetchReplace } from '$lib/paginate'
   import {
     EmptyState,
     EndRow,
@@ -22,7 +24,7 @@
     Skeleton,
     type SettingsField,
   } from '$lib/ui/paginator'
-  import type { DemoItem } from '../../content/items'
+  import type { DemoEntry } from '../../content/items'
   import {
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
@@ -30,9 +32,12 @@
     type DemoExtra,
     type DemoStore,
   } from './definition'
-  import { shotHeight } from './item-views'
+  import { isAnimeRecord, shotHeight } from './item-views'
   import ShotTile from './ShotTile.svelte'
   import ItemRow from './ItemRow.svelte'
+  import AnimeCard from './AnimeCard.svelte'
+  import SearchForm from './SearchForm.svelte'
+  import SearchNote from './SearchNote.svelte'
   import type { PaginatorState } from '$lib/paginate'
 
   const HOST_CLASS =
@@ -64,7 +69,24 @@
       options: [
         ['products', 'Товары (299)'],
         ['photos', 'Фото (131)'],
+        ['anime', 'Аниме (Shikimori API)'],
       ],
+    },
+    { type: 'divider', label: 'Поиск (источник и lib search)' },
+    {
+      // Отключает поиск целиком: поля нет, `?page.q` до источника не доходит.
+      key: 'search',
+      label: 'Поиск (поле и ?page.q)',
+      type: 'toggle',
+    },
+    {
+      // Отключает именно lib search: запрос уходит источнику как есть
+      // (у Shikimori — серверная подстрока нашего бэкенда, без fuzzy).
+      key: 'fuzzy',
+      label: 'lib/search (fuzzy-перехват)',
+      type: 'toggle',
+      jsOnly: true,
+      enabledWhen: (v) => v.search,
     },
     {
       key: 'mode',
@@ -193,17 +215,54 @@
     storeKind: DemoStore
     onStore: (store: DemoStore) => void
     /** SSR-снапшот URL-бранча. Страницу из адреса хост считает сам (через адаптер). */
-    url?: { snapshot: PaginatorState<DemoItem> | null }
+    url?: { snapshot: PaginatorState<DemoEntry> | null }
   }
 
   let { name, storeKind, onStore, url }: Props = $props()
 
-  const pagState = usePaginatorState<DemoItem>(name)
-  const { scrollToPage } = usePaginatorActions(name)
+  /** Хранилище пагинаторов страницы (SSR-снапшоты): нужно для пересборки после гидратации. */
+  const scopeStore = useScopeStore()
+
+  const pagState = usePaginatorState<DemoEntry>(name)
+  const { scrollToPage, setExtra } = usePaginatorActions(name)
 
   const cfg = $derived.by((): DemoExtra => {
     const s = pagState()
     return demoExtraOf(s.extra)
+  })
+
+  // Смена «источник/флаги поиска» — это смена ДАННЫХ: ключи объявлены в
+  // reloadKeys пагинатора, ядро само сбросит страницу и перезагрузит первую.
+  const searchLabel = $derived(
+    cfg.kind === 'anime'
+      ? cfg.fuzzy
+        ? 'Поиск: lib/search (fuzzy на клиенте, добор страниц)'
+        : 'Поиск: родной (бэкенд сужает выдачу подстрокой)'
+      : cfg.fuzzy
+        ? 'Поиск: lib/search (fuzzy по названиям)'
+        : 'Поиск: у этого источника родного нет — включите lib/search'
+  )
+  const searchHint = $derived(
+    cfg.kind === 'anime'
+      ? cfg.fuzzy
+        ? 'Например, «нарута» — опечатку исправит словарь lib/search'
+        : 'Например, «наруто» — точная подстрока на бэкенде'
+      : 'Например, «Product 1» или «Photo 1»'
+  )
+  const qValue = $derived(String(pagState().extra.q ?? ''))
+
+  // Поделённый адрес с включённым lib search: SSR отдал выдачу ИСТОЧНИКА
+  // (fuzzy на сервере не выполняется никогда). С JS перехват пересобирает её
+  // с первой страницы источника и показывает запрошенную страницу — адрес при
+  // этом не меняется. Как fetchReplace при монтировании страницы Shikimori
+  // в исходнике.
+  onMount(() => {
+    if (!url?.snapshot) return
+    const state = pagState()
+    const opts = demoExtraOf(state.extra)
+    const q = String(state.extra.q ?? '').trim()
+    if (!opts.search || !opts.fuzzy || !q) return
+    void fetchReplace(scopeStore, name, state.page, 'replace')
   })
 
   // Смена раскладки (list ↔ columns) пересобирает якоря: возвращаем viewport к странице,
@@ -237,6 +296,22 @@
   snapshot={url?.snapshot ?? null}
 >
   {#snippet toolbar()}
+    {#if cfg.search}
+      <SearchForm
+        pageParam="page"
+        label={searchLabel}
+        hint={searchHint}
+        value={qValue}
+        commit={(value) => setExtra({ q: value })}
+        class="mb-2"
+      />
+    {:else if qValue}
+      <p class="mb-2 text-xs text-muted-foreground" data-testid="search-off">
+        Поиск выключен (<code class="rounded bg-muted/70 px-1">?page.search=false</code>): запрос
+        «{qValue}» не учитывается — показан обычный каталог.
+      </p>
+    {/if}
+    <SearchNote {name} active={cfg.search && cfg.fuzzy} />
     <PaginatorSettings
       {name}
       class="mb-5 rounded-xl border border-border bg-card p-4 text-sm shadow-sm"
@@ -252,7 +327,7 @@
           ['none', 'Память (без персиста)'],
         ],
       }}
-      noscriptHint="Без JavaScript: работают источник, раскладка, размер страницы и число страниц (через адрес); остальные опции требуют JS."
+      noscriptHint="Без JavaScript: работают источник, поиск (родной — на сервере), раскладка, размер страницы и число страниц (через адрес); fuzzy-перехват и остальные опции требуют JS."
     >
       {#snippet footer(ctx)}
         Настройки и страница восстановлены {restoredLabel(storeKind)}; каждое изменение
@@ -276,6 +351,7 @@
   {#snippet skelColumns(ctx: { page: number; index: number })}
     <Skeleton height={shotHeight(ctx.index + 1)} />
   {/snippet}
+  <!-- Карточка источника: запись Shikimori (постер/синонимы) либо демо-запись. -->
   {#snippet skelList(ctx: { page: number; index: number })}
     {#if cfg.kind === 'photos'}
       <Skeleton height={shotHeight(ctx.index + 1)} />
@@ -301,14 +377,14 @@
       renderDivider={null}
       renderSkeleton={cfg.skel ? skelColumns : undefined}
     >
-      {#snippet renderItem(item: DemoItem)}
-        <ShotTile {item} />
+      {#snippet renderItem(item: DemoEntry)}
+        {#if isAnimeRecord(item)}<AnimeCard {item} />{:else}<ShotTile {item} />{/if}
       {/snippet}
     </PageColumns>
   {:else}
     <PageList {name} renderSkeleton={cfg.skel ? skelList : undefined}>
-      {#snippet renderItem(item: DemoItem)}
-        <ItemRow {item} />
+      {#snippet renderItem(item: DemoEntry)}
+        {#if isAnimeRecord(item)}<AnimeCard {item} />{:else}<ItemRow {item} />{/if}
       {/snippet}
     </PageList>
   {/if}
