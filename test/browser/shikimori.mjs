@@ -233,6 +233,221 @@ async function checkSsr() {
  */
 const OPTS = 'page.mode=single&page.topTrigger=off&page.bottomTrigger=off';
 
+/** Раскрыть панель фильтров (нативный <details>): открыт — второй раз не кликаем. */
+async function openFilters(page) {
+  const details = page.locator('[data-testid="filters-details"]');
+  if (!(await details.evaluate((el) => el.open))) await page.locator('[data-testid="filters-toggle"]').click();
+}
+
+/**
+ * Панель фильтров (этап 4): контролы приходят ИЗ СХЕМЫ, а применение идёт тем же
+ * каналом, что и остальные настройки (хранилище пагинатора). Проверяется то, что
+ * видно только в браузере: панель есть у источника с фильтрами и её нет у
+ * источника без них, выбор из формы сужает выдачу и попадает в адрес, чип снимает
+ * РОВНО одно значение, а связка гасит поле с причиной.
+ */
+async function checkFiltersUi(browser) {
+  console.log('— Панель фильтров: схема в контролах, снятие чипом, связки —');
+  const schema = (await api('/api/shikimori/filters')).body;
+  const expected = schema.fields.flatMap((field) =>
+    field.type === 'multiselect'
+      ? (field.modes ?? ['or']).map((mode) => `filters.${field.key}.${mode}`)
+      : field.type === 'number'
+        ? (field.bounds ?? ['min', 'max']).map((bound) => `filters.${field.key}.${bound}`)
+        : [`filters.${field.key}`],
+  );
+
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+  const panel = page.locator('[data-testid="filters-panel"]');
+
+  try {
+    // Источник без фильтров: возможности нет — нет и панели (не «панель вхолостую»).
+    await page.goto(`${U}?page.mode=single`, { waitUntil: 'networkidle' });
+    await waitFor(async () => (await page.locator('[data-testid="filters-panel"]').count()) === 0, {
+      what: 'панель отсутствует у источника без фильтров',
+    });
+    console.log('  ok  у товаров (нет возможности `filters`) панели нет');
+
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await waitFor(async () => await panel.isVisible(), { what: 'панель фильтров' });
+    const paths = await panel
+      .locator('[data-testid="catalog-filter-field"]')
+      .evaluateAll((els) => els.map((el) => el.dataset.filterPath));
+    if (paths.join(',') !== expected.join(','))
+      throw new Error(`контролы не совпали со схемой:\n ${paths}\n ${expected}`);
+    if ((await panel.locator('[data-testid="filters-built-at"]').count()) !== 1)
+      throw new Error('панель не показывает метку сборки схемы');
+    console.log(`  ok  контролов ${paths.length} — ровно объявленные схемой пути (режимы и границы включены)`);
+
+    // Второй пагинатор на странице (?gallery.*) — его ключи едут скрытыми полями.
+    await page.goto(`${U}?page.src=animes&page.size=5&gallery.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await waitFor(async () => await panel.isVisible(), { what: 'панель после перезагрузки' });
+    const hidden = await panel
+      .locator('[data-testid="catalog-filter-form"] input[type="hidden"]')
+      .evaluateAll((els) => els.map((el) => `${el.name}=${el.value}`));
+    for (const key of ['page.src=animes', 'page.size=5', 'gallery.size=5']) {
+      if (!hidden.includes(key)) throw new Error(`чужой ключ адреса не сохраняется формой: ${key} (${hidden})`);
+    }
+    console.log(`  ok  скрытые поля формы несут чужие ключи адреса: ${hidden.join(', ')}`);
+
+    await openFilters(page);
+    await panel
+      .locator('select[data-select-native][name="page.filters.kind"]')
+      .selectOption('tv', { force: true });
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => page.url().includes('page.filters.kind=tv'), { what: 'фильтр в адресе' });
+    await waitFor(async () => {
+      const ids = await rowsOf(page).evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+      const api1 = await api('/api/shikimori/animes?limit=5&filters.kind=tv');
+      return ids.join(',') === api1.body.items.map((it) => String(it.id)).join(',');
+    }, { what: 'выдача сужена фильтром «Тип: ТВ»' });
+    const appliedNow = [...new URL(page.url()).searchParams.keys()].filter((key) =>
+      key.startsWith('page.filters.'),
+    );
+    if (appliedNow.join(',') !== 'page.filters.kind')
+      throw new Error(`в адрес уехали ключи, которых пользователь не выбирал: ${appliedNow}`);
+    const chip = page.locator('[data-testid="active-filter"]');
+    if ((await chip.count()) !== 1) throw new Error(`после одного фильтра ждали один чип, их ${await chip.count()}`);
+    if ((await chip.getAttribute('data-filter-path')) !== 'filters.kind')
+      throw new Error('чип ссылается не на то поле');
+    // Подписи — ИЗ СХЕМЫ (их собирает серверная зона): у типа это «TV»,
+    // у жанров — русские имена. Своих подписей интерфейс не выдумывает.
+    const label = (field, value) =>
+      schema.fields.find((item) => item.key === field)?.options?.find((item) => item.value === value)?.label ?? value;
+    const chipText = (await chip.innerText()).replace(/\s+/g, ' ').trim();
+    if (!chipText.includes('Тип') || !chipText.includes(label('kind', 'tv')))
+      throw new Error(`подпись чипа не из схемы: «${chipText}» вместо «Тип: ${label('kind', 'tv')}»`);
+    if ((await page.locator('[data-testid="filters-count"]').innerText()) !== '1')
+      throw new Error('счётчик панели не совпал с числом фильтров');
+    console.log(`  ok  выбор из формы применён (адрес + выдача как у роута), чип «${chipText}»`);
+
+    // Фильтр сбрасывает указатель: стр. 2 → применение → стр. 1 в адресе нет.
+    await page.locator('[data-paginator-host="demo-url"] a[aria-label="Вперёд"], [data-paginator-host="demo-url"] button[aria-label="Вперёд"]').first().evaluate((el) => el.click());
+    await waitFor(async () => page.url().includes('page=2'), { what: 'переход на стр. 2' });
+    await openFilters(page);
+    await panel
+      .locator('select[data-select-native][name="page.filters.status"]')
+      .selectOption('released', { force: true });
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => page.url().includes('page.filters.status=released'), { what: 'второй фильтр в адресе' });
+    if (/[?&]page=2(&|$)/.test(page.url()))
+      throw new Error(`смена фильтров обязана начинать с первой страницы: ${page.url()}`);
+    console.log('  ok  новый набор фильтров сбрасывает указатель страницы (в адресе нет page=2)');
+
+    // Клик по чипу снимает РОВНО одно значение: второй фильтр остаётся.
+    const kindChip = page.locator('[data-testid="active-filter"][data-filter-path="filters.kind"]');
+    await kindChip.evaluate((el) => el.click());
+    await waitFor(async () => !page.url().includes('page.filters.kind'), { what: 'фильтр снят чипом' });
+    if (!page.url().includes('page.filters.status=released'))
+      throw new Error(`снятие чипа унесло соседний фильтр: ${page.url()}`);
+    if ((await page.locator('[data-testid="active-filter"]').count()) !== 1)
+      throw new Error('после снятия чипа должен остаться один активный фильтр');
+    console.log('  ok  чип снял только своё значение (соседний фильтр и адрес целы)');
+
+    // Связка: у анонсов нет оценки — поле гаснет, причина видна.
+    await openFilters(page);
+    await panel
+      .locator('select[data-select-native][name="page.filters.status"]')
+      .selectOption('anons', { force: true });
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => page.url().includes('page.filters.status=anons'), { what: 'фильтр «анонс»' });
+    const reason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
+    if (!/оценк/i.test(reason)) throw new Error(`причина гашения не из связки схемы: «${reason}»`);
+    if (!(await panel.locator('input[name="page.filters.score.min"]').isDisabled()))
+      throw new Error('поле оценки под связкой должно быть выключено');
+    console.log(`  ok  связка схемы: «${reason.trim()}» — поле выключено, причина показана`);
+
+    // Связка с поиском: `status=latest` запрещает `q` — панель говорит об этом.
+    await page.goto(`${U}?page.src=animes&page.size=5&page.filters.status=latest&${OPTS}`, {
+      waitUntil: 'networkidle',
+    });
+    await waitFor(async () => await panel.locator('[data-testid="filters-search-blocked"]').isVisible(), {
+      what: 'причина запрета поиска',
+    });
+    const blocked = await panel.locator('[data-testid="filters-search-blocked"]').innerText();
+    if (!/поиск/i.test(blocked)) throw new Error(`причина запрета поиска не внятная: «${blocked}»`);
+    console.log(`  ok  связка «поиск под фильтром» видна в панели: ${blocked.replace(/\s+/g, ' ').trim()}`);
+
+    await context.close();
+  } finally {
+    if (!context.closed) await context.close().catch(() => {});
+  }
+}
+
+/**
+ * Тот же путь БЕЗ JavaScript: панель приходит в разметке SSR (схему собрал
+ * сервер), раскрытие — нативный <details>, отправка — обычный GET формы.
+ * Это и есть проверка «минимум сложности в UI»: без JS всё работает потому, что
+ * форма настоящая, а не потому, что «для no-JS есть отдельная ветка».
+ */
+async function checkFiltersNoJs(browser) {
+  console.log('— Фильтры без JavaScript: SSR-разметка и нативный GET —');
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 1200 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+
+  try {
+    await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
+    const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
+    const count = await fields.count();
+    if (count !== 10) throw new Error(`без JS в разметке ${count} контролов вместо 10`);
+    // Значения приходят из адреса: применим фильтр и вернёмся на адрес со фильтром.
+    await openFilters(page);
+    await page.locator('select[data-select-native][name="page.filters.kind"]').selectOption('movie');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    const url = new URL(page.url());
+    if (url.searchParams.get('page.filters.kind') !== 'movie')
+      throw new Error(`нативный GET не донёс фильтр: ${page.url()}`);
+    // Форма уходит как её отправляет браузер: незаполненные поля дают ключи с
+    // ПУСТЫМ значением (`page.filters.status=`). Адресный слой такие значения
+    // считает отсутствием фильтра (deny-safe), поэтому важно другое: среди
+    // ключей нет ни одного ЗНАЧИМОГО, которого пользователь не выбирал.
+    const filled = [...url.searchParams.entries()].filter(
+      ([key, value]) => key.startsWith('page.filters.') && value !== '',
+    );
+    if (filled.length !== 1 || filled[0][0] !== 'page.filters.kind')
+      throw new Error(`нативный GET принёс лишние фильтры: ${JSON.stringify(filled)}`);
+    for (const [key, value] of [
+      ['page.src', 'animes'],
+      ['page.size', '5'],
+    ]) {
+      if (url.searchParams.get(key) !== value)
+        throw new Error(`чужой ключ ${key} потерян при отправке формы: ${page.url()}`);
+    }
+    // Выдачу сузил СЕРВЕР: строки пришли в разметке и совпадают с роутом.
+    const ids = await page
+      .locator('[data-paginator-host="demo-url"] a[data-testid^="anime-"]')
+      .evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+    const api1 = await api('/api/shikimori/animes?limit=5&filters.kind=movie');
+    if (!ids.length || ids.join(',') !== api1.body.items.map((it) => String(it.id)).join(','))
+      throw new Error(`без JS выдача не совпала с роутом: ${ids} vs ${api1.body.items.map((it) => it.id)}`);
+    const chips = page.locator('[data-testid="active-filter"]');
+    if ((await chips.count()) !== 1)
+      throw new Error(`без JS после одного фильтра ждали один чип, их ${await chips.count()}`);
+    const chip = await chips.innerText();
+    console.log(`  ok  без JS: контролов 10, GET донёс «Тип: Фильм», чужие ключи целы, выдача — ${ids.length} фильмов`);
+    console.log(`      чип из схемы: ${chip.replace(/\s+/g, ' ').trim()}`);
+
+    // Снятие чипа — настоящая ссылка: без JS это обычный переход.
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="active-filter"]').click(),
+    ]);
+    if (page.url().includes('page.filters.kind'))
+      throw new Error(`ссылка чипа не сняла фильтр: ${page.url()}`);
+    console.log('  ok  без JS чип снимается обычной ссылкой (адрес чист от этого фильтра)');
+    await context.close();
+  } finally {
+    if (!context.closed) await context.close().catch(() => {});
+  }
+}
+
+
 /** Строки живого источника внутри хоста демо-пагинатора. */
 const rowsOf = (page) => page.locator('[data-paginator-host="demo-url"] a[data-testid^="anime-"]');
 
@@ -386,7 +601,11 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
   try {
     await checkBrowser(browser);
-    console.log('\n✅ Живой источник Shikimori: SSR, стрелочная навигация, родной поиск и lib/search');
+    await checkFiltersUi(browser);
+    await checkFiltersNoJs(browser);
+    console.log(
+      '\n✅ Живой источник Shikimori: SSR, стрелочная навигация, родной поиск, lib/search и панель фильтров (JS и без JS)',
+    );
   } finally {
     await browser.close();
     killServer();

@@ -14,6 +14,7 @@ import {
   catalogFilterFieldNames,
   catalogFilterFormData,
   catalogFilterInitialState,
+  catalogFilterOptionsAreComplete,
   catalogFilterUrlWithout,
   catalogFilterValuesFromSearch,
   compileCatalogFilterSchema,
@@ -252,5 +253,66 @@ describe('компиляция в форму b1', () => {
     expect(state.values['filters.genres.and']).toEqual(['1'])
     expect(state.values['filters.score.min']).toBe('7')
     expect(state.values['filters.year.max']).toBe('2026')
+  })
+})
+
+describe('значение, скрытое лимитом показа', () => {
+  /**
+   * Поле объявило `optionsTruncated`: у источника значений больше, чем доехало
+   * в схему. «Нет в показанных опциях» для такого поля — ещё не «чужое
+   * значение»: молча выбросить его нельзя, решает источник (он один знает свой
+   * справочник и честно скажет `dropped`).
+   */
+  const truncated: CatalogFilterSchema = {
+    source: 'shikimori',
+    version: 1,
+    fields: [
+      {
+        key: 'studios',
+        label: 'Студии',
+        type: 'multiselect',
+        modes: ['and'],
+        options: [{ value: '858', label: 'Wit Studio' }],
+        optionsTruncated: 933,
+      },
+      {
+        key: 'kind',
+        label: 'Тип',
+        type: 'select',
+        options: [{ value: 'tv', label: 'ТВ' }],
+      },
+    ],
+  }
+
+  it('полный список опций остаётся allowlist’ом, обрезанный — нет', () => {
+    expect(catalogFilterOptionsAreComplete(truncated.fields[0])).toBe(false)
+    expect(catalogFilterOptionsAreComplete(truncated.fields[1])).toBe(true)
+    expect(
+      catalogFilterOptionsAreComplete({ key: 'x', label: 'X', type: 'text' } as never),
+    ).toBe(false)
+  })
+
+  it('значение вне обрезанного списка доезжает до значений', () => {
+    const form = catalogFilterFormData(truncated, { 'filters.studios.and': '858,1933' })
+    expect(form.getAll('filters.studios.and')).toEqual(['858', '1933'])
+    const { values, errors } = validateCatalogFilterValues(truncated, form)
+    expect(errors).toEqual([])
+    expect(values).toEqual({ studios: { and: ['858', '1933'] } })
+  })
+
+  it('у поля с полным списком allowlist работает как прежде', () => {
+    const form = catalogFilterFormData(truncated, { 'filters.kind': 'zzz' })
+    expect(form.get('filters.kind')).toBeNull()
+    expect(validateCatalogFilterValues(truncated, form).values).toEqual({})
+  })
+
+  it('чип различает «чужое значение» и «скрыто лимитом»', () => {
+    const values = { 'filters.studios.and': ['1933'], 'filters.kind': ['zzz'] }
+    const chips = activeCatalogFilters(truncated, values)
+    const hidden = chips.find((chip) => chip.value === '1933')
+    const foreign = chips.find((chip) => chip.value === 'zzz')
+    expect(hidden).toMatchObject({ hiddenByLimit: true, unknown: false })
+    expect(foreign).toMatchObject({ unknown: true })
+    expect(foreign?.hiddenByLimit).toBeUndefined()
   })
 })

@@ -8,3 +8,4 @@
  */
 export * from './catalog-filter'
 export * from './rules'
+export * from './view'

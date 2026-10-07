@@ -336,6 +336,19 @@ export function validateCatalogFilterSchema(input: unknown): CatalogFilterSchema
 export const CATALOG_FILTER_OPTIONS_LIMIT = 1000
 
 /**
+ * Опции поля — ДОВЕРЕННЫЙ allowlist, только пока показ не обрезан лимитом
+ * (2026-10-07, замечание сверки): у поля с `optionsTruncated` часть настоящих
+ * значений источника в схему не попала, поэтому «нет в показанных опциях» ещё
+ * не значит «чужое значение». Такому полю синтаксис проверяем, а не состав, и
+ * решает источник — он один знает свой справочник и честно отвечает (`dropped`).
+ * Молчаливой фильтрации нет ни на одной стороне: значение либо применяется, либо
+ * названо в отчёте источника.
+ */
+export function catalogFilterOptionsAreComplete(descriptor: CatalogFilterField): boolean {
+  return !!descriptor.options && !descriptor.optionsTruncated
+}
+
+/**
  * Деградация oversized-полей: select/multiselect с числом опций > limit
  * обрезается до top-`limit` по частоте (`count`, без count — по алфавиту),
  * число скрытых опций пишется в `optionsTruncated`. Принцип (план улучшения
@@ -446,10 +459,16 @@ export function compileCatalogFilterSchema(
         ] as ValidatorRef[],
       }
       const options = descriptor.options?.map((option) => option.value) ?? []
+      // Allowlist — только при ПОЛНОМ показе опций: у обрезанного лимитом поля
+      // настоящие значения источника могли не доехать, и «нет в списке» ещё не
+      // значит «чужое значение» (решает источник, см. `catalogFilterOptionsAreComplete`).
+      const list = catalogFilterOptionsAreComplete(descriptor)
+        ? [...common.validate, optionsAllowlist(options)]
+        : common.validate
       fields[name] = descriptor.type === 'multiselect'
-        ? field.multiselect({ ...common, options, validate: [...common.validate, optionsAllowlist(options)] })
+        ? field.multiselect({ ...common, options, validate: list })
         : descriptor.type === 'select'
-          ? field.select({ ...common, options, validate: [...common.validate, optionsAllowlist(options)] })
+          ? field.select({ ...common, options, validate: list })
           : descriptor.type === 'number'
             ? field.number(common)
             : field.text(common)
@@ -551,6 +570,12 @@ export type ActiveCatalogFilter = {
   excluded: boolean
   /** Значение отсутствует в опциях схемы (мусор из адреса). */
   unknown: boolean
+  /**
+   * Значение отсутствует В ПОКАЗАННЫХ опциях, но поле объявило `optionsTruncated`:
+   * оно может быть настоящим (скрыто лимитом показа), поэтому и причина другая,
+   * чем у мусора, — источник такое значение принимает.
+   */
+  hiddenByLimit?: boolean
 }
 
 /** Активные фильтры списком: по одному элементу на значение. */
@@ -566,6 +591,8 @@ export function activeCatalogFilters(
     const descriptor = byKey.get(parsed.key)
     for (const value of list) {
       const option = descriptor?.options?.find((item) => item.value === value)
+      const missing = !!descriptor?.options && !option
+      const hiddenByLimit = missing && !!descriptor?.optionsTruncated
       out.push({
         path,
         key: parsed.key,
@@ -575,7 +602,8 @@ export function activeCatalogFilters(
         label: option?.label ?? value,
         fieldLabel: descriptor?.label ?? parsed.key,
         excluded: parsed.mode === 'not',
-        unknown: !!descriptor?.options && !option,
+        unknown: missing && !hiddenByLimit,
+        ...(hiddenByLimit ? { hiddenByLimit: true } : {}),
       })
     }
   }
@@ -711,7 +739,9 @@ export function catalogFilterFormData(
   }
 
   for (const descriptor of schema.fields) {
-    const allowed = descriptor.options ? new Set(descriptor.options.map((option) => option.value)) : null
+    const allowed = catalogFilterOptionsAreComplete(descriptor)
+      ? new Set((descriptor.options ?? []).map((option) => option.value))
+      : null
     for (const name of catalogFilterFieldNames(descriptor)) {
       if (descriptor.type === 'number') {
         // Числовая граница из адреса: только конечное число в пределах
