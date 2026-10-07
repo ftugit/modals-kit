@@ -9,7 +9,9 @@
  *  5. Догрузка сверху (prepend);
  *  6. Персист настроек в URL (?page, ?page.size, ?page.<key>) и localStorage;
  *  7. Восстановление настроек при шеринге ссылки (включая SSR);
- *  8. Два независимых URL-пагинатора на одной странице (?page.* и ?gallery.*).
+ *  8. Два независимых URL-пагинатора на одной странице (?page.* и ?gallery.*);
+ *  9. Скелетоны подгрузки (список/колонки, append/prepend) и отсутствие дубля
+ *     строки «Загрузка страницы N…», когда скелетоны выключены.
  *
  * Запуск:
  *   MODALS_PORT=4173 node test/browser/paginate.mjs
@@ -162,6 +164,144 @@ async function run() {
       // URL sync check
     }
     console.log('  ok  опция «зона сверху» (topZone) переключается и реактивна');
+
+    // ── Скелетоны подгрузки: pending-группа живёт весь запрос, содержимое — после него ──
+    // Две регрессии, которые здесь закрыты:
+    //   • колоночная раскладка: `distributeRoundRobin(pages, count, !renderSkeleton)` —
+    //     условие было инвертировано, слоты pending-страницы в раскладку не попадали,
+    //     и при подгрузке скелетонов не было видно вовсе;
+    //   • список без скелетонов: внешние `pendingSide(...)` над и под списком рисовали
+    //     ВТОРУЮ строку «Загрузка страницы N…» поверх pending-группы.
+    // Задержка появления содержимого — транспорт демо-источника (DEMO_TRANSPORT_MS = 500).
+    console.log('— Скелетоны подгрузки (append/prepend) —');
+    const skeletonTimeline = (trigger) =>
+      page.evaluate(
+        (trigger) =>
+          new Promise((resolve) => {
+            const hostEl = document.querySelector('[data-paginator-host="demo-url"]');
+            const inHost = '[data-paginator-host="demo-url"] ';
+            const rows = () =>
+              document.querySelectorAll(
+                `${inHost}[data-testid^="card-"], ${inHost}[data-testid^="photo-"]`,
+              ).length;
+            const t0 = performance.now();
+            const frames = [];
+            let started = false;
+            const tick = () => {
+              const t = performance.now() - t0;
+              if (!started && t > 60) {
+                started = true;
+                if (trigger === 'append') hostEl.scrollTop = hostEl.scrollHeight;
+                else {
+                  hostEl.scrollTop = 100;
+                  hostEl.dispatchEvent(new Event('scroll'));
+                }
+              }
+              frames.push([
+                Math.round(t),
+                document.querySelectorAll('[data-testid="skeleton"]').length,
+                rows(),
+              ]);
+              if (t < 2000) requestAnimationFrame(tick);
+              else resolve(frames);
+            };
+            requestAnimationFrame(tick);
+          }),
+        trigger,
+      );
+
+    for (const layout of ['list', 'columns']) {
+      for (const trigger of ['append', 'prepend']) {
+        // prepend нужно сначала выйти из верхней зоны, а потом вернуться в неё: на коротком
+        // списке хост почти не скроллится, поэтому берём размер побольше и сужаем зону сверху.
+        const size = trigger === 'append' ? 10 : 20;
+        const bottom = trigger === 'append' ? 'direction' : 'off';
+        const topZone = trigger === 'append' ? '' : '&page.topZone=20%25';
+        const url = `${U}?page=${trigger === 'append' ? 1 : 2}&page.mode=accumulate&page.skel=true&page.ind=false&page.layout=${layout}&page.size=${size}&page.topTrigger=direction&page.bottomTrigger=${bottom}${topZone}`;
+        await page.goto(url, { waitUntil: 'networkidle' });
+        // при монтировании хост может сам запустить подгрузку (контейнер не заполнен) —
+        // ждём тишины, иначе таймлайн начнётся на середине чужого запроса
+        await page.waitForFunction(
+          () => document.querySelectorAll('[data-testid="skeleton"]').length === 0,
+          null,
+          { timeout: 5000 },
+        );
+        await sleep(300);
+        if (trigger === 'prepend') {
+          const geom = await host.evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+            return { scrollTop: el.scrollTop, max: el.scrollHeight - el.clientHeight };
+          });
+          if (geom.scrollTop < 20)
+            throw new Error(`${layout}/prepend: хост почти не скроллится (${geom.scrollTop}px)`);
+          await sleep(300);
+        }
+        const frames = await skeletonTimeline(trigger);
+        const win = frames.filter((f) => f[1] > 0);
+        const dur = win.length ? win[win.length - 1][0] - win[0][0] : 0;
+        const maxSkel = Math.max(0, ...frames.map((f) => f[1]));
+        const itemsBefore = frames[0][2];
+        const firstContent = frames.find((f) => f[2] > itemsBefore);
+        if (!firstContent)
+          throw new Error(`${layout}/${trigger}: подгрузка не сработала — элементов ${itemsBefore}`);
+        if (win.length < 5 || dur < 150)
+          throw new Error(
+            `${layout}/${trigger}: скелетоны видны ${win.length} кадров за ${dur} мс — слишком быстро для глаза`,
+          );
+        if (maxSkel !== size)
+          throw new Error(
+            `${layout}/${trigger}: скелетонов максимум ${maxSkel}, ожидался размер страницы ${size}`,
+          );
+        const delay = firstContent[0] - win[0][0];
+        if (delay < 250)
+          throw new Error(
+            `${layout}/${trigger}: содержимое появилось через ${delay} мс после скелетонов — задержки источника нет`,
+          );
+        winScroll = await page.evaluate(() => window.scrollY);
+        if (winScroll !== 0)
+          throw new Error(`${layout}/${trigger}: подгрузка сорвала window.scrollY = ${winScroll}`);
+        console.log(
+          `  ok  ${layout}/${trigger}: скелетонов ${maxSkel}, видны ${dur} мс (${win.length} кадров), содержимое позже на ${delay} мс`,
+        );
+      }
+    }
+
+    // ── Без скелетонов строка «Загрузка страницы N…» ровно одна ──────────────────
+    console.log('— Строка «Загрузка…» без скелетонов —');
+    for (const layout of ['list', 'columns']) {
+      await page.goto(
+        `${U}?page=1&page.size=5&page.mode=accumulate&page.skel=false&page.ind=false&page.layout=${layout}&page.topTrigger=off&page.bottomTrigger=manual`,
+        { waitUntil: 'networkidle' },
+      );
+      const link = page.locator('[data-testid="load-next"]');
+      await link.waitFor({ state: 'visible', timeout: 5000 });
+      // счётчик стартует ДО клика и живёт окно подгрузки (задержка источника 500 мс)
+      const poll = page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            let max = 0;
+            const t0 = performance.now();
+            const tick = () => {
+              const n = [...document.querySelectorAll('[data-paginator-host="demo-url"] *')].filter(
+                (e) =>
+                  !e.children.length &&
+                  /^Загрузка страницы/.test((e.textContent || '').trim()) &&
+                  e.getClientRects().length > 0,
+              ).length;
+              max = Math.max(max, n);
+              if (performance.now() - t0 < 700) requestAnimationFrame(tick);
+              else resolve(max);
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
+      await link.scrollIntoViewIfNeeded();
+      await link.click();
+      const maxRows = await poll;
+      if (maxRows !== 1)
+        throw new Error(`${layout}: строк «Загрузка страницы…» одновременно ${maxRows}, ожидалась 1`);
+      console.log(`  ok  ${layout}: без скелетонов строка «Загрузка…» ровно одна (не дубль)`);
+    }
 
     // ── Персист настроек: URL (?page, ?page.size, ?page.<key>) и localStorage ──────────
     console.log('— Персист настроек демо —');
