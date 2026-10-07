@@ -30,6 +30,20 @@
      * раскрытия нет ни дублирующего порога, ни зависимости от порядка CSS.
      */
     narrowInline?: boolean
+    /**
+     * Подсвечивать ли опцию под указателем (и активную опцию вообще).
+     *
+     * 🔴 Подсветка — эффект наведения, а наведение есть не у всякого ввода.
+     * На тач-экране браузер после касания шлёт совместимые мышиные события
+     * (`mouseover`/`mousemove` в точке пальца), и они попадают в опцию: список
+     * открывается с подсвеченной строкой, которой никто не наводил, а при
+     * движении пальца подсветка «проскакивает» по строкам. Признак берётся по
+     * возможностям ввода (`hover: none` + `pointer: coarse` — см. Select), а не
+     * по ширине окна: планшет с тачем и узкое окно десктопа различаются именно
+     * этим. Клавиатура не страдает: она ходит по опциям своими ключами
+     * (`onKeydown` → `moveActive`) и подсветку включает сама.
+     */
+    pointerHighlight?: boolean
     listWidth?: 'trigger' | 'auto'
     commit: (next: readonly SelectOption[]) => void
     close: () => void
@@ -47,6 +61,7 @@
     asLayer = false,
     hostMenu = false,
     narrowInline = false,
+    pointerHighlight = true,
     listWidth = 'trigger',
     commit,
     close,
@@ -431,13 +446,16 @@
           id={optionId(index)}
           role="option"
           aria-selected={checked}
-          data-active={index === activeIndex || undefined}
+          data-active={(pointerHighlight && index === activeIndex) || undefined}
           tabindex="-1"
-          onmousemove={() => (activeIndex = index)}
+          onmousemove={() => {
+            // Наведение — только у ввода, который умеет наводить (см. проп).
+            if (pointerHighlight) activeIndex = index
+          }}
           disabled={option.disabled}
           class={cn(
             'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent disabled:opacity-50',
-            index === activeIndex && 'bg-accent',
+            pointerHighlight && index === activeIndex && 'bg-accent',
           )}
           onclick={() => choose(option)}
         >

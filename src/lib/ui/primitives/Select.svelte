@@ -78,7 +78,7 @@
   import { Portal } from '@ark-ui/svelte/portal'
   import type { HTMLSelectAttributes } from 'svelte/elements'
   import { useInteractionModality } from '@ark-ui/svelte/interaction'
-  import { onMount, type Snippet } from 'svelte'
+  import { onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '../cn'
   import { tryUseModals, type HostFloatingCloseReason } from '$lib/modals/svelte'
   import { createMediaQuery } from '$lib/modals/svelte'
@@ -175,7 +175,13 @@
   let nativeEl = $state<HTMLSelectElement | null>(null)
   let mounted = $state(false)
   let open = $state(false)
-  let selected = $state<SelectOption[]>([])
+  /**
+   * Внутренний выбор контрола. Инициализируется пропом (он же — значение для
+   * SSR), дальше им владеет контрол: см. эффект внешнего значения ниже.
+   */
+  let selected = $state<SelectOption[]>(
+    untrack(() => options.filter((o) => new Set(valuesOf(value)).has(o.value))),
+  )
 
   /**
    * Хост, если он смонтирован. На desktop просим host popup-menu, на mobile —
@@ -228,9 +234,6 @@
   /* ── производные ─────────────────────────────────────────────────── */
 
   const all = $derived([...options])
-  const nativeValues = $derived(
-    new Set((Array.isArray(value) ? value : [value ?? '']).map(String)),
-  )
   const listHeight = $derived(
     config.listSize === 'sm' ? '12rem' : config.listSize === 'lg' ? '24rem' : '18rem',
   )
@@ -243,6 +246,43 @@
   const optionsByValue = (values: string[]) => {
     const want = new Set(values)
     return all.filter((o) => want.has(o.value))
+  }
+
+  /** Значения пропа `value` в виде строк — одна форма для одиночного и множественного. */
+  function valuesOf(source: string | readonly string[] | null | undefined): string[] {
+    return (Array.isArray(source) ? source : [source ?? '']).map(String)
+  }
+
+  /** Набор значений как один ключ — по нему видно, изменилось ли внешнее значение. */
+  const valuesKey = (values: Iterable<string>) => [...values].sort().join('\u0000')
+  /**
+   * Значения, записанные самим контролом. Свой `commit` возвращается пропом
+   * (`value = …` и повторный рендер родителя, не знающего о выборе) — это не
+   * внешнее изменение, иначе выбор гасился бы собственной же записью.
+   */
+  const selfWritten = new Set<string>()
+
+  /** Выбранное во внутреннем состоянии — то, чем рисуется и нативный контрол, и список. */
+  const selectedValues = $derived(new Set(selected.map((o) => o.value)))
+
+  /**
+   * Проп `value` — ВНЕШНЕЕ значение (адрес, хранилище), а не «текущее».
+   *
+   * 🔴 Раньше выбранность рисовалась ПРЯМО из пропа (`selected={nativeValues…}`),
+   * и любой повторный рендер родителя возвращал контролу значение пропа. В форме
+   * фильтров родитель отдаёт значение из адреса и на выбор пользователя не
+   * реагирует, поэтому первый же повторный рендер панели гасил только что
+   * сделанный выбор — «у одиночного select выбор сразу сбрасывается».
+   *
+   * Теперь выбор живёт в контроле (`selected` + нативный `<select>`), а проп
+   * применяется ТОЛЬКО когда он реально сменился: чип/адрес/хранилище поменялись
+   * извне — приняли, повторный рендер с тем же пропом — не трогаем.
+   */
+  function writeValues(values: Set<string>): void {
+    if (nativeEl) {
+      for (const o of Array.from(nativeEl.options)) o.selected = values.has(o.value)
+    }
+    selected = all.filter((o) => values.has(o.value))
   }
 
   /* ── синхронизация с нативным контролом ──────────────────────────── */
@@ -264,6 +304,8 @@
       nativeEl.dispatchEvent(new Event('change', { bubbles: true }))
     }
     selected = all.filter((o) => values.has(o.value))
+    // Своя запись вернётся пропом — пометим, чтобы не принять её за внешнюю.
+    selfWritten.add(valuesKey(values))
     value = multiple ? [...values] : ([...values][0] ?? '')
     onchange?.([...values])
     // Строка поиска живёт в панели (шаг E2): очистку после выбора делает она.
@@ -431,7 +473,7 @@
     // [local,memory]). На первом маунте порядок верный — поэтому баг
     // всплывал только после пересоздания.
     if (nativeEl && multiple) {
-      for (const o of Array.from(nativeEl.options)) o.selected = nativeValues.has(o.value)
+      for (const o of Array.from(nativeEl.options)) o.selected = selectedValues.has(o.value)
     }
     syncFromNative()
     mounted = true
@@ -441,10 +483,28 @@
     return () => form?.removeEventListener('reset', onReset)
   })
 
+  /**
+   * Применение внешнего значения: проп `value` изменился НА САМОМ ДЕЛЕ
+   * (адрес, чип, хранилище) — принимаем его. Повторная передача того же
+   * значения (обычный повторный рендер родителя) выбора не касается.
+   */
+  let appliedKey: string | null = null
+
   $effect(() => {
-    void value
+    const values = valuesOf(value)
+    const key = valuesKey(values)
+    // Опции пересобрались — DOM остаётся источником истины для выбора.
     void options
-    if (mounted) queueMicrotask(syncFromNative)
+    if (!mounted || !nativeEl) {
+      appliedKey = key
+      return
+    }
+    if (selfWritten.delete(key) || key === appliedKey) {
+      queueMicrotask(syncFromNative)
+      return
+    }
+    appliedKey = key
+    writeValues(new Set(values))
   })
 
   /** Desktop popup двигается за триггером. */
@@ -526,6 +586,8 @@
     {commit}
     asLayer={sheet}
     hostMenu={variant === 'host'}
+    // Подсветка опций — эффект наведения: на тач-экране её нет (см. SelectList).
+    pointerHighlight={!coarsePointer.matches}
     // Без хоста на узком экране список и раньше раскрывался на весь экран —
     // это делал @media-блок в app.css по селектору `[data-select-positioner]`.
     // Теперь то же условие приходит пропом, из того же живого media query.
@@ -591,10 +653,10 @@
     onkeydown={interceptKey}
   >
     {#if placeholder !== undefined && !multiple}
-      <option value="" selected={nativeValues.has('')}>{placeholder}</option>
+      <option value="" selected={selectedValues.has('')}>{placeholder}</option>
     {/if}
     {#each all as option (option.value)}
-      <option value={option.value} disabled={option.disabled} selected={nativeValues.has(option.value)}>
+      <option value={option.value} disabled={option.disabled} selected={selectedValues.has(option.value)}>
         {option.label}
       </option>
     {/each}
