@@ -5,7 +5,8 @@
  * часть), поэтому пагинатор работает и без неё.
  *
  * Возможности объявляют сами источники (а не тумблеры панели):
- *   • товары — данные + число страниц (поиск появится на следующем этапе);
+ *   • товары — данные + число страниц + родной поиск по названию (подстрока без
+ *              учёта регистра) и fuzzy: lib/search может встать сверху;
  *   • фото   — «просто данные»: ни поиска, ни фильтров, ни fuzzy;
  *   • аниме  — каталог Shikimori: родной поиск (подстрока на бэкенде), fuzzy,
  *              бюджеты добора живого API; числа страниц у API нет.
@@ -21,12 +22,31 @@ import { loadAnimePage, type AnimeRecord } from '../../content/anime'
  */
 const searchEnabled = (extra: Record<string, unknown>): boolean => extra.search !== false
 
-/** Товары: 299 записей, число страниц известно. Родного поиска пока нет. */
+/** Товары: 299 записей, число страниц известно, поиск — по названию. */
 export const productsSource: AdaptedSource<DemoItem> = defineSource<DemoItem>({
   id: 'products',
   label: 'Товары',
   totals: true,
-  page: ({ page, pageSize, signal }) => getItemsPage({ kind: 'products', page, pageSize, signal }),
+  search: {
+    // Родной поиск источника: подстрока по названию, регистр не важен (в items.ts).
+    enabled: searchEnabled,
+    // lib/search поверх родного: тексты для ранжирования берутся у записи.
+    // Словаря опечаток нет — каталог локальный, запасной контур сканирует его
+    // целиком дешёво (батч 50 = страница источника).
+    fuzzy: {
+      id: (item) => `product-${item.id}`,
+      texts: (item) => ('title' in item ? [item.title] : []),
+      batchSize: 50,
+    },
+  },
+  page: ({ page, pageSize, extra, signal }) =>
+    getItemsPage({
+      kind: 'products',
+      page,
+      pageSize,
+      q: typeof extra?.q === 'string' ? extra.q : undefined,
+      signal,
+    }),
 })
 
 /** Фото: «просто данные» — без поиска, фильтров и fuzzy. */

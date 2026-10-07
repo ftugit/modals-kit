@@ -11,7 +11,15 @@ export type DemoItem = Product | Photo
  * опция панели (`extra.kind`), разметка различает записи по форме.
  */
 export type DemoEntry = DemoItem | AnimeRecord
-export type ItemsQuery = { kind: ItemKind } & PageRequest
+export type ItemsQuery = {
+  kind: ItemKind
+  /**
+   * Запрос по названию. Родной поиск есть только у товаров (подстрока по title,
+   * без учёта регистра); у фото его нет — источник не объявляет возможность, и
+   * оболочка пагинатора запрос к нему не передаёт.
+   */
+  q?: string
+} & PageRequest
 
 export const PRODUCTS: Product[] = Array.from({ length: 299 }, (_, i) => ({
   id: i + 1,
@@ -24,13 +32,33 @@ export const GALLERY: Photo[] = Array.from({ length: 131 }, (_, i) => ({
   caption: `Photo ${i + 1}`,
 }))
 
-export function queryItemsPage(kind: ItemKind, { page, pageSize }: PageRequest): PageResponse<DemoItem> {
+/** Название записи для поиска: у товара — title, у фото подписи в поиск не идут. */
+function searchableTitle(item: DemoItem): string | null {
+  return 'title' in item ? item.title : null
+}
+
+export function queryItemsPage(
+  kind: ItemKind,
+  { page, pageSize, q }: PageRequest & { q?: string },
+): PageResponse<DemoItem> {
   const all = kind === 'products' ? PRODUCTS : GALLERY
+  // Поиск — возможность ТОЛЬКО товаров: подстрока по названию без учёта регистра.
+  // Фильтр применяется ДО среза страницы: пагинация идёт по найденному, а не по
+  // всему массиву, иначе вторая страница выдачи показала бы «дырки». Фото —
+  // «просто данные»: ни родного поиска, ни фильтра по подписям у них нет.
+  const query = kind === 'products' && typeof q === 'string' ? q.trim().toLowerCase() : ''
+  const rows =
+    query.length === 0
+      ? all
+      : all.filter((item) => {
+          const title = searchableTitle(item)
+          return title !== null && title.toLowerCase().includes(query)
+        })
   const start = (page - 1) * pageSize
   return {
-    items: all.slice(start, start + pageSize),
-    totalItems: all.length,
-    totalPages: Math.ceil(all.length / pageSize),
+    items: rows.slice(start, start + pageSize),
+    totalItems: rows.length,
+    totalPages: Math.ceil(rows.length / pageSize),
   }
 }
 
@@ -42,7 +70,8 @@ export function validateItemsQuery(raw: unknown): ItemsQuery {
     const n = typeof v === 'number' ? v : Number(v)
     return Number.isInteger(n) && n >= min && n <= max ? n : fallback
   }
-  return { kind, page: int(o.page, 1, 1_000_000, 1), pageSize: int(o.pageSize, 1, 100, 20) }
+  const q = typeof o.q === 'string' ? o.q.slice(0, 120) : undefined
+  return { kind, page: int(o.page, 1, 1_000_000, 1), pageSize: int(o.pageSize, 1, 100, 20), q }
 }
 
 export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoItem>> {
@@ -51,5 +80,5 @@ export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoI
     await new Promise((r) => setTimeout(r, 20))
   }
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-  return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize })
+  return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize, q: args.q })
 }
