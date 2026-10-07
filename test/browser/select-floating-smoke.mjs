@@ -250,6 +250,33 @@ try {
     await page.close()
   }
 
+  console.log('— Select: тач-экран не подсвечивает строки —')
+  {
+    // 🔴 Подсветка опции — эффект НАВЕДЕНИЯ, а наведение есть не у всякого
+    // ввода. Без этого признака список открывался с подсвеченной первой
+    // строкой (активная опция с первого кадра) и подсвечивал строки от
+    // совместимых мышиных событий, которые браузер шлёт после касания.
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    await clickSelect(page.locator('[data-select-root]').first())
+    await waitAtLeast(page, '[data-select-content]', 1)
+
+    const lit = page.locator('[data-select-content] [role="option"][data-active]')
+    assert((await lit.count()) === 0, 'на тач-экране список открылся с подсвеченной строкой')
+    ok('на тач-экране при открытии ни одна строка не подсвечена')
+
+    await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(120)
+    assert((await lit.count()) === 1, 'клавиатура не включила подсветку — опции недоступны без наведения')
+    ok('клавиатура включает подсветку сама')
+
+    await page.keyboard.press('Escape')
+    await waitCount(page, '[data-host-floating]', 0)
+    await page.close()
+  }
+
   console.log('— Select: поиск переживает переход desktop⇄mobile —')
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })

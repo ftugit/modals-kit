@@ -41,7 +41,8 @@
      * возможностям ввода (`hover: none` + `pointer: coarse` — см. Select), а не
      * по ширине окна: планшет с тачем и узкое окно десктопа различаются именно
      * этим. Клавиатура не страдает: она ходит по опциям своими ключами
-     * (`onKeydown` → `moveActive`) и подсветку включает сама.
+     * (`onKeydown` → `moveActive`) и подсветку включает сама — для этого и
+     * нужен второй источник признака ниже.
      */
     pointerHighlight?: boolean
     listWidth?: 'trigger' | 'auto'
@@ -70,6 +71,12 @@
   let searchInput = $state<HTMLInputElement | null>(null)
   let searchArmed = $state(false)
   let activeIndex = $state(0)
+  /**
+   * Клавиатура включила подсветку: на тач-экране её нет, пока по опциям не
+   * пошли стрелками (см. проп `pointerHighlight`).
+   */
+  let keyboardArmed = $state(false)
+  const highlight = $derived(pointerHighlight || keyboardArmed)
   let listboxEl = $state<HTMLElement | null>(null)
   let contentEl = $state<HTMLElement | null>(null)
 
@@ -234,24 +241,28 @@
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       event.stopPropagation()
+      keyboardArmed = true
       moveActive(1)
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       event.stopPropagation()
+      keyboardArmed = true
       moveActive(-1)
       return
     }
     if (event.key === 'Home') {
       event.preventDefault()
       event.stopPropagation()
+      keyboardArmed = true
       activeIndex = Math.max(0, filtered.findIndex((o) => !o.disabled))
       return
     }
     if (event.key === 'End') {
       event.preventDefault()
       event.stopPropagation()
+      keyboardArmed = true
       const last = filtered.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0).at(-1)
       activeIndex = last ?? 0
       return
@@ -446,7 +457,7 @@
           id={optionId(index)}
           role="option"
           aria-selected={checked}
-          data-active={(pointerHighlight && index === activeIndex) || undefined}
+          data-active={(highlight && index === activeIndex) || undefined}
           tabindex="-1"
           onmousemove={() => {
             // Наведение — только у ввода, который умеет наводить (см. проп).
@@ -455,7 +466,7 @@
           disabled={option.disabled}
           class={cn(
             'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent disabled:opacity-50',
-            pointerHighlight && index === activeIndex && 'bg-accent',
+            highlight && index === activeIndex && 'bg-accent',
           )}
           onclick={() => choose(option)}
         >
