@@ -25,9 +25,11 @@ import { getItemsPage } from '../../content/items'
 import {
   SHIKIMORI_LIMIT_MAX,
   getAnimesPage,
+  getShikimoriFilters,
   getShikimoriTerms,
   type AnimesPage,
 } from '../../content/shikimori'
+import type { CatalogFilterSchema } from '$lib/filters'
 import {
   SHIKIMORI_FILTER_KEYS,
   SHIKIMORI_FILTER_RELOAD_KEYS,
@@ -123,6 +125,56 @@ export type DemoConfig = DemoExtra & {
  * зашит в `SHIKIMORI_LIMIT_MAX` и в разборе параметров эндпоинта).
  */
 export const DEMO_PAGE_SIZES = [5, 10, 20, 40] as const
+
+/** Префикс адресных ключей пагинатора демо (`?page…`). */
+export const DEMO_PAGE_PREFIX = 'page'
+
+/** Источник, у которого есть серверная схема фильтров (живой каталог). */
+export const DEMO_LIVE_SRC = 'animes'
+
+/**
+ * Чужие ключи адреса — для адресов ссылок и нативной формы фильтров.
+ *
+ * Своё отбрасывается: указатель страницы каталога (новый набор фильтров
+ * начинается с первой) и ключи ЕГО фильтров (их заменяет форма). Ключи модалки
+ * — состояние слоя модалок, а не фильтров. Всё остальное (размер страницы,
+ * источник, вторая полоса `?gallery.*`) обязано пережить смену фильтров.
+ */
+/**
+ * Кэш схемы фильтров на клиенте: один запрос на сессию.
+ *
+ * Схема собирается сервером из живых справочников и кэшируется там (TTL +
+ * stale-fallback), поэтому клиенту достаточно спросить один раз — при
+ * переключении источника туда-обратно второй запрос не нужен. Живёт это ТОЛЬКО
+ * на клиенте: зовётся из эффекта, а эффекты при SSR не исполняются.
+ */
+let filterSchemaCache: CatalogFilterSchema | null = null
+let filterSchemaInflight: Promise<CatalogFilterSchema> | null = null
+
+/** Схема фильтров живого источника — из роута `/api/shikimori/filters`. */
+export async function loadFilterSchema(): Promise<CatalogFilterSchema> {
+  if (filterSchemaCache) return filterSchemaCache
+  filterSchemaInflight ??= getShikimoriFilters()
+    .then((schema) => {
+      filterSchemaCache = schema
+      return schema
+    })
+    .finally(() => {
+      filterSchemaInflight = null
+    })
+  return await filterSchemaInflight
+}
+
+export function demoPreservedSearch(search: string | URLSearchParams): Record<string, string> {
+  const params = typeof search === 'string' ? new URLSearchParams(search) : search
+  const out: Record<string, string> = {}
+  for (const [key, value] of params) {
+    if (key === DEMO_PAGE_PREFIX || key.startsWith(`${DEMO_PAGE_PREFIX}.filters.`)) continue
+    if (key === 'modal' || key.startsWith('modal.')) continue
+    out[key] = value
+  }
+  return out
+}
 
 export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   src: 'products',

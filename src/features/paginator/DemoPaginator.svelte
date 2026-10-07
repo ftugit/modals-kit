@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { page } from '$app/state'
+  import type { CatalogFilterSchema } from '$lib/filters'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
   import {
     EdgeSentinel,
@@ -28,11 +30,14 @@
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
     demoExtraOf,
+    demoPreservedSearch,
     demoQueryOf,
+    loadFilterSchema,
     onInterceptStats,
     type DemoExtra,
     type DemoStore,
   } from './definition'
+  import FiltersPanel from './FiltersPanel.svelte'
   import { isAnimeItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
@@ -213,9 +218,11 @@
     onStore: (store: DemoStore) => void
     /** SSR-снапшот URL-бранча. Страницу из адреса хост считает сам (через адаптер). */
     url?: { snapshot: PaginatorState<CatalogItem> | null }
+    /** Схема фильтров от сервера: есть, только если её объявляет выбранный источник. */
+    schema?: CatalogFilterSchema | null
   }
 
-  let { name, storeKind, onStore, url }: Props = $props()
+  let { name, storeKind, onStore, url, schema = null }: Props = $props()
 
   const pagState = usePaginatorState<CatalogItem>(name)
   // Имя захватывается начальным значением осознанно (как у панели настроек рядом):
@@ -226,6 +233,24 @@
   const query = $derived(demoQueryOf(pagState().extra))
   /** Возможности текущего источника: панель и подсказки следуют им, а не имени `src`. */
   const gates = $derived(featureGates(pagState().capabilities))
+
+  /**
+   * Схема фильтров: серверная (её отдал лоадер, если источник выбран адресом)
+   * или догруженная клиентом при переключении на живой источник. Панель без
+   * схемы не рисуется — фильтров у неё тогда просто нет.
+   */
+  // Начальное значение читается осознанно: при SSR эффекты не исполняются, и
+  // разметка панели обязана появиться уже в первом рендере (иначе без JS формы
+  // фильтров не будет вовсе).
+  let filterSchema = $state<CatalogFilterSchema | null>(schema)
+  $effect(() => {
+    // Пересборка схемы у сервера — на изменения выбранного источника: сам
+    // выбор читается из extra (гейт `filters`), а не из имени.
+    if (!gates.filters || filterSchema) return
+    void loadFilterSchema()
+      .then((loaded) => (filterSchema = loaded))
+      .catch(() => {})
+  })
 
   /** Живая статистика перехвата lib search (канал источника, не реестра). */
   let stats = $state<SearchInterceptStats | null>(null)
@@ -319,6 +344,21 @@
           Источник не умеет искать: ни родного поиска, ни подключённого lib/search.
         {/if}
       </p>
+      {#if filterSchema && gates.filters}
+        <!--
+          Фильтры — свойство ИСТОЧНИКА (capabilities.filters): у товаров и фото
+          возможности нет, и панели нет. Схему рисует `FiltersPanel`, все
+          решения (контролы, связки, патч хранилища) — в api схемы.
+        -->
+        <div class="mt-4">
+          <FiltersPanel
+            {name}
+            schema={filterSchema}
+            extra={pagState().extra}
+            preserved={demoPreservedSearch(page.url.search)}
+          />
+        </div>
+      {/if}
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
         Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · lib/search:
         <b data-testid="search-ls">{cfg.ls ? 'вкл' : 'выкл'}</b>

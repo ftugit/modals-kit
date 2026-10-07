@@ -1,3 +1,4 @@
+import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
 import { fetchAnimesPage } from '$lib/server/shikimori-filters'
 import {
   createPaginatorStore,
@@ -7,11 +8,13 @@ import {
 import {
   DEFAULT_DEMO_EXTRA,
   DEFAULT_GALLERY_EXTRA,
+  DEMO_LIVE_SRC,
   ensureDemoPaginator,
   ensureGalleryPaginator,
   setLiveServerTransport,
 } from './definition'
 import type { DemoItem } from '../../content/items'
+import type { CatalogFilterSchema } from '$lib/filters'
 import type { CatalogItem } from './item-views'
 import type { PaginatorLoaderData } from './types'
 
@@ -83,5 +86,23 @@ export async function loadPaginatorDemo(ctx: {
       initServerPaginator<DemoItem>(store, galleryName, { url }),
     ])
 
-  return { defaultName, snapshot, gallerySnapshot }
+  return { defaultName, snapshot, gallerySnapshot, filterSchema: await schemaOf(snapshot) }
+}
+
+/**
+ * Схема фильтров — только для источника, который их объявляет, и только когда
+ * он выбран адресом. Товарам и фото схему не собирают вовсе: сборка трогает
+ * живые справочники источника, и страница без фильтров её не ждёт.
+ *
+ * Без серверной схемы SSR-разметка фильтров не нарисуется (без JavaScript
+ * фильтры работают только через неё) — поэтому сбой сборки не роняет страницу:
+ * панель просто не показывается, а клиент попробует схему сам.
+ */
+async function schemaOf(snapshot: PaginatorState<CatalogItem>): Promise<CatalogFilterSchema | null> {
+  if (snapshot.extra?.src !== DEMO_LIVE_SRC) return null
+  try {
+    return await getShikimoriFilterSchema()
+  } catch {
+    return null
+  }
 }

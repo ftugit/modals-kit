@@ -21,14 +21,15 @@ const IMMUTABLE_ROOT = join(CLIENT_ROOT, '_app/immutable')
 const MANIFEST = join(CLIENT_ROOT, '.vite/manifest.json')
 const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
 
-// Лимиты подняты 2026-10-07 (этапы 1–3): общий слой источников с возможностями,
-// серверная схема фильтров Shikimori и её клиентская часть (включая ключи адреса)
-// добавили ~28 KiB gzip — это функциональность, а не случайная зависимость.
-// Запас остаётся минимальным (факт 194.2 / 181.4 / 12.9): гейт по-прежнему ловит
+// Лимиты подняты 2026-10-07 (этапы 1–4): общий слой источников с возможностями,
+// серверная схема фильтров Shikimori, её клиентская часть (ключи адреса, схема,
+// связки) и панель фильтров с формой на схеме добавили ~34 KiB gzip — это
+// функциональность, а не случайная зависимость.
+// Запас остаётся минимальным (факт 200.0 / 187.1 / 12.9): гейт по-прежнему ловит
 // и новую тяжёлую зависимость, и рост клиентской части схемы.
 const LIMITS = {
-  allImmutableGzip: 200 * KiB,
-  allJsGzip: 185 * KiB,
+  allImmutableGzip: 203 * KiB,
+  allJsGzip: 190 * KiB,
   allCssGzip: 20 * KiB,
   largestJsGzip: 50 * KiB,
   largestCssGzip: 14 * KiB,
@@ -38,6 +39,9 @@ const ROUTE_LIMITS = {
   '/': 130 * KiB,
   '/form': 150 * KiB,
   '/modals': 135 * KiB,
+  // Пагинатор с живым источником, lib/search и панелью фильтров (факт 120.3).
+  // Лимит добавлен на этапе 4: раньше этот маршрут не проверялся вовсе.
+  '/paginator': 126 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

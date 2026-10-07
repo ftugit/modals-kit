@@ -76,12 +76,14 @@
             {storeKind}
             onStore={(s: DemoStore) => (storeKind = s)}
             url={{ snapshot: activeSnapshot }}
+            schema={loaderData.filterSchema}
           />
         {:else}
           <DemoPaginator
             name={activeName}
             {storeKind}
             onStore={(s: DemoStore) => (storeKind = s)}
+            schema={loaderData.filterSchema}
           />
         {/if}
       {/key}
