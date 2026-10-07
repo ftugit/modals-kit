@@ -5,7 +5,7 @@
     'nav-pill inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
     {
       active: {
-        true: 'nav-pill-active bg-primary text-primary-foreground font-semibold',
+        true: 'nav-pill-active bg-accent text-accent-foreground font-semibold',
         false: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
       },
     },

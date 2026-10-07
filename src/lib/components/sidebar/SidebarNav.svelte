@@ -5,7 +5,7 @@
     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
     {
       active: {
-        true: 'bg-primary text-primary-foreground font-semibold',
+        true: 'bg-accent text-accent-foreground font-semibold',
         false: 'text-foreground/80 hover:bg-accent hover:text-accent-foreground',
       },
     },

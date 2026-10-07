@@ -350,12 +350,14 @@
   outline-offset: 2px;
 }
 .modal-trigger {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 10%, transparent);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 6%, transparent);
 }
 .modal-trigger:hover {
-  background: color-mix(in oklab, var(--primary) 90%, var(--background));
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .modal-trigger[data-state='loading'],
 .modal-trigger[data-state='error'] {
