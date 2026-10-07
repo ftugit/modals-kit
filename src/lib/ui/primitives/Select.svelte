@@ -85,6 +85,22 @@
     multiple?: boolean
     disabled?: boolean
     name?: string
+    /**
+     * `id` нативного `select` — то, на что указывает `<label for>`.
+     *
+     * Без этого пропа внешняя подпись молча ни на что не ссылалась: элемент
+     * оставался без идентификатора, и `<label for="…">` не фокусировал контрол
+     * (в форме фильтров так и было — `for` приходил из имени поля). lib/form
+     * идентификаторы даёт сам (`attrs.id`, `labelProps().for`), а примитиву их
+     * должен дать потребитель — или взять сгенерированный.
+     */
+    id?: string
+    /**
+     * Связь с текстом-пояснением (`aria-describedby`): приходит от потребителя
+     * (например, «почему поле выключено» под контролом). Уходит на НАТИВНЫЙ
+     * select — тот же узел, что несут `id`/`name`, поэтому связь не разъедется.
+     */
+    'aria-describedby'?: string
     required?: boolean
     /** Классы внешней обёртки (по умолчанию `w-full`). */
     wrapperClass?: string
@@ -110,10 +126,20 @@
 
   let {
     options, value = $bindable(), placeholder, size = 'md', multiple = false,
-    disabled = false, name, required, wrapperClass, listWidth = 'trigger',
+    disabled = false, name, id, 'aria-describedby': ariaDescribedby, required, wrapperClass, listWidth = 'trigger',
     closeOnSelect,
     class: cls, config: cfgProp, onchange,
   }: Props = $props()
+
+  /**
+   * Идентификатор нативного контрола: явный `id` или сгенерированный.
+   *
+   * Сгенерированный (`$props.id()`) стабилен между сервером и клиентом, поэтому
+   * разметка не расходится при гидратации, а подпись/подсказки привязываются к
+   * существующему узлу сами — «тихо не сработавшая» связь больше невозможна.
+   */
+  const uid = $props.id()
+  const selectId = $derived(id ?? uid)
 
   const config = $derived({
     ...DEFAULT_SELECT_CONFIG,
@@ -476,7 +502,9 @@
   <select
     bind:this={nativeEl}
     data-select-native=""
+    id={selectId}
     {name}
+    aria-describedby={ariaDescribedby}
     {required}
     {disabled}
     multiple={multiple}

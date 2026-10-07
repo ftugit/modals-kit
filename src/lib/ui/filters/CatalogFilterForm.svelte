@@ -63,6 +63,14 @@
       // Выключенный контрол браузер не отправляет и сам — но его значение
       // («выключено» не равно «пусто») наружу уходить не должно ни при каком
       // пути, поэтому и здесь оно не читается.
+      //
+      // Это и есть согласованная политика для значения, которое гасит связка
+      // схемы (например, «Оценка» при «Анонсах»): при применении оно уходит
+      // автоматически — ровно так же, как без JavaScript его не отправляет сам
+      // браузер. Скрытых полей для «удержания» таких значений здесь нет
+      // намеренно: это развело бы пути JS и no-JS, а решать должна схема —
+      // источник всё равно не применит запрещённое значение и назовёт причину
+      // (`dropped`), а панель показывает её и в списке связок, и под полем.
       if (control.disabled) continue
       const items = read(data, control)
       if (items.length) values[control.path] = items
@@ -85,12 +93,28 @@
 
   <div class="grid gap-3 sm:grid-cols-2">
     {#each controls as control (control.path)}
+      {@const describedBy =
+        [
+          control.kind === 'multiselect' && control.truncated ? `${control.name}-truncated` : null,
+          control.disabled && control.reason ? `${control.name}-reason` : null,
+        ]
+          .filter(Boolean)
+          .join(' ') || undefined}
       <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={control.path}>
+        <!--
+          Подпись ссылается на `id`, который получает сам контрол (`id={control.name}`),
+          а не на «имя, которое когда-нибудь совпадёт»: до этого `<label for>` указывал
+          в пустоту (у примитива `Select` не было `id`), и подпись молча ничего не
+          фокусировала. `name` и `id` здесь совпадают намеренно — и то и другое
+          выводится из пути поля, поэтому связь нельзя разъехать незаметно.
+        -->
         <label class="block text-xs font-medium text-muted-foreground" for={control.name}>
           {control.label}
         </label>
         {#if control.kind === 'select'}
           <Select
+            id={control.name}
+            aria-describedby={describedBy}
             options={control.options}
             name={control.name}
             value={control.value}
@@ -99,6 +123,8 @@
           />
         {:else if control.kind === 'multiselect'}
           <Select
+            id={control.name}
+            aria-describedby={describedBy}
             options={control.options}
             name={control.name}
             multiple
@@ -108,6 +134,8 @@
           />
         {:else if control.kind === 'number'}
           <Input
+            id={control.name}
+            aria-describedby={describedBy}
             type="number"
             name={control.name}
             value={control.value}
@@ -117,15 +145,30 @@
             disabled={control.disabled}
           />
         {:else}
-          <Input type="text" name={control.name} value={control.value} disabled={control.disabled} />
+          <Input
+            id={control.name}
+            aria-describedby={describedBy}
+            type="text"
+            name={control.name}
+            value={control.value}
+            disabled={control.disabled}
+          />
         {/if}
         {#if control.kind === 'multiselect' && control.truncated}
-          <p class="text-xs text-muted-foreground" data-testid="catalog-filter-truncated">
+          <p
+            id={`${control.name}-truncated`}
+            class="text-xs text-muted-foreground"
+            data-testid="catalog-filter-truncated"
+          >
             Показаны не все значения: у источника их больше на {control.truncated}.
           </p>
         {/if}
         {#if control.disabled && control.reason}
-          <p class="text-xs text-muted-foreground" data-testid="catalog-filter-reason">
+          <p
+            id={`${control.name}-reason`}
+            class="text-xs text-muted-foreground"
+            data-testid="catalog-filter-reason"
+          >
             {control.reason}
           </p>
         {/if}

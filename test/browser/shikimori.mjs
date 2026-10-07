@@ -292,6 +292,40 @@ async function checkFiltersUi(browser) {
     }
     console.log(`  ok  скрытые поля формы несут чужие ключи адреса: ${hidden.join(', ')}`);
 
+    // Подпись и контрол связаны по-настоящему: `for` каждой подписи указывает
+    // на существующий узел, и клик по подписи фокусирует ЭТОТ контрол.
+    // Регрессия, которую ловим: у примитива Select раньше не было `id`, и
+    // `<label for>` молча ничего не фокусировал.
+    await openFilters(page) // подписи живут внутри <details>: сначала раскрыть
+    const labelCheck = await panel.locator('[data-testid="catalog-filter-field"]').evaluateAll((fields) =>
+      fields.map((field) => {
+        const label = field.querySelector('label');
+        const id = label?.getAttribute('for');
+        const target = id ? field.querySelector(`#${CSS.escape(id)}`) : null;
+        const control = field.querySelector('input, select');
+        // `aria-describedby` (пояснение к полю: причина гашения, обрезка
+        // списка) обязан указывать на существующий узел — ссылка в пустоту
+        // неотличима от отсутствия связи, но заметна только скринридеру.
+        const describedby = (control?.getAttribute('aria-describedby') ?? '')
+          .split(' ')
+          .filter(Boolean)
+          .map((ref) => ({ ref, found: !!field.querySelector(`#${CSS.escape(ref)}`) }));
+        return { id, linked: !!target, tag: target?.tagName ?? null, describedby };
+      }),
+    );
+    const broken = labelCheck.filter(
+      (item) => !item.id || !item.linked || item.describedby.some((d) => !d.found),
+    );
+    if (broken.length) throw new Error(`связи поля разъехались: ${JSON.stringify(broken)}`);
+    const described = labelCheck.flatMap((item) => item.describedby.map((d) => d.ref));
+    const labelTarget = `page.filters.${schema.fields.find((field) => field.type === 'select').key}`;
+    await panel.locator(`label[for="${labelTarget}"]`).click();
+    const focused = await page.evaluate(() => document.activeElement?.id ?? null);
+    if (focused !== labelTarget)
+      throw new Error(`клик по подписи не фокусирует контрол (активен: ${focused})`);
+    console.log(`  ok  подпись связана с контролом: ${labelCheck.length} подписей, клик по «${labelTarget}» фокусирует его`);
+    console.log(`      aria-describedby указывает на существующие пояснения: ${described.join(', ') || '—'}`);
+
     await openFilters(page);
     await panel
       .locator('select[data-select-native][name="page.filters.kind"]')
@@ -358,6 +392,28 @@ async function checkFiltersUi(browser) {
     if (!(await panel.locator('input[name="page.filters.score.min"]').isDisabled()))
       throw new Error('поле оценки под связкой должно быть выключено');
     console.log(`  ok  связка схемы: «${reason.trim()}» — поле выключено, причина показана`);
+
+    // Политика «заблокированное значение снимается при применении»: адрес
+    // (со старым значением в ссылке) её не теряет, а «Применить» — не пишет.
+    await page.goto(
+      `${U}?page.src=animes&page.size=5&page.filters.status=anons&page.filters.score.min=5&${OPTS}`,
+      { waitUntil: 'networkidle' },
+    );
+    const beforeApply = [...new URL(page.url()).searchParams.keys()].filter((key) =>
+      key.startsWith('page.filters.'),
+    );
+    if (!beforeApply.includes('page.filters.score.min'))
+      throw new Error(`адрес со заблокированным значением потерял ключ: ${beforeApply}`);
+    await openFilters(page);
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => !page.url().includes('page.filters.score.min'), {
+      what: 'связка сняла заблокированное значение при применении',
+    });
+    if (!page.url().includes('page.filters.status=anons'))
+      throw new Error(`применение фильтров потеряло соседний фильтр: ${page.url()}`);
+    if ((await page.locator('[data-testid="active-filter"]').count()) !== 1)
+      throw new Error('после применения под связкой должен остаться один активный фильтр');
+    console.log('  ok  значение под связкой уходит при «Применить» (соседний фильтр цел, чипов 1)');
 
     // Связка с поиском: `status=latest` запрещает `q` — панель говорит об этом.
     await page.goto(`${U}?page.src=animes&page.size=5&page.filters.status=latest&${OPTS}`, {

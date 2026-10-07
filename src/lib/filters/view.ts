@@ -309,6 +309,16 @@ export function catalogFilterView(
  * патчем: пустое значение — `undefined` (снятие ключа), список — строкой через
  * запятую (формат extra и адреса один), граница числа — числом (так её читает
  * адресный слой).
+ *
+ * Связки применяются ЗДЕСЬ ЖЕ, до записи: значение, которое схема снимает при
+ * этих же значениях (например, «Оценка» при «Анонсах»), в патч не едет. Так JS
+ * решает ситуацию сам — ровно как без JavaScript её решает браузер, не
+ * отправляя выключенный контрол, — и в хранилище не попадает сочетание, которое
+ * источник всё равно отбросил бы (`dropped`). Это не «подмена значений после
+ * валидации»: правило применяется к тому, что пользователь отправляет, а не к
+ * уже сохранённому состоянию; адрес/ссылка, где запрещённое значение лежит,
+ * ничего не теряет — панель называет причину, пока пользователь не применит
+ * набор сам.
  */
 export function catalogFilterExtraPatch(
   schema: CatalogFilterSchema,
@@ -320,8 +330,20 @@ export function catalogFilterExtraPatch(
     if (declared.has(path)) input[path] = value
   }
   const stripped = stripDefaultCatalogFilterValues(schema, input)
+  // Поля, которые связки снимают при ЭТИХ значениях: их значения не пишутся.
+  // (Связка «поиск запрещён» тут ни при чём: `q` — не фильтровый путь и живёт
+  // в своём канале, причина видна в панели.)
+  const suppressed = catalogFilterSuppressedFields(schema, catalogFilterValueMap(stripped))
+  const isSuppressed = (path: string) => {
+    const parsed = parseCatalogFilterPath(path)
+    return parsed !== undefined && suppressed.has(parsed.key)
+  }
   const patch: CatalogFilterPatch = {}
   for (const path of declared) {
+    if (isSuppressed(path)) {
+      patch[path] = undefined
+      continue
+    }
     const raw = stripped[path]
     const list = Array.isArray(raw)
       ? raw.map((item) => String(item).trim()).filter((item) => item.length > 0)
