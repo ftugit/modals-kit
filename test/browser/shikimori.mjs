@@ -129,6 +129,84 @@ async function checkApi() {
   console.log('  ok  словарь коррекции собран из живых страниц популярности');
 }
 
+/**
+ * Фильтры каталога (этап 3): схема живёт в зоне источника и приезжает готовой,
+ * применяется СЕРВЕРОМ — клиент про `genre_v2`/`season` не знает вовсе.
+ *
+ * Проверяется то, что нельзя увидеть в разметке: связки (поиск под `latest` не
+ * работает — `q` отбрасывается с причиной), deny-safe (чужое значение фильтра
+ * не сужает выдачу, но и не молчит) и паритет SSR с роутом на одном фильтре.
+ */
+async function checkFilters() {
+  console.log('— Фильтры: схема источника, применение на сервере, связки —');
+  const schema = await fetch(`${BASE}/api/shikimori/filters`).then(async (r) => ({
+    status: r.status,
+    body: await r.json(),
+  }));
+  if (schema.status !== 200) throw new Error(`/api/shikimori/filters → HTTP ${schema.status}`);
+  const builtAt = Date.parse(schema.body.builtAt ?? '');
+  if (!Number.isFinite(builtAt)) throw new Error('у схемы нет метки builtAt');
+  if (Date.now() - builtAt > 60 * 60 * 1000) throw new Error('схема старше часа — обновление не работает');
+  const keys = schema.body.fields.map((f) => f.key);
+  for (const key of ['genres', 'studios', 'kind', 'status', 'rating', 'duration', 'score', 'year'])
+    if (!keys.includes(key)) throw new Error(`в схеме нет поля ${key}: ${keys}`);
+  const genres = schema.body.fields.find((f) => f.key === 'genres');
+  if (!genres.options?.length) throw new Error('у жанров нет живых значений');
+  const studios = schema.body.fields.find((f) => f.key === 'studios');
+  if (studios.options.length !== 1000 || !studios.optionsTruncated)
+    throw new Error(`студии не деградированы до предела: ${studios.options.length}/${studios.optionsTruncated}`);
+  const rules = schema.body.rules ?? [];
+  for (const id of ['search-with-latest', 'score-with-anons'])
+    if (!rules.some((rule) => rule.id === id)) throw new Error(`в схеме нет связки ${id}`);
+  console.log(
+    `  ok  схема готова: ${keys.length} полей, жанров ${genres.options.length}, студий ${studios.options.length} (скрыто ${studios.optionsTruncated}), связок ${rules.length}`,
+  );
+
+  // Применение фильтра: год — единственное поле, значение которого видно в самой
+  // записи, поэтому «фильтр правда сузил выдачу» проверяется по данным.
+  const ranged = await api('/api/shikimori/animes?limit=10&filters.year.min=1990&filters.year.max=1992');
+  if (ranged.status !== 200) throw new Error(`фильтр по годам → HTTP ${ranged.status}`);
+  if (!ranged.body.items.length) throw new Error('фильтр 1990–1992 не дал записей');
+  const outside = ranged.body.items.filter((item) => item.year < 1990 || item.year > 1992);
+  if (outside.length) throw new Error(`в выдаче фильтра по годам чужие записи: ${JSON.stringify(outside[0])}`);
+  if (ranged.body.dropped) throw new Error(`валидный фильтр отброшен: ${JSON.stringify(ranged.body.dropped)}`);
+  console.log(`  ok  фильтр по годам применён сервером: ${ranged.body.items.length} записей, все 1990–1992`);
+
+  // Deny-safe: чужого значения в схеме нет — фильтр не применяется, но причина едет.
+  const junk = await api('/api/shikimori/animes?limit=5&filters.kind=zzz');
+  const plain = await api('/api/shikimori/animes?limit=5');
+  if (junk.status !== 200) throw new Error(`мусорное значение → HTTP ${junk.status}`);
+  if (junk.body.dropped?.[0]?.key !== 'filters.kind')
+    throw new Error(`чужое значение не объяснено: ${JSON.stringify(junk.body.dropped)}`);
+  const junkIds = junk.body.items.map((item) => item.id).join(',');
+  const plainIds = plain.body.items.map((item) => item.id).join(',');
+  if (junkIds !== plainIds) throw new Error('мусорное значение всё-таки сузило выдачу');
+  console.log('  ok  чужое значение: фильтр не применён, выдача как без фильтра, причина в ответе');
+
+  // Связка: с «последними добавленными» поиск не работает — `q` отбрасывается.
+  const ruled = await api(
+    `/api/shikimori/animes?limit=5&search=${encodeURIComponent('наруто')}&filters.status=latest`,
+  );
+  const latest = await api('/api/shikimori/animes?limit=5&filters.status=latest');
+  if (ruled.status !== 200) throw new Error(`связка latest+поиск → HTTP ${ruled.status}`);
+  const droppedSearch = (ruled.body.dropped ?? []).find((item) => item.key === 'q');
+  if (!droppedSearch?.reason) throw new Error(`поиск отброшен без причины: ${JSON.stringify(ruled.body.dropped)}`);
+  if (ruled.body.items.map((i) => i.id).join(',') !== latest.body.items.map((i) => i.id).join(','))
+    throw new Error('со связкой выдача отличается от `status=latest` без поиска — q всё-таки ушёл в API');
+  console.log(`  ok  связка сработала: поиск не применён («${droppedSearch.reason}»), выдача — «последние добавленные»`);
+
+  // Паритет SSR и роута: адрес со фильтром и запрос к роуту дают одну выборку.
+  const ssrHtml = await fetch(`${U}?page.src=animes&page.size=5&page.filters.year.min=1990&page.filters.year.max=1992`).then(
+    (r) => r.text(),
+  );
+  const ssrIds = [...ssrHtml.matchAll(/data-testid="anime-(\d+)"/g)].map((m) => m[1]);
+  const routeIds = ranged.body.items.slice(0, 5).map((item) => String(item.id));
+  if (!ssrIds.length) throw new Error('SSR со фильтром не отдал ни одной карточки');
+  if (ssrIds.join(',') !== routeIds.join(','))
+    throw new Error(`SSR и роут разошлись на одном фильтре: ${ssrIds} vs ${routeIds}`);
+  console.log('  ok  SSR применяет тот же конвейер: адрес со фильтром даёт ту же выборку, что роут');
+}
+
 async function checkSsr() {
   console.log('— SSR живого источника (без JS, в разметке) —');
   const url = `${U}?page.src=animes&page.size=5`;
@@ -303,6 +381,7 @@ async function checkBrowser(browser) {
 async function run() {
   await ensureServer();
   await checkApi();
+  await checkFilters();
   await checkSsr();
   const browser = await chromium.launch({ headless: true });
   try {

@@ -1,4 +1,4 @@
-import { fetchAnimes } from '$lib/server/shikimori'
+import { fetchAnimesPage } from '$lib/server/shikimori-filters'
 import {
   createPaginatorStore,
   initServerPaginator,
@@ -28,7 +28,13 @@ export type { PaginatorLoaderData } from './types'
  * а не состояние запроса.
  */
 setLiveServerTransport({
-  fetchPage: (query) => fetchAnimes(query),
+  async fetchPage(query) {
+    // Фильтры применяет ТОТ ЖЕ конвейер, что и роут (`fetchAnimesPage`): один
+    // разбор, одна живая схема, одни связки. Иначе SSR-снапшот строился бы по
+    // другим правилам, чем клиентская догрузка, — и «перезагрузка страницы
+    // меняет выдачу» вернулось бы.
+    return await fetchAnimesPage({ query, filters: query.filters ?? {} })
+  },
 })
 
 export type PaginatorSearch = { page?: number }

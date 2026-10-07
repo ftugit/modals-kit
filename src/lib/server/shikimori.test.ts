@@ -19,7 +19,10 @@ import {
   getTermArtifact,
   hasNextOf,
   normalizeAnime,
+  fetchShikimoriJson,
   parseAnimesQuery,
+  probeShikimoriJson,
+  readFilterParams,
   resetShikimoriTransport,
   resetTermArtifact,
   yearOf,
@@ -139,6 +142,89 @@ describe('buildUpstreamUrl', () => {
     const url = new URL(buildUpstreamUrl({ page: 1, limit: 20 }))
     expect(url.searchParams.has('search')).toBe(false)
     expect(url.searchParams.get('order')).toBe('popularity')
+  })
+})
+
+describe('фильтры каталога: разбор и адрес запроса', () => {
+  it('`filters.*` читаются с проверкой формы: числа — числами, список — строкой', () => {
+    const filters = readFilterParams(
+      new URLSearchParams(
+        'filters.genres.and=27%2C133&filters.score.min=8&filters.year.max=2010&filters.kind=&filters..bad=1&filters.nope=zzz',
+      ),
+    )
+    expect(filters).toEqual({
+      'filters.genres.and': '27,133',
+      'filters.score.min': 8,
+      'filters.year.max': 2010,
+      'filters.nope': 'zzz',
+    })
+  })
+
+  it('parseAnimesQuery отдаёт фильтры ОТДЕЛЬНО от страницы и поиска', () => {
+    const res = parseAnimesQuery(new URLSearchParams('page=2&search=наруто&filters.kind=tv'))
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.query).toEqual({ page: 2, limit: 20, order: 'popularity', search: 'наруто' })
+    expect(res.filters).toEqual({ 'filters.kind': 'tv' })
+  })
+
+  it('параметры фильтров едут в адрес API: повторение — «и», `!` — «кроме»', () => {
+    const url = new URL(
+      buildUpstreamUrl({
+        page: 1,
+        limit: 20,
+        genre_v2: ['27', '!133'],
+        studio: ['858'],
+        kind: 'tv',
+        status: 'released',
+        rating: 'pg_13',
+        duration: 'F',
+        score: 8,
+        season: '1990_2010',
+      }),
+    )
+    expect(url.searchParams.getAll('genre_v2')).toEqual(['27', '!133'])
+    expect(url.searchParams.getAll('studio')).toEqual(['858'])
+    expect(url.searchParams.get('score')).toBe('8')
+    expect(url.searchParams.get('season')).toBe('1990_2010')
+    expect(url.searchParams.get('duration')).toBe('F')
+  })
+
+  it('без фильтров адрес тот же, что раньше (страница и поиск не тронуты)', () => {
+    const url = new URL(buildUpstreamUrl({ page: 1, limit: 20, search: 'наруто' }))
+    expect([...url.searchParams.keys()].sort()).toEqual(['limit', 'order', 'page', 'search'])
+  })
+})
+
+describe('справочники схемы: общий GET и проба', () => {
+  it('fetchShikimoriJson ходит с User-Agent и кэширует ответ', async () => {
+    const { fn, calls } = fakeFetch(() => ok([{ id: 858, name: 'Wit Studio' }]))
+    const first = await fetchShikimoriJson<{ id: number }[]>('/studios', { fetch: fn, ...deps })
+    const second = await fetchShikimoriJson<{ id: number }[]>('/studios', { fetch: fn, ...deps })
+    expect(first).toEqual([{ id: 858, name: 'Wit Studio' }])
+    expect(second).toBe(first)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toBe('https://shikimori.io/api/studios')
+  })
+
+  it('проба отдаёт ответ КАК ЕСТЬ: 422 — это данные, а не отказ', async () => {
+    const { fn } = fakeFetch(
+      () => new Response(JSON.stringify(['kind — one of: <code>tv</code>']), { status: 422 }),
+    )
+    const res = await probeShikimoriJson('/animes?limit=1&kind=zzz', { fetch: fn, ...deps })
+    expect(res.status).toBe(422)
+    expect(res.text).toContain('<code>tv</code>')
+  })
+
+  it('проба повторяет 429, а сетевой отказ — честная ошибка', async () => {
+    let attempt = 0
+    const { fn } = fakeFetch(() => {
+      attempt += 1
+      return attempt === 1 ? new Response('', { status: 429 }) : new Response('[]', { status: 200 })
+    })
+    const res = await probeShikimoriJson('/studios', { fetch: fn, ...deps })
+    expect(res.status).toBe(200)
+    expect(attempt).toBe(2)
   })
 })
 

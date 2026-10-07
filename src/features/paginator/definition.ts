@@ -29,6 +29,11 @@ import {
   type AnimesPage,
 } from '../../content/shikimori'
 import {
+  SHIKIMORI_FILTER_KEYS,
+  SHIKIMORI_FILTER_RELOAD_KEYS,
+  SHIKIMORI_FILTER_SEARCH,
+} from '../../content/shikimori-filters'
+import {
   reportSearchCorrection,
   searchQueryValidator,
   withLibSearch,
@@ -145,8 +150,18 @@ export const DEFAULT_DEMO_CONFIG: DemoConfig = {
   pageSize: 20,
 }
 
-/** Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1). */
-export const DEMO_RELOAD_KEYS = ['src', 'srch', 'ls', 'q', 'total'] as const
+/**
+ * Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1).
+ * Ключи фильтров входят сюда целиком: смена любого фильтра — новая выдача.
+ */
+export const DEMO_RELOAD_KEYS = [
+  'src',
+  'srch',
+  'ls',
+  'q',
+  'total',
+  ...SHIKIMORI_FILTER_RELOAD_KEYS,
+] as const
 
 const oneOf =
   (...values: readonly string[]) =>
@@ -174,16 +189,26 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   cols: (v) => (v === 'auto' || v === 2 || v === 3 || v === 4 ? v : undefined),
   colW: extraField('number', (v) => v === 160 || v === 220 || v === 300 || v === 400),
   colFit: extraField('number', (v) => v === 0 || v === 10 || v === 25 || v === 50),
+  // Ключи фильтров каталога Shikimori: форма значения — из общего со схемой
+  // объявления (`content/shikimori-filters`); допустимость значений проверяет
+  // схема на сервере, слой адреса отвечает только за форму и типы.
+  ...SHIKIMORI_FILTER_SEARCH,
 }
 
-/** extra из state → типизированный DemoExtra (мусор/отсутствие → дефолт). */
-export function demoExtraOf(extra: Extra): DemoExtra {
-  const out: DemoExtra = { ...DEFAULT_DEMO_EXTRA }
-  for (const key of Object.keys(DEMO_EXTRA_SEARCH) as (keyof DemoExtra)[]) {
-    const v = DEMO_EXTRA_SEARCH[key](extra[key] ?? null)
-    if (v !== undefined) (out as Record<string, unknown>)[key] = v
+/**
+ * extra из state → типизированный DemoExtra (мусор/отсутствие → дефолт).
+ *
+ * Ключи фильтров (`filters.*`) идут тем же путём, что и остальные ключи панели:
+ * их состав и форма объявлены общей спеку (`SHIKIMORI_FILTER_SEARCH`), поэтому
+ * «своих» списков ключей здесь нет — есть один словарь валидаторов.
+ */
+export function demoExtraOf(extra: Extra): DemoExtra & Record<string, ExtraValue> {
+  const out: Record<string, ExtraValue> = { ...DEFAULT_DEMO_EXTRA }
+  for (const key of Object.keys(DEMO_EXTRA_SEARCH)) {
+    const v = DEMO_EXTRA_SEARCH[key]!(extra[key] ?? null)
+    if (v !== undefined) out[key] = v
   }
-  return out
+  return out as DemoExtra & Record<string, ExtraValue>
 }
 
 export function demoName(store: DemoStore): string {
@@ -206,7 +231,13 @@ export function demoQueryOf(extra: Extra | undefined): string {
  * страницы/перехвата/ошибок у источника одна на оба мира.
  */
 export type LiveTransport = {
-  fetchPage(query: { page: number; limit: number; search?: string }): Promise<AnimesPage>
+  fetchPage(query: {
+    page: number
+    limit: number
+    search?: string
+    /** Фильтры в канонических ключах: серверный транспорт применяет их сам. */
+    filters?: Readonly<Record<string, unknown>>
+  }): Promise<AnimesPage>
 }
 
 let liveTransport: LiveTransport | null = null
@@ -216,12 +247,31 @@ export function setLiveServerTransport(transport: LiveTransport | null): void {
   liveTransport = transport
 }
 
-/** Страница живого каталога: сервер — напрямую в API, браузер — через свой бэкенд. */
-async function loadAnimePage(look: SourceLook, q: string): Promise<PageResponse<CatalogItem>> {
-  const query = { page: look.page, limit: look.pageSize, ...(q ? { search: q } : {}) }
+/**
+ * Страница живого каталога: сервер — напрямую в API, браузер — через свой
+ * бэкенд. Фильтры (объявленные источником, `filters` в спеке) едут ОДНИМ
+ * запросом вместе со страницей и поиском: их применяет серверная зона по живой
+ * схеме, а неприменённое она возвращает списком `dropped` — молчание запрещено.
+ */
+async function loadAnimePage(
+  look: SourceLook,
+  q: string,
+  filters: Readonly<Record<string, string>>,
+): Promise<PageResponse<CatalogItem>> {
+  const query = {
+    page: look.page,
+    limit: look.pageSize,
+    ...(q ? { search: q } : {}),
+    ...(Object.keys(filters).length ? { filters } : {}),
+  }
   const res = liveTransport
     ? await liveTransport.fetchPage(query)
     : await getAnimesPage({ ...query, signal: look.signal })
+  if (res.dropped?.length) {
+    for (const item of res.dropped) {
+      console.warn(`[shikimori] фильтр «${item.key}» не применён: ${item.reason}`)
+    }
+  }
   // Числа страниц Shikimori API не отдаёт: только «страница пришла полной».
   return { items: res.items, hasNext: res.hasNext }
 }
@@ -311,8 +361,14 @@ function createAnimesSource(): AdaptedSource<CatalogItem> {
     search: { minLength: 2 },
     scan: { batchSize: SHIKIMORI_LIMIT_MAX },
     totals: false,
+    // Фильтры объявляет САМ источник: ключи выведены из схемы схемы
+    // (`content/shikimori-filters`), а значения и связки живут в серверной зоне
+    // (`$lib/server/shikimori-schema`) и приезжают роутом `/api/shikimori/filters`.
+    // Возможность видна панели (`capabilities.filters`) — UI гасит фильтры у
+    // источников, которые их не объявляют.
+    filters: SHIKIMORI_FILTER_KEYS,
     dictionary: () => getShikimoriTerms(),
-    data: (look, input) => loadAnimePage(look, input.q),
+    data: (look, input) => loadAnimePage(look, input.q, input.filters),
   }).with(withSearchGate({ gate: 'srch' }))
 }
 

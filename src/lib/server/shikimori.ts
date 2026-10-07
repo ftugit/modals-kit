@@ -35,8 +35,10 @@ import {
   type AnimeCard,
 } from '../../content/shikimori'
 
-/** REST-эндпоинт каталога (домен, на который переадресует shikimori.one). */
-export const SHIKIMORI_API = 'https://shikimori.io/api/animes'
+/** База REST API (домен, на который переадресует shikimori.one). */
+export const SHIKIMORI_API_BASE = 'https://shikimori.io/api'
+/** REST-эндпоинт каталога. */
+export const SHIKIMORI_API = `${SHIKIMORI_API_BASE}/animes`
 /** Сайт Shikimori — для абсолютных ссылок на тайтлы. */
 export const SHIKIMORI_SITE = 'https://shikimori.one'
 /** Хост, с которого отдаются постеры (`/system/animes/...`). */
@@ -71,9 +73,20 @@ export type AnimesQuery = {
   limit: number
   search?: string
   order?: string
+  /** Отбор каталога (`genre_v2` — мир жанров v2: те же id, что в GraphQL). */
+  genre_v2?: readonly string[]
+  studio?: readonly string[]
+  kind?: string
+  status?: string
+  rating?: string
+  duration?: string
+  /** Минимальная оценка (у `score` в API только нижняя граница). */
+  score?: number
+  /** Диапазон лет сезона `2014_2016` (обе границы — часть формата API). */
+  season?: string
 }
 
-export type ParseOk = { ok: true; query: AnimesQuery }
+export type ParseOk = { ok: true; query: AnimesQuery; filters: Record<string, unknown> }
 export type ParseFail = { ok: false; error: string }
 
 /**
@@ -118,7 +131,37 @@ export function parseAnimesQuery(params: URLSearchParams): ParseOk | ParseFail {
       ...(search ? { search } : {}),
       order,
     },
+    filters: readFilterParams(params),
   }
+}
+
+/**
+ * `filters.*` из адреса — как есть, но проверенные на ФОРМУ: строка (список
+ * через запятую) или число для границы. Что из этого допустимо по существу,
+ * решает схема (она — в зоне источника): разбор не имеет права ни пропустить
+ * мусор, ни отбросить законный фильтр раньше схемы.
+ */
+export function readFilterParams(params: URLSearchParams): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, raw] of params.entries()) {
+    if (!key.startsWith('filters.') || raw === '') continue
+    if (raw.length > 400) continue
+    const path = key.slice('filters.'.length)
+    // Форма ключа: `filters.<поле>` или `filters.<поле>.<режим|граница>` —
+    // односегментные ключи есть у select-полей (`filters.kind`).
+    if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)?$/.test(path)) continue
+    if (path.endsWith('.min') || path.endsWith('.max')) {
+      const num = Number(raw)
+      if (Number.isFinite(num) && Math.abs(num) <= 1e9) out[key] = num
+      continue
+    }
+    const items = raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item !== '' && item.length <= 120)
+    if (items.length) out[key] = items.join(',')
+  }
+  return out
 }
 
 /** URL запроса к API — единственное место, где он собирается (и повод для кэша). */
@@ -128,6 +171,24 @@ export function buildUpstreamUrl(query: AnimesQuery): string {
   url.searchParams.set('limit', String(Math.min(query.limit, SHIKIMORI_LIMIT_MAX)))
   url.searchParams.set('order', query.order ?? SHIKIMORI_ORDER)
   if (query.search) url.searchParams.set('search', query.search)
+  // Фильтры каталога: повторяющийся параметр у API значит «и», отрицание —
+  // префикс `!` (проверено живьём: `genre_v2=27&genre_v2=!133`).
+  for (const [key, value] of [
+    ['genre_v2', query.genre_v2],
+    ['studio', query.studio],
+  ] as const) {
+    for (const item of value ?? []) url.searchParams.append(key, item)
+  }
+  for (const [key, value] of [
+    ['kind', query.kind],
+    ['status', query.status],
+    ['rating', query.rating],
+    ['duration', query.duration],
+    ['season', query.season],
+  ] as const) {
+    if (value) url.searchParams.set(key, value)
+  }
+  if (query.score !== undefined) url.searchParams.set('score', String(query.score))
   return url.toString()
 }
 
@@ -212,6 +273,8 @@ let startQueue: Promise<unknown> = Promise.resolve()
 export function resetShikimoriTransport(): void {
   cache.clear()
   inflight.clear()
+  jsonCache.clear()
+  jsonInflight.clear()
   lastStartedAt = 0
   startQueue = Promise.resolve()
 }
@@ -230,7 +293,11 @@ function schedule<T>(task: () => Promise<T>, deps: ResolvedDeps): Promise<T> {
   return run
 }
 
-async function requestUpstream(url: string, query: AnimesQuery, deps: ResolvedDeps): Promise<AnimesPage> {
+/**
+ * Один GET к API: повторы на 429/5xx, таймаут, User-Agent — ОДНО место для всех
+ * обращений транспорта (страницы каталога, справочники схемы, пробы).
+ */
+async function requestUpstreamJson(url: string, deps: ResolvedDeps): Promise<unknown> {
   for (let attempt = 0; ; attempt += 1) {
     let res: Response
     try {
@@ -249,11 +316,15 @@ async function requestUpstream(url: string, query: AnimesQuery, deps: ResolvedDe
       throw new ShikimoriUpstreamError(`Shikimori API ответил ${res.status}`, 502)
     }
     if (!res.ok) throw new ShikimoriUpstreamError(`Shikimori API ответил ${res.status}`, 502)
-    const raw: unknown = await res.json()
-    const list = Array.isArray(raw) ? raw : []
-    const items = list.map(normalizeAnime).filter((card): card is AnimeCard => card !== null)
-    return { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
+    return await res.json()
   }
+}
+
+async function requestUpstream(url: string, query: AnimesQuery, deps: ResolvedDeps): Promise<AnimesPage> {
+  const raw = await requestUpstreamJson(url, deps)
+  const list = Array.isArray(raw) ? raw : []
+  const items = list.map(normalizeAnime).filter((card): card is AnimeCard => card !== null)
+  return { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
 }
 
 /**
@@ -291,15 +362,23 @@ export async function fetchAnimes(
     inflight.set(url, job)
   }
 
+  return await waitFor(job, signal)
+}
+
+/**
+ * Ожидание общего запроса с возможностью отмены ТОЛЬКО своего ожидания:
+ * прерывание не отменяет сам запрос (он дозаполнит кэш и не сломает других).
+ */
+async function waitFor<T>(job: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return job
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  return await new Promise<AnimesPage>((resolve, reject) => {
+  return await new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(new DOMException('Aborted', 'AbortError'))
     signal.addEventListener('abort', onAbort, { once: true })
     job.then(
-      (page) => {
+      (value) => {
         signal.removeEventListener('abort', onAbort)
-        resolve(page)
+        resolve(value)
       },
       (error) => {
         signal.removeEventListener('abort', onAbort)
@@ -307,6 +386,81 @@ export async function fetchAnimes(
       },
     )
   })
+}
+
+// ── Справочники и пробы: тот же транспорт, другая проекция ─────────────────
+
+type JsonEntry = { at: number; value: unknown }
+const jsonCache = new Map<string, JsonEntry>()
+const jsonInflight = new Map<string, Promise<unknown>>()
+
+const absoluteApiUrl = (path: string): string =>
+  path.startsWith('http') ? path : `${SHIKIMORI_API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
+
+/**
+ * Произвольный GET к API с той же вежливостью, что и страницы каталога: кэш по
+ * адресу, один запрос на всех (single-flight), минимальный зазор между ЛЮБЫМИ
+ * обращениями, повторы. Формы ответа не знает — проекцию делает вызывающий.
+ * Нужен зоне схемы фильтров (живые справочники) и всему, что не страница.
+ */
+export async function fetchShikimoriJson<T = unknown>(
+  path: string,
+  { signal, ...transport }: TransportDeps & { signal?: AbortSignal } = {},
+): Promise<T> {
+  const deps = resolveDeps(transport)
+  const url = absoluteApiUrl(path)
+  const hit = jsonCache.get(url)
+  if (hit && deps.now() - hit.at < deps.cacheTtlMs) return hit.value as T
+
+  let job = jsonInflight.get(url) as Promise<T> | undefined
+  if (!job) {
+    job = schedule(() => requestUpstreamJson(url, deps), deps).then(
+      (value) => {
+        jsonCache.set(url, { at: deps.now(), value })
+        jsonInflight.delete(url)
+        return value as T
+      },
+      (error) => {
+        jsonInflight.delete(url)
+        throw error
+      },
+    )
+    jsonInflight.set(url, job)
+  }
+  return await waitFor(job, signal)
+}
+
+/**
+ * Проба API: ответ КАК ЕСТЬ, включая 4xx. Нужна там, где ошибка — это данные:
+ * текст 422 перечисляет допустимые значения enum'а, и это единственный живой
+ * справочник для `rating`/`duration`/`kind`/`status` (у `/constants/anime`
+ * значений меньше, чем принимает сам параметр). Ответ пробы не кэшируется —
+ * кэшируется её РЕЗУЛЬТАТ (схема), а повтор 429 делается здесь же.
+ */
+export async function probeShikimoriJson(
+  path: string,
+  transport: TransportDeps = {},
+): Promise<{ status: number; text: string }> {
+  const deps = resolveDeps(transport)
+  const url = absoluteApiUrl(path)
+  return await schedule(async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      let res: Response
+      try {
+        res = await deps.fetch(url, {
+          headers: { 'User-Agent': SHIKIMORI_UA, accept: 'application/json' },
+          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+        })
+      } catch (error) {
+        throw new ShikimoriUpstreamError(`Shikimori API недоступен: ${String(error)}`, 504)
+      }
+      if (res.status === 429 && attempt === 0) {
+        await deps.sleep(RETRY_DELAY_MS)
+        continue
+      }
+      return { status: res.status, text: await res.text() }
+    }
+  }, deps)
 }
 
 // ── Словарь коррекции (fuzzy) ──────────────────────────────────────────────
