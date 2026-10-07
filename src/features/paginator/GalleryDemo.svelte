@@ -23,7 +23,7 @@
   } from './definition'
   import { shotHeight } from './item-views'
   import ShotTile from './ShotTile.svelte'
-  import type { MinimalRouter, PaginatorState } from '$lib/paginate'
+  import type { PaginatorState } from '$lib/paginate'
 
   const GALLERY_FIELDS: SettingsField<GalleryExtra>[] = [
     {
@@ -41,11 +41,9 @@
 
   interface Props {
     snapshot: PaginatorState<DemoItem>
-    externalPage?: number | null
-    router?: MinimalRouter | null
   }
 
-  let { snapshot, externalPage = null, router }: Props = $props()
+  let { snapshot }: Props = $props()
 
   const name = ensureGalleryPaginator()
 </script>
@@ -90,14 +88,12 @@
       class="h-[360px] scroll-mt-20 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm"
       ariaLabel="Галерея"
       {snapshot}
-      {externalPage}
       extraSearch={GALLERY_EXTRA_SEARCH}
       pageSizes={GALLERY_PAGE_SIZES}
       extraDefaults={DEFAULT_GALLERY_EXTRA}
       mode="single"
       topTrigger="off"
       bottomTrigger="off"
-      {router}
     >
       {#snippet children()}
         {@render GalleryBody({ name })}

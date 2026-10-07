@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
-  import { page } from '$app/state'
+  // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
+  // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { PaginatorScope } from '$lib/paginate/svelte'
-  import type { MinimalRouter } from '$lib/paginate'
   import {
     DEFAULT_DEMO_CONFIG,
     GALLERY_NAME,
@@ -23,35 +22,6 @@
   let storeKind = $state<DemoStore>(DEFAULT_DEMO_CONFIG.store)
   const activeName = $derived(ensureDemoPaginator(storeKind))
 
-  const router: MinimalRouter = {
-    navigate: (opts: { search: (prev: Record<string, unknown>) => Record<string, unknown>; replace?: boolean }) => {
-      const current = Object.fromEntries(page.url.searchParams)
-      const next = opts.search(current)
-      const nextParams = new URLSearchParams()
-      for (const [k, v] of Object.entries(next)) {
-        if (v != null) nextParams.set(k, String(v))
-      }
-      const qs = nextParams.toString() ? `?${nextParams.toString()}` : ''
-      void goto(`${page.url.pathname}${qs}`, {
-        replaceState: opts.replace ?? true,
-        noScroll: true,
-        keepFocus: true,
-      })
-    },
-    currentSearch: () => Object.fromEntries(page.url.searchParams),
-  }
-
-  const externalPage = $derived.by(() => {
-    const raw = page.url.searchParams.get('page')
-    const n = Number(raw)
-    return Number.isInteger(n) && n >= 1 ? n : null
-  })
-
-  const galleryExternalPage = $derived.by(() => {
-    const raw = page.url.searchParams.get('gallery')
-    const n = Number(raw)
-    return Number.isInteger(n) && n >= 1 ? n : null
-  })
 </script>
 
 <PaginatorScope
@@ -90,11 +60,7 @@
             name={activeName}
             {storeKind}
             onStore={(s: DemoStore) => (storeKind = s)}
-            url={{
-              snapshot: activeName === loaderData.defaultName ? loaderData.snapshot : null,
-              externalPage,
-            }}
-            {router}
+            url={{ snapshot: activeName === loaderData.defaultName ? loaderData.snapshot : null }}
           />
         {:else}
           <DemoPaginator
@@ -117,10 +83,6 @@
       {/if}
     </p>
 
-    <GalleryDemo
-      snapshot={loaderData.gallerySnapshot}
-      externalPage={galleryExternalPage}
-      {router}
-    />
+    <GalleryDemo snapshot={loaderData.gallerySnapshot} />
   </div>
 </PaginatorScope>

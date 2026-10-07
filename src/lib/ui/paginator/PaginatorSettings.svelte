@@ -1,6 +1,6 @@
 <script lang="ts" generics="V extends Record<string, import('$lib/paginate').ExtraValue> = Record<string, import('$lib/paginate').ExtraValue>">
   import { onMount, type Snippet } from 'svelte'
-  import { page } from '$app/state'
+  import { currentPathname, currentSearch } from '$lib/router/sveltekit'
   import { buttonVariants } from '$lib/ui/primitives'
   import { getPaginator, type Extra, type ExtraValue } from '$lib/paginate'
   import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
@@ -79,15 +79,15 @@
 
   const js = $derived(!hydrated)
 
+  // Чужие ключи адреса — через слой фреймворка (канон: панель читает `app.search`),
+  // а не `window.location.search`: прямое чтение адреса не даёт `$derived` зависимостей,
+  // и копии чужих ключей застывали на моменте создания панели.
   const foreignParams = $derived.by((): [string, string][] => {
     const base = pageParam
     const out: [string, string][] = []
-    if (typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search)
-      for (const [k, v] of searchParams.entries()) {
-        if (k === base || k.startsWith(`${base}.`)) continue
-        out.push([k, v])
-      }
+    for (const [k, v] of Object.entries(currentSearch())) {
+      if (k === base || k.startsWith(`${base}.`)) continue
+      out.push([k, String(v)])
     }
     return out
   })
@@ -107,7 +107,7 @@
 
 <form
   method="get"
-  action={page.url.pathname}
+  action={currentPathname()}
   data-testid="demo-panel"
   class={className ?? 'rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
   onsubmit={(e) => e.preventDefault()}

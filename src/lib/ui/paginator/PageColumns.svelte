@@ -92,9 +92,11 @@
     prevCount = c
   })
 
-  const cols = $derived.by(() =>
-    distributeRoundRobin(pages, count, !renderSkeleton)
-  )
+  // Слоты-скелетоны включаются РОВНО тогда, когда есть чем их рисовать
+  // (канон: `distributeRoundRobin(pages, count, !!props.renderSkeleton)`).
+  // С инверсией pending-страница давала ноль ячеек, и в раскладке «колонки»
+  // подгрузка шла с пустым местом: скелетоны «не работали».
+  const cols = $derived.by(() => distributeRoundRobin(pages, count, !!renderSkeleton))
 
   const firstIndexOf = $derived.by(() => {
     const m = new Map<number, number>()

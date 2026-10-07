@@ -33,11 +33,11 @@
     useScopeStore,
     type ResolvedHostOptions,
   } from './context.svelte'
+  import { readPaginatorSearch, type ExtraSearchSpec } from '../adapter-url'
   import {
-    readPaginatorSearch,
-    type ExtraSearchSpec,
-    type MinimalRouter,
-  } from '../adapter-url'
+    currentSearch as frameworkSearch,
+    svelteKitRouter,
+  } from '$lib/router/sveltekit'
 
   interface Props<T> {
     name: string
@@ -50,7 +50,6 @@
     snapshot?: PaginatorState<T> | null
     externalPage?: number | null
     externalRestorable?: { pageSize?: number; extra: Extra } | null
-    router?: MinimalRouter | null
     currentSearch?: () => Record<string, unknown> | null
     mode?: 'accumulate' | 'single'
     topTrigger?: EdgeTrigger
@@ -76,7 +75,6 @@
     snapshot: snapProp,
     externalPage: externalPageProp,
     externalRestorable: externalRestorableProp,
-    router,
     currentSearch: currentSearchProp,
     mode = DEFAULT_HOST_OPTIONS.mode,
     topTrigger = DEFAULT_HOST_OPTIONS.topTrigger,
@@ -94,16 +92,36 @@
   const instance = getPaginator(name)
   const store = useScopeStore()
 
-  // D15: stale SSR-snapshot check
+  // D15: stale SSR-snapshot check. Снапшот мог приехать из адреса, которого уже нет
+  // (back/forward, «мелкая» навигация): тогда он несовместим с текущим адресом и его
+  // место занимает страница, которую называет адрес. Канон берёт её из пропа
+  // `externalPage` (у роута — валидированный search); в порте её считает тот же
+  // адаптер, что владеет адресом: `observeExternal`/ключ адреса.
+  const initialExternalPage = ((): number | null => {
+    if (externalPageProp != null) return externalPageProp
+    const a = instance.adapter as {
+      setRouter?: unknown
+      observeExternal?: (search: Record<string, unknown>) => { page?: number | null } | null
+      searchSpec?: { pageParam?: string }
+    }
+    if (typeof a.setRouter !== 'function') return null
+    const search = currentSearchProp ? currentSearchProp() : frameworkSearch()
+    if (!search) return null
+    const observed = a.observeExternal?.(search)
+    if (observed?.page != null) return observed.page
+    const n = Number(search[a.searchSpec?.pageParam ?? 'page'])
+    return Number.isInteger(n) && n >= 1 ? n : null
+  })()
+
   let snap = snapProp
-  if (snap && externalPageProp != null && snap.status === 'idle' && snap.page !== externalPageProp) {
+  if (snap && initialExternalPage != null && snap.status === 'idle' && snap.page !== initialExternalPage) {
     snap = {
       ...snap,
       loadedPages: [],
       pages: {},
       error: null,
       status: 'init',
-      page: externalPageProp,
+      page: initialExternalPage,
     }
   }
 
@@ -393,31 +411,37 @@
     if (sentinelVisible[-1]) maybeLoadMore(-1)
   })
 
-  // URL observation
+  // ── Адрес: только через адаптер ─────────────────────────────────────────────
+  // Признак URL-транспорта — метод `setRouter` (канон: `bindsUrl`). У адаптеров без
+  // адреса (local/memory) его нет, и хост адрес не читает ВООБЩЕ: иначе переключение
+  // хранилища рождало гибрид «страница из storage, фильтры из URL» (ловится
+  // probes/pag-store-hybrid.mjs). Ключи адреса тоже берём у адаптера (`searchSpec`),
+  // чтобы спецификация не жила в двух местах.
+  const bindsUrl = typeof adapter.setRouter === 'function'
   const spec = adapter.searchSpec ?? {}
   const effectivePageParam = pageParamProp ?? spec.pageParam ?? 'page'
   const effectiveExtraSearch = extraSearchProp ?? spec.extra
   const effectivePageSizes = pageSizesProp ?? spec.pageSizes
 
-  const resolvedSearch = $derived.by((): Record<string, unknown> | null => {
-    if (currentSearchProp) return currentSearchProp()
-    if (router?.currentSearch) return router.currentSearch()
-    if (typeof window !== 'undefined') {
-      return Object.fromEntries(new URLSearchParams(window.location.search))
-    }
-    return null
-  })
+  // Срез поиска даёт слой фреймворка (SvelteKit) — не `window.location`:
+  // прямое чтение адреса не реактивно и обходит роутер.
+  const resolvedSearch = $derived.by((): Record<string, unknown> | null =>
+    currentSearchProp ? currentSearchProp() : frameworkSearch(),
+  )
 
+  // Внешнее состояние читает ТРАНСПОРТ, не хост: хост отдаёт реактивный срез
+  // поиска, а `adapter.observeExternal` решает, что он значит.
   const externalObserved = $derived.by(() => {
-    if (resolvedSearch && adapter.observeExternal) {
-      return adapter.observeExternal(resolvedSearch)
-    }
-    return null
+    if (!bindsUrl) return null
+    const search = resolvedSearch
+    return search && adapter.observeExternal ? adapter.observeExternal(search) : null
   })
 
   const effectiveExternalPage = $derived.by(() => {
     if (externalPageProp != null) return externalPageProp
-    if (externalObserved && externalObserved.page != null) return externalObserved.page
+    if (!bindsUrl) return null
+    const observed = externalObserved
+    if (observed && observed.page != null) return observed.page
     if (resolvedSearch && resolvedSearch[effectivePageParam] != null) {
       const n = Number(resolvedSearch[effectivePageParam])
       return Number.isInteger(n) && n >= 1 ? n : null
@@ -426,6 +450,7 @@
   })
 
   const effectiveExternalRestorable = $derived.by(() => {
+    if (!bindsUrl) return externalRestorableProp
     if (externalObserved && externalObserved.restorable) return externalObserved.restorable
     if (!effectiveExtraSearch && !effectivePageSizes) return externalRestorableProp
     if (resolvedSearch) {
@@ -445,36 +470,10 @@
     return null
   })
 
-  const fallbackRouter: MinimalRouter = {
-    navigate(opts: Parameters<MinimalRouter['navigate']>[0]) {
-      if (typeof window === 'undefined') return
-      const searchParams = new URLSearchParams(window.location.search)
-      const current = Object.fromEntries(searchParams)
-      const next = opts.search(current)
-      const nextParams = new URLSearchParams()
-      for (const [k, v] of Object.entries(next)) {
-        if (v != null) nextParams.set(k, String(v))
-      }
-      const qs = nextParams.toString() ? `?${nextParams.toString()}` : ''
-      const url = `${window.location.pathname}${qs}${window.location.hash}`
-      if (opts.replace ?? true) {
-        window.history.replaceState(window.history.state, '', url)
-      } else {
-        window.history.pushState(window.history.state, '', url)
-      }
-      window.dispatchEvent(new Event('popstate'))
-    },
-    currentSearch() {
-      if (typeof window === 'undefined') return {}
-      return Object.fromEntries(new URLSearchParams(window.location.search))
-    },
-  }
-
   onMount(() => {
-    const r = router ?? (typeof window !== 'undefined' ? fallbackRouter : null)
-    if (r && typeof adapter.setRouter === 'function') {
-      adapter.setRouter(r)
-    }
+    // Единственное место, где библиотека касается навигации (канон D2): роутер
+    // слоя фреймворка уезжает в URL-транспорт адаптера — фичи адрес не знают.
+    if (bindsUrl) adapter.setRouter(svelteKitRouter())
 
     void initPaginator(store, name)
 
@@ -482,9 +481,7 @@
       anchors.setTracker(null)
       instance.scrollDriver = null
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(holdRaf)
-      if (typeof adapter.setRouter === 'function') {
-        adapter.setRouter(null)
-      }
+      if (bindsUrl) adapter.setRouter(null)
     }
   })
 

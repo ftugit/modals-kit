@@ -33,7 +33,7 @@
   import { shotHeight } from './item-views'
   import ShotTile from './ShotTile.svelte'
   import ItemRow from './ItemRow.svelte'
-  import type { MinimalRouter, PaginatorState } from '$lib/paginate'
+  import type { PaginatorState } from '$lib/paginate'
 
   const HOST_CLASS =
     'h-[520px] scroll-mt-20 overflow-y-auto rounded-xl border border-border/70 bg-background p-3'
@@ -178,11 +178,11 @@
     name: string
     storeKind: DemoStore
     onStore: (store: DemoStore) => void
-    url?: { snapshot: PaginatorState<DemoItem> | null; externalPage: number | null }
-    router?: MinimalRouter | null
+    /** SSR-снапшот URL-бранча. Страницу из адреса хост считает сам (через адаптер). */
+    url?: { snapshot: PaginatorState<DemoItem> | null }
   }
 
-  let { name, storeKind, onStore, url, router }: Props = $props()
+  let { name, storeKind, onStore, url }: Props = $props()
 
   const pagState = usePaginatorState<DemoItem>(name)
 
@@ -208,8 +208,6 @@
   bottomZone={cfg.bottomZone}
   prependBehavior={cfg.prepend}
   snapshot={url?.snapshot ?? null}
-  externalPage={url?.externalPage ?? null}
-  {router}
 >
   {#snippet toolbar()}
     <PaginatorSettings
@@ -243,6 +241,22 @@
 </PaginatorHost>
 
 {#snippet DemoBody({ cfg, name }: { cfg: DemoExtra; name: string })}
+  <!--
+    Скелетоны объявлены значениями и передаются УСЛОВНО: выключены — `undefined`,
+    и список сам рисует строку «Загрузка страницы N…» (ровно как в исходнике,
+    `renderSkeleton={cfg().skel ? skeleton(cfg().kind) : undefined}`).
+  -->
+  {#snippet skelColumns(ctx: { page: number; index: number })}
+    <Skeleton height={shotHeight(ctx.index + 1)} />
+  {/snippet}
+  {#snippet skelList(ctx: { page: number; index: number })}
+    {#if cfg.kind === 'photos'}
+      <Skeleton height={shotHeight(ctx.index + 1)} />
+    {:else}
+      <Skeleton />
+    {/if}
+  {/snippet}
+
   {#if cfg.ind}
     <LoadingIndicator {name} />
   {/if}
@@ -258,31 +272,16 @@
       columnWidth={cfg.colW}
       stretch={`${cfg.colFit}%`}
       renderDivider={null}
+      renderSkeleton={cfg.skel ? skelColumns : undefined}
     >
       {#snippet renderItem(item: DemoItem)}
         <ShotTile {item} />
       {/snippet}
-      {#snippet renderSkeleton(ctx)}
-        {#if cfg.skel}
-          <Skeleton height={shotHeight(ctx.index + 1)} />
-        {/if}
-      {/snippet}
     </PageColumns>
   {:else}
-    <PageList
-      {name}
-    >
+    <PageList {name} renderSkeleton={cfg.skel ? skelList : undefined}>
       {#snippet renderItem(item: DemoItem)}
         <ItemRow {item} />
-      {/snippet}
-      {#snippet renderSkeleton(ctx)}
-        {#if cfg.skel}
-          {#if cfg.kind === 'photos'}
-            <Skeleton height={shotHeight(ctx.index + 1)} />
-          {:else}
-            <Skeleton />
-          {/if}
-        {/if}
       {/snippet}
     </PageList>
   {/if}

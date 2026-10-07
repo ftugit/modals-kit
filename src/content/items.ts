@@ -38,10 +38,20 @@ export function validateItemsQuery(raw: unknown): ItemsQuery {
   return { kind, page: int(o.page, 1, 1_000_000, 1), pageSize: int(o.pageSize, 1, 100, 20) }
 }
 
+/**
+ * Транспортная задержка демо-источника, мс (только клиент: SSR отдаёт данные сразу).
+ *
+ * Здесь она и должна жить — в исходнике (SolidHono) данные приезжают по сети,
+ * поэтому скелетоны/индикатор видно сами собой. В порте источник локальный, и с
+ * прежними 20 мс подгрузка была визуально мгновенной: скелетоны успевали
+ * прожить ~19 мс. 500 мс — как раз чтобы «загрузка» читалась глазом.
+ */
+const DEMO_TRANSPORT_MS = 500
+
 export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoItem>> {
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   if (typeof window !== 'undefined') {
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, DEMO_TRANSPORT_MS))
   }
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize })
