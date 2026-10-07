@@ -119,6 +119,7 @@
       ...snap,
       loadedPages: [],
       pages: {},
+      pending: null,
       error: null,
       status: 'init',
       page: initialExternalPage,
@@ -232,10 +233,25 @@
   let holdRaf = 0
   let prependRef: { page: number; top: number } | null = null
 
-  $effect(() => {
-    const s = currentState
+  /**
+   * Захват опорной точки prepend-подгрузки — как в исходнике
+   * (`createComputed(on(() => state(), …))` в Solid-версии): синхронно в момент
+   * патча состояния, то есть ДО вставки слотов и до вызова `scrollDriver`/
+   * `holdAbove`. Через `$effect` так не получается: эффекты Svelte выполняются
+   * после обновления DOM, поэтому ссылка захватывалась бы уже по сдвинутой
+   * геометрии (и не успевала к моменту чтения). Ещё одно следствие в исходнике —
+   * гард перехода: повторные патчи внутри окна загрузки (например отчёт якоря
+   * меняет `page`) НЕ перезаписывают опорную точку, иначе следующая подгрузка
+   * сверху с тем же `belowPage` возьмёт протухшее значение.
+   */
+  let prevPendingMode: 'append' | 'prepend' | 'replace' | null = null
+
+  function capturePrependRef(s: PaginatorState<any>): void {
     const c = containerRef
-    if (!c || !s.pending || s.pending.mode !== 'prepend') return
+    const mode = s.pending?.mode ?? null
+    const enteredPrepend = mode === 'prepend' && prevPendingMode !== 'prepend'
+    prevPendingMode = mode
+    if (!c || !enteredPrepend || !s.pending) return
     const page = s.pending.page + 1
     const el = anchors.getElement(`page:${page}`) ?? c.querySelector(`[data-pag-anchor="${page}"]`)
     if (el) {
@@ -244,7 +260,7 @@
         top: el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop,
       }
     }
-  })
+  }
 
   function holdAbove(belowPage: number) {
     const c = containerRef
@@ -475,9 +491,14 @@
     // слоя фреймворка уезжает в URL-транспорт адаптера — фичи адрес не знают.
     if (bindsUrl) adapter.setRouter(svelteKitRouter())
 
+    // Синхронная подписка на патчи состояния: тот же тайминг, что у Solid-эффекта
+    // в исходнике (захват опорной точки до вставки слотов).
+    const unsubscribe = store.subscribe?.(name, capturePrependRef)
+
     void initPaginator(store, name)
 
     return () => {
+      unsubscribe?.()
       anchors.setTracker(null)
       instance.scrollDriver = null
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(holdRaf)

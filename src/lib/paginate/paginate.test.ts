@@ -216,6 +216,19 @@ describe('layout & columns', () => {
     const runs0 = runsOfColumn(cols[0])
     expect(runs0.length).toBeGreaterThan(0)
     expect(runs0[0].page).toBe(1)
+
+    // includeSlots=true: pending-группа даёт ячейки с item = null — их и рисует
+    // сниппет скелетона в PageColumns (при includeSlots=false слоты не попадают в
+    // раскладку вовсе, и скелетоны в колонках не появляются — так и было раньше).
+    const withPending = [
+      { page: 1, pending: false as const, items: ['i1', 'i2'] },
+      { page: 2, pending: true as const, slots: 4 },
+    ]
+    const slotCols = distributeRoundRobin(withPending, 2, true)
+    const slots = slotCols.flat().filter((c) => c.item === null)
+    expect(slots).toHaveLength(4)
+    expect(slotCols.flat().every((c) => c.item === null || typeof c.item === 'string')).toBe(true)
+    expect(distributeRoundRobin(withPending, 2, false).flat()).toHaveLength(2)
   })
 
   it('pendingSide detects above / below pending state', () => {
