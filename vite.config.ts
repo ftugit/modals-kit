@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [layerGuard(RULES), UnoCSS(), sveltekit()],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
   test: { include: ['src/**/*.{test,spec}.{js,ts}'] },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: true,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
