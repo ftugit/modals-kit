@@ -45,6 +45,28 @@ const fill = async (pg, values) => {
   }
 }
 
+/**
+ * Ожидание готовности формы, а не фиксированной паузы.
+ *
+ * ХОЛОДНЫЙ `vite dev` отдаёт разметку раньше, чем ядро формы привязалось к
+ * узлам (первый запрос догружает модули). Клик по «Создать аккаунт» в этот
+ * момент уходит в никуда: в DOM не появляется НИ ОДНОЙ ошибки, и проверка
+ * fetch-пути падает без причины (воспроизведено 2026-10-07: холодный прогон —
+ * FAIL без текста, прогретый — зелёный; ожидание ПОСЛЕ клика не помогает —
+ * потерян сам клик). Признак привязки даёт само ядро: оно ставит форме
+ * `novalidate` (перехватывает отправку). Ждём этот факт до клика.
+ */
+async function readyToSubmit(pg) {
+  await pg.waitForFunction(
+    () =>
+      !![...document.querySelectorAll('form')].find(
+        (form) => form.hasAttribute('novalidate') && form.querySelector('#signup-email'),
+      ),
+    null,
+    { timeout: 20000 },
+  )
+}
+
 const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 1–2. расширение ──────────────────────────────────────────────── */
@@ -66,12 +88,21 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
   // type=email недостаточно: fetch-путь ставит novalidate и обязан получить
   // тот же вердикт из общего ядра.
+  await readyToSubmit(pg)
   await pg.fill('#signup-email', 'fffffffff')
   await click(pg, 'Создать аккаунт')
-  await pg.waitForTimeout(1500)
+  // Вердикт приходит из того же ядра, но асинхронно (транспорт) — ждём ФАКТ,
+  // а не время: на прогретом сервере он появляется почти сразу.
+  const sawEmailVerdict = await pg
+    .waitForFunction(
+      () => [...document.querySelectorAll('p.text-destructive')].some((p) => /адрес почты/i.test(p.textContent ?? '')),
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false)
   const emailErrors = await pg.locator('p.text-destructive').allInnerTexts()
-  ok('fetch-путь отклоняет строку без формата email',
-    emailErrors.some((t) => /корректный адрес почты|email/i.test(t)), emailErrors.join(' | '))
+  ok('fetch-путь отклоняет строку без формата email', sawEmailVerdict, emailErrors.join(' | '))
 
   /* ── 5–6. факт против показа ────────────────────────────────── */
   /* ── 13. сложность пароля ───────────────────────────────────── */
