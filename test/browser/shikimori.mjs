@@ -390,6 +390,20 @@ async function checkFiltersNoJs(browser) {
 
   try {
     await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
+    // Переадресация на канонический адрес — ОТДЕЛЬНАЯ навигация: дожидаемся
+    // именно чистой строки запроса. Без page.evaluate (в контексте без JS он
+    // недоступен) — опросом адреса со стороны драйвера.
+    const waitCanonical = async () => {
+      for (let i = 0; i < 100; i += 1) {
+        const params = new URL(page.url()).searchParams;
+        const dirty = [...params.entries()].some(
+          ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+        );
+        if (!dirty) return;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error(`адрес не пришёл к каноническому виду: ${page.url()}`);
+    };
     const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
     const count = await fields.count();
     if (count !== 10) throw new Error(`без JS в разметке ${count} контролов вместо 10`);
@@ -400,18 +414,38 @@ async function checkFiltersNoJs(browser) {
       page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
       page.locator('[data-testid="catalog-filter-submit"]').click(),
     ]);
+    await waitCanonical();
     const url = new URL(page.url());
     if (url.searchParams.get('page.filters.kind') !== 'movie')
       throw new Error(`нативный GET не донёс фильтр: ${page.url()}`);
-    // Форма уходит как её отправляет браузер: незаполненные поля дают ключи с
-    // ПУСТЫМ значением (`page.filters.status=`). Адресный слой такие значения
-    // считает отсутствием фильтра (deny-safe), поэтому важно другое: среди
-    // ключей нет ни одного ЗНАЧИМОГО, которого пользователь не выбирал.
+    // Форма отправляет ВСЕ свои контролы (включая незаполненные), поэтому
+    // адрес приводится к каноническому виду слоем адреса: пустые значения
+    // объявленных ключей уходят (`canonicalPaginatorSearch`), и в адресе остался
+    // ровно один выбранный фильтр, а не список полей с пустыми значениями.
     const filled = [...url.searchParams.entries()].filter(
       ([key, value]) => key.startsWith('page.filters.') && value !== '',
     );
     if (filled.length !== 1 || filled[0][0] !== 'page.filters.kind')
       throw new Error(`нативный GET принёс лишние фильтры: ${JSON.stringify(filled)}`);
+    const empties = [...url.searchParams.entries()].filter(
+      ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+    );
+    if (empties.length)
+      throw new Error(`в адресе остались пустые ключи пагинатора: ${JSON.stringify(empties)}`);
+    // И повторное «Применить» без изменений адрес не засоряет: адрес уже
+    // канонический, а форма снова шлёт все поля — их отсекает тот же слой.
+    await openFilters(page);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    await waitCanonical();
+    const again = new URL(page.url());
+    const emptiesAgain = [...again.searchParams.entries()].filter(
+      ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+    );
+    if (emptiesAgain.length)
+      throw new Error(`повторное «Применить» засорило адрес: ${JSON.stringify(emptiesAgain)}`);
     for (const [key, value] of [
       ['page.src', 'animes'],
       ['page.size', '5'],

@@ -32,6 +32,7 @@ import {
   pendingSide,
   pickCurrentPage,
   prefetchPage,
+  canonicalPaginatorSearch,
   readPaginatorSearch,
   resetPaginator,
   resetRegistry,
@@ -359,6 +360,48 @@ describe('URL adapter & extra search', () => {
     expect(readPaginatorSearch(new URLSearchParams('page.n=9'), { extra: numSpec }).extra.n).toBe(9)
     expect(readPaginatorSearch(new URLSearchParams('page.tags=a, b,,c'), { extra: listSpec }).extra.tags).toBe('a,b,c')
     expect(readPaginatorSearch(new URLSearchParams('page.n=abc'), { extra: numSpec }).extra.n).toBeUndefined()
+  })
+
+  it('canonicalPaginatorSearch: пустые объявленные ключи уходят, значения остаются', () => {
+    const specs = [
+      {
+        pageParam: 'page',
+        extra: {
+          q: extraField('text'),
+          'filters.kind': extraField('text'),
+          'filters.status': extraField('text'),
+        },
+      },
+    ]
+    // Нативная форма без JS отправляет ВСЕ контролы — вот тот самый «список полей».
+    const dirty = new URLSearchParams('page=2&page.size=&page.q=&page.filters.kind=tv&page.filters.status=')
+    expect(canonicalPaginatorSearch(specs, dirty)?.toString()).toBe('page=2&page.filters.kind=tv')
+    // Пустое значение ≠ значащее: `false`/`0` остаются.
+    const keep = new URLSearchParams('page.srch=false&page.q=&page.zero=0')
+    expect(
+      canonicalPaginatorSearch(
+        { extra: { q: extraField('text'), srch: extraField('boolean'), zero: extraField('number') } },
+        keep,
+      )?.toString(),
+    ).toBe('page.srch=false&page.zero=0')
+    // Чужие ключи не наши: не трогаем даже пустые.
+    const foreign = new URLSearchParams('utm_source=&page.q=')
+    expect(canonicalPaginatorSearch({ extra: { q: extraField('text') } }, foreign)?.toString()).toBe(
+      'utm_source=',
+    )
+    // Адрес уже канонический — переадресовать нечего.
+    expect(canonicalPaginatorSearch(specs, 'page=2&page.filters.kind=tv')).toBeNull()
+    // Второй пагинатор на странице чистится своей спецификацией.
+    const two = new URLSearchParams('page.q=&gallery=&gallery.cols=')
+    expect(
+      canonicalPaginatorSearch(
+        [{ extra: { q: extraField('text') } }, { pageParam: 'gallery', extra: { cols: extraField('text') } }],
+        two,
+      )?.toString(),
+    ).toBe('')
+    // Значение, потерявшее смысл (мусор), НЕ убирается: решение владельца —
+    // «мёртвый» ключ живёт в адресе, пока его не тронет сам пользователь.
+    expect(canonicalPaginatorSearch(specs, 'page.filters.kind=zzz')).toBeNull()
   })
 
   it('readPaginatorSearch and paginatorSearch', () => {

@@ -178,6 +178,48 @@ export function readPaginatorSearch(
  * так `app.search` роутера остаётся симметричен URL, а stringifySearch собирает его обратно.
  * Раунд-8: отсутствующий ключ остаётся отсутствующим (URL принадлежит url-адаптеру, персистом).
  */
+/**
+ * Канонический адрес пагинатора: пустые значения ОБЪЯВЛЕННЫХ ключей убираются.
+ *
+ * Зачем: нативная форма отправляет ВСЕ свои контролы, включая незаполненные, —
+ * после «Применить» без JavaScript адрес превращался в список полей
+ * (`?page.filters.kind=tv&page.filters.status=&page.filters.rating=&…`). Для
+ * слоя пустое значение тождественно отсутствию ключа (§ 3.5: чистый канонический
+ * адрес), поэтому такие ключи — шум, а не выбор пользователя. Править при этом
+ * САМИ поля нельзя: без JavaScript «подкручивать» форму нечем (выключенный или
+ * безымянный контрол браузер не отправит, и ввод пропал бы молча), — значит
+ * адрес приводит в порядок тот, кто его принимает.
+ *
+ * Что НЕ трогается: ключи со значениями (в том числе визуально пустые, но
+ * значащие — `false`, `0`), чужие ключи второго пагинатора и вовсе не наши
+ * (`utm_source`): отбрасывать чужое — не наше дело. `null` — адрес уже
+ * канонический, лишней переадресации не будет.
+ */
+export function canonicalPaginatorSearch(
+  parts: PaginatorSearchOptions | readonly PaginatorSearchOptions[],
+  params: URLSearchParams | string,
+): URLSearchParams | null {
+  const specs = Array.isArray(parts)
+    ? (parts as readonly PaginatorSearchOptions[])
+    : [parts as PaginatorSearchOptions]
+  const source = typeof params === 'string' ? new URLSearchParams(params) : params
+  const out = new URLSearchParams(source)
+  let changed = false
+  const dropEmpty = (key: string): void => {
+    const values = out.getAll(key)
+    if (!values.length || values.some((value) => value !== '')) return
+    out.delete(key)
+    changed = true
+  }
+  for (const spec of specs) {
+    const base = spec.pageParam ?? 'page'
+    dropEmpty(base)
+    dropEmpty(`${base}.size`)
+    for (const key of Object.keys(spec.extra ?? {})) dropEmpty(`${base}.${key}`)
+  }
+  return changed ? out : null
+}
+
 export function paginatorSearch(
   opts: PaginatorSearchOptions | readonly PaginatorSearchOptions[] = {},
 ): (params: URLSearchParams) => Record<string, unknown> {
