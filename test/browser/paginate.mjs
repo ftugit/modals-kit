@@ -569,6 +569,56 @@ async function run() {
       throw new Error('запрос не должен пропадать из адреса при гашении тумблера');
     console.log('  ok  товары: тумблер srch гасит применение запроса, ввод и адрес целы');
 
+    // Чистка адреса БЕЗ переадресации и без перехода (решение владельца
+    // 2026-10-08: «если очистка url не будет требовать редиректа, то очищай»).
+    // Приходим на «грязный» адрес (такой оставляет нативная GET-форма: пустые
+    // значения незаполненных контролов) и ждём, что слой адреса приведёт его к
+    // каноническому виду заменой записи истории: страница не перезагружается
+    // (метка на window переживает правку), запись в истории не добавляется, а
+    // содержимое и значимые ключи не меняются.
+    await page.goto(`${U}?page.src=products&page=2&page.size=&page.q=&page.layout=`, {
+      waitUntil: 'networkidle',
+    });
+    await page.evaluate(() => {
+      window.__addrMark = 1
+    })
+    const cardsBefore = await page
+      .locator('[data-testid^="card-"]')
+      .evaluateAll((els) => els.map((el) => el.dataset.testid));
+    const historyBefore = await page.evaluate(() => history.length);
+    let addr = null;
+    for (let i = 0; i < 50; i += 1) {
+      addr = await page.evaluate(() => {
+        const params = new URLSearchParams(location.search);
+        const dirty = [...params.entries()].filter(
+          ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+        );
+        return {
+          dirty: dirty.map(([key]) => key),
+          search: location.search,
+          mark: window.__addrMark ?? null,
+          historyLength: history.length,
+        };
+      });
+      if (!addr.dirty.length) break;
+      await sleep(100);
+    }
+    if (addr.dirty.length)
+      throw new Error(`пустые ключи пагинатора остались в адресе: ${addr.dirty.join(', ')} — ${addr.search}`);
+    if (addr.mark !== 1)
+      throw new Error('адрес чистился перезагрузкой страницы: окно потеряло метку (ждали замену записи)');
+    if (addr.historyLength !== historyBefore)
+      throw new Error(`чистка адреса добавила запись в истории: ${historyBefore} → ${addr.historyLength}`);
+    const paramsAfter = new URLSearchParams(addr.search);
+    if (paramsAfter.get('page.src') !== 'products' || paramsAfter.get('page') !== '2')
+      throw new Error(`чистка адреса потеряла значимые ключи: ${addr.search}`);
+    const cardsAfter = await page
+      .locator('[data-testid^="card-"]')
+      .evaluateAll((els) => els.map((el) => el.dataset.testid));
+    if (cardsBefore.join(',') !== cardsAfter.join(','))
+      throw new Error(`после чистки адреса выдача изменилась: ${cardsBefore.slice(0, 3)} vs ${cardsAfter.slice(0, 3)}`);
+    console.log('  ok  пустые ключи формы уходят заменой записи адреса (без перезагрузки, истории и перезапроса)');
+
     console.log(
       '\n✅ Браузерный тест в Chromium пройден: скролл окна стабилен, персист настроек работает',
     );

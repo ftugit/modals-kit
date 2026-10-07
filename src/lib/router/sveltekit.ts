@@ -14,7 +14,7 @@
  * берётся у `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт
  * через `goto`.
  */
-import { goto } from '$app/navigation'
+import { goto, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import type { MinimalRouter } from '$lib/paginate'
 
@@ -33,6 +33,21 @@ export function currentPathname(): string {
 }
 
 /**
+ * Адрес из среза search: путь + строка запроса. Одна сборка на все записи,
+ * чтобы `navigate` и `syncAddress` не разъезжались в формате.
+ */
+function hrefOf(search: Record<string, unknown>): string {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(search)) {
+    if (v == null) continue
+    if (Array.isArray(v)) for (const item of v) params.append(k, String(item))
+    else params.set(k, String(v))
+  }
+  const qs = params.toString()
+  return `${page.url.pathname}${qs ? `?${qs}` : ''}`
+}
+
+/**
  * Роутер под контракт URL-транспорта пагинатора (`PaginatorAdapter.setRouter`).
  *
  * Хост отдаёт его адаптеру сам — по признаку `setRouter` (канон: `bindsUrl`).
@@ -42,18 +57,24 @@ export function svelteKitRouter(): MinimalRouter {
   return {
     navigate(opts) {
       const next = opts.search(currentSearch())
-      const params = new URLSearchParams()
-      for (const [k, v] of Object.entries(next)) {
-        if (v != null) params.set(k, String(v))
-      }
-      const qs = params.toString()
       // Скролл принадлежит контейнеру хоста, не странице → noScroll
       // (в исходнике то же самое: `resetScroll: false`).
-      void goto(`${page.url.pathname}${qs ? `?${qs}` : ''}`, {
+      void goto(hrefOf(next), {
         replaceState: opts.replace ?? true,
         noScroll: true,
         keepFocus: true,
       })
+    },
+    /**
+     * Замена ТЕКУЩЕЙ записи истории без перехода: `replaceState` слоя SvelteKit
+     * (не `goto`) — адрес меняется, но загрузка не перезапускается, разметка не
+     * перерисовывается, браузер ничего не запрашивает. Нужна там, где адрес надо
+     * ПОПРАВИТЬ, а не «пойти» (например, убрать пустые ключи нативной формы).
+     * Соседний `history.replaceState` не годится: SvelteKit не узнал бы о правке
+     * и вернул бы старый адрес на следующем чтении.
+     */
+    syncAddress(opts) {
+      replaceState(hrefOf(opts.search(currentSearch())), page.state)
     },
     currentSearch,
   }

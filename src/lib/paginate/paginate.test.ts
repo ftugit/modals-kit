@@ -33,6 +33,7 @@ import {
   pickCurrentPage,
   prefetchPage,
   canonicalPaginatorSearch,
+  canonicalSearchRecord,
   readPaginatorSearch,
   resetPaginator,
   resetRegistry,
@@ -402,6 +403,72 @@ describe('URL adapter & extra search', () => {
     // Значение, потерявшее смысл (мусор), НЕ убирается: решение владельца —
     // «мёртвый» ключ живёт в адресе, пока его не тронет сам пользователь.
     expect(canonicalPaginatorSearch(specs, 'page.filters.kind=zzz')).toBeNull()
+  })
+
+  it('canonicalSearchRecord: срез роутера приводится к каноническому виду', () => {
+    const specs = { extra: { q: extraField('text'), 'filters.kind': extraField('text') } }
+    // «Грязный» адрес нативной GET-формы: пустые значения объявленных ключей уходят.
+    expect(
+      canonicalSearchRecord(specs, {
+        page: '2',
+        'page.size': '',
+        'page.q': '',
+        'page.filters.kind': 'tv',
+        utm_source: 'x',
+      }),
+    ).toEqual({ page: '2', 'page.filters.kind': 'tv', utm_source: 'x' })
+    // Уже канонический — править нечего (`null`, лишней записи истории не будет).
+    expect(canonicalSearchRecord(specs, { page: '2', 'page.filters.kind': 'tv' })).toBeNull()
+    // Чужие ключи не наши: пустое значение постороннего ключа остаётся.
+    expect(canonicalSearchRecord(specs, { 'page.q': '', utm_source: '' })).toEqual({ utm_source: '' })
+  })
+
+  it('чистка адреса — замена записи истории на привязке роутера, без перехода', () => {
+    const specs = { q: extraField('text'), 'filters.kind': extraField('text') }
+    const adapter = createUrlAdapter({
+      name: 'canonicalBind',
+      source: sourceOf(async () => ({ items: [] })),
+      extraSearch: specs,
+    })
+    const navigate = vi.fn()
+    const syncAddress = vi.fn()
+    adapter.setRouter({
+      navigate,
+      syncAddress,
+      currentSearch: () => ({ page: '2', 'page.size': '', 'page.q': '', 'page.filters.kind': 'tv' }),
+    })
+    // Перехода нет: адрес правится заменой записи истории (`replaceState` слоя
+    // роутера), поэтому и `navigate` не вызывается.
+    expect(navigate).not.toHaveBeenCalled()
+    expect(syncAddress).toHaveBeenCalledTimes(1)
+    const opts = syncAddress.mock.calls[0][0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>
+    }
+    expect(opts.search({})).toEqual({ page: '2', 'page.filters.kind': 'tv' })
+
+    // Адрес канонический — шага нет.
+    const clean = createUrlAdapter({
+      name: 'canonicalClean',
+      source: sourceOf(async () => ({ items: [] })),
+      extraSearch: specs,
+    })
+    const syncClean = vi.fn()
+    clean.setRouter({
+      navigate: vi.fn(),
+      syncAddress: syncClean,
+      currentSearch: () => ({ page: '2', 'page.filters.kind': 'tv' }),
+    })
+    expect(syncClean).not.toHaveBeenCalled()
+
+    // Роутер, не умеющий замену записи (или сервер), — адрес просто остаётся как есть.
+    const bare = createUrlAdapter({
+      name: 'canonicalBare',
+      source: sourceOf(async () => ({ items: [] })),
+      extraSearch: specs,
+    })
+    expect(() =>
+      bare.setRouter({ navigate: vi.fn(), currentSearch: () => ({ 'page.q': '' }) }),
+    ).not.toThrow()
   })
 
   it('readPaginatorSearch and paginatorSearch', () => {

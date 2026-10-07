@@ -457,20 +457,6 @@ async function checkFiltersNoJs(browser) {
 
   try {
     await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
-    // Переадресация на канонический адрес — ОТДЕЛЬНАЯ навигация: дожидаемся
-    // именно чистой строки запроса. Без page.evaluate (в контексте без JS он
-    // недоступен) — опросом адреса со стороны драйвера.
-    const waitCanonical = async () => {
-      for (let i = 0; i < 100; i += 1) {
-        const params = new URL(page.url()).searchParams;
-        const dirty = [...params.entries()].some(
-          ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
-        );
-        if (!dirty) return;
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      throw new Error(`адрес не пришёл к каноническому виду: ${page.url()}`);
-    };
     const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
     const ssrPaths = await fields.evaluateAll((els) => els.map((el) => el.dataset.filterPath));
     const expectedPaths = expectedFilterPaths((await api('/api/shikimori/filters')).body);
@@ -483,38 +469,38 @@ async function checkFiltersNoJs(browser) {
       page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
       page.locator('[data-testid="catalog-filter-submit"]').click(),
     ]);
-    await waitCanonical();
     const url = new URL(page.url());
     if (url.searchParams.get('page.filters.kind') !== 'movie')
       throw new Error(`нативный GET не донёс фильтр: ${page.url()}`);
-    // Форма отправляет ВСЕ свои контролы (включая незаполненные), поэтому
-    // адрес приводится к каноническому виду слоем адреса: пустые значения
-    // объявленных ключей уходят (`canonicalPaginatorSearch`), и в адресе остался
-    // ровно один выбранный фильтр, а не список полей с пустыми значениями.
+    // Форма отправляет ВСЕ свои контролы, поэтому в адресе есть пустые ключи.
+    // Так и должно быть: без JavaScript править адрес нечем, а переадресация
+    // ради «списка пустых полей» отклонена владельцем (2026-10-08: «если
+    // очистка url не будет требовать редиректа, то очищай»). Пустое значение
+    // для слоя тождественно отсутствию ключа, поэтому страница от них не
+    // зависит; с JavaScript адрес чистит клиент — заменой записи истории, без
+    // перехода (см. `test/browser/paginate.mjs`). Здесь же важно другое:
+    // ЗНАЧАЩИЙ фильтр ровно один, и это выбранный.
     const filled = [...url.searchParams.entries()].filter(
       ([key, value]) => key.startsWith('page.filters.') && value !== '',
     );
     if (filled.length !== 1 || filled[0][0] !== 'page.filters.kind')
-      throw new Error(`нативный GET принёс лишние фильтры: ${JSON.stringify(filled)}`);
+      throw new Error(`нативный GET принёс лишние значащие фильтры: ${JSON.stringify(filled)}`);
     const empties = [...url.searchParams.entries()].filter(
       ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
     );
-    if (empties.length)
-      throw new Error(`в адресе остались пустые ключи пагинатора: ${JSON.stringify(empties)}`);
-    // И повторное «Применить» без изменений адрес не засоряет: адрес уже
-    // канонический, а форма снова шлёт все поля — их отсекает тот же слой.
+    // Повторное «Применить» без изменений: адрес засоряется только теми же
+    // пустыми ключами формы (их и присылает браузер), значащих фильтров по-прежнему один.
     await openFilters(page);
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
       page.locator('[data-testid="catalog-filter-submit"]').click(),
     ]);
-    await waitCanonical();
     const again = new URL(page.url());
-    const emptiesAgain = [...again.searchParams.entries()].filter(
-      ([key, value]) => value === '' && (key === 'page' || key.startsWith('page.')),
+    const filledAgain = [...again.searchParams.entries()].filter(
+      ([key, value]) => key.startsWith('page.filters.') && value !== '',
     );
-    if (emptiesAgain.length)
-      throw new Error(`повторное «Применить» засорило адрес: ${JSON.stringify(emptiesAgain)}`);
+    if (filledAgain.length !== 1 || filledAgain[0][0] !== 'page.filters.kind')
+      throw new Error(`повторное «Применить» добавило значащие фильтры: ${JSON.stringify(filledAgain)}`);
     for (const [key, value] of [
       ['page.src', 'animes'],
       ['page.size', '5'],
@@ -533,7 +519,10 @@ async function checkFiltersNoJs(browser) {
     if ((await chips.count()) !== 1)
       throw new Error(`без JS после одного фильтра ждали один чип, их ${await chips.count()}`);
     const chip = await chips.innerText();
-    console.log(`  ok  без JS: контролов ${ssrPaths.length}, GET донёс «Тип: Фильм», чужие ключи целы, выдача — ${ids.length} фильмов`);
+    console.log(
+      `  ok  без JS: контролов ${ssrPaths.length}, GET донёс «Тип: Фильм», чужие ключи целы, ` +
+        `выдача — ${ids.length} фильмов (пустых ключей формы взято ${empties.length} — без JS они норма)`,
+    );
     console.log(`      чип из схемы: ${chip.replace(/\s+/g, ' ').trim()}`);
 
     // Снятие чипа — настоящая ссылка: без JS это обычный переход.

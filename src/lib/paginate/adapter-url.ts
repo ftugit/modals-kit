@@ -220,6 +220,27 @@ export function canonicalPaginatorSearch(
   return changed ? out : null
 }
 
+/**
+ * Тот же канонический вид, но для среза search роутера (запись `{ключ: значение}`,
+ * как её отдаёт `currentSearch`). Нужен на записи адреса и на привязке роутера:
+ * сама `canonicalPaginatorSearch` работает с `URLSearchParams`, а роутер принимает
+ * объект. `null` — править нечего.
+ */
+export function canonicalSearchRecord(
+  parts: PaginatorSearchOptions | readonly PaginatorSearchOptions[],
+  record: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!record) return null
+  const canonical = canonicalPaginatorSearch(parts, searchToParams(record))
+  if (!canonical) return null
+  const out: Record<string, unknown> = {}
+  for (const key of new Set(canonical.keys())) {
+    const values = canonical.getAll(key)
+    out[key] = values.length > 1 ? values : values[0]
+  }
+  return out
+}
+
 export function paginatorSearch(
   opts: PaginatorSearchOptions | readonly PaginatorSearchOptions[] = {},
 ): (params: URLSearchParams) => Record<string, unknown> {
@@ -274,6 +295,13 @@ export type MinimalRouter = {
     search: (prev: Record<string, unknown>) => Record<string, unknown>
     replace?: boolean
   }): void | Promise<unknown>
+  /**
+   * Привести адрес к виду без перехода (замена текущей записи истории) — там, где
+   * адрес надо поправить, а не «пойти»: навигация перезапустила бы загрузку данных.
+   * Необязателен: роутер без такой возможности просто оставляет адрес как есть,
+   * а на сервере адрес править нечем и не нужно (пустое значение = отсутствие ключа).
+   */
+  syncAddress?(opts: { search: (prev: Record<string, unknown>) => Record<string, unknown> }): void
   currentSearch?: () => Record<string, unknown>
 }
 
@@ -455,6 +483,8 @@ export function createUrlAdapter<T>(opts: {
       inflight = want
       void Promise.resolve(
         router.navigate({
+          // `mergeSearch` выбрасывает прежние ключи своего префикса, поэтому
+          // запись и без чистки не переносит «грязный» хвост адреса дальше.
           search: (prev) => mergeSearch(prev, own),
           replace: true,
         }),
@@ -465,6 +495,18 @@ export function createUrlAdapter<T>(opts: {
     capabilities: { append },
     setRouter(next) {
       router = next
+      if (!next?.syncAddress) return
+      /**
+       * Адрес мог прийти «грязным»: нативная GET-форма отправляет ВСЕ свои
+       * контролы, поэтому в адресе после «Применить» остаются пустые значения
+       * незаполненных полей. Для слоя пустое значение тождественно отсутствию
+       * ключа, значит адрес правится до канонического вида — ЗАМЕНОЙ записи
+       * истории (`syncAddress`), без перехода и без редиректа: разметка та же,
+       * данные те же, лишней навигации нет. Без JavaScript шага нет вовсе —
+       * править нечем, и это не потеря: пустые ключи инертны (см. §4.6 чек-листа).
+       */
+      const cleaned = canonicalSearchRecord(searchOpts, next.currentSearch?.() ?? lastInitSearch)
+      if (cleaned) next.syncAddress({ search: () => cleaned })
     },
   }
 }
