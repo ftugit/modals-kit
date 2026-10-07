@@ -12,9 +12,12 @@
  *      значение опции остаются и в адресе, и в записи localStorage (источник их
  *      просто не применяет), а выключенный тумблер не пишет ничего нового.
  *
- * ⚠️ Пункт 2/3 ходят в живой Shikimori только при переключении на него; этот
- * файл живёт на локальных источниках (товары/фото) — сеть не нужна, кроме
- * загрузки страницы. Запуск:
+ * ⚠️ Фильтры живого источника (панель, связки, чипы) требуют сети и проверяются
+ * в shikimori.mjs; здесь про фильтры пинится только граница возможностей —
+ * у источника без `capabilities.filters` панели нет, а «мёртвые» ключи
+ * `page.filters.*` в адресе живут (решение владельца) и ничего не ломают.
+ *
+ * Запуск:
  *   MODALS_PORT=4173 node test/browser/capabilities.mjs
  */
 import { spawn } from 'node:child_process';
@@ -235,7 +238,37 @@ async function run() {
       `  ok  поле выключено с причиной, ключи живы: q=${url.get('page.q')} / ls=${url.get('page.ls')}`,
     );
 
-    // ── 3. То же в localStorage: «мёртвые» ключи остаются в записи ─────────
+    // ── 3. Фильтры: панель — свойство источника, ключи живут ───────────────
+    console.log('— Фильтры: есть только там, где источник их объявляет —');
+    await page.goto(`${U}?page.src=products&page.size=5&page.filters.kind=tv&${QUIET}`, {
+      waitUntil: 'networkidle',
+    });
+    await page.waitForSelector(`${HOST} [data-testid="card-1"]`);
+    assert(
+      (await page.locator('[data-testid="filters-panel"]').count()) === 0,
+      'у товаров фильтров нет — панель не рисуется',
+    );
+    assert(
+      params(page).get('page.filters.kind') === 'tv',
+      `«мёртвый» ключ фильтра обязан остаться в адресе: ${search(page)}`,
+    );
+    await switchSource(page, 'photos');
+    await page.waitForSelector(`${HOST} [data-testid="photo-1"]`);
+    assert(
+      (await page.locator('[data-testid="filters-panel"]').count()) === 0,
+      'у фото фильтров нет — панель не рисуется',
+    );
+    assert(
+      params(page).get('page.filters.kind') === 'tv',
+      `ключ фильтра переживает смену источника: ${search(page)}`,
+    );
+    assert(
+      (await page.locator(`${HOST} [data-testid="catalog-filter-field"]`).count()) === 0,
+      'контролов фильтров у источника без фильтров быть не должно',
+    );
+    console.log('  ok  панели нет, ключ цел, выдача не сужена');
+
+    // ── 4. То же в localStorage: «мёртвые» ключи остаются в записи ─────────
     console.log('— Переключение источника в localStorage-хранилище —');
     await page.goto(`${U}?page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
     await page.waitForSelector(`${HOST} [data-testid="card-1"]`);
@@ -275,7 +308,7 @@ async function run() {
     );
     console.log(`  ok  localStorage: src=photos, запрос цел, страница ${saved.page}`);
 
-    console.log('\n✅ Этапы 1–2: возможности источника правят UI, причины видны, мёртвые ключи живы');
+    console.log('\n✅ Этапы 1–2 + граница фильтров: возможности правят UI, причины видны, ключи живы');
   } finally {
     await browser.close();
     killServer();

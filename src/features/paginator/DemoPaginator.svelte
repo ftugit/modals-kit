@@ -241,13 +241,34 @@
   // разметка панели обязана появиться уже в первом рендере (иначе без JS формы
   // фильтров не будет вовсе).
   let filterSchema = $state<CatalogFilterSchema | null>(schema)
+  /**
+   * Причина, по которой фильтров нет. Молчание тут было бы худшим ответом:
+   * источник фильтры объявляет (`gates.filters`), значит пользователь ждёт
+   * панель и обязан узнать, что схема не приехала и можно повторить.
+   */
+  let filterSchemaError = $state<string | null>(null)
+
+  function loadSchema(options: { retry?: boolean } = {}): void {
+    if (options.retry) filterSchemaError = null
+    void loadFilterSchema()
+      .then((loaded) => {
+        filterSchema = loaded
+        filterSchemaError = null
+      })
+      .catch((error) => {
+        filterSchema = null
+        filterSchemaError = `схема фильтров не загрузилась: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      })
+  }
+
   $effect(() => {
     // Пересборка схемы у сервера — на изменения выбранного источника: сам
-    // выбор читается из extra (гейт `filters`), а не из имени.
-    if (!gates.filters || filterSchema) return
-    void loadFilterSchema()
-      .then((loaded) => (filterSchema = loaded))
-      .catch(() => {})
+    // выбор читается из extra (гейт `filters`), а не из имени. Состояние уже
+    // загружено/уже провалилось — повтор только по кнопке, а не в цикле.
+    if (!gates.filters || filterSchema || filterSchemaError) return
+    loadSchema()
   })
 
   /**
@@ -368,6 +389,21 @@
             preserved={demoPreservedSearch(page.url.search)}
           />
         </div>
+      {:else if gates.filters && filterSchemaError}
+        <p
+          class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-testid="filters-schema-error"
+        >
+          {filterSchemaError}
+          <button
+            type="button"
+            class="rounded-md border border-border px-2 py-0.5 hover:bg-muted"
+            data-testid="filters-schema-retry"
+            onclick={() => loadSchema({ retry: true })}
+          >
+            Повторить
+          </button>
+        </p>
       {/if}
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
         Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · lib/search:

@@ -86,39 +86,45 @@
   <div class="grid gap-3 sm:grid-cols-2">
     {#each controls as control (control.path)}
       <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={control.path}>
-        <label class="block text-xs font-medium text-muted-foreground" for={control.name}>
-          {control.label}
+        <!--
+          Подпись — обёрткой, а не `<label for="…">`: у прогрессивного `Select`
+          (нативный `select` + надстройка) нет `id`, поэтому `for` не находил
+          адресата — клик по подписи не попадал в контрол, и скринридер не
+          связывал подпись с полем. Тот же приём, что у полей панели настроек.
+        -->
+        <label class="block space-y-1 text-xs font-medium text-muted-foreground">
+          <span>{control.label}</span>
+          {#if control.kind === 'select'}
+            <Select
+              options={control.options}
+              name={control.name}
+              value={control.value}
+              disabled={control.disabled}
+              placeholder="Любое"
+            />
+          {:else if control.kind === 'multiselect'}
+            <Select
+              options={control.options}
+              name={control.name}
+              multiple
+              value={[...control.value]}
+              disabled={control.disabled}
+              placeholder="Не выбрано"
+            />
+          {:else if control.kind === 'number'}
+            <Input
+              type="number"
+              name={control.name}
+              value={control.value}
+              placeholder={control.placeholder}
+              min={control.min}
+              max={control.max}
+              disabled={control.disabled}
+            />
+          {:else}
+            <Input type="text" name={control.name} value={control.value} disabled={control.disabled} />
+          {/if}
         </label>
-        {#if control.kind === 'select'}
-          <Select
-            options={control.options}
-            name={control.name}
-            value={control.value}
-            disabled={control.disabled}
-            placeholder="Любое"
-          />
-        {:else if control.kind === 'multiselect'}
-          <Select
-            options={control.options}
-            name={control.name}
-            multiple
-            value={[...control.value]}
-            disabled={control.disabled}
-            placeholder="Не выбрано"
-          />
-        {:else if control.kind === 'number'}
-          <Input
-            type="number"
-            name={control.name}
-            value={control.value}
-            placeholder={control.placeholder}
-            min={control.min}
-            max={control.max}
-            disabled={control.disabled}
-          />
-        {:else}
-          <Input type="text" name={control.name} value={control.value} disabled={control.disabled} />
-        {/if}
         {#if control.kind === 'multiselect' && control.truncated}
           <p class="text-xs text-muted-foreground" data-testid="catalog-filter-truncated">
             Показаны не все значения: у источника их больше на {control.truncated}.
