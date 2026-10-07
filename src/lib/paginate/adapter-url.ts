@@ -9,13 +9,13 @@
 //   ?page.size=5       — размер страницы (нативно)
 //   ?page.<key>=<v>    — ключи потребителя (RestorableState.extra), объявленные в extraSearch
 // Один пагинатор = один базовый ключ (pageParam), несколько пагинаторов — разные ключи.
+import { assertAdaptedSource, type AdaptedSource } from './source'
 import type {
   Extra,
   ExtraValue,
   HrefContext,
   PaginatorAdapter,
   PaginatorState,
-  Source,
 } from './types'
 
 /** Строгий целочисленный парсер: любой мусор («2.7», «abc», «../../etc») → 1 (deny-safe). */
@@ -247,7 +247,8 @@ function searchToParams(search: Record<string, unknown>): URLSearchParams {
 
 export function createUrlAdapter<T>(opts: {
   name: string
-  source: Source<T>
+  /** Только адаптированный источник: возможности пагинатор узнаёт отсюда. */
+  source: AdaptedSource<T>
   pageSize?: number
   append?: boolean
   pageParam?: string
@@ -262,6 +263,7 @@ export function createUrlAdapter<T>(opts: {
   /** Спецификация ключей адреса — хост читает её вместо дублирующих пропсов. */
   searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[] }
 } {
+  assertAdaptedSource<T>(opts.source, `createUrlAdapter("${opts.name}")`)
   const pageSize = opts.pageSize ?? 20
   const pageParam = opts.pageParam ?? 'page'
   const append = opts.append ?? true
@@ -389,7 +391,7 @@ export function createUrlAdapter<T>(opts: {
       if (!seen && page !== 1) params.set(pageParam, String(page))
       return `?${params.toString()}`
     },
-    loadPage: (req) => opts.source(req),
+    loadPage: (req) => opts.source.page(req),
     persist(state: PaginatorState<T>) {
       if (!router) return // сервер / роутер не привязан — URL уже источник истины
       const own = ownKeys(state)
@@ -411,6 +413,7 @@ export function createUrlAdapter<T>(opts: {
       })
     },
     capabilities: { append },
+    source: opts.source,
     setRouter(next) {
       router = next
     },

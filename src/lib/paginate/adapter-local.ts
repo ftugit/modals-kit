@@ -1,14 +1,17 @@
 // Local-адаптер: source + storage без URL (SPEC §3.6). Дословный порт React-версии.
 import { createMemoryStorage } from './storage'
-import type { PaginatorAdapter, PaginatorStorage, Source } from './types'
+import { assertAdaptedSource, type AdaptedSource } from './source'
+import type { PaginatorAdapter, PaginatorStorage } from './types'
 
 export function createLocalAdapter<T>(opts: {
   name: string
-  source: Source<T>
+  /** Только адаптированный источник: возможности пагинатор узнаёт отсюда. */
+  source: AdaptedSource<T>
   storage?: PaginatorStorage
   pageSize?: number
   append?: boolean
 }): PaginatorAdapter<T> {
+  assertAdaptedSource<T>(opts.source, `createLocalAdapter("${opts.name}")`)
   const storage = opts.storage ?? createMemoryStorage()
   const pageSize = opts.pageSize ?? 20
   const append = opts.append ?? true
@@ -24,8 +27,9 @@ export function createLocalAdapter<T>(opts: {
         extra: restored?.extra ?? {},
       }
     },
-    loadPage: (req) => opts.source(req),
+    loadPage: (req) => opts.source.page(req),
     persist: (state) => storage.write(opts.name, state),
     capabilities: { append },
+    source: opts.source,
   }
 }

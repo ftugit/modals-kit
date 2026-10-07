@@ -12,6 +12,7 @@ import {
   createUrlAdapter,
   decodeExtraValue,
   definePaginator,
+  defineSource,
   deriveMeta,
   distributeRoundRobin,
   encodeExtraValue,
@@ -349,7 +350,7 @@ describe('URL adapter & extra search', () => {
       name: 'gallery',
       pageParam: 'gallery',
       pageSize: 12,
-      source: async () => ({ items: [] }),
+      source: defineSource({ id: 'gallery-test', label: 'Тест', page: async () => ({ items: [] }) }),
     })
     expect(adapter.pageParam).toBe('gallery')
     expect(adapter.hrefFor(2, { search: {} })).toContain('gallery=2')
@@ -509,7 +510,12 @@ describe('core operations & lifecycle', () => {
   })
 
   it('maxPages limits loaded pages and evicts far side', async () => {
-    const source = async ({ page }: PageRequest) => ({ items: [`item${page}`], totalPages: 10 })
+    const source = defineSource({
+      id: 'maxTestSrc',
+      label: 'Тест',
+      totals: true,
+      page: async ({ page }: PageRequest) => ({ items: [`item${page}`], totalPages: 10 }),
+    })
     definePaginator({
       name: 'maxTest',
       adapter: createLocalAdapter({ name: 'maxTest', source, append: true }),

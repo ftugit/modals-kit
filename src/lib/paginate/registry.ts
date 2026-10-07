@@ -2,7 +2,8 @@
 // R17 deny by default: неизвестный name → throw. Дословный порт registry.ts React-версии.
 import { createLocalAdapter } from './adapter-local'
 import { createEmitter, type Emitter } from './events'
-import type { PaginatorAdapter, PaginatorConfig, ScrollDriver } from './types'
+import { assertAdaptedSource, sourceCapabilities, type AdaptedSource, type SourceCapabilities } from './source'
+import type { Extra, PaginatorAdapter, PaginatorConfig, ScrollDriver } from './types'
 
 export type LastAction =
   { kind: 'goToPage'; page: number } | { kind: 'loadMore'; dir: 1 | -1 } | null
@@ -11,6 +12,12 @@ export type PaginatorInstance = {
   name: string
   /** Generic стирается на уровне реестра; типизация возвращается на границе хуков. */
   adapter: PaginatorAdapter<unknown>
+  /**
+   * Адаптированный источник пагинатора (или null у курсорного транспорта, у
+   * которого свой контракт). Отсюда UI берёт возможности: что источник умеет —
+   * то и можно показывать.
+   */
+  source: AdaptedSource<unknown> | null
   emitter: Emitter
   pageSize: number
   lastAction: LastAction
@@ -37,6 +44,11 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
   if (instances.has(config.name)) {
     throw new Error(`Paginator "${config.name}" already defined`)
   }
+  // Deny by default: в ветке «источник + опции» принимается только адаптированный
+  // источник — объект, лишь повторяющий форму общего слоя, отвергается сразу.
+  if (!('adapter' in config)) {
+    assertAdaptedSource<T>(config.source, `definePaginator("${config.name}")`)
+  }
   const adapter =
     'adapter' in config
       ? config.adapter
@@ -50,6 +62,7 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
   instances.set(config.name, {
     name: config.name,
     adapter: adapter as PaginatorAdapter<unknown>,
+    source: (adapter.source as AdaptedSource<unknown> | undefined) ?? null,
     emitter: createEmitter(),
     pageSize: 'adapter' in config ? (config.pageSize ?? 20) : (config.pageSize ?? 20),
     lastAction: null,
@@ -64,6 +77,15 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
 /** Зарегистрирован ли пагинатор (get-or-create для демо/динамических конфигов). */
 export function hasPaginator(name: string): boolean {
   return instances.has(name)
+}
+
+/**
+ * Возможности источника пагинатора на текущий выбор: UI/панель спрашивают
+ * здесь, а не угадывают по названию источника. Курсорный транспорт источника
+ * не несёт — отдаём минимальные возможности.
+ */
+export function paginatorCapabilities(name: string, extra?: Extra): SourceCapabilities {
+  return sourceCapabilities(getPaginator(name).source ?? undefined, extra)
 }
 
 export function getPaginator(name: string): PaginatorInstance {

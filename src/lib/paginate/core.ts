@@ -5,6 +5,7 @@ import { canLoadMore, deriveMeta, flattenPages } from './pure'
 import { getPaginator, type PaginatorInstance } from './registry'
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraValue, PageResponse, PaginatorState } from './types'
+import { clearUnsupportedKeys } from './source'
 
 export function getState<T>(store: Store, name: string): PaginatorState<T> {
   return store.state<T>(name)()
@@ -539,9 +540,13 @@ export async function setExtra<T>(
 ): Promise<void> {
   const instance = getPaginator(name)
   const state = getState<T>(store, name)
+  // Возможности источника — часть контракта записи: ключи того, чего у текущего
+  // выбора нет, снимаются ЭТИМ ЖЕ патчем (переключение источника = одна запись и
+  // один перезаход). Объявляет их источник (`capabilityKeys`), см. lib/paginate/source.
+  const patchExtraWithCleared = clearUnsupportedKeys(instance.source, state.extra, patchExtra)
   let changed = false
   let touchesData = false
-  for (const [k, v] of Object.entries(patchExtra)) {
+  for (const [k, v] of Object.entries(patchExtraWithCleared)) {
     // `undefined` = УДАЛИТЬ ключ (снятие фильтра). Раньше сравнение пропускало
     // такой патч, и стор хранил значение вечно: список оставался суженным.
     const removed = v === undefined && k in state.extra
@@ -555,7 +560,7 @@ export async function setExtra<T>(
   // значение undefined», и persist со сравнениями ловили бы фантом.
   const mergeExtra = (extra: Extra): Extra => {
     const next: Extra = { ...extra }
-    for (const [k, v] of Object.entries(patchExtra)) {
+    for (const [k, v] of Object.entries(patchExtraWithCleared)) {
       if (v === undefined) delete next[k]
       else next[k] = v
     }

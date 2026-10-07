@@ -4,6 +4,7 @@
     EdgeSentinel,
     PaginatorHost,
     usePaginatorActions,
+    usePaginatorCapabilities,
     usePaginatorState,
     useScopeStore,
   } from '$lib/paginate/svelte'
@@ -61,6 +62,9 @@
   const acc = (v: DemoExtra) => v.mode === 'accumulate'
   const zoneOn = (t: DemoExtra['topTrigger']) => t === 'direction' || t === 'chat'
 
+  // `requires` — способности, без которых поле не работает: панель сама покажет
+  // его выключенным с причиной и не даст записать значение. Что источник умеет,
+  // знает пагинатор (возможности), поэтому тумблеры ничего не объявляют руками.
   const DEMO_FIELDS: readonly SettingsField<DemoExtra>[] = [
     {
       key: 'kind',
@@ -72,12 +76,13 @@
         ['anime', 'Аниме (Shikimori API)'],
       ],
     },
-    { type: 'divider', label: 'Поиск (источник и lib search)' },
+    { type: 'divider', label: 'Поиск (возможности источника и lib search)' },
     {
       // Отключает поиск целиком: поля нет, `?page.q` до источника не доходит.
       key: 'search',
       label: 'Поиск (поле и ?page.q)',
       type: 'toggle',
+      requires: 'search',
     },
     {
       // Отключает именно lib search: запрос уходит источнику как есть
@@ -86,6 +91,7 @@
       label: 'lib/search (fuzzy-перехват)',
       type: 'toggle',
       jsOnly: true,
+      requires: 'fuzzy',
       enabledWhen: (v) => v.search,
     },
     {
@@ -146,7 +152,6 @@
         ['50', '50%'],
       ],
     },
-    { key: 'total', label: 'Известное число страниц', type: 'toggle' },
     { key: 'skel', label: 'Скелетоны', type: 'toggle', jsOnly: true },
     { key: 'ind', label: 'Плавающий индикатор загрузки', type: 'toggle', jsOnly: true },
     {
@@ -224,6 +229,7 @@
   const scopeStore = useScopeStore()
 
   const pagState = usePaginatorState<DemoEntry>(name)
+  const pagCaps = usePaginatorCapabilities(name)
   const { scrollToPage, setExtra } = usePaginatorActions(name)
 
   const cfg = $derived.by((): DemoExtra => {
@@ -231,24 +237,26 @@
     return demoExtraOf(s.extra)
   })
 
+  // Что умеет ВЫБРАННЫЙ источник — знает пагинатор (возможности приходят из
+  // слоя источника). Панель и тулбар включают/выключают функции только отсюда:
+  // у фото поиска нет — формы не будет, поле в панели будет видно выключенным.
+  const caps = $derived(pagCaps())
+  // Контур поиска: выключен демо-тумблером `?page.search=false` или источником.
+  const searchOn = $derived(caps.search && cfg.search)
+  // lib search не обязателен источнику: у аниме родной поиск работает и без него.
+  const fuzzyOn = $derived(searchOn && caps.fuzzy && cfg.fuzzy)
+
   // Смена «источник/флаги поиска» — это смена ДАННЫХ: ключи объявлены в
-  // reloadKeys пагинатора, ядро само сбросит страницу и перезагрузит первую.
-  const searchLabel = $derived(
-    cfg.kind === 'anime'
-      ? cfg.fuzzy
-        ? 'Поиск: lib/search (fuzzy на клиенте, добор страниц)'
-        : 'Поиск: родной (бэкенд сужает выдачу подстрокой)'
-      : cfg.fuzzy
-        ? 'Поиск: lib/search (fuzzy по названиям)'
-        : 'Поиск: у этого источника родного нет — включите lib/search'
-  )
-  const searchHint = $derived(
-    cfg.kind === 'anime'
-      ? cfg.fuzzy
-        ? 'Например, «нарута» — опечатку исправит словарь lib/search'
-        : 'Например, «наруто» — точная подстрока на бэкенде'
-      : 'Например, «Product 1» или «Photo 1»'
-  )
+  // dataKeys источника, ядро само сбросит страницу и перезагрузит первую.
+  const searchLabel = $derived.by(() => {
+    if (!searchOn) return 'Поиск'
+    if (fuzzyOn) return 'Поиск: lib/search (fuzzy на клиенте, добор страниц)'
+    return caps.fuzzy
+      ? 'Поиск: родной (бэкенд сужает выдачу подстрокой)'
+      : 'Поиск: подстрока на стороне источника'
+  })
+  const searchHint = $derived(!searchOn ? '' : fuzzyOn ? 'Опечатку исправит словарь lib/search' : '')
+
   const qValue = $derived(String(pagState().extra.q ?? ''))
 
   // Поделённый адрес с включённым lib search: SSR отдал выдачу ИСТОЧНИКА
@@ -261,7 +269,8 @@
     const state = pagState()
     const opts = demoExtraOf(state.extra)
     const q = String(state.extra.q ?? '').trim()
-    if (!opts.search || !opts.fuzzy || !q) return
+    const c = pagCaps()
+    if (!c.search || !c.fuzzy || !opts.search || !opts.fuzzy || !q) return
     void fetchReplace(scopeStore, name, state.page, 'replace')
   })
 
@@ -296,22 +305,48 @@
   snapshot={url?.snapshot ?? null}
 >
   {#snippet toolbar()}
-    {#if cfg.search}
+    {#if caps.search}
+      {#if searchOn}
+        <SearchForm
+          pageParam="page"
+          label={searchLabel}
+          hint={searchHint}
+          value={qValue}
+          commit={(value) => setExtra({ q: value })}
+          class="mb-2"
+        />
+      {:else if qValue}
+        <p class="mb-2 text-xs text-muted-foreground" data-testid="search-off">
+          Поиск выключен (<code class="rounded bg-muted/70 px-1">?page.search=false</code>): запрос
+          «{qValue}» не учитывается — показан обычный каталог.
+        </p>
+      {/if}
+    {:else}
+      <!--
+        Источник поиска не умеет — возможность пришла от пагинатора. Поле ВИДНО,
+        но выключено, и рядом написана причина: выключенное не прячем.
+      -->
       <SearchForm
         pageParam="page"
-        label={searchLabel}
-        hint={searchHint}
-        value={qValue}
-        commit={(value) => setExtra({ q: value })}
+        label="Поиск"
+        hint="источник не поддерживает поиск"
+        value=""
+        disabled
+        commit={() => {}}
         class="mb-2"
       />
-    {:else if qValue}
-      <p class="mb-2 text-xs text-muted-foreground" data-testid="search-off">
-        Поиск выключен (<code class="rounded bg-muted/70 px-1">?page.search=false</code>): запрос
-        «{qValue}» не учитывается — показан обычный каталог.
+      <p class="mb-2 text-xs text-muted-foreground" data-testid="search-unsupported">
+        Источник не поддерживает поиск — параметр <code class="rounded bg-muted/70 px-1"
+          >?page.q</code
+        > выключен.
       </p>
     {/if}
-    <SearchNote {name} active={cfg.search && cfg.fuzzy} />
+    {#if searchOn && !fuzzyOn && qValue}
+      <p class="mb-2 text-xs text-muted-foreground" data-testid="search-native">
+        lib/search выключен (?page.fuzzy=false): запрос обслуживает родной поиск источника.
+      </p>
+    {/if}
+    <SearchNote {name} active={fuzzyOn} />
     <PaginatorSettings
       {name}
       class="mb-5 rounded-xl border border-border bg-card p-4 text-sm shadow-sm"
@@ -327,7 +362,7 @@
           ['none', 'Память (без персиста)'],
         ],
       }}
-      noscriptHint="Без JavaScript: работают источник, поиск (родной — на сервере), раскладка, размер страницы и число страниц (через адрес); fuzzy-перехват и остальные опции требуют JS."
+      noscriptHint="Без JavaScript: работают источник, родной поиск (у каталога Shikimori — подстрока на бэкенде), раскладка, размер страницы и число страниц (через адрес); fuzzy-перехват и остальные опции требуют JS. Параметры, которых источник не поддерживает, выключены — их и не записать."
     >
       {#snippet footer(ctx)}
         Настройки и страница восстановлены {restoredLabel(storeKind)}; каждое изменение
@@ -338,6 +373,15 @@
   {/snippet}
 
   {#snippet children()}
+    <div
+      class="sr-only"
+      data-testid="source-capabilities"
+      data-source={cfg.kind}
+      data-search={caps.search ? 'on' : 'off'}
+      data-fuzzy={caps.fuzzy ? 'on' : 'off'}
+      data-filters={caps.filters ? 'on' : 'off'}
+      data-totals={caps.totals ? 'on' : 'off'}
+    ></div>
     {@render DemoBody({ cfg, name })}
   {/snippet}
 </PaginatorHost>

@@ -4,6 +4,7 @@
 // в баррель не входит (как `$lib/paginate/solid`): иначе solid-js попадал бы
 // в клиентскую сборку SvelteKit.
 export type { SearchConfig, SearchInstance } from './types'
+export { withSearch, type WithSearchOptions } from './source'
 export {
   defineSearch,
   hasSearch,
@@ -13,6 +14,9 @@ export {
   reportSearchCorrection,
   getSearchCorrection,
   onSearchCorrection,
+  reportSearchStats,
+  getSearchStats,
+  onSearchStats,
   resetSearchRegistry,
 } from './registry'
 export { setSearchQuery, clearSearchQuery, resyncSearch, normalizeSearchQuery } from './core'

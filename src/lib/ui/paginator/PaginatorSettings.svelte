@@ -2,9 +2,12 @@
   import { onMount, type Snippet } from 'svelte'
   import { currentPathname, currentSearch } from '$lib/router/sveltekit'
   import { buttonVariants } from '$lib/ui/primitives'
-  import { getPaginator, type Extra, type ExtraValue } from '$lib/paginate'
-  import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
+  import { getPaginator, type Extra, type ExtraValue, type SourceCapability } from '$lib/paginate'
+  import { usePaginatorActions, usePaginatorCapabilities, usePaginatorState } from '$lib/paginate/svelte'
   import { Field, Select, Toggle } from './fields'
+
+  /** Патч записи: несколько ключей одним `setExtra` (например, переключение источника + чистка). */
+  export type SettingsPatch = Record<string, ExtraValue | undefined>
 
   export type SettingsField<V extends Record<string, ExtraValue> = Record<string, ExtraValue>> =
     | {
@@ -15,6 +18,10 @@
         parse?: (raw: string) => ExtraValue
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
+        /** Возможности источника, без которых параметр недоступен (панель выключит с причиной). */
+        requires?: SourceCapability | readonly SourceCapability[]
+        /** Что записать в extra: по умолчанию `{ [key]: value }`. */
+        patch?: (value: ExtraValue, values: V) => SettingsPatch
       }
     | {
         key: keyof V & string
@@ -22,11 +29,21 @@
         type: 'toggle'
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
+        requires?: SourceCapability | readonly SourceCapability[]
+        patch?: (value: ExtraValue, values: V) => SettingsPatch
       }
     | {
         type: 'divider'
         label?: string
       }
+
+  /** Подписи возможностей для причины «источник не поддерживает …». */
+  const CAPABILITY_LABEL: Record<SourceCapability, string> = {
+    search: 'поиск',
+    filters: 'фильтры',
+    fuzzy: 'lib/search',
+    totals: 'число страниц',
+  }
 
   interface Props<V extends Record<string, ExtraValue>> {
     name?: string
@@ -41,7 +58,7 @@
     }
     renderField?: (
       field: SettingsField<V>,
-      ctx: { value: ExtraValue; set(v: ExtraValue): void; disabled: boolean }
+      ctx: { value: ExtraValue; set(v: ExtraValue): void; disabled: boolean; reason: string | null }
     ) => Snippet | undefined
     footer?: Snippet<[{ pageSize: number; page: number }]>
     class?: string
@@ -63,6 +80,7 @@
   }: Props<V> = $props()
 
   const pagState = usePaginatorState(name)
+  const capabilities = usePaginatorCapabilities(name)
   const { setExtra, setPageSize } = usePaginatorActions(name)
 
   const pageParam = $derived(
@@ -93,16 +111,29 @@
     return out
   })
 
-  function fieldDisabled(f: SettingsField<V>): boolean {
-    if ('key' in f) {
-      if ((f.jsOnly ?? false) && js) return true
-      if (f.enabledWhen && !f.enabledWhen(currentValues)) return true
+  /**
+   * Доступность поля: JS-требования, возможности ИСТОЧНИКА (панель получает их
+   * от пагинатора) и связи между параметрами. Возвращает и причину — её видит
+   * пользователь, а не только разработчик в консоли.
+   */
+  function fieldState(f: SettingsField<V>): { disabled: boolean; reason: string | null } {
+    if (!('key' in f)) return { disabled: false, reason: null }
+    if ((f.jsOnly ?? false) && js) return { disabled: true, reason: null }
+    const caps = capabilities()
+    const required = f.requires === undefined ? [] : Array.isArray(f.requires) ? f.requires : [f.requires]
+    const missing = (required as readonly SourceCapability[]).filter((capability) => !caps[capability])
+    if (missing.length > 0) {
+      return {
+        disabled: true,
+        reason: `источник не поддерживает ${missing.map((capability) => CAPABILITY_LABEL[capability]).join(' и ')}`,
+      }
     }
-    return false
+    if (f.enabledWhen && !f.enabledWhen(currentValues)) return { disabled: true, reason: null }
+    return { disabled: false, reason: null }
   }
 
-  function setValue(key: string, v: ExtraValue) {
-    setExtra({ [key]: v })
+  function setValue(field: { key: string; patch?: (value: ExtraValue, values: V) => SettingsPatch }, v: ExtraValue) {
+    setExtra(field.patch ? field.patch(v, currentValues) : { [field.key]: v })
   }
 </script>
 
@@ -151,11 +182,13 @@
         </div>
       {:else if 'key' in f}
         {@const val = currentValues[f.key]}
-        {@const dis = fieldDisabled(f)}
+        {@const state = fieldState(f)}
+        {@const dis = state.disabled}
         {@const custom = renderField?.(f, {
           value: val,
-          set: (v) => setValue(f.key, v),
+          set: (v) => setValue(f, v),
           disabled: dis,
+          reason: state.reason,
         })}
         {#if custom}
           {@render custom()}
@@ -165,15 +198,16 @@
             label={f.label}
             checked={val === true}
             disabled={dis}
-            onChange={(v) => setValue(f.key, v)}
+            hint={state.reason ?? undefined}
+            onChange={(v) => setValue(f, v)}
           />
         {:else if f.type === 'select'}
-          <Field label={f.label}>
+          <Field label={f.label} hint={state.reason ?? undefined}>
             <Select
               name={`${pageParam}.${f.key}`}
               disabled={dis}
               value={String(val ?? '')}
-              onChange={(raw) => setValue(f.key, f.parse ? f.parse(raw) : raw)}
+              onChange={(raw) => setValue(f, f.parse ? f.parse(raw) : raw)}
               options={f.options}
             />
           </Field>

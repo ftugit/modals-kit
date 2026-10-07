@@ -13,6 +13,7 @@ export {
   usePageHref,
   usePaginator,
   usePaginatorActions,
+  usePaginatorCapabilities,
   usePaginatorEvents,
   usePaginatorItems,
   usePaginatorOptions,

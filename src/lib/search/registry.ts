@@ -11,11 +11,13 @@ import {
   createUrlAdapter,
   definePaginator,
   hasPaginator,
+  sanitizeQueryValue,
   type ExtraValue,
   type PaginatorSearchOptions,
 } from '$lib/paginate'
 import type { SearchConfig, SearchInstance } from './types'
-import { createSearchInterceptor, type SearchCorrectionInfo } from './accumulator'
+import { withSearch } from './source'
+import type { SearchCorrectionInfo, SearchInterceptStats } from './accumulator'
 
 const instances = new Map<string, SearchInstance>()
 const corrections = new Map<string, SearchCorrectionInfo | null>()
@@ -23,15 +25,10 @@ const correctionListeners = new Map<string, Set<(info: SearchCorrectionInfo | nu
 
 /** Deny-safe валидатор запроса из адреса: строка, без управляющих, с обрезкой. */
 export function searchQueryValidator(maxLength: number): (raw: ExtraValue) => ExtraValue | undefined {
-  return (raw) => {
-    if (raw == null) return undefined
-    // decodeExtraValue мог распознать число/boolean — запрос «1998» легален.
-    const value = String(raw)
-      .replace(/[\u0000-\u001f\u007f]/g, ' ')
-      .trim()
-      .slice(0, maxLength)
-    return value ? value : undefined
-  }
+  // Санитайзер — общий со слоем источника (lib/paginate/source): одна нормализация
+  // запроса и в адресе, и на пути «extra → источник». decodeExtraValue мог
+  // распознать число/boolean — запрос «1998» легален.
+  return (raw) => sanitizeQueryValue(raw, maxLength)
 }
 
 /**
@@ -63,11 +60,11 @@ export function defineSearch<T>(config: SearchConfig<T>): SearchInstance {
     debounce: config.debounce ?? 300,
     maxQueryLength,
   }
-  // Перехват источника: fuzzy-усиление подменяет источник пагинатора; без
-  // fuzzy-опций базовый источник работает как есть (серверное сужение по q).
-  const source = config.fuzzy
-    ? createSearchInterceptor<T>({ ...config.fuzzy, source: config.source, minLength })
-    : config.source
+  // Перехват источника: lib search подключается декоратором withSearch и берёт
+  // спецификацию fuzzy У САМОГО ИСТОЧНИКА (`searchFor(extra).fuzzy`) — поэтому
+  // источник без объявленного усиления работает как есть (серверное сужение по q),
+  // а переключатель источников отдаёт каждому своё усиление.
+  const source = withSearch<T>(config.source, { name: config.name, minLength })
   if (!hasPaginator(config.name)) {
     definePaginator<T>({
       name: config.name,
@@ -104,6 +101,32 @@ export function getSearch(name: string): SearchInstance {
   return instance
 }
 
+const stats = new Map<string, SearchInterceptStats | null>()
+const statsListeners = new Map<string, Set<(stats: SearchInterceptStats | null) => void>>()
+
+/** Живая статистика перехвата (null — усиление неактивно): для панелей поиска. */
+export function reportSearchStats(name: string, next: SearchInterceptStats | null): void {
+  stats.set(name, next)
+  for (const listener of statsListeners.get(name) ?? []) listener(next)
+}
+
+export function getSearchStats(name: string): SearchInterceptStats | null {
+  return stats.get(name) ?? null
+}
+
+export function onSearchStats(
+  name: string,
+  listener: (stats: SearchInterceptStats | null) => void,
+): () => void {
+  let set = statsListeners.get(name)
+  if (!set) {
+    set = new Set()
+    statsListeners.set(name, set)
+  }
+  set.add(listener)
+  return () => set.delete(listener)
+}
+
 /** Подпись подмены запроса (основной контур аккумулятора) для UI. */
 export function reportSearchCorrection(name: string, info: SearchCorrectionInfo | null): void {
   corrections.set(name, info)
@@ -132,4 +155,6 @@ export function resetSearchRegistry(): void {
   instances.clear()
   corrections.clear()
   correctionListeners.clear()
+  stats.clear()
+  statsListeners.clear()
 }

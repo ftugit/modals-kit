@@ -25,8 +25,9 @@ import {
   viewState as deriveViewState,
 } from '../pure'
 import { getPaginator } from '../registry'
+import { sourceCapabilities, type SourceCapabilities } from '../source'
 import { createPaginatorStore, getClientStore, type Store } from '../store'
-import type { Extra, PageGroup, PaginatorEvent, PaginatorState, ViewState } from '../types'
+import type { Extra, ExtraValue, PageGroup, PaginatorEvent, PaginatorState, ViewState } from '../types'
 
 export type EdgeTrigger = 'off' | 'direction' | 'edge' | 'chat' | 'manual'
 export type PrependBehavior = 'auto' | 'native' | 'js'
@@ -114,6 +115,18 @@ export type StateAccessor<T> = (() => PaginatorState<T>) & {
  * Реактивное состояние пагинатора на Svelte 5 runes.
  * Работает и как вызов `state().page`, и как геттер `state.current.page`.
  */
+/**
+ * Возможности источника текущего выбора: «что источник умеет». UI/панель обязаны
+ * спрашивать здесь, а не угадывать: чего нет — то выключается, а не показывается
+ * кнопкой-обманкой. Реактивно к `extra`: у переключателя источников возможности
+ * меняются вместе с выбранным `kind`.
+ */
+export function usePaginatorCapabilities(name?: string): () => SourceCapabilities {
+  const ctx = useCtx('usePaginatorCapabilities', name)
+  const state = usePaginatorState<unknown>(ctx.name)
+  return () => sourceCapabilities(getPaginator(ctx.name).source ?? undefined, state().extra)
+}
+
 export function usePaginatorState<T>(name?: string): StateAccessor<T> {
   const ctx = useCtx('usePaginatorState', name)
   const resolvedName = ctx.name
@@ -172,7 +185,8 @@ export type PaginatorActions = {
   scrollToPage(page: number): void
   prefetchPage(page: number): void
   setPageSize(pageSize: number): void
-  setExtra(patch: Extra, options?: { reload?: boolean }): void
+  /** Патч extra: `undefined` — удалить ключ (снятие фильтра/переключение источника). */
+  setExtra(patch: Record<string, ExtraValue | undefined>, options?: { reload?: boolean }): void
   loadPrev(): void
   requestMore(dir: 1 | -1): void
 }

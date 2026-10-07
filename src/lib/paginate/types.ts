@@ -1,6 +1,8 @@
 // Контракты lib paginate — ЕДИНСТВЕННАЯ дефиниция; клиент и сервер импортируют отсюда.
 // Порт одноимённых контрактов React-версии (SPEC §3.1): без jotai/zod.
 
+import type { AdaptedSource } from './source'
+
 export type MaybePromise<T> = T | Promise<T>
 
 export type PageRequest = { page: number; pageSize: number; signal?: AbortSignal; extra?: Extra }
@@ -103,6 +105,12 @@ export type PaginatorAdapter<T> = {
   /** Пагинатор отдаёт ПОЛНЫЙ snapshot; storage/адаптер берут своё (R10). */
   persist(state: PaginatorState<T>): MaybePromise<void>
   capabilities: { append: boolean }
+  /**
+   * Источник, который обслуживает адаптер (если он собран из источника):
+   * пагинатор берёт отсюда возможности для UI. Курсорный транспорт источник
+   * не носит — у него отдельный контракт (opaque-курсоры).
+   */
+  source?: AdaptedSource<T>
   /** URL-адаптер: базовый search-ключ (`?page`, `?page.size`, `?page.<key>`); нужен UI-компонентам форм без JS. */
   pageParam?: string
 }
@@ -136,7 +144,8 @@ export type PaginatorConfig<T> =
     }
   | {
       name: string
-      source: Source<T>
+      /** Только адаптированный источник (defineSource) — иначе отказ, см. lib/paginate/source. */
+      source: AdaptedSource<T>
       pageSize?: number
       append?: boolean
       storage?: PaginatorStorage
