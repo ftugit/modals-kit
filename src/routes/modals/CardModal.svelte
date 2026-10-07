@@ -6,7 +6,7 @@
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '$lib/modals/svelte'
   import { ModalTrigger } from '$lib/modals/svelte'
   import { entryLabel } from '$lib/modals'
-  import { CloseAllButton } from '$lib/ui/modals'
+  import { CloseAllButton, modalTriggerVariants } from '$lib/ui/modals'
   import { Select } from '$lib/ui'
   import FloatingMenu from './FloatingMenu.svelte'
 
@@ -209,7 +209,7 @@
          вершину цепочки, в адрес не попадает. -->
     <button
       type="button"
-      class="modal-trigger"
+      class={modalTriggerVariants()}
       onclick={() => m.modals.openLayer({ content: storagelessInCard })}
     >
       Без хранилища поверх
@@ -235,7 +235,7 @@
       />
       <button
         type="button"
-        class="modal-trigger"
+        class={modalTriggerVariants()}
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку

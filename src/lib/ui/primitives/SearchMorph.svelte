@@ -54,24 +54,38 @@
   }
 </script>
 
+<!--
+  Бывшие `.search-morph*`: раскрытие по ширине и проявление поля — утилиты.
+  Состояние читают два пути: без JS — `:has(:checked)` от корня (checkbox
+  нативный), с ним — `data-open` на панели (для потомков через `group/morph`).
+  Корень помечен `data-search-morph` — по нему и ходит `:has`.
+-->
 <div
   bind:this={rootEl}
   class={cn('flex', direction === 'left' ? 'justify-end' : 'justify-start', cls)}
+  data-search-morph=""
 >
   <input
     type="checkbox"
     {id}
-    class="search-morph-toggle peer sr-only"
+    class="sr-only"
     checked={open}
     {disabled}
     onchange={(e) => (e.currentTarget.checked ? expand() : (open = false))}
   />
   <div
-    class="search-morph relative flex h-9 items-center rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30"
+    class={cn(
+      'group/morph relative flex h-9 w-[var(--morph-collapsed,2.25rem)] items-center rounded-md border border-input bg-background shadow-xs',
+      'focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30',
+      'transition-[width] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms]',
+      '[[data-search-morph]:has(:checked)_&]:w-[var(--morph-expanded,18rem)]',
+      'data-[open=true]:w-[var(--morph-expanded,18rem)]',
+    )}
     data-open={open ? 'true' : 'false'}
     data-testid="search-morph"
+    data-search-morph-panel=""
   >
-    <div class="search-morph-field h-full">
+    <div class="h-full min-w-0 flex-1 overflow-hidden" data-search-morph-field="">
       <input
         bind:this={fieldEl}
         bind:value
@@ -82,6 +96,11 @@
         tabindex={open ? 0 : -1}
         class={cn(
           'h-full w-full min-w-0 rounded-md bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:appearance-none',
+          // Поле проявляется за половину срока раскрытия — как в прежнем
+          // `transition: opacity calc(var(--field-dur) / 2)` с задержкой.
+          'opacity-0 transition-[opacity] duration-100 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms]',
+          '[[data-search-morph]:has(:checked)_&]:opacity-100 [[data-search-morph]:has(:checked)_&]:delay-100',
+          'group-data-[open=true]/morph:opacity-100 group-data-[open=true]/morph:delay-100',
           direction === 'left' ? 'pl-3 pr-9' : 'pl-9 pr-3',
         )}
         onkeydown={handleKeydown}
@@ -91,7 +110,11 @@
       <label
         data-morph="open"
         for={id}
-        class="inline-flex h-full w-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+        class={cn(
+          'inline-flex h-full w-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:text-foreground',
+          // Лупа «открыть» уступает место кнопке отправки, когда поиск раскрыт.
+          '[[data-search-morph]:has(:checked)_&]:hidden group-data-[open=true]/morph:hidden',
+        )}
         aria-label="Открыть поиск"
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
@@ -102,7 +125,10 @@
       <button
         data-morph="submit"
         type="button"
-        class="inline-flex h-full w-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+        class={cn(
+          'hidden h-full w-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground cursor-pointer',
+          '[[data-search-morph]:has(:checked)_&]:inline-flex group-data-[open=true]/morph:inline-flex',
+        )}
         aria-label="Искать"
         tabindex={open ? 0 : -1}
         onclick={() => onSearch?.(value)}

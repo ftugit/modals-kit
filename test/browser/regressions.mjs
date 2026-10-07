@@ -41,17 +41,17 @@ try {
     })
     await gotoBase(page)
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage')
-    const tailsBefore = await page.locator('.modal-tail').count()
+    await page.waitForSelector('[data-modal-stage]')
+    const tailsBefore = await page.locator('[data-modal-tail]').count()
 
-    const select = page.locator('.modal-popup select').first()
+    const select = page.locator('[data-modal-popup] select').first()
     const box = await select.boundingBox()
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await page.waitForSelector('[data-host-floating]')
     await page.waitForTimeout(300)
 
     const state = await page.evaluate(() => {
-      const layers = [...document.querySelectorAll('.modal-layer')]
+      const layers = [...document.querySelectorAll('[data-modal-layer]')]
       const active = layers.find((l) => l.hasAttribute('data-active'))
       return {
         layers: layers.length,
@@ -59,9 +59,9 @@ try {
         hidden: layers.filter((l) => l.getAttribute('aria-hidden') === 'true').length,
         inert: layers.filter((l) => l.hasAttribute('inert')).length,
         // Хвосты СЦЕНЫ: headless не имеет права добавлять их сюда.
-        tails: document.querySelectorAll('.modal-stage .modal-tail').length,
+        tails: document.querySelectorAll('[data-modal-stage] [data-modal-tail]').length,
         // А вот собственный хвост листа — это участие в потоке (D34).
-        sheetTails: document.querySelectorAll('[data-host-floating] .modal-tail').length,
+        sheetTails: document.querySelectorAll('[data-host-floating] [data-modal-tail]').length,
       }
     })
     assert(state.layers === 1, `слоёв ${state.layers}, ожидался 1 (headless нарисовал свой)`)
@@ -116,12 +116,12 @@ try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
       await gotoBase(page)
       await page.locator('text=Select внутри модалки').first().click()
-      await page.waitForSelector('.modal-stage')
-      await page.locator('.modal-popup select').first().focus()
+      await page.waitForSelector('[data-modal-stage]')
+      await page.locator('[data-modal-popup] select').first().focus()
       await page.keyboard.press(key)
       await page.waitForTimeout(500)
       const state = await page.evaluate(() => ({
-        stage: document.querySelectorAll('.modal-stage').length,
+        stage: document.querySelectorAll('[data-modal-stage]').length,
         floating: document.querySelectorAll('[data-host-floating]').length,
       }))
       assert(state.stage === 1, `${key}: owner-модалка закрылась`)
@@ -134,8 +134,8 @@ try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await gotoBase(page)
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage')
-    const select = page.locator('.modal-popup select').first()
+    await page.waitForSelector('[data-modal-stage]')
+    const select = page.locator('[data-modal-popup] select').first()
     const box = await select.boundingBox()
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await page.waitForTimeout(600)
@@ -154,8 +154,8 @@ try {
     })
     await gotoBase(page)
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage')
-    const select = page.locator('.modal-popup select').first()
+    await page.waitForSelector('[data-modal-stage]')
+    const select = page.locator('[data-modal-popup] select').first()
     const box = await select.boundingBox()
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await page.waitForSelector('[data-host-floating]')
@@ -210,13 +210,13 @@ try {
     // работает и при `overflow: hidden`, поэтому она плохой индикатор.
     const state = await page.evaluate(() => {
       // Фонов в DOM может быть два: у стопки свой, у поверхности листа свой.
-      const backdrops = [...document.querySelectorAll('.modal-backdrop')]
+      const backdrops = [...document.querySelectorAll('[data-modal-backdrop]')]
       return {
         bodyOverflow: getComputedStyle(document.body).overflow,
         backdropHidden: !backdrops.some((el) => !el.hasAttribute('hidden')),
         dialogs: document.querySelectorAll('[role=dialog]').length,
-        popups: document.querySelectorAll('.modal-popup').length,
-        stages: document.querySelectorAll('.modal-stage').length,
+        popups: document.querySelectorAll('[data-modal-popup]').length,
+        stages: document.querySelectorAll('[data-modal-stage]').length,
         label: document.querySelector('[role=dialog]')?.getAttribute('aria-label') ?? null,
       }
     })
@@ -272,7 +272,7 @@ try {
       await page.waitForTimeout(250)
       const geometry = await page.evaluate(() => {
         const outer = document.querySelector('[data-host-floating]')
-        const inner = document.querySelector('.select-content')
+        const inner = document.querySelector('[data-select-content]')
         return {
           outer: Math.round(outer.getBoundingClientRect().height),
           inner: Math.round(inner.getBoundingClientRect().height),
@@ -309,9 +309,9 @@ try {
     // панель монтируется в том же такте — и раньше фокус отбирал <select>.
     await gotoBase(page)
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage')
+    await page.waitForSelector('[data-modal-stage]')
     for (let i = 0; i < 3; i += 1) {
-      const box = await page.locator('.modal-popup select').first().boundingBox()
+      const box = await page.locator('[data-modal-popup] select').first().boundingBox()
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
       await page.waitForSelector('[data-host-floating]')
       await page.waitForTimeout(250)
@@ -391,8 +391,8 @@ try {
     })
     await gotoBase(page)
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage')
-    const box = await page.locator('.modal-popup select').first().boundingBox()
+    await page.waitForSelector('[data-modal-stage]')
+    const box = await page.locator('[data-modal-popup] select').first().boundingBox()
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     await page.waitForTimeout(350)
@@ -419,12 +419,12 @@ try {
     await page.waitForTimeout(500)
     const after = await page.evaluate(() => ({
       floating: document.querySelectorAll('[data-host-floating]').length,
-      stage: document.querySelectorAll('.modal-stage').length,
-      inert: document.querySelectorAll('.modal-popup[inert], .modal-backdrop-close[inert]').length,
+      stage: document.querySelectorAll('[data-modal-stage]').length,
+      inert: document.querySelectorAll('[data-modal-popup][inert], [data-modal-close][inert]').length,
     }))
     assert(after.floating === 0 && after.stage === 1, 'лист не закрылся или сцена пропала')
     assert(after.inert === 0, 'на модалке остался inert после закрытия листа')
-    await page.locator('.modal-popup select').first().click({ force: true })
+    await page.locator('[data-modal-popup] select').first().click({ force: true })
     await page.waitForSelector('[data-host-floating]')
     ok('после закрытия листа модалка снова интерактивна')
     await page.close()
@@ -445,7 +445,7 @@ try {
 
     // Модалка без хранилища: запись есть, адреса нет.
     await page.locator('button', { hasText: 'Модалка без хранилища' }).first().click()
-    await page.waitForSelector('.modal-stage')
+    await page.waitForSelector('[data-modal-stage]')
     const transient = await page.evaluate(() => ({
       url: location.search,
       ids: (history.state?.['sveltekit:states']?.modals?.transient ?? []).map((t) => t.id),
@@ -457,10 +457,10 @@ try {
     // Меню внутри неё не рушит модалку.
     await page.locator('button', { hasText: 'Меню в этой модалке' }).first().click()
     await page.waitForSelector('[data-host-floating]')
-    assert((await page.locator('.modal-stage').count()) === 1, 'меню закрыло модалку')
+    assert((await page.locator('[data-modal-stage]').count()) === 1, 'меню закрыло модалку')
     await page.keyboard.press('Escape')
     await page.waitForTimeout(300)
-    assert((await page.locator('.modal-stage').count()) === 1, 'Escape закрыл модалку вместо меню')
+    assert((await page.locator('[data-modal-stage]').count()) === 1, 'Escape закрыл модалку вместо меню')
 
     // Переход на зарегистрированную модалку: новая стопка, адрес появился.
     await page.locator('button', { hasText: 'Перейти на демо-модалку' }).first().click()
@@ -490,9 +490,9 @@ try {
     }
     const openModal = async (trigger) => {
       await page.locator(`text=${trigger}`).first().click()
-      await page.waitForSelector('.modal-stage')
+      await page.waitForSelector('[data-modal-stage]')
       await page.waitForTimeout(250)
-      return page.locator('.modal-stage').getAttribute('data-anchor')
+      return page.locator('[data-modal-stage]').getAttribute('data-anchor')
     }
     const closeAll = async () => {
       for (let i = 0; i < 3; i += 1) { await page.keyboard.press('Escape'); await page.waitForTimeout(220) }
@@ -549,11 +549,11 @@ try {
     const closeControl = page.getByText('Анимация закрытия', { exact: true }).locator('..')
     await closeControl.getByRole('button', { name: 'выкл' }).click()
     await page.locator('text=Открыть карточку').first().click()
-    await page.waitForSelector('.modal-stage')
+    await page.waitForSelector('[data-modal-stage]')
 
     const started = await page.evaluate(() => performance.now())
     await page.keyboard.press('Escape')
-    await page.waitForFunction(() => !document.querySelector('.modal-stage'), undefined, { timeout: 1000 })
+    await page.waitForFunction(() => !document.querySelector('[data-modal-stage]'), undefined, { timeout: 1000 })
     const elapsed = await page.evaluate((start) => performance.now() - start, started)
     // Один rAF и планировщик допустимы; базовые 320ms сюда уже не помещаются.
     assert(elapsed < 150, `сцена прожила ${Math.round(elapsed)}ms при closeAnimation=none`)
@@ -569,9 +569,9 @@ try {
     await page.getByRole('button', { name: 'право' }).first().click()
     await page.getByRole('button', { name: 'выпадашка' }).first().click()
     await page.locator('text=Select внутри модалки').first().click()
-    await page.waitForSelector('.modal-stage[data-anchor="right"]')
+    await page.waitForSelector('[data-modal-stage][data-anchor="right"]')
 
-    const select = page.locator('.modal-popup select').first()
+    const select = page.locator('[data-modal-popup] select').first()
     await select.click({ force: true })
     await page.waitForSelector('[data-host-floating]')
     const sheet = page.locator('[data-host-floating]')
@@ -585,7 +585,7 @@ try {
     // `openLayer()` без mobile-override также обязан найти якорь ниже по стеку.
     await page.locator('button', { hasText: 'Без хранилища поверх' }).first().click()
     await page.waitForFunction(
-      () => document.querySelector('.modal-stage')?.getAttribute('data-anchor') === 'right',
+      () => document.querySelector('[data-modal-stage]')?.getAttribute('data-anchor') === 'right',
     )
     const transient = await page.evaluate(() =>
       (history.state?.['sveltekit:states']?.modals?.transient ?? []).length)
@@ -598,7 +598,7 @@ try {
   await run('R-20 обычная модалка не ломает transient, а Back/Forward восстанавливают снимок', async () => {
     const page = await browser.newPage({ viewport: { width: 393, height: 851 } })
     await gotoBase(page)
-    const anchor = () => page.locator('.modal-stage').getAttribute('data-anchor')
+    const anchor = () => page.locator('[data-modal-stage]').getAttribute('data-anchor')
     const snapshot = () => page.evaluate(() => history.state?.['sveltekit:states']?.modals ?? null)
 
     await page.getByRole('button', { name: 'право' }).first().click()

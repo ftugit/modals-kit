@@ -93,136 +93,109 @@
 
   const label = (e: any) => (e.kind === 'registered' ? e.name : e.id)
   const params = (e: any) => (e.kind === 'registered' ? e.params : modals.layerContent(e.id))
+  // Оформление страницы: утилиты вместо прежнего блочного стиля.
+  const CODE = 'rounded-[5px] border border-[#252a34] bg-[#0f1115] px-1 py-0.5 text-[0.82em]'
+  const BTN_BASE =
+    'flex-1 cursor-pointer rounded-lg px-3 py-2 text-[0.88rem] font-medium text-white enabled:hover:brightness-[1.12] disabled:cursor-not-allowed disabled:bg-[#2a2f3a] disabled:text-[#666e7d]'
+  const BTN = `${BTN_BASE} bg-[#2d6cdf]`
+  const BTN_ALT = `${BTN_BASE} bg-[#6b4fd6]`
+  const PRE =
+    'm-0 overflow-x-auto rounded-md border border-[#252a34] bg-[#0f1115] px-2.5 py-2 text-[0.78rem] whitespace-pre-wrap break-all'
 </script>
 
 <svelte:head><title>Полный цикл модалки</title></svelte:head>
 
-<main>
-  <h1>Полный цикл</h1>
-  <p class="lead">
-    Объявление → вызов с параметрами → цепочка → адрес → Назад.
-    Хост ещё не написан, поэтому слои ниже нарисованы примитивно —
-    но сама механика настоящая.
-  </p>
+<!--
+  Оформление страницы — утилиты, а не прежний блочный стиль: app.css хранит
+  только токены тем. Тёмная тема спайка набрана цветами прямо в классах.
+-->
+<div class="min-h-dvh bg-[#0f1115] font-sans text-[15px] leading-[1.55] text-[#e6e8eb] [&_h1]:mb-1.5 [&_h1]:text-[1.6rem] [&_h2]:mb-3.5 [&_h2]:text-[0.78rem] [&_h2]:font-semibold [&_h2]:tracking-[0.08em] [&_h2]:text-[#8b93a1] [&_h2]:uppercase [&_dt]:text-[0.85rem] [&_dt]:text-[#8b93a1] [&_dd]:m-0">
+  <main class="mx-auto max-w-[70rem] px-5 pt-8 pb-16">
+    <h1>Полный цикл</h1>
+    <p class="mb-7 max-w-[46rem] text-[#9aa3b2]">
+      Объявление → вызов с параметрами → цепочка → адрес → Назад.
+      Хост ещё не написан, поэтому слои ниже нарисованы примитивно —
+      но сама механика настоящая.
+    </p>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Два поддерживаемых вида записи</h2>
+    <section class="grid grid-cols-1 gap-4 min-[820px]:grid-cols-2">
+      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+        <h2>Два поддерживаемых вида записи</h2>
 
-      <div class="kind">
-        <div class="kind-h"><b>1. registered</b> · глобальный реестр</div>
-        <p>Объявлена в <code>createRegistry('app')</code>, видна отовсюду.</p>
-        <button onclick={openGlobal} disabled={!ready}>Открыть «auth»</button>
+        <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
+          <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · глобальный реестр</div>
+          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>createRegistry('app')</code>, видна отовсюду.</p>
+          <button class={BTN} onclick={openGlobal} disabled={!ready}>Открыть «auth»</button>
+        </div>
+
+        <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
+          <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · область роута</div>
+          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>app.child('/cycle')</code>. С других роутов не видна.
+             Параметры уезжают в адрес.</p>
+          <button class={BTN} onclick={openScoped} disabled={!ready}>Открыть «account» с id</button>
+        </div>
+
+        <div class="mb-[1.1rem] border-l-[3px] border-l-[#6b4fd6] py-0.5 pl-3">
+          <div class="mb-1 text-[0.9rem]"><b>3. transient</b> · слой из кода</div>
+          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Имени в реестре нет, содержимое передаётся на месте,
+             в адрес не попадает.</p>
+          <button class={BTN_ALT} onclick={openTransient} disabled={!ready}>Открыть разовый слой</button>
+        </div>
+
       </div>
 
-      <div class="kind">
-        <div class="kind-h"><b>1. registered</b> · область роута</div>
-        <p>Объявлена в <code>app.child('/cycle')</code>. С других роутов не видна.
-           Параметры уезжают в адрес.</p>
-        <button onclick={openScoped} disabled={!ready}>Открыть «account» с id</button>
+      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+        <h2>Что получилось</h2>
+        <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          <dt>стопка</dt>
+          <dd class="font-semibold text-[#7ee787]">{chain.length ? chain.map(label).join(' → ') : 'пусто'}</dd>
+          <dt>верхняя запись</dt>
+          <dd>{top ? top.kind : '—'}</dd>
+          <dt>её данные</dt>
+          <dd><code>{top ? JSON.stringify(params(top)) : '—'}</code></dd>
+          <dt>адрес</dt>
+          <dd><code class={`${CODE} break-all`}>{href || '—'}</code></dd>
+        </dl>
+
+        <div class="flex gap-2">
+          <button class={BTN} onclick={close} disabled={!chain.length}>Закрыть верхнюю</button>
+          <button class={BTN} onclick={closeAll} disabled={!chain.length}>Закрыть все</button>
+        </div>
+        <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
+          Дальше жмите <b>Назад</b> в браузере: каждое открытие — своя запись
+          истории, у transient тоже. Затем <b>F5</b>: записи из адреса вернутся,
+          разовый слой — нет.
+        </p>
       </div>
+    </section>
 
-      <div class="kind alt">
-        <div class="kind-h"><b>3. transient</b> · слой из кода</div>
-        <p>Имени в реестре нет, содержимое передаётся на месте,
-           в адрес не попадает.</p>
-        <button class="alt" onclick={openTransient} disabled={!ready}>Открыть разовый слой</button>
-      </div>
-
-    </div>
-
-    <div class="card">
-      <h2>Что получилось</h2>
-      <dl>
-        <dt>стопка</dt>
-        <dd class="strong">{chain.length ? chain.map(label).join(' → ') : 'пусто'}</dd>
-        <dt>верхняя запись</dt>
-        <dd>{top ? top.kind : '—'}</dd>
-        <dt>её данные</dt>
-        <dd><code>{top ? JSON.stringify(params(top)) : '—'}</code></dd>
-        <dt>адрес</dt>
-        <dd><code class="wrap">{href || '—'}</code></dd>
-      </dl>
-
-      <div class="row">
-        <button onclick={close} disabled={!chain.length}>Закрыть верхнюю</button>
-        <button onclick={closeAll} disabled={!chain.length}>Закрыть все</button>
-      </div>
-      <p class="hint">
-        Дальше жмите <b>Назад</b> в браузере: каждое открытие — своя запись
-        истории, у transient тоже. Затем <b>F5</b>: записи из адреса вернутся,
-        разовый слой — нет.
-      </p>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Слои (заглушка вместо хоста)</h2>
-    {#if chain.length === 0}
-      <p class="hint">Стопка пуста.</p>
-    {:else}
-      <div class="layers">
-        {#each chain as entry, i (label(entry))}
-          <div class="layer" class:active={i === chain.length - 1}>
-            <div class="layer-h">
-              <span class="badge" class:t={entry.kind === 'transient'}>{entry.kind}</span>
-              <b>{label(entry)}</b>
-              <span class="dim">глубина {i + 1} из {chain.length}</span>
+    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+      <h2>Слои (заглушка вместо хоста)</h2>
+      {#if chain.length === 0}
+        <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">Стопка пуста.</p>
+      {:else}
+        <div class="flex flex-col gap-2.5">
+          {#each chain as entry, i (label(entry))}
+            <div
+              class="rounded-lg border border-[#252a34] p-3 opacity-50 data-[active]:border-[#2d6cdf] data-[active]:opacity-100"
+              data-active={i === chain.length - 1 ? '' : undefined}
+            >
+              <div class="mb-1.5 flex flex-wrap items-center gap-2 text-[0.88rem]">
+                <span class="rounded bg-[#2d6cdf] px-1.5 py-0.5 text-[0.7rem] data-[kind=transient]:bg-[#6b4fd6]" data-kind={entry.kind}>{entry.kind}</span>
+                <b>{label(entry)}</b>
+                <span class="ml-auto text-[0.78rem] text-[#7a8292]">глубина {i + 1} из {chain.length}</span>
+              </div>
+              <pre class={PRE}>{JSON.stringify(params(entry), null, 2)}</pre>
             </div>
-            <pre>{JSON.stringify(params(entry), null, 2)}</pre>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </section>
+          {/each}
+        </div>
+      {/if}
+    </section>
 
-  <section class="card">
-    <h2>Журнал</h2>
-    <pre class="log">{log.join('\n') || '—'}</pre>
-  </section>
-</main>
+    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+      <h2>Журнал</h2>
+      <pre class={`${PRE} max-h-48 overflow-y-auto`}>{log.join('\n') || '—'}</pre>
+    </section>
+  </main>
+</div>
 
-<style>
-  :global(body) { margin: 0; background: #0f1115; color: #e6e8eb;
-    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-  main { max-width: 70rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  h1 { font-size: 1.6rem; margin: 0 0 .35rem; }
-  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
-       color: #8b93a1; margin: 0 0 .9rem; font-weight: 600; }
-  .lead { color: #9aa3b2; margin: 0 0 1.75rem; max-width: 46rem; }
-  .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
-  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: #171a21; border: 1px solid #252a34; border-radius: 12px;
-          padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
-  .kind { border-left: 3px solid #2d6cdf; padding: .1rem 0 .1rem .8rem; margin-bottom: 1.1rem; }
-  .kind.alt { border-left-color: #6b4fd6; }
-  .kind-h { font-size: .9rem; margin-bottom: .3rem; }
-  .kind p { color: #8b93a1; font-size: .84rem; margin: 0 0 .55rem; }
-  dl { margin: 0 0 1rem; display: grid; grid-template-columns: auto 1fr; gap: .45rem 1rem; }
-  dt { color: #8b93a1; font-size: .85rem; }
-  dd { margin: 0; }
-  dd.strong { color: #7ee787; font-weight: 600; }
-  code { background: #0f1115; border: 1px solid #252a34; border-radius: 5px;
-         padding: .05rem .3rem; font-size: .82em; }
-  code.wrap { word-break: break-all; }
-  .row { display: flex; gap: .5rem; }
-  button { background: #2d6cdf; color: #fff; border: 0; border-radius: 8px;
-           padding: .5rem .8rem; font-size: .88rem; font-weight: 500; cursor: pointer; }
-  button.alt { background: #6b4fd6; }
-  button:disabled { background: #2a2f3a; color: #666e7d; cursor: not-allowed; }
-  button:not(:disabled):hover { filter: brightness(1.12); }
-  .row button { flex: 1; }
-  .layers { display: flex; flex-direction: column; gap: .6rem; }
-  .layer { border: 1px solid #252a34; border-radius: 8px; padding: .6rem .75rem; opacity: .5; }
-  .layer.active { opacity: 1; border-color: #2d6cdf; }
-  .layer-h { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem;
-             font-size: .88rem; flex-wrap: wrap; }
-  .badge { background: #2d6cdf; border-radius: 4px; padding: .05rem .4rem; font-size: .7rem; }
-  .badge.t { background: #6b4fd6; }
-  .dim { color: #7a8292; font-size: .78rem; margin-left: auto; }
-  pre { background: #0f1115; border: 1px solid #252a34; border-radius: 6px;
-        padding: .5rem .7rem; overflow-x: auto; font-size: .78rem; margin: 0;
-        white-space: pre-wrap; word-break: break-all; }
-  pre.log { max-height: 12rem; overflow-y: auto; }
-  .hint { color: #7a8292; font-size: .82rem; margin: .7rem 0 0; }
-</style>

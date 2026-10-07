@@ -12,7 +12,7 @@
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel, type CloseAnimation, type MobileAnchor, type OpenAnimation, type StackAnimation, type TailDirection } from '$lib/modals'
   import { ModalTrigger, useModals } from '$lib/modals/svelte'
-  import { CloseAllButton } from '$lib/ui/modals'
+  import { CloseAllButton, modalTriggerVariants } from '$lib/ui/modals'
   import LoadLink from '$lib/router/LoadLink.svelte'
   import SourcesPanel from './SourcesPanel.svelte'
   import FloatingMenu from './FloatingMenu.svelte'
@@ -95,7 +95,7 @@
         <FloatingMenu
           label="Меню на странице"
           mobile="bottom"
-          class="modal-trigger"
+          class={modalTriggerVariants()}
           items={[
             { label: 'Открыть карточку', hint: 'обычная модалка', onSelect: () => m.modals.open('card', { params: { id: 11 } }) },
             { label: 'Полноэкранная', onSelect: () => m.modals.open('fullpage') },
@@ -106,23 +106,23 @@
         <FloatingMenu
           label="Меню без мобильного режима"
           sheetOnNarrow={false}
-          class="modal-trigger"
+          class={modalTriggerVariants()}
           items={[
             { label: 'Эта кнопка всегда выпадашка', hint: 'sheetOnNarrow=false' },
             { label: 'Открыть карточку', onSelect: () => m.modals.open('card', { params: { id: 12 } }) },
             { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
           ]}
         />
-        <button type="button" class="modal-trigger" onclick={openStorageless}>
+        <button type="button" class={modalTriggerVariants()} onclick={openStorageless}>
           Модалка без хранилища
         </button>
         <CloseAllButton />
         <!-- ссылка на страницу, которая ждёт loader (1.5 c) и крутит
              спиннер, как триггер модалки: порт LoadLink оригинала -->
-        <LoadLink href="/cards/501?slow=1" class="modal-trigger">
+        <LoadLink href="/cards/501?slow=1" class={modalTriggerVariants()}>
           Страница со спиннером
         </LoadLink>
-        <LoadLink href="/no-such-page/1" class="modal-trigger">
+        <LoadLink href="/no-such-page/1" class={modalTriggerVariants()}>
           Битая ссылка
         </LoadLink>
         <!-- обычная ссылка: функция сама гасит переход -->
@@ -303,7 +303,7 @@
       />
       <button
         type="button"
-        class="modal-trigger"
+        class={modalTriggerVariants()}
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку

@@ -22,6 +22,14 @@
     focusInputOnOpen?: boolean
     asLayer?: boolean
     hostMenu?: boolean
+    /**
+     * Фолбэк без хоста на узком экране: список раскрывается на весь экран.
+     * Раньше это делал `@media (max-width: 1024px)` для
+     * `[data-select-positioner]:not([data-host-menu])`; теперь режим приходит
+     * пропом из Select (там живёт тот же живой media query), поэтому у
+     * раскрытия нет ни дублирующего порога, ни зависимости от порядка CSS.
+     */
+    narrowInline?: boolean
     listWidth?: 'trigger' | 'auto'
     commit: (next: readonly SelectOption[]) => void
     close: () => void
@@ -38,6 +46,7 @@
     focusInputOnOpen = autoFocusSearch,
     asLayer = false,
     hostMenu = false,
+    narrowInline = false,
     listWidth = 'trigger',
     commit,
     close,
@@ -71,6 +80,58 @@
     const enabled = filtered.filter((o) => !o.disabled)
     return enabled.length > 0 && enabled.every((o) => selectedValues.has(o.value))
   })
+
+  /**
+   * Панель снаружи видна по `data-select-content` (+ `data-select-content-auto`,
+   * `data-select-listbox`, `data-select-search-row`, `data-select-actions`,
+   * `data-select-mobile-*`): marker-классов у списка больше нет.
+   *
+   * Шкура панели: фон с текстом и две тени. Значения 1:1 с прежними
+   * правилами `.select-content` из app.css: там стояло
+   * `var(--card, var(--popover))` — в обеих темах `--card` определён и равен
+   * `--popover`, поэтому короткие токены `card` дают тот же цвет, а тень
+   * `shadow-md` не берём вовсе: правило из app.css её всё равно перекрывало
+   * своей (это и была вторая тень).
+   */
+  const CONTENT_SKIN =
+    'bg-card text-card-foreground shadow-[0_20px_45px_-12px_color-mix(in_oklab,var(--foreground)_30%,transparent),0_6px_16px_-8px_color-mix(in_oklab,var(--foreground)_20%,transparent)]'
+  /**
+   * Появление панели: было `animation: select-content-in 150ms` со своими
+   * кадрами — стало переходом из `@starting-style` (вариант `starting:`).
+   * Первый кадр тот же: сдвиг на 4px вверх и масштаб 0.97.
+   */
+  const CONTENT_FRAMES =
+    'origin-[var(--transform-origin)] transition-[opacity,transform] duration-150 ease-out motion-reduce:duration-[1ms] starting:opacity-0 starting:-translate-y-1 starting:scale-[0.97]'
+  /** Лист (host-лист или полноэкранный фолбэк): тот же вход, но «снизу». */
+  const SHEET_FRAMES =
+    'origin-bottom transition-[opacity,transform] duration-150 ease-out motion-reduce:duration-[1ms] starting:opacity-0 starting:translate-y-3'
+
+  /**
+   * Полноэкранная раскладка: у листа хоста — потому что узкий контейнер
+   * (data-as-layer), у фолбэка — потому что нет хоста и экран узкий.
+   */
+  const fullscreen = $derived(asLayer || narrowInline)
+
+  /** Сколько места панель занимает в раскрытом виде — 1:1 с прежним CSS. */
+  const contentSize = $derived.by(() => {
+    if (fullscreen) {
+      return listWidth === 'auto'
+        ? 'w-screen h-full max-w-none max-h-none'
+        : 'w-full h-full max-w-none max-h-none'
+    }
+    if (hostMenu) {
+      const width = listWidth === 'auto'
+        ? 'w-max min-w-[var(--reference-width,100%)] max-w-[min(22rem,calc(100vw-16px))]'
+        : 'w-full max-w-none'
+      return `${width} max-h-[var(--host-floating-max-height,var(--host-popup-max-height,var(--available-height)))]`
+    }
+    return listWidth === 'auto'
+      ? 'w-max min-w-[var(--reference-width,auto)] max-w-[min(22rem,var(--available-width,22rem))]'
+      : 'w-full max-h-[var(--available-height)]'
+  })
+
+  /** Мобильная шапка панели (счётчик/действия/крестик) — только в листе. */
+  const sheetOnly = $derived(fullscreen ? 'inline-flex flex-none' : 'hidden')
 
   /**
    * Куда уходит фокус при открытии.
@@ -222,16 +283,28 @@
   role="presentation"
   onkeydown={onKeydown}
   class={cn(
-    'select-content z-70 flex flex-col overflow-hidden border border-border bg-popover text-popover-foreground shadow-md outline-none',
-    listWidth === 'auto' && 'select-content-auto',
+    'z-70 flex flex-col overflow-hidden border border-border outline-none',
+    CONTENT_SKIN,
+    contentSize,
+    fullscreen
+      ? `${SHEET_FRAMES} rounded-none group-data-[mobile-anchor=bottom]/sheet:rounded-t-[16px] group-data-[mobile-anchor=top]/sheet:rounded-b-[16px] group-data-[mobile-anchor=top]/sheet:origin-top`
+      : `rounded-[calc(var(--radius)+2px)] ${CONTENT_FRAMES}`,
   )}
+  data-select-content-auto={listWidth === 'auto' ? '' : undefined}
   style="--select-list-height: {listHeight}"
 >
-  <div class="select-search-row flex items-center gap-2 border-b border-border">
+  <div
+    class={cn(
+      'flex items-center gap-2 border-b border-border',
+      fullscreen ? 'min-h-14 px-4 py-0' : 'p-2',
+    )}
+    data-select-search-row=""
+  >
     {#if config.showCount && multiple && selected.length > 0}
       <button
         type="button"
-        class="select-mobile-count h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-accent"
+        class={cn('h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-accent', sheetOnly)}
+        data-select-mobile-count=""
         aria-label={`Снять выделение: выбрано ${selected.length}`}
         onclick={() => applySelection([])}
       >
@@ -272,7 +345,8 @@
     {#if multiple && config.showSelectAll && !allVisibleSelected && filtered.length > 0}
       <button
         type="button"
-        class="select-mobile-action h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        class={cn('h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground', sheetOnly)}
+        data-select-mobile-action=""
         aria-label={query ? 'Выбрать найденные' : 'Выбрать все'}
         onclick={() => applySelection(selectedAfterToggleAll(selected, filtered, allVisibleSelected))}
       >
@@ -285,7 +359,8 @@
     {#if config.showClear && selected.length > 0 && !(config.showCount && multiple) && (multiple || placeholder !== undefined)}
       <button
         type="button"
-        class="select-mobile-action h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        class={cn('h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground', sheetOnly)}
+        data-select-mobile-action=""
         aria-label="Очистить"
         onclick={() => applySelection([])}
       >
@@ -297,7 +372,8 @@
 
     <button
       type="button"
-      class="select-mobile-close h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
+      class={cn('h-9 w-9 items-center justify-center rounded-md hover:bg-accent', sheetOnly)}
+      data-select-mobile-close=""
       aria-label="Закрыть"
       onclick={close}
     >
@@ -308,7 +384,10 @@
   </div>
 
   {#if config.showCount && multiple}
-    <p class="select-count-row border-b border-border px-3 py-2 text-xs text-muted-foreground">
+    <p
+      class={cn('border-b border-border px-3 py-2 text-xs text-muted-foreground', fullscreen && 'hidden')}
+      data-select-count-row=""
+    >
       Выбрано {selected.length} из {all.filter((o) => !o.disabled).length}
     </p>
   {/if}
@@ -320,7 +399,7 @@
       data-select-listbox=""
       role="listbox"
       aria-multiselectable={multiple || undefined}
-      class="select-listbox h-full overflow-y-auto p-1 outline-none"
+      class={cn('h-full overflow-y-auto p-1 outline-none', fullscreen ? 'max-h-none' : 'max-h-[var(--select-list-height)]')}
       tabindex="-1"
     >
       {#each filtered as option, index (option.value)}
@@ -359,7 +438,10 @@
   </div>
 
   {#if multiple && (config.showSelectAll || config.showClear)}
-    <div class="select-actions flex items-center justify-between gap-2 border-t border-border px-2 py-1.5 text-sm">
+    <div
+      class={cn('flex items-center justify-between gap-2 border-t border-border px-2 py-1.5 text-sm', fullscreen && 'hidden')}
+      data-select-actions=""
+    >
       {#if config.showSelectAll}
         <button type="button" class="rounded-md px-2 py-1 hover:bg-accent"
           onclick={() => applySelection(selectedAfterToggleAll(selected, filtered, allVisibleSelected))}>

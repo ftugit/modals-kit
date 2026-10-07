@@ -11,7 +11,7 @@
   //   • блокируется для незарегистрированного имени
   import { chainToSearch, nextChain, routeHref } from '../core'
   import type { ChainOverrides, RegisteredEntry, StackMode } from '../types'
-  import { ButtonIndicator } from '$lib/ui/modals'
+  import { ButtonIndicator, modalTriggerVariants } from '$lib/ui/modals'
   import { useModals } from './context'
 
   /** Публичные props триггера зарегистрированной модалки. */
@@ -161,13 +161,14 @@
   }
 </script>
 
-<!-- Разметочная половина — порт ui/modals/trigger.tsx оригинала: класс
-     modal-trigger, индикатор состояния и span вокруг содержимого. Индикатор
-     берется из ui-слоя порта ($lib/ui/modals) — в оригинале обе половины
-     триггера жили в разных слоях, здесь логика в этом же файле. -->
+<!-- Разметочная половина — порт ui/modals/trigger.tsx оригинала: индикатор
+     состояния и span вокруг содержимого. Оформление даёт CVA из
+     $lib/ui/modals (атомарные утилиты), а снаружи триггер виден по
+     `data-modal-trigger`: маркер-класса у него больше нет. -->
 <a
   {href}
-  class={`modal-trigger ${cls ?? ''}`}
+  class={modalTriggerVariants({ class: cls })}
+  data-modal-trigger=""
   {title}
   aria-haspopup="dialog"
   aria-disabled={disabled || undefined}

@@ -140,7 +140,16 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.waitForTimeout(900)
   await click(pg, 'нативно')
   await click(pg, 'всё в общий')
+  // Нативный POST вообще не уходит, пока молчит браузерная валидация: у полей
+  // `required`/`minlength`, и пустая форма останавливается ДО сети (проверено:
+  // 0 POST-запросов, браузер показывает свои пузыри). Заполняем так, чтобы
+  // браузер пропустил отправку, а сервер нашёл свою ошибку (пароль minlength) —
+  // ровно то, что проверяет сценарий: серверные ошибки попадают в общий блок.
+  await pg.fill('#signup-email', 'a@b.io').catch(() => {})
+  await pg.fill('#signup-age', '30').catch(() => {})
   await pg.fill('#signup-password', 'abc').catch(() => {})
+  await pg.fill('#signup-confirm', 'abc').catch(() => {})
+  await pg.check('#signup-agree').catch(() => {})
   await Promise.all([
     pg.waitForLoadState('load'),
     pg.locator('button[value=submit]').click({ force: true }),

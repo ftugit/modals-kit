@@ -1,5 +1,17 @@
 <!doctype html>
-<html lang="ru" data-theme="lemonade">
+<!--
+  База приложения — классами, а не CSS-файлом: app.css содержит только
+  токены тем. HTML — тоже источник для UnoCSS (transformIndexHtml), поэтому
+  эти утилиты попадают в сборку как обычные.
+  `[&_button:not(:disabled)]:cursor-pointer` заменяет прежнее правило
+  `button:not(:disabled), [role=button]… { cursor: pointer }`: reset пресета
+  курсор не задаёт.
+-->
+<html
+	lang="ru"
+	data-theme="lemonade"
+	class="scroll-smooth selection:bg-[color-mix(in_oklab,var(--primary)_22%,transparent)] [&_button:not(:disabled)]:cursor-pointer [&_[role=button]:not([aria-disabled=true])]:cursor-pointer"
+>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -20,7 +32,10 @@
 		/>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<body
+		data-sveltekit-preload-data="hover"
+		class="m-0 bg-background font-sans text-[15px] leading-[1.55] text-foreground"
+	>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

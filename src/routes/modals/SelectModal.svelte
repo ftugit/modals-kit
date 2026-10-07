@@ -2,6 +2,7 @@
   import { Select } from '$lib/ui'
   import FloatingMenu from './FloatingMenu.svelte'
   import { useModals } from '$lib/modals/svelte'
+  import { modalTriggerVariants } from '$lib/ui/modals'
   const genres = [
     { value: 'action', label: 'Боевик' },
     { value: 'drama', label: 'Драма', hint: 'включая мелодраму' },
@@ -16,7 +17,7 @@
   const m = useModals()
 </script>
 
-<div class="body">
+<div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
   <h2>Select внутри модалки</h2>
   <p>Список лежит в своём контейнере в <code>body</code>, а частью ловушки фокуса
      модалки его объявляет <code>aria-controls</code> на триггере — штатный
@@ -24,9 +25,9 @@
   <label>Жанр<Select options={genres} bind:value={picked} placeholder="Выберите жанр" /></label>
   <label>Несколько<Select options={genres} bind:value={many} multiple placeholder="Любые" /></label>
   <label>Несколько, закрывать после выбора<Select options={genres} bind:value={manyClose} multiple closeOnSelect placeholder="Любые" /></label>
-  <p class="picked">Выбрано: <b>{picked}</b> / [{many.join(', ')}] / closeOnSelect [{manyClose.join(', ')}]</p>
+  <p class="text-[0.8rem]" data-select-modal-picked="">Выбрано: <b>{picked}</b> / [{many.join(', ')}] / closeOnSelect [{manyClose.join(', ')}]</p>
 
-  <div class="row">
+  <div class="flex flex-wrap items-center gap-3">
     <FloatingMenu
       label="Меню внутри модалки"
       items={[
@@ -43,22 +44,22 @@
     />
     <button
       type="button"
-      class="modal-trigger"
+      class={modalTriggerVariants()}
       onclick={() => m.modals.openLayer({ content: storagelessHere })}
     >
       Без хранилища поверх
     </button>
-    <span class="menu-result">Из меню: <b>{действие}</b></span>
+    <span class="text-[0.8rem]">Из меню: <b>{действие}</b></span>
   </div>
   <p>Меню — второй потребитель того же <code>host.floating</code>, что и список:
      Escape, клик мимо и лист на узком экране приходят от хоста.</p>
 </div>
 
 {#snippet storagelessHere()}
-  <div class="body">
+  <div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
     <h2>Модалка без хранилища</h2>
     <p>Открыта поверх модалки со списками. В адресе её нет; «Назад» закрывает именно её.</p>
-    <div class="row">
+    <div class="flex flex-wrap items-center gap-3">
       <FloatingMenu
         label="Меню этой модалки"
         items={[{ label: 'Закрыть её', onSelect: () => m.modals.close() }]}
@@ -67,13 +68,3 @@
   </div>
 {/snippet}
 
-<style>
-  .body { padding: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
-  h2 { margin: 0; font-size: 1.1rem; }
-  p { margin: 0; color: var(--muted-foreground); font-size: .85rem; }
-  label { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; }
-  .picked { font-size: .8rem; }
-  .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-  .menu-result { font-size: .8rem; }
-  code { font-size: .8em; }
-</style>

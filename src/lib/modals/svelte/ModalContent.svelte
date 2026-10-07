@@ -4,6 +4,12 @@
   import { runtimeKey, visibleChain } from '../core'
   import type { ResolvedEntry } from '../types'
   import { setInstance, useModals } from './context'
+  import {
+    MODAL_CONTENT_CLASS,
+    MODAL_ERROR_CLASS,
+    MODAL_REVEAL_CLASS,
+    MODAL_SKELETON_CLASS,
+  } from './classes'
 
   interface Props {
     entry: ResolvedEntry
@@ -42,7 +48,7 @@
   {#if config.renderError}
     {@render (config.renderError as any)(`Нет такой модалки: «${entry.name}»`, 'Проверьте имя в реестре или ссылку с ?modal=…')}
   {:else}
-    <div class="modal-error" role="alert">
+    <div class={MODAL_ERROR_CLASS} data-modal-error="" role="alert">
       Нет такой модалки: «{entry.name}»
       <div>Проверьте имя в реестре или ссылку с ?modal=…</div>
     </div>
@@ -51,17 +57,21 @@
   {#if config.renderError}
     {@render (config.renderError as any)(rt.error ?? 'Ошибка загрузки')}
   {:else}
-    <div class="modal-error" role="alert">{rt.error ?? 'Ошибка загрузки'}</div>
+    <div class={MODAL_ERROR_CLASS} data-modal-error="" role="alert">{rt.error ?? 'Ошибка загрузки'}</div>
   {/if}
 {:else if showSkeleton}
   {#if config.renderSkeleton}
     {@render (config.renderSkeleton as any)()}
   {:else}
-    <div class="modal-skeleton" aria-busy="true" aria-live="polite"></div>
+    <div class={MODAL_SKELETON_CLASS} data-modal-skeleton="" aria-busy="true" aria-live="polite"></div>
   {/if}
 {:else}
   <!-- после скелетона содержимое проявляется, а не возникает рывком -->
-  <div class="modal-content" class:modal-reveal={wasPending}>
+  <div
+    class={wasPending ? `${MODAL_CONTENT_CLASS} ${MODAL_REVEAL_CLASS}` : MODAL_CONTENT_CLASS}
+    data-modal-content=""
+    data-modal-reveal={wasPending ? '' : undefined}
+  >
     {#if entry.definition?.component}
       {@const Component = entry.definition.component as any}
       <Component

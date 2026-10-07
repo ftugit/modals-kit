@@ -2,10 +2,12 @@
   import { variants, type VariantProps } from '$lib/ui/cn'
 
   export const navPillVariants = variants(
-    'nav-pill inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+    // Своих классов нет и здесь: единственный «внешний» признак активного
+    // пункта — `aria-current="page"`, который ставит разметка.
+    'inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
     {
       active: {
-        true: 'nav-pill-active bg-accent text-accent-foreground font-semibold',
+        true: 'bg-accent text-accent-foreground font-semibold',
         false: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
       },
     },

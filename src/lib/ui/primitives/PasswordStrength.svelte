@@ -52,7 +52,25 @@
   })
 </script>
 
-<div class="strength flex flex-col gap-2" data-score={score} data-testid="strength">
+<!--
+  Бывший `.strength`: цвета по оценке жили в app.css переменной
+  `--strength-color`, которую читали дети. Переменная осталась (иначе детям
+  пришлось бы знать все цвета), но задаётся утилитами от `data-score`,
+  а не правилами в CSS-файле.
+-->
+<div
+  class={cn(
+    'flex flex-col gap-2',
+    // Значение атрибута в селекторе — числом: без кавычек lightningcss
+    // при минификации считает это ошибкой (`[data-score=0]` невалиден).
+    "data-[score='0']:[--strength-color:var(--muted-foreground)] data-[score='1']:[--strength-color:var(--destructive)]",
+    "data-[score='2']:[--strength-color:#d97706] data-[score='3']:[--strength-color:#ca8a04]",
+    "data-[score='4']:[--strength-color:#16a34a]",
+  )}
+  data-strength=""
+  data-score={score}
+  data-testid="strength"
+>
   <InputShell>
     <input
       type={visible ? 'text' : 'password'}
@@ -98,7 +116,12 @@
     <div class="flex gap-1" aria-hidden="true">
       {#each [1, 2, 3, 4] as level}
         <span
-          class="strength-seg h-1.5 flex-1 rounded-full"
+          class={cn(
+            'h-1.5 flex-1 rounded-full bg-muted',
+            '[transition:background-color_200ms_cubic-bezier(0.2,0,0,1),scale_200ms_cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms]',
+            'data-[on=true]:bg-[var(--strength-color)]',
+          )}
+          data-strength-seg=""
           data-on={score >= level ? 'true' : 'false'}
         ></span>
       {/each}
@@ -109,7 +132,8 @@
     <div class="flex flex-col gap-1" role="progressbar" aria-valuenow={score * 25} aria-valuemin={0} aria-valuemax={100}>
       <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          class="strength-bar h-full rounded-full transition-all duration-200"
+          class="h-full rounded-full bg-[var(--strength-color)] transition-all duration-200 motion-reduce:duration-[1ms]"
+          data-strength-bar=""
           style={`width: ${score * 25}%`}
         ></div>
       </div>
@@ -119,7 +143,12 @@
 
   <p
     id="strength-hint"
-    class={cn('text-xs', show('text') ? 'strength-text' : 'text-muted-foreground')}
+    class={cn(
+      'text-xs',
+      show('text')
+        ? 'text-[var(--strength-color)] transition-[color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms]'
+        : 'text-muted-foreground',
+    )}
     aria-live="polite"
   >
     {#if mounted && value}

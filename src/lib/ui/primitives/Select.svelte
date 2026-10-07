@@ -163,6 +163,14 @@
    */
   const sheet = $derived(asLayer && host !== undefined)
 
+  /**
+   * Фолбэк без хоста на узком экране: тот же лист, но по своим правилам —
+   * раньше это делал @media-блок в app.css. Условие совпадает с веткой
+   * разметки `{:else}` (без хоста), поэтому порог у вёрстки и у оформления
+   * списка общий — живой media query, а не продублированное число.
+   */
+  const inlineFallbackSheet = $derived(asLayer && host === undefined)
+
   let popupId = $state<string | null>(null)
   let lastClosedAt = 0
 
@@ -435,6 +443,10 @@
     {commit}
     asLayer={sheet}
     hostMenu={variant === 'host'}
+    // Без хоста на узком экране список и раньше раскрывался на весь экран —
+    // это делал @media-блок в app.css по селектору `[data-select-positioner]`.
+    // Теперь то же условие приходит пропом, из того же живого media query.
+    narrowInline={variant === 'inline' && inlineFallbackSheet}
     close={() => setOpen(false)}
   />
 {/snippet}
@@ -442,7 +454,7 @@
 
 <div
   bind:this={rootEl}
-  class={cn('relative', wrapperClass ?? 'w-full', disabled && 'opacity-50')}
+  class={cn('group/select relative', wrapperClass ?? 'w-full', disabled && 'opacity-50')}
   data-select-root=""
   data-enhanced={mounted ? '' : undefined}
   data-expanded={open ? '' : undefined}
@@ -463,6 +475,7 @@
   -->
   <select
     bind:this={nativeEl}
+    data-select-native=""
     {name}
     {required}
     {disabled}
@@ -470,10 +483,16 @@
     aria-haspopup={mounted && !multiple ? 'listbox' : undefined}
     aria-expanded={mounted && !multiple ? open : undefined}
     aria-controls={open && popupNode?.id ? popupNode.id : undefined}
+    data-select-native-multiple={multiple ? '' : undefined}
     class={inputVariants({
       size,
       class: cn(
-        multiple ? 'select-native-multiple py-2 pr-3' : 'pr-8',
+        multiple
+          // Прежний `.select-native-multiple` из app.css: h-auto + min-h-28,
+          // но без минимума, как только контролом управляет JS (data-enhanced)
+          // или экран узкий.
+          ? 'h-auto min-h-28 py-2 pr-3 max-lg:min-h-0 group-data-[enhanced]/select:min-h-0'
+          : 'pr-8',
         mounted && 'absolute inset-0 z-10 m-0 h-full min-h-0 cursor-pointer opacity-0',
         open && 'pointer-events-none',
         cls,
@@ -501,6 +520,7 @@
       aria-hidden="true"
       tabindex="-1"
       class={cn(inputVariants({ size }), 'flex w-full items-center justify-between gap-2', cls)}
+      data-select-trigger=""
     >
       <span class="flex min-w-0 flex-1 items-center gap-1 text-left">
         {#if selected.length === 0}
@@ -509,7 +529,10 @@
           <span class="truncate">Выбрано {selected.length}</span>
         {:else if multiple && config.display === 'badges'}
           {#each selected.slice(0, config.badgeLimit) as o (o.value)}
-            <span class="select-badge max-w-[9rem] truncate rounded bg-accent px-1.5 py-0.5 text-xs">
+            <span
+              class="max-w-[9rem] truncate rounded bg-accent px-1.5 py-0.5 text-xs"
+              data-select-badge=""
+            >
               {o.label}
             </span>
           {/each}
@@ -531,13 +554,27 @@
       {#if host}
         {#if popupNode}
           <Portal container={popupNode}>
-            <div data-select-positioner="" data-host-menu="">
+            <div
+              data-select-positioner=""
+              data-host-menu=""
+              class="static inset-auto h-auto w-full min-w-0 transform-none z-auto"
+            >
               {@render selectBody('host')}
             </div>
           </Portal>
         {/if}
       {:else}
-        <div data-select-positioner="" class="absolute left-0 top-full z-70 mt-1 w-full">
+        <!--
+          Фолбэк без хоста. Узкий экран решается здесь тем же живым
+          media query, что и оформление списка (narrowInline): раньше это
+          делал @media-блок в app.css, и порог был продублирован в CSS.
+        -->
+        <div
+          data-select-positioner=""
+          class={inlineFallbackSheet
+            ? 'fixed inset-0 z-70 w-screen h-dvh min-w-0 transform-none'
+            : 'absolute left-0 top-full z-70 mt-1 w-full'}
+        >
           {@render selectBody('inline')}
         </div>
       {/if}

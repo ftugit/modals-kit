@@ -85,7 +85,14 @@
       value={code}
       {disabled}
       wrapperClass="w-auto shrink-0"
-      class={cn('phone-code w-auto pl-2.5 text-sm', rounded && 'rounded-l-full pl-4')}
+      // Бывший `.phone-code.phone-code` (удвоенный класс повышал
+      // специфичность над стилями триггера): ширина по содержимому, стык
+      // с номером без скругления и без границы; без `field-sizing` —
+      // фиксированные 5rem через @supports.
+      class={cn(
+        'w-auto pl-2.5 text-sm field-sizing-content min-w-[3.75rem] pr-5 rounded-e-none border-e-0 supports-[not_(field-sizing:content)]:w-20',
+        rounded && 'rounded-l-full pl-4',
+      )}
       onchange={(values: string[]) => handleCodeChange(values[0] ?? '+7')}
     />
     <input
@@ -101,7 +108,8 @@
       {disabled}
       value={formatted}
       class={cn(
-        'phone-number font-mono w-full rounded-r-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
+        // Бывший `.phone-number`: стык с кодом — без скругления слева.
+        'font-mono w-full rounded-r-md rounded-l-none border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
         mounted && 'pr-9',
         rounded && 'rounded-r-full pr-10',
       )}

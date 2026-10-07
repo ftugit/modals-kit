@@ -28,7 +28,6 @@ export default defineConfig({
         './src/routes/spike/+page.svelte',
         './src/routes/cards/[id]/+page.svelte',
         './src/app.css',
-        './src/lib/modals/css/modals.css',
         './src/lib/shell/index.ts',
         './src/lib/shell/page.svelte.ts',
         './src/lib/shell/shell.svelte.ts',

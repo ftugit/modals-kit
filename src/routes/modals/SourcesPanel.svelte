@@ -96,56 +96,39 @@
   const has = (s: string) => active.includes(s)
 </script>
 
-<section class="panel">
+<section class="my-6 rounded-[12px] border border-border px-4 py-[1.1rem] [&_h2]:m-0 [&_h2]:mb-2 [&_h2]:text-[0.8rem] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-[0.06em] [&_h2]:text-muted-foreground">
   <h2>Источники</h2>
-  <p class="hint">
+  <p class="my-2 text-[0.82rem] text-muted-foreground">
     Ядро собирается как <code>модалка(ядро(хранилище), опции)</code>.
     Снимите источник — кнопки, которым он нужен, погаснут.
   </p>
 
-  <div class="pick">
+  <div class="mb-3 max-w-[26rem]">
     <Select {options} bind:value={picked} multiple placeholder="Выберите источники" />
   </div>
 
-  <div class="row">
-    <button disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
+  <div class="flex flex-wrap gap-2">
+    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
       Открыть в url
     </button>
-    <button disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
+    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
       Открыть в localStorage
     </button>
-    <button disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
+    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
       Открыть в memory
     </button>
   </div>
 
-  <dl class="state">
+  <dl class="mt-3.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.82rem] [&_dd]:m-0 [&_dt]:text-muted-foreground">
     <dt>адрес</dt><dd><code>{storages.url}</code></dd>
     <dt>localStorage</dt><dd><code>{storages.local}</code></dd>
     <dt>memory</dt><dd><code>{held.memory ?? 0} записей</code></dd>
   </dl>
 
-  <p class="hint">
+  <p class="my-2 text-[0.82rem] text-muted-foreground">
     Сценарий: откройте в localStorage и в memory, затем <b>F5</b>.
     Запись localStorage восстановится, memory — нет: она живёт в памяти вкладки.
     Закрытие модалки стирает запись из её носителя.
   </p>
 </section>
 
-<style>
-  .panel { border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; margin: 1.5rem 0; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
-       color: var(--muted-foreground); margin: 0 0 .5rem; }
-  .hint { color: var(--muted-foreground); font-size: .82rem; margin: .5rem 0; }
-  .pick { max-width: 26rem; margin-bottom: .75rem; }
-  .row { display: flex; gap: .5rem; flex-wrap: wrap; }
-  button { background: var(--primary); color: var(--primary-foreground); border: 0;
-           border-radius: 8px; padding: .5rem .8rem; font-size: .88rem; cursor: pointer; }
-  button:disabled { background: var(--muted); color: var(--muted-foreground); cursor: not-allowed; }
-  .state { display: grid; grid-template-columns: auto 1fr; gap: .3rem .8rem;
-           margin: .9rem 0 0; font-size: .82rem; }
-  dt { color: var(--muted-foreground); }
-  dd { margin: 0; }
-  code { background: var(--muted); border-radius: 4px; padding: .05rem .3rem;
-         font-size: .9em; word-break: break-all; }
-</style>

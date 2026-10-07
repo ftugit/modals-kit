@@ -35,6 +35,18 @@
   } from './context'
   import { createIsNarrow } from './media.svelte'
   import { createReactiveStore } from './store.svelte'
+  import {
+    floatingLayoutClass,
+    MODAL_BACKDROP_CLASS,
+    MODAL_CLOSE_ANIMATION_CLASSES,
+    MODAL_CLOSE_CLASS,
+    MODAL_FLOATING_CLASS,
+    MODAL_LAYER_CLASS,
+    MODAL_OPEN_ANIMATION_CLASSES,
+    MODAL_POPUP_CLASS,
+    MODAL_STAGE_CLASS,
+    MODAL_VIEWPORT_CLASS,
+  } from './classes'
   import Layers from './Layers.svelte'
   import ModalContent from './ModalContent.svelte'
   import Tails from './Tails.svelte'
@@ -734,7 +746,7 @@
        * `data-ending-style` ставится этой же записью состояния, а в DOM
        * попадает после флаша. Прочитать стиль сразу — значит увидеть
        * базовый переход оболочки (320 мс) даже когда анимация выключена
-       * (`.modal-close-none[data-ending-style] { transition: none }`):
+       * (`data-[ending-style]:transition-none` из MODAL_CLOSE_ANIMATION_CLASSES):
        * сцена висела лишние 320 мс и исчезала ПОЗЖЕ фона.
        */
       let timer = 0
@@ -947,18 +959,21 @@
         там первый прогон реактивности не теряется.
       -->
       <Dialog.Backdrop
-        class="modal-backdrop"
+        class={MODAL_BACKDROP_CLASS}
+        data-modal-backdrop=""
         data-starting-style={starting ? '' : undefined}
         data-ending-style={ending ? '' : undefined}
       />
       {#if visible}
         <div
-          class="modal-viewport"
+          class={MODAL_VIEWPORT_CLASS}
+          data-modal-viewport=""
           style={css({ ...viewportStyle(anchor), ...(fullpage ? { padding: 0 } : null) })}
         >
           <Dialog.Content
             bind:ref={stageEl}
-            class="modal-stage"
+            class={MODAL_STAGE_CLASS}
+            data-modal-stage=""
             data-anchor={anchor ?? 'center'}
             data-fullpage={fullpage || undefined}
           >
@@ -966,7 +981,8 @@
               <button
                 bind:this={closeBtnEl}
                 type="button"
-                class="modal-backdrop-close"
+                class={MODAL_CLOSE_CLASS}
+                data-modal-close=""
                 aria-label="Закрыть модалку"
                 onclick={() => modals.close()}
               >
@@ -980,7 +996,8 @@
 
             <div
               bind:this={popupEl}
-              class="modal-popup modal-open-{config.openAnimation} modal-close-{config.closeAnimation} modal-stack-{config.stackAnimation}"
+              class={`${MODAL_POPUP_CLASS} ${MODAL_OPEN_ANIMATION_CLASSES[config.openAnimation]} ${MODAL_CLOSE_ANIMATION_CLASSES[config.closeAnimation]}`}
+              data-modal-popup=""
               data-starting-style={starting ? '' : undefined}
               data-ending-style={ending ? '' : undefined}
               data-stack-role={sheetSurface ? 'tail' : undefined}
@@ -996,7 +1013,7 @@
                   ещё виден. Порт `ExitContent` из `stack.tsx` — я его сперва
                   не перенёс, поймано сверкой экспортов с оригиналом.
                 -->
-                <div class="modal-layer">
+                <div class={MODAL_LAYER_CLASS} data-modal-layer="">
                   <ModalContent entry={shown} active={false} />
                 </div>
               {/if}
@@ -1014,7 +1031,7 @@
   -->
   <Dialog.RootProvider value={sheetDialog} lazyMount unmountOnExit>
     <Portal>
-      <Dialog.Backdrop class="modal-backdrop" />
+      <Dialog.Backdrop class={MODAL_BACKDROP_CLASS} data-modal-backdrop="" />
     </Portal>
   </Dialog.RootProvider>
 
@@ -1039,7 +1056,7 @@
             { role: 'dialog', 'aria-label': floating.label }}
         id={floatingDomId(floating.id)}
         use:registerFloating={floating.id}
-        class="modal-host-floating modal-host-popup"
+        class={`${MODAL_FLOATING_CLASS} ${isSheet(floating) ? floatingLayoutClass(sheetAnchor(floating)) : ''}`}
         data-host-popup=""
         data-host-floating=""
         data-place={geometry.place}

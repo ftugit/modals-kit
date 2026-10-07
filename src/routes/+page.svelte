@@ -64,11 +64,3 @@
   </div>
 </div>
 
-<style>
-  :global(body) {
-    margin: 0;
-    background: var(--background);
-    color: var(--foreground);
-    font: 15px/1.55 ui-sans-serif, system-ui, sans-serif;
-  }
-</style>

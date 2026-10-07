@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MobileAnchor } from '$lib/modals'
   import { useModal, useModals } from '$lib/modals/svelte'
+  import { modalTriggerVariants } from '$lib/ui/modals'
 
   const m = useModals()
   const me = useModal()
@@ -52,61 +53,55 @@
   }
 </script>
 
-<div class="flow-probe" data-flow-probe="" data-probe-index={me.index}>
+<div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe="" data-probe-index={me.index}>
   <h2>Проверка наследования потока</h2>
-  <p class="probe-meta">
+  <p class="text-[0.85rem] text-muted-foreground">
     Запись {me.index + 1} из {me.depth}; собственное направление:
     <b>{me.resolved.mobile ?? 'нет'}</b>.
   </p>
 
-  <div class="probe-actions">
-    <button type="button" class="modal-trigger" data-probe-action="random-modal" onclick={openRandomModal}>
+  <div class="flex flex-wrap gap-2.5">
+    <button type="button" class={modalTriggerVariants()} data-probe-action="random-modal" onclick={openRandomModal}>
       Открыть с случайным направлением
     </button>
-    <button type="button" class="modal-trigger" data-probe-action="inherited-modal" onclick={openInheritedModal}>
+    <button type="button" class={modalTriggerVariants()} data-probe-action="inherited-modal" onclick={openInheritedModal}>
       Открыть без направления
     </button>
-    <button type="button" class="modal-trigger" data-probe-action="plain-transient" onclick={openPlainTransient}>
+    <button type="button" class={modalTriggerVariants()} data-probe-action="plain-transient" onclick={openPlainTransient}>
       Без хранилища
     </button>
-    <button type="button" class="modal-trigger" data-probe-action="random-transient" onclick={openRandomTransient}>
+    <button type="button" class={modalTriggerVariants()} data-probe-action="random-transient" onclick={openRandomTransient}>
       Без хранилища со случайным направлением
     </button>
   </div>
 
   {#if lastRandom}
-    <p class="probe-result" data-probe-random={lastRandom}>Последнее случайное направление: {lastRandom}</p>
+    <p class="text-[0.85rem] text-muted-foreground" data-probe-random={lastRandom}>Последнее случайное направление: {lastRandom}</p>
   {/if}
 </div>
 
 {#snippet plainTransient()}
-  <div class="flow-probe" data-flow-probe-transient="plain">
+  <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="plain">
     <h2>Модалка без хранилища</h2>
-    <p class="probe-meta">У этой записи нет собственного направления.</p>
+    <p class="text-[0.85rem] text-muted-foreground">У этой записи нет собственного направления.</p>
     <button
       type="button"
-      class="modal-trigger"
+      class={modalTriggerVariants()}
       data-probe-action="registered-from-transient"
       onclick={openRegisteredFromPlainTransient}
     >
       Открыть обычную модалку без параметров
     </button>
-    <p class="probe-result" data-probe-registered-result>{plainTransientResult}</p>
+    <p class="text-[0.85rem] text-muted-foreground" data-probe-registered-result>{plainTransientResult}</p>
   </div>
 {/snippet}
 
 {#snippet randomTransient()}
-  <div class="flow-probe" data-flow-probe-transient="random">
+  <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="random">
     <h2>Модалка без хранилища со случайным направлением</h2>
-    <p class="probe-meta" data-probe-random={lastRandom ?? undefined}>
+    <p class="text-[0.85rem] text-muted-foreground" data-probe-random={lastRandom ?? undefined}>
       Собственное направление: {lastRandom ?? 'нет'}.
     </p>
   </div>
 {/snippet}
 
-<style>
-  .flow-probe { display: flex; flex-direction: column; gap: .8rem; padding: 1.25rem; }
-  .flow-probe h2, .flow-probe p { margin: 0; }
-  .probe-meta, .probe-result { color: var(--muted-foreground); font-size: .85rem; }
-  .probe-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
-</style>

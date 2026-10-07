@@ -55,9 +55,9 @@ async function run() {
       assert.ok(hasLogo > 0, 'логотип со ссылкой на / присутствует')
 
       // 3-zone sidebar check on desktop
-      const sidebarTop = await page.locator('.sidebar-top').count()
-      const sidebarMiddle = await page.locator('.sidebar-middle').count()
-      const sidebarBottom = await page.locator('.sidebar-bottom').count()
+      const sidebarTop = await page.locator('[data-sidebar-zone="top"]').count()
+      const sidebarMiddle = await page.locator('[data-sidebar-zone="middle"]').count()
+      const sidebarBottom = await page.locator('[data-sidebar-zone="bottom"]').count()
       assert.ok(sidebarTop > 0, 'sidebar-top (Safe Zone) присутствует')
       assert.ok(sidebarMiddle > 0, 'sidebar-middle (Scrollable Zone) присутствует')
       assert.ok(sidebarBottom > 0, 'sidebar-bottom (Safe Zone) присутствует')

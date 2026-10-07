@@ -124,110 +124,90 @@
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   });
+  // Оформление страницы: утилиты вместо прежнего блочного стиля.
+  const CODE_BASE = 'rounded-[5px] border border-[#252a34] bg-[#0f1115] px-1 py-0.5'
+  const CODE = `${CODE_BASE} text-[0.85em]`
+  const CODE_MONO = `${CODE_BASE} text-[0.8em]`
+  const BTN_BASE =
+    'flex-[1_1_auto] cursor-pointer rounded-lg px-[0.8rem] py-[0.55rem] text-[0.9rem] font-medium text-white enabled:hover:brightness-[1.12] disabled:cursor-not-allowed disabled:bg-[#2a2f3a] disabled:text-[#666e7d]'
+  const BTN = `${BTN_BASE} bg-[#2d6cdf]`
+  const BTN_GO = `${BTN_BASE} bg-[#1f8a58]`
+  const BTN_ALT = `${BTN_BASE} bg-[#6b4fd6]`
+  const PRE =
+    'm-0 overflow-x-auto rounded-lg border border-[#252a34] bg-[#0f1115] px-3.5 py-[0.7rem] text-[0.8rem] whitespace-pre-wrap break-all'
 </script>
 
 <svelte:head><title>Спайк: модель истории</title></svelte:head>
 
-<main>
-  <h1>Спайк модели истории</h1>
-  <p class="lead">
-    Проверяем фундамент порта до того, как писать хост: уживаются ли URL-цепочка
-    и transient-слои в одной истории браузера.
-  </p>
-
-  <section class="grid">
-    <div class="card">
-      <h2>Состояние</h2>
-      <dl>
-        <dt>URL-цепочка <code>?modal=</code></dt>
-        <dd>{urlChain.length ? urlChain.join(' → ') : '—'}</dd>
-        <dt>transient (в <code>page.state</code>, не в URL)</dt>
-        <dd>{transient.length ? transient.map((t: any) => t.id).join(' → ') : '—'}</dd>
-        <dt>полная цепочка</dt>
-        <dd class="strong">{fullChain.length ? fullChain.join(' → ') : 'пусто'}</dd>
-        <dt>метка глубины</dt>
-        <dd>{depthMark ?? '— (потеряна: перезагрузка?)'}</dd>
-        <dt>location.href (адресная строка)</dt>
-        <dd><code class="mono">{mounted ? locHref : '—'}</code></dd>
-        <dt>page.url (что видит приложение)</dt>
-        <dd><code class="mono">{page.url.pathname}{page.url.search}</code></dd>
-      </dl>
-    </div>
-
-    <div class="card">
-      <h2>Действия</h2>
-      <div class="row">
-        <button onclick={() => openRegistered('card')}>pushState + «card»</button>
-        <button onclick={() => openRegistered('user')}>pushState + «user»</button>
-      </div>
-      <div class="row">
-        <button class="go" onclick={() => openViaGoto('card')}>goto + «card»</button>
-        <button class="go" onclick={() => openViaGoto('user')}>goto + «user»</button>
-      </div>
-      <div class="row">
-        <button class="alt" onclick={openTransient}>+ transient (без URL)</button>
-        <button class="alt" onclick={replaceTop}>replaceState</button>
-      </div>
-      <div class="row">
-        <button onclick={closeTop} disabled={!fullChain.length}>Закрыть верхний (back)</button>
-        <button onclick={() => closeN(2)} disabled={fullChain.length < 2}>go(-2)</button>
-      </div>
-      <p class="hint">
-        Дальше — кнопками <b>Назад / Вперёд</b> самого браузера, и <b>F5</b> на
-        непустой цепочке. Это и есть проверка.
-      </p>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Сырой <code>history.state</code> (что туда кладёт SvelteKit)</h2>
-    <pre>{rawHistoryState}</pre>
-    <p class="hint">
-      Ключи <code>sveltekit:*</code> — внутренние. Писать в <code>history.state</code>
-      напрямую нельзя: роутер SvelteKit это перетрёт и предупредит в консоли.
+<!--
+  Оформление страницы — утилиты, а не прежний блочный стиль: app.css хранит
+  только токены тем. Тёмная тема спайка набрана цветами прямо в классах.
+-->
+<div class="min-h-dvh bg-[#0f1115] font-sans text-[15px] leading-[1.55] text-[#e6e8eb] [&_h1]:mb-1.5 [&_h1]:text-[1.6rem] [&_h2]:mb-3.5 [&_h2]:text-[0.78rem] [&_h2]:font-semibold [&_h2]:tracking-[0.08em] [&_h2]:text-[#8b93a1] [&_h2]:uppercase [&_dt]:text-[0.85rem] [&_dt]:text-[#8b93a1] [&_dd]:m-0 [&_dd]:tabular-nums [&_h1]:tracking-[-0.01em] [&_h2]:text-[0.8rem]">
+  <main class="mx-auto max-w-[68rem] px-5 pt-8 pb-16">
+    <h1>Спайк модели истории</h1>
+    <p class="mb-7 max-w-[46rem] text-[#9aa3b2]">
+      Проверяем фундамент порта до того, как писать хост: уживаются ли URL-цепочка
+      и transient-слои в одной истории браузера.
     </p>
-  </section>
 
-  <section class="card">
-    <h2>Журнал</h2>
-    <pre class="log">{log.join('\n') || '—'}</pre>
-  </section>
-</main>
+    <section class="grid grid-cols-1 gap-4 min-[760px]:grid-cols-2">
+      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+        <h2>Состояние</h2>
+        <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          <dt>URL-цепочка <code class={CODE}>?modal=</code></dt>
+          <dd>{urlChain.length ? urlChain.join(' → ') : '—'}</dd>
+          <dt>transient (в <code class={CODE}>page.state</code>, не в URL)</dt>
+          <dd>{transient.length ? transient.map((t: any) => t.id).join(' → ') : '—'}</dd>
+          <dt>полная цепочка</dt>
+          <dd class="font-semibold text-[#7ee787]">{fullChain.length ? fullChain.join(' → ') : 'пусто'}</dd>
+          <dt>метка глубины</dt>
+          <dd>{depthMark ?? '— (потеряна: перезагрузка?)'}</dd>
+          <dt>location.href (адресная строка)</dt>
+          <dd><code class={CODE_MONO}>{mounted ? locHref : '—'}</code></dd>
+          <dt>page.url (что видит приложение)</dt>
+          <dd><code class={CODE_MONO}>{page.url.pathname}{page.url.search}</code></dd>
+        </dl>
+      </div>
 
-<style>
-  :global(body) {
-    margin: 0;
-    background: #0f1115;
-    color: #e6e8eb;
-    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  }
-  main { max-width: 68rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  h1 { font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
-       color: #8b93a1; margin: 0 0 .9rem; font-weight: 600; }
-  .lead { color: #9aa3b2; margin: 0 0 1.75rem; max-width: 46rem; }
-  .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
-  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: #171a21; border: 1px solid #252a34; border-radius: 12px;
-          padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
-  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .45rem 1rem; }
-  dt { color: #8b93a1; font-size: .85rem; }
-  dd { margin: 0; font-variant-numeric: tabular-nums; }
-  dd.strong { color: #7ee787; font-weight: 600; }
-  code { background: #0f1115; border: 1px solid #252a34; border-radius: 5px;
-         padding: .05rem .3rem; font-size: .85em; }
-  .row { display: flex; gap: .5rem; margin-bottom: .55rem; flex-wrap: wrap; }
-  button { flex: 1 1 auto; background: #2d6cdf; color: #fff; border: 0;
-           border-radius: 8px; padding: .55rem .8rem; font-size: .9rem;
-           font-weight: 500; cursor: pointer; }
-  button.alt { background: #6b4fd6; }
-  button.go { background: #1f8a58; }
-  .mono { font-size: .8em; }
-  button:disabled { background: #2a2f3a; color: #666e7d; cursor: not-allowed; }
-  button:not(:disabled):hover { filter: brightness(1.12); }
-  pre { background: #0f1115; border: 1px solid #252a34; border-radius: 8px;
-        padding: .7rem .85rem; overflow-x: auto; font-size: .8rem; margin: 0;
-        white-space: pre-wrap; word-break: break-all; }
-  pre.log { max-height: 15rem; overflow-y: auto; }
-  .hint { color: #7a8292; font-size: .82rem; margin: .7rem 0 0; }
-</style>
+      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+        <h2>Действия</h2>
+        <div class="mb-2.5 flex flex-wrap gap-2">
+          <button class={BTN} onclick={() => openRegistered('card')}>pushState + «card»</button>
+          <button class={BTN} onclick={() => openRegistered('user')}>pushState + «user»</button>
+        </div>
+        <div class="mb-2.5 flex flex-wrap gap-2">
+          <button class={BTN_GO} onclick={() => openViaGoto('card')}>goto + «card»</button>
+          <button class={BTN_GO} onclick={() => openViaGoto('user')}>goto + «user»</button>
+        </div>
+        <div class="mb-2.5 flex flex-wrap gap-2">
+          <button class={BTN_ALT} onclick={openTransient}>+ transient (без URL)</button>
+          <button class={BTN_ALT} onclick={replaceTop}>replaceState</button>
+        </div>
+        <div class="mb-2.5 flex flex-wrap gap-2">
+          <button class={BTN} onclick={closeTop} disabled={!fullChain.length}>Закрыть верхний (back)</button>
+          <button class={BTN} onclick={() => closeN(2)} disabled={fullChain.length < 2}>go(-2)</button>
+        </div>
+        <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
+          Дальше — кнопками <b>Назад / Вперёд</b> самого браузера, и <b>F5</b> на
+          непустой цепочке. Это и есть проверка.
+        </p>
+      </div>
+    </section>
+
+    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+      <h2>Сырой <code class={CODE}>history.state</code> (что туда кладёт SvelteKit)</h2>
+      <pre class={PRE}>{rawHistoryState}</pre>
+      <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
+        Ключи <code class={CODE}>sveltekit:*</code> — внутренние. Писать в <code class={CODE}>history.state</code>
+        напрямую нельзя: роутер SvelteKit это перетрёт и предупредит в консоли.
+      </p>
+    </section>
+
+    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
+      <h2>Журнал</h2>
+      <pre class={`${PRE} max-h-60 overflow-y-auto`}>{log.join('\n') || '—'}</pre>
+    </section>
+  </main>
+</div>
+

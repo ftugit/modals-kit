@@ -35,7 +35,7 @@ try {
     await clickSelect(root)
     await waitAtLeast(page, '[data-host-floating]', 1)
     assert(await page.locator('[data-select-content][data-host-menu]').count() >= 1, 'host menu content not rendered')
-    assert(await page.locator('.modal-stage').count() === 0, 'desktop select unexpectedly opened modal layer')
+    assert(await page.locator('[data-modal-stage]').count() === 0, 'desktop select unexpectedly opened modal layer')
     const place = await page.locator('[data-host-floating]').first().getAttribute('data-place')
     assert(['bottom', 'top', 'overlay'].includes(place), `unexpected floating place=${place}`)
     ok(`desktop opened host.floating menu (${place})`)
@@ -66,7 +66,7 @@ try {
     // 🔴 Контракт уточнён (решение владельца, ISSUES.md R-04): лист модальный,
     // поэтому сцена Ark существует — она даёт фон, scroll lock и aria-изоляцию.
     // Проверяем то, ради чего пункт писался: ПУСТОЙ ОБОЛОЧКИ нет.
-    assert((await page.locator('.modal-popup').count()) === 0, 'headless-запись нарисовала пустую модалку')
+    assert((await page.locator('[data-modal-popup]').count()) === 0, 'headless-запись нарисовала пустую модалку')
     ok('desktop floating стал листом без переноса DOM')
     await page.setViewportSize({ width: 1280, height: 860 })
     await page.waitForFunction(
@@ -105,20 +105,20 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    await page.locator('.modal-trigger', { hasText: 'Select внутри модалки' }).click()
-    await page.locator('.modal-stage').waitFor({ state: 'visible', timeout: 5000 })
-    const modalSelects = page.locator('.modal-layer[data-active] [data-select-root]')
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 })
+    const modalSelects = page.locator('[data-modal-layer][data-active] [data-select-root]')
 
     const singleSelect = modalSelects.nth(0)
     await clickSelect(singleSelect)
     await waitAtLeast(page, '[data-host-floating]', 1)
     await page.locator('[data-select-content][data-host-menu]').waitFor({ state: 'visible' })
-    assert(await page.locator('.modal-stage').count() === 1, 'owner modal closed when inner select opened')
+    assert(await page.locator('[data-modal-stage]').count() === 1, 'owner modal closed when inner select opened')
     ok('inner Select opened as host.floating while owner modal stayed open')
     await page.locator('[data-select-content][data-host-menu] [role="option"]', { hasText: 'Комедия' }).click()
     await waitCount(page, '[data-host-floating]', 0)
-    assert(await page.locator('.modal-stage').count() === 1, 'owner modal closed after choosing inner option')
-    const picked = await page.locator('.modal-layer[data-active] .picked').innerText()
+    assert(await page.locator('[data-modal-stage]').count() === 1, 'owner modal closed after choosing inner option')
+    const picked = await page.locator('[data-modal-layer][data-active] [data-select-modal-picked]').innerText()
     assert(picked.includes('comedy'), `inner select did not commit comedy: ${picked}`)
     ok('single Select closes only floating menu and commits value')
 
@@ -127,7 +127,7 @@ try {
     await waitAtLeast(page, '[data-host-floating]', 1)
     await page.locator('[data-select-content][data-host-menu] [role="option"]', { hasText: 'Боевик' }).click()
     await waitAtLeast(page, '[data-host-floating]', 1)
-    assert(await page.locator('.modal-stage').count() === 1, 'owner modal closed after default multiple choice')
+    assert(await page.locator('[data-modal-stage]').count() === 1, 'owner modal closed after default multiple choice')
     ok('multiple Select stays open by default after option click')
     await page.keyboard.press('Escape')
     await waitCount(page, '[data-host-floating]', 0)
@@ -137,7 +137,7 @@ try {
     await waitAtLeast(page, '[data-host-floating]', 1)
     await page.locator('[data-select-content][data-host-menu] [role="option"]', { hasText: 'Драма' }).click()
     await waitCount(page, '[data-host-floating]', 0)
-    assert(await page.locator('.modal-stage').count() === 1, 'owner modal closed after closeOnSelect multiple choice')
+    assert(await page.locator('[data-modal-stage]').count() === 1, 'owner modal closed after closeOnSelect multiple choice')
     ok('multiple Select can opt into closeOnSelect')
 
     await page.close()
@@ -292,7 +292,7 @@ try {
     await clickSelect(page.locator('[data-select-root]').first())
     await waitAtLeast(page, '[data-host-floating]', 1)
     assert(
-      (await page.locator('.modal-popup').count()) === 0,
+      (await page.locator('[data-modal-popup]').count()) === 0,
       'на 900px select открылся слоем — порог всё ещё свой, а не хостовый',
     )
     ok('на 900px select — выпадашка, как и модалки у хоста')

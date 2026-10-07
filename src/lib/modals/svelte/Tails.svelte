@@ -9,6 +9,7 @@
   import { resolveEntry, tailStyle, visibleChain, visibleTails } from '../core'
   import type { Chain, MobileAnchor, ResolvedEntry, TailDirection } from '../types'
   import { useModals } from './context'
+  import { MODAL_TAIL_CLASS } from './classes'
 
   interface Props {
     activeEntry: ResolvedEntry
@@ -63,7 +64,8 @@
   {@const tailEntry = resolveEntry(chain[i], i, m.scope.lookup)}
   <div
     aria-hidden="true"
-    class="modal-tail"
+    class={MODAL_TAIL_CLASS}
+    data-modal-tail=""
     data-depth={depth + 1}
     style={style(
       tailStyle({

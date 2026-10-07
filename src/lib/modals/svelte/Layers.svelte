@@ -4,6 +4,7 @@
   import { resolveEntry, visibleChain } from '../core'
   import { entryLabel } from '../types'
   import { useModals } from './context'
+  import { MODAL_LAYER_CLASS } from './classes'
   import ModalContent from './ModalContent.svelte'
 
   // Контекст держим целиком: хост переживает смену ядра, геттеры живые.
@@ -25,7 +26,8 @@
     Нужен, чтобы Tab не попадал в скрытые нижние слои.
   -->
   <div
-    class="modal-layer"
+    class={MODAL_LAYER_CLASS}
+    data-modal-layer=""
     data-active={active || undefined}
     aria-hidden={active ? undefined : 'true'}
     inert={!active}

@@ -1,0 +1,42 @@
+import { chromium } from 'playwright'
+const PORT = Number(process.env.MODALS_PORT ?? 4173)
+const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const browser = await chromium.launch({ headless: true })
+// 1. drawer открыт, узкий экран
+const m = await browser.newPage({ viewport: { width: 390, height: 844 } })
+await m.goto(BASE + '/modals', { waitUntil: 'networkidle' })
+await m.locator('label[for="fe-sidebar"][aria-label="Открыть панель"]').click()
+await sleep(500)
+await m.screenshot({ path: 'probes/shot-drawer.png' })
+// 2. стопка из трёх слоёв на desktop
+const d = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+await d.goto(BASE + '/modals?modal=card,card,card', { waitUntil: 'networkidle' })
+await d.waitForSelector('[data-modal-stage]')
+await sleep(700)
+await d.screenshot({ path: 'probes/shot-stack.png' })
+// 3. лист (sheet) — select внутри модалки на узком экране, тёмная тема
+const s = await browser.newPage({ viewport: { width: 390, height: 844 } })
+await s.goto(BASE + '/modals?modal=select', { waitUntil: 'networkidle' })
+await s.waitForSelector('[data-modal-stage]')
+await s.click('html', { position: { x: 5, y: 5 } }).catch(() => {})
+await sleep(400)
+await s.evaluate(() => localStorage.setItem('fe-theme', 'night'))
+await s.evaluate(() => { document.documentElement.setAttribute('data-theme', 'night') })
+await s.click('select', { force: true }).catch(() => {})
+await sleep(600)
+await s.screenshot({ path: 'probes/shot-sheet-night.png' })
+// 4. мобильный лист модалки с хвостами стопки
+const sheet = await browser.newPage({ viewport: { width: 390, height: 844 } })
+await sheet.goto(BASE + '/modals?modal=card,card', { waitUntil: 'networkidle' })
+await sheet.waitForSelector('[data-modal-stage]')
+await sleep(700)
+await sheet.screenshot({ path: 'probes/shot-modal-sheet.png' })
+// 5. полноэкранная модалка
+const full = await browser.newPage({ viewport: { width: 390, height: 844 } })
+await full.goto(BASE + '/modals?modal=fullpage', { waitUntil: 'networkidle' })
+await full.waitForSelector('[data-modal-stage]')
+await sleep(500)
+await full.screenshot({ path: 'probes/shot-modal-fullpage.png' })
+await browser.close()
+console.log('готово')

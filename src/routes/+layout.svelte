@@ -38,7 +38,6 @@
   } from '$lib/components/sidebar'
   import 'virtual:uno.css'
   import '../app.css'
-  import '$lib/modals/css/modals.css'
 
   let { children } = $props()
 
