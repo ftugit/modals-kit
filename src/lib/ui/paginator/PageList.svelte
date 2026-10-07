@@ -1,11 +1,6 @@
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
-  import { pendingSide } from '$lib/paginate'
-  import {
-    PageAnchor,
-    usePaginatorPages,
-    usePaginatorState,
-  } from '$lib/paginate/svelte'
+  import { PageAnchor, usePaginatorPages } from '$lib/paginate/svelte'
   import PageDivider from './PageDivider.svelte'
   import StatusRow from './StatusRow.svelte'
 
@@ -31,28 +26,12 @@
 
   const pagesGetter = usePaginatorPages<T>(name)
   const pages = $derived(pagesGetter())
-  const pagState = usePaginatorState<T>(name)
-
-  const pendingAbove = $derived.by(() => {
-    if (renderSkeleton) return null
-    const p = pendingSide(pages)
-    return p && p.side === 'above' ? p : null
-  })
-
-  const pendingBelow = $derived.by(() => {
-    if (renderSkeleton) return null
-    const p = pendingSide(pages)
-    return p && p.side === 'below' ? p : null
-  })
+  // Строка «загрузка» живёт ТОЛЬКО внутри pending-группы (как в исходнике SolidHono:
+  // `PageList` → слоты скелетонов, иначе `renderPending`/дефолтная строка). Внешние
+  // `pendingRow(side)` + `pendingAbove/Below` есть только у колоночной раскладки
+  // (`layout.tsx:220`); здесь они добавляли вторую строку «Загрузка страницы N…» —
+  // одна внутри группы, вторая рядом с ней.
 </script>
-
-{#if pendingAbove}
-  {#if renderPending}
-    {@render renderPending({ page: pendingAbove.page })}
-  {:else}
-    <StatusRow text={`Загрузка страницы ${pendingAbove.page}…`} />
-  {/if}
-{/if}
 
 <div class={className}>
   {#each pages as group (group.page)}
@@ -94,10 +73,3 @@
   {/each}
 </div>
 
-{#if pendingBelow}
-  {#if renderPending}
-    {@render renderPending({ page: pendingBelow.page })}
-  {:else}
-    <StatusRow text={`Загрузка страницы ${pendingBelow.page}…`} />
-  {/if}
-{/if}

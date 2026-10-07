@@ -163,6 +163,110 @@ async function run() {
     }
     console.log('  ok  опция «зона сверху» (topZone) переключается и реактивна');
 
+    // ── Скелетоны подгрузки: живут всё время загрузки, содержимое — после задержки ─────────────
+    // Регрессия: раньше pending-группа исчезала за один кадр (источник демо отвечает за ~20 мс,
+    // меньше кадра), а в колоночной раскладке слоты скелетонов вообще не попадали в раскладку —
+    // то есть при подгрузке скелетонов не было видно ни в списке, ни в колонках.
+    console.log('— Скелетоны подгрузки (append/prepend) —');
+    const skeletonTimeline = (layout, trigger) =>
+      page.evaluate(
+        ({ layout, trigger }) =>
+          new Promise((resolve) => {
+            const hostEl = document.querySelector('[data-paginator-host="demo-url"]');
+            const inHost = '[data-paginator-host="demo-url"] ';
+            const rows = () =>
+              document.querySelectorAll(
+                `${inHost}[data-testid^="card-"], ${inHost}[data-testid^="photo-"]`,
+              ).length;
+            const t0 = performance.now();
+            const frames = [];
+            let started = false;
+            const tick = () => {
+              const t = performance.now() - t0;
+              if (!started && t > 60) {
+                started = true;
+                if (trigger === 'append') hostEl.scrollTop = hostEl.scrollHeight;
+                else {
+                  hostEl.scrollTop = 100;
+                  hostEl.dispatchEvent(new Event('scroll'));
+                }
+              }
+              frames.push([
+                Math.round(t),
+                document.querySelectorAll('[data-testid="skeleton"]').length,
+                rows(),
+                Math.round(hostEl.scrollTop),
+              ]);
+              if (t < 1500) requestAnimationFrame(tick);
+              else resolve(frames);
+            };
+            requestAnimationFrame(tick);
+          }),
+        { layout, trigger },
+      );
+
+    for (const layout of ['list', 'columns']) {
+      for (const trigger of ['append', 'prepend']) {
+        const target = trigger === 'append' ? 1 : 2;
+        // prepend требует выйти из верхней зоны (40% высоты хоста) и вернуться в неё — на
+        // коротком списке (size=10) хост почти не скроллится, поэтому берём страницу покрупнее.
+        // bottomTrigger=manual валит SSR ещё на базлайне (см. отчёт) — для prepend хватит 'off'.
+        const size = trigger === 'append' ? 10 : 20;
+        const bottom = trigger === 'append' ? 'direction' : 'off';
+        // prepend: верхнюю зону сужаем до 20% — в колоночной раскладке хост скроллится всего
+        // на ~119px, и при зоне 40% из неё невозможно выйти, чтобы re-arm триггер направления
+        const topZone = trigger === 'append' ? '' : '&page.topZone=20%25';
+        const url = `${U}?page=${target}&page.mode=accumulate&page.skel=true&page.ind=false&page.layout=${layout}&page.size=${size}&page.topTrigger=direction&page.bottomTrigger=${bottom}${topZone}`;
+        await page.goto(url, { waitUntil: 'networkidle' });
+        // при монтировании хост может сам запустить подгрузку (контейнер не заполнен) —
+        // ждём, пока он успокоится, иначе таймлайн начнётся на середине чужого запроса
+        await page.waitForFunction(
+          () => document.querySelectorAll('[data-testid="skeleton"]').length === 0,
+          null,
+          { timeout: 5000 },
+        );
+        await sleep(300);
+        if (trigger === 'prepend') {
+          const geom = await host.evaluate((el) => {
+            el.scrollTop = el.scrollHeight; // максимум, чтобы гарантированно выйти из верхней зоны
+            return { scrollTop: el.scrollTop, max: el.scrollHeight - el.clientHeight };
+          });
+          if (geom.scrollTop < 20)
+            throw new Error(`${layout}/prepend: хост почти не скроллится (${geom.scrollTop}px)`);
+          await sleep(300);
+        }
+        const frames = await skeletonTimeline(layout, trigger);
+        const win = frames.filter((f) => f[1] > 0);
+        const dur = win.length ? win[win.length - 1][0] - win[0][0] : 0;
+        const itemsBefore = frames[0][2];
+        const firstContent = frames.find((f) => f[2] > itemsBefore);
+        if (!firstContent)
+          throw new Error(
+            `${layout}/${trigger}: подгрузка не сработала — элементов осталось ${itemsBefore}`,
+          );
+        const maxSkel = Math.max(0, ...frames.map((f) => f[1]));
+        if (win.length < 5 || dur < 120)
+          throw new Error(
+            `${layout}/${trigger}: скелетоны видны ${win.length} кадров за ${dur} мс — слишком быстро для глаза`,
+          );
+        if (maxSkel !== size)
+          throw new Error(
+            `${layout}/${trigger}: скелетонов максимум ${maxSkel}, ожидалось ${size} (размер страницы)`,
+          );
+        if (!firstContent || firstContent[0] - win[0][0] < 120)
+          throw new Error(
+            `${layout}/${trigger}: содержимое пришло через ${firstContent ? firstContent[0] - win[0][0] : '∞'} мс после появления скелетонов — задержки нет`,
+          );
+        winScroll = await page.evaluate(() => window.scrollY);
+        if (winScroll !== 0)
+          throw new Error(`${layout}/${trigger}: подгрузка сорвала window.scrollY = ${winScroll}`);
+        console.log(
+          `  ok  ${layout}/${trigger}: скелетонов ${maxSkel}, видны ${dur} мс (${win.length} кадров), содержимое позже на ${firstContent[0] - win[0][0]} мс`,
+        );
+      }
+    }
+
+
     // ── Персист настроек: URL (?page, ?page.size, ?page.<key>) и localStorage ──────────
     console.log('— Персист настроек демо —');
     const sel = (n) => page.locator(`[data-testid="demo-panel"] select[name="page.${n}"]`);

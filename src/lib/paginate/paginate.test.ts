@@ -216,6 +216,19 @@ describe('layout & columns', () => {
     const runs0 = runsOfColumn(cols[0])
     expect(runs0.length).toBeGreaterThan(0)
     expect(runs0[0].page).toBe(1)
+
+    // includeSlots=true: pending-группа даёт ячейки с item = null — их и рисует
+    // сниппет скелетона в PageColumns (при includeSlots=false слоты не попадают в
+    // раскладку вовсе, и скелетоны в колонках не появляются — так и было раньше).
+    const withPending = [
+      { page: 1, pending: false as const, items: ['i1', 'i2'] },
+      { page: 2, pending: true as const, slots: 4 },
+    ]
+    const slotCols = distributeRoundRobin(withPending, 2, true)
+    const slots = slotCols.flat().filter((c) => c.item === null)
+    expect(slots).toHaveLength(4)
+    expect(slotCols.flat().every((c) => c.item === null || typeof c.item === 'string')).toBe(true)
+    expect(distributeRoundRobin(withPending, 2, false).flat()).toHaveLength(2)
   })
 
   it('pendingSide detects above / below pending state', () => {
@@ -422,6 +435,44 @@ describe('core operations & lifecycle', () => {
 
     await loadMore(store, 'moreTest', -1)
     expect(getState(store, 'moreTest').loadedPages).toEqual([1, 2, 3])
+  })
+
+  /**
+   * «Пол» показа скелетонов подгрузки: хост выставляет instance.pendingDelayMs,
+   * ядро держит pending-группу, пока не истечёт это время — содержимое появляется
+   * с задержкой, а не мгновенно (источник демо отвечает за ~20 мс, меньше кадра).
+   */
+  it('pendingDelayMs держит скелетоны подгрузки до появления содержимого', async () => {
+    const fake = fakeAdapter({ page: 2 })
+    definePaginator({ name: 'floorTest', adapter: fake.adapter })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'floorTest')
+
+    getPaginator('floorTest').pendingDelayMs = 60
+    const started = performance.now()
+    const done = loadMore(store, 'floorTest', 1)
+
+    // данные источника уже пришли (мок отвечает мгновенно), но скелетоны ещё на экране
+    await new Promise((r) => setTimeout(r, 25))
+    expect(getState(store, 'floorTest').status).toBe('loading')
+    expect(getState(store, 'floorTest').pending).not.toBeNull()
+
+    await done
+    expect(performance.now() - started).toBeGreaterThanOrEqual(55)
+    expect(getState(store, 'floorTest').pending).toBeNull()
+    expect(getState(store, 'floorTest').loadedPages).toEqual([2, 3])
+  })
+
+  it('pendingDelayMs = 0 (умолчание ядра): состояние меняется сразу за данными', async () => {
+    const fake = fakeAdapter({ page: 1 })
+    definePaginator({ name: 'noFloorTest', adapter: fake.adapter })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'noFloorTest')
+
+    const started = performance.now()
+    await loadMore(store, 'noFloorTest', 1)
+    expect(performance.now() - started).toBeLessThan(40)
+    expect(getState(store, 'noFloorTest').pending).toBeNull()
   })
 
   it('setPageSize recalculates page index based on first item', async () => {

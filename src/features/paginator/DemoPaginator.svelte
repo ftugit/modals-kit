@@ -127,6 +127,20 @@
     { key: 'total', label: 'Известное число страниц', type: 'toggle' },
     { key: 'skel', label: 'Скелетоны', type: 'toggle', jsOnly: true },
     { key: 'ind', label: 'Плавающий индикатор загрузки', type: 'toggle', jsOnly: true },
+    {
+      key: 'pend',
+      label: 'Скелетоны: минимум на экране',
+      type: 'select',
+      jsOnly: true,
+      parse: (raw) => Number(raw),
+      options: [
+        ['0', '0 мс — без задержки'],
+        ['200', '200 мс'],
+        ['300', '300 мс (по умолчанию)'],
+        ['600', '600 мс'],
+        ['900', '900 мс'],
+      ],
+    },
     { type: 'divider', label: 'Подгрузка по краям (только в режиме накопления)' },
     {
       key: 'topTrigger',
@@ -185,10 +199,22 @@
   let { name, storeKind, onStore, url }: Props = $props()
 
   const pagState = usePaginatorState<DemoItem>(name)
+  const { scrollToPage } = usePaginatorActions(name)
 
   const cfg = $derived.by((): DemoExtra => {
     const s = pagState()
     return demoExtraOf(s.extra)
+  })
+
+  // Смена раскладки (list ↔ columns) пересобирает якоря: возвращаем viewport к странице,
+  // которая была текущей ДО смены — как createEffect(on(() => cfg().layout, …)) в исходнике.
+  let prevLayout: DemoExtra['layout'] | undefined = undefined
+  $effect(() => {
+    const layout = cfg.layout
+    if (prevLayout !== undefined && prevLayout !== layout) {
+      scrollToPage(pagState().page)
+    }
+    prevLayout = layout
   })
 
   function restoredLabel(store: DemoStore): string {
@@ -207,6 +233,7 @@
   topZone={cfg.topZone}
   bottomZone={cfg.bottomZone}
   prependBehavior={cfg.prepend}
+  pendingDelayMs={cfg.pend}
   snapshot={url?.snapshot ?? null}
 >
   {#snippet toolbar()}

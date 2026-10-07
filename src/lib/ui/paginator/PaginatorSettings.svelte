@@ -55,6 +55,7 @@
     fields = [],
     values: valuesMapper,
     store: storeProp,
+    renderField,
     footer,
     class: className,
     applyLabel = 'Применить',
@@ -151,7 +152,14 @@
       {:else if 'key' in f}
         {@const val = currentValues[f.key]}
         {@const dis = fieldDisabled(f)}
-        {#if f.type === 'toggle'}
+        {@const custom = renderField?.(f, {
+          value: val,
+          set: (v) => setValue(f.key, v),
+          disabled: dis,
+        })}
+        {#if custom}
+          {@render custom()}
+        {:else if f.type === 'toggle'}
           <Toggle
             name={`${pageParam}.${f.key}`}
             label={f.label}

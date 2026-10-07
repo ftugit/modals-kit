@@ -20,6 +20,13 @@ export type PaginatorInstance = {
   replaceAbort: AbortController | null
   /** Максимальное число страниц в памяти (окно/выгрузка). */
   maxPages?: number
+  /**
+   * Минимальное время показа pending-группы (скелетоны подгрузки), мс.
+   * Выставляет хост (`<PaginatorHost pendingDelayMs>`) — как `scrollDriver`:
+   * это UX-политика, а не семантика ядра. 0/undefined — скелетоны живут ровно
+   * столько, сколько идёт запрос (поведение исходника).
+   */
+  pendingDelayMs?: number
   /** Ключи extra, влияющие на данные источника: их смена = сброс + загрузка стр. 1. */
   reloadKeys: Set<string>
 }
@@ -49,6 +56,7 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
     scrollDriver: null,
     replaceAbort: null,
     maxPages: config.maxPages,
+    pendingDelayMs: 0,
     reloadKeys: new Set(config.reloadKeys ?? []),
   })
 }

@@ -973,6 +973,8 @@ export function PendingIndicator(props: {
 
 // ── Публичный хост ──────────────────────────────────────────────────────────
 
+const warnedDetached = new Set<string>()
+
 function readPage(raw: unknown): number | null {
   const n = typeof raw === 'number' ? raw : Number(raw)
   return Number.isInteger(n) && n >= 1 ? n : null
@@ -987,6 +989,15 @@ export function PaginatorHost<T>(props: PaginatorHostProps<T>) {
   const router = props.router
 
   if (!bindsUrl || !router) {
+    // Диагностика из исходника: URL-пагинатор без роутера молча не обновлял бы адрес.
+    if (bindsUrl && !router && !warnedDetached.has(props.name)) {
+      warnedDetached.add(props.name)
+      console.warn(
+        `[paginate] пагинатор "${props.name}" на URL-транспорте смонтирован без роутера: ` +
+          'адрес обновляться не будет. Передайте props.router (MinimalRouter) или соберите ' +
+          'пагинатор на адаптере без адреса (createLocalAdapter / createCursorAdapter).',
+      )
+    }
     return <ContainerHost<T> {...props} />
   }
 

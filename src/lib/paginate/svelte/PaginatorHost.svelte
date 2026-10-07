@@ -57,6 +57,13 @@
     topZone?: TriggerZone
     bottomZone?: TriggerZone
     prependBehavior?: PrependBehavior
+    /**
+     * Минимальное время показа pending-группы подгрузки (скелетоны или строка
+     * «загрузка»), мс. Демо-источник отвечает за ~20 мс — меньше одного кадра,
+     * поэтому без «пола» содержимое подменяет скелетоны мгновенно.
+     * 0 — выключено: слоты живут ровно столько, сколько идёт запрос.
+     */
+    pendingDelayMs?: number
     hashAnchor?: string | null
     pageLine?: number
     pageHysteresis?: number
@@ -82,6 +89,7 @@
     topZone = DEFAULT_HOST_OPTIONS.topZone,
     bottomZone = DEFAULT_HOST_OPTIONS.bottomZone,
     prependBehavior = DEFAULT_HOST_OPTIONS.prependBehavior,
+    pendingDelayMs = DEFAULT_HOST_OPTIONS.pendingDelayMs,
     hashAnchor: hashAnchorProp,
     pageLine = 0.2,
     pageHysteresis = 48,
@@ -119,6 +127,7 @@
       ...snap,
       loadedPages: [],
       pages: {},
+      pending: null,
       error: null,
       status: 'init',
       page: initialExternalPage,
@@ -137,6 +146,7 @@
     currentState = getState(store, name)
     const unsub = store.subscribe?.(name, (next) => {
       currentState = next
+      capturePrependRef(next)
     })
     return () => unsub?.()
   })
@@ -152,6 +162,7 @@
     topZone,
     bottomZone,
     prependBehavior,
+    pendingDelayMs,
   }))
 
   const triggerOf = (dir: 1 | -1): EdgeTrigger =>
@@ -159,6 +170,12 @@
 
   $effect(() => {
     instance.adapter.capabilities.append = options.mode === 'accumulate'
+  })
+
+  // Пол показа скелетонов — политика хоста (как scrollDriver): ядро лишь читает
+  // значение в момент подгрузки. Реактивно: смена пропа переопределяет значение.
+  $effect(() => {
+    instance.pendingDelayMs = options.pendingDelayMs
   })
 
   const nativeAnchoring =
@@ -232,10 +249,25 @@
   let holdRaf = 0
   let prependRef: { page: number; top: number } | null = null
 
-  $effect(() => {
-    const s = currentState
+  /**
+   * Захват опорной точки prepend-подгрузки — как в исходнике
+   * (`createComputed(on(() => state(), …))` в Solid-версии): синхронно в момент патча
+   * состояния, то есть ДО вставки слотов и до вызова `scrollDriver`/`holdAbove`.
+   * Через `$effect` так не получается: эффекты Svelte выполняются после обновления DOM,
+   * поэтому ссылка захватывалась бы уже по сдвинутой геометрии (и не успевала к моменту
+   * чтения). Ещё одно следствие в исходнике — гард перехода: повторные патчи внутри окна
+   * загрузки (например отчёт якоря меняет `page`) НЕ перезаписывают опорную точку, иначе
+   * следующая подгрузка сверху с тем же `belowPage` возьмёт протухшее значение.
+   */
+  let prevPendingMode: 'append' | 'prepend' | 'replace' | null = null
+
+  function capturePrependRef(s: PaginatorState<any>): void {
     const c = containerRef
-    if (!c || !s.pending || s.pending.mode !== 'prepend') return
+    const mode = s.pending?.mode ?? null
+    const wasMode = prevPendingMode
+    const enteredPrepend = mode === 'prepend' && wasMode !== 'prepend'
+    prevPendingMode = mode
+    if (!c || !enteredPrepend || !s.pending) return
     const page = s.pending.page + 1
     const el = anchors.getElement(`page:${page}`) ?? c.querySelector(`[data-pag-anchor="${page}"]`)
     if (el) {
@@ -244,7 +276,7 @@
         top: el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop,
       }
     }
-  })
+  }
 
   function holdAbove(belowPage: number) {
     const c = containerRef

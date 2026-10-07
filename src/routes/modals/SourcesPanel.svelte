@@ -96,7 +96,7 @@
   const has = (s: string) => active.includes(s)
 </script>
 
-<section class="my-6 rounded-[12px] border border-border px-4 py-[1.1rem] [&_h2]:m-0 [&_h2]:mb-2 [&_h2]:text-[0.8rem] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-[0.06em] [&_h2]:text-muted-foreground">
+<section class="my-6 rounded-[12px] border border-border px-[1.1rem] py-4 [&_h2]:m-0 [&_h2]:mb-2 [&_h2]:text-[0.8rem] [&_h2]:uppercase [&_h2]:tracking-[0.06em] [&_h2]:text-muted-foreground [&_code]:break-all [&_code]:rounded-[4px] [&_code]:bg-muted [&_code]:px-[0.3rem] [&_code]:py-[0.05rem] [&_code]:text-[0.9em]">
   <h2>Источники</h2>
   <p class="my-2 text-[0.82rem] text-muted-foreground">
     Ядро собирается как <code>модалка(ядро(хранилище), опции)</code>.
@@ -108,18 +108,18 @@
   </div>
 
   <div class="flex flex-wrap gap-2">
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
+    <button class="cursor-pointer rounded-[8px] border-0 bg-primary px-[0.8rem] py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
       Открыть в url
     </button>
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
+    <button class="cursor-pointer rounded-[8px] border-0 bg-primary px-[0.8rem] py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
       Открыть в localStorage
     </button>
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
+    <button class="cursor-pointer rounded-[8px] border-0 bg-primary px-[0.8rem] py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
       Открыть в memory
     </button>
   </div>
 
-  <dl class="mt-3.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.82rem] [&_dd]:m-0 [&_dt]:text-muted-foreground">
+  <dl class="mt-[0.9rem] mb-0 grid grid-cols-[auto_1fr] gap-x-[0.8rem] gap-y-[0.3rem] text-[0.82rem] [&_dd]:m-0 [&_dt]:text-muted-foreground">
     <dt>адрес</dt><dd><code>{storages.url}</code></dd>
     <dt>localStorage</dt><dd><code>{storages.local}</code></dd>
     <dt>memory</dt><dd><code>{held.memory ?? 0} записей</code></dd>

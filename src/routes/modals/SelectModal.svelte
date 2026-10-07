@@ -17,7 +17,7 @@
   const m = useModals()
 </script>
 
-<div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
+<div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-[0.3rem] [&_label]:text-[0.85rem] [&_code]:text-[0.8em]">
   <h2>Select внутри модалки</h2>
   <p>Список лежит в своём контейнере в <code>body</code>, а частью ловушки фокуса
      модалки его объявляет <code>aria-controls</code> на триггере — штатный
@@ -56,7 +56,7 @@
 </div>
 
 {#snippet storagelessHere()}
-  <div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
+  <div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-[0.3rem] [&_label]:text-[0.85rem] [&_code]:text-[0.8em]">
     <h2>Модалка без хранилища</h2>
     <p>Открыта поверх модалки со списками. В адресе её нет; «Назад» закрывает именно её.</p>
     <div class="flex flex-wrap items-center gap-3">

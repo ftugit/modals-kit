@@ -45,6 +45,8 @@ export type DemoExtra = {
   prepend: PrependBehavior
   /** Плавающий индикатор загрузки (UI-компонент). */
   ind: boolean
+  /** Минимальное время показа скелетонов подгрузки, мс (0 — без задержки). */
+  pend: DemoHoldMs
   /** Число колонок в раскладке columns: 'auto' | 2 | 3 | 4. */
   cols: DemoCols
   /** Авто-колонки: целевая ширина колонки, px. */
@@ -52,6 +54,9 @@ export type DemoExtra = {
   /** Авто-колонки: допуск вписывания (сжать/растянуть), % от colW. */
   colFit: DemoColFit
 }
+
+export type DemoHoldMs = 0 | 200 | 300 | 600 | 900
+export const DEMO_HOLD_MS: readonly DemoHoldMs[] = [0, 200, 300, 600, 900]
 
 export type DemoColW = 160 | 220 | 300 | 400
 export type DemoColFit = 0 | 10 | 25 | 50
@@ -80,6 +85,7 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   bottomZone: '40%',
   prepend: 'auto',
   ind: true,
+  pend: 300,
   cols: 'auto',
   colW: 220,
   colFit: 25,
@@ -113,6 +119,7 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   bottomZone: extraField('text', oneOf(...DEMO_ZONES)),
   prepend: extraField('text', oneOf('auto', 'native', 'js')),
   ind: bool,
+  pend: extraField('number', (v) => DEMO_HOLD_MS.includes(v as DemoHoldMs)),
   cols: (v) => (v === 'auto' || v === 2 || v === 3 || v === 4 ? v : undefined),
   colW: extraField('number', (v) => v === 160 || v === 220 || v === 300 || v === 400),
   colFit: extraField('number', (v) => v === 0 || v === 10 || v === 25 || v === 50),

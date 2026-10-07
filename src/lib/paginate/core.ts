@@ -22,6 +22,22 @@ function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+const nowMs = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+
+/**
+ * «Пол» показа pending-группы подгрузки: держит скелетоны (или строку «загрузка»)
+ * на экране, пока содержимое уже пришло. Значение задаёт хост (`<PaginatorHost
+ * pendingDelayMs>`) через `instance.pendingDelayMs` — та же схема, что у
+ * `scrollDriver`: это UX-политика, а не семантика ядра. `0` (дефолт) — выключено:
+ * состояние меняется сразу за данными, как в исходнике.
+ */
+async function holdPendingFloor(instance: PaginatorInstance, startedAt: number): Promise<void> {
+  const floor = instance.pendingDelayMs ?? 0
+  if (floor <= 0) return
+  const left = floor - (nowMs() - startedAt)
+  if (left > 0) await new Promise<void>((resolve) => setTimeout(resolve, left))
+}
+
 /** persist не критичен для отображения: ошибка → warn, состояние не ломается (SPEC §3.3). */
 export function safePersist(store: Store, name: string): void {
   const instance = getPaginator(name)
@@ -265,6 +281,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
   if (!canLoadMore(dir, state)) return
   instance.lastAction = { kind: 'loadMore', dir }
   const target = dir > 0 ? Math.max(...state.loadedPages) + 1 : Math.min(...state.loadedPages) - 1
+  const startedAt = nowMs()
   const reqId = state.reqId + 1
   const lastLoaded = state.loadedPages[state.loadedPages.length - 1]
   const count = state.pages[lastLoaded]?.length ?? state.pageSize
@@ -301,6 +318,13 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     return
   }
   if (getState<T>(store, name).reqId !== reqId) return // reset победил (T2.5)
+  // Пол показа скелетонов: содержимое (или «конец коллекции») появляется не раньше,
+  // чем pending-группа провисела `pendingDelayMs`. После ожидания перепроверяем, что
+  // запрос всё ещё актуален: reset/новый запрос за время ожидания отменяет патч.
+  await holdPendingFloor(instance, startedAt)
+  const afterFloor = getState<T>(store, name)
+  if (afterFloor.reqId !== reqId || afterFloor.status !== 'loading' || afterFloor.pending?.page !== target)
+    return
   if (resp.items.length === 0) {
     patch<T>(store, name, (s) => ({
       ...s,

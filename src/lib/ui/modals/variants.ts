@@ -26,7 +26,7 @@ import {
 /* Общая геометрия кнопок и триггеров: 36px минимум, паддинги 8/12,
    размер шрифта, переход по background/color/opacity и фокусное кольцо. */
 const ACTION_BASE =
-  'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-2px)] px-3 py-2 text-sm font-medium leading-none no-underline [transition:background_150ms_ease,color_150ms_ease,opacity_150ms_ease] focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2'
+  'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-2px)] px-3 py-2 text-[14px] font-medium leading-none no-underline [transition:background_150ms_ease,color_150ms_ease,opacity_150ms_ease] focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2'
 
 export const modalBackdropVariants = variants(MODAL_BACKDROP_CLASS, {}, {})
 
@@ -59,10 +59,15 @@ export const modalButtonVariants = variants(
       danger:
         'bg-destructive text-destructive-foreground hover:enabled:bg-[color-mix(in_oklab,var(--destructive)_88%,var(--foreground))]',
     },
+    /**
+     * Размер меняет только высоту и отступы: кегль и line-height заданы базой
+     * (14px / 1), иначе `text-sm` вернул бы line-height 20px — в исходнике
+     * у `.modal-btn` стояло `line-height: 1`.
+     */
     size: {
-      sm: 'min-h-8 px-3 py-1.5 text-xs',
-      md: 'min-h-9 px-3 py-2 text-sm',
-      lg: 'min-h-10 px-4 py-2 text-sm',
+      sm: 'min-h-8 px-3 py-1.5 text-xs leading-none',
+      md: 'min-h-9 px-3 py-2 text-[14px] leading-none',
+      lg: 'min-h-10 px-4 py-2 text-[14px] leading-none',
     },
   },
   {

@@ -38,6 +38,8 @@ export type ResolvedHostOptions = {
   topZone: TriggerZone
   bottomZone: TriggerZone
   prependBehavior: PrependBehavior
+  /** Минимальное время показа скелетонов подгрузки, мс (см. <PaginatorHost pendingDelayMs>). */
+  pendingDelayMs: number
 }
 
 export const DEFAULT_HOST_OPTIONS: ResolvedHostOptions = {
@@ -47,6 +49,9 @@ export const DEFAULT_HOST_OPTIONS: ResolvedHostOptions = {
   topZone: '40%',
   bottomZone: '40%',
   prependBehavior: 'auto',
+  // 300 мс: демо-источник отвечает за ~20 мс — это меньше кадра, и без «пола»
+  // скелетоны жили бы один кадр. Значение по умолчанию — только у хоста Svelte.
+  pendingDelayMs: 300,
 }
 
 export type PaginatorContextValue = {

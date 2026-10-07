@@ -211,13 +211,13 @@
       -->
       <!-- Шапка нужна только листу. -->
       <div
-        class="hidden min-h-14 items-center justify-between gap-2 border-b border-border px-4 group-data-[layout=sheet]/sheet:flex"
+        class="hidden group-data-[layout=sheet]/sheet:flex group-data-[layout=sheet]/sheet:min-h-14 group-data-[layout=sheet]/sheet:items-center group-data-[layout=sheet]/sheet:justify-between group-data-[layout=sheet]/sheet:gap-2 group-data-[layout=sheet]/sheet:border-b group-data-[layout=sheet]/sheet:border-border group-data-[layout=sheet]/sheet:px-4"
         data-floating-menu-head=""
       >
         <span class="text-[0.95rem] font-semibold" data-floating-menu-title="">{label}</span>
         <button
           type="button"
-          class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent hover:bg-accent"
+          class="inline-flex size-9 cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent hover:bg-accent"
           data-floating-menu-close=""
           aria-label="Закрыть меню"
           onclick={() => closeMenu()}
@@ -232,7 +232,7 @@
             'flex w-full items-baseline justify-between gap-3 rounded-[7px] border-0 bg-transparent px-2.5 py-2 text-left text-inherit',
             'cursor-pointer data-[active]:bg-accent disabled:cursor-not-allowed disabled:opacity-45',
             // Лист: крупные цели нажатия и разделители строк.
-            'group-data-[layout=sheet]/sheet:min-h-12 group-data-[layout=sheet]/sheet:items-center group-data-[layout=sheet]/sheet:rounded-none group-data-[layout=sheet]/sheet:px-4',
+            'group-data-[layout=sheet]/sheet:min-h-12 group-data-[layout=sheet]/sheet:items-center group-data-[layout=sheet]/sheet:rounded-none group-data-[layout=sheet]/sheet:px-4 group-data-[layout=sheet]/sheet:py-0',
             'group-data-[layout=sheet]/sheet:[&+&]:[border-top:1px_solid_color-mix(in_oklab,var(--border)_55%,transparent)]',
           )}
           data-floating-menu-item=""
@@ -242,7 +242,7 @@
           onclick={() => choose(item)}
         >
           <span>{item.label}</span>
-          {#if item.hint}<span class="text-xs text-muted-foreground" data-floating-menu-hint="">{item.hint}</span>{/if}
+          {#if item.hint}<span class="text-[0.75rem] text-muted-foreground" data-floating-menu-hint="">{item.hint}</span>{/if}
         </button>
       {/each}
     </div>
