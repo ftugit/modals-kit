@@ -13,20 +13,36 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
+/**
+ * Приведение строки к сравнимому виду: регистр и диакритика.
+ *
+ * NFKD разлагает «ё» на «е» + комбинируемую точку, «й» — на «и» + кратка,
+ * поэтому после снятия комбинируемых знаков запрос «сенен» находит «Сёнен»,
+ * «сейнэн» — «Сэйнэн». Без этого поиск по подписи «работает» ровно до первой
+ * буквы с точками — а подписи жанров у источника именно такие.
+ */
 function searchable(value: string): string {
-  return value.normalize('NFKD').toLocaleLowerCase();
+  return value.normalize('NFKD').replace(/\p{M}+/gu, '').toLocaleLowerCase();
 }
 
-/** Локальный substring-поиск; режим явно определяет доступные для поиска поля. */
+/**
+ * Локальный substring-поиск; режим явно определяет доступные для поиска поля.
+ *
+ * `label` (и `both`) ищут по тому, что человек ВИДИТ: подпись вместе с
+ * пояснением — `hint` показывается рядом с ней и воспринимается как часть
+ * названия варианта.
+ */
 export function matchesSelectOption(
-  option: Pick<SelectOption, 'value' | 'label'>,
+  option: Pick<SelectOption, 'value' | 'label' | 'hint'>,
   query: string,
   mode: SelectSearchMode,
 ): boolean {
   if (mode === 'off' || !query) return true;
   const needle = searchable(query);
-  return (mode === 'value' || mode === 'both') && searchable(option.value).includes(needle)
-    || (mode === 'label' || mode === 'both') && searchable(option.label).includes(needle);
+  const visible = option.hint ? `${option.label} ${option.hint}` : option.label;
+  const byValue = (mode === 'value' || mode === 'both') && searchable(option.value).includes(needle);
+  const byLabel = (mode === 'label' || mode === 'both') && searchable(visible).includes(needle);
+  return byValue || byLabel;
 }
 
 export function selectedAfterToggle(

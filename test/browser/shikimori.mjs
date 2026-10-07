@@ -337,6 +337,38 @@ async function checkFiltersUi(browser) {
     console.log(`  ok  подпись связана с контролом: ${labelCheck.length} подписей, клик по «${labelTarget}» фокусирует его`);
     console.log(`      aria-describedby указывает на существующие пояснения: ${described.join(', ') || '—'}`);
 
+    // Поиск в списке фильтра ищет по тому, что ВИДНО. Значением варианта служит
+    // id справочника источника («133»), поэтому поиск ТОЛЬКО по значению не
+    // находил подпись — регрессия владельца «поиск в select не работает».
+    await openFilters(page);
+    const genres = panel.locator('select[data-select-native][name="page.filters.genres.and"]');
+    await genres.scrollIntoViewIfNeeded();
+    await genres.click({ force: true });
+    await waitFor(async () => (await page.locator('[data-select-listbox] [role="option"]').count()) > 1, {
+      what: 'список жанров раскрыт',
+    });
+    const searchBox = page.locator('[data-select-content] input[role="combobox"]').first();
+    await searchBox.click();
+    const found = async (query) => {
+      await searchBox.fill(query);
+      await page.waitForTimeout(150);
+      return page.locator('[data-select-listbox] [role="option"]').allInnerTexts();
+    };
+    const byLabel = await found('романтика');
+    if (byLabel.length > 5 || !byLabel.some((text) => text.includes('Романтика')))
+      throw new Error(`поиск по подписи не сработал: ${JSON.stringify(byLabel)}`);
+    const withoutYo = await found('сенен');
+    if (!withoutYo.some((text) => text.includes('Сёнен')))
+      throw new Error(`поиск не нашёл «Сёнен» без «ё»: ${JSON.stringify(withoutYo)}`);
+    const byValue = await found('22'); // «Романтика» — id 22 в справочнике v2
+    if (!byValue.some((text) => text.includes('Романтика')))
+      throw new Error(`поиск по значению перестал работать: ${JSON.stringify(byValue)}`);
+    await page.keyboard.press('Escape');
+    await waitFor(async () => (await page.locator('[data-select-content]').count()) === 0, {
+      what: 'список закрыт',
+    });
+    console.log('  ok  поиск в списке фильтра: по подписи («романтика» → «Романтика»), без «ё» и по значению');
+
     await openFilters(page);
     await panel
       .locator('select[data-select-native][name="page.filters.kind"]')
