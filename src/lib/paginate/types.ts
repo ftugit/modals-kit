@@ -1,5 +1,10 @@
 // Контракты lib paginate — ЕДИНСТВЕННАЯ дефиниция; клиент и сервер импортируют отсюда.
 // Порт одноимённых контрактов React-версии (SPEC §3.1): без jotai/zod.
+//
+// Источник данных — АДАПТИРОВАННЫЙ объект слоя (`$lib/paginate/source`), а не
+// произвольная функция: пагинатор обязан знать возможности источника (поиск,
+// фильтры, totals) и раздавать их UI. Тип адаптера это фиксирует.
+import type { AdaptedSource, SourceCapabilities } from './source'
 
 export type MaybePromise<T> = T | Promise<T>
 
@@ -13,8 +18,10 @@ export type PageResponse<T> = {
   hasNext?: boolean
 }
 
-/** Источник — условная fetch-функция: «дай страницу». Единственный путь к данным (R1). */
-export type Source<T> = (req: PageRequest) => Promise<PageResponse<T>>
+/**
+ * Форма вызова данных на границе адаптера. Источник — АДАПТИРОВАННЫЙ объект
+ * (`AdaptedSource`), поэтому «просто функция» эту границу не проходит.
+ */
 
 /** Что хранилище может вернуть при восстановлении (валидируется на read, deny-safe). */
 export type RestorableState = {
@@ -60,6 +67,12 @@ export type PaginatorState<T> = RestorableState & {
   reqId: number
   /** Opaque source/adapter state; paginator stores it but never interprets it. */
   sourceState?: string
+  /**
+   * Возможности выбранного источника (см. `$lib/paginate/source`). Величина
+   * ВЫЧИСЛЯЕМАЯ (не restorable): резолвится адаптером из текущего extra при
+   * init и каждой смене extra. UI читает отсюда и гасит невозможные функции.
+   */
+  capabilities: SourceCapabilities
 }
 
 export type AdapterInit<T> = {
@@ -103,6 +116,18 @@ export type PaginatorAdapter<T> = {
   /** Пагинатор отдаёт ПОЛНЫЙ snapshot; storage/адаптер берут своё (R10). */
   persist(state: PaginatorState<T>): MaybePromise<void>
   capabilities: { append: boolean }
+  /**
+   * Возможности источника для текущего extra (см. `$lib/paginate/source`).
+   * Пагинатор кладёт их в состояние — UI гасит функции, которых нет.
+   */
+  capabilitiesFor(extra: Extra): SourceCapabilities
+  /**
+   * Все ключи extra, которые пагинатор считает объявленными: источник
+   * (`source.extraKeys()` — `q` и фильтры) плюс поверхность потребителя
+   * (спецификация адреса/дефолты). `undefined` — поверхность не объявлена,
+   * строгая проверка записи невозможна.
+   */
+  extraKeys?(): readonly string[] | undefined
   /** URL-адаптер: базовый search-ключ (`?page`, `?page.size`, `?page.<key>`); нужен UI-компонентам форм без JS. */
   pageParam?: string
 }
@@ -136,10 +161,12 @@ export type PaginatorConfig<T> =
     }
   | {
       name: string
-      source: Source<T>
+      source: AdaptedSource<T>
       pageSize?: number
       append?: boolean
       storage?: PaginatorStorage
+      /** Ключи extra, объявленные потребителем (строгая проверка записи `setExtra`). */
+      extraKeys?: readonly string[]
       maxPages?: number
       /** Ключи extra, влияющие на данные источника (смена → сброс + загрузка стр. 1). */
       reloadKeys?: readonly string[]

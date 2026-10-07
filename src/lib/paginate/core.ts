@@ -197,6 +197,7 @@ export async function initPaginator<T>(
       page: init.page,
       pageSize,
       extra,
+      capabilities: instance.adapter.capabilitiesFor(extra),
       sourceState: init.sourceState,
       totalItems: init.totalItems ?? null,
       totalPages: init.totalPages ?? null,
@@ -218,6 +219,7 @@ export async function initPaginator<T>(
     page: init.page,
     pageSize,
     extra,
+    capabilities: instance.adapter.capabilitiesFor(extra),
     sourceState: init.sourceState ?? s.sourceState,
     totalItems: init.totalItems ?? s.totalItems,
     totalPages: init.totalPages ?? s.totalPages,
@@ -465,7 +467,7 @@ export async function resetPaginator<T>(store: Store, name: string): Promise<voi
   instance.lastAction = null
   dropPrefetched(instance)
   patch<T>(store, name, (s) => ({
-    ...initialState<T>(name, s.pageSize, s.extra),
+    ...initialState<T>(name, s.pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
     reqId: s.reqId + 1,
   }))
   safePersist(store, name) // storage/URL ← исходный указатель (page 1)
@@ -492,7 +494,7 @@ export async function setPageSize<T>(store: Store, name: string, pageSize: numbe
   instance.lastAction = { kind: 'goToPage', page }
   dropPrefetched(instance)
   patch<T>(store, name, (s) => ({
-    ...initialState<T>(name, pageSize, s.extra),
+    ...initialState<T>(name, pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
     page,
     status: 'idle',
     reqId: s.reqId + 1,
@@ -515,6 +517,7 @@ export async function setExtra<T>(
 ): Promise<void> {
   const instance = getPaginator(name)
   const state = getState<T>(store, name)
+  assertDeclaredExtraKeys(instance, patchExtra)
   let changed = false
   let touchesData = false
   for (const [k, v] of Object.entries(patchExtra)) {
@@ -544,16 +547,47 @@ export async function setExtra<T>(
     }
     instance.lastAction = { kind: 'goToPage', page: 1 }
     dropPrefetched(instance)
-    patch<T>(store, name, (s) => ({
-      ...initialState<T>(name, s.pageSize, mergeExtra(s.extra)),
-      status: 'idle',
-      reqId: s.reqId + 1,
-    }))
+    patch<T>(store, name, (s) => {
+      const extra = mergeExtra(s.extra)
+      return {
+        ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
+        status: 'idle',
+        reqId: s.reqId + 1,
+      }
+    })
     instance.emitter.emit({ type: 'page-changed', page: 1, via: 'go' })
     safePersist(store, name)
     await fetchReplace<T>(store, name, 1, 'replace')
     return
   }
-  patch<T>(store, name, (s) => ({ ...s, extra: mergeExtra(s.extra) }))
+  patch<T>(store, name, (s) => {
+    const extra = mergeExtra(s.extra)
+    return { ...s, extra, capabilities: instance.adapter.capabilitiesFor(extra) }
+  })
   safePersist(store, name)
+}
+
+/**
+ * Запись неподдерживаемого ключа — ошибка разработчика, а не «тихо ничего не
+ * произошло»: ключ обязан быть объявлен либо ИСТОЧНИКОМ (`source.extraKeys()`),
+ * либо ПОТРЕБИТЕЛЕМ (спецификация адреса / объявленные ключи). Снятие ключа
+ * (`undefined`) и пустое значение легальны всегда: это очистка, а не установка.
+ */
+function assertDeclaredExtraKeys(
+  instance: PaginatorInstance,
+  patch: Record<string, ExtraValue | undefined>,
+): void {
+  const declared = instance.adapter.extraKeys?.()
+  if (!declared) return // поверхность потребителя не объявлена — судить нечем
+  const known = new Set(declared)
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === null || value === '') continue
+    if (!known.has(key)) {
+      const own = [...known].sort().join(', ')
+      throw new Error(
+        `setExtra("${instance.name}"): ключ «${key}» не объявлен ни источником, ни потребителем. ` +
+          `Объявленные ключи: ${own || '—'}.`,
+      )
+    }
+  }
 }

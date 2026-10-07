@@ -1,8 +1,10 @@
 # lib search
 
-Поиск как **перехват пагинатора**: `defineSearch` подменяет источник
-пагинатора обёрткой (`createSearchInterceptor`) и регистрирует его на
-URL-адаптере. Своего ядра состояния у поиска нет — страницы, гонки,
+Поиск как **перехват пагинатора**: lib/search подключается к источнику
+декоратором `withLibSearch` (тот же путь и в `defineSearch`, который
+регистрирует пагинатор на URL-адаптере). Источник — АДАПТИРОВАННЫЙ
+(`$lib/paginate/source`): паспорт записи (`id`/`title`/`texts`), словарь и
+размер батча lib/search берёт у него, а не у потребителя. Своего ядра состояния у поиска нет — страницы, гонки,
 SSR-снапшоты, back/forward, ссылки без JS делает lib/paginate; запрос `q` —
 обычный ключ extra пагинатора (`reloadKeys: ['q']`).
 
@@ -24,7 +26,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 | `types.ts` | Контракты: `SearchConfig` (вход `defineSearch`), `SearchInstance` |
 | `registry.ts` | Реестр по имени (deny by default), `defineSearch` (перехват + регистрация пагинатора), `searchAddressSpec` для validateSearch роута |
 | `core.ts` | Vanilla-действия: `setSearchQuery` / `clearSearchQuery` / `resyncSearch` (обёртки над `setExtra`/`goToPage`) |
-| `accumulator.ts` | `createSearchInterceptor` — перехватчик `Source<T>` с fuzzy-ранжированием; `createAccumulatingSource` — механика бюджета и виртуальных страниц без средовых гардов |
+| `accumulator.ts` | `withLibSearch` — подключение fuzzy-контура к адаптированному источнику (нужно `scan` в спеке); `createAccumulatingSource` — механика бюджета и виртуальных страниц без средовых гардов |
 | `fuzzy.ts` | Изоморфное ядро: foldKey, взвешенный Дамерау-Левенштейн, словарь терминов, скоринг |
 | `dictionary.ts` | Клиент: разбор артефакта `display\tdf`, биграммный индекс, корректор запроса |
 | `svelte/` | Svelte 5-вход `$lib/search/svelte`: хук `useSearchCorrection` (подпись «искали X → показываем Y»). Устроен как `$lib/paginate/svelte`: ядро о фреймворке не знает, обвязка живёт отдельной точкой входа — поэтому `$lib/search` остаётся импортируемым из node-тестов |
@@ -95,19 +97,27 @@ export const load = ({ url }) => /* … */ void url
 
 ```ts
 // Клиент и сервер: пагинатор с источником-диспетчером.
-const intercepted = createSearchInterceptor<Item>({
-  source: baseSource,          // обязан понимать extra.q как подстроку
-  id: (r) => String(r.id),
-  texts: (r) => [r.title],
+const base = defineSource<Item>({
+  name: 'items',
+  record: { id: (r) => String(r.id), title: (r) => r.title, texts: (r) => [r.title] },
+  search: { minLength: 2 },   // родной поиск источника (q → параметр API)
+  scan: { batchSize: 50 },    // разрешение сканирования для fuzzy-контура
+  dictionary: () => loadTerms(),   // словарь коррекции — свойство ИСТОЧНИКА
+  data: (look, input) => loadPage(look, input),
+})
+// lib/search: fuzzy + коррекция; тумблер потребителя — ключ extra `ls`.
+const source = withLibSearch(base, {
+  gate: 'ls',
   onCorrection: (info) => reportSearchCorrection(name, info), // канал реестра
   onStats: (stats) => publishStats(name, stats),              // канал потребителя
 })
-const source: Source<Item> = (req) =>
-  extra.ls ? intercepted(req) : baseSource(req)   // тумблер потребителя
 
 definePaginator({ name, source, reloadKeys: ['q', 'ls'],
   adapter: createUrlAdapter({ name, source, pageSizes, extraSearch: { q: qValidator } }) })
 ```
+
+Подключение к источнику без `scan` — ошибка разработчика (`withLibSearch`
+бросает): «включено, но молча ничего не делает» слой не допускает.
 
 Отличия от `defineSearch` ровно два, и оба — про отсутствие экземпляра поиска
 в реестре: запись запроса делается штатным `setExtra(store, name, { q })`

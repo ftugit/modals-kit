@@ -1,8 +1,12 @@
 /**
- * Перехватчик источника пагинатора: generic `Source<T>` ПОВЕРХ базового
- * источника. lib search не строит собственного пагинатора данных — она
- * подменяет источник существующего (fuzzy здесь — только МЕТОД сопоставления
- * и ранжирования, страницы добирает сама lib search):
+ * Перехватчик источника пагинатора: обёртка `AdaptedSource<T>` ПОВЕРХ
+ * адаптированного источника. lib search не строит собственного пагинатора
+ * данных — она подменяет источник существующего (fuzzy здесь — только МЕТОД
+ * сопоставления и ранжирования, страницы добирает сама lib search).
+ *
+ * Паспорт записи (id/texts) и размер батча берутся У САМОГО источника
+ * (`recordFor`/`capabilitiesFor().scan`): потребителю нечего дублировать, а
+ * подключить fuzzy к источнику без разрешения сканирования нельзя.
  *
  * - запрос пуст → сквозной проход: базовый источник отдаёт обычные страницы
  *   каталога, пагинатор работает как до перехвата;
@@ -23,7 +27,14 @@
  * поэтому PageNav у перехваченного пагинатора автоматически остаётся на
  * стрелках; номера страниц — только у неперехваченного источника.
  */
-import type { Extra, PageRequest, PageResponse, Source } from '$lib/paginate/types'
+import {
+  decorateSource,
+  isServerSide,
+  type AdaptedSource,
+  type SourceRecordSpec,
+} from '$lib/paginate/source'
+import type { Extra, PageRequest, PageResponse } from '$lib/paginate/types'
+import { createLazyCorrector } from './dictionary'
 import { prepareQuery, prepareTexts, scorePrepared, type PreparedText } from './fuzzy'
 
 /** Живая статистика перехватчика для демо-панелей и отладки. */
@@ -49,12 +60,19 @@ export type SearchCorrectionInfo = {
   changed: boolean
 }
 
-/** Клиентское fuzzy-усиление перехвата (без него источник остаётся серверным). */
-export type SearchFuzzyOptions<T> = {
-  /** Стабильный id записи источника (дедупликация между батчами). */
-  id: (record: T) => string
-  /** Тексты записи для ранжирования (title, aliases, …). */
-  texts: (record: T) => readonly string[]
+/** Дефолтный размер батча, если источник не объявил свой (`spec.scan.batchSize`). */
+export const DEFAULT_FUZZY_BATCH = 50
+
+/** Настройки перехвата: паспорт записи и размер батча — свойство ИСТОЧНИКА. */
+export type SearchInterceptorOptions<T> = {
+  /**
+   * Базовый источник (адаптированный). Обязан понимать `extra.q` НА СЕРВЕРЕ
+   * как точное/подстрочное сужение — это контур SSR/no-JS. ВАЖНО: `q` —
+   * отдельное поле транспорта, не значение фильтров.
+   */
+  source: AdaptedSource<T>
+  /** Минимальная длина запроса; короче — сквозной проход без сужения. @default 2 */
+  minLength?: number
   /**
    * Клиентская коррекция запроса по словарю корпуса. `null` — словарь не
    * готов/недоступен → запасной контур (сканирование). Не вызывается на сервере.
@@ -64,8 +82,6 @@ export type SearchFuzzyOptions<T> = {
   onCorrection?: (info: SearchCorrectionInfo | null) => void
   /** Живая статистика (пере)стройки буфера; null — перехват неактивен (пустой q). */
   onStats?: (stats: SearchInterceptStats | null) => void
-  /** Размер батча — pageSize, с которым источник опрашивается при поиске. @default 500 */
-  batchSize?: number
   /** Бюджет батчей на один вызов loadPage. @default 8 */
   maxBatchesPerCall?: number
   /**
@@ -85,16 +101,12 @@ export type SearchFuzzyOptions<T> = {
   parallelBatches?: number
 }
 
-export type SearchInterceptorOptions<T> = SearchFuzzyOptions<T> & {
-  /**
-   * Базовый источник пагинатора («дай страницу N размера M»). Обязан понимать
-   * `extra.q` НА СЕРВЕРЕ как точное/подстрочное сужение — это контур SSR/no-JS.
-   * ВАЖНО: `q` — отдельное поле транспорта, не значение фильтров.
-   */
-  source: Source<T>
-  /** Минимальная длина запроса; короче — сквозной проход без сужения. @default 2 */
-  minLength?: number
-}
+/**
+ * Опции подключения lib/search к источнику. `gate` — ключ extra, которым
+ * ПОТРЕБИТЕЛЬ гасит lib/search (демо: `ls`): при `false` перехват не работает,
+ * источник отдаёт каталог как есть.
+ */
+export type LibSearchOptions<T> = Omit<SearchInterceptorOptions<T>, 'source'> & { gate?: string }
 
 type Accumulated<T> = {
   key: string
@@ -126,18 +138,22 @@ function abortError(): Error {
 /**
  * Накопительный источник БЕЗ средовых гардов: чистый клиентский контур
  * (коррекция → батчи → буфер → водяной знак страниц). Отделён от
- * createSearchInterceptor, чтобы механика бюджета/параллельности была
+ * `withLibSearch`, чтобы механика бюджета/параллельности была
  * тестируема вне браузера: обёртка отвечает за ПОЛИТИКУ (пустой запрос,
  * minLength, SSR/no-JS), этот источник — только за накопление.
  * Контракт: `extra.q` непустой и не короче minLength (гарды обёртки).
  */
-export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): Source<T> {
-  const batchSize = opts.batchSize ?? 500
+export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): AdaptedSource<T> {
   const maxBatchesPerCall = opts.maxBatchesPerCall ?? 8
   const maxBatchesDeepLink = opts.maxBatchesDeepLink ?? 32
   const parallelBatches = Math.max(1, Math.min(opts.parallelBatches ?? 4, 8))
 
   let state: Accumulated<T> | null = null
+
+  /** Паспорт записи и размер батча — свойства ИСТОЧНИКА, не потребителя. */
+  const recordOf = (extra?: Extra): SourceRecordSpec<T> => opts.source.recordFor(extra)
+  const batchOf = (extra?: Extra): number =>
+    opts.source.capabilitiesFor(extra).scan?.batchSize ?? DEFAULT_FUZZY_BATCH
 
   const freshState = (key: string, contour: 'main' | 'fallback'): Accumulated<T> => ({
     key,
@@ -158,16 +174,20 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
 
   /** Применение батча к буферу: только после УСПЕШНОГО ответа — прерванный
    * запрос не двигает позицию чтения и не портит буфер. */
-  function applyBatch(acc: Accumulated<T>, res: PageResponse<T>): void {
-    for (const record of res.items) {
-      const id = opts.id(record)
+  function applyBatch(
+    acc: Accumulated<T>,
+    res: PageResponse<T>,
+    record: SourceRecordSpec<T>,
+  ): void {
+    for (const item of res.items) {
+      const id = record.id(item)
       acc.recordsSeen += 1
       if (acc.seen.has(id)) continue
       acc.seen.add(id)
-      const prepared: PreparedText[] = prepareTexts(opts.texts(record))
+      const prepared: PreparedText[] = prepareTexts(record.texts(item))
       const score = scorePrepared(prepared, acc.rankTokens)
       if (score > 0) {
-        acc.byId.set(id, record)
+        acc.byId.set(id, item)
         acc.ranked.push({ id, score, ord: acc.seen.size })
       }
     }
@@ -177,13 +197,11 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
   /** Батч = очередная страница базового источника с подставленным сужением. */
   async function fetchOne(acc: Accumulated<T>, baseExtra: Extra, signal?: AbortSignal): Promise<void> {
     const narrow = acc.contour === 'main' ? (acc.correction?.corrected ?? '') : ''
-    const res = await opts.source({
-      page: acc.batchPage,
-      pageSize: batchSize,
-      extra: { ...baseExtra, q: narrow },
-      signal,
-    })
-    applyBatch(acc, res)
+    const res = await opts.source.fetchPage(
+      { page: acc.batchPage, pageSize: batchOf(baseExtra), signal },
+      { ...baseExtra, q: narrow },
+    )
+    applyBatch(acc, res, recordOf(baseExtra))
     acc.batchPage += 1
     acc.exhausted = !res.hasNext
   }
@@ -202,18 +220,18 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
   ): Promise<void> {
     const narrow = acc.contour === 'main' ? (acc.correction?.corrected ?? '') : ''
     const start = acc.batchPage
+    const size = batchOf(baseExtra)
     const responses = await Promise.all(
       Array.from({ length: count }, (_, i) =>
-        opts.source({
-          page: start + i,
-          pageSize: batchSize,
-          extra: { ...baseExtra, q: narrow },
-          signal,
-        }),
+        opts.source.fetchPage(
+          { page: start + i, pageSize: size, signal },
+          { ...baseExtra, q: narrow },
+        ),
       ),
     )
+    const record = recordOf(baseExtra)
     for (const res of responses) {
-      applyBatch(acc, res)
+      applyBatch(acc, res, record)
       acc.batchPage += 1
       acc.exhausted = !res.hasNext
     }
@@ -223,6 +241,7 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
     const pageSize = req.pageSize
     const wanted = Math.max(1, Math.floor(req.page))
     const baseExtra: Extra = { ...(req.extra ?? {}) }
+    const batchSize = batchOf(baseExtra) // размер батча — свойство источника
 
     // Коррекция резолвится один раз на аккумулятор.
     if (acc.correction === null && acc.contour === 'main') {
@@ -330,58 +349,130 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
     return { items, hasNext }
   }
 
-  return async (req: PageRequest): Promise<PageResponse<T>> => {
-    const rawQuery = String(req.extra?.q ?? '').trim()
+  return decorateSource<T>({
+    fetchPage: (base, look, extra) => {
+      const req: PageRequest = { page: look.page, pageSize: look.pageSize, signal: look.signal, extra }
+      const rawQuery = String(extra?.q ?? '').trim()
 
-    // Fingerprint буфера включает ВСЕ ключи источника (фильтры и т.п.), кроме
-    // q: другой набор фильтров — другая выдача источника, буфер строится заново.
-    const extraKey = Object.entries(req.extra ?? {})
-      .filter(([k, v]) => k !== 'q' && v !== undefined && v !== null && v !== '')
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, v]) => `${k}=${String(v)}`)
-      .join('\u0001')
-    const key = `${rawQuery}\u0000${req.pageSize}\u0000${extraKey}`
-    if (!state || state.key !== key) state = freshState(key, opts.correct ? 'main' : 'fallback')
-    const acc = state
+      // Fingerprint буфера включает ВСЕ ключи источника (фильтры и т.п.), кроме
+      // q: другой набор фильтров — другая выдача источника, буфер строится заново.
+      const extraKey = Object.entries(extra ?? {})
+        .filter(([k, v]) => k !== 'q' && v !== undefined && v !== null && v !== '')
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([k, v]) => `${k}=${String(v)}`)
+        .join('\u0001')
+      const key = `${rawQuery}\u0000${req.pageSize}\u0000${extraKey}`
+      if (!state || state.key !== key) state = freshState(key, opts.correct ? 'main' : 'fallback')
+      const acc = state
 
-    // Single-flight: replace, prefetch и back/forward делят один буфер и позицию чтения.
-    const prev = acc.lock
-    const job = (async () => {
-      if (prev) await prev.catch(() => undefined)
-      return produce(acc, req, rawQuery)
-    })()
-    acc.lock = job.catch(() => undefined)
-    return job
-  }
+      // Single-flight: replace, prefetch и back/forward делят один буфер и позицию чтения.
+      const prev = acc.lock
+      const job = (async () => {
+        if (prev) await prev.catch(() => undefined)
+        return produce(acc, req, rawQuery)
+      })()
+      acc.lock = job.catch(() => undefined)
+      return job
+    },
+  })(opts.source)
 }
 
 /**
- * Перехватчик источника пагинатора: ПОЛИТИКА контуров поверх
- * createAccumulatingSource. Пустой/короткий запрос и SSR/no-JS — сквозной
- * проход в базовый источник (на сервере — подстрока по сырому q, fuzzy не
- * исполняется); живой клиент с запросом — накопительный контур.
+ * Подключить lib/search к адаптированному источнику: декоратор слоя источника.
+ *
+ * Требование — РАЗРЕШЕНИЕ СКАНИРОВАНИЯ у источника (`scan` в спеке): без него
+ * подключение — ошибка разработчика (fuzzy не на что натягивать, а «включено,
+ * но молча ничего не делает» запрещено инвариантом слоя). Подключённый fuzzy
+ * появляется в возможностях (`fuzzy`), и UI по нему включает тумблер.
+ *
+ * ПОЛИТИКА контуров: пустой/короткий запрос, выключенный тумблер (`gate`) и
+ * SSR/no-JS — сквозной проход в базовый источник (на сервере — подстрока по
+ * сырому q, fuzzy не исполняется); живой клиент с запросом — накопительный
+ * контур. `totalItems` перехват не отдаёт: номерная навигация остаётся
+ * стрелками (R12).
  */
-export function createSearchInterceptor<T>(opts: SearchInterceptorOptions<T>): Source<T> {
+export function withLibSearch<T>(
+  source: AdaptedSource<T>,
+  opts: LibSearchOptions<T> = {},
+): AdaptedSource<T> {
   const minLength = opts.minLength ?? 2
-  const accumulate = createAccumulatingSource(opts)
-  return async (req: PageRequest): Promise<PageResponse<T>> => {
-    const rawQuery = String(req.extra?.q ?? '').trim()
-
-    // Нет запроса → сквозной проход: пагинатор остаётся обычным каталогом.
-    if (!rawQuery) {
-      opts.onCorrection?.(null)
-      opts.onStats?.(null) // перехват неактивен — панель гасит живые счётчики
-      return opts.source(req)
-    }
-    // Короче минимума → каталог без сужения (1 символ не должен резать выдачу).
-    if (rawQuery.length < minLength) {
-      opts.onCorrection?.(null)
-      return opts.source({ ...req, extra: { ...(req.extra ?? {}), q: '' } })
-    }
-    // Контур SSR/no-JS: серверная подстрока по сырому q, fuzzy не исполняется.
-    if (import.meta.env.SSR || typeof window === 'undefined') {
-      return opts.source(req)
-    }
-    return accumulate(req)
+  // Коррекция опечаток: либо её дал потребитель, либо lib/search берёт СЛОВАРЬ
+  // у самого источника (`dictionary` в спеке `defineSource`) — корректор при
+  // этом строится один раз и лениво, а роут не дублирует ни загрузку, ни разбор.
+  const lazyCorrector = !opts.correct && source.dictionary
+    ? createLazyCorrector(() => source.dictionary!())
+    : null
+  const correct: SearchInterceptorOptions<T>['correct'] =
+    opts.correct ??
+    (lazyCorrector
+      ? async (query) => {
+          const corrector = await lazyCorrector()
+          if (!corrector) return null
+          const result = corrector.correct(query)
+          const corrected = result.correctedQuery.trim()
+          if (!corrected) return null
+          return { query, corrected, changed: result.changed }
+        }
+      : undefined)
+  const config: SearchInterceptorOptions<T> = {
+    ...opts,
+    source,
+    minLength,
+    ...(correct ? { correct } : {}),
   }
+  const accumulate = createAccumulatingSource<T>(config)
+
+  /** Разрешение сканирования — обязательное условие подключения. */
+  const assertScannable = (extra?: Extra): void => {
+    if (source.capabilitiesFor(extra).scan) return
+    throw new Error(
+      `lib/search: источник «${source.name}» не разрешает сканирование — добавьте \`scan\` в спеку ` +
+        `defineSource(...) либо не подключайте withLibSearch к нему.`,
+    )
+  }
+
+  const inactive = (): void => {
+    opts.onCorrection?.(null)
+    opts.onStats?.(null) // перехват неактивен — панель гасит живые счётчики
+  }
+
+  return decorateSource<T>({
+    capabilitiesFor: (base, extra) => {
+      assertScannable(extra)
+      const caps = base.capabilitiesFor(extra)
+      return {
+        ...caps,
+        fuzzy: {
+          minLength,
+          ...(caps.scan?.batchSize !== undefined ? { batchSize: caps.scan.batchSize } : {}),
+        },
+      }
+    },
+    fetchPage: (base, look, extra) => {
+      assertScannable(extra)
+      // Тумблер потребителя (демо: `ls`): выключен — источник отдаёт каталог как есть.
+      if (opts.gate && extra?.[opts.gate] === false) {
+        inactive()
+        return base.fetchPage(look, extra)
+      }
+      const rawQuery = String(extra?.q ?? '').trim()
+
+      // Нет запроса → сквозной проход: пагинатор остаётся обычным каталогом.
+      if (!rawQuery) {
+        inactive()
+        return base.fetchPage(look, extra)
+      }
+      // Короче минимума → каталог без сужения (1 символ не должен резать выдачу).
+      if (rawQuery.length < minLength) {
+        opts.onCorrection?.(null)
+        return base.fetchPage(look, { ...(extra ?? {}), q: '' })
+      }
+      // Контур SSR/no-JS: серверная подстрока по сырому q, fuzzy не исполняется.
+      if (isServerSide()) return base.fetchPage(look, extra)
+      // Словаря нет — подписи коррекции неоткуда взяться: гасим её (и живую
+      // статистику заодно), чтобы подпись прошлого источника не залипала.
+      if (!correct) inactive()
+      return accumulate.fetchPage(look, extra)
+    },
+  })(source)
 }

@@ -29,30 +29,33 @@ import {
   type AnimesPage,
 } from '../../content/shikimori'
 import {
-  createLazyCorrector,
-  createSearchInterceptor,
   reportSearchCorrection,
   searchQueryValidator,
-  type QueryCorrector,
+  withLibSearch,
   type SearchCorrectionInfo,
   type SearchInterceptStats,
 } from '$lib/search'
 import {
+  composeSources,
   createLocalStorageStorage,
   createUrlAdapter,
   definePaginator,
+  defineSource,
   extraField,
   hasPaginator,
+  withSearchGate,
+  withTotalsGate,
+  type AdaptedSource,
   type EdgeTrigger,
   type Extra,
   type ExtraSearchSpec,
   type ExtraValue,
-  type PageRequest,
   type PageResponse,
   type PrependBehavior,
-  type Source,
+  type SourceLook,
+  type SourceRecordSpec,
 } from '$lib/paginate'
-import { catalogTexts, type CatalogItem } from './item-views'
+import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
 
 export type DemoStore = 'url' | 'local' | 'none'
 
@@ -214,11 +217,11 @@ export function setLiveServerTransport(transport: LiveTransport | null): void {
 }
 
 /** Страница живого каталога: сервер — напрямую в API, браузер — через свой бэкенд. */
-async function loadAnimePage(req: PageRequest, q: string): Promise<PageResponse<CatalogItem>> {
-  const query = { page: req.page, limit: req.pageSize, ...(q ? { search: q } : {}) }
+async function loadAnimePage(look: SourceLook, q: string): Promise<PageResponse<CatalogItem>> {
+  const query = { page: look.page, limit: look.pageSize, ...(q ? { search: q } : {}) }
   const res = liveTransport
     ? await liveTransport.fetchPage(query)
-    : await getAnimesPage({ ...query, signal: req.signal })
+    : await getAnimesPage({ ...query, signal: look.signal })
   // Числа страниц Shikimori API не отдаёт: только «страница пришла полной».
   return { items: res.items, hasNext: res.hasNext }
 }
@@ -250,68 +253,61 @@ function publishStats(name: string, stats: SearchInterceptStats | null): void {
 }
 
 /**
- * БАЗОВЫЙ источник страниц: «дай страницу N размера M» у выбранного источника.
- *
- * - products/photos — локальные данные демо, `q` не понимают (родного поиска
- *   нет; поиск по ним возможен только слоем lib search);
- * - animes — Shikimori API: `q` уезжает ОТДЕЛЬНЫМ полем `search` (не в
- *   фильтры), номер страницы — `page`, размер — `limit` (≤ 50).
+ * Паспорт записи каталога — ОДИН на все три источника демо: как читать любую
+ * запись (id, заголовок, тексты) знает слой источника, а не потребитель. По
+ * нему lib/search ранжирует и дедуплицирует, а вьюхи берут заголовки.
  */
-const baseSource: Source<CatalogItem> = async (req: PageRequest): Promise<PageResponse<CatalogItem>> => {
-  const cfg = demoExtraOf(req.extra ?? {})
-  // Опция `srch` — про РОДНОЙ поиск источника: выключена → запрос до API не
-  // доходит (каталог как есть), но сам `q` остаётся в extra и доступен слою
-  // lib search — тот тогда сканирует каталог БЕЗ сужения источника.
-  if (cfg.src === 'animes') return loadAnimePage(req, cfg.srch ? demoQueryOf(req.extra) : '')
-  const r = await getItemsPage({ kind: cfg.src, page: req.page, pageSize: req.pageSize })
-  if (cfg.total) {
-    return { items: r.items, totalItems: r.totalItems, totalPages: r.totalPages }
-  }
-  return { items: r.items, hasNext: req.page * req.pageSize < (r.totalItems ?? 0) }
+const catalogRecord: SourceRecordSpec<CatalogItem> = {
+  id: (item) => String(item.id),
+  title: catalogTitle,
+  texts: catalogTexts,
 }
 
-/** Словарь коррекции собирает backend одной пачкой (живые страницы популярности). */
-const loadCorrector = createLazyCorrector(() => getShikimoriTerms())
+/**
+ * Локальный источник демо (товары/фото): данные лежат в памяти целиком,
+ * поэтому сканирование разрешено (`scan` — батч по умолчанию), totals есть.
+ * Родного поиска у него пока нет: наличие поиска объявляет САМ источник
+ * (`search` в спеке), и до этого момента `q` до данных не доезжает.
+ */
+function createLocalItemsSource(kind: 'products' | 'photos'): AdaptedSource<CatalogItem> {
+  return defineSource<CatalogItem>({
+    name: kind,
+    record: catalogRecord,
+    scan: {},
+    totals: true,
+    data: async ({ page, pageSize, signal }) => {
+      const r = await getItemsPage({ kind, page, pageSize, signal })
+      return {
+        items: r.items,
+        totalItems: r.totalItems,
+        totalPages: r.totalPages,
+        hasNext: page * pageSize < (r.totalItems ?? 0),
+      }
+    },
+  })
+}
 
 /**
- * Перехватчик lib search — ОДИН НА ИМЯ пагинатора (у перехватчика своё
- * состояние: буфер, водяной знак, «замороженные» страницы; делить его между
- * хранилищами нельзя) и всегда в цепочке: работает только при `ls` и непустом
- * `q`, иначе — сквозной проход к базовому источнику (пустой запрос, SSR/no-JS,
- * выключенный тумблер дают выдачу источника как есть).
+ * Живой каталог Shikimori как источник: родной поиск (`q` уезжает ОТДЕЛЬНЫМ
+ * полем `search`, не в фильтры), разрешение сканирования (лимит выдачи за один
+ * запрос = размер батча lib/search: больше сервис молча режет до 50) и словарь
+ * терминов для коррекции опечаток. Totals Shikimori не отдаёт — номерной
+ * навигации у него нет (R12: только стрелки).
  *
- * Fuzzy — метод сопоставления, страницы добирает lib search (батчи). Коррекция
- * опечаток — по словарю Shikimori, поэтому включается только для этого
- * источника; товары/фото ранжируются без коррекции (fallback-сканирование).
+ * Тумблер `srch` — декоратор `withSearchGate`: при выключенном родном поиске
+ * источник получает пустой `q` (каталог как есть), но сам `q` остаётся в extra
+ * и доступен lib/search — сканирование без сужения источником.
  */
-function makeIntercepted(name: string, srcOf: () => DemoSrc): Source<CatalogItem> {
-  return createSearchInterceptor<CatalogItem>({
-    source: baseSource,
-    id: (record) => String(record.id),
-    // Батч = предел выдачи Shikimori за один запрос: больше сервис молча режет
-    // до 50, и «неполная страница» врёт про исчерпание каталога. Исчерпание
-    // перехватчик читает из `hasNext` источника, а не из длины батча.
-    batchSize: SHIKIMORI_LIMIT_MAX,
-    // Тексты записи — общий хелпер вьюх: для Shikimori это романдзи + русское
-    // название (и то и другое человек видит в списке и набирает в поиске).
-    texts: catalogTexts,
-    correct: async (query): Promise<SearchCorrectionInfo | null> => {
-      // Fuzzy/коррекция НИКОГДА не выполняются на сервере, и словарь есть
-      // только у Shikimori: товары/фото ранжируются без коррекции.
-      if (import.meta.env?.SSR) return null
-      if (srcOf() !== 'animes') return null
-      const corrector: QueryCorrector | null = await loadCorrector()
-      if (!corrector) return null
-      const result = corrector.correct(query)
-      const corrected = result.correctedQuery.trim()
-      if (!corrected) return null
-      return { query, corrected, changed: result.changed }
-    },
-    // Подпись «искали X → показываем Y» кладётся в реестр lib search — её читает
-    // `useSearchCorrection(name)` из `$lib/search/svelte` (имя = имя пагинатора).
-    onCorrection: (info) => reportSearchCorrection(name, info),
-    onStats: (stats) => publishStats(name, stats),
-  })
+function createAnimesSource(): AdaptedSource<CatalogItem> {
+  return defineSource<CatalogItem>({
+    name: 'animes',
+    record: catalogRecord,
+    search: { minLength: 2 },
+    scan: { batchSize: SHIKIMORI_LIMIT_MAX },
+    totals: false,
+    dictionary: () => getShikimoriTerms(),
+    data: (look, input) => loadAnimePage(look, input.q),
+  }).with(withSearchGate({ gate: 'srch' }))
 }
 
 /**
@@ -326,22 +322,39 @@ function makeIntercepted(name: string, srcOf: () => DemoSrc): Source<CatalogItem
  *              перехватчик сканирует его без сужения (медленнее, но находит).
  *   выкл  выкл поиска нет вовсе: обычный каталог.
  *
- * Перехватчик всегда в цепочке (как у канона): при пустом `q` он и сам уходит
- * в сквозной проход.
+ * Кто что объявляет:
+ *  • `srch` гаснет у источников без родного поиска (см. `capabilities.search`);
+ *  • `ls` — подключение lib/search (декоратор `withLibSearch`, ключ-тумблер
+ *    `gate`): без подключения `fuzzy` в возможностях нет, и панель гасит опцию;
+ *  • `total` — декоратор `withTotalsGate`: тумблер снимает totals у ответа, и
+ *    возможности честно объявляют `totals: false` (номера страниц гаснут).
+ * Сама логика страницы/перехвата/ошибок — одна на все миры: их различает
+ * слой источника, а не ветки потребителя.
  */
-function makeSource(name: string): Source<CatalogItem> {
-  // Текущий источник нужен корректору словаря: он осмыслен только для Shikimori.
-  let currentSrc: DemoSrc = DEFAULT_DEMO_EXTRA.src
-  const intercepted = makeIntercepted(name, () => currentSrc)
-  return (req: PageRequest): Promise<PageResponse<CatalogItem>> => {
-    const cfg = demoExtraOf(req.extra ?? {})
-    currentSrc = cfg.src
-    if (!cfg.ls) {
-      publishStats(name, null)
-      return baseSource(req)
-    }
-    return intercepted(req)
+function makeSource(name: string): AdaptedSource<CatalogItem> {
+  // Каналы панели: статистика перехвата и подпись коррекции. Корректор словаря
+  // строит lib/search из `dictionary` САМОГО источника — те же каналы несут
+  // оба контура, а у источника без словаря подпись просто гаснет.
+  const channels = {
+    onStats: (stats: SearchInterceptStats | null) => publishStats(name, stats),
+    onCorrection: (info: SearchCorrectionInfo | null) => reportSearchCorrection(name, info),
   }
+  return composeSources<CatalogItem>(
+    {
+      // Товары: локальные данные + lib/search поверх (fuzzy-скан по названию) —
+      // источник объявляет `scan`, поэтому слайдер `ls` у него осмыслен.
+      products: withLibSearch(
+        createLocalItemsSource('products').with(withTotalsGate({ gate: 'total' })),
+        { gate: 'ls', ...channels },
+      ),
+      // Фото — «просто данные»: ни родного поиска, ни сканирования, ни
+      // фильтров. Возможностей нет — панель гасит опции поиска и поле запроса
+      // (не «включено вхолостую», а честно недоступно).
+      photos: createLocalItemsSource('photos').with(withTotalsGate({ gate: 'total' })),
+      animes: withLibSearch(createAnimesSource(), { gate: 'ls', ...channels }),
+    },
+    { name, select: (extra) => demoExtraOf(extra ?? {}).src },
+  )
 }
 
 /** Get-or-create: зарегистрировать пагинатор под способ хранения и вернуть его имя. */
@@ -389,10 +402,22 @@ export function galleryExtraOf(extra: Extra): GalleryExtra {
   return { cols: (cols as GalleryExtra['cols'] | undefined) ?? 'auto' }
 }
 
-const gallerySource: Source<CatalogItem> = async ({ page, pageSize }: PageRequest) => {
-  const r = await getItemsPage({ kind: 'photos', page, pageSize })
-  return { items: r.items, totalItems: r.totalItems, totalPages: r.totalPages }
-}
+/** Галерея — тот же локальный источник демо, но без тумблеров опций панели. */
+const gallerySource: AdaptedSource<CatalogItem> = defineSource<CatalogItem>({
+  name: 'gallery',
+  record: catalogRecord,
+  scan: {},
+  totals: true,
+  data: async ({ page, pageSize, signal }) => {
+    const r = await getItemsPage({ kind: 'photos', page, pageSize, signal })
+    return {
+      items: r.items,
+      totalItems: r.totalItems,
+      totalPages: r.totalPages,
+      hasNext: page * pageSize < (r.totalItems ?? 0),
+    }
+  },
+})
 
 export function ensureGalleryPaginator(): string {
   if (hasPaginator(GALLERY_NAME)) return GALLERY_NAME

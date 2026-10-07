@@ -1,4 +1,5 @@
 import { createMemoryStorage } from './storage'
+import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
 import type {
   AdapterInit,
   Extra,
@@ -15,6 +16,14 @@ export type CursorSource<T> = {
     offsetRecovery: boolean
     stableAcrossSessions: boolean
   }
+  /**
+   * Возможности источника глазами UI — тем же контрактом, что у адаптированного
+   * источника (`$lib/paginate/source`). Необязательны: курсорные источники
+   * объявляют объём позже (приводятся к `AdaptedSource` отдельной задачей).
+   */
+  capabilitiesFor?(extra: Extra): SourceCapabilities
+  /** Ключи extra, которые понимает источник. */
+  extraKeys?(): readonly string[]
   load(input: {
     cursor?: string
     limit: number
@@ -186,5 +195,7 @@ export function createCursorAdapter<T>(options: {
       })
     },
     capabilities: { append: options.append ?? true },
+    capabilitiesFor: (extra) => options.source.capabilitiesFor?.(extra) ?? EMPTY_CAPABILITIES,
+    extraKeys: options.source.extraKeys ? () => options.source.extraKeys!() : undefined,
   }
 }

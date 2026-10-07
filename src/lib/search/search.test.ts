@@ -4,21 +4,63 @@
  * через ИМПОРТ модулей (не строковые пины исходников).
  *
  * Намеренно НЕ здесь: водяной знак/дедуп/сброс по fingerprint перехваченного
- * накопителя. Fuzzy-контур в `createSearchInterceptor` по архитектуре только
- * клиентский (под `import.meta.env.SSR || typeof window === 'undefined'` идёт
- * серверная подстрока) — в node он и не должен исполняться, поэтому его место
- * в браузерном сценарии. Здесь SSR-граница перехвата пинится поведенчески
- * (ниже), а сам накопитель тестируется напрямую — `createAccumulatingSource`
- * средовых гардов не имеет.
+ * накопителя. Fuzzy-контур в `withLibSearch` по архитектуре только клиентский
+ * (на сервере — `isServerSide()` — идёт серверная подстрока источника) — в node
+ * он и не должен исполняться, поэтому его место в браузерном сценарии. Здесь
+ * SSR-граница подключения пинится поведенчески (ниже), а сам накопитель
+ * тестируется напрямую — `createAccumulatingSource` средовых гардов не имеет.
+ *
+ * Источники теста строятся слоем (`defineSource`) — как и в приложении: иначе
+ * пагинатор такой источник не примет, и проверять было бы нечего.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import * as fuzzy from './fuzzy'
-import { createAccumulatingSource, createSearchInterceptor } from './accumulator'
+import { createAccumulatingSource, withLibSearch, type LibSearchOptions } from './accumulator'
 import { defineSearch, getSearch, hasSearch, resetSearchRegistry, searchAddressSpec } from './registry'
 import { normalizeSearchQuery } from './core'
-import { getPaginator, hasPaginator, resetRegistry, type Extra, type PageRequest, type PageResponse } from '../paginate'
+import {
+  defineSource,
+  getPaginator,
+  hasPaginator,
+  resetRegistry,
+  type AdaptedSource,
+  type Extra,
+  type PageRequest,
+  type PageResponse,
+  type SourceRecordSpec,
+} from '../paginate'
 
 type Rec = { id: string; title: string }
+
+/**
+ * Источник теста: данные + паспорт записи через слой источника. Записанный
+ * вызов собирается обратно в форму `PageRequest` — проверки «что доехало до
+ * данных» читаются как раньше, но идут честным путём слоя (объявленный `q` и
+ * объявленные фильтры; необъявленные ключи слой отсекает).
+ */
+function testSource(
+  data: (req: PageRequest) => Promise<PageResponse<Rec>>,
+  over: {
+    scan?: { batchSize?: number }
+    filters?: readonly string[]
+    record?: SourceRecordSpec<Rec>
+  } = {},
+): AdaptedSource<Rec> {
+  return defineSource<Rec>({
+    name: 'test-source',
+    record: over.record ?? { id: (r) => r.id, title: (r) => r.title, texts: (r) => [r.title] },
+    scan: over.scan ?? {},
+    search: { minLength: 1 },
+    ...(over.filters ? { filters: over.filters } : {}),
+    data: (look, input) =>
+      data({
+        page: look.page,
+        pageSize: look.pageSize,
+        signal: look.signal,
+        extra: { q: input.q, ...input.filters },
+      }),
+  })
+}
 
 afterEach(() => {
   resetSearchRegistry()
@@ -166,21 +208,21 @@ describe('скоринг и ранжирование', () => {
 
 describe('перехватчик источника', () => {
   const base = (calls: PageRequest[], recs: Rec[] = [{ id: 'x', title: 'Наруто' }]) => {
-    return async (req: PageRequest): Promise<PageResponse<Rec>> => {
-      calls.push(req)
-      return { items: recs, hasNext: false }
-    }
+    return testSource(
+      async (req) => {
+        calls.push(req)
+        return { items: recs, hasNext: false }
+      },
+      { filters: ['kind'] },
+    )
   }
 
   it('SSR/no-JS-контур: запрос проходит в источник как есть (без батча 500)', async () => {
     const calls: PageRequest[] = []
-    const source = createSearchInterceptor<Rec>({
-      id: (r) => r.id,
-      texts: (r) => [r.title],
+    const source = withLibSearch<Rec>(base(calls), {
       correct: async () => ({ query: 'нарута', corrected: 'наруто', changed: true }),
-      source: base(calls),
     })
-    const res = await source({ page: 3, pageSize: 20, extra: { q: 'нарута', kind: 'tv' } })
+    const res = await source.fetchPage({ page: 3, pageSize: 20 }, { q: 'нарута', kind: 'tv' })
     expect(res.items.length).toBe(1)
     expect(calls.length).toBe(1) // без накопительных батчей
     expect(calls[0].page).toBe(3) // страница зовущего — не перезапрос с первой
@@ -191,10 +233,10 @@ describe('перехватчик источника', () => {
 
   it('пустой и короче minLength запрос — сквозной каталог', async () => {
     const calls: PageRequest[] = []
-    const source = createSearchInterceptor<Rec>({ id: (r) => r.id, texts: (r) => [r.title], source: base(calls) })
-    await source({ page: 1, pageSize: 20, extra: { q: '   ' } })
-    await source({ page: 1, pageSize: 20, extra: { q: 'н' } })
-    await source({ page: 1, pageSize: 20, extra: {} })
+    const source = withLibSearch<Rec>(base(calls))
+    await source.fetchPage({ page: 1, pageSize: 20 }, { q: '   ' })
+    await source.fetchPage({ page: 1, pageSize: 20 }, { q: 'н' })
+    await source.fetchPage({ page: 1, pageSize: 20 })
     expect(calls.length).toBe(3)
     expect(calls[1].extra?.q).toBe('') // одиночный символ не должен резать выдачу
   })
@@ -219,25 +261,29 @@ describe('накопитель: бюджет, потолок, параллель
       return { items, hasNext: page < pages }
     }
 
-  const opts = (source: (req: PageRequest) => Promise<PageResponse<Rec>>, over: Record<string, unknown> = {}) => ({
-    id: (r: Rec) => r.id,
-    texts: (r: Rec) => [r.title],
-    source,
-    ...over,
-  })
+  /**
+   * Накопитель поверх источника теста. Размер батча теперь объявляет САМ
+   * источник (`scan.batchSize`) — опций `id`/`texts`/`batchSize` у перехвата
+   * больше нет: паспорт записи и батч приезжают из слоя источника.
+   */
+  const accumulating = (
+    data: (req: PageRequest) => Promise<PageResponse<Rec>>,
+    over: Omit<LibSearchOptions<Rec>, 'source'> & { batchSize?: number } = {},
+  ) => {
+    const { batchSize, ...rest } = over
+    return createAccumulatingSource<Rec>({ source: testSource(data, { scan: { batchSize } }), ...rest })
+  }
 
   it('deep-link за базовым бюджетом: оценка поднимает бюджет до цели (один вызов)', async () => {
     let calls = 0
-    const source = createAccumulatingSource<Rec>(
-      opts(
-        async (req) => {
-          calls += 1
-          return pagedSource(60)(req)
-        },
-        { batchSize: 10, maxBatchesPerCall: 2, maxBatchesDeepLink: 60, parallelBatches: 2 },
-      ),
+    const source = accumulating(
+      async (req) => {
+        calls += 1
+        return pagedSource(60)(req)
+      },
+      { batchSize: 10, maxBatchesPerCall: 2, maxBatchesDeepLink: 60, parallelBatches: 2 },
     )
-    const res = await source({ page: 10, pageSize: 20, extra: { q: 'запись' } })
+    const res = await source.fetchPage({ page: 10, pageSize: 20 }, { q: 'запись' })
     expect(res.items.length).toBe(20) // страница 10 собрана ЗА ОДИН вызов
     expect(res.hasNext).toBe(true)
     expect(calls).toBeGreaterThan(8)
@@ -246,17 +292,15 @@ describe('накопитель: бюджет, потолок, параллель
 
   it('за потолком бюджета: честная пустота с hasNext, продолжение накапливает', async () => {
     let calls = 0
-    const source = createAccumulatingSource<Rec>(
-      opts(
-        async (req) => {
-          calls += 1
-          return pagedSource(60)(req)
-        },
-        { batchSize: 10, maxBatchesPerCall: 2, maxBatchesDeepLink: 5, parallelBatches: 1 },
-      ),
+    const source = accumulating(
+      async (req) => {
+        calls += 1
+        return pagedSource(60)(req)
+      },
+      { batchSize: 10, maxBatchesPerCall: 2, maxBatchesDeepLink: 5, parallelBatches: 1 },
     )
     // Страница 10 требует ~201 ранжированную запись: за вызов не добраться.
-    let res = await source({ page: 10, pageSize: 20, extra: { q: 'запись' } })
+    let res = await source.fetchPage({ page: 10, pageSize: 20 }, { q: 'запись' })
     expect(res.items.length).toBe(0)
     expect(res.hasNext).toBe(true) // но это НЕ конец: пустота с hasNext — «ищем ещё»
     const afterFirst = calls
@@ -264,7 +308,7 @@ describe('накопитель: бюджет, потолок, параллель
     // «Продолжить поиск» = повторный запрос той же страницы: бюджет свежий,
     // позиция чтения сохранена — аккумулятор НЕ начинает с нуля.
     for (let i = 0; i < 4 && res.items.length === 0; i++) {
-      res = await source({ page: 10, pageSize: 20, extra: { q: 'запись' } })
+      res = await source.fetchPage({ page: 10, pageSize: 20 }, { q: 'запись' })
     }
     expect(res.items.length).toBe(20)
     expect(calls).toBeGreaterThan(afterFirst)
@@ -274,14 +318,22 @@ describe('накопитель: бюджет, потолок, параллель
   it('параллельная группа ≡ последовательной раскачке (детерминизм выдачи)', async () => {
     const trackA = { inFlight: 0, maxInFlight: 0 }
     const trackB = { inFlight: 0, maxInFlight: 0 }
-    const sequential = createAccumulatingSource<Rec>(
-      opts(pagedSource(40, trackA), { batchSize: 10, maxBatchesPerCall: 50, maxBatchesDeepLink: 50, parallelBatches: 1 }),
-    )
-    const parallel = createAccumulatingSource<Rec>(
-      opts(pagedSource(40, trackB), { batchSize: 10, maxBatchesPerCall: 50, maxBatchesDeepLink: 50, parallelBatches: 4 }),
-    )
-    const req = { page: 3, pageSize: 20, extra: { q: 'запись' } }
-    const [a, b] = await Promise.all([sequential(req), parallel(req)])
+    const sequential = accumulating(pagedSource(40, trackA), {
+      batchSize: 10,
+      maxBatchesPerCall: 50,
+      maxBatchesDeepLink: 50,
+      parallelBatches: 1,
+    })
+    const parallel = accumulating(pagedSource(40, trackB), {
+      batchSize: 10,
+      maxBatchesPerCall: 50,
+      maxBatchesDeepLink: 50,
+      parallelBatches: 4,
+    })
+    const [a, b] = await Promise.all([
+      sequential.fetchPage({ page: 3, pageSize: 20 }, { q: 'запись' }),
+      parallel.fetchPage({ page: 3, pageSize: 20 }, { q: 'запись' }),
+    ])
     expect(b.items.map((r) => r.id)).toEqual(a.items.map((r) => r.id))
     expect(trackA.maxInFlight).toBe(1) // последовательная — один запрос в полёте
     expect(trackB.maxInFlight).toBeGreaterThan(1) // параллельная — несколько
@@ -289,19 +341,62 @@ describe('накопитель: бюджет, потолок, параллель
 
   it('группа не качает лишнего: батчей ровно по потребности', async () => {
     let calls = 0
-    const source = createAccumulatingSource<Rec>(
-      opts(
-        async (req) => {
-          calls += 1
-          return pagedSource(60)(req)
-        },
-        { batchSize: 10, maxBatchesPerCall: 8, maxBatchesDeepLink: 32, parallelBatches: 4 },
-      ),
+    const source = accumulating(
+      async (req) => {
+        calls += 1
+        return pagedSource(60)(req)
+      },
+      { batchSize: 10, maxBatchesPerCall: 8, maxBatchesDeepLink: 32, parallelBatches: 4 },
     )
     // Страница 1 (pageSize 20): цель 21 запись = 3 батча по 10 — не 4.
-    const res = await source({ page: 1, pageSize: 20, extra: { q: 'запись' } })
+    const res = await source.fetchPage({ page: 1, pageSize: 20 }, { q: 'запись' })
     expect(res.items.length).toBe(20)
     expect(calls).toBe(3)
+  })
+})
+
+describe('подключение lib/search к источнику (слой источника)', () => {
+  const scanSource = (calls: PageRequest[], over: { scan?: { batchSize?: number } } = {}) =>
+    testSource(
+      async (req) => {
+        calls.push(req)
+        return { items: [{ id: 'x', title: 'Наруто' }], hasNext: false }
+      },
+      { scan: over.scan ?? {} },
+    )
+
+  it('без разрешения сканирования подключение не работает (ошибка разработчика)', async () => {
+    const noScan = defineSource<Rec>({
+      name: 'no-scan',
+      record: { id: (r) => r.id, title: (r) => r.title, texts: (r) => [r.title] },
+      data: async () => ({ items: [], hasNext: false }),
+    })
+    const broke = withLibSearch(noScan)
+    expect(() => broke.capabilitiesFor()).toThrow(/не разрешает сканирование/)
+    await expect(broke.fetchPage({ page: 1, pageSize: 10 }, { q: 'наруто' })).rejects.toThrow(
+      /не разрешает сканирование/,
+    )
+  })
+
+  it('fuzzy в возможностях, размер батча — от источника, q в паспорте ключей', () => {
+    const withSize = withLibSearch(scanSource([], { scan: { batchSize: 50 } }))
+    expect(withSize.capabilitiesFor().fuzzy).toEqual({ minLength: 2, batchSize: 50 })
+    expect(withSize.capabilitiesFor().scan).toEqual({ batchSize: 50 }) // разрешение остаётся видно
+    expect(withSize.extraKeys()).toEqual(['q'])
+    const withoutSize = withLibSearch(scanSource([]))
+    expect(withoutSize.capabilitiesFor().fuzzy).toEqual({ minLength: 2 }) // дефолт батча — за слоем
+    expect(withoutSize.capabilitiesFor().totals).toBe(false)
+  })
+
+  it('тумблер `gate`: выключен — источник отвечает как обычно, перехвата нет', async () => {
+    const calls: PageRequest[] = []
+    const source = withLibSearch(scanSource(calls), { gate: 'ls' })
+    const res = await source.fetchPage({ page: 2, pageSize: 10 }, { q: 'наруто', ls: false })
+    expect(calls.length).toBe(1)
+    expect(calls[0].page).toBe(2) // страница зовущего: накопительных батчей нет
+    expect(res.items.length).toBe(1)
+    // Возможность не исчезает от тумблера: панель по-прежнему может её включить.
+    expect(source.capabilitiesFor({ ls: false }).fuzzy).toEqual({ minLength: 2 })
   })
 })
 
@@ -312,10 +407,10 @@ describe('реестр и действия', () => {
       name: 'demo-search',
       pageParam: 'search',
       pageSize: 10,
-      source: async (req) => {
+      source: testSource(async (req) => {
         seen = req.extra ?? {}
         return { items: [{ id: 'x', title: 'Наруто' }], hasNext: false }
-      },
+      }),
     })
     expect(instance.pageParam).toBe('search')
     expect(instance.queryKey).toBe('q')

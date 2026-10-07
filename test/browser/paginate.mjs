@@ -9,8 +9,10 @@
  *  5. Догрузка сверху (prepend);
  *  6. Персист настроек в URL (?page, ?page.size, ?page.<key>) и localStorage;
  *  7. Восстановление настроек при шеринге ссылки (включая SSR);
- *  8. Два независимых URL-пагинатора на одной странице (?page.* и ?gallery.*);
- *  9. Скелетоны подгрузки (список/колонки, append/prepend) и отсутствие дубля
+ *  8. Возможности источника гасят опции панели (у фото поиска нет — опции
+ *     и поле запроса погашены, число страниц работает);
+ *  9. Два независимых URL-пагинатора на одной странице (?page.* и ?gallery.*);
+ * 10. Скелетоны подгрузки (список/колонки, append/prepend) и отсутствие дубля
  *     строки «Загрузка страницы N…», когда скелетоны выключены.
  *
  * Запуск:
@@ -485,6 +487,48 @@ async function run() {
     if (!search().includes('gallery.size=24') || !search().includes('page=11'))
       throw new Error(`gallery.size → URL: ${search()}`);
     console.log('  ok  панель настроек галереи вне хоста пишет свой префикс');
+
+    // ── Возможности источника гасят опции панели ────────────────────────────
+    console.log('— Возможности источника в панели —');
+    const field = (n) =>
+      page.locator(`[data-testid="demo-panel"] input[name="page.${n}"][type="checkbox"]`);
+    await page.goto(`${U}?page.src=photos`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="photo-"]').length > 0, {
+      timeout: 15000,
+    });
+    // Фото — «просто данные»: ни родного поиска, ни подключённого lib/search.
+    // Опции поиска и поле запроса погашены (включить нечего), а число страниц
+    // источник отдаёт — эта опция работает.
+    if (!(await field('srch').isDisabled()))
+      throw new Error('у источника без поиска опция родного поиска должна быть погашена');
+    if (!(await field('ls').isDisabled()))
+      throw new Error('у источника без lib/search опция fuzzy должна быть погашена');
+    if (await field('total').isDisabled())
+      throw new Error('у источника с totals опция числа страниц должна работать');
+    if (!(await page.locator('[data-testid="search-input"]').isDisabled()))
+      throw new Error('когда искать нечем, поле запроса должно быть погашено');
+    console.log('  ok  фото: опции поиска и lib/search погашены, поле запроса погашено, totals работает');
+
+    // Товары: lib/search подключён и сканирование разрешено — опция `ls`
+    // работает, родного поиска у источника пока нет — `srch` погашен.
+    await page.goto(`${U}?page.src=products`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length > 0, {
+      timeout: 15000,
+    });
+    if (!(await field('srch').isDisabled()))
+      throw new Error('у товаров без родного поиска опция srch должна быть погашена');
+    if (await field('ls').isDisabled())
+      throw new Error('у товаров с разрешённым сканированием опция lib/search должна работать');
+    if (!(await field('total').isDisabled()) === false)
+      throw new Error('у товаров с totals опция числа страниц должна работать');
+    console.log('  ok  товары: lib/search работает (scan есть), родной поиск погашен (его нет)');
+
+    // Погашенные опции не пишутся в адрес: ключ домена не «протекает» из панели
+    // мимо возможности источника (setExtra отклоняет необъявленный ключ).
+    const leak = await page.evaluate(() => window.location.search);
+    if (leak.includes('page.ls') || leak.includes('page.srch'))
+      throw new Error(`погашенные опции попали в адрес: ${leak}`);
+    console.log('  ok  погашенные опции в адрес не пишутся');
 
     console.log(
       '\n✅ Браузерный тест в Chromium пройден: скролл окна стабилен, персист настроек работает',

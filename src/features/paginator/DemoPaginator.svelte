@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
+  import { featureGates, getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
   import {
     EdgeSentinel,
     PaginatorHost,
@@ -77,11 +77,16 @@
       key: 'srch',
       label: 'Родной поиск источника (q → search)',
       type: 'toggle',
+      // Источник сам объявляет, умеет ли он искать (capabilities.search):
+      // у товаров и фото родного поиска нет — опция гаснет, а не «включается вхолостую».
+      requires: 'nativeSearch',
     },
     {
       key: 'ls',
       label: 'lib/search поверх источника (fuzzy)',
       type: 'toggle',
+      // Опция осмысленна там, где lib/search ПОДКЛЮЧЁН к источнику (capabilities.fuzzy).
+      requires: 'libSearch',
     },
     { type: 'divider', label: 'Раскладка и режим' },
     {
@@ -146,8 +151,11 @@
       key: 'total',
       label: 'Известное число страниц',
       type: 'toggle',
-      // У Shikimori числа страниц нет by design: API не отдаёт ни `Link`, ни счётчика.
-      enabledWhen: (v) => v.src !== 'animes',
+      // Тумблер гасит totals в ответе источника (`withTotalsGate`) — значит
+      // осмысленен только там, где источник totals вообще отдаёт. У Shikimori
+      // их нет by design (API не отдаёт ни `Link`, ни счётчика) — источник их
+      // не объявляет, и опция гаснет сама, без знания потребителя об имени источника.
+      requires: 'totals',
     },
     { key: 'skel', label: 'Скелетоны', type: 'toggle', jsOnly: true },
     { key: 'ind', label: 'Плавающий индикатор загрузки', type: 'toggle', jsOnly: true },
@@ -215,6 +223,8 @@
 
   const cfg = $derived.by((): DemoExtra => demoExtraOf(pagState().extra))
   const query = $derived(demoQueryOf(pagState().extra))
+  /** Возможности текущего источника: панель и подсказки следуют им, а не имени `src`. */
+  const gates = $derived(featureGates(pagState().capabilities))
 
   /** Живая статистика перехвата lib search (канал источника, не реестра). */
   let stats = $state<SearchInterceptStats | null>(null)
@@ -281,16 +291,27 @@
     </PaginatorSettings>
 
     <div class="mb-5 rounded-xl border border-border bg-card p-4 shadow-sm">
-      <SearchQueryForm {name} path="page.q" disabled={!cfg.srch} />
+      <!--
+        Поле запроса гаснет, когда запрос некуда применить: механизм поиска
+        либо не объявлен источником (`gates`), либо выключен своим тумблером.
+        Оба слоя независимы: lib/search работает и при выключенном родном.
+      -->
+      <SearchQueryForm
+        {name}
+        path="page.q"
+        disabled={!(gates.nativeSearch && cfg.srch) && !(gates.libSearch && cfg.ls)}
+      />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
-        {#if cfg.src === 'animes'}
-          Родной поиск — подстрока силами API (<code>q</code> → <code>search</code>):
+        {#if gates.nativeSearch}
+          Родной поиск — подстрока силами источника (<code>q</code> → <code>search</code>):
           «наруто» и «naruto» находит, «нарута» — нет. lib/search добавляет
           fuzzy-ранжирование и коррекцию по словарю из живых страниц популярности; без
           родного поиска он сканирует каталог без сужения — медленнее, но находит опечатки.
+        {:else if gates.libSearch}
+          Родного поиска у источника нет: запрос сужает выдачу только при включённом
+          lib/search (fuzzy-сканирование данных источника).
         {:else}
-          У товаров и фото родного поиска нет: запрос сужает выдачу только при включённом
-          lib/search (fuzzy по локальным данным). Источник Shikimori ищет сам.
+          Источник не умеет искать: ни родного поиска, ни подключённого lib/search.
         {/if}
       </p>
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
@@ -306,9 +327,9 @@
             >просмотрено {stats?.scanned}, совпало {stats?.matched}, выдано {stats?.emitted}{#if stats?.exhausted}{' '}·
               каталог исчерпан{/if}</span
           >
-        {:else if cfg.src === 'animes'}
+        {:else if !gates.totals}
           · <span data-testid="search-stats"
-            >число страниц API не отдаёт — навигация стрелками</span
+            >число страниц источник не отдаёт — навигация стрелками</span
           >
         {/if}
       </p>

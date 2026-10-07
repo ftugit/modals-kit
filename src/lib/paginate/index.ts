@@ -2,6 +2,7 @@
  * src/lib/paginate — framework-neutral ядро библиотеки пагинации.
  */
 export * from './types'
+export * from './source'
 export * from './events'
 export * from './pure'
 export * from './layout'

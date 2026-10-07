@@ -2,7 +2,7 @@
   import { onMount, type Snippet } from 'svelte'
   import { currentPathname, currentSearch } from '$lib/router/sveltekit'
   import { buttonVariants } from '$lib/ui/primitives'
-  import { getPaginator, type Extra, type ExtraValue } from '$lib/paginate'
+  import { featureGates, getPaginator, type Extra, type ExtraValue, type FeatureGate } from '$lib/paginate'
   import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
   import { Field, Select, Toggle } from './fields'
 
@@ -15,6 +15,8 @@
         parse?: (raw: string) => ExtraValue
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
+        /** Возможность ИСТОЧНИКА, без которой параметр не работает (панель гасит поле). */
+        requires?: FeatureGate
       }
     | {
         key: keyof V & string
@@ -22,6 +24,8 @@
         type: 'toggle'
         jsOnly?: boolean
         enabledWhen?: (values: V) => boolean
+        /** Возможность ИСТОЧНИКА, без которой параметр не работает (панель гасит поле). */
+        requires?: FeatureGate
       }
     | {
         type: 'divider'
@@ -68,6 +72,14 @@
     getPaginator(pagState().name).adapter.pageParam ?? 'page'
   )
 
+  /**
+   * Возможности текущего источника, как их отдал пагинатор: чем источник не
+   * умеет — тем панель не управляет (гасит поле), а не «включает и молчит».
+   * Возможности живут в состоянии пагинатора, поэтому переключение источника
+   * обновляет их само.
+   */
+  const gates = $derived(featureGates(pagState().capabilities))
+
   const currentValues = $derived.by((): V => {
     return valuesMapper ? valuesMapper(pagState().extra) : (pagState().extra as V)
   })
@@ -94,6 +106,7 @@
 
   function fieldDisabled(f: SettingsField<V>): boolean {
     if ('key' in f) {
+      if (f.requires && !gates[f.requires]) return true // источник так не умеет
       if ((f.jsOnly ?? false) && js) return true
       if (f.enabledWhen && !f.enabledWhen(currentValues)) return true
     }

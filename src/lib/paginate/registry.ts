@@ -39,6 +39,7 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
           pageSize: config.pageSize,
           append: config.append,
           storage: config.storage,
+          extraKeys: config.extraKeys,
         })
   instances.set(config.name, {
     name: config.name,

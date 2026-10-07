@@ -9,6 +9,12 @@ Headless-библиотека пагинации с разделением frame
 - **Хранилища и транспорт**: URL-состояние (`?page`, `?page.size`, `?page.<key>`), `localStorage`, `memoryStorage` и cursor-адаптер (`createCursorAdapter`).
 - **Скролл и якоря**: Детект маркеров страниц через `IntersectionObserver` с гистерезисом, независимые зоны `topZone` / `bottomZone` (`edge`, `20%`, `40%`, `200px`), сохранение положения контента при prepend (`holdAbove` / CSS scroll anchoring).
 - **Раскладки**: Чистая математика колонок (`computeColumns`, `distributeRoundRobin`, `runsOfColumn`, `pageWindow`).
+- **Слой источника — единственный вход данных**: пагинатор принимает только
+  АДАПТИРОВАННЫЙ источник (`defineSource` + декораторы; см. `source.ts`).
+  Источник объявляет возможности (`search`, `scan`, `filters`, `totals`) и
+  паспорт записи (`id`/`title`/`texts`); пагинатор отдаёт возможности UI
+  (`state.capabilities`), и интерфейс гасит то, чего у источника нет.
+  Объект, эмулирующий api слоя, не принимается — нужен бренд слоя.
 - **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/content/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
 - **Тонкие адаптеры**:
   - `src/lib/paginate/solid/` — SolidJS сигналы и JSX-биндинги.
@@ -21,7 +27,19 @@ Headless-библиотека пагинации с разделением frame
 ### Определение пагинатора
 
 ```ts
-import { definePaginator, createUrlAdapter } from '$lib/paginate'
+import { defineSource, definePaginator, createUrlAdapter } from '$lib/paginate'
+
+// Источник: данные + паспорт записи + объявленные возможности.
+const products = defineSource<Product>({
+  name: 'products',
+  record: { id: (r) => String(r.id), title: (r) => r.title, texts: (r) => [r.title] },
+  scan: {},        // lib/search может сканировать (fuzzy по названию)
+  totals: true,    // источник отдаёт число страниц
+  data: async ({ page, pageSize, signal }) => {
+    const res = await fetch(`/api/products?page=${page}&size=${pageSize}`, { signal })
+    return res.json()
+  },
+})
 
 definePaginator({
   name: 'products',
@@ -29,10 +47,8 @@ definePaginator({
     name: 'products',
     pageParam: 'page',
     pageSize: 20,
-    source: async ({ page, pageSize, extra }) => {
-      const res = await fetch(`/api/products?page=${page}&size=${pageSize}`)
-      return res.json()
-    },
+    source: products,
+    extraSearch: {},          // ключи потребителя (?page.<key>) — deny-safe
   }),
 })
 ```

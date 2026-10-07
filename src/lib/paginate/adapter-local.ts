@@ -1,14 +1,20 @@
-// Local-адаптер: source + storage без URL (SPEC §3.6). Дословный порт React-версии.
+// Local-адаптер: source + storage без URL (SPEC §3.6). Дословный порт React-версии;
+// источник — адаптированный (слой `source.ts`): возможности и паспорт записи
+// приезжают пагинатору, а вызов данных идёт единственным путём (`fetchPage`).
 import { createMemoryStorage } from './storage'
-import type { PaginatorAdapter, PaginatorStorage, Source } from './types'
+import { assertAdaptedSource, type AdaptedSource } from './source'
+import type { PaginatorAdapter, PaginatorStorage } from './types'
 
 export function createLocalAdapter<T>(opts: {
   name: string
-  source: Source<T>
+  source: AdaptedSource<T>
   storage?: PaginatorStorage
   pageSize?: number
   append?: boolean
+  /** Ключи extra, объявленные потребителем (для строгой проверки `setExtra`). */
+  extraKeys?: readonly string[]
 }): PaginatorAdapter<T> {
+  const source = assertAdaptedSource<T>(opts.source, `createLocalAdapter("${opts.name}")`)
   const storage = opts.storage ?? createMemoryStorage()
   const pageSize = opts.pageSize ?? 20
   const append = opts.append ?? true
@@ -24,8 +30,12 @@ export function createLocalAdapter<T>(opts: {
         extra: restored?.extra ?? {},
       }
     },
-    loadPage: (req) => opts.source(req),
+    loadPage: (req) =>
+      source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal }, req.extra),
     persist: (state) => storage.write(opts.name, state),
     capabilities: { append },
+    capabilitiesFor: (extra) => source.capabilitiesFor(extra),
+    // Поверхность потребителя известна только если он её объявил: иначе не судим.
+    extraKeys: opts.extraKeys ? () => [...opts.extraKeys!, ...source.extraKeys()] : undefined,
   }
 }

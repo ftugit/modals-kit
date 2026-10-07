@@ -21,10 +21,11 @@ export {
 } from './registry'
 export { setSearchQuery, clearSearchQuery, resyncSearch, normalizeSearchQuery } from './core'
 export {
-  createSearchInterceptor,
+  withLibSearch,
   createAccumulatingSource,
+  DEFAULT_FUZZY_BATCH,
   type SearchInterceptorOptions,
-  type SearchFuzzyOptions,
+  type LibSearchOptions,
   type SearchCorrectionInfo,
   type SearchInterceptStats,
 } from './accumulator'

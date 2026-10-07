@@ -1,12 +1,14 @@
 // Хранилище состояния пагинатора (чистый vanilla Store без привязки к фреймворку).
 // Дескрипторы модульно кэшируются по name ВНУТРИ экземпляра store: отдельный store на
 // запрос (SSR-конкурентность) и глобальный клиентский (состояние переживает unmount хоста).
+import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
 import type { Extra, PaginatorState } from './types'
 
 export function initialState<T>(
   name: string,
   pageSize: number,
   extra: Extra = {},
+  capabilities: SourceCapabilities = EMPTY_CAPABILITIES,
 ): PaginatorState<T> {
   return {
     name,
@@ -23,6 +25,7 @@ export function initialState<T>(
     hasNext: null,
     hasPrev: null,
     reqId: 0,
+    capabilities,
   }
 }
 

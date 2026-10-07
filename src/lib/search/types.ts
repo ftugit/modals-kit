@@ -5,26 +5,26 @@
 // новые, если надо. Запрос `q` живёт в extra пагинатора (адрес
 // `?<pageParam>.q`), `reloadKeys: ['q']` сбрасывает выдачу на первую страницу.
 // Несколько поисков на странице — разные name/pageParam.
-import type { Extra, Source } from '$lib/paginate/types'
-import type { ExtraSearchSpec } from '$lib/paginate'
-import type { SearchFuzzyOptions } from './accumulator'
+import type { Extra } from '$lib/paginate/types'
+import type { AdaptedSource, ExtraSearchSpec } from '$lib/paginate'
+import type { LibSearchOptions } from './accumulator'
 
 export type SearchConfig<T> = {
   /** Уникальное имя поиска; оно же — имя пагинатора (R17: deny by default). */
   name: string
   /**
-   * Базовый источник пагинатора («дай страницу N размера M»). Поиск подменяет
-   * его перехватчиком. Источник обязан понимать `extra.q` НА СЕРВЕРЕ как
-   * точное/подстрочное сужение — это контур SSR/no-JS; `q` — отдельное поле
-   * транспорта, никогда не значение фильтров.
+   * Базовый источник пагинатора — АДАПТИРОВАННЫЙ (`$lib/paginate/source`).
+   * Поиск подменяет его перехватчиком. Источник обязан понимать `extra.q` НА
+   * СЕРВЕРЕ как точное/подстрочное сужение — это контур SSR/no-JS; `q` —
+   * отдельное поле транспорта, никогда не значение фильтров.
    */
-  source: Source<T>
+  source: AdaptedSource<T>
   /**
-   * Клиентское fuzzy-усиление: id/texts для ранжирования, коррекция по
-   * словарю, размер батча. Без него источник используется как есть
-   * (серверный подстрочный поиск и с JS тоже).
+   * Подключение lib/search поверх источника (fuzzy + коррекция). Требует
+   * `scan` у источника; паспорт записи и размер батча lib/search берёт у него
+   * же. Без этого источник используется как есть (серверная подстрока и с JS).
    */
-  fuzzy?: SearchFuzzyOptions<T>
+  fuzzy?: Omit<LibSearchOptions<T>, 'gate'>
   /**
    * Базовый ключ адреса: `?<pageParam>=N`, `?<pageParam>.q=строка`.
    * По умолчанию — name. Два поиска на странице обязаны отличаться ключом.

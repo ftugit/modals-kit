@@ -233,7 +233,11 @@ async function checkBrowser(browser) {
     await waitFor(async () => (await page.locator('[data-testid="search-native"]').innerText()) === 'выкл', {
       what: 'тумблер родного поиска выключен',
     });
-    if (!(await input.isDisabled())) throw new Error('выключенный родной поиск должен гасить поле поиска');
+    // lib/search жив (тумблер `ls` включён) — искать по-прежнему есть чем,
+    // поэтому поле запроса ОСТАЁТСЯ активным: гасится родное применение
+    // запроса источником, а не возможность искать вообще.
+    if (await input.isDisabled())
+      throw new Error('при включённом lib/search поле поиска должно оставаться активным');
     await waitFor(async () => {
       const texts = await rowsOf(page).allInnerTexts();
       return texts.some((t) => /наруто/i.test(t));
@@ -273,6 +277,10 @@ async function checkBrowser(browser) {
     bothOff.searchParams.set('page.srch', 'false');
     await page.goto(bothOff.toString(), { waitUntil: 'networkidle' });
     await waitFor(async () => (await rowsOf(page).count()) === 5, { what: 'каталог без поиска' });
+    // Поиска нет вовсе (ни родного, ни lib/search) — поле запроса погашено,
+    // и это следует из возможностей источника, а не из имени `src`.
+    const searchInput = page.locator('[data-testid="search-input"]');
+    await waitFor(async () => await searchInput.isDisabled(), { what: 'поле поиска погашено без поиска вовсе' });
     // Тумблеры гасят ПРИМЕНЕНИЕ запроса, но не стирают ввод пользователя:
     // ключ `q` остаётся в адресе (ссылка переносима), а выдача — обычный каталог.
     if (!page.url().includes('page.q='))

@@ -12,6 +12,7 @@ import {
   createUrlAdapter,
   decodeExtraValue,
   definePaginator,
+  defineSource,
   deriveMeta,
   distributeRoundRobin,
   encodeExtraValue,
@@ -39,6 +40,8 @@ import {
   setExtra,
   setPageSize,
   viewState,
+  EMPTY_CAPABILITIES,
+  type AdaptedSource,
   type Extra,
   type PageRequest,
   type PageResponse,
@@ -61,8 +64,36 @@ function makeState(overrides: Partial<PaginatorState<unknown>> = {}): PaginatorS
     hasPrev: null,
     reqId: 0,
     extra: {},
+    capabilities: EMPTY_CAPABILITIES,
     ...overrides,
   }
+}
+
+/**
+ * Источник теста: данные + паспорт через слой (`defineSource`) — пагинатор
+ * принимает только адаптированные источники, «просто функция» его не пройдёт.
+ */
+function sourceOf<T>(
+  load: (req: PageRequest) => Promise<PageResponse<T>>,
+  over: { scan?: { batchSize?: number }; search?: boolean } = {},
+): AdaptedSource<T> {
+  return defineSource<T>({
+    name: 'test-source',
+    record: {
+      id: (record) => String((record as { id?: unknown }).id ?? ''),
+      title: () => '',
+      texts: () => [],
+    },
+    scan: over.scan ?? {},
+    ...(over.search === false ? {} : { search: { minLength: 1 } }),
+    data: (look, input) =>
+      load({
+        page: look.page,
+        pageSize: look.pageSize,
+        signal: look.signal,
+        extra: { q: input.q },
+      }),
+  })
 }
 
 function fakeAdapter(
@@ -79,7 +110,13 @@ function fakeAdapter(
       }))
   )
   const persist = vi.fn(() => {})
-  const adapter = { getInitial, loadPage, persist, capabilities: { append: true } }
+  const adapter = {
+    getInitial,
+    loadPage,
+    persist,
+    capabilities: { append: true },
+    capabilitiesFor: () => ({ totals: true }),
+  }
   return { adapter, getInitial, loadPage, persist }
 }
 
@@ -349,7 +386,7 @@ describe('URL adapter & extra search', () => {
       name: 'gallery',
       pageParam: 'gallery',
       pageSize: 12,
-      source: async () => ({ items: [] }),
+      source: sourceOf(async () => ({ items: [] })),
     })
     expect(adapter.pageParam).toBe('gallery')
     expect(adapter.hrefFor(2, { search: {} })).toContain('gallery=2')
@@ -471,7 +508,7 @@ describe('core operations & lifecycle', () => {
   })
 
   it('maxPages limits loaded pages and evicts far side', async () => {
-    const source = async ({ page }: PageRequest) => ({ items: [`item${page}`], totalPages: 10 })
+    const source = sourceOf(async ({ page }) => ({ items: [`item${page}`], totalPages: 10 }))
     definePaginator({
       name: 'maxTest',
       adapter: createLocalAdapter({ name: 'maxTest', source, append: true }),

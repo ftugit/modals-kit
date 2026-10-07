@@ -1,8 +1,8 @@
 // Реестр поисков по name (порядок как у lib/paginate R9/R17): одна регистрация,
 // клиент и сервер импортируют её же; неизвестное имя → throw (deny by default).
 //
-// defineSearch НЕ создаёт нового ядра данных: он ПЕРЕХВАТЫВАЕТ источник
-// пагинатора (createSearchInterceptor) и регистрирует пагинатор на
+// defineSearch НЕ создаёт нового ядра данных: он ПОДКЛЮЧАЕТ lib/search к
+// источнику пагинатора (withLibSearch) и регистрирует пагинатор на
 // URL-адаптере, объявляя запрос `q` ключом его extra. Пустой запрос —
 // сквозной проход к базовому источнику (обычный каталог); с запросом тот же
 // пагинатор показывает результаты. Всё остальное — состояние, гонки,
@@ -15,7 +15,7 @@ import {
   type PaginatorSearchOptions,
 } from '$lib/paginate'
 import type { SearchConfig, SearchInstance } from './types'
-import { createSearchInterceptor, type SearchCorrectionInfo } from './accumulator'
+import { withLibSearch, type SearchCorrectionInfo } from './accumulator'
 
 const instances = new Map<string, SearchInstance>()
 const corrections = new Map<string, SearchCorrectionInfo | null>()
@@ -63,10 +63,10 @@ export function defineSearch<T>(config: SearchConfig<T>): SearchInstance {
     debounce: config.debounce ?? 300,
     maxQueryLength,
   }
-  // Перехват источника: fuzzy-усиление подменяет источник пагинатора; без
+  // Подключение lib/search — декоратор источника (нужно `scan` в спеке); без
   // fuzzy-опций базовый источник работает как есть (серверное сужение по q).
   const source = config.fuzzy
-    ? createSearchInterceptor<T>({ ...config.fuzzy, source: config.source, minLength })
+    ? withLibSearch<T>(config.source, { ...config.fuzzy, minLength })
     : config.source
   if (!hasPaginator(config.name)) {
     definePaginator<T>({
