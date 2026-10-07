@@ -21,7 +21,7 @@
  *   node probes/classes-audit.mjs --all        # весь src (шумно, для осмотра)
  *   node probes/classes-audit.mjs src/app.html # конкретные файлы
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createGenerator } from '@unocss/core'
 import * as wind from '@unocss/preset-wind4'
 
@@ -79,6 +79,7 @@ const SCOPE = [
   'src/lib/modals/svelte/ModalTrigger.svelte',
   'src/lib/shell/AppShell.svelte',
   'src/lib/ui/modals/variants.ts',
+  'src/lib/ui/modals/variants.svelte',
   'src/lib/ui/modals/index.ts',
   'src/lib/ui/modals/Skeleton.svelte',
   'src/lib/ui/modals/ModalError.svelte',
@@ -235,6 +236,7 @@ const NOT_A_CLASS = new Set([
 const wanted = new Set()
 const perFile = new Map()
 for (const file of targets) {
+  if (!existsSync(file)) continue // дерево может не содержать файл из общего списка
   const toks = tokensOf(file)
   perFile.set(file, [...toks])
   for (const t of toks) wanted.add(t)
