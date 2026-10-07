@@ -38,7 +38,6 @@ import {
   searchQueryValidator,
   withLibSearch,
   type SearchCorrectionInfo,
-  type SearchInterceptStats,
 } from '$lib/search'
 import {
   composeSources,
@@ -276,32 +275,6 @@ async function loadAnimePage(
   return { items: res.items, hasNext: res.hasNext }
 }
 
-// ── Каналы демо-панели: статистика перехвата (подпись коррекции — в реестре lib search) ──
-
-type StatsListener = (stats: SearchInterceptStats | null) => void
-const statsListeners = new Map<string, Set<StatsListener>>()
-const lastStats = new Map<string, SearchInterceptStats | null>()
-
-export function getInterceptStats(name: string): SearchInterceptStats | null {
-  return lastStats.get(name) ?? null
-}
-
-export function onInterceptStats(name: string, listener: StatsListener): () => void {
-  const listeners = statsListeners.get(name) ?? new Set<StatsListener>()
-  statsListeners.set(name, listeners)
-  listeners.add(listener)
-  listener(getInterceptStats(name))
-  return () => {
-    listeners.delete(listener)
-    if (!listeners.size) statsListeners.delete(name)
-  }
-}
-
-function publishStats(name: string, stats: SearchInterceptStats | null): void {
-  lastStats.set(name, stats)
-  for (const listener of statsListeners.get(name) ?? []) listener(stats)
-}
-
 /**
  * Паспорт записи каталога — ОДИН на все три источника демо: как читать любую
  * запись (id, заголовок, тексты) знает слой источника, а не потребитель. По
@@ -397,8 +370,10 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
   // Каналы панели: статистика перехвата и подпись коррекции. Корректор словаря
   // строит lib/search из `dictionary` САМОГО источника — те же каналы несут
   // оба контура, а у источника без словаря подпись просто гаснет.
+  // Статистику перехвата панель берёт из ОБЩЕГО канала lib/search: `name` при
+  // подключении `withLibSearch` делает это автоматически (свой реестр странице
+  // не нужен). Здесь остаётся только подпись коррекции.
   const channels = {
-    onStats: (stats: SearchInterceptStats | null) => publishStats(name, stats),
     onCorrection: (info: SearchCorrectionInfo | null) => reportSearchCorrection(name, info),
   }
   return composeSources<CatalogItem>(
@@ -409,13 +384,13 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
         createLocalItemsSource('products')
           .with(withSearchGate({ gate: 'srch' }))
           .with(withTotalsGate({ gate: 'total' })),
-        { gate: 'ls', ...channels },
+        { gate: 'ls', name, ...channels },
       ),
       // Фото — «просто данные»: ни родного поиска, ни сканирования, ни
       // фильтров. Возможностей нет — панель гасит опции поиска и поле запроса
       // (не «включено вхолостую», а честно недоступно).
       photos: createLocalItemsSource('photos').with(withTotalsGate({ gate: 'total' })),
-      animes: withLibSearch(createAnimesSource(), { gate: 'ls', ...channels }),
+      animes: withLibSearch(createAnimesSource(), { gate: 'ls', name, ...channels }),
     },
     { name, select: (extra) => demoExtraOf(extra ?? {}).src },
   )

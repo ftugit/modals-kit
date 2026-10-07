@@ -6,8 +6,7 @@
     PaginatorHost,
     usePaginatorState,
   } from '$lib/paginate/svelte'
-  import type { SearchInterceptStats } from '$lib/search'
-  import { useSearchCorrection } from '$lib/search/svelte'
+  import { useSearchCorrection, useSearchStats } from '$lib/search/svelte'
   import {
     EmptyState,
     EndRow,
@@ -29,7 +28,6 @@
     DEMO_PAGE_SIZES,
     demoExtraOf,
     demoQueryOf,
-    onInterceptStats,
     type DemoExtra,
     type DemoStore,
   } from './definition'
@@ -227,10 +225,26 @@
   /** Возможности текущего источника: панель и подсказки следуют им, а не имени `src`. */
   const gates = $derived(featureGates(pagState().capabilities))
 
-  /** Живая статистика перехвата lib search (канал источника, не реестра). */
-  let stats = $state<SearchInterceptStats | null>(null)
-  // Подписка сразу отдаёт текущее значение (см. `onInterceptStats`).
-  $effect(() => onInterceptStats(name, (next) => (stats = next)))
+  /**
+   * Запрос некуда применить — поле гаснет; причина у поля обязательна и говорит
+   * именно то, что случилось: у источника нет механизма поиска ЛИБО механизм
+   * есть, но выключен тумблером панели. Формулировку даёт слой возможностей
+   * (`gates`), а не догадка разметки.
+   */
+  const searchOff = $derived(!(gates.nativeSearch && cfg.srch) && !(gates.libSearch && cfg.ls))
+  const searchOffReason = $derived(
+    !searchOff
+      ? null
+      : !gates.nativeSearch && !gates.libSearch
+        ? 'источник не поддерживает поиск — запрос некуда применить'
+        : 'поиск выключен опциями панели'
+  )
+
+  /**
+   * Живая статистика перехвата — хук ОБЩЕГО канала lib/search (тот же слой, что
+   * подпись коррекции): числом владеет поиск, а не разметка страницы.
+   */
+  const stats = useSearchStats(name)
 
   /**
    * Deep-link с запросом и включённым lib/search: SSR-выдача пришла от
@@ -300,7 +314,8 @@
       <SearchQueryForm
         {name}
         path="page.q"
-        disabled={!(gates.nativeSearch && cfg.srch) && !(gates.libSearch && cfg.ls)}
+        disabled={searchOff}
+        hint={searchOffReason ?? undefined}
       />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
         {#if gates.nativeSearch}
@@ -327,10 +342,10 @@
             >искали «{correction()?.query}», показываем «{correction()?.corrected}»</span
           >
         {/if}
-        {#if cfg.ls && stats}
+        {#if cfg.ls && stats.current}
           · <span data-testid="search-stats"
-            >просмотрено {stats?.scanned}, совпало {stats?.matched}, выдано {stats?.emitted}{#if stats?.exhausted}{' '}·
-              каталог исчерпан{/if}</span
+            >просмотрено {stats.current?.scanned}, совпало {stats.current?.matched}, выдано {stats
+              .current?.emitted}{#if stats.current?.exhausted}{' '}· каталог исчерпан{/if}</span
           >
         {:else if !gates.totals}
           · <span data-testid="search-stats"
