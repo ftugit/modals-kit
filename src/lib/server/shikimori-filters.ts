@@ -4,8 +4,10 @@
  * Здесь живёт ЗНАНИЕ ОБ API, которого нет в схеме: какой параметр отвечает за
  * поле и в каком виде принимает значение (измерено живьём, `probes-shiki/`):
  *   • `genre_v2` — мир жанров v2 (те же id, что отдаёт GraphQL `genres`);
- *     повторяющийся параметр значит «и», префикс `!` — «кроме»;
- *   • `studio` — только «и» (отрицания у студий нет ни в REST, ни в GraphQL);
+ *   • `studio` — id студий REST-справочника (`/studios`);
+ *     у обоих: СПИСОК через запятую значит «и», префикс `!` у значения —
+ *     «кроме», а повтор параметра API читает как «последний побеждает»
+ *     (поэтому списки собираются одним значением — см. `buildUpstreamUrl`);
  *   • `kind`/`status`/`rating`/`duration` — по значению;
  *   • `score` — минимальная оценка (нижняя граница, верхней у API нет);
  *   • `season` — диапазон лет ОБЕИМИ границами (`2014_2016`); односторонний
@@ -70,12 +72,15 @@ export function animesFilterParams(
       const group = value as Partial<Record<string, readonly string[]>>
       if (group.or?.length) dropped.push({ key: `filters.${key}.or`, reason: 'режим «или» API не поддерживает' })
       if (key === 'genres') {
-        // «и» и «кроме» — одним параметром: повторение значит «и», `!` — «кроме».
+        // «и» и «кроме» — одним списком: элементы складываются по «и», `!` —
+        // исключение (проверено живьём, см. `buildUpstreamUrl`).
         const list = [...(group.and ?? []), ...(group.not ?? []).map((item) => `!${item}`)]
         if (list.length) params.genre_v2 = [...list]
       } else if (key === 'studios') {
-        if (group.not?.length) dropped.push({ key: `filters.${key}.not`, reason: 'отрицания у студий нет' })
-        if (group.and?.length) params.studio = [...group.and]
+        // Отрицания — тот же список с префиксом `!` (проверено живьём: см.
+        // объявление поля в `content/shikimori-filters`).
+        const list = [...(group.and ?? []), ...(group.not ?? []).map((item) => `!${item}`)]
+        if (list.length) params.studio = [...list]
       } else {
         // Поле-мультивыбор без правила мэппинга: молча «как-нибудь» не бывает.
         dropped.push({ key: `filters.${key}`, reason: 'для поля не объявлен параметр API' })

@@ -30,13 +30,18 @@ import type { ExtraSearchSpec, ExtraValue } from '$lib/paginate'
  * сезона `2014_2016`).
  */
 export const SHIKIMORI_FILTER_FIELDS: readonly CatalogFilterField[] = [
-  // Режимы: «и» (`and`) у жанров нативно, «кроме» (`not`) — тоже; «или» в API
-  // нет вовсе (повторяющиеся `genre_v2=` складываются по «и»), поэтому режим не
-  // объявляется — UI его не покажет, а адрес с ним не прочтётся.
+  // Режимы: «и» (`and`) у жанров нативно (список через запятую), «кроме»
+  // (`not`) — префиксом `!` в том же списке; «или» в API нет вовсе, поэтому
+  // режим не объявляется — UI его не покажет, а адрес с ним не прочтётся.
   { key: 'genres', label: 'Жанры', type: 'multiselect', modes: ['and', 'not'] },
-  // У студий «кроме» нет: отрицания в параметре `studio` нет ни в REST, ни в
-  // GraphQL (проверено живьём), поэтому режим один.
-  { key: 'studios', label: 'Студии', type: 'multiselect', modes: ['and'] },
+  // Студии: список через запятую — «и», префикс `!` — «кроме», как у жанров.
+  // Проверено живьём (2026-10-07, REST `/api/animes`): `studio=1,!1998` — работы
+  // студии 1 без работ студии 1998 (в проверке выпал 53223, он снят обоими);
+  // `studio=1,858` — пусто (работ обеих студий нет); `studio=!858` без «и»
+  // исключает все работы Wit. Прежняя запись «отрицания нет» была неверной, а
+  // повтор параметра (`studio=1&studio=858`) у API значит «последний побеждает»
+  // — поэтому список едет ОДНИМ значением.
+  { key: 'studios', label: 'Студии', type: 'multiselect', modes: ['and', 'not'] },
   { key: 'kind', label: 'Тип', type: 'select' },
   { key: 'status', label: 'Статус', type: 'select' },
   { key: 'rating', label: 'Рейтинг', type: 'select' },
@@ -99,7 +104,7 @@ export const SHIKIMORI_FILTER_RELOAD_KEYS: readonly string[] = [...SHIKIMORI_FIL
 export const SHIKIMORI_FILTER_SOURCE = 'shikimori'
 
 /** Версия СОСТАВА полей (не значений): растёт, когда меняется контракт ключей. */
-export const SHIKIMORI_FILTER_SCHEMA_VERSION = 1
+export const SHIKIMORI_FILTER_SCHEMA_VERSION = 2
 
 /** Схема без значений — то, на что накладывает данные серверная зона. */
 export function shikimoriFilterSchemaSkeleton(): CatalogFilterSchema {

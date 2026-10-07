@@ -34,8 +34,11 @@ const schema: CatalogFilterSchema = validateCatalogFilterSchema({
       key: 'studios',
       label: 'Студии',
       type: 'multiselect',
-      modes: ['and'],
-      options: [{ value: '858', label: 'Wit Studio', count: 7 }],
+      modes: ['and', 'not'],
+      options: [
+        { value: '858', label: 'Wit Studio', count: 7 },
+        { value: '1998', label: 'Studio Signpost', count: 3 },
+      ],
     },
     {
       key: 'kind',
@@ -64,8 +67,14 @@ describe('мэппинг значений в параметры API', () => {
     expect(params.genre_v2).toEqual(['27', '133', '!133'])
   })
 
-  it('студии: только «и»', () => {
+  it('студии: «и» повторением, «кроме» — префиксом `!` (как у жанров)', () => {
     expect(animesFilterQuery(schema, { 'filters.studios.and': '858' }).params.studio).toEqual(['858'])
+    const { params, dropped } = animesFilterQuery(schema, {
+      'filters.studios.and': '858',
+      'filters.studios.not': '1998',
+    })
+    expect(params.studio).toEqual(['858', '!1998'])
+    expect(dropped).toEqual([])
   })
 
   it('select-поля едут по значению, оценка — нижней границей', () => {
@@ -89,13 +98,25 @@ describe('мэппинг значений в параметры API', () => {
     expect(dropped.map((item) => item.key)).toContain('filters.year')
   })
 
-  it('параметры доезжают до адреса API как повторяющиеся поля', () => {
+  it('параметры доезжают до адреса API одним списком через запятую', () => {
     const { params } = animesFilterQuery(schema, { 'filters.genres.and': '27', 'filters.studios.and': '858', 'filters.kind': 'movie' })
     const url = new URL(buildUpstreamUrl({ page: 2, limit: 20, ...params }))
     expect(url.searchParams.getAll('genre_v2')).toEqual(['27'])
     expect(url.searchParams.getAll('studio')).toEqual(['858'])
     expect(url.searchParams.get('kind')).toBe('movie')
     expect(url.searchParams.get('page')).toBe('2')
+  })
+
+  it('«и» + «кроме» едут ОДНИМ значением списка (повтор API читает как последнее)', () => {
+    const { params } = animesFilterQuery(schema, {
+      'filters.genres.and': '27',
+      'filters.genres.not': '133',
+      'filters.studios.and': '858',
+      'filters.studios.not': '1998',
+    })
+    const url = new URL(buildUpstreamUrl({ page: 1, limit: 20, ...params }))
+    expect(url.searchParams.getAll('genre_v2')).toEqual(['27,!133'])
+    expect(url.searchParams.getAll('studio')).toEqual(['858,!1998'])
   })
 })
 
