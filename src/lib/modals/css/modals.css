@@ -9,7 +9,7 @@
   inset: 0;
   z-index: 200;
   transition: opacity 220ms ease;
-  background: color-mix(in oklab, var(--foreground) 50%, transparent);
+  background: rgb(0 0 0 / 60%);
   backdrop-filter: blur(2px);
 }
 .modal-backdrop[data-starting-style],

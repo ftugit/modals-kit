@@ -132,7 +132,7 @@
     <label
       for="fe-sidebar"
       aria-label="Закрыть подложку"
-      class="fe-sidebar-backdrop absolute inset-0 z-30 bg-foreground/45 lg:hidden"
+      class="fe-sidebar-backdrop absolute inset-0 z-30 bg-black/60 lg:hidden"
       onclick={(e) => {
         e.preventDefault()
         drawer.close()
