@@ -4,7 +4,7 @@ export interface Product { id: number; title: string; price: number }
 export interface Photo { id: number; caption: string }
 export type ItemKind = 'products' | 'photos'
 export type DemoItem = Product | Photo
-export type ItemsQuery = { kind: ItemKind } & PageRequest
+export type ItemsQuery = { kind: ItemKind; q?: string } & PageRequest
 
 export const PRODUCTS: Product[] = Array.from({ length: 299 }, (_, i) => ({
   id: i + 1,
@@ -17,13 +17,37 @@ export const GALLERY: Photo[] = Array.from({ length: 131 }, (_, i) => ({
   caption: `Photo ${i + 1}`,
 }))
 
-export function queryItemsPage(kind: ItemKind, { page, pageSize }: PageRequest): PageResponse<DemoItem> {
+/** Текст записи, по которому ищет локальный источник (у демо — заголовок/подпись). */
+function searchTextOf(kind: ItemKind, item: DemoItem): string {
+  return kind === 'products' ? String((item as Product).title ?? '') : String((item as Photo).caption ?? '')
+}
+
+/** Нормализация запроса локального источника: регистр/пробелы (подстрока, не fuzzy). */
+function normalizeLocalQuery(q: string | undefined): string {
+  return String(q ?? '').trim().toLocaleLowerCase('ru')
+}
+
+/**
+ * Страница локального корпуса с учётом ПОИСКА ПО НАЗВАНИЮ: сужение идёт до
+ * пагинации, поэтому числа страниц (`totalItems`/`totalPages`) считаются по
+ * найденному, а не по всему массиву — источник остаётся честным пагинатором.
+ * Объявляет ли источник поиск — его дело (`search` в спеке `defineSource`):
+ * здесь механизм, там возможность.
+ */
+export function queryItemsPage(
+  kind: ItemKind,
+  { page, pageSize, q }: PageRequest & { q?: string },
+): PageResponse<DemoItem> {
   const all = kind === 'products' ? PRODUCTS : GALLERY
+  const query = normalizeLocalQuery(q)
+  const matched = query
+    ? all.filter((item) => searchTextOf(kind, item).toLocaleLowerCase('ru').includes(query))
+    : all
   const start = (page - 1) * pageSize
   return {
-    items: all.slice(start, start + pageSize),
-    totalItems: all.length,
-    totalPages: Math.ceil(all.length / pageSize),
+    items: matched.slice(start, start + pageSize),
+    totalItems: matched.length,
+    totalPages: Math.ceil(matched.length / pageSize),
   }
 }
 
@@ -54,5 +78,5 @@ export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoI
     await new Promise((r) => setTimeout(r, DEMO_TRANSPORT_MS))
   }
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-  return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize })
+  return queryItemsPage(args.kind, { page: args.page, pageSize: args.pageSize, q: args.q })
 }

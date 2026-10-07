@@ -93,6 +93,7 @@ describe('defineSource: возможности и deny-safe вход', () => {
       libSearch: false,
       filters: false,
       totals: false,
+      dictionary: false,
     })
     expect(
       featureGates({
@@ -100,8 +101,9 @@ describe('defineSource: возможности и deny-safe вход', () => {
         fuzzy: { minLength: 2 },
         filters: { keys: ['kind'] },
         totals: true,
+        dictionary: true,
       }),
-    ).toEqual({ nativeSearch: true, libSearch: true, filters: true, totals: true })
+    ).toEqual({ nativeSearch: true, libSearch: true, filters: true, totals: true, dictionary: true })
   })
 })
 
@@ -201,6 +203,42 @@ describe('composeSources: выбор источника по ключу extra', 
     const combo = build([], [])
     await expect(combo.fetchPage({ page: 1, pageSize: 5 }, { src: 'nope' })).rejects.toThrow(/неизвестный источник/)
     expect(() => composeSources({}, { select: () => 'a' })).toThrow(/пустой набор/)
+  })
+})
+
+describe('lib/search не обязателен: родной поиск источника самодостаточен', () => {
+  it('setExtra(q) перезагружает выдачу и доезжает до данных без всякого lib/search', async () => {
+    const calls: Call[] = []
+    definePaginator<Rec>({
+      name: 'nativeTest',
+      source: make(calls, { name: 'items', search: { minLength: 2 } }),
+      extraKeys: ['q'],
+      reloadKeys: ['q'],
+    })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'nativeTest')
+    expect(calls.length).toBe(1)
+    await setExtra(store, 'nativeTest', { q: 'на' }) // короче порога — как пустой
+    await setExtra(store, 'nativeTest', { q: 'наруто' })
+    expect(calls.at(-1)?.input.q).toBe('наруто')
+    expect(getState(store, 'nativeTest').page).toBe(1) // смена запроса — с первой страницы
+    expect(getState(store, 'nativeTest').capabilities.search).toEqual({ minLength: 2 })
+    // lib/search не подключён — fuzzy нет, и это видно панели (опция `ls` гаснет):
+    // поиск источника самодостаточен, декоратор лишь добавляет fuzzy-контур.
+    expect(getState(store, 'nativeTest').capabilities.fuzzy).toBeUndefined()
+    expect(featureGates(getState(store, 'nativeTest').capabilities).libSearch).toBe(false)
+  })
+
+  it('словарь — объявленная возможность источника (коррекция опечаток)', () => {
+    const withDictionary = defineSource<Rec>({
+      name: 'terms',
+      record: { id: (r) => r.id, title: (r) => r.title, texts: (r) => [r.title] },
+      dictionary: async () => 'наруто\t10',
+      data: async () => ({ items: [], hasNext: false }),
+    })
+    expect(featureGates(withDictionary.capabilitiesFor()).dictionary).toBe(true)
+    expect(withDictionary.capabilitiesFor().dictionary).toBe(true)
+    expect(featureGates(EMPTY_CAPABILITIES).dictionary).toBe(false)
   })
 })
 

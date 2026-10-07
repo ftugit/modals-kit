@@ -71,6 +71,8 @@ export type SourceCapabilities = {
   fuzzy?: { minLength: number; batchSize?: number }
   /** Фильтры источника: ключи extra, которые он понимает (этап 3 добавит схему). */
   filters?: { keys: readonly string[] }
+  /** Источник отдаёт словарь терминов (`dictionary` в спеке) — коррекция опечаток. */
+  dictionary?: boolean
   /** Ответы источника несут полные totals (номерная навигация у потребителя). */
   totals: boolean
 }
@@ -207,6 +209,7 @@ export function defineSource<T>(spec: SourceSpec<T>): AdaptedSource<T> {
     ...(spec.search ? { search: { minLength } } : {}),
     ...(spec.scan ? { scan: { ...spec.scan } } : {}),
     ...(filterKeys.length ? { filters: { keys: filterKeys } } : {}),
+    ...(spec.dictionary ? { dictionary: true } : {}),
     totals: spec.totals ?? false,
   }
   return adapt<T>({
@@ -359,7 +362,7 @@ export function isServerSide(): boolean {
  * Ключи возможностей, по которым UI гасит функции: у панели настроек поле
  * помечается `requires: 'nativeSearch'`, у демо так же гаснут `srch`/`ls`/`total`.
  */
-export type FeatureGate = 'nativeSearch' | 'libSearch' | 'filters' | 'totals'
+export type FeatureGate = 'nativeSearch' | 'libSearch' | 'filters' | 'totals' | 'dictionary'
 
 /** Возможности выбранного источника глазами UI: то, что можно включать. */
 export function featureGates(capabilities: SourceCapabilities): Record<FeatureGate, boolean> {
@@ -368,5 +371,6 @@ export function featureGates(capabilities: SourceCapabilities): Record<FeatureGa
     libSearch: capabilities.fuzzy !== undefined,
     filters: capabilities.filters !== undefined,
     totals: capabilities.totals,
+    dictionary: capabilities.dictionary === true,
   }
 }

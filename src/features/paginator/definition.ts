@@ -264,19 +264,25 @@ const catalogRecord: SourceRecordSpec<CatalogItem> = {
 }
 
 /**
- * Локальный источник демо (товары/фото): данные лежат в памяти целиком,
- * поэтому сканирование разрешено (`scan` — батч по умолчанию), totals есть.
- * Родного поиска у него пока нет: наличие поиска объявляет САМ источник
- * (`search` в спеке), и до этого момента `q` до данных не доезжает.
+ * Локальный источник демо.
+ *
+ * Товары умеют искать по названию: поиск реализован в самих данных
+ * (`queryItemsPage` сужает корпус до пагинации), а наличие возможности
+ * объявляет СПЕКА источника (`search`), не потребитель и не роут. Сканирование
+ * разрешено (`scan`) — поверх работает lib/search (fuzzy по названию).
+ *
+ * Фото — «просто данные»: ни `search`, ни `scan`, ни фильтров. Возможностей нет
+ * → панель гасит опции поиска и поле запроса (честное «искать нечем»).
  */
 function createLocalItemsSource(kind: 'products' | 'photos'): AdaptedSource<CatalogItem> {
+  const searchable = kind === 'products'
   return defineSource<CatalogItem>({
     name: kind,
     record: catalogRecord,
-    scan: {},
+    ...(searchable ? { search: { minLength: 2 }, scan: {} } : {}),
     totals: true,
-    data: async ({ page, pageSize, signal }) => {
-      const r = await getItemsPage({ kind, page, pageSize, signal })
+    data: async ({ page, pageSize, signal }, input) => {
+      const r = await getItemsPage({ kind, page, pageSize, q: input.q, signal })
       return {
         items: r.items,
         totalItems: r.totalItems,
@@ -341,10 +347,12 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
   }
   return composeSources<CatalogItem>(
     {
-      // Товары: локальные данные + lib/search поверх (fuzzy-скан по названию) —
-      // источник объявляет `scan`, поэтому слайдер `ls` у него осмыслен.
+      // Товары: родной поиск источника (тумблер `srch`) + lib/search поверх
+      // (fuzzy-скан по названию: источник объявляет `scan`).
       products: withLibSearch(
-        createLocalItemsSource('products').with(withTotalsGate({ gate: 'total' })),
+        createLocalItemsSource('products')
+          .with(withSearchGate({ gate: 'srch' }))
+          .with(withTotalsGate({ gate: 'total' })),
         { gate: 'ls', ...channels },
       ),
       // Фото — «просто данные»: ни родного поиска, ни сканирования, ни

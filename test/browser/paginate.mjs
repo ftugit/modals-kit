@@ -64,6 +64,9 @@ function killServer() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Начало каталога товаров без сужения — 10 записей первого слайса (id 1..10). */
+const PRODUCTS_TOP = Array.from({ length: 10 }, (_, i) => `card-${i + 1}`).join(',');
+
 async function run() {
   await ensureServer();
   const browser = await chromium.launch({ headless: true });
@@ -509,26 +512,62 @@ async function run() {
       throw new Error('когда искать нечем, поле запроса должно быть погашено');
     console.log('  ok  фото: опции поиска и lib/search погашены, поле запроса погашено, totals работает');
 
-    // Товары: lib/search подключён и сканирование разрешено — опция `ls`
-    // работает, родного поиска у источника пока нет — `srch` погашен.
-    await page.goto(`${U}?page.src=products`, { waitUntil: 'networkidle' });
-    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length > 0, {
-      timeout: 15000,
-    });
-    if (!(await field('srch').isDisabled()))
-      throw new Error('у товаров без родного поиска опция srch должна быть погашена');
-    if (await field('ls').isDisabled())
-      throw new Error('у товаров с разрешённым сканированием опция lib/search должна работать');
-    if (!(await field('total').isDisabled()) === false)
-      throw new Error('у товаров с totals опция числа страниц должна работать');
-    console.log('  ok  товары: lib/search работает (scan есть), родной поиск погашен (его нет)');
-
-    // Погашенные опции не пишутся в адрес: ключ домена не «протекает» из панели
-    // мимо возможности источника (setExtra отклоняет необъявленный ключ).
+    // Погашенные опции не пишутся в адрес: ключ не «протекает» из панели мимо
+    // возможности источника (и дефолты не засоряют адрес).
     const leak = await page.evaluate(() => window.location.search);
     if (leak.includes('page.ls') || leak.includes('page.srch'))
       throw new Error(`погашенные опции попали в адрес: ${leak}`);
     console.log('  ok  погашенные опции в адрес не пишутся');
+
+    // ── Товары: родной поиск источника по названию ──────────────────────────
+    // Возможность объявлена ИСТОЧНИКОМ (`search` в спеке), поэтому опция srch
+    // доступна; lib/search подключён поверх (scan) — доступна и ls.
+    await page.goto(`${U}?page.src=products&page.ls=false&page.size=10`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length === 10, {
+      timeout: 15000,
+    });
+    if (await field('srch').isDisabled())
+      throw new Error('у товаров с родным поиском опция srch должна работать');
+    if (await field('ls').isDisabled())
+      throw new Error('у товаров с разрешённым сканированием опция lib/search должна работать');
+    const searchInput = page.locator('[data-testid="search-input"]');
+    if (await searchInput.isDisabled())
+      throw new Error('когда искать есть чем, поле запроса должно быть активным');
+    await searchInput.fill('Product 29');
+    await searchInput.press('Enter');
+    await page.waitForFunction(
+      () => new URLSearchParams(location.search).get('page.q') === 'Product 29',
+      { timeout: 15000 },
+    );
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length === 10, {
+      timeout: 15000,
+    });
+    const found = await page.locator('[data-testid^="card-"]').allInnerTexts();
+    if (!found.every((text) => /Product 29/.test(text)))
+      throw new Error(`родной поиск товаров не сузил выдачу: ${found.join(' | ')}`);
+    const counter = await page.locator('[data-testid="page-divider-1"], [data-testid="status-row"]').count();
+    console.log(
+      `  ok  товары: родной поиск по названию сузил выдачу (${found.length} строк на странице` +
+        `${counter ? ', totals по найденному' : ''})`,
+    );
+
+    // Тумблер родного поиска гасит применение запроса: выдача снова каталог,
+    // а ввод и адрес целы (запрос не стирается — ссылка переносима).
+    await field('srch').evaluate((el) => el.click());
+    await page.waitForFunction(
+      () => new URLSearchParams(location.search).get('page.srch') === 'false',
+      { timeout: 15000 },
+    );
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length === 10, {
+      timeout: 15000,
+    });
+    const plain = await page.locator('[data-testid^="card-"]').evaluateAll((els) => els.map((el) => el.dataset.testid));
+    const full = PRODUCTS_TOP; // начало каталога без сужения
+    if (plain.join(',') !== full)
+      throw new Error(`с выключенным родным поиском ожидался каталог с начала: ${plain.slice(0, 3)} vs ${full.slice(0, 3)}`);
+    if (new URLSearchParams(new URL(page.url()).search).get('page.q') !== 'Product 29')
+      throw new Error('запрос не должен пропадать из адреса при гашении тумблера');
+    console.log('  ok  товары: тумблер srch гасит применение запроса, ввод и адрес целы');
 
     console.log(
       '\n✅ Браузерный тест в Chromium пройден: скролл окна стабилен, персист настроек работает',
