@@ -20,6 +20,7 @@
    * (`page.filters.<поле>.<режим>`), чужие ключи адреса едут скрытыми полями.
    * Ровно эти ключи читает адресный слой после перехода.
    */
+  import { onMount } from 'svelte'
   import { Button, Input, Select } from '$lib/ui/primitives'
   import type { CatalogFilterControl } from '$lib/filters'
 
@@ -39,6 +40,18 @@
   let { controls, action, hidden = [], onApply, resetHref, class: cls = '' }: Props = $props()
 
   let formEl = $state<HTMLFormElement | null>(null)
+
+  /**
+   * Гашение недоступных полей — работа JavaScript, а не разметки: без JS форму
+   * нельзя «подкручивать» (выключенный контрол браузер не отправляет, и запрос
+   * пользователя пропал бы молча). До гидратации поля остаются живыми, а
+   * причина (««Статус» блокирует поле: …») видна всегда — там же говорит
+   * валидатор связок. Канон тот же, что у панели настроек (`js = !hydrated`).
+   */
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
 
   /**
    * Значения одного контрола из формы. Числовая граница и одиночный выбор —
@@ -118,7 +131,7 @@
             options={control.options}
             name={control.name}
             value={control.value}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
             placeholder="Любое"
           />
         {:else if control.kind === 'multiselect'}
@@ -129,7 +142,7 @@
             name={control.name}
             multiple
             value={[...control.value]}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
             placeholder="Не выбрано"
           />
         {:else if control.kind === 'number'}
@@ -142,7 +155,7 @@
             placeholder={control.placeholder}
             min={control.min}
             max={control.max}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
           />
         {:else}
           <Input
@@ -151,7 +164,7 @@
             type="text"
             name={control.name}
             value={control.value}
-            disabled={control.disabled}
+            disabled={hydrated && control.disabled}
           />
         {/if}
         {#if control.kind === 'multiselect' && control.truncated}

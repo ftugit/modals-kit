@@ -123,12 +123,40 @@ describe('контролы из объявления схемы', () => {
 })
 
 describe('связки в интерфейсе', () => {
-  it('поле под связкой гасится с причиной из схемы', () => {
+  it('поле под связкой гасится с причиной, называющей виновника', () => {
     const states = catalogFilterFieldStates(schema, { 'filters.status': 'anons' })
     const score = states.find((state) => state.key === 'score')
-    expect(score).toMatchObject({ disabled: true, suppressedBy: 'score-with-anons', reason: 'у анонсов нет оценки' })
+    // Причина — не «список невозможного», а ответ «что мешает этому полю»:
+    // связка названа полем-виновником, объяснение берётся из схемы.
+    expect(score).toMatchObject({
+      disabled: true,
+      suppressedBy: 'score-with-anons',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки',
+    })
     // Соседние поля связка не трогает.
     expect(states.find((state) => state.key === 'genres')?.disabled).toBe(false)
+  })
+
+  it('несколько условий связки называются все (согласование по числу)', () => {
+    const multi = {
+      ...schema,
+      rules: [
+        {
+          id: 'kind-and-status',
+          when: [
+            { field: 'kind', value: 'movie' },
+            { field: 'status', value: 'anons' },
+          ],
+          drop: { field: 'score' },
+          reason: 'связка с двумя условиями',
+        },
+      ],
+    }
+    const score = catalogFilterFieldStates(multi, {
+      'filters.kind': 'movie',
+      'filters.status': 'anons',
+    }).find((state) => state.key === 'score')
+    expect(score?.reason).toBe('«Тип» и «Статус» блокируют поле: связка с двумя условиями')
   })
 
   it('запрет поиска виден отдельно — у поиска свой канал', () => {
@@ -139,10 +167,12 @@ describe('связки в интерфейсе', () => {
 
   it('снятое связкой поле названо в картине панели', () => {
     const view = catalogFilterView(schema, { 'filters.status': 'anons' })
-    expect(view.suppressed).toEqual([{ key: 'score', label: 'Оценка', reason: 'у анонсов нет оценки' }])
+    expect(view.suppressed).toEqual([
+      { key: 'score', label: 'Оценка', reason: '«Статус» блокирует поле: у анонсов нет оценки' },
+    ])
     expect(view.controls.find((control) => control.path === 'filters.score.min')).toMatchObject({
       disabled: true,
-      reason: 'у анонсов нет оценки',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки',
     })
   })
 

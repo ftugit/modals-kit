@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { currentPathname, currentSearch } from '$lib/router/sveltekit'
   import { getClientStore, setExtra } from '$lib/paginate'
   import { normalizeSearchQuery } from '$lib/search'
@@ -28,6 +29,14 @@
     disabled = false,
     hint,
   }: Props = $props()
+
+  // Гашение поля — работа JS (тот же канон, что у панели настроек): без
+  // JavaScript контрол остаётся живым, иначе браузер не отправит его значение и
+  // запрос пользователя пропал бы молча. Причина видна в обоих случаях.
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
 
   // Запись запроса — штатный `setExtra` пагинатора (строка как у исходника,
   // `ShikimoriPage.tsx`): `q` — restorable-ключ extra, он же входит в
@@ -114,7 +123,7 @@
     type="search"
     data-testid="search-input"
     name={path}
-    {disabled}
+    disabled={hydrated && disabled}
     maxlength={maxLength}
     {value}
     placeholder="Тайтл: «наруто», «naruto», «нарута»"
