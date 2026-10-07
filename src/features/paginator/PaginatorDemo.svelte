@@ -2,6 +2,7 @@
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { PaginatorScope } from '$lib/paginate/svelte'
+  import type { PaginatorState } from '$lib/paginate'
   import {
     DEFAULT_DEMO_CONFIG,
     GALLERY_NAME,
@@ -9,7 +10,8 @@
     ensureDemoPaginator,
     type DemoStore,
   } from './definition'
-  import type { PaginatorLoaderData } from './loader'
+  import type { CatalogItem } from './item-views'
+  import type { PaginatorLoaderData } from './types'
   import DemoPaginator from './DemoPaginator.svelte'
   import GalleryDemo from './GalleryDemo.svelte'
 
@@ -21,6 +23,9 @@
 
   let storeKind = $state<DemoStore>(DEFAULT_DEMO_CONFIG.store)
   const activeName = $derived(ensureDemoPaginator(storeKind))
+  const activeSnapshot = $derived.by<PaginatorState<CatalogItem> | null>(() =>
+    storeKind === 'url' && activeName === loaderData.defaultName ? loaderData.snapshot : null
+  )
 
 </script>
 
@@ -44,6 +49,16 @@
           компоненты из <code class="rounded bg-muted/70 px-1">ui/paginator</code>: уберите
           ненужные.
         </p>
+        <p class="mt-2 max-w-2xl text-muted-foreground">
+          Один пагинатор обслуживает три источника (опция «Источник данных»): локальные товары и
+          фото и{' '}
+          <b>живой каталог Shikimori</b> — прямые запросы к его API через бэкенд (серверный
+          эндпоинт с кэшем и троттлингом, без выгрузки каталога). Поиск — два независимых слоя:
+          родной поиск источника (<code class="rounded bg-muted/70 px-1">q</code> →{' '}
+          <code class="rounded bg-muted/70 px-1">search</code> в API, работает без lib/search) и
+          lib/search поверх него (fuzzy-ранжирование и коррекция опечаток). Обе опции — тумблеры
+          демо-панели.
+        </p>
       </div>
       <a
         href="/"
@@ -60,7 +75,7 @@
             name={activeName}
             {storeKind}
             onStore={(s: DemoStore) => (storeKind = s)}
-            url={{ snapshot: activeName === loaderData.defaultName ? loaderData.snapshot : null }}
+            url={{ snapshot: activeSnapshot }}
           />
         {:else}
           <DemoPaginator

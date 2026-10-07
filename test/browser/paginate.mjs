@@ -321,14 +321,14 @@ async function run() {
 
     await sel('layout').selectOption('columns');
     await chk('skel').evaluate((el) => el.click());
-    await sel('kind').selectOption('photos');
+    await sel('src').selectOption('photos');
     await sleep(1200);
     const q = search();
     for (const part of [
       'page.size=5',
       'page.layout=columns',
       'page.skel=false',
-      'page.kind=photos',
+      'page.src=photos',
     ]) {
       if (!q.includes(part)) throw new Error(`в URL нет ${part}: ${q}`);
     }
@@ -342,7 +342,7 @@ async function run() {
     const p2 = await ctx2.newPage();
     await p2.goto(shared, { waitUntil: 'networkidle' });
     const restored = {
-      kind: await p2.locator('select[name="page.kind"]').inputValue(),
+      src: await p2.locator('select[name="page.src"]').inputValue(),
       layout: await p2.locator('select[name="page.layout"]').inputValue(),
       size: await p2.locator('select[name="page.size"]').inputValue(),
       skel: await p2.locator('input[name="page.skel"][type="checkbox"]').isChecked(),
@@ -354,7 +354,7 @@ async function run() {
       photos: await p2.locator('[data-testid^="photo-"]').count(),
     };
     if (
-      restored.kind !== 'photos' ||
+      restored.src !== 'photos' ||
       restored.layout !== 'columns' ||
       restored.size !== '5' ||
       restored.skel ||
@@ -383,7 +383,7 @@ async function run() {
     await sleep(1000);
     const nm = await page.locator('[data-testid="current-name"]').innerText();
     if (nm !== 'demo-local-ls') throw new Error(`имя пагинатора для LS: ${nm}`);
-    if ((await sel('kind').inputValue()) !== 'products')
+    if ((await sel('src').inputValue()) !== 'products')
       throw new Error('пустой LS должен дать дефолты, а не настройки URL');
     await sel('size').selectOption('10');
     await sel('layout').selectOption('columns');
@@ -430,7 +430,7 @@ async function run() {
       throw new Error('URL-хранилище без параметров должно давать дефолты');
     // а с адресом-ссылкой — её настройки
     await page.goto(shared, { waitUntil: 'networkidle' });
-    if ((await sel('kind').inputValue()) !== 'photos')
+    if ((await sel('src').inputValue()) !== 'photos')
       throw new Error('URL-хранилище не восстановило настройки из адреса');
     console.log('  ok  переключение хранилищ показывает настройки каждого из них');
 

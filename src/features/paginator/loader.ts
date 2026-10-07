@@ -1,4 +1,4 @@
-import type { DemoItem } from '../../content/items'
+import { fetchAnimes } from '$lib/server/shikimori'
 import {
   createPaginatorStore,
   initServerPaginator,
@@ -9,13 +9,27 @@ import {
   DEFAULT_GALLERY_EXTRA,
   ensureDemoPaginator,
   ensureGalleryPaginator,
+  setLiveServerTransport,
 } from './definition'
+import type { DemoItem } from '../../content/items'
+import type { CatalogItem } from './item-views'
+import type { PaginatorLoaderData } from './types'
 
-export interface PaginatorLoaderData {
-  defaultName: string
-  snapshot: PaginatorState<DemoItem>
-  gallerySnapshot: PaginatorState<DemoItem>
-}
+export type { PaginatorLoaderData } from './types'
+
+/**
+ * Мост живого источника на сервере: лоадер отдаёт пагинатору транспорт прямо
+ * к серверному модулю Shikimori (`$lib/server/shikimori` — кэш, троттлинг,
+ * User-Agent), поэтому SSR-снапшот строится одним запросом на сервере и БЕЗ
+ * обращения к собственному HTTP-эндпоинту. В браузере тот же источник идёт в
+ * `/api/shikimori/animes` (см. `content/shikimori.ts`).
+ *
+ * Вызов идемпотентен и живёт на уровне модуля: транспорт — инвариант сервера,
+ * а не состояние запроса.
+ */
+setLiveServerTransport({
+  fetchPage: (query) => fetchAnimes(query),
+})
 
 export type PaginatorSearch = { page?: number }
 
@@ -26,7 +40,7 @@ export async function loadPaginatorDemo(ctx: {
 }): Promise<PaginatorLoaderData> {
   const store = createPaginatorStore()
   const defaultName = ensureDemoPaginator('url')
-  store.update<DemoItem>(defaultName, (state) => ({
+  store.update<CatalogItem>(defaultName, (state) => ({
     ...state,
     extra: { ...DEFAULT_DEMO_EXTRA },
   }))
@@ -51,15 +65,17 @@ export async function loadPaginatorDemo(ctx: {
 
   const url = `${ctx.pathname || '/paginator'}${searchStr}`
   const galleryName = ensureGalleryPaginator()
-  store.update<DemoItem>(galleryName, (state) => ({
+  store.update<CatalogItem>(galleryName, (state) => ({
     ...state,
     extra: { ...DEFAULT_GALLERY_EXTRA },
   }))
 
-  const [snapshot, gallerySnapshot] = await Promise.all([
-    initServerPaginator<DemoItem>(store, defaultName, { url }),
-    initServerPaginator<DemoItem>(store, galleryName, { url }),
-  ]);
+  const [snapshot, gallerySnapshot]: [PaginatorState<CatalogItem>, PaginatorState<DemoItem>] =
+    await Promise.all([
+      initServerPaginator<CatalogItem>(store, defaultName, { url }),
+      // Галерея — вторая полоса под своим префиксом `?gallery.*`, всегда фото.
+      initServerPaginator<DemoItem>(store, galleryName, { url }),
+    ])
 
   return { defaultName, snapshot, gallerySnapshot }
 }

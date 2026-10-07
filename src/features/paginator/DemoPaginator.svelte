@@ -1,11 +1,13 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
   import {
     EdgeSentinel,
     PaginatorHost,
-    usePaginatorActions,
     usePaginatorState,
-    useScopeStore,
   } from '$lib/paginate/svelte'
+  import type { SearchInterceptStats } from '$lib/search'
+  import { useSearchCorrection } from '$lib/search/svelte'
   import {
     EmptyState,
     EndRow,
@@ -22,18 +24,21 @@
     Skeleton,
     type SettingsField,
   } from '$lib/ui/paginator'
-  import type { DemoItem } from '../../content/items'
   import {
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
     demoExtraOf,
+    demoQueryOf,
+    onInterceptStats,
     type DemoExtra,
     type DemoStore,
   } from './definition'
-  import { shotHeight } from './item-views'
-  import ShotTile from './ShotTile.svelte'
+  import { isAnimeItem, shotHeight, type CatalogItem } from './item-views'
+  import AnimeRow from './AnimeRow.svelte'
+  import AnimeTile from './AnimeTile.svelte'
   import ItemRow from './ItemRow.svelte'
-  import type { PaginatorState } from '$lib/paginate'
+  import SearchQueryForm from './SearchQueryForm.svelte'
+  import ShotTile from './ShotTile.svelte'
 
   const HOST_CLASS =
     'h-[520px] scroll-mt-20 overflow-y-auto rounded-xl border border-border/70 bg-background p-3'
@@ -58,12 +63,34 @@
 
   const DEMO_FIELDS: readonly SettingsField<DemoExtra>[] = [
     {
-      key: 'kind',
-      label: 'Содержимое (источник)',
+      key: 'src',
+      label: 'Источник данных',
       type: 'select',
       options: [
-        ['products', 'Товары (299)'],
-        ['photos', 'Фото (131)'],
+        ['products', 'Товары (299, локально)'],
+        ['photos', 'Фото (131, локально)'],
+        ['animes', 'Shikimori (живой API)'],
+      ],
+    },
+    { type: 'divider', label: 'Поиск: два независимых слоя' },
+    {
+      key: 'srch',
+      label: 'Родной поиск источника (q → search)',
+      type: 'toggle',
+    },
+    {
+      key: 'ls',
+      label: 'lib/search поверх источника (fuzzy)',
+      type: 'toggle',
+    },
+    { type: 'divider', label: 'Раскладка и режим' },
+    {
+      key: 'layout',
+      label: 'Раскладка',
+      type: 'select',
+      options: [
+        ['list', 'Список'],
+        ['columns', 'Колонки (round-robin)'],
       ],
     },
     {
@@ -74,15 +101,6 @@
       options: [
         ['accumulate', 'Накопление (подгрузка)'],
         ['single', 'Классическая смена'],
-      ],
-    },
-    {
-      key: 'layout',
-      label: 'Раскладка',
-      type: 'select',
-      options: [
-        ['list', 'Список'],
-        ['columns', 'Колонки (round-robin)'],
       ],
     },
     {
@@ -124,7 +142,13 @@
         ['50', '50%'],
       ],
     },
-    { key: 'total', label: 'Известное число страниц', type: 'toggle' },
+    {
+      key: 'total',
+      label: 'Известное число страниц',
+      type: 'toggle',
+      // У Shikimori числа страниц нет by design: API не отдаёт ни `Link`, ни счётчика.
+      enabledWhen: (v) => v.src !== 'animes',
+    },
     { key: 'skel', label: 'Скелетоны', type: 'toggle', jsOnly: true },
     { key: 'ind', label: 'Плавающий индикатор загрузки', type: 'toggle', jsOnly: true },
     { type: 'divider', label: 'Подгрузка по краям (только в режиме накопления)' },
@@ -179,16 +203,37 @@
     storeKind: DemoStore
     onStore: (store: DemoStore) => void
     /** SSR-снапшот URL-бранча. Страницу из адреса хост считает сам (через адаптер). */
-    url?: { snapshot: PaginatorState<DemoItem> | null }
+    url?: { snapshot: PaginatorState<CatalogItem> | null }
   }
 
   let { name, storeKind, onStore, url }: Props = $props()
 
-  const pagState = usePaginatorState<DemoItem>(name)
+  const pagState = usePaginatorState<CatalogItem>(name)
+  // Имя захватывается начальным значением осознанно (как у панели настроек рядом):
+  // родитель пересоздаёт демо по `{#key activeName}` при смене хранилища.
+  const correction = useSearchCorrection(name)
 
-  const cfg = $derived.by((): DemoExtra => {
-    const s = pagState()
-    return demoExtraOf(s.extra)
+  const cfg = $derived.by((): DemoExtra => demoExtraOf(pagState().extra))
+  const query = $derived(demoQueryOf(pagState().extra))
+
+  /** Живая статистика перехвата lib search (канал источника, не реестра). */
+  let stats = $state<SearchInterceptStats | null>(null)
+  // Подписка сразу отдаёт текущее значение (см. `onInterceptStats`).
+  $effect(() => onInterceptStats(name, (next) => (stats = next)))
+
+  /**
+   * Deep-link с запросом и включённым lib/search: SSR-выдача пришла от
+   * ИСТОЧНИКА (серверная подстрока — fuzzy на сервере не исполняется), а на
+   * клиенте ту же страницу обязан показать перехватчик. Механика та же, что у
+   * `resyncSearch` из lib/search (перезапрос текущей страницы), но вызванная
+   * напрямую: `resyncSearch` адресован поискам, зарегистрированным через
+   * `defineSearch`, а здесь регистрация канонная (пагинатор + перехватчик,
+   * как на странице shikimori у исходника) — экземпляра поиска в реестре нет.
+   * В single-семантике переход на ту же страницу = REPLACE через перехватчик;
+   * в накоплении перехват подхватывает следующую же подгрузку.
+   */
+  onMount(() => {
+    if (cfg.ls && query) void goToPage(getClientStore(), name, pagState().page)
   })
 
   function restoredLabel(store: DemoStore): string {
@@ -212,7 +257,7 @@
   {#snippet toolbar()}
     <PaginatorSettings
       {name}
-      class="mb-5 rounded-xl border border-border bg-card p-4 text-sm shadow-sm"
+      class="mb-3 rounded-xl border border-border bg-card p-4 text-sm shadow-sm"
       pageSizes={DEMO_PAGE_SIZES}
       fields={DEMO_FIELDS}
       values={demoExtraOf}
@@ -225,14 +270,49 @@
           ['none', 'Память (без персиста)'],
         ],
       }}
-      noscriptHint="Без JavaScript: работают источник, раскладка, размер страницы и число страниц (через адрес); остальные опции требуют JS."
+      noscriptHint="Без JavaScript: работают источник, поиск, раскладка, размер страницы и число страниц (через адрес); остальные опции требуют JS."
     >
       {#snippet footer(ctx)}
         Настройки и страница восстановлены {restoredLabel(storeKind)}; каждое изменение
-        сразу пишется туда же. Размер страницы: <b data-testid="page-size">{ctx.pageSize}</b> —
-        номера страниц подписаны на разделителях в списке.
+        сразу пишется туда же. Размер страницы: <b data-testid="page-size">{ctx.pageSize}</b> — у
+        Shikimori это <code>limit</code> запроса к API (максимум 50), номера страниц подписаны на
+        разделителях в списке.
       {/snippet}
     </PaginatorSettings>
+
+    <div class="mb-5 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <SearchQueryForm {name} path="page.q" disabled={!cfg.srch} />
+      <p class="text-xs text-muted-foreground" data-testid="search-hint">
+        {#if cfg.src === 'animes'}
+          Родной поиск — подстрока силами API (<code>q</code> → <code>search</code>):
+          «наруто» и «naruto» находит, «нарута» — нет. lib/search добавляет
+          fuzzy-ранжирование и коррекцию по словарю из живых страниц популярности; без
+          родного поиска он сканирует каталог без сужения — медленнее, но находит опечатки.
+        {:else}
+          У товаров и фото родного поиска нет: запрос сужает выдачу только при включённом
+          lib/search (fuzzy по локальным данным). Источник Shikimori ищет сам.
+        {/if}
+      </p>
+      <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
+        Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · lib/search:
+        <b data-testid="search-ls">{cfg.ls ? 'вкл' : 'выкл'}</b>
+        {#if correction()?.changed}
+          · <span data-testid="search-correction"
+            >искали «{correction()?.query}», показываем «{correction()?.corrected}»</span
+          >
+        {/if}
+        {#if cfg.ls && stats}
+          · <span data-testid="search-stats"
+            >просмотрено {stats?.scanned}, совпало {stats?.matched}, выдано {stats?.emitted}{#if stats?.exhausted}{' '}·
+              каталог исчерпан{/if}</span
+          >
+        {:else if cfg.src === 'animes'}
+          · <span data-testid="search-stats"
+            >число страниц API не отдаёт — навигация стрелками</span
+          >
+        {/if}
+      </p>
+    </div>
   {/snippet}
 
   {#snippet children()}
@@ -244,13 +324,19 @@
   <!--
     Скелетоны объявлены значениями и передаются УСЛОВНО: выключены — `undefined`,
     и список сам рисует строку «Загрузка страницы N…» (ровно как в исходнике,
-    `renderSkeleton={cfg().skel ? skeleton(cfg().kind) : undefined}`).
+    `renderSkeleton={cfg.skel ? skeleton(cfg.src) : undefined}`).
   -->
   {#snippet skelColumns(ctx: { page: number; index: number })}
-    <Skeleton height={shotHeight(ctx.index + 1)} />
+    {#if cfg.src === 'animes'}
+      <Skeleton height={240} />
+    {:else}
+      <Skeleton height={shotHeight(ctx.index + 1)} />
+    {/if}
   {/snippet}
   {#snippet skelList(ctx: { page: number; index: number })}
-    {#if cfg.kind === 'photos'}
+    {#if cfg.src === 'animes'}
+      <Skeleton height={52} />
+    {:else if cfg.src === 'photos'}
       <Skeleton height={shotHeight(ctx.index + 1)} />
     {:else}
       <Skeleton />
@@ -274,14 +360,23 @@
       renderDivider={null}
       renderSkeleton={cfg.skel ? skelColumns : undefined}
     >
-      {#snippet renderItem(item: DemoItem)}
-        <ShotTile {item} />
+      {#snippet renderItem(item: CatalogItem)}
+        {#if isAnimeItem(item)}
+          <AnimeTile {item} />
+        {:else}
+          <ShotTile {item} />
+        {/if}
       {/snippet}
     </PageColumns>
   {:else}
     <PageList {name} renderSkeleton={cfg.skel ? skelList : undefined}>
-      {#snippet renderItem(item: DemoItem)}
-        <ItemRow {item} />
+      <!-- Запись различается по форме (канон): тайтл Shikimori, товар или фото. -->
+      {#snippet renderItem(item: CatalogItem)}
+        {#if isAnimeItem(item)}
+          <AnimeRow {item} />
+        {:else}
+          <ItemRow {item} />
+        {/if}
       {/snippet}
     </PageList>
   {/if}

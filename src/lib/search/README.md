@@ -87,6 +87,35 @@ export const load = ({ url }) => /* … */ void url
 `name`/`pageParam` и все спецификации в массиве `paginatorSearch`. Каждый ключ
 адреса принадлежит ровно одному пагинатору.
 
+### Второй способ: пагинатор + перехватчик (как в демо)
+
+Когда пагинатор уже определён сам (свой URL-адаптер, `pageSizes`, опции панели)
+и один источник обслуживает несколько входов, поиск подключается НИЖЕ уровня
+реестра — тем же перехватчиком, которым пользуется `defineSearch`:
+
+```ts
+// Клиент и сервер: пагинатор с источником-диспетчером.
+const intercepted = createSearchInterceptor<Item>({
+  source: baseSource,          // обязан понимать extra.q как подстроку
+  id: (r) => String(r.id),
+  texts: (r) => [r.title],
+  onCorrection: (info) => reportSearchCorrection(name, info), // канал реестра
+  onStats: (stats) => publishStats(name, stats),              // канал потребителя
+})
+const source: Source<Item> = (req) =>
+  extra.ls ? intercepted(req) : baseSource(req)   // тумблер потребителя
+
+definePaginator({ name, source, reloadKeys: ['q', 'ls'],
+  adapter: createUrlAdapter({ name, source, pageSizes, extraSearch: { q: qValidator } }) })
+```
+
+Отличия от `defineSearch` ровно два, и оба — про отсутствие экземпляра поиска
+в реестре: запись запроса делается штатным `setExtra(store, name, { q })`
+(нормализация — `normalizeSearchQuery`), а перезапрос текущей страницы после
+гидратации deep-link'а — `goToPage(store, name, state.page)` (в single-семантике
+это REPLACE через перехватчик) вместо `resyncSearch`. Подпись коррекции
+(`useSearchCorrection`) и `hasSearch/getSearch` при этом работают как обычно.
+
 ## Что lib search НЕ делает
 
 lib search — **не хранилище и не транспорт**. Адрес (`?<pageParam>`,

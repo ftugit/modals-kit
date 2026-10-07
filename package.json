@@ -19,7 +19,8 @@
     "test:browser:shell": "node test/browser/shell.mjs",
     "test:browser:forms": "node test/browser/forms.mjs",
     "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs",
-    "test:browser:paginate": "node test/browser/paginate.mjs"
+    "test:browser:paginate": "node test/browser/paginate.mjs",
+    "test:browser:shikimori": "node test/browser/shikimori.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
