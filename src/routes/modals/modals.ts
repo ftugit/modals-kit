@@ -30,6 +30,8 @@ const MODAL_DEFINITIONS = [
     name: 'flow-probe',
     component: FlowProbeModal,
     size: { width: 560, height: 320 },
+    color: 'var(--card)',
+    tailColor: 'var(--border)',
   },
   {
     name: 'fullpage',
@@ -42,6 +44,8 @@ const MODAL_DEFINITIONS = [
     name: 'broken-route',
     component: CardModal,
     size: { width: 420, height: 260 },
+    color: 'var(--card)',
+    tailColor: 'var(--border)',
     route: '/no-such-page/$id',
   },
   {
@@ -56,6 +60,8 @@ const MODAL_DEFINITIONS = [
     name: 'select',
     component: SelectModal,
     size: { width: 560, height: 360 },
+    color: 'var(--card)',
+    tailColor: 'var(--border)',
   },
 ] as any
 

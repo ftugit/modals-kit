@@ -285,8 +285,8 @@ export function resolveEntry(entry: ChainEntry, index: number, lookup: Lookup): 
     index,
     params: isRegistered(entry) ? { ...(definition?.defaultParams ?? {}), ...entry.params } : {},
     size: ov.size ?? definition?.size ?? { width: 480 },
-    color: ov.color ?? definition?.color ?? '#ffffff',
-    tailColor: ov.tailColor ?? definition?.tailColor ?? '#e5e7eb',
+    color: ov.color ?? definition?.color ?? 'var(--card)',
+    tailColor: ov.tailColor ?? definition?.tailColor ?? 'var(--border)',
     // Намерение сохраняем как есть: 'off' — это отказ записи, а не
     // «ничего не задано». Итоговый якорь считает `mobileAnchorOf`.
     mobile: mobileRaw,
