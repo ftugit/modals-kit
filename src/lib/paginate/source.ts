@@ -186,13 +186,39 @@ export function resolveQuery(raw: unknown, minLength: number): string {
   return q.length >= Math.max(1, minLength) ? q : ''
 }
 
+/**
+ * Пространство ключей фильтров: `filters.<поле>[.<режим>|<граница>]`. Префикс
+ * объявлен здесь ОДИН раз (сама форма ключей — в `$lib/filters`), чтобы слой
+ * источника мог честно сказать, какой фильтровый ключ он отбросил: у него нет
+ * списка «чужих» ключей, а UI-ключи (раскладка, режим) трогать нельзя.
+ */
+export const FILTER_KEY_PREFIX = 'filters.'
+
 /** Значения объявленных фильтров: только известные ключи, пустые опускаются. */
-export function resolveFilters(extra: Extra | undefined, keys: readonly string[]): Record<string, string> {
+export function resolveFilters(
+  extra: Extra | undefined,
+  keys: readonly string[],
+  options: { source?: string } = {},
+): Record<string, string> {
   const out: Record<string, string> = {}
+  const declared = new Set(keys)
   for (const key of keys) {
     const value = extra?.[key]
     if (value === undefined || value === null || value === '') continue
     out[key] = String(value)
+  }
+  // Симметрия с запросом: фильтровый ключ, которого источник не объявлял, не
+  // исчезает молча — слой говорит, что именно отброшено и почему (deny-safe:
+  // в данные такой ключ не поедет).
+  if (extra) {
+    for (const key of Object.keys(extra)) {
+      if (declared.has(key) || !key.startsWith(FILTER_KEY_PREFIX)) continue
+      if (extra[key] === undefined || extra[key] === null || extra[key] === '') continue
+      devWarn(
+        `[source:${options.source ?? '—'}] фильтр «${key}» отброшен: источник не объявляет ` +
+          `фильтры (нужен \`filters\` в спеке; состав значений объявляет схема источника).`,
+      )
+    }
   }
   return out
 }
@@ -228,7 +254,7 @@ export function defineSource<T>(spec: SourceSpec<T>): AdaptedSource<T> {
       }
       return spec.data(look, {
         q: spec.search ? resolveQuery(rawQuery, minLength) : '',
-        filters: resolveFilters(extra, filterKeys),
+        filters: resolveFilters(extra, filterKeys, { source: spec.name }),
       })
     },
   })

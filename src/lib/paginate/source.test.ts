@@ -87,6 +87,34 @@ describe('defineSource: возможности и deny-safe вход', () => {
     expect(source.capabilitiesFor().filters).toEqual({ keys: ['kind', 'year'] })
   })
 
+  it('фильтр без объявления: ключ не молчит — слой называет отброшенное', async () => {
+    const calls: Call[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const source = make(calls, {})
+    await source.fetchPage(
+      { page: 1, pageSize: 5 },
+      { 'filters.kind': 'tv', 'filters.genres.and': '27', layout: 'columns' },
+    )
+    expect(calls[0].input.filters).toEqual({})
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('filters.kind'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('filters.genres.and'))
+    warn.mockRestore()
+  })
+
+  it('объявленный фильтр — часть контракта источника (и в паспорте, и в данных)', async () => {
+    const calls: Call[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const source = make(calls, { filters: ['filters.kind'] })
+    await source.fetchPage({ page: 1, pageSize: 5 }, { 'filters.kind': 'tv', 'filters.status': 'anons' })
+    expect(calls[0].input.filters).toEqual({ 'filters.kind': 'tv' })
+    expect(source.extraKeys()).toEqual(['filters.kind'])
+    // Отброшен только незаявленный ключ, и об этом сказано.
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('filters.status'))
+    warn.mockRestore()
+  })
+
   it('featureGates: что включено у источника — то и можно включать в UI', () => {
     expect(featureGates(EMPTY_CAPABILITIES)).toEqual({
       nativeSearch: false,
