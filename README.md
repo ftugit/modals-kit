@@ -10,6 +10,9 @@
   адаптеров для SolidJS и Svelte 5 (списки, колонки, бесконечный скролл, сохранение скролла
   при prepend, URL/localStorage/cursor хранилища). Документация —
   [`src/lib/paginate/README.md`](./src/lib/paginate/README.md).
+- **search** — поиск как перехват пагинатора: `defineSearch` подменяет источник и
+  регистрирует его на URL-адаптере, запрос живёт в extra (`?search.q`), fuzzy-ядро
+  изоморфно. Документация — [`src/lib/search/README.md`](./src/lib/search/README.md).
 
 ## API модалок
 
