@@ -115,9 +115,19 @@
   /** Сколько места панель занимает в раскрытом виде — 1:1 с прежним CSS. */
   const contentSize = $derived.by(() => {
     if (fullscreen) {
+      /**
+       * В листе высота ограничена не только «на глаз»: контейнер листа
+       * (`h-auto` + `max-h`) объявляет свой бюджет переменной
+       * `--host-floating-max-height`. Без этого предела длинный список
+       * (например, 80 жанров) растягивал панель до своей высоты, контейнер
+       * обрезал её — и прокрутки не было вовсе: список оказывался «ровно
+       * по себе», а его хвост недостижим. Полноэкранному фолбэку без хоста
+       * предел не нужен: там высота задана явно (`h-dvh`) и определена.
+       */
+      const cap = asLayer ? 'max-h-[var(--host-floating-max-height,85dvh)]' : 'max-h-none'
       return listWidth === 'auto'
-        ? 'w-screen h-full max-w-none max-h-none'
-        : 'w-full h-full max-w-none max-h-none'
+        ? `w-screen h-full max-w-none ${cap}`
+        : `w-full h-full max-w-none ${cap}`
     }
     if (hostMenu) {
       const width = listWidth === 'auto'
@@ -392,14 +402,26 @@
     </p>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-hidden">
+  <!--
+    Обёртка списка — флекс-колонка в полноэкранном листе: там список обязан
+    СТЯГИВАТЬСЯ по высоте листа (`flex-1` + `min-h-0`), а не расти по содержимому.
+    Процентная высота (`h-full`) на этом узле не работает: высота обёртки
+    приходит от flex-раскладки родителя («auto» в вычисленном виде), поэтому
+    80 жанров растягивали список до 2568 px, обрезались `overflow: hidden` —
+    и прокрутки не было вовсе. В выпадашке (не лист) прежняя схема верна:
+    список там как раз по содержимому, а предел задаёт `max-h`.
+  -->
+  <div class={cn('min-h-0 flex-1 overflow-hidden', fullscreen && 'flex flex-col')}>
     <div
       bind:this={listboxEl}
       id={listboxId}
       data-select-listbox=""
       role="listbox"
       aria-multiselectable={multiple || undefined}
-      class={cn('h-full overflow-y-auto p-1 outline-none', fullscreen ? 'max-h-none' : 'max-h-[var(--select-list-height)]')}
+      class={cn(
+        'overflow-y-auto p-1 outline-none',
+        fullscreen ? 'min-h-0 flex-1 max-h-none' : 'h-full max-h-[var(--select-list-height)]',
+      )}
       tabindex="-1"
     >
       {#each filtered as option, index (option.value)}

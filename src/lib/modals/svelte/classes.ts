@@ -108,13 +108,26 @@ export const MODAL_TAIL_CLASS =
  */
 export const MODAL_FLOATING_CLASS = 'group/sheet pointer-events-auto'
 
-/** Раскладка контейнера-листа: полный экран либо прижатие к краю. */
+/**
+ * Раскладка контейнера-листа: полный экран либо прижатие к краю.
+ *
+ * Бюджет высоты объявляется здесь же, рядом с `max-h`/`h-dvh`, и уезжает
+ * переменной `--host-floating-max-height`: содержимое листа (список select)
+ * обязано укладываться в тот же предел. Иначе длинный список растягивает
+ * контейнер с `h-auto` до своей высоты (2000+ px), тот обрезается `max-h`,
+ * а внутренний скролл не появляется: список становится «не длиннее себя»
+ * и прокручивать нечего.
+ */
 export function floatingLayoutClass(anchor: string | undefined): string {
-  if (anchor === 'bottom') return 'fixed inset-x-0 bottom-0 top-auto w-screen h-auto max-h-[85dvh]'
-  if (anchor === 'top') return 'fixed inset-x-0 top-0 bottom-auto w-screen h-auto max-h-[85dvh]'
-  if (anchor === 'left') return 'fixed inset-y-0 left-0 right-auto w-[min(90vw,24rem)] h-dvh'
-  if (anchor === 'right') return 'fixed inset-y-0 right-0 left-auto w-[min(90vw,24rem)] h-dvh'
-  return 'fixed inset-0 w-screen h-dvh max-h-none'
+  if (anchor === 'bottom')
+    return 'fixed inset-x-0 bottom-0 top-auto w-screen h-auto max-h-[85dvh] [--host-floating-max-height:85dvh]'
+  if (anchor === 'top')
+    return 'fixed inset-x-0 top-0 bottom-auto w-screen h-auto max-h-[85dvh] [--host-floating-max-height:85dvh]'
+  if (anchor === 'left')
+    return 'fixed inset-y-0 left-0 right-auto w-[min(90vw,24rem)] h-dvh [--host-floating-max-height:100dvh]'
+  if (anchor === 'right')
+    return 'fixed inset-y-0 right-0 left-auto w-[min(90vw,24rem)] h-dvh [--host-floating-max-height:100dvh]'
+  return 'fixed inset-0 w-screen h-dvh max-h-none [--host-floating-max-height:100dvh]'
 }
 
 /* ── состояния: скелетон, ошибка, спиннер ─────────────────────────── */

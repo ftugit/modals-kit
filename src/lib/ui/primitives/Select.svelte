@@ -362,12 +362,47 @@
 
   /* ── перехват нативного контрола ─────────────────────────────────── */
 
+  /**
+   * Гашение «догоняющего» клика после открытия по указателю.
+   *
+   * 🔴 Открытие происходит на `pointerdown` (иначе Android поднимает свой
+   * picker), но тот же жест оставляет после себя `click` — и он прилетает
+   * УЖЕ в смонтированный список: в пункт, который оказался на месте контрола.
+   * Со стороны это выглядит как «я нажал по select, а он сам выбрал вариант»
+   * (и значение уезжает мимо хранилища). Гасим ровно один клик этого жеста:
+   * слушатель снимает себя сам, а если клика не было — снимается по таймауту.
+   */
+  let swallowArmed = false
+  function swallowTrailingClick(): void {
+    if (swallowArmed) return
+    swallowArmed = true
+    const armedAt = Date.now()
+    const cleanup = () => {
+      swallowArmed = false
+      window.removeEventListener('click', onClick, true)
+      window.removeEventListener('pointercancel', cleanup, true)
+      window.clearTimeout(timer)
+    }
+    const onClick = (event: MouseEvent) => {
+      cleanup()
+      if (Date.now() - armedAt > 700) return // чужой жест — не наш клик
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    const timer = window.setTimeout(cleanup, 800)
+    window.addEventListener('click', onClick, true)
+    window.addEventListener('pointercancel', cleanup, true)
+  }
+
   // `preventDefault` нужен и для touch: иначе Android поднимет собственный
   // picker нативного `<select>` раньше, чем мы успеем открыть свой список.
   function interceptPointer(event: PointerEvent | MouseEvent) {
     if (!mounted || disabled || event.defaultPrevented) return
     event.preventDefault()
+    const wasOpen = open
     setOpen(true)
+    // Список открылся именно этим жестом — значит следом придёт его клик.
+    if (!wasOpen && open) swallowTrailingClick()
   }
   function interceptKey(event: KeyboardEvent) {
     if (!mounted || disabled || event.defaultPrevented) return

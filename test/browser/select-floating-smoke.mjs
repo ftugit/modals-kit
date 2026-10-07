@@ -361,6 +361,118 @@ try {
     await page.close()
   }
 
+  console.log('— Select: мобильный лист — три бага из мобильного отчёта —')
+  {
+    // Живая страница с ДЛИННЫМ списком: панель фильтров источника «animes»,
+    // у жанров 80 пунктов — именно на них список раньше упирался в предел.
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      locale: 'ru-RU',
+    })
+    const page = await ctx.newPage()
+    await page.goto(`${new URL(BASE).origin}/paginator?page.src=animes&page.filters.kind=tv`, {
+      waitUntil: 'networkidle',
+    })
+    await page.locator('details').first().evaluate((el) => el.setAttribute('open', ''))
+
+    const kind = page.locator('[data-select-root]:has(select[name="page.filters.kind"])').locator('select')
+    await kind.scrollIntoViewIfNeeded()
+
+    // Точка фона, за которой ЗАВЕДОМО есть управляющий элемент: без этого
+    // проверка «пробоя фона» ничего не доказывала бы — пустой фон и сам
+    // ничего не нажимает. Ищем в верхней полосе (лист занимает низ).
+    const bgPoint = await page.evaluate(() => {
+      for (let y = 24; y <= 180; y += 12) {
+        for (let x = 24; x <= 366; x += 24) {
+          const hit = document.elementFromPoint(x, y)?.closest?.('button, a[href], input, label, [role="button"]')
+          if (hit) {
+            const name = hit.getAttribute('aria-label') || hit.textContent || hit.tagName
+            return { x, y, name: name.replace(/\s+/g, ' ').trim().slice(0, 24) }
+          }
+        }
+      }
+      return null
+    })
+    assert(bgPoint, 'в верхней полосе страницы нет управляющего элемента — проверка пробоя фона недействительна')
+
+    // 1) Открытие тапом НЕ выбирает пункт, оказавшийся на месте контрола —
+    // ни когда значение уже стоит (прежнее «меняет выбор сам»), ни когда
+    // поле пустое (прежний «сброс/самовыбор»).
+    for (const [label, name] of [
+      ['со значением', 'page.filters.kind'],
+      ['пустое', 'page.filters.status'],
+    ]) {
+      const field = page.locator(`[data-select-root]:has(select[name="${name}"])`).locator('select')
+      await field.scrollIntoViewIfNeeded()
+      const valueBefore = await field.inputValue()
+      await field.tap()
+      await waitAtLeast(page, '[data-select-content]', 1)
+      const valueAfter = await field.inputValue()
+      assert(
+        valueAfter === valueBefore,
+        `тап «выбрал» пункт вместо открытия (${label}): ${JSON.stringify(valueBefore)} → ${JSON.stringify(valueAfter)}`,
+      )
+      await page.keyboard.press('Escape')
+      await waitCount(page, '[data-select-content]', 0)
+    }
+    ok('открытие тапом не подменяет значение — ни выбранное, ни пустое')
+
+    // 2) Длинный список прокручивается пальцем.
+    const genres = page.locator('[data-select-root]:has(select[name="page.filters.genres.and"])').locator('select')
+    await genres.scrollIntoViewIfNeeded()
+    await genres.evaluate((el) => el.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch' }),
+    ))
+    await waitAtLeast(page, '[data-select-listbox]', 1)
+
+    const listbox = page.locator('[data-select-listbox]').last()
+    const box = await listbox.boundingBox()
+    const cdp = await ctx.newCDPSession(page)
+    const x = Math.round(box.x + box.width / 2)
+    const y0 = Math.round(box.y + box.height - 60)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] })
+    for (let i = 1; i <= 8; i += 1) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 - i * 30 }] })
+      await page.waitForTimeout(16)
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await page.waitForTimeout(400)
+
+    const scrolled = await listbox.evaluate((el) => ({
+      top: el.scrollTop,
+      room: el.scrollHeight - el.clientHeight,
+      height: el.clientHeight,
+    }))
+    assert(scrolled.room > 100, `список жанров некуда прокручивать: запас ${scrolled.room}px`)
+    assert(scrolled.top > 100, `жест не прокрутил список: scrollTop=${scrolled.top}`)
+    ok(`список жанров прокручивается пальцем (scrollTop=${scrolled.top}, запас ${scrolled.room}px)`) 
+
+    // 3) Тап по фону закрывает лист и НЕ нажимает то, что оказалось под пальцем.
+    await page.evaluate(() => {
+      window.__leaked = 0
+      document.addEventListener(
+        'click',
+        (event) => {
+          const hit = event.target?.closest?.('button, a[href], input, label, [role="button"]')
+          if (hit) window.__leaked += 1
+        },
+        true,
+      )
+    })
+    const urlBefore = page.url()
+    await page.touchscreen.tap(bgPoint.x, bgPoint.y)
+    await waitCount(page, '[data-select-content]', 0)
+    await page.waitForTimeout(400)
+    const leaked = await page.evaluate(() => window.__leaked)
+    assert(leaked === 0, `клик от тапа по фону дошёл до «${bgPoint.name}» (${leaked} клик(ов))`)
+    assert(page.url() === urlBefore, `тап по фону сменил адрес: ${page.url()}`)
+    ok(`тап по фону закрыл лист, не нажав «${bgPoint.name}» под пальцем`)
+
+    await ctx.close()
+  }
+
   console.log(`\n✅ select-floating-smoke: ${passed} checks passed`)
 } finally {
   await browser.close()

@@ -618,14 +618,45 @@
   $effect(() => {
     if (floatings.length === 0 || typeof document === 'undefined') return
 
+    /**
+     * Гашение клика, который остаётся от тапа ПО ФОНУ.
+     *
+     * 🔴 Закрытие по фону идёт на `pointerdown` (так слой исчезает без
+     * задержки), но тот же жест оставляет после себя `click` — а к этому
+     * мгновению замок страницы уже снят (`body` снова `pointer-events: auto`),
+     * и клик прилетает в кнопку ПОД пальцем. Владелец: «нажатием по фону у
+     * меня кликались другие кнопки». Гасим ровно один клик этого жеста;
+     * слушатель снимает себя сам, а если клика не было — по таймауту.
+     */
+    const swallowClickOnce = () => {
+      const armedAt = Date.now()
+      const cleanup = () => {
+        window.removeEventListener('click', onClick, true)
+        window.removeEventListener('pointercancel', cleanup, true)
+        window.clearTimeout(timer)
+      }
+      const onClick = (event: MouseEvent) => {
+        cleanup()
+        if (Date.now() - armedAt > 700) return // чужой жест — не наш клик
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      const timer = window.setTimeout(cleanup, 800)
+      window.addEventListener('click', onClick, true)
+      window.addEventListener('pointercancel', cleanup, true)
+    }
+
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null
       const keepIndex = closestFloatingIndex(target)
       const toClose = keepIndex < 0 ? floatings : floatings.slice(keepIndex + 1)
+      let closed = false
       for (const floating of [...toClose].reverse()) {
         if (floating.dismiss?.outsidePointer === false) continue
         closeFloating(floating.id, 'outside-pointer')
+        closed = true
       }
+      if (closed) swallowClickOnce()
     }
 
     const onKeydown = (event: KeyboardEvent) => {
