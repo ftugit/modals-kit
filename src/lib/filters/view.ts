@@ -38,6 +38,7 @@ import {
 } from './catalog-filter'
 import {
   catalogFilterSearchRule,
+  catalogFilterRuleFires,
   catalogFilterSuppressedFields,
   catalogFilterValueMap,
   checkCatalogFilterRules,
@@ -194,16 +195,17 @@ export function catalogFilterFieldStates(
 ): CatalogFilterFieldState[] {
   if (!schema) return []
   const map = catalogFilterValueMap(values)
-  const suppressed = catalogFilterSuppressedFields(schema, map)
   const reasons = new Map<string, { id: string; reason: string }>()
+  // Причина — от связки, которая СРАБОТАЛА (все условия `when`). Проверка
+  // «поле в снятых» не годится: не сработавшее правило на уже снятое поле
+  // перезаписало бы чужой текст причины.
   for (const rule of schema.rules ?? []) {
     if (rule.drop === 'q') continue
-    if (suppressed.has(rule.drop.field)) {
-      reasons.set(rule.drop.field, {
-        id: rule.id,
-        reason: `${ruleBlocker(schema, rule)} поле: ${rule.reason}`,
-      })
-    }
+    if (!catalogFilterRuleFires(schema, map, rule)) continue
+    reasons.set(rule.drop.field, {
+      id: rule.id,
+      reason: `${ruleBlocker(schema, rule)} поле: ${rule.reason}`,
+    })
   }
   return schema.fields.map((field) => {
     const hit = reasons.get(field.key)

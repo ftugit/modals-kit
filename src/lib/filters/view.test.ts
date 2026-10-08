@@ -165,6 +165,29 @@ describe('связки в интерфейсе', () => {
     expect(states.find((state) => state.key === 'genres')?.disabled).toBe(false)
   })
 
+  it('причину пишет только сработавшая связка, даже если другая целит то же поле', () => {
+    const two = {
+      ...schema,
+      rules: [
+        ...(schema.rules ?? []),
+        // Не сработает (ни жанров, ни ТВ), но drop — на уже снятое поле.
+        // По membership в «снятых» она перезаписала бы чужую причину.
+        {
+          id: 'score-with-genres',
+          when: [{ field: 'genres' }],
+          drop: { field: 'score' },
+          reason: 'объяснение несработавшей связки',
+        },
+      ],
+    }
+    const score = catalogFilterFieldStates(two, { 'filters.status': 'anons' }).find((s) => s.key === 'score')
+    expect(score).toMatchObject({
+      disabled: true,
+      suppressedBy: 'score-with-anons',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки',
+    })
+  })
+
   it('несколько условий связки называются все (согласование по числу)', () => {
     const multi = {
       ...schema,

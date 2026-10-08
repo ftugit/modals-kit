@@ -59,6 +59,15 @@ function conditionMet(
   return paths.some((path) => valuesAt(values, path).includes(condition.value!))
 }
 
+/** Сработала ли связка при этих значениях: выполнены ВСЕ условия `when`. */
+export function catalogFilterRuleFires(
+  schema: CatalogFilterSchema,
+  values: CatalogFilterValueMap,
+  rule: CatalogFilterRule,
+): boolean {
+  return rule.when.every((condition) => conditionMet(schema, values, condition))
+}
+
 /** Сработавшая связка «поиск запрещён»: её причина объясняет, почему `q` не применяется. */
 export function catalogFilterSearchRule(
   schema: CatalogFilterSchema | undefined,
