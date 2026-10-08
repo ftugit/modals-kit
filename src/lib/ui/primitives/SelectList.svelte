@@ -516,7 +516,7 @@
           onclick={() => choose(option)}
         >
           <span aria-hidden="true" class="flex h-4 w-4 shrink-0 items-center justify-center leading-4">
-            {checked && (multiple ? '✓' : '◉')}
+            {checked ? (multiple ? '✓' : '◉') : ''}
           </span>
           <span class="min-w-0 flex-1">
             <span>{option.label}</span>

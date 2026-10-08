@@ -250,12 +250,11 @@ try {
     await page.close()
   }
 
-  console.log('— Select: тач-экран не подсвечивает строки —')
+  console.log('— Select: touch открывает multiselect с правильной целью событий —')
   {
-    // 🔴 Подсветка опции — эффект НАВЕДЕНИЯ, а наведение есть не у всякого
-    // ввода. Без этого признака список открывался с подсвеченной первой
-    // строкой (активная опция с первого кадра) и подсвечивал строки от
-    // совместимых мышиных событий, которые браузер шлёт после касания.
+    // Проверяем event targets: открывающий tap должен остаться на нативном
+    // SELECT и не попасть в новую option. Настоящий mouse hover и keyboard
+    // active не отключаем; клавиатурную активацию проверяем ниже.
     const page = await browser.newPage({
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
@@ -265,40 +264,44 @@ try {
     await page.locator('details').first().evaluate((el) => el.setAttribute('open', ''))
     await page.evaluate(() => {
       window.__touchOpenOptionEvents = []
-      window.__touchTriggerClick = false
-      document.addEventListener('click', (event) => {
-        if (event.target instanceof HTMLSelectElement && event.target.name === 'page.filters.genres.not') {
-          window.__touchTriggerClick = true
-        }
-      }, true)
-      for (const type of ['pointerover', 'mouseover', 'click']) {
+      window.__touchSelectTargets = []
+      window.__touchNativeClick = false
+      const native = document.querySelector('select[name="page.filters.genres.not"]')
+      for (const type of ['pointerdown', 'pointerup', 'pointerover', 'mouseover', 'click']) {
         document.addEventListener(type, (event) => {
-          const target = event.target instanceof Element
-            ? event.target.closest('[data-select-content] [role="option"]')
+          const target = event.target
+          const option = target instanceof Element
+            ? target.closest('[data-select-content] [role="option"]')
             : null
-          if (target) window.__touchOpenOptionEvents.push({ type, text: target.textContent?.trim() })
+          if (target === native || target instanceof HTMLOptionElement || option) {
+            window.__touchSelectTargets.push({ type, nativeSelect: target === native, tag: target?.tagName })
+          }
+          if (option) window.__touchOpenOptionEvents.push({ type, text: option.textContent?.trim() })
+          if (type === 'click' && target === native) window.__touchNativeClick = true
         }, true)
       }
     })
     const nativeSelect = page.locator('select[name="page.filters.genres.not"]')
     await nativeSelect.scrollIntoViewIfNeeded()
+    assert((await nativeSelect.evaluate((el) => el.size)) === 1,
+      'hydrated multiselect не использует single-row native hit target')
     await nativeSelect.tap()
     await waitAtLeast(page, '[data-select-content]', 1)
     await page.waitForTimeout(180)
 
-    const openedFromTrigger = await page.evaluate(() => window.__touchTriggerClick)
-    assert(openedFromTrigger, 'tap click не остался на native Select trigger')
+    const openedFromNative = await page.evaluate(() => window.__touchNativeClick)
+    assert(openedFromNative, 'tap click не остался на нативном SELECT')
+    const targets = await page.evaluate(() => window.__touchSelectTargets)
+    assert(targets.some((event) => event.type === 'pointerdown' && event.nativeSelect) &&
+      targets.some((event) => event.type === 'click' && event.nativeSelect) &&
+      targets.every((event) => event.nativeSelect),
+      `touch events ушли с SELECT на option: ${JSON.stringify(targets)}`)
     const optionEvents = await page.evaluate(() => window.__touchOpenOptionEvents)
     assert(optionEvents.length === 0,
       `открывающий tap был перенаправлен в option: ${JSON.stringify(optionEvents)}`)
     const lit = page.locator('[data-select-content] [role="option"][data-active]')
-    assert((await lit.count()) === 0, 'открывающий tap сделал option data-active')
-    const backgrounds = await page.locator('[data-select-content] [role="option"]').evaluateAll((rows) =>
-      rows.map((row) => getComputedStyle(row).backgroundColor),
-    )
-    assert(new Set(backgrounds).size === 1,
-      `hover после открытия отличается от обычного: ${JSON.stringify([...new Set(backgrounds)])}`)
-    ok('открывающий touch жест остался на trigger: ни option event, ни hover/active на списке')
+    assert((await lit.count()) === 0, 'открывающий tap выбрал option вместо только открытия списка')
+    ok('touch targets остались на SELECT; ни одна option не получила открывающий жест')
 
     await page.keyboard.press('ArrowDown')
     await page.waitForTimeout(120)
@@ -480,7 +483,8 @@ try {
     ok('открытие тапом не подменяет значение — ни выбранное, ни пустое')
 
     // 2) Длинный список прокручивается пальцем.
-    const genres = page.locator('[data-select-root]:has(select[name="page.filters.genres.and"])').locator('select')
+    const genresRoot = page.locator('[data-select-root]:has(select[name="page.filters.genres.and"])')
+    const genres = genresRoot.locator('select')
     await genres.scrollIntoViewIfNeeded()
     await genres.tap()
     await waitAtLeast(page, '[data-select-listbox]', 1)

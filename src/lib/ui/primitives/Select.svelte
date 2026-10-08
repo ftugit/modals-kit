@@ -457,34 +457,15 @@
   /* ── перехват нативного контрола ─────────────────────────────────── */
 
   /**
-   * Гашение «догоняющего» клика после открытия по указателю.
-   *
-   * Мышь открывает список по `pointerdown`; на touch ждём, пока жест
-   * завершится без прокрутки, и раскрываем только на следующий `click`.
-   * Если открыть лист на `pointerup`, тот же tap уже перепроверяется над
-   * новым DOM и попадает в опцию под пальцем. `preventDefault` на touch
-   * `pointerdown` оставляет открытие за компонентом, а не системным picker.
+   * Mouse opens on `pointerdown`; touch is not opened until its `click`.
+   * Hydrated multiselects use `size=1`, so the browser has already fixed the
+   * click target on SELECT before the new sheet can render options beneath it.
    */
-  const TOUCH_TAP_SLOP = 8
-  let pendingTouchOpen: { pointerId: number; x: number; y: number } | null = null
-  let pendingTouchClick: { x: number; y: number; at: number } | null = null
   let swallowArmed = false
 
-  function clearPendingTouchClick(): void {
-    pendingTouchClick = null
-  }
-
-  function armOpenOnTouchClick(event: PointerEvent): void {
-    pendingTouchClick = { x: event.clientX, y: event.clientY, at: Date.now() }
-  }
-
-  /** Touch opens on its click, so the opening gesture still targets the closed trigger. */
+  /** Open on click only; the native click target is fixed before the sheet renders. */
   function openFromTouchClick(event: MouseEvent): void {
-    const pending = pendingTouchClick
-    pendingTouchClick = null
-    if (!pending || Date.now() - pending.at > 700) return
-    if (Math.abs(event.clientX - pending.x) > 3 || Math.abs(event.clientY - pending.y) > 3) return
-    if (!mounted || disabled || event.defaultPrevented) return
+    if (event.defaultPrevented) return
     event.preventDefault()
     setOpen(true)
   }
@@ -525,50 +506,13 @@
     if (!wasOpen && open) swallowTrailingClick(event)
   }
 
-  // `preventDefault` нужен и для touch: иначе Android поднимет собственный
-  // picker нативного `<select>` раньше, чем мы успеем показать свой список.
-  // Само touch-открытие откладываем до pointerup, чтобы обычный свайп не
-  // раскрывал лист. Если браузер передаст прокрутку странице, он пошлёт
-  // pointercancel; запасной порог движения покрывает и браузеры без него.
+  // Prevent Android's native picker, but do not open on pointerdown: touch
+  // opens on click, after the browser has fixed its target on this SELECT.
   function interceptPointer(event: PointerEvent) {
     if (!mounted || disabled || event.defaultPrevented) return
-    clearPendingTouchClick()
-    if (event.pointerType === 'touch') {
-      if (!event.isPrimary) {
-        pendingTouchOpen = null
-        return
-      }
-      event.preventDefault()
-      pendingTouchOpen = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-      return
-    }
     event.preventDefault()
-    pendingTouchOpen = null
+    if (event.pointerType === 'touch') return
     openFromPointer(event)
-  }
-
-  function trackPointerMove(event: PointerEvent): void {
-    const pending = pendingTouchOpen
-    if (!pending || pending.pointerId !== event.pointerId) return
-    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > TOUCH_TAP_SLOP)
-      pendingTouchOpen = null
-  }
-
-  function finishTouchPointer(event: PointerEvent): void {
-    const pending = pendingTouchOpen
-    if (!pending || pending.pointerId !== event.pointerId) return
-    pendingTouchOpen = null
-    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > TOUCH_TAP_SLOP) return
-    // Do not reveal the sheet before the browser dispatches the tap's click.
-    // Otherwise that same click is re-hit-tested against a newly visible option.
-    armOpenOnTouchClick(event)
-  }
-
-  function cancelTouchPointer(event: PointerEvent): void {
-    if (pendingTouchOpen?.pointerId === event.pointerId) {
-      pendingTouchOpen = null
-      clearPendingTouchClick()
-    }
   }
 
   // Старый fallback для браузеров без Pointer Events. Современные браузеры
@@ -623,7 +567,6 @@
       : () => {}
     return () => {
       form?.removeEventListener('reset', onReset)
-      clearPendingTouchClick()
       stopTrace()
     }
   })
@@ -779,6 +722,7 @@
     там атрибутов нет. В самой панели `aria-expanded="true"` корректен:
     панель существует только в раскрытом состоянии.
   -->
+  <!-- Keep touch hits on the hydrated SELECT, not a native OPTION; no-JS keeps the full list. -->
   <select
     bind:this={nativeEl}
     data-select-native=""
@@ -789,6 +733,7 @@
     {required}
     {disabled}
     multiple={multiple}
+    size={mounted && multiple ? 1 : undefined}
     aria-haspopup={mounted && !multiple ? 'listbox' : undefined}
     aria-expanded={mounted && !multiple ? open : undefined}
     aria-controls={open && popupNode?.id ? popupNode.id : undefined}
@@ -811,9 +756,6 @@
     onchange={syncFromNative}
     onclick={openFromTouchClick}
     onpointerdown={interceptPointer}
-    onpointermove={trackPointerMove}
-    onpointerup={finishTouchPointer}
-    onpointercancel={cancelTouchPointer}
     onmousedown={interceptMouse}
     onkeydown={interceptKey}
   >

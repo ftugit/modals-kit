@@ -732,7 +732,10 @@ try {
       'single Select не показывает radio dot для выбранного варианта')
     assert((await selected.locator('svg').count()) === 0,
       'single Select показывает multiselect-checkmark')
-    ok('single selected option uses the radio-dot indicator')
+    const singleMarkers = await list.locator('[role="option"] > span[aria-hidden="true"]').allInnerTexts()
+    assert(singleMarkers.every((marker) => marker !== 'false'),
+      `в маркерах single Select появился текст false: ${JSON.stringify(singleMarkers)}`)
+    ok('single selected option uses the radio-dot indicator without false markers')
 
     await selected.click()
     await page.waitForFunction(() => document.querySelector('[data-modal-stage] [data-select-native]')?.value === '')
@@ -765,7 +768,172 @@ try {
       'multiselect потерял checkmark indicator')
     assert((await selected.locator('svg').count()) === 0,
       'multiselect marker unexpectedly uses SVG instead of the checkmark glyph')
-    ok('multiselect retains checkmarks and stays open after selection')
+    const multiMarkers = await list.locator('[role="option"] > span[aria-hidden="true"]').allInnerTexts()
+    assert(multiMarkers.every((marker) => marker !== 'false'),
+      `в маркерах multiselect появился текст false: ${JSON.stringify(multiMarkers)}`)
+    ok('multiselect retains checkmarks and stays open after selection without false markers')
+    await page.close()
+  })
+
+  /* ── R-23: multiselect в обычной модалке не попадает в native option hit-target ── */
+  await run('R-23 touch multiselect в обычной модалке открывает слой без снятия выбранных options', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await gotoBase(page)
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+
+    const selects = page.locator('[data-modal-stage] [data-select-native]')
+    const multiple = selects.nth(1)
+    const list = page.locator('[data-select-listbox]').last()
+    const chosen = () => multiple.evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort())
+    const expected = ['action', 'drama']
+
+    await multiple.tap({ force: true })
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    await list.locator('[role="option"]').filter({ hasText: 'Боевик' }).tap()
+    await list.locator('[role="option"]').filter({ hasText: 'Драма' }).tap()
+    await page.keyboard.press('Escape')
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    await page.waitForTimeout(300)
+    assert(JSON.stringify(await chosen()) === JSON.stringify(expected), 'не удалось подготовить выбранные multiselect options')
+
+    const hit = await multiple.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      const target = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      return {
+        pointerEvents: getComputedStyle(el).pointerEvents,
+        nativeSelect: target === el,
+        nativeOption: target instanceof HTMLOptionElement,
+        size: el.size,
+      }
+    })
+    assert(hit.pointerEvents !== 'none' && hit.nativeSelect && !hit.nativeOption && hit.size === 1,
+      `hydrated multiselect tap target is not its SELECT: ${JSON.stringify(hit)}`)
+
+    await page.evaluate(() => {
+      window.__selectOpeningOptionEvents = []
+      window.__selectOpeningTargets = []
+      const native = document.querySelector('[data-modal-stage] select[data-select-native-multiple]')
+      for (const type of ['pointerdown', 'pointerup', 'pointerover', 'mouseover', 'click']) {
+        document.addEventListener(type, (event) => {
+          const target = event.target
+          const customOption = target instanceof Element
+            ? target.closest('[data-select-listbox] [role="option"]')
+            : null
+          if (target === native || target instanceof HTMLOptionElement || customOption) {
+            window.__selectOpeningTargets.push({ type, nativeSelect: target === native, tag: target?.tagName })
+          }
+          if (customOption) window.__selectOpeningOptionEvents.push({ type, text: customOption.textContent?.trim() })
+        }, true)
+      }
+    })
+    const box = await multiple.boundingBox()
+    assert(box, 'filled multiselect trigger lost its hitbox')
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    assert(JSON.stringify(await chosen()) === JSON.stringify(expected),
+      `opening the filled multiselect changed its selection: ${JSON.stringify(await chosen())}`)
+    assert((await page.locator('[data-modal-stage]').count()) === 1,
+      'opening the nested Select sheet closed its ordinary owner modal')
+    assert((await page.evaluate(() => window.__selectOpeningOptionEvents)).length === 0,
+      'the opening touch was retargeted to an option inside the new Select sheet')
+    const openingTargets = await page.evaluate(() => window.__selectOpeningTargets)
+    assert(openingTargets.some((event) => event.type === 'pointerdown' && event.nativeSelect) &&
+      openingTargets.some((event) => event.type === 'click' && event.nativeSelect) &&
+      openingTargets.every((event) => event.nativeSelect),
+      `opening touch escaped the native SELECT hit-target: ${JSON.stringify(openingTargets)}`)
+    assert((await chainOf(page)).length === 1, 'Select sheet did not get exactly one headless stack entry')
+    ok('filled multiselect keeps touch on SELECT; opening gesture targets no native/custom option')
+
+    await page.keyboard.press('Escape')
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    await page.waitForTimeout(300)
+    const label = page.locator('[data-modal-stage] label').nth(1)
+    const labelBox = await label.boundingBox()
+    assert(labelBox, 'multiselect label has no hitbox')
+    await page.touchscreen.tap(labelBox.x + 8, labelBox.y + 4)
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    assert(JSON.stringify(await chosen()) === JSON.stringify(expected), 'label activation changed multiselect values')
+    assert((await page.locator('[data-modal-stage]').count()) === 1, 'label activation closed the owner modal')
+    ok('label activation also opens the custom multiselect without native deselection')
+
+    const single = selects.nth(0)
+    const singleBox = await single.boundingBox()
+    assert(singleBox, 'sibling Select has no hitbox behind its owner modal')
+    await page.touchscreen.tap(singleBox.x + singleBox.width / 2, singleBox.y + singleBox.height / 2)
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    assert((await page.locator('[data-modal-stage]').count()) === 1,
+      'outside tap on nested Select dismissed the ordinary owner modal too')
+    assert((await chainOf(page)).length === 0, 'outside tap left a headless Select record behind')
+    assert(JSON.stringify(await chosen()) === JSON.stringify(expected),
+      'dismissing the Select sheet changed the underlying multiselect values')
+    ok('outside tap first dismisses only the Select sheet and preserves its owner/value')
+
+    await page.waitForTimeout(300)
+    await single.tap({ force: true })
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    assert((await page.locator('[data-modal-stage]').count()) === 1,
+      'a deliberate tap on a sibling Select replaced the ordinary modal')
+    ok('the next deliberate tap opens a sibling Select inside the same ordinary modal')
+    await page.keyboard.press('Escape')
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    await page.close()
+  })
+
+  /* ── R-24: очистка multiselect не мешает следующей ordinary modal ── */
+  await run('R-24 clearing every multiselect value then opens an ordinary modal', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await gotoBase(page)
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+
+    const multiple = page.locator('[data-modal-stage] select[data-select-native-multiple]').first()
+    const chosen = () => multiple.evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort())
+    await multiple.tap()
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    const list = page.locator('[data-select-listbox]').last()
+    await list.locator('[role="option"]').filter({ hasText: 'Боевик' }).tap()
+    await list.locator('[role="option"]').filter({ hasText: 'Драма' }).tap()
+    assert(JSON.stringify(await chosen()) === JSON.stringify(['action', 'drama']),
+      `could not prepare multiple values: ${JSON.stringify(await chosen())}`)
+
+    await list.locator('[role="option"]').filter({ hasText: 'Боевик' }).tap()
+    assert(JSON.stringify(await chosen()) === JSON.stringify(['drama']),
+      `clearing the first selected option damaged the remaining value: ${JSON.stringify(await chosen())}`)
+    assert((await page.locator('[data-host-floating]').count()) === 1,
+      'clearing one multiselect value closed its Select sheet')
+    await list.locator('[role="option"]').filter({ hasText: 'Драма' }).tap()
+    assert((await chosen()).length === 0, 'clearing the last selected option did not leave an empty multiselect')
+    assert((await page.locator('[data-host-floating]').count()) === 1,
+      'clearing the last multiselect value closed its Select sheet')
+    ok('both selected values can be cleared individually while the Select sheet stays open')
+
+    await page.keyboard.press('Escape')
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    assert((await page.locator('[data-modal-stage]').count()) === 1,
+      'closing the Select sheet also dismissed its ordinary owner modal')
+    assert((await chainOf(page)).length === 0, 'closed Select sheet left a headless stack entry')
+    await multiple.tap()
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    assert((await chosen()).length === 0, 'reopening the empty multiselect restored a stale value')
+    await page.keyboard.press('Escape')
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    ok('an empty multiselect reopens normally and preserves its empty value')
+
+    await page.keyboard.press('Escape')
+    await page.locator('[data-modal-stage]').waitFor({ state: 'detached' })
+    const card = page.locator('[data-modal-trigger]').filter({ hasText: 'Открыть карточку' }).first()
+    await card.tap()
+    await page.getByText('Карточка #7', { exact: true }).waitFor({ state: 'visible' })
+    assert((await page.locator('[data-modal-stage]').count()) === 1,
+      'ordinary Card modal did not open after clearing the multiselect')
+    assert((await page.locator('[data-host-floating]').count()) === 0,
+      'a stale Select sheet remained over the ordinary Card modal')
+    ok('after all multiselect values are cleared, the ordinary Card modal opens cleanly')
     await page.close()
   })
 
