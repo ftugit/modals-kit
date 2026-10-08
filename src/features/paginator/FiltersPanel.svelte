@@ -92,9 +92,19 @@
   </div>
 
   <!--
-    Раскрытие — нативный <details>: панель работает и без JavaScript (внутри
-    форма-GET), и без «своего» состояния раскрытия.
+    Серверная проверка расположена ВНЕ закрываемого <details>: после no-JS GET
+    человек должен увидеть, почему заведомо несовместимый набор не применился,
+    не открывая форму повторно.
   -->
+  {#if view.violations.length}
+    <ul class="mt-2 space-y-1" data-testid="filters-validation">
+      {#each view.violations as violation (violation.id + violation.keys.join(','))}
+        <li class="text-xs text-destructive" data-violation-id={violation.id}>{violation.message}</li>
+      {/each}
+    </ul>
+  {/if}
+
+  <!-- Раскрытие — нативный <details>: форма-GET работает и без JavaScript. -->
   <details class="mt-3" data-testid="filters-details">
     <summary class="cursor-pointer text-sm font-medium" data-testid="filters-toggle">
       Выбрать фильтры
@@ -109,21 +119,6 @@
       />
     </div>
   </details>
-
-  <!--
-    Списком показываем только то, чему НЕ нашлось места у поля: связка без
-    «drop» (например, одно значение и в «все из», и в «кроме») не гасит никакой
-    контрол, поэтому её предупреждение живёт здесь. Всё, что гасит конкретное
-    поле, говорит само поле — своей причиной (««Статус» блокирует поле: …»);
-    повторять это ещё и списком значит забивать панель дублями.
-  -->
-  {#if view.violations.some((violation) => !violation.drop)}
-    <ul class="mt-2 space-y-1" data-testid="filters-violations">
-      {#each view.violations.filter((violation) => !violation.drop) as violation (violation.id + violation.keys.join(','))}
-        <li class="text-xs text-destructive" data-violation-id={violation.id}>{violation.message}</li>
-      {/each}
-    </ul>
-  {/if}
 
   <div class="mt-3">
     <ActiveFilters chips={view.chips} count={view.count} onRemove={remove} />

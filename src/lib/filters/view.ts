@@ -154,7 +154,7 @@ export type CatalogFilterView = {
   searchBlocked?: { id: string; reason: string }
   /** Поля, снятые связками (deny-safe решение источника), с причинами. */
   suppressed: readonly { key: string; label: string; reason: string }[]
-  /** Подсказки формы: сочетания, которые дадут пустую выдачу. */
+  /** Пояснения к активным связкам и смысловым противоречиям. */
   violations: readonly CatalogFilterViolation[]
 }
 
@@ -323,9 +323,8 @@ export function catalogFilterView(
     count: chips.length,
     ...(rule ? { searchBlocked: { id: rule.id, reason: rule.reason } } : {}),
     suppressed,
-    // `checkCatalogFilterRules` уже включает противоречия режимов одного поля
-    // (они следуют из смысла `and`/`not`, а не из объявления связки).
-    violations: checkCatalogFilterRules(schema, map),
+    // Поиск объясняется выше; остальное — предупреждения у фильтров.
+    violations: checkCatalogFilterRules(schema, map).filter((violation) => violation.drop !== 'q'),
   }
 }
 

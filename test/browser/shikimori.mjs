@@ -484,6 +484,11 @@ async function checkFiltersUi(browser) {
     );
     if (!beforeApply.includes('page.filters.score.min'))
       throw new Error(`адрес со заблокированным значением потерял ключ: ${beforeApply}`);
+    const blockedScore = panel.locator('input[name="page.filters.score.min"]');
+    await waitFor(async () => await blockedScore.isDisabled(), { what: 'JS отключил поле оценки под связкой' });
+    const invalidNotice = page.locator('[data-testid="filters-validation"]');
+    if (!(await invalidNotice.isVisible()) || !/анонс.*оценк/i.test(await invalidNotice.innerText()))
+      throw new Error(`JS должен показать ту же причину связки до применения: ${await invalidNotice.innerText()}`);
     await openFilters(page);
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => !page.url().includes('page.filters.score.min'), {
@@ -493,7 +498,9 @@ async function checkFiltersUi(browser) {
       throw new Error(`применение фильтров потеряло соседний фильтр: ${page.url()}`);
     if ((await page.locator('[data-testid="active-filter"]').count()) !== 1)
       throw new Error('после применения под связкой должен остаться один активный фильтр');
-    console.log('  ok  значение под связкой уходит при «Применить» (соседний фильтр цел, чипов 1)');
+    if (!(await invalidNotice.isVisible()) || !/анонс.*оценк/i.test(await invalidNotice.innerText()))
+      throw new Error('причина отключения score должна оставаться видимой, пока выбран status=anons');
+    console.log('  ok  JS disabled поле; при применении score удалён, причина связи осталась видна, чипы/адрес согласованы');
 
     // Связка с поиском: `status=latest` запрещает `q` — панель говорит об этом.
     await page.goto(`${U}?page.src=animes&page.size=5&page.filters.status=latest&${OPTS}`, {
@@ -624,6 +631,38 @@ async function checkFiltersNoJs(browser) {
     if (page.url().includes('page.filters.kind'))
       throw new Error(`ссылка чипа не сняла фильтр: ${page.url()}`);
     console.log('  ok  без JS чип снимается обычной ссылкой (адрес чист от этого фильтра)');
+
+    // No-JS GET may carry a schema-known impossible relationship. The server
+    // must explain it outside the closed <details>, while preserving the URL;
+    // the source independently confirms that the blocked score was not sent.
+    console.log('— No-JS validation: incompatible status + score remains visible —');
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'domcontentloaded' });
+    await openFilters(page);
+    await page.locator('select[data-select-native][name="page.filters.status"]').selectOption('anons');
+    const scoreInput = page.locator('[data-testid="filters-panel"] input[name="page.filters.score.min"]');
+    await scoreInput.fill('5');
+    if (await scoreInput.isDisabled()) throw new Error('no-JS форма не должна молча отключать поле оценки');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    const impossibleUrl = new URL(page.url());
+    if (impossibleUrl.searchParams.get('page.filters.status') !== 'anons' ||
+        impossibleUrl.searchParams.get('page.filters.score.min') !== '5')
+      throw new Error(`no-JS GET должен сохранить оба введённых значения: ${page.url()}`);
+    const validation = page.locator('[data-testid="filters-validation"]');
+    if (!(await validation.isVisible()) || !/анонс.*оценк/i.test(await validation.innerText()))
+      throw new Error(`no-JS объяснение должно быть видно без раскрытия формы: ${await validation.innerText()}`);
+    if (await page.locator('[data-testid="filters-details"]').evaluate((el) => el.open))
+      throw new Error('no-JS проверка должна оставаться видимой при закрытой форме');
+    if (await scoreInput.isDisabled()) throw new Error('без JavaScript выбранное поле не должно быть disabled');
+    const suppressed = await api('/api/shikimori/animes?limit=5&filters.status=anons&filters.score.min=5');
+    const statusOnly = await api('/api/shikimori/animes?limit=5&filters.status=anons');
+    if (!suppressed.body.dropped?.some((item) => item.key === 'filters.score'))
+      throw new Error(`no-JS связка не вернула причину: ${JSON.stringify(suppressed.body.dropped)}`);
+    if (suppressed.body.items.map((item) => item.id).join(',') !== statusOnly.body.items.map((item) => item.id).join(','))
+      throw new Error('заблокированная оценка изменила выдачу status=anons');
+    console.log('  ok  validation виден без JS/раскрытия, URL не переписан, выдача равна status=anons без score');
 
     // Native multiple-select submits one GET parameter per selected option.
     // The URL adapter must fold those repeats into the source's canonical CSV list.

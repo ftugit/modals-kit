@@ -176,6 +176,20 @@ describe('связки в интерфейсе', () => {
       disabled: true,
       reason: '«Статус» блокирует поле: у анонсов нет оценки',
     })
+    // Объяснение блока остаётся в картине даже до выбора оценки: оно нужно
+    // пользователю без JS и доступно у формы до её раскрытия.
+    expect(view.violations.map((violation) => violation.id)).toEqual(['score-with-anons'])
+  })
+
+  it('no-JS view retains a blocked value and its source-owned explanation', () => {
+    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' })
+    expect(view.violations).toHaveLength(1)
+    expect(view.violations[0]).toMatchObject({
+      id: 'score-with-anons',
+      drop: { field: 'score' },
+      message: 'у анонсов нет оценки',
+    })
+    expect(view.chips.some((chip) => chip.key === 'score' && chip.value === '5')).toBe(true)
   })
 
   it('противоречие режимов одного поля — подсказка, а не запрет', () => {
