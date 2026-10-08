@@ -466,9 +466,16 @@ const LINK_MESSAGES = {
   'link.blocked': '«{field}» невозможно использовать совместно с {blockers}',
 }
 
+/**
+ * `opts.namePrefix` — адресный слой имён: форма фильтров живёт на url-контуре
+ * `bind`, где ИМЯ ПОЛЯ и есть ключ адреса (`page.filters.kind` — так же, как у
+ * поиска S5). `paths` и `defaults` остаются каноническими относительными
+ * путями: они кормят extra-слой хранилища, а не DOM.
+ */
 export function compileCatalogFilterSchema(
   input: unknown,
   id = 'catalog-filters',
+  opts: { namePrefix?: string } = {},
 ): {
   schema: CatalogFilterSchema
   definition: FormDescription
@@ -481,6 +488,7 @@ export function compileCatalogFilterSchema(
   defaults: Record<string, string>
 } {
   const schema = validateCatalogFilterSchema(input)
+  const namePrefix = opts.namePrefix ?? ''
   const fields: Record<string, FieldDraft<any>> = Object.create(null)
   const paths: string[] = []
   const defaults: Record<string, string> = {}
@@ -523,7 +531,7 @@ export function compileCatalogFilterSchema(
       const list = catalogFilterOptionsAreComplete(descriptor)
         ? [...common.validate, optionsAllowlist(options.map((option) => option.value))]
         : common.validate
-      fields[name] = descriptor.type === 'multiselect'
+      fields[namePrefix + name] = descriptor.type === 'multiselect'
         ? field.multiselect({ ...common, options, validate: list })
         : descriptor.type === 'select'
           ? field.select({ ...common, options, validate: list })

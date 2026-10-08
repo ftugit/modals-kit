@@ -338,7 +338,15 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     url.commit(patch, via)
     // локальное зеркало держим в такт с DOM: подсветка/живые проверки читают state
     store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+    // Коммит-набор (без имени поля) показывает ИТОГ проверки целиком: форма
+    // фильтров узнаёт нарушения связок на месте, до похода на сервер.
     if (name) recheck(name)
+    else
+      store.set((s) => ({
+        ...s,
+        facts: ev.errors,
+        shown: display(ev.errors, { from: 'fetch', intent: 'submit', outcome: 'not-applied' }).errors,
+      }))
   }
 
   function formProps(): FormProps {
@@ -359,14 +367,17 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
           // конверт не нужен (hidden() пуст), envelope-проверка не звенит.
           form.setAttribute('novalidate', '')
           assertPlacement(form)
+          // `live: false` — форма коммит-набора: полей по одному не отдаём,
+          // применяет их submit (или явный commit() хоста).
+          const liveOn = url.live !== false
           const live = (ev: Event) => {
             const t = ev.target as HTMLElement | null
             const fname = t && 'name' in t ? String((t as HTMLInputElement).name) : ''
             if (fname) commitUrl('field', fname)
           }
-          form.addEventListener('change', live)
+          if (liveOn) form.addEventListener('change', live)
           return () => {
-            form.removeEventListener('change', live)
+            if (liveOn) form.removeEventListener('change', live)
             if (formEl === form) formEl = null
           }
         },

@@ -376,12 +376,20 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     lastUrlPatchRef.current = printed
     url.commit(patch, via)
     store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+    // Коммит-набор (без имени поля) показывает итог проверки целиком.
     if (name) recheck(name)
+    else
+      store.set((s) => ({
+        ...s,
+        facts: ev.errors,
+        shown: display(ev.errors, { from: 'fetch', intent: 'submit', outcome: 'not-applied' }).errors,
+      }))
   }
 
   // S2: живой режим — `change` на форме (делегирование: любой контрол, любой тип).
   useEffect(() => {
-    if (!oRef.current.url) return
+    const url = oRef.current.url
+    if (!url || url.live === false) return    // коммит-набор: только submit/commit()
     const live = (ev: Event) => {
       const t = ev.target as HTMLInputElement | null
       if (t?.name) commitUrl('field', t.name)

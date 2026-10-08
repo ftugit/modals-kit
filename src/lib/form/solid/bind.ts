@@ -336,7 +336,14 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     url.commit(patch, via)
     batch(() => {
       store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+      // Коммит-набор (без имени поля) показывает итог проверки целиком.
       if (name) recheck(name)
+      else
+        store.set((s) => ({
+          ...s,
+          facts: ev.errors,
+          shown: display(ev.errors, { from: 'fetch', intent: 'submit', outcome: 'not-applied' }).errors,
+        }))
     })
   }
 
@@ -352,6 +359,8 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
           // живой коммит делегированием `change`, конверт не проверяется.
           el.setAttribute('novalidate', '')
           assertPlacement(el)
+          // `live: false` — форма коммит-набора (см. UrlFormOptions).
+          if (o.url?.live === false) return
           const live = (ev: Event) => {
             const t = ev.target as HTMLInputElement | null
             if (t?.name) commitUrl('field', t.name)
