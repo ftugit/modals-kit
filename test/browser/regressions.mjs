@@ -815,7 +815,18 @@ try {
     await page.evaluate(() => {
       window.__selectOpeningOptionEvents = []
       window.__selectOpeningTargets = []
+      window.__selectOpeningNativeEvents = []
       const native = document.querySelector('[data-modal-stage] select[data-select-native-multiple]')
+      for (const type of ['input', 'change']) {
+        document.addEventListener(type, (event) => {
+          if (event.target !== native) return
+          window.__selectOpeningNativeEvents.push({
+            type: event.type,
+            selectedValues: [...native.selectedOptions].map((option) => option.value).sort(),
+            isTrusted: event.isTrusted,
+          })
+        }, true)
+      }
       for (const type of ['pointerdown', 'pointerup', 'pointerover', 'mouseover', 'click']) {
         document.addEventListener(type, (event) => {
           const target = event.target
@@ -835,6 +846,8 @@ try {
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     assert(JSON.stringify(await chosen()) === JSON.stringify(expected),
       `opening the filled multiselect changed its selection: ${JSON.stringify(await chosen())}`)
+    assert((await page.evaluate(() => window.__selectOpeningNativeEvents)).length === 0,
+      `opening the filled multiselect emitted native input/change: ${JSON.stringify(await page.evaluate(() => window.__selectOpeningNativeEvents))}`)
     assert((await page.locator('[data-modal-stage]').count()) === 1,
       'opening the nested Select sheet closed its ordinary owner modal')
     assert((await page.evaluate(() => window.__selectOpeningOptionEvents)).length === 0,
@@ -856,6 +869,8 @@ try {
     await page.touchscreen.tap(labelBox.x + 8, labelBox.y + 4)
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     assert(JSON.stringify(await chosen()) === JSON.stringify(expected), 'label activation changed multiselect values')
+    assert((await page.evaluate(() => window.__selectOpeningNativeEvents)).length === 0,
+      `label activation emitted native input/change: ${JSON.stringify(await page.evaluate(() => window.__selectOpeningNativeEvents))}`)
     assert((await page.locator('[data-modal-stage]').count()) === 1, 'label activation closed the owner modal')
     ok('label activation also opens the custom multiselect without native deselection')
 
@@ -934,6 +949,75 @@ try {
     assert((await page.locator('[data-host-floating]').count()) === 0,
       'a stale Select sheet remained over the ordinary Card modal')
     ok('after all multiselect values are cleared, the ordinary Card modal opens cleanly')
+    await page.close()
+  })
+
+  /* ── R-25: нативные input/change только при фактическом изменении value ── */
+  await run('R-25 native Select events follow value changes and skip no-op bulk selection', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await gotoBase(page)
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+
+    const multiple = page.locator('[data-modal-stage] select[data-select-native-multiple]').first()
+    const chosen = () => multiple.evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort())
+    await page.evaluate(() => {
+      const native = document.querySelector('[data-modal-stage] select[data-select-native-multiple]')
+      window.__issue5SelectEvents = []
+      for (const type of ['input', 'change']) {
+        document.addEventListener(type, (event) => {
+          if (event.target !== native) return
+          window.__issue5SelectEvents.push({
+            type: event.type,
+            targetTag: event.target.tagName,
+            selectedValues: [...native.selectedOptions].map((option) => option.value).sort(),
+            isTrusted: event.isTrusted,
+          })
+        }, true)
+      }
+    })
+
+    await multiple.tap({ force: true })
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    assert((await chosen()).length === 0, 'opening empty multiselect unexpectedly selected a value')
+    assert((await page.evaluate(() => window.__issue5SelectEvents.length)) === 0,
+      'opening empty multiselect emitted native input/change')
+
+    const list = page.locator('[data-select-listbox]').last()
+    await list.locator('[role="option"]').filter({ hasText: 'Боевик' }).tap()
+    assert(JSON.stringify(await chosen()) === JSON.stringify(['action']),
+      'choosing an enabled option did not change the native SELECT value')
+    const changedEvents = await page.evaluate(() => window.__issue5SelectEvents)
+    assert(changedEvents.length === 2 && changedEvents[0].type === 'input' && changedEvents[1].type === 'change',
+      `a real value change should emit input then change once: ${JSON.stringify(changedEvents)}`)
+    assert(changedEvents.every((event) => event.targetTag === 'SELECT' &&
+      event.isTrusted === false && JSON.stringify(event.selectedValues) === JSON.stringify(['action'])),
+      `real selection events lost their native target or post-change value: ${JSON.stringify(changedEvents)}`)
+
+    const search = page.locator('[data-select-content] input[role="combobox"]').last()
+    await search.click({ force: true })
+    await page.waitForFunction(() =>
+      !document.querySelector('[data-select-content] input[role="combobox"]')?.hasAttribute('readonly'))
+    await search.fill('Документальный')
+    const disabledOption = list.locator('[role="option"]')
+    await page.waitForFunction(() => document.querySelectorAll('[data-select-listbox] [role="option"]').length === 1)
+    assert((await disabledOption.count()) === 1 && await disabledOption.isDisabled(),
+      'the no-op probe did not isolate the single disabled option')
+    const selectFound = page.locator('[data-select-content] [data-select-mobile-action][aria-label="Выбрать найденные"]').last()
+    await selectFound.waitFor({ state: 'visible' })
+    const beforeNoop = await chosen()
+    await selectFound.tap({ force: true })
+    await page.waitForTimeout(80)
+    const afterNoop = await chosen()
+    assert(JSON.stringify(afterNoop) === JSON.stringify(beforeNoop),
+      `select-all on a disabled-only result changed values: ${JSON.stringify(beforeNoop)} → ${JSON.stringify(afterNoop)}`)
+    assert((await page.evaluate(() => window.__issue5SelectEvents.length)) === 2,
+      `a no-op selection emitted input/change despite unchanged values: ${JSON.stringify(await page.evaluate(() => window.__issue5SelectEvents))}`)
+    assert((await page.locator('[data-host-floating]').count()) === 1,
+      'a no-op bulk selection closed the multiselect sheet')
+    ok('open emits no events; changed option emits one post-change pair; disabled-only no-op emits none')
     await page.close()
   })
 

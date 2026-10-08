@@ -333,6 +333,9 @@
 
   function commit(next: readonly SelectOption[], keepOpen?: boolean) {
     const values = new Set(next.map((o) => o.value))
+    // Bulk action may be a no-op (for example, every filtered option is
+    // disabled). Do not emit native events or onchange for unchanged values.
+    if (valuesKey(values) === valuesKey(selected.map((option) => option.value))) return
     // Сначала состояние: из него рисуются и список, и опции нативного
     // контрола (после гидратации их ровно столько, сколько выбрано).
     selected = all.filter((o) => values.has(o.value))
