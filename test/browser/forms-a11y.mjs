@@ -41,6 +41,15 @@ const ok = (name, cond, extra = '') => {
   if (!cond) failed++
 }
 
+
+/** Панель — select-поля механизма (этап 8): выбор опции по подписи поля. */
+const pick = async (pg, fieldText, optionText) => {
+  const sel = pg.locator(`label:has-text("${fieldText}") select`)
+  const value = await sel.locator('option', { hasText: optionText }).first().getAttribute('value')
+  await sel.selectOption(value)
+  await pg.waitForTimeout(350)
+}
+
 const click = (pg, text) => pg.evaluate((t) => {
   const el = [...document.querySelectorAll('button')].find((n) => n.textContent.trim() === t)
   el?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -114,7 +123,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
-  await click(pg, 'все')
+  await pick(pg, 'Сколько ошибок на поле', 'все')
   await failedSubmit(pg)
   ok('несколько ошибок на поле: списки без нарушений',
     (await violations(pg)).length === 0, describe(await violations(pg)))
@@ -126,7 +135,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
-  await click(pg, 'свои')
+  await pick(pg, 'Политика разметки адаптера', 'свои')
   await failedSubmit(pg)
   ok('подменённые идентификаторы: связи целы',
     (await violations(pg)).length === 0, describe(await violations(pg)))
@@ -138,8 +147,8 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
-  await click(pg, 'нативно')
-  await click(pg, 'всё в общий')
+  await pick(pg, 'Перехват отправки', 'нативно')
+  await pick(pg, 'Обработчик ошибок', 'всё в общий')
   // Нативный POST вообще не уходит, пока молчит браузерная валидация: у полей
   // `required`/`minlength`, и пустая форма останавливается ДО сети (проверено:
   // 0 POST-запросов, браузер показывает свои пузыри). Заполняем так, чтобы

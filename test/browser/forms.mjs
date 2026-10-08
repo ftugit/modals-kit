@@ -29,6 +29,19 @@ const ok = (name, cond, extra = '') => {
   if (!cond) failed++
 }
 
+
+/** Панель — select-поля механизма: выбор опции по подписи поля и подписи опции. */
+const pick = async (pg, fieldText, optionText) => {
+  const sel = pg.locator(`label:has-text("${fieldText}") select`)
+  const value = await sel.locator('option', { hasText: optionText }).first().getAttribute('value')
+  await sel.selectOption(value)
+  await pg.waitForTimeout(350)
+}
+/** Тумблер механизма (Toggle над Switch-примитивом). */
+const flip = (pg, labelText) =>
+  pg.locator(`label:has-text("${labelText}") input`).first().check({ force: true })
+    .then(() => pg.waitForTimeout(350))
+
 const click = (pg, text) => pg.evaluate((t) => {
   const el = [...document.querySelectorAll('button')].find((n) => n.textContent.trim() === t)
   el?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -75,13 +88,11 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
 
-  const segmentedStyle = await pg.locator('div[role="group"]').first().locator('button[aria-pressed="true"]').evaluate((button) => ({
-    border: button.classList.contains('border-primary'),
-    ring: button.classList.contains('ring-1'),
-    weight: getComputedStyle(button).fontWeight,
-  }))
-  ok('Forms сохраняет рамочный active-вариант Segmented',
-    segmentedStyle.border && segmentedStyle.ring && segmentedStyle.weight === '600', JSON.stringify(segmentedStyle))
+  // Этап 8: панель настроек — поля механизма на общих виджетах; Segmented нет.
+  ok('панель — поля form: контролы с id=имени и значением из зеркала',
+    await pg.locator('#mode').evaluate((el) => el.tagName === 'SELECT' && el.name === 'mode'
+      && el.value === 'as-is')
+    && await pg.locator('#with_type').evaluate((el) => el.getAttribute('role') === 'switch'))
 
   ok('свой тип значения даёт атрибуты',
     await pg.locator('#signup-rating').getAttribute('type') === 'range'
@@ -138,7 +149,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const texts = await pg.locator('p.text-destructive').allInnerTexts()
   ok('текст ошибки показан', texts.some((t) => t.includes('Минимум 10')), texts.join(' | '))
 
-  await click(pg, 'без minLength')
+  await pick(pg, 'Обработчик ошибок', 'без minLength')
   await click(pg, 'Создать аккаунт')
   await pg.waitForTimeout(1500)
   const after = await pg.locator('p.text-destructive').allInnerTexts()
@@ -146,7 +157,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   ok('подсветка по факту осталась',
     await pg.locator('#signup-password').getAttribute('aria-invalid') === 'true')
 
-  await click(pg, 'по показу')
+  await pick(pg, 'Откуда берётся подсветка', 'по показу')
   await click(pg, 'Создать аккаунт')
   await pg.waitForTimeout(1500)
   ok('подсветка по показу погасла',
@@ -154,25 +165,24 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
   // Переключатель обязан переразложить уже показанные ошибки сразу, без
   // повторной отправки. Это и есть наглядный контракт панели демо.
-  await click(pg, 'всё в общий')
+  await pick(pg, 'Обработчик ошибок', 'всё в общий')
   await pg.waitForTimeout(50)
   const demoStatus = await pg.locator('[aria-live="polite"]:has-text("Фактов:")').innerText()
   ok('«всё в общий» сразу переносит текущие ошибки наверх',
     /общих: [1-9]/.test(demoStatus)
     && await pg.locator('div:has(> input#signup-password) p.text-destructive').count() === 0,
     demoStatus)
-  ok('активная опция доступна через aria-pressed',
-    await pg.getByText('всё в общий', { exact: true }).getAttribute('aria-pressed') === 'true')
+  ok('побочный эффект mode записан в зеркало: селектор подсветки стал «по показу»',
+    (await pg.locator('#invalid_from').inputValue()) === 'shown')
 
   /* ── 7. песочница ───────────────────────────────────────────── */
   const sandbox = pg.locator('section:has-text("Расширение на лету")')
   const text = await sandbox.innerText()
-  ok('без регистрации типа описание не объявляется',
-    text.includes('не зарегистрирован') && text.includes("тип значения 'rating'"))
-  await click(pg, 'зарегистрирован')
+  ok('без регистрации типа описание не объявляется', text.includes("тип значения 'rating'"))
+  await flip(pg, 'Тип значения rating')
   ok('после регистрации описание собирается',
     (await sandbox.innerText()).includes('type="range"'))
-  await click(pg, 'с описанием')
+  await flip(pg, 'Правило «шестизначный код» — с описанием')
   ok('правило с описанием даёт шаблон в песочнице',
     (await sandbox.innerText()).includes('pattern="\\d{6}"'))
 
@@ -180,7 +190,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const service = pg.locator('section:has-text("Чужая служба")')
   ok('имена службы переведены в наши',
     (await service.innerText()).includes('card external.LUHN_FAILED'))
-  await click(pg, 'формат не распознан')
+  await pick(pg, 'Образец чужой службы', 'формат не распознан')
   ok('нераспознанный формат не даёт тишины',
     (await service.innerText()).includes('service.502'))
 

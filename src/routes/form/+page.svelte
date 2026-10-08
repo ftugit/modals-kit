@@ -8,15 +8,15 @@
   import { bind, type LiveMode } from '$lib/form/svelte'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
   import {
-    compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor,
+    compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
     type FormDescription,
   } from '$lib/form'
   import { code6Described, code6Plain, ratingType } from './extend'
   import { checks, forms, formsCustomUi } from './forms.config'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
-  import Control from '$lib/ui/demo/Control.svelte'
-  import Segmented from '$lib/ui/demo/Segmented.svelte'
+  import { createConfig } from '$lib/form/svelte'
+  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '$lib/ui/settings'
   import Common from './ui/Common.svelte'
   import Field from './ui/Field.svelte'
 
@@ -28,8 +28,103 @@
   /* ── обработчик ошибок: один, все сценарии внутри ─────────────── */
 
   type Mode = 'as-is' | 'one-block' | 'drop-code' | 'to-channel'
-  let mode = $state<Mode>('as-is')
   let channelLog = $state<string[]>([])
+
+  /* ── панель настроек — на самом механизме (этап 8) ─────────────────
+     Второго состояния страница не держит: переключатели демо читают зеркало
+     `settings`, а `opts` синхронизируется эффектом. Имена полей = id, как в
+     фильтрах и пагинаторной панели; контролы — общие виджеты `$lib/ui/settings`
+     (Select/Toggle поверх примитивов), аттрибуты — из `form.field(...)`. */
+  /* Зеркало механизма старует пустым (дефолты описания — только для
+     декода/сида); панель держит тот же список значений единственным
+     источником: `sv()` читает зеркало с фолбэком, разметка — тоже. */
+  const PANEL_DEFAULTS: Record<string, string | boolean> = {
+    mode: 'as-is', invalid_from: 'fact', intercept: 'js', live: 'after-touched',
+    cardinality: 'first', markup: 'default', parallel: 'block',
+    sample: 'поле и код известны', with_type: false, described: false,
+  }
+  const sv = (name: string) => settings.values[name] ?? PANEL_DEFAULTS[name]
+
+  const panelCfg = createConfig({
+    resolve: () => undefined,
+    ui: { fieldId: (_formId, name) => name },
+  })
+  const settings = bind(panelCfg, defineForm({
+    id: 'demo-settings',
+    registry: defaultRegistry,
+    fields: {
+      mode: field.select({
+        label: 'Обработчик ошибок',
+        defaultValue: PANEL_DEFAULTS.mode,
+        options: [
+          { value: 'as-is', label: 'как есть' },
+          { value: 'one-block', label: 'всё в общий' },
+          { value: 'drop-code', label: 'без minLength' },
+          { value: 'to-channel', label: 'почту — в канал' },
+        ],
+      }),
+      invalid_from: field.select({
+        label: 'Откуда берётся подсветка',
+        defaultValue: PANEL_DEFAULTS.invalid_from,
+        options: [
+          { value: 'fact', label: 'по факту' },
+          { value: 'shown', label: 'по показу' },
+        ],
+      }),
+      intercept: field.select({
+        label: 'Перехват отправки',
+        defaultValue: PANEL_DEFAULTS.intercept,
+        options: [
+          { value: 'js', label: 'перехватывать' },
+          { value: 'native', label: 'нативно' },
+        ],
+      }),
+      live: field.select({
+        label: 'Режим живой проверки',
+        defaultValue: PANEL_DEFAULTS.live,
+        options: [
+          { value: 'after-touched', label: 'после касания' },
+          { value: 'on-blur', label: 'при уходе' },
+          { value: 'on-input', label: 'при вводе' },
+          { value: 'on-submit', label: 'при отправке' },
+        ],
+      }),
+      cardinality: field.select({
+        label: 'Сколько ошибок на поле',
+        defaultValue: PANEL_DEFAULTS.cardinality,
+        options: [
+          { value: 'first', label: 'первая' },
+          { value: 'all', label: 'все (пересобирает форму)' },
+        ],
+      }),
+      markup: field.select({
+        label: 'Политика разметки адаптера',
+        defaultValue: PANEL_DEFAULTS.markup,
+        options: [
+          { value: 'default', label: 'умолчания' },
+          { value: 'custom', label: 'свои' },
+        ],
+      }),
+      parallel: field.select({
+        label: 'Параллельные отправки',
+        defaultValue: PANEL_DEFAULTS.parallel,
+        options: [
+          { value: 'block', label: 'блокировать' },
+          { value: 'replace', label: 'заменять' },
+          { value: 'queue', label: 'очередь' },
+        ],
+      }),
+      sample: field.select({
+        label: 'Образец чужой службы',
+        defaultValue: PANEL_DEFAULTS.sample,
+        options: Object.keys(PSP_SAMPLES).map((k) => ({ value: k, label: k })),
+      }),
+      with_type: field.checkbox({ label: 'Тип значения rating', defaultValue: PANEL_DEFAULTS.with_type }),
+      described: field.checkbox({ label: 'Правило «шестизначный код» — с описанием', defaultValue: PANEL_DEFAULTS.described }),
+    },
+  }), {})
+
+  const mode = $derived(sv('mode') as Mode)
 
   const handler: ErrorHandler = (errors, ctx) => {
     switch (mode) {
@@ -68,12 +163,12 @@
     checks,
   })
 
-  let cardinality = $state<'first' | 'all'>('first')
+  const cardinality = $derived(sv('cardinality') as 'first' | 'all')
   const description = $derived(cardinality === 'all' ? signupAll : signup)
   $effect(() => { opts.specVersion = cardinality === 'all' ? SPEC_ALL : SPEC_FIRST })
 
   /** Политика разметки адаптера: идентификаторы полей и правило перепроверки. */
-  let ui = $state<'default' | 'custom'>('default')
+  const ui = $derived(sv('markup') as 'default' | 'custom')
 
   // Связки создаются один раз: bind заводит реактивное состояние и подписку.
   // Настройки передаются КАК ЕСТЬ: связка читает их лениво. Копия через
@@ -89,7 +184,10 @@
 
   /* ── песочница: расширение на лету, на СВОЁМ реестре ──────────── */
 
-  const sandbox = $state({ withType: false, described: false })
+  const sandbox = $derived({
+    withType: sv('with_type') === true,
+    described: sv('described') === true,
+  })
 
   /**
    * Своя сборка на собственном реестре: регистрации не протекают в основную
@@ -119,7 +217,7 @@
 
   /* ── чужая служба: сырой ответ → инструкция → обработчик ─────── */
 
-  let sample = $state<keyof typeof PSP_SAMPLES>('поле и код известны')
+  const sample = $derived(sv('sample') as keyof typeof PSP_SAMPLES)
   const raw = $derived(PSP_SAMPLES[sample]!)
   const normalized = $derived(normalizePsp(raw))
   const afterHandler = $derived(
@@ -158,106 +256,29 @@
     form.apply([editor.add(compiled.field)])
   }
 
-  type SegmentedSetting = {
-    label: string
-    value: string
-    onChange: (value: string) => void
-    options: { value: string; label: string; hint?: string }[]
-  }
-  const formSettings = $derived.by((): SegmentedSetting[] => [
-    {
-      label: 'Обработчик ошибок',
-      value: mode,
-      onChange: (x) => {
-        mode = x as Mode
-        if (mode === 'one-block') opts.invalidFrom = 'shown'
-        form.redisplay()
-      },
-      options: [
-        { value: 'as-is', label: 'как есть' },
-        { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
-        { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
-        { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
-      ],
-    },
-    {
-      label: 'Откуда берётся подсветка',
-      value: opts.invalidFrom,
-      onChange: (x) => (opts.invalidFrom = x as InvalidFrom),
-      options: [
-        { value: 'fact', label: 'по факту', hint: 'ошибка была — поле подсвечено' },
-        { value: 'shown', label: 'по показу', hint: 'забрали текст — погасло' },
-      ],
-    },
-    {
-      label: 'Перехват отправки',
-      value: opts.intercept ? 'js' : 'native',
-      onChange: (x) => (opts.intercept = x === 'js'),
-      options: [
-        { value: 'js', label: 'перехватывать', hint: 'тот же FormData через fetch' },
-        { value: 'native', label: 'нативно', hint: 'обычный POST, действие SvelteKit' },
-      ],
-    },
-    {
-      label: 'Режим живой проверки',
-      value: opts.live,
-      onChange: (x) => (opts.live = x as LiveMode),
-      options: [
-        { value: 'after-touched', label: 'после касания' },
-        { value: 'on-blur', label: 'при уходе' },
-        { value: 'on-input', label: 'при вводе' },
-        { value: 'on-submit', label: 'при отправке' },
-      ],
-    },
-    {
-      label: 'Сколько ошибок на поле',
-      value: cardinality,
-      onChange: (x) => (cardinality = x as 'first' | 'all'),
-      options: [
-        { value: 'first', label: 'первая' },
-        { value: 'all', label: 'все', hint: 'свойство описания: состояние начнётся заново' },
-      ],
-    },
-    {
-      label: 'Политика разметки адаптера',
-      value: ui,
-      onChange: (x) => (ui = x as 'default' | 'custom'),
-      options: [
-        { value: 'default', label: 'умолчания', hint: 'id вида signup-email' },
-        { value: 'custom', label: 'свои', hint: 'id вида fld_signup__email и проверка на вводе' },
-      ],
-    },
-    {
-      label: 'Параллельные отправки',
-      value: opts.parallel,
-      onChange: (x) => (opts.parallel = x as ParallelPolicy),
-      options: [
-        { value: 'block', label: 'блокировать' },
-        { value: 'replace', label: 'заменять' },
-        { value: 'queue', label: 'очередь' },
-      ],
-    },
-  ])
-  const sandboxSettings = $derived.by((): SegmentedSetting[] => [
-    {
-      label: 'Тип значения rating',
-      value: sandbox.withType ? 'on' : 'off',
-      onChange: (x) => (sandbox.withType = x === 'on'),
-      options: [
-        { value: 'off', label: 'не зарегистрирован' },
-        { value: 'on', label: 'зарегистрирован' },
-      ],
-    },
-    {
-      label: 'Правило «шестизначный код»',
-      value: sandbox.described ? 'on' : 'off',
-      onChange: (x) => (sandbox.described = x === 'on'),
-      options: [
-        { value: 'off', label: 'без описания' },
-        { value: 'on', label: 'с описанием' },
-      ],
-    },
-  ])
+  /* Эффект mode — ровно прежний onChange: «всё в общий» переставляет источник
+     подсветки (пишем В ЗЕРКАЛО, чтобы селектор показывал актуальное значение) и
+     перекрашивает уже показанные ошибки. Первый пропуск — чтобы монтирование не
+     считалось изменением. */
+  let seenMode = untrack(() => sv('mode'))
+  $effect(() => {
+    const m = sv('mode')
+    if (m === seenMode) return
+    seenMode = m
+    if (m === 'one-block') settings.field('invalid_from')?.onInput('shown')
+    form.redisplay()
+  })
+
+  /* Зеркало панели — единственный источник; `opts` (ленивые читалки связки
+     демо-формы) синхронизируются здесь. */
+  $effect(() => {
+    const v = settings.values
+    if ('intercept' in v) opts.intercept = v.intercept === 'js'
+    if ('live' in v) opts.live = v.live as LiveMode
+    if ('parallel' in v) opts.parallel = v.parallel as ParallelPolicy
+    if ('invalid_from' in v) opts.invalidFrom = v.invalid_from as InvalidFrom
+  })
+
 </script>
 
 <div class="py-10 sm:py-14">
@@ -280,10 +301,16 @@
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
       <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend class="sr-only">Настройки формы</legend>
-        {#each formSettings as setting (setting.label)}
-          <Control label={setting.label}>
-            <Segmented variant="form" value={setting.value} onChange={setting.onChange} options={setting.options} />
-          </Control>
+        {#each ['mode', 'invalid_from', 'intercept', 'live', 'cardinality', 'markup', 'parallel'] as name (name)}
+          {@const v = settings.field(name)!}
+          <PanelField label={v.label ?? name}>
+            <PanelSelect
+              value={String(v.value ?? PANEL_DEFAULTS[name] ?? '')}
+              options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
+              onChange={(x) => v.onInput(x)}
+              {...v.attrs}
+            />
+          </PanelField>
         {/each}
         <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
           <b>Сейчас демо настроено так:</b>
@@ -382,10 +409,15 @@
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
         <div class="mb-3 grid gap-4 sm:grid-cols-2">
-          {#each sandboxSettings as setting (setting.label)}
-            <Control label={setting.label}>
-              <Segmented variant="form" value={setting.value} onChange={setting.onChange} options={setting.options} />
-            </Control>
+          {#each ['with_type', 'described'] as name (name)}
+            {@const v = settings.field(name)!}
+            <PanelToggle
+              label={v.label ?? name}
+              checked={v.value === true}
+              onChange={(c) => v.onInput(c)}
+              hiddenPair={false}
+              {...v.attrs}
+            />
           {/each}
         </div>
 
@@ -427,13 +459,18 @@
     <!-- ── чужая служба ──────────────────────────────────────────── -->
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Чужая служба: нормализация до обработчика</div>
-        <div class="mb-3">
-          <Segmented
-            variant="form"
-            value={sample}
-            onChange={(x) => (sample = x as keyof typeof PSP_SAMPLES)}
-            options={Object.keys(PSP_SAMPLES).map((k) => ({ value: k, label: k }))}
-          />
+        <div class="mb-3 max-w-xl">
+          {#each ['sample'] as sname (sname)}
+            {@const v = settings.field(sname)!}
+            <PanelField label={v.label ?? sname}>
+              <PanelSelect
+                value={String(v.value ?? PANEL_DEFAULTS[sname] ?? '')}
+                options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
+                onChange={(x) => v.onInput(x)}
+                {...v.attrs}
+              />
+            </PanelField>
+          {/each}
         </div>
         <div class="grid gap-3 sm:grid-cols-3">
           <div>
