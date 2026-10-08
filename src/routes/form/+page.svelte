@@ -1,8 +1,10 @@
 <script lang="ts">
+  // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
+  import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
+  const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
-  import { browser } from '$app/environment'
   import { bind, type LiveMode } from '$lib/form/svelte'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
   import {
@@ -276,7 +278,7 @@
 
     <!-- ── настройки ─────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <fieldset disabled={!browser} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
+      <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend class="sr-only">Настройки формы</legend>
         {#each formSettings as setting (setting.label)}
           <Control label={setting.label}>
@@ -295,7 +297,7 @@
           {/if}
         </div>
       </fieldset>
-      <noscript><p class="mt-3 text-xs text-muted-foreground">Без JS: неактивны.</p></noscript>
+      <noscript><p class="mt-3 text-xs text-muted-foreground">Без JS: неактивны — {JS_ONLY_REASON}.</p></noscript>
     </section>
 
     <!-- ── форма ─────────────────────────────────────────────────── -->
@@ -375,7 +377,7 @@
     {/if}
 
     <!-- ── песочница расширения ──────────────────────────────────── -->
-    <fieldset disabled={!browser} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
+    <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
       <legend class="sr-only">Настройки расширения</legend>
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>

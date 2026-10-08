@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { browser } from '$app/environment'
+  // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
+  import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
+  const jsOnly = useJsOnly()
 
   // Порт src/features/modals/ModalsDemo.tsx оригинала: состав триггеров,
   // счётчик стопки, панель настроек. Хост — в КОРНЕВОМ layout (этап B):
@@ -167,7 +169,7 @@
       </div>
     </header>
 
-    <fieldset disabled={!browser} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
+    <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
       <legend class="sr-only">Демо модалок</legend>
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 flex flex-wrap items-center gap-2">
@@ -241,7 +243,7 @@
             ошибка «нет такой модалки»
           </a>
         </div>
-        <noscript><p class="mb-3 text-xs text-muted-foreground">Без JS: неактивны.</p></noscript>
+        <noscript><p class="mb-3 text-xs text-muted-foreground">Без JS: неактивны — {JS_ONLY_REASON}.</p></noscript>
         <div class="rounded-lg bg-muted p-2 font-mono text-xs text-muted-foreground">
           <!-- Считаем ВСЮ цепочку: пока открыт мобильный лист select, одна
                запись принадлежит системному оверлею (headless) — он без

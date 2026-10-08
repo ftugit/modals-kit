@@ -16,6 +16,7 @@
   import { bind, createConfig } from '$lib/form/svelte'
   import { computeLinks, linkHelperText } from '$lib/links/links'
   import { buttonVariants } from '$lib/ui/primitives'
+  import { JS_ONLY_REASON } from '$lib/ui/js-only.svelte'
   import type { DemoPanelSchema } from './compile'
   import { Field, Select, Toggle } from './fields'
 
@@ -85,7 +86,7 @@
       const gated = schema.gated.get(name)
       if (gated !== undefined) return { disabled: true, reason: gated }
       if (schema.jsOnly.has(name) && form.submitVisible)
-        return { disabled: true, reason: 'доступно после загрузки JavaScript' }
+        return { disabled: true, reason: JS_ONLY_REASON }
       const firing = linksOut.fields.get(name)
       if (firing) return { disabled: true, reason: linkHelperText(firing, (id) => schema.label(id)) }
       return undefined
