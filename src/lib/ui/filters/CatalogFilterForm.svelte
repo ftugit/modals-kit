@@ -1,125 +1,150 @@
 <script lang="ts">
   /**
-   * Форма фильтров — только разметка.
+   * Форма фильтров — связка «описание полей → разметка» на механизме lib/form.
    *
-   * Что она НЕ делает (и почему): не знает ни ключей фильтров, ни схемы, ни
-   * источника, ни адреса. Контролы приходят готовыми (`catalogFilterView`), а
-   * выбор уезжает наружу словарём «путь поля → значения». Проверка значений,
-   * отсечение чужого, связки и патч хранилища живут в `$lib/filters` — поэтому
-   * вторая реализация (React/SolidJS) повторяет эту разметку, а не логику: у
-   * неё те же `controls`, тот же `formAction` и тот же контракт `onApply`.
+   * S5 (этап 5): контролы больше не собираются руками — набор полей приезжает
+   * КОМПИЛЯТОРОМ схемы (`compileCatalogFilterSchema`), каждый контрол рисуется
+   * из `field(key)` связки `bind`, а применение — url-контур с `live: false`:
+   * форма коммит-набора, поле за полем ничего не уезжает, только «Применить»
+   * (или явный `commit()` хоста). Имена полей — адресные (`page.filters.kind`),
+   * канон для пути без JS и для патча с JS ОДНИ.
    *
-   * Значения берутся из САМОЙ формы (`FormData`), а не из зеркала состояния:
-   * контролы — нативные (`select`/`input`), и браузер уже хранит выбор в них.
-   * Одно зеркало здесь означало бы вторую правду: смена значения в нативном
-   * контроле (клавиатурой, assistive-технологией, программно) не обновляла бы
-   * её, и «применить» отправляло бы старое. Заодно пути «с JS» и «без JS»
-   * отправляют одни и те же данные — без JS форма уходит обычным GET.
+   * Значения берутся из САМОЙ формы (`FormData` внутри `bind`), а не из
+   * зеркала: одно зеркало здесь означало бы вторую правду — смена значения в
+   * нативном контроле (клавиатурой, assistive-технологией, программно) не
+   * обновляла бы её, и «применить» отправляло бы старое. Заодно пути «с JS» и
+   * «без JS» отправляют одни и те же данные: без JS форма уходит обычным GET.
    *
-   * Без JavaScript форма работает целиком: имена полей канонические
-   * (`page.filters.<поле>.<режим>`), чужие ключи адреса едут скрытыми полями.
-   * Ровно эти ключи читает адресный слой после перехода.
+   * Нарушения набора (связки, allowlist, границы числа) компилируются в те же
+   * валидаторы описания, поэтому безымянный коммит показывает их ПОД ПОЛЯМИ
+   * (`FieldView.errors`) до похода на сервер — а серверный список нарушений
+   * остаётся правдой для пути без JS.
    */
   import { onMount } from 'svelte'
+  import { compileCatalogFilterSchema, catalogFilterFieldStates, parseCatalogFilterPath } from '$lib/filters'
+  import type { CatalogFilterSchema } from '$lib/filters'
+  import { bind, createConfig } from '$lib/form/svelte'
+  import type { FormDescription } from '$lib/form'
   import { Button, Input, Select } from '$lib/ui/primitives'
-  import type { CatalogFilterControl } from '$lib/filters'
 
   interface Props {
-    controls: readonly CatalogFilterControl[]
+    /** Схема источника: по ней компилируется описание полей (единый код-путь с сервером). */
+    schema: CatalogFilterSchema
+    /** Значения из состояния пагинатора (`extra`), канонические пути `filters.*`. */
+    values?: Record<string, unknown> | undefined
+    /** Адресный префикс: `page` → имена полей `page.filters.…` (ключи адреса). */
+    prefix?: string
     /** `action` нативной формы: страница каталога (GET). */
     action?: string
     /** Чужой ключ адреса, который обязан пережить отправку формы. */
     hidden?: readonly { name: string; value: string }[]
-    /** Выбор пользователя: путь поля → значения. */
+    /** Выбор пользователя: путь поля → значения (пустые отброшены, всё одним набором). */
     onApply?: (values: Record<string, string[]>) => void
     /** Адрес «сбросить свои фильтры» (чужие ключи при этом живут). */
     resetHref?: string
     class?: string
   }
 
-  let { controls, action, hidden = [], onApply, resetHref, class: cls = '' }: Props = $props()
+  let {
+    schema,
+    values,
+    prefix = 'page',
+    action,
+    hidden = [],
+    onApply,
+    resetHref,
+    class: cls = '',
+  }: Props = $props()
 
-  let formEl = $state<HTMLFormElement | null>(null)
+  // svelte-ignore state_referenced_locally
+  const namePrefix = prefix ? `${prefix}.` : ''
 
-  /**
-   * Гашение недоступных полей — работа JavaScript, а не разметки: без JS форму
-   * нельзя «подкручивать» (выключенный контрол браузер не отправляет, и запрос
-   * пользователя пропал бы молча). До гидратации поля остаются живыми, а
-   * причина (««Статус» блокирует поле: …») видна всегда — там же говорит
-   * валидатор связок. Канон тот же, что у панели настроек (`js = !hydrated`).
-   */
+  // Определение полей — ОДИН раз на экземпляр: смена схемы пересоздаёт форму
+  // (хост обёртывает её в {#key}). Имена — адресные ключи, относительные пути
+  // остаются каноном хранилища.
+  // svelte-ignore state_referenced_locally
+  const compiled = compileCatalogFilterSchema(schema, `catalog-filters`, {
+    namePrefix,
+  })
+  const desc: FormDescription = compiled.definition
+
+  // Идентификатор контрола — его КАНОНИЧЕСКОЕ адресное имя (`page.filters.kind`)
+  // (решение b1, `bd52745`): `<label for>` указывает на существующий узел, а id
+  // читается так же, как имя поля. Точки в id допустимы (HTML5 запрещает только
+  // пробелы), поэтому «имя = id» не переводится в другой алфавит.
+  const catalogForms = createConfig({
+    resolve: () => undefined,
+    ui: { fieldId: (_formId, name) => name },
+  })
+
+  // Решение связки о поле (выключено + причина) — канал fieldState: он же
+  // даёт FieldView.disabled/reason, и причина видна ПОД полем всегда (до
+  // гидратации в том числе), а гашение контрола — работа JavaScript: без JS
+  // выключенный контрол браузер не отправил бы, и запрос пользователя
+  // пропал бы молча (канон `js = !hydrated`, как у панели настроек).
+  // Реактивно: связки пересчитываются на каждое применение набора (extra
+  // поменялся — «Оценка» при «Анонсах» гаснет сразу, как и в старом view).
+  const linkOf = $derived(
+    new Map(catalogFilterFieldStates(schema, values).map((state) => [state.key, state])),
+  )
+  function fieldState(name: string): { disabled?: boolean; reason?: string } | undefined {
+    const parsed = parseCatalogFilterPath(name.slice(namePrefix.length))
+    const state = parsed ? linkOf.get(parsed.key) : undefined
+    return state?.disabled ? { disabled: true, reason: state.reason } : undefined
+  }
+
+  // svelte-ignore state_referenced_locally
+  const form = bind(catalogForms, desc, {
+    url: {
+      live: false,                                 // коммит-набор: применяем целиком
+      action,
+      seed: (d) => {
+        const out: Record<string, unknown> = {}
+        for (const f of d.fields) {
+          const current = values?.[f.name.slice(namePrefix.length)]
+          if (current !== undefined) out[f.name] = current
+        }
+        return out
+      },
+      commit: (patch) => {
+        if (!onApply) return
+        const next: Record<string, string[]> = {}
+        for (const [name, raw] of Object.entries(patch)) {
+          const list = (Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw])
+            .map((item) => String(item).trim())
+            .filter((item) => item !== '')
+          if (list.length) next[name.slice(namePrefix.length)] = list
+        }
+        onApply(next)
+      },
+    },
+    fieldState,
+  })
+
   let hydrated = $state(false)
   onMount(() => {
     hydrated = true
   })
 
-  /**
-   * Значения одного контрола из формы. Числовая граница и одиночный выбор —
-   * одно значение, мультивыбор — список (нативный `select multiple` шлёт их
-   * под одним именем). Пустые значения отбрасываются: «ничего не выбрано» —
-   * это снятие ключа, а не значение с пустой строкой.
-   */
-  function read(data: FormData, control: CatalogFilterControl): string[] {
-    return data
-      .getAll(control.name)
-      .map((item) => String(item).trim())
-      .filter((item) => item !== '')
-  }
+  /** Значение контрола из зеркала: списки — массивом, скаляры — первой строкой. */
+  const asList = (raw: unknown): string[] =>
+    Array.isArray(raw)
+      ? raw.map((item) => String(item))
+      : raw === undefined || raw === null || raw === ''
+        ? []
+        : String(raw).split(',').map((item) => item.trim()).filter((item) => item !== '')
 
-  /**
-   * Идентификатор контрола — его КАНОНИЧЕСКОЕ имя (`page.filters.kind`).
-   * Так решено в b1 (`bd52745`), и это же проверяет браузерный набор: `<label for>`
-   * указывает на существующий узел, а id читается так же, как имя поля формы.
-   * Точки в id допустимы (HTML5 запрещает только пробелы), поэтому «имя = id» не
-   * приходится переводить в другой алфавит — связи нечему разъезжаться. Несущий
-   * id узел — нативный контрол: у `Select` он же и есть поле формы, а видимый
-   * «триггер» — рисунок (`aria-hidden`, `tabindex="-1"`).
-   */
-  const idOf = (control: CatalogFilterControl): string => control.name
-
-  /** Идентификатор пояснения к полю: строка связки (причина или отказ) или усечённый список. */
-  const noteId = (control: CatalogFilterControl, kind: 'reason' | 'truncated'): string =>
-    `${idOf(control)}-${kind}`
-
-  /** Связи доступности: подсказка поля — то, что реально нарисовано рядом. */
-  function describedBy(control: CatalogFilterControl): string | undefined {
-    const ids: string[] = []
-    if (control.kind === 'multiselect' && control.truncated) ids.push(noteId(control, 'truncated'))
-    if (control.disabled && control.reason) ids.push(noteId(control, 'reason'))
-    return ids.length ? ids.join(' ') : undefined
-  }
-
-  function submit(event: SubmitEvent) {
-    if (!onApply) return
-    const form = formEl ?? (event.currentTarget as HTMLFormElement)
-    event.preventDefault()
-    const data = new FormData(form)
-    const values: Record<string, string[]> = {}
-    for (const control of controls) {
-      // Выключенный контрол браузер не отправляет и сам — но его значение
-      // («выключено» не равно «пусто») наружу уходить не должно ни при каком
-      // пути, поэтому и здесь оно не читается.
-      //
-      // Это и есть согласованная политика для значения, которое гасит связка
-      // схемы (например, «Оценка» при «Анонсах»): при применении оно уходит
-      // автоматически — ровно так же, как без JavaScript его не отправляет сам
-      // браузер. Скрытых полей для «удержания» таких значений здесь нет
-      // намеренно: это развело бы пути JS и no-JS, а решать должна схема —
-      // источник всё равно не применит запрещённое значение и назовёт причину
-      // (`dropped`), а панель показывает её и в списке связок, и под полем.
-      if (control.disabled) continue
-      const items = read(data, control)
-      if (items.length) values[control.path] = items
-    }
-    onApply(values)
+  /** Пояснение «показаны не все значения» — id по образцу старых заметок. */
+  const noteId = (name: string): string => `${name}-truncated`
+  const truncatedOf = (f: { name: string }): number | undefined => {
+    const parsed = parseCatalogFilterPath(f.name.slice(namePrefix.length))
+    const field = parsed ? schema.fields.find((fd) => fd.key === parsed.key) : undefined
+    return field?.type === 'multiselect' ? field.optionsTruncated : undefined
   }
 </script>
 
 <form
-  bind:this={formEl}
-  method="get"
-  action={action}
-  onsubmit={submit}
+  {...form.formProps()}
   data-testid="catalog-filter-form"
   class={`space-y-4 ${cls}`}
 >
@@ -128,72 +153,65 @@
   {/each}
 
   <div class="grid gap-3 sm:grid-cols-2">
-    {#each controls as control (control.path)}
-      <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={control.path}>
-        <label class="block text-xs font-medium text-muted-foreground" for={idOf(control)}>
-          {control.label}
+    {#each form.description.fields as fd (fd.name)}
+      {@const v = form.field(fd.name)!}
+      {@const truncated = truncatedOf(fd)}
+      {@const describedby = [
+        v.attrs['aria-describedby'] ?? null,
+        truncated ? noteId(v.name) : null,
+      ].filter(Boolean).join(' ') || undefined}
+      <div class="space-y-1" data-testid="catalog-filter-field" data-filter-path={v.name.slice(namePrefix.length)}>
+        <label class="block text-xs font-medium text-muted-foreground" {...v.labelProps()}>
+          {v.label}
         </label>
-        {#if control.kind === 'select'}
+        {#if v.input === 'select' || v.input === 'multiselect'}
           <Select
-            id={idOf(control)}
-            aria-describedby={describedBy(control)}
-            options={control.options}
-            name={control.name}
-            value={control.value}
-            disabled={hydrated && control.disabled}
-            placeholder="Любое"
-          />
-        {:else if control.kind === 'multiselect'}
-          <Select
-            id={idOf(control)}
-            aria-describedby={describedBy(control)}
-            options={control.options}
-            name={control.name}
-            multiple
-            value={[...control.value]}
-            disabled={hydrated && control.disabled}
-            placeholder="Не выбрано"
-          />
-        {:else if control.kind === 'number'}
-          <Input
-            id={idOf(control)}
-            aria-describedby={describedBy(control)}
-            type="number"
-            name={control.name}
-            value={control.value}
-            placeholder={control.placeholder}
-            min={control.min}
-            max={control.max}
-            disabled={hydrated && control.disabled}
+            {...(() => {
+              const { value: _v, disabled: _d, 'aria-describedby': _a, ...rest } = v.attrs
+              return rest
+            })()}
+            options={v.options ?? []}
+            value={v.input === 'multiselect' ? asList(v.value) : (asList(v.value)[0] ?? '')}
+            multiple={v.input === 'multiselect'}
+            placeholder={v.input === 'multiselect' ? 'Не выбрано' : 'Любое'}
+            aria-describedby={describedby}
+            disabled={hydrated && v.disabled === true}
           />
         {:else}
           <Input
-            id={idOf(control)}
-            aria-describedby={describedBy(control)}
-            type="text"
-            name={control.name}
-            value={control.value}
-            disabled={hydrated && control.disabled}
+            {...(() => {
+              const { disabled: _d, 'aria-describedby': _a, ...rest } = v.attrs
+              return rest
+            })()}
+            type={v.input === 'number' ? 'number' : 'text'}
+            placeholder={v.placeholder}
+            aria-describedby={describedby}
+            disabled={hydrated && v.disabled === true}
           />
         {/if}
-        {#if control.kind === 'multiselect' && control.truncated}
+        {#if truncated}
           <p
             class="text-xs text-muted-foreground"
-            id={noteId(control, 'truncated')}
+            id={noteId(v.name)}
             data-testid="catalog-filter-truncated"
           >
-            Показаны не все значения: у источника их больше на {control.truncated}.
+            Показаны не все значения: у источника их больше на {truncated}.
           </p>
         {/if}
-        {#if control.disabled && control.reason}
+        {#if v.reason}
           <p
             class="text-xs text-muted-foreground"
-            id={noteId(control, 'reason')}
+            {...v.helpProps()}
             data-testid="catalog-filter-reason"
           >
-            {control.reason}
+            {v.reason}
           </p>
         {/if}
+        {#each v.errors as error (error.id)}
+          <p class="text-xs text-destructive" {...v.errorProps()} data-testid="catalog-filter-error">
+            {error.message ?? error.code}
+          </p>
+        {/each}
       </div>
     {/each}
   </div>

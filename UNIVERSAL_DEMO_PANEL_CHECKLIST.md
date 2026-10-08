@@ -429,9 +429,31 @@ disabled ≠ скрыто; причина в helper (отдельного узл
      - [ ] no-JS скоуп (следствие Q2): GET-форма фильтров/поиска меняет адрес — её
        читают только url-инстансы; для local/none отсутствие фильтра без JS —
        задокументированное ограничение, обходного «пиши в стор из формы» не вводим.
-5. [ ] Перенос фильтров: `CatalogFilterForm` на `field(key)`; канонические имена
+5. [x] Перенос фильтров: `CatalogFilterForm` на `field(key)`; канонические имена
      `page.filters.<key>.<mode>`, no-JS GET, список нарушений — сохранить; дроп из
      `catalogFilterExtraPatch` переезжает в сборщик набора.
+     Реализовано: форма строит `bind` сама (`compileCatalogFilterSchema(schema, id,
+     { namePrefix: 'page.' })` — имена полей = ключи адреса, `paths/defaults` целы
+     для extra-слоя), размечает `form.description.fields` через `form.field(name)`
+     (label=имя сохранён переопределением `fieldId`; примитивы Select/Input принимают
+     attrs из Projection; заметки truncated — вручную, reason — каналом `fieldState`
+     поверх `catalogFilterFieldStates`, реактивно на каждое применение); url-опция
+     `live: false` — форма коммит-набора: по одному полю ничего не уезжает, только
+     submit (до гидратации — нативный GET, как был); безымянный коммит `commitUrl`
+     теперь ПОКАЗЫВАЕТ итог проверки под полями (facts+shown = evaluate-ошибки:
+     связки/allowlist/границы видно до похода на сервер; три монти); панель тоньше:
+     `{#key schema}` пересоздаёт форму (и bind) на смену схемы, `onApply` — тот же
+     контракт `Record<path, string[]>` (пустые отброшены, трим — как старый `read()`).
+     Дроп подавленных связкой значений: сборщик не добавляет их сам (гашенный
+     контрол не в FormData; валидатор связки рисует ошибку), `catalogFilterExtraPatch`
+     оставлен оборонительно — буквальный перенос (удаление strip из патчера) не
+     меняет результат, но снимает гарантию для прямых вызовов; решение за оператором,
+     если захочет строгость формулировки. Доказательства: shikimori-копия (контролы
+     11, label↔id, чипы, связки, «JS disabled → score удалён», клик-закрыть-применить,
+     поле запроса) + capabilities/regressions/paginate/modals/shell/forms/errors —
+     вся цепочка зелёная; no-JS (11 контролов, нативный GET, отказ набора, CSV
+     мультивыбора, round-trip) зелёный; unit 545, check 0/45; /paginator +1.2 KiB
+     immutable (bind в форме — ожидаемо), /form не тронут; база 45 warnings.
 6. [ ] Перенос демо-панели: `compileDemoPanelSchema`; `page.size` обычным полем; `jsOnly`
      остаётся в shell; `requires` — серверные данные; `fieldState()` из `PaginatorSettings`
      исчезает; три страницы на оболочке.

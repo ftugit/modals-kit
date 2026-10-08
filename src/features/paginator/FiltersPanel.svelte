@@ -110,13 +110,22 @@
       Выбрать фильтры
     </summary>
     <div class="mt-3">
-      <CatalogFilterForm
-        controls={view.controls}
-        action={view.formAction ?? url}
-        hidden={view.hidden}
-        resetHref={view.formAction ?? url}
-        onApply={apply}
-      />
+      <!--
+        Форма привязана к Описанию, собранному из схемы, поэтому смена схемы
+        (другой источник) пересоздаёт её целиком: имена полей и валидаторы —
+        из нового compile, значения — тем же `seed` из состояния.
+      -->
+      {#key schema}
+        <CatalogFilterForm
+          {schema}
+          values={extra}
+          {prefix}
+          action={view.formAction ?? url}
+          hidden={view.hidden}
+          resetHref={view.formAction ?? url}
+          onApply={apply}
+        />
+      {/key}
     </div>
   </details>
 
