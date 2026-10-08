@@ -522,9 +522,12 @@ disabled ≠ скрыто; причина в helper (отдельного узл
        ЭТАП ЗАКРЫТ: 6.0–6.4, коммиты 6.0–6.3 + 6.4; прогон после всех шагов: unit 557,
        guard 62/2 (база), check 0/45, forms/modals 49/regressions 47/paginate/shell 7/
        capabilities/errors + shikimori-копия — всё зелёное.
-7. [ ] Регрессии: браузерный набор + no-JS пути на /modals /form /paginator; недостижимость
-     «пустого пагинатора с надписью» из UI-действий; `test/browser/shikimori.mjs` (сетевой,
-     preview поднимает сам) + `capabilities.mjs` перед докладом.
+7. [x] Регрессии (2026-10-09, свежие прогоны после b018a46): набор полностью зелёный
+     (regressions 47, modals 49, shell 7, paginate, capabilities, errors, forms вкл. no-JS,
+     shikimori-копия), недостижимость
+     «пустого пагинатора с надписью» из UI-действий — покрыто зелёными ассертами
+     «не применён, выдача прежняя» (shikimori :201/:213/:733) и структурой live-пути
+     (гашение до отправки); итоговый доклад — `UNIVERSAL_DEMO_PANEL_REPORT.md`.
 
 ## Постоянные правила (§5)
 
