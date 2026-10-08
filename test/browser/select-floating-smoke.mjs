@@ -259,20 +259,46 @@ try {
     const page = await browser.newPage({
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
-    await page.goto(BASE, { waitUntil: 'networkidle' })
-    const nativeSelect = page.locator('[data-select-root]').first().locator('select')
+    await page.goto(`${new URL(BASE).origin}/paginator?page.src=animes&page.filters.kind=tv`, {
+      waitUntil: 'networkidle',
+    })
+    await page.locator('details').first().evaluate((el) => el.setAttribute('open', ''))
+    await page.evaluate(() => {
+      window.__touchOpenOptionEvents = []
+      window.__touchTriggerClick = false
+      document.addEventListener('click', (event) => {
+        if (event.target instanceof HTMLSelectElement && event.target.name === 'page.filters.genres.not') {
+          window.__touchTriggerClick = true
+        }
+      }, true)
+      for (const type of ['pointerover', 'mouseover', 'click']) {
+        document.addEventListener(type, (event) => {
+          const target = event.target instanceof Element
+            ? event.target.closest('[data-select-content] [role="option"]')
+            : null
+          if (target) window.__touchOpenOptionEvents.push({ type, text: target.textContent?.trim() })
+        }, true)
+      }
+    })
+    const nativeSelect = page.locator('select[name="page.filters.genres.not"]')
+    await nativeSelect.scrollIntoViewIfNeeded()
     await nativeSelect.tap()
     await waitAtLeast(page, '[data-select-content]', 1)
     await page.waitForTimeout(180)
 
+    const openedFromTrigger = await page.evaluate(() => window.__touchTriggerClick)
+    assert(openedFromTrigger, 'tap click не остался на native Select trigger')
+    const optionEvents = await page.evaluate(() => window.__touchOpenOptionEvents)
+    assert(optionEvents.length === 0,
+      `открывающий tap был перенаправлен в option: ${JSON.stringify(optionEvents)}`)
     const lit = page.locator('[data-select-content] [role="option"][data-active]')
-    assert((await lit.count()) === 0, 'на тач-экране список открылся с подсвеченной data-active строкой')
+    assert((await lit.count()) === 0, 'открывающий tap сделал option data-active')
     const backgrounds = await page.locator('[data-select-content] [role="option"]').evaluateAll((rows) =>
       rows.map((row) => getComputedStyle(row).backgroundColor),
     )
     assert(new Set(backgrounds).size === 1,
-      `на тач-экране совместимый hover покрасил строку: ${JSON.stringify([...new Set(backgrounds)])}`)
-    ok('на тач-экране касание не оставляет hover-фон на опции')
+      `hover после открытия отличается от обычного: ${JSON.stringify([...new Set(backgrounds)])}`)
+    ok('открывающий touch жест остался на trigger: ни option event, ни hover/active на списке')
 
     await page.keyboard.press('ArrowDown')
     await page.waitForTimeout(120)

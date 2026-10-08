@@ -461,14 +461,34 @@
    * Гашение «догоняющего» клика после открытия по указателю.
    *
    * Мышь открывает список по `pointerdown`; на touch ждём, пока жест
-   * завершится без прокрутки. Иначе начало обычного свайпа по странице на
-   * нативном `<select>` тут же раскрывает лист и перехватывает дальнейший
-   * скролл. `preventDefault` на touch `pointerdown` при этом оставляет за
-   * нашим компонентом открытие вместо системного picker браузера.
+   * завершится без прокрутки, и раскрываем только на следующий `click`.
+   * Если открыть лист на `pointerup`, тот же tap уже перепроверяется над
+   * новым DOM и попадает в опцию под пальцем. `preventDefault` на touch
+   * `pointerdown` оставляет открытие за компонентом, а не системным picker.
    */
   const TOUCH_TAP_SLOP = 8
   let pendingTouchOpen: { pointerId: number; x: number; y: number } | null = null
+  let pendingTouchClick: { x: number; y: number; at: number } | null = null
   let swallowArmed = false
+
+  function clearPendingTouchClick(): void {
+    pendingTouchClick = null
+  }
+
+  function armOpenOnTouchClick(event: PointerEvent): void {
+    pendingTouchClick = { x: event.clientX, y: event.clientY, at: Date.now() }
+  }
+
+  /** Touch opens on its click, so the opening gesture still targets the closed trigger. */
+  function openFromTouchClick(event: MouseEvent): void {
+    const pending = pendingTouchClick
+    pendingTouchClick = null
+    if (!pending || Date.now() - pending.at > 700) return
+    if (Math.abs(event.clientX - pending.x) > 3 || Math.abs(event.clientY - pending.y) > 3) return
+    if (!mounted || disabled || event.defaultPrevented) return
+    event.preventDefault()
+    setOpen(true)
+  }
   function swallowTrailingClick(event: PointerEvent | MouseEvent): void {
     // Открытие по чистому `click` следа не оставляет — гасить нечего.
     if (swallowArmed || event.type === 'click') return
@@ -513,6 +533,7 @@
   // pointercancel; запасной порог движения покрывает и браузеры без него.
   function interceptPointer(event: PointerEvent) {
     if (!mounted || disabled || event.defaultPrevented) return
+    clearPendingTouchClick()
     if (event.pointerType === 'touch') {
       if (!event.isPrimary) {
         pendingTouchOpen = null
@@ -539,11 +560,16 @@
     if (!pending || pending.pointerId !== event.pointerId) return
     pendingTouchOpen = null
     if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > TOUCH_TAP_SLOP) return
-    openFromPointer(event)
+    // Do not reveal the sheet before the browser dispatches the tap's click.
+    // Otherwise that same click is re-hit-tested against a newly visible option.
+    armOpenOnTouchClick(event)
   }
 
   function cancelTouchPointer(event: PointerEvent): void {
-    if (pendingTouchOpen?.pointerId === event.pointerId) pendingTouchOpen = null
+    if (pendingTouchOpen?.pointerId === event.pointerId) {
+      pendingTouchOpen = null
+      clearPendingTouchClick()
+    }
   }
 
   // Старый fallback для браузеров без Pointer Events. Современные браузеры
@@ -598,6 +624,7 @@
       : () => {}
     return () => {
       form?.removeEventListener('reset', onReset)
+      clearPendingTouchClick()
       stopTrace()
     }
   })
@@ -783,6 +810,7 @@
     })}
     oninput={syncFromNative}
     onchange={syncFromNative}
+    onclick={openFromTouchClick}
     onpointerdown={interceptPointer}
     onpointermove={trackPointerMove}
     onpointerup={finishTouchPointer}
