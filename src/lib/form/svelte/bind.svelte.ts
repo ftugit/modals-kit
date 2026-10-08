@@ -318,12 +318,23 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   /** Собрать набор объявленных ключей из DOM и отдать sink'у хоста. */
+  // Дубль-страх sink'а: blur-овый `change` приходит и когда значение не
+  // менялось с прошлого коммита (дебаунс-коммит уже был). Повтор того же
+  // патча — шум, который на смене монти (remont хоста) успевает приземлиться
+  // в НОВОЕ хранилище чужим значением. Тот же патч, что уже отправляли, — мимо.
+  let lastUrlPatch: string | null = null
   function commitUrl(via: UrlCommitVia, name?: string) {
     const url = o.url
     if (!url || !formEl) return
     const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
     for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    const printed = JSON.stringify(patch)
+    if (printed === lastUrlPatch) {
+      if (name) recheck(name)
+      return
+    }
+    lastUrlPatch = printed
     url.commit(patch, via)
     // локальное зеркало держим в такт с DOM: подсветка/живые проверки читают state
     store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
@@ -558,6 +569,9 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     custom: (prefix = 'u_') => desc.fields.filter((f) => f.name.startsWith(prefix)).map(viewOf),
     get f() { return fieldProxy },
     field: (name: string) => (desc.byName[name] ? viewOf(desc.byName[name]!) : undefined),
+    /** S5 (url-канал): коммит текущего состояния формы в sink хоста, как если бы
+     * поле изменили нативно — для управляемого хостом ввода (debounce, кнопки). */
+    commit: (name?: string) => commitUrl('field', name),
     select: <T,>(sel: (s: FormState) => T) => sel(snapshot),
   }
 }

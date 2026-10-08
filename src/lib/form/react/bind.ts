@@ -359,6 +359,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
    * на полях. В React это проп, а не эффект после отрисовки: обе стороны
    * (SSR и оживление) вычисляют его из одного состояния — рассинхрона нет.
    */
+  const lastUrlPatchRef = useRef<string | null>(null)
   const commitUrl = (via: UrlCommitVia, name?: string) => {
     const url = oRef.current.url
     const el = holder.formEl
@@ -366,6 +367,13 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     const ev = evaluate(new FormData(el), desc, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
     for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    // Тот же патч, что уже отправляли (blur без изменения) — в sink не идёт.
+    const printed = JSON.stringify(patch)
+    if (printed === lastUrlPatchRef.current) {
+      if (name) recheck(name)
+      return
+    }
+    lastUrlPatchRef.current = printed
     url.commit(patch, via)
     store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
     if (name) recheck(name)
@@ -526,6 +534,8 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     facts: state.facts, shown: state.shown,
     get submitVisible() { return !hydrated },
     formProps, hidden, intent, submit, lift, apply, rows, field, f,
+    /** S5 (url-канал): коммит текущего состояния формы в sink хоста (см. svelte). */
+    commit: (name?: string) => commitUrl('field', name),
     select: <T,>(sel: (s: typeof state) => T) => sel(state),
     /** Поля, созданные в рантайме: отличаются только префиксом имени. */
     custom: (prefix = 'u_') => desc.fields.filter((fd) => fd.name.startsWith(prefix)).map(viewOf),

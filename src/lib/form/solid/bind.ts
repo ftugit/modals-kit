@@ -318,6 +318,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
    * снимает атрибут без пересоздания связки. Обе стороны (SSR и оживление)
    * вычисляют его из одного состояния — рассинхрона нет.
    */
+  let lastUrlPatch: string | null = null
   const commitUrl = (via: UrlCommitVia, name?: string) => {
     const url = o.url
     if (!url || !formEl) return
@@ -325,6 +326,13 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     const ev = evaluate(new FormData(formEl), d, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
     for (const f of d.fields) patch[f.name] = ev.values[f.name]
+    // Тот же патч, что уже отправляли (blur без изменения) — в sink не идёт.
+    const printed = JSON.stringify(patch)
+    if (printed === lastUrlPatch) {
+      if (name) recheck(name)
+      return
+    }
+    lastUrlPatch = printed
     url.commit(patch, via)
     batch(() => {
       store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
@@ -495,6 +503,8 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     setFormEl: (el: HTMLFormElement) => { formEl = el; if (el) assertEnvelope(el) },
     get submitVisible() { return !hydrated() },
     formProps, hidden, intent, submit, lift, apply, rows,
+    /** S5 (url-канал): коммит текущего состояния формы в sink хоста (см. svelte). */
+    commit: (name?: string) => commitUrl('field', name),
     field: (name: string) => {
       const f = description().byName[name]
       return f ? viewOf(f, cfg.ui, state()) : undefined
