@@ -11,6 +11,9 @@
     path: string
     maxLength?: number
     debounce?: number
+    /** Текущий запрос из СОСТОЯНИЯ пагинатора (не из адреса): выдача строится
+     по нему — поле обязано показывать то же. До гидратации не используется. */
+    query?: string
     /** Запрос выключен опцией панели — поле не принимает ввод. */
     disabled?: boolean
     /**
@@ -24,6 +27,7 @@
   let {
     name,
     path,
+    query,
     maxLength = 120,
     debounce = 300,
     disabled = false,
@@ -48,12 +52,16 @@
 
   /**
    * Текущее значение: до гидратации и без JS — из адреса (SSR/deep-link — как
-   * у канона: форма рождается с запросом), с JS — «своё» состояние ввода,
-   * чтобы echo-persist адреса не переставлял курсор в инпуте.
+   * у канона: форма рождается с запросом). С JS — из СТОРА пагинатора, а не из
+   * адреса: хранилище может быть не адресным (`local`/`none`), и тогда поле
+   * обязано показывать то же состояние, по которому строится выдача. Своё
+   * состояние ввода (`typed`) поверх — чтобы echo-persist не переставлял
+   * курсор в инпуте.
    */
   const fromAddress = $derived(String(currentSearch()[path] ?? '').slice(0, maxLength))
+  const fromStore = $derived(query ?? '')
   let typed = $state<string | null>(null)
-  const value = $derived(typed ?? fromAddress)
+  const value = $derived(typed ?? (hydrated ? fromStore : fromAddress))
 
   let timer: ReturnType<typeof setTimeout> | undefined
   const stopTimer = () => clearTimeout(timer)

@@ -561,6 +561,38 @@ async function checkFiltersUi(browser) {
       throw new Error('список не закрылся после применения жанра');
     console.log('  ok  один клик по «Применить» закрыл открытый multiselect и записал genres.and=22');
 
+    // Поле запроса зеркалит ХРАНИЛИЩЕ, а не адрес: в url-режиме адрес и есть
+    // хранилище, в localStorage — состояние оттуда, и адрес остаётся чужим.
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    const searchInput = page.locator('[data-testid="search-input"]');
+    await searchInput.fill('наруто');
+    await waitFor(() => page.url().includes('page.q=%D0%BD%D0%B0%D1%80%D1%83%D1%82%D0%BE') || page.url().includes('page.q=наруто'),
+      { what: 'url-режим: запрос записан в адрес' });
+    await page.locator('[data-testid="demo-panel"] select[name="store"]').selectOption('local');
+    await sleep(1200);
+    const afterSwitch = await searchInput.inputValue();
+    if (afterSwitch !== '')
+      throw new Error(`после перехода на localStorage поле обязано очиститься (в хранилище запроса нет), а не показать адрес: «${afterSwitch}»`);
+    await searchInput.fill('кот');
+    await sleep(900);
+    const rawLocal = JSON.parse(await page.evaluate(() => localStorage.getItem('pag:demo-local-ls')));
+    if (rawLocal.extra?.q !== 'кот')
+      throw new Error(`запрос не лёг в localStorage: ${JSON.stringify(rawLocal.extra)}`);
+    if (decodeURIComponent(page.url()).includes('page.q=кот'))
+      throw new Error('localStorage-режим не должен писать запрос в адрес');
+    // Перезагрузка: url-хранение → поле из адреса (адрес чист — пусто, не из LS).
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await sleep(700);
+    if (await searchInput.inputValue() !== '')
+      throw new Error('url-режим после reload не должен подсматривать в localStorage');
+    await page.locator('[data-testid="demo-panel"] select[name="store"]').selectOption('local');
+    await sleep(1200);
+    if (await searchInput.inputValue() !== 'кот')
+      throw new Error(`после reload поле не достало запрос из localStorage: «${await searchInput.inputValue()}»`);
+    if (decodeURIComponent(page.url()).includes('page.q'))
+      throw new Error('адрес после восстановления из localStorage испачкан запросом');
+    console.log('  ok  поле запроса живёт хранилищем: url — адрес, local — стор, не путаются');
+
     await context.close();
   } finally {
     if (!context.closed) await context.close().catch(() => {});
