@@ -509,7 +509,8 @@
           }}
           disabled={option.disabled}
           class={cn(
-            'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent disabled:opacity-50',
+            'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm disabled:opacity-50',
+            pointerHighlight && 'hover:bg-accent',
             highlight && index === activeIndex && 'bg-accent',
           )}
           onclick={() => choose(option)}

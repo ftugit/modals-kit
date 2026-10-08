@@ -260,12 +260,19 @@ try {
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    await clickSelect(page.locator('[data-select-root]').first())
+    const nativeSelect = page.locator('[data-select-root]').first().locator('select')
+    await nativeSelect.tap()
     await waitAtLeast(page, '[data-select-content]', 1)
+    await page.waitForTimeout(180)
 
     const lit = page.locator('[data-select-content] [role="option"][data-active]')
-    assert((await lit.count()) === 0, 'на тач-экране список открылся с подсвеченной строкой')
-    ok('на тач-экране при открытии ни одна строка не подсвечена')
+    assert((await lit.count()) === 0, 'на тач-экране список открылся с подсвеченной data-active строкой')
+    const backgrounds = await page.locator('[data-select-content] [role="option"]').evaluateAll((rows) =>
+      rows.map((row) => getComputedStyle(row).backgroundColor),
+    )
+    assert(new Set(backgrounds).size === 1,
+      `на тач-экране совместимый hover покрасил строку: ${JSON.stringify([...new Set(backgrounds)])}`)
+    ok('на тач-экране касание не оставляет hover-фон на опции')
 
     await page.keyboard.press('ArrowDown')
     await page.waitForTimeout(120)
