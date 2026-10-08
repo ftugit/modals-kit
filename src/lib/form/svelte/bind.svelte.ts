@@ -347,6 +347,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
           // ATTACH значит «мы живые»: novalidate — браузеру тут делать нечего,
           // конверт не нужен (hidden() пуст), envelope-проверка не звенит.
           form.setAttribute('novalidate', '')
+          assertPlacement(form)
           const live = (ev: Event) => {
             const t = ev.target as HTMLElement | null
             const fname = t && 'name' in t ? String((t as HTMLInputElement).name) : ''
@@ -385,6 +386,20 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       },
       ...(snapshot.pending ? { 'aria-busy': true as const } : {}),
     }
+  }
+
+  // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
+  // Семья «разметка приложения»: DEV console.error с перечислением и подсказкой.
+  function assertPlacement(el: HTMLFormElement) {
+    if (!import.meta.env.DEV) return
+    const missing = desc.fields
+      .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
+      .filter((f) => !el.querySelector(`[name="${f.name}"]`))
+      .map((f) => f.name)
+    if (missing.length)
+      console.error(
+        `[form] форма '${desc.id}': в разметке нет полей: ${missing.join(', ')}. ` +
+        'Разместите каждое поле field(name) или уберите его из описания.')
   }
 
   function assertEnvelope(el: HTMLFormElement) {

@@ -318,6 +318,19 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   }, [cfg, desc, recheck, scheduleCheck, state, store])
 
   /** Поля конверта обязаны быть в разметке: предупреждает, а не молчит. */
+  // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
+  const assertPlacement = (el: HTMLFormElement) => {
+    if (!import.meta.env.DEV) return
+    const missing = desc.fields
+      .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
+      .filter((f) => !el.querySelector(`[name="${f.name}"]`))
+      .map((f) => f.name)
+    if (missing.length)
+      console.error(
+        `[form] форма '${desc.id}': в разметке нет полей: ${missing.join(', ')}. ` +
+        'Разместите каждое поле field(name) или уберите его из описания.')
+  }
+
   const assertEnvelope = (el: HTMLFormElement) => {
     if (!import.meta.env.DEV) return
     const missing = hidden().map((h) => h.name)
@@ -331,7 +344,10 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   /** Реагирует на появление/снятие формы: ядро читает DOM только здесь. */
   const attachRef = useCallback((el: HTMLFormElement | null) => {
     holder.formEl = el
-    if (el) assertEnvelope(el)
+    if (el) {
+      assertEnvelope(el)
+      if (oRef.current.url) assertPlacement(el)
+    }
   }, [desc, holder])
 
   /**

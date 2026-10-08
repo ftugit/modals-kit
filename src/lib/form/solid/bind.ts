@@ -343,6 +343,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
           // ATTACH = мы живые: novalidate атрибутом (как в svelte-бинде),
           // живой коммит делегированием `change`, конверт не проверяется.
           el.setAttribute('novalidate', '')
+          assertPlacement(el)
           const live = (ev: Event) => {
             const t = ev.target as HTMLInputElement | null
             if (t?.name) commitUrl('field', t.name)
@@ -460,6 +461,19 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   })
 
   /** Поля конверта обязаны быть в разметке: предупреждает, а не молчит. */
+  // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
+  const assertPlacement = (el: HTMLFormElement) => {
+    if (!import.meta.env.DEV) return
+    const missing = description().fields
+      .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
+      .filter((f) => !el.querySelector(`[name="${f.name}"]`))
+      .map((f) => f.name)
+    if (missing.length)
+      console.error(
+        `[form] форма '${initial.id}': в разметке нет полей: ${missing.join(', ')}. ` +
+        'Разместите каждое поле field(name) или уберите его из описания.')
+  }
+
   const assertEnvelope = (el: HTMLFormElement) => {
     if (!import.meta.env.DEV) return
     const missing = hidden().map((h) => h.name)
