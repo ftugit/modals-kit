@@ -325,7 +325,13 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     const d = description()
     const ev = evaluate(new FormData(formEl), d, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
-    for (const f of d.fields) patch[f.name] = ev.values[f.name]
+    for (const f of d.fields) {
+      // Выключенный контрол в набор не кладём (ср. svelte-бинд): иначе отсутствие
+      // записи в FormData декодер читает как default и live-коммит стёр бы значение.
+      const ctl = formEl.querySelectorAll(`[name="${CSS.escape(f.name)}"]`)
+      if (ctl.length > 0 && Array.from(ctl).every((x) => (x as HTMLInputElement).disabled)) continue
+      patch[f.name] = ev.values[f.name]
+    }
     // Тот же патч, что уже отправляли (blur без изменения) — в sink не идёт.
     const printed = JSON.stringify(patch)
     if (printed === lastUrlPatch) {

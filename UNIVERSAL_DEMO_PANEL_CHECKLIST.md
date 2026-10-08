@@ -459,6 +459,48 @@ disabled ≠ скрыто; причина в helper (отдельного узл
      исчезает; три страницы на оболочке.
      *Доказательство:* паритет поведения выключений/причин на трёх панелях — СРАВНЕНИЕМ,
      не «компонент переиспользован».
+     Разбивка (по образцу 4.x/5.x):
+     - 6.0 механизм: `commitUrl` не кладёт в патч поля, выключенные в DOM (все 3 монти) —
+       политика «значение выключенного не стирается» (§6.4) иначе ломается full-set-коммитом
+       живого режима (отсутствующий в FormData select получил бы default вместо хранимого).
+       Для фильтров результат не меняется: выключенное и так выпадало (пусто → drop → удаление).
+     - 6.1 `compileDemoPanelSchema` (`src/lib/ui/paginator/compile.ts`): `SettingsField[]` →
+       `FormDescription` (`select`→allowlist-options, `toggle`→checkbox 'true'/absent, имя
+       `${pageParam}.${key}`, `page.size` — обычное поле `select` с `pageSizes`), `divider` →
+       группы вывода, `parse` → маппер «значения формы → патч extra» (`toExtraPatch`),
+       `enabledWhen(fn)` → данные `enabledBy: [{field, equals|in}]` (§6.4 следствие 3: условие
+       серверное и проверяемое) → `LinkRule[]` ядра `lib/links` (инверсия по закрытому списку
+       опций), `requires` → статическое выключение по сету gates на входе компилятора
+       ( capabilities — серверные данные), текст причины — один композитор на helper и ошибку.
+     - 6.2 shell на `bind`: форма через `form.formProps()` (GET/нативный путь механический),
+       `fieldState`-канал bind (gates ∪ jsOnly&&!hydrated ∪ firings), `fieldState()` и
+       ручной обход полей исчезают; `store`-слот, hidden чужих ключей, footer, noscriptHint —
+       остаются; `renderField` (потребителей нет) снимается с публичного API.
+     - 6.3 хосты: `DEMO_FIELDS` — `enabledWhen` → `enabledBy` (cols/colW/colFit/topZone/...),
+       GalleryDemo не трогается (правил нет).
+     - [x]-ые шаги: 6.0–6.3 сделаны (2026-10-09): commitUrl-скип disabled-контролов (×3 монти),
+       `compileDemoPanelSchema` (`src/lib/ui/paginator/compile.ts`, юнит 12 тестов),
+       `SettingsField` переехал в `types.ts` и `enabledWhen(функция)` → `enabledBy(данные)`;
+       shell тонкий (`PaginatorSettings` = компиляция + `{#key schema}`, форма —
+       `PaginatorSettingsForm` на bind: live-контур url, fieldState из гат/гидратации/связок,
+       `Toggle` получил `hiddenPair` — пара скрытых инпутов остаётся только для нативного GET
+       до гидратации); размер страницы — обычное поле (`page.size` в описании формы, sink
+       относит его в `setPageSize`). Политика имён панели расширена до camelCase-сегментов
+       (`policyWith`, адреса/ключи extra каноничны — §5-ное «имя = ключ адреса»).
+       Полис-проба на живой панели (9 проверок): helper-причина связки, гашение cols,
+       сохранение выключенного значения в адресе и возврат при снятии блокирующего,
+       gate «источник не поддерживает родной поиск», jsOnly после гидратации, no-JS кнопка
+       и hidden — всё зелёное. Прогон: unit 557, check 0/45, paginate/capabilities/errors/
+       shell(7)/forms/regressions(47)/modals(49) + shikimori-копия — зелёные.
+       Размеры: /paginator 122.9/126.0 (в бюджете), весь JS 195.2/190.0 и immutable
+       208.2/203.0 — рост +1.4/+1.3 относительно stage-5 (компилятор+связки в общих чанках),
+       /form 151.3/150.0 — открыт с этапа 5 (+0.1 от нового пропа `hiddenPair` у Toggle);
+       бюджеты не поднимал.
+     - 6.4 «три страницы»: /paginator (обе панели) — этот шаг; /modals и /form имеют
+       рукописные fieldset-ы «выключено до гидратации» (`data-js-only-settings`, `disabled={!browser}`),
+       без paginator-store и без url-состояния — их «перевод на оболочку» = общий паттерн
+       контейнера (bind локальный контур + jsOnly из него), а не `PaginatorSettings` как класс
+       (у них нет store sink'а). УТОЧНЕНИЕ ОПЕРАТОРУ, если требовалось иначе.
 7. [ ] Регрессии: браузерный набор + no-JS пути на /modals /form /paginator; недостижимость
      «пустого пагинатора с надписью» из UI-действий; `test/browser/shikimori.mjs` (сетевой,
      preview поднимает сам) + `capabilities.mjs` перед докладом.

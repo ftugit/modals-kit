@@ -328,7 +328,15 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     if (!url || !formEl) return
     const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
-    for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    for (const f of desc.fields) {
+      // Выключенный контрол в набор не кладём: FormData его не несёт, а отсутствие
+      // записи декодер честно читает как default — full-set-коммит живого режима
+      // стёр бы хранимое значение. Политика домена (§6.4): значение живёт в форме,
+      // из набора его вырезает связка. Снимут блокирующее — поле вернётся со значением.
+      const ctl = formEl.querySelectorAll(`[name="${CSS.escape(f.name)}"]`)
+      if (ctl.length > 0 && Array.from(ctl).every((el) => (el as HTMLInputElement).disabled)) continue
+      patch[f.name] = ev.values[f.name]
+    }
     const printed = JSON.stringify(patch)
     if (printed === lastUrlPatch) {
       if (name) recheck(name)

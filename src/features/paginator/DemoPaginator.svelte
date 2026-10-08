@@ -62,9 +62,6 @@
     ['200px', '200 px'],
   ] as const
 
-  const acc = (v: DemoExtra) => v.mode === 'accumulate'
-  const zoneOn = (t: DemoExtra['topTrigger']) => t === 'direction' || t === 'chat'
-
   const DEMO_FIELDS: readonly SettingsField<DemoExtra>[] = [
     {
       key: 'src',
@@ -120,7 +117,7 @@
       label: 'Колонки',
       type: 'select',
       parse: (raw) => (raw === 'auto' ? 'auto' : Number(raw)),
-      enabledWhen: (v) => v.layout === 'columns',
+      enabledBy: [{ field: 'layout', equals: 'columns' }],
       options: [
         ['auto', 'Авто (по ширине)'],
         ['2', '2'],
@@ -133,7 +130,7 @@
       label: 'Авто: ширина колонки',
       type: 'select',
       parse: (raw) => Number(raw),
-      enabledWhen: (v) => v.layout === 'columns' && v.cols === 'auto',
+      enabledBy: [{ field: 'layout', equals: 'columns' }, { field: 'cols', equals: 'auto' }],
       options: [
         ['160', '160px'],
         ['220', '220px'],
@@ -146,7 +143,7 @@
       label: 'Авто: допуск вписывания (±)',
       type: 'select',
       parse: (raw) => Number(raw),
-      enabledWhen: (v) => v.layout === 'columns' && v.cols === 'auto',
+      enabledBy: [{ field: 'layout', equals: 'columns' }, { field: 'cols', equals: 'auto' }],
       options: [
         ['0', '0% — только целые колонки'],
         ['10', '10%'],
@@ -172,7 +169,7 @@
       label: 'Триггер сверху',
       type: 'select',
       jsOnly: true,
-      enabledWhen: acc,
+      enabledBy: [{ field: 'mode', equals: 'accumulate' }],
       options: TRIGGER_OPTIONS,
     },
     {
@@ -180,7 +177,7 @@
       label: 'Зона сверху',
       type: 'select',
       jsOnly: true,
-      enabledWhen: (v) => acc(v) && zoneOn(v.topTrigger),
+      enabledBy: [{ field: 'mode', equals: 'accumulate' }, { field: 'topTrigger', in: ['direction', 'chat'] }],
       options: ZONE_OPTIONS,
     },
     {
@@ -188,7 +185,10 @@
       label: 'Позиция при подгрузке сверху',
       type: 'select',
       jsOnly: true,
-      enabledWhen: (v) => acc(v) && v.topTrigger !== 'off',
+      enabledBy: [
+        { field: 'mode', equals: 'accumulate' },
+        { field: 'topTrigger', in: ['direction', 'edge', 'chat', 'manual'] },
+      ],
       options: [
         ['auto', 'Авто (нативный якорь, иначе JS)'],
         ['native', 'Только нативный якорь (overflow-anchor)'],
@@ -200,7 +200,7 @@
       label: 'Триггер снизу',
       type: 'select',
       jsOnly: true,
-      enabledWhen: acc,
+      enabledBy: [{ field: 'mode', equals: 'accumulate' }],
       options: TRIGGER_OPTIONS,
     },
     {
@@ -208,7 +208,7 @@
       label: 'Зона снизу',
       type: 'select',
       jsOnly: true,
-      enabledWhen: (v) => acc(v) && zoneOn(v.bottomTrigger),
+      enabledBy: [{ field: 'mode', equals: 'accumulate' }, { field: 'bottomTrigger', in: ['direction', 'chat'] }],
       options: ZONE_OPTIONS,
     },
   ]

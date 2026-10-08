@@ -2,7 +2,9 @@
  * src/lib/ui/paginator — готовые UI-компоненты поверх headless `lib/paginate`.
  */
 export { Field, Select, Toggle } from './fields'
-export { default as PaginatorSettings, type SettingsField } from './PaginatorSettings.svelte'
+export { default as PaginatorSettings } from './PaginatorSettings.svelte'
+export type { SettingsField, PanelEnabledBy } from './types'
+export { compileDemoPanelSchema, type DemoPanelSchema, type DemoPanelInput, GATE_LABEL } from './compile'
 export { default as PageList } from './PageList.svelte'
 export { default as PageColumns } from './PageColumns.svelte'
 export { default as PageDivider } from './PageDivider.svelte'

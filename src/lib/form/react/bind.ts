@@ -366,7 +366,13 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     if (!url || !el) return
     const ev = evaluate(new FormData(el), desc, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
-    for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    for (const f of desc.fields) {
+      // Выключенный контрол в набор не кладём (ср. svelte-бинд): иначе отсутствие
+      // записи в FormData декодер читает как default и live-коммит стёр бы значение.
+      const ctl = el.querySelectorAll(`[name="${CSS.escape(f.name)}"]`)
+      if (ctl.length > 0 && Array.from(ctl).every((x) => (x as HTMLInputElement).disabled)) continue
+      patch[f.name] = ev.values[f.name]
+    }
     // Тот же патч, что уже отправляли (blur без изменения) — в sink не идёт.
     const printed = JSON.stringify(patch)
     if (printed === lastUrlPatchRef.current) {
