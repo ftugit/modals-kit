@@ -46,7 +46,7 @@
      */
     pointerHighlight?: boolean
     listWidth?: 'trigger' | 'auto'
-    commit: (next: readonly SelectOption[]) => void
+    commit: (next: readonly SelectOption[], keepOpen?: boolean) => void
     close: () => void
   }
 
@@ -339,14 +339,15 @@
   }
 
   /** Выбор сделан: оболочке — значения, себе — очистку поиска. */
-  function applySelection(next: readonly SelectOption[]) {
-    commit(next)
+  function applySelection(next: readonly SelectOption[], keepOpen?: boolean) {
+    commit(next, keepOpen)
     if (config.clearSearchOnSelect) query = ''
   }
 
   function choose(option: SelectOption) {
     if (option.disabled) return
-    applySelection(multiple ? selectedAfterToggle(selected, option, true) : [option])
+    const next = selectedAfterToggle(selected, option, multiple)
+    applySelection(next, !multiple && !next.length)
   }
 </script>
 
@@ -514,10 +515,8 @@
           )}
           onclick={() => choose(option)}
         >
-          <span class={cn('w-4 shrink-0', !checked && 'opacity-0')}>
-            <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
-              <path d="m3 8 3 3 7-7" />
-            </svg>
+          <span aria-hidden="true" class="flex h-4 w-4 shrink-0 items-center justify-center leading-4">
+            {checked && (multiple ? '✓' : '◉')}
           </span>
           <span class="min-w-0 flex-1">
             <span>{option.label}</span>

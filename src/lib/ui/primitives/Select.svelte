@@ -281,10 +281,6 @@
     config.listSize === 'sm' ? '12rem' : config.listSize === 'lg' ? '24rem' : '18rem',
   )
   const popupNode = $derived(popupId && host ? host.floating.container(popupId) : undefined)
-  const closeOnSelectMode = $derived(config.closeOnSelect ?? 'single')
-  const shouldCloseOnSelect = $derived(
-    closeOnSelectMode === true || (closeOnSelectMode === 'single' && !multiple),
-  )
 
   const optionsByValue = (values: string[]) => {
     const want = new Set(values)
@@ -335,7 +331,7 @@
     return values
   }
 
-  function commit(next: readonly SelectOption[]) {
+  function commit(next: readonly SelectOption[], keepOpen?: boolean) {
     const values = new Set(next.map((o) => o.value))
     // Сначала состояние: из него рисуются и список, и опции нативного
     // контрола (после гидратации их ровно столько, сколько выбрано).
@@ -344,7 +340,9 @@
     // в DOM, — иначе обработчик прочитал бы прежнее.
     flushSync()
     if (nativeEl) {
-      for (const o of Array.from(nativeEl.options)) o.selected = values.has(o.value)
+      if (multiple) {
+        for (const o of Array.from(nativeEl.options)) o.selected = values.has(o.value)
+      }
       // Нативный контрол — источник истины для формы: события шлём от него.
       nativeEl.dispatchEvent(new Event('input', { bubbles: true }))
       nativeEl.dispatchEvent(new Event('change', { bubbles: true }))
@@ -354,7 +352,8 @@
     value = multiple ? [...values] : ([...values][0] ?? '')
     onchange?.([...values])
     // Строка поиска живёт в панели (шаг E2): очистку после выбора делает она.
-    if (shouldCloseOnSelect) setOpen(false)
+    if ((config.closeOnSelect !== false && (!multiple || config.closeOnSelect === true)) && !keepOpen)
+      setOpen(false)
   }
 
   /* ── геометрия host popup-menu ───────────────────────────────────── */

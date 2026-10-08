@@ -25,7 +25,7 @@
   <label>Жанр<Select options={genres} bind:value={picked} placeholder="Выберите жанр" /></label>
   <label>Несколько<Select options={genres} bind:value={many} multiple placeholder="Любые" /></label>
   <label>Несколько, закрывать после выбора<Select options={genres} bind:value={manyClose} multiple closeOnSelect placeholder="Любые" /></label>
-  <p class="text-[0.8rem]" data-select-modal-picked="">Выбрано: <b>{picked}</b> / [{many.join(', ')}] / closeOnSelect [{manyClose.join(', ')}]</p>
+  <p class="text-[0.8rem]" data-select-modal-picked="">Выбрано: {picked} / [{many.join(', ')}] / [{manyClose.join(', ')}]</p>
 
   <div class="flex flex-wrap items-center gap-3">
     <FloatingMenu

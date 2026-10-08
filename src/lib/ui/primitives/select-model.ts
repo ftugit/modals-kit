@@ -51,10 +51,9 @@ export function selectedAfterToggle(
   multiple: boolean,
 ): SelectOption[] {
   if (option.disabled) return [...selected];
-  if (!multiple) return [option];
-  return selected.some(item => item.value === option.value)
-    ? selected.filter(item => item.value !== option.value)
-    : [...selected, option];
+  const selectedOption = selected.some(item => item.value === option.value)
+  if (selectedOption) return multiple ? selected.filter(item => item.value !== option.value) : []
+  return multiple ? [...selected, option] : [option]
 }
 
 /** Выбирает/снимает только видимые enabled options, не теряя выбор вне фильтра. */

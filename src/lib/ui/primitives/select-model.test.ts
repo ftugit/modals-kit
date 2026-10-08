@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { matchesSelectOption, type SelectOption } from './select-model'
+import { matchesSelectOption, selectedAfterToggle, type SelectOption } from './select-model'
 import { DEFAULT_SELECT_CONFIG } from './Select.svelte'
 
 const option = (value: string, label: string, hint?: string): SelectOption => ({ value, label, hint })
+
+describe('выбор вариантов select', () => {
+  const items = [option('a', 'A'), option('b', 'B'), { ...option('locked', 'Locked'), disabled: true }]
+
+  it('single повторно нажимает текущий вариант как toggle, другой заменяет выбор', () => {
+    expect(selectedAfterToggle([], items[0]!, false)).toEqual([items[0]])
+    expect(selectedAfterToggle([items[0]!], items[0]!, false)).toEqual([])
+    expect(selectedAfterToggle([items[0]!], items[1]!, false)).toEqual([items[1]])
+  })
+
+  it('не снимает disabled вариант и сохраняет поведение multi', () => {
+    expect(selectedAfterToggle([items[0]!], items[2]!, false)).toEqual([items[0]])
+    expect(selectedAfterToggle([], items[0]!, true)).toEqual([items[0]])
+    expect(selectedAfterToggle([items[0]!], items[0]!, true)).toEqual([])
+  })
+})
 
 describe('поиск по вариантам select', () => {
   const genres = [option('27', 'Сёнен'), option('133', 'Романтика'), option('42', 'Сэйнэн')]

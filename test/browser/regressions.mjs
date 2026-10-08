@@ -711,6 +711,64 @@ try {
     await page.close()
   })
 
+  /* ── R-22: single Select toggles its current value and uses radio marks ── */
+  await run('R-22 single Select deselects current option, preserves default, stays open', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    await gotoBase(page)
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+
+    const selects = page.locator('[data-modal-stage] [data-select-native]')
+    const withDefault = selects.nth(0)
+    await withDefault.waitFor({ state: 'attached' })
+    assert((await withDefault.inputValue()) === 'drama', 'single Select не восстановил исходный выбор')
+    await withDefault.click({ force: true })
+    const list = page.locator('[data-select-listbox]').last()
+    await list.waitFor({ state: 'visible' })
+    let selected = list.locator('[role="option"][aria-selected="true"]')
+    assert((await selected.count()) === 1 && (await selected.innerText()).includes('Драма'),
+      'выбранная single-опция не отмечена')
+    assert((await selected.locator('span').first().innerText()) === '◉',
+      'single Select не показывает radio dot для выбранного варианта')
+    assert((await selected.locator('svg').count()) === 0,
+      'single Select показывает multiselect-checkmark')
+    ok('single selected option uses the radio-dot indicator')
+
+    await selected.click()
+    await page.waitForFunction(() => document.querySelector('[data-modal-stage] [data-select-native]')?.value === '')
+    assert(await list.isVisible(), 'повторный выбор закрыл single popup')
+    const defaultState = await withDefault.evaluate((el) => ({
+      value: el.value,
+      placeholderSelected: [...el.options].some((option) => option.value === '' && option.selected),
+    }))
+    assert(defaultState.value === '' && defaultState.placeholderSelected,
+      `single Select не вернулся к empty placeholder default: ${JSON.stringify(defaultState)}`)
+    assert((await list.locator('[role="option"]').filter({ hasText: 'Выберите жанр' }).count()) === 0,
+      'placeholder default нельзя выбирать/снимать как обычную опцию списка')
+    assert((await list.locator('[role="option"][aria-selected="true"]').count()) === 0,
+      'после снятия выбора осталась отмеченная single-опция')
+    ok('reselect clears to the placeholder default and leaves the popup open')
+
+    await list.locator('[role="option"]').filter({ hasText: 'Комедия' }).click()
+    await list.waitFor({ state: 'detached' })
+    assert((await withDefault.inputValue()) === 'comedy', 'обычный выбор single-опции сломан')
+    ok('choosing a different single option still closes normally')
+
+    const multiple = selects.nth(1)
+    await multiple.click({ force: true })
+    await list.waitFor({ state: 'visible' })
+    await list.locator('[role="option"]').filter({ hasText: 'Боевик' }).click()
+    assert(await list.isVisible(), 'обычный multiselect неожиданно закрылся')
+    selected = list.locator('[role="option"][aria-selected="true"]')
+    assert((await selected.count()) === 1, 'multiselect не отметил выбранную опцию')
+    assert((await selected.locator('span').first().innerText()) === '✓',
+      'multiselect потерял checkmark indicator')
+    assert((await selected.locator('svg').count()) === 0,
+      'multiselect marker unexpectedly uses SVG instead of the checkmark glyph')
+    ok('multiselect retains checkmarks and stays open after selection')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
