@@ -690,12 +690,16 @@
       const targetBehindFloating = closed && keepIndex < 0 && chain.length > 0 &&
         pointerStartedInModal(target)
       if (closed && (pointerStartedOnShield(target) || targetBehindFloating)) {
+        // Отмена dismiss-pointerdown подавляет совместимые mousedown/mouseup
+        // (Pointer Events §11). Без неё оверлей снимается в том же такте и хвост
+        // жеста перенацеливается на элемент ПОД ним — чужой select получал
+        // mousedown/фокус, кнопки — :active (click-through). `click` доставляется
+        // всегда — его гасит swallowClickOnce. См. CLICK_THROUGH_CHECKLIST.md.
+        event.preventDefault()
         if (targetBehindFloating) {
-          event.preventDefault()
           event.stopPropagation()
-          const trigger = focusReturn
           queueMicrotask(() => {
-            if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+            if (focusReturn?.isConnected) focusReturn.focus({ preventScroll: true })
           })
         }
         swallowClickOnce(event)

@@ -1021,6 +1021,123 @@ try {
     await page.close()
   })
 
+
+  /* ── R-26: тап по оверлею листа не «кликает» сквозь него (мобильный) ── */
+  await run('R-26 закрытие листа тапом по оверлею не активирует элемент под ним', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await gotoBase(page)
+
+    // Page-level multiselect (панель «Источники»): на узком экране — лист со своим оверлеем.
+    const selectRoot = page.locator('section:has(h2:text-is("Источники")) [data-select-root]')
+    await selectRoot.scrollIntoViewIfNeeded()
+    const box = await selectRoot.boundingBox()
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    await page.waitForSelector('[data-modal-backdrop]')
+    await page.waitForTimeout(300)
+
+    // Точка в зоне щита (не над панелью листа), под которой лежит интерактивный элемент.
+    const point = await page.evaluate(() => {
+      const backdrop = document.querySelector('[data-modal-backdrop]')
+      const floatings = [...document.querySelectorAll('[data-host-floating]')]
+      const hidden = []
+      const hide = (el) => { hidden.push([el, el.style.visibility]); el.style.visibility = 'hidden' }
+      const bodyPE = document.body.style.pointerEvents
+      if (backdrop) hide(backdrop)
+      floatings.forEach(hide)
+      document.body.style.pointerEvents = 'auto'
+      const candidates = []
+      for (let y = 30; y < innerHeight - 16 && candidates.length < 60; y += 14) {
+        for (let x = 14; x < innerWidth - 14 && candidates.length < 60; x += 14) {
+          const stack = document.elementsFromPoint(x, y)
+          const behind = stack.find((el) =>
+            el.closest && el.closest('select, button, a, input, [data-select-trigger], [role="button"]'))
+          if (behind) candidates.push({ x, y })
+        }
+      }
+      document.body.style.pointerEvents = bodyPE
+      hidden.forEach(([el, v]) => { el.style.visibility = v })
+      // Оставляем только точки, которые в боевом состоянии попадают в щит, а не в панель листа.
+      for (const c of candidates) {
+        const top = document.elementFromPoint(c.x, c.y)
+        if (top === document.documentElement || top === document.body ||
+            (top && top.closest && top.closest('[data-modal-backdrop]'))) {
+          return c
+        }
+      }
+      return null
+    })
+    assert(point, 'под оверлеем не нашлось интерактивного элемента в зоне щита')
+
+    // Журнал событий: win-cap — видит всё, doc-bub — только ДОСТАВЛЕННОЕ (не заглушенное).
+    await page.evaluate(() => {
+      window.__ev = []
+      const desc = (t) => {
+        if (!t) return 'null'
+        if (t === document) return '#document'
+        if (t.nodeType !== 1) return String(t.nodeName)
+        const el = t
+        let s = el.tagName.toLowerCase()
+        if (el.id) s += '#' + el.id
+        for (const a of ['data-modal-backdrop', 'data-host-floating', 'data-select-native', 'data-modal-layer', 'name']) {
+          if (el.hasAttribute(a)) s += `[${a}=${el.getAttribute(a)}]`
+        }
+        return s
+      }
+      for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'focusin']) {
+        window.addEventListener(type, (e) => {
+          window.__ev.push({ ph: 'win-cap', type, target: desc(e.target) })
+        }, true)
+        document.addEventListener(type, (e) => {
+          window.__ev.push({ ph: 'doc-bub', type, target: desc(e.target) })
+        }, false)
+      }
+    })
+
+    await page.touchscreen.tap(point.x, point.y)
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    await page.waitForTimeout(300)
+
+    const ev = await page.evaluate(() => window.__ev)
+    const delivered = ev.filter((e) => e.ph === 'doc-bub')
+    const leaked = delivered.filter((e) => ['mousedown', 'mouseup', 'click'].includes(e.type))
+    assert(leaked.length === 0,
+      `хвост жеста дошёл сквозь снятый оверлей: ${JSON.stringify(leaked)}`)
+    ok('ни mousedown/mouseup/click не дошли до страницы после снятия оверлея')
+    assert((await page.locator('[data-modal-stage]').count()) === 0,
+      'клик сквозь оверлей открыл модалку')
+    assert((await chainOf(page)).length === 0, 'клик сквозь оверлей изменил цепочку модалок')
+    const activeIsTrigger = await page.evaluate(() => {
+      const roots = [...document.querySelectorAll('[data-select-root]')]
+      const active = document.activeElement
+      return Boolean(active && roots.some((r) => r.contains(active)))
+    })
+    assert(activeIsTrigger, 'фокус не вернулся на триггер закрытого листа')
+    ok('фокус вернулся на триггер, цепочка пуста, модалок нет — жест полностью потреблён оверлеем')
+
+    // Быстрый повторный тап по триггеру переоткрывает лист: хвост не съел новый жест.
+    await selectRoot.scrollIntoViewIfNeeded()
+    const box2 = await selectRoot.boundingBox()
+    await page.touchscreen.tap(box2.x + box2.width / 2, box2.y + box2.height / 2)
+    await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    ok('быстрый повторный тап по триггеру переоткрывает лист')
+
+    // Закрываем снова и тапаем прямо по точке под бывшим оверлеем — элемент должен получить события.
+    await page.touchscreen.tap(point.x, point.y)
+    await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    await page.waitForTimeout(300)
+    await page.evaluate(() => { window.__ev.length = 0 })
+    await page.touchscreen.tap(point.x, point.y)
+    await page.waitForTimeout(400)
+    const ev2 = await page.evaluate(() => window.__ev)
+    const delivered2 = ev2.filter((e) => e.ph === 'doc-bub')
+    assert(delivered2.some((e) => e.type === 'mousedown' || e.type === 'click'),
+      'прямой тап по элементу под бывшим оверлеем не дошёл до него — страница «застыла»')
+    ok('прямой тап по элементу под бывшим оверлеем доставляется — взаимодействие не сломано')
+    await page.close()
+  })
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
