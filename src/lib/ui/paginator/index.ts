@@ -1,7 +1,8 @@
 /**
  * src/lib/ui/paginator — готовые UI-компоненты поверх headless `lib/paginate`.
  */
-export { Field, Select, Toggle } from './fields'
+// Виджеты панели живут в $lib/ui/settings (этап 8); реэкспорт — прежний API.
+export { Field, Select, Toggle } from '$lib/ui/settings'
 export { default as PaginatorSettings } from './PaginatorSettings.svelte'
 export type { SettingsField, PanelEnabledBy } from './types'
 export { compileDemoPanelSchema, type DemoPanelSchema, type DemoPanelInput, GATE_LABEL } from './compile'

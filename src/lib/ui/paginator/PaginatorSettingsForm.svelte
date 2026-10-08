@@ -18,7 +18,7 @@
   import { buttonVariants } from '$lib/ui/primitives'
   import { JS_ONLY_REASON } from '$lib/ui/js-only.svelte'
   import type { DemoPanelSchema } from './compile'
-  import { Field, Select, Toggle } from './fields'
+  import { Field, Select, Toggle } from '$lib/ui/settings'
 
   interface Props<V extends Record<string, ExtraValue>> {
     schema: DemoPanelSchema

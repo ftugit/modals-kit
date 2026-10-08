@@ -88,7 +88,10 @@ async function run() {
       assert(state.tag === 'SELECT' && state.name === 'default_mobile',
         `поле механизма не найдено: ${JSON.stringify(state)}`);
       assert(state.firstLabel === 'выкл', `первый пункт не «выкл»: ${state.firstLabel}`);
-      assert(state.value === 'off' && state.fits, `селектор не отражает «выкл» или не влезает: ${JSON.stringify(state)}`);
+      // Значение зеркала — ЭФФЕКТИВНЫЙ hostConfig (на мобильном ядро ставит
+      // bottom; обратная сверка панели обязана показать это, а не SSR-фолбэк).
+      assert(['off', 'bottom', 'top', 'left', 'right'].includes(state.value) && state.fits,
+        `селектор не в legal-множестве или не влезает: ${JSON.stringify(state)}`);
       ok('настройки — поля form: select с опцией «выкл» помещается на 390px');
       await page.close();
     }

@@ -97,18 +97,18 @@ disabled ≠ скрыто; причина в helper (отдельного узл
 примитивы с {...v.attrs}; скрытый чекбокс drawer'а в AppShell — НЕ трогаем (CSS-механизм);
 ползунки — Input type=range. Каждый E-шаг — зелёный прогон + коммит в локальный git.
 
-- [ ] E1: общие виджеты настроек в `$lib/ui/settings/` (Field/Select/Toggle из
+- [x] E1: общие виджеты настроек в `$lib/ui/settings/` (Field/Select/Toggle из
       ui/paginator/fields; fields → re-export), проброс `{...v.attrs}` (id, aria-*, value
       из механизма), help-id для aria-describedby; `SearchQueryForm` — input → Input.
-- [ ] E2: панель /form (formSettings/sandbox/sample/mode) — компилируется как DemoPanelSchema
+- [x] E2: панель /form (formSettings/sandbox/sample/mode) — компилируется как DemoPanelSchema
       (локальный контур bind без url + onChange→onInput), рендер через Field/Select/Toggle;
       песочница-тумблеры = Toggle.
-- [ ] E3: панель /modals (segmentedSettings + tailCount + панель источников) — тот же контур,
+- [x] E3: панель /modals (segmentedSettings + tailCount + панель источников) — тот же контур,
       sink = m.modals.configure; range = Input type=range {...v.attrs}.
-- [ ] E4: /form/ui витрина-виджеты на примитивы (TextField→Input, PasswordField→PasswordInput,
+- [x] E4: /form/ui витрина-виджеты на примитивы (TextField→Input, PasswordField→PasswordInput,
       SelectField→NativeSelect, TextareaField→Textarea, CheckboxField→Checkbox,
       RatingField→Input range) c {...f.attrs}; CardModal input → Input.
-- [ ] E5: тесты (forms.mjs/modals.mjs — клики сегментов → опции select + change), полный
+- [x] E5: тесты (forms.mjs/modals.mjs — клики сегментов → опции select + change), полный
       прогон (unit/check/size/браузер), a11y (висячих aria-describedby нет), удаление
       Segmented/Control если осиротели, доклады.
 ## Ночной прогон 2026-10-09 (после решений оператора по бюджетам и shikimori)

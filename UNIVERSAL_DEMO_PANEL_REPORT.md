@@ -114,6 +114,35 @@ push не делался (не было просьбы).
 5. Видовой паритет /form /modals: подробный разбор с ценой и планом —
    `/home/user/nightly/ITEM5-VIEW-PARITY-PLAN.md`. Дефолт без слова оператора: не делается.
 
+## §9 Этап 8: примитивы + form/lib для всех демо-панелей (приказ оператора 2026-10-09)
+
+Исполнено по ответам на четыре уточнения (Select/Toggle как у /paginator; витрина
+/form/ui — на примитивы; AppShell-чекбокс не тронут; ползунки — Input type=range).
+Этапы `a…e` = E1–E5 чек-листа, каждый — зелёный прогон и коммит:
+
+- E1 `fe37647`: общие виджеты `$lib/ui/settings` (Field/Select/Toggle), attrs
+  механизма (`{...v.attrs}`: id, aria-*, value/checked, ATTACH-регистрация) входят
+  в контролы; help-id связан с `aria-describedby`; поиск — Input-примитив.
+- E2 `dd02597`: панель /form = `defineForm('demo-settings')` + bind на странице:
+  9 select/checkbox-полей, зеркало — единственный источник (`PANEL_DEFAULTS`
+  фолбэк для SSR), побочный эффект mode пишется обратно в зеркало; Segmented выключен.
+- E3 `337ae98`: панель /modals = `defineForm('modal-settings')` (8 select + range
+  Input), дифф-патч в `m.modals.configure`; no-JS гейт накрыл и настройки (9 select
+  выключены до гидратации); обратный hydrate-эффект исправил расхождение
+  дефолтов (SSR `off` против ядрового `bottom`).
+- E4 `fe489b2`: витрина /form/ui — внутри примитивы (Input/NativeSelect/Textarea/
+  Checkbox) с тем же `{...f.attrs}`; CardModal-поле обмена — Input; тесты
+  регрессий R-17/18/19/20 переведены на опции select.
+- E5: удалены `$lib/ui/demo/Segmented.svelte` и `Control.svelte`; инвентарь
+  нативных `<input>/<select>/<textarea>` в app-разметке чист (остались только
+  hidden-входы url-контура механизма и CSS-чекбокс AppShell по решению
+  оператора); SourcesPanel оставлен примитивному Select (причина — в чек-листе).
+
+Проверка (сборка на HEAD этапа): unit 557 ✓, guards 62/2 (база, не тронут),
+check 0/45 ✓, test:size ✓, браузер: forms 36 ✓, forms-a11y 12 ✓, modals 49 ✓,
+shell 7 ✓, paginate ✓, errors ✓, capabilities ✓, select-floating-smoke 27 ✓,
+a11y/axe — 0 нарушений, regressions 47 ✓, shikimori ✓, select-trace (dev) ✓.
+
 ## Открытые вопросы оператору (не решены намеренно)
 
 1. /form 151.5 > 150.0 (и весь JS/immutable сверх лимитов) — бюджеты не поднимал; решение за
