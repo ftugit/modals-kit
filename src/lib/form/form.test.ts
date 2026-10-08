@@ -2,6 +2,7 @@
 import { describe as suite, expect, test } from 'vitest'
 import {
   applyOps, assertConsistent, checkStale, compileFieldSpec, createRegistry, defineForm,
+  fieldLinkState,
   degrade, editor, evaluate, fieldSetHash, FormDefinitionError, groupRows, InvariantError,
   makeContinuation, makeRenderer, normalizeErrors, projectAttrs, reconcile, ru,
   addressedTo, assertQueuedProtocol, effectiveMode, hasError, invalidFromFor,
@@ -557,5 +558,40 @@ suite('сложность пароля', () => {
 
   test('пустое значение проверяет обязательность, а не сложность', () => {
     expect(check('')).toBeNull()
+  })
+})
+
+/* ── выключенное поле: контракт ядра ───────────────────────────────── */
+
+suite('поле знает, что оно выключено', () => {
+  test('сахар несёт disabled и reason в черновик', () => {
+    const d = field.text({ label: 'Код', disabled: true, reason: 'нужна роль' })
+    expect(d.disabled).toBe(true)
+    expect(d.reason).toBe('нужна роль')
+    const def = defineForm({ id: 'dis', fields: { a: d } })
+    expect(def.fields[0]?.disabled).toBe(true)
+    expect(def.fields[0]?.reason).toBe('нужна роль')
+  })
+
+  test('reason без disabled не доживает до черновика', () => {
+    const d = field.text({ label: 'Код', reason: 'вздор' })
+    expect(d.disabled).toBeUndefined()
+    expect(d.reason).toBeUndefined()
+  })
+
+  test('связка перекрывает объявление — и гасит, и размыкает', () => {
+    const def = defineForm({
+      id: 'lk',
+      fields: { a: field.text({ label: 'A', disabled: true, reason: 'источник: нет доступа' }) },
+    })
+    const f = def.fields[0]!
+    // связка молчит — как объявлено
+    expect(fieldLinkState(f, undefined)).toEqual({ disabled: true, reason: 'источник: нет доступа' })
+    // ответ связки полон: старого reason не остаётся
+    expect(fieldLinkState(f, { disabled: true })).toEqual({ disabled: true, reason: undefined })
+    // связка размыкает статически закрытое поле
+    expect(fieldLinkState(f, { disabled: false })).toEqual({})
+    // инвариант держится и при попытке принести reason без disabled
+    expect(fieldLinkState({} as never, { reason: 'просто так' })).toEqual({})
   })
 })

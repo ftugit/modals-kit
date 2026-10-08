@@ -5,7 +5,7 @@ import { createAttachmentKey } from 'svelte/attachments'
 import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
-import type { FieldDescriptor, FormDescription, InvalidFrom } from '../describe'
+import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, split, type ErrorContext, type ErrorHandler } from '../errors'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
@@ -66,6 +66,10 @@ export interface FieldView {
   readonly fresh: boolean
   /** Идёт асинхронная проверка. */
   readonly checking: boolean
+  /** Поле выключено связкой: видно, но недоступно (disabled ≠ скрыто). */
+  readonly disabled?: boolean
+  /** Причина выключения — рисуется в helper-слоте; бывает только у выключенного поля. */
+  readonly reason?: string
 
   labelProps(): { for: string }
   helpProps(): { id: string } | undefined
@@ -102,6 +106,11 @@ export interface BindOptions {
   invalidFrom?: InvalidFrom
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
   checks?: CheckRegistry
+  /**
+   * Канал решений связки (lib/links): ответ связки перекрывает статическое
+   * объявление поля в дескрипторе. Значит поле — внутри реактивности слоя.
+   */
+  fieldState?: (name: string) => FieldLink | undefined
 }
 
 /** Повторяемая группа: ключи стабильны, индекс — производное. */
@@ -346,8 +355,10 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const helpId = `${id}-help`
     const errorId = `${id}-error`
     const has = hasError(f.name, snapshot.facts, snapshot.shown, invalidMode(f.name))
+    // Решение связки поверх объявления поля; инвариант reason⊂disabled — в fieldLinkState.
+    const ls = fieldLinkState(f, o.fieldState?.(f.name))
     const describedBy = cfg.ui.describedBy({
-      help: f.help ? helpId : undefined,
+      help: f.help || ls.reason ? helpId : undefined,
       error: errors.length ? errorId : undefined,
     })
 
@@ -357,6 +368,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       // список смонтированных полей собирает адаптер
       [ATTACH]: () => undefined,
     }
+    if (ls.disabled) attrs.disabled = true
     if (has) attrs['aria-invalid'] = true
     if (errors.length) attrs['aria-errormessage'] = errorId
     if (describedBy) attrs['aria-describedby'] = describedBy
@@ -367,12 +379,13 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, options: f.options,
       errors, value, has,
+      disabled: ls.disabled, reason: ls.reason,
       touched: snapshot.touched[f.name] === true,
       dirty: snapshot.dirty[f.name] === true,
       fresh: snapshot.fresh[f.name] === true,
       checking: snapshot.checking[f.name] === true,
       labelProps: () => ({ for: id }),
-      helpProps: () => (f.help ? { id: helpId } : undefined),
+      helpProps: () => (f.help || ls.reason ? { id: helpId } : undefined),
       errorProps: () => (errors.length ? { id: errorId, role: 'alert' as const } : undefined),
       setTouched: (val = true) => {
         store.set((s) => ({ ...s, touched: { ...s.touched, [f.name]: val } }))

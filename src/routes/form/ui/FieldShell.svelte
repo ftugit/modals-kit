@@ -18,8 +18,11 @@
     {/if}
   </Label>
   {@render children()}
-  {#if f.help}
-    <p {...f.helpProps()} class="text-xs text-muted-foreground">{f.help}</p>
+  {#if f.help || f.reason}
+    <!-- причина выключенного поля занимает helper-слот вместо help;
+         data-атрибут — ручка теста, не стиль -->
+    <p {...f.helpProps()} class="text-xs text-muted-foreground"
+       data-field-reason={f.reason ? '' : undefined}>{f.reason ?? f.help}</p>
   {/if}
   {#if f.errors[0]}
     <p {...f.errorProps()} class="text-xs font-medium text-destructive">{f.errors[0].message}</p>

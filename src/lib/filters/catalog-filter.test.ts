@@ -64,6 +64,35 @@ describe('схема фильтров: валидация', () => {
     expect(parsed.fields[0]?.modes).toEqual(['and', 'not'])
   })
 
+  it('опция с disabled проходит схему; false не пишется, мусор отклоняется', () => {
+    const parsed = validateCatalogFilterSchema({
+      ...schema,
+      rules: [],
+      fields: [
+        {
+          key: 'genres',
+          label: 'Жанры',
+          type: 'multiselect',
+          modes: ['and'],
+          options: [
+            { value: '1', label: 'Экшен', disabled: true },
+            { value: '2', label: 'Драма', disabled: false },
+          ],
+        },
+      ],
+    })
+    const options = parsed.fields[0]?.options
+    expect(options?.[0]).toMatchObject({ value: '1', disabled: true })
+    // разряженная форма: отсутствие ключа и false — одно и то же, шума нет
+    expect(options?.[1] && 'disabled' in options[1]).toBe(false)
+    expect(() =>
+      validateCatalogFilterSchema({
+        ...schema,
+        fields: [{ key: 'k', label: 'K', type: 'select', options: [{ value: 'x', label: 'X', disabled: 'да' }] }],
+      }),
+    ).toThrow(/disabled/)
+  })
+
   it('отклоняет подделку полей: дубль ключа, чужой тип, опции вне правил', () => {
     expect(() => validateCatalogFilterSchema({ ...schema, source: 'Demo Kit' })).toThrow(/source/)
     expect(() =>
@@ -253,6 +282,37 @@ describe('компиляция в форму b1', () => {
     expect(state.values['filters.genres.and']).toEqual(['1'])
     expect(state.values['filters.score.min']).toBe('7')
     expect(state.values['filters.year.max']).toBe('2026')
+  })
+
+  it('опции доезжают до поля формы полными подписями; allowlist — по значениям', () => {
+    const compiled = compileCatalogFilterSchema({
+      ...schema,
+      rules: [],
+      fields: [
+        {
+          key: 'genres',
+          label: 'Жанры',
+          type: 'multiselect',
+          modes: ['and'],
+          options: [
+            { value: '1', label: 'Экшен', disabled: true },
+            { value: '2', label: 'Драма' },
+          ],
+        },
+      ],
+    })
+    const genreField = compiled.definition.fields.find((f) => f.name === 'filters.genres.and')
+    // Подпись и флаг доступности не теряются: поле видит «Драма», а не «2».
+    expect(genreField?.options).toEqual([
+      { value: '1', label: 'Экшен', count: undefined, disabled: true },
+      { value: '2', label: 'Драма', count: undefined },
+    ])
+    // allowlist по-прежнему по значениям: чужое отсекается, объявленное — нет.
+    const form = new FormData()
+    form.append('filters.genres.and', '1')
+    form.append('filters.genres.and', 'чужое')
+    const { errors } = validateCatalogFilterValues(compiled.schema, form)
+    expect(errors).toEqual(['oneOf'])
   })
 })
 

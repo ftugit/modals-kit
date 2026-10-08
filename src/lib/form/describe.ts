@@ -34,6 +34,13 @@ export interface FieldDescriptor<V = unknown> {
   readonly validators: readonly ValidatorRef[]
   readonly options?: readonly Option[]
   readonly visibleWhen?: VisibilityCondition
+  /**
+   * Решение связочного слоя: поле выключено — видно, но недоступно.
+   * Ядро только несёт это до компонента; кто выключил — вопрос слоя.
+   */
+  readonly disabled?: boolean
+  /** Причина показывается в слоте helper вместо help; бывает только у выключенного поля. */
+  readonly reason?: string
   readonly cardinality?: 'first' | 'all'
   readonly invalidFrom?: InvalidFrom
   readonly fresh?: boolean
@@ -97,6 +104,12 @@ export interface FieldOptions<V = unknown> {
   options?: readonly (string | Option)[]
   /** Условие, при котором поле участвует в показе и обычной валидации. */
   visibleWhen?: VisibilityCondition
+  /**
+   * Поле выключено (видно, но недоступно); `reason` — почему, показывается
+   * в helper-слоте вместо `help`. Решение считает связочный слой, ядро несёт.
+   */
+  disabled?: boolean
+  reason?: string
   /** Переопределение режима «первая ошибка» / «все ошибки» на уровне поля. */
   cardinality?: 'first' | 'all'
   /** Переопределение источника `aria-invalid` на уровне поля. */
@@ -129,6 +142,10 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         validators: o.validate ?? [],
         options: o.options?.map((x) => (typeof x === 'string' ? { value: x, label: x } : x)),
         visibleWhen: o.visibleWhen,
+        disabled: o.disabled,
+        // Инвариант контракта: причина бывает только у выключенного поля —
+        // иначе helper-узел (и aria-describedby на него) обещан, но пуст.
+        reason: o.disabled ? o.reason : undefined,
         cardinality: o.cardinality,
         invalidFrom: o.invalidFrom,
       } as FieldDraft
@@ -138,6 +155,26 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
 
 /** field.* на defaultRegistry для краткого описания встроенных полей. */
 export const field = makeFieldSugar()
+
+/** Решение связочного слоя об одном поле — канал `fieldState` в опциях bind. */
+export interface FieldLink {
+  readonly disabled?: boolean
+  readonly reason?: string
+}
+
+/**
+ * Наложение решения связки на статическое объявление: если связка про поле
+ * что-то сказала — её ответ перекрывает дескриптор (включая разблокировку);
+ * молчит — как объявлено. Инвариант `reason` только при `disabled`
+ * обеспечивается здесь, а не в трёх адаптерах.
+ */
+export function fieldLinkState(
+  d: FieldDescriptor<any>,
+  link: FieldLink | undefined,
+): FieldLink {
+  const s = link ?? d
+  return s.disabled ? { disabled: true, reason: s.reason } : {}
+}
 
 /* ── мета-валидация ────────────────────────────────────────────────── */
 

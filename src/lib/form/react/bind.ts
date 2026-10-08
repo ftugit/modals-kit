@@ -16,7 +16,7 @@ import type { FormEvent } from 'react'
 import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
-import type { FieldDescriptor, FormDescription, InvalidFrom } from '../describe'
+import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, split, type ErrorContext, type ErrorHandler } from '../errors'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
@@ -44,6 +44,11 @@ export interface UseFormOptions {
   checks?: CheckRegistry
   /** Версия спецификации в конверте: сервер поднимает описание по ней. */
   specVersion?: number
+  /**
+   * Канал решений связки (lib/links): ответ связки перекрывает статическое
+   * объявление поля. Читается лениво на каждом пересчёте представления.
+   */
+  fieldState?: (name: string) => FieldLink | undefined
 }
 
 /** Данные одного поля: `attrs` содержит всё, что обязано быть на элементе. */
@@ -65,6 +70,10 @@ export interface FieldView {
   readonly dirty: boolean
   readonly fresh: boolean
   readonly checking: boolean
+  /** Поле выключено связкой: видно, но недоступно (disabled ≠ скрыто). */
+  readonly disabled?: boolean
+  /** Причина выключения — рисуется в helper-слоте; бывает только у выключенного поля. */
+  readonly reason?: string
   labelProps(): { htmlFor: string }
   helpProps(): { id: string } | undefined
   errorProps(): { id: string; role: 'alert' } | undefined
@@ -238,13 +247,16 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     const helpId = `${id}-help`
     const errorId = `${id}-error`
     const has = hasError(f.name, state.facts, state.shown, invalidMode(f.name))
+    // Решение связки поверх объявления поля; инвариант reason⊂disabled — в fieldLinkState.
+    const ls = fieldLinkState(f, oRef.current.fieldState?.(f.name))
     const describedBy = cfg.ui.describedBy({
-      help: f.help ? helpId : undefined,
+      help: f.help || ls.reason ? helpId : undefined,
       error: errors.length ? errorId : undefined,
     })
 
     const base = desc.attrsOf(f.name)
     const attrs: HtmlAttrs = toReactProps({ ...base.attrs, name: f.name, id })
+    if (ls.disabled) attrs.disabled = true
     if (has) attrs['aria-invalid'] = true
     if (errors.length) attrs['aria-errormessage'] = errorId
     if (describedBy) attrs['aria-describedby'] = describedBy
@@ -255,12 +267,13 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, options: f.options,
       errors, value, has,
+      disabled: ls.disabled, reason: ls.reason,
       touched: state.touched[f.name] === true,
       dirty: state.dirty[f.name] === true,
       fresh: state.fresh[f.name] === true,
       checking: state.checking[f.name] === true,
       labelProps: () => ({ htmlFor: id }),
-      helpProps: () => (f.help ? { id: helpId } : undefined),
+      helpProps: () => (f.help || ls.reason ? { id: helpId } : undefined),
       errorProps: () => (errors.length ? { id: errorId, role: 'alert' as const } : undefined),
       setTouched: (val = true) => {
         store.set((s) => ({ ...s, touched: { ...s.touched, [f.name]: val } }))

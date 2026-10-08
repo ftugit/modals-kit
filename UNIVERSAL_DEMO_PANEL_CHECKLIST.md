@@ -91,11 +91,29 @@ disabled ≠ скрыто; причина в helper (отдельного узл
 
 ## Этапы (порядок из §6 промта; каждый — локальный git-коммит после доказательств)
 
-1. [ ] Ядро `lib/form`: `FieldView.disabled`/`reason`, `options[].disabled` не теряется
+1. [x] Ядро `lib/form`: `FieldView.disabled`/`reason`, `options[].disabled` не теряется
      (describe/compiler/view.ts), причина рисуется в helper (`FieldShell` / `CatalogFilterControl`),
      `helpProps()` при `help || reason`. Адаптеры react/solid — паритет полей состояния.
      *Доказательство:* поле `disabled+reason` рисуется выключенным; helper показывает
      причину; `aria-describedby` на непустой узел (unit + браузерка).
+     **Итог этапа.** `FieldDescriptor`/`FieldOptions` + `disabled`/`reason` (сахар сворачивает
+     `reason` при `!disabled`); `fieldLinkState` в describe — единая инвариантная точка оверлея,
+     использована в трёх адаптерах; рантайм-канал `fieldState?: (name) => FieldLink | undefined`
+     в опциях bind (svelte/react/solid; react читает лениво через `oRef`). viewOf: `attrs.disabled`,
+     `describedBy`/`helpProps` при `help || reason`. `FieldShell`: один helper-`<p>` с
+     `data-field-reason`, `{f.reason ?? f.help}`. Каталог: `CatalogFilterOption.disabled`
+     (проверка типа, разряженная запись), компилятор несёт полные подписи опций в поля формы
+     (allowlist — по значениям), `optionsOf` в view.ts сохраняет флаг (`<option disabled>`
+     рендерится примитивом). Unit: form.test.ts (3 теста: сахар, сворачивание reason, оверлей),
+     catalog-filter.test.ts (схема + компиляция), view.test.ts (control.options) — 499/499.
+     `npm run check`: 0 ошибок, 45 warning (столько же на базе — новых нет). Браузерка на базе
+     preview: `forms.mjs` и `forms-a11y.mjs` зелёные (ветка help в FieldShell покрыта);
+     полная цепочка `fieldState`→рендер доказывается на этапе 4 (потребителя канала ещё нет;
+     new-страница отклонена из-за immutable-бюджета). `shikimori.mjs` падает на «клик по подписи
+     не фокусирует контрол» И НА БАЗЕ ТОЧЬ-В-ТОЧЬ — предсуществующая красная строка набора
+     на preview-конфиге, перепроверить на этапе 7. Вес: immutable 207825 (база 207834, −9;
+     лимит 207872, воздух 47B), JS 194625 (база 194568±6; дельта +52..57, строка красна
+     с базы — перебор +8..14; дельта заявлена, лимиты не подняты). Маршрут /form 149.5/150.0 KiB.
 2. [ ] `lib/links` ядро (нейтральный `LinkRule {when, effect: disable-field|disable-option,
      reason}`) + расчёт выключений + составитель текстов (helper и текст отказа из одних
      данных) + сборка набора без выключенных + `lib/links/svelte` `useLinkEffects`.

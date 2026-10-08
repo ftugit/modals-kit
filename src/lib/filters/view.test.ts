@@ -91,6 +91,32 @@ describe('контролы из объявления схемы', () => {
     expect(controls.some((control) => control.path === 'filters.genres.or')).toBe(false)
   })
 
+  it('несоступное значение схемы доезжает до опции контрола флагом disabled', () => {
+    const controls = catalogFilterControls(
+      {
+        ...schema,
+        fields: [
+          {
+            key: 'genres',
+            label: 'Жанры',
+            type: 'multiselect',
+            modes: ['and'],
+            options: [
+              { value: '1', label: 'Экшен', disabled: true },
+              { value: '2', label: 'Драма' },
+            ],
+          },
+        ],
+      },
+      {},
+    )
+    const options = controls[0]?.kind === 'multiselect' ? controls[0].options : []
+    expect(options).toEqual([
+      { value: '1', label: 'Экшен', disabled: true },
+      { value: '2', label: 'Драма' },
+    ])
+  })
+
   it('значения контролов — из extra, а не из адреса', () => {
     const controls = catalogFilterControls(schema, {
       'filters.genres.and': '1,2',

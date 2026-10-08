@@ -73,7 +73,7 @@ export type CatalogFilterControl =
       name: string
       label: string
       value: string
-      options: readonly { value: string; label: string }[]
+      options: readonly { value: string; label: string; disabled?: boolean }[]
       /** Поле гасит связка: показать выключенным и сказать почему. */
       disabled: boolean
       reason?: string
@@ -84,7 +84,7 @@ export type CatalogFilterControl =
       name: string
       label: string
       value: readonly string[]
-      options: readonly { value: string; label: string }[]
+      options: readonly { value: string; label: string; disabled?: boolean }[]
       /** Показ списка обрезан лимитом: часть значений есть у источника, но не здесь. */
       truncated?: number
       disabled: boolean
@@ -161,8 +161,9 @@ export type CatalogFilterView = {
 const EMPTY: readonly string[] = []
 
 /** Подпись опции: имя из схемы (для скрытых лимитом значений — сам id). */
-function optionsOf(field: CatalogFilterField): { value: string; label: string }[] {
-  return (field.options ?? []).map((option) => ({ value: option.value, label: option.label }))
+function optionsOf(field: CatalogFilterField): { value: string; label: string; disabled?: boolean }[] {
+  return (field.options ?? []).map((option) =>
+    option.disabled ? { value: option.value, label: option.label, disabled: true } : { value: option.value, label: option.label })
 }
 
 /**

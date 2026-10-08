@@ -38,6 +38,11 @@ export type CatalogFilterOption = {
   value: string
   label: string
   count?: number
+  /**
+   * Значение недоступно: гасится в списке и не может быть выбрано заново
+   * (выборка при этом не чистится — см. модель панели).
+   */
+  disabled?: boolean
 }
 
 export type CatalogFilterField = {
@@ -290,8 +295,13 @@ export function validateCatalogFilterSchema(input: unknown): CatalogFilterSchema
           throw new Error('Invalid catalog filter option label')
         if (option.count !== undefined && (!Number.isInteger(option.count) || option.count < 0))
           throw new Error('Invalid catalog filter option count')
+        if (option.disabled !== undefined && typeof option.disabled !== 'boolean')
+          throw new Error('Invalid catalog filter option disabled')
         optionValues.add(option.value)
-        return { value: option.value, label: option.label, count: option.count }
+        // disabled пишем только при true: разряженный объект, без false-шума.
+        return option.disabled
+          ? { value: option.value, label: option.label, count: option.count, disabled: true }
+          : { value: option.value, label: option.label, count: option.count }
       })
     }
 
@@ -458,12 +468,14 @@ export function compileCatalogFilterSchema(
             : []),
         ] as ValidatorRef[],
       }
-      const options = descriptor.options?.map((option) => option.value) ?? []
+      // Поля формы получают ПОЛНЫЕ подписи опций (label + disabled): их видит
+      // FieldView, а allowlist строится только из значений.
+      const options = descriptor.options ?? []
       // Allowlist — только при ПОЛНОМ показе опций: у обрезанного лимитом поля
       // настоящие значения источника могли не доехать, и «нет в списке» ещё не
       // значит «чужое значение» (решает источник, см. `catalogFilterOptionsAreComplete`).
       const list = catalogFilterOptionsAreComplete(descriptor)
-        ? [...common.validate, optionsAllowlist(options)]
+        ? [...common.validate, optionsAllowlist(options.map((option) => option.value))]
         : common.validate
       fields[name] = descriptor.type === 'multiselect'
         ? field.multiselect({ ...common, options, validate: list })
