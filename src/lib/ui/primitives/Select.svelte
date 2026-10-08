@@ -114,6 +114,7 @@
   import type { MobileAnchor } from '$lib/modals'
   import { inputVariants } from './field'
   import SelectList from './SelectList.svelte'
+  import { installSelectTrace } from './select-trace'
 
   /**
    * Пропы нативного контрола едут как есть: `id`, `aria-describedby`,
@@ -580,7 +581,25 @@
     const form = nativeEl?.form
     const onReset = () => queueMicrotask(syncFromNative)
     form?.addEventListener('reset', onReset)
-    return () => form?.removeEventListener('reset', onReset)
+    const stopTrace = import.meta.env.DEV
+      ? installSelectTrace({
+          root: () => rootEl,
+          popup: () => popupNode ?? null,
+          snapshot: () => ({
+            id: selectId,
+            name,
+            multiple,
+            disabled,
+            open,
+            popupId,
+            values: selected.map((option) => option.value),
+          }),
+        })
+      : () => {}
+    return () => {
+      form?.removeEventListener('reset', onReset)
+      stopTrace()
+    }
   })
 
   /**

@@ -22,7 +22,8 @@
     "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs",
     "test:browser:paginate": "node test/browser/paginate.mjs",
     "test:browser:capabilities": "node test/browser/capabilities.mjs",
-    "test:browser:shikimori": "node test/browser/shikimori.mjs"
+    "test:browser:shikimori": "node test/browser/shikimori.mjs",
+    "test:browser:select-trace": "node test/browser/select-trace.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
