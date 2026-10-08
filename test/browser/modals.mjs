@@ -72,26 +72,24 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
 
   try {
-    // ── 0. Компактный Segmented на узком экране ──────────────────────────────
+    // ── 0. Панель настроек на узком экране — select-поля механизма (этап 8) ──
     {
-      console.log('— Segmented: оригинальный стиль и ширина первого пункта —');
+      console.log('— Настройки хоста: компактный select, первый пункт «выкл» —');
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       await page.goto(BASE, { waitUntil: 'networkidle' });
-      const group = page.locator('[role="group"]').first();
-      const state = await group.evaluate((el) => {
-        const buttons = [...el.querySelectorAll('button')];
-        const first = buttons[0];
-        const selected = el.querySelector('button[aria-pressed="true"]');
-        return {
-          firstLabel: first.textContent.trim(),
-          firstFits: first.scrollWidth <= first.clientWidth,
-          selectedWeight: selected && getComputedStyle(selected).fontWeight,
-        };
-      });
-      assert(state.firstLabel === 'выкл', `не восстановлена исходная подпись первого пункта: ${state.firstLabel}`);
-      assert(state.firstFits, 'подпись первого пункта выходит за ширину кнопки');
-      assert(state.selectedWeight === '500', `выбранный пункт не соответствует оригинальному font-medium: ${state.selectedWeight}`);
-      ok('первый пункт помещается, выбранный пункт использует оригинальный font-medium');
+      const sel = page.locator('#default_mobile');
+      const state = await sel.evaluate((el) => ({
+        tag: el.tagName,
+        name: el.getAttribute('name'),
+        firstLabel: el.options[0]?.textContent.trim(),
+        value: el.value,
+        fits: el.scrollWidth <= el.clientWidth + 1,
+      }));
+      assert(state.tag === 'SELECT' && state.name === 'default_mobile',
+        `поле механизма не найдено: ${JSON.stringify(state)}`);
+      assert(state.firstLabel === 'выкл', `первый пункт не «выкл»: ${state.firstLabel}`);
+      assert(state.value === 'off' && state.fits, `селектор не отражает «выкл» или не влезает: ${JSON.stringify(state)}`);
+      ok('настройки — поля form: select с опцией «выкл» помещается на 390px');
       await page.close();
     }
 
@@ -119,10 +117,16 @@ async function run() {
         && initialSettings.disabled.every(Boolean)
         && initialSettings.controlsDisabled.every(Boolean), `no-JS settings: ${JSON.stringify(initialSettings)}`)
       ok('без JS настройки модалки и источников выключены');
-      const sourceSelectDisabled = await page.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
-        nodes.length === 1 && nodes[0].matches(':disabled'));
-      assert(sourceSelectDisabled, 'no-JS Select источников не выключен');
-      ok('без JS Select источников тоже выключен');
+      // Этап 8: под гейтом и панель настроек (8 select'ов механизма) — все
+      // контролы поля; источниковый select (нативный слой кастомного виджета)
+      // тоже обязан быть выключен до гидратации.
+      const selectsDisabled = await page.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
+        nodes.length === 9 && nodes.every((n) => n.matches(':disabled')));
+      assert(selectsDisabled, 'no-JS: не все select панели/источников выключены');
+      const sourceSelect = page.locator('[data-js-only-settings] [data-select-native]');
+      assert((await sourceSelect.count()) === 1 && await sourceSelect.first().evaluate((n) => n.matches(':disabled')),
+        'no-JS Select источников не выключен');
+      ok('без JS выключены оба блока: панель настроек (9 select) и Select источников');
       assert(initialSettings.routeLinks.every(Boolean), `no-JS route links: ${JSON.stringify(initialSettings.routeLinks)}`)
       ok('без JS ссылки на главную и цикл остаются доступны');
 
@@ -164,9 +168,11 @@ async function run() {
           && settings.every((node) => node instanceof HTMLFieldSetElement && !node.disabled)
       }, null, { timeout: 20000 });
       ok('после гидратации настройки модалки и источников включены');
-      const sourceSelectEnabled = await hydrated.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
-        nodes.length === 1 && !nodes[0].matches(':disabled'));
-      assert(sourceSelectEnabled, 'после гидратации Select источников не включился');
+      // Этап 8: после гидратации — те же 9 select'ов (источниковый остаётся
+      // нативным слоем кастомного виджета), панель настроек включена.
+      const selectsEnabled = await hydrated.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
+        nodes.length === 9 && nodes.every((n) => !n.matches(':disabled')));
+      assert(selectsEnabled, 'после гидратации поля настроек/источников не включились');
       ok('после гидратации Select источников включён');
       const fullpage = hydrated.locator('[data-modal-trigger]', { hasText: 'Полноэкранная' }).first();
       const fullpageState = await fullpage.evaluate((el) => ({ tag: el.tagName, href: el.getAttribute('href') }));
