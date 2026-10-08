@@ -1,5 +1,4 @@
 <script lang="ts">
-  // Тот же Control, что у демонстрации модалок: подпись и содержимое.
   let { label, children }: { label: string; children?: import('svelte').Snippet } = $props()
 </script>
 

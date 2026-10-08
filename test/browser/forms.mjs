@@ -75,6 +75,14 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
 
+  const segmentedStyle = await pg.locator('div[role="group"]').first().locator('button[aria-pressed="true"]').evaluate((button) => ({
+    border: button.classList.contains('border-primary'),
+    ring: button.classList.contains('ring-1'),
+    weight: getComputedStyle(button).fontWeight,
+  }))
+  ok('Forms сохраняет рамочный active-вариант Segmented',
+    segmentedStyle.border && segmentedStyle.ring && segmentedStyle.weight === '600', JSON.stringify(segmentedStyle))
+
   ok('свой тип значения даёт атрибуты',
     await pg.locator('#signup-rating').getAttribute('type') === 'range'
     && await pg.locator('#signup-rating').getAttribute('max') === '5')
@@ -228,7 +236,28 @@ async function run(jsEnabled) {
                                          viewport: { width: 1280, height: 3000 } })
   const pg = await ctx.newPage()
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
-  if (jsEnabled) await pg.waitForTimeout(900)
+  if (jsEnabled) {
+    await pg.waitForFunction(() => {
+      const settings = [...document.querySelectorAll('[data-js-only-settings]')]
+      return settings.length === 2 && settings.every((node) => node instanceof HTMLFieldSetElement && !node.disabled)
+    }, null, { timeout: 20000 })
+  }
+  const settingsState = await pg.evaluate(() => {
+    const settings = [...document.querySelectorAll('[data-js-only-settings]')]
+    const form = document.querySelector('form')
+    const email = document.querySelector('#signup-email')
+    const submit = form?.querySelector('button[value="submit"]')
+    const route = [...document.querySelectorAll('a')].find((el) => el.getAttribute('href') === '/modals')
+    return {
+      count: settings.length,
+      disabled: settings.map((node) => node instanceof HTMLFieldSetElement && node.disabled),
+      controlsDisabled: settings.map((node) => [...node.querySelectorAll('button,input,select,textarea')]
+        .some((control) => control.matches(':disabled'))),
+      emailDisabled: !email || email.matches(':disabled'),
+      submitDisabled: !submit || submit.matches(':disabled'),
+      routeHref: route?.getAttribute('href') ?? null,
+    }
+  })
   await fill(pg, scenario)
   if (jsEnabled) {
     await click(pg, 'Создать аккаунт')
@@ -243,7 +272,7 @@ async function run(jsEnabled) {
   const errors = (await pg.locator('p.text-destructive').allInnerTexts()).sort()
   const kept = await pg.inputValue('#signup-email')
   await ctx.close()
-  return { errors, kept }
+  return { errors, kept, settingsState }
 }
 
 /* ── 12. серверные слои ───────────────────────────────────────────── */
@@ -277,6 +306,18 @@ const nojs = await run(false)
 const js = await run(true)
 
 ok('без скрипта форма работает', nojs.errors.length > 0, nojs.errors.join(' | '))
+ok('без скрипта JS-настройки заблокированы',
+  nojs.settingsState.count === 2
+    && nojs.settingsState.disabled.every(Boolean)
+    && nojs.settingsState.controlsDisabled.every(Boolean), JSON.stringify(nojs.settingsState))
+ok('без скрипта форма и переход на другую страницу остаются доступны',
+  !nojs.settingsState.emailDisabled
+    && !nojs.settingsState.submitDisabled
+    && nojs.settingsState.routeHref === '/modals', JSON.stringify(nojs.settingsState))
+ok('после гидратации JS-настройки включены',
+  js.settingsState.count === 2
+    && js.settingsState.disabled.every((disabled) => !disabled)
+    && js.settingsState.controlsDisabled.every((disabled) => !disabled), JSON.stringify(js.settingsState))
 ok('без скрипта значения возвращаются', nojs.kept === 'a@b.io')
 ok('пути дают одинаковые ошибки',
   JSON.stringify(nojs.errors) === JSON.stringify(js.errors),

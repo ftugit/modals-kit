@@ -104,13 +104,31 @@ async function run() {
       });
       await page.goto(BASE, { waitUntil: 'networkidle' });
 
+      const initialSettings = await page.evaluate(() => {
+        const fieldsets = [...document.querySelectorAll('[data-js-only-settings]')]
+        return {
+          count: fieldsets.length,
+          disabled: fieldsets.map((node) => node instanceof HTMLFieldSetElement && node.disabled),
+          controlsDisabled: fieldsets.map((node) => [...node.querySelectorAll('button,input,select,textarea')]
+            .some((control) => control.matches(':disabled'))),
+          routeLinks: ['/','/cycle'].map((href) => [...document.querySelectorAll('a')]
+            .some((link) => link.getAttribute('href') === href && !link.matches(':disabled'))),
+        }
+      })
+      assert(initialSettings.count === 1
+        && initialSettings.disabled.every(Boolean)
+        && initialSettings.controlsDisabled.every(Boolean), `no-JS settings: ${JSON.stringify(initialSettings)}`)
+      ok('без JS настройки модалки и источников выключены');
+      assert(initialSettings.routeLinks.every(Boolean), `no-JS route links: ${JSON.stringify(initialSettings.routeLinks)}`)
+      ok('без JS ссылки на главную и цикл остаются доступны');
+
       const card = page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first();
       const cardState = await card.evaluate((el) => ({
         tag: el.tagName,
         href: el.getAttribute('href'),
-        disabled: el instanceof HTMLButtonElement && el.disabled,
+        disabled: el.matches(':disabled'),
       }));
-      assert(cardState.tag === 'A' && cardState.href === '/cards/7', `no-JS route trigger: ${JSON.stringify(cardState)}`);
+      assert(cardState.tag === 'A' && cardState.href === '/cards/7' && !cardState.disabled, `no-JS route trigger: ${JSON.stringify(cardState)}`);
       ok('без JS route-триггер остаётся доступной ссылкой /cards/7');
 
       for (const label of ['Полноэкранная', 'Проверить наследование', 'Select внутри модалки', 'Несуществующая', 'Битый route']) {
@@ -123,14 +141,25 @@ async function run() {
         assert(state.tag === 'BUTTON' && state.disabled && state.href === null, `no-JS ${label} доступен: ${JSON.stringify(state)}`);
         ok(`без JS «${label}» неактивен`);
       }
+      await card.click();
+      await page.waitForURL((url) => url.pathname === '/cards/7', { timeout: 10000 });
+      ok('без JS ссылка-триггер внутри отключённой панели открывает route /cards/7');
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+      await page.getByRole('link', { name: 'Цикл', exact: true }).click();
+      await page.waitForURL((url) => url.pathname === '/cycle', { timeout: 10000 });
+      ok('без JS ссылка действительно переводит на /cycle');
       await page.close();
 
       const hydrated = await browser.newPage({ viewport: { width: 1280, height: 860 } });
       await hydrated.goto(BASE, { waitUntil: 'networkidle' });
       await hydrated.waitForFunction(() => {
         const trigger = [...document.querySelectorAll('[data-modal-trigger]')].find((el) => el.textContent?.includes('Полноэкранная'));
-        return trigger && !trigger.hasAttribute('data-pending');
-      });
+        const settings = [...document.querySelectorAll('[data-js-only-settings]')]
+        return trigger && !trigger.hasAttribute('data-pending')
+          && settings.length === 1
+          && settings.every((node) => node instanceof HTMLFieldSetElement && !node.disabled)
+      }, null, { timeout: 20000 });
+      ok('после гидратации настройки модалки и источников включены');
       const fullpage = hydrated.locator('[data-modal-trigger]', { hasText: 'Полноэкранная' }).first();
       const fullpageState = await fullpage.evaluate((el) => ({ tag: el.tagName, href: el.getAttribute('href') }));
       assert(fullpageState.tag === 'A' && fullpageState.href?.includes('modal=fullpage'), `hydrated route-less trigger: ${JSON.stringify(fullpageState)}`);

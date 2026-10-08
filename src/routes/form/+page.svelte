@@ -1,7 +1,7 @@
 <script lang="ts">
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
-  import { untrack } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { bind, type LiveMode } from '$lib/form/svelte'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
   import {
@@ -12,12 +12,15 @@
   import { checks, forms, formsCustomUi } from './forms.config'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
-  import Control from './Control.svelte'
-  import Segmented from './Segmented.svelte'
+  import Control from '$lib/ui/demo/Control.svelte'
+  import Segmented from '$lib/ui/demo/Segmented.svelte'
   import Common from './ui/Common.svelte'
   import Field from './ui/Field.svelte'
 
   let { form: actionResult }: { form?: { result?: Result } | null } = $props()
+
+  let hydrated = $state(false)
+  onMount(() => { hydrated = true })
 
   /** Снимок результата действия на момент связывания — читается намеренно один раз. */
   const initialResult = untrack(() => actionResult?.result ?? null)
@@ -173,106 +176,120 @@
     </header>
 
     <!-- ── настройки ─────────────────────────────────────────────── -->
-    <section class="grid gap-4 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:grid-cols-2">
-      <Control label="Обработчик ошибок">
-        <Segmented
-          value={mode}
-          onChange={(x) => {
-            mode = x as Mode
-            // В режиме общего блока поля не должны продолжать выглядеть так,
-            // будто сообщение осталось возле них.
-            if (mode === 'one-block') opts.invalidFrom = 'shown'
-            form.redisplay()
-          }}
-          options={[
-            { value: 'as-is', label: 'как есть' },
-            { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
-            { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
-            { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
-          ]}
-        />
-      </Control>
+    <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
+      <fieldset disabled={!hydrated} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
+        <Control label="Обработчик ошибок">
+          <Segmented
+            variant="form"
+            value={mode}
+            onChange={(x) => {
+              mode = x as Mode
+              // В режиме общего блока поля не должны продолжать выглядеть так,
+              // будто сообщение осталось возле них.
+              if (mode === 'one-block') opts.invalidFrom = 'shown'
+              form.redisplay()
+            }}
+            options={[
+              { value: 'as-is', label: 'как есть' },
+              { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
+              { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
+              { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Откуда берётся подсветка">
-        <Segmented
-          value={opts.invalidFrom}
-          onChange={(x) => (opts.invalidFrom = x as InvalidFrom)}
-          options={[
-            { value: 'fact', label: 'по факту', hint: 'ошибка была — поле подсвечено' },
-            { value: 'shown', label: 'по показу', hint: 'забрали текст — погасло' },
-          ]}
-        />
-      </Control>
+        <Control label="Откуда берётся подсветка">
+          <Segmented
+            variant="form"
+            value={opts.invalidFrom}
+            onChange={(x) => (opts.invalidFrom = x as InvalidFrom)}
+            options={[
+              { value: 'fact', label: 'по факту', hint: 'ошибка была — поле подсвечено' },
+              { value: 'shown', label: 'по показу', hint: 'забрали текст — погасло' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Перехват отправки">
-        <Segmented
-          value={opts.intercept ? 'js' : 'native'}
-          onChange={(x) => (opts.intercept = x === 'js')}
-          options={[
-            { value: 'js', label: 'перехватывать', hint: 'тот же FormData через fetch' },
-            { value: 'native', label: 'нативно', hint: 'обычный POST, действие SvelteKit' },
-          ]}
-        />
-      </Control>
+        <Control label="Перехват отправки">
+          <Segmented
+            variant="form"
+            value={opts.intercept ? 'js' : 'native'}
+            onChange={(x) => (opts.intercept = x === 'js')}
+            options={[
+              { value: 'js', label: 'перехватывать', hint: 'тот же FormData через fetch' },
+              { value: 'native', label: 'нативно', hint: 'обычный POST, действие SvelteKit' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Режим живой проверки">
-        <Segmented
-          value={opts.live}
-          onChange={(x) => (opts.live = x as LiveMode)}
-          options={[
-            { value: 'after-touched', label: 'после касания' },
-            { value: 'on-blur', label: 'при уходе' },
-            { value: 'on-input', label: 'при вводе' },
-            { value: 'on-submit', label: 'при отправке' },
-          ]}
-        />
-      </Control>
+        <Control label="Режим живой проверки">
+          <Segmented
+            variant="form"
+            value={opts.live}
+            onChange={(x) => (opts.live = x as LiveMode)}
+            options={[
+              { value: 'after-touched', label: 'после касания' },
+              { value: 'on-blur', label: 'при уходе' },
+              { value: 'on-input', label: 'при вводе' },
+              { value: 'on-submit', label: 'при отправке' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Сколько ошибок на поле">
-        <Segmented
-          value={cardinality}
-          onChange={(x) => (cardinality = x as 'first' | 'all')}
-          options={[
-            { value: 'first', label: 'первая' },
-            { value: 'all', label: 'все', hint: 'свойство описания: состояние начнётся заново' },
-          ]}
-        />
-      </Control>
+        <Control label="Сколько ошибок на поле">
+          <Segmented
+            variant="form"
+            value={cardinality}
+            onChange={(x) => (cardinality = x as 'first' | 'all')}
+            options={[
+              { value: 'first', label: 'первая' },
+              { value: 'all', label: 'все', hint: 'свойство описания: состояние начнётся заново' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Политика разметки адаптера">
-        <Segmented
-          value={ui}
-          onChange={(x) => (ui = x as 'default' | 'custom')}
-          options={[
-            { value: 'default', label: 'умолчания', hint: 'id вида signup-email' },
-            { value: 'custom', label: 'свои', hint: 'id вида fld_signup__email и проверка на вводе' },
-          ]}
-        />
-      </Control>
+        <Control label="Политика разметки адаптера">
+          <Segmented
+            variant="form"
+            value={ui}
+            onChange={(x) => (ui = x as 'default' | 'custom')}
+            options={[
+              { value: 'default', label: 'умолчания', hint: 'id вида signup-email' },
+              { value: 'custom', label: 'свои', hint: 'id вида fld_signup__email и проверка на вводе' },
+            ]}
+          />
+        </Control>
 
-      <Control label="Параллельные отправки">
-        <Segmented
-          value={opts.parallel}
-          onChange={(x) => (opts.parallel = x as ParallelPolicy)}
-          options={[
-            { value: 'block', label: 'блокировать' },
-            { value: 'replace', label: 'заменять' },
-            { value: 'queue', label: 'очередь' },
-          ]}
-        />
-      </Control>
+        <Control label="Параллельные отправки">
+          <Segmented
+            variant="form"
+            value={opts.parallel}
+            onChange={(x) => (opts.parallel = x as ParallelPolicy)}
+            options={[
+              { value: 'block', label: 'блокировать' },
+              { value: 'replace', label: 'заменять' },
+              { value: 'queue', label: 'очередь' },
+            ]}
+          />
+        </Control>
 
-      <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
-        <b>Сейчас демо настроено так:</b>
-        ошибки
-        {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
-        на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
-        {#if form.facts.length === 0}
-          <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
-        {:else}
-          <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
-        {/if}
-      </div>
+        <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
+          <b>Сейчас демо настроено так:</b>
+          ошибки
+          {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
+          на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
+          {#if form.facts.length === 0}
+            <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
+          {:else}
+            <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
+          {/if}
+        </div>
+      </fieldset>
+      {#if !hydrated}
+        <p data-js-settings-note="" role="status" class="mt-3 text-xs text-muted-foreground">
+          Эти параметры работают после загрузки JavaScript; поля и отправка формы доступны без него.
+        </p>
+      {/if}
     </section>
 
     <!-- ── форма ─────────────────────────────────────────────────── -->
@@ -352,98 +369,104 @@
     {/if}
 
     <!-- ── песочница расширения ──────────────────────────────────── -->
-    <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
-      <div class="mb-3 grid gap-4 sm:grid-cols-2">
-        <Control label="Тип значения rating">
-          <Segmented
-            value={sandbox.withType ? 'on' : 'off'}
-            onChange={(x) => (sandbox.withType = x === 'on')}
-            options={[
-              { value: 'off', label: 'не зарегистрирован' },
-              { value: 'on', label: 'зарегистрирован' },
-            ]}
-          />
-        </Control>
-        <Control label="Правило «шестизначный код»">
-          <Segmented
-            value={sandbox.described ? 'on' : 'off'}
-            onChange={(x) => (sandbox.described = x === 'on')}
-            options={[
-              { value: 'off', label: 'без описания' },
-              { value: 'on', label: 'с описанием' },
-            ]}
-          />
-        </Control>
-      </div>
+    <fieldset disabled={!hydrated} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
+      <legend class="sr-only">Дополнительные интерактивные настройки формы</legend>
+      <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
+        <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
+        <div class="mb-3 grid gap-4 sm:grid-cols-2">
+          <Control label="Тип значения rating">
+            <Segmented
+              variant="form"
+              value={sandbox.withType ? 'on' : 'off'}
+              onChange={(x) => (sandbox.withType = x === 'on')}
+              options={[
+                { value: 'off', label: 'не зарегистрирован' },
+                { value: 'on', label: 'зарегистрирован' },
+              ]}
+            />
+          </Control>
+          <Control label="Правило «шестизначный код»">
+            <Segmented
+              variant="form"
+              value={sandbox.described ? 'on' : 'off'}
+              onChange={(x) => (sandbox.described = x === 'on')}
+              options={[
+                { value: 'off', label: 'без описания' },
+                { value: 'on', label: 'с описанием' },
+              ]}
+            />
+          </Control>
+        </div>
 
-      {#if built.ok}
-        <table class="w-full text-left text-xs">
-          <thead class="text-muted-foreground">
-            <tr>
-              <th class="py-1 pr-3 font-medium">поле</th>
-              <th class="py-1 pr-3 font-medium">выведено в разметку</th>
-              <th class="py-1 font-medium">не выведено и почему</th>
-            </tr>
-          </thead>
-          <tbody class="font-mono">
-            {#each built.form.fields as f (f.name)}
-              {@const a = built.form.attrsOf(f.name)}
-              <tr class="border-t border-border/60 align-top">
-                <td class="py-1 pr-3">{f.name}</td>
-                <td class="py-1 pr-3 text-muted-foreground">{attrText(a.attrs)}</td>
-                <td class="py-1 text-muted-foreground">
-                  {#each a.skipped as s (s.kind)}<div><b>{s.kind}</b> — {s.why}</div>{:else}—{/each}
-                </td>
+        {#if built.ok}
+          <table class="w-full text-left text-xs">
+            <thead class="text-muted-foreground">
+              <tr>
+                <th class="py-1 pr-3 font-medium">поле</th>
+                <th class="py-1 pr-3 font-medium">выведено в разметку</th>
+                <th class="py-1 font-medium">не выведено и почему</th>
               </tr>
-            {/each}
-          </tbody>
-        </table>
-      {:else}
-        <!-- без bg-подложки: text-destructive на 5%-тонированном фоне даёт 4.36:1,
-             на фоне карты контраст держится в обеих темах -->
-        <pre class="rounded-lg border border-destructive/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
-      {/if}
+            </thead>
+            <tbody class="font-mono">
+              {#each built.form.fields as f (f.name)}
+                {@const a = built.form.attrsOf(f.name)}
+                <tr class="border-t border-border/60 align-top">
+                  <td class="py-1 pr-3">{f.name}</td>
+                  <td class="py-1 pr-3 text-muted-foreground">{attrText(a.attrs)}</td>
+                  <td class="py-1 text-muted-foreground">
+                    {#each a.skipped as s (s.kind)}<div><b>{s.kind}</b> — {s.why}</div>{:else}—{/each}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <!-- без bg-подложки: text-destructive на 5%-тонированном фоне даёт 4.36:1,
+               на фоне карты контраст держится в обеих темах -->
+          <pre class="rounded-lg border border-destructive/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
+        {/if}
 
-      <p class="mt-2 text-xs text-muted-foreground">
-        Реестр здесь свой: основная форма выше о нём не знает и продолжает работать.
-        Пока тип не зарегистрирован, описание не объявляется — и говорит, чего не хватает.
-        Правило без описания работает, но атрибута не даёт: причина названа.
-      </p>
-    </section>
+        <p class="mt-2 text-xs text-muted-foreground">
+          Реестр здесь свой: основная форма выше о нём не знает и продолжает работать.
+          Пока тип не зарегистрирован, описание не объявляется — и говорит, чего не хватает.
+          Правило без описания работает, но атрибута не даёт: причина названа.
+        </p>
+      </section>
 
     <!-- ── чужая служба ──────────────────────────────────────────── -->
-    <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <div class="mb-3 text-sm font-semibold">Чужая служба: нормализация до обработчика</div>
-      <div class="mb-3">
-        <Segmented
-          value={sample}
-          onChange={(x) => (sample = x as keyof typeof PSP_SAMPLES)}
-          options={Object.keys(PSP_SAMPLES).map((k) => ({ value: k, label: k }))}
-        />
-      </div>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div>
-          <div class="mb-1 text-xs font-medium text-muted-foreground">сырой ответ</div>
-          <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{JSON.stringify(raw.body, null, 1)}</pre>
+      <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
+        <div class="mb-3 text-sm font-semibold">Чужая служба: нормализация до обработчика</div>
+        <div class="mb-3">
+          <Segmented
+            variant="form"
+            value={sample}
+            onChange={(x) => (sample = x as keyof typeof PSP_SAMPLES)}
+            options={Object.keys(PSP_SAMPLES).map((k) => ({ value: k, label: k }))}
+          />
         </div>
-        <div>
-          <div class="mb-1 text-xs font-medium text-muted-foreground">после инструкции — ФАКТ</div>
-          <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{normalized
-            .map((e) => `${e.path ?? '*'} ${e.code}\n  ${e.message ?? '—'}`).join('\n')}</pre>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div>
+            <div class="mb-1 text-xs font-medium text-muted-foreground">сырой ответ</div>
+            <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{JSON.stringify(raw.body, null, 1)}</pre>
+          </div>
+          <div>
+            <div class="mb-1 text-xs font-medium text-muted-foreground">после инструкции — ФАКТ</div>
+            <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{normalized
+              .map((e) => `${e.path ?? '*'} ${e.code}\n  ${e.message ?? '—'}`).join('\n')}</pre>
+          </div>
+          <div>
+            <div class="mb-1 text-xs font-medium text-muted-foreground">после обработчика — ПОКАЗ</div>
+            <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{afterHandler
+              .map((e) => `${e.path ?? '*'} ${e.code}`).join('\n') || '— пусто'}</pre>
+          </div>
         </div>
-        <div>
-          <div class="mb-1 text-xs font-medium text-muted-foreground">после обработчика — ПОКАЗ</div>
-          <pre class="rounded-lg bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">{afterHandler
-            .map((e) => `${e.path ?? '*'} ${e.code}`).join('\n') || '— пусто'}</pre>
-        </div>
-      </div>
-      <p class="mt-2 text-xs text-muted-foreground">
-        Разработчик получает наши имена: <code>pan → card</code>, <code>payer.contact → email</code>.
-        Не нашлось соответствия — ошибка просто общая. Исходные данные службы остаются
-        в <code>source</code>, чтобы было чем манипулировать.
-      </p>
-    </section>
+        <p class="mt-2 text-xs text-muted-foreground">
+          Разработчик получает наши имена: <code>pan → card</code>, <code>payer.contact → email</code>.
+          Не нашлось соответствия — ошибка просто общая. Исходные данные службы остаются
+          в <code>source</code>, чтобы было чем манипулировать.
+        </p>
+        </section>
+    </fieldset>
 
     <!-- ── отчёт: собирается обходом реестра ─────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
