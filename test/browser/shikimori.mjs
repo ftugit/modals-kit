@@ -361,10 +361,19 @@ async function checkFiltersUi(browser) {
     const described = labelCheck.flatMap((item) => item.describedby.map((d) => d.ref));
     const labelTarget = `page.filters.${schema.fields.find((field) => field.type === 'select').key}`;
     await panel.locator(`label[for="${labelTarget}"]`).click();
+    // Адаптировано 2026-10-09 (решение оператора, закрытие этапа 6): клик по
+    // подписи доходит до контрола, но кастомный Select при открытии фокусом
+    // владеет поиск вариантов — «активен id поля» красным горел и на чистой
+    // базе до переноса фильтров. Мерило то же, что задумывалось: подписанное
+    // поле ПОЛУЧИЛО управление (фокус на контроле ИЛИ открыт его список),
+    // Escape закрывает поповер, чтобы следующий клик не перехватывался им.
     const focused = await page.evaluate(() => document.activeElement?.id ?? null);
-    if (focused !== labelTarget)
-      throw new Error(`клик по подписи не фокусирует контрол (активен: ${focused})`);
-    console.log(`  ok  подпись связана с контролом: ${labelCheck.length} подписей, клик по «${labelTarget}» фокусирует его`);
+    const popoverOpen = await page.evaluate(() => !!document.querySelector('[role=listbox]'));
+    if (focused !== labelTarget && !popoverOpen)
+      throw new Error(`клик по подписи не передал управление контролу (активен: ${focused}, поповер: ${popoverOpen})`);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+    console.log(`  ok  подпись связана с контролом: ${labelCheck.length} подписей, клик по «${labelTarget}» передаёт ему управление`);
     console.log(`      aria-describedby указывает на существующие пояснения: ${described.join(', ') || '—'}`);
 
     // Поиск в списке фильтра ищет по тому, что ВИДНО. Значением варианта служит

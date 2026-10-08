@@ -29,21 +29,25 @@ const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
 // и новую тяжёлую зависимость, и рост клиентской части схемы.
 // Issue 11 (2026-10-08): shared demo controls and JS-only settings fit the
 // original global budgets; do not raise them to accommodate this change.
+// REVISION 2026-10-09 (решение оператора, этап 6–7 закрытия): «подними на 10%
+// все» — лимиты подняты ровно на 10% (факты после этапов 5–6: 208.5 / 195.5 /
+// 13.0 / 47.7; маршруты /form 151.5, /paginator 123.0). Правило «рост докладывать»
+// остаётся: поднятие — акт оператора, не исполнителя.
 const LIMITS = {
-  allImmutableGzip: 203 * KiB,
-  allJsGzip: 190 * KiB,
-  allCssGzip: 20 * KiB,
-  largestJsGzip: 50 * KiB,
-  largestCssGzip: 14 * KiB,
+  allImmutableGzip: 223.3 * KiB,
+  allJsGzip: 209 * KiB,
+  allCssGzip: 22 * KiB,
+  largestJsGzip: 55 * KiB,
+  largestCssGzip: 15.4 * KiB,
 }
 
 const ROUTE_LIMITS = {
-  '/': 130 * KiB,
-  '/form': 150 * KiB,
-  '/modals': 135 * KiB,
+  '/': 143 * KiB,
+  '/form': 165 * KiB,
+  '/modals': 148.5 * KiB,
   // Пагинатор с живым источником, lib/search и панелью фильтров (факт 120.3).
   // Лимит добавлен на этапе 4: раньше этот маршрут не проверялся вовсе.
-  '/paginator': 126 * KiB,
+  '/paginator': 138.6 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {
