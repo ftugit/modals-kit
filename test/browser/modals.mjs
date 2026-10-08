@@ -72,6 +72,63 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
 
   try {
+    // ── 0. Триггеры no-JS и после гидратации ────────────────────────────────
+    {
+      console.log('— ModalTrigger: route до гидратации, client-only после —');
+      const page = await browser.newPage({
+        viewport: { width: 1280, height: 860 },
+        javaScriptEnabled: false,
+      });
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+
+      const card = page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first();
+      const cardState = await card.evaluate((el) => ({
+        tag: el.tagName,
+        href: el.getAttribute('href'),
+        disabled: el instanceof HTMLButtonElement && el.disabled,
+      }));
+      assert(cardState.tag === 'A' && cardState.href === '/cards/7', `no-JS route trigger: ${JSON.stringify(cardState)}`);
+      ok('без JS route-триггер остаётся доступной ссылкой /cards/7');
+
+      for (const label of ['Полноэкранная', 'Проверить наследование', 'Select внутри модалки', 'Несуществующая', 'Битый route']) {
+        const trigger = page.locator('[data-modal-trigger]', { hasText: label }).first();
+        const state = await trigger.evaluate((el) => ({
+          tag: el.tagName,
+          disabled: el instanceof HTMLButtonElement && el.disabled,
+          href: el.getAttribute('href'),
+        }));
+        assert(state.tag === 'BUTTON' && state.disabled && state.href === null, `no-JS ${label} доступен: ${JSON.stringify(state)}`);
+        ok(`без JS «${label}» неактивен`);
+      }
+      await page.close();
+
+      const hydrated = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+      await hydrated.goto(BASE, { waitUntil: 'networkidle' });
+      await hydrated.waitForFunction(() => {
+        const trigger = [...document.querySelectorAll('[data-modal-trigger]')].find((el) => el.textContent?.includes('Полноэкранная'));
+        return trigger && !trigger.hasAttribute('data-pending');
+      });
+      const fullpage = hydrated.locator('[data-modal-trigger]', { hasText: 'Полноэкранная' }).first();
+      const fullpageState = await fullpage.evaluate((el) => ({ tag: el.tagName, href: el.getAttribute('href') }));
+      assert(fullpageState.tag === 'A' && fullpageState.href?.includes('modal=fullpage'), `hydrated route-less trigger: ${JSON.stringify(fullpageState)}`);
+      ok('после гидратации обычная client-only модалка доступна');
+      for (const label of ['Несуществующая', 'Битый route']) {
+        const trigger = hydrated.locator('[data-modal-trigger]', { hasText: label }).first();
+        const state = await trigger.evaluate((el) => ({
+          tag: el.tagName,
+          disabled: el instanceof HTMLButtonElement && el.disabled,
+        }));
+        assert(state.tag === 'BUTTON' && state.disabled, `невалидный сценарий «${label}» включился: ${JSON.stringify(state)}`);
+        ok(`после гидратации сценарий «${label}» остаётся выключенным`);
+      }
+      await fullpage.click();
+      await hydrated.locator('[data-modal-layer][data-active]').waitFor({ state: 'visible', timeout: 5000 });
+      ok('гидратированный client-only триггер открывает модалку');
+      await hydrated.keyboard.press('Escape');
+      await waitForNoModal(hydrated);
+      await hydrated.close();
+    }
+
     // ── 1. Слои, классы, data-anchor, transform хвостов ─────────────────────
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });

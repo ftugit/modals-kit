@@ -120,6 +120,9 @@
 
   const visualState = $derived<State>(known ? status : 'error')
   const disabled = $derived(visualState !== 'idle')
+  // SSR/no-JS cannot open an in-place modal. Only a real route remains an
+  // actionable link until hydration; route-less triggers become anchors after
+  // the client is live. Unknown and broken-route scenarios stay disabled.
   const title = $derived(
     known
       ? titleProp
@@ -165,17 +168,34 @@
      состояния и span вокруг содержимого. Оформление даёт CVA из
      $lib/ui/modals (атомарные утилиты), а снаружи триггер виден по
      `data-modal-trigger`: маркер-класса у него больше нет. -->
-<a
-  {href}
-  class={modalTriggerVariants({ class: cls })}
-  data-modal-trigger=""
-  {title}
-  aria-haspopup="dialog"
-  aria-disabled={disabled || undefined}
-  data-state={visualState}
-  data-pending={pending || undefined}
-  onclick={handleClick}
->
-  <ButtonIndicator state={visualState} />
-  <span>{#if children}{@render children()}{/if}</span>
-</a>
+{#if !known || (pending && routeTarget === null)}
+  <button
+    type="button"
+    disabled
+    class={modalTriggerVariants({ class: `${cls ?? ''} disabled:cursor-not-allowed disabled:opacity-50` })}
+    data-modal-trigger=""
+    {title}
+    aria-haspopup="dialog"
+    aria-disabled="true"
+    data-state={visualState}
+    data-pending={pending || undefined}
+  >
+    <ButtonIndicator state={visualState} />
+    <span>{#if children}{@render children()}{/if}</span>
+  </button>
+{:else}
+  <a
+    {href}
+    class={modalTriggerVariants({ class: cls })}
+    data-modal-trigger=""
+    {title}
+    aria-haspopup="dialog"
+    aria-disabled={disabled || undefined}
+    data-state={visualState}
+    data-pending={pending || undefined}
+    onclick={handleClick}
+  >
+    <ButtonIndicator state={visualState} />
+    <span>{#if children}{@render children()}{/if}</span>
+  </a>
+{/if}
