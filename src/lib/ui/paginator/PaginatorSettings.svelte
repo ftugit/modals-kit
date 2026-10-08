@@ -142,7 +142,7 @@
         reason: `источник не поддерживает ${missing.map((gate) => GATE_LABEL[gate]).join(' и ')}`,
       }
     }
-    if ((f.jsOnly ?? false) && js) return { disabled: true, reason: null }
+    if ((f.jsOnly ?? false) && js) return { disabled: true, reason: 'доступно после загрузки JavaScript' }
     if (f.enabledWhen && !f.enabledWhen(currentValues)) return { disabled: true, reason: null }
     return { disabled: false, reason: null }
   }

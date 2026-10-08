@@ -21,7 +21,10 @@
 </script>
 
 <label class="flex items-center gap-2 self-end pb-1.5 text-xs" title={hint}>
-  {#if name && !disabled}
+  {#if name && disabled}
+    <!-- Сохранить URL-параметр, пока управление отключено возможностями/JS. -->
+    <input type="hidden" {name} value={checked ? 'true' : 'false'} />
+  {:else if name}
     <input type="hidden" {name} value="false" />
   {/if}
   <Switch

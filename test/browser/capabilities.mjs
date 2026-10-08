@@ -120,6 +120,32 @@ async function run() {
   await ensureServer();
   const browser = await chromium.launch({ headless: true });
   try {
+    // lib/search is browser-only: no-JS must not present its switch as usable,
+    // while native source search remains available and the stored setting survives GET.
+    console.log('— lib/search: выключен до гидратации без потери параметра —');
+    const noJs = await browser.newPage({
+      viewport: { width: 1280, height: 1200 },
+      javaScriptEnabled: false,
+    });
+    await noJs.goto(`${U}?page.src=products&page.ls=true&page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
+    assert(await panel(noJs, 'ls').isDisabled(), 'lib/search должен быть недоступен до гидратации');
+    assert(!(await panel(noJs, 'srch').isDisabled()), 'родной поиск источника остаётся доступным без JS');
+    assert(
+      (await noJs.locator('[data-testid="demo-panel"] [data-field-hint]').allInnerTexts())
+        .some((text) => /после загрузки JavaScript/.test(text)),
+      'отключённое поле lib/search не объясняет, почему оно недоступно',
+    );
+    assert(
+      (await noJs.locator('[data-testid="demo-panel"] input[type="hidden"][name="page.ls"]').first().inputValue()) === 'true',
+      'disabled-поле должно сохранять уже выбранный URL-параметр',
+    );
+    await Promise.all([
+      noJs.waitForNavigation({ waitUntil: 'networkidle' }),
+      noJs.locator('[data-native-fallback] button[type="submit"]').first().click(),
+    ]);
+    assert(new URL(noJs.url()).searchParams.get('page.ls') === 'true', 'GET-fallback потерял page.ls=true');
+    await noJs.close();
+
     const page = await browser.newPage({ viewport: { width: 1280, height: 1200 } });
 
     // ── 1. Товары: оба слоя поиска — возможности источника ─────────────────

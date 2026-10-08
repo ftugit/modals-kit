@@ -89,7 +89,9 @@
       key: 'ls',
       label: 'lib/search поверх источника (fuzzy)',
       type: 'toggle',
-      // Опция осмысленна там, где lib/search ПОДКЛЮЧЁН к источнику (capabilities.fuzzy).
+      jsOnly: true,
+      // Без JavaScript этот декоратор не запускается: не показываем тумблер как
+      // работающую опцию до гидратации. После неё проверяется capability источника.
       requires: 'libSearch',
     },
     { type: 'divider', label: 'Раскладка и режим' },
