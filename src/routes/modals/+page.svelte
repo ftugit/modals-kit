@@ -160,7 +160,7 @@
           value={cfg.defaultMobile ?? 'off'}
           onChange={(v) => set({ defaultMobile: v as MobileAnchor | 'off' })}
           options={[
-            { value: 'off', label: 'не прижимать', hint: 'запись со своим mobile прижмётся всё равно' },
+            { value: 'off', label: 'выкл', hint: 'не прижимать автоматически; запись со своим mobile прижмётся всё равно' },
             { value: 'bottom', label: 'низ' },
             { value: 'top', label: 'верх' },
             { value: 'left', label: 'лево' },

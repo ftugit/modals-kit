@@ -72,6 +72,29 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
 
   try {
+    // ── 0. Компактный Segmented на узком экране ──────────────────────────────
+    {
+      console.log('— Segmented: оригинальный стиль и ширина первого пункта —');
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+      const group = page.locator('[role="group"]').first();
+      const state = await group.evaluate((el) => {
+        const buttons = [...el.querySelectorAll('button')];
+        const first = buttons[0];
+        const selected = el.querySelector('button[aria-pressed="true"]');
+        return {
+          firstLabel: first.textContent.trim(),
+          firstFits: first.scrollWidth <= first.clientWidth,
+          selectedWeight: selected && getComputedStyle(selected).fontWeight,
+        };
+      });
+      assert(state.firstLabel === 'выкл', `не восстановлена исходная подпись первого пункта: ${state.firstLabel}`);
+      assert(state.firstFits, 'подпись первого пункта выходит за ширину кнопки');
+      assert(state.selectedWeight === '500', `выбранный пункт не соответствует оригинальному font-medium: ${state.selectedWeight}`);
+      ok('первый пункт помещается, выбранный пункт использует оригинальный font-medium');
+      await page.close();
+    }
+
     // ── 0. Триггеры no-JS и после гидратации ────────────────────────────────
     {
       console.log('— ModalTrigger: route до гидратации, client-only после —');

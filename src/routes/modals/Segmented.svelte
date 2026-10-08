@@ -5,7 +5,7 @@
     'rounded-md px-2 py-2 text-xs font-medium whitespace-nowrap transition-colors',
     {
       active: {
-        true: 'bg-background text-foreground shadow-sm font-semibold',
+        true: 'bg-background text-foreground shadow-sm',
         false: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
       },
     },
@@ -18,9 +18,9 @@
 </script>
 
 <script lang="ts">
-  // Порт Segmented из src/features/modals/ModalsDemo.tsx оригинала.
-  // Дженерик-типы Solid здесь не нужны: значение всегда строка, а тип
-  // контролирует страница через union у $state.
+  // Порт самодельного Segmented из src/features/modals/ModalsDemo.tsx оригинала;
+  // там нет shadcn Tabs для этого контрола. Дженерик-типы Solid здесь не нужны:
+  // значение всегда строка, а тип контролирует страница через union у $state.
   let {
     options,
     value,
@@ -42,6 +42,7 @@
   {#each options as o (o.value)}
     <button
       type="button"
+      aria-pressed={o.value === value}
       onclick={() => onChange(o.value)}
       title={o.hint}
       class={segmentedItemVariants({ active: o.value === value })}
