@@ -80,7 +80,7 @@ try {
   await run('R-01 поворот не оставляет осиротевших записей цепочки', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await gotoBase(page)
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').click({ force: true })
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
 
     await page.setViewportSize({ width: 1280, height: 860 })
@@ -95,8 +95,8 @@ try {
 
     // накопление на серии поворотов
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.locator('select').first().scrollIntoViewIfNeeded()
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').scrollIntoViewIfNeeded()
+    await page.locator('select[data-select-native]').click({ force: true })
     await page.waitForSelector('[data-host-floating]')
     for (let i = 0; i < 3; i += 1) {
       await page.setViewportSize({ width: 1280, height: 860 })
@@ -181,7 +181,7 @@ try {
   await run('R-03 Back → Forward не создаёт запись без UI', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await gotoBase(page)
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     await page.waitForSelector('[data-host-floating]')
     await page.goBack()
     await page.waitForTimeout(400)
@@ -202,7 +202,7 @@ try {
   await run('R-04 лист получает фон, scroll lock и aria-изоляцию', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await gotoBase(page)
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     await page.waitForTimeout(350)
 
@@ -267,7 +267,7 @@ try {
     for (const [width, height, label] of [[390, 844, 'sheet'], [900, 800, 'popup 900']]) {
       const page = await browser.newPage({ viewport: { width, height } })
       await gotoBase(page)
-      await page.locator('select').first().click({ force: true })
+      await page.locator('select[data-select-native]').first().click({ force: true })
       await page.waitForSelector('[data-host-floating]')
       await page.waitForTimeout(250)
       const geometry = await page.evaluate(() => {
@@ -300,7 +300,7 @@ try {
     // На странице
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await gotoBase(page)
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     await page.waitForSelector('[data-host-floating]')
     await page.waitForTimeout(250)
     assert((await focusKind(page)) === 'search', 'на странице поиск не получил фокус')
@@ -331,7 +331,7 @@ try {
     const closeAll = page.locator('button', { hasText: 'Закрыть все' }).first()
     assert(await closeAll.isDisabled(), 'кнопка активна при пустой стопке')
 
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     await page.waitForTimeout(250)
 
@@ -367,7 +367,7 @@ try {
   await run('R-12 закрытие листа возвращает фокус триггеру', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await gotoBase(page)
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
     await page.waitForTimeout(250)
     await page.keyboard.press('Escape')
@@ -484,8 +484,17 @@ try {
     await page.waitForSelector('[data-select-root][data-enhanced]')
     await page.waitForTimeout(400)
 
+    // Этап 8: панель настроек — select-поля механизма; подписи Segmented
+    // ушли, но таблица «метка → поле+значение» сохраняет текст сценария.
     const setDefault = async (label) => {
-      await page.locator('button', { hasText: label }).first().click()
+      const [sel, value] = {
+        'выкл': ['#default_mobile', 'off'],
+        'низ': ['#default_mobile', 'bottom'],
+        'право': ['#default_mobile', 'right'],
+        'выпадашка': ['#floating_mobile', 'off'],
+        'как у модалок': ['#floating_mobile', 'on'],
+      }[label]
+      await page.selectOption(sel, value)
       await page.waitForTimeout(200)
     }
     const openModal = async (trigger) => {
@@ -517,7 +526,7 @@ try {
     // `floatingMobile` относится только к обычным popup/menu. Select —
     // часть потока хоста и поэтому всё равно становится листом.
     await setDefault('выпадашка')
-    await page.locator('select').first().click({ force: true })
+    await page.locator('select[data-select-native]').first().click({ force: true })
     assert((await floating()).startsWith('sheet/fullscreen'),
       'Select выпал из потока при floatingMobile=false')
     await closeAll()
@@ -546,8 +555,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await gotoBase(page)
     // Берём ровно control закрытия, а не одноимённые «выкл» у открытия/стопки.
-    const closeControl = page.getByText('Анимация закрытия', { exact: true }).locator('..')
-    await closeControl.getByRole('button', { name: 'выкл' }).click()
+    await page.selectOption('#close_animation', 'none') // панель — select механизма (этап 8)
     await page.locator('text=Открыть карточку').first().click()
     await page.waitForSelector('[data-modal-stage]')
 
@@ -566,8 +574,8 @@ try {
     const page = await browser.newPage({ viewport: { width: 393, height: 851 } })
     await gotoBase(page)
     // `floatingMobile=false` вправе оставить menu popup, но не Select.
-    await page.getByRole('button', { name: 'право' }).first().click()
-    await page.getByRole('button', { name: 'выпадашка' }).first().click()
+    await page.selectOption('#default_mobile', 'right') // панель — select'ы механизма
+    await page.selectOption('#floating_mobile', 'off')
     await page.locator('text=Select внутри модалки').first().click()
     await page.waitForSelector('[data-modal-stage][data-anchor="right"]')
 
@@ -601,7 +609,7 @@ try {
     const anchor = () => page.locator('[data-modal-stage]').getAttribute('data-anchor')
     const snapshot = () => page.evaluate(() => history.state?.['sveltekit:states']?.modals ?? null)
 
-    await page.getByRole('button', { name: 'право' }).first().click()
+    await page.selectOption('#default_mobile', 'right') // панель — select механизма
     await page.getByText('Проверить наследование', { exact: true }).click()
     assert(await anchor() === 'right', 'root opener без параметров не взял defaultMobile хоста')
 

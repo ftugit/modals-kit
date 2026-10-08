@@ -3,6 +3,7 @@
   // Состав 1:1: заголовок из загрузчика, индекс/id/глубина, цепочка,
   // «следующая» карточка (случайные размер и цвет, стабильные пока
   // запись в цепочке), обмен данными между слоями, футер с триггерами.
+  import { Input } from '$lib/ui/primitives'
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '$lib/modals/svelte'
   import { ModalTrigger } from '$lib/modals/svelte'
   import { entryLabel } from '$lib/modals'
@@ -148,7 +149,7 @@
       <div class="mb-1 text-xs font-medium text-muted-foreground">
         Обмен данными (§9): напиши — увидят соседние модалки
       </div>
-      <input
+      <Input
         class="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm"
         value={mine.value ?? ''}
         oninput={(e) => (mine.value = e.currentTarget.value)}

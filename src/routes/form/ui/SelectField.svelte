@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { inputVariants } from '$lib/ui/primitives'
+  import { NativeSelect } from '$lib/ui/primitives'
   import type { FieldView } from '$lib/form/svelte'
   import FieldShell from './FieldShell.svelte'
 
@@ -7,14 +7,13 @@
 </script>
 
 <FieldShell {f}>
-  <select
+  <NativeSelect
     {...f.attrs}
-    class={inputVariants({ class: 'pr-8' })}
     onblur={() => f.setTouched()}
     onchange={(e) => f.onInput(e.currentTarget.value)}
   >
     {#each f.options ?? [] as o (o.value)}
       <option value={o.value} selected={String(f.value ?? '') === o.value}>{o.label}</option>
     {/each}
-  </select>
+  </NativeSelect>
 </FieldShell>

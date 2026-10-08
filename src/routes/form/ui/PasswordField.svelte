@@ -3,7 +3,7 @@
   // иначе шкала и проверка разошлись бы, и пользователь видел бы «надёжный»
   // там, где форма не пропускает.
   import { strengthOf, type StrengthLevel } from '$lib/form'
-  import { inputVariants } from '$lib/ui/primitives'
+  import { Input } from '$lib/ui/primitives'
   import type { FieldView } from '$lib/form/svelte'
   import FieldShell from './FieldShell.svelte'
 
@@ -23,9 +23,8 @@
 </script>
 
 <FieldShell {f}>
-  <input
+  <Input
     {...f.attrs}
-    class={inputVariants()}
     autocomplete="new-password"
     onblur={() => f.setTouched()}
     oninput={(e) => f.onInput(e.currentTarget.value)}

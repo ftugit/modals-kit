@@ -1,6 +1,7 @@
 <script lang="ts">
   // Компонент для СВОЕГО типа значения. Библиотека о нём не знает:
   // тип зарегистрирован приложением, компонент выбран через resolve.
+  import { Input } from '$lib/ui/primitives'
   import type { FieldView } from '$lib/form/svelte'
   import FieldShell from './FieldShell.svelte'
 
@@ -10,7 +11,7 @@
 
 <FieldShell {f}>
   <div class="flex items-center gap-3">
-    <input
+    <Input
       {...f.attrs}
       class="flex-1 accent-primary"
       onchange={(e) => f.onInput(Number(e.currentTarget.value))}

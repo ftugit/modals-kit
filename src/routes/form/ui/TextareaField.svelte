@@ -1,6 +1,7 @@
 <script lang="ts">
   // Те же соображения, что и у TextField: классы берём, управляемое значение — нет.
   import type { FieldView } from '$lib/form/svelte'
+  import { Textarea } from '$lib/ui/primitives'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()
@@ -13,11 +14,11 @@
 </script>
 
 <FieldShell {f}>
-  <textarea
+  <Textarea
     {...f.attrs}
-    class={cls}
-    rows="3"
+    rows={3}
+    value={String(f.value ?? '')}
     onblur={() => f.setTouched()}
     oninput={(e) => f.onInput(e.currentTarget.value)}
-  >{String(f.value ?? '')}</textarea>
+  />
 </FieldShell>

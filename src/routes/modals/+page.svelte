@@ -185,6 +185,29 @@
     }
   })
 
+  // Обратная сверка, как `hydrate` у пагинаторной панели: эффективный
+  // hostConfig (дефолты ядра, изменения из other-источников) становится
+  // значением зеркала, если они разошлись. Без цикла: обе стороны пишут
+  // только при различии. Снимок на инициализации для SSR остаётся фолбэком.
+  const cfgToMirror = (c: typeof lastCfg): Record<string, string> => ({
+    default_mobile: String((c as { defaultMobile?: string }).defaultMobile ?? 'off'),
+    floating_mobile: (c as { floatingMobile?: boolean }).floatingMobile === false ? 'off' : 'on',
+    open_animation: String((c as { openAnimation?: string }).openAnimation ?? 'scale'),
+    close_animation: String((c as { closeAnimation?: string }).closeAnimation ?? 'scale'),
+    stack_animation: String((c as { stackAnimation?: string }).stackAnimation ?? 'cards'),
+    tail_direction: String((c as { tailDirection?: string }).tailDirection ?? 'bottom'),
+    max_height: String((c as { maxHeight?: string }).maxHeight ?? '80vh'),
+    clear_on_close: String((c as { clearOnClose?: boolean }).clearOnClose ?? false),
+    tail_count: String((c as { tailCount?: number }).tailCount ?? 3),
+  })
+  $effect(() => {
+    const c = m.view.hostConfig as typeof lastCfg
+    const want = cfgToMirror(c)
+    for (const name of Object.keys(want)) {
+      if (sv(name) !== want[name]) settings.field(name)?.onInput(want[name])
+    }
+  })
+
   const SETTINGS = ['default_mobile', 'floating_mobile', 'open_animation', 'close_animation',
                     'stack_animation', 'tail_direction', 'max_height', 'clear_on_close'] as const
 
