@@ -260,9 +260,11 @@ async function openFilters(page) {
 async function chooseFilterOption(page, select, value, label) {
   const name = await select.getAttribute('name');
   await select.scrollIntoViewIfNeeded();
-  await select.click({ force: true });
   const listbox = page.locator('[data-select-listbox]').last();
-  await listbox.waitFor({ state: 'visible' });
+  if (!(await listbox.isVisible().catch(() => false))) {
+    await select.click({ force: true });
+    await listbox.waitFor({ state: 'visible' });
+  }
   const options = listbox.locator('[role="option"]');
   let match = -1;
   for (let i = 0; i < (await options.count()); i += 1) {
@@ -276,7 +278,9 @@ async function chooseFilterOption(page, select, value, label) {
   await options.nth(match).click();
   await page.waitForFunction(([fieldName, expected]) => {
     const field = [...document.querySelectorAll('select')].find((item) => item.name === fieldName);
-    return field?.value === expected;
+    return field?.multiple
+      ? [...field.selectedOptions].some((option) => option.value === expected)
+      : field?.value === expected;
   }, [name, value]);
 }
 
@@ -545,7 +549,8 @@ async function checkFiltersNoJs(browser) {
     await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
     const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
     const ssrPaths = await fields.evaluateAll((els) => els.map((el) => el.dataset.filterPath));
-    const expectedPaths = expectedFilterPaths((await api('/api/shikimori/filters')).body);
+    const schema = (await api('/api/shikimori/filters')).body;
+    const expectedPaths = expectedFilterPaths(schema);
     if (ssrPaths.join(',') !== expectedPaths.join(','))
       throw new Error(`без JS контролы не совпали со схемой:\n ${ssrPaths}\n ${expectedPaths}`);
     // Значения приходят из адреса: применим фильтр и вернёмся на адрес со фильтром.
@@ -619,6 +624,89 @@ async function checkFiltersNoJs(browser) {
     if (page.url().includes('page.filters.kind'))
       throw new Error(`ссылка чипа не сняла фильтр: ${page.url()}`);
     console.log('  ok  без JS чип снимается обычной ссылкой (адрес чист от этого фильтра)');
+
+    // Native multiple-select submits one GET parameter per selected option.
+    // The URL adapter must fold those repeats into the source's canonical CSV list.
+    console.log('— Multiselect без JS: оба жанра доходят до источника —');
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'domcontentloaded' });
+    await openFilters(page);
+    const genreSelect = page.locator('select[data-select-native][name="page.filters.genres.and"]');
+    await genreSelect.selectOption(['22', '27']);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    const directUrl = new URL(page.url());
+    const directValues = directUrl.searchParams.getAll('page.filters.genres.and').sort();
+    if (directValues.join(',') !== '22,27')
+      throw new Error(`native GET не отправил оба жанра: ${JSON.stringify(directValues)}`);
+    const directSelected = await page
+      .locator('select[data-select-native][name="page.filters.genres.and"]')
+      .evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort());
+    if (directSelected.join(',') !== '22,27')
+      throw new Error(`после SSR один из жанров пропал: ${JSON.stringify(directSelected)}`);
+    const directChips = page.locator('[data-testid="active-filter"][data-filter-path="filters.genres.and"]');
+    if ((await directChips.count()) !== 2)
+      throw new Error(`ожидали два genre-чипа после no-JS GET, получили ${await directChips.count()}`);
+    const expectedMulti = await api('/api/shikimori/animes?limit=5&filters.genres.and=22,27');
+    const directIds = await page
+      .locator('[data-paginator-host="demo-url"] a[data-testid^="anime-"]')
+      .evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+    if (!expectedMulti.body.items.length || directIds.join(',') !== expectedMulti.body.items.map((item) => String(item.id)).join(','))
+      throw new Error(`no-JS выдача не применила оба жанра: ${directIds} vs ${expectedMulti.body.items.map((item) => item.id)}`);
+    console.log('  ok  прямой no-JS GET: два повторяющихся параметра стали CSV, два чипа и точная выдача API');
+
+    // A JS-applied CSV URL must round-trip through the no-JS native form too.
+    const jsContext = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
+    try {
+      const jsPage = await jsContext.newPage();
+      await jsPage.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+      await openFilters(jsPage);
+      const jsGenres = jsPage.locator('select[data-select-native][name="page.filters.genres.and"]');
+      const genreOptions = schema.fields.find((field) => field.key === 'genres').options;
+      const genreLabel = (value) => genreOptions.find((option) => option.value === value)?.label ?? value;
+      await chooseFilterOption(jsPage, jsGenres, '22', genreLabel('22'));
+      await chooseFilterOption(jsPage, jsGenres, '27', genreLabel('27'));
+      const selectedByJs = await jsGenres.evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort());
+      if (selectedByJs.join(',') !== '22,27')
+        throw new Error(`JS multiselect не удержал два жанра: ${JSON.stringify(selectedByJs)}`);
+      await jsPage.locator('[data-testid="catalog-filter-submit"]').click();
+      await waitFor(
+        async () => new URL(jsPage.url()).searchParams.get('page.filters.genres.and') !== null,
+        { what: 'JS multiselect in URL' },
+      );
+      const jsUrl = new URL(jsPage.url());
+      const jsCsv = jsUrl.searchParams.getAll('page.filters.genres.and');
+      if (jsCsv.length !== 1 || jsCsv[0].split(',').sort().join(',') !== '22,27')
+        throw new Error(`JS путь должен записать один канонический CSV, получили ${JSON.stringify(jsCsv)}`);
+      await jsPage.close();
+
+      await page.goto(jsUrl.href, { waitUntil: 'domcontentloaded' });
+      const restored = await page
+        .locator('select[data-select-native][name="page.filters.genres.and"]')
+        .evaluate((el) => [...el.selectedOptions].map((option) => option.value).sort());
+      if (restored.join(',') !== '22,27')
+        throw new Error(`no-JS навигация потеряла JS-настройку: ${JSON.stringify(restored)}`);
+      await openFilters(page);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.locator('[data-testid="catalog-filter-submit"]').click(),
+      ]);
+      const roundTrip = new URL(page.url()).searchParams.getAll('page.filters.genres.and').sort();
+      if (roundTrip.join(',') !== '22,27')
+        throw new Error(`JS→no-JS→GET потерял выбранный жанр: ${JSON.stringify(roundTrip)}`);
+      const roundTripChips = page.locator('[data-testid="active-filter"][data-filter-path="filters.genres.and"]');
+      if ((await roundTripChips.count()) !== 2)
+        throw new Error(`JS→no-JS после GET ожидали два жанра, чипов ${await roundTripChips.count()}`);
+      const roundTripIds = await page
+        .locator('[data-paginator-host="demo-url"] a[data-testid^="anime-"]')
+        .evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+      if (roundTripIds.join(',') !== expectedMulti.body.items.map((item) => String(item.id)).join(','))
+        throw new Error(`JS→no-JS выдача потеряла часть списка: ${roundTripIds}`);
+      console.log('  ok  JS → no-JS GET round-trip: CSV восстановлен и оба жанра применены');
+    } finally {
+      await jsContext.close();
+    }
     await context.close();
   } finally {
     if (!context.closed) await context.close().catch(() => {});

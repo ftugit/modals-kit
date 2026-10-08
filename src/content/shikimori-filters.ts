@@ -19,7 +19,7 @@ import {
   type CatalogFilterField,
   type CatalogFilterSchema,
 } from '$lib/filters'
-import type { ExtraSearchSpec, ExtraValue } from '$lib/paginate'
+import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '$lib/paginate'
 
 /**
  * Поля схемы без значений: `options`/`min`/`max` наполняет серверная зона.
@@ -77,7 +77,7 @@ function boundValue(raw: ExtraValue): number | undefined {
  * Пустые элементы и переросшие предел (120, как у валидатора схемы)
  * отбрасываются; пустой список — не значение.
  */
-function listValue(raw: ExtraValue): string | undefined {
+const listValue = commaListSearch((raw: ExtraValue): string | undefined => {
   const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw : null
   if (text === null) return undefined
   const items = text
@@ -86,7 +86,7 @@ function listValue(raw: ExtraValue): string | undefined {
     .filter((item) => item !== '')
   if (!items.length || items.some((item) => item.length > 120)) return undefined
   return items.join(',')
-}
+})
 
 /**
  * Ключи фильтров для адресного слоя (`extraSearch` пагинатора): что вообще

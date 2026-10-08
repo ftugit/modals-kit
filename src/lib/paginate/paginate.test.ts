@@ -34,6 +34,7 @@ import {
   prefetchPage,
   canonicalPaginatorSearch,
   canonicalSearchRecord,
+  commaListSearch,
   readPaginatorSearch,
   resetPaginator,
   resetRegistry,
@@ -360,6 +361,10 @@ describe('URL adapter & extra search', () => {
     expect(readPaginatorSearch(new URLSearchParams('page.q=9'), { extra: textSpec }).extra.q).toBe('9')
     expect(readPaginatorSearch(new URLSearchParams('page.n=9'), { extra: numSpec }).extra.n).toBe(9)
     expect(readPaginatorSearch(new URLSearchParams('page.tags=a, b,,c'), { extra: listSpec }).extra.tags).toBe('a,b,c')
+    const repeatedList = { tags: commaListSearch(extraField('list')) }
+    expect(readPaginatorSearch(new URLSearchParams('page.tags=a&page.tags=b'), { extra: repeatedList }).extra.tags).toBe('a,b')
+    const repeatedToggle = { enabled: extraField('boolean') }
+    expect(readPaginatorSearch(new URLSearchParams('page.enabled=false&page.enabled=true'), { extra: repeatedToggle }).extra.enabled).toBe(true)
     expect(readPaginatorSearch(new URLSearchParams('page.n=abc'), { extra: numSpec }).extra.n).toBeUndefined()
   })
 

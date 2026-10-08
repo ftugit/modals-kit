@@ -84,7 +84,7 @@ export function coerceExtraValue(raw: ExtraValue, type: ExtraFieldType): ExtraVa
 export function extraField(
   type: ExtraFieldType,
   validate?: (value: ExtraValue) => boolean,
-): (raw: ExtraValue) => ExtraValue | undefined {
+): ExtraSearchValidator {
   return (raw) => {
     const value = coerceExtraValue(raw, type)
     if (value === undefined) return undefined
@@ -92,12 +92,27 @@ export function extraField(
   }
 }
 
+/** Отметка для повторяющихся GET-значений нативного `<select multiple>`. */
+export type ExtraSearchValidator = ((raw: ExtraValue) => ExtraValue | undefined) & {
+  readonly repeatedValues?: 'comma'
+}
+
+/**
+ * Свернуть повторяющиеся параметры нативной формы в CSV-скаляр. В хранилище
+ * список остаётся `ExtraValue`-скаляром; объединение выполняет URL-адаптер.
+ */
+export function commaListSearch(
+  validate: (raw: ExtraValue) => ExtraValue | undefined,
+): ExtraSearchValidator {
+  return Object.assign(validate, { repeatedValues: 'comma' as const })
+}
+
 /**
  * Спецификация ключей потребителя в URL: имя → валидатор (raw → значение | undefined).
  * undefined = ключ отсутствует/мусор → в extra не попадает (дефолт роута остаётся).
  * Рекомендуемый строитель — `extraField` с объявленным типом (§ 3.1 плана).
  */
-export type ExtraSearchSpec = Record<string, (raw: ExtraValue) => ExtraValue | undefined>
+export type ExtraSearchSpec = Record<string, ExtraSearchValidator>
 
 /**
  * Dev-режим адресного слоя: нет process (браузер) — считаем dev; предупреждения
@@ -152,11 +167,17 @@ export function readPaginatorSearch(
   const extra: Extra = {}
   const spec = opts.extra ?? {}
   for (const [key, validate] of Object.entries(spec)) {
-    // Последнее значение побеждает: форма без JS шлёт hidden=false + checkbox=true.
+    // Обычные поля используют последнее значение (hidden=false + checkbox=true);
+    // явно объявленные списки собирают повторяющиеся значения native GET.
     const all = params.getAll(`${base}.${key}`)
-    const raw = all.length ? all[all.length - 1] : null
+    const validator = validate
+    const raw = all.length
+      ? validator.repeatedValues === 'comma'
+        ? all.join(',')
+        : all[all.length - 1]
+      : null
     if (raw == null) continue
-    const v = validate(decodeExtraValue(raw))
+    const v = validator(decodeExtraValue(raw))
     if (v !== undefined) extra[key] = v
     else warnExtraDropped(base, key, raw, 'значение не прошло валидатор')
   }
