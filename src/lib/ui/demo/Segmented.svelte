@@ -1,37 +1,35 @@
 <script lang="ts">
-  const formActive = 'rounded-md border border-primary bg-background px-2 py-2 text-xs font-semibold whitespace-nowrap text-foreground shadow-sm ring-1 ring-primary/30 transition-colors'
-  const formInactive = 'rounded-md border border-transparent px-2 py-2 text-xs font-medium whitespace-nowrap text-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground'
-  const modalActive = 'rounded-md bg-background px-2 py-2 text-xs font-medium whitespace-nowrap text-foreground shadow-sm transition-colors'
-  const modalInactive = 'rounded-md px-2 py-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground'
+  const base = 'rounded-md px-2 py-2 text-xs whitespace-nowrap transition-colors'
+  const active = 'bg-background text-foreground shadow-sm'
+  const inactive = 'hover:bg-accent hover:text-accent-foreground'
+  const formActive = 'border border-primary ring-1 ring-primary/30 font-semibold'
+  const formInactive = 'border border-transparent text-foreground/70 font-medium'
+  const modalActive = 'font-medium'
+  const modalInactive = 'text-muted-foreground font-medium'
 
   let {
     options,
     value,
     onChange,
-    ariaLabel,
     variant = 'modals',
   }: {
     options: { value: string; label: string; hint?: string }[]
     value: string
     onChange: (value: string) => void
-    ariaLabel?: string
     variant?: 'form' | 'modals'
   } = $props()
 </script>
 
-<div
-  role="group"
-  aria-label={ariaLabel}
-  class="grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-1 rounded-lg bg-muted p-1"
->
+<div role="group" class="grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-1 rounded-lg bg-muted p-1">
   {#each options as option (option.value)}
-    {@const active = option.value === value}
     <button
       type="button"
       onclick={() => onChange(option.value)}
       title={option.hint}
-      aria-pressed={active}
-      class={variant === 'form' ? (active ? formActive : formInactive) : (active ? modalActive : modalInactive)}
+      aria-pressed={option.value === value}
+      class={`${base} ${option.value === value ? active : inactive} ${variant === 'form'
+        ? option.value === value ? formActive : formInactive
+        : option.value === value ? modalActive : modalInactive}`}
     >
       {option.label}
     </button>

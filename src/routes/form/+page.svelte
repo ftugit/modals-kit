@@ -1,7 +1,8 @@
 <script lang="ts">
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
-  import { onMount, untrack } from 'svelte'
+  import { untrack } from 'svelte'
+  import { browser } from '$app/environment'
   import { bind, type LiveMode } from '$lib/form/svelte'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
   import {
@@ -18,9 +19,6 @@
   import Field from './ui/Field.svelte'
 
   let { form: actionResult }: { form?: { result?: Result } | null } = $props()
-
-  let hydrated = $state(false)
-  onMount(() => { hydrated = true })
 
   /** Снимок результата действия на момент связывания — читается намеренно один раз. */
   const initialResult = untrack(() => actionResult?.result ?? null)
@@ -157,6 +155,107 @@
     if (!compiled.ok) { console.error(compiled.defects); return }
     form.apply([editor.add(compiled.field)])
   }
+
+  type SegmentedSetting = {
+    label: string
+    value: string
+    onChange: (value: string) => void
+    options: { value: string; label: string; hint?: string }[]
+  }
+  const formSettings = $derived.by((): SegmentedSetting[] => [
+    {
+      label: 'Обработчик ошибок',
+      value: mode,
+      onChange: (x) => {
+        mode = x as Mode
+        if (mode === 'one-block') opts.invalidFrom = 'shown'
+        form.redisplay()
+      },
+      options: [
+        { value: 'as-is', label: 'как есть' },
+        { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
+        { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
+        { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
+      ],
+    },
+    {
+      label: 'Откуда берётся подсветка',
+      value: opts.invalidFrom,
+      onChange: (x) => (opts.invalidFrom = x as InvalidFrom),
+      options: [
+        { value: 'fact', label: 'по факту', hint: 'ошибка была — поле подсвечено' },
+        { value: 'shown', label: 'по показу', hint: 'забрали текст — погасло' },
+      ],
+    },
+    {
+      label: 'Перехват отправки',
+      value: opts.intercept ? 'js' : 'native',
+      onChange: (x) => (opts.intercept = x === 'js'),
+      options: [
+        { value: 'js', label: 'перехватывать', hint: 'тот же FormData через fetch' },
+        { value: 'native', label: 'нативно', hint: 'обычный POST, действие SvelteKit' },
+      ],
+    },
+    {
+      label: 'Режим живой проверки',
+      value: opts.live,
+      onChange: (x) => (opts.live = x as LiveMode),
+      options: [
+        { value: 'after-touched', label: 'после касания' },
+        { value: 'on-blur', label: 'при уходе' },
+        { value: 'on-input', label: 'при вводе' },
+        { value: 'on-submit', label: 'при отправке' },
+      ],
+    },
+    {
+      label: 'Сколько ошибок на поле',
+      value: cardinality,
+      onChange: (x) => (cardinality = x as 'first' | 'all'),
+      options: [
+        { value: 'first', label: 'первая' },
+        { value: 'all', label: 'все', hint: 'свойство описания: состояние начнётся заново' },
+      ],
+    },
+    {
+      label: 'Политика разметки адаптера',
+      value: ui,
+      onChange: (x) => (ui = x as 'default' | 'custom'),
+      options: [
+        { value: 'default', label: 'умолчания', hint: 'id вида signup-email' },
+        { value: 'custom', label: 'свои', hint: 'id вида fld_signup__email и проверка на вводе' },
+      ],
+    },
+    {
+      label: 'Параллельные отправки',
+      value: opts.parallel,
+      onChange: (x) => (opts.parallel = x as ParallelPolicy),
+      options: [
+        { value: 'block', label: 'блокировать' },
+        { value: 'replace', label: 'заменять' },
+        { value: 'queue', label: 'очередь' },
+      ],
+    },
+  ])
+  const sandboxSettings = $derived.by((): SegmentedSetting[] => [
+    {
+      label: 'Тип значения rating',
+      value: sandbox.withType ? 'on' : 'off',
+      onChange: (x) => (sandbox.withType = x === 'on'),
+      options: [
+        { value: 'off', label: 'не зарегистрирован' },
+        { value: 'on', label: 'зарегистрирован' },
+      ],
+    },
+    {
+      label: 'Правило «шестизначный код»',
+      value: sandbox.described ? 'on' : 'off',
+      onChange: (x) => (sandbox.described = x === 'on'),
+      options: [
+        { value: 'off', label: 'без описания' },
+        { value: 'on', label: 'с описанием' },
+      ],
+    },
+  ])
 </script>
 
 <div class="py-10 sm:py-14">
@@ -177,102 +276,13 @@
 
     <!-- ── настройки ─────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <fieldset disabled={!hydrated} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
-        <Control label="Обработчик ошибок">
-          <Segmented
-            variant="form"
-            value={mode}
-            onChange={(x) => {
-              mode = x as Mode
-              // В режиме общего блока поля не должны продолжать выглядеть так,
-              // будто сообщение осталось возле них.
-              if (mode === 'one-block') opts.invalidFrom = 'shown'
-              form.redisplay()
-            }}
-            options={[
-              { value: 'as-is', label: 'как есть' },
-              { value: 'one-block', label: 'всё в общий', hint: 'сразу переносит текущие ошибки наверх' },
-              { value: 'drop-code', label: 'без minLength', hint: 'текста нет, поле всё равно подсвечено' },
-              { value: 'to-channel', label: 'почту — в канал', hint: 'ушла в sms и не вернулась' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Откуда берётся подсветка">
-          <Segmented
-            variant="form"
-            value={opts.invalidFrom}
-            onChange={(x) => (opts.invalidFrom = x as InvalidFrom)}
-            options={[
-              { value: 'fact', label: 'по факту', hint: 'ошибка была — поле подсвечено' },
-              { value: 'shown', label: 'по показу', hint: 'забрали текст — погасло' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Перехват отправки">
-          <Segmented
-            variant="form"
-            value={opts.intercept ? 'js' : 'native'}
-            onChange={(x) => (opts.intercept = x === 'js')}
-            options={[
-              { value: 'js', label: 'перехватывать', hint: 'тот же FormData через fetch' },
-              { value: 'native', label: 'нативно', hint: 'обычный POST, действие SvelteKit' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Режим живой проверки">
-          <Segmented
-            variant="form"
-            value={opts.live}
-            onChange={(x) => (opts.live = x as LiveMode)}
-            options={[
-              { value: 'after-touched', label: 'после касания' },
-              { value: 'on-blur', label: 'при уходе' },
-              { value: 'on-input', label: 'при вводе' },
-              { value: 'on-submit', label: 'при отправке' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Сколько ошибок на поле">
-          <Segmented
-            variant="form"
-            value={cardinality}
-            onChange={(x) => (cardinality = x as 'first' | 'all')}
-            options={[
-              { value: 'first', label: 'первая' },
-              { value: 'all', label: 'все', hint: 'свойство описания: состояние начнётся заново' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Политика разметки адаптера">
-          <Segmented
-            variant="form"
-            value={ui}
-            onChange={(x) => (ui = x as 'default' | 'custom')}
-            options={[
-              { value: 'default', label: 'умолчания', hint: 'id вида signup-email' },
-              { value: 'custom', label: 'свои', hint: 'id вида fld_signup__email и проверка на вводе' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Параллельные отправки">
-          <Segmented
-            variant="form"
-            value={opts.parallel}
-            onChange={(x) => (opts.parallel = x as ParallelPolicy)}
-            options={[
-              { value: 'block', label: 'блокировать' },
-              { value: 'replace', label: 'заменять' },
-              { value: 'queue', label: 'очередь' },
-            ]}
-          />
-        </Control>
-
+      <fieldset disabled={!browser} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
+        <legend class="sr-only">Настройки формы</legend>
+        {#each formSettings as setting (setting.label)}
+          <Control label={setting.label}>
+            <Segmented variant="form" value={setting.value} onChange={setting.onChange} options={setting.options} />
+          </Control>
+        {/each}
         <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
           <b>Сейчас демо настроено так:</b>
           ошибки
@@ -285,11 +295,7 @@
           {/if}
         </div>
       </fieldset>
-      {#if !hydrated}
-        <p data-js-settings-note="" role="status" class="mt-3 text-xs text-muted-foreground">
-          Эти параметры работают после загрузки JavaScript; поля и отправка формы доступны без него.
-        </p>
-      {/if}
+      <noscript><p class="mt-3 text-xs text-muted-foreground">Без JS: неактивны.</p></noscript>
     </section>
 
     <!-- ── форма ─────────────────────────────────────────────────── -->
@@ -369,33 +375,16 @@
     {/if}
 
     <!-- ── песочница расширения ──────────────────────────────────── -->
-    <fieldset disabled={!hydrated} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
-      <legend class="sr-only">Дополнительные интерактивные настройки формы</legend>
+    <fieldset disabled={!browser} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
+      <legend class="sr-only">Настройки расширения</legend>
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
         <div class="mb-3 grid gap-4 sm:grid-cols-2">
-          <Control label="Тип значения rating">
-            <Segmented
-              variant="form"
-              value={sandbox.withType ? 'on' : 'off'}
-              onChange={(x) => (sandbox.withType = x === 'on')}
-              options={[
-                { value: 'off', label: 'не зарегистрирован' },
-                { value: 'on', label: 'зарегистрирован' },
-              ]}
-            />
-          </Control>
-          <Control label="Правило «шестизначный код»">
-            <Segmented
-              variant="form"
-              value={sandbox.described ? 'on' : 'off'}
-              onChange={(x) => (sandbox.described = x === 'on')}
-              options={[
-                { value: 'off', label: 'без описания' },
-                { value: 'on', label: 'с описанием' },
-              ]}
-            />
-          </Control>
+          {#each sandboxSettings as setting (setting.label)}
+            <Control label={setting.label}>
+              <Segmented variant="form" value={setting.value} onChange={setting.onChange} options={setting.options} />
+            </Control>
+          {/each}
         </div>
 
         {#if built.ok}

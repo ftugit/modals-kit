@@ -27,12 +27,11 @@ const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
 // функциональность, а не случайная зависимость.
 // Запас остаётся минимальным (факт 200.7 / 187.8 / 12.9 — с подписями полей фильтров и причиной сбоя схемы): гейт по-прежнему ловит
 // и новую тяжёлую зависимость, и рост клиентской части схемы.
-// Issue 11 (2026-10-08): Forms/Modals now share the demo controls and render
-// their JS-only settings disabled until hydration. The measured 203.4 / 190.5
-// KiB keeps a sub-1-KiB reserve instead of hiding an unbounded increase.
+// Issue 11 (2026-10-08): shared demo controls and JS-only settings fit the
+// original global budgets; do not raise them to accommodate this change.
 const LIMITS = {
-  allImmutableGzip: 204 * KiB,
-  allJsGzip: 191 * KiB,
+  allImmutableGzip: 203 * KiB,
+  allJsGzip: 190 * KiB,
   allCssGzip: 20 * KiB,
   largestJsGzip: 50 * KiB,
   largestCssGzip: 14 * KiB,

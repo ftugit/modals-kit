@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { browser } from '$app/environment'
+
   // Порт src/features/modals/ModalsDemo.tsx оригинала: состав триггеров,
   // счётчик стопки, панель настроек. Хост — в КОРНЕВОМ layout (этап B):
   // страница читает живой контекст, а настройки шлёт через
@@ -23,9 +24,6 @@
   // Живой контекст: геттеры видят смену ядра при смене источников.
   const m = useModals()
   const cfg = $derived(m.view.hostConfig)
-  let hydrated = $state(false)
-  onMount(() => { hydrated = true })
-
   /**
    * Модалка БЕЗ хранилища: `openLayer` кладёт в цепочку transient-запись.
    * Содержимое живёт в памяти вкладки, в адрес не попадает и перезагрузку
@@ -46,6 +44,101 @@
 
   // Настройки хоста: страница только ПОСЫЛАЕТ патчи, состояние — в сторе.
   const set = (patch: Record<string, unknown>) => m.modals.configure(patch)
+
+  type SegmentedSetting = {
+    label: string
+    value: string
+    onChange: (value: string) => void
+    options: { value: string; label: string; hint?: string }[]
+  }
+  const segmentedSettings = $derived.by((): SegmentedSetting[] => [
+    {
+      label: 'Мобильный режим (умолчание)',
+      value: cfg.defaultMobile ?? 'off',
+      onChange: (v) => set({ defaultMobile: v as MobileAnchor | 'off' }),
+      options: [
+        { value: 'off', label: 'выкл', hint: 'не прижимать автоматически; запись со своим mobile прижмётся всё равно' },
+        { value: 'bottom', label: 'низ' },
+        { value: 'top', label: 'верх' },
+        { value: 'left', label: 'лево' },
+        { value: 'right', label: 'право' },
+      ],
+    },
+    {
+      label: 'Мобильный режим popup-меню (умолчание)',
+      value: cfg.floatingMobile === false ? 'off' : 'on',
+      onChange: (v) => set({ floatingMobile: v === 'on' }),
+      options: [
+        { value: 'on', label: 'как у модалок', hint: 'обычные меню становятся листом' },
+        { value: 'off', label: 'выпадашка', hint: 'не влияет на Select: он всегда в потоке' },
+      ],
+    },
+    {
+      label: 'Анимация открытия',
+      value: cfg.openAnimation,
+      onChange: (v) => set({ openAnimation: v }),
+      options: [
+        { value: 'scale', label: 'scale' },
+        { value: 'fade', label: 'fade' },
+        { value: 'slide-up', label: 'slide' },
+        { value: 'none', label: 'выкл' },
+      ],
+    },
+    {
+      label: 'Анимация закрытия',
+      value: cfg.closeAnimation,
+      onChange: (v) => set({ closeAnimation: v }),
+      options: [
+        { value: 'scale', label: 'scale' },
+        { value: 'fade', label: 'fade' },
+        { value: 'slide-down', label: 'slide' },
+        { value: 'none', label: 'выкл' },
+      ],
+    },
+    {
+      label: 'Анимация стопки',
+      value: cfg.stackAnimation,
+      onChange: (v) => set({ stackAnimation: v }),
+      options: [
+        { value: 'cards', label: 'карты' },
+        { value: 'deck', label: 'колода' },
+        { value: 'fan', label: 'веер' },
+        { value: 'none', label: 'выкл' },
+      ],
+    },
+    {
+      label: 'Направление хвостов',
+      value: cfg.tailDirection,
+      onChange: (v) => set({ tailDirection: v }),
+      options: [
+        { value: 'bottom', label: 'вниз' },
+        { value: 'top', label: 'вверх' },
+        { value: 'left', label: 'влево' },
+        { value: 'right', label: 'вправо' },
+        { value: 'none', label: 'выкл' },
+      ],
+    },
+    {
+      label: 'Макс. высота модалки',
+      value: cfg.maxHeight ?? '80vh',
+      onChange: (v) => set({ maxHeight: v }),
+      options: [
+        { value: '60vh', label: '60vh' },
+        { value: '70vh', label: '70vh' },
+        { value: '80vh', label: '80vh' },
+        { value: '90vh', label: '90vh' },
+      ],
+    },
+    {
+      label: 'Очистка памяти после закрытия',
+      value: String(cfg.clearOnClose),
+      onChange: (v) => set({ clearOnClose: v === 'true' }),
+      options: [
+        { value: 'false', label: 'хранить' },
+        { value: 'true', label: 'очищать' },
+      ],
+    },
+  ])
 </script>
 
 <div class="py-10 sm:py-14">
@@ -74,8 +167,8 @@
       </div>
     </header>
 
-    <fieldset disabled={!hydrated} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
-      <legend class="sr-only">Интерактивная демонстрация модальной системы</legend>
+    <fieldset disabled={!browser} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
+      <legend class="sr-only">Демо модалок</legend>
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <!-- Обычные модалки НЕ копируют defaultMobile в override: направление
@@ -148,11 +241,7 @@
             ошибка «нет такой модалки»
           </a>
         </div>
-        {#if !hydrated}
-          <p data-js-settings-note="" role="status" class="mb-3 text-xs text-muted-foreground">
-            Интерактивные элементы включаются после загрузки JavaScript; ссылки на страницы доступны без него.
-          </p>
-        {/if}
+        <noscript><p class="mb-3 text-xs text-muted-foreground">Без JS: неактивны.</p></noscript>
         <div class="rounded-lg bg-muted p-2 font-mono text-xs text-muted-foreground">
           <!-- Считаем ВСЮ цепочку: пока открыт мобильный лист select, одна
                запись принадлежит системному оверлею (headless) — он без
@@ -163,101 +252,11 @@
       </section>
 
       <section class="grid gap-4 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:grid-cols-2">
-        <Control label="Мобильный режим (умолчание)">
-          <Segmented
-            value={cfg.defaultMobile ?? 'off'}
-            onChange={(v) => set({ defaultMobile: v as MobileAnchor | 'off' })}
-            options={[
-              { value: 'off', label: 'выкл', hint: 'не прижимать автоматически; запись со своим mobile прижмётся всё равно' },
-              { value: 'bottom', label: 'низ' },
-              { value: 'top', label: 'верх' },
-              { value: 'left', label: 'лево' },
-              { value: 'right', label: 'право' },
-            ]}
-          />
-        </Control>
-        <Control label="Мобильный режим popup-меню (умолчание)">
-          <Segmented
-            value={cfg.floatingMobile === false ? 'off' : 'on'}
-            onChange={(v) => set({ floatingMobile: v === 'on' })}
-            options={[
-              { value: 'on', label: 'как у модалок', hint: 'обычные меню становятся листом' },
-              { value: 'off', label: 'выпадашка', hint: 'не влияет на Select: он всегда в потоке' },
-            ]}
-          />
-        </Control>
-
-        <Control label="Анимация открытия">
-          <Segmented
-            value={cfg.openAnimation}
-            onChange={(v) => set({ openAnimation: v })}
-            options={[
-              { value: 'scale', label: 'scale' },
-              { value: 'fade', label: 'fade' },
-              { value: 'slide-up', label: 'slide' },
-              { value: 'none', label: 'выкл' },
-            ]}
-          />
-        </Control>
-        <Control label="Анимация закрытия">
-          <Segmented
-            value={cfg.closeAnimation}
-            onChange={(v) => set({ closeAnimation: v })}
-            options={[
-              { value: 'scale', label: 'scale' },
-              { value: 'fade', label: 'fade' },
-              { value: 'slide-down', label: 'slide' },
-              { value: 'none', label: 'выкл' },
-            ]}
-          />
-        </Control>
-        <Control label="Анимация стопки">
-          <Segmented
-            value={cfg.stackAnimation}
-            onChange={(v) => set({ stackAnimation: v })}
-            options={[
-              { value: 'cards', label: 'карты' },
-              { value: 'deck', label: 'колода' },
-              { value: 'fan', label: 'веер' },
-              { value: 'none', label: 'выкл' },
-            ]}
-          />
-        </Control>
-        <Control label="Направление хвостов">
-          <Segmented
-            value={cfg.tailDirection}
-            onChange={(v) => set({ tailDirection: v })}
-            options={[
-              { value: 'bottom', label: 'вниз' },
-              { value: 'top', label: 'вверх' },
-              { value: 'left', label: 'влево' },
-              { value: 'right', label: 'вправо' },
-              { value: 'none', label: 'выкл' },
-            ]}
-          />
-        </Control>
-        <Control label="Макс. высота модалки">
-          <Segmented
-            value={cfg.maxHeight ?? '80vh'}
-            onChange={(v) => set({ maxHeight: v })}
-            options={[
-              { value: '60vh', label: '60vh' },
-              { value: '70vh', label: '70vh' },
-              { value: '80vh', label: '80vh' },
-              { value: '90vh', label: '90vh' },
-            ]}
-          />
-        </Control>
-        <Control label="Очистка памяти после закрытия">
-          <Segmented
-            value={String(cfg.clearOnClose)}
-            onChange={(v) => set({ clearOnClose: v === 'true' })}
-            options={[
-              { value: 'false', label: 'хранить' },
-              { value: 'true', label: 'очищать' },
-            ]}
-          />
-        </Control>
+        {#each segmentedSettings as setting (setting.label)}
+          <Control label={setting.label}>
+            <Segmented value={setting.value} onChange={setting.onChange} options={setting.options} />
+          </Control>
+        {/each}
         <Control label={`Число хвостов: ${cfg.tailCount ?? 3}`}>
           <input
             type="range"

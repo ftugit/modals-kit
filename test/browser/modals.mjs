@@ -119,6 +119,10 @@ async function run() {
         && initialSettings.disabled.every(Boolean)
         && initialSettings.controlsDisabled.every(Boolean), `no-JS settings: ${JSON.stringify(initialSettings)}`)
       ok('без JS настройки модалки и источников выключены');
+      const sourceSelectDisabled = await page.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
+        nodes.length === 1 && nodes[0].matches(':disabled'));
+      assert(sourceSelectDisabled, 'no-JS Select источников не выключен');
+      ok('без JS Select источников тоже выключен');
       assert(initialSettings.routeLinks.every(Boolean), `no-JS route links: ${JSON.stringify(initialSettings.routeLinks)}`)
       ok('без JS ссылки на главную и цикл остаются доступны');
 
@@ -160,6 +164,10 @@ async function run() {
           && settings.every((node) => node instanceof HTMLFieldSetElement && !node.disabled)
       }, null, { timeout: 20000 });
       ok('после гидратации настройки модалки и источников включены');
+      const sourceSelectEnabled = await hydrated.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
+        nodes.length === 1 && !nodes[0].matches(':disabled'));
+      assert(sourceSelectEnabled, 'после гидратации Select источников не включился');
+      ok('после гидратации Select источников включён');
       const fullpage = hydrated.locator('[data-modal-trigger]', { hasText: 'Полноэкранная' }).first();
       const fullpageState = await fullpage.evaluate((el) => ({ tag: el.tagName, href: el.getAttribute('href') }));
       assert(fullpageState.tag === 'A' && fullpageState.href?.includes('modal=fullpage'), `hydrated route-less trigger: ${JSON.stringify(fullpageState)}`);
