@@ -531,3 +531,99 @@ export function createUrlAdapter<T>(opts: {
     },
   }
 }
+
+/**
+ * S4 (§6.4, Q2 v2 «url на подхвате»): адрес — ОДИН из адаптеров хранилища того
+ * же пагинатора, а не отдельный пагинатор-двойник. Фабрика-композиция: поверх
+ * local-адаптера (source + storage) ставится url-канал (тот же `createUrlAdapter`,
+ * ядро не знает о гибриде).
+ *
+ * Правила выбора канала — фиксация НА ЗАГРУЗКЕ (`getInitial`):
+ *  • адрес несёт хоть один НАШ объявленный ключ (page / page.size / page.<key>
+ *    из `extraSearch`; пустое значение = отсутствие) → адрес и есть хранилище
+ *    сессии: чтение из него, `persist` пишет адрес, fallback-стор НЕ пишется;
+ *  • адрес пуст → restores прошлый заход из storage, стор и есть хранилище
+ *    сессии: `persist` пишет его, адрес не трогаем.
+ * «Наши ключи» считаем ТОЛЬКО по объявленной спецификации (deny-safe): мусор
+ * `?page.junk=1` сессию не перехватывает. Переключение канала посреди сессии
+ * не предусмотрено — адрес меняется навигацией документа (загрузка), а на ней
+ * `getInitial` пересматривает решение.
+ */
+export function withUrlTakeover<T>(
+  base: PaginatorAdapter<T>,
+  url: {
+    /** Имя url-канала — для dev-сообщений адаптера; дефолт 'url-channel'. */
+    name?: string
+    /** Тот же адаптированный источник, что у base: данные читаются базовым адаптером. */
+    source: AdaptedSource<T>
+    pageSize?: number
+    pageParam?: string
+    pageSizes?: readonly number[]
+    extraSearch?: ExtraSearchSpec
+    extraDefaults?: Extra
+    append?: boolean
+  },
+): PaginatorAdapter<T> & {
+  setRouter(router: MinimalRouter | null): void
+  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[] }
+} {
+  const channel = createUrlAdapter<T>({
+    name: url.name ?? 'url-channel',
+    source: url.source,
+    pageSize: url.pageSize,
+    pageParam: url.pageParam,
+    pageSizes: url.pageSizes,
+    extraSearch: url.extraSearch,
+    extraDefaults: url.extraDefaults,
+    append: url.append,
+  })
+  const baseParam = url.pageParam ?? 'page'
+  // Канал сессии: true — адрес несёт, false — несёт storage. Решает getInitial.
+  let takes = false
+  const urlCarries = (params: URLSearchParams): boolean => {
+    const has = (k: string) => {
+      const v = params.get(k)
+      return v != null && v !== ''
+    }
+    if (has(baseParam) || has(`${baseParam}.size`)) return true
+    for (const key of Object.keys(url.extraSearch ?? {})) if (has(`${baseParam}.${key}`)) return true
+    return false
+  }
+
+  return {
+    getInitial(ctx?: { url?: string }) {
+      const raw = ctx?.url ?? (typeof window !== 'undefined' ? window.location.search : '')
+      const query = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw
+      takes = urlCarries(new URLSearchParams(query))
+      return takes ? channel.getInitial(ctx) : base.getInitial(ctx)
+    },
+    // Данные читает базовый адаптер: источник один, двойного пути нет.
+    loadPage: (req) => base.loadPage(req),
+    persist(state) {
+      return takes ? channel.persist(state) : base.persist(state)
+    },
+    // Внешний поиск наблюдаем только когда адрес — наше хранилище: локальная
+    // сессия слепа к чужим правкам адреса (гибрид «страница из стора, фильтры
+    // из адреса» запрещён контрактом observeExternal).
+    observeExternal(search) {
+      return takes ? channel.observeExternal!(search) : null
+    },
+    hrefFor(page, ctx) {
+      return takes ? channel.hrefFor!(page, ctx) : (base.hrefFor?.(page, ctx) ?? null)
+    },
+    capabilities: base.capabilities,
+    capabilitiesFor: (extra) => base.capabilitiesFor(extra),
+    // Объявленная поверхность — максимум двух каналов: запись `setExtra`
+    // судится по ней, а судить чужими ключами нельзя (deny-safe).
+    extraKeys: () => {
+      const union = new Set([...(base.extraKeys?.() ?? []), ...(channel.extraKeys?.() ?? [])])
+      return union.size ? [...union] : undefined
+    },
+    // Форма без JS GET-ит в адрес при любом канале: ключ объявления остаётся.
+    pageParam: baseParam,
+    searchSpec: channel.searchSpec,
+    setRouter(router) {
+      channel.setRouter(router)
+    },
+  }
+}

@@ -10,6 +10,7 @@ import {
   createMemoryStorage,
   createPaginatorStore,
   createUrlAdapter,
+  withUrlTakeover,
   decodeExtraValue,
   definePaginator,
   defineSource,
@@ -785,5 +786,73 @@ describe('Q1 onError: fan-out, коды, persist', () => {
     off()
     safePersist(store, 'q1-fan')
     expect(host).toHaveLength(1)
+  })
+})
+
+describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => {
+  const mkCombo = (storage: ReturnType<typeof createMemoryStorage>) => {
+    const source = sourceOf(async () => ({ items: [] }))
+    const combo = withUrlTakeover(
+      createLocalAdapter<unknown>({ name: 't', source, storage }),
+      { name: 't', source, pageSize: 10, extraSearch: { q: extraField('text') }, extraDefaults: { q: '' } },
+    )
+    const navigate = vi.fn()
+    combo.setRouter({ navigate, currentSearch: () => ({}) })
+    return { combo, navigate }
+  }
+  const restored = (page: number, extra: Record<string, unknown>) =>
+    ({ page, pageSize: 10, totalItems: null, totalPages: null, extra }) as never
+
+  it('адрес пуст → прошлый заход из storage; persist пишет storage, адрес молчит', async () => {
+    const storage = createMemoryStorage()
+    await storage.write('t', restored(4, { q: 'store' }))
+    const { combo, navigate } = mkCombo(storage)
+    const init = await combo.getInitial({ url: '/catalog' })
+    expect(init.page).toBe(4)
+    expect(init.extra.q).toBe('store')
+    await combo.persist({ ...restored(5, { q: 'x' }), items: [], loadedPages: [], pages: {}, status: 'idle' } as never)
+    expect(navigate).not.toHaveBeenCalled()
+    expect((await storage.read('t'))!.page).toBe(5)
+    // Локальная сессия слепа к правкам адреса: внешнего наблюдения нет.
+    expect(combo.observeExternal?.({ page: 2 })).toBeNull()
+    expect(combo.hrefFor?.(3)).toBeNull()
+  })
+
+  it('адрес несёт объявленный ключ → хранилище = адрес; storage не пишется', async () => {
+    const storage = createMemoryStorage()
+    await storage.write('t', restored(4, { q: 'store' }))
+    const { combo, navigate } = mkCombo(storage)
+    const init = await combo.getInitial({ url: '/catalog?page=7&page.q=url' })
+    expect(init.page).toBe(7)
+    expect(init.extra.q).toBe('url')
+    await combo.persist({ ...restored(8, { q: 'url' }), items: [], loadedPages: [], pages: {}, status: 'idle' } as never)
+    expect(navigate).toHaveBeenCalledTimes(1)
+    const call = navigate.mock.calls[0][0] as { replace?: boolean; search: (p: Record<string, unknown>) => Record<string, unknown> }
+    expect(call.replace).toBe(true)
+    expect(call.search({ utm_source: 'x' })).toEqual({ utm_source: 'x', page: 8, 'page.q': 'url' })
+    // Fallback-стор неприкосновенен: «пока url несёт — не используется и не пишется».
+    expect((await storage.read('t'))!.page).toBe(4)
+    // Внешний адрес наблюдается: страница из него.
+    expect(combo.observeExternal?.({ page: 3, 'page.q': 'z' })).toMatchObject({ page: 3 })
+    expect(combo.hrefFor?.(3)).toContain('page=3')
+  })
+
+  it('undeclared-ключ адреса не перехватывает сессию (deny-safe); пустое значение — тоже', async () => {
+    const storage = createMemoryStorage()
+    for (const url of ['/c?page.junk=1', '/c?page.q=']) {
+      await storage.write('t', restored(4, { q: 'store' }))   // каждое условие — с чистого снапшота
+      const { combo, navigate } = mkCombo(storage)
+      const init = await combo.getInitial({ url })
+      expect(init.page, url).toBe(4)                     // restores из storage, не из адреса
+      await combo.persist({ ...restored(6, {}), items: [], loadedPages: [], pages: {}, status: 'idle' } as never)
+      expect(navigate, url).not.toHaveBeenCalled()      // адрес локальной сессии не правится
+    }
+  })
+
+  it('поверхность extraKeys — объединение каналов (форма пишет в стор тем же судом)', () => {
+    const storage = createMemoryStorage()
+    const { combo } = mkCombo(storage)
+    const keys = combo.extraKeys?.() ?? []
+    expect(keys).toContain('q')                          // объявлен адресной спецификацией
   })
 })
