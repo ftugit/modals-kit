@@ -98,6 +98,34 @@
   const activeOptionId = $derived(
     filtered.length > 0 && filtered[activeIndex] ? optionId(activeIndex) : undefined,
   )
+
+  /*
+   * ── Предел отрисовки списка ─────────────────────────────────────────
+   * Строка списка — шесть узлов (кнопка, галочка, подпись, пояснение).
+   * Справочник студий — 1000 вариантов: 6000 узлов и ~250 мс открытия на
+   * телефоне. Поэтому список рисуется первой порцией, а остальное
+   * дорисовывается при прокрутке до конца. Поиск идёт по ВСЕМУ списку
+   * (`filtered`), а не по нарисованному: введённый запрос достаёт вариант,
+   * до которого иначе пришлось бы листать.
+   */
+  const limit = $derived(Math.max(0, config.renderLimit))
+  const chunk = $derived(Math.max(1, config.renderChunk))
+  /** Сколько строк добавлено порциями (сверх первой). */
+  let extra = $state(0)
+  const shown = $derived(
+    limit > 0 ? Math.min(filtered.length, limit + extra) : filtered.length,
+  )
+  const visible = $derived(filtered.slice(0, shown))
+  /** Сколько вариантов не нарисовано (0 — нарисован весь список). */
+  const hidden = $derived(filtered.length - visible.length)
+
+  /** Прокрутка до конца списка дорисовывает следующую порцию. */
+  function loadMore(): void {
+    const el = listboxEl
+    if (!el || hidden === 0) return
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 24) return
+    extra += chunk
+  }
   const allVisibleSelected = $derived.by(() => {
     const enabled = filtered.filter((o) => !o.disabled)
     return enabled.length > 0 && enabled.every((o) => selectedValues.has(o.value))
@@ -203,9 +231,19 @@
   })
 
   $effect(() => {
+    // Новая выборка (запрос, опции) — список снова начинается с первой порции.
+    void query
+    void options
+    extra = 0
+  })
+
+  $effect(() => {
     void query
     void options
     if (activeIndex >= filtered.length) activeIndex = Math.max(0, filtered.length - 1)
+    // Клавиатура ушла за нарисованную порцию — дорисовываем до неё, иначе
+    // виртуальный фокус уехал бы в ненарисованную строку.
+    if (limit > 0 && activeIndex + 1 > shown) extra = activeIndex + 1 - limit
   })
 
   /*
@@ -215,6 +253,9 @@
    */
   $effect(() => {
     const id = activeOptionId
+    // `shown` в зависимостях: дорисованная порция — новый узел, к нему и
+    // прокручиваем.
+    void shown
     if (!id || !listboxEl) return
     listboxEl.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: 'nearest' })
   })
@@ -443,6 +484,7 @@
       id={listboxId}
       data-select-listbox=""
       role="listbox"
+      onscroll={loadMore}
       aria-multiselectable={multiple || undefined}
       class={cn(
         'overflow-y-auto p-1 outline-none',
@@ -450,13 +492,15 @@
       )}
       tabindex="-1"
     >
-      {#each filtered as option, index (option.value)}
+      {#each visible as option, index (option.value)}
         {@const checked = selectedValues.has(option.value)}
         <button
           type="button"
           id={optionId(index)}
           role="option"
           aria-selected={checked}
+          aria-setsize={hidden > 0 ? filtered.length : undefined}
+          aria-posinset={hidden > 0 ? index + 1 : undefined}
           data-active={(highlight && index === activeIndex) || undefined}
           tabindex="-1"
           onmousemove={() => {
@@ -485,6 +529,16 @@
       {:else}
         <p class="px-2 py-3 text-center text-sm text-muted-foreground">Ничего не найдено</p>
       {/each}
+      {#if hidden > 0}
+        <!--
+          Строка для глаза: о неполном списке скринридеру говорят `aria-setsize`
+          и `aria-posinset` на вариантах, поэтому здесь текст скрыт от него —
+          иначе он же читался бы как содержимое listbox.
+        -->
+        <p class="px-2 py-3 text-center text-xs text-muted-foreground" data-select-more="" aria-hidden="true">
+          Показано {visible.length} из {filtered.length} — листайте дальше или уточните запрос
+        </p>
+      {/if}
     </div>
   </div>
 

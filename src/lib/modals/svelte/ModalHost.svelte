@@ -615,6 +615,18 @@
     return -1
   }
 
+  /**
+   * True when the pointer began on the modal shield rather than on the page
+   * element the user aimed at. Closing the shield can retarget its trailing
+   * click to that page element; a real hit on (for example) «Применить» must
+   * instead be allowed to finish its normal click after the popup closes.
+   */
+  function pointerStartedOnShield(target: Node | null): boolean {
+    if (!(target instanceof Element)) return true
+    return target === document.documentElement || target === document.body ||
+      target.closest('[data-modal-backdrop]') !== null
+  }
+
   $effect(() => {
     if (floatings.length === 0 || typeof document === 'undefined') return
 
@@ -624,12 +636,16 @@
      * 🔴 Закрытие по фону идёт на `pointerdown` (так слой исчезает без
      * задержки), но тот же жест оставляет после себя `click` — а к этому
      * мгновению замок страницы уже снят (`body` снова `pointer-events: auto`),
-     * и клик прилетает в кнопку ПОД пальцем. Владелец: «нажатием по фону у
-     * меня кликались другие кнопки». Гасим ровно один клик этого жеста;
-     * слушатель снимает себя сам, а если клика не было — по таймауту.
+     * и клик может быть перенаправлен в кнопку ПОД пальцем. Владелец:
+     * «нажатием по фону у меня кликались другие кнопки». Гасим его только
+     * когда pointerdown начался на щите (HTML/body/backdrop); если он попал
+     * прямо в кнопку, её штатный click не подавляем. Слушатель снимает себя
+     * сам, а если клика не было — по таймауту.
      */
-    const swallowClickOnce = () => {
+    const swallowClickOnce = (origin: PointerEvent) => {
       const armedAt = Date.now()
+      const x = origin.clientX
+      const y = origin.clientY
       const cleanup = () => {
         window.removeEventListener('click', onClick, true)
         window.removeEventListener('pointercancel', cleanup, true)
@@ -638,6 +654,9 @@
       const onClick = (event: MouseEvent) => {
         cleanup()
         if (Date.now() - armedAt > 700) return // чужой жест — не наш клик
+        // «Догоняющий» клик приходит в той же точке, что и нажатие: клик в
+        // другом месте — намеренное действие, его не гасим.
+        if (Math.abs(event.clientX - x) > 3 || Math.abs(event.clientY - y) > 3) return
         event.preventDefault()
         event.stopPropagation()
       }
@@ -656,7 +675,7 @@
         closeFloating(floating.id, 'outside-pointer')
         closed = true
       }
-      if (closed) swallowClickOnce()
+      if (closed && pointerStartedOnShield(target)) swallowClickOnce(event)
     }
 
     const onKeydown = (event: KeyboardEvent) => {

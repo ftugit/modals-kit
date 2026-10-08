@@ -388,7 +388,7 @@ try {
     await page.close()
   }
 
-  console.log('— Select: мобильный лист — три бага из мобильного отчёта —')
+  console.log('— Select: мобильный лист — мобильные регрессии —')
   {
     // Живая страница с ДЛИННЫМ списком: панель фильтров источника «animes»,
     // у жанров 80 пунктов — именно на них список раньше упирался в предел.
@@ -449,9 +449,7 @@ try {
     // 2) Длинный список прокручивается пальцем.
     const genres = page.locator('[data-select-root]:has(select[name="page.filters.genres.and"])').locator('select')
     await genres.scrollIntoViewIfNeeded()
-    await genres.evaluate((el) => el.dispatchEvent(
-      new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch' }),
-    ))
+    await genres.tap()
     await waitAtLeast(page, '[data-select-listbox]', 1)
 
     const listbox = page.locator('[data-select-listbox]').last()
@@ -496,6 +494,37 @@ try {
     assert(leaked === 0, `клик от тапа по фону дошёл до «${bgPoint.name}» (${leaked} клик(ов))`)
     assert(page.url() === urlBefore, `тап по фону сменил адрес: ${page.url()}`)
     ok(`тап по фону закрыл лист, не нажав «${bgPoint.name}» под пальцем`)
+
+    // 4) Свайп страницы, который начинается НА нативном select, не должен
+    // раскрывать лист в pointerdown и превращать продолжение жеста в прокрутку
+    // уже открытого списка. Touch считается тапом только после pointerup без
+    // заметного движения.
+    const scrollField = page.locator('select[name="page.filters.kind"]')
+    await page.locator('main').evaluate((el) => { el.scrollTop = 0 })
+    await scrollField.scrollIntoViewIfNeeded()
+    const scrollFieldBox = await scrollField.boundingBox()
+    assert(scrollFieldBox, 'select для свайп-регрессии не имеет геометрии')
+    const mainBefore = await page.locator('main').evaluate((el) => ({
+      top: el.scrollTop,
+      max: el.scrollHeight - el.clientHeight,
+    }))
+    assert(mainBefore.max > mainBefore.top + 100, 'странице некуда прокручиваться от select')
+    const touch = await ctx.newCDPSession(page)
+    const tx = Math.round(scrollFieldBox.x + scrollFieldBox.width / 2)
+    const ty = Math.round(scrollFieldBox.y + scrollFieldBox.height / 2)
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tx, y: ty }] })
+    for (let i = 1; i <= 8; i += 1) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: tx, y: ty - i * 22 }] })
+      await page.waitForTimeout(16)
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await page.waitForTimeout(450)
+    const scrollAfter = await page.locator('main').evaluate((el) => el.scrollTop)
+    assert(scrollAfter > mainBefore.top + 40, `свайп не прокрутил страницу: ${mainBefore.top} → ${scrollAfter}`)
+    assert(await page.locator('[data-select-listbox]').count() === 0, 'свайп по select открыл список')
+    assert(await scrollField.inputValue() === 'tv', 'свайп по select изменил выбранное значение')
+    ok(`свайп по select прокрутил страницу (${mainBefore.top} → ${scrollAfter}) и не открыл список`)
+    await touch.detach()
 
     await ctx.close()
   }

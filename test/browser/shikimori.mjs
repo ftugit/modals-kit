@@ -256,6 +256,30 @@ async function openFilters(page) {
   if (!(await details.evaluate((el) => el.open))) await page.locator('[data-testid="filters-toggle"]').click();
 }
 
+/** Select a JS-enhanced filter through its visible list, not a missing native option. */
+async function chooseFilterOption(page, select, value, label) {
+  const name = await select.getAttribute('name');
+  await select.scrollIntoViewIfNeeded();
+  await select.click({ force: true });
+  const listbox = page.locator('[data-select-listbox]').last();
+  await listbox.waitFor({ state: 'visible' });
+  const options = listbox.locator('[role="option"]');
+  let match = -1;
+  for (let i = 0; i < (await options.count()); i += 1) {
+    const visibleLabel = (await options.nth(i).innerText()).trim().split('\n')[0].trim();
+    if (visibleLabel === label) {
+      match = i;
+      break;
+    }
+  }
+  if (match < 0) throw new Error(`у ${name} нет видимой опции «${label}»`);
+  await options.nth(match).click();
+  await page.waitForFunction(([fieldName, expected]) => {
+    const field = [...document.querySelectorAll('select')].find((item) => item.name === fieldName);
+    return field?.value === expected;
+  }, [name, value]);
+}
+
 /**
  * Панель фильтров (этап 4): контролы приходят ИЗ СХЕМЫ, а применение идёт тем же
  * каналом, что и остальные настройки (хранилище пагинатора). Проверяется то, что
@@ -272,6 +296,8 @@ async function checkFiltersUi(browser) {
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   const panel = page.locator('[data-testid="filters-panel"]');
+  const label = (field, value) =>
+    schema.fields.find((item) => item.key === field)?.options?.find((item) => item.value === value)?.label ?? value;
 
   try {
     // Источник без фильтров: возможности нет — нет и панели (не «панель вхолостую»).
@@ -370,9 +396,12 @@ async function checkFiltersUi(browser) {
     console.log('  ok  поиск в списке фильтра: по подписи («романтика» → «Романтика»), без «ё» и по значению');
 
     await openFilters(page);
-    await panel
-      .locator('select[data-select-native][name="page.filters.kind"]')
-      .selectOption('tv', { force: true });
+    await chooseFilterOption(
+      page,
+      panel.locator('select[data-select-native][name="page.filters.kind"]'),
+      'tv',
+      label('kind', 'tv'),
+    );
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => page.url().includes('page.filters.kind=tv'), { what: 'фильтр в адресе' });
     await waitFor(async () => {
@@ -391,8 +420,6 @@ async function checkFiltersUi(browser) {
       throw new Error('чип ссылается не на то поле');
     // Подписи — ИЗ СХЕМЫ (их собирает серверная зона): у типа это «TV»,
     // у жанров — русские имена. Своих подписей интерфейс не выдумывает.
-    const label = (field, value) =>
-      schema.fields.find((item) => item.key === field)?.options?.find((item) => item.value === value)?.label ?? value;
     const chipText = (await chip.innerText()).replace(/\s+/g, ' ').trim();
     if (!chipText.includes('Тип') || !chipText.includes(label('kind', 'tv')))
       throw new Error(`подпись чипа не из схемы: «${chipText}» вместо «Тип: ${label('kind', 'tv')}»`);
@@ -404,9 +431,12 @@ async function checkFiltersUi(browser) {
     await page.locator('[data-paginator-host="demo-url"] a[aria-label="Вперёд"], [data-paginator-host="demo-url"] button[aria-label="Вперёд"]').first().evaluate((el) => el.click());
     await waitFor(async () => page.url().includes('page=2'), { what: 'переход на стр. 2' });
     await openFilters(page);
-    await panel
-      .locator('select[data-select-native][name="page.filters.status"]')
-      .selectOption('released', { force: true });
+    await chooseFilterOption(
+      page,
+      panel.locator('select[data-select-native][name="page.filters.status"]'),
+      'released',
+      label('status', 'released'),
+    );
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => page.url().includes('page.filters.status=released'), { what: 'второй фильтр в адресе' });
     if (/[?&]page=2(&|$)/.test(page.url()))
@@ -425,9 +455,12 @@ async function checkFiltersUi(browser) {
 
     // Связка: у анонсов нет оценки — поле гаснет, причина видна.
     await openFilters(page);
-    await panel
-      .locator('select[data-select-native][name="page.filters.status"]')
-      .selectOption('anons', { force: true });
+    await chooseFilterOption(
+      page,
+      panel.locator('select[data-select-native][name="page.filters.status"]'),
+      'anons',
+      label('status', 'anons'),
+    );
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => page.url().includes('page.filters.status=anons'), { what: 'фильтр «анонс»' });
     const reason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
@@ -468,6 +501,27 @@ async function checkFiltersUi(browser) {
     const blocked = await panel.locator('[data-testid="filters-search-blocked"]').innerText();
     if (!/поиск/i.test(blocked)) throw new Error(`причина запрета поиска не внятная: «${blocked}»`);
     console.log(`  ok  связка «поиск под фильтром» видна в панели: ${blocked.replace(/\s+/g, ' ').trim()}`);
+
+    // Multiselect остаётся раскрытым после выбора. Кнопка «Применить» —
+    // реальная цель pointerdown, а не click-through из-за закрывающегося щита:
+    // один пользовательский клик обязан и закрыть выпадашку, и отправить форму.
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await openFilters(page);
+    await chooseFilterOption(
+      page,
+      panel.locator('select[data-select-native][name="page.filters.genres.and"]'),
+      '22',
+      label('genres', '22'),
+    );
+    if ((await page.locator('[data-select-listbox]').count()) !== 1)
+      throw new Error('multiselect должен оставаться открытым после выбора жанра');
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => page.url().includes('page.filters.genres.and=22'), {
+      what: 'клик по «Применить» отправил выбранный жанр при открытом списке',
+    });
+    if ((await page.locator('[data-select-listbox]').count()) !== 0)
+      throw new Error('список не закрылся после применения жанра');
+    console.log('  ok  один клик по «Применить» закрыл открытый multiselect и записал genres.and=22');
 
     await context.close();
   } finally {

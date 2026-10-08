@@ -29,6 +29,32 @@
     showCount: boolean
     listSize: SelectListSize
     badgeLimit: number
+    /**
+     * Сколько строк списка рисовать сразу (0 — без предела).
+     *
+     * 🔴 Добавка к канону (в каноне список рисуется целиком). Строка списка —
+     * это шесть узлов (кнопка, галочка, подпись, пояснение…), а справочник
+     * студий — 1000 вариантов: 6000 узлов и ~250 мс открытия на телефоне.
+     * Длинный список рисуется первой порцией, остальное дорисовывается при
+     * прокрутке до конца; поиск при этом ищет по ВСЕМУ списку, а не по
+     * нарисованному. Предел срабатывает только там, где он достигнут: списки
+     * короче `renderLimit` рисуются как раньше, целиком.
+     */
+    renderLimit: number
+    /** Порция дорисовки при прокрутке до конца списка. */
+    renderChunk: number
+    /**
+     * Чем служит нативный `<select>` после гидратации.
+     *
+     * `all` — весь список (как в серверной разметке), `value` — только
+     * выбранное. 🔴 Добавка к канону. Нативный контрол нужен форме как
+     * носитель значения (и как единственный УИ без JS, где список приходит из
+     * разметки), а список на экране рисует панель. Держать оба списка целиком
+     * — двойная разметка: на странице фильтров это 2000 `<option>` (79% узлов
+     * страницы) плюс 6000 узлов панели. Выбранное всегда остаётся носителем
+     * значения, поэтому форма отправляет ровно то же, что и раньше.
+     */
+    nativeList: 'all' | 'value'
   }
 
   export const DEFAULT_SELECT_CONFIG: SelectEnhancementConfig = {
@@ -50,6 +76,9 @@
     showCount: true,
     listSize: 'md',
     badgeLimit: 2,
+    renderLimit: 200,
+    renderChunk: 200,
+    nativeList: 'value',
   }
 
   /**
@@ -78,7 +107,7 @@
   import { Portal } from '@ark-ui/svelte/portal'
   import type { HTMLSelectAttributes } from 'svelte/elements'
   import { useInteractionModality } from '@ark-ui/svelte/interaction'
-  import { onMount, untrack, type Snippet } from 'svelte'
+  import { flushSync, onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '../cn'
   import { tryUseModals, type HostFloatingCloseReason } from '$lib/modals/svelte'
   import { createMediaQuery } from '$lib/modals/svelte'
@@ -234,6 +263,19 @@
   /* ── производные ─────────────────────────────────────────────────── */
 
   const all = $derived([...options])
+  /** Выбранное во внутреннем состоянии — то, чем рисуется и нативный контрол, и список. */
+  const selectedValues = $derived(new Set(selected.map((o) => o.value)))
+  /**
+   * Опции нативного контрола. До гидратации — весь список (так его видит
+   * no-JS), после — только выбранное: список на экране рисует панель.
+   */
+  /** Пустой вариант выбран, когда выбранного нет вовсе (одно и то же правило для разметки и синхронизации). */
+  const placeholderSelected = $derived(selectedValues.has('') || selectedValues.size === 0)
+  const nativeOptions = $derived(
+    config.nativeList === 'value' && mounted
+      ? all.filter((o) => selectedValues.has(o.value))
+      : all,
+  )
   const listHeight = $derived(
     config.listSize === 'sm' ? '12rem' : config.listSize === 'lg' ? '24rem' : '18rem',
   )
@@ -261,9 +303,6 @@
    * внешнее изменение, иначе выбор гасился бы собственной же записью.
    */
   const selfWritten = new Set<string>()
-
-  /** Выбранное во внутреннем состоянии — то, чем рисуется и нативный контрол, и список. */
-  const selectedValues = $derived(new Set(selected.map((o) => o.value)))
 
   /**
    * Проп `value` — ВНЕШНЕЕ значение (адрес, хранилище), а не «текущее».
@@ -297,13 +336,18 @@
 
   function commit(next: readonly SelectOption[]) {
     const values = new Set(next.map((o) => o.value))
+    // Сначала состояние: из него рисуются и список, и опции нативного
+    // контрола (после гидратации их ровно столько, сколько выбрано).
+    selected = all.filter((o) => values.has(o.value))
+    // Синхронная отрисовка: `change` уходит в форму, когда значение уже лежит
+    // в DOM, — иначе обработчик прочитал бы прежнее.
+    flushSync()
     if (nativeEl) {
       for (const o of Array.from(nativeEl.options)) o.selected = values.has(o.value)
       // Нативный контрол — источник истины для формы: события шлём от него.
       nativeEl.dispatchEvent(new Event('input', { bubbles: true }))
       nativeEl.dispatchEvent(new Event('change', { bubbles: true }))
     }
-    selected = all.filter((o) => values.has(o.value))
     // Своя запись вернётся пропом — пометим, чтобы не принять её за внешнюю.
     selfWritten.add(valuesKey(values))
     value = multiple ? [...values] : ([...values][0] ?? '')
@@ -415,18 +459,22 @@
   /**
    * Гашение «догоняющего» клика после открытия по указателю.
    *
-   * 🔴 Открытие происходит на `pointerdown` (иначе Android поднимает свой
-   * picker), но тот же жест оставляет после себя `click` — и он прилетает
-   * УЖЕ в смонтированный список: в пункт, который оказался на месте контрола.
-   * Со стороны это выглядит как «я нажал по select, а он сам выбрал вариант»
-   * (и значение уезжает мимо хранилища). Гасим ровно один клик этого жеста:
-   * слушатель снимает себя сам, а если клика не было — снимается по таймауту.
+   * Мышь открывает список по `pointerdown`; на touch ждём, пока жест
+   * завершится без прокрутки. Иначе начало обычного свайпа по странице на
+   * нативном `<select>` тут же раскрывает лист и перехватывает дальнейший
+   * скролл. `preventDefault` на touch `pointerdown` при этом оставляет за
+   * нашим компонентом открытие вместо системного picker браузера.
    */
+  const TOUCH_TAP_SLOP = 8
+  let pendingTouchOpen: { pointerId: number; x: number; y: number } | null = null
   let swallowArmed = false
-  function swallowTrailingClick(): void {
-    if (swallowArmed) return
+  function swallowTrailingClick(event: PointerEvent | MouseEvent): void {
+    // Открытие по чистому `click` следа не оставляет — гасить нечего.
+    if (swallowArmed || event.type === 'click') return
     swallowArmed = true
     const armedAt = Date.now()
+    const x = event.clientX
+    const y = event.clientY
     const cleanup = () => {
       swallowArmed = false
       window.removeEventListener('click', onClick, true)
@@ -436,6 +484,13 @@
     const onClick = (event: MouseEvent) => {
       cleanup()
       if (Date.now() - armedAt > 700) return // чужой жест — не наш клик
+      /**
+       * 🔴 «Догоняющий» клик приходит В ТОЙ ЖЕ точке, что и открытие. Клик в
+       * другом месте — это уже намеренное действие человека (например, вторым
+       * пальцем по «Применить»): гасить его нельзя, иначе на быстром темпе
+       * пропадают обычные нажатия.
+       */
+      if (Math.abs(event.clientX - x) > 3 || Math.abs(event.clientY - y) > 3) return
       event.preventDefault()
       event.stopPropagation()
     }
@@ -444,15 +499,60 @@
     window.addEventListener('pointercancel', cleanup, true)
   }
 
-  // `preventDefault` нужен и для touch: иначе Android поднимет собственный
-  // picker нативного `<select>` раньше, чем мы успеем открыть свой список.
-  function interceptPointer(event: PointerEvent | MouseEvent) {
-    if (!mounted || disabled || event.defaultPrevented) return
-    event.preventDefault()
+  function openFromPointer(event: PointerEvent | MouseEvent): void {
     const wasOpen = open
     setOpen(true)
-    // Список открылся именно этим жестом — значит следом придёт его клик.
-    if (!wasOpen && open) swallowTrailingClick()
+    if (!wasOpen && open) swallowTrailingClick(event)
+  }
+
+  // `preventDefault` нужен и для touch: иначе Android поднимет собственный
+  // picker нативного `<select>` раньше, чем мы успеем показать свой список.
+  // Само touch-открытие откладываем до pointerup, чтобы обычный свайп не
+  // раскрывал лист. Если браузер передаст прокрутку странице, он пошлёт
+  // pointercancel; запасной порог движения покрывает и браузеры без него.
+  function interceptPointer(event: PointerEvent) {
+    if (!mounted || disabled || event.defaultPrevented) return
+    if (event.pointerType === 'touch') {
+      if (!event.isPrimary) {
+        pendingTouchOpen = null
+        return
+      }
+      event.preventDefault()
+      pendingTouchOpen = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+      return
+    }
+    event.preventDefault()
+    pendingTouchOpen = null
+    openFromPointer(event)
+  }
+
+  function trackPointerMove(event: PointerEvent): void {
+    const pending = pendingTouchOpen
+    if (!pending || pending.pointerId !== event.pointerId) return
+    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > TOUCH_TAP_SLOP)
+      pendingTouchOpen = null
+  }
+
+  function finishTouchPointer(event: PointerEvent): void {
+    const pending = pendingTouchOpen
+    if (!pending || pending.pointerId !== event.pointerId) return
+    pendingTouchOpen = null
+    if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > TOUCH_TAP_SLOP) return
+    openFromPointer(event)
+  }
+
+  function cancelTouchPointer(event: PointerEvent): void {
+    if (pendingTouchOpen?.pointerId === event.pointerId) pendingTouchOpen = null
+  }
+
+  // Старый fallback для браузеров без Pointer Events. Современные браузеры
+  // уже обработали этот ввод в `pointerdown`; повторно на `mousedown` не
+  // открываем, в частности — после touch, который перешёл в прокрутку.
+  function interceptMouse(event: MouseEvent): void {
+    if (typeof window !== 'undefined' && 'PointerEvent' in window) return
+    if (!mounted || disabled || event.defaultPrevented) return
+    event.preventDefault()
+    openFromPointer(event)
   }
   function interceptKey(event: KeyboardEvent) {
     if (!mounted || disabled || event.defaultPrevented) return
@@ -505,6 +605,22 @@
     }
     appliedKey = key
     writeValues(new Set(values))
+  })
+
+  /**
+   * Нативный контрол несёт ровно текущее значение, как только опции
+   * отрисованы. Нужен для ВНЕШНИХ изменений (чип, адрес, хранилище): опция
+   * нового значения появляется в разметке позже записи, и браузер сам её
+   * выбирать не обязан. События отсюда не шлём — это внутренняя синхронизация.
+   */
+  $effect(() => {
+    void nativeOptions
+    void placeholderSelected
+    if (!nativeEl) return
+    for (const o of Array.from(nativeEl.options)) {
+      const want = o.value === '' ? placeholderSelected : selectedValues.has(o.value)
+      if (o.selected !== want) o.selected = want
+    }
   })
 
   /** Desktop popup двигается за триггером. */
@@ -649,14 +765,21 @@
     oninput={syncFromNative}
     onchange={syncFromNative}
     onpointerdown={interceptPointer}
-    onmousedown={interceptPointer}
+    onpointermove={trackPointerMove}
+    onpointerup={finishTouchPointer}
+    onpointercancel={cancelTouchPointer}
+    onmousedown={interceptMouse}
     onkeydown={interceptKey}
   >
     {#if placeholder !== undefined && !multiple}
-      <option value="" selected={selectedValues.has('')}>{placeholder}</option>
+      <option value="" selected={placeholderSelected}>{placeholder}</option>
     {/if}
-    {#each all as option (option.value)}
-      <option value={option.value} disabled={option.disabled} selected={selectedValues.has(option.value)}>
+    {#each nativeOptions as option (option.value)}
+      <option
+        value={option.value}
+        disabled={config.nativeList === 'value' ? undefined : option.disabled}
+        selected={selectedValues.has(option.value)}
+      >
         {option.label}
       </option>
     {/each}
