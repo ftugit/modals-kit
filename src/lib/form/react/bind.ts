@@ -11,13 +11,14 @@
 //   applyHandler/split/hasError        — факт/показ
 //   AsyncRunner                        — асинхронные проверки
 //   applyOps/reconcile                 — операции над набором полей
-import { useCallback, useMemo, useReducer, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
 import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
+import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
@@ -42,6 +43,8 @@ export interface UseFormOptions {
   onErrors?: ErrorHandler
   /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
   onError?: ErrorSink
+  /** URL-контур (§6.4): GET до гидратации, живой коммит в sink хоста после. */
+  url?: UrlFormOptions
   invalidFrom?: InvalidFrom
   checks?: CheckRegistry
   /** Версия спецификации в конверте: сервер поднимает описание по ней. */
@@ -144,6 +147,21 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     /** Ключ последнего сообщённого результата (Q1, дедуп). */
     notified: undefined as string | undefined,
   }), [])
+
+  // S2: «живой режим после оживления» — флаг переворачивается на mount-эффекте.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => {
+    if (!oRef.current.url) return
+    setHydrated(true)
+    return () => setHydrated(false)
+  }, [])
+  // URL-режим: зеркало значений от хоста один раз при связке (без валидации).
+  useMemo(() => {
+    const seed = o.url?.seed
+    if (!seed) return
+    const seeded = seed(desc)
+    if (seeded) store.set((st) => ({ ...st, values: { ...st.values, ...seeded } }))
+  }, [])
 
   const handler = () => oRef.current.onErrors ?? cfg.config.onErrors
   const liveMode = () => oRef.current.live ?? cfg.config.live ?? 'after-touched'
@@ -325,7 +343,46 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
    * на полях. В React это проп, а не эффект после отрисовки: обе стороны
    * (SSR и оживление) вычисляют его из одного состояния — рассинхрона нет.
    */
-  const formProps = () => ({
+  const commitUrl = (via: UrlCommitVia, name?: string) => {
+    const url = oRef.current.url
+    const el = holder.formEl
+    if (!url || !el) return
+    const ev = evaluate(new FormData(el), desc, { render, instance, requireEnvelope: false })
+    const patch: Record<string, unknown> = {}
+    for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    url.commit(patch, via)
+    store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+    if (name) recheck(name)
+  }
+
+  // S2: живой режим — `change` на форме (делегирование: любой контрол, любой тип).
+  useEffect(() => {
+    if (!oRef.current.url) return
+    const live = (ev: Event) => {
+      const t = ev.target as HTMLInputElement | null
+      if (t?.name) commitUrl('field', t.name)
+    }
+    const el = holder.formEl
+    el?.addEventListener('change', live)
+    return () => el?.removeEventListener('change', live)
+  }, [])
+
+  const formProps = () => {
+    if (oRef.current.url) {
+      return {
+        method: 'get' as const,
+        action: oRef.current.url.action ?? (typeof window !== 'undefined' ? window.location.pathname : ''),
+        noValidate: hydrated as boolean,
+        'aria-busy': (state.pending ? true : undefined) as true | undefined,
+        onSubmit: (e: FormEvent<HTMLFormElement>) => {
+          if (!hydrated) return                    // нативный GET до оживления (и без JS)
+          e.preventDefault()
+          commitUrl('submit')
+        },
+        ref: attachRef,
+      }
+    }
+    return {
     method: 'post' as const,
     action,
     encType: 'multipart/form-data',
@@ -339,7 +396,8 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
       void submit(new FormData(el, submitter))
     },
     ref: attachRef,
-  })
+  }
+  }
 
   /**
    * Скрытые поля конверта: обязаны быть в разметке ДО оживления.
@@ -351,6 +409,8 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
    * им нужен value, чтобы смена ревизии после apply() доехала до DOM.
    */
   const hidden = () => {
+    // URL-режим: конверт не участвует — ни в DOM, ни в адрес.
+    if (oRef.current.url) return []
     const env = buildEnvelope({
       formId: desc.id, revision: desc.revision, instance, submissionId: holder.sid,
       specVersion: o.specVersion,
@@ -448,6 +508,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     /** Общие ошибки: у них нет пути. */
     common: useMemo(() => split(state.shown).common, [state.shown]),
     facts: state.facts, shown: state.shown,
+    get submitVisible() { return !hydrated },
     formProps, hidden, intent, submit, lift, apply, rows, field, f,
     select: <T,>(sel: (s: typeof state) => T) => sel(state),
     /** Поля, созданные в рантайме: отличаются только префиксом имени. */

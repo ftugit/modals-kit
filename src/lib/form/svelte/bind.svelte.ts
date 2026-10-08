@@ -7,6 +7,7 @@ import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
+import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
@@ -23,9 +24,9 @@ import type { BoundConfig, LiveMode } from './config'
 const ATTACH = createAttachmentKey()
 
 export interface FormProps {
-  method: 'post'
+  method: 'post' | 'get'
   action: string
-  enctype: 'multipart/form-data'
+  enctype?: 'multipart/form-data'
   onsubmit: (e: SubmitEvent) => void
   'aria-busy'?: true
   [key: symbol]: unknown
@@ -104,6 +105,8 @@ export interface BindOptions {
   onErrors?: ErrorHandler
   /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
   onError?: ErrorSink
+  /** URL-контур (§6.4): GET до гидратации, живой коммит в sink хоста после. */
+  url?: UrlFormOptions
   /** Источник подсветки: по факту или по показу. */
   invalidFrom?: InvalidFrom
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
@@ -153,6 +156,23 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   store.subscribe(() => { snapshot = store.getSnapshot() })
 
   let formEl: HTMLFormElement | null = null
+
+  // S2: «живой режим после гидратации». $effect исполняется только в браузере:
+  // флаг переворачивается на оживлении, при размонтировании — возвращается.
+  let hydrated = $state(false)
+  $effect(() => {
+    if (!o.url) return
+    hydrated = true
+    return () => { hydrated = false }
+  })
+
+  // URL-режим: начальное зеркало значений от хоста (из хранилища, не из адреса —
+  // адрес сеет сервер в load, хост читает состояние). Валидация молчит: fields
+  // показывают значения, а не претензии.
+  if (o.url?.seed) {
+    const seeded = o.url.seed(initial)
+    if (seeded) store.set((st) => ({ ...st, values: { ...st.values, ...seeded } }))
+  }
 
   const handler = () => o.onErrors ?? cfg.config.onErrors
   const liveMode = () => o.live ?? cfg.config.live ?? 'after-touched'
@@ -297,7 +317,50 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     }
   }
 
+  /** Собрать набор объявленных ключей из DOM и отдать sink'у хоста. */
+  function commitUrl(via: UrlCommitVia, name?: string) {
+    const url = o.url
+    if (!url || !formEl) return
+    const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
+    const patch: Record<string, unknown> = {}
+    for (const f of desc.fields) patch[f.name] = ev.values[f.name]
+    url.commit(patch, via)
+    // локальное зеркало держим в такт с DOM: подсветка/живые проверки читают state
+    store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+    if (name) recheck(name)
+  }
+
   function formProps(): FormProps {
+    const url = o.url
+    if (url) {
+      return {
+        method: 'get',
+        action: url.action ?? (typeof window !== 'undefined' ? window.location.pathname : ''),
+        onsubmit: (e: SubmitEvent) => {
+          if (!hydrated) return                       // нативный GET до оживления (и без JS)
+          e.preventDefault()
+          commitUrl('submit')
+        },
+        [ATTACH]: (el: Element) => {
+          const form = el as HTMLFormElement
+          formEl = form
+          // ATTACH значит «мы живые»: novalidate — браузеру тут делать нечего,
+          // конверт не нужен (hidden() пуст), envelope-проверка не звенит.
+          form.setAttribute('novalidate', '')
+          const live = (ev: Event) => {
+            const t = ev.target as HTMLElement | null
+            const fname = t && 'name' in t ? String((t as HTMLInputElement).name) : ''
+            if (fname) commitUrl('field', fname)
+          }
+          form.addEventListener('change', live)
+          return () => {
+            form.removeEventListener('change', live)
+            if (formEl === form) formEl = null
+          }
+        },
+        ...(snapshot.pending ? { 'aria-busy': true as const } : {}),
+      }
+    }
     return {
       method: 'post',
       action,
@@ -335,6 +398,9 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   function hidden(): HiddenProps[] {
+    // URL-режим: конверт не участвует — ни в DOM, ни в адрес (иначе __form_*
+    // уехали бы GET-ом мусор-параметрами).
+    if (o.url) return []
     const env = buildEnvelope({
       formId: desc.id, revision: desc.revision, instance, submissionId, specVersion: o.specVersion,
     }, desc.policy)
@@ -471,6 +537,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     get common() { return split(snapshot.shown).common },
     get facts() { return snapshot.facts },
     get shown() { return snapshot.shown },
+    get submitVisible() { return !hydrated },
     formProps, hidden, intent, submit, lift, redisplay, apply, rows,
     /** Поля, созданные в рантайме: отличаются только префиксом имени. */
     custom: (prefix = 'u_') => desc.fields.filter((f) => f.name.startsWith(prefix)).map(viewOf),

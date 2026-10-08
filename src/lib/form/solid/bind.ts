@@ -19,13 +19,14 @@ import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
+import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
 import { FormStore, initialState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type ParallelPolicy, type Transport } from '../submit'
 import type { HtmlAttrs, RowKey } from '../types'
-import { batch, createSignal } from 'solid-js'
+import { batch, createSignal, onCleanup } from 'solid-js'
 import type { BoundConfig, LiveMode, UiPolicy } from './config'
 
 /** Настройки связки: адрес, режимы и колбэки конкретной формы. */
@@ -44,6 +45,8 @@ export interface CreateFormOptions {
   onErrors?: ErrorHandler
   /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
   onError?: ErrorSink
+  /** URL-контур (§6.4): GET до гидратации, живой коммит в sink хоста после. */
+  url?: UrlFormOptions
   invalidFrom?: InvalidFrom
   checks?: CheckRegistry
   /** Версия спецификации в конверте: сервер поднимает описание по ней. */
@@ -135,6 +138,16 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
 
   let submissionId = started.lifted?.submissionId ?? crypto.randomUUID()
   let formEl: HTMLFormElement | null = null
+  // S2: «живой режим после оживления» — сигнал переворачивается на mount.
+  const [hydrated, setHydrated] = createSignal(false)
+  if (typeof window !== 'undefined' && o.url) {
+    queueMicrotask(() => setHydrated(true))
+  }
+  // URL-режим: зеркало значений от хоста один раз при связке (без валидации).
+  if (o.url?.seed) {
+    const seeded = o.url.seed(initial)
+    if (seeded) store.set((st) => ({ ...st, values: { ...st.values, ...seeded } }))
+  }
 
   // описание изменяемо: операции над набором полей строят НОВОЕ описание
   const [description, setDescription] = createSignal(initial)
@@ -305,7 +318,47 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
    * снимает атрибут без пересоздания связки. Обе стороны (SSR и оживление)
    * вычисляют его из одного состояния — рассинхрона нет.
    */
-  const formProps = () => ({
+  const commitUrl = (via: UrlCommitVia, name?: string) => {
+    const url = o.url
+    if (!url || !formEl) return
+    const d = description()
+    const ev = evaluate(new FormData(formEl), d, { render, instance, requireEnvelope: false })
+    const patch: Record<string, unknown> = {}
+    for (const f of d.fields) patch[f.name] = ev.values[f.name]
+    url.commit(patch, via)
+    batch(() => {
+      store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+      if (name) recheck(name)
+    })
+  }
+
+  const formProps = () => {
+    if (o.url) {
+      return {
+        method: 'get' as const,
+        action: o.url.action ?? (typeof window !== 'undefined' ? window.location.pathname : ''),
+        ref: (el: HTMLFormElement | null) => {
+          formEl = el
+          if (!el) return
+          // ATTACH = мы живые: novalidate атрибутом (как в svelte-бинде),
+          // живой коммит делегированием `change`, конверт не проверяется.
+          el.setAttribute('novalidate', '')
+          const live = (ev: Event) => {
+            const t = ev.target as HTMLInputElement | null
+            if (t?.name) commitUrl('field', t.name)
+          }
+          el.addEventListener('change', live)
+          onCleanup(() => el.removeEventListener('change', live))
+        },
+        'aria-busy': (state().pending ? true : undefined) as true | undefined,
+        onSubmit: (e: SubmitEvent) => {
+          if (!hydrated()) return                       // нативный GET до оживления (и без JS)
+          e.preventDefault()
+          commitUrl('submit')
+        },
+      }
+    }
+    return {
     method: 'post' as const,
     action,
     // Регистрация формы не должна зависеть от отдельного ручного вызова:
@@ -319,10 +372,13 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
       e.preventDefault()
       void submit(new FormData(e.currentTarget as HTMLFormElement, e.submitter as HTMLElement | null))
     },
-  })
+  }
+  }
 
   /** Скрытые поля конверта: обязаны быть в разметке ДО оживления. */
   const hidden = () => {
+    // URL-режим: конверт не участвует — ни в DOM, ни в адрес.
+    if (o.url) return []
     const desc = description()
     const env = buildEnvelope({
       formId: desc.id, revision: desc.revision, instance, submissionId,
@@ -423,6 +479,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     get facts() { return state().facts },
     get shown() { return state().shown },
     setFormEl: (el: HTMLFormElement) => { formEl = el; if (el) assertEnvelope(el) },
+    get submitVisible() { return !hydrated() },
     formProps, hidden, intent, submit, lift, apply, rows,
     field: (name: string) => {
       const f = description().byName[name]
