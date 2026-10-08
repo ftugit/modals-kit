@@ -627,6 +627,11 @@
       target.closest('[data-modal-backdrop]') !== null
   }
 
+  /** A real modal control can sit behind a host popup while the dialog stays open. */
+  function pointerStartedInModal(target: Node | null): boolean {
+    return target instanceof Element && target.closest('[data-modal-layer]') !== null
+  }
+
   $effect(() => {
     if (floatings.length === 0 || typeof document === 'undefined') return
 
@@ -670,12 +675,31 @@
       const keepIndex = closestFloatingIndex(target)
       const toClose = keepIndex < 0 ? floatings : floatings.slice(keepIndex + 1)
       let closed = false
+      let focusReturn: HTMLElement | null = null
       for (const floating of [...toClose].reverse()) {
         if (floating.dismiss?.outsidePointer === false) continue
+        if (!closed) focusReturn = focusableTrigger(floating.triggers)
         closeFloating(floating.id, 'outside-pointer')
         closed = true
       }
-      if (closed && pointerStartedOnShield(target)) swallowClickOnce(event)
+      // Inside a modal, the hit-test can land on a real control behind the
+      // popup (unlike the full-page sheet, where it lands on the shield). The
+      // first gesture only dismisses the floating; don't let that same press
+      // activate/open the modal control. Page-level targets outside a modal
+      // remain actionable (for example, the filter form's Apply button).
+      const targetBehindFloating = closed && keepIndex < 0 && chain.length > 0 &&
+        pointerStartedInModal(target)
+      if (closed && (pointerStartedOnShield(target) || targetBehindFloating)) {
+        if (targetBehindFloating) {
+          event.preventDefault()
+          event.stopPropagation()
+          const trigger = focusReturn
+          queueMicrotask(() => {
+            if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+          })
+        }
+        swallowClickOnce(event)
+      }
     }
 
     const onKeydown = (event: KeyboardEvent) => {

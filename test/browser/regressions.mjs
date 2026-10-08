@@ -650,6 +650,67 @@ try {
     await page.close()
   })
 
+  /* ── R-21: закрытие Select в модалке не активирует цель под ним ─── */
+  await run('R-21 outside click закрывает Select, но не действие модалки под ним', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    await gotoBase(page)
+    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(320)
+
+    await page.locator('[data-modal-layer][data-active] select').first().click({ force: true })
+    await page.waitForSelector('[data-host-floating][data-layout="popup"]')
+
+    // Центр кнопки находится вне выпадающего списка, но внутри слоя модалки.
+    // Проверяем hit-test до жеста: это реальная цель, не пустое место/щит.
+    const action = page
+      .locator('[data-modal-layer][data-active] button')
+      .filter({ hasText: 'Без хранилища поверх' })
+      .first()
+    const box = await action.boundingBox()
+    assert(box, 'действие за Select не имеет hit-target')
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    const hit = await page.evaluate(({ x, y }) => {
+      const target = document.elementFromPoint(x, y)
+      const button = target?.closest('button')
+      return {
+        label: button?.textContent?.replace(/\\s+/g, ' ').trim() ?? '',
+        inModal: Boolean(button?.closest('[data-modal-layer]')),
+        inFloating: Boolean(button?.closest('[data-host-floating]')),
+      }
+    }, point)
+    assert(hit.label.includes('Без хранилища поверх') && hit.inModal && !hit.inFloating,
+      `проверяемая точка не попадает в кнопку за Select: ${JSON.stringify(hit)}`)
+
+    await page.evaluate(() => {
+      window.__outsideActionClicks = 0
+      document.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('button')
+        if (button?.textContent?.includes('Без хранилища поверх')) window.__outsideActionClicks += 1
+      }, true)
+    })
+    await page.mouse.click(point.x, point.y)
+    await page.waitForSelector('[data-host-floating]', { state: 'detached' })
+    const leakedClicks = await page.evaluate(() => window.__outsideActionClicks)
+    assert(leakedClicks === 0, `закрытие Select активировало нижнюю кнопку (${leakedClicks} click)`)
+    assert((await chainOf(page)).length === 0, 'вместе с Select открылся transient-слой')
+    assert((await page.locator('[data-modal-stage]').count()) === 1, 'закрылся owner-modal')
+    const focusReturned = await page.evaluate(() =>
+      document.activeElement instanceof HTMLSelectElement &&
+      document.activeElement.closest('[data-modal-layer]') !== null)
+    assert(focusReturned, 'фокус не вернулся к триггеру Select внутри модалки')
+    ok('focus вернулся к Select, не потерявшись на body')
+    ok('hit-test подтвердил реальную кнопку; outside click закрыл только Select')
+
+    await action.click()
+    await page.waitForFunction(
+      () => (history.state?.['sveltekit:states']?.modals?.transient ?? []).length === 1,
+    )
+    assert((await chainOf(page)).length === 1, 'обычный клик после закрытия Select не сработал')
+    ok('следующий намеренный клик по той же кнопке активен')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
