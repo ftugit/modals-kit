@@ -91,7 +91,28 @@ disabled ≠ скрыто; причина в helper (отдельного узл
 
 ## Вопросы к оператору (накапливаются; решение — запись здесь + в этапе)
 
-- **Q1. Единый крюк ошибок на всё приложение.** [проект предложен 2026-10-08, ждёт ок]
+- **Q1. Единый крюк ошибок на всё приложение.** [ВЫПОЛНЕНО 2026-10-08, реализация
+  ниже; из порядка «после 7» изъят по указанию оператора]
+  Сделано: конверт `{lib, code, cause, ctx?}` структурно в трёх lib; `onError` —
+  config-уровень (SSR-путь: `definePaginator`, `createModals`, `createConfig` форм)
+  И проп провайдера (`PaginatorHost`, `ModalHost`, solid — хук `usePaginatorErrors`
+  + проп; react/solid bind/config форм — зеркалом); внутри инстанса — Set fan-out
+  (`onPaginatorError` — отписка); точки: paginate init-failed/load-failed(фаза в
+  ctx)/persist-failed (console.warn вытеснен каналом), form — `notifyResultErrors`
+  после применения результата (дедуп по submissionId; external/unknown/warnings),
+  modals — unknown-запись/load/preload в `deps.report`. Приложение:
+  `app-errors.svelte.ts` (report: DEV console.error+throw; прод+SSR фатал — throw →
+  реальный 500; прод+клиент — `appErrors.critical` → layout `{#if}` рвёт дерево и
+  показывает Error500; дедуп первого фатала; таблица фаталов одна),
+  `+error.svelte` создан, экран 500 без причин/стека (проверено тестом), кнопка
+  reload. Fault-гейт демо `?fault=init|append` (content/items.ts, клиентская ветка).
+  Тесты: unit +7 (535 зелёные), браузерный `test/browser/errors.mjs` (в chain
+  test:browser): фатал→500-замена+текучесть причин запрещена, append→только консоль,
+  чисто→тихо — OK; полный test:browser зелёный, shikimori (зонд) зелёный, check 0/45.
+  Размеры: immutable 210224 (+2165 к базе этапа), js 196891; глобальные гейты —
+  прежний дрейф среды; /form 150.9>150.0 — РЕАЛЬНЫЙ рост от Q1 (бюджеты не поднимал,
+  решение за оператором). Перенос фильтров (этап 5) поднимет onError-канал форм —
+  там же поле `field(key)` в описаниях; Q2 выполнено частью: подхват — этап 4.
   **Решение: единого `onError` ВНУТРИ lib не делать** (инвертирует зависимость lib→app;
   глобальный синглтон течёт между запросами на SSR; ломает паритет монти). Lib держат
   СВОИ выходы ошибок (уже есть, проверено), а единственное место инжекта — мост на

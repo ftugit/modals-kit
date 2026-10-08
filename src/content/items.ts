@@ -80,8 +80,21 @@ export function validateItemsQuery(raw: unknown): ItemsQuery {
  */
 const DEMO_TRANSPORT_MS = 500
 
+/**
+ * Впрыск отказа (Q1, для демо и регресс-тестов): 'items' — падают ВСЕ запросы
+ * данных клиента; 'items-more' — только страницы >1 (сбой `append` — не-фатал).
+ * Клиентская зона: на сервере гейт не действует (нет location), SSR-путь не ломается.
+ */
+export const demoFault = new Set<'items' | 'items-more'>()
+
 export async function getItemsPage(args: ItemsQuery): Promise<PageResponse<DemoItem>> {
   if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  if (
+    typeof window !== 'undefined' &&
+    (demoFault.has('items') || (demoFault.has('items-more') && args.page > 1))
+  ) {
+    throw new Error('Fault: данные недоступны (инжект отказа демо)')
+  }
   if (typeof window !== 'undefined') {
     await new Promise((r) => setTimeout(r, DEMO_TRANSPORT_MS))
   }

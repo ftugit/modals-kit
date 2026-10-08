@@ -42,6 +42,8 @@ import {
   runsOfColumn,
   setExtra,
   setPageSize,
+  safePersist,
+  onPaginatorError,
   viewState,
   EMPTY_CAPABILITIES,
   type AdaptedSource,
@@ -657,5 +659,131 @@ describe('core operations & lifecycle', () => {
     await retry(store, 'errTest')
     expect(getState(store, 'errTest').status).toBe('idle')
     expect(getState(store, 'errTest').pages[1]).toEqual(['p1'])
+  })
+})
+
+/* ─────────────────── Q1: приёмники ошибок (onError) ─────────────────── */
+
+describe('Q1 onError: fan-out, коды, persist', () => {
+  it('init-failed: getInitial бросает → config-sink получает конверт', async () => {
+    resetRegistry()
+    const store = createPaginatorStore()
+    const seen: unknown[] = []
+    definePaginator({
+      name: 'q1-init',
+      adapter: {
+        async getInitial() {
+          throw new Error('rest broke')
+        },
+        loadPage: async () => ({ items: [] }),
+        persist: () => {},
+        capabilities: EMPTY_CAPABILITIES,
+        capabilitiesFor: () => EMPTY_CAPABILITIES,
+      },
+      onError: (e) => void seen.push(e),
+    })
+    await initPaginator(store, 'q1-init')
+    expect(seen).toHaveLength(1)
+    const e = seen[0] as { lib: string; code: string; cause: Error; ctx: Record<string, unknown> }
+    expect([e.lib, e.code, e.cause.message, e.ctx.phase]).toEqual(['paginate', 'init-failed', 'rest broke', 'init'])
+  })
+
+  it('load-failed + phase init: первая страница упала — код load-failed', async () => {
+    resetRegistry()
+    const store = createPaginatorStore()
+    const seen: unknown[] = []
+    definePaginator({
+      name: 'q1-load',
+      adapter: {
+        async getInitial() {
+          return { page: 1, pageSize: 20 }
+        },
+        loadPage: async () => {
+          throw new Error('source down')
+        },
+        persist: () => {},
+        capabilities: EMPTY_CAPABILITIES,
+        capabilitiesFor: () => EMPTY_CAPABILITIES,
+      },
+      onError: (e) => void seen.push(e),
+    })
+    await initPaginator(store, 'q1-load')
+    expect(seen.some((x) => (x as { code: string }).code === 'load-failed')).toBe(true)
+    expect((seen[0] as { ctx: Record<string, unknown> }).ctx.phase).toBe('init')
+  })
+
+  it('persist-failed: вместо console.warn; бросок sink’а прокинут вверх', () => {
+    resetRegistry()
+    const store = createPaginatorStore()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const seen: string[] = []
+    definePaginator({
+      name: 'q1-p',
+      adapter: {
+        async getInitial() {
+          return { page: 1, pageSize: 20 }
+        },
+        loadPage: async () => ({ items: [] }),
+        persist: () => {
+          throw new Error('quota')
+        },
+        capabilities: EMPTY_CAPABILITIES,
+        capabilitiesFor: () => EMPTY_CAPABILITIES,
+      },
+      onError: (e) => seen.push(e.code),
+    })
+    safePersist(store, 'q1-p')
+    expect(seen).toEqual(['persist-failed'])
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    // бросок — намеренный контракт серверного фатала
+    resetRegistry()
+    definePaginator({
+      name: 'q1-throw',
+      adapter: {
+        async getInitial() {
+          return { page: 1, pageSize: 20 }
+        },
+        loadPage: async () => ({ items: [] }),
+        persist: () => {
+          throw new Error('quota')
+        },
+        capabilities: EMPTY_CAPABILITIES,
+        capabilitiesFor: () => EMPTY_CAPABILITIES,
+      },
+      onError: () => {
+        throw new Error('fatal')
+      },
+    })
+    // бросок приёмника ПРОКИНУТ наружу — намеренный контракт серверного фатала
+    expect(() => safePersist(store, 'q1-throw')).toThrow('fatal')
+  })
+
+  it('onPaginatorError: подписка хоста, отписка уважаема, оба sink’а получают', () => {
+    resetRegistry()
+    const store = createPaginatorStore()
+    const cfg: string[] = []
+    const host: string[] = []
+    definePaginator({
+      name: 'q1-fan',
+      adapter: {
+        async getInitial() {
+          return { page: 1, pageSize: 20 }
+        },
+        loadPage: async () => ({ items: [] }),
+        persist: () => {
+          throw new Error('quota')
+        },
+        capabilities: EMPTY_CAPABILITIES,
+        capabilitiesFor: () => EMPTY_CAPABILITIES,
+      },
+      onError: (e) => cfg.push(e.code),
+    })
+    const off = onPaginatorError('q1-fan', (e) => host.push(e.code))
+    safePersist(store, 'q1-fan')
+    expect([cfg, host]).toEqual([['persist-failed'], ['persist-failed']])
+    off()
+    safePersist(store, 'q1-fan')
+    expect(host).toHaveLength(1)
   })
 })

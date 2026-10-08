@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { report } from '$lib/app-errors.svelte'
   import { page } from '$app/state'
   import type { CatalogFilterSchema } from '$lib/filters'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
@@ -316,6 +317,7 @@
 
 <PaginatorHost
   {name}
+  onError={report}
   class={HOST_CLASS}
   ariaLabel="Демо пагинатора"
   extraDefaults={DEFAULT_DEMO_EXTRA}

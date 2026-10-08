@@ -14,7 +14,7 @@
     "test:unit": "vitest run",
     "test:guard": "node --test tooling/",
     "test:size": "node tooling/size-budget.mjs",
-    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs",
+    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
     "test:browser:modals": "node test/browser/modals.mjs",
     "test:browser:shell": "node test/browser/shell.mjs",
@@ -23,7 +23,8 @@
     "test:browser:paginate": "node test/browser/paginate.mjs",
     "test:browser:capabilities": "node test/browser/capabilities.mjs",
     "test:browser:shikimori": "node test/browser/shikimori.mjs",
-    "test:browser:select-trace": "node test/browser/select-trace.mjs"
+    "test:browser:select-trace": "node test/browser/select-trace.mjs",
+    "test:browser:errors": "node test/browser/errors.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",

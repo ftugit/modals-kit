@@ -595,3 +595,39 @@ suite('поле знает, что оно выключено', () => {
     expect(fieldLinkState({} as never, { reason: 'просто так' })).toEqual({})
   })
 })
+
+/* ─────────────── Q1: notifyResultErrors (приёмник ошибок) ─────────────── */
+
+test('Q1: external + outcome-unknown + warnings; дедуп по submissionId; no-sink — ключ цел', async () => {
+  const { notifyResultErrors } = await import('./errors')
+  type Evt = { code: string; lib: string }
+  const events: Evt[] = []
+  const sink = (e: Evt) => events.push(e)
+  const result: any = {
+    v: 1, formId: 'f', instance: 'i', submissionId: 's1', ok: false, status: 422,
+    outcome: 'not-applied', from: 'fetch',
+    errors: [
+      { id: 'a:external:1', code: 'external', origin: 'external' },
+      { id: 'name:required:2', code: 'required', origin: 'core', path: 'name' },
+    ],
+    warnings: [{ id: '*:after:3', code: 'after', origin: 'server' }],
+    values: {},
+  }
+  let seenKey: string | undefined
+  seenKey = notifyResultErrors(sink, result, seenKey)
+  expect(events.map((e) => [e.lib, e.code])).toEqual([
+    ['form', 'external-error'],
+    ['form', 'warnings'],
+  ])
+  expect(seenKey).toBe('s1')
+  // повтор того же результата (lift+submit) — молчание
+  const n = events.length
+  seenKey = notifyResultErrors(sink, result, seenKey)
+  expect(events).toHaveLength(n)
+  // новый submission + unknown — сообщено, включая исходный ключ dedup
+  events.length = 0
+  seenKey = notifyResultErrors(sink, { ...result, submissionId: 's2', outcome: 'unknown' }, seenKey)
+  expect(events.map((e) => e.code)).toEqual(['external-error', 'outcome-unknown', 'warnings'])
+  // sink нет — nothing, переданный ключ сохранён
+  expect((notifyResultErrors as any)(undefined, result, 'keepme')).toBe('keepme')
+})

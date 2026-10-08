@@ -2,6 +2,7 @@
 // Дословный порт core.ts React-версии: jotai-store → Store из store.ts, логика 1-в-1
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
 import { canLoadMore, deriveMeta, flattenPages } from './pure'
+import type { LibError } from './types'
 import { getPaginator, type PaginatorInstance } from './registry'
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraValue, PageResponse, PaginatorState } from './types'
@@ -18,20 +19,46 @@ function patch<T>(
   store.update<T>(name, fn)
 }
 
+/**
+ * Разослать конверт по приёмникам инстанса (Q1). Эмиттер событий — не здесь:
+ * `type:'error'` уже уходит подписчикам до notify. Бросок sink'а РАСПРОСТРАНЯЕТСЯ:
+ * так серверный фатал доезжает до SvelteKit-500 (см. `onError` в README-контракте).
+ */
+export function notifyError(
+  instance: PaginatorInstance,
+  code: LibError['code'],
+  cause: unknown,
+  ctx?: Record<string, unknown>,
+): void {
+  for (const sink of instance.errorSinks) sink({ lib: 'paginate', code, cause, ctx })
+}
+
 function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** persist не критичен для отображения: ошибка → warn, состояние не ломается (SPEC §3.3). */
+/**
+ * persist не критичен для отображения: состояние не ломается (SPEC §3.3).
+ * Q1: вместо `console.warn` — конверт `persist-failed` в приёмники (хост решает
+ * консоль/что-то ещё; warn'ом более не владеем — канал единый).
+ */
 export function safePersist(store: Store, name: string): void {
   const instance = getPaginator(name)
+  const report = (error: unknown) => {
+    try {
+      notifyError(instance, 'persist-failed', error, { via: 'persist' })
+    } catch {
+      /* sink бросил (DEV throw) — от async-цепочки нам не долететь, глушим
+         УЖЕ оглашённое: бросок случился, обработчик видел. */
+    }
+  }
   try {
     const result = instance.adapter.persist(getState<unknown>(store, name))
-    if (result instanceof Promise) {
-      result.catch((error) => console.warn('[paginate] persist failed:', error))
-    }
+    if (result instanceof Promise) result.catch(report)
   } catch (error) {
-    console.warn('[paginate] persist failed:', error)
+    // синхронный бросок: notify наружу НЕ глушим — серверный фатал обязан дожить
+    // до load; DEV-throw here виден как есть.
+    notifyError(instance, 'persist-failed', error, { via: 'persist' })
   }
 }
 
@@ -137,6 +164,7 @@ export async function fetchReplace<T>(
       pending: null,
     }))
     instance.emitter.emit({ type: 'error', error, page, phase })
+    notifyError(instance, 'load-failed', error, { page, phase })
     return
   }
   if (ac.signal.aborted || getState<T>(store, name).reqId !== reqId) return // устарел — reset победил (T2.5)
@@ -179,6 +207,7 @@ export async function initPaginator<T>(
   } catch (error) {
     patch<T>(store, name, (s) => ({ ...s, status: 'error', error: errMessage(error) }))
     instance.emitter.emit({ type: 'error', error, page: null, phase: 'init' })
+    notifyError(instance, 'init-failed', error, { page: null, phase: 'init' })
     return
   }
   // Гонка (T4.7): пока getInitial был в полёте, externalPage/goToPage могли стартовать
@@ -300,6 +329,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
       pending: null,
     }))
     instance.emitter.emit({ type: 'error', error, page: target, phase: 'append' })
+    notifyError(instance, 'load-failed', error, { page: target, phase: 'append' })
     return
   }
   if (getState<T>(store, name).reqId !== reqId) return // reset победил (T2.5)

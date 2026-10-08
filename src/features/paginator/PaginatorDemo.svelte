@@ -1,6 +1,8 @@
 <script lang="ts">
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
+  import { onMount } from 'svelte'
+  import { demoFault } from '../../content/items'
   import { PaginatorScope } from '$lib/paginate/svelte'
   import type { PaginatorState } from '$lib/paginate'
   import {
@@ -20,6 +22,13 @@
   }
 
   let { loaderData }: Props = $props()
+
+  // Q1: активация впрыска отказа по адресу (?fault=init|append) — клиентская фаза.
+  onMount(() => {
+    const f = new URLSearchParams(location.search).get('fault')
+    if (f === 'init') demoFault.add('items')
+    else if (f === 'append') demoFault.add('items-more')
+  })
 
   let storeKind = $state<DemoStore>(DEFAULT_DEMO_CONFIG.store)
   const activeName = $derived(ensureDemoPaginator(storeKind))

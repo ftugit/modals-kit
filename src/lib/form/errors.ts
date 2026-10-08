@@ -5,7 +5,7 @@
 //
 // Между результатом и показом стоит один обработчик — преобразование массива.
 import type { FormDescription, InvalidFrom } from './describe'
-import type { FormError, Outcome } from './result'
+import type { FormError, Outcome, Result } from './result'
 import { safeObject } from './types'
 
 export interface ErrorContext {
@@ -103,4 +103,52 @@ export function hasError(
 ): boolean {
   const list = mode === 'shown' ? shown : facts
   return list.some((e) => e.path === name && !e.silent)
+}
+
+/* ─────────────────────────── приёмник ошибок (Q1) ─────────────────── */
+
+/**
+ * Конверт ошибки — нормализованный ВЫХОД lib. `fatal` намеренно нет: форма не
+ * знает, чем рисуется страница; 500/консоль решает хост. Тип — структурная
+ * копия конвертов соседних lib (общего импорта между lib нет).
+ */
+export interface LibError {
+  readonly lib: 'form'
+  readonly code: 'external-error' | 'outcome-unknown' | 'warnings' | (string & {})
+  readonly cause: unknown
+  readonly ctx?: Record<string, unknown>
+}
+
+/** Приёмник: `createConfig({ onError })` или `bind(..., { onError })`. */
+export type ErrorSink = (e: LibError) => void
+
+/**
+ * Сообщить о применённом результате (Q1). Зовётся СЛЕДОМ за применением —
+ * показ не трогает (данные остаются в state как были). Дедуп: один
+ * `submissionId` не сообщается дважды (lift и submit применяют один результат).
+ * @returns ключ для хранения (предыдущий, если сообщение не потребовалось).
+ */
+export function notifyResultErrors(
+  sink: ErrorSink | undefined,
+  result: Result,
+  prevNotified?: string,
+): string | undefined {
+  if (!sink) return prevNotified
+  if (result.submissionId === prevNotified) return prevNotified
+  const base = {
+    formId: result.formId, instance: result.instance,
+    outcome: result.outcome, from: result.from,
+  }
+  for (const e of result.errors) {
+    if (e.origin === 'external') {
+      sink({ lib: 'form', code: 'external-error', cause: e, ctx: { ...base, path: e.path } })
+    }
+  }
+  if (result.outcome === 'unknown') {
+    sink({ lib: 'form', code: 'outcome-unknown', cause: null, ctx: base })
+  }
+  for (const w of result.warnings ?? []) {
+    sink({ lib: 'form', code: 'warnings', cause: w, ctx: base })
+  }
+  return result.submissionId
 }

@@ -4,7 +4,7 @@
 // само выбирает компонент поля по `input` из FieldView. Настройка собирает
 // умолчания (транспорт, режимы) и политику разметки адаптера. Для каждой
 // формы это повторяется один раз, а не в каждой связке.
-import type { ErrorHandler } from '../errors'
+import type { ErrorHandler, ErrorSink } from '../errors'
 import type { InvalidFrom } from '../describe'
 import type { MessageDictionary } from '../messages'
 import type { FormState } from '../state'
@@ -67,6 +67,8 @@ export interface FormsConfig {
   parallel?: ParallelPolicy
   /** Обработчик ошибок проекта. Форма может задать свой. */
   onErrors?: ErrorHandler
+  /** Приёмник системных ошибок проекта (Q1): наблюдатель, показ не трогает. */
+  onError?: ErrorSink
   /** Откуда берётся «поле невалидно» по умолчанию. */
   invalidFrom?: InvalidFrom
   /** Политика разметки адаптера: идентификаторы, `aria-describedby`, эскалация. */

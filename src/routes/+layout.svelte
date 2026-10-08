@@ -13,6 +13,8 @@
     type ModalRegistry,
   } from '$lib/modals'
   import { svelteKitCore } from '$lib/modals/cores/sveltekit'
+  import { appErrors, report } from '$lib/app-errors.svelte'
+  import Error500 from '$lib/components/Error500.svelte'
   import { ModalHost } from '$lib/modals/svelte'
   import { BackdropCloseIcon, ModalError, Skeleton } from '$lib/ui/modals'
   import { demoScope } from './modals/modals'
@@ -83,7 +85,7 @@
 
   const initial = untrack(() => ({ names: [...demoSources.list], lookup: scope.lookup }))
   const core = svelteKitCore(sourcesFor(initial.names), { lookup: initial.lookup })
-  const modals = createModals(core, { tailCount: 3, maxHeight: '80vh' })
+  const modals = createModals(core, { tailCount: 3, maxHeight: '80vh', onError: report })
 
   let appliedNames = initial.names.join()
   let appliedLookup = initial.lookup
@@ -104,11 +106,14 @@
 
 <PageHead defaultTitle="dd modals" />
 
-{#if OWN_SYSTEM.has(page.route.id ?? '')}
+{#if appErrors.critical}
+  <Error500 />
+{:else if OWN_SYSTEM.has(page.route.id ?? '')}
   {@render children()}
 {:else}
   <ModalHost
     {modals}
+    onError={report}
     scope={scope}
     closeIcon
     backdropClick="top"

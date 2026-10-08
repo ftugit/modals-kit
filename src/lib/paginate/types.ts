@@ -149,6 +149,22 @@ export type PaginatorStorage = {
   write(name: string, snapshot: PaginatorState<unknown>): MaybePromise<void>
 }
 
+/**
+ * Конверт ошибки — нормализованный ВЫХОД lib (Q1). `fatal` здесь нет намеренно:
+ * lib не знает, чем рисуется страница; решение 500/консоль принимает хост.
+ * Тип структурно дублируется в каждой lib — общего импорта между lib нет.
+ */
+export interface LibError {
+  readonly lib: 'paginate'
+  readonly code: 'init-failed' | 'load-failed' | 'persist-failed' | (string & {})
+  readonly cause: unknown
+  /** Что случилось вокруг: страница/фаза/сторона — набор кода определяет lib. */
+  readonly ctx?: Record<string, unknown>
+}
+
+/** Приёмник ошибок: прокидывается в `definePaginator({ onError })` и в провайдер. */
+export type ErrorSink = (e: LibError) => void
+
 /** Конфиг регистрации: либо готовый адаптер, либо «источник + опции» (нормализуется в local-адаптер). */
 export type PaginatorConfig<T> =
   | {
@@ -158,6 +174,8 @@ export type PaginatorConfig<T> =
       pageSize?: number
       maxPages?: number
       reloadKeys?: readonly string[]
+      /** Приёмник ошибок ядра (Q1): init/load/persist сбоку. */
+      onError?: ErrorSink
     }
   | {
       name: string
@@ -170,6 +188,8 @@ export type PaginatorConfig<T> =
       maxPages?: number
       /** Ключи extra, влияющие на данные источника (смена → сброс + загрузка стр. 1). */
       reloadKeys?: readonly string[]
+      /** Приёмник ошибок ядра (Q1): init/load/persist сбоку. */
+      onError?: ErrorSink
     }
 
 export type PaginatorEvent =

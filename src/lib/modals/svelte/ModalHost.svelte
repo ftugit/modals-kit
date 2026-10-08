@@ -68,8 +68,18 @@
     skeleton?: Snippet
     error?: Snippet<[string, string | undefined]>
     closeIconSlot?: Snippet
+    /** Приёмник системных ошибок модалок (Q1): подключается на жизнь хоста. */
+    onError?: (e: import('../types').LibError) => void
   }
-  let { modals, scope, children, skeleton, error, closeIconSlot, ...cfg }: Props = $props()
+  let { modals, scope, children, skeleton, error, closeIconSlot, onError, ...cfg }: Props = $props()
+
+  // Q1: приёмник провайдера живёт на жизнь хоста; эффект перечитывает ТЕКУЩЕЕ
+  // ядро-объект — смена `modals` переподключает sink, старый снимается.
+  $effect(() => {
+    const m = liveModals
+    if (!onError) return
+    return m.onError(onError)
+  })
 
   /* ── живое «сейчас» хоста ────────────────────────────────────────── */
   // Смена ядра БЕЗ пересоздания хоста (этап B): ядро пересобирается при
@@ -88,6 +98,7 @@
       store: modals.store,
       lookup: scope.lookup,
       preload: undefined,
+      report: (e) => modals.reportError(e),
       hrefOf: (e: any) => routeHref(e.definition?.route, e.params),
     }),
   }))
@@ -122,6 +133,7 @@
               : { ok: false as const, reason: r.reason }
           }
         : undefined,
+      report: (e) => modals.reportError(e),
       hrefOf: (e) => routeHref(e.definition?.route, e.params),
     })
 

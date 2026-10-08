@@ -18,7 +18,7 @@ import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
-import { applyHandler, hasError, invalidFromFor, split, type ErrorContext, type ErrorHandler } from '../errors'
+import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
@@ -42,6 +42,8 @@ export interface CreateFormOptions {
   /** Политика параллельных отправок; читается перед каждой отправкой. */
   parallel?: ParallelPolicy
   onErrors?: ErrorHandler
+  /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
+  onError?: ErrorSink
   invalidFrom?: InvalidFrom
   checks?: CheckRegistry
   /** Версия спецификации в конверте: сервер поднимает описание по ней. */
@@ -168,7 +170,12 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
     } as ReturnType<FormStore['getSnapshot']>
   }
 
-  const applyResult = (result: Result) => store.set((s) => reduceResult(s, result))
+  let notified: string | undefined
+  const applyResult = (result: Result) => {
+    store.set((s) => reduceResult(s, result))
+    // Q1: наблюдатель после применения; дедуп по submissionId.
+    notified = notifyResultErrors(o.onError ?? cfg.config.onError, result, notified)
+  }
 
   /** Продолжение — адресованное сообщение: чужое не применяется. */
   let lifted = started.lifted

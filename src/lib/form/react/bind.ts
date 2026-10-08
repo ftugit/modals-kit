@@ -17,7 +17,7 @@ import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
-import { applyHandler, hasError, invalidFromFor, split, type ErrorContext, type ErrorHandler } from '../errors'
+import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
@@ -40,6 +40,8 @@ export interface UseFormOptions {
   /** Политика параллельных отправок; читается перед каждой отправкой. */
   parallel?: ParallelPolicy
   onErrors?: ErrorHandler
+  /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
+  onError?: ErrorSink
   invalidFrom?: InvalidFrom
   checks?: CheckRegistry
   /** Версия спецификации в конверте: сервер поднимает описание по ней. */
@@ -139,6 +141,8 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     sid: o.continuation?.submissionId ?? submissionId,
     formEl: null as HTMLFormElement | null,
     lifted: (o.continuation ?? null) as Result | null | undefined,
+    /** Ключ последнего сообщённого результата (Q1, дедуп). */
+    notified: undefined as string | undefined,
   }), [])
 
   const handler = () => oRef.current.onErrors ?? cfg.config.onErrors
@@ -175,7 +179,9 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
 
   const applyResult = useCallback((result: Result) => {
     store.set((s) => reduceResult(s, result))
-  }, [reduceResult, store])
+    // Q1: наблюдатель после применения; holder — переживает рендеры (дедуп).
+    holder.notified = notifyResultErrors(oRef.current.onError ?? cfg.config.onError, result, holder.notified)
+  }, [cfg, holder, oRef, reduceResult, store])
 
   /** Продолжение — адресованное сообщение: чужое не применяется. */
   const lift = useCallback((result: Result | null | undefined) => {

@@ -22,6 +22,8 @@ export type PaginatorInstance = {
   maxPages?: number
   /** Ключи extra, влияющие на данные источника: их смена = сброс + загрузка стр. 1. */
   reloadKeys: Set<string>
+  /** Приёмники ошибок (Q1): config-уровень + провайдеры. Бросок sink'а — вверх. */
+  errorSinks: Set<(e: import('./types').LibError) => void>
 }
 
 const instances = new Map<string, PaginatorInstance>()
@@ -51,7 +53,22 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
     replaceAbort: null,
     maxPages: config.maxPages,
     reloadKeys: new Set(config.reloadKeys ?? []),
+    errorSinks: new Set(config.onError ? [config.onError] : []),
   })
+}
+
+/**
+ * Подключить приёмник ошибок инстанса (провайдер монти — Q1). Возвращает отписку.
+ */
+export function onPaginatorError(
+  name: string,
+  sink: (e: import('./types').LibError) => void,
+): () => void {
+  const sinks = getPaginator(name).errorSinks
+  sinks.add(sink)
+  return () => {
+    sinks.delete(sink)
+  }
 }
 
 /** Зарегистрирован ли пагинатор (get-or-create для демо/динамических конфигов). */

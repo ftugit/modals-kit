@@ -222,3 +222,24 @@ test('LRU вытеснение с защитой активных записей
   await l.preloadModal('item', { id: 2 })
   assert.equal(calls, 4, 'item:2 была вытеснена и загрузилась заново')
 })
+
+test('Q1: report — неизвестная запись и сбой загрузчика летят в sink', async () => {
+  const seen: any[] = []
+  const store = createModalStore()
+  const scope = createRegistry('q1').define([
+    { name: 'bad', component: 'X', loader: async () => { throw new Error('nope') } },
+  ] as never[])
+  const l = createLoader({ store, lookup: scope.lookup, report: (e) => seen.push(e) })
+
+  l.runLoader({ ...entry('ghost'), known: false })
+  assert.equal(seen[0].lib, 'modals')
+  assert.equal(seen[0].code, 'unknown-modal')
+  assert.equal(seen[0].ctx.name, 'ghost')
+
+  l.runLoader(entry('bad'))
+  await tick()
+  await tick()
+  assert.equal(seen[1].code, 'load-failed')
+  assert.equal((seen[1].cause as Error).message, 'nope')
+  assert.equal(seen[1].ctx.name, 'bad')
+})

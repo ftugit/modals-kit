@@ -8,10 +8,15 @@
 import { loaderKey, runtimeKey } from './core'
 import type { AnyDefinition } from './registry'
 import type { ModalStore } from './store'
-import type { ResolvedEntry, RuntimeState } from './types'
+import type { LibError, ResolvedEntry, RuntimeState } from './types'
 
 export interface LoaderDeps {
   store: ModalStore
+  /**
+   * Сообщить конверт в приёмники хоста (Q1): unknown-запись, сбой загрузчика,
+   * сбой предзагрузки. Бросок — вверх (так серверный фатал доезжает до 500).
+   */
+  report?: (e: LibError) => void
   lookup: (name: string) => AnyDefinition | undefined
   /**
    * Данные маршрута силами фреймворка (`core.preload`). Есть — у модалки
@@ -111,6 +116,7 @@ export function createLoader(deps: LoaderDeps) {
 
     if (!entry.known) {
       setRuntime(key, { status: 'error', error: `Нет такой модалки: «${entry.name}»` })
+      deps.report?.({ lib: 'modals', code: 'unknown-modal', cause: null, ctx: { name: entry.name } })
       return () => {}
     }
 
@@ -151,6 +157,7 @@ export function createLoader(deps: LoaderDeps) {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
         for (const k of job.keys) setRuntime(k, { status: 'error', error: errorMessage(error) })
+        deps.report?.({ lib: 'modals', code: 'load-failed', cause: error, ctx: { name: entry.name } })
       })
       .finally(() => {
         // Удаляем только если это всё ещё наш job: устаревший промис
@@ -177,7 +184,10 @@ export function createLoader(deps: LoaderDeps) {
     params: Record<string, unknown>,
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     const definition = lookup(name)
-    if (!definition) return { ok: false, error: `Нет такой модалки: «${name}»` }
+    if (!definition) {
+      deps.report?.({ lib: 'modals', code: 'unknown-modal', cause: null, ctx: { name, via: 'preload' } })
+      return { ok: false, error: `Нет такой модалки: «${name}»` }
+    }
 
     const merged = { ...(definition.defaultParams ?? {}), ...params }
     const entry = { name, params: merged } as ResolvedEntry
@@ -195,6 +205,7 @@ export function createLoader(deps: LoaderDeps) {
       cacheSet(ck, data)
       return { ok: true }
     } catch (error) {
+      deps.report?.({ lib: 'modals', code: 'preload-failed', cause: error, ctx: { name } })
       return { ok: false, error: errorMessage(error) }
     }
   }

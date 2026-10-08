@@ -3,7 +3,7 @@
 // Хук приложения существует только затем, чтобы не повторять ЭТО на каждой
 // форме. Библиотека фабрики хуков не поставляет: `bind` работает и без хука.
 import type { Component } from 'svelte'
-import type { ErrorHandler } from '../errors'
+import type { ErrorHandler, ErrorSink } from '../errors'
 import type { InvalidFrom } from '../describe'
 import type { MessageDictionary } from '../messages'
 import type { FormPolicy } from '../policy'
@@ -81,6 +81,8 @@ export interface FormsConfig {
   parallel?: ParallelPolicy
   /** Обработчик ошибок проекта. Форма может задать свой. */
   onErrors?: ErrorHandler
+  /** Приёмник системных ошибок проекта (Q1): наблюдатель, показ не трогает. */
+  onError?: ErrorSink
   /** Откуда берётся «поле невалидно» по умолчанию. */
   invalidFrom?: InvalidFrom
   /** Реестр и политика проекта: по умолчанию общие. */

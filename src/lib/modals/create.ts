@@ -15,7 +15,7 @@ import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, nextChain, re
 import { createModalStore, type ModalStore } from './store'
 import { DEFAULT_HOST_CONFIG } from './types'
 import type {
-  Chain, ChainOverrides, HostConfig, ModalContext, RegisteredEntry, StackMode, TransientEntry,
+  Chain, ChainOverrides, HostConfig, LibError, ErrorSink, ModalContext, RegisteredEntry, StackMode, TransientEntry,
 } from './types'
 import { entryLabel } from './types'
 import type { AnyDefinition } from './registry'
@@ -101,6 +101,13 @@ export interface Modals<V = unknown> {
   forceClose(name?: string): void
   /** Инвалидировать или очистить кэш асинхронных данных модалок. */
   invalidateLoader(name?: string, params?: Record<string, unknown>): void
+  /**
+   * Подключить приёмник ошибок (Q1). Отписка — при размонтировании.
+   * Бросок приёмника распространяется вверх: серверный фатал доезжает до 500.
+   */
+  onError(sink: ErrorSink): () => void
+  /** Сообщить конверт всем приёмникам (зовут загрузчик и точки размещения). */
+  reportError(e: LibError): void
   /** Принудительно чистит всю цепочку, включая заблокированные записи. */
   forceCloseAll(): void
 }
@@ -111,14 +118,19 @@ export interface Modals<V = unknown> {
  */
 export function createModals<V = unknown>(
   core: ModalCore,
-  options: ModalsOptions<V> = {},
+  options: ModalsOptions<V> & { onError?: ErrorSink } = {},
 ): Modals<V> {
   const store = createModalStore()
+
+  // Q1: приёмник — НЕ часть HostConfig, выделен до копирования умолчаний,
+  // иначе осел бы в store как настройка внешнего вида.
+  const { onError, ...hostOptions } = options
+  const errorSinks = new Set<ErrorSink>(onError ? [onError] : [])
 
   // Умолчания задаются один раз при создании; запись цепочки может их
   // переопределить своими `overrides`.
   const clean = Object.fromEntries(
-    Object.entries(options).filter(([, v]) => v !== undefined),
+    Object.entries(hostOptions).filter(([, v]) => v !== undefined),
   ) as Partial<HostConfig>
   store.set({ hostConfig: { ...DEFAULT_HOST_CONFIG, ...clean } })
 
@@ -456,6 +468,17 @@ export function createModals<V = unknown>(
 
     invalidateLoader(name, params) {
       store.clearMemory(name, params)
+    },
+
+    onError(sink) {
+      errorSinks.add(sink)
+      return () => {
+        errorSinks.delete(sink)
+      }
+    },
+
+    reportError(e) {
+      for (const sink of errorSinks) sink(e)
     },
   }
 

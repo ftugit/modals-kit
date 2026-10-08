@@ -309,3 +309,19 @@ test('жизненный цикл: onOpen / onClose / onHostOpen / onHostClose',
     'close:a', 'host:close',
   ])
 })
+
+/* ─────────────── Q1: канал приёмников (createModals) ─────────────── */
+
+test('Q2x. onError: config-приёмник + регистрация хоста, отписка уважаема', () => {
+  const seen: string[] = []
+  const core = buildCore(memoryEngine(), urlStorage(), { lookup: createRegistry('q1m').lookup })
+  const m = createModals(core, {
+    onError: (e: { code: string }) => seen.push('cfg:' + e.code),
+  })
+  const off = m.onError((e: { code: string }) => seen.push('host:' + e.code))
+  m.reportError({ lib: 'modals', code: 'x', cause: null })
+  assert.deepEqual(seen, ['cfg:x', 'host:x'])
+  off()
+  m.reportError({ lib: 'modals', code: 'y', cause: null })
+  assert.deepEqual(seen, ['cfg:x', 'host:x', 'cfg:y'])
+})

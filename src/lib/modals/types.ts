@@ -338,3 +338,18 @@ export interface ResolvedEntry<V = unknown> {
   /** Исходное определение, когда запись зарегистрирована и известна. */
   definition?: ModalDefinition<any, any, V>
 }
+
+/* ───────────────── приёмник ошибок (Q1) ───────────────── */
+
+/**
+ * Конверт ошибки — нормализованный ВЫХОД lib (Q1). Структурная копия конвертов
+ * соседних lib; `fatal` намеренно решает хост, не модалки.
+ */
+export interface LibError {
+  readonly lib: 'modals'
+  readonly code: 'unknown-modal' | 'load-failed' | 'preload-failed' | (string & {})
+  readonly cause: unknown
+  readonly ctx?: Record<string, unknown>
+}
+
+export type ErrorSink = (e: LibError) => void

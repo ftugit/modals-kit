@@ -1,5 +1,6 @@
 // Однократная настройка проекта. Хук приложения существует только затем,
 // чтобы не повторять ЭТО на каждой форме.
+import { report } from '$lib/app-errors.svelte'
 import { createConfig } from '$lib/form/svelte'
 import type { Transport } from '$lib/form'
 import './extend'                       // регистрация своего типа и правил
@@ -46,6 +47,8 @@ export const forms = createConfig({
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',
+  // Q1: системные сбои формы стекаются в единый канал приложения (показ не трогает).
+  onError: report,
 })
 
 /** Асинхронные проверки передаются связке: в браузере — с подавлением. */
@@ -61,6 +64,7 @@ export const formsCustomUi = createConfig({
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',
+  onError: report,
   ui: {
     fieldId: (formId, name) => `fld_${formId}__${name}`,
     shouldValidate: ({ event }) => event === 'input',

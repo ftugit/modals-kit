@@ -16,12 +16,13 @@
     setPageSize,
   } from '../core'
   import { canLoadMore, pickCurrentPage } from '../pure'
-  import { getPaginator } from '../registry'
+  import { getPaginator, onPaginatorError } from '../registry'
   import { createPaginatorStore, getClientStore, type Store } from '../store'
   import type {
     EdgeTrigger,
     Extra,
     ExtraValue,
+    LibError,
     PaginatorState,
     PrependBehavior,
     ScrollDriver,
@@ -62,6 +63,8 @@
     pageHysteresis?: number
     toolbar?: Snippet
     children?: Snippet
+    /** Приёмник ошибок инстанса (Q1): подключается на жизнь хоста. */
+    onError?: (e: LibError) => void
   }
 
   let {
@@ -87,7 +90,14 @@
     pageHysteresis = 48,
     toolbar,
     children,
+    onError,
   }: Props<any> = $props()
+
+  // Q1: хост-проп подключается к инстансу на жизнь компонента (дедуп — дело sink'а).
+  $effect(() => {
+    if (!onError) return
+    return onPaginatorError(name, onError)
+  })
 
   const instance = getPaginator(name)
   const store = useScopeStore()

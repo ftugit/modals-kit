@@ -41,11 +41,11 @@ import {
   pickCurrentPage,
   viewState as deriveViewState,
 } from '../pure'
-import { getPaginator } from '../registry'
+import { getPaginator, onPaginatorError } from '../registry'
 import { createPaginatorStore, getClientStore, type Store } from '../store'
 import { readPaginatorSearch, type ExtraSearchSpec, type MinimalRouter } from '../adapter-url'
 import type { PaginatorAdapter } from '../types'
-import type { Extra, PageGroup, PaginatorEvent, PaginatorState, ViewState } from '../types'
+import type { Extra, LibError, PageGroup, PaginatorEvent, PaginatorState, ViewState } from '../types'
 
 type PaginatorContextValue = {
   name: string
@@ -169,6 +169,8 @@ export type PaginatorHostProps<T> = {
    * счётчики): хуки usePaginator* доступны, а скролл списка её не уносит.
    */
   toolbar?: JSX.Element
+  /** Приёмник ошибок инстанса (Q1): подключается на жизнь хоста. */
+  onError?: (e: LibError) => void
   /**
    * Режим: 'accumulate' (default) — страницы складываются (подгрузка по краям);
    * 'single' — классическая смена (любой переход = REPLACE), сентинелы не рендерятся.
@@ -219,6 +221,8 @@ export type PaginatorHostProps<T> = {
  */
 function ContainerHost<T>(props: PaginatorHostProps<T>) {
   const instance = getPaginator(props.name) // R17: неизвестный name → throw
+  // Q1: проп onError — на жизнь компонента (-solid-: onCleanup в setup-скоупе).
+  if (props.onError) onCleanup(onPaginatorError(props.name, props.onError))
   // snapshot/externalPage читаются один раз при создании (гидрация — фаза setup).
   const snapProp = props.snapshot ?? null
   const externalAtMount = props.externalPage ?? null
@@ -722,6 +726,15 @@ export function usePaginatorActions(nameArg?: string): PaginatorActions {
 export function usePaginatorEvents(handler: (event: PaginatorEvent) => void, name?: string): void {
   const ctx = useCtx('usePaginatorEvents', name)
   onCleanup(getPaginator(ctx.name).emitter.on((event) => handler(event)))
+}
+
+/**
+ * Приёмник ошибок ядра (Q1): init/load/persist-сбоки, нормализованным конвертом.
+ * Событийный эмиттер остаётся отдельным каналом — это надстройка для хостов.
+ */
+export function usePaginatorErrors(sink: (e: LibError) => void, name?: string): void {
+  const ctx = useCtx('usePaginatorErrors', name)
+  onCleanup(onPaginatorError(ctx.name, sink))
 }
 
 export function usePageHref(

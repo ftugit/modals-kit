@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { report } from '$lib/app-errors.svelte'
   import { PaginatorHost, usePaginatorState } from '$lib/paginate/svelte'
   import {
     EmptyState,
@@ -84,6 +85,7 @@
 
     <PaginatorHost
       {name}
+      onError={report}
       pageParam={GALLERY_PAGE_PARAM}
       class="h-[360px] scroll-mt-20 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm"
       ariaLabel="Галерея"

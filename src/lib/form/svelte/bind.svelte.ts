@@ -6,7 +6,7 @@ import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
-import { applyHandler, hasError, invalidFromFor, split, type ErrorContext, type ErrorHandler } from '../errors'
+import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import { buildEnvelope } from '../envelope'
 import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
@@ -102,6 +102,8 @@ export interface BindOptions {
   transport?: Transport
   /** Обработчик ошибок формы. Перекрывает проектный. */
   onErrors?: ErrorHandler
+  /** Приёмник системных ошибок (Q1). Перекрывает проектный. */
+  onError?: ErrorSink
   /** Источник подсветки: по факту или по показу. */
   invalidFrom?: InvalidFrom
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
@@ -197,12 +199,15 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       values: { ...s.values, ...result.values },
       revision: result.revision,
     }))
+    // Q1: сообщаем ПОСЛЕ применения — показ не зависит от sink'а; дедуп по submissionId.
+    notified = notifyResultErrors(o.onError ?? cfg.config.onError, result, notified)
   }
 
   /**
    * Продолжение — адресованное сообщение: чужое не применяется, иначе две
    * одинаковые формы увидят чужие ошибки.
    */
+  let notified: string | undefined
   let lifted: Result | null | undefined
   function lift(result: Result | null | undefined) {
     if (!result || result === lifted) return
