@@ -89,6 +89,28 @@ disabled ≠ скрыто; причина в helper (отдельного узл
 - Практика: любые правки клиентского кода — сразу сравнивать test:size с базовым прогоном
   (замер дребезга — 2 чистых сборки подряд).
 
+## Этап 8 (приказ оператора 2026-10-09 ночью): примитивы + form/lib для всех демо-панелей
+
+Правило: весь проект не использует дефолтные поля ввода — только примитивы; демо-панели
+(как фильтры) через form/lib, поля — от механизма (form.field / attrs). Решения оператора:
+панели = Select/Toggle как у /paginator (Segmented уходит); виджеты /form/ui — начинку на
+примитивы с {...v.attrs}; скрытый чекбокс drawer'а в AppShell — НЕ трогаем (CSS-механизм);
+ползунки — Input type=range. Каждый E-шаг — зелёный прогон + коммит в локальный git.
+
+- [ ] E1: общие виджеты настроек в `$lib/ui/settings/` (Field/Select/Toggle из
+      ui/paginator/fields; fields → re-export), проброс `{...v.attrs}` (id, aria-*, value
+      из механизма), help-id для aria-describedby; `SearchQueryForm` — input → Input.
+- [ ] E2: панель /form (formSettings/sandbox/sample/mode) — компилируется как DemoPanelSchema
+      (локальный контур bind без url + onChange→onInput), рендер через Field/Select/Toggle;
+      песочница-тумблеры = Toggle.
+- [ ] E3: панель /modals (segmentedSettings + tailCount + панель источников) — тот же контур,
+      sink = m.modals.configure; range = Input type=range {...v.attrs}.
+- [ ] E4: /form/ui витрина-виджеты на примитивы (TextField→Input, PasswordField→PasswordInput,
+      SelectField→NativeSelect, TextareaField→Textarea, CheckboxField→Checkbox,
+      RatingField→Input range) c {...f.attrs}; CardModal input → Input.
+- [ ] E5: тесты (forms.mjs/modals.mjs — клики сегментов → опции select + change), полный
+      прогон (unit/check/size/браузер), a11y (висячих aria-describedby нет), удаление
+      Segmented/Control если осиротели, доклады.
 ## Ночной прогон 2026-10-09 (после решений оператора по бюджетам и shikimori)
 
 - Исполнено: `tooling/size-budget.mjs` — «подними на 10% все» (203→223.3, 190→209, 20→22,
