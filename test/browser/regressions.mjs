@@ -505,7 +505,7 @@ try {
     }
 
     // У demo-модалок нет зашитого mobile: обе следуют живому умолчанию хоста.
-    await setDefault('не прижимать')
+    await setDefault('выкл')
     assert((await openModal('Select внутри модалки')) === 'center',
       'Select-модалка сохранила зашитое направление вместо настройки хоста')
     await closeAll()
