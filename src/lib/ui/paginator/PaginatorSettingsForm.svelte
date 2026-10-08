@@ -150,7 +150,9 @@
               checked={v.value === true}
               disabled={v.disabled === true}
               hint={v.reason ?? undefined}
+              hintId={`${v.attrs.id}-help`}
               hiddenPair={js}
+              {...v.attrs}
             />
             {#each v.errors as error (error.id)}
               <p class="mt-0.5 text-xs text-destructive" {...v.errorProps()}>
@@ -159,12 +161,17 @@
             {/each}
           </div>
         {:else}
-          <Field label={v.label ?? schema.label(name)} hint={v.reason ?? undefined}>
+          <Field
+            label={v.label ?? schema.label(name)}
+            hint={v.reason ?? undefined}
+            hintId={`${v.attrs.id}-help`}
+          >
             <Select
               name={v.name}
               disabled={v.disabled === true}
               value={v.value === undefined || v.value === null ? '' : String(v.value)}
               options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
+              {...v.attrs}
             />
             {#each v.errors as error (error.id)}
               <p class="mt-0.5 text-xs text-destructive" {...v.errorProps()}>

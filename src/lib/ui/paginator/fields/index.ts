@@ -1,3 +1,3 @@
-export { default as Field } from './Field.svelte'
-export { default as Select } from './Select.svelte'
-export { default as Toggle } from './Toggle.svelte'
+export { default as Field } from '$lib/ui/settings/Field.svelte'
+export { default as Select } from '$lib/ui/settings/Select.svelte'
+export { default as Toggle } from '$lib/ui/settings/Toggle.svelte'

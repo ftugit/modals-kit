@@ -7,6 +7,7 @@
   // хранилища. Ключ объявления — адресный (`page.q`), в стор он ложится как `q`.
   import { onMount } from 'svelte'
   import { defineForm, field, v } from '$lib/form'
+  import { Input } from '$lib/ui/primitives'
   import { bind, createConfig } from '$lib/form/svelte'
   import { currentSearch } from '$lib/router/sveltekit'
   import { getClientStore, setExtra } from '$lib/paginate'
@@ -163,7 +164,7 @@
   {#each preserved as [key, val] (key + '=' + val)}
     <input type="hidden" name={key} value={val} />
   {/each}
-  <input
+  <Input
     {...vf.attrs}
     type="search"
     data-testid="search-input"
