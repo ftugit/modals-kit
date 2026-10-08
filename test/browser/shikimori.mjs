@@ -457,6 +457,33 @@ async function checkFiltersUi(browser) {
       throw new Error('после снятия чипа должен остаться один активный фильтр');
     console.log('  ok  чип снял только своё значение (соседний фильтр и адрес целы)');
 
+    // Числовые контролы читаются как FormData.getAll() → string[]. Score и год
+    // обязаны пережить этот путь до числового extra, URL и параметров API.
+    console.log('— Оценка и год: JS FormData → extra → URL → API —');
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await openFilters(page);
+    await panel.locator('input[name="page.filters.score.min"]').fill('8');
+    await panel.locator('input[name="page.filters.year.min"]').fill('1990');
+    await panel.locator('input[name="page.filters.year.max"]').fill('1992');
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await waitFor(async () => {
+      const params = new URL(page.url()).searchParams;
+      return params.get('page.filters.score.min') === '8' &&
+        params.get('page.filters.year.min') === '1990' && params.get('page.filters.year.max') === '1992';
+    }, { what: 'JS сохраняет score и обе границы года в URL' });
+    const numeric = await api('/api/shikimori/animes?limit=5&filters.score.min=8&filters.year.min=1990&filters.year.max=1992');
+    if (numeric.status !== 200 || numeric.body.dropped?.length)
+      throw new Error(`score/year отклонены сервером: ${JSON.stringify(numeric.body.dropped)}`);
+    if (!numeric.body.items.length || numeric.body.items.some((item) =>
+      item.score < 8 || item.year < 1990 || item.year > 1992))
+      throw new Error(`score/year не сузили фактическую выдачу: ${JSON.stringify(numeric.body.items)}`);
+    const numericIds = numeric.body.items.map((item) => String(item.id));
+    await waitFor(async () => {
+      const visible = await rowsOf(page).evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+      return visible.join(',') === numericIds.join(',');
+    }, { what: 'JS выдача совпадает с API score/year' });
+    console.log(`  ok  JS score≥8 + year 1990–1992 сохранились и сузили выдачу до ${numericIds.length} записей`);
+
     // Связка: у анонсов нет оценки — поле гаснет, причина видна.
     await openFilters(page);
     await chooseFilterOption(
@@ -663,6 +690,33 @@ async function checkFiltersNoJs(browser) {
     if (suppressed.body.items.map((item) => item.id).join(',') !== statusOnly.body.items.map((item) => item.id).join(','))
       throw new Error('заблокированная оценка изменила выдачу status=anons');
     console.log('  ok  validation виден без JS/раскрытия, URL не переписан, выдача равна status=anons без score');
+
+    // Без JS те же score/year поля отправляются нативным GET на серверный
+    // источник; проверяем диапазон и фактическую выдачу, а не только URL.
+    console.log('— Оценка и год: no-JS GET → source schema → Shikimori —');
+    await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'domcontentloaded' });
+    await openFilters(page);
+    await page.locator('[data-testid="filters-panel"] input[name="page.filters.score.min"]').fill('8');
+    await page.locator('[data-testid="filters-panel"] input[name="page.filters.year.min"]').fill('1990');
+    await page.locator('[data-testid="filters-panel"] input[name="page.filters.year.max"]').fill('1992');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('[data-testid="catalog-filter-submit"]').click(),
+    ]);
+    const scoreYearUrl = new URL(page.url());
+    if (scoreYearUrl.searchParams.get('page.filters.score.min') !== '8' ||
+        scoreYearUrl.searchParams.get('page.filters.year.min') !== '1990' ||
+        scoreYearUrl.searchParams.get('page.filters.year.max') !== '1992')
+      throw new Error(`no-JS GET потерял score/year: ${page.url()}`);
+    const scoreYear = await api('/api/shikimori/animes?limit=5&filters.score.min=8&filters.year.min=1990&filters.year.max=1992');
+    if (scoreYear.status !== 200 || scoreYear.body.dropped?.length || !scoreYear.body.items.length)
+      throw new Error(`no-JS score/year не применились: ${JSON.stringify(scoreYear.body.dropped)}`);
+    if (scoreYear.body.items.some((item) => item.score < 8 || item.year < 1990 || item.year > 1992))
+      throw new Error(`no-JS score/year пропустили чужие записи: ${JSON.stringify(scoreYear.body.items)}`);
+    const serverIds = await rowsOf(page).evaluateAll((els) => els.map((el) => el.dataset.testid.replace('anime-', '')));
+    if (serverIds.join(',') !== scoreYear.body.items.map((item) => String(item.id)).join(','))
+      throw new Error(`no-JS SSR отличается от score/year API: ${serverIds}`);
+    console.log(`  ok  no-JS score≥8 + year 1990–1992 дошли до источника; SSR показывает ${serverIds.length} точных записей`);
 
     // Native multiple-select submits one GET parameter per selected option.
     // The URL adapter must fold those repeats into the source's canonical CSV list.

@@ -499,7 +499,16 @@ export function stripDefaultCatalogFilterValues(
     if (!parsed) continue
     const descriptor = byKey.get(parsed.key)
     if (descriptor?.type === 'number' && parsed.bound) {
-      const num = typeof raw === 'number' ? raw : typeof raw === 'string' && raw !== '' ? Number(raw) : undefined
+      // Форма читает каждый нативный контрол через FormData.getAll(), поэтому
+      // даже одиночная числовая граница приходит как string[]. Принимаем ровно
+      // один элемент; несколько значений для одного number-поля неоднозначны.
+      const candidate = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw
+      const num =
+        typeof candidate === 'number'
+          ? candidate
+          : typeof candidate === 'string' && candidate.trim() !== ''
+            ? Number(candidate)
+            : undefined
       if (num === undefined || !Number.isFinite(num)) continue
       const edge = parsed.bound === 'min' ? descriptor.min : descriptor.max
       if (edge !== undefined && num === edge) continue // дефолт — не фильтр

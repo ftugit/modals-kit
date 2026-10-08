@@ -223,15 +223,29 @@ describe('патч хранилища', () => {
     ])
   })
 
-  it('граница числового поля остаётся ЧИСЛОМ, равная краю базы — не значение', () => {
+  it('FormData-границы числового поля остаются числами, края базы — не значения', () => {
     const patch = catalogFilterExtraPatch(schema, {
-      'filters.score.min': '7',
-      'filters.year.min': '1900',
-      'filters.year.max': '2028',
+      'filters.score.min': ['7'],
+      'filters.year.min': ['1900'],
+      'filters.year.max': ['2028'],
     })
     expect(patch['filters.score.min']).toBe(7)
     expect(patch['filters.year.min']).toBeUndefined()
     expect(patch['filters.year.max']).toBeUndefined()
+  })
+
+  it('принимает по одному FormData-значению score/year и отвергает неоднозначный number', () => {
+    const patch = catalogFilterExtraPatch(schema, {
+      'filters.score.min': ['8'],
+      'filters.year.min': ['1990'],
+      'filters.year.max': ['1992'],
+    })
+    expect(patch['filters.score.min']).toBe(8)
+    expect(patch['filters.year.min']).toBe(1990)
+    expect(patch['filters.year.max']).toBe(1992)
+
+    const ambiguous = catalogFilterExtraPatch(schema, { 'filters.score.min': ['7', '8'] })
+    expect(ambiguous['filters.score.min']).toBeUndefined()
   })
 
   it('значение, снятое связкой, в патч не едет — но причина остаётся в картине', () => {
