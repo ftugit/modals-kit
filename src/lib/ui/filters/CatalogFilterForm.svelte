@@ -77,7 +77,7 @@
    */
   const idOf = (control: CatalogFilterControl): string => control.name
 
-  /** Идентификатор пояснения к полю: причина связки или усечённый список. */
+  /** Идентификатор пояснения к полю: строка связки (причина или отказ) или усечённый список. */
   const noteId = (control: CatalogFilterControl, kind: 'reason' | 'truncated'): string =>
     `${idOf(control)}-${kind}`
 

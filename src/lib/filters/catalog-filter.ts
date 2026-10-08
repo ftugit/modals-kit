@@ -30,6 +30,7 @@ import {
   type FormState,
   type ValidatorRef,
 } from '$lib/form'
+import { linkBlockedValidator, type LinkBlockedProbe } from '$lib/links/validators'
 
 /** `and` — все значения, `or` — любое, `not` — исключение (красные чипы). */
 export type CatalogFilterMode = 'and' | 'or' | 'not'
@@ -426,6 +427,45 @@ function optionsAllowlist(values: readonly string[]): ValidatorRef {
  * которого нет в `options`), лимиты — правилами min/max. Одно определение
  * используют серверная форма, клиентская форма и `validateCatalogFilterValues`.
  */
+/**
+ * Зонды валидатора связок: по каждому ПОЛЕ, которое схема умеет снимать
+ * (`drop: { field }`), — список правил, которые его гасят. Валидатор вешается
+ * на все пути поля (режимы и границы): отказ касается поля, а не одного
+ * режима. Условия переводятся в пути, которые видит декодер формы, — ядро
+ * `lib/links` о путях не знает. `drop: 'q'` не участвует: поиск живёт вне
+ * формы (связка с ним решает сервер, см. `catalogFilterSearchRule`).
+ */
+function linkProbesByField(schema: CatalogFilterSchema): Map<string, LinkBlockedProbe[]> {
+  const pathsOf = new Map(schema.fields.map((field) => [field.key, catalogFilterFieldNames(field)]))
+  const labelOf = new Map(schema.fields.map((field) => [field.key, field.label]))
+  const out = new Map<string, LinkBlockedProbe[]>()
+  for (const rule of schema.rules ?? []) {
+    if (rule.drop === 'q') continue
+    const list = out.get(rule.drop.field) ?? []
+    list.push({
+      id: rule.id,
+      when: rule.when.map((condition) => ({
+        label: labelOf.get(condition.field) ?? condition.field,
+        paths: pathsOf.get(condition.field) ?? [],
+        ...(condition.value === undefined ? {} : { value: condition.value }),
+      })),
+    })
+    out.set(rule.drop.field, list)
+  }
+  return out
+}
+
+/**
+ * Валидатор связок в определении: набор с запрещённой комбинацией отклоняется
+ * ЦЕЛИКОМ (`validateCatalogFilterValues` на любой ошибке отдаёт `values = {}`) —
+ * источник не получает ни одного значения, «частичного применения» без JS нет.
+ * Текст отказа — общий со связочным helper'ом (код + параметры, словарь на
+ * форме), см. `lib/links/validators`.
+ */
+const LINK_MESSAGES = {
+  'link.blocked': '«{field}» невозможно использовать совместно с {blockers}',
+}
+
 export function compileCatalogFilterSchema(
   input: unknown,
   id = 'catalog-filters',
@@ -444,12 +484,14 @@ export function compileCatalogFilterSchema(
   const fields: Record<string, FieldDraft<any>> = Object.create(null)
   const paths: string[] = []
   const defaults: Record<string, string> = {}
+  const blocked = linkProbesByField(schema)
 
   for (const descriptor of schema.fields) {
     for (const name of catalogFilterFieldNames(descriptor)) {
       const parsed = parseCatalogFilterPath(name)
       const mode = parsed?.mode
       const bound = parsed?.bound
+      const linkProbes = blocked.get(descriptor.key)
       const common = {
         // Режим/граница видны в подписи: «Жанры · кроме», «Оценка · от» —
         // читается и без JS.
@@ -466,6 +508,10 @@ export function compileCatalogFilterSchema(
           ...(descriptor.type === 'multiselect' && descriptor.maxSelections !== undefined
             ? [{ name: 'maxCount', arg: descriptor.maxSelections }]
             : []),
+          // Отказ связки — у КАЖДОГО поля, которое схема умеет снимать, у
+          // всех его путей (режим/граница): набор с выбранным запрещённым
+          // значением отклоняется целиком, «частичного применения» без JS нет.
+          ...(linkProbes ? [linkBlockedValidator(linkProbes, descriptor.label)] : []),
         ] as ValidatorRef[],
       }
       // Поля формы получают ПОЛНЫЕ подписи опций (label + disabled): их видит
@@ -491,7 +537,12 @@ export function compileCatalogFilterSchema(
     }
   }
 
-  return { schema, definition: defineForm({ id, fields, policy: catalogFilterPolicy() }), paths, defaults }
+  return {
+    schema,
+    definition: defineForm({ id, fields, policy: catalogFilterPolicy(), messages: LINK_MESSAGES }),
+    paths,
+    defaults,
+  }
 }
 
 /**

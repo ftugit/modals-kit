@@ -148,8 +148,9 @@ export function animesFilterQuery(
       dropped.push({ key, reason: 'поля нет в схеме источника' })
       continue
     }
-    const name = parseCatalogFilterPath(key)!.key
-    if (suppressed.has(name)) continue
+    // Поля, снятые связкой, сюда ДОЕЗЖАЮТ: без JS набор отклоняет валидатор
+    // связей (модель §7: частичного применения не существует — источник не
+    // получает ничего). Предрезка «по-тихому» оставила бы status работать.
     usable[key] = value
   }
 
@@ -187,19 +188,35 @@ export function animesFilterQuery(
     explained.add(`filters.${field.key}.min`)
     explained.add(`filters.${field.key}.max`)
   }
-  for (const key of Object.keys(usable)) {
-    if (applied.has(key) || explained.has(key)) continue
-    dropped.push({ key, reason: 'значение вне опций или границ схемы' })
-  }
-
+  // Связка, снявшая поле с ВЫБРАННЫМ значением, — отказ набора; объясняем
+  // её причиной, а не «вне опций» (значение-то корректно, несовместим набор).
+  const rejected = errors.includes('link.blocked')
+  const linkExplain = new Set<string>()
   for (const key of suppressed) {
+    const field = schema.fields.find((item) => item.key === key)
+    if (!field) continue
+    // Пустое запрещённое поле ничего не нарушает (§7.5): сообщаем только о
+    // связке, которая задела значение.
+    if (!catalogFilterFieldNames(field).some((path) => (map[path]?.length ?? 0) > 0)) continue
+    linkExplain.add(key)
     const rule = (schema.rules ?? []).find((item) => item.drop !== 'q' && item.drop.field === key)
     dropped.push({
       key: `filters.${key}`,
       reason: rule?.reason ?? 'несовместимо с другими фильтрами',
     })
   }
+  for (const key of Object.keys(usable)) {
+    const owner = parseCatalogFilterPath(key)?.key
+    if (applied.has(key) || explained.has(key) || (owner !== undefined && linkExplain.has(owner))) continue
+    dropped.push({
+      key,
+      reason: rejected
+        ? 'набор отклонён связкой: значения несовместимы'
+        : 'значение вне опций или границ схемы',
+    })
+  }
   for (const error of errors) {
+    if (error === 'link.blocked') continue // его причина уже названа по ключам
     dropped.push({ key: 'filters', reason: `значение не прошло проверку (${error})` })
   }
 

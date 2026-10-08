@@ -158,8 +158,7 @@ describe('связки в интерфейсе', () => {
     // связка названа полем-виновником, объяснение берётся из схемы.
     expect(score).toMatchObject({
       disabled: true,
-      suppressedBy: 'score-with-anons',
-      reason: '«Статус» блокирует поле: у анонсов нет оценки',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки'
     })
     // Соседние поля связка не трогает.
     expect(states.find((state) => state.key === 'genres')?.disabled).toBe(false)
@@ -183,8 +182,7 @@ describe('связки в интерфейсе', () => {
     const score = catalogFilterFieldStates(two, { 'filters.status': 'anons' }).find((s) => s.key === 'score')
     expect(score).toMatchObject({
       disabled: true,
-      suppressedBy: 'score-with-anons',
-      reason: '«Статус» блокирует поле: у анонсов нет оценки',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки'
     })
   })
 
@@ -210,20 +208,30 @@ describe('связки в интерфейсе', () => {
     expect(score?.reason).toBe('«Тип» и «Статус» блокируют поле: связка с двумя условиями')
   })
 
+  it('отказ связки рисуется под полем, куда доехало значение', () => {
+    const controls = catalogFilterControls(schema, { 'filters.status': 'anons', 'filters.score.min': '5' })
+    const score = controls.find((control) => control.path === 'filters.score.min')
+    // Значение под связкой: строка под полем говорит про отказ набора, а не
+    // про блокировку. Тот же текст, что интерполирует словарь валидатора.
+    expect(score?.reason).toBe('«Оценка» невозможно использовать совместно с «Статус»')
+    // Пустое запрещённое поле ничего не нарушает (§7.5) — остаётся helper.
+    const empty = catalogFilterControls(schema, { 'filters.status': 'anons' })
+    expect(empty.find((control) => control.path === 'filters.score.min')?.reason)
+      .toBe('«Статус» блокирует поле: у анонсов нет оценки')
+    // Вина не перекладывается: блокирующий выбран, но сам не нарушает набор.
+    expect(empty.find((control) => control.path === 'filters.status')?.reason).toBeUndefined()
+  })
+
   it('запрет поиска виден отдельно — у поиска свой канал', () => {
     const view = catalogFilterView(schema, { 'filters.status': 'latest' })
     expect(view.searchBlocked).toEqual({ id: 'search-with-latest', reason: 'поиск не работает' })
-    expect(view.suppressed).toEqual([])
   })
 
   it('снятое связкой поле названо в картине панели', () => {
     const view = catalogFilterView(schema, { 'filters.status': 'anons' })
-    expect(view.suppressed).toEqual([
-      { key: 'score', label: 'Оценка', reason: '«Статус» блокирует поле: у анонсов нет оценки' },
-    ])
     expect(view.controls.find((control) => control.path === 'filters.score.min')).toMatchObject({
       disabled: true,
-      reason: '«Статус» блокирует поле: у анонсов нет оценки',
+      reason: '«Статус» блокирует поле: у анонсов нет оценки'
     })
     // Объяснение блока остаётся в картине даже до выбора оценки: оно нужно
     // пользователю без JS и доступно у формы до её раскрытия.

@@ -659,10 +659,11 @@ async function checkFiltersNoJs(browser) {
       throw new Error(`ссылка чипа не сняла фильтр: ${page.url()}`);
     console.log('  ok  без JS чип снимается обычной ссылкой (адрес чист от этого фильтра)');
 
-    // No-JS GET may carry a schema-known impossible relationship. The server
-    // must explain it outside the closed <details>, while preserving the URL;
-    // the source independently confirms that the blocked score was not sent.
-    console.log('— No-JS validation: incompatible status + score remains visible —');
+    // No-JS GET may carry a schema-known impossible relationship. Per the
+    // link model (§7.9) the whole set is REJECTED: the URL keeps what the
+    // user sent, the server applies nothing (not even the blocking side),
+    // and the refusal is explained — under the field and outside the panel.
+    console.log('— No-JS: отказ целого набора для несовместимых status + score —');
     await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'domcontentloaded' });
     await openFilters(page);
     await page.locator('select[data-select-native][name="page.filters.status"]').selectOption('anons');
@@ -683,13 +684,27 @@ async function checkFiltersNoJs(browser) {
     if (await page.locator('[data-testid="filters-details"]').evaluate((el) => el.open))
       throw new Error('no-JS проверка должна оставаться видимой при закрытой форме');
     if (await scoreInput.isDisabled()) throw new Error('без JavaScript выбранное поле не должно быть disabled');
+    // Отказ показан ПОД ПОЛЕМ жертвой (строка связки замещается отказом,
+    // когда значение под связкой есть) — тот же текст, что у валидатора.
+    const fieldError = page
+      .locator('[data-testid="catalog-filter-reason"]')
+      .filter({ hasText: /невозможно использовать совместно с/i });
+    if ((await fieldError.count()) === 0) {
+      const all = await page.locator('[data-testid="catalog-filter-reason"]').allTextContents();
+      throw new Error(`отказ под полем не найден: ${JSON.stringify(all)}`);
+    }
     const suppressed = await api('/api/shikimori/animes?limit=5&filters.status=anons&filters.score.min=5');
-    const statusOnly = await api('/api/shikimori/animes?limit=5&filters.status=anons');
+    const plain = await api('/api/shikimori/animes?limit=5');
     if (!suppressed.body.dropped?.some((item) => item.key === 'filters.score'))
       throw new Error(`no-JS связка не вернула причину: ${JSON.stringify(suppressed.body.dropped)}`);
-    if (suppressed.body.items.map((item) => item.id).join(',') !== statusOnly.body.items.map((item) => item.id).join(','))
-      throw new Error('заблокированная оценка изменила выдачу status=anons');
-    console.log('  ok  validation виден без JS/раскрытия, URL не переписан, выдача равна status=anons без score');
+    if (!suppressed.body.dropped?.some((item) => item.key === 'filters.status' && /отклонён связкой/.test(item.reason)))
+      throw new Error(`отказ не объяснил, почему не применён и status: ${JSON.stringify(suppressed.body.dropped)}`);
+    if (suppressed.body.items.map((item) => item.id).join(',') !== plain.body.items.map((item) => item.id).join(','))
+      throw new Error('несовместимый набор применился частично: выдача отличается от каталога без фильтров');
+    console.log(
+      '  ok  no-JS: URL цел, отказ назван под полем и в списке, набор отклонён целиком — ' +
+        'выдача равна каталогу без фильтров',
+    );
 
     // Без JS те же score/year поля отправляются нативным GET на серверный
     // источник; проверяем диапазон и фактическую выдачу, а не только URL.

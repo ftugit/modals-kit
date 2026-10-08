@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { computeLinks, linkHelperText, linkRefusalText, linkSubmission, type LinkRule } from './links'
+import { linkBlockedValidator } from './validators'
 
 const LABELS: Record<string, string> = { genres: 'Жанры', score: 'Оценка', status: 'Статус', type: 'Тип' }
 const label = (field: string): string => LABELS[field] ?? field
@@ -86,11 +87,13 @@ describe('составитель текстов: один на helper и отк�
       .toBe('«Статус» и «Тип» блокируют поле: у анонсов нет оценки')
   })
 
-  it('отказ валидатора: те же данные, другая реплика', () => {
-    expect(linkRefusalText('score', firing(['status']), label))
+  it('отказ валидатора: те же данные, другая реплика; повторы виновников схлопываются', () => {
+    expect(linkRefusalText('score', ['status'], label))
       .toBe('«Оценка» невозможно использовать совместно с «Статус»')
-    expect(linkRefusalText('score', firing(['status', 'type']), label))
+    expect(linkRefusalText('score', ['status', 'type'], label))
       .toBe('«Оценка» невозможно использовать совместно с «Статус», «Тип»')
+    expect(linkRefusalText('score', ['status', 'status'], label))
+      .toBe('«Оценка» невозможно использовать совместно с «Статус»')
   })
 })
 
@@ -127,5 +130,52 @@ describe('сборка набора для отправки', () => {
   it('порядок и содержимое сохранённых списков не меняются', () => {
     const set = linkSubmission(values, () => false, () => false)
     expect(set['filters.genres.and']).toEqual(['1', '2'])
+  })
+})
+
+describe('фабрика валидаторов отказа', () => {
+  const probes = [
+    { id: 'score-with-anons', when: [{ label: 'Статус', paths: ['filters.status'], value: 'anons' }] },
+  ]
+  const check = linkBlockedValidator(probes, 'Оценка')
+  const ctx = (values: Record<string, unknown>) => ({ path: 'filters.score.min', values })
+
+  it('пустое запрещённое поле ничего не нарушает', () => {
+    expect(check(undefined, ctx({ 'filters.status': 'anons' }))).toBeNull()
+    expect(check('', ctx({ 'filters.status': 'anons' }))).toBeNull()
+    expect(check([], ctx({ 'filters.status': 'anons' }))).toBeNull()
+  })
+
+  it('значение + выполненное условие: код и параметры для словарного текста', () => {
+    expect(check(5, ctx({ 'filters.status': 'anons' })))
+      .toEqual({ code: 'link.blocked', params: { field: 'Оценка', blockers: '«Статус»' } })
+  })
+
+  it('условие по любому пути поля; список значений — presence элемента', () => {
+    const multi = linkBlockedValidator(
+      [{
+        id: 'r',
+        when: [
+          { label: 'Жанры', paths: ['filters.genres.and', 'filters.genres.not'] },
+          { label: 'Тип', paths: ['filters.kind'], value: 'tv' },
+        ],
+      }],
+      'Оценка',
+    )
+    expect(multi(7, ctx({ 'filters.genres.not': ['1'], 'filters.kind': 'movie' }))).toBeNull()
+    expect(multi(7, ctx({ 'filters.genres.and': ['1'], 'filters.kind': 'tv' })))
+      .toMatchObject({ params: { blockers: '«Жанры», «Тип»' } })
+  })
+
+  it('два правила на поле: говорит последнее (кардинальность как у view)', () => {
+    const two = linkBlockedValidator(
+      [
+        { id: 'a', when: [{ label: 'А', paths: ['a'] }] },
+        { id: 'b', when: [{ label: 'Б', paths: ['b'] }] },
+      ],
+      'Цель',
+    )
+    expect(two('x', ctx({ a: ['1'], b: ['1'] }))).toMatchObject({ params: { blockers: '«Б»' } })
+    expect(two('x', ctx({ b: ['1'] }))).toMatchObject({ params: { blockers: '«Б»' } })
   })
 })

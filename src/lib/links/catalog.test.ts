@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest'
 import { catalogFilterFieldStates } from '$lib/filters/view'
 import { catalogFilterValueMap, checkCatalogFilterRules } from '$lib/filters/rules'
 import type { CatalogFilterSchema } from '$lib/filters/catalog-filter'
+import { catalogFilterFieldNames } from '$lib/filters/catalog-filter'
 import { catalogLinkOutcome, catalogLinkRules, catalogLinkSet, catalogLinkValues } from './catalog'
-import { linkHelperText } from './links'
+import { linkHelperText, linkRefusalText } from './links'
 
 const schema: CatalogFilterSchema = {
   source: 'parity',
@@ -64,15 +65,24 @@ const CASES: Record<string, unknown>[] = [
 ]
 
 describe('паритет: словарь связок ≡ движок схемы', () => {
-  it('гасит те же поля с теми же текстами причин', () => {
+  it('гасит те же поля с теми же строками под полем', () => {
     for (const extra of CASES) {
       const viewStates = catalogFilterFieldStates(schema, extra)
       const expected = new Map(
         viewStates.filter((s) => s.disabled).map((s) => [s.key, s.reason!]),
       )
-      const outcome = catalogLinkOutcome(schema, catalogFilterValueMap(extra))
+      const map = catalogFilterValueMap(extra)
+      const outcome = catalogLinkOutcome(schema, map)
+      // Ровно та же логика выбора реплики, что у view: у заполненной жертвы
+      // под полем стоит ОТКАЗ набора, у пустой — helper блокировки.
       const got = new Map(
-        [...outcome.fields].map(([key, firing]) => [key, linkHelperText(firing, label)]),
+        [...outcome.fields].map(([key, firing]) => {
+          const field = schema.fields.find((f) => f.key === key)!
+          const filled = catalogFilterFieldNames(field).some((name) => (map[name]?.length ?? 0) > 0)
+          return [key, filled
+            ? linkRefusalText(key, firing.blockers, label)
+            : linkHelperText(firing, label)]
+        }),
       )
       expect(got, JSON.stringify(extra)).toEqual(expected)
     }

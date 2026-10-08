@@ -148,11 +148,24 @@ describe('связки', () => {
     expect(res.params.status).toBe('latest')
   })
 
-  it('оценка с анонсами не применяется — с причиной из связки', () => {
+  it('оценка с анонсами: отказ ЦЕЛОГО набора — источник не получает ничего', () => {
+    // Модель §7.9: без JS «частичного результата» нет. Связка не вырезает
+    // молча свою жертву — валидатор отклоняет набор, и даже корректный
+    // status не доходит до источника. Причина названа по полю-жертве.
     const res = animesFilterQuery(schema, { 'filters.status': 'anons', 'filters.score.min': 8 })
-    expect(res.params.score).toBeUndefined()
-    expect(res.params.status).toBe('anons')
-    expect(res.dropped).toEqual([{ key: 'filters.score', reason: 'у анонсов нет оценки' }])
+    expect(res.params).toEqual({})
+    expect(res.dropped).toEqual([
+      { key: 'filters.score', reason: 'у анонсов нет оценки' },
+      { key: 'filters.status', reason: 'набор отклонён связкой: значения несовместимы' },
+    ])
+  })
+
+  it('связка сработала, но запрещённое поле пусто — набор применяется как обычно', () => {
+    // §7.5: пустое запрещённое поле ничего не нарушает; ghost-записей в
+    // dropped нет даже у снятого поля.
+    const res = animesFilterQuery(schema, { 'filters.status': 'anons' })
+    expect(res.params).toEqual({ status: 'anons' })
+    expect(res.dropped).toEqual([])
   })
 
   it('без связок поиск разрешён', () => {

@@ -272,6 +272,39 @@ describe('компиляция в форму b1', () => {
     expect(form.get('filters.unknown')).toBeNull()
   })
 
+  it('связка на поле входит в отказ набора; пустое запрещённое поле — нет', () => {
+    const linked = {
+      ...schema,
+      rules: [
+        {
+          id: 'score-with-kind',
+          when: [{ field: 'kind', value: 'tv' }],
+          drop: { field: 'score' },
+          reason: 'у ТВ нет оценки',
+        },
+      ],
+    }
+    const bad = new FormData()
+    bad.set('filters.kind', 'tv')
+    bad.set('filters.score.min', '5')
+    const rejected = validateCatalogFilterValues(linked, bad)
+    expect(rejected.errors).toContain('link.blocked')
+    // отказ касается ЦЕЛОГО набора: источник не получает ничего
+    expect(rejected.values).toEqual({})
+
+    const free = new FormData()
+    free.set('filters.kind', 'tv')
+    const passed = validateCatalogFilterValues(linked, free)
+    // пустое запрещённое поле ничего не нарушает
+    expect(passed.errors).toEqual([])
+    expect(passed.values.kind).toBe('tv')
+    // шаблон сообщения живёт на определении — та же формулировка, что
+    // панель рисует под полем (view.test сверяет строку посимвольно)
+    const compiled = compileCatalogFilterSchema(linked)
+    expect(compiled.definition.messages['link.blocked'])
+      .toBe('«{field}» невозможно использовать совместно с {blockers}')
+  })
+
   it('начальное состояние формы заполняется из адреса и дефолтов', () => {
     const compiled = compileCatalogFilterSchema(schema)
     const state = catalogFilterInitialState(

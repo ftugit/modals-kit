@@ -111,11 +111,12 @@ export function linkHelperText(firing: LinkFiring, label: LinkLabel): string {
 /**
  * Отказ валидатора (no-JS): `«Оценка» невозможно использовать совместно с
  * «Статус»`. Те же данные, другая реплика: helper объясняет ПОКАЗАНИЕ,
- * отказ — ПРИЧИНУ НЕПРИМЕНЕНИЯ набора.
+ * отказ — ПРИЧИНУ НЕПРИМЕНЕНИЯ набора. `blockers` — идентификаторы полей из
+ * `when`; повторы допустимы (одно поле в двух условиях), текст от них чище.
  */
-export function linkRefusalText(field: string, firing: LinkFiring, label: LinkLabel): string {
-  const blockers = firing.blockers.map((x) => `«${label(x)}»`).join(', ')
-  return `«${label(field)}» невозможно использовать совместно с ${blockers}`
+export function linkRefusalText(field: string, blockers: readonly string[], label: LinkLabel): string {
+  const who = [...new Set(blockers)].map((x) => `«${label(x)}»`).join(', ')
+  return `«${label(field)}» невозможно использовать совместно с ${who}`
 }
 
 /**

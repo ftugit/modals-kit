@@ -128,11 +128,8 @@ export type CatalogFilterControl =
  */
 export type CatalogFilterFieldState = {
   key: string
-  label: string
   disabled: boolean
   reason?: string
-  /** Связка снимает это поле при текущих значениях. */
-  suppressedBy?: string
 }
 
 /** Что пользователь видит в панели фильтров — целиком из схемы и extra. */
@@ -153,8 +150,6 @@ export type CatalogFilterView = {
   count: number
   /** Поиск запрещён связкой: показать причину рядом с полем запроса. */
   searchBlocked?: { id: string; reason: string }
-  /** Поля, снятые связками (deny-safe решение источника), с причинами. */
-  suppressed: readonly { key: string; label: string; reason: string }[]
   /** Пояснения к активным связкам и смысловым противоречиям. */
   violations: readonly CatalogFilterViolation[]
 }
@@ -167,19 +162,14 @@ function optionsOf(field: CatalogFilterField): { value: string; label: string; d
     option.disabled ? { value: option.value, label: option.label, disabled: true } : { value: option.value, label: option.label })
 }
 
-/**
- * Кто заблокировал поле: подписи полей из условий связки. Пользователю нужен
- * не «список невозможного», а ответ на вопрос «что именно мешает этому полю» —
- * поэтому причина называет поле-виновника (`«Статус» блокирует поле: …`).
- */
-function ruleBlocker(schema: CatalogFilterSchema, rule: CatalogFilterRule): string {
+/** Подписи виновников без повторов — общий материал для обеих реплик. */
+function blockerLabels(schema: CatalogFilterSchema, rule: CatalogFilterRule): string[] {
   const labels: string[] = []
   for (const condition of rule.when) {
     const label = schema.fields.find((field) => field.key === condition.field)?.label ?? condition.field
     if (!labels.includes(label)) labels.push(label)
   }
-  const quoted = labels.map((label) => `«${label}»`).join(' и ')
-  return labels.length > 1 ? `${quoted} блокируют` : `${quoted} блокирует`
+  return labels
 }
 
 /**
@@ -195,25 +185,32 @@ export function catalogFilterFieldStates(
 ): CatalogFilterFieldState[] {
   if (!schema) return []
   const map = catalogFilterValueMap(values)
-  const reasons = new Map<string, { id: string; reason: string }>()
-  // Причина — от связки, которая СРАБОТАЛА (все условия `when`). Проверка
-  // «поле в снятых» не годится: не сработавшее правило на уже снятое поле
-  // перезаписало бы чужой текст причины.
+  // Связка, которая СРАБОТАЛА (все условия `when`), на поле-жертву: подписи
+  // виновников + объявленная причина. Проверка «поле в снятых» не годится:
+  // не сработавшее правило перезаписало бы чужий текст.
+  const hits = new Map<string, { q: string[]; why: string }>()
   for (const rule of schema.rules ?? []) {
-    if (rule.drop === 'q') continue
-    if (!catalogFilterRuleFires(schema, map, rule)) continue
-    reasons.set(rule.drop.field, {
-      id: rule.id,
-      reason: `${ruleBlocker(schema, rule)} поле: ${rule.reason}`,
-    })
+    const victim = rule.drop
+    if (victim === 'q' || !catalogFilterRuleFires(schema, map, rule)) continue
+    hits.set(victim.field, { q: blockerLabels(schema, rule), why: rule.reason })
   }
   return schema.fields.map((field) => {
-    const hit = reasons.get(field.key)
+    const hit = hits.get(field.key)
+    if (!hit) return { key: field.key, disabled: false }
+    const quoted = hit.q.map((x) => `«${x}»`)
+    // Строка под полем: helper-«кто мешает», а если у жертвы УЖЕ есть
+    // значение (мир без JS, расшаренный адрес) — отказ набора: с этим
+    // значением он не применён (§7.5: пустое запрещённое поле молчит).
+    // Формулировка отказа дословно повторяет словарь `link.blocked`;
+    // композитор `$lib/links` на клиент не тащим — стороны приколоты
+    // тестами посимвольно, разъедутся — упадут оба файла.
+    const filled = catalogFilterFieldNames(field).some((n) => map[n]?.length)
     return {
       key: field.key,
-      label: field.label,
-      disabled: !!hit,
-      ...(hit ? { reason: hit.reason, suppressedBy: hit.id } : {}),
+      disabled: true,
+      reason: filled
+        ? `«${field.label}» невозможно использовать совместно с ${quoted.join(', ')}`
+        : `${quoted.join(' и ')}${quoted[1] ? ' блокируют' : ' блокирует'} поле: ${hit.why}`,
     }
   })
 }
@@ -302,9 +299,6 @@ export function catalogFilterView(
   const map = catalogFilterValueMap(extra)
   const rule = catalogFilterSearchRule(schema, map)
   const states = catalogFilterFieldStates(schema, extra)
-  const suppressed = states
-    .filter((state) => state.disabled && state.reason)
-    .map((state) => ({ key: state.key, label: state.label, reason: state.reason! }))
   const urlOpts = { prefix: opts.url?.prefix ?? opts.prefix ?? 'page', preserved: opts.url?.preserved ?? {} }
   const chips: CatalogFilterChip[] = activeCatalogFilters(schema, values).map((chip) => ({
     ...chip,
@@ -325,7 +319,6 @@ export function catalogFilterView(
       .map(([name, value]) => ({ name, value })),
     count: chips.length,
     ...(rule ? { searchBlocked: { id: rule.id, reason: rule.reason } } : {}),
-    suppressed,
     // Поиск объясняется выше; остальное — предупреждения у фильтров.
     violations: checkCatalogFilterRules(schema, map).filter((violation) => violation.drop !== 'q'),
   }
