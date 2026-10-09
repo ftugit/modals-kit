@@ -215,3 +215,70 @@ source-schema-guard) — все rc=0, «бюджеты веса соблюден
 modals 51 ✓ (2 новые), regressions 47 ✓ (R-03 зелёный), shell 7 ✓, paginate 29 ✓ (×2 подряд),
 forms 36 ✓, forms-a11y 12 ✓, errors 3 ✓, capabilities ✓, select-floating-smoke 27 ✓,
 a11y (axe) 0 нарушений ✓, shikimori 39 ✓.
+
+## §11 Модульность: чистота ядер, демо-компоненты, примитивы полей и новые гарды (приказ оператора 2026-10-10)
+
+**1. Lib не связан с фреймворком кроме как через адаптеры — проверено и закреплено.**
+Аудит: в ядрах `src/lib/{modals,form,paginate,links,search}` вне адаптерных зон
+(`svelte/`, `solid/`, `react/`, `vue/`, `cores/*`) импортов фреймворка нет;
+`$app/*` дышит только через адаптеры (modals/cores/sveltekit, modals/svelte/media,
+router) и UI-слой. Закреплено обобщением `tooling/core-purity.mjs`: появился
+список `CORE_MODULES` — боевой прогон проверяет все пять ядер, а не только
+modals; у ядер с адаптерами (form/paginate/links) зона фреймворка обязана быть
+непустой (иначе проверка фиктивна).
+
+**2. Демки — отдельные компоненты, не функционал роута.**
+- `src/lib/ui/demo/modals/`: панель настроек хоста (`SettingsPanel.svelte`,
+  вырезана из инлайна /modals: `defineForm('modal-settings')`, прямой/обратный
+  эффекты, разметка — DOM не менялся), `SourcesPanel`, `FloatingMenu`,
+  пять модалок, реестр `registry.ts` (demoScope) и `sources.svelte.ts`
+  (demoSources) — всё переехало из `src/routes/modals/` (git mv, история цела).
+- `src/lib/ui/demo/form/`: каталог полей (`ui/*`), `forms.config`, `extend`,
+  `handle`, `signup`, `psp` — из `src/routes/form/`; серверные роуты
+  (`+page.server`, `submit/+server`) стали тонкими вызовами `$lib`.
+- `src/lib/ui/demo/cycle/` и `src/lib/ui/demo/spike/`: содержимое
+  соответствующих +page целиком стало компонентами `CycleDemo`/`SpikeDemo`;
+  в роутах — заголовок документа и монтирование.
+- Барели `src/lib/ui/demo/{modals,form}/index.ts` — «тянуть компонент», а не
+  копировать со страницы.
+- Пагинационная панель (`src/lib/ui/paginator/PaginatorSettingsForm.svelte`)
+  компонентом была и раньше — проверено.
+
+**3. Оживлённые кнопки — через компонент.**
+Все сырые `<button>` в routes (36 штук: /form, /modals и его модалки,
+/menu-виджет, cycle, spike) заменены на примитив `Button`
+(`$lib/ui/primitives`). В `Button` добавлены `variant="plain"` и `size="none"`
+— для кнопок с собственным класс-рисунком (иконки, пункты меню): семантика
+примитива (type, disabled, aria) остаётся, визуал несёт класс. Forwarded
+`ref` (bind:this + эффект) заменил в FloatingMenu `bind:this`, которое у
+компонента вернуло бы экземпляр, а не элемент (`attach` из spread компайлер
+не применяет — проверено падением R-16 на живом прогоне). Кнопка смены темы —
+компонент `ThemeToggleSlot`, её тег тоже переведён на Button. Submit-кнопки
+/form явно получили `type="submit"` (Browser-default у Button — button;
+name/value из `form.intent()` едут как есть, no-JS GET цел).
+
+**4. Гарды сборки (vite, падают и dev, и build).**
+- Сырые `<form|input|select|textarea>` разрешены только в: `src/lib/form/`
+  (там живёт `<Form>` — новый компонент `Form.svelte`: spread `formProps()`,
+  атрибуты потребителя поверх, скрытые пары всегда внутри формы),
+  `src/lib/ui/primitives/` (примитивы полей), `src/lib/ui/settings/`
+  (виджеты панелей), `src/lib/shell/` — исключение владельца для sidebar-
+  чекбокса no-JS-drawer'а. Компонентские имена (`<Form>`) правило не задевает
+  (регистр различим).
+- Внутри `src/lib/form/**` запрещён импорт `$lib/ui/(primitives|settings)`:
+  провайдер формы владеет собственным `field`, UI-примитив — потребитель
+  form-контракта, а не его часть. Реализовано полем `deny` в движке гарда
+  (deny сильнее allow).
+- Шаблонные правила вынесены в чистую `checkTemplate` — покрываются
+  `node --test tooling/` (новые кейсы включая ложные: `<Form/>` vs `<form>`,
+  node_modules Ark UI, shell).
+
+**Итоги прогонов этапа.** unit 559/559 (29 файлов); svelte-check 0 / 45;
+`node --test tooling/` — 75 pass, 2 fail — те же два, что и на родителе
+(открытый вопрос бюджетов lib/form у оператора, §«Открытые вопросы»);
+size-budget — «бюджеты веса соблюдены». Браузер на preview: modals 51,
+regressions 47, forms 36, forms-a11y 12, shell 7, paginate 29, errors 3,
+capabilities, select-floating-smoke 27, axe 0, shikimori 39 — всё зелёное;
+/cycle и /spike проверены смоук-прогоном после выноса (рендер без ошибок).
+Коммиты этапа: `7a8db1b` (Form в lib/form), `c665487` (Button в routes),
+`bdc63a0` + `0111c18` (демо→lib), `6370312` (гарды).
