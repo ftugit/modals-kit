@@ -1,10 +1,9 @@
 /** Регрессии оставшихся audit findings. PGlite RAM или явно заданный LOCAL PostgreSQL. */
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { Pool } from "pg";
-import { afterAll, it } from 'vitest';
-const F = await import("./fixtures/index.ts");
+const F = await import("../fixture.ts");
 const url = process.env.DB_HARDENING_PG_URL;
 if (url) {
   const parsed = new URL(url);
@@ -32,8 +31,14 @@ const driver = url ? F.pgAdapter(engine) : F.pgliteAdapter(engine),
   db = F.createDb({ driver, limits: F.conservativeLimits });
 const ctx = { principal: { id: crypto.randomUUID(), roles: ["author"] } },
   api = F.createProbeApi(db);
-const test = (name: string, fn: () => Promise<void> | void) => it(name, fn, 30_000)
-await api.author.insert(ctx, { name: "followup" });
+const checks = [];
+async function test(name, fn) {
+  await fn();
+  checks.push(name);
+  console.log("PASS", name);
+}
+try {
+  await api.author.insert(ctx, { name: "followup" });
   await test("A03 JSON roots retain types on insert/update/filter; SQL arrays unchanged", async () => {
     const jsonResource = db.resource(
       F.defineResource({
@@ -323,7 +328,25 @@ await api.author.insert(ctx, { name: "followup" });
         c.release();
       }
     });
-afterAll(async () => {
+} finally {
   if (url) await engine.end();
   else await engine.close();
-})
+}
+console.log(
+  "Followup groups:",
+  checks.length,
+  url ? "native PostgreSQL (Unix socket)" : "PGlite",
+);
+if (process.argv[2])
+  await writeFile(
+    process.argv[2],
+    JSON.stringify(
+      {
+        engine: url ? "native PostgreSQL17 via Unix socket" : "PGlite",
+        checks,
+        remote: false,
+      },
+      null,
+      2,
+    ) + "\n",
+  );

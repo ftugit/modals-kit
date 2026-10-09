@@ -57,18 +57,18 @@ npm-пакет, потребляемый как зависимость**. `apply
 | `SolidHono/tooling/vite/db.mjs` | — (не переносится) | «серверная граница» в SvelteKit — `$lib/server/*` + `svelte-check`; vite-плагин не нужен (проверено: импорт `$lib/server` из клиента ломает сборку) |
 | `src/lib/db/migrations/001-db-probe.sql`, `002-db-probe-page-index.sql` | `src/lib/db/migrations/*` | 1:1, как образец схемы под этот слой (не автоприменение) |
 | `docs/db-lib.md`, `docs/en/db-lib.md` | [`README.md`](./README.md) | переписано под SvelteKit-идиомы, добавлены §5–§7 (драйверы, миграции, API-матрица) |
-| `test/checks/db-lib.mjs` | `src/lib/db/ported-db.test.ts` | 16/16 групп, без правок ожиданий |
-| `test/checks/db-hardening.mjs` | `src/lib/db/ported-hardening.test.ts` | 5/5 групп |
-| `test/checks/db-followup.mjs` | `src/lib/db/ported-followup.test.ts` | 8 групп из 12; снятые — см. §4 |
-| `test/checks/db-{proxy,build,entrypoints,graph,types}.mjs`, `database.mjs` | `src/lib/db/structure.test.ts` (частично) | проверки сборочного графа Hono/Vite к порту не применимы; перенесено только то, что про контракт: границы entry-поинтов, полнота `kind → status`, парсинг миграций |
+| `test/checks/db-lib.mjs` | `src/lib/db/test/ported/db-lib.script.ts` | 16/16 групп, без правок ожиданий |
+| `test/checks/db-hardening.mjs` | `src/lib/db/test/ported/db-hardening.script.ts` | 5/5 групп |
+| `test/checks/db-followup.mjs` | `src/lib/db/test/ported/db-followup.script.ts` | 8 групп из 12; снятые — см. §4 |
+| `test/checks/db-{proxy,build,entrypoints,graph,types}.mjs`, `database.mjs` | `src/lib/db/test/db-structure.test.ts` (частично) | проверки сборочного графа Hono/Vite к порту не применимы; перенесено только то, что про контракт: границы entry-поинтов, полнота `kind → status`, парсинг миграций |
 | — | `src/lib/db/schema.ts` | zero-dep Standard Schema-примитивы (`s.text/uuid/integer/…`), ответ на «zod не обязан быть в приложении» |
 | — | `src/lib/db/zod.ts` | обратный мост: `z` + `field/f/defineResource`, чтобы `resources.ts` источника переносился без правок |
 | — | `src/lib/db/adapters/hyperdrive.ts` | адаптер «`pg.Client` на запрос» по инструкции Cloudflare (см. §3) |
 | — | `src/lib/db/sveltekit/{handle,context,errors,query,cursor,migrate,node,index}.ts` | SvelteKit-слой (см. §3) |
-| — | `src/lib/db/port-specific.test.ts`, `src/lib/db/fixtures/index.ts`, `tooling/db-docs.mjs` | тесты именно порта; сборка `dist`, runner `test/run.mjs`, `fix-esm` и `tsconfig.build.json` после переезда в дерево не нужны — их удалили |
+| — | `src/lib/db/test/db-port-specific.test.ts`, `src/lib/db/test/fixture.ts`, `tooling/db-docs.mjs` | тесты именно порта; сборка `dist`, runner `test/run.mjs`, `fix-esm` и `tsconfig.build.json` после переезда в дерево не нужны — их удалили |
 | — (в источнике нет) | `src/lib/db/ops.ts` | `withRetry`: повтор только при `e.details.retryable === true` (`40001`/`40P01`), экспоненциальная пауза с джиттером, инъектируемый `wait` |
 | — (в источнике нет) | `src/lib/db/testing/index.ts` | `withTestDb`: изолированная схема в нативном PG (`KIT_TEST_PG_URL`) или PGlite in-memory; отдельный entry, чтобы `pg`/PGlite не попадали в клиентский бандл |
-| `test/checks/db-proxy.mjs` + `adapters/proxy*.ts` | `src/lib/db/port-specific.test.ts` (группы 25–28) + `src/lib/db/probes/proxy-live.probe.mjs` | решение изменено 09.10.2026: адаптеры перенесены. Проверки источника (`A03` энкодер, `A17` WSS-дедлайны) переписаны на заглушках транспорта — сеть в `npm run check` не нужна; поведение на живом прокси измерялось раньше матрицей (`src/lib/db/probes/transport-matrix.probe.mjs`, её эталонная копия `src/lib/db/probes/lib/proxy-driver.mjs` осталась) |
+| `test/checks/db-proxy.mjs` + `adapters/proxy*.ts` | `src/lib/db/test/db-port-specific.test.ts` (группы 25–28) + `src/lib/db/probes/proxy-live.probe.mjs` | решение изменено 09.10.2026: адаптеры перенесены. Проверки источника (`A03` энкодер, `A17` WSS-дедлайны) переписаны на заглушках транспорта — сеть в `npm run check` не нужна; поведение на живом прокси измерялось раньше матрицей (`src/lib/db/probes/transport-matrix.probe.mjs`, её эталонная копия `src/lib/db/probes/lib/proxy-driver.mjs` осталась) |
 
 Правая колонка «`src/lib/db/**`» — код, унаследованный от источника: при ре-синхронизации
 его диффят первыми. `src/lib/db/sveltekit/**` — собственный слой, апстрим его не касается.
@@ -164,10 +164,10 @@ Directus, Supabase-js, `@neondatabase/serverless`), но взято только
 
 ```sh
 npm run test:db     # == npx vitest run src/lib/db — шестой файл, аудит документации, внутрь не входит
-# ✓ src/lib/db/structure.test.ts       6 групп  (границы слоя)
-# ✓ src/lib/db/port-specific.test.ts  29 групп  (новое поведение)
+# ✓ src/lib/db/test/db-structure.test.ts       6 групп  (границы слоя)
+# ✓ src/lib/db/test/db-port-specific.test.ts  29 групп  (новое поведение)
 # ✓ src/lib/db/test/db-ported.test.ts          3 it'а: db-lib 16, db-hardening 5, db-followup 9
-# ✓ src/lib/db/docs.test.ts            1 группа: README/PORTING против кода
+# ✓ src/lib/db/test/db-docs.test.ts            1 группа: README/PORTING против кода
 # ИТОГО 65 групп; на PGlite выполняются 64 — одна группа db-followup требует нативного PG
 npm run test        # всё приложение: vitest по src + node --test tooling/ (стражи, 88 тестов guard'а)
 npm run check       # svelte-check: 0 ошибок
@@ -234,9 +234,9 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
 
 Ещё одна несостоявшаяся «оптимизация»: `node --test` как раннер — не подходит, потому что
 перенесённые файлы ассертят на верхнем уровне. В приложении их не переписывали под `it()`:
-`db-ported.test.ts` больше не нужен: скрипты превращены в обычные `*.test.ts` (тот же
-`test()`-хелпер, но `it()` вместо немедленного вызова, а подготовка и `close()` — в
-`afterAll`). Свой runner `test/run.mjs` тоже не нужен.
+`test/db-ported.test.ts` — тонкая обёртка: каждый скрипт под ней один `it`, потому что
+их тела выполняют всё на верхнем уровне (общий прогон PGlite/PG, общий `try/finally`) и
+переписывать перенесённый код под `it()` смысла нет. Свой runner `test/run.mjs` не нужен.
 
 ## 8. Ре-синхронизация с upstream
 
@@ -257,7 +257,7 @@ done
    если правка их требует — она не переносится, а переписывается на слой (`src/lib/db/sveltekit/**`).
 2. Всё, что касается `DataContext`, обязано остаться frozen + передаваемым из хука (см. §3 про ALS).
 3. Новые `FailureKind` немедленно добавляют и в `FAILURE_STATUS`, и в тест полноты —
-   иначе `src/lib/db/structure.test.ts` не зелёный (он же сверяет матрицу README).
+   иначе `src/lib/db/test/db-structure.test.ts` не зелёный (он же сверяет матрицу README).
 4. После переноса: `npm run test:db` → `npm run check` → `npm run build` → §5.2–5.3.
    `tooling/db-docs.mjs` (тот же `npm run test:db`) заставит обновить счётчики и таблицы.
 

@@ -1,19 +1,24 @@
 /** Регрессии исправлений аудита: PASS означает безопасное ожидаемое поведение. Только local RAM/mocks. */
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
-import { afterAll, it } from 'vitest';
-const F = await import("./fixtures/index.ts");
-const test = (name: string, fn: () => Promise<void> | void) => it(name, fn, 30_000)
+const F = await import("../fixture.ts");
+const checks = [];
+async function test(name, fn) {
+  await fn();
+  checks.push(name);
+  console.log('PASS', name);
+}
 const pg = new PGlite();
-await pg.exec(await readFile(new URL("../../migrations/001-db-probe.sql", 'utf8'));
+await pg.exec(await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), 'utf8'));
 const db = F.createDb({ driver: F.pgliteAdapter(pg), limits: F.conservativeLimits });
 const a = { principal: { id: crypto.randomUUID(), roles: ['author'] } },
   b = { principal: { id: crypto.randomUUID(), roles: ['author'] } };
 const api = F.createProbeApi(db);
 await api.author.insert(a, { name: 'hardening' });
 const row = await api.blog.insert(a, { title: 'original' });
-await test('A01 invalid row policies fail closed; optional client filter still works', async () => {
+try {
+  await test('A01 invalid row policies fail closed; optional client filter still works', async () => {
     for (const invalid of [undefined, null, Promise.resolve(false)]) {
       const r = db.resource(
         F.defineResource({
@@ -245,6 +250,16 @@ await test('A01 invalid row policies fail closed; optional client filter still w
       if (['COMMIT_TAG', 'ROLLBACK'].includes(fault)) assert.equal(released, true);
     }
   });
-afterAll(async () => {
+} finally {
   await pg.close();
-})
+}
+if (process.argv[2])
+  await writeFile(
+    process.argv[2],
+    JSON.stringify(
+      { checks, meaning: 'Safe-behavior regression tests', network: false, nativeTcp: false },
+      null,
+      2,
+    ) + '\n',
+  );
+console.log('Hardening groups:', checks.length);
