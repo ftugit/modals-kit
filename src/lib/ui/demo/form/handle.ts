@@ -7,6 +7,7 @@
 import {
   createFormHandler, MemoryIdempotencyStore, windowThrottle, type Handled,
 } from '$lib/form/server'
+import { SECURITY_LAYERS } from '$lib/server/form-security'
 import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '$lib/form'
 import './extend'
 import { checks } from './extend'
@@ -53,6 +54,9 @@ function expandFor(base: FormDescription, form: FormData | null): FormDescriptio
 function handlerFor(description: typeof signup) {
   return createFormHandler({
     description,
+    // Слой 02 (origin) включён проектом, а не оставляется на волю маршрута:
+    // «забыл указать origin» иначе означает «принимаем межсайтовый POST».
+    order: SECURITY_LAYERS,
     checks,
     idempotency,
     throttle,

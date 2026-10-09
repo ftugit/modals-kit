@@ -28,11 +28,39 @@ function matchPattern(pattern, value) {
 /**
  * @typedef {object} Rule
  * @property {RegExp | string} pattern
- * @property {boolean} [isTemplateCheck]
+ * @property {boolean} [isTemplateCheck] правило по разметке (.svelte/.html)
+ * @property {boolean} [isSourceCheck] правило по ЛЮБОМУ исходнику: .ts/.js тоже,
+ *   иначе обход прячется в скрипте (`document.createElement('form')`, ручные
+ *   `formProps`) — там, где разметочные правила не действуют.
  * @property {(RegExp | string)[]} [allow]
  * @property {(RegExp | string)[]} [deny]
+ * @property {RegExp} [require] срабатывает ТОЛЬКО если в тексте нет этого узора:
+ *   способ потребовать «пользуйся библиотекой», не запрещая сам приём.
  * @property {string | ((ctx: {source: string, importer: string, rule: Rule}) => string)} message
  */
+
+/**
+ * Общий проход по правилам: одно совпадение узора + файл вне allow-списка +
+ * (если задан `require`) отсутствие обязательного узора = ошибка.
+ * @param {Rule[]} rules
+ * @param {string} code
+ * @param {string | undefined} id
+ * @returns {string | null}
+ */
+function runTextRules(rules, code, id) {
+  const file = norm(id);
+  const src = typeof code === 'string' ? code : String(code ?? '');
+  for (const rule of rules) {
+    if (!matchPattern(rule.pattern, src)) continue;
+    const allowed = (rule.allow ?? []).some((a) => matchPattern(a, file));
+    if (allowed) continue;
+    if (rule.require && rule.require.test(src)) continue;
+    return typeof rule.message === 'function'
+      ? rule.message({ source: src, importer: file, rule })
+      : rule.message;
+  }
+  return null;
+}
 
 /**
  * Чистое ядро — без Vite, чтобы покрывалось обычным node --test.
@@ -78,17 +106,19 @@ export function createGuard(rules) {
  * @returns {string | null}
  */
 export function checkTemplate(rules, code, id) {
-  const file = norm(id);
-  for (const rule of rules) {
-    if (!rule.isTemplateCheck) continue;
-    if (!matchPattern(rule.pattern, code)) continue;
-    const allowed = (rule.allow ?? []).some((a) => matchPattern(a, file));
-    if (allowed) continue;
-    return typeof rule.message === 'function'
-      ? rule.message({ source: code, importer: file, rule })
-      : rule.message;
-  }
-  return null;
+  return runTextRules(rules.filter((r) => r.isTemplateCheck), code, id);
+}
+
+/**
+ * Правила по исходнику целиком — действуют и на .ts, и на .js: обход
+ * lib/form ровно там и прячется (ручные formProps, createElement, разбор тела).
+ * @param {Rule[]} rules
+ * @param {string} code
+ * @param {string | undefined} id
+ * @returns {string | null}
+ */
+export function checkSource(rules, code, id) {
+  return runTextRules(rules.filter((r) => r.isSourceCheck), code, id);
 }
 
 /**
@@ -98,6 +128,7 @@ export function checkTemplate(rules, code, id) {
 export function layerGuard(rules) {
   const check = createGuard(rules);
   const templateRules = rules.filter((r) => r.isTemplateCheck);
+  const sourceRules = rules.filter((r) => r.isSourceCheck);
   return {
     name: 'layer-guard',
     enforce: 'pre',
@@ -115,9 +146,18 @@ export function layerGuard(rules) {
      * @param {string} id
      */
     transform(code, id) {
-      if (!id.endsWith('.svelte') && !id.endsWith('.html')) return null;
-      const msg = checkTemplate(templateRules, code, id);
-      if (msg) this.error(msg);
+      const file = norm(id);
+      if (file.endsWith('.svelte') || file.endsWith('.html')) {
+        const msg = checkTemplate(templateRules, code, id);
+        if (msg) this.error(msg);
+      }
+      // Сырые теги ловятся в разметке, а обход — в скриптах: проверки должны
+      // покрывать и .ts/.js, иначе «формы только через lib/form» остаётся
+      // пунктиром, который обходится одной строкой в модуле.
+      if (/\.(?:svelte|ts|js|mjs|cjs)$/.test(file)) {
+        const msg = checkSource(sourceRules, code, id);
+        if (msg) this.error(msg);
+      }
       return null;
     },
   };
@@ -126,6 +166,15 @@ export function layerGuard(rules) {
 /* ── правила проекта ───────────────────────────────────────────────── */
 
 const MODALS_LIB = /(^|\/)src\/lib\/modals\//;
+/** Кто имеет право на сырые form-теги и на собственный разбор тела. */
+const FORM_KEEPERS = [
+  /(^|\/)src\/lib\/form\//,
+  /(^|\/)src\/lib\/ui\/primitives\//,
+  /(^|\/)src\/lib\/ui\/settings\//,
+  /(^|\/)src\/lib\/shell\//,
+  /(^|\/)node_modules\//,
+  /(^|\/)tooling\//,
+];
 
 /** @type {Rule[]} */
 export const RULES = [
@@ -174,7 +223,12 @@ export const RULES = [
     // aria-связи, оживление контролов) не теряется на каждом «удобном»
     // разметочном дубле. Исключение — оболочка (sidebar-чекбокс работает
     // без JS и не является полем).
-    pattern: /<(form|input|select|textarea)([ \t\n>])/,
+    //
+    // Узор закрыл дыры, найденные прогон образцов (2026-10-09): самозакрытый
+    // <form/> и <input/>, закрывающий </form> (его раньше не было за что
+    // ловить) и ВЕРХНИЙ регистр — HTML-теги без регистра, а предыдущая
+    // версия сравнивала их чувствительно, в отличие от правила <dialog>.
+    pattern: /<\/?(?:form|input|select|textarea|FORM|INPUT|SELECT|TEXTAREA)(?=[\s/>])/,
     isTemplateCheck: true,
     allow: [
       /(^|\/)src\/lib\/form\//,
@@ -260,6 +314,91 @@ export const RULES = [
         '',
         '  Ловушка фокуса, scroll-lock и aria-hidden уже настроены',
         '  хостом один раз на всю стопку.',
+      ].join('\n'),
+  },
+
+  /* ── обход lib/form запрещён ─────────────────────────────────────────── */
+
+  {
+    // Дыра разметочного правила: тег можно подставить динамикой.
+    pattern: /<svelte:element[^>]*\bthis=(?:"|')?(?:\{[^}]*\}|["']?(?:form|input|select|textarea)\b)/,
+    isTemplateCheck: true,
+    allow: FORM_KEEPERS,
+    message: ({ importer }) =>
+      [
+        `[layer-guard] <svelte:element this="form"> — тот же сырой тег, только динамикой.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        "      import { Form } from '$lib/form/svelte';",
+        '',
+        '  Почему: обёртка держит formProps(), скрытые пары и no-JS-семантику.',
+      ].join('\n'),
+  },
+  {
+    // Контракт адаптера: `form` у <Form> — результат bind(). Подделать его
+    // можно, только написав formProps самому, — это и запрещено.
+    pattern: /\bformProps\s*[:=(]/,
+    isSourceCheck: true,
+    allow: FORM_KEEPERS,
+    message: ({ importer }) =>
+      [
+        `[layer-guard] formProps собирает ТОЛЬКО bind() из '$lib/form/svelte'.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        "      import { bind, Form } from '$lib/form/svelte';",
+        '      const form = bind(forms, описание, { transport })',
+        '',
+        '  Почему: ручной formProps() даёт разметку без связки — без novalidate,',
+        '  без живых проверок и МИМО серверных слоёв (идемпотентность, частота,',
+        '  origin, лимит тела), а ошибки показывает фреймворк, а не приложение.',
+        '  Нужен обычный POST без перехвата — `bind(..., { intercept: false })`:',
+        '  тот же путь, но под контролем библиотеки.',
+      ].join('\n'),
+  },
+  {
+    pattern: /\bdocument\s*\.\s*createElement\s*\(\s*(?:"|')\s*(?:form|input|select|textarea)\b/i,
+    isSourceCheck: true,
+    allow: FORM_KEEPERS,
+    message: ({ importer }) =>
+      [
+        `[layer-guard] createElement('form') обносит форму мимо lib/form.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Нужен submit вне разметки — возьмите форму из bind() и вызовите её',
+        '  submit(), а не конструируйте узел вручную.',
+      ].join('\n'),
+  },
+  {
+    // Серверный приём собирается слоями: маршрут, читающий тело сам,
+    // проходит мимо метода, origin, лимитов, имён и конверта.
+    pattern: /\brequest\s*\.\s*(?:clone\s*\(\s*\)\s*\.\s*)?formData\s*\(|\bawait\s+request\s*\.\s*json\s*\(/,
+    isSourceCheck: true,
+    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
+    require: /from ['"]\$lib\/form\/server['"]/,
+    message: ({ importer }) =>
+      [
+        `[layer-guard] Тело запроса разбирают слои, а не маршрут.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        "      import { createFormHandler } from '$lib/form/server';",
+        '',
+        '  До bodyLayer стоят метод, origin, предел тела со счётчиком, проверка',
+        '  имён и конверт; свой request.formData() выбрасывает их молча.',
+      ].join('\n'),
+  },
+  {
+    pattern: /\bexport const actions\s*[:=]/,
+    isSourceCheck: true,
+    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
+    require: /from ['"]\$lib\/(?:ui\/demo\/)?form(?:\/|['"])/,
+    message: ({ importer }) =>
+      [
+        `[layer-guard] form-экшены обязаны идти через '$lib/form'.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        "  Экшен = createFormHandler (или обёртка над ним, как '$lib/ui/demo/form/handle.ts'):",
+        '  тогда метод, origin, лимиты, имена, конверт и execute живут в одном',
+        '  конвейере, а отказ приходит как Result, а не как страница фреймворка.',
       ].join('\n'),
   },
 ];
