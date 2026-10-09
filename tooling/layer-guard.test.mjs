@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGuard, checkTemplate, RULES } from './layer-guard.mjs';
+import { createGuard, checkTemplate, checkSource, RULES } from './layer-guard.mjs';
 
 const check = createGuard(RULES);
 
@@ -120,4 +120,69 @@ test('template: <NativeSelect /> самозакрытый тоже блокир�
 test('template: кит собирает носитель сам — settings и shell легальны', () => {
   assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/ui/settings/Select.svelte'), null);
   assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/shell/sidebar.svelte'), null);
+});
+
+/* ── обход lib/form (добавлено 2026-10-09 после разбора дыр узора) ────── */
+
+const ROUTE = '/app/src/routes/x/+page.svelte';
+const SERVER = '/app/src/routes/x/+page.server.ts';
+
+test('template: самозакрытый и закрывающий form-теги ловятся', () => {
+  assert.ok(checkTemplate(RULES, '<form/>', ROUTE), '<form/>');
+  assert.ok(checkTemplate(RULES, '<input/>', ROUTE), '<input/>');
+  assert.ok(checkTemplate(RULES, '<span></span></form>', ROUTE), '</form>');
+});
+
+test('template: ВЕРХНИЙ регистр — те же теги, ловится (правило <dialog> умеет, и это умеет)', () => {
+  assert.ok(checkTemplate(RULES, '<FORM method="post">', ROUTE));
+  assert.ok(checkTemplate(RULES, '<SELECT name="a">', ROUTE));
+});
+
+test('template: компоненты с заглавной не задеты', () => {
+  assert.equal(checkTemplate(RULES, '<Form {f}><Input /><Select options={o} /></Form>', ROUTE), null);
+});
+
+test('template: <svelte:element this="form"> — дыра закрыта, this="div" легален', () => {
+  assert.ok(checkTemplate(RULES, '<svelte:element this="form">{x}</svelte:element>', ROUTE));
+  assert.equal(checkTemplate(RULES, '<svelte:element this="div">{x}</svelte:element>', ROUTE), null);
+});
+
+test('source: ручной formProps запрещён вне lib/form', () => {
+  const msg = checkSource(RULES, 'const f = { formProps: () => ({ method: "post" }) }', ROUTE);
+  assert.ok(msg, 'обнаружен');
+  assert.match(msg, /bind\(\)/, 'сообщение указывает на bind');
+  assert.match(msg, /intercept: false/, 'сообщение предлагает легальный режим без перехвата');
+  assert.equal(checkSource(RULES, 'export function formProps() {}', '/app/src/lib/form/svelte/bind.svelte.ts'), null);
+});
+
+test('source: createElement("form") запрещён', () => {
+  assert.ok(checkSource(RULES, 'const el = document.createElement("form")', '/app/src/lib/x.ts'));
+  assert.equal(checkSource(RULES, 'document.createElement("div")', '/app/src/lib/x.ts'), null);
+});
+
+test('source: form-экшены обязаны идти через $lib/form', () => {
+  assert.ok(checkSource(RULES, 'export const actions = { default: async () => ({}) }', SERVER));
+  assert.equal(
+    checkSource(RULES, "import { handleSignup } from '$lib/ui/demo/form/handle'\nexport const actions = {}", SERVER),
+    null,
+    'обёртка над слоями — легальный путь',
+  );
+  assert.equal(
+    checkSource(RULES, "import { createFormHandler } from '$lib/form/server'\nexport const actions = {}", SERVER),
+    null,
+  );
+});
+
+test('source: разбор тела маршрутом запрещён, файдом со слоями — разрешён', () => {
+  assert.ok(checkSource(RULES, 'const d = await request.formData()', SERVER));
+  assert.ok(checkSource(RULES, 'const j = await request.json()', SERVER));
+  assert.equal(
+    checkSource(
+      RULES,
+      "import { createFormHandler } from '$lib/form/server'\nconst p = await request.clone().formData()",
+      '/app/src/lib/ui/demo/form/handle.ts',
+    ),
+    null,
+    'probe до слоёв остаётся легальным: файл знает про createFormHandler',
+  );
 });

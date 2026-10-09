@@ -1,0 +1,14 @@
+const { chromium } = await import('playwright');
+const base = 'http://127.0.0.1:5173/db-demo';
+const b = await chromium.launch(); const p = await b.newPage();
+const count = async () => (await (await fetch(base)).text()).match(/<tbody>([\s\S]*?)<\/tbody>/)[1].split('<tr>').length - 1;
+const before = await count();
+await p.goto(base, { waitUntil: 'load' });
+const total = await p.textContent('p >> strong');
+await p.click('[data-testid="rows"] tbody tr:first-child form button');
+await p.waitForFunction(() => !!document.querySelector('[role=status]'), null, { timeout: 15000 }).catch(() => console.log('нет role=status после клика'));
+const status = await p.textContent('[role=status]').catch(() => null);
+const afterReload = await count();
+console.log('до:', before, '| всего в SSR:', total, '| status:', status?.trim(), '| после перезагрузки:', afterReload);
+await b.close();
+console.log(afterReload === before - 1 ? 'DELETE_OK' : 'DELETE_REFRESH_QUESTION');

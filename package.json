@@ -24,13 +24,16 @@
     "test:browser:capabilities": "node test/browser/capabilities.mjs",
     "test:browser:shikimori": "node test/browser/shikimori.mjs",
     "test:browser:select-trace": "node test/browser/select-trace.mjs",
-    "test:browser:errors": "node test/browser/errors.mjs"
+    "test:browser:errors": "node test/browser/errors.mjs",
+    "test:db:probes": "node --import tsx src/lib/db/probes/pglite.probe.mts && node --import tsx src/lib/db/probes/order.probe.mts",
+    "test:db": "vitest run src/lib/db"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "axe-core": "^4.13.0",
     "playwright": "^1.63.0",
@@ -38,14 +41,19 @@
     "solid-js": "^1.9.15",
     "svelte": "^5.56.1",
     "svelte-check": "^4.6.0",
+    "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "unocss": "^66.10.5",
     "vite": "^8.0.16",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "zod": "^4.0.0"
   },
   "dependencies": {
     "@ark-ui/svelte": "5.24.2",
+    "@electric-sql/pglite": "^0.5.8",
+    "@standard-schema/spec": "^1.1.0",
     "clsx": "^2.1.1",
+    "pg": "^8.23.0",
     "tailwind-merge": "^3.7.0"
   }
 }
