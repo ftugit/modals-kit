@@ -56,16 +56,17 @@ try {
     if (n < 1) throw new Error(`${n} строк — SSR-снапшот потерян при гидрации`)
     return `${n} строк`
   })
-  await step('навигация живая: ссылки страниц отрисованы', async () => {
+  await step('навигация живая: ссылки страниц отрисованы (ключ ?page)', async () => {
     const links = await page.$$eval('[data-testid="page-nav"] a', (els) => els.map((e) => e.getAttribute('href')))
-    if (!links.some((h) => h && h.includes('db=2'))) throw new Error(`нет ссылки на страницу 2: ${links.join(',')}`)
-    return links.filter((h) => h?.includes('db=')).join(' ')
+    if (!links.some((h) => h && h.includes('page=2'))) throw new Error(`нет ссылки на страницу 2: ${links.join(',')}`)
+    if (links.some((h) => h?.includes('db='))) throw new Error(`в адресе остался свой ключ: ${links.join(',')}`)
+    return links.filter((h) => h?.includes('page=')).join(' ')
   })
 
   const before = await rowIds()
   await step('клик по странице 2 меняет адрес и строки', async () => {
-    await page.click('[data-testid="page-nav"] a[href*="db=2"]')
-    await page.waitForURL(/db=2/, { timeout: 15_000 })
+    await page.click('[data-testid="page-nav"] a[href*="page=2"]')
+    await page.waitForURL(/page=2/, { timeout: 15_000 })
     await page.waitForFunction(
       (prev) => {
         const now = [...document.querySelectorAll('[data-testid="row-id"]')].map((e) => e.textContent.trim())
@@ -78,13 +79,29 @@ try {
   })
 
   const totalBefore = Number((await page.textContent('[data-testid="total"]'))?.trim())
-  await step('форма создания работает из браузера (notice + строка)', async () => {
+  // `total` рисуется `ListMeta` из состояния пагинатора: после точечного
+  // обновления он меняется, серверная шапка страницы — нет.
+  await step('форма создаёт запись БЕЗ перезагрузки страницы (fetch-транспорт)', async () => {
+    // Начало с первой страницы: созданный запись попадает в неё (порядок —
+    // created_at DESC), а на ?page=2 её не было бы — это проверка списка, а не адреса.
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    // Метка на window: перезагрузка (в т.ч. form-submit с навигацией) стирает её,
+    // а точечное обновление списка — нет. Это и есть проверяемое свойство.
+    await page.evaluate(() => {
+      window.__probe = 'alive'
+      window.__nav = 0
+      addEventListener('beforeunload', () => {
+        window.__nav = (window.__nav ?? 0) + 1
+      })
+    })
+    const total = Number((await page.textContent('[data-testid="total"]'))?.trim())
+    await page.waitForFunction(() => window.__probe === 'alive')
     const title = 'браузер-' + Date.now().toString(36)
     await page.fill('input[name="title"]', title)
     // Статус собственного POST важен: 403 здесь — не отказ слоя, а CSRF-проверка
     // Kit (порт превью не в списке trusted origins), и без него шаг выглядел бы
     // как «форма не отвечает».
-    const posted = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/db-demo'), {
+    const posted = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/db-demo/submit'), {
       timeout: 15_000,
     })
     await page.click('button[data-testid="create"]')
@@ -94,21 +111,65 @@ try {
         `403 на POST: порт ${new URL(BASE).port} не в списке trusted origins — ` +
           'перезапустите превью с PREVIEW_PORTS=<порт> или KIT_TRUSTED_ORIGINS=<origin>',
       )
-    if (!res.ok()) throw new Error(`POST ?/create = ${res.status()}`)
-    await page.waitForSelector('[data-testid="notice"]', { timeout: 15_000 })
-    const text = await page.textContent('[data-testid="notice"]')
+    if (!res.ok()) throw new Error(`POST /db-demo/submit = ${res.status()}`)
+    const type = res.headers()['content-type'] ?? ''
+    if (!type.includes('application/json')) throw new Error(`не-JSON ответ (${type}): страница ушла на навигацию`)
+    // Обновлённый список — это и есть «точечно»: строка появилась, total вырос,
+    // при этом страница не перезагружалась (метка ниже жива).
+    await page.waitForFunction(
+      (n) => Number(document.querySelector('[data-testid="total"]')?.textContent.trim()) === n + 1,
+      total,
+      { timeout: 15_000 },
+    )
+    await page.waitForFunction(
+      (t) => [...document.querySelectorAll('[data-testid="row"]')].some((e) => e.textContent.includes(t)),
+      title,
+      { timeout: 15_000 },
+    )
+    const alive = await page.evaluate(() => window.__probe)
+    if (alive !== 'alive') throw new Error(`страница перезагрузилась (метка пропала): ${alive}`)
     const first = await page.textContent('[data-testid="row"]')
-    if (!first?.includes(title)) throw new Error(`созданной записи нет первой в списке: ${first}`)
-    return `notice «${text?.trim()}», строка первая`
+    if (!first?.includes(title)) throw new Error(`созданная запись не первая в списке: ${first}`)
+    return `метка жива, ответ ${type.split(';')[0]}, строка первая`
   })
-  await step('счётчик вырос после создания', async () => {
+  await step('сводка обновилась без навигации, notice не нужен (fetch-путь)', async () => {
     const total = Number((await page.textContent('[data-testid="total"]'))?.trim())
-    if (total !== totalBefore + 1) throw new Error(`total ${totalBefore} → ${total}`)
-    return `${totalBefore} → ${total}`
+    if (total !== totalBefore + 1) throw new Error(`total ${totalBefore} → ${total} — источник не перезапрошен`)
+    const alive = await page.evaluate(() => window.__probe)
+    const nav = await page.$$eval('[data-testid="page-nav"] a', (e) => e.length)
+    return `${totalBefore} → ${total}, ссылок страниц: ${nav}, метка жива: ${alive === 'alive'}`
+  })
+  await step('панель переключает режим: поток вместо списка страниц', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    // Имя контрола панели = адресный ключ (`page.<key>`, см. compile.ts), поэтому
+    // поле находится без гадания на разметку.
+    await page.locator('select[name="page.mode"]').selectOption('stream')
+    await page.waitForURL(/page\.mode=stream/, { timeout: 15_000 })
+    await page.waitForFunction(
+      () => !document.querySelector('[data-testid="page-nav"]') && !!document.querySelector('[data-testid="load-next"]'),
+      undefined,
+      { timeout: 15_000 },
+    )
+    const mode = await page.textContent('[data-testid="list-mode"]')
+    const rows0 = await rowCount()
+    await page.click('[data-testid="load-next"]')
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="row"]').length > n, rows0, { timeout: 15_000 })
+    const rows1 = await rowCount()
+    return `режим «${mode?.trim()}», строк ${rows0} → ${rows1}`
+  })
+  await step('в потоке адрес остаётся на той же странице (никакого ?page=2)', async () => {
+    const search = new URL(page.url()).search
+    if (/page=2/.test(search)) throw new Error(`подгрузка ушла в ?page=2: ${search}`)
+    return `адрес: ${search}`
+  })
+  await step('обратно в режим страниц: панель пишет ?page.mode=pages', async () => {
+    await page.locator('select[name="page.mode"]').selectOption('pages')
+    await page.waitForFunction(() => !!document.querySelector('[data-testid="page-nav"]'), undefined, { timeout: 15_000 })
+    return new URL(page.url()).search
   })
   await step('фильтр из адреса применяется в браузере', async () => {
     const flt = encodeURIComponent(JSON.stringify({ op: 'eq', field: 'title', value: 'несуществующий-заголовок' }))
-    await page.goto(`${BASE}?db.flt=${flt}`, { waitUntil: 'networkidle' })
+    await page.goto(`${BASE}?page.flt=${flt}`, { waitUntil: 'networkidle' })
     const n = await rowCount()
     if (n !== 0) throw new Error(`${n} строк вместо нуля`)
     const empty = await page.$eval('[data-testid="rows"]', (el) => el.textContent.includes('записей нет'))

@@ -21,3 +21,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# локальная БД демо (PGlite): каталог данных и его блокировка — не для репозитория
+data/

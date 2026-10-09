@@ -104,3 +104,28 @@ export function handleDbRemove(
       },
     })(request, from))
 }
+
+/**
+ * Разбор по конверту: форма сама говорит, кто её принимает (тот же приём, что у
+ * `/form/submit`). Набор описаний здесь НЕ приходит от клиента — по `__form_id`
+ * сверяется статическое описание, иначе клиент мог бы прислать своё.
+ */
+export async function dispatchDbForm(
+  request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
+): Promise<Handled> {
+  const probe = await request.clone().formData().catch(() => null)
+  // Только строка: `File` в этом поле — чужое тело, и сравнивать его бессмысленно.
+  const id = typeof probe?.get('__form_id') === 'string' ? (probe.get('__form_id') as string) : ''
+  if (id === dbCreate.id) return handleDbCreate(request, from, dbCtx)
+  if (id === dbRemove.id) return handleDbRemove(request, from, dbCtx)
+  return {
+    status: 400,
+    result: {
+      v: 1, formId: id ?? 'unknown', instance: 'unknown:new', from,
+      submissionId: '00000000-0000-4000-8000-000000000000', revision: 0,
+      values: {}, ok: false, status: 400, outcome: 'not-applied',
+      errors: [{ id: '*:envelope.unknown-form:0', code: 'envelope.unknown-form',
+        message: 'Неизвестная форма: сервер не принимает такой `__form_id`', origin: 'server' }],
+    },
+  }
+}

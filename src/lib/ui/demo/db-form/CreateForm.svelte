@@ -11,6 +11,7 @@
   import { untrack } from 'svelte'
   import { bind, Form } from '$lib/form/svelte'
   import type { Result } from '$lib/form'
+  import { jsonTransport } from '$lib/ui/demo/form/transport'
   import { Button } from '$lib/ui/primitives'
   import { forms } from '$lib/ui/demo/form/forms.config'
   import Common from '$lib/ui/demo/form/ui/Common.svelte'
@@ -18,19 +19,40 @@
   import { dbCreate } from './description'
 
   interface Props {
-    /** Ответ экшена `?/create` — continuation, а не «перерисовать форму». */
+    /** Ответ экшена `?/create` — continuation нативного пути (без JavaScript). */
     seed?: Result | null
+    /**
+     * Успешная запись: страница НЕ перезагружается, поэтому список обновляет
+     * этот колбэк (он вызывает `reset` пагинатора — свежая страница из источника).
+     */
+    onApplied?: () => void
   }
 
-  let { seed = null }: Props = $props()
+  let { seed = null, onApplied }: Props = $props()
 
-  // `continuation` читается один раз при создании связки; untrack — чтобы
-  // Svelte не считал это «ссылка только на начальное значение».
+  // Путь отправки — штатный для `lib/form`: `intercept` по умолчанию = fetch через
+  // транспорт конфига. Свой транспорт здесь нужен один-единственный: `/form/submit`
+  // принимает форму демо форм, а не БД-демо. Нативный POST остаётся запасом без JS
+  // (action `?/create`), поэтому `seed`/continuation никуда не деваются.
   const form = bind(forms, dbCreate, {
     action: '?/create',
-    intercept: false,
     live: 'on-submit',
+    transport: jsonTransport('/db-demo/submit'),
     continuation: untrack(() => seed),
+  })
+
+  // Реакция на итог — переход статуса в `success`, ровно один раз на отправку.
+  // `submitCount` для этого не годится: поле объявлено в `FormState` (state.ts:15),
+  // но ядром не увеличивается — эффект на нём не сработал бы вовсе. Первый запуск
+  // эффекта не считается: `continuation` (путь без JS) тоже даёт `success`, а список
+  // после перезагрузки и так свежий.
+  let last = form.state.status
+  $effect(() => {
+    const now = form.state.status
+    if (now === last) return
+    const was = last
+    last = now
+    if (now === 'success' && was !== 'success') onApplied?.()
   })
 </script>
 

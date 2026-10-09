@@ -8,9 +8,17 @@
    * `Form`, `Common`/`Field` живут там, страница отдаёт им лишь результат
    * экшена. Строки приходят SSR-снапшотом, поэтому без JavaScript видны и
    * они, и номера страниц.
+   *
+   * С JavaScript отправка идёт через транспорт `lib/form` (fetch на
+   * `/db-demo/submit`), поэтому страница НЕ перезагружается: результат
+   * применяется к форме, а список обновляет `reset` пагинатора — свежая
+   * страница из источника. Нативный POST на `?/create`/`?/remove` остаётся
+   * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageData } from './$types'
   import type { Result } from '$lib/form'
+  import { usePaginatorActions } from '$lib/paginate/svelte'
+  import { DB_LIST_NAME, ensureDbListPaginator } from '$lib/ui/demo/db-list/definition'
   import DbPostsList from '$lib/ui/demo/db-list/DbPostsList.svelte'
   import CreateForm from '$lib/ui/demo/db-form/CreateForm.svelte'
   import RemoveForm from '$lib/ui/demo/db-form/RemoveForm.svelte'
@@ -33,17 +41,19 @@
     action?.result?.ok ? String((action.result.data as { message?: string } | undefined)?.message ?? '') : '',
   )
 
-  /** Первая строка показанной страницы — «сырая» запись как есть из слоя. */
-  const rawRow = $derived(
-    JSON.stringify(data.snapshot?.pages?.[data.snapshot.page]?.[0] ?? null),
-  )
+  // Что делает успешная запись: обновляет источник пагинатора, а не страницу.
+  // Регистрация нужна до `usePaginatorActions`: тело страницы исполняется раньше
+  // тела дочернего компонента, а хост бросает «Unknown paginator» на неизвестном имени.
+  ensureDbListPaginator()
+  const list = usePaginatorActions(DB_LIST_NAME)
+  const refreshList = () => list.reset()
+
 </script>
 
 <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
-<p class="text-sm text-muted-foreground">
-  всего записей: <strong data-testid="total">{data.snapshot.totalItems ?? '—'}</strong>,
-  размер страницы: {data.snapshot.pageSize}
-</p>
+<!-- Сводка (сколько записей, размер страницы, режим) живёт в `ListMeta` внутри
+     хоста: после отправки формы страница не перезагружается, поэтому серверные
+     цифры на этом месте остались бы вчерашними. -->
 
 {#if notice}
   <p class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" role="status" data-testid="notice">
@@ -52,8 +62,8 @@
 {/if}
 
 <div class="grid gap-6 md:grid-cols-2">
-  <CreateForm seed={seed('create')} />
-  <RemoveForm seed={seed('remove')} />
+  <CreateForm seed={seed('create')} onApplied={refreshList} />
+  <RemoveForm seed={seed('remove')} onApplied={refreshList} />
 </div>
 
-<DbPostsList snapshot={data.snapshot} raw={rawRow} />
+<DbPostsList snapshot={data.snapshot} showRaw />

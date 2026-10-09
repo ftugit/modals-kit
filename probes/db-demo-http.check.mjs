@@ -166,26 +166,27 @@ await step("/form/submit принимает только form-encoded: JSON = 40
   return "400 envelope.missing — тело читает слой, а не маршрут";
 });
 
-/* Ключи адреса принадлежат пагинатору: размер страницы — ?db.size, сама
-   страница — ?db. Прежний ?limit был ключом слоя и в демо больше не работает. */
-await step("GET с ?db.size=3 отвечает страницей в 3 строки", async () => {
-  const r = await fetch(base + "?db.size=3", { headers: { accept: "text/html" } });
+/* Ключи адреса принадлежат пагинатору и они общие для приложения: ?page,
+   ?page.size, ?page.flt, ?page.ord. Прежний ?limit был ключом слоя и в демо
+   больше не работает; своего имени параметра (`?db`) список не требует. */
+await step("GET с ?page.size=3 отвечает страницей в 3 строки", async () => {
+  const r = await fetch(base + "?page.size=3", { headers: { accept: "text/html" } });
   const n = count(await r.text());
   if (n !== 3) throw new Error(`${n} строк вместо 3`);
   return "3";
 });
-await step("вне разрешённых ?db.size откатывается на размер пагинатора", async () => {
-  const r = await fetch(base + "?db.size=1", { headers: { accept: "text/html" } });
+await step("вне разрешённых ?page.size откатывается на размер пагинатора", async () => {
+  const r = await fetch(base + "?page.size=1", { headers: { accept: "text/html" } });
   const n = count(await r.text());
   if (n !== 5) throw new Error(`${n} строк — deny-safe не сработал`);
   return "5 (default)";
 });
-await step("?db=2 отдаёт ДРУГИЕ строки (SSR-снапшот читает адрес)", async () => {
+await step("?page=2 отдаёт ДРУГИЕ строки (SSR-снапшот читает адрес)", async () => {
   const a = ids((await body()).html);
-  const r = await fetch(base + "?db=2", { headers: { accept: "text/html" } });
+  const r = await fetch(base + "?page=2", { headers: { accept: "text/html" } });
   const b = ids(await r.text());
   if (!b.length) throw new Error("вторая страница пуста");
-  if (a.join() === b.join()) throw new Error("?db=2 вернул те же id");
+  if (a.join() === b.join()) throw new Error("?page=2 вернул те же id");
   return `${a.length} → ${b.length} строк, id не пересекаются`;
 });
 await step("GET /api/db-posts отвечает конвертом пагинатора", async () => {
@@ -208,16 +209,61 @@ await step("неизвестное поле в фильтре = 4xx с кодо�
 /* Битый фильтр — не 500 и не «пусто»: пагинатор переводит отказ источника в
    своё состояние error, и страница остаётся страницей (ErrorRow с причиной и
    «Повторить»). Тот же отказ на эндпоинте обязан прийти 4xx с кодом. */
-await step("битый JSON в ?db.flt = ErrorRow с причиной (не 500, не пусто)", async () => {
-  const r = await fetch(base + "?db.flt=" + encodeURIComponent("{title:"), { headers: { accept: "text/html" } });
+/* Перехваченный путь: транспорт `lib/form` шлёт fetch на /db-demo/submit и
+   получает Result. Это проверка того, что страница после отправки НЕ
+   перечитывается: ответ — JSON формы, а не новый HTML, и приём при этом общий
+   с `?/create` (тот же `createFormHandler`). */
+await step("POST /db-demo/submit (транспорт) = Result JSON, запись видна в списке", async () => {
+  const html0 = (await body()).html;
+  const params = envelopeOf(html0, "db_demo_create");
+  const title = "fetch-" + Date.now().toString(36);
+  params.set("title", title);
+  const r = await fetch(new URL("/db-demo/submit", base).href, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, accept: "application/json" },
+    body: params.toString(),
+  });
+  const type = r.headers.get("content-type") ?? "";
+  if (!type.includes("application/json")) throw new Error(`ответ не JSON (${type}): значит это HTML страницы`);
+  const result = await r.json();
+  if (result.ok !== true) throw new Error(`ok=${result.ok} status=${r.status}: ${JSON.stringify(result.errors ?? result).slice(0, 160)}`);
+  const html = (await body()).html;
+  if (!html.includes(title)) throw new Error("запись создана, но её нет в списке");
+  return `${r.status} ok, outcome=${result.outcome}, строка в списке`;
+});
+await step("POST /db-demo/submit без конверта = отказ слоя, не 500 и не HTML", async () => {
+  const r = await fetch(new URL("/db-demo/submit", base).href, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, accept: "application/json" },
+    body: new URLSearchParams({ title: "без конверта", __form_id: "db_demo_create" }).toString(),
+  });
+  const type = r.headers.get("content-type") ?? "";
+  if (!type.includes("application/json")) throw new Error(`не-JSON ответ ${r.status}`);
+  const result = await r.json();
+  if (result.ok === true) throw new Error("пустой конверт принят");
+  const code = (result.errors ?? [{}])[0]?.code ?? "?";
+  if (r.status === 500) throw new Error("500 вместо отказа валидации");
+  return `${r.status}, code=${code}`;
+});
+/* Режим навигации — тоже ключ адреса, значит работает и без JavaScript: SSR
+   обязан отдать ручную ссылку «показать ещё» вместо списка номеров. */
+await step("?page.mode=stream без JS отдаёт ссылку подгрузки (не PageNav)", async () => {
+  const r = await fetch(base + "?page.mode=stream", { headers: { accept: "text/html" } });
+  const html = await r.text();
+  if (!html.includes('data-testid="load-next"')) throw new Error("ссылки подгрузки нет в SSR-разметке");
+  if (html.includes('data-testid="page-nav"')) throw new Error("в потоке остался список номеров страниц");
+  return "load-next в SSR, PageNav нет";
+});
+await step("битый JSON в ?page.flt = ErrorRow с причиной (не 500, не пусто)", async () => {
+  const r = await fetch(base + "?page.flt=" + encodeURIComponent("{title:"), { headers: { accept: "text/html" } });
   const html = await r.text();
   if (/Internal Server Error|error-boundary/i.test(html)) throw new Error("похоже на 500: " + html.slice(0, 80));
   if (!/data-testid="error-row"/.test(html)) throw new Error(`отказа в списке нет, status ${r.status}`);
   if (count(html) !== 0) throw new Error("строки показаны несмотря на битый фильтр");
   return `status ${r.status}, строка отказа на месте`;
 });
-await step("?db.flt=<фильтр слоя> сужает список и total", async () => {
-  const r = await fetch(base + "?db.flt=" + encodeURIComponent(JSON.stringify(FILTER_EQ_3)), {
+await step("?page.flt=<фильтр слоя> сужает список и total", async () => {
+  const r = await fetch(base + "?page.flt=" + encodeURIComponent(JSON.stringify(FILTER_EQ_3)), {
     headers: { accept: "text/html" },
   });
   const html = await r.text();
@@ -226,9 +272,9 @@ await step("?db.flt=<фильтр слоя> сужает список и total",
   if (!html.includes("Запись 3")) throw new Error("нужной строки нет");
   return "1 строка, total 1";
 });
-await step('?db.ord=[["title","asc"]] меняет порядок (порядок идёт в слой)', async () => {
+await step('?page.ord=[["title","asc"]] меняет порядок (порядок идёт в слой)', async () => {
   const desc = ids((await body()).html);
-  const r = await fetch(base + "?db.ord=" + encodeURIComponent(JSON.stringify([["title", "asc"]])), {
+  const r = await fetch(base + "?page.ord=" + encodeURIComponent(JSON.stringify([["title", "asc"]])), {
     headers: { accept: "text/html" },
   });
   const html = await r.text();
@@ -240,9 +286,9 @@ await step('?db.ord=[["title","asc"]] меняет порядок (порядо�
   if (new Set(asc).size !== asc.length) throw new Error("id повторяются в выдаче");
   return `${asc.length} строк, первая — «${(html.match(/data-testid="row"[\s\S]{0,400}?>\s*([^<]{1,40})</) ?? [, "—"])[1].trim()}»`;
 });
-await step("?db.ord asc = обратный к ?db.ord desc (одна полная страница)", async () => {
+await step("?page.ord asc = обратный к ?page.ord desc (одна полная страница)", async () => {
   const at = async (dir) => {
-    const r = await fetch(base + `?db.size=20&db.ord=${encodeURIComponent(JSON.stringify([["title", dir]]))}`, {
+    const r = await fetch(base + `?page.size=20&page.ord=${encodeURIComponent(JSON.stringify([["title", dir]]))}`, {
       headers: { accept: "text/html" },
     });
     const html = await r.text();
@@ -256,8 +302,8 @@ await step("?db.ord asc = обратный к ?db.ord desc (одна полна�
     throw new Error(`asc(${asc.length}) и desc(${desc.length}) — не зеркало: ${asc.join().slice(0, 40)} / ${desc.join().slice(0, 40)}`);
   return `${asc.length} строк в двух направлениях`;
 });
-await step("мусор в ?db.ord не просачивается (ErrorRow, не 500)", async () => {
-  const r = await fetch(base + "?db.ord=" + encodeURIComponent("title:asc"), { headers: { accept: "text/html" } });
+await step("мусор в ?page.ord не просачивается (ErrorRow, не 500)", async () => {
+  const r = await fetch(base + "?page.ord=" + encodeURIComponent("title:asc"), { headers: { accept: "text/html" } });
   const html = await r.text();
   // Неподходящая ФОРМА ключа отсекает пагинатор (deny-safe) — страница живая.
   if (/Internal Server Error|error-boundary/i.test(html)) throw new Error("похоже на 500: " + html.slice(0, 80));
