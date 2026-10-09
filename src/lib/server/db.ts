@@ -61,6 +61,13 @@ INSERT INTO public.demo_post (title) SELECT 'Запись ' || n FROM generate_s
   WHERE NOT EXISTS (SELECT 1 FROM public.demo_post);
 `
 
+/**
+ * Принцип демо-«автора»: один на хук, на SSR-снапшот пагинатора и на
+ * `/api/db-posts`. Разносить его копией по трём местам нельзя — расхождение
+ * проявилось бы как «страница показывает другое, чем догрузка».
+ */
+export const DEMO_PRINCIPAL = Object.freeze({ roles: ['author'] })
+
 type Runtime = { db: Database; driver: Driver; close?: () => Promise<void> }
 let opening: Promise<Runtime> | undefined
 

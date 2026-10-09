@@ -132,9 +132,12 @@ import type { Handle } from '@sveltejs/kit'
 import { getRuntime } from '$lib/server/db'
 
 export const handle: Handle = async ({ event, resolve }) => {
-  if (event.url.pathname !== '/db-demo') return resolve(event)   // модалки/статика не платят за сессию
+  // /db-demo и догрузка страниц его пагинатора (/api/db-posts) — модалки и статика
+  // за сессию не платят.
+  if (event.url.pathname !== '/db-demo' && !event.url.pathname.startsWith('/api/db-posts'))
+    return resolve(event)
   const { db } = await getRuntime()
-  const inject = dbHandle({ db, principal: () => ({ roles: ['author'] }) })
+  const inject = dbHandle({ db, principal: () => DEMO_PRINCIPAL })   // принцип один на все пути демо
   return inject({ event, resolve } as never)
 }
 ```

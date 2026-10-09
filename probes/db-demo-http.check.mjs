@@ -6,19 +6,24 @@
  */
 const base = process.env.DEMO_URL ?? "http://127.0.0.1:5173/db-demo";
 const results = [];
+/* Каноническая форма фильтра слоя: {op, field, value} — её разбирает
+   `parseListInput`, а не выдуманный пробом вариант. */
+const FILTER_EQ_3 = { op: "eq", field: "title", value: "Запись 3" };
 let failed = 0;
 
 const body = async () => {
   const r = await fetch(base, { headers: { accept: "text/html" } });
   return { status: r.status, html: await r.text() };
 };
-/* «нет tbody» ≠ «ноль строк»: страница ошибки тоже не имеет tbody, и без этого
-   различия 403/422 выглядят как «фильтр ничего не нашёл». */
+/* Список рисует PageList пагинатора, поэтому строки считаются по метке
+   `data-testid="row"`. «Нет контейнера» ≠ «ноль строк»: страница ошибки тоже
+   пустая, и без этого различия 400/403 выглядят как «фильтр ничего не нашёл». */
 const count = (html) => {
-  const m = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
-  if (!m) throw new Error("tbody отсутствует (страница ошибки?)");
-  return (m[1].match(/<tr[\s>]/g) ?? []).length;   // <tr class="…"> — строки с атрибутами тоже
+  if (!/data-testid="rows"/.test(html)) throw new Error("контейнер списка отсутствует (страница ошибки?)");
+  return (html.match(/data-testid="row"/g) ?? []).length;
 };
+/** Id показанных строк — по ним видно, что вторая страница действительно другая. */
+const ids = (html) => [...html.matchAll(/data-testid="row-id">([0-9a-f-]{8,})</g)].map((m) => m[1]);
 const step = async (name, fn) => {
   try {
     const value = await fn();
@@ -47,13 +52,14 @@ await step("SSR отдал строки (миграция + сид примен�
   if (n < 1) throw new Error("tbody пуст");
   return n + " строк";
 });
-await step("в HTML есть id-хвост строки (raw-блок)", async () =>
-  /<td><code>[0-9a-f]{8}/.test((await body()).html));
-await step("счётчик записей на странице", async () => {
-  const m = (await body()).html.match(/<strong[^>]*>(\d+)<\/strong>/);
-  if (!m) throw new Error("счётчик не найден");
-  return m[1];
-});
+await step("в HTML есть id строки целиком (его копируют в поле удаления)", async () =>
+  ids((await body()).html).length > 0);
+const totalOf = (html) => {
+  const m = html.match(/data-testid="total"[^>]*>(\d+)</);
+  if (!m) throw new Error("счётчик записей не найден");
+  return Number(m[1]);
+};
+await step("счётчик записей на странице", async () => String(totalOf((await body()).html)));
 
 /** SvelteKit (production) требует, чтобы у POST с form-action совпадал Origin
  *  (csrf_check_origin): без заголовка — 403. Браузер его шлёт всегда, рукописный
@@ -92,16 +98,20 @@ const form = (fields, envelope) => {
   };
 };
 
-await step("POST /db-demo?/create → строка добавлена", async () => {
+/* Первая страница всегда умещается в размер, поэтому «строк стало больше» под
+   пагинацией ничего не доказывает: проверяется total и то, что новая запись
+   попала в первую страницу (порядок — created_at DESC). */
+await step("POST /db-demo?/create → запись в начале списка, total +1", async () => {
   const html0 = (await body()).html;
-  const before = count(html0);
+  const before = totalOf(html0);
   const title = "проверка-" + Date.now().toString(36);
   const r = await fetch(base + "?/create", form({ title }, envelopeOf(html0, "db_demo_create")));
   if (!r.ok && r.status !== 303 && r.status !== 200) throw new Error("status " + r.status);
   const html = (await body()).html;
-  const after = count(html);
   if (!html.includes(title)) throw new Error("новой строки нет в HTML");
-  return `${before} → ${after}`;
+  const after = totalOf(html);
+  if (after !== before + 1) throw new Error(`total ${before} → ${after}`);
+  return `total ${before} → ${after}, строка первая в списке`;
 });
 await step("валидация: короткий title = ошибка поля, не 500", async () => {
   const html = await (await fetch(base + "?/create", form({ title: "а" }, envelopeOf((await body()).html, "db_demo_create")))).text();
@@ -109,18 +119,20 @@ await step("валидация: короткий title = ошибка поля, 
     throw new Error("похоже на 500: " + html.slice(0, 80));
   return /минимум|от 3|at least|short|3/i.test(html) ? "текст ошибки поля на месте" : "проверь: ошибки нет";
 });
-await step("POST ?/remove убивает строку (count-1)", async () => {
-  const before = count((await body()).html);
+await step("POST ?/remove убивает строку (total -1, id исчез)", async () => {
   const html = (await body()).html;
+  const before = totalOf(html);
   // id больше не прячется в разметку: страница печатает его целиком в таблице,
   // и поле удаления — обычное видимое поле (скрытая пара для этого не нужна).
-  const first = html.match(/<td><code>([0-9a-f-]{8,})<\/code><\/td>/);
-  if (!first) throw new Error("id строки не найден в таблице");
-  const r = await fetch(base + "?/remove", form({ ids: first[1] }, envelopeOf(html, "db_demo_remove")));
+  const [first] = ids(html);
+  if (!first) throw new Error("id строки не найден в списке");
+  const r = await fetch(base + "?/remove", form({ ids: first }, envelopeOf(html, "db_demo_remove")));
   if (!r.ok && r.status !== 303) throw new Error("status " + r.status);
-  const after = count((await body()).html);
-  if (after >= before) throw new Error(`${before} → ${after} (не уменьшилось)`);
-  return `${before} → ${after}`;
+  const html1 = (await body()).html;
+  const after = totalOf(html1);
+  if (after !== before - 1) throw new Error(`total ${before} → ${after}`);
+  if (ids(html1).includes(first)) throw new Error("удалённый id всё ещё в списке");
+  return `total ${before} → ${after}, id ${first.slice(0, 8)}… исчез`;
 });
 /* ── защита: кто и когда отвечает ────────────────────────────────────────
    Порядок жёстко задан кодом SvelteKit: проверка `csrf_check_origin` стоит ДО
@@ -154,9 +166,102 @@ await step("/form/submit принимает только form-encoded: JSON = 40
   return "400 envelope.missing — тело читает слой, а не маршрут";
 });
 
-await step("GET с ?limit=1 отвечает страницей в 1 строку", async () => {
-  const r = await fetch(base + "?limit=1", { headers: { accept: "text/html" } });
-  return count(await r.text());
+/* Ключи адреса принадлежат пагинатору: размер страницы — ?db.size, сама
+   страница — ?db. Прежний ?limit был ключом слоя и в демо больше не работает. */
+await step("GET с ?db.size=3 отвечает страницей в 3 строки", async () => {
+  const r = await fetch(base + "?db.size=3", { headers: { accept: "text/html" } });
+  const n = count(await r.text());
+  if (n !== 3) throw new Error(`${n} строк вместо 3`);
+  return "3";
+});
+await step("вне разрешённых ?db.size откатывается на размер пагинатора", async () => {
+  const r = await fetch(base + "?db.size=1", { headers: { accept: "text/html" } });
+  const n = count(await r.text());
+  if (n !== 5) throw new Error(`${n} строк — deny-safe не сработал`);
+  return "5 (default)";
+});
+await step("?db=2 отдаёт ДРУГИЕ строки (SSR-снапшот читает адрес)", async () => {
+  const a = ids((await body()).html);
+  const r = await fetch(base + "?db=2", { headers: { accept: "text/html" } });
+  const b = ids(await r.text());
+  if (!b.length) throw new Error("вторая страница пуста");
+  if (a.join() === b.join()) throw new Error("?db=2 вернул те же id");
+  return `${a.length} → ${b.length} строк, id не пересекаются`;
+});
+await step("GET /api/db-posts отвечает конвертом пагинатора", async () => {
+  const r = await fetch(new URL("/api/db-posts?page=1&size=2", base).href);
+  const j = await r.json();
+  if (!Array.isArray(j.items) || typeof j.totalItems !== "number")
+    throw new Error(JSON.stringify(j).slice(0, 120));
+  return `${j.items.length} из ${j.totalItems}, hasNext=${j.hasNext}`;
+});
+/* `/api/db-posts` принимает фиксированный набор ключей (page/size/flt/ord), а
+   разбор внутри — `parseListInput`, который и отвечает deny-safe: неизвестное
+   поле фильтра отбивается с кодом, а не молча просачивается в SQL. */
+await step("неизвестное поле в фильтре = 4xx с кодом, не 500", async () => {
+  const r = await fetch(new URL('/api/db-posts?page=1&flt=' + encodeURIComponent('{"nope":1}'), base).href);
+  const text = await r.text();
+  if (r.status < 400 || r.status >= 500) throw new Error(`status ${r.status}: ${text.slice(0, 80)}`);
+  const code = JSON.parse(text).code ?? "?";
+  return `${r.status} ${code}`;
+});
+/* Битый фильтр — не 500 и не «пусто»: пагинатор переводит отказ источника в
+   своё состояние error, и страница остаётся страницей (ErrorRow с причиной и
+   «Повторить»). Тот же отказ на эндпоинте обязан прийти 4xx с кодом. */
+await step("битый JSON в ?db.flt = ErrorRow с причиной (не 500, не пусто)", async () => {
+  const r = await fetch(base + "?db.flt=" + encodeURIComponent("{title:"), { headers: { accept: "text/html" } });
+  const html = await r.text();
+  if (/Internal Server Error|error-boundary/i.test(html)) throw new Error("похоже на 500: " + html.slice(0, 80));
+  if (!/data-testid="error-row"/.test(html)) throw new Error(`отказа в списке нет, status ${r.status}`);
+  if (count(html) !== 0) throw new Error("строки показаны несмотря на битый фильтр");
+  return `status ${r.status}, строка отказа на месте`;
+});
+await step("?db.flt=<фильтр слоя> сужает список и total", async () => {
+  const r = await fetch(base + "?db.flt=" + encodeURIComponent(JSON.stringify(FILTER_EQ_3)), {
+    headers: { accept: "text/html" },
+  });
+  const html = await r.text();
+  if (count(html) !== 1) throw new Error(`${count(html)} строк вместо 1`);
+  if (totalOf(html) !== 1) throw new Error(`total ${totalOf(html)} — посчитан без фильтра`);
+  if (!html.includes("Запись 3")) throw new Error("нужной строки нет");
+  return "1 строка, total 1";
+});
+await step('?db.ord=[["title","asc"]] меняет порядок (порядок идёт в слой)', async () => {
+  const desc = ids((await body()).html);
+  const r = await fetch(base + "?db.ord=" + encodeURIComponent(JSON.stringify([["title", "asc"]])), {
+    headers: { accept: "text/html" },
+  });
+  const html = await r.text();
+  const asc = ids(html);
+  if (!asc.length) throw new Error("строк нет (адрес отброшен?)");
+  if (asc.join() === desc.join()) throw new Error("порядок не изменился");
+  // Никаких ожиданий по тексту: в живой таблице демо лежат записи прошлых
+  // прогонов. Проверяется свойство порядка, а не конкретная запись.
+  if (new Set(asc).size !== asc.length) throw new Error("id повторяются в выдаче");
+  return `${asc.length} строк, первая — «${(html.match(/data-testid="row"[\s\S]{0,400}?>\s*([^<]{1,40})</) ?? [, "—"])[1].trim()}»`;
+});
+await step("?db.ord asc = обратный к ?db.ord desc (одна полная страница)", async () => {
+  const at = async (dir) => {
+    const r = await fetch(base + `?db.size=20&db.ord=${encodeURIComponent(JSON.stringify([["title", dir]]))}`, {
+      headers: { accept: "text/html" },
+    });
+    const html = await r.text();
+    if (/data-testid="error-row"/.test(html)) throw new Error(`отказ при order ${dir}: ` + html.slice(0, 120));
+    return ids(html);
+  };
+  const asc = await at("asc");
+  const desc = await at("desc");
+  if (asc.length < 2) throw new Error(`мало строк для сравнения: ${asc.length}`);
+  if (asc.length !== desc.length || desc.join() !== [...asc].reverse().join())
+    throw new Error(`asc(${asc.length}) и desc(${desc.length}) — не зеркало: ${asc.join().slice(0, 40)} / ${desc.join().slice(0, 40)}`);
+  return `${asc.length} строк в двух направлениях`;
+});
+await step("мусор в ?db.ord не просачивается (ErrorRow, не 500)", async () => {
+  const r = await fetch(base + "?db.ord=" + encodeURIComponent("title:asc"), { headers: { accept: "text/html" } });
+  const html = await r.text();
+  // Неподходящая ФОРМА ключа отсекает пагинатор (deny-safe) — страница живая.
+  if (/Internal Server Error|error-boundary/i.test(html)) throw new Error("похоже на 500: " + html.slice(0, 80));
+  return `status ${r.status}, ${(await count(html))} строк default-порядка`;
 });
 await step("в HTML нет «Cannot find module»/«is not exported»", async () => {
   const html = (await body()).html;

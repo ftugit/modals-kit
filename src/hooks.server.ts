@@ -1,5 +1,5 @@
 import { dbHandle } from '$lib/db/sveltekit'
-import { getRuntime } from '$lib/server/db'
+import { DEMO_PRINCIPAL, getRuntime } from '$lib/server/db'
 import type { Handle } from '@sveltejs/kit'
 
 /**
@@ -11,8 +11,11 @@ import type { Handle } from '@sveltejs/kit'
  * обращение к БД, а не на каждый запрос приложения.
  */
 export const handle: Handle = async ({ event, resolve }) => {
-  if (event.url.pathname !== '/db-demo') return resolve(event)
+  // Список догружается с /api/db-posts (страницы пагинатора) — контекст нужен и там,
+  // иначе догрузка пойдёт без принципа и покажет другое, чем первая страница.
+  if (event.url.pathname !== '/db-demo' && !event.url.pathname.startsWith('/api/db-posts'))
+    return resolve(event)
   const { db } = await getRuntime()
-  const inject = dbHandle({ db, principal: () => ({ roles: ['author'] }) })
+  const inject = dbHandle({ db, principal: () => DEMO_PRINCIPAL })
   return inject({ event, resolve } as never)
 }
