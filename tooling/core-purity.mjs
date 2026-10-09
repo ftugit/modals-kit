@@ -96,7 +96,7 @@ export function checkFile(relPath, source) {
 }
 
 /** @returns {string} */
-export function formatProblems(relPath, problems) {
+export function formatProblems(relPath, problems, root = 'src/lib/modals') {
   if (!problems.length) return ''
   const out = [`\n[core-purity] ${relPath}`]
   for (const p of problems) {
@@ -105,8 +105,24 @@ export function formatProblems(relPath, problems) {
   }
   out.push('')
   out.push('  Куда это переносить:')
-  out.push('    • реактивность и разметка → src/lib/modals/<фреймворк>/')
-  out.push('    • обвязка роутера         → src/lib/modals/adapters/<фреймворк>.ts')
-  out.push('  Ядро общается с миром только через ChainAdapter.\n')
+  out.push(`    • реактивность и разметка → ${root}/<фреймворк>/`)
+  out.push(`    • обвязка среды           → ${root}/adapters/<фреймворк>.ts`)
+  out.push('  Ядро общается с миром только через свои adapter-контракты.\n')
   return out.join('\n')
 }
+
+/* ── список ядер, проверяемых боевым прогоном ─────────────────────────── */
+
+/**
+ * Модули-ядра, для которых действует правило «без фреймворка — или через
+ * свой адаптер». Каждый проверяется так же строго, как modals: импорт
+ * фреймворка или слоя фреймворка вне FRAMEWORK_ZONES роняет проверку.
+ * Новые ядра добавляются сюда, а не в обход проверки.
+ */
+export const CORE_MODULES = [
+  'src/lib/modals',
+  'src/lib/form',
+  'src/lib/paginate',
+  'src/lib/links',
+  'src/lib/search',
+]

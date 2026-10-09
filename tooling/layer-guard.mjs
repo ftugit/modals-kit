@@ -30,6 +30,7 @@ function matchPattern(pattern, value) {
  * @property {RegExp | string} pattern
  * @property {boolean} [isTemplateCheck]
  * @property {(RegExp | string)[]} [allow]
+ * @property {(RegExp | string)[]} [deny]
  * @property {string | ((ctx: {source: string, importer: string, rule: Rule}) => string)} message
  */
 
@@ -50,6 +51,14 @@ export function createGuard(rules) {
     for (const rule of rules) {
       if (rule.isTemplateCheck) continue;
       if (!matchPattern(rule.pattern, src)) continue;
+      // deny сильнее allow: «кому явно нельзя» срабатывает даже для файлов из
+      // общего allow-списка потребителей. Так lib/form отсекается от
+      // UI-примитивов, оставаясь доступным для всего остального слоя.
+      if ((rule.deny ?? []).some((d) => matchPattern(d, from))) {
+        return typeof rule.message === 'function'
+          ? rule.message({ source: src, importer: from, rule })
+          : rule.message;
+      }
       const allowed = (rule.allow ?? []).some((/** @type {RegExp|string} */ a) => matchPattern(a, from));
       if (allowed) continue;
       return typeof rule.message === 'function'
@@ -58,6 +67,28 @@ export function createGuard(rules) {
     }
     return null;
   };
+}
+
+/**
+ * Шаблонная часть правил (сырые теги в разметке) — тоже чистая функция,
+ * чтобы её тестировали node --test, а не только живая vite-сборка.
+ * @param {Rule[]} rules
+ * @param {string} code
+ * @param {string | undefined} id
+ * @returns {string | null}
+ */
+export function checkTemplate(rules, code, id) {
+  const file = norm(id);
+  for (const rule of rules) {
+    if (!rule.isTemplateCheck) continue;
+    if (!matchPattern(rule.pattern, code)) continue;
+    const allowed = (rule.allow ?? []).some((a) => matchPattern(a, file));
+    if (allowed) continue;
+    return typeof rule.message === 'function'
+      ? rule.message({ source: code, importer: file, rule })
+      : rule.message;
+  }
+  return null;
 }
 
 /**
@@ -85,17 +116,8 @@ export function layerGuard(rules) {
      */
     transform(code, id) {
       if (!id.endsWith('.svelte') && !id.endsWith('.html')) return null;
-      for (const rule of templateRules) {
-        if (matchPattern(rule.pattern, code)) {
-          const allowed = (rule.allow ?? []).some((a) => matchPattern(a, id));
-          if (!allowed) {
-            const msg = typeof rule.message === 'function'
-              ? rule.message({ source: code, importer: id, rule })
-              : rule.message;
-            this.error(msg);
-          }
-        }
-      }
+      const msg = checkTemplate(templateRules, code, id);
+      if (msg) this.error(msg);
       return null;
     },
   };
@@ -142,6 +164,60 @@ export const RULES = [
         '',
         '  Почему: нативный <dialog> работает мимо стека истории, z-index',
         '  и системы анимаций хоста. Используйте единую модальную систему.',
+      ].join('\n'),
+  },
+  {
+    // Сырые form-теги живут ТОЛЬКО в библиотеке формы и в примитивах полей.
+    // Потребитель (страница, фича, демо-блок) получает либо <Form> из
+    // '$lib/form/svelte', либо поле из примитивов ('$lib/ui/primitives',
+    // '$lib/ui/settings') — тогда семантика (hidden-пары, no-JS GET,
+    // aria-связи, оживление контролов) не теряется на каждом «удобном»
+    // разметочном дубле. Исключение — оболочка (sidebar-чекбокс работает
+    // без JS и не является полем).
+    pattern: /<(form|input|select|textarea)([ \t\n>])/,
+    isTemplateCheck: true,
+    allow: [
+      /(^|\/)src\/lib\/form\//,
+      /(^|\/)src\/lib\/ui\/primitives\//,
+      /(^|\/)src\/lib\/ui\/settings\//,
+      /(^|\/)src\/lib\/shell\//,
+      /(^|\/)node_modules\//,
+    ],
+    message: ({ importer }) =>
+      [
+        `[layer-guard] Сырой form-тег запрещён в этом файле.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Форма и поля собираются только из компонентов:',
+        '',
+        "      import { Form } from '$lib/form/svelte';     // тег <form> + hidden-пары",
+        "      import { Input, Select, Checkbox } from '$lib/ui/primitives';",
+        "      import { Field, Select, Toggle } from '$lib/ui/settings'; // панели настроек",
+        '',
+        '  Почему: тег <form> обязан нести formProps() (метод, action, submit-',
+        '  обработчик, novalidate после гидратации), а скрытые пары держат',
+        '  чужие ключи адреса при no-JS GET. Всё это живёт в <Form> и в',
+        '  примитивах полей; скопированная разметка теряет это молча.',
+      ].join('\n'),
+  },
+  {
+    // Наоборот: lib/form — ниже примитивов, примитивы о ней не знают.
+    // Библиотека формы рендерит поля САМА (bind/config/ui-политика);
+    // импорт UI-примитива внутрь провайдера означал бы, что «свой field»
+    // куда-то делся и его подменяют чужой разметкой.
+    pattern: /^\$lib\/ui\/(primitives|settings)(\/|$)/,
+    allow: [/.*/], // всем, кроме тех, кто в deny
+    deny: [/(^|\/)src\/lib\/form\//],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] «${source}» недоступен внутри lib/form.`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Внутри библиотеки формы примитивы UI запрещены сознательно:',
+        '  провайдер живёт на СОБСТВЕННЫХ полях (field/BoundForm + config.ui),',
+        '  а UI-примитив — потребитель form-контракта, а не его часть.',
+        '  Нужен новый вид поля — добавьте его в lib/form (ui.fieldComponent)',
+        '  и зарегистрируйте в конфигурации страницы.',
       ].join('\n'),
   },
   {

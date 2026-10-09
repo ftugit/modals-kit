@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { checkFile, collectSpecifiers, formatProblems, isFrameworkZone } from './core-purity.mjs'
+import { checkFile, collectSpecifiers, formatProblems, isFrameworkZone, CORE_MODULES } from './core-purity.mjs'
 
 const ROOT = 'src/lib/modals'
 
@@ -65,7 +65,7 @@ test('отчёт говорит, куда переносить', () => {
   const report = formatProblems('core.ts', checkFile('core.ts', "import 'svelte'"))
   assert.match(report, /<фреймворк>\//)
   assert.match(report, /adapters\/<фреймворк>\.ts/)
-  assert.match(report, /ChainAdapter/)
+  assert.match(report, /adapter-контракты/)
 })
 
 /* ── боевой прогон ─────────────────────────────────────────────────── */
@@ -79,19 +79,28 @@ function walk(dir, acc = []) {
   return acc
 }
 
-test('ядро модалок не зависит ни от одного фреймворка', () => {
-  const files = walk(ROOT)
-  assert.ok(files.length > 5, 'нечего проверять — путь изменился?')
-  const problems = []
-  for (const file of files) {
-    const rel = relative(ROOT, file)
-    const found = checkFile(rel, readFileSync(file, 'utf8'))
-    if (found.length) problems.push(formatProblems(rel, found))
-  }
-  assert.equal(problems.length, 0, problems.join('\n'))
-})
+for (const root of CORE_MODULES) {
+  test(`ядро ${root} не зависит ни от одного фреймворка`, () => {
+    const files = walk(root)
+    assert.ok(files.length > 2, 'нечего проверять — путь изменился?')
+    const problems = []
+    for (const file of files) {
+      const rel = relative(root, file)
+      const found = checkFile(rel, readFileSync(file, 'utf8'))
+      if (found.length) problems.push(formatProblems(rel, found, root))
+    }
+    assert.equal(problems.length, 0, problems.join('\n'))
+  })
+}
 
 test('зона фреймворка существует и непуста (иначе проверка бессмысленна)', () => {
   const zones = walk(ROOT).map((f) => relative(ROOT, f)).filter(isFrameworkZone)
   assert.ok(zones.length > 0, 'нет ни одного файла в зоне фреймворка — граница фиктивна')
+})
+
+test('зона фреймворка есть у каждого ядра с адаптерами (form/paginate/links)', () => {
+  for (const root of ['src/lib/form', 'src/lib/paginate', 'src/lib/links']) {
+    const zones = walk(root).map((f) => relative(root, f)).filter(isFrameworkZone)
+    assert.ok(zones.length > 0, `${root}: нет ни одного файла в зоне фреймворка`)
+  }
 })
