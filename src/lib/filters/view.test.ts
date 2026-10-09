@@ -305,20 +305,36 @@ describe('патч хранилища', () => {
     expect(ambiguous['filters.score.min']).toBeUndefined()
   })
 
-  it('значение, снятое связкой, в патч не едет — но причина остаётся в картине', () => {
-    // Анонсы + оценка: поле гасит связка схемы, и патч (одна запись в
-    // хранилище) снимает оценку сам — как это делает браузер без JS, не
-    // отправляя выключенный контрол. Итог у JS и no-JS одинаков: источника
-    // оценка не касается.
+  it('патчер — сериализатор: прямой вызов относит связку как есть (миграция 2026-10-10)', () => {
+    // Буквальный перенос дропа в сборщик (решение оператора): вне панели
+    // catalogFilterExtraPatch не знает о связках — подавляют их сборщики
+    // входа (форма: скип disabled; чип: removeValuePatch).
     const patch = catalogFilterExtraPatch(schema, { 'filters.status': 'anons', 'filters.score.min': '5' })
     expect(patch['filters.status']).toBe('anons')
-    expect(patch['filters.score.min']).toBeUndefined()
-    // Соседние значения поля-связки живут: патч чистит весь ключ «score», а не
-    // всё, что рядом.
-    expect(patch['filters.kind']).toBeUndefined()
-    // Та же связка без триггера ничего не трогает: значение остаётся значением.
-    const kept = catalogFilterExtraPatch(schema, { 'filters.status': 'released', 'filters.score.min': '5' })
-    expect(kept['filters.score.min']).toBe(5)
+    expect(patch['filters.score.min']).toBe(5)
+  })
+
+  it('значение, снятое связкой, в хранилище не остаётся — но снимает его сборщик, не патчер', () => {
+    // extra хранит сочетание, которое набор формы не производил (рука/URL):
+    // снятие невинного чипа не должно его возвращать — score гасит anons.
+    const clean = catalogFilterRemoveValuePatch(
+      schema,
+      { 'filters.status': 'anons', 'filters.score.min': '5', 'filters.kind': 'tv' },
+      'filters.kind',
+      'tv',
+    )
+    expect(clean['filters.status']).toBe('anons')
+    expect(clean['filters.kind']).toBeUndefined()
+    expect(clean['filters.score.min']).toBeUndefined()
+    // Снятие САМОГО триггера оживляет соседа: связка считается после чипа.
+    const revived = catalogFilterRemoveValuePatch(
+      schema,
+      { 'filters.status': 'anons', 'filters.score.min': '5' },
+      'filters.status',
+      'anons',
+    )
+    expect(revived['filters.status']).toBeUndefined()
+    expect(revived['filters.score.min']).toBe(5)
   })
 
   it('необъявленный ключ в патч не попадает', () => {
