@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '$lib/ui/primitives'
   import type { MobileAnchor } from '$lib/modals'
   import { useModal, useModals } from '$lib/modals/svelte'
   import { modalTriggerVariants } from '$lib/ui/modals'
@@ -61,18 +62,18 @@
   </p>
 
   <div class="flex flex-wrap gap-2.5">
-    <button type="button" class={modalTriggerVariants()} data-probe-action="random-modal" onclick={openRandomModal}>
+    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="random-modal" onclick={openRandomModal}>
       Открыть с случайным направлением
-    </button>
-    <button type="button" class={modalTriggerVariants()} data-probe-action="inherited-modal" onclick={openInheritedModal}>
+    </Button>
+    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="inherited-modal" onclick={openInheritedModal}>
       Открыть без направления
-    </button>
-    <button type="button" class={modalTriggerVariants()} data-probe-action="plain-transient" onclick={openPlainTransient}>
+    </Button>
+    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="plain-transient" onclick={openPlainTransient}>
       Без хранилища
-    </button>
-    <button type="button" class={modalTriggerVariants()} data-probe-action="random-transient" onclick={openRandomTransient}>
+    </Button>
+    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="random-transient" onclick={openRandomTransient}>
       Без хранилища со случайным направлением
-    </button>
+    </Button>
   </div>
 
   {#if lastRandom}
@@ -84,14 +85,14 @@
   <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="plain">
     <h2>Модалка без хранилища</h2>
     <p class="text-[0.85rem] text-muted-foreground">У этой записи нет собственного направления.</p>
-    <button
-      type="button"
+    <Button variant="plain" size="none"
+      
       class={modalTriggerVariants()}
       data-probe-action="registered-from-transient"
       onclick={openRegisteredFromPlainTransient}
     >
       Открыть обычную модалку без параметров
-    </button>
+    </Button>
     <p class="text-[0.85rem] text-muted-foreground" data-probe-registered-result>{plainTransientResult}</p>
   </div>
 {/snippet}

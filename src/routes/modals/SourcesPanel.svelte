@@ -7,6 +7,7 @@
   // приложения (sources.svelte.ts): панель пишет прямо в него, layout
   // пересобирает ядро. Прежняя цена «панель вне хоста» (баг №26, журнал
   // §6 №11) снята: select панели на узком экране получает слой хоста.
+import { Button } from '$lib/ui/primitives'
   import { onMount, untrack } from 'svelte'
   import { Select } from '$lib/ui'
   import { useModals } from '$lib/modals/svelte'
@@ -108,15 +109,15 @@
   </div>
 
   <div class="flex flex-wrap gap-2">
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
+    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
       Открыть в url
-    </button>
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
+    </Button>
+    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
       Открыть в localStorage
-    </button>
-    <button class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
+    </Button>
+    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
       Открыть в memory
-    </button>
+    </Button>
   </div>
 
   <dl class="mt-3.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.82rem] [&_dd]:m-0 [&_dt]:text-muted-foreground">

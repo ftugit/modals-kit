@@ -3,6 +3,7 @@
   // Состав 1:1: заголовок из загрузчика, индекс/id/глубина, цепочка,
   // «следующая» карточка (случайные размер и цвет, стабильные пока
   // запись в цепочке), обмен данными между слоями, футер с триггерами.
+import { Button } from '$lib/ui/primitives'
   import { Input } from '$lib/ui/primitives'
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '$lib/modals/svelte'
   import { ModalTrigger } from '$lib/modals/svelte'
@@ -83,14 +84,14 @@
         {ldr.loading ? 'загрузка…' : 'готово'}
       </div>
     </div>
-    <button
-      type="button"
+    <Button variant="plain" size="none"
+      
       class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
       onclick={() => m.modals.close()}
       aria-label="Закрыть текущую"
     >
       ✕
-    </button>
+    </Button>
   </div>
 
   <div class="min-h-0 flex-auto overflow-y-auto px-5 py-4 text-sm leading-relaxed text-muted-foreground">
@@ -208,13 +209,13 @@
     </ModalTrigger>
     <!-- Модалка без хранилища поверх этой: transient-запись ложится на
          вершину цепочки, в адрес не попадает. -->
-    <button
-      type="button"
+    <Button variant="plain" size="none"
+      
       class={modalTriggerVariants()}
       onclick={() => m.modals.openLayer({ content: storagelessInCard })}
     >
       Без хранилища поверх
-    </button>
+    </Button>
   </div>
 </div>
 
@@ -234,13 +235,13 @@
           { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
         ]}
       />
-      <button
-        type="button"
+      <Button variant="plain" size="none"
+        
         class={modalTriggerVariants()}
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку
-      </button>
+      </Button>
     </div>
   </div>
 {/snippet}

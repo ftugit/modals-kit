@@ -1,5 +1,6 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
+import { Button } from '$lib/ui/primitives'
   import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
   const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
@@ -357,17 +358,17 @@
           {#each form.rows('items').keys as key (key)}
             <div data-row={key} class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
               {#each form.rows('items').row(key) as f (f.name)}<Field of={f} />{/each}
-              <button type="button" class="self-end rounded-md border border-border px-3 py-2 text-xs"
+              <Button variant="plain" size="none"  class="self-end rounded-md border border-border px-3 py-2 text-xs"
                       onclick={() => form.apply([editor.removeRow('items', key)])}>
                 Удалить
-              </button>
+              </Button>
             </div>
           {/each}
-          <button type="button"
+          <Button variant="plain" size="none" 
                   class="rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
                   onclick={() => form.apply([editor.addRow('items', `r${Date.now() % 100000}`)])}>
             + Позиция
-          </button>
+          </Button>
         </fieldset>
 
         <!-- поле, созданное в рантайме: та же операция, те же атрибуты -->
@@ -378,19 +379,19 @@
         {/if}
 
         <div class="flex flex-wrap gap-2">
-          <button type="button"
+          <Button variant="plain" size="none" 
                   class="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
                   onclick={addRuntimeField}>
             + Поле из рантайма
-          </button>
-          <button {...form.intent('submit')}
+          </Button>
+          <Button variant="plain" size="none" type="submit" {...form.intent('submit')}
                   class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50">
             {form.state.pendingIntent === 'submit' ? 'Отправка…' : 'Создать аккаунт'}
-          </button>
-          <button {...form.intent('save-draft')}
+          </Button>
+          <Button variant="plain" size="none" type="submit" {...form.intent('save-draft')}
                   class="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50">
             {form.state.pendingIntent === 'save-draft' ? 'Сохранение…' : 'Сохранить черновик'}
-          </button>
+          </Button>
         </div>
       </Form>
     </section>

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '$lib/ui/primitives'
   import { onMount } from 'svelte'
   import { createModals, createRegistry, urlStorage } from '$lib/modals'
   import { svelteKitCore } from '$lib/modals/cores/sveltekit'
@@ -125,21 +126,21 @@
         <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
           <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · глобальный реестр</div>
           <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>createRegistry('app')</code>, видна отовсюду.</p>
-          <button class={BTN} onclick={openGlobal} disabled={!ready}>Открыть «auth»</button>
+          <Button variant="plain" size="none" class={BTN} onclick={openGlobal} disabled={!ready}>Открыть «auth»</Button>
         </div>
 
         <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
           <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · область роута</div>
           <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>app.child('/cycle')</code>. С других роутов не видна.
              Параметры уезжают в адрес.</p>
-          <button class={BTN} onclick={openScoped} disabled={!ready}>Открыть «account» с id</button>
+          <Button variant="plain" size="none" class={BTN} onclick={openScoped} disabled={!ready}>Открыть «account» с id</Button>
         </div>
 
         <div class="mb-[1.1rem] border-l-[3px] border-l-[#6b4fd6] py-0.5 pl-3">
           <div class="mb-1 text-[0.9rem]"><b>3. transient</b> · слой из кода</div>
           <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Имени в реестре нет, содержимое передаётся на месте,
              в адрес не попадает.</p>
-          <button class={BTN_ALT} onclick={openTransient} disabled={!ready}>Открыть разовый слой</button>
+          <Button variant="plain" size="none" class={BTN_ALT} onclick={openTransient} disabled={!ready}>Открыть разовый слой</Button>
         </div>
 
       </div>
@@ -158,8 +159,8 @@
         </dl>
 
         <div class="flex gap-2">
-          <button class={BTN} onclick={close} disabled={!chain.length}>Закрыть верхнюю</button>
-          <button class={BTN} onclick={closeAll} disabled={!chain.length}>Закрыть все</button>
+          <Button variant="plain" size="none" class={BTN} onclick={close} disabled={!chain.length}>Закрыть верхнюю</Button>
+          <Button variant="plain" size="none" class={BTN} onclick={closeAll} disabled={!chain.length}>Закрыть все</Button>
         </div>
         <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
           Дальше жмите <b>Назад</b> в браузере: каждое открытие — своя запись

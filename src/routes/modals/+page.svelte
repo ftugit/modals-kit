@@ -1,5 +1,6 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
+import { Button } from '$lib/ui/primitives'
   import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
   const jsOnly = useJsOnly()
 
@@ -283,9 +284,9 @@
               { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
             ]}
           />
-          <button type="button" class={modalTriggerVariants()} onclick={openStorageless}>
+          <Button variant="plain" size="none"  class={modalTriggerVariants()} onclick={openStorageless}>
             Модалка без хранилища
-          </button>
+          </Button>
           <CloseAllButton />
           <!-- ссылка на страницу, которая ждёт loader (1.5 c) и крутит
                спиннер, как триггер модалки: порт LoadLink оригинала -->
@@ -391,13 +392,13 @@
           { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
         ]}
       />
-      <button
-        type="button"
+      <Button variant="plain" size="none"
+        
         class={modalTriggerVariants()}
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку
-      </button>
+      </Button>
     </div>
     <p class="m-0 text-xs text-muted-foreground">
       Переход начинает новую стопку: несериализуемая запись не может оказаться

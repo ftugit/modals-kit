@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '$lib/ui/primitives'
   import { Select } from '$lib/ui'
   import FloatingMenu from './FloatingMenu.svelte'
   import { useModals } from '$lib/modals/svelte'
@@ -42,13 +43,13 @@
       sheetOnNarrow={false}
       items={[{ label: 'Этот оверлей не прижимается', hint: 'sheetOnNarrow=false' }]}
     />
-    <button
-      type="button"
+    <Button variant="plain" size="none"
+      
       class={modalTriggerVariants()}
       onclick={() => m.modals.openLayer({ content: storagelessHere })}
     >
       Без хранилища поверх
-    </button>
+    </Button>
     <span class="text-[0.8rem]">Из меню: <b>{действие}</b></span>
   </div>
   <p>Меню — второй потребитель того же <code>host.floating</code>, что и список:

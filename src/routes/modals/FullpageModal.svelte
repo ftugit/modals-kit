@@ -1,5 +1,6 @@
 <script lang="ts">
   // Порт FullpageModal из src/features/modals/demo-modals.tsx оригинала.
+import { Button } from '$lib/ui/primitives'
   import { useModal, useModals } from '$lib/modals/svelte'
   import { ModalTrigger } from '$lib/modals/svelte'
   import { CloseAllButton } from '$lib/ui/modals'
@@ -16,13 +17,13 @@
         size: fullpage · без радиуса · иконка закрытия на фоне скрыта
       </div>
     </div>
-    <button
-      type="button"
+    <Button variant="plain" size="none"
+      
       class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
       onclick={() => m.modals.close()}
     >
       Закрыть
-    </button>
+    </Button>
   </div>
   <div class="min-h-0 flex-auto overflow-y-auto px-6 py-5">
     <p class="max-w-prose text-sm text-muted-foreground">

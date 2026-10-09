@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '$lib/ui/primitives'
   import { goto, pushState, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
@@ -173,20 +174,20 @@
       <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
         <h2>Действия</h2>
         <div class="mb-2.5 flex flex-wrap gap-2">
-          <button class={BTN} onclick={() => openRegistered('card')}>pushState + «card»</button>
-          <button class={BTN} onclick={() => openRegistered('user')}>pushState + «user»</button>
+          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('card')}>pushState + «card»</Button>
+          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('user')}>pushState + «user»</Button>
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
-          <button class={BTN_GO} onclick={() => openViaGoto('card')}>goto + «card»</button>
-          <button class={BTN_GO} onclick={() => openViaGoto('user')}>goto + «user»</button>
+          <Button variant="plain" size="none" class={BTN_GO} onclick={() => openViaGoto('card')}>goto + «card»</Button>
+          <Button variant="plain" size="none" class={BTN_GO} onclick={() => openViaGoto('user')}>goto + «user»</Button>
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
-          <button class={BTN_ALT} onclick={openTransient}>+ transient (без URL)</button>
-          <button class={BTN_ALT} onclick={replaceTop}>replaceState</button>
+          <Button variant="plain" size="none" class={BTN_ALT} onclick={openTransient}>+ transient (без URL)</Button>
+          <Button variant="plain" size="none" class={BTN_ALT} onclick={replaceTop}>replaceState</Button>
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
-          <button class={BTN} onclick={closeTop} disabled={!fullChain.length}>Закрыть верхний (back)</button>
-          <button class={BTN} onclick={() => closeN(2)} disabled={fullChain.length < 2}>go(-2)</button>
+          <Button variant="plain" size="none" class={BTN} onclick={closeTop} disabled={!fullChain.length}>Закрыть верхний (back)</Button>
+          <Button variant="plain" size="none" class={BTN} onclick={() => closeN(2)} disabled={fullChain.length < 2}>go(-2)</Button>
         </div>
         <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
           Дальше — кнопками <b>Назад / Вперёд</b> самого браузера, и <b>F5</b> на

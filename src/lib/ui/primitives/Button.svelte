@@ -13,6 +13,10 @@
           'border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-foreground underline-offset-4 hover:underline',
+        // «plain»: только базовые утилиты — цвет, фон и радиус несёт класс
+        // потребителя. Нужен там, где рисунок кнопки свой (иконки, элементы
+        // меню), а нужна вся семантика примитива (disabled, aria, type).
+        plain: '',
       },
       size: {
         xs: 'h-7 rounded-md px-2 text-xs',
@@ -21,6 +25,7 @@
         lg: 'h-10 px-6 text-sm',
         icon: 'h-9 w-9',
         'icon-sm': 'h-8 w-8',
+        none: '',
       },
     },
     { variant: 'default', size: 'md' },
@@ -28,10 +33,10 @@
 
   export type ButtonVariants = VariantProps<{
     variant: Record<
-      'default' | 'secondary' | 'accent' | 'destructive' | 'outline' | 'ghost' | 'link',
+      'default' | 'secondary' | 'accent' | 'destructive' | 'outline' | 'ghost' | 'link' | 'plain',
       string
     >
-    size: Record<'xs' | 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm', string>
+    size: Record<'xs' | 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm' | 'none', string>
   }>
 </script>
 
@@ -41,6 +46,12 @@
 
   interface Props extends HTMLButtonAttributes, ButtonVariants {
     children?: Snippet
+    /**
+     * Forwarded ref: узел <button> в руки потребителю. Нужен вместо
+     * `bind:this`, которое у компонента отдаёт экземпляр, а не элемент
+     * (фокус-менеджмент и геометрия триггера опираются на узел).
+     */
+    ref?: (el: HTMLButtonElement | null) => void
   }
 
   let {
@@ -49,11 +60,18 @@
     class: cls,
     type = 'button',
     children,
+    ref,
     ...rest
   }: Props = $props()
+
+  let self = $state<HTMLButtonElement | null>(null)
+  // ref — эффект, а не attach: `attach` из spread компайлер не применяет,
+  // а потребителю нужен именно элемент (getBoundingClientRect, focus()).
+  $effect(() => ref?.(self))
 </script>
 
 <button
+  bind:this={self}
   {type}
   class={buttonVariants({ variant, size, class: cls })}
   {...rest}

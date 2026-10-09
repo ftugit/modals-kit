@@ -23,6 +23,7 @@
    * `aria-controls` на кнопке обязателен: по нему ловушка фокуса модалки
    * признаёт портированное меню своим (решение D31).
    */
+import { Button } from '$lib/ui/primitives'
   import { Portal } from '@ark-ui/svelte/portal'
   import { tryUseModals, type HostFloatingCloseReason } from '$lib/modals/svelte'
   import { cn } from '$lib/ui/cn'
@@ -162,9 +163,8 @@
   })
 </script>
 
-<button
-  bind:this={buttonEl}
-  type="button"
+<Button variant="plain" size="none"
+  ref={(el) => { buttonEl = el }}
   class={cn(modalButtonVariants({ variant: 'quiet' }), cls)}
   data-modal-btn=""
   aria-haspopup="menu"
@@ -174,7 +174,7 @@
   onkeydown={onTriggerKeydown}
 >
   {label}
-</button>
+</Button>
 
 {#if open && menuNode}
   <Portal container={menuNode}>
@@ -215,18 +215,18 @@
         data-floating-menu-head=""
       >
         <span class="text-[0.95rem] font-semibold" data-floating-menu-title="">{label}</span>
-        <button
-          type="button"
+        <Button variant="plain" size="none"
+          
           class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent hover:bg-accent"
           data-floating-menu-close=""
           aria-label="Закрыть меню"
           onclick={() => closeMenu()}
-        >✕</button>
+        >✕</Button>
       </div>
       {#each items as item, i (item.label)}
         {@const index = enabled.indexOf(item)}
-        <button
-          type="button"
+        <Button variant="plain" size="none"
+          
           role="menuitem"
           class={cn(
             'flex w-full items-baseline justify-between gap-3 rounded-[7px] border-0 bg-transparent px-2.5 py-2 text-left text-inherit',
@@ -243,7 +243,7 @@
         >
           <span>{item.label}</span>
           {#if item.hint}<span class="text-xs text-muted-foreground" data-floating-menu-hint="">{item.hint}</span>{/if}
-        </button>
+        </Button>
       {/each}
     </div>
   </Portal>
