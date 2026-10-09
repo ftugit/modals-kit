@@ -1,0 +1,51 @@
+{
+  "name": "modals-kit",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run && node --test tooling/",
+    "test:unit": "vitest run",
+    "test:guard": "node --test tooling/",
+    "test:size": "node tooling/size-budget.mjs",
+    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs",
+    "test:browser:regressions": "node test/browser/regressions.mjs",
+    "test:browser:modals": "node test/browser/modals.mjs",
+    "test:browser:shell": "node test/browser/shell.mjs",
+    "test:browser:forms": "node test/browser/forms.mjs",
+    "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs",
+    "test:browser:paginate": "node test/browser/paginate.mjs",
+    "test:browser:capabilities": "node test/browser/capabilities.mjs",
+    "test:browser:shikimori": "node test/browser/shikimori.mjs",
+    "test:browser:select-trace": "node test/browser/select-trace.mjs",
+    "test:browser:errors": "node test/browser/errors.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/kit": "^2.63.0",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "axe-core": "^4.13.0",
+    "playwright": "^1.63.0",
+    "react": "^19.3.0",
+    "solid-js": "^1.9.15",
+    "svelte": "^5.56.1",
+    "svelte-check": "^4.6.0",
+    "typescript": "^6.0.3",
+    "unocss": "^66.10.5",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@ark-ui/svelte": "5.24.2",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.7.0"
+  }
+}
