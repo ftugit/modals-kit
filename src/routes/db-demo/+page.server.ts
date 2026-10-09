@@ -23,8 +23,10 @@ export const load: PageServerLoad = async (event) => {
   // Разбор — ВНУТРИ try: отказ слоя (неизвестный ключ, битый JSON фильтра) обязан
   // пройти через toKitError, а не упасть в Kit как сырой DbFailure.
   try {
-    const { name, snapshot } = await loadDbListSnapshot(event.url.href)
-    return { listName: name, snapshot }
+    // `name` лоадеру не нужен: страница его не выбирает — имя знает компонент
+    // списка, а registration обязана жить и в клиентском бандле.
+    const { snapshot } = await loadDbListSnapshot(event.url.href)
+    return { snapshot }
   } catch (e) {
     const kit = toKitError(e, import.meta.env.DEV)
     throw error(kit.status, kit.body)

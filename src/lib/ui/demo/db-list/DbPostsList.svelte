@@ -8,17 +8,28 @@
   import { PaginatorHost } from '$lib/paginate/svelte'
   import type { PaginatorState } from '$lib/paginate'
   import { EmptyState, ErrorRow, LoadingIndicator, PageList, PageNav } from '$lib/ui/paginator'
+  // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
+  // бандле, где рендерится хост. Иначе клиент падает на гидрации с
+  // «Unknown paginator» (registry.ts), а SSR этого не видит.
+  import { DB_LIST_NAME, ensureDbListPaginator } from './definition'
   import type { DbPost } from './definition'
 
   interface Props {
-    name: string
     /** SSR-снапшот из лоадера: без JavaScript список виден целиком. */
     snapshot?: PaginatorState<DbPost> | null
     /** Первая строка как пришла из слоя — технический блок демо. */
     raw?: string
   }
 
-  let { name, snapshot = null, raw = '' }: Props = $props()
+  let { snapshot = null, raw = '' }: Props = $props()
+
+  // Регистрация на стороне компонента — так же, как в демо пагинатора
+  // (`features/paginator/PaginatorDemo.svelte`: `$derived(ensureDemoPaginator(...))`):
+  // тело родителя выполняется до инициализации `<PaginatorHost>`, поэтому хост
+  // заведомо видит экземпляр. Функция идемпотентна (guard `hasPaginator`), и
+  // повторный вызов с сервера (лоадер) ей не мешает.
+  ensureDbListPaginator()
+  const name = DB_LIST_NAME
 </script>
 
 <PaginatorHost {name} {snapshot} mode="single" class="space-y-3">
