@@ -7,13 +7,13 @@
 export * from "../index";
 export { pgliteAdapter } from "../adapters/pglite";
 export { pgAdapter } from "../adapters/pg";
-export { authors, blogs } from"../resources";
-export { createProbeRest } from"../probe-rest";
+export { authors, blogs } from "./fixtures/resources";
+export { createProbeRest } from "./fixtures/probe-rest";
 export { BodyTooLarge, readBoundedBody } from "../sveltekit/query";
 // Опциональный путь: тесты источника объявляют несколько схем через zod.
 export { z } from "../zod";
 export { splitSqlStatements } from "../sveltekit/migrate";
-import { authors, blogs } from"../resources";
+import { authors, blogs } from "./fixtures/resources";
 import type { Database } from "../types";
 export function createProbeApi(db: Database) {
   return { author: db.resource(authors), blog: db.resource(blogs) };

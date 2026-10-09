@@ -447,7 +447,7 @@ TCP на нестандартный порт проходит; на Cloudflare W
 Фикс (0.2.1): успешный путь делает `release()`, сбойный — `release(err)`, то есть клиент
 уничтожается, а не возвращается в пул убитым; приём и порядок — из pg-pool (`_releaseOnce`
 запрещает второй release, поэтому `end()` оставлен только в `cancel()`). Регрессия — группа 29
-`src/lib/db/port-specific.test.ts`: стаб считает `connect()`/`release()` и падает на двойном
+`src/lib/db/test/db-port-specific.test.ts`: стаб считает `connect()`/`release()` и падает на двойном
 release; проверка мутацией (убрать `release`) роняет её же со `releases: 0, checkedOut: 3`.
 
 Замер «до/после» на сервере оператора (production-сборка, `preview`, `DB_POOL_MAX=2`):

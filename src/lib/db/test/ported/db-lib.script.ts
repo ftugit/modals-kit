@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { Pool } from "pg";
-import { afterAll, it } from 'vitest';
-const F = await import("./fixtures/index.ts");
+const F = await import("../fixture.ts");
 const native = process.env.DB_LIB_TEST_PG_URL;
 const pg = native
   ? new Pool({ connectionString: native, max: 4 })
@@ -57,11 +56,16 @@ const a = {
   },
   editor = { principal: { id: a.principal.id, roles: ["editor"] } },
   guest = { principal: { roles: [] } };
-const test = (name: string, fn: () => Promise<void> | void) => it(name, fn, 30_000)
-let row: any;
+let passed = 0;
+async function test(name, fn) {
+  await fn();
+  passed++;
+  console.log("\u2713 " + name);
+}
 const rejects = (fn, kind) =>
   assert.rejects(fn, (e) => e instanceof F.DbFailure && e.kind === kind);
-await test("author setup and canonical decimal/bigint/date/array/json", async () => {
+try {
+  await test("author setup and canonical decimal/bigint/date/array/json", async () => {
     await api.author.insert(a, { name: " Alice " });
     await api.author.insert(b, { name: "Bob" });
     const row = await api.blog.insert(a, {
@@ -78,10 +82,8 @@ await test("author setup and canonical decimal/bigint/date/array/json", async ()
     assert.equal(row.published_at, "2026-09-25T12:34:56.123456Z");
     assert.deepEqual(row.tags, ["x", "y"]);
     assert.deepEqual(row.meta, { nested: [1, true, null] });
-    // `row` нужен следующим группам: берём его здесь, а не на уровне модуля — иначе
-    // выборка случилась бы до вставок (vitest регистрирует тесты, а не выполняет их)
-    row = (await api.blog.select(a))[0];
   });
+  const row = (await api.blog.select(a))[0];
   await test("field projection omitted; mandatory id/owner; writes/filter/order forbidden", async () => {
     const got = await api.blog.get(a, row.id, {
       fields: ["title", "private_note", "unknown"],
@@ -583,7 +585,8 @@ await test("author setup and canonical decimal/bigint/date/array/json", async ()
       "forbidden",
     );
   });
-afterAll(async () => {
+  console.log(`\nDB lib: ${passed} groups passed`);
+} finally {
   if (native) await pg.end();
   else await pg.close();
-})
+}
