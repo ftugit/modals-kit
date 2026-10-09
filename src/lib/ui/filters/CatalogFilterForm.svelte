@@ -23,7 +23,7 @@
   import { onMount } from 'svelte'
   import { compileCatalogFilterSchema, catalogFilterFieldStates, parseCatalogFilterPath } from '$lib/filters'
   import type { CatalogFilterSchema } from '$lib/filters'
-  import { bind, createConfig } from '$lib/form/svelte'
+  import { bind, createConfig, Form } from '$lib/form/svelte'
   import type { FormDescription } from '$lib/form'
   import { Button, Input, Select } from '$lib/ui/primitives'
 
@@ -143,14 +143,12 @@
   }
 </script>
 
-<form
-  {...form.formProps()}
+<Form
+  {form}
+  hiddenFields={hidden}
   data-testid="catalog-filter-form"
   class={`space-y-4 ${cls}`}
 >
-  {#each hidden as field (field.name)}
-    <input type="hidden" name={field.name} value={field.value} />
-  {/each}
 
   <div class="grid gap-3 sm:grid-cols-2">
     {#each form.description.fields as fd (fd.name)}
@@ -228,4 +226,4 @@
     {/if}
     <Button type="submit" size="sm" data-testid="catalog-filter-submit">Применить</Button>
   </div>
-</form>
+</Form>

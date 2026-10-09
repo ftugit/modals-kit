@@ -5,7 +5,7 @@
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
-  import { bind, type LiveMode } from '$lib/form/svelte'
+  import { bind, Form, type LiveMode } from '$lib/form/svelte'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
   import {
     compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
@@ -329,8 +329,7 @@
 
     <!-- ── форма ─────────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <form {...form.formProps()} class="space-y-4">
-        {#each form.hidden() as h (h.name)}<input {...h} />{/each}
+      <Form {form} hiddenFields={form.hidden()} class="space-y-4">
 
         <Common errors={form.common} title="Проверьте форму" />
 
@@ -393,7 +392,7 @@
             {form.state.pendingIntent === 'save-draft' ? 'Сохранение…' : 'Сохранить черновик'}
           </button>
         </div>
-      </form>
+      </Form>
     </section>
 
     {#if channelLog.length}

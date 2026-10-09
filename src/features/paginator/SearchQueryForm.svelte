@@ -8,7 +8,7 @@
   import { onMount } from 'svelte'
   import { defineForm, field, v } from '$lib/form'
   import { Input } from '$lib/ui/primitives'
-  import { bind, createConfig } from '$lib/form/svelte'
+  import { bind, createConfig, Form } from '$lib/form/svelte'
   import { currentSearch } from '$lib/router/sveltekit'
   import { getClientStore, setExtra } from '$lib/paginate'
   import { normalizeSearchQuery } from '$lib/search'
@@ -124,16 +124,6 @@
    * уходит в стор пагинатора — запрос живёт в extra, сброс страницы и запись
    * адреса делает его транспорт. `disabled` гасит только JS-путь (см. выше).
    */
-  const fprops = $derived({
-    ...form.formProps(),
-    onsubmit: (event: SubmitEvent) => {
-      if (!hydrated) return                     // нативный GET до оживления (и без JS)
-      event.preventDefault()
-      stopTimer()
-      if (!disabled) form.commit()
-    },
-  })
-
   /**
    * Чужие ключи адреса — скрытыми полями: без JS GET-submit их не сотрёт.
    * Свой ключ запроса и указатель страницы не сохраняются (см. выше).
@@ -151,19 +141,23 @@
   источника, сужённые родным поиском. С JS тем же ключом управляет lib search
   (fuzzy + коррекция) либо родной поиск источника — по опциям панели.
 -->
-<form
-  {...fprops}
+<Form
+  {form}
+  hiddenFields={preserved.map(([name, value]) => ({ name, value }))}
   role="search"
   data-testid="search-form"
   class="mb-3 flex flex-wrap items-center gap-2"
+  onsubmit={(event) => {
+    if (!hydrated) return // нативный GET до оживления (и без JS)
+    event.preventDefault()
+    stopTimer()
+    if (!disabled) form.commit()
+  }}
   onreset={(event) => {
     event.preventDefault()
     clear()
   }}
 >
-  {#each preserved as [key, val] (key + '=' + val)}
-    <input type="hidden" name={key} value={val} />
-  {/each}
   <Input
     {...vf.attrs}
     type="search"
@@ -197,4 +191,4 @@
   >
     Сбросить
   </button>
-</form>
+</Form>

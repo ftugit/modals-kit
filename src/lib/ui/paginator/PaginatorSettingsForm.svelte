@@ -13,7 +13,7 @@
    */
   import type { Snippet } from 'svelte'
   import type { ExtraValue } from '$lib/paginate'
-  import { bind, createConfig } from '$lib/form/svelte'
+  import { bind, createConfig, Form } from '$lib/form/svelte'
   import { computeLinks, linkHelperText } from '$lib/links/links'
   import { buttonVariants } from '$lib/ui/primitives'
   import { JS_ONLY_REASON } from '$lib/ui/js-only.svelte'
@@ -108,17 +108,14 @@
   const js = $derived(form.submitVisible)
 </script>
 
-<form
-  {...form.formProps()}
+<Form
+  {form}
+  hiddenFields={
+    js ? [{ name: pageParam, value: page }, ...foreign.map(([name, value]) => ({ name, value }))] : []
+  }
   data-testid="demo-panel"
   class={className ?? 'rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
 >
-  {#if js}
-    <input type="hidden" name={pageParam} value={page} />
-    {#each foreign as [k, v] (k + '=' + v)}
-      <input type="hidden" name={k} value={v} />
-    {/each}
-  {/if}
 
   <div class="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3 lg:grid-cols-5">
     {#if storeProp}
@@ -200,4 +197,4 @@
       {@render footer({ pageSize, page })}
     </div>
   {/if}
-</form>
+</Form>
