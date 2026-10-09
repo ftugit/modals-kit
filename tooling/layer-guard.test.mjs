@@ -105,3 +105,19 @@ test('импорт примитивов разрешён всем, кто вне
   // и другие $lib/ui-модули form-библиотеку не касаются
   assert.equal(check('$lib/ui/cn', '/app/src/lib/form/svelte/config.ts'), null);
 });
+
+test('template: <NativeSelect> вне кита блокируется с подсказкой enhanced Select', () => {
+  const msg = checkTemplate(RULES, '<div><NativeSelect name="s" /></div>', '/app/src/routes/demo/+page.svelte');
+  assert.match(msg, /только внутри кита/);
+  assert.match(msg, /\$lib\/ui\/primitives/);
+});
+
+test('template: <NativeSelect /> самозакрытый тоже блокируется; enhanced <Select /> — нет', () => {
+  assert.notEqual(checkTemplate(RULES, '<NativeSelect />', '/app/src/features/x.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<Select options={opts} />', '/app/src/features/x.svelte'), null);
+});
+
+test('template: кит собирает носитель сам — settings и shell легальны', () => {
+  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/ui/settings/Select.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/shell/sidebar.svelte'), null);
+});
