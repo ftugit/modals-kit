@@ -21,7 +21,7 @@
 | VCS | `/home/user/integration/.git` — есть (локальный, без `origin`); коммиты только локальные |
 | последний коммит | `e6107da` refactor(db-demo): список через пагинатор, формы — отдельные компоненты |
 | baseline | `de0fe0d` = срез `modals-kit@5d08da7`, всё остальное в истории — адаптация |
-| гейты этого среза | vitest 33 файла / 599 тестов · tooling 104/104 · слой 39/39 · svelte-check 0 ошибок (46 warning'ов в `src/lib/paginate`) · build 8.14 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (20)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) |
+| гейты этого среза | vitest 33 файла / 599 тестов · tooling 104/104 · слой 39/39 · svelte-check 0 ошибок (46 warning'ов в `src/lib/paginate`) · build 8.14 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (20)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) · `probes/db-demo-browser.check.mjs` → `DB_DEMO_BROWSER_OK (8)` — браузерная проверка обязательна: HTTP-проба не видит класса ошибок «SSR зелёный, гидрация мёртвая» (Chromium ставится `npx playwright install chromium`, порт превью обязан быть в `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы) |
 | SKIPPED | нет |
 | долг пользователя | отозвать вставленные в чат PAT GitHub; `drop database if exists kitdb_demo with (force)`, когда демо не нужно |
 

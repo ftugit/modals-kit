@@ -56,4 +56,4 @@
   <RemoveForm seed={seed('remove')} />
 </div>
 
-<DbPostsList name={data.listName} snapshot={data.snapshot} raw={rawRow} />
+<DbPostsList snapshot={data.snapshot} raw={rawRow} />
