@@ -14,6 +14,18 @@ export interface ModalStoreData {
   /** Проекция транспорта. Писать напрямую нельзя — только через действия. */
   chain: Chain
   hostConfig: HostConfig
+  /**
+   * Скоупы настроек (обычно — путь страницы): слайсы, которые накладываются
+   * на базовый `hostConfig` при чтении в своём скоупе. Так демка одной
+   * страницы не течёт на модалки остальных (решение оператора 2026-10-10).
+   */
+  hostConfigBy: Record<string, Partial<HostConfig>>
+  /**
+   * Ключ активного скоупа (путь страницы). Пишет адаптер через
+   * `setScope`, читают только мёрреные геттеры — см. `scopedConfig`
+   * в `create.ts` (там же — почему это данные, а не функция).
+   */
+  scopeKey: string
   /** Состояние загрузки записи: ключ `${index}:${name}`. */
   runtime: Record<string, RuntimeState>
   /** Своя ячейка данных модалки. */
@@ -27,6 +39,8 @@ export interface ModalStoreData {
 const initial = (): ModalStoreData => ({
   chain: [],
   hostConfig: DEFAULT_HOST_CONFIG,
+  hostConfigBy: {},
+  scopeKey: '',
   runtime: {},
   data: {},
   sharedData: {},
@@ -72,8 +86,8 @@ export function createModalStore() {
       emit()
     },
 
-    /** Слияние во вложенную карту (runtime/data/sharedData). */
-    merge<K extends 'runtime' | 'data' | 'sharedData'>(
+    /** Слияние во вложенную карту (runtime/data/sharedData/hostConfigBy). */
+    merge<K extends 'runtime' | 'data' | 'sharedData' | 'hostConfigBy'>(
       key: K,
       patch: Partial<ModalStoreData[K]>,
     ): void {

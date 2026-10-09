@@ -93,7 +93,7 @@
   const initial = untrack(() => ({
     modals,
     scope,
-    view: createReactiveStore(modals.store),
+    view: createReactiveStore(modals.store, !!modals.configScope),
     loader: createLoader({
       store: modals.store,
       lookup: scope.lookup,
@@ -121,7 +121,7 @@
   $effect(() => {
     liveModals = modals
     liveScope = scope
-    liveView = createReactiveStore(modals.store)
+    liveView = createReactiveStore(modals.store, !!modals.configScope)
     liveLoader = createLoader({
       store: modals.store,
       lookup: scope.lookup,
@@ -154,7 +154,10 @@
   /* ── настройки хоста приходят пропсами и живут в сторе ───────────── */
 
   $effect(() => {
-    modals.configure({
+    // Пропсы хоста — БАЗА: они для всех страниц общие, а слайсы демки
+    // (configure) накладываются поверх в своём скоупе (решение оператора
+    // 2026-10-10: демка страницы не влияет на модалки остальных).
+    modals.configureBase({
       ...cfg,
       renderSkeleton: skeleton,
       renderError: error,

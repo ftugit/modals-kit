@@ -12,7 +12,7 @@
 // в коде, которому до носителя нет никакого дела. Проводка уехала
 // в `build.ts`, то есть внутрь ядра.
 import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, nextChain, resolveEntry, sameEntry } from './core'
-import { createModalStore, type ModalStore } from './store'
+import { createModalStore, type ModalStore, type ModalStoreData } from './store'
 import { DEFAULT_HOST_CONFIG } from './types'
 import type {
   Chain, ChainOverrides, HostConfig, LibError, ErrorSink, ModalContext, RegisteredEntry, StackMode, TransientEntry,
@@ -65,11 +65,24 @@ export interface Modals<V = unknown> {
   readonly core: ModalCore
   /** Состояние: цепочка, настройки, загрузка, обмен данными. */
   readonly store: ModalStore
-  /** Текущие настройки хоста. */
+  /** Текущие настройки хоста (в активном скоупе — если он задан). */
   readonly config: HostConfig<V>
+  /** Включатель постраничных слайсов (см. опцию `configScope`). */
+  readonly configScope?: () => string
+  /**
+   * Сообщить активный скоуп (путь страницы). Раскладка зовёт при каждой
+   * смене адреса; по этому ключу читаются слайсы `hostConfigBy`.
+   */
+  setScope(path: string): void
 
-  /** Изменить настройки хоста на лету (хост зовёт на смену пропсов). */
+  /**
+   * Изменить настройки хоста на лету. При заданном `configScope` запись
+   * уходит в слайс текущего скоупа (страницы) — на другие страницы она
+   * не влияет. Сам хост пишет мимо скоупа через `configureBase`.
+   */
   configure(patch: Partial<HostConfig<V>>): void
+  /** Базовые настройки хоста (пропсы); слайсы скоупов накладываются поверх. */
+  configureBase(patch: Partial<HostConfig<V>>): void
 
   /** Подключить ядро: прочитать начальную цепочку и следить за внешними изменениями. */
   attach(): () => void
@@ -118,13 +131,31 @@ export interface Modals<V = unknown> {
  */
 export function createModals<V = unknown>(
   core: ModalCore,
-  options: ModalsOptions<V> & { onError?: ErrorSink } = {},
+  options: ModalsOptions<V> & { onError?: ErrorSink; configScope?: () => string } = {},
 ): Modals<V> {
   const store = createModalStore()
 
   // Q1: приёмник — НЕ часть HostConfig, выделен до копирования умолчаний,
-  // иначе осел бы в store как настройка внешнего вида.
-  const { onError, ...hostOptions } = options
+  // иначе осел бы в store как настройка внешнего вида. `configScope` — тоже.
+  const { onError, configScope, ...hostOptions } = options
+  /**
+   * Эффективный конфиг: база + слайс активного скоупа.
+   *
+   * 🔴 Ключ читается из `state.scopeKey`, а НЕ вызовом `configScope()`:
+   * эту функцию зовут реактивные геттеры и эффекты хоста (зеркало,
+   * `fireLifecycle`). Если источник ключа читает `page`, эффект подключения
+   * ядра (`attach`) подписывается на навигацию и во время диспатча
+   * `popstate` переподключает сам себя: cleanup снимает обработчик до его
+   * очереди, событие «Вперёд» теряется, в истории остаётся призрак записи.
+   * Поймано регрессией R-03. Поэтому скоуп — данные в сторе: адаптер
+   * сообщает смену путём через `setScope`, а геттеры ядра чистые.
+   */
+  const scopedConfig = (
+    state: Readonly<Pick<ModalStoreData, 'hostConfig' | 'hostConfigBy' | 'scopeKey'>>,
+  ) =>
+    configScope
+      ? ({ ...state.hostConfig, ...(state.hostConfigBy[state.scopeKey] ?? {}) } as HostConfig<V>)
+      : (state.hostConfig as HostConfig<V>)
   const errorSinks = new Set<ErrorSink>(onError ? [onError] : [])
 
   // Умолчания задаются один раз при создании; запись цепочки может их
@@ -133,6 +164,18 @@ export function createModals<V = unknown>(
     Object.entries(hostOptions).filter(([, v]) => v !== undefined),
   ) as Partial<HostConfig>
   store.set({ hostConfig: { ...DEFAULT_HOST_CONFIG, ...clean } })
+
+  /**
+   * Обновить ключ скоупа из пользовательской функции (синхронный читатель,
+   * вызывается только ВНЕ реактивных геттеров — из `configure` и setup).
+   * Нужен на гонку «эффект страницы раньше эффекта раскладки».
+   */
+  const syncScope = () => {
+    if (!configScope) return
+    const sc = configScope()
+    if (sc !== store.state.scopeKey) store.set({ scopeKey: sc })
+  }
+  syncScope()
 
   /** Содержимое разовых слоёв. В адрес и хранилище не попадает. */
   const layers = new Map<string, unknown>()
@@ -264,7 +307,7 @@ export function createModals<V = unknown>(
 
   /** Кто открылся и кто закрылся между двумя цепочками. */
   const fireLifecycle = (prev: Chain, next: Chain) => {
-    const cfg = store.state.hostConfig
+    const cfg = scopedConfig(store.state)
     const id = (e: Chain[number], i: number) => `${i}:${entryLabel(e)}`
     const prevIds = prev.map(id)
     const nextIds = next.map(id)
@@ -326,8 +369,9 @@ export function createModals<V = unknown>(
     core,
     store,
 
+    configScope,
     get config() {
-      return store.state.hostConfig as HostConfig<V>
+      return scopedConfig(store.state)
     },
 
     get chain() {
@@ -335,6 +379,27 @@ export function createModals<V = unknown>(
     },
 
     configure(patch) {
+      const next = Object.fromEntries(
+        Object.entries(patch).filter(([, v]) => v !== undefined),
+      ) as Partial<HostConfig>
+      if (!configScope) {
+        store.set({ hostConfig: { ...store.state.hostConfig, ...next } })
+        return
+      }
+      syncScope()
+      const sc = store.state.scopeKey
+      if (!sc) {
+        store.set({ hostConfig: { ...store.state.hostConfig, ...next } })
+        return
+      }
+      store.merge('hostConfigBy', { [sc]: { ...store.state.hostConfigBy[sc], ...next } })
+    },
+
+    setScope(path) {
+      if (path !== store.state.scopeKey) store.set({ scopeKey: path })
+    },
+
+    configureBase(patch) {
       const next = Object.fromEntries(
         Object.entries(patch).filter(([, v]) => v !== undefined),
       ) as Partial<HostConfig>

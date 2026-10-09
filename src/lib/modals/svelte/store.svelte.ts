@@ -14,7 +14,7 @@ import type { ModalStore, ModalStoreData } from '../store'
  * Зеркало, а не источник: писать по-прежнему через действия ядра.
  * Односторонний поток сохраняется: транспорт → ядро → зеркало → разметка.
  */
-export function createReactiveStore(core: ModalStore = getClientStore()) {
+export function createReactiveStore(core: ModalStore = getClientStore(), scoped = false) {
   // $state.raw: ядро отдаёт НОВЫЙ объект на каждое изменение, поэтому
   // глубокая проксификация не нужна — сравнение по ссылке точнее и дешевле.
   let snapshot = $state.raw<ModalStoreData>(core.state as ModalStoreData)
@@ -31,7 +31,12 @@ export function createReactiveStore(core: ModalStore = getClientStore()) {
       return snapshot.chain
     },
     get hostConfig() {
-      return snapshot.hostConfig
+      // Ключ скоупа — данные стора (`scopeKey`), пишет его адаптер через
+      // `setScope`. Здесь геттер ЧИСТЫЙ: подписка — только на снапшот,
+      // никаких чтений `page` (иначе эффекты хоста подписываются на
+      // навигацию и отрывают ядро посреди popstate — R-03).
+      if (!scoped) return snapshot.hostConfig
+      return { ...snapshot.hostConfig, ...snapshot.hostConfigBy[snapshot.scopeKey] }
     },
     get runtime() {
       return snapshot.runtime

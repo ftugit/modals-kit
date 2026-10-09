@@ -481,6 +481,47 @@ async function run() {
       }
     }
 
+    // ── Скоуп настроек демки (решение оператора 2026-10-10) ────────────────────
+    // Панель /modals пишет настройки хоста в СВОЙ слайс (path-ключ): они живы,
+    // пока открыт этот путь, и не трогают базу — пропсы хоста для остальных
+    // страниц. Чистоту базы вне скоупа держит unit-тест scoped-config.test.ts
+    // (визуального носителя настроек на других маршрутах демки нет).
+    {
+      console.log('— Скоуп настроек: панель двигает лист только на своей странице —');
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      const setPanel = (v) =>
+        page.evaluate((val) => {
+          const el = document.querySelector('select[name="default_mobile"]');
+          el.value = val;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }, v);
+      const sheetY = async () => {
+        await page.locator('select[data-select-native]').first().click({ force: true });
+        await page.locator('[data-host-floating]').first().waitFor({ state: 'visible', timeout: 5000 });
+        await sleep(450);
+        const box = await page.locator('[data-host-floating]').first().boundingBox();
+        await page.keyboard.press('Escape');
+        await sleep(300);
+        return box.y;
+      };
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+      await sleep(700);
+      const yBase = await sheetY();
+      assert(yBase > 500, `база: лист прижат снизу, y=${yBase}`);
+      await setPanel('top');
+      await sleep(500);
+      const yTop = await sheetY();
+      assert(yTop < 10, `слайс не подейовал: лист y=${yTop}, ожидался верх`);
+      ok('панель default_mobile=top → лист демки переехал наверх');
+      await setPanel('bottom');
+      await sleep(500);
+      const yBack = await sheetY();
+      assert(Math.abs(yBack - yBase) < 2, `лист не вернулся: y=${yBack} vs ${yBase}`);
+      ok('возврат bottom → лист снова у нижней кромки (слайс живой, база цела)');
+      await page.close();
+    }
+
     console.log(`\n✅ modals-browser: ${passed} проверок пройдено`);
   } finally {
     await browser.close().catch(() => {});

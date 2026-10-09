@@ -83,14 +83,37 @@
 
   const scope = $derived(page.url.pathname.startsWith('/modals') || page.route.id === '/modals' ? demoScope : (ROUTE_SCOPES[page.route.id ?? ''] ?? globalScope))
 
-  const initial = untrack(() => ({ names: [...demoSources.list], lookup: scope.lookup }))
+  /**
+   * Источники цепочки — тоже достояние ДЕМКИ, а не сайта (решение
+   * оператора 2026-10-10): панель на /modals вправе переключать носители,
+   * но на прочих страницах действует базовая пара url+local. Иначе выбор
+   * «память» на демке обескровил бы deep-link'и везде.
+   */
+  const DEFAULT_SOURCES = ['url', 'local']
+  const namesNow = $derived(
+    page.route.id === '/modals' ? [...demoSources.list] : DEFAULT_SOURCES,
+  )
+  const initial = untrack(() => ({ names: [...namesNow], lookup: scope.lookup }))
   const core = svelteKitCore(sourcesFor(initial.names), { lookup: initial.lookup })
-  const modals = createModals(core, { tailCount: 3, maxHeight: '80vh', onError: report })
+  // `configScope` — адрес страницы как ключ слайса настроек: `m.modals.configure`
+  // демки пишет только в свой слайс, база (пропсы хоста) неотапливаема для всех.
+  const modals = createModals(core, {
+    tailCount: 3,
+    maxHeight: '80vh',
+    onError: report,
+    configScope: () => page.url.pathname,
+  })
+
+  $effect(() => {
+    // Скоуп настроек — данные в сторе (см. комментарий `scopedConfig`):
+    // раскладка сообщает путь, геттеры хоста остаются чистыми.
+    modals.setScope(page.url.pathname)
+  })
 
   let appliedNames = initial.names.join()
   let appliedLookup = initial.lookup
   $effect(() => {
-    const names = demoSources.list
+    const names = namesNow
     const nextLookup = scope.lookup
     const key = names.join()
     if (key === appliedNames && nextLookup === appliedLookup) return

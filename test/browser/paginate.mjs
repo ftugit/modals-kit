@@ -325,7 +325,11 @@ async function run() {
     console.log('  ok  размер страницы: ?page.size=5 в URL, бейдж и разделители страниц');
 
     await sel('layout').selectOption('columns');
+    await sleep(250); // панель перерисовывает строки под новый layout — не кликаем в детачнутый узел
     await chk('skel').evaluate((el) => el.click());
+    await sleep(150);
+    if (await chk('skel').evaluate((el) => el.checked))
+      await chk('skel').evaluate((el) => el.click()); // гонка перерендера: повторяем наживо
     await sel('src').selectOption('photos');
     await sleep(1200);
     const q = search();
