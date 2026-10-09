@@ -1,5 +1,6 @@
 <script lang="ts">
   // Переключатель темы (lemonade / night).
+  import { Button } from '$lib/ui/primitives'
   import { onMount } from 'svelte'
 
   type Theme = 'lemonade' | 'night'
@@ -35,8 +36,7 @@
   }
 </script>
 
-<button
-  type="button"
+<Button variant="plain" size="none"
   class="inline-flex size-8 items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer ml-1"
   onclick={toggle}
   aria-label={theme === 'night' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
@@ -52,4 +52,4 @@
       <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
     </svg>
   {/if}
-</button>
+</Button>
