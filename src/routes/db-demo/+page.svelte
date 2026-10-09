@@ -1,49 +1,48 @@
 <script lang="ts">
   /**
-   * Демо проверяет СЛОЙ БД, но форму собирает `$lib/form`: `bind` + обёртка
-   * `Form` + проектный конфиг из `forms.config`. Нативный путь включён штатной
-   * опцией `intercept: false` (не «свой formProps»): разметку, скрытые пары,
-   * серверную валидацию и показ ошибок по-прежнему даёт библиотека, а
-   * `intercept` отвечает только за то, кто отправляет — JS или браузер.
+   * Страница-витрина `lib/db`. Здесь только то, что не умеют компоненты:
+   * заголовок, счётчик записей, notice серверного итога и порядок блоков.
+   *
+   * Список — пагинатор (`DbPostsList` + `$lib/paginate`), формы — отдельные
+   * компоненты `db-form/{Create,Remove}Form.svelte` (как в демо форм): `bind`,
+   * `Form`, `Common`/`Field` живут там, страница отдаёт им лишь результат
+   * экшена. Строки приходят SSR-снапшотом, поэтому без JavaScript видны и
+   * они, и номера страниц.
    */
-  import { untrack } from 'svelte'
-  import { bind, Form } from '$lib/form/svelte'
+  import type { PageData } from './$types'
   import type { Result } from '$lib/form'
-  import { Button } from '$lib/ui/primitives'
-  import { forms } from '$lib/ui/demo/form/forms.config'
-  import Common from '$lib/ui/demo/form/ui/Common.svelte'
-  import Field from '$lib/ui/demo/form/ui/Field.svelte'
-  import { dbCreate, dbRemove } from '$lib/ui/demo/db-form/description'
-
-  let { data, form } = $props()
+  import DbPostsList from '$lib/ui/demo/db-list/DbPostsList.svelte'
+  import CreateForm from '$lib/ui/demo/db-form/CreateForm.svelte'
+  import RemoveForm from '$lib/ui/demo/db-form/RemoveForm.svelte'
 
   /** Результат экшена + метка «какой форме он принадлежит» (см. +page.server). */
-  const action = (form ?? null) as { result?: Result; intent?: string } | null
+  interface FormOutcome {
+    result?: Result
+    intent?: string
+  }
 
-  /**
-   * `continuation` подсаживает серверный итог в связку: тогда отказ базы
-   * подсвечивает то же поле теми же словами, что и клиентская проверка,
-   * а не превращается в страницу фреймворка.
-   */
-  const seeded = (which: string): Result | null =>
-    untrack(() => (action?.intent === which ? action.result ?? null : null))
+  let { data, form }: { data: PageData; form?: FormOutcome | null } = $props()
 
-  const create = bind(forms, dbCreate, {
-    action: '?/create', intercept: false, live: 'on-submit', continuation: seeded('create'),
-  })
-  const remove = bind(forms, dbRemove, {
-    action: '?/remove', intercept: false, live: 'on-submit', continuation: seeded('remove'),
-  })
+  const action = (form ?? null) as FormOutcome | null
+
+  /** Результат подсаживается ТОЙ форме, чей интент его вернул. */
+  const seed = (which: string): Result | null =>
+    action?.intent === which ? action.result ?? null : null
 
   const notice = $derived(
     action?.result?.ok ? String((action.result.data as { message?: string } | undefined)?.message ?? '') : '',
+  )
+
+  /** Первая строка показанной страницы — «сырая» запись как есть из слоя. */
+  const rawRow = $derived(
+    JSON.stringify(data.snapshot?.pages?.[data.snapshot.page]?.[0] ?? null),
   )
 </script>
 
 <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
 <p class="text-sm text-muted-foreground">
-  всего записей: <strong data-testid="total">{data.totalItems}</strong>, на странице:
-  {data.items.length}{data.pageSize ? ` (размер страницы ${data.pageSize})` : ''}
+  всего записей: <strong data-testid="total">{data.snapshot.totalItems ?? '—'}</strong>,
+  размер страницы: {data.snapshot.pageSize}
 </p>
 
 {#if notice}
@@ -53,36 +52,8 @@
 {/if}
 
 <div class="grid gap-6 md:grid-cols-2">
-  <Form form={create} hiddenFields={create.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
-    <Common errors={create.common} title="Добавление отклонено" />
-    <Field of={create.f.title} />
-    <Button type="submit" data-testid="create">Добавить</Button>
-  </Form>
-
-  <Form form={remove} hiddenFields={remove.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
-    <Common errors={remove.common} title="Удаление отклонено" />
-    <Field of={remove.f.ids} />
-    <Button type="submit" variant="outline" data-testid="remove">Удалить</Button>
-  </Form>
+  <CreateForm seed={seed('create')} />
+  <RemoveForm seed={seed('remove')} />
 </div>
 
-<table class="w-full text-sm" data-testid="rows">
-  <thead>
-    <tr class="text-left text-muted-foreground">
-      <th>id — скопируйте в поле удаления</th>
-      <th>title</th>
-      <th>created_at</th>
-    </tr>
-  </thead>
-  <tbody>
-    {#each data.items as row (String(row.id))}
-      <tr class="border-t border-border">
-        <td><code>{String(row.id ?? '')}</code></td>
-        <td>{row.title ?? ''}</td>
-        <td>{row.created_at ?? ''}</td>
-      </tr>
-    {/each}
-  </tbody>
-</table>
-
-<pre class="overflow-auto rounded-lg bg-muted p-3 text-xs" data-testid="raw">{JSON.stringify(data.items[0] ?? null)}</pre>
+<DbPostsList name={data.listName} snapshot={data.snapshot} raw={rawRow} />

@@ -189,11 +189,16 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
    невалидный `title` = `role=alert` + `aria-invalid` + строка не вставлена → валидный =
    `role=status` + 8 строк + запись в выдаче → delete через `use:enhance` = 6 → 5 →
    `?filter`/`?order`/`?limit` работают → неизвестный ключ = 422 → `/` (модалки) жив.
+   (Позже список демо переведён на пагинатор приложения: ключи адреса — `?db`,
+   `?db.size`, `?db.flt`, `?db.ord`, а отказ по неизвестному ключу показывает
+   `/api/db-posts` = 422 `validation`; на странице битый фильтр не 500 и не пусто,
+   а состояние `error` пагинатора — `ErrorRow` с причиной и «Повторить».)
    Зонд составной коллекции: `node src/lib/db/probes/shikimori-view.probe.mjs` (реальный PG 17,
    VIEW + `INSTEAD OF` + скоуп по `principal` + маски полей связи) → `PROBE_OK`.
 4. Сквозной прогон без браузера: `node src/lib/db/probes/http-roundtrip.mjs` против запущенного
-   `npm run dev` копии приложения — 11 проверок (SSR-список, `?/remove`/`?/create` с
-   перечитыванием состояния, `?filter=<json>`, 422 на `?nope=1` и на не-JSON `filter`)
+   `npm run dev` копии приложения — 14 проверок (SSR-список пагинатора, `?/remove`/`?/create` с
+   перечитыванием состояния, `?db.flt=<json>`, `?db.ord`, 422 на мусор в фильтре и `ErrorRow`
+   на странице вместо 500)
    → `HTTP_ROUNDTRIP_OK`. Дешевле браузера и не зависит от `~/.cache/ms-playwright`,
    который не переживает пересоздание песочницы; Playwright-прогоны (§5.3) остаются
    обязательными для изменений, касающихся `use:enhance` и гидрации.
@@ -262,9 +267,12 @@ done
    `tooling/db-docs.mjs` (тот же `npm run test:db`) заставит обновить счётчики и таблицы.
 
 Обновление **приложения** (`modals-kit`): слой лежит в том же дереве, поэтому апгрейд
-может задеть и его — при переносе новой ревизии сверяют четыре места: `src/app.d.ts`
+может задеть и его — при переносе новой ревизии сверяют шесть мест: `src/app.d.ts`
 (augmentation), `src/hooks.server.ts` (`dbHandle`), `src/lib/server/db.ts` (composition
-root) и `src/routes/db-demo/**`. Ниже — чек-лист того, что в приложении обязательно.
+root), `src/lib/server/db-list.ts` + `src/routes/api/db-posts/**` (данные для пагинатора
+демо: SSR-транспорт и HTTP-доводка — один конвейер на оба пути) и `src/routes/db-demo/**`
+со `src/lib/ui/demo/db-{form,list}/**` (страница-витрина: формы — отдельные компоненты,
+список — пагинатор). Ниже — чек-лист того, что в приложении обязательно.
 
 ## 9. Интеграция в приложение: чек-лист и грабли
 
@@ -293,7 +301,9 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 /home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
 '^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `$lib/ui/demo/{form,modals}/**`,
 `ui/paginator/fields/*` → `$lib/ui/settings/*`), затем вернуть своё: deps в `package.json`,
-`src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/routes/db-demo/**`. Дальше
+`src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
+`src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/ui/demo/db-form/**`,
+`src/lib/ui/demo/db-list/**`. Дальше
 `npm install && npx svelte-kit sync && npx svelte-check && npm run build && npm run test:guard`.
 
 Что потребовало правок именно на `5d08da7`:

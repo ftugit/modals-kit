@@ -1,22 +1,30 @@
+/**
+ * Демо `lib/db`: список — пагинатор (SSR-снапшот + `/api/db-posts`), формы —
+ * отдельные компоненты, приём — конвейер `$lib/ui/demo/db-form/handle`.
+ *
+ * Маршрут тонкий и НЕ трогает `request.formData()`: `?/create` и `?/remove` —
+ * form-экшены (нативный POST), поэтому метод и origin проверяет связка
+ * `createFormHandler` (она же держит лимит тела, лимит имён и lock-revision).
+ * Проверка origin включена и в dev (`verifyOriginInDev`), так что `?/create` с
+ * чужого origin даёт ровно тот же 403, что и на проде.
+ *
+ * Адрес списка читает пагинатор (`?db`, `?db.size`, `?db.flt`, `?db.ord`):
+ * лоадер больше не режет массив и не парсит `?limit` сам — второго источника
+ * правды о показанной странице нет.
+ */
 import { error, fail } from '@sveltejs/kit'
-import { parseListInput, toKitError } from '$lib/db/sveltekit'
-import { getRuntime, posts } from '$lib/server/db'
+import { toKitError } from '$lib/db/sveltekit'
+import { loadDbListSnapshot } from '$lib/server/db-list'
 import type { Handled } from '$lib/form/server'
 import { failureHandled, handleDbCreate, handleDbRemove } from '$lib/ui/demo/db-form/handle'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async (event) => {
-  const { db } = await getRuntime()
-  const api = db.resource(posts)
-  // Разбор — ВНУТРИ try: отказ (неизвестный ключ, битый JSON) обязан пройти
-  // через toKitError, а не упасть в Kit как сырой DbFailure.
+  // Разбор — ВНУТРИ try: отказ слоя (неизвестный ключ, битый JSON фильтра) обязан
+  // пройти через toKitError, а не упасть в Kit как сырой DbFailure.
   try {
-    const input = parseListInput(event.url.searchParams)
-    const [items, totalItems] = await Promise.all([
-      api.select(event.locals.dbCtx, input),
-      api.count(event.locals.dbCtx, {})
-    ])
-    return { items, totalItems, pageSize: input.limit ?? 20 }
+    const { name, snapshot } = await loadDbListSnapshot(event.url.href)
+    return { listName: name, snapshot }
   } catch (e) {
     const kit = toKitError(e, import.meta.env.DEV)
     throw error(kit.status, kit.body)
@@ -24,10 +32,8 @@ export const load: PageServerLoad = async (event) => {
 }
 
 /**
- * Мутации собраны на слоях lib/form (см. `$lib/ui/demo/db-form/handle`): тело
- * читает `bodyLayer`, имена сверяет `namesLayer`, origin проверяет слой 02 из
- * `form-security`. Экшену остаётся выбрать кодировку — как это делает
- * `src/routes/form/+page.server.ts`, чтобы у демо БД и у демо форм был один путь.
+ * Экшены выбирают только кодировку ответа — как в `src/routes/form`: у демо БД
+ * и у демо форм один путь приёма.
  */
 async function act(intent: 'create' | 'remove', promise: Promise<Handled>) {
   try {
