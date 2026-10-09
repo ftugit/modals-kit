@@ -30,7 +30,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    const root = page.locator('[data-select-root]').first()
+    const root = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     await root.waitFor({ state: 'visible' })
     await clickSelect(root)
     await waitAtLeast(page, '[data-host-floating]', 1)
@@ -49,7 +49,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    const root = page.locator('[data-select-root]').first()
+    const root = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     await clickSelect(root)
     await waitAtLeast(page, '[data-host-floating]', 1)
     await page.setViewportSize({ width: 390, height: 844 })
@@ -84,7 +84,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    const root = page.locator('[data-select-root]').first()
+    const root = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     await clickSelect(root)
     await waitAtLeast(page, '[data-host-floating]', 1)
     const sheet = page.locator('[data-host-floating]').first()
@@ -151,7 +151,7 @@ try {
     // Панель источников пишет в demoSources на КАЖДЫЙ выбор. Раньше это
     // пересоздавало ядро модалок и убивало открытый transient-слой —
     // мультиселект закрывался на первом же клике.
-    const sources = page.locator('[data-select-root]').first()
+    const sources = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     const trigger = sources.locator('[data-select-trigger], button').first()
     const before = (await trigger.innerText()).replace(/\s+/g, ' ').trim()
 
@@ -180,7 +180,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
 
-    const select = page.locator('[data-select-root]').first()
+    const select = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     await clickSelect(select)
     await waitAtLeast(page, '[data-host-floating]', 1)
 
@@ -222,7 +222,7 @@ try {
     })
     await page.goto(BASE, { waitUntil: 'networkidle' })
 
-    const sources = page.locator('[data-select-root]').first()
+    const sources = page.locator('[data-select-root]:has([data-select-native-multiple])').first()
     await sources.locator('button, [role="combobox"], select').first().click({ force: true })
     await waitAtLeast(page, '[data-host-floating]', 1)
 
@@ -317,7 +317,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    await clickSelect(page.locator('[data-select-root]').first())
+    await clickSelect(page.locator('[data-select-root]:has([data-select-native-multiple])').first())
     await waitAtLeast(page, '[data-host-floating]', 1)
 
     const typed = 'mem'
@@ -352,7 +352,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 900, height: 800 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
 
-    await clickSelect(page.locator('[data-select-root]').first())
+    await clickSelect(page.locator('[data-select-root]:has([data-select-native-multiple])').first())
     await waitAtLeast(page, '[data-host-floating]', 1)
     assert(
       (await page.locator('[data-modal-popup]').count()) === 0,
@@ -365,7 +365,7 @@ try {
     // Ниже порога хоста (768) поведение прежнее: слой.
     await page.setViewportSize({ width: 600, height: 800 })
     await page.waitForTimeout(300)
-    await clickSelect(page.locator('[data-select-root]').first())
+    await clickSelect(page.locator('[data-select-root]:has([data-select-native-multiple])').first())
     await page.waitForFunction(
       () => document.querySelector('[data-host-floating]')?.getAttribute('data-layout') === 'sheet',
       undefined, { timeout: 5000 },
@@ -380,7 +380,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    await clickSelect(page.locator('[data-select-root]').first())
+    await clickSelect(page.locator('[data-select-root]:has([data-select-native-multiple])').first())
     await waitAtLeast(page, '[data-host-floating]', 1)
 
     // Метим живой DOM-узел списка. Если при повороте он уцелеет — значит

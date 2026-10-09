@@ -121,15 +121,18 @@ async function run() {
         && initialSettings.controlsDisabled.every(Boolean), `no-JS settings: ${JSON.stringify(initialSettings)}`)
       ok('без JS настройки модалки и источников выключены');
       // Этап 8: под гейтом и панель настроек (8 select'ов механизма) — все
-      // контролы поля; источниковый select (нативный слой кастомного виджета)
-      // тоже обязан быть выключен до гидратации.
+      // контролы поля. С 2026-10-10 каждый селектор панели — enhanced
+      // `Select`-примитив, поэтому носителей значения (нативный слой) теперь
+      // девять, и до гидратации выключены все: без JS панель остаётся
+      // девятью обычными select со списком опций.
       const selectsDisabled = await page.locator('[data-js-only-settings] select').evaluateAll((nodes) =>
         nodes.length === 9 && nodes.every((n) => n.matches(':disabled')));
       assert(selectsDisabled, 'no-JS: не все select панели/источников выключены');
-      const sourceSelect = page.locator('[data-js-only-settings] [data-select-native]');
-      assert((await sourceSelect.count()) === 1 && await sourceSelect.first().evaluate((n) => n.matches(':disabled')),
-        'no-JS Select источников не выключен');
-      ok('без JS выключены оба блока: панель настроек (9 select) и Select источников');
+      const carriers = page.locator('[data-js-only-settings] [data-select-native]');
+      assert((await carriers.count()) === 9
+        && await carriers.evaluateAll((ns) => ns.every((n) => n.matches(':disabled'))),
+        'no-JS: не у каждого enhanced-селектора выключен носитель значения');
+      ok('без JS выключены оба блока: панель настроек и Select источников (9 select, у всех — нативный носитель)');
       assert(initialSettings.routeLinks.every(Boolean), `no-JS route links: ${JSON.stringify(initialSettings.routeLinks)}`)
       ok('без JS ссылки на главную и цикл остаются доступны');
 

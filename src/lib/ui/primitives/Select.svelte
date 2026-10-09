@@ -327,7 +327,22 @@
     const values = new Set(
       Array.from(nativeEl?.selectedOptions ?? [], (o) => o.value),
     )
+    // Собственный dispatch из commit(): выбор уже лежит в `selected`, значит
+    // ключ совпадает и извещения не будет — двойного `onchange` примитив себе
+    // не устраивает.
+    const changed = valuesKey(values) !== valuesKey(selected.map((o) => o.value))
     selected = all.filter((o) => values.has(o.value))
+    // Внешняя запись в носитель значения — selectOption из теста,
+    // `el.value = … + dispatchEvent`, автофилл, раскрытый ОС-список до
+    // гидратации — обязана известить потребителя так же, как выбор панелью:
+    // иначе виджет-обвязка (панели настроек) никогда не узнает о новом
+    // значении контрола. Пометка selfWritten — чтобы возврат пропа
+    // (`value = …` через bindable) не приняли за внешнее изменение.
+    if (changed) {
+      selfWritten.add(valuesKey(values))
+      value = multiple ? [...values] : ([...values][0] ?? '')
+      onchange?.([...values])
+    }
     return values
   }
 
