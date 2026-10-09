@@ -17,8 +17,8 @@
   import Error500 from '$lib/components/Error500.svelte'
   import { ModalHost } from '$lib/modals/svelte'
   import { BackdropCloseIcon, ModalError, Skeleton } from '$lib/ui/modals'
-  import { demoScope } from './modals/modals'
-  import { demoSources } from './modals/sources.svelte'
+  import { demoScope } from '$lib/ui/demo/modals/registry'
+  import { demoSources } from '$lib/ui/demo/modals/sources.svelte'
   import {
     setPageContext,
     AppShell,

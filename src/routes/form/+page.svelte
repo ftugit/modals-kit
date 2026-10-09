@@ -12,14 +12,14 @@ import { Button } from '$lib/ui/primitives'
     compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
     type FormDescription,
   } from '$lib/form'
-  import { code6Described, code6Plain, ratingType } from './extend'
-  import { checks, forms, formsCustomUi } from './forms.config'
-  import { normalizePsp, PSP_SAMPLES } from './psp'
-  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
+  import { code6Described, code6Plain, ratingType } from '$lib/ui/demo/form/extend'
+  import { checks, forms, formsCustomUi } from '$lib/ui/demo/form/forms.config'
+  import { normalizePsp, PSP_SAMPLES } from '$lib/ui/demo/form/psp'
+  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '$lib/ui/demo/form/signup'
   import { createConfig } from '$lib/form/svelte'
   import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '$lib/ui/settings'
-  import Common from './ui/Common.svelte'
-  import Field from './ui/Field.svelte'
+  import Common from '$lib/ui/demo/form/ui/Common.svelte'
+  import Field from '$lib/ui/demo/form/ui/Field.svelte'
 
   let { form: actionResult }: { form?: { result?: Result } | null } = $props()
 
