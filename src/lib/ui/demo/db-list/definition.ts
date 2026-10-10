@@ -57,7 +57,7 @@ export const DB_LIST_POINTER_KEY = 'after'
  * union-типа демо-пагинатора; разойтись они не вправе (иначе ключ доедет до
  * одного мира и не доедет до другого).
  */
-export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_POINTER_KEY] as const
+export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_MODE_KEY, DB_LIST_POINTER_KEY] as const
 
 export interface DbPost {
   id: string
@@ -74,6 +74,12 @@ export type DbPostsQuery = {
   order?: string
   /** Подписанный сервером указатель «продолжить отсюда» — keyset-режим. */
   after?: string
+  /**
+   * Режим курсора включён, но токена ещё нет (первый шаг). Без этого флага
+   * keyset включался бы только со второго шага, и первая страница cursor-режима
+   * не получала бы указателя — «дальше» не появилось бы никогда.
+   */
+  cursor?: boolean
   signal?: AbortSignal
 }
 
@@ -191,15 +197,30 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   const rawOrder = input.filters?.ord
   const order = rawOrder && rawOrder !== DB_LIST_ORDER_DEFAULT ? rawOrder : undefined
   const after = input.filters?.[DB_LIST_POINTER_KEY]
+  // Признак режима читается ТЕМ ЖЕ предикатом, что адрес и состояние: значение
+  // фильтра — строка (`resolveFilters` приводит её через String), а из панели
+  // прилетает boolean, из нативного GET — 'on'. Три формы, одно значение.
+  const cursorOn = isCursorOn(input.filters)
   // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
   // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
   if (serverTransport)
-    return serverTransport({ page: look.page, pageSize: look.pageSize, filter, order, after: after || undefined, signal: look.signal })
+    return serverTransport({
+      page: look.page,
+      pageSize: look.pageSize,
+      filter,
+      order,
+      after: after || undefined,
+      cursor: cursorOn,
+      signal: look.signal,
+    })
   const q = new URLSearchParams({ size: String(look.pageSize) })
   // Слой отказывает, когда `page` и `after` смешаны, поэтому транспорт выбирается
   // здесь и только здесь: токен есть — номера в запросе нет.
   if (after) q.set(DB_LIST_POINTER_KEY, after)
   else q.set('page', String(look.page))
+  // Режим едет отдельным ключом: сервер по нему включает keyset и на первом шаге,
+  // где токена ещё не существует.
+  if (cursorOn) q.set(DB_LIST_MODE_KEY, '1')
   if (filter) q.set('flt', filter)
   if (order) q.set('ord', order)
   const res = await fetch(`/api/db-posts?${q}`, { signal: look.signal })

@@ -60,6 +60,24 @@ describe('адрес источника БД: страницы и курсор �
     expect(seen[1]).toMatchObject({ page: 4, after: 'T-3' })
   })
 
+  it('keyset включается режимом, а не только токеном: первый шаг тоже без номера', async () => {
+    const seen: DbPostsQuery[] = []
+    setDbPostsServerTransport(async (query) => {
+      seen.push(query)
+      return { items: [], hasNext: true, extra: { after: 'T-1' } }
+    })
+    // Панель (JS) пишет boolean, адрес без JS — 'on'; транспорт обязан увидеть
+    // режим в обоих случаях, иначе первая страница cursor-режима осталась бы без
+    // указателя и «дальше» не появилось бы вовсе.
+    await dbPostsCursorSource.fetchPage({ page: 1, pageSize: 5 }, { cur: true })
+    expect(seen[0]).toMatchObject({ cursor: true, after: undefined, page: 1 })
+    await dbPostsCursorSource.fetchPage({ page: 1, pageSize: 5 }, { cur: 'on' })
+    expect(seen[1]).toMatchObject({ cursor: true })
+    // Выключенный режим — страницы: `false` не должен притворяться включённым.
+    await dbPostsCursorSource.fetchPage({ page: 2, pageSize: 5 }, { cur: false })
+    expect(seen[2]).toMatchObject({ cursor: false, page: 2 })
+  })
+
   it('курсорная возможность: с `cur` полных totals нет, и UI гасит номера сам', async () => {
     expect(dbPostsSource.capabilitiesFor({}).totals).toBe(true)
     expect(dbPostsCursorSource.capabilitiesFor({ cur: true }).totals).toBe(false)

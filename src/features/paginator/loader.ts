@@ -14,10 +14,6 @@ import {
   setLiveServerTransport,
 } from './definition'
 import type { DemoSrc } from './definition'
-// Транспорт источника БД ставится на уровне модуля (`$lib/server/db-list`): без
-// этого импорта пункт «БД» умел бы только догрузку через `/api/db-posts`, и
-// «тот же источник, что на /db-demo» был бы правдой лишь наполовину.
-import '$lib/server/db-list'
 import type { DemoItem } from '../../content/items'
 import type { CatalogFilterSchema } from '$lib/filters'
 import type { CatalogItem } from './item-views'

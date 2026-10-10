@@ -73,17 +73,20 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
   // Ключи адреса переводятся в те, что разбирает слой: пагинатор говорит
   // «page/size», слой говорит «page/limit». Один перевод — на оба пути.
   const after = typeof query.after === 'string' && query.after !== '' ? query.after : null
+  // Keyset включается ЛИБО токеном, ЛИБО режимом: на первом шаге курсорного
+  // режима токена ещё нет, но страница обязана быть выдана тем же способом —
+  // иначе она не получит указателя, и «дальше» не появится никогда.
+  const keyset = after !== null || query.cursor === true
   const params = new URLSearchParams({ limit: String(query.pageSize) })
   if (after !== null) params.set('after', after)
-  else params.set('page', String(query.page))
+  else if (!keyset) params.set('page', String(query.page))
   if (query.filter) params.set('filter', query.filter)
-  const order = after !== null ? totalOrder(query.order) : query.order
+  const order = keyset ? totalOrder(query.order) : query.order
   if (order) params.set('order', order)
   // `page` и `after` взаимоисключающи на уровне слоя, и режим выбирается ЗДЕСЬ
   // одним условием: у источника нет второй ветки, которая решала бы иначе.
-  const input =
-    after !== null ? parseListInput(params, { cursor: true }) : parseListInput(params)
-  if (after !== null) {
+  const input = keyset ? parseListInput(params, { cursor: true }) : parseListInput(params)
+  if (keyset) {
     const page = await api.cursor(ctx, input)
     return {
       items: page.items as DbPost[],
