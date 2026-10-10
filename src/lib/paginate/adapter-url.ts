@@ -479,6 +479,23 @@ export function createUrlAdapter<T>(opts: {
         }
       }
       if (!seen && page !== 1) params.set(pageParam, String(page))
+      /**
+       * Дописка указателя, который источник вернул вместе со страницей (курсор
+       * следующего шага): он живёт в extra СОСТОЯНИЯ, а на сервере адрес править
+       * нечем — без этой дописки ссылка вела бы в один адрес, а клик с JavaScript
+       * шёл бы в другой. Адрес сильнее: ключи, которые в срезе уже есть, не
+       * перезаписываются, и берутся только объявленные (deny-safe как в persist).
+       */
+      const extra = ctx?.extra
+      if (extra) {
+        for (const key of extraKeys) {
+          const v = extra[key]
+          if (v === undefined || v === null || v === '') continue
+          if (`${pageParam}.${key}` in search) continue
+          if (opts.extraDefaults && key in opts.extraDefaults && opts.extraDefaults[key] === v) continue
+          params.set(`${pageParam}.${key}`, String(v))
+        }
+      }
       return `?${params.toString()}`
     },
     loadPage: (req) =>

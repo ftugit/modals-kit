@@ -555,6 +555,9 @@
     anchors,
     requestMore,
     currentSearch: () => resolvedSearch,
+    // Ссылки строятся из адреса ПЛЮС то, что источник вернул со страницей: на SSR
+    // адрес править нечем, а курсор следующего шага должен жить именно в ссылке.
+    linkExtra: () => getState(store, name).extra,
     hashAnchor: effectiveHashAnchor,
     options: () => options,
   })

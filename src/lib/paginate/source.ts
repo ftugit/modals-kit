@@ -334,11 +334,16 @@ export function withTotalsGate<T>(opts: { gate: string }): SourceDecorator<T> {
       fetchPage: async (look, extra) => {
         const res = await base.fetchPage(look, extra)
         if (enabled(base, extra)) return res
+        // Снимаются ТОЛЬКО totals. `extra` (указатель следующего шага) обязан
+        // пережить гейт: источник про тумблер «число страниц» ничего про курсор
+        // не знает, а молчаливая потеря поля сделала бы ссылки разными в двух
+        // режимах панели.
         return {
           items: res.items,
           hasNext:
             res.hasNext ??
             (res.totalItems != null ? look.page * look.pageSize < res.totalItems : res.items.length > 0),
+          ...(res.extra ? { extra: res.extra } : {}),
         }
       },
     })

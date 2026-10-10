@@ -55,6 +55,11 @@ export type PaginatorContextValue = {
   anchors: AnchorRegistry
   requestMore?: (dir: 1 | -1) => void
   currentSearch?: () => Record<string, unknown> | null
+  /**
+   * Extra состояния для построения ссылок: то, что источник вернул вместе со
+   * страницей (указатель следующего шага) и чего адрес ещё не знает на SSR.
+   */
+  linkExtra?: () => Extra | null
   hashAnchor?: string | null
   options?: () => ResolvedHostOptions
 }
@@ -211,7 +216,7 @@ export function usePageHref(
   return () => {
     const p = pageOf()
     const search = currentSearch?.() ?? undefined
-    const href = adapter.hrefFor!(p, { search })
+    const href = adapter.hrefFor!(p, { search, extra: ctx.linkExtra?.() ?? null })
     return href == null ? null : href + hash
   }
 }

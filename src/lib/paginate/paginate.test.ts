@@ -11,6 +11,7 @@ import {
   createPaginatorStore,
   createUrlAdapter,
   withUrlTakeover,
+  withTotalsGate,
   decodeExtraValue,
   definePaginator,
   defineSource,
@@ -660,6 +661,91 @@ describe('core operations & lifecycle', () => {
     await retry(store, 'errTest')
     expect(getState(store, 'errTest').status).toBe('idle')
     expect(getState(store, 'errTest').pages[1]).toEqual(['p1'])
+  })
+})
+
+describe('extra источника: указатель следующего шага (адресный курсор)', () => {
+  beforeEach(() => {
+    resetRegistry()
+  })
+
+  /** Источник, который на каждой странице отдаёт токен следующего шага. */
+  function pointerSource() {
+    return sourceOf<string>(async ({ page }) => ({
+      items: [`item${page}`],
+      hasNext: page < 3,
+      // «Дальше некуда» — тоже ответ: пустое значение обязано снять ключ.
+      extra: page >= 3 ? { after: '' } : { after: `token-${page}` },
+    }))
+  }
+
+  it('объявленный ключ дописывается в extra, перезагрузки нет', async () => {
+    const source = pointerSource()
+    definePaginator({
+      name: 'ptrTest',
+      adapter: createUrlAdapter<string>({
+        name: 'ptrTest',
+        source,
+        pageSizes: [1],
+        extraSearch: { after: extraField('text') },
+      }),
+    })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'ptrTest')
+    expect(getState(store, 'ptrTest').extra).toEqual({ after: 'token-1' })
+
+    const before = getState(store, 'ptrTest').loadedPages
+    await goToPage(store, 'ptrTest', 2)
+    const s = getState(store, 'ptrTest')
+    expect(s.extra).toEqual({ after: 'token-2' })
+    expect(s.loadedPages).toEqual([2])
+    expect(before).toEqual([1])
+    // Один переход = одна загрузка страницы: указатель не должен её повторять.
+    await goToPage(store, 'ptrTest', 3)
+    expect(getState(store, 'ptrTest').extra).toEqual({})
+  })
+
+  it('непроглашенный ключ источника не попадает в extra (deny-safe + предупреждение)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    definePaginator({
+      name: 'ptrUnknown',
+      adapter: createUrlAdapter<string>({
+        name: 'ptrUnknown',
+        source: sourceOf<string>(async () => ({ items: ['a'], extra: { secret: 'x' } })),
+        extraSearch: { after: extraField('text') },
+      }),
+    })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'ptrUnknown')
+    expect(getState(store, 'ptrUnknown').extra).toEqual({})
+    expect(warn.mock.calls.flat().join(' ')).toContain('secret')
+    warn.mockRestore()
+  })
+
+  it('href несёт указатель, даже когда адрес его ещё не знает (ссылка = клик)', () => {
+    const adapter = createUrlAdapter<string>({
+      name: 'ptrHref',
+      source: pointerSource(),
+      extraSearch: { after: extraField('text') },
+    })
+    // SSR: в адресе токена нет (править адрес на сервере нечем), но ссылка обязана
+    // вести туда же, куда приведёт клик с JavaScript.
+    expect(adapter.hrefFor!(2, { search: { page: 1 }, extra: { after: 'T1' } })).toBe(
+      '?page=2&page.after=T1',
+    )
+    // Адрес сильнее состояния: то, что пользователь принёс в URL, не перезаписывается.
+    expect(adapter.hrefFor!(2, { search: { page: 1, 'page.after': 'T0' }, extra: { after: 'T1' } })).toBe(
+      '?page=2&page.after=T0',
+    )
+    // Без extra поведение не меняется вовсе (обратная совместимость).
+    expect(adapter.hrefFor!(2, { search: { page: 1 } })).toBe('?page=2')
+  })
+
+  it('гейт totals не съедает указатель следующего шага', async () => {
+    const source = pointerSource().with(withTotalsGate({ gate: 'total' }))
+    const resp = await source.fetchPage({ page: 2, pageSize: 1 }, { total: false })
+    expect(resp.totalPages).toBeUndefined()
+    expect(resp.extra).toEqual({ after: 'token-2' })
   })
 })
 

@@ -89,6 +89,54 @@ function dropPrefetched(instance: PaginatorInstance): void {
   const holder = instance as PaginatorInstance & { prefetched?: Map<number, unknown> }
   holder.prefetched?.clear()
 }
+/**
+ * Ответ источника дописывает свои ключи extra (указатель следующего шага).
+ *
+ * Отдельная функция, а не `setExtra`: этот путь никогда не перезагружает выдачу.
+ * Ключ, выданный загрузкой страницы, попал бы в `reloadKeys`-семантику, и каждый
+ * ответ сбрасывал бы список на первую страницу — то есть на сам себя.
+ *
+ * Deny-safe как у `setExtra`: либо ключ объявлен (`adapter.extraKeys()`), либо
+ * предупреждение и отбрасывание. `''`/null — снять ключ (источник сказал
+ * «дальше некуда»).
+ */
+function mergeResponseExtra<T>(store: Store, name: string, resp: PageResponse<T>): void {
+  const incoming = resp.extra
+  if (!incoming) return
+  const instance = getPaginator(name)
+  const declared = instance.adapter.extraKeys?.()
+  const known = declared ? new Set(declared) : null
+  const state = getState<T>(store, name)
+  const next: Extra = { ...state.extra }
+  let changed = false
+  for (const [key, value] of Object.entries(incoming)) {
+    if (known && !known.has(key)) {
+      console.warn(
+        `paginate: источник «${instance.name}» вернул ключ extra «${key}», которого нет среди объявленных; ключ записан не был.`,
+      )
+      continue
+    }
+    if (value === undefined || value === null || value === '') {
+      if (key in next) {
+        delete next[key]
+        changed = true
+      }
+      continue
+    }
+    if (next[key] !== value) {
+      next[key] = value
+      changed = true
+    }
+  }
+  if (!changed) return
+  patch<T>(store, name, (s) => ({
+    ...s,
+    extra: next,
+    capabilities: instance.adapter.capabilitiesFor(next),
+  }))
+  safePersist(store, name)
+}
+
 export async function fetchReplace<T>(
   store: Store,
   name: string,
@@ -129,6 +177,7 @@ export async function fetchReplace<T>(
       pending: null,
       error: null,
     }))
+    mergeResponseExtra<T>(store, name, prefetched)
     instance.scrollDriver?.({ type: 'top' })
     instance.emitter.emit({ type: 'loaded', page, itemCount: prefetched.items.length, via: phase })
     return
@@ -183,6 +232,9 @@ export async function fetchReplace<T>(
     error: null,
     pending: null,
   }))
+  // Указатель следующего шага — из того же ответа, что и строки: отдельного
+  // «узнать курсор» запроса быть не может, а ссылка обязана его нести.
+  mergeResponseExtra<T>(store, name, resp)
   instance.scrollDriver?.({ type: 'top' })
   if (resp.items.length === 0) instance.emitter.emit({ type: 'empty-page', page })
   instance.emitter.emit({ type: 'loaded', page, itemCount: resp.items.length, via: phase })
@@ -341,6 +393,9 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
       hasNext: dir > 0 ? false : s.hasNext,
       hasPrev: dir < 0 ? false : s.hasPrev,
     }))
+    // «Дальше нет» — тоже ответ источника: указатель обязан быть снят, иначе
+    // пустой край оставил бы в адресе токен, ведущий за конец коллекции.
+    mergeResponseExtra<T>(store, name, resp)
     instance.emitter.emit({ type: 'append-empty', page: target })
     return
   }
@@ -380,6 +435,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     pending: null,
     error: null,
   }))
+  mergeResponseExtra<T>(store, name, resp)
   instance.emitter.emit({
     type: 'loaded',
     page: target,
