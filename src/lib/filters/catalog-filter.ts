@@ -31,6 +31,7 @@ import {
   type ValidatorRef,
 } from '$lib/form'
 import { linkBlockedValidator, type LinkBlockedProbe } from '$lib/links/validators'
+import { DEV } from 'esm-env'
 
 /** `and` — все значения, `or` — любое, `not` — исключение (красные чипы). */
 export type CatalogFilterMode = 'and' | 'or' | 'not'
@@ -385,7 +386,7 @@ export function capCatalogFilterOptions(
     truncated += descriptor.options.length - limit
     return { ...descriptor, options: ranked.slice(0, limit), optionsTruncated: descriptor.options.length - limit }
   })
-  if (truncated > 0 && typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  if (truncated > 0 && DEV) {
     console.warn(`[catalog-filter] ${schema.source}: скрыто ${truncated} опций сверх лимита ${limit} (деградация схемы)`)
   }
   return { ...schema, fields }

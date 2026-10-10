@@ -1279,6 +1279,26 @@ try {
     await page.close()
   })
 
+  /* ── R-31 (C7): production-сборка не печатает dev-предупреждения ──── */
+  // Признак dev был `typeof process === 'undefined' || NODE_ENV !== 'production'`:
+  // в браузере `process` нет, и предупреждения жили в production. Теперь — `DEV`
+  // из `esm-env`. Набор гоняется на preview (production); в dev то же
+  // предупреждение обязано остаться — его ловит отдельная проба.
+  await run('R-31 production: dev-предупреждения [paginate] не печатаются', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    const warnings = []
+    page.on('console', (m) => { if (m.type() === 'warning' && m.text().includes('[paginate]')) warnings.push(m.text()) })
+    // Пустой `page.q=` не проходит валидатор extra-ключа → в dev это предупреждение.
+    // Гидрацию не ждём: на таком адресе она сейчас падает отдельно (баг F12,
+    // replaceState до инициализации роутера) — предупреждение печаталось раньше.
+    await page.goto(`${origin}/paginator?page.size=10&page.q=`)
+    await page.waitForTimeout(2500)
+    assert(warnings.length === 0, `production печатает dev-предупреждение: ${warnings[0]}`)
+    ok('отброшенный extra-ключ в production молчит')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

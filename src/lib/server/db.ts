@@ -16,8 +16,15 @@ import { openNodeDatabase, openPgPool } from '$lib/db/sveltekit/node'
 import { applyMigrationText, cursorCodecFromEnv } from '$lib/db/sveltekit'
 import { envReader } from '$lib/db/sveltekit/node'
 import type { Database, Driver } from '$lib/db'
+import { env as privateEnv } from '$env/dynamic/private'
 
-const env = envReader(process.env, import.meta.env as Record<string, string | undefined>)
+/**
+ * Настройки — из `$env/dynamic/private` (C7, docs/audit/crutches.md): одна форма
+ * для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
+ * и `.env`. Читается при вызове, а не при импорте: SvelteKit заполняет окружение
+ * в `Server.init`, и живая привязка `privateEnv` к этому моменту свежая.
+ */
+const env = (key: string): string | undefined => envReader(privateEnv)(key)
 
 export const posts = defineResource({
   key: 'demo.post.v1',

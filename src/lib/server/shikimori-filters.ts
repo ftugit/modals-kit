@@ -31,6 +31,7 @@ import {
   type CatalogFilterSchema,
   type CatalogFilterValues,
 } from '$lib/filters'
+import { DEV } from 'esm-env'
 import type { AnimesPage } from '../../content/shikimori'
 import { fetchAnimes, type AnimesQuery, type TransportDeps } from './shikimori'
 import { getShikimoriFilterSchema } from './shikimori-schema'
@@ -254,7 +255,7 @@ export async function fetchAnimesPage(
   const query: AnimesQuery = { ...parsed.query, ...applied.params }
   if (!applied.search) delete query.search
   for (const item of applied.dropped) {
-    if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') {
+    if (DEV) {
       console.warn(`[shikimori] фильтр «${item.key}» не применён: ${item.reason}`)
     }
   }

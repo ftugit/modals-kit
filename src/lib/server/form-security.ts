@@ -8,6 +8,12 @@
 // понимает только этот модуль: у SvelteKit сравнение точное
 // (`csrf_trusted_origins.includes(origin)`), поэтому в `svelte.config.js`
 // уезжают только точные адреса.
+//
+// Окружение — `$env/dynamic/private` (C7, docs/audit/crutches.md), а не
+// `process.env`: так переменные приходят на любом адаптере (Workers — из
+// `platform.env`) и в dev из `.env`. Списки собираются при ПЕРВОЙ проверке, а не
+// при импорте: к запросу SvelteKit окружение уже заполнил.
+import { env } from '$env/dynamic/private'
 import {
   bodyLayer, methodLayer, namesLayer, originLayer, reject,
   type Layer,
@@ -15,7 +21,7 @@ import {
 
 /** Точные адреса из окружения (wildcard-записи отфильтрованы ниже). */
 function fromEnv(): string[] {
-  return (process.env.KIT_TRUSTED_ORIGINS ?? '')
+  return (env.KIT_TRUSTED_ORIGINS ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -29,11 +35,11 @@ function fromEnv(): string[] {
  * локального адреса, — проверка от этого не ослабевает.
  */
 function localOrigins(): string[] {
-  const ports = (process.env.PREVIEW_PORTS ?? '5173,5174')
+  const ports = (env.PREVIEW_PORTS ?? '5173,5174')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-  const sandbox = process.env.E2B_SANDBOX_ID
+  const sandbox = env.E2B_SANDBOX_ID
   return ports.flatMap((p) => [
     `http://localhost:${p}`,
     `http://127.0.0.1:${p}`,
@@ -41,14 +47,21 @@ function localOrigins(): string[] {
   ])
 }
 
-const all = [...new Set([...fromEnv(), ...localOrigins()])]
-const exact = all.filter((o) => !o.includes('*'))
-const patterns = all
-  .filter((o) => o.includes('*'))
-  .map((o) => new RegExp(`^${o.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]+')}$`))
+type Origins = { exact: string[]; patterns: RegExp[]; strict: Layer }
+let origins: Origins | null = null
 
-/** Точные адреса для `kit.csrf.trustedOrigins` — того же источника, что и слой. */
-export const TRUSTED_ORIGINS: readonly string[] = exact
+/** Списки адресов и строгий слой — один раз на процесс, при первой проверке. */
+function trusted(): Origins {
+  if (origins) return origins
+  const all = [...new Set([...fromEnv(), ...localOrigins()])]
+  const exact = all.filter((o) => !o.includes('*'))
+  const patterns = all
+    .filter((o) => o.includes('*'))
+    .map((o) => new RegExp(`^${o.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]+')}$`))
+  /** Строгий режим библиотеки: неизвестный origin = отказ, пустые заголовки = отказ. */
+  const strict = originLayer({ allowed: exact, strict: true })
+  return (origins = { exact, patterns, strict })
+}
 
 /** Ничего не настроено: сравниваем с собственным адресом запроса, как фреймворк. */
 const sameOrigin: Layer = (ctx) => {
@@ -61,11 +74,9 @@ const sameOrigin: Layer = (ctx) => {
   return got === own ? undefined : reject(403, 'origin.rejected', { own, got })
 }
 
-/** Строгий режим библиотеки: неизвестный origin = отказ, пустые заголовки = отказ. */
-const strict = originLayer({ allowed: exact, strict: true })
-
 /** Слой 02 приложения: wildcard-исключения поверх библиотечной проверки. */
 export const originGuard: Layer = (ctx) => {
+  const { exact, patterns, strict } = trusted()
   const origin = ctx.request.headers.get('origin')
   if (origin && patterns.some((re) => re.test(origin))) return undefined
   return exact.length ? strict(ctx) : sameOrigin(ctx)

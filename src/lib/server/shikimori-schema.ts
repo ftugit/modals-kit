@@ -36,6 +36,7 @@ import {
   SHIKIMORI_FILTER_SCHEMA_VERSION,
   shikimoriFilterSchemaSkeleton,
 } from '../../content/shikimori-filters'
+import { DEV } from 'esm-env'
 import { fetchGraphql } from './graphql'
 import {
   fetchShikimoriJson,
@@ -311,7 +312,7 @@ export async function getShikimoriFilterSchema(deps: SchemaDeps = {}): Promise<C
       })
       .catch((error: unknown) => {
         if (cached) {
-          if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') {
+          if (DEV) {
             console.warn(`[shikimori-schema] обновление не удалось, отдаю схему от ${cached.schema.builtAt}: ${String(error)}`)
           }
           return cached.schema

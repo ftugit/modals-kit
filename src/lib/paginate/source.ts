@@ -18,6 +18,7 @@
  *  • запись возможностей не «из-под полы»: всё живёт в extra хранилища
  *    (url/local/память), а слой отвечает за то, чтобы ключи были объявлены.
  */
+import { DEV } from 'esm-env'
 import type { Extra, PageResponse } from './types'
 
 /**
@@ -174,7 +175,7 @@ export function assertAdaptedSource<T>(value: unknown, where: string): AdaptedSo
 }
 
 function devWarn(message: string): void {
-  if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') {
+  if (DEV) {
     console.warn(message)
   }
 }

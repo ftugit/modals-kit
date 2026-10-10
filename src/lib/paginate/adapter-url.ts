@@ -9,6 +9,7 @@
 //   ?page.size=5       — размер страницы (нативно)
 //   ?page.<key>=<v>    — ключи потребителя (RestorableState.extra), объявленные в extraSearch
 // Один пагинатор = один базовый ключ (pageParam), несколько пагинаторов — разные ключи.
+import { DEV } from 'esm-env'
 import { assertAdaptedSource, type AdaptedSource } from './source'
 import type {
   Extra,
@@ -115,15 +116,14 @@ export function commaListSearch(
 export type ExtraSearchSpec = Record<string, ExtraSearchValidator>
 
 /**
- * Dev-режим адресного слоя: нет process (браузер) — считаем dev; предупреждения
- * глушит только явный production. Изоморфно с остальными гвардами библиотеки.
+ * Dev-режим адресного слоя — `DEV` из `esm-env` (так рекомендует документация
+ * Svelte для библиотек): условие экспорта `development`/`production` у сборщика,
+ * на чистом Node — `NODE_ENV`. Прежняя проверка «нет `process` → dev» в браузере
+ * была истинна всегда, и production-сборка печатала dev-предупреждения (C7,
+ * docs/audit/crutches.md).
  */
 export function isDevAddressLayer(): boolean {
-  return (
-    typeof process === 'undefined' ||
-    !process.env ||
-    process.env.NODE_ENV !== 'production'
-  )
+  return DEV
 }
 
 /** Единая точка dev-предупреждений адресного слоя (§ 3.1: молчаливый отброс запрещён). */
