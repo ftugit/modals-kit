@@ -88,6 +88,18 @@ describe('foldKey и дистанция', () => {
     expect(fuzzy.substitutionCost('б', 'л')).toBe(1) // несвязанные буквы
   })
 
+  // F11: конфузии сравниваются в свёрнутом пространстве (после гомоглифов).
+  it('латинские конфузии работают после foldKey; кириллическая о/у не удешевлена', () => {
+    const dl = (a: string, b: string) => fuzzy.damerauLevenshtein(fuzzy.foldKey(a), fuzzy.foldKey(b))
+    expect(dl('kemi', 'kimi')).toBe(0.5) // e/i
+    expect(dl('kimi', 'kemi')).toBe(0.5) // симметрично
+    expect(dl('kyn', 'kin')).toBe(0.5) // i/y
+    expect(dl('nakama', 'nakomo')).toBe(1) // a/o дважды
+    expect(dl('кот', 'кут')).toBe(1) // о/у в русском — полная замена
+    expect(dl('kot', 'kut')).toBe(1) // и латинская o/u: её пары нет сознательно
+    expect(dl('один', 'адин')).toBe(0.5) // кириллические пары не тронуты
+  })
+
   it('maxCostFor: короткие слова — строже', () => {
     expect(fuzzy.maxCostFor('но')).toBe(1)
     expect(fuzzy.maxCostFor('abcd')).toBe(1)
