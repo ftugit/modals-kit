@@ -86,8 +86,25 @@ function prefetchBuffer<T>(
  * или поискового запроса показывала бы старую страницу из буфера.
  */
 function dropPrefetched(instance: PaginatorInstance): void {
-  const holder = instance as PaginatorInstance & { prefetched?: Map<number, unknown> }
+  const holder = instance as PaginatorInstance & { prefetched?: Map<number, unknown>; prefetchGen?: number }
   holder.prefetched?.clear()
+  /**
+   * Поколение буфера. Полётный prefetch, начатый ДО сброса, обязан выбросить свой
+   * ответ: он относится к другому набору данных, а приедет в текущий и подменит
+   * страницу, которую только что запросили с новым фильтром.
+   */
+  holder.prefetchGen = (holder.prefetchGen ?? 0) + 1
+}
+
+/**
+ * Полётные предзагрузки экземпляра. Hover и focus по одной и той же ссылке — это
+ * два вызова на один запрос: без множества «уже грузится» мгновенный клик стоил
+ * двух одинаковых обращений к данным (замер логом сети на превью: ×3 на клик).
+ */
+function prefetchInflight(instance: PaginatorInstance): Set<number> {
+  const holder = instance as PaginatorInstance & { prefetchInflight?: Set<number> }
+  holder.prefetchInflight ??= new Set<number>()
+  return holder.prefetchInflight
 }
 /**
  * Ответ источника дописывает свои ключи extra (указатель следующего шага).
@@ -525,17 +542,26 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
   if (state.loadedPages.includes(page) || state.pending?.page === page) return
   const buffer = prefetchBuffer<T>(instance)
   if (buffer.has(page)) return
+  const inflight = prefetchInflight(instance)
+  if (inflight.has(page)) return
+  inflight.add(page)
+  const gen = (instance as PaginatorInstance & { prefetchGen?: number }).prefetchGen ?? 0
   try {
     const resp = (await instance.adapter.loadPage({
       page,
       pageSize: state.pageSize,
       extra: state.extra,
     })) as PageResponse<T>
-    if (resp.items && resp.items.length > 0) {
+    // Сброс в полёте (смена фильтра/размера) — ответ из другого набора, в буфер его нельзя.
+    const stillCurrent =
+      ((instance as PaginatorInstance & { prefetchGen?: number }).prefetchGen ?? 0) === gen
+    if (stillCurrent && resp.items && resp.items.length > 0) {
       buffer.set(page, resp)
     }
   } catch {
     // тихий prefetch — не ломает UI
+  } finally {
+    inflight.delete(page)
   }
 }
 

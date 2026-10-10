@@ -518,15 +518,30 @@ export function createUrlAdapter<T>(opts: {
       // Уже объявлено такое же значение и оно в полёте — дождаться применения.
       if (inflight === want && current !== want) return
       // Остальное — ПОСЛЕДНИЙ persist побеждает: перезаписываем и полётный navigate.
+      // `mergeSearch` выбрасывает прежние ключи своего префикса, поэтому запись
+      // и без чистки не переносит «грязный» хвост адреса дальше.
+      const search = (prev: Record<string, unknown>) => mergeSearch(prev, own)
+      /**
+       * Адрес пагинатора — ЗАПИСЬ текущей строки истории, а не переход, и делать
+       * его надо тем же: `syncAddress` (replaceState) меняет адрес, не перечитывая
+       * данные. `goto` с новым `?page` — это навигация SvelteKit, то есть повторный
+       * run `+page.server.ts`: второй запрос к источнику на каждое нажатие, результат
+       * которого списку не нужен (снапшот читается один раз). Замены семантики тут
+       * нет: `persist` и раньше писал с `replace: true`, новая запись истории не
+       * создавалась. Роутер без `syncAddress` (не SvelteKit) идёт прежним путём.
+       */
+      if (router.syncAddress) {
+        inflight = want
+        router.syncAddress({ search })
+        // Флаг держится до микротаски: пока фреймворк не применил новый адрес в
+        // реактивном срезе, повторная запись того же `want` не нужна.
+        void Promise.resolve().then(() => {
+          if (inflight === want) inflight = null
+        })
+        return
+      }
       inflight = want
-      void Promise.resolve(
-        router.navigate({
-          // `mergeSearch` выбрасывает прежние ключи своего префикса, поэтому
-          // запись и без чистки не переносит «грязный» хвост адреса дальше.
-          search: (prev) => mergeSearch(prev, own),
-          replace: true,
-        }),
-      ).finally(() => {
+      void Promise.resolve(router.navigate({ search, replace: true })).finally(() => {
         if (inflight === want) inflight = null
       })
     },

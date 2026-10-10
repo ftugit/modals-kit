@@ -751,6 +751,107 @@ describe('extra источника: указатель следующего ша
 
 /* ─────────────────── Q1: приёмники ошибок (onError) ─────────────────── */
 
+describe('prefetch: один полёт на страницу и недействительный ответ после сброса', () => {
+  beforeEach(() => {
+    resetRegistry()
+  })
+
+  it('повторный prefetch той же страницы в полёте не плодит запрос', async () => {
+    let resolve!: (v: PageResponse<string>) => void
+    const loadPage = vi.fn((req: PageRequest) =>
+      req.page === 1
+        ? Promise.resolve({ items: ['p1a', 'p1b'], totalPages: 3 })
+        : new Promise<PageResponse<string>>((r) => (resolve = r)),
+    )
+    const fake = fakeAdapter({ page: 1, pageSize: 10, totalPages: 3 }, loadPage as never)
+    definePaginator({ name: 'pfTest', adapter: fake.adapter })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'pfTest')
+    void prefetchPage(store, 'pfTest', 2)
+    void prefetchPage(store, 'pfTest', 2) // hover + focus: второй обязан присоединиться
+    expect(loadPage).toHaveBeenCalledTimes(2) // 1-я страница + одна предзагрузка
+    resolve({ items: ['p2a', 'p2b'], totalPages: 3 })
+    await vi.waitFor(() => expect(getState(store, 'pfTest').loadedPages).toEqual([1]))
+    // Предзагруженное берётся из буфера без нового запроса.
+    await goToPage(store, 'pfTest', 2)
+    expect(getState(store, 'pfTest').pages[2]).toEqual(['p2a', 'p2b'])
+    expect(loadPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('ответ предзагрузки, начатой до сброса, в буфер не попадает', async () => {
+    let pendingStale: ((v: PageResponse<string>) => void) | null = null
+    let beyondFirst = 0
+    const loadPage = vi.fn((req: PageRequest) => {
+      if (req.page === 1) return Promise.resolve({ items: ['p1'], totalPages: 3 })
+      beyondFirst++
+      if (beyondFirst === 1) return new Promise<PageResponse<string>>((r) => (pendingStale = r))
+      return Promise.resolve({ items: ['fresh-p2'], totalPages: 3 })
+    })
+    const fake = fakeAdapter({ page: 1, pageSize: 10, totalPages: 3 }, loadPage as never)
+    definePaginator({ name: 'pfStale', adapter: fake.adapter, reloadKeys: ['kind'] })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'pfStale')
+    void prefetchPage(store, 'pfStale', 2)
+    // Смена данных = сброс буфера: предзагрузка была про ДРУГОЙ набор.
+    await setExtra(store, 'pfStale', { kind: 'photos' })
+    pendingStale!({ items: ['stale-p2'], totalPages: 3 })
+    await Promise.resolve()
+    await Promise.resolve()
+    const before = loadPage.mock.calls.length
+    await goToPage(store, 'pfStale', 2)
+    expect(getState(store, 'pfStale').pages[2]).toEqual(['fresh-p2'])
+    expect(loadPage.mock.calls.length).toBe(before + 1)
+  })
+})
+
+describe('persist адреса: правка записи истории вместо перехода', () => {
+  beforeEach(() => {
+    resetRegistry()
+  })
+
+  it('роутер с syncAddress получает правку адреса, navigate не зовётся', async () => {
+    const written: Record<string, unknown>[] = []
+    const navigate = vi.fn()
+    const syncAddress = vi.fn((opts: { search: (prev: Record<string, unknown>) => Record<string, unknown> }) => {
+      written.push(opts.search({}))
+    })
+    const adapter = createUrlAdapter<string>({
+      name: 'syncTest',
+      source: sourceOf<string>(async ({ page }) => ({ items: [`p${page}`], totalItems: 30, totalPages: 3 })),
+      pageParam: 'page',
+    })
+    definePaginator({ name: 'syncTest', adapter })
+    adapter.setRouter({ navigate, syncAddress, currentSearch: () => ({}) })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'syncTest')
+    await goToPage(store, 'syncTest', 2)
+    expect(navigate).not.toHaveBeenCalled()
+    // Адрес обязан нести вторую страницу — только её ключи, без чужого хвоста.
+    expect(written.at(-1)).toEqual({ page: 2 })
+  })
+
+  it('роутер без syncAddress — прежний путь: navigate с replace', async () => {
+    const navigate = vi.fn()
+    const adapter = createUrlAdapter<string>({
+      name: 'navTest',
+      source: sourceOf<string>(async ({ page }) => ({ items: [`p${page}`], totalItems: 30, totalPages: 3 })),
+      pageParam: 'page',
+    })
+    definePaginator({ name: 'navTest', adapter })
+    adapter.setRouter({ navigate, currentSearch: () => ({}) })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'navTest')
+    await goToPage(store, 'navTest', 3)
+    expect(navigate).toHaveBeenCalled()
+    const call = navigate.mock.calls.at(-1)![0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>
+      replace?: boolean
+    }
+    expect(call.search({})).toEqual({ page: 3 })
+    expect(call.replace).toBe(true)
+  })
+})
+
 describe('Q1 onError: fan-out, коды, persist', () => {
   it('init-failed: getInitial бросает → config-sink получает конверт', async () => {
     resetRegistry()
