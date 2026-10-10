@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { buttonVariants } from '$lib/ui/primitives'
   import { usePageHref, usePaginatorActions } from '$lib/paginate/svelte'
@@ -15,13 +16,16 @@
 
   let {
     page,
-    name,
+    name: nameProp,
     current = false,
     disabled = false,
     label,
     class: className,
     children,
   }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const hrefGetter = usePageHref(() => page, name)
   const href = $derived(hrefGetter())

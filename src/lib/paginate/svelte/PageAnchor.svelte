@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { useCtx } from './context.svelte'
 
@@ -11,7 +12,10 @@
     children?: Snippet
   }
 
-  let { page, class: className = '', name, marker = true, children }: Props = $props()
+  let { page, class: className = '', name: nameProp, marker = true, children }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const { anchors } = useCtx('PageAnchor', name)
   let anchorEl: HTMLDivElement | undefined = $state()

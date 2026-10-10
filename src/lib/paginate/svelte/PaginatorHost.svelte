@@ -68,7 +68,7 @@
   }
 
   let {
-    name,
+    name: nameProp,
     class: className,
     ariaLabel,
     pageParam: pageParamProp,
@@ -92,6 +92,24 @@
     children,
     onError,
   }: Props<any> = $props()
+
+  /**
+   * Конфигурация экземпляра читается ОДИН раз — при монтировании. Имя, SSR-снапшот,
+   * дефолты extra и ключи адреса нужны только однократной инициализации (гидрация
+   * стора, привязка роутера к адаптеру, контекст для детей): живой смены у них нет.
+   * Другое имя — другой пагинатор, и пересоздаёт хост родитель (`{#key}`), а не
+   * хост сам себя на лету. `untrack` делает это решение явным, а не случайным:
+   * https://svelte.dev/docs/svelte/compiler-warnings#state_referenced_locally
+   */
+  const init = untrack(() => ({
+    name: nameProp,
+    snapshot: snapProp,
+    extraDefaults,
+    pageParam: pageParamProp,
+    extraSearch: extraSearchProp,
+    pageSizes: pageSizesProp,
+  }))
+  const name = init.name
 
   // Q1: хост-проп подключается к инстансу на жизнь компонента (дедуп — дело sink'а).
   $effect(() => {
@@ -123,7 +141,7 @@
     return Number.isInteger(n) && n >= 1 ? n : null
   })()
 
-  let snap = snapProp
+  let snap = init.snapshot
   if (snap && initialExternalPage != null && snap.status === 'idle' && snap.page !== initialExternalPage) {
     snap = {
       ...snap,
@@ -138,8 +156,9 @@
 
   if (snap) store.hydrate(name, snap)
 
-  if (extraDefaults) {
-    store.update(name, (s) => ({ ...s, extra: { ...extraDefaults, ...s.extra } }))
+  const initialExtraDefaults = init.extraDefaults
+  if (initialExtraDefaults) {
+    store.update(name, (s) => ({ ...s, extra: { ...initialExtraDefaults, ...s.extra } }))
   }
 
   let currentState = $state.raw<PaginatorState<any>>(getState(store, name))
@@ -473,9 +492,9 @@
   // чтобы спецификация не жила в двух местах.
   const bindsUrl = typeof adapter.setRouter === 'function'
   const spec = adapter.searchSpec ?? {}
-  const effectivePageParam = pageParamProp ?? spec.pageParam ?? 'page'
-  const effectiveExtraSearch = extraSearchProp ?? spec.extra
-  const effectivePageSizes = pageSizesProp ?? spec.pageSizes
+  const effectivePageParam = init.pageParam ?? spec.pageParam ?? 'page'
+  const effectiveExtraSearch = init.extraSearch ?? spec.extra
+  const effectivePageSizes = init.pageSizes ?? spec.pageSizes
 
   // Срез поиска даёт слой фреймворка (SvelteKit) — не `window.location`:
   // прямое чтение адреса не реактивно и обходит роутер.

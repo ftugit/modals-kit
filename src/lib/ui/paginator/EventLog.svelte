@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { untrack } from 'svelte'
   export { describeEvent } from './event-log'
 </script>
 
@@ -12,7 +13,10 @@
     class?: string
   }
 
-  let { name, limit = 5, class: className }: Props = $props()
+  let { name: nameProp, limit = 5, class: className }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   let events = $state<{ n: number; text: string }[]>([])
   let count = 0

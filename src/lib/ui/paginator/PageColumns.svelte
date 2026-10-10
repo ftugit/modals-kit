@@ -1,5 +1,5 @@
 <script lang="ts" generics="T">
-  import { onMount, type Snippet } from 'svelte'
+  import { onMount, type Snippet, untrack } from 'svelte'
   import {
     computeColumns,
     distributeRoundRobin,
@@ -32,7 +32,7 @@
   }
 
   let {
-    name,
+    name: nameProp,
     columns: columnsProp = 'auto',
     columnWidth = 220,
     stretch = '25%',
@@ -45,6 +45,9 @@
     renderSkeleton,
     renderPending,
   }: Props<T> = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const pagesGetter = usePaginatorPages<T>(name)
   const pages = $derived(pagesGetter())

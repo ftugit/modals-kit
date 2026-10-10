@@ -1,4 +1,5 @@
 <script lang="ts" generics="T">
+  import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { PageAnchor, usePaginatorPages } from '$lib/paginate/svelte'
   import PageDivider from './PageDivider.svelte'
@@ -15,7 +16,7 @@
   }
 
   let {
-    name,
+    name: nameProp,
     class: className,
     itemClass = 'mb-2',
     renderItem,
@@ -23,6 +24,9 @@
     renderPending,
     renderDivider,
   }: Props<T> = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const pagesGetter = usePaginatorPages<T>(name)
   const pages = $derived(pagesGetter())

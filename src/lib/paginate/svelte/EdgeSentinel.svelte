@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { useCtx, usePaginatorOptions } from './context.svelte'
 
   interface Props {
@@ -6,7 +7,10 @@
     name?: string
   }
 
-  let { dir, name }: Props = $props()
+  let { dir, name: nameProp }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const { anchors } = useCtx('EdgeSentinel', name)
   const options = usePaginatorOptions(name)

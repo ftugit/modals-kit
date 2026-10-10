@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { usePaginatorState } from './context.svelte'
   import type { Snippet } from 'svelte'
 
@@ -13,7 +14,10 @@
     children: Snippet<[PendingIndicatorRender]>
   }
 
-  let { name, class: className = '', children }: Props = $props()
+  let { name: nameProp, class: className = '', children }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const state = usePaginatorState<unknown>(name)
 

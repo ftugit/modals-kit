@@ -1,4 +1,5 @@
 <script lang="ts" generics="V extends Record<string, import('$lib/paginate').ExtraValue> = Record<string, import('$lib/paginate').ExtraValue>">
+  import { untrack } from 'svelte'
   /**
    * Оболочка панели настроек пагинатора: строит компилированное описание
    * (`./compile`) и держит только то, что компилироваться не может —
@@ -38,7 +39,7 @@
   }
 
   let {
-    name,
+    name: nameProp,
     pageSizes,
     fields = [],
     values: valuesMapper,
@@ -48,6 +49,9 @@
     applyLabel,
     noscriptHint,
   }: Props<V> = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const pagState = usePaginatorState(name)
   const { setExtra, setPageSize } = usePaginatorActions(name)

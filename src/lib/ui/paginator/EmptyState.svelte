@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { usePaginatorState } from '$lib/paginate/svelte'
 
@@ -7,7 +8,10 @@
     children?: Snippet
   }
 
-  let { name, children }: Props = $props()
+  let { name: nameProp, children }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
   const pagState = usePaginatorState(name)
   const isReadyAndEmpty = $derived(
     pagState().status === 'idle' &&

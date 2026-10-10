@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { report } from '$lib/app-errors.svelte'
   import { page } from '$app/state'
   import type { CatalogFilterSchema } from '$lib/filters'
@@ -238,11 +238,13 @@ import ItemRow from './ItemRow.svelte'
     schema?: CatalogFilterSchema | null
   }
 
-  let { name, storeKind, onStore, url, schema = null }: Props = $props()
+  let { name: nameProp, storeKind, onStore, url, schema = null }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; родитель пересоздаёт демо по `{#key activeName}`
+  // при смене хранилища.
+  const name = untrack(() => nameProp)
 
   const pagState = usePaginatorState<CatalogItem>(name)
-  // Имя захватывается начальным значением осознанно (как у панели настроек рядом):
-  // родитель пересоздаёт демо по `{#key activeName}` при смене хранилища.
   const correction = useSearchCorrection(name)
 
   const cfg = $derived.by((): DemoExtra => demoExtraOf(pagState().extra))
@@ -258,10 +260,12 @@ import ItemRow from './ItemRow.svelte'
    * или догруженная клиентом при переключении на живой источник. Панель без
    * схемы не рисуется — фильтров у неё тогда просто нет.
    */
-  // Начальное значение читается осознанно: при SSR эффекты не исполняются, и
-  // разметка панели обязана появиться уже в первом рендере (иначе без JS формы
-  // фильтров не будет вовсе).
-  let filterSchema = $state<CatalogFilterSchema | null>(schema)
+  // Начальное значение читается осознанно (`untrack`): при SSR эффекты не исполняются,
+  // и разметка панели обязана появиться уже в первом рендере (иначе без JS формы
+  // фильтров не будет вовсе). Дальше схемой владеет компонент: следовать пропсу нельзя —
+  // данные маршрута приходят новым объектом на каждую навигацию с загрузкой, и
+  // `{#key schema}` в FiltersPanel пересоздавал бы форму, теряя введённое.
+  let filterSchema = $state<CatalogFilterSchema | null>(untrack(() => schema))
   /**
    * Причина, по которой фильтров нет. Молчание тут было бы худшим ответом:
    * источник фильтры объявляет (`gates.filters`), значит пользователь ждёт

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { canGo, canLoadMore } from '../pure'
   import { usePageHref, usePaginatorActions, usePaginatorOptions, usePaginatorState } from './context.svelte'
   import type { Snippet } from 'svelte'
@@ -21,7 +22,10 @@
     children: Snippet<[LoadMoreSlotRender]>
   }
 
-  let { dir, name, action: actionProp = 'auto', always = false, children }: Props = $props()
+  let { dir, name: nameProp, action: actionProp = 'auto', always = false, children }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
 
   const state = usePaginatorState<unknown>(name)
   const options = usePaginatorOptions(name)

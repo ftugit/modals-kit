@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { buttonVariants } from '$lib/ui/primitives'
   import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
@@ -9,7 +10,10 @@
     children?: Snippet<[{ error: string | null; retry: () => void }]>
   }
 
-  let { name, retryLabel = 'Повторить', children }: Props = $props()
+  let { name: nameProp, retryLabel = 'Повторить', children }: Props = $props()
+  // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
+  // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
+  const name = untrack(() => nameProp)
   const pagState = usePaginatorState(name)
   const { retry } = usePaginatorActions(name)
 </script>
