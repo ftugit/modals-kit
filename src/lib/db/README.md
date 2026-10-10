@@ -499,7 +499,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
-| `src/lib/db/test/db-port-specific.test.ts` | 29 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive) |
+| `src/lib/db/test/db-port-specific.test.ts` | 30 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

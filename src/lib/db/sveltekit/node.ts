@@ -5,7 +5,7 @@
  * `node:fs` и WASM PGlite не попадали даже через barrel.
  */
 import { PGlite } from "@electric-sql/pglite";
-import { mkdir, open, realpath, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { Pool, type PoolConfig } from "pg";
 import { pgAdapter } from "../adapters/pg";
@@ -24,6 +24,48 @@ export function resolveDatabaseDir(projectRoot: string, configuredDir: string): 
     throw new Error("DATABASE_DIR must be a filesystem path, not a storage URI");
   return isAbsolute(value) ? resolve(value) : resolve(projectRoot, value);
 }
+/**
+ * Жив ли владелец замка. `true` — только когда файл точно не принадлежит
+ * работающему процессу: pid прочитан, он не наш, процесс не отвечает (ESRCH), и
+ * с момента записи прошлая секунда (окно «файл создан, pid ещё не записан»).
+ * Любой сюрприз — испорченный JSON, недоступный файл, EPERM на `kill(pid,0)` —
+ * трактуется как «владелец жив»: отказ безопаснее, чем два писателя в PGlite.
+ */
+async function lockIsStale(lockPath: string): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(lockPath, "utf8");
+  } catch {
+    return false;
+  }
+  let pid: number | undefined;
+  let startedAt = 0;
+  try {
+    const parsed = JSON.parse(raw) as { pid?: unknown; startedAt?: unknown };
+    pid = typeof parsed.pid === "number" && Number.isSafeInteger(parsed.pid) ? parsed.pid : undefined;
+    const at = Date.parse(typeof parsed.startedAt === "string" ? parsed.startedAt : "");
+    startedAt = Number.isFinite(at) ? at : 0;
+  } catch {
+    return false;
+  }
+  if (pid === undefined || pid <= 0 || pid === process.pid) return false;
+  if (startedAt !== 0 && Date.now() - startedAt < 1000) return false;
+  try {
+    process.kill(pid, 0);
+    return false; // процесс жив
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+async function readLockPid(lockPath: string): Promise<string> {
+  try {
+    const parsed = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown };
+    return `pid ${typeof parsed.pid === "number" ? parsed.pid : "?"}`;
+  } catch {
+    return "pid неизвестен";
+  }
+}
+
 /**
  * Embedded PostgreSQL с дисковым каталогом и строгой durability.
  * Каталогом владеет ОДИН процесс: lock-файл нужен не «на всякий случай» —
@@ -51,12 +93,22 @@ export async function openNodeDatabase(
   await mkdir(requestedDir, { recursive: true, mode: 0o700 });
   const dataDir = await realpath(requestedDir);
   const lockPath = join(dataDir, lockName);
-  const lock = await open(lockPath, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "EEXIST")
+  const lock = await open(lockPath, "wx", 0o600).catch(async (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EEXIST") throw error;
+    if (!(await lockIsStale(lockPath)))
       throw new Error(
         `Database directory is locked: ${dataDir}. Stop its owner; after a crash verify no owner is running before removing ${lockName}.`,
       );
-    throw error;
+    // Владелец мёртв (SIGKILL, рестарт контейнера, превью, убитое вместе с
+    // окружением): оставленная им запись — уже не защита, а вечный 500 для
+    // демо, поэтому замок снимается и об этом говорится вслух.
+    process.stderr.write(
+      `[kit-db] ${lockName} снят: процесс-владелец (${await readLockPid(lockPath)}) больше не жив\n`,
+    );
+    await unlink(lockPath);
+    // Вторая попытка тем же `wx`: если в этот промежуток проснулся настоящий
+    // владелец, он проигрывает честно — повторного EEXIST мы не прощаем.
+    return open(lockPath, "wx", 0o600);
   });
   let db: PGlite | undefined;
   try {

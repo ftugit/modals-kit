@@ -90,34 +90,62 @@ export function getRuntime(): Promise<Runtime> {
   return opening
 }
 
+/** Конфигурация секрета — ошибка запуска, и она обязана называть переменную. */
+function explainCursorConfig(build: () => ReturnType<typeof cursorCodecFromEnv>) {
+  try {
+    return build()
+  } catch (e) {
+    throw new Error(
+      `DB_CURSOR_SECRET непригоден: ${(e as Error)?.message ?? e} ` +
+        `(нужна строка не короче 32 байт; без неё курсор выключать честнее, чем ронять приложение)`,
+      { cause: e },
+    )
+  }
+}
+
 async function open(): Promise<Runtime> {
     let driver: Driver
     let close: (() => Promise<void>) | undefined
-    if (env('HYPERDRIVE_CONNECTION_STRING')) {
-      // Cloudflare Workers/Vercel Edge: клиент на запрос, пул держит Hyperdrive.
-      driver = hyperdriveAdapter({ connectionString: env('HYPERDRIVE_CONNECTION_STRING')!, maxInFlight: 5 })
-    } else if (env('DATABASE_URL')) {
-      const pool = openPgPool({
-        connectionString: env('DATABASE_URL')!,
-        max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)),
-        // Холодный старт у хостера = долгие первые рукопожатия; дефолтных 10 с на
-        // это мало, а лишний пул-таймаут ещё и отравляет синглтон (см. выше).
-        connectionTimeoutMillis: Number(env('DB_CONNECT_TIMEOUT_MS') ?? 30_000),
+    try {
+      if (env('HYPERDRIVE_CONNECTION_STRING')) {
+        // Cloudflare Workers/Vercel Edge: клиент на запрос, пул держит Hyperdrive.
+        driver = hyperdriveAdapter({ connectionString: env('HYPERDRIVE_CONNECTION_STRING')!, maxInFlight: 5 })
+      } else if (env('DATABASE_URL')) {
+        const pool = openPgPool({
+          connectionString: env('DATABASE_URL')!,
+          max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)),
+          // Холодный старт у хостера = долгие первые рукопожатия; дефолтных 10 с на
+          // это мало, а лишний пул-таймаут ещё и отравляет синглтон (см. выше).
+          connectionTimeoutMillis: Number(env('DB_CONNECT_TIMEOUT_MS') ?? 30_000),
+        })
+        driver = pool.driver
+        close = pool.close
+      } else {
+        const node = await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres', {
+          memory: !env('DATABASE_DIR'),
+        })
+        driver = pgliteAdapter(node.db)
+        close = node.close
+      }
+      const db = createDb({
+        driver,
+        limits: { pageSize: 20, maxPageSize: 100, maxPage: 10000, filterDepth: 8, filterNodes: 100, inValues: 100, inputKeys: 64 },
+        // Секрет курсора обязан быть не короче 32 байт, иначе слой отказывает — и
+        // без этой обёртки весь демо-роут падал бы в 500 с текстом «Invalid cursor
+        // key/TTL configuration», где не понять, о какой переменной речь. Fail-fast
+        // сохранён (молча работать без подписи токенов нельзя), названа причина.
+        cursorCodec: explainCursorConfig(() => cursorCodecFromEnv(env)),
       })
-      driver = pool.driver
-      close = pool.close
-    } else {
-      const node = await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres', {
-        memory: !env('DATABASE_DIR'),
-      })
-      driver = pgliteAdapter(node.db)
-      close = node.close
+      await applyMigrationText(db, MIGRATION)
+      return { db, driver, close }
+    } catch (e) {
+      // Захваченный ресурс обязан быть отпущен и при отказе ПОСЛЕ захвата:
+      // каталог PGlite остаётся с `.kit-db.lock`, и следующая попытка (а `opening`
+      // после ошибки сброшена — иначе одна заминка становилась бы состоянием
+      // процесса) отвечала бы «stop its owner» вместо настоящей причины. Ровно так
+      // и проявил себя слишком короткий DB_CURSOR_SECRET: первая ошибка — про
+      // секрет, все остальные — про замок.
+      await close?.()
+      throw e
     }
-    const db = createDb({
-      driver,
-      limits: { pageSize: 20, maxPageSize: 100, maxPage: 10000, filterDepth: 8, filterNodes: 100, inValues: 100, inputKeys: 64 },
-      cursorCodec: cursorCodecFromEnv(env),
-    })
-    await applyMigrationText(db, MIGRATION)
-    return { db, driver, close }
-}
+  }

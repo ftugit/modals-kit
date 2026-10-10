@@ -27,6 +27,11 @@ import {
   FAILURE_STATUS,
 } from"../sveltekit/index";
 import { applyMigrationText, splitSqlStatements } from"../sveltekit/migrate";
+import { openNodeDatabase } from"../sveltekit/node";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { hyperdriveAdapter } from"../adapters/hyperdrive";
 import type { Driver, Statement, QueryResult, Row } from"../index";
 import { it } from 'vitest'
@@ -1009,3 +1014,48 @@ test("pgproxy носит значения текстом → адаптер ра
   assert.deepEqual(roundTrip.rows[0].tags, ["a", 'b"c']);
 });
 
+test(
+  "замок каталога: живой владелец — отказ, мёртвый — снятие с предупреждением",
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kit-db-lock-"));
+    const lockPath = join(dir, ".kit-db.lock");
+    const alive = { pid: process.pid, startedAt: new Date(Date.now() - 60_000).toISOString() };
+    const open = () => openNodeDatabase(dir, dir, { memory: false });
+
+    // Владелец жив (это мы сами) — каталог занят, и никакая «самопомощь» тут
+    // неуместна: два писателя PGlite не переживает.
+    await writeFile(lockPath, JSON.stringify(alive) + "\n");
+    await assert.rejects(open, /locked/);
+    // Содержимое непонятное → «владелец неизвестен» трактуется как «жив»:
+    // отказ безопаснее, чем размойти каталог по испорченному файлу.
+    await writeFile(lockPath, "не json");
+    await assert.rejects(open, /locked/);
+
+    // pid, которого нет в системе = владелец умер, не успев убрать замок
+    // (SIGKILL превью, рестарт контейнера). Молча вечно отказывать — вечный 500
+    // для любого, кто перезапускает демо, поэтому замок снимается вслух.
+    const child = spawn(process.execPath, ["-e", ""]);
+    await new Promise((res) => child.once("exit", res));
+    const deadPid = child.pid;
+    assert.ok(deadPid && deadPid !== process.pid);
+    await writeFile(lockPath, JSON.stringify({ pid: deadPid, startedAt: new Date(Date.now() - 60_000).toISOString() }) + "\n");
+    const written: string[] = [];
+    const realWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    let node: Awaited<ReturnType<typeof openNodeDatabase>> | undefined;
+    try {
+      node = await open();
+    } finally {
+      process.stderr.write = realWrite;
+    }
+    assert.ok(node, "каталог не открылся после снятия замка");
+    assert.match(written.join(""), /\.kit-db\.lock снят/);
+    // Новый замок принадлежит нам, а close() возвращает каталог в свободное состояние.
+    assert.equal(JSON.parse(await readFile(lockPath, "utf8")).pid, process.pid);
+    await node.close();
+    await assert.rejects(() => readFile(lockPath, "utf8"), /ENOENT/);
+  },
+);
