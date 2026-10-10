@@ -72,8 +72,13 @@ export function currentPathname(): string {
 }
 
 /**
- * Адрес из среза search: путь + строка запроса. Одна сборка на все записи,
- * чтобы `navigate` и `syncAddress` не разъезжались в формате.
+ * Адрес из среза search: путь + строка запроса + текущий `#фрагмент`. Одна
+ * сборка на все записи, чтобы `navigate` и `syncAddress` не разъезжались в формате.
+ *
+ * Фрагмент берётся у адресной строки: пагинатор меняет только search, а `#якорь`
+ * принадлежит странице (ссылка «к разделу», shallow-флаги и т. п.). Без него каждая
+ * запись адреса стирала якорь (баг F9, docs/audit/crutches.md). На сервере записей
+ * нет — `hrefOf` вызывается только из обработчиков в браузере.
  */
 function hrefOf(search: Record<string, unknown>): string {
   const params = new URLSearchParams()
@@ -83,7 +88,8 @@ function hrefOf(search: Record<string, unknown>): string {
     else params.set(k, String(v))
   }
   const qs = params.toString()
-  return `${page.url.pathname}${qs ? `?${qs}` : ''}`
+  const hash = browser ? window.location.hash : ''
+  return `${page.url.pathname}${qs ? `?${qs}` : ''}${hash}`
 }
 
 /**

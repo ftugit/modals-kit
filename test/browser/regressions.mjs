@@ -1259,6 +1259,26 @@ try {
     await page.close()
   })
 
+  /* ── R-30 (F9): запись адреса пагинатором не стирает #якорь ───────── */
+  // `hrefOf` (router/sveltekit.ts) собирал только путь + `?search`, и каждая
+  // запись адреса (`syncAddress` → `replaceState`) выбрасывала фрагмент.
+  await run('R-30 запись адреса пагинатором сохраняет #якорь', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    await page.goto(`${origin}/paginator?page.size=10#r30`)
+    await page.waitForSelector('[data-select-root][data-enhanced]')
+    const size = page.locator('[data-testid="demo-panel"] select[name="page.size"]')
+    const addr = () => page.evaluate(() => location.search + location.hash)
+    for (const value of ['40', '5']) {
+      await size.selectOption(value, { force: true })
+      await page.waitForFunction((v) => new URLSearchParams(location.search).get('page.size') === v, value)
+      const now = await addr()
+      assert(now.endsWith('#r30'), `после page.size=${value} якорь потерян: ${now}`)
+    }
+    ok('две записи page.size (40, 5) подряд: поиск обновлён, #r30 на месте')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
