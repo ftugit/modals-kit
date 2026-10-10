@@ -38,10 +38,12 @@
     type DemoStore,
   } from './definition'
   import FiltersPanel from './FiltersPanel.svelte'
-  import { isAnimeItem, isDbItem, shotHeight, type CatalogItem } from './item-views'
+  import { catalogTestId, isAnimeItem, isDbItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
-  import DbRow from './DbRow.svelte'
+  // Строка записи БД — общий компонент с `/db-demo` (`$lib/ui/demo/db-list`),
+// здесь ей передаётся только оформление карточки и опознавательный testid.
+import DbPostRow from '$lib/ui/demo/db-list/DbPostRow.svelte'
 import ItemRow from './ItemRow.svelte'
   import SearchQueryForm from './SearchQueryForm.svelte'
   import ShotTile from './ShotTile.svelte'
@@ -499,7 +501,11 @@ import ItemRow from './ItemRow.svelte'
         {#if isAnimeItem(item)}
           <AnimeTile {item} />
         {:else if isDbItem(item)}
-          <DbRow {item} />
+          <DbPostRow
+            {item}
+            testid={catalogTestId(item)}
+            class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
+          />
         {:else}
           <ShotTile {item} />
         {/if}
@@ -512,7 +518,11 @@ import ItemRow from './ItemRow.svelte'
         {#if isAnimeItem(item)}
           <AnimeRow {item} />
         {:else if isDbItem(item)}
-          <DbRow {item} />
+          <DbPostRow
+            {item}
+            testid={catalogTestId(item)}
+            class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
+          />
         {:else}
           <ItemRow {item} />
         {/if}

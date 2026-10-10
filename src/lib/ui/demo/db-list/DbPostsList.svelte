@@ -41,6 +41,7 @@
     type DbListExtra,
     type DbPost,
   } from './definition'
+  import DbPostRow from './DbPostRow.svelte'
   import ListMeta from './ListMeta.svelte'
 
   interface Props {
@@ -150,11 +151,11 @@
     </div>
     <PageList {name}>
       {#snippet renderItem(item: DbPost)}
-        <div class="flex items-baseline gap-3 px-4 py-2" data-testid="row" data-id={item.id}>
-          <span class="min-w-0 flex-1 truncate">{item.title}</span>
-          <span class="text-xs text-muted-foreground">{item.created_at}</span>
-          <code class="text-xs text-muted-foreground" data-testid="row-id">{item.id}</code>
-        </div>
+        <!--
+          Компонент общий с демо-пагинатором: `full` здесь включает полный id и метку
+          `row-id`, потому что на этой странице id копируют в форму удаления.
+        -->
+        <DbPostRow {item} full />
       {/snippet}
     </PageList>
     <EmptyState {name}>
