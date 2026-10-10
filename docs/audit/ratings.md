@@ -3,9 +3,9 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **118 / 387** файлов прочитано.
+Прогресс: **161 / 387** файлов прочитано.
 
-Средняя оценка по прочитанным: **8.6**.
+Средняя оценка по прочитанным: **8.5**.
 
 ## `src/`
 
@@ -175,64 +175,64 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `async.ts` | 191 | — | ⏳ |  | setTimeout×2, any×1 |
-| `builtins.ts` | 219 | — | ⏳ |  |  |
-| `constraints.ts` | 77 | — | ⏳ |  |  |
-| `continuation.ts` | 110 | — | ⏳ |  |  |
-| `decode.ts` | 66 | — | ⏳ |  |  |
-| `describe.ts` | 371 | — | ⏳ |  | any×2 |
-| `devtools.ts` | 102 | — | ⏳ |  |  |
-| `editor.ts` | 252 | — | ⏳ |  |  |
-| `envelope.ts` | 87 | — | ⏳ |  |  |
-| `errors.ts` | 155 | — | ⏳ |  |  |
-| `external.ts` | 89 | — | ⏳ |  |  |
-| `field-types.ts` | 119 | — | ⏳ |  | any×2 |
-| `form.test.ts` | 634 | — | ⏳ |  | any×2 |
-| `index.ts` | 37 | — | ⏳ |  |  |
-| `keep.ts` | 18 | — | ⏳ |  |  |
-| `messages.ts` | 80 | — | ⏳ |  |  |
-| `policy.ts` | 130 | — | ⏳ |  |  |
-| `queued.ts` | 66 | — | ⏳ |  | setTimeout×1 |
-| `registry.ts` | 57 | — | ⏳ |  | any×3 |
-| `result.ts` | 118 | — | ⏳ |  |  |
-| `schema.ts` | 56 | — | ⏳ |  |  |
-| `server.ts` | 474 | — | ⏳ |  | ts-ignore/expect×1 |
-| `source.ts` | 129 | — | ⏳ |  |  |
-| `spec.ts` | 168 | — | ⏳ |  |  |
-| `state.ts` | 110 | — | ⏳ |  |  |
-| `strength.ts` | 143 | — | ⏳ |  |  |
-| `submit.ts` | 255 | — | ⏳ |  |  |
-| `types.ts` | 75 | — | ⏳ |  |  |
-| `upload.ts` | 30 | — | ⏳ |  |  |
-| `url.test.ts` | 61 | — | ⏳ |  |  |
-| `url.ts` | 88 | — | ⏳ |  |  |
-| `validate.ts` | 107 | — | ⏳ |  |  |
-| `validators.ts` | 371 | — | ⏳ |  | any×25 |
+| `async.ts` | 191 | 6 | прочитан | F21-корень: вытесненный run отдаёт null в onResult и стирает свежую ошибку/гасит checking; #cache без предела; дубли JSDoc | setTimeout×2, any×1 |
+| `builtins.ts` | 219 | 9 | прочитан | numberType ставит inputmode=numeric на type=number: моб. клавиатура без точки/минуса, ядро их принимает (на устройстве не проверено) |  |
+| `constraints.ts` | 77 | 10 | прочитан | словарь видов ограничений + opaque; без замечаний |  |
+| `continuation.ts` | 110 | 9 | прочитан | дубли JSDoc; иначе образцово |  |
+| `decode.ts` | 66 | 9 | прочитан | безвредный каст val as string |  |
+| `describe.ts` | 371 | 9 | прочитан | attrsOf отдаёт кэшированный изменяемый объект; checkFieldDefinition без JSDoc | any×2 |
+| `devtools.ts` | 102 | 9 | прочитан | unknownKind считается по подстроке текста 'не знает вида' — связь по сообщению |  |
+| `editor.ts` | 252 | 8 | прочитан | дубль JSDoc; InvariantError без name; reconcile: null-значение подменяется default |  |
+| `envelope.ts` | 87 | 9 | прочитан | specVersion Number() без проверки NaN (уходит в source.resolve) |  |
+| `errors.ts` | 155 | 9 | прочитан | K10: дубли JSDoc 69–72, 86–89 |  |
+| `external.ts` | 89 | 9 | прочитан | aliases[r.field] по обычному объекту (constructor/__proto__ из ответа службы → не-строковый path); дубль JSDoc 202–206 |  |
+| `field-types.ts` | 119 | 10 | прочитан | проекция ограничений типом с названной причиной пропуска | any×2 |
+| `form.test.ts` | 634 | 7 | прочитан | ядро покрыто хорошо, но нет тестов server.ts, share(), AsyncRunner, accept/maxSize на files — ровно там F14–F21; top-level await импорты; any; входит в C10 | any×2 |
+| `index.ts` | 37 | 10 | прочитан | чистый реэкспорт ядра; фреймворков нет |  |
+| `keep.ts` | 18 | 8 | прочитан | K8/C7-остаток: import.meta.env?.DEV (Vite) вместо esm-env DEV по решению C7 |  |
+| `messages.ts` | 80 | 9 | прочитан | нет форм множественного числа (делегировано policy.interpolate) |  |
+| `policy.ts` | 130 | 10 | прочитан | политика имён/пределов/конверта переопределяема; без замечаний |  |
+| `queued.ts` | 66 | 9 | прочитан | pollUntilDone: сон не прерывается signal, retryAfterMs сервера без предела; дубль JSDoc | setTimeout×1 |
+| `registry.ts` | 57 | 9 | прочитан | модульный defaultRegistry признан в комментарии; регистрации статичны | any×3 |
+| `result.ts` | 118 | 9 | прочитан | normalizeErrors режет по limits.errors ДО сортировки — выживший набор зависит от порядка входа; дубль JSDoc 85–88 |  |
+| `schema.ts` | 56 | 9 | прочитан | K10: осиротевший дубль JSDoc 45–50 |  |
+| `server.ts` | 474 | 4 | прочитан | F16 source+namesLayer: поля рантайма → 400 unexpected-field; F17 safeRedirect пропускает /\evil.com и /<TAB>/evil.com; F18 windowThrottle по x-forwarded-for (подделка, общий anon, Map без чистки); F19 идемпотентность get→execute→put — 2 параллельных = 2 execute, MemoryIdempotencyStore без вытеснения; detail исключения уходит клиенту; дубли JSDoc; опечатка «Своий»; @ts-expect-error duplex обоснован; модульного состояния нет | ts-ignore/expect×1 |
+| `source.ts` | 129 | 8 | прочитан | revision = base.revision + version — коллизии (2+1 = 1+2); дубли JSDoc |  |
+| `spec.ts` | 168 | 9 | прочитан | UNSAFE_PATTERN ловит только вложенный квантификатор, не альтернации ((a\|a)*); честно назван эвристикой |  |
+| `state.ts` | 110 | 6 | прочитан | F15: share() сравнивает объекты по own-ключам — File/Date/Blob заменяются на СТАРЫЙ, FormStore.set не будит подписчиков; дубль JSDoc |  |
+| `strength.ts` | 143 | 8 | прочитан | K10: мёртвое выражение pool + (classes === 1 ? 0 : 0), стр. 52 |  |
+| `submit.ts` | 255 | 8 | прочитан | JSDoc от stale() приклеен к acquire(), у stale нет; abort() бросает ожидающих acquire без завершения промиса |  |
+| `types.ts` | 75 | 10 | прочитан | типы-бренды и HtmlAttrs; без замечаний |  |
+| `upload.ts` | 30 | 9 | прочитан | effectiveMode деградирует reference→inline; мелочи |  |
+| `url.test.ts` | 61 | 9 | прочитан | кодек и согласие с POST-декодером проверены |  |
+| `url.ts` | 88 | 9 | прочитан | чистый кодек; без существенных замечаний |  |
+| `validate.ts` | 107 | 9 | прочитан | тихий catch неразрешённого валидатора; смягчено проверкой defineForm (spec.validator-invalid) |  |
+| `validators.ts` | 371 | 6 | прочитан | F14: v.accept — MIME в RegExp без экранирования (image/svg+xml отклоняет сам себя); accept/maxSize на files(File[]) — TypeError/всегда отказ; README «сервер смотрит содержимое» — сниффинга нет; pattern u vs v-флаг HTML (мелочь) | any×25 |
 
 ## `src/lib/form/react/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `bind.ts` | 580 | — | ⏳ |  | window/document×2, addEventListener×1 |
-| `config.ts` | 91 | — | ⏳ |  |  |
-| `index.ts` | 4 | — | ⏳ |  |  |
+| `bind.ts` | 580 | 5 | прочитан | C9: не используется (только README), тестов нет; дрейф от svelte: render без cfg.config.messages, action игнорирует actionBase, нет redisplay; useMemo с побочным эффектом; stale-замыкание commitUrl в live-эффекте; те же F20/F21; import.meta.env.DEV | window/document×2, addEventListener×1 |
+| `config.ts` | 91 | 8 | прочитан | C9: дрейф контракта (нет registry/policy; valueAttrs иначе — оправдано контролируемостью) |  |
+| `index.ts` | 4 | 9 | прочитан | C9: зона без потребителей |  |
 
 ## `src/lib/form/solid/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `bind.ts` | 544 | — | ⏳ |  | window/document×2, microtask×1, addEventListener×1 |
-| `config.ts` | 89 | — | ⏳ |  |  |
-| `index.ts` | 4 | — | ⏳ |  |  |
+| `bind.ts` | 544 | 5 | прочитан | C9: не используется, тестов нет; тот же дрейф (messages, actionBase, redisplay); hydrated по queueMicrotask, не по mount; те же F20/F21; import.meta.env.DEV | window/document×2, microtask×1, addEventListener×1 |
+| `config.ts` | 89 | 8 | прочитан | C9: дрейф контракта как у react |  |
+| `index.ts` | 4 | 9 | прочитан | C9: зона без потребителей |  |
 
 ## `src/lib/form/svelte/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `Form.svelte` | 49 | — | ⏳ |  |  |
-| `bind.svelte.ts` | 602 | — | ⏳ |  | $effect×1, window/document×2, addEventListener×1 |
-| `config.ts` | 120 | — | ⏳ |  |  |
-| `index.ts` | 6 | — | ⏳ |  |  |
+| `Form.svelte` | 49 | 9 | прочитан | ключ each name=value — дубль пары даст each_key_duplicate; каст as unknown as с объяснением |  |
+| `bind.svelte.ts` | 602 | 6 | прочитан | F20: scheduleCheck шлёт проверке сырые строки FormData, сервер — decode()-значения; F21-место; C7-остаток import.meta.env.DEV ×3 + typeof window (K8); нет teardown (machine.abort/runner.cancel не вызываются); no-op [ATTACH] с вводящим комментарием | $effect×1, window/document×2, addEventListener×1 |
+| `config.ts` | 120 | 9 | прочитан | valueAttrs String(массив) для multi; мелочь |  |
+| `index.ts` | 6 | 10 | прочитан | реэкспорт |  |
 
 ## `src/lib/links/`
 

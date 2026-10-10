@@ -104,3 +104,16 @@ RESULT: STALE (bug)
 «deprecated in SvelteKit 3 in favour of `$app/env`». В установленном SvelteKit 2.70.3 есть оба
 модуля (`node_modules/@sveltejs/kit/types/index.d.ts`, `declare module '$app/env'`). Сейчас это
 не ошибка; при переходе на SvelteKit 3 затронет места 1, 3, 9.
+
+## Ход 9: остатки C7 в `lib/form`
+
+Решение хода 7 — признак dev через `DEV` из `esm-env` — в `lib/form` не применено:
+
+| Файл | Что |
+|---|---|
+| `lib/form/keep.ts` | `import.meta.env?.DEV` |
+| `lib/form/svelte/bind.svelte.ts:185,424,436` | `import.meta.env.DEV` (+ `typeof window` на стр. 365, K8) |
+| `lib/form/react/bind.ts:174,323,335`, `lib/form/solid/bind.ts:163,489,501` | `import.meta.env.DEV` (зоны C9) |
+
+`import.meta.env` — соглашение Vite: README библиотеки обещает «ядро приезжает исходниками и не
+зависит от сборщика», а `keep.ts` лежит в ядре. **Не исправлено**: накапливаем, ждёт решения.
