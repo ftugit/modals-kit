@@ -468,8 +468,10 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 Строки `select` типизированы как `Partial<…>` — проекция вправе вернуть не все поля, а
 relations добавляются через `include`.
 
-Условия окружения: `DB_CURSOR_SECRET`, `DB_CURSOR_OLD_KEYS` (кольцо старых ключей для
-мягкой смены секрета), `DB_CURSOR_TTL_SECONDS` (по умолчанию 1800). Остальные имена
+Условия окружения: `DB_CURSOR_SECRET` (не короче 32 байт — более короткий ключ
+отказывается сам кодек, `createCursorCodec`, а не молча подписывает слабым HMAC),
+`DB_CURSOR_OLD_KEYS` (кольцо старых ключей для мягкой смены секрета,
+`kid:secret,...`), `DB_CURSOR_TTL_SECONDS` (по умолчанию 1800). Остальные имена
 (`DATABASE_URL`, `DATABASE_DIR`, `DB_POOL_MAX`, `HYPERDRIVE_CONNECTION_STRING`, `VERCEL`)
 читает приложение — пакет принимает значения, а не env.
 

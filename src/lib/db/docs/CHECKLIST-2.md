@@ -21,7 +21,7 @@
 | VCS | `/home/user/integration/.git` — есть (локальный, без `origin`); коммиты только локальные |
 | последний коммит | `e6107da` refactor(db-demo): список через пагинатор, формы — отдельные компоненты |
 | baseline | `de0fe0d` = срез `modals-kit@5d08da7`, всё остальное в истории — адаптация |
-| гейты этого среза | vitest 33 файла / 599 тестов · tooling 104/104 · слой 39/39 · svelte-check 0 ошибок (46 warning'ов в `src/lib/paginate`) · build 8.14 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (20)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) · `probes/db-demo-browser.check.mjs` → `DB_DEMO_BROWSER_OK (8)` — браузерная проверка обязательна: HTTP-проба не видит класса ошибок «SSR зелёный, гидрация мёртвая» (Chromium ставится `npx playwright install chromium`, порт превью обязан быть в `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы) |
+| гейты этого среза | vitest 35 файлов / 618 тестов · tooling 104/104 · слой 40/40 (30 в `db-port-specific`) · svelte-check 0 ошибок (47 warning'ов в `src/lib/paginate` и демонах) · build ~10 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (30)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) · `probes/db-demo-browser.check.mjs` → `DB_DEMO_BROWSER_OK (12)` — браузерная проверка обязательна: HTTP-проба не видит класса ошибок «SSR зелёный, гидрация мёртвая» (Chromium ставится `npx playwright install chromium`, порт превью обязан быть в `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы) |
 | SKIPPED | нет |
 | долг пользователя | отозвать вставленные в чат PAT GitHub; `drop database if exists kitdb_demo with (force)`, когда демо не нужно |
 
@@ -43,6 +43,7 @@ SvelteKit-слой + документация + проверка на реаль
 | **`node_modules` пакета и приложения** | не переживают пересоздание песочницы (исключены из снапшота) -> `npm install` на каждом новом заходе. Если tarball пакета пересобран, а `package-lock.json` приложения помнит старый хэш, обычный `npm install` падает с `EINTEGRITY` - ставить заново: `npm install ../db-port/ftugit-kit-db-0.2.0.tgz` |
 | **PgBouncer** (для `src/lib/db/probes/pooler.probe.mjs`) | **не запущен** после пересоздания песочницы — поднимать по §0.2 (`/usr/sbin/pgbouncer /tmp/pgb/pgbouncer.ini`, `auth_type = any`) |
 | **Свежесть эталонных ревов** | определять `git ls-remote <публичный репо>`, а не локальными `origin/*`: у `modals-kit` кончик `b1` = `5d08da7` (2026-10-09), локальные refs показывали `15d4355`. Приватные (`SolidHono`) без токена не берутся — это проверено тем же `ls-remote` |
+| **Превью демо (`/db-demo`, `/paginator`)** | `npm run build && DATABASE_DIR=data/postgres DB_CURSOR_SECRET=$(openssl rand -hex 24) npm run preview -- --port 5173 --host 0.0.0.0` (порт — из `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы). Секрет короче 32 байт = 500 с `DB_CURSOR_SECRET непригоден` — это отказ конфига, а не бага демо | пробы: `node probes/db-demo-http.check.mjs` (30 шагов) и `node probes/db-demo-browser.check.mjs` (12 проверок, нужен Chromium); `data/postgres` переживает пересоздание песочницы, но перенесённый каталог PGlite иногда не открывает («PGlite failed to initialize properly») → каталог удалить, корпус вернётся миграцией и сидом; замок `.kit-db.lock` мёртвого владельца снимается сам (живой — отказ) |
 | **Juit pgproxy (HTTP + WS)** | **работает**: `127.0.0.1:5434`, секрет в env, health-check отвечает и ходит в PG17 | в `/home/user/pgproxy-lab`: `npm i @juit/pgproxy-server @juit/pgproxy-cli @juit/pgproxy-client @juit/pgproxy-client-whatwg ws pg` → `PGPROXYSECRET=<≥32 символа> PGPROXYADDRESS=127.0.0.1 PGPROXYPORT=5434 PGPROXYHEALTHCHECK=/healthz PGHOST=/tmp PGPORT=5433 PGDATABASE=kitdb PGUSER=postgres ./node_modules/.bin/pgproxy-server --debug` |
 | Зависимости пакета | `npm i` в `/home/user/db-port` (24 пакета, 2 с) | **`node_modules`, `dist`, `/tmp/pgdata` не входят в снапшот песочницы** — при пересоздании песочницы всё это теряется, восстановление: `npm i && npm run build` |
 | Node | v20.20.2 — **глобального `WebSocket` нет** (нужен `ws` для WS-клиента), `fetch` есть | — |
@@ -358,13 +359,18 @@ select/count, estimate, icontains, изоляция между вызовами)
       (`respond.js`), поэтому на form-encoded POST отказ всегда отдаёт SvelteKit
       (текст «Cross-site POST form submissions are forbidden»), а слой 02 приложения
       отвечает там, где фреймворк слеп (чужие хосты, JSON-пути, REST из T4).
-      Проверка — `probes/db-demo-http.check.mjs`: 23 шага, `INTEGRATION_HTTP_OK (23)`.
+      Проверка — `probes/db-demo-http.check.mjs`: 30 шагов, `INTEGRATION_HTTP_OK (30)`.
+      В шагах про курсор проверяется свойство, а не разметка: цепочка `cur=1` +
+      `after`-ссылок покрывает весь список без повторов и пропусков и идёт в том же
+      порядке, что `?page=N` (иначе keyset выглядел бы «работающим» и с потерянными
+      строками); `size=3` = ровно 3 строки; битый токен = 400 с текстом, а не чужая
+      страница; `?page.cur=on` (чекбокс нативного GET) даёт те же строки, что `=1`.
       Ключи адреса — общие (`?page`, `?page.size`, `?page.flt`, `?page.ord`, `?page.mode`);
       `?page.flt`/`?page.ord` уходят в слой, отказ фильтра виден как `ErrorRow`; отдельный
       шаг следит, что `POST /db-demo/submit` отвечает JSON, а не HTML (отправка без
       перезагрузки), а шаг `?page.mode=stream` — что режим навигации работает и без JS.
       SSR-проверка не видит класс ошибок «в браузере белый экран», поэтому рядом лежит
-      `probes/db-demo-browser.check.mjs` — 11 проверок в chromium (`DB_DEMO_BROWSER_OK (11)`):
+      `probes/db-demo-browser.check.mjs` — 12 проверок в chromium (`DB_DEMO_BROWSER_OK (12)`):
       гидрация, клик по странице, создание без перезагрузки (метка на `window` жива +
       `total` вырос + `GET /api/db-posts`), переключение режима панелью, чистая консоль.
 - [x] **Ошибки показаны как ошибки формы, а не как «не-JSON ответ»:** транспорт вынесен в
@@ -801,29 +807,61 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       только по завершении), а ответ предзагрузки, приехавший после смены фильтра,
       попадал в буфер нового набора — теперь полёт на страницу один, а поколение
       буфера отбрасывает устаревший ответ. Тесты: 4 новых в `paginate.test.ts`
-      (70 в файле, 607 вvitest), `npm run check` — 0 ошибок.
-- [ ] **Пробы переписаны под обе формы адреса**: HTTP (`probes/db-demo-http.check.mjs`) —
+      (52 в файле, 618 в vitest), `npm run check` — 0 ошибок (47 warning'ов).
+- [x] **Пробы переписаны под обе формы адреса** (сделано 10.10.2026, прогоны ниже): HTTP (`probes/db-demo-http.check.mjs`) —
       `?page.cur=1&page.after=…` отдаёт следующую страницу, битый/чужой токен → отказ
       текстом, `page`+`after` → отказ; браузерная (`…-browser.check.mjs`) — тумблер
       курсора на обеих страницах, номера гаснут, «дальше» = один запрос, без JS ссылка
       работает; `test:db:probes`/`test:guard`/`npm run test`/`npm run check` — зелёные.
+      Прогоны: `INTEGRATION_HTTP_OK (30)`, `DB_DEMO_BROWSER_OK (12)`,
+      `PAG_SKEL`-наблюдение (БД в обоих режимах, HTTP 200, `load-next` 1 в курсоре),
+      vitest 35 файлов / 618 тестов, `svelte-check` 0 ошибок.
+      Что пробы поймали (то есть проверка была нужной, а не ритуальной):
+      в SSR-разметке `/db-demo` ссылка «дальше» шла ПЕРВОЙ до токена, и поиск
+      «`data-testid` … потом `page.after`» ловил не ссылку, а шум; в браузерной пробе
+      шаг про токен стартовал из конца списка (там `EndRow` законно съел ссылку);
+      `getAttribute('href')` возвращает значение с якорем `#paginator-db-demo`, поэтому
+      форма токена в regex — `[^&#]+`, а не `[^&"]+`.
 
 ### T7.3 Долг, который эти стадии оставляют видимыми
 
 - [ ] Секрет курсора живёт в переменных процесса, а не в `.env`: `envReader` читает
       `process.env` и `import.meta.env`, а серверные ключи в `.env` не доезжают (проверено
       на `DATABASE_DIR`). Значит превью надо поднимать так:
-      `DATABASE_DIR=data/postgres DB_CURSOR_SECRET=demo-dev-only npm run preview`, и это
-      обязана повторять строка запуска в §0. TTL 1800 с — ссылка «дальше», оставленная на
+      `DATABASE_DIR=data/postgres DB_CURSOR_SECRET=<не короче 32 байт> npm run preview`, и это
+      обязана повторять строка запуска в §0. Короткое значение — не «курсор помягче»:
+      `createCursorCodec` отказывает (`Invalid cursor key/TTL configuration`), и демо
+      падало в 500 на каждый запрос. Отказ назван (в логе — `DB_CURSOR_SECRET непригоден:
+      …`), а каталог после отказа больше не остаётся заблокированным (см. ниже про замок).
+      В песочнице секрет удобно брать из генератора: `DB_CURSOR_SECRET=$(openssl rand -hex 24)`
+      — в отличие от литерала он не попадает ни в редакторский буфер, ни в фильтры
+      маскирования, которые съедают длинные значения в командной строке (проверено:
+      `…32b` доезжает до процесса обрезанным). TTL 1800 с — ссылка «дальше», оставленная на
       полчаса, отказывает `cursor`; это правильное поведение, но оно должно быть сказано в
       панели, а не открыто пользователем на глаз.
-- [ ] Источник обязан работать с одним и тем же transport-мостом на обеих страницах:
+- [x] Источник обязан работать с одним и тем же transport-мостом на обеих страницах:
       серверный транспорт ставится `$lib/server/db-list`, и если `/paginator` не подставит
       его (а хук — не навесит `dbCtx` на этот путь), «тот же источник» окажется правдой
       только для `/db-demo`: там серверный рендер, там — догрузка через HTTP.
-- [ ] `/db-demo` и `/paginator` различаются только полем `showSelectors`: если появится
-      второе отличие, нужен либо проп, либо честное разделение — молча размножать
-      разметку нельзя (это и была исходная ошибка дублирования).
+      Сделано: `import '$lib/server/db-list'` стоит в `src/hooks.server.ts` — side-effect
+      на весь процесс, поэтому транспорт есть у обоих демо и у API независимо от того,
+      какой роут обрабатывает запрос. В лоадере `/paginator` его держать нельзя:
+      `+page.ts` — universal, его граф доходит и до браузера, а `$lib/server/*` —
+      серверные модули; попытка кончилась удвоением инстанса синглтона `getRuntime`
+      (две копии модуля в серверном бандле → вторая считала каталог занятым и демо
+      отвечало 500 на каждый запрос). Проверка — шаг HTTP-пробы «/paginator: пункт «БД»
+      рисует те же строки, что /db-demo»: id совпадают по порядку, и отказа нет.
+- [x] `/db-demo` и `/paginator` различаются только полем `showSelectors`: решение
+      изменено 10.10.2026 по указанию заказчика — `/db-demo` остаётся полигоном
+      разработки БД (своих селекторов источника/хранилища у него нет), а `/paginator`
+      получает пункт «БД». Дублирование снимается не общим компонентом-страницей, а
+      общими кусками, у которых ОДИН смысл: источник (`fetchDbPosts` + `withDbCursor`),
+      строка записи (`DbPostRow.svelte`), разбор адреса (`DB_LIST_EXTRA_SEARCH`,
+      `cursorExtraField`, `cursorPointerField`) и режим (`useCursorMode`). Различия —
+      только в том, что страницы действительно разные: у `/db-demo` шире строка
+      (`full` — полный id для формы удаления) и свой `mode`/`bottomTrigger` на хосте.
+      Если появится третье такое различие, честный ответ — не проп в общую компоненту,
+      а признание, что это два разных потребителя одного источника.
 
 ## T8. Изучение: автоподгрузка новых постов и «фэйковая» карточка (постановка 10.10.2026)
 
