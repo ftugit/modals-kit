@@ -2,25 +2,51 @@
  * Список демо-записей через пагинатор приложения (`$lib/paginate`), а не через
  * собственную разметку «slice + ссылки».
  *
+ * ЭТОТ МОДУЛЬ — ОБЩИЙ для двух демо-страниц: `/db-demo` (витрина работы с БД:
+ * формы, notice, сырая строка) и раздела «пагинатор» (там «БД» — один из пунктов
+ * списка источников). Разных реализаций списка быть не должно, различаются только
+ * панели; расширение (чат-режим, моментальная строка) заводится здесь и сразу
+ * видно обоим.
+ *
  * Ключи адреса — общие для приложения: `?page=2`, `?page.size=10`,
- * `?page.flt=<фильтр слоя>`, `?page.ord=<json>`, `?page.mode=stream`. Своих
- * имён (`?db*`) здесь намеренно нет: `pageParam` по умолчанию = `page`, и
- * переопределять его ради одного потребителя значит заставлять адрес говорить
- * двумя диалектами. Разбор адреса принадлежит пагинатору, поэтому
- * `+page.server.ts` не читает `?limit`/`?filter` сам — второго источника правды
- * о показанной странице быть не должно.
+ * `?page.flt=<фильтр слоя>`, `?page.ord=<json>`, `?page.cur=1`,
+ * `?page.after=<токен слоя>`. Своих имён (`?db*`) здесь намеренно нет: `pageParam`
+ * по умолчанию = `page`, и переопределять его ради одного потребителя значит
+ * заставлять адрес говорить двумя диалектами. Разбор адреса принадлежит
+ * пагинатору, поэтому `+page.server.ts` не читает `?limit`/`?filter` сам — второго
+ * источника правды о показанной странице быть не должно.
  *
  * Две дороги к одним данным, один конвейер:
  *   • браузер — `fetch('/api/db-posts?…')`;
  *   • SSR-снапшот — серверный транспорт (`setDbPostsServerTransport`), который
  *     ставит `$lib/server/db-list` и который вызывает слой напрямую. Без него
  *     серверный рендер дёргал бы собственный HTTP-эндпоинт через `localhost`.
+ *
+ * Страница или поток — режим ИСТОЧНИКА (`?page.cur=1`), а не страницы: источник
+ * понимает оба адреса (`?page` → offset, `?page.after` → keyset), и ни одна из
+ * страниц не выбирает транспорт руками.
  */
-import { createUrlAdapter, definePaginator, defineSource, extraField, hasPaginator, type PageResponse } from '$lib/paginate'
+import {
+  createUrlAdapter,
+  decorateSource,
+  definePaginator,
+  defineSource,
+  extraField,
+  hasPaginator,
+  type Extra,
+  type ExtraSearchSpec,
+  type ExtraValue,
+  type PageResponse,
+  type SourceDecorator,
+} from '$lib/paginate'
 
 export const DB_LIST_NAME = 'db-demo'
 export const DB_LIST_PAGE_SIZE = 5
 export const DB_LIST_PAGE_SIZES = [3, 5, 10, 20] as const
+
+/** Ключ тумблера «курсор вместо номеров страниц» и ключ указателя следующего шага. */
+export const DB_LIST_MODE_KEY = 'cur'
+export const DB_LIST_POINTER_KEY = 'after'
 
 export interface DbPost {
   id: string
@@ -30,10 +56,13 @@ export interface DbPost {
 
 /** Запрос страницы в том виде, в каком его понимает слой (`parseListInput`). */
 export type DbPostsQuery = {
+  /** Номер страницы (offset). Не используется, когда задан `after`. */
   page: number
   pageSize: number
   filter?: string
   order?: string
+  /** Подписанный сервером указатель «продолжить отсюда» — keyset-режим. */
+  after?: string
   signal?: AbortSignal
 }
 
@@ -52,6 +81,9 @@ export function setDbPostsServerTransport(fn: ServerTransport): void {
  * были бы разные правила. Здесь проверяется только ФОРМА (короткий массив пар с
  * asc/desc), допустимость поля и направление разбирает слой.
  */
+/** Значение «порядок по умолчанию»: панель обязана УМЕТЬ снять свой выбор. */
+export const DB_LIST_ORDER_DEFAULT = 'default'
+
 function isOrderSpec(value: unknown): boolean {
   if (typeof value !== 'string' || value.length === 0 || value.length > 256) return false
   let parsed: unknown
@@ -67,33 +99,65 @@ function isOrderSpec(value: unknown): boolean {
   )
 }
 
-/** Способ навигации списка: номера страниц или поток с подгрузкой. */
-export const DB_LIST_MODES = ['pages', 'stream'] as const
-export type DbListMode = (typeof DB_LIST_MODES)[number]
+/**
+ * Форма токена: длина и алфавит. Подлинность токена проверяет слой (HMAC + TTL
+ * + scope порядка/фильтра), поэтому здесь нет и не может быть «разбора» курсора:
+ * клиенту он недоступен намеренно.
+ */
+function isCursorToken(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9_\-/.=+]+$/.test(value)
+}
 
 /** Ключи `?page.<key>`: форма проверяется здесь, допустимость — на сервере (схема слоя). */
-export const DB_LIST_EXTRA_SEARCH = {
+export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // JSON-фильтр слоя: длина ограничена, содержимое разбирает `parseListInput`.
   flt: extraField('text', (v) => typeof v === 'string' && v.length > 0 && v.length <= 2048),
-  ord: extraField('text', isOrderSpec),
-  // UI-ключ: на выдачу не влияет, поэтому НЕ входит в reloadKeys.
-  mode: extraField('text', (v) => v === 'pages' || v === 'stream'),
+  // Порядок: ЛИБО маркер «как в слое», ЛИБО JSON-спека. Маркер нужен затем, чтобы
+  // снятие выбора было реальным значением: пустая строка в панели означает «ключ не
+  // трогаем», и вернуть порядок по умолчанию из `?page.ord=[…]` было бы нельзя.
+  ord: extraField('text', (v) => v === DB_LIST_ORDER_DEFAULT || isOrderSpec(v)),
+  // Режим навигации: влияет на то, КАК читается выдача, поэтому в `reloadKeys`.
+  // Валидатор свой, а не `extraField('boolean')`: чекбокс в нативном GET приезжает
+  // как `on` (см. `builtins.ts` формы), и «только настоящий boolean» отсёк бы
+  // именно no-JS путь. Снятый флаг = ключа в адресе нет = дефолт `false`.
+  [DB_LIST_MODE_KEY]: (raw) => (isCursorValue(raw) ? true : undefined),
+  // Указатель следующего шага: результат выдачи, а не её условие — в `reloadKeys`
+  // его нет (иначе каждый ответ сбрасывал бы список на сам себя).
+  [DB_LIST_POINTER_KEY]: extraField('text', isCursorToken),
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
-export const DEFAULT_DB_LIST_EXTRA = { mode: 'pages' as DbListMode }
+export const DEFAULT_DB_LIST_EXTRA = {
+  [DB_LIST_MODE_KEY]: false,
+  [DB_LIST_POINTER_KEY]: '',
+  ord: DB_LIST_ORDER_DEFAULT,
+}
 
-export type DbListExtra = { flt?: string; ord?: string; mode: DbListMode }
+export type DbListExtra = { flt?: string; ord: string; cur: boolean; after: string }
 
 /** Значения панели настроек — из текущего extra (тот же разбор, что и на адресе). */
 export function dbListExtraOf(extra: Record<string, unknown> | undefined): DbListExtra {
   const out: Record<string, unknown> = { ...DEFAULT_DB_LIST_EXTRA }
   for (const key of Object.keys(DB_LIST_EXTRA_SEARCH)) {
-    const validate = DB_LIST_EXTRA_SEARCH[key as keyof typeof DB_LIST_EXTRA_SEARCH]
-    const v = (validate as (raw: unknown) => unknown)(extra?.[key] ?? null)
+    const validate = DB_LIST_EXTRA_SEARCH[key]!
+    const v = validate(extra?.[key] as ExtraValue)
     if (v !== undefined) out[key] = v
   }
   return out as DbListExtra
+}
+
+/** Собственно признак «тумблер включён» — ОДНО определение для адреса и состояния. */
+function isCursorValue(raw: unknown): boolean {
+  return raw === true || raw === 1 || raw === 'true' || raw === '1' || raw === 'on'
+}
+
+/**
+ * Значение тумблера режима «как есть»: и `true` (панель через JS), и строки,
+ * которые приносит адрес (`on` из чекбокса нативного GET, `1`, `true`). Тот же
+ * набор принимает валидатор ключа — иначе состояние и ссылка разошлись бы.
+ */
+export function isCursorOn(extra: Extra | undefined): boolean {
+  return isCursorValue(extra?.[DB_LIST_MODE_KEY])
 }
 
 export const dbPostsSource = defineSource<DbPost>({
@@ -103,15 +167,26 @@ export const dbPostsSource = defineSource<DbPost>({
     title: (r) => r.title,
     texts: (r) => [r.title, String(r.id)],
   },
-  // Фильтры объявляет САМ источник: ключи `?db.flt`/`?db.ord` доходят до
-  // `data` через `input.filters`; необъявленный ключ пагинатор отсекает.
-  filters: ['flt', 'ord'],
+  // Фильтры объявляет САМ источник: ключи `?page.flt`/`?page.ord`/`?page.after`
+  // доходят до `data` через `input.filters`; необъявленный ключ пагинатор отсекает.
+  // `after` здесь не «фильтр данных», а единственный способ передать источнику
+  // указатель, который он сам же и выдал: слой источника не читает адрес напрямую.
+  filters: ['flt', 'ord', DB_LIST_POINTER_KEY],
   totals: true,
   data: async ({ page, pageSize, signal }, input) => {
     const filter = input.filters?.flt
-    const order = input.filters?.ord
-    if (serverTransport) return serverTransport({ page, pageSize, filter, order, signal })
-    const q = new URLSearchParams({ page: String(page), size: String(pageSize) })
+    const rawOrder = input.filters?.ord
+    const order = rawOrder && rawOrder !== DB_LIST_ORDER_DEFAULT ? rawOrder : undefined
+    const after = input.filters?.[DB_LIST_POINTER_KEY]
+    // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
+    // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
+    if (serverTransport)
+      return serverTransport({ page, pageSize, filter, order, after: after || undefined, signal })
+    const q = new URLSearchParams({ size: String(pageSize) })
+    // Слой отказывает, когда `page` и `after` смешаны, поэтому транспорт выбирается
+    // здесь и только здесь: токен есть — номера в запросе нет.
+    if (after) q.set(DB_LIST_POINTER_KEY, after)
+    else q.set('page', String(page))
     if (filter) q.set('flt', filter)
     if (order) q.set('ord', order)
     const res = await fetch(`/api/db-posts?${q}`, { signal })
@@ -123,22 +198,42 @@ export const dbPostsSource = defineSource<DbPost>({
   },
 })
 
+/**
+ * Курсор как возможность источника: при `?page.cur=1` полных totals нет (счётчик
+ * страниц был бы вторым запросом на каждый шаг), поэтому номерная навигация и
+ * опция «известное число страниц» выключаются САМИМ слоем возможностей, а не
+ * решением разметки. Данные при этом те же самые: меняется только то, чем список
+ * пользуется.
+ */
+export function withDbCursor(): SourceDecorator<DbPost> {
+  return decorateSource<DbPost>({
+    capabilitiesFor: (base, extra) => {
+      const caps = base.capabilitiesFor(extra)
+      return isCursorOn(extra) ? { ...caps, totals: false } : caps
+    },
+    fetchPage: (base, look, extra) => base.fetchPage(look, extra),
+  })
+}
+
+/** Курсорный источник — он же для `/db-demo`, он же для пункта «БД» в демо пагинатора. */
+export const dbPostsCursorSource = dbPostsSource.with(withDbCursor())
+
 /** Регистрация идемпотентна: при HMR модуль выполняется повторно. */
 export function ensureDbListPaginator(): string {
   if (!hasPaginator(DB_LIST_NAME)) {
     definePaginator<DbPost>({
       name: DB_LIST_NAME,
       pageSize: DB_LIST_PAGE_SIZE,
-      // Смена фильтра/порядка — новая выдача: сброс на первую страницу. `mode`
-      // сюда не входит: это раскладка, а не данные.
-      reloadKeys: ['flt', 'ord'],
+      // Смена фильтра, порядка или СПОСОБА навигации — новая выдача: сброс на
+      // первую страницу. `after` сюда не входит: это указатель, а не условие.
+      reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
       adapter: createUrlAdapter<DbPost>({
         name: DB_LIST_NAME,
-        source: dbPostsSource,
+        source: dbPostsCursorSource,
         pageSize: DB_LIST_PAGE_SIZE,
         pageSizes: DB_LIST_PAGE_SIZES,
-        // append разрешён всегда: режим «поток» включает его хост пропсом `mode`,
-        // а в режиме «страницы» пагинатор сам делает REPLACE.
+        // append разрешён всегда: в курсорном режиме список накапливается, а в
+        // постраничном пагинатор сам делает REPLACE.
         append: true,
         extraSearch: DB_LIST_EXTRA_SEARCH,
         extraDefaults: DEFAULT_DB_LIST_EXTRA,

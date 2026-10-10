@@ -1,5 +1,8 @@
 /**
  * GET /api/db-posts?page=2&size=5&flt=<json>&ord=<порядок> — страница списка демо.
+ * GET /api/db-posts?after=<токен>&size=5&… — ТО ЖЕ САМОЕ продолжение по указателю:
+ * `after` и `page` — два адреса одного конвейера (`queryPage`), и выбор между ними
+ * делает сервер по наличию токена, а не по догадке клиента.
  *
  * Тонкий слой HTTP: ключи пагинатора переводятся в запрос слоя, ответ отдаётся
  * в формате `PageResponse` (пагинатор по нему рисует номера страниц), а отказ
@@ -25,6 +28,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
       pageSize: num(url.searchParams.get('size'), DB_LIST_PAGE_SIZE, 100),
       filter: url.searchParams.get('flt') ?? undefined,
       order: url.searchParams.get('ord') ?? undefined,
+      // Токен важнее номера — ровно как в источнике: смешанный адрес обязан
+      // означать одно и то же с обеих сторон (SSR-снапшот и догрузка).
+      after: url.searchParams.get('after') ?? undefined,
     },
     locals.dbCtx ?? Object.freeze({ principal: DEMO_PRINCIPAL }),
   )

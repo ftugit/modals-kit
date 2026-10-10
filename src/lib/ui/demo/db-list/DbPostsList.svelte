@@ -1,20 +1,26 @@
 <script lang="ts">
   /**
-   * Список демо — обычный потребитель `$lib/paginate`: строки рисует
-   * `PageList`, навигацию и настройки — компоненты `$lib/ui/paginator`.
-   * Своего `slice`, своих ссылок «дальше» и своего чтения адреса здесь нет:
-   * адрес принадлежит пагинатору (`?page`, `?page.size`, `?page.flt`,
-   * `?page.ord`, `?page.mode`).
+   * Список демо — обычный потребитель `$lib/paginate`: строки рисует `PageList`,
+   * навигацию и настройки — компоненты `$lib/ui/paginator`. Своего `slice`, своих
+   * ссылок «дальше» и своего чтения адреса здесь нет: адрес принадлежит
+   * пагинатору (`?page`, `?page.size`, `?page.ord`, `?page.cur`, `?page.after`).
    *
-   * Способ навигации переключает панель настроек: `pages` — обычная навигация
-   * со списком страниц (`PageNav`, REPLACE), `stream` — поток с подгрузкой
-   * (`mode="accumulate"` у хоста + `LoadMoreLink`). Различается только
-   * взаимодействие: источник, размер страницы и фильтр на оба режима одни.
+   * Способ навигации — одна опция панели, `Курсор вместо номеров страниц`
+   * (`?page.cur=1`). Выключен: `PageNav` со списком номеров, REPLACE, `?page=N`.
+   * Включён: список накапливается, указатель следующего шага — подписанный
+   * токен слоя в адресе (`?page.after=…`), поэтому «дальше» остаётся обычной
+   * ССЫЛКОЙ и работает без JavaScript; номеров нет, потому что keyset-шаг не
+   * знает, сколько страниц впереди (источник в этом режиме честно объявляет
+   * `totals: false`, и панель с навигацией гасят их сами).
+   *
+   * Различается только взаимодействие: источник, размер страницы, порядок и
+   * фильтр на оба режима одни — тот же `queryPage` на сервере.
    */
   import { PaginatorHost, usePaginatorState } from '$lib/paginate/svelte'
   import type { PaginatorState } from '$lib/paginate'
   import {
     EmptyState,
+    EndRow,
     ErrorRow,
     LoadMoreLink,
     LoadingIndicator,
@@ -27,13 +33,12 @@
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.
   import {
-    DB_LIST_MODES,
     DB_LIST_NAME,
     DB_LIST_PAGE_SIZES,
     dbListExtraOf,
     ensureDbListPaginator,
+    isCursorOn,
     type DbListExtra,
-    type DbListMode,
     type DbPost,
   } from './definition'
   import ListMeta from './ListMeta.svelte'
@@ -54,47 +59,55 @@
   ensureDbListPaginator()
   const name = DB_LIST_NAME
 
-  const state = usePaginatorState<DbPost>(name)
-  const modeOf = (extra: Record<string, unknown> | undefined): DbListMode | undefined =>
-    extra?.mode === 'stream' || extra?.mode === 'pages' ? (extra.mode as DbListMode) : undefined
+  const state = usePaginatorState<DbPost>()
   /**
    * Режим на первой отрисовке берётся из ТОГО ЖЕ источника, что и строки: на
-   * сервере стор вне области видимости пуст (снапшот живёт в хосте), поэтому
-   * значение доится из снимка лоадера. Иначе `?page.mode=stream` дал бы
-   * расхождение SSR/клиента — ровно то, о чём предупреждает
-   * `snapshotSafeError`.
+   * сервере стор вне области видимости хоста пуст (снапшот живёт в хосте), поэтому
+   * значение доится из снимка лоадера. Иначе `?page.cur=true` дал бы расхождение
+   * SSR/клиента — ровно то, о чём предупреждает `snapshotSafeError`.
    */
-  const mode: DbListMode = $derived(modeOf(state().extra) ?? modeOf(snapshot?.extra) ?? 'pages')
-  const stream = $derived(mode === 'stream')
+  const cursor = $derived(isCursorOn(state().extra) || isCursorOn(snapshot?.extra))
 
   /**
    * Панель — данные (`SettingsField[]`), а не разметка: компилятор панели
    * строит из них форму `lib/form` и гасит то, что не может работать без JS.
+   * Порядок и размер страницы — скалярные ключи адреса, поэтому no-JS они
+   * работают как обычные контролы GET-формы.
    */
   const FIELDS: readonly SettingsField<DbListExtra>[] = [
     {
-      key: 'mode',
-      label: 'Способ навигации',
+      key: 'ord',
+      label: 'Сортировка',
       type: 'select',
-      options: DB_LIST_MODES.map((m) => [m, m === 'pages' ? 'Страницы (?page=N, список номеров)' : 'Поток (подгрузка, accumulate)']),
+      // Значение — ровно то, что кладётся в `?page.ord`: JSON-спека порядка слоя.
+      // «Как в слое» отдельным значением, а не пустой строкой: снятие выбора должно
+      // быть выразимо (пустое поле панели означает «ключ не трогать»).
+      options: [
+        ['default', 'Как в слое (created_at ↓, затем id ↑)'],
+        ['[["created_at","asc"]]', 'Сначала старые (created_at ↑)'],
+        ['[["title","asc"]]', 'По названию A→Я'],
+        ['[["title","desc"]]', 'По названию Я→A'],
+      ],
     },
+    { key: 'cur', label: 'Курсор вместо номеров страниц', type: 'toggle' },
   ]
 </script>
 
 <!--
-  Триггеры края — то, чем «поток» отличается от «страниц» практически: в потоке
-  внизу живёт ручной «показать ещё» (bottomTrigger="manual"), в режиме страниц оба
-  триггера выключены, чтобы рядом с PageNav не выросла вторая навигация.
-  Без явного `manual`/`always` ссылка не рисуется вовсе (LoadMoreSlot.svelte:
-  `if (!always && trig !== 'manual') return false`) — значит, «ссылки нет» здесь
-  не отказ слоя, а дефолт хоста, и его нужно задать самому.
+  Триггеры края — то, чем «курсор» отличается от «страниц» практически: в
+  курсорном режиме внизу живёт ручной «показать ещё» (bottomTrigger="manual"), а
+  сверху ничего: обратного указателя у keyset-шага нет, и ссылка «назад» вела бы не
+  туда. В постраничном режиме оба триггера выключены, чтобы рядом с `PageNav` не
+  выросла вторая навигация. Без явного `manual`/`always` ссылка не рисуется вовсе
+  (`LoadMoreSlot.svelte: if (!always && trig !== 'manual') return false`) — значит,
+  «ссылки нет» здесь не отказ слоя, а дефолт хоста, и его нужно задать самому.
 -->
 <PaginatorHost
   {name}
   {snapshot}
-  mode={stream ? 'accumulate' : 'single'}
+  mode={cursor ? 'accumulate' : 'single'}
   topTrigger="off"
-  bottomTrigger={stream ? 'manual' : 'off'}
+  bottomTrigger={cursor ? 'manual' : 'off'}
   class="space-y-3"
   ariaLabel="Список записей демо"
 >
@@ -105,12 +118,18 @@
       pageSizes={DB_LIST_PAGE_SIZES}
       fields={FIELDS}
       values={dbListExtraOf}
-      noscriptHint="Без JavaScript работают страница, размер и режим навигации (все три — ключи адреса); фильтр и порядок — тоже адрес (?page.flt, ?page.ord)."
+      noscriptHint="Без JavaScript работают размер страницы, сортировка и режим курсора — все три ключи адреса (?page.size, ?page.ord, ?page.cur). Указатель следующего шага (?page.after) сервер выдаёт подписанным, поэтому ссылка «дальше» ведёт туда же, куда клик с JavaScript."
     >
       {#snippet footer(ctx)}
         Страница <b data-testid="panel-page">{ctx.page}</b>, размер <b data-testid="panel-size">{ctx.pageSize}</b>.
-        Фильтр и порядок разбираются на сервере (`parseListInput`), поэтому отказ по ним —
+        Фильтр, порядок и подпись токена разбирает сервер (`parseListInput`), поэтому отказ по ним —
         состояние ошибки списка, а не пустой результат.
+        {#if !cursor}
+          Указатель следующего шага в адресе появляется, когда включён курсорный режим.
+        {:else}
+          Токен живёт 30 минут (`DB_CURSOR_TTL_SECONDS`): старая ссылка отдаст отказ,
+          а не чужую страницу.
+        {/if}
       {/snippet}
     </PaginatorSettings>
   {/snippet}
@@ -127,7 +146,7 @@
     </div>
     <PageList {name}>
       {#snippet renderItem(item: DbPost)}
-        <div class="flex items-baseline gap-3 px-4 py-2" data-testid="row">
+        <div class="flex items-baseline gap-3 px-4 py-2" data-testid="row" data-id={item.id}>
           <span class="min-w-0 flex-1 truncate">{item.title}</span>
           <span class="text-xs text-muted-foreground">{item.created_at}</span>
           <code class="text-xs text-muted-foreground" data-testid="row-id">{item.id}</code>
@@ -139,8 +158,18 @@
     </EmptyState>
   </div>
 
-  {#if stream}
-    <LoadMoreLink dir={1} {name} />
+  {#if cursor}
+    <LoadMoreLink dir={1} {name}>
+      {#snippet label(p)}
+        <!--
+          Подпись говорит про токен: это не «страница N из M», продолжения без
+          указателя не существует, и врать про номера здесь — значит портить
+          проверку «что именно загрузки, а не перезагрузки».
+        -->
+        <span data-testid="cursor-next">↓ дальше по указателю{#if p.href} (ссылка без JS){/if}</span>
+      {/snippet}
+    </LoadMoreLink>
+    <EndRow {name} />
   {:else}
     <PageNav {name} counter class="flex items-center gap-2 text-sm" />
   {/if}
