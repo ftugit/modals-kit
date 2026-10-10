@@ -466,8 +466,18 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
   }
 }
 
-/** Переход только относительный и только из проверенных значений. */
+const REDIRECT_BASE = 'http://redirect.invalid'
+
+/**
+ * Переход только на свой сайт. Строковой проверки «начинается с `/`, но не с
+ * `//`» мало: браузер читает `\` как `/` и вырезает табы и переводы строк, так
+ * что `/\evil.com` и `/<TAB>/evil.com` уводят на чужой хост. Поэтому адрес
+ * разбирается тем же алгоритмом URL, что у браузера, и отдаётся нормализованным.
+ */
 function safeRedirect(r: string | undefined): string | undefined {
-  if (!r) return undefined
-  return r.startsWith('/') && !r.startsWith('//') ? r : undefined
+  if (!r || !r.startsWith('/')) return undefined
+  let url: URL
+  try { url = new URL(r, REDIRECT_BASE) } catch { return undefined }
+  if (url.origin !== REDIRECT_BASE) return undefined
+  return url.pathname + url.search + url.hash
 }
