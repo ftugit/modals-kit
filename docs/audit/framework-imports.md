@@ -49,6 +49,14 @@ grep -rnE "from ['\"](\$app/[a-z]+|@sveltejs/kit[^'\"]*|\$env/[a-z/]+)['\"]" src
 
 Строки 10–11 добавлены в ходе 6 при чтении `lib/server`: модулей `$env/*` в `src/` нет вовсе (`grep -rn '\$env/' src` — пусто).
 
+**`lib/paginate` (ход 8, 26 файлов прочитаны целиком).** Прямых импортов `$app/*`, `@sveltejs/kit`,
+`$env/*` нет. Признак dev — `DEV` из `esm-env` (`adapter-url.ts:12`, `source.ts:21`). Единственная
+связь с SvelteKit — `svelte/PaginatorHost.svelte` импортирует адаптер `$lib/router/sveltekit`
+(`currentSearch`, `svelteKitRouter`) — это норма (адаптер, канон D2), но из-за неё Svelte-биндинги
+пагинатора работают только под SvelteKit. Остаётся K8: признак окружения через `typeof window`
+(`source.ts` `isServerSide`, `adapter-url.ts`, `svelte/context.svelte.ts`, `svelte/PaginatorScope.svelte`)
+вместо `BROWSER` из `esm-env`.
+
 ### Ложные совпадения (импорта нет)
 
 | Место | Почему ложное |
