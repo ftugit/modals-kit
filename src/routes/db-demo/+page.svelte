@@ -20,6 +20,7 @@
   import { usePaginatorActions } from '$lib/paginate/svelte'
   import { DB_LIST_NAME, ensureDbListPaginator } from '$lib/ui/demo/db-list/definition'
   import DbPostsList from '$lib/ui/demo/db-list/DbPostsList.svelte'
+  import { createOptimistic } from '$lib/ui/demo/db-list/optimistic.svelte'
   import CreateForm from '$lib/ui/demo/db-form/CreateForm.svelte'
   import RemoveForm from '$lib/ui/demo/db-form/RemoveForm.svelte'
 
@@ -48,6 +49,11 @@
   const list = usePaginatorActions(DB_LIST_NAME)
   const refreshList = () => list.reset()
 
+  // Хранилище оптимистичных строк создаёт СТРАНИЦА: его видят и форма (пишет), и
+  // список (рисует). Внутри списка или формы оно означало бы, что второй половине
+  // некуда девать карточку, а на уровне модуля — общую очередь на всех посетителей.
+  const optimistic = createOptimistic()
+
 </script>
 
 <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
@@ -62,8 +68,8 @@
 {/if}
 
 <div class="grid gap-6 md:grid-cols-2">
-  <CreateForm seed={seed('create')} onApplied={refreshList} />
+  <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
   <RemoveForm seed={seed('remove')} onApplied={refreshList} />
 </div>
 
-<DbPostsList snapshot={data.snapshot} showRaw />
+<DbPostsList snapshot={data.snapshot} showRaw {optimistic} />

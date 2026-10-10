@@ -65,6 +65,16 @@ export interface DbPost {
   created_at: string
 }
 
+/**
+ * Строка для ПОКАЗА: оптимистичной карточке не хватает `created_at` (его назначает
+ * сервер), а компонента строки одна — иначе «моментальная» строка выглядела бы
+ * иначе, чем пришедшая с сервера, и демо проверяло бы не то.
+ */
+export type DbPostView = { id: string; title: string; created_at?: string }
+
+/** Отказ записи: убрать карточку или оставить с повтором (см. `LIVE-APPEND.md`, Р5). */
+export type FailureMode = 'remove' | 'retry'
+
 /** Запрос страницы в том виде, в каком его понимает слой (`parseListInput`). */
 export type DbPostsQuery = {
   /** Номер страницы (offset). Не используется, когда задан `after`. */
@@ -146,6 +156,16 @@ export function isCursorOn(extra: Extra | undefined): boolean {
  */
 export const cursorExtraField: ExtraSearchValidator = (raw) => (isCursorValue(raw) ? true : undefined)
 
+/**
+ * Тумблер живого списка — тем же словарём значений, что и режим курсора: два
+ * чекбокса в одной панели, разбираемые по-разному, были бы подарком для
+ * «у меня в адресе работает, а у вас нет».
+ */
+export const liveExtraField: ExtraSearchValidator = (raw) => (isCursorValue(raw) ? true : undefined)
+
+/** Ключ `?page.live` — опрос текущего окна (см. `docs/LIVE-APPEND.md`, Р6). */
+export const DB_LIST_LIVE_KEY = 'live'
+
 /** Валидатор указателя следующего шага — тем же словарём пользуется и демо пагинатора. */
 export const cursorPointerField: ExtraSearchValidator = extraField('text', isCursorToken)
 
@@ -165,6 +185,12 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // Указатель следующего шага: результат выдачи, а не её условие — в `reloadKeys`
   // его нет (иначе каждый ответ сбрасывал бы список на сам себя).
   [DB_LIST_POINTER_KEY]: cursorPointerField,
+  // Что делать с оптимистичной карточкой при отказе. На выдачу не влияет — в
+  // `reloadKeys` его нет по той же причине, что и `size`.
+  err: extraField('text', (v) => v === 'remove' || v === 'retry'),
+  // Живой список: влияет только на то, переспрашивает ли страница источник, —
+  // поэтому НЕ в `reloadKeys` (само включение не должно ронять окно).
+  [DB_LIST_LIVE_KEY]: liveExtraField,
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
@@ -172,9 +198,20 @@ export const DEFAULT_DB_LIST_EXTRA = {
   [DB_LIST_MODE_KEY]: false,
   [DB_LIST_POINTER_KEY]: '',
   ord: DB_LIST_ORDER_DEFAULT,
+  // «повторить» по умолчанию: потерять введённое при сетевом сбое обиднее, чем
+  // увидеть карточку с кнопкой.
+  err: 'retry' as FailureMode,
+  [DB_LIST_LIVE_KEY]: false,
 }
 
-export type DbListExtra = { flt?: string; ord: string; cur: boolean; after: string }
+export type DbListExtra = {
+  flt?: string
+  ord: string
+  cur: boolean
+  after: string
+  err: FailureMode
+  live: boolean
+}
 
 /** Значения панели настроек — из текущего extra (тот же разбор, что и на адресе). */
 export function dbListExtraOf(extra: Record<string, unknown> | undefined): DbListExtra {

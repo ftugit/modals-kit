@@ -15,8 +15,15 @@
    *
    * Различается только взаимодействие: источник, размер страницы, порядок и
    * фильтр на оба режима одни — тот же `queryPage` на сервере.
+   *
+   * Оптимистичная карточка (`optimistic`) рисуется ОТТУДА ЖЕ, откуда строки, и тем
+   * же компонентом строки, но в состояние источника не попадает: у неё нет
+   * `created_at`, она не участвует в `totalItems` и в указателе следующего шага.
+   * Место — по порядку сортировки (`pendingPlacement`), исчезает — когда настоящая
+   * строка приехала в окно (`isAbsorbed`).
    */
-  import { PaginatorHost } from '$lib/paginate/svelte'
+  import { PaginatorHost, usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
+  import { onDestroy } from 'svelte'
   import type { PaginatorState } from '$lib/paginate'
   import {
     EmptyState,
@@ -33,13 +40,19 @@
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.
   import {
+    DB_LIST_LIVE_KEY,
     DB_LIST_NAME,
     DB_LIST_PAGE_SIZES,
+    DB_LIST_POINTER_KEY,
     dbListExtraOf,
     ensureDbListPaginator,
     type DbListExtra,
     type DbPost,
+    type FailureMode,
   } from './definition'
+  import { createLive } from './live.svelte'
+  import { isAbsorbed, pendingPlacement, type Optimistic } from './optimistic.svelte'
+  import DbPostPendingRow from './DbPostPendingRow.svelte'
   import DbPostRow from './DbPostRow.svelte'
   import ListMeta from './ListMeta.svelte'
   import { useCursorMode } from './cursor-mode.svelte'
@@ -49,9 +62,11 @@
     snapshot?: PaginatorState<DbPost> | null
     /** Первая строка как пришла из слоя — технический блок демо. */
     showRaw?: boolean
+    /** Оптимистичные строки формы добавления; без неё список чисто серверный. */
+    optimistic?: Optimistic | null
   }
 
-  let { snapshot = null, showRaw = true }: Props = $props()
+  let { snapshot = null, showRaw = true, optimistic = null }: Props = $props()
 
   // Регистрация на стороне компонента — так же, как в демо пагинатора
   // (`features/paginator/PaginatorDemo.svelte`): тело родителя выполняется до
@@ -72,6 +87,67 @@
    */
   const cursorOn = useCursorMode(name, () => snapshot)
   const cursor = $derived(cursorOn())
+
+  /**
+   * Порядок и режим отказа — из состояния пагинатора, а не из пропов: панель пишет
+   * их в extra, и только там они совпадают с тем, что реально ушло на сервер.
+   * Снимок лоадера участвует как страховка на первом рендере (до гидрации).
+   */
+  const listState = usePaginatorState<DbPost>(name)
+  const extra = $derived(
+    dbListExtraOf({ ...snapshot?.extra, ...listState().extra } as Record<string, unknown>),
+  )
+  const place = $derived(pendingPlacement(extra.ord))
+  /** Карточки, которые ещё не приехали из источника. `settled` тоже считается. */
+  const cards = $derived.by(() => {
+    if (!optimistic) return []
+    // `pages` — отображение номера в окно строк; «видимые» = всё, что накоплено
+    // (в accumulate-режиме окно живёт под первым ключом, и flat() это ловит).
+    const visible = Object.values(listState().pages ?? {}).flat() as DbPost[]
+    return optimistic.list().filter((c) => !isAbsorbed(c, visible))
+  })
+  // Опция панели доходит до формы одним числом: в момент отказа store читает
+  // последнее значение — гонка «меняю тумблер и жму отправить» здесь означает
+  // «повезло или не повезло», и прятать это за доступором смысла нет.
+  $effect(() => optimistic?.setFailureMode(extra.err as FailureMode))
+
+  const actions = usePaginatorActions(name)
+
+  /**
+   * Опрос текущего окна — тем же адресом, что и источник: «спросить то же самое»
+   * и «спросить первую страницу» это разные вопросы, и на второй ответ список
+   * уехал бы с того места, где читатель стоит.
+   */
+  const liveUrl = $derived.by(() => {
+    const state = listState()
+    const params = new URLSearchParams({ page: String(state.page), size: String(state.pageSize) })
+    if (extra.flt) params.set('flt', extra.flt)
+    if (extra.ord !== 'default') params.set('ord', extra.ord)
+    if (cursor) {
+      params.set('cur', '1')
+      if (extra.after) params.set('after', extra.after)
+    }
+    return `/api/db-posts?${params.toString()}`
+  })
+  /** Пилюля вместо автопрокрутки: читатель ушёл от начала — не его просьба. */
+  let fresh = $state(false)
+  const live = createLive({
+    url: () => (extra.live ? liveUrl : null),
+    onFresh: () => {
+      // Порог 100 px — не украшение: ниже него человек уже смотрит на место, куда
+      // придут новые строки, и двигать ему прокрутку бессмысленно.
+      if (typeof window !== 'undefined' && window.scrollY <= 100) actions.reset()
+      else fresh = true
+    },
+  })
+  $effect(() => {
+    if (extra.live) live.start()
+    else {
+      live.stop()
+      fresh = false
+    }
+  })
+  onDestroy(() => live.stop())
 
   /**
    * Панель — данные (`SettingsField[]`), а не разметка: компилятор панели
@@ -95,6 +171,20 @@
       ],
     },
     { key: 'cur', label: 'Курсор вместо номеров страниц', type: 'toggle' },
+    {
+      key: DB_LIST_LIVE_KEY,
+      label: 'Следить за новыми (опрос раз в 2 с)',
+      type: 'toggle',
+    },
+    {
+      key: 'err',
+      label: 'При отказе записи',
+      type: 'select',
+      options: [
+        ['retry', 'Оставить карточку с кнопкой «повторить»'],
+        ['remove', 'Убрать карточку из списка'],
+      ],
+    },
   ]
 </script>
 
@@ -139,6 +229,18 @@
     </PaginatorSettings>
   {/snippet}
 
+  {#if extra.live}
+    <!-- Состояние опроса видно текстом: «тихий» live-режим неотличим от сломанного,
+         а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
+    <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
+      <span>опрос окна: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
+      {#if fresh}
+        <button class="rounded-md border border-border bg-card px-2 py-0.5 underline" data-testid="live-pill"
+          onclick={() => { fresh = false; actions.reset() }}>↑ список изменился — показать</button>
+      {/if}
+    </p>
+  {/if}
+
   <ListMeta {showRaw} />
   <LoadingIndicator {name} text="Загружаю страницу…" />
   <ErrorRow {name} />
@@ -149,6 +251,11 @@
       <span>created_at</span>
       <span>id — скопируйте в поле удаления</span>
     </div>
+    {#if place === 'head'}
+      {#each cards as card (card.tmpId)}
+        <DbPostPendingRow {card} {optimistic} />
+      {/each}
+    {/if}
     <PageList {name}>
       {#snippet renderItem(item: DbPost)}
         <!--
@@ -158,6 +265,11 @@
         <DbPostRow {item} full />
       {/snippet}
     </PageList>
+    {#if place === 'tail'}
+      {#each cards as card (card.tmpId)}
+        <DbPostPendingRow {card} {optimistic} />
+      {/each}
+    {/if}
     <EmptyState {name}>
       <p class="px-4 py-6 text-center text-sm text-muted-foreground">записей нет — добавьте первую формой слева</p>
     </EmptyState>

@@ -7,6 +7,7 @@ import { toFormFailure } from '$lib/db/sveltekit'
 import { createFormHandler, type Handled } from '$lib/form/server'
 import type { FormError } from '$lib/form'
 import { getRuntime, posts } from '$lib/server/db'
+import { invalidateLiveCache } from '$lib/server/live-cache'
 import { SECURITY_LAYERS } from '$lib/server/form-security'
 import { dbCreate, dbRemove } from './description'
 
@@ -62,14 +63,29 @@ export function handleDbCreate(
   request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
 ): Promise<Handled> {
   return withDb((db) =>
-    createFormHandler<{ message: string }>({
+    createFormHandler<{ message: string; created?: { id: string; title: string; created_at: string } }>({
       description: dbCreate,
       order: SECURITY_LAYERS,
       async execute({ values, commit, fail }) {
         try {
           const row = await db.resource(posts).insert(dbCtx, { title: String(values.title ?? '') })
           commit()
-          return { data: { message: `создано: ${String(row.title ?? '')}` } }
+          // Условный GET не должен пережить собственную запись: «304» на следующем
+          // тике спрятал бы строку, которую человек только что добавил.
+          invalidateLiveCache()
+          // `created` — не украшение: это единственное, чего клиент знать не может
+          // (`id` и `created_at` назначает сервер). С ними оптимистичная карточка
+          // заменяется НА МЕСТЕ, без пересборки окна и без скачка.
+          return {
+            data: {
+              message: `создано: ${String(row.title ?? '')}`,
+              created: {
+                id: String(row.id ?? ''),
+                title: String(row.title ?? ''),
+                created_at: String(row.created_at ?? ''),
+              },
+            },
+          }
         } catch (e) {
           // commit() не позван → исход «not-applied», ошибок «не знаю, применилось» нет.
           return fail(toFormErrors(e))
@@ -97,6 +113,7 @@ export function handleDbRemove(
             deleted += 1
           }
           commit()
+          invalidateLiveCache()
           return { data: { message: `удалено ${deleted}`, deleted } }
         } catch (e) {
           return fail(toFormErrors(e))

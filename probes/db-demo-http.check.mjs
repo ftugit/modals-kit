@@ -387,6 +387,67 @@ await step("API: битый токен = 400 с объяснением, а не 
   return `400 code=${body?.code}, «${text.slice(0, 44)}…»`;
 });
 /* ─── тот же источник на второй странице (демо-пагинатор) ─── */
+await step("API: страница помечена ETag, повтор даёт те же байты", async () => {
+  const q = "?page=1&size=3";
+  const r1 = await fetch(API + q);
+  const b1 = await r1.text();
+  const r2 = await fetch(API + q);
+  const b2 = await r2.text();
+  const etag = r1.headers.get("etag");
+  if (!etag) throw new Error("заголовка etag нет — условный GET неотличим от обычного");
+  if (!/^W\/"[0-9a-f]{16,}"$/.test(etag)) throw new Error(`формат отпечатка: ${etag}`);
+  if (b1 !== b2) throw new Error("тот же запрос вернул другие байты — отпечаток врун");
+  if (r2.headers.get("cache-control") !== "no-store") throw new Error("ответ можно закэшировать как свежий: " + r2.headers.get("cache-control"));
+  return `${etag}, cache-control: no-store`;
+});
+await step("API: If-None-Match → 304 без тела и с эхом отпечатка", async () => {
+  const q = "?page=1&size=3";
+  const etag = (await fetch(API + q)).headers.get("etag");
+  const r = await fetch(API + q, { headers: { "if-none-match": etag } });
+  const text = await r.text();
+  if (r.status !== 304) throw new Error(`status ${r.status} вместо 304`);
+  if (text !== "") throw new Error(`тело на 304: ${text.slice(0, 60)}`);
+  if (r.headers.get("etag") !== etag) throw new Error("304 без эха отпечатка — клиент потерял базу сверки");
+  return `304, ${text.length} байт тела`;
+});
+await step("API: слабая и сильная форма равны, чужой отпечаток = 200", async () => {
+  const q = "?page=1&size=4";
+  const etag = (await fetch(API + q)).headers.get("etag");
+  const strong = etag.replace(/^W\//, "");
+  const weak = await fetch(API + q, { headers: { "if-none-match": `W/"${strong.slice(1, -1)}"` } });
+  const star = await fetch(API + q, { headers: { "if-none-match": "*" } });
+  const alien = await fetch(API + q, { headers: { "if-none-match": 'W/"000000000000000000000000"' } });
+  const alienText = await alien.text();
+  if (weak.status !== 304) throw new Error(`слабая форма дала ${weak.status}`);
+  if (star.status !== 304) throw new Error('"*" дал ' + star.status);
+  if (alien.status !== 200 || !alienText.includes("\"items\"")) throw new Error(`чужой отпечаток: ${alien.status}, тело ${alienText.length} байт`);
+  return "304 / 304 / 200 со страницей";
+});
+await step("API: чужой ключ не получает чужой 304", async () => {
+  const a = await fetch(API + "?page=1&size=3");
+  const etagA = a.headers.get("etag");
+  await a.text();
+  const b = await fetch(API + "?page=2&size=3", { headers: { "if-none-match": etagA } });
+  const text = await b.text();
+  if (b.status !== 200) throw new Error(`вторая страница ответила ${b.status} — отпечаток первой распространяется на чужой ключ`);
+  if (!JSON.parse(text).items.length) throw new Error("вторая страница пуста");
+  return `200, отпечаток другой: ${b.headers.get("etag") !== etagA}`;
+});
+await step("API: запись обесценивает 304 — следующий тик обязан её увидеть", async () => {
+  const q = "?page=1&size=3";
+  const etag = (await fetch(API + q)).headers.get("etag");
+  await (await fetch(API + q)).text();
+  const title = "проба-etag-" + Date.now().toString(36);
+  const html = (await (await fetch(base)).text());
+  const r = await fetch(base + "?/create", form({ title }, envelopeOf(html, "db_demo_create")));
+  if (!r.ok && r.status !== 303 && r.status !== 200) throw new Error(`запись не прошла: ${r.status}`);
+  const after = await fetch(API + q, { headers: { "if-none-match": etag } });
+  const text = await after.text();
+  if (after.status === 304) throw new Error("304 после собственной записи: добавленная строка скрылась бы до истечения TTL");
+  if (!text.includes(title)) throw new Error("200 есть, но новой строки в выдаче нет");
+  return `${after.status}, новая строка на месте, отпечаток сменился: ${after.headers.get("etag") !== etag}`;
+});
+
 await step("/paginator: пункт «БД» рисует те же строки, что /db-demo", async () => {
   const html = await (await fetch(APP + "?page.src=db&page.size=5", { headers: { accept: "text/html" } })).text();
   const here = [...html.matchAll(/data-testid="db-([0-9a-f-]{8,})"/g)].map((m) => m[1]);

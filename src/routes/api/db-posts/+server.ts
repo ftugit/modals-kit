@@ -9,8 +9,14 @@
  * слоя приходит текстом и кодом — пустой список для пагинатора значит «данных
  * нет», и это другое состояние. Разбор и проверка имён — `parseListInput`
  * (deny-safe), общий с SSR-снапшотом.
+ *
+ * `ETag` и ответ `304` — не про «сэкономить байты», а про то, чтобы «ничего
+ * нового» стоило дешевле, чем чтение базы: живой список переспрашивает каждую
+ * пару секунд, и каждый такой тик без нового указателя обязан уйти в 304, не
+ * касаясь `SELECT`. Проверка — в пробе (`If-None-Match` → 304 без тела).
  */
 import { json } from '@sveltejs/kit'
+import { fingerprint, remember, revalidate } from '$lib/server/live-cache'
 import type { RequestHandler } from './$types'
 import { fetchDbPostsPage } from '$lib/server/db-list'
 import { DEMO_PRINCIPAL } from '$lib/server/db'
@@ -27,7 +33,13 @@ const num = (raw: string | null, fallback: number, min: number, max: number): nu
   return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.trunc(v))) : fallback
 }
 
-export const GET: RequestHandler = async ({ url, locals }) => {
+export const GET: RequestHandler = async ({ url, request, locals }) => {
+  // Условный GET живого списка проверяется ДО обращения к базе: иначе «ничего
+  // нового» стоило бы ровно столько же, сколько «новое», — то есть выбор между
+  // опросом и push сводился бы к «опрос дороже».
+  const key = url.search
+  const hit = revalidate(key, request.headers.get('if-none-match'))
+  if (hit !== null) return new Response(null, { status: 304, headers: { etag: hit, 'cache-control': 'no-store' } })
   const page = await fetchDbPostsPage(
     {
       page: num(url.searchParams.get('page'), 1, 1, 10_000),
@@ -43,6 +55,15 @@ export const GET: RequestHandler = async ({ url, locals }) => {
     },
     locals.dbCtx ?? Object.freeze({ principal: DEMO_PRINCIPAL }),
   )
+  // Отказ — не состояние списка: его нельзя «закэшировать как текущее», и
+  // валидатору он не отдаётся (иначе 304 спрячет исправленную ошибку).
   if ('error' in page) return json(page, { status: page.status, headers: { 'cache-control': 'no-store' } })
-  return json(page, { headers: { 'cache-control': 'no-store' } })
+  // Хеш считается по тем же байтам, что уходят клиенту, — «совпал отпечаток»
+  // значит «совпел ответ», а не «совпал объект до сериализации».
+  const body = JSON.stringify(page)
+  const etag = await fingerprint(body)
+  remember(key, etag)
+  return new Response(body, {
+    headers: { 'content-type': 'application/json', etag, 'cache-control': 'no-store' },
+  })
 }

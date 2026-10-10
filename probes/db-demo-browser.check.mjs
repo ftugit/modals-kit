@@ -37,8 +37,13 @@ const step = async (name, fn) => {
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()
 page.on('pageerror', (e) => problems.push(`pageerror: ${e.message.split('\n')[0]}`))
+// `net::ERR_FAILED` — собственные обрывы запросов, которыми ПРОБА моделирует
+// отказ сети (см. шаги оптимистичной карточки). Их игнорировать честно: это не
+// ошибка приложения, а заказанный браузерам сбой; всё остальное — ловим.
+const IGNORED_CONSOLE = /net::ERR_FAILED|Failed to load resource.*\/db-demo\/submit/
 page.on('console', (m) => {
-  if (m.type() === 'error') problems.push(`console.error: ${m.text().split('\n')[0]}`)
+  if (m.type() === 'error' && !IGNORED_CONSOLE.test(m.text()))
+    problems.push(`console.error: ${m.text().split('\n')[0]}`)
 })
 
 const rowIds = () => page.$$eval('[data-testid="row-id"]', (els) => els.map((e) => e.textContent.trim()))
@@ -214,6 +219,151 @@ try {
     const empty = await page.$eval('[data-testid="rows"]', (el) => el.textContent.includes('записей нет'))
     return `пусто, EmptyState показан: ${empty}`
   })
+  // ---------- T8: оптимистичная карточка и живой список ----------
+  const cardTitles = () =>
+    page.$$eval('[data-testid="row"], [data-testid="pending-row"]', (els) =>
+      els.map((e) => e.textContent.trim().replace(/\s+/g, ' ')))
+  /**
+   * Заголовок первой строки — СПАНАми, а не «первое слово текста строки»: сидовые
+   * записи называются «Запись 1», и по первому слову проба получала бы не дубль, а
+   * успешную вставку (что она и делала, пока это не всплыло).
+   */
+  const firstTitle = () => page.$eval('[data-testid="row"]', (el) => el.querySelector('span').textContent.trim())
+  const submitTitle = async (title) => {
+    await page.fill('input[name="title"]', title)
+    await page.click('[data-testid="create"]')
+  }
+
+  // Отказ моделируется ОТПАДАЮЩИМ ЗАПРОСОМ, а не «дублем заголовка»: уникальности
+  // по title в `demo_post` нет (индекс `demo_post_page` — про порядок), так что
+  // прошлая редакция этого шага не проверяла отказ, а успешно вставляла строку.
+  // Сбой сети — ровно тот случай, ради которого оптимистичная карточка и нужна.
+  const SUBMIT = '**/db-demo/submit'
+  await step('отказ сети: карточка остаётся с «повторить», поле цело', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    const title = `отказ-${Date.now() % 1_000_000}`
+    await page.route(SUBMIT, (route) => route.abort())
+    try {
+      await submitTitle(title)
+      await page.waitForSelector('[data-testid="pending-error"]', { timeout: 15_000 })
+      const kept = await page.inputValue('input[name="title"]')
+      const cards = await page.$$eval('[data-testid="pending-row"]', (els) => els.length)
+      // Строки в списке быть не может: запрос не дошёл до сервера.
+      const inRows = await page.$$eval('[data-testid="row"]', (els, k) => els.filter((e) => e.textContent.includes(k)).length, title)
+      if (kept !== title) throw new Error(`поле очищено после отказа: ${JSON.stringify(kept)}`)
+      if (cards !== 1) throw new Error(`${cards} карточек вместо одной`)
+      if (inRows !== 0) throw new Error(`${inRows} строк в источнике при отменённом запросе`)
+      return `«${title}»: ${await page.textContent('[data-testid="pending-error"]')}, карточка 1, строк в источнике 0`
+    } finally {
+      await page.unroute(SUBMIT)
+    }
+  })
+  await step('«повторить» шлёт ту же форму; после успеха строка одна, карточка всосалась', async () => {
+    // Заголовок берём из поля: оно переживает отказ (это и проверяется), и он
+    // точен — вытаскивать его из текста карточки значит однажды взять «—».
+    const title = await page.inputValue('input[name="title"]')
+    const [resp] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/db-demo/submit'), { timeout: 15_000 }),
+      page.click('[data-testid="pending-retry"]'),
+    ])
+    // Тело повтора — конверт `lib/form` (multipart), поэтому ищем ИМЯ поля, а не
+    // «title=»: форма отправляет неquery-строку, и «title=» не встречается вовсе.
+    const sent = resp.request().postData() ?? ''
+    if (!sent.includes('title')) throw new Error(`в теле повтора нет поля title: ${sent.slice(0, 80)}`)
+    if (!sent.includes(title)) throw new Error(`повтор ушёл с другим значением: ${sent.slice(0, 80)}`)
+    if (!resp.ok()) throw new Error(`повтор ответил ${resp.status()} — сеть не восстановилась?`)
+    // Примирение: одна НАСТОЯЩАЯ строка и ноль карточек с этим заголовком.
+    await page.waitForFunction(
+      (k) => {
+        const rows = [...document.querySelectorAll('[data-testid="row"]')].filter((e) => e.textContent.includes(k))
+        const cards = [...document.querySelectorAll('[data-testid="pending-row"]')].filter((e) =>
+          e.textContent.includes(k),
+        )
+        return rows.length === 1 && cards.length === 0
+      },
+      title,
+      { timeout: 20_000 },
+    )
+    const tmp = (await rowIds()).filter((id) => id.startsWith('tmp:'))
+    if (tmp.length) throw new Error(`остались временные id: ${tmp.join(', ')}`)
+    return `ответ ${resp.status()}, одна строка вместо карточки, tmp-хвостов нет`
+  })
+  await step('тот же отказ в режиме remove: карточка убрана, поле цело', async () => {
+    await page.goto(`${BASE}?page.err=remove`, { waitUntil: 'networkidle' })
+    const title = `убрать-${Date.now() % 1_000_000}`
+    const before = await rowCount()
+    let dropped = 0
+    const watch = (r) => {
+      if (r.url().includes('/db-demo/submit')) dropped += 1
+    }
+    page.on('requestfailed', watch)
+    await page.route(SUBMIT, (route) => route.abort())
+    try {
+      await submitTitle(title)
+      // Ждём «карточек ноль» после отказа; во время запроса карточка висит, так что
+      // зависнувшая отправка здесь не проходит молча, а вешает ожидание.
+      await page.waitForFunction(
+        () => document.querySelectorAll('[data-testid="pending-row"]').length === 0,
+        undefined,
+        { timeout: 15_000 },
+      )
+      const kept = await page.inputValue('input[name="title"]')
+      const after = await rowCount()
+      if (!dropped) throw new Error('отменённых запросов не было — шагу не во что было упереться')
+      if (kept !== title) throw new Error(`поле очищено: ${JSON.stringify(kept)}`)
+      if (after !== before) throw new Error(`список изменился: ${before} → ${after}`)
+      return `карточка убрана вместе с отказом (${dropped} отменённых запросов), «${title}» осталось в поле`
+    } finally {
+      page.off('requestfailed', watch)
+      await page.unroute(SUBMIT)
+    }
+  })
+  await step('успешная запись: строка одна, карточка всосалась без tmp-дубля', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    const title = `проба-t8-${Date.now() % 1_000_000}`
+    await submitTitle(title)
+    // Ждём не «появления» (его карточка даёт мгновенно), а именно ПРИМIREНИЯ:
+    // заголовок в списке есть, а карточки с ним уже нет — значит пришла строка
+    // из источника и заменила её на месте.
+    await page.waitForFunction(
+      (t) => {
+        const rows = [...document.querySelectorAll('[data-testid="row"], [data-testid="pending-row"]')]
+        const hit = rows.filter((e) => e.textContent.includes(t))
+        return hit.length >= 1 && !hit.some((e) => e.dataset.pending === 'true')
+      },
+      title,
+      { timeout: 20_000 },
+    )
+    const ids = await rowIds()
+    const tmp = ids.filter((id) => id.startsWith('tmp:'))
+    const dupes = (await cardTitles()).filter((s) => s.includes(title)).length
+    if (tmp.length) throw new Error(`остались временные id: ${tmp.join(', ')}`)
+    if (dupes !== 1) throw new Error(`${dupes} строк с этим заголовком вместо одной`)
+    return `одна строка, id ${ids[0].slice(0, 8)}`
+  })
+  await step('живой список: ?page.live=1 делает тики, скрытая вкладка — пауза', async () => {
+    await page.goto(`${BASE}?page.live=1`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-testid="live-state"]', { timeout: 15_000 })
+    const ticks = () =>
+      page.$eval('[data-testid="live-state"]', (el) => Number(/(\d+) тиков/.exec(el.textContent)?.[1] ?? -1))
+    const a = await ticks()
+    await page.waitForTimeout(3_000)
+    const b = await ticks()
+    if (b <= a) throw new Error(`опрос стоит: ${a} → ${b} тиков`)
+    // Скрытость эмулируется тем же признаком, который читает слой, — а не
+    // «догадкой про таймер»: регресс «тратим трафик на невидимой вкладке» ловится
+    // именно на `visibilityState`.
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    const c = await ticks()
+    await page.waitForTimeout(3_000)
+    const d = await ticks()
+    if (d !== c) throw new Error(`на скрытой вкладке опрос продолжается: ${c} → ${d}`)
+    return `${b - a} тиков на виду, ${d - c} на скрытой`
+  })
+
   await step('итог: за всю сессию ошибок в консоли нет', async () => {
     if (problems.length) throw new Error(problems.slice(0, 3).join(' | ').slice(0, 260))
     return 'чисто'
