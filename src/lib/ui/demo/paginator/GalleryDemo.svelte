@@ -11,7 +11,7 @@
     Skeleton,
     type SettingsField,
   } from '$lib/ui/paginator'
-  import type { DemoItem } from '../../content/items'
+  import type { DemoItem } from '../../../../content/items'
   import {
     DEFAULT_GALLERY_EXTRA,
     GALLERY_EXTRA_SEARCH,

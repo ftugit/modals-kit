@@ -32,7 +32,7 @@ export const SCHEMA_ZONE = /^src\/lib\/server\/shikimori-schema\.ts$/
 export const PIPELINE_ZONE = /^src\/lib\/server\/shikimori-filters\.ts$/
 
 /** Кому можно читать готовую схему `getShikimoriFilterSchema` (сервер целиком). */
-export const SCHEMA_READERS = [/^src\/lib\/server\//, /^src\/routes\/api\//, /^src\/features\/paginator\/loader\.ts$/]
+export const SCHEMA_READERS = [/^src\/lib\/server\//, /^src\/routes\/api\//, /^src\/lib\/ui\/demo\/paginator\/loader\.ts$/]
 
 /**
  * Запрещённое в зоне чистых фильтров (`src/lib/filters`): модуль изоморфный и

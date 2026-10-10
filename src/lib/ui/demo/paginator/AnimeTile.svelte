@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { animeTitle, type AnimeCard } from '../../content/shikimori'
+  import { animeTitle, type AnimeCard } from '../../../../content/shikimori'
 
   interface Props {
     item: AnimeCard

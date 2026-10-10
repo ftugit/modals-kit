@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types'
-import { loadPaginatorDemo } from '../../features/paginator/loader'
+import { loadPaginatorDemo } from '$lib/ui/demo/paginator/loader'
 
 /**
  * Загрузка демонстрации пагинатора. Адрес здесь НЕ правится: пустые ключи

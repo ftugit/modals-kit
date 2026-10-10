@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AnimeCard } from '../../content/shikimori'
+  import type { AnimeCard } from '../../../../content/shikimori'
   import type { DbPost } from '$lib/ui/demo/db-list/definition'
   import {
     catalogTestId,

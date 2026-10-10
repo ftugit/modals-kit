@@ -2,7 +2,7 @@
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
-  import { demoFault } from '../../content/items'
+  import { demoFault } from '../../../../content/items'
   import { PaginatorScope } from '$lib/paginate/svelte'
   import type { PaginatorState } from '$lib/paginate'
   import {

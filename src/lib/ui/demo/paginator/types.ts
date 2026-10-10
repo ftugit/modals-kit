@@ -3,7 +3,7 @@
 // даже типом.
 import type { CatalogFilterSchema } from '$lib/filters'
 import type { PaginatorState } from '$lib/paginate'
-import type { DemoItem } from '../../content/items'
+import type { DemoItem } from '../../../../content/items'
 import type { CatalogItem } from './item-views'
 
 export interface PaginatorLoaderData {

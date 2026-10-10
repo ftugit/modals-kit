@@ -21,20 +21,20 @@
 //   `ls`   — lib search поверх источника: перехватчик (fuzzy-ранжирование +
 //            коррекция опечаток по словарю) подменяет выдачу на клиенте.
 // Выключены оба → `q` до источника не доходит, список — обычный каталог.
-import { getItemsPage } from '../../content/items'
+import { getItemsPage } from '../../../../content/items'
 import {
   SHIKIMORI_LIMIT_MAX,
   getAnimesPage,
   getShikimoriFilters,
   getShikimoriTerms,
   type AnimesPage,
-} from '../../content/shikimori'
+} from '../../../../content/shikimori'
 import type { CatalogFilterSchema } from '$lib/filters'
 import {
   SHIKIMORI_FILTER_KEYS,
   SHIKIMORI_FILTER_RELOAD_KEYS,
   SHIKIMORI_FILTER_SEARCH,
-} from '../../content/shikimori-filters'
+} from '../../../../content/shikimori-filters'
 import {
   reportSearchCorrection,
   searchQueryValidator,

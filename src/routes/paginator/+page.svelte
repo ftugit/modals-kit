@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types'
-  import PaginatorDemo from '../../features/paginator/PaginatorDemo.svelte'
+  import PaginatorDemo from '$lib/ui/demo/paginator/PaginatorDemo.svelte'
 
   interface Props {
     data: PageData

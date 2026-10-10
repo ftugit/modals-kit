@@ -7,8 +7,8 @@
  * fuzzy-ранжирования — и разметка (`ItemRow`/`ShotTile`/`AnimeRow`/`AnimeTile`),
  * и источник (`definition.ts`) смотрят на записи через них.
  */
-import type { DemoItem, Photo, Product } from '../../content/items'
-import { animeTexts, animeTitle, type AnimeCard } from '../../content/shikimori'
+import type { DemoItem, Photo, Product } from '../../../../content/items'
+import { animeTexts, animeTitle, type AnimeCard } from '../../../../content/shikimori'
 import type { DbPost } from '$lib/ui/demo/db-list/definition'
 
 /**

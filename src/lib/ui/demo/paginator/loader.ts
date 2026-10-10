@@ -14,7 +14,7 @@ import {
   setLiveServerTransport,
 } from './definition'
 import type { DemoSrc } from './definition'
-import type { DemoItem } from '../../content/items'
+import type { DemoItem } from '../../../../content/items'
 import type { CatalogFilterSchema } from '$lib/filters'
 import type { CatalogItem } from './item-views'
 import type { PaginatorLoaderData } from './types'

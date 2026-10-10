@@ -33,7 +33,7 @@ test('позиции символов сохраняются (номер стр�
 /* ── правила содержимого ──────────────────────────────────────────── */
 
 test('ключ фильтра в компоненте — ошибка', () => {
-  const problems = checkSource('src/features/paginator/Filters.svelte', `const key = 'filters.kind'\n`)
+  const problems = checkSource('src/lib/ui/demo/paginator/Filters.svelte', `const key = 'filters.kind'\n`)
   assert.equal(problems.length, 1)
   assert.equal(problems[0].rule, 'filter-key-literal')
   assert.match(problems[0].why, /catalogFilterFieldNames/)
@@ -53,7 +53,7 @@ test('отключение по месту работает и не распол
 
 test('выдуманное имя не заменяет параметр API', () => {
   // Правда о том, что «жанры» — это `genre_v2`, живёт на сервере.
-  assert.equal(checkSource('src/features/paginator/definition.ts', `const p = 'genre_v2'`).length, 1)
+  assert.equal(checkSource('src/lib/ui/demo/paginator/definition.ts', `const p = 'genre_v2'`).length, 1)
   assert.deepEqual(checkSource('src/lib/server/shikimori.ts', `const p = 'genre_v2'`), [])
 })
 
@@ -71,9 +71,9 @@ test('сборка схемы — только в её зоне', () => {
 })
 
 test('чтение готовой схемы — только сервером', () => {
-  assert.equal(checkSource('src/features/paginator/Filters.svelte', `getShikimoriFilterSchema()`).length, 1)
+  assert.equal(checkSource('src/lib/ui/demo/paginator/Filters.svelte', `getShikimoriFilterSchema()`).length, 1)
   assert.deepEqual(checkSource('src/routes/api/shikimori/filters/+server.ts', `getShikimoriFilterSchema()`), [])
-  assert.deepEqual(checkSource('src/features/paginator/loader.ts', `getShikimoriFilterSchema()`), [])
+  assert.deepEqual(checkSource('src/lib/ui/demo/paginator/loader.ts', `getShikimoriFilterSchema()`), [])
 })
 
 test('конвейер применяется через общий вход, а не вызывается в обход', () => {
