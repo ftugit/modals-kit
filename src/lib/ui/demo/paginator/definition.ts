@@ -214,8 +214,23 @@ export async function loadFilterSchema(): Promise<CatalogFilterSchema> {
   return await filterSchemaInflight
 }
 
-export function demoPreservedSearch(search: string | URLSearchParams): Record<string, string> {
-  const params = typeof search === 'string' ? new URLSearchParams(search) : search
+/**
+ * Ключи адреса, которые нативная форма фильтров обязана пронести дальше
+ * (`page.size`, `page.src`, …): всё, кроме указателя, самих фильтров и модалок.
+ *
+ * Вызывающий передаёт ЖИВОЙ срез адреса — `currentSearch()` слоя роутера, а не
+ * `page.url.search`: пагинатор пишет адрес «мелкой» записью истории, и
+ * `page.url` после неё устаревает (баг F5, docs/audit/crutches.md).
+ */
+export function demoPreservedSearch(
+  search: string | URLSearchParams | Readonly<Record<string, unknown>>,
+): Record<string, string> {
+  const params =
+    typeof search === 'string' || search instanceof URLSearchParams
+      ? new URLSearchParams(search)
+      : new URLSearchParams(
+          Object.entries(search).flatMap(([k, v]) => (v == null ? [] : [[k, String(v)] as [string, string]])),
+        )
   const out: Record<string, string> = {}
   for (const [key, value] of params) {
     if (key === DEMO_PAGE_PREFIX || key.startsWith(`${DEMO_PAGE_PREFIX}.filters.`)) continue

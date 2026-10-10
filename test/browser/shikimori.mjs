@@ -333,6 +333,41 @@ async function checkFiltersUi(browser) {
     }
     console.log(`  ok  скрытые поля формы несут чужие ключи адреса: ${hidden.join(', ')}`);
 
+    // Регрессия F5 (docs/audit/crutches.md): размер страницы меняется «мелкой»
+    // записью истории, а `page.url` после неё не обновляется. Форма фильтров
+    // строила action, скрытые поля и ссылку сброса от старого адреса, и
+    // нативная отправка или «сбросить» возвращали прежний page.size.
+    await page.selectOption('[data-testid="demo-panel"] select[name="page.size"]', '20');
+    await waitFor(async () => !(await page.evaluate(() => location.search)).includes('page.size=5'), {
+      what: 'адрес без page.size=5 после смены размера',
+    });
+    await waitFor(
+      async () => {
+        const s = await panel.evaluate((root) => {
+          const f = root.querySelector('[data-testid="catalog-filter-form"]');
+          return [
+            f.getAttribute('action') ?? '',
+            ...[...f.querySelectorAll('input[type="hidden"]')].map((i) => `${i.name}=${i.value}`),
+            ...[...root.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? ''),
+          ];
+        });
+        return s.every((v) => !v.includes('page.size=5')) && s.some((v) => v.includes('gallery.size=5'));
+      },
+      { timeout: 5000, what: 'action/скрытые поля/ссылка сброса без старого page.size=5 (F5)' },
+    );
+    // Обратно на 5 — дальше набор сверяет выдачу с `limit=5`; заодно проверка
+    // в другую сторону: новый ключ появляется в форме без перезагрузки.
+    await page.selectOption('[data-testid="demo-panel"] select[name="page.size"]', '5');
+    await waitFor(
+      async () =>
+        (await page.evaluate(() => location.search)).includes('page.size=5') &&
+        (await panel
+          .locator('[data-testid="catalog-filter-form"] input[type="hidden"]')
+          .evaluateAll((els) => els.some((el) => el.name === 'page.size' && el.value === '5'))),
+      { timeout: 5000, what: 'page.size=5 снова в адресе и в скрытых полях формы' },
+    );
+    console.log('  ok  после «мелкой» смены размера форма фильтров несёт новый адрес, а не устаревший page.url (F5)');
+
     // Подпись и контрол связаны по-настоящему: `for` каждой подписи указывает
     // на существующий узел, и клик по подписи фокусирует ЭТОТ контрол.
     // Регрессия, которую ловим: у примитива Select раньше не было `id`, и

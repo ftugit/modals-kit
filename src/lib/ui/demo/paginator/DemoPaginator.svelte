@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
   import { report } from '$lib/app-errors.svelte'
-  import { page } from '$app/state'
+  import { currentSearch } from '$lib/router/sveltekit'
   import type { CatalogFilterSchema } from '$lib/filters'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
   import {
@@ -428,7 +428,7 @@ import ItemRow from './ItemRow.svelte'
             {name}
             schema={filterSchema}
             extra={pagState().extra}
-            preserved={demoPreservedSearch(page.url.search)}
+            preserved={demoPreservedSearch(currentSearch())}
           />
         </div>
       {:else if gates.filters && filterSchemaError}

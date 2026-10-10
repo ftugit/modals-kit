@@ -93,11 +93,16 @@
     return state?.disabled ? { disabled: true, reason: state.reason } : undefined
   }
 
-  // svelte-ignore state_referenced_locally
   const form = bind(catalogForms, desc, {
     url: {
       live: false,                                 // коммит-набор: применяем целиком
-      action,
+      // Геттер, а не значение: `action` несёт чужие ключи адреса (`page.size`…),
+      // и после «мелкой» записи истории хост отдаёт новый — связка читает его
+      // на каждом рендере (`formProps`). Снимок при создании оставлял форме
+      // старый адрес (баг F5, docs/audit/crutches.md).
+      get action() {
+        return action
+      },
       seed: (d) => {
         const out: Record<string, unknown> = {}
         for (const f of d.fields) {
