@@ -12,6 +12,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  SHIKIMORI_CACHE_MAX,
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_UA,
   buildUpstreamUrl,
@@ -209,6 +210,16 @@ describe('справочники схемы: общий GET и проба', () =
     expect(calls[0]).toBe('https://shikimori.io/api/studios')
   })
 
+  it('fetchShikimoriJson: кэш справочников тоже с потолком (F10)', async () => {
+    const { fn, calls } = fakeFetch(() => ok([]))
+    const at = (i: number) => fetchShikimoriJson(`/studios?i=${i}`, { fetch: fn, ...deps, minGapMs: 0 })
+    for (let i = 0; i <= SHIKIMORI_CACHE_MAX; i += 1) await at(i)
+    await at(SHIKIMORI_CACHE_MAX)
+    expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 1)
+    await at(0)
+    expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 2)
+  })
+
   it('проба отдаёт ответ КАК ЕСТЬ: 422 — это данные, а не отказ', async () => {
     const { fn } = fakeFetch(
       () => new Response(JSON.stringify(['kind — one of: <code>tv</code>']), { status: 422 }),
@@ -306,6 +317,19 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
     const again = await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
     expect(calls).toHaveLength(1)
     expect(again.cached).toBe(true)
+  })
+
+  // F10: ключ кэша — адрес из ввода пользователя; без потолка перебор параметров
+  // копил ответы до конца жизни процесса.
+  it('потолок кэша: сверх SHIKIMORI_CACHE_MAX вытесняется самый старый адрес', async () => {
+    const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
+    const at = (page: number) => fetchAnimes({ ...query, page }, { ...deps, fetch: fn, minGapMs: 0 })
+    for (let page = 1; page <= SHIKIMORI_CACHE_MAX + 1; page += 1) await at(page)
+    expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 1)
+    expect((await at(SHIKIMORI_CACHE_MAX + 1)).cached).toBe(true)
+    expect((await at(2)).cached).toBe(true)
+    expect((await at(1)).cached).toBeUndefined()
+    expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 2)
   })
 
   it('single-flight: параллельные вызовы одного URL делят один запрос', async () => {

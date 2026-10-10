@@ -21,7 +21,9 @@
  *
  * Вежливость к внешнему сервису — часть контракта, а не деталь:
  *   • ответ кэшируется на `CACHE_TTL_MS` (повторный переход по страницам и
- *     переключение опций панели не долбят API заново);
+ *     переключение опций панели не долбят API заново); память кэша ограничена
+ *     `SHIKIMORI_CACHE_MAX` адресами — ключ строится из ввода пользователя
+ *     (`/api/shikimori/animes`), и без потолка процесс рос бы без предела (F10);
  *   • запуски запросов разнесены минимум на `MIN_GAP_MS` (кэш-мисс не может
  *     устроить залп);
  *   • один повтор на 429/5xx с паузой, дальше — честная ошибка;
@@ -52,6 +54,13 @@ export { SHIKIMORI_LIMIT_MAX, SHIKIMORI_ORDER }
 export const SHIKIMORI_UA = 'modals-kit-demo/0.1 (+https://github.com/ftugit/modals-kit)'
 
 const CACHE_TTL_MS = 60_000
+/**
+ * Потолок кэша (на каждую из двух карт: страницы и справочники). Ключ — адрес
+ * запроса, собранный из ввода пользователя (поиск, фильтры, страница), так что
+ * без потолка любой перебор параметров копил бы ответы до конца жизни процесса
+ * (баг F10, docs/audit/crutches.md). 256 страниц × ≤50 карточек — единицы МБ.
+ */
+export const SHIKIMORI_CACHE_MAX = 256
 const MIN_GAP_MS = 250
 const RETRY_DELAY_MS = 1_000
 const UPSTREAM_TIMEOUT_MS = 10_000
@@ -270,6 +279,33 @@ function resolveDeps(deps: TransportDeps): ResolvedDeps {
 
 type CacheEntry = { at: number; value: AnimesPage }
 
+/**
+ * Чтение кэша по TTL: просроченная запись удаляется сразу, а не ждёт вытеснения.
+ */
+function cacheGet<E extends { at: number }>(map: Map<string, E>, key: string, deps: ResolvedDeps): E | undefined {
+  const hit = map.get(key)
+  if (!hit) return undefined
+  if (deps.now() - hit.at < deps.cacheTtlMs) return hit
+  map.delete(key)
+  return undefined
+}
+
+/**
+ * Запись с потолком {@link SHIKIMORI_CACHE_MAX}: когда места нет, уходит самая
+ * старая по вставке (порядок `Map`; как в `live-cache.ts`: точный LRU здесь стоит
+ * дороже, чем даёт). Вставка идёт по времени, так что самая старая запись — она же
+ * первая кандидатка на просрочку. Перезапись ключа переносит его в конец очереди.
+ */
+function cacheSet<E>(map: Map<string, E>, key: string, entry: E): void {
+  map.delete(key)
+  while (map.size >= SHIKIMORI_CACHE_MAX) {
+    const oldest = map.keys().next()
+    if (oldest.done) break
+    map.delete(oldest.value)
+  }
+  map.set(key, entry)
+}
+
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<AnimesPage>>()
 let lastStartedAt = 0
@@ -347,16 +383,14 @@ export async function fetchAnimes(
   const deps = resolveDeps(transport)
   const url = buildUpstreamUrl(query)
 
-  const hit = cache.get(url)
-  if (hit && deps.now() - hit.at < deps.cacheTtlMs) {
-    return { ...hit.value, cached: true }
-  }
+  const hit = cacheGet(cache, url, deps)
+  if (hit) return { ...hit.value, cached: true }
 
   let job = inflight.get(url)
   if (!job) {
     job = schedule(() => requestUpstream(url, query, deps), deps).then(
       (page) => {
-        cache.set(url, { at: deps.now(), value: page })
+        cacheSet(cache, url, { at: deps.now(), value: page })
         inflight.delete(url)
         return page
       },
@@ -415,14 +449,14 @@ export async function fetchShikimoriJson<T = unknown>(
 ): Promise<T> {
   const deps = resolveDeps(transport)
   const url = absoluteApiUrl(path)
-  const hit = jsonCache.get(url)
-  if (hit && deps.now() - hit.at < deps.cacheTtlMs) return hit.value as T
+  const hit = cacheGet(jsonCache, url, deps)
+  if (hit) return hit.value as T
 
   let job = jsonInflight.get(url) as Promise<T> | undefined
   if (!job) {
     job = schedule(() => requestUpstreamJson(url, deps), deps).then(
       (value) => {
-        jsonCache.set(url, { at: deps.now(), value })
+        cacheSet(jsonCache, url, { at: deps.now(), value })
         jsonInflight.delete(url)
         return value as T
       },
