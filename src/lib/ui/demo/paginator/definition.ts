@@ -120,6 +120,11 @@ export type DemoExtra = {
   prepend: PrependBehavior
   /** Плавающий индикатор загрузки (UI-компонент). */
   ind: boolean
+  /**
+   * Якорь хоста в ссылках навигации (`PaginatorHost.hashAnchor`): по имени
+   * пагинатора, свой или без якоря. Живой пропс — ссылки следуют за ним.
+   */
+  anchor: DemoAnchor
   /** Число колонок в раскладке columns: 'auto' | 2 | 3 | 4. */
   cols: DemoCols
   /** Авто-колонки: целевая ширина колонки, px. */
@@ -132,6 +137,16 @@ export type DemoColW = 160 | 220 | 300 | 400
 export type DemoColFit = 0 | 10 | 25 | 50
 
 export type DemoZone = 'edge' | '20%' | '40%' | '200px'
+export type DemoAnchor = 'auto' | 'catalog' | 'off'
+export const DEMO_ANCHORS: readonly DemoAnchor[] = ['auto', 'catalog', 'off']
+
+/**
+ * Значение пропса `hashAnchor` хоста: `undefined` — якорь по имени пагинатора
+ * (`paginator-<name>`), строка — свой якорь, `null` — ссылки без якоря.
+ */
+export function demoHashAnchor(anchor: DemoAnchor): string | null | undefined {
+  return anchor === 'catalog' ? 'catalog' : anchor === 'off' ? null : undefined
+}
 export type DemoCols = 'auto' | 2 | 3 | 4
 export const DEMO_ZONES: readonly DemoZone[] = ['edge', '20%', '40%', '200px']
 
@@ -227,6 +242,7 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   bottomZone: '40%',
   prepend: 'auto',
   ind: true,
+  anchor: 'auto',
   cols: 'auto',
   colW: 220,
   colFit: 25,
@@ -292,6 +308,7 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   bottomZone: extraField('text', oneOf(...DEMO_ZONES)),
   prepend: extraField('text', oneOf('auto', 'native', 'js')),
   ind: bool,
+  anchor: extraField('text', oneOf(...DEMO_ANCHORS)),
   cols: (v) => (v === 'auto' || v === 2 || v === 3 || v === 4 ? v : undefined),
   colW: extraField('number', (v) => v === 160 || v === 220 || v === 300 || v === 400),
   colFit: extraField('number', (v) => v === 0 || v === 10 || v === 25 || v === 50),

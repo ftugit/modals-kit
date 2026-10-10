@@ -30,6 +30,7 @@
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
     demoExtraOf,
+    demoHashAnchor,
     demoPreservedSearch,
     demoQueryOf,
     demoHasFilterSchema,
@@ -196,6 +197,17 @@ import ItemRow from './ItemRow.svelte'
       options: ZONE_OPTIONS,
     },
     {
+      // Без JS тоже работает: якорь приходит в адресе, хост рисуется на сервере.
+      key: 'anchor',
+      label: 'Якорь в ссылках',
+      type: 'select',
+      options: [
+        ['auto', 'По имени (#paginator-…)'],
+        ['catalog', 'Свой (#catalog)'],
+        ['off', 'Без якоря'],
+      ],
+    },
+    {
       key: 'prepend',
       label: 'Позиция при подгрузке сверху',
       type: 'select',
@@ -352,6 +364,7 @@ import ItemRow from './ItemRow.svelte'
   topZone={cfg.topZone}
   bottomZone={cfg.bottomZone}
   prependBehavior={cfg.prepend}
+  hashAnchor={demoHashAnchor(cfg.anchor)}
   snapshot={url?.snapshot ?? null}
 >
   {#snippet toolbar()}
@@ -370,7 +383,7 @@ import ItemRow from './ItemRow.svelte'
           ['none', 'Память (без персиста)'],
         ],
       }}
-      noscriptHint="Без JavaScript: работают источник, поиск, раскладка, размер страницы и число страниц (через адрес); остальные опции требуют JS."
+      noscriptHint="Без JavaScript: работают источник, поиск, раскладка, якорь, размер страницы и число страниц (через адрес); остальные опции требуют JS."
     >
       {#snippet footer(ctx)}
         Настройки и страница восстановлены {restoredLabel(storeKind)}; каждое изменение

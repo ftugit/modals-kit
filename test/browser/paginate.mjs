@@ -495,6 +495,43 @@ async function run() {
       throw new Error(`gallery.size → URL: ${search()}`);
     console.log('  ok  панель настроек галереи вне хоста пишет свой префикс');
 
+    // ── Якорь хоста — живой пропс: ссылки навигации следуют за id хоста ─────────
+    // Регрессия: контекст хоста отдавал якорь значением на момент монтирования, и
+    // после смены пропса id хоста менялся, а ссылки вели на старый, уже
+    // несуществующий якорь (#paginator-demo-url вместо #catalog).
+    console.log('— Якорь хоста в ссылках (hashAnchor) —');
+    const HOST = '[data-paginator-host="demo-url"]';
+    const anchorState = () =>
+      page.evaluate((h) => {
+        const host = document.querySelector(h);
+        const a = host?.querySelector('nav a[aria-label="Вперёд"]');
+        return { id: host?.id ?? null, href: a?.getAttribute('href') ?? null };
+      }, HOST);
+    const hostIdIs = (id) =>
+      page.waitForFunction(([h, want]) => document.querySelector(h)?.id === want, [HOST, id], {
+        timeout: 5000,
+      });
+    await page.goto(U, { waitUntil: 'networkidle' });
+    let st = await anchorState();
+    if (st.id !== 'paginator-demo-url' || !st.href?.endsWith('#paginator-demo-url'))
+      throw new Error(`якорь по умолчанию: ${JSON.stringify(st)}`);
+    await sel('anchor').selectOption('catalog');
+    await hostIdIs('catalog');
+    st = await anchorState();
+    if (!st.href?.endsWith('#catalog'))
+      throw new Error(`id хоста = catalog, а ссылка ведёт на ${st.href}`);
+    if (!search().includes('page.anchor=catalog'))
+      throw new Error(`якорь не попал в адрес: ${search()}`);
+    await sel('anchor').selectOption('off');
+    await hostIdIs('');
+    st = await anchorState();
+    if (!st.href || st.href.includes('#')) throw new Error(`«без якоря», а ссылка: ${st.href}`);
+    console.log('  ok  смена якоря: id хоста и ссылки навигации меняются вместе (auto → catalog → off)');
+    const ssrAnchor = await (await fetch(`${U}?page.anchor=catalog`)).text();
+    if (!ssrAnchor.includes('id="catalog"') || !/href="[^"]*#catalog"/.test(ssrAnchor))
+      throw new Error('SSR: ?page.anchor=catalog не дал id="catalog" и ссылок с #catalog');
+    console.log('  ok  без JS: якорь из адреса рисуется сервером (id и ссылки)');
+
     // ── Возможности источника гасят опции панели ────────────────────────────
     console.log('— Возможности источника в панели —');
     const field = (n) =>
