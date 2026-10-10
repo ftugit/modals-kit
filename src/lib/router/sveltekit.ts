@@ -14,9 +14,45 @@
  * берётся у `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт
  * через `goto`.
  */
+import { browser } from '$app/environment'
 import { goto, replaceState } from '$app/navigation'
 import { page } from '$app/state'
+import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '$lib/paginate'
+
+/**
+ * 🔴 `page.url` — адрес СТРАНИЦЫ, а не адресная строка. «Мелкая» запись
+ * (`replaceState`/`pushState` из `$app/navigation`, shallow routing) меняет запись
+ * истории и `page.state`, но `page.url` намеренно оставляет прежним (исходник
+ * SvelteKit: `replaceState` сохраняет `page.url.href` в записи и не трогает
+ * `page.url`). Пагинатор пишет свой адрес именно так (`syncAddress`), поэтому
+ * после первой же записи `page.url.searchParams` устаревает: следующая запись
+ * сливала ключи с устаревшим срезом и затирала соседний пагинатор, а ссылки
+ * строились от старого адреса. Тот же вывод — у ядра модалок
+ * (`modals/cores/sveltekit.ts`: «`pushState()` НЕ обновляет `page.url`»).
+ *
+ * Поэтому в браузере срез берётся у адресной строки, а реактивность ей даёт
+ * `createSubscriber` (штатный способ подключить внешний источник к рунам):
+ *   • настоящая навигация — зависимость от `page.url` (SvelteKit пишет историю
+ *     раньше, чем обновляет `page`, так что `location` к этому моменту свежий);
+ *   • собственная «мелкая» запись — `notifyAddressWrite()`;
+ *   • Назад/Вперёд по «мелким» записям, где `page.url` не меняется, — `popstate`.
+ * На сервере адресной строки нет, а `page.url` там верен: мелких записей не было.
+ */
+const addressWrites = new Set<() => void>()
+
+const subscribeAddress = createSubscriber((update) => {
+  addressWrites.add(update)
+  window.addEventListener('popstate', update)
+  return () => {
+    addressWrites.delete(update)
+    window.removeEventListener('popstate', update)
+  }
+})
+
+function notifyAddressWrite(): void {
+  for (const update of addressWrites) update()
+}
 
 /**
  * Search текущего рендера. Реактивен: чтение внутри `$derived`/`$effect`
@@ -24,7 +60,10 @@ import type { MinimalRouter } from '$lib/paginate'
  * На сервере отдаёт адрес запроса — как `app.search` исходника на SSR.
  */
 export function currentSearch(): Record<string, unknown> {
-  return Object.fromEntries(page.url.searchParams)
+  if (!browser) return Object.fromEntries(page.url.searchParams)
+  void page.url
+  subscribeAddress()
+  return Object.fromEntries(new URLSearchParams(window.location.search))
 }
 
 /** Путь текущего рендера — для `action` формы без JS (аналог `app.pathname`). */
@@ -75,6 +114,7 @@ export function svelteKitRouter(): MinimalRouter {
      */
     syncAddress(opts) {
       replaceState(hrefOf(opts.search(currentSearch())), page.state)
+      notifyAddressWrite()
     },
     currentSearch,
   }
