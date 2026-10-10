@@ -1146,6 +1146,25 @@ try {
     ok('прямой тап по элементу под бывшим оверлеем доставляется — взаимодействие не сломано')
     await page.close()
   })
+  /* ── R-27 (F7): <title> страницы есть уже в SSR ─────────────────── */
+  // ModalHost — предок каждой страницы. Привязка к пропсу дочернего компонента
+  // (`bind:ref`) включала у него SSR-цикл на копии рендерера, и `<title>`
+  // страницы проигрывал `<title>` раскладки (sveltejs/svelte#18845): без JS и
+  // для краулеров заголовок был «dd modals».
+  await run('R-27 SSR отдаёт <title> страницы, тот же, что после гидрации', async () => {
+    const origin = new URL(BASE).origin
+    for (const [path, expected] of [['/', 'modals-kit — главная'], ['/paginator', 'Пагинатор — modals-kit']]) {
+      const html = await (await fetch(origin + path)).text()
+      const ssr = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((m) => m[1])
+      assert(ssr.length === 1 && ssr[0] === expected, `${path}: SSR <title> = ${JSON.stringify(ssr)}, ждали «${expected}»`)
+      const page = await browser.newPage()
+      await page.goto(origin + path)
+      await page.waitForFunction((t) => document.title === t, expected, { timeout: 10000 })
+      await page.close()
+      ok(`${path}: SSR и клиент — «${expected}»`)
+    }
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

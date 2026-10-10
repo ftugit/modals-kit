@@ -268,9 +268,18 @@
   let phase = $state<Phase>('closed')
   let mounted = $state(false)
   let popupEl = $state<HTMLElement>()
-  // null, а не undefined: у части Ark проп `ref` имеет запасное значение,
-  // и bind:ref={undefined} падает (`props_invalid_value`).
-  let stageEl = $state<HTMLElement | null>(null)
+  /**
+   * Сцена (`Dialog.Content`) — родитель `popupEl` по нашему же маркеру, а не
+   * `bind:ref` на компоненте. Любая привязка к пропсу ДОЧЕРНЕГО КОМПОНЕНТА
+   * заставляет SSR Svelte рендерить этот компонент в цикле на копии рендерера
+   * (`$$renderer.copy()`), и у копии `get_path()` даёт `-1`
+   * (sveltejs/svelte#18845, не исправлено в 5.57.2). Хост — предок каждой
+   * страницы, поэтому `<title>` любой страницы проигрывал `<title>` раскладки,
+   * стоявшему раньше в дереве: SSR отдавал «dd modals» (баг F7,
+   * docs/audit/crutches.md). `attach` на `Dialog.Content` не годится: Ark
+   * сливает пропсы через `mergeProps`, а тот теряет ключи-символы.
+   */
+  const stageEl = $derived(popupEl?.closest<HTMLElement>('[data-modal-stage]') ?? null)
   let closeBtnEl = $state<HTMLButtonElement>()
 
   /* ── host-owned floating overlays ───────────────────────────── */
@@ -1064,7 +1073,6 @@
           style={css({ ...viewportStyle(anchor), ...(fullpage ? { padding: 0 } : null) })}
         >
           <Dialog.Content
-            bind:ref={stageEl}
             class={MODAL_STAGE_CLASS}
             data-modal-stage=""
             data-anchor={anchor ?? 'center'}
