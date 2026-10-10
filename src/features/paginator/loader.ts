@@ -8,11 +8,16 @@ import {
 import {
   DEFAULT_DEMO_EXTRA,
   DEFAULT_GALLERY_EXTRA,
-  DEMO_LIVE_SRC,
+  demoHasFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
   setLiveServerTransport,
 } from './definition'
+import type { DemoSrc } from './definition'
+// Транспорт источника БД ставится на уровне модуля (`$lib/server/db-list`): без
+// этого импорта пункт «БД» умел бы только догрузку через `/api/db-posts`, и
+// «тот же источник, что на /db-demo» был бы правдой лишь наполовину.
+import '$lib/server/db-list'
 import type { DemoItem } from '../../content/items'
 import type { CatalogFilterSchema } from '$lib/filters'
 import type { CatalogItem } from './item-views'
@@ -99,7 +104,7 @@ export async function loadPaginatorDemo(ctx: {
  * панель просто не показывается, а клиент попробует схему сам.
  */
 async function schemaOf(snapshot: PaginatorState<CatalogItem>): Promise<CatalogFilterSchema | null> {
-  if (snapshot.extra?.src !== DEMO_LIVE_SRC) return null
+  if (!demoHasFilterSchema(snapshot.extra?.src as DemoSrc | undefined)) return null
   try {
     return await getShikimoriFilterSchema()
   } catch {

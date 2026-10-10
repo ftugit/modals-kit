@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AnimeCard } from '../../content/shikimori'
+  import type { DbPost } from '$lib/ui/demo/db-list/definition'
   import {
     catalogTestId,
     catalogTitle,
@@ -10,8 +11,11 @@
   } from './item-views'
 
   interface Props {
-    /** Плитка обслуживает товары и фото; у каталога Shikimori своя (`AnimeTile`). */
-    item: Exclude<CatalogItem, AnimeCard>
+    /**
+     * Плитка обслуживает товары и фото; у каталога Shikimori своя (`AnimeTile`),
+     * у записей БД — тоже своя (`DbRow`): у строки есть смысл только в списке.
+     */
+    item: Exclude<CatalogItem, AnimeCard | DbPost>
     prefix?: string
   }
 

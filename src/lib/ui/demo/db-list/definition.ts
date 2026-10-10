@@ -35,9 +35,12 @@ import {
   hasPaginator,
   type Extra,
   type ExtraSearchSpec,
+  type ExtraSearchValidator,
   type ExtraValue,
   type PageResponse,
   type SourceDecorator,
+  type SourceInput,
+  type SourceLook,
 } from '$lib/paginate'
 
 export const DB_LIST_NAME = 'db-demo'
@@ -47,6 +50,14 @@ export const DB_LIST_PAGE_SIZES = [3, 5, 10, 20] as const
 /** Ключ тумблера «курсор вместо номеров страниц» и ключ указателя следующего шага. */
 export const DB_LIST_MODE_KEY = 'cur'
 export const DB_LIST_POINTER_KEY = 'after'
+
+/**
+ * Ключи, которые источник понимает: фильтр, порядок и указатель следующего шага.
+ * Список ОДИН — по нему сверяются и спека источника, и обёртка для
+ * union-типа демо-пагинатора; разойтись они не вправе (иначе ключ доедет до
+ * одного мира и не доедет до другого).
+ */
+export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_POINTER_KEY] as const
 
 export interface DbPost {
   id: string
@@ -108,6 +119,30 @@ function isCursorToken(value: unknown): boolean {
   return typeof value === 'string' && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9_\-/.=+]+$/.test(value)
 }
 
+/** Собственно признак «тумблер включён» — ОДНО определение для адреса и состояния. */
+function isCursorValue(raw: unknown): boolean {
+  return raw === true || raw === 1 || raw === 'true' || raw === '1' || raw === 'on'
+}
+
+/**
+ * Значение тумблера режима «как есть»: и `true` (панель через JS), и строки,
+ * которые приносит адрес (`on` из чекбокса нативного GET, `1`, `true`). Тот же
+ * набор принимает валидатор ключа — иначе состояние и ссылка разошлись бы.
+ */
+export function isCursorOn(extra: Extra | undefined): boolean {
+  return isCursorValue(extra?.[DB_LIST_MODE_KEY])
+}
+
+/**
+ * Валидатор `?page.cur` — ОДИН на оба демо (`/db-demo` и панель пагинатора):
+ * «источник тот же» перестаёт быть правдой, если на двух страницах один и тот же
+ * адресный ключ трактуется по-разному.
+ */
+export const cursorExtraField: ExtraSearchValidator = (raw) => (isCursorValue(raw) ? true : undefined)
+
+/** Валидатор указателя следующего шага — тем же словарём пользуется и демо пагинатора. */
+export const cursorPointerField: ExtraSearchValidator = extraField('text', isCursorToken)
+
 /** Ключи `?page.<key>`: форма проверяется здесь, допустимость — на сервере (схема слоя). */
 export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // JSON-фильтр слоя: длина ограничена, содержимое разбирает `parseListInput`.
@@ -120,10 +155,10 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // Валидатор свой, а не `extraField('boolean')`: чекбокс в нативном GET приезжает
   // как `on` (см. `builtins.ts` формы), и «только настоящий boolean» отсёк бы
   // именно no-JS путь. Снятый флаг = ключа в адресе нет = дефолт `false`.
-  [DB_LIST_MODE_KEY]: (raw) => (isCursorValue(raw) ? true : undefined),
+  [DB_LIST_MODE_KEY]: cursorExtraField,
   // Указатель следующего шага: результат выдачи, а не её условие — в `reloadKeys`
   // его нет (иначе каждый ответ сбрасывал бы список на сам себя).
-  [DB_LIST_POINTER_KEY]: extraField('text', isCursorToken),
+  [DB_LIST_POINTER_KEY]: cursorPointerField,
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
@@ -146,18 +181,33 @@ export function dbListExtraOf(extra: Record<string, unknown> | undefined): DbLis
   return out as DbListExtra
 }
 
-/** Собственно признак «тумблер включён» — ОДНО определение для адреса и состояния. */
-function isCursorValue(raw: unknown): boolean {
-  return raw === true || raw === 1 || raw === 'true' || raw === '1' || raw === 'on'
-}
-
 /**
- * Значение тумблера режима «как есть»: и `true` (панель через JS), и строки,
- * которые приносит адрес (`on` из чекбокса нативного GET, `1`, `true`). Тот же
- * набор принимает валидатор ключа — иначе состояние и ссылка разошлись бы.
+ * Страница данных: транспорт и перевод ключей. Общая для `dbPostsSource` (список
+ * `/db-demo`) и для обёртки демо-пагинатора, где запись — часть union'а: разной
+ * логики выдачи на две страницы здесь нет намеренно.
  */
-export function isCursorOn(extra: Extra | undefined): boolean {
-  return isCursorValue(extra?.[DB_LIST_MODE_KEY])
+export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promise<PageResponse<DbPost>> {
+  const filter = input.filters?.flt
+  const rawOrder = input.filters?.ord
+  const order = rawOrder && rawOrder !== DB_LIST_ORDER_DEFAULT ? rawOrder : undefined
+  const after = input.filters?.[DB_LIST_POINTER_KEY]
+  // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
+  // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
+  if (serverTransport)
+    return serverTransport({ page: look.page, pageSize: look.pageSize, filter, order, after: after || undefined, signal: look.signal })
+  const q = new URLSearchParams({ size: String(look.pageSize) })
+  // Слой отказывает, когда `page` и `after` смешаны, поэтому транспорт выбирается
+  // здесь и только здесь: токен есть — номера в запросе нет.
+  if (after) q.set(DB_LIST_POINTER_KEY, after)
+  else q.set('page', String(look.page))
+  if (filter) q.set('flt', filter)
+  if (order) q.set('ord', order)
+  const res = await fetch(`/api/db-posts?${q}`, { signal: look.signal })
+  const body = (await res.json().catch(() => null)) as (PageResponse<DbPost> & { error?: string }) | null
+  // Ошибка сервера обязана дойти до пагинатора как ошибка: пустой список он
+  // читает как «данных нет», и это другое состояние.
+  if (!res.ok) throw new Error(body?.error ?? `db-posts: HTTP ${res.status}`)
+  return body as PageResponse<DbPost>
 }
 
 export const dbPostsSource = defineSource<DbPost>({
@@ -171,31 +221,9 @@ export const dbPostsSource = defineSource<DbPost>({
   // доходят до `data` через `input.filters`; необъявленный ключ пагинатор отсекает.
   // `after` здесь не «фильтр данных», а единственный способ передать источнику
   // указатель, который он сам же и выдал: слой источника не читает адрес напрямую.
-  filters: ['flt', 'ord', DB_LIST_POINTER_KEY],
+  filters: DB_LIST_FILTER_KEYS,
   totals: true,
-  data: async ({ page, pageSize, signal }, input) => {
-    const filter = input.filters?.flt
-    const rawOrder = input.filters?.ord
-    const order = rawOrder && rawOrder !== DB_LIST_ORDER_DEFAULT ? rawOrder : undefined
-    const after = input.filters?.[DB_LIST_POINTER_KEY]
-    // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
-    // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
-    if (serverTransport)
-      return serverTransport({ page, pageSize, filter, order, after: after || undefined, signal })
-    const q = new URLSearchParams({ size: String(pageSize) })
-    // Слой отказывает, когда `page` и `after` смешаны, поэтому транспорт выбирается
-    // здесь и только здесь: токен есть — номера в запросе нет.
-    if (after) q.set(DB_LIST_POINTER_KEY, after)
-    else q.set('page', String(page))
-    if (filter) q.set('flt', filter)
-    if (order) q.set('ord', order)
-    const res = await fetch(`/api/db-posts?${q}`, { signal })
-    const body = (await res.json().catch(() => null)) as (PageResponse<DbPost> & { error?: string }) | null
-    // Ошибка сервера обязана дойти до пагинатора как ошибка: пустой список он
-    // читает как «данных нет», и это другое состояние.
-    if (!res.ok) throw new Error(body?.error ?? `db-posts: HTTP ${res.status}`)
-    return body as PageResponse<DbPost>
-  },
+  data: (look, input) => fetchDbPosts(look, input),
 })
 
 /**
@@ -205,8 +233,8 @@ export const dbPostsSource = defineSource<DbPost>({
  * решением разметки. Данные при этом те же самые: меняется только то, чем список
  * пользуется.
  */
-export function withDbCursor(): SourceDecorator<DbPost> {
-  return decorateSource<DbPost>({
+export function withDbCursor<T>(): SourceDecorator<T> {
+  return decorateSource<T>({
     capabilitiesFor: (base, extra) => {
       const caps = base.capabilitiesFor(extra)
       return isCursorOn(extra) ? { ...caps, totals: false } : caps
@@ -215,8 +243,11 @@ export function withDbCursor(): SourceDecorator<DbPost> {
   })
 }
 
-/** Курсорный источник — он же для `/db-demo`, он же для пункта «БД» в демо пагинатора. */
-export const dbPostsCursorSource = dbPostsSource.with(withDbCursor())
+/**
+ * Курсорный источник — он же для `/db-demo`, он же (через `defineSource` с тем же
+ * `fetchDbPosts`) для пункта «БД» в демо пагинатора, где запись — часть union'а.
+ */
+export const dbPostsCursorSource = dbPostsSource.with(withDbCursor<DbPost>())
 
 /** Регистрация идемпотентна: при HMR модуль выполняется повторно. */
 export function ensureDbListPaginator(): string {

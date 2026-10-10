@@ -32,15 +32,17 @@
     demoExtraOf,
     demoPreservedSearch,
     demoQueryOf,
+    demoHasFilterSchema,
     loadFilterSchema,
     type DemoExtra,
     type DemoStore,
   } from './definition'
   import FiltersPanel from './FiltersPanel.svelte'
-  import { isAnimeItem, shotHeight, type CatalogItem } from './item-views'
+  import { isAnimeItem, isDbItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
-  import ItemRow from './ItemRow.svelte'
+  import DbRow from './DbRow.svelte'
+import ItemRow from './ItemRow.svelte'
   import SearchQueryForm from './SearchQueryForm.svelte'
   import ShotTile from './ShotTile.svelte'
 
@@ -71,7 +73,17 @@
         ['products', 'Товары (299, локально)'],
         ['photos', 'Фото (131, локально)'],
         ['animes', 'Shikimori (живой API)'],
+        ['db', 'БД (записи demo_post, $lib/db)'],
       ],
+    },
+    {
+      key: 'cur',
+      label: 'Курсор вместо номеров страниц',
+      // Опция ИСТОЧНИКА: у товаров, фото и Shikimori указателя следующего шага нет,
+      // поэтому поле связано с выбором источника, а не с догадкой разметки. Работает
+      // и без JavaScript: ?page.cur=1 попадает в адрес, а токен выдаёт сервер.
+      enabledBy: [{ field: 'src', equals: 'db' }],
+      type: 'toggle',
     },
     { type: 'divider', label: 'Поиск: два независимых слоя' },
     {
@@ -270,7 +282,10 @@
     // Пересборка схемы у сервера — на изменения выбранного источника: сам
     // выбор читается из extra (гейт `filters`), а не из имени. Состояние уже
     // загружено/уже провалилось — повтор только по кнопке, а не в цикле.
-    if (!gates.filters || filterSchema || filterSchemaError) return
+    // Живая схема есть только у источников из `DEMO_SCHEMA_SRCS`: у БД фильтры
+    // тоже объявлены (`flt`/`ord` адресом), но собирать для них справочник
+    // Shikimori — значит показать чужую панель.
+    if (!gates.filters || !demoHasFilterSchema(cfg.src) || filterSchema || filterSchemaError) return
     loadSchema()
   })
 
@@ -445,6 +460,8 @@
   {#snippet skelColumns(ctx: { page: number; index: number })}
     {#if cfg.src === 'animes'}
       <Skeleton height={240} />
+    {:else if cfg.src === 'db'}
+      <Skeleton height={44} />
     {:else}
       <Skeleton height={shotHeight(ctx.index + 1)} />
     {/if}
@@ -452,6 +469,8 @@
   {#snippet skelList(ctx: { page: number; index: number })}
     {#if cfg.src === 'animes'}
       <Skeleton height={52} />
+    {:else if cfg.src === 'db'}
+      <Skeleton height={44} />
     {:else if cfg.src === 'photos'}
       <Skeleton height={shotHeight(ctx.index + 1)} />
     {:else}
@@ -479,6 +498,8 @@
       {#snippet renderItem(item: CatalogItem)}
         {#if isAnimeItem(item)}
           <AnimeTile {item} />
+        {:else if isDbItem(item)}
+          <DbRow {item} />
         {:else}
           <ShotTile {item} />
         {/if}
@@ -490,6 +511,8 @@
       {#snippet renderItem(item: CatalogItem)}
         {#if isAnimeItem(item)}
           <AnimeRow {item} />
+        {:else if isDbItem(item)}
+          <DbRow {item} />
         {:else}
           <ItemRow {item} />
         {/if}

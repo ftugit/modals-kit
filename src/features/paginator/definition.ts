@@ -62,12 +62,26 @@ import {
   type SourceRecordSpec,
 } from '$lib/paginate'
 import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
+import {
+  DB_LIST_FILTER_KEYS,
+  cursorExtraField,
+  cursorPointerField,
+  fetchDbPosts,
+  withDbCursor,
+} from '$lib/ui/demo/db-list/definition'
 
 export type DemoStore = 'url' | 'local' | 'none'
 
-/** Источник данных пагинатора (опция панели `src`). */
-export type DemoSrc = 'products' | 'photos' | 'animes'
-export const DEMO_SRCS: readonly DemoSrc[] = ['products', 'photos', 'animes']
+/**
+ * Источник данных пагинатора (опция панели `src`).
+ *
+ * `db` — витрина `$lib/db`: список строк из живой БД. Он не «демо-данные рядом с
+ * демо-данными»: реализация одна и та же, что у страницы `/db-demo`
+ * (`$lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
+ * только форма записи общая с каталогом.
+ */
+export type DemoSrc = 'products' | 'photos' | 'animes' | 'db'
+export const DEMO_SRCS: readonly DemoSrc[] = ['products', 'photos', 'animes', 'db']
 
 /** Ключи потребителя, живущие в хранилище пагинатора (RestorableState.extra). */
 export type DemoExtra = {
@@ -83,6 +97,15 @@ export type DemoExtra = {
   layout: 'list' | 'columns'
   /** accumulate — страницы складываются (подгрузка); single — классическая смена (REPLACE). */
   mode: 'accumulate' | 'single'
+  /**
+   * Режим курсора — возможность ИСТОЧНИКА, а не пагинатора: тумблер есть у тех
+   * источников, которые умеют продолжать выдачу по подписанному указателю
+   * (`?page.after`). Панель связывает его с источником (`enabledBy`), а не с
+   * догадкой разметки.
+   */
+  cur: boolean
+  /** Указатель следующего шага: значение выдаёт сервер, клиент его не строит. */
+  after: string
   /** Известное число страниц: источник отдаёт totals → номерные кнопки; иначе только стрелки (R12). */
   total: boolean
   /** Скелетоны при загрузке (UI). */
@@ -130,6 +153,18 @@ export const DEMO_PAGE_PREFIX = 'page'
 
 /** Источник, у которого есть серверная схема фильтров (живой каталог). */
 export const DEMO_LIVE_SRC = 'animes'
+
+/**
+ * Источники, у которых есть ЧТО собирать: схема фильтров строится сервером из
+ * живых справочников конкретного каталога, поэтому «у источника есть фильтры»
+ * (`capabilities.filters`) — НЕ основание её собирать. У БД фильтры есть
+ * (`flt`/`ord` адресом), а схемы Shikimori у них нет и быть не может.
+ */
+export const DEMO_SCHEMA_SRCS: readonly DemoSrc[] = [DEMO_LIVE_SRC]
+
+export function demoHasFilterSchema(src: DemoSrc | undefined): boolean {
+  return src != null && DEMO_SCHEMA_SRCS.includes(src)
+}
 
 /**
  * Чужие ключи адреса — для адресов ссылок и нативной формы фильтров.
@@ -182,6 +217,8 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   q: '',
   layout: 'list',
   mode: 'accumulate',
+  cur: false,
+  after: '',
   total: true,
   skel: true,
   topTrigger: 'direction',
@@ -211,6 +248,10 @@ export const DEMO_RELOAD_KEYS = [
   'ls',
   'q',
   'total',
+  // Способ навигации источника меняет то, КАК читается выдача, — значит это новая
+  // выдача, а не раскладка. `after` сюда НЕ входит: это указатель, который выдаёт
+  // сам сервер, и сброс по нему означал бы «загрузили → сбросили → загрузили».
+  'cur',
   ...SHIKIMORI_FILTER_RELOAD_KEYS,
 ] as const
 
@@ -229,6 +270,10 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   q: searchQueryValidator(120),
   layout: extraField('text', oneOf('list', 'columns')),
   mode: extraField('text', oneOf('accumulate', 'single')),
+  // Ключи курсорного режима — общие с демо БД: тот же валидатор, те же правила
+  // (нативный GET-чекбокс приезжает как `on`, токен проверяется по форме).
+  cur: cursorExtraField,
+  after: cursorPointerField,
   total: bool,
   skel: bool,
   topTrigger: extraField('text', oneOf('off', 'direction', 'edge', 'chat', 'manual')),
@@ -443,6 +488,18 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
       // (не «включено вхолостую», а честно недоступно).
       photos: createLocalItemsSource('photos').with(withTotalsGate({ gate: 'total' })),
       animes: withLibSearch(createAnimesSource(), { gate: 'ls', name, ...channels }),
+      // БД — НЕ второй реализации списка: данные читает тот же `fetchDbPosts`
+      // (SSR — прямаем в слой, браузер — `/api/db-posts`), отличие только в форме
+      // записи (паспорт `catalogRecord`) и в том, что здесь запись — часть union'а.
+      // Lib/search к нему не подключается: сканировать живую выдачу БД демо не
+      // договоривались, и панель честно гасит `ls` (нет возможности `fuzzy`).
+      db: defineSource<CatalogItem>({
+        name: 'db_demo_posts',
+        record: catalogRecord,
+        filters: DB_LIST_FILTER_KEYS,
+        totals: true,
+        data: (look, input) => fetchDbPosts(look, input),
+      }).with(withDbCursor<CatalogItem>()),
     },
     { name, select: (extra) => demoExtraOf(extra ?? {}).src },
   )
