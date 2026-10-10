@@ -242,6 +242,15 @@ export const DEFAULT_DEMO_CONFIG: DemoConfig = {
  * Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1).
  * Ключи фильтров входят сюда целиком: смена любого фильтра — новая выдача.
  */
+/**
+ * Позиционные ключи: `after` выдаётся сервером как «откуда продолжать это окно».
+ * Смена условия выдачи (фильтр, порядок, способ навигации) окно пересобирает, и
+ * ядро обязано снять указатель вместе с ним: отправленный с новым `ord`, он стоит
+ * источнику 400, а осевший в адресе он превращает «ссылку на середину» в ссылку
+ * на несуществующую середину.
+ */
+export const DEMO_POSITION_KEYS = ['after'] as const
+
 export const DEMO_RELOAD_KEYS = [
   'src',
   'srch',
@@ -251,6 +260,7 @@ export const DEMO_RELOAD_KEYS = [
   // Способ навигации источника меняет то, КАК читается выдача, — значит это новая
   // выдача, а не раскладка. `after` сюда НЕ входит: это указатель, который выдаёт
   // сам сервер, и сброс по нему означал бы «загрузили → сбросили → загрузили».
+  // Снимается он другим механизмом — `positionKeys` (см. `DEMO_POSITION_KEYS`).
   'cur',
   ...SHIKIMORI_FILTER_RELOAD_KEYS,
 ] as const
@@ -514,6 +524,7 @@ export function ensureDemoPaginator(store: DemoStore): string {
       name,
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
+      positionKeys: DEMO_POSITION_KEYS,
       adapter: createUrlAdapter<CatalogItem>({
         name,
         source: makeSource(name),
@@ -530,6 +541,7 @@ export function ensureDemoPaginator(store: DemoStore): string {
       source: makeSource(name),
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
+      positionKeys: DEMO_POSITION_KEYS,
       storage: store === 'local' ? createLocalStorageStorage() : undefined,
     })
   }

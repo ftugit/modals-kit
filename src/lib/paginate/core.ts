@@ -617,6 +617,28 @@ export async function setPageSize<T>(store: Store, name: string, pageSize: numbe
 }
 
 /**
+ * Позиционные ключи (см. `positionKeys` в конфиге) переживают сброс окна только в одном
+ * случае: их прислал сам патч. Иначе их снимает ядро — ключ вида «указатель следующего
+ * шага» описывает место в ПРОШЛОМ окне, а источник, получив его вместе с новым
+ * порядком, обязан отказать (иначе он выдал бы чужую середину выдачи). Демо БД на этом
+ * и спотыкалось: смена сортировки на 1-й странице курсорного режима уезжала в 400.
+ */
+function dropPositionKeys(
+  extra: Extra,
+  positionKeys: Set<string>,
+  patch: Record<string, ExtraValue | undefined>,
+): Extra {
+  if (positionKeys.size === 0) return extra
+  let next: Extra | null = null
+  for (const key of positionKeys) {
+    if (!(key in extra) || key in patch) continue
+    next ??= { ...extra }
+    delete next[key]
+  }
+  return next ?? extra
+}
+
+/**
  * Ключи потребителя (см. RestorableState.extra): патч + persist, без загрузки.
  * `reload: true` — ключ влияет на данные источника (фильтр/вид контента) → сброс и
  * загрузка страницы 1 с новым extra.
@@ -660,7 +682,7 @@ export async function setExtra<T>(
     instance.lastAction = { kind: 'goToPage', page: 1 }
     dropPrefetched(instance)
     patch<T>(store, name, (s) => {
-      const extra = mergeExtra(s.extra)
+      const extra = dropPositionKeys(mergeExtra(s.extra), instance.positionKeys, patchExtra)
       return {
         ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
         status: 'idle',

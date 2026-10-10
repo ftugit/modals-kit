@@ -22,6 +22,12 @@ export type PaginatorInstance = {
   maxPages?: number
   /** Ключи extra, влияющие на данные источника: их смена = сброс + загрузка стр. 1. */
   reloadKeys: Set<string>
+  /**
+   * Позиционные ключи extra: описывают место в уже выданном окне, а не условие выдачи.
+   * Любая пересборка окна (смена `reloadKeys`-ключа) обязана их снять, иначе источник
+   * получит указатель прошлого окна вместе с новым порядком/фильтром.
+   */
+  positionKeys: Set<string>
   /** Приёмники ошибок (Q1): config-уровень + провайдеры. Бросок sink'а — вверх. */
   errorSinks: Set<(e: import('./types').LibError) => void>
 }
@@ -53,6 +59,7 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
     replaceAbort: null,
     maxPages: config.maxPages,
     reloadKeys: new Set(config.reloadKeys ?? []),
+    positionKeys: new Set(config.positionKeys ?? []),
     errorSinks: new Set(config.onError ? [config.onError] : []),
   })
 }

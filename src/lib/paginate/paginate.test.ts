@@ -626,6 +626,31 @@ describe('core operations & lifecycle', () => {
     expect(s.extra).toEqual({ kind: 'photos', layout: 'columns' })
   })
 
+  it('positionKeys: пересборка окна снимает позиционный ключ, явный патч — оставляет', async () => {
+    const fake = fakeAdapter({ page: 3, pageSize: 20, extra: { kind: 'products', after: 'tok-1' } })
+    definePaginator({
+      name: 'posTest',
+      adapter: fake.adapter,
+      reloadKeys: ['kind'],
+      positionKeys: ['after'],
+    })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'posTest')
+    // Пока выдача не пересобрана, указатель следующего шага живёт в состоянии.
+    expect(getState(store, 'posTest').extra.after).toBe('tok-1')
+
+    // Смена условия выдачи = новое окно: чужой указатель обязан уйти, иначе источник
+    // получит токен прошлого порядка и откажет (демо БД на этом и падало в 400).
+    await setExtra(store, 'posTest', { kind: 'photos' })
+    const s = getState(store, 'posTest')
+    expect(s.page).toBe(1)
+    expect(s.extra).toEqual({ kind: 'photos' })
+
+    // А патч, который сам принёс ключ, — это восстановление окна, а не сброс.
+    await setExtra(store, 'posTest', { kind: 'animes', after: 'tok-2' })
+    expect(getState(store, 'posTest').extra).toEqual({ kind: 'animes', after: 'tok-2' })
+  })
+
   it('maxPages limits loaded pages and evicts far side', async () => {
     const source = sourceOf(async ({ page }) => ({ items: [`item${page}`], totalPages: 10 }))
     definePaginator({
@@ -1022,6 +1047,53 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
     // Внешний адрес наблюдается: страница из него.
     expect(combo.observeExternal?.({ page: 3, 'page.q': 'z' })).toMatchObject({ page: 3 })
     expect(combo.hrefFor?.(3)).toContain('page=3')
+  })
+
+  it('echo-guard судит по ЖИВОМУ адресу: отставший срез роутера не должен гасить запись', async () => {
+    const source = sourceOf(async () => ({ items: [] }))
+    const mk = () =>
+      withUrlTakeover(
+        createLocalAdapter<unknown>({ name: 't', source, storage: createMemoryStorage() }),
+        { name: 't', source, pageSize: 10, extraSearch: { q: extraField('text') }, extraDefaults: { q: '' } },
+      )
+    const state = restored(8, { q: 'url' })
+    const withState = { ...state, items: [], loadedPages: [], pages: {}, status: 'idle' } as never
+    const real = Object.getOwnPropertyDescriptor(globalThis, 'location')
+    try {
+      // 1) адрес УЖЕ канонический для состояния, а срез роутера отстал напрошлая
+      //    страница → писать нечего (эхо). На старом коде именно здесь случался
+      //    лишний replaceState.
+      Object.defineProperty(globalThis, 'location', { value: { search: '?page=8&page.q=url' }, configurable: true })
+      let writes: Record<string, unknown>[] = []
+      const combo1 = mk()
+      // Канал выбирается при инициализации: адрес несёт объявленный ключ → хранителем
+      // становится адрес, и дальше судим по нему.
+      await combo1.getInitial({ url: '/catalog?page=8&page.q=url' })
+      combo1.setRouter({
+        navigate: vi.fn(),
+        currentSearch: () => ({ page: 4 }),
+        syncAddress: (o) => void writes.push(o.search({ page: 4 })),
+      })
+      await combo1.persist(withState)
+      expect(writes).toHaveLength(0)
+
+      // 2) живой адрес ДРУГОЙ, а срез роутера уже показывает желаемое → на срезе
+      //    guard решил бы «уже так» и запись потерялась бы: стор переключился, адрес
+      //    нет. Это и есть «параметры не работают».
+      Object.defineProperty(globalThis, 'location', { value: { search: '?page=7&page.q=stale' }, configurable: true })
+      const combo2 = mk()
+      await combo2.getInitial({ url: '/catalog?page=7&page.q=stale' })
+      combo2.setRouter({
+        navigate: vi.fn(),
+        currentSearch: () => ({ page: 8, 'page.q': 'url' }),
+        syncAddress: (o) => void writes.push(o.search({ page: 8, 'page.q': 'url' })),
+      })
+      await combo2.persist(withState)
+      expect(writes).toHaveLength(1)
+      expect(writes[0]).toMatchObject({ page: 8, 'page.q': 'url' })
+    } finally {
+      if (real) Object.defineProperty(globalThis, 'location', real)
+    }
   })
 
   it('undeclared-ключ адреса не перехватывает сессию (deny-safe); пустое значение — тоже', async () => {

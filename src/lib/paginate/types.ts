@@ -189,6 +189,12 @@ export type PaginatorConfig<T> =
       pageSize?: number
       maxPages?: number
       reloadKeys?: readonly string[]
+      /**
+       * Позиционные ключи extra (например указатель следующего шага): они описывают
+       * место В выдаче, а не её условие, поэтому сброс окна обязаны снимать их.
+       * Смысл появляется только рядом с `reloadKeys` — там, где выдача пересобирается.
+       */
+      positionKeys?: readonly string[]
       /** Приёмник ошибок ядра (Q1): init/load/persist сбоку. */
       onError?: ErrorSink
     }
@@ -203,6 +209,8 @@ export type PaginatorConfig<T> =
       maxPages?: number
       /** Ключи extra, влияющие на данные источника (смена → сброс + загрузка стр. 1). */
       reloadKeys?: readonly string[]
+      /** Позиционные ключи extra: сброс окна по `reloadKeys` снимает их (см. выше). */
+      positionKeys?: readonly string[]
       /** Приёмник ошибок ядра (Q1): init/load/persist сбоку. */
       onError?: ErrorSink
     }

@@ -183,7 +183,9 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // именно no-JS путь. Снятый флаг = ключа в адресе нет = дефолт `false`.
   [DB_LIST_MODE_KEY]: cursorExtraField,
   // Указатель следующего шага: результат выдачи, а не её условие — в `reloadKeys`
-  // его нет (иначе каждый ответ сбрасывал бы список на сам себя).
+  // его нет (иначе каждый ответ сбрасывал бы список на сам себя). Сбрасывается он
+  // через `positionKeys`: пересборка окна по `flt`/`ord`/`cur` снимает его, потому
+  // что токен привязан к тому окну и к тому порядку, на которых его выдали.
   [DB_LIST_POINTER_KEY]: cursorPointerField,
   // Что делать с оптимистичной карточкой при отказе. На выдачу не влияет — в
   // `reloadKeys` его нет по той же причине, что и `size`.
@@ -319,6 +321,7 @@ export function ensureDbListPaginator(): string {
       // Смена фильтра, порядка или СПОСОБА навигации — новая выдача: сброс на
       // первую страницу. `after` сюда не входит: это указатель, а не условие.
       reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
+      positionKeys: [DB_LIST_POINTER_KEY],
       adapter: createUrlAdapter<DbPost>({
         name: DB_LIST_NAME,
         source: dbPostsCursorSource,

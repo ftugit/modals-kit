@@ -405,6 +405,21 @@ export function createUrlAdapter<T>(opts: {
   }
 
   /** Отпечаток собственных ключей в произвольном search (для echo-guard). */
+/**
+   * Строка запроса, по которой судится «адрес уже такой». Берётся ЖИВОЙ адрес, а не
+   * срез фреймворка: `$app/state.page.url` после `replaceState` обновляется
+   * асинхронно, и на устаревшем срезе echo-guard либо пишет адрес лишний раз, либо —
+   * когда устаревший срез совпадает с новым состоянием — не пишет вовсе. Второе и
+   * выглядит как «источник и параметры не переключаются»: стор поменялся, адрес
+   * остался прежним. На сервере `location` нет, и править там нечего — остаётся
+   * прежний источник (срез роутера).
+   */
+  function liveSearch(): Record<string, unknown> | null {
+    const loc = globalThis.location
+    if (!loc) return router?.currentSearch?.() ?? null
+    return Object.fromEntries(new URLSearchParams(loc.search))
+  }
+
   function fingerprintOf(search: Record<string, unknown> | null): string {
     if (!search) return ''
     const r = readPaginatorSearch(searchToParams(search), searchOpts)
@@ -512,7 +527,7 @@ export function createUrlAdapter<T>(opts: {
       if (!router) return // сервер / роутер не привязан — URL уже источник истины
       const own = ownKeys(state)
       const want = JSON.stringify(own)
-      const current = fingerprintOf(router.currentSearch?.() ?? null)
+      const current = fingerprintOf(liveSearch())
       // Эхо: URL уже показывает то же самое И полётный navigate (если был) нёс то же.
       if (current === want && (inflight == null || inflight === want)) return
       // Уже объявлено такое же значение и оно в полёте — дождаться применения.
@@ -520,6 +535,10 @@ export function createUrlAdapter<T>(opts: {
       // Остальное — ПОСЛЕДНИЙ persist побеждает: перезаписываем и полётный navigate.
       // `mergeSearch` выбрасывает прежние ключи своего префикса, поэтому запись
       // и без чистки не переносит «грязный» хвост адреса дальше.
+      // Основой слияния остаётся срез, который даёт РОУТЕР (он читается в момент
+      // записи, а не захватывается здесь): так чужие ключи строки запроса — например
+      // цепочка `?modal=` модалок — переносятся по договору роутера, а не по нашему
+      // догадыванию о свежести адреса.
       const search = (prev: Record<string, unknown>) => mergeSearch(prev, own)
       /**
        * Адрес пагинатора — ЗАПИСЬ текущей строки истории, а не переход, и делать

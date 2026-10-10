@@ -8,13 +8,16 @@
  *     о чём предупреждает `snapshotSafeError`);
  *   • снятие режима снимает и указатель следующего шага. `?page.after` — значение,
  *     которое выдал сервер; само по себе оно не «просрочивается», когда тумблер
- *     выключили, и осело бы в адресе и в ссылках навигации. Источник обязан его
- *     игнорировать (см. `fetchDbPosts`), а адрес обязан быть честным — поэтому у
- *     ключа стоит `''`, что для пагинатора значит «ключа нет».
+ *     выключили, и осело бы в адресе и в ссылках навигации. Смену выдачи (фильтр,
+ *     порядок, сам режим) указатель переживает только в состоянии: ядро снимает
+ *     позиционные ключи при пересборке окна (`positionKeys`). Здесь добивается
+ *     другой случай — указатель, приехавший из адреса без режима: источника для
+ *     него нет, и адрес обязан стать честным, поэтому ключу пишется `''`, что для
+ *     пагинатора значит «ключа нет».
  */
 import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
 import type { PaginatorState } from '$lib/paginate'
-import { DB_LIST_POINTER_KEY, isCursorOn, type DbPost } from './definition'
+import { DB_LIST_MODE_KEY, DB_LIST_POINTER_KEY, isCursorOn, type DbPost } from './definition'
 
 /**
  * Доступ к признаку режима; вызывается там, где есть имя пагинатора. Снимок
@@ -28,7 +31,17 @@ export function useCursorMode(
 ): () => boolean {
   const state = usePaginatorState<DbPost>(name)
   const actions = usePaginatorActions(name)
-  const cursor = $derived(isCursorOn(state().extra) || isCursorOn(snapshot?.()?.extra))
+  const cursor = $derived(
+    // Пока у состояния нет своего значения (SSR, адрес без ключа), режим берётся из
+    // снимка лоадера — иначе первая клиентская отрисовка разошлась бы с серверной.
+    // Как только значение появилось, снимок обязан отступить: он описывает ТОТУ
+    // загрузку страницы, а адрес мы пишем правкой истории, поэтому снимок и после
+    // переключения остаётся прежним — и выключенный тумблер жил бы «включённым» до
+    // перезагрузки, удерживая за собой и чистку указателя.
+    state().extra?.[DB_LIST_MODE_KEY] !== undefined
+      ? isCursorOn(state().extra)
+      : isCursorOn(snapshot?.()?.extra),
+  )
   $effect(() => {
     if (cursor) return
     const stale = state().extra?.[DB_LIST_POINTER_KEY]
