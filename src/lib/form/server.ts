@@ -260,7 +260,7 @@ export interface HandlerOptions<T = unknown> {
   throttle?: Throttle
   /** Обработчик ошибок проекта. Проходят оба пути. */
   onErrors?: ErrorHandler
-  /** Телеметрия: одна запись на запрос. */
+  /** Телеметрия: одна запись на запрос; при сбое вне execute — с полем `failure`. */
   observe?: (e: Record<string, unknown>) => void
   /** Своий порядок слоёв. Обязательные выбрасывать нельзя. */
   order?: readonly Layer[]
@@ -294,6 +294,8 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
     Promise<Handled<T>> {
     const started = Date.now()
     const ctx: Ctx = { request, description: base, limits, reached: 'rejected', warnings: [] }
+    /** Сбой вне execute: текст — только в телеметрию и лог сервера, не клиенту. */
+    let failure: unknown
     let currentIntent = 'submit'
     const status = base.policy.status
 
@@ -327,6 +329,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
         submissionId: handled.result.submissionId, outcome: handled.result.outcome,
         ms: Date.now() - started, errors: handled.result.errors.length,
         removed: shown.removed, reached: ctx.reached,
+        ...(failure !== undefined ? { failure: String(failure) } : {}),
       })
       return { ...handled, result: {
         ...handled.result,
@@ -453,13 +456,16 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
       if (o.idempotency) await o.idempotency.put(submissionId, result, IDEMPOTENCY_TTL_MS)
       return finish({ status: status.ok, result })
     } catch (e) {
+      // Текст исключения (адреса, логины БД, пути) клиенту не отдаётся.
+      failure = e
+      console.error('[form] сбой приёма запроса', e)
       const outcome: Outcome = ctx.reached === 'committed' ? 'committed'
         : ctx.reached === 'executing' ? 'unknown' : 'not-applied'
       return finish({
         status: 500,
         result: make({ ok: false, status: 500, outcome, errors: [{
           id: stableId({ code: 'handler.failed' }), code: 'handler.failed',
-          message: render('handler.failed'), params: { detail: String(e) }, origin: 'server',
+          message: render('handler.failed'), origin: 'server',
         }] }),
       })
     }

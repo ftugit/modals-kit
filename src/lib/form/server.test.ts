@@ -1,5 +1,5 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
-import { describe as suite, expect, test } from 'vitest'
+import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, defineForm, makeFieldSugar } from './index'
 import { createFormHandler } from './server'
 
@@ -34,5 +34,24 @@ suite('переход после успеха (F17)', () => {
     expect(await redirectOf('/ok')).toBe('/ok')
     expect(await redirectOf('/a/b?x=1#h')).toBe('/a/b?x=1#h')
     expect(await redirectOf('/%2F%2Fevil.com')).toBe('/%2F%2Fevil.com')
+  })
+})
+
+suite('сбой вне execute', () => {
+  test('текст исключения не уходит клиенту, но доступен телеметрии', async () => {
+    const seen: Record<string, unknown>[] = []
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const h = createFormHandler({
+      description: base,
+      source: { resolve: async () => { throw new Error('ECONNREFUSED 10.0.0.5:5432 user=app') }, revision: async () => 1 },
+      observe: (e) => { seen.push(e) },
+      execute: (c) => { c.commit(); return {} },
+    })
+    const r = await h(post({ ...envelopeOf(), name: 'a' }))
+    quiet.mockRestore()
+    expect(r.status).toBe(500)
+    expect(r.result.errors.map((e) => e.code)).toEqual(['handler.failed'])
+    expect(JSON.stringify(r.result)).not.toContain('ECONNREFUSED')
+    expect(String(seen[0]?.['failure'])).toContain('ECONNREFUSED')
   })
 })
