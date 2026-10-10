@@ -427,6 +427,34 @@
     }
   }
 
+  /**
+   * Остановка Tab — только у области, которую действительно есть что прокручивать.
+   * Прокручиваемый хост обязан фокусироваться с клавиатуры (WCAG 2.1.1, axe
+   * `scrollable-region-focusable`): иначе без мыши его содержимое не пролистать.
+   * Хост, который ничего не прокручивает (листает страница, как у `/db-demo`),
+   * в фокусе лишь мешает: пустая остановка Tab без действия.
+   * До гидрации (SSR, без JS) измерять нечем — оставляем фокусируемым, чтобы
+   * прокручиваемый хост не потерял доступность; клиент уточняет сразу после монтирования.
+   */
+  let scrollable = $state(true)
+
+  $effect(() => {
+    const c = containerRef
+    if (!c) return
+    void currentState.loadedPages // перемерить, когда приехали/ушли страницы
+    const measure = () => {
+      const oy = getComputedStyle(c).overflowY
+      scrollable = (oy === 'auto' || oy === 'scroll') && c.scrollHeight > c.clientHeight + 1
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    // Высота содержимого меняется и без смены состояния (картинки, шрифты, ширина окна).
+    const ro = new ResizeObserver(measure)
+    ro.observe(c)
+    for (const child of c.children) ro.observe(child)
+    return () => ro.disconnect()
+  })
+
   let lastStateKey: string | null = null
   $effect(() => {
     const s = currentState
@@ -575,6 +603,7 @@
   объявления для скринридера и так идут через `role="status"` внутри.
   `region` с `aria-label` — честная именованная область, дети у неё любые.
 -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (прокручиваемая область: tabindex ставится, только когда хост реально прокручивается, — так требует axe `scrollable-region-focusable`; onkeydown/onwheel/ontouch* лишь замечают жест прокрутки для автодогрузки, своего действия у них нет, а клавиши обрабатывает браузер) -->
 <div
   bind:this={containerRef}
   class={className}
@@ -588,7 +617,7 @@
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
   onkeydown={handleKeyDown}
-  tabindex={0}
+  tabindex={scrollable ? 0 : undefined}
   style:overflow-anchor={prependBehavior !== 'js' && nativeAnchoring ? 'auto' : 'none'}
 >
   <div
