@@ -666,3 +666,34 @@ suite('файловые правила (F14)', () => {
     expect(big.map((e) => [e.code, e.params?.['name']])).toEqual([['maxSize', 'c.pdf']])
   })
 })
+
+/* ── F15: share() не заходит в File/Date — замена видна ─────────────── */
+
+suite('структурное разделение (F15)', async () => {
+  const { share, FormStore, initialState } = await import('./state')
+  const a = new File(['a'], 'a.txt'), b = new File(['bb'], 'b.txt')
+
+  test('новый File/Date заменяет старый, массив файлов — тоже', () => {
+    expect(share({ doc: a }, { doc: b }).doc).toBe(b)
+    expect(share({ docs: [a] }, { docs: [b] }).docs[0]).toBe(b)
+    const d2 = new Date(1)
+    expect(share({ at: new Date(0) }, { at: d2 }).at).toBe(d2)
+  })
+
+  test('неизменившиеся ветви сохраняют ссылку, тот же File — тоже', () => {
+    const prev = { doc: a, meta: { n: 1 }, list: [1, 2] }
+    const next = share(prev, { doc: a, meta: { n: 1 }, list: [1, 2] })
+    expect(next).toBe(prev)
+    const bare = Object.assign(Object.create(null), { x: 1 })
+    expect(share(bare, Object.assign(Object.create(null), { x: 1 }))).toBe(bare)
+  })
+
+  test('FormStore.set будит подписчиков при замене файла', () => {
+    const store = new FormStore(initialState(1, { doc: a }))
+    let woke = 0
+    store.subscribe(() => { woke++ })
+    store.set((s) => ({ ...s, values: { ...s.values, doc: b } }))
+    expect(woke).toBe(1)
+    expect(store.getSnapshot().values['doc']).toBe(b)
+  })
+})

@@ -39,19 +39,16 @@ export const initialState = (revision: Revision, values: Record<string, unknown>
 
 /**
  * Структурное разделение: неизменившаяся часть обязана сохранить ссылку.
- * Это не оптимизация, а условие корректности — иначе гранулярная
- * реактивность вырождается в полную перерисовку.
- */
-/**
- * Структурное разделение: неизменившаяся часть обязана сохранить ссылку.
  * Это условие корректности гранулярной реактивности, а не оптимизация.
+ * Внутрь заходит только в простые объекты и массивы: у `File`, `Blob`, `Date`
+ * собственных ключей нет, и по ключам два разных файла выглядели бы одинаково.
  * @param prev Прошлое значение.
  * @param next Новое значение.
  * @returns `prev`, если ничего не изменилось, иначе новое дерево с общими ветвями.
  */
 export function share<T>(prev: T, next: T): T {
   if (Object.is(prev, next)) return prev
-  if (prev === null || next === null || typeof prev !== 'object' || typeof next !== 'object') return next
+  if (!isStructural(prev) || !isStructural(next)) return next
   if (Array.isArray(prev) !== Array.isArray(next)) return next
 
   const keys = new Set([...Object.keys(prev as object), ...Object.keys(next as object)])
@@ -66,6 +63,14 @@ export function share<T>(prev: T, next: T): T {
   }
   if (Array.isArray(next) && (next as unknown[]).length !== (prev as unknown[]).length) changed = true
   return changed ? (out as T) : prev
+}
+
+/** Простой объект (в том числе без прототипа) или массив — то, во что `share` заходит. */
+function isStructural(x: unknown): x is object {
+  if (x === null || typeof x !== 'object') return false
+  if (Array.isArray(x)) return true
+  const proto = Object.getPrototypeOf(x)
+  return proto === Object.prototype || proto === null
 }
 
 export class FormStore {
