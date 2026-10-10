@@ -3,9 +3,9 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **28 / 376** файлов прочитано.
+Прогресс: **51 / 376** файлов прочитано.
 
-Средняя оценка по прочитанным: **8.2**.
+Средняя оценка по прочитанным: **8.3**.
 
 ## `src/`
 
@@ -27,35 +27,35 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `app-errors.svelte.ts` | 75 | — | ⏳ |  |  |
-| `index.ts` | 2 | — | ⏳ |  |  |
+| `app-errors.svelte.ts` | 75 | 8 | прочитан | Одна точка решения о судьбе ошибки, структурный конверт без импорта типов lib (K8). Модульный `$state` безопасен на сервере: SSR-ветка бросает и не пишет `critical`. −1 K4: эта безопасность держится на порядке веток, а не на устройстве модуля, и в комментарии не названа. −1 K3: `import.meta.env.DEV/SSR` вместо `dev`/`browser` из `$app/environment`. |  |
+| `index.ts` | 2 | 10 | прочитан | Заглушка шаблона SvelteKit (пустой `$lib`-индекс); вреда нет. |  |
 
 ## `src/lib/components/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `Error500.svelte` | 23 | — | ⏳ |  | window/document×1 |
+| `Error500.svelte` | 23 | 8 | прочитан | Ни строки из ошибки пользователю (K4). −1 K7: `role="alert"` на `<main>` заменяет landmark main. −1 K10: «сырой» `<button>`, хотя во всём приложении используется примитив `Button`. | window/document×1 |
 
 ## `src/lib/components/header/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `LogoSlot.svelte` | 13 | — | ⏳ |  |  |
-| `NavSlot.svelte` | 39 | — | ⏳ |  | $app/×1 |
-| `PageTitleSlot.svelte` | 14 | — | ⏳ |  |  |
-| `SiteFooter.svelte` | 19 | — | ⏳ |  |  |
-| `ThemeToggleSlot.svelte` | 56 | — | ⏳ |  | window/document×5 |
-| `index.ts` | 7 | — | ⏳ |  |  |
-| `nav.ts` | 16 | — | ⏳ |  |  |
+| `LogoSlot.svelte` | 13 | 10 | прочитан | Статичная ссылка-логотип. |  |
+| `NavSlot.svelte` | 39 | 7 | прочитан | `aria-current` как единственный признак активности (K7). −2 K8: читает `page.url.pathname` из `$app/state` в обход адаптера (`currentPathname()`), см. framework-imports.md №5. −1 K10: варианты стиля и логика активного пункта продублированы в `SidebarNav`. | $app/×1 |
+| `PageTitleSlot.svelte` | 14 | 10 | прочитан | `$derived` от контекста страницы оболочки. |  |
+| `SiteFooter.svelte` | 19 | 10 | прочитан | Статичный футер из общего списка навигации. |  |
+| `ThemeToggleSlot.svelte` | 56 | 9 | прочитан | Начальная тема ставится скриптом в `app.html` до отрисовки, компонент синхронизируется в `onMount` (K5). −1 K10: атрибут выставляется дважды (`setAttribute` и `dataset`), лишняя проверка `typeof document` в функции, вызываемой только на клиенте. | window/document×5 |
+| `index.ts` | 7 | 10 | прочитан | Баррель экспорта. |  |
+| `nav.ts` | 16 | 10 | прочитан | Единый список навигации. |  |
 
 ## `src/lib/components/sidebar/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `SidebarFooter.svelte` | 28 | — | ⏳ |  |  |
-| `SidebarNav.svelte` | 40 | — | ⏳ |  | $app/×1 |
-| `SidebarUser.svelte` | 13 | — | ⏳ |  |  |
-| `index.ts` | 4 | — | ⏳ |  |  |
+| `SidebarFooter.svelte` | 28 | 9 | прочитан | −1 K7: доступное имя кнопок — только значение (`top`, `left`); подпись «Dock:»/«Side:» — соседний `span`, с кнопкой не связана. |  |
+| `SidebarNav.svelte` | 40 | 7 | прочитан | −2 K8: `page.url.pathname` из `$app/state` в обход адаптера (framework-imports.md №4). −1 K10: дубль логики `NavSlot`. | $app/×1 |
+| `SidebarUser.svelte` | 13 | 10 | прочитан | Статичная разметка (пустой `<script>` безвреден). |  |
+| `index.ts` | 4 | 10 | прочитан | Баррель экспорта. |  |
 
 ## `src/lib/db/adapters/`
 
@@ -376,15 +376,15 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `AppShell.svelte` | 196 | — | ⏳ |  | window/document×1, svelte-ignore×3, addEventListener×1 |
-| `CollapsingHeader.svelte` | 321 | — | ⏳ |  | $effect×2, window/document×13, setTimeout×3, rAF×2, addEventListener×2 |
-| `HeaderRowView.svelte` | 56 | — | ⏳ |  |  |
-| `HeaderSlot.svelte` | 39 | — | ⏳ |  | $effect×1 |
-| `PageHead.svelte` | 49 | — | ⏳ |  |  |
-| `index.ts` | 38 | — | ⏳ |  |  |
-| `page.svelte.ts` | 226 | — | ⏳ |  | $effect×3 |
-| `shell.svelte.ts` | 83 | — | ⏳ |  | window/document×2 |
-| `use-drawer.svelte.ts` | 86 | — | ⏳ |  | window/document×10, history.*State×1, addEventListener×3 |
+| `AppShell.svelte` | 196 | 7 | прочитан | Drawer без JS на checkbox и `:has()`, ref-ы через `bind:this` (K6). `svelte-ignore` для label-кнопок обоснован (лейбл управляет checkbox). −1 K2: `isNarrow` вручную через `matchMedia` в `onMount`, хотя есть `MediaQuery` из `svelte/reactivity`. −1 K7: «кнопки» — `<label role="button" tabindex="0">` с ручной обработкой Enter/Space (`labelKeyHandler`) вместо `<button>`: компромисс ради работы без JS, но вручную воспроизводит поведение кнопки. −1 K10: тянет `BACKDROP_UTILS` из `$lib/modals/svelte/classes`, то есть оболочка зависит от модуля модалок. | window/document×1, svelte-ignore×3, addEventListener×1 |
+| `CollapsingHeader.svelte` | 321 | 6 | прочитан | Императивная анимация по скроллу вне реактивности — оправдана частотой событий. −1 K10 (костыль C5): «на всякий случай» перемер по таймерам `setTimeout(measure, 300)` и `1200` поверх `ResizeObserver`. −1 K2 (костыль C5): эффект строк 121–136 читает `const _rows = rows` только ради зависимости; при этом вложенные изменения слотов (`header[row][side] = …`) ссылку `rows` не меняют, так что «перемер при смене rows», обещанный комментарием, не происходит. −1 K10: `ResizeObserver` подписывается на `inner.top/bottom` один раз в `onMount`: ряд, появившийся позже, не наблюдается. −1 K10: разметка рядов top и bottom продублирована. | $effect×2, window/document×13, setTimeout×3, rAF×2, addEventListener×2 |
+| `HeaderRowView.svelte` | 56 | 9 | прочитан | Чистое представление ряда. −1 K10: проверки `slots.start &&` при типе, где массивы обязательны. |  |
+| `HeaderSlot.svelte` | 39 | 8 | прочитан | Регистрация в `$effect` с очисткой — внешний эффект, по назначению (K2). −1 K5: регистрация в эффекте, поэтому в SSR слот не попадает, в отличие от `useHeaderSlot` («SSR-safe»); разница не задокументирована. −1 K10: условие строки 32 повторяет `isSidebar`. | $effect×1 |
+| `PageHead.svelte` | 49 | 6 | прочитан | Мета-теги из контекста страницы, `$derived` заголовка. −3 K5/K3 (баг F7, подтверждён пробой `title_probe.py`): на страницах внутри AppShell SSR отдаёт `<title>dd modals</title>`, а после гидрации — заголовок страницы из её `<svelte:head>`. Два источника `<title>` (этот компонент и страницы) конкурируют; без JS и для краулеров заголовок неверен. −1 K10: `useHeadSeo` в проекте не вызывается, поэтому SEO-поля, кроме title, мертвы, а маршруты ставят `<title>` в обход механизма. |  |
+| `index.ts` | 38 | 10 | прочитан | Публичный API модуля оболочки (баррель). |  |
+| `page.svelte.ts` | 226 | 7 | прочитан | Контекст страницы через `setContext`/`getContext` (по документации state-management: состояние в контексте, а не в модуле — K4). Регистрация слотов синхронна, поэтому работает и в SSR. −1 K2: `enabled: () => boolean` и `useHeadSeo(() => …)` вычисляются один раз при вызове: сигнатура обещает реактивность, которой нет. −1 K10: `registerHeaderSlot` и `registerSidebarSlot` — копии одной логики вставки по `offset`. −1 K10: мёртвый псевдоним типа `HeaderRows = HeaderSlots`. | $effect×3 |
+| `shell.svelte.ts` | 83 | 7 | прочитан | Состояние оболочки в контексте (K4), валидация прочитанного из хранилища. −2 K5: `localStorage` читается в конструкторе: SSR рисует `top/left`, клиент сразу ставит сохранённое (пробой `shell_hydration_probe.py`: после гидрации `dock=bottom`, без предупреждений), то есть у пользователя с нестандартной раскладкой шапка и панель перескакивают после загрузки. Устраняется cookie и чтением в `load` или скриптом в `app.html`, как у темы. −1 K10: неиспользуемый импорт `onMount`. | window/document×2 |
+| `use-drawer.svelte.ts` | 86 | 4 | прочитан | Drawer поверх checkbox работает без JS (K6). −4 K3 (баг F6, подтверждён пробой `drawer_probe.py`): открытие вызывает нативный `history.pushState` и копирует служебные ключи `sveltekit:history`/`sveltekit:navigation` в новую запись. SvelteKit в dev предупреждает: «Avoid using history.pushState(...)… Use the pushState and replaceState imports from $app/navigation». Документированный путь для «Назад закрывает панель» — [shallow routing](https://svelte.dev/docs/kit/shallow-routing) (`pushState` + `page.state`) через адаптер. Предупреждение пропущено при обходе во 2-м ходе (обход был на широком экране). −1 K10: `panel` в `DrawerOptions` принимается, но не используется. −1 K10: проверки `typeof history` внутри `onMount`/обработчиков лишние. | window/document×10, history.*State×1, addEventListener×3 |
 
 ## `src/lib/ui/`
 
