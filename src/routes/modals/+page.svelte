@@ -128,6 +128,15 @@ import { Button } from '$lib/ui/primitives'
           <LoadLink href="/no-such-page/1" class={modalTriggerVariants()}>
             Битая ссылка
           </LoadLink>
+          <!-- исходы загрузчика: ошибка (страницу покажет её +error; в kit 3
+               ссылка ещё и увидит ошибку до перехода) и штатная
+               переадресация — не ошибка -->
+          <LoadLink href="/cards/404?fail=1" class={modalTriggerVariants()}>
+            Загрузчик с ошибкой
+          </LoadLink>
+          <LoadLink href="/cards/307?moved=1" class={modalTriggerVariants()}>
+            Ссылка с переадресацией
+          </LoadLink>
           <!-- обычная ссылка: функция сама гасит переход -->
           <a
             href="?modal=card"

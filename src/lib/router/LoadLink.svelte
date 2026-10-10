@@ -10,7 +10,8 @@
   // слоя фреймворка ядра (та же таблица роутов, что и у триггера route-модалок):
   // ссылка только рисует состояние, сама она ничего не проверяет
   // (осмотр 1.10-2, №30/№31).
-  import { goto, preloadData } from '$app/navigation'
+  import { goto } from '$app/navigation'
+  import { preloadOutcome } from './sveltekit'
   import { routeResolves } from '$lib/modals/cores/sveltekit'
   import { ButtonIndicator } from '$lib/ui/modals'
 
@@ -22,6 +23,11 @@
     /**
      * При ошибке загрузчика всё равно переходить (по умолчанию — да:
      * страницу покажет её +error). Как `navigateOnError` оригинала.
+     *
+     * Ограничение kit 2.x: `preloadData` не сообщает об ошибке загрузчика
+     * (sveltejs/kit#12399, исправлено в kit 3 — #12579), поэтому `false`
+     * сейчас удерживает ссылку только при отказе самой предзагрузки (сеть,
+     * чанк). После перехода на kit 3 — и при ошибке загрузчика, без правок.
      */
     navigateOnError?: boolean
     title?: string
@@ -67,14 +73,21 @@
 
     status = 'loading'
     innerError = null
-    const r = await preloadData(href)
-    if (r.type !== 'loaded') {
-      innerError = r.type === 'redirect' ? `переход: ${r.location}` : 'не удалось загрузить страницу'
-      status = 'error'
-      if (!navigateOnError) return
-    } else {
-      status = 'idle'
-    }
+    // Исход читает адаптер по контракту kit 3 (`preloadOutcome`). Переадресация —
+    // штатный исход, не ошибка: переходим по исходному адресу, и SvelteKit сам
+    // её выполнит (в том числе на внешний адрес, куда `goto` напрямую не ходит).
+    // Отказ предзагрузки — ошибка, а не вечное `loading`, которое к тому же
+    // глушило бы повторный клик (C4).
+    const outcome = await preloadOutcome(href)
+    const failed =
+      outcome.kind === 'error'
+        ? outcome.status
+          ? `ошибка ${outcome.status}${outcome.message ? `: ${outcome.message}` : ''}`
+          : `не удалось загрузить страницу${outcome.message ? `: ${outcome.message}` : ''}`
+        : null
+    innerError = failed
+    status = failed ? 'error' : 'idle'
+    if (failed && !navigateOnError) return
     // replaceState — так называется опция у goto SvelteKit (у navigate
     // оригинала была replace)
     goto(href, { replaceState: replace })

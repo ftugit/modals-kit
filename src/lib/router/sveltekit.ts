@@ -15,7 +15,7 @@
  * через `goto`.
  */
 import { browser } from '$app/environment'
-import { goto, pushState, replaceState } from '$app/navigation'
+import { goto, preloadData, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '$lib/paginate'
@@ -144,4 +144,36 @@ export function shallowFlag(key: string): { readonly on: boolean; push(): void }
       pushState(window.location.href, { ...state(), [key]: true })
     },
   }
+}
+
+/**
+ * Исход предзагрузки адреса — по контракту SvelteKit 3 (`preloadData`:
+ * `loaded | redirect | error` + `status`, sveltejs/kit#12579).
+ *
+ * Kit 2.x этот контракт не выполняет: при ошибке загрузчика `preloadData`
+ * отдаёт `{type: 'loaded', status: 200}` с данными ТЕКУЩЕЙ страницы
+ * (`preload_error` → `clone_page(page)`; sveltejs/kit#12399). Поэтому до
+ * перехода на kit 3 ветка `error` срабатывает только при отказе самой
+ * предзагрузки (исключение: сеть, чанк), а ошибка загрузчика видна как
+ * `loaded` (C4, docs/audit/crutches.md). Признаков из внутренностей 2.x здесь
+ * сознательно нет — после обновления kit ветка заработает без правок.
+ */
+export type PreloadOutcome =
+  | { kind: 'loaded'; status: number }
+  | { kind: 'redirect'; location: string }
+  | { kind: 'error'; status: number | null; message: string }
+
+export async function preloadOutcome(href: string): Promise<PreloadOutcome> {
+  // Тип шире объявленного в 2.x: форма 3.x (`type: 'error'`) обязана читаться.
+  let r: { type: string; status?: number; location?: string; error?: { message?: string } }
+  try {
+    r = (await preloadData(href)) as typeof r
+  } catch (error) {
+    return { kind: 'error', status: null, message: error instanceof Error ? error.message : String(error) }
+  }
+  if (r.type === 'redirect') return { kind: 'redirect', location: r.location ?? href }
+  if (r.type === 'error' || (r.status ?? 200) >= 400) {
+    return { kind: 'error', status: r.status ?? null, message: r.error?.message ?? '' }
+  }
+  return { kind: 'loaded', status: r.status ?? 200 }
 }

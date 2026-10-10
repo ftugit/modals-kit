@@ -1199,6 +1199,66 @@ try {
     await page.close()
   })
 
+  /* ── R-29 (C4): LoadLink различает исходы загрузчика ─────────────── */
+  // Исход читает адаптер `preloadOutcome` по контракту kit 3 (`loaded |
+  // redirect | error`). Было: `type !== 'loaded'` считалось ошибкой — штатная
+  // переадресация рисовалась ошибкой, а отказ preloadData оставлял ссылку в
+  // вечном `loading`. Ошибку ЗАГРУЗЧИКА kit 2.x ссылке не сообщает
+  // (sveltejs/kit#12399): эта часть проверяется только на kit ≥ 3.
+  await run('R-29 LoadLink: переадресация — не ошибка, отказ предзагрузки — ошибка', async () => {
+    const { readFileSync } = await import('node:fs')
+    const kitMajor = Number(JSON.parse(readFileSync('node_modules/@sveltejs/kit/package.json', 'utf8')).version.split('.')[0])
+    const watch = (page, href) => page.evaluate((h) => {
+      window.__llStates = []
+      const a = document.querySelector(`a[href="${h}"]`)
+      new MutationObserver(() => window.__llStates.push(a.getAttribute('data-state')))
+        .observe(a, { attributes: true, attributeFilter: ['data-state'] })
+    }, href)
+
+    // 1. Переадресация: переход на цель, состояния `error` не было.
+    let page = await browser.newPage()
+    await gotoBase(page)
+    await watch(page, '/cards/307?moved=1')
+    await page.locator('a[href="/cards/307?moved=1"]').click()
+    await page.waitForURL((u) => u.pathname === '/cards/307' && !u.search.includes('moved'), { timeout: 10000 })
+    // Переход клиентский — window тот же, наблюдатель успел записать состояния.
+    let states = await page.evaluate(() => window.__llStates)
+    assert(!states.includes('error'), `переадресация показана ошибкой: ${JSON.stringify(states)}`)
+    ok(`переадресация: переход на цель, ошибки нет (состояния: ${JSON.stringify(states)})`)
+    await page.close()
+
+    // 2. Отказ загрузки кода маршрута: пользователь не застревает на ссылке в
+    //    вечном `loading` — либо переход (kit сам уходит в нативную навигацию),
+    //    либо ссылка выходит из `loading` с причиной.
+    page = await browser.newPage()
+    await gotoBase(page)
+    await page.route(/cards\/\[id\]|nodes\/\d+\.js/, (r) => r.abort())
+    await page.locator('a[href="/cards/501?slow=1"]').click()
+    await page.waitForFunction(() => {
+      if (location.pathname !== '/modals') return true
+      return document.querySelector('a[href="/cards/501?slow=1"]')?.getAttribute('data-state') !== 'loading'
+    }, null, { timeout: 15000 })
+    const where = new URL(page.url()).pathname
+    ok(`отказ загрузки кода: не застряли в loading (${where === '/modals' ? 'ссылка вышла из loading' : `переход на ${where}`})`)
+    await page.close()
+
+    // 3. Ошибка загрузчика: страницу показывает её +error; в kit 3 ссылка видит ошибку до перехода.
+    page = await browser.newPage()
+    await gotoBase(page)
+    await watch(page, '/cards/404?fail=1')
+    await page.locator('a[href="/cards/404?fail=1"]').click()
+    await page.waitForURL((u) => u.pathname === '/cards/404', { timeout: 10000 })
+    await page.waitForFunction(() => document.body.innerText.includes('404'), null, { timeout: 10000 })
+    states = await page.evaluate(() => window.__llStates)
+    if (kitMajor >= 3) {
+      assert(states.includes('error'), `kit ${kitMajor}: ошибка загрузчика не видна ссылке: ${JSON.stringify(states)}`)
+      ok('ошибка загрузчика: ссылка видит её до перехода (контракт kit 3)')
+    } else {
+      ok(`ошибка загрузчика: переход на +error со статусом 404; распознавание до перехода ждёт kit 3 (сейчас ${kitMajor}.x, состояния: ${JSON.stringify(states)})`)
+    }
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
