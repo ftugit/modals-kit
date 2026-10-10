@@ -45,7 +45,7 @@ grep -rnE "from ['\"](\$app/[a-z]+|@sveltejs/kit[^'\"]*|\$env/[a-z/]+)['\"]" src
 | 9 | `lib/modals/svelte/media.svelte.ts:3,15` | `$app/environment` (`browser`) | **Лишний импорт фреймворка** в Svelte-биндинге | Проверка `if (!browser) return` стоит внутри `$effect`, а `$effect` на сервере не выполняется вовсе: импорт и проверку можно убрать. Если признак окружения нужен — `esm-env` (`BROWSER`). |
 
 | 10 | `lib/server/db.ts:20`, `lib/server/form-security.ts:18,32,36` | `process.env` вместо `$env/dynamic/private` | **Обход модуля окружения фреймворка** (C7) | `$env/dynamic/private`; работает на любом адаптере. |
-| 11 | `lib/server/shikimori-filters.ts:257`, `lib/server/shikimori-schema.ts:314` (и `lib/paginate`, `lib/filters` — см. их пачки) | `process.env.NODE_ENV` как признак dev | **Обход** (C7) | `import.meta.env.DEV` (Vite) либо `dev` из `$app/environment` — в библиотеке предпочтительно первое. |
+| 11 | `lib/server/shikimori-filters.ts:257`, `lib/server/shikimori-schema.ts:314`, `lib/filters/catalog-filter.ts:388` (и `lib/paginate/adapter-url.ts:124`, `lib/paginate/source.ts:177` — уточнить в их пачке) | `process.env.NODE_ENV` как признак dev | **Обход** (C7) | `import.meta.env.DEV` (Vite) либо `dev` из `$app/environment` — в библиотеке предпочтительно первое. |
 
 Строки 10–11 добавлены в ходе 6 при чтении `lib/server`: модулей `$env/*` в `src/` нет вовсе (`grep -rn '\$env/' src` — пусто).
 
