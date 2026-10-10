@@ -120,6 +120,14 @@ export async function openNodeDatabase(
     await db.waitReady;
     await db.query("SELECT 1");
   } catch (error) {
+    // Файловый каталог — это dev/демо-режим, и «PGlite failed to initialize
+    // properly» там означает почти всегда одно: корпус пережил неаккуратную
+    // смерть или перенос и восстановлению этой сборкой не подлежит. Без подсказки
+    // человек ищет причину в приложении, хотя ему нужно удалить каталог.
+    if (!/locked/.test(String((error as Error)?.message ?? "")))
+      (error as Error).message =
+        `${(error as Error)?.message ?? error}: каталог ${dataDir} не открывается (повреждён или создан другой сборкой PGlite). ` +
+        "Удалите его — демо пересоздаст корпус из миграций и сида.";
     await lock.close().catch(() => {});
     if (db) await db.close();
     await unlink(lockPath).catch(() => {});

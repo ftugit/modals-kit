@@ -139,12 +139,12 @@ try {
     const nav = await page.$$eval('[data-testid="page-nav"] a', (e) => e.length)
     return `${totalBefore} → ${total}, ссылок страниц: ${nav}, метка жива: ${alive === 'alive'}`
   })
-  await step('панель переключает режим: поток вместо списка страниц', async () => {
+  await step('панель включает курсор: тумблер → ?page.cur, номеров больше нет', async () => {
     await page.goto(BASE, { waitUntil: 'networkidle' })
     // Имя контрола панели = адресный ключ (`page.<key>`, см. compile.ts), поэтому
     // поле находится без гадания на разметку.
-    await page.locator('select[name="page.mode"]').selectOption('stream')
-    await page.waitForURL(/page\.mode=stream/, { timeout: 15_000 })
+    await page.locator('input[name="page.cur"]').check()
+    await page.waitForURL(/page\.cur=(true|1)/, { timeout: 15_000 })
     await page.waitForFunction(
       () => !document.querySelector('[data-testid="page-nav"]') && !!document.querySelector('[data-testid="load-next"]'),
       undefined,
@@ -155,17 +155,56 @@ try {
     await page.click('[data-testid="load-next"]')
     await page.waitForFunction((n) => document.querySelectorAll('[data-testid="row"]').length > n, rows0, { timeout: 15_000 })
     const rows1 = await rowCount()
-    return `режим «${mode?.trim()}», строк ${rows0} → ${rows1}`
+    const ids1 = await rowIds()
+    if (new Set(ids1).size !== ids1.length) throw new Error('подгрузка повторила строки: ' + ids1.join(','))
+    return `режим «${mode?.trim()}», строк ${rows0} → ${rows1}, id уникальны`
   })
-  await step('в потоке адрес остаётся на той же странице (никакого ?page=2)', async () => {
-    const search = new URL(page.url()).search
-    if (/page=2/.test(search)) throw new Error(`подгрузка ушла в ?page=2: ${search}`)
-    return `адрес: ${search}`
+  await step('продолжение держится на токене: клик выдаёт новый указатель', async () => {
+    // Свой заход, а не «продолжение предыдущего шага»: в прошлом шаге список дошёл
+    // до конца, указателя следующего шага больше нет, и `EndRow` законно заменил
+    // ссылку. Размер 3 при 9 записях оставляет запас в два шага.
+    await page.goto(`${BASE}?page.cur=1&page.size=3`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-testid="load-next"]', { timeout: 15_000 })
+    const pointer = async () =>
+      decodeURIComponent(/page\.after=([^&#"]+)/.exec((await page.getAttribute('[data-testid="load-next"]', 'href')) ?? '')?.[1] ?? '')
+    const before = await pointer()
+    if (!before) throw new Error('в ссылке нет указателя: ' + (await page.getAttribute('[data-testid="load-next"]', 'href')))
+    const rows0 = await rowCount()
+    await page.click('[data-testid="load-next"]')
+    await page.waitForFunction((n) => document.querySelectorAll('[data-testid="row"]').length > n, rows0, { timeout: 15_000 })
+    const after = await pointer()
+    if (after === before) throw new Error('ссылка «дальше» не продвинулась: тот же токен')
+    // Адрес состояния держит УКАЗАТЕЛЬ ПОСЛЕДНЕГО ответа — тот же, что и в ссылке:
+    // позиция списка и ссылка «дальше» обязаны быть одним значением, иначе
+    // перезагрузка страницы вернула бы не туда, куда ведёт ссылка.
+    const search = decodeURIComponent(new URL(page.url()).search)
+    if (!search.includes('page.after=' + after))
+      throw new Error(`в адресе не тот указатель: ${search.slice(0, 60)}… / ссылка ${after.slice(0, 12)}…`)
+    return `токен сменился (${before.slice(0, 8)}… -> ${after.slice(0, 8)}…), он же — в адресе`
   })
-  await step('обратно в режим страниц: панель пишет ?page.mode=pages', async () => {
-    await page.locator('select[name="page.mode"]').selectOption('pages')
+  await step('без указателя список снова с начала (токен = позиция)', async () => {
+    const seen = await rowIds()
+    await page.goto(`${BASE}?page.cur=1`, { waitUntil: 'networkidle' })
+    await page.waitForFunction((prev) => {
+      const now = [...document.querySelectorAll('[data-testid="row-id"]')].map((e) => e.textContent.trim())
+      return now.length > 0 && now.join() === prev.slice(0, now.length).join()
+    }, seen, { timeout: 15_000 })
+    const first = await rowIds()
+    if (first[0] !== seen[0]) throw new Error(`первая строка не вернулась к началу: ${first[0]} / ${seen[0]}`)
+    return `${first.length} строк — те же, с которых начали`
+  })
+  await step('тумблер выключается: ?page.cur снят, номера страниц вернулись', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    // Первый шаг — включённый тумблер, второй — снятый: `toPatch` для toggle пишет
+    // и `false` (в отличие от select, где пустое значение = «ключ не трогаем»),
+    // иначе режим нельзя было бы выключить панелью.
+    await page.locator('input[name="page.cur"]').check()
+    await page.waitForURL(/page\.cur=/, { timeout: 15_000 })
+    await page.locator('input[name="page.cur"]').uncheck()
     await page.waitForFunction(() => !!document.querySelector('[data-testid="page-nav"]'), undefined, { timeout: 15_000 })
-    return new URL(page.url()).search
+    const search = new URL(page.url()).search
+    if (/page\.cur=/.test(search)) throw new Error(`ключ режима остался в адресе: ${search}`)
+    return search || 'адрес чистый, PageNav снова есть'
   })
   await step('фильтр из адреса применяется в браузере', async () => {
     const flt = encodeURIComponent(JSON.stringify({ op: 'eq', field: 'title', value: 'несуществующий-заголовок' }))

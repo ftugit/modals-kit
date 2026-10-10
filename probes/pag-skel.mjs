@@ -108,6 +108,12 @@ const browser = await chromium.launch({ headless: true })
     ['ручной снизу', '?page.size=5&page.bottomTrigger=manual'],
     ['ручной сверху', '?page.size=5&page.topTrigger=manual'],
     ['классический режим', '?page.size=5&page.mode=single'],
+    // Источник «БД» — он же на /db-demo: два режима навигации на одном источнике
+    // обязаны проходить ту же проверку на рекурсию сниппетов, что и локальные данные.
+    ['БД: страницы', '?page.src=db&page.size=5'],
+    // `bottomTrigger=manual` — чтобы ссылка «показать» была чем считать: дефолт
+    // демо — автоскролл, и «нул» ссылок там ничего не значит.
+    ['БД: курсор', '?page.src=db&page.size=5&page.cur=1&page.bottomTrigger=manual'],
   ]) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     let status = 0
@@ -118,7 +124,9 @@ const browser = await chromium.launch({ headless: true })
     await page.waitForTimeout(600)
     const hosts = await page.locator('[data-paginator-host]').count()
     const links = await page.locator('[data-testid^="load-"]').count()
-    console.log(`    ${label.padEnd(18)} HTTP ${status}, хостов ${hosts}, ссылок «показать» ${links}`)
+    console.log(
+      `    ${label.padEnd(18)} HTTP ${status}${status === 200 ? '' : '  <-- НЕ 200'}, хостов ${hosts}, ссылок «показать» ${links}`,
+    )
     await page.close()
   }
 }

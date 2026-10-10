@@ -44,6 +44,7 @@
   // Строка записи БД — общий компонент с `/db-demo` (`$lib/ui/demo/db-list`),
 // здесь ей передаётся только оформление карточки и опознавательный testid.
 import DbPostRow from '$lib/ui/demo/db-list/DbPostRow.svelte'
+import { useCursorMode } from '$lib/ui/demo/db-list/cursor-mode.svelte'
 import ItemRow from './ItemRow.svelte'
   import SearchQueryForm from './SearchQueryForm.svelte'
   import ShotTile from './ShotTile.svelte'
@@ -245,6 +246,9 @@ import ItemRow from './ItemRow.svelte'
   const correction = useSearchCorrection(name)
 
   const cfg = $derived.by((): DemoExtra => demoExtraOf(pagState().extra))
+  // Режим курсора источника «БД» — общий с `/db-demo` хук: значение и уборка
+  // указателя из адреса обязаны быть одинаковыми на обеих страницах.
+  useCursorMode(name)
   const query = $derived(demoQueryOf(pagState().extra))
   /** Возможности текущего источника: панель и подсказки следуют им, а не имени `src`. */
   const gates = $derived(featureGates(pagState().capabilities))

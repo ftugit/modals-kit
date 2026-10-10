@@ -16,7 +16,7 @@
    * Различается только взаимодействие: источник, размер страницы, порядок и
    * фильтр на оба режима одни — тот же `queryPage` на сервере.
    */
-  import { PaginatorHost, usePaginatorState } from '$lib/paginate/svelte'
+  import { PaginatorHost } from '$lib/paginate/svelte'
   import type { PaginatorState } from '$lib/paginate'
   import {
     EmptyState,
@@ -37,12 +37,12 @@
     DB_LIST_PAGE_SIZES,
     dbListExtraOf,
     ensureDbListPaginator,
-    isCursorOn,
     type DbListExtra,
     type DbPost,
   } from './definition'
   import DbPostRow from './DbPostRow.svelte'
   import ListMeta from './ListMeta.svelte'
+  import { useCursorMode } from './cursor-mode.svelte'
 
   interface Props {
     /** SSR-снапшот из лоадера: без JavaScript список виден целиком. */
@@ -60,18 +60,18 @@
   ensureDbListPaginator()
   const name = DB_LIST_NAME
 
-  // Имя здесь обязательно: этот вызов — ВНЕ области видимости `<PaginatorHost>`
-  // (он рисует хост, а не живёт внутри него), контекста ещё нет. `ListMeta`,
-  // который находится внутри хоста, наоборот, имени не принимает — иначе
-  // молча читал бы чужой стор, если демо вставят в другую страницу.
-  const state = usePaginatorState<DbPost>(name)
   /**
-   * Режим на первой отрисовке берётся из ТОГО ЖЕ источника, что и строки: на
-   * сервере стор вне области видимости хоста пуст (снапшот живёт в хосте), поэтому
-   * значение доится из снимка лоадера. Иначе `?page.cur=true` дал бы расхождение
-   * SSR/клиента — ровно то, о чём предупреждает `snapshotSafeError`.
+   * Режим и уборка указателя — общий хук (`useCursorMode`): тот же код служит
+   * этой странице и пункту «БД» в демо-пагинаторе, поэтому «сняли курсор →
+   * адрес честный» не может оказаться правдой только на одной из них.
+   *
+   * Имя здесь обязательно: этот вызов — ВНЕ области видимости `<PaginatorHost>`
+   * (он рисует хост, а не живёт внутри него), контекста ещё нет. `ListMeta`,
+   * который находится внутри хоста, наоборот, имени не принимает — иначе
+   * молча читал бы чужой стор, если демо вставят в другую страницу.
    */
-  const cursor = $derived(isCursorOn(state().extra) || isCursorOn(snapshot?.extra))
+  const cursorOn = useCursorMode(name, () => snapshot)
+  const cursor = $derived(cursorOn())
 
   /**
    * Панель — данные (`SettingsField[]`), а не разметка: компилятор панели

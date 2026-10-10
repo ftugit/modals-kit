@@ -48,7 +48,7 @@ describe('адрес источника БД: страницы и курсор �
     expect(validate('x'.repeat(513))).toBeUndefined() // длина ограничена
   })
 
-  it('источник выбирает транспорт по наличию указателя: `after` важнее номера', async () => {
+  it('источник выбирает транспорт по РЕЖИМУ: указатель без режима не едет', async () => {
     const seen: DbPostsQuery[] = []
     setDbPostsServerTransport(async (query) => {
       seen.push(query)
@@ -56,8 +56,15 @@ describe('адрес источника БД: страницы и курсор �
     })
     await dbPostsSource.fetchPage({ page: 3, pageSize: DB_LIST_PAGE_SIZE }, { ord: DB_LIST_ORDER_DEFAULT })
     expect(seen[0]).toMatchObject({ page: 3, after: undefined, order: undefined })
+    // Когда режим включён, указатель важнее номера: смешанный адрес обязан
+    // означать одно и то же с обеих сторон (SSR-снапшот и догрузка).
+    await dbPostsSource.fetchPage({ page: 4, pageSize: DB_LIST_PAGE_SIZE }, { cur: true, after: 'T-3' })
+    expect(seen[1]).toMatchObject({ page: 4, cursor: true, after: 'T-3' })
+    // Осевший в адресе `?page.after` при выключенном режиме — НЕ второй способ
+    // навигации, а мусор: списку с номерами страниц keyset-ответ противопоказан
+    // (в нём нет totalItems, и `PageNav` строил бы номера из ниоткуда).
     await dbPostsSource.fetchPage({ page: 4, pageSize: DB_LIST_PAGE_SIZE }, { after: 'T-3' })
-    expect(seen[1]).toMatchObject({ page: 4, after: 'T-3' })
+    expect(seen[2]).toMatchObject({ page: 4, cursor: false, after: undefined })
   })
 
   it('keyset включается режимом, а не только токеном: первый шаг тоже без номера', async () => {

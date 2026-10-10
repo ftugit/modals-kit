@@ -83,6 +83,17 @@ const envelopeOf = (html, formId) => {
 
 const ORIGIN = new URL(base).origin;
 /**
+ * Тот же конвейер, что и у страницы, но без HTML: ответы источника. Проверять
+ * «страницы» и «курсор» одним браузерным текстом нельзя — на уровне ответа видно
+ * то, чего разметка уже не скроет: `totalItems` в keyset-режиме, порядок id.
+ */
+const API = ORIGIN + "/api/db-posts";
+const APP = ORIGIN + "/paginator";
+const api = async (query) => {
+  const r = await fetch(API + "?" + query, { headers: { accept: "application/json" } });
+  return { status: r.status, body: await r.json().catch(() => null) };
+};
+/**
  * Конверт обязателен и для статического описания: `createFormHandler` сверяет
  * `__form_id` (policy.ts: id/rev/instance/submission/spec/intent), иначе ответ
  * — 400 `envelope.missing`, а не отказ валидации. Браузер получает эти пары из
@@ -246,13 +257,27 @@ await step("POST /db-demo/submit без конверта = отказ слоя, 
   return `${r.status}, code=${code}`;
 });
 /* Режим навигации — тоже ключ адреса, значит работает и без JavaScript: SSR
-   обязан отдать ручную ссылку «показать ещё» вместо списка номеров. */
-await step("?page.mode=stream без JS отдаёт ссылку подгрузки (не PageNav)", async () => {
-  const r = await fetch(base + "?page.mode=stream", { headers: { accept: "text/html" } });
+   обязан отдать ручную ссылку «показать ещё» с токеном вместо списка номеров.
+   Указатель выдаёт сервер, поэтому в разметке он есть уже на первой отрисовке. */
+await step("?page.cur=1 без JS отдаёт ссылку подгрузки с токеном (не PageNav)", async () => {
+  const r = await fetch(base + "?page.cur=1&page.size=3", { headers: { accept: "text/html" } });
   const html = await r.text();
-  if (!html.includes('data-testid="load-next"')) throw new Error("ссылки подгрузки нет в SSR-разметке");
-  if (html.includes('data-testid="page-nav"')) throw new Error("в потоке остался список номеров страниц");
-  return "load-next в SSR, PageNav нет";
+  // Ссылка «дальше» и её токен — один тег, причём `href` идёт первым (атрибуты
+  // в SSR-разметке не упорядочены нашей волей), поэтому ищем пары, а не порядок.
+  const link = /<a [^>]*href="([^"]*page\.after=([^&#"]+)[^"]*)"[^>]*data-testid="load-next"/.exec(html);
+  if (!link) throw new Error("ссылки подгрузки с токеном в SSR-разметке нет");
+  const token = decodeURIComponent(link[2]);
+  if (html.includes('data-testid="page-nav"')) throw new Error("в курсорном режиме остался список номеров страниц");
+  return "load-next с токеном " + token.slice(0, 12) + "…, PageNav нет";
+});
+await step("?page.cur=on (чекбокс нативного GET) = ?page.cur=1 (панель)", async () => {
+  // Без JavaScript флаг приезжает как `on` (см. `builtins.ts` формы), панель пишет
+  // boolean. Значения разные, смысл обязан быть один: те же строки на экране.
+  const one = await (await fetch(base + "?page.cur=1&page.size=3", { headers: { accept: "text/html" } })).text();
+  const on = await (await fetch(base + "?page.cur=on&page.size=3", { headers: { accept: "text/html" } })).text();
+  if (ids(one).join() !== ids(on).join()) throw new Error("строки разошлись: " + ids(one)[0] + " / " + ids(on)[0]);
+  if (!/page\.after=/.test(on)) throw new Error("`on` не включает курсорный режим: токена в ссылках нет");
+  return ids(one).length + " одинаковых строк, токен в ссылках есть там и там";
 });
 await step("битый JSON в ?page.flt = ErrorRow с причиной (не 500, не пусто)", async () => {
   const r = await fetch(base + "?page.flt=" + encodeURIComponent("{title:"), { headers: { accept: "text/html" } });
@@ -309,6 +334,81 @@ await step("мусор в ?page.ord не просачивается (ErrorRow, �
   if (/Internal Server Error|error-boundary/i.test(html)) throw new Error("похоже на 500: " + html.slice(0, 80));
   return `status ${r.status}, ${(await count(html))} строк default-порядка`;
 });
+/* ─── ответы источника (не разметка): то, что страница уже не скроет ─── */
+await step("API: ?size=3 — ровно 3 строки (дефолт не подменяет запрос)", async () => {
+  const { status, body } = await api("size=3&page=1");
+  if (status !== 200) throw new Error(`status ${status}`);
+  if (body?.items?.length !== 3) throw new Error(`${body?.items?.length} items вместо 3`);
+  return `3 из ${body.totalItems}`;
+});
+await step("API: первый шаг курсора без токена = keyset без total, указатель выдан", async () => {
+  const { body } = await api("size=3&cur=1");
+  const token = body?.extra?.after;
+  if (!token) throw new Error("указателя следующего шага нет: " + JSON.stringify(body?.extra));
+  if ("totalItems" in (body ?? {})) throw new Error("totalItems вернулся в keyset-ответе");
+  if (body.items.length !== 3) throw new Error(`${body.items.length} items вместо 3`);
+  return `токен ${token.slice(0, 10)}…, 3 строки, total нет`;
+});
+await step("API: цепочка курсора покрывает список без повторов и пропусков", async () => {
+  const size = 4;
+  const total = (await api(`size=${size}&page=1`)).body.totalItems;
+  const seen = [];
+  let after = null;
+  let steps = 0;
+  for (;;) {
+    const q = after ? `size=${size}&cur=1&after=${encodeURIComponent(after)}` : `size=${size}&cur=1`;
+    const { status, body } = await api(q);
+    if (status !== 200) throw new Error(`шаг ${steps + 1}: status ${status} ${JSON.stringify(body).slice(0, 120)}`);
+    seen.push(...body.items.map((i) => i.id));
+    steps++;
+    after = body.hasNext ? body.extra?.after : null;
+    if (!after) break;
+    if (steps > Math.ceil(total / size) + 2) throw new Error(`цепочка не заканчивается (${steps} шагов при total ${total})`);
+  }
+  if (seen.length !== total) throw new Error(`пройдено ${seen.length}, total ${total}`);
+  if (new Set(seen).size !== seen.length) throw new Error("в цепочке есть повторы — порядок неполный");
+  // Совпадение МНОЖЕСТВ — минимум; порядок сверяется отдельно и он детерминирован,
+  // потому что `created_at` в демо ставится `clock_timestamp()` (уникален на строку),
+  // а keyset-порядок дополняется `id ASC` на сервере.
+  const pages = [];
+  for (let n = 1; n <= Math.ceil(total / size); n++)
+    pages.push(...(await api(`size=${size}&page=${n}`)).body.items.map((i) => i.id));
+  if (new Set(pages).size !== seen.length) throw new Error("множества id разошлись со списком по номерам");
+  if (pages.join() !== seen.join()) throw new Error("ключевой порядок ≠ постраничному: " + seen.slice(0, 2) + " / " + pages.slice(0, 2));
+  return `${steps} шагов, ${seen.length} = total, порядок совпадает с ?page=N`;
+});
+await step("API: битый токен = 400 с объяснением, а не чужая страница", async () => {
+  const { status, body } = await api("size=3&cur=1&after=" + encodeURIComponent("не-токен"));
+  if (status === 200) throw new Error("чужой токен принят: " + JSON.stringify(body).slice(0, 120));
+  if (status !== 400) throw new Error(`ожидался 400, а ${status}: ` + JSON.stringify(body).slice(0, 120));
+  const text = String(body?.error ?? "");
+  if (!/токен/i.test(text)) throw new Error("в ответе нет объяснения: " + text.slice(0, 120));
+  if (/Internal|undefined|\[object/i.test(text)) throw new Error("текст нечитаем: " + text.slice(0, 120));
+  return `400 code=${body?.code}, «${text.slice(0, 44)}…»`;
+});
+/* ─── тот же источник на второй странице (демо-пагинатор) ─── */
+await step("/paginator: пункт «БД» рисует те же строки, что /db-demo", async () => {
+  const html = await (await fetch(APP + "?page.src=db&page.size=5", { headers: { accept: "text/html" } })).text();
+  const here = [...html.matchAll(/data-testid="db-([0-9a-f-]{8,})"/g)].map((m) => m[1]);
+  if (!here.length) throw new Error("записей БД в демо-пагинаторе нет: " + html.slice(0, 140));
+  const there = ids((await body()).html);
+  if (here.join() !== there.slice(0, here.length).join())
+    throw new Error(`разошлись с /db-demo: ${here[0]} / ${there[0]}`);
+  if (/data-testid="error-row"/.test(html)) throw new Error("список в отказе: " + html.slice(0, 140));
+  return `${here.length} одинаковых с /db-demo строк (SSR через слой, не через API)`;
+});
+await step("/paginator: курсор — возможность источника: у «БД» токен, у «товаров» — нет", async () => {
+  const db = await (await fetch(APP + "?page.src=db&page.size=5&page.cur=1&page.bottomTrigger=manual", { headers: { accept: "text/html" } })).text();
+  const pr = await (await fetch(APP + "?page.src=products&page.size=5&page.cur=1", { headers: { accept: "text/html" } })).text();
+  // Ссылка «показать ещё» с токеном — то же самое, что рисует /db-demo: разметка
+  // разная (хост демо), продолжение — одно и то же (источник).
+  const link = /<a [^>]*href="[^"]*page\.after=([^&#"]+)[^"]*"[^>]*data-testid="load-next"/.exec(db);
+  if (!link) throw new Error("у источника «БД» ссылки подгрузки с указателем нет");
+  if (/page\.after=/.test(pr)) throw new Error("товарам выдан указатель, которого у них нет");
+  if (!/data-testid="page-nav"/.test(pr)) throw new Error("у товаров пропали номера страниц из-за чужого ключа");
+  return `БД: токен ${decodeURIComponent(link[1]).slice(0, 10)}… в load-next; товары: указателя нет, PageNav жив`;
+});
+
 await step("в HTML нет «Cannot find module»/«is not exported»", async () => {
   const html = (await body()).html;
   const bad = /Cannot find module|is not exported|Failed to resolve import|kit-db.*undefined/.exec(html);

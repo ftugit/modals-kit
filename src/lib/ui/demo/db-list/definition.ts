@@ -196,11 +196,14 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   const filter = input.filters?.flt
   const rawOrder = input.filters?.ord
   const order = rawOrder && rawOrder !== DB_LIST_ORDER_DEFAULT ? rawOrder : undefined
-  const after = input.filters?.[DB_LIST_POINTER_KEY]
   // Признак режима читается ТЕМ ЖЕ предикатом, что адрес и состояние: значение
   // фильтра — строка (`resolveFilters` приводит её через String), а из панели
   // прилетает boolean, из нативного GET — 'on'. Три формы, одно значение.
   const cursorOn = isCursorOn(input.filters)
+  // Указатель значит что-то только внутри режима: осевший в адресе `?page.after`
+  // при выключенном тумблере не превращает постраничный список в keyset (иначе
+  // «номера страниц» и «данные по токену» показывались бы одновременно).
+  const after = cursorOn ? input.filters?.[DB_LIST_POINTER_KEY] : undefined
   // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
   // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
   if (serverTransport)
