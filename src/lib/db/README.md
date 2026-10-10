@@ -473,7 +473,9 @@ relations добавляются через `include`.
 `DB_CURSOR_OLD_KEYS` (кольцо старых ключей для мягкой смены секрета,
 `kid:secret,...`), `DB_CURSOR_TTL_SECONDS` (по умолчанию 1800). Остальные имена
 (`DATABASE_URL`, `DATABASE_DIR`, `DB_POOL_MAX`, `HYPERDRIVE_CONNECTION_STRING`, `VERCEL`)
-читает приложение — пакет принимает значения, а не env.
+читает приложение — пакет принимает значения, а не env. Полный перечень с
+описанием каждого ключа (и разбором `403 origin.rejected` из `KIT_TRUSTED_ORIGINS`) —
+в `.env.example` в корне приложения; его актуальность проверяет `node --test tooling/env-docs.test.mjs`.
 
 ## 8. Как слой связан с деревом приложения
 
