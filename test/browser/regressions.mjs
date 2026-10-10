@@ -1165,6 +1165,40 @@ try {
     }
   })
 
+  /* ── R-28 (F6): мобильная панель пишет историю через SvelteKit ──── */
+  // Раньше — нативный `history.pushState({...history.state, ddSidebar: 1})`:
+  // в dev SvelteKit предупреждал «Avoid using history.pushState(...)», а в
+  // новую запись копировались его служебные ключи. Теперь флаг — в
+  // `page.state` (shallow routing), то есть внутри `sveltekit:states`.
+  await run('R-28 мобильная панель: shallow-запись SvelteKit, Back закрывает, адрес цел', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 } })
+    const warnings = []
+    page.on('console', (m) => { if (m.text().includes('history.pushState')) warnings.push(m.text()) })
+    await page.goto(`${origin}/paginator?page.size=10#r28`)
+    await page.waitForSelector('[data-select-root][data-enhanced]')
+    const checked = () => page.evaluate(() => document.getElementById('fe-sidebar').checked)
+    await page.locator('label[for="fe-sidebar"]:not([data-fe-sidebar-close])').filter({ visible: true }).first().click()
+    await page.waitForFunction(() => document.getElementById('fe-sidebar').checked)
+    const st = await page.evaluate(() => history.state)
+    assert(st?.['sveltekit:states']?.ddSidebar === true, `флаг панели не в sveltekit:states: ${JSON.stringify(st)}`)
+    assert(!('ddSidebar' in st), 'флаг панели лежит в корне history.state — запись сделана в обход SvelteKit')
+    assert(await page.evaluate(() => location.search + location.hash) === '?page.size=10#r28', 'открытие панели изменило адрес')
+    ok('открытие: флаг в page.state, адрес (поиск и #якорь) не тронут')
+    await page.goBack()
+    await page.waitForFunction(() => !document.getElementById('fe-sidebar').checked)
+    assert(await page.evaluate(() => location.pathname) === '/paginator', 'Back увёл со страницы')
+    ok('Back закрывает панель и остаётся на странице')
+    await page.locator('label[for="fe-sidebar"]:not([data-fe-sidebar-close])').filter({ visible: true }).first().click()
+    await page.waitForFunction(() => document.getElementById('fe-sidebar').checked)
+    await page.locator('[data-fe-sidebar-close]').click()
+    await page.waitForFunction(() => !history.state?.['sveltekit:states']?.ddSidebar)
+    assert(!(await checked()), 'крестик не закрыл панель')
+    ok('крестик закрывает панель и снимает её запись истории')
+    assert(warnings.length === 0, `SvelteKit предупредил о history.pushState: ${warnings[0]}`)
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

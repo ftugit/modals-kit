@@ -31,7 +31,6 @@
   const hasSidebar = $derived(sidebarHasSlots(page.sidebar))
   const drawer = createDrawer({
     input: () => inputRef,
-    panel: () => asideRef,
     isNarrow: () => isNarrow,
   })
 </script>

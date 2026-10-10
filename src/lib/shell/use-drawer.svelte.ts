@@ -1,10 +1,13 @@
 // Логика мобильного drawer'а поверх checkbox + CSS:
 // Esc закрывает, клик по фону закрывает, Back закрывает без навигации.
+//
+// «Back закрывает» — флаг в `page.state` (shallow routing SvelteKit) через слой
+// роутера, а не нативный `history.pushState` (баг F6, docs/audit/crutches.md).
 import { onMount } from 'svelte'
+import { shallowFlag } from '$lib/router/sveltekit'
 
 export interface DrawerOptions {
   input: () => HTMLInputElement | undefined
-  panel: () => HTMLElement | undefined
   isNarrow: () => boolean
 }
 
@@ -12,10 +15,10 @@ const HISTORY_FLAG = 'ddSidebar'
 
 export function createDrawer(options: DrawerOptions) {
   let open = $state(false)
+  const entry = shallowFlag(HISTORY_FLAG)
 
   const sync = () => {
-    const el = options.input()
-    open = Boolean(el?.checked)
+    open = Boolean(options.input()?.checked)
   }
 
   const close = () => {
@@ -23,13 +26,26 @@ export function createDrawer(options: DrawerOptions) {
     if (!input || !input.checked) return
     input.checked = false
     open = false
-    if (typeof history !== 'undefined') {
-      const st = history.state as Record<string, unknown> | null
-      if (st && st[HISTORY_FLAG]) {
-        history.back()
+    // Своя запись истории есть — снимаем её: «Назад» после закрытия не должен
+    // повторно «закрывать» уже закрытую панель.
+    if (entry.on) history.back()
+  }
+
+  // Back по записи панели: SvelteKit возвращает прежний `page.state` без флага.
+  // Реагируем только на ПЕРЕХОД «был флаг → нет флага»: панель, открытая до
+  // гидратации (без JS записи нет), так не закрывается сама.
+  let hadEntry = false
+  $effect(() => {
+    const on = entry.on
+    if (hadEntry && !on) {
+      const input = options.input()
+      if (input?.checked) {
+        input.checked = false
+        open = false
       }
     }
-  }
+    hadEntry = on
+  })
 
   onMount(() => {
     const input = options.input()
@@ -38,17 +54,7 @@ export function createDrawer(options: DrawerOptions) {
 
     const onChange = () => {
       sync()
-      if (input.checked && typeof history !== 'undefined') {
-        history.pushState({ ...(history.state ?? {}), [HISTORY_FLAG]: 1 }, '', location.href)
-      }
-    }
-
-    const onPop = () => {
-      const st = history.state as Record<string, unknown> | null
-      if (!(st && st[HISTORY_FLAG]) && input.checked) {
-        input.checked = false
-        open = false
-      }
+      if (input.checked) entry.push()
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -59,12 +65,10 @@ export function createDrawer(options: DrawerOptions) {
     }
 
     input.addEventListener('change', onChange)
-    window.addEventListener('popstate', onPop)
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
       input.removeEventListener('change', onChange)
-      window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onKeyDown)
     }
   })

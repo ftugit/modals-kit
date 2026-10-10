@@ -15,7 +15,7 @@
  * через `goto`.
  */
 import { browser } from '$app/environment'
-import { goto, replaceState } from '$app/navigation'
+import { goto, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '$lib/paginate'
@@ -117,5 +117,31 @@ export function svelteKitRouter(): MinimalRouter {
       notifyAddressWrite()
     },
     currentSearch,
+  }
+}
+
+/**
+ * Флаг «мелкой» записи истории (shallow routing) для UI, у которого «Назад»
+ * должен ЗАКРЫВАТЬ, а не уводить со страницы: мобильная панель и т. п.
+ *
+ * Запись — `pushState` из `$app/navigation` с прежним `page.state` плюс флаг:
+ * чужие ключи (цепочка модалок) едут дальше. Нативный `history.pushState` здесь
+ * не годится: SvelteKit о такой записи не знает, предупреждает в консоли и
+ * копирует свои служебные ключи (`sveltekit:history`) в новую запись (баг F6,
+ * docs/audit/crutches.md). Снять флаг — `history.back()`, как в документации:
+ * https://svelte.dev/docs/kit/shallow-routing
+ */
+export function shallowFlag(key: string): { readonly on: boolean; push(): void } {
+  const state = () => page.state as Record<string, unknown>
+  return {
+    get on() {
+      return Boolean(state()[key])
+    },
+    push() {
+      if (state()[key]) return
+      // Адрес — ровно адресная строка: `''` SvelteKit разрешает через
+      // `new URL('', document.baseURI)`, а это теряет `#якорь`.
+      pushState(window.location.href, { ...state(), [key]: true })
+    },
   }
 }
