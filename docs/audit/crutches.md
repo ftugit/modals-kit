@@ -1,0 +1,16 @@
+# Реестр «костылей» в `src/` (задача 3)
+
+Определение «костыля» — в [README.md](README.md#что-считается-костылём). Записи добавляются по мере
+чтения файлов; полнота реестра равна прогрессу в [ratings.md](ratings.md).
+
+Колонки: **Место** · **Что сделано** · **Почему это костыль** · **Как правильно** · **Статус**
+(`костыль` — обход без причины; `обоснован` — сознательное отступление с записанной причиной;
+`исправлено` — устранено в этой работе, с коммитом).
+
+| # | Место | Что сделано | Почему костыль | Как правильно | Статус |
+|---|---|---|---|---|---|
+| F5 | `lib/ui/demo/paginator/DemoPaginator.svelte:431` | `preserved` строится из `page.url.search` в обход адаптера роутера | `page.url` не меняется при shallow-записи; форма фильтров, скрытые поля и ссылка сброса восстанавливают старый `page.size`. Подтверждено пробой — [framework-imports.md](framework-imports.md#f5--подтверждённый-баг-из-за-обхода-адаптера) | `demoPreservedSearch(currentSearch())` из `$lib/router/sveltekit` | **баг**, не исправлен (ждёт решения) |
+| C1 | `hooks.server.ts:19-29` | Хук сам фильтрует пути, сам лениво берёт БД, на каждый запрос создаёт `dbHandle(...)` и вызывает его через `as never` | Повторяет то, что `dbHandle` уже умеет (`paths`, `db` как фабрика); приведение `as never` прячет несовпадение типов, хотя `MinimalEvent` спроектирован под `Handle` без приведений | `export const handle = dbHandle({ db: async () => (await getRuntime()).db, principal: () => DEMO_PRINCIPAL, paths: ['/db-demo', '/api/db-posts'] })`. Если типы не сойдутся — чинить `DbHandle`, а не место вызова | костыль |
+| C2 | `routes/+layout.svelte:61-67,84,134` | Корневой layout переключает поведение по `page.route.id` (`OWN_SYSTEM` для `/cycle` и `/spike`, `ROUTE_SCOPES` для `/modals`) | Маршрутно-специфичная логика в общем layout; при добавлении маршрута нужно помнить о списке. SvelteKit решает это структурой: [группы маршрутов и `@`-сброс layout](https://svelte.dev/docs/kit/advanced-routing#Advanced-layouts) | `(site)/+layout.svelte` с хостом модалок и AppShell, `/cycle` и `/spike` вне группы; scope модалок задаёт сам маршрут `/modals` | костыль |
+| C3 | `routes/form/+page.svelte:169,230-234,264-271,275-281` | `$effect` копирует состояние в состояние: зеркало панели → `opts`, `cardinality` → `opts.specVersion`, `form.state` → `channelLog`; эффект «пропусти первый запуск» вместо обработчика смены | [`$effect` — аварийный люк](https://svelte.dev/docs/svelte/$effect#When-not-to-use-$effect): синхронизация через эффект даёт лишний такт рассинхрона и скрытый порядок | `opts` — объект с геттерами от `settings.values` (связка и так читает лениво); `channelLog` — `$derived`; реакция на смену режима — в `onChange` селекта | костыль |
+| C4 | `lib/router/LoadLink.svelte:184-202` | Результат `preloadData` проверяется как `r.type !== 'loaded'` → ошибка | В kit 2.70.3 ошибка загрузчика приходит как `{type:'loaded', status ≥ 400}` (`types/index.d.ts`, `preloadData`): настоящая ошибка показывается как успех, а штатный redirect — как ошибка. Нет `try/catch`: при отказе сети ссылка навсегда зависает в `loading` | Ошибка — `r.type === 'loaded' && r.status >= 400`; redirect — `goto(r.location)`; `try/finally` возвращает `status` | костыль (по типам; поведение пробой не проверено) |
