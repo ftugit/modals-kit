@@ -32,7 +32,9 @@
 
   let { data, form }: { data: PageData; form?: FormOutcome | null } = $props()
 
-  const action = (form ?? null) as FormOutcome | null
+  // `form` — живой пропс: SvelteKit обнуляет его при навигации и меняет после
+  // каждого экшена, поэтому результат выводится, а не копируется при монтировании.
+  const action = $derived((form ?? null) as FormOutcome | null)
 
   /** Результат подсаживается ТОЙ форме, чей интент его вернул. */
   const seed = (which: string): Result | null =>

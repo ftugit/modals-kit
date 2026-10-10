@@ -60,6 +60,7 @@ export type PaginatorContextValue = {
    * страницей (указатель следующего шага) и чего адрес ещё не знает на SSR.
    */
   linkExtra?: () => Extra | null
+  /** Якорь хоста для ссылок; может быть геттером — читать лениво, не кэшировать. */
   hashAnchor?: string | null
   options?: () => ResolvedHostOptions
 }
@@ -211,13 +212,15 @@ export function usePageHref(
   const adapter = getPaginator(ctx.name).adapter
   if (!adapter.hrefFor) return () => null
   const currentSearch = ctx.currentSearch
-  const hash = ctx.hashAnchor ? `#${ctx.hashAnchor}` : ''
 
   return () => {
     const p = pageOf()
     const search = currentSearch?.() ?? undefined
     const href = adapter.hrefFor!(p, { search, extra: ctx.linkExtra?.() ?? null })
-    return href == null ? null : href + hash
+    if (href == null) return null
+    // Якорь читается при каждом вычислении: у хоста это реактивный геттер.
+    const anchor = ctx.hashAnchor
+    return anchor ? `${href}#${anchor}` : href
   }
 }
 
