@@ -162,6 +162,24 @@ const stepBase = (ctx: FieldContext, parsed: { unit: 'number' | 'day' | 'second'
   return (c.value.includes('T') ? parseDateTimeSecond(c.value) : parseTimeSecond(c.value)) ?? 0
 }
 
+/** Значение поля `file` (один файл) или `files` (массив) — списком файлов. */
+const filesOf = (value: File | readonly File[] | null | undefined): readonly File[] =>
+  value == null ? [] : Array.isArray(value) ? value : [value as File]
+
+/**
+ * Совпадение файла с токеном `accept` по правилам HTML: `.ext` — суффикс имени
+ * без учёта регистра, `type/*` — любой подтип, иначе MIME-тип целиком без учёта
+ * регистра и параметров. Строковое сравнение, не RegExp: в MIME есть `+` и `.`.
+ * Проверяется ЗАЯВЛЕННЫЙ клиентом тип — содержимое файла никто не смотрит.
+ */
+const acceptsFile = (token: string, f: File): boolean => {
+  const t = token.trim().toLowerCase()
+  if (t.startsWith('.')) return f.name.toLowerCase().endsWith(t)
+  const type = (f.type ?? '').split(';')[0]!.trim().toLowerCase()
+  if (t.endsWith('/*')) return type.startsWith(t.slice(0, -1))
+  return type === t
+}
+
 const filled = (x: unknown) =>
   x !== null && x !== undefined && x !== '' && x !== false && !(Array.isArray(x) && !x.length)
 const len = (x: unknown) => (typeof x === 'string' ? x.length : Array.isArray(x) ? x.length : 0)
@@ -294,21 +312,23 @@ export const v = {
   accept: (types: readonly string[]) => {
     if (!Array.isArray(types) || types.some((t) => typeof t !== 'string' || !t))
       throw new Error('[form] accept: ожидается непустой массив MIME-типов или расширений')
-    return describe<File | null>(
-      (f) => {
-        if (!f) return null
-        const good = types.some((t) => t.startsWith('.')
-          ? f.name.toLowerCase().endsWith(t.toLowerCase())
-          : new RegExp(`^${t.replace('*', '.*')}$`).test(f.type))
-        return good ? null : issue('accept', { types })
+    return describe<File | readonly File[] | null>(
+      (value) => {
+        // `files` несёт массив: правило действует на КАЖДЫЙ файл, как атрибут `accept`
+        const bad = filesOf(value).find((f) => !types.some((t) => acceptsFile(t, f)))
+        return bad ? issue('accept', { types, name: bad.name }) : null
       },
       [{ kind: 'accept', types }])
   },
 
   maxSize: (bytes: number) => {
     const max = nonNegative('maxSize', bytes)
-    return describe<File | null>(
-      (f) => (!f || f.size <= max ? null : issue('maxSize', { bytes: max })),
+    return describe<File | readonly File[] | null>(
+      (value) => {
+        // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма
+        const big = filesOf(value).find((f) => f.size > max)
+        return big ? issue('maxSize', { bytes: max, name: big.name }) : null
+      },
       [{ kind: 'maxSize', bytes: max }])
   },
 

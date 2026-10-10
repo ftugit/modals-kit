@@ -420,8 +420,8 @@ const handle = createFormHandler({
 | `v.integer()` | `integer` | `step=1` | |
 | `v.step(n, unit?)` | `step` | `step` | единица важна: у даты — день |
 | `v.oneOf(values)` | `oneOf` | — | список сам и есть ограничение |
-| `v.accept(types)` | `accept` | `accept` | MIME или расширение; сервер смотрит содержимое |
-| `v.maxSize(bytes)` | `maxSize` | — | нативного атрибута нет |
+| `v.accept(types)` | `accept` | `accept` | MIME, `type/*` или расширение — по правилам атрибута; у `files` — каждый файл. Сверяется ЗАЯВЛЕННЫЙ клиентом тип, содержимое не проверяется |
+| `v.maxSize(bytes)` | `maxSize` | — | нативного атрибута нет; у `files` — предел на каждый файл |
 | `v.strength(level, o?)` | `strength` | `minlength` (граница уровня) | оценка в битах, не шаблон; заменяемая через `o.score` |
 | `v.sameAs(field)` | `sameAs` | — | браузер не умеет сравнивать поля — проверяет сервер |
 | `check(name)` | код проверки | — | асинхронная, см. [раздел](#асинхронные-проверки) |

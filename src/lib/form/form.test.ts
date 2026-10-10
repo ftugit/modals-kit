@@ -631,3 +631,38 @@ test('Q1: external + outcome-unknown + warnings; дедуп по submissionId; n
   // sink нет — nothing, переданный ключ сохранён
   expect((notifyResultErrors as any)(undefined, result, 'keepme')).toBe('keepme')
 })
+
+/* ── F14: accept/maxSize по правилам атрибута, у files — поэлементно ── */
+
+suite('файловые правила (F14)', () => {
+  const ctx = { path: 'f', values: {} }
+  const file = (name: string, type: string, size = 1) => new File(['x'.repeat(size)], name, { type })
+
+  test('MIME сравнивается строкой: + и . — не метасимволы', () => {
+    expect(v.accept(['image/svg+xml'])(file('a.svg', 'image/svg+xml'), ctx)).toBeNull()
+    expect(v.accept(['application/vnd.api+json'])(file('a.json', 'application/vnd.api+json'), ctx)).toBeNull()
+    expect(v.accept(['image/png'])(file('a.p', 'imageXpng'), ctx)?.code).toBe('accept')
+    expect(v.accept(['image/png'])(file('a.png', 'image/pngx'), ctx)?.code).toBe('accept')
+  })
+
+  test('маска type/*, регистр и параметры MIME', () => {
+    expect(v.accept(['image/*'])(file('a.png', 'image/png'), ctx)).toBeNull()
+    expect(v.accept(['image/*'])(file('a.txt', 'text/plain'), ctx)?.code).toBe('accept')
+    expect(v.accept(['Text/Plain'])(file('a.txt', 'text/plain;charset=utf-8'), ctx)).toBeNull()
+    expect(v.accept(['.PDF'])(file('doc.pdf', ''), ctx)).toBeNull()
+  })
+
+  test('files: каждый файл проверяется отдельно, без броска', () => {
+    const d = defineForm({ id: 'many', fields: { docs: field.files({ validate: [v.accept(['.pdf']), v.maxSize(4)] }) } })
+    const fd = (...files: File[]) => {
+      const b = body({}, envelope('many'))
+      for (const f of files) b.append('docs', f)
+      return b
+    }
+    expect(evaluate(fd(file('a.pdf', 'application/pdf', 1), file('b.pdf', 'application/pdf', 2)), d, { render }).errors).toHaveLength(0)
+    const wrong = evaluate(fd(file('a.pdf', 'application/pdf'), file('b.exe', 'application/x-msdownload')), d, { render }).errors
+    expect(wrong.map((e) => [e.code, e.params?.['name']])).toEqual([['accept', 'b.exe']])
+    const big = evaluate(fd(file('a.pdf', 'application/pdf', 1), file('c.pdf', 'application/pdf', 9)), d, { render }).errors
+    expect(big.map((e) => [e.code, e.params?.['name']])).toEqual([['maxSize', 'c.pdf']])
+  })
+})
