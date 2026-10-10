@@ -34,7 +34,7 @@ grep -rnE "from ['\"](\$app/[a-z]+|@sveltejs/kit[^'\"]*|\$env/[a-z/]+)['\"]" src
 | # | Место | Импорт | Вердикт | Что делать |
 |---|---|---|---|---|
 | 1 | `lib/router/sveltekit.ts:17-20` | `$app/environment`, `$app/navigation`, `$app/state`, `svelte/reactivity` | **Адаптер** — норма | — |
-| 2 | `lib/router/LoadLink.svelte:13` | `$app/navigation` (`goto`, `preloadData`) | **Адаптер** (роутерный слой) — норма | — |
+| 2 | `lib/router/LoadLink.svelte:13-14` | `$app/navigation` (`goto`); `preloadData` с хода 6 — через `preloadOutcome` адаптера | **Адаптер** (роутерный слой) — норма | — |
 | 3 | `lib/modals/cores/sveltekit.ts:12-14` | `$app/environment`, `$app/navigation`, `$app/state` | **Адаптер** (движок модалок) — норма | — |
 | 4 | `lib/components/sidebar/SidebarNav.svelte:21,30` | `$app/state` → `page.url.pathname` | **Обход адаптера** | Активный пункт меню — через `currentPathname()` из `$lib/router/sveltekit` (уже есть). |
 | 5 | `lib/components/header/NavSlot.svelte:23,29` | `$app/state` → `page.url.pathname` | **Обход адаптера** | То же, `currentPathname()`. |
@@ -43,6 +43,11 @@ grep -rnE "from ['\"](\$app/[a-z]+|@sveltejs/kit[^'\"]*|\$env/[a-z/]+)['\"]" src
 | 7 | `lib/ui/demo/paginator/FiltersPanel.svelte:15,44` | `$app/state` → `page.url.pathname` (значение пропса по умолчанию) | **Обход адаптера** | `currentPathname()`; путь при «мелких» записях не меняется, бага нет. |
 | 8 | `lib/ui/demo/spike/SpikeDemo.svelte:3-4` | `$app/navigation`, `$app/state` | **Обход адаптера, обоснованный**: спайк исследует поведение истории SvelteKit (`pushState` против `goto`), то есть сам фреймворк | Оставить; по смыслу это прикладной код маршрута `/spike`, а не библиотека. |
 | 9 | `lib/modals/svelte/media.svelte.ts:3,15` | `$app/environment` (`browser`) | **Лишний импорт фреймворка** в Svelte-биндинге | Проверка `if (!browser) return` стоит внутри `$effect`, а `$effect` на сервере не выполняется вовсе: импорт и проверку можно убрать. Если признак окружения нужен — `esm-env` (`BROWSER`). |
+
+| 10 | `lib/server/db.ts:20`, `lib/server/form-security.ts:18,32,36` | `process.env` вместо `$env/dynamic/private` | **Обход модуля окружения фреймворка** (C7) | `$env/dynamic/private`; работает на любом адаптере. |
+| 11 | `lib/server/shikimori-filters.ts:257`, `lib/server/shikimori-schema.ts:314` (и `lib/paginate`, `lib/filters` — см. их пачки) | `process.env.NODE_ENV` как признак dev | **Обход** (C7) | `import.meta.env.DEV` (Vite) либо `dev` из `$app/environment` — в библиотеке предпочтительно первое. |
+
+Строки 10–11 добавлены в ходе 6 при чтении `lib/server`: модулей `$env/*` в `src/` нет вовсе (`grep -rn '\$env/' src` — пусто).
 
 ### Ложные совпадения (импорта нет)
 
