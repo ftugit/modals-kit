@@ -1,20 +1,19 @@
 // Компилятор демо-панели: `SettingsField[]` → описание формы + всё, чем shell
-// размечает доступность, seed и патч (этап 6, §6.4/§6.5 `lib/links/panel`).
+// размечает доступность, seed и патч (этап 6, §6.4/§6.5).
 //
 // Принцип тот же, что у компилятора фильтров: панель — ДАННЫЕ, а решение о
-// выключении считает общий слой. Отличия домена:
+// выключении считает форма (`disabledWhen`, R1). Отличия домена:
 //   • имена полей — канонические ключи адреса (`page.cols`, `gallery.size`);
 //   • `page.size` — обычное поле (select), не специальный пропс: значение его
 //     уходит не в extra, а в `setPageSize` — это решает маппер патча;
-//   • `enabledBy` (данные) инвертируется в правила связок ядра `lib/links`:
+//   • `enabledBy` (данные) инвертируется в правила `disabledWhen` поля:
 //     «доступно при X=a» == «выключено при X=b, X=c, …» по ЗАКРЫТОМУ списку
 //     значений X. Значение поля панели всегда одно из объявленных (дефолты
 //     extra гарантированы), пустое поле — «не выбрано», правило не горит;
 //   • `requires` гасит поле СТАТИЧЕСКИ: возможности источника — серверные
 //     данные, они известны на SSR и не меняются, пока источник не сменили.
 import type { ExtraValue, FeatureGate } from '#lib/paginate/index.js'
-import { defineForm, field, policyWith, type FieldDraft, type FormDescription } from '#lib/form/index.js'
-import type { LinkRule } from '#lib/links/links.js'
+import { defineForm, field, policyWith, type DisableRule, type FieldDraft, type FormDescription } from '#lib/form/index.js'
 import type { SettingsField } from './types'
 
 /** Подписи возможностей для причины «источник не поддерживает …». */
@@ -47,8 +46,6 @@ export interface DemoPanelSchema {
   definition: FormDescription
   /** Порядок вывода: группы за divider'ами; items — полные имена полей. */
   groups: readonly { label: string | undefined; items: readonly string[] }[]
-  /** Правила живого слоя из `enabledBy` (инверсия); их потребляет `computeLinks`. */
-  links: readonly LinkRule[]
   /** Подпись поля по его идентичности — для составителя текстов. */
   label(name: string): string
   /** Выключено возможностями источника: имя → причина (статика, компилируется). */
@@ -88,7 +85,6 @@ export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
   const drafts: Record<string, FieldDraft<never>> = Object.create(null)
   const labels = new Map<string, string>()
   const groups: { label: string | undefined; items: string[] }[] = [{ label: undefined, items: [] }]
-  const links: LinkRule[] = []
   const gated = new Map<string, string>()
   const jsOnly = new Set<string>()
   /** name → маппинг в патч: kind + ключ extra + маппер значения. */
@@ -144,6 +140,8 @@ export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
     }
 
     // enabledBy → «выключено при каждом другом значении» по закрытому списку.
+    // Виновник в тексте — подпись поля из условия (её знает форма).
+    const disabledWhen: DisableRule[] = []
     for (const cond of f.enabledBy ?? []) {
       const depName = `${pp}.${cond.field}`
       const dep = optionValues.get(depName)
@@ -161,14 +159,13 @@ export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
             : 'условия'
       for (const value of dep.values) {
         if (allowed.has(value)) continue
-        links.push({
-          id: `${name}#enabledBy:${cond.field}=${value}`,
-          when: [{ field: depName, value }],
-          effect: { kind: 'disable-field', field: name },
+        disabledWhen.push({
+          when: { field: depName, includes: value },
           reason: cond.reason ?? `доступно при «${labels.get(depName) ?? cond.field}» = ${allowedText}`,
         })
       }
     }
+    if (disabledWhen.length) drafts[name] = { ...drafts[name], disabledWhen } as FieldDraft<never>
   }
 
   const definition: FormDescription = defineForm({
@@ -216,7 +213,6 @@ export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
   return {
     definition,
     groups,
-    links,
     kinds,
     label: (name) => labels.get(name) ?? name,
     gated,

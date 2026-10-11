@@ -299,11 +299,17 @@ describe('компиляция в форму b1', () => {
     // пустое запрещённое поле ничего не нарушает
     expect(passed.errors).toEqual([])
     expect(passed.values.kind).toBe('tv')
-    // шаблон сообщения живёт на определении — та же формулировка, что
-    // панель рисует под полем (view.test сверяет строку посимвольно)
+    // связка — правило поля (`disabledWhen`) у каждого его пути; текст —
+    // словаря формы, своего у фильтров нет (rules.test сверяет строки)
     const compiled = compileCatalogFilterSchema(linked)
-    expect(compiled.definition.messages['link.blocked'])
-      .toBe('«{field}» невозможно использовать совместно с {blockers}')
+    expect(compiled.definition.byName['filters.score.min']?.disabledWhen).toEqual([{
+      when: { field: 'filters.kind', includes: 'tv' },
+      reason: 'у ТВ нет оценки',
+      blockers: ['Тип'],
+      label: 'Оценка',
+    }])
+    expect(compiled.definition.byName['filters.kind']?.disabledWhen).toBeUndefined()
+    expect(compiled.definition.messages).toEqual({})
   })
 
   it('начальное состояние формы заполняется из адреса и дефолтов', () => {

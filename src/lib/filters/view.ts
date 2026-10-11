@@ -6,14 +6,14 @@
  *
  *   • `catalogFilterView` — картина панели из СХЕМЫ + `extra` пагинатора
  *     (применённый набор): чипы, счётчик, адреса формы, запрет поиска и
- *     пояснения к связкам. Связки считает словарь `#lib/links/catalog.js` —
- *     тот же расчёт, что гасит поля живой формы и защищает источник (C6);
+ *     пояснения к связкам. Связки считает `catalogRuleState` — тем же
+ *     условием формы, что гасит поля живой формы и защищает источник (R1);
  *   • `catalogFilterExtraPatch` / `catalogFilterRemoveValuePatch` — патч для
  *     канала состояния (`setExtra`): выбор пользователя пишется в хранилище, а
  *     не в адрес напрямую.
  *
  * Контролы формы здесь не собираются: их компилирует `compileCatalogFilterSchema`,
- * а гасит связка через канал `fieldState` формы (`catalogLinkFieldState`).
+ * а гасят связки правила `disabledWhen` в том же определении формы.
  */
 import {
   activeCatalogFilters,
@@ -21,6 +21,8 @@ import {
   catalogFilterUrlWithout,
   catalogFilterFieldNames,
   catalogFilterValueMap,
+  catalogFilterViolations,
+  catalogRuleState,
   parseCatalogFilterPath,
   readCatalogFilterValues,
   stripDefaultCatalogFilterValues,
@@ -28,7 +30,6 @@ import {
   type CatalogFilterSchema,
   type CatalogFilterViolation,
 } from './catalog-filter'
-import { CATALOG_SEARCH_LINK, catalogLinkOutcome, catalogLinkViolations } from '#lib/links/catalog.js'
 
 /** Патч канала состояния: ключ extra → значение (или снятие). */
 export type CatalogFilterPatch = Record<string, string | number | undefined>
@@ -74,7 +75,7 @@ export type CatalogFilterView = {
  * Полная картина панели: чипы + адреса + причины. Значения берутся из `extra`
  * пагинатора (единственный источник истины), а не из адреса: пагинатор может
  * жить на любом хранилище. Это ПРИМЕНЁННЫЙ набор — живые блокировки полей
- * считает форма по своему зеркалу (`catalogLinkFieldState`).
+ * считает форма по своему зеркалу (`disabledWhen` её полей).
  */
 export function catalogFilterView(
   schema: CatalogFilterSchema,
@@ -82,8 +83,8 @@ export function catalogFilterView(
   opts: { prefix?: string; url?: CatalogFilterUrlView } = {},
 ): CatalogFilterView {
   const values = readCatalogFilterValues(extra)
-  const outcome = catalogLinkOutcome(schema, catalogFilterValueMap(extra))
-  const search = outcome.fields.get(CATALOG_SEARCH_LINK)
+  const map = catalogFilterValueMap(extra)
+  const search = catalogRuleState(schema, map).search
   const urlOpts = { prefix: opts.url?.prefix ?? opts.prefix ?? 'page', preserved: opts.url?.preserved ?? {} }
   const chips: CatalogFilterChip[] = activeCatalogFilters(schema, values).map((chip) => ({
     ...chip,
@@ -102,9 +103,9 @@ export function catalogFilterView(
       .filter(([name]) => name !== urlOpts.prefix && !name.startsWith(`${urlOpts.prefix}.filters.`))
       .map(([name, value]) => ({ name, value })),
     count: chips.length,
-    ...(search ? { searchBlocked: { id: search.rule.id, reason: search.rule.reason } } : {}),
+    ...(search ? { searchBlocked: { id: search.id, reason: search.reason } } : {}),
     // Поиск объясняется выше; остальное — предупреждения у фильтров.
-    violations: catalogLinkViolations(outcome).filter((violation) => violation.drop !== 'q'),
+    violations: catalogFilterViolations(schema, map).filter((violation) => violation.drop !== 'q'),
   }
 }
 
@@ -118,7 +119,7 @@ export function catalogFilterView(
  * знает. Дроп подавленных значений живёт у СБОРЩИКА входа — там, где JS решает
  * ситуацию сам, ровно как без JavaScript её решает браузер, не отправляя
  * выключенный контрол: путь формы гасит их пропуском disabled-контролов
- * (`commitUrl`/`linkSubmission`), путь чипа — фильтром переносимых значений в
+ * (`commitUrl`), путь чипа — фильтром переносимых значений в
  * `catalogFilterRemoveValuePatch`. В хранилище не попадает сочетание, которое
  * источник всё равно отбросил бы (`dropped`); адрес/ссылка, где запрещённое
  * значение лежит, ничего не теряет — панель называет причину, пока
@@ -183,8 +184,8 @@ export function catalogFilterRemoveValuePatch(
   // хранить сочетание, которое «отправил» не набор формы, а рука или прошлое
   // состояние (URL со score при anons). Связка считается ПОСЛЕ снятия чипа —
   // иначе снятие триггера ошибочно похоронит ожившего соседа.
-  // (Связка «поиск запрещён» ни при чём: её идентификатор `#q` — не ключ поля.)
-  const suppressed = catalogLinkOutcome(
+  // (Связка «поиск запрещён» ни при чём: она снимает поиск, а не поле.)
+  const suppressed = catalogRuleState(
     schema,
     catalogFilterValueMap(stripDefaultCatalogFilterValues(schema, next)),
   ).fields

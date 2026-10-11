@@ -13,6 +13,7 @@ import { makeRenderer, ru } from '../messages'
 import type { FormError, Result } from '../result'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
+import { disabledState } from '../validate'
 import type { HtmlAttrs, RowKey } from '../types'
 import type { BoundConfig, LiveMode } from './config'
 import { DEV } from 'esm-env'
@@ -113,7 +114,7 @@ export interface BindOptions {
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
   checks?: CheckRegistry
   /**
-   * Канал решений связки (lib/links): ответ перекрывает объявление поля.
+   * Канал решений о доступности: ответ перекрывает `disabledWhen` и объявление.
    * `values` — живое зеркало формы (C6): решение — от выбранного сейчас.
    */
   fieldState?: (name: string, values: Readonly<Record<string, unknown>>) => FieldLink | undefined
@@ -497,8 +498,8 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const helpId = `${id}-help`
     const errorId = `${id}-error`
     const has = hasError(f.name, snapshot.facts, snapshot.shown, invalidMode(f.name))
-    // Решение связки поверх объявления поля; инвариант reason⊂disabled — в fieldLinkState.
-    const ls = fieldLinkState(f, o.fieldState?.(f.name, snapshot.values))
+    // Канал fieldState → правила disabledWhen → объявление (инвариант — в fieldLinkState).
+    const ls = fieldLinkState(f, o.fieldState?.(f.name, snapshot.values) ?? disabledState(desc, f, snapshot.values, render))
     const describedBy = cfg.ui.describedBy({
       help: f.help || ls.reason ? helpId : undefined,
       error: errors.length ? errorId : undefined,

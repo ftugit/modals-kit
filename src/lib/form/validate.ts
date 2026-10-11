@@ -1,19 +1,89 @@
 // Проверка значений. Один и тот же код исполняется в браузере и на сервере.
 import type { ConstraintKind } from './constraints'
-import type { FieldDescriptor, FormDescription, VisibilityCondition } from './describe'
+import type { DisableRule, FieldCondition, FieldDescriptor, FieldLink, FormDescription, VisibilityCondition } from './describe'
 import type { Structural } from './decode'
 import type { FormError } from './result'
 import { stableId } from './result'
 import type { Issue, ValidatorRef } from './validators'
 
+/** Заполнено ли значение: непустая строка/список, число, `true`. */
+export function isFilled(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(isFilled)
+  return v === true || typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')
+}
+
+/** Выполнено ли условие при этих значениях. Один расчёт для браузера и сервера. */
+export function matchesCondition(c: FieldCondition, values: Readonly<Record<string, unknown>>): boolean {
+  if ('all' in c) return c.all.every((x) => matchesCondition(x, values))
+  if ('any' in c) return c.any.some((x) => matchesCondition(x, values))
+  if ('not' in c) return !matchesCondition(c.not, values)
+  const v = values[c.field]
+  if ('filled' in c) return isFilled(v)
+  if ('includes' in c) return (Array.isArray(v) ? v : [v]).some((x) => x != null && String(x) === c.includes)
+  if ('equals' in c) return v === c.equals
+  return v !== c.notEquals
+}
+
 /** Условия — данные, поэтому сервер считает видимость без скрипта. */
 export function isVisible(c: VisibilityCondition | undefined, values: Record<string, unknown>): boolean {
-  if (!c) return true
-  if ('all' in c) return c.all.every((x) => isVisible(x, values))
-  if ('any' in c) return c.any.some((x) => isVisible(x, values))
-  if ('not' in c) return !isVisible(c.not, values)
-  if ('equals' in c) return values[c.field] === c.equals
-  return values[c.field] !== c.notEquals
+  return !c || matchesCondition(c, values)
+}
+
+/** Сработавшие правила выключения поля — все, в порядке объявления. */
+export function disabledBy(f: FieldDescriptor, values: Readonly<Record<string, unknown>>): DisableRule[] {
+  return (f.disabledWhen ?? []).filter((rule) => matchesCondition(rule.when, values))
+}
+
+const fieldsOf = (c: FieldCondition): string[] =>
+  'all' in c ? c.all.flatMap(fieldsOf) : 'any' in c ? c.any.flatMap(fieldsOf) : 'not' in c ? fieldsOf(c.not) : [c.field]
+
+/** «А» · «А» и «Б» · «А», «Б» и «В». */
+const quoteList = (xs: readonly string[]): string => {
+  const q = xs.map((x) => `«${x}»`)
+  return q.length < 2 ? q.join('') : `${q.slice(0, -1).join(', ')} и ${q[q.length - 1]}`
+}
+
+/**
+ * Подстановки текста о выключении по сработавшим правилам: `field` — как
+ * называется выключенное, `blockers` — кто мешает (без повторов, в порядке
+ * объявления, уже в кавычках и через «и»), `reason` — причины через «; ».
+ */
+export function disableParams(
+  d: FormDescription, f: FieldDescriptor, rules: readonly DisableRule[],
+): { field: string; blockers: string; reason: string } {
+  const blockers = rules.flatMap((rule) => rule.blockers ?? fieldsOf(rule.when).map((name) => d.byName[name]?.label ?? name))
+  return {
+    field: rules.find((rule) => rule.label)?.label ?? f.label ?? f.name,
+    blockers: quoteList([...new Set(blockers)]),
+    reason: [...new Set(rules.map((rule) => rule.reason))].join('; '),
+  }
+}
+
+/**
+ * Сработавшие правила → коды и подстановки текста: правила без своего текста
+ * дают ОДИН общий `link.blocked`, со своим — `link.message` (`{text}` — их
+ * тексты через «; »). Одни данные на подсказку под полем и на отказ.
+ */
+export function disableIssues(d: FormDescription, f: FieldDescriptor, rules: readonly DisableRule[]): Issue[] {
+  const plain = rules.filter((rule) => rule.message === undefined)
+  const own = rules.filter((rule) => rule.message !== undefined)
+  const out: Issue[] = []
+  if (plain.length) out.push({ code: 'link.blocked', params: disableParams(d, f, plain) })
+  if (own.length) {
+    const text = own.map((rule) => d.policy.interpolate(rule.message!, disableParams(d, f, [rule]))).join('; ')
+    out.push({ code: 'link.message', params: { text } })
+  }
+  return out
+}
+
+/** Живое решение `disabledWhen` для поля: выключено + строка под ним, или ничего. */
+export function disabledState(
+  d: FormDescription, f: FieldDescriptor, values: Readonly<Record<string, unknown>>,
+  render: (code: string, params: Record<string, unknown>) => string,
+): FieldLink | undefined {
+  const rules = disabledBy(f, values)
+  if (!rules.length) return undefined
+  return { disabled: true, reason: disableIssues(d, f, rules).map((i) => render(i.code, i.params ?? {})).join('; ') }
 }
 
 /** Возвращает множество видимых полей формы. */
@@ -76,7 +146,11 @@ export function validateForm(
 
     // значение не разобралось — правила поверх мусора дадут ложные ошибки
     const collected = structuralByPath.get(f.name) ?? []
-    if (collected.length === 0) {
+    // Выключенное поле с выбором: без JS браузер его отправил — набор
+    // отклоняется по связке, остальные правила к такому значению неприменимы.
+    const blocked = collected.length === 0 && isFilled(values[f.name]) ? disabledBy(f, values) : []
+    if (blocked.length) collected.push(...disableIssues(d, f, blocked).map((i) => toError(i, f.name, f)))
+    else if (collected.length === 0) {
       const mode = f.cardinality ?? opts.cardinality ?? d.cardinality
       const constraints = d.constraintsOf(f.name)
       for (const ref of f.validators) {

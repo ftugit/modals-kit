@@ -23,7 +23,6 @@
   import { onMount } from 'svelte'
   import { compileCatalogFilterSchema, parseCatalogFilterPath } from '#lib/filters/index.js'
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
-  import { catalogLinkFieldState } from '#lib/links/catalog.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
   import { Button, Input, Select } from '#lib/ui/primitives/index.js'
@@ -78,15 +77,12 @@
     ui: { fieldId: (_formId, name) => name },
   })
 
-  // Решение связки о поле (выключено + причина) — канал fieldState: он же
-  // даёт FieldView.disabled/reason, и причина видна ПОД полем всегда (до
+  // Связки схемы приходят в определении (`disabledWhen` полей, R1): форма сама
+  // даёт FieldView.disabled/reason по ЖИВЫМ значениям — выбрал «анонс», «Оценка»
+  // гаснет сразу, до «Применить» (F44). Причина видна ПОД полем всегда (до
   // гидратации в том числе), а гашение контрола — работа JavaScript: без JS
   // выключенный контрол браузер не отправил бы, и запрос пользователя
   // пропал бы молча (канон `js = !hydrated`, как у панели настроек).
-  // Считается по ЖИВЫМ значениям формы (второй аргумент канала, C6): выбрал
-  // «анонс» — «Оценка» гаснет сразу, до «Применить» (F44).
-  // svelte-ignore state_referenced_locally
-  const fieldState = catalogLinkFieldState(schema, namePrefix)
 
   const form = bind(catalogForms, desc, {
     url: {
@@ -118,7 +114,6 @@
         onApply(next)
       },
     },
-    fieldState,
   })
 
   let hydrated = $state(false)

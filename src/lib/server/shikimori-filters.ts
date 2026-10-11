@@ -16,8 +16,8 @@
  *
  * Deny-safe на каждом шаге: значение, которого нет в опциях схемы, отсекает
  * `catalogFilterFormData`; значение, не прошедшее правила формы, отсекает
- * `validateCatalogFilterValues`; связки (`drop`) считает словарь `#lib/links/catalog.js`
- * — тот же расчёт, что гасит поля формы (C6).
+ * `validateCatalogFilterValues`; связки (`drop`) считает `catalogRuleState` — то же
+ * условие формы, что гасит её поля (R1).
  * Неприменённое НЕ исчезает молча: возвращается списком `dropped` с причиной —
  * её показывают интерфейс и журнал.
  */
@@ -25,12 +25,12 @@ import {
   catalogFilterFieldNames,
   catalogFilterFormData,
   catalogFilterValueMap,
+  catalogRuleState,
   parseCatalogFilterPath,
   validateCatalogFilterValues,
   type CatalogFilterSchema,
   type CatalogFilterValues,
 } from '#lib/filters/index.js'
-import { CATALOG_SEARCH_LINK, catalogLinkOutcome } from '#lib/links/catalog.js'
 import { DEV } from 'esm-env'
 import type { AnimesPage } from '../../content/shikimori'
 import { fetchAnimes, type AnimesQuery, type TransportDeps } from './shikimori'
@@ -138,9 +138,9 @@ export function animesFilterQuery(
   raw: Record<string, unknown>,
 ): AnimesFilterQuery {
   const map = catalogFilterValueMap(raw)
-  // Один расчёт связок: поля, которые они гасят, и запрет поиска (`#q`).
-  const links = catalogLinkOutcome(schema, map).fields
-  const searchRule = links.get(CATALOG_SEARCH_LINK)?.rule
+  // Один расчёт связок: поля, которые они гасят, и запрет поиска.
+  const rules = catalogRuleState(schema, map)
+  const searchRule = rules.search
   const declared = new Set(schema.fields.flatMap(catalogFilterFieldNames))
   const dropped: DroppedFilter[] = []
 
@@ -194,14 +194,14 @@ export function animesFilterQuery(
   // её причиной, а не «вне опций» (значение-то корректно, несовместим набор).
   const rejected = errors.includes('link.blocked')
   const linkExplain = new Set<string>()
-  for (const [key, firing] of links) {
+  for (const [key, rule] of rules.fields) {
     const field = schema.fields.find((item) => item.key === key)
-    if (!field) continue // `#q` — поиск: у него свой канал выше
+    if (!field) continue
     // Пустое запрещённое поле ничего не нарушает (§7.5): сообщаем только о
     // связке, которая задела значение.
     if (!catalogFilterFieldNames(field).some((path) => (map[path]?.length ?? 0) > 0)) continue
     linkExplain.add(key)
-    dropped.push({ key: `filters.${key}`, reason: firing.rule.reason })
+    dropped.push({ key: `filters.${key}`, reason: rule.reason })
   }
   for (const key of Object.keys(usable)) {
     const owner = parseCatalogFilterPath(key)?.key

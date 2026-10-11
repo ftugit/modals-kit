@@ -8,13 +8,12 @@
    *
    * Каждое изменение — `commit: 'live'` в хранилище пагинатора (как жил
    * панельный `setExtra` до переноса); выключения считают: гаты (статика
-   * компиляции), гидратация (`jsOnly`) и связки `enabledBy` — через ядро
-   * `lib/links`. Причина — в helper (канал `fieldState` → `FieldView`).
+   * компиляции), гидратация (`jsOnly`) и связки `enabledBy` — правилами
+   * `disabledWhen` в описании формы. Причина — в helper (`FieldView`).
    */
   import type { Snippet } from 'svelte'
   import type { ExtraValue } from '#lib/paginate/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
-  import { computeLinks, linkFieldState, linkHelperText } from '#lib/links/links.js'
   import { buttonVariants } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON } from '#lib/ui/js-only.svelte.js'
   import type { DemoPanelSchema } from './compile'
@@ -66,23 +65,6 @@
     ui: { fieldId: (_formId, name) => name },
   })
 
-  // Связки панели считаются ПО ЖИВЫМ значениям формы — второму аргументу
-  // канала `fieldState` (C6): гасить надо сразу на изменении, до похода в
-  // хранилище. Boolean-значения чекбоксов — в строковой форме адресных
-  // значений ('true'/'false'), пустое — «не выбрано».
-  // svelte-ignore state_referenced_locally
-  const links = linkFieldState(
-    (values: Readonly<Record<string, unknown>>) => ({
-      outcome: computeLinks(schema.links, (name) => {
-        const raw = values[name]
-        if (raw === undefined || raw === null || raw === '') return []
-        return [typeof raw === 'boolean' ? (raw ? 'true' : 'false') : String(raw)]
-      }),
-    }),
-    (name) => name,
-    (firing) => linkHelperText(firing, (id) => schema.label(id)),
-  )
-
   // Имя = id, как в фильтрах (b1 `bd52745`): адресное имя контрола читается
   // из разметки без второго алфавита.
   // svelte-ignore state_referenced_locally
@@ -99,12 +81,14 @@
         if (size !== undefined) onSize(size)
       },
     },
-    fieldState: (name, values) => {
+    // Гаты и гидратация — решения shell, не данные формы; их нет — говорят
+    // связки `enabledBy` (`disabledWhen` в описании, по живым значениям).
+    fieldState: (name) => {
       const gated = schema.gated.get(name)
       if (gated !== undefined) return { disabled: true, reason: gated }
       if (schema.jsOnly.has(name) && form.submitVisible)
         return { disabled: true, reason: JS_ONLY_REASON }
-      return links(name, values)
+      return undefined
     },
   })
 

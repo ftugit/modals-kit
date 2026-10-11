@@ -10,8 +10,8 @@
    * НЕ изменился — панель по-прежнему «схема → render»: список
    * `SettingsField` описывает поля, имена адресов, выключения и маппинг в
    * extra; `fieldState()`-функция из оболочки ушла — решение о выключении
-   * считается компилятором (гаты), механизмом (гидратация) и `lib/links`
-   * (связки `enabledBy`), а показывает его `FieldView`.
+   * считается компилятором (гаты), механизмом (гидратация) и формой
+   * (связки `enabledBy` → `disabledWhen`), а показывает его `FieldView`.
    */
   import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
   import { featureGates, getPaginator, type Extra, type ExtraValue } from '#lib/paginate/index.js'

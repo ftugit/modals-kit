@@ -9,13 +9,48 @@ import { constraintsOf, type ValidatorRef } from './validators'
 /** Один вариант выбора для select/radio-like поля. */
 export interface Option { value: string; label: string; disabled?: boolean }
 
-/** Декларативное условие видимости поля. */
-export type VisibilityCondition =
+/**
+ * Декларативное условие на значения формы — данные, поэтому сервер считает его
+ * без скрипта. Им описываются и видимость (`visibleWhen`), и выключение
+ * (`disabledWhen`). `filled` — поле заполнено (непустая строка или список,
+ * число, `true`); `includes` — список содержит значение, скаляр равен ему
+ * (сравнение строковое: значение из адреса и из разметки — строка).
+ */
+export type FieldCondition =
   | { field: FieldPath; equals: string | number | boolean | null }
   | { field: FieldPath; notEquals: string | number | boolean | null }
-  | { all: readonly VisibilityCondition[] }
-  | { any: readonly VisibilityCondition[] }
-  | { not: VisibilityCondition }
+  | { field: FieldPath; filled: true }
+  | { field: FieldPath; includes: string }
+  | { all: readonly FieldCondition[] }
+  | { any: readonly FieldCondition[] }
+  | { not: FieldCondition }
+
+/** Условие видимости поля — то же условие формы (прежнее имя типа). */
+export type VisibilityCondition = FieldCondition
+
+/**
+ * Правило выключения поля (R1): когда `when` выполнено, поле видно, но
+ * недоступно — браузер его не отправляет. Без JS про `disabled` никто не
+ * знает, поэтому то же правило проверяет `validateForm` на обеих сторонах:
+ * ЗАПОЛНЕННОЕ выключенное поле даёт отказ, пустое ничего не нарушает.
+ * Текст один на подсказку под полем и на отказ. Сработало несколько правил —
+ * говорят ВСЕ: виновники и причины собираются в один текст `link.blocked`.
+ */
+export interface DisableRule {
+  readonly when: FieldCondition
+  /** Причина своими словами («у анонсов нет оценки»): подставляется как `{reason}`. */
+  readonly reason: string
+  /** Кто мешает — подписи для `{blockers}`; по умолчанию подписи полей из `when`. */
+  readonly blockers?: readonly string[]
+  /** Как выключенное называется в `{field}`; по умолчанию подпись поля. */
+  readonly label?: string
+  /**
+   * Свой текст этого правила вместо словарного — шаблон с теми же
+   * подстановками `{field}`, `{blockers}`, `{reason}`. Правила со своим
+   * текстом говорят каждое отдельно (код `link.message`), остальные — общим.
+   */
+  readonly message?: string
+}
 
 /** Откуда берётся «поле невалидно»: по факту ошибки или по тому, что показано. */
 export type InvalidFrom = 'fact' | 'shown'
@@ -34,9 +69,11 @@ export interface FieldDescriptor<V = unknown> {
   readonly validators: readonly ValidatorRef[]
   readonly options?: readonly Option[]
   readonly visibleWhen?: VisibilityCondition
+  /** Правила выключения поля по значениям формы (см. `DisableRule`). */
+  readonly disabledWhen?: readonly DisableRule[]
   /**
-   * Решение связочного слоя: поле выключено — видно, но недоступно.
-   * Ядро только несёт это до компонента; кто выключил — вопрос слоя.
+   * Поле выключено статически (видно, но недоступно): решение известно при
+   * объявлении. Решения по значениям — `disabledWhen`.
    */
   readonly disabled?: boolean
   /** Причина показывается в слоте helper вместо help; бывает только у выключенного поля. */
@@ -105,8 +142,13 @@ export interface FieldOptions<V = unknown> {
   /** Условие, при котором поле участвует в показе и обычной валидации. */
   visibleWhen?: VisibilityCondition
   /**
-   * Поле выключено (видно, но недоступно); `reason` — почему, показывается
-   * в helper-слоте вместо `help`. Решение считает связочный слой, ядро несёт.
+   * Правила выключения по значениям формы: живое гашение у клиента и отказ
+   * `link.blocked` в `validateForm` — одно объявление на обе стороны.
+   */
+  disabledWhen?: readonly DisableRule[]
+  /**
+   * Поле выключено статически (видно, но недоступно); `reason` — почему,
+   * показывается в helper-слоте вместо `help`.
    */
   disabled?: boolean
   reason?: string
@@ -142,6 +184,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         validators: o.validate ?? [],
         options: o.options?.map((x) => (typeof x === 'string' ? { value: x, label: x } : x)),
         visibleWhen: o.visibleWhen,
+        disabledWhen: o.disabledWhen,
         disabled: o.disabled,
         // Инвариант контракта: причина бывает только у выключенного поля —
         // иначе helper-узел (и aria-describedby на него) обещан, но пуст.
@@ -156,7 +199,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
 /** field.* на defaultRegistry для краткого описания встроенных полей. */
 export const field = makeFieldSugar()
 
-/** Решение связочного слоя об одном поле — канал `fieldState` в опциях bind. */
+/** Решение о доступности поля — канал `fieldState` в опциях bind или `disabledWhen`. */
 export interface FieldLink {
   readonly disabled?: boolean
   readonly reason?: string

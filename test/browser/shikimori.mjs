@@ -543,8 +543,8 @@ async function checkFiltersUi(browser) {
     if (new URL(page.url()).searchParams.get('page.filters.status') === 'anons')
       throw new Error('проверка «до Применить» прошла уже после записи адреса');
     const liveReason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
-    // В оценке стоит 8 с прошлого шага → под полем отказ набора (заполненная
-    // жертва), а не helper; обе реплики обязаны назвать виновника.
+    // В оценке стоит 8 с прошлого шага; текст один на пустое и заполненное
+    // поле (R1) и обязан назвать виновника.
     if (!/«Статус»/.test(liveReason) || !/оценк/i.test(liveReason))
       throw new Error(`причина до «Применить» не называет виновника: «${liveReason}»`);
     console.log(`  ok  связка гасит поле до «Применить»: «${liveReason.trim()}»`);
@@ -772,11 +772,11 @@ async function checkFiltersNoJs(browser) {
     if (await page.locator('[data-testid="filters-details"]').evaluate((el) => el.open))
       throw new Error('no-JS проверка должна оставаться видимой при закрытой форме');
     if (await scoreInput.isDisabled()) throw new Error('без JavaScript выбранное поле не должно быть disabled');
-    // Отказ показан ПОД ПОЛЕМ жертвой (строка связки замещается отказом,
-    // когда значение под связкой есть) — тот же текст, что у валидатора.
+    // Отказ показан ПОД ПОЛЕМ — тот же текст, что у валидатора (R1: один
+    // текст на подсказку и отказ).
     const fieldError = page
       .locator('[data-testid="catalog-filter-reason"]')
-      .filter({ hasText: /невозможно использовать совместно с/i });
+      .filter({ hasText: /нельзя использовать вместе с «Статус»/i });
     if ((await fieldError.count()) === 0) {
       const all = await page.locator('[data-testid="catalog-filter-reason"]').allTextContents();
       throw new Error(`отказ под полем не найден: ${JSON.stringify(all)}`);

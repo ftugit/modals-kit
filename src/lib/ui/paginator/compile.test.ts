@@ -85,13 +85,12 @@ describe('compileDemoPanelSchema: groups', () => {
 })
 
 describe('compileDemoPanelSchema: инверсия enabledBy', () => {
-  it('«cols доступно при layout=columns» → правило «layout=list гасит cols»', () => {
-    const { links } = compile()
-    expect(links).toHaveLength(1)
-    expect(links[0].when).toEqual([{ field: 'page.layout', value: 'list' }])
-    expect(links[0].effect).toEqual({ kind: 'disable-field', field: 'page.cols' })
-    expect(links[0].reason).toContain('«Раскладка»')
-    expect(links[0].reason).toBe('доступно при «Раскладка» = «Колонки»') // текст о РАЗРЕШЁННОМ значении
+  it('«cols доступно при layout=columns» → правило поля «layout=list гасит cols»', () => {
+    const { definition: form } = compile()
+    expect(form.byName['page.cols']?.disabledWhen).toEqual([
+      { when: { field: 'page.layout', includes: 'list' }, reason: 'доступно при «Раскладка» = «Колонки»' }, // текст о РАЗРЕШЁННОМ значении
+    ])
+    expect(form.byName['page.layout']?.disabledWhen).toBeUndefined()
   })
   it('несколько «других» значений → по правилу на каждое; in снимает часть', () => {
     const fields: readonly SettingsField<Fix>[] = [
@@ -104,24 +103,23 @@ describe('compileDemoPanelSchema: инверсия enabledBy', () => {
         enabledBy: [{ field: 'layout', in: ['columns'] }],
       },
     ]
-    const { links } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(links.map((l) => l.when[0]!.value)).toEqual(['list']) // 'columns' разрешён — не гасит
+    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
+    expect(form.byName['p.z']?.disabledWhen?.map((r) => r.when)).toEqual([{ field: 'p.layout', includes: 'list' }]) // 'columns' разрешён — не гасит
   })
   it('правило к зависимости-переключателю строится по булевым значениям', () => {
     const fields: readonly SettingsField<Fix>[] = [
       { key: 'srch', label: 'Поиск', type: 'toggle' },
       { key: 'x', label: 'X', type: 'select', options: [['1', '1']], enabledBy: [{ field: 'srch', equals: true }] },
     ]
-    const { links } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(links).toHaveLength(1)
-    expect(links[0].when).toEqual([{ field: 'p.srch', value: 'false' }])
+    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
+    expect(form.byName['p.x']?.disabledWhen?.map((r) => r.when)).toEqual([{ field: 'p.srch', includes: 'false' }])
   })
   it('связка к полю вне панели игнорируется (поле свободно)', () => {
     const fields: readonly SettingsField<Fix>[] = [
       { key: 'x', label: 'X', type: 'select', options: [['1', '1']], enabledBy: [{ field: 'ghost', equals: 'y' }] },
     ]
-    const { links } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(links).toHaveLength(0)
+    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
+    expect(form.byName['p.x']?.disabledWhen).toBeUndefined()
   })
 })
 

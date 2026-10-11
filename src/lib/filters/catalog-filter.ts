@@ -14,7 +14,8 @@
  * без упрощений: имена полей, правила валидатора и формат адреса сохранены
  * посимвольно; заменено только то, что относится к ЧУЖОЙ форме (канон собирал
  * определение на `@/lib/form/core`, здесь — на `#lib/form/index.js`), и добавлены связки
- * (`rules`, их применяет словарь `#lib/links/catalog.js`) — они часть схемы, как и поля.
+ * (`rules`) — они часть схемы, как и поля: компилятор переводит их в `disabledWhen`
+ * полей формы, а связка с поиском и пояснения панели считаются тем же условием формы.
  */
 import {
   decode,
@@ -29,8 +30,10 @@ import {
   type FormPolicy,
   type FormState,
   type ValidatorRef,
+  matchesCondition,
+  type DisableRule,
+  type FieldCondition,
 } from '#lib/form/index.js'
-import { linkBlockedValidator, type LinkBlockedProbe } from '#lib/links/validators.js'
 import { DEV } from 'esm-env'
 
 /** `and` — все значения, `or` — любое, `not` — исключение (красные чипы). */
@@ -98,6 +101,11 @@ export type CatalogFilterRule = {
   drop: 'q' | { field: string }
   /** Человекочитаемая причина: её показывает интерфейс. */
   reason: string
+  /**
+   * Свой текст под выключенным полем вместо словарного: шаблон с
+   * подстановками `{field}`, `{blockers}`, `{reason}` (см. `DisableRule.message`).
+   */
+  message?: string
 }
 
 export type CatalogFilterSchema = {
@@ -213,6 +221,8 @@ function validateCatalogFilterRules(
       throw new Error('Invalid or duplicate catalog filter rule id')
     if (typeof rule.reason !== 'string' || !rule.reason.trim() || rule.reason.length > 200)
       throw new Error('Invalid catalog filter rule reason')
+    if (rule.message !== undefined && (typeof rule.message !== 'string' || !rule.message.trim() || rule.message.length > 200))
+      throw new Error('Invalid catalog filter rule message')
     if (!Array.isArray(rule.when) || rule.when.length === 0 || rule.when.length > 8)
       throw new Error('Invalid catalog filter rule conditions')
     const when = rule.when.map((condition) => {
@@ -235,7 +245,10 @@ function validateCatalogFilterRules(
               throw new Error('Catalog filter rule drops an unknown field')
             })()
     ids.add(rule.id)
-    return { id: rule.id, when, drop: normalizedDrop, reason: rule.reason.trim() }
+    return {
+      id: rule.id, when, drop: normalizedDrop, reason: rule.reason.trim(),
+      ...(rule.message !== undefined ? { message: rule.message.trim() } : {}),
+    }
   })
 }
 
@@ -429,42 +442,41 @@ function optionsAllowlist(values: readonly string[]): ValidatorRef {
  * используют серверная форма, клиентская форма и `validateCatalogFilterValues`.
  */
 /**
- * Зонды валидатора связок: по каждому ПОЛЕ, которое схема умеет снимать
- * (`drop: { field }`), — список правил, которые его гасят. Валидатор вешается
- * на все пути поля (режимы и границы): отказ касается поля, а не одного
- * режима. Условия переводятся в пути, которые видит декодер формы, — ядро
- * `lib/links` о путях не знает. `drop: 'q'` не участвует: поиск живёт вне
- * формы (связку с ним решает словарь `#lib/links/catalog.js`, идентификатор `q`).
+ * Связка схемы → условие формы. Идентификатор условия — КЛЮЧ поля схемы, а
+ * форма видит пути (`filters.genres.and`, `filters.score.min`): поле заполнено,
+ * если заполнен любой его путь; значение есть, если оно на любом пути.
+ * `prefix` — адресный слой имён живой формы (`page.`); сервер и панель считают
+ * по путям без префикса. Один перевод на форму, поиск и пояснения панели.
  */
-function linkProbesByField(schema: CatalogFilterSchema): Map<string, LinkBlockedProbe[]> {
+function ruleCondition(schema: CatalogFilterSchema, rule: CatalogFilterRule, prefix = ''): FieldCondition {
   const pathsOf = new Map(schema.fields.map((field) => [field.key, catalogFilterFieldNames(field)]))
-  const labelOf = new Map(schema.fields.map((field) => [field.key, field.label]))
-  const out = new Map<string, LinkBlockedProbe[]>()
-  for (const rule of schema.rules ?? []) {
-    if (rule.drop === 'q') continue
-    const list = out.get(rule.drop.field) ?? []
-    list.push({
-      id: rule.id,
-      when: rule.when.map((condition) => ({
-        label: labelOf.get(condition.field) ?? condition.field,
-        paths: pathsOf.get(condition.field) ?? [],
-        ...(condition.value === undefined ? {} : { value: condition.value }),
-      })),
-    })
-    out.set(rule.drop.field, list)
-  }
-  return out
+  const all = rule.when.map((condition): FieldCondition => {
+    const any = (pathsOf.get(condition.field) ?? []).map((path): FieldCondition =>
+      condition.value === undefined
+        ? { field: prefix + path, filled: true }
+        : { field: prefix + path, includes: condition.value })
+    return any.length === 1 ? any[0]! : { any }
+  })
+  return all.length === 1 ? all[0]! : { all }
 }
 
 /**
- * Валидатор связок в определении: набор с запрещённой комбинацией отклоняется
- * ЦЕЛИКОМ (`validateCatalogFilterValues` на любой ошибке отдаёт `values = {}`) —
- * источник не получает ни одного значения, «частичного применения» без JS нет.
- * Текст отказа — общий со связочным helper'ом (код + параметры, словарь на
- * форме), см. `lib/links/validators`.
+ * Правила выключения поля схемы — у КАЖДОГО его пути (режим/граница): гаснет
+ * поле целиком, отказ касается поля, а не одного режима. Называется поле
+ * подписью схемы («Оценка», а не «Оценка · от»), текст — словаря формы.
+ * `drop: 'q'` сюда не входит: поиск живёт вне формы (`catalogRuleState`).
  */
-const LINK_MESSAGES = {
-  'link.blocked': '«{field}» невозможно использовать совместно с {blockers}',
+function disableRulesFor(schema: CatalogFilterSchema, descriptor: CatalogFilterField, prefix: string): DisableRule[] {
+  const labelOf = new Map(schema.fields.map((field) => [field.key, field.label]))
+  return (schema.rules ?? [])
+    .filter((rule) => rule.drop !== 'q' && rule.drop.field === descriptor.key)
+    .map((rule) => ({
+      when: ruleCondition(schema, rule, prefix),
+      reason: rule.reason,
+      blockers: rule.when.map((condition) => labelOf.get(condition.field) ?? condition.field),
+      label: descriptor.label,
+      ...(rule.message !== undefined ? { message: rule.message } : {}),
+    }))
 }
 
 /**
@@ -493,14 +505,13 @@ export function compileCatalogFilterSchema(
   const fields: Record<string, FieldDraft<any>> = Object.create(null)
   const paths: string[] = []
   const defaults: Record<string, string> = {}
-  const blocked = linkProbesByField(schema)
 
   for (const descriptor of schema.fields) {
+    const disabledWhen = disableRulesFor(schema, descriptor, namePrefix)
     for (const name of catalogFilterFieldNames(descriptor)) {
       const parsed = parseCatalogFilterPath(name)
       const mode = parsed?.mode
       const bound = parsed?.bound
-      const linkProbes = blocked.get(descriptor.key)
       const common = {
         // Режим/граница видны в подписи: «Жанры · кроме», «Оценка · от» —
         // читается и без JS.
@@ -517,11 +528,11 @@ export function compileCatalogFilterSchema(
           ...(descriptor.type === 'multiselect' && descriptor.maxSelections !== undefined
             ? [{ name: 'maxCount', arg: descriptor.maxSelections }]
             : []),
-          // Отказ связки — у КАЖДОГО поля, которое схема умеет снимать, у
-          // всех его путей (режим/граница): набор с выбранным запрещённым
-          // значением отклоняется целиком, «частичного применения» без JS нет.
-          ...(linkProbes ? [linkBlockedValidator(linkProbes, descriptor.label)] : []),
         ] as ValidatorRef[],
+        // Связки схемы: живое гашение у клиента и отказ `link.blocked` в
+        // validateForm — набор с выбранным запрещённым значением отклоняется
+        // целиком, «частичного применения» без JS нет.
+        ...(disabledWhen.length ? { disabledWhen } : {}),
       }
       // Поля формы получают ПОЛНЫЕ подписи опций (label + disabled): их видит
       // FieldView, а allowlist строится только из значений.
@@ -548,7 +559,7 @@ export function compileCatalogFilterSchema(
 
   return {
     schema,
-    definition: defineForm({ id, fields, policy: catalogFilterPolicy(), messages: LINK_MESSAGES }),
+    definition: defineForm({ id, fields, policy: catalogFilterPolicy() }),
     paths,
     defaults,
   }
@@ -912,7 +923,7 @@ export type CatalogFilterValueMap = Readonly<Record<string, readonly string[]>>
 
 /**
  * Нарушение связки в картине панели: что столкнулось, почему и что из-за
- * этого не применяется. Считает словарь `#lib/links/catalog.js`.
+ * этого не применяется. Считает `catalogFilterViolations`.
  */
 export type CatalogFilterViolation = {
   /** Имя связки: `search-with-latest` (правило схемы) или `contradictory-modes`. */
@@ -939,6 +950,70 @@ export function catalogFilterValueMap(source: Record<string, unknown> | undefine
       .map((item) => String(item ?? '').trim())
       .filter((item) => item.length > 0 && item.length <= 120)
     if (items.length) out[path] = items
+  }
+  return out
+}
+
+/** Сработавшие связки схемы при значениях-путях (`filters.status` → список). */
+export type CatalogRuleState = {
+  /** Все сработавшие связки в порядке схемы. */
+  fired: readonly CatalogFilterRule[]
+  /** Ключ поля → последняя сработавшая связка, которая его снимает. */
+  fields: ReadonlyMap<string, CatalogFilterRule>
+  /** Последняя сработавшая связка, запрещающая поиск. */
+  search?: CatalogFilterRule
+}
+
+/**
+ * Связки схемы при текущих значениях — тем же условием формы, что гасит поля
+ * (`matchesCondition`): серверная защита источника, запрет поиска и картина
+ * панели не могут разойтись с живой формой.
+ */
+export function catalogRuleState(
+  schema: CatalogFilterSchema,
+  values: Readonly<Record<string, unknown>>,
+): CatalogRuleState {
+  const fired = (schema.rules ?? []).filter((rule) => matchesCondition(ruleCondition(schema, rule), values))
+  const fields = new Map<string, CatalogFilterRule>()
+  let search: CatalogFilterRule | undefined
+  for (const rule of fired) {
+    if (rule.drop === 'q') search = rule
+    else fields.set(rule.drop.field, rule)
+  }
+  return { fired, fields, ...(search ? { search } : {}) }
+}
+
+/**
+ * Пояснения панели: сработавшие связки схемы и противоречия режимов.
+ * Противоречие (одно значение в «все из» и в «кроме») связка не объявляет —
+ * оно СЛЕДУЕТ из смысла. Это подсказка, а не запрет: поле не гаснет, источник
+ * ничего не отбрасывает — честно вернёт пусто. Ключи — канонические:
+ * `filters.status=anons`, `filters.genres.not=133`.
+ */
+export function catalogFilterViolations(
+  schema: CatalogFilterSchema,
+  map: CatalogFilterValueMap,
+): CatalogFilterViolation[] {
+  const out: CatalogFilterViolation[] = catalogRuleState(schema, map).fired.map((rule) => ({
+    id: rule.id,
+    message: rule.reason,
+    keys: rule.when.map((condition) =>
+      condition.value === undefined ? `filters.${condition.field}` : `filters.${condition.field}=${condition.value}`),
+    drop: rule.drop === 'q' ? 'q' : { field: rule.drop.field },
+  }))
+  for (const field of schema.fields) {
+    const modes = field.modes ?? []
+    if (!modes.includes('and') || !modes.includes('not')) continue
+    const required = map[`filters.${field.key}.and`] ?? []
+    for (const value of new Set(map[`filters.${field.key}.not`] ?? [])) {
+      if (!required.includes(value)) continue
+      const name = field.options?.find((option) => option.value === value)?.label ?? value
+      out.push({
+        id: 'contradictory-modes',
+        message: `«${field.label}»: «${name}» выбрано и в «все из», и в «кроме» — выдача будет пустой`,
+        keys: [`filters.${field.key}.and=${value}`, `filters.${field.key}.not=${value}`],
+      })
+    }
   }
   return out
 }

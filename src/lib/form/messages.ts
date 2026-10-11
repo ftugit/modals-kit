@@ -42,6 +42,13 @@ export const ru: MessageDictionary = {
     return notes.length ? `${head}: ${notes.join(', ')}` : head
   },
 
+  // Выключение поля правилами `disabledWhen`: один текст на подсказку под
+  // полем и на отказ набора. Виновник называется — «список невозможного»
+  // пользователю не ответ. Подстановки — `disableParams`.
+  'link.blocked': '«{field}» нельзя использовать вместе с {blockers}: {reason}',
+  // Свои тексты правил (`DisableRule.message`), уже с подстановками.
+  'link.message': '{text}',
+
   'type.number': 'Введите число',
   'type.date': 'Введите дату',
   'type.time': 'Введите время',

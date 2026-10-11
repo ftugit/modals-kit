@@ -98,8 +98,7 @@ test('зона фреймворка существует и непуста (ин
   assert.ok(zones.length > 0, 'нет ни одного файла в зоне фреймворка — граница фиктивна')
 })
 
-// links адаптера не имеет (C6: форма приносит живые значения через канал
-// `fieldState`, Svelte-обёртка удалена) — его чистоту держит CORE_MODULES.
+// lib/links удалён (R1): связки — правила `disabledWhen` самой формы.
 test('зона фреймворка есть у каждого ядра с адаптерами (form/paginate)', () => {
   for (const root of ['src/lib/form', 'src/lib/paginate']) {
     const zones = walk(root).map((f) => relative(root, f)).filter(isFrameworkZone)

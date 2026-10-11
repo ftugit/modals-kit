@@ -14,7 +14,7 @@
 - Рантайм `svelte` (`$state`, `setContext`, `svelte/reactivity`) фреймворком SvelteKit не считается:
   он ожидаем в Svelte-биндингах (`*/svelte/`), в UI-компонентах и в оболочке `lib/shell`.
   Импортов `svelte` в нейтральных ядрах (`lib/paginate/*.ts`, `lib/form/*.ts`, `lib/modals/*.ts`,
-  `lib/db`, `lib/search`, `lib/filters`, `lib/links`) **нет**.
+  `lib/db`, `lib/search`, `lib/filters`, `lib/links` — удалён в ходе 34) **нет**.
 
 Документация, на которую опирается вывод
 ([packaging → best practices](https://svelte.dev/docs/kit/packaging#Best-practices)):

@@ -123,6 +123,5 @@ export const CORE_MODULES = [
   'src/lib/modals',
   'src/lib/form',
   'src/lib/paginate',
-  'src/lib/links',
   'src/lib/search',
 ]
