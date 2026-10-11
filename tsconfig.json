@@ -6,8 +6,7 @@
     "jsx": "preserve",
     "types": [
       "$app/types",
-      "node",
-      "vitest/globals"
+      "node"
     ]
   },
   "include": [
