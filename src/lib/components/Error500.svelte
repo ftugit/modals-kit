@@ -3,8 +3,9 @@
   // разработчика (warn) и в логе сервера, пользователю — только факт сбоя.
 </script>
 
-<main class="grid min-h-dvh place-items-center bg-background px-6 text-foreground" role="alert" data-testid="error-500">
-  <div class="flex max-w-md flex-col items-center gap-4 text-center">
+<main class="grid min-h-dvh place-items-center bg-background px-6 text-foreground" data-testid="error-500">
+  <!-- role="alert" — на содержимом, не на <main>: роль заменила бы ориентир main (B4) -->
+  <div class="flex max-w-md flex-col items-center gap-4 text-center" role="alert">
     <span class="text-6xl font-black tracking-tight text-muted-foreground">500</span>
     <h1 class="text-xl font-semibold">Приложение недоступно</h1>
     <p class="text-sm text-muted-foreground">

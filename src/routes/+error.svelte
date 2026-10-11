@@ -12,8 +12,9 @@
 {#if serverError}
   <Error500 />
 {:else}
-  <main class="grid min-h-dvh place-items-center bg-background px-6 text-foreground" role="alert">
-    <div class="flex max-w-md flex-col items-center gap-3 text-center">
+  <main class="grid min-h-dvh place-items-center bg-background px-6 text-foreground">
+    <!-- role="alert" — на содержимом, не на <main>: роль заменила бы ориентир main (B4) -->
+    <div class="flex max-w-md flex-col items-center gap-3 text-center" role="alert">
       <span class="text-5xl font-black tracking-tight text-muted-foreground">{page.status}</span>
       <h1 class="text-lg font-semibold">Страница не найдена или недоступна</h1>
       <a class="text-sm text-primary underline" href="/">На главную</a>
