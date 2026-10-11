@@ -107,6 +107,15 @@ checks.register('email-taken', async (value) => {
     : null
 })
 
+/**
+ * Тексты СВОИХ кодов приложения — словарь приложения (README «Сообщения»).
+ * Один модуль на обе стороны: `createConfig` в браузере и `createFormHandler`
+ * на сервере. Без текста код показывался как есть: «email.taken» (F57).
+ */
+export const appMessages = {
+  'email.taken': 'Этот адрес уже занят',
+}
+
 /** Валидатор-обёртка: синхронно пропускает, вида ограничения у него нет. */
 export const emailTaken = () => check('email-taken', { debounceMs: 250 })
 

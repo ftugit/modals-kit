@@ -225,8 +225,10 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.locator('#signup-email').blur()
   await pg.waitForTimeout(1200)
   const asyncErrors = await pg.locator('p.text-destructive').allInnerTexts()
-  ok('асинхронная проверка дала ошибку', asyncErrors.some((t) => t.includes('email.taken')
-    || t.includes('занят')), asyncErrors.join(' | '))
+  // Текст — из словаря приложения, как у синхронных ошибок; код наружу не
+  // попадает (F57: раньше живая проверка показывала «email.taken»).
+  ok('асинхронная проверка дала ошибку с текстом', asyncErrors.includes('Этот адрес уже занят'), asyncErrors.join(' | '))
+  ok('код проверки не показан вместо текста', !asyncErrors.some((t) => t.includes('email.taken')), asyncErrors.join(' | '))
   await pg.close()
 }
 

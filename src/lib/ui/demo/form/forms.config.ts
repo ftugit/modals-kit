@@ -5,7 +5,7 @@ import { createConfig } from '#lib/form/svelte/index.js'
 import type { Transport } from '#lib/form/index.js'
 import { jsonTransport } from './transport'
 import './extend'                       // регистрация своего типа и правил
-import { checks } from './extend'
+import { appMessages, checks } from './extend'
 import CheckboxField from './ui/CheckboxField.svelte'
 import RatingField from './ui/RatingField.svelte'
 import SelectField from './ui/SelectField.svelte'
@@ -41,6 +41,7 @@ export const forms = createConfig({
   parallel: 'block',
   // Q1: системные сбои формы стекаются в единый канал приложения (показ не трогает).
   onError: report,
+  messages: appMessages,
 })
 
 /** Асинхронные проверки передаются связке: в браузере — с подавлением. */
@@ -57,6 +58,7 @@ export const formsCustomUi = createConfig({
   live: 'after-touched',
   parallel: 'block',
   onError: report,
+  messages: appMessages,
   ui: {
     fieldId: (formId, name) => `fld_${formId}__${name}`,
     shouldValidate: ({ event }) => event === 'input',

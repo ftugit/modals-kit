@@ -10,7 +10,7 @@ import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type
 import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { formRenderer } from '../messages-order'
-import type { FormError, Result } from '../result'
+import { normalizeErrors, type FormError, type Result } from '../result'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
 import { disabledState } from '../validate'
@@ -268,13 +268,16 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     // иначе он останется поднятым навсегда
     if (!asyncRefsOf(desc, name).length) return
     store.set((s) => ({ ...s, checking: { ...s.checking, [name]: true } }))
-    runner.schedule(desc, name, valuesForChecks(new FormData(formEl), desc), (error) => {
+    runner.schedule(desc, name, valuesForChecks(new FormData(formEl), desc), (raw) => {
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]
         // Асинхронный ответ заменяет только предыдущую async-ошибку.
         // Синхронные ошибки того же поля (email/minLength/…) сохраняются.
         const previous = asyncErrorIds.get(name)
+        // Текст — тем же словарём, что у синхронных ошибок и у сервера (F57):
+        // без этого живая проверка показывала код («email.taken»).
+        const error = raw && normalizeErrors([raw], render, desc.policy.limits)[0]
         const facts = s.facts.filter((e) => e.id !== previous && e.id !== error?.id)
         if (error) { facts.push(error); asyncErrorIds.set(name, error.id) }
         else asyncErrorIds.delete(name)

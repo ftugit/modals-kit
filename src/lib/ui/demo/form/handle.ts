@@ -11,7 +11,7 @@ import {
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '#lib/form/index.js'
 import './extend'
-import { checks } from './extend'
+import { appMessages, checks } from './extend'
 import { resolveDescription, signup } from './signup'
 
 const idempotency = new MemoryIdempotencyStore()
@@ -65,6 +65,7 @@ function handlerFor(description: typeof signup) {
     // «забыл указать origin» иначе означает «принимаем межсайтовый POST».
     order: SECURITY_LAYERS,
     checks,
+    messages: appMessages,
     idempotency,
     throttle,
     async execute({ values, intent, commit }) {
