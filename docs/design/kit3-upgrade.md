@@ -410,7 +410,7 @@ A4 `5b4f93c` · A5 `a9f7b0f` · A6 `0aad223` · чистка §10 `ab3957a`. П�
 ## 12. Замечено попутно, вне переезда (не делаю без решения)
 
 Мусор в корне, не связанный с v2 → v3 (все файлы в git):
-- `uno.config.ts` и `unocss.config.ts` — почти одинаковые;
+- ~~`uno.config.ts` и `unocss.config.ts` — почти одинаковые~~ — активен `unocss.config.ts` (проверено сборкой), `uno.config.ts` удалён (ход 16, решение владельца Q5);
 - `CHECKLIST.md`, `CLICK_THROUGH_CHECKLIST.md`, `PAGINATOR_CHECKLIST.md`, `UNIVERSAL_DEMO_PANEL_*.md`;
 - `spike-history.py`, `browser-check.mjs`, `delete-check.mjs`;
 - 6 `.png` в корне и `screenshots/` (24 файла).
@@ -424,3 +424,27 @@ A4 `5b4f93c` · A5 `a9f7b0f` · A6 `0aad223` · чистка §10 `ab3957a`. П�
   на :4173, `forms`/`forms-a11y`/`db-demo` — на :5173. Одним сервером скрипт не проходит;
 - `src/lib/links/index.ts:2` — комментарий ссылается на несуществующий модуль `links/panel`;
 - холодный `vite dev` в песочнице (2 GB) упирается в OOM на `/db-demo` и на master — свойство среды, не кода.
+
+Найдено во время фазы B (ход 16):
+- **Гонка обхода истории в ядре модалок (R-24)** — давняя, Kit 3 её расширил: операция между `go()` и
+  применением обхода считала шаги от устаревшей глубины (`go(-2)` → `about:blank`). Исправлено в `build.ts`
+  (решение Q3=a), три юнит-теста красные без правки.
+- **`tooling/size-budget.mjs`**: (1) путь `generated/client-optimized` — раскладка 2.x; гейты ветки читали
+  устаревший app.js сборки 2.x, пока его не вычистил `vite dev` 3.x; (2) узлы `~n` (серверные данные)
+  выбрасывались → `/paginator` всегда мерился без страницы. Исправлено (B9); лимит `/paginator` 196.5 (Q4).
+- **Вес `/paginator`**: 191.5 KiB gzip начальной загрузки (страница + её чанки) — кандидат на разбор.
+- **«Весь JS» 213.9 / 214.0 KiB** — запас 0.1.
+- **Порядок CSS-переменных темы UnoCSS недетерминирован** между сборками: побайтное сравнение CSS
+  некорректно, сравнивать по набору правил/объявлений.
+- **UnoCSS `transformIndexHtml`** — предупреждение Kit 3 `transform_index_html_unsupported`; хук мёртвый
+  (kit#8269). Снят в `vite.config.ts` (Q1=a); убрать снятие, когда решат в UnoCSS или Kit (kit#17373).
+- **`src/app.html` никогда не сканировался UnoCSS** (и на 2.x; unocss#1774): 10 утилит `<html>` (`scroll-smooth`,
+  курсор кнопок, выделение…) не попадали в CSS. Исправлено `content.filesystem` (Q2).
+- **`probes/`** (78 файлов, 15 читали ключ 2.x `sveltekit:states`) удалён (Q5); живые проверки перенесены:
+  `test/http/db-demo-http.check.mjs` (35), `test/browser/db-demo-browser.check.mjs` (17),
+  `test/browser/url-storage.check.mjs` (19) — зелёные на 3.x; курсорный режим требует `DB_CURSOR_SECRET`
+  (без него 501 — штатно). `classes-audit.mjs`, `uno-probe.mjs` → `tooling/`.
+
+Статус фазы B (ход 16): B0–B9 выполнены, коммит `d5d681a`. Попутно в фазе B сделано то, что планировалось
+в C1 для модалок: движок без `window.location`/`history.state` (решение Q0=a). Остаётся C1 для роутера
+пагинатора (`router/sveltekit.ts`: `window.location` + `popstate`) и пункты C2–C6, F37/F38, §8.
