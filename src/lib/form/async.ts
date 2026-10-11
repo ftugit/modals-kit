@@ -112,8 +112,20 @@ export class AsyncRunner {
   #timers = new Map<FieldPath, ReturnType<typeof setTimeout>>()
   #inflight = new Map<FieldPath, AbortController>()
   #cache = new Map<string, FormError | null>()
+  /**
+   * Поколение поля: растёт на каждом `schedule` и `cancel`. Ответ отдаётся в
+   * колбэк, только если поколение не сменилось — иначе вытесненная проверка
+   * сообщила бы «ошибки нет» поверх новой (и сняла бы признак «идёт проверка»).
+   */
+  #generation = new Map<FieldPath, number>()
 
   constructor(private readonly checks: CheckRegistry) {}
+
+  #bump(path: FieldPath): number {
+    const next = (this.#generation.get(path) ?? 0) + 1
+    this.#generation.set(path, next)
+    return next
+  }
 
   get pending(): number { return this.#inflight.size }
 
@@ -131,9 +143,12 @@ export class AsyncRunner {
     const refs = asyncRefsOf(d, path)
     if (!refs.length) return
     const debounce = Math.max(...refs.map((r) => r.policy.debounceMs))
+    const generation = this.#bump(path)
     clearTimeout(this.#timers.get(path))
     this.#timers.set(path, setTimeout(() => {
-      void this.run(d, path, values).then(onResult)
+      void this.run(d, path, values).then((e) => {
+        if (this.#generation.get(path) === generation) onResult(e)
+      })
     }, debounce))
   }
 
@@ -179,10 +194,12 @@ export class AsyncRunner {
    */
   cancel(path?: FieldPath): void {
     if (path) {
+      this.#bump(path)
       clearTimeout(this.#timers.get(path)); this.#timers.delete(path)
       this.#inflight.get(path)?.abort('cancelled'); this.#inflight.delete(path)
       return
     }
+    for (const p of [...this.#timers.keys(), ...this.#inflight.keys()]) this.#bump(p)
     for (const t of this.#timers.values()) clearTimeout(t)
     for (const c of this.#inflight.values()) c.abort('cancelled')
     this.#timers.clear(); this.#inflight.clear()

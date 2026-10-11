@@ -697,3 +697,39 @@ suite('структурное разделение (F15)', async () => {
     expect(store.getSnapshot().values['doc']).toBe(b)
   })
 })
+
+/* ── F21: вытесненная асинхронная проверка молчит ──────────────────── */
+
+suite('асинхронные проверки: вытеснение (F21)', async () => {
+  const { AsyncRunner, CheckRegistry, check } = await import('./async')
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const make = () => {
+    const checks = new CheckRegistry().register('taken', async (value) => {
+      await sleep(value === 'slow' ? 120 : 10)           // signal намеренно не уважается
+      return { code: 'login.taken' }
+    })
+    const d = defineForm({ id: 'q', fields: { login: field.text({ validate: [check('taken', { debounceMs: 0 })] }) } })
+    return { runner: new AsyncRunner(checks), d }
+  }
+
+  test('медленный ответ вытесненной проверки не стирает свежую ошибку', async () => {
+    const { runner, d } = make()
+    const calls: string[] = []
+    const cb = (e: FormError | null) => { calls.push(e ? e.code : 'null') }
+    runner.schedule(d, 'login', { login: 'slow' }, cb)
+    await sleep(20)
+    runner.schedule(d, 'login', { login: 'fast' }, cb)
+    await sleep(200)
+    expect(calls).toEqual(['login.taken'])
+  })
+
+  test('после cancel колбэк не вызывается', async () => {
+    const { runner, d } = make()
+    const calls: unknown[] = []
+    runner.schedule(d, 'login', { login: 'fast' }, (e) => { calls.push(e) })
+    await sleep(5)
+    runner.cancel('login')
+    await sleep(60)
+    expect(calls).toEqual([])
+  })
+})
