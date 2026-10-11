@@ -1,7 +1,7 @@
 // Local-адаптер: source + storage без URL (SPEC §3.6). Дословный порт React-версии;
 // источник — адаптированный (слой `source.ts`): возможности и паспорт записи
 // приезжают пагинатору, а вызов данных идёт единственным путём (`fetchPage`).
-import { createMemoryStorage } from './storage'
+import { createSessionDefaultStorage } from './storage-default'
 import { assertAdaptedSource, type AdaptedSource } from './source'
 import type { PaginatorAdapter, PaginatorStorage } from './types'
 
@@ -15,7 +15,7 @@ export function createLocalAdapter<T>(opts: {
   extraKeys?: readonly string[]
 }): PaginatorAdapter<T> {
   const source = assertAdaptedSource<T>(opts.source, `createLocalAdapter("${opts.name}")`)
-  const storage = opts.storage ?? createMemoryStorage()
+  const storage = opts.storage ?? createSessionDefaultStorage()
   const pageSize = opts.pageSize ?? 20
   const append = opts.append ?? true
   return {

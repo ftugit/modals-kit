@@ -1,5 +1,5 @@
 import { BROWSER } from 'esm-env'
-import { createMemoryStorage } from './storage'
+import { createSessionDefaultStorage } from './storage-default'
 import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
 import type {
   AdapterInit,
@@ -96,7 +96,7 @@ export function createCursorAdapter<T>(options: {
   pageSize?: number
   append?: boolean
 }): PaginatorAdapter<T> {
-  const storage = options.storage ?? createMemoryStorage()
+  const storage = options.storage ?? createSessionDefaultStorage()
   const pageSize = options.pageSize ?? 20
   const blank = (fp: string): CursorState => ({
     v: 1,

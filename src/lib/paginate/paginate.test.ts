@@ -1285,3 +1285,15 @@ describe('отмена loadMore и prefetch (B6)', () => {
     expect(signals[3]?.aborted).toBe(true)
   })
 })
+
+/* ── B10: хранилище по умолчанию на сервере не общее для запросов ─────── */
+describe('хранилище адаптера по умолчанию на сервере (B10)', () => {
+  it('local-адаптер без storage: снимок одного запроса не восстанавливается другому', async () => {
+    const source = sourceOf(async () => ({ items: [] }))
+    const adapter = createLocalAdapter<unknown>({ name: 'b10', source })
+    await adapter.persist(makeState({ name: 'b10', page: 3, pageSize: 50, extra: { q: 'чужое' } }) as never)
+    const init = await adapter.getInitial()
+    expect(init.page).toBe(1)
+    expect(init.extra).toEqual({})
+  })
+})
