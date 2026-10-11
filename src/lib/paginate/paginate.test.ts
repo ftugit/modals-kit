@@ -1243,3 +1243,45 @@ describe('сеансовое состояние вне общего экземп
     expect(load.mock.calls[0]![0].cursor).toBeUndefined()
   })
 })
+
+/* ── B6: сброс прерывает сам запрос догрузки и предзагрузки, а не только ответ ── */
+describe('отмена loadMore и prefetch (B6)', () => {
+  beforeEach(() => resetRegistry())
+  const hanging = () => {
+    const signals: Record<number, AbortSignal | undefined> = {}
+    const loadPage = vi.fn((req: PageRequest) => {
+      signals[req.page] = req.signal
+      return req.page === 1
+        ? Promise.resolve({ items: ['p1a', 'p1b'], totalPages: 5 })
+        : new Promise<PageResponse<string>>((_r, reject) =>
+          req.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    })
+    return { signals, loadPage }
+  }
+
+  it('сброс прерывает полётную догрузку; состояние не застревает в loading', async () => {
+    const { signals, loadPage } = hanging()
+    definePaginator({ name: 'b6m', adapter: fakeAdapter({ page: 1, pageSize: 2, totalPages: 5 }, loadPage as never).adapter as never })
+    const store = createPaginatorStore()
+    await initPaginator<string>(store, 'b6m')
+    const more = loadMore<string>(store, 'b6m', 1)
+    expect(signals[2]?.aborted).toBe(false)
+    await resetPaginator<string>(store, 'b6m')
+    await more
+    expect(signals[2]?.aborted).toBe(true)
+    expect(getState(store, 'b6m').status).not.toBe('error')
+    expect(getState(store, 'b6m').status).not.toBe('loading')
+  })
+
+  it('смена размера страницы прерывает полётную предзагрузку', async () => {
+    const { signals, loadPage } = hanging()
+    definePaginator({ name: 'b6p', adapter: fakeAdapter({ page: 1, pageSize: 2, totalPages: 5 }, loadPage as never).adapter as never })
+    const store = createPaginatorStore()
+    await initPaginator<string>(store, 'b6p')
+    const pf = prefetchPage<string>(store, 'b6p', 3)
+    expect(signals[3]?.aborted).toBe(false)
+    void setPageSize<string>(store, 'b6p', 4)
+    await pf
+    expect(signals[3]?.aborted).toBe(true)
+  })
+})

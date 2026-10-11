@@ -1,6 +1,7 @@
 // Действия ядра пагинатора над Store (SPEC §3.3). Vanilla: сервер (loader) + клиент.
 // Дословный порт core.ts React-версии: jotai-store → Store из store.ts, логика 1-в-1
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
+import { DEV } from 'esm-env'
 import { canLoadMore, deriveMeta, flattenPages } from './pure'
 import type { LibError, ScrollDriver } from './types'
 import { getPaginator, type LastAction, type PaginatorInstance } from './registry'
@@ -79,6 +80,11 @@ export function safePersist(store: Store, name: string): void {
  * прежде, переживает размонтирование хоста.
  */
 type Session = {
+  /**
+   * Отмена текущей загрузки стора: replace (init/goToPage/reset) или догрузки
+   * loadMore. Сброс, смена размера и фильтра отменяют её через `abortReplace` —
+   * запрос в сеть прерывается, а не только его ответ отбрасывается по reqId.
+   */
   replaceAbort: AbortController | null
   lastAction: LastAction
   /**
@@ -98,6 +104,8 @@ type Session = {
    * двух одинаковых обращений к данным (замер логом сети на превью: ×3 на клик).
    */
   prefetchInflight: Set<number>
+  /** Контроллеры полётных предзагрузок: сброс буфера прерывает и сами запросы. */
+  prefetchAborts: Set<AbortController>
   /** Исполнитель команд скролла хоста этого стора (SPEC §3.7); null — хоста нет. */
   scrollDriver: ScrollDriver | null
   /**
@@ -118,7 +126,7 @@ function sessionOf(store: Store, name: string): Session {
   if (!session) {
     session = {
       replaceAbort: null, lastAction: null, prefetched: new Map(), prefetchGen: 0,
-      prefetchInflight: new Set(), scrollDriver: null,
+      prefetchInflight: new Set(), prefetchAborts: new Set(), scrollDriver: null,
     }
     byName.set(name, session)
   }
@@ -157,6 +165,8 @@ function abortReplace(session: Session): void {
 function dropPrefetched(session: Session): void {
   session.prefetched.clear()
   session.prefetchGen += 1
+  for (const ac of session.prefetchAborts) ac.abort()
+  session.prefetchAborts.clear()
 }
 
 /**
@@ -181,7 +191,8 @@ function mergeResponseExtra<T>(store: Store, name: string, resp: PageResponse<T>
   let changed = false
   for (const [key, value] of Object.entries(incoming)) {
     if (known && !known.has(key)) {
-      console.warn(
+      // Ошибка интеграции источника — сообщение для разработчика, не для production-консоли.
+      if (DEV) console.warn(
         `paginate: источник «${instance.name}» вернул ключ extra «${key}», которого нет среди объявленных; ключ записан не был.`,
       )
       continue
@@ -448,15 +459,21 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
   // (требование 2026-09-22, вариант A) реализован ХОСТОМ (holdAbove): опорный якорь —
   // бывшая первая страница (intent.page + 1), её сдвиги компенсируются в container.
   if (dir === -1) sessionOf(store, name).scrollDriver?.({ type: 'page', page: target, reason: 'prepend' })
+  const session = sessionOf(store, name)
+  abortReplace(session)
+  const ac = new AbortController()
+  session.replaceAbort = ac
   let resp: PageResponse<T>
   try {
     resp = (await instance.adapter.loadPage({
       page: target,
       pageSize: state.pageSize,
       extra: state.extra,
+      signal: ac.signal,
     })) as PageResponse<T>
   } catch (error) {
-    if (getState<T>(store, name).reqId !== reqId) return
+    if (session.replaceAbort === ac) session.replaceAbort = null
+    if (ac.signal.aborted || getState<T>(store, name).reqId !== reqId) return
     patch<T>(store, name, (s) => ({
       ...s,
       status: 'error',
@@ -467,7 +484,8 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     notifyError(instance, 'load-failed', error, { page: target, phase: 'append' })
     return
   }
-  if (getState<T>(store, name).reqId !== reqId) return // reset победил (T2.5)
+  if (session.replaceAbort === ac) session.replaceAbort = null
+  if (ac.signal.aborted || getState<T>(store, name).reqId !== reqId) return // reset победил (T2.5)
   if (resp.items.length === 0) {
     patch<T>(store, name, (s) => ({
       ...s,
@@ -613,11 +631,14 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
   if (inflight.has(page)) return
   inflight.add(page)
   const gen = session.prefetchGen
+  const ac = new AbortController()
+  session.prefetchAborts.add(ac)
   try {
     const resp = (await instance.adapter.loadPage({
       page,
       pageSize: state.pageSize,
       extra: state.extra,
+      signal: ac.signal,
     })) as PageResponse<T>
     // Сброс в полёте (смена фильтра/размера) — ответ из другого набора, в буфер его нельзя.
     const stillCurrent = session.prefetchGen === gen
@@ -628,6 +649,7 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
     // тихий prefetch — не ломает UI
   } finally {
     inflight.delete(page)
+    session.prefetchAborts.delete(ac)
   }
 }
 
