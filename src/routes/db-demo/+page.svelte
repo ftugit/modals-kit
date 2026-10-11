@@ -15,7 +15,7 @@
    * страница из источника. Нативный POST на `?/create`/`?/remove` остаётся
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
-  import type { PageData } from './$types'
+  import type { PageProps } from './$types'
   import type { Result } from '$lib/form'
   import { usePaginatorActions } from '$lib/paginate/svelte'
   import { DB_LIST_NAME, ensureDbListPaginator } from '$lib/ui/demo/db-list/definition'
@@ -24,17 +24,13 @@
   import CreateForm from '$lib/ui/demo/db-form/CreateForm.svelte'
   import RemoveForm from '$lib/ui/demo/db-form/RemoveForm.svelte'
 
-  /** Результат экшена + метка «какой форме он принадлежит» (см. +page.server). */
-  interface FormOutcome {
-    result?: Result
-    intent?: string
-  }
-
-  let { data, form }: { data: PageData; form?: FormOutcome | null } = $props()
+  // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
+  // тип выводит SvelteKit из `actions` (`ActionData`).
+  let { data, form }: PageProps = $props()
 
   // `form` — живой пропс: SvelteKit обнуляет его при навигации и меняет после
   // каждого экшена, поэтому результат выводится, а не копируется при монтировании.
-  const action = $derived((form ?? null) as FormOutcome | null)
+  const action = $derived(form ?? null)
 
   /** Результат подсаживается ТОЙ форме, чей интент его вернул. */
   const seed = (which: string): Result | null =>

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
-  let { data }: { data: import('./$types').PageData } = $props()
+  let { data }: import('./$types').PageProps = $props()
 </script>
 
 <div class="py-10 sm:py-14">
