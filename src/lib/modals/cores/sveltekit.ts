@@ -10,8 +10,9 @@
 //
 // Логики тут нет намеренно: появится условие — его место в url.ts.
 import { browser } from '$app/env'
-import { goto, preloadData } from '$app/navigation'
+import { preloadData } from '$app/navigation'
 import { page } from '$app/state'
+import { addressTraversing, goAddress, visibleAddress, writeAddress } from '#lib/router/sveltekit.js'
 import { buildCore, type CoreOptions, type ReconfigurableCore } from '../build'
 import type { ChainEngine } from '../engine'
 import { urlStorage } from '../storages'
@@ -55,45 +56,37 @@ export const routeResolves = makeRouteResolves(
  * На сервере `page.shallow` нет, а `page.state` — пустой объект: мелких
  * записей ещё не было.
  *
- * 🔴 «Читаю своё». В Kit 3 `goto(…, { shallow })` асинхронен: запись истории
- * и `page.*` меняются только после разрешения маршрута. Ядро же пишет и сразу
- * перечитывает адрес/состояние (`build.ts`: запись → `notify()`), а следующая
- * запись сливает чужие ключи с `state()`. Поэтому до применения записи
- * движок отдаёт ровно то, что записал; после — снова `page.*`. Контракт
- * `ChainEngine` остаётся синхронным; служебную запись истории и адресную
- * строку браузера движок не читает — только `page.*`.
+ * 🔴 «Читаю своё» и общий писатель (F41). В Kit 3 `goto(…, { shallow })`
+ * асинхронен: запись истории и `page.*` меняются только после разрешения
+ * маршрута. Ядро же пишет и сразу перечитывает адрес/состояние (`build.ts`:
+ * запись → `notify()`), а следующая запись сливает чужие ключи с `state()`.
+ * Поэтому движок пишет и читает через общего писателя адреса слоя роутера
+ * (`#lib/router/sveltekit.js`): до применения записи — намерение (своё И чужое:
+ * пагинатор и флаги пишут туда же), после — снова `page.*`. Своей копии
+ * «незавершённой записи» у движка больше нет. Контракт `ChainEngine` остаётся
+ * синхронным; служебную запись истории и адресную строку браузера движок не
+ * читает. `#якорь` страницы писатель дописывает из адресной строки при
+ * отправке (F40, решение владельца A).
  */
 export function svelteKitEngine(): ChainEngine {
-  let pending: { url: URL; state: Record<string, unknown> } | null = null
-  let seq = 0
-
-  const write = (path: string, state: Record<string, unknown>, replace: boolean): void => {
-    // `#якорь` принадлежит странице, ядро модалок пишет только pathname+search
-    // (F40). Фрагмент — у адресной строки в момент записи, как у пагинатора
-    // (`router/sveltekit.ts`, F9): клик по ссылке-якорю обновляет только
-    // `page.url`, а `page.shallow` остаётся прежним (решение владельца — A).
-    const url = path.includes('#') || !browser ? path : path + window.location.hash
-    const mine = ++seq
-    pending = { url: new URL(url, (page.shallow?.url ?? page.url).href), state }
+  const write = (url: string, state: Record<string, unknown>, replace: boolean): void => {
     // Отказ `goto` (маршрут не найден) не глотаем: он всплывёт как раньше.
-    void goto(url, { shallow: true, replace, state: state as App.PageState }).finally(() => {
-      if (seq === mine) pending = null
-    })
+    void writeAddress(() => ({ url, state }), { replace })
   }
 
   return {
     name: 'sveltekit',
     location() {
-      const u = pending?.url ?? page.shallow?.url ?? page.url
+      const u = visibleAddress().url
       return { pathname: u.pathname, search: u.search }
     },
 
-    // Shallow-запись — только через `goto` из $app/navigation: прямой
-    // history.pushState роутер SvelteKit перетрёт и предупредит в консоли.
+    // Shallow-запись — только через `goto` из $app/navigation (внутри писателя):
+    // прямой history.pushState роутер SvelteKit перетрёт и предупредит в консоли.
     pushState: (url, state) => write(url, state, false),
     replaceState: (url, state) => write(url, state, true),
 
-    state: () => pending?.state ?? (page.state as Record<string, unknown>),
+    state: () => visibleAddress().state as Record<string, unknown>,
 
     /**
      * На сервере внешней навигации не бывает — метода просто нет,
@@ -105,16 +98,28 @@ export function svelteKitEngine(): ChainEngine {
      * того, как фреймворк обновил `page`, поэтому ядро читает уже новое
      * состояние — отсрочка на микрозадачу не нужна.
      * Срабатывает и на применение собственной записи — повторное чтение
-     * даёт то же состояние. `pending` здесь НЕ сбрасывается: при двух
-     * записях в полёте применение первой сбросило бы вторую. Сброс — только
-     * в `finally` последней записи (обход истории прерывает незавершённую
-     * запись, и её промис тоже разрешается).
+     * даёт то же состояние (намерение писателя совпадает с применённым).
+     *
+     * Кроме окна своего шага по истории: писатель отправляет `go` только после
+     * записей, сделанных до него, и смена `page.*` от такой записи — НЕ итог
+     * обхода. Ядро (`build.ts`, `traversing`) приняло бы её за конец обхода и
+     * посчитало следующий шаг от устаревшей глубины (R-24).
      */
-    onPopState: browser ? (fn) => watch(() => [page.url, page.shallow, page.state], fn) : undefined,
+    onPopState: browser
+      ? (fn) =>
+          watch(
+            () => [page.url, page.shallow, page.state],
+            () => {
+              if (!addressTraversing()) fn()
+            },
+          )
+      : undefined,
 
     // Нет `go` → нет истории → адаптер не отдаст `back`, и закрытие
     // пойдёт через replace. Ровно то, что нужно при SSR.
-    go: browser ? (delta) => window.history.go(delta) : undefined,
+    // Шаг — через писателя: после записей, сделанных до него (открыть и сразу
+    // закрыть не уходит назад раньше, чем запись открытия попала в историю).
+    go: browser ? (delta) => goAddress(delta) : undefined,
 
     /**
      * Исполняет load() самой страницы маршрута. Канонический приём shallow

@@ -1536,6 +1536,51 @@ try {
     await page.close()
   })
 
+  await run('R-41 два владельца адреса в одной задаче: размер страницы и мобильная панель', async () => {
+    // F41: пока запись адреса одного владельца в полёте (`goto` асинхронен),
+    // второй строил свой адрес из устаревшего среза. Панель записывала адрес без
+    // нового `page.size`, и пагинатор, прочитав его, откатывал выбор пользователя.
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 } })
+    await page.goto(BASE.replace(/\/modals$/, '/paginator?page.size=10#r41'), { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-testid="demo-panel"] select[name="page.size"]')
+    await page.waitForFunction(() => document.getElementById('fe-sidebar') !== null)
+    const before = await page.evaluate(() => history.length)
+    await page.evaluate(() => {
+      const size = document.querySelector('[data-testid="demo-panel"] select[name="page.size"]')
+      size.value = '5'
+      size.dispatchEvent(new Event('change', { bubbles: true }))
+      const drawer = document.getElementById('fe-sidebar')
+      drawer.checked = true
+      drawer.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await page.waitForFunction(() => new URLSearchParams(location.search).get('page.size') === '5', null, { timeout: 5000 })
+      .catch(() => {})
+    const now = await page.evaluate(() => ({
+      search: location.search, hash: location.hash, length: history.length,
+      badge: document.querySelector('[data-testid="page-size"]')?.textContent,
+      open: document.getElementById('fe-sidebar').checked,
+    }))
+    assert(now.search.includes('page.size=5') && now.badge === '5',
+      `размер страницы потерян второй записью: ${JSON.stringify(now)}`)
+    assert(now.hash === '#r41', `якорь потерян: ${now.hash}`)
+    assert(now.open && now.length === before + 1, `панель не дала ровно одну запись истории: ${JSON.stringify(now)}`)
+    ok('обе записи в адресе: ?page.size=5, #r41, панель — одна запись истории')
+
+    await page.goBack()
+    await page.waitForFunction(() => !document.getElementById('fe-sidebar').checked, null, { timeout: 5000 })
+    const back = await page.evaluate(() => ({ path: location.pathname, search: location.search,
+      badge: document.querySelector('[data-testid="page-size"]')?.textContent }))
+    assert(back.path === '/paginator' && back.search.includes('page.size=5') && back.badge === '5',
+      `Назад после двух записей: ${JSON.stringify(back)}`)
+    ok('Назад закрывает панель и оставляет размер 5')
+
+    await page.reload({ waitUntil: 'networkidle' })
+    const reloaded = await page.evaluate(() => document.querySelector('[data-testid="page-size"]')?.textContent)
+    assert(reloaded === '5', `после перезагрузки размер ${reloaded}`)
+    ok('после перезагрузки — тот же размер страницы')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
