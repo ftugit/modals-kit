@@ -52,6 +52,20 @@ test('имя собирается из движка и хранилища', () =
   assert.equal(buildCore(historyEngine(), localStorageChain(fakeStorage())).name, 'history(local)')
 })
 
+/* ── F37: видимый адрес отдаёт ядро, читая движок на каждом вызове ──── */
+
+test('core.location() — живое чтение движка, не снимок при сборке', () => {
+  const e = historyEngine()
+  const core = buildCore(e, urlStorage())
+  assert.deepEqual(core.location!(), { pathname: '/', search: '' })
+  // Навигация мимо ядра (роутер приложения): ядро обязано видеть новый адрес.
+  e.pushState('/modals?probe=2', {})
+  assert.deepEqual(core.location!(), { pathname: '/modals', search: '?probe=2' })
+  // Не-url хранилище: адрес всё равно отдаётся — от него строится href маршрутов.
+  const local = buildCore(memoryEngine('/films?x=1'), localStorageChain(fakeStorage()))
+  assert.deepEqual(local.location!(), { pathname: '/films', search: '?x=1' })
+})
+
 /* ── одно хранилище, разные движки ─────────────────────────────────── */
 
 test('url + движок без истории (SSR): адрес работает, back нет', () => {

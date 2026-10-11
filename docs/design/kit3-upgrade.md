@@ -285,9 +285,9 @@ vite-plugin-svelte ^7.1.2, svelte-check ^4.6.0, Node в песочнице 20.20
   - `window.location` в `location()`;
   - `history.state` и отсрочку на микрозадачу в `readState()`;
   - собственный `popstate` в `modals/cores/sveltekit.ts`.
-- **C3. F38**: ядро модалок получает уведомление о навигации из адаптера SvelteKit, контракт `ModalCore` не
+- **C3. F38** ✅ (ход 17, R-37): ядро модалок получает уведомление о навигации из адаптера SvelteKit, контракт `ModalCore` не
   меняется. Проба `nav_chain_probe.py`, случай B → цепочка пуста.
-- **C4. F37**: href `ModalTrigger` от реактивного видимого адреса (`location()` по решению (a)). Проба `trigger_href_probe.py`.
+- **C4. F37** ✅ (ход 17, R-36): href `ModalTrigger` от реактивного видимого адреса (`location()` по решению (a)). Проба `trigger_href_probe.py`.
 - **C5.** F5/F6: упростить адаптер роутера и шторку, если спайк подтвердит. Регрессии F5/F6 остаются зелёными.
 - **C6.** Ветки 2.x:
   - `router/sveltekit.ts:181-198` (комментарий «Kit 2.x…», расширенный тип);

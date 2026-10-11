@@ -365,6 +365,9 @@ export function buildCore(
     // `reconfigure` добавляет и убирает ключ через syncHrefFor().
     ...(addressable ? { hrefFor: hrefForImpl } : null),
 
+    // Адрес — у движка; реактивность — его же (SvelteKit: `page.*`).
+    location: () => engine.location(),
+
     preload: engine.preload ? (href) => engine.preload!(href) : undefined,
     resolves: engine.resolves ? (href) => engine.resolves!(href) : undefined,
 

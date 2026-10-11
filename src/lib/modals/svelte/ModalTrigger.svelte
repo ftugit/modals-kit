@@ -103,7 +103,11 @@
     if (hrefProp) return hrefProp
     if (routeTarget) return routeTarget
     const only = wouldOpen.filter((e): e is RegisteredEntry => e.kind === 'registered')
-    const loc = typeof location !== 'undefined' ? location : { pathname: '/', search: '' }
+    // Видимый адрес — у ядра (реактивный в SvelteKit: href обновляется после
+    // клиентской навигации, F37); без метода — адресная строка как есть.
+    const loc =
+      m.modals.core.location?.() ??
+      (typeof location !== 'undefined' ? location : { pathname: '/', search: '' })
     return loc.pathname + chainToSearch(only, m.scope.lookup, new URLSearchParams(loc.search))
   })
 

@@ -76,7 +76,7 @@ README не оценивается в таблице (сканер берёт т
 | B10 | `lib/paginate/adapter-{local,cursor}.ts` | Память-хранилище по умолчанию одно на процесс (на сервере — общее для запросов) | 9bc37d9: внутренний `storage-default.ts` — на сервере хранилище ничего не помнит |
 | B11 | `lib/shell/shell.svelte.ts` | `localStorage` в конструкторе → SSR и клиент расходились | 358d742 (решение «cookie»): `+layout.server.ts` читает cookie, `ShellState(initial)`, запись в cookie, перенос из localStorage один раз. Добавлены необязательные `AppShell.prefs`, `setShellContext(initial?)` |
 
-## Находки хода 12 — `lib/modals` (ход 13: F26–F36 и C13 исправлены, F37/F38 отложены до SvelteKit 3)
+## Находки хода 12 — `lib/modals` (ход 13: F26–F36 и C13 исправлены; F37/F38 закрыты переходом на SvelteKit 3, ход 17)
 
 Правило хода 9: находки аудита копятся и ждут решения владельца. Каждая F подтверждена пробой в
 `~/.agent/probes/` (браузерные — на временном worktree с инструментовкой `host_instrument.patch`,
@@ -115,8 +115,8 @@ README не оценивается в таблице (сканер берёт т
 | F26, F27 (хост) | исправлено — загрузчик на (ядро, область) с `dispose`, зеркало на ядро, `attach` в `untrack` | `31668f1` | инструментированные пробы `host_reattach_probe.py` (слушатели/чистильщики 1/1 за 6 переходов), `host_tracked_lifecycle_probe.py` (onOpen 1 после трёх изменений) |
 | F29 | исправлено — `AbortController` на размонтирование, `preloadModal(…, {signal})` | `31668f1` | браузер R-34 (красный без правки) |
 | F31 | исправлено — `entered` обрезается до живых индексов | `31668f1` | браузер R-35 (красный без правки) |
-| F37 | **отложено до перехода на SvelteKit 3** (решение владельца, ход 13; выбран вариант (a) — реактивный адрес; в 3.x — `page.shallow?.url ?? page.url`) | — | `~/.agent/probes/trigger_href_probe.py`; план `docs/design/kit3-upgrade.md`, этап 4 |
-| F38 | **отложено до перехода на SvelteKit 3** (решение владельца, ход 13: «сейчас оставь как есть»); общий корень с F37 | — | `~/.agent/probes/nav_chain_probe.py`, случай B; план `docs/design/kit3-upgrade.md`, этап 4 |
+| F37 | **закрыто** (ход 17, вариант (a) владельца): необязательный `ModalCore.location()` — видимый адрес из движка; в SvelteKit он реактивен (`page.shallow?.url ?? page.url`), `ModalTrigger` читает его внутри `$derived`. Движки memory/fastedge нереактивны — так и задокументировано в контракте | `core-contract.ts` `location?`, `build.ts`, `ModalTrigger.svelte` | регрессия R-36 (красная на `window.location`, зелёная на `core.location()`); `build.test.ts` «core.location() — живое чтение движка»; `~/.agent/probes/trigger_href_probe.py` |
+| F38 | **закрыто** (ход 17) движком модалок на `page.*` (Q0, коммит `d5d681a`): `onPopState` — `watch(page.url, page.shallow, page.state)`, уведомление приходит и на клиентский переход, контракт `ModalCore` не менялся | `cores/sveltekit.ts` | регрессия R-37 (красная на прежнем `popstate`+микрозадача: слой 1, попап; зелёная сейчас); `~/.agent/probes/nav_chain_probe.py` (переписан: старый ждал удалённый `window.__modals`) |
 | C13 | исправлено (решение владельца: `onError` ловит сбой загрузчика → в окне общий текст) — `errorMessage` возвращает «Ошибка загрузки», исходная ошибка идёт в `onError` (`load-failed`/`preload-failed`, `cause`); JSDoc `renderError` | см. `git log` | `loader.test.ts` C13 (красный без правки); 3 теста старого контракта обновлены (приёмочный 14) |
 
 Попутно (ход 13): первая версия F26 убрала переподключение на смену `scope` — а оно было

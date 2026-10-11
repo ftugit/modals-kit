@@ -1402,6 +1402,64 @@ try {
     await page.close()
   })
 
+  /* ── R-36 (F37): href триггера следует за адресом после клиентской навигации ── */
+  await run('R-36 href триггера следует за query после клиентского перехода', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    const hrefs = () => page.evaluate(() =>
+      [...document.querySelectorAll('a[data-modal-trigger]')]
+        .map((a) => a.getAttribute('href') ?? '')
+        .filter((h) => h.includes('modal=')))
+    // Переход — обычной ссылкой: его перехватывает роутер SvelteKit (без перезагрузки).
+    const clientNav = (href) => page.evaluate((h) => {
+      const a = document.createElement('a'); a.href = h; document.body.append(a); a.click()
+    }, href)
+    await page.goto(`${origin}/modals?probe=1`, { waitUntil: 'networkidle' })
+    await page.waitForFunction(() =>
+      document.querySelectorAll('a[data-modal-trigger][href*="modal="]').length > 0, null, { timeout: 10_000 })
+    const start = await hrefs()
+    assert(start.length > 0 && start.every((h) => h.startsWith('/modals?probe=1&')), `стартовые href: ${start}`)
+    for (const [target, prefix] of [['/modals?probe=2', '/modals?probe=2&'], ['/modals', '/modals?modal=']]) {
+      await clientNav(target)
+      await page.waitForURL(`${origin}${target}`)
+      await page.waitForFunction((p) => {
+        const hs = [...document.querySelectorAll('a[data-modal-trigger][href*="modal="]')].map((a) => a.getAttribute('href'))
+        return hs.length > 0 && hs.every((h) => h.startsWith(p))
+      }, prefix, { timeout: 5_000 }).catch(async () => {
+        throw new Error(`после перехода на ${target} href устарели: ${await hrefs()}`)
+      })
+    }
+    ok('href пересобраны после ?probe=2 и после /modals без query')
+    await page.close()
+  })
+
+  /* ── R-37 (F38): клиентский уход со страницы снимает url-модалку того же scope ── */
+  await run('R-37 переход ссылкой с открытой url-модалкой не оставляет слоя', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    await page.goto(`${origin}/?modal=gprobe`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-modal-layer]', { timeout: 10_000 })
+    await page.evaluate(() => {
+      const a = document.createElement('a'); a.href = '/paginator'; document.body.append(a); a.click()
+    })
+    await page.waitForURL(`${origin}/paginator`)
+    await page.waitForFunction(() =>
+      !document.querySelector('[data-modal-layer]') && !document.querySelector('[data-modal-popup]'),
+    null, { timeout: 5_000 }).catch(async () => {
+      const left = await page.evaluate(() => ({
+        layers: document.querySelectorAll('[data-modal-layer]').length,
+        popup: !!document.querySelector('[data-modal-popup]'),
+      }))
+      throw new Error(`на /paginator осталась модалка: ${JSON.stringify(left)}`)
+    })
+    // Устойчиво, а не мгновенный кадр: слой не возвращается следом.
+    await page.waitForTimeout(500)
+    const layers = await page.evaluate(() => document.querySelectorAll('[data-modal-layer]').length)
+    assert(layers === 0, `слой вернулся: ${layers}`)
+    ok('адрес /paginator, слоёв 0, попапа нет')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
