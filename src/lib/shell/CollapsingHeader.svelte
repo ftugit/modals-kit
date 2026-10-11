@@ -8,7 +8,7 @@
   //   шапкой 1:1, контент стоит, пока шапка едет. dock=top прячет при скролле вниз,
   //   dock=bottom — наоборот.
   // - Пустые ряды не занимают места; пустая шапка целиком — `hidden`.
-  import { onMount, type Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
   import {
     HEADER_ROWS,
     headerHasSlots,
@@ -96,43 +96,26 @@
     applyProgress(progress, false)
   }
 
-  onMount(() => {
-    measure()
-    window.addEventListener('resize', measure)
-    const t1 = window.setTimeout(measure, 300)
-    const t2 = window.setTimeout(measure, 1200)
-
-    let ro: ResizeObserver | null = null
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => measure())
-      if (inner.top) ro.observe(inner.top)
-      if (inner.bottom) ro.observe(inner.bottom)
-    }
-
-    return () => {
-      window.removeEventListener('resize', measure)
-      window.clearTimeout(t1)
-      window.clearTimeout(t2)
-      ro?.disconnect()
-    }
+  // Высоты рядов — ResizeObserver на каждом ряду (C5). Шрифты, перенос строк,
+  // смена содержимого и ширины окна, скрытие ряда (`hidden` → размер 0) меняют
+  // высоту ряда, и наблюдатель сообщает об этом сам: без таймеров «на всякий
+  // случай», без слушателя resize и без перезамера на каждую смену `rows`.
+  // Первое уведомление приходит сразу после observe — это и есть начальный замер.
+  $effect(() => {
+    const rowsEls = [inner.top, inner.bottom].filter((el): el is HTMLDivElement => !!el)
+    if (!rowsEls.length) return
+    if (typeof ResizeObserver === 'undefined') return measure()
+    const ro = new ResizeObserver(measure)
+    for (const el of rowsEls) ro.observe(el)
+    return () => ro.disconnect()
   })
 
-  // Реактивная перепривязка и замер при смене dock / disabled / rows
+  // dock меняет направление сдвига, disabled — сбрасывает прогресс: перерисовать.
+  // Отрисовка вне отслеживания: onProgress хоста не должен становиться зависимостью.
   $effect(() => {
-    const _dock = dock
-    const _disabled = disabled
-    const _rows = rows
-
-    if (_disabled) {
-      applyProgress(0, false)
-      return
-    }
-
-    // В следующем кадре, когда DOM обновился, перемеряем
-    const raf = requestAnimationFrame(() => {
-      measure()
-    })
-    return () => cancelAnimationFrame(raf)
+    const off = disabled
+    void dock
+    untrack(() => applyProgress(off ? 0 : progress, false))
   })
 
   // Скролл-синхронизация
