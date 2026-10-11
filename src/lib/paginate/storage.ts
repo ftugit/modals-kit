@@ -77,7 +77,7 @@ const defaultPick = (s: PaginatorState<unknown>): Partial<RestorableState> => ({
 
 export function createLocalStorageStorage(
   opts: {
-    /** Кастомный отбор полей из полного snapshot. Default: page + pageSize + totalItems + extra. */
+    /** Кастомный отбор полей из полного snapshot. Default: page + pageSize + totalItems + extra + sourceState. */
     pick?: (s: PaginatorState<unknown>) => Partial<RestorableState>
     /** Инжекция для тестов/кастомных бэкендов. Default: globalThis.localStorage (SSR-guard). */
     storage?: MinimalStorage
@@ -92,9 +92,18 @@ export function createLocalStorageStorage(
 
   return {
     read(name) {
-      const ls = resolve()
-      if (!ls) return null
-      const raw = ls.getItem(`pag:${name}`)
+      // Недоступное хранилище — то же, что «ничего не сохранено»: в браузере с
+      // запретом хранилища SecurityError бросает уже обращение к
+      // `window.localStorage`, а не только getItem. Падение чтения сорвало бы
+      // инициализацию пагинатора ради необязательного восстановления.
+      let raw: string | null
+      try {
+        const ls = resolve()
+        if (!ls) return null
+        raw = ls.getItem(`pag:${name}`)
+      } catch {
+        return null
+      }
       if (raw == null) return null
       let parsed: unknown
       try {

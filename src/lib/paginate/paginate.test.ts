@@ -343,6 +343,22 @@ describe('emitter & storage', () => {
     map.set('pag:lsTest', 'not json')
     expect(await storage.read('lsTest')).toBeNull()
   })
+
+  it('запрещённое хранилище: чтение → null (как «не сохранено»), запись — ошибка ядру', async () => {
+    const denied = () => { throw new DOMException('denied', 'SecurityError') }
+    const thrower = createLocalStorageStorage({ storage: { getItem: denied, setItem: denied } })
+    expect(await thrower.read('x')).toBeNull()
+    expect(() => thrower.write('x', makeState({ name: 'x' }))).toThrow(/denied/)
+    // браузер с запретом бросает уже при обращении к window.localStorage
+    const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: denied })
+    try {
+      expect(await createLocalStorageStorage().read('x')).toBeNull()
+    } finally {
+      if (desc) Object.defineProperty(globalThis, 'localStorage', desc)
+      else delete (globalThis as { localStorage?: unknown }).localStorage
+    }
+  })
 })
 
 describe('URL adapter & extra search', () => {
