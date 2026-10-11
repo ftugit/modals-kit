@@ -42,7 +42,7 @@ test('загрузчик: loading → ready, данные попадают в с
   assert.deepEqual(rt.data, { title: 'Привет' })
 })
 
-test('падение загрузчика — статус error с сообщением', async () => {
+test('падение загрузчика — статус error с общим текстом (C13)', async () => {
   const store = createModalStore()
   const scope = createRegistry('t').define([
     { name: 'bad', component: 'X', loader: async () => { throw new Error('сервер лёг') } } as any,
@@ -51,7 +51,7 @@ test('падение загрузчика — статус error с сообще
   l.runLoader(entry('bad'))
   await tick()
   assert.equal(l.readRuntime('bad', 0).status, 'error')
-  assert.equal(l.readRuntime('bad', 0).error, 'сервер лёг')
+  assert.equal(l.readRuntime('bad', 0).error, 'Ошибка загрузки')
 })
 
 test('кеш: повторное открытие не грузит заново', async () => {
@@ -162,7 +162,7 @@ test('preloadModal: нет модалки и упавший загрузчик',
   assert.match((miss as any).error, /Нет такой модалки/)
   const fail = await l.preloadModal('bad', {})
   assert.equal(fail.ok, false)
-  assert.equal((fail as any).error, 'нет сети')
+  assert.equal((fail as any).error, 'Ошибка загрузки')
 })
 
 test('clearMemory сбрасывает кеш загрузчика', async () => {
@@ -338,4 +338,29 @@ test('F26: dispose снимает очистку со стора и отменя
   off()
   store.clearMemory()
   assert.equal(cleared, 1, 'отписка registerMemoryCleaner работает')
+})
+
+/* ── ход 13: C13 — текст сбоя загрузчика не уходит в интерфейс ──────── */
+
+test('C13: окно ошибки и preload показывают общий текст, подробности — только в report', async () => {
+  const seen: any[] = []
+  const store = createModalStore()
+  const secret = 'ECONNREFUSED 10.0.0.5:5432 users_private'
+  const scope = createRegistry('c13').define([
+    { name: 'bad', component: 'X', loader: async () => { throw new Error(secret) } },
+    { name: 'bad2', component: 'X', loader: async () => { throw new Error(secret) } },
+  ] as never[])
+  const l = createLoader({ store, lookup: scope.lookup, report: (e) => seen.push(e) })
+
+  l.runLoader(entry('bad'))
+  await tick()
+  await tick()
+  const rt = l.readRuntime('bad', 0)
+  assert.equal(rt.status, 'error')
+  assert.equal(rt.error, 'Ошибка загрузки')
+  assert.equal((seen[0].cause as Error).message, secret, 'исходная ошибка доходит до onError')
+
+  const pre = await l.preloadModal('bad2')
+  assert.deepEqual(pre, { ok: false, error: 'Ошибка загрузки' })
+  assert.equal((seen.at(-1).cause as Error).message, secret)
 })

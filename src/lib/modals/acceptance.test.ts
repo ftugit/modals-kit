@@ -203,7 +203,7 @@ test('13. preloadModal: нет модалки → ok:false с причиной',
   assert.match((r as any).error, /Нет такой модалки/)
 })
 
-test('14. preloadModal: загрузчик упал → ok:false с сообщением', async () => {
+test('14. preloadModal: загрузчик упал → ok:false с общим текстом (C13)', async () => {
   const scope = createRegistry('t').define([
     def('bad', { loader: async () => { throw new Error('сервер лёг') } }),
   ])
@@ -211,7 +211,7 @@ test('14. preloadModal: загрузчик упал → ok:false с сообще
   const l = createLoader({ store: m.store, lookup: scope.lookup })
   const r = await l.preloadModal('bad', {})
   assert.equal(r.ok, false)
-  assert.equal((r as any).error, 'сервер лёг')
+  assert.equal((r as any).error, 'Ошибка загрузки')
 })
 
 /* ── 15–17: транспорт и история ────────────────────────────────────── */

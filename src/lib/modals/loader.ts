@@ -110,8 +110,11 @@ export function createLoader(deps: LoaderDeps) {
 
   const setRuntime = (key: string, next: RuntimeState) => store.merge('runtime', { [key]: next })
 
-  const errorMessage = (error: unknown): string =>
-    error instanceof Error ? error.message : 'Ошибка загрузки'
+  // Текст сбоя загрузчика в интерфейс НЕ попадает (C13): `error.message`
+  // потребителя может нести внутренние подробности (адреса, SQL, стек).
+  // Исходная ошибка целиком уходит в `report` → `onError` хоста
+  // (`load-failed` / `preload-failed`, `cause`), окну — общий текст.
+  const errorMessage = (_error: unknown): string => 'Ошибка загрузки'
 
   const missing = (name: string) => `Нет такой модалки: «${name}»`
 
