@@ -367,6 +367,25 @@ vite-plugin-svelte ^7.1.2, svelte-check ^4.6.0, Node в песочнице 20.20
 
 ## 10. Вопросы владельцу (до старта фазы A)
 
+**Ответы владельца (2026-10-11, ход 16):**
+
+| # | Решение |
+|---|---|
+| 1 | `#lib` в стиле документации: полный путь с расширением `.js` (`#lib/form/index.js`, `#lib/ui/Button.svelte`), одно правило `"#lib/*": "./src/lib/*"`, без алиасов на модули |
+| 2 | один чистый модуль `src/lib/server/trusted-origins.ts` для `vite.config.ts` (`process.env`) и серверного слоя (`$app/env/private`) |
+| 3 | страж `tooling/env-docs.mjs` удалить: перечень, описания и проверки — `src/env.ts` |
+| 4, 5 | `package-lock.json` главный, `bun.lock` удалить; `@sveltejs/adapter-vercel` удалить; `vercel.json`/`wrangler.jsonc` не трогать |
+| 6 | не спрашивалось: `adapter-auto` остаётся, Node в песочнице — 24 |
+| 7 | сразу |
+| 8 | всё в ветке `upgrade/kit3`; master не трогается до завершения переезда |
+| — | install-скрипт esbuild одобрить (`allowScripts`) |
+
+**Ход фазы A (ветка `upgrade/kit3`):** A1 `58ae1c9` · A2+A3 `4958b0e` · скрипты `node --test` на Node ≥ 21 `48786e4` ·
+A4 `5b4f93c` · A5 `a9f7b0f` · A6 `0aad223` · чистка §10 `ab3957a`. После A — гейт и все 9 браузерных наборов зелёные.
+
+Исходные вопросы:
+
+
 1. **Стиль `#lib`.** По документации — `#lib/form/index.js` (226 таких импортов) и `#lib/x.js` для файлов.
    Альтернатива: отдельные алиасы на публичные точки модулей (`#modals`, `#form`, `#paginate`…) в
    `package.json#imports` — короче, и граница модуля видна в импорте. Это архитектурное решение (меняет вид
@@ -397,3 +416,11 @@ vite-plugin-svelte ^7.1.2, svelte-check ^4.6.0, Node в песочнице 20.20
 - 6 `.png` в корне и `screenshots/` (24 файла).
 
 Часть из них упоминается в доках `lib/db` и `ModalHost.svelte`. Предлагаю разобрать отдельным заходом.
+
+Найдено во время фазы A (ход 16):
+- `npm audit`: `seroval`/`solid-js` — critical, `source-map-js` — high; исправления в пределах мажора (`fix: true`),
+  к переезду не относятся. Kit/cookie (low) закрываются фазой B;
+- `npm run test:browser` гоняет все наборы подряд, а серверы им нужны разные: `regressions`/`modals`/… ждут preview
+  на :4173, `forms`/`forms-a11y`/`db-demo` — на :5173. Одним сервером скрипт не проходит;
+- `src/lib/links/index.ts:2` — комментарий ссылается на несуществующий модуль `links/panel`;
+- холодный `vite dev` в песочнице (2 GB) упирается в OOM на `/db-demo` и на master — свойство среды, не кода.
