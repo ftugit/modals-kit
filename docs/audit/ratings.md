@@ -5,7 +5,7 @@
 
 Прогресс: **161 / 387** файлов прочитано.
 
-Средняя оценка по прочитанным: **8.5**.
+Средняя оценка по прочитанным: **8.7**.
 
 ## `src/`
 
@@ -175,7 +175,7 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `async.ts` | 191 | 6 | прочитан | F21-корень: вытесненный run отдаёт null в onResult и стирает свежую ошибку/гасит checking; #cache без предела; дубли JSDoc | setTimeout×2, any×1 |
+| `async.ts` | 191 | 8 | прочитан | Ход 10: F21 исправлен (6068f80) — вытесненный/отменённый запуск не зовёт onResult; было 6. Остаётся: #cache без предела; 2 дубля JSDoc (K10) | setTimeout×2, any×1 |
 | `builtins.ts` | 219 | 9 | прочитан | numberType ставит inputmode=numeric на type=number: моб. клавиатура без точки/минуса, ядро их принимает (на устройстве не проверено) |  |
 | `constraints.ts` | 77 | 10 | прочитан | словарь видов ограничений + opaque; без замечаний |  |
 | `continuation.ts` | 110 | 9 | прочитан | дубли JSDoc; иначе образцово |  |
@@ -187,19 +187,19 @@
 | `errors.ts` | 155 | 9 | прочитан | K10: дубли JSDoc 69–72, 86–89 |  |
 | `external.ts` | 89 | 9 | прочитан | aliases[r.field] по обычному объекту (constructor/__proto__ из ответа службы → не-строковый path); дубль JSDoc 202–206 |  |
 | `field-types.ts` | 119 | 10 | прочитан | проекция ограничений типом с названной причиной пропуска | any×2 |
-| `form.test.ts` | 634 | 7 | прочитан | ядро покрыто хорошо, но нет тестов server.ts, share(), AsyncRunner, accept/maxSize на files — ровно там F14–F21; top-level await импорты; any; входит в C10 | any×2 |
+| `form.test.ts` | 634 | 8 | прочитан | Ход 10: добавлены тесты F14 (accept/maxSize на files) и F15 (share File/Date); сервер покрыт отдельным server.test.ts; было 7. Остаётся: top-level await импорты; any; C10 | any×2 |
 | `index.ts` | 37 | 10 | прочитан | чистый реэкспорт ядра; фреймворков нет |  |
-| `keep.ts` | 18 | 8 | прочитан | K8/C7-остаток: import.meta.env?.DEV (Vite) вместо esm-env DEV по решению C7 |  |
-| `messages.ts` | 80 | 9 | прочитан | нет форм множественного числа (делегировано policy.interpolate) |  |
+| `keep.ts` | 18 | 10 | прочитан | Ход 10: C7-остаток исправлен (c3d72df) — DEV из esm-env, keep.test.ts на обе ветки; было 8 |  |
+| `messages.ts` | 80 | 9 | прочитан | Ход 10: F23 исправлен (363a437) — тексты для 13 кодов, страж полноты messages.test.ts. Остаётся: нет форм множественного числа (делегировано policy.interpolate) |  |
 | `policy.ts` | 130 | 10 | прочитан | политика имён/пределов/конверта переопределяема; без замечаний |  |
 | `queued.ts` | 66 | 9 | прочитан | pollUntilDone: сон не прерывается signal, retryAfterMs сервера без предела; дубль JSDoc | setTimeout×1 |
 | `registry.ts` | 57 | 9 | прочитан | модульный defaultRegistry признан в комментарии; регистрации статичны | any×3 |
 | `result.ts` | 118 | 9 | прочитан | normalizeErrors режет по limits.errors ДО сортировки — выживший набор зависит от порядка входа; дубль JSDoc 85–88 |  |
 | `schema.ts` | 56 | 9 | прочитан | K10: осиротевший дубль JSDoc 45–50 |  |
-| `server.ts` | 474 | 4 | прочитан | F16 source+namesLayer: поля рантайма → 400 unexpected-field; F17 safeRedirect пропускает /\evil.com и /<TAB>/evil.com; F18 windowThrottle по x-forwarded-for (подделка, общий anon, Map без чистки); F19 идемпотентность get→execute→put — 2 параллельных = 2 execute, MemoryIdempotencyStore без вытеснения; detail исключения уходит клиенту; дубли JSDoc; опечатка «Своий»; @ts-expect-error duplex обоснован; модульного состояния нет | ts-ignore/expect×1 |
+| `server.ts` | 474 | 8 | прочитан | Ход 10: F16 (ac97fc1), F17 (e0c25b0), F18 (53ebff1, key обязателен), F19 (df5b4ab, reserve/release), detail (ef92227) исправлены; было 4. −1 F24 (на удержании): служебные intent'ы с mutate-schema сервер не применяет, спецполя нет. −1 K10: 2 дубля JSDoc, опечатка «Своий» (стр. 372) | ts-ignore/expect×1 |
 | `source.ts` | 129 | 8 | прочитан | revision = base.revision + version — коллизии (2+1 = 1+2); дубли JSDoc |  |
 | `spec.ts` | 168 | 9 | прочитан | UNSAFE_PATTERN ловит только вложенный квантификатор, не альтернации ((a\|a)*); честно назван эвристикой |  |
-| `state.ts` | 110 | 6 | прочитан | F15: share() сравнивает объекты по own-ключам — File/Date/Blob заменяются на СТАРЫЙ, FormStore.set не будит подписчиков; дубль JSDoc |  |
+| `state.ts` | 110 | 9 | прочитан | Ход 10: F15 исправлен (05cd06f) — share() заходит только в простые объекты/массивы, тест File/Date; было 6. Остаётся: дубль JSDoc |  |
 | `strength.ts` | 143 | 8 | прочитан | K10: мёртвое выражение pool + (classes === 1 ? 0 : 0), стр. 52 |  |
 | `submit.ts` | 255 | 8 | прочитан | JSDoc от stale() приклеен к acquire(), у stale нет; abort() бросает ожидающих acquire без завершения промиса |  |
 | `types.ts` | 75 | 10 | прочитан | типы-бренды и HtmlAttrs; без замечаний |  |
@@ -207,13 +207,13 @@
 | `url.test.ts` | 61 | 9 | прочитан | кодек и согласие с POST-декодером проверены |  |
 | `url.ts` | 88 | 9 | прочитан | чистый кодек; без существенных замечаний |  |
 | `validate.ts` | 107 | 9 | прочитан | тихий catch неразрешённого валидатора; смягчено проверкой defineForm (spec.validator-invalid) |  |
-| `validators.ts` | 371 | 6 | прочитан | F14: v.accept — MIME в RegExp без экранирования (image/svg+xml отклоняет сам себя); accept/maxSize на files(File[]) — TypeError/всегда отказ; README «сервер смотрит содержимое» — сниффинга нет; pattern u vs v-флаг HTML (мелочь) | any×25 |
+| `validators.ts` | 371 | 9 | прочитан | Ход 10: F14 исправлен (95c39de) — MIME строкой по правилам accept, files поэлементно, README честный; было 6. Остаётся: pattern u vs v-флаг HTML (мелочь) | any×25 |
 
 ## `src/lib/form/react/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `bind.ts` | 580 | 5 | прочитан | C9: не используется (только README), тестов нет; дрейф от svelte: render без cfg.config.messages, action игнорирует actionBase, нет redisplay; useMemo с побочным эффектом; stale-замыкание commitUrl в live-эффекте; те же F20/F21; import.meta.env.DEV | window/document×2, addEventListener×1 |
+| `bind.ts` | 580 | 6 | прочитан | Ход 10: F20/F21/C7 исправлены механически; было 5. Остаётся C9: не используется, тестов нет; дрейф от svelte (messages, actionBase, redisplay); useMemo с побочным эффектом; stale-замыкание commitUrl | window/document×2, addEventListener×1 |
 | `config.ts` | 91 | 8 | прочитан | C9: дрейф контракта (нет registry/policy; valueAttrs иначе — оправдано контролируемостью) |  |
 | `index.ts` | 4 | 9 | прочитан | C9: зона без потребителей |  |
 
@@ -221,7 +221,7 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `bind.ts` | 544 | 5 | прочитан | C9: не используется, тестов нет; тот же дрейф (messages, actionBase, redisplay); hydrated по queueMicrotask, не по mount; те же F20/F21; import.meta.env.DEV | window/document×2, microtask×1, addEventListener×1 |
+| `bind.ts` | 544 | 6 | прочитан | Ход 10: F20/F21/C7 исправлены механически; было 5. Остаётся C9: не используется, тестов нет; тот же дрейф; hydrated по queueMicrotask, не по mount | window/document×2, microtask×1, addEventListener×1 |
 | `config.ts` | 89 | 8 | прочитан | C9: дрейф контракта как у react |  |
 | `index.ts` | 4 | 9 | прочитан | C9: зона без потребителей |  |
 
@@ -230,7 +230,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `Form.svelte` | 49 | 9 | прочитан | ключ each name=value — дубль пары даст each_key_duplicate; каст as unknown as с объяснением |  |
-| `bind.svelte.ts` | 602 | 6 | прочитан | F20: scheduleCheck шлёт проверке сырые строки FormData, сервер — decode()-значения; F21-место; C7-остаток import.meta.env.DEV ×3 + typeof window (K8); нет teardown (machine.abort/runner.cancel не вызываются); no-op [ATTACH] с вводящим комментарием | $effect×1, window/document×2, addEventListener×1 |
+| `bind.svelte.ts` | 602 | 7 | прочитан | Ход 10: F20 (bf3b26b), F21 (6068f80), C7-остаток (c3d72df) исправлены; было 6. Остаётся: typeof window (K8, стр. 366); нет teardown (machine.abort/runner.cancel не вызываются); no-op [ATTACH] с вводящим комментарием | $effect×1, window/document×2, addEventListener×1 |
 | `config.ts` | 120 | 9 | прочитан | valueAttrs String(массив) для multi; мелочь |  |
 | `index.ts` | 6 | 10 | прочитан | реэкспорт |  |
 
@@ -308,17 +308,17 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `adapter-cursor.ts` | 202 | 8 | прочитан | Курсорный адаптер: opaque-токены, base64url-состояние с лимитом 8 КБ, восстановление из своего хранилища. Минусы: `sourceState` в замыкании адаптера (один на процесс — C11, латентно: в приложении не используется); нет шапки-комментария; тест слабый (не проверяет, что токен реально передан). |  |
+| `adapter-cursor.ts` | 202 | 9 | прочитан | Ход 10: C11 исправлен (d1a5087) — на сервере своё CursorState на каждый loadPage, кэш и восстановление только в браузере; тест изоляции; было 8. Остаётся: нет шапки-комментария |  |
 | `adapter-local.ts` | 42 | 9 | прочитан | Тонкий адаптер «страница в хранилище»; дефолтный `createMemoryStorage()` создаётся один раз на definePaginator — на сервере это общее хранилище, но в приложении local-адаптер на SSR с memory-хранилищем не задействован (не проверено пробой). Чисто. |  |
-| `adapter-url.ts` | 682 | 7 | прочитан | Единый парсер адреса (deny-safe), канонизация пустых ключей, echo-guard по живому адресу — продумано и задокументировано. Минусы: место F12 (`setRouter` → синхронный `syncAddress`); `lastInitSearch`/`inflight` и `takes` в `withUrlTakeover` — сеансовое состояние в замыкании (C11, латентно); две «осиротевшие» JSDoc (над `canonicalPaginatorSearch` висит описание validateSearch; «Отпечаток собственных ключей» без функции, с поломанным отступом); `typeof window` вместо `esm-env` (K8). | window/document×6, microtask×1 |
+| `adapter-url.ts` | 682 | 8 | прочитан | Ход 10: F12 исправлен на стороне роутера (614e35a); C11 (d1a5087) — lastInitSearch только в браузере, takeover.hrefFor судит по ctx.search; было 7. Остаётся: две осиротевшие JSDoc; typeof window вместо esm-env (K8) | window/document×6, microtask×1 |
 | `anchors.ts` | 245 | 9 | прочитан | IO-трекер «маркер + линия» с гистерезисом, реестр якорей с переносом регистраций — аккуратно, комментарии объясняют причины. Мелочи: доля `pageLine` пересчитывается в px один раз при создании (без ресайза); `unobserve` молча убирает страницу из `passed` без уведомления. |  |
-| `core.ts` | 728 | 5 | прочитан | Ядро пагинатора (728 строк). F13 (подтверждено пробами): `instance.replaceAbort` на глобальном экземпляре — одновременные SSR-запросы отменяют друг друга, страница навсегда в «Загрузка…». Ещё: буфер предзагрузки, `gen`, `inflight` прикручены к экземпляру через приведение типов (K10); `loadMore`/`prefetchPage` зовут loadPage без signal; `console.warn` в `mergeResponseExtra` без DEV-гарда; осиротевшая JSDoc (стр. 65–68). |  |
+| `core.ts` | 728 | 8 | прочитан | Ход 10: F13 исправлен (bb54a5e) — состояние полёта, буфер предзагрузки, поколение и inflight в Session (WeakMap по стору), приведения типов ушли; восстановление осиротевшего loading; C11 (d1a5087) — scrollDriver/append в Session; было 5. −1: loadMore/prefetchPage зовут loadPage без signal. −1: console.warn в mergeResponseExtra без DEV-гарда |  |
 | `events.ts` | 24 | 10 | прочитан | Минимальный эмиттер, корректная отписка. |  |
 | `index.ts` | 17 | 10 | прочитан | Публичный баррель. |  |
 | `layout.ts` | 155 | 9 | прочитан | Чистая математика раскладок (окно номеров, авто-колонки, round-robin), без DOM. Минус: шапка устарела («без DOM и Solid», путь `src/ui/paginator` не существует). |  |
-| `paginate.test.ts` | 1118 | 8 | прочитан | Широкое покрытие ядра, адресного слоя, Q1, prefetch и takeover, проверки на поведение. Минусы: 16 ошибок типов, которые не видит ни один гейт (C10); слабые проверки `computeColumns` (count ≥ 1) и курсорного адаптера; нет теста на два стора одного имени (дыра, через которую прошёл F13); тест «чистка адреса на привязке роутера» закрепляет синхронный `syncAddress` в `setRouter` — при исправлении F12 его придётся менять. | any×1 |
+| `paginate.test.ts` | 1118 | 8 | прочитан | Ход 10: закрыта дыра «два стора одного имени» (F13 ×3, C11 ×4 теста, часть красная без правки). Тест «чистка адреса на привязке роутера» не менялся: F12 исправлен в роутере (очередь до afterNavigate), setRouter по-прежнему зовёт syncAddress синхронно. Остаётся: ошибки типов, невидимые гейту (C10); слабые проверки computeColumns | any×1 |
 | `pure.ts` | 113 | 10 | прочитан | Чистые функции, стабильные ссылки групп. |  |
-| `registry.ts` | 96 | 6 | прочитан | Модульный реестр `instances` хранит изменяемые сеансовые поля (`replaceAbort`, `lastAction`, `scrollDriver`) — корень F13 на сервере (K4). Стр. 56: тернарник с одинаковыми ветками (`config.pageSize ?? 20` в обеих, K10); инлайн-типы через `import('./types')`. |  |
+| `registry.ts` | 96 | 8 | прочитан | Ход 10: экземпляр — только конфигурация (F13 bb54a5e, C11 d1a5087); было 6. Остаётся K10: стр. 56 тернарник с одинаковыми ветками (pageSize ?? 20); инлайн-типы через import('./types') |  |
 | `source.test.ts` | 341 | 9 | прочитан | Хорошие поведенческие тесты слоя источника: бренд, deny-safe, декораторы, композиция, связка с ядром. 2 ошибки типов, невидимые гейтам (C10). |  |
 | `source.ts` | 408 | 9 | прочитан | Слой адаптированного источника с брендом и паспортом возможностей. Минусы: `isServerSide()` через `typeof window` (K8); `resolveQuery` — ещё одна копия нормализации запроса; fallback `hasNext = items.length > 0` в `withTotalsGate` — незадокументированная эвристика. |  |
 | `storage.ts` | 115 | 8 | прочитан | Memory/localStorage-хранилища, deny-safe чтение. Минусы: доступ к `globalThis.localStorage`/`getItem` не в try (SecurityError в песочнице или при отключённом хранилище); JSDoc `defaultPick` не упоминает `sourceState`. |  |
@@ -329,7 +329,7 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `adapter.tsx` | 1057 | 6 | прочитан | 1056 строк Solid-биндингов: в приложении не используются, исключены из svelte-check, тестов нет (C9). Проба tsc strict — компилируется. Уже разошлись со Svelte-версией: `tabIndex={0}` всегда (a11y-правка не перенесена), `usePageHref` без `linkExtra`. Сам код аккуратный (трекер и scrollDriver — в эффектах, на SSR не исполняются). | rAF×3, untrack×6 |
+| `adapter.tsx` | 1057 | 6 | прочитан | Ход 10: C11 перенесён механически (setScrollDriver/setAppendMode), tsc strict + noUnusedLocals чисто. Остаётся C9: не используется, исключён из svelte-check, тестов нет; дрейф (tabIndex={0}, usePageHref без linkExtra) | rAF×3, untrack×6 |
 | `index.ts` | 2 | 8 | прочитан | Реэкспорт Solid-адаптера — часть неиспользуемого и непроверяемого кода (C9). |  |
 
 ## `src/lib/paginate/svelte/`
@@ -339,7 +339,7 @@
 | `EdgeSentinel.svelte` | 46 | 10 | прочитан | Сентинел края: регистрация в эффекте, имя через untrack с объяснением. | $effect×1, untrack×1 |
 | `LoadMoreSlot.svelte` | 93 | 9 | прочитан | Headless-слот с href (работает без JS) и preventDefault при клике — правильное прогрессивное улучшение. Мелочь: `Math.min(...loaded)` на каждый перерасчёт. | untrack×1 |
 | `PageAnchor.svelte` | 53 | 9 | прочитан | Маркер начала страницы. Мелочь: `anchorEl` привязан через bind:this, но нигде не читается (мёртвая переменная). | $effect×1, untrack×1 |
-| `PaginatorHost.svelte` | 662 | 6 | прочитан | Хост (662 строки): жесты, триггеры, prepend-удержание, a11y-решения с объяснениями. Минусы: `instance.scrollDriver = scrollDriver` на верхнем уровне скрипта исполняется и на SSR — глобальный экземпляр удерживает замыкание последнего отрендеренного хоста (C11); `$effect` меняет `capabilities.append` общего адаптера; гидрирует снапшот `loading` без восстановления (здесь проявляется F13); прямой импорт `$lib/router/sveltekit` в «фреймворконезависимом» слое (единственная точка D2 — задокументировано). | $effect×8, window/document×1, rAF×3, any×8, svelte-ignore×1, untrack×2 |
+| `PaginatorHost.svelte` | 662 | 8 | прочитан | Ход 10: C11 (d1a5087) — scrollDriver ставится в onMount и снимается в cleanup, режим накопления в Session стора, общий адаптер не мутируется; снапшот loading восстанавливает ядро (F13); было 6. −1: прямой импорт $lib/router/sveltekit в фреймворконезависимом слое (единственная точка D2, задокументировано). −1: 662 строки, хост совмещает жесты, триггеры и prepend-удержание | $effect×8, window/document×1, rAF×3, any×8, svelte-ignore×1, untrack×2 |
 | `PaginatorScope.svelte` | 33 | 9 | прочитан | Скоуп стора: снапшоты один раз через untrack. `typeof window` вместо `esm-env` (K8). | untrack×1 |
 | `PendingIndicator.svelte` | 42 | 10 | прочитан | Индикатор ожидания, чистый $derived. | untrack×1 |
 | `context.svelte.ts` | 243 | 9 | прочитан | Контекст и хуки на рунах; подписки в $effect (на SSR не исполняются). `typeof window` в `useScopeStore` (K8). | $effect×2 |
@@ -350,7 +350,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `LoadLink.svelte` | 111 | 8 | прочитан | Пересмотрено в ходе 6 после исправления C4 (4866d35). Ссылка работает без JS, «битая» — уже в SSR (K6). Исход предзагрузки — через адаптер `preloadOutcome` по контракту kit 3; переадресация не ошибка, отказ предзагрузки не оставляет вечное `loading` (K3). Ограничение kit 2.x (ошибка загрузчика не видна, sveltejs/kit#12399) описано в JSDoc `navigateOnError` — не дефект кода. −1 K2: флаг гидрации `pending` выставляется через `$effect` (идиоматичнее `onMount`); −1 K10: шапка ещё говорит «preloadData/goto из $app/navigation», хотя preloadData теперь через адаптер. | $effect×1, $app/×1 |
-| `sveltekit.ts` | 179 | 9 | прочитан | Пересмотрено в ходе 6. Адаптер: единственная точка `$app/state`/`$app/navigation` для пагинатора, оболочки и LoadLink (K8). `createSubscriber` — штатный способ подключить адресную строку к рунам; разбор устаревания `page.url` при shallow-записи верный (K3). Новое: `shallowFlag` (F6), `preloadOutcome` (C4, контракт kit 3, приведение типа к форме 3.x объяснено). −1 K9: `page.state` приводится к `Record<string, unknown>` — `App.PageState` в `app.d.ts` не объявлен. Ход 7: F9 исправлен (83ae5aa): `hrefOf` дописывает `window.location.hash`, регрессия R-30; было 7. | $app/×3, window/document×8, history.*State×2, addEventListener×1 |
+| `sveltekit.ts` | 179 | 9 | прочитан | Ход 10: F12 исправлен (614e35a) — syncAddress копится до afterNavigate, регрессия R-32. −1 K9: page.state приводится к Record<string, unknown> — App.PageState не объявлен | $app/×3, window/document×8, history.*State×2, addEventListener×1 |
 
 ## `src/lib/search/`
 
