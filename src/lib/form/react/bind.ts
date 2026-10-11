@@ -156,6 +156,11 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     setHydrated(true)
     return () => setHydrated(false)
   }, [])
+  // Размонтирование: отправка в полёте и проверки не переживают компонент.
+  useEffect(() => () => {
+    machine.abort('unmounted')
+    runner?.cancel()
+  }, [machine, runner])
   // URL-режим: зеркало значений от хоста один раз при связке (без валидации).
   useMemo(() => {
     const seed = o.url?.seed

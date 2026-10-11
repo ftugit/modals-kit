@@ -118,12 +118,19 @@ export function valuesForChecks(data: EntrySource, d: FormDescription): Record<s
 }
 
 /**
+ * Предел кэша проверок по значению. Ключ — значение поля: без предела каждое
+ * набранное значение (логин, e-mail) оставалось в памяти до ухода со страницы.
+ */
+const CACHE_MAX = 200
+
+/**
  * Браузерная сторона: подавление частых вызовов, отмена предыдущей проверки
  * того же поля, кэш по значению.
  */
 export class AsyncRunner {
   #timers = new Map<FieldPath, ReturnType<typeof setTimeout>>()
   #inflight = new Map<FieldPath, AbortController>()
+  /** Кэш по значению; самые старые записи вытесняются после `CACHE_MAX`. */
   #cache = new Map<string, FormError | null>()
   /**
    * Поколение поля: растёт на каждом `schedule` и `cancel`. Ответ отдаётся в
@@ -133,6 +140,12 @@ export class AsyncRunner {
   #generation = new Map<FieldPath, number>()
 
   constructor(private readonly checks: CheckRegistry) {}
+
+  #remember(key: string, e: FormError | null): void {
+    this.#cache.delete(key)
+    this.#cache.set(key, e)
+    if (this.#cache.size > CACHE_MAX) this.#cache.delete(this.#cache.keys().next().value!)
+  }
 
   #bump(path: FieldPath): number {
     const next = (this.#generation.get(path) ?? 0) + 1
@@ -186,11 +199,11 @@ export class AsyncRunner {
         if (controller.signal.aborted) return null
         if (issue) {
           const e = toError(issue, path)
-          this.#cache.set(key, e)
+          this.#remember(key, e)
           return e
         }
       }
-      this.#cache.set(key, null)
+      this.#remember(key, null)
       return null
     } catch {
       if (controller.signal.aborted) return null

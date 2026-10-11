@@ -732,6 +732,32 @@ suite('асинхронные проверки: вытеснение (F21)', asy
     await sleep(60)
     expect(calls).toEqual([])
   })
+  test('cancel() без поля (размонтирование, B1) глушит все запланированные проверки', async () => {
+    const { runner, d } = make()
+    const calls: unknown[] = []
+    runner.schedule(d, 'login', { login: 'fast' }, (e) => { calls.push(e) })
+    runner.cancel()
+    await sleep(60)
+    expect(calls).toEqual([])
+  })
+})
+
+/* ── B7: кэш проверок по значению ограничен ──────────────────────────── */
+
+suite('асинхронные проверки: предел кэша (B7)', async () => {
+  const { AsyncRunner, CheckRegistry, check } = await import('./async')
+  test('старые значения вытесняются, свежие берутся из кэша', async () => {
+    let calls = 0
+    const checks = new CheckRegistry().register('free', async () => { calls++; return null })
+    const d = defineForm({ id: 'c', fields: { login: field.text({ validate: [check('free', { debounceMs: 0 })] }) } })
+    const runner = new AsyncRunner(checks)
+    for (let i = 0; i < 250; i++) await runner.run(d, 'login', { login: `u${i}` })
+    expect(calls).toBe(250)
+    await runner.run(d, 'login', { login: 'u249' })   // свежее — из кэша
+    expect(calls).toBe(250)
+    await runner.run(d, 'login', { login: 'u0' })     // самое старое — вытеснено
+    expect(calls).toBe(251)
+  })
 })
 
 /* ── F20: браузер даёт проверке те же значения, что сервер ─────────── */

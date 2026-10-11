@@ -106,6 +106,11 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
   const asyncErrorIds = new Map<string, string>()
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
+  // Размонтирование владельца: отправка в полёте и проверки не переживают компонент.
+  onCleanup(() => {
+    machine.abort('unmounted')
+    runner?.cancel()
+  })
 
   /** Продолжение входит в НАЧАЛЬНОЕ состояние: SSR рисует ошибки на местах. */
   const addressed = (c: Result | null | undefined): c is Result =>
