@@ -41,7 +41,7 @@
   import 'virtual:uno.css'
   import '../app.css'
 
-  let { children } = $props()
+  let { children, data } = $props()
 
   // Инициализация контекста страницы
   setPageContext({ title: 'dd modals', titleSeparator: ' · ' })
@@ -156,7 +156,7 @@
       <BackdropCloseIcon />
     {/snippet}
 
-    <AppShell>
+    <AppShell prefs={data.shell}>
       {@render children()}
       <SiteFooter />
     </AppShell>

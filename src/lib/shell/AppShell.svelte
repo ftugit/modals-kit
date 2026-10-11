@@ -1,6 +1,6 @@
 <script lang="ts">
   // Каркас приложения: CollapsingHeader (3 ряда) + 3-зонный Sidebar + Main scroller.
-  import { onMount, type Snippet } from 'svelte'
+  import { onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '$lib/ui/cn'
   import { BACKDROP_UTILS } from '$lib/modals/svelte/classes'
   import { usePage, sidebarHasSlots } from './page.svelte'
@@ -8,9 +8,18 @@
   import CollapsingHeader from './CollapsingHeader.svelte'
   import { createDrawer, labelKeyHandler } from './use-drawer.svelte'
 
-  let { children }: { children: Snippet } = $props()
+  import type { ShellPrefs } from './prefs'
 
-  const shell = setShellContext()
+  interface Props {
+    children: Snippet
+    /** Сохранённые настройки каркаса (cookie, прочитанная в load). Читаются один раз — при создании. */
+    prefs?: Partial<ShellPrefs> | null
+  }
+  let { children, prefs }: Props = $props()
+
+  // Намеренно — начальное значение: настройки из cookie нужны один раз, при
+  // создании состояния; дальше ими владеет ShellState (пишет cookie сам).
+  const shell = setShellContext(untrack(() => prefs))
   const page = usePage()
 
   let inputRef = $state<HTMLInputElement>()
