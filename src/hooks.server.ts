@@ -36,5 +36,5 @@ export const handle: Handle = async ({ event, resolve }) => {
     return resolve(event)
   const { db } = await getRuntime()
   const inject = dbHandle({ db, principal: () => DEMO_PRINCIPAL })
-  return inject({ event, resolve } as never)
+  return inject({ event, resolve })
 }

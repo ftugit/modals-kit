@@ -26,9 +26,15 @@ export type Principal = { readonly id?: string; readonly roles: readonly string[
 export type ResolvePrincipal = (
   event: MinimalEvent,
 ) => Principal | undefined | Promise<Principal | undefined>;
-export type DbHandle = (input: {
-  event: MinimalEvent;
-  resolve: (event: MinimalEvent, options?: unknown) => Promise<Response>;
+/**
+ * Обобщён по событию (F42): `resolve` у SvelteKit принимает свой `RequestEvent`,
+ * и параметр функции контравариантен — с фиксированным `MinimalEvent` хук
+ * приложения мог передать `{ event, resolve }` только через приведение типа.
+ * Опции `resolve` дескриптор не передаёт, поэтому их в типе нет.
+ */
+export type DbHandle = <E extends MinimalEvent>(input: {
+  event: E;
+  resolve: (event: E) => Response | Promise<Response>;
 }) => Promise<Response>;
 
 const MAX_REQUEST_ID = 200;
