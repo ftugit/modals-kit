@@ -1,29 +1,45 @@
 /**
- * Словарь связок ФИЛЬТРОВ каталога поверх нейтрального ядра `./links`.
+ * Словарь связок ФИЛЬТРОВ каталога поверх нейтрального ядра `./links` —
+ * ЕДИНСТВЕННЫЙ движок связок фильтров (C6): живая форма, картина панели и
+ * серверная deny-safe защита спрашивают одно и то же здесь.
  *
  * Переводит язык схемы на язык ядра и обратно:
- *   • `drop: { field }`  → `disable-field`; `drop: 'q'` НЕ переводится —
- *     поиск живёт вне формы (решение оператора §4.1) и остаётся в своём
- *     канале `catalogFilterSearchRule`;
+ *   • `drop: { field }` → `disable-field` по ключу поля;
+ *   • `drop: 'q'` → `disable-field` по идентификатору `#q` (`CATALOG_SEARCH_LINK`;
+ *     ключ поля схемы обязан начинаться с буквы, поэтому совпасть не может):
+ *     поиск живёт вне формы (решение оператора §4.1), но связку считает тот же
+ *     расчёт — у поиска лишь свой канал показа (`searchBlocked`, `search`);
  *   • противоречие режимов (одно значение в «все из» и в «кроме») связка не
  *     объявляет: оно СЛЕДУЕТ из смысла, поэтому правила синтезуются из
- *     текущих значений — недоступным становится ЗНАЧЕНИЕ в обоих списках,
- *     выбор сохраняется, в набор не попадает;
+ *     текущих значений (`disable-option`). Это подсказка, а не запрет: поле
+ *     не гаснет, источник ничего не отбрасывает — честно вернёт пусто;
  *   • идентификаторы условий — ключи полей (`score`) и пути-срез (`score.min`,
- *     `genres.and`): ядро читает их через `catalogLinkValues`, совпадая с
- *     семантикой `conditionMet` из `lib/filters/rules.ts` (поле заполнено,
- *     если любое имя режима заполнено; значение — если есть на любом пути).
- *
- * Паритет с `lib/filters/rules.ts` обязателен и покрыт тестом: этот слой —
- * будущий единственный движок живого режима (этап 5), а сегодня обязан
- * отвечать ровно то же, что отвечал движок схемы.
+ *     `genres.and`): ядро читает их через `catalogLinkValues` (поле заполнено,
+ *     если заполнен любой его путь; значение — если есть на любом пути).
  */
 import {
   catalogFilterFieldNames,
+  catalogFilterValueMap,
+  parseCatalogFilterPath,
   type CatalogFilterSchema,
+  type CatalogFilterValueMap,
+  type CatalogFilterViolation,
 } from '#lib/filters/catalog-filter.js'
-import type { CatalogFilterValueMap } from '#lib/filters/rules.js'
-import { computeLinks, type LinkOutcome, type LinkRule, type LinkValues } from './links'
+import {
+  computeLinks,
+  linkFieldState,
+  linkHelperText,
+  linkRefusalText,
+  type LinkFieldDecision,
+  type LinkFiring,
+  type LinkLabel,
+  type LinkOutcome,
+  type LinkRule,
+  type LinkValues,
+} from './links'
+
+/** Идентификатор поиска в словаре: `drop: 'q'` схемы гасит именно его. */
+export const CATALOG_SEARCH_LINK = '#q'
 
 /** Ключ → пути поля; срез `ключ.режим/граница` сужает список путей. */
 function pathsOf(schema: CatalogFilterSchema): (id: string) => readonly string[] {
@@ -61,7 +77,6 @@ export function catalogLinkRules(
 ): readonly LinkRule[] {
   const rules: LinkRule[] = []
   for (const rule of schema.rules ?? []) {
-    if (rule.drop === 'q') continue
     rules.push({
       id: rule.id,
       reason: rule.reason,
@@ -69,7 +84,7 @@ export function catalogLinkRules(
         field: condition.field,
         ...(condition.value === undefined ? {} : { value: condition.value }),
       })),
-      effect: { kind: 'disable-field', field: rule.drop.field },
+      effect: { kind: 'disable-field', field: rule.drop === 'q' ? CATALOG_SEARCH_LINK : rule.drop.field },
     })
   }
   for (const field of schema.fields) {
@@ -83,7 +98,7 @@ export function catalogLinkRules(
       if (!required.includes(value)) continue
       rules.push({
         id: 'contradictory-modes',
-        reason: `«${nameOf(value)}» выбрано и в «все из», и в «кроме» — выдача будет пустой`,
+        reason: `«${field.label}»: «${nameOf(value)}» выбрано и в «все из», и в «кроме» — выдача будет пустой`,
         when: [
           { field: `${field.key}.and`, value },
           { field: `${field.key}.not`, value },
@@ -103,25 +118,67 @@ export function catalogLinkOutcome(
   return computeLinks(catalogLinkRules(schema, map), catalogLinkValues(schema, map))
 }
 
+/** Подписи для текстов: ключ поля → его `label`. */
+export function catalogLinkLabel(schema: CatalogFilterSchema): LinkLabel {
+  const labels = new Map(schema.fields.map((field) => [field.key, field.label]))
+  return (id) => labels.get(id) ?? id
+}
+
 /**
- * Набор фильтров без выключенного: путь → значения. Числовые границы и
- * запятые — формат адресного слоя, сюда он приходит картой путей; сборка
- * трогает только состав значений (сегодня это делает `catalogFilterExtraPatch`
- * — после этапа 5 он зовёт именно эту функцию).
+ * Строка под погашенным полем. У ПУСТОЙ жертвы — helper «кто мешает»
+ * (`«Статус» блокирует поле: …`); если значение уже стоит (мир без JS,
+ * расшаренный адрес, выбор до блокировки) — отказ набора: с этим значением он
+ * не применится (§7.5). Формулировку отказа делит валидатор (`link.blocked`).
  */
-export function catalogLinkSet(
+export function catalogLinkReason(
   schema: CatalogFilterSchema,
   map: CatalogFilterValueMap,
-  outcome: LinkOutcome,
-): Record<string, readonly string[]> {
-  const out: Record<string, readonly string[]> = {}
-  for (const field of schema.fields) {
-    if (outcome.fields.has(field.key)) continue
-    const off = outcome.options.get(field.key)
-    for (const path of catalogFilterFieldNames(field)) {
-      const kept = (map[path] ?? []).filter((value) => !off?.has(value))
-      if (kept.length) out[path] = kept
-    }
-  }
-  return out
+  firing: LinkFiring,
+  key: string,
+): string {
+  const label = catalogLinkLabel(schema)
+  const field = schema.fields.find((item) => item.key === key)
+  const filled = field !== undefined && catalogFilterFieldNames(field).some((path) => (map[path]?.length ?? 0) > 0)
+  return filled ? linkRefusalText(key, firing.blockers, label) : linkHelperText(firing, label)
+}
+
+/**
+ * Пояснения к сработавшим связкам — картина панели и серверная проверка.
+ * Ключи — канонические: `filters.status=anons`, `filters.genres.not=133`.
+ */
+export function catalogLinkViolations(outcome: LinkOutcome): CatalogFilterViolation[] {
+  return outcome.firings.map(({ rule }) => {
+    const keys = rule.when.map((condition) =>
+      condition.value === undefined
+        ? `filters.${condition.field}`
+        : `filters.${condition.field}=${condition.value}`,
+    )
+    const drop: CatalogFilterViolation['drop'] = rule.effect.kind !== 'disable-field'
+      ? undefined
+      : rule.effect.field === CATALOG_SEARCH_LINK ? 'q' : { field: rule.effect.field }
+    return { id: rule.id, message: rule.reason, keys, ...(drop ? { drop } : {}) }
+  })
+}
+
+/**
+ * Канал `fieldState` формы фильтров: имена контролов адресные
+ * (`page.filters.score.min`), значения — живое зеркало формы. Поле гаснет
+ * целиком (все его пути), строка — `catalogLinkReason`.
+ */
+export function catalogLinkFieldState(
+  schema: CatalogFilterSchema,
+  namePrefix = '',
+): (name: string, values: Readonly<Record<string, unknown>>) => LinkFieldDecision | undefined {
+  return linkFieldState(
+    (values: Readonly<Record<string, unknown>>) => {
+      const own: Record<string, unknown> = {}
+      for (const [name, value] of Object.entries(values)) {
+        if (name.startsWith(namePrefix)) own[name.slice(namePrefix.length)] = value
+      }
+      const map = catalogFilterValueMap(own)
+      return { map, outcome: catalogLinkOutcome(schema, map) }
+    },
+    (name) => (name.startsWith(namePrefix) ? parseCatalogFilterPath(name.slice(namePrefix.length))?.key : undefined),
+    (firing, key, { map }) => catalogLinkReason(schema, map, firing, key),
+  )
 }

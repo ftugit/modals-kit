@@ -21,8 +21,9 @@
    * остаётся правдой для пути без JS.
    */
   import { onMount } from 'svelte'
-  import { compileCatalogFilterSchema, catalogFilterFieldStates, parseCatalogFilterPath } from '#lib/filters/index.js'
+  import { compileCatalogFilterSchema, parseCatalogFilterPath } from '#lib/filters/index.js'
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
+  import { catalogLinkFieldState } from '#lib/links/catalog.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
   import { Button, Input, Select } from '#lib/ui/primitives/index.js'
@@ -82,16 +83,10 @@
   // гидратации в том числе), а гашение контрола — работа JavaScript: без JS
   // выключенный контрол браузер не отправил бы, и запрос пользователя
   // пропал бы молча (канон `js = !hydrated`, как у панели настроек).
-  // Реактивно: связки пересчитываются на каждое применение набора (extra
-  // поменялся — «Оценка» при «Анонсах» гаснет сразу, как и в старом view).
-  const linkOf = $derived(
-    new Map(catalogFilterFieldStates(schema, values).map((state) => [state.key, state])),
-  )
-  function fieldState(name: string): { disabled?: boolean; reason?: string } | undefined {
-    const parsed = parseCatalogFilterPath(name.slice(namePrefix.length))
-    const state = parsed ? linkOf.get(parsed.key) : undefined
-    return state?.disabled ? { disabled: true, reason: state.reason } : undefined
-  }
+  // Считается по ЖИВЫМ значениям формы (второй аргумент канала, C6): выбрал
+  // «анонс» — «Оценка» гаснет сразу, до «Применить» (F44).
+  // svelte-ignore state_referenced_locally
+  const fieldState = catalogLinkFieldState(schema, namePrefix)
 
   const form = bind(catalogForms, desc, {
     url: {

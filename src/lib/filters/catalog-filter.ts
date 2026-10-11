@@ -14,7 +14,7 @@
  * без упрощений: имена полей, правила валидатора и формат адреса сохранены
  * посимвольно; заменено только то, что относится к ЧУЖОЙ форме (канон собирал
  * определение на `@/lib/form/core`, здесь — на `#lib/form/index.js`), и добавлены связки
- * (`rules`, см. `./rules.ts`) — они часть схемы, как и поля.
+ * (`rules`, их применяет словарь `#lib/links/catalog.js`) — они часть схемы, как и поля.
  */
 import {
   decode,
@@ -434,7 +434,7 @@ function optionsAllowlist(values: readonly string[]): ValidatorRef {
  * на все пути поля (режимы и границы): отказ касается поля, а не одного
  * режима. Условия переводятся в пути, которые видит декодер формы, — ядро
  * `lib/links` о путях не знает. `drop: 'q'` не участвует: поиск живёт вне
- * формы (связка с ним решает сервер, см. `catalogFilterSearchRule`).
+ * формы (связку с ним решает словарь `#lib/links/catalog.js`, идентификатор `q`).
  */
 function linkProbesByField(schema: CatalogFilterSchema): Map<string, LinkBlockedProbe[]> {
   const pathsOf = new Map(schema.fields.map((field) => [field.key, catalogFilterFieldNames(field)]))
@@ -903,4 +903,42 @@ export function validateCatalogFilterValues(
     }
   }
   return { values, errors: [] }
+}
+
+/* ── значения для связок ───────────────────────────────────────────── */
+
+/** Значения фильтров «как из адреса»: путь поля → список значений. */
+export type CatalogFilterValueMap = Readonly<Record<string, readonly string[]>>
+
+/**
+ * Нарушение связки в картине панели: что столкнулось, почему и что из-за
+ * этого не применяется. Считает словарь `#lib/links/catalog.js`.
+ */
+export type CatalogFilterViolation = {
+  /** Имя связки: `search-with-latest` (правило схемы) или `contradictory-modes`. */
+  id: string
+  /** Человекочитаемая причина — её показывает интерфейс. */
+  message: string
+  /** Канонические ключи столкнувшихся значений: `filters.genres.not=133`. */
+  keys: readonly string[]
+  /**
+   * Что не применяется из-за связки: `'q'` — поиск, `{ field }` — фильтр схемы.
+   * Пусто — сочетание просто невозможно (deny-safe нечего отбрасывать: форма
+   * такое не пропускает, а источник честно вернёт пустую выдачу).
+   */
+  drop?: 'q' | { field: string }
+}
+
+/** Значения из адреса/extra → карта путей (то, что читают связки). */
+export function catalogFilterValueMap(source: Record<string, unknown> | undefined): CatalogFilterValueMap {
+  const out: Record<string, readonly string[]> = {}
+  for (const [path, raw] of Object.entries(source ?? {})) {
+    if (!path.startsWith('filters.') || !parseCatalogFilterPath(path)) continue
+    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : [raw]
+    const items = list
+      .map((item) => String(item ?? '').trim())
+      .filter((item) => item.length > 0 && item.length <= 120)
+    if (items.length) out[path] = items
+  }
+  return out
 }

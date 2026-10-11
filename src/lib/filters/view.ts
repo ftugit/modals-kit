@@ -1,49 +1,34 @@
 /**
- * Инструкция для интерфейса: что схема разрешает показать, что запрещает связка
- * и во что превращается выбор пользователя.
+ * Инструкция для интерфейса панели фильтров: что применено, что запрещает
+ * связка и во что превращается выбор пользователя.
  *
- * Зачем это отдельно от `catalog-filter.ts`: канон считал всё это ВНУТРИ
- * компонента (`FiltersPanel.tsx`), поэтому вторая реализация (React/SolidJS)
- * вынуждена была бы повторить и чтение значений, и патч `setExtra`, и связки —
- * то есть ту самую логику, ради общего вида которой схему и заводили. Здесь
- * этой логики нет ни в одном компоненте:
+ * Компонент остаётся разметкой — всё, что можно посчитать, считается здесь:
  *
- *   • `catalogFilterView` — готовая к отрисовке картина (контролы, чипы,
- *     счётчик, причины недоступности, адреса) из СХЕМЫ + `extra` пагинатора;
- *   • `catalogFilterControls` — что интерфейс должен показать: по контролу на
- *     КАЖДЫЙ объявленный путь (режимы и границы включены), с опциями, границами
- *     и краями базы — и всё это выводится из объявления, а не из кода панели;
- *   • `catalogFilterFieldStates` — какие поля гасит связка и ПОЧЕМУ;
+ *   • `catalogFilterView` — картина панели из СХЕМЫ + `extra` пагинатора
+ *     (применённый набор): чипы, счётчик, адреса формы, запрет поиска и
+ *     пояснения к связкам. Связки считает словарь `#lib/links/catalog.js` —
+ *     тот же расчёт, что гасит поля живой формы и защищает источник (C6);
  *   • `catalogFilterExtraPatch` / `catalogFilterRemoveValuePatch` — патч для
  *     канала состояния (`setExtra`): выбор пользователя пишется в хранилище, а
  *     не в адрес напрямую.
  *
- * Компонент остаётся только разметкой: он рисует то, что здесь посчитано, и
- * отправляет наружу значения — ключей фильтров он не знает вовсе.
+ * Контролы формы здесь не собираются: их компилирует `compileCatalogFilterSchema`,
+ * а гасит связка через канал `fieldState` формы (`catalogLinkFieldState`).
  */
 import {
   activeCatalogFilters,
   canonicalCatalogFilterUrl,
   catalogFilterUrlWithout,
-  CATALOG_FILTER_BOUND_LABEL,
-  CATALOG_FILTER_MODE_LABEL,
   catalogFilterFieldNames,
+  catalogFilterValueMap,
   parseCatalogFilterPath,
   readCatalogFilterValues,
   stripDefaultCatalogFilterValues,
   type ActiveCatalogFilter,
-  type CatalogFilterField,
-  type CatalogFilterRule,
   type CatalogFilterSchema,
-} from './catalog-filter'
-import {
-  catalogFilterSearchRule,
-  catalogFilterRuleFires,
-  catalogFilterSuppressedFields,
-  catalogFilterValueMap,
-  checkCatalogFilterRules,
   type CatalogFilterViolation,
-} from './rules'
+} from './catalog-filter'
+import { CATALOG_SEARCH_LINK, catalogLinkOutcome, catalogLinkViolations } from '#lib/links/catalog.js'
 
 /** Патч канала состояния: ключ extra → значение (или снятие). */
 export type CatalogFilterPatch = Record<string, string | number | undefined>
@@ -64,79 +49,10 @@ export type CatalogFilterUrlView = {
 /** Чип активного фильтра: значение плюс адрес, снимающий ТОЛЬКО его. */
 export type CatalogFilterChip = ActiveCatalogFilter & { href: string }
 
-/** Готовый к отрисовке контрол: путь в extra, имя в адресе, значение, опции. */
-export type CatalogFilterControl =
-  | {
-      kind: 'select'
-      /** Имя поля в extra: `filters.kind`. */
-      path: string
-      /** Имя в адресе: `page.filters.kind` (то, что читает URL-слой и no-JS форма). */
-      name: string
-      label: string
-      value: string
-      options: readonly { value: string; label: string; disabled?: boolean }[]
-      /** Поле гасит связка: показать выключенным и сказать почему. */
-      disabled: boolean
-      reason?: string
-    }
-  | {
-      kind: 'multiselect'
-      path: string
-      name: string
-      label: string
-      value: readonly string[]
-      options: readonly { value: string; label: string; disabled?: boolean }[]
-      /** Показ списка обрезан лимитом: часть значений есть у источника, но не здесь. */
-      truncated?: number
-      disabled: boolean
-      reason?: string
-    }
-  | {
-      kind: 'number'
-      path: string
-      name: string
-      label: string
-      value: string
-      min?: number
-      max?: number
-      /**
-       * Край базы — ПОДСКАЗКА, а не значение: заполненный «от: 1» ушёл бы в адрес
-       * при нативной отправке формы (`1900`, `1`, `2028`) и остался бы там как
-       * фильтр, которого пользователь не выбирал. С JS такой ключ снимает
-       * `catalogFilterExtraPatch`, а путь без JS отправляет форму как есть —
-       * поэтому значение не предзаполняется вовсе, а край виден подсказкой.
-       */
-      placeholder?: string
-      disabled: boolean
-      reason?: string
-    }
-  | {
-      kind: 'text'
-      path: string
-      name: string
-      label: string
-      value: string
-      placeholder?: string
-      disabled: boolean
-      reason?: string
-    }
-
-/**
- * Состояние поля: доступно ли и что говорит связка. `reason` называет
- * поле-виновника — ««Статус» блокирует поле: …», а не просто повторяет
- * объявленную причину.
- */
-export type CatalogFilterFieldState = {
-  key: string
-  disabled: boolean
-  reason?: string
-}
-
 /** Что пользователь видит в панели фильтров — целиком из схемы и extra. */
 export type CatalogFilterView = {
   source: string
   builtAt?: string
-  controls: readonly CatalogFilterControl[]
   chips: readonly CatalogFilterChip[]
   /**
    * `action` нативной формы (GET на страницу каталога) — без запроса: адрес
@@ -154,141 +70,11 @@ export type CatalogFilterView = {
   violations: readonly CatalogFilterViolation[]
 }
 
-const EMPTY: readonly string[] = []
-
-/** Подпись опции: имя из схемы (для скрытых лимитом значений — сам id). */
-function optionsOf(field: CatalogFilterField): { value: string; label: string; disabled?: boolean }[] {
-  return (field.options ?? []).map((option) =>
-    option.disabled ? { value: option.value, label: option.label, disabled: true } : { value: option.value, label: option.label })
-}
-
-/** Подписи виновников без повторов — общий материал для обеих реплик. */
-function blockerLabels(schema: CatalogFilterSchema, rule: CatalogFilterRule): string[] {
-  const labels: string[] = []
-  for (const condition of rule.when) {
-    const label = schema.fields.find((field) => field.key === condition.field)?.label ?? condition.field
-    if (!labels.includes(label)) labels.push(label)
-  }
-  return labels
-}
-
 /**
- * Состояние полей при текущих значениях: гасит ли поле связка. Причина
- * приходит из схемы — UI её только показывает.
- *
- * Список здесь ровно тот, что просят контролы: у связки с `drop === 'q'` поля
- * не гасятся (её причина — про поиск, и живёт в предупреждениях панели).
- */
-export function catalogFilterFieldStates(
-  schema: CatalogFilterSchema | undefined,
-  values: Record<string, unknown> | undefined,
-): CatalogFilterFieldState[] {
-  if (!schema) return []
-  const map = catalogFilterValueMap(values)
-  // Связка, которая СРАБОТАЛА (все условия `when`), на поле-жертву: подписи
-  // виновников + объявленная причина. Проверка «поле в снятых» не годится:
-  // не сработавшее правило перезаписало бы чужий текст.
-  const hits = new Map<string, { q: string[]; why: string }>()
-  for (const rule of schema.rules ?? []) {
-    const victim = rule.drop
-    if (victim === 'q' || !catalogFilterRuleFires(schema, map, rule)) continue
-    hits.set(victim.field, { q: blockerLabels(schema, rule), why: rule.reason })
-  }
-  return schema.fields.map((field) => {
-    const hit = hits.get(field.key)
-    if (!hit) return { key: field.key, disabled: false }
-    const quoted = hit.q.map((x) => `«${x}»`)
-    // Строка под полем: helper-«кто мешает», а если у жертвы УЖЕ есть
-    // значение (мир без JS, расшаренный адрес) — отказ набора: с этим
-    // значением он не применён (§7.5: пустое запрещённое поле молчит).
-    // Формулировка отказа дословно повторяет словарь `link.blocked`;
-    // композитор `#lib/links/index.js` на клиент не тащим — стороны приколоты
-    // тестами посимвольно, разъедутся — упадут оба файла.
-    const filled = catalogFilterFieldNames(field).some((n) => map[n]?.length)
-    return {
-      key: field.key,
-      disabled: true,
-      reason: filled
-        ? `«${field.label}» невозможно использовать совместно с ${quoted.join(', ')}`
-        : `${quoted.join(' и ')}${quoted[1] ? ' блокируют' : ' блокирует'} поле: ${hit.why}`,
-    }
-  })
-}
-
-/**
- * Готовые к отрисовке контролы: по одному на КАЖДЫЙ объявленный путь
- * (`filters.genres.and`, `filters.genres.not`, `filters.score.min`, …). Именно
- * поэтому «какие связки поддерживает источник» видно в интерфейсе: чего нет в
- * схеме — того нет и в форме, а не «спрятано за флагом».
- */
-export function catalogFilterControls(
-  schema: CatalogFilterSchema,
-  extra: Record<string, unknown> | undefined,
-  opts: { prefix?: string } = {},
-): CatalogFilterControl[] {
-  const prefix = opts.prefix ?? 'page'
-  const values = readCatalogFilterValues(extra)
-  const states = new Map(catalogFilterFieldStates(schema, extra).map((state) => [state.key, state]))
-  const out: CatalogFilterControl[] = []
-  for (const field of schema.fields) {
-    const state = states.get(field.key)
-    const disabled = state?.disabled ?? false
-    for (const path of catalogFilterFieldNames(field)) {
-      const parsed = parseCatalogFilterPath(path)
-      const name = `${prefix}.${path}`
-      const current = values[path] ?? EMPTY
-      const common = {
-        path,
-        name,
-        label: field.label
-          ? `${field.label}${parsed?.mode ? ` · ${CATALOG_FILTER_MODE_LABEL[parsed.mode]}` : parsed?.bound ? ` · ${CATALOG_FILTER_BOUND_LABEL[parsed.bound]}` : ''}`
-          : path,
-        disabled,
-        ...(disabled && state?.reason ? { reason: state.reason } : {}),
-      }
-      if (field.type === 'multiselect' || field.type === 'select') {
-        const options = optionsOf(field)
-        if (field.type === 'multiselect') {
-          out.push({
-            ...common,
-            kind: 'multiselect',
-            value: current,
-            options,
-            ...(field.optionsTruncated ? { truncated: field.optionsTruncated } : {}),
-          })
-        } else {
-          out.push({ ...common, kind: 'select', value: current[0] ?? '', options })
-        }
-        continue
-      }
-      if (field.type === 'number') {
-        const edge = parsed?.bound === 'max' ? field.max : parsed?.bound === 'min' ? field.min : undefined
-        out.push({
-          ...common,
-          kind: 'number',
-          // Значение — только то, что реально стоит фильтром; край базы виден
-          // подсказкой (см. `placeholder` в типе контрола).
-          value: current[0] ?? '',
-          ...(edge !== undefined ? { placeholder: String(edge) } : {}),
-          ...(field.min !== undefined ? { min: field.min } : {}),
-          ...(field.max !== undefined ? { max: field.max } : {}),
-        })
-        continue
-      }
-      if (field.type === 'text') {
-        out.push({ ...common, kind: 'text', value: current[0] ?? '' })
-        continue
-      }
-      out.push({ ...common, kind: 'select', value: current[0] ?? '', options: optionsOf(field) })
-    }
-  }
-  return out
-}
-
-/**
- * Полная картина панели: контролы + чипы + причины. Значения берутся из `extra`
+ * Полная картина панели: чипы + адреса + причины. Значения берутся из `extra`
  * пагинатора (единственный источник истины), а не из адреса: пагинатор может
- * жить на любом хранилище.
+ * жить на любом хранилище. Это ПРИМЕНЁННЫЙ набор — живые блокировки полей
+ * считает форма по своему зеркалу (`catalogLinkFieldState`).
  */
 export function catalogFilterView(
   schema: CatalogFilterSchema,
@@ -296,9 +82,8 @@ export function catalogFilterView(
   opts: { prefix?: string; url?: CatalogFilterUrlView } = {},
 ): CatalogFilterView {
   const values = readCatalogFilterValues(extra)
-  const map = catalogFilterValueMap(extra)
-  const rule = catalogFilterSearchRule(schema, map)
-  const states = catalogFilterFieldStates(schema, extra)
+  const outcome = catalogLinkOutcome(schema, catalogFilterValueMap(extra))
+  const search = outcome.fields.get(CATALOG_SEARCH_LINK)
   const urlOpts = { prefix: opts.url?.prefix ?? opts.prefix ?? 'page', preserved: opts.url?.preserved ?? {} }
   const chips: CatalogFilterChip[] = activeCatalogFilters(schema, values).map((chip) => ({
     ...chip,
@@ -307,7 +92,6 @@ export function catalogFilterView(
   return {
     source: schema.source,
     ...(schema.builtAt ? { builtAt: schema.builtAt } : {}),
-    controls: catalogFilterControls(schema, extra, opts),
     chips,
     ...(opts.url ? { formAction: canonicalCatalogFilterUrl(opts.url.page, {}, urlOpts) } : {}),
     // Скрытые поля формы — ЧУЖИЕ ключи адреса: свои фильтры форма заменяет
@@ -318,9 +102,9 @@ export function catalogFilterView(
       .filter(([name]) => name !== urlOpts.prefix && !name.startsWith(`${urlOpts.prefix}.filters.`))
       .map(([name, value]) => ({ name, value })),
     count: chips.length,
-    ...(rule ? { searchBlocked: { id: rule.id, reason: rule.reason } } : {}),
+    ...(search ? { searchBlocked: { id: search.rule.id, reason: search.rule.reason } } : {}),
     // Поиск объясняется выше; остальное — предупреждения у фильтров.
-    violations: checkCatalogFilterRules(schema, map).filter((violation) => violation.drop !== 'q'),
+    violations: catalogLinkViolations(outcome).filter((violation) => violation.drop !== 'q'),
   }
 }
 
@@ -399,11 +183,11 @@ export function catalogFilterRemoveValuePatch(
   // хранить сочетание, которое «отправил» не набор формы, а рука или прошлое
   // состояние (URL со score при anons). Связка считается ПОСЛЕ снятия чипа —
   // иначе снятие триггера ошибочно похоронит ожившего соседа.
-  // (Связка «поиск запрещён» ни при чём: `q` — не фильтровый путь.)
-  const suppressed = catalogFilterSuppressedFields(
+  // (Связка «поиск запрещён» ни при чём: её идентификатор `#q` — не ключ поля.)
+  const suppressed = catalogLinkOutcome(
     schema,
     catalogFilterValueMap(stripDefaultCatalogFilterValues(schema, next)),
-  )
+  ).fields
   for (const key of Object.keys(next)) {
     const parsed = parseCatalogFilterPath(key)
     if (parsed !== undefined && suppressed.has(parsed.key)) delete next[key]

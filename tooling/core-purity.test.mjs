@@ -98,8 +98,10 @@ test('зона фреймворка существует и непуста (ин
   assert.ok(zones.length > 0, 'нет ни одного файла в зоне фреймворка — граница фиктивна')
 })
 
-test('зона фреймворка есть у каждого ядра с адаптерами (form/paginate/links)', () => {
-  for (const root of ['src/lib/form', 'src/lib/paginate', 'src/lib/links']) {
+// links адаптера не имеет (C6: форма приносит живые значения через канал
+// `fieldState`, Svelte-обёртка удалена) — его чистоту держит CORE_MODULES.
+test('зона фреймворка есть у каждого ядра с адаптерами (form/paginate)', () => {
+  for (const root of ['src/lib/form', 'src/lib/paginate']) {
     const zones = walk(root).map((f) => relative(root, f)).filter(isFrameworkZone)
     assert.ok(zones.length > 0, `${root}: нет ни одного файла в зоне фреймворка`)
   }

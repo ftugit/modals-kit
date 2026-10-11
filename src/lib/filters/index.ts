@@ -7,5 +7,4 @@
  * (`ftugit/SolidHono@shiki-final`, `src/lib/search/catalog-filter.ts`).
  */
 export * from './catalog-filter'
-export * from './rules'
 export * from './view'

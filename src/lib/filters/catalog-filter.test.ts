@@ -16,6 +16,7 @@ import {
   catalogFilterInitialState,
   catalogFilterOptionsAreComplete,
   catalogFilterUrlWithout,
+  catalogFilterValueMap,
   catalogFilterValuesFromSearch,
   compileCatalogFilterSchema,
   parseCatalogFilterPath,
@@ -407,5 +408,17 @@ describe('значение, скрытое лимитом показа', () => {
     expect(hidden).toMatchObject({ hiddenByLimit: true, unknown: false })
     expect(foreign).toMatchObject({ unknown: true })
     expect(foreign?.hiddenByLimit).toBeUndefined()
+  })
+})
+
+describe('значения для связок', () => {
+  it('читаются только `filters.*`, списки разбираются по запятой', () => {
+    expect(
+      catalogFilterValueMap({ 'filters.genres.and': '1,2', 'filters.status': 'latest', q: 'наруто', 'page.size': '20' }),
+    ).toEqual({ 'filters.genres.and': ['1', '2'], 'filters.status': ['latest'] })
+  })
+
+  it('пустые и переросшие значения не считаются выбором', () => {
+    expect(catalogFilterValueMap({ 'filters.genres.and': ',', 'filters.status': 'x'.repeat(121) })).toEqual({})
   })
 })

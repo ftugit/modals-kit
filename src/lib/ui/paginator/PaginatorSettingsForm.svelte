@@ -14,7 +14,7 @@
   import type { Snippet } from 'svelte'
   import type { ExtraValue } from '#lib/paginate/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
-  import { computeLinks, linkHelperText } from '#lib/links/links.js'
+  import { computeLinks, linkFieldState, linkHelperText } from '#lib/links/links.js'
   import { buttonVariants } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON } from '#lib/ui/js-only.svelte.js'
   import type { DemoPanelSchema } from './compile'
@@ -66,6 +66,23 @@
     ui: { fieldId: (_formId, name) => name },
   })
 
+  // Связки панели считаются ПО ЖИВЫМ значениям формы — второму аргументу
+  // канала `fieldState` (C6): гасить надо сразу на изменении, до похода в
+  // хранилище. Boolean-значения чекбоксов — в строковой форме адресных
+  // значений ('true'/'false'), пустое — «не выбрано».
+  // svelte-ignore state_referenced_locally
+  const links = linkFieldState(
+    (values: Readonly<Record<string, unknown>>) => ({
+      outcome: computeLinks(schema.links, (name) => {
+        const raw = values[name]
+        if (raw === undefined || raw === null || raw === '') return []
+        return [typeof raw === 'boolean' ? (raw ? 'true' : 'false') : String(raw)]
+      }),
+    }),
+    (name) => name,
+    (firing) => linkHelperText(firing, (id) => schema.label(id)),
+  )
+
   // Имя = id, как в фильтрах (b1 `bd52745`): адресное имя контрола читается
   // из разметки без второго алфавита.
   // svelte-ignore state_referenced_locally
@@ -82,27 +99,14 @@
         if (size !== undefined) onSize(size)
       },
     },
-    fieldState: (name) => {
+    fieldState: (name, values) => {
       const gated = schema.gated.get(name)
       if (gated !== undefined) return { disabled: true, reason: gated }
       if (schema.jsOnly.has(name) && form.submitVisible)
         return { disabled: true, reason: JS_ONLY_REASON }
-      const firing = linksOut.fields.get(name)
-      if (firing) return { disabled: true, reason: linkHelperText(firing, (id) => schema.label(id)) }
-      return undefined
+      return links(name, values)
     },
   })
-
-  // Связки панели считаются ПО ЗЕРКАЛУ формы (live-режим: гасить надо сразу
-  // на изменении, до похода в хранилище). Boolean-значения чекбоксов — в
-  // строковой форме адресных значений ('true'/'false'), пустое — «не выбрано».
-  const linksOut = $derived(
-    computeLinks(schema.links, (name) => {
-      const raw = form.values[name]
-      if (raw === undefined || raw === null || raw === '') return []
-      return [typeof raw === 'boolean' ? (raw ? 'true' : 'false') : String(raw)]
-    }),
-  )
 
   /** До гидратации — нативная GET и hidden-пары; флаг несёт сам механизм (S2). */
   const js = $derived(form.submitVisible)

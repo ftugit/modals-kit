@@ -113,10 +113,10 @@ export interface BindOptions {
   /** Асинхронные проверки. На сервере те же выполняются всегда. */
   checks?: CheckRegistry
   /**
-   * Канал решений связки (lib/links): ответ связки перекрывает статическое
-   * объявление поля в дескрипторе. Значит поле — внутри реактивности слоя.
+   * Канал решений связки (lib/links): ответ перекрывает объявление поля.
+   * `values` — живое зеркало формы (C6): решение — от выбранного сейчас.
    */
-  fieldState?: (name: string) => FieldLink | undefined
+  fieldState?: (name: string, values: Readonly<Record<string, unknown>>) => FieldLink | undefined
 }
 
 /** Повторяемая группа: ключи стабильны, индекс — производное. */
@@ -331,20 +331,38 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   // патча — шум, который на смене монти (remont хоста) успевает приземлиться
   // в НОВОЕ хранилище чужим значением. Тот же патч, что уже отправляли, — мимо.
   let lastUrlPatch: string | null = null
-  function commitUrl(via: UrlCommitVia, name?: string) {
-    const url = o.url
-    if (!url || !formEl) return
-    const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
+
+  /** Набор объявленных ключей из DOM: проверка `evaluate` + патч без выключенных. */
+  function readUrl(form: HTMLFormElement) {
+    const ev = evaluate(new FormData(form), desc, { render, instance, requireEnvelope: false })
     const patch: Record<string, unknown> = {}
     for (const f of desc.fields) {
       // Выключенный контрол в набор не кладём: FormData его не несёт, а отсутствие
       // записи декодер честно читает как default — full-set-коммит живого режима
       // стёр бы хранимое значение. Политика домена (§6.4): значение живёт в форме,
       // из набора его вырезает связка. Снимут блокирующее — поле вернётся со значением.
-      const ctl = formEl.querySelectorAll(`[name="${CSS.escape(f.name)}"]`)
+      const ctl = form.querySelectorAll(`[name="${CSS.escape(f.name)}"]`)
       if (ctl.length > 0 && Array.from(ctl).every((el) => (el as HTMLInputElement).disabled)) continue
       patch[f.name] = ev.values[f.name]
     }
+    return { ev, patch }
+  }
+
+  /**
+   * Зеркало без коммита (`live: false`) для канала `fieldState` (C6/F44): тот
+   * же DOM, что у коммита. Только `change`: на `input` промежуточный `7.` в
+   * number читается пустым и стёр бы набираемое.
+   */
+  function mirrorUrl() {
+    if (!formEl) return
+    const { patch } = readUrl(formEl)
+    store.set((st) => ({ ...st, values: { ...st.values, ...patch } }))
+  }
+
+  function commitUrl(via: UrlCommitVia, name?: string) {
+    const url = o.url
+    if (!url || !formEl) return
+    const { ev, patch } = readUrl(formEl)
     const printed = JSON.stringify(patch)
     if (printed === lastUrlPatch) {
       if (name) recheck(name)
@@ -383,17 +401,17 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
           // конверт не нужен (hidden() пуст), envelope-проверка не звенит.
           form.setAttribute('novalidate', '')
           assertPlacement(form)
-          // `live: false` — форма коммит-набора: полей по одному не отдаём,
-          // применяет их submit (или явный commit() хоста).
-          const liveOn = url.live !== false
+          // `live: false` — форма коммит-набора: применяет submit (или commit()
+          // хоста), `change` лишь обновляет зеркало.
           const live = (ev: Event) => {
             const t = ev.target as HTMLElement | null
             const fname = t && 'name' in t ? String((t as HTMLInputElement).name) : ''
             if (fname) commitUrl('field', fname)
           }
-          if (liveOn) form.addEventListener('change', live)
+          const onChange = url.live !== false ? live : mirrorUrl
+          form.addEventListener('change', onChange)
           return () => {
-            if (liveOn) form.removeEventListener('change', live)
+            form.removeEventListener('change', onChange)
             if (formEl === form) formEl = null
           }
         },
@@ -480,7 +498,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const errorId = `${id}-error`
     const has = hasError(f.name, snapshot.facts, snapshot.shown, invalidMode(f.name))
     // Решение связки поверх объявления поля; инвариант reason⊂disabled — в fieldLinkState.
-    const ls = fieldLinkState(f, o.fieldState?.(f.name))
+    const ls = fieldLinkState(f, o.fieldState?.(f.name, snapshot.values))
     const describedBy = cfg.ui.describedBy({
       help: f.help || ls.reason ? helpId : undefined,
       error: errors.length ? errorId : undefined,

@@ -1,18 +1,15 @@
 /**
  * Api схемы глазами интерфейса: что компонент получает готовым.
  *
- * Проверяется то, ради чего этот слой существует: контролы выводятся из
- * ОБЪЯВЛЕНИЯ схемы (лишнего не появится, пропущенного не будет), связки гасят
- * поля с причиной, патч хранилища снимает опустевшие ключи, не трогает
+ * Проверяется то, ради чего этот слой существует: картина панели называет
+ * сработавшие связки (поля гасит форма — `#lib/links/catalog.js`), патч хранилища снимает опустевшие ключи, не трогает
  * необъявленные и НЕ ПИШЕТ значение, снятое связкой (JS решает то же, что
  * делает браузер без JS, не отправляя выключенный контрол), а чипы несут
  * адрес, снимающий ровно одно значение.
  */
 import { describe, expect, it } from 'vitest'
 import {
-  catalogFilterControls,
   catalogFilterExtraPatch,
-  catalogFilterFieldStates,
   catalogFilterRemoveValuePatch,
   catalogFilterView,
 } from './view'
@@ -61,181 +58,18 @@ const schema: CatalogFilterSchema = {
   ],
 }
 
-describe('контролы из объявления схемы', () => {
-  it('по одному на объявленный путь, с подписью режима/границы', () => {
-    const controls = catalogFilterControls(schema, {})
-    expect(controls.map((control) => control.path)).toEqual([
-      'filters.genres.and',
-      'filters.genres.not',
-      'filters.studios.and',
-      'filters.kind',
-      'filters.status',
-      'filters.score.min',
-      'filters.year.min',
-      'filters.year.max',
-    ])
-    expect(controls.map((control) => control.name)).toEqual([
-      'page.filters.genres.and',
-      'page.filters.genres.not',
-      'page.filters.studios.and',
-      'page.filters.kind',
-      'page.filters.status',
-      'page.filters.score.min',
-      'page.filters.year.min',
-      'page.filters.year.max',
-    ])
-    expect(controls[0].label).toBe('Жанры · все из')
-    expect(controls[1].label).toBe('Жанры · кроме')
-    expect(controls[5].label).toBe('Оценка · от')
-    // Режима «или» в схеме нет — контрола тоже: источник его не поддерживает.
-    expect(controls.some((control) => control.path === 'filters.genres.or')).toBe(false)
-  })
-
-  it('несоступное значение схемы доезжает до опции контрола флагом disabled', () => {
-    const controls = catalogFilterControls(
-      {
-        ...schema,
-        fields: [
-          {
-            key: 'genres',
-            label: 'Жанры',
-            type: 'multiselect',
-            modes: ['and'],
-            options: [
-              { value: '1', label: 'Экшен', disabled: true },
-              { value: '2', label: 'Драма' },
-            ],
-          },
-        ],
-      },
-      {},
-    )
-    const options = controls[0]?.kind === 'multiselect' ? controls[0].options : []
-    expect(options).toEqual([
-      { value: '1', label: 'Экшен', disabled: true },
-      { value: '2', label: 'Драма' },
-    ])
-  })
-
-  it('значения контролов — из extra, а не из адреса', () => {
-    const controls = catalogFilterControls(schema, {
-      'filters.genres.and': '1,2',
-      'filters.kind': 'tv',
-      'filters.score.min': 7,
-    })
-    expect(controls.find((control) => control.path === 'filters.genres.and')?.value).toEqual(['1', '2'])
-    expect(controls.find((control) => control.path === 'filters.kind')?.value).toBe('tv')
-    // Числовая граница едет числом, а инпут показывает её строкой.
-    expect(controls.find((control) => control.path === 'filters.score.min')?.value).toBe('7')
-  })
-
-  it('границы числового инпута — из схемы, край базы показан ПОДСКАЗКОЙ, а не значением', () => {
-    const controls = catalogFilterControls(schema, {})
-    const score = controls.find((control) => control.path === 'filters.score.min')
-    const yearMax = controls.find((control) => control.path === 'filters.year.max')
-    // Значение пустое: предзаполненный край уехал бы в адрес при нативной
-    // отправке формы и висел бы фильтром, которого пользователь не выбирал.
-    expect(score).toMatchObject({ kind: 'number', value: '', placeholder: '1', min: 1, max: 10 })
-    expect(yearMax).toMatchObject({ kind: 'number', value: '', placeholder: '2028', min: 1900, max: 2028 })
-    // А если значение пришло из extra — оно показывается, подсказка не мешает.
-    const filled = catalogFilterControls(schema, { 'filters.score.min': '7' }).find(
-      (control) => control.path === 'filters.score.min',
-    )
-    expect(filled).toMatchObject({ value: '7', placeholder: '1' })
-  })
-
-  it('обрезанный лимитом список показывает, сколько скрыто', () => {
-    const studios = catalogFilterControls(schema, {}).find((control) => control.path === 'filters.studios.and')
-    expect(studios?.kind === 'multiselect' && studios.truncated).toBe(5)
-  })
-})
-
-describe('связки в интерфейсе', () => {
-  it('поле под связкой гасится с причиной, называющей виновника', () => {
-    const states = catalogFilterFieldStates(schema, { 'filters.status': 'anons' })
-    const score = states.find((state) => state.key === 'score')
-    // Причина — не «список невозможного», а ответ «что мешает этому полю»:
-    // связка названа полем-виновником, объяснение берётся из схемы.
-    expect(score).toMatchObject({
-      disabled: true,
-      reason: '«Статус» блокирует поле: у анонсов нет оценки'
-    })
-    // Соседние поля связка не трогает.
-    expect(states.find((state) => state.key === 'genres')?.disabled).toBe(false)
-  })
-
-  it('причину пишет только сработавшая связка, даже если другая целит то же поле', () => {
-    const two = {
-      ...schema,
-      rules: [
-        ...(schema.rules ?? []),
-        // Не сработает (ни жанров, ни ТВ), но drop — на уже снятое поле.
-        // По membership в «снятых» она перезаписала бы чужую причину.
-        {
-          id: 'score-with-genres',
-          when: [{ field: 'genres' }],
-          drop: { field: 'score' },
-          reason: 'объяснение несработавшей связки',
-        },
-      ],
-    }
-    const score = catalogFilterFieldStates(two, { 'filters.status': 'anons' }).find((s) => s.key === 'score')
-    expect(score).toMatchObject({
-      disabled: true,
-      reason: '«Статус» блокирует поле: у анонсов нет оценки'
-    })
-  })
-
-  it('несколько условий связки называются все (согласование по числу)', () => {
-    const multi = {
-      ...schema,
-      rules: [
-        {
-          id: 'kind-and-status',
-          when: [
-            { field: 'kind', value: 'movie' },
-            { field: 'status', value: 'anons' },
-          ],
-          drop: { field: 'score' },
-          reason: 'связка с двумя условиями',
-        },
-      ],
-    }
-    const score = catalogFilterFieldStates(multi, {
-      'filters.kind': 'movie',
-      'filters.status': 'anons',
-    }).find((state) => state.key === 'score')
-    expect(score?.reason).toBe('«Тип» и «Статус» блокируют поле: связка с двумя условиями')
-  })
-
-  it('отказ связки рисуется под полем, куда доехало значение', () => {
-    const controls = catalogFilterControls(schema, { 'filters.status': 'anons', 'filters.score.min': '5' })
-    const score = controls.find((control) => control.path === 'filters.score.min')
-    // Значение под связкой: строка под полем говорит про отказ набора, а не
-    // про блокировку. Тот же текст, что интерполирует словарь валидатора.
-    expect(score?.reason).toBe('«Оценка» невозможно использовать совместно с «Статус»')
-    // Пустое запрещённое поле ничего не нарушает (§7.5) — остаётся helper.
-    const empty = catalogFilterControls(schema, { 'filters.status': 'anons' })
-    expect(empty.find((control) => control.path === 'filters.score.min')?.reason)
-      .toBe('«Статус» блокирует поле: у анонсов нет оценки')
-    // Вина не перекладывается: блокирующий выбран, но сам не нарушает набор.
-    expect(empty.find((control) => control.path === 'filters.status')?.reason).toBeUndefined()
-  })
-
+describe('связки в картине панели', () => {
   it('запрет поиска виден отдельно — у поиска свой канал', () => {
     const view = catalogFilterView(schema, { 'filters.status': 'latest' })
     expect(view.searchBlocked).toEqual({ id: 'search-with-latest', reason: 'поиск не работает' })
+    expect(view.violations).toEqual([])
   })
 
-  it('снятое связкой поле названо в картине панели', () => {
+  it('сработавшая связка названа в картине даже до выбора оценки', () => {
+    // Объяснение блока нужно пользователю без JS и доступно у формы до её раскрытия.
     const view = catalogFilterView(schema, { 'filters.status': 'anons' })
-    expect(view.controls.find((control) => control.path === 'filters.score.min')).toMatchObject({
-      disabled: true,
-      reason: '«Статус» блокирует поле: у анонсов нет оценки'
-    })
-    // Объяснение блока остаётся в картине даже до выбора оценки: оно нужно
-    // пользователю без JS и доступно у формы до её раскрытия.
     expect(view.violations.map((violation) => violation.id)).toEqual(['score-with-anons'])
+    expect(view.searchBlocked).toBeUndefined()
   })
 
   it('no-JS view retains a blocked value and its source-owned explanation', () => {
@@ -249,11 +83,13 @@ describe('связки в интерфейсе', () => {
     expect(view.chips.some((chip) => chip.key === 'score' && chip.value === '5')).toBe(true)
   })
 
-  it('противоречие режимов одного поля — подсказка, а не запрет', () => {
+  it('противоречие режимов одного поля — подсказка с подписью поля', () => {
     const view = catalogFilterView(schema, { 'filters.genres.and': '1', 'filters.genres.not': '1' })
-    expect(view.violations.map((violation) => violation.id)).toEqual(['contradictory-modes'])
-    // Оба контрола остаются рабочими: источник честно вернёт пустую выдачу.
-    expect(view.controls.filter((control) => control.disabled)).toEqual([])
+    expect(view.violations).toEqual([{
+      id: 'contradictory-modes',
+      message: '«Жанры»: «Экшен» выбрано и в «все из», и в «кроме» — выдача будет пустой',
+      keys: ['filters.genres.and=1', 'filters.genres.not=1'],
+    }])
   })
 })
 

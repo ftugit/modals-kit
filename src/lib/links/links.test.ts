@@ -5,7 +5,7 @@
  * и есть контракт для каждого словаря-потребителя (каталог, панель).
  */
 import { describe, expect, it } from 'vitest'
-import { computeLinks, linkHelperText, linkRefusalText, linkSubmission, type LinkRule } from './links'
+import { computeLinks, linkFieldState, linkHelperText, linkRefusalText, linkSubmission, type LinkRule } from './links'
 import { linkBlockedValidator } from './validators'
 
 const LABELS: Record<string, string> = { genres: 'Жанры', score: 'Оценка', status: 'Статус', type: 'Тип' }
@@ -177,5 +177,40 @@ describe('фабрика валидаторов отказа', () => {
     )
     expect(two('x', ctx({ a: ['1'], b: ['1'] }))).toMatchObject({ params: { blockers: '«Б»' } })
     expect(two('x', ctx({ b: ['1'] }))).toMatchObject({ params: { blockers: '«Б»' } })
+  })
+})
+
+describe('linkFieldState — канал fieldState формы', () => {
+  const rules: LinkRule[] = [
+    { id: 'r', when: [{ field: 'a', value: 'x' }], effect: { kind: 'disable-field', field: 'b' }, reason: 'нельзя' },
+  ]
+
+  it('один расчёт на объект значений, новый объект — новый расчёт', () => {
+    let runs = 0
+    const state = linkFieldState(
+      (values: Record<string, string>) => {
+        runs += 1
+        return { outcome: computeLinks(rules, (id) => (values[id] ? [values[id]!] : [])) }
+      },
+      (name) => name,
+      (firing) => linkHelperText(firing, (id) => id.toUpperCase()),
+    )
+    const live = { a: 'x' }
+    expect(state('b', live)).toEqual({ disabled: true, reason: '«A» блокирует поле: нельзя' })
+    expect(state('a', live)).toBeUndefined()
+    expect(runs).toBe(1)
+    expect(state('b', { a: 'y' })).toBeUndefined()
+    expect(runs).toBe(2)
+  })
+
+  it('имя вне словаря — без расчёта и без решения', () => {
+    let runs = 0
+    const state = linkFieldState(
+      () => { runs += 1; return { outcome: computeLinks(rules, () => []) } },
+      () => undefined,
+      () => 'x',
+    )
+    expect(state('anything', {})).toBeUndefined()
+    expect(runs).toBe(0)
   })
 })

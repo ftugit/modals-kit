@@ -15,7 +15,11 @@
  *     отличается, формулировка нет;
  *   • сборка набора (`linkSubmission`) — выключенное из набора для отправки
  *     вырезается, в самой форме значения НЕ стираются: снял блокирующий
- *     параметр — поле вернулось со всем, что в нём было.
+ *     параметр — поле вернулось со всем, что в нём было;
+ *   • канал формы (`linkFieldState`) — ответ в форме `fieldState(name, values)`
+ *     для `lib/form`: форма приносит ЖИВЫЕ значения, ядро решает. Сама форма
+ *     правил не знает (решение C6), ядро не знает формы — совпадение по форме
+ *     ответа `{ disabled, reason }`.
  *
  * `when`-условия и эффекты адресуют поле идентификатором, каким его видит
  * словарь (ключ, путь — решение словаря); `read` объясняет, что там сейчас
@@ -136,4 +140,34 @@ export function linkSubmission(
     if (kept.length) out[field] = kept
   }
   return out
+}
+
+/** Решение о поле формы: структурно — `FieldLink` из `lib/form` (ядро о форме не знает). */
+export interface LinkFieldDecision {
+  readonly disabled: true
+  readonly reason: string
+}
+
+/**
+ * Канал `fieldState(name, values)` формы из связок. `compute` превращает
+ * ЖИВЫЕ значения формы в расчёт (и всё, что нужно тексту), `field` переводит
+ * имя контрола в идентификатор словаря, `reason` сочиняет строку под полем.
+ *
+ * Расчёт — один на объект значений: форма отдаёт новый объект на каждое
+ * изменение, поэтому N полей не пересчитывают правила N раз, а старое
+ * значение не может пережить новое.
+ */
+export function linkFieldState<V extends object, C extends { readonly outcome: LinkOutcome }>(
+  compute: (values: V) => C,
+  field: (name: string) => string | undefined,
+  reason: (firing: LinkFiring, field: string, ctx: C) => string,
+): (name: string, values: V) => LinkFieldDecision | undefined {
+  let last: { values: V; ctx: C } | undefined
+  return (name, values) => {
+    const id = field(name)
+    if (id === undefined) return undefined
+    if (last?.values !== values) last = { values, ctx: compute(values) }
+    const firing = last.ctx.outcome.fields.get(id)
+    return firing ? { disabled: true, reason: reason(firing, id, last.ctx) } : undefined
+  }
 }

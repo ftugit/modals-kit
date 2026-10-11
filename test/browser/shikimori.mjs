@@ -528,7 +528,8 @@ async function checkFiltersUi(browser) {
     }, { what: 'JS выдача совпадает с API score/year' });
     console.log(`  ok  JS score≥8 + year 1990–1992 сохранились и сузили выдачу до ${numericIds.length} записей`);
 
-    // Связка: у анонсов нет оценки — поле гаснет, причина видна.
+    // Связка: у анонсов нет оценки — поле гаснет, причина видна. Гаснет СРАЗУ
+    // на выборе, до «Применить» (C6/F44): связка читает живые значения формы.
     await openFilters(page);
     await chooseFilterOption(
       page,
@@ -536,6 +537,17 @@ async function checkFiltersUi(browser) {
       'anons',
       label('status', 'anons'),
     );
+    await waitFor(async () => await panel.locator('input[name="page.filters.score.min"]').isDisabled(), {
+      what: 'поле оценки выключено до «Применить»',
+    });
+    if (new URL(page.url()).searchParams.get('page.filters.status') === 'anons')
+      throw new Error('проверка «до Применить» прошла уже после записи адреса');
+    const liveReason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
+    // В оценке стоит 8 с прошлого шага → под полем отказ набора (заполненная
+    // жертва), а не helper; обе реплики обязаны назвать виновника.
+    if (!/«Статус»/.test(liveReason) || !/оценк/i.test(liveReason))
+      throw new Error(`причина до «Применить» не называет виновника: «${liveReason}»`);
+    console.log(`  ok  связка гасит поле до «Применить»: «${liveReason.trim()}»`);
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => page.url().includes('page.filters.status=anons'), { what: 'фильтр «анонс»' });
     const reason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
