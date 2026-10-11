@@ -26,6 +26,9 @@ import {
   hasPaginator,
   initPaginator,
   initServerPaginator,
+  appendOf,
+  setAppendMode,
+  setScrollDriver,
   loadMore,
   pageSearch,
   pagesList,
@@ -1166,5 +1169,61 @@ describe('конкурентные SSR-запросы и восстановле�
     await initPaginator<string>(store, 'f13d')
     expect(loadPage).toHaveBeenCalledTimes(1)
     release(); await first
+  })
+})
+
+/* ── C11: сеансовое состояние не делится между запросами/хостами ─────── */
+describe('сеансовое состояние вне общего экземпляра (C11)', () => {
+  beforeEach(() => resetRegistry())
+
+  it('режим накопления — у стора хоста; общий адаптер не меняется', () => {
+    const { adapter } = fakeAdapter({ page: 1 })
+    definePaginator({ name: 'c11a', adapter: adapter as never })
+    const a = createPaginatorStore()
+    const b = createPaginatorStore()
+    setAppendMode(a, 'c11a', false)
+    expect(appendOf(a, 'c11a')).toBe(false)
+    expect(appendOf(b, 'c11a')).toBe(true)
+    expect(getPaginator('c11a').adapter.capabilities.append).toBe(true)
+  })
+
+  it('команды скролла получает только хост своего стора', async () => {
+    const { adapter } = fakeAdapter({ page: 1 })
+    definePaginator({ name: 'c11s', adapter: adapter as never })
+    const a = createPaginatorStore()
+    const b = createPaginatorStore()
+    const driverA = vi.fn()
+    setScrollDriver(a, 'c11s', driverA)
+    await initPaginator<string>(b, 'c11s')
+    await goToPage<string>(b, 'c11s', 2)
+    expect(driverA).not.toHaveBeenCalled()
+    await initPaginator<string>(a, 'c11s')
+    await goToPage<string>(a, 'c11s', 2)
+    expect(driverA).toHaveBeenCalled()
+  })
+
+  it('takeover: ссылки судят по ctx.search своего рендера, а не по последнему getInitial', async () => {
+    const source = sourceOf(async () => ({ items: [] }))
+    const combo = withUrlTakeover(
+      createLocalAdapter<unknown>({ name: 't11', source, storage: createMemoryStorage() }),
+      { name: 't11', source, pageSize: 10, extraSearch: { q: extraField('text') }, extraDefaults: { q: '' } },
+    )
+    await combo.getInitial({ url: '/c?page=2' })          // запрос A: адрес несёт
+    await combo.getInitial({ url: '/c' })                 // запрос B: адрес пуст
+    expect(combo.hrefFor?.(3, { search: { page: '2' } })).toContain('page=3')  // рендер A
+    expect(combo.hrefFor?.(3, { search: {} })).toBeNull()                      // рендер B
+  })
+
+  it('курсоры на сервере не переходят из запроса в запрос', async () => {
+    const load = vi.fn(async ({ cursor }: { cursor?: string }) => ({
+      items: [`for-${cursor ?? 'first'}`], nextCursor: cursor ? `${cursor}+` : 't1', hasNext: true,
+    }))
+    const source = { id: 'c11c', capabilities: { offsetRecovery: false, stableAcrossSessions: true }, load }
+    const adapter = createCursorAdapter({ name: 'c11c', source: source as never })
+    await adapter.loadPage({ page: 2, pageSize: 10, extra: {} })   // запрос A: обход 1 → 2
+    load.mockClear()
+    await adapter.loadPage({ page: 2, pageSize: 10, extra: {} })   // запрос B: свой обход
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(load.mock.calls[0]![0].cursor).toBeUndefined()
   })
 })

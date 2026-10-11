@@ -2,7 +2,7 @@
 // R17 deny by default: неизвестный name → throw. Дословный порт registry.ts React-версии.
 import { createLocalAdapter } from './adapter-local'
 import { createEmitter, type Emitter } from './events'
-import type { PaginatorAdapter, PaginatorConfig, ScrollDriver } from './types'
+import type { PaginatorAdapter, PaginatorConfig } from './types'
 
 export type LastAction =
   { kind: 'goToPage'; page: number } | { kind: 'loadMore'; dir: 1 | -1 } | null
@@ -19,8 +19,6 @@ export type PaginatorInstance = {
   adapter: PaginatorAdapter<unknown>
   emitter: Emitter
   pageSize: number
-  /** Регистрирует хост (SPEC §3.7); ядро дёргает его после REPLACE/goToPage. */
-  scrollDriver: ScrollDriver | null
   /** Максимальное число страниц в памяти (окно/выгрузка). */
   maxPages?: number
   /** Ключи extra, влияющие на данные источника: их смена = сброс + загрузка стр. 1. */
@@ -57,7 +55,6 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
     adapter: adapter as PaginatorAdapter<unknown>,
     emitter: createEmitter(),
     pageSize: 'adapter' in config ? (config.pageSize ?? 20) : (config.pageSize ?? 20),
-    scrollDriver: null,
     maxPages: config.maxPages,
     reloadKeys: new Set(config.reloadKeys ?? []),
     positionKeys: new Set(config.positionKeys ?? []),

@@ -1,3 +1,4 @@
+import { BROWSER } from 'esm-env'
 import { createMemoryStorage } from './storage'
 import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
 import type {
@@ -97,29 +98,31 @@ export function createCursorAdapter<T>(options: {
 }): PaginatorAdapter<T> {
   const storage = options.storage ?? createMemoryStorage()
   const pageSize = options.pageSize ?? 20
-  let sourceState: CursorState = {
+  const blank = (fp: string): CursorState => ({
     v: 1,
     source: options.source.id,
-    fingerprint: '',
+    fingerprint: fp,
     cursors: { '1': null },
-  }
+  })
+  /**
+   * Кэш курсоров сеанса — ТОЛЬКО в браузере. На сервере замыкание адаптера одно
+   * на все запросы (C11): общий кэш смешивал бы курсоры разных пользователей и
+   * сбрасывался бы чужим fingerprint посреди обхода. Там каждый loadPage идёт со
+   * своим состоянием (обход от первой страницы или offsetRecovery).
+   */
+  let sourceState: CursorState = blank('')
 
-  function reset(nextFingerprint: string): void {
-    sourceState = {
-      v: 1,
-      source: options.source.id,
-      fingerprint: nextFingerprint,
-      cursors: { '1': null },
-    }
-  }
-
-  function ensureState(req: PageRequest): void {
+  /** Состояние для запроса: сеансовое (браузер) или своё (сервер), под текущий fingerprint. */
+  function stateFor(req: PageRequest): CursorState {
     const next = fingerprint(options.source.id, req.pageSize, req.extra ?? {})
-    if (sourceState.source !== options.source.id || sourceState.fingerprint !== next) reset(next)
+    const base = BROWSER ? sourceState : blank(next)
+    const st = base.source !== options.source.id || base.fingerprint !== next ? blank(next) : base
+    if (BROWSER) sourceState = st
+    return st
   }
 
   async function loadPage(req: PageRequest): Promise<PageResponse<T>> {
-    ensureState(req)
+    const sourceState = stateFor(req)
     let cursor = sourceState.cursors[String(req.page)] ?? undefined
 
     if (cursor === undefined && options.source.capabilities.offsetRecovery) {
@@ -177,7 +180,7 @@ export function createCursorAdapter<T>(options: {
     getInitial: async (): Promise<AdapterInit<T>> => {
       const restored = await storage.read(options.name)
       const restoredState = decode(restored?.sourceState)
-      if (restoredState?.source === options.source.id) sourceState = restoredState
+      if (BROWSER && restoredState?.source === options.source.id) sourceState = restoredState
       return {
         page: restored?.page ?? 1,
         pageSize: restored?.pageSize ?? pageSize,

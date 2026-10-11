@@ -9,7 +9,7 @@
 //   ?page.size=5       — размер страницы (нативно)
 //   ?page.<key>=<v>    — ключи потребителя (RestorableState.extra), объявленные в extraSearch
 // Один пагинатор = один базовый ключ (pageParam), несколько пагинаторов — разные ключи.
-import { DEV } from 'esm-env'
+import { BROWSER, DEV } from 'esm-env'
 import { assertAdaptedSource, type AdaptedSource } from './source'
 import type {
   Extra,
@@ -364,7 +364,10 @@ export function createUrlAdapter<T>(opts: {
   }
   const extraKeys = Object.keys(opts.extraSearch ?? {})
   let router: MinimalRouter | null = null
-  // Раунд-6: поиск последнего getInitial(ctx.url) — href-ы на SSR, где роутера нет.
+  // Поиск последнего getInitial — запасной срез адреса ТОЛЬКО в браузере (там сеанс
+  // один). На сервере замыкание адаптера общее для всех запросов: запись отсюда
+  // давала бы ссылкам чужого запроса чужой адрес (C11), поэтому там срез приходит
+  // только из ctx.search (хост передаёт его всегда).
   let lastInitSearch: Record<string, unknown> | null = null
   // Полётный navigate (URL ещё НЕ применился). Echo-guard обязан видеть его иначе класс:
   // reportAnchor(A)→navigate(A); reportAnchor(B≈URL)→echo-skip; navigate(A) садится ПОЗЖЕ
@@ -476,7 +479,7 @@ export function createUrlAdapter<T>(opts: {
         ctx?.url ?? opts.getUrl?.() ?? (typeof window !== 'undefined' ? window.location.search : '')
       const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : url
       const params = new URLSearchParams(query)
-      lastInitSearch = Object.fromEntries(params)
+      if (BROWSER) lastInitSearch = Object.fromEntries(params)
       const r = readPaginatorSearch(params, searchOpts)
       return { page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: r.extra }
     },
@@ -631,6 +634,9 @@ export function withUrlTakeover<T>(
   })
   const baseParam = url.pageParam ?? 'page'
   // Канал сессии: true — адрес несёт, false — несёт storage. Решает getInitial.
+  // Читают его persist/observeExternal — они работают только в браузере, где сеанс
+  // один. На сервере замыкание общее для всех запросов (C11), поэтому hrefFor
+  // судит по ctx.search своего рендера, а не по `takes` последнего getInitial.
   let takes = false
   const urlCarries = (params: URLSearchParams): boolean => {
     const has = (k: string) => {
@@ -661,7 +667,11 @@ export function withUrlTakeover<T>(
       return takes ? channel.observeExternal!(search) : null
     },
     hrefFor(page, ctx) {
-      return takes ? channel.hrefFor!(page, ctx) : (base.hrefFor?.(page, ctx) ?? null)
+      const carries = ctx?.search
+        ? urlCarries(new URLSearchParams(Object.entries(ctx.search)
+          .filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])))
+        : takes
+      return carries ? channel.hrefFor!(page, ctx) : (base.hrefFor?.(page, ctx) ?? null)
     },
     capabilities: base.capabilities,
     capabilitiesFor: (extra) => base.capabilitiesFor(extra),

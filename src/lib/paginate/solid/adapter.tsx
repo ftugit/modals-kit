@@ -23,6 +23,9 @@ import {
   getState,
   goToPage,
   initPaginator,
+  appendOf,
+  setAppendMode,
+  setScrollDriver,
   loadMore,
   onExternalPage,
   prefetchPage,
@@ -270,7 +273,7 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
   const prependBehavior = () => options().prependBehavior
   // D14: режим — живой флип append-способности адаптера без пересоздания (state/URL целы).
   createEffect(() => {
-    instance.adapter.capabilities.append = options().mode === 'accumulate'
+    setAppendMode(store, props.name, options().mode === 'accumulate') // C11: не правим общий адаптер
   })
   const nativeAnchoring =
     typeof CSS !== 'undefined' &&
@@ -296,7 +299,7 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
   }
 
   const canAuto = (dir: 1 | -1): boolean => {
-    if (!instance.adapter.capabilities.append) return false
+    if (!appendOf(store, props.name)) return false
     const s = getState<T>(store, props.name)
     if (s.status !== 'idle') return false
     if (!canLoadMore(dir, s)) return false
@@ -435,7 +438,7 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
           }
           holdRaf = requestAnimationFrame(tick)
         }
-        instance.scrollDriver = (intent) => {
+        setScrollDriver(store, props.name, (intent) => {
           armed[-1] = false
           armed[1] = triggerOf(1) !== 'chat'
           gestureBudget = 0
@@ -464,7 +467,7 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
           }
           if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run)
           else run()
-        }
+        })
         const tracker = createAnchorTracker(
           containerRef ?? null,
           {
@@ -493,7 +496,7 @@ function ContainerHost<T>(props: PaginatorHostProps<T>) {
         onCleanup(() => {
           anchors.setTracker(null)
           tracker?.destroy()
-          instance.scrollDriver = null
+          setScrollDriver(store, props.name, null)
           cancelAnimationFrame(holdRaf)
         })
       },

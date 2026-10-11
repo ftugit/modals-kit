@@ -9,6 +9,9 @@
   import {
     getState,
     initPaginator,
+    appendOf,
+    setAppendMode,
+    setScrollDriver,
     loadMore,
     onExternalPage,
     reportAnchor,
@@ -187,8 +190,9 @@
   const triggerOf = (dir: 1 | -1): EdgeTrigger =>
     dir === -1 ? options.topTrigger : options.bottomTrigger
 
+  // Режим — для СВОЕГО стора: общий адаптер реестра не правится (C11).
   $effect(() => {
-    instance.adapter.capabilities.append = options.mode === 'accumulate'
+    setAppendMode(store, name, options.mode === 'accumulate')
   })
 
   const nativeAnchoring =
@@ -215,7 +219,7 @@
   }
 
   const canAuto = (dir: 1 | -1): boolean => {
-    if (!instance.adapter.capabilities.append) return false
+    if (!appendOf(store, name)) return false
     const s = getState<any>(store, name)
     if (s.status !== 'idle') return false
     if (!canLoadMore(dir, s)) return false
@@ -356,7 +360,6 @@
     else run()
   }
 
-  instance.scrollDriver = scrollDriver
 
   $effect(() => {
     const c = containerRef
@@ -550,6 +553,9 @@
     // Единственное место, где библиотека касается навигации (канон D2): роутер
     // слоя фреймворка уезжает в URL-транспорт адаптера — фичи адрес не знают.
     if (router) adapter.setRouter(router)
+    // Только в браузере и для своего стора: на верхнем уровне скрипта присвоение
+    // шло и при SSR, и глобальный экземпляр держал замыкание последнего хоста (C11).
+    setScrollDriver(store, name, scrollDriver)
 
     // Синхронная подписка на патчи состояния: тот же тайминг, что у Solid-эффекта
     // в исходнике (захват опорной точки до вставки слотов).
@@ -560,7 +566,7 @@
     return () => {
       unsubscribe?.()
       anchors.setTracker(null)
-      instance.scrollDriver = null
+      setScrollDriver(store, name, null)
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(holdRaf)
       if (bindsUrl) adapter.setRouter(null)
     }

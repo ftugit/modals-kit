@@ -2,7 +2,7 @@
 // Дословный порт core.ts React-версии: jotai-store → Store из store.ts, логика 1-в-1
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
 import { canLoadMore, deriveMeta, flattenPages } from './pure'
-import type { LibError } from './types'
+import type { LibError, ScrollDriver } from './types'
 import { getPaginator, type LastAction, type PaginatorInstance } from './registry'
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraValue, PageResponse, PaginatorState } from './types'
@@ -98,6 +98,15 @@ type Session = {
    * двух одинаковых обращений к данным (замер логом сети на превью: ×3 на клик).
    */
   prefetchInflight: Set<number>
+  /** Исполнитель команд скролла хоста этого стора (SPEC §3.7); null — хоста нет. */
+  scrollDriver: ScrollDriver | null
+  /**
+   * Режим хоста: копить страницы (accumulate) или заменять. Задаёт хост своего
+   * стора; общий адаптер реестра хост больше не правит (C11: флип
+   * `adapter.capabilities.append` менял режим всем хостам с тем же именем).
+   * undefined — как объявил адаптер.
+   */
+  append?: boolean
 }
 
 const sessions = new WeakMap<Store, Map<string, Session>>()
@@ -107,10 +116,31 @@ function sessionOf(store: Store, name: string): Session {
   if (!byName) { byName = new Map(); sessions.set(store, byName) }
   let session = byName.get(name)
   if (!session) {
-    session = { replaceAbort: null, lastAction: null, prefetched: new Map(), prefetchGen: 0, prefetchInflight: new Set() }
+    session = {
+      replaceAbort: null, lastAction: null, prefetched: new Map(), prefetchGen: 0,
+      prefetchInflight: new Set(), scrollDriver: null,
+    }
     byName.set(name, session)
   }
   return session
+}
+
+/**
+ * Хост регистрирует исполнителя команд скролла для СВОЕГО стора (в `onMount`,
+ * не при SSR) и снимает его при размонтировании.
+ */
+export function setScrollDriver(store: Store, name: string, driver: ScrollDriver | null): void {
+  sessionOf(store, name).scrollDriver = driver
+}
+
+/** Режим накопления страниц для хоста этого стора (см. `Session.append`). */
+export function setAppendMode(store: Store, name: string, append: boolean | undefined): void {
+  sessionOf(store, name).append = append
+}
+
+/** Копит ли пагинатор страницы в этом сторе: режим хоста, иначе объявление адаптера. */
+export function appendOf(store: Store, name: string): boolean {
+  return sessionOf(store, name).append ?? getPaginator(name).adapter.capabilities.append
 }
 
 /** Отменить активную загрузку пагинатора в этом сторе. */
@@ -217,7 +247,7 @@ export async function fetchReplace<T>(
       error: null,
     }))
     mergeResponseExtra<T>(store, name, prefetched)
-    instance.scrollDriver?.({ type: 'top' })
+    sessionOf(store, name).scrollDriver?.({ type: 'top' })
     instance.emitter.emit({ type: 'loaded', page, itemCount: prefetched.items.length, via: phase })
     return
   }
@@ -274,7 +304,7 @@ export async function fetchReplace<T>(
   // Указатель следующего шага — из того же ответа, что и строки: отдельного
   // «узнать курсор» запроса быть не может, а ссылка обязана его нести.
   mergeResponseExtra<T>(store, name, resp)
-  instance.scrollDriver?.({ type: 'top' })
+  sessionOf(store, name).scrollDriver?.({ type: 'top' })
   if (resp.items.length === 0) instance.emitter.emit({ type: 'empty-page', page })
   instance.emitter.emit({ type: 'loaded', page, itemCount: resp.items.length, via: phase })
 }
@@ -374,12 +404,12 @@ export async function goToPage<T>(store: Store, name: string, page: number): Pro
   // Раунд-4: скролл к якорю загруженной страницы — только в accumulate-семантике
   // (capabilities.append). В single («классика») любой переход = REPLACE, даже на
   // загруженную: иначе live-переключение режима оставляло бы стек страниц.
-  if (state.loadedPages.includes(page) && instance.adapter.capabilities.append) {
+  if (state.loadedPages.includes(page) && appendOf(store, name)) {
     if (page !== state.page) {
       patch<T>(store, name, (s) => ({ ...s, page }))
       instance.emitter.emit({ type: 'page-changed', page, via: 'go' })
     }
-    instance.scrollDriver?.({ type: 'page', page })
+    sessionOf(store, name).scrollDriver?.({ type: 'page', page })
     safePersist(store, name)
     return
   }
@@ -395,7 +425,7 @@ export async function goToPage<T>(store: Store, name: string, page: number): Pro
  */
 export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Promise<void> {
   const instance = getPaginator(name)
-  if (!instance.adapter.capabilities.append) return
+  if (!appendOf(store, name)) return
   const state = getState<T>(store, name)
   if (state.status === 'loading' || state.status === 'init') return
   if (!canLoadMore(dir, state)) return
@@ -417,7 +447,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
   // оригинале (page = подгруженная страница). UX «скролл не меняет положение»
   // (требование 2026-09-22, вариант A) реализован ХОСТОМ (holdAbove): опорный якорь —
   // бывшая первая страница (intent.page + 1), её сдвиги компенсируются в container.
-  if (dir === -1) instance.scrollDriver?.({ type: 'page', page: target, reason: 'prepend' })
+  if (dir === -1) sessionOf(store, name).scrollDriver?.({ type: 'page', page: target, reason: 'prepend' })
   let resp: PageResponse<T>
   try {
     resp = (await instance.adapter.loadPage({
@@ -511,7 +541,7 @@ export async function onExternalPage<T>(store: Store, name: string, page: number
   if (state.loadedPages.includes(page)) {
     patch<T>(store, name, (s) => ({ ...s, page }))
     instance.emitter.emit({ type: 'page-changed', page, via: 'url' })
-    instance.scrollDriver?.({ type: 'page', page })
+    sessionOf(store, name).scrollDriver?.({ type: 'page', page })
     return
   }
   patch<T>(store, name, (s) => ({ ...s, page }))
@@ -521,7 +551,7 @@ export async function onExternalPage<T>(store: Store, name: string, page: number
 
 /** Повтор последнего действия; после ошибки init (lastAction null) — повторный init. */
 export async function retry<T>(store: Store, name: string): Promise<void> {
-  const instance = getPaginator(name)
+  getPaginator(name) // неизвестное имя — ошибка, как и раньше
   const last = sessionOf(store, name).lastAction
   if (last?.kind === 'goToPage') {
     await goToPage<T>(store, name, last.page)
@@ -540,9 +570,9 @@ export async function retry<T>(store: Store, name: string): Promise<void> {
  * Потребители — любой сценарий «вернуть viewport к странице N» без семантики перехода.
  */
 export function scrollToPage<T>(store: Store, name: string, page: number): void {
-  const instance = getPaginator(name)
+  getPaginator(name) // неизвестное имя — ошибка, как и раньше
   if (!getState<T>(store, name).loadedPages.includes(page)) return
-  instance.scrollDriver?.({ type: 'page', page })
+  sessionOf(store, name).scrollDriver?.({ type: 'page', page })
 }
 
 /** Якорь сообщил текущую страницу (R3): только page + событие + persist, без fetch. */
