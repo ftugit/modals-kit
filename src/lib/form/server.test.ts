@@ -1,7 +1,7 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
 import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, defineForm, makeFieldSugar } from './index'
-import { createFormHandler } from './server'
+import { createFormHandler, windowThrottle } from './server'
 
 const field = makeFieldSugar()
 const base = defineForm({ id: 'probe', fields: { name: field.text({}) } })
@@ -53,5 +53,31 @@ suite('сбой вне execute', () => {
     expect(r.result.errors.map((e) => e.code)).toEqual(['handler.failed'])
     expect(JSON.stringify(r.result)).not.toContain('ECONNREFUSED')
     expect(String(seen[0]?.['failure'])).toContain('ECONNREFUSED')
+  })
+})
+
+suite('частота (F18)', () => {
+  const req = (ip = '1.1.1.1') => ({ request: new Request('http://x/', { headers: { 'x-real-ip': ip } }) })
+
+  test('без ключа ограничитель не создаётся: подделываемого умолчания нет', () => {
+    expect(() => windowThrottle({ limit: 1, windowMs: 1000 } as never)).toThrow(/key обязателен/)
+  })
+
+  test('лимит считается по заданному ключу', () => {
+    const t = windowThrottle({ limit: 2, windowMs: 1000, key: (r) => r.headers.get('x-real-ip')! }, () => 0)
+    expect(t.check(req()).allowed).toBe(true)
+    expect(t.check(req()).allowed).toBe(true)
+    expect(t.check(req())).toEqual({ allowed: false, retryAfterMs: 1000 })
+    expect(t.check(req('2.2.2.2')).allowed).toBe(true)
+  })
+
+  test('окна без попаданий удаляются: память не растёт с числом разовых ключей', () => {
+    let now = 0
+    const t = windowThrottle({ limit: 5, windowMs: 1000, key: (r) => r.headers.get('x-real-ip')! }, () => now)
+    for (let i = 0; i < 500; i++) t.check(req(`10.0.${i >> 8}.${i & 255}`))
+    expect(t.size).toBe(500)
+    now = 1500
+    t.check(req('9.9.9.9'))
+    expect(t.size).toBe(1)
   })
 })

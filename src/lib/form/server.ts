@@ -187,23 +187,46 @@ export interface Throttle {
   check(ctx: { request: Request }): Promise<ThrottleVerdict> | ThrottleVerdict
 }
 
-/** Отказ по частоте идёт ДО чтения тела: иначе отказ расходует предел. */
 /**
- * Ограничение частоты скользящим окном в памяти процесса.
- * @param o Лимит, окно и функция ключа (по умолчанию `x-forwarded-for`).
+ * Ограничение частоты скользящим окном в памяти процесса. Отказ по частоте идёт
+ * ДО чтения тела: иначе отказ расходует предел.
+ *
+ * Ключ обязателен: умолчания «по адресу клиента» у библиотеки нет и быть не может.
+ * Сырой `x-forwarded-for` задаёт сам клиент — подставив случайный, он получает
+ * новое окно на каждый запрос. Доверенный адрес знает только развёртывание:
+ * заголовок, который ПЕРЕЗАПИСЫВАЕТ ваш прокси, идентификатор сессии или
+ * пользователя. Для SvelteKit это то же, что `event.getClientAddress()` с
+ * настройками адаптера (`ADDRESS_HEADER`, `XFF_DEPTH` у adapter-node).
+ *
+ * Память: окна без попаданий удаляются; полный обход ключей — не чаще раза за
+ * `windowMs`, так что в карте живут только ключи, активные за последнее окно.
+ * @param o Лимит, окно и функция ключа.
  * @param now Часы — для тестов.
+ * @returns Ограничитель; `size` — число живых окон (для наблюдения и тестов).
  */
 export function windowThrottle(
-  o: { limit: number; windowMs: number; key?: (r: Request) => string },
+  o: { limit: number; windowMs: number; key: (r: Request) => string },
   now: () => number = Date.now,
-): Throttle {
+): Throttle & { readonly size: number } {
+  if (typeof o.key !== 'function')
+    throw new TypeError('[form] windowThrottle: key обязателен — сырой x-forwarded-for подделывается клиентом')
   const hits = new Map<string, number[]>()
-  const keyOf = o.key ?? ((r: Request) => r.headers.get('x-forwarded-for') ?? 'anon')
+  let sweptAt = now()
+  const live = (list: readonly number[], t: number) => list.filter((x) => t - x < o.windowMs)
+  const sweep = (t: number) => {
+    sweptAt = t
+    for (const [key, list] of hits) {
+      const rest = live(list, t)
+      if (rest.length) hits.set(key, rest)
+      else hits.delete(key)
+    }
+  }
   return {
     check({ request }) {
-      const key = keyOf(request)
+      const key = o.key(request)
       const t = now()
-      const list = (hits.get(key) ?? []).filter((x) => t - x < o.windowMs)
+      if (t - sweptAt >= o.windowMs) sweep(t)
+      const list = live(hits.get(key) ?? [], t)
       if (list.length >= o.limit) {
         hits.set(key, list)
         return { allowed: false, retryAfterMs: o.windowMs - (t - list[0]!) }
@@ -212,6 +235,7 @@ export function windowThrottle(
       hits.set(key, list)
       return { allowed: true }
     },
+    get size() { return hits.size },
   }
 }
 
