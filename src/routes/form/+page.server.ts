@@ -3,8 +3,8 @@ import { fail, type Actions } from '@sveltejs/kit'
 import { handleSignup } from '$lib/ui/demo/form/handle'
 
 export const actions: Actions = {
-  default: async ({ request }) => {
-    const { result, status } = await handleSignup(request, 'action')
+  default: async (event) => {
+    const { result, status } = await handleSignup(event.request, 'action', event)
     return result.ok ? { result } : fail(status, { result })
   },
 }

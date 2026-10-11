@@ -80,6 +80,33 @@ suite('частота (F18)', () => {
     t.check(req('9.9.9.9'))
     expect(t.size).toBe(1)
   })
+  test('контекст запроса из handle доходит до ключа: окно на адрес клиента', async () => {
+    type Ev = { getClientAddress(): string }
+    const seen: (Ev | undefined)[] = []
+    const throttle = windowThrottle<Ev>({
+      limit: 1, windowMs: 60_000,
+      key: (_r, event) => { seen.push(event); return event!.getClientAddress() },
+    })
+    const h = createFormHandler<unknown, Ev>({
+      description: base, throttle, execute: (c) => { c.commit(); return {} },
+    })
+    const ev = (ip: string): Ev => ({ getClientAddress: () => ip })
+    const a = ev('1.1.1.1')
+    expect((await h(post({ ...envelopeOf(), name: 'a' }), 'fetch', a)).status).toBe(200)
+    expect((await h(post({ ...envelopeOf(), name: 'a' }), 'fetch', a)).status).toBe(429)
+    expect((await h(post({ ...envelopeOf(), name: 'a' }), 'fetch', ev('2.2.2.2'))).status).toBe(200)
+    expect(seen[0]).toBe(a)
+  })
+
+  test('без event ключ получает undefined — бросающий ключ даёт отказ, а не общее окно', async () => {
+    const throttle = windowThrottle<{ getClientAddress(): string }>({
+      limit: 100, windowMs: 60_000, key: (_r, event) => event!.getClientAddress(),
+    })
+    const h = createFormHandler({ description: base, throttle, execute: (c) => { c.commit(); return {} } })
+    const r = await h(post({ ...envelopeOf(), name: 'a' }))
+    expect(r.result.ok).toBe(false)
+    expect(throttle.size).toBe(0)
+  })
 })
 
 suite('идемпотентность: параллельный повтор (F19)', () => {

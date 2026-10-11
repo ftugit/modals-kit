@@ -4,6 +4,7 @@
 // конверт, описание, идемпотентность, частота, асинхронные проверки и
 // обработчик ошибок — всё в одном конвейере. Приложение пишет только execute.
 // Отдельная точка входа: серверные слои не должны попасть в браузерный бандл.
+import type { RequestEvent } from '@sveltejs/kit'
 import {
   createFormHandler, MemoryIdempotencyStore, windowThrottle, type Handled,
 } from '$lib/form/server'
@@ -14,7 +15,13 @@ import { checks } from './extend'
 import { resolveDescription, signup } from './signup'
 
 const idempotency = new MemoryIdempotencyStore()
-const throttle = windowThrottle({ limit: 30, windowMs: 60_000, key: () => 'demo' })
+// Лимит — на адрес клиента (F18): `getClientAddress()` учитывает настройки
+// адаптера (ADDRESS_HEADER/XFF_DEPTH), сырой x-forwarded-for не читается.
+// Маршрут обязан передать event: без него ключ бросает, а не сводит всех в одно окно.
+const throttle = windowThrottle<RequestEvent>({
+  limit: 30, windowMs: 60_000,
+  key: (_request, event) => event!.getClientAddress(),
+})
 
 const created: string[] = []
 export const createdCount = () => created.length
@@ -52,7 +59,7 @@ function expandFor(base: FormDescription, form: FormData | null): FormDescriptio
 }
 
 function handlerFor(description: typeof signup) {
-  return createFormHandler({
+  return createFormHandler<unknown, RequestEvent>({
     description,
     // Слой 02 (origin) включён проектом, а не оставляется на волю маршрута:
     // «забыл указать origin» иначе означает «принимаем межсайтовый POST».
@@ -71,7 +78,7 @@ function handlerFor(description: typeof signup) {
 }
 
 export async function handleSignup(
-  request: Request, from: 'action' | 'fetch',
+  request: Request, from: 'action' | 'fetch', event: RequestEvent,
 ): Promise<Handled> {
   // набор полей НЕ приходит от клиента: описание поднимается по конверту
   const probe = await request.clone().formData().catch(() => null)
@@ -104,5 +111,5 @@ export async function handleSignup(
       },
     }
   }
-  return handlerFor(expanded)(request, from)
+  return handlerFor(expanded)(request, from, event)
 }

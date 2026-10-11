@@ -266,8 +266,14 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 }
 
 export interface ThrottleVerdict { allowed: boolean; retryAfterMs?: number }
-export interface Throttle {
-  check(ctx: { request: Request }): Promise<ThrottleVerdict> | ThrottleVerdict
+/**
+ * Ограничитель частоты. `event` — контекст запроса фреймворка, который маршрут
+ * передал третьим аргументом приёмника (`handle(request, from, event)`):
+ * библиотека его не читает, только доносит до ключа. Для SvelteKit это
+ * `RequestEvent` с `getClientAddress()`.
+ */
+export interface Throttle<E = unknown> {
+  check(ctx: { request: Request; event?: E }): Promise<ThrottleVerdict> | ThrottleVerdict
 }
 
 /**
@@ -278,19 +284,22 @@ export interface Throttle {
  * Сырой `x-forwarded-for` задаёт сам клиент — подставив случайный, он получает
  * новое окно на каждый запрос. Доверенный адрес знает только развёртывание:
  * заголовок, который ПЕРЕЗАПИСЫВАЕТ ваш прокси, идентификатор сессии или
- * пользователя. Для SvelteKit это то же, что `event.getClientAddress()` с
- * настройками адаптера (`ADDRESS_HEADER`, `XFF_DEPTH` у adapter-node).
+ * пользователя. Для SvelteKit это `event.getClientAddress()` с настройками
+ * адаптера (`ADDRESS_HEADER`, `XFF_DEPTH` у adapter-node): маршрут передаёт
+ * `event` в приёмник, и он приходит вторым аргументом ключа —
+ * `key: (_request, event) => event!.getClientAddress()`. Без `event` (вызов
+ * приёмника без третьего аргумента) ключ получает `undefined`.
  *
  * Память: окна без попаданий удаляются; полный обход ключей — не чаще раза за
  * `windowMs`, так что в карте живут только ключи, активные за последнее окно.
- * @param o Лимит, окно и функция ключа.
+ * @param o Лимит, окно и функция ключа `(request, event) => string`.
  * @param now Часы — для тестов.
  * @returns Ограничитель; `size` — число живых окон (для наблюдения и тестов).
  */
-export function windowThrottle(
-  o: { limit: number; windowMs: number; key: (r: Request) => string },
+export function windowThrottle<E = unknown>(
+  o: { limit: number; windowMs: number; key: (r: Request, event: E | undefined) => string },
   now: () => number = Date.now,
-): Throttle & { readonly size: number } {
+): Throttle<E> & { readonly size: number } {
   if (typeof o.key !== 'function')
     throw new TypeError('[form] windowThrottle: key обязателен — сырой x-forwarded-for подделывается клиентом')
   const hits = new Map<string, number[]>()
@@ -305,8 +314,8 @@ export function windowThrottle(
     }
   }
   return {
-    check({ request }) {
-      const key = o.key(request)
+    check({ request, event }) {
+      const key = o.key(request, event)
       const t = now()
       if (t - sweptAt >= o.windowMs) sweep(t)
       const list = live(hits.get(key) ?? [], t)
@@ -344,7 +353,7 @@ export class ExecuteFailure extends Error {
 }
 
 /** Настройка приёма запроса формой. */
-export interface HandlerOptions<T = unknown> {
+export interface HandlerOptions<T = unknown, E = unknown> {
   /** Описание формы: изоморфный модуль, импортированный и сервером. */
   description: FormDescription
   /** Источник описания для полей из рантайма. */
@@ -364,12 +373,12 @@ export interface HandlerOptions<T = unknown> {
   /** Хранилище идемпотентности: повтор не выполняется заново. */
   idempotency?: IdempotencyStore
   /** Ограничение частоты: отказ ДО чтения тела. */
-  throttle?: Throttle
+  throttle?: Throttle<E>
   /** Обработчик ошибок проекта. Проходят оба пути. */
   onErrors?: ErrorHandler
   /** Телеметрия: одна запись на запрос; при сбое вне execute — с полем `failure`. */
   observe?: (e: Record<string, unknown>) => void
-  /** Своий порядок слоёв. Обязательные выбрасывать нельзя. */
+  /** Свой порядок слоёв. Обязательные выбрасывать нельзя. */
   order?: readonly Layer[]
   /** Бизнес-действие: обязано позвать `commit()` или `fail()`. */
   execute(ctx: ExecuteContext): Promise<{ data?: T; redirect?: string }> | { data?: T; redirect?: string }
@@ -381,9 +390,11 @@ export interface Handled<T = unknown> { result: Result<T>; status: number }
 /**
  * Собрать приёмник запроса из переставляемых слоёв.
  * @param o Описание, слои, проверки и бизнес-действие.
- * @returns Функция `Request → { result, status }`: кодировку выбирает маршрут.
+ * @returns Функция `(request, from?, event?) → { result, status }`: кодировку
+ *   выбирает маршрут. `event` — контекст запроса фреймворка (для SvelteKit —
+ *   `RequestEvent`); библиотека передаёт его ограничителю частоты, не читая.
  */
-export function createFormHandler<T>(o: HandlerOptions<T>) {
+export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
   const base = o.description
   const render = makeRenderer([o.messages, base.messages as never, ru], base.policy.interpolate)
   const limits: Limits = { ...DEFAULT_LIMITS, ...o.limits }
@@ -399,7 +410,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
   if (o.idempotency && !o.idempotency.reserve !== !o.idempotency.release)
     throw new Error('[form] IdempotencyStore: reserve и release реализуются только вместе')
 
-  return async function handle(request: Request, from: 'action' | 'fetch' = 'action'):
+  return async function handle(request: Request, from: 'action' | 'fetch' = 'action', event?: E):
     Promise<Handled<T>> {
     const started = Date.now()
     const ctx: Ctx = { request, description: base, limits, reached: 'rejected', warnings: [] }
@@ -450,7 +461,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
 
     try {
       if (o.throttle) {
-        const verdict = await o.throttle.check({ request })
+        const verdict = await o.throttle.check({ request, event })
         if (!verdict.allowed)
           return finish(fail(reject(429, 'rate.limited', { retryAfterMs: verdict.retryAfterMs })))
       }

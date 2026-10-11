@@ -2,7 +2,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit'
 import { handleSignup } from '$lib/ui/demo/form/handle'
 
-export const POST: RequestHandler = async ({ request }) => {
-  const { result, status } = await handleSignup(request, 'fetch')
+export const POST: RequestHandler = async (event) => {
+  const { result, status } = await handleSignup(event.request, 'fetch', event)
   return json(result, { status: status === 0 ? 200 : status })
 }
