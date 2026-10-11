@@ -35,6 +35,12 @@ import {
   SHIKIMORI_FILTER_RELOAD_KEYS,
   SHIKIMORI_FILTER_SEARCH,
 } from '../../../../content/shikimori-filters'
+import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
+import {
+  RICKMORTY_FILTER_KEYS,
+  RICKMORTY_FILTER_SCHEMA,
+  RICKMORTY_FILTER_SEARCH,
+} from '../../../../content/rickmorty-filters'
 import {
   reportSearchCorrection,
   searchQueryValidator,
@@ -80,12 +86,23 @@ export type DemoStore = 'url' | 'local' | 'none'
  * (`#lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
  * только форма записи общая с каталогом.
  */
-export type DemoSrc = 'products' | 'photos' | 'animes' | 'db'
-export const DEMO_SRCS: readonly DemoSrc[] = ['products', 'photos', 'animes', 'db']
+export type DemoSrc = 'products' | 'photos' | 'animes' | 'rm-rest' | 'rm-graphql' | 'db'
+export const DEMO_SRCS: readonly DemoSrc[] = ['products', 'photos', 'animes', 'rm-rest', 'rm-graphql', 'db']
+
+/**
+ * Rick and Morty — ОДИН источник в двух версиях API (F54): `rm-rest` и
+ * `rm-graphql` различаются только транспортом. Схема фильтров у них общая и
+ * статичная, ключи адреса те же — поэтому при переключении версии фильтры и
+ * запрос остаются в адресе и применяются новой версией без изменений в lib.
+ */
+export const DEMO_RICKMORTY_SRCS: Readonly<Partial<Record<DemoSrc, RickMortyApi>>> = {
+  'rm-rest': 'rest',
+  'rm-graphql': 'graphql',
+}
 
 /** Ключи потребителя, живущие в хранилище пагинатора (RestorableState.extra). */
 export type DemoExtra = {
-  /** Источник данных: товары, фото или живой каталог Shikimori. */
+  /** Источник данных: товары, фото, живые Shikimori и Rick and Morty (REST/GraphQL), БД. */
   src: DemoSrc
   /** Родной поиск источника (`q` → `search` в API). Выключен → запрос не применяется. */
   srch: boolean
@@ -175,10 +192,19 @@ export const DEMO_LIVE_SRC = 'animes'
  * (`capabilities.filters`) — НЕ основание её собирать. У БД фильтры есть
  * (`flt`/`ord` адресом), а схемы Shikimori у них нет и быть не может.
  */
-export const DEMO_SCHEMA_SRCS: readonly DemoSrc[] = [DEMO_LIVE_SRC]
+export const DEMO_SCHEMA_SRCS: readonly DemoSrc[] = [DEMO_LIVE_SRC, 'rm-rest', 'rm-graphql']
 
 export function demoHasFilterSchema(src: DemoSrc | undefined): boolean {
   return src != null && DEMO_SCHEMA_SRCS.includes(src)
+}
+
+/**
+ * Схема, известная без сервера: у Rick and Morty значения фильтров статичны
+ * (их объявляет документация API), поэтому схема одна и та же на сервере и в
+ * браузере. `null` — статической схемы нет (Shikimori собирает свою сервером).
+ */
+export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterSchema | null {
+  return src != null && src in DEMO_RICKMORTY_SRCS ? RICKMORTY_FILTER_SCHEMA : null
 }
 
 /**
@@ -293,7 +319,7 @@ export const DEMO_RELOAD_KEYS = [
   // сам сервер, и сброс по нему означал бы «загрузили → сбросили → загрузили».
   // Снимается он другим механизмом — `positionKeys` (см. `DEMO_POSITION_KEYS`).
   'cur',
-  ...SHIKIMORI_FILTER_RELOAD_KEYS,
+  ...new Set([...SHIKIMORI_FILTER_RELOAD_KEYS, ...RICKMORTY_FILTER_KEYS]),
 ] as const
 
 const oneOf =
@@ -330,6 +356,10 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   // Ключи фильтров каталога Shikimori: форма значения — из общего со схемой
   // объявления (`content/shikimori-filters`); допустимость значений проверяет
   // схема на сервере, слой адреса отвечает только за форму и типы.
+  // Ключи Rick and Morty — тем же способом; общий ключ `filters.status` берёт
+  // валидатор Shikimori (список через запятую): одно значение он пропускает
+  // так же, а допустимость проверит схема выбранного источника.
+  ...RICKMORTY_FILTER_SEARCH,
   ...SHIKIMORI_FILTER_SEARCH,
 }
 
@@ -383,6 +413,50 @@ let liveTransport: LiveTransport | null = null
 /** Подставляет серверный транспорт живого источника (только из server-only кода). */
 export function setLiveServerTransport(transport: LiveTransport | null): void {
   liveTransport = transport
+}
+
+/** Серверный мост Rick and Morty — тот же приём, что у Shikimori. */
+export type RickMortyTransport = {
+  fetchPage(query: {
+    api: RickMortyApi
+    page: number
+    limit: number
+    search?: string
+    filters?: Readonly<Record<string, unknown>>
+  }): Promise<CharactersPage>
+}
+
+let rickMortyTransport: RickMortyTransport | null = null
+
+/** Подставляет серверный транспорт Rick and Morty (только из server-only кода). */
+export function setRickMortyServerTransport(transport: RickMortyTransport | null): void {
+  rickMortyTransport = transport
+}
+
+/**
+ * Страница персонажей: сервер — напрямую в API, браузер — через свой бэкенд.
+ * Число страниц API отдаёт (`count`), поэтому у источника есть номера страниц.
+ */
+async function loadCharactersPage(
+  api: RickMortyApi,
+  look: SourceLook,
+  q: string,
+  filters: Readonly<Record<string, string>>,
+): Promise<PageResponse<CatalogItem>> {
+  const query = {
+    api,
+    page: look.page,
+    limit: look.pageSize,
+    ...(q ? { search: q } : {}),
+    ...(Object.keys(filters).length ? { filters } : {}),
+  }
+  const res = rickMortyTransport
+    ? await rickMortyTransport.fetchPage(query)
+    : await getCharactersPage({ ...query, signal: look.signal })
+  for (const item of res.dropped ?? []) {
+    console.warn(`[rickmorty] фильтр «${item.key}» не применён: ${item.reason}`)
+  }
+  return { items: res.items, totalItems: res.totalItems, totalPages: res.totalPages, hasNext: res.hasNext }
 }
 
 /**
@@ -485,6 +559,26 @@ function createAnimesSource(): AdaptedSource<CatalogItem> {
 }
 
 /**
+ * Rick and Morty как источник: родной поиск по имени (`q` → `name` API),
+ * фильтры из статической схемы, totals (`count` API) и сканирование для
+ * lib/search батчами по странице API. Версия API — параметр, а не второй
+ * источник: всё, кроме транспорта, у REST и GraphQL общее.
+ */
+function createRickMortySource(api: RickMortyApi): AdaptedSource<CatalogItem> {
+  return defineSource<CatalogItem>({
+    name: `rickmorty-${api}`,
+    record: catalogRecord,
+    search: { minLength: 2 },
+    scan: { batchSize: 20 },
+    totals: true,
+    filters: RICKMORTY_FILTER_KEYS,
+    data: (look, input) => loadCharactersPage(api, look, input.q, input.filters),
+  })
+    .with(withSearchGate({ gate: 'srch' }))
+    .with(withTotalsGate({ gate: 'total' }))
+}
+
+/**
  * Комбинированный источник пагинатора — матрица опций панели:
  *
  *   srch  ls   что происходит
@@ -530,6 +624,8 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
       // (не «включено вхолостую», а честно недоступно).
       photos: createLocalItemsSource('photos').with(withTotalsGate({ gate: 'total' })),
       animes: withLibSearch(createAnimesSource(), { gate: 'ls', name, ...channels }),
+      'rm-rest': withLibSearch(createRickMortySource('rest'), { gate: 'ls', name, ...channels }),
+      'rm-graphql': withLibSearch(createRickMortySource('graphql'), { gate: 'ls', name, ...channels }),
       // БД — НЕ второй реализации списка: данные читает тот же `fetchDbPosts`
       // (SSR — прямаем в слой, браузер — `/api/db-posts`), отличие только в форме
       // записи (паспорт `catalogRecord`) и в том, что здесь запись — часть union'а.

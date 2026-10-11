@@ -49,9 +49,13 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // не дублируются — большой общий чанк (51.6) разошёлся на несколько (svelte 32.5,
 // primitives 10.8, classes 9.8, shell 5.9): gzip по частям хуже, плюс узлы групп.
 // По постоянному решению оператора — +5: 228.3 → 233.3, 214 → 219, /modals 155 → 160.
+// REVISION 2026-10-12 (ход 40, F54 — Rick and Morty REST/GraphQL в демо-пагинаторе):
+// весь JS 220.0 > 219.0 (+2 вьюхи персонажа, клиент источника, статическая схема).
+// По постоянному решению оператора — +5: 219 → 224. /paginator 188.5 / 196.5 — в пределах;
+// все immutable 233.3 / 233.3 — на границе, не превышен, не тронут.
 const LIMITS = {
   allImmutableGzip: 233.3 * KiB,
-  allJsGzip: 219 * KiB,
+  allJsGzip: 224 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,

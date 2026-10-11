@@ -33,15 +33,18 @@
     demoHashAnchor,
     demoPreservedSearch,
     demoQueryOf,
-    demoHasFilterSchema,
+    DEMO_LIVE_SRC,
+    demoStaticFilterSchema,
     loadFilterSchema,
     type DemoExtra,
     type DemoStore,
   } from './definition'
   import FiltersPanel from './FiltersPanel.svelte'
-  import { catalogTestId, isAnimeItem, isDbItem, shotHeight, type CatalogItem } from './item-views'
+  import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
+  import CharacterRow from './CharacterRow.svelte'
+  import CharacterTile from './CharacterTile.svelte'
   // Строка записи БД — общий компонент с `/db-demo` (`#lib/ui/demo/db-list`),
 // здесь ей передаётся только оформление карточки и опознавательный testid.
 import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
@@ -77,13 +80,16 @@ import ItemRow from './ItemRow.svelte'
         ['products', 'Товары (299, локально)'],
         ['photos', 'Фото (131, локально)'],
         ['animes', 'Shikimori (живой API)'],
+        ['rm-rest', 'Rick and Morty (REST, живой API)'],
+        ['rm-graphql', 'Rick and Morty (GraphQL, живой API)'],
         ['db', 'БД (записи demo_post, #lib/db)'],
       ],
     },
     {
       key: 'cur',
       label: 'Курсор вместо номеров страниц',
-      // Опция ИСТОЧНИКА: у товаров, фото и Shikimori указателя следующего шага нет,
+      // Опция ИСТОЧНИКА: у товаров, фото, Shikimori и Rick and Morty указателя
+      // следующего шага нет (у Rick and Morty — ни в REST, ни в GraphQL: только номера),
       // поэтому поле связано с выбором источника, а не с догадкой разметки. Работает
       // и без JavaScript: ?page.cur=1 попадает в адрес, а токен выдаёт сервер.
       enabledBy: [{ field: 'src', equals: 'db' }],
@@ -277,7 +283,19 @@ import ItemRow from './ItemRow.svelte'
   // фильтров не будет вовсе). Дальше схемой владеет компонент: следовать пропсу нельзя —
   // данные маршрута приходят новым объектом на каждую навигацию с загрузкой, и
   // `{#key schema}` в FiltersPanel пересоздавал бы форму, теряя введённое.
-  let filterSchema = $state<CatalogFilterSchema | null>(untrack(() => schema))
+  // Здесь хранится только ЖИВАЯ схема Shikimori; статическая (Rick and Morty)
+  // выводится из источника, а показ выбирает `filterSchema` по текущему `src`.
+  let liveSchema = $state<CatalogFilterSchema | null>(
+    untrack(() => (schema?.source === 'shikimori' ? schema : null)),
+  )
+  /**
+   * Схема панели — по ТЕКУЩЕМУ источнику: статическая у Rick and Morty, живая у
+   * Shikimori, у остальных нет. Раньше схема была одним состоянием, и
+   * загруженная для Shikimori оставалась на экране после переключения на БД.
+   */
+  const filterSchema = $derived(
+    demoStaticFilterSchema(cfg.src) ?? (cfg.src === DEMO_LIVE_SRC ? liveSchema : null),
+  )
   /**
    * Причина, по которой фильтров нет. Молчание тут было бы худшим ответом:
    * источник фильтры объявляет (`gates.filters`), значит пользователь ждёт
@@ -289,11 +307,11 @@ import ItemRow from './ItemRow.svelte'
     if (options.retry) filterSchemaError = null
     void loadFilterSchema()
       .then((loaded) => {
-        filterSchema = loaded
+        liveSchema = loaded
         filterSchemaError = null
       })
       .catch((error) => {
-        filterSchema = null
+        liveSchema = null
         filterSchemaError = `схема фильтров не загрузилась: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -307,7 +325,7 @@ import ItemRow from './ItemRow.svelte'
     // Живая схема есть только у источников из `DEMO_SCHEMA_SRCS`: у БД фильтры
     // тоже объявлены (`flt`/`ord` адресом), но собирать для них справочник
     // Shikimori — значит показать чужую панель.
-    if (!gates.filters || !demoHasFilterSchema(cfg.src) || filterSchema || filterSchemaError) return
+    if (!gates.filters || cfg.src !== DEMO_LIVE_SRC || liveSchema || filterSchemaError) return
     loadSchema()
   })
 
@@ -431,7 +449,7 @@ import ItemRow from './ItemRow.svelte'
             preserved={demoPreservedSearch(currentSearch())}
           />
         </div>
-      {:else if gates.filters && filterSchemaError}
+      {:else if gates.filters && cfg.src === DEMO_LIVE_SRC && filterSchemaError}
         <p
           class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
           data-testid="filters-schema-error"
@@ -483,6 +501,8 @@ import ItemRow from './ItemRow.svelte'
   {#snippet skelColumns(ctx: { page: number; index: number })}
     {#if cfg.src === 'animes'}
       <Skeleton height={240} />
+    {:else if cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
+      <Skeleton height={220} />
     {:else if cfg.src === 'db'}
       <Skeleton height={44} />
     {:else}
@@ -490,7 +510,7 @@ import ItemRow from './ItemRow.svelte'
     {/if}
   {/snippet}
   {#snippet skelList(ctx: { page: number; index: number })}
-    {#if cfg.src === 'animes'}
+    {#if cfg.src === 'animes' || cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
       <Skeleton height={52} />
     {:else if cfg.src === 'db'}
       <Skeleton height={44} />
@@ -521,6 +541,8 @@ import ItemRow from './ItemRow.svelte'
       {#snippet renderItem(item: CatalogItem)}
         {#if isAnimeItem(item)}
           <AnimeTile {item} />
+        {:else if isRickMortyItem(item)}
+          <CharacterTile {item} />
         {:else if isDbItem(item)}
           <DbPostRow
             {item}
@@ -538,6 +560,8 @@ import ItemRow from './ItemRow.svelte'
       {#snippet renderItem(item: CatalogItem)}
         {#if isAnimeItem(item)}
           <AnimeRow {item} />
+        {:else if isRickMortyItem(item)}
+          <CharacterRow {item} />
         {:else if isDbItem(item)}
           <DbPostRow
             {item}

@@ -10,13 +10,14 @@
 import type { DemoItem, Photo, Product } from '../../../../content/items'
 import { animeTexts, animeTitle, type AnimeCard } from '../../../../content/shikimori'
 import type { DbPost } from '#lib/ui/demo/db-list/definition.js'
+import { rickMortyTexts, type RickMortyCharacter } from '../../../../content/rickmorty'
 
 /**
  * Запись каталога любого источника демо. `DbPost` — не «ещё одна форма строки»,
  * а тот же тип, что отдаёт `#lib/db/index.js`: источник БД в списке источников обязан
  * приезжать без переразметки, иначе это была бы вторая реализация.
  */
-export type CatalogItem = DemoItem | AnimeCard | DbPost
+export type CatalogItem = DemoItem | AnimeCard | DbPost | RickMortyCharacter
 
 export const SHOT_COLORS = [
   'bg-chart-1/20',
@@ -44,6 +45,11 @@ export function isAnimeItem(item: CatalogItem): item is AnimeCard {
   return 'name' in item && 'url' in item
 }
 
+/** Персонаж Rick and Morty: вид (`species`) есть только у него. */
+export function isRickMortyItem(item: CatalogItem): item is RickMortyCharacter {
+  return 'species' in item && 'gender' in item
+}
+
 /**
  * Запись из БД: `created_at` есть только у неё (у товара — цена, у фото — подпись,
  * у аниме — название и ссылка). Различие по форме, а не по имени источника:
@@ -57,6 +63,7 @@ export function isDbItem(item: CatalogItem): item is DbPost {
 export function catalogTitle(item: CatalogItem): string {
   if (isDbItem(item)) return item.title
   if (isAnimeItem(item)) return animeTitle(item)
+  if (isRickMortyItem(item)) return item.name
   if (isPhotoItem(item)) return `Photo ${item.id}`
   return `Product ${item.id}`
 }
@@ -65,12 +72,13 @@ export function catalogTitle(item: CatalogItem): string {
 export function catalogTexts(item: CatalogItem): string[] {
   if (isDbItem(item)) return [item.title, item.id]
   if (isAnimeItem(item)) return animeTexts(item)
+  if (isRickMortyItem(item)) return rickMortyTexts(item)
   if (isPhotoItem(item)) return [String(item.caption ?? `Photo ${item.id}`)]
   return [String((item as Product).title ?? item.id)]
 }
 
 /** `data-testid` записи — общий для тестов и проб. */
 export function catalogTestId(item: CatalogItem, prefix?: string): string {
-  const kind = isDbItem(item) ? 'db' : isAnimeItem(item) ? 'anime' : isPhotoItem(item) ? 'photo' : 'card'
+  const kind = isDbItem(item) ? 'db' : isAnimeItem(item) ? 'anime' : isRickMortyItem(item) ? 'rm' : isPhotoItem(item) ? 'photo' : 'card'
   return `${prefix ? `${prefix}-` : ''}${kind}-${item.id}`
 }

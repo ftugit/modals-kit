@@ -1,5 +1,6 @@
 import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
+import { fetchCharactersPage } from '#lib/server/rickmorty.js'
 import {
   createPaginatorStore,
   initServerPaginator,
@@ -9,9 +10,11 @@ import {
   DEFAULT_DEMO_EXTRA,
   DEFAULT_GALLERY_EXTRA,
   demoHasFilterSchema,
+  demoStaticFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
   setLiveServerTransport,
+  setRickMortyServerTransport,
 } from './definition'
 import type { DemoSrc } from './definition'
 import type { DemoItem } from '../../../../content/items'
@@ -39,6 +42,12 @@ setLiveServerTransport({
     // меняет выдачу» вернулось бы.
     return await fetchAnimesPage({ query, filters: query.filters ?? {} })
   },
+})
+
+// Rick and Morty — тот же приём: SSR идёт в серверный модуль напрямую, один
+// конвейер фильтров с роутом `/api/rickmorty/characters`.
+setRickMortyServerTransport({
+  fetchPage: (query) => fetchCharactersPage(query),
 })
 
 export type PaginatorSearch = { page?: number }
@@ -100,7 +109,10 @@ export async function loadPaginatorDemo(ctx: {
  * панель просто не показывается, а клиент попробует схему сам.
  */
 async function schemaOf(snapshot: PaginatorState<CatalogItem>): Promise<CatalogFilterSchema | null> {
-  if (!demoHasFilterSchema(snapshot.extra?.src as DemoSrc | undefined)) return null
+  const src = snapshot.extra?.src as DemoSrc | undefined
+  if (!demoHasFilterSchema(src)) return null
+  const fixed = demoStaticFilterSchema(src)
+  if (fixed) return fixed
   try {
     return await getShikimoriFilterSchema()
   } catch {
