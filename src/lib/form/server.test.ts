@@ -1,6 +1,7 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
 import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, createAppSource, defineForm, makeFieldSugar } from './index'
+import { v } from './validators'
 import { createFormHandler, MemoryIdempotencyStore, windowThrottle, type IdempotencyStore } from './server'
 
 const field = makeFieldSugar()
@@ -202,5 +203,27 @@ suite('поля из источника (F16)', () => {
     const r = await h(sent({ u_color: '+79991234567', u_other: 'x' }))
     expect(r.status).toBe(400)
     expect(r.result.errors[0]).toMatchObject({ code: 'request.unexpected-field', params: { name: 'u_other' } })
+  })
+})
+
+suite('порядок словарей (F55): форма → приложение → пакет', () => {
+  const required = defineForm({
+    id: 'probe-texts',
+    fields: { name: field.text({ validate: [v.required()] }) },
+    messages: { required: 'текст формы' },
+  })
+  const textOf = async (app: Record<string, string>, d = required) => {
+    const h = createFormHandler({ description: d, messages: app, execute: (c) => { c.commit(); return {} } })
+    const r = await h(post({ ...envelopeOf({}, d), name: '' }))
+    return r.result.errors.find((e) => e.path === 'name')?.message
+  }
+
+  test('словарь формы сильнее словаря приложения', async () => {
+    expect(await textOf({ required: 'текст приложения' })).toBe('текст формы')
+  })
+
+  test('приложение — для кодов, которых нет в словаре формы', async () => {
+    const bare = defineForm({ id: 'probe-texts-2', fields: { name: field.text({ validate: [v.required()] }) } })
+    expect(await textOf({ required: 'текст приложения' }, bare)).toBe('текст приложения')
   })
 })

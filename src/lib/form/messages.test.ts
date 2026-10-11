@@ -31,3 +31,12 @@ test('параметры подставляются', () => {
   expect(r('file.too-large', { name: 'a.pdf' })).toBe('Файл a.pdf слишком большой')
   expect(r('maxSize', { name: 'a.pdf', bytes: 2048 })).toBe('Файл a.pdf больше 2 КБ')
 })
+
+// F55: клиент (bind) и сервер (createFormHandler) собирают тексты одним помощником.
+test('порядок словарей: форма → приложение → пакет', async () => {
+  const { formRenderer } = await import('./messages-order')
+  const r = formRenderer({ required: 'форма' }, { required: 'приложение', minLength: 'приложение {min}' })
+  expect(r('required')).toBe('форма')
+  expect(r('minLength', { min: 3 })).toBe('приложение 3')
+  expect(r('rate.limited', {})).toBe('Слишком много попыток. Повторите позже')
+})

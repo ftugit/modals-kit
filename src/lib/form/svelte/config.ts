@@ -69,7 +69,7 @@ export interface FormsConfig {
    * Вернула `undefined` — это ДЕФЕКТ КОНФИГУРАЦИИ: умолчаний у библиотеки нет.
    */
   resolve(f: ResolveTarget): FieldComponent | undefined
-  /** Тексты поверх словаря формы. */
+  /** Тексты приложения: слабее словаря формы, сильнее пакета (F55). */
   messages?: MessageDictionary
   /** Транспорт по умолчанию для всех форм. */
   transport?: Transport

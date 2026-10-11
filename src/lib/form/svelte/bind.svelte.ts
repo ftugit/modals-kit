@@ -9,7 +9,7 @@ import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescript
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
-import { makeRenderer, ru } from '../messages'
+import { formRenderer } from '../messages-order'
 import type { FormError, Result } from '../result'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
@@ -143,7 +143,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   
   const instance = o.instance ?? `${initial.id}:new`
   const action = o.action ?? `${cfg.config.actionBase ?? ''}/${initial.id}`
-  const render = makeRenderer([cfg.config.messages, initial.messages as never, ru],
+  const render = formRenderer(initial.messages as never, cfg.config.messages,
                               initial.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
   const asyncErrorIds = new Map<string, string>()

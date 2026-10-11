@@ -5,7 +5,8 @@
 import { runAsyncChecks, type CheckRegistry } from './async'
 import { applyHandler, type ErrorContext, type ErrorHandler } from './errors'
 import type { FormDescription } from './describe'
-import { makeRenderer, ru, type MessageDictionary } from './messages'
+import type { MessageDictionary } from './messages'
+import { formRenderer } from './messages-order'
 import { normalizeErrors, stableId, type FormError, type Outcome, type Result } from './result'
 import { runSchema, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
@@ -364,7 +365,7 @@ export interface HandlerOptions<T = unknown, E = unknown> {
   origin?: OriginOptions
   /** Правки пределов приёма поверх умолчаний. */
   limits?: Partial<Limits>
-  /** Тексты поверх словаря формы. */
+  /** Тексты приложения: слабее словаря формы, сильнее пакета (F55). */
   messages?: MessageDictionary
   /** Асинхронные проверки: на сервере выполняются ВСЕГДА. */
   checks?: CheckRegistry
@@ -396,7 +397,7 @@ export interface Handled<T = unknown> { result: Result<T>; status: number }
  */
 export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
   const base = o.description
-  const render = makeRenderer([o.messages, base.messages as never, ru], base.policy.interpolate)
+  const render = formRenderer(base.messages as never, o.messages, base.policy.interpolate)
   const limits: Limits = { ...DEFAULT_LIMITS, ...o.limits }
 
   const layers: readonly Layer[] = o.order ?? [
