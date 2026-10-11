@@ -1,24 +1,9 @@
 <script lang="ts">
-  // Корневая страница ошибок SvelteKit: серверные краши (в т.ч. фатал из
-  // `report`, брошенный в SSR-пути) приходят сюда. 5xx — та же разметка, что и
-  // клиентский оверлей; 4xx — нейтральный текст. Стек и причина клиенту не
-  // показываются никогда.
-  import { page } from '$app/state'
-  import Error500 from '#lib/components/Error500.svelte'
-
-  const serverError = $derived(page.status >= 500)
+  // Корневая граница ошибок: маршруты вне каркаса (/cycle, /spike — у них свой
+  // каркас внутри демо) и сбой самого каркаса `(site)` (его load). Каркаса здесь
+  // нет, поэтому ориентир `<main>` ставит граница (B4). Ошибки сайта ловит
+  // `(site)/+error.svelte` — внутри каркаса, как и прежде.
+  import ErrorPage from '#lib/components/ErrorPage.svelte'
 </script>
 
-{#if serverError}
-  <Error500 />
-{:else}
-  <!-- Не <main>: страница ошибки рендерится внутри <main> каркаса (B4). -->
-  <div class="grid min-h-dvh place-items-center bg-background px-6 text-foreground">
-    <!-- role="alert" — на содержимом: анонс при клиентском переходе на ошибку -->
-    <div class="flex max-w-md flex-col items-center gap-3 text-center" role="alert">
-      <span class="text-5xl font-black tracking-tight text-muted-foreground">{page.status}</span>
-      <h1 class="text-lg font-semibold">Страница не найдена или недоступна</h1>
-      <a class="text-sm text-primary underline" href="/">На главную</a>
-    </div>
-  </div>
-{/if}
+<main><ErrorPage /></main>

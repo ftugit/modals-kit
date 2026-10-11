@@ -43,9 +43,15 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // (226.8 > 223.3 все immutable; /modals 153.6 > 150.0); код приложения между замерами —
 // только замена pushState/replaceState на goto({ shallow }). По постоянному решению
 // оператора («поднимай на 5кб сразу») — allImmutableGzip 223.3 → 228.3, /modals 150 → 155.
+// REVISION 2026-10-11 (ход 27, C2 — каркас и модальные системы по группам папок):
+// весь JS 213.8 → 218.1, все immutable 227.0 → 231.3, /modals 154.0 → 157.5; прочие
+// маршруты легче на 4.9 (реестр демо-модалок больше не в корневом layout). Модули
+// не дублируются — большой общий чанк (51.6) разошёлся на несколько (svelte 32.5,
+// primitives 10.8, classes 9.8, shell 5.9): gzip по частям хуже, плюс узлы групп.
+// По постоянному решению оператора — +5: 228.3 → 233.3, 214 → 219, /modals 155 → 160.
 const LIMITS = {
-  allImmutableGzip: 228.3 * KiB,
-  allJsGzip: 214 * KiB,
+  allImmutableGzip: 233.3 * KiB,
+  allJsGzip: 219 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -58,8 +64,9 @@ const ROUTE_LIMITS = {
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
   // дали 148.6. Вернуть 148.5 после F25 (docs/design/universal-demo-panel.md).
-  // Ход 16: 150 → 155 — рантайм Kit 3 (см. REVISION выше).
-  '/modals': 155 * KiB,
+  // Ход 16: 150 → 155 — рантайм Kit 3 (см. REVISION выше). Ход 27: 155 → 160 —
+  // три узла layout вместо одного (C2, см. REVISION у LIMITS).
+  '/modals': 160 * KiB,
   // Пагинатор с живым источником, lib/search и панелью фильтров. Ход 16 (решение
   // оператора): 138.6 → 196.5 = факт 191.5 + 5. Прежние «факт 120.3» и 138.6 были
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
@@ -142,17 +149,25 @@ function collectManifestFiles(keys, seenKeys = new Set(), files = new Set()) {
 function routeDictionary() {
   if (!existsSync(GENERATED_APP)) return {}
   const source = readFileSync(GENERATED_APP, 'utf8')
+  // Словарь Kit: `"/(site)/(app)/form": [лист, [layouts], [errors]]`. Разбор —
+  // JSON после двух замен, а не регулярка по `[…]`: с группами (C2) значения
+  // вложенные, и `\[([^\]]*)\]` обрезал их на первой `]`, теряя layouts.
+  //   • `~n` — узел n с серверной загрузкой (в app.js это JS-выражение `~n`):
+  //     прежний `Number('~8')` давал NaN, и /paginator, /db-demo мерились без
+  //     собственной страницы;
+  //   • пропуски массива (`[,4]` — слот layout без файла) → `null`.
+  const body = source.match(/export const dictionary = (\{[\s\S]*?\});/)?.[1]
+  if (!body) return {}
+  const dictionary = JSON.parse(
+    body.replace(/~(\d+)/g, '$1').replace(/\[\s*,/g, '[null,').replace(/,\s*(?=[,\]])/g, ',null'),
+  )
   const out = {}
-  for (const match of source.matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
-    // `~n` — узел n с серверной загрузкой (в app.js это JS-выражение `~n`). Раньше
-    // `Number('~8')` давал NaN, узел выбрасывался, и маршруты с `+page.server` /
-    // `+page.ts`-данными (/paginator, /db-demo) мерились без собственной страницы.
-    out[match[1]] = match[2]
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => (x.startsWith('~') ? Number(x.slice(1)) : Number(x)))
-      .filter(Number.isFinite)
+  for (const [id, [leaf, layouts = []]] of Object.entries(dictionary)) {
+    // Адрес маршрута — id без групп: `/(site)/(app)` → `/`. Вес — корень (0,
+    // добавляет routeGzip) + layouts ветки + лист; узлы ошибок Kit грузит только
+    // при ошибке — их нет в начальной загрузке, как не было и до групп.
+    const url = id.replace(/\/\([^/]+\)/g, '') || '/'
+    out[url] = [leaf, ...layouts].filter(Number.isFinite)
   }
   return out
 }

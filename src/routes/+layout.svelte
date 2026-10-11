@@ -1,126 +1,21 @@
 <script lang="ts">
-  // Корневой layout: модальная система + AppShell (CollapsingHeader, Sidebar, Main scroller).
+  // Корневой layout — общее для ВСЕХ маршрутов: <head>, контекст страницы,
+  // стили и фатальная ошибка. Структура папками (C2), без проверок route.id:
+  //   (site)/            — каркас сайта (шапка, сайдбар);
+  //     (app)/           — страницы с глобальной модальной системой;
+  //     (modals-demo)/   — /modals со своей областью и носителями;
+  //   cycle/, spike/     — вне каркаса, со своими модальными системами.
   import favicon from '#lib/assets/favicon.svg'
-  import { untrack } from 'svelte'
-  import { page } from '$app/state'
-  import {
-    createModals,
-    globalScope,
-    localStorageChain,
-    memoryStorage,
-    urlStorage,
-    type ChainStorage,
-    type ModalRegistry,
-  } from '#lib/modals/index.js'
-  import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
-  import { appErrors, report } from '#lib/app-errors.svelte.js'
+  import { appErrors } from '#lib/app-errors.svelte.js'
   import Error500 from '#lib/components/Error500.svelte'
-  import { ModalHost } from '#lib/modals/svelte/index.js'
-  import { BackdropCloseIcon, ModalError, Skeleton } from '#lib/ui/modals/index.js'
-  import { demoScope } from '#lib/ui/demo/modals/registry.js'
-  import { demoSources } from '#lib/ui/demo/modals/sources.svelte.js'
-  import {
-    setPageContext,
-    AppShell,
-    PageHead,
-    useHeaderSlot,
-    useSidebarSlot,
-  } from '#lib/shell/index.js'
-  import {
-    LogoSlot,
-    NavSlot,
-    ThemeToggleSlot,
-    PageTitleSlot,
-    SiteFooter,
-  } from '#lib/components/header/index.js'
-  import {
-    SidebarNav,
-    SidebarUser,
-    SidebarFooter,
-  } from '#lib/components/sidebar/index.js'
+  import { setPageContext, PageHead } from '#lib/shell/index.js'
   import 'virtual:uno.css'
   import '../app.css'
 
-  let { children, data } = $props()
+  let { children } = $props()
 
   // Инициализация контекста страницы
   setPageContext({ title: 'dd modals', titleSeparator: ' · ' })
-
-  // Базовые слоты шапки по умолчанию
-  useHeaderSlot('top.start', logoSnippet)
-  useHeaderSlot('top.center', titleSnippet)
-  useHeaderSlot('top.end', navSnippet)
-  useHeaderSlot('top.end', themeSnippet)
-
-  // Базовые слоты 3-зонного сайдбара
-  useSidebarSlot('top', sidebarTopSnippet)
-  useSidebarSlot('middle', sidebarNavSnippet)
-  useSidebarSlot('bottom', sidebarBottomSnippet)
-
-  /** Роут → область видимости модалок этого роута. Прочие — globalScope. */
-  const ROUTE_SCOPES: Record<string, ModalRegistry> = { '/modals': demoScope }
-
-  /**
-   * Роуты с СОБСТВЕННЫМИ модальными системами: /cycle — демо ручной сборки
-   * ядра, /spike — песочница модели истории.
-   */
-  const OWN_SYSTEM = new Set(['/cycle', '/spike'])
-
-  /** Набор источников под выбранные имена. */
-  function sourcesFor(names: string[]): Record<string, ChainStorage> {
-    const map: Record<string, ChainStorage> = {}
-    if (names.includes('url')) map.url = urlStorage()
-    if (names.includes('local')) {
-      map.local = localStorageChain(
-        typeof localStorage !== 'undefined'
-          ? localStorage
-          : { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      )
-    }
-    if (names.includes('memory')) map.memory = memoryStorage()
-    return map
-  }
-
-  const scope = $derived(page.url.pathname.startsWith('/modals') || page.route.id === '/modals' ? demoScope : (ROUTE_SCOPES[page.route.id ?? ''] ?? globalScope))
-
-  /**
-   * Источники цепочки — тоже достояние ДЕМКИ, а не сайта (решение
-   * оператора 2026-10-10): панель на /modals вправе переключать носители,
-   * но на прочих страницах действует базовая пара url+local. Иначе выбор
-   * «память» на демке обескровил бы deep-link'и везде.
-   */
-  const DEFAULT_SOURCES = ['url', 'local']
-  const namesNow = $derived(
-    page.route.id === '/modals' ? [...demoSources.list] : DEFAULT_SOURCES,
-  )
-  const initial = untrack(() => ({ names: [...namesNow], lookup: scope.lookup }))
-  const core = svelteKitCore(sourcesFor(initial.names), { lookup: initial.lookup })
-  // `configScope` — адрес страницы как ключ слайса настроек: `m.modals.configure`
-  // демки пишет только в свой слайс, база (пропсы хоста) неотапливаема для всех.
-  const modals = createModals(core, {
-    tailCount: 3,
-    maxHeight: '80vh',
-    onError: report,
-    configScope: () => page.url.pathname,
-  })
-
-  $effect(() => {
-    // Скоуп настроек — данные в сторе (см. комментарий `scopedConfig`):
-    // раскладка сообщает путь, геттеры хоста остаются чистыми.
-    modals.setScope(page.url.pathname)
-  })
-
-  let appliedNames = initial.names.join()
-  let appliedLookup = initial.lookup
-  $effect(() => {
-    const names = namesNow
-    const nextLookup = scope.lookup
-    const key = names.join()
-    if (key === appliedNames && nextLookup === appliedLookup) return
-    appliedNames = key
-    appliedLookup = nextLookup
-    untrack(() => core.reconfigure({ sources: sourcesFor(names), lookup: nextLookup }))
-  })
 </script>
 
 <svelte:head>
@@ -130,69 +25,8 @@
 <PageHead defaultTitle="dd modals" />
 
 {#if appErrors.critical}
-  <!-- фатал заменяет каркас целиком: ориентир main — здесь -->
+  <!-- фатал заменяет всё целиком: ориентир main — здесь -->
   <main><Error500 /></main>
-{:else if OWN_SYSTEM.has(page.route.id ?? '')}
-  {#if page.error}
-    <!-- свой каркас у маршрута — внутри его демо; страница ошибки идёт без него,
-         ориентир main даёт layout (B4) -->
-    <main>{@render children()}</main>
-  {:else}
-    {@render children()}
-  {/if}
 {:else}
-  <ModalHost
-    {modals}
-    onError={report}
-    scope={scope}
-    closeIcon
-    backdropClick="top"
-    tailCount={3}
-    maxHeight="80vh"
-    mobileBreakpoint={768}
-    defaultMobile="bottom"
-  >
-    {#snippet skeleton()}
-      <Skeleton />
-    {/snippet}
-    {#snippet error(message, hint)}
-      <ModalError {message} {hint} />
-    {/snippet}
-    {#snippet closeIconSlot()}
-      <BackdropCloseIcon />
-    {/snippet}
-
-    <AppShell prefs={data.shell}>
-      {@render children()}
-      <SiteFooter />
-    </AppShell>
-  </ModalHost>
+  {@render children()}
 {/if}
-
-{#snippet logoSnippet()}
-  <LogoSlot />
-{/snippet}
-
-{#snippet titleSnippet()}
-  <PageTitleSlot />
-{/snippet}
-
-{#snippet navSnippet()}
-  <NavSlot />
-{/snippet}
-
-{#snippet themeSnippet()}
-  <ThemeToggleSlot />
-{/snippet}
-
-{#snippet sidebarTopSnippet()}
-  <SidebarUser />
-{/snippet}
-
-{#snippet sidebarNavSnippet()}
-  <SidebarNav />
-{/snippet}
-
-{#snippet sidebarBottomSnippet()}
-  <SidebarFooter />
-{/snippet}

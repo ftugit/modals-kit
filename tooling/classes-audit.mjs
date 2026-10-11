@@ -101,7 +101,7 @@ const SCOPE = [
   'src/routes/modals/FlowProbeModal.svelte',
   'src/routes/cycle/+page.svelte',
   'src/routes/spike/+page.svelte',
-  'src/routes/+page.svelte',
+  'src/routes/(site)/(app)/+page.svelte',
   // Шапка и сайдбар: своих классов там тоже не осталось (единственный
   // признак активного пункта — `aria-current="page"`).
   'src/lib/components/header/NavSlot.svelte',

@@ -34,7 +34,7 @@ export const load: PageServerLoad = async (event) => {
 }
 
 /**
- * Экшены выбирают только кодировку ответа — как в `src/routes/form`: у демо БД
+ * Экшены выбирают только кодировку ответа — как в `src/routes/(site)/(app)/form`: у демо БД
  * и у демо форм один путь приёма.
  */
 async function act(intent: 'create' | 'remove', promise: Promise<Handled>) {
