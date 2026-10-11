@@ -7,7 +7,7 @@
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'
-import { getTermArtifact, ShikimoriUpstreamError } from '$lib/server/shikimori'
+import { getTermArtifact, upstreamFailure } from '$lib/server/shikimori'
 
 export const GET: RequestHandler = async ({ request }) => {
   try {
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ request }) => {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     })
   } catch (error) {
-    const status = error instanceof ShikimoriUpstreamError ? error.status : 502
-    return new Response(`Словарь Shikimori недоступен: ${String(error)}`, { status })
+    const { message, status } = upstreamFailure(error, 'api/shikimori/terms')
+    return new Response(`Словарь Shikimori недоступен: ${message}`, { status })
   }
 }

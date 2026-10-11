@@ -9,7 +9,7 @@
  */
 import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
-import { ShikimoriUpstreamError } from '$lib/server/shikimori'
+import { upstreamFailure } from '$lib/server/shikimori'
 import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
 
 export const GET: RequestHandler = async () => {
@@ -17,7 +17,7 @@ export const GET: RequestHandler = async () => {
     const schema = await getShikimoriFilterSchema()
     return json(schema, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
-    const status = error instanceof ShikimoriUpstreamError ? error.status : 502
-    return json({ error: `Схема фильтров Shikimori недоступна: ${String(error)}` }, { status })
+    const { message, status } = upstreamFailure(error, 'api/shikimori/filters')
+    return json({ error: `Схема фильтров Shikimori недоступна: ${message}` }, { status })
   }
 }

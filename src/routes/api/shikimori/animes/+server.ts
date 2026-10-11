@@ -14,7 +14,7 @@
  */
 import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
-import { parseAnimesQuery, ShikimoriUpstreamError } from '$lib/server/shikimori'
+import { parseAnimesQuery, ShikimoriUpstreamError, upstreamFailure } from '$lib/server/shikimori'
 import { fetchAnimesPage } from '$lib/server/shikimori-filters'
 
 export const GET: RequestHandler = async ({ url, request }) => {
@@ -29,9 +29,8 @@ export const GET: RequestHandler = async ({ url, request }) => {
     const page = await fetchAnimesPage(parsed, { signal: request.signal })
     return json(page, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
-    if (error instanceof ShikimoriUpstreamError) {
-      return json({ error: error.message }, { status: error.status })
-    }
-    return json({ error: `Shikimori API: ${String(error)}` }, { status: 502 })
+    const { message, status } = upstreamFailure(error, 'api/shikimori/animes')
+    const text = error instanceof ShikimoriUpstreamError ? message : `Shikimori API: ${message}`
+    return json({ error: text }, { status })
   }
 }
