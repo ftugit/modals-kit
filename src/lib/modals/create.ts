@@ -11,13 +11,13 @@
 // протекало в слой модалки — четыре ветвления по `storage.addressable`
 // в коде, которому до носителя нет никакого дела. Проводка уехала
 // в `build.ts`, то есть внутрь ядра.
-import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, nextChain, resolveEntry, sameEntry } from './core'
+import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, loaderKey, nextChain, resolveEntry, sameEntry } from './core'
 import { createModalStore, type ModalStore, type ModalStoreData } from './store'
 import { DEFAULT_HOST_CONFIG } from './types'
 import type {
   Chain, ChainOverrides, HostConfig, LibError, ErrorSink, ModalContext, RegisteredEntry, StackMode, TransientEntry,
 } from './types'
-import { entryLabel } from './types'
+import { entryLabel, isRegistered } from './types'
 import type { AnyDefinition } from './registry'
 import { assertTransient, assertTransientOnTop, type ModalCore } from './core-contract'
 
@@ -308,7 +308,11 @@ export function createModals<V = unknown>(
   /** Кто открылся и кто закрылся между двумя цепочками. */
   const fireLifecycle = (prev: Chain, next: Chain) => {
     const cfg = scopedConfig(store.state)
-    const id = (e: Chain[number], i: number) => `${i}:${entryLabel(e)}`
+    // Позиция + имя + ПАРАМЕТРЫ: замена `a{id:1}` на `a{id:2}` на том же месте —
+    // это закрытие одной модалки и открытие другой (F35). Переопределения
+    // внешнего вида (цвет, размер) в тождество не входят.
+    const id = (e: Chain[number], i: number) =>
+      `${i}:${isRegistered(e) ? loaderKey(e.name, e.params) : entryLabel(e)}`
     const prevIds = prev.map(id)
     const nextIds = next.map(id)
 
@@ -410,13 +414,21 @@ export function createModals<V = unknown>(
      * Читает начальную цепочку и подписывается на внешние изменения
      * (Назад/Вперёд, соседняя вкладка). Возвращает отписку.
      *
-     * Применение цепочки с учётом `lock` и `noForward`, а также вызов
-     * `onOpen`/`onClose` появятся вместе с действиями — см. `HOST-GAP.md`.
+     * Внешние изменения применяет `sync` (с учётом `lock` и `noForward`).
+     * `onOpen`/`onClose` зовутся по разнице с цепочкой стора, поэтому
+     * повторное подключение живые записи заново не открывает.
+     *
+     * Колбэки потребителя выполняются синхронно внутри вызова: реактивный
+     * хост обязан звать `attach` вне отслеживания (`untrack`), иначе чтения
+     * в колбэках подпишут его эффект подключения (F27).
      */
     attach() {
       const first = prune(core.read())
+      // События — по разнице с тем, что уже было в сторе: повторное
+      // подключение (смена ядра) не «открывает» заново живые записи (F27).
+      const prev = store.state.chain
       store.set({ chain: first })
-      fireLifecycle([], first)
+      fireLifecycle(prev, first)
       const off = core.subscribe?.(sync)
       return () => off?.()
     },
