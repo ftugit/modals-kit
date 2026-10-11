@@ -664,6 +664,15 @@ defineForm({ id: 'signup', policy, fields: { /* … */ } })
 осмысленная отправка является новой операцией. Хранилище — интерфейс
 `IdempotencyStore`, в памяти — `MemoryIdempotencyStore`.
 
+`get`/`put` защищают только от последовательного повтора. От параллельного
+(двойной клик, повтор прокси, пока первый запрос выполняется) — необязательная
+пара `reserve`/`release`: `reserve` обязана атомарно занять ключ (в БД —
+`INSERT … ON CONFLICT DO NOTHING`, в Redis — `SET NX PX`). Занятый ключ даёт
+дублю `409 submission.in-flight` с исходом `not-applied` и тем же
+`submissionId`. Бронь снимается только при исходе `not-applied`; при `unknown`
+она держится до `IDEMPOTENCY_RESERVE_MS`. `MemoryIdempotencyStore` реализует
+бронь и вычищает просроченные записи — он годится для одного процесса.
+
 Частота: `windowThrottle({ limit, windowMs, key })` отказывает до чтения тела.
 `key` обязателен — умолчания «по адресу клиента» нет, потому что сырой
 `x-forwarded-for` задаёт сам клиент. Ключ — заголовок, который перезаписывает

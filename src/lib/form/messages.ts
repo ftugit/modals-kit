@@ -55,6 +55,7 @@ export const ru: MessageDictionary = {
   'request.unexpected-field': 'Запрос содержит неизвестное поле',
   'request.duplicate': 'Поле передано дважды',
   'handler.failed': 'Операция не выполнена',
+  'submission.in-flight': 'Эта отправка уже выполняется. Дождитесь результата',
   'success-not-acknowledged': 'Операция не подтверждена',
   'interceptor.failed': 'Внутренняя ошибка обработки',
 }

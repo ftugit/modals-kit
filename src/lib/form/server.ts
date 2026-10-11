@@ -156,28 +156,84 @@ export const namesLayer: Layer = (ctx) => {
 
 /* ── идемпотентность и частота ─────────────────────────────────────── */
 
+/** Исход брони ключа идемпотентности. */
+export type Reservation<R = Result> =
+  | { status: 'reserved' }
+  | { status: 'done'; result: R }
+  | { status: 'busy' }
+
 /**
  * Без этого семантика исхода неполна: «неизвестно» говорит «не повторяйте»,
  * но повтор всё равно возможен.
+ *
+ * `get`/`put` защищают от ПОСЛЕДОВАТЕЛЬНОГО повтора. От параллельного (двойной
+ * клик, повтор прокси, пока первый запрос ещё выполняется) — только бронь:
+ * `reserve` обязана АТОМАРНО занять ключ (в БД — `INSERT … ON CONFLICT DO NOTHING`
+ * или `SET NX`), иначе два запроса оба увидят «пусто» и оба выполнятся.
+ * Хранилище без `reserve` работает как раньше; тогда `release` не вызывается.
  */
 export interface IdempotencyStore {
   get(key: SubmissionId): Promise<Result | undefined> | Result | undefined
+  /** Записать окончательный результат; заменяет бронь. */
   put(key: SubmissionId, result: Result, ttlMs: number): Promise<void> | void
+  /**
+   * Атомарно занять ключ на время выполнения.
+   * `done` — результат уже есть; `busy` — ключ занят другим запросом.
+   * @param ttlMs Срок брони: после него ключ считается свободным (процесс мог умереть).
+   */
+  reserve?(key: SubmissionId, ttlMs: number): Promise<Reservation> | Reservation
+  /** Снять бронь без результата. Обязательна вместе с `reserve`. */
+  release?(key: SubmissionId): Promise<void> | void
 }
 
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
+/** Срок брони: дольше выполняться отправке незачем, а умерший процесс не держит ключ вечно. */
+export const IDEMPOTENCY_RESERVE_MS = 5 * 60 * 1000
 
+type MemoryEntry = { result: Result; exp: number } | { result?: undefined; exp: number }
+
+/**
+ * Хранилище в памяти процесса: для одного процесса и разработки. Бронь
+ * атомарна (однопоточный JS: проверка и запись без `await` между ними).
+ * Просроченные записи вычищаются обходом не чаще раза в минуту — карта не
+ * растёт сверх отправок за `ttlMs`.
+ */
 export class MemoryIdempotencyStore implements IdempotencyStore {
-  #map = new Map<string, { result: Result; exp: number }>()
-  constructor(private readonly now: () => number = Date.now) {}
-  get(key: SubmissionId) {
+  #map = new Map<string, MemoryEntry>()
+  #sweptAt: number
+  constructor(private readonly now: () => number = Date.now) { this.#sweptAt = now() }
+
+  #live(key: SubmissionId, t: number): MemoryEntry | undefined {
     const hit = this.#map.get(key)
-    if (!hit) return undefined
-    if (hit.exp < this.now()) { this.#map.delete(key); return undefined }
-    return hit.result
+    if (hit && hit.exp <= t) { this.#map.delete(key); return undefined }
+    return hit
+  }
+
+  #sweep(t: number) {
+    if (t - this.#sweptAt < 60_000) return
+    this.#sweptAt = t
+    for (const [k, v] of this.#map) if (v.exp <= t) this.#map.delete(k)
+  }
+
+  get(key: SubmissionId) {
+    return this.#live(key, this.now())?.result
   }
   put(key: SubmissionId, result: Result, ttlMs: number) {
-    this.#map.set(key, { result, exp: this.now() + ttlMs })
+    const t = this.now()
+    this.#sweep(t)
+    this.#map.set(key, { result, exp: t + ttlMs })
+  }
+  reserve(key: SubmissionId, ttlMs: number): Reservation {
+    const t = this.now()
+    this.#sweep(t)
+    const hit = this.#live(key, t)
+    if (hit?.result) return { status: 'done', result: hit.result }
+    if (hit) return { status: 'busy' }
+    this.#map.set(key, { exp: t + ttlMs })
+    return { status: 'reserved' }
+  }
+  release(key: SubmissionId) {
+    if (!this.#map.get(key)?.result) this.#map.delete(key)
   }
   get size() { return this.#map.size }
 }
@@ -313,6 +369,8 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
   ]
   if (!layers.includes(bodyLayer) || !layers.includes(namesLayer))
     throw new Error('[form] order обязан содержать bodyLayer и namesLayer')
+  if (o.idempotency && !o.idempotency.reserve !== !o.idempotency.release)
+    throw new Error('[form] IdempotencyStore: reserve и release реализуются только вместе')
 
   return async function handle(request: Request, from: 'action' | 'fetch' = 'action'):
     Promise<Handled<T>> {
@@ -411,13 +469,31 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
           }),
         })
 
-      // повтор той же отправки не выполняется заново
+      // повтор той же отправки не выполняется заново; параллельный — тоже (бронь)
+      let reserved = false
       if (o.idempotency) {
-        const prev = await o.idempotency.get(submissionId)
-        if (prev) {
+        const store = o.idempotency
+        const r: Reservation = store.reserve
+          ? await store.reserve(submissionId, IDEMPOTENCY_RESERVE_MS)
+          : await (async () => {
+            const prev = await store.get(submissionId)
+            return prev ? { status: 'done' as const, result: prev } : { status: 'reserved' as const }
+          })()
+        if (r.status === 'done') {
           ctx.reached = 'committed'
-          return finish({ status: prev.status, result: prev as Result<T> })
+          return finish({ status: r.result.status, result: r.result as Result<T> })
         }
+        if (r.status === 'busy')
+          // «не применено» и тот же submissionId: адаптер не создаёт новый id, и
+          // следующая попытка получит результат первой отправки из хранилища.
+          return finish({
+            status: 409,
+            result: withId({ ok: false, status: 409, outcome: 'not-applied', errors: normalizeErrors([{
+              id: stableId({ code: 'submission.in-flight' }), code: 'submission.in-flight',
+              message: render('submission.in-flight'), origin: 'server', retryable: true,
+            }], render, ctx.description.policy.limits) }),
+          })
+        reserved = !!store.reserve
       }
 
       ctx.reached = 'executing'
@@ -435,6 +511,10 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
       } catch (e) {
         if (e instanceof ExecuteFailure) {
           const outcome = e.outcome ?? (committed ? 'committed' : 'not-applied')
+          // Бронь снимается ТОЛЬКО при достоверном «не применено»: исправленная
+          // отправка с тем же id должна пройти. При «неизвестно»/«зафиксировано»
+          // без записи бронь держится до срока — повтор получит отказ, а не второе выполнение.
+          if (reserved && outcome === 'not-applied') await o.idempotency!.release!(submissionId)
           const code = outcome === 'not-applied' ? status.validationFailed : 500
           return finish({
             status: code,

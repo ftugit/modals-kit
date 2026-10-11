@@ -1,7 +1,7 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
 import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, defineForm, makeFieldSugar } from './index'
-import { createFormHandler, windowThrottle } from './server'
+import { createFormHandler, MemoryIdempotencyStore, windowThrottle, type IdempotencyStore } from './server'
 
 const field = makeFieldSugar()
 const base = defineForm({ id: 'probe', fields: { name: field.text({}) } })
@@ -79,5 +79,61 @@ suite('частота (F18)', () => {
     now = 1500
     t.check(req('9.9.9.9'))
     expect(t.size).toBe(1)
+  })
+})
+
+suite('идемпотентность: параллельный повтор (F19)', () => {
+  const gate = () => { let open!: () => void; const p = new Promise<void>((r) => { open = r }); return { p, open } }
+
+  test('параллельный дубль не выполняется второй раз; поздний повтор получает первый результат', async () => {
+    let runs = 0
+    const g = gate()
+    const h = createFormHandler({
+      description: base, idempotency: new MemoryIdempotencyStore(),
+      execute: async (c) => { runs++; await g.p; c.commit(); return { data: runs } },
+    })
+    const env = envelopeOf()
+    const first = h(post({ ...env, name: 'a' }))
+    const second = await h(post({ ...env, name: 'a' }))
+    expect(second.status).toBe(409)
+    expect(second.result.errors.map((e) => e.code)).toEqual(['submission.in-flight'])
+    expect(second.result.outcome).toBe('not-applied')
+    g.open()
+    const done = await first
+    expect(done.status).toBe(200)
+    expect(second.result.submissionId).toBe(done.result.submissionId)
+    const late = await h(post({ ...env, name: 'a' }))
+    expect(late.result.data).toBe(1)
+    expect(runs).toBe(1)
+  })
+
+  test('«не применено» снимает бронь: исправленная отправка с тем же id выполняется', async () => {
+    const store = new MemoryIdempotencyStore()
+    let attempt = 0
+    const h = createFormHandler({
+      description: base, idempotency: store,
+      execute: (c) => {
+        if (++attempt === 1) c.fail([{ id: 'x', code: 'name.taken', message: 'занято', origin: 'server' } as never])
+        c.commit(); return {}
+      },
+    })
+    const env = envelopeOf()
+    expect((await h(post({ ...env, name: 'a' }))).result.outcome).toBe('not-applied')
+    expect((await h(post({ ...env, name: 'b' }))).result.outcome).toBe('committed')
+  })
+
+  test('память: просроченные записи вычищаются', () => {
+    let now = 0
+    const store = new MemoryIdempotencyStore(() => now)
+    for (let i = 0; i < 100; i++) store.reserve(`id-${i}` as never, 1000)
+    expect(store.size).toBe(100)
+    now = 61_000
+    expect(store.reserve('fresh' as never, 1000)).toEqual({ status: 'reserved' })
+    expect(store.size).toBe(1)
+  })
+
+  test('reserve без release — ошибка конфигурации', () => {
+    const bad: IdempotencyStore = { get: () => undefined, put: () => {}, reserve: () => ({ status: 'reserved' }) }
+    expect(() => createFormHandler({ description: base, idempotency: bad, execute: () => ({}) })).toThrow(/вместе/)
   })
 })
