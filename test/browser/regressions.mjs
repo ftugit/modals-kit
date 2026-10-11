@@ -1522,6 +1522,20 @@ try {
     }
   })
 
+  await run('R-40 выключенный Select: нативный носитель остаётся невидимым поверх кнопки', async () => {
+    // `disabled:opacity-50` базового класса поля специфичнее `opacity-0`
+    // (псевдокласс): выключенный нативный select проступал полупрозрачным
+    // поверх кнопки, и два контрола накладывались. Гаснет корень целиком.
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+    await page.goto(BASE.replace(/\/modals$/, '/paginator'), { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-select-root][data-enhanced] select[data-select-native]:disabled')
+    const states = await page.$$eval('[data-select-root][data-enhanced] select[data-select-native]:disabled', (els) =>
+      els.map((e) => ({ name: e.name, opacity: getComputedStyle(e).opacity })))
+    assert(states.length > 0 && states.every((s) => s.opacity === '0'), `видимый выключенный носитель: ${JSON.stringify(states)}`)
+    ok(`выключенные Select (${states.map((s) => s.name).join(', ')}): носитель opacity 0`)
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

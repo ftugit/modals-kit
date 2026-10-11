@@ -765,7 +765,9 @@
           // или экран узкий.
           ? 'h-auto min-h-28 py-2 pr-3 max-lg:min-h-0 group-data-[enhanced]/select:min-h-0'
           : 'pr-8',
-        mounted && 'absolute inset-0 z-10 m-0 h-full min-h-0 cursor-pointer opacity-0',
+        // `disabled:opacity-0`: базовый `disabled:opacity-50` поля специфичнее
+        // `opacity-0` и проявлял выключенный носитель поверх кнопки; гаснет корень.
+        mounted && 'absolute inset-0 z-10 m-0 h-full min-h-0 cursor-pointer opacity-0 disabled:opacity-0',
         open && 'pointer-events-none',
         cls,
       ),
