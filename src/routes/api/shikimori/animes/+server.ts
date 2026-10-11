@@ -12,14 +12,13 @@
  * `genres.and` — это `genre_v2`, и не должен. Схема читается только тогда,
  * когда фильтры в запросе есть: обычная страница каталога её не ждёт.
  */
-import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
 import { parseAnimesQuery, ShikimoriUpstreamError, upstreamFailure } from '$lib/server/shikimori'
 import { fetchAnimesPage } from '$lib/server/shikimori-filters'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseAnimesQuery(url.searchParams)
-  if (!parsed.ok) return json({ error: parsed.error }, { status: 400 })
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
 
   try {
     // Конвейер фильтров — общий с SSR-мостом (`fetchAnimesPage`), здесь только
@@ -27,10 +26,10 @@ export const GET: RequestHandler = async ({ url, request }) => {
     // signal запроса: если браузер ушёл (сменил страницу/запрос), сервер
     // перестаёт ждать ответа. Общий запрос к API при этом дозаполнит кэш.
     const page = await fetchAnimesPage(parsed, { signal: request.signal })
-    return json(page, { headers: { 'cache-control': 'no-store' } })
+    return Response.json(page, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     const { message, status } = upstreamFailure(error, 'api/shikimori/animes')
     const text = error instanceof ShikimoriUpstreamError ? message : `Shikimori API: ${message}`
-    return json({ error: text }, { status })
+    return Response.json({ error: text }, { status })
   }
 }

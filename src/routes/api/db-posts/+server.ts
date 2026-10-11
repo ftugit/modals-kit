@@ -15,7 +15,6 @@
  * пару секунд, и каждый такой тик без нового указателя обязан уйти в 304, не
  * касаясь `SELECT`. Проверка — в пробе (`If-None-Match` → 304 без тела).
  */
-import { json } from '@sveltejs/kit'
 import { fingerprint, remember, revalidate } from '$lib/server/live-cache'
 import type { RequestHandler } from './$types'
 import { fetchDbPostsPage } from '$lib/server/db-list'
@@ -57,7 +56,7 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
   )
   // Отказ — не состояние списка: его нельзя «закэшировать как текущее», и
   // валидатору он не отдаётся (иначе 304 спрячет исправленную ошибку).
-  if ('error' in page) return json(page, { status: page.status, headers: { 'cache-control': 'no-store' } })
+  if ('error' in page) return Response.json(page, { status: page.status, headers: { 'cache-control': 'no-store' } })
   // Хеш считается по тем же байтам, что уходят клиенту, — «совпал отпечаток»
   // значит «совпел ответ», а не «совпал объект до сериализации».
   const body = JSON.stringify(page)

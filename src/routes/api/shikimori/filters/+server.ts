@@ -7,7 +7,6 @@
  * кэширует сам — серверная схема обновляется по TTL, а сборка одна на всех
  * (single-flight), поэтому «каждый клиент тянет своё» невозможно.
  */
-import { json } from '@sveltejs/kit'
 import type { RequestHandler } from './$types'
 import { upstreamFailure } from '$lib/server/shikimori'
 import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
@@ -15,9 +14,9 @@ import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
 export const GET: RequestHandler = async () => {
   try {
     const schema = await getShikimoriFilterSchema()
-    return json(schema, { headers: { 'cache-control': 'no-store' } })
+    return Response.json(schema, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     const { message, status } = upstreamFailure(error, 'api/shikimori/filters')
-    return json({ error: `Схема фильтров Shikimori недоступна: ${message}` }, { status })
+    return Response.json({ error: `Схема фильтров Shikimori недоступна: ${message}` }, { status })
   }
 }
