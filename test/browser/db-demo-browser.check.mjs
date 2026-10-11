@@ -10,7 +10,7 @@
  * страница. SSR при этом отдавал готовые строки, и проба без JS была зелёной.
  *
  * Запуск: `npm run build && npm run preview -- --port 5173`, затем
- *   node probes/db-demo-browser.check.mjs
+ *   node test/browser/db-demo-browser.check.mjs
  * Порт обязан быть в списке `PREVIEW_PORTS` (см. `src/lib/server/trusted-origins.ts`: по умолчанию
  * 5173 и 5174) — иначе Kit отсекает POST формы по origin, и проверка создания
  * записи отвечает 403. Чужой порт задают так: PREVIEW_PORTS=5188 npm run preview.

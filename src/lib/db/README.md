@@ -128,7 +128,7 @@ export const getRuntime = () =>
 ```ts
 // src/hooks.server.ts
 import { dbHandle } from '#lib/db/sveltekit/index.js'
-import type { Handle } from '@sveltejs/kit'
+import type { Handle } from '@sveltejs/kit/hooks'
 import { getRuntime } from '#lib/server/db.js'
 
 export const handle: Handle = async ({ event, resolve }) => {

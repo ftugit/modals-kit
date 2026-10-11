@@ -88,9 +88,12 @@
     innerError = failed
     status = failed ? 'error' : 'idle'
     if (failed && !navigateOnError) return
-    // replaceState — так называется опция у goto SvelteKit (у navigate
-    // оригинала была replace)
-    goto(href, { replaceState: replace })
+    // `goto` отклоняется, если переход не удался (в т. ч. адрес вне маршрутов) —
+    // это ошибка ссылки, а не необработанное исключение и не вечный `idle`.
+    goto(href, { replace }).catch((error: unknown) => {
+      innerError = `не удалось перейти${error instanceof Error && error.message ? `: ${error.message}` : ''}`
+      status = 'error'
+    })
   }
 </script>
 

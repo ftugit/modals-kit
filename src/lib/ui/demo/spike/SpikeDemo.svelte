@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Button } from '#lib/ui/primitives/index.js'
-  import { goto, pushState, replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
 
@@ -58,10 +58,10 @@ import { Button } from '#lib/ui/primitives/index.js'
     return u.pathname + (u.search || '') ;
   }
 
-  function openRegistered(name: string) {
+  async function openRegistered(name: string) {
     const next = [...urlChain, name];
-    pushState(urlFor(next), { depth: next.length + transient.length } as any);
-    note(`openRegistered('${name}') → pushState(url=${urlFor(next)})`);
+    await goto(urlFor(next), { shallow: true, state: { depth: next.length + transient.length } });
+    note(`openRegistered('${name}') → goto(url=${urlFor(next)}, { shallow })`);
     rawHistoryState = readRaw();
     locHref = location.pathname + location.search;
     locSearch = location.search;
@@ -70,7 +70,7 @@ import { Button } from '#lib/ui/primitives/index.js'
   // Вариант Б: настоящая навигация роутером. Проверяем, обновится ли page.url.
   async function openViaGoto(name: string) {
     const next = [...urlChain, name];
-    await goto(urlFor(next), { noScroll: true, keepFocus: true });
+    await goto(urlFor(next), { reset: false });
     note(`openViaGoto('${name}') → goto(${urlFor(next)})`);
     rawHistoryState = readRaw();
     locHref = location.pathname + location.search;
@@ -78,12 +78,12 @@ import { Button } from '#lib/ui/primitives/index.js'
   }
 
   let transientSeq = 0;
-  function openTransient() {
+  async function openTransient() {
     const id = `t${++transientSeq}`;
     const next = [...transient, { id, at: Date.now() }];
     // URL НЕ меняется: '' — остаёмся на текущем адресе
-    pushState('', { transient: next, depth: urlChain.length + next.length } as any);
-    note(`openTransient('${id}') → pushState('', {transient:[${next.length}]}) — URL не тронут`);
+    await goto('', { shallow: true, state: { transient: next, depth: urlChain.length + next.length } });
+    note(`openTransient('${id}') → goto('', { shallow, state: {transient:[${next.length}]} }) — URL не тронут`);
     rawHistoryState = readRaw();
     locHref = location.pathname + location.search;
     locSearch = location.search;
@@ -99,9 +99,9 @@ import { Button } from '#lib/ui/primitives/index.js'
     history.go(-n);
   }
 
-  function replaceTop() {
-    replaceState('', { transient, depth: fullChain.length, touched: Date.now() } as any);
-    note('replaceState — запись истории заменена, «Вперёд» должен уцелеть');
+  async function replaceTop() {
+    await goto('', { shallow: true, replace: true, state: { transient, depth: fullChain.length, touched: Date.now() } });
+    note('goto({ shallow, replace }) — запись истории заменена, «Вперёд» должен уцелеть');
     rawHistoryState = readRaw();
     locHref = location.pathname + location.search;
     locSearch = location.search;
@@ -174,8 +174,8 @@ import { Button } from '#lib/ui/primitives/index.js'
       <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
         <h2>Действия</h2>
         <div class="mb-2.5 flex flex-wrap gap-2">
-          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('card')}>pushState + «card»</Button>
-          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('user')}>pushState + «user»</Button>
+          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('card')}>shallow + «card»</Button>
+          <Button variant="plain" size="none" class={BTN} onclick={() => openRegistered('user')}>shallow + «user»</Button>
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
           <Button variant="plain" size="none" class={BTN_GO} onclick={() => openViaGoto('card')}>goto + «card»</Button>
@@ -183,7 +183,7 @@ import { Button } from '#lib/ui/primitives/index.js'
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
           <Button variant="plain" size="none" class={BTN_ALT} onclick={openTransient}>+ transient (без URL)</Button>
-          <Button variant="plain" size="none" class={BTN_ALT} onclick={replaceTop}>replaceState</Button>
+          <Button variant="plain" size="none" class={BTN_ALT} onclick={replaceTop}>shallow replace</Button>
         </div>
         <div class="mb-2.5 flex flex-wrap gap-2">
           <Button variant="plain" size="none" class={BTN} onclick={closeTop} disabled={!fullChain.length}>Закрыть верхний (back)</Button>

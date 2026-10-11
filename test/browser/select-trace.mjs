@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import { pageState } from './history-state.mjs'
 
 const BASE = process.env.SELECT_TRACE_BASE ?? 'http://127.0.0.1:5173/modals'
 const TRACE_PREFIX = '[modals/select-trace] '
@@ -28,9 +29,7 @@ async function openInnerSelect(page) {
 }
 
 async function readTransientCount(page) {
-  return page.evaluate(() =>
-    (history.state?.['sveltekit:states']?.modals?.transient ?? []).length,
-  )
+  return ((await pageState(page)).modals?.transient ?? []).length
 }
 
 const browser = await chromium.launch({ headless: true })

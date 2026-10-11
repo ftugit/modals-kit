@@ -69,7 +69,7 @@ vite-plugin-svelte ^7.1.2, svelte-check ^4.6.0, Node в песочнице 20.20
 | `sv migrate` (sv 1.0.1 → 1.1.1) | [cli#1392] (2026-10-03), sv 1.1.1 (2026-10-06) | **исправлено в 1.1.1:**<br>• `$lib` переписывается по всему проекту;<br>• конфликт имён при слиянии конфигов;<br>• хуки навигации;<br>• разбор `</script>`.<br>**Открыто:**<br>• перепечатка меняет текст (п. 3) — бьёт по нам, см. §0.2;<br>• схемы env `input => input ?? ''` ломают `A ?? B` (п. 8);<br>• всегда пишет `"#lib": "./src/lib/index.js"` («not fixing»), а у нас `index.ts` |
 | npm, поставляемый с Node 22 (до 11.5.0), падает на свежей установке Kit 3 с ошибкой резолвера | byteiota, 2026-10-10 | у нас Node 20 — менять всё равно. Брать Node 24 или проверить версию npm |
 | TypeScript 7.0.2 уже вышел, а peer Kit 3.0.1 — `typescript ^6.0.0` | npm | после переезда TS закреплён на 6 до поддержки 7 в Kit. Не блокер, но держим в виду |
-| `svelte.config.js` больше не читается вовсе. Скрипты CI/деплоя, которые на него ссылаются, молча ломаются | руководство, byteiota, per-ankh#271 | у нас его читают:<br>• `tooling/env-docs.mjs` (`SCANNED_FILES`);<br>• комментарии в `.env.example` и `form-security.ts`;<br>• `probes/db-demo-browser.check.mjs` |
+| `svelte.config.js` больше не читается вовсе. Скрипты CI/деплоя, которые на него ссылаются, молча ломаются | руководство, byteiota, per-ankh#271 | у нас его читают:<br>• `tooling/env-docs.mjs` (`SCANNED_FILES`);<br>• комментарии в `.env.example` и `form-security.ts`;<br>• `test/browser/db-demo-browser.check.mjs` |
 
 ### 2.2 Причины не ждать долго
 
@@ -181,7 +181,7 @@ vite-plugin-svelte ^7.1.2, svelte-check ^4.6.0, Node в песочнице 20.20
 
 | Изменение | Где у нас | Объём | Фаза |
 |---|---|---|---|
-| `svelte.config.js` → `sveltekit({ adapter, csrf: { trustedOrigins }, preprocess })` в `vite.config.ts` | файл + `tooling/env-docs.mjs:23` + комментарии (`.env.example:8,28`, `form-security.ts:9`, `probes/db-demo-browser.check.mjs:14`, `lib/db/docs/CHECKLIST-2.md:328,336`) | 1 файл удалить, 6 мест поправить | A2 |
+| `svelte.config.js` → `sveltekit({ adapter, csrf: { trustedOrigins }, preprocess })` в `vite.config.ts` | файл + `tooling/env-docs.mjs:23` + комментарии (`.env.example:8,28`, `form-security.ts:9`, `test/browser/db-demo-browser.check.mjs:14`, `lib/db/docs/CHECKLIST-2.md:328,336`) | 1 файл удалить, 6 мест поправить | A2 |
 | логика `trustedOrigins` **дублируется** в `svelte.config.js` и `server/form-security.ts` (env + порты превью). После переезда в TS-конфиг её можно взять из одного чистого модуля | 2 копии | вопрос §10 | A2 |
 | `$app/environment` → `$app/env` | `modals/cores/sveltekit.ts:12`, `modals/svelte/media.svelte.ts:3`, `router/sveltekit.ts:17`; комментарий `ui/js-only.svelte.ts:7` | 3 импорта + 1 комментарий | A1 |
 | `$env/dynamic/private` → `src/env.ts` + `$app/env/private` | `server/db.ts:19`, `server/form-security.ts:16`. Переменные: `KIT_TRUSTED_ORIGINS`, `PREVIEW_PORTS`, `E2B_SANDBOX_ID`, `DATABASE_URL`, `HYPERDRIVE_CONNECTION_STRING`, `DATABASE_DIR`, `DB_POOL_MAX`, `DB_CONNECT_TIMEOUT_MS`, `DB_CURSOR_SECRET`, `DB_CURSOR_OLD_KEYS`, `DB_CURSOR_TTL_SECONDS`, `VERCEL` | 2 файла + новый `src/env.ts` (12 переменных, все dynamic, private) | A3 |

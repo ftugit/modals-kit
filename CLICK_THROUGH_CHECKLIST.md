@@ -42,6 +42,11 @@
 
 ## Воспроизведение (доказано, `probes/click-through-repro.mjs`)
 
+> Каталог `probes/` удалён при переезде на SvelteKit 3 (ветка `upgrade/kit3`): разовые
+> пробы читали ключ истории 2.x `sveltekit:states`, которого в 3.x нет. Упомянутые ниже
+> файлы доступны в истории: `git show 77f1cf5:probes/<файл>`. Регрессия click-through
+> закреплена в `test/browser/regressions.mjs`.
+
 Мобильный контекст (390×844, touch): /paginator → источник `animes` → раскрыть
 `<details data-testid="filters-details">` (панель фильтров свёрнута!) → тап по первому
 select → лист открыт. Тап по оверлею в точке (28, 30), под которой лежит

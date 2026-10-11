@@ -19,7 +19,10 @@ const KiB = 1024
 const CLIENT_ROOT = '.svelte-kit/output/client'
 const IMMUTABLE_ROOT = join(CLIENT_ROOT, '_app/immutable')
 const MANIFEST = join(CLIENT_ROOT, '.vite/manifest.json')
-const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
+// SvelteKit 3 разделил сгенерированное на `generated/build` и `generated/dev`; в 2.x файл
+// лежал в `generated/client-optimized`. Старый путь читал УСТАРЕВШИЙ app.js от сборки
+// 2.x, пока его не вычистил `vite dev` 3.x (ход 16, B9).
+const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 
 // Лимиты подняты 2026-10-07 (этапы 1–4): общий слой источников с возможностями,
 // серверная схема фильтров Shikimori, её клиентская часть (ключи адреса, схема,
@@ -37,8 +40,12 @@ const GENERATED_APP = '.svelte-kit/generated/client-optimized/app.js'
 // цвета/якоря из адреса) и загрузчика F30/F32–F34 дали 209.2 > 209.0 KiB «весь JS».
 // Оператор: «поднимай сейчас и в подобных сценариях на 5кб сразу всегда» —
 // allJsGzip 209 → 214. Прочие лимиты не тронуты (не превышены).
+// REVISION 2026-10-11 (ход 16, переезд на SvelteKit 3, B1): рантайм Kit 3 дал +3.5 KiB
+// (226.8 > 223.3 все immutable; /modals 153.6 > 150.0); код приложения между замерами —
+// только замена pushState/replaceState на goto({ shallow }). По постоянному решению
+// оператора («поднимай на 5кб сразу») — allImmutableGzip 223.3 → 228.3, /modals 150 → 155.
 const LIMITS = {
-  allImmutableGzip: 223.3 * KiB,
+  allImmutableGzip: 228.3 * KiB,
   allJsGzip: 214 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
@@ -52,10 +59,14 @@ const ROUTE_LIMITS = {
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
   // дали 148.6. Вернуть 148.5 после F25 (docs/design/universal-demo-panel.md).
-  '/modals': 150 * KiB,
-  // Пагинатор с живым источником, lib/search и панелью фильтров (факт 120.3).
-  // Лимит добавлен на этапе 4: раньше этот маршрут не проверялся вовсе.
-  '/paginator': 138.6 * KiB,
+  // Ход 16: 150 → 155 — рантайм Kit 3 (см. REVISION выше).
+  '/modals': 155 * KiB,
+  // Пагинатор с живым источником, lib/search и панелью фильтров. Ход 16 (решение
+  // оператора): 138.6 → 196.5 = факт 191.5 + 5. Прежние «факт 120.3» и 138.6 были
+  // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
+  // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
+  // остальных маршрутов; вес самой страницы — отдельная находка (kit3-upgrade §12).
+  '/paginator': 196.5 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {
@@ -134,9 +145,14 @@ function routeDictionary() {
   const source = readFileSync(GENERATED_APP, 'utf8')
   const out = {}
   for (const match of source.matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
+    // `~n` — узел n с серверной загрузкой (в app.js это JS-выражение `~n`). Раньше
+    // `Number('~8')` давал NaN, узел выбрасывался, и маршруты с `+page.server` /
+    // `+page.ts`-данными (/paginator, /db-demo) мерились без собственной страницы.
     out[match[1]] = match[2]
       .split(',')
-      .map((x) => Number(x.trim()))
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map((x) => (x.startsWith('~') ? Number(x.slice(1)) : Number(x)))
       .filter(Number.isFinite)
   }
   return out

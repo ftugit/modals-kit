@@ -1,8 +1,10 @@
 <!doctype html>
 <!--
   База приложения — классами, а не CSS-файлом: app.css содержит только
-  токены тем. HTML — тоже источник для UnoCSS (transformIndexHtml), поэтому
-  эти утилиты попадают в сборку как обычные.
+  токены тем. Этот файл SvelteKit не пропускает через Vite (transformIndexHtml
+  к нему не применяется), поэтому UnoCSS сканирует его явно —
+  `content.filesystem` в unocss.config.ts; без этого утилиты отсюда в сборку
+  не попадали.
   `[&_button:not(:disabled)]:cursor-pointer` заменяет прежнее правило
   `button:not(:disabled), [role=button]… { cursor: pointer }`: reset пресета
   курсор не задаёт.

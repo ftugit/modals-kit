@@ -66,7 +66,7 @@ not ok - ядро модалок не зависит ни от одного фр
 `data-modal-trigger`, `data-modal-skeleton`, `data-modal-error`,
 `data-modal-spinner`, `data-select-*`, `data-fe-sidebar-*`, `data-sidebar-zone`.
 Их ставят компоненты, по ним ходят тесты и внешние стили. Следит за этим
-`probes/classes-audit.mjs`: он ищет маркеры и утилиты, для которых нет правил.
+`tooling/classes-audit.mjs`: он ищет маркеры и утилиты, для которых нет правил.
 
 **Грабли, на которые легко наступить заново.** UnoCSS собирает классы из
 разметки: по умолчанию (`content.pipeline.include`) сканируются только
@@ -82,8 +82,8 @@ not ok - ядро модалок не зависит ни от одного фр
 Проверить, что все классы действительно собрались, можно без браузера:
 
 ```
-node probes/classes-audit.mjs     # маркеры + токены, для которых нет правил
-node probes/uno-probe.mjs 'z-200' 'animate-[pulse_1.4s_ease-in-out_infinite]' 'starting:opacity-0'
+node tooling/classes-audit.mjs     # маркеры + токены, для которых нет правил
+node tooling/uno-probe.mjs 'z-200' 'animate-[pulse_1.4s_ease-in-out_infinite]' 'starting:opacity-0'
 ```
 
 Соответствие утилит и прежних правил держит `test/browser/modals.mjs`:

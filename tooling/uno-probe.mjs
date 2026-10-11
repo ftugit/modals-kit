@@ -1,9 +1,9 @@
 /**
  * probe: что реально генерирует официальный UnoCSS (presetWind4) под тему проекта.
- * Тема повторена здесь литералом (uno.config.ts — TS, node без лоадера его не читает),
+ * Тема повторена здесь литералом (unocss.config.ts — TS, node без лоадера его не читает),
  * сам конфиг НЕ меняется и не импортируется: probe только печатает CSS по кандидатам.
  *
- *   node probes/uno-probe.mjs 'z-200' 'data-[starting-style]:opacity-0' ...
+ *   node tooling/uno-probe.mjs 'z-200' 'data-[starting-style]:opacity-0' ...
  */
 import { createGenerator } from '@unocss/core'
 import * as wind from '@unocss/preset-wind4'

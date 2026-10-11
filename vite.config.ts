@@ -12,14 +12,21 @@ const kit = {
   adapter: adapter(),
   preprocess: vitePreprocess(),
   csrf: { trustedOrigins: trustedOrigins((key) => process.env[key]).exact },
-  // Переменные окружения — `src/env.ts` + `$app/env/private`. В 3.x это стабильный API,
-  // флаг снимается вместе со сменой мажора (docs/design/kit3-upgrade.md, B1).
-  experimental: { explicitEnvironmentVariables: true },
 };
+
+// UnoCSS без хука `transformIndexHtml`. SvelteKit не пропускает `src/app.html` через этот
+// хук и никогда не пропускал (sveltejs/kit#8269), а с 3.0 предупреждает о КАЖДОМ плагине,
+// который его объявляет (`transform_index_html_unsupported`, sveltejs/kit#16394). У UnoCSS
+// хук нужен только для index.html обычного Vite-приложения, здесь он мёртвый: CSS с ним
+// и без него побайтно одинаков, а классы app.html сканируются явно (`content.filesystem`
+// в unocss.config.ts). Тот же приём — varlock (dmno-dev/varlock#1199). Убрать, когда
+// UnoCSS или SvelteKit (фильтр ложных срабатываний, sveltejs/kit#17373) решат это у себя.
+const unocss = UnoCSS();
+for (const plugin of unocss) delete plugin.transformIndexHtml;
 
 export default defineConfig({
   // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
-  plugins: [layerGuard(RULES), UnoCSS(), sveltekit(kit)],
+  plugins: [layerGuard(RULES), unocss, sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
   test: { include: ['src/**/*.{test,spec}.{js,ts}'] },
   preview: {

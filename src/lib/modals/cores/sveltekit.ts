@@ -10,7 +10,7 @@
 //
 // Логики тут нет намеренно: появится условие — его место в url.ts.
 import { browser } from '$app/env'
-import { preloadData, pushState, replaceState } from '$app/navigation'
+import { goto, preloadData } from '$app/navigation'
 import { page } from '$app/state'
 import { buildCore, type CoreOptions, type ReconfigurableCore } from '../build'
 import type { ChainEngine } from '../engine'
@@ -18,6 +18,7 @@ import { urlStorage } from '../storages'
 import type { Sources } from '../build'
 import type { ModalCore } from '../core-contract'
 import { makeRouteResolves } from './routes'
+import { watch } from '../svelte/watch.svelte'
 
 /* ── таблица роутов: проверка адреса в РАНТАЙМЕ ────────────────────── */
 /*
@@ -44,70 +45,67 @@ export const routeResolves = makeRouteResolves(
 /**
  * Срез SvelteKit под `ChainEngine` — внутренняя деталь ядра.
  *
- * 🔴 Источник адреса зависит от среды, и это не мелочь:
- *   • в браузере — `window.location`, потому что `pushState()` НЕ обновляет
- *     `page.url` (спайк, SPIKE-HISTORY.md);
- *   • на сервере `window` нет вовсе, а `page.url` там как раз верен —
- *     «мелкой» навигации ещё не было.
- * Прежняя версия читала только `window.location` и падала при SSR.
+ * Адрес и состояние записи — только штатные `page.*` SvelteKit 3
+ * (https://svelte.dev/docs/kit/shallow-routing):
+ *   • видимый адрес — `page.shallow?.url ?? page.url`: после shallow-`goto`
+ *     `page.url` по-прежнему описывает отрисованную страницу, а адресную
+ *     строку описывает `page.shallow`;
+ *   • состояние записи — `page.state`; при Назад/Вперёд по shallow-записям
+ *     фреймворк сам восстанавливает и `page.state`, и `page.shallow`.
+ * На сервере `page.shallow` нет, а `page.state` — пустой объект: мелких
+ * записей ещё не было.
+ *
+ * 🔴 «Читаю своё». В Kit 3 `goto(…, { shallow })` асинхронен: запись истории
+ * и `page.*` меняются только после разрешения маршрута. Ядро же пишет и сразу
+ * перечитывает адрес/состояние (`build.ts`: запись → `notify()`), а следующая
+ * запись сливает чужие ключи с `state()`. Поэтому до применения записи
+ * движок отдаёт ровно то, что записал; после — снова `page.*`. Контракт
+ * `ChainEngine` остаётся синхронным, обходов на внутренностях роутера
+ * (`history.state`, `window.location`) нет.
  */
 export function svelteKitEngine(): ChainEngine {
+  let pending: { url: URL; state: Record<string, unknown> } | null = null
+  let seq = 0
+
+  const write = (url: string, state: Record<string, unknown>, replace: boolean): void => {
+    const mine = ++seq
+    pending = { url: new URL(url, (page.shallow?.url ?? page.url).href), state }
+    // Отказ `goto` (маршрут не найден) не глотаем: он всплывёт как раньше.
+    void goto(url, { shallow: true, replace, state: state as App.PageState }).finally(() => {
+      if (seq === mine) pending = null
+    })
+  }
+
   return {
     name: 'sveltekit',
     location() {
-      const u = browser ? window.location : page.url
+      const u = pending?.url ?? page.shallow?.url ?? page.url
       return { pathname: u.pathname, search: u.search }
     },
 
-    // Только через $app/navigation: прямой history.pushState роутер SvelteKit
-    // перетрёт и предупредит в консоли.
-    pushState: (url, state) => pushState(url, state as App.PageState),
-    replaceState: (url, state) => replaceState(url, state as App.PageState),
+    // Shallow-запись — только через `goto` из $app/navigation: прямой
+    // history.pushState роутер SvelteKit перетрёт и предупредит в консоли.
+    pushState: (url, state) => write(url, state, false),
+    replaceState: (url, state) => write(url, state, true),
 
-    /**
-     * 🔴 Читаем `history.state`, а НЕ `page.state`.
-     *
-     * Проверено в браузере: при «мелкой» навигации, где адрес не меняется
-     * (`pushState('')`), после Назад `history.state` уже верен, а
-     * `page.state` остаётся от предыдущей записи. Из-за этого первый Назад
-     * не снимал transient-слой, а второй снимал сразу два уровня.
-     *
-     * `sveltekit:states` — внутренний ключ роутера; зависимость от него
-     * записана в журнал отклонений. Запасной путь — `page.state`:
-     * он нужен на сервере, где `history` нет вовсе.
-     */
-    state: () => {
-      // В браузере `history.state` — единственный источник, БЕЗ отката
-      // на `page.state`. Отката тут быть не должно: после Назад ключа
-      // `sveltekit:states` на записи может не быть вовсе, и тогда откат
-      // возвращал устаревший `page.state` — слой, снятый кнопкой Назад,
-      // продолжал считаться открытым. Поймано на transient-слое select.
-      if (browser) {
-        const raw = (window.history.state ?? {}) as Record<string, unknown>
-        const states = raw['sveltekit:states']
-        return (states && typeof states === 'object' ? states : {}) as Record<string, unknown>
-      }
-      // На сервере `history` нет вовсе — там только page.state.
-      return page.state as Record<string, unknown>
-    },
+    state: () => pending?.state ?? (page.state as Record<string, unknown>),
 
     /**
      * На сервере внешней навигации не бывает — метода просто нет,
      * и ядро узнает об этом через контракт, а не через исключение.
      *
-     * 🔴 Уведомление ОТЛОЖЕНО на микрозадачу. Нативный `popstate` приходит
-     * раньше, чем роутер SvelteKit успевает обновить `page.state`, поэтому
-     * синхронное чтение даёт состояние ПРЕДЫДУЩЕЙ записи: первый «Назад»
-     * не снимал transient-слой, второй снимал сразу два уровня.
-     * В оригинале ровно от этого стоял `queueMicrotask(() => notify())`.
+     * Внешнее изменение — это смена `page.url`/`page.shallow`/`page.state`:
+     * Назад/Вперёд (в том числе по shallow-записям, где навигационные хуки не
+     * вызываются) и обычная навигация. Реактивный эффект срабатывает ПОСЛЕ
+     * того, как фреймворк обновил `page`, поэтому ядро читает уже новое
+     * состояние — отсрочка на микрозадачу, нужная в 2.x, больше не нужна.
+     * Срабатывает и на применение собственной записи — повторное чтение
+     * даёт то же состояние. `pending` здесь НЕ сбрасывается: при двух
+     * записях в полёте применение первой сбросило бы вторую. Сброс — только
+     * в `finally` последней записи (обход истории прерывает незавершённую
+     * запись, и её промис тоже разрешается).
      */
-    onPopState: browser
-      ? (fn) => {
-          const deferred = () => queueMicrotask(fn)
-          window.addEventListener('popstate', deferred)
-          return () => window.removeEventListener('popstate', deferred)
-        }
-      : undefined,
+    onPopState: browser ? (fn) => watch(() => [page.url, page.shallow, page.state], fn) : undefined,
 
     // Нет `go` → нет истории → адаптер не отдаст `back`, и закрытие
     // пойдёт через replace. Ровно то, что нужно при SSR.
@@ -117,19 +115,19 @@ export function svelteKitEngine(): ChainEngine {
      * Исполняет load() самой страницы маршрута. Канонический приём shallow
      * routing из документации SvelteKit — и он же снимает дублирование
      * «страница грузит своё, модалка грузит то же ещё раз».
+     *
+     * Исходы `preloadData`: `loaded` | `redirect` | `error` (ошибка загрузчика —
+     * со статусом, sveltejs/kit#12579).
      */
     async preload(href) {
       const r = await preloadData(href)
-      if (r.type === 'loaded') {
-        return r.status === 200
-          ? { ok: true as const, data: r.data }
-          : {
-              ok: false as const,
-              reason: r.status === 404 ? ('not-found' as const) : ('error' as const),
-              status: r.status,
-            }
+      if (r.type === 'redirect') return { ok: false as const, reason: 'redirect' as const }
+      if (r.type === 'loaded' && r.status === 200) return { ok: true as const, data: r.data }
+      return {
+        ok: false as const,
+        reason: r.status === 404 ? ('not-found' as const) : ('error' as const),
+        status: r.status,
       }
-      return { ok: false as const, reason: 'redirect' as const }
     },
 
     /*

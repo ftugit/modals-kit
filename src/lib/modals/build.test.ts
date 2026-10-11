@@ -579,3 +579,110 @@ test('зарегистрированная запись снимает сист�
   assert.doesNotThrow(() => m.open('card', { params: { id: 7 } }))
   assert.deepEqual(names(m.chain), ['card'], 'оверлей не уступил место модалке')
 })
+
+/* ── обход истории применяется средой АСИНХРОННО (SvelteKit 3) ──────── */
+// Браузер переходит по `go()` сразу, а состояние записи среда отдаёт только
+// после применения обхода (SvelteKit 3 обновляет `page.state` после
+// `await get_navigation_intent`). Операция, пришедшая в это окно, считала
+// шаги от устаревшей глубины и уводила за пределы приложения (R-24: go(-2)
+// → about:blank). Ядро обязано дождаться применения обхода.
+function lagEngine(): ChainEngine & { browserIndex: () => number; flush: () => void } {
+  const stack: Array<{ url: string; state: Record<string, unknown> }> = [
+    { url: '/other', state: {} },
+    { url: '/', state: {} },
+  ]
+  let i = 1 // где браузер
+  let applied = 1 // что видит «страница»
+  const pops = new Set<() => void>()
+  return {
+    name: 'lag',
+    browserIndex: () => i,
+    flush() {
+      applied = i
+      for (const f of [...pops]) f()
+    },
+    location() {
+      const u = new URL(stack[applied].url, 'http://x')
+      return { pathname: u.pathname, search: u.search }
+    },
+    pushState(u, s) {
+      stack.length = i + 1
+      stack.push({ url: u, state: s })
+      i = applied = stack.length - 1
+    },
+    replaceState(u, s) {
+      stack[i] = { url: u, state: s }
+    },
+    state: () => stack[applied].state,
+    // Каждая регистрация — отдельная подписка, как `watch` в движке SvelteKit
+    // (одна и та же функция в Set схлопнулась бы и спрятала повторный вызов).
+    onPopState(fn) {
+      const own = () => fn()
+      pops.add(own)
+      return () => pops.delete(own)
+    },
+    go(d) {
+      i = Math.max(0, Math.min(stack.length - 1, i + d))
+    },
+  }
+}
+
+test('back во время неприменённого обхода ждёт его и считает шаги от новой глубины', () => {
+  const e = lagEngine()
+  const core = buildCore(e, { url: urlStorage() })
+  const seen: number[] = []
+  core.subscribe((c) => seen.push(c.length))
+  const card: RegisteredEntry = { kind: 'registered', name: 'card', params: {}, overrides: {} }
+  const sheet: RegisteredEntry = { kind: 'registered', name: 'sheet', params: {}, overrides: {} }
+
+  core.write([card])
+  core.write([card, sheet])
+  assert.equal(e.browserIndex(), 3)
+
+  core.back!(1, [card]) // закрыть лист: go(-1), обход ещё не применён
+  assert.equal(e.browserIndex(), 2)
+  core.back!(1, []) // закрыть модалку в том же окне
+  assert.equal(e.browserIndex(), 2, 'операция в окне обхода обязана ждать, а не шагать от устаревшей глубины')
+
+  e.flush() // среда применила первый обход → отложенная операция
+  assert.equal(e.browserIndex(), 1, 'ровно на исходную запись страницы, не дальше (не на /other)')
+  e.flush()
+  assert.deepEqual(core.read(), [])
+})
+
+test('запись во время неприменённого обхода выполняется после него', () => {
+  const e = lagEngine()
+  const core = buildCore(e, { url: urlStorage() })
+  core.subscribe(() => {})
+  const reg1 = (name: string): RegisteredEntry => ({ kind: 'registered', name, params: {}, overrides: {} })
+
+  core.write([reg1('a')])
+  core.write([reg1('a'), reg1('b')])
+  core.back!(1, [reg1('a')])
+  core.write([reg1('a'), reg1('c')]) // открыть другую поверх, пока обход не применён
+  assert.equal(e.browserIndex(), 2, 'запись не должна обрезать историю до применения обхода')
+  e.flush()
+  assert.deepEqual(core.read().map((x) => (x as RegisteredEntry).name), ['a', 'c'])
+  assert.equal(e.browserIndex(), 3)
+})
+
+test('несколько подписчиков: одно событие истории применяет отложенное один раз', () => {
+  const e = lagEngine()
+  const core = buildCore(e, { url: urlStorage() })
+  core.subscribe(() => {})
+  core.subscribe(() => {})
+  const r = (name: string): RegisteredEntry => ({ kind: 'registered', name, params: {}, overrides: {} })
+  core.write([r('a')])
+  core.write([r('a'), r('b')])
+  core.write([r('a'), r('b'), r('c')])
+  core.back!(1, [r('a'), r('b')]) // go(-1)
+  core.back!(1, [r('a')]) // ждёт
+  core.back!(1, []) // ждёт
+  e.flush() // применён первый; второй начинает свой обход, третий обязан ждать дальше
+  assert.equal(e.browserIndex(), 2, 'второй сделал ровно один шаг, третий ждёт')
+  e.flush()
+  assert.equal(e.browserIndex(), 1, 'ровно на исходную запись страницы')
+  e.flush()
+  assert.equal(e.browserIndex(), 1, 'лишних шагов нет')
+  assert.deepEqual(core.read(), [])
+})

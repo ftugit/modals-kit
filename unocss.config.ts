@@ -13,6 +13,10 @@ const pair = (name: string) => ({
 });
 
 export default defineConfig({
+  // app.html — шаблон SvelteKit, а не модуль Vite: ни сборка, ни transformIndexHtml
+  // его не видят (sveltejs/kit#8269), поэтому классы <html>/<body> сканируются с диска.
+  // https://unocss.dev/guide/extracting#extracting-from-filesystem
+  content: { filesystem: ['src/app.html'] },
   presets: [
     presetWind4({ 
       preflights: { reset: true } 

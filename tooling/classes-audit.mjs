@@ -17,9 +17,9 @@
  * Значения `id`, `name`, `data-testid`, `autocomplete` и прочих атрибутов
  * поэтому в отчёт не попадают: они и должны быть словами.
  *
- *   node probes/classes-audit.mjs              # область рефактора
- *   node probes/classes-audit.mjs --all        # весь src (шумно, для осмотра)
- *   node probes/classes-audit.mjs src/app.html # конкретные файлы
+ *   node tooling/classes-audit.mjs              # область рефактора
+ *   node tooling/classes-audit.mjs --all        # весь src (шумно, для осмотра)
+ *   node tooling/classes-audit.mjs src/app.html # конкретные файлы
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createGenerator } from '@unocss/core'

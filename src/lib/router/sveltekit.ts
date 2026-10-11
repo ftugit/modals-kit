@@ -15,21 +15,19 @@
  * через `goto`.
  */
 import { browser } from '$app/env'
-import { afterNavigate, goto, preloadData, pushState, replaceState } from '$app/navigation'
+import { afterNavigate, goto, preloadData } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '#lib/paginate/index.js'
 
 /**
  * 🔴 `page.url` — адрес СТРАНИЦЫ, а не адресная строка. «Мелкая» запись
- * (`replaceState`/`pushState` из `$app/navigation`, shallow routing) меняет запись
- * истории и `page.state`, но `page.url` намеренно оставляет прежним (исходник
- * SvelteKit: `replaceState` сохраняет `page.url.href` в записи и не трогает
- * `page.url`). Пагинатор пишет свой адрес именно так (`syncAddress`), поэтому
+ * (`goto(…, { shallow: true })` из `$app/navigation`, shallow routing) меняет запись
+ * истории и `page.state`, но `page.url` намеренно оставляет прежним. Пагинатор пишет свой адрес именно так (`syncAddress`), поэтому
  * после первой же записи `page.url.searchParams` устаревает: следующая запись
  * сливала ключи с устаревшим срезом и затирала соседний пагинатор, а ссылки
  * строились от старого адреса. Тот же вывод — у ядра модалок
- * (`modals/cores/sveltekit.ts`: «`pushState()` НЕ обновляет `page.url`»).
+ * (`modals/cores/sveltekit.ts`: «shallow-запись НЕ обновляет `page.url`»).
  *
  * Поэтому в браузере срез берётся у адресной строки, а реактивность ей даёт
  * `createSubscriber` (штатный способ подключить внешний источник к рунам):
@@ -102,8 +100,7 @@ function hrefOf(search: Record<string, unknown>): string {
  * регистрирует `afterNavigate`, а это функция жизненного цикла.
  *
  * Запись адреса (`syncAddress`) до готовности роутера SvelteKit ставится в
- * очередь: `replaceState` при гидрации бросает (`Cannot call replaceState(...)
- * before router is initialized` в dev, `reading '$set'` в production) и обрывает
+ * очередь: shallow-запись до запуска роутера бросает и обрывает
  * гидрацию (F12: адрес `?page.q=` после нативной GET-формы). `onMount` хоста
  * выполняется ДО запуска роутера, а `afterNavigate` — после (и при гидрации, и
  * при монтировании компонента позже), поэтому очередь сбрасывается в первом
@@ -123,26 +120,28 @@ export function svelteKitRouter(): MinimalRouter {
   return {
     navigate(opts) {
       const next = opts.search(currentSearch())
-      // Скролл принадлежит контейнеру хоста, не странице → noScroll
+      // Скролл и фокус принадлежат контейнеру хоста, не странице → `reset: false`
       // (в исходнике то же самое: `resetScroll: false`).
-      void goto(hrefOf(next), {
-        replaceState: opts.replace ?? true,
-        noScroll: true,
-        keepFocus: true,
-      })
+      void goto(hrefOf(next), { replace: opts.replace ?? true, reset: false })
     },
     /**
-     * Замена ТЕКУЩЕЙ записи истории без перехода: `replaceState` слоя SvelteKit
-     * (не `goto`) — адрес меняется, но загрузка не перезапускается, разметка не
+     * Замена ТЕКУЩЕЙ записи истории без перехода: shallow-`goto` SvelteKit
+     * (`shallow: true, replace: true`) — адрес меняется, но загрузка не перезапускается, разметка не
      * перерисовывается, браузер ничего не запрашивает. Нужна там, где адрес надо
      * ПОПРАВИТЬ, а не «пойти» (например, убрать пустые ключи нативной формы).
      * Соседний `history.replaceState` не годится: SvelteKit не узнал бы о правке
      * и вернул бы старый адрес на следующем чтении.
      */
     syncAddress(opts) {
+      // В SvelteKit 3 `goto` асинхронен: адресная строка меняется только после
+      // разрешения маршрута, а промис разрешается, «когда изменение состояния
+      // применено» (https://svelte.dev/docs/kit/$app-navigation#goto). Уведомлять
+      // подписчиков раньше — значит отдать им СТАРЫЙ `location`: пагинатор
+      // откатывал своё состояние и затирал только что записанный ключ.
       const write = () => {
-        replaceState(hrefOf(opts.search(currentSearch())), page.state)
-        notifyAddressWrite()
+        void goto(hrefOf(opts.search(currentSearch())), { shallow: true, replace: true, state: page.state }).then(
+          notifyAddressWrite,
+        )
       }
       if (ready) write()
       else queued.push(write)
@@ -155,7 +154,7 @@ export function svelteKitRouter(): MinimalRouter {
  * Флаг «мелкой» записи истории (shallow routing) для UI, у которого «Назад»
  * должен ЗАКРЫВАТЬ, а не уводить со страницы: мобильная панель и т. п.
  *
- * Запись — `pushState` из `$app/navigation` с прежним `page.state` плюс флаг:
+ * Запись — shallow-`goto` из `$app/navigation` с прежним `page.state` плюс флаг:
  * чужие ключи (цепочка модалок) едут дальше. Нативный `history.pushState` здесь
  * не годится: SvelteKit о такой записи не знает, предупреждает в консоли и
  * копирует свои служебные ключи (`sveltekit:history`) в новую запись (баг F6,
@@ -172,7 +171,7 @@ export function shallowFlag(key: string): { readonly on: boolean; push(): void }
       if (state()[key]) return
       // Адрес — ровно адресная строка: `''` SvelteKit разрешает через
       // `new URL('', document.baseURI)`, а это теряет `#якорь`.
-      pushState(window.location.href, { ...state(), [key]: true })
+      void goto(window.location.href, { shallow: true, state: { ...state(), [key]: true } })
     },
   }
 }

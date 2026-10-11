@@ -5,6 +5,7 @@
 //
 // Запуск: node test/browser/regressions.mjs   (нужен preview на :4173)
 import { chromium } from 'playwright'
+import { pageState, waitPageState } from './history-state.mjs'
 
 const PORT = Number(process.env.MODALS_PORT ?? 4173)
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}/modals`
@@ -16,11 +17,7 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg)
 }
 
-const chainOf = (page) =>
-  page.evaluate(() => {
-    const m = history.state?.['sveltekit:states']?.modals ?? {}
-    return (m.transient ?? []).map((t) => t.id)
-  })
+const chainOf = async (page) => ((await pageState(page)).modals?.transient ?? []).map((t) => t.id)
 
 const browser = await chromium.launch({ headless: true })
 const gotoBase = async (page) => {
@@ -252,10 +249,10 @@ try {
 
     await page.keyboard.press('Escape')
     await page.waitForTimeout(400)
-    const after = await page.evaluate(() => ({
-      overflow: getComputedStyle(document.body).overflow,
-      chain: (history.state?.['sveltekit:states']?.modals?.transient ?? []).length,
-    }))
+    const after = {
+      overflow: await page.evaluate(() => getComputedStyle(document.body).overflow),
+      chain: (await chainOf(page)).length,
+    }
     assert(after.chain === 0, 'Escape не снял запись')
     assert(after.overflow !== 'hidden', 'блокировка прокрутки осталась после закрытия')
     ok('Escape закрывает лист и снимает блокировку')
@@ -446,10 +443,10 @@ try {
     // Модалка без хранилища: запись есть, адреса нет.
     await page.locator('button', { hasText: 'Модалка без хранилища' }).first().click()
     await page.waitForSelector('[data-modal-stage]')
-    const transient = await page.evaluate(() => ({
-      url: location.search,
-      ids: (history.state?.['sveltekit:states']?.modals?.transient ?? []).map((t) => t.id),
-    }))
+    const transient = {
+      url: await page.evaluate(() => location.search),
+      ids: await chainOf(page),
+    }
     assert(transient.url === '', `transient-модалка попала в адрес: ${transient.url}`)
     assert(transient.ids.length === 1, `запись не создана: ${JSON.stringify(transient.ids)}`)
     ok('модалка без хранилища: запись в истории есть, адрес чист')
@@ -465,10 +462,10 @@ try {
     // Переход на зарегистрированную модалку: новая стопка, адрес появился.
     await page.locator('button', { hasText: 'Перейти на демо-модалку' }).first().click()
     await page.waitForTimeout(600)
-    const after = await page.evaluate(() => ({
-      url: location.search,
-      ids: (history.state?.['sveltekit:states']?.modals?.transient ?? []).map((t) => t.id),
-    }))
+    const after = {
+      url: await page.evaluate(() => location.search),
+      ids: await chainOf(page),
+    }
     assert(after.url.includes('modal=select'), `адрес не записан: ${after.url}`)
     assert(after.ids.length === 0, 'transient-запись осталась под зарегистрированной')
     ok('переход на зарегистрированную модалку начинает новую стопку')
@@ -595,8 +592,7 @@ try {
     await page.waitForFunction(
       () => document.querySelector('[data-modal-stage]')?.getAttribute('data-anchor') === 'right',
     )
-    const transient = await page.evaluate(() =>
-      (history.state?.['sveltekit:states']?.modals?.transient ?? []).length)
+    const transient = (await chainOf(page)).length
     assert(transient === 1, `transient-запись не создана: ${transient}`)
     ok('Select и модалка без хранилища получили правый якорь от активного потока')
     await page.close()
@@ -607,7 +603,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 393, height: 851 } })
     await gotoBase(page)
     const anchor = () => page.locator('[data-modal-stage]').getAttribute('data-anchor')
-    const snapshot = () => page.evaluate(() => history.state?.['sveltekit:states']?.modals ?? null)
+    const snapshot = async () => (await pageState(page)).modals ?? null
 
     await page.selectOption('#default_mobile', 'right') // панель — select механизма
     await page.getByText('Проверить наследование', { exact: true }).click()
@@ -711,9 +707,7 @@ try {
     ok('hit-test подтвердил реальную кнопку; outside click закрыл только Select')
 
     await action.click()
-    await page.waitForFunction(
-      () => (history.state?.['sveltekit:states']?.modals?.transient ?? []).length === 1,
-    )
+    await waitPageState(page, (s) => (s.modals?.transient ?? []).length === 1)
     assert((await chainOf(page)).length === 1, 'обычный клик после закрытия Select не сработал')
     ok('следующий намеренный клик по той же кнопке активен')
     await page.close()
@@ -1169,7 +1163,7 @@ try {
   // Раньше — нативный `history.pushState({...history.state, ddSidebar: 1})`:
   // в dev SvelteKit предупреждал «Avoid using history.pushState(...)», а в
   // новую запись копировались его служебные ключи. Теперь флаг — в
-  // `page.state` (shallow routing), то есть внутри `sveltekit:states`.
+  // `page.state` (shallow routing): в записи SvelteKit, а не в корне `history.state`.
   await run('R-28 мобильная панель: shallow-запись SvelteKit, Back закрывает, адрес цел', async () => {
     const origin = new URL(BASE).origin
     const page = await browser.newPage({ viewport: { width: 390, height: 800 } })
@@ -1181,7 +1175,8 @@ try {
     await page.locator('label[for="fe-sidebar"]:not([data-fe-sidebar-close])').filter({ visible: true }).first().click()
     await page.waitForFunction(() => document.getElementById('fe-sidebar').checked)
     const st = await page.evaluate(() => history.state)
-    assert(st?.['sveltekit:states']?.ddSidebar === true, `флаг панели не в sveltekit:states: ${JSON.stringify(st)}`)
+    const ps = await pageState(page)
+    assert(ps.ddSidebar === true, `флаг панели не в page.state: ${JSON.stringify(ps)}`)
     assert(!('ddSidebar' in st), 'флаг панели лежит в корне history.state — запись сделана в обход SvelteKit')
     assert(await page.evaluate(() => location.search + location.hash) === '?page.size=10#r28', 'открытие панели изменило адрес')
     ok('открытие: флаг в page.state, адрес (поиск и #якорь) не тронут')
@@ -1192,7 +1187,7 @@ try {
     await page.locator('label[for="fe-sidebar"]:not([data-fe-sidebar-close])').filter({ visible: true }).first().click()
     await page.waitForFunction(() => document.getElementById('fe-sidebar').checked)
     await page.locator('[data-fe-sidebar-close]').click()
-    await page.waitForFunction(() => !history.state?.['sveltekit:states']?.ddSidebar)
+    await waitPageState(page, (s) => !s.ddSidebar)
     assert(!(await checked()), 'крестик не закрыл панель')
     ok('крестик закрывает панель и снимает её запись истории')
     assert(warnings.length === 0, `SvelteKit предупредил о history.pushState: ${warnings[0]}`)

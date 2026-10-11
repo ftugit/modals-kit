@@ -21,7 +21,7 @@
 | VCS | `/home/user/integration/.git` — есть (локальный, без `origin`); коммиты только локальные |
 | последний коммит | `e6107da` refactor(db-demo): список через пагинатор, формы — отдельные компоненты |
 | baseline | `de0fe0d` = срез `modals-kit@5d08da7`, всё остальное в истории — адаптация |
-| гейты этого среза | vitest 38 файлов / 640 тестов · tooling 104/104 · слой 40/40 (30 в `db-port-specific`) · svelte-check 0 ошибок (47 warning'ов в `src/lib/paginate` и демонах) · build ~10 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (35)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) · `probes/db-demo-browser.check.mjs` → `DB_DEMO_BROWSER_OK (17)` — браузерная проверка обязательна: HTTP-проба не видит класса ошибок «SSR зелёный, гидрация мёртвая» (Chromium ставится `npx playwright install chromium`, порт превью обязан быть в `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы) |
+| гейты этого среза | vitest 38 файлов / 640 тестов · tooling 104/104 · слой 40/40 (30 в `db-port-specific`) · svelte-check 0 ошибок (47 warning'ов в `src/lib/paginate` и демонах) · build ~10 s · `test:db:probes` ORDER OK · `INTEGRATION_HTTP_OK (35)` и `HTTP_ROUNDTRIP_OK` на обоих движках (5173 PGlite, 5174 живой PG) · `test/browser/db-demo-browser.check.mjs` → `DB_DEMO_BROWSER_OK (17)` — браузерная проверка обязательна: HTTP-проба не видит класса ошибок «SSR зелёный, гидрация мёртвая» (Chromium ставится `npx playwright install chromium`, порт превью обязан быть в `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы) |
 | SKIPPED | нет |
 | долг пользователя | отозвать вставленные в чат PAT GitHub; `drop database if exists kitdb_demo with (force)`, когда демо не нужно |
 
@@ -43,7 +43,7 @@ SvelteKit-слой + документация + проверка на реаль
 | **`node_modules` пакета и приложения** | не переживают пересоздание песочницы (исключены из снапшота) -> `npm install` на каждом новом заходе. Если tarball пакета пересобран, а `package-lock.json` приложения помнит старый хэш, обычный `npm install` падает с `EINTEGRITY` - ставить заново: `npm install ../db-port/ftugit-kit-db-0.2.0.tgz` |
 | **PgBouncer** (для `src/lib/db/probes/pooler.probe.mjs`) | **не запущен** после пересоздания песочницы — поднимать по §0.2 (`/usr/sbin/pgbouncer /tmp/pgb/pgbouncer.ini`, `auth_type = any`) |
 | **Свежесть эталонных ревов** | определять `git ls-remote <публичный репо>`, а не локальными `origin/*`: у `modals-kit` кончик `b1` = `5d08da7` (2026-10-09), локальные refs показывали `15d4355`. Приватные (`SolidHono`) без токена не берутся — это проверено тем же `ls-remote` |
-| **Превью демо (`/db-demo`, `/paginator`)** | `npm run build && DATABASE_DIR=data/postgres DB_CURSOR_SECRET=$(openssl rand -hex 24) npm run preview -- --port 5173 --host 0.0.0.0` (порт — из `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы). Секрет короче 32 байт = 500 с `DB_CURSOR_SECRET непригоден` — это отказ конфига, а не бага демо | пробы: `node probes/db-demo-http.check.mjs` (35 шагов) и `node probes/db-demo-browser.check.mjs` (17 проверок, нужен Chromium); `data/postgres` переживает пересоздание песочницы, но перенесённый каталог PGlite иногда не открывает («PGlite failed to initialize properly») → каталог удалить, корпус вернётся миграцией и сидом; замок `.kit-db.lock` мёртвого владельца снимается сам (живой — отказ). **Перед `npx vitest run` превью останавливают** (pid из
+| **Превью демо (`/db-demo`, `/paginator`)** | `npm run build && DATABASE_DIR=data/postgres DB_CURSOR_SECRET=$(openssl rand -hex 24) npm run preview -- --port 5173 --host 0.0.0.0` (порт — из `PREVIEW_PORTS`, иначе Kit отвечает 403 на POST формы). Секрет короче 32 байт = 500 с `DB_CURSOR_SECRET непригоден` — это отказ конфига, а не бага демо | пробы: `node test/http/db-demo-http.check.mjs` (35 шагов) и `node test/browser/db-demo-browser.check.mjs` (17 проверок, нужен Chromium); `data/postgres` переживает пересоздание песочницы, но перенесённый каталог PGlite иногда не открывает («PGlite failed to initialize properly») → каталог удалить, корпус вернётся миграцией и сидом; замок `.kit-db.lock` мёртвого владельца снимается сам (живой — отказ). **Перед `npx vitest run` превью останавливают** (pid из
      `data/postgres/.kit-db.lock`): каталог заложён блокировкой, и тесты слоя падают на
      `[vitest-pool]: Worker forks emitted error`; после `npm run build` превью
      перезапускают обязательно |
@@ -314,7 +314,7 @@ select/count, estimate, icontains, изоляция между вызовами)
       **ок** (до переписывания разметки падал на гарде); `npm run test:guard` → **80/80**.
 - [x] Живой прогон на **production-сборке** (`npm run preview`, чтобы не ловить OOM от
       `vite dev` + chromium на 2 ГБ): `browser-check.mjs` → **`BROWSER_OK (7 → 8)`**,
-      `delete-check.mjs` → **`DELETE_OK`** (7 → 6), `probes/db-demo-http.check.mjs` →
+      `delete-check.mjs` → **`DELETE_OK`** (7 → 6), `test/http/db-demo-http.check.mjs` →
       **`INTEGRATION_HTTP_OK (9)`**. Вердикт браузера переведён с абсолютного (`seeded === 7 &&
       after === 8`) на относительный: корпус в PGlite живёт в памяти процесса, и предыдущий прогон
       сдвигал строки — абсолютный ожидаемый номер давал ложную регрессию.
@@ -362,7 +362,7 @@ select/count, estimate, icontains, изоляция между вызовами)
       (`respond.js`), поэтому на form-encoded POST отказ всегда отдаёт SvelteKit
       (текст «Cross-site POST form submissions are forbidden»), а слой 02 приложения
       отвечает там, где фреймворк слеп (чужие хосты, JSON-пути, REST из T4).
-      Проверка — `probes/db-demo-http.check.mjs`: 35 шагов, `INTEGRATION_HTTP_OK (35)`.
+      Проверка — `test/http/db-demo-http.check.mjs`: 35 шагов, `INTEGRATION_HTTP_OK (35)`.
       В шагах про курсор проверяется свойство, а не разметка: цепочка `cur=1` +
       `after`-ссылок покрывает весь список без повторов и пропусков и идёт в том же
       порядке, что `?page=N` (иначе keyset выглядел бы «работающим» и с потерянными
@@ -373,7 +373,7 @@ select/count, estimate, icontains, изоляция между вызовами)
       шаг следит, что `POST /db-demo/submit` отвечает JSON, а не HTML (отправка без
       перезагрузки), а шаг `?page.mode=stream` — что режим навигации работает и без JS.
       SSR-проверка не видит класс ошибок «в браузере белый экран», поэтому рядом лежит
-      `probes/db-demo-browser.check.mjs` — 17 проверок в chromium (`DB_DEMO_BROWSER_OK (17)`):
+      `test/browser/db-demo-browser.check.mjs` — 17 проверок в chromium (`DB_DEMO_BROWSER_OK (17)`):
       гидрация, клик по странице, создание без перезагрузки (метка на `window` жива +
       `total` вырос + `GET /api/db-posts`), переключение режима панелью, чистая консоль.
 - [x] **Ошибки показаны как ошибки формы, а не как «не-JSON ответ»:** транспорт вынесен в
@@ -672,7 +672,7 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       текущего `page` и, в accumulate, всех `loadedPages`) или публичный
       `updatePages`. Пока решено малым: демо зовёт `reset()` и честно называет это
       «обновить источник» (`src/routes/db-demo/+page.svelte`).
-- [ ] Проверить гипотезу на живом браузере (проба `probes/db-demo-browser.check.mjs`):
+- [ ] Проверить гипотезу на живом браузере (проба `test/browser/db-demo-browser.check.mjs`):
       удалённая с третьей страницы строка исчезает только вместе с переходом на первую
       — это и есть аргумент в пользу `refresh`.
 
@@ -758,7 +758,7 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
   `core.ts:394`). То есть лишний round-trip без пользы, чего у SolidHono не было.
 - Что при этом честно SSR-ится: первая отрисовка по любому адресу (в т.ч. `?page=3`,
   `?page.mode=stream`) и весь путь без JavaScript — `<a href="?page=2">` работает как
-  настоящая навигация (проверки в `probes/db-demo-http.check.mjs` — «?page=2 отдаёт ДРУГИЕ
+  настоящая навигация (проверки в `test/http/db-demo-http.check.mjs` — «?page=2 отдаёт ДРУГИЕ
   строки», «?page.mode=stream без JS отдаёт ссылку подгрузки»).
 
 Решение (не принято; ничего не менять без слова заказчика):
@@ -803,7 +803,7 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       срез роутера: это договор `MinimalRouter`, и тест на `utm_source` его сторожит.
       Регрессия закрыта с двух сторон: юнитом «echo-guard судит по ЖИВОМУ адресу…»
       (`src/lib/paginate/paginate.test.ts`; на коде ДО правки он падает — проверено
-      откатом) и браузерной пробой `probes/url-storage.check.mjs` (19 проверок; на
+      откатом) и браузерной пробой `test/browser/url-storage.check.mjs` (19 проверок; на
       коде ДО правки даёт ровно один отказ — `{"url":"?page.size=5&page.src=db",
       "src":"products"}`; на коде ПОСЛЕ — `URL_STORAGE_OK (19)`).
 - [x] **Тот же прогон вскрыл второй, независимый дефект — указатель `?page.after`
@@ -911,7 +911,7 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       попадал в буфер нового набора — теперь полёт на страницу один, а поколение
       буфера отбрасывает устаревший ответ. Тесты: 4 новых в `paginate.test.ts`
       (52 в файле, 640 в vitest), `npm run check` — 0 ошибок (47 warning'ов).
-- [x] **Пробы переписаны под обе формы адреса** (сделано 10.10.2026, прогоны ниже): HTTP (`probes/db-demo-http.check.mjs`) —
+- [x] **Пробы переписаны под обе формы адреса** (сделано 10.10.2026, прогоны ниже): HTTP (`test/http/db-demo-http.check.mjs`) —
       `?page.cur=1&page.after=…` отдаёт следующую страницу, битый/чужой токен → отказ
       текстом, `page`+`after` → отказ; браузерная (`…-browser.check.mjs`) — тумблер
       курсора на обеих страницах, номера гаснут, «дальше» = один запрос, без JS ссылка

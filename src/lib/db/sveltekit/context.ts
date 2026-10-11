@@ -1,7 +1,7 @@
 import type { DataContext, Database } from "../types";
 
 /**
- * Структурные типы вместо `import type { Handle, RequestEvent } from '@sveltejs/kit'`:
+ * Структурные типы вместо `Handle` (`@sveltejs/kit/hooks`) и `RequestEvent` (`@sveltejs/kit`):
  * пакет остаётся проверяемым без установленного SvelteKit, а его формы
  * совпадают с kit-типизацией (Handle = ({event, resolve}) => Promise<Response>),
  * поэтому `export const handle = dbHandle(...)` в `hooks.server.ts` проходит

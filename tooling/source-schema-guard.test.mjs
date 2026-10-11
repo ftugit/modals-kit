@@ -91,7 +91,7 @@ test('тесты и сами инструменты правилам не под
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
     'src/lib/filters/url.ts',
-    `import { page } from '$app/stores'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
+    `import { page } from '$app/state'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
   )
   assert.equal(impure.length, 2)
   assert.equal(impure[0].rule, 'filters-lib-purity')

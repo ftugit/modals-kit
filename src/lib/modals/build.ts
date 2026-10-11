@@ -124,6 +124,33 @@ export function buildCore(
   /** Писала ли эта система хоть раз. До первой записи верим содержимому источников. */
   let everWrote = false
 
+  /**
+   * 🔴 Обход истории, начатый `back()`, ещё не применён средой.
+   *
+   * Браузер переходит по `go()` сразу, но среда отдаёт состояние новой записи
+   * позже: нативный `popstate` приходит отдельной задачей, а SvelteKit 3
+   * обновляет `page.state` ещё позже — после разрешения маршрута. Операция,
+   * пришедшая в это окно, считала шаги от УСТАРЕВШЕЙ глубины: второй Escape
+   * подряд делал `go(-2)` вместо `go(-1)` и уводил за пределы приложения
+   * (R-24, docs/design/kit3-upgrade.md §12). Поэтому `write`/`back` в окне
+   * откладываются и выполняются по порядку, как только среда сообщит о смене
+   * (`onPopState`). Без подписчиков сообщать некому — тогда не откладываем.
+   */
+  let traversing = false
+  let offExternal: (() => void) | undefined
+  const deferred: Array<() => void> = []
+  const deferWhileTraversing = (op: () => void): boolean => {
+    if (!traversing || listeners.size === 0) return false
+    deferred.push(op)
+    return true
+  }
+  function onExternalChange() {
+    traversing = false
+    notify()
+    // Отложенная операция сама может начать обход — тогда остальные ждут его.
+    while (!traversing && deferred.length > 0) deferred.shift()!()
+  }
+
   /** Куда писать запись: по определению модалки, иначе источник по умолчанию. */
   const sourceFor = (name: string): string => {
     const declared = lookup(name)?.source
@@ -247,6 +274,7 @@ export function buildCore(
 
     write(chain, opts?: WriteOptions) {
       assertTransientOnTop(chain)
+      if (deferWhileTraversing(() => core.write(chain, opts))) return
       everWrote = true
       const registered = chain.filter((e): e is RegisteredEntry => e.kind === 'registered')
       const transient = chain.filter((e): e is TransientEntry => e.kind === 'transient')
@@ -296,16 +324,22 @@ export function buildCore(
     },
 
     subscribe(listener) {
+      // Подписка на среду — ОДНА на все подписчики ядра: при подписке на
+      // каждого одно событие истории применяло бы отложенные операции
+      // несколько раз подряд, и повтор сбрасывал бы `traversing` обхода,
+      // начатого первым применением.
+      if (listeners.size === 0) offExternal = engine.onPopState?.(onExternalChange)
       listeners.add(listener)
-      const off = engine.onPopState?.(notify)
       return () => {
-        listeners.delete(listener)
-        off?.()
+        if (!listeners.delete(listener) || listeners.size > 0) return
+        offExternal?.()
+        offExternal = undefined
       }
     },
 
     back: hasHistory
       ? (steps, chain) => {
+          if (deferWhileTraversing(() => core.back!(steps, chain))) return
           // Шаг назад — такое же намеренное изменение состояния, как запись:
           // дальше зеркало обязано быть единственным источником. Без этого
           // после перезагрузки `closeAll()` воскрешал слой из localStorage,
@@ -316,7 +350,11 @@ export function buildCore(
           // Шаг считаем по метке глубины, а не по `steps`: в истории могли
           // остаться записи слоёв, которых уже нет.
           const available = Math.max(0, depth - chain.length)
-          if (available > 0) engine.go!(-available)
+          if (available > 0) {
+            // Флаг — ДО вызова: среда может уведомить синхронно (FastEdge, тесты).
+            traversing = true
+            engine.go!(-available)
+          }
           else core.write(chain, { replace: true })
         }
       : undefined,

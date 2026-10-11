@@ -6,7 +6,7 @@ import { DEMO_PRINCIPAL, getRuntime } from '#lib/server/db.js'
 // серверные. Это side-effect импорта на весь процесс: оба демо и API получают
 // транспорт независимо от того, какой роут обрабатывает запрос.
 import '#lib/server/db-list.js'
-import type { Handle } from '@sveltejs/kit'
+import type { Handle } from '@sveltejs/kit/hooks'
 
 /**
  * Доверенный контекст: principal выдаёт только сервер (здесь — демо-«автор»),
