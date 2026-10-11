@@ -243,3 +243,99 @@ test('Q1: report — неизвестная запись и сбой загру�
   assert.equal((seen[1].cause as Error).message, 'nope')
   assert.equal(seen[1].ctx.name, 'bad')
 })
+
+/* ── ход 12: F30, F32–F34, F26 (загрузчик) ─────────────────────────── */
+
+test('F32: защита от вытеснения узнаёт активную запись с defaultParams', async () => {
+  let calls = 0
+  const store = createModalStore()
+  const scope = createRegistry('f32').define([
+    { name: 'card', component: 'X', defaultParams: { slow: false }, loader: async (p: any) => { calls++; return p.id } } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup, maxEntries: 2 })
+  // цепочка хранит СЫРЫЕ параметры, хост грузит по разрешённым (с умолчаниями)
+  store.set({ chain: [{ kind: 'registered', name: 'card', params: { id: 1 }, overrides: {} }] })
+  l.runLoader(entry('card', { slow: false, id: 1 })); await tick()
+  for (const id of [2, 3, 4]) { l.runLoader(entry('card', { slow: false, id }, 1)); await tick() }
+  const before = calls
+  l.runLoader(entry('card', { slow: false, id: 1 })); await tick()
+  assert.equal(calls, before, 'активная card:1 осталась в кеше')
+})
+
+test('F33: первым ушёл владелец, последним подписчик — загрузка отменена, runtime обоих idle', () => {
+  let signal!: AbortSignal
+  const store = createModalStore()
+  const scope = createRegistry('f33').define([
+    { name: 'card', component: 'X', loader: (_p: any, s: AbortSignal) => { signal = s; return new Promise(() => {}) } } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  const offA = l.runLoader(entry('card', { id: 1 }, 0))
+  const offB = l.runLoader(entry('card', { id: 1 }, 1))
+  offA()
+  assert.equal(signal.aborted, false, 'подписчик ещё ждёт')
+  assert.equal(l.readRuntime('card', 0).status, 'idle', 'ушедшая запись не висит в loading')
+  offB()
+  assert.equal(signal.aborted, true)
+  assert.equal(l.readRuntime('card', 1).status, 'idle')
+})
+
+test('F34: предзагрузка и открытие до её конца делят одну загрузку', async () => {
+  let calls = 0
+  const store = createModalStore()
+  const scope = createRegistry('f34').define([
+    { name: 'card', component: 'X', loader: async () => { calls++; await tick(); return 'd' } } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  const p = l.preloadModal('card', { id: 1 })
+  l.runLoader(entry('card', { id: 1 }))
+  assert.deepEqual(await p, { ok: true })
+  await tick()
+  assert.equal(calls, 1)
+  assert.equal(l.readRuntime('card', 0).status, 'ready')
+})
+
+test('F34: отмена ожидания кнопки отменяет загрузку, если её больше никто не ждёт', async () => {
+  let signal!: AbortSignal
+  const store = createModalStore()
+  const scope = createRegistry('f34b').define([
+    { name: 'card', component: 'X', loader: (_p: any, s: AbortSignal) => { signal = s; return new Promise(() => {}) } } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  const owner = new AbortController()
+  const p = l.preloadModal('card', {}, { signal: owner.signal })
+  owner.abort()
+  const r = await p
+  assert.equal(r.ok, false)
+  assert.equal(signal.aborted, true)
+})
+
+test('F30: unknown-modal несёт читаемую причину, а не null', async () => {
+  const seen: any[] = []
+  const store = createModalStore()
+  const l = createLoader({ store, lookup: () => undefined, report: (e) => seen.push(e) })
+  l.runLoader({ ...entry('ghost'), known: false })
+  await l.preloadModal('ghost2', {})
+  assert.ok(seen[0].cause instanceof Error)
+  assert.match(seen[0].cause.message, /ghost/)
+  assert.ok(seen[1].cause instanceof Error)
+  assert.equal(seen[1].ctx.via, 'preload')
+})
+
+test('F26: dispose снимает очистку со стора и отменяет загрузки', () => {
+  let signal!: AbortSignal
+  let cleared = 0
+  const store = createModalStore()
+  const scope = createRegistry('f26').define([
+    { name: 'card', component: 'X', loader: (_p: any, s: AbortSignal) => { signal = s; return new Promise(() => {}) } } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  const off = store.registerMemoryCleaner(() => { cleared++ })
+  l.runLoader(entry('card', { id: 1 }))
+  l.dispose()
+  assert.equal(signal.aborted, true)
+  store.clearMemory()
+  assert.equal(cleared, 1, 'чужая очистка жива')
+  off()
+  store.clearMemory()
+  assert.equal(cleared, 1, 'отписка registerMemoryCleaner работает')
+})
