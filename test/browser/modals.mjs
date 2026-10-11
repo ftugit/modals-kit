@@ -357,23 +357,28 @@ async function run() {
       ok('скриншот: skeleton.png');
 
       /*
-        Раскрытие содержимого — теперь переход из @starting-style, а не
-        анимация, поэтому и проверка поведенческая: следим за прозрачностью
-        с момента появления узла и ждём, что она пришла ИЗ нуля (появление
-        «из ничего» отличимо от мгновенной вставки).
+        Раскрытие содержимого — переход из @starting-style, а не анимация, поэтому
+        и проверка поведенческая. Не выборка кадров (F47): rAF под нагрузкой
+        пропускает первые кадры перехода, и минимум прозрачности «не из нуля»
+        получался случайно. Браузер сам сообщает о созданном переходе событием
+        `transitionrun` — мгновенная вставка без @starting-style его не даёт. В
+        обработчике читаем прозрачность: переход только создан, значение — его
+        начало. https://developer.mozilla.org/docs/Web/API/Element/transitionrun_event
       */
       await page.evaluate(() => {
-        window.__revealMin = 1;
-        const started = performance.now();
-        const tick = () => {
-          const el = document.querySelector('[data-modal-reveal]');
-          if (el) {
-            const o = Number(getComputedStyle(el).opacity);
-            if (Number.isFinite(o) && o < window.__revealMin) window.__revealMin = o;
-          }
-          if (performance.now() - started < 2500) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
+        window.__revealRuns = [];
+        document.addEventListener(
+          'transitionrun',
+          (e) => {
+            const el = e.target;
+            if (!(el instanceof Element) || !el.matches('[data-modal-reveal]')) return;
+            window.__revealRuns.push({
+              property: e.propertyName,
+              opacity: Number(getComputedStyle(el).opacity),
+            });
+          },
+          true,
+        );
       });
 
       await page.locator('[data-modal-content]').waitFor({ state: 'visible', timeout: 9000 });
@@ -388,7 +393,13 @@ async function run() {
             easing: cs.transitionTimingFunction,
           };
         });
-      const minOpacity = await page.evaluate(() => window.__revealMin);
+      // Переход создаётся на кадре стиля после вставки — ждём событие, а не таймер.
+      await page.waitForFunction(
+        () => window.__revealRuns.some((r) => r.property === 'opacity'),
+        null,
+        { timeout: 3000 },
+      ).catch(() => {});
+      const run = await page.evaluate(() => window.__revealRuns.find((r) => r.property === 'opacity'));
       assert(
         /opacity/.test(reveal.property),
         `у раскрытия нет перехода по opacity: ${reveal.property}`,
@@ -397,9 +408,10 @@ async function run() {
         /0\.26s|260ms/.test(reveal.duration),
         `длительность раскрытия ${reveal.duration}, ожидалась 260ms`,
       );
-      assert(minOpacity < 0.5, `раскрытие началось с opacity=${minOpacity}, а не с нуля`);
+      assert(run, 'перехода по opacity не было (transitionrun не пришёл): контент вставлен мгновенно');
+      assert(run.opacity < 0.5, `раскрытие началось с opacity=${run.opacity}, а не с нуля`);
       ok(
-        `контент появился после загрузчика: переход opacity за ${reveal.duration}, минимум ${minOpacity.toFixed(3)}`,
+        `контент появился после загрузчика: transitionrun(opacity) за ${reveal.duration}, старт ${run.opacity.toFixed(3)}`,
       );
       await page.close();
     }
