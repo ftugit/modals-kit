@@ -110,6 +110,7 @@ const toError = (i: Issue, path: string, f: FieldDescriptor): FormError => ({
   params: i.params,
   path,
   origin: 'core',
+  ...(i.message !== undefined ? { template: i.message } : {}),
 })
 
 /** Выполняет структурную, полевую и формовую валидацию. */

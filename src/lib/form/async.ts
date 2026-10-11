@@ -55,7 +55,8 @@ export function check(name: string, policy: Partial<AsyncPolicy> = {}): Validato
   return Object.assign(v, { asyncCheck: { name, policy: { ...DEFAULT_ASYNC, ...policy } } })
 }
 
-export interface AsyncRef { name: string; policy: AsyncPolicy }
+/** `message` — свой текст ошибки проверки: `check(…).message('…')` (F56). */
+export interface AsyncRef { name: string; policy: AsyncPolicy; message?: string }
 
 /** Асинхронные проверки поля — их надо прогнать и на сервере, и в браузере. */
 export function asyncRefsOf(d: FormDescription, name: string): AsyncRef[] {
@@ -71,10 +72,14 @@ export function asyncRefsOf(d: FormDescription, name: string): AsyncRef[] {
   return out
 }
 
-const toError = (i: Issue, path: string): FormError => ({
-  id: stableId({ path, code: i.code, params: i.params }),
-  code: i.code, message: i.code, params: i.params, path, origin: 'core',
-})
+const toError = (i: Issue, path: string, own?: string): FormError => {
+  const template = i.message ?? own
+  return {
+    id: stableId({ path, code: i.code, params: i.params }),
+    code: i.code, message: i.code, params: i.params, path, origin: 'core',
+    ...(template !== undefined ? { template } : {}),
+  }
+}
 
 /** Прогон всех асинхронных проверок формы. Сервер делает это ВСЕГДА. */
 /**
@@ -95,7 +100,7 @@ export async function runAsyncChecks(
       if (!fn) continue
       try {
         const issue = await fn(values[f.name], { path: f.name, values, signal })
-        if (issue) out.push(toError(issue, f.name))
+        if (issue) out.push(toError(issue, f.name, ref.message))
       } catch {
         // сбой проверки — ошибка на СВОЁМ поле, форма не падает целиком
         out.push(toError({ code: 'check.failed', params: { check: ref.name } }, f.name))
@@ -198,7 +203,7 @@ export class AsyncRunner {
         const issue = await fn(values[path], { path, values, signal: controller.signal })
         if (controller.signal.aborted) return null
         if (issue) {
-          const e = toError(issue, path)
+          const e = toError(issue, path, ref.message)
           this.#remember(key, e)
           return e
         }

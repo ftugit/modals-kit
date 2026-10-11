@@ -10,8 +10,12 @@ import {
 } from './strength'
 import type { FieldPath } from './types'
 
-/** Короткая ошибка валидатора до нормализации в FormError. */
-export interface Issue { code: string; params?: Record<string, unknown>; path?: FieldPath }
+/**
+ * Короткая ошибка валидатора до нормализации в FormError. `message` — свой
+ * текст этой ошибки (шаблон с подстановками из `params`): сильнее любого
+ * словаря (F56). Обычно его ставит `.message()` валидатора.
+ */
+export interface Issue { code: string; params?: Record<string, unknown>; path?: FieldPath; message?: string }
 /** Создаёт Issue. */
 export const issue = (code: string, params?: Record<string, unknown>): Issue => ({ code, params })
 
@@ -29,15 +33,41 @@ export interface FieldContext {
 export interface Validator<V = unknown> {
   (value: V, ctx: FieldContext): Issue | null
   describe?(): readonly Constraint[]
+  /**
+   * Тот же валидатор со своим текстом ошибки (F56):
+   * `v.minValue(18).message('Вам должно быть {min}')`. Подстановки — из
+   * параметров ошибки. Сильнее текста поля и словарей. Есть у всех
+   * валидаторов, собранных через `describe` (встроенные, `check`).
+   */
+  message?(text: string): Validator<V>
 }
 
-/** Ссылка: функция (код) либо имя из реестра (сериализуемое описание). */
-export type ValidatorRef = Validator<any> | { name: string; arg?: unknown }
+/**
+ * Ссылка: функция (код) либо имя из реестра (сериализуемое описание).
+ * `message` у именованной ссылки — то же, что `.message()` у функции.
+ */
+export type ValidatorRef = Validator<any> | { name: string; arg?: unknown; message?: string }
+
+/** Валидатор `v` со своим текстом ошибки; описание и асинхронная метка сохраняются. */
+export function withText<V>(v: Validator<V>, text: string): Validator<V> {
+  const out = ((value: V, ctx: FieldContext) => {
+    const found = v(value, ctx)
+    return found ? { ...found, message: text } : found
+  }) as Validator<V>
+  if (v.describe) out.describe = v.describe
+  // асинхронная проверка (`check`) отвечает не из функции, а из реестра проверок
+  const meta = (v as { asyncCheck?: object }).asyncCheck
+  if (meta) Object.assign(out, { asyncCheck: { ...meta, message: text } })
+  out.message = (next: string) => withText(v, next)
+  return out
+}
 
 /** Прикрепляет к валидатору описание ограничений для HTML-проекции. */
 export function describe<V>(fn: (v: V, ctx: FieldContext) => Issue | null,
                             constraints: readonly Constraint[]): Validator<V> {
-  return Object.assign(fn, { describe: () => constraints }) as Validator<V>
+  const out = Object.assign(fn, { describe: () => constraints }) as Validator<V>
+  out.message = (text: string) => withText(out, text)
+  return out
 }
 
 /** Реестр именованных валидаторов. */
@@ -52,7 +82,7 @@ export class ValidatorRegistry {
     if (typeof ref === 'function') return ref
     const f = this.#byName.get(ref.name)
     if (!f) throw new Error(`[form] валидатор не зарегистрирован: ${ref.name}`)
-    return f(ref.arg)
+    return ref.message === undefined ? f(ref.arg) : withText(f(ref.arg), ref.message)
   }
 }
 

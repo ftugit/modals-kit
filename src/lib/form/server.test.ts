@@ -3,6 +3,9 @@ import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, createAppSource, defineForm, makeFieldSugar } from './index'
 import { v } from './validators'
 import { createFormHandler, MemoryIdempotencyStore, windowThrottle, type IdempotencyStore } from './server'
+import { check, CheckRegistry } from './async'
+import { evaluate } from './submit'
+import { formRenderer } from './messages-order'
 
 const field = makeFieldSugar()
 const base = defineForm({ id: 'probe', fields: { name: field.text({}) } })
@@ -225,5 +228,85 @@ suite('порядок словарей (F55): форма → приложени�
   test('приложение — для кодов, которых нет в словаре формы', async () => {
     const bare = defineForm({ id: 'probe-texts-2', fields: { name: field.text({ validate: [v.required()] }) } })
     expect(await textOf({ required: 'текст приложения' }, bare)).toBe('текст приложения')
+  })
+})
+
+suite('свой текст ошибки (F56): валидатор → поле → форма «поле:код» → форма → приложение', () => {
+  // Сервер и браузер считают текст одним путём: сверяем обе стороны на каждом случае.
+  const textsOf = async (d: ReturnType<typeof defineForm>, app: Record<string, string> = {}) => {
+    const values = { age: '15', kids: '-1' }
+    const h = createFormHandler({ description: d, messages: app, execute: (c) => { c.commit(); return {} } })
+    const server = (await h(post({ ...envelopeOf({}, d), ...values }))).result.errors
+    const client = evaluate(new URLSearchParams(values), d, {
+      render: formRenderer(d.messages, app, d.policy.interpolate), instance: `${d.id}:new`, requireEnvelope: false,
+    }).errors
+    const pick = (list: readonly { path?: string; message?: string }[]) =>
+      Object.fromEntries(list.filter((e) => e.path).map((e) => [e.path, e.message]))
+    expect(pick(client)).toEqual(pick(server))
+    return pick(server)
+  }
+  let n = 0
+  const form = (fields: Record<string, ReturnType<typeof field.number>>, messages?: Record<string, string>) =>
+    defineForm({ id: `f56-${++n}`, fields, messages })
+
+  test('словарь формы по коду — на все поля сразу (как было)', async () => {
+    const d = form({ age: field.number({ validate: [v.minValue(18)] }), kids: field.number({ validate: [v.minValue(0)] }) },
+      { minValue: 'форма {min}' })
+    expect(await textsOf(d)).toEqual({ age: 'форма 18', kids: 'форма 0' })
+  })
+
+  test('1) текст в поле: только это поле, соседи — по словарю', async () => {
+    const d = form({
+      age: field.number({ validate: [v.minValue(18)], messages: { minValue: 'Вам должно быть {min}' } }),
+      kids: field.number({ validate: [v.minValue(0)] }),
+    }, { minValue: 'форма {min}' })
+    expect(await textsOf(d)).toEqual({ age: 'Вам должно быть 18', kids: 'форма 0' })
+  })
+
+  test('2) ключ «поле:код» в словаре формы', async () => {
+    const d = form({ age: field.number({ validate: [v.minValue(18)] }), kids: field.number({ validate: [v.minValue(0)] }) },
+      { 'age:minValue': 'Вам должно быть {min}', minValue: 'форма {min}' })
+    expect(await textsOf(d)).toEqual({ age: 'Вам должно быть 18', kids: 'форма 0' })
+  })
+
+  test('3) текст в валидаторе сильнее поля и словаря; атрибуты разметки те же', async () => {
+    const own = v.minValue(18).message('валидатор {min}')
+    const d = form({
+      age: field.number({ validate: [own], messages: { minValue: 'поле {min}' } }),
+      kids: field.number({ validate: [v.minValue(0)] }),
+    }, { 'age:minValue': 'ключ {min}', minValue: 'форма {min}' })
+    expect(await textsOf(d)).toEqual({ age: 'валидатор 18', kids: 'форма 0' })
+    expect(own.describe?.()).toEqual(v.minValue(18).describe?.())
+    expect(own.message?.('ещё раз {min}')).toBeTypeOf('function')
+  })
+
+  test('поле сильнее ключа «поле:код» формы; именованная ссылка реестра несёт свой текст', async () => {
+    const d = form({
+      age: field.number({ validate: [v.minValue(18)], messages: { minValue: 'поле {min}' } }),
+      kids: field.number({ validate: [{ name: 'minValue', arg: 0, message: 'реестр {min}' }] }),
+    }, { 'age:minValue': 'ключ {min}' })
+    expect(await textsOf(d)).toEqual({ age: 'поле 18', kids: 'реестр 0' })
+  })
+
+  test('порядок словарей F55 сохраняется: «поле:код» приложения не перебивает код формы', async () => {
+    const d = form({ age: field.number({ validate: [v.minValue(18)] }), kids: field.number({ validate: [v.minValue(0)] }) },
+      { minValue: 'форма {min}' })
+    expect(await textsOf(d, { 'age:minValue': 'приложение {min}' })).toEqual({ age: 'форма 18', kids: 'форма 0' })
+  })
+
+  test('асинхронная проверка: check(…).message() и «поле:код» — на сервере', async () => {
+    const checks = new CheckRegistry().register('taken', async () => ({ code: 'x.taken', params: { who: 'a@b' } }))
+    const d = defineForm({
+      id: 'f56-async',
+      fields: {
+        a: field.text({ validate: [check('taken').message('{who} занят')] }),
+        b: field.text({ validate: [check('taken')] }),
+      },
+      messages: { 'b:x.taken': 'поле b: {who}' },
+    })
+    const h = createFormHandler({ description: d, checks, execute: (c) => { c.commit(); return {} } })
+    const r = await h(post({ ...envelopeOf({}, d), a: '1', b: '2' }))
+    const by = Object.fromEntries(r.result.errors.map((e) => [e.path, e.message]))
+    expect(by).toEqual({ a: 'a@b занят', b: 'поле b: a@b' })
   })
 })

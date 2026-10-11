@@ -67,6 +67,8 @@ export interface FieldDescriptor<V = unknown> {
   readonly defaultValue?: V
   readonly secret?: boolean
   readonly validators: readonly ValidatorRef[]
+  /** Тексты ошибок поля по коду (F56); в словарь формы попадают как «поле:код». */
+  readonly messages?: Readonly<Record<string, string>>
   readonly options?: readonly Option[]
   readonly visibleWhen?: VisibilityCondition
   /** Правила выключения поля по значениям формы (см. `DisableRule`). */
@@ -137,6 +139,11 @@ export interface FieldOptions<V = unknown> {
   secret?: boolean
   /** Валидаторы поля: функции или сериализуемые ссылки на реестр. */
   validate?: readonly ValidatorRef[]
+  /**
+   * Тексты ошибок ЭТОГО поля по коду: `{ minValue: 'Вам должно быть {min}' }`
+   * (F56). Сильнее словарей формы и приложения, слабее `.message()` валидатора.
+   */
+  messages?: Readonly<Record<string, string>>
   /** Варианты выбора. Строка превращается в `{ value, label }`. */
   options?: readonly (string | Option)[]
   /** Условие, при котором поле участвует в показе и обычной валидации. */
@@ -182,6 +189,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         // пароль не возвращается наружу: возврат пароля в разметку — типовая дыра
         secret: o.secret ?? input === 'password',
         validators: o.validate ?? [],
+        messages: o.messages,
         options: o.options?.map((x) => (typeof x === 'string' ? { value: x, label: x } : x)),
         visibleWhen: o.visibleWhen,
         disabledWhen: o.disabledWhen,
@@ -308,7 +316,10 @@ export interface FormDefinition {
   fields: Record<string, FieldDraft<any>>
   /** Список submit-намерений. Если не задан, создаётся `submit/full`. */
   actions?: readonly ActionDescriptor[]
-  /** Сообщения формы поверх словаря приложения и встроенного словаря. */
+  /**
+   * Сообщения формы поверх словаря приложения и встроенного словаря. Ключ —
+   * код (`minValue`, на все поля) или «поле:код» (`'age:minValue'`, F56).
+   */
   messages?: Record<string, string>
   /** Режим ошибки по умолчанию для полей формы. */
   cardinality?: 'first' | 'all'
@@ -354,6 +365,17 @@ const DEFAULT_ACTIONS: readonly ActionDescriptor[] = [
   { id: 'submit', validate: 'full', sideEffect: 'submit' },
 ]
 
+/**
+ * Словарь формы с текстами полей (F56): `messages` поля ложатся ключами
+ * «поле:код» поверх таких же ключей формы — поле ближе к ошибке.
+ */
+function formMessages(own: Record<string, string> | undefined, fields: readonly FieldDescriptor[]) {
+  const out: Record<string, string> = { ...own }
+  for (const f of fields)
+    for (const [code, text] of Object.entries(f.messages ?? {})) out[`${f.name}:${code}`] = text
+  return out
+}
+
 /** Проверяет и компилирует FormDefinition в FormDescription. */
 export function defineForm(def: FormDefinition): FormDescription {
   const registry = def.registry ?? defaultRegistry
@@ -390,7 +412,7 @@ export function defineForm(def: FormDefinition): FormDescription {
     revision: def.revision ?? 1,
     fields, byName,
     actions: def.actions ?? DEFAULT_ACTIONS,
-    messages: def.messages ?? {},
+    messages: formMessages(def.messages, fields),
     cardinality: def.cardinality ?? 'first',
     invalidFrom: def.invalidFrom ?? 'fact',
     defects, registry, policy,

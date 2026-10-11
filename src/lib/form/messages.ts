@@ -84,7 +84,9 @@ export const ru: MessageDictionary = {
 }
 
 /**
- * Приоритет: поле → форма → приложение → пакет → код как текст.
+ * Приоритет (F56): свой текст ошибки (валидатор `.message()`) → в каждом
+ * словаре сначала «поле:код» (сюда же `defineForm` кладёт `messages` поля),
+ * потом код; словари — форма → приложение → пакет → код как текст.
  * Подстановка берётся из политики: падежи и множественное число — не дело ядра.
  */
 export function makeRenderer(
@@ -92,11 +94,20 @@ export function makeRenderer(
   interpolate: (t: string, p: Record<string, unknown>) => string = defaultPolicy.interpolate,
 ) {
   const chain = dicts.filter(Boolean) as MessageDictionary[]
-  return (code: string, params: Record<string, unknown> = {}): string => {
+  return (
+    code: string, params: Record<string, unknown> = {},
+    at: { path?: string; template?: string } = {},
+  ): string => {
+    // F56: свой текст ошибки (валидатор `.message()`) сильнее любого словаря
+    if (at.template !== undefined) return interpolate(at.template, params)
+    // в каждом словаре «поле:код» конкретнее просто кода; словари — по порядку
+    const keys = at.path ? [`${at.path}:${code}`, code] : [code]
     for (const d of chain) {
-      const t = d[code]
-      if (typeof t === 'function') return t(params)
-      if (typeof t === 'string') return interpolate(t, params)
+      for (const key of keys) {
+        const t = d[key]
+        if (typeof t === 'function') return t(params)
+        if (typeof t === 'string') return interpolate(t, params)
+      }
     }
     return code
   }

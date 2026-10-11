@@ -10,6 +10,11 @@ export interface FormError {
   readonly code: string
   /** Текст. Пустой — ошибка есть, но показывать нечего. */
   readonly message?: string
+  /**
+   * Свой текст этой ошибки — шаблон от валидатора (`.message()`, F56). При
+   * нормализации сильнее словарей; подстановки — из `params`.
+   */
+  readonly template?: string
   readonly params?: Record<string, unknown>
   /** Есть путь — ошибка поля. Нет — общая. Других правил нет. */
   readonly path?: FieldPath
@@ -78,7 +83,11 @@ export function stableStringify(x: unknown): string {
 export const stableId = (e: { path?: string; code: string; params?: unknown }) =>
   `${e.path ?? '*'}:${e.code}:${hash(e.params ?? null)}`
 
-export type RenderMessage = (code: string, params?: Record<string, unknown>) => string
+export type RenderMessage = (
+  code: string, params?: Record<string, unknown>,
+  /** `path` — для ключа «поле:код» в словаре; `template` — свой текст ошибки. */
+  at?: { path?: FieldPath; template?: string },
+) => string
 
 const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`)
 
@@ -104,7 +113,7 @@ export function normalizeErrors(
     if (seen.has(id)) continue
     seen.add(id)
     // словарь не знает кода чужой службы и не обязан: готовый текст не затираем
-    const rendered = render(e.code, e.params)
+    const rendered = render(e.code, e.params, { path: e.path, template: e.template })
     const message = rendered === e.code && e.message && e.message !== e.code ? e.message : rendered
     out.push({ ...e, id, message: clip(message, limits.messageLength) })
     if (out.length >= limits.errors) break
