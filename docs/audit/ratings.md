@@ -264,20 +264,20 @@
 | `build.test.ts` | 582 | — | ⏳ |  | window/document×1, any×15 |
 | `build.ts` | 441 | 9 | прочитан | Ход 12: прочитан, багов не найдено |  |
 | `core-contract.ts` | 168 | 9 | прочитан | Ход 12: прочитан. K10 — «НЕ импортирует ничего» (:17) не соответствует импортам | window/document×1 |
-| `core.ts` | 610 | 6 | прочитан | Ход 12: F28 (color/tailColor из адреса → inline style: инъекция CSS, внешние ресурсы), F36 (mobile/size без проверки); K9 — Lookup с any. Прототип: подмена только локальная (isPlainObject отсекает Object.prototype) | any×1 |
-| `create.ts` | 552 | 6 | прочитан | Ход 12: F27 (attach зовёт lifecycle внутри отслеживаемого эффекта хоста; повторный attach — повторный onOpen), F35 (lifecycle без учёта params); мёртвые lockedTop/hasLocked; K10 — HOST-GAP.md и «появятся» (:410-414) |  |
+| `core.ts` | 610 | 6 | прочитан | Ход 12: F28 (color/tailColor из адреса → inline style: инъекция CSS, внешние ресурсы), F36 (mobile/size без проверки); K9 — Lookup с any. Прототип: подмена только локальная (isPlainObject отсекает Object.prototype) Ход 13: F28/F36 исправлены (1c377d8, validate.ts). | any×1 |
+| `create.ts` | 552 | 6 | прочитан | Ход 12: F27 (attach зовёт lifecycle внутри отслеживаемого эффекта хоста; повторный attach — повторный onOpen), F35 (lifecycle без учёта params); мёртвые lockedTop/hasLocked; K10 — HOST-GAP.md и «появятся» (:410-414) Ход 13: F35 и F27-библиотека исправлены (cc073d5). |  |
 | `engine.ts` | 69 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний |  |
 | `geometry.test.ts` | 97 | — | ⏳ |  |  |
 | `index.ts` | 42 | 10 | прочитан | Ход 12: реэкспорт, без замечаний |  |
 | `loader.test.ts` | 246 | — | ⏳ |  | setTimeout×1, any×20, addEventListener×1 |
-| `loader.ts` | 232 | 6 | прочитан | Ход 12: F32 (pinning по сырым params), F33 (уход подписчика без abort, вечный loading), F34 (preload без дедупа и отмены), F30 (cause:null), C13 (сырой message в UI) |  |
+| `loader.ts` | 232 | 6 | прочитан | Ход 12: F32 (pinning по сырым params), F33 (уход подписчика без abort, вечный loading), F34 (preload без дедупа и отмены), F30 (cause:null), C13 (сырой message в UI) Ход 13: F30/F32/F33/F34 исправлены (d78e52f), dispose. |  |
 | `matrix.test.ts` | 273 | — | ⏳ |  | any×1 |
 | `registry.test.ts` | 120 | — | ⏳ |  | any×1 |
 | `registry.ts` | 193 | 10 | прочитан | Ход 12: прочитан, без замечаний |  |
 | `scoped-config.test.ts` | 41 | — | ⏳ |  |  |
 | `sources.test.ts` | 199 | — | ⏳ |  | any×2 |
 | `storages.test.ts` | 211 | — | ⏳ |  | any×2 |
-| `storages.ts` | 154 | 8 | прочитан | Ход 12: parseEntry принимает color/mobile из localStorage без проверки (вход F28/F36) | window/document×1 |
+| `storages.ts` | 154 | 8 | прочитан | Ход 12: parseEntry принимает color/mobile из localStorage без проверки (вход F28/F36) Ход 13: вход F28/F36 закрыт (1c377d8). | window/document×1 |
 | `store.ts` | 145 | 8 | прочитан | Ход 12: registerMemoryCleaner не возвращает отписку — основа утечки F26 |  |
 | `types.ts` | 356 | 9 | прочитан | Ход 12: прочитан. K10 — ссылка на несуществующий adapter.ts (:194); K9 — any у ResolvedEntry.definition без причины |  |
 
@@ -298,9 +298,9 @@
 |---|---:|:---:|:---:|---|---|
 | `Layers.svelte` | 39 | 10 | прочитан | Ход 12: без замечаний |  |
 | `ModalContent.svelte` | 91 | 8 | прочитан | Ход 12: C13 — показывает сырой rt.error; renderError/renderSkeleton через as any | $effect×1, any×4, untrack×1 |
-| `ModalHost.svelte` | 1171 | 4 | прочитан | Ход 12: F26 (утечка зеркал/загрузчиков при каждом переподключении, +1 на переход /modals↔/), F27 (attach не в untrack); сериализатор стиля без экранирования (сток F28); 3 копии css(); closeFloating(…,'escape') для «Назад»; K9 any (:102, :974, :1022) | $effect×9, window/document×16, setTimeout×3, rAF×3, microtask×1, any×4, untrack×6, addEventListener×4 |
-| `ModalTrigger.svelte` | 202 | 5 | прочитан | Ход 12: F29 (открытие после await preload на чужой странице); импорт $lib/ui/modals (lib→ui, K8); кандидат — href из нереактивного location | $effect×2 |
-| `Tails.svelte` | 84 | 6 | прочитан | Ход 12: F31 (entered не чистится — нет анимации у повторного хвоста); копия сериализатора стиля | $effect×1, rAF×1 |
+| `ModalHost.svelte` | 1171 | 4 | прочитан | Ход 12: F26 (утечка зеркал/загрузчиков при каждом переподключении, +1 на переход /modals↔/), F27 (attach не в untrack); сериализатор стиля без экранирования (сток F28); 3 копии css(); closeFloating(…,'escape') для «Назад»; K9 any (:102, :974, :1022) Ход 13: F26/F27 исправлены (31668f1); F38 — нет синхронизации цепочки при переходе в той же области (ждёт решения). | $effect×9, window/document×16, setTimeout×3, rAF×3, microtask×1, any×4, untrack×6, addEventListener×4 |
+| `ModalTrigger.svelte` | 202 | 5 | прочитан | Ход 12: F29 (открытие после await preload на чужой странице); импорт $lib/ui/modals (lib→ui, K8); кандидат — href из нереактивного location Ход 13: F29 исправлен (31668f1); кандидат подтверждён как F37 (ждёт решения API). | $effect×2 |
+| `Tails.svelte` | 84 | 6 | прочитан | Ход 12: F31 (entered не чистится — нет анимации у повторного хвоста); копия сериализатора стиля Ход 13: F31 исправлен (31668f1). | $effect×1, rAF×1 |
 | `classes.ts` | 171 | 10 | прочитан | Ход 12: без замечаний |  |
 | `context.ts` | 221 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний | window/document×2 |
 | `index.ts` | 28 | 10 | прочитан | Ход 12: реэкспорт, без замечаний |  |
