@@ -4,6 +4,7 @@
 // выполняются всегда, просто без подавления частых вызовов. Отправку они
 // не блокируют — иначе путь без скрипта и путь с перехватом разошлись бы.
 import { opaque } from './constraints'
+import { decode, type EntrySource } from './decode'
 import type { FormDescription } from './describe'
 import type { FormError } from './result'
 import { stableId } from './result'
@@ -102,6 +103,18 @@ export async function runAsyncChecks(
     }
   }
   return out
+}
+
+/**
+ * Значения формы для асинхронных проверок в браузере — ТЕ ЖЕ, что сервер даёт
+ * `runAsyncChecks`: разобранные типом поля (`decode`), а не сырые строки
+ * `FormData` (число `"42"` вместо `42`, флажок `"on"` вместо `true`, мультиполе —
+ * последнее значение). Иначе одна проверка решала бы по-разному на двух путях.
+ * @param data Данные формы (`new FormData(form)`).
+ * @param d Описание формы.
+ */
+export function valuesForChecks(data: EntrySource, d: FormDescription): Record<string, unknown> {
+  return decode(data, d).values
 }
 
 /**

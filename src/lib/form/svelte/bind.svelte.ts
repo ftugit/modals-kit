@@ -2,7 +2,7 @@
 //
 // Библиотека не создаёт ни одного элемента: всё ниже — наборы пропсов.
 import { createAttachmentKey } from 'svelte/attachments'
-import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
+import { AsyncRunner, asyncRefsOf, valuesForChecks, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
@@ -259,7 +259,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     // иначе он останется поднятым навсегда
     if (!asyncRefsOf(desc, name).length) return
     store.set((s) => ({ ...s, checking: { ...s.checking, [name]: true } }))
-    runner.schedule(desc, name, Object.fromEntries(new FormData(formEl).entries()), (error) => {
+    runner.schedule(desc, name, valuesForChecks(new FormData(formEl), desc), (error) => {
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]

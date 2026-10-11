@@ -733,3 +733,32 @@ suite('асинхронные проверки: вытеснение (F21)', asy
     expect(calls).toEqual([])
   })
 })
+
+/* ── F20: браузер даёт проверке те же значения, что сервер ─────────── */
+
+suite('асинхронные проверки: значения как на сервере (F20)', async () => {
+  const { AsyncRunner, CheckRegistry, check, runAsyncChecks, valuesForChecks } = await import('./async')
+  const { decode } = await import('./decode')
+
+  test('число, флажок и мультиполе приходят типизированными на обоих путях', async () => {
+    const seen: unknown[] = []
+    const checks = new CheckRegistry().register('adult', async (value, ctx) => {
+      seen.push({ value, agree: ctx.values['agree'], tags: ctx.values['tags'] })
+      return typeof value === 'number' && value >= 18 ? null : { code: 'age.too-young' }
+    })
+    const d = defineForm({ id: 'p', fields: {
+      age: field.number({ validate: [check('adult')] }),
+      agree: field.checkbox({}),
+      tags: field.select({ multiple: true, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] } as never),
+    } })
+    const fd = new FormData()
+    fd.set('age', '42'); fd.set('agree', 'on'); fd.append('tags', 'a'); fd.append('tags', 'b')
+
+    const server = await runAsyncChecks(d, decode(fd, d).values, checks)
+    const browser = await new AsyncRunner(checks).run(d, 'age', valuesForChecks(fd, d))
+    expect(server).toEqual([])
+    expect(browser).toBeNull()
+    expect(seen[1]).toEqual(seen[0])
+    expect(seen[0]).toMatchObject({ value: 42, agree: true })
+  })
+})

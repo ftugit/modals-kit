@@ -13,7 +13,7 @@
 //   applyOps/reconcile                 — операции над набором полей
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import type { FormEvent } from 'react'
-import { AsyncRunner, asyncRefsOf, type CheckRegistry } from '../async'
+import { AsyncRunner, asyncRefsOf, valuesForChecks, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
@@ -226,7 +226,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
     if (!runner || !holder.formEl) return
     if (!asyncRefsOf(desc, name).length) return
     store.set((s) => ({ ...s, checking: { ...s.checking, [name]: true } }))
-    runner.schedule(desc, name, Object.fromEntries(new FormData(holder.formEl).entries()), (error) => {
+    runner.schedule(desc, name, valuesForChecks(new FormData(holder.formEl), desc), (error) => {
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]
