@@ -130,7 +130,8 @@
 <PageHead defaultTitle="dd modals" />
 
 {#if appErrors.critical}
-  <Error500 />
+  <!-- фатал заменяет каркас целиком: ориентир main — здесь -->
+  <main><Error500 /></main>
 {:else if OWN_SYSTEM.has(page.route.id ?? '')}
   {@render children()}
 {:else}
