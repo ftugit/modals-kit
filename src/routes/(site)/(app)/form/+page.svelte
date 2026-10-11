@@ -29,11 +29,10 @@ import { Button } from '#lib/ui/primitives/index.js'
   /* ── обработчик ошибок: один, все сценарии внутри ─────────────── */
 
   type Mode = 'as-is' | 'one-block' | 'drop-code' | 'to-channel'
-  let channelLog = $state<string[]>([])
 
   /* ── панель настроек — на самом механизме (этап 8) ─────────────────
      Второго состояния страница не держит: переключатели демо читают зеркало
-     `settings`, а `opts` синхронизируется эффектом. Имена полей = id, как в
+     `settings`, а `opts` — геттеры над ним (C3). Имена полей = id, как в
      фильтрах и пагинаторной панели; контролы — общие виджеты `#lib/ui/settings/index.js`
      (Select/Toggle поверх примитивов), аттрибуты — из `form.field(...)`. */
   /* Зеркало механизма старует пустым (дефолты описания — только для
@@ -149,24 +148,27 @@ import { Button } from '#lib/ui/primitives/index.js'
 
   /* ── настройки связывания ─────────────────────────────────────── */
 
-  const opts = $state({
+  /* Настройки — геттеры над зеркалом панели, а не копия в `$state` (C3): связка
+     читает их лениво, в момент использования, поэтому эффект-синхронизатор с его
+     лишним тактом рассинхрона не нужен.
+     https://svelte.dev/docs/svelte/$effect#When-not-to-use-$effect */
+  const opts = {
     action: '/form',
     instance: 'signup:new',
-    specVersion: SPEC_FIRST,
-    intercept: true,
-    live: 'after-touched' as LiveMode,
-    parallel: 'block' as ParallelPolicy,
-    invalidFrom: 'fact' as InvalidFrom,
+    get specVersion() { return cardinality === 'all' ? SPEC_ALL : SPEC_FIRST },
+    get intercept() { return sv('intercept') === 'js' },
+    get live() { return sv('live') as LiveMode },
+    get parallel() { return sv('parallel') as ParallelPolicy },
+    get invalidFrom() { return sv('invalid_from') as InvalidFrom },
     onErrors: handler,
     // результат действия передаётся ПРИ СВЯЗЫВАНИИ: без скрипта эффектов нет,
     // и ошибки обязаны оказаться уже в серверной разметке
     continuation: initialResult,
     checks,
-  })
+  }
 
   const cardinality = $derived(sv('cardinality') as 'first' | 'all')
   const description = $derived(cardinality === 'all' ? signupAll : signup)
-  $effect(() => { opts.specVersion = cardinality === 'all' ? SPEC_ALL : SPEC_FIRST })
 
   /** Политика разметки адаптера: идентификаторы полей и правило перепроверки. */
   const ui = $derived(sv('markup') as 'default' | 'custom')
@@ -226,12 +228,14 @@ import { Button } from '#lib/ui/primitives/index.js'
 
   $effect(() => { form.lift(actionResult?.result) })
 
-  // Побочное действие внешнего канала: отдельно от обработчика.
-  $effect(() => {
-    if (mode !== 'to-channel') return
-    const taken = form.state.facts.filter((e) => e.path === 'email')
-    if (taken.length) channelLog = taken.map((e) => `sms: ${e.message}`)
-  })
+  // Внешний канал: что ушло бы в него из текущих фактов — вычисление, а не
+  // эффект (C3). Сама отправка — отдельно от обработчика: его зовут и для
+  // предпросмотра, а предпросмотр ничего слать не должен.
+  const channelLog = $derived(
+    mode === 'to-channel'
+      ? form.state.facts.filter((e) => e.path === 'email').map((e) => `sms: ${e.message}`)
+      : [],
+  )
 
   const attrText = (a: Record<string, unknown>) =>
     Object.entries(a)
@@ -257,28 +261,16 @@ import { Button } from '#lib/ui/primitives/index.js'
     form.apply([editor.add(compiled.field)])
   }
 
-  /* Эффект mode — ровно прежний onChange: «всё в общий» переставляет источник
-     подсветки (пишем В ЗЕРКАЛО, чтобы селектор показывал актуальное значение) и
-     перекрашивает уже показанные ошибки. Первый пропуск — чтобы монтирование не
-     считалось изменением. */
-  let seenMode = untrack(() => sv('mode'))
-  $effect(() => {
-    const m = sv('mode')
-    if (m === seenMode) return
-    seenMode = m
-    if (m === 'one-block') settings.field('invalid_from')?.onInput('shown')
+  /* Смена обработчика — реакция на действие пользователя, а не на состояние
+     (C3): «всё в общий» переставляет источник подсветки (пишем В ЗЕРКАЛО, чтобы
+     селектор показывал актуальное значение) и перекрашивает уже показанные
+     ошибки. Монтирование изменением не считается само собой. */
+  function onPanelChange(name: string, value: string) {
+    settings.field(name)?.onInput(value)
+    if (name !== 'mode') return
+    if (value === 'one-block') settings.field('invalid_from')?.onInput('shown')
     form.redisplay()
-  })
-
-  /* Зеркало панели — единственный источник; `opts` (ленивые читалки связки
-     демо-формы) синхронизируются здесь. */
-  $effect(() => {
-    const v = settings.values
-    if ('intercept' in v) opts.intercept = v.intercept === 'js'
-    if ('live' in v) opts.live = v.live as LiveMode
-    if ('parallel' in v) opts.parallel = v.parallel as ParallelPolicy
-    if ('invalid_from' in v) opts.invalidFrom = v.invalid_from as InvalidFrom
-  })
+  }
 
 </script>
 
@@ -308,7 +300,7 @@ import { Button } from '#lib/ui/primitives/index.js'
             <PanelSelect
               value={String(v.value ?? PANEL_DEFAULTS[name] ?? '')}
               options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
-              onChange={(x) => v.onInput(x)}
+              onChange={(x) => onPanelChange(name, x)}
               {...v.attrs}
             />
           </PanelField>
