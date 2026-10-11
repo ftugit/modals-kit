@@ -22,7 +22,6 @@
   "exclude": [
     "tooling/**/*",
     "**/*.test.ts",
-    "src/lib/paginate/solid/**/*",
     "src/lib/db/test/**/*"
   ]
 }

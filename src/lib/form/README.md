@@ -3,13 +3,13 @@
 Изоморфная библиотека форм: **описание — данные, разметка — приложение, ядро — один и тот же
 код в браузере и на сервере**. Библиотека не создаёт ни одного DOM-элемента: она считает
 атрибуты, проверяет значения, принимает запрос и решает, что показывать. Теги расставляет
-приложение — поэтому одна и та же форма одинаково работает в Svelte, React и Solid.
+приложение — поэтому ядро не привязано к движку, а адаптер движка остаётся тонким слоем.
 
 ```
 описание(поля, правила) → связывание(настройка) → наборы пропсов → ваша разметка
 ```
 
-Готовые адаптеры движков: `svelte/`, `react/`, `solid/` (см. [Адаптеры движков](#адаптеры-движков)).
+Готовый адаптер движка: `svelte/` (см. [Адаптеры движков](#адаптеры-движков)).
 Ядро покрыто модульными тестами, а вес и чистоту слоёв охраняют автоматические
 стражи: бюджет каждого адаптера — отдельной строкой.
 
@@ -121,12 +121,12 @@ export const forms = createConfig({
 | отправка | `envelope.ts`, `submit.ts`, `state.ts` | конверт, конвейер, гонки, состояние |
 | приём | `server.ts` | переставляемые слои, идемпотентность, частота |
 | динамика | `editor.ts`, `spec.ts`, `source.ts` | операции над набором полей, рантайм, устаревание |
-| обвязки | `svelte/`, `react/`, `solid/` | единственные места, где ядро встречается с фреймворком |
+| обвязки | `svelte/` | единственное место, где ядро встречается с фреймворком |
 
 Три правила, которые не нарушаются:
 
 1. **Ядро не знает фреймворка.** В файлах ядра нет ни одного импорта вне
-   относительных путей; зоны адаптеров (`svelte/`, `react/`, `solid/`) — отдельные
+   относительных путей; зоны адаптеров (сейчас одна — `svelte/`) — отдельные
    слои, и пакет движка разрешён только в своей зоне. Страж проверяет это на
    каждом прогоне.
 2. **Граница «разметка — данные».** Библиотека не создаёт элементов и не знает,
@@ -151,8 +151,7 @@ export const forms = createConfig({
    ```
 
    В `index.ts` нет ни одного фреймворка: точка входа ядра чиста. Суффиксные
-   алиасы открывают зоны библиотеки: `@form/svelte`, `@form/react`,
-   `@form/solid`, `@form/server`.
+   алиасы открывают зоны библиотеки: `@form/svelte`, `@form/server`.
 
 2. **Реализовать транспорт** — единственное место, где ядро касается сети:
 
@@ -178,129 +177,28 @@ export const forms = createConfig({
    | операции над набором | `applyOps`, `reconcile` (`editor.ts`) |
    | конверт | `buildEnvelope` (`envelope.ts`) |
 
-4. **Взять готовый слой реактивности** — для Svelte, React и Solid он уже написан:
-   см. [Адаптеры движков](#адаптеры-движков). Для другого движка — следующий раздел;
+4. **Взять готовый слой реактивности** — для Svelte он уже написан:
+   см. [Адаптеры движков](#адаптеры-движков). Для другого движка — раздел «Как создать свой хук»;
    эталонная реализация: [`svelte/bind.svelte.ts`](./svelte/bind.svelte.ts)
    (~400 строк, половина — комментарии).
 
 ## Адаптеры движков
 
-Три зоны — `svelte/`, `react/`, `solid/` — повторяют один и тот же контракт.
-Настройка проекта один раз (`createConfig` → `BoundConfig`), связка одной
-строкой, дальше — наборы пропсов для вашей разметки:
+Сейчас зона одна — `svelte/` (`@form/svelte`). Адаптеры React и Solid удалены
+(аудит, C9): они не использовались, не проверялись тестами и уже разошлись со
+Svelte-версией; будут написаны заново по тому же контракту.
 
-| | Svelte | React | Solid |
-|---|---|---|---|
-| импорт | `@form/svelte` | `@form/react` | `@form/solid` |
-| связка | `bind(forms, signup, opts)` | `useForm(forms, signup, opts)` | `createForm(forms, signup, opts)` |
-| состояние | руны | `useSyncExternalStore` | `createSignal` + `batch` |
-| поле | `form.f.email` | `form.f.email` | `form.f.email` |
-| `labelProps` | `for` | `htmlFor` | `for` |
-| атрибуты | HTML-имена (`minlength`) | camelCase-пропсы (`minLength`) | HTML-имена (`minlength`) |
-| выбор компонента поля | `resolve` в настройке | приложение по `f.input` | приложение по `f.input` |
-
-Настройка `createConfig` одинакова у всех трёх (`transport`, `live`, `parallel`,
-`onErrors`, `invalidFrom`, `ui`); у Svelte-адаптера есть ещё `resolve` —
-«представление → компонент». React и Solid не навязывают компоненты: приложение
-само выбирает их по `f.input` из `FieldView`.
-
-### React
-
-```ts
-// forms.config.ts — настройка проекта: один раз на приложение
-import { createConfig } from '@form/react'
-import { fetchTransport } from './transport'
-
-export const forms = createConfig({
-  transport: fetchTransport,
-  live: 'after-touched',
-})
-```
-
-```tsx
-// SignupForm.tsx — разметку пишет приложение
-import { useForm } from '@form/react'
-import { signup } from './signup'
-
-export function SignupForm() {
-  const form = useForm(forms, signup)
-  const email = form.f.email
-
-  return (
-    <form {...form.formProps()}>
-      {form.hidden().map((h) => <input key={h.name} {...h} />)}
-
-      {form.common[0] && <div role="alert">{form.common[0].message}</div>}
-
-      <label {...email.labelProps()}>{email.label}</label>
-      <input {...email.attrs}
-             onInput={(e) => email.onInput(e.currentTarget.value)}
-             onBlur={() => email.setTouched()} />
-      {email.errors[0] && <p {...email.errorProps()}>{email.errors[0].message}</p>}
-
-      <button {...form.intent('submit')}>Создать аккаунт</button>
-    </form>
-  )
-}
-```
-
-Перевод HTML-имён в camelCase-пропсы (`maxlength` → `maxLength`) — внутри
-адаптера: ядро говорит на языке разметки, React — на языке пропсов. Номер
-отправки в конверте рождается на каждой стороне свой, поэтому для него
-адаптер отдаёт `defaultValue`, а не `value`: React не сверяет
-неконтролируемое поле при оживлении, и в DOM остаётся номер сервера.
-
-### Solid
-
-```ts
-// forms.config.ts — настройка проекта: один раз на приложение
-import { createConfig } from '@form/solid'
-import { fetchTransport } from './transport'
-
-export const forms = createConfig({
-  transport: fetchTransport,
-  live: 'after-touched',
-})
-```
-
-```tsx
-// SignupForm.tsx — разметку пишет приложение
-import { createForm } from '@form/solid'
-import { signup } from './signup'
-
-export function SignupForm() {
-  const form = createForm(forms, signup)
-
-  return (
-    <form {...form.formProps()}>
-      <For each={form.hidden()}>{(h) => <input {...h} />}</For>
-
-      <label {...form.f.email.labelProps()}>{form.f.email.label}</label>
-      <input {...form.f.email.attrs}
-             onInput={(e) => form.f.email.onInput(e.currentTarget.value)}
-             onBlur={() => form.f.email.setTouched()} />
-      <Show when={form.f.email.errors[0]}>
-        <p {...form.f.email.errorProps()}>{form.f.email.errors[0].message}</p>
-      </Show>
-
-      <button {...form.intent('submit')}>Создать аккаунт</button>
-    </form>
-  )
-}
-```
-
-Компонент Solid живёт один раз, поэтому связка создаётся один раз, а настройки
-читаются лениво — объект опций с геттерами, а не снимок. `formProps()` содержит
-`ref`, который регистрирует элемент формы для live-валидации и асинхронных
-проверок; отдельный вызов регистрации не требуется. Атрибуты остаются HTML-ными:
-Solid пишет их в разметку как есть, перекладки имён нет.
+Контракт зоны: настройка проекта один раз (`createConfig` → `BoundConfig`), связка
+одной строкой (`bind(forms, signup, opts)`), дальше — наборы пропсов для вашей
+разметки (`form.f.email`, `labelProps` → `for`, атрибуты — HTML-имена, `minlength`).
+Состояние — руны. Настройка `createConfig`: `transport`, `live`, `parallel`,
+`onErrors`, `invalidFrom`, `ui` и `resolve` — «представление → компонент».
 
 ## Как создать свой хук
 
 Хук приложения — тонкая обёртка над адаптером, чтобы не повторять настройку на каждой
 форме. Библиотека фабрики хуков не поставляет: это право приложения. Ниже — полный
-каркас адаптера на React (готовые варианты — [`react/bind.ts`](./react/bind.ts) и
-[`solid/bind.ts`](./solid/bind.ts)):
+каркас адаптера на React (эталон — [`svelte/bind.svelte.ts`](./svelte/bind.svelte.ts)):
 
 ```ts
 // form/use-form.ts — адаптер React: useState над FormStore
@@ -328,8 +226,7 @@ export function useForm(description, opts) {
 ```
 
 Свои настройки, которые хук обычно выставляет (все — из `FormsConfig` в `config.ts`
-зоны адаптера: [`svelte/`](./svelte/config.ts), [`react/`](./react/config.ts),
-[`solid/`](./solid/config.ts)):
+зоны адаптера: [`svelte/`](./svelte/config.ts)):
 
 | Настройка | Тип | Что решает |
 |---|---|---|
@@ -712,4 +609,4 @@ const throttle = windowThrottle<RequestEvent>({
 библиотеку), gzip — «вес доставки» (прокси того, что уедет в браузер), адаптеры
 движков — отдельной строкой каждый. Рост бюджета — осознанный: отдельным
 изменением с причиной; молчаливые +10% невозможны. Текущие пределы:
-275 КБ raw / 68.5 КБ gzip / адаптеры: svelte 9.3 · react 9.3 · solid 8.1 КБ.
+320.3 КБ raw / 86.9 КБ gzip / адаптер svelte 12.7 КБ (`BUDGETS` в `tooling/form-size.mjs`).

@@ -18,14 +18,11 @@ test('рантайм — код, но не тесты и не документа
   assert.equal(isRuntimeFile('REFACTOR.md'), false, 'документация не считается')
 })
 
-test('зона адаптера — svelte/, react/, solid/', () => {
+test('зона адаптера — svelte/; неизвестная папка — ядро', () => {
   assert.equal(isAdapterZone('svelte/bind.svelte.ts'), true)
-  assert.equal(isAdapterZone('react/bind.ts'), true)
-  assert.equal(isAdapterZone('solid/bind.ts'), true)
+  assert.equal(isAdapterZone('react/bind.ts'), false, 'адаптера react нет (C9) — папка без зоны')
   assert.equal(isAdapterZone('describe.ts'), false)
   assert.equal(zoneOf('svelte\\config.ts'), 'svelte', 'windows-разделители нормализуются')
-  assert.equal(zoneOf('react/bind.ts'), 'react')
-  assert.equal(zoneOf('solid/config.ts'), 'solid')
   assert.equal(zoneOf('state.ts'), null)
 })
 
@@ -47,18 +44,17 @@ test('относительные пути разрешены везде', () => 
 
 test('пакет движка разрешён только в своей зоне', () => {
   assert.deepEqual(checkImports('svelte/bind.svelte.ts', ['svelte', 'svelte/attachments']), [])
-  assert.deepEqual(checkImports('react/bind.ts', ['react']), [])
-  assert.deepEqual(checkImports('solid/bind.ts', ['solid-js']), [])
-  const problems = checkImports('state.ts', ['svelte', 'react', 'solid-js'])
-  assert.equal(problems.length, 3)
+  const problems = checkImports('state.ts', ['svelte', 'svelte/store'])
+  assert.equal(problems.length, 2)
   for (const p of problems) assert.match(p.reason, /без фреймворка/)
-  const cross = checkImports('react/bind.ts', ['solid-js'])
-  assert.equal(cross.length, 1, 'пакет чужого движка — нарушение зоны')
+  const foreign = checkImports('react/bind.ts', ['react', 'solid-js'])
+  assert.equal(foreign.length, 2, 'движок без своей зоны — внешний пакет')
+  for (const p of foreign) assert.match(p.reason, /не тянет зависимостей/)
 })
 
 test('esm-env разрешён везде, и только он (C7)', () => {
   assert.deepEqual(checkImports('keep.ts', ['esm-env']), [])
-  assert.deepEqual(checkImports('react/bind.ts', ['esm-env']), [])
+  assert.deepEqual(checkImports('svelte/bind.ts', ['esm-env']), [])
   assert.equal(checkImports('keep.ts', ['esm-env/development']).length, 1, 'подпути не разрешены')
   assert.equal(checkImports('keep.ts', ['esm-env-x']).length, 1)
 })
@@ -79,10 +75,10 @@ test('мера разделяет ядро и адаптеры по зонам',
     { path: 'react/bind.ts', source: 'c'.repeat(100) },
   ])
   assert.equal(m.files, 3)
-  assert.equal(m.coreRaw, 1000)
+  assert.equal(m.coreRaw, 1101, 'папка без зоны считается ядром (1000 + \n + 100)')
   assert.equal(m.adapters.svelte.raw, 200)
-  assert.equal(m.adapters.react.raw, 100)
-  assert.equal(m.adapters.solid.raw, 0, 'зона пустая — весит ноль')
+  assert.deepEqual(Object.keys(m.adapters), ['svelte'])
+  assert.equal(measure([{ path: 'core.ts', source: 'a' }]).adapters.svelte.raw, 0, 'зона пустая — весит ноль')
   assert.ok(m.gzip < m.raw, 'сжатие обязано уменьшать повторяющийся текст')
   assert.equal(m.heaviest[0].path, 'core.ts')
 })
@@ -102,7 +98,7 @@ test('превышение названо числами и протоколом
   ])
   const violations = checkBudgets(
     { ...m, gzip: m.gzip + 1000 },
-    { raw: 1, gzip: 10, adapters: { svelte: 0, react: 10_000, solid: 10_000 } })
+    { raw: 1, gzip: 10, adapters: { svelte: 0 } })
   assert.equal(violations.length, 3, 'raw + gzip + адаптер svelte')
   for (const v of violations) assert.match(v.line, />/)
   assert.match(violations[0].why, /причину|причина/i)
@@ -111,17 +107,15 @@ test('превышение названо числами и протоколом
 test('в пределах бюджета — тишина', () => {
   const m = measure([{ path: 'core.ts', source: 'x'.repeat(100) }])
   assert.deepEqual(
-    checkBudgets(m, { raw: 10_000, gzip: 10_000, adapters: { svelte: 10_000, react: 10_000, solid: 10_000 } }),
+    checkBudgets(m, { raw: 10_000, gzip: 10_000, adapters: { svelte: 10_000 } }),
     [])
 })
 
 test('отчёт печатает цифры и пороги рядом', () => {
   const m = measure([{ path: 'core.ts', source: 'x'.repeat(100) }])
-  const text = report(m, { raw: 1000, gzip: 1000, adapters: { svelte: 1000, react: 1000, solid: 1000 } })
+  const text = report(m, { raw: 1000, gzip: 1000, adapters: { svelte: 1000 } })
   assert.match(text, /ядро:/)
   assert.match(text, /адаптер svelte/)
-  assert.match(text, /адаптер react/)
-  assert.match(text, /адаптер solid/)
   assert.match(text, /бюджеты:/)
   assert.match(text, /самое тяжёлое:/)
 })
@@ -162,7 +156,7 @@ test('рантайм формы не импортирует пакетов', () 
 test('адаптеры существуют и непусты (иначе бюджет фиктивен)', () => {
   const zones = walk(ROOT).map((f) => relative(ROOT, f)).filter(isAdapterZone)
   assert.ok(zones.length > 0, 'нет зоны адаптера — граница фиктивна')
-  for (const z of ['svelte', 'react', 'solid'])
+  for (const z of ['svelte'])
     assert.ok(zones.some((p) => zoneOf(p) === z), `зона ${z} пуста — бюджет фиктивен`)
 })
 

@@ -1,6 +1,6 @@
-# src/lib/paginate — headless-пагинация (SolidJS & Svelte 5)
+# src/lib/paginate — headless-пагинация (Svelte 5)
 
-Headless-библиотека пагинации с разделением framework-neutral ядра и тонких адаптеров для SolidJS и Svelte 5.
+Headless-библиотека пагинации с разделением framework-neutral ядра и тонкого адаптера движка (сейчас — Svelte 5; адаптер SolidJS удалён в аудите, C9, будет написан заново).
 Ядро не зависит от фреймворков, DOM и роутера: `src/lib/paginate/` предоставляет чистые функции, контракты, хранилища, трекинг якорей и state machine.
 
 ## Возможности
@@ -16,8 +16,7 @@ Headless-библиотека пагинации с разделением frame
   (`state.capabilities`), и интерфейс гасит то, чего у источника нет.
   Объект, эмулирующий api слоя, не принимается — нужен бренд слоя.
 - **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/content/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
-- **Тонкие адаптеры**:
-  - `src/lib/paginate/solid/` — SolidJS сигналы и JSX-биндинги.
+- **Тонкий адаптер**:
   - `src/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
 - **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер слоя фреймворка (`src/lib/router/sveltekit.ts`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса хост берёт у адаптера (`searchSpec`), поэтому спецификация не живёт в двух местах.
 - **Готовые UI-компоненты**: `src/lib/ui/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `EventLog` и др.).
@@ -76,22 +75,6 @@ definePaginator({
 </PaginatorHost>
 ```
 
-### Использование в SolidJS
-
-```tsx
-import { PaginatorHost } from '#lib/paginate/solid/index.js'
-import { PageList, PageNav } from '#lib/ui/paginator/index.js'
-
-function ProductsView() {
-  return (
-    <PaginatorHost name="products" class="h-[500px] overflow-y-auto">
-      <PageList renderItem={(item) => <div>{item.title}</div>} />
-      <PageNav />
-    </PaginatorHost>
-  )
-}
-```
-
 ## Структура библиотеки
 
 - `src/lib/paginate/` — framework-neutral ядро:
@@ -106,6 +89,5 @@ function ProductsView() {
   - `store.ts` — vanilla Store с поддержкой SSR и гидрации.
   - `registry.ts` — реестр экземпляров пагинаторов по имени.
   - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra`, `setPageSize` и др.).
-- `src/lib/paginate/solid/` — SolidJS адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`).
 - `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`).
 - `src/lib/ui/paginator/` — готовые UI-компоненты.

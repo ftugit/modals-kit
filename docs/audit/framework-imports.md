@@ -115,7 +115,7 @@ RESULT: STALE (bug)
 |---|---|
 | `lib/form/keep.ts` | `import.meta.env?.DEV` |
 | `lib/form/svelte/bind.svelte.ts:185,424,436` | `import.meta.env.DEV` (+ `typeof window` на стр. 365, K8) |
-| `lib/form/react/bind.ts:174,323,335`, `lib/form/solid/bind.ts:163,489,501` | `import.meta.env.DEV` (зоны C9) |
+| `lib/form/react/bind.ts:174,323,335`, `lib/form/solid/bind.ts:163,489,501` | `import.meta.env.DEV` (зоны C9; удалены в ходе 25) |
 
 `import.meta.env` — соглашение Vite: README библиотеки обещает «ядро приезжает исходниками и не
 зависит от сборщика», а `keep.ts` лежит в ядре. ~~Не исправлено~~ **Исправлено в ходе 10** (c3d72df):

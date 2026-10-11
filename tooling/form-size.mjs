@@ -48,16 +48,17 @@ export const BUDGETS = {
    * Адаптеры движков: gzip только своей зоны. Тонкая обвязка обязана
    * оставаться тонкой — но провайдер поля (bind + Form-обвязка) реально
    * весит, поэтому поднят до фактов с запасом (оператор, 2026-10-10):
-   * svelte 12 472 · react 11 059 · solid 9 933.
+   * svelte 12 472. Зоны react/solid удалены вместе с адаптерами (C9, ход 25):
+   * новый адаптер приходит со своей зоной, пакетом движка и бюджетом.
    */
-  adapters: { svelte: 13_000, react: 11_600, solid: 10_400 },
+  adapters: { svelte: 13_000 },
 }
 
 /** Рантайм-файл: код на TypeScript или Svelte, но не тест и не документация. */
 export const isRuntimeFile = (name) => /\.(ts|svelte)$/.test(name) && !/\.test\./.test(name)
 
 /** Зоны адаптеров: единственные места, где форме известен фреймворк. */
-export const ADAPTER_ZONES = ['svelte', 'react', 'solid']
+export const ADAPTER_ZONES = ['svelte']
 
 /** Зона адаптера по пути от корня библиотеки; ядро — null. */
 export const zoneOf = (relPath) => {
@@ -71,8 +72,6 @@ export const isAdapterZone = (relPath) => zoneOf(relPath) !== null
 /** Пакет движка и зона, где он разрешён. */
 const ENGINE_PACKAGES = [
   { zone: 'svelte', re: /^svelte(\/|$)/ },
-  { zone: 'react', re: /^react(\/|$)/ },
-  { zone: 'solid', re: /^solid-js(\/|$)/ },
 ]
 
 /**
