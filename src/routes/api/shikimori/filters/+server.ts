@@ -8,7 +8,7 @@
  * (single-flight), поэтому «каждый клиент тянет своё» невозможно.
  */
 import type { RequestHandler } from './$types'
-import { upstreamFailure } from '#lib/server/shikimori.js'
+import { upstreamFailure } from '#lib/server/upstream.js'
 import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 
 export const GET: RequestHandler = async () => {

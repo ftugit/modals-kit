@@ -30,7 +30,7 @@
  *   • у каждого запроса жёсткий таймаут.
  */
 import { buildTermDictionary, serializeTermDictionary } from '#lib/search/fuzzy.js'
-import { upstreamFetch } from './upstream'
+import { UpstreamError, upstreamFetch } from './upstream'
 import {
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_ORDER,
@@ -69,35 +69,12 @@ const UPSTREAM_TIMEOUT_MS = 10_000
 const TERMS_PAGES = 6
 const TERMS_TTL_MS = 60 * 60 * 1000
 
-/**
- * Сбой внешнего API. `message` — НАШ текст (код ответа, «недоступен»), его можно
- * показать клиенту; исходная ошибка (адрес, код ОС) — только в `cause`, для лога.
- */
-export class ShikimoriUpstreamError extends Error {
-  status: number
+/** Сбой REST API Shikimori; общий слой ошибок — `UpstreamError` (`./upstream`). */
+export class ShikimoriUpstreamError extends UpstreamError {
   constructor(message: string, status = 502, options?: ErrorOptions) {
-    super(message, options)
+    super(message, status, options)
     this.name = 'ShikimoriUpstreamError'
-    this.status = status
   }
-}
-
-/**
- * Ответ API-маршрута на пойманную ошибку (B8). Сбой внешнего API отдаёт свой
- * текст и код; всё прочее — непредвиденный сбой сервера: подробности только в
- * лог, клиенту — общий текст. Обрыв запроса клиентом не логируется: читать
- * ответ уже некому.
- * @param error Пойманная ошибка.
- * @param where Метка маршрута для лога.
- * @returns Текст для клиента и HTTP-статус.
- */
-export function upstreamFailure(error: unknown, where: string): { message: string; status: number } {
-  if (error instanceof ShikimoriUpstreamError) {
-    if (error.cause !== undefined) console.warn(`[${where}] ${error.message}`, error.cause)
-    return { message: error.message, status: error.status }
-  }
-  if (!(error instanceof Error && error.name === 'AbortError')) console.error(`[${where}]`, error)
-  return { message: 'внутренняя ошибка сервера', status: 502 }
 }
 
 export type AnimesQuery = {

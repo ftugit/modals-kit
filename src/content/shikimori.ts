@@ -137,7 +137,9 @@ export async function getAnimesPage({ page, limit, search, filters, signal }: An
       .json()
       .then((body: { error?: string }) => body?.error)
       .catch(() => null)
-    throw new Error(`Shikimori API: ${detail ?? res.status}`)
+    // Текст маршрута уже полный («Каталог Shikimori недоступен: <причина>», §13.1):
+    // своя приставка его только дублировала. Без тела — тот же вид из кода ответа.
+    throw new Error(detail ?? `Каталог Shikimori недоступен: ответ ${res.status}`)
   }
   return (await res.json()) as AnimesPage
 }

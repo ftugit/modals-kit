@@ -7,7 +7,8 @@
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'
-import { getTermArtifact, upstreamFailure } from '#lib/server/shikimori.js'
+import { getTermArtifact } from '#lib/server/shikimori.js'
+import { upstreamFailure } from '#lib/server/upstream.js'
 
 export const GET: RequestHandler = async ({ request }) => {
   try {

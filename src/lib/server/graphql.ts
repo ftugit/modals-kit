@@ -14,13 +14,14 @@
  *   • GraphQL-ответ с `errors` — ошибка, даже если HTTP 200: частичные данные
  *     не данные, и молча построить по ним схему нельзя.
  *
- * Ошибки наружу — `GraphqlUpstreamError` со статусом: потребитель (роут)
- * показывает их как 502/504, а не как пустой список. `message` — НАШ текст
+ * Ошибки наружу — `GraphqlUpstreamError` (наследник общего `UpstreamError`)
+ * со статусом: потребитель (роут) отдаёт их через `upstreamFailure` как
+ * 502/504, а не как пустой список. `message` — НАШ текст
  * (его можно показать клиенту); исходный сбой и тексты `errors` сервера —
  * только в `cause`, для лога (как B8 у REST-транспорта).
  */
 import { isServerSide } from '#lib/paginate/index.js'
-import { upstreamFetch } from './upstream'
+import { UpstreamError, upstreamFetch } from './upstream'
 
 /** Запрос к GraphQL: адрес, документ, переменные и проекция ответа. */
 export type GraphqlSpec<T, V = Record<string, unknown>> = {
@@ -54,12 +55,11 @@ const MIN_GAP_MS = 250
 const RETRY_DELAY_MS = 1_000
 const TIMEOUT_MS = 10_000
 
-export class GraphqlUpstreamError extends Error {
-  status: number
+/** Сбой GraphQL-сервера; общий слой ошибок — `UpstreamError` (`./upstream`). */
+export class GraphqlUpstreamError extends UpstreamError {
   constructor(message: string, status = 502, options?: ErrorOptions) {
-    super(message, options)
+    super(message, status, options)
     this.name = 'GraphqlUpstreamError'
-    this.status = status
   }
 }
 

@@ -10,7 +10,7 @@
  *   • заголовков пагинации API не отдаёт — `hasNext` выводится из длины страницы;
  *   • `search` — подстрока по названиям, опечатки не терпит (работа lib search).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   SHIKIMORI_CACHE_MAX,
   SHIKIMORI_LIMIT_MAX,
@@ -19,7 +19,6 @@ import {
   fetchAnimes,
   getTermArtifact,
   ShikimoriUpstreamError,
-  upstreamFailure,
   hasNextOf,
   normalizeAnime,
   fetchShikimoriJson,
@@ -432,23 +431,5 @@ describe('ошибки API-маршрутов не уходят клиенту (
     expect(err).toBeInstanceOf(ShikimoriUpstreamError)
     expect(err.message).not.toContain('10.0.0.7')
     expect(err.cause).toBe(boom)
-  })
-
-  it('непредвиденная ошибка: клиенту общий текст, подробности в лог; обрыв клиентом — без лога', () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      const r = upstreamFailure(new Error('DATABASE_URL=postgres://u:secret@db'), 't')
-      expect(r).toEqual({ message: 'внутренняя ошибка сервера', status: 502 })
-      expect(log).toHaveBeenCalledTimes(1)
-
-      upstreamFailure(new DOMException('aborted', 'AbortError'), 't')
-      expect(log).toHaveBeenCalledTimes(1)
-
-      const up = upstreamFailure(new ShikimoriUpstreamError('Shikimori API ответил 503', 502), 't')
-      expect(up).toEqual({ message: 'Shikimori API ответил 503', status: 502 })
-    } finally {
-      log.mockRestore(); warn.mockRestore()
-    }
   })
 })

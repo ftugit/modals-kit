@@ -13,7 +13,8 @@
  * когда фильтры в запросе есть: обычная страница каталога её не ждёт.
  */
 import type { RequestHandler } from './$types'
-import { parseAnimesQuery, ShikimoriUpstreamError, upstreamFailure } from '#lib/server/shikimori.js'
+import { parseAnimesQuery } from '#lib/server/shikimori.js'
+import { upstreamFailure } from '#lib/server/upstream.js'
 import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
@@ -29,7 +30,6 @@ export const GET: RequestHandler = async ({ url, request }) => {
     return Response.json(page, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     const { message, status } = upstreamFailure(error, 'api/shikimori/animes')
-    const text = error instanceof ShikimoriUpstreamError ? message : `Shikimori API: ${message}`
-    return Response.json({ error: text }, { status })
+    return Response.json({ error: `Каталог Shikimori недоступен: ${message}` }, { status })
   }
 }
