@@ -26,12 +26,21 @@ export interface HostFloatingRect {
   height: number
 }
 
+/**
+ * Почему закрылся floating. По причине потребитель решает, возвращать ли фокус:
+ * `escape` и `history` — да (поверхность закрыл пользователь, триггер жив);
+ * `owner-closed` — нет (триггер ушёл вместе с модалкой-владельцем);
+ * `programmatic`/`transfer` — закрыл сам потребитель, состояние не трогать.
+ */
 export type HostFloatingCloseReason =
   | 'escape'
   | 'outside-pointer'
   | 'programmatic'
   | 'transfer'
+  /** Модалка-владелец закрылась, запись листа снята вместе с её хвостом. */
   | 'owner-closed'
+  /** Владелец жив, снята только запись листа: «Назад»/«Вперёд» или запись ядра извне. */
+  | 'history'
 
 export interface HostFloatingPlacementOptions {
   /** Отступ между anchor/trigger и popup в режимах bottom/top. */

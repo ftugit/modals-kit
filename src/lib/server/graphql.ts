@@ -20,6 +20,7 @@
  * только в `cause`, для лога (как B8 у REST-транспорта).
  */
 import { isServerSide } from '#lib/paginate/index.js'
+import { upstreamFetch } from './upstream'
 
 /** Запрос к GraphQL: адрес, документ, переменные и проекция ответа. */
 export type GraphqlSpec<T, V = Record<string, unknown>> = {
@@ -66,7 +67,7 @@ type Resolved = Required<Omit<GraphqlDeps, 'fetch'>> & { fetch: typeof globalThi
 
 function resolveDeps(deps: GraphqlDeps): Resolved {
   return {
-    fetch: deps.fetch ?? globalThis.fetch,
+    fetch: deps.fetch ?? upstreamFetch(),
     now: deps.now ?? (() => Date.now()),
     sleep: deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms))),
     cacheTtlMs: deps.cacheTtlMs ?? CACHE_TTL_MS,

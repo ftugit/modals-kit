@@ -1487,6 +1487,41 @@ try {
     await page.close()
   })
 
+  /* ── R-39 (§13.2): снятие записи листа — фокус по причине закрытия ───── */
+  // «Назад» при живой модалке → причина `history`: фокус возвращается на Select.
+  // Модалка ушла вместе с листом → `owner-closed`: Select фокус не трогает,
+  // его возвращает сама модалка своему триггеру.
+  await run('R-39 лист Select: «Назад» возвращает фокус на Select, закрытие модалки — на её триггер', async () => {
+    const origin = new URL(BASE).origin
+    for (const [scenario, step] of [['Назад', -1], ['закрытие модалки', -2]]) {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`${origin}/modals`, { waitUntil: 'networkidle' })
+      await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+      await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+      await page.locator('[data-modal-stage] [data-select-native]').first().tap({ force: true })
+      await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+      await page.waitForTimeout(300)
+      await page.evaluate((d) => history.go(d), step)
+      await page.locator('[data-host-floating]').waitFor({ state: 'detached', timeout: 5_000 })
+      await page.waitForTimeout(800)
+      const state = await page.evaluate(() => {
+        const a = document.activeElement
+        return {
+          stage: !!document.querySelector('[data-modal-stage]'),
+          select: !!a?.matches('[data-modal-stage] [data-select-native]'),
+          trigger: !!a?.matches('[data-modal-trigger]'),
+        }
+      })
+      if (step === -1) assert(state.stage && state.select, `${scenario}: ${JSON.stringify(state)}`)
+      else assert(!state.stage && state.trigger, `${scenario}: ${JSON.stringify(state)}`)
+      assert(errors.length === 0, `${scenario}: ошибки ${errors.join(' | ')}`)
+      ok(`${scenario}: ${step === -1 ? 'модалка жива, фокус на Select' : 'модалка закрыта, фокус на её триггере'}`)
+      await page.close()
+    }
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

@@ -429,7 +429,7 @@
     if (reason === 'programmatic' || reason === 'transfer') return
     if (!open) return
     open = false
-    if (reason === 'escape') nativeEl?.focus({ preventScroll: true })
+    if (reason === 'escape' || reason === 'history') nativeEl?.focus({ preventScroll: true })
   }
 
   /* ── открытие и закрытие ─────────────────────────────────────────── */

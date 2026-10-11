@@ -413,6 +413,7 @@
     if (entryId === undefined) return
     const { [floatingId]: _gone, ...rest } = sheetEntries
     sheetEntries = rest
+    delete sheetOwners[floatingId]
     if (modals.chain.some((e) => entryLabel(e) === entryId)) modals.forceClose(entryId)
   }
 
@@ -477,6 +478,13 @@
 
   /** id headless-записи цепочки для каждого floating, ставшего листом. */
   let sheetEntries = $state<Record<string, string>>({})
+  /**
+   * Запись под листом в момент его открытия (модалка-владелец; `undefined` —
+   * лист открыт прямо на странице). Нужна только для причины закрытия:
+   * ушёл владелец → `owner-closed`, иначе → `history`. Не реактивна: читается
+   * в момент снятия записи.
+   */
+  const sheetOwners: Record<string, string | undefined> = {}
 
   /**
    * 🔴 Усыновлённый узел САМ становится контентом диалога.
@@ -533,6 +541,8 @@
         // восстанавливать по записи нечего, а без флага в цепочку
         // возвращалось состояние без интерфейса (ISSUES.md R-03).
         const inherited = sheetAnchor(floating)
+        const below = untrack(() => fullChain.at(-1))
+        sheetOwners[floating.id] = below ? entryLabel(below) : undefined
         const entryId = modals.openHeadless({
           mobile: inherited === 'fullscreen' ? undefined : inherited,
           noForward: true,
@@ -546,8 +556,12 @@
   })
 
   /**
-   * Снятие записи «извне» (кнопка Назад, Escape, backdrop) обязано закрыть
-   * и сам floating: иначе список остался бы висеть без своей записи.
+   * Снятие записи «извне» (кнопка Назад, закрытие модалки-владельца, запись
+   * ядра) обязано закрыть и сам floating: иначе список остался бы висеть без
+   * своей записи. Причина — по владельцу: ушёл вместе с записью → `owner-closed`
+   * (триггера больше нет, фокус возвращать некуда), жив → `history` (триггер
+   * на месте, фокус возвращается). Свои Escape/outside-click floating закрывает
+   * сам раньше — сюда они не доходят.
    */
   $effect(() => {
     const live = new Set(fullChain.map((e) => entryLabel(e)))
@@ -555,8 +569,10 @@
       if (live.has(entryId)) continue
       const { [floatingId]: _gone, ...rest } = sheetEntries
       sheetEntries = rest
+      const owner = sheetOwners[floatingId]
+      delete sheetOwners[floatingId]
       if (floatings.some((f) => f.id === floatingId)) {
-        closeFloating(floatingId, 'escape')
+        closeFloating(floatingId, owner !== undefined && !live.has(owner) ? 'owner-closed' : 'history')
       }
     }
   })

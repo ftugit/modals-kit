@@ -80,7 +80,7 @@ import { Button } from '#lib/ui/primitives/index.js'
         lastClosedAt = Date.now()
         if (reason === 'programmatic' || reason === 'transfer') return
         open = false
-        if (reason === 'escape') buttonEl?.focus({ preventScroll: true })
+        if (reason === 'escape' || reason === 'history') buttonEl?.focus({ preventScroll: true })
       },
     }
   }

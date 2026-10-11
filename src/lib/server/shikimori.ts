@@ -30,6 +30,7 @@
  *   • у каждого запроса жёсткий таймаут.
  */
 import { buildTermDictionary, serializeTermDictionary } from '#lib/search/fuzzy.js'
+import { upstreamFetch } from './upstream'
 import {
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_ORDER,
@@ -291,7 +292,7 @@ type ResolvedDeps = Required<Pick<TransportDeps, 'fetch' | 'now' | 'sleep' | 'ca
 
 function resolveDeps(deps: TransportDeps): ResolvedDeps {
   return {
-    fetch: deps.fetch ?? globalThis.fetch,
+    fetch: deps.fetch ?? upstreamFetch(),
     now: deps.now ?? (() => Date.now()),
     sleep: deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms))),
     cacheTtlMs: deps.cacheTtlMs ?? CACHE_TTL_MS,
