@@ -15,7 +15,9 @@
  *     не данные, и молча построить по ним схему нельзя.
  *
  * Ошибки наружу — `GraphqlUpstreamError` со статусом: потребитель (роут)
- * показывает их как 502/504, а не как пустой список.
+ * показывает их как 502/504, а не как пустой список. `message` — НАШ текст
+ * (его можно показать клиенту); исходный сбой и тексты `errors` сервера —
+ * только в `cause`, для лога (как B8 у REST-транспорта).
  */
 import { isServerSide } from '#lib/paginate/index.js'
 
@@ -53,8 +55,8 @@ const TIMEOUT_MS = 10_000
 
 export class GraphqlUpstreamError extends Error {
   status: number
-  constructor(message: string, status = 502) {
-    super(message)
+  constructor(message: string, status = 502, options?: ErrorOptions) {
+    super(message, options)
     this.name = 'GraphqlUpstreamError'
     this.status = status
   }
@@ -125,7 +127,7 @@ async function requestGraphql<T, V>(spec: GraphqlSpec<T, V>, deps: Resolved): Pr
         signal: AbortSignal.timeout(deps.timeoutMs),
       })
     } catch (error) {
-      throw new GraphqlUpstreamError(`GraphQL недоступен: ${String(error)}`, 504)
+      throw new GraphqlUpstreamError('GraphQL недоступен', 504, { cause: error })
     }
     if (res.status === 429 || res.status >= 500) {
       if (attempt === 0) {
@@ -138,10 +140,10 @@ async function requestGraphql<T, V>(spec: GraphqlSpec<T, V>, deps: Resolved): Pr
     const raw: unknown = await res.json()
     const payload = (raw ?? {}) as { data?: unknown; errors?: readonly { message?: string }[] }
     if (payload.errors?.length) {
-      throw new GraphqlUpstreamError(
-        `GraphQL: ${payload.errors.map((e) => e.message ?? 'ошибка').join('; ')}`,
-        502,
-      )
+      // Тексты сервера (имена полей, типы) — подробности запроса, не для клиента.
+      throw new GraphqlUpstreamError('GraphQL вернул ошибку', 502, {
+        cause: payload.errors.map((e) => e.message ?? 'ошибка').join('; '),
+      })
     }
     if (payload.data === undefined || payload.data === null) {
       throw new GraphqlUpstreamError('GraphQL: ответ без data', 502)

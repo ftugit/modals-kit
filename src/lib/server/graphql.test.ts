@@ -70,7 +70,11 @@ describe('запрос', () => {
 
   it('`errors` при HTTP 200 — ошибка, а не «частичные данные»', async () => {
     const { fetchImpl } = stubFetch([() => json({ errors: [{ message: 'Expected type' }] })])
-    await expect(fetchGraphql(spec, { fetch: fetchImpl })).rejects.toThrow(/Expected type/)
+    const error = await fetchGraphql(spec, { fetch: fetchImpl }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(GraphqlUpstreamError)
+    // Текст сервера (подробности запроса) — только в `cause`, не в сообщении для клиента.
+    expect((error as Error).message).toBe('GraphQL вернул ошибку')
+    expect((error as Error).cause).toBe('Expected type')
   })
 
   it('ответ без `data` — ошибка', async () => {
@@ -96,7 +100,12 @@ describe('запрос', () => {
     const failing = (async () => {
       throw new Error('socket hang up')
     }) as unknown as typeof globalThis.fetch
-    await expect(fetchGraphql(spec, { fetch: failing })).rejects.toThrow(/недоступен/)
+    const error = await fetchGraphql(spec, { fetch: failing }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(GraphqlUpstreamError)
+    expect((error as GraphqlUpstreamError).status).toBe(504)
+    // Исходный сбой (адрес, код ОС) — только в `cause`, не в сообщении для клиента (B8).
+    expect((error as Error).message).toBe('GraphQL недоступен')
+    expect(((error as Error).cause as Error).message).toBe('socket hang up')
   })
 })
 

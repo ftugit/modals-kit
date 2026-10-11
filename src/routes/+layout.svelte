@@ -133,7 +133,13 @@
   <!-- фатал заменяет каркас целиком: ориентир main — здесь -->
   <main><Error500 /></main>
 {:else if OWN_SYSTEM.has(page.route.id ?? '')}
-  {@render children()}
+  {#if page.error}
+    <!-- свой каркас у маршрута — внутри его демо; страница ошибки идёт без него,
+         ориентир main даёт layout (B4) -->
+    <main>{@render children()}</main>
+  {:else}
+    {@render children()}
+  {/if}
 {:else}
   <ModalHost
     {modals}
