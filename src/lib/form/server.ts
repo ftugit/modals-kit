@@ -133,13 +133,40 @@ function metered(request: Request, limits: Limits): Request {
 }
 
 /**
+ * Источник описания текущего запроса. Приватно и по ссылке на ctx: публичный
+ * `Ctx` и порядок слоёв (`order`) не меняются, а слой имён и обработчик
+ * разрешают источник РОВНО ОДИН раз — кто первый.
+ */
+const pendingSource = new WeakMap<Ctx, { source: DescriptionSource; instance: string; done: boolean }>()
+
+/**
+ * Поднять описание из источника по версии из конверта (однократно на запрос).
+ * Набор полей НЕ приходит от клиента: описание поднимает сервер.
+ */
+async function resolveSource(ctx: Ctx): Promise<void> {
+  const pending = pendingSource.get(ctx)
+  if (!pending || pending.done) return
+  pending.done = true
+  const specRaw = ctx.form?.get(ctx.description.policy.envelopeKeys.spec)
+  ctx.description = await pending.source.resolve({
+    formId: ctx.description.id,
+    instance: pending.instance,
+    specVersion: typeof specRaw === 'string' ? Number(specRaw) : undefined,
+  })
+}
+
+/**
  * Слой 04. Имена. Неизвестное поле, повтор одиночного и лишние значения —
  * ОТКАЗ, а не починка: «взять первое значение» скрывает ошибку клиента
  * или атаку и делает отладку невозможной.
+ *
+ * Имена сверяются с описанием, ПОДНЯТЫМ из `source` по `__form_spec`, а не с
+ * базой из кода: иначе поле из рантайма отвергалось бы как неизвестное (F16).
  */
-export const namesLayer: Layer = (ctx) => {
+export const namesLayer: Layer = async (ctx) => {
+  if (!ctx.form) return undefined
+  await resolveSource(ctx)
   const { form, description: d } = ctx
-  if (!form) return undefined
   const envelope = new Set(Object.values(d.policy.envelopeKeys))
 
   for (const key of new Set(form.keys())) {
@@ -376,6 +403,7 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
     Promise<Handled<T>> {
     const started = Date.now()
     const ctx: Ctx = { request, description: base, limits, reached: 'rejected', warnings: [] }
+    if (o.source) pendingSource.set(ctx, { source: o.source, instance: o.instance ?? `${base.id}:new`, done: false })
     /** Сбой вне execute: текст — только в телеметрию и лог сервера, не клиенту. */
     let failure: unknown
     let currentIntent = 'submit'
@@ -432,16 +460,8 @@ export function createFormHandler<T>(o: HandlerOptions<T>) {
         if (r) return finish(fail(r))
       }
 
-      // набор полей НЕ приходит от клиента: описание поднимает сервер
-      if (o.source) {
-        const keys = ctx.description.policy.envelopeKeys
-        const specRaw = ctx.form?.get(keys.spec)
-        ctx.description = await o.source.resolve({
-          formId: ctx.description.id,
-          instance: o.instance ?? `${ctx.description.id}:new`,
-          specVersion: typeof specRaw === 'string' ? Number(specRaw) : undefined,
-        })
-      }
+      // обычно уже поднято слоем имён; здесь — если order поставил его до тела
+      await resolveSource(ctx)
 
       const ev = evaluate(ctx.form!, ctx.description, { render, instance: o.instance })
       if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))

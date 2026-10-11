@@ -1,6 +1,6 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
 import { describe as suite, expect, test, vi } from 'vitest'
-import { buildEnvelope, defineForm, makeFieldSugar } from './index'
+import { buildEnvelope, createAppSource, defineForm, makeFieldSugar } from './index'
 import { createFormHandler, MemoryIdempotencyStore, windowThrottle, type IdempotencyStore } from './server'
 
 const field = makeFieldSugar()
@@ -135,5 +135,45 @@ suite('идемпотентность: параллельный повтор (F1
   test('reserve без release — ошибка конфигурации', () => {
     const bad: IdempotencyStore = { get: () => undefined, put: () => {}, reserve: () => ({ status: 'reserved' }) }
     expect(() => createFormHandler({ description: base, idempotency: bad, execute: () => ({}) })).toThrow(/вместе/)
+  })
+})
+
+suite('поля из источника (F16)', () => {
+  const make = () => {
+    let loads = 0
+    const store = {
+      load: async () => { loads++; return [{ name: 'color', input: 'text' as const, label: 'Цвет', rules: [{ rule: 'pattern', arg: 'e164' }] }] },
+      currentVersion: async () => 1,
+    }
+    const h = createFormHandler({
+      description: base, source: createAppSource({ probe: base }, store),
+      execute: (c) => { c.commit(); return { data: c.values } },
+    })
+    return { h, loads: () => loads }
+  }
+  const sent = (extra: Record<string, string>) => post({ ...envelopeOf({ specVersion: 1 }), name: 'a', ...extra })
+
+  test('поле из рантайма принимается, источник поднимается один раз', async () => {
+    const { h, loads } = make()
+    const r = await h(sent({ u_color: '+79991234567' }))
+    expect(r.status).toBe(200)
+    expect((r.result.data as Record<string, unknown>)['u_color']).toBe('+79991234567')
+    expect(loads()).toBe(1)
+  })
+
+  test('правила поля из источника действуют на сервере', async () => {
+    const { h } = make()
+    // required у «свежего» поля в первом круге не навязывается (source.ts) — проверяем шаблон
+    expect((await h(sent({ u_color: '+79991234567' }))).result.ok).toBe(true)
+    const r = await h(sent({ u_color: 'red' }))
+    expect(r.result.ok).toBe(false)
+    expect(r.result.errors.map((e) => e.path)).toContain('u_color')
+  })
+
+  test('поле, которого нет ни в базе, ни в источнике, по-прежнему отказ', async () => {
+    const { h } = make()
+    const r = await h(sent({ u_color: '+79991234567', u_other: 'x' }))
+    expect(r.status).toBe(400)
+    expect(r.result.errors[0]).toMatchObject({ code: 'request.unexpected-field', params: { name: 'u_other' } })
   })
 })
