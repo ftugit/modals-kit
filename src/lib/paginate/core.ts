@@ -3,7 +3,7 @@
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
 import { canLoadMore, deriveMeta, flattenPages } from './pure'
 import type { LibError } from './types'
-import { getPaginator, type PaginatorInstance } from './registry'
+import { getPaginator, type LastAction, type PaginatorInstance } from './registry'
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraValue, PageResponse, PaginatorState } from './types'
 
@@ -68,16 +68,55 @@ export function safePersist(store: Store, name: string): void {
  */
 
 /**
- * Буфер опережающей загрузки живёт на экземпляре реестра (переживает unmount хоста).
- * Хранит полный ответ источника: `items` без meta теряли бы `hasNext`
- * (порт фикса shiki-search-lib; баг базы 038773a).
+ * Состояние полёта одного пагинатора В ОДНОМ сторе: контроллер отмены активной
+ * загрузки, последнее действие (для `retry`), буфер предзагрузки и его поколение.
+ *
+ * Живёт рядом со стором, а не на экземпляре реестра (F13). Реестр — один на
+ * процесс, а стор на сервере свой на каждый запрос: на экземпляре одновременные
+ * SSR-запросы отменяли загрузки друг друга, и отменённый отдавал снапшот
+ * `loading` без данных (документация Kit «State management»: никакого общего
+ * изменяемого состояния на сервере). На клиенте стор глобальный — сессия, как и
+ * прежде, переживает размонтирование хоста.
  */
-function prefetchBuffer<T>(
-  instance: PaginatorInstance,
-): Map<number, PageResponse<T>> {
-  const holder = instance as PaginatorInstance & { prefetched?: Map<number, PageResponse<unknown>> }
-  if (!holder.prefetched) holder.prefetched = new Map()
-  return holder.prefetched as Map<number, PageResponse<T>>
+type Session = {
+  replaceAbort: AbortController | null
+  lastAction: LastAction
+  /**
+   * Буфер опережающей загрузки. Хранит полный ответ источника: `items` без meta
+   * теряли бы `hasNext` (порт фикса shiki-search-lib; баг базы 038773a).
+   */
+  prefetched: Map<number, PageResponse<unknown>>
+  /**
+   * Поколение буфера. Полётный prefetch, начатый ДО сброса, обязан выбросить свой
+   * ответ: он относится к другому набору данных, а приедет в текущий и подменит
+   * страницу, которую только что запросили с новым фильтром.
+   */
+  prefetchGen: number
+  /**
+   * Полётные предзагрузки. Hover и focus по одной и той же ссылке — это два
+   * вызова на один запрос: без множества «уже грузится» мгновенный клик стоил
+   * двух одинаковых обращений к данным (замер логом сети на превью: ×3 на клик).
+   */
+  prefetchInflight: Set<number>
+}
+
+const sessions = new WeakMap<Store, Map<string, Session>>()
+
+function sessionOf(store: Store, name: string): Session {
+  let byName = sessions.get(store)
+  if (!byName) { byName = new Map(); sessions.set(store, byName) }
+  let session = byName.get(name)
+  if (!session) {
+    session = { replaceAbort: null, lastAction: null, prefetched: new Map(), prefetchGen: 0, prefetchInflight: new Set() }
+    byName.set(name, session)
+  }
+  return session
+}
+
+/** Отменить активную загрузку пагинатора в этом сторе. */
+function abortReplace(session: Session): void {
+  session.replaceAbort?.abort()
+  session.replaceAbort = null
 }
 
 /**
@@ -85,27 +124,11 @@ function prefetchBuffer<T>(
  * предзагруженная страница — данные из другого набора. Без этого смена фильтра
  * или поискового запроса показывала бы старую страницу из буфера.
  */
-function dropPrefetched(instance: PaginatorInstance): void {
-  const holder = instance as PaginatorInstance & { prefetched?: Map<number, unknown>; prefetchGen?: number }
-  holder.prefetched?.clear()
-  /**
-   * Поколение буфера. Полётный prefetch, начатый ДО сброса, обязан выбросить свой
-   * ответ: он относится к другому набору данных, а приедет в текущий и подменит
-   * страницу, которую только что запросили с новым фильтром.
-   */
-  holder.prefetchGen = (holder.prefetchGen ?? 0) + 1
+function dropPrefetched(session: Session): void {
+  session.prefetched.clear()
+  session.prefetchGen += 1
 }
 
-/**
- * Полётные предзагрузки экземпляра. Hover и focus по одной и той же ссылке — это
- * два вызова на один запрос: без множества «уже грузится» мгновенный клик стоил
- * двух одинаковых обращений к данным (замер логом сети на превью: ×3 на клик).
- */
-function prefetchInflight(instance: PaginatorInstance): Set<number> {
-  const holder = instance as PaginatorInstance & { prefetchInflight?: Set<number> }
-  holder.prefetchInflight ??= new Set<number>()
-  return holder.prefetchInflight
-}
 /**
  * Ответ источника дописывает свои ключи extra (указатель следующего шага).
  *
@@ -161,20 +184,19 @@ export async function fetchReplace<T>(
   phase: 'init' | 'replace',
 ): Promise<void> {
   const instance = getPaginator(name)
+  const session = sessionOf(store, name)
   // Прерываем предыдущий replace-запрос (D22: AbortController для replace/goToPage/reset)
-  if (instance.replaceAbort) {
-    instance.replaceAbort.abort()
-  }
+  session.replaceAbort?.abort()
   const ac = new AbortController()
-  instance.replaceAbort = ac
+  session.replaceAbort = ac
 
   // Если страница была тихо предзагружена через prefetchPage (hover), используем её мгновенно.
   // В буфере лежит ВЕСЬ ответ источника, а не только items: раньше сохранялся массив,
   // и `hasNext` терялся — для источника без totalItems (поиск, курсор) это означало
   // «дальше неизвестно» сразу после перехода по предзагруженной ссылке.
-  const prefetched = prefetchBuffer<T>(instance).get(page)
+  const prefetched = session.prefetched.get(page) as PageResponse<T> | undefined
   if (prefetched && prefetched.items.length > 0 && phase === 'replace') {
-    prefetchBuffer<T>(instance).delete(page)
+    session.prefetched.delete(page)
     const state = getState<T>(store, name)
     const meta = deriveMeta(
       { ...prefetched, totalPages: prefetched.totalPages ?? state.totalPages ?? undefined },
@@ -234,7 +256,7 @@ export async function fetchReplace<T>(
     return
   }
   if (ac.signal.aborted || getState<T>(store, name).reqId !== reqId) return // устарел — reset победил (T2.5)
-  if (instance.replaceAbort === ac) instance.replaceAbort = null
+  if (session.replaceAbort === ac) session.replaceAbort = null
   const pageSize = getState<T>(store, name).pageSize
   const meta = deriveMeta(resp, pageSize, page)
   patch<T>(store, name, (s) => ({
@@ -269,7 +291,21 @@ export async function initPaginator<T>(
   ctx?: AdapterInitContext,
 ): Promise<void> {
   const instance = getPaginator(name)
-  if (getState<T>(store, name).status !== 'init') return
+  const status = getState<T>(store, name).status
+  /**
+   * Восстановление (F13): снапшот с `loading`, которого этот стор не начинал —
+   * ни контроллера загрузки, ни последнего действия в его сессии. Так приезжает
+   * SSR-снапшот, чья загрузка на сервере не завершилась (отмена, сбой стора):
+   * раньше страница навсегда оставалась на «Загрузка…». Загрузка перезапускается
+   * с той же страницы и теми же extra/pageSize.
+   */
+  if (status === 'loading') {
+    const session = sessionOf(store, name)
+    if (!session.replaceAbort && session.lastAction === null)
+      await fetchReplace<T>(store, name, getState<T>(store, name).page, 'init')
+    return
+  }
+  if (status !== 'init') return
   let init: AdapterInit<T>
   try {
     init = (await instance.adapter.getInitial(ctx)) as AdapterInit<T>
@@ -333,7 +369,7 @@ export async function initPaginator<T>(
  */
 export async function goToPage<T>(store: Store, name: string, page: number): Promise<void> {
   const instance = getPaginator(name)
-  instance.lastAction = { kind: 'goToPage', page }
+  sessionOf(store, name).lastAction = { kind: 'goToPage', page }
   const state = getState<T>(store, name)
   // Раунд-4: скролл к якорю загруженной страницы — только в accumulate-семантике
   // (capabilities.append). В single («классика») любой переход = REPLACE, даже на
@@ -363,7 +399,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
   const state = getState<T>(store, name)
   if (state.status === 'loading' || state.status === 'init') return
   if (!canLoadMore(dir, state)) return
-  instance.lastAction = { kind: 'loadMore', dir }
+  sessionOf(store, name).lastAction = { kind: 'loadMore', dir }
   const target = dir > 0 ? Math.max(...state.loadedPages) + 1 : Math.min(...state.loadedPages) - 1
   const reqId = state.reqId + 1
   const lastLoaded = state.loadedPages[state.loadedPages.length - 1]
@@ -471,7 +507,7 @@ export async function onExternalPage<T>(store: Store, name: string, page: number
   const instance = getPaginator(name)
   const state = getState<T>(store, name)
   if (page === state.page) return
-  instance.lastAction = { kind: 'goToPage', page }
+  sessionOf(store, name).lastAction = { kind: 'goToPage', page }
   if (state.loadedPages.includes(page)) {
     patch<T>(store, name, (s) => ({ ...s, page }))
     instance.emitter.emit({ type: 'page-changed', page, via: 'url' })
@@ -486,7 +522,7 @@ export async function onExternalPage<T>(store: Store, name: string, page: number
 /** Повтор последнего действия; после ошибки init (lastAction null) — повторный init. */
 export async function retry<T>(store: Store, name: string): Promise<void> {
   const instance = getPaginator(name)
-  const last = instance.lastAction
+  const last = sessionOf(store, name).lastAction
   if (last?.kind === 'goToPage') {
     await goToPage<T>(store, name, last.page)
     return
@@ -540,12 +576,13 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
   const instance = getPaginator(name)
   const state = getState<T>(store, name)
   if (state.loadedPages.includes(page) || state.pending?.page === page) return
-  const buffer = prefetchBuffer<T>(instance)
+  const session = sessionOf(store, name)
+  const buffer = session.prefetched
   if (buffer.has(page)) return
-  const inflight = prefetchInflight(instance)
+  const inflight = session.prefetchInflight
   if (inflight.has(page)) return
   inflight.add(page)
-  const gen = (instance as PaginatorInstance & { prefetchGen?: number }).prefetchGen ?? 0
+  const gen = session.prefetchGen
   try {
     const resp = (await instance.adapter.loadPage({
       page,
@@ -553,8 +590,7 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
       extra: state.extra,
     })) as PageResponse<T>
     // Сброс в полёте (смена фильтра/размера) — ответ из другого набора, в буфер его нельзя.
-    const stillCurrent =
-      ((instance as PaginatorInstance & { prefetchGen?: number }).prefetchGen ?? 0) === gen
+    const stillCurrent = session.prefetchGen === gen
     if (stillCurrent && resp.items && resp.items.length > 0) {
       buffer.set(page, resp)
     }
@@ -572,12 +608,9 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
  */
 export async function resetPaginator<T>(store: Store, name: string): Promise<void> {
   const instance = getPaginator(name)
-  if (instance.replaceAbort) {
-    instance.replaceAbort.abort()
-    instance.replaceAbort = null
-  }
-  instance.lastAction = null
-  dropPrefetched(instance)
+  abortReplace(sessionOf(store, name))
+  sessionOf(store, name).lastAction = null
+  dropPrefetched(sessionOf(store, name))
   patch<T>(store, name, (s) => ({
     ...initialState<T>(name, s.pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
     reqId: s.reqId + 1,
@@ -599,12 +632,9 @@ export async function setPageSize<T>(store: Store, name: string, pageSize: numbe
   if (state.pageSize === pageSize) return
   const firstIndex = (state.page - 1) * state.pageSize
   const page = Math.floor(firstIndex / pageSize) + 1
-  if (instance.replaceAbort) {
-    instance.replaceAbort.abort()
-    instance.replaceAbort = null
-  }
-  instance.lastAction = { kind: 'goToPage', page }
-  dropPrefetched(instance)
+  abortReplace(sessionOf(store, name))
+  sessionOf(store, name).lastAction = { kind: 'goToPage', page }
+  dropPrefetched(sessionOf(store, name))
   patch<T>(store, name, (s) => ({
     ...initialState<T>(name, pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
     page,
@@ -675,12 +705,9 @@ export async function setExtra<T>(
     return next
   }
   if (options.reload ?? touchesData) {
-    if (instance.replaceAbort) {
-      instance.replaceAbort.abort()
-      instance.replaceAbort = null
-    }
-    instance.lastAction = { kind: 'goToPage', page: 1 }
-    dropPrefetched(instance)
+    abortReplace(sessionOf(store, name))
+    sessionOf(store, name).lastAction = { kind: 'goToPage', page: 1 }
+    dropPrefetched(sessionOf(store, name))
     patch<T>(store, name, (s) => {
       const extra = dropPositionKeys(mergeExtra(s.extra), instance.positionKeys, patchExtra)
       return {

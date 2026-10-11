@@ -1115,3 +1115,56 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
     expect(keys).toContain('q')                          // объявлен адресной спецификацией
   })
 })
+
+/* ── F13: состояние полёта — у стора запроса, а не у экземпляра реестра ── */
+describe('конкурентные SSR-запросы и восстановление (F13)', () => {
+  beforeEach(() => resetRegistry())
+
+  it('загрузка одного стора не отменяет загрузку другого', async () => {
+    const signals: AbortSignal[] = []
+    const { adapter } = fakeAdapter({ page: 1 }, async ({ page, signal }) => {
+      signals.push(signal!)
+      await new Promise((r) => setTimeout(r, 20))
+      if (signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+      return { items: [`p${page}`], totalItems: 1, totalPages: 1 }
+    })
+    definePaginator({ name: 'f13', adapter: adapter as never })
+    // два запроса — два стора, один экземпляр реестра
+    const [a, b] = await Promise.all([
+      initServerPaginator<string>(createPaginatorStore(), 'f13'),
+      initServerPaginator<string>(createPaginatorStore(), 'f13'),
+    ])
+    expect(signals.filter((s) => s.aborted)).toHaveLength(0)
+    expect([a.status, b.status]).toEqual(['idle', 'idle'])
+    expect([a.pages[1], b.pages[1]]).toEqual([['p1'], ['p1']])
+  })
+
+  it('снапшот loading без своей загрузки перезапускается на клиенте', async () => {
+    const { adapter, loadPage, getInitial } = fakeAdapter({ page: 2 })
+    definePaginator({ name: 'f13r', adapter: adapter as never })
+    const client = createPaginatorStore()
+    client.hydrate('f13r', { ...getState<string>(createPaginatorStore(), 'f13r'), name: 'f13r',
+      page: 2, status: 'loading', pending: { page: 2, mode: 'replace', count: 20 } })
+    await initPaginator<string>(client, 'f13r')
+    expect(getInitial).not.toHaveBeenCalled()
+    expect(loadPage).toHaveBeenCalledTimes(1)
+    expect(loadPage.mock.calls[0]![0].page).toBe(2)
+    expect(getState<string>(client, 'f13r')).toMatchObject({ status: 'idle', pending: null, loadedPages: [2] })
+  })
+
+  it('загрузка, начатая самим стором, не дублируется повторным init', async () => {
+    let release!: () => void
+    const { adapter, loadPage } = fakeAdapter({ page: 1 }, async ({ page }) => {
+      await new Promise<void>((r) => { release = r })
+      return { items: [`p${page}`], totalItems: 1, totalPages: 1 }
+    })
+    definePaginator({ name: 'f13d', adapter: adapter as never })
+    const store = createPaginatorStore()
+    const first = initPaginator<string>(store, 'f13d')
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledTimes(1))
+    expect(getState<string>(store, 'f13d').status).toBe('loading')
+    await initPaginator<string>(store, 'f13d')
+    expect(loadPage).toHaveBeenCalledTimes(1)
+    release(); await first
+  })
+})

@@ -7,17 +7,20 @@ import type { PaginatorAdapter, PaginatorConfig, ScrollDriver } from './types'
 export type LastAction =
   { kind: 'goToPage'; page: number } | { kind: 'loadMore'; dir: 1 | -1 } | null
 
+/**
+ * Экземпляр реестра — ОДИН на процесс: только конфигурация и подписчики.
+ * Состояние полёта (отмена загрузки, последнее действие, буфер предзагрузки)
+ * живёт рядом со стором (`core.ts` `sessionOf`), иначе SSR-запросы делили бы
+ * его между собой (F13).
+ */
 export type PaginatorInstance = {
   name: string
   /** Generic стирается на уровне реестра; типизация возвращается на границе хуков. */
   adapter: PaginatorAdapter<unknown>
   emitter: Emitter
   pageSize: number
-  lastAction: LastAction
   /** Регистрирует хост (SPEC §3.7); ядро дёргает его после REPLACE/goToPage. */
   scrollDriver: ScrollDriver | null
-  /** Контроллер отмены активного replace-запроса (D22). */
-  replaceAbort: AbortController | null
   /** Максимальное число страниц в памяти (окно/выгрузка). */
   maxPages?: number
   /** Ключи extra, влияющие на данные источника: их смена = сброс + загрузка стр. 1. */
@@ -54,9 +57,7 @@ export function definePaginator<T>(config: PaginatorConfig<T>): void {
     adapter: adapter as PaginatorAdapter<unknown>,
     emitter: createEmitter(),
     pageSize: 'adapter' in config ? (config.pageSize ?? 20) : (config.pageSize ?? 20),
-    lastAction: null,
     scrollDriver: null,
-    replaceAbort: null,
     maxPages: config.maxPages,
     reloadKeys: new Set(config.reloadKeys ?? []),
     positionKeys: new Set(config.positionKeys ?? []),
