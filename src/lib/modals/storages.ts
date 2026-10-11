@@ -7,6 +7,7 @@
 import { chainToSearch, decodeChain } from './core'
 import type { AnyDefinition } from './registry'
 import type { RegisteredEntry } from './types'
+import { sanitizeOverrides } from './validate'
 
 /** Что хранилище получает от движка. */
 export interface StorageEnv {
@@ -73,7 +74,8 @@ function parseEntry(raw: unknown): RegisteredEntry | null {
     kind: 'registered',
     name: raw.name,
     params: isRecord(raw.params) ? raw.params : {},
-    overrides: isRecord(raw.overrides) ? (raw.overrides as RegisteredEntry['overrides']) : {},
+    // Поля проверяются по одному: цвет уходит в inline style (F28), якорь — в раскладку (F36).
+    overrides: isRecord(raw.overrides) ? sanitizeOverrides(raw.overrides) : {},
   }
 }
 

@@ -2,6 +2,7 @@
 // блокировки. Framework-agnostic — не знает ни про фреймворк, ни про URL-объект,
 // ни про DOM. Порт core.ts оригинала (SolidHono@shiki-final).
 import { isRegistered } from './types'
+import { isBoxDimension, isMobileOverride, isSafeCssColor } from './validate'
 import type {
   Chain,
   ChainEntry,
@@ -162,18 +163,24 @@ export function decodeChain(search: string | URLSearchParams, lookup: Lookup): R
         const size = decodeSize(values[0])
         if (size) entry.overrides.size = size
       } else {
+        // Только известные измерения и только конечные положительные числа:
+        // `size.width=abc` давал NaN, `size.<что угодно>` — лишний ключ (F36).
+        const dim = path[1]
+        const value = Number(values[0])
+        if ((dim !== 'width' && dim !== 'height') || !isBoxDimension(value)) continue
         const current =
           entry.overrides.size && entry.overrides.size !== 'fullpage' ? entry.overrides.size : {}
-        entry.overrides.size = { ...current, [path[1]]: Number(values[0]) }
+        entry.overrides.size = { ...current, [dim]: value }
       }
       continue
     }
     if (head === 'color' || head === 'tailColor') {
-      entry.overrides[head] = values[0]
+      // Значение уходит в inline style: принимаем только один CSS-цвет (F28).
+      if (isSafeCssColor(values[0])) entry.overrides[head] = values[0]
       continue
     }
     if (head === 'mobile') {
-      entry.overrides.mobile = values[0] as MobileAnchor | 'off'
+      if (isMobileOverride(values[0])) entry.overrides.mobile = values[0]
       continue
     }
     if (head === 'lock') {

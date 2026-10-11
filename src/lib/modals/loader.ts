@@ -113,11 +113,13 @@ export function createLoader(deps: LoaderDeps) {
   const errorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : 'Ошибка загрузки'
 
+  const missing = (name: string) => `Нет такой модалки: «${name}»`
+
   /** Конверт «нет такой модалки»: причина — читаемая ошибка, а не `null` (F30). */
   const unknownModal = (name: string, via?: string): LibError => ({
     lib: 'modals',
     code: 'unknown-modal',
-    cause: new Error(`Нет такой модалки: «${name}»`),
+    cause: new Error(missing(name)),
     ctx: via ? { name, via } : { name },
   })
 
@@ -191,7 +193,7 @@ export function createLoader(deps: LoaderDeps) {
     const key = runtimeKey(entry.name, entry.index)
 
     if (!entry.known) {
-      setRuntime(key, { status: 'error', error: `Нет такой модалки: «${entry.name}»` })
+      setRuntime(key, { status: 'error', error: missing(entry.name) })
       deps.report?.(unknownModal(entry.name))
       return () => {}
     }
@@ -238,7 +240,7 @@ export function createLoader(deps: LoaderDeps) {
     const definition = lookup(name)
     if (!definition) {
       deps.report?.(unknownModal(name, 'preload'))
-      return { ok: false, error: `Нет такой модалки: «${name}»` }
+      return { ok: false, error: missing(name) }
     }
 
     const merged = { ...(definition.defaultParams ?? {}), ...params }
