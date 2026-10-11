@@ -309,6 +309,9 @@ describe('компиляция в форму b1', () => {
       label: 'Оценка',
     }])
     expect(compiled.definition.byName['filters.kind']?.disabledWhen).toBeUndefined()
+    // F45: край базы — подсказкой у пустого числового инпута, не значением
+    expect(compiled.definition.byName['filters.score.min']?.placeholder).toBe('1')
+    expect(compiled.definition.byName['filters.kind']?.placeholder).toBeUndefined()
     expect(compiled.definition.messages).toEqual({})
   })
 

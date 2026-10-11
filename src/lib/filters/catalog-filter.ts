@@ -480,6 +480,16 @@ function disableRulesFor(schema: CatalogFilterSchema, descriptor: CatalogFilterF
 }
 
 /**
+ * Край базы подсказкой у числового инпута диапазона (F45): «от» — min, «до» —
+ * max. Значение не предзаполняется — фильтром стоит только то, что выбрал
+ * пользователь, а край виден, пока поле пустое.
+ */
+function edgeHint(descriptor: CatalogFilterField, bound: CatalogFilterBound | undefined): { placeholder?: string } {
+  const edge = bound === 'min' ? descriptor.min : bound === 'max' ? descriptor.max : undefined
+  return edge !== undefined ? { placeholder: String(edge) } : {}
+}
+
+/**
  * `opts.namePrefix` — адресный слой имён: форма фильтров живёт на url-контуре
  * `bind`, где ИМЯ ПОЛЯ и есть ключ адреса (`page.filters.kind` — так же, как у
  * поиска S5). `paths` и `defaults` остаются каноническими относительными
@@ -548,7 +558,7 @@ export function compileCatalogFilterSchema(
         : descriptor.type === 'select'
           ? field.select({ ...common, options, validate: list })
           : descriptor.type === 'number'
-            ? field.number(common)
+            ? field.number({ ...common, ...edgeHint(descriptor, bound) })
             : field.text(common)
       paths.push(name)
       // value=min у инпута «от», value=max у инпута «до» (границы базы).

@@ -756,6 +756,11 @@ async function checkFiltersNoJs(browser) {
     await openFilters(page);
     await page.locator('select[data-select-native][name="page.filters.status"]').selectOption('anons');
     const scoreInput = page.locator('[data-testid="filters-panel"] input[name="page.filters.score.min"]');
+    // F45: пустое поле диапазона показывает край базы подсказкой, не значением.
+    const edge = await scoreInput.evaluate((el) => ({ value: el.value, placeholder: el.getAttribute('placeholder') }));
+    if (edge.value !== '' || !/^\d/.test(edge.placeholder ?? ''))
+      throw new Error(`край базы не виден подсказкой: ${JSON.stringify(edge)}`);
+    console.log(`  ok  F45: «Оценка · от» пустое, подсказка «${edge.placeholder}»`);
     await scoreInput.fill('5');
     if (await scoreInput.isDisabled()) throw new Error('no-JS форма не должна молча отключать поле оценки');
     await Promise.all([
