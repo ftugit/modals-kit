@@ -6,6 +6,7 @@
   // не пересоздавал существующие хвосты при росте цепочки (иначе терялось
   // состояние `entered` и повторно играла анимация «ухода в стопку»).
   // В Svelte это делает ключ `{#each ... (i)}` — отклонение №3 в журнале.
+  import { untrack } from 'svelte'
   import { resolveEntry, tailStyle, visibleChain, visibleTails } from '../core'
   import type { Chain, MobileAnchor, ResolvedEntry, TailDirection } from '../types'
   import { useModals } from './context'
@@ -44,12 +45,19 @@
   // Массив, а не Set: `$state(new Set())` не реактивен на `add()` —
   // руны следят за свойствами объекта, а не за методами коллекций.
   // Ловилось тем, что ближайший хвост оставался без transform.
+  //
+  // 🔴 Ушедший хвост забывается сразу (F31). Раньше индекс оставался в
+  // `entered` навсегда, и хвост, снова появившийся на том же месте (закрыли
+  // верхнюю, открыли другую), вставал в стопку без анимации «ухода».
   let entered = $state<number[]>([])
   $effect(() => {
-    const pending = indices.filter((i) => !entered.includes(i))
+    const live = indices
+    const kept = untrack(() => entered).filter((i) => live.includes(i))
+    const pending = live.filter((i) => !kept.includes(i))
+    if (kept.length !== untrack(() => entered).length) entered = kept
     if (pending.length === 0) return
     const id = requestAnimationFrame(() => {
-      entered = [...entered, ...pending]
+      entered = [...kept, ...pending]
     })
     return () => cancelAnimationFrame(id)
   })

@@ -107,6 +107,15 @@
     return loc.pathname + chainToSearch(only, m.scope.lookup, new URLSearchParams(loc.search))
   })
 
+  /**
+   * Ожидание предзагрузки принадлежит кнопке: ушли со страницы — ожидание
+   * снято, загрузка (если её больше никто не ждёт) отменена, а модалка НЕ
+   * открывается. Раньше после `await` открытие шло безусловно и модалка
+   * всплывала на странице, куда пользователь уже перешёл (F29).
+   */
+  let pendingOpen: AbortController | null = null
+  $effect(() => () => pendingOpen?.abort())
+
   // Модалку, которую открыла эта кнопка, закрыли — кнопка снова доступна.
   let openedAt = $state<number | null>(null)
   $effect(() => {
@@ -143,7 +152,10 @@
     if (hasLoader) {
       // Загрузчик работает ДО открытия: модалка откроется уже с данными.
       status = 'loading'
-      const r = await m.loader.preloadModal(name, params ?? {})
+      const owner = (pendingOpen = new AbortController())
+      const r = await m.loader.preloadModal(name, params ?? {}, { signal: owner.signal })
+      if (owner.signal.aborted) return
+      pendingOpen = null
       if (!r.ok) {
         status = 'error'
         return

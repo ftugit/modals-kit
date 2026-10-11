@@ -88,19 +88,31 @@
   // зеркале, scope и загрузчике; контекст наружу отдаёт их ГЕТТЕРАМИ.
   // Потребители читают по месту употребления (`m.view`, `m.modals`) —
   // деструктуризация кассировала бы значение и застывала на старом ядре.
-  //
-  // Единственная точка правды о «текущих» ядре, зеркале, scope и загрузчике.
+
+  /** Загрузчик данных для данного ядра и области. */
+  const loaderFor = (m: typeof modals, s: typeof scope, preload: boolean) =>
+    createLoader({
+      store: m.store,
+      lookup: s.lookup,
+      preload: preload && m.core.preload
+        ? async (href) => {
+            const r = await m.core.preload!(href)
+            return r.ok
+              ? { ok: true as const, data: r.data }
+              : { ok: false as const, reason: r.reason }
+          }
+        : undefined,
+      report: (e) => m.reportError(e),
+      hrefOf: (e) => routeHref(e.definition?.route, e.params),
+    })
+
+  // Начальные значения — для SSR и первого кадра. В браузере загрузчик
+  // сразу заменяется полноценным (с `preload`), а зеркало переиспользуется.
   const initial = untrack(() => ({
     modals,
     scope,
     view: createReactiveStore(modals.store, !!modals.configScope),
-    loader: createLoader({
-      store: modals.store,
-      lookup: scope.lookup,
-      preload: undefined,
-      report: (e) => modals.reportError(e),
-      hrefOf: (e: any) => routeHref(e.definition?.route, e.params),
-    }),
+    loader: loaderFor(modals, scope, false),
   }))
   let liveModals = $state.raw(initial.modals)
   let liveScope = $state.raw(initial.scope)
@@ -112,41 +124,71 @@
   const loader = $derived(liveLoader)
 
   /* ── (пере)подключение ядра ──────────────────────────────────────── */
-  // Читает начальную цепочку и подписывается на Назад/Вперёд; чистка
-  // эффекта отписывает. Эффект, а не onMount: хост переживает смену
-  // ядра (смена источников пересобирает его) и на каждый такой повод
-  // переподключается заново. Объявлен ПЕРВЫМ из эффектов — фазовый
-  // эффект ниже должен видеть уже подключённое ядро.
+  //
+  // 🔴 Каждый экземпляр, созданный эффектом, освобождается его же очисткой
+  // (F26). Раньше один эффект на каждый повод (в том числе смену `scope` при
+  // переходе /modals ↔ прочие страницы) создавал новые зеркало и загрузчик,
+  // а старые оставались подписанными на стор: +1 подписчик и +1 кеш
+  // загрузчика на каждый переход.
+  //
+  // Загрузчик зависит от ядра И области: кеш привязан к определениям, а
+  // одноимённая модалка другой области — другое определение. Зеркало — только
+  // от ядра. Объявлены ПЕРВЫМИ из эффектов — фазовый эффект ниже должен
+  // видеть уже подключённое ядро.
+  let initialLoaderLive = true
+  $effect(() => {
+    const m = modals
+    const s = scope
+    const next = untrack(() => loaderFor(m, s, true))
+    if (initialLoaderLive) {
+      initialLoaderLive = false
+      initial.loader.dispose()
+    }
+    liveScope = s
+    liveLoader = next
+    return () => next.dispose()
+  })
+
+  // Зеркало стора — одно на ядро.
+  let firstView = true
+  $effect(() => {
+    const m = modals
+    const reuse = firstView && m === initial.modals
+    if (firstView && !reuse) initial.view.destroy()
+    firstView = false
+    const nextView = reuse
+      ? initial.view
+      : untrack(() => createReactiveStore(m.store, !!m.configScope))
+    liveModals = m
+    liveView = nextView
+    return () => nextView.destroy()
+  })
+
+  // Подключаем ядро: читаем начальную цепочку и слушаем Назад/Вперёд.
+  // Без этого стопка живёт только до первой внешней навигации, а Escape
+  // «не закрывает»: шаг назад по истории делается, но никто не слушает.
+  //
+  // Переподключение и на смену `scope`: ядро уведомляет только о `popstate`,
+  // и при клиентском переходе между областями (/modals → /) именно оно
+  // перечитывает цепочку из нового адреса — иначе модалка ушедшей страницы
+  // оставалась бы открытой. Повторное подключение безвредно: события
+  // жизненного цикла `attach` считает по разнице со стором.
   let firstAttach = true
   $effect(() => {
-    liveModals = modals
-    liveScope = scope
-    liveView = createReactiveStore(modals.store, !!modals.configScope)
-    liveLoader = createLoader({
-      store: modals.store,
-      lookup: scope.lookup,
-      preload: modals.core.preload
-        ? async (href) => {
-            const r = await modals.core.preload!(href)
-            return r.ok
-              ? { ok: true as const, data: r.data }
-              : { ok: false as const, reason: r.reason }
-          }
-        : undefined,
-      report: (e) => modals.reportError(e),
-      hrefOf: (e) => routeHref(e.definition?.route, e.params),
-    })
+    const m = modals
+    void scope
 
-    // Подключаем ядро: читаем начальную цепочку и слушаем Назад/Вперёд.
-    // Без этого стопка живёт только до первой внешней навигации, а Escape
-    // «не закрывает»: шаг назад по истории делается, но никто не слушает.
-    const detach = modals.attach()
+    // 🔴 `untrack`: `attach` синхронно зовёт `onOpen`/`onModalOpen`/
+    // `onHostOpen` потребителя. Любое `$state`, прочитанное в колбэке,
+    // иначе подписывало бы этот эффект: изменение значения переподключало
+    // хост и заново «открывало» живую запись (F27; тот же класс, что R-03).
+    const detach = untrack(() => m.attach())
 
     // Холодный запуск по ссылке: стопка восстанавливается БЕЗ анимации
     // входа — и только на ПЕРВОМ подключении. Смена ядра при живой
     // цепочке открывается обычной анимацией (почему фаза не ставится
     // отсюда напрямую — см. комментарий у coldStart в фазовом эффекте).
-    if (firstAttach && modals.chain.length > 0) coldStart = true
+    if (firstAttach && untrack(() => m.chain.length) > 0) coldStart = true
     firstAttach = false
     return detach
   })

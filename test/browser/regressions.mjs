@@ -1318,6 +1318,95 @@ try {
     await page.close()
   })
 
+  /* ── R-33 (F28): цвет из адреса не дописывает CSS и не грузит ресурсы ─ */
+  // `modal.N.color` уходил в inline style как есть: `red;position:fixed;…`
+  // растягивал модалку поверх всего, `url(…)` грузил чужой ресурс.
+  await run('R-33 цвет из адреса: ни новых объявлений, ни внешних запросов', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    const foreign = []
+    page.on('request', (r) => { if (new URL(r.url()).hostname === '127.0.0.2') foreign.push(r.url()) })
+    for (const color of [
+      'red;position:fixed;inset:0;width:100vw;z-index:2147483647',
+      'url(http://127.0.0.2:9/track.png) center/cover',
+    ]) {
+      await page.goto(`${origin}/modals?modal=card&modal.0.id=1&modal.0.color=${encodeURIComponent(color)}`)
+      await page.waitForSelector('[data-modal-popup]', { timeout: 10_000 })
+      await page.waitForTimeout(500)
+      const box = await page.evaluate(() => {
+        const el = document.querySelector('[data-modal-popup]')
+        const cs = getComputedStyle(el)
+        return { position: cs.position, image: cs.backgroundImage, style: el.getAttribute('style') }
+      })
+      assert(box.position !== 'fixed', `объявление из адреса применилось: ${box.style}`)
+      assert(box.image === 'none', `фон из адреса применился: ${box.image}`)
+    }
+    assert(foreign.length === 0, `запрос на чужой хост: ${foreign[0]}`)
+    const palette = 'color-mix(in oklab, var(--chart-1) 8%, var(--card))'
+    await page.goto(`${origin}/modals?modal=card&modal.0.id=1&modal.0.color=${encodeURIComponent(palette)}`)
+    await page.waitForSelector('[data-modal-popup]', { timeout: 10_000 })
+    const style = await page.getAttribute('[data-modal-popup]', 'style')
+    assert(style.includes('color-mix'), `цвет палитры демо отвергнут: ${style}`)
+    ok('опасные значения отброшены, цвет палитры принят')
+    await page.close()
+  })
+
+  /* ── R-34 (F29): размонтированный триггер не открывает модалку ─────── */
+  // Триггер ждал предзагрузку и открывал модалку, даже если его уже
+  // размонтировали: закрыли карточку, в которой он жил, — а через пару
+  // секунд всплывала «следующая». При смене страницы симптом в production
+  // маскируется (имя другой области отбрасывается), поэтому сценарий —
+  // внутри одной области. Math.random фиксирован: медленность триггера
+  // карточки выбирается случайно.
+  await run('R-34 медленный триггер внутри закрытой карточки ничего не открывает', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    await page.addInitScript(() => { Math.random = () => 0.9 })
+    await page.goto(`${origin}/modals?modal=card&modal.0.id=1`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-modal-layer][data-active] [data-modal-content]', { timeout: 10_000 })
+    const trigger = page.locator('[data-modal-layer][data-active] a[data-modal-trigger]').first()
+    await trigger.click()
+    assert((await trigger.getAttribute('data-state')) === 'loading', 'триггер не ушёл в загрузку')
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => !document.querySelector('[data-modal-popup]'), null, { timeout: 5_000 })
+    await page.waitForTimeout(3600) // медленный загрузчик карточки: до 3 с
+    const state = await page.evaluate(() => ({ search: location.search, popups: document.querySelectorAll('[data-modal-popup]').length }))
+    assert(!state.search.includes('modal=') && state.popups === 0, `модалка открылась после закрытия: ${JSON.stringify(state)}`)
+    ok('после закрытия карточки следующая не всплыла, адрес чистый')
+    await page.close()
+  })
+
+  /* ── R-35 (F31): повторно появившийся хвост играет вход ─────────────── */
+  await run('R-35 хвост после закрытия и нового открытия снова «уходит в стопку»', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    await page.goto(`${origin}/modals?modal=card&modal.0.id=1`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-modal-layer][data-active] [data-modal-content]', { timeout: 10_000 })
+    const firstFrame = async () => {
+      await page.evaluate(() => {
+        window.__tailFirst = null
+        const mo = new MutationObserver(() => {
+          const t = document.querySelector('[data-modal-tail][data-depth="1"]')
+          if (t && window.__tailFirst === null) { window.__tailFirst = t.getAttribute('style'); mo.disconnect() }
+        })
+        mo.observe(document.body, { subtree: true, childList: true, attributes: true })
+      })
+      await page.locator('[data-modal-layer][data-active] a[data-modal-trigger]').first().click()
+      await page.waitForSelector('[data-modal-tail][data-depth="1"]', { timeout: 10_000 })
+      await page.waitForTimeout(500)
+      return page.evaluate(() => window.__tailFirst)
+    }
+    const first = await firstFrame()
+    assert(/scale\(1\)/.test(first), `первый хвост без входа: ${first}`)
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => !document.querySelector('[data-modal-tail]'), null, { timeout: 5_000 })
+    await page.waitForSelector('[data-modal-layer][data-active] [data-modal-content]', { timeout: 10_000 })
+    const again = await firstFrame()
+    assert(/scale\(1\)/.test(again), `повторный хвост встал в стопку без входа: ${again}`)
+    ok('оба появления начинаются с позиции активной оболочки')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
