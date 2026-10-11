@@ -1,8 +1,8 @@
 <script lang="ts">
   // Каркас приложения: CollapsingHeader (3 ряда) + 3-зонный Sidebar + Main scroller.
   import { onMount, untrack, type Snippet } from 'svelte'
-  import { cn } from '$lib/ui/cn'
-  import { BACKDROP_UTILS } from '$lib/modals/svelte/classes'
+  import { cn } from '#lib/ui/cn.js'
+  import { BACKDROP_UTILS } from '#lib/modals/svelte/classes.js'
   import { usePage, sidebarHasSlots } from './page.svelte'
   import { setShellContext } from './shell.svelte'
   import CollapsingHeader from './CollapsingHeader.svelte'

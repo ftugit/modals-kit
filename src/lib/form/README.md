@@ -43,7 +43,7 @@
 
 ```ts
 // signup.ts — описание: изоморфный модуль, его импортируют обе стороны
-import { defineForm, field, v } from '$lib/form'
+import { defineForm, field, v } from '#lib/form/index.js'
 
 export const signup = defineForm({
   id: 'signup',
@@ -68,7 +68,7 @@ export const signup = defineForm({
 
 ```ts
 // forms.config.ts — настройка проекта: один раз на приложение
-import { createConfig } from '$lib/form/svelte'
+import { createConfig } from '#lib/form/svelte/index.js'
 import TextField from './ui/TextField.svelte'   // компоненты пишет приложение
 import CheckboxField from './ui/CheckboxField.svelte'
 
@@ -83,7 +83,7 @@ export const forms = createConfig({
 ```svelte
 <!-- +page.svelte -->
 <script>
-  import { bind } from '$lib/form/svelte'
+  import { bind } from '#lib/form/svelte/index.js'
   import { forms } from './forms.config'
   import { signup } from './signup'
   const form = bind(forms, signup, { onErrors: handler })
@@ -358,7 +358,7 @@ Svelte-связка также предоставляет `form.redisplay()` —
 
 ```ts
 // сервер: приём запроса — переставляемые слои
-import { createFormHandler, MemoryIdempotencyStore } from '$lib/form/server'
+import { createFormHandler, MemoryIdempotencyStore } from '#lib/form/server.js'
 import { signup } from './signup'
 
 const handle = createFormHandler({
@@ -440,7 +440,7 @@ const handle = createFormHandler({
 Валидатор — обычная функция; описание себя — необязательная добавка:
 
 ```ts
-import { describe, issue, opaque, registerValidator } from '$lib/form'
+import { describe, issue, opaque, registerValidator } from '#lib/form/index.js'
 
 // СИНХРОННОЕ ПРАВИЛО с описанием: атрибут выводится
 const inn = () => describe<string>(
@@ -461,7 +461,7 @@ signup.registry.registerValidator('inn', inn)   // сериализуемая с
 Типы значения расширяются так же:
 
 ```ts
-// declare module '$lib/form' { interface FieldValues { rating: number | null } }
+// declare module '#lib/form/index.js' { interface FieldValues { rating: number | null } }
 signup.registry.registerType({
   kind: 'rating',
   inputs: ['range'],                    // представление, которое тип обслуживает
@@ -533,7 +533,7 @@ signup.registry.registerType({
 формат второй раз.
 
 ```ts
-import { registerErrorInstruction } from '$lib/form'   // registry.registerInstruction
+import { registerErrorInstruction } from '#lib/form/index.js'   // registry.registerInstruction
 
 registry.registerInstruction({
   id: 'external-api',
@@ -597,7 +597,7 @@ rows.remove(key)
 запрещены на уровне типа. Поле из рантайма не исполняет чужой код.
 
 ```ts
-import { compileFieldSpec } from '$lib/form'
+import { compileFieldSpec } from '#lib/form/index.js'
 
 const r = compileFieldSpec({
   name: 'extra1', input: 'tel', label: 'Телефон', required: true,

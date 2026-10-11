@@ -1,10 +1,10 @@
-import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
-import { fetchAnimesPage } from '$lib/server/shikimori-filters'
+import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
+import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
 import {
   createPaginatorStore,
   initServerPaginator,
   type PaginatorState,
-} from '$lib/paginate'
+} from '#lib/paginate/index.js'
 import {
   DEFAULT_DEMO_EXTRA,
   DEFAULT_GALLERY_EXTRA,
@@ -15,7 +15,7 @@ import {
 } from './definition'
 import type { DemoSrc } from './definition'
 import type { DemoItem } from '../../../../content/items'
-import type { CatalogFilterSchema } from '$lib/filters'
+import type { CatalogFilterSchema } from '#lib/filters/index.js'
 import type { CatalogItem } from './item-views'
 import type { PaginatorLoaderData } from './types'
 
@@ -23,7 +23,7 @@ export type { PaginatorLoaderData } from './types'
 
 /**
  * Мост живого источника на сервере: лоадер отдаёт пагинатору транспорт прямо
- * к серверному модулю Shikimori (`$lib/server/shikimori` — кэш, троттлинг,
+ * к серверному модулю Shikimori (`#lib/server/shikimori.js` — кэш, троттлинг,
  * User-Agent), поэтому SSR-снапшот строится одним запросом на сервере и БЕЗ
  * обращения к собственному HTTP-эндпоинту. В браузере тот же источник идёт в
  * `/api/shikimori/animes` (см. `content/shikimori.ts`).

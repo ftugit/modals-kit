@@ -12,8 +12,8 @@
   // (осмотр 1.10-2, №30/№31).
   import { goto } from '$app/navigation'
   import { preloadOutcome } from './sveltekit'
-  import { routeResolves } from '$lib/modals/cores/sveltekit'
-  import { ButtonIndicator } from '$lib/ui/modals'
+  import { routeResolves } from '#lib/modals/cores/sveltekit.js'
+  import { ButtonIndicator } from '#lib/ui/modals/index.js'
 
   interface Props {
     href: string

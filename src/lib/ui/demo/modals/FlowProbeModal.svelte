@@ -1,8 +1,8 @@
 <script lang="ts">
-import { Button } from '$lib/ui/primitives'
-  import type { MobileAnchor } from '$lib/modals'
-  import { useModal, useModals } from '$lib/modals/svelte'
-  import { modalTriggerVariants } from '$lib/ui/modals'
+import { Button } from '#lib/ui/primitives/index.js'
+  import type { MobileAnchor } from '#lib/modals/index.js'
+  import { useModal, useModals } from '#lib/modals/svelte/index.js'
+  import { modalTriggerVariants } from '#lib/ui/modals/index.js'
 
   const m = useModals()
   const me = useModal()

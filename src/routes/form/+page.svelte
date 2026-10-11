@@ -1,25 +1,25 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Button } from '$lib/ui/primitives'
-  import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
+import { Button } from '#lib/ui/primitives/index.js'
+  import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
-  import { bind, Form, type LiveMode } from '$lib/form/svelte'
-  import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '$lib/form'
+  import { bind, Form, type LiveMode } from '#lib/form/svelte/index.js'
+  import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
     compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
     type FormDescription,
-  } from '$lib/form'
-  import { code6Described, code6Plain, ratingType } from '$lib/ui/demo/form/extend'
-  import { checks, forms, formsCustomUi } from '$lib/ui/demo/form/forms.config'
-  import { normalizePsp, PSP_SAMPLES } from '$lib/ui/demo/form/psp'
-  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '$lib/ui/demo/form/signup'
-  import { createConfig } from '$lib/form/svelte'
-  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '$lib/ui/settings'
-  import Common from '$lib/ui/demo/form/ui/Common.svelte'
-  import Field from '$lib/ui/demo/form/ui/Field.svelte'
+  } from '#lib/form/index.js'
+  import { code6Described, code6Plain, ratingType } from '#lib/ui/demo/form/extend.js'
+  import { checks, forms, formsCustomUi } from '#lib/ui/demo/form/forms.config.js'
+  import { normalizePsp, PSP_SAMPLES } from '#lib/ui/demo/form/psp.js'
+  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '#lib/ui/demo/form/signup.js'
+  import { createConfig } from '#lib/form/svelte/index.js'
+  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '#lib/ui/settings/index.js'
+  import Common from '#lib/ui/demo/form/ui/Common.svelte'
+  import Field from '#lib/ui/demo/form/ui/Field.svelte'
 
   let { form: actionResult }: { form?: { result?: Result } | null } = $props()
 
@@ -34,7 +34,7 @@ import { Button } from '$lib/ui/primitives'
   /* ── панель настроек — на самом механизме (этап 8) ─────────────────
      Второго состояния страница не держит: переключатели демо читают зеркало
      `settings`, а `opts` синхронизируется эффектом. Имена полей = id, как в
-     фильтрах и пагинаторной панели; контролы — общие виджеты `$lib/ui/settings`
+     фильтрах и пагинаторной панели; контролы — общие виджеты `#lib/ui/settings/index.js`
      (Select/Toggle поверх примитивов), аттрибуты — из `form.field(...)`. */
   /* Зеркало механизма старует пустым (дефолты описания — только для
      декода/сида); панель держит тот же список значений единственным

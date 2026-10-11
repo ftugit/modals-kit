@@ -1,5 +1,5 @@
 // Чужая служба: формат ответа её собственный, библиотека о нём не знает.
-import { defaultRegistry, normalizeService, type ErrorInstruction } from '$lib/form'
+import { defaultRegistry, normalizeService, type ErrorInstruction } from '#lib/form/index.js'
 
 /**
  * Служба отвечает так — ни одна поддерживаемая форма такое не разберёт:

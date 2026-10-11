@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { Checkbox, Label } from '$lib/ui/primitives'
-  import type { FieldView } from '$lib/form/svelte'
+  import { Checkbox, Label } from '#lib/ui/primitives/index.js'
+  import type { FieldView } from '#lib/form/svelte/index.js'
 
   let f: FieldView = $props()
 </script>

@@ -9,11 +9,11 @@
  */
 import type { DemoItem, Photo, Product } from '../../../../content/items'
 import { animeTexts, animeTitle, type AnimeCard } from '../../../../content/shikimori'
-import type { DbPost } from '$lib/ui/demo/db-list/definition'
+import type { DbPost } from '#lib/ui/demo/db-list/definition.js'
 
 /**
  * Запись каталога любого источника демо. `DbPost` — не «ещё одна форма строки»,
- * а тот же тип, что отдаёт `$lib/db`: источник БД в списке источников обязан
+ * а тот же тип, что отдаёт `#lib/db/index.js`: источник БД в списке источников обязан
  * приезжать без переразметки, иначе это была бы вторая реализация.
  */
 export type CatalogItem = DemoItem | AnimeCard | DbPost

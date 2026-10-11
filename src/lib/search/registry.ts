@@ -13,7 +13,7 @@ import {
   hasPaginator,
   type ExtraValue,
   type PaginatorSearchOptions,
-} from '$lib/paginate'
+} from '#lib/paginate/index.js'
 import type { SearchConfig, SearchInstance } from './types'
 import { withLibSearch, type SearchCorrectionInfo } from './accumulator'
 

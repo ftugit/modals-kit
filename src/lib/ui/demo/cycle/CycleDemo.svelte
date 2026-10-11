@@ -1,9 +1,9 @@
 <script lang="ts">
-import { Button } from '$lib/ui/primitives'
+import { Button } from '#lib/ui/primitives/index.js'
   import { onMount } from 'svelte'
-  import { createModals, createRegistry, urlStorage } from '$lib/modals'
-  import { svelteKitCore } from '$lib/modals/cores/sveltekit'
-  import { createReactiveStore } from '$lib/modals/svelte/store.svelte'
+  import { createModals, createRegistry, urlStorage } from '#lib/modals/index.js'
+  import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
+  import { createReactiveStore } from '#lib/modals/svelte/store.svelte.js'
 
   /* ═══════════════════════════════════════════════════════════════
      1. ОБЪЯВЛЕНИЕ. Два места: глобальное и область роута.

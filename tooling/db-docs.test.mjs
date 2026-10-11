@@ -56,8 +56,8 @@ const README = [
   '',
   '| Экспорт | Что |',
   '|---|---|',
-  "| `$lib/db` | `createDb`, `DbFailure`, `conservativeLimits` |",
-  '| `$lib/db/schema` | `s`, `make` |',
+  "| `#lib/db/index.js` | `createDb`, `DbFailure`, `conservativeLimits` |",
+  '| `#lib/db/schema.js` | `s`, `make` |',
   '',
   '| kind | 422 | 403 | 404 |',
   '|---|---|---|---|',
@@ -68,7 +68,7 @@ const README = [
 test('parseApiTable игнорирует соседние таблицы: только спецификаторы модулей', () => {
   const rows = parseApiTable(README)
   assert.equal(rows.size, 2)
-  assert.deepEqual(rows.get('$lib/db'), ['createDb', 'DbFailure', 'conservativeLimits'])
+  assert.deepEqual(rows.get('#lib/db/index.js'), ['createDb', 'DbFailure', 'conservativeLimits'])
 })
 
 test('общая строка матрицы даёт свой статус каждому из перечисленных kind', () => {
@@ -88,7 +88,7 @@ test('пустой README без таблицы — null, а не падение
 
 /* ── контракт потребителя ─────────────────────────────────────────────── */
 
-test('аудит ловит импорт старого пакета и обход $lib/db', () => {
+test('аудит ловит импорт старого пакета и обход #lib/db', () => {
   const problems = auditDocs({
     readme: README,
     porting: '',
@@ -96,11 +96,11 @@ test('аудит ловит импорт старого пакета и обхо
     appFiles: [
       { file: 'src/x.ts', text: "import { createDb } from '@ftugit/kit-db/sveltekit'" },
       { file: 'src/y.ts', text: "import { db } from '../../lib/db/sveltekit'" },
-      { file: 'src/ok.ts', text: "import { db } from '$lib/db/sveltekit'" },
+      { file: 'src/ok.ts', text: "import { db } from '#lib/db/sveltekit/index.js'" },
     ],
   })
   assert.ok(problems.some((p) => p.includes('src/x.ts') && p.includes('старого пакета')), problems.join('\n'))
-  assert.ok(problems.some((p) => p.includes('src/y.ts') && p.includes('мимо $lib/db')), problems.join('\n'))
+  assert.ok(problems.some((p) => p.includes('src/y.ts') && p.includes('мимо #lib/db')), problems.join('\n'))
   assert.ok(!problems.some((p) => p.includes('src/ok.ts')), problems.join('\n'))
 })
 
@@ -110,7 +110,7 @@ test('аудит ругается на обещанный в README экспор
     porting: '',
     sources: Object.fromEntries(Object.values(ENTRIES).map((f) => [f, 'export const createDb = 1'])),
   })
-  assert.ok(problems.some((p) => p.includes('$lib/db → DbFailure')), problems.join('\n'))
+  assert.ok(problems.some((p) => p.includes('#lib/db/index.js → DbFailure')), problems.join('\n'))
   assert.ok(problems.some((p) => p.includes('не описан в таблице API')), problems.join('\n'))
 })
 

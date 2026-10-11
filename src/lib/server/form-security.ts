@@ -15,7 +15,7 @@ import { E2B_SANDBOX_ID, KIT_TRUSTED_ORIGINS, PREVIEW_PORTS } from '$app/env/pri
 import {
   bodyLayer, methodLayer, namesLayer, originLayer, reject,
   type Layer,
-} from '$lib/form/server'
+} from '#lib/form/server.js'
 import { trustedOrigins } from './trusted-origins'
 
 type Origins = { exact: string[]; patterns: RegExp[]; strict: Layer }

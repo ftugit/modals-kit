@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { usePaginatorState } from '$lib/paginate/svelte'
+  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
 
   interface Props {
     name?: string

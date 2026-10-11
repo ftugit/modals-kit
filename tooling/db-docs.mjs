@@ -1,5 +1,5 @@
 /**
- * db-docs — проверка актуальности документации слоя `$lib/db` против кода.
+ * db-docs — проверка актуальности документации слоя `#lib/db` против кода.
  *
  * README/PORTING перечисляют публичный API, коды ошибок, лимиты, env-ключи и
  * счётчики тестов. Такие списки расходятся с кодом первыми, и расхождение
@@ -13,7 +13,7 @@
  *   • сами исходники подаёт вызывающий (`src/lib/db/test/db-docs.test.ts`),
  *     потому что `.ts` читается только там, где есть TS-транспиляция;
  *   • вместо `package.json#exports` проверяется контракт потребителя: приложение
- *     импортирует слой ТОЛЬКО через `$lib/db…` — это и есть то, что раньше
+ *     импортирует слой ТОЛЬКО через `#lib/db/…` — это и есть то, что раньше
  *     гарантировала карта экспортов.
  *
  * Выход: пустой список — документация актуальна.
@@ -23,16 +23,16 @@ export const DB_ROOT = 'src/lib/db'
 
 /** Entry-поинты слоя: как их видит приложение → файл внутри `src/lib/db`. */
 export const ENTRIES = {
-  '$lib/db': 'index.ts',
-  '$lib/db/schema': 'schema.ts',
-  '$lib/db/adapters/pg': 'adapters/pg.ts',
-  '$lib/db/adapters/pglite': 'adapters/pglite.ts',
-  '$lib/db/adapters/proxy': 'adapters/proxy.ts',
-  '$lib/db/adapters/hyperdrive': 'adapters/hyperdrive.ts',
-  '$lib/db/sveltekit': 'sveltekit/index.ts',
-  '$lib/db/sveltekit/node': 'sveltekit/node.ts',
-  '$lib/db/zod': 'zod.ts',
-  '$lib/db/testing': 'testing/index.ts',
+  '#lib/db/index.js': 'index.ts',
+  '#lib/db/schema.js': 'schema.ts',
+  '#lib/db/adapters/pg.js': 'adapters/pg.ts',
+  '#lib/db/adapters/pglite.js': 'adapters/pglite.ts',
+  '#lib/db/adapters/proxy.js': 'adapters/proxy.ts',
+  '#lib/db/adapters/hyperdrive.js': 'adapters/hyperdrive.ts',
+  '#lib/db/sveltekit/index.js': 'sveltekit/index.ts',
+  '#lib/db/sveltekit/node.js': 'sveltekit/node.ts',
+  '#lib/db/zod.js': 'zod.ts',
+  '#lib/db/testing/index.js': 'testing/index.ts',
 }
 
 /** Раздел README, где лежит таблица публичного API. */
@@ -143,7 +143,7 @@ export function envKeysFrom(texts) {
  * Таблица «| Экспорт | Что |»: спецификатор → заявленные имена.
  * @param {string} markdown
  */
-export function parseApiTable(markdown, heading = API_HEADING, tail = API_TAIL, only = (spec) => spec.startsWith('$lib/') || spec.startsWith('@')) {
+export function parseApiTable(markdown, heading = API_HEADING, tail = API_TAIL, only = (spec) => spec.startsWith('#lib/') || spec.startsWith('@')) {
   const from = markdown.indexOf(heading)
   const to = tail ? markdown.indexOf(tail) : -1
   if (from < 0) return null
@@ -251,21 +251,21 @@ export function auditDocs(input) {
     for (const spec of table.keys()) {
       if (!(spec in ENTRIES)) note(`README описывает ${spec}, которого нет в ENTRIES аудита`)
     }
-    // каждая ссылка вида `$lib/db…` в README обязана быть entry-поинтом: именно так
+    // каждая ссылка вида `#lib/db/…` в README обязана быть entry-поинтом: именно так
     // потребитель узнаёт, что можно импортировать, а что — внутренность слоя
-    for (const m of readme.matchAll(/`\$lib\/db[\w./-]*`/g)) {
+    for (const m of readme.matchAll(/`#lib\/db\/[\w./-]*`/g)) {
       const spec = m[0].slice(1, -1)
       if (!(spec in ENTRIES)) note(`README предлагает импортировать ${spec}, которого нет в карте entry-поинтов`)
     }
   }
 
-  /* 2. Потребитель: приложение обязано импортировать слой через $lib/db. */
+  /* 2. Потребитель: приложение обязано импортировать слой через #lib/db/…. */
   for (const { file, text } of input.appFiles ?? []) {
     for (const m of text.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)) {
       const spec = m[1]
       if (/^@ftugit\/kit-db/.test(spec)) note(`${file}: импорт старого пакета ${spec} — слоя больше нет в npm`)
-      else if (/(^|\/)lib\/db(\/|$)/.test(spec) && !spec.startsWith('$lib/db')) {
-        note(`${file}: слой импортирован мимо $lib/db (${spec})`)
+      else if (/(^|\/)lib\/db(\/|$)/.test(spec) && !spec.startsWith('#lib/db/')) {
+        note(`${file}: слой импортирован мимо #lib/db (${spec})`)
       }
     }
   }

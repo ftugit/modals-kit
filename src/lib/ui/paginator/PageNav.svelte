@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { pageWindow } from '$lib/paginate'
-  import { usePaginatorState } from '$lib/paginate/svelte'
-  import { ButtonGroup, buttonVariants } from '$lib/ui/primitives'
+  import { pageWindow } from '#lib/paginate/index.js'
+  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import { ButtonGroup, buttonVariants } from '#lib/ui/primitives/index.js'
   import PageLink from './PageLink.svelte'
 
   export interface PageNavRenderProps {

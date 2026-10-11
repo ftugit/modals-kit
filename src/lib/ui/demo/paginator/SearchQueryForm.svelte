@@ -6,12 +6,12 @@
   // коммит в стор пагинатора тем же `setExtra` (sink), а адрес правит транспорт
   // хранилища. Ключ объявления — адресный (`page.q`), в стор он ложится как `q`.
   import { onMount } from 'svelte'
-  import { defineForm, field, v } from '$lib/form'
-  import { Input } from '$lib/ui/primitives'
-  import { bind, createConfig, Form } from '$lib/form/svelte'
-  import { currentSearch } from '$lib/router/sveltekit'
-  import { getClientStore, setExtra } from '$lib/paginate'
-  import { normalizeSearchQuery } from '$lib/search'
+  import { defineForm, field, v } from '#lib/form/index.js'
+  import { Input } from '#lib/ui/primitives/index.js'
+  import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
+  import { currentSearch } from '#lib/router/sveltekit.js'
+  import { getClientStore, setExtra } from '#lib/paginate/index.js'
+  import { normalizeSearchQuery } from '#lib/search/index.js'
 
   interface Props {
     /** Имя пагинатора (оно же имя поиска: им пользуется lib search). */

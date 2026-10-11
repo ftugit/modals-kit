@@ -1,8 +1,8 @@
 <script lang="ts">
   // Компонент приложения. Всё обязательное — имя, идентификатор, тип,
   // атрибуты проверки, связи доступности, начальное значение — в `attrs`.
-  import { Input } from '$lib/ui/primitives'
-  import type { FieldView } from '$lib/form/svelte'
+  import { Input } from '#lib/ui/primitives/index.js'
+  import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

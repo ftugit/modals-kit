@@ -188,7 +188,7 @@ export const RULES = [
         '',
         '  Модальный слой открывается ТОЛЬКО через хост:',
         '',
-        "      import { openLayer } from '$lib/modals';",
+        "      import { openLayer } from '#lib/modals/index.js';",
         '      openLayer({ title: …, content: … });',
         '',
         '  Почему: на всю стопку существует ровно один Dialog.',
@@ -208,7 +208,7 @@ export const RULES = [
         '',
         '  Все модальные окна открываются ТОЛЬКО через единую хост-систему:',
         '',
-        "      import { useModals, openLayer } from '$lib/modals';",
+        "      import { useModals, openLayer } from '#lib/modals/index.js';",
         '      openLayer({ title: …, content: … });',
         '',
         '  Почему: нативный <dialog> работает мимо стека истории, z-index',
@@ -218,8 +218,8 @@ export const RULES = [
   {
     // Сырые form-теги живут ТОЛЬКО в библиотеке формы и в примитивах полей.
     // Потребитель (страница, фича, демо-блок) получает либо <Form> из
-    // '$lib/form/svelte', либо поле из примитивов ('$lib/ui/primitives',
-    // '$lib/ui/settings') — тогда семантика (hidden-пары, no-JS GET,
+    // '#lib/form/svelte/index.js', либо поле из примитивов ('#lib/ui/primitives/index.js',
+    // '#lib/ui/settings/index.js') — тогда семантика (hidden-пары, no-JS GET,
     // aria-связи, оживление контролов) не теряется на каждом «удобном»
     // разметочном дубле. Исключение — оболочка (sidebar-чекбокс работает
     // без JS и не является полем).
@@ -244,9 +244,9 @@ export const RULES = [
         '',
         '  Форма и поля собираются только из компонентов:',
         '',
-        "      import { Form } from '$lib/form/svelte';     // тег <form> + hidden-пары",
-        "      import { Input, Select, Checkbox } from '$lib/ui/primitives';",
-        "      import { Field, Select, Toggle } from '$lib/ui/settings'; // панели настроек",
+        "      import { Form } from '#lib/form/svelte/index.js';     // тег <form> + hidden-пары",
+        "      import { Input, Select, Checkbox } from '#lib/ui/primitives/index.js';",
+        "      import { Field, Select, Toggle } from '#lib/ui/settings/index.js'; // панели настроек",
         '',
         '  Почему: тег <form> обязан нести formProps() (метод, action, submit-',
         '  обработчик, novalidate после гидратации), а скрытые пары держат',
@@ -275,8 +275,8 @@ export const RULES = [
         '',
         '  Странице и демке положен расширенный select:',
         '',
-        "      import { Select } from '$lib/ui/primitives';              // список — панель, значение — носитель в нём",
-        "      import { Select as PanelSelect } from '$lib/ui/settings'; // панели настроек",
+        "      import { Select } from '#lib/ui/primitives/index.js';              // список — панель, значение — носитель в нём",
+        "      import { Select as PanelSelect } from '#lib/ui/settings/index.js'; // панели настроек",
         '',
         '  Почему: enhanced <Select> оставляет форму и no-JS на нативном',
         '  <select>-носителе (с опциями — nativeList), а список рисует',
@@ -289,7 +289,7 @@ export const RULES = [
     // Библиотека формы рендерит поля САМА (bind/config/ui-политика);
     // импорт UI-примитива внутрь провайдера означал бы, что «свой field»
     // куда-то делся и его подменяют чужой разметкой.
-    pattern: /^\$lib\/ui\/(primitives|settings)(\/|$)/,
+    pattern: /^#lib\/ui\/(primitives|settings)\//,
     allow: [/.*/], // всем, кроме тех, кто в deny
     deny: [/(^|\/)src\/lib\/form\//],
     message: ({ source, importer }) =>
@@ -329,7 +329,7 @@ export const RULES = [
         `[layer-guard] <svelte:element this="form"> — тот же сырой тег, только динамикой.`,
         `  файл: ${importer || '<точка входа>'}`,
         '',
-        "      import { Form } from '$lib/form/svelte';",
+        "      import { Form } from '#lib/form/svelte/index.js';",
         '',
         '  Почему: обёртка держит formProps(), скрытые пары и no-JS-семантику.',
       ].join('\n'),
@@ -342,10 +342,10 @@ export const RULES = [
     allow: FORM_KEEPERS,
     message: ({ importer }) =>
       [
-        `[layer-guard] formProps собирает ТОЛЬКО bind() из '$lib/form/svelte'.`,
+        `[layer-guard] formProps собирает ТОЛЬКО bind() из '#lib/form/svelte/index.js'.`,
         `  файл: ${importer || '<точка входа>'}`,
         '',
-        "      import { bind, Form } from '$lib/form/svelte';",
+        "      import { bind, Form } from '#lib/form/svelte/index.js';",
         '      const form = bind(forms, описание, { transport })',
         '',
         '  Почему: ручной formProps() даёт разметку без связки — без novalidate,',
@@ -374,13 +374,13 @@ export const RULES = [
     pattern: /\brequest\s*\.\s*(?:clone\s*\(\s*\)\s*\.\s*)?formData\s*\(|\bawait\s+request\s*\.\s*json\s*\(/,
     isSourceCheck: true,
     allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
-    require: /from ['"]\$lib\/form\/server['"]/,
+    require: /from ['"]#lib\/form\/server\.js['"]/,
     message: ({ importer }) =>
       [
         `[layer-guard] Тело запроса разбирают слои, а не маршрут.`,
         `  файл: ${importer || '<точка входа>'}`,
         '',
-        "      import { createFormHandler } from '$lib/form/server';",
+        "      import { createFormHandler } from '#lib/form/server.js';",
         '',
         '  До bodyLayer стоят метод, origin, предел тела со счётчиком, проверка',
         '  имён и конверт; свой request.formData() выбрасывает их молча.',
@@ -390,13 +390,13 @@ export const RULES = [
     pattern: /\bexport const actions\s*[:=]/,
     isSourceCheck: true,
     allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
-    require: /from ['"]\$lib\/(?:ui\/demo\/)?form(?:\/|['"])/,
+    require: /from ['"]#lib\/(?:ui\/demo\/)?form\//,
     message: ({ importer }) =>
       [
-        `[layer-guard] form-экшены обязаны идти через '$lib/form'.`,
+        `[layer-guard] form-экшены обязаны идти через '#lib/form/index.js'.`,
         `  файл: ${importer || '<точка входа>'}`,
         '',
-        "  Экшен = createFormHandler (или обёртка над ним, как '$lib/ui/demo/form/handle.ts'):",
+        "  Экшен = createFormHandler (или обёртка над ним, как '#lib/ui/demo/form/handle.ts'):",
         '  тогда метод, origin, лимиты, имена, конверт и execute живут в одном',
         '  конвейере, а отказ приходит как Result, а не как страница фреймворка.',
       ].join('\n'),

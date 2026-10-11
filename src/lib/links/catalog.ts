@@ -21,8 +21,8 @@
 import {
   catalogFilterFieldNames,
   type CatalogFilterSchema,
-} from '$lib/filters/catalog-filter'
-import type { CatalogFilterValueMap } from '$lib/filters/rules'
+} from '#lib/filters/catalog-filter.js'
+import type { CatalogFilterValueMap } from '#lib/filters/rules.js'
 import { computeLinks, type LinkOutcome, type LinkRule, type LinkValues } from './links'
 
 /** Ключ → пути поля; срез `ключ.режим/граница` сужает список путей. */

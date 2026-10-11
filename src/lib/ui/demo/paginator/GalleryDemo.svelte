@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { report } from '$lib/app-errors.svelte'
-  import { PaginatorHost, usePaginatorState } from '$lib/paginate/svelte'
+  import { report } from '#lib/app-errors.svelte.js'
+  import { PaginatorHost, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {
     EmptyState,
     ErrorRow,
@@ -10,7 +10,7 @@
     PaginatorSettings,
     Skeleton,
     type SettingsField,
-  } from '$lib/ui/paginator'
+  } from '#lib/ui/paginator/index.js'
   import type { DemoItem } from '../../../../content/items'
   import {
     DEFAULT_GALLERY_EXTRA,
@@ -24,7 +24,7 @@
   } from './definition'
   import { shotHeight } from './item-views'
   import ShotTile from './ShotTile.svelte'
-  import type { PaginatorState } from '$lib/paginate'
+  import type { PaginatorState } from '#lib/paginate/index.js'
 
   const GALLERY_FIELDS: SettingsField<GalleryExtra>[] = [
     {

@@ -7,10 +7,10 @@
   // приложения (sources.svelte.ts): панель пишет прямо в него, layout
   // пересобирает ядро. Прежняя цена «панель вне хоста» (баг №26, журнал
   // §6 №11) снята: select панели на узком экране получает слой хоста.
-import { Button } from '$lib/ui/primitives'
+import { Button } from '#lib/ui/primitives/index.js'
   import { onMount, untrack } from 'svelte'
-  import { Select } from '$lib/ui'
-  import { useModals } from '$lib/modals/svelte'
+  import { Select } from '#lib/ui/index.js'
+  import { useModals } from '#lib/modals/svelte/index.js'
   import { demoSources } from './sources.svelte'
 
   const m = useModals()

@@ -2,9 +2,9 @@
   // Компонент приложения. Индикатор считает ТОЙ ЖЕ функцией, что и валидатор:
   // иначе шкала и проверка разошлись бы, и пользователь видел бы «надёжный»
   // там, где форма не пропускает.
-  import { strengthOf, type StrengthLevel } from '$lib/form'
-  import { Input } from '$lib/ui/primitives'
-  import type { FieldView } from '$lib/form/svelte'
+  import { strengthOf, type StrengthLevel } from '#lib/form/index.js'
+  import { Input } from '#lib/ui/primitives/index.js'
+  import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

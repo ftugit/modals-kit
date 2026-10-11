@@ -1,5 +1,5 @@
 <!-- Порт Skeleton из src/ui/modals/ui.tsx оригинала: та же разметка,
-     оформление — атомарные утилиты из $lib/modals/svelte/classes, а снаружи
+     оформление — атомарные утилиты из #lib/modals/svelte/classes, а снаружи
      скелетон виден по data-modal-skeleton(-line/grid/card). -->
 <script lang="ts">
   import {
@@ -8,7 +8,7 @@
     MODAL_SKELETON_GRID_CLASS,
     MODAL_SKELETON_LINE_CLASS,
     MODAL_SKELETON_TITLE_CLASS,
-  } from '$lib/modals/svelte/classes'
+  } from '#lib/modals/svelte/classes.js'
 </script>
 
 <div class={MODAL_SKELETON_CLASS} data-modal-skeleton="" aria-busy="true" aria-live="polite">

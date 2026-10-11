@@ -1,4 +1,4 @@
-# CHECKLIST-2 — расширение порта `$lib/db`
+# CHECKLIST-2 — расширение порта `#lib/db/index.js`
 
 
 ## П. Процедура (переживает сжатие контекста)
@@ -11,7 +11,7 @@
 4. Невыполнимое требование называется вслух; молча опущенное = ложный отчёт.
 5. После правки от пользователя: стоп, ответ на вопрос, ждать решения — не править.
 6. Демо-страницы следуют конвенциям приложения: список — только через пагинатор
-   (`$lib/paginate` + части `$lib/ui/paginator`), форма создания/правки — отдельный
+   (`#lib/paginate/index.js` + части `#lib/ui/paginator/index.js`), форма создания/правки — отдельный
    компонент. В `+page.svelte` ни то ни другое не размечается: ни `slice` со
    ссылками, ни `bind`+`Form` inline.
 
@@ -147,7 +147,7 @@ Supabase-js, Payload, `@neondatabase/serverless`, pg-boss, graphile-worker. От
 - [x] **`icontains` / `istartsWith`** — регистронезависимые `ILIKE`-пары к `contains`/`startsWith`
       (PocketBase `_ilike`, Directus `_icontains`) с общим экранированием и `ESCAPE E'\'`;
       `OP_LIST` расширен, оператор по-прежнему обязан быть объявлен в `filters` поля.
-- [x] **Тестовый harness — `$lib/db/testing`**: `withTestDb(fn, options)` → PGlite в памяти
+- [x] **Тестовый harness — `#lib/db/testing/index.js`**: `withTestDb(fn, options)` → PGlite в памяти
       или настоящий PostgreSQL в уникальной схеме `kit_test_<hex>` (`-c search_path`, не `SET`),
       миграции текстом, `DROP SCHEMA` в `finally`. Отдельный entry — по той же причине, по какой
       ядро не реэкспортирует адаптеры (`pg`/PGlite не должны попадать в клиентский/edge-бандл).
@@ -219,7 +219,7 @@ select/count, estimate, icontains, изоляция между вызовами)
 
 ### T3.2 Перенос HTTP/WS-адаптеров — **сделан** (решение от 09.10.2026 изменено: «переноси»)
 
-- [x] `src/lib/db/adapters/proxy.ts` → entry `$lib/db/adapters/proxy`: `proxyHttpAdapter`,
+- [x] `src/lib/db/adapters/proxy.ts` → entry `#lib/db/adapters/proxy.js`: `proxyHttpAdapter`,
       `proxyWsAdapter`, `proxyAdapter(mode, config)`. Zero-dep: `fetch` + `WebSocket` + Web
       Crypto, `@juit/*` в зависимости не добавлены. Подняты все четыре правила источника
       (одно утверждение на запрос, никаких значений конкатенацией, `sqlstate:false`,
@@ -302,12 +302,12 @@ select/count, estimate, icontains, изоляция между вызовами)
 - [x] **Апдейт реально сломал сборку демо**: новый гард `tooling/layer-guard.mjs` запрещает сырые
       form-теги вне `src/lib/form/` и примитивов (паттерн по исходнику целиком — комментарий с
       тегом тоже красит). `src/routes/db-demo/+page.svelte` переписан на `Form`
-      (`$lib/form/svelte`, `formProps()` = `{method:'post', action, onsubmit: () => {}}`) +
-      `Input`/`Button` из `$lib/ui/primitives`, скрытые id-пары через `hiddenFields`. Смысл
+      (`#lib/form/svelte/index.js`, `formProps()` = `{method:'post', action, onsubmit: () => {}}`) +
+      `Input`/`Button` из `#lib/ui/primitives/index.js`, скрытые id-пары через `hiddenFields`. Смысл
       демо (SvelteKit form actions + `dbHandle`) сохранён: обёртка взята ради инвариантов
       разметки, а не ради связанной формы кита.
-- [x] Переезд демо-блоков довершен: `src/routes/{form,modals}/**` → `$lib/ui/demo/{form,modals}/**`,
-      `src/lib/ui/paginator/fields/*` → `$lib/ui/settings/*` (29 удалённых путей сняты по
+- [x] Переезд демо-блоков довершен: `src/routes/{form,modals}/**` → `#lib/ui/demo/{form,modals}/**`,
+      `src/lib/ui/paginator/fields/*` → `#lib/ui/settings/*` (29 удалённых путей сняты по
       `git diff --name-status | grep -E '^(D|R)'`, пустые каталоги вычищены).
 - [x] Гейты на `5d08da7`: `npx svelte-kit sync && npx svelte-check` → **0 ошибок** (45
       предупреждений, в `db-demo`/`lib/server/db.ts`/`hooks.server.ts` — 0); `npm run build` →
@@ -346,11 +346,11 @@ select/count, estimate, icontains, изоляция между вызовами)
       (правила идут и на `.ts`/`.js`, `transform` больше не ограничен `.svelte`), ключ
       `require` («правило молчит, если в файле есть этот узор») и четыре правила: ручной
       `formProps` вне `src/lib/form/`, `document.createElement('form')`, «`export const actions`
-      обязан импортировать `$lib/form`», «тело читает слой, а не маршрут
+      обязан импортировать `#lib/form/index.js`», «тело читает слой, а не маршрут
       (`request.formData()` / `await request.json()` вне файлов, знающих `createFormHandler`)».
       Узор сырых тегов закрыл все четыре дыры. Тестов гарда: 80 → **88**, мутация проверена
       на живой сборке: scratch-файл с ручным `formProps`, с `<form/>` и с `actions` без
-      `$lib/form` — каждый роняет `npm run build` с объясняющим сообщением.
+      `#lib/form/index.js` — каждый роняет `npm run build` с объясняющим сообщением.
 - [x] **Защита формы из `lib/form` включена всегда, а не по вкусу маршрута:** новый
       `src/lib/server/form-security.ts` собирает `SECURITY_LAYERS` (метод → origin → тело →
       имена) и `originGuard` = `originLayer({ strict: true })` + поддержка wildcard-хостов
@@ -698,7 +698,7 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       `optimisticRow(page, row, { until: 'server' | ms })` в слое + тест на откат.
       Без этого демо получит локальный колдун, который потом никто не повторит.
       **Честно: реализовано ровно то, от чего пункт предостерегал** (T8.1, `e499977`) —
-      карточка живёт в `$lib/ui/demo/db-list/optimistic.svelte.ts`, ядро не тронуто
+      карточка живёт в `#lib/ui/demo/db-list/optimistic.svelte.ts`, ядро не тронуто
       (grep `optimisticRow` и `shadow` по `src/lib/paginate/*.ts` — пусто). Отклонение
       обосновано меркой (§5 того же документа): слиянию карточки с окном не нужны ни
       якоря, ни границы окон, а повторяемость держится не на слое, а на 120 строках +
@@ -943,13 +943,13 @@ auth-коллекция `users`, 10 «забытых» пунктов, приё�
       полчаса, отказывает `cursor`; это правильное поведение, но оно должно быть сказано в
       панели, а не открыто пользователем на глаз.
 - [x] Источник обязан работать с одним и тем же transport-мостом на обеих страницах:
-      серверный транспорт ставится `$lib/server/db-list`, и если `/paginator` не подставит
+      серверный транспорт ставится `#lib/server/db-list.js`, и если `/paginator` не подставит
       его (а хук — не навесит `dbCtx` на этот путь), «тот же источник» окажется правдой
       только для `/db-demo`: там серверный рендер, там — догрузка через HTTP.
-      Сделано: `import '$lib/server/db-list'` стоит в `src/hooks.server.ts` — side-effect
+      Сделано: `import '#lib/server/db-list.js'` стоит в `src/hooks.server.ts` — side-effect
       на весь процесс, поэтому транспорт есть у обоих демо и у API независимо от того,
       какой роут обрабатывает запрос. В лоадере `/paginator` его держать нельзя:
-      `+page.ts` — universal, его граф доходит и до браузера, а `$lib/server/*` —
+      `+page.ts` — universal, его граф доходит и до браузера, а `#lib/server/*` —
       серверные модули; попытка кончилась удвоением инстанса синглтона `getRuntime`
       (две копии модуля в серверном бандле → вторая считала каталог занятым и демо
       отвечало 500 на каждый запрос). Проверка — шаг HTTP-пробы «/paginator: пункт «БД»

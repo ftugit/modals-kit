@@ -3,7 +3,7 @@
    * Панель фильтров каталога: связка «схема источника → хранилище пагинатора».
    *
    * Сложного здесь нет по устройству: всё, что можно посчитать, считает api
-   * схемы (`$lib/filters`) — какие контролы есть, что гасит связка и почему,
+   * схемы (`#lib/filters/index.js`) — какие контролы есть, что гасит связка и почему,
    * какие чипы висят, какой патч положить в extra, какой адрес снимает одно
    * значение. Этот компонент знает ровно три вещи, которых api знать не может:
    * имя пагинатора, канал-хранилище и путь страницы.
@@ -13,14 +13,14 @@
    * пагинатора, и нигде не регистрируется.
    */
   import { page } from '$app/state'
-  import { getClientStore, setExtra } from '$lib/paginate'
+  import { getClientStore, setExtra } from '#lib/paginate/index.js'
   import {
     catalogFilterExtraPatch,
     catalogFilterRemoveValuePatch,
     catalogFilterView,
     type CatalogFilterSchema,
-  } from '$lib/filters'
-  import { ActiveFilters, CatalogFilterForm } from '$lib/ui/filters'
+  } from '#lib/filters/index.js'
+  import { ActiveFilters, CatalogFilterForm } from '#lib/ui/filters/index.js'
 
   interface Props {
     /** Имя пагинатора-владельца: единственный канал записи — его хранилище. */

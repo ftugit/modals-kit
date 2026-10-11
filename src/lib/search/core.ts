@@ -4,7 +4,7 @@
 // Запрос живёт в extra пагинатора ('q' входит в reloadKeys), поэтому смена
 // запроса = штатный setExtra: сброс на страницу 1, отмена in-flight, persist
 // в адрес через URL-адаптер пагинатора.
-import { getClientStore, getState, goToPage, setExtra } from '$lib/paginate'
+import { getClientStore, getState, goToPage, setExtra } from '#lib/paginate/index.js'
 import { getSearch } from './registry'
 
 /** Нормализация запроса перед записью в состояние/адрес (та же, что валидатор адреса). */

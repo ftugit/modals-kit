@@ -21,11 +21,11 @@
    * остаётся правдой для пути без JS.
    */
   import { onMount } from 'svelte'
-  import { compileCatalogFilterSchema, catalogFilterFieldStates, parseCatalogFilterPath } from '$lib/filters'
-  import type { CatalogFilterSchema } from '$lib/filters'
-  import { bind, createConfig, Form } from '$lib/form/svelte'
-  import type { FormDescription } from '$lib/form'
-  import { Button, Input, Select } from '$lib/ui/primitives'
+  import { compileCatalogFilterSchema, catalogFilterFieldStates, parseCatalogFilterPath } from '#lib/filters/index.js'
+  import type { CatalogFilterSchema } from '#lib/filters/index.js'
+  import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
+  import type { FormDescription } from '#lib/form/index.js'
+  import { Button, Input, Select } from '#lib/ui/primitives/index.js'
 
   interface Props {
     /** Схема источника: по ней компилируется описание полей (единый код-путь с сервером). */

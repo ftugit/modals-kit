@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { buttonVariants } from '$lib/ui/primitives'
-  import { usePaginatorActions } from '$lib/paginate/svelte'
+  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { usePaginatorActions } from '#lib/paginate/svelte/index.js'
   import type { Snippet } from 'svelte'
 
   interface Props {

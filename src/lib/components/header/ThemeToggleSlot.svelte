@@ -1,6 +1,6 @@
 <script lang="ts">
   // Переключатель темы (lemonade / night).
-  import { Button } from '$lib/ui/primitives'
+  import { Button } from '#lib/ui/primitives/index.js'
   import { onMount } from 'svelte'
 
   type Theme = 'lemonade' | 'night'

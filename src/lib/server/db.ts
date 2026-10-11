@@ -9,12 +9,12 @@
  * тем же `applyMigrationText`, что и в проде (один путь, не «в тесте одно,
  * в проде другое»).
  */
-import { createDb, defineResource, f, field, policy, s } from '$lib/db'
-import { pgliteAdapter } from '$lib/db/adapters/pglite'
-import { hyperdriveAdapter } from '$lib/db/adapters/hyperdrive'
-import { openNodeDatabase, openPgPool } from '$lib/db/sveltekit/node'
-import { applyMigrationText, cursorCodecFromEnv } from '$lib/db/sveltekit'
-import type { Database, Driver } from '$lib/db'
+import { createDb, defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
+import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
+import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
+import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
+import type { Database, Driver } from '#lib/db/index.js'
 import {
   DATABASE_DIR, DATABASE_URL, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
   DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,

@@ -24,7 +24,7 @@ const walk = (dir: string): string[] =>
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
-it('документация слоя $lib/db актуальна против кода', () => {
+it('документация слоя #lib/db актуальна против кода', () => {
   // исходники слоя: и с расширением, и без — re-export вида `export * from'../errors'`
   const sources: Record<string, string> = {}
   for (const file of walk(DB_ROOT)) {

@@ -15,17 +15,17 @@
  *                      был бы ВТОРЫМ запросом на каждый шаг, а номеров страницы в
  *                      потоке всё равно нет.
  */
-import { parseListInput, toKitError } from '$lib/db/sveltekit'
-import type { DataContext } from '$lib/db'
-import type { PageResponse } from '$lib/paginate'
-import { createPaginatorStore, initServerPaginator } from '$lib/paginate'
+import { parseListInput, toKitError } from '#lib/db/sveltekit/index.js'
+import type { DataContext } from '#lib/db/index.js'
+import type { PageResponse } from '#lib/paginate/index.js'
+import { createPaginatorStore, initServerPaginator } from '#lib/paginate/index.js'
 import {
   DB_LIST_PAGE_SIZE,
   ensureDbListPaginator,
   setDbPostsServerTransport,
   type DbPost,
   type DbPostsQuery,
-} from '$lib/ui/demo/db-list/definition'
+} from '#lib/ui/demo/db-list/definition.js'
 import { DEMO_PRINCIPAL, getRuntime, posts } from './db'
 
 /**

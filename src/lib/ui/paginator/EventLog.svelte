@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import { usePaginatorEvents } from '$lib/paginate/svelte'
+  import { usePaginatorEvents } from '#lib/paginate/svelte/index.js'
   import { describeEvent as describe } from './event-log'
 
   interface Props {

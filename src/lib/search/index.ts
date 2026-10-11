@@ -1,10 +1,10 @@
 // Публичная поверхность lib search — framework-neutral часть: реестр, действия,
 // перехватчик источника и изоморфное fuzzy-ядро. Всё здесь собирается и
 // тестируется без единого фреймворка (тот же принцип, что у lib/paginate:
-// ядро в `$lib/search`, обвязка — в `$lib/search/svelte`).
+// ядро в `#lib/search/index.js`, обвязка — в `#lib/search/svelte/index.js`).
 //
 // Хук `useSearchCorrection` (подпись коррекции) живёт в Svelte-входе
-// `$lib/search/svelte` и отсюда НЕ реэкспортируется: импорт `$lib/search`
+// `#lib/search/svelte/index.js` и отсюда НЕ реэкспортируется: импорт `#lib/search/index.js`
 // должен оставаться возможным из node-тестов, а `.svelte.ts`-обвязка тянет
 // компилятор Svelte.
 export type { SearchConfig, SearchInstance } from './types'

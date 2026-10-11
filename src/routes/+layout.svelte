@@ -1,6 +1,6 @@
 <script lang="ts">
   // Корневой layout: модальная система + AppShell (CollapsingHeader, Sidebar, Main scroller).
-  import favicon from '$lib/assets/favicon.svg'
+  import favicon from '#lib/assets/favicon.svg'
   import { untrack } from 'svelte'
   import { page } from '$app/state'
   import {
@@ -11,33 +11,33 @@
     urlStorage,
     type ChainStorage,
     type ModalRegistry,
-  } from '$lib/modals'
-  import { svelteKitCore } from '$lib/modals/cores/sveltekit'
-  import { appErrors, report } from '$lib/app-errors.svelte'
-  import Error500 from '$lib/components/Error500.svelte'
-  import { ModalHost } from '$lib/modals/svelte'
-  import { BackdropCloseIcon, ModalError, Skeleton } from '$lib/ui/modals'
-  import { demoScope } from '$lib/ui/demo/modals/registry'
-  import { demoSources } from '$lib/ui/demo/modals/sources.svelte'
+  } from '#lib/modals/index.js'
+  import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
+  import { appErrors, report } from '#lib/app-errors.svelte.js'
+  import Error500 from '#lib/components/Error500.svelte'
+  import { ModalHost } from '#lib/modals/svelte/index.js'
+  import { BackdropCloseIcon, ModalError, Skeleton } from '#lib/ui/modals/index.js'
+  import { demoScope } from '#lib/ui/demo/modals/registry.js'
+  import { demoSources } from '#lib/ui/demo/modals/sources.svelte.js'
   import {
     setPageContext,
     AppShell,
     PageHead,
     useHeaderSlot,
     useSidebarSlot,
-  } from '$lib/shell'
+  } from '#lib/shell/index.js'
   import {
     LogoSlot,
     NavSlot,
     ThemeToggleSlot,
     PageTitleSlot,
     SiteFooter,
-  } from '$lib/components/header'
+  } from '#lib/components/header/index.js'
   import {
     SidebarNav,
     SidebarUser,
     SidebarFooter,
-  } from '$lib/components/sidebar'
+  } from '#lib/components/sidebar/index.js'
   import 'virtual:uno.css'
   import '../app.css'
 

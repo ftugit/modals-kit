@@ -15,8 +15,8 @@
  *     него нет, и адрес обязан стать честным, поэтому ключу пишется `''`, что для
  *     пагинатора значит «ключа нет».
  */
-import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
-import type { PaginatorState } from '$lib/paginate'
+import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
+import type { PaginatorState } from '#lib/paginate/index.js'
 import { DB_LIST_MODE_KEY, DB_LIST_POINTER_KEY, isCursorOn, type DbPost } from './definition'
 
 /**

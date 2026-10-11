@@ -29,7 +29,7 @@ import { useInstance, useModals } from './context'
  * Если счётчик нужен ТОЛЬКО для настоящих модалок, не вычитайте единицу
  * вслепую (оверлеев может не быть вовсе), а отфильтруйте:
  *
- *     import { visibleChain } from '$lib/modals'
+ *     import { visibleChain } from '#lib/modals/index.js'
  *     const real = visibleChain(useChain().current).length
  *
  * Проверено измерением: попытка исключить такие записи из счётчиков

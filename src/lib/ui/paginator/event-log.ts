@@ -1,4 +1,4 @@
-import type { PaginatorEvent } from '$lib/paginate'
+import type { PaginatorEvent } from '#lib/paginate/index.js'
 
 export function describeEvent(e: PaginatorEvent): string {
   switch (e.type) {

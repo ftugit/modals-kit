@@ -7,8 +7,8 @@
   // `nativeList: 'all'` — справочники формы коротенькие, экономить разметку
   // нечего, а полный нативный список сохраняет и поведение формы без JS, и
   // совместимость с `selectOption` в тестах.
-  import { Select } from '$lib/ui/primitives'
-  import type { FieldView } from '$lib/form/svelte'
+  import { Select } from '#lib/ui/primitives/index.js'
+  import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

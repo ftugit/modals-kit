@@ -3,7 +3,7 @@
 Поиск как **перехват пагинатора**: lib/search подключается к источнику
 декоратором `withLibSearch` (тот же путь и в `defineSearch`, который
 регистрирует пагинатор на URL-адаптере). Источник — АДАПТИРОВАННЫЙ
-(`$lib/paginate/source`): паспорт записи (`id`/`title`/`texts`), словарь и
+(`#lib/paginate/source.js`): паспорт записи (`id`/`title`/`texts`), словарь и
 размер батча lib/search берёт у него, а не у потребителя. Своего ядра состояния у поиска нет — страницы, гонки,
 SSR-снапшоты, back/forward, ссылки без JS делает lib/paginate; запрос `q` —
 обычный ключ extra пагинатора (`reloadKeys: ['q']`).
@@ -29,7 +29,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 | `accumulator.ts` | `withLibSearch` — подключение fuzzy-контура к адаптированному источнику (нужно `scan` в спеке); `createAccumulatingSource` — механика бюджета и виртуальных страниц без средовых гардов |
 | `fuzzy.ts` | Изоморфное ядро: foldKey, взвешенный Дамерау-Левенштейн, словарь терминов, скоринг |
 | `dictionary.ts` | Клиент: разбор артефакта `display\tdf`, биграммный индекс, корректор запроса |
-| `svelte/` | Svelte 5-вход `$lib/search/svelte`: хук `useSearchCorrection` (подпись «искали X → показываем Y»). Устроен как `$lib/paginate/svelte`: ядро о фреймворке не знает, обвязка живёт отдельной точкой входа — поэтому `$lib/search` остаётся импортируемым из node-тестов |
+| `svelte/` | Svelte 5-вход `#lib/search/svelte/index.js`: хук `useSearchCorrection` (подпись «искали X → показываем Y»). Устроен как `#lib/paginate/svelte/index.js`: ядро о фреймворке не знает, обвязка живёт отдельной точкой входа — поэтому `#lib/search/index.js` остаётся импортируемым из node-тестов |
 
 Самой формы поиска в библиотеке нет: поле запроса — обычное поле lib form
 (`<Form method="get">` + поле), транспорт — GET-форма, композицию собирает
@@ -77,7 +77,7 @@ export const load = ({ url }) => /* … */ void url
 ```svelte
 <!-- Подпись коррекции — из Svelte-входа -->
 <script lang="ts">
-  import { useSearchCorrection } from '$lib/search/svelte'
+  import { useSearchCorrection } from '#lib/search/svelte/index.js'
   const correction = useSearchCorrection('my-search')
 </script>
 {#if correction()?.changed}
@@ -203,10 +203,10 @@ applyUrl серверной формы — отдельная задача (v2).
 
 Библиотека перенесена из исходника SolidHono (`src/lib/search`) — логика,
 контракты и правила сохранены без упрощений; отличия порта ровно два:
-импорты смотрят на `$lib/paginate`, а Solid-хук `useSearchCorrection` заменён
-Svelte 5-обвязкой в `$lib/search/svelte`. Единственный файл канона, который
+импорты смотрят на `#lib/paginate/index.js`, а Solid-хук `useSearchCorrection` заменён
+Svelte 5-обвязкой в `#lib/search/svelte/index.js`. Единственный файл канона, который
 сюда не переносился, — `catalog-filter.ts` (схема фильтров каталога → форма →
 адрес): он построен на form-API канона (`@/lib/form/core`: `defineForm`,
 `field`, `safeName`, `validators`), которого в порте форм нет, и принадлежит
 витрине каталога, а не механике поиска. Если он понадобится, это отдельная
-задача с адаптацией под `$lib/form`.
+задача с адаптацией под `#lib/form/index.js`.

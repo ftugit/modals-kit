@@ -5,13 +5,13 @@
    * список, поэтому поле видимое и текстовое (значение можно скопировать).
    */
   import { untrack } from 'svelte'
-  import { bind, Form } from '$lib/form/svelte'
-  import type { Result } from '$lib/form'
-  import { jsonTransport } from '$lib/ui/demo/form/transport'
-  import { Button } from '$lib/ui/primitives'
-  import { forms } from '$lib/ui/demo/form/forms.config'
-  import Common from '$lib/ui/demo/form/ui/Common.svelte'
-  import Field from '$lib/ui/demo/form/ui/Field.svelte'
+  import { bind, Form } from '#lib/form/svelte/index.js'
+  import type { Result } from '#lib/form/index.js'
+  import { jsonTransport } from '#lib/ui/demo/form/transport.js'
+  import { Button } from '#lib/ui/primitives/index.js'
+  import { forms } from '#lib/ui/demo/form/forms.config.js'
+  import Common from '#lib/ui/demo/form/ui/Common.svelte'
+  import Field from '#lib/ui/demo/form/ui/Field.svelte'
   import { dbRemove } from './description'
 
   interface Props {

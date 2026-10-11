@@ -6,13 +6,13 @@
     pendingSide,
     runsOfColumn,
     type Stretch,
-  } from '$lib/paginate'
+  } from '#lib/paginate/index.js'
   import {
     PageAnchor,
     usePaginatorActions,
     usePaginatorPages,
     usePaginatorState,
-  } from '$lib/paginate/svelte'
+  } from '#lib/paginate/svelte/index.js'
   import StatusRow from './StatusRow.svelte'
 
   interface Props<T> {

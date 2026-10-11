@@ -41,7 +41,7 @@
   import {
     currentSearch as frameworkSearch,
     svelteKitRouter,
-  } from '$lib/router/sveltekit'
+  } from '#lib/router/sveltekit.js'
 
   interface Props<T> {
     name: string

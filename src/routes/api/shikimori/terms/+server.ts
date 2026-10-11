@@ -3,11 +3,11 @@
  *
  * Собирается из ЖИВОГО каталога (несколько страниц популярности) и кэшируется
  * на час — см. `getTermArtifact`. Формат тот же, что у канона: его разбирает
- * `createLazyCorrector` из `$lib/search`, а fuzzy-сопоставление исполняется
+ * `createLazyCorrector` из `#lib/search/index.js`, а fuzzy-сопоставление исполняется
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'
-import { getTermArtifact, upstreamFailure } from '$lib/server/shikimori'
+import { getTermArtifact, upstreamFailure } from '#lib/server/shikimori.js'
 
 export const GET: RequestHandler = async ({ request }) => {
   try {

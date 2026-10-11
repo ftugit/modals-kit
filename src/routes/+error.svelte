@@ -4,7 +4,7 @@
   // клиентский оверлей; 4xx — нейтральный текст. Стек и причина клиенту не
   // показываются никогда.
   import { page } from '$app/state'
-  import Error500 from '$lib/components/Error500.svelte'
+  import Error500 from '#lib/components/Error500.svelte'
 
   const serverError = $derived(page.status >= 500)
 </script>

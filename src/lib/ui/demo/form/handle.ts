@@ -7,9 +7,9 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import {
   createFormHandler, MemoryIdempotencyStore, windowThrottle, type Handled,
-} from '$lib/form/server'
-import { SECURITY_LAYERS } from '$lib/server/form-security'
-import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '$lib/form'
+} from '#lib/form/server.js'
+import { SECURITY_LAYERS } from '#lib/server/form-security.js'
+import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '#lib/form/index.js'
 import './extend'
 import { checks } from './extend'
 import { resolveDescription, signup } from './signup'

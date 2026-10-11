@@ -1,4 +1,4 @@
-<script lang="ts" generics="V extends Record<string, import('$lib/paginate').ExtraValue> = Record<string, import('$lib/paginate').ExtraValue>">
+<script lang="ts" generics="V extends Record<string, import('#lib/paginate/index.js').ExtraValue> = Record<string, import('#lib/paginate/index.js').ExtraValue>">
   /**
    * Форма настроек внутри оболочки панели. Отделена от `PaginatorSettings`,
    * потому что смена источника меняет ВЕСЬ компилированный слой (гаты
@@ -12,13 +12,13 @@
    * `lib/links`. Причина — в helper (канал `fieldState` → `FieldView`).
    */
   import type { Snippet } from 'svelte'
-  import type { ExtraValue } from '$lib/paginate'
-  import { bind, createConfig, Form } from '$lib/form/svelte'
-  import { computeLinks, linkHelperText } from '$lib/links/links'
-  import { buttonVariants } from '$lib/ui/primitives'
-  import { JS_ONLY_REASON } from '$lib/ui/js-only.svelte'
+  import type { ExtraValue } from '#lib/paginate/index.js'
+  import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
+  import { computeLinks, linkHelperText } from '#lib/links/links.js'
+  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { JS_ONLY_REASON } from '#lib/ui/js-only.svelte.js'
   import type { DemoPanelSchema } from './compile'
-  import { Field, Select, Toggle } from '$lib/ui/settings'
+  import { Field, Select, Toggle } from '#lib/ui/settings/index.js'
 
   interface Props<V extends Record<string, ExtraValue>> {
     schema: DemoPanelSchema

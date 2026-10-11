@@ -32,8 +32,8 @@ import {
   isServerSide,
   type AdaptedSource,
   type SourceRecordSpec,
-} from '$lib/paginate/source'
-import type { Extra, PageRequest, PageResponse } from '$lib/paginate/types'
+} from '#lib/paginate/source.js'
+import type { Extra, PageRequest, PageResponse } from '#lib/paginate/types.js'
 import { createLazyCorrector } from './dictionary'
 import { reportSearchStats } from './stats'
 import { prepareQuery, prepareTexts, scorePrepared, type PreparedText } from './fuzzy'

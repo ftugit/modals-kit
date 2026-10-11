@@ -1,15 +1,15 @@
 /**
  * GET /api/shikimori/filters — готовая схема фильтров каталога.
  *
- * Схема живёт в зоне источника (`$lib/server/shikimori-schema`): значения
+ * Схема живёт в зоне источника (`#lib/server/shikimori-schema.js`): значения
  * прочитаны из живых справочников, связки объявлены там же, метка `builtAt`
  * говорит, когда это было. Роут ничего не считает на клиенте и ничего не
  * кэширует сам — серверная схема обновляется по TTL, а сборка одна на всех
  * (single-flight), поэтому «каждый клиент тянет своё» невозможно.
  */
 import type { RequestHandler } from './$types'
-import { upstreamFailure } from '$lib/server/shikimori'
-import { getShikimoriFilterSchema } from '$lib/server/shikimori-schema'
+import { upstreamFailure } from '#lib/server/shikimori.js'
+import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 
 export const GET: RequestHandler = async () => {
   try {

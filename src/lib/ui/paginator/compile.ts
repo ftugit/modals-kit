@@ -12,9 +12,9 @@
 //     extra гарантированы), пустое поле — «не выбрано», правило не горит;
 //   • `requires` гасит поле СТАТИЧЕСКИ: возможности источника — серверные
 //     данные, они известны на SSR и не меняются, пока источник не сменили.
-import type { ExtraValue, FeatureGate } from '$lib/paginate'
-import { defineForm, field, policyWith, type FieldDraft, type FormDescription } from '$lib/form'
-import type { LinkRule } from '$lib/links/links'
+import type { ExtraValue, FeatureGate } from '#lib/paginate/index.js'
+import { defineForm, field, policyWith, type FieldDraft, type FormDescription } from '#lib/form/index.js'
+import type { LinkRule } from '#lib/links/links.js'
 import type { SettingsField } from './types'
 
 /** Подписи возможностей для причины «источник не поддерживает …». */

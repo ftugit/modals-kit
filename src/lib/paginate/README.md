@@ -27,7 +27,7 @@ Headless-библиотека пагинации с разделением frame
 ### Определение пагинатора
 
 ```ts
-import { defineSource, definePaginator, createUrlAdapter } from '$lib/paginate'
+import { defineSource, definePaginator, createUrlAdapter } from '#lib/paginate/index.js'
 
 // Источник: данные + паспорт записи + объявленные возможности.
 const products = defineSource<Product>({
@@ -57,8 +57,8 @@ definePaginator({
 
 ```svelte
 <script lang="ts">
-  import { PaginatorHost } from '$lib/paginate/svelte'
-  import { PageList, PageNav, LoadingIndicator, LoadMoreLink } from '$lib/ui/paginator'
+  import { PaginatorHost } from '#lib/paginate/svelte/index.js'
+  import { PageList, PageNav, LoadingIndicator, LoadMoreLink } from '#lib/ui/paginator/index.js'
 </script>
 
 <PaginatorHost name="products" class="h-[500px] overflow-y-auto">
@@ -79,8 +79,8 @@ definePaginator({
 ### Использование в SolidJS
 
 ```tsx
-import { PaginatorHost } from '$lib/paginate/solid'
-import { PageList, PageNav } from '$lib/ui/paginator'
+import { PaginatorHost } from '#lib/paginate/solid/index.js'
+import { PageList, PageNav } from '#lib/ui/paginator/index.js'
 
 function ProductsView() {
   return (

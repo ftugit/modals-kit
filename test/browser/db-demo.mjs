@@ -6,7 +6,7 @@
  *   node test/browser/db-demo.mjs
  *
  * Порт обязан быть в PREVIEW_PORTS (по умолчанию 5173 и 5174, см.
- * `$lib/server/form-security.ts`): иначе слой origin отвечает на POST формы 403.
+ * `#lib/server/form-security.ts`): иначе слой origin отвечает на POST формы 403.
  * Поэтому адрес по умолчанию — 5173, как у forms.mjs.
  *
  * Что проверяется:

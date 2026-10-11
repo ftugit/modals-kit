@@ -30,7 +30,7 @@ import {
   type CatalogFilterOption,
   type CatalogFilterRule,
   type CatalogFilterSchema,
-} from '$lib/filters'
+} from '#lib/filters/index.js'
 import {
   SHIKIMORI_FILTER_SOURCE,
   SHIKIMORI_FILTER_SCHEMA_VERSION,

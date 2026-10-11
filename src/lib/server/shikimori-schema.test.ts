@@ -17,7 +17,7 @@ import {
 } from './shikimori-schema'
 import { resetShikimoriTransport } from './shikimori'
 import { resetGraphqlTransport } from './graphql'
-import { catalogFilterFieldNames } from '$lib/filters'
+import { catalogFilterFieldNames } from '#lib/filters/index.js'
 
 /**
  * Тексты 422 ровно в том виде, в каком их отдаёт API (записаны живьём,

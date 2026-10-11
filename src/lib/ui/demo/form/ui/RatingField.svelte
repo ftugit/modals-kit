@@ -1,8 +1,8 @@
 <script lang="ts">
   // Компонент для СВОЕГО типа значения. Библиотека о нём не знает:
   // тип зарегистрирован приложением, компонент выбран через resolve.
-  import { Input } from '$lib/ui/primitives'
-  import type { FieldView } from '$lib/form/svelte'
+  import { Input } from '#lib/ui/primitives/index.js'
+  import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

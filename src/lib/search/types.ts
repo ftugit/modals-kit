@@ -5,15 +5,15 @@
 // новые, если надо. Запрос `q` живёт в extra пагинатора (адрес
 // `?<pageParam>.q`), `reloadKeys: ['q']` сбрасывает выдачу на первую страницу.
 // Несколько поисков на странице — разные name/pageParam.
-import type { Extra } from '$lib/paginate/types'
-import type { AdaptedSource, ExtraSearchSpec } from '$lib/paginate'
+import type { Extra } from '#lib/paginate/types.js'
+import type { AdaptedSource, ExtraSearchSpec } from '#lib/paginate/index.js'
 import type { LibSearchOptions } from './accumulator'
 
 export type SearchConfig<T> = {
   /** Уникальное имя поиска; оно же — имя пагинатора (R17: deny by default). */
   name: string
   /**
-   * Базовый источник пагинатора — АДАПТИРОВАННЫЙ (`$lib/paginate/source`).
+   * Базовый источник пагинатора — АДАПТИРОВАННЫЙ (`#lib/paginate/source.js`).
    * Поиск подменяет его перехватчиком. Источник обязан понимать `extra.q` НА
    * СЕРВЕРЕ как точное/подстрочное сужение — это контур SSR/no-JS; `q` —
    * отдельное поле транспорта, никогда не значение фильтров.

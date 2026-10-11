@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageProps } from './$types'
-  import PaginatorDemo from '$lib/ui/demo/paginator/PaginatorDemo.svelte'
+  import PaginatorDemo from '#lib/ui/demo/paginator/PaginatorDemo.svelte'
 
   let { data }: PageProps = $props()
 </script>

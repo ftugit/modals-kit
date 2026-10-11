@@ -11,7 +11,7 @@
    * Значения режима `not` (в источнике — исключение) помечены красным: это
    * единственный цвет, который здесь что-то значит.
    */
-  import type { CatalogFilterChip } from '$lib/filters'
+  import type { CatalogFilterChip } from '#lib/filters/index.js'
 
   interface Props {
     chips: readonly CatalogFilterChip[]

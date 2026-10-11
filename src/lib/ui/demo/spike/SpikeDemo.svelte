@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button } from '$lib/ui/primitives'
+import { Button } from '#lib/ui/primitives/index.js'
   import { goto, pushState, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Порт LockedModal из src/features/modals/demo-modals.tsx оригинала.
-  import { ForceClose } from '$lib/ui/modals'
+  import { ForceClose } from '#lib/ui/modals/index.js'
 </script>
 
 <div class="flex min-h-0 flex-auto flex-col items-center justify-center gap-3 p-6 text-center">

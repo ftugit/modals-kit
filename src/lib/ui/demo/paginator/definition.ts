@@ -29,7 +29,7 @@ import {
   getShikimoriTerms,
   type AnimesPage,
 } from '../../../../content/shikimori'
-import type { CatalogFilterSchema } from '$lib/filters'
+import type { CatalogFilterSchema } from '#lib/filters/index.js'
 import {
   SHIKIMORI_FILTER_KEYS,
   SHIKIMORI_FILTER_RELOAD_KEYS,
@@ -40,7 +40,7 @@ import {
   searchQueryValidator,
   withLibSearch,
   type SearchCorrectionInfo,
-} from '$lib/search'
+} from '#lib/search/index.js'
 import {
   composeSources,
   createLocalStorageStorage,
@@ -60,7 +60,7 @@ import {
   type PrependBehavior,
   type SourceLook,
   type SourceRecordSpec,
-} from '$lib/paginate'
+} from '#lib/paginate/index.js'
 import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
 import {
   DB_LIST_FILTER_KEYS,
@@ -68,16 +68,16 @@ import {
   cursorPointerField,
   fetchDbPosts,
   withDbCursor,
-} from '$lib/ui/demo/db-list/definition'
+} from '#lib/ui/demo/db-list/definition.js'
 
 export type DemoStore = 'url' | 'local' | 'none'
 
 /**
  * Источник данных пагинатора (опция панели `src`).
  *
- * `db` — витрина `$lib/db`: список строк из живой БД. Он не «демо-данные рядом с
+ * `db` — витрина `#lib/db/index.js`: список строк из живой БД. Он не «демо-данные рядом с
  * демо-данными»: реализация одна и та же, что у страницы `/db-demo`
- * (`$lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
+ * (`#lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
  * только форма записи общая с каталогом.
  */
 export type DemoSrc = 'products' | 'photos' | 'animes' | 'db'
@@ -363,7 +363,7 @@ export function demoQueryOf(extra: Extra | undefined): string {
  * На SSR тот же базовый источник обязан уметь отдать страницу каталога, не
  * сходя с сервера: снапшот страницы строится в лоадере (`initServerPaginator`),
  * а ходить оттуда в собственный HTTP-эндпоинт — лишний круг. Поэтому
- * server-only лоадер подставляет транспорт напрямую к `$lib/server/shikimori`
+ * server-only лоадер подставляет транспорт напрямую к `#lib/server/shikimori.js`
  * (там кэш, троттлинг и User-Agent); в браузере мост пуст, и источник идёт в
  * свой эндпоинт `/api/shikimori/animes`. Развилка в ОДНОМ месте — сама логика
  * страницы/перехвата/ошибок у источника одна на оба мира.
@@ -475,7 +475,7 @@ function createAnimesSource(): AdaptedSource<CatalogItem> {
     totals: false,
     // Фильтры объявляет САМ источник: ключи выведены из схемы схемы
     // (`content/shikimori-filters`), а значения и связки живут в серверной зоне
-    // (`$lib/server/shikimori-schema`) и приезжают роутом `/api/shikimori/filters`.
+    // (`#lib/server/shikimori-schema.js`) и приезжают роутом `/api/shikimori/filters`.
     // Возможность видна панели (`capabilities.filters`) — UI гасит фильтры у
     // источников, которые их не объявляют.
     filters: SHIKIMORI_FILTER_KEYS,

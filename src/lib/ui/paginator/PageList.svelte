@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { PageAnchor, usePaginatorPages } from '$lib/paginate/svelte'
+  import { PageAnchor, usePaginatorPages } from '#lib/paginate/svelte/index.js'
   import PageDivider from './PageDivider.svelte'
   import StatusRow from './StatusRow.svelte'
 

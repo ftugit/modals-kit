@@ -45,10 +45,10 @@ export const FILTERS_LIB_FORBIDDEN_SPECIFIERS = [
   /^\$app\//,
   /^react(-dom)?(\/|$)/,
   /^solid-js(\/|$)/,
-  /^\$lib\/server\//,
-  /^\$lib\/paginate(\/|$)/,
-  /^\$lib\/modals(\/|$)/,
-  /^\$lib\/form\/(svelte|react|solid|vue)(\/|$)/,
+  /^#lib\/server\//,
+  /^#lib\/paginate\//,
+  /^#lib\/modals\//,
+  /^#lib\/form\/(svelte|react|solid|vue)\//,
 ]
 export const FILTERS_LIB_FORBIDDEN_GLOBALS = [/\bwindow\./, /\bdocument\./, /\blocalStorage\b/, /\bfetch\s*\(/]
 
@@ -88,7 +88,7 @@ export const CONTENT_RULES = [
     zones: [SCHEMA_ZONE],
     why:
       'сборка схемы вызвана вне её зоны. Значения и связки собираются в\n' +
-      '    `$lib/server/shikimori-schema`; сборка «ещё разок» в роуте или\n' +
+      '    `#lib/server/shikimori-schema.js`; сборка «ещё разок» в роуте или\n' +
       '    лоадере — это второй кэш, вторая метка `builtAt` и два ответа на\n' +
       '    вопрос «какие фильтры у источника есть».',
   },

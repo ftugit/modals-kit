@@ -1,6 +1,6 @@
 // Изоморфное описание: его импортируют и страница, и серверное действие.
 // Ноль UI, ноль HTTP, ноль Svelte.
-import { defineForm, field, v } from '$lib/form'
+import { defineForm, field, v } from '#lib/form/index.js'
 import { emailTaken, inn, luhn } from './extend'
 
 /**

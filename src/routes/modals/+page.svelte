@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Button } from '$lib/ui/primitives'
-  import { JS_ONLY_REASON, useJsOnly } from '$lib/ui/js-only.svelte'
+import { Button } from '#lib/ui/primitives/index.js'
+  import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
   // Порт src/features/modals/ModalsDemo.tsx оригинала: состав триггеров,
@@ -15,13 +15,13 @@ import { Button } from '$lib/ui/primitives'
   //   • «Pager Demo» → «Цикл» (/cycle): страницы /paginator в порте нет;
   //   • SourcesPanel — расширение порта: выбор источников цепочки
   //     (состояние приложения, sources.svelte.ts).
-  import { entryLabel } from '$lib/modals'
-  import { ModalTrigger, useModals } from '$lib/modals/svelte'
-  import { CloseAllButton, modalTriggerVariants } from '$lib/ui/modals'
-  import LoadLink from '$lib/router/LoadLink.svelte'
-  import SettingsPanel from '$lib/ui/demo/modals/SettingsPanel.svelte'
-  import SourcesPanel from '$lib/ui/demo/modals/SourcesPanel.svelte'
-  import FloatingMenu from '$lib/ui/demo/modals/FloatingMenu.svelte'
+  import { entryLabel } from '#lib/modals/index.js'
+  import { ModalTrigger, useModals } from '#lib/modals/svelte/index.js'
+  import { CloseAllButton, modalTriggerVariants } from '#lib/ui/modals/index.js'
+  import LoadLink from '#lib/router/LoadLink.svelte'
+  import SettingsPanel from '#lib/ui/demo/modals/SettingsPanel.svelte'
+  import SourcesPanel from '#lib/ui/demo/modals/SourcesPanel.svelte'
+  import FloatingMenu from '#lib/ui/demo/modals/FloatingMenu.svelte'
 
   // Живой контекст: геттеры видят смену ядра при смене источников.
   const m = useModals()

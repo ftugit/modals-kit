@@ -1,7 +1,7 @@
 // Изоморфное описание: его читают и страница (bind), и сервер
 // (createFormHandler). Разъезда «клиент проверяет одно, сервер другое» здесь
 // быть не может — валидация одна на оба пути.
-import { defineForm, field, v } from '$lib/form'
+import { defineForm, field, v } from '#lib/form/index.js'
 
 /** Запись в таблицу демо. `title` — единственное, что решает сервер. */
 export const dbCreate = defineForm({

@@ -3,8 +3,8 @@
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
   import { demoFault } from '../../../../content/items'
-  import { PaginatorScope } from '$lib/paginate/svelte'
-  import type { PaginatorState } from '$lib/paginate'
+  import { PaginatorScope } from '#lib/paginate/svelte/index.js'
+  import type { PaginatorState } from '#lib/paginate/index.js'
   import {
     DEFAULT_DEMO_CONFIG,
     GALLERY_NAME,

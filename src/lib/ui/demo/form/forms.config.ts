@@ -1,8 +1,8 @@
 // Однократная настройка проекта. Хук приложения существует только затем,
 // чтобы не повторять ЭТО на каждой форме.
-import { report } from '$lib/app-errors.svelte'
-import { createConfig } from '$lib/form/svelte'
-import type { Transport } from '$lib/form'
+import { report } from '#lib/app-errors.svelte.js'
+import { createConfig } from '#lib/form/svelte/index.js'
+import type { Transport } from '#lib/form/index.js'
 import { jsonTransport } from './transport'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'

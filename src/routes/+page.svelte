@@ -21,7 +21,7 @@
     {
       href: '/db-demo',
       title: 'База данных',
-      text: 'Слой $lib/db внутри SvelteKit: миграции, ресурсы с политиками, form actions, '
+      text: 'Слой #lib/db внутри SvelteKit: миграции, ресурсы с политиками, form actions, '
         + 'страницы и курсоры — на PGlite в памяти и на pg через DATABASE_URL.',
     },
     {

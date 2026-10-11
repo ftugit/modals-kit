@@ -97,7 +97,7 @@ disabled ≠ скрыто; причина в helper (отдельного узл
 примитивы с {...v.attrs}; скрытый чекбокс drawer'а в AppShell — НЕ трогаем (CSS-механизм);
 ползунки — Input type=range. Каждый E-шаг — зелёный прогон + коммит в локальный git.
 
-- [x] E1: общие виджеты настроек в `$lib/ui/settings/` (Field/Select/Toggle из
+- [x] E1: общие виджеты настроек в `#lib/ui/settings//index.js` (Field/Select/Toggle из
       ui/paginator/fields; fields → re-export), проброс `{...v.attrs}` (id, aria-*, value
       из механизма), help-id для aria-describedby; `SearchQueryForm` — input → Input.
 - [x] E2: панель /form (formSettings/sandbox/sample/mode) — компилируется как DemoPanelSchema
@@ -397,7 +397,7 @@ disabled ≠ скрыто; причина в helper (отдельного узл
      catalog.test сверяют обе реплики посимвольно). Серверный dropped: жертва → причина
      правила (`у анонсов нет оценки`), прочие неприменённые ключи → «набор отклонён
      связкой: значения несовместимы»; общий `{key:'filters'}` не пишется.
-     *Вес:* ради бюджета урезано лишнее: из клиента убран импорт `$lib/links` (текст
+     *Вес:* ради бюджета урезано лишнее: из клиента убран импорт `#lib/links/index.js` (текст
      собирается локально в view), из `CatalogFilterFieldState` — `label`/`suppressedBy`,
      из view — `view.suppressed` (продакшн-потребителя не имел, закреплён был только
      тестом; violations + строки полей покрывают смысл). Итог: immutable 208036 / JS 194771
@@ -592,7 +592,7 @@ disabled ≠ скрыто; причина в helper (отдельного узл
        контейнера (bind локальный контур + jsOnly из него), а не `PaginatorSettings` как класс
        (у них нет store sink'а). РЕАЛИЗОВАНО (2026-10-09) как унификация пути выключения —
        то самое общее ядро §6.4 «один путь выключения для всех трёх панелей»:
-       `$lib/ui/js-only.svelte` (`useJsOnly()` — флаг переворачивается ровно на монтировании;
+       `#lib/ui/js-only.svelte.js` (`useJsOnly()` — флаг переворачивается ровно на монтировании;
        `!browser` этого не даёт: `browser` истина уже с первой клиентской отрисовки, гашение
        держалось лишь пока узел не перерисовался) + канонический текст `JS_ONLY_REASON`,
        его же теперь показывает helper пагинаторной панели и noscript-строки /form и /modals
@@ -645,8 +645,8 @@ swallowClickOnce); усиленный вариант остаётся в backup-
 
 - [x] Аудит чистоты: ядра lib не импортируют фреймворк вне адаптерных зон (проверено greps-сканом + generalized core-purity на modals/form/paginate/links/search).
 - [x] core-purity: список CORE_MODULES, боевой прогон по всем ядрам; непустота зоны фреймворка у ядер с адаптерами.
-- [x] Все демо-панели собираются из общих компонентов $lib/ui/settings (Field/Select/Toggle) — /modals, /form, /paginator.
-- [x] Демки вынесены из routes в $lib/ui/demo/{modals,form,cycle,spike} (+ барели index.ts); роуты — тонкие обёртки; серверные заглушки /form в $lib.
+- [x] Все демо-панели собираются из общих компонентов #lib/ui/settings (Field/Select/Toggle) — /modals, /form, /paginator.
+- [x] Демки вынесены из routes в #lib/ui/demo/{modals,form,cycle,spike} (+ барели index.ts); роуты — тонкие обёртки; серверные заглушки /form в #lib.
 - [x] Панель настроек /modals — компонент SettingsPanel.svelte (не инлайн в +page), пишет в свой per-route слайс.
 - [x] Оживлённые кнопки routes — примитив Button (plain/none); кнопка темы — компонент; submit не потерял type=submit (no-JS GET проверен формами).
 - [x] Тег <form> и поля ввода — только через lib/form (новый компонент Form) или примитивы полей; гард сборки ловит сырые теги (исключение — shell/sidebar по решению оператора).

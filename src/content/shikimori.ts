@@ -5,7 +5,7 @@
  *   • браузер (этот модуль) ходит в СВОЙ эндпоинт `/api/shikimori/animes` и
  *     `/api/shikimori/terms` — никаких прямых обращений к внешнему API, иначе
  *     User-Agent, кэш, троттлинг и повторы оказались бы на клиенте;
- *   • сервер (`$lib/server/shikimori.ts`) ходит в `shikimori.io` напрямую.
+ *   • сервер (`#lib/server/shikimori.ts`) ходит в `shikimori.io` напрямую.
  *
  * Контракт источника — обычный `Source<T>` пагинатора: «страница N размера M»
  * плюс `q`. `pageSize` едет в API как `limit` (максимум {@link SHIKIMORI_LIMIT_MAX}),
@@ -15,10 +15,10 @@
  *
  * Фильтры не исключение из этого правила: браузер отправляет значения в
  * канонических ключах (`filters.<поле>[.<режим>]`), а применяет их СЕРВЕР
- * (`$lib/server/shikimori-filters`) по живой схеме источника; готовая схема
+ * (`#lib/server/shikimori-filters.js`) по живой схеме источника; готовая схема
  * приезжает роутом `/api/shikimori/filters` (`getShikimoriFilters`).
  */
-import { validateCatalogFilterSchema, type CatalogFilterSchema } from '$lib/filters'
+import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/filters/index.js'
 
 /** Максимум записей на страницу у Shikimori API: больше он молча режет до этого. */
 export const SHIKIMORI_LIMIT_MAX = 50

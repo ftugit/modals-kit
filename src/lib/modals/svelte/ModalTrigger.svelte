@@ -11,7 +11,7 @@
   //   • блокируется для незарегистрированного имени
   import { chainToSearch, nextChain, routeHref } from '../core'
   import type { ChainOverrides, RegisteredEntry, StackMode } from '../types'
-  import { ButtonIndicator, modalTriggerVariants } from '$lib/ui/modals'
+  import { ButtonIndicator, modalTriggerVariants } from '#lib/ui/modals/index.js'
   import { useModals } from './context'
 
   /** Публичные props триггера зарегистрированной модалки. */
@@ -178,7 +178,7 @@
 
 <!-- Разметочная половина — порт ui/modals/trigger.tsx оригинала: индикатор
      состояния и span вокруг содержимого. Оформление даёт CVA из
-     $lib/ui/modals (атомарные утилиты), а снаружи триггер виден по
+     #lib/ui/modals (атомарные утилиты), а снаружи триггер виден по
      `data-modal-trigger`: маркер-класса у него больше нет. -->
 {#if !known || (pending && routeTarget === null)}
   <button

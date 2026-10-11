@@ -7,7 +7,7 @@
 // Условие доступности — данные, а не функция (§6.4 следствие 3): `enabledBy`
 // проверяем на сервере, из него же инвертируются правила связок. Функция
 // `enabledWhen(values)` так данные оценить не позволяла.
-import type { ExtraValue, FeatureGate } from '$lib/paginate'
+import type { ExtraValue, FeatureGate } from '#lib/paginate/index.js'
 
 /** Одна связка «поле доступно при значении другого». */
 export interface PanelEnabledBy {

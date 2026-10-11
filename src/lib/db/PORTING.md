@@ -54,7 +54,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 | `server/modules/probe/rest.ts` | `test/fixtures/probe-rest.ts` + `src/lib/db/sveltekit/query.ts` | разбор `?limit/page/filter/order/fields/include/includeDeleted` стал `parseListInput`; conflict-правило `page`+`after` сохранено |
 | `server/modules/probe/api.ts` | — (не переносится) | реестр Hono-роутов: в SvelteKit его роль выполняют `+page.server.ts`/`+server.ts` |
 | `server/runtime/request-body.ts` | `src/lib/db/sveltekit/query.ts` | `readBoundedBody`/`readJson` (лимит 64 KiB по умолчанию, `BodyTooLarge` → 413) |
-| `SolidHono/tooling/vite/db.mjs` | — (не переносится) | «серверная граница» в SvelteKit — `$lib/server/*` + `svelte-check`; vite-плагин не нужен (проверено: импорт `$lib/server` из клиента ломает сборку) |
+| `SolidHono/tooling/vite/db.mjs` | — (не переносится) | «серверная граница» в SvelteKit — `#lib/server/*` + `svelte-check`; vite-плагин не нужен (проверено: импорт `#lib/server` из клиента ломает сборку) |
 | `src/lib/db/migrations/001-db-probe.sql`, `002-db-probe-page-index.sql` | `src/lib/db/migrations/*` | 1:1, как образец схемы под этот слой (не автоприменение) |
 | `docs/db-lib.md`, `docs/en/db-lib.md` | [`README.md`](./README.md) | переписано под SvelteKit-идиомы, добавлены §5–§7 (драйверы, миграции, API-матрица) |
 | `test/checks/db-lib.mjs` | `src/lib/db/test/ported/db-lib.script.ts` | 16/16 групп, без правок ожиданий |
@@ -81,7 +81,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 2. Строки проходят `normalizeValue` (`Date` → ISO, `bigint` → `string`) → уже
    devalue-совместимы, то есть пригодны как есть в `load`-данных SvelteKit.
 3. Валидация уже идёт через `~standard`, т. е. через тот же контракт, на котором
-   SvelteKit 2 строит `error()`/`fail()` и через который работает `$lib/form/schema.ts`
+   SvelteKit 2 строит `error()`/`fail()` и через который работает `#lib/form/schema.ts`
    в `modals-kit`. Поэтому вместо «перевести на zod» получилось «снять обязательный zod».
 4. Именование ошибок уже таблицей `kind → status`; в `modals-kit` его достаточно
    обернуть в `throw error(status, body)` (Kit требует `{status, body}`, а не `Response`).
@@ -184,7 +184,7 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
    `rewriteRelativeImportExtensions`), и сборка же прогоняет `tooling/layer-guard.mjs`.
 2. `npm run check` = `svelte-kit sync && svelte-check` → **0 ошибок** (46 warning'ов —
    все предсуществующие в `modals-kit`, в `src/lib/paginate`; тесты слоя исключены из
-   `check` так же, как тесты `$lib/form`).
+   `check` так же, как тесты `#lib/form/index.js`).
 3. Реальный браузер (`playwright` 1.64 + chromium) на `/db-demo`: SSR 7 строк без JS →
    невалидный `title` = `role=alert` + `aria-invalid` + строка не вставлена → валидный =
    `role=status` + 8 строк + запись в выдаче → delete через `use:enhance` = 6 → 5 →
@@ -299,8 +299,8 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 
 Порядок обновления копии (тот же, что и в 0-м пункте выше): `git archive <ref> | tar -x -C
 /home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
-'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `$lib/ui/demo/{form,modals}/**`,
-`ui/paginator/fields/*` → `$lib/ui/settings/*`), затем вернуть своё: deps в `package.json`,
+'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/ui/demo/{form,modals}/**`,
+`ui/paginator/fields/*` → `#lib/ui/settings/*`), затем вернуть своё: deps в `package.json`,
 `src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
 `src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/ui/demo/db-form/**`,
 `src/lib/ui/demo/db-list/**`. Дальше
@@ -312,8 +312,8 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
   \t\n>])/`, allow-list: `src/lib/form/`, `src/lib/ui/primitives/`, `src/lib/ui/settings/`,
   `src/lib/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
   `vite build`; смотрит по исходнику файла целиком, поэтому закомментированный тег в шапке тоже
-  красит сборку. `src/routes/db-demo/+page.svelte` переписан на `Form` из `$lib/form/svelte` и
-  `Input`/`Button` из `$lib/ui/primitives`: `Form` требует `formProps()`, и демо отдаёт
+  красит сборку. `src/routes/db-demo/+page.svelte` переписан на `Form` из `#lib/form/svelte/index.js` и
+  `Input`/`Button` из `#lib/ui/primitives/index.js`: `Form` требует `formProps()`, и демо отдаёт
   `{ method: 'post', action, onsubmit: () => {} }` — submit остаётся нативным SvelteKit-путём
   (демо проверяет слой БД, а не формы кита), скрытые id-пары идут через `hiddenFields`.
 - `package.json` приложения изменился только скриптами (`test:browser:errors`) — зависимости не
@@ -349,7 +349,7 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
   (`src/lib/components/header/nav.ts`) и на главную (массив `demos` в `src/routes/+page.svelte`).
   Превью не даёт менять URL, поэтому демо без ссылки из превью непроверяемо; заодно прод-сборка
   (`npm run build` + `npm run preview`) проверяет layer-guard, а `dev` - нет.
-- `db`/ресурсы — только в `$lib/server/**`; импорт оттуда в `.svelte` должен падать на
+- `db`/ресурсы — только в `#lib/server/**`; импорт оттуда в `.svelte` должен падать на
   сборке (в `modals-kit` за этим и так следит `tooling/layer-guard.mjs`).
 - `getRuntime()` — ленивый синглтон; `dbHandle({ db })` принимает и фабрику, чтобы
   PGlite не поднимался на каждый запрос.

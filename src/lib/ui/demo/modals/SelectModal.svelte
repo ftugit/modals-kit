@@ -1,9 +1,9 @@
 <script lang="ts">
-import { Button } from '$lib/ui/primitives'
-  import { Select } from '$lib/ui'
+import { Button } from '#lib/ui/primitives/index.js'
+  import { Select } from '#lib/ui/index.js'
   import FloatingMenu from './FloatingMenu.svelte'
-  import { useModals } from '$lib/modals/svelte'
-  import { modalTriggerVariants } from '$lib/ui/modals'
+  import { useModals } from '#lib/modals/svelte/index.js'
+  import { modalTriggerVariants } from '#lib/ui/modals/index.js'
   const genres = [
     { value: 'action', label: 'Боевик' },
     { value: 'drama', label: 'Драма', hint: 'включая мелодраму' },

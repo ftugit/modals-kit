@@ -5,7 +5,7 @@
     MODAL_ERROR_CLASS,
     MODAL_ERROR_HINT_CLASS,
     MODAL_ERROR_TITLE_CLASS,
-  } from '$lib/modals/svelte/classes'
+  } from '#lib/modals/svelte/classes.js'
   import WarningIcon from './WarningIcon.svelte'
 
   let { message, hint }: { message: string; hint?: string } = $props()

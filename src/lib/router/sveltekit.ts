@@ -18,7 +18,7 @@ import { browser } from '$app/env'
 import { afterNavigate, goto, preloadData, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
-import type { MinimalRouter } from '$lib/paginate'
+import type { MinimalRouter } from '#lib/paginate/index.js'
 
 /**
  * 🔴 `page.url` — адрес СТРАНИЦЫ, а не адресная строка. «Мелкая» запись

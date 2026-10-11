@@ -5,7 +5,7 @@ import {
   MODAL_CLOSE_ANIMATION_CLASSES,
   MODAL_OPEN_ANIMATION_CLASSES,
   MODAL_POPUP_CLASS,
-} from '$lib/modals/svelte/classes'
+} from '#lib/modals/svelte/classes.js'
 
 /**
  * CVA-наборы модальных примитивов.
@@ -15,7 +15,7 @@ import {
  * по data-атрибутам (`data-modal-trigger`, `data-modal-btn`,
  * `data-modal-popup`…), их ставят компоненты.
  *
- * Общие части оболочки/фона берутся из `$lib/modals/svelte/classes` —
+ * Общие части оболочки/фона берутся из `#lib/modals/svelte/classes.js` —
  * там их видит и сам хост (`ModalHost`), поэтому источник правды один.
  *
  * `@unocss-include` нужен по той же причине, что и в `classes.ts`: UnoCSS

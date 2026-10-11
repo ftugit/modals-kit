@@ -1,5 +1,5 @@
 /**
- * Список демо-записей через пагинатор приложения (`$lib/paginate`), а не через
+ * Список демо-записей через пагинатор приложения (`#lib/paginate/index.js`), а не через
  * собственную разметку «slice + ссылки».
  *
  * ЭТОТ МОДУЛЬ — ОБЩИЙ для двух демо-страниц: `/db-demo` (витрина работы с БД:
@@ -19,7 +19,7 @@
  * Две дороги к одним данным, один конвейер:
  *   • браузер — `fetch('/api/db-posts?…')`;
  *   • SSR-снапшот — серверный транспорт (`setDbPostsServerTransport`), который
- *     ставит `$lib/server/db-list` и который вызывает слой напрямую. Без него
+ *     ставит `#lib/server/db-list.js` и который вызывает слой напрямую. Без него
  *     серверный рендер дёргал бы собственный HTTP-эндпоинт через `localhost`.
  *
  * Страница или поток — режим ИСТОЧНИКА (`?page.cur=1`), а не страницы: источник
@@ -41,7 +41,7 @@ import {
   type SourceDecorator,
   type SourceInput,
   type SourceLook,
-} from '$lib/paginate'
+} from '#lib/paginate/index.js'
 
 export const DB_LIST_NAME = 'db-demo'
 export const DB_LIST_PAGE_SIZE = 5
@@ -97,7 +97,7 @@ export type ServerTransport = (query: DbPostsQuery) => Promise<PageResponse<DbPo
 
 let serverTransport: ServerTransport | null = null
 
-/** Ставится один раз на уровне модуля серверным слоем (см. `$lib/server/db-list`). */
+/** Ставится один раз на уровне модуля серверным слоем (см. `#lib/server/db-list.js`). */
 export function setDbPostsServerTransport(fn: ServerTransport): void {
   serverTransport = fn
 }

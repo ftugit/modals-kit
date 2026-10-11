@@ -1,6 +1,6 @@
 <script lang="ts">
   // Общий блок: ошибки без пути. Код приложения.
-  import type { FormError } from '$lib/form'
+  import type { FormError } from '#lib/form/index.js'
 
   let { errors, title }: { errors: readonly FormError[]; title?: string } = $props()
 </script>

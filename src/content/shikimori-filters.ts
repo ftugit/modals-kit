@@ -6,11 +6,11 @@
  *     имён (`filters.<ключ>[.<режим>|.<граница>]`), по которому пагинатор
  *     объявляет ключи extra, а адресный слой читает адрес;
  *   • не здесь — ЗНАЧЕНИЯ (жанры, студии, enum'ы) и СВЯЗКИ: их собирает
- *     серверная зона источника (`$lib/server/shikimori-schema`) из живых
+ *     серверная зона источника (`#lib/server/shikimori-schema.js`) из живых
  *     справочников, ставит метку `builtAt` и отдаёт клиенту готовую схему
  *     роутом `/api/shikimori/filters`. Клиент схему НЕ вычисляет.
  *
- * Тот же список ключей использует и транспорт (`$lib/server/shikimori-filters`),
+ * Тот же список ключей использует и транспорт (`#lib/server/shikimori-filters.js`),
  * сопоставляя канонические значения с параметрами API: одно объявление — одна
  * правда о том, какие фильтры у источника есть.
  */
@@ -18,8 +18,8 @@ import {
   catalogFilterFieldNames,
   type CatalogFilterField,
   type CatalogFilterSchema,
-} from '$lib/filters'
-import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '$lib/paginate'
+} from '#lib/filters/index.js'
+import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
 
 /**
  * Поля схемы без значений: `options`/`min`/`max` наполняет серверная зона.

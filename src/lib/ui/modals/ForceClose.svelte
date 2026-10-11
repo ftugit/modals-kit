@@ -2,8 +2,8 @@
   // Порт ForceClose из src/ui/modals/force-close.tsx оригинала.
   // Принудительное закрытие (внешний вид; логика — lib/modals):
   // единственный легальный выход из заблокированной модалки.
-  import { useModals } from '$lib/modals/svelte'
-  import { cn } from '$lib/ui/cn'
+  import { useModals } from '#lib/modals/svelte/index.js'
+  import { cn } from '#lib/ui/cn.js'
   import { modalButtonVariants } from './variants'
   import type { HTMLButtonAttributes } from 'svelte/elements'
 

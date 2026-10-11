@@ -38,4 +38,4 @@ export type { ChainEngine } from './engine'
 
 // Ядро SvelteKit импортируется отдельно, чтобы этот модуль
 // оставался собираемым без SvelteKit:
-//   import { svelteKitCore } from '$lib/modals/cores/sveltekit'
+//   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'

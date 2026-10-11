@@ -5,13 +5,13 @@
    * `modals.configure` — в СВОЙ per-route слайс, настройки демки не течёт
    * на модалки остальных страниц (решение оператора 2026-10-10).
    */
-  import type { MobileAnchor } from '$lib/modals'
-  import { useModals } from '$lib/modals/svelte'
-  import { bind, createConfig } from '$lib/form/svelte'
-  import { defineForm, field } from '$lib/form'
+  import type { MobileAnchor } from '#lib/modals/index.js'
+  import { useModals } from '#lib/modals/svelte/index.js'
+  import { bind, createConfig } from '#lib/form/svelte/index.js'
+  import { defineForm, field } from '#lib/form/index.js'
   import { untrack } from 'svelte'
-  import { Input } from '$lib/ui/primitives'
-  import { Field as PanelField, Select as PanelSelect } from '$lib/ui/settings'
+  import { Input } from '#lib/ui/primitives/index.js'
+  import { Field as PanelField, Select as PanelSelect } from '#lib/ui/settings/index.js'
 
   const m = useModals()
 

@@ -63,7 +63,7 @@ test('известное ограничение: вычисляемый спец
 test('сырой <input> на странице — ошибка, подсказывающая замену', () => {
   const msg = checkTemplate(RULES, '<template><input name="q" /></template>', '/app/src/routes/search/+page.svelte');
   assert.ok(msg, 'должно вернуть ошибку');
-  assert.match(msg, /Form.*from '\$lib\/form\/svelte'/s, 'сообщение указывает на <Form>');
+  assert.match(msg, /Form.*from '#lib\/form\/svelte\/index\.js'/s, 'сообщение указывает на <Form>');
   assert.match(msg, /primitives/, 'и на примитивы полей');
 });
 
@@ -95,21 +95,21 @@ test('<Form /> (компонент, не тег) не задевает прав�
 /* ── lib/form не знает про UI-примитивы ─────────────────────────────── */
 
 test('импорт примитивов внутрь lib/form запрещён', () => {
-  assert.ok(check('$lib/ui/primitives', '/app/src/lib/form/svelte/provider.svelte'));
-  assert.ok(check('$lib/ui/settings', '/app/src/lib/form/svelte/x.svelte'));
+  assert.ok(check('#lib/ui/primitives/index.js', '/app/src/lib/form/svelte/provider.svelte'));
+  assert.ok(check('#lib/ui/settings/index.js', '/app/src/lib/form/svelte/x.svelte'));
 });
 
 test('импорт примитивов разрешён всем, кто вне lib/form', () => {
-  assert.equal(check('$lib/ui/primitives', '/app/src/routes/form/+page.svelte'), null);
-  assert.equal(check('$lib/ui/primitives', '/app/src/lib/ui/demo/form/ui/Field.svelte'), null);
-  // и другие $lib/ui-модули form-библиотеку не касаются
-  assert.equal(check('$lib/ui/cn', '/app/src/lib/form/svelte/config.ts'), null);
+  assert.equal(check('#lib/ui/primitives/index.js', '/app/src/routes/form/+page.svelte'), null);
+  assert.equal(check('#lib/ui/primitives/index.js', '/app/src/lib/ui/demo/form/ui/Field.svelte'), null);
+  // и другие #lib/ui-модули form-библиотеку не касаются
+  assert.equal(check('#lib/ui/cn.js', '/app/src/lib/form/svelte/config.ts'), null);
 });
 
 test('template: <NativeSelect> вне кита блокируется с подсказкой enhanced Select', () => {
   const msg = checkTemplate(RULES, '<div><NativeSelect name="s" /></div>', '/app/src/routes/demo/+page.svelte');
   assert.match(msg, /только внутри кита/);
-  assert.match(msg, /\$lib\/ui\/primitives/);
+  assert.match(msg, /#lib\/ui\/primitives/);
 });
 
 test('template: <NativeSelect /> самозакрытый тоже блокируется; enhanced <Select /> — нет', () => {
@@ -160,15 +160,15 @@ test('source: createElement("form") запрещён', () => {
   assert.equal(checkSource(RULES, 'document.createElement("div")', '/app/src/lib/x.ts'), null);
 });
 
-test('source: form-экшены обязаны идти через $lib/form', () => {
+test('source: form-экшены обязаны идти через #lib/form', () => {
   assert.ok(checkSource(RULES, 'export const actions = { default: async () => ({}) }', SERVER));
   assert.equal(
-    checkSource(RULES, "import { handleSignup } from '$lib/ui/demo/form/handle'\nexport const actions = {}", SERVER),
+    checkSource(RULES, "import { handleSignup } from '#lib/ui/demo/form/handle.js'\nexport const actions = {}", SERVER),
     null,
     'обёртка над слоями — легальный путь',
   );
   assert.equal(
-    checkSource(RULES, "import { createFormHandler } from '$lib/form/server'\nexport const actions = {}", SERVER),
+    checkSource(RULES, "import { createFormHandler } from '#lib/form/server.js'\nexport const actions = {}", SERVER),
     null,
   );
 });
@@ -179,7 +179,7 @@ test('source: разбор тела маршрутом запрещён, фай�
   assert.equal(
     checkSource(
       RULES,
-      "import { createFormHandler } from '$lib/form/server'\nconst p = await request.clone().formData()",
+      "import { createFormHandler } from '#lib/form/server.js'\nconst p = await request.clone().formData()",
       '/app/src/lib/ui/demo/form/handle.ts',
     ),
     null,

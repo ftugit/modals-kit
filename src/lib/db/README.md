@@ -1,15 +1,15 @@
-# `$lib/db` — серверный слой данных
+# `#lib/db/index.js` — серверный слой данных
 
-Обычный `lib` этого приложения, такой же, как `$lib/form` или `$lib/modals`: TS-исходники
-в `src/lib/db`, импорт через `$lib/db`, тесты рядом (`src/lib/db/test/*.test.ts`), проверки
+Обычный `lib` этого приложения, такой же, как `#lib/form/index.js` или `#lib/modals/index.js`: TS-исходники
+в `src/lib/db`, импорт через `#lib/db/index.js`, тесты рядом (`src/lib/db/test/*.test.ts`), проверки
 границ — в `tooling/`. Отдельного пакета, `dist`-сборки и tarball-установки больше нет.
 
 Слой **перенесён** из `server/lib/db` репозитория SolidHono (эталон: `f8079b1`) и
 адаптирован под SvelteKit (эталон приложения: `modals-kit@f82734f`, сверено с `5d08da7`
 на `b1`). Карта переноса, снятые проверки и правила ре-синхронизации — [`PORTING.md`](./PORTING.md).
 
-Ядро (`$lib/db`) про HTTP не знает вообще: это компилятор SQL + политики +
-валидация + транзакции. SvelteKit-слой (`$lib/db/sveltekit`) добавляет ровно то,
+Ядро (`#lib/db/index.js`) про HTTP не знает вообще: это компилятор SQL + политики +
+валидация + транзакции. SvelteKit-слой (`#lib/db/sveltekit/index.js`) добавляет ровно то,
 чего ядру не хватало: `event.locals`, разбор query из `load`, ошибки в формате
 `error()`/`fail()`, курсорный секрет из env, прогон миграций.
 
@@ -37,7 +37,7 @@
 
 ## Установка
 
-Никакой: слой лежит в этом же дереве, `import { createDb } from '$lib/db'` работает сразу.
+Никакой: слой лежит в этом же дереве, `import { createDb } from '#lib/db/index.js'` работает сразу.
 Зависимости, которые слой реально тянет, уже в `package.json` приложения:
 
 | Зависимость | Зачем | Где |
@@ -48,24 +48,24 @@
 | `zod` (devDep) | опциональный совместимый вход | `src/lib/db/zod.ts` |
 
 `pg` и `PGlite` намеренно **не** реэкспортируются из барреля: клиентская/edge сборка не
-должна их тянуть. Импорт движков — только из под-путей `$lib/db/adapters/*` и
-`$lib/db/sveltekit/node`.
+должна их тянуть. Импорт движков — только из под-путей `#lib/db/adapters/*` и
+`#lib/db/sveltekit/node.js`.
 
 `@sveltejs/kit` слой в рантайме не импортирует (нужен только типам), поэтому
-`$lib/db/sveltekit` работает и в Cloudflare Workers.
+`#lib/db/sveltekit/index.js` работает и в Cloudflare Workers.
 
 ## 1. Composition root
 
-Единственный владелец соединения и ресурсов — серверный модуль (`$lib/server`), как в
+Единственный владелец соединения и ресурсов — серверный модуль (`#lib/server`), как в
 официальном SvelteKit FAQ «How do I set up a database?»: синглтон процесса, а не на
 запрос. Лень важна: `vite dev` и `vite build` спорят из-за file-lock каталога PGlite.
 
 ```ts
 // src/lib/server/db.ts
-import { createDb, conservativeLimits, defineResource, f, field, policy, s } from '$lib/db'
-import { pgliteAdapter } from '$lib/db/adapters/pglite'
-import { openNodeDatabase, openPgPool, envReader } from '$lib/db/sveltekit/node'
-import { applyMigrationText, cursorCodecFromEnv } from '$lib/db/sveltekit'
+import { createDb, conservativeLimits, defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
+import { openNodeDatabase, openPgPool, envReader } from '#lib/db/sveltekit/node.js'
+import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
 
 export const posts = defineResource({
   key: 'demo.post.v1',                    // участвует в scope курсора: переименование = сброс курсоров
@@ -127,9 +127,9 @@ export const getRuntime = () =>
 
 ```ts
 // src/hooks.server.ts
-import { dbHandle } from '$lib/db/sveltekit'
+import { dbHandle } from '#lib/db/sveltekit/index.js'
 import type { Handle } from '@sveltejs/kit'
-import { getRuntime } from '$lib/server/db'
+import { getRuntime } from '#lib/server/db.js'
 
 export const handle: Handle = async ({ event, resolve }) => {
   // /db-demo и догрузка страниц его пагинатора (/api/db-posts) — модалки и статика
@@ -160,7 +160,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 ```ts
 // src/app.d.ts
-import type { KitErrorBody, LocalsDb } from '$lib/db/sveltekit'
+import type { KitErrorBody, LocalsDb } from '#lib/db/sveltekit/index.js'
 
 declare global {
   namespace App {
@@ -294,7 +294,7 @@ const created = await db.resource(posts).insertMany(ctx, rows, { chunkSize: 200 
 Сериализационный конфликт — единственная ошибка, при которой повтор всего блока безопасен:
 
 ```ts
-import { withRetry } from '$lib/db'
+import { withRetry } from '#lib/db/index.js'
 await withRetry(db, (tx) => tx.transaction(async (t) => move(t, from, to)), {
   attempts: 5, isolation: 'serializable', onRetry: (e, n) => metrics.inc('db.retry', n),
 })
@@ -324,10 +324,10 @@ await withRetry(db, (tx) => tx.transaction(async (t) => move(t, from, to)), {
 
 | Адаптер | Ввод | Транзакции | Когда |
 |---|---|---|---|
-| `$lib/db/adapters/pg` | `pgAdapter(pool, maxInFlight = 32, transactionTimeoutMs = 30000)` | да (savepoint'ы) | Node-сервер, long-lived |
-| `$lib/db/adapters/pglite` | `pgliteAdapter(db)` | да | dev/тесты; один пользователь, WASM, не для Workers |
-| `$lib/db/adapters/hyperdrive` | `hyperdriveAdapter({ connectionString, timeoutMs = 15000, maxInFlight = 5 })` | да, на одном `Client` | Cloudflare Workers + Hyperdrive |
-| `$lib/db/adapters/proxy` | `proxyHttpAdapter(config)` / `proxyWsAdapter(config)` / `proxyAdapter(mode, config)` | HTTP — **нет**, WS — да (один сокет = один backend) | Postgres за HTTP/WS-прокси (`@juit/pgproxy`-протокол): хостинг без TCP, free-контейнеры, домен за Cloudflare |
+| `#lib/db/adapters/pg.js` | `pgAdapter(pool, maxInFlight = 32, transactionTimeoutMs = 30000)` | да (savepoint'ы) | Node-сервер, long-lived |
+| `#lib/db/adapters/pglite.js` | `pgliteAdapter(db)` | да | dev/тесты; один пользователь, WASM, не для Workers |
+| `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter({ connectionString, timeoutMs = 15000, maxInFlight = 5 })` | да, на одном `Client` | Cloudflare Workers + Hyperdrive |
+| `#lib/db/adapters/proxy.js` | `proxyHttpAdapter(config)` / `proxyWsAdapter(config)` / `proxyAdapter(mode, config)` | HTTP — **нет**, WS — да (один сокет = один backend) | Postgres за HTTP/WS-прокси (`@juit/pgproxy`-протокол): хостинг без TCP, free-контейнеры, домен за Cloudflare |
 | транспорт без сессий и без прокси (`neon()` HTTP) | свой `Driver` ≈ 35 строк, `capabilities.transactions = false` | **нет** | [`docs/TRANSPORTS.md`](./docs/TRANSPORTS.md) §5 |
 
 `adapters/proxy` — это протокол `@juit/pgproxy`: `{id, query, params}` → `{id, statusCode,
@@ -340,8 +340,8 @@ json/массивы; `int8` и `numeric` остаются строками — �
 ошибке нет → `sqlstate: false`, и конфликт уникальности честно становится 500, а не 409.
 
 ```ts
-import { createDb, conservativeLimits } from '$lib/db'
-import { proxyWsAdapter } from '$lib/db/adapters/proxy'
+import { createDb, conservativeLimits } from '#lib/db/index.js'
+import { proxyWsAdapter } from '#lib/db/adapters/proxy.js'
 
 const db = createDb({
   limits: conservativeLimits,
@@ -415,7 +415,7 @@ Row-Level Security остаётся ответственностью схемы 
 ## 6. Миграции
 
 ```ts
-import { applyMigrationText, splitSqlStatements } from '$lib/db/sveltekit'
+import { applyMigrationText, splitSqlStatements } from '#lib/db/sveltekit/index.js'
 const statements = splitSqlStatements(await readFile(file, 'utf8'))
 await applyMigrationText(db, sql)            // один BEGIN/COMMIT на файл; -> { applied: n }
 ```
@@ -435,16 +435,16 @@ keyset-индекс, который обязана порождать `order`).
 
 | Экспорт | Что |
 |---|---|
-| `$lib/db` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `defineResource`, `field`, `f`, `s`, `make`, `policy`, `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
-| `$lib/db/schema` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` |
-| `$lib/db/adapters/pg` | `pgAdapter` |
-| `$lib/db/adapters/pglite` | `pgliteAdapter` |
-| `$lib/db/adapters/hyperdrive` | `hyperdriveAdapter` |
-| `$lib/db/adapters/proxy` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
-| `$lib/db/sveltekit` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
-| `$lib/db/sveltekit/node` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
-| `$lib/db/testing` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
-| `$lib/db/zod` | `z` (zod) + `field`/`f`/`defineResource`: позволяет переносить схемы вида `field(z.string().min(1), {...})` без правок; пакет zod не тянет, импорт опциональный |
+| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `defineResource`, `field`, `f`, `s`, `make`, `policy`, `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
+| `#lib/db/schema.js` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` |
+| `#lib/db/adapters/pg.js` | `pgAdapter` |
+| `#lib/db/adapters/pglite.js` | `pgliteAdapter` |
+| `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter` |
+| `#lib/db/adapters/proxy.js` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
+| `#lib/db/sveltekit/index.js` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
+| `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
+| `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
+| `#lib/db/zod.js` | `z` (zod) + `field`/`f`/`defineResource`: позволяет переносить схемы вида `field(z.string().min(1), {...})` без правок; пакет zod не тянет, импорт опциональный |
 
 `withTestDb(fn, options)` — тестовая БД одним вызовом, чтобы приложению не пришлось тащить
 Docker. С `url` (или env `KIT_TEST_PG_URL`) это настоящий PostgreSQL в уникальной схеме
@@ -480,9 +480,9 @@ relations добавляются через `include`.
 ## 8. Как слой связан с деревом приложения
 
 Слой — часть приложения, поэтому никаких `exports`/`files`/`tsconfig.build.json` у него
-нет: Vite резолвит `$lib/db` в `src/lib/db`, a `svelte-check` видит `.ts` как есть. Единствен-
+нет: Vite резолвит `#lib/db/index.js` в `src/lib/db`, a `svelte-check` видит `.ts` как есть. Единствен-
 ное ограничение, которое теперь держит контракт потребителя, проверяется аудитом: приложение
-импортирует слой **только** через `$lib/db…` (никаких `../../lib/db`), а карта entry-поинтов
+импортирует слой **только** через `#lib/db…` (никаких `../../lib/db`), а карта entry-поинтов
 ниже — единственное, что считается публичным API.
 
 ## 9. Разработка слоя
@@ -493,7 +493,7 @@ relations добавляются через `include`.
 npm run test:db       # vitest по src/lib/db (структура, порт-специфика, перенесённые проверки, аудит доков)
 npm run test          # всё: vitest по src + node --test tooling/
 npm run check         # svelte-check по всему дереву (тесты слоя из него исключены, как и остальные *.test.ts)
-npm run build         # здесь важен и layer-guard: обход $lib/form роняет сборку
+npm run build         # здесь важен и layer-guard: обход #lib/form роняет сборку
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 

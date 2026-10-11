@@ -19,7 +19,7 @@ export type CursorSource<T> = {
   }
   /**
    * Возможности источника глазами UI — тем же контрактом, что у адаптированного
-   * источника (`$lib/paginate/source`). Необязательны: курсорные источники
+   * источника (`#lib/paginate/source.js`). Необязательны: курсорные источники
    * объявляют объём позже (приводятся к `AdaptedSource` отдельной задачей).
    */
   capabilitiesFor?(extra: Extra): SourceCapabilities

@@ -1,7 +1,7 @@
 /**
  * Shikimori API — серверный транспорт живого источника каталога.
  *
- * Работает ТОЛЬКО на сервере (SvelteKit `$lib/server/*`): браузер ходит в наш
+ * Работает ТОЛЬКО на сервере (SvelteKit `#lib/server/*`): браузер ходит в наш
  * собственный эндпоинт `/api/shikimori/animes`, а тот уже напрямую дёргает
  * `https://shikimori.io/api/animes`. Так сделано сознательно (решение
  * владельца): исходник SolidHono сначала скачивал каталог в локальную карту
@@ -29,7 +29,7 @@
  *   • один повтор на 429/5xx с паузой, дальше — честная ошибка;
  *   • у каждого запроса жёсткий таймаут.
  */
-import { buildTermDictionary, serializeTermDictionary } from '$lib/search/fuzzy'
+import { buildTermDictionary, serializeTermDictionary } from '#lib/search/fuzzy.js'
 import {
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_ORDER,

@@ -14,7 +14,7 @@ import {
 } from './shikimori-filters'
 import { buildUpstreamUrl, resetShikimoriTransport } from './shikimori'
 import { resetShikimoriFilterSchema } from './shikimori-schema'
-import { validateCatalogFilterSchema, type CatalogFilterSchema } from '$lib/filters'
+import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/filters/index.js'
 
 const schema: CatalogFilterSchema = validateCatalogFilterSchema({
   source: 'shikimori',

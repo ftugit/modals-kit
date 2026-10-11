@@ -9,16 +9,16 @@
    * `fetch` в обход него здесь запрещён сборкой (`npm run test:guard`).
    */
   import { untrack } from 'svelte'
-  import { bind, Form } from '$lib/form/svelte'
-  import type { Result } from '$lib/form'
-  import { jsonTransport } from '$lib/ui/demo/form/transport'
-  import { Button } from '$lib/ui/primitives'
-  import { forms } from '$lib/ui/demo/form/forms.config'
-  import Common from '$lib/ui/demo/form/ui/Common.svelte'
-  import Field from '$lib/ui/demo/form/ui/Field.svelte'
+  import { bind, Form } from '#lib/form/svelte/index.js'
+  import type { Result } from '#lib/form/index.js'
+  import { jsonTransport } from '#lib/ui/demo/form/transport.js'
+  import { Button } from '#lib/ui/primitives/index.js'
+  import { forms } from '#lib/ui/demo/form/forms.config.js'
+  import Common from '#lib/ui/demo/form/ui/Common.svelte'
+  import Field from '#lib/ui/demo/form/ui/Field.svelte'
   import { dbCreate } from './description'
-  import type { DbPost } from '$lib/ui/demo/db-list/definition'
-  import type { Optimistic } from '$lib/ui/demo/db-list/optimistic.svelte'
+  import type { DbPost } from '#lib/ui/demo/db-list/definition.js'
+  import type { Optimistic } from '#lib/ui/demo/db-list/optimistic.svelte.js'
 
   interface Props {
     /** Ответ экшена `?/create` — continuation нативного пути (без JavaScript). */

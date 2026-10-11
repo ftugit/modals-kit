@@ -109,9 +109,9 @@
   import { useInteractionModality } from '@ark-ui/svelte/interaction'
   import { flushSync, onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '../cn'
-  import { tryUseModals, type HostFloatingCloseReason } from '$lib/modals/svelte'
-  import { createMediaQuery } from '$lib/modals/svelte'
-  import type { MobileAnchor } from '$lib/modals'
+  import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
+  import { createMediaQuery } from '#lib/modals/svelte/index.js'
+  import type { MobileAnchor } from '#lib/modals/index.js'
   import { inputVariants } from './field'
   import SelectList from './SelectList.svelte'
   import { installSelectTrace } from './select-trace'
@@ -121,7 +121,7 @@
    * `aria-invalid`, `title`, `form`, `autocomplete`, `tabindex`…
    *
    * Раньше списка атрибутов не было вовсе — и вместе с ними молча пропадал
-   * `id`: `<label for>` не находил адресата, а форма проекта (`$lib/form`)
+   * `id`: `<label for>` не находил адресата, а форма проекта (`#lib/form/index.js`)
    * не могла положить в поле свои `f.attrs` (тот же `id` плюс связи
    * доступности). Видимый «триггер» ниже — только рисунок (`aria-hidden`,
    * `tabindex="-1"`), поэтому атрибуты принадлежат нативному `select`: он и

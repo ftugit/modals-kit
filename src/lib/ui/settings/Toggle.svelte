@@ -5,7 +5,7 @@
    * сам контрол; `hiddenPair` — единственный «форменный» сюжет виджета
    * (нативный GET без JS), см. исторический комментарий ниже.
    */
-  import { Switch } from '$lib/ui/primitives'
+  import { Switch } from '#lib/ui/primitives/index.js'
 
   interface Props {
     name?: string

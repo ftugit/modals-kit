@@ -3,7 +3,7 @@
    * Страница-витрина `lib/db`. Здесь только то, что не умеют компоненты:
    * заголовок, счётчик записей, notice серверного итога и порядок блоков.
    *
-   * Список — пагинатор (`DbPostsList` + `$lib/paginate`), формы — отдельные
+   * Список — пагинатор (`DbPostsList` + `#lib/paginate/index.js`), формы — отдельные
    * компоненты `db-form/{Create,Remove}Form.svelte` (как в демо форм): `bind`,
    * `Form`, `Common`/`Field` живут там, страница отдаёт им лишь результат
    * экшена. Строки приходят SSR-снапшотом, поэтому без JavaScript видны и
@@ -16,13 +16,13 @@
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageProps } from './$types'
-  import type { Result } from '$lib/form'
-  import { usePaginatorActions } from '$lib/paginate/svelte'
-  import { DB_LIST_NAME, ensureDbListPaginator } from '$lib/ui/demo/db-list/definition'
-  import DbPostsList from '$lib/ui/demo/db-list/DbPostsList.svelte'
-  import { createOptimistic } from '$lib/ui/demo/db-list/optimistic.svelte'
-  import CreateForm from '$lib/ui/demo/db-form/CreateForm.svelte'
-  import RemoveForm from '$lib/ui/demo/db-form/RemoveForm.svelte'
+  import type { Result } from '#lib/form/index.js'
+  import { usePaginatorActions } from '#lib/paginate/svelte/index.js'
+  import { DB_LIST_NAME, ensureDbListPaginator } from '#lib/ui/demo/db-list/definition.js'
+  import DbPostsList from '#lib/ui/demo/db-list/DbPostsList.svelte'
+  import { createOptimistic } from '#lib/ui/demo/db-list/optimistic.svelte.js'
+  import CreateForm from '#lib/ui/demo/db-form/CreateForm.svelte'
+  import RemoveForm from '#lib/ui/demo/db-form/RemoveForm.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
   // тип выводит SvelteKit из `actions` (`ActionData`).

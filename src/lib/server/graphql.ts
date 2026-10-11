@@ -17,7 +17,7 @@
  * Ошибки наружу — `GraphqlUpstreamError` со статусом: потребитель (роут)
  * показывает их как 502/504, а не как пустой список.
  */
-import { isServerSide } from '$lib/paginate'
+import { isServerSide } from '#lib/paginate/index.js'
 
 /** Запрос к GraphQL: адрес, документ, переменные и проекция ответа. */
 export type GraphqlSpec<T, V = Record<string, unknown>> = {

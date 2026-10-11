@@ -16,7 +16,7 @@
  * она умеет только читать `ctx.values` по путям и вернуть код сообщения, чей
  * текст собирает словарь (тот же составитель, что и у helper).
  */
-import { issue, type FieldContext, type Validator } from '$lib/form/validators'
+import { issue, type FieldContext, type Validator } from '#lib/form/validators.js'
 
 /** Условие-зонд: где искать и что искать; label — для текста отказа. */
 export interface LinkBlockedCondition {

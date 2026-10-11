@@ -1,4 +1,4 @@
-import { createRegistry, globalScope } from '$lib/modals'
+import { createRegistry, globalScope } from '#lib/modals/index.js'
 import CardModal from './CardModal.svelte'
 import FullpageModal from './FullpageModal.svelte'
 import LockedModal from './LockedModal.svelte'

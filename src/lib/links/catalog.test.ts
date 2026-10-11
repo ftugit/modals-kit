@@ -4,10 +4,10 @@
  * сегодня обязан отвечать РОВНО то же — проверка табличная, на одних данных.
  */
 import { describe, expect, it } from 'vitest'
-import { catalogFilterFieldStates } from '$lib/filters/view'
-import { catalogFilterValueMap, checkCatalogFilterRules } from '$lib/filters/rules'
-import type { CatalogFilterSchema } from '$lib/filters/catalog-filter'
-import { catalogFilterFieldNames } from '$lib/filters/catalog-filter'
+import { catalogFilterFieldStates } from '#lib/filters/view.js'
+import { catalogFilterValueMap, checkCatalogFilterRules } from '#lib/filters/rules.js'
+import type { CatalogFilterSchema } from '#lib/filters/catalog-filter.js'
+import { catalogFilterFieldNames } from '#lib/filters/catalog-filter.js'
 import { catalogLinkOutcome, catalogLinkRules, catalogLinkSet, catalogLinkValues } from './catalog'
 import { linkHelperText, linkRefusalText } from './links'
 

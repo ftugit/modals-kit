@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { variants, type VariantProps } from '$lib/ui/cn'
+  import { variants, type VariantProps } from '#lib/ui/cn.js'
 
   export const sidebarNavItemVariants = variants(
     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',

@@ -1,7 +1,7 @@
 // Контракты lib paginate — ЕДИНСТВЕННАЯ дефиниция; клиент и сервер импортируют отсюда.
 // Порт одноимённых контрактов React-версии (SPEC §3.1): без jotai/zod.
 //
-// Источник данных — АДАПТИРОВАННЫЙ объект слоя (`$lib/paginate/source`), а не
+// Источник данных — АДАПТИРОВАННЫЙ объект слоя (`#lib/paginate/source.js`), а не
 // произвольная функция: пагинатор обязан знать возможности источника (поиск,
 // фильтры, totals) и раздавать их UI. Тип адаптера это фиксирует.
 import type { AdaptedSource, SourceCapabilities } from './source'
@@ -77,7 +77,7 @@ export type PaginatorState<T> = RestorableState & {
   /** Opaque source/adapter state; paginator stores it but never interprets it. */
   sourceState?: string
   /**
-   * Возможности выбранного источника (см. `$lib/paginate/source`). Величина
+   * Возможности выбранного источника (см. `#lib/paginate/source.js`). Величина
    * ВЫЧИСЛЯЕМАЯ (не restorable): резолвится адаптером из текущего extra при
    * init и каждой смене extra. UI читает отсюда и гасит невозможные функции.
    */
@@ -132,7 +132,7 @@ export type PaginatorAdapter<T> = {
   persist(state: PaginatorState<T>): MaybePromise<void>
   capabilities: { append: boolean }
   /**
-   * Возможности источника для текущего extra (см. `$lib/paginate/source`).
+   * Возможности источника для текущего extra (см. `#lib/paginate/source.js`).
    * Пагинатор кладёт их в состояние — UI гасит функции, которых нет.
    */
   capabilitiesFor(extra: Extra): SourceCapabilities

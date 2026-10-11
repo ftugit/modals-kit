@@ -16,7 +16,7 @@
  *
  * Deny-safe на каждом шаге: значение, которого нет в опциях схемы, отсекает
  * `catalogFilterFormData`; значение, не прошедшее правила формы, отсекает
- * `validateCatalogFilterValues`; связки (`drop`) отсекает `$lib/filters/rules`.
+ * `validateCatalogFilterValues`; связки (`drop`) отсекает `#lib/filters/rules.js`.
  * Неприменённое НЕ исчезает молча: возвращается списком `dropped` с причиной —
  * её показывают интерфейс и журнал.
  */
@@ -30,7 +30,7 @@ import {
   validateCatalogFilterValues,
   type CatalogFilterSchema,
   type CatalogFilterValues,
-} from '$lib/filters'
+} from '#lib/filters/index.js'
 import { DEV } from 'esm-env'
 import type { AnimesPage } from '../../content/shikimori'
 import { fetchAnimes, type AnimesQuery, type TransportDeps } from './shikimori'

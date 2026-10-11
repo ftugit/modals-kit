@@ -1,11 +1,11 @@
 // РАСШИРЕНИЕ БИБЛИОТЕКИ КОДОМ ПРИЛОЖЕНИЯ.
 // Ни один файл в src/lib/form при этом не меняется.
 
-import { CheckRegistry, check, defaultRegistry, describe, issue, opaque, v } from '$lib/form'
-import type { Constraint, FieldType } from '$lib/form'
+import { CheckRegistry, check, defaultRegistry, describe, issue, opaque, v } from '#lib/form/index.js'
+import type { Constraint, FieldType } from '#lib/form/index.js'
 
 // Открытые ключи: подсказки среды возвращаются расширением интерфейсов.
-declare module '$lib/form' {
+declare module '#lib/form/index.js' {
   interface FieldValues { rating: number | null }
   interface InputModes { rating: true }
 }

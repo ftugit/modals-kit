@@ -3,7 +3,7 @@
 // Ключи типов значения и представлений — ОТКРЫТЫЕ. Встроенные перечислены
 // в интерфейсах ниже, приложение добавляет свои расширением:
 //
-//     declare module '$lib/form' {
+//     declare module '#lib/form/index.js' {
 //       interface FieldValues { rating: number | null }
 //     }
 

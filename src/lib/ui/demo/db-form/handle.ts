@@ -2,13 +2,13 @@
 // лимит тела, проверка имён, потом валидация и execute. Маршрут обязан
 // остаться тонким: собственный `request.formData()` в маршруте layer-guard
 // роняет сборку именно потому, что он выбрасывает всё перечисленное молча.
-import type { Database, DataContext } from '$lib/db'
-import { toFormFailure } from '$lib/db/sveltekit'
-import { createFormHandler, type Handled } from '$lib/form/server'
-import type { FormError } from '$lib/form'
-import { getRuntime, posts } from '$lib/server/db'
-import { invalidateLiveCache } from '$lib/server/live-cache'
-import { SECURITY_LAYERS } from '$lib/server/form-security'
+import type { Database, DataContext } from '#lib/db/index.js'
+import { toFormFailure } from '#lib/db/sveltekit/index.js'
+import { createFormHandler, type Handled } from '#lib/form/server.js'
+import type { FormError } from '#lib/form/index.js'
+import { getRuntime, posts } from '#lib/server/db.js'
+import { invalidateLiveCache } from '#lib/server/live-cache.js'
+import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { dbCreate, dbRemove } from './description'
 
 /**

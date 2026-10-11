@@ -1,6 +1,6 @@
 <script lang="ts">
   // Заголовок текущей страницы для шапки.
-  import { usePage } from '$lib/shell/page.svelte'
+  import { usePage } from '#lib/shell/page.svelte.js'
 
   const page = usePage()
   const displayTitle = $derived(page.seo.subTitle ?? page.seo.title ?? '')

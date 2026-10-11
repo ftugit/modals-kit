@@ -19,7 +19,7 @@
 
 | Раздел | Панель | Устройство |
 |---|---|---|
-| `/paginator` (демо + галерея), `/db-demo` | `lib/ui/paginator/PaginatorSettings.svelte` — общий компонент, 3 подключения | `SettingsField[]` → `compileDemoPanelSchema` → `bind` → виджеты `$lib/ui/settings` |
+| `/paginator` (демо + галерея), `/db-demo` | `lib/ui/paginator/PaginatorSettings.svelte` — общий компонент, 3 подключения | `SettingsField[]` → `compileDemoPanelSchema` → `bind` → виджеты `#lib/ui/settings/index.js` |
 | `/modals`, настройки хоста | `lib/ui/demo/modals/SettingsPanel.svelte`, 209 строк, собрана вручную | `defineForm` + `field.select` ×8 + `bind` + виджеты; запись — `m.modals.configure` |
 | `/modals`, источники | `lib/ui/demo/modals/SourcesPanel.svelte` | на механизм не переведена (этап 8: «оставлено на решение оператора») |
 | `/form` | разметка прямо в `routes/form/+page.svelte` | `defineForm` + `bind` + виджеты; запись — состояние страницы |
@@ -31,7 +31,7 @@
    возможностям источника (`featureGates`), читает адрес. На `/modals` и `/form`
    пагинатора нет — подключить его туда нельзя.
 2. **Общими являются только виджеты и механизм**, не компонент: `Field`/`Select`/
-   `Toggle` из `$lib/ui/settings` и `lib/form`. Панели `/modals` и `/form` вручную
+   `Toggle` из `#lib/ui/settings/index.js` и `lib/form`. Панели `/modals` и `/form` вручную
    повторяют один и тот же шаблон (снимок умолчаний → `defineForm` → `bind` без url →
    зеркало → дифф в приёмник).
 3. **Прежний отчёт засчитал требование как выполненное.**

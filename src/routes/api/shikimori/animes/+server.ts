@@ -13,8 +13,8 @@
  * когда фильтры в запросе есть: обычная страница каталога её не ждёт.
  */
 import type { RequestHandler } from './$types'
-import { parseAnimesQuery, ShikimoriUpstreamError, upstreamFailure } from '$lib/server/shikimori'
-import { fetchAnimesPage } from '$lib/server/shikimori-filters'
+import { parseAnimesQuery, ShikimoriUpstreamError, upstreamFailure } from '#lib/server/shikimori.js'
+import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseAnimesQuery(url.searchParams)

@@ -1,6 +1,6 @@
 // UI-примитивы модалок: порт src/ui/modals оригинала (внешний вид — логика
 // живёт в lib/modals). Оформление — атомарные утилиты: константы в
-// $lib/modals/svelte/classes.ts, CVA-варианты кнопок и триггеров —
+// #lib/modals/svelte/classes.ts, CVA-варианты кнопок и триггеров —
 // в variants.ts. CSS-файла у модальной системы нет вовсе.
 export { default as BackdropCloseIcon } from './BackdropCloseIcon.svelte'
 export { default as ButtonIndicator } from './ButtonIndicator.svelte'

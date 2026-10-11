@@ -8,7 +8,7 @@
 // текст или `{ message }`), оформляется Result'ом с `origin: 'external'`
 // и исходом `unknown`: запрос мог дожить до записи, и врать «не применилось»
 // здесь честнее, чем молча проглотить сбой.
-import type { Result, Transport } from '$lib/form'
+import type { Result, Transport } from '#lib/form/index.js'
 
 /** Что сказать человеку по коду, пока не подоспел текст из тела. */
 const REASON: Record<number, string> = {

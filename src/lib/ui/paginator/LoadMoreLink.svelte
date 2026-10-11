@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { LoadMoreSlot, type LoadMoreSlotRender } from '$lib/paginate/svelte'
-  import { buttonVariants } from '$lib/ui/primitives'
+  import { LoadMoreSlot, type LoadMoreSlotRender } from '#lib/paginate/svelte/index.js'
+  import { buttonVariants } from '#lib/ui/primitives/index.js'
   import Spinner from './Spinner.svelte'
 
   /**

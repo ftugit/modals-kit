@@ -162,7 +162,7 @@ CockroachDB — а PlanetScale (MySQL) и Upstash (Redis) к Postgres отнош
 
 ```ts
 // src/lib/server/db.ts — стандартный путь, никаких env-фич кроме DATABASE_URL
-import { openPgPool } from '$lib/db/sveltekit/node'
+import { openPgPool } from '#lib/db/sveltekit/node.js'
 export const db = createDb({ driver: pgAdapter(openPgPool(process.env.DATABASE_URL!, { max: 1 })) })
 ```
 
@@ -223,9 +223,9 @@ IPv4 add-on платный ($4/мес) и **на Free недоступен**. И
 
 ```ts
 // src/lib/server/db.ts — ни @supabase/supabase-js, ни REST: только pg
-import { createDb, conservativeLimits } from '$lib/db'
-import { openPgPool } from '$lib/db/sveltekit/node'
-import { pgAdapter } from '$lib/db/adapters/pg'
+import { createDb, conservativeLimits } from '#lib/db/index.js'
+import { openPgPool } from '#lib/db/sveltekit/node.js'
+import { pgAdapter } from '#lib/db/adapters/pg.js'
 
 // строка shared pooler: пользователь `postgres.<PROJECT-REF>`, порт 5432 (session) или 6543 (transaction)
 const runtime = openPgPool({
@@ -325,7 +325,7 @@ const driver: Driver = {
 ошибки, — иначе `409` превращается в враньё вместо `500`.
 
 **Решение по T3.2 (изменено 09.10.2026):** адаптеры **перенесены** — `src/lib/db/adapters/proxy.ts`,
-entry `$lib/db/adapters/proxy` (`proxyHttpAdapter` / `proxyWsAdapter` / `proxyAdapter(mode, …)`),
+entry `#lib/db/adapters/proxy.js` (`proxyHttpAdapter` / `proxyWsAdapter` / `proxyAdapter(mode, …)`),
 без `@juit/pgproxy-client*`: транспорт — `fetch` + `WebSocket` + Web Crypto, поэтому пакет
 остаётся zero-dep, а тесты гоняются на заглушке транспорта. Код и правила источника соблюдены:
 `maxInFlight` fail-fast без очереди, `timeoutMs` на операцию, отмена через `AbortController`,

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { buttonVariants } from '$lib/ui/primitives'
-  import { usePageHref, usePaginatorActions } from '$lib/paginate/svelte'
+  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { usePageHref, usePaginatorActions } from '#lib/paginate/svelte/index.js'
 
   interface Props {
     page: number

@@ -1,6 +1,6 @@
 /**
  * Демо `lib/db`: список — пагинатор (SSR-снапшот + `/api/db-posts`), формы —
- * отдельные компоненты, приём — конвейер `$lib/ui/demo/db-form/handle`.
+ * отдельные компоненты, приём — конвейер `#lib/ui/demo/db-form/handle.js`.
  *
  * Маршрут тонкий и НЕ трогает `request.formData()`: `?/create` и `?/remove` —
  * form-экшены (нативный POST), поэтому метод и origin проверяет связка
@@ -13,10 +13,10 @@
  * правды о показанной странице нет.
  */
 import { error, fail } from '@sveltejs/kit'
-import { toKitError } from '$lib/db/sveltekit'
-import { loadDbListSnapshot } from '$lib/server/db-list'
-import type { Handled } from '$lib/form/server'
-import { failureHandled, handleDbCreate, handleDbRemove } from '$lib/ui/demo/db-form/handle'
+import { toKitError } from '#lib/db/sveltekit/index.js'
+import { loadDbListSnapshot } from '#lib/server/db-list.js'
+import type { Handled } from '#lib/form/server.js'
+import { failureHandled, handleDbCreate, handleDbRemove } from '#lib/ui/demo/db-form/handle.js'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async (event) => {

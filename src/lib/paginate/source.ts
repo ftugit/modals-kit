@@ -168,7 +168,7 @@ export function assertAdaptedSource<T>(value: unknown, where: string): AdaptedSo
   if (!isAdaptedSource<T>(value)) {
     throw new Error(
       `${where}: источник не адаптирован. Пагинатор принимает только ` +
-        `defineSource(...) с декораторами $lib/paginate — объект, эмулирующий api слоя, не принимается.`,
+        `defineSource(...) с декораторами #lib/paginate — объект, эмулирующий api слоя, не принимается.`,
     )
   }
   return value
@@ -189,7 +189,7 @@ export function resolveQuery(raw: unknown, minLength: number): string {
 
 /**
  * Пространство ключей фильтров: `filters.<поле>[.<режим>|<граница>]`. Префикс
- * объявлен здесь ОДИН раз (сама форма ключей — в `$lib/filters`), чтобы слой
+ * объявлен здесь ОДИН раз (сама форма ключей — в `#lib/filters/index.js`), чтобы слой
  * источника мог честно сказать, какой фильтровый ключ он отбросил: у него нет
  * списка «чужих» ключей, а UI-ключи (раскладка, режим) трогать нельзя.
  */

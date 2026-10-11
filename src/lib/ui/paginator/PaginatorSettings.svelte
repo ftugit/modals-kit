@@ -1,4 +1,4 @@
-<script lang="ts" generics="V extends Record<string, import('$lib/paginate').ExtraValue> = Record<string, import('$lib/paginate').ExtraValue>">
+<script lang="ts" generics="V extends Record<string, import('#lib/paginate/index.js').ExtraValue> = Record<string, import('#lib/paginate/index.js').ExtraValue>">
   import { untrack } from 'svelte'
   /**
    * Оболочка панели настроек пагинатора: строит компилированное описание
@@ -13,9 +13,9 @@
    * считается компилятором (гаты), механизмом (гидратация) и `lib/links`
    * (связки `enabledBy`), а показывает его `FieldView`.
    */
-  import { currentPathname, currentSearch } from '$lib/router/sveltekit'
-  import { featureGates, getPaginator, type Extra, type ExtraValue } from '$lib/paginate'
-  import { usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
+  import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
+  import { featureGates, getPaginator, type Extra, type ExtraValue } from '#lib/paginate/index.js'
+  import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import type { Snippet } from 'svelte'
   import { compileDemoPanelSchema } from './compile'
   import type { SettingsField } from './types'

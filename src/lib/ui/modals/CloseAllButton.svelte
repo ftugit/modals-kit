@@ -2,8 +2,8 @@
   // Порт CloseAllButton из src/ui/modals/close-all.tsx оригинала.
   // «Закрыть всё» (внешний вид; логика — lib/modals): чистит всю стопку;
   // если внутри есть заблокированная — кнопка недоступна.
-  import { useChain, useChainLocked, useModals } from '$lib/modals/svelte'
-  import { cn } from '$lib/ui/cn'
+  import { useChain, useChainLocked, useModals } from '#lib/modals/svelte/index.js'
+  import { cn } from '#lib/ui/cn.js'
   import { modalButtonVariants } from './variants'
   import type { HTMLButtonAttributes } from 'svelte/elements'
 

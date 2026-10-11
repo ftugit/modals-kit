@@ -58,7 +58,7 @@ export function toKitError(
  * Для form actions: поле + текст ошибки из Standard Schema. В источнике
  * сообщения схемы терялись (`fail('validation', key)`), поэтому в UI
  * доезжал только «Invalid input» — здесь они идут в `fieldErrors`
- * в формате `$lib/form`-ошибок (`path`/`message`).
+ * в формате `#lib/form/index.js`-ошибок (`path`/`message`).
  */
 export function toFormFailure(
   error: unknown,

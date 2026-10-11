@@ -91,11 +91,11 @@ index.ts              barrel (драйверы намеренно не реэк�
 1. Ядро не знает про Hono: `lib/db` не импортирует `hono` — только `Request`-агностичные
    контракты (`DataContext`, `Statement`). HTTP-обвязка SolidHono (`server/modules/probe/rest.ts`,
    `SolidHono/server/runtime/*.ts`, `SolidHono/tooling/vite/db.mjs`) остаётся за переносом и заменяется
-   идиомами SvelteKit (`+page.server.ts`, `actions`, `event.locals`, `$lib/server`).
-2. `$lib/server/*` уже даёт серверную границу сборки → «vite-dbBuildPlugin» не нужен.
+   идиомами SvelteKit (`+page.server.ts`, `actions`, `event.locals`, `#lib/server`).
+2. `#lib/server/*` уже даёт серверную границу сборки → «vite-dbBuildPlugin» не нужен.
 3. `normalizeValue` (Date→ISO, bigint→string) = сериализуемость в `data` SvelteKit (devalue).
 4. Standard Schema (`~standard`) — тот же контракт, что у SvelteKit 2 / `+page.server.ts`
-   и у собственного `$lib/form/schema.ts` в `modals-kit`.
+   и у собственного `#lib/form/schema.ts` в `modals-kit`.
 5. Миграции не автоматические, только `src/lib/db/migrations/*.sql` + явный прогон.
 
 Расхождения, которые надо закрыть в порте (см. §7): `@server/*` алиасы, `zod` как
@@ -123,7 +123,7 @@ SvelteKit-слой), `f0eb10b` (перенесённый baseline db-lib 16/16),
 
 Ответы пользователя, определившие API (вопросы Q1–Q4 в чате):
 **Q1** = pg + pglite + hyperdrive; **Q2** = zero-dep Standard Schema, zod опционален
-(`$lib/db/zod`); **Q3** = lib + hooks + типы + демо-роут; **Q4** = отдельный
+(`#lib/db/zod.js`); **Q3** = lib + hooks + типы + демо-роут; **Q4** = отдельный
 пакет-зависимость (не патч в дерево).
 
 ## 5.1 Решения и отвергнутые варианты
@@ -180,7 +180,7 @@ cd /home/user/repos/solidhono && npm i && npm run check:db-lib
 ## 8. Что осталось незакрытым (осознанно)
 
 1. Публикации в реестр нет: `private: false`, `prepublishOnly` и tarball готовы; имя
-   `$lib/db` локальное.
+   `#lib/db/index.js` локальное.
 2. RLS (`SET LOCAL role`) — вне пакета: второй эшелон, зона ответственности схемы/миграций
    приложения (обоснование — `PORTING.md` §3).
 3. Juit/pgproxy-адаптеры не перенесены; исходники — `server/lib/db/adapters/proxy*.ts`

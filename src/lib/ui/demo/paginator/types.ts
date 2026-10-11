@@ -1,8 +1,8 @@
 // Типы данных лоадера страницы — вынесены из server-only `loader.ts`, чтобы
 // клиентские компоненты (`PaginatorDemo.svelte`) не тянули серверный модуль
 // даже типом.
-import type { CatalogFilterSchema } from '$lib/filters'
-import type { PaginatorState } from '$lib/paginate'
+import type { CatalogFilterSchema } from '#lib/filters/index.js'
+import type { PaginatorState } from '#lib/paginate/index.js'
 import type { DemoItem } from '../../../../content/items'
 import type { CatalogItem } from './item-views'
 

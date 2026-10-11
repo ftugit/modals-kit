@@ -1,4 +1,4 @@
-import type { PageRequest, PageResponse } from '$lib/paginate/types'
+import type { PageRequest, PageResponse } from '#lib/paginate/types.js'
 
 export interface Product { id: number; title: string; price: number }
 export interface Photo { id: number; caption: string }

@@ -91,7 +91,7 @@ test('тесты и сами инструменты правилам не под
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
     'src/lib/filters/url.ts',
-    `import { page } from '$app/stores'\nimport { fetchAnimes } from '$lib/server/shikimori'`,
+    `import { page } from '$app/stores'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
   )
   assert.equal(impure.length, 2)
   assert.equal(impure[0].rule, 'filters-lib-purity')
@@ -105,7 +105,7 @@ test('модуль фильтров не трогает среду', () => {
 
 test('здоровый модуль фильтров проходит', () => {
   const src = [
-    `import { defineForm } from '$lib/form'`,
+    `import { defineForm } from '#lib/form/index.js'`,
     `import { catalogFilterFieldNames } from './catalog-filter'`,
     `export const names = (field) => catalogFilterFieldNames(field)`,
   ].join('\n')

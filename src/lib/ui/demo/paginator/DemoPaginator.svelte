@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { report } from '$lib/app-errors.svelte'
-  import { currentSearch } from '$lib/router/sveltekit'
-  import type { CatalogFilterSchema } from '$lib/filters'
-  import { featureGates, getClientStore, goToPage, type PaginatorState } from '$lib/paginate'
+  import { report } from '#lib/app-errors.svelte.js'
+  import { currentSearch } from '#lib/router/sveltekit.js'
+  import type { CatalogFilterSchema } from '#lib/filters/index.js'
+  import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
   import {
     EdgeSentinel,
     PaginatorHost,
     usePaginatorState,
-  } from '$lib/paginate/svelte'
-  import { useSearchCorrection, useSearchStats } from '$lib/search/svelte'
+  } from '#lib/paginate/svelte/index.js'
+  import { useSearchCorrection, useSearchStats } from '#lib/search/svelte/index.js'
   import {
     EmptyState,
     EndRow,
@@ -25,7 +25,7 @@
     ResetButton,
     Skeleton,
     type SettingsField,
-  } from '$lib/ui/paginator'
+  } from '#lib/ui/paginator/index.js'
   import {
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
@@ -42,10 +42,10 @@
   import { catalogTestId, isAnimeItem, isDbItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
-  // Строка записи БД — общий компонент с `/db-demo` (`$lib/ui/demo/db-list`),
+  // Строка записи БД — общий компонент с `/db-demo` (`#lib/ui/demo/db-list`),
 // здесь ей передаётся только оформление карточки и опознавательный testid.
-import DbPostRow from '$lib/ui/demo/db-list/DbPostRow.svelte'
-import { useCursorMode } from '$lib/ui/demo/db-list/cursor-mode.svelte'
+import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
+import { useCursorMode } from '#lib/ui/demo/db-list/cursor-mode.svelte.js'
 import ItemRow from './ItemRow.svelte'
   import SearchQueryForm from './SearchQueryForm.svelte'
   import ShotTile from './ShotTile.svelte'
@@ -77,7 +77,7 @@ import ItemRow from './ItemRow.svelte'
         ['products', 'Товары (299, локально)'],
         ['photos', 'Фото (131, локально)'],
         ['animes', 'Shikimori (живой API)'],
-        ['db', 'БД (записи demo_post, $lib/db)'],
+        ['db', 'БД (записи demo_post, #lib/db)'],
       ],
     },
     {

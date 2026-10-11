@@ -15,11 +15,11 @@
  * пару секунд, и каждый такой тик без нового указателя обязан уйти в 304, не
  * касаясь `SELECT`. Проверка — в пробе (`If-None-Match` → 304 без тела).
  */
-import { fingerprint, remember, revalidate } from '$lib/server/live-cache'
+import { fingerprint, remember, revalidate } from '#lib/server/live-cache.js'
 import type { RequestHandler } from './$types'
-import { fetchDbPostsPage } from '$lib/server/db-list'
-import { DEMO_PRINCIPAL } from '$lib/server/db'
-import { DB_LIST_PAGE_SIZE } from '$lib/ui/demo/db-list/definition'
+import { fetchDbPostsPage } from '#lib/server/db-list.js'
+import { DEMO_PRINCIPAL } from '#lib/server/db.js'
+import { DB_LIST_PAGE_SIZE } from '#lib/ui/demo/db-list/definition.js'
 
 /**
  * Значение по умолчанию и нижняя граница — РАЗНЫЕ числа: их совмещение в одном

@@ -11,7 +11,7 @@
    * каталога. `nativeList: 'all'`: у панов короткие списки, полный нативный
    * список дешёв и нужен no-JS и тестам (`selectOption`).
    */
-  import { Select } from '$lib/ui/primitives'
+  import { Select } from '#lib/ui/primitives/index.js'
 
   interface Props {
     name?: string

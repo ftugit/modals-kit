@@ -1,7 +1,7 @@
 /**
  * Node-only: PGlite (dev/тесты) и pg-пул (Vercel/свой Node).
  *
- * Отдельный вход `$lib/db/sveltekit/node` — чтобы в Workers-сборку
+ * Отдельный вход `#lib/db/sveltekit/node.js` — чтобы в Workers-сборку
  * `node:fs` и WASM PGlite не попадали даже через barrel.
  */
 import { PGlite } from "@electric-sql/pglite";

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getPaginator, resetRegistry } from '$lib/paginate'
+import { getPaginator, resetRegistry } from '#lib/paginate/index.js'
 import {
   DEMO_RELOAD_KEYS,
   DEMO_SRCS,

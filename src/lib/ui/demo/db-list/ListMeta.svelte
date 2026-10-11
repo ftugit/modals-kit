@@ -8,7 +8,7 @@
    * не при чём: после отправки формы страница не перезагружается, и серверные
    * цифры остались бы вчерашними.
    */
-  import { usePaginatorState } from '$lib/paginate/svelte'
+  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { DB_LIST_ORDER_DEFAULT, dbListExtraOf, type DbPost } from './definition'
   interface Props {
     /** Показывать первую строку как она пришла из слоя (технический блок). */

@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Список демо — обычный потребитель `$lib/paginate`: строки рисует `PageList`,
-   * навигацию и настройки — компоненты `$lib/ui/paginator`. Своего `slice`, своих
+   * Список демо — обычный потребитель `#lib/paginate/index.js`: строки рисует `PageList`,
+   * навигацию и настройки — компоненты `#lib/ui/paginator/index.js`. Своего `slice`, своих
    * ссылок «дальше» и своего чтения адреса здесь нет: адрес принадлежит
    * пагинатору (`?page`, `?page.size`, `?page.ord`, `?page.cur`, `?page.after`).
    *
@@ -22,9 +22,9 @@
    * Место — по порядку сортировки (`pendingPlacement`), исчезает — когда настоящая
    * строка приехала в окно (`isAbsorbed`).
    */
-  import { PaginatorHost, usePaginatorActions, usePaginatorState } from '$lib/paginate/svelte'
+  import { PaginatorHost, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { onDestroy } from 'svelte'
-  import type { PaginatorState } from '$lib/paginate'
+  import type { PaginatorState } from '#lib/paginate/index.js'
   import {
     EmptyState,
     EndRow,
@@ -35,7 +35,7 @@
     PageNav,
     PaginatorSettings,
     type SettingsField,
-  } from '$lib/ui/paginator'
+  } from '#lib/ui/paginator/index.js'
   // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.

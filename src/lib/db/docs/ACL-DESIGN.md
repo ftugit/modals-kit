@@ -305,7 +305,7 @@ auth: {
 | `projection` по явному белому списку + `mandatoryRead` | уже есть | 0 |
 | `restore` = `update` c `deletedAt IS NOT NULL` | `src/lib/db/resource.ts` | +1 метод (или `mutate(ctx,'restore')`) |
 | `schema.ts`/`validation.ts`: поле `writeMask` не нужно — маски живут в ACL | — | 0 |
-| Новый вход `$lib/db/rest`: `defineCollection`, `validateSchema`, `authorize`, `handleRest(req, {registry, ctx})` (framework-agnostic, возвращает `Response`) | `src/rest/**` | новый код, ядро не трогает |
+| Новый вход `#lib/db/rest`: `defineCollection`, `validateSchema`, `authorize`, `handleRest(req, {registry, ctx})` (framework-agnostic, возвращает `Response`) | `src/rest/**` | новый код, ядро не трогает |
 | SvelteKit-тонкость: `export const handle` → `/api/rest/**` через `dbHandle({paths})` + `+server.ts`, который вызывает `handleRest` | `src/lib/db/sveltekit/**` | ~20 строк |
 
 Ядро **не** импортирует `@sveltejs/kit` и `node:crypto` в universal-входе. Это важно и

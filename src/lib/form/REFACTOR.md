@@ -22,7 +22,7 @@ export interface FieldValues { }              // пусто, расширяет�
 export type ValueKind = keyof FieldValues & string
 
 // приложение
-declare module '$lib/form' {
+declare module '#lib/form/index.js' {
   interface FieldValues { rating: number | null }
 }
 registerFieldType({ kind: 'rating', /* … */ })

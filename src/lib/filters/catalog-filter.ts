@@ -13,7 +13,7 @@
  * Порт канона (`ftugit/SolidHono@shiki-final`, `src/lib/search/catalog-filter.ts`)
  * без упрощений: имена полей, правила валидатора и формат адреса сохранены
  * посимвольно; заменено только то, что относится к ЧУЖОЙ форме (канон собирал
- * определение на `@/lib/form/core`, здесь — на `$lib/form`), и добавлены связки
+ * определение на `@/lib/form/core`, здесь — на `#lib/form/index.js`), и добавлены связки
  * (`rules`, см. `./rules.ts`) — они часть схемы, как и поля.
  */
 import {
@@ -29,8 +29,8 @@ import {
   type FormPolicy,
   type FormState,
   type ValidatorRef,
-} from '$lib/form'
-import { linkBlockedValidator, type LinkBlockedProbe } from '$lib/links/validators'
+} from '#lib/form/index.js'
+import { linkBlockedValidator, type LinkBlockedProbe } from '#lib/links/validators.js'
 import { DEV } from 'esm-env'
 
 /** `and` — все значения, `or` — любое, `not` — исключение (красные чипы). */
@@ -867,7 +867,7 @@ export type CatalogFilterValues = Record<string, CatalogFilterGroup | CatalogFil
  * формой: невалидное значение не «доедет» до источника ни при каком входе.
  *
  * Канон был асинхронным (его ядро формы), здесь проверка синхронна — как и у
- * `$lib/form` b1; состав проверок тот же: allowlist опций, границы числа.
+ * `#lib/form/index.js` b1; состав проверок тот же: allowlist опций, границы числа.
  */
 export function validateCatalogFilterValues(
   schemaInput: unknown,
