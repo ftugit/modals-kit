@@ -11,7 +11,7 @@
  *
  * Запуск: `npm run build && npm run preview -- --port 5173`, затем
  *   node probes/db-demo-browser.check.mjs
- * Порт обязан быть в списке `PREVIEW_PORTS` (см. `svelte.config.js`: по умолчанию
+ * Порт обязан быть в списке `PREVIEW_PORTS` (см. `src/lib/server/trusted-origins.ts`: по умолчанию
  * 5173 и 5174) — иначе Kit отсекает POST формы по origin, и проверка создания
  * записи отвечает 403. Чужой порт задают так: PREVIEW_PORTS=5188 npm run preview.
  * Нужен Chromium из Playwright (`npx playwright install chromium`); в песочнице

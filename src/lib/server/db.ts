@@ -14,17 +14,15 @@ import { pgliteAdapter } from '$lib/db/adapters/pglite'
 import { hyperdriveAdapter } from '$lib/db/adapters/hyperdrive'
 import { openNodeDatabase, openPgPool } from '$lib/db/sveltekit/node'
 import { applyMigrationText, cursorCodecFromEnv } from '$lib/db/sveltekit'
-import { envReader } from '$lib/db/sveltekit/node'
 import type { Database, Driver } from '$lib/db'
-import { env as privateEnv } from '$env/dynamic/private'
+import {
+  DATABASE_DIR, DATABASE_URL, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
+  DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
+} from '$app/env/private'
 
-/**
- * Настройки — из `$env/dynamic/private` (C7, docs/audit/crutches.md): одна форма
- * для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
- * и `.env`. Читается при вызове, а не при импорте: SvelteKit заполняет окружение
- * в `Server.init`, и живая привязка `privateEnv` к этому моменту свежая.
- */
-const env = (key: string): string | undefined => envReader(privateEnv)(key)
+// Настройки — из `$app/env/private` (перечень и проверки — `src/env.ts`): одна форма
+// для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
+// и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
 export const posts = defineResource({
   key: 'demo.post.v1',
@@ -114,22 +112,22 @@ async function open(): Promise<Runtime> {
     let driver: Driver
     let close: (() => Promise<void>) | undefined
     try {
-      if (env('HYPERDRIVE_CONNECTION_STRING')) {
+      if (HYPERDRIVE_CONNECTION_STRING) {
         // Cloudflare Workers/Vercel Edge: клиент на запрос, пул держит Hyperdrive.
-        driver = hyperdriveAdapter({ connectionString: env('HYPERDRIVE_CONNECTION_STRING')!, maxInFlight: 5 })
-      } else if (env('DATABASE_URL')) {
+        driver = hyperdriveAdapter({ connectionString: HYPERDRIVE_CONNECTION_STRING, maxInFlight: 5 })
+      } else if (DATABASE_URL) {
         const pool = openPgPool({
-          connectionString: env('DATABASE_URL')!,
-          max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)),
+          connectionString: DATABASE_URL,
+          max: DB_POOL_MAX ?? (VERCEL ? 1 : 4),
           // Холодный старт у хостера = долгие первые рукопожатия; дефолтных 10 с на
           // это мало, а лишний пул-таймаут ещё и отравляет синглтон (см. выше).
-          connectionTimeoutMillis: Number(env('DB_CONNECT_TIMEOUT_MS') ?? 30_000),
+          connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS ?? 30_000,
         })
         driver = pool.driver
         close = pool.close
       } else {
-        const node = await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres', {
-          memory: !env('DATABASE_DIR'),
+        const node = await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres', {
+          memory: !DATABASE_DIR,
         })
         driver = pgliteAdapter(node.db)
         close = node.close
@@ -141,7 +139,11 @@ async function open(): Promise<Runtime> {
         // без этой обёртки весь демо-роут падал бы в 500 с текстом «Invalid cursor
         // key/TTL configuration», где не понять, о какой переменной речь. Fail-fast
         // сохранён (молча работать без подписи токенов нельзя), названа причина.
-        cursorCodec: explainCursorConfig(() => cursorCodecFromEnv(env)),
+        cursorCodec: explainCursorConfig(() =>
+          cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_OLD_KEYS })[key], {
+            ttlSeconds: DB_CURSOR_TTL_SECONDS,
+          }),
+        ),
       })
       await applyMigrationText(db, MIGRATION)
       return { db, driver, close }

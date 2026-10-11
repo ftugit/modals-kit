@@ -1,11 +1,25 @@
-import UnoCSS from 'unocss/vite';
+import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import UnoCSS from 'unocss/vite';
 import { defineConfig } from 'vitest/config';
+import { trustedOrigins } from './src/lib/server/trusted-origins.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
+
+// Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` — точные адреса из того же списка, что у слоя 02
+// форм (`src/lib/server/trusted-origins.ts`); окружение здесь — момент сборки/запуска dev.
+const kit = {
+  adapter: adapter(),
+  preprocess: vitePreprocess(),
+  csrf: { trustedOrigins: trustedOrigins((key) => process.env[key]).exact },
+  // Переменные окружения — `src/env.ts` + `$app/env/private`. В 3.x это стабильный API,
+  // флаг снимается вместе со сменой мажора (docs/design/kit3-upgrade.md, B1).
+  experimental: { explicitEnvironmentVariables: true },
+};
 
 export default defineConfig({
   // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
-  plugins: [layerGuard(RULES), UnoCSS(), sveltekit()],
+  plugins: [layerGuard(RULES), UnoCSS(), sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
   test: { include: ['src/**/*.{test,spec}.{js,ts}'] },
   preview: {

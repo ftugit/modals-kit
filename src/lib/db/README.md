@@ -475,7 +475,7 @@ relations добавляются через `include`.
 (`DATABASE_URL`, `DATABASE_DIR`, `DB_POOL_MAX`, `HYPERDRIVE_CONNECTION_STRING`, `VERCEL`)
 читает приложение — пакет принимает значения, а не env. Полный перечень с
 описанием каждого ключа (и разбором `403 origin.rejected` из `KIT_TRUSTED_ORIGINS`) —
-в `.env.example` в корне приложения; его актуальность проверяет `node --test tooling/env-docs.test.mjs`.
+в `.env.example` в корне приложения; перечень и проверки значений — `src/env.ts`.
 
 ## 8. Как слой связан с деревом приложения
 

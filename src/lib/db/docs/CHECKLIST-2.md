@@ -325,7 +325,7 @@ select/count, estimate, icontains, изоляция между вызовами)
       значит: тесты обязаны отправлять корректный `Origin`, а `csrf.trustedOrigins` — часть
       конфигурации деплоя, не «мелочь».
 - [x] **Тот же 403 — причина, почему POST не работает в превью (замерено, не гипотеза):** это не
-      CSP/CORP/`X-Frame-Options` (их в приложении нет вообще: `svelte.config.js` = только
+      CSP/CORP/`X-Frame-Options` (их в приложении нет вообще: конфиг Kit = только
       `adapter`, по всему дереву `b1` ни одного совпадения), а собственная проверка SvelteKit.
       `respond.js` держит её под `if (!__SVELTEKIT_DEV__)` — в `vite dev` её нет, в `preview`
       есть; `url.origin` берётся из `:authority || host` (`preview/index.js:208`), а превью-прокси
@@ -333,7 +333,7 @@ select/count, estimate, icontains, изоляция между вызовами)
       Wildcard в белом списке не работает — сравнение `csrf_trusted_origins.includes(origin)`,
       из «магии» только `'*'`, которое на сборке выключает проверку
       (`write_server.js:41`: `csrf_check_origin: checkOrigin && !trustedOrigins.includes('*')`).
-      Лечение: `kit.csrf.trustedOrigins` из переменной `KIT_TRUSTED_ORIGINS` в `svelte.config.js`;
+      Лечение: `kit.csrf.trustedOrigins` из переменной `KIT_TRUSTED_ORIGINS` (конфиг Kit в `vite.config.ts`);
       превью собирается с `KIT_TRUSTED_ORIGINS='*'`, прод — с конкретным адресом
       (`KIT_TRUSTED_ORIGINS=https://pzlbdb.freesrv.com npm run build`).
       До: `POST` с чужим `Origin` → 403 «Cross-site POST form submissions are forbidden».

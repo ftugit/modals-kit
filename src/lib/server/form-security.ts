@@ -3,49 +3,20 @@
 // молча принимает межсайтовый POST, и это ровно та дыра, из-за которой
 // «защита есть, но её никто не включил».
 //
-// Список публичных адресов — один на всё приложение: переменная
-// KIT_TRUSTED_ORIGINS (через запятую). Wildcard-хост (`https://*.e2b.app`)
-// понимает только этот модуль: у SvelteKit сравнение точное
-// (`csrf_trusted_origins.includes(origin)`), поэтому в `svelte.config.js`
-// уезжают только точные адреса.
+// Список доверенных адресов — один на всё приложение (`trusted-origins.ts`): его же
+// получает фреймворк через `csrf.trustedOrigins` в `vite.config.ts`. Wildcard-хост
+// (`https://*.e2b.app`) понимает только этот слой: у SvelteKit сравнение точное.
 //
-// Окружение — `$env/dynamic/private` (C7, docs/audit/crutches.md), а не
+// Окружение — `$app/env/private` (перечень и проверки — `src/env.ts`), а не
 // `process.env`: так переменные приходят на любом адаптере (Workers — из
 // `platform.env`) и в dev из `.env`. Списки собираются при ПЕРВОЙ проверке, а не
 // при импорте: к запросу SvelteKit окружение уже заполнил.
-import { env } from '$env/dynamic/private'
+import { E2B_SANDBOX_ID, KIT_TRUSTED_ORIGINS, PREVIEW_PORTS } from '$app/env/private'
 import {
   bodyLayer, methodLayer, namesLayer, originLayer, reject,
   type Layer,
 } from '$lib/form/server'
-
-/** Точные адреса из окружения (wildcard-записи отфильтрованы ниже). */
-function fromEnv(): string[] {
-  return (env.KIT_TRUSTED_ORIGINS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-/**
- * Локальные адреса и превью песочницы. Прокси превью обращается к
- * `127.0.0.1:PORT` и подменяет `Host`, поэтому публичный адрес обязан быть в
- * списке, иначе любая форма ловит 403 от фреймворка. localhost оставлен
- * сознательно: межсайтовый атакующий приходит со СВОИМ origin, а не с
- * локального адреса, — проверка от этого не ослабевает.
- */
-function localOrigins(): string[] {
-  const ports = (env.PREVIEW_PORTS ?? '5173,5174')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  const sandbox = env.E2B_SANDBOX_ID
-  return ports.flatMap((p) => [
-    `http://localhost:${p}`,
-    `http://127.0.0.1:${p}`,
-    ...(sandbox ? [`https://${p}-${sandbox}.e2b.app`] : []),
-  ])
-}
+import { trustedOrigins } from './trusted-origins'
 
 type Origins = { exact: string[]; patterns: RegExp[]; strict: Layer }
 let origins: Origins | null = null
@@ -53,11 +24,9 @@ let origins: Origins | null = null
 /** Списки адресов и строгий слой — один раз на процесс, при первой проверке. */
 function trusted(): Origins {
   if (origins) return origins
-  const all = [...new Set([...fromEnv(), ...localOrigins()])]
-  const exact = all.filter((o) => !o.includes('*'))
-  const patterns = all
-    .filter((o) => o.includes('*'))
-    .map((o) => new RegExp(`^${o.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]+')}$`))
+  const { exact, patterns } = trustedOrigins(
+    (key) => ({ E2B_SANDBOX_ID, KIT_TRUSTED_ORIGINS, PREVIEW_PORTS })[key],
+  )
   /** Строгий режим библиотеки: неизвестный origin = отказ, пустые заголовки = отказ. */
   const strict = originLayer({ allowed: exact, strict: true })
   return (origins = { exact, patterns, strict })

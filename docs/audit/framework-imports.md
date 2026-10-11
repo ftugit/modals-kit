@@ -44,7 +44,7 @@ grep -rnE "from ['\"](\$app/[a-z]+|@sveltejs/kit[^'\"]*|\$env/[a-z/]+)['\"]" src
 | 8 | `lib/ui/demo/spike/SpikeDemo.svelte:3-4` | `$app/navigation`, `$app/state` | **Обход адаптера, обоснованный**: спайк исследует поведение истории SvelteKit (`pushState` против `goto`), то есть сам фреймворк | Оставить; по смыслу это прикладной код маршрута `/spike`, а не библиотека. |
 | 9 | `lib/modals/svelte/media.svelte.ts:3,15` | `$app/environment` (`browser`) | **Лишний импорт фреймворка** в Svelte-биндинге | Проверка `if (!browser) return` стоит внутри `$effect`, а `$effect` на сервере не выполняется вовсе: импорт и проверку можно убрать. Если признак окружения нужен — `esm-env` (`BROWSER`). |
 
-| 10 | ~~`lib/server/db.ts:20`, `lib/server/form-security.ts:18,32,36`~~ | `process.env` вместо `$env/dynamic/private` | ~~Обход модуля окружения фреймворка (C7)~~ **исправлено в ходе 7** (9ba827b) | `$env/dynamic/private`; чтение при вызове/первой проверке. |
+| 10 | ~~`lib/server/db.ts:20`, `lib/server/form-security.ts:18,32,36`~~ | `process.env` вместо `$env/dynamic/private` | ~~Обход модуля окружения фреймворка (C7)~~ **исправлено в ходе 7** (9ba827b) | `$env/dynamic/private`; чтение при вызове/первой проверке. Ход 16 (переезд на Kit 3, A2): `$env/dynamic/private` → `$app/env/private`, перечень и проверки — `src/env.ts`; `envReader` в приложении больше не нужен. |
 | 11 | ~~`lib/server/shikimori-filters.ts:257`, `lib/server/shikimori-schema.ts:314`, `lib/filters/catalog-filter.ts:388`, `lib/paginate/adapter-url.ts:124`, `lib/paginate/source.ts:177`~~ | `process.env.NODE_ENV` как признак dev | ~~Обход (C7)~~ **исправлено в ходе 7** (9ba827b) | `DEV` из `esm-env` во всех пяти местах (решение владельца). |
 
 Строки 10–11 добавлены в ходе 6 при чтении `lib/server`: модулей `$env/*` в `src/` нет вовсе (`grep -rn '\$env/' src` — пусто).
@@ -96,7 +96,7 @@ RESULT: STALE (bug)
 
 Для демо это терпимо (демо — прикладной код, лежащий в `lib/ui/demo` по соглашению проекта).
 Для `lib/server` правильнее перенести типы и источники Shikimori в `$lib` (например,
-`$lib/server/shikimori/` или `$lib/content/`) либо завести алиас в `svelte.config.js`.
+`$lib/server/shikimori/` или `$lib/content/`) либо завести subpath-импорт в `package.json#imports`.
 
 ## Замечание на будущее: `$app/environment` → `$app/env`
 
