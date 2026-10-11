@@ -14,7 +14,7 @@
  * берётся у `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт
  * через `goto`.
  */
-import { browser } from '$app/environment'
+import { browser } from '$app/env'
 import { afterNavigate, goto, preloadData, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'

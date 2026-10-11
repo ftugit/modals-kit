@@ -9,7 +9,7 @@
 // значит цепочку есть смысл делать ссылкой.
 //
 // Логики тут нет намеренно: появится условие — его место в url.ts.
-import { browser } from '$app/environment'
+import { browser } from '$app/env'
 import { preloadData, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { buildCore, type CoreOptions, type ReconfigurableCore } from '../build'
