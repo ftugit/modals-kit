@@ -24,6 +24,8 @@ export const ru: MessageDictionary = {
   multipleOf: (p) => `Шаг ${p['step']}`,
   oneOf: 'Выберите значение из списка',
   sameAs: 'Значения не совпадают',
+  accept: (p) => `Файл ${p['name'] ?? ''} не подходит по типу`.replace('  ', ' '),
+  maxSize: (p) => `Файл ${p['name'] ?? ''} больше ${Math.ceil(Number(p['bytes']) / 1024)} КБ`.replace('  ', ' '),
   strength: (p) => {
     const why: Record<string, string> = {
       short: 'слишком короткий',
@@ -58,6 +60,20 @@ export const ru: MessageDictionary = {
   'submission.in-flight': 'Эта отправка уже выполняется. Дождитесь результата',
   'success-not-acknowledged': 'Операция не подтверждена',
   'interceptor.failed': 'Внутренняя ошибка обработки',
+  'after.failed': 'Действие выполнено, но последующая задача завершилась с ошибкой',
+  'check.failed': 'Не удалось выполнить проверку. Попробуйте ещё раз',
+  'value.incompatible': 'Значение не подходит к изменившемуся полю',
+  'method.not-allowed': 'Запрос отклонён: недопустимый метод',
+  'origin.rejected': 'Запрос отклонён: чужой источник',
+  'body.unsupported-type': 'Запрос отклонён: неподдерживаемый формат',
+  'body.too-large': 'Запрос слишком большой',
+  'body.too-many-keys': 'Запрос содержит слишком много полей',
+  'request.too-many': 'Поле передано слишком много раз',
+  'file.too-large': (p) => `Файл ${p['name'] ?? ''} слишком большой`.replace('  ', ' '),
+  'rate.limited': (p) => {
+    const s = Math.ceil(Number(p['retryAfterMs'] ?? 0) / 1000)
+    return s > 0 ? `Слишком много попыток. Повторите через ${s} с` : 'Слишком много попыток. Повторите позже'
+  },
 }
 
 /**
