@@ -3,9 +3,9 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **166 / 395** файлов прочитано.
+Прогресс: **192 / 395** файлов прочитано.
 
-Средняя оценка по прочитанным: **8.9**.
+Средняя оценка по прочитанным: **8.8**.
 
 ## `src/`
 
@@ -262,51 +262,51 @@
 |---|---:|:---:|:---:|---|---|
 | `acceptance.test.ts` | 328 | — | ⏳ |  | any×11 |
 | `build.test.ts` | 582 | — | ⏳ |  | window/document×1, any×15 |
-| `build.ts` | 441 | — | ⏳ |  |  |
-| `core-contract.ts` | 168 | — | ⏳ |  | window/document×1 |
-| `core.ts` | 610 | — | ⏳ |  | any×1 |
-| `create.ts` | 552 | — | ⏳ |  |  |
-| `engine.ts` | 69 | — | ⏳ |  |  |
+| `build.ts` | 441 | 9 | прочитан | Ход 12: прочитан, багов не найдено |  |
+| `core-contract.ts` | 168 | 9 | прочитан | Ход 12: прочитан. K10 — «НЕ импортирует ничего» (:17) не соответствует импортам | window/document×1 |
+| `core.ts` | 610 | 6 | прочитан | Ход 12: F28 (color/tailColor из адреса → inline style: инъекция CSS, внешние ресурсы), F36 (mobile/size без проверки); K9 — Lookup с any. Прототип: подмена только локальная (isPlainObject отсекает Object.prototype) | any×1 |
+| `create.ts` | 552 | 6 | прочитан | Ход 12: F27 (attach зовёт lifecycle внутри отслеживаемого эффекта хоста; повторный attach — повторный onOpen), F35 (lifecycle без учёта params); мёртвые lockedTop/hasLocked; K10 — HOST-GAP.md и «появятся» (:410-414) |  |
+| `engine.ts` | 69 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний |  |
 | `geometry.test.ts` | 97 | — | ⏳ |  |  |
-| `index.ts` | 42 | — | ⏳ |  |  |
+| `index.ts` | 42 | 10 | прочитан | Ход 12: реэкспорт, без замечаний |  |
 | `loader.test.ts` | 246 | — | ⏳ |  | setTimeout×1, any×20, addEventListener×1 |
-| `loader.ts` | 232 | — | ⏳ |  |  |
+| `loader.ts` | 232 | 6 | прочитан | Ход 12: F32 (pinning по сырым params), F33 (уход подписчика без abort, вечный loading), F34 (preload без дедупа и отмены), F30 (cause:null), C13 (сырой message в UI) |  |
 | `matrix.test.ts` | 273 | — | ⏳ |  | any×1 |
 | `registry.test.ts` | 120 | — | ⏳ |  | any×1 |
-| `registry.ts` | 193 | — | ⏳ |  |  |
+| `registry.ts` | 193 | 10 | прочитан | Ход 12: прочитан, без замечаний |  |
 | `scoped-config.test.ts` | 41 | — | ⏳ |  |  |
 | `sources.test.ts` | 199 | — | ⏳ |  | any×2 |
 | `storages.test.ts` | 211 | — | ⏳ |  | any×2 |
-| `storages.ts` | 154 | — | ⏳ |  | window/document×1 |
-| `store.ts` | 145 | — | ⏳ |  |  |
-| `types.ts` | 356 | — | ⏳ |  |  |
+| `storages.ts` | 154 | 8 | прочитан | Ход 12: parseEntry принимает color/mobile из localStorage без проверки (вход F28/F36) | window/document×1 |
+| `store.ts` | 145 | 8 | прочитан | Ход 12: registerMemoryCleaner не возвращает отписку — основа утечки F26 |  |
+| `types.ts` | 356 | 9 | прочитан | Ход 12: прочитан. K10 — ссылка на несуществующий adapter.ts (:194); K9 — any у ResolvedEntry.definition без причины |  |
 
 ## `src/lib/modals/cores/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `fastedge.test.ts` | 221 | — | ⏳ |  | window/document×2, sveltekit-internal×1, any×3 |
-| `fastedge.ts` | 88 | — | ⏳ |  | window/document×2 |
-| `memory.ts` | 18 | — | ⏳ |  |  |
+| `fastedge.ts` | 88 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний | window/document×2 |
+| `memory.ts` | 18 | 10 | прочитан | Ход 12: без замечаний |  |
 | `routes.test.ts` | 48 | — | ⏳ |  |  |
-| `routes.ts` | 48 | — | ⏳ |  |  |
-| `sveltekit.ts` | 169 | — | ⏳ |  | $app/×4, window/document×13, history.*State×1, sveltekit-internal×3, microtask×2, addEventListener×1 |
+| `routes.ts` | 48 | 8 | прочитан | Ход 12: routePattern — [[optional]] как обязательный, [...rest] в середине обрывает сверку, paths.base не учитывается (латентно: таких маршрутов нет) |  |
+| `sveltekit.ts` | 169 | 8 | прочитан | Ход 12: import.meta.glob маршрутов внутри lib — связность K8 (известна) | $app/×4, window/document×13, history.*State×1, sveltekit-internal×3, microtask×2, addEventListener×1 |
 
 ## `src/lib/modals/svelte/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `Layers.svelte` | 39 | — | ⏳ |  |  |
-| `ModalContent.svelte` | 91 | — | ⏳ |  | $effect×1, any×4, untrack×1 |
-| `ModalHost.svelte` | 1171 | — | ⏳ |  | $effect×9, window/document×16, setTimeout×3, rAF×3, microtask×1, any×4, untrack×6, addEventListener×4 |
-| `ModalTrigger.svelte` | 202 | — | ⏳ |  | $effect×2 |
-| `Tails.svelte` | 84 | — | ⏳ |  | $effect×1, rAF×1 |
-| `classes.ts` | 171 | — | ⏳ |  |  |
-| `context.ts` | 221 | — | ⏳ |  | window/document×2 |
-| `index.ts` | 28 | — | ⏳ |  |  |
-| `media.svelte.ts` | 42 | — | ⏳ |  | $effect×1, $app/×1, window/document×1, addEventListener×1 |
-| `state.svelte.ts` | 246 | — | ⏳ |  |  |
-| `store.svelte.ts` | 62 | — | ⏳ |  |  |
+| `Layers.svelte` | 39 | 10 | прочитан | Ход 12: без замечаний |  |
+| `ModalContent.svelte` | 91 | 8 | прочитан | Ход 12: C13 — показывает сырой rt.error; renderError/renderSkeleton через as any | $effect×1, any×4, untrack×1 |
+| `ModalHost.svelte` | 1171 | 4 | прочитан | Ход 12: F26 (утечка зеркал/загрузчиков при каждом переподключении, +1 на переход /modals↔/), F27 (attach не в untrack); сериализатор стиля без экранирования (сток F28); 3 копии css(); closeFloating(…,'escape') для «Назад»; K9 any (:102, :974, :1022) | $effect×9, window/document×16, setTimeout×3, rAF×3, microtask×1, any×4, untrack×6, addEventListener×4 |
+| `ModalTrigger.svelte` | 202 | 5 | прочитан | Ход 12: F29 (открытие после await preload на чужой странице); импорт $lib/ui/modals (lib→ui, K8); кандидат — href из нереактивного location | $effect×2 |
+| `Tails.svelte` | 84 | 6 | прочитан | Ход 12: F31 (entered не чистится — нет анимации у повторного хвоста); копия сериализатора стиля | $effect×1, rAF×1 |
+| `classes.ts` | 171 | 10 | прочитан | Ход 12: без замечаний |  |
+| `context.ts` | 221 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний | window/document×2 |
+| `index.ts` | 28 | 10 | прочитан | Ход 12: реэкспорт, без замечаний |  |
+| `media.svelte.ts` | 42 | 8 | прочитан | Ход 12: K2 — свой matchMedia вместо MediaQuery из svelte/reactivity; проверка browser внутри $effect лишняя | $effect×1, $app/×1, window/document×1, addEventListener×1 |
+| `state.svelte.ts` | 246 | 9 | прочитан | Ход 12: useModalData вне модалки молча пишет в общий ключ 'detached' |  |
+| `store.svelte.ts` | 62 | 9 | прочитан | Ход 12: getClientStore на сервере не используется (все вызовы передают стор); destroy есть, но хост его не зовёт (F26) |  |
 
 ## `src/lib/paginate/`
 
