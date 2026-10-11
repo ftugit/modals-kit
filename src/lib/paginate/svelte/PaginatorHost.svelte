@@ -491,6 +491,9 @@
   // probes/pag-store-hybrid.mjs). Ключи адреса тоже берём у адаптера (`searchSpec`),
   // чтобы спецификация не жила в двух местах.
   const bindsUrl = typeof adapter.setRouter === 'function'
+  // Роутер создаётся при инициализации: он регистрирует afterNavigate и до него
+  // копит записи адреса (F12 — запись во время гидрации обрывала её).
+  const router = bindsUrl ? svelteKitRouter() : null
   const spec = adapter.searchSpec ?? {}
   const effectivePageParam = init.pageParam ?? spec.pageParam ?? 'page'
   const effectiveExtraSearch = init.extraSearch ?? spec.extra
@@ -546,7 +549,7 @@
   onMount(() => {
     // Единственное место, где библиотека касается навигации (канон D2): роутер
     // слоя фреймворка уезжает в URL-транспорт адаптера — фичи адрес не знают.
-    if (bindsUrl) adapter.setRouter(svelteKitRouter())
+    if (router) adapter.setRouter(router)
 
     // Синхронная подписка на патчи состояния: тот же тайминг, что у Solid-эффекта
     // в исходнике (захват опорной точки до вставки слотов).

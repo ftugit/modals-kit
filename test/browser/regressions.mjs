@@ -1290,12 +1290,31 @@ try {
     const warnings = []
     page.on('console', (m) => { if (m.type() === 'warning' && m.text().includes('[paginate]')) warnings.push(m.text()) })
     // Пустой `page.q=` не проходит валидатор extra-ключа → в dev это предупреждение.
-    // Гидрацию не ждём: на таком адресе она сейчас падает отдельно (баг F12,
-    // replaceState до инициализации роутера) — предупреждение печаталось раньше.
+    // Гидрацию здесь не ждём: её проверяет R-32 (F12).
     await page.goto(`${origin}/paginator?page.size=10&page.q=`)
     await page.waitForTimeout(2500)
     assert(warnings.length === 0, `production печатает dev-предупреждение: ${warnings[0]}`)
     ok('отброшенный extra-ключ в production молчит')
+    await page.close()
+  })
+
+  /* ── R-32 (F12): адрес с пустым ключом не обрывает гидрацию ───────── */
+  // Нативная GET-форма оставляет `?page.q=`; хост чистил адрес `replaceState` в
+  // onMount — до запуска роутера SvelteKit: исключение, гидрация обрывалась,
+  // страница оставалась неинтерактивной. Теперь запись ждёт первого afterNavigate.
+  await run('R-32 пустой ключ адреса: гидрация доходит до конца, адрес очищен', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+    await page.goto(`${origin}/paginator?page.size=10&page.q=`)
+    await page.waitForSelector('[data-select-root][data-enhanced]', { timeout: 10_000 })
+    await page.waitForFunction(() => !new URLSearchParams(location.search).has('page.q'), null, { timeout: 5_000 })
+    assert(errors.length === 0, `ошибки страницы: ${errors.join(' | ')}`)
+    const search = await page.evaluate(() => location.search)
+    assert(search.includes('page.size=10'), `соседний ключ потерян: ${search}`)
+    ok(`гидрация завершена, ошибок нет, адрес ${search}`)
     await page.close()
   })
 

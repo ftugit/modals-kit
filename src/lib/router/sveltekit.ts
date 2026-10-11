@@ -15,7 +15,7 @@
  * через `goto`.
  */
 import { browser } from '$app/environment'
-import { goto, preloadData, pushState, replaceState } from '$app/navigation'
+import { afterNavigate, goto, preloadData, pushState, replaceState } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '$lib/paginate'
@@ -97,8 +97,29 @@ function hrefOf(search: Record<string, unknown>): string {
  *
  * Хост отдаёт его адаптеру сам — по признаку `setRouter` (канон: `bindsUrl`).
  * Фичи про существование адреса не знают: ни роутера, ни разбора `?page`.
+ *
+ * Вызывать ПРИ ИНИЦИАЛИЗАЦИИ компонента (верхний уровень `<script>`): роутер
+ * регистрирует `afterNavigate`, а это функция жизненного цикла.
+ *
+ * Запись адреса (`syncAddress`) до готовности роутера SvelteKit ставится в
+ * очередь: `replaceState` при гидрации бросает (`Cannot call replaceState(...)
+ * before router is initialized` в dev, `reading '$set'` в production) и обрывает
+ * гидрацию (F12: адрес `?page.q=` после нативной GET-формы). `onMount` хоста
+ * выполняется ДО запуска роутера, а `afterNavigate` — после (и при гидрации, и
+ * при монтировании компонента позже), поэтому очередь сбрасывается в первом
+ * `afterNavigate`. Срез адреса вычисляется в момент записи, а не постановки.
+ * https://svelte.dev/docs/kit/$app-navigation#afterNavigate
  */
 export function svelteKitRouter(): MinimalRouter {
+  let ready = false
+  let queued: Array<() => void> = []
+  afterNavigate(() => {
+    if (ready) return
+    ready = true
+    const run = queued
+    queued = []
+    for (const write of run) write()
+  })
   return {
     navigate(opts) {
       const next = opts.search(currentSearch())
@@ -119,8 +140,12 @@ export function svelteKitRouter(): MinimalRouter {
      * и вернул бы старый адрес на следующем чтении.
      */
     syncAddress(opts) {
-      replaceState(hrefOf(opts.search(currentSearch())), page.state)
-      notifyAddressWrite()
+      const write = () => {
+        replaceState(hrefOf(opts.search(currentSearch())), page.state)
+        notifyAddressWrite()
+      }
+      if (ready) write()
+      else queued.push(write)
     },
     currentSearch,
   }
