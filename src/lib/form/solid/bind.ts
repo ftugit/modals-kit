@@ -28,6 +28,7 @@ import { evaluate, runSubmit, SubmitMachine, type ParallelPolicy, type Transport
 import type { HtmlAttrs, RowKey } from '../types'
 import { batch, createSignal, onCleanup } from 'solid-js'
 import type { BoundConfig, LiveMode, UiPolicy } from './config'
+import { DEV } from 'esm-env'
 
 /** Настройки связки: адрес, режимы и колбэки конкретной формы. */
 export interface CreateFormOptions {
@@ -160,7 +161,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   /** Факты в показ: один обработчик, оба пути. */
   const display = (facts: readonly FormError[], ctx: ErrorContext) => {
     const shown = applyHandler(facts, ctx, handler())
-    if (import.meta.env.DEV && shown.removed > 0)
+    if (DEV && shown.removed > 0)
       console.warn(`[form] обработчик убрал ${shown.removed} из ${facts.length} ошибок`)
     return shown
   }
@@ -486,7 +487,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   /** Поля конверта обязаны быть в разметке: предупреждает, а не молчит. */
   // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
   const assertPlacement = (el: HTMLFormElement) => {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = description().fields
       .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
       .filter((f) => !el.querySelector(`[name="${f.name}"]`))
@@ -498,7 +499,7 @@ export function createForm(cfg: BoundConfig, initial: FormDescription, o: Create
   }
 
   const assertEnvelope = (el: HTMLFormElement) => {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = hidden().map((h) => h.name)
       .filter((n) => !el.querySelector(`input[name="${n}"]`))
     if (missing.length)

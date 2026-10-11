@@ -19,7 +19,8 @@
  *
  * Зависимости: рантайм формы не импортирует ни одного пакета. Разрешены
  * только относительные пути, а пакет движка ('svelte', 'react', 'solid-js')
- * — только внутри своей зоны адаптера.
+ * — только внутри своей зоны адаптера. Единственное исключение — `esm-env`
+ * (см. ALLOWED_PACKAGES).
  */
 import { gzipSync } from 'node:zlib'
 
@@ -85,8 +86,19 @@ export function collectSpecifiers(source) {
 }
 
 /**
+ * Пакеты, разрешённые во всём рантайме формы. Только `esm-env`: флаг режима
+ * разработки по условиям экспорта (`development`/`production`) — работает в любом
+ * сборщике и в Node SSR без Vite, в отличие от `import.meta.env.DEV`, который
+ * подставляет только Vite (решение C7, ход 10). Кода в сборке он не оставляет:
+ * `DEV` — константа, ветки вырезаются; и он уже стоит у Svelte в зависимостях.
+ * Добавлять сюда что-то ещё — только с причиной такого же веса.
+ */
+export const ALLOWED_PACKAGES = Object.freeze(['esm-env'])
+
+/**
  * Внешние зависимости рантайма. Разрешены относительные пути всегда,
- * пакет движка — только в своей зоне адаптера. Всё остальное — нарушение.
+ * пакет движка — только в своей зоне адаптера, `ALLOWED_PACKAGES` — везде.
+ * Всё остальное — нарушение.
  *
  * @param {string} relPath путь от корня библиотеки
  * @param {string[]} specs
@@ -97,6 +109,7 @@ export function checkImports(relPath, specs) {
   const problems = []
   for (const spec of specs) {
     if (spec.startsWith('.') || spec.startsWith('/')) continue
+    if (ALLOWED_PACKAGES.includes(spec)) continue
     const engine = ENGINE_PACKAGES.find((p) => p.re.test(spec))
     if (engine) {
       if (engine.zone === zone) continue

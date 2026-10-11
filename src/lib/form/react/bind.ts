@@ -26,6 +26,7 @@ import { FormStore, initialState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type ParallelPolicy, type Transport } from '../submit'
 import type { HtmlAttrs, RowKey } from '../types'
 import type { BoundConfig, LiveMode } from './config'
+import { DEV } from 'esm-env'
 
 /** Настройки связки: адрес, режимы и колбэки конкретной формы. */
 export interface UseFormOptions {
@@ -171,7 +172,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   /** Факты в показ: один обработчик, оба пути. */
   const display = useCallback((facts: readonly FormError[], ctx: ErrorContext) => {
     const shown = applyHandler(facts, ctx, handler())
-    if (import.meta.env.DEV && shown.removed > 0)
+    if (DEV && shown.removed > 0)
       console.warn(`[form] обработчик убрал ${shown.removed} из ${facts.length} ошибок`)
     return shown
   }, [])
@@ -320,7 +321,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   /** Поля конверта обязаны быть в разметке: предупреждает, а не молчит. */
   // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
   const assertPlacement = (el: HTMLFormElement) => {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = desc.fields
       .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
       .filter((f) => !el.querySelector(`[name="${f.name}"]`))
@@ -332,7 +333,7 @@ export function useForm(cfg: BoundConfig, initial: FormDescription, o: UseFormOp
   }
 
   const assertEnvelope = (el: HTMLFormElement) => {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = hidden().map((h) => h.name)
       .filter((n) => !el.querySelector(`input[name="${n}"]`))
     if (missing.length)

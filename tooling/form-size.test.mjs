@@ -56,6 +56,13 @@ test('пакет движка разрешён только в своей зон
   assert.equal(cross.length, 1, 'пакет чужого движка — нарушение зоны')
 })
 
+test('esm-env разрешён везде, и только он (C7)', () => {
+  assert.deepEqual(checkImports('keep.ts', ['esm-env']), [])
+  assert.deepEqual(checkImports('react/bind.ts', ['esm-env']), [])
+  assert.equal(checkImports('keep.ts', ['esm-env/development']).length, 1, 'подпути не разрешены')
+  assert.equal(checkImports('keep.ts', ['esm-env-x']).length, 1)
+})
+
 test('внешний пакет — нарушение с причиной', () => {
   const problems = checkImports('validate.ts', ['zod'])
   assert.equal(problems.length, 1)

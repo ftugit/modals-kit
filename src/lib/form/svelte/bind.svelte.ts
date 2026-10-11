@@ -15,6 +15,7 @@ import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
 import type { HtmlAttrs, RowKey } from '../types'
 import type { BoundConfig, LiveMode } from './config'
+import { DEV } from 'esm-env'
 
 /**
  * Привязка к узлу едет ВНУТРИ набора пропсов — как `ref` в других движках.
@@ -182,7 +183,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   /** Факты в показ: один обработчик, оба пути. */
   function display(facts: readonly FormError[], ctx: ErrorContext) {
     const shown = applyHandler(facts, ctx, handler())
-    if (import.meta.env.DEV && shown.removed > 0)
+    if (DEV && shown.removed > 0)
       console.warn(`[form] обработчик убрал ${shown.removed} из ${facts.length} ошибок`)
     return shown
   }
@@ -421,7 +422,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   // S3: неразмещённое поле (url-режим: поле обязано быть в разметке, конверта нет).
   // Семья «разметка приложения»: DEV console.error с перечислением и подсказкой.
   function assertPlacement(el: HTMLFormElement) {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = desc.fields
       .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
       .filter((f) => !el.querySelector(`[name="${f.name}"]`))
@@ -433,7 +434,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   function assertEnvelope(el: HTMLFormElement) {
-    if (!import.meta.env.DEV) return
+    if (!DEV) return
     const missing = hidden().map((h) => h.name)
       .filter((n) => !el.querySelector(`input[name="${n}"]`))
     if (missing.length)
