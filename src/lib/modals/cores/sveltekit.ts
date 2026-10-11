@@ -67,7 +67,12 @@ export function svelteKitEngine(): ChainEngine {
   let pending: { url: URL; state: Record<string, unknown> } | null = null
   let seq = 0
 
-  const write = (url: string, state: Record<string, unknown>, replace: boolean): void => {
+  const write = (path: string, state: Record<string, unknown>, replace: boolean): void => {
+    // `#якорь` принадлежит странице, ядро модалок пишет только pathname+search
+    // (F40). Фрагмент — у адресной строки в момент записи, как у пагинатора
+    // (`router/sveltekit.ts`, F9): клик по ссылке-якорю обновляет только
+    // `page.url`, а `page.shallow` остаётся прежним (решение владельца — A).
+    const url = path.includes('#') || !browser ? path : path + window.location.hash
     const mine = ++seq
     pending = { url: new URL(url, (page.shallow?.url ?? page.url).href), state }
     // Отказ `goto` (маршрут не найден) не глотаем: он всплывёт как раньше.

@@ -270,6 +270,28 @@ async function run() {
       await page.close();
     }
 
+    // ── 2б. F40: #якорь страницы переживает открытие и закрытие модалки ─────
+    // Якорь принадлежит странице (ссылка «к разделу»); модалка меняет только
+    // свои ключи search. Раньше открытие писало pathname+search и стирало его.
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+      console.log('— F40: #якорь страницы при открытии/закрытии модалки —');
+      await page.goto(BASE + '#f40', { waitUntil: 'networkidle' });
+      await page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first().click();
+      await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 });
+      await page.waitForFunction(() => location.search.includes('modal='), null, { timeout: 5000 });
+      const opened = await page.evaluate(() => ({ search: location.search, hash: location.hash }));
+      assert(opened.hash === '#f40', `открытие модалки стёрло якорь: ${JSON.stringify(opened)}`);
+      ok('открытие: ?modal=… записан, #f40 на месте');
+      await page.keyboard.press('Escape');
+      await waitForNoModal(page);
+      await page.waitForFunction(() => !location.search.includes('modal='), null, { timeout: 5000 });
+      const closed = await page.evaluate(() => location.hash);
+      assert(closed === '#f40', `закрытие модалки стёрло якорь: ${closed}`);
+      ok('закрытие (Esc): ?modal снят, #f40 на месте');
+      await page.close();
+    }
+
     // ── 3. Клик по фону (backdropClick=top) ─────────────────────────────────
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
