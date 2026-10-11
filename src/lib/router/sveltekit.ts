@@ -17,51 +17,27 @@
 import { browser } from '$app/env'
 import { afterNavigate, goto, preloadData } from '$app/navigation'
 import { page } from '$app/state'
-import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '#lib/paginate/index.js'
 
 /**
- * 🔴 `page.url` — адрес СТРАНИЦЫ, а не адресная строка. «Мелкая» запись
- * (`goto(…, { shallow: true })` из `$app/navigation`, shallow routing) меняет запись
- * истории и `page.state`, но `page.url` намеренно оставляет прежним. Пагинатор пишет свой адрес именно так (`syncAddress`), поэтому
- * после первой же записи `page.url.searchParams` устаревает: следующая запись
- * сливала ключи с устаревшим срезом и затирала соседний пагинатор, а ссылки
- * строились от старого адреса. Тот же вывод — у ядра модалок
- * (`modals/cores/sveltekit.ts`: «shallow-запись НЕ обновляет `page.url`»).
- *
- * Поэтому в браузере срез берётся у адресной строки, а реактивность ей даёт
- * `createSubscriber` (штатный способ подключить внешний источник к рунам):
- *   • настоящая навигация — зависимость от `page.url` (SvelteKit пишет историю
- *     раньше, чем обновляет `page`, так что `location` к этому моменту свежий);
- *   • собственная «мелкая» запись — `notifyAddressWrite()`;
- *   • Назад/Вперёд по «мелким» записям, где `page.url` не меняется, — `popstate`.
- * На сервере адресной строки нет, а `page.url` там верен: мелких записей не было.
+ * Видимый адрес — по документации shallow routing SvelteKit 3: `page.url` —
+ * адрес СТРАНИЦЫ, «мелкая» запись (`goto(…, { shallow: true })`) его не меняет
+ * и кладёт адресную строку в `page.shallow.url`; Назад/Вперёд по таким записям
+ * восстанавливает `page.shallow`. Оба поля реактивны, так что чтение внутри
+ * `$derived` перестраивается и после своих записей пагинатора, и после
+ * навигации — без своего `popstate` и ручных уведомлений.
+ * На сервере `page.shallow` нет, `page.url` — адрес запроса.
+ * https://svelte.dev/docs/kit/shallow-routing
  */
-const addressWrites = new Set<() => void>()
-
-const subscribeAddress = createSubscriber((update) => {
-  addressWrites.add(update)
-  window.addEventListener('popstate', update)
-  return () => {
-    addressWrites.delete(update)
-    window.removeEventListener('popstate', update)
-  }
-})
-
-function notifyAddressWrite(): void {
-  for (const update of addressWrites) update()
-}
+const visibleUrl = (): (typeof page)['url'] => page.shallow?.url ?? page.url
 
 /**
- * Search текущего рендера. Реактивен: чтение внутри `$derived`/`$effect`
- * перезапускается на каждой навигации (в том числе back/forward).
- * На сервере отдаёт адрес запроса — как `app.search` исходника на SSR.
+ * Search видимого адреса. Реактивен: чтение внутри `$derived`/`$effect`
+ * перезапускается на каждой навигации и «мелкой» записи (в том числе back/forward).
+ * На сервере — адрес запроса, как `app.search` исходника на SSR.
  */
 export function currentSearch(): Record<string, unknown> {
-  if (!browser) return Object.fromEntries(page.url.searchParams)
-  void page.url
-  subscribeAddress()
-  return Object.fromEntries(new URLSearchParams(window.location.search))
+  return Object.fromEntries(visibleUrl().searchParams)
 }
 
 /** Путь текущего рендера — для `action` формы без JS (аналог `app.pathname`). */
@@ -73,10 +49,13 @@ export function currentPathname(): string {
  * Адрес из среза search: путь + строка запроса + текущий `#фрагмент`. Одна
  * сборка на все записи, чтобы `navigate` и `syncAddress` не разъезжались в формате.
  *
- * Фрагмент берётся у адресной строки: пагинатор меняет только search, а `#якорь`
- * принадлежит странице (ссылка «к разделу», shallow-флаги и т. п.). Без него каждая
- * запись адреса стирала якорь (баг F9, docs/audit/crutches.md). На сервере записей
- * нет — `hrefOf` вызывается только из обработчиков в браузере.
+ * Фрагмент берётся у адресной строки в момент записи: пагинатор меняет только
+ * search, а `#якорь` принадлежит странице (ссылка «к разделу» и т. п.). Без него
+ * каждая запись стирала якорь (баг F9, docs/audit/crutches.md).
+ * Не из `page.*`: клик по ссылке-якорю обновляет только `page.url`, а
+ * `page.shallow` после «мелкой» записи остаётся прежним — следующая запись
+ * стёрла бы новый якорь (SvelteKit 3.0.1, проба ход 17; решение владельца — A).
+ * Реактивность здесь не нужна: `hrefOf` вызывается только из обработчиков в браузере.
  */
 function hrefOf(search: Record<string, unknown>): string {
   const params = new URLSearchParams()
@@ -87,7 +66,7 @@ function hrefOf(search: Record<string, unknown>): string {
   }
   const qs = params.toString()
   const hash = browser ? window.location.hash : ''
-  return `${page.url.pathname}${qs ? `?${qs}` : ''}${hash}`
+  return `${visibleUrl().pathname}${qs ? `?${qs}` : ''}${hash}`
 }
 
 /**
@@ -100,11 +79,13 @@ function hrefOf(search: Record<string, unknown>): string {
  * регистрирует `afterNavigate`, а это функция жизненного цикла.
  *
  * Запись адреса (`syncAddress`) до готовности роутера SvelteKit ставится в
- * очередь: shallow-запись до запуска роутера бросает и обрывает
- * гидрацию (F12: адрес `?page.q=` после нативной GET-формы). `onMount` хоста
- * выполняется ДО запуска роутера, а `afterNavigate` — после (и при гидрации, и
- * при монтировании компонента позже), поэтому очередь сбрасывается в первом
- * `afterNavigate`. Срез адреса вычисляется в момент записи, а не постановки.
+ * очередь (F12: адрес `?page.q=` после нативной GET-формы). Навигация до запуска
+ * роутера по-прежнему запрещена (`navigation_before_start`); `onMount` хоста
+ * выполняется ДО запуска, а `afterNavigate` — после (и при гидрации, и при
+ * монтировании компонента позже), поэтому очередь сбрасывается в первом
+ * `afterNavigate`. В 3.0.1 без очереди запись проходит лишь потому, что `goto`
+ * успевает несколько раз уступить микрозадачу до проверки — это тайминг
+ * внутренностей, а не контракт. Срез адреса вычисляется в момент записи.
  * https://svelte.dev/docs/kit/$app-navigation#afterNavigate
  */
 export function svelteKitRouter(): MinimalRouter {
@@ -133,15 +114,11 @@ export function svelteKitRouter(): MinimalRouter {
      * и вернул бы старый адрес на следующем чтении.
      */
     syncAddress(opts) {
-      // В SvelteKit 3 `goto` асинхронен: адресная строка меняется только после
-      // разрешения маршрута, а промис разрешается, «когда изменение состояния
-      // применено» (https://svelte.dev/docs/kit/$app-navigation#goto). Уведомлять
-      // подписчиков раньше — значит отдать им СТАРЫЙ `location`: пагинатор
-      // откатывал своё состояние и затирал только что записанный ключ.
+      // `goto` асинхронен; читатели узнают о записи из `page.shallow`, который
+      // SvelteKit обновляет, когда запись применена — не раньше (иначе пагинатор
+      // откатывал бы своё состояние к старому адресу).
       const write = () => {
-        void goto(hrefOf(opts.search(currentSearch())), { shallow: true, replace: true, state: page.state }).then(
-          notifyAddressWrite,
-        )
+        void goto(hrefOf(opts.search(currentSearch())), { shallow: true, replace: true, state: page.state })
       }
       if (ready) write()
       else queued.push(write)
@@ -178,15 +155,8 @@ export function shallowFlag(key: string): { readonly on: boolean; push(): void }
 
 /**
  * Исход предзагрузки адреса — по контракту SvelteKit 3 (`preloadData`:
- * `loaded | redirect | error` + `status`, sveltejs/kit#12579).
- *
- * Kit 2.x этот контракт не выполняет: при ошибке загрузчика `preloadData`
- * отдаёт `{type: 'loaded', status: 200}` с данными ТЕКУЩЕЙ страницы
- * (`preload_error` → `clone_page(page)`; sveltejs/kit#12399). Поэтому до
- * перехода на kit 3 ветка `error` срабатывает только при отказе самой
- * предзагрузки (исключение: сеть, чанк), а ошибка загрузчика видна как
- * `loaded` (C4, docs/audit/crutches.md). Признаков из внутренностей 2.x здесь
- * сознательно нет — после обновления kit ветка заработает без правок.
+ * `loaded | redirect | error` + `status`, sveltejs/kit#12579). Отказ самой
+ * предзагрузки (сеть, чанк) — исключение, тоже `error`.
  */
 export type PreloadOutcome =
   | { kind: 'loaded'; status: number }
@@ -194,16 +164,13 @@ export type PreloadOutcome =
   | { kind: 'error'; status: number | null; message: string }
 
 export async function preloadOutcome(href: string): Promise<PreloadOutcome> {
-  // Тип шире объявленного в 2.x: форма 3.x (`type: 'error'`) обязана читаться.
-  let r: { type: string; status?: number; location?: string; error?: { message?: string } }
+  let r: Awaited<ReturnType<typeof preloadData>>
   try {
-    r = (await preloadData(href)) as typeof r
+    r = await preloadData(href)
   } catch (error) {
     return { kind: 'error', status: null, message: error instanceof Error ? error.message : String(error) }
   }
-  if (r.type === 'redirect') return { kind: 'redirect', location: r.location ?? href }
-  if (r.type === 'error' || (r.status ?? 200) >= 400) {
-    return { kind: 'error', status: r.status ?? null, message: r.error?.message ?? '' }
-  }
-  return { kind: 'loaded', status: r.status ?? 200 }
+  if (r.type === 'redirect') return { kind: 'redirect', location: r.location }
+  if (r.type === 'error') return { kind: 'error', status: r.status, message: r.error.message }
+  return { kind: 'loaded', status: r.status }
 }

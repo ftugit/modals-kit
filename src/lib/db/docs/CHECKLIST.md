@@ -94,7 +94,7 @@ index.ts              barrel (драйверы намеренно не реэк�
    идиомами SvelteKit (`+page.server.ts`, `actions`, `event.locals`, `#lib/server`).
 2. `#lib/server/*` уже даёт серверную границу сборки → «vite-dbBuildPlugin» не нужен.
 3. `normalizeValue` (Date→ISO, bigint→string) = сериализуемость в `data` SvelteKit (devalue).
-4. Standard Schema (`~standard`) — тот же контракт, что у SvelteKit 2 / `+page.server.ts`
+4. Standard Schema (`~standard`) — тот же контракт, что у SvelteKit / `+page.server.ts`
    и у собственного `#lib/form/schema.ts` в `modals-kit`.
 5. Миграции не автоматические, только `src/lib/db/migrations/*.sql` + явный прогон.
 

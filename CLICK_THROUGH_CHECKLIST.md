@@ -43,7 +43,7 @@
 ## Воспроизведение (доказано, `probes/click-through-repro.mjs`)
 
 > Каталог `probes/` удалён при переезде на SvelteKit 3 (ветка `upgrade/kit3`): разовые
-> пробы читали ключ истории 2.x `sveltekit:states`, которого в 3.x нет. Упомянутые ниже
+> пробы читали служебный ключ истории `sveltekit:states` прежней версии SvelteKit, которого в 3.x нет. Упомянутые ниже
 > файлы доступны в истории: `git show 77f1cf5:probes/<файл>`. Регрессия click-through
 > закреплена в `test/browser/regressions.mjs`.
 

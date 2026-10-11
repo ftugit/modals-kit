@@ -332,7 +332,8 @@ select/count, estimate, icontains, изоляция между вызовами)
       обращается к `127.0.0.1:5173`, поэтому браузерный `Origin` всегда «чужой».
       Wildcard в белом списке не работает — сравнение `csrf_trusted_origins.includes(origin)`,
       из «магии» только `'*'`, которое на сборке выключает проверку
-      (`write_server.js:41`: `csrf_check_origin: checkOrigin && !trustedOrigins.includes('*')`).
+      (история прежней версии SvelteKit: `write_server.js:41` — `csrf_check_origin: checkOrigin && !trustedOrigins.includes('*')`;
+      в 3.x этой опции нет).
       Лечение: `kit.csrf.trustedOrigins` из переменной `KIT_TRUSTED_ORIGINS` (конфиг Kit в `vite.config.ts`);
       превью собирается с `KIT_TRUSTED_ORIGINS='*'`, прод — с конкретным адресом
       (`KIT_TRUSTED_ORIGINS=https://pzlbdb.freesrv.com npm run build`).

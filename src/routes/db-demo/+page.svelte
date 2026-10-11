@@ -25,7 +25,7 @@
   import RemoveForm from '#lib/ui/demo/db-form/RemoveForm.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
-  // тип выводит SvelteKit из `actions` (`ActionData`).
+  // тип выводит SvelteKit из `actions` (`PageProps['form']`).
   let { data, form }: PageProps = $props()
 
   // `form` — живой пропс: SvelteKit обнуляет его при навигации и меняет после

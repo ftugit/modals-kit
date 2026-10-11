@@ -81,7 +81,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 2. Строки проходят `normalizeValue` (`Date` → ISO, `bigint` → `string`) → уже
    devalue-совместимы, то есть пригодны как есть в `load`-данных SvelteKit.
 3. Валидация уже идёт через `~standard`, т. е. через тот же контракт, на котором
-   SvelteKit 2 строит `error()`/`fail()` и через который работает `#lib/form/schema.ts`
+   SvelteKit строит `error()`/`fail()` и через который работает `#lib/form/schema.ts`
    в `modals-kit`. Поэтому вместо «перевести на zod» получилось «снять обязательный zod».
 4. Именование ошибок уже таблицей `kind → status`; в `modals-kit` его достаточно
    обернуть в `throw error(status, body)` (Kit требует `{status, body}`, а не `Response`).
@@ -107,7 +107,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 | `toKitError` возвращает **данные** `{status, body}`, а не бросает | `error()`/`fail()` живут в `@sveltejs/kit`; импорт оставлен приложению → `./sveltekit` не тянет kit и работает в Workers | `structure.check.mts`: у `./sveltekit` нет `node:`/`pg`/PGlite-импортов; полнота `FAILURE_STATUS` по всем `FailureKind` |
 | `splitSqlStatements` вместо `split(';')` | `;` внутри строк/комментариев/`$tag$` режет оператор пополам | `port-specific` + проверка на `src/lib/db/migrations/001` (5 операторов) |
 | `openNodeDatabase(..., {memory})` + lock-файл каталога | PGlite в одном каталоге из `dev` и `build` даёт «database directory is already open by process N» ([пример](https://github.com/AaronBuxbaum/diveday/issues/2101)) | тестов нет; проверено руками: `resolveDatabaseDir(root,'idb://db')` → `DATABASE_DIR must be a filesystem path, not a storage URI`, обычный путь → абсолютный; в интеграции демо шло `memory: true` |
-| Zero-dep `s.*` + `field(zodSchema)` одновременно | Kit 2 и Superforms валидируются через Standard Schema ([обсуждение](https://github.com/sveltejs/kit/discussions/13336), [zod v4 `~standard`](https://medium.com/@ariawhenujoseph/…superforms…)); жёсткая зависимость от `zod` = лишний деп в `modals-kit`, где его нет | `port-specific`: «`field()` принимает и zod-схему, и свою»; дифференциальный корпус против `zod@4.6.5` |
+| Zero-dep `s.*` + `field(zodSchema)` одновременно | SvelteKit и Superforms валидируются через Standard Schema ([обсуждение](https://github.com/sveltejs/kit/discussions/13336), [zod v4 `~standard`](https://medium.com/@ariawhenujoseph/…superforms…)); жёсткая зависимость от `zod` = лишний деп в `modals-kit`, где его нет | `port-specific`: «`field()` принимает и zod-схему, и свою»; дифференциальный корпус против `zod@4.6.5` |
 | `defineResource` проверяет форму конфигурации (`checkShape`) | переносчик поймал три «молча не работающих» конфигурации на реальном PG: `softDelete` без `value`/`readDeleted` (метка пишется `undefined`, `includeDeleted` = вечный 403), `generated` + write-маска (значение теряется), `validateFinal: true` вместо схемы (500 на записи). Источник проверял только идентификаторы и существование полей | `port-specific`: «defineResource отклоняет конфигурации, которые иначе молча не работают» (7 случаев); на реальном прогоне `src/lib/db/probes/shikimori-view.probe.mjs` тот же путь зелёный |
 | SQLSTATE отказа прав (`42501`/`42502`) → `forbidden` (403) | составная коллекция с `INSTEAD OF`-триггером отвечала 500 на «в чужую категорию нельзя» — «запрещено» было неотличимо от «упало» ([PostgreSQL: 42501 insufficient_privilege](https://www.postgresql.org/docs/current/errcodes-appendix.html)) | `port-specific`: «SQLSTATE отказа прав идёт в forbidden, а не в database»; сквозной прогон `src/lib/db/probes/shikimori-view.probe.mjs` → `403/forbidden` |
 | RLS не включается и не обещается | [RLS — второй эшелон](https://patotski.com/blog/postgres-row-level-security-multi-tenant/), app-level фильтры первичны; `SET LOCAL` — единственная безопасная форма при transaction pooling ([pgbouncer](https://codelit.io/blog/database-pooling-pgbouncer)) | документировано в README §5; `policy`+`filterSQL` закрытыported-тестами источника |
@@ -181,7 +181,7 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
 
 1. `npm run build` — сборка приложения: слой компилируется вместе с ним (никакого
    `dist`/`fix-esm` больше нет, `.js`-суффиксы в относительных импортах не нужны:
-   `rewriteRelativeImportExtensions`), и сборка же прогоняет `tooling/layer-guard.mjs`.
+   `moduleResolution: bundler` из `$app/tsconfig`), и сборка же прогоняет `tooling/layer-guard.mjs`.
 2. `npm run check` = `svelte-kit sync && svelte-check` → **0 ошибок** (46 warning'ов —
    все предсуществующие в `modals-kit`, в `src/lib/paginate`; тесты слоя исключены из
    `check` так же, как тесты `#lib/form/index.js`).
@@ -366,9 +366,10 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
   подменяйте его `idb://` (`resolveDatabaseDir` на URI отказывает намеренно).
 - TypeScript один на всё дерево (версия приложения) — расхождения «пакет vs приложение»
   больше нет; `.d.ts` не публикуются, `svelte-check` видит исходники.
-- Релятивные импорты внутри слоя пишутся **без** `.js` (в отличие от пакета): `tsconfig.json`
-  приложения включает `rewriteRelativeImportExtensions`, а `moduleResolution: bundler` не
-  требует суффиксов. При возврате к отдельному пакету суффиксы надо будет вернуть.
+- Релятивные импорты внутри слоя пишутся **без** `.js` (в отличие от пакета): `moduleResolution:
+  bundler` (его задаёт `$app/tsconfig`) суффиксов не требует. Импорт из других слоёв — `#lib/…`
+  с полным путём и расширением (`#lib/form/index.js`). При возврате к отдельному пакету
+  суффиксы относительных импортов надо будет вернуть.
 
 ## 10. Незакрытое (осознанные долги)
 

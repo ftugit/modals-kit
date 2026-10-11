@@ -19,9 +19,8 @@ const KiB = 1024
 const CLIENT_ROOT = '.svelte-kit/output/client'
 const IMMUTABLE_ROOT = join(CLIENT_ROOT, '_app/immutable')
 const MANIFEST = join(CLIENT_ROOT, '.vite/manifest.json')
-// SvelteKit 3 разделил сгенерированное на `generated/build` и `generated/dev`; в 2.x файл
-// лежал в `generated/client-optimized`. Старый путь читал УСТАРЕВШИЙ app.js от сборки
-// 2.x, пока его не вычистил `vite dev` 3.x (ход 16, B9).
+// Сгенерированное SvelteKit лежит раздельно: `generated/build` (сборка) и `generated/dev`.
+// Читать надо именно файл сборки — иначе бюджет считается по чужому app.js (ход 16, B9).
 const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 
 // Лимиты подняты 2026-10-07 (этапы 1–4): общий слой источников с возможностями,

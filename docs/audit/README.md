@@ -33,15 +33,16 @@
 
 ## Что такое «спецификация SvelteKit» в этом аудите
 
-Официальная документация Svelte 5 и SvelteKit 2 (версии проекта: Svelte 5.57, SvelteKit 2.70):
+Официальная документация Svelte 5 и SvelteKit. Ходы 4–13 сверялись с SvelteKit 2.70; после переезда
+(ветка `upgrade/kit3`, ход 16–17) — с SvelteKit 3.0.1 (Svelte 5.57):
 
 | Код | Критерий | Источник |
 |---|---|---|
 | K1 | Svelte 5 runes; нет legacy-синтаксиса (`export let`, `$:`, `on:`, `<slot>`, `createEventDispatcher`, `$app/stores`). | [v5 migration guide](https://svelte.dev/docs/svelte/v5-migration-guide), [$app/stores (deprecated)](https://svelte.dev/docs/kit/$app-stores) |
 | K2 | Реактивность: производное — `$derived`; `$effect` — только для внешних эффектов, не для синхронизации состояния; нет захвата начального значения пропса. | [$derived](https://svelte.dev/docs/svelte/$derived), [$effect — когда не использовать](https://svelte.dev/docs/svelte/$effect#When-not-to-use-$effect), [state_referenced_locally](https://svelte.dev/docs/svelte/compiler-warnings#state_referenced_locally) |
-| K3 | Поток данных SvelteKit: `load`/form actions/`+server`, типы `./$types`, `$app/state`, навигация через `$app/navigation`, shallow routing по документации (`page.url` не меняется при `pushState`/`replaceState`). | [load](https://svelte.dev/docs/kit/load), [form actions](https://svelte.dev/docs/kit/form-actions), [shallow routing](https://svelte.dev/docs/kit/shallow-routing), [$app/state](https://svelte.dev/docs/kit/$app-state), [types](https://svelte.dev/docs/kit/types) |
-| K4 | Граница сервер/клиент: серверное — в `$lib/server` или `*.server.ts`, секреты через `$env`, **нет общего изменяемого состояния на сервере**, `load` без побочных эффектов. | [server-only modules](https://svelte.dev/docs/kit/server-only-modules), [state management](https://svelte.dev/docs/kit/state-management) |
-| K5 | SSR-безопасность: нет обращения к `window`/`document` вне браузера; разметка SSR и гидрации совпадает. | [state management](https://svelte.dev/docs/kit/state-management), [$app/environment](https://svelte.dev/docs/kit/$app-environment) |
+| K3 | Поток данных SvelteKit: `load`/form actions/`+server`, типы `./$types`, `$app/state`, навигация через `$app/navigation`, shallow routing по документации (`page.url` не меняется при `goto(…, { shallow: true })`; видимый адрес — `page.shallow?.url ?? page.url`). | [load](https://svelte.dev/docs/kit/load), [form actions](https://svelte.dev/docs/kit/form-actions), [shallow routing](https://svelte.dev/docs/kit/shallow-routing), [$app/state](https://svelte.dev/docs/kit/$app-state), [types](https://svelte.dev/docs/kit/types) |
+| K4 | Граница сервер/клиент: серверное — в `$lib/server` или `*.server.ts`, секреты через `$app/env/private`, **нет общего изменяемого состояния на сервере**, `load` без побочных эффектов. | [server-only modules](https://svelte.dev/docs/kit/server-only-modules), [state management](https://svelte.dev/docs/kit/state-management) |
+| K5 | SSR-безопасность: нет обращения к `window`/`document` вне браузера; разметка SSR и гидрации совпадает. | [state management](https://svelte.dev/docs/kit/state-management), [$app/env](https://svelte.dev/docs/kit/$app-env) |
 | K6 | Прогрессивное улучшение: заявленное «работает без JS» действительно работает; формы — нативные с перехватом. | [form actions — progressive enhancement](https://svelte.dev/docs/kit/form-actions#Progressive-enhancement) |
 | K7 | Доступность: правила a11y компилятора, роли, фокус, объявления маршрута. | [accessibility](https://svelte.dev/docs/kit/accessibility) |
 | K8 | Слои: `src/lib` обращается к фреймворку через адаптеры; переносимая библиотека не импортирует `$app/*` (для окружения — `esm-env`); `lib` не зависит от прикладных папок. | [packaging](https://svelte.dev/docs/kit/packaging), [project structure](https://svelte.dev/docs/kit/project-structure) |

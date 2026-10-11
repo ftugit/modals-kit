@@ -16,7 +16,7 @@ declare global {
 		// interface Error {}
 		// interface PageData {}
 		/**
-		 * Состояние записи истории (`pushState`/`replaceState`, `page.state`). Модалки хранят своё
+		 * Состояние записи истории (`goto(…, { shallow: true, state })`, `page.state`). Модалки хранят своё
 		 * под ключом `modals` (`STATE_KEY`, `#lib/modals/build.ts`) и СЛИВАЮТ его с чужими ключами
 		 * записи, а не затирают, — поэтому форма открытая: словарь, а не фиксированный набор полей.
 		 */

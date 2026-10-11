@@ -1198,11 +1198,8 @@ try {
   // Исход читает адаптер `preloadOutcome` по контракту kit 3 (`loaded |
   // redirect | error`). Было: `type !== 'loaded'` считалось ошибкой — штатная
   // переадресация рисовалась ошибкой, а отказ preloadData оставлял ссылку в
-  // вечном `loading`. Ошибку ЗАГРУЗЧИКА kit 2.x ссылке не сообщает
-  // (sveltejs/kit#12399): эта часть проверяется только на kit ≥ 3.
+  // вечном `loading`.
   await run('R-29 LoadLink: переадресация — не ошибка, отказ предзагрузки — ошибка', async () => {
-    const { readFileSync } = await import('node:fs')
-    const kitMajor = Number(JSON.parse(readFileSync('node_modules/@sveltejs/kit/package.json', 'utf8')).version.split('.')[0])
     const watch = (page, href) => page.evaluate((h) => {
       window.__llStates = []
       const a = document.querySelector(`a[href="${h}"]`)
@@ -1245,12 +1242,8 @@ try {
     await page.waitForURL((u) => u.pathname === '/cards/404', { timeout: 10000 })
     await page.waitForFunction(() => document.body.innerText.includes('404'), null, { timeout: 10000 })
     states = await page.evaluate(() => window.__llStates)
-    if (kitMajor >= 3) {
-      assert(states.includes('error'), `kit ${kitMajor}: ошибка загрузчика не видна ссылке: ${JSON.stringify(states)}`)
-      ok('ошибка загрузчика: ссылка видит её до перехода (контракт kit 3)')
-    } else {
-      ok(`ошибка загрузчика: переход на +error со статусом 404; распознавание до перехода ждёт kit 3 (сейчас ${kitMajor}.x, состояния: ${JSON.stringify(states)})`)
-    }
+    assert(states.includes('error'), `ошибка загрузчика не видна ссылке: ${JSON.stringify(states)}`)
+    ok('ошибка загрузчика: ссылка видит её до перехода (контракт kit 3)')
     await page.close()
   })
 
@@ -1457,6 +1450,40 @@ try {
     const layers = await page.evaluate(() => document.querySelectorAll('[data-modal-layer]').length)
     assert(layers === 0, `слой вернулся: ${layers}`)
     ok('адрес /paginator, слоёв 0, попапа нет')
+    await page.close()
+  })
+
+  /* ── R-38 (C1, Kit 3): якорь, поставленный кликом после «мелкой» записи ── */
+  // Клик по ссылке-якорю обновляет в SvelteKit 3.0.1 только `page.url`, а
+  // `page.shallow` остаётся от прошлой записи пагинатора. Якорь из `page.*`
+  // стирался следующей записью; адаптер берёт его у адресной строки (решение A).
+  await run('R-38 запись пагинатора после клика по #якорю его не стирает; Назад синхронизирует срез', async () => {
+    const origin = new URL(BASE).origin
+    const page = await browser.newPage()
+    await page.goto(`${origin}/paginator?page.size=10`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-select-root][data-enhanced]')
+    const size = page.locator('[data-testid="demo-panel"] select[name="page.size"]')
+    const addr = () => page.evaluate(() => location.search + location.hash)
+    const pick = async (v) => {
+      await size.selectOption(v, { force: true })
+      await page.waitForFunction((x) => new URLSearchParams(location.search).get('page.size') === x, v)
+    }
+    await pick('40')
+    await page.evaluate(() => {
+      const a = document.createElement('a'); a.href = '#h1'; a.textContent = 'h1'; document.body.append(a); a.click()
+    })
+    await page.waitForFunction(() => location.hash === '#h1')
+    await pick('5')
+    const after = await addr()
+    assert(after === '?page.size=5#h1', `запись после клика по якорю: ${after}`)
+    ok(`запись page.size=5 сохранила якорь (${after})`)
+    await page.goBack()
+    await page.waitForFunction(() => new URLSearchParams(location.search).get('page.size') !== '5')
+    const back = new URLSearchParams(new URL(page.url()).search).get('page.size')
+    await page.waitForFunction((v) =>
+      document.querySelector('[data-testid="demo-panel"] select[name="page.size"]')?.value === v, back, { timeout: 5_000 })
+      .catch(async () => { throw new Error(`Назад: адрес page.size=${back}, select=${await size.inputValue()}`) })
+    ok(`Назад: select следует за адресом (page.size=${back})`)
     await page.close()
   })
 

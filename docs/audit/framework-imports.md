@@ -105,6 +105,8 @@ RESULT: STALE (bug)
 модуля (`node_modules/@sveltejs/kit/types/index.d.ts`, `declare module '$app/env'`). Сейчас это
 не ошибка; при переходе на SvelteKit 3 затронет места 1, 3, 9.
 
+**Выполнено при переходе на SvelteKit 3 (ход 16):** `$app/environment` и `$env/*` заменены на `$app/env`.
+
 ## Ход 9: остатки C7 в `lib/form`
 
 Решение хода 7 — признак dev через `DEV` из `esm-env` — в `lib/form` не применено:
