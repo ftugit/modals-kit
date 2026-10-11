@@ -42,12 +42,31 @@ export type PollOutcome =
   | { done: true; result: Result }
   | { done: false; retryAfterMs: number }
 
-/** Опрос до терминального исхода. Существует только при скрипте. */
+/** Потолок паузы между опросами: `retryAfterMs` приходит от сервера и ничем не ограничен. */
+const MAX_POLL_DELAY_MS = 60_000
+/** Пауза, если сервер прислал не число (NaN, Infinity, отрицательное). */
+const FALLBACK_POLL_DELAY_MS = 1_000
+
+/** Сон, который прерывает сигнал: отмена не ждёт конца паузы. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const done = () => { clearTimeout(t); signal?.removeEventListener('abort', done); resolve() }
+    const t = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
+}
+
 /**
  * Опрос до терминального исхода. Существует только при скрипте.
+ *
+ * Пауза — `retryAfterMs` сервера, но не дольше минуты (`MAX_POLL_DELAY_MS`):
+ * значение приходит по сети, и без предела ответ `retryAfterMs: 1e9` подвешивал
+ * опрос навсегда. Отмена (`signal`) прерывает и запрос, и паузу.
  * @param d Адреса опроса из данных результата.
  * @param poll Транспорт опроса.
  * @param o Предел попыток и сигнал отмены.
+ * @returns Терминальный результат; `undefined` — попытки кончились или отменено.
  */
 export async function pollUntilDone(
   d: QueuedData,
@@ -59,7 +78,10 @@ export async function pollUntilDone(
     if (o.signal?.aborted) return undefined
     const r = await poll(d.pollUrl, o.signal)
     if (r.done) return r.result
-    await new Promise((res) => setTimeout(res, r.retryAfterMs))
+    const wait = Number.isFinite(r.retryAfterMs) && r.retryAfterMs >= 0
+      ? Math.min(r.retryAfterMs, MAX_POLL_DELAY_MS)
+      : FALLBACK_POLL_DELAY_MS
+    await sleep(wait, o.signal)
   }
   return undefined
 }
