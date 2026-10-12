@@ -137,7 +137,7 @@ Supabase-js, Payload, `@neondatabase/serverless`, pg-boss, graphile-worker. От
       а на транспорте без транзакций — последовательно, если не выставлен `atomic: true`
       (тогда `unsupported` **до** первого запроса; повод — замер в T3).
 - [x] **`estimate` для UI-пагинатора** (`estimate(ctx, filter) → { rows, exact, method }`):
-      `pg_class.reltuples` без фильтра (только `relkind IN ('r','p','m')`), `EXPLAIN (FORMAT JSON)`
+      `pg_class.reltuples`, только когда видна вся таблица (DB-4, ход 48; только `relkind IN ('r','p','m')`), `EXPLAIN (FORMAT JSON)`
       / `Plan Rows` с фильтром, точный `count(*)` как откат. `exact: false` обязан
       отображаться как «~», а не как подтверждённое число.
 - [x] **Transaction retry — `withRetry`** (`src/lib/db/ops.ts`, экспорт из корня + `RetryOptions`):

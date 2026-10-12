@@ -221,8 +221,11 @@ export const load: PageServerLoad = async (event) => {
 `createdb -T template0 --encoding=UTF8`.
 
 Для пагинатора точный `count` не обязателен: `api.estimate(ctx, filter)` →
-`{ rows, exact, method }` — `pg_class.reltuples` без фильтра (дешевле на порядки), план
-`EXPLAIN (FORMAT JSON)` с фильтром, точный `count(*)` как откат. `exact: false` обязан
+`{ rows, exact, method }` — `pg_class.reltuples`, когда пользователю видна вся таблица (нет
+фильтра, политика `select` без условий, удалённые строки не скрыты; дешевле на порядки), иначе
+план `EXPLAIN (FORMAT JSON)` с тем же предикатом, что у `select` (политика, soft-delete,
+фильтр), точный `count(*)` как откат. Проверки — как у `count`: право чтения, ключи ввода,
+`includeDeleted` только с `readDeleted`. `exact: false` обязан
 отражаться в UI («~12 000»), цифры с `estimate` нельзя показывать как подтверждённые.
 
 Составная коллекция (например «аниме за юзером» = VIEW над 4 таблицами с `jsonb_agg`
@@ -503,7 +506,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
-| `src/lib/db/test/db-port-specific.test.ts` | 31 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-port-specific.test.ts` | 32 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

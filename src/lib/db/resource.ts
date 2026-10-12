@@ -347,9 +347,25 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     input: { filter?: Filter; includeDeleted?: boolean } = {},
   ) {
     const ctx = context(ctx0);
-    // Без фильтра: статистика планировщика. Только для реальных таблиц — у вьюхи
-    // reltuples = 0, и это было бы «0 строк» вместо правдоподобной оценки.
-    if (!input.filter) {
+    // Те же проверки, что у `count`: право читать ресурс и только известные ключи ввода.
+    readable(r, ctx);
+    listInput(input as ListInput);
+    if (Object.keys(input).some((k) => !['filter', 'includeDeleted'].includes(k)))
+      fail('validation');
+    // Предикат строится ДО выбора метода: так политика, права на поля фильтра и
+    // `readDeleted` проверяются всегда, а не только когда фильтр задан (DB-4).
+    const policy = r.policy.select(ctx);
+    const s2 = new Sql();
+    const predicate = await where(ctx, 'select', s2, input.filter, input.includeDeleted ?? false, {
+      value: policy,
+    });
+    // Статистика планировщика описывает ВСЮ таблицу. Она годится, только когда
+    // пользователю видна вся таблица: нет фильтра, политика без условий, удалённые
+    // строки не скрываются. Только для реальных таблиц — у вьюхи reltuples = 0, и это
+    // было бы «0 строк» вместо правдоподобной оценки.
+    const wholeTable =
+      !input.filter && policy === true && (!r.softDelete || input.includeDeleted === true);
+    if (wholeTable) {
       const parts = r.table.split('.');
       const name = parts[parts.length - 1]!;
       const schema = parts.length > 1 ? parts[0]! : 'public';
@@ -369,9 +385,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const n = raw === undefined || raw === null ? -1 : Number(raw);
       if (n >= 0) return { rows: n, exact: false, method: 'reltuples' as const };
     }
-    const s2 = new Sql();
-    const predicate = await where(ctx, 'select', s2, input.filter, input.includeDeleted ?? false);
-    if (!input.filter) {
+    if (wholeTable) {
+      // Статистики нет (вьюха, таблица без ANALYZE) — честный count.
       const c = await db.query(
         withSignal(s2.statement(`SELECT count(*)::bigint AS n FROM ${table(r)} WHERE ${predicate}`), ctx),
       );

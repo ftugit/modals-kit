@@ -389,6 +389,57 @@ test("estimate: reltuples без фильтра, EXPLAIN с фильтром, т
   assert.deepEqual(c, { rows: 7, exact: true, method: "count" }, "нет статистики → честный count");
 });
 
+test("estimate: политика чтения, soft-delete и readDeleted действуют и без фильтра (DB-4)", async () => {
+  const { withTestDb } = await import("../testing/index.ts");
+  const migration = `
+    CREATE TABLE owned_post (id integer PRIMARY KEY, owner text NOT NULL, deleted_at timestamptz);
+    INSERT INTO owned_post SELECT g, 'alice', NULL FROM generate_series(1, 500) g;
+    INSERT INTO owned_post VALUES (1000, 'bob', NULL), (1001, 'bob', now());
+    ANALYZE owned_post;
+  `;
+  await withTestDb(
+    async ({ db }) => {
+      const owned = defineResource({
+        key: "test.owned.v1",
+        table: "owned_post",
+        primaryKey: "id",
+        fields: {
+          id: f.integer({ read: () => true, orderable: true, filters: ["eq"] }),
+          owner: f.text({ read: () => true, filters: ["eq"] }),
+          deleted_at: f.timestamp({ read: () => true, nullable: true }),
+        },
+        policy: { select: policy.ownerOrRoles("owner", ["admin"]), insert: policy.deny(), update: policy.deny(), delete: policy.deny() },
+        softDelete: { field: "deleted_at", value: () => new Date().toISOString(), readDeleted: ["admin"] },
+        order: [["id", "asc"]],
+      });
+      const api = db.resource(owned);
+      const bob = { principal: { id: "bob", roles: [] as string[] } };
+      const guest = { principal: { roles: [] as string[] } };
+      const admin = { principal: { id: "root", roles: ["admin"] } };
+
+      const asBob = await api.estimate(bob, {});
+      assert.notEqual(asBob.method, "reltuples", "чужие строки не входят в оценку");
+      assert.ok(asBob.rows <= 5, `bob видит 1 строку, оценка ${asBob.rows}`);
+      assert.equal((await api.estimate(guest, {})).rows, 0, "гостю политика не даёт ни одной строки");
+      await assert.rejects(
+        () => api.estimate(guest, { includeDeleted: true }),
+        (e) => e instanceof DbFailure && e.kind === "forbidden",
+        "includeDeleted без readDeleted запрещён, как в count",
+      );
+      await assert.rejects(
+        () => api.estimate(bob, { page: 2 } as never),
+        (e) => e instanceof DbFailure && e.kind === "validation",
+        "лишние ключи ввода отклоняются, как в count",
+      );
+      const adminLive = await api.estimate(admin, {});
+      assert.notEqual(adminLive.method, "reltuples", "без includeDeleted удалённые строки не считаются");
+      const adminAll = await api.estimate(admin, { includeDeleted: true });
+      assert.deepEqual(adminAll, { rows: 502, exact: false, method: "reltuples" }, "вся таблица видна — статистика годится");
+    },
+    { migrations: [migration], memory: true },
+  );
+});
+
 test("withRetry: повторяет только на откатанные транзакции, паузы экспоненциальные", async () => {
   const db = createDb({ driver: stubDriver(), limits: conservativeLimits });
   const failures: Array<{ retryable: boolean; kind: string }> = [
