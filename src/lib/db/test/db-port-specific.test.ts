@@ -679,6 +679,16 @@ test("dbHandle: нематемные roles отказывают, paths=scope о�
   await scoped({ event: { request: other, url: new URL(other.url), locals: {} } as any, resolve: async () => new Response() });
   assert.equal(resolved, 0, "для чужих путей principal резолвить не нужно");
 });
+test("dbHandle: paths — префикс по границе сегмента (F43)", async () => {
+  const db = createDb({ driver: stubDriver(), limits: conservativeLimits });
+  const seen: string[] = [];
+  const scoped = dbHandle({ db, principal: (event) => { seen.push(event.url.pathname); return { roles: [] }; }, paths: ["/api", "/db/"] });
+  for (const path of ["/api", "/api/x", "/apiary", "/api-docs", "/db/", "/db/x", "/db", "/dbx"]) {
+    const request = new Request("http://x" + path);
+    await scoped({ event: { request, url: new URL(request.url), locals: {} } as any, resolve: async () => new Response() });
+  }
+  assert.deepEqual(seen, ["/api", "/api/x", "/db/", "/db/x"]);
+});
 
 /* ── 5. Разделитель SQL и миграции ──────────────────────────────────────── */
 test("splitSqlStatements: ; внутри строк, комментариев и $$…$$ не режет оператор", async () => {

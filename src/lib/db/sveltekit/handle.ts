@@ -12,8 +12,9 @@ export interface DbHandleOptions {
   /** Доверенный источник principal. `undefined` = гость (roles: []). */
   principal: ResolvePrincipal;
   /**
-   * Разрешить DB-контекст только для этих префиксов — чтобы модалки/статика
-   * не платили за резолв сессии. По умолчанию: все запросы.
+   * Разрешить DB-контекст только для этих путей — чтобы модалки/статика
+   * не платили за резолв сессии. `'/db-demo'` покрывает сам путь и всё под
+   * `'/db-demo/'`, но не `'/db-demoX'`. По умолчанию: все запросы.
    */
   paths?: readonly string[];
 }
@@ -23,9 +24,12 @@ const guest: Principal = { roles: [] };
 export function dbHandle(options: DbHandleOptions): DbHandle {
   if (!options.db || typeof options.principal !== "function")
     throw new Error("dbHandle requires { db, principal }");
-  const paths = options.paths;
+  // Префикс сравнивается по границе сегмента: '/db-demo' покрывает '/db-demo' и
+  // '/db-demo/…', но не '/db-demoX' (F43).
+  const paths = options.paths?.map((p) => ({ exact: p, prefix: p.endsWith("/") ? p : p + "/" }));
   return async ({ event, resolve }) => {
-    if (paths && !paths.some((p) => event.url.pathname === p || event.url.pathname.startsWith(p))) {
+    const path = event.url.pathname;
+    if (paths && !paths.some((p) => path === p.exact || path.startsWith(p.prefix))) {
       event.locals.dbCtx = createRequestContext(event, guest);
       return resolve(event);
     }

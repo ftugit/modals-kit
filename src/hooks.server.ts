@@ -24,17 +24,16 @@ export const init: ServerInit = () => {
  * `signal` берёт сам рантайм (ушёл со страницы → SQL отменяется). Роль из
  * query-параметра появиться не может физически: DataContext собирает пакет.
  *
- * getRuntime() — ленивый: PGlite поднимается только для путей, где есть
- * обращение к БД, а не на каждый запрос приложения.
+ * Контекст нужен всем путям демо: и странице, и /db-demo/submit (перехваченная
+ * отправка формы), и /api/db-posts (доводка страниц пагинатора). Иначе догрузка
+ * пошла бы без принципа и показала бы другое, чем первая страница.
+ *
+ * `db` — фабрика: PGlite поднимается только для `paths`, а не на каждый запрос
+ * приложения. Вне `paths` пакет кладёт в `locals.dbCtx` гостевой контекст и не
+ * трогает БД (C1: хук больше не повторяет фильтр путей `dbHandle`).
  */
-export const handle: Handle = async ({ event, resolve }) => {
-  // Контекст нужен всем путям демо: и странице, и /db-demo/submit (перехваченная
-  // отправка формы), и /api/db-posts (доводка страниц пагинатора). Иначе догрузка
-  // пошла бы без принципа и показала бы другое, чем первая страница.
-  const path = event.url.pathname
-  if (path !== '/db-demo' && !path.startsWith('/db-demo/') && !path.startsWith('/api/db-posts'))
-    return resolve(event)
-  const { db } = await getRuntime()
-  const inject = dbHandle({ db, principal: () => DEMO_PRINCIPAL })
-  return inject({ event, resolve })
-}
+export const handle: Handle = dbHandle({
+  db: async () => (await getRuntime()).db,
+  principal: () => DEMO_PRINCIPAL,
+  paths: ['/db-demo', '/api/db-posts'],
+})

@@ -6,11 +6,11 @@
 
 ## Открытые пункты
 
-- [ ] **F43 — `paths` без границы сегмента.** `sveltekit/handle.ts:28`:
+- [x] **F43 — `paths` без границы сегмента.** ИСПРАВЛЕНО (ход 48): граница сегмента в `handle.ts`, тест «paths — префикс по границе сегмента (F43)» (красный до правки). `sveltekit/handle.ts:28`:
   `pathname === p || pathname.startsWith(p)` — `'/db-demo'` совпадает и с `'/db-demoX'`.
   Исправление известно: `pathname === p || pathname.startsWith(p.endsWith('/') ? p : p + '/')`.
   **План:** правка в `handle.ts` плюс тест на `/db-demoX`. Делается одним коммитом с C1, F43 первым.
-- [ ] **C1 — хук приложения повторяет `dbHandle`.** `src/hooks.server.ts:35`: хук сам
+- [x] **C1 — хук приложения повторяет `dbHandle`.** ИСПРАВЛЕНО (ход 48): `handle = dbHandle({ db: фабрика, principal, paths: ['/db-demo', '/api/db-posts'] })`; вне `paths` — гостевой `dbCtx` (поведение пакета, владелец не возражал против исправления как задумано). `src/hooks.server.ts:35`: хук сам
   фильтрует пути и на каждый запрос заново создаёт `dbHandle(...)`. Задумано:
   `export const handle = dbHandle({ db: async () => (await getRuntime()).db, principal: () => DEMO_PRINCIPAL, paths: ['/db-demo', '/api/db-posts'] })`.
   В самом хуке та же граница пропущена у `/api/db-posts` (`startsWith('/api/db-posts')`).
