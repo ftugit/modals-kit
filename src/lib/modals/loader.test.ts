@@ -360,7 +360,7 @@ test('C13: окно ошибки и preload показывают общий те
   assert.equal(rt.error, 'Ошибка загрузки')
   assert.equal((seen[0].cause as Error).message, secret, 'исходная ошибка доходит до onError')
 
-  const pre = await l.preloadModal('bad2')
+  const pre = await l.preloadModal('bad2', {})
   assert.deepEqual(pre, { ok: false, error: 'Ошибка загрузки' })
   assert.equal((seen.at(-1).cause as Error).message, secret)
 })

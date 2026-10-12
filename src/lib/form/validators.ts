@@ -43,17 +43,27 @@ export interface Validator<V = unknown> {
 }
 
 /**
+ * Валидатор, у которого `.message()` ЕСТЬ наверняка: встроенные `v.*` и `check`
+ * (собраны через `describe`/`withText`). Отдельный тип нужен строгому
+ * TypeScript: у произвольной функции-валидатора метода нет, поэтому в
+ * `Validator` он необязателен, а у этих — вызывается без проверки.
+ */
+export type MessageValidator<V = unknown> = Validator<V> & {
+  message(text: string): MessageValidator<V>
+}
+
+/**
  * Ссылка: функция (код) либо имя из реестра (сериализуемое описание).
  * `message` у именованной ссылки — то же, что `.message()` у функции.
  */
 export type ValidatorRef = Validator<any> | { name: string; arg?: unknown; message?: string }
 
 /** Валидатор `v` со своим текстом ошибки; описание и асинхронная метка сохраняются. */
-export function withText<V>(v: Validator<V>, text: string): Validator<V> {
+export function withText<V>(v: Validator<V>, text: string): MessageValidator<V> {
   const out = ((value: V, ctx: FieldContext) => {
     const found = v(value, ctx)
     return found ? { ...found, message: text } : found
-  }) as Validator<V>
+  }) as MessageValidator<V>
   if (v.describe) out.describe = v.describe
   // асинхронная проверка (`check`) отвечает не из функции, а из реестра проверок
   const meta = (v as { asyncCheck?: object }).asyncCheck
@@ -64,8 +74,8 @@ export function withText<V>(v: Validator<V>, text: string): Validator<V> {
 
 /** Прикрепляет к валидатору описание ограничений для HTML-проекции. */
 export function describe<V>(fn: (v: V, ctx: FieldContext) => Issue | null,
-                            constraints: readonly Constraint[]): Validator<V> {
-  const out = Object.assign(fn, { describe: () => constraints }) as Validator<V>
+                            constraints: readonly Constraint[]): MessageValidator<V> {
+  const out = Object.assign(fn, { describe: () => constraints }) as MessageValidator<V>
   out.message = (text: string) => withText(out, text)
   return out
 }

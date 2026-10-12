@@ -47,22 +47,23 @@ export const API_TAIL = '## 8.'
  * остановиться: node-модули, драйверы, `$app/…`).
  *
  * @param {string} source
- * @param {((spec: string) => string | null)?} [resolve]
- * @param {(spec: string) => boolean}? [isBarrel] — стоит ли идти внутрь `export *`
+ * @param {((spec: string) => string | null) | null} [resolve]
+ * @param {(spec: string) => boolean} [isBarrel] - стоит ли идти внутрь `export *`
  * @returns {string[]}
  */
 export function collectExports(source, resolve = null, isBarrel = () => true) {
+  /** @type {Set<string>} */
   const out = new Set()
   const seen = new Set([source])
   const queue = [source]
   while (queue.length) {
-    const text = queue.shift()
+    const text = /** @type {string} */ (queue.shift())
     // re-export списком: export { a, b as c } from './x' (тип-импорт тоже считаем)
     for (const m of text.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}(?:\s*from\s*['"]([^'"]+)['"])?/g)) {
       for (const part of m[1].split(',')) {
         const name = part.trim().replace(/^type\s+/, '')
         if (!name) continue
-        out.add(name.includes(' as ') ? name.split(/\s+as\s+/).pop() : name)
+        out.add(name.includes(' as ') ? /** @type {string} */ (name.split(/\s+as\s+/).pop()) : name)
       }
     }
     // звёздный ре-экспорт: раскрываем, пока есть куда идти
@@ -118,7 +119,9 @@ export const ENV_PREFIXES = ['DB_', 'DATABASE_', 'KIT_', 'POSTGRES_']
  * @returns {string[]}
  */
 export function envKeysFrom(texts) {
+  /** @type {Set<string>} */
   const out = new Set()
+  /** @param {string | undefined} k */
   const keep = (k) => {
     if (k && ENV_PREFIXES.some((p) => k.startsWith(p)) && /^[A-Z][A-Z0-9_]{3,}$/.test(k)) out.add(k)
   }
@@ -126,7 +129,7 @@ export function envKeysFrom(texts) {
     // env-контракт в коде
     for (const m of t.matchAll(/env\(\s*["\']([A-Z0-9_]+)["\']\s*\)|process\.env\.([A-Z0-9_]+)/g)) keep(m[1] ?? m[2])
     for (const m of t.matchAll(/\{([^}]*)\}\s*=\s*(?:env|process\.env)\b/g)) {
-      for (const part of m[1].split(',')) keep(part.trim().split(/\s*:\s*/).pop().split('=')[0].trim())
+      for (const part of m[1].split(',')) keep((part.trim().split(/\s*:\s*/).pop() ?? '').split('=')[0]?.trim())
     }
     // имя ключа внутри строки (сообщение об ошибке, дефолт) — тоже контракт для README.
     // только строки: `DB_ROOT` как идентификатор константы ключом окружения не является
@@ -142,6 +145,9 @@ export function envKeysFrom(texts) {
 /**
  * Таблица «| Экспорт | Что |»: спецификатор → заявленные имена.
  * @param {string} markdown
+ * @param {string} [heading]
+ * @param {string} [tail]
+ * @param {(spec: string) => boolean} [only]
  */
 export function parseApiTable(markdown, heading = API_HEADING, tail = API_TAIL, only = (spec) => spec.startsWith('#lib/') || spec.startsWith('@')) {
   const from = markdown.indexOf(heading)
@@ -214,10 +220,12 @@ export function parseStatusMatrix(markdown) {
 export function auditDocs(input) {
   /** @type {string[]} */
   const problems = []
+  /** @param {string} msg */
   const note = (msg) => problems.push(msg)
   const readme = input.readme
   const docs = [readme, input.porting, ...(input.extraDocs ?? []).map(([, t]) => t)]
   const allDocs = docs.join('\n')
+  /** @param {string} rel */
   const layer = (rel) => input.sources[rel] ?? ''
 
   /* 1. Экспорты: всё заявленное существует и живёт в правильном entry-поинте. */
@@ -347,6 +355,7 @@ export function auditDocs(input) {
 }
 
 /** @param {string[]} problems */
+/** @param {string[]} problems */
 export function formatProblems(problems) {
   if (!problems.length) return ''
   return ['[db-docs] документация расходится с кодом:', ...problems.map((p) => `  - ${p}`)].join('\n')
@@ -354,11 +363,13 @@ export function formatProblems(problems) {
 
 /* ── мелкие хелперы путей (POSIX, без node:path, чтобы работало в браузере) ── */
 
+/** @param {string} p */
 export function dirnamePosix(p) {
   const i = p.lastIndexOf('/')
   return i < 0 ? '.' : p.slice(0, i)
 }
 
+/** @param {string} p */
 export function normalize(p) {
   /** @type {string[]} */
   const out = []
@@ -370,5 +381,7 @@ export function normalize(p) {
   return out.join('/')
 }
 
+/** @param {string} a @param {string} b */
 const joinPosix = (a, b) => (a === '.' || a === '' ? b : `${a}/${b}`)
+/** @param {string} s */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

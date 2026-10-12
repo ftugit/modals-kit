@@ -215,7 +215,7 @@ test('attach читает начальную цепочку и следит за
   core.write([registered('card'), registered('user')])
   assert.deepEqual(names(modals.chain), ['card', 'user'])
 
-  e.go(-1)
+  e.go!(-1)
   assert.deepEqual(names(modals.chain), ['card'], 'Назад доезжает через ядро')
 
   off()
@@ -451,10 +451,10 @@ test('reconfigure: смена lookup меняет разрешение имён 
   const core = buildCore(historyEngine(), { url: urlStorage(), memory: memoryStorage() }, {
     lookup: () => undefined,
   })
-  assert.equal(core.lookup('card'), undefined)
+  assert.equal(core.lookup!('card'), undefined)
 
   core.reconfigure({ lookup: (n: string) => (n === 'card' ? defA : undefined) })
-  assert.equal(core.lookup('card'), defA, 'новый lookup виден через то же ядро')
+  assert.equal(core.lookup!('card'), defA, 'новый lookup виден через то же ядро')
 })
 
 test('reconfigure: запись исчезнувшего источника переселяется, а не пропадает', () => {
@@ -576,7 +576,7 @@ test('«Вперёд» не стирает содержимое вернувше
 
   // «Вперёд»: запись возвращается в цепочку — содержимое обязано вернуться
   // вместе с ней, иначе слой окажется пустой оболочкой.
-  engine.go(1)
+  engine.go!(1)
   assert.equal(names(m.chain).length, 1, 'запись не вернулась после «Вперёд»')
   assert.equal(m.layerContent(id), 'живое содержимое', 'содержимое вернувшегося слоя стёрто')
 })
@@ -645,7 +645,7 @@ test('back во время неприменённого обхода ждёт е
   const e = lagEngine()
   const core = buildCore(e, { url: urlStorage() })
   const seen: number[] = []
-  core.subscribe((c) => seen.push(c.length))
+  core.subscribe!((c) => seen.push(c.length))
   const card: RegisteredEntry = { kind: 'registered', name: 'card', params: {}, overrides: {} }
   const sheet: RegisteredEntry = { kind: 'registered', name: 'sheet', params: {}, overrides: {} }
 
@@ -667,7 +667,7 @@ test('back во время неприменённого обхода ждёт е
 test('запись во время неприменённого обхода выполняется после него', () => {
   const e = lagEngine()
   const core = buildCore(e, { url: urlStorage() })
-  core.subscribe(() => {})
+  core.subscribe!(() => {})
   const reg1 = (name: string): RegisteredEntry => ({ kind: 'registered', name, params: {}, overrides: {} })
 
   core.write([reg1('a')])
@@ -683,8 +683,8 @@ test('запись во время неприменённого обхода в�
 test('несколько подписчиков: одно событие истории применяет отложенное один раз', () => {
   const e = lagEngine()
   const core = buildCore(e, { url: urlStorage() })
-  core.subscribe(() => {})
-  core.subscribe(() => {})
+  core.subscribe!(() => {})
+  core.subscribe!(() => {})
   const r = (name: string): RegisteredEntry => ({ kind: 'registered', name, params: {}, overrides: {} })
   core.write([r('a')])
   core.write([r('a'), r('b')])

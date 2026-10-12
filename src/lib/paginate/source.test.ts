@@ -83,7 +83,7 @@ describe('defineSource: возможности и deny-safe вход', () => {
     const source = make(calls, { filters: ['kind', 'year'] })
     await source.fetchPage({ page: 1, pageSize: 5 }, { kind: 'tv', year: '', layout: 'columns' })
     expect(calls[0].input.filters).toEqual({ kind: 'tv' })
-    expect(source.extraKeys().sort()).toEqual(['kind', 'year'])
+    expect([...source.extraKeys()].sort()).toEqual(['kind', 'year'])
     expect(source.capabilitiesFor().filters).toEqual({ keys: ['kind', 'year'] })
   })
 
@@ -224,7 +224,7 @@ describe('composeSources: выбор источника по ключу extra', 
     expect(combo.capabilitiesFor({ src: 'a' }).search).toEqual({ minLength: 1 })
     expect(combo.capabilitiesFor({ src: 'b' }).search).toBeUndefined()
     // Ключи — объединение: после переключения ключ снова осмыслен.
-    expect(combo.extraKeys().sort()).toEqual(['kind', 'q'])
+    expect([...combo.extraKeys()].sort()).toEqual(['kind', 'q'])
   })
 
   it('неизвестный выбор — ошибка разработчика, а не пустая выдача', async () => {

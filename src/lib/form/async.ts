@@ -8,7 +8,7 @@ import { decode, type EntrySource } from './decode'
 import type { FormDescription } from './describe'
 import type { FormError } from './result'
 import { stableId } from './result'
-import { describe, type Issue, type Validator } from './validators'
+import { describe, type Issue, type MessageValidator, type Validator } from './validators'
 import type { FieldPath } from './types'
 
 /** Контекст асинхронной проверки. */
@@ -50,7 +50,7 @@ export class CheckRegistry {
  * @param name Имя проверки в `CheckRegistry`.
  * @param policy Дебаунс, кэш по значению, таймаут.
  */
-export function check(name: string, policy: Partial<AsyncPolicy> = {}): Validator<unknown> {
+export function check(name: string, policy: Partial<AsyncPolicy> = {}): MessageValidator<unknown> {
   const v = describe<unknown>(() => null, [opaque('асинхронная проверка не выражается атрибутом')])
   return Object.assign(v, { asyncCheck: { name, policy: { ...DEFAULT_ASYNC, ...policy } } })
 }

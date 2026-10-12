@@ -189,7 +189,7 @@ test('subscribe получает свои записи и внешнюю нав�
   const off = a.subscribe!((c) => seen.push(c.length))
   a.write([registered('card')])
   a.write([registered('card'), registered('user')])
-  e.go(-1)
+  e.go!(-1)
   off()
   a.write([])
   assert.deepEqual(seen, [1, 2, 1], 'после отписки события не приходят')

@@ -119,9 +119,9 @@ test('Назад откатывает смешанную стопку по од�
   m.open('a'); m.open('b'); m.open('c')
   assert.deepEqual(names(m.chain), ['a', 'b', 'c'])
 
-  e.go(-1); assert.deepEqual(names(m.chain), ['a', 'b'])
-  e.go(-1); assert.deepEqual(names(m.chain), ['a'])
-  e.go(1);  assert.deepEqual(names(m.chain), ['a', 'b'], 'Вперёд тоже')
+  e.go!(-1); assert.deepEqual(names(m.chain), ['a', 'b'])
+  e.go!(-1); assert.deepEqual(names(m.chain), ['a'])
+  e.go!(1);  assert.deepEqual(names(m.chain), ['a', 'b'], 'Вперёд тоже')
 })
 
 /* ── долговечность по источникам ───────────────────────────────────── */

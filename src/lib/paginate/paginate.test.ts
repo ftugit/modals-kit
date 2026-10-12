@@ -57,6 +57,7 @@ import {
   type PageResponse,
   type PaginatorState,
 } from './index'
+import { initialState } from './store'
 
 function makeState(overrides: Partial<PaginatorState<unknown>> = {}): PaginatorState<unknown> {
   return {
@@ -527,7 +528,7 @@ describe('URL adapter & extra search', () => {
       source: sourceOf(async () => ({ items: [] })),
     })
     expect(adapter.pageParam).toBe('gallery')
-    expect(adapter.hrefFor(2, { search: {} })).toContain('gallery=2')
+    expect(adapter.hrefFor?.(2, { search: {} })).toContain('gallery=2')
   })
 })
 
@@ -909,7 +910,8 @@ describe('Q1 onError: fan-out, коды, persist', () => {
         },
         loadPage: async () => ({ items: [] }),
         persist: () => {},
-        capabilities: EMPTY_CAPABILITIES,
+        // `append` адаптера не задан → режим замены (как было: undefined = false).
+        capabilities: { append: false },
         capabilitiesFor: () => EMPTY_CAPABILITIES,
       },
       onError: (e) => void seen.push(e),
@@ -934,7 +936,8 @@ describe('Q1 onError: fan-out, коды, persist', () => {
           throw new Error('source down')
         },
         persist: () => {},
-        capabilities: EMPTY_CAPABILITIES,
+        // `append` адаптера не задан → режим замены (как было: undefined = false).
+        capabilities: { append: false },
         capabilitiesFor: () => EMPTY_CAPABILITIES,
       },
       onError: (e) => void seen.push(e),
@@ -959,7 +962,8 @@ describe('Q1 onError: fan-out, коды, persist', () => {
         persist: () => {
           throw new Error('quota')
         },
-        capabilities: EMPTY_CAPABILITIES,
+        // `append` адаптера не задан → режим замены (как было: undefined = false).
+        capabilities: { append: false },
         capabilitiesFor: () => EMPTY_CAPABILITIES,
       },
       onError: (e) => seen.push(e.code),
@@ -980,7 +984,8 @@ describe('Q1 onError: fan-out, коды, persist', () => {
         persist: () => {
           throw new Error('quota')
         },
-        capabilities: EMPTY_CAPABILITIES,
+        // `append` адаптера не задан → режим замены (как было: undefined = false).
+        capabilities: { append: false },
         capabilitiesFor: () => EMPTY_CAPABILITIES,
       },
       onError: () => {
@@ -1006,7 +1011,8 @@ describe('Q1 onError: fan-out, коды, persist', () => {
         persist: () => {
           throw new Error('quota')
         },
-        capabilities: EMPTY_CAPABILITIES,
+        // `append` адаптера не задан → режим замены (как было: undefined = false).
+        capabilities: { append: false },
         capabilitiesFor: () => EMPTY_CAPABILITIES,
       },
       onError: (e) => cfg.push(e.code),
@@ -1022,7 +1028,7 @@ describe('Q1 onError: fan-out, коды, persist', () => {
 
 describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => {
   const mkCombo = (storage: ReturnType<typeof createMemoryStorage>) => {
-    const source = sourceOf(async () => ({ items: [] }))
+    const source = sourceOf<unknown>(async () => ({ items: [] }))
     const combo = withUrlTakeover(
       createLocalAdapter<unknown>({ name: 't', source, storage }),
       { name: 't', source, pageSize: 10, extraSearch: { q: extraField('text') }, extraDefaults: { q: '' } },
@@ -1031,8 +1037,8 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
     combo.setRouter({ navigate, currentSearch: () => ({}) })
     return { combo, navigate }
   }
-  const restored = (page: number, extra: Record<string, unknown>) =>
-    ({ page, pageSize: 10, totalItems: null, totalPages: null, extra }) as never
+  // Полное состояние: storage.write принимает PaginatorState (сохраняет только restorable-часть).
+  const restored = (page: number, extra: Extra) => ({ ...initialState<unknown>('t', 10, extra), page })
 
   it('адрес пуст → прошлый заход из storage; persist пишет storage, адрес молчит', async () => {
     const storage = createMemoryStorage()
@@ -1040,7 +1046,7 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
     const { combo, navigate } = mkCombo(storage)
     const init = await combo.getInitial({ url: '/catalog' })
     expect(init.page).toBe(4)
-    expect(init.extra.q).toBe('store')
+    expect(init.extra?.q).toBe('store')
     await combo.persist({ ...restored(5, { q: 'x' }), items: [], loadedPages: [], pages: {}, status: 'idle' } as never)
     expect(navigate).not.toHaveBeenCalled()
     expect((await storage.read('t'))!.page).toBe(5)
@@ -1055,7 +1061,7 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
     const { combo, navigate } = mkCombo(storage)
     const init = await combo.getInitial({ url: '/catalog?page=7&page.q=url' })
     expect(init.page).toBe(7)
-    expect(init.extra.q).toBe('url')
+    expect(init.extra?.q).toBe('url')
     await combo.persist({ ...restored(8, { q: 'url' }), items: [], loadedPages: [], pages: {}, status: 'idle' } as never)
     expect(navigate).toHaveBeenCalledTimes(1)
     const call = navigate.mock.calls[0][0] as { replace?: boolean; search: (p: Record<string, unknown>) => Record<string, unknown> }
@@ -1069,7 +1075,7 @@ describe('withUrlTakeover: адрес на подхвате (S4, Q2 v2)', () => 
   })
 
   it('echo-guard судит по ЖИВОМУ адресу: отставший срез роутера не должен гасить запись', async () => {
-    const source = sourceOf(async () => ({ items: [] }))
+    const source = sourceOf<unknown>(async () => ({ items: [] }))
     const mk = () =>
       withUrlTakeover(
         createLocalAdapter<unknown>({ name: 't', source, storage: createMemoryStorage() }),
@@ -1219,7 +1225,7 @@ describe('сеансовое состояние вне общего экземп
   })
 
   it('takeover: ссылки судят по ctx.search своего рендера, а не по последнему getInitial', async () => {
-    const source = sourceOf(async () => ({ items: [] }))
+    const source = sourceOf<unknown>(async () => ({ items: [] }))
     const combo = withUrlTakeover(
       createLocalAdapter<unknown>({ name: 't11', source, storage: createMemoryStorage() }),
       { name: 't11', source, pageSize: 10, extraSearch: { q: extraField('text') }, extraDefaults: { q: '' } },
@@ -1289,7 +1295,7 @@ describe('отмена loadMore и prefetch (B6)', () => {
 /* ── B10: хранилище по умолчанию на сервере не общее для запросов ─────── */
 describe('хранилище адаптера по умолчанию на сервере (B10)', () => {
   it('local-адаптер без storage: снимок одного запроса не восстанавливается другому', async () => {
-    const source = sourceOf(async () => ({ items: [] }))
+    const source = sourceOf<unknown>(async () => ({ items: [] }))
     const adapter = createLocalAdapter<unknown>({ name: 'b10', source })
     await adapter.persist(makeState({ name: 'b10', page: 3, pageSize: 50, extra: { q: 'чужое' } }) as never)
     const init = await adapter.getInitial()

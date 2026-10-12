@@ -167,7 +167,7 @@ test('9b. lock: внешняя навигация Назад не закрыва
   const e = hist()
   const { m } = sys(scope, e)
   m.open('a'); m.open('locked')
-  e.go(-1)
+  e.go!(-1)
   assert.deepEqual(names(m.chain), ['a', 'locked'], 'адрес возвращён обратно')
 })
 
@@ -179,7 +179,7 @@ test('11. noForward: «Вперёд» не восстанавливает так
   assert.deepEqual(names(m.chain), ['a', 'flash'])
   m.close()
   assert.deepEqual(names(m.chain), ['a'])
-  e.go(1)
+  e.go!(1)
   assert.deepEqual(names(m.chain), ['a'], 'обратно не всплыла')
 })
 

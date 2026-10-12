@@ -211,7 +211,7 @@ describe('кэш схемы', () => {
     const failing = (async () => {
       throw new Error('сеть упала')
     }) as unknown as typeof globalThis.fetch
-    const second = await getShikimoriFilterSchema({ fetch: failing, now: c.now, sleep: c.sleep, retryDelayMs: 1 })
+    const second = await getShikimoriFilterSchema({ fetch: failing, now: c.now, sleep: c.sleep })
     expect(second).toBe(first)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
@@ -221,6 +221,6 @@ describe('кэш схемы', () => {
     const failing = (async () => {
       throw new Error('сеть упала')
     }) as unknown as typeof globalThis.fetch
-    await expect(getShikimoriFilterSchema({ fetch: failing, retryDelayMs: 1 })).rejects.toThrow(/недоступен/)
+    await expect(getShikimoriFilterSchema({ fetch: failing, sleep: async () => {} })).rejects.toThrow(/недоступен/)
   })
 })

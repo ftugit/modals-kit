@@ -464,8 +464,9 @@ suite('устаревание и продолжение', () => {
 })
 
 suite('исход и файлы', () => {
-  const base = { v: 1, formId: 'f', instance: 'f:new', submissionId: SUB, ok: true,
-                 status: 200, errors: [], values: {}, revision: 1, from: 'fetch' } as Result
+  // Без outcome: каждый тест задаёт свой исход поверх базы.
+  const base: Omit<Result, 'outcome'> = { v: 1, formId: 'f', instance: 'f:new', submissionId: SUB, ok: true,
+                 status: 200, errors: [], values: {}, revision: 1, from: 'fetch' }
 
   test('queued без протокола — ошибка разработки', () => {
     expect(() => assertQueuedProtocol({ ...base, outcome: 'queued' }))

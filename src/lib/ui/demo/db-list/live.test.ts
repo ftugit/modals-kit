@@ -135,7 +135,8 @@ describe('createLive', () => {
   })
 
   it('пока ответ в полёте, второй запрос не стартует', async () => {
-    let release: (() => void) | null = null
+    // `as`: присваивание в замыкании TS не отслеживает и иначе сузил бы тип до null.
+    let release = null as (() => void) | null
     let started = 0
     const fetchImpl = vi.fn(
       () =>

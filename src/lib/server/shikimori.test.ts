@@ -122,10 +122,10 @@ describe('parseAnimesQuery', () => {
   })
 
   it('странный order откатывается к популярности', () => {
-    expect(parse('order=!!').ok && parse('order=!!').ok && parse('order=!!').query.order).toBe(
-      'popularity'
-    )
-    expect(parse('order=ranked').ok && parse('order=ranked').query.order).toBe('ranked')
+    const weird = parse('order=!!')
+    expect(weird.ok && weird.query.order).toBe('popularity')
+    const ranked = parse('order=ranked')
+    expect(ranked.ok && ranked.query.order).toBe('ranked')
   })
 })
 

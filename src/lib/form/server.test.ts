@@ -67,12 +67,13 @@ suite('частота (F18)', () => {
     expect(() => windowThrottle({ limit: 1, windowMs: 1000 } as never)).toThrow(/key обязателен/)
   })
 
-  test('лимит считается по заданному ключу', () => {
+  test('лимит считается по заданному ключу', async () => {
     const t = windowThrottle({ limit: 2, windowMs: 1000, key: (r) => r.headers.get('x-real-ip')! }, () => 0)
-    expect(t.check(req()).allowed).toBe(true)
-    expect(t.check(req()).allowed).toBe(true)
-    expect(t.check(req())).toEqual({ allowed: false, retryAfterMs: 1000 })
-    expect(t.check(req('2.2.2.2')).allowed).toBe(true)
+    // Контракт Throttle.check — значение ИЛИ промис: await покрывает оба.
+    expect((await t.check(req())).allowed).toBe(true)
+    expect((await t.check(req())).allowed).toBe(true)
+    expect(await t.check(req())).toEqual({ allowed: false, retryAfterMs: 1000 })
+    expect((await t.check(req('2.2.2.2'))).allowed).toBe(true)
   })
 
   test('окна без попаданий удаляются: память не растёт с числом разовых ключей', () => {

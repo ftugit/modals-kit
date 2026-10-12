@@ -14,6 +14,14 @@
   `export const handle = dbHandle({ db: async () => (await getRuntime()).db, principal: () => DEMO_PRINCIPAL, paths: ['/db-demo', '/api/db-posts'] })`.
   В самом хуке та же граница пропущена у `/api/db-posts` (`startsWith('/api/db-posts')`).
 
+- [ ] **C10-db — типизация перенесённых сценариев.** `src/lib/db/test/ported/*.script.ts`
+  исключены из `tsconfig.json` (101 ошибка: `db-followup` 38, `db-lib` 37,
+  `db-hardening` 26). Остальной C10 закрыт: тесты и `tooling/db-docs.mjs` проверяются.
+  Состав: нетипизированный JS-порт (неявный `any`, `catch (e)` без сужения, `PGlite | Pool`
+  без сужения по драйверу) и намеренно неверные входы негативных тестов (там нужен
+  `as never`, а не исправление). Рантайм не затронут: сценарии гоняет `db-ported.test.ts`.
+  Отложено в этот чек-лист, потому что это код `lib/db`.
+
 ### Проверка «вместе не создают ли нового бага» (ход 42)
 
 - **Сейчас — нет.** Хук приложения не передаёт `paths`, поэтому код F43 в приложении не

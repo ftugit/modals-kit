@@ -27,7 +27,7 @@ import {
   type CatalogFilterSchema,
 } from './catalog-filter'
 
-const schema = {
+const schema: CatalogFilterSchema = {
   source: 'demo',
   version: 3,
   fields: [
