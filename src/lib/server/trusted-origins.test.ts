@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { trustedOrigins } from './trusted-origins'
+import { sameOriginFetch, trustedOrigins } from './trusted-origins'
 
 const from = (env: Record<string, string>) => trustedOrigins((key) => env[key])
 
@@ -38,5 +38,19 @@ describe('trustedOrigins — один список для фреймворка �
       KIT_TRUSTED_ORIGINS: 'http://localhost:5173',
     })
     expect(exact).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173', 'https://5173-sbx1.e2b.app'])
+  })
+})
+
+describe('sameOriginFetch — только страницы этого сайта', () => {
+  const req = (site?: string) =>
+    new Request('https://app.test/api/x', site ? { headers: { 'sec-fetch-site': site } } : {})
+  it('same-origin — да; cross-site, same-site, none — нет', () => {
+    expect(sameOriginFetch(req('same-origin'))).toBe(true)
+    for (const s of ['cross-site', 'same-site', 'none']) expect(sameOriginFetch(req(s))).toBe(false)
+  })
+  it('без заголовка: отказ, а с allowMissing (dev по http) — да; чужой сайт и в dev — нет', () => {
+    expect(sameOriginFetch(req())).toBe(false)
+    expect(sameOriginFetch(req(), true)).toBe(true)
+    expect(sameOriginFetch(req('cross-site'), true)).toBe(false)
   })
 })

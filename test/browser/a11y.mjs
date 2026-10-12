@@ -92,7 +92,8 @@ await check(page, 'демо модалок: открытая карточка', 
 // остаётся оффлайновым.
 await check(page, 'пагинатор: настройки, поиск, выдача', '/paginator?page.src=products&page.size=5')
 
-const live = await fetch(new URL('/api/shikimori/filters', `${BASE}/`).href)
+// заголовок как у браузера: без него 403, и проверка панели молча выключилась бы
+const live = await fetch(new URL('/api/shikimori/filters', `${BASE}/`).href, { headers: { 'sec-fetch-site': 'same-origin' } })
   .then((r) => r.ok)
   .catch(() => false)
 if (live) {

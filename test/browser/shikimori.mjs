@@ -79,7 +79,8 @@ async function waitFor(fn, { timeout = 20000, every = 250, what = 'услови�
 
 async function api(path) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { accept: 'application/json' },
+    // как браузер со страницы сайта: /api/shikimori/filters без него отвечает 403
+    headers: { accept: 'application/json', 'sec-fetch-site': 'same-origin' },
   });
   const text = await res.text();
   let body = null;
@@ -156,11 +157,17 @@ async function checkApi() {
  */
 async function checkFilters() {
   console.log('— Фильтры: схема источника, применение на сервере, связки —');
-  const schema = await fetch(`${BASE}/api/shikimori/filters`).then(async (r) => ({
+  const schema = await fetch(`${BASE}/api/shikimori/filters`, { headers: { 'sec-fetch-site': 'same-origin' } }).then(async (r) => ({
     status: r.status,
     body: await r.json(),
   }));
   if (schema.status !== 200) throw new Error(`/api/shikimori/filters → HTTP ${schema.status}`);
+  // только страницам этого сайта: без заголовка и с чужого сайта — 403 без тела
+  for (const site of [null, 'cross-site', 'same-site', 'none']) {
+    const r = await fetch(`${BASE}/api/shikimori/filters`, site ? { headers: { 'sec-fetch-site': site } } : {});
+    if (r.status !== 403 || (await r.text()) !== '') throw new Error(`/api/shikimori/filters с Sec-Fetch-Site=${site} → ${r.status}, ожидался 403`);
+  }
+  console.log('  ok  /api/shikimori/filters: без Sec-Fetch-Site и не same-origin → 403');
   const builtAt = Date.parse(schema.body.builtAt ?? '');
   if (!Number.isFinite(builtAt)) throw new Error('у схемы нет метки builtAt');
   if (Date.now() - builtAt > 60 * 60 * 1000) throw new Error('схема старше часа — обновление не работает');
@@ -310,6 +317,16 @@ async function checkFiltersUi(browser) {
       what: 'панель отсутствует у источника без фильтров',
     });
     console.log('  ok  у товаров (нет возможности `filters`) панели нет');
+
+    // Источник переключён в панели: адрес пишется без серверной загрузки, схема со
+    // страницей не пришла — браузер берёт её с /api/shikimori/filters (Sec-Fetch-Site
+    // ставит сам браузер, 403 тут означал бы сломанную панель).
+    const schemaResponse = page.waitForResponse((r) => r.url().includes('/api/shikimori/filters'));
+    await page.locator('[data-testid="demo-panel"] select[name="page.src"]').selectOption('animes');
+    const fetched = await schemaResponse;
+    if (fetched.status() !== 200) throw new Error(`схема после переключения источника: HTTP ${fetched.status()}`);
+    await waitFor(async () => await panel.isVisible(), { what: 'панель фильтров после переключения источника' });
+    console.log('  ok  переключение источника в панели: схема пришла с /api/shikimori/filters (200), панель на месте');
 
     await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
     await waitFor(async () => await panel.isVisible(), { what: 'панель фильтров' });

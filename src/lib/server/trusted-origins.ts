@@ -57,3 +57,23 @@ export function trustedOrigins(get: EnvGet): TrustedOrigins {
       .map((o) => new RegExp(`^${escape(o).replace(/\*/g, '[^/]+')}$`)),
   }
 }
+
+/**
+ * Пришёл ли запрос от страницы этого же сайта — по заголовку `Sec-Fetch-Site`
+ * (Fetch Metadata; во всех браузерах с марта 2023: Chrome 76, Firefox 90, Safari 16.4).
+ * Пропускает только `same-origin`: чужой сайт (`cross-site`), соседний поддомен
+ * (`same-site`) и адрес, открытый руками (`none`), получают отказ.
+ *
+ * Это не защита от парсеров: заголовок ставит браузер, а скрипт подделывает его одной
+ * строкой. Отсекает чужие страницы в браузере и простые скачивания без заголовка.
+ *
+ * Браузер шлёт заголовок только на «доверенные» адреса (https, localhost/127.0.0.1).
+ * Dev по http с адреса сети заголовка не получит, поэтому `allowMissing` — для dev.
+ * @param request Входящий запрос.
+ * @param allowMissing Пропускать запрос без заголовка (dev по http).
+ * @returns `true` — запрос со страницы этого сайта.
+ */
+export function sameOriginFetch(request: Request, allowMissing = false): boolean {
+  const site = request.headers.get('sec-fetch-site')
+  return site === 'same-origin' || (site === null && allowMissing)
+}
