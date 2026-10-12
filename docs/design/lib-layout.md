@@ -1,6 +1,7 @@
 # План: раскладка `src/lib` — библиотеки, адаптеры, UI
 
-**Статус: ЗАПЛАНИРОВАНО** (решение владельца, ход 45). Делать после чек-листа `lib/db`
+**Статус: ЗАПЛАНИРОВАНО** (решение владельца, ход 45; ход 47 — сюда же влит R2, очистка
+фильтров). Делать после чек-листа `lib/db`
 ([../audit/lib-db.md](../audit/lib-db.md)). Пути импорта — публичный API: перенос начинается
 только после ответов на «Решения» ниже.
 
@@ -12,6 +13,39 @@
   `lib/components` и `ui/*`.
 - Цель: lib можно забрать в проект на другом фреймворке (например, React), написав только
   адаптеры.
+
+## R2 — очистка фильтров (влита в этот план, ход 47)
+
+R2 (ход 31–34): `lib/filters` — не библиотека (F53). По сути это генератор формы и правил из
+схемы плюс UI; «лишнее» — формат адреса (префикс `filters.`), поиск `q` в связках, патчи
+канала `extra` пагинатора. Отдельно R2 означал бы перенос дважды (сначала чистка, потом
+раскладка), поэтому он делается шагом 3 этого плана.
+
+Что меняет объединение: внутри пакета `paginate` префикс `filters.`, поле поиска `q` и канал
+`extra` — свои договорённости пакета, а не чужие. Значит, от R2 остаётся только то, что даёт
+практическую пользу:
+
+1. **Разрезать `catalog-filter.ts` (1029 строк) по ролям** — без изменения поведения и имён:
+
+   | Файл `paginate/filters/` | Что туда идёт |
+   |---|---|
+   | `schema.ts` | типы схемы, `validateCatalogFilterSchema`, `catalogFilterSafeName`, `catalogFilterFieldNames`, `CATALOG_FILTER_OPTIONS_LIMIT`, `capCatalogFilterOptions`, `catalogFilterOptionsAreComplete` |
+   | `form.ts` | схема → `lib/form`: `compileCatalogFilterSchema`, `stripDefaultCatalogFilterValues`, `catalogFilterInitialState`, `catalogFilterFormData` |
+   | `url.ts` | ключи адреса: `parseCatalogFilterPath`, `readCatalogFilterValues`, `catalogFilterValuesFromSearch`, `canonicalCatalogFilterUrl`, `catalogFilterUrlWithout` |
+   | `rules.ts` | связки и серверная проверка: `catalogRuleState`, `catalogFilterValueMap`, `catalogFilterViolations`, `validateCatalogFilterValues` |
+   | `view.ts` | как есть: картина панели и патчи `extra`, `activeCatalogFilters` (данные чипов) |
+
+2. **Один префикс.** Литерал `'filters.'` сейчас повторён 5 раз в `catalog-filter.ts` и 5 раз в
+   `lib/server` (`shikimori.ts`, `shikimori-filters.ts`, `rickmorty.ts`), а в
+   `paginate/source.ts:196` уже есть `FILTER_KEY_PREFIX` с комментарием «объявлен здесь ОДИН
+   раз». Все места — на эту константу.
+3. **Русские подписи режимов и границ** (`CATALOG_FILTER_MODE_LABEL`, `CATALOG_FILTER_BOUND_LABEL`)
+   используются только в `compileCatalogFilterSchema` для подписей полей. Это текст UI в lib —
+   решение 4.
+
+Не входит (нет практической пользы сейчас, ход 32): переименование `CatalogFilter*`,
+параметр вместо префикса, отделение схемы фильтров в спеку источника (R3 — записан).
+R4/R5 (Select + `lib/search`, no-JS) — отдельно, после этого плана.
 
 ## Почему `lib/router` нельзя просто разложить по адаптерам
 
@@ -55,7 +89,8 @@ src/lib/
 │   ├── (ядро без изменений)
 │   ├── search/                  ← lib/search/*.ts (accumulator, core, dictionary, fuzzy,
 │   │                              registry, stats, types, index, тесты, README)
-│   ├── filters/                 ← lib/filters/* (catalog-filter, view, index, тесты)
+│   ├── filters/                 ← lib/filters/*, разрезан по ролям (см. R2): schema, form,
+│   │                              url, rules, view, index, тесты
 │   ├── svelte/                  как есть
 │   │   └── search/              ← lib/search/svelte/* (correction, stats)
 │   └── sveltekit/               НОВЫЙ адаптер
@@ -125,18 +160,21 @@ src/lib/
    `components/modals` (меняет API). `ModalHost`, `Layers`, `Tails` остаются в адаптере:
    механика стопки (фокус, история, слои) со структурными классами, а не оформление.
 3. Демо: `src/lib/demo/` или рядом с маршрутами в `src/routes/...`.
+4. Подписи режимов/границ фильтров: (а) словарь подписей — параметр
+   `compileCatalogFilterSchema` с русским по умолчанию, как `messages` в `lib/form`
+   (рекомендую: так устроена форма, API только расширяется); (б) оставить как есть.
 
 ## Порядок (каждый шаг — отдельный коммит с гейтом)
 
 1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
    `modals/cores/sveltekit.ts` + `LoadLink` в `components/modals`.
 2. `search` → `paginate/search` и `paginate/svelte/search`.
-3. `filters` → `paginate/filters` (перенос без изменения поведения).
+3. `filters` → `paginate/filters` вместе с R2: разрез по ролям, один префикс, подписи (по
+   решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.
 4. `ui/*`, `shell`, `cn`, `js-only`, `use-drawer` → `components`, `hooks`, `utils.ts`.
 5. `ui/demo` → `demo` (по решению 3).
-6. «Причёсывание» `filters` — отдельный шаг, с согласованием API.
 
 В каждом шаге: пути в стражах (`tooling/core-purity.mjs` `CORE_MODULES`, `layer-guard`,
 `size-budget`, `form-size`, `classes-audit`, `source-schema-guard`), README библиотек,
 `docs/audit/*` (ссылки), `tsconfig`/`package.json#imports` при необходимости; браузерные наборы
-после шагов 1, 4, 5.
+после шагов 1, 3, 4, 5.
