@@ -570,7 +570,16 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         (opts.onConflictIgnore ? ' ON CONFLICT DO NOTHING' : '') +
         ' RETURNING ' +
         projection(r, keys);
-      const res = await dbx.query(withSignal(s.statement(sql), ctx));
+      let res: Awaited<ReturnType<Database['query']>>;
+      try {
+        res = await dbx.query(withSignal(s.statement(sql), ctx));
+      } catch (error) {
+        // у всех строк один набор полей — привязка к полю та же, что у insert;
+        // какая именно строка, PostgreSQL сообщает только текстом, его не разбираем
+        const e = normalizeFailure(error);
+        await attachFieldErrors(r, ctx, e, 'insert', items[0]!);
+        throw e;
+      }
       // Короткий RETURNING без ON CONFLICT DO NOTHING означает, что часть строк не
       // вошла, а ошибка потерялась (триггер,Rules, strange driver) → кричим, а не
       // возвращаем «успех» с недобором.

@@ -128,16 +128,63 @@ export function fieldError(
     ...(own_ !== undefined ? { template: own_ } : {}),
   };
 }
-/** Issue схемы → ошибка поля: код/параметры берём, если схема их дала (s.*). */
+const num = (v: unknown) => (typeof v === "number" || typeof v === "bigint" ? Number(v) : undefined);
+/**
+ * Коды zod (4 и 3) → коды правил форм, чтобы текст дал словарь, а не английское
+ * сообщение zod. Распознаём по виду issue, zod не импортируем. Строгие границы
+ * (`gt`/`lt`) не переводим: «не меньше N» для них было бы неправдой.
+ */
+function zodCode(i: Record<string, unknown>): { code: string; params?: Record<string, unknown> } | undefined {
+  const kind = String(i.origin ?? i.type ?? "");
+  const inclusive = i.inclusive !== false;
+  switch (i.code) {
+    case "too_small":
+    case "too_big": {
+      const small = i.code === "too_small";
+      const n = num(small ? i.minimum : i.maximum);
+      if (n === undefined || !inclusive) return { code: "invalid" };
+      const p = small ? { min: n } : { max: n };
+      if (kind === "string") return { code: small ? "minLength" : "maxLength", params: p };
+      if (kind === "number" || kind === "int" || kind === "bigint") return { code: small ? "minValue" : "maxValue", params: p };
+      if (kind === "array" || kind === "set") return { code: small ? "minCount" : "maxCount", params: p };
+      return { code: "invalid" };
+    }
+    case "invalid_format":
+    case "invalid_string": {
+      const f = String(i.format ?? i.validation ?? "");
+      return { code: f === "email" ? "email" : f === "url" ? "url" : f === "regex" ? "pattern" : "invalid" };
+    }
+    case "invalid_value":
+    case "invalid_enum_value":
+      return { code: "oneOf" };
+    case "invalid_type":
+      return { code: i.expected === "int" || i.expected === "integer" ? "integer" : "invalid" };
+    case "not_multiple_of": {
+      const n = num(i.divisor ?? i.multipleOf);
+      return n === undefined ? { code: "invalid" } : { code: "step", params: { step: n } };
+    }
+    default:
+      return undefined;
+  }
+}
+/**
+ * Issue схемы → ошибка поля. Код и параметры — от схемы (`s.*` даёт коды правил
+ * форм, коды zod переводятся), иначе `invalid` с текстом схемы. Свой текст zod
+ * (`refine(…, 'текст')`, код `custom`) — свой текст поля: он сильнее словарей.
+ */
 function issueError(field: Field, key: string, issue: unknown): FieldError {
   const i = (issue && typeof issue === "object" ? issue : {}) as Record<string, unknown>;
-  const code = typeof i.code === "string" && i.code ? i.code : "invalid";
-  const params =
+  const message = String(i.message ?? "Invalid input");
+  let code = typeof i.code === "string" && i.code ? i.code : "invalid";
+  let params =
     i.params && typeof i.params === "object" && !Array.isArray(i.params)
       ? (i.params as Record<string, unknown>)
       : undefined;
-  const template = typeof i.template === "string" ? i.template : undefined;
-  return fieldError(field, key, code, String(i.message ?? "Invalid input"), params, template);
+  let template = typeof i.template === "string" ? i.template : undefined;
+  const zod = i.template === undefined ? zodCode(i) : undefined;
+  if (zod) ({ code, params } = { code: zod.code, params: zod.params });
+  else if (code === "custom" && template === undefined && message !== "Invalid input") template = message;
+  return fieldError(field, key, code, message, params, template);
 }
 /**
  * Проверка одного поля без броска на ошибке значения: `{ errors }` — что не так.

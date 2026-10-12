@@ -287,43 +287,144 @@ export const actions: Actions = {
 
 ### Ошибки по полям и свои тексты
 
-Отказ `validation` перечисляет **все** плохие поля сразу (`details.errors`), а не первое. Каждая
-ошибка — `{ field?, code, params?, message, template? }`. Коды те же, что у правил `lib/form`:
-`required`, `minLength`/`maxLength` (`{ min }`/`{ max }`), `minValue`/`maxValue`, `integer`,
-`oneOf`, `pattern`, `minCount`/`maxCount`, `type.date`, `type.datetime`; свои — `unique`,
-`check`, `invalid` (схема не дала кода, например zod), `custom` (`s.custom`).
+Коротко: `lib/db` сообщает, **какое поле** не так и **почему** (код + параметры), сразу по всем
+полям. Текст можно задать в модели, а форма `lib/form` покажет ошибку под нужным полем, без
+импорта библиотек друг в друга.
 
-Ограничения, которые `defineSchema` создала из модели, тоже приходят ошибкой поля: уникальный
-индекс → `unique` (`conflict`, 409), CHECK → `check`, NOT NULL → `required`. Привязка к полю —
-только если этот `ctx` сам пишет поле (значение прислал он). Иначе ошибка общая, как раньше.
-Составной уникальный индекс даёт общую ошибку `unique` с `params.fields`.
+#### Что лежит в ошибке
 
-Свой текст — у поля, по коду, с подстановками из параметров (как `.message()` у правил формы):
+Отказ (`DbFailure`) несёт `details.errors` — список ошибок:
 
 ```ts
-email: field(s.text({ max: 254 }), {
-  read: () => true, create: () => true, required: true, db: { unique: true },
-  messages: { unique: 'Этот email уже зарегистрирован', maxLength: 'Не длиннее {max} символов' },
-}),
-```
-
-Свой текст схемы (`s.text({ pattern, message })`, `s.custom`) сильнее текста поля. Свой текст
-приходит как `template` и в форме сильнее словарей. Без своего текста форма берёт текст из
-своих словарей по коду.
-
-В форму `lib/form` ошибки идут без импорта друг друга: `failureIssues(e)` отдаёт их как issues
-Standard Schema (`path: [поле]` + `code`/`params`/`template`), а `ctx.fail` их принимает:
-
-```ts
-execute: async (ctx) => {
-  try { await locals.db.resource(users).insert(locals.dbCtx, ctx.values) }
-  catch (e) { const issues = failureIssues(e); if (issues) ctx.fail(issues); throw e }
-  ctx.commit()
+interface FieldError {
+  field?: string                    // поле ресурса; нет — ошибка про запись целиком
+  code: string                      // 'minLength', 'unique', … (таблица ниже)
+  params?: Record<string, unknown>  // { min: 3 }, { max: 120 }, { fields: ['a', 'b'] }
+  message: string                   // готовый текст (свой текст с подстановками или текст схемы)
+  template?: string                 // свой текст до подстановок — только если он задан
 }
 ```
 
-`toKitError` кладёт ошибки в `body.errors` (без `template`), `toFormFailure` — в
-`fieldErrors`/`formErrors` готовыми текстами.
+- **Все поля сразу.** `insert`/`update` проверяют каждое присланное поле и бросают одну ошибку
+  `validation` со всеми проблемами. Раньше отказ был на первом плохом поле.
+- **Права проверяются раньше значений.** Если в запросе есть поле, которое этому `ctx` писать
+  нельзя, ответ — `forbidden` (403), сколько бы плохих значений там ни было.
+- Старые поля `details.field` и `details.issues` остались (первое поле и его тексты) — на них
+  стоит старый код.
+
+#### Коды
+
+| Код | Когда | `params` | Текст в форме по умолчанию (`lib/form`, словарь `ru`) |
+|---|---|---|---|
+| `required` | поле не пришло, `null` у не-`nullable`, NOT NULL в БД | — | Обязательное поле |
+| `minLength` / `maxLength` | `s.text({ min, max })`, `z.string().min/max` | `{ min }` / `{ max }` | Минимум N символов / Не больше N символов |
+| `minValue` / `maxValue` | `s.integer({ min, max })`, `z.number().min/max` | `{ min }` / `{ max }` | Не меньше N / Не больше N |
+| `integer` | не целое (`s.integer`, `z.number().int()`) | — | Введите целое число |
+| `step` | `z.number().multipleOf(n)` | `{ step }` | Шаг N |
+| `oneOf` | `s.enumOf`, `z.enum` | — | Выберите значение из списка |
+| `pattern` | `s.text({ pattern })`, `z.string().regex` | — | Значение не соответствует формату |
+| `email` / `url` | `z.email()` / `z.url()` | — | Введите корректный адрес почты / ссылку |
+| `minCount` / `maxCount` | `s.array(…, { min, max })`, `z.array().min/max` | `{ min }` / `{ max }` | Выберите хотя бы N / Не больше N вариантов |
+| `type.date` / `type.datetime` | `s.date()` / `s.timestamp()` | — | Введите дату / Введите дату и время |
+| `unique` | уникальный индекс из модели (`db: { unique: true }`, `db.unique`) | составной: `{ fields }` | Это значение уже занято |
+| `check` | CHECK из модели сработал в обход кода | — | *нет — текст схемы (англ.)* |
+| `invalid` | схема не дала кода (uuid, bigint, json; строгие `gt`/`lt` zod; valibot…) | — | *нет — текст схемы (англ.)* |
+| `custom` | `s.custom`, `z.refine(…, 'текст')` | — | свой текст схемы |
+
+Коды совпадают с кодами правил `lib/form`, поэтому словари формы подходят без доработок.
+Коды zod (4 и 3) переводятся по виду ошибки, zod при этом не импортируется. Строгие границы
+(`gt`/`lt`) нарочно не переводятся: «не меньше 3» для `> 3` было бы неправдой.
+
+#### Ошибки самой БД (ограничения из модели)
+
+Ограничения, которые `defineSchema` построила из модели, тоже становятся ошибками поля:
+
+| PostgreSQL | Вид отказа | Ошибка |
+|---|---|---|
+| уникальный индекс (`23505`) | `conflict`, 409 | `{ field, code: 'unique' }` |
+| составной уникальный индекс | `conflict`, 409 | `{ code: 'unique', params: { fields } }` — без поля, общая |
+| CHECK (`23514`) | `validation`, 422 | `{ field, code: 'check' }` |
+| NOT NULL (`23502`) | `validation`, 422 | `{ field, code: 'required' }` |
+
+Поле указывается, **только если этот `ctx` сам пишет это поле** (оно есть в запросе и есть
+право `create`/`update`): значение прислал он, и узнать «занято» ему можно. Если значение
+подставил сервер (`createValue`) или поле не пишется этим пользователем — ошибка общая, как
+раньше. Ограничения, созданные вручную SQL-ом, к полю не привязываются (имя неизвестно), для
+них остаётся `constraints` ресурса (`publicFields`). `insertMany` привязывает так же, но какая
+именно строка пачки виновата, не сообщает: PostgreSQL пишет это только текстом, а текст
+драйвера мы не разбираем.
+
+Уникальный индекс — единственная защита от гонки двух одновременных запросов. Проверка
+«такого email нет» запросом заранее её не заменяет.
+
+#### Свои тексты
+
+Как у правил формы (`v.minLength(3).message('…')`): текст по коду, подстановки — из `params`.
+
+```ts
+email: field(s.text({ max: 254 }), {
+  read: () => true, create: () => true, required: true,
+  db: { unique: true },
+  messages: {
+    unique: 'Этот email уже зарегистрирован',
+    maxLength: 'Не длиннее {max} символов',
+    required: 'Укажите email',
+  },
+}),
+```
+
+Откуда берётся текст, от сильного к слабому:
+
+1. свой текст схемы — `s.text({ pattern, message })`, `s.custom(() => 'текст')`, `z.refine(…, 'текст')`;
+2. `messages` поля модели (выше);
+3. в форме — `messages` поля формы (`field.email({ messages: { unique: '…' } })`), затем словари
+   формы, приложения и пакета по коду;
+4. текст схемы как есть (`message`).
+
+Пункты 1–2 приходят в форму как `template` и сильнее её словарей: текст модели действует во
+всех формах. Нужен разный текст в разных формах — задавайте его в форме, а не в модели.
+
+#### В форму `lib/form`
+
+`failureIssues(e)` отдаёт ошибки как issues Standard Schema: `{ message, path: ['поле'], code,
+params?, template? }`; `null` — у сбоя нет ошибок по полям (отказ прав, недоступность БД), его
+показывают иначе. `ctx.fail` в обработчике формы принимает такие issues сам:
+
+```ts
+import { failureIssues } from '#lib/db/index.js'
+import { createFormHandler } from '#lib/form/server.js'
+
+const handler = createFormHandler({
+  description: signup,
+  async execute(ctx) {
+    try {
+      await locals.db.resource(users).insert(locals.dbCtx, ctx.values)
+    } catch (e) {
+      const issues = failureIssues(e)
+      if (issues) ctx.fail(issues)   // под поля: «Этот email уже зарегистрирован»
+      throw e                        // остальное — общая ошибка «Операция не выполнена»
+    }
+    ctx.commit()
+    return { redirect: '/welcome' }
+  },
+})
+```
+
+Без JS форма перерисуется с ошибкой под полем и `aria-invalid`, с JS — то же без перезагрузки.
+
+#### Без формы: API и простые actions
+
+- `toKitError(e)` → `body.errors` (без `template`):
+
+  ```json
+  { "code": "conflict", "message": "Data conflict",
+    "errors": [{ "field": "email", "code": "unique", "message": "Этот email уже зарегистрирован" }] }
+  ```
+
+- `toFormFailure(e)` → `data.fieldErrors` (`{ email: ['…'] }`) и `data.formErrors` готовыми
+  текстами — для форм без `lib/form` (пример в начале раздела).
+- Своя схема через `make(vendor, check)`: `check` может вернуть `{ message, code, params? }`
+  (`CodedIssue`) — код дойдёт до формы так же, как у `s.*`.
 
 Пакетная вставка — `insertMany`: один `INSERT … VALUES (…),(…) RETURNING` на чанк, валидация
 каждой строки — тем же `draftInput`-путём, что и у `insert`.
@@ -598,14 +699,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 82 группы в шести файлах (на PGlite выполняются 81: одна группа требует
+Тесты слоя — 91 группа в шести файлах (на PGlite выполняются 90: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 37 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 17 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 18 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

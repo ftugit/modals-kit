@@ -457,6 +457,14 @@ test("ошибки полей: уникальный индекс из модел
     assert.ok(pair instanceof DbFailure && pair.kind === "conflict");
     assert.deepEqual(pair.details.errors?.map((x) => [x.field, x.code, x.params]), [[undefined, "unique", { fields: ["a", "b"] }]]);
 
+    // insertMany: та же привязка к полю (строка пачки не называется)
+    const many = await db.resource(r).insertMany(ctx, [
+      { title: "fourth", email: "c@x.ru", a: null, b: null },
+      { title: "fifth", email: "a@x.ru", a: null, b: null },
+    ]).catch((e: unknown) => e);
+    assert.ok(many instanceof DbFailure && many.kind === "conflict");
+    assert.deepEqual(many.details.errors?.map((x) => [x.field, x.code]), [["email", "unique"]]);
+
     // поле, которое этот ctx не пишет (значение пришло не от него), — без привязки к полю
     const sealed = post({
       email: field(s.text(), { ...open, required: true, createValue: () => "a@x.ru", db: { unique: true } }),
@@ -468,3 +476,30 @@ test("ошибки полей: уникальный индекс из модел
     assert.ok(hidden instanceof DbFailure && hidden.kind === "conflict");
     assert.equal(hidden.details.errors, undefined);
   }));
+
+test("ошибки полей: коды zod переводятся в коды правил форм; свой текст refine — свой текст поля", async () => {
+  const r = post({
+    name: field(z.string().min(2).max(5), { ...open, create: () => true, required: true }),
+    age: field(z.number().int().min(18), { ...open, create: () => true, required: true, db: { type: "integer" } }),
+    tags: field(z.array(z.string()).min(1), { ...open, create: () => true, required: true, db: { type: "text[]" } }),
+    mail: field(z.email(), { ...open, create: () => true, required: true, db: { type: "text" } }),
+    kind: field(z.enum(["a", "b"]), { ...open, create: () => true, required: true, db: { type: "text" } }),
+    step: field(z.number().multipleOf(5), { ...open, create: () => true, required: true, db: { type: "integer" } }),
+    over: field(z.number().gt(3), { ...open, create: () => true, required: true, db: { type: "integer" } }),
+    own: field(z.string().refine((v) => v === "ok", "Только ok"), { ...open, create: () => true, required: true, db: { type: "text" } }),
+  });
+  const db = createDb({ driver: { query: async () => ({ rows: [] }) } as unknown as Driver, limits: conservativeLimits });
+  const err = await db.resource(r).insert(ctx, {
+    title: "abc", name: "x", age: 17.5, tags: [], mail: "x", kind: "c", step: 3, over: 3, own: "no",
+  }).catch((e: unknown) => e);
+  assert.ok(err instanceof DbFailure && err.kind === "validation");
+  const got = Object.fromEntries((err.details.errors ?? []).map((x) => [x.field, [x.code, x.params, x.template]]));
+  assert.deepEqual(got.name, ["minLength", { min: 2 }, undefined]);
+  assert.equal(got.age![0], "integer");
+  assert.deepEqual(got.tags, ["minCount", { min: 1 }, undefined]);
+  assert.equal(got.mail![0], "email");
+  assert.equal(got.kind![0], "oneOf");
+  assert.deepEqual(got.step, ["step", { step: 5 }, undefined]);
+  assert.equal(got.over![0], "invalid", "строгая граница gt не выдаётся за «не меньше»");
+  assert.deepEqual(got.own, ["custom", undefined, "Только ok"]);
+});
