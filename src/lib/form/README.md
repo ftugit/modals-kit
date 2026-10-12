@@ -584,6 +584,28 @@ const handler = createFormHandler({
 Схема гоняется после синхронных правил и только если они прошли: межполевое
 над мусором бессмысленно. Issues склеиваются в `path` обычным способом.
 
+Если в issue есть строковый `code` (и, может быть, `params`/`template`), ошибка получает этот
+код, и текст берётся из словарей так же, как у своих правил: `template` → «поле:код» →
+код → готовый `message` issue. Без `code` — код `schema` и текст issue как есть.
+
+### Ошибки из бизнес-действия: `ctx.fail(issues)`
+
+`ctx.fail` в `execute` принимает не только `FormError`, но и issues в том же формате. Так
+приходят ошибки `lib/db` (`failureIssues`) — без импорта друг друга:
+
+```ts
+execute: async (ctx) => {
+  try { await locals.db.resource(users).insert(locals.dbCtx, ctx.values) }
+  catch (e) { const issues = failureIssues(e); if (issues) ctx.fail(issues); throw e }
+  ctx.commit()
+}
+```
+
+`{ path: ['email'], code: 'unique', message: '…' }` становится ошибкой поля `email` с текстом
+«Это значение уже занято» (код `unique` есть в словаре пакета). Свой текст у поля формы —
+`field.email({ messages: { unique: 'Этот email уже зарегистрирован' } })`. Свой текст модели
+(`template`) сильнее словарей. Issue без `path` — общая ошибка формы.
+
 ## Политика: пределы, имена, конверт
 
 Всё, от чего зависит «примет ли библиотека чужой код и чужие данные», собрано

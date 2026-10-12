@@ -24,6 +24,37 @@ const messages: Record<FailureKind, string> = {
   post_commit: "Data committed, notification failed",
   schema_pending: "Database schema update required",
 };
+/**
+ * Ошибка конкретного поля (или записи целиком, если `field` нет) в общем виде:
+ * код и параметры — для словаря текстов приложения, `message` — готовый текст.
+ * Коды совпадают с кодами правил форм (`required`, `minLength`, `maxLength`,
+ * `minValue`, `maxValue`, `integer`, `oneOf`, `pattern`, `minCount`, `maxCount`,
+ * `type.date`, `type.datetime`) плюс свои: `unique`, `check`, `invalid`, `custom`.
+ */
+export interface FieldError {
+  /** Поле ресурса. Нет — ошибка про запись целиком (составной unique). */
+  field?: string;
+  code: string;
+  params?: Record<string, unknown>;
+  /** Готовый текст: свой текст модели с подстановками либо текст схемы. */
+  message: string;
+  /**
+   * Свой текст — из `messages` поля или из самой схемы (`s.text({ message })`),
+   * до подстановок `{min}`, `{max}`… Есть — он сильнее любых словарей текстов.
+   */
+  template?: string;
+}
+/**
+ * Issue в формате Standard Schema (`message`, `path`) плюс `code`/`params`/`template`.
+ * Так ошибки БД читает любая библиотека форм без импорта `lib/db`.
+ */
+export interface FailureIssue {
+  message: string;
+  path?: readonly [string];
+  code: string;
+  params?: Record<string, unknown>;
+  template?: string;
+}
 export class DbFailure extends Error {
   readonly name = "DbFailure";
   constructor(
@@ -33,7 +64,11 @@ export class DbFailure extends Error {
       publicFields?: readonly string[];
       condition?: string;
       constraint?: string;
+      /** Колонка из ошибки PostgreSQL (`not_null_violation`). */
+      column?: string;
       field?: string;
+      /** Ошибки по полям: все сразу, а не первая. */
+      errors?: readonly FieldError[];
       retryable?: boolean;
       committed?: boolean;
       /** Тексты из Standard Schema: только про присланные значения, не про БД. */
@@ -73,6 +108,7 @@ export function normalizeFailure(error: unknown): DbFailure {
       sqlstate: code,
       condition: code ? SQLSTATE[code] : undefined,
       constraint: typeof e.constraint === "string" ? e.constraint : undefined,
+      column: typeof e.column === "string" ? e.column : undefined,
       retryable: code === "40001" || code === "40P01",
     },
     error,
@@ -88,6 +124,36 @@ export function fail(
     field || issues ? { ...(field ? { field } : {}), ...(issues ? { issues } : {}) } : {},
   );
 }
+/** Отказ `validation` со всеми ошибками полей сразу. */
+export function failFields(errors: readonly FieldError[]): never {
+  const first = errors.find((x) => x.field)?.field;
+  throw new DbFailure("validation", {
+    ...(first ? { field: first } : {}),
+    // `issues` — прежний вид (тексты первого поля): на нём стоят перенесённые тесты
+    issues: errors.filter((x) => x.field === first).map((x) => x.message),
+    errors: Object.freeze([...errors]),
+  });
+}
+/**
+ * Ошибки сбоя как Standard Schema issues: путь — имя поля. `null` — у сбоя нет
+ * ошибок по полям (отказ прав, недоступность БД…), показывать его надо иначе.
+ * Пример для формы: `const i = failureIssues(e); if (i) ctx.fail(i)`.
+ */
+export function failureIssues(error: unknown): FailureIssue[] | null {
+  if (!(error instanceof DbFailure) || !error.details.errors?.length) return null;
+  return error.details.errors.map((x) => ({
+    message: x.message,
+    code: x.code,
+    ...(x.field ? { path: [x.field] as const } : {}),
+    ...(x.params ? { params: x.params } : {}),
+    ...(x.template !== undefined ? { template: x.template } : {}),
+  }));
+}
+/** Публичный вид ошибок полей: без `template` (это деталь показа). */
+const publicErrors = (e: DbFailure) =>
+  e.details.errors?.length
+    ? { errors: e.details.errors.map(({ template: _t, ...rest }) => rest) }
+    : {};
 /** Presenter не отдаёт SQL, параметры, cause/stack даже в dev. */
 export function presentFailure(error: unknown, development = false) {
   const e = normalizeFailure(error);
@@ -111,6 +177,7 @@ export function presentFailure(error: unknown, development = false) {
         code: e.kind,
         message: e.message,
         ...(e.details.publicFields ? { fields: e.details.publicFields } : {}),
+        ...publicErrors(e),
         ...(e.details.committed ? { committed: true } : {}),
         ...(development
           ? {

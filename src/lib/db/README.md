@@ -274,7 +274,8 @@ export const actions: Actions = {
 
 Поведение, которое стоит знать заранее (проверено в реальном приложении):
 
-- `title: "ab"` → `fieldErrors.title = ["Too small: expected string to have >=3 characters"]`,
+- `title: "ab"` → `fieldErrors.title = ["Too small: expected string to have >=3 characters"]`
+  (код `minLength`, `{ min: 3 }` — в `details.errors`, см. ниже),
   `aria-invalid`, строка **не** вставлена;
 - клиент не может прислать `id`: у поля `immutable` + `createValue` → `forbidden` (403);
 - `delete` строки, скрытой политикой → `not_found` (404), а не 403: факт существования
@@ -283,6 +284,46 @@ export const actions: Actions = {
   добавляется только `diagnostic` (`sqlstate`, `condition`, `field`);
 - отказ прав на стороне БД (`RLS`, `GRANT`, `RAISE EXCEPTION … ERRCODE 42501/42502` из
   триггера) идёт в `forbidden` → **403**, а не в 500: «нельзя» и «сервер упал» различимы.
+
+### Ошибки по полям и свои тексты
+
+Отказ `validation` перечисляет **все** плохие поля сразу (`details.errors`), а не первое. Каждая
+ошибка — `{ field?, code, params?, message, template? }`. Коды те же, что у правил `lib/form`:
+`required`, `minLength`/`maxLength` (`{ min }`/`{ max }`), `minValue`/`maxValue`, `integer`,
+`oneOf`, `pattern`, `minCount`/`maxCount`, `type.date`, `type.datetime`; свои — `unique`,
+`check`, `invalid` (схема не дала кода, например zod), `custom` (`s.custom`).
+
+Ограничения, которые `defineSchema` создала из модели, тоже приходят ошибкой поля: уникальный
+индекс → `unique` (`conflict`, 409), CHECK → `check`, NOT NULL → `required`. Привязка к полю —
+только если этот `ctx` сам пишет поле (значение прислал он). Иначе ошибка общая, как раньше.
+Составной уникальный индекс даёт общую ошибку `unique` с `params.fields`.
+
+Свой текст — у поля, по коду, с подстановками из параметров (как `.message()` у правил формы):
+
+```ts
+email: field(s.text({ max: 254 }), {
+  read: () => true, create: () => true, required: true, db: { unique: true },
+  messages: { unique: 'Этот email уже зарегистрирован', maxLength: 'Не длиннее {max} символов' },
+}),
+```
+
+Свой текст схемы (`s.text({ pattern, message })`, `s.custom`) сильнее текста поля. Свой текст
+приходит как `template` и в форме сильнее словарей. Без своего текста форма берёт текст из
+своих словарей по коду.
+
+В форму `lib/form` ошибки идут без импорта друг друга: `failureIssues(e)` отдаёт их как issues
+Standard Schema (`path: [поле]` + `code`/`params`/`template`), а `ctx.fail` их принимает:
+
+```ts
+execute: async (ctx) => {
+  try { await locals.db.resource(users).insert(locals.dbCtx, ctx.values) }
+  catch (e) { const issues = failureIssues(e); if (issues) ctx.fail(issues); throw e }
+  ctx.commit()
+}
+```
+
+`toKitError` кладёт ошибки в `body.errors` (без `template`), `toFormFailure` — в
+`fieldErrors`/`formErrors` готовыми текстами.
 
 Пакетная вставка — `insertMany`: один `INSERT … VALUES (…),(…) RETURNING` на чанк, валидация
 каждой строки — тем же `draftInput`-путём, что и у `insert`.
@@ -486,8 +527,8 @@ keyset-индекс, который обязана порождать `order`).
 
 | Экспорт | Что |
 |---|---|
-| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `defineResource`, `field`, `f`, `s`, `make`, `policy`, `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
-| `#lib/db/schema.js` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` |
+| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `failFields`, `failureIssues` (+ типы `FieldError`, `FailureIssue`), `defineResource`, `field`, `f`, `s`, `make`, `policy`, `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
+| `#lib/db/schema.js` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` (предикат вправе вернуть `CodedIssue` — код и параметры дойдут до формы) |
 | `#lib/db/adapters/pg.js` | `pgAdapter` |
 | `#lib/db/adapters/pglite.js` | `pgliteAdapter` |
 | `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter` |
@@ -516,7 +557,7 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 
 `Field`-флаги: `column`, `schema`, `kind`, `read`/`create`/`update` (Grant),
 `generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `filters`,
-`orderable`, `db` (`type`/`default`/`unique`, §6). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
+`orderable`, `db` (`type`/`default`/`unique`, §6), `messages` (свои тексты ошибок по коду, §4). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
 `policy`, `order`, `hooks`, `relations`, `constraints`, `validateFinal`, `softDelete`, `db` (§6).
 
 `softDelete.children: () => [{ resource, field, onDelete }]` — что делать с дочерними записями
@@ -557,14 +598,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 80 групп в шести файлах (на PGlite выполняются 79: одна группа требует
+Тесты слоя — 82 группы в шести файлах (на PGlite выполняются 81: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 37 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 15 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`) и `softDelete.children` — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 17 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

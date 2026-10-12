@@ -1,5 +1,5 @@
 import { s } from "./schema";
-import { fail } from "./errors";
+import { fail, failFields, type FieldError } from "./errors";
 import type { StandardSchema } from "./types";
 import type {
   DataContext,
@@ -103,31 +103,73 @@ function budget(value: unknown, depth = 0, state = { n: 0 }): void {
     }
   }
 }
+/** `{min}` → значение параметра; неизвестная подстановка остаётся как есть. */
+function interpolate(text: string, params: Record<string, unknown> | undefined): string {
+  return params ? text.replace(/\{(\w+)\}/g, (m, k: string) => (own(params, k) ? String(params[k]) : m)) : text;
+}
+/**
+ * Ошибка поля с учётом `messages` поля: свой текст схемы сильнее, затем текст
+ * поля по коду, иначе — текст схемы как есть.
+ */
+export function fieldError(
+  field: Pick<Field, "messages"> | undefined,
+  key: string | undefined,
+  code: string,
+  message: string,
+  params?: Record<string, unknown>,
+  template?: string,
+): FieldError {
+  const own_ = template ?? (field?.messages && own(field.messages, code) ? field.messages[code] : undefined);
+  return {
+    ...(key ? { field: key } : {}),
+    code,
+    ...(params ? { params } : {}),
+    message: own_ !== undefined ? interpolate(own_, params) : message,
+    ...(own_ !== undefined ? { template: own_ } : {}),
+  };
+}
+/** Issue схемы → ошибка поля: код/параметры берём, если схема их дала (s.*). */
+function issueError(field: Field, key: string, issue: unknown): FieldError {
+  const i = (issue && typeof issue === "object" ? issue : {}) as Record<string, unknown>;
+  const code = typeof i.code === "string" && i.code ? i.code : "invalid";
+  const params =
+    i.params && typeof i.params === "object" && !Array.isArray(i.params)
+      ? (i.params as Record<string, unknown>)
+      : undefined;
+  const template = typeof i.template === "string" ? i.template : undefined;
+  return fieldError(field, key, code, String(i.message ?? "Invalid input"), params, template);
+}
+/**
+ * Проверка одного поля без броска на ошибке значения: `{ errors }` — что не так.
+ * Бросает только на защите от перегрузки (`budget`): это не ошибка поля.
+ */
+export async function checkField(
+  field: Field,
+  value: unknown,
+  key: string,
+  normalize = true,
+): Promise<{ value: unknown; errors?: undefined } | { errors: FieldError[] }> {
+  const required = () => ({ errors: [fieldError(field, key, "required", "Required")] });
+  if (value === undefined) return required();
+  let v = normalize && field.normalize ? field.normalize(value) : value;
+  if (v === null) return field.nullable ? { value: null } : required();
+  budget(v);
+  const parsed = await field.schema["~standard"].validate(v);
+  if (parsed.issues) return { errors: parsed.issues.map((i) => issueError(field, key, i)) };
+  v = parsed.value;
+  budget(v);
+  if ((v === null && !field.nullable) || v === undefined) return required();
+  return { value: v };
+}
 export async function validateField(
   field: Field,
   value: unknown,
   key: string,
   normalize = true,
 ): Promise<unknown> {
-  if (value === undefined) fail("validation", key);
-  let v = normalize && field.normalize ? field.normalize(value) : value;
-  if (v === null) {
-    if (field.nullable) return null;
-    fail("validation", key);
-  }
-  budget(v);
-  const parsed = await field.schema["~standard"].validate(v);
-  if (parsed.issues)
-    fail(
-      "validation",
-      key,
-      parsed.issues.map((i) => String(i.message)),
-    );
-  v = parsed.value;
-  budget(v);
-  if (v === null && !field.nullable) fail("validation", key);
-  if (v === undefined) fail("validation", key);
-  return v;
+  const r = await checkField(field, value, key, normalize);
+  if (r.errors) failFields(r.errors);
+  return r.value;
 }
 export async function draftInput(
   r: Resource,
@@ -138,6 +180,7 @@ export async function draftInput(
 ): Promise<Row> {
   const draft = inputRecord(input, maxKeys);
   if (op === "update" && !Object.keys(draft).length) fail("validation");
+  const errors: FieldError[] = [];
   for (const k of Object.keys(draft)) {
     const f = own(r.fields, k) ? r.fields[k] : undefined;
     if (
@@ -150,15 +193,19 @@ export async function draftInput(
       !grants(op === "insert" ? f.create : f.update, ctx)
     )
       fail("forbidden");
-    draft[k] = await validateField(f, draft[k], k);
+    // ошибки значений копим: форма должна увидеть все плохие поля сразу
+    const r_ = await checkField(f, draft[k], k);
+    if (r_.errors) errors.push(...r_.errors);
+    else draft[k] = r_.value;
   }
   if (op === "insert")
     for (const [k, f] of Object.entries(r.fields)) {
       if (f.createValue)
         draft[k] = await validateField(f, f.createValue(ctx), k);
       else if (f.required && !f.generated && !own(draft, k))
-        fail("validation", k);
+        errors.push(fieldError(f, k, "required", "Required"));
     }
+  if (errors.length) failFields(errors);
   return draft;
 }
 /** После before-hook повторяем schema и запрещаем изменение server-owned полей. */
@@ -361,6 +408,13 @@ function checkShape(r: Resource): void {
             push(`fields.${name}.db.${k}: непустая строка`);
         if (f.db.unique !== undefined && typeof f.db.unique !== "boolean") push(`fields.${name}.db.unique: boolean`);
       }
+    }
+    if (f.messages !== undefined) {
+      if (!f.messages || typeof f.messages !== "object" || Array.isArray(f.messages))
+        push(`fields.${name}.messages: обязан быть объектом { код: текст }`);
+      else
+        for (const [code, text] of Object.entries(f.messages))
+          if (typeof text !== "string" || !text.trim()) push(`fields.${name}.messages.${code}: непустая строка`);
     }
   }
   if (bad.length) fail("validation", undefined, bad);

@@ -1,7 +1,8 @@
 import { policyBoolean } from './validation';
-import { DbFailure, fail, normalizeFailure } from './errors';
+import { DbFailure, fail, normalizeFailure, type FieldError } from './errors';
+import { tableSpec } from './sync/model';
 import { context, draftInput, freeze, grants, inputRecord, own } from './validation';
-import { revalidateDraft, validateField } from './validation';
+import { fieldError, revalidateDraft, validateField } from './validation';
 import {
   Sql,
   col,
@@ -30,6 +31,63 @@ import type {
   ResourceApi,
   Row,
 } from './types';
+
+/**
+ * Ограничения, которые `defineSchema` создаёт из модели (уникальные индексы, CHECK):
+ * имя → поля. Имена с хешем приложение не знает, поэтому сопоставление здесь, а не
+ * в `constraints` ресурса. `null` — модель не описывает таблицу (zod без `db.type`).
+ */
+const managed = new WeakMap<object, Promise<Map<string, { kind: 'unique' | 'check'; fields: string[] }> | null>>();
+function managedConstraints(r: Resource): Promise<Map<string, { kind: 'unique' | 'check'; fields: string[] }> | null> {
+  let p = managed.get(r);
+  if (!p) {
+    const byColumn = new Map(Object.entries(r.fields).map(([k, f]) => [f.column ?? k, k]));
+    p = tableSpec(r)
+      .then((spec) => {
+        const out = new Map<string, { kind: 'unique' | 'check'; fields: string[] }>();
+        for (const o of spec.objects)
+          if (o.kind !== 'index')
+            out.set(o.name, { kind: o.kind, fields: o.columns.map((c) => byColumn.get(c)).filter((k): k is string => !!k) });
+        return out;
+      })
+      .catch(() => null);
+    managed.set(r, p);
+  }
+  return p;
+}
+const DEFAULT_TEXT: Record<string, string> = {
+  unique: 'Value already exists',
+  check: 'Value violates a constraint',
+  required: 'Required',
+};
+/**
+ * Ошибка PostgreSQL → ошибки полей, если поле известно и этот ctx сам его пишет
+ * (значит, значение прислал он и узнать «занято» ему можно). Иначе — без полей,
+ * как раньше: общая `conflict`/`validation`.
+ */
+async function attachFieldErrors(
+  r: Resource, ctx: DataContext, e: DbFailure, op: 'insert' | 'update', draft: Row,
+): Promise<void> {
+  const writable = (k: string) =>
+    own(r.fields, k) && own(draft, k) && grants(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx);
+  const state = e.details.sqlstate;
+  let errors: FieldError[] = [];
+  if (state === '23502' && e.details.column) {
+    const k = Object.keys(r.fields).find((key) => (r.fields[key].column ?? key) === e.details.column);
+    if (k && grants(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx))
+      errors = [fieldError(r.fields[k], k, 'required', DEFAULT_TEXT.required)];
+  } else if ((state === '23505' || state === '23514') && e.details.constraint) {
+    const c = (await managedConstraints(r))?.get(e.details.constraint);
+    if (c && c.fields.length && c.fields.every(writable)) {
+      const code = c.kind;
+      errors =
+        c.fields.length === 1
+          ? [fieldError(r.fields[c.fields[0]], c.fields[0], code, DEFAULT_TEXT[code])]
+          : [fieldError(undefined, undefined, code, DEFAULT_TEXT[code], { fields: [...c.fields] })];
+    }
+  }
+  if (errors.length) e.details.errors = Object.freeze(errors);
+}
 export function resourceApi<F extends Fields, R extends Relations = {}>(
   db: Database,
   r: Resource<F, R>,
@@ -321,7 +379,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         registered.fields.every((k) => own(r.fields, k) && grants(r.fields[k].read, ctx))
       ) {
         e.details.publicFields = Object.freeze([...registered.fields]);
-      }
+      } else if (op !== 'delete' && draft) await attachFieldErrors(r, ctx, e, op, draft);
       throw e;
     }
     if (!row) fail('not_found');

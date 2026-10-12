@@ -24,6 +24,8 @@ export const ru: MessageDictionary = {
   multipleOf: (p) => `Шаг ${p['step']}`,
   oneOf: 'Выберите значение из списка',
   sameAs: 'Значения не совпадают',
+  // ошибки БД (`lib/db`): уникальный индекс
+  unique: 'Это значение уже занято',
   accept: (p) => `Файл ${p['name'] ?? ''} не подходит по типу`.replace('  ', ' '),
   maxSize: (p) => `Файл ${p['name'] ?? ''} больше ${Math.ceil(Number(p['bytes']) / 1024)} КБ`.replace('  ', ' '),
   strength: (p) => {

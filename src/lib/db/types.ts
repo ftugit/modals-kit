@@ -121,6 +121,12 @@ export interface Field<T = unknown> {
   orderable?: boolean;
   /** Колонка в БД: то, чего не видно из схемы поля (см. `#lib/db/sync/index.js`). */
   db?: ColumnOptions;
+  /**
+   * Свои тексты ошибок поля по коду: `{ unique: 'Этот email уже зарегистрирован',
+   * minLength: 'Минимум {min} символов' }`. Подстановки — из параметров ошибки.
+   * Сильнее словарей формы, как `.message()` у правила формы.
+   */
+  messages?: Readonly<Record<string, string>>;
 }
 /**
  * Подробности колонки для `defineSchema`. Значения пишет разработчик в коде, не

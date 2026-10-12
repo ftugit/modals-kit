@@ -11,12 +11,23 @@ export interface StandardSchemaLike<T = unknown> {
   }
 }
 
+/**
+ * Issue в формате Standard Schema. Необязательные `code`/`params`/`template`
+ * понимаются, если есть: тогда текст берётся из словарей формы по коду (как у
+ * своих правил), а `template` — свой текст, сильнее словарей. Так приходят,
+ * например, ошибки `lib/db` (`failureIssues`) — без импорта друг друга.
+ */
+export interface IssueLike {
+  readonly message: string
+  readonly path?: readonly (PropertyKey | { readonly key: PropertyKey })[]
+  readonly code?: unknown
+  readonly params?: unknown
+  readonly template?: unknown
+}
+
 export type StandardResult<T> =
   | { readonly value: T; readonly issues?: undefined }
-  | { readonly issues: readonly {
-        readonly message: string
-        readonly path?: readonly (string | { key: string })[]
-      }[] }
+  | { readonly issues: readonly IssueLike[] }
 
 /**
  * Проверка на контракт Standard Schema (`~standard`).
@@ -26,20 +37,35 @@ export const isStandardSchema = (x: unknown): x is StandardSchemaLike =>
   !!x && typeof x === 'object' && '~standard' in x
 
 /**
- * Перевести issues схемы в ошибки формы: путь склеивается в `path`,
- * текст становится сообщением.
+ * Перевести один issue в ошибку формы. Путь склеивается в `path`. Есть строковый
+ * `code` — он и параметры идут в словарь; нет — код `schema`, текст как есть.
+ * @param i Issue (Standard Schema, возможно с `code`/`params`/`template`).
+ * @param origin Откуда ошибка: `core` для схемы формы, `server` для бизнес-действия.
+ */
+export function issueError(i: IssueLike, origin: FormError['origin'] = 'core'): FormError {
+  const path = i.path?.map((p) => String(typeof p === 'object' && p !== null ? p.key : p)).join('.')
+  const coded = typeof i.code === 'string' && i.code !== ''
+  const code = coded ? (i.code as string) : 'schema'
+  const params = coded
+    ? (i.params && typeof i.params === 'object' && !Array.isArray(i.params) ? i.params as Record<string, unknown> : undefined)
+    : { message: i.message }
+  const template = typeof i.template === 'string' ? i.template : undefined
+  return {
+    id: stableId({ path, code, params }),
+    code, message: i.message,
+    ...(params ? { params } : {}),
+    ...(template !== undefined ? { template } : {}),
+    path: path || undefined, origin,
+  }
+}
+
+/**
+ * Перевести issues схемы в ошибки формы (см. `issueError`).
  * @param result Результат `~standard.validate`.
  */
 export function schemaErrors(result: StandardResult<unknown>): FormError[] {
   if (!result.issues) return []
-  return result.issues.map((i) => {
-    const path = i.path?.map((p) => (typeof p === 'string' ? p : p.key)).join('.')
-    return {
-      id: stableId({ path, code: 'schema', params: { message: i.message } }),
-      code: 'schema', message: i.message, params: { message: i.message },
-      path: path || undefined, origin: 'core' as const,
-    }
-  })
+  return result.issues.map((i) => issueError(i))
 }
 
 /** Прогон схемы над значениями формы. Асинхронные схемы тоже допустимы. */

@@ -39,10 +39,23 @@ export function columnMeta(schema: unknown): ColumnMeta | undefined {
   const m = (schema as Record<string, unknown>)[META];
   return m && typeof m === "object" ? (m as ColumnMeta) : undefined;
 }
-/** Схема из предиката: `check` возвращает `true` либо текст ошибки. */
+/**
+ * Ошибка с кодом: Standard Schema issue плюс `code`/`params` (для словаря текстов)
+ * и `template` (свой текст схемы). Лишние поля стандарт допускает.
+ */
+export interface CodedIssue {
+  message: string;
+  code: string;
+  params?: Record<string, unknown>;
+  template?: string;
+}
+/**
+ * Схема из предиката: `check` возвращает `true`, текст ошибки либо ошибку с
+ * кодом (`CodedIssue`) — её код и параметры доедут до формы (`FieldError`).
+ */
 export function make<T>(
   vendor: string,
-  check: (value: unknown) => true | string,
+  check: (value: unknown) => true | string | CodedIssue,
   meta?: ColumnMeta,
 ): StandardSchemaV1<unknown, T> {
   return {
@@ -54,12 +67,16 @@ export function make<T>(
         const r = check(value);
         return r === true
           ? { value: value as T }
-          : { issues: [{ message: r }] };
+          : { issues: [typeof r === "string" ? { message: r } : r] };
       },
     },
   };
 }
-const failWith = (message: string): string => message;
+const failWith = (
+  message: string,
+  code = "invalid",
+  params?: Record<string, unknown>,
+): CodedIssue => (params ? { message, code, params } : { message, code });
 const is = (v: unknown, t: string): boolean => typeof v === t;
 const digits = (s: string, from: number, len: number): number => {
   let n = 0;
@@ -86,11 +103,11 @@ const TIME_TAIL = /^T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 /** `YYYY-MM-DD` + реально существующая дата. */
 export const dateSchema = (): StandardSchemaV1<unknown, string> =>
   make("kit-db/date", (v) => {
-    if (typeof v !== "string" || !DATE_RE.test(v)) return failWith("Invalid ISO date");
+    if (typeof v !== "string" || !DATE_RE.test(v)) return failWith("Invalid ISO date", "type.date");
     const y = digits(v, 0, 4),
       m = digits(v, 5, 2),
       d = digits(v, 8, 2);
-    if (!validDate(y, m, d)) return failWith("Invalid ISO date");
+    if (!validDate(y, m, d)) return failWith("Invalid ISO date", "type.date");
     return true;
   }, { type: "date" });
 /**
@@ -101,23 +118,23 @@ export const dateSchema = (): StandardSchemaV1<unknown, string> =>
 export const timestampSchema = (): StandardSchemaV1<unknown, string> =>
   make("kit-db/timestamp", (v) => {
     if (typeof v !== "string" || v.length < 20 || !DATE_RE.test(v.slice(0, 10)))
-      return failWith("Invalid ISO datetime");
+      return failWith("Invalid ISO datetime", "type.datetime");
     const y = digits(v, 0, 4),
       m = digits(v, 5, 2),
       d = digits(v, 8, 2);
-    if (!validDate(y, m, d)) return failWith("Invalid ISO datetime");
+    if (!validDate(y, m, d)) return failWith("Invalid ISO datetime", "type.datetime");
     const tail = v.slice(10);
-    if (!TIME_TAIL.test(tail)) return failWith("Invalid ISO datetime");
+    if (!TIME_TAIL.test(tail)) return failWith("Invalid ISO datetime", "type.datetime");
     const hh = digits(tail, 1, 2),
       mm = digits(tail, 4, 2),
       ss = digits(tail, 7, 2);
-    if (hh > 23 || mm > 59 || ss > 59) return failWith("Invalid ISO datetime");
+    if (hh > 23 || mm > 59 || ss > 59) return failWith("Invalid ISO datetime", "type.datetime");
     const offset = tail.match(/(Z|[+-]\d{2}:\d{2})$/)?.[1];
-    if (!offset) return failWith("Invalid ISO datetime");
+    if (!offset) return failWith("Invalid ISO datetime", "type.datetime");
     if (offset !== "Z") {
       const oh = Number(offset.slice(1, 3)),
         om = Number(offset.slice(4, 6));
-      if (oh > 23 || om > 59) return failWith("Invalid ISO datetime");
+      if (oh > 23 || om > 59) return failWith("Invalid ISO datetime", "type.datetime");
     }
     return true;
   }, { type: "timestamptz" });
@@ -134,13 +151,16 @@ export const text = (o: TextOptions = {}): StandardSchemaV1<unknown, string> =>
     if (typeof v !== "string") return failWith("Expected string");
     const s = v;
     if (o.min !== undefined && s.length < o.min)
-      return failWith(`Too small: expected string to have >=${o.min} characters`);
+      return failWith(`Too small: expected string to have >=${o.min} characters`, "minLength", { min: o.min });
     if (o.max !== undefined && s.length > o.max)
-      return failWith(`Too big: expected string to have <=${o.max} characters`);
+      return failWith(`Too big: expected string to have <=${o.max} characters`, "maxLength", { max: o.max });
     if (o.pattern !== undefined) {
       if (o.pattern.global || o.pattern.sticky)
         throw new Error("schema.pattern must not be global or sticky");
-      if (!o.pattern.test(s)) return failWith(o.message ?? "Invalid string");
+      if (!o.pattern.test(s))
+        return o.message !== undefined
+          ? { message: o.message, code: "pattern", template: o.message }
+          : failWith("Invalid string", "pattern");
     }
     return true;
   }, { type: "text", ...(o.min !== undefined || o.max !== undefined ? { length: { min: o.min, max: o.max } } : {}) });
@@ -158,9 +178,9 @@ export const integer = (
 ): StandardSchemaV1<unknown, number> =>
   make("kit-db/integer", (v) => {
     if (typeof v !== "number" || !Number.isSafeInteger(v))
-      return failWith("Expected int");
-    if (o.min !== undefined && v < o.min) return failWith("Too small");
-    if (o.max !== undefined && v > o.max) return failWith("Too big");
+      return failWith("Expected int", "integer");
+    if (o.min !== undefined && v < o.min) return failWith("Too small", "minValue", { min: o.min });
+    if (o.max !== undefined && v > o.max) return failWith("Too big", "maxValue", { max: o.max });
     return true;
   }, { type: "integer", ...(o.min !== undefined || o.max !== undefined ? { range: { min: o.min, max: o.max } } : {}) });
 /** bigint в PostgreSQL: строка цифр, точность JS-числа не используется намеренно. */
@@ -182,7 +202,7 @@ export const json = (): StandardSchemaV1<unknown, unknown> =>
     // Цикл — только объект на ТЕКУЩЕМ пути: общая ссылка из двух мест (`{ a: x, b: x }`)
     // законна, `JSON.stringify` её сохраняет (DB-9).
     const path = new Set<unknown>();
-    const enter = (x: object, body: () => true | string): true | string => {
+    const enter = (x: object, body: () => true | CodedIssue): true | CodedIssue => {
       if (path.has(x)) return failWith("Cyclic JSON value");
       path.add(x);
       try {
@@ -191,7 +211,7 @@ export const json = (): StandardSchemaV1<unknown, unknown> =>
         path.delete(x);
       }
     };
-    const walk = (x: unknown): true | string => {
+    const walk = (x: unknown): true | CodedIssue => {
       if (x === null || is(x, "boolean") || is(x, "string")) return true;
       if (is(x, "number"))
         return Number.isFinite(x) ? true : failWith("Invalid JSON number");
@@ -229,11 +249,11 @@ export const array = (
     version: 1,
     vendor: "kit-db/array",
     async validate(value) {
-      if (!Array.isArray(value)) return { issues: [{ message: "Expected array" }] };
+      if (!Array.isArray(value)) return { issues: [failWith("Expected array")] };
       if (o.min !== undefined && value.length < o.min)
-        return { issues: [{ message: "Too small" }] };
+        return { issues: [failWith("Too small", "minCount", { min: o.min })] };
       if (o.max !== undefined && value.length > o.max)
-        return { issues: [{ message: "Too big" }] };
+        return { issues: [failWith("Too big", "maxCount", { max: o.max })] };
       const issues: Issue[] = [];
       for (let i = 0; i < value.length; i++) {
         const r = await item["~standard"].validate(value[i]);
@@ -250,7 +270,7 @@ export const enumOf = <const T extends readonly string[]>(
 ): StandardSchemaV1<unknown, T[number]> =>
   make("kit-db/enum", (v) =>
     (typeof v === "string" && (values as readonly string[]).includes(v)) ||
-    failWith("Invalid option"),
+    failWith("Invalid option", "oneOf"),
     { type: "text", values: [...values] },
   );
 /** Свой предикат: один шаг, свой текст ошибки. */
@@ -259,7 +279,7 @@ export const custom = <T>(
 ): StandardSchemaV1<unknown, T> =>
   make("kit-db/custom", (v) => {
     const r = check(v);
-    return typeof r === "string" ? failWith(r) : true;
+    return typeof r === "string" ? { message: r, code: "custom", template: r } : true;
   });
 /** Публичный неймспейс: `s.text()`, `s.uuid()`, … */
 export const s = {

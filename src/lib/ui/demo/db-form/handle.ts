@@ -2,7 +2,7 @@
 // лимит тела, проверка имён, потом валидация и execute. Маршрут обязан
 // остаться тонким: собственный `request.formData()` в маршруте layer-guard
 // роняет сборку именно потому, что он выбрасывает всё перечисленное молча.
-import type { Database, DataContext } from '#lib/db/index.js'
+import { failureIssues, type Database, type DataContext } from '#lib/db/index.js'
 import { toFormFailure } from '#lib/db/sveltekit/index.js'
 import { createFormHandler, type Handled } from '#lib/form/server.js'
 import type { FormError } from '#lib/form/index.js'
@@ -86,8 +86,9 @@ export function handleDbCreate(
             },
           }
         } catch (e) {
-          // commit() не позван → исход «not-applied», ошибок «не знаю, применилось» нет.
-          return fail(toFormErrors(e))
+          // commit() не позван → исход «не применено». Ошибки полей БД (длина, «уже
+          // занято») идут под свои поля с текстами из словарей формы; прочее — общее.
+          return fail(failureIssues(e) ?? toFormErrors(e))
         }
       },
     })(request, from))

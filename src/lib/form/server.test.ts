@@ -311,3 +311,39 @@ suite('свой текст ошибки (F56): валидатор → поле �
     expect(by).toEqual({ a: 'a@b занят', b: 'поле b: a@b' })
   })
 })
+
+suite('ctx.fail принимает issues Standard Schema (ошибки БД без импорта lib/db)', () => {
+  const run = async (issues: unknown[], d = base) => {
+    const h = createFormHandler({ description: d, execute: (c) => c.fail(issues as never) })
+    return (await h(post({ ...envelopeOf({}, d), name: 'a' }))).result
+  }
+
+  test('код из issue — текст из словаря пакета, ошибка под полем по path', async () => {
+    const r = await run([{ message: 'Value already exists', path: ['name'], code: 'unique' }])
+    expect(r.ok).toBe(false)
+    expect(r.errors.map((e) => [e.path, e.code, e.message, e.origin])).toEqual([['name', 'unique', 'Это значение уже занято', 'server']])
+  })
+
+  test('свой текст (template) сильнее словарей; параметры подставляются', async () => {
+    const r = await run([{ message: 'Слаг — не длиннее 10', path: ['name'], code: 'maxLength', params: { max: 10 }, template: 'Слаг — не длиннее {max}' }])
+    expect(r.errors[0]?.message).toBe('Слаг — не длиннее 10')
+  })
+
+  test('текст поля формы «поле:код» сильнее пакета; без path — общая ошибка; без кода — текст как есть', async () => {
+    const d = defineForm({ id: 'probe2', fields: { name: field.text({ messages: { unique: 'Имя уже занято' } }) } })
+    const r = await run([
+      { message: 'Value already exists', path: ['name'], code: 'unique' },
+      { message: 'Value already exists', code: 'unique', params: { fields: ['a', 'b'] } },
+      { message: 'что-то своё', path: ['name'] },
+    ], d)
+    const by = r.errors.map((e) => [e.path ?? '*', e.code, e.message])
+    expect(by).toContainEqual(['name', 'unique', 'Имя уже занято'])
+    expect(by).toContainEqual(['*', 'unique', 'Это значение уже занято'])
+    expect(by).toContainEqual(['name', 'schema', 'что-то своё'])
+  })
+
+  test('обычные FormError проходят как раньше', async () => {
+    const r = await run([{ id: 'x', code: 'name.taken', message: 'занято', path: 'name', origin: 'server' }])
+    expect(r.errors.map((e) => [e.path, e.message])).toEqual([['name', 'занято']])
+  })
+})

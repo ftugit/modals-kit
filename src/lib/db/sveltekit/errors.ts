@@ -1,4 +1,4 @@
-import { DbFailure, normalizeFailure, type FailureKind } from "../errors";
+import { DbFailure, normalizeFailure, type FailureKind, type FieldError } from "../errors";
 import { BodyTooLarge } from "./query";
 
 /** Те же коды, что и в источнике (presentFailure), но без сборки Response. */
@@ -21,6 +21,8 @@ export interface KitErrorBody {
   /** Стабильный код для UI/тестов: `code: 'not_found'` и т. п. */
   code: string;
   fields?: readonly string[];
+  /** Ошибки по полям (`validation`, а также `unique`/`check` у `conflict`). */
+  errors?: readonly Omit<FieldError, "template">[];
   committed?: boolean;
   /** Только в dev: код SQLSTATE и имя условия. SQL/параметры/cause — никогда. */
   diagnostic?: Record<string, unknown>;
@@ -42,6 +44,9 @@ export function toKitError(
     message: e.message,
     code: e.kind,
     ...(e.details.publicFields ? { fields: e.details.publicFields } : {}),
+    ...(e.details.errors?.length
+      ? { errors: e.details.errors.map(({ template: _t, ...rest }) => rest) }
+      : {}),
     ...(e.details.committed ? { committed: true } : {}),
     ...(development
       ? {
@@ -78,7 +83,11 @@ export function toFormFailure(
   const e = normalizeFailure(error);
   const fieldErrors: Record<string, string[]> = {};
   const formErrors: string[] = [];
-  if (e instanceof DbFailure) {
+  if (e instanceof DbFailure && e.details.errors?.length) {
+    for (const x of e.details.errors)
+      if (x.field) (fieldErrors[x.field] ??= []).push(x.message);
+      else formErrors.push(x.message);
+  } else if (e instanceof DbFailure) {
     const messages = e.details.issues?.length ? [...e.details.issues] : [];
     if (e.details.field) {
       fieldErrors[e.details.field] = messages.length ? messages : [e.message];

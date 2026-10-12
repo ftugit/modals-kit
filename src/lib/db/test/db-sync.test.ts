@@ -391,3 +391,80 @@ test("softDelete.children: cascade без softDelete у ребёнка — valid
     await assert.rejects(db.resource(tree).delete(ctx, root), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
     assert.equal(await live(pg, "tree"), 1);
   }));
+
+/* ── Ошибки полей: все сразу, с кодом и своим текстом; ограничения БД — к полю ── */
+test("ошибки полей: все плохие поля сразу, коды и параметры как у правил формы, свой текст поля", async () => {
+  const r = post({
+    rank: field(s.integer({ min: 1, max: 5 }), { ...open, create: () => true, required: true }),
+    slug: field(s.text({ max: 10 }), {
+      ...open, create: () => true, required: true,
+      messages: { maxLength: "Слаг — не длиннее {max}" },
+    }),
+  });
+  const db = createDb({ driver: { query: async () => ({ rows: [] }) } as unknown as Driver, limits: conservativeLimits });
+  const err = await db.resource(r).insert(ctx, { title: "ab", rank: 9, slug: "x".repeat(11) }).catch((e: unknown) => e);
+  assert.ok(err instanceof DbFailure && err.kind === "validation");
+  const byField = Object.fromEntries((err.details.errors ?? []).map((x) => [x.field, x]));
+  assert.deepEqual(Object.keys(byField).sort(), ["rank", "slug", "title"]);
+  assert.equal(byField.title!.code, "minLength");
+  assert.deepEqual(byField.title!.params, { min: 3 });
+  assert.equal(byField.title!.template, undefined, "без своего текста — шаблона нет, текст даст словарь");
+  assert.equal(byField.rank!.code, "maxValue");
+  assert.deepEqual(byField.rank!.params, { max: 5 });
+  assert.equal(byField.slug!.message, "Слаг — не длиннее 10");
+  assert.equal(byField.slug!.template, "Слаг — не длиннее {max}");
+  // прежний вид для старого кода: поле и тексты первого поля
+  assert.equal(typeof err.details.field, "string");
+  // отсутствующее обязательное поле — тоже ошибка поля, а не голое «Invalid input»
+  const missing = await db.resource(r).insert(ctx, { title: "abc", rank: 1 }).catch((e: unknown) => e);
+  assert.ok(missing instanceof DbFailure);
+  assert.deepEqual(missing.details.errors?.map((x) => [x.field, x.code]), [["slug", "required"]]);
+  // Standard Schema issues для формы и публичное тело API (без template)
+  const { failureIssues } = await import("../index");
+  const issues = failureIssues(err)!;
+  assert.ok(issues.some((i) => i.path?.[0] === "slug" && i.code === "maxLength" && i.template === "Слаг — не длиннее {max}"));
+  assert.equal(failureIssues(new DbFailure("forbidden")), null);
+  const body = toKitError(err).body;
+  assert.equal(body.errors?.length, 3);
+  assert.equal(JSON.stringify(body).includes("template"), false);
+});
+
+test("ошибки полей: уникальный индекс из модели → ошибка поля `unique` (свой текст); составной — общая; чужое поле — без поля", () =>
+  withPg(async (pg, driver) => {
+    const r = post(
+      {
+        email: field(s.text({ max: 254 }), {
+          ...open, create: () => true, update: () => true, required: true,
+          db: { unique: true }, messages: { unique: "Этот email уже зарегистрирован" },
+        }),
+        a: field(s.text(), { ...open, create: () => true, nullable: true }),
+        b: field(s.text(), { ...open, create: () => true, nullable: true }),
+      },
+      { db: { unique: [["a", "b"]] } },
+    );
+    await defineSchema({ resources: [r] }).sync(driver);
+    const db = createDb({ driver, limits: conservativeLimits });
+    await db.resource(r).insert(ctx, { title: "first", email: "a@x.ru", a: "1", b: "2" });
+
+    const dup = await db.resource(r).insert(ctx, { title: "second", email: "a@x.ru" }).catch((e: unknown) => e);
+    assert.ok(dup instanceof DbFailure && dup.kind === "conflict");
+    assert.deepEqual(dup.details.errors, [
+      { field: "email", code: "unique", message: "Этот email уже зарегистрирован", template: "Этот email уже зарегистрирован" },
+    ]);
+    assert.equal(toKitError(dup).status, 409);
+
+    const pair = await db.resource(r).insert(ctx, { title: "third", email: "b@x.ru", a: "1", b: "2" }).catch((e: unknown) => e);
+    assert.ok(pair instanceof DbFailure && pair.kind === "conflict");
+    assert.deepEqual(pair.details.errors?.map((x) => [x.field, x.code, x.params]), [[undefined, "unique", { fields: ["a", "b"] }]]);
+
+    // поле, которое этот ctx не пишет (значение пришло не от него), — без привязки к полю
+    const sealed = post({
+      email: field(s.text(), { ...open, required: true, createValue: () => "a@x.ru", db: { unique: true } }),
+    });
+    await pg.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+    await defineSchema({ resources: [sealed] }).sync(driver);
+    await db.resource(sealed).insert(ctx, { title: "one" });
+    const hidden = await db.resource(sealed).insert(ctx, { title: "two" }).catch((e: unknown) => e);
+    assert.ok(hidden instanceof DbFailure && hidden.kind === "conflict");
+    assert.equal(hidden.details.errors, undefined);
+  }));

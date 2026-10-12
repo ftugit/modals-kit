@@ -8,7 +8,7 @@ import type { FormDescription } from './describe'
 import type { MessageDictionary } from './messages'
 import { formRenderer } from './messages-order'
 import { normalizeErrors, stableId, type FormError, type Outcome, type Result } from './result'
-import { runSchema, type StandardSchemaLike } from './schema'
+import { issueError, runSchema, type IssueLike, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
 import { evaluate } from './submit'
 import { nameProblem } from './policy'
@@ -343,7 +343,12 @@ export interface ExecuteContext<V = Record<string, unknown>> {
   /** После фиксации: сбой уходит в предупреждения, а не отменяет результат. */
   after(fn: () => Promise<void> | void): void
   /** Ошибки ПОЛЕЙ, а не общий сбой. */
-  fail(errors: readonly FormError[], outcome?: Outcome): never
+  /**
+   * Отказ с ошибками. Кроме `FormError` принимает issues Standard Schema (в том
+   * числе с `code`/`params`/`template`, как отдаёт `failureIssues` из `lib/db`):
+   * они становятся ошибками полей по `path` с текстами из словарей формы.
+   */
+  fail(errors: readonly (FormError | IssueLike)[], outcome?: Outcome): never
 }
 
 export class ExecuteFailure extends Error {
@@ -538,7 +543,11 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
           values: ev.values, intent: ev.intent, request,
           commit: () => { committed = true; ctx.reached = 'committed' },
           after: (fn) => { afters.push(fn) },
-          fail: (list, outcome) => { throw new ExecuteFailure(list, outcome) },
+          fail: (list, outcome) => {
+            throw new ExecuteFailure(
+              list.map((x) => ('origin' in x && typeof x.origin === 'string' ? x as FormError : issueError(x as IssueLike, 'server'))),
+              outcome)
+          },
         })
       } catch (e) {
         if (e instanceof ExecuteFailure) {
