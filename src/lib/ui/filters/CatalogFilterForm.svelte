@@ -21,7 +21,11 @@
    * остаётся правдой для пути без JS.
    */
   import { onMount } from 'svelte'
-  import { compileCatalogFilterSchema, parseCatalogFilterPath } from '#lib/filters/index.js'
+  import {
+    CATALOG_FILTER_NOJS_OPTIONS,
+    compileCatalogFilterSchema,
+    parseCatalogFilterPath,
+  } from '#lib/filters/index.js'
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
@@ -131,10 +135,26 @@
 
   /** Пояснение «показаны не все значения» — id по образцу старых заметок. */
   const noteId = (name: string): string => `${name}-truncated`
-  const truncatedOf = (f: { name: string }): number | undefined => {
+  /**
+   * Сколько значений не видно в списке: аварийно обрезанные схемой
+   * (`optionsTruncated`) плюс — только без JS — опции сверх показа
+   * `CATALOG_FILTER_NOJS_OPTIONS` (тот же счёт, что у `nativeLimit` примитива:
+   * первые N плюс выбранное). С JS список ищет по всем, и второе слагаемое
+   * пропадает вместе с пояснением.
+   */
+  const hiddenOf = (
+    f: { name: string },
+    options: readonly { value: string }[],
+    selected: readonly string[],
+  ): number | undefined => {
     const parsed = parseCatalogFilterPath(f.name.slice(namePrefix.length))
     const field = parsed ? schema.fields.find((fd) => fd.key === parsed.key) : undefined
-    return field?.type === 'multiselect' ? field.optionsTruncated : undefined
+    if (field?.type !== 'multiselect' && field?.type !== 'select') return undefined
+    const keep = new Set(selected)
+    const nojs = hydrated
+      ? 0
+      : options.filter((o, i) => i >= CATALOG_FILTER_NOJS_OPTIONS && !keep.has(o.value)).length
+    return (field.optionsTruncated ?? 0) + nojs || undefined
   }
 </script>
 
@@ -148,7 +168,9 @@
   <div class="grid gap-3 sm:grid-cols-2">
     {#each form.description.fields as fd (fd.name)}
       {@const v = form.field(fd.name)!}
-      {@const truncated = truncatedOf(fd)}
+      {@const truncated = v.input === 'select' || v.input === 'multiselect'
+        ? hiddenOf(fd, v.options ?? [], asList(v.value))
+        : undefined}
       {@const describedby = [
         v.attrs['aria-describedby'] ?? null,
         truncated ? noteId(v.name) : null,
@@ -169,6 +191,7 @@
             placeholder={v.input === 'multiselect' ? 'Не выбрано' : 'Любое'}
             aria-describedby={describedby}
             disabled={hydrated && v.disabled === true}
+            config={{ nativeLimit: CATALOG_FILTER_NOJS_OPTIONS }}
           />
         {:else}
           <Input

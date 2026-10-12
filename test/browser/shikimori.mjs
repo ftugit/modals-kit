@@ -177,13 +177,14 @@ async function checkFilters() {
   const genres = schema.body.fields.find((f) => f.key === 'genres');
   if (!genres.options?.length) throw new Error('у жанров нет живых значений');
   const studios = schema.body.fields.find((f) => f.key === 'studios');
-  if (studios.options.length !== 1000 || !studios.optionsTruncated)
-    throw new Error(`студии не деградированы до предела: ${studios.options.length}/${studios.optionsTruncated}`);
+  // все студии едут в схеме (с JS поиск по всем), без аварийной обрезки
+  if (studios.options.length < 1500 || studios.optionsTruncated)
+    throw new Error(`студии приехали не целиком: ${studios.options.length}/${studios.optionsTruncated}`);
   const rules = schema.body.rules ?? [];
   for (const id of ['search-with-latest', 'score-with-anons'])
     if (!rules.some((rule) => rule.id === id)) throw new Error(`в схеме нет связки ${id}`);
   console.log(
-    `  ok  схема готова: ${keys.length} полей, жанров ${genres.options.length}, студий ${studios.options.length} (скрыто ${studios.optionsTruncated}), связок ${rules.length}`,
+    `  ok  схема готова: ${keys.length} полей, жанров ${genres.options.length}, студий ${studios.options.length} (все), связок ${rules.length}`,
   );
 
   // Применение фильтра: год — единственное поле, значение которого видно в самой
@@ -338,6 +339,49 @@ async function checkFiltersUi(browser) {
     if ((await panel.locator('[data-testid="filters-built-at"]').count()) !== 1)
       throw new Error('панель не показывает метку сборки схемы');
     console.log(`  ok  контролов ${paths.length} — ровно объявленные схемой пути (режимы и границы включены)`);
+
+    // С JS список студий — все, а не первые 200: поиск находит студию из хвоста.
+    {
+      const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
+      const tail = studioOptions[studioOptions.length - 1];
+      if (studioOptions.length <= 200) throw new Error('студий меньше показа без JS — проверять хвост нечем');
+      if ((await panel.locator('[data-testid="catalog-filter-truncated"]').count()) !== 0)
+        throw new Error('с JS осталось пояснение «показаны не все значения»');
+      const studiosSelect = page.locator('select[data-select-native][name="page.filters.studios.and"]');
+      await openFilters(page);
+      await studiosSelect.scrollIntoViewIfNeeded();
+      await studiosSelect.click({ force: true });
+      await page.locator('[data-select-listbox]').last().waitFor({ state: 'visible' });
+      await page.locator('[data-select-search-row] input').last().fill(tail.label);
+      await chooseFilterOption(page, studiosSelect, tail.value, tail.label);
+      await page.keyboard.press('Escape');
+      await page.locator('[data-select-listbox]').last().waitFor({ state: 'hidden' }).catch(() => {});
+      console.log(`  ok  с JS поиск находит студию из хвоста списка («${tail.label}», №${studioOptions.length})`);
+    }
+
+    // Переход внутри сайта: схема не едет с данными страницы, а берётся из памяти вкладки.
+    {
+      const dataWithSchema = [];
+      const apiCalls = [];
+      const onResponse = async (r) => {
+        if (r.url().includes('/api/shikimori/filters')) apiCalls.push(r.url());
+        if (r.url().includes('/paginator/__data.json')) {
+          const text = await r.text().catch(() => '');
+          if (text.includes('builtAt')) dataWithSchema.push(r.url());
+        }
+      };
+      page.on('response', onResponse);
+      // клиентский переход ссылкой (роутер SvelteKit ловит клик), не перезагрузка
+      await page.locator('a[href="/"]', { hasText: 'на главную' }).evaluate((el) => el.click());
+      await page.waitForURL(`${BASE}/`);
+      await page.goBack();
+      await waitFor(async () => await panel.isVisible(), { what: 'панель после возврата' });
+      await page.waitForTimeout(500);
+      page.off('response', onResponse);
+      if (dataWithSchema.length) throw new Error(`схема приехала с данными перехода: ${dataWithSchema}`);
+      if (apiCalls.length) throw new Error(`схема запрошена роутом, хотя была в памяти: ${apiCalls}`);
+      console.log('  ok  переход внутри сайта: схемы нет в данных страницы, панель — из памяти вкладки');
+    }
 
     // Второй пагинатор на странице (?gallery.*) — его ключи едут скрытыми полями.
     await page.goto(`${U}?page.src=animes&page.size=5&gallery.size=5&${OPTS}`, { waitUntil: 'networkidle' });
@@ -692,6 +736,26 @@ async function checkFiltersNoJs(browser) {
     const expectedPaths = expectedFilterPaths(schema);
     if (ssrPaths.join(',') !== expectedPaths.join(','))
       throw new Error(`без JS контролы не совпали со схемой:\n ${ssrPaths}\n ${expectedPaths}`);
+    // Без JS студии — первые 200 (частые) с пояснением; студия из хвоста,
+    // пришедшая адресом, показана выбранной сверх 200 и применяется.
+    {
+      const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
+      const native = page.locator('select[data-select-native][name="page.filters.studios.and"]');
+      const shown = await native.locator('option').evaluateAll((els) => els.map((el) => el.value));
+      if (shown.length !== 200 || shown.join() !== studioOptions.slice(0, 200).map((o) => o.value).join())
+        throw new Error(`без JS у студий не первые 200: ${shown.length}`);
+      const note = page.locator('[id="page.filters.studios.and-truncated"]');
+      if ((await note.count()) !== 1) throw new Error('без JS нет пояснения «показаны не все значения»');
+      const tail = studioOptions[studioOptions.length - 1];
+      await page.goto(`${U}?page.src=animes&page.size=5&page.filters.studios.and=${tail.value}`, { waitUntil: 'domcontentloaded' });
+      const withTail = await native.locator('option').evaluateAll((els) => els.map((el) => [el.value, el.selected]));
+      if (withTail.length !== 201 || !withTail.some(([value, selected]) => value === tail.value && selected))
+        throw new Error(`без JS выбранная студия из хвоста не показана выбранной: ${withTail.length}`);
+      if ((await page.locator('[data-testid="catalog-filter-error"]').count()) !== 0)
+        throw new Error('без JS студия из хвоста отклонена валидатором');
+      console.log(`  ok  без JS: студий 200 из ${studioOptions.length} с пояснением; выбранная из хвоста — 201-й, выбрана, без ошибки`);
+      await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
+    }
     // Значения приходят из адреса: применим фильтр и вернёмся на адрес со фильтром.
     await openFilters(page);
     await page.locator('select[data-select-native][name="page.filters.kind"]').selectOption('movie');

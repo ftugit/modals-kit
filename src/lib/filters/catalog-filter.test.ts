@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
+  CATALOG_FILTER_NOJS_OPTIONS,
   CATALOG_FILTER_OPTIONS_LIMIT,
   activeCatalogFilters,
   canonicalCatalogFilterUrl,
@@ -223,6 +224,45 @@ describe('деградация oversized-полей', () => {
     expect(capped.fields[0]?.options?.[0]?.value).toBe(`s${CATALOG_FILTER_OPTIONS_LIMIT + 2}`)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
+  })
+
+  it('длинное поле в пределе едет целиком: частые первыми, дальше по подписи; короткое не трогается; allowlist полный', () => {
+    const studios = Array.from({ length: 1934 }, (_, i) => ({ value: `s${i}`, label: `Студия ${String(1933 - i).padStart(4, '0')}` }))
+    studios[1500] = { ...studios[1500]!, count: 5 } as (typeof studios)[number]
+    const kinds = [{ value: 'tv', label: 'TV' }, { value: 'movie', label: 'Фильм' }, { value: 'ova', label: 'OVA' }]
+    const schema: CatalogFilterSchema = {
+      source: 'demo', version: 1,
+      fields: [
+        { key: 'studios', label: 'Студии', type: 'multiselect', options: studios },
+        { key: 'kind', label: 'Тип', type: 'select', options: kinds },
+      ],
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const capped = capCatalogFilterOptions(schema)
+    const options = capped.fields[0]!.options!
+    expect(options).toHaveLength(1934)
+    expect(capped.fields[0]!.optionsTruncated).toBeUndefined()
+    expect(options[0]!.value).toBe('s1500') // единственная с частотой
+    expect(options.slice(1, 3).map((o) => o.label)).toEqual(['Студия 0000', 'Студия 0001'])
+    expect(capped.fields[1]!.options!.map((o) => o.value)).toEqual(['tv', 'movie', 'ova'])
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    // значение из хвоста (не в первых 200) законно, чужое — нет: allowlist по всему списку
+    const tail = new FormData()
+    tail.append('filters.studios.or', 's3')
+    expect(validateCatalogFilterValues(capped, tail).errors).toEqual([])
+    const foreign = new FormData()
+    foreign.append('filters.studios.or', 'zzz')
+    expect(validateCatalogFilterValues(capped, foreign).errors).toEqual(['oneOf'])
+  })
+
+  it('схема длиннее предела 5000 не проходит валидатор (защита от гигантских форм)', () => {
+    const options = Array.from({ length: CATALOG_FILTER_OPTIONS_LIMIT + 1 }, (_, i) => ({ value: `s${i}`, label: `S${i}` }))
+    expect(() =>
+      validateCatalogFilterSchema({ source: 'demo', version: 1, fields: [{ key: 'studios', label: 'Студии', type: 'multiselect', options }] }),
+    ).toThrow('Invalid catalog filter options')
+    expect(CATALOG_FILTER_OPTIONS_LIMIT).toBe(5000)
+    expect(CATALOG_FILTER_NOJS_OPTIONS).toBe(200)
   })
 })
 

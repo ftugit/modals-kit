@@ -2,7 +2,8 @@
   import { onMount, untrack } from 'svelte'
   import { report } from '#lib/app-errors.svelte.js'
   import { currentSearch } from '#lib/router/sveltekit.js'
-  import type { CatalogFilterSchema } from '#lib/filters/index.js'
+  import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
+  import { SHIKIMORI_FILTER_SOURCE } from '../../../../content/shikimori-filters'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
   import {
     EdgeSentinel,
@@ -285,8 +286,15 @@ import ItemRow from './ItemRow.svelte'
   // `{#key schema}` в FiltersPanel пересоздавал бы форму, теряя введённое.
   // Здесь хранится только ЖИВАЯ схема Shikimori; статическая (Rick and Morty)
   // выводится из источника, а показ выбирает `filterSchema` по текущему `src`.
+  // Схема со страницей (полная отрисовка) — в память вкладки; без неё
+  // (переход внутри сайта) — из памяти, сразу, без мигания панели. Память
+  // работает только в браузере, при SSR `remember`/`recall` пусты.
   let liveSchema = $state<CatalogFilterSchema | null>(
-    untrack(() => (schema?.source === 'shikimori' ? schema : null)),
+    untrack(() => {
+      if (schema?.source !== SHIKIMORI_FILTER_SOURCE) return catalogFilterSchemas.recall(SHIKIMORI_FILTER_SOURCE)
+      catalogFilterSchemas.remember(schema)
+      return schema
+    }),
   )
   /**
    * Схема панели — по ТЕКУЩЕМУ источнику: статическая у Rick and Morty, живая у

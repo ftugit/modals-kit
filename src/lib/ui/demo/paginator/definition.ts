@@ -29,11 +29,12 @@ import {
   getShikimoriTerms,
   type AnimesPage,
 } from '../../../../content/shikimori'
-import type { CatalogFilterSchema } from '#lib/filters/index.js'
+import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
 import {
   SHIKIMORI_FILTER_KEYS,
   SHIKIMORI_FILTER_RELOAD_KEYS,
   SHIKIMORI_FILTER_SEARCH,
+  SHIKIMORI_FILTER_SOURCE,
 } from '../../../../content/shikimori-filters'
 import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
 import {
@@ -215,23 +216,22 @@ export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterS
  * — состояние слоя модалок, а не фильтров. Всё остальное (размер страницы,
  * источник, вторая полоса `?gallery.*`) обязано пережить смену фильтров.
  */
-/**
- * Кэш схемы фильтров на клиенте: один запрос на сессию.
- *
- * Схема собирается сервером из живых справочников и кэшируется там (TTL +
- * stale-fallback), поэтому клиенту достаточно спросить один раз — при
- * переключении источника туда-обратно второй запрос не нужен. Живёт это ТОЛЬКО
- * на клиенте: зовётся из эффекта, а эффекты при SSR не исполняются.
- */
-let filterSchemaCache: CatalogFilterSchema | null = null
+/** Запрос схемы в полёте: параллельные вызовы ждут один и тот же ответ. */
 let filterSchemaInflight: Promise<CatalogFilterSchema> | null = null
 
-/** Схема фильтров живого источника — из роута `/api/shikimori/filters`. */
+/**
+ * Схема фильтров живого источника: из памяти вкладки (`catalogFilterSchemas`),
+ * иначе — один раз из роута `/api/shikimori/filters` (и в память). Роут нужен,
+ * только когда схема не пришла со страницей: источник переключили в панели
+ * (адрес пишется без серверной загрузки) или пришли переходом внутри сайта,
+ * а в памяти её ещё нет; ещё — повтор после сбоя сборки на сервере.
+ */
 export async function loadFilterSchema(): Promise<CatalogFilterSchema> {
-  if (filterSchemaCache) return filterSchemaCache
+  const known = catalogFilterSchemas.recall(SHIKIMORI_FILTER_SOURCE)
+  if (known) return known
   filterSchemaInflight ??= getShikimoriFilters()
     .then((schema) => {
-      filterSchemaCache = schema
+      catalogFilterSchemas.remember(schema)
       return schema
     })
     .finally(() => {

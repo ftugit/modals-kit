@@ -8,3 +8,4 @@
  */
 export * from './catalog-filter'
 export * from './view'
+export * from './schema-memory'

@@ -60,9 +60,12 @@ export type CatalogFilterField = {
   max?: number
   maxSelections?: number
   /**
-   * Сколько опций скрыто деградацией (см. `capCatalogFilterOptions`): поле
-   * показывает top-N по частоте, остальные доступны только через фильтрацию
-   * по значению, если клиент знает его извне. Выставляется сборщиком схемы.
+   * Сколько опций скрыто аварийной деградацией (см. `capCatalogFilterOptions`):
+   * справочник длиннее `CATALOG_FILTER_OPTIONS_LIMIT`, поле несёт top-N по
+   * частоте, остальные доступны только через фильтрацию по значению, если
+   * клиент знает его извне. Выставляется сборщиком схемы. Обычный длинный
+   * справочник (студии, ~2000) сюда не попадает: он едет целиком, а короче
+   * становится только список без JS (`CATALOG_FILTER_NOJS_OPTIONS`).
    */
   optionsTruncated?: number
   /**
@@ -299,7 +302,11 @@ export function validateCatalogFilterSchema(input: unknown): CatalogFilterSchema
 
     let options: CatalogFilterOption[] | undefined
     if (fieldValue.type === 'select' || fieldValue.type === 'multiselect') {
-      if (!Array.isArray(fieldValue.options) || fieldValue.options.length === 0 || fieldValue.options.length > 1000)
+      if (
+        !Array.isArray(fieldValue.options) ||
+        fieldValue.options.length === 0 ||
+        fieldValue.options.length > CATALOG_FILTER_OPTIONS_LIMIT
+      )
         throw new Error('Invalid catalog filter options')
       const optionValues = new Set<string>()
       options = fieldValue.options.map((option) => {
@@ -354,11 +361,23 @@ export function validateCatalogFilterSchema(input: unknown): CatalogFilterSchema
 }
 
 /**
- * Предел числа опций одного поля схемы. Сверх него схему строить/валидировать
- * нельзя (защита от гигантских форм), но транспорт данных падать НЕ должен —
- * вместо throw сборщик деградирует поле через `capCatalogFilterOptions`.
+ * Предел числа опций одного поля схемы — защита от гигантских форм, а не
+ * размер показа. Сверх него схему строить/валидировать нельзя, но транспорт
+ * данных падать НЕ должен — вместо throw сборщик деградирует поле через
+ * `capCatalogFilterOptions`. Справочник студий (~2000) в предел помещается
+ * и едет целиком: с JS список ищет по всем значениям.
  */
-export const CATALOG_FILTER_OPTIONS_LIMIT = 1000
+export const CATALOG_FILTER_OPTIONS_LIMIT = 5000
+
+/**
+ * Сколько опций показывает список БЕЗ JavaScript (решение владельца: «с JS —
+ * все, без JS — ограниченный список»). Без JS список — нативный `<select>` из
+ * серверной разметки: 2000 строк в нём не найти перебором, и каждая весит в
+ * HTML. Показываются первые N по порядку схемы (самые частые — см.
+ * `capCatalogFilterOptions`) плюс всё уже выбранное. Значения сверх показа
+ * при этом законны: сервер проверяет выбор по полному списку.
+ */
+export const CATALOG_FILTER_NOJS_OPTIONS = 200
 
 /**
  * Опции поля — ДОВЕРЕННЫЙ allowlist, только пока показ не обрезан лимитом
@@ -373,31 +392,40 @@ export function catalogFilterOptionsAreComplete(descriptor: CatalogFilterField):
   return !!descriptor.options && !descriptor.optionsTruncated
 }
 
+/** Частые — первыми; при равной частоте (и без неё) — по подписи. */
+function byPopularity(a: CatalogFilterOption, b: CatalogFilterOption): number {
+  const byCount = (b.count ?? 0) - (a.count ?? 0)
+  return byCount !== 0 ? byCount : a.label.localeCompare(b.label, 'ru') || a.value.localeCompare(b.value)
+}
+
 /**
- * Деградация oversized-полей: select/multiselect с числом опций > limit
- * обрезается до top-`limit` по частоте (`count`, без count — по алфавиту),
- * число скрытых опций пишется в `optionsTruncated`. Принцип (план улучшения
- * §3.12): размер схемы фильтров не умеет ронять транспорт данных никогда;
- * throw-путь валидатора остаётся только для не-размерных нарушений схемы.
+ * Длинные справочники схемы — к показу:
+ *  • поле длиннее `rankFrom` (по умолчанию — показ без JS) упорядочивается по
+ *    частоте (`count`), при равной — по подписи: первые N и есть список без JS,
+ *    и в нём оказываются самые нужные значения, а не первые по алфавиту или id;
+ *  • поле длиннее `limit` ещё и обрезается до top-`limit` (аварийная
+ *    деградация), число скрытых опций пишется в `optionsTruncated`. Принцип
+ *    (план улучшения §3.12): размер схемы не умеет ронять транспорт данных
+ *    никогда; throw-путь валидатора остаётся для не-размерных нарушений.
+ * Короткие поля не трогаются: их порядок задаёт источник.
  */
 export function capCatalogFilterOptions(
   schema: CatalogFilterSchema,
   limit = CATALOG_FILTER_OPTIONS_LIMIT,
+  rankFrom = CATALOG_FILTER_NOJS_OPTIONS,
 ): CatalogFilterSchema {
   let truncated = 0
   const fields = schema.fields.map((descriptor) => {
     if (
       (descriptor.type !== 'select' && descriptor.type !== 'multiselect') ||
       !descriptor.options ||
-      descriptor.options.length <= limit
+      descriptor.options.length <= Math.min(limit, rankFrom)
     )
       return descriptor
-    const ranked = [...descriptor.options].sort((a, b) => {
-      const byCount = (b.count ?? 0) - (a.count ?? 0)
-      return byCount !== 0 ? byCount : a.value.localeCompare(b.value)
-    })
-    truncated += descriptor.options.length - limit
-    return { ...descriptor, options: ranked.slice(0, limit), optionsTruncated: descriptor.options.length - limit }
+    const ranked = [...descriptor.options].sort(byPopularity)
+    if (ranked.length <= limit) return { ...descriptor, options: ranked }
+    truncated += ranked.length - limit
+    return { ...descriptor, options: ranked.slice(0, limit), optionsTruncated: ranked.length - limit }
   })
   if (truncated > 0 && DEV) {
     console.warn(`[catalog-filter] ${schema.source}: скрыто ${truncated} опций сверх лимита ${limit} (деградация схемы)`)
@@ -407,7 +435,7 @@ export function capCatalogFilterOptions(
 
 /**
  * Политика формы фильтров: единственное отличие от умолчательной — предел
- * числа вариантов поднят до предела СХЕМЫ (1000), потому что гигантские
+ * числа вариантов поднят до предела СХЕМЫ (5000), потому что гигантские
  * справочники (студии) приходят из живого источника и уже деградированы
  * `capCatalogFilterOptions`; второй, более низкий предел отсекал бы их молча.
  */

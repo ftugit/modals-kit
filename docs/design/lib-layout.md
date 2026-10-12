@@ -29,7 +29,7 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
 
    | Файл `paginate/filters/` | Что туда идёт |
    |---|---|
-   | `schema.ts` | типы схемы, `validateCatalogFilterSchema`, `catalogFilterSafeName`, `catalogFilterFieldNames`, `CATALOG_FILTER_OPTIONS_LIMIT`, `capCatalogFilterOptions`, `catalogFilterOptionsAreComplete` |
+   | `schema.ts` | типы схемы, `validateCatalogFilterSchema`, `catalogFilterSafeName`, `catalogFilterFieldNames`, `CATALOG_FILTER_OPTIONS_LIMIT`, `CATALOG_FILTER_NOJS_OPTIONS`, `capCatalogFilterOptions`, `catalogFilterOptionsAreComplete`; память схем — `schema-memory.ts` |
    | `form.ts` | схема → `lib/form`: `compileCatalogFilterSchema`, `stripDefaultCatalogFilterValues`, `catalogFilterInitialState`, `catalogFilterFormData` |
    | `url.ts` | ключи адреса: `parseCatalogFilterPath`, `readCatalogFilterValues`, `catalogFilterValuesFromSearch`, `canonicalCatalogFilterUrl`, `catalogFilterUrlWithout` |
    | `rules.ts` | связки и серверная проверка: `catalogRuleState`, `catalogFilterValueMap`, `catalogFilterViolations`, `validateCatalogFilterValues` |

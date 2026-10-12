@@ -56,6 +56,14 @@ export async function loadPaginatorDemo(ctx: {
   url?: string | URL
   pathname?: string
   search?: Record<string, unknown> | URLSearchParams
+  /**
+   * Запрос данных для перехода внутри сайта (`event.isDataRequest` SvelteKit):
+   * схема фильтров тогда не едет — браузер держит её в памяти вкладки
+   * (`catalogFilterSchemas`), а если там пусто, берёт один раз роутом. Полная
+   * отрисовка (первый заход, перезагрузка, любой запрос без JS) схему несёт:
+   * без неё нет ни разметки фильтров без JS, ни гидратации.
+   */
+  isDataRequest?: boolean
 }): Promise<PaginatorLoaderData> {
   const store = createPaginatorStore()
   const defaultName = ensureDemoPaginator('url')
@@ -96,7 +104,12 @@ export async function loadPaginatorDemo(ctx: {
       initServerPaginator<DemoItem>(store, galleryName, { url }),
     ])
 
-  return { defaultName, snapshot, gallerySnapshot, filterSchema: await schemaOf(snapshot) }
+  return {
+    defaultName,
+    snapshot,
+    gallerySnapshot,
+    filterSchema: ctx.isDataRequest ? null : await schemaOf(snapshot),
+  }
 }
 
 /**

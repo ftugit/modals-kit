@@ -17,7 +17,11 @@ import {
 } from './shikimori-schema'
 import { resetShikimoriTransport } from './shikimori'
 import { resetGraphqlTransport } from './graphql'
-import { catalogFilterFieldNames } from '#lib/filters/index.js'
+import {
+  CATALOG_FILTER_OPTIONS_LIMIT,
+  catalogFilterFieldNames,
+  catalogFilterOptionsAreComplete,
+} from '#lib/filters/index.js'
 
 /**
  * Тексты 422 ровно в том виде, в каком их отдаёт API (записаны живьём,
@@ -153,16 +157,35 @@ describe('сборка схемы', () => {
     expect(schema.rules?.map((rule) => rule.id)).toEqual(['search-with-latest', 'score-with-anons'])
   })
 
-  it('гигантский справочник студий деградирует, а не роняет транспорт', async () => {
-    const studios = Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, name: `Студия ${String(i + 1).padStart(4, '0')}` }))
+  it('все студии едут в схеме целиком: частые первыми, дальше по подписи (первые 200 — список без JS)', async () => {
+    // как у живого источника: ~2000 студий, частота есть только у попавших в выборку
+    const studios = Array.from({ length: 1934 }, (_, i) => ({ id: i + 1, name: `Студия ${String(1934 - i).padStart(4, '0')}` }))
     const { fetchImpl } = stubUpstream(studios)
     const c = clock()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
     const schema = buildShikimoriFilterSchema(refs, '2026-10-07T09:00:00.000Z')
     const field = schema.fields.find((item) => item.key === 'studios')!
-    expect(field.options).toHaveLength(1000)
-    expect(field.optionsTruncated).toBe(200)
+    expect(field.options).toHaveLength(1934)
+    expect(field.optionsTruncated).toBeUndefined()
+    expect(catalogFilterOptionsAreComplete(field)).toBe(true)
+    expect(field.options![0]).toMatchObject({ value: '858', count: 2 }) // из выборки популярности
+    expect(field.options!.slice(1, 3).map((o) => o.label)).toEqual(['Студия 0001', 'Студия 0002'])
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('справочник сверх предела схемы (5000) деградирует, а не роняет транспорт', async () => {
+    const studios = Array.from({ length: CATALOG_FILTER_OPTIONS_LIMIT + 3 }, (_, i) => ({ id: i + 1, name: `Студия ${i + 1}` }))
+    const { fetchImpl } = stubUpstream(studios)
+    const c = clock()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const schema = buildShikimoriFilterSchema(refs, '2026-10-07T09:00:00.000Z')
+    const field = schema.fields.find((item) => item.key === 'studios')!
+    expect(field.options).toHaveLength(CATALOG_FILTER_OPTIONS_LIMIT)
+    expect(field.optionsTruncated).toBe(3)
+    expect(field.options![0]!.value).toBe('858')
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })

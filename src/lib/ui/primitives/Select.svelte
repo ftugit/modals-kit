@@ -55,6 +55,16 @@
      * значения, поэтому форма отправляет ровно то же, что и раньше.
      */
     nativeList: 'all' | 'value'
+    /**
+     * Сколько опций нативный `<select>` показывает ДО гидратации — то есть
+     * без JavaScript (0 — все). 🔴 Добавка к канону. Без JS список — это
+     * нативный контрол из серверной разметки: справочник на 2000 строк в нём
+     * не найти перебором, и каждая строка весит в HTML. Показываются первые N
+     * опций по порядку `options` плюс всё уже выбранное (иначе выбор пропал бы
+     * при отправке). После гидратации предел не действует: список рисует
+     * панель и ищет по всем опциям, а нативный контрол живёт по `nativeList`.
+     */
+    nativeLimit: number
   }
 
   export const DEFAULT_SELECT_CONFIG: SelectEnhancementConfig = {
@@ -79,6 +89,7 @@
     renderLimit: 200,
     renderChunk: 200,
     nativeList: 'value',
+    nativeLimit: 0,
   }
 
   /**
@@ -266,16 +277,21 @@
   const all = $derived([...options])
   /** Выбранное во внутреннем состоянии — то, чем рисуется и нативный контрол, и список. */
   const selectedValues = $derived(new Set(selected.map((o) => o.value)))
-  /**
-   * Опции нативного контрола. До гидратации — весь список (так его видит
-   * no-JS), после — только выбранное: список на экране рисует панель.
-   */
   /** Пустой вариант выбран, когда выбранного нет вовсе (одно и то же правило для разметки и синхронизации). */
   const placeholderSelected = $derived(selectedValues.has('') || selectedValues.size === 0)
+  /**
+   * Опции нативного контрола. До гидратации — то, что видит no-JS: весь список
+   * или, с `nativeLimit`, первые N плюс выбранное. После — по `nativeList`:
+   * только выбранное (список на экране рисует панель) или всё.
+   */
   const nativeOptions = $derived(
-    config.nativeList === 'value' && mounted
-      ? all.filter((o) => selectedValues.has(o.value))
-      : all,
+    mounted
+      ? config.nativeList === 'value'
+        ? all.filter((o) => selectedValues.has(o.value))
+        : all
+      : config.nativeLimit > 0 && all.length > config.nativeLimit
+        ? all.filter((o, i) => i < config.nativeLimit || selectedValues.has(o.value))
+        : all,
   )
   const listHeight = $derived(
     config.listSize === 'sm' ? '12rem' : config.listSize === 'lg' ? '24rem' : '18rem',
@@ -740,7 +756,7 @@
     там атрибутов нет. В самой панели `aria-expanded="true"` корректен:
     панель существует только в раскрытом состоянии.
   -->
-  <!-- Keep touch hits on the hydrated SELECT, not a native OPTION; no-JS keeps the full list. -->
+  <!-- Keep touch hits on the hydrated SELECT, not a native OPTION; no-JS gets the list (or `nativeLimit` of it). -->
   <select
     bind:this={nativeEl}
     data-select-native=""
