@@ -62,8 +62,9 @@
 
 ```ts
 // src/lib/server/db.ts
-import { createDb, conservativeLimits, defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { createDb, conservativeLimits, defineResource, f, field, policy, s, type Driver } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
+import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool, envReader } from '#lib/db/sveltekit/node.js'
 import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
 
@@ -93,23 +94,27 @@ export const posts = defineResource({
 
 const env = envReader(process.env, import.meta.env as Record<string, string | undefined>)
 
-let runtime: Promise<{ db: Database; close(): Promise<void> }> | undefined
-export const getRuntime = () =>
-  (runtime ??= (async () => {
-    const cursorCodec = cursorCodecFromEnv(env)      // без DB_CURSOR_SECRET → undefined (только page)
-    if (env('DATABASE_URL')) {
-      const pg = openPgPool({ connectionString: env('DATABASE_URL')!,
-                              max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)) })
-      return { db: createDb({ driver: pg.driver, limits: conservativeLimits, cursorCodec }),
-               close: pg.close }
-    }
-    const node = await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres',
-                                       { memory: !env('DATABASE_DIR') })
-    const db = createDb({ driver: pgliteAdapter(node.db), limits: conservativeLimits, cursorCodec })
-    await applyMigrationText(db, MIGRATION)           // demo: схема создаётся тем же путём, что и в проде
-    return { db, close: node.close }
-  })())
+// Соединение откроется при первом запросе к БД, а не здесь: страницы без БД её не поднимают.
+// Движок выбирает окружение, остальной код от него не зависит.
+export const db = createDb({
+  driver: lazyDriver(openDriver),
+  limits: conservativeLimits,
+  cursorCodec: cursorCodecFromEnv(env),               // без DB_CURSOR_SECRET → undefined (только page)
+})
+
+async function openDriver(): Promise<Driver> {
+  const driver = env('DATABASE_URL')
+    ? openPgPool({ connectionString: env('DATABASE_URL')!,
+                   max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)) }).driver
+    : pgliteAdapter((await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres',
+                                            { memory: !env('DATABASE_DIR') })).db)
+  await applyMigrationText(createDb({ driver, limits: conservativeLimits }), MIGRATION) // demo: тот же путь, что в проде
+  return driver
+}
 ```
+
+`lazyDriver` открывает драйвер один раз; параллельные первые запросы ждут одно открытие,
+неудачное открытие не запоминается (следующий запрос пробует снова).
 
 Именованные экспорты ресурсов, а не «один глобальный `db`»: маршрут получает
 `db.resource(posts)`, и компилятор видит только те поля, которые ресурс разрешил.
@@ -129,18 +134,16 @@ export const getRuntime = () =>
 // src/hooks.server.ts
 import { dbHandle } from '#lib/db/sveltekit/index.js'
 import type { Handle } from '@sveltejs/kit/hooks'
-import { getRuntime } from '#lib/server/db.js'
+import { db, DEMO_PRINCIPAL } from '#lib/server/db.js'
 
-export const handle: Handle = async ({ event, resolve }) => {
-  // /db-demo и догрузка страниц его пагинатора (/api/db-posts) — модалки и статика
-  // за сессию не платят.
-  if (event.url.pathname !== '/db-demo' && !event.url.pathname.startsWith('/api/db-posts'))
-    return resolve(event)
-  const { db } = await getRuntime()
-  const inject = dbHandle({ db, principal: () => DEMO_PRINCIPAL })   // принцип один на все пути демо
-  return inject({ event, resolve } as never)
-}
+// Пользователь — на каждом запросе; БД при этом не поднимается (её откроет первый запрос
+// к ней, см. `lazyDriver`). С авторизацией principal берут из сессии.
+export const handle: Handle = dbHandle({ db, principal: () => DEMO_PRINCIPAL })
 ```
+
+`paths` (необязательно) ограничивает, где резолвится principal: вне них `locals.dbCtx` —
+гость. Префикс сравнивается по границе сегмента: `'/api'` покрывает `/api` и `/api/…`, но
+не `/apiary`.
 
 Что даёт хук:
 
@@ -175,8 +178,7 @@ export {}
 
 ```ts
 export const load: PageServerLoad = async (event) => {
-  const { db } = await getRuntime()
-  const api = db.resource(posts)
+  const api = event.locals.db.resource(posts)
   try {
     const input = parseListInput(event.url.searchParams)   // ВНУТРИ try: отказ = 422, а не 500
     const [items, totalItems] = await Promise.all([api.select(event.locals.dbCtx, input),
@@ -247,10 +249,9 @@ export const load: PageServerLoad = async (event) => {
 ```ts
 export const actions: Actions = {
   create: async (event) => {
-    const { db } = await getRuntime()
     try {
       const input = await readJson(event.request)                  // или formData → объект
-      const row = await db.resource(posts).insert(event.locals.dbCtx, { title: input.title })
+      const row = await event.locals.db.resource(posts).insert(event.locals.dbCtx, { title: input.title })
       return { ok: true, message: `создано: ${row.title}` }
     } catch (e) {
       const { status, data } = toFormFailure(e, import.meta.env.DEV)
@@ -330,6 +331,7 @@ await withRetry(db, (tx) => tx.transaction(async (t) => move(t, from, to)), {
 | `#lib/db/adapters/pg.js` | `pgAdapter(pool, maxInFlight = 32, transactionTimeoutMs = 30000)` | да (savepoint'ы) | Node-сервер, long-lived |
 | `#lib/db/adapters/pglite.js` | `pgliteAdapter(db)` | да | dev/тесты; один пользователь, WASM, не для Workers |
 | `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter({ connectionString, timeoutMs = 15000, maxInFlight = 5 })` | да, на одном `Client` | Cloudflare Workers + Hyperdrive |
+| `#lib/db/adapters/lazy.js` | `lazyDriver(open, capabilities = как у pg)` — обёртка над любым драйвером из этой таблицы | как у открытого драйвера | БД открывается при первом запросе, а не при создании `db`: страницы без БД её не поднимают; движок (pg, PGlite, Hyperdrive, прокси) не важен |
 | `#lib/db/adapters/proxy.js` | `proxyHttpAdapter(config)` / `proxyWsAdapter(config)` / `proxyAdapter(mode, config)` | HTTP — **нет**, WS — да (один сокет = один backend) | Postgres за HTTP/WS-прокси (`@juit/pgproxy`-протокол): хостинг без TCP, free-контейнеры, домен за Cloudflare |
 | транспорт без сессий и без прокси (`neon()` HTTP) | свой `Driver` ≈ 35 строк, `capabilities.transactions = false` | **нет** | [`docs/TRANSPORTS.md`](./docs/TRANSPORTS.md) §5 |
 
@@ -432,7 +434,7 @@ await applyMigrationText(db, sql)            // один BEGIN/COMMIT на фа�
 keyset-индекс, который обязана порождать `order`).
 
 Автопрогона на импорте нет сознательно: `vite build` и `vite dev` не должны менять схему.
-Прогон — явный скрипт/роут/флаг (в демо — `getRuntime()` при первом обращении к dev-БД).
+Прогон — явный скрипт/роут/флаг (в демо — при открытии драйвера, то есть при первом запросе к dev-БД).
 
 ## 7. Публичный API
 
@@ -443,6 +445,7 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/adapters/pg.js` | `pgAdapter` |
 | `#lib/db/adapters/pglite.js` | `pgliteAdapter` |
 | `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter` |
+| `#lib/db/adapters/lazy.js` | `lazyDriver` |
 | `#lib/db/adapters/proxy.js` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
 | `#lib/db/sveltekit/index.js` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
 | `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
@@ -506,7 +509,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
-| `src/lib/db/test/db-port-specific.test.ts` | 36 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-port-specific.test.ts` | 37 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

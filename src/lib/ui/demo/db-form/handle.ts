@@ -6,7 +6,7 @@ import type { Database, DataContext } from '#lib/db/index.js'
 import { toFormFailure } from '#lib/db/sveltekit/index.js'
 import { createFormHandler, type Handled } from '#lib/form/server.js'
 import type { FormError } from '#lib/form/index.js'
-import { getRuntime, posts } from '#lib/server/db.js'
+import { db, posts } from '#lib/server/db.js'
 import { invalidateLiveCache } from '#lib/server/live-cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { dbCreate, dbRemove } from './description'
@@ -49,10 +49,9 @@ export function failureHandled(e: unknown): Handled {
   }
 }
 
-/** Пул поднимается один раз на запрос; сбой подъёма — тоже ошибка формы, не 500. */
+/** БД открывается при первом запросе; сбой открытия — тоже ошибка формы, не 500. */
 async function withDb(run: (db: Database) => Promise<Handled>): Promise<Handled> {
   try {
-    const { db } = await getRuntime()
     return await run(db)
   } catch (e) {
     return failureHandled(e)

@@ -10,7 +10,7 @@
   `pathname === p || pathname.startsWith(p)` — `'/db-demo'` совпадает и с `'/db-demoX'`.
   Исправление известно: `pathname === p || pathname.startsWith(p.endsWith('/') ? p : p + '/')`.
   **План:** правка в `handle.ts` плюс тест на `/db-demoX`. Делается одним коммитом с C1, F43 первым.
-- [x] **C1 — хук приложения повторяет `dbHandle`.** ИСПРАВЛЕНО (ход 48): `handle = dbHandle({ db: фабрика, principal, paths: ['/db-demo', '/api/db-posts'] })`; вне `paths` — гостевой `dbCtx` (поведение пакета, владелец не возражал против исправления как задумано). `src/hooks.server.ts:35`: хук сам
+- [x] **C1 — хук приложения повторяет `dbHandle`.** ИСПРАВЛЕНО (ход 48): `handle = dbHandle({ db: фабрика, principal, paths: ['/db-demo', '/api/db-posts'] })`; вне `paths` — гостевой `dbCtx` (поведение пакета). **Ход 49 (решение владельца):** `paths` из хука убран — пользователь определяется на каждом запросе, а БД открывается при первом запросе к ней: новый `lazyDriver` (`adapters/lazy.ts`), в приложении `db = createDb({ driver: lazyDriver(openDriver) })`, `getRuntime` удалён. Движок (pg, PGlite, Hyperdrive) на это не влияет. `src/hooks.server.ts:35`: хук сам
   фильтрует пути и на каждый запрос заново создаёт `dbHandle(...)`. Задумано:
   `export const handle = dbHandle({ db: async () => (await getRuntime()).db, principal: () => DEMO_PRINCIPAL, paths: ['/db-demo', '/api/db-posts'] })`.
   В самом хуке та же граница пропущена у `/api/db-posts` (`startsWith('/api/db-posts')`).

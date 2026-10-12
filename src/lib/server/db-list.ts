@@ -26,7 +26,7 @@ import {
   type DbPost,
   type DbPostsQuery,
 } from '#lib/ui/demo/db-list/definition.js'
-import { DEMO_PRINCIPAL, getRuntime, posts } from './db'
+import { DEMO_PRINCIPAL, db, posts } from './db'
 
 /**
  * Порядок keyset-выборки обязан быть ПОЛНЫМ. Без уникального хвоста строки с
@@ -68,7 +68,6 @@ const EXPLAIN: Record<string, string> = {
 }
 
 async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageResponse<DbPost>> {
-  const { db } = await getRuntime()
   const api = db.resource(posts)
   // Ключи адреса переводятся в те, что разбирает слой: пагинатор говорит
   // «page/size», слой говорит «page/limit». Один перевод — на оба пути.

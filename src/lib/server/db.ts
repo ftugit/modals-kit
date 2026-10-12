@@ -3,6 +3,10 @@
  * Паттерн — SvelteKit FAQ «How do I set up a database?»: синглтон процесса,
  * импорт из серверных модулей, никаких `db` в `.svelte`.
  *
+ * `db` создаётся при загрузке модуля и ничего не стоит: соединение открывает
+ * `lazyDriver` при первом запросе к БД. Страницы без БД её не поднимают — какой бы
+ * движок ни был задан окружением (Hyperdrive, pg, PGlite): путь один.
+ *
  * Движок: PGlite в памяти для dev/демо (иначе `npm run dev` и `vite build`
  * спорят из-за file-lock одного каталога) либо файловый каталог, если задан
  * DATABASE_DIR. Миграции — явные, НЕ при старте: здесь демо-корпус создаётся
@@ -12,9 +16,10 @@
 import { createDb, defineResource, f, field, policy, s } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
+import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
 import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
-import type { Database, Driver } from '#lib/db/index.js'
+import type { Database, Driver, Limits } from '#lib/db/index.js'
 import {
   DATABASE_DIR, DATABASE_URL, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
   DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
@@ -73,27 +78,7 @@ INSERT INTO public.demo_post (title) SELECT 'Запись ' || n FROM generate_s
  */
 export const DEMO_PRINCIPAL = Object.freeze({ roles: ['author'] })
 
-type Runtime = { db: Database; driver: Driver; close?: () => Promise<void> }
-let opening: Promise<Runtime> | undefined
-
-/**
- * Один индекс на процесс; `await` внутри load/action.
- *
- * Кэшируем только УСПЕШНУЮ инициализацию. Наивное `opening ??= промис` запоминает и
- * отказ: один медленный первый запрос (холодный контейнер на free-хостинге, таймаут
- * коннекта, БД ещё не поднята) превращал бы 500 в состояние процесса до перезапуска.
- */
-export function getRuntime(): Promise<Runtime> {
-  if (!opening)
-    opening = open().catch((e) => {
-      // Причина 500 в production не видна (SvelteKit её не печатает), а без этой строки
-      // её ещё и нельзя найти: отказ инициализации молча повторялся бы на каждый запрос.
-      console.error('[db] инициализация не удалась:', e?.kind ?? e?.constructor?.name, String(e?.message ?? e).slice(0, 300), '\n  details:', JSON.stringify((e as { details?: unknown })?.details ?? null).slice(0, 400), '\n  cause:', String((e as { cause?: Error })?.cause?.message ?? (e as { cause?: unknown })?.cause ?? 'нет').slice(0, 300))
-      opening = undefined
-      throw e
-    })
-  return opening
-}
+const LIMITS: Limits = { pageSize: 20, maxPageSize: 100, maxPage: 10000, filterDepth: 8, filterNodes: 100, inValues: 100, inputKeys: 64 }
 
 /** Конфигурация секрета — ошибка запуска, и она обязана называть переменную. */
 function explainCursorConfig(build: () => ReturnType<typeof cursorCodecFromEnv>) {
@@ -108,53 +93,73 @@ function explainCursorConfig(build: () => ReturnType<typeof cursorCodecFromEnv>)
   }
 }
 
-async function open(): Promise<Runtime> {
-    let driver: Driver
-    let close: (() => Promise<void>) | undefined
-    try {
-      if (HYPERDRIVE_CONNECTION_STRING) {
-        // Cloudflare Workers/Vercel Edge: клиент на запрос, пул держит Hyperdrive.
-        driver = hyperdriveAdapter({ connectionString: HYPERDRIVE_CONNECTION_STRING, maxInFlight: 5 })
-      } else if (DATABASE_URL) {
-        const pool = openPgPool({
-          connectionString: DATABASE_URL,
-          max: DB_POOL_MAX ?? (VERCEL ? 1 : 4),
-          // Холодный старт у хостера = долгие первые рукопожатия; дефолтных 10 с на
-          // это мало, а лишний пул-таймаут ещё и отравляет синглтон (см. выше).
-          connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS ?? 30_000,
-        })
-        driver = pool.driver
-        close = pool.close
-      } else {
-        const node = await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres', {
-          memory: !DATABASE_DIR,
-        })
-        driver = pgliteAdapter(node.db)
-        close = node.close
-      }
-      const db = createDb({
-        driver,
-        limits: { pageSize: 20, maxPageSize: 100, maxPage: 10000, filterDepth: 8, filterNodes: 100, inValues: 100, inputKeys: 64 },
-        // Секрет курсора обязан быть не короче 32 байт, иначе слой отказывает — и
-        // без этой обёртки весь демо-роут падал бы в 500 с текстом «Invalid cursor
-        // key/TTL configuration», где не понять, о какой переменной речь. Fail-fast
-        // сохранён (молча работать без подписи токенов нельзя), названа причина.
-        cursorCodec: explainCursorConfig(() =>
-          cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_OLD_KEYS })[key], {
-            ttlSeconds: DB_CURSOR_TTL_SECONDS,
-          }),
-        ),
-      })
-      await applyMigrationText(db, MIGRATION)
-      return { db, driver, close }
-    } catch (e) {
-      // Захваченный ресурс обязан быть отпущен и при отказе ПОСЛЕ захвата:
-      // каталог PGlite остаётся с `.kit-db.lock`, и следующая попытка (а `opening`
-      // после ошибки сброшена — иначе одна заминка становилась бы состоянием
-      // процесса) отвечала бы «stop its owner» вместо настоящей причины. Ровно так
-      // и проявил себя слишком короткий DB_CURSOR_SECRET: первая ошибка — про
-      // секрет, все остальные — про замок.
-      await close?.()
-      throw e
-    }
+// Секрет курсора обязан быть не короче 32 байт, иначе слой отказывает — и без
+// `explainCursorConfig` демо падало бы в 500 с текстом «Invalid cursor key/TTL
+// configuration», где не понять, о какой переменной речь. Проверка дешёвая и
+// синхронная, но её отказ НЕ роняет загрузку модуля (иначе неверный секрет ломал бы и
+// страницы без БД): он запоминается и становится отказом первого обращения к БД.
+let cursorConfigError: unknown
+const cursorCodec = (() => {
+  try {
+    return explainCursorConfig(() =>
+      cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_OLD_KEYS })[key], {
+        ttlSeconds: DB_CURSOR_TTL_SECONDS,
+      }),
+    )
+  } catch (e) {
+    cursorConfigError = e
+    return undefined
   }
+})()
+
+/**
+ * Один `Database` на процесс. Соединение — при первом запросе (`lazyDriver`):
+ * неудачное открытие не запоминается, следующий запрос пробует снова — один медленный
+ * первый запрос (холодный контейнер, таймаут коннекта) не становится 500 до перезапуска.
+ */
+export const db: Database = createDb({ driver: lazyDriver(openDriver), limits: LIMITS, cursorCodec })
+
+async function openDriver(): Promise<Driver> {
+  let driver: Driver
+  let close: (() => Promise<void>) | undefined
+  try {
+    if (cursorConfigError) throw cursorConfigError
+    if (HYPERDRIVE_CONNECTION_STRING) {
+      // Cloudflare Workers/Vercel Edge: клиент на запрос, пул держит Hyperdrive.
+      driver = hyperdriveAdapter({ connectionString: HYPERDRIVE_CONNECTION_STRING, maxInFlight: 5 })
+    } else if (DATABASE_URL) {
+      const pool = openPgPool({
+        connectionString: DATABASE_URL,
+        max: DB_POOL_MAX ?? (VERCEL ? 1 : 4),
+        // Холодный старт у хостера = долгие первые рукопожатия; дефолтных 10 с на
+        // это мало.
+        connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS ?? 30_000,
+      })
+      driver = pool.driver
+      close = pool.close
+    } else {
+      const node = await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres', {
+        memory: !DATABASE_DIR,
+      })
+      driver = pgliteAdapter(node.db)
+      close = node.close
+    }
+    // Демо-корпус создаётся тем же `applyMigrationText`, что и в проде.
+    await applyMigrationText(createDb({ driver, limits: LIMITS }), MIGRATION)
+    return close ? { ...driver, close } : driver
+  } catch (e) {
+    // Причина 500 в production не видна (SvelteKit её не печатает), а без этой строки
+    // её ещё и нельзя найти: отказ открытия молча повторялся бы на каждый запрос.
+    const err = e as { kind?: string; message?: string; details?: unknown; cause?: { message?: string } | unknown; constructor?: { name?: string } }
+    console.error(
+      '[db] открыть БД не удалось:', err?.kind ?? err?.constructor?.name, String(err?.message ?? e).slice(0, 300),
+      '\n  details:', JSON.stringify(err?.details ?? null).slice(0, 400),
+      '\n  cause:', String((err?.cause as { message?: string })?.message ?? err?.cause ?? 'нет').slice(0, 300),
+    )
+    // Захваченный ресурс обязан быть отпущен и при отказе ПОСЛЕ захвата: каталог
+    // PGlite остаётся с `.kit-db.lock`, и следующая попытка отвечала бы «stop its
+    // owner» вместо настоящей причины.
+    await close?.()
+    throw e
+  }
+}

@@ -412,6 +412,44 @@ test("pg: openPgPool не обещает выключенный таймаут �
   assert.ok(e2 instanceof DbFailure && e2.kind === "transaction", `kind: ${e2?.kind}`);
 });
 
+test("lazyDriver: открывается при первом запросе, один раз; отказ не запоминается", async () => {
+  const { lazyDriver } = await import("../adapters/lazy.ts");
+  let opens = 0;
+  let failNext = true;
+  let closed = 0;
+  const inner = Object.assign(stubDriver(() => [{ one: 1 }]), { close: async () => { closed++; } });
+  const driver = lazyDriver(async () => {
+    opens++;
+    await new Promise((r) => setTimeout(r, 5));
+    if (failNext) {
+      failNext = false;
+      throw new Error("cold start");
+    }
+    return inner;
+  });
+  const db = createDb({ driver, limits: conservativeLimits });
+  db.resource(posts); // объявление ресурса и создание db ничего не открывают
+  assert.equal(opens, 0, "до первого запроса БД не открывается");
+  await assert.rejects(() => db.query({ text: "SELECT 1" }), (e) => e instanceof DbFailure);
+  assert.equal(opens, 1);
+  // Следующий запрос пробует снова; параллельные первые запросы ждут одно открытие.
+  const results = await Promise.all([1, 2, 3].map(() => db.query({ text: "SELECT 1" })));
+  assert.equal(opens, 2, "отказ не запомнен, удачное открытие — одно на все параллельные запросы");
+  assert.deepEqual(results.map((r) => r.rows[0]), [{ one: 1 }, { one: 1 }, { one: 1 }]);
+  await db.transaction(async (tx) => tx.query({ text: "SELECT 2" }));
+  assert.equal(opens, 2, "дальше — уже открытый драйвер");
+  await driver.close?.();
+  assert.equal(closed, 1);
+
+  // Объявленные возможности обязаны совпасть с открытым драйвером.
+  const noTx = lazyDriver(async () => ({ ...stubDriver(), capabilities: { ...stubDriver().capabilities, transactions: false } }));
+  await assert.rejects(() => noTx.query({ text: "SELECT 1" }), (e) => e instanceof DbFailure && e.kind === "unsupported");
+  // Ничего не открывали — close ничего не поднимает.
+  let lazyOpens = 0;
+  await lazyDriver(async () => { lazyOpens++; return stubDriver(); }).close?.();
+  assert.equal(lazyOpens, 0);
+});
+
 test("openPgPool: serverless-дефолты и startupParameters для пулера", async () => {
   const { openPgPool } = await import("../sveltekit/node.ts");
   const url = "postgres://u@127.0.0.1:1/none";
