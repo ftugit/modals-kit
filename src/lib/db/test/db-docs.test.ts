@@ -44,6 +44,7 @@ it('документация слоя #lib/db актуальна против к
   const groups: [string, number, boolean?][] = [
     ['db-structure', (read(`${DB_ROOT}/test/db-structure.test.ts`).match(/^check\(/gm) ?? []).length, false],
     ['db-port-specific', (read(`${DB_ROOT}/test/db-port-specific.test.ts`).match(/^test\(/gm) ?? []).length, false],
+    ['db-sync', (read(`${DB_ROOT}/test/db-sync.test.ts`).match(/^test\(/gm) ?? []).length, false],
     // у перенесённых проверок часть групп регистрируется только на native PG (A11),
     // поэтому допустим разброс [n-1, n]: документация обязана назвать честное число
     ['db-lib', countCalls(`${DB_ROOT}/test/ported/db-lib.script.ts`), true],

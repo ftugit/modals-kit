@@ -13,6 +13,8 @@ export const FAILURE_STATUS: Record<FailureKind, number> = {
   cursor: 400,
   transaction: 409,
   post_commit: 500,
+  /** Модели разошлись со схемой БД так, что само не применить (`defineSchema`). */
+  schema_pending: 503,
 };
 export interface KitErrorBody {
   message: string;

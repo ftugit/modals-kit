@@ -20,6 +20,7 @@
 Безопасность      идентификаторы через ident(), значения через параметры, deny-safe query
 Пейджинация       offset (page/limit) и keyset-курсор (HMAC + kid + TTL + scope)
 Транзакции        savepoint'ы, откат по сигналу, afterCommit-очередь, «отравленный» parent
+Схема            defineSchema: таблицы из ресурсов, безопасное — само, конфликт → schema_pending
 Миграции          splitSqlStatements + applyMigrationText (один BEGIN/COMMIT)
 ```
 
@@ -30,7 +31,7 @@
 · [Чтение в `load`](#3-чтение-в-load)
 · [Запись в actions](#4-запись-в-actions)
 · [Драйверы](#5-драйверы)
-· [Миграции](#6-миграции)
+· [Схема и миграции](#6-схема-и-миграции)
 · [Публичный API](#7-публичный-api)
 · [Свой код в TypeScript](#8-свой-код-в-typescript)
 · [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md)
@@ -66,7 +67,8 @@ import { createDb, conservativeLimits, defineResource, f, field, policy, s, type
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool, envReader } from '#lib/db/sveltekit/node.js'
-import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
+import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
+import { defineSchema } from '#lib/db/sync/index.js'
 
 export const posts = defineResource({
   key: 'demo.post.v1',                    // участвует в scope курсора: переименование = сброс курсоров
@@ -74,13 +76,13 @@ export const posts = defineResource({
   primaryKey: 'id',
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true,
-                 orderable: true, filters: ['eq', 'in'] }),
+                 orderable: true, filters: ['eq', 'in'], db: { default: 'gen_random_uuid()' } }),
     title: field(s.text({ min: 3, max: 120 }), {
       read: () => true, create: () => true, update: () => true, required: true,
       normalize: (v) => (typeof v === 'string' ? v.trim() : v),
       filters: ['eq', 'contains', 'startsWith'], orderable: true,
     }),
-    created_at: f.timestamp({ read: () => true, generated: true,
+    created_at: f.timestamp({ read: () => true, generated: true, db: { default: 'clock_timestamp()' },
                               orderable: true, filters: ['gt', 'gte', 'lt', 'lte'] }),
   },
   policy: {
@@ -91,6 +93,9 @@ export const posts = defineResource({
   },
   order: [['created_at', 'desc']],
 })
+
+// Таблицы — из ресурсов (§6): в проде достаточно DATABASE_URL.
+export const schema = defineSchema({ resources: [posts] })
 
 const env = envReader(process.env, import.meta.env as Record<string, string | undefined>)
 
@@ -108,8 +113,7 @@ async function openDriver(): Promise<Driver> {
                    max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)) }).driver
     : pgliteAdapter((await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres',
                                             { memory: !env('DATABASE_DIR') })).db)
-  await applyMigrationText(createDb({ driver, limits: conservativeLimits }), MIGRATION) // demo: тот же путь, что в проде
-  return driver
+  return schema.gate(driver) // недостающее создаётся само; конфликт → запросы отвечают schema_pending
 }
 ```
 
@@ -321,7 +325,7 @@ await withRetry(db, (tx) => tx.transaction(async (t) => move(t, from, to)), {
 | `conflict`, `transaction` | | | | • | | | | |
 | `cursor` | | | | | • | | | |
 | `unsupported` | | | | | | • | | |
-| `unavailable` | | | | | | | • | |
+| `unavailable`, `schema_pending` | | | | | | | • | |
 | `database`, `post_commit` | | | | | | | | • |
 
 ## 5. Драйверы
@@ -417,7 +421,49 @@ PostgreSQL 17.11** (`DB_LIB_TEST_PG_URL`, `DB_HARDENING_PG_URL`) — 5/5 и та
 Row-Level Security остаётся ответственностью схемы и миграций: фильтрация в `policy` —
 первична, RLS — второй эшелон, пакет её не включает.
 
-## 6. Миграции
+## 6. Схема и миграции
+
+### Схема из моделей: `defineSchema`
+
+```ts
+import { defineSchema } from '#lib/db/sync/index.js'
+export const schema = defineSchema({
+  resources: [posts, comments],
+  sql: [{ id: 'comments-trigger', text: 'CREATE FUNCTION …; CREATE TRIGGER …' }], // один раз на id
+})
+// в open() у lazyDriver:
+return schema.gate(driver, { onReport: (r) => console.warn(r) })
+```
+
+Таблица строится из ресурса: тип колонки — из схемы поля (`s.text` → `text`, `f.timestamp` →
+`timestamptz`, `s.json` → `jsonb`, …; у чужих схем — `db: { type }`, без него открытие БД
+отказывает `validation` с именем поля), `NOT NULL` — если поле не `nullable` (метка `softDelete`
+всегда допускает NULL), `DEFAULT` — `db: { default: 'clock_timestamp()' }`, `CHECK` — из
+`s.text({ min, max })`, `s.integer({ min, max })`, `s.enum`, индекс — под сортировку `order`
+(+ `primaryKey`, как его пишет `orderSQL`), уникальность — `db: { unique: true }` у поля или
+`db: { unique: [[…]], indexes: [[…]] }` у ресурса. У ресурса с `softDelete` индексы частичные —
+по неудалённым строкам (удалённый `slug` можно занять снова).
+
+При открытии БД (`gate` → `sync`):
+
+1. Один SELECT из `kit_schema`: отпечатки моделей и `id` ручного SQL совпали — ничего не делать.
+2. Иначе — транзакция под `pg_advisory_xact_lock` (экземпляров много, меняет один): чтение
+   `pg_catalog`, сравнение, выполнение шагов `auto`.
+3. Шаги `conflict` не выполняются; пока они есть, каждый запрос к БД отвечает `schema_pending`
+   (503) и перед этим перепроверяет `kit_schema` — снятый конфликт отпускает запросы без
+   перезапуска. Страницы без запросов к БД работают.
+
+| Само (`auto`) | Конфликт (`conflict`, блокирует) | Ждёт решения (`notice`) |
+|---|---|---|
+| новая таблица; новая колонка, если NULL допустим, есть DEFAULT или таблица пуста; `DROP NOT NULL`; `SET NOT NULL` без NULL в данных; DEFAULT; CHECK (`NOT VALID`) и индексы — новые создаются, свои старые (имя `<таблица>_ck|ix|ux_<хеш>`) удаляются | обязательная колонка без DEFAULT на непустой таблице; пропала и появилась колонка одного типа (переименование или замена?); смена типа; `NOT NULL` при NULL в данных; уникальность при дублях; колонка вне модели с `NOT NULL` без DEFAULT; другой primary key; изменённый текст ручного SQL под тем же `id` | колонка в БД, которой нет в модели (вставкам не мешает) |
+
+Отпечаток таблицы записывается, когда у неё не осталось конфликтов. Чужие объекты (ручные
+CHECK/индексы) не трогаются. Изменение схемы мимо моделей при совпавшем отпечатке не
+замечается — сверка идёт по записи в БД, как у WordPress. Нужен транзакционный драйвер
+(pg, PGlite, Hyperdrive); без транзакций — `unsupported`. Роль из `DATABASE_URL` должна
+иметь право `CREATE` на схему.
+
+### SQL-файлы: `applyMigrationText`
 
 ```ts
 import { applyMigrationText, splitSqlStatements } from '#lib/db/sveltekit/index.js'
@@ -434,7 +480,7 @@ await applyMigrationText(db, sql)            // один BEGIN/COMMIT на фа�
 keyset-индекс, который обязана порождать `order`).
 
 Автопрогона на импорте нет сознательно: `vite build` и `vite dev` не должны менять схему.
-Прогон — явный скрипт/роут/флаг (в демо — при открытии драйвера, то есть при первом запросе к dev-БД).
+Прогон — явный скрипт/роут/флаг. Таблицы демо `applyMigrationText` больше не создаёт — это делает `defineSchema`.
 
 ## 7. Публичный API
 
@@ -447,6 +493,7 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter` |
 | `#lib/db/adapters/lazy.js` | `lazyDriver` |
 | `#lib/db/adapters/proxy.js` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
+| `#lib/db/sync/index.js` | `defineSchema`, `canonicalType`, типы `SchemaSpec`, `SchemaReport`, `SqlStep`, `Step`, `DbSchema` |
 | `#lib/db/sveltekit/index.js` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
 | `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
 | `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
@@ -469,8 +516,15 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 
 `Field`-флаги: `column`, `schema`, `kind`, `read`/`create`/`update` (Grant),
 `generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `filters`,
-`orderable`. `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
-`policy`, `order`, `hooks`, `relations`, `constraints`, `validateFinal`, `softDelete`.
+`orderable`, `db` (`type`/`default`/`unique`, §6). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
+`policy`, `order`, `hooks`, `relations`, `constraints`, `validateFinal`, `softDelete`, `db` (§6).
+
+`softDelete.children: () => [{ resource, field, onDelete }]` — что делать с дочерними записями
+при мягком удалении (`field` — поле ребёнка с ключом родителя). `cascade` помечает удалёнными
+детей, внуков и дальше (у ребёнка обязан быть `softDelete`, иначе `validation`; круг или
+глубже 8 уровней — `unsupported`); `restrict` отказывает `conflict` (409), пока есть
+неудалённые дети, и откатывает всё. Родитель и дети — одна транзакция; политики детей не
+применяются, как у каскада внешнего ключа в самой БД.
 Строки `select` типизированы как `Partial<…>` — проекция вправе вернуть не все поля, а
 relations добавляются через `include`.
 
@@ -503,13 +557,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 65 групп в четырёх файлах (на PGlite выполняются 64: одна группа требует
+Тесты слоя — 80 групп в шести файлах (на PGlite выполняются 79: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 37 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-sync.test.ts` | 15 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`) и `softDelete.children` — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

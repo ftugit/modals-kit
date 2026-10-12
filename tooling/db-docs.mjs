@@ -30,6 +30,7 @@ export const ENTRIES = {
   '#lib/db/adapters/proxy.js': 'adapters/proxy.ts',
   '#lib/db/adapters/hyperdrive.js': 'adapters/hyperdrive.ts',
   '#lib/db/adapters/lazy.js': 'adapters/lazy.ts',
+  '#lib/db/sync/index.js': 'sync/index.ts',
   '#lib/db/sveltekit/index.js': 'sveltekit/index.ts',
   '#lib/db/sveltekit/node.js': 'sveltekit/node.ts',
   '#lib/db/zod.js': 'zod.ts',

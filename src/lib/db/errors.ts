@@ -9,7 +9,8 @@ export type FailureKind =
   | "unavailable"
   | "cursor"
   | "transaction"
-  | "post_commit";
+  | "post_commit"
+  | "schema_pending";
 const messages: Record<FailureKind, string> = {
   validation: "Invalid input",
   forbidden: "Operation not permitted",
@@ -21,6 +22,7 @@ const messages: Record<FailureKind, string> = {
   cursor: "Invalid or expired cursor",
   transaction: "Transaction aborted",
   post_commit: "Data committed, notification failed",
+  schema_pending: "Database schema update required",
 };
 export class DbFailure extends Error {
   readonly name = "DbFailure";
@@ -100,6 +102,7 @@ export function presentFailure(error: unknown, development = false) {
     cursor: 400,
     transaction: 409,
     post_commit: 500,
+    schema_pending: 503,
   };
   return {
     status: statuses[e.kind],

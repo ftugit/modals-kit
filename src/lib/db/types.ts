@@ -119,6 +119,31 @@ export interface Field<T = unknown> {
   createValue?: (ctx: DataContext) => unknown;
   filters?: readonly Operator[];
   orderable?: boolean;
+  /** Колонка в БД: то, чего не видно из схемы поля (см. `#lib/db/sync/index.js`). */
+  db?: ColumnOptions;
+}
+/**
+ * Подробности колонки для `defineSchema`. Значения пишет разработчик в коде, не
+ * пользователь: `default` попадает в DDL как SQL-выражение.
+ */
+export interface ColumnOptions {
+  /** Тип PostgreSQL. Обязателен, если схема поля не из `s.*` (zod, valibot, своя). */
+  type?: string;
+  /** SQL-выражение DEFAULT: `'clock_timestamp()'`, `'gen_random_uuid()'`, `"'draft'"`. */
+  default?: string;
+  /** Уникальность. У ресурса с `softDelete` — среди неудалённых строк. */
+  unique?: boolean;
+}
+/**
+ * Что делать с дочерними записями при мягком удалении родителя.
+ * `cascade` — пометить удалёнными и их (у дочернего ресурса обязан быть `softDelete`);
+ * `restrict` — не удалять, пока есть неудалённые дочерние (`conflict`, 409).
+ */
+export interface SoftDeleteChild {
+  resource: Resource;
+  /** Поле дочернего ресурса, в котором лежит `primaryKey` родителя. */
+  field: string;
+  onDelete: "cascade" | "restrict";
 }
 export type Fields = Record<string, Field>;
 export type InferRow<F extends Fields> = {
@@ -182,6 +207,17 @@ export interface Resource<
     field: string;
     value: (ctx: DataContext) => unknown;
     readDeleted: Grant;
+    /**
+     * Дочерние ресурсы и правило для каждого. Функция — чтобы ресурсы могли ссылаться
+     * друг на друга (родитель объявлен раньше ребёнка). Как и каскад внешнего ключа,
+     * правило выполняется без политик дочернего ресурса.
+     */
+    children?: () => readonly SoftDeleteChild[];
+  };
+  /** Индексы и составная уникальность для `defineSchema`. */
+  db?: {
+    indexes?: readonly (readonly string[])[];
+    unique?: readonly (readonly string[])[];
   };
 }
 export interface ListInput {

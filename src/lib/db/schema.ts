@@ -17,12 +17,36 @@ type Result<T> = StandardSchemaV1.Result<T>;
 
 type Issue = NonNullable<StandardSchemaV1.Result<unknown>["issues"]>[number];
 
+/**
+ * Что схема знает о колонке PostgreSQL: тип и ограничения, которые можно повторить
+ * в БД как CHECK. Читает `defineSchema` (`#lib/db/sync/index.js`), когда строит
+ * таблицу из модели. У чужих схем (zod, valibot) этого нет — там тип колонки
+ * задаётся полем `db.type`.
+ */
+export interface ColumnMeta {
+  type: string;
+  /** Длина строки (`char_length`). */
+  length?: { min?: number; max?: number };
+  /** Диапазон числа. */
+  range?: { min?: number; max?: number };
+  /** Допустимые значения (enum). */
+  values?: readonly string[];
+}
+const META = "~kitDb";
+/** Метаданные колонки у схемы `s.*`; `undefined` — схема их не несёт. */
+export function columnMeta(schema: unknown): ColumnMeta | undefined {
+  if (!schema || typeof schema !== "object") return undefined;
+  const m = (schema as Record<string, unknown>)[META];
+  return m && typeof m === "object" ? (m as ColumnMeta) : undefined;
+}
 /** Схема из предиката: `check` возвращает `true` либо текст ошибки. */
 export function make<T>(
   vendor: string,
   check: (value: unknown) => true | string,
+  meta?: ColumnMeta,
 ): StandardSchemaV1<unknown, T> {
   return {
+    ...(meta ? { [META]: Object.freeze(meta) } : {}),
     "~standard": {
       version: 1,
       vendor,
@@ -68,7 +92,7 @@ export const dateSchema = (): StandardSchemaV1<unknown, string> =>
       d = digits(v, 8, 2);
     if (!validDate(y, m, d)) return failWith("Invalid ISO date");
     return true;
-  });
+  }, { type: "date" });
 /**
  * `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)` — соответствует
  * `z.iso.datetime({ offset: true })`: смещение принято, секунды до 59
@@ -96,7 +120,7 @@ export const timestampSchema = (): StandardSchemaV1<unknown, string> =>
       if (oh > 23 || om > 59) return failWith("Invalid ISO datetime");
     }
     return true;
-  });
+  }, { type: "timestamptz" });
 
 export interface TextOptions {
   min?: number;
@@ -119,7 +143,7 @@ export const text = (o: TextOptions = {}): StandardSchemaV1<unknown, string> =>
       if (!o.pattern.test(s)) return failWith(o.message ?? "Invalid string");
     }
     return true;
-  });
+  }, { type: "text", ...(o.min !== undefined || o.max !== undefined ? { length: { min: o.min, max: o.max } } : {}) });
 export const uuid = (): StandardSchemaV1<unknown, string> =>
   make(
     "kit-db/uuid",
@@ -127,6 +151,7 @@ export const uuid = (): StandardSchemaV1<unknown, string> =>
       (typeof v === "string" &&
         /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(v)) ||
       failWith("Invalid UUID"),
+    { type: "uuid" },
   );
 export const integer = (
   o: { min?: number; max?: number } = {},
@@ -137,20 +162,20 @@ export const integer = (
     if (o.min !== undefined && v < o.min) return failWith("Too small");
     if (o.max !== undefined && v > o.max) return failWith("Too big");
     return true;
-  });
+  }, { type: "integer", ...(o.min !== undefined || o.max !== undefined ? { range: { min: o.min, max: o.max } } : {}) });
 /** bigint в PostgreSQL: строка цифр, точность JS-числа не используется намеренно. */
 export const bigint = (): StandardSchemaV1<unknown, string> =>
   make("kit-db/bigint", (v) =>
     (typeof v === "string" && /^-?\d+$/.test(v)) || failWith("Expected bigint string"),
-  );
+  { type: "bigint" });
 /** numeric/decimal: строка, чтобы не терять разряды через Number. */
 export const decimal = (): StandardSchemaV1<unknown, string> =>
   make("kit-db/decimal", (v) =>
     (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) ||
     failWith("Expected decimal string"),
-  );
+  { type: "numeric" });
 export const boolean = (): StandardSchemaV1<unknown, boolean> =>
-  make("kit-db/boolean", (v) => is(v, "boolean") || failWith("Expected boolean"));
+  make("kit-db/boolean", (v) => is(v, "boolean") || failWith("Expected boolean"), { type: "boolean" });
 /** Значение, которое можно положить в jsonb: рекурсивно JSON-представимо. */
 export const json = (): StandardSchemaV1<unknown, unknown> =>
   make("kit-db/json", (v) => {
@@ -194,11 +219,12 @@ export const json = (): StandardSchemaV1<unknown, unknown> =>
       return failWith("Invalid JSON value");
     };
     return walk(v);
-  });
+  }, { type: "jsonb" });
 export const array = (
   item: StandardSchemaV1<unknown, unknown>,
   o: { min?: number; max?: number } = {},
 ): StandardSchemaV1<unknown, readonly unknown[]> => ({
+  ...(columnMeta(item) ? { [META]: Object.freeze({ type: columnMeta(item)!.type + "[]" }) } : {}),
   "~standard": {
     version: 1,
     vendor: "kit-db/array",
@@ -225,6 +251,7 @@ export const enumOf = <const T extends readonly string[]>(
   make("kit-db/enum", (v) =>
     (typeof v === "string" && (values as readonly string[]).includes(v)) ||
     failWith("Invalid option"),
+    { type: "text", values: [...values] },
   );
 /** Свой предикат: один шаг, свой текст ошибки. */
 export const custom = <T>(

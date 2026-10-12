@@ -308,7 +308,19 @@ function checkShape(r: Resource): void {
       push('softDelete.value: обязан быть (ctx) => значение — иначе метка удаляется как undefined');
     if (!isGrantShape(r.softDelete.readDeleted))
       push("softDelete.readDeleted: обязан быть Grant (иначе includeDeleted всегда запрещён)");
+    if (r.softDelete.children !== undefined && typeof r.softDelete.children !== "function")
+      push("softDelete.children: обязан быть () => [{ resource, field, onDelete }] — функция, чтобы ресурсы могли ссылаться друг на друга");
   }
+  if (r.db !== undefined)
+    for (const kind of ["indexes", "unique"] as const) {
+      const list = r.db[kind];
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) push(`db.${kind}: обязан быть массивом списков полей`);
+      else
+        for (const cols of list)
+          if (!Array.isArray(cols) || !cols.length || cols.some((k) => !own(r.fields, k)))
+            push(`db.${kind}: каждый элемент — непустой список существующих полей`);
+    }
   if (
     r.validateFinal !== undefined &&
     (!(r.validateFinal as { "~standard"?: unknown }) ||
@@ -341,6 +353,15 @@ function checkShape(r: Resource): void {
       push(`fields.${name}: generated + create/update — write-маска не имеет смысла`);
     if (f.generated && f.required) push(`fields.${name}: generated + required — поле никогда не придёт от клиента`);
     if (f.immutable && f.update !== undefined) push(`fields.${name}: immutable + update-маска`);
+    if (f.db !== undefined) {
+      if (!f.db || typeof f.db !== "object") push(`fields.${name}.db: обязан быть объектом { type?, default?, unique? }`);
+      else {
+        for (const k of ["type", "default"] as const)
+          if (f.db[k] !== undefined && (typeof f.db[k] !== "string" || !f.db[k]!.trim()))
+            push(`fields.${name}.db.${k}: непустая строка`);
+        if (f.db.unique !== undefined && typeof f.db.unique !== "boolean") push(`fields.${name}.db.unique: boolean`);
+      }
+    }
   }
   if (bad.length) fail("validation", undefined, bad);
 }

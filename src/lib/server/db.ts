@@ -9,16 +9,18 @@
  *
  * Движок: PGlite в памяти для dev/демо (иначе `npm run dev` и `vite build`
  * спорят из-за file-lock одного каталога) либо файловый каталог, если задан
- * DATABASE_DIR. Миграции — явные, НЕ при старте: здесь демо-корпус создаётся
- * тем же `applyMigrationText`, что и в проде (один путь, не «в тесте одно,
- * в проде другое»).
+ * DATABASE_DIR. Таблицы описаны моделями (`posts`) и разворачиваются сами при
+ * открытии БД (`schema.gate`): на любом движке один путь — в проде достаточно
+ * DATABASE_URL. Что само применить нельзя, ждёт решения, а запросы к БД до тех пор
+ * отвечают `schema_pending` (503).
  */
 import { createDb, defineResource, f, field, policy, s } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
-import { applyMigrationText, cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
+import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
+import { defineSchema } from '#lib/db/sync/index.js'
 import type { Database, Driver, Limits } from '#lib/db/index.js'
 import {
   DATABASE_DIR, DATABASE_URL, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
@@ -34,7 +36,9 @@ export const posts = defineResource({
   table: 'public.demo_post',
   primaryKey: 'id',
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq', 'in'] }),
+    // DEFAULT есть и у колонки, и у createValue: ресурс подставляет uuid сам, а прямой
+    // SQL (сид ниже) остаётся валидным.
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq', 'in'], db: { default: 'gen_random_uuid()' } }),
     title: field(s.text({ min: 3, max: 120 }), {
       read: () => true,
       create: () => true,
@@ -44,7 +48,7 @@ export const posts = defineResource({
       filters: ['eq', 'contains', 'startsWith'],
       orderable: true,
     }),
-    created_at: f.timestamp({ read: () => true, generated: true, orderable: true, filters: ['gt', 'gte', 'lt', 'lte'] }),
+    created_at: f.timestamp({ read: () => true, generated: true, orderable: true, filters: ['gt', 'gte', 'lt', 'lte'], db: { default: 'clock_timestamp()' } }),
   },
   policy: {
     select: policy.publicRows(),
@@ -57,19 +61,20 @@ export const posts = defineResource({
   order: [['created_at', 'desc']],
 })
 
-const MIGRATION = `
-CREATE SCHEMA IF NOT EXISTS public;
-CREATE TABLE IF NOT EXISTS public.demo_post (
-  -- DEFAULT есть и у колонки, и у поля createValue: ресурс подставляет uuid,
-  -- а прямой SQL/seed остаётся валидным — как в миграции источника.
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  title text NOT NULL CHECK (length(title) BETWEEN 3 AND 120),
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
-);
-CREATE INDEX IF NOT EXISTS demo_post_page ON public.demo_post (created_at DESC NULLS LAST, id ASC NULLS LAST);
-INSERT INTO public.demo_post (title) SELECT 'Запись ' || n FROM generate_series(1, 7) n
-  WHERE NOT EXISTS (SELECT 1 FROM public.demo_post);
-`
+/**
+ * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из `s.text`, индекс
+ * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
+ */
+export const schema = defineSchema({
+  resources: [posts],
+  sql: [
+    {
+      id: 'demo-post-seed',
+      text: `INSERT INTO public.demo_post (title) SELECT 'Запись ' || n FROM generate_series(1, 7) n
+               WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
+    },
+  ],
+})
 
 /**
  * Принцип демо-«автора»: один на хук, на SSR-снапшот пагинатора и на
@@ -144,9 +149,16 @@ async function openDriver(): Promise<Driver> {
       driver = pgliteAdapter(node.db)
       close = node.close
     }
-    // Демо-корпус создаётся тем же `applyMigrationText`, что и в проде.
-    await applyMigrationText(createDb({ driver, limits: LIMITS }), MIGRATION)
-    return close ? { ...driver, close } : driver
+    // Схема из моделей: недостающее создаётся само; конфликт не роняет открытие —
+    // запросы отвечают `schema_pending`, пока его не снимут.
+    const gated = await schema.gate(close ? { ...driver, close } : driver, {
+      onReport: (r) =>
+        console[r.status === 'ok' ? 'info' : 'warn'](
+          `[db] схема: применено ${r.applied.length}, конфликтов ${r.conflicts.length}, ждут решения ${r.notices.length}`,
+          r.conflicts.map((c) => `${c.kind} ${c.table} ${c.column ?? ''}`.trim()).join('; '),
+        ),
+    })
+    return gated
   } catch (e) {
     // Причина 500 в production не видна (SvelteKit её не печатает), а без этой строки
     // её ещё и нельзя найти: отказ открытия молча повторялся бы на каждый запрос.

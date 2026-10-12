@@ -325,6 +325,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       throw e;
     }
     if (!row) fail('not_found');
+    if (op === 'delete' && r.softDelete?.children) await softDeleteChildren(dbx, ctx, id);
     if (op !== 'delete' && r.validateFinal) {
       const checked = await r.validateFinal['~standard'].validate(row);
       if (checked.issues) fail('validation');
@@ -341,6 +342,70 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       await dbx.afterCommit(() => r.hooks!.afterCommit!(notice));
     }
     return result;
+  }
+  /**
+   * Правила `softDelete.children` после того, как родитель помечен удалённым (та же
+   * транзакция: `restrict` откатывает и родителя). Уровни идут сверху вниз; набор
+   * ключей уровня — подзапрос от ключа родителя, поэтому число параметров не растёт
+   * с числом дочерних строк. Политики дочерних ресурсов не применяются — как у каскада
+   * внешнего ключа в самой БД.
+   */
+  async function softDeleteChildren(dbx: Database, ctx: DataContext, id: unknown) {
+    const parentId = await validateField(r.fields[r.primaryKey], id, r.primaryKey);
+    type Level = { parent: Resource; keys: (s: Sql) => string; path: string[] };
+    const queue: Level[] = [
+      { parent: r as unknown as Resource, keys: (s) => '(' + s.param(parentId) + ')', path: [r.key] },
+    ];
+    while (queue.length) {
+      const { parent, keys, path } = queue.shift()!;
+      const children = parent.softDelete?.children?.() ?? [];
+      if (!Array.isArray(children)) fail('validation', undefined, [`${parent.key}: softDelete.children() обязан вернуть массив`]);
+      for (const link of children) {
+        const child = link?.resource;
+        if (!child?.fields || !own(child.fields, link.field) || !['cascade', 'restrict'].includes(link.onDelete))
+          fail('validation', undefined, [`${parent.key}: softDelete.children — нужен { resource, field (поле ребёнка), onDelete: 'cascade' | 'restrict' }`]);
+        const live = child.softDelete ? ' AND ' + col(child, child.softDelete.field) + ' IS NULL' : '';
+        const s = new Sql();
+        const match = `${col(child, link.field)} IN ${keys(s)}${live}`;
+        if (link.onDelete === 'restrict') {
+          const found = await dbx.query(
+            withSignal(s.statement(`SELECT 1 FROM ${table(child)} WHERE ${match} LIMIT 1`), ctx),
+          );
+          if (found.rows.length)
+            throw new DbFailure('conflict', { constraint: `${parent.key}->${child.key}` });
+          continue;
+        }
+        if (!child.softDelete)
+          fail('validation', undefined, [
+            `${parent.key} → ${child.key}: cascade требует softDelete у дочернего ресурса — иначе мягкое удаление родителя стёрло бы детей навсегда`,
+          ]);
+        if (path.includes(child.key) || path.length >= 8)
+          fail('unsupported', undefined, [
+            `${[...path, child.key].join(' → ')}: каскад по кругу или глубже 8 уровней не поддерживается`,
+          ]);
+        const value = await validateField(
+          child.fields[child.softDelete.field],
+          child.softDelete.value(ctx),
+          child.softDelete.field,
+        );
+        await dbx.query(
+          withSignal(
+            s.statement(
+              `UPDATE ${table(child)} SET ${ident(child.fields[child.softDelete.field].column ?? child.softDelete.field)} = ${s.fieldParam(child.fields[child.softDelete.field], value)} WHERE ${match}`,
+            ),
+            ctx,
+          ),
+        );
+        // Следующий уровень: ключи детей, связанных с ключами этого уровня (без условия
+        // «не удалён» — они только что получили метку).
+        queue.push({
+          parent: child,
+          keys: (s2) =>
+            `(SELECT ${col(child, child.primaryKey)} FROM ${table(child)} WHERE ${col(child, link.field)} IN ${keys(s2)})`,
+          path: [...path, child.key],
+        });
+      }
+    }
   }
   async function estimate(
     ctx0: DataContext,
@@ -480,7 +545,13 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   ) =>
     db.guard(async () => {
       const ctx = context(ctx0);
-      const needsTransaction = !!(r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal);
+      const needsTransaction = !!(
+        r.hooks?.beforeWrite ||
+        r.hooks?.afterWrite ||
+        r.validateFinal ||
+        // родитель и дети — вместе или никак: `restrict` на втором уровне откатывает всё
+        (op === 'delete' && r.softDelete?.children)
+      );
       if (needsTransaction) {
         // На HTTP это отказывает ДО запроса/мутации, а не эмулирует atomic hooks.
         if (!db.driver.capabilities.transactions) throw new DbFailure('unsupported');
