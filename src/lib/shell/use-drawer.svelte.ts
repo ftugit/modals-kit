@@ -4,7 +4,7 @@
 // «Back закрывает» — флаг в `page.state` (shallow routing SvelteKit) через слой
 // роутера, а не нативный `history.pushState` (баг F6, docs/audit/crutches.md).
 import { onMount } from 'svelte'
-import { shallowFlag } from '#lib/router/sveltekit.js'
+import { goAddress, shallowFlag, visibleAddress } from '#lib/router/sveltekit.js'
 
 export interface DrawerOptions {
   input: () => HTMLInputElement | undefined
@@ -27,8 +27,12 @@ export function createDrawer(options: DrawerOptions) {
     input.checked = false
     open = false
     // Своя запись истории есть — снимаем её: «Назад» после закрытия не должен
-    // повторно «закрывать» уже закрытую панель.
-    if (entry.on) history.back()
+    // повторно «закрывать» уже закрытую панель. Смотрим на НАМЕРЕНИЕ писателя, а
+    // не на применённый `page.state`: запись панели может ещё ждать в очереди
+    // (за записью пагинатора), и тогда она применится уже после закрытия. Шаг
+    // назад — через писателя (`goAddress`): он уйдёт после этой записи, а не
+    // раньше неё, как прямой `history.back()` (F41, находка хода 40).
+    if (visibleAddress().state[HISTORY_FLAG]) goAddress(-1)
   }
 
   // Back по записи панели: SvelteKit возвращает прежний `page.state` без флага.

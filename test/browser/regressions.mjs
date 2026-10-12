@@ -1581,6 +1581,43 @@ try {
     await page.close()
   })
 
+  await run('R-42 панель закрыта, пока её запись истории ещё в очереди: флаг не остаётся', async () => {
+    // Находка хода 40: закрытие панели звало `history.back()` напрямую и только
+    // если запись панели уже ПРИМЕНЕНА. Пока она ждала в очереди писателя (за
+    // записью размера страницы), закрытие шаг назад не делало, запись потом
+    // применялась — и в истории оставался флаг закрытой панели: следующий «Назад»
+    // ничего видимого не делал.
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 } })
+    await page.goto(BASE.replace(/\/modals$/, '/paginator?page.size=10#r42'), { waitUntil: 'networkidle' })
+    await page.waitForSelector('[data-testid="demo-panel"] select[name="page.size"]')
+    await page.waitForFunction(() => document.getElementById('fe-sidebar') !== null)
+    const before = await page.evaluate(() => history.length)
+    await page.evaluate(() => {
+      const size = document.querySelector('[data-testid="demo-panel"] select[name="page.size"]')
+      size.value = '5'
+      size.dispatchEvent(new Event('change', { bubbles: true }))
+      const drawer = document.getElementById('fe-sidebar')
+      drawer.checked = true
+      drawer.dispatchEvent(new Event('change', { bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    await page.waitForFunction(() => new URLSearchParams(location.search).get('page.size') === '5', null, { timeout: 5000 })
+    await page.waitForTimeout(800)
+    const now = await page.evaluate(() => ({
+      search: location.search, hash: location.hash, length: history.length,
+      badge: document.querySelector('[data-testid="page-size"]')?.textContent,
+      open: document.getElementById('fe-sidebar').checked,
+    }))
+    const ps = await pageState(page)
+    assert(!now.open, `панель не закрылась: ${JSON.stringify(now)}`)
+    assert(!ps.ddSidebar, `закрытая панель оставила свою запись истории: page.state=${JSON.stringify(ps)}`)
+    assert(now.search.includes('page.size=5') && now.badge === '5' && now.hash === '#r42',
+      `адрес после открытия и закрытия: ${JSON.stringify(now)}`)
+    assert(now.length <= before + 1, `лишние записи истории: было ${before}, стало ${now.length}`)
+    ok('закрыта до применения своей записи: флага в истории нет, ?page.size=5 и #r42 целы')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
