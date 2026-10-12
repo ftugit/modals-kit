@@ -71,8 +71,8 @@ export const dateSchema = (): StandardSchemaV1<unknown, string> =>
   });
 /**
  * `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)` — соответствует
- * `z.iso.datetime({ offset: true })`: смещение принято, секунды до 60
- * (високосная), календарная дата обязательна.
+ * `z.iso.datetime({ offset: true })`: смещение принято, секунды до 59
+ * (високосную 60 не принимаем, см. `TIME_TAIL`), календарная дата обязательна.
  */
 export const timestampSchema = (): StandardSchemaV1<unknown, string> =>
   make("kit-db/timestamp", (v) => {
@@ -154,29 +154,42 @@ export const boolean = (): StandardSchemaV1<unknown, boolean> =>
 /** Значение, которое можно положить в jsonb: рекурсивно JSON-представимо. */
 export const json = (): StandardSchemaV1<unknown, unknown> =>
   make("kit-db/json", (v) => {
-    const seen = new Set<unknown>();
+    // Цикл — только объект на ТЕКУЩЕМ пути: общая ссылка из двух мест (`{ a: x, b: x }`)
+    // законна, `JSON.stringify` её сохраняет (DB-9).
+    const path = new Set<unknown>();
+    const enter = (x: object, body: () => true | string): true | string => {
+      if (path.has(x)) return failWith("Cyclic JSON value");
+      path.add(x);
+      try {
+        return body();
+      } finally {
+        path.delete(x);
+      }
+    };
     const walk = (x: unknown): true | string => {
       if (x === null || is(x, "boolean") || is(x, "string")) return true;
       if (is(x, "number"))
         return Number.isFinite(x) ? true : failWith("Invalid JSON number");
-      if (Array.isArray(x)) {
-        if (seen.has(x)) return failWith("Cyclic JSON value");
-        seen.add(x);
-        for (let i = 0; i < x.length; i++) {
-          const r = walk(i in x ? x[i] : null);
-          if (r !== true) return r;
-        }
-        return true;
-      }
+      if (Array.isArray(x))
+        return enter(x, () => {
+          for (let i = 0; i < x.length; i++) {
+            const r = walk(i in x ? x[i] : null);
+            if (r !== true) return r;
+          }
+          return true;
+        });
+      // Только plain-объект: `Map`, `Set`, `Date`, экземпляры классов JSON превратил бы
+      // в `{}` или строку — данные терялись бы молча (DB-9).
       if (x && typeof x === "object") {
-        if (seen.has(x)) return failWith("Cyclic JSON value");
-        seen.add(x);
-        for (const [k, value] of Object.entries(x)) {
-          const r = walk(value);
-          if (r !== true) return r;
-          void k;
-        }
-        return true;
+        const proto = Object.getPrototypeOf(x);
+        if (proto !== Object.prototype && proto !== null) return failWith("Invalid JSON value");
+        return enter(x, () => {
+          for (const value of Object.values(x)) {
+            const r = walk(value);
+            if (r !== true) return r;
+          }
+          return true;
+        });
       }
       return failWith("Invalid JSON value");
     };

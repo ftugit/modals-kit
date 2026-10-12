@@ -88,13 +88,21 @@ export function pgAdapter(
       return admitted(async () => {
         const c = await pool.connect();
         let broken = false,
-          closed = false;
+          closed = false,
+          // COMMIT уже ушёл на сервер: если сейчас сработает таймер или отмена, исход
+          // неизвестен (транзакция могла зафиксироваться). Такой отказ — `unavailable`,
+          // его `withRetry` не повторяет даже с `retryTransactionKind` (DB-7).
+          committing = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let onError: (error: Error) => void = () => {};
         let interrupt: (e: unknown) => void = () => {};
         const onAbort = () => {
           broken = true;
           interrupt(new DbFailure("unavailable"));
+        };
+        const onTimeout = () => {
+          broken = true;
+          interrupt(new DbFailure(committing ? "unavailable" : "transaction"));
         };
         const interrupted = new Promise<never>((_, reject) => {
           interrupt = reject;
@@ -103,10 +111,7 @@ export function pgAdapter(
             reject(error);
           };
           c.once?.("error", onError);
-          timer = setTimeout(() => {
-            broken = true;
-            reject(new DbFailure("transaction"));
-          }, transactionTimeoutMs);
+          timer = setTimeout(onTimeout, transactionTimeoutMs);
           // Отмена запроса (event.request.signal) обрывает транзакцию:
           // ROLLBACK делает runTransaction, соединение возвращается в pool.
           if (options?.signal?.aborted) onAbort();
@@ -117,6 +122,7 @@ export function pgAdapter(
             runTransaction(
               async (s) => {
                 if (closed) throw new DbFailure("transaction");
+                if (s.text === "COMMIT") committing = true;
                 try {
                   const r = await c.query(s.text, [...(s.values ?? [])]);
                   if (s.text === "COMMIT" && r.command !== "COMMIT") {

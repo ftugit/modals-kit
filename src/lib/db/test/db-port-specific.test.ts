@@ -88,6 +88,42 @@ const posts = defineResource({
   order: [["at", "desc"]],
 });
 
+test("defineResource: order обязателен, направление и повторы проверяются при объявлении (DB-5, DB-6)", () => {
+  const base = {
+    key: "test.order.v1",
+    table: "post",
+    primaryKey: "id",
+    fields: { id: f.integer({ read: () => true, orderable: true }), n: f.integer({ read: () => true, orderable: true }) },
+    policy: { select: policy.publicRows(), insert: policy.deny(), update: policy.deny(), delete: policy.deny() },
+  };
+  const issues = (r: unknown) => {
+    try {
+      defineResource(r as never);
+      return null;
+    } catch (e) {
+      assert.ok(e instanceof DbFailure && e.kind === "validation", `ожидался DbFailure(validation), получено ${String(e)}`);
+      return (e as DbFailure).details.issues ?? [];
+    }
+  };
+  assert.match(String(issues(base)), /order: обязателен/);
+  assert.match(String(issues({ ...base, order: [["id", "up"]] })), /'asc'\|'desc'/);
+  assert.match(String(issues({ ...base, order: [["n", "asc"], ["n", "desc"]] })), /n повторяется/);
+  assert.equal(issues({ ...base, order: [["n", "desc"]] }), null);
+});
+
+test("s.json: общая ссылка — не цикл; Map/Set/Date не теряются молча (DB-9)", async () => {
+  const check = async (v: unknown) => (await s.json()["~standard"].validate(v)).issues?.[0]?.message ?? "ok";
+  const shared = { x: 1 };
+  assert.equal(await check({ a: shared, b: [shared, shared] }), "ok");
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = { back: cyclic };
+  assert.equal(await check(cyclic), "Cyclic JSON value");
+  assert.equal(await check({ m: new Map([["k", 1]]) }), "Invalid JSON value");
+  assert.equal(await check([new Set([1])]), "Invalid JSON value");
+  assert.equal(await check({ at: new Date(0) }), "Invalid JSON value");
+  assert.equal(await check(Object.assign(Object.create(null), { a: 1 })), "ok");
+});
+
 /* ── 1. DataContext.signal доезжает до Statement, и только из сервера ─────── */
 test("ctx.signal попадает в Statement, а чужие поля ctx — нет", async () => {
   const driver = stubDriver();
@@ -330,6 +366,50 @@ test("pgAdapter: отменяемый запрос возвращает соед
   ac.abort();
   await assert.rejects(() => p);
   assert.deepEqual(hung.stats(), { releases: 1, checkedOut: 0 }, "отменённое соединение не должно оставаться занятым");
+});
+
+test("pg: openPgPool не обещает выключенный таймаут транзакции; таймаут во время COMMIT не повторяется (DB-7, DB-8)", async () => {
+  const { pgAdapter } = await import("../adapters/pg.ts");
+  const { openPgPool } = await import("../sveltekit/node.ts");
+  const mk = (hangOn: string | null, timeoutMs: number) => {
+    const seen: string[] = [];
+    const client = {
+      query: (text: string) => {
+        seen.push(text);
+        return text === hangOn
+          ? new Promise(() => {})
+          : Promise.resolve({ rows: [], rowCount: 0, command: text.split(" ")[0] });
+      },
+      release: () => {},
+      once: () => {},
+      removeListener: () => {},
+    };
+    const pool = { connect: async () => client, query: async () => ({ rows: [], rowCount: 0 }), on: () => {}, end: async () => {} };
+    return { driver: pgAdapter(pool as unknown as import("pg").Pool, 4, timeoutMs), seen };
+  };
+  // DB-8: 0 отклоняется самим openPgPool с понятным текстом (до создания пула), а не
+  // ошибкой адаптера после него. Адаптер 0 по-прежнему не принимает (тест A17 источника).
+  assert.throws(
+    () => openPgPool({ connectionString: "postgres://u@127.0.0.1:1/x", transactionTimeoutMs: 0 }),
+    /Invalid pg pool option: transactionTimeoutMs/,
+  );
+  const ok = mk(null, 1000);
+  assert.equal(await ok.driver.transaction(async (tx) => (await tx.query({ text: "SELECT 1" })).rowCount), 0);
+  assert.deepEqual(ok.seen, ["BEGIN", "SELECT 1", "COMMIT"]);
+  // DB-7: COMMIT ушёл и завис → исход неизвестен → `unavailable`; withRetry с
+  // retryTransactionKind его НЕ повторяет (иначе возможна двойная запись).
+  const hang = mk("COMMIT", 20);
+  const db = createDb({ driver: hang.driver, limits: conservativeLimits });
+  let attempts = 0;
+  const err = await withRetry(db, async (tx) => { attempts++; await tx.query({ text: "INSERT 1" }); }, {
+    attempts: 3, retryTransactionKind: true, wait: async () => {},
+  }).catch((e) => e);
+  assert.ok(err instanceof DbFailure && err.kind === "unavailable", `kind: ${err?.kind}`);
+  assert.equal(attempts, 1, "транзакция с неизвестным исходом COMMIT не повторяется");
+  // Таймаут ДО COMMIT — по-прежнему `transaction` (откат, повтор безопасен).
+  const early = mk("INSERT 1", 20);
+  const e2 = await early.driver.transaction(async (tx) => { await tx.query({ text: "INSERT 1" }); }).catch((e) => e);
+  assert.ok(e2 instanceof DbFailure && e2.kind === "transaction", `kind: ${e2?.kind}`);
 });
 
 test("openPgPool: serverless-дефолты и startupParameters для пулера", async () => {
@@ -752,6 +832,20 @@ test("splitSqlStatements: ; внутри строк, комментариев и
   const { readFile } = await import("node:fs/promises");
   const migration = await readFile(new URL("../migrations/001-db-probe.sql", import.meta.url), "utf8");
   assert.equal(splitSqlStatements(migration).length, 5, "001-db-probe.sql = 5 операторов");
+});
+test("splitSqlStatements: обратный слэш экранирует только в E'…' (DB-10)", () => {
+  assert.deepEqual(splitSqlStatements(String.raw`INSERT INTO t VALUES ('C:\'); CREATE TABLE u (id int);`), [
+    String.raw`INSERT INTO t VALUES ('C:\')`,
+    "CREATE TABLE u (id int)",
+  ]);
+  assert.deepEqual(splitSqlStatements(String.raw`SELECT "a\"; SELECT 2`), [String.raw`SELECT "a\"`, "SELECT 2"]);
+  assert.deepEqual(splitSqlStatements(String.raw`SELECT E'it\'s;ok'; SELECT e'\\'; SELECT 3`), [
+    String.raw`SELECT E'it\'s;ok'`,
+    String.raw`SELECT e'\\'`,
+    "SELECT 3",
+  ]);
+  // `E` в конце идентификатора — не префикс E-строки.
+  assert.deepEqual(splitSqlStatements(String.raw`SELECT nameE'\'; SELECT 4`).length, 2);
 });
 test("applyMigrationText: требует транзакционный драйвер и идёт одним BEGIN/COMMIT", async () => {
   const driver = stubDriver();

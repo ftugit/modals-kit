@@ -206,7 +206,9 @@ export function openPgPool(options: PgPoolOptions): PgRuntime {
   } = options;
   if (!options.connectionString) throw new Error("Missing DATABASE_URL");
   // `max`/`maxInFlight` должны быть не меньше 1 (ноль = «вечно ждать» и тихий
-  // deadlock в admission-cap), таймауты допускают 0 = «выключено».
+  // deadlock в admission-cap), таймауты допускают 0 = «выключено» — кроме
+  // `transactionTimeoutMs`: pgAdapter не даёт выключить таймаут транзакции (защита
+  // от вечно открытой транзакции), и 0 здесь падал бы уже после создания пула (DB-8).
   for (const [name, value, min] of [
     ["max", max, 1],
     ["maxInFlight", maxInFlight, 1],
@@ -214,7 +216,7 @@ export function openPgPool(options: PgPoolOptions): PgRuntime {
     ["idleTimeoutMillis", idleTimeoutMillis, 0],
     ["keepAliveInitialDelayMillis", keepAliveInitialDelayMillis, 0],
     ["statementTimeoutMs", statementTimeoutMs, 0],
-    ["transactionTimeoutMs", transactionTimeoutMs, 0],
+    ["transactionTimeoutMs", transactionTimeoutMs, 1],
   ] as const)
     if (!Number.isSafeInteger(value) || (value as number) < min)
       throw new Error(`Invalid pg pool option: ${name} (нужно целое ≥ ${min})`);

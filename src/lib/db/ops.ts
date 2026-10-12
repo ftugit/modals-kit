@@ -19,7 +19,11 @@ export interface RetryOptions {
   onRetry?: (error: DbFailure, attempt: number) => void;
   /** Инъекция сна — для тестов и для runtime с `scheduler.wait`. */
   wait?: (ms: number) => Promise<void>;
-  /** Повторять и при `kind: "transaction"` (например, internal timeout адаптера). */
+  /**
+   * Повторять и при `kind: "transaction"` (например, internal timeout адаптера: транзакция
+   * откатана). Таймаут, сработавший уже во время COMMIT, адаптер pg отдаёт как
+   * `unavailable` — исход неизвестен, такой отказ не повторяется.
+   */
   retryTransactionKind?: boolean;
 }
 

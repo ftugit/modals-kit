@@ -266,14 +266,24 @@ const isGrantShape = (g: unknown): boolean =>
 function checkShape(r: Resource): void {
   const bad: string[] = [];
   const push = (msg: string) => bad.push(msg);
-  if (r.order !== undefined) {
-    if (!Array.isArray(r.order) || r.order.length > 8) push("order: массив пар [field, dir] длиной ≤ 8");
-    else
-      for (const pair of r.order) {
-        if (!Array.isArray(pair) || pair.length !== 2 || !own(r.fields, pair[0]))
-          push("order: каждый элемент — [существующее поле, 'asc'|'desc']");
-        else if (!r.fields[pair[0]]!.orderable) push(`order: ${pair[0]} не объявлено orderable`);
-      }
+  // `order` обязателен (как в типе `Resource`): без него defineResource падал на
+  // `r.order.map` с TypeError (DB-5). Направление и повторы проверяются здесь же —
+  // иначе ресурс объявлялся, а каждый select отказывал в orderBy (DB-6).
+  if (!Array.isArray(r.order) || r.order.length > 8) push("order: обязателен — массив пар [field, dir] длиной ≤ 8");
+  else {
+    const seen = new Set<string>();
+    for (const pair of r.order) {
+      if (
+        !Array.isArray(pair) ||
+        pair.length !== 2 ||
+        !own(r.fields, pair[0]) ||
+        !["asc", "desc"].includes(pair[1] as string)
+      )
+        push("order: каждый элемент — [существующее поле, 'asc'|'desc']");
+      else if (!r.fields[pair[0]]!.orderable) push(`order: ${pair[0]} не объявлено orderable`);
+      else if (seen.has(pair[0])) push(`order: ${pair[0]} повторяется`);
+      else seen.add(pair[0]);
+    }
   }
   // orderBy дописывает primaryKey в каждую сортировку (tie-breaker) и требует, чтобы
   // он был orderable + читаем: иначе 403 возникает на первом же select.

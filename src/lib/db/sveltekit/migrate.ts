@@ -26,11 +26,16 @@ export function splitSqlStatements(sql: string): string[] {
     }
     if (c === "'" || c === '"' || c === "`") {
       const quote = c;
+      // `\` экранирует только в E-строке (`E'…'`): при `standard_conforming_strings = on`
+      // (умолчание PostgreSQL с 9.1) в `'…'` и `"…"` обратный слэш — обычный символ,
+      // `'C:\'` — законченная строка (DB-10).
+      const escapes =
+        quote === "'" && /[Ee]/.test(sql[i - 1] ?? "") && !/[A-Za-z0-9_$]/.test(sql[i - 2] ?? "");
       current += c;
       for (i++; i < sql.length; i++) {
         const ch = sql[i]!;
         current += ch;
-        if (ch === "\\" && quote !== "`") {
+        if (ch === "\\" && escapes) {
           i++;
           if (i < sql.length) current += sql[i]!;
           continue;
