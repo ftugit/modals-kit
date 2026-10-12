@@ -777,7 +777,7 @@
         // (Pointer Events §11). Без неё оверлей снимается в том же такте и хвост
         // жеста перенацеливается на элемент ПОД ним — чужой select получал
         // mousedown/фокус, кнопки — :active (click-through). `click` доставляется
-        // всегда — его гасит swallowClickOnce. См. CLICK_THROUGH_CHECKLIST.md.
+        // всегда — его гасит swallowClickOnce. Регрессия — R-26 в test/browser/regressions.mjs.
         event.preventDefault()
         if (targetBehindFloating) {
           event.stopPropagation()

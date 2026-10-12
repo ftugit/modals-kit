@@ -7,16 +7,16 @@
   проверки в браузере и на сервере. Документация и рецепты —
   [`src/lib/form/README.md`](./src/lib/form/README.md).
 - **paginate** — headless-библиотека пагинации с разделением framework-neutral ядра и
-  адаптеров для SolidJS и Svelte 5 (списки, колонки, бесконечный скролл, сохранение скролла
+  адаптера Svelte 5 (списки, колонки, бесконечный скролл, сохранение скролла
   при prepend, URL/localStorage/cursor хранилища). Документация —
   [`src/lib/paginate/README.md`](./src/lib/paginate/README.md).
 - **search** — поиск как перехват пагинатора: `defineSearch` подменяет источник и
   регистрирует его на URL-адаптере, запрос живёт в extra (`?search.q`), fuzzy-ядро
   изоморфно. Документация — [`src/lib/search/README.md`](./src/lib/search/README.md).
   В демо (`/paginator`) пагинатор и поиск — ОДИН раздел: источник выбирается
-  панелью (локальные товары/фото или живой каталог Shikimori), а тумблеры гасят
-  родной поиск источника и слой lib/search независимо. Живой источник ходит не к
-  API напрямую, а в свой эндпоинт (`/api/shikimori/animes`, `/api/shikimori/terms`):
+  панелью (локальные товары/фото, живые каталоги Shikimori и Rick and Morty), а тумблеры гасят
+  родной поиск источника и слой lib/search независимо. Живые источники ходят не к
+  API напрямую, а в свои эндпоинты (`/api/shikimori/*`, `/api/rickmorty/characters`):
   кэш, троттлинг и User-Agent живут на сервере, без выгрузки каталога в файл.
 
 ## API модалок

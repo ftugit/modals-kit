@@ -422,7 +422,7 @@ A4 `5b4f93c` · A5 `a9f7b0f` · A6 `0aad223` · чистка §10 `ab3957a`. П�
 
 Мусор в корне, не связанный с v2 → v3 (все файлы в git):
 - ~~`uno.config.ts` и `unocss.config.ts` — почти одинаковые~~ — активен `unocss.config.ts` (проверено сборкой), `uno.config.ts` удалён (ход 16, решение владельца Q5);
-- `CHECKLIST.md`, `CLICK_THROUGH_CHECKLIST.md`, `PAGINATOR_CHECKLIST.md`, `UNIVERSAL_DEMO_PANEL_*.md`;
+- ~~`CHECKLIST.md`, `CLICK_THROUGH_CHECKLIST.md`, `PAGINATOR_CHECKLIST.md`, `UNIVERSAL_DEMO_PANEL_*.md`~~ — удалены (ход 43, аудит md: задачи закрыты); прочесть — `git show 2c02b6f:<файл>`;
 - `spike-history.py`, `browser-check.mjs`, `delete-check.mjs`;
 - 6 `.png` в корне и `screenshots/` (24 файла).
 

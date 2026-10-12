@@ -1,32 +1,37 @@
-# Хост стопки: устройство через адаптеры
+# Модальная система: устройство через ядро
 
-Хост говорит с миром **только** через `ChainAdapter`. Других каналов у него нет.
-Адаптер отвечает сразу за две вещи, которые обычно путают: **как стопка
-читается** и **как она хранится**.
+Модалка говорит с миром **только** через ядро — контракт `ModalCore`
+(`core-contract.ts`). Ядро отвечает сразу за две вещи, которые обычно путают:
+**как стопка читается** (среда) и **как она хранится** (хранилище).
 
 ## Слои
 
 ```
-types.ts         модель записи и контракты — 0 импортов фреймворка
-core.ts          чистый TS: кодек адреса, геометрия хвостов, блокировки
-store.ts         состояние + подписки, без реактивности фреймворка
+types.ts          модель записи — 0 импортов фреймворка
+core.ts           чистый TS: кодек адреса, геометрия хвостов, блокировки
+store.ts          состояние + подписки, без реактивности фреймворка
+validate.ts       проверка значений из адреса и localStorage (внутренний)
    ↑
-adapter.ts       контракт транспорта
+core-contract.ts  контракт ядра `ModalCore`
+engine.ts         контракт среды `ChainEngine` + memoryEngine
+storages.ts       хранилища: urlStorage, localStorageChain, memoryStorage
+build.ts          buildCore(среда, хранилища, опции) — сборка ядра
+create.ts         createModals(ядро, опции) — API действий
    ↑
-adapters/        url.ts (ядро кодека + истории, тестируется без браузера)
-                 ├── sveltekit.ts   обвязка $app/* — первый адаптер
-                 ├── local.ts       localStorage + синхронизация вкладок
-                 └── memory.ts      SSR, тесты, встраивание
+cores/            sveltekit.ts  обвязка $app/* (svelteKitEngine, svelteKitCore)
+                  fastedge.ts   ядро под роутер FastEdge (доказательство переносимости)
+                  memory.ts     неадресуемое ядро: SSR, тесты, встраивание
+                  routes.ts     таблица роутов — чистая логика
    ↑
-svelte/          store.svelte.ts — ЕДИНСТВЕННОЕ место с реактивностью
+svelte/           хост и хуки — ЕДИНСТВЕННОЕ место с реактивностью
 ```
 
 Цель — **одно ядро, много фреймворков**. Svelte здесь первый, а не
-единственный: добавить React или Vue = добавить два файла рядом, ядра
+единственный: добавить React или Vue = добавить два места рядом, ядра
 не касаясь.
 
 ```
-adapters/<фреймворк>.ts   обвязка роутера     ← знает фреймворк
+cores/<фреймворк>.ts      обвязка роутера     ← знает фреймворк
 <фреймворк>/              реактивность и вид  ← знает фреймворк
 всё остальное                                 ← чистый TypeScript
 ```
@@ -91,7 +96,7 @@ node tooling/uno-probe.mjs 'z-200' 'animate-[pulse_1.4s_ease-in-out_infinite]' '
 `animation-name` скелетона (встроенный `pulse`), сквозной z-index фона и
 сцены и поведение при `prefers-reduced-motion`.
 
-### Существование маршрута — дело адаптера, а не наше
+### Существование маршрута — дело ядра, а не наше
 
 Проверка «ведёт ли `route` на настоящую страницу» прошла две правки,
 и обе поучительные.
@@ -112,7 +117,7 @@ export function resolve<T extends RouteId | Pathname>(...args: ResolveArgs<T>): 
 `resolve('/films/[id]', { id })` **не компилируется**; блокировать кнопку
 в рантайме уже незачем. (`resolveRoute` помечен deprecated в пользу `resolve`.)
 
-Поэтому адаптер SvelteKit **не реализует `resolves`** — и своего
+Поэтому ядро SvelteKit **не реализует `resolves`** — и своего
 сопоставления шаблонов в проекте не осталось вовсе.
 
 В контракте `resolves?` при этом сохранён: он нужен транспортам, которые
@@ -122,15 +127,15 @@ export function resolve<T extends RouteId | Pathname>(...args: ResolveArgs<T>): 
 по наличию метода.
 
 Так же устроен `lib/paginate` в этом же проекте: `core.ts` чистый,
-`adapter-*.ts` чистые, весь фреймворк — в `solid.tsx`.
+`adapter-*.ts` чистые, весь фреймворк — в `svelte/`.
 
 ## Переговоры о возможностях
 
-Хост **никогда** не спрашивает «ты какой адаптер?». Он спрашивает, что
-адаптер умеет — по наличию метода:
+Хост **никогда** не спрашивает «ты какое ядро?». Он спрашивает, что
+ядро умеет — по наличию метода:
 
 ```ts
-const hasHistory = typeof adapter.back === 'function'
+const hasHistory = typeof core.back === 'function'
 ```
 
 Метода нет → возможности нет, и хост честно деградирует:
@@ -140,6 +145,7 @@ const hasHistory = typeof adapter.back === 'function'
 | `back` | закрытие делает `write(replace)`, «Вперёд» не сохраняется |
 | `subscribe` | внешние изменения не отслеживаются (память, SSR) |
 | `hrefFor` | триггер рисует кнопку вместо ссылки — без JS работать не будет |
+| `location` | триггер читает `window.location` — href обновится только при смене цепочки |
 | `resolves` | битый `route` не ловится до клика, даст 404 |
 | `preload` | данные берутся только из `definition.loader` |
 | `bind` | роутер не нужен |
@@ -302,16 +308,16 @@ routing). Тогда модалке с `route` собственный `loader` �
 ## Сборка: модалка(движок(хранилище), опции)
 
 ```ts
-createModals(svelteKitEngine(), urlStorage())        // цепочка в ?modal=
-createModals(svelteKitEngine(), localStorageChain(localStorage))  // адрес чистый
-createModals(memoryEngine(),    urlStorage())        // SSR: адрес есть, истории нет
+createModals(buildCore(svelteKitEngine(), urlStorage()))        // цепочка в ?modal=
+createModals(buildCore(svelteKitEngine(), localStorageChain(localStorage)))  // адрес чистый
+createModals(buildCore(memoryEngine(),    urlStorage()))        // адрес есть, истории нет
 ```
 
 | Что | За что отвечает |
 |---|---|
 | **движок** | адрес, история, предзагрузка — всё, что от фреймворка |
 | **хранилище** | где лежит объявленная часть цепочки |
-| **опции** | `lookup` (область видимости имён), `stateKey` |
+| **опции** | `lookup` (область видимости имён) |
 
 Имя транспорта собирается само и читается как формула: `sveltekit(url)`,
 `history(local)`, `memory(memory)`.
@@ -326,7 +332,7 @@ createModals(memoryEngine(),    urlStorage())        // SSR: адрес есть
 | движок с `preload` / `resolves` | данные маршрута / проверка битого маршрута |
 | хранилище `addressable` | `hrefFor`, то есть работа без JS |
 
-Отсюда SSR не требует отдельного адаптера: `svelteKitEngine()` на сервере
+Отсюда SSR не требует отдельного ядра: `svelteKitEngine()` на сервере
 не отдаёт ни `go`, ни `onPopState` — транспорт сам становится «без истории».
 
 ### Чего вложение стоило: зеркало в записи истории
@@ -447,16 +453,18 @@ modals.open('debug')    // source: 'memory' → исчезнет с переза
 мастера и т.п. — это содержимое: его хранит своё хранилище, а загрузчик
 модалки читает. Цепочка при этом остаётся в адресе и делится ссылкой.
 
-Сокращение для частого случая: `createSvelteKitModals()`.
+Сокращение для частого случая: `svelteKitCore(sources?, options?)` из
+`cores/sveltekit.ts` — то же `buildCore(svelteKitEngine(), sources, options)`, хранилище
+по умолчанию — адрес. Так собрано ядро сайта (`routes/(site)/ModalSystem.svelte`).
 
 `memory` существует не для галочки: абстракция с единственной реализацией
-ничего не доказывает. Весь набор сценариев в `adapter.test.ts` прогоняется
-по обоим транспортам.
+ничего не доказывает. Набор сценариев в `matrix.test.ts` прогоняется
+по каждой среде и каждому хранилищу.
 
 ## Как написать свой
 
 ```ts
-const myAdapter: ChainAdapter = {
+const myCore: ModalCore = {
   name: 'my-transport',
   capabilities: { addressable: false, transient: true, history: false },
   read: () => chain,
@@ -465,7 +473,9 @@ const myAdapter: ChainAdapter = {
 }
 ```
 
-Обязательны только `name`, `capabilities`, `read`, `write`.
+Обязательны только `name`, `capabilities`, `read`, `write` (контракт — `ModalCore`
+в `core-contract.ts`). Обычно проще не писать ядро, а собрать его `buildCore` из своей
+среды (`ChainEngine`) и готового хранилища.
 
 ## Чего писать НЕ надо: это берёт на себя Ark
 
@@ -494,19 +504,21 @@ preOpenEl.focus() // ark-owns-ok: причина
 
 ## Что проверено, а что нет
 
-Прогон `npm test` — **74 проверки**: 44 по сборке, хранилищам и кодеку,
-13 по областям реестра (в отдельном файле), 10 layer-guard, 11 ark-owns, 9 core-purity
-9 по core-purity.
+Числа проверок здесь не пишутся: они устаревают с первым новым тестом. Где что лежит:
 
-SSR проверен на уровне контракта: роутер без `go`/`onPopState` даёт транспорт
+- **модульные тесты** (`npm run test:unit`): `src/lib/modals/*.test.ts` — сборка,
+  хранилища, кодек, реестр, загрузчик, матрица «среда × хранилище»;
+  `cores/*.test.ts` — ядра, включая `sveltekit.test.ts`;
+- **стражи** (`npm run test:guard`): `tooling/ark-owns.mjs`, `core-purity.mjs`,
+  `layer-guard.mjs`;
+- **браузер** на production-превью: `test/browser/modals.mjs` и
+  `test/browser/regressions.mjs` — история, Назад/Вперёд, `#якорь`, перезагрузка;
+- **типы**: `npm run check` (svelte-check, тесты включены).
+
+SSR проверен на уровне контракта: среда без `go`/`onPopState` даёт транспорт
 без истории, и адрес при этом продолжает работать.
-`npx svelte-check` — **0 ошибок**.
 
-**Проверено на реальном браузере** (см. `../../../SPIKE-HISTORY.md`): URL-цепочка
+Первичная проба истории в браузере — `spike-history.py` в корне репозитория: URL-цепочка
 и transient уживаются в одной истории, Назад/Вперёд ходят через границу типов,
 `history.go(-2)` снимает смешанные записи, после F5 адресная часть
 восстанавливается, а transient исчезает.
-
-**Не проверено:** `sveltekit.ts` тестами не покрыт намеренно — в нём нет
-логики, только подключение `$app/*`. Если там появится хоть одно условие,
-его надо унести в `url.ts`.
