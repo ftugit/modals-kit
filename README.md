@@ -53,7 +53,6 @@
 | `globalScope`, `registerModal()` | константа и функция | Дают глобальную область и совместимый способ зарегистрировать в ней определение. |
 | `explainMissing()` | функция | Формирует диагностическое сообщение о неразрешённом имени модалки. |
 | `createModals()`, `Modals`, `ModalsOptions` | фабрика и типы | Создают API действий модальной системы поверх переданного ядра. |
-| `OpenOptions`, `HeadlessOptions`, `LayerOptions` | типы | Задают параметры зарегистрированного, headless и разового открытия в API `Modals`. |
 | `ReadContext`, `HrefContext`, `WriteOptions` | типы | Передают ядру серверный адрес и параметры записи в историю. |
 | `CoreCapabilities`, `PreloadResult`, `ModalCore` | типы | Описывают возможности, предзагрузку и минимальный контракт транспорта цепочки. |
 | `canPreload()`, `canLink()` | функции-предикаты | Проверяют способность ядра предзагружать маршрут или формировать адресную ссылку. |
@@ -76,7 +75,7 @@
 | `createReactiveStore()`, `ReactiveModalStore` | фабрика и тип | Превращают чистый ModalStore в реактивное Svelte-представление. |
 | `createMediaQuery()`, `createIsNarrow()` | фабрики | Создают реактивные состояния media query и проверки заданного breakpoint. |
 | `HostFloatingRect`, `HostFloatingPlacementOptions`, `HostFloatingOptions`, `HostFloatingCloseReason` | типы | Описывают геометрию, размещение, поведение и причины закрытия host-owned floating entry. |
-| `HostFlowOptions`, `HostFloatingApi` | тип и API | Описывают потоковую поверхность без собственного мобильного override и методы host-owned floating entry. |
+| `HostFloatingApi` | API | Описывает методы host-owned floating entry. |
 | `ModalsContext`, `setModalsContext()`, `tryUseModals()`, `useModals()` | контекст и функции | Предоставляют, необязательно читают или требуют живой контекст ModalHost. |
 | `OverlayContainer`, `setOverlayContainer()`, `useOverlayContainer()` | контекст и функции | Управляют контейнером портала вложенных оверлеев внутри модального слоя. |
 | `InstanceValue`, `setInstance()`, `useInstance()` | контекст и функции | Передают и читают идентичность записи, содержимое которой сейчас рендерится. |
