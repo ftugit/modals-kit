@@ -64,8 +64,9 @@ test('обычные импорты ядра не задеваются', () => {
 test('отчёт говорит, куда переносить', () => {
   const report = formatProblems('core.ts', checkFile('core.ts', "import 'svelte'"))
   assert.match(report, /<фреймворк>\//)
-  assert.match(report, /adapters\/<фреймворк>\.ts/)
-  assert.match(report, /adapter-контракты/)
+  // путь совпадает с зоной FRAMEWORK_ZONES `cores/<имя>.ts`
+  assert.match(report, /cores\/<фреймворк>\.ts/)
+  assert.match(report, /свои контракты/)
 })
 
 /* ── боевой прогон ─────────────────────────────────────────────────── */

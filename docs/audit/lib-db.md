@@ -49,3 +49,41 @@
 
 Результаты — ниже, по мере чтения. Статус всех находок: ОТКРЫТО, не исправлять без слова
 владельца.
+
+### Ход 43 — первый проход (частичный, только чтение)
+
+Прочитано: `sveltekit/{handle,context,cursor,query,errors}.ts`, `cursor/codec.ts`,
+`errors.ts` (классификация), `adapters/proxy.ts` (кодирование значений, кадры, ошибки),
+`query/sql.ts` (идентификаторы, порядок, LIKE, keyset), путь чтения в `resource.ts`
+(стр. 145–215). Не прочитано: остальной `resource.ts`, `validation.ts`, `schema.ts`,
+`database.ts`, `adapters/{pg,pglite,hyperdrive,shared}.ts`, `sveltekit/{node,migrate}.ts`,
+`sqlstate.ts`, `testing/`, `ops.ts`, `policy.ts`.
+
+- [ ] **DB-1 — смена ключа курсора не работает** (подтверждено пробой).
+  `sveltekit/cursor.ts:36`: активный kid всегда `"v1"`, и курсоры, выданные до смены,
+  тоже несут `kid: "v1"`. Если по README положить старый секрет в
+  `DB_CURSOR_OLD_KEYS="v0:<старый>"`, все старые курсоры отклоняются, потому что `v1` теперь
+  новый секрет (проба: `REJECTED`). Если положить `"v1:<старый>"`, развёртка
+  `{ v1: secret, ...old }` (стр. 19–30) молча ЗАМЕНЯЕТ новый секрет старым: новые курсоры
+  подписываются старым ключом (проба: кодек только со старым ключом принял свежий
+  курсор). Тест `db-port-specific.test.ts:766` назван «старым ключам из кольца — есть»,
+  но курсор со старым ключом не проверяет. Направление: имя активного kid из окружения
+  (например, `DB_CURSOR_KID`) и отказ, если kid старого ключа совпадает с активным.
+- [ ] **DB-2 — `toFormFailure` в production отдаёт клиенту внутренний текст БД**
+  (подтверждено пробой). `sveltekit/errors.ts:80` кладёт `details.issues` в
+  `formErrors`/`fieldErrors` без учёта `development`. По контракту (`errors.ts:37`)
+  в `issues` лежат только тексты Standard Schema, но `adapters/proxy.ts:243` кладёт туда
+  сырой текст ошибки Postgres (`duplicate key … "users_email_key"`), а `:239–330` —
+  подсказки об инфраструктуре прокси. Проба: `toFormFailure(e, false).data.formErrors`
+  содержит имя ограничения. Сейчас не проявляется: приложение работает на PGlite, прокси
+  не подключён. Попутно: комментарий `validation.ts:254` («причины видны в
+  dev-диагностике `toKitError`») неверен — `diagnostic` не содержит `issues` (проба: `{}`).
+- [ ] **DB-3 — типы курсорной страницы.** `nextCursor: string | null`, а `after`
+  принимает `string | undefined`: естественный цикл `after = page.nextCursor` не проходит
+  проверку типов (видно в C10-db, `db-lib.script.ts:235–249`).
+- Проверено, бага нет: keyset с NULL согласован с `ORDER BY … NULLS LAST`
+  (`sql.ts:107–110`, `222–250`); `ident()` пропускает только `[A-Za-z_][A-Za-z0-9_]*`;
+  LIKE экранирует `\ % _` с явным `ESCAPE`; значения курсора повторно проходят
+  `validateField` перед keyset (`resource.ts:180–189`); тело запроса читается с
+  отсечкой по размеру (`query.ts:13–46`).
+

@@ -191,7 +191,7 @@ export interface ModalDefinition<
    * Строка с `$param` (`'/films/$id'`) или функция от params.
    *
    * Транспорт, умеющий `preload()`, может взять данные страницы отсюда —
-   * тогда собственный `loader` не нужен (см. adapter.ts).
+   * тогда собственный `loader` не нужен (см. `ModalCore.preload` в core-contract.ts).
    */
   route?: string | ((params: P) => string)
 

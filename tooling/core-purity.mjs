@@ -106,8 +106,8 @@ export function formatProblems(relPath, problems, root = 'src/lib/modals') {
   out.push('')
   out.push('  Куда это переносить:')
   out.push(`    • реактивность и разметка → ${root}/<фреймворк>/`)
-  out.push(`    • обвязка среды           → ${root}/adapters/<фреймворк>.ts`)
-  out.push('  Ядро общается с миром только через свои adapter-контракты.\n')
+  out.push(`    • обвязка среды           → ${root}/cores/<фреймворк>.ts`)
+  out.push('  Ядро общается с миром только через свои контракты (ядро, среда, хранилище).\n')
   return out.join('\n')
 }
 
