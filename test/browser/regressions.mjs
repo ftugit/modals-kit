@@ -1618,6 +1618,48 @@ try {
     await page.close()
   })
 
+  await run('R-43 якорь внутри открытой модалки: Escape закрывает окно, адрес и история целы', async () => {
+    // F39: клик по `#якорю` внутри модалки добавлял запись истории — браузер
+    // копировал в неё состояние «модалка открыта». Escape шагал назад на запись
+    // открытия, окно оставалось, адрес терял якорь; следующий Escape окно уже не
+    // закрывал. Теперь при открытом слое якорь заменяет текущую запись (через
+    // общий писатель адреса), а не добавляет новую.
+    const page = await browser.newPage()
+    const url = () => page.evaluate(() => location.pathname + location.search + location.hash)
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    const start = await url()
+    await page.locator('a[data-modal-trigger]').first().click()
+    await page.waitForSelector('[role="dialog"]')
+    await page.waitForFunction((u) => location.pathname + location.search + location.hash !== u, start)
+    const opened = await url()
+    const before = await page.evaluate(() => history.length)
+    await page.evaluate(() => {
+      const target = document.createElement('div'); target.id = 'r43'; target.textContent = 'цель'
+      document.body.append(target)
+      const a = document.createElement('a'); a.href = '#r43'; a.id = 'r43-link'; a.textContent = 'к цели'
+      ;[...document.querySelectorAll('[role="dialog"]')].at(-1).append(a)
+    })
+    await page.click('#r43-link')
+    await page.waitForFunction(() => location.hash === '#r43')
+    assert(await page.evaluate(() => history.length) === before, 'якорь внутри модалки добавил запись истории')
+    assert(await page.locator('[role="dialog"]').count() === 1, 'якорь закрыл модалку')
+    assert(await url() === opened + '#r43', `адрес после якоря: ${await url()}`)
+    ok('якорь внутри модалки: адрес с #r43, записи истории не прибавилось, окно открыто')
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, null, { timeout: 5000 })
+    await page.waitForFunction(() => !location.search.includes('modal='), null, { timeout: 5000 })
+    assert(await page.evaluate(() => location.pathname) === new URL(BASE).pathname, 'Escape увёл со страницы')
+    ok(`Escape закрывает окно и снимает его из адреса: ${await url()}`)
+    // Открыть снова и закрыть: прежний «залипший» адрес не возвращается.
+    await page.locator('a[data-modal-trigger]').first().click()
+    await page.waitForSelector('[role="dialog"]')
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, null, { timeout: 5000 })
+    await page.waitForFunction(() => !location.search.includes('modal='), null, { timeout: 5000 })
+    ok('повторное открытие и закрытие работают')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)

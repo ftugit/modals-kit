@@ -68,6 +68,48 @@ const writer = browser
   : null
 if (writer) window.addEventListener('popstate', () => writer.external())
 
+/**
+ * Якорь страницы при занятой записи истории (F39).
+ *
+ * Клик по `#якорю` браузер (и SvelteKit 3.0.1, ветка «отличается только
+ * фрагментом» обработчика кликов) превращает в НОВУЮ запись истории — с копией
+ * состояния текущей. Если текущая запись чья-то «мелкая» (открыта модалка,
+ * мобильная панель), копия тоже говорит «открыто», а «закрыть» = шаг назад
+ * попадает на запись открытия: окно остаётся, адрес теряет якорь.
+ *
+ * Поэтому, пока у записи есть состояние, якорь её ЗАМЕНЯЕТ — тем же писателем,
+ * что и остальные записи адреса (состояние и чужие ключи сохраняются), а
+ * прокрутку к цели делаем сами, как SvelteKit для повторного клика по тому же
+ * якорю (`scrollIntoView` + `focus`). Фрагмент принадлежит странице (решение
+ * владельца A, C1), отдельный шаг истории ради него при открытом слое не нужен.
+ * Без состояния (обычная запись) — поведение браузера и SvelteKit как есть.
+ *
+ * Слушатель — на фазе перехвата окна (раньше любого узла): обработчик SvelteKit висит на
+ * контейнере приложения и уважает `defaultPrevented`.
+ */
+function onHashLinkClick(event: MouseEvent): void {
+  if (!writer || event.defaultPrevented || event.button !== 0) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+  if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download')) return
+  if (link.target && link.target !== '_self') return
+  const to = new URL(link.href)
+  const here = new URL(window.location.href)
+  if (!to.hash || to.origin !== here.origin || to.pathname !== here.pathname || to.search !== here.search) return
+  if (Object.keys(writer.visible().state).length === 0) return
+  event.preventDefault()
+  void writeAddress((cur) => ({ url: `${cur.url.pathname}${cur.url.search}${to.hash}` }), { replace: true })
+  const id = decodeURIComponent(to.hash.slice(1))
+  const target = id ? document.getElementById(id) : null
+  if (target) {
+    target.scrollIntoView()
+    target.focus({ preventScroll: true })
+  } else if (id === '' || id === 'top') {
+    window.scrollTo({ top: 0 })
+  }
+}
+if (writer) window.addEventListener('click', onHashLinkClick, true)
+
 // Реактивность намерения: читатель внутри `$derived`/`$effect` перезапускается и
 // на собственной записи (до её применения), и на изменении `page.*`.
 const trackIntent = writer ? createSubscriber((update) => writer.subscribe(update)) : () => {}
