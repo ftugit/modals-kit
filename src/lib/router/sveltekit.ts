@@ -20,6 +20,7 @@ import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '#lib/paginate/index.js'
 import { watch } from './watch.svelte'
+import { createLayerLinks } from './layer-links'
 import {
   createAddressWriter,
   type AddressChange,
@@ -54,21 +55,87 @@ const visibleUrl = (): (typeof page)['url'] => page.shallow?.url ?? page.url
  * всех запросов.
  * https://svelte.dev/docs/kit/shallow-routing
  */
+/**
+ * Navigation API — только для связок слоёв (ход 106): ключ записи и событие
+ * обхода с записью, с которой ушли. Baseline 2026-01 (Chrome/Edge, Firefox 147,
+ * Safari 26.2); без него перенос делает только свой шаг назад, как раньше.
+ * https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API
+ */
+const nav: Navigation | undefined = browser && 'navigation' in window ? window.navigation : undefined
+const links = nav ? createLayerLinks(sessionStorageOrUndefined()) : null
+
+function sessionStorageOrUndefined(): Storage | undefined {
+  try {
+    return window.sessionStorage
+  } catch {
+    return undefined // запрет хранилища: связки живут в памяти вкладки
+  }
+}
+
+const aliveKeys = (): string[] => (nav ? nav.entries().map((e) => e.key) : [])
+
 const writer = browser
   ? createAddressWriter({
       // Копия: у `page.url` Kit свой тип (`ReadonlyURLSearchParams`), ядру нужен URL.
       read: () => ({ url: new URL(visibleUrl().href), state: page.state as Record<string, unknown> }),
-      commit: ({ href, state, replace, load }) =>
-        load
-          ? // Скролл и фокус принадлежат контейнеру хоста, не странице → `reset: false`.
-            goto(href, { replace, reset: false, state: state as App.PageState })
-          : goto(href, { shallow: true, replace, state: state as App.PageState }),
+      commit: ({ href, state, replace, load }) => {
+        if (load)
+          // Скролл и фокус принадлежат контейнеру хоста, не странице → `reset: false`.
+          return goto(href, { replace, reset: false, state: state as App.PageState })
+        // «Мелкое» добавление записи — это слой (модалка, флаг панели, список
+        // селекта): запоминаем, поверх какой записи он открыт.
+        const base = !replace ? nav?.currentEntry?.key : undefined
+        return goto(href, { shallow: true, replace, state: state as App.PageState }).then(() => {
+          const layer = nav?.currentEntry?.key
+          if (!links || !base || !layer || layer === base) return
+          links.link(layer, base)
+          // Новая запись отрезала «вперёд» — связки выпавших записей не нужны.
+          links.prune(aliveKeys())
+        })
+      },
       hash: () => window.location.hash,
       traverse: (delta) => window.history.go(delta),
       here: () => new URL(window.location.href),
     })
   : null
-if (writer) window.addEventListener('popstate', () => writer.external())
+
+/**
+ * Запись, с которой ушёл обход, — если она и запись назначения из одной стопки
+ * слоёв. `currententrychange` приходит раньше `popstate` (проверено в
+ * Chromium, Firefox и WebKit, ход 103), и его `from` — закрытая запись с
+ * актуальным адресом; `popstate` передаёт её писателю.
+ */
+let traversedFrom: { url: URL; hash: string } | null = null
+if (writer && nav && links) {
+  links.prune(aliveKeys())
+  nav.addEventListener('currententrychange', (event) => {
+    if (event.navigationType !== 'traverse') return
+    const to = nav.currentEntry
+    // Firefox в iframe шлёт обход второй раз с `from === currentEntry`
+    // (lit-ui-router #1192): это не обход.
+    if (!to || event.from === to || event.from.key === to.key || !event.from.url) {
+      traversedFrom = null
+      return
+    }
+    if (!links.sameStack(event.from.key, to.key)) {
+      traversedFrom = null
+      return
+    }
+    const url = new URL(event.from.url)
+    traversedFrom = { url, hash: url.hash }
+  })
+  // Как SvelteKit: в хранилище — когда вкладка уходит в фон или закрывается.
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') links.persist()
+  })
+  window.addEventListener('pagehide', () => links.persist())
+}
+if (writer)
+  window.addEventListener('popstate', () => {
+    const from = traversedFrom
+    traversedFrom = null
+    writer.external(from ?? undefined)
+  })
 // Kit применяет обход после `popstate` асинхронно; перенос адреса страницы
 // после закрытия слоя ждёт именно этого (ход 100, `address.ts`).
 if (writer) watch(() => [page.url, page.shallow, page.state], () => writer.applied())

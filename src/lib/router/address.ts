@@ -39,8 +39,10 @@
  *    адресной строке (`here`) и сразу виден как намерение, а отправляется по
  *    сигналу `applied()` — фреймворк показал запись назначения. Тот же принцип, что у якоря (F39, решение
  *    владельца A): адрес принадлежит странице, а не записи слоя. Обход
- *    пользователя (кнопка «Назад» браузера) не переносится: направление и
- *    смысл чужого обхода писателю неизвестны.
+ *    пользователя (кнопка «Назад» браузера, Android) переносится, только если
+ *    среда сама определила, что обе записи из одной стопки слоёв, и передала
+ *    закрытую запись в `external(from)` (ход 106, `layer-links.ts`): писатель
+ *    направления и смысла чужого обхода не знает.
  *  • **Отказ коммита не глотается**: промис записи отклоняется, как раньше
  *    отклонялся `goto`. Незаписанные шаги после отказа остаются — они несут
  *    полное намерение и сами повторяют упавшую часть.
@@ -103,8 +105,13 @@ export interface AddressWriter {
   write(change: (current: AddressSnapshot) => AddressChange, options: AddressWriteOptions): Promise<void>
   /** Шаг по истории — после того как применятся записи, сделанные до него. */
   go(delta: number): void
-  /** Обход истории (Назад/Вперёд, в том числе свой `go`): незаписанное устарело. */
-  external(): void
+  /**
+   * Обход истории (Назад/Вперёд, в том числе свой `go`): незаписанное устарело.
+   * `from` — запись, с которой ушли, если среда установила, что она и запись
+   * назначения из одной стопки слоёв: тогда адрес страницы переносится и при
+   * чужом обходе. Без `from` переносит только свой шаг назад.
+   */
+  external(from?: { readonly url: Readonly<URL>; readonly hash: string }): void
   /**
    * Фреймворк применил изменение адреса (реактивный сигнал среды). Нужен для
    * переноса адреса страницы после закрытия слоя — см. `here`.
@@ -337,17 +344,18 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
       pump()
     },
 
-    external() {
+    external(given) {
       const wasTraversing = traversing
       traversing = false
-      const from = leaving
+      // Источник переноса: от среды (обе записи из одной стопки) или свой шаг назад.
+      const from = given ? { url: withoutHash(given.url), hash: given.hash } : wasTraversing ? leaving : null
       leaving = null
       // Новый обход отменяет ещё не отправленный перенос прежнего.
       const hadCarry = carry !== null
       carry = null
       // Перенос считается синхронно, в том же `popstate`: намерение (адрес
       // страницы) видно читателям сразу, без мигания старого адреса.
-      if (wasTraversing && from) {
+      if (from) {
         const here = deps.here ? withoutHash(deps.here()) : withoutHash(deps.read().url)
         carry = carried(from, here, deps.hash?.() ?? '')
       }
@@ -361,7 +369,7 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
         sendCarry(target)
       }
       emit()
-      if (wasTraversing) pump()
+      if (wasTraversing || queue.length > 0) pump()
     },
 
     applied() {

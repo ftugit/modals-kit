@@ -105,10 +105,10 @@ describe('createAddressWriter: адрес страницы переживает 
     })
     writer.layerKeys((k) => k === 'modal' || k.startsWith('modal.'))
     /** Браузер обошёл историю: адресная строка уже новая, `page.*` ещё нет. */
-    const pop = (href: string, h = '') => {
+    const pop = (href: string, h = '', from?: { url: URL; hash: string }) => {
       bar = new URL(href + h, bar)
       if (!withHere) real = { url: new URL(href, real.url), state: real.state }
-      writer.external()
+      writer.external(from)
     }
     /** Фреймворк применил обход. */
     const apply = (state: Record<string, unknown> = {}) => {
@@ -222,4 +222,33 @@ describe('createAddressWriter: адрес страницы переживает 
     await tick()
     expect(sent.map((s) => s.href)).toEqual(['/films?sheet=1'])
   })
+
+  it('системный «Назад» переносит адрес, если среда подтвердила одну стопку', async () => {
+    const { writer, sent, pop, apply } = layerEnv()
+    await writer.write((c) => ({ url: c.url, state: { m: 1 } }), { replace: false })
+    await writer.write(() => ({ url: '/films?page.size=10' }), { replace: true })
+    sent.length = 0
+    // Пользователь сам нажал «Назад»; среда по связкам знает: слой → запись под ним.
+    pop('/films', '', { url: new URL('http://app.test/films?page.size=10'), hash: '' })
+    expect(writer.visible().url.search).toBe('?page.size=10')
+    apply({})
+    await tick()
+    expect(sent).toEqual([{ href: '/films?page.size=10', state: {}, replace: true, load: false }])
+  })
+
+  it('«Вперёд» в слой переносит текущий адрес страницы, ключи слоя остаются его', async () => {
+    const { writer, sent, pop, apply } = layerEnv('http://app.test/films?page.src=photos')
+    // Браузер вернул вперёд запись модалки с устаревшими настройками страницы.
+    pop('/films?page.src=products&modal=card', '', { url: new URL('http://app.test/films?page.src=photos'), hash: '' })
+    expect(writer.visible().url.search).toBe('?page.src=photos&modal=card')
+    apply({ modals: { depth: 1 } })
+    await tick()
+    expect(sent.at(-1)).toEqual({
+      href: '/films?page.src=photos&modal=card',
+      state: { modals: { depth: 1 } },
+      replace: true,
+      load: false,
+    })
+  })
 })
+
