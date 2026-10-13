@@ -27,8 +27,10 @@ export interface InputModes {
   text: true; email: true; password: true; tel: true; url: true; search: true
   color: true; hidden: true; textarea: true; number: true; range: true
   date: true; 'datetime-local': true; time: true
-  select: true; multiselect: true; radio: true; checkbox: true
+  select: true; multiselect: true; radio: true; checkbox: true; switch: true
   file: true; files: true
+  /** Одноразовый код: строка цифр, ячейки рисует компонент приложения. */
+  otp: true
 }
 export type InputMode = (keyof InputModes & string) | (string & {})
 

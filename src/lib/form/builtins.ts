@@ -36,13 +36,13 @@ const validDateTime = (raw: string) => {
 
 const required: Projection = () => ({ required: true })
 
-const TEXT_PATTERN_INPUTS = new Set<InputMode>(['text', 'email', 'password', 'tel', 'url', 'search'])
+const TEXT_PATTERN_INPUTS = new Set<InputMode>(['text', 'email', 'password', 'tel', 'url', 'search', 'otp'])
 const TEXT_LENGTH_INPUTS = new Set<InputMode>([...TEXT_PATTERN_INPUTS, 'textarea'])
 
 /** Встроенный тип строкового значения для text-like представлений. */
 export const textType: FieldType<string> = {
   kind: 'text',
-  inputs: ['text', 'email', 'password', 'tel', 'url', 'search', 'color', 'hidden', 'textarea'],
+  inputs: ['text', 'email', 'password', 'tel', 'url', 'search', 'color', 'hidden', 'textarea', 'otp'],
   multiple: false, empty: '',
   decode: (e) => ok(first(e)),
   encode: (v, n, out) => { out.push([n, v]) },
@@ -66,7 +66,11 @@ export const textType: FieldType<string> = {
     oneOf: true,
     opaque: true,
   },
-  attrs: (input) => (input === 'textarea' ? {} : { type: input === 'text' ? 'text' : input }),
+  attrs: (input) =>
+    input === 'textarea' ? {}
+    // код: обычное текстовое поле с цифровой клавиатурой и автоподстановкой из SMS
+    : input === 'otp' ? { type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code' }
+    : { type: input },
   degradation: { withoutJs: 'обычное текстовое поле' },
 }
 
@@ -107,12 +111,13 @@ export const numberType: FieldType<number | null> = {
 
 /** Встроенный тип boolean-значения для checkbox. */
 export const checkboxType: FieldType<boolean> = {
-  kind: 'checkbox', inputs: ['checkbox'], multiple: false, empty: false,
+  kind: 'checkbox', inputs: ['checkbox', 'switch'], multiple: false, empty: false,
   // отсутствие записи = не отмечен. Нативная семантика, а не ошибка.
   decode: (e) => ok(e.length > 0 && first(e) !== '' && first(e) !== 'off'),
   encode: (v, n, out) => { if (v) out.push([n, 'on']) },
   constraints: { required, opaque: true },
-  attrs: () => ({ type: 'checkbox', value: 'on' }),
+  // переключатель — тот же флажок, роль switch озвучивает «вкл/выкл»
+  attrs: (input) => (input === 'switch' ? { type: 'checkbox', role: 'switch', value: 'on' } : { type: 'checkbox', value: 'on' }),
   degradation: { withoutJs: 'флажок' },
 }
 

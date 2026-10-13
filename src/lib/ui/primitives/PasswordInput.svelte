@@ -49,7 +49,10 @@
 </script>
 
 <InputShell data-password-input="" class={cls}>
+  <!-- Чужие атрибуты — ПЕРВЫМИ: поле формы приносит `type="password"` в attrs,
+       и разворот после `type` выключил бы показ пароля. -->
   <input
+    {...rest}
     bind:this={inputEl}
     bind:value
     type={visible ? 'text' : 'password'}
@@ -59,7 +62,6 @@
       size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-10 px-3 text-sm' : 'h-9 px-3 text-sm',
       mounted && 'pr-10',
     )}
-    {...rest}
   />
   {#if mounted}
     <InputAffix side="end" interactive>

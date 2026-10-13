@@ -3,7 +3,7 @@
   // иначе шкала и проверка разошлись бы, и пользователь видел бы «надёжный»
   // там, где форма не пропускает.
   import { strengthOf, type StrengthLevel } from '#lib/form/index.js'
-  import { Input } from '#lib/ui/primitives/index.js'
+  import { PasswordInput } from '#lib/ui/primitives/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
@@ -23,7 +23,8 @@
 </script>
 
 <FieldShell {f}>
-  <Input
+  <!-- Показ пароля — кнопка-глаз примитива, появляется после оживления. -->
+  <PasswordInput
     {...f.attrs}
     autocomplete="new-password"
     onblur={() => f.setTouched()}

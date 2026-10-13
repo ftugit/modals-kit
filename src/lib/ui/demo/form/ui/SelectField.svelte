@@ -19,8 +19,9 @@
     {...f.attrs}
     options={f.options ?? []}
     value={Array.isArray(f.value) ? f.value.map(String) : (f.value == null ? '' : String(f.value))}
+    multiple={f.input === 'multiselect'}
     config={{ nativeList: 'all' }}
     onblur={() => f.setTouched()}
-    onchange={(values) => f.onInput(values[0] ?? '')}
+    onchange={(values) => f.onInput(f.input === 'multiselect' ? values : (values[0] ?? ''))}
   />
 </FieldShell>

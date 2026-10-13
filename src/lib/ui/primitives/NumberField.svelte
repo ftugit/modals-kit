@@ -1,58 +1,76 @@
 <script lang="ts">
+  // Числовое поле с кнопками «−/+». Атрибуты (name, id, min/max/step, aria-*,
+  // required) приходят снаружи как есть — поле формы разворачивает сюда `attrs`.
+  // Кнопки появляются после оживления: без JS остаётся обычный `type="number"`.
   import { onMount } from 'svelte'
+  import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../cn'
 
-  interface Props {
-    min?: number
-    max?: number
-    step?: number
-    value?: number
-    disabled?: boolean
-    class?: string
-    name?: string
+  interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'size'> {
+    value?: number | string | null
+    decrementLabel?: string
+    incrementLabel?: string
   }
 
   let {
-    min = 0,
-    max = 20,
-    step = 1,
-    value = $bindable(3),
+    value = $bindable(),
     disabled = false,
+    decrementLabel = 'Уменьшить',
+    incrementLabel = 'Увеличить',
     class: cls,
-    name = 'demo-number',
+    ...rest
   }: Props = $props()
 
   let mounted = $state(false)
+  let inputEl = $state<HTMLInputElement | null>(null)
 
   onMount(() => {
     mounted = true
   })
 
-  function stepUp() {
-    if (disabled) return
-    const next = (value ?? 0) + step
-    if (next <= max) value = next
+  const bound = (raw: unknown): number | null => {
+    if (raw === undefined || raw === null || raw === '') return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
   }
+  const min = $derived(bound(rest.min))
+  const max = $derived(bound(rest.max))
+  // `step="any"` (умолчание числового поля формы) кнопкам шага не даёт: шагаем на 1.
+  const step = $derived(bound(rest.step) ?? 1)
+  const current = $derived(bound(value))
 
-  function stepDown() {
-    if (disabled) return
-    const next = (value ?? 0) - step
-    if (next >= min) value = next
+  /** Знаков после запятой у шага: 0.1 + 0.2 не должно дать 0.30000000000000004. */
+  const decimals = $derived((String(step).split('.')[1] ?? '').length)
+
+  function shift(direction: 1 | -1) {
+    if (disabled || !inputEl) return
+    // С пустого поля «+» начинает с нижней границы, «−» — с верхней (без границ —
+    // с одного шага от нуля); дальше — шаг от текущего значения.
+    let next =
+      current !== null ? current + direction * step
+      : direction > 0 ? (min ?? step)
+      : (max ?? min ?? -step)
+    if (min !== null && next < min) next = min
+    if (max !== null && next > max) next = max
+    next = Number(next.toFixed(decimals))
+    inputEl.value = String(next)
+    value = next
+    // Тот же путь, что у ввода с клавиатуры: обработчики потребителя видят событие.
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }))
+    inputEl.dispatchEvent(new Event('change', { bubbles: true }))
   }
 </script>
 
-<div class="relative flex items-center">
+<div class="relative flex items-center" data-number-field="">
+  <!-- Чужие атрибуты — первыми: `type` поля задаёт сам примитив. -->
   <input
+    {...rest}
+    bind:this={inputEl}
     type="number"
-    {name}
-    inputmode="numeric"
-    {min}
-    {max}
-    {step}
     {disabled}
     bind:value
     class={cn(
-      'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+      'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
       mounted && 'pr-16',
       cls,
     )}
@@ -62,9 +80,10 @@
       <button
         type="button"
         class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 cursor-pointer"
-        aria-label="Уменьшить"
-        disabled={disabled || (value ?? 0) <= min}
-        onclick={stepDown}
+        aria-label={decrementLabel}
+        data-number-step="down"
+        disabled={disabled || (current !== null && min !== null && current <= min)}
+        onclick={() => shift(-1)}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
           <path d="M3.5 8h9" />
@@ -73,9 +92,10 @@
       <button
         type="button"
         class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 cursor-pointer"
-        aria-label="Увеличить"
-        disabled={disabled || (value ?? 0) >= max}
-        onclick={stepUp}
+        aria-label={incrementLabel}
+        data-number-step="up"
+        disabled={disabled || (current !== null && max !== null && current >= max)}
+        onclick={() => shift(1)}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
           <path d="M8 3.5v9M3.5 8h9" />

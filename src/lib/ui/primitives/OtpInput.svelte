@@ -1,12 +1,14 @@
 <script lang="ts">
+  // Одноразовый код: до оживления — обычное поле (жив без JS), после — ячейки
+  // поверх того же поля. Атрибуты (name, id, required, pattern, aria-*) приходят
+  // снаружи как есть — поле формы разворачивает сюда `attrs`.
   import { onMount } from 'svelte'
+  import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../cn'
 
-  interface Props {
+  interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'size'> {
     length?: number
     value?: string
-    disabled?: boolean
-    class?: string
     onComplete?: (code: string) => void
   }
 
@@ -16,6 +18,8 @@
     disabled = false,
     class: cls,
     onComplete,
+    oninput,
+    ...rest
   }: Props = $props()
 
   let mounted = $state(false)
@@ -23,23 +27,36 @@
   let caret = $state(0)
   let fieldEl = $state<HTMLInputElement | null>(null)
 
-  const done = $derived(value.length === length)
+  const text = $derived(String(value ?? ''))
+  const done = $derived(text.length === length)
   const activeIndex = $derived(Math.min(focused ? caret : -1, length - 1))
+
+  /**
+   * Свои значения — только там, где снаружи ничего не пришло: подпись поля
+   * формы (`<label for>`) сильнее `aria-label`, а правило формы — шаблона.
+   */
+  const own = $derived({
+    pattern: rest.pattern ?? `\\d{${length}}`,
+    maxlength: rest.maxlength ?? length,
+    title: rest.title ?? `Ровно ${length} цифр`,
+    'aria-label': rest.id || rest['aria-labelledby'] ? rest['aria-label'] : (rest['aria-label'] ?? `Код из ${length} цифр`),
+  })
 
   function digits(raw: string) {
     return raw.replace(/\D/g, '').slice(0, length)
   }
 
-  function handleInput(e: Event & { currentTarget: HTMLInputElement }) {
+  function handleInput(e: Event & { currentTarget: EventTarget & HTMLInputElement }) {
     const next = digits(e.currentTarget.value)
     value = next
     if (e.currentTarget.value !== next) e.currentTarget.value = next
     caret = e.currentTarget.selectionStart ?? next.length
+    oninput?.(e)
     if (next.length === length) onComplete?.(next)
   }
 
   function syncCaret() {
-    caret = fieldEl?.selectionStart ?? value.length
+    caret = fieldEl?.selectionStart ?? text.length
   }
 
   onMount(() => {
@@ -50,19 +67,16 @@
 <div class={cn('flex flex-col items-start gap-1.5', cls)}>
   {#if !mounted}
     <input
+      {...rest}
+      {...own}
       type="text"
       inputmode="numeric"
       autocomplete="one-time-code"
-      pattern={`\\d{${length}}`}
-      title={`Ровно ${length} цифр`}
-      maxlength={length}
       {disabled}
-      aria-label={`Код из ${length} цифр`}
       data-testid="otp-input"
       data-otp-input=""
-      // Бывший `.otp-plain`: обычный input до монтирования.
-      class="w-full max-w-[16rem] rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-base tracking-[0.35em] indent-[0.35em] text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-      {value}
+      class="w-full max-w-[16rem] rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-base tracking-[0.35em] indent-[0.35em] text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive"
+      value={text}
       oninput={handleInput}
     />
   {:else}
@@ -93,33 +107,33 @@
           )}
           data-otp-slot=""
           data-active={activeIndex === index ? 'true' : 'false'}
-          data-empty={value[index] ? 'false' : 'true'}
+          data-empty={text[index] ? 'false' : 'true'}
           aria-hidden="true"
         >
-          {value[index] ?? ''}
+          {text[index] ?? ''}
         </span>
       {/each}
       <input
+        {...rest}
+        {...own}
         bind:this={fieldEl}
         type="text"
         inputmode="numeric"
         autocomplete="one-time-code"
-        pattern={`\\d{${length}}`}
-        title={`Ровно ${length} цифр`}
-        maxlength={length}
         {disabled}
-        aria-label={`Код из ${length} цифр`}
         data-testid="otp-input"
         data-otp-input-overlay=""
-        // Бывший `.otp-input`: прозрачный input поверх ячеек.
         class="absolute inset-0 size-full border-0 bg-transparent p-0 text-base tracking-normal text-transparent caret-transparent outline-none [&::selection]:bg-transparent"
-        {value}
+        value={text}
         oninput={handleInput}
         onfocus={() => {
           focused = true
           syncCaret()
         }}
-        onblur={() => (focused = false)}
+        onblur={(e) => {
+          focused = false
+          rest.onblur?.(e)
+        }}
         onkeyup={syncCaret}
         onclick={syncCaret}
       />
@@ -131,7 +145,7 @@
     {:else if done}
       Код введён полностью.
     {:else}
-      Введено {value.length} из {length}.
+      Введено {text.length} из {length}.
     {/if}
   </p>
 </div>

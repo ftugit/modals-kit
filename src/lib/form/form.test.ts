@@ -165,6 +165,27 @@ suite('описание и ограничения', () => {
     expect(d.attrsOf('r').attrs['required']).toBeUndefined()
   })
 
+  test('otp и switch: свои атрибуты разметки, значения — как у текста и флажка', () => {
+    const d = defineForm({
+      id: 'modes',
+      fields: {
+        code: field.otp({ validate: [v.required(), v.maxLength(6), v.pattern({ source: '\\d{6}' })] }),
+        on: field.switch({ validate: [v.required()] }),
+      },
+    })
+    expect(d.attrsOf('code').attrs).toMatchObject({
+      type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
+      required: true, maxlength: 6, pattern: '\\d{6}',
+    })
+    expect(d.attrsOf('on').attrs).toMatchObject({ type: 'checkbox', role: 'switch', value: 'on', required: true })
+
+    const okRes = evaluate(body({ code: '123456', on: 'on' }, envelope('modes')), d, { render })
+    expect(okRes.errors).toHaveLength(0)
+    expect(okRes.values).toMatchObject({ code: '123456', on: true })
+    const bad = evaluate(body({ code: '12ab56' }, envelope('modes')), d, { render })
+    expect(bad.errors.map((e) => `${e.path}:${e.code}`)).toEqual(expect.arrayContaining(['code:pattern', 'on:required']))
+  })
+
   test('integer не ставит опасный step=1 при дробном min', () => {
     const d = defineForm({ id: 'intmin', fields: { n: field.number({ validate: [v.minValue(18.5), v.integer()] }) } })
     expect(d.attrsOf('n').attrs).toMatchObject({ type: 'number', min: 18.5, step: 'any' })

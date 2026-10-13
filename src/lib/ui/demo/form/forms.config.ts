@@ -10,6 +10,10 @@ import CheckboxField from './ui/CheckboxField.svelte'
 import RatingField from './ui/RatingField.svelte'
 import SelectField from './ui/SelectField.svelte'
 import PasswordField from './ui/PasswordField.svelte'
+import NumberField from './ui/NumberField.svelte'
+import OtpField from './ui/OtpField.svelte'
+import SearchField from './ui/SearchField.svelte'
+import SwitchField from './ui/SwitchField.svelte'
 import TextField from './ui/TextField.svelte'
 import TextareaField from './ui/TextareaField.svelte'
 
@@ -26,8 +30,12 @@ const resolve = (f: { input: string }) => {
     case 'password': return PasswordField
     case 'rating': return RatingField          // свой тип — такой же гражданин
     case 'textarea': return TextareaField
-    case 'select': case 'radio': return SelectField
+    case 'select': case 'radio': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
+    case 'switch': return SwitchField
+    case 'number': return NumberField
+    case 'search': return SearchField
+    case 'otp': return OtpField
     default: return TextField
   }
 }

@@ -21,6 +21,7 @@
 - [Адаптеры движков](#адаптеры-движков)
 - [Как создать свой хук](#как-создать-свой-хук)
 - [Фронтенд и бэкенд одновременно](#фронтенд-и-бэкенд-одновременно)
+- [Встроенные представления](#встроенные-представления)
 - [Каталог валидаторов](#каталог-валидаторов)
 - [Как добавить свой валидатор](#как-добавить-свой-валидатор)
 - [Как фильтровать данные](#как-фильтровать-данные)
@@ -298,6 +299,40 @@ const handle = createFormHandler({
 отдаёт `result` в `form`, `+server.ts` — `handle(request, 'fetch')` и `json(...)`.
 В других движках — серверная функция или роут того же движка: адрес один,
 контракт `Result` тот же.
+
+## Встроенные представления
+
+Представление (`input`) — то, как поле выглядит; тип значения (`kind`) — что из него
+декодируется. `field.<представление>(...)` находит тип по представлению. Библиотека
+отдаёт только `attrs`; компонент под представление выбирает приложение в `resolve`
+(в демо — `src/lib/ui/demo/form/forms.config.ts`, примитивы — `#lib/ui/primitives`).
+
+| Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
+|---|---|---|---|
+| `text`, `email`, `url`, `tel`, `color`, `hidden` | `text` | `type` | `TextField` → `Input` |
+| `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления) |
+| `search` | `text` | `type="search"` | `SearchField` → `SearchInput` (крестик очистки после оживления) |
+| `otp` | `text` | `type="text" inputmode="numeric" autocomplete="one-time-code"` | `OtpField` → `OtpInput` (ячейки после оживления; число ячеек — из `v.maxLength(n)`, без него 6) |
+| `textarea` | `text` | — | `TextareaField` → `Textarea` |
+| `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления); `range` — свой компонент |
+| `date`, `time`, `datetime-local` | `date` / `time` / `datetime` | `type` | `TextField` → `Input` |
+| `select`, `radio` | `select` | — | `SelectField` → `Select` |
+| `multiselect` | `multiselect` | `multiple` | `SelectField` → `Select multiple` |
+| `checkbox` | `checkbox` | `type="checkbox" value="on"` | `CheckboxField` → `Checkbox` |
+| `switch` | `checkbox` | `type="checkbox" role="switch" value="on"` | `SwitchField` → `Switch` |
+| `file`, `files` | `file` / `files` | `type="file"` (`multiple`) | — |
+
+`otp` и `switch` — не новые типы значения, а представления существующих: код — это
+строка (длину и цифры задают правила `v.maxLength(6)`, `v.pattern({ source: '\\d{6}' })`,
+они же уходят в `maxlength`/`pattern`), переключатель — флажок с ролью `switch`.
+
+```ts
+invite: field.otp({ label: 'Код приглашения', validate: [v.maxLength(6), v.pattern({ source: '\\d{6}' })] }),
+digest: field.switch({ label: 'Присылать дайджест на почту' }),
+```
+
+Без JS всё перечисленное остаётся обычным элементом формы: кнопки показа пароля,
+шага числа, крестик и ячейки кода рисуются только после оживления.
 
 ## Каталог валидаторов
 

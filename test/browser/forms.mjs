@@ -132,13 +132,13 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
   await pg.fill('#signup-password', 'testtest1')
   await pg.waitForTimeout(200)
-  const weakText = await pg.locator('div:has(> input#signup-password) span[aria-live]').innerText()
+  const weakText = await pg.locator('div:has(> [data-password-input] > input#signup-password) span[aria-live]').innerText()
   ok('повтор слова с цифрой не считается надёжным',
     /слабый|средний/.test(weakText), weakText)
 
   await pg.fill('#signup-password', 'Tr0ub4dour&3')
   await pg.waitForTimeout(200)
-  const strongText = await pg.locator('div:has(> input#signup-password) span[aria-live]').innerText()
+  const strongText = await pg.locator('div:has(> [data-password-input] > input#signup-password) span[aria-live]').innerText()
   ok('знаки усиливают, а не мешают', /надёжный/.test(strongText), strongText)
 
   await pg.fill('#signup-password', '')
@@ -170,7 +170,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const demoStatus = await pg.locator('[aria-live="polite"]:has-text("Фактов:")').innerText()
   ok('«всё в общий» сразу переносит текущие ошибки наверх',
     /общих: [1-9]/.test(demoStatus)
-    && await pg.locator('div:has(> input#signup-password) p.text-destructive').count() === 0,
+    && await pg.locator('div:has(> [data-password-input] > input#signup-password) p.text-destructive').count() === 0,
     demoStatus)
   ok('побочный эффект mode записан в зеркало: селектор подсветки стал «по показу»',
     (await pg.locator('#invalid_from').inputValue()) === 'shown')
@@ -210,7 +210,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   const keys = await pg.locator('[data-row]').evaluateAll((els) => els.map((e) => e.dataset['row']))
   await pg.evaluate((k) => {
     const row = document.querySelector(`[data-row="${k}"]`)
-    row?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    row?.querySelector(':scope > button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   }, keys[0])
   await pg.waitForTimeout(300)
   ok('удалена именно своя строка', await rows() === 1
@@ -334,6 +334,79 @@ ok('без скрипта значения возвращаются', nojs.kept 
 ok('пути дают одинаковые ошибки',
   JSON.stringify(nojs.errors) === JSON.stringify(js.errors),
   `${nojs.errors.join('|')} против ${js.errors.join('|')}`)
+
+/* ── примитивы полей (ход 117): пароль с показом, число с шагом, код, переключатель, список ── */
+{
+  console.log('— примитивы полей формы —')
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 3000 } })
+  const pg = await ctx.newPage()
+  await pg.goto(BASE, { waitUntil: 'networkidle' })
+  await pg.waitForSelector('[data-password-input] button[aria-pressed]', { timeout: 20000 })
+
+  const pass = pg.locator('#signup-password')
+  await pass.fill('secret-123')
+  const eye = pg.locator('[data-password-input]:has(#signup-password) button[aria-pressed]')
+  await eye.click()
+  ok('пароль: глаз показывает введённое', await pass.getAttribute('type') === 'text')
+  ok('пароль: значение при показе не теряется', await pass.inputValue() === 'secret-123')
+  await eye.click()
+  ok('пароль: второй щелчок снова прячет', await pass.getAttribute('type') === 'password')
+
+  const age = pg.locator('#signup-age')
+  await age.fill('')
+  await pg.locator('[data-number-field]:has(#signup-age) [data-number-step="up"]').click()
+  ok('число: «+» с пустого начинает с min (18)', await age.inputValue() === '18', await age.inputValue())
+  await pg.locator('[data-number-field]:has(#signup-age) [data-number-step="up"]').click()
+  ok('число: «+» шагает на 1', await age.inputValue() === '19', await age.inputValue())
+  ok('число: «−» у границы min выключается после шага вниз',
+    await (async () => {
+      await pg.locator('[data-number-field]:has(#signup-age) [data-number-step="down"]').click()
+      return pg.locator('[data-number-field]:has(#signup-age) [data-number-step="down"]').isDisabled()
+    })())
+
+  ok('код: шесть ячеек из правила длины', await pg.locator('[data-otp-slot]').count() === 6)
+  const otp = pg.locator('#signup-invite')
+  await otp.pressSequentially('12a34')
+  ok('код: в поле попадают только цифры', await otp.inputValue() === '1234', await otp.inputValue())
+  // Дописываем до шести: иначе ошибка шаблона появится на уходе из поля и сдвинет
+  // разметку между нажатием и отпусканием мыши на следующем шаге.
+  await otp.pressSequentially('56')
+  ok('код: шесть цифр — без ошибки', await otp.inputValue() === '123456', await otp.inputValue())
+
+  const sw = pg.locator('#signup-digest')
+  ok('переключатель: роль switch', await sw.getAttribute('role') === 'switch')
+  await pg.locator('label[for="signup-digest"]').click()
+  ok('переключатель: подпись переключает', await sw.isChecked())
+
+  ok('интересы: нативный список — множественный',
+    await pg.locator('select[name="topics"]').evaluate((el) => el.multiple))
+  await ctx.close()
+
+  // Без JS: обычные поля, без кнопок оживления; сервер принимает новые значения.
+  const nctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 3000 } })
+  const npg = await nctx.newPage()
+  await npg.goto(BASE, { waitUntil: 'domcontentloaded' })
+  ok('без JS: у пароля нет глаза', await npg.locator('[data-password-input] button').count() === 0)
+  ok('без JS: у числа нет кнопок шага', await npg.locator('[data-number-step]').count() === 0)
+  ok('без JS: код — обычное поле с шаблоном',
+    await npg.locator('#signup-invite').getAttribute('pattern') === '\\d{6}'
+      && await npg.locator('[data-otp-slot]').count() === 0)
+  const post = (extra) => nctx.request.post(new URL('/form/submit', BASE).href, {
+    headers: { origin: new URL(BASE).origin },
+    multipart: {
+      __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
+      __form_submission: crypto.randomUUID(), intent: 'submit',
+      email: 'prim@example.com', password: 'longenough1', confirm: 'longenough1',
+      age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on', ...extra,
+    },
+  })
+  const good = await (await post({ invite: '123456', topics: 'tips', digest: 'on' })).json()
+  ok('сервер: код, интерес и переключатель принимаются', good.outcome === 'committed', JSON.stringify(good.errors ?? good.outcome))
+  const bad = await (await post({ invite: '12ab56' })).json()
+  ok('сервер: код не из цифр отклоняется правилом шаблона',
+    (bad.errors ?? []).some((e) => e.path === 'invite' && e.code === 'pattern'), JSON.stringify(bad.errors))
+  await nctx.close()
+}
 
 await browser.close()
 console.log(failed ? `\nпровалов: ${failed}` : '\nвсе проверки прошли')

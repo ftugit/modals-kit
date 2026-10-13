@@ -341,7 +341,10 @@ import { Button } from '#lib/ui/primitives/index.js'
           <Field of={form.f.card} />
           <Field of={form.f.rating} />
           <Field of={form.f.about} />
+          <Field of={form.f.invite} />
+          <Field of={form.f.topics} />
         </div>
+        <Field of={form.f.digest} />
         <Field of={form.f.agree} />
 
         <!-- повторяемая группа: ключи стабильны, индекс — производное -->

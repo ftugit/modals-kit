@@ -73,6 +73,22 @@ function make(cardinality: 'first' | 'all') {
         validate: [luhn()],
       }),
       about: field.textarea({ label: 'О себе', validate: [v.maxLength(200)] }),
+      // Представления со своими примитивами: код (ячейки), множественный выбор,
+      // переключатель. Число ячеек кода берётся из правила длины.
+      invite: field.otp({
+        label: 'Код приглашения',
+        help: 'Необязательно: шесть цифр из письма',
+        validate: [v.maxLength(6), v.pattern({ source: '\\d{6}' })],
+      }),
+      topics: field.multiselect({
+        label: 'Интересы',
+        options: [
+          { value: 'news', label: 'Новости' },
+          { value: 'tips', label: 'Советы' },
+          { value: 'events', label: 'События' },
+        ],
+      }),
+      digest: field.switch({ label: 'Присылать дайджест на почту' }),
       // повторяемая группа: ключ строки стабилен, индекс — производное
       'items.r1.sku': field.text({ label: 'Артикул', validate: [v.maxLength(16)] }),
       'items.r1.qty': field.number({ label: 'Количество', validate: [v.minValue(1), v.maxValue(99)] }),
