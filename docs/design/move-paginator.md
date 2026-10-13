@@ -52,7 +52,10 @@ const search = usePaginatorSearch(name, {
   disabled: () => searchOff,
   reason: () => searchOffReason,
 })
-// → { form, field, value, disabled, reason }
+// → { form, field, value, disabled, reason, hydrated, resetHref, clear }
+//   hydrated  — страница ожила: до этого (и без JS) разметка показывает «Найти»
+//               и ссылку «Сбросить»; после — только поле с крестиком (ход 116)
+//   resetHref — текущий адрес без запроса и указателя страницы
 ```
 
 ## Шаги
@@ -77,9 +80,10 @@ const search = usePaginatorSearch(name, {
         внешней смене запроса, выключение до оживления. Тексты (`label`,
         `placeholder`) — параметрами, в хуке своих текстов нет.
   - [ ] Экспорт `usePaginatorSearch` из `src/lib/ui/paginator/index.ts`.
-  - [ ] `SearchBar.svelte` (пока в `demo/paginator`): `<Form>` + `Input` из
-        `#lib/ui/primitives`, кнопки, причина выключения; тексты — нынешние, без
-        изменений.
+  - [ ] `SearchBar.svelte` (пока в `demo/paginator`): `<Form>` + `SearchInput`
+        из `#lib/ui/primitives` (крестик очистки), «Найти» и ссылка «Сбросить»
+        только до оживления, причина выключения; тексты — нынешние, без изменений.
+        Поведение уже есть в `SearchQueryForm` (ход 116) — переносится как есть.
   - [ ] `DemoPaginator.svelte` → `SearchBar`; удалить `SearchQueryForm.svelte`.
   - [ ] Проверки: `gate.sh` (layer-guard: поле только из примитивов/`lib/form`);
         `rickmorty.mjs`, `shikimori.mjs` (поиск); `source-switch.mjs` (поле пустеет

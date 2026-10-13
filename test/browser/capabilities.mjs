@@ -145,6 +145,22 @@ async function run() {
       noJs.locator('[data-native-fallback] button[type="submit"]').first().click(),
     ]);
     assert(new URL(noJs.url()).searchParams.get('page.ls') === 'true', 'GET-fallback потерял page.ls=true');
+
+    // Поиск без JS: «Найти» — GET-отправка, «Сбросить» — ссылка на адрес без запроса
+    // (кнопка type="reset" без JS вернула бы поле к тому же запросу из разметки).
+    console.log('— Поиск без JS: «Найти» и «Сбросить»-ссылка —');
+    await noJs.goto(`${U}?page.src=products&page.size=5&page.q=product%207&${QUIET}`, { waitUntil: 'networkidle' });
+    assert(await noJs.locator('[data-testid="search-submit"]').isVisible(), 'без JS нет кнопки «Найти»');
+    assert((await noJs.locator('[data-search-clear]').count()) === 0, 'крестик очистки без JS не работает — его быть не должно');
+    const clearLink = noJs.locator('a[data-testid="search-clear"]');
+    const clearHref = new URL((await clearLink.getAttribute('href')) ?? '', U);
+    assert(!clearHref.searchParams.has('page.q'), `ссылка сброса несёт запрос: ${clearHref.search}`);
+    assert(clearHref.searchParams.get('page.size') === '5', `ссылка сброса потеряла чужой ключ: ${clearHref.search}`);
+    await Promise.all([noJs.waitForNavigation({ waitUntil: 'networkidle' }), clearLink.click()]);
+    assert(!new URL(noJs.url()).searchParams.has('page.q'), `без JS сброс не снял запрос: ${new URL(noJs.url()).search}`);
+    assert((await noJs.locator('[data-testid="search-input"]').inputValue()) === '', 'без JS поле после сброса не пустое');
+    assert((await noJs.locator('a[data-testid="search-clear"]').count()) === 0, 'без запроса ссылке сброса нечего снимать');
+    console.log('  ok  без JS: «Найти» есть, «Сбросить» — ссылка без page.q, чужие ключи целы');
     await noJs.close();
 
     const page = await browser.newPage({ viewport: { width: 1280, height: 1200 } });
@@ -226,7 +242,10 @@ async function run() {
     assert(url.get('page.src') === 'photos', `выбор источника не записался: ${search(page)}`);
 
     assert(await input.isDisabled(), 'поле запроса обязано быть выключенным');
-    assert(await page.locator('[data-testid="search-submit"]').isDisabled(), 'кнопка тоже выключена');
+    // С JS кнопок отправки и сброса нет (только до оживления); у выключенного поля
+    // нет и крестика очистки.
+    assert((await page.locator('[data-testid="search-submit"]').count()) === 0, 'с JS кнопки «Найти» быть не должно');
+    assert((await page.locator('[data-search-clear]').count()) === 0, 'у выключенного поля нет крестика');
     const title = await input.getAttribute('title');
     assert(
       /не поддерживает поиск/.test(title ?? ''),
@@ -295,6 +314,25 @@ async function run() {
       'контролов фильтров у источника без фильтров быть не должно',
     );
     console.log('  ok  панели нет, ключ снят сменой источника, выдача не сужена');
+
+    // ── 3б. Крестик очистки в поле (с JS): снимает запрос сразу, без кнопок ──
+    console.log('— Поиск с JS: крестик очистки, кнопок нет —');
+    await page.goto(`${U}?page.src=products&page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
+    await page.waitForSelector(`${HOST} [data-testid="card-1"]`);
+    assert((await page.locator('[data-testid="search-submit"]').count()) === 0, 'с JS кнопки «Найти» быть не должно');
+    assert((await page.locator('a[data-testid="search-clear"]').count()) === 0, 'с JS ссылки «Сбросить» быть не должно');
+    const live = page.locator('[data-testid="search-input"]');
+    await live.fill('product 7');
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('page.q') === 'product 7', null, {
+      timeout: 15000,
+    });
+    const cross = page.locator('[data-search-clear]');
+    assert(await cross.isVisible(), 'у заполненного поля нет крестика очистки');
+    await cross.click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('page.q'), null, { timeout: 15000 });
+    assert((await live.inputValue()) === '', `крестик не очистил поле: «${await live.inputValue()}»`);
+    assert((await cross.count()) === 0, 'у пустого поля крестик остался');
+    console.log('  ok  с JS: дебаунс пишет page.q, крестик снимает его и чистит поле');
 
     // ── 4. То же в localStorage: смена источника снимает запрос из записи ──
     console.log('— Переключение источника в localStorage-хранилище —');

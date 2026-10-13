@@ -7,9 +7,9 @@
   // хранилища. Ключ объявления — адресный (`page.q`), в стор он ложится как `q`.
   import { onMount, untrack } from 'svelte'
   import { defineForm, field, v } from '#lib/form/index.js'
-  import { Input } from '#lib/ui/primitives/index.js'
+  import { SearchInput } from '#lib/ui/primitives/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
-  import { currentSearch } from '#lib/router/sveltekit.js'
+  import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
   import { getClientStore, setExtra } from '#lib/paginate/index.js'
   import { normalizeSearchQuery } from '#lib/search/index.js'
 
@@ -147,6 +147,17 @@
       .filter(([key]) => key !== path && key !== 'page')
       .map(([key, val]) => [key, String(val)] as const),
   )
+
+  /**
+   * «Сбросить» до оживления и без JS — ссылка на тот же адрес без запроса и без
+   * указателя страницы (как «Сбросить» у формы фильтров). Кнопка сброса формы
+   * (`type="reset"`) без JS вернула бы поле к значению из разметки, т. е. к тому
+   * же запросу, — поиск не очистился бы. С JS сброс — крестик в самом поле.
+   */
+  const resetHref = $derived.by(() => {
+    const qs = new URLSearchParams(preserved.map(([key, val]) => [key, val])).toString()
+    return qs ? `${currentPathname()}?${qs}` : currentPathname()
+  })
 </script>
 
 <!--
@@ -167,42 +178,47 @@
     stopTimer()
     if (!disabled) form.commit()
   }}
-  onreset={(event) => {
-    event.preventDefault()
-    clear()
-  }}
 >
-  <Input
-    {...vf.attrs}
-    type="search"
-    data-testid="search-input"
-    disabled={hydrated && disabled}
-    {value}
-    placeholder="Тайтл: «наруто», «naruto», «нарута»"
-    aria-label="Поиск по каталогу"
-    title={disabled ? hint : undefined}
-    class="h-9 min-w-56 flex-1 rounded-lg border border-border bg-background px-3 text-sm shadow-xs placeholder:text-muted-foreground disabled:opacity-50"
-    oninput={onInput}
-  />
+  <!-- Поле с крестиком очистки: крестик появляется после оживления (сброс — работа
+       JS); `type="search"` и прятанье родного крестика браузера — в примитиве. -->
+  <div class="flex min-w-56 flex-1">
+    <SearchInput
+      {...vf.attrs}
+      data-testid="search-input"
+      disabled={hydrated && disabled}
+      {value}
+      placeholder="Тайтл: «наруто», «naruto», «нарута»"
+      aria-label="Поиск по каталогу"
+      clearLabel="Очистить поиск"
+      title={disabled ? hint : undefined}
+      oninput={onInput}
+      onClear={clear}
+    />
+  </div>
   {#if disabled && hint}
     <!-- Причина стоит в потоке формы последней строкой: видно рядом с полем,
          которое не принимает ввод. -->
     <span class="order-last w-full text-xs text-muted-foreground" data-field-hint>{hint}</span>
   {/if}
-  <button
-    type="submit"
-    data-testid="search-submit"
-    {disabled}
-    class="h-9 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent disabled:opacity-50"
-  >
-    Найти
-  </button>
-  <button
-    type="reset"
-    data-testid="search-clear"
-    disabled={disabled || !value}
-    class="h-9 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent disabled:opacity-50"
-  >
-    Сбросить
-  </button>
+  <!-- С JS поле применяется само (дебаунс), Enter — сразу: кнопки нужны только до
+       оживления и без JS (тот же флаг, что у панели настроек, `submitVisible`). -->
+  {#if !hydrated}
+    <button
+      type="submit"
+      data-testid="search-submit"
+      {disabled}
+      class="h-9 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent disabled:opacity-50"
+    >
+      Найти
+    </button>
+    {#if fromAddress}
+      <a
+        href={resetHref}
+        data-testid="search-clear"
+        class="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent"
+      >
+        Сбросить
+      </a>
+    {/if}
+  {/if}
 </Form>
