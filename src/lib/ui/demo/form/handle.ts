@@ -6,15 +6,19 @@
 // Отдельная точка входа: серверные слои не должны попасть в браузерный бандл.
 import type { RequestEvent } from '@sveltejs/kit'
 import {
-  createFormHandler, MemoryIdempotencyStore, windowThrottle, type Handled,
+  createFormHandler, storeIdempotency, windowThrottle, type Handled,
 } from '#lib/form/server.js'
+import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '#lib/form/index.js'
 import './extend'
 import { appMessages, checks } from './extend'
 import { resolveDescription, signup } from './signup'
 
-const idempotency = new MemoryIdempotencyStore()
+// Бронь отправки — в памяти процесса: этой форме база не нужна, и общая бронь
+// сделала бы сервер БД её единственной зависимостью (см. `#lib/server/cache.ts`).
+// Потолок — с запасом на отправки за сутки (срок брони и результата).
+const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', { max: 10_000 }))
 // Лимит — на адрес клиента (F18): `getClientAddress()` учитывает настройки
 // адаптера (ADDRESS_HEADER/XFF_DEPTH), сырой x-forwarded-for не читается.
 // Маршрут обязан передать event: без него ключ бросает, а не сводит всех в одно окно.
@@ -23,8 +27,10 @@ const throttle = windowThrottle<RequestEvent>({
   key: (_request, event) => event!.getClientAddress(),
 })
 
-const created: string[] = []
-export const createdCount = () => created.length
+// Счётчик созданных — число, а не список адресов: список рос без предела и держал
+// в памяти введённые email.
+const demo = localStore.scope('demo-form:stats', { max: 16 })
+export const createdCount = (): number => demo.get<number>('created') ?? 0
 
 /**
  * Разворот описания по фактическому составу данных — серверная половина
@@ -71,7 +77,7 @@ function handlerFor(description: typeof signup) {
     async execute({ values, intent, commit }) {
       // служебные действия ничего не создают: набор полей меняет адаптер
       if (intent !== 'submit' && intent !== 'save-draft') { commit(); return {} }
-      created.push(String(values['email']))
+      demo.incr('created', Infinity)
       commit()
       return { data: { email: values['email'] } }
     },

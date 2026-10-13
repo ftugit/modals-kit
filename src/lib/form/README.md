@@ -653,6 +653,21 @@ defineForm({ id: 'signup', policy, fields: { /* … */ } })
 она держится до `IDEMPOTENCY_RESERVE_MS`. `MemoryIdempotencyStore` реализует
 бронь и вычищает просроченные записи — он годится для одного процесса.
 
+`storeIdempotency(store)` строит то же хранилище поверх любого объекта с
+`get`/`set`/`delete` и атомарным `add` (`IdempotencyKv`): например, области
+`memoryStore` из `#lib/cache` или сетевого хранилища с тем же контрактом. Бронь —
+это `add`, поэтому у общего для инстансов хранилища и защита от дубля общая.
+Хранилище без `add` отвергается сразу при подключении: эмуляция через
+`get` + `set` пропустила бы параллельный дубль. У хранилища с потолком запись
+может уйти раньше срока, поэтому потолок берут с запасом на отправки за сутки.
+
+```ts
+import { storeIdempotency } from '#lib/form/server.js'
+import { localStore } from '#lib/server/cache.js'
+
+const idempotency = storeIdempotency(localStore.scope('signup:idempotency', { max: 10_000 }))
+```
+
 Частота: `windowThrottle({ limit, windowMs, key })` отказывает до чтения тела.
 `key` обязателен — умолчания «по адресу клиента» нет, потому что сырой
 `x-forwarded-for` задаёт сам клиент. Ключ — заголовок, который перезаписывает

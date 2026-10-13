@@ -266,6 +266,60 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   get size() { return this.#map.size }
 }
 
+/**
+ * Минимум, который нужен брони от внешнего хранилища: атомарное «записать, если
+ * пусто» и обычные чтение, запись, удаление. По форме совпадает с `AtomicStore`
+ * из `#lib/cache` (подходит его `memoryStore` и любое сетевое хранилище с тем же
+ * контрактом), но lib/form от него не зависит: годится любой объект с этими
+ * методами.
+ */
+export interface IdempotencyKv {
+  get<T>(key: string): Promise<T | undefined> | T | undefined
+  set<T>(key: string, value: T, ttlMs: number): Promise<void> | void
+  /** Атомарно: записать, только если ключа нет. `true` — записали. */
+  add<T>(key: string, value: T, ttlMs: number): Promise<boolean> | boolean
+  delete(key: string): Promise<void> | void
+}
+
+type KvRecord = { result: Result } | { result?: undefined; pending: true }
+
+/**
+ * `IdempotencyStore` поверх внешнего хранилища. Бронь — атомарный `add`, поэтому
+ * параллельный дубль получает `busy`, даже если хранилище общее для нескольких
+ * инстансов (тогда и защита общая).
+ *
+ * Хранилище с потолком (память процесса) может вытеснить запись раньше срока —
+ * тогда повтор, пришедший после вытеснения, выполнится заново. Потолок выбирают с
+ * запасом на число отправок за `IDEMPOTENCY_TTL_MS`.
+ * @param store Хранилище с атомарным `add`; проверяется при подключении.
+ * @returns Хранилище брони с `reserve`/`release`.
+ */
+export function storeIdempotency(store: IdempotencyKv): IdempotencyStore {
+  if (typeof store?.add !== 'function')
+    throw new TypeError('[form] storeIdempotency: нужно хранилище с атомарным add — без него параллельный дубль выполнится дважды')
+  const read = async (key: SubmissionId) => (await store.get<KvRecord>(key)) ?? undefined
+  return {
+    async get(key) {
+      return (await read(key))?.result
+    },
+    async put(key, result, ttlMs) {
+      await store.set<KvRecord>(key, { result }, ttlMs)
+    },
+    async reserve(key, ttlMs) {
+      if (await store.add<KvRecord>(key, { pending: true }, ttlMs)) return { status: 'reserved' }
+      const hit = await read(key)
+      // Ключ мог истечь между add и get: «занято» безопаснее, повтор придёт снова.
+      return hit?.result ? { status: 'done', result: hit.result } : { status: 'busy' }
+    },
+    async release(key) {
+      // Снимает только бронь без результата. Результат пишет тот же запрос, что
+      // держит бронь, поэтому между чтением и удалением его никто не подменит.
+      const hit = await read(key)
+      if (hit && !hit.result) await store.delete(key)
+    },
+  }
+}
+
 export interface ThrottleVerdict { allowed: boolean; retryAfterMs?: number }
 /**
  * Ограничитель частоты. `event` — контекст запроса фреймворка, который маршрут

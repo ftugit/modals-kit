@@ -2,7 +2,8 @@
 import { describe as suite, expect, test, vi } from 'vitest'
 import { buildEnvelope, createAppSource, defineForm, makeFieldSugar } from './index'
 import { v } from './validators'
-import { createFormHandler, MemoryIdempotencyStore, windowThrottle, type IdempotencyStore } from './server'
+import { createFormHandler, MemoryIdempotencyStore, storeIdempotency, windowThrottle, type IdempotencyStore } from './server'
+import { memoryStore } from '../cache/index'
 import { check, CheckRegistry } from './async'
 import { evaluate } from './submit'
 import { formRenderer } from './messages-order'
@@ -162,6 +163,40 @@ suite('идемпотентность: параллельный повтор (F1
     now = 61_000
     expect(store.reserve('fresh' as never, 1000)).toEqual({ status: 'reserved' })
     expect(store.size).toBe(1)
+  })
+
+  test('storeIdempotency поверх memoryStore: параллельный дубль — 409, поздний повтор — прежний результат', async () => {
+    let runs = 0
+    const g = gate()
+    const h = createFormHandler({
+      description: base, idempotency: storeIdempotency(memoryStore().scope('form')),
+      execute: async (c) => { runs++; await g.p; c.commit(); return { data: runs } },
+    })
+    const env = envelopeOf()
+    const first = h(post({ ...env, name: 'a' }))
+    const second = await h(post({ ...env, name: 'a' }))
+    expect(second.status).toBe(409)
+    g.open()
+    expect((await first).status).toBe(200)
+    expect((await h(post({ ...env, name: 'a' }))).result.data).toBe(1)
+    expect(runs).toBe(1)
+  })
+
+  test('storeIdempotency: «не применено» снимает бронь, результат — нет', async () => {
+    const kv = memoryStore()
+    const store = storeIdempotency(kv)
+    expect(await store.reserve!('k1' as never, 1000)).toEqual({ status: 'reserved' })
+    await store.release!('k1' as never)
+    expect(kv.get('k1')).toBeUndefined()
+    await store.reserve!('k2' as never, 1000)
+    await store.put('k2' as never, { ok: true, status: 200, outcome: 'committed', errors: [] } as never, 1000)
+    await store.release!('k2' as never)
+    expect(await store.get('k2' as never)).toMatchObject({ outcome: 'committed' })
+  })
+
+  test('storeIdempotency без атомарного add — ошибка при подключении', () => {
+    const plain = { get: () => undefined, set: () => {}, delete: () => {} }
+    expect(() => storeIdempotency(plain as never)).toThrow(/атомарным add/)
   })
 
   test('reserve без release — ошибка конфигурации', () => {

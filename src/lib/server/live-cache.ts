@@ -14,16 +14,21 @@
  *   • любая запись в демо поднимает `generation`, и все записи памяти до неё
  *     считаются недействительными сразу — не «когда истечёт TTL».
  *
- * Память на процесс: на нескольких инстансах у каждого своя, и потеря равна
- * одному лишнему 200 — не ошибке. Хранится ОДНА строка на ключ (отпечаток), тело
- * не держим: у 304 тела нет.
+ * Память на процесс (`localStore`, а не общее хранилище: смысл 304 — ответить без
+ * ввода-вывода, поход по сети съел бы выигрыш). На нескольких инстансах у каждого
+ * своя память, и запись на одном не сбрасывает память другого: тот может ответить
+ * устаревшим 304, но не дольше TTL (1,5 с — один тик опроса), либо лишним 200.
+ * Хранится ОДНА строка на ключ (отпечаток), тело не держим: у 304 тела нет.
  */
+import { localStore } from '#lib/server/cache.js'
+
 const TTL_MS = 1_500
 const MAX_ENTRIES = 64
 
 type Entry = { etag: string; at: number; generation: number }
 
-const entries = new Map<string, Entry>()
+// Потолок и вытеснение «самого старого» — у области хранилища.
+const entries = localStore.scope('live-cache:db-posts', { max: MAX_ENTRIES })
 let generation = 0
 
 /** Вызывается из приёмной формы после `commit()`: с этого мгновения память пуста. */
@@ -52,7 +57,7 @@ export async function fingerprint(text: string): Promise<string> {
  * для эха (304 обязан его нести) либо `null`.
  */
 export function revalidate(key: string, header: string | null, now = Date.now()): string | null {
-  const entry = entries.get(key)
+  const entry = entries.get<Entry>(key)
   if (!entry) return null
   if (entry.generation !== generation || now - entry.at > TTL_MS) {
     entries.delete(key)
@@ -62,13 +67,8 @@ export function revalidate(key: string, header: string | null, now = Date.now())
 }
 
 export function remember(key: string, etag: string, now = Date.now()): void {
-  if (entries.size >= MAX_ENTRIES && !entries.has(key)) {
-    // Вытеснение «самого старого», а не «первого попавшегося»: Map хранит порядок
-    // вставки, и этого достаточно — точный LRU здесь стоит дороже, чем даёт.
-    const oldest = entries.keys().next()
-    if (!oldest.done) entries.delete(oldest.value)
-  }
-  entries.set(key, { etag, at: now, generation })
+  // Срок хранилища — уборка; решает проверка `now - at` в `revalidate`.
+  entries.set<Entry>(key, { etag, at: now, generation }, TTL_MS)
 }
 
 /** Только для проб и самопроверки: сколько ключей держится в памяти. */
