@@ -167,6 +167,20 @@ test('аудит сверяет счётчики групп и число опе
   assert.ok(!fixed.some((p) => p.includes('оператор')), fixed.join('\n'))
 })
 
+test('итог групп — отдельное число в контексте итога, а не подстрока', () => {
+  const base = {
+    readme: README,
+    sources: Object.fromEntries(Object.values(ENTRIES).map((f) => [f, 'export const createDb = 1; export const s = 1; export const make = 1; export const DbFailure = 1; export const conservativeLimits = 1'])),
+    groups: [['db-lib', 16], ['db-structure', 7]],
+  }
+  const totalProblem = (porting) => auditDocs({ ...base, porting }).some((p) => p.includes('суммарное число'))
+  // 23 внутри 123 и в номере строки — не итог.
+  assert.equal(totalProblem('db-lib 16 групп, db-structure 7, всего 123'), true)
+  assert.equal(totalProblem('db-lib 16 групп, db-structure 7; см. `x.ts:23`'), true)
+  assert.equal(totalProblem('db-lib 16 групп, db-structure 7, всего 23'), false)
+  assert.equal(totalProblem('db-lib 16 групп, db-structure 7. ИТОГО 23 группы'), false)
+})
+
 test('аудит ловит ссылку на несуществующий файл, если вызывающий подтверждает отсутствие', () => {
   const problems = auditDocs({
     readme: README + '\nСм. `src/lib/db/query/missing.ts`.\n',

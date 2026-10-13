@@ -19,10 +19,6 @@
     "vite.config.ts"
   ],
   "exclude": [
-    "tooling/**/*",
-    // Перенесённые сценарии lib/db (101 тип-ошибка: намеренно неверные входы и
-    // нетипизированный JS-порт). Типизация — в чек-листе docs/audit/lib-db.md (C10-db),
-    // после поиска багов lib/db. Рантайм-прогон: db-ported.test.ts в vitest.
-    "src/lib/db/test/ported/**/*"
+    "tooling/**/*"
   ]
 }

@@ -329,7 +329,10 @@ export function auditDocs(input) {
     if (!ok) note(`рядом с «${name}» в README/PORTING нет числа ${n} (найдено: ${found.join(', ') || 'нет'})`)
     total += tolerant ? Math.min(n, found[0] ?? n) : n
   }
-  if (total && !allDocs.includes(String(total))) note(`суммарное число групп (${total}) не упоминается в документации`)
+  // Итог ищется как отдельное число в контексте итога («всего 23», «ИТОГО 91», «91 группа»),
+  // а не подстрокой: иначе 91 «находится» внутри 191 или номера строки.
+  const totalRe = new RegExp(`(?:всего|итого)\\D{0,20}?(?<!\\d)${total}(?!\\d)|(?<!\\d)${total}\\s+групп`, 'iu')
+  if (total && !totalRe.test(allDocs)) note(`суммарное число групп (${total}) не упоминается в документации`)
 
   /* 7. Миграции: заявленное число операторов совпадает с фактическим. */
   if (input.splitSqlStatements) {

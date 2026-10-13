@@ -139,7 +139,7 @@ return schema.gate(driver, { onReport })
    Тесты на PGlite: каждый вид изменения, два «экземпляра» параллельно.
 3. ✅ `schema_pending` (503) в `FAILURE_STATUS`/`toKitError`; драйвер из `gate` отказывает до снятия конфликта.
 4. UI-компонент и серверное действие (по решениям 1–2); перенос порциями.
-5. ✅ README `lib/db` §6. ⬜ Строка «для Preview — свой `DATABASE_URL`» в `.env.example`.
+5. ✅ README `lib/db` §6. ✅ Строка «для Preview — свой `DATABASE_URL`» в `.env.example`.
 
 ## Не сделано / ограничения (ход 53)
 

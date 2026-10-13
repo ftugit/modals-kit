@@ -2,9 +2,11 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
+// Типы — статическим импортом: `F` — значение динамического импорта, не пространство имён.
+import type { DbFailure } from "../fixture.ts";
 const F = await import("../fixture.ts");
-const checks = [];
-async function test(name, fn) {
+const checks: string[] = [];
+async function test(name: string, fn: () => Promise<void>) {
   await fn();
   checks.push(name);
   console.log('PASS', name);
@@ -25,9 +27,10 @@ try {
           ...F.blogs,
           policy: {
             ...F.blogs.policy,
-            select: () => invalid,
-            update: () => invalid,
-            delete: () => invalid,
+            // Намеренно неверные ответы политики: отказ проверяется в рантайме.
+            select: () => invalid as never,
+            update: () => invalid as never,
+            delete: () => invalid as never,
           },
         }),
       );
@@ -39,12 +42,12 @@ try {
     assert.ok((await api.blog.select(a)).length);
     const child = F.defineResource({
       ...F.authors,
-      policy: { ...F.authors.policy, select: () => null },
+      policy: { ...F.authors.policy, select: () => null as never },
     });
     const included = db.resource(
       F.defineResource({
         ...F.blogs,
-        relations: { author: { ...F.blogs.relations.author, resource: child } },
+        relations: { author: { ...F.blogs.relations!.author!, resource: child } },
       }),
     );
     await assert.rejects(() => included.select(a, { include: ['author'] }));
@@ -56,7 +59,7 @@ try {
       Promise.reject(Error('invalid async policy')),
     ]) {
       const r = db.resource(
-        F.defineResource({ ...F.blogs, policy: { ...F.blogs.policy, insert: () => invalid } }),
+        F.defineResource({ ...F.blogs, policy: { ...F.blogs.policy, insert: () => invalid as never } }),
       );
       await assert.rejects(() => r.insert(a, { title: 'must not insert' }));
     }
@@ -65,7 +68,8 @@ try {
         ...F.blogs,
         fields: {
           ...F.blogs.fields,
-          title: { ...F.blogs.fields.title, update: () => Promise.resolve(true) },
+          // Намеренно неверное право поля: асинхронный ответ запрещён.
+          title: { ...F.blogs.fields.title, update: (() => Promise.resolve(true)) as never },
         },
       }),
     );
@@ -109,7 +113,9 @@ try {
     assert.equal((await api.blog.get(a, row.id)).title, 'outer committed');
   });
   await test('A14 reject NaN, hidden toJSON/toPostgres and accessors before fingerprint; valid change works', async () => {
-    for (const change of [
+    // Черновик с массивом `tags`: хуки ниже намеренно портят его разными способами.
+    type Draft = { tags: unknown[] };
+    const changes: Array<(draft: Draft) => void> = [
       (draft) => {
         draft.tags[0] = NaN;
       },
@@ -133,7 +139,8 @@ try {
           },
         });
       },
-    ]) {
+    ];
+    for (const change of changes) {
       const r = F.defineResource({
         ...F.blogs,
         fields: {
@@ -143,18 +150,18 @@ try {
             create: ['author'],
           }),
         },
-        hooks: { beforeWrite: ({ draft }) => change(draft) },
+        hooks: { beforeWrite: ({ draft }) => change(draft as unknown as Draft) },
       });
       await assert.rejects(
         () => db.resource(r).insert(a, { title: 'invalid hook output', tags: [null] }),
-        (e) => e.kind === 'validation',
+        (e: DbFailure) => e.kind === 'validation',
       );
     }
     const valid = F.defineResource({
       ...F.blogs,
       hooks: {
         beforeWrite: ({ draft }) => {
-          draft.tags = ['x'];
+          draft!.tags = ['x'];
         },
       },
     });
@@ -194,12 +201,12 @@ try {
       'COMMIT_TAG',
       'ROLLBACK',
     ]) {
-      const sql = [];
+      const sql: string[] = [];
       let notices = 0,
-        released,
+        released: unknown,
         once = false;
       const connection = {
-        async query(text) {
+        async query(text: string) {
           sql.push(text);
           if (text === 'BROKEN')
             throw Object.assign(Error('business SQL failure'), { code: '23514' });
@@ -219,12 +226,13 @@ try {
             command: text === 'COMMIT' && fault === 'COMMIT_TAG' ? 'ROLLBACK' : text.split(' ')[0],
           };
         },
-        release(value) {
+        release(value: unknown) {
           released = value;
         },
       };
       const fake = F.createDb({
-        driver: F.pgAdapter({ connect: async () => connection, query: connection.query }),
+        // Поддельный пул: только `connect` и `query`, остального `Pool` тесту не нужно.
+        driver: F.pgAdapter({ connect: async () => connection, query: connection.query } as never),
         limits: F.conservativeLimits,
       });
       await assert.rejects(() =>

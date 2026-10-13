@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { Pool } from "pg";
+// Типы — статическим импортом: `F` — значение динамического импорта, не пространство имён.
+import type { DbFailure } from "../fixture.ts";
 const F = await import("../fixture.ts");
 const url = process.env.DB_HARDENING_PG_URL;
 if (url) {
@@ -10,11 +12,15 @@ if (url) {
   assert.ok(["127.0.0.1", "localhost", ""].includes(parsed.hostname));
   assert.equal(parsed.searchParams.get("host"), "/tmp");
 }
-const engine = url
+// Две ветки движка с разными типами клиента: `pool` есть только при `url`,
+// `lite` — только без него (C10-db: раньше одно `engine: PGlite | Pool`).
+const pool = url
   ? new Pool({ connectionString: url, max: 4, connectionTimeoutMillis: 2000 })
-  : new PGlite();
-const sql = (text, values) => engine.query(text, values);
-const exec = (text) => (url ? engine.query(text) : engine.exec(text));
+  : undefined;
+const lite = url ? undefined : new PGlite();
+const sql = async (text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> =>
+  url ? pool!.query(text, values) : lite!.query<Record<string, unknown>>(text, values);
+const exec = (text: string) => (url ? pool!.query(text) : lite!.exec(text));
 if (url)
   assert.equal(
     (
@@ -27,12 +33,12 @@ if (url)
   );
 const migration = await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), "utf8");
 await exec(migration);
-const driver = url ? F.pgAdapter(engine) : F.pgliteAdapter(engine),
+const driver = url ? F.pgAdapter(pool!) : F.pgliteAdapter(lite!),
   db = F.createDb({ driver, limits: F.conservativeLimits });
 const ctx = { principal: { id: crypto.randomUUID(), roles: ["author"] } },
   api = F.createProbeApi(db);
-const checks = [];
-async function test(name, fn) {
+const checks: string[] = [];
+async function test(name: string, fn: () => Promise<void>) {
   await fn();
   checks.push(name);
   console.log("PASS", name);
@@ -96,7 +102,7 @@ try {
     const query =
       "EXPLAIN (COSTS OFF) SELECT id,created_at FROM db_probe.blog WHERE deleted_at IS NULL ORDER BY created_at DESC NULLS LAST,id ASC NULLS LAST LIMIT 20";
     assert.ok(
-      !(await sql(query)).rows.some((r) => /Sort/.test(r["QUERY PLAN"])),
+      !(await sql(query)).rows.some((r) => /Sort/.test(r["QUERY PLAN"] as string)),
     );
     await exec(
       await readFile(new URL("../../migrations/002-db-probe-page-index.sql", import.meta.url), "utf8"),
@@ -105,7 +111,7 @@ try {
       await readFile(new URL("../../migrations/002-db-probe-page-index.sql", import.meta.url), "utf8"),
     );
     assert.ok(
-      !(await sql(query)).rows.some((r) => /Sort/.test(r["QUERY PLAN"])),
+      !(await sql(query)).rows.some((r) => /Sort/.test(r["QUERY PLAN"] as string)),
     );
     await sql("RESET enable_seqscan");
   });
@@ -140,12 +146,12 @@ try {
     const before = await api.blog.count(ctx);
     await assert.rejects(
       () => r.insert(ctx, { title: "Must rollback", active: false }),
-      (e) => e.kind === "validation",
+      (e: DbFailure) => e.kind === "validation",
     );
     assert.equal(await api.blog.count(ctx), before);
     await assert.rejects(
       () => r.update(ctx, row.id, { active: false }),
-      (e) => e.kind === "validation",
+      (e: DbFailure) => e.kind === "validation",
     );
     assert.equal((await r.get(ctx, row.id)).active, true);
   });
@@ -211,8 +217,8 @@ try {
           observerTimeoutMs: value,
         }),
       );
-    let release;
-    const pending = new Promise((r) => {
+    let release!: () => void;
+    const pending = new Promise<void>((r) => {
       release = r;
     });
     const original = Error("SQL failure");
@@ -230,49 +236,50 @@ try {
     try {
       await assert.rejects(
         () => guarded.query({ text: "unused" }),
-        (e) => e.cause === original,
+        (e: DbFailure) => e.cause === original,
       );
     } finally {
       release();
     }
   });
   await test("A17 native adapter bounds admissions and expires idle transaction callbacks", async () => {
-    let released;
+    let released: unknown;
     const c = {
-      query: async (text) => ({
+      query: async (text: string) => ({
         rows: [],
         rowCount: 0,
         command: text.split(" ")[0],
       }),
-      release: (v) => {
+      release: (v: unknown) => {
         released = v;
       },
     };
     for (const value of [0, -1, NaN, 2 ** 31])
-      assert.throws(() => F.pgAdapter({ connect: async () => c }, 1, value));
-    const d = F.pgAdapter({ connect: async () => c }, 1, 15);
+      // Поддельный пул: только `connect`, остального `Pool` тесту не нужно.
+      assert.throws(() => F.pgAdapter({ connect: async () => c } as never, 1, value));
+    const d = F.pgAdapter({ connect: async () => c } as never, 1, 15);
     const first = assert.rejects(
       () => d.transaction(async () => new Promise(() => {})),
-      (e) => e.kind === "transaction",
+      (e: DbFailure) => e.kind === "transaction",
     );
     await assert.rejects(
       () => d.transaction(async () => {}),
-      (e) => e.kind === "unavailable",
+      (e: DbFailure) => e.kind === "unavailable",
     );
     await first;
     assert.equal(released, true);
   });
   if (url)
     await test("A11 real PostgreSQL failed control statement rolls back; actual COMMIT tag is checked", async () => {
-      const pool = engine;
+      const native = pool!;
       let notices = 0;
       const wrapped = {
-        query: pool.query.bind(pool),
+        query: native.query.bind(native),
         async connect() {
-          const c = await pool.connect();
+          const c = await native.connect();
           return {
             release: c.release.bind(c),
-            query: (text, values) =>
+            query: (text: string, values?: unknown[]) =>
               c.query(
                 text.startsWith("SAVEPOINT ") ? "SELECT 1/0" : text,
                 values,
@@ -281,7 +288,8 @@ try {
         },
       };
       const guarded = F.createDb({
-        driver: F.pgAdapter(wrapped),
+        // Обёртка над настоящим пулом: только `query` и `connect`.
+        driver: F.pgAdapter(wrapped as never),
         limits: F.conservativeLimits,
       });
       const before = await api.blog.count(ctx);
@@ -310,14 +318,14 @@ try {
           await tx.afterCommit(() => {
             notices++;
           });
-          await engine.query("SELECT pg_terminate_backend($1)", [pid]);
+          await native.query("SELECT pg_terminate_backend($1)", [pid]);
           await new Promise(() => {});
         }),
       );
       assert.equal(notices, 0);
       assert.equal(await api.blog.count(ctx), before);
       // Настоящий backend отвечает ROLLBACK на COMMIT в aborted transaction.
-      const c = await pool.connect();
+      const c = await native.connect();
       try {
         await c.query("BEGIN");
         try {
@@ -329,8 +337,8 @@ try {
       }
     });
 } finally {
-  if (url) await engine.end();
-  else await engine.close();
+  if (url) await pool!.end();
+  else await lite!.close();
 }
 console.log(
   "Followup groups:",

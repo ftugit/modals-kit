@@ -18,7 +18,11 @@
   **Вопрос владельцу:** вне `paths` ставить гостевой `dbCtx` (как сейчас в `dbHandle`) или
   не трогать запрос вовсе (как сейчас в хуке).
 
-- [ ] **C10-db — типизация перенесённых сценариев.** `src/lib/db/test/ported/*.script.ts`
+- [x] **C10-db — типизация перенесённых сценариев.** ИСПРАВЛЕНО (ход 83): исключение убрано
+  из `tsconfig.json`, `svelte-check` — 0 ошибок, сценарии в vitest зелёные (db-lib, db-hardening,
+  db-followup). Клиент движка разделён на `pool`/`lite`; неверные входы негативных проверок —
+  `as never` с комментарием; `after = p.nextCursor ?? undefined` с пометкой DB-3 (тип не
+  менялся — нужно согласие). Было: `src/lib/db/test/ported/*.script.ts`
   исключены из `tsconfig.json` (101 ошибка: `db-followup` 38, `db-lib` 37,
   `db-hardening` 26). Остальной C10 закрыт: тесты и `tooling/db-docs.mjs` проверяются.
   Состав: нетипизированный JS-порт (неявный `any`, `catch (e)` без сужения, `PGlite | Pool`

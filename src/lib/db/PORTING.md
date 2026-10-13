@@ -183,9 +183,9 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
 1. `npm run build` — сборка приложения: слой компилируется вместе с ним (никакого
    `dist`/`fix-esm` больше нет, `.js`-суффиксы в относительных импортах не нужны:
    `moduleResolution: bundler` из `$app/tsconfig`), и сборка же прогоняет `tooling/layer-guard.mjs`.
-2. `npm run check` = `svelte-kit sync && svelte-check` → **0 ошибок** (46 warning'ов —
-   все предсуществующие в `modals-kit`, в `src/lib/paginate`; тесты слоя исключены из
-   `check` так же, как тесты `#lib/form/index.js`).
+2. `npm run check` = `svelte-kit sync && svelte-check` → **0 ошибок**. Тесты слоя, включая
+   перенесённые сценарии `test/ported/*.script.ts`, входят в проверку типов (C10 — ход 43,
+   C10-db — ход 83); намеренно неверные входы негативных проверок помечены `as never`.
 3. Реальный браузер (`playwright` 1.64 + chromium) на `/db-demo`: SSR 7 строк без JS →
    невалидный `title` = `role=alert` + `aria-invalid` + строка не вставлена → валидный =
    `role=status` + 8 строк + запись в выдаче → delete через `use:enhance` = 6 → 5 →

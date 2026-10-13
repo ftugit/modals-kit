@@ -190,12 +190,6 @@ export function createModals<V = unknown>(
    */
   const HEADLESS = Symbol('headless')
 
-  const lockedTop = (chain: Chain): boolean => {
-    const top = chain[chain.length - 1]
-    return top ? top.overrides.lock === true : false
-  }
-  const hasLocked = (chain: Chain): boolean => chain.some((e) => e.overrides.lock === true)
-
   /**
    * Единственная точка записи цепочки.
    *

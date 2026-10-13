@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { Pool } from "pg";
+// Типы — статическим импортом: `F` — значение динамического импорта, не пространство имён.
+import type { Database, DbFailure, FailureKind } from "../fixture.ts";
 const F = await import("../fixture.ts");
 const native = process.env.DB_LIB_TEST_PG_URL;
-const pg = native
-  ? new Pool({ connectionString: native, max: 4 })
-  : new PGlite();
+// Две ветки движка с разными типами клиента: `pool` есть только при `native`,
+// `lite` — только без него (C10-db: раньше одно `pg: PGlite | Pool`).
+const pool = native ? new Pool({ connectionString: native, max: 4 }) : undefined;
+const lite = native ? undefined : new PGlite();
 if (native) {
-  const existing = await pg.query(
+  const existing = await pool!.query(
     "SELECT to_regnamespace('db_probe') AS found",
   );
   assert.equal(
@@ -18,11 +21,11 @@ if (native) {
   );
 }
 await (native
-  ? pg.query(await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), "utf8"))
-  : pg.exec(await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), "utf8")));
+  ? pool!.query(await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), "utf8"))
+  : lite!.exec(await readFile(new URL("../../migrations/001-db-probe.sql", import.meta.url), "utf8")));
 let errors = 0,
   queries = 0;
-const driver = native ? F.pgAdapter(pg) : F.pgliteAdapter(pg),
+const driver = native ? F.pgAdapter(pool!) : F.pgliteAdapter(lite!),
   query = driver.query.bind(driver);
 driver.query = (...args) => {
   queries++;
@@ -57,12 +60,12 @@ const a = {
   editor = { principal: { id: a.principal.id, roles: ["editor"] } },
   guest = { principal: { roles: [] } };
 let passed = 0;
-async function test(name, fn) {
+async function test(name: string, fn: () => Promise<void>) {
   await fn();
   passed++;
   console.log("\u2713 " + name);
 }
-const rejects = (fn, kind) =>
+const rejects = (fn: () => Promise<unknown>, kind: FailureKind) =>
   assert.rejects(fn, (e) => e instanceof F.DbFailure && e.kind === kind);
 try {
   await test("author setup and canonical decimal/bigint/date/array/json", async () => {
@@ -186,16 +189,17 @@ try {
     );
     await rejects(() => api.blog.select(a, { limit: 101 }), "validation");
     await rejects(() => api.blog.select(a, { page: 0 }), "validation");
-    let nested = true;
+    // Намеренно неверный вход: вложенность сверх предела проверяется в рантайме.
+    let nested: unknown = true;
     for (let i = 0; i < 10; i++) nested = { not: nested };
-    await rejects(() => api.blog.select(a, { filter: nested }), "validation");
+    await rejects(() => api.blog.select(a, { filter: nested as never }), "validation");
   });
   await test("singular include uses one SQL and target field/row ACL", async () => {
     queries = 0;
     const result = await api.blog.select(a, { include: ["author"] });
     assert.equal(queries, 1);
-    assert.equal(result[0].author.name, "Alice");
-    assert.ok(!("private_note" in result[0].author));
+    assert.equal(result[0]!.author!.name, "Alice");
+    assert.ok(!("private_note" in result[0]!.author!));
     const hiddenAuthors = F.defineResource({
       ...F.authors,
       policy: { ...F.authors.policy, select: () => false },
@@ -228,29 +232,32 @@ try {
       [["published_at", "asc"]],
       [["published_at", "desc"]],
       [["created_at", "desc"]],
-    ]) {
+    ] as const) {
       const ids = [];
-      let after;
+      let after: string | undefined;
       do {
         const p = await api.blog.cursor(a, { limit: 2, order, after });
         ids.push(...p.items.map((x) => x.id));
-        after = p.nextCursor;
+        // DB-3 (открыто): `nextCursor` — `string | null`, а `after` принимает только
+        // `string | undefined`, поэтому естественное `after = p.nextCursor` не проходит типы.
+        after = p.nextCursor ?? undefined;
       } while (after);
       assert.equal(ids.length, 6);
       assert.equal(new Set(ids).size, 6);
     }
     const p = await api.blog.cursor(a, { limit: 2 });
-    await rejects(() => api.blog.cursor(b, { after: p.nextCursor }), "cursor");
+    await rejects(() => api.blog.cursor(b, { after: p.nextCursor! }), "cursor");
     await rejects(
-      () => api.blog.cursor(a, { after: p.nextCursor.slice(0, -3) + "ABC" }),
+      () => api.blog.cursor(a, { after: p.nextCursor!.slice(0, -3) + "ABC" }),
       "cursor",
     );
     await rejects(
-      () => api.blog.cursor(a, { after: p.nextCursor, fields: ["title"] }),
+      () => api.blog.cursor(a, { after: p.nextCursor!, fields: ["title"] }),
       "cursor",
     );
+    // Намеренно неверный вход: у `select` нет `after`, отказ — в рантайме.
     await rejects(
-      () => api.blog.select(a, { after: p.nextCursor }),
+      () => api.blog.select(a, { after: p.nextCursor } as never),
       "validation",
     );
     let now = 100000;
@@ -280,7 +287,7 @@ try {
   });
   await test("rollback/savepoint and escaped transaction handle", async () => {
     const before = await api.blog.count(a);
-    let escaped;
+    let escaped: Database | undefined;
     await assert.rejects(() =>
       db.transaction(async (tx) => {
         escaped = tx;
@@ -289,7 +296,7 @@ try {
       }),
     );
     assert.equal(await api.blog.count(a), before);
-    await rejects(() => escaped.query({ text: "SELECT 1" }), "transaction");
+    await rejects(() => escaped!.query({ text: "SELECT 1" }), "transaction");
     await db.transaction(async (tx) => {
       await tx.resource(F.blogs).insert(a, { title: "outer committed" });
       await assert.rejects(() =>
@@ -320,7 +327,7 @@ try {
       ...F.blogs,
       hooks: {
         beforeWrite: ({ draft }) => {
-          draft.title = "hook normalized";
+          draft!.title = "hook normalized";
         },
         afterWrite: async ({ db }) => {
           await db.query({ text: "SELECT 1" });
@@ -364,7 +371,7 @@ try {
         ...F.blogs,
         hooks: {
           beforeWrite: ({ draft }) => {
-            draft.owner_id = b.principal.id;
+            draft!.owner_id = b.principal.id;
           },
         },
       }),
@@ -394,7 +401,7 @@ try {
     );
     await assert.rejects(
       () => committed.insert(a, { title: "committed notification failure" }),
-      (e) => e.kind === "post_commit" && e.details.committed === true,
+      (e: DbFailure) => e.kind === "post_commit" && e.details.committed === true,
     );
     assert.equal(await api.blog.count(a), n + 1);
   });
@@ -432,7 +439,7 @@ try {
     const before = errors;
     await assert.rejects(
       () => api.author.insert(a, { name: "duplicate" }),
-      (e) => e.kind === "conflict" && e.details.sqlstate === "23505",
+      (e: DbFailure) => e.kind === "conflict" && e.details.sqlstate === "23505",
     );
     assert.equal(errors, before + 1);
     const failure = F.normalizeFailure({
@@ -490,17 +497,17 @@ try {
     ])
       await assert.rejects(
         () => db.query({ text: sql }),
-        (e) => e.details.sqlstate === code,
+        (e: DbFailure) => e.details.sqlstate === code,
       );
     await assert.rejects(
       () => api.author.insert(editor, { name: "duplicate" }),
-      (e) =>
+      (e: DbFailure) =>
         e.details.publicFields?.[0] === "id" &&
         F.presentFailure(e).body.error.fields?.[0] === "id",
     );
     await assert.rejects(
       () => api.author.insert(a, { name: "duplicate" }),
-      (e) => e.details.publicFields === undefined,
+      (e: DbFailure) => e.details.publicFields === undefined,
     );
     const notify = db.resource(
       F.defineResource({
@@ -530,7 +537,7 @@ try {
         ...F.blogs,
         hooks: {
           beforeWrite: ({ before, draft }) => {
-            draft.sequence = (BigInt(before.sequence) + 1n).toString();
+            draft!.sequence = (BigInt(before!.sequence as string) + 1n).toString();
           },
         },
       }),
@@ -543,7 +550,7 @@ try {
     assert.equal((await api.blog.get(a, record.id)).sequence, "12");
     if (native)
       assert.ok(
-        pg.totalCount > 1,
+        pool!.totalCount > 1,
         "Native concurrency must use multiple sessions",
       );
   });
@@ -575,7 +582,7 @@ try {
         },
         hooks: {
           beforeWrite: ({ draft }) => {
-            draft.meta.nested.safe = false;
+            (draft!.meta as { nested: { safe: boolean } }).nested.safe = false;
           },
         },
       }),
@@ -587,6 +594,6 @@ try {
   });
   console.log(`\nDB lib: ${passed} groups passed`);
 } finally {
-  if (native) await pg.end();
-  else await pg.close();
+  if (native) await pool!.end();
+  else await lite!.close();
 }
