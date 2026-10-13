@@ -30,6 +30,11 @@ function optional<T>(check: Check<T>): StandardSchemaV1<string | undefined, T | 
 
 const text = optional((value) => ({ value }))
 
+/** Секрет, который подбирают перебором: короче 32 символов — отказ запуска. */
+const secret = optional((value) =>
+  value.length >= 32 ? { value } : { message: `нужно не короче 32 символов, задано ${value.length}` },
+)
+
 const positiveInteger = optional((value) => {
   const n = Number(value)
   return /^\d+$/.test(value) && Number.isSafeInteger(n) && n >= 1
@@ -77,6 +82,11 @@ export const variables = defineEnvVars({
   VERCEL: {
     schema: text,
     description: 'Задаёт платформа Vercel; влияет на значение DB_POOL_MAX по умолчанию.',
+  },
+  DB_ADMIN_TOKEN: {
+    schema: secret,
+    description:
+      'Секрет кнопки «Выполнить» на экране переноса схемы (/db-demo), не короче 32 символов. Без него перенос по кнопке выключен.',
   },
 
   // ── Указатель следующего шага (`?page.after`) ──

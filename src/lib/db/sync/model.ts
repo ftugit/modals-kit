@@ -19,8 +19,11 @@ export interface ColumnSpec {
  */
 export interface ObjectSpec {
   name: string;
-  kind: "check" | "index" | "unique";
-  /** Для `check` — выражение; для индексов — полный `CREATE … INDEX`. */
+  kind: "check" | "index" | "unique" | "foreign";
+  /**
+   * Для `check` — выражение; для индексов — полный `CREATE … INDEX`; для `foreign` —
+   * `FOREIGN KEY (…) REFERENCES … ON DELETE …`.
+   */
   sql: string;
   /** Колонки, на которые объект опирается. */
   columns: readonly string[];
@@ -135,7 +138,7 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
   const prefix = name.slice(0, 50);
   const objects: ObjectSpec[] = [];
   const named = async (kind: ObjectSpec["kind"], body: string) =>
-    `${prefix}_${{ check: "ck", index: "ix", unique: "ux" }[kind]}_${(await sha256(kind + "\n" + qualified + "\n" + body)).slice(0, 8)}`;
+    `${prefix}_${{ check: "ck", index: "ix", unique: "ux", foreign: "fk" }[kind]}_${(await sha256(kind + "\n" + qualified + "\n" + body)).slice(0, 8)}`;
   for (const c of checks)
     objects.push({ kind: "check", name: await named("check", c.expr), sql: c.expr, columns: c.columns });
 
@@ -159,6 +162,20 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
   for (const [k, f] of Object.entries(r.fields)) if (f.db?.unique) await index("unique", [ident(colOf(k))]);
   for (const keys of r.db?.unique ?? []) await index("unique", keys.map((k) => ident(colOf(k))));
   for (const keys of r.db?.indexes ?? []) await index("index", keys.map((k) => ident(colOf(k))));
+  for (const [k, f] of Object.entries(r.fields)) {
+    const ref = f.db?.references;
+    if (!ref) continue;
+    const target = ref.resource();
+    if (!target?.fields || !target.table) fail("validation", k, [`${r.key}.${k}: db.references.resource() вернул не ресурс`]);
+    const targetKey = ref.field ?? target.primaryKey;
+    if (!target.fields[targetKey]) fail("validation", k, [`${r.key}.${k}: у ${target.key} нет поля ${targetKey}`]);
+    const tParts = target.table.split(".");
+    const tQualified = ident(tParts.length > 1 ? tParts[0]! : "public") + "." + ident(tParts[tParts.length - 1]!);
+    const body =
+      `FOREIGN KEY (${ident(colOf(k))}) REFERENCES ${tQualified} (${ident(target.fields[targetKey]!.column ?? targetKey)})` +
+      ` ON DELETE ${(ref.onDelete ?? "no action").toUpperCase()}`;
+    objects.push({ kind: "foreign", name: await named("foreign", body), sql: body, columns: [colOf(k)] });
+  }
 
   const fingerprint = (
     await sha256(JSON.stringify({ qualified, pk, columns, objects: objects.map((o) => o.name) }))

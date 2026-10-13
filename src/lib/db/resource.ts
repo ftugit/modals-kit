@@ -46,7 +46,8 @@ function managedConstraints(r: Resource): Promise<Map<string, { kind: 'unique' |
       .then((spec) => {
         const out = new Map<string, { kind: 'unique' | 'check'; fields: string[] }>();
         for (const o of spec.objects)
-          if (o.kind !== 'index')
+          // внешние ключи сюда не идут: «нет такой записи» — не ошибка значения поля
+          if (o.kind === 'unique' || o.kind === 'check')
             out.set(o.name, { kind: o.kind, fields: o.columns.map((c) => byColumn.get(c)).filter((k): k is string => !!k) });
         return out;
       })

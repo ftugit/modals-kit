@@ -12,6 +12,10 @@ export interface FormState {
   readonly values: Readonly<Record<string, unknown>>   // снимок для рендера; истина — DOM
   readonly dirty: Readonly<Record<FieldPath, boolean>>
   readonly touched: Readonly<Record<FieldPath, boolean>>
+  /**
+   * Сколько отправок начато через перехват (привязка увеличивает в начале `submit`).
+   * Нужно для «показывать ошибки поля после первой попытки»; итог отправки — `status`.
+   */
   readonly submitCount: number
   /** ФАКТ: ошибки как они есть. Отсюда поле берёт «я невалидно». */
   readonly facts: readonly FormError[]

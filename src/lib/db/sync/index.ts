@@ -17,6 +17,11 @@
  *    каждый запрос `schema_pending` (503) и перед этим перепроверяет `kit_schema`:
  *    когда расхождение снимут (на этом или другом экземпляре), запросы пойдут сами.
  *
+ * 4. Конфликт снимает человек: `sync(driver, { resolve })` — тот же прогон под той же
+ *    блокировкой, но с решениями по конфликтным шагам (`stepKey` → `choices(step)`).
+ *    Что выполнено по решению — в `report.resolved`. Шаги без SQL (нужен перенос
+ *    данных) решением не снимаются: их снимает правка модели или данных.
+ *
  * Отпечаток таблицы записывается, только когда у неё не осталось конфликтов. Изменение
  * схемы мимо моделей (ручной ALTER) при совпавшем отпечатке не замечается — как и у
  * WordPress, сверка идёт по версии, записанной в самой БД.
@@ -47,13 +52,38 @@ export interface SchemaReport {
   status: "ok" | "pending";
   /** Что выполнено сейчас (пусто при быстрой проверке). */
   applied: readonly Step[];
+  /** Конфликтные шаги, выполненные по решению человека (`sync(driver, { resolve })`). */
+  resolved: readonly Step[];
   /** Блокирует запросы до решения человеком. */
   conflicts: readonly Step[];
   /** Не блокирует, но ждёт решения. */
   notices: readonly Step[];
 }
+/**
+ * Решение по конфликтному шагу: `apply` — выполнить предложенный SQL (у шагов с
+ * потерей данных — удалить колонку, сменить тип); `rename`/`replace` — у
+ * `rename_or_replace`: переименовать старую колонку или удалить её и добавить новую.
+ */
+export type Choice = "apply" | "rename" | "replace";
+/** Решения по шагам: ключ — `stepKey(step)`. */
+export type Resolution = Readonly<Record<string, Choice>>;
+
+/** Устойчивый ключ шага: по нему экран решений и сервер говорят об одном шаге. */
+export function stepKey(step: Step): string {
+  return `${step.kind}:${step.table}:${step.column ?? ""}`;
+}
+/** Какие решения возможны у шага. Пусто — само не снять: нужна правка модели или данных. */
+export function choices(step: Step): readonly Choice[] {
+  if (step.level === "auto") return [];
+  if (step.kind === "rename_or_replace") return ["rename", "replace"];
+  // уникальный индекс на данных с повторами упадёт: сначала убрать повторы
+  if (step.kind === "unique_duplicates") return [];
+  return step.sql.length ? ["apply"] : [];
+}
+
 export interface DbSchema {
-  sync(driver: Driver): Promise<SchemaReport>;
+  /** `resolve` — решения человека по конфликтам и ожидающим шагам (см. `choices`). */
+  sync(driver: Driver, options?: { resolve?: Resolution }): Promise<SchemaReport>;
   /**
    * `sync` + драйвер, который при конфликтах отвечает `schema_pending`, пока их не снимут.
    * `onReport` — для журнала: что применено и чего ждём.
@@ -61,7 +91,7 @@ export interface DbSchema {
   gate(driver: Driver, options?: { onReport?: (report: SchemaReport) => void }): Promise<Driver>;
 }
 
-const OK: SchemaReport = Object.freeze({ status: "ok", applied: [], conflicts: [], notices: [] });
+const OK: SchemaReport = Object.freeze({ status: "ok", applied: [], resolved: [], conflicts: [], notices: [] });
 
 export function defineSchema(spec: SchemaSpec): DbSchema {
   if (!spec || !Array.isArray(spec.resources) || !spec.resources.length)
@@ -121,11 +151,13 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
     return true;
   }
 
-  async function sync(driver: Driver): Promise<SchemaReport> {
+  async function sync(driver: Driver, options: { resolve?: Resolution } = {}): Promise<SchemaReport> {
     if (!driver?.capabilities?.transactions)
       throw new DbFailure("unsupported", {}, new Error("defineSchema: нужен транзакционный драйвер (pg, PGlite, Hyperdrive)"));
     const { specs, want } = await prepare();
-    if (await upToDate(driver)) return OK;
+    const decisions = options.resolve ?? {};
+    const deciding = Object.keys(decisions).length > 0;
+    if (!deciding && (await upToDate(driver))) return OK;
     return driver.transaction(async (tx) => {
       const run = (text: string, values: unknown[] = []) => tx.query({ text, values });
       await run("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [kit]);
@@ -145,19 +177,37 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
           [kind, name, hash, JSON.stringify(detail)],
         );
       const applied: Step[] = [],
+        resolved: Step[] = [],
         conflicts: Step[] = [],
-        notices: Step[] = [];
+        notices: Step[] = [],
+        foreign: Step[] = [];
+      const used = new Set<string>();
       for (const s of specs) {
         const prev = have.get("table\0" + s.qualified);
         if (prev?.hash === s.fingerprint) continue;
         const detail = (typeof prev?.detail === "string" ? JSON.parse(prev.detail) : prev?.detail) as
           | { defaults?: Record<string, string | null> }
           | undefined;
-        const steps = await planTable(tx, s, detail);
-        for (const step of steps.filter((x) => x.level === "auto").sort(byOrder)) {
-          for (const text of step.sql) await run(text);
-          applied.push(step);
+        // План → автоматические шаги → решения человека → план заново: после
+        // переименования или удаления колонки появляются новые автоматические шаги
+        // (индексы на ней, добавление новой колонки). Внешние ключи — после всех таблиц.
+        let steps: Step[] = [];
+        for (let round = 0; round < 4; round++) {
+          steps = await planTable(tx, s, detail);
+          for (const step of steps.filter((x) => x.level === "auto" && x.kind !== "add_foreign").sort(byOrder)) {
+            for (const text of step.sql) await run(text);
+            applied.push(step);
+          }
+          const chosen = steps.filter((x) => x.level !== "auto" && decisions[stepKey(x)] !== undefined && !used.has(stepKey(x)));
+          if (!chosen.length) break;
+          for (const step of chosen) {
+            const key = stepKey(step);
+            used.add(key);
+            for (const text of decidedSQL(step, decisions[key]!)) await run(text);
+            resolved.push(step);
+          }
         }
+        foreign.push(...steps.filter((x) => x.kind === "add_foreign"));
         const blocking = steps.filter((x) => x.level === "conflict");
         conflicts.push(...blocking);
         notices.push(...steps.filter((x) => x.level === "notice"));
@@ -167,6 +217,15 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
             defaults: Object.fromEntries(s.columns.map((c) => [c.name, c.default])),
           });
       }
+      for (const step of foreign) {
+        for (const text of step.sql) await run(text);
+        applied.push(step);
+      }
+      const unknown = Object.keys(decisions).filter((k) => !used.has(k));
+      if (unknown.length)
+        // Решение по шагу, которого нет в плане: экран устарел (другой экземпляр уже
+        // применил или модель сменилась) — откат всего прогона, а не частичное применение.
+        throw new DbFailure("conflict", { issues: [`defineSchema: шагов больше нет в плане: ${unknown.join(", ")}`] });
       for (const step of spec.sql ?? []) {
         const hash = want.get("sql\0" + step.id)!;
         const prev = have.get("sql\0" + step.id);
@@ -183,6 +242,7 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
       return Object.freeze({
         status: conflicts.length ? "pending" : "ok",
         applied: Object.freeze(applied),
+        resolved: Object.freeze(resolved),
         conflicts: Object.freeze(conflicts),
         notices: Object.freeze(notices),
       }) as SchemaReport;
@@ -213,4 +273,15 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
   }
 
   return { sync, gate };
+}
+
+/** SQL по решению человека; решение, которого у шага нет, — отказ до выполнения. */
+function decidedSQL(step: Step, choice: Choice): readonly string[] {
+  if (!choices(step).includes(choice))
+    throw new DbFailure("validation", {
+      issues: [`defineSchema: решение «${String(choice)}» не подходит шагу ${stepKey(step)} (возможно: ${choices(step).join(", ") || "нет"})`],
+    });
+  if (step.kind === "rename_or_replace" && choice === "replace")
+    return [`ALTER TABLE ${step.table} DROP COLUMN ${ident(step.from!)}`];
+  return step.sql;
 }

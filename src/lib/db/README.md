@@ -605,6 +605,34 @@ CHECK/индексы) не трогаются. Изменение схемы м�
 (pg, PGlite, Hyperdrive); без транзакций — `unsupported`. Роль из `DATABASE_URL` должна
 иметь право `CREATE` на схему.
 
+**Внешние ключи.** `db: { references: { resource: () => authors, field?: 'id', onDelete?: 'no action' | 'restrict' | 'cascade' | 'set null' } }`
+у поля. Ключ (имя `<таблица>_fk_<хеш>`) добавляется после всех таблиц и `NOT VALID` — старые
+строки без пары не мешают открытию, новые проверяются; пропал из модели — удаляется.
+`set null` требует `nullable`; `field` по умолчанию — первичный ключ цели. У таблиц без ключей
+отпечаток прежний.
+
+**Решение конфликтов.** Конфликт снимает человек: правкой модели (или данных) либо решением —
+
+```ts
+import { choices, stepKey } from '#lib/db/sync/index.js'
+const report = await schema.sync(driver)          // что ждёт решения
+for (const step of report.conflicts) choices(step) // ['rename', 'replace'] | ['apply'] | [] — само не снять
+await schema.sync(driver, { resolve: { [stepKey(report.conflicts[0])]: 'rename' } })
+// report.resolved — что выполнено по решению; запросы отпускает без перезапуска
+```
+
+`rename` переименовывает колонку (данные остаются), `replace` удаляет старую и планирует заново
+(новая колонка может оказаться новым конфликтом), `apply` выполняет предложенный SQL (смена
+типа с приведением, удаление лишней колонки). Решение и автоматические шаги — одна
+транзакция: ключ шага, которого в свежем плане уже нет (схему успел поменять другой
+экземпляр), — `conflict`, неподходящее решение — `validation`, отказ БД — откат целиком.
+Дубли под уникальностью, `NULL` под `NOT NULL` и обязательная колонка без DEFAULT вариантов не
+имеют (`choices` → `[]`): их снимает правка данных или модели.
+
+Приложение показывает это экраном на страницах с БД (`src/lib/ui/demo/db-form/SchemaPending.svelte`):
+кнопка «Выполнить» спрашивает `DB_ADMIN_TOKEN` (`src/lib/server/schema-admin.ts` сверяет его
+за постоянное время до обращения к БД); без переменной кнопки нет, экран объясняет, что задать.
+
 ### SQL-файлы: `applyMigrationText`
 
 ```ts
@@ -699,14 +727,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 92 группы в шести файлах (на PGlite выполняются 91: одна группа требует
+Тесты слоя — 97 групп в шести файлах (на PGlite выполняются 96: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 18 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 23 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

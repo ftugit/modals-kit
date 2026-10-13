@@ -139,6 +139,18 @@ export interface ColumnOptions {
   default?: string;
   /** Уникальность. У ресурса с `softDelete` — среди неудалённых строк. */
   unique?: boolean;
+  /**
+   * Внешний ключ: значение поля — ключ записи другого ресурса. Ресурс задаётся
+   * функцией (ссылки бывают взаимными, порядок загрузки модулей не важен).
+   * `field` — поле цели (по умолчанию её `primaryKey`), `onDelete` — что делает БД при
+   * настоящем удалении цели (по умолчанию `no action`; мягкое удаление — `softDelete.children`).
+   */
+  references?: ColumnReference;
+}
+export interface ColumnReference {
+  resource: () => Resource;
+  field?: string;
+  onDelete?: "no action" | "restrict" | "cascade" | "set null";
 }
 /**
  * Что делать с дочерними записями при мягком удалении родителя.

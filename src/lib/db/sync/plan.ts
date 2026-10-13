@@ -20,9 +20,11 @@ export interface Step {
     | "drop_default"
     | "set_not_null"
     | "drop_check"
+    | "drop_foreign"
     | "drop_index"
     | "add_check"
     | "create_index"
+    | "add_foreign"
     | "run_sql"
     | "add_required_column"
     | "change_type"
@@ -51,10 +53,12 @@ const ORDER: Step["kind"][] = [
   "drop_default",
   "set_default",
   "set_not_null",
+  "drop_foreign",
   "drop_check",
   "drop_index",
   "add_check",
   "create_index",
+  "add_foreign",
 ];
 export const byOrder = (a: Step, b: Step) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind);
 
@@ -95,7 +99,9 @@ export async function planTable(
       if (!found) add({ level: "auto", kind: "create_schema", sql: [`CREATE SCHEMA IF NOT EXISTS ${ident(spec.schema)}`] });
     }
     add({ level: "auto", kind: "create_table", sql: [createTableSQL(spec)] });
-    for (const o of spec.objects) if (o.kind !== "check") add({ level: "auto", kind: "create_index", sql: [o.sql] });
+    for (const o of spec.objects)
+      if (o.kind === "foreign") add({ level: "auto", kind: "add_foreign", column: o.columns[0], sql: [addForeignSQL(t, o)] });
+      else if (o.kind !== "check") add({ level: "auto", kind: "create_index", sql: [o.sql] });
     return steps;
   }
 
@@ -203,11 +209,13 @@ export async function planTable(
 
   // Управляемые объекты: по имени (в нём хеш определения).
   const present = new Set([...cons.map((c) => c.name), ...indexes.map((i) => i.name)]);
-  const managed = new RegExp(`^${spec.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_(ck|ix|ux)_[0-9a-f]{8}$`);
+  const managed = new RegExp(`^${spec.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_(ck|ix|ux|fk)_[0-9a-f]{8}$`);
   const wanted = new Set(spec.objects.map((o) => o.name));
   for (const c of cons)
     if (c.type === "c" && managed.test(c.name) && !wanted.has(c.name))
       add({ level: "auto", kind: "drop_check", sql: [`ALTER TABLE ${t} DROP CONSTRAINT ${ident(c.name)}`] });
+    else if (c.type === "f" && managed.test(c.name) && !wanted.has(c.name))
+      add({ level: "auto", kind: "drop_foreign", sql: [`ALTER TABLE ${t} DROP CONSTRAINT ${ident(c.name)}`] });
   for (const i of indexes)
     if (managed.test(i.name) && !wanted.has(i.name))
       add({ level: "auto", kind: "drop_index", sql: [`DROP INDEX ${ident(spec.schema)}.${ident(i.name)}`] });
@@ -217,6 +225,7 @@ export async function planTable(
     if (o.columns.some((c) => !inDb.has(c) && !added.has(c))) continue;
     if (o.kind === "check")
       add({ level: "auto", kind: "add_check", sql: [`ALTER TABLE ${t} ADD CONSTRAINT ${ident(o.name)} CHECK (${o.sql}) NOT VALID`] });
+    else if (o.kind === "foreign") add({ level: "auto", kind: "add_foreign", column: o.columns[0], sql: [addForeignSQL(t, o)] });
     else if (o.kind === "index") add({ level: "auto", kind: "create_index", sql: [o.sql] });
     else if (
       // новая колонка с одинаковым DEFAULT у нескольких строк — дубли гарантированы
@@ -226,6 +235,15 @@ export async function planTable(
     else add({ level: "auto", kind: "create_index", sql: [o.sql] });
   }
   return steps;
+}
+
+/**
+ * Внешний ключ без проверки старых строк (`NOT VALID`), как и CHECK: новые и
+ * изменённые строки он проверяет сразу, а «сироты» из прошлого не роняют открытие БД.
+ * Выполняется после всех таблиц этого прогона: цель может создаваться в нём же.
+ */
+function addForeignSQL(t: string, o: ObjectSpec): string {
+  return `ALTER TABLE ${t} ADD CONSTRAINT ${ident(o.name)} ${o.sql} NOT VALID`;
 }
 
 async function duplicates(q: Query, t: string, o: ObjectSpec): Promise<boolean> {

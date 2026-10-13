@@ -65,6 +65,8 @@ const EXPLAIN: Record<string, string> = {
     'Курсор выключен: на сервере не задан DB_CURSOR_SECRET — подписывать токены нечем. Постраничный режим и остальные операции работают как раньше.',
   cursor:
     'Токен страницы недействителен или устарел (время жизни — DB_CURSOR_TTL_SECONDS, по умолчанию 30 минут). Начните с первой страницы.',
+  schema_pending:
+    'Модели разошлись со схемой базы — нужен перенос. Что изменится и кнопка «Выполнить» — на странице /db-demo.',
 }
 
 async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageResponse<DbPost>> {

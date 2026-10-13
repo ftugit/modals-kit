@@ -21,9 +21,11 @@ import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
 import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
 import { defineSchema } from '#lib/db/sync/index.js'
+import { DbFailure } from '#lib/db/index.js'
 import type { Database, Driver, Limits } from '#lib/db/index.js'
+import { createSchemaAdmin } from './schema-admin'
 import {
-  DATABASE_DIR, DATABASE_URL, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
+  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
   DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
 
@@ -122,7 +124,29 @@ const cursorCodec = (() => {
  * неудачное открытие не запоминается, следующий запрос пробует снова — один медленный
  * первый запрос (холодный контейнер, таймаут коннекта) не становится 500 до перезапуска.
  */
-export const db: Database = createDb({ driver: lazyDriver(openDriver), limits: LIMITS, cursorCodec })
+const lazy = lazyDriver(openDriver)
+export const db: Database = createDb({ driver: lazy, limits: LIMITS, cursorCodec })
+
+/** Открытый драйвер мимо `gate` — только для переноса схемы (`schemaAdmin`). */
+let raw: Driver | undefined
+
+/**
+ * Перенос схемы по кнопке: отчёт и решения под `DB_ADMIN_TOKEN`. БД открывается тем
+ * же `lazyDriver`, что и у запросов (одно соединение на процесс); при конфликте
+ * открытие проходит, а первый запрос отвечает `schema_pending` — это и ожидается.
+ */
+export const schemaAdmin = createSchemaAdmin({
+  schema,
+  token: DB_ADMIN_TOKEN,
+  async driver() {
+    if (!raw)
+      await lazy.query({ text: 'SELECT 1' }).catch((e) => {
+        if (!(e instanceof DbFailure && e.kind === 'schema_pending')) throw e
+      })
+    if (!raw) throw new DbFailure('unavailable')
+    return raw
+  },
+})
 
 async function openDriver(): Promise<Driver> {
   let driver: Driver
@@ -151,7 +175,8 @@ async function openDriver(): Promise<Driver> {
     }
     // Схема из моделей: недостающее создаётся само; конфликт не роняет открытие —
     // запросы отвечают `schema_pending`, пока его не снимут.
-    const gated = await schema.gate(close ? { ...driver, close } : driver, {
+    raw = close ? { ...driver, close } : driver
+    const gated = await schema.gate(raw, {
       onReport: (r) =>
         console[r.status === 'ok' ? 'info' : 'warn'](
           `[db] схема: применено ${r.applied.length}, конфликтов ${r.conflicts.length}, ждут решения ${r.notices.length}`,
@@ -171,6 +196,7 @@ async function openDriver(): Promise<Driver> {
     // Захваченный ресурс обязан быть отпущен и при отказе ПОСЛЕ захвата: каталог
     // PGlite остаётся с `.kit-db.lock`, и следующая попытка отвечала бы «stop its
     // owner» вместо настоящей причины.
+    raw = undefined
     await close?.()
     throw e
   }

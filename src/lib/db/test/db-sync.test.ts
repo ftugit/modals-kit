@@ -10,7 +10,7 @@ import { afterAll, it } from "vitest";
 import { createDb, defineResource, f, field, policy, s, DbFailure, conservativeLimits } from "../index";
 import { pgliteAdapter } from "../adapters/pglite";
 import { toKitError } from "../sveltekit/index";
-import { defineSchema } from "../sync/index";
+import { choices, defineSchema, stepKey } from "../sync/index";
 import type { Driver, Fields, Resource, SoftDeleteChild } from "../index";
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000);
@@ -502,4 +502,119 @@ test("ошибки полей: коды zod переводятся в коды �
   assert.deepEqual(got.step, ["step", { step: 5 }, undefined]);
   assert.equal(got.over![0], "invalid", "строгая граница gt не выдаётся за «не меньше»");
   assert.deepEqual(got.own, ["custom", undefined, "Только ok"]);
+});
+
+/* ── Решения человека по конфликтам (шаг 4) и внешние ключи ─────────────── */
+
+test("sync resolve: переименование сохраняет данные, gate снова пропускает запросы", () =>
+  withPg(async (pg, driver) => {
+    await defineSchema({ resources: [post({ name: field(s.text(), { ...open, nullable: true }) })] }).sync(driver);
+    await pg.query("INSERT INTO post (title, name) VALUES ('Запись', 'Иван')");
+    const next = defineSchema({ resources: [post({ label: field(s.text(), { ...open, nullable: true }) })] });
+    const gated = await next.gate(driver);
+    const db = createDb({ driver: gated, limits: conservativeLimits });
+    await assert.rejects(db.resource(post()).select(ctx), (e: unknown) => e instanceof DbFailure && e.kind === "schema_pending");
+
+    const pending = await next.sync(driver);
+    const step = pending.conflicts[0]!;
+    assert.deepEqual(choices(step), ["rename", "replace"]);
+    const done = await next.sync(driver, { resolve: { [stepKey(step)]: "rename" } });
+    assert.deepEqual([done.status, kinds(done.resolved)], ["ok", ["rename_or_replace:label"]]);
+    assert.deepEqual((await pg.query("SELECT label FROM post")).rows, [{ label: "Иван" }]);
+    assert.equal((await db.resource(post()).select(ctx)).length, 1);
+  }));
+
+test("sync resolve: «удалить и добавить» убирает старую колонку; обязательная новая на данных — снова конфликт", () =>
+  withPg(async (pg, driver) => {
+    await defineSchema({ resources: [post({ name: field(s.text(), { ...open, nullable: true }) })] }).sync(driver);
+    await pg.query("INSERT INTO post (title, name) VALUES ('Запись', 'Иван')");
+    const soft = defineSchema({ resources: [post({ label: field(s.text(), { ...open, nullable: true }) })] });
+    const key = stepKey((await soft.sync(driver)).conflicts[0]!);
+    const done = await soft.sync(driver, { resolve: { [key]: "replace" } });
+    assert.deepEqual([done.status, kinds(done.applied)], ["ok", ["add_column:label"]]);
+    assert.deepEqual((await pg.query("SELECT label FROM post")).rows, [{ label: null }]);
+    assert.deepEqual((await columns(pg)).map((c) => c.name), ["id", "title", "created_at", "label"]);
+
+    await defineSchema({ resources: [post({ name: field(s.text(), { ...open, nullable: true }) })] }).sync(driver, {
+      resolve: { [stepKey({ level: "conflict", kind: "rename_or_replace", table: '"public"."post"', column: "name", sql: [] })]: "rename" },
+    });
+    const hard = defineSchema({ resources: [post({ label: f.text({ ...open }) })] });
+    const k2 = stepKey((await hard.sync(driver)).conflicts[0]!);
+    const still = await hard.sync(driver, { resolve: { [k2]: "replace" } });
+    assert.deepEqual([still.status, kinds(still.conflicts)], ["pending", ["add_required_column:label"]]);
+  }));
+
+test("sync resolve: неподходящее решение и устаревший шаг — отказ, ничего не применено", () =>
+  withPg(async (pg, driver) => {
+    const nullable = post({ note: field(s.text(), { ...open, nullable: true }) });
+    await defineSchema({ resources: [nullable] }).sync(driver);
+    await pg.query("INSERT INTO post (title, note) VALUES ('С заметкой', '42')");
+    const typed = defineSchema({ resources: [post({ note: f.integer({ ...open, nullable: true }) })] });
+    const step = (await typed.sync(driver)).conflicts[0]!;
+    await assert.rejects(typed.sync(driver, { resolve: { [stepKey(step)]: "rename" } }), (e: unknown) =>
+      e instanceof DbFailure && e.kind === "validation");
+    await assert.rejects(typed.sync(driver, { resolve: { "change_type:\"public\".\"post\":nope": "apply" } }), (e: unknown) =>
+      e instanceof DbFailure && e.kind === "conflict");
+    assert.equal((await columns(pg)).find((c) => c.name === "note")!.type, "text");
+    // смена типа по решению: данные приведены
+    const done = await typed.sync(driver, { resolve: { [stepKey(step)]: "apply" } });
+    assert.deepEqual([done.status, kinds(done.resolved)], ["ok", ["change_type:note"]]);
+    assert.deepEqual((await pg.query("SELECT note FROM post")).rows, [{ note: 42 }]);
+  }));
+
+test("sync: внешний ключ из db.references — после всех таблиц, NOT VALID для старых строк, снимается вместе с моделью", () =>
+  withPg(async (pg, driver) => {
+    const author = defineResource({
+      key: "t.author",
+      table: "public.author",
+      primaryKey: "id",
+      fields: {
+        id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
+        name: field(s.text({ min: 1, max: 80 }), { ...open, create: () => true, required: true }),
+      },
+      policy: rules,
+      order: [["id", "asc"]],
+    } as Resource);
+    const plain = post({ author_id: f.uuid({ ...open, nullable: true }) });
+    await defineSchema({ resources: [plain, author] }).sync(driver);
+    await pg.query("INSERT INTO post (title, author_id) VALUES ('Сирота', gen_random_uuid())");
+
+    const linked = post({
+      author_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => author, onDelete: "set null" } } }),
+    });
+    // ссылающаяся таблица раньше цели — порядок ресурсов не важен
+    const report = await defineSchema({ resources: [linked, author] }).sync(driver);
+    assert.deepEqual([report.status, kinds(report.applied)], ["ok", ["add_foreign:author_id"]]);
+    const fk = async () =>
+      (await pg.query<{ name: string; def: string }>(
+        "SELECT conname AS name, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'post'::regclass AND contype = 'f'",
+      )).rows;
+    const [made] = await fk();
+    assert.match(made!.name, /^post_fk_[0-9a-f]{8}$/);
+    assert.match(made!.def, /REFERENCES author\(id\) ON DELETE SET NULL NOT VALID/);
+    await assert.rejects(pg.query("INSERT INTO post (title, author_id) VALUES ('Новая', gen_random_uuid())"), /foreign key/);
+    const [{ id }] = (await pg.query<{ id: string }>("INSERT INTO author (name) VALUES ('Аня') RETURNING id")).rows;
+    await pg.query("INSERT INTO post (title, author_id) VALUES ('Своя', $1)", [id]);
+    await pg.query("DELETE FROM author");
+    assert.deepEqual((await pg.query("SELECT count(*)::int AS n FROM post WHERE author_id IS NULL AND title = 'Своя'")).rows, [{ n: 1 }]);
+
+    // на пустой БД: CREATE TABLE обеих, внешний ключ последним
+    await pg.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+    const fresh = await defineSchema({ resources: [linked, author] }).sync(driver);
+    assert.equal(fresh.applied.at(-1)!.kind, "add_foreign");
+
+    const dropped = await defineSchema({ resources: [plain, author] }).sync(driver);
+    assert.deepEqual(kinds(dropped.applied), ["drop_foreign"]);
+    assert.deepEqual(await fk(), []);
+  }));
+
+test("defineResource: db.references проверяется при объявлении", () => {
+  const bad = (references: unknown, nullable = true) => () =>
+    post({ x: f.uuid({ ...open, nullable, db: { references } as never }) });
+  const says = (re: RegExp) => (e: unknown) =>
+    e instanceof DbFailure && (e.details.issues ?? []).some((x) => re.test(x));
+  assert.throws(bad({ resource: "author" }), says(/db\.references/));
+  assert.throws(bad({ resource: () => post(), onDelete: "drop" }), says(/onDelete/));
+  assert.throws(bad({ resource: () => post(), onDelete: "set null" }, false), says(/set null/));
+  return Promise.resolve();
 });

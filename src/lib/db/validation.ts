@@ -448,12 +448,23 @@ function checkShape(r: Resource): void {
     if (f.generated && f.required) push(`fields.${name}: generated + required — поле никогда не придёт от клиента`);
     if (f.immutable && f.update !== undefined) push(`fields.${name}: immutable + update-маска`);
     if (f.db !== undefined) {
-      if (!f.db || typeof f.db !== "object") push(`fields.${name}.db: обязан быть объектом { type?, default?, unique? }`);
+      if (!f.db || typeof f.db !== "object") push(`fields.${name}.db: обязан быть объектом { type?, default?, unique?, references? }`);
       else {
         for (const k of ["type", "default"] as const)
           if (f.db[k] !== undefined && (typeof f.db[k] !== "string" || !f.db[k]!.trim()))
             push(`fields.${name}.db.${k}: непустая строка`);
         if (f.db.unique !== undefined && typeof f.db.unique !== "boolean") push(`fields.${name}.db.unique: boolean`);
+        const ref = f.db.references;
+        if (ref !== undefined) {
+          if (!ref || typeof ref !== "object" || typeof ref.resource !== "function")
+            push(`fields.${name}.db.references: { resource: () => Resource, field?, onDelete? }`);
+          else {
+            if (ref.field !== undefined && (typeof ref.field !== "string" || !ref.field)) push(`fields.${name}.db.references.field: непустая строка`);
+            if (ref.onDelete !== undefined && !["no action", "restrict", "cascade", "set null"].includes(ref.onDelete))
+              push(`fields.${name}.db.references.onDelete: no action | restrict | cascade | set null`);
+            if (ref.onDelete === "set null" && !f.nullable) push(`fields.${name}.db.references: onDelete «set null» у поля без nullable`);
+          }
+        }
       }
     }
     if (f.messages !== undefined) {

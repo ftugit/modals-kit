@@ -12,11 +12,12 @@
  * лоадер больше не режет массив и не парсит `?limit` сам — второго источника
  * правды о показанной странице нет.
  */
-import { error, fail } from '@sveltejs/kit'
+import { error, fail, redirect } from '@sveltejs/kit'
 import { toKitError } from '#lib/db/sveltekit/index.js'
 import { loadDbListSnapshot } from '#lib/server/db-list.js'
 import type { Handled } from '#lib/form/server.js'
 import { failureHandled, handleDbCreate, handleDbRemove } from '#lib/ui/demo/db-form/handle.js'
+import { handleSchemaResolve, schemaScreen } from '#lib/ui/demo/db-form/schema-handle.js'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async (event) => {
@@ -26,9 +27,21 @@ export const load: PageServerLoad = async (event) => {
     // `name` лоадеру не нужен: страница его не выбирает — имя знает компонент
     // списка, а registration обязана жить и в клиентском бандле.
     const { snapshot } = await loadDbListSnapshot(event.url.href)
-    return { snapshot }
+    // Отказ списка ловит пагинатор (в снимке — `status: 'error'`). Только тогда
+    // спрашиваем схему: исправная страница лишнего запроса не платит, а
+    // `schema_pending` превращается в экран решений вместо строки «ошибка загрузки».
+    if (snapshot.status === 'error') {
+      const schema = await schemaScreen().catch(() => null)
+      if (schema) return { snapshot: null, schema }
+    }
+    return { snapshot, schema: null }
   } catch (e) {
     const kit = toKitError(e, import.meta.env.DEV)
+    // Модели разошлись со схемой — не ошибка страницы, а экран решений.
+    if (kit.body.code === 'schema_pending') {
+      const schema = await schemaScreen()
+      if (schema) return { snapshot: null, schema }
+    }
     throw error(kit.status, kit.body)
   }
 }
@@ -37,7 +50,7 @@ export const load: PageServerLoad = async (event) => {
  * Экшены выбирают только кодировку ответа — как в `src/routes/(site)/(app)/form`: у демо БД
  * и у демо форм один путь приёма.
  */
-async function act(intent: 'create' | 'remove', promise: Promise<Handled>) {
+async function act(intent: 'create' | 'remove' | 'schema', promise: Promise<Handled>) {
   try {
     const { result, status } = await promise
     // `intent` — чтобы страница подсадила результат ТОЙ форме, которая его
@@ -54,4 +67,10 @@ async function act(intent: 'create' | 'remove', promise: Promise<Handled>) {
 export const actions: Actions = {
   create: (event) => act('create', handleDbCreate(event.request, 'action', event.locals.dbCtx)),
   remove: (event) => act('remove', handleDbRemove(event.request, 'action', event.locals.dbCtx)),
+  // Перенос схемы: успех (или «решать уже нечего») — заново на страницу, где теперь список.
+  schema: async (event) => {
+    const handled = await handleSchemaResolve(event.request).catch((e) => failureHandled(e))
+    if (!handled || handled.result.ok) redirect(303, event.url.pathname)
+    return act('schema', Promise.resolve(handled))
+  },
 }

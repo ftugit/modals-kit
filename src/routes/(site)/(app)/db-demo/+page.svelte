@@ -23,6 +23,7 @@
   import { createOptimistic } from '#lib/ui/demo/db-list/optimistic.svelte.js'
   import CreateForm from '#lib/ui/demo/db-form/CreateForm.svelte'
   import RemoveForm from '#lib/ui/demo/db-form/RemoveForm.svelte'
+  import SchemaPending from '#lib/ui/demo/db-form/SchemaPending.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
   // тип выводит SvelteKit из `actions` (`PageProps['form']`).
@@ -65,9 +66,13 @@
   </p>
 {/if}
 
-<div class="grid gap-6 md:grid-cols-2">
-  <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
-  <RemoveForm seed={seed('remove')} onApplied={refreshList} />
-</div>
+{#if data.schema || !data.snapshot}
+  {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
+{:else}
+  <div class="grid gap-6 md:grid-cols-2">
+    <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
+    <RemoveForm seed={seed('remove')} onApplied={refreshList} />
+  </div>
 
-<DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
+  <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
+{/if}
