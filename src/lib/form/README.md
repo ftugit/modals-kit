@@ -510,12 +510,17 @@ registry.registerInstruction({
 ```ts
 const checks = new CheckRegistry()
 checks.register('email-taken', async (value, ctx) =>
-  ctx.signal.aborted || !(await isTaken(value)) ? null : issue('email.taken'))
+  ctx.signal.aborted || !(await isTaken(value)) ? null : issue('unique'))
 
-// в описании — обёртка с настройкой подавления
+// в описании — обёртка с настройкой подавления и свой текст кода
 email: field.email({ validate: [v.required(), v.email(),
-  check('email-taken', { debounceMs: 400, cacheByValue: true })] })
+  check('email-taken', { debounceMs: 400, cacheByValue: true })],
+  messages: { unique: 'Этот адрес уже занят' } })
 ```
+
+Код проверки лучше брать из словаря пакета (`unique`, `required`, …): у него уже
+есть текст, а свой текст поля — в `messages` поля. Свой код (`issue('email.taken')`)
+без текста в словаре формы или приложения показывается как есть.
 
 В браузере `AsyncRunner` даёт дебаунс, отмену предыдущей проверки того же поля
 и кэш по значению. Результат async-проверки заменяет только предыдущую

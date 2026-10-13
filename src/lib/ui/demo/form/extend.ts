@@ -100,21 +100,17 @@ export const checks = new CheckRegistry()
 
 const TAKEN = new Set(['taken@example.com', 'admin@example.com'])
 
+/**
+ * Код — `unique`, как у отказа базы по уникальности: у пакета для него есть
+ * текст, а свой текст поля задаётся в `messages` поля (`signup.ts`), так что
+ * отдельный словарь приложения не нужен (F57).
+ */
 checks.register('email-taken', async (value) => {
   await new Promise((r) => setTimeout(r, 200))      // как будто обращение к хранилищу
   return TAKEN.has(String(value ?? '').toLowerCase())
-    ? issue('email.taken', { email: value })
+    ? issue('unique', { email: value })
     : null
 })
-
-/**
- * Тексты СВОИХ кодов приложения — словарь приложения (README «Сообщения»).
- * Один модуль на обе стороны: `createConfig` в браузере и `createFormHandler`
- * на сервере. Без текста код показывался как есть: «email.taken» (F57).
- */
-export const appMessages = {
-  'email.taken': 'Этот адрес уже занят',
-}
 
 /** Валидатор-обёртка: синхронно пропускает, вида ограничения у него нет. */
 export const emailTaken = () => check('email-taken', { debounceMs: 250 })

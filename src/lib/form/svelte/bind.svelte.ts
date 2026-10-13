@@ -276,7 +276,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
         // Синхронные ошибки того же поля (email/minLength/…) сохраняются.
         const previous = asyncErrorIds.get(name)
         // Текст — тем же словарём, что у синхронных ошибок и у сервера (F57):
-        // без этого живая проверка показывала код («email.taken»).
+        // без этого живая проверка показывала код вместо текста.
         const error = raw && normalizeErrors([raw], render, desc.policy.limits)[0]
         const facts = s.facts.filter((e) => e.id !== previous && e.id !== error?.id)
         if (error) { facts.push(error); asyncErrorIds.set(name, error.id) }

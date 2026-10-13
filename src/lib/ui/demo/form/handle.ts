@@ -12,7 +12,7 @@ import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '#lib/form/index.js'
 import './extend'
-import { appMessages, checks } from './extend'
+import { checks } from './extend'
 import { resolveDescription, signup } from './signup'
 
 // Бронь отправки — в памяти процесса: этой форме база не нужна, и общая бронь
@@ -71,8 +71,7 @@ function handlerFor(description: typeof signup) {
     // «забыл указать origin» иначе означает «принимаем межсайтовый POST».
     order: SECURITY_LAYERS,
     checks,
-    messages: appMessages,
-    idempotency,
+      idempotency,
     throttle,
     async execute({ values, intent, commit }) {
       // служебные действия ничего не создают: набор полей меняет адаптер

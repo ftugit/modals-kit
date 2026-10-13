@@ -225,10 +225,10 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.locator('#signup-email').blur()
   await pg.waitForTimeout(1200)
   const asyncErrors = await pg.locator('p.text-destructive').allInnerTexts()
-  // Текст — из словаря приложения, как у синхронных ошибок; код наружу не
-  // попадает (F57: раньше живая проверка показывала «email.taken»).
+  // Текст — из `messages` поля, как у синхронных ошибок; код наружу не
+  // попадает (F57: раньше живая проверка показывала код; теперь код `unique`, текст — из `messages` поля).
   ok('асинхронная проверка дала ошибку с текстом', asyncErrors.includes('Этот адрес уже занят'), asyncErrors.join(' | '))
-  ok('код проверки не показан вместо текста', !asyncErrors.some((t) => t.includes('email.taken')), asyncErrors.join(' | '))
+  ok('код проверки не показан вместо текста', !asyncErrors.some((t) => /email\.taken|\bunique\b/.test(t)), asyncErrors.join(' | '))
   await pg.close()
 }
 
