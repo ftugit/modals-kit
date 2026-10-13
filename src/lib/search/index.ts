@@ -43,6 +43,8 @@ export {
   prepareTexts,
   prepareQuery,
   scorePrepared,
+  matchesQuery,
+  MATCH_MIN_SCORE,
   rankFuzzy,
   collectFuzzyPage,
   MIN_TERM_LEN,

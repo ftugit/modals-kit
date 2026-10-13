@@ -27,7 +27,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 | `registry.ts` | Реестр по имени (deny by default), `defineSearch` (перехват + регистрация пагинатора), `searchAddressSpec` для validateSearch роута |
 | `core.ts` | Vanilla-действия: `setSearchQuery` / `clearSearchQuery` / `resyncSearch` (обёртки над `setExtra`/`goToPage`) |
 | `accumulator.ts` | `withLibSearch` — подключение fuzzy-контура к адаптированному источнику (нужно `scan` в спеке); `createAccumulatingSource` — механика бюджета и виртуальных страниц без средовых гардов |
-| `fuzzy.ts` | Изоморфное ядро: foldKey, взвешенный Дамерау-Левенштейн, словарь терминов, скоринг |
+| `fuzzy.ts` | Изоморфное ядро: foldKey, взвешенный Дамерау-Левенштейн, словарь терминов, скоринг, фильтр `matchesQuery` |
 | `dictionary.ts` | Клиент: разбор артефакта `display\tdf`, биграммный индекс, корректор запроса |
 | `svelte/` | Svelte 5-вход `#lib/search/svelte/index.js`: хук `useSearchCorrection` (подпись «искали X → показываем Y»). Устроен как `#lib/paginate/svelte/index.js`: ядро о фреймворке не знает, обвязка живёт отдельной точкой входа — поэтому `#lib/search/index.js` остаётся импортируемым из node-тестов |
 
@@ -125,6 +125,30 @@ definePaginator({ name, source, reloadKeys: ['q', 'ls'],
 гидратации deep-link'а — `goToPage(store, name, state.page)` (в single-семантике
 это REPLACE через перехватчик) вместо `resyncSearch`. Подпись коррекции
 (`useSearchCorrection`) и `hasSearch/getSearch` при этом работают как обычно.
+
+## Фильтр по запросу: `matchesQuery`
+
+Когда нужно не ранжировать, а отобрать («подходит / не подходит»), — например,
+варианты выпадающего списка:
+
+```ts
+import { matchesQuery, prepareQuery, prepareTexts } from '#lib/search/index.js'
+
+const texts = prepareTexts([option.label])     // один раз на вариант
+const tokens = prepareQuery(input)             // один раз на ввод
+const visible = options.filter((o) => matchesQuery(textsOf(o), tokens))
+```
+
+Подходит: точное совпадение, начало, подстрока, слово, начало слова, опечатка в
+пределах `maxCostFor` (1 правка до 4 букв, 2 — длиннее) — всё с тем же `foldKey`
+(регистр, диакритика, ё→е, гомоглифы латиница↔кириллица) и весами конфузий
+(е/э, о/а…). Не подходит: подпоследовательность («nrt» в «naruto») — она ниже
+порога `MATCH_MIN_SCORE` (0.45), потому что в длинном списке совпадает почти со
+всем. Порог меняется: `matchesQuery(texts, tokens, { minScore: 0.8 })` — только
+подстроки и точнее. Каждый токен запроса обязан подойти (как у `scorePrepared`).
+
+Пример — справочник студий Shikimori (1934): «madhose» → MADHOUSE, «kioto» →
+Kyoto Animation и ещё 5, «сенэн» → «Сёнен», «mappa» → только MAPPA.
 
 ## Что lib search НЕ делает
 

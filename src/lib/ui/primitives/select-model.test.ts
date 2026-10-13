@@ -62,4 +62,42 @@ describe('поиск по вариантам select', () => {
     expect(matchesSelectOption(genres[1], '', 'off')).toBe(true)
     expect(matchesSelectOption(genres[1], '', 'value')).toBe(true)
   })
+
+  // R4 (решение B): подпись ищется через matchesQuery lib/search — опечатки
+  // находятся, слабая подпоследовательность (шум на длинных справочниках) — нет.
+  const studios = [
+    option('1', 'MADHOUSE'),
+    option('2', 'Kyoto Animation'),
+    option('3', 'MAPPA'),
+    option('4', 'Madman Entertainment'),
+    option('5', 'Pierrot'),
+  ]
+  const visible = (query: string, list = studios) =>
+    list.filter((o) => matchesSelectOption(o, query, 'label')).map((o) => o.label)
+
+  it('опечатка в пределах порога находит вариант: madhose, kioto, сенэн', () => {
+    expect(visible('madhose')).toEqual(['MADHOUSE'])
+    expect(visible('kioto')).toEqual(['Kyoto Animation'])
+    expect(matchesSelectOption(genres[0], 'сенэн', 'label')).toBe(true)
+  })
+
+  it('подпоследовательность не считается совпадением: mappa — только MAPPA', () => {
+    expect(visible('mappa')).toEqual(['MAPPA'])
+    expect(visible('mdh')).toEqual([])
+  })
+
+  it('порядок списка не меняется: это фильтр, а не сортировка', () => {
+    expect(visible('ma')).toEqual(['MADHOUSE', 'Kyoto Animation', 'MAPPA', 'Madman Entertainment'])
+  })
+
+  it('режим value остаётся подстрокой: опечатки в кодах не ищутся', () => {
+    const codes = [option('tv_13', 'TV'), option('ova', 'OVA')]
+    expect(codes.filter((o) => matchesSelectOption(o, 'tv_1', 'value'))).toHaveLength(1)
+    expect(codes.filter((o) => matchesSelectOption(o, 'ovo', 'value'))).toHaveLength(0)
+  })
+
+  it('запрос без букв и цифр — подстрокой', () => {
+    const dashed = [option('a', 'Сёнен-ай'), option('b', 'Сёнен')]
+    expect(dashed.filter((o) => matchesSelectOption(o, '-', 'label')).map((o) => o.label)).toEqual(['Сёнен-ай'])
+  })
 })

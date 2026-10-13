@@ -367,6 +367,29 @@ export function scorePrepared(texts: readonly PreparedText[], tokens: readonly s
   return total
 }
 
+/** Порог «подходит» для {@link matchesQuery}: от опечатки и выше, без подпоследовательностей. */
+export const MATCH_MIN_SCORE = 0.45
+
+/**
+ * Подходит ли запись под запрос — фильтр, а не ранжирование: точное, начало,
+ * подстрока, слово, начало слова или опечатка в пределах {@link maxCostFor}
+ * («kioto» → «Kyoto Animation», «сенэн» → «Сёнен»). Слабый хвост
+ * (подпоследовательность «nrt» → «naruto») ниже порога: в длинном списке он
+ * совпадает почти со всем.
+ *
+ * @example
+ * const texts = prepareTexts([studio.name])   // один раз на запись
+ * const tokens = prepareQuery(input)          // один раз на запрос
+ * list.filter(() => matchesQuery(texts, tokens))
+ */
+export function matchesQuery(
+  texts: readonly PreparedText[],
+  tokens: readonly string[],
+  options: { minScore?: number } = {},
+): boolean {
+  return scorePrepared(texts, tokens) >= (options.minScore ?? MATCH_MIN_SCORE)
+}
+
 /**
  * Ранжирование массива записей по запросу (совместимый экспорт).
  * Для потоковой выдачи с дедупом и виртуальными страницами используйте

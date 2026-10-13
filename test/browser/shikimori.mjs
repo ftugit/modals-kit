@@ -340,6 +340,37 @@ async function checkFiltersUi(browser) {
       throw new Error('панель не показывает метку сборки схемы');
     console.log(`  ok  контролов ${paths.length} — ровно объявленные схемой пути (режимы и границы включены)`);
 
+    // R4: поиск по подписи терпит опечатку (matchesQuery lib/search), но не шумит.
+    {
+      const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
+      const madhouse = studioOptions.find((o) => o.label.toLowerCase() === 'madhouse');
+      if (!madhouse) throw new Error('в справочнике нет MADHOUSE — проверять опечатку не на чем');
+      const studiosSelect = page.locator('select[data-select-native][name="page.filters.studios.and"]');
+      await openFilters(page);
+      await studiosSelect.scrollIntoViewIfNeeded();
+      const listbox = page.locator('[data-select-listbox]').last();
+      // как в chooseFilterOption: клик по открытому списку его закрыл бы
+      if (!(await listbox.isVisible().catch(() => false))) {
+        await studiosSelect.click({ force: true });
+        await listbox.waitFor({ state: 'visible' });
+      }
+      const labels = async () =>
+        (await listbox.locator('[role="option"]').allInnerTexts()).map((t) => t.trim().split('\n')[0].trim());
+      await page.locator('[data-select-search-row] input').last().fill('madhose');
+      await waitFor(async () => (await labels()).includes(madhouse.label), { what: 'MADHOUSE по запросу «madhose»' });
+      await page.locator('[data-select-search-row] input').last().fill('mappa');
+      await waitFor(async () => {
+        const got = await labels();
+        return got.length >= 1 && got.every((l) => /mappa/i.test(l));
+      }, { what: '«mappa» — только студии с MAPPA в названии' });
+      await page.locator('[data-select-search-row] input').last().fill('');
+      await page.keyboard.press('Escape');
+      await listbox.waitFor({ state: 'hidden' });
+      // закрытие слоя идёт через историю: следующий клик до её завершения тонет
+      await page.waitForTimeout(500);
+      console.log('  ok  поиск студий: «madhose» находит MADHOUSE, «mappa» — без шума');
+    }
+
     // С JS список студий — все, а не первые 200: поиск находит студию из хвоста.
     {
       const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
@@ -358,6 +389,7 @@ async function checkFiltersUi(browser) {
       await page.locator('[data-select-listbox]').last().waitFor({ state: 'hidden' }).catch(() => {});
       console.log(`  ok  с JS поиск находит студию из хвоста списка («${tail.label}», №${studioOptions.length})`);
     }
+
 
     // Переход внутри сайта: схема не едет с данными страницы, а берётся из памяти вкладки.
     {

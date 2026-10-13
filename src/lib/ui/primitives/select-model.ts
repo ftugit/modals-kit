@@ -1,3 +1,5 @@
+import { matchesQuery, prepareQuery, prepareTexts, type PreparedText } from '#lib/search/fuzzy.js';
+
 export type SelectSearchMode = 'off' | 'value' | 'label' | 'both';
 
 export interface SelectOption {
@@ -14,23 +16,47 @@ export interface SelectOption {
 }
 
 /**
- * Приведение строки к сравнимому виду: регистр и диакритика.
+ * Приведение строки к сравнимому виду: регистр и диакритика (поиск по значению).
  *
  * NFKD разлагает «ё» на «е» + комбинируемую точку, «й» — на «и» + кратка,
- * поэтому после снятия комбинируемых знаков запрос «сенен» находит «Сёнен»,
- * «сейнэн» — «Сэйнэн». Без этого поиск по подписи «работает» ровно до первой
- * буквы с точками — а подписи жанров у источника именно такие.
+ * поэтому после снятия комбинируемых знаков «сенен» находит «Сёнен».
  */
 function searchable(value: string): string {
   return value.normalize('NFKD').replace(/\p{M}+/gu, '').toLocaleLowerCase();
 }
 
+/** Подготовленный видимый текст варианта: один раз на объект варианта. */
+const preparedLabels = new WeakMap<object, PreparedText[]>();
+function labelTexts(option: Pick<SelectOption, 'label' | 'hint'>): PreparedText[] {
+  let texts = preparedLabels.get(option);
+  if (!texts) {
+    texts = prepareTexts(option.hint ? [option.label, option.hint] : [option.label]);
+    preparedLabels.set(option, texts);
+  }
+  return texts;
+}
+
+/** Токены последнего запроса: фильтр зовётся на каждый вариант с одним и тем же вводом. */
+let lastQuery = '';
+let lastTokens: string[] = [];
+function queryTokens(query: string): string[] {
+  if (query !== lastQuery) {
+    lastQuery = query;
+    lastTokens = prepareQuery(query);
+  }
+  return lastTokens;
+}
+
 /**
- * Локальный substring-поиск; режим явно определяет доступные для поиска поля.
+ * Локальный фильтр вариантов; режим явно определяет доступные для поиска поля.
  *
- * `label` (и `both`) ищут по тому, что человек ВИДИТ: подпись вместе с
- * пояснением — `hint` показывается рядом с ней и воспринимается как часть
- * названия варианта.
+ * - `value` — подстрока значения (коды, id: опечатки там не бывают «почти верными»).
+ * - `label` (и `both`) — по тому, что человек ВИДИТ: подпись вместе с
+ *   пояснением, через `matchesQuery` из lib/search — подстрока, начало слова и
+ *   опечатки («kioto» → «Kyoto Animation», «сенэн» → «Сёнен»), без шумной
+ *   подпоследовательности. Запрос без букв и цифр («-») — подстрокой.
+ *
+ * Порядок вариантов не меняется: это фильтр, а не сортировка.
  */
 export function matchesSelectOption(
   option: Pick<SelectOption, 'value' | 'label' | 'hint'>,
@@ -38,11 +64,15 @@ export function matchesSelectOption(
   mode: SelectSearchMode,
 ): boolean {
   if (mode === 'off' || !query) return true;
-  const needle = searchable(query);
-  const visible = option.hint ? `${option.label} ${option.hint}` : option.label;
-  const byValue = (mode === 'value' || mode === 'both') && searchable(option.value).includes(needle);
-  const byLabel = (mode === 'label' || mode === 'both') && searchable(visible).includes(needle);
-  return byValue || byLabel;
+  const byValue = (mode === 'value' || mode === 'both') && searchable(option.value).includes(searchable(query));
+  if (byValue) return true;
+  if (mode === 'value') return false;
+  const tokens = queryTokens(query);
+  if (!tokens.length) {
+    const visible = option.hint ? `${option.label} ${option.hint}` : option.label;
+    return searchable(visible).includes(searchable(query));
+  }
+  return matchesQuery(labelTexts(option), tokens);
 }
 
 export function selectedAfterToggle(
