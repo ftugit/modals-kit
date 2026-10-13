@@ -8,7 +8,7 @@
  * подтверждает и ловушку, и лечение.
  *
  * Запуск:  node probe/testdb-encoding.probe.mjs
- * Нужны:   поднятый PG17 (CHECKLIST-2 §0) и две БД:
+ * Нужны:   поднятый PG17 (docs/PROBES-ENV.md) и две БД:
  *   createdb -T template0 --encoding=UTF8    --locale=C.UTF-8 kitdb_utf
  *   createdb -T template0 --encoding=SQL_ASCII                 kitdb_ascii
  * Переменные: KIT_TEST_PG_URL (UTF8-база), KIT_TEST_PG_URL_ASCII, PROBE_PG_UTF, PROBE_PG_ASCII.

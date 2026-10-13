@@ -1,6 +1,6 @@
 # Транспорты: Vercel, Cloudflare, пулеры, PGlite
 
-Вопрос, на который отвечает документ (CHECKLIST-2 §T3): работает ли PostgreSQL, который
+Вопрос, на который отвечает документ (бывший T3 чеклиста переноса): работает ли PostgreSQL, который
 дают Vercel/Cloudflare, **через текущий `lib/db` как есть**, что при этом отваливается и
 корректно ли ведёт себя ядро с недостающими частями. Отдельный «HTTP-пакет» — нет.
 
@@ -76,7 +76,7 @@ N+1 умножается на эти милисекунды: на `pg` 20 свя
 
 ```sh
 node src/lib/db/probes/transport-matrix.probe.mjs
-# PostgreSQL 17 и pgproxy — рецепты в CHECKLIST-2 §0
+# PostgreSQL 17 и pgproxy — рецепты в PROBES-ENV.md
 # PG_MATRIX_URL · PGPROXY_URL · PGPROXY_SECRET · PGPROXY_MODULES · DEBUG_MATRIX=1
 # живое включение портированного ./adapters/proxy: PROXY_URL · PROXY_SECRET · PROXY_INSECURE=1 · PROXY_GAP_MS
 ```

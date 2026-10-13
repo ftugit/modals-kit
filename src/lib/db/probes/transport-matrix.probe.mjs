@@ -9,7 +9,7 @@
  * портить данные.
  *
  * Запуск:  node probe/transport-matrix.probe.mjs
- * Нужны: PostgreSQL 17 (CHECKLIST-2 §0) и запущенный pgproxy (лаборатория §0).
+ * Нужны: PostgreSQL 17 и запущенный pgproxy (docs/PROBES-ENV.md).
  * Переменные: PG_MATRIX_URL, PGPROXY_URL, PGPROXY_SECRET (обязательно), PGPROXY_MODULES.
  */
 import assert from "node:assert/strict";

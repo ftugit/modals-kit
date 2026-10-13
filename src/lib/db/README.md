@@ -34,7 +34,7 @@
 · [Схема и миграции](#6-схема-и-миграции)
 · [Публичный API](#7-публичный-api)
 · [Свой код в TypeScript](#8-свой-код-в-typescript)
-· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md)
+· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · что не сделано — [docs/PLAN.md](./docs/PLAN.md)
 
 ## Установка
 

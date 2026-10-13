@@ -10,7 +10,7 @@
  *      конечная коллекция отдаст запретительное или соберёт явный список вместо `*`.
  *
  * Запуск:  node probe/shikimori-view.probe.mjs
- * Нужен PostgreSQL: см. CHECKLIST-2.md §0 (createdb shikidb).
+ * Нужен PostgreSQL: см. docs/PROBES-ENV.md (createdb shikidb).
  */
 import assert from "node:assert/strict";
 import { Pool } from "pg";
