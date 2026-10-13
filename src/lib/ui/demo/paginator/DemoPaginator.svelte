@@ -3,7 +3,8 @@
   import { report } from '#lib/app-errors.svelte.js'
   import { currentSearch } from '#lib/router/sveltekit.js'
   import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
-  import { SHIKIMORI_FILTER_SOURCE } from '../../../../content/shikimori-filters'
+  import { shikimoriFilterSource } from '../../../../content/shikimori-filters'
+  import { SHIKIMORI_APIS, type ShikimoriApi } from '../../../../content/shikimori'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
   import {
     EdgeSentinel,
@@ -34,7 +35,7 @@
     demoHashAnchor,
     demoPreservedSearch,
     demoQueryOf,
-    DEMO_LIVE_SRC,
+    demoShikimoriApi,
     demoStaticFilterSchema,
     loadFilterSchema,
     type DemoExtra,
@@ -80,7 +81,9 @@ import ItemRow from './ItemRow.svelte'
       options: [
         ['products', 'Товары (299, локально)'],
         ['photos', 'Фото (131, локально)'],
-        ['animes', 'Shikimori (живой API)'],
+        ['animes', 'Shikimori (mix: REST + GraphQL, живой API)'],
+        ['animes-rest', 'Shikimori (REST, живой API)'],
+        ['animes-graphql', 'Shikimori (GraphQL, живой API)'],
         ['rm-rest', 'Rick and Morty (REST, живой API)'],
         ['rm-graphql', 'Rick and Morty (GraphQL, живой API)'],
         ['db', 'БД (записи demo_post, #lib/db)'],
@@ -289,38 +292,51 @@ import ItemRow from './ItemRow.svelte'
   // Схема со страницей (полная отрисовка) — в память вкладки; без неё
   // (переход внутри сайта) — из памяти, сразу, без мигания панели. Память
   // работает только в браузере, при SSR `remember`/`recall` пусты.
-  let liveSchema = $state<CatalogFilterSchema | null>(
+  // У Shikimori три версии API и у каждой своя схема — состояние держит их по
+  // версии, чтобы переключение `animes` ↔ `animes-graphql` не показывало чужую.
+  let liveSchemas = $state<Partial<Record<ShikimoriApi, CatalogFilterSchema>>>(
     untrack(() => {
-      if (schema?.source !== SHIKIMORI_FILTER_SOURCE) return catalogFilterSchemas.recall(SHIKIMORI_FILTER_SOURCE)
-      catalogFilterSchemas.remember(schema)
-      return schema
+      const out: Partial<Record<ShikimoriApi, CatalogFilterSchema>> = {}
+      for (const api of SHIKIMORI_APIS) {
+        const source = shikimoriFilterSource(api)
+        if (schema?.source === source) catalogFilterSchemas.remember(schema)
+        const known = schema?.source === source ? schema : catalogFilterSchemas.recall(source)
+        if (known) out[api] = known
+      }
+      return out
     }),
   )
+  /** Версия API Shikimori у выбранного источника; `null` — источник не Shikimori. */
+  const shikiApi = $derived(demoShikimoriApi(cfg.src))
+  const liveSchema = $derived(shikiApi ? (liveSchemas[shikiApi] ?? null) : null)
   /**
    * Схема панели — по ТЕКУЩЕМУ источнику: статическая у Rick and Morty, живая у
    * Shikimori, у остальных нет. Раньше схема была одним состоянием, и
    * загруженная для Shikimori оставалась на экране после переключения на БД.
    */
   const filterSchema = $derived(
-    demoStaticFilterSchema(cfg.src) ?? (cfg.src === DEMO_LIVE_SRC ? liveSchema : null),
+    demoStaticFilterSchema(cfg.src) ?? liveSchema,
   )
   /**
    * Причина, по которой фильтров нет. Молчание тут было бы худшим ответом:
    * источник фильтры объявляет (`gates.filters`), значит пользователь ждёт
    * панель и обязан узнать, что схема не приехала и можно повторить.
    */
-  let filterSchemaError = $state<string | null>(null)
+  let filterSchemaErrors = $state<Partial<Record<ShikimoriApi, string>>>({})
+  const filterSchemaError = $derived(shikiApi ? (filterSchemaErrors[shikiApi] ?? null) : null)
 
   function loadSchema(options: { retry?: boolean } = {}): void {
-    if (options.retry) filterSchemaError = null
-    void loadFilterSchema()
+    const api = shikiApi
+    if (!api) return
+    if (options.retry) delete filterSchemaErrors[api]
+    void loadFilterSchema(api)
       .then((loaded) => {
-        liveSchema = loaded
-        filterSchemaError = null
+        liveSchemas[api] = loaded
+        delete filterSchemaErrors[api]
       })
       .catch((error) => {
-        liveSchema = null
-        filterSchemaError = `схема фильтров не загрузилась: ${
+        delete liveSchemas[api]
+        filterSchemaErrors[api] = `схема фильтров не загрузилась: ${
           error instanceof Error ? error.message : String(error)
         }`
       })
@@ -333,7 +349,7 @@ import ItemRow from './ItemRow.svelte'
     // Живая схема есть только у источников из `DEMO_SCHEMA_SRCS`: у БД фильтры
     // тоже объявлены (`flt`/`ord` адресом), но собирать для них справочник
     // Shikimori — значит показать чужую панель.
-    if (!gates.filters || cfg.src !== DEMO_LIVE_SRC || liveSchema || filterSchemaError) return
+    if (!gates.filters || !shikiApi || liveSchema || filterSchemaError) return
     loadSchema()
   })
 
@@ -457,7 +473,7 @@ import ItemRow from './ItemRow.svelte'
             preserved={demoPreservedSearch(currentSearch())}
           />
         </div>
-      {:else if gates.filters && cfg.src === DEMO_LIVE_SRC && filterSchemaError}
+      {:else if gates.filters && shikiApi && filterSchemaError}
         <p
           class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
           data-testid="filters-schema-error"
@@ -507,7 +523,7 @@ import ItemRow from './ItemRow.svelte'
     `renderSkeleton={cfg.skel ? skeleton(cfg.src) : undefined}`).
   -->
   {#snippet skelColumns(ctx: { page: number; index: number })}
-    {#if cfg.src === 'animes'}
+    {#if demoShikimoriApi(cfg.src)}
       <Skeleton height={240} />
     {:else if cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
       <Skeleton height={220} />
@@ -518,7 +534,7 @@ import ItemRow from './ItemRow.svelte'
     {/if}
   {/snippet}
   {#snippet skelList(ctx: { page: number; index: number })}
-    {#if cfg.src === 'animes' || cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
+    {#if demoShikimoriApi(cfg.src) || cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
       <Skeleton height={52} />
     {:else if cfg.src === 'db'}
       <Skeleton height={44} />

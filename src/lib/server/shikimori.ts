@@ -34,15 +34,21 @@ import { readJson, readText, type AppFetch } from '#lib/fetch/index.js'
 import type { Store } from '#lib/cache/index.js'
 import { localStore } from './cache'
 import { UPSTREAM_UA, upstream } from './fetch'
+import { fetchGraphql } from './graphql'
 import {
+  SHIKIMORI_DEFAULT_API,
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_ORDER,
+  isShikimoriApi,
   type AnimesPage,
   type AnimeCard,
+  type ShikimoriApi,
 } from '../../content/shikimori'
 
 /** База REST API (домен, на который переадресует shikimori.one). */
 export const SHIKIMORI_API_BASE = 'https://shikimori.io/api'
+/** GraphQL-эндпоинт Shikimori: для универсального транспорта это просто адрес. */
+export const SHIKIMORI_GRAPHQL = 'https://shikimori.io/api/graphql'
 /** REST-эндпоинт каталога. */
 export const SHIKIMORI_API = `${SHIKIMORI_API_BASE}/animes`
 /** Сайт Shikimori — для абсолютных ссылок на тайтлы. */
@@ -74,8 +80,13 @@ export type AnimesQuery = {
   limit: number
   search?: string
   order?: string
-  /** Отбор каталога (`genre_v2` — мир жанров v2: те же id, что в GraphQL). */
+  /** Отбор каталога (`genre_v2` — мир жанров v2: те же id, что в GraphQL). Версия `mix`. */
   genre_v2?: readonly string[]
+  /**
+   * Жанры параметром `genre`: в REST это мир v1 (`/api/genres`, версия `rest`),
+   * в GraphQL — аргумент `genre` с id жанров v2 (версия `graphql`).
+   */
+  genre?: readonly string[]
   studio?: readonly string[]
   kind?: string
   status?: string
@@ -87,8 +98,25 @@ export type AnimesQuery = {
   season?: string
 }
 
-export type ParseOk = { ok: true; query: AnimesQuery; filters: Record<string, unknown> }
+export type ParseOk = {
+  ok: true
+  /** Версия API источника (`?api=`, по умолчанию {@link SHIKIMORI_DEFAULT_API}). */
+  api: ShikimoriApi
+  query: AnimesQuery
+  filters: Record<string, unknown>
+}
 export type ParseFail = { ok: false; error: string }
+
+/**
+ * Версия API из адреса роута (`?api=rest|graphql|mix`). Нет параметра — версия
+ * по умолчанию; незнакомое значение — ошибка 400, а не «молча mix»: запрос
+ * явно просил источник, которого нет.
+ */
+export function parseShikimoriApi(params: URLSearchParams): { ok: true; api: ShikimoriApi } | ParseFail {
+  const raw = params.get('api')
+  if (raw == null || raw === '') return { ok: true, api: SHIKIMORI_DEFAULT_API }
+  return isShikimoriApi(raw) ? { ok: true, api: raw } : { ok: false, error: 'api: ожидалось rest | graphql | mix' }
+}
 
 /**
  * Разбор входных параметров каталога (deny-safe): всё, что не прошло проверку,
@@ -106,6 +134,9 @@ export function parseAnimesQuery(params: URLSearchParams): ParseOk | ParseFail {
     const n = Number(value)
     return Number.isInteger(n) ? n : null
   }
+
+  const api = parseShikimoriApi(params)
+  if (!api.ok) return api
 
   const page = int(raw('page'), 1)
   if (page == null || page < 1) return { ok: false, error: 'page: ожидалось целое ≥ 1' }
@@ -126,6 +157,7 @@ export function parseAnimesQuery(params: URLSearchParams): ParseOk | ParseFail {
 
   return {
     ok: true,
+    api: api.api,
     query: {
       page,
       limit: Math.min(limit, SHIKIMORI_LIMIT_MAX),
@@ -182,6 +214,7 @@ export function buildUpstreamUrl(query: AnimesQuery): string {
   // Отрицание — префикс `!` у значения списка; одиночное `!id` тоже работает.
   for (const [key, value] of [
     ['genre_v2', query.genre_v2],
+    ['genre', query.genre],
     ['studio', query.studio],
   ] as const) {
     if (value?.length) url.searchParams.set(key, value.join(','))
@@ -267,7 +300,8 @@ function resolveDeps(deps: TransportDeps): Resolved {
     fetch: deps.fetch ?? upstream,
     pages: root.scope('pages', { max: SHIKIMORI_CACHE_MAX }),
     json: root.scope('json', { max: SHIKIMORI_CACHE_MAX }),
-    terms: root.scope('terms', { max: 1 }),
+    // Словарь на каждую версию API (rest / graphql / mix).
+    terms: root.scope('terms', { max: 3 }),
   }
 }
 
@@ -304,6 +338,131 @@ export async function fetchAnimes(
   const page: AnimesPage = { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
   await deps.pages.set(url, page, CACHE_TTL_MS)
   return page
+}
+
+// ── Версия `graphql`: каталог через GraphQL ────────────────────────────────
+
+/**
+ * Аргументы GraphQL `animes(...)` и их типы (интроспекция 2026-10-13). Строки —
+ * те же значения, что у REST: список через запятую — «и», `!` — «кроме».
+ * `studio` у аргументов есть, но справочника студий в GraphQL нет — версия
+ * `graphql` поле «Студии» не объявляет, и сюда оно не доезжает.
+ */
+const GRAPHQL_ARGS = {
+  search: 'String',
+  kind: 'AnimeKindString',
+  status: 'AnimeStatusString',
+  season: 'SeasonString',
+  score: 'Int',
+  duration: 'DurationString',
+  rating: 'RatingString',
+  genre: 'String',
+} as const
+
+/** Поля карточки: ровно то, что нужно `AnimeCard`. */
+const GRAPHQL_CARD_FIELDS =
+  'id name russian url kind score status episodes airedOn { date year } poster { previewUrl miniUrl }'
+
+/**
+ * Документ и переменные страницы каталога. В документ попадают только ЗАДАННЫЕ
+ * аргументы: незаданный фильтр не едет даже `null`-ом — запрос тот же, что
+ * собрал бы человек, и ключ кэша не зависит от «пустых» переменных.
+ */
+export function buildGraphqlAnimesRequest(query: AnimesQuery): { doc: string; variables: Record<string, unknown> } {
+  const variables: Record<string, unknown> = {
+    page: query.page,
+    limit: Math.min(query.limit, SHIKIMORI_LIMIT_MAX),
+    order: query.order ?? SHIKIMORI_ORDER,
+  }
+  const values: Record<keyof typeof GRAPHQL_ARGS, unknown> = {
+    search: query.search || undefined,
+    kind: query.kind || undefined,
+    status: query.status || undefined,
+    season: query.season || undefined,
+    score: query.score,
+    duration: query.duration || undefined,
+    rating: query.rating || undefined,
+    genre: query.genre?.length ? query.genre.join(',') : undefined,
+  }
+  const declared = ['$page: PositiveInt', '$limit: PositiveInt', '$order: OrderEnum']
+  const args = ['page: $page', 'limit: $limit', 'order: $order']
+  for (const [name, type] of Object.entries(GRAPHQL_ARGS) as [keyof typeof GRAPHQL_ARGS, string][]) {
+    if (values[name] === undefined) continue
+    variables[name] = values[name]
+    declared.push(`$${name}: ${type}`)
+    args.push(`${name}: $${name}`)
+  }
+  const doc = `query Animes(${declared.join(', ')}) {\n  animes(${args.join(', ')}) { ${GRAPHQL_CARD_FIELDS} }\n}`
+  return { doc, variables }
+}
+
+/** Запись GraphQL `Anime` → карточка источника (мусор — null, как у REST). */
+export function normalizeGraphqlAnime(raw: unknown): AnimeCard | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = Number(r.id)
+  if (!Number.isInteger(id)) return null
+  const name = typeof r.name === 'string' ? r.name.trim() : ''
+  const russian = typeof r.russian === 'string' ? r.russian.trim() : ''
+  if (!name && !russian) return null
+  const poster = (r.poster ?? {}) as Record<string, unknown>
+  const aired = (r.airedOn ?? {}) as Record<string, unknown>
+  const scoreNum = typeof r.score === 'number' ? r.score : Number(r.score)
+  const episodes = typeof r.episodes === 'number' ? r.episodes : Number(r.episodes)
+  const date = typeof aired.date === 'string' ? aired.date : null
+  return {
+    id,
+    name: name || russian,
+    russian: russian || null,
+    poster: absolute(typeof poster.previewUrl === 'string' ? poster.previewUrl : null, SHIKIMORI_MEDIA),
+    thumb: absolute(typeof poster.miniUrl === 'string' ? poster.miniUrl : null, SHIKIMORI_MEDIA),
+    url: absolute(typeof r.url === 'string' ? r.url : null, SHIKIMORI_SITE) ?? SHIKIMORI_SITE,
+    kind: typeof r.kind === 'string' ? r.kind : 'unknown',
+    score: Number.isFinite(scoreNum) && scoreNum > 0 ? scoreNum : null,
+    status: typeof r.status === 'string' ? r.status : '',
+    episodes: Number.isFinite(episodes) ? episodes : 0,
+    year: typeof aired.year === 'number' ? aired.year : yearOf(date),
+    airedOn: date,
+  }
+}
+
+/**
+ * Страница каталога через GraphQL. Кэш, склейка и вежливость — у
+ * универсального транспорта (`./graphql`, область `graphql`): своя карта
+ * страниц здесь не нужна. `cached` транспорт не сообщает — поле не ставится.
+ */
+export async function fetchAnimesGraphql(
+  query: AnimesQuery,
+  { signal, ...transport }: TransportDeps & { signal?: AbortSignal } = {},
+): Promise<AnimesPage> {
+  const { doc, variables } = buildGraphqlAnimesRequest(query)
+  const items = await fetchGraphql(
+    {
+      url: SHIKIMORI_GRAPHQL,
+      doc,
+      variables,
+      map: (data) => {
+        const list = (data as { animes?: unknown }).animes
+        return (Array.isArray(list) ? list : [])
+          .map(normalizeGraphqlAnime)
+          .filter((card): card is AnimeCard => card !== null)
+      },
+    },
+    { ...transport, ...(signal ? { signal } : {}) },
+  )
+  return { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
+}
+
+/**
+ * Страница каталога выбранной версии: `graphql` — GraphQL, `rest` и `mix` —
+ * REST `/api/animes` (у `mix` каталог REST, отличие от `rest` — в справочниках).
+ */
+export async function fetchCatalogPage(
+  api: ShikimoriApi,
+  query: AnimesQuery,
+  deps: TransportDeps & { signal?: AbortSignal } = {},
+): Promise<AnimesPage> {
+  return api === 'graphql' ? await fetchAnimesGraphql(query, deps) : await fetchAnimes(query, deps)
 }
 
 // ── Справочники и пробы: тот же транспорт, другая проекция ─────────────────
@@ -354,27 +513,36 @@ export async function probeShikimoriJson(
  * без предварительной выгрузки каталога; кэшируется на час.
  */
 export async function getTermArtifact(
-  { pages = TERMS_PAGES, signal, ...transport }: TransportDeps & { pages?: number; signal?: AbortSignal } = {},
+  {
+    api = SHIKIMORI_DEFAULT_API,
+    pages = TERMS_PAGES,
+    signal,
+    ...transport
+  }: TransportDeps & { api?: ShikimoriApi; pages?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   const deps = resolveDeps(transport)
-  const hit = await deps.terms.get<string>('artifact')
+  // Словарь у версии свой: названия читаются тем же транспортом, что и каталог
+  // версии (у `graphql` — GraphQL), чтобы версия не зависела от чужого API.
+  const key = `artifact:${api}`
+  const hit = await deps.terms.get<string>(key)
   if (hit !== undefined) return hit
 
   const texts: string[] = []
   for (let page = 1; page <= Math.max(1, pages); page += 1) {
-    const res = await fetchAnimes(
+    const res = await fetchCatalogPage(
+      api,
       { page, limit: SHIKIMORI_LIMIT_MAX, order: SHIKIMORI_ORDER },
-      { ...transport, signal },
+      { ...transport, ...(signal ? { signal } : {}) },
     )
     for (const card of res.items) texts.push(card.russian ?? card.name, card.name)
     if (!res.hasNext) break
   }
   const text = serializeTermDictionary(buildTermDictionary(texts))
-  await deps.terms.set('artifact', text, TERMS_TTL_MS)
+  await deps.terms.set(key, text, TERMS_TTL_MS)
   return text
 }
 
 /** Сброс словаря (тесты). */
 export async function resetTermArtifact(): Promise<void> {
-  await localStore.scope('shikimori').scope('terms', { max: 1 }).clear()
+  await localStore.scope('shikimori').scope('terms', { max: 3 }).clear()
 }

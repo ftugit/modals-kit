@@ -22,9 +22,13 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 // Лимит — на адрес клиента (F18): `getClientAddress()` учитывает настройки
 // адаптера (ADDRESS_HEADER/XFF_DEPTH), сырой x-forwarded-for не читается.
 // Маршрут обязан передать event: без него ключ бросает, а не сводит всех в одно окно.
+// Окна — в области `localStore` с потолком: адресов за минуту может быть сколько
+// угодно, а память процесса — нет (у встроенной карты ограничителя потолка нет).
+// 10 000 окон × ≤30 меток — сотни КБ; вытесняется давно не писавший адрес.
 const throttle = windowThrottle<RequestEvent>({
   limit: 30, windowMs: 60_000,
   key: (_request, event) => event!.getClientAddress(),
+  store: localStore.scope('demo-form:throttle', { max: 10_000 }),
 })
 
 // Счётчик созданных — число, а не список адресов: список рос без предела и держал

@@ -86,6 +86,82 @@ suite('частота (F18)', () => {
     t.check(req('9.9.9.9'))
     expect(t.size).toBe(1)
   })
+  /** Хранилище со сроком в духе `localStore`: потолок, срок и вытеснение давно не писавших. */
+  function kv(now: () => number, max = Infinity) {
+    const map = new Map<string, { value: unknown; exp: number }>()
+    const writes: { key: string; value: unknown; ttlMs: number }[] = []
+    return {
+      writes,
+      map,
+      get<T>(key: string) {
+        const hit = map.get(key)
+        if (!hit || hit.exp <= now()) { map.delete(key); return undefined }
+        return hit.value as T
+      },
+      set<T>(key: string, value: T, ttlMs: number) {
+        writes.push({ key, value, ttlMs })
+        map.delete(key)
+        while (map.size >= max) map.delete(map.keys().next().value!)
+        map.set(key, { value, exp: now() + ttlMs })
+      },
+    }
+  }
+
+  test('окна во внешнем хранилище: скользящее окно, срок — от последнего попадания', async () => {
+    let now = 0
+    const store = kv(() => now)
+    const t = windowThrottle({ limit: 2, windowMs: 1000, key: (r) => r.headers.get('x-real-ip')!, store }, () => now)
+    expect(t.size).toBeUndefined()
+    expect((await t.check(req())).allowed).toBe(true)
+    now = 600
+    expect((await t.check(req())).allowed).toBe(true)
+    expect(store.writes.at(-1)).toEqual({ key: '1.1.1.1', value: [0, 600], ttlMs: 1000 })
+    now = 900
+    // Отказ не попадание: окно не удлиняется, ждать — до выхода метки 0.
+    expect(await t.check(req())).toEqual({ allowed: false, retryAfterMs: 100 })
+    // Запись живёт, пока в окне младшая метка (600 + 1000), а не до выхода старшей.
+    expect(store.writes.at(-1)).toEqual({ key: '1.1.1.1', value: [0, 600], ttlMs: 700 })
+    now = 1000
+    // Скользящее: метка 0 вышла, 600 ещё в окне — одно место.
+    expect((await t.check(req())).allowed).toBe(true)
+    expect(await t.check(req())).toEqual({ allowed: false, retryAfterMs: 600 })
+  })
+
+  test('записанное в хранилище не меняется: каждое попадание — новый массив', async () => {
+    const store = kv(() => 0)
+    const t = windowThrottle({ limit: 5, windowMs: 1000, key: () => 'k', store }, () => 0)
+    await t.check(req())
+    const first = store.writes[0]!.value
+    await t.check(req())
+    expect(first).toEqual([0])
+    expect(store.writes[1]!.value).not.toBe(first)
+  })
+
+  test('потолок хранилища ограничивает память: окна разовых ключей вытесняются', async () => {
+    const store = kv(() => 0, 100)
+    const t = windowThrottle({ limit: 5, windowMs: 60_000, key: (r) => r.headers.get('x-real-ip')!, store }, () => 0)
+    for (let i = 0; i < 500; i++) await t.check(req(`10.0.${i >> 8}.${i & 255}`))
+    expect(store.map.size).toBe(100)
+  })
+
+  test('синхронное хранилище — синхронный ответ: между чтением и записью никто не вклинится', () => {
+    const store = kv(() => 0)
+    const t = windowThrottle({ limit: 1, windowMs: 1000, key: () => 'k', store }, () => 0)
+    const verdicts = [t.check(req()), t.check(req())]
+    expect(verdicts).toEqual([{ allowed: true }, { allowed: false, retryAfterMs: 1000 }])
+  })
+
+  test('асинхронное хранилище тоже поддерживается', async () => {
+    const inner = kv(() => 0)
+    const store = {
+      get: async <T,>(key: string) => inner.get<T>(key),
+      set: async <T,>(key: string, value: T, ttlMs: number) => inner.set(key, value, ttlMs),
+    }
+    const t = windowThrottle({ limit: 1, windowMs: 1000, key: () => 'k', store }, () => 0)
+    expect(await t.check(req())).toEqual({ allowed: true })
+    expect(await t.check(req())).toEqual({ allowed: false, retryAfterMs: 1000 })
+  })
+
   test('контекст запроса из handle доходит до ключа: окно на адрес клиента', async () => {
     type Ev = { getClientAddress(): string }
     const seen: (Ev | undefined)[] = []

@@ -332,8 +332,55 @@ export interface Throttle<E = unknown> {
 }
 
 /**
- * Ограничение частоты скользящим окном в памяти процесса. Отказ по частоте идёт
- * ДО чтения тела: иначе отказ расходует предел.
+ * Хранилище окон частоты: «ключ → метки попаданий» со сроком. Подходит любое
+ * хранилище с таким контрактом, например область `localStore` из `lib/cache`
+ * (`localStore.scope('signup:throttle', { max: 10_000 })`): истёкшие окна
+ * убирает срок, лишние ключи — потолок области. Библиотека его не импортирует —
+ * контракт структурный, как у `storeIdempotency`.
+ *
+ * Чтение и запись — две операции. С синхронным хранилищем (память процесса)
+ * между ними никто не вклинится, и окно точное. С сетевым два одновременных
+ * запроса могут прочесть одно окно и оба пройти — лимит тогда «примерно»;
+ * для общего лимита на несколько инстансов нужен атомарный счётчик.
+ */
+export interface ThrottleKv {
+  get<T>(key: string): Promise<T | undefined> | T | undefined
+  set<T>(key: string, value: T, ttlMs: number): Promise<void> | void
+}
+
+/** Значение или обещание — продолжить синхронно, если значение уже есть. */
+const thenMaybe = <T, R>(value: Promise<T> | T, next: (v: T) => R | Promise<R>): R | Promise<R> =>
+  value instanceof Promise ? value.then(next) : next(value)
+
+/**
+ * Окна по умолчанию — карта в памяти процесса: библиотека работает и без
+ * внешнего хранилища. Окна без попаданий удаляются; полный обход ключей — не
+ * чаще раза за `windowMs`, так что в карте живут только ключи, активные за
+ * последнее окно.
+ */
+function mapWindows(windowMs: number, now: () => number): ThrottleKv & { readonly size: number } {
+  const hits = new Map<string, readonly number[]>()
+  let sweptAt = now()
+  return {
+    get<T>(key: string) {
+      const t = now()
+      if (t - sweptAt >= windowMs) {
+        sweptAt = t
+        for (const [k, list] of hits) if (!list.some((x) => t - x < windowMs)) hits.delete(k)
+      }
+      return hits.get(key) as T | undefined
+    },
+    set<T>(key: string, value: T) {
+      hits.set(key, value as readonly number[])
+    },
+    get size() { return hits.size },
+  }
+}
+
+/**
+ * Ограничение частоты скользящим окном: в окне `windowMs` до `limit` попаданий
+ * на ключ, считая от каждого запроса назад (на стыке окон всплеска «2×» нет).
+ * Отказ по частоте идёт ДО чтения тела: иначе отказ расходует предел.
  *
  * Ключ обязателен: умолчания «по адресу клиента» у библиотеки нет и быть не может.
  * Сырой `x-forwarded-for` задаёт сам клиент — подставив случайный, он получает
@@ -345,44 +392,46 @@ export interface Throttle<E = unknown> {
  * `key: (_request, event) => event!.getClientAddress()`. Без `event` (вызов
  * приёмника без третьего аргумента) ключ получает `undefined`.
  *
- * Память: окна без попаданий удаляются; полный обход ключей — не чаще раза за
- * `windowMs`, так что в карте живут только ключи, активные за последнее окно.
- * @param o Лимит, окно и функция ключа `(request, event) => string`.
- * @param now Часы — для тестов.
- * @returns Ограничитель; `size` — число живых окон (для наблюдения и тестов).
+ * Память: без `store` окна живут в карте процесса (см. `mapWindows`). Со `store`
+ * окна живут в нём со сроком `windowMs` от последнего попадания — их убирают
+ * срок и потолок хранилища (у карты потолка нет; у области `localStore` есть).
+ * Значения записываются новыми массивами: записанное в хранилище не меняется.
+ * @param o Лимит, окно, функция ключа `(request, event) => string` и хранилище окон.
+ * @param now Часы меток — для тестов (срок записей считает часы хранилища).
+ * @returns Ограничитель; `size` — число живых окон встроенной карты (для
+ *   наблюдения и тестов), со своим `store` — `undefined`.
  */
 export function windowThrottle<E = unknown>(
-  o: { limit: number; windowMs: number; key: (r: Request, event: E | undefined) => string },
+  o: {
+    limit: number
+    windowMs: number
+    key: (r: Request, event: E | undefined) => string
+    /** Где хранить окна; по умолчанию — карта в памяти процесса. */
+    store?: ThrottleKv
+  },
   now: () => number = Date.now,
-): Throttle<E> & { readonly size: number } {
+): Throttle<E> & { readonly size: number | undefined } {
   if (typeof o.key !== 'function')
     throw new TypeError('[form] windowThrottle: key обязателен — сырой x-forwarded-for подделывается клиентом')
-  const hits = new Map<string, number[]>()
-  let sweptAt = now()
-  const live = (list: readonly number[], t: number) => list.filter((x) => t - x < o.windowMs)
-  const sweep = (t: number) => {
-    sweptAt = t
-    for (const [key, list] of hits) {
-      const rest = live(list, t)
-      if (rest.length) hits.set(key, rest)
-      else hits.delete(key)
-    }
-  }
+  const own = o.store ? null : mapWindows(o.windowMs, now)
+  const store: ThrottleKv = o.store ?? own!
   return {
     check({ request, event }) {
       const key = o.key(request, event)
       const t = now()
-      if (t - sweptAt >= o.windowMs) sweep(t)
-      const list = live(hits.get(key) ?? [], t)
-      if (list.length >= o.limit) {
-        hits.set(key, list)
-        return { allowed: false, retryAfterMs: o.windowMs - (t - list[0]!) }
-      }
-      list.push(t)
-      hits.set(key, list)
-      return { allowed: true }
+      return thenMaybe(store.get<readonly number[]>(key), (stored): ThrottleVerdict | Promise<ThrottleVerdict> => {
+        const list = (Array.isArray(stored) ? stored : []).filter((x) => t - x < o.windowMs)
+        if (list.length >= o.limit) {
+          const retryAfterMs = o.windowMs - (t - list[0]!)
+          // Отказ не попадание: окно не удлиняется. Срок записи — до выхода
+          // МЛАДШЕЙ метки (раньше нельзя: потерялись бы метки, ещё живые в окне).
+          const keepMs = o.windowMs - (t - list[list.length - 1]!)
+          return thenMaybe(store.set(key, list, keepMs), () => ({ allowed: false, retryAfterMs }))
+        }
+        return thenMaybe(store.set(key, [...list, t], o.windowMs), () => ({ allowed: true }))
+      })
     },
-    get size() { return hits.size },
+    get size() { return own?.size },
   }
 }
 

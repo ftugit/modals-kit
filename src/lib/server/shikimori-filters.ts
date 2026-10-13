@@ -3,7 +3,9 @@
  *
  * Здесь живёт ЗНАНИЕ ОБ API, которого нет в схеме: какой параметр отвечает за
  * поле и в каком виде принимает значение (измерено живьём, `probes-shiki/`):
- *   • `genre_v2` — мир жанров v2 (те же id, что отдаёт GraphQL `genres`);
+ *   • жанры — по версии API: `mix` — `genre_v2` (мир жанров v2, те же id, что
+ *     отдаёт GraphQL `genres`), `rest` — `genre` (мир v1, REST `/genres`),
+ *     `graphql` — аргумент `genre` GraphQL (id v2);
  *   • `studio` — id студий REST-справочника (`/studios`);
  *     у обоих: СПИСОК через запятую значит «и», префикс `!` у значения —
  *     «кроме», а повтор параметра API читает как «последний побеждает»
@@ -32,8 +34,8 @@ import {
   type CatalogFilterValues,
 } from '#lib/filters/index.js'
 import { DEV } from 'esm-env'
-import type { AnimesPage } from '../../content/shikimori'
-import { fetchAnimes, type AnimesQuery, type TransportDeps } from './shikimori'
+import { SHIKIMORI_DEFAULT_API, type AnimesPage, type ShikimoriApi } from '../../content/shikimori'
+import { fetchCatalogPage, type AnimesQuery, type TransportDeps } from './shikimori'
 import { getShikimoriFilterSchema } from './shikimori-schema'
 
 /** Что из запрошенного не применяется и почему (для UI, лога и отладки). */
@@ -58,6 +60,7 @@ export type AnimesFilterQuery = {
 export function animesFilterParams(
   schema: CatalogFilterSchema,
   values: CatalogFilterValues,
+  api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
 ): { params: Partial<AnimesQuery>; dropped: DroppedFilter[] } {
   const params: Partial<AnimesQuery> = {}
   const dropped: DroppedFilter[] = []
@@ -76,7 +79,11 @@ export function animesFilterParams(
         // «и» и «кроме» — одним списком: элементы складываются по «и», `!` —
         // исключение (проверено живьём, см. `buildUpstreamUrl`).
         const list = [...(group.and ?? []), ...(group.not ?? []).map((item) => `!${item}`)]
-        if (list.length) params.genre_v2 = [...list]
+        // Параметр — по версии: id жанров у `rest` из мира v1, у остальных v2.
+        if (list.length) {
+          if (api === 'mix') params.genre_v2 = [...list]
+          else params.genre = [...list]
+        }
       } else if (key === 'studios') {
         // Отрицания — тот же список с префиксом `!` (проверено живьём: см.
         // объявление поля в `content/shikimori-filters`).
@@ -136,6 +143,7 @@ export function animesFilterParams(
 export function animesFilterQuery(
   schema: CatalogFilterSchema,
   raw: Record<string, unknown>,
+  api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
 ): AnimesFilterQuery {
   const map = catalogFilterValueMap(raw)
   // Один расчёт связок: поля, которые они гасят, и запрет поиска.
@@ -164,7 +172,7 @@ export function animesFilterQuery(
 
   const formData = catalogFilterFormData(schema, usable)
   const { values, errors } = validateCatalogFilterValues(schema, formData)
-  const mapped = animesFilterParams(schema, values)
+  const mapped = animesFilterParams(schema, values, api)
 
   // Что дошло до значений, а что нет: неприменённое не исчезает молча — иначе
   // «фильтр стоит в адресе, а выдача не сузилась» выглядело бы как баг API.
@@ -240,13 +248,14 @@ export function animesFilterQuery(
  * клиент не должен оставлять после себя «схема недоступна» на весь TTL.
  */
 export async function fetchAnimesPage(
-  parsed: { query: AnimesQuery; filters: Readonly<Record<string, unknown>> },
+  parsed: { api?: ShikimoriApi; query: AnimesQuery; filters: Readonly<Record<string, unknown>> },
   deps: TransportDeps & { signal?: AbortSignal } = {},
 ): Promise<AnimesPage> {
+  const api = parsed.api ?? SHIKIMORI_DEFAULT_API
   const requested = Object.keys(parsed.filters).length > 0
   const { signal, ...transport } = deps
   const applied: AnimesFilterQuery = requested
-    ? animesFilterQuery(await getShikimoriFilterSchema(transport), parsed.filters)
+    ? animesFilterQuery(await getShikimoriFilterSchema({ ...transport, api }), parsed.filters, api)
     : { params: {}, dropped: [], search: true }
 
   const query: AnimesQuery = { ...parsed.query, ...applied.params }
@@ -257,7 +266,7 @@ export async function fetchAnimesPage(
     }
   }
 
-  const page = await fetchAnimes(query, { ...transport, ...(signal ? { signal } : {}) })
+  const page = await fetchCatalogPage(api, query, { ...transport, ...(signal ? { signal } : {}) })
   return applied.dropped.length ? { ...page, dropped: applied.dropped } : page
 }
 

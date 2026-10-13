@@ -44,15 +44,23 @@ const ENUM_MESSAGES: Record<string, string> = {
   ]),
 }
 
-type Stub = { graphql: number; rest: number }
+type Stub = { graphql: number; rest: number; urls: string[]; queries: string[] }
 
 function stubUpstream(studios: { id: number; name: string }[]) {
-  const calls: Stub = { graphql: 0, rest: 0 }
+  const calls: Stub = { graphql: 0, rest: 0, urls: [], queries: [] }
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (init?.method === 'POST') {
       calls.graphql += 1
       const body = JSON.parse(String(init.body)) as { query: string; variables?: { page?: number } }
+      calls.queries.push(body.query)
+      // Проба enum'а через GraphQL: API отвечает 500 с перечнем в errors (записано живьём 2026-10-13).
+      const probe = /animes\((kind|status|rating|duration): "zzz"/.exec(body.query)?.[1]
+      if (probe) {
+        const message = JSON.parse(ENUM_MESSAGES[probe]!)[0] as string
+        return json({ errors: [{ exception: 'InvalidParameterError', message }] }, 500)
+      }
+      if (body.query.includes('order: aired_on')) return json({ data: { animes: [{ airedOn: { year: 2027 } }] } })
       if (body.query.includes('genres(entryType: Anime)')) {
         return json({ data: { genres: [{ id: '27', name: 'Shounen', russian: 'Сёнен' }, { id: '133', name: 'Isekai', russian: null }] } })
       }
@@ -69,7 +77,15 @@ function stubUpstream(studios: { id: number; name: string }[]) {
       })
     }
     calls.rest += 1
+    calls.urls.push(url)
     if (url.includes('/studios')) return json(studios)
+    if (url.endsWith('/genres')) {
+      return json([
+        { id: 8, name: 'Drama', russian: 'Драма', kind: 'genre', entry_type: 'Anime' },
+        { id: 89, name: 'Police', russian: 'Полиция', kind: 'genre', entry_type: 'Manga' },
+        { id: 27, name: 'Shounen', russian: '', kind: 'genre', entry_type: 'Anime' },
+      ])
+    }
     if (url.includes('order=aired_on')) return json([{ aired_on: '2028-01-01' }])
     const name = /[?&](kind|status|rating|duration)=/.exec(url)?.[1]
     if (name) return new Response(ENUM_MESSAGES[name]!, { status: 422 })
@@ -246,5 +262,72 @@ describe('кэш схемы', () => {
       throw new Error('сеть упала')
     }, { sleep: async () => {} })
     await expect(getShikimoriFilterSchema({ fetch: failing })).rejects.toThrow(/недоступен/)
+  })
+})
+
+describe('три версии API (ход 85, вариант «c» хода 96)', () => {
+  it('rest: только REST — жанры v1 аниме из /genres, студии, enum по 422; частот нет', async () => {
+    const { calls, fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
+    const refs = await readShikimoriRefs({ fetch: fetchImpl }, 'rest')
+    expect(calls.graphql).toBe(0)
+    // Манга из общего справочника отсеяна; пустой russian → name.
+    expect(refs.genres).toEqual([
+      { id: '8', label: 'Драма' },
+      { id: '27', label: 'Shounen' },
+    ])
+    expect(refs.studios).toEqual([{ id: '858', label: 'Wit Studio' }])
+    expect(refs.enums.status).toEqual(['anons', 'ongoing', 'released', 'latest'])
+    expect(refs.counts.size).toBe(0)
+    expect(refs.newestYear).toBe(2028)
+    const schema = buildShikimoriFilterSchema(refs, '2026-10-13T09:00:00.000Z', 'rest')
+    expect(schema.source).toBe('shikimori-rest')
+    expect(schema.fields.map((field) => field.key)).toContain('studios')
+  })
+
+  it('graphql: только GraphQL — студий нет ни в справочниках, ни в схеме', async () => {
+    const { calls, fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
+    const refs = await readShikimoriRefs({ fetch: fetchImpl }, 'graphql')
+    expect(calls.rest).toBe(0)
+    expect(refs.studios).toEqual([])
+    expect(refs.genres.map((genre) => genre.id)).toEqual(['27', '133'])
+    expect(refs.enums.kind).toEqual(['tv', 'movie', 'ova'])
+    expect(refs.enums.duration).toEqual(['S', 'F'])
+    expect(refs.counts.get('genres:27')).toBe(2)
+    expect(refs.newestYear).toBe(2027)
+    // Выборка этой версии студий не спрашивает.
+    expect(calls.queries.filter((q) => q.includes('studios'))).toEqual([])
+
+    const schema = buildShikimoriFilterSchema(refs, '2026-10-13T09:00:00.000Z', 'graphql')
+    expect(schema.source).toBe('shikimori-graphql')
+    expect(schema.fields.map((field) => field.key)).toEqual([
+      'genres', 'kind', 'status', 'rating', 'duration', 'score', 'year',
+    ])
+    expect(schema.fields.flatMap(catalogFilterFieldNames).some((name) => name.includes('studios'))).toBe(false)
+  })
+
+  it('graphql: 500 пробы — это ответ, а не сбой: без повторов (один запрос на справочник)', async () => {
+    const { calls, fetchImpl } = stubUpstream([])
+    const fetch = makeUpstream(fetchImpl, { sleep: async () => {} })
+    await readShikimoriRefs({ fetch }, 'graphql')
+    for (const name of ['kind', 'status', 'rating', 'duration']) {
+      expect(calls.queries.filter((q) => q.includes(`${name}: "zzz"`))).toHaveLength(1)
+    }
+  })
+
+  it('graphql: проба без перечня в ответе — честная ошибка', async () => {
+    const fetch = makeUpstream(async () => json({ errors: [{ message: 'что-то иное' }] }, 500), { sleep: async () => {} })
+    await expect(readShikimoriRefs({ fetch }, 'graphql')).rejects.toThrow()
+  })
+
+  it('кэш схем — у каждой версии свой: схема одной не отдаётся за другую', async () => {
+    const c = clock()
+    const { fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
+    const deps = { fetch: fetchImpl, now: c.now, store: c.store }
+    const mix = await getShikimoriFilterSchema(deps)
+    const graphql = await getShikimoriFilterSchema({ ...deps, api: 'graphql' })
+    const rest = await getShikimoriFilterSchema({ ...deps, api: 'rest' })
+    expect([mix.source, graphql.source, rest.source]).toEqual(['shikimori', 'shikimori-graphql', 'shikimori-rest'])
+    expect(await getShikimoriFilterSchema({ ...deps, api: 'graphql' })).toBe(graphql)
+    expect(await getShikimoriFilterSchema(deps)).toBe(mix)
   })
 })

@@ -1,18 +1,32 @@
 /**
  * Схема фильтров Shikimori — в зоне ответственности ИСТОЧНИКА, на сервере.
  *
+ * Схем ТРИ — по версии API источника (`ShikimoriApi`, решение владельца, ход 85):
+ *
+ *   версия   жанры                      студии          enum'ы          частоты
+ *   ───────  ─────────────────────────  ──────────────  ──────────────  ──────────────
+ *   rest     REST `/genres` (v1, 46)    REST `/studios` проба REST 422  нет
+ *   graphql  GraphQL `genres` (v2)      ПОЛЯ НЕТ        проба GraphQL   выборка GraphQL
+ *   mix      GraphQL `genres` (v2)      REST `/studios` проба REST 422  выборка GraphQL
+ *
  * Что здесь и почему именно здесь:
  *   • СОСТАВ полей приходит общим объявлением (`content/shikimori-filters`):
- *     ключи и режимы — контракт имён, один на клиент и сервер;
+ *     ключи и режимы — контракт имён, один на клиент и сервер; у `graphql`
+ *     нет «Студий» — в GraphQL нет их справочника (вариант «c», ход 96);
  *   • ЗНАЧЕНИЯ читаются живьём из справочников API: жанры v2 — GraphQL
- *     (`genres(entryType: Anime)`; в REST справочника v2 нет вовсе), студии —
- *     REST (`/studios`, 1933 записи), enum'ы (тип/статус/рейтинг/длительность) —
- *     из текста 422: API сам перечисляет допустимые значения, и его список
- *     ШИРЕ, чем `/constants/anime` (там нет `tv_13`, `latest`);
+ *     (`genres(entryType: Anime)`; в REST справочника v2 нет вовсе), жанры v1
+ *     — REST `/genres`, студии — REST (`/studios`, 1933 записи), enum'ы
+ *     (тип/статус/рейтинг/длительность) — из текста ошибки: API сам
+ *     перечисляет допустимые значения, и его список ШИРЕ, чем
+ *     `/constants/anime` (там нет `tv_13`, `latest`) и чем описания типов
+ *     GraphQL (там нет `latest`, зато есть `ova/ona`, который API отвергает);
  *   • ЧАСТОТЫ опций — из выборки популярной части каталога (несколько
  *     страниц GraphQL): по ним `capCatalogFilterOptions` ставит частые студии
  *     первыми — первые 200 и есть список без JS, и без частот «Wit Studio»
- *     могла бы в него не попасть. С JS едут и ищутся все студии;
+ *     могла бы в него не попасть. С JS едут и ищутся все студии. У `rest`
+ *     частот нет: в списке REST `/animes` нет ни жанров, ни студий, а запрос
+ *     на каждый тайтл — сотни запросов ради порядка. Порядок там — порядок
+ *     справочника;
  *   • СВЯЗКИ (что нельзя сочетать) объявлены здесь же: это знание об API,
  *     измеренное живьём (`probes-shiki/`), а не о разметке;
  *   • СТАБИЛЬНОСТЬ: собранная схема кэшируется с меткой `builtAt` и обновляется
@@ -33,21 +47,25 @@ import {
   type CatalogFilterSchema,
 } from '#lib/filters/index.js'
 import {
-  SHIKIMORI_FILTER_SOURCE,
   SHIKIMORI_FILTER_SCHEMA_VERSION,
   shikimoriFilterSchemaSkeleton,
+  shikimoriFilterSource,
 } from '../../content/shikimori-filters'
+import { SHIKIMORI_APIS, SHIKIMORI_DEFAULT_API, type ShikimoriApi } from '../../content/shikimori'
+import type { Store } from '#lib/cache/index.js'
+import { localStore } from './cache'
 import { DEV } from 'esm-env'
 import { fetchGraphql } from './graphql'
 import {
+  SHIKIMORI_GRAPHQL,
   fetchShikimoriJson,
   probeShikimoriJson,
   type TransportDeps,
 } from './shikimori'
-import { FetchError } from '#lib/fetch/index.js'
+import { FetchError, readText } from '#lib/fetch/index.js'
+import { upstream } from './fetch'
 
-/** GraphQL-эндпоинт Shikimori: для универсального транспорта это просто адрес. */
-export const SHIKIMORI_GRAPHQL = 'https://shikimori.io/api/graphql'
+export { SHIKIMORI_GRAPHQL }
 
 /** Как долго живёт собранная схема (n минут): после — обновляется при запросе. */
 export const SHIKIMORI_SCHEMA_TTL_MS = 30 * 60 * 1000
@@ -128,6 +146,7 @@ const ENUM_LABELS: Record<EnumName, Record<string, string>> = {
 /** Что прочитано живьём: значения справочников + частоты по выборке каталога. */
 export type ShikimoriRefs = {
   genres: readonly { id: string; label: string }[]
+  /** Студии; у версии `graphql` справочника нет — пусто (и поля в схеме нет). */
   studios: readonly { id: string; label: string }[]
   enums: Record<EnumName, readonly string[]>
   /** Частота значения в популярной выборке: `<ключ поля>:<id>` → сколько раз. */
@@ -140,6 +159,17 @@ export type ShikimoriRefs = {
 
 const GENRES_DOC = `query Genres {
   genres(entryType: Anime) { id name russian kind }
+}`
+
+const NEWEST_DOC = `query Newest {
+  animes(limit: 1, order: aired_on) { airedOn { year } }
+}`
+
+/** Выборка версии `graphql`: только жанры — студий у этой версии нет. */
+const SAMPLE_GENRES_DOC = `query Sample($page: PositiveInt, $limit: PositiveInt, $order: OrderEnum) {
+  animes(page: $page, limit: $limit, order: $order) {
+    genres { id }
+  }
 }`
 
 const SAMPLE_DOC = `query Sample($page: PositiveInt, $limit: PositiveInt, $order: OrderEnum) {
@@ -183,30 +213,127 @@ async function readEnum(name: EnumName, transport: TransportDeps): Promise<strin
   return values
 }
 
-/** Чтение всех справочников схемы: значения + частоты + края годов. */
-export async function readShikimoriRefs(transport: TransportDeps = {}): Promise<ShikimoriRefs> {
-  const [genreList, studioList, newest, ...pages] = await Promise.all([
-    fetchGraphql<{ id: string; name: string; russian: string | null }[]>({
-      url: SHIKIMORI_GRAPHQL,
-      doc: GENRES_DOC,
-      map: (data) => (data as { genres?: { id: string; name: string; russian: string | null }[] }).genres ?? [],
-    }, transport),
-    fetchShikimoriJson<{ id: number | string; name: string }[]>('/studios', transport),
-    fetchShikimoriJson<{ aired_on?: string | null }[]>('/animes?limit=1&order=aired_on', transport),
-    ...Array.from({ length: SHIKIMORI_SCHEMA_SAMPLE_PAGES }, (_, index) =>
-      fetchGraphql<{ genres?: { id: string }[]; studios?: { id: string }[] }[]>({
+/**
+ * Повторы пробы GraphQL: на негодное значение GraphQL Shikimori отвечает
+ * HTTP 500 с `InvalidParameterError` в теле. Для пробы это ответ, а не сбой —
+ * 500 не повторяем (иначе каждый справочник стоил бы трёх запросов); 429/503 и
+ * прочие временные отказы повторяются как обычно.
+ */
+const GRAPHQL_PROBE_RETRY = { statuses: [408, 425, 429, 502, 503, 504] }
+
+/**
+ * Живой список значений enum'а через GraphQL: тот же приём, что у REST, —
+ * запрос с заведомо негодным значением, и сервер сам перечисляет допустимые
+ * (`included_in?([...])` в `errors[0].message`). Ответ пробы не кэшируется —
+ * кэшируется её результат (схема).
+ */
+async function readEnumGraphql(name: EnumName, transport: TransportDeps): Promise<string[]> {
+  const fetch = transport.fetch ?? upstream
+  const res = await fetch(SHIKIMORI_GRAPHQL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ query: `{ animes(${name}: "zzz", limit: 1) { id } }` }),
+    idempotent: true,
+    retry: GRAPHQL_PROBE_RETRY,
+  })
+  const text = await readText(res, { accept: () => true })
+  let message = ''
+  try {
+    const payload = JSON.parse(text) as { errors?: readonly { message?: string }[] }
+    message = payload.errors?.map((error) => error.message ?? '').join(' | ') ?? ''
+  } catch {
+    // не JSON — ниже это «пустой список значений»
+  }
+  const values = parseEnumMessage(message)
+  if (!values.length) {
+    throw new FetchError('fetch.rejected', `справочник «${name}»: пустой список значений`, {
+      upstreamStatus: res.status,
+    })
+  }
+  return values
+}
+
+type Labelled = { id: string; label: string }
+type GraphqlGenre = { id: string; name: string; russian: string | null }
+type SamplePage = { genres?: { id: string }[]; studios?: { id: string }[] }[]
+
+const graphqlGenres = (transport: TransportDeps): Promise<Labelled[]> =>
+  fetchGraphql<GraphqlGenre[]>({
+    url: SHIKIMORI_GRAPHQL,
+    doc: GENRES_DOC,
+    map: (data) => (data as { genres?: GraphqlGenre[] }).genres ?? [],
+  }, transport).then((list) => list.map((genre) => ({ id: String(genre.id), label: genre.russian ?? genre.name })))
+
+/** Жанры v1 из REST: справочник общий у аниме и манги — берём только аниме. */
+const restGenres = (transport: TransportDeps): Promise<Labelled[]> =>
+  fetchShikimoriJson<{ id: number | string; name: string; russian?: string | null; entry_type?: string }[]>(
+    '/genres',
+    transport,
+  ).then((list) =>
+    list
+      .filter((genre) => genre.entry_type === 'Anime')
+      .map((genre) => ({ id: String(genre.id), label: genre.russian || genre.name })),
+  )
+
+const restStudios = (transport: TransportDeps): Promise<Labelled[]> =>
+  fetchShikimoriJson<{ id: number | string; name: string }[]>('/studios', transport).then((list) =>
+    list.map((studio) => ({ id: String(studio.id), label: studio.name })),
+  )
+
+const restNewestYear = (transport: TransportDeps): Promise<number> =>
+  fetchShikimoriJson<{ aired_on?: string | null }[]>('/animes?limit=1&order=aired_on', transport).then(
+    (list) => Number.parseInt(String(list?.[0]?.aired_on ?? '').slice(0, 4), 10),
+  )
+
+const graphqlNewestYear = (transport: TransportDeps): Promise<number> =>
+  fetchGraphql<number>({
+    url: SHIKIMORI_GRAPHQL,
+    doc: NEWEST_DOC,
+    map: (data) => Number((data as { animes?: { airedOn?: { year?: number } | null }[] }).animes?.[0]?.airedOn?.year),
+  }, transport)
+
+const samplePages = (doc: string, transport: TransportDeps): Promise<SamplePage[]> =>
+  Promise.all(
+    Array.from({ length: SHIKIMORI_SCHEMA_SAMPLE_PAGES }, (_, index) =>
+      fetchGraphql<SamplePage>({
         url: SHIKIMORI_GRAPHQL,
-        doc: SAMPLE_DOC,
+        doc,
         variables: { page: index + 1, limit: 50, order: 'popularity' },
-        map: (data) => (data as { animes?: { genres?: { id: string }[]; studios?: { id: string }[] }[] }).animes ?? [],
+        map: (data) => (data as { animes?: SamplePage }).animes ?? [],
       }, transport),
     ),
+  )
+
+/**
+ * Чтение всех справочников схемы версии `api`: значения + частоты + края
+ * годов. Каждая версия ходит только в свой API (таблица в шапке модуля).
+ */
+export async function readShikimoriRefs(
+  transport: TransportDeps = {},
+  api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
+): Promise<ShikimoriRefs> {
+  const graphql = api === 'graphql'
+  const [genres, studios, newest, pages] = await Promise.all([
+    api === 'rest' ? restGenres(transport) : graphqlGenres(transport),
+    graphql ? Promise.resolve([]) : restStudios(transport),
+    graphql ? graphqlNewestYear(transport) : restNewestYear(transport),
+    api === 'rest' ? Promise.resolve([]) : samplePages(graphql ? SAMPLE_GENRES_DOC : SAMPLE_DOC, transport),
   ])
   const enums = {} as Record<EnumName, readonly string[]>
   for (const name of ['kind', 'status', 'rating', 'duration'] as const) {
-    enums[name] = await readEnum(name, transport)
+    enums[name] = graphql ? await readEnumGraphql(name, transport) : await readEnum(name, transport)
   }
+  return {
+    genres,
+    studios,
+    enums,
+    counts: countsOf(pages),
+    newestYear: Number.isInteger(newest) ? newest : new Date().getUTCFullYear(),
+  }
+}
 
+/** Частоты значений по выборке: `<поле>:<id>` → сколько раз встретилось. */
+function countsOf(pages: readonly SamplePage[]): Map<string, number> {
   const counts = new Map<string, number>()
   const bump = (key: string) => counts.set(key, (counts.get(key) ?? 0) + 1)
   for (const page of pages) {
@@ -215,15 +342,7 @@ export async function readShikimoriRefs(transport: TransportDeps = {}): Promise<
       for (const studio of anime.studios ?? []) bump(`studios:${String(studio.id)}`)
     }
   }
-
-  const newestYear = Number.parseInt(String(newest?.[0]?.aired_on ?? '').slice(0, 4), 10)
-  return {
-    genres: genreList.map((genre) => ({ id: String(genre.id), label: genre.russian ?? genre.name })),
-    studios: studioList.map((studio) => ({ id: String(studio.id), label: studio.name })),
-    enums,
-    counts,
-    newestYear: Number.isInteger(newestYear) ? newestYear : new Date().getUTCFullYear(),
-  }
+  return counts
 }
 
 /* ── Сборка схемы ───────────────────────────────────────────────────────── */
@@ -265,13 +384,17 @@ function enrichField(field: CatalogFilterField, refs: ShikimoriRefs): CatalogFil
  * Собранная схема обязана пройти свой же валидатор — это проверяется здесь,
  * а не «когда-нибудь в форме»: невалидную схему нельзя отдавать клиенту.
  */
-export function buildShikimoriFilterSchema(refs: ShikimoriRefs, builtAt: string): CatalogFilterSchema {
-  const skeleton = shikimoriFilterSchemaSkeleton()
+export function buildShikimoriFilterSchema(
+  refs: ShikimoriRefs,
+  builtAt: string,
+  api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
+): CatalogFilterSchema {
+  const skeleton = shikimoriFilterSchemaSkeleton(api)
   const capped = capCatalogFilterOptions({ ...skeleton, fields: skeleton.fields.map((field) => enrichField(field, refs)) })
   return validateCatalogFilterSchema({
     ...capped,
     version: SHIKIMORI_FILTER_SCHEMA_VERSION,
-    source: SHIKIMORI_FILTER_SOURCE,
+    source: shikimoriFilterSource(api),
     rules: SHIKIMORI_FILTER_RULES,
     builtAt,
   })
@@ -280,19 +403,35 @@ export function buildShikimoriFilterSchema(refs: ShikimoriRefs, builtAt: string)
 /* ── Кэш схемы: `builtAt`, TTL, одна сборка на всех ─────────────────────── */
 
 export type SchemaDeps = TransportDeps & {
+  /** Версия API источника (по умолчанию `mix`): у каждой версии своя схема и свой кэш. */
+  api?: ShikimoriApi
   /** Часы (тесты). */
   now?: () => number
   /** Время жизни схемы (тесты). */
   ttlMs?: number
 }
 
-let cached: { at: number; schema: CatalogFilterSchema } | null = null
-let building: Promise<CatalogFilterSchema> | null = null
+type CachedSchema = { at: number; schema: CatalogFilterSchema }
 
-/** Сброс кэша схемы (тесты; в приложении не нужен). */
+/**
+ * Собранные схемы — в области `shikimori:schemas` хранилища транспорта
+ * (`localStore` по умолчанию), запись на версию API: ключей ровно три.
+ * Срок записи — `Infinity`: свежесть решает метка `at` и TTL схемы, а
+ * устаревшая запись НУЖНА — её отдают, если обновление упало.
+ */
+const schemasOf = (store: Store | undefined): Store =>
+  (store ?? localStore).scope('shikimori').scope('schemas', { max: SHIKIMORI_APIS.length })
+
+/**
+ * Сборки в полёте — по версии. Это обещания, а не данные: в хранилище им не
+ * место (single-flight живёт в процессе, как склейка запросов в `fetch`).
+ */
+const building = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>()
+
+/** Сброс кэша схем в `localStore` (тесты; в приложении не нужен). */
 export function resetShikimoriFilterSchema(): void {
-  cached = null
-  building = null
+  building.clear()
+  void schemasOf(undefined).clear()
 }
 
 /**
@@ -301,29 +440,36 @@ export function resetShikimoriFilterSchema(): void {
  * обновление не стирает предыдущую схему: она отдаётся с прежним `builtAt`.
  */
 export async function getShikimoriFilterSchema(deps: SchemaDeps = {}): Promise<CatalogFilterSchema> {
-  const now = deps.now ?? (() => Date.now())
-  const ttlMs = deps.ttlMs ?? SHIKIMORI_SCHEMA_TTL_MS
+  const { api = SHIKIMORI_DEFAULT_API, now: clock, ttlMs: ttl, ...transport } = deps
+  const now = clock ?? (() => Date.now())
+  const ttlMs = ttl ?? SHIKIMORI_SCHEMA_TTL_MS
+  const schemas = schemasOf(transport.store)
+  const cached = await schemas.get<CachedSchema>(api)
   if (cached && now() - cached.at < ttlMs) return cached.schema
-  if (!building) {
+  let pending = building.get(api)
+  if (!pending) {
     const startedAt = now()
-    building = readShikimoriRefs(deps)
-      .then((refs) => {
-        const schema = buildShikimoriFilterSchema(refs, new Date(startedAt).toISOString())
-        cached = { at: now(), schema }
+    pending = readShikimoriRefs(transport, api)
+      .then(async (refs) => {
+        const schema = buildShikimoriFilterSchema(refs, new Date(startedAt).toISOString(), api)
+        await schemas.set<CachedSchema>(api, { at: now(), schema }, Infinity)
         return schema
       })
       .catch((error: unknown) => {
         if (cached) {
           if (DEV) {
-            console.warn(`[shikimori-schema] обновление не удалось, отдаю схему от ${cached.schema.builtAt}: ${String(error)}`)
+            console.warn(
+              `[shikimori-schema] ${api}: обновление не удалось, отдаю схему от ${cached.schema.builtAt}: ${String(error)}`,
+            )
           }
           return cached.schema
         }
         throw error
       })
       .finally(() => {
-        building = null
+        building.delete(api)
       })
+    building.set(api, pending)
   }
-  return await building
+  return await pending
 }

@@ -20,6 +20,7 @@ import {
   type CatalogFilterSchema,
 } from '#lib/filters/index.js'
 import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
+import { SHIKIMORI_DEFAULT_API, type ShikimoriApi } from './shikimori'
 
 /**
  * Поля схемы без значений: `options`/`min`/`max` наполняет серверная зона.
@@ -49,6 +50,22 @@ export const SHIKIMORI_FILTER_FIELDS: readonly CatalogFilterField[] = [
   { key: 'score', label: 'Оценка', type: 'number', bounds: ['min'] },
   { key: 'year', label: 'Год', type: 'number', bounds: ['min', 'max'] },
 ]
+
+/**
+ * Поля схемы конкретной версии API. Состав различается ровно там, где у версии
+ * нет справочника: в GraphQL Shikimori студий нет — значит у `graphql` нет и
+ * поля «Студии» (вариант «c», ход 96). Пустое поле «есть, но выбрать нечего»
+ * было бы враньём интерфейса; поле, которого нет, адрес и сервер отсекают
+ * deny-safe («поля нет в схеме источника»).
+ */
+export function shikimoriFilterFields(api: ShikimoriApi = SHIKIMORI_DEFAULT_API): readonly CatalogFilterField[] {
+  return api === 'graphql' ? SHIKIMORI_FILTER_FIELDS.filter((field) => field.key !== 'studios') : SHIKIMORI_FILTER_FIELDS
+}
+
+/** Ключи extra конкретной версии (то, что источник объявляет `filters`). */
+export function shikimoriFilterKeys(api: ShikimoriApi = SHIKIMORI_DEFAULT_API): readonly string[] {
+  return shikimoriFilterFields(api).flatMap(catalogFilterFieldNames)
+}
 
 /**
  * Ключи extra, которые понимает источник фильтров: `filters.genres.and`,
@@ -100,17 +117,26 @@ export const SHIKIMORI_FILTER_SEARCH: ExtraSearchSpec = Object.fromEntries(
 /** Ключи, смена которых меняет ВЫДАЧУ: сбрасывают указатель на первую страницу. */
 export const SHIKIMORI_FILTER_RELOAD_KEYS: readonly string[] = [...SHIKIMORI_FILTER_KEYS]
 
-/** Источник схемы: имя, под которым её строит серверная зона. */
+/** Источник схемы версии `mix`: имя, под которым её строит серверная зона. */
 export const SHIKIMORI_FILTER_SOURCE = 'shikimori'
+
+/**
+ * Имя схемы версии: у каждой версии СВОЯ схема (разные справочники, разные
+ * id жанров), и память вкладки (`catalogFilterSchemas`) держит их порознь.
+ * У `mix` имя прежнее — схема, запомненная до разделения, остаётся его.
+ */
+export function shikimoriFilterSource(api: ShikimoriApi = SHIKIMORI_DEFAULT_API): string {
+  return api === 'mix' ? SHIKIMORI_FILTER_SOURCE : `${SHIKIMORI_FILTER_SOURCE}-${api}`
+}
 
 /** Версия СОСТАВА полей (не значений): растёт, когда меняется контракт ключей. */
 export const SHIKIMORI_FILTER_SCHEMA_VERSION = 2
 
 /** Схема без значений — то, на что накладывает данные серверная зона. */
-export function shikimoriFilterSchemaSkeleton(): CatalogFilterSchema {
+export function shikimoriFilterSchemaSkeleton(api: ShikimoriApi = SHIKIMORI_DEFAULT_API): CatalogFilterSchema {
   return {
-    source: SHIKIMORI_FILTER_SOURCE,
+    source: shikimoriFilterSource(api),
     version: SHIKIMORI_FILTER_SCHEMA_VERSION,
-    fields: SHIKIMORI_FILTER_FIELDS,
+    fields: shikimoriFilterFields(api),
   }
 }

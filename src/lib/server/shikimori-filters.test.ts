@@ -209,13 +209,21 @@ describe('страница каталога с фильтрами: один ко
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
       if (init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as { query: string }
+        const body = JSON.parse(String(init.body)) as { query: string; variables?: Record<string, unknown> }
+        calls.push(`BODY ${JSON.stringify(body)}`)
+        const probe = /animes\((kind|status|rating|duration): "zzz"/.exec(body.query)?.[1]
+        if (probe) return json({ errors: [{ message: JSON.parse(enumMessage(`${probe}=zzz`))[0] }] }, 500)
+        if (body.query.includes('order: aired_on')) return json({ data: { animes: [{ airedOn: { year: 2028 } }] } })
+        if (body.query.startsWith('query Animes')) {
+          return json({ data: { animes: [{ id: '1', name: 'Title', russian: null, url: 'https://shikimori.io/animes/1', kind: 'tv', score: 7.5, status: 'released', episodes: 12, airedOn: { date: '2002-10-03', year: 2002 }, poster: null }] } })
+        }
         if (body.query.includes('genres(entryType')) {
           return json({ data: { genres: [{ id: '27', name: 'Shounen', russian: 'Сёнен' }] } })
         }
         return json({ data: { animes: [{ genres: [{ id: '27' }], studios: [{ id: '858' }] }] } })
       }
       if (url.includes('/studios')) return json([{ id: 858, name: 'Wit Studio' }])
+      if (url.endsWith('/genres')) return json([{ id: 27, name: 'Shounen', russian: 'Сёнен', entry_type: 'Anime' }])
       if (url.includes('order=aired_on')) return json([{ aired_on: '2028-01-01' }])
       if (/(kind|status|rating|duration)=zzz/.test(url)) return new Response(enumMessage(url), { status: 422 })
       return json([anime()])
@@ -292,5 +300,49 @@ describe('страница каталога с фильтрами: один ко
     )
     expect(pageUrl(calls).searchParams.has('kind')).toBe(false)
     expect(page.dropped).toEqual([{ key: 'filters.kind', reason: 'значение вне опций или границ схемы' }])
+  })
+
+  it('rest: жанры едут параметром `genre` (мир v1), каталог — REST', async () => {
+    const { calls, fetchImpl } = stubUpstream()
+    const page = await fetchAnimesPage(
+      { api: 'rest', query: { page: 1, limit: 20 }, filters: { 'filters.genres.and': '27' } },
+      { fetch: fetchImpl },
+    )
+    expect(page.items).toHaveLength(1)
+    expect(calls.some((call) => call.startsWith('POST'))).toBe(false)
+    const parsed = pageUrl(calls)
+    expect(parsed.searchParams.get('genre')).toBe('27')
+    expect(parsed.searchParams.has('genre_v2')).toBe(false)
+  })
+
+  it('graphql: студий в схеме нет — фильтр студий отсекается с причиной, жанры едут аргументом `genre`', async () => {
+    const { calls, fetchImpl } = stubUpstream()
+    const page = await fetchAnimesPage(
+      {
+        api: 'graphql',
+        query: { page: 1, limit: 20 },
+        filters: { 'filters.genres.and': '27', 'filters.studios.and': '858' },
+      },
+      { fetch: fetchImpl },
+    )
+    expect(page.items.map((card) => card.id)).toEqual([1])
+    expect(page.dropped).toEqual([{ key: 'filters.studios.and', reason: 'поля нет в схеме источника' }])
+    // Ни одного REST-запроса: версия ходит только в свой API.
+    expect(calls.some((call) => call.startsWith('GET '))).toBe(false)
+    const catalog = calls
+      .filter((call) => call.startsWith('BODY '))
+      .map((call) => JSON.parse(call.slice('BODY '.length)) as { query: string; variables?: Record<string, unknown> })
+      .find((body) => body.query.startsWith('query Animes'))!
+    expect(catalog.variables).toMatchObject({ genre: '27' })
+    expect(catalog.query).not.toContain('studio')
+  })
+})
+
+describe('мэппинг жанров по версии API', () => {
+  it('mix → genre_v2, rest и graphql → genre', () => {
+    const values = { genres: { and: ['27'], not: ['133'] } }
+    expect(animesFilterParams(schema, values).params).toEqual({ genre_v2: ['27', '!133'] })
+    expect(animesFilterParams(schema, values, 'rest').params).toEqual({ genre: ['27', '!133'] })
+    expect(animesFilterParams(schema, values, 'graphql').params).toEqual({ genre: ['27', '!133'] })
   })
 })

@@ -7,12 +7,15 @@
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'
-import { getTermArtifact } from '#lib/server/shikimori.js'
-import { apiFailure } from '#lib/server/api-error.js'
+import { getTermArtifact, parseShikimoriApi } from '#lib/server/shikimori.js'
+import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
 
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
+  // Версия API (`?api=`): словарь читается тем же API, что и каталог версии.
+  const api = parseShikimoriApi(url.searchParams)
+  if (!api.ok) return apiInvalid(api.error)
   try {
-    const text = await getTermArtifact({ signal: request.signal })
+    const text = await getTermArtifact({ api: api.api, signal: request.signal })
     return new Response(text, {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     })

@@ -13,7 +13,8 @@
 //   animes          — ЖИВОЙ каталог Shikimori: прямые запросы к его API через
 //                     наш бэкенд (`/api/shikimori/animes`), без выгрузки и без
 //                     локальной карты (канон SolidHono работал с дампом — решение
-//                     владельца: этот путь не повторяем).
+//                     владельца: этот путь не повторяем). Три версии API:
+//                     `animes` (mix), `animes-rest`, `animes-graphql`.
 //
 // Поиск — два независимых слоя (обе опции панели):
 //   `srch` — РОДНОЙ поиск источника: `q` уезжает в API как `search`
@@ -28,13 +29,14 @@ import {
   getShikimoriFilters,
   getShikimoriTerms,
   type AnimesPage,
+  type ShikimoriApi,
 } from '../../../../content/shikimori'
 import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
 import {
-  SHIKIMORI_FILTER_KEYS,
   SHIKIMORI_FILTER_RELOAD_KEYS,
   SHIKIMORI_FILTER_SEARCH,
-  SHIKIMORI_FILTER_SOURCE,
+  shikimoriFilterKeys,
+  shikimoriFilterSource,
 } from '../../../../content/shikimori-filters'
 import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
 import {
@@ -87,8 +89,45 @@ export type DemoStore = 'url' | 'local' | 'none'
  * (`#lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
  * только форма записи общая с каталогом.
  */
-export type DemoSrc = 'products' | 'photos' | 'animes' | 'rm-rest' | 'rm-graphql' | 'db'
-export const DEMO_SRCS: readonly DemoSrc[] = ['products', 'photos', 'animes', 'rm-rest', 'rm-graphql', 'db']
+export type DemoSrc =
+  | 'products'
+  | 'photos'
+  | 'animes'
+  | 'animes-rest'
+  | 'animes-graphql'
+  | 'rm-rest'
+  | 'rm-graphql'
+  | 'db'
+export const DEMO_SRCS: readonly DemoSrc[] = [
+  'products',
+  'photos',
+  'animes',
+  'animes-rest',
+  'animes-graphql',
+  'rm-rest',
+  'rm-graphql',
+  'db',
+]
+
+/**
+ * Shikimori — ОДИН источник в трёх версиях API (решение владельца, ход 85):
+ * `animes` — mix (как было до разделения: адреса `?page.src=animes` читаются
+ * по-старому), `animes-rest` — только REST, `animes-graphql` — только GraphQL.
+ * В отличие от Rick and Morty схемы у версий РАЗНЫЕ: справочники свои (жанры
+ * v1 у REST, v2 у GraphQL и mix), а у GraphQL нет «Студий» (вариант «c», ход 96).
+ * Поэтому при смене версии фильтры, которых у новой версии нет или чьи
+ * значения ей чужие, отсекаются deny-safe с причиной — не применяются молча.
+ */
+export const DEMO_SHIKIMORI_SRCS: Readonly<Partial<Record<DemoSrc, ShikimoriApi>>> = {
+  animes: 'mix',
+  'animes-rest': 'rest',
+  'animes-graphql': 'graphql',
+}
+
+/** Версия API Shikimori у источника; `null` — источник не Shikimori. */
+export function demoShikimoriApi(src: DemoSrc | undefined): ShikimoriApi | null {
+  return (src != null && DEMO_SHIKIMORI_SRCS[src]) || null
+}
 
 /**
  * Rick and Morty — ОДИН источник в двух версиях API (F54): `rm-rest` и
@@ -184,16 +223,13 @@ export const DEMO_PAGE_SIZES = [5, 10, 20, 40] as const
 /** Префикс адресных ключей пагинатора демо (`?page…`). */
 export const DEMO_PAGE_PREFIX = 'page'
 
-/** Источник, у которого есть серверная схема фильтров (живой каталог). */
-export const DEMO_LIVE_SRC = 'animes'
-
 /**
  * Источники, у которых есть ЧТО собирать: схема фильтров строится сервером из
  * живых справочников конкретного каталога, поэтому «у источника есть фильтры»
  * (`capabilities.filters`) — НЕ основание её собирать. У БД фильтры есть
  * (`flt`/`ord` адресом), а схемы Shikimori у них нет и быть не может.
  */
-export const DEMO_SCHEMA_SRCS: readonly DemoSrc[] = [DEMO_LIVE_SRC, 'rm-rest', 'rm-graphql']
+export const DEMO_SCHEMA_SRCS: readonly DemoSrc[] = ['animes', 'animes-rest', 'animes-graphql', 'rm-rest', 'rm-graphql']
 
 export function demoHasFilterSchema(src: DemoSrc | undefined): boolean {
   return src != null && DEMO_SCHEMA_SRCS.includes(src)
@@ -216,28 +252,33 @@ export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterS
  * — состояние слоя модалок, а не фильтров. Всё остальное (размер страницы,
  * источник, вторая полоса `?gallery.*`) обязано пережить смену фильтров.
  */
-/** Запрос схемы в полёте: параллельные вызовы ждут один и тот же ответ. */
-let filterSchemaInflight: Promise<CatalogFilterSchema> | null = null
+/** Запросы схем в полёте (по версии API): параллельные вызовы ждут один ответ. */
+const filterSchemaInflight = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>()
 
 /**
- * Схема фильтров живого источника: из памяти вкладки (`catalogFilterSchemas`),
- * иначе — один раз из роута `/api/shikimori/filters` (и в память). Роут нужен,
- * только когда схема не пришла со страницей: источник переключили в панели
- * (адрес пишется без серверной загрузки) или пришли переходом внутри сайта,
- * а в памяти её ещё нет; ещё — повтор после сбоя сборки на сервере.
+ * Схема фильтров живого источника версии `api`: из памяти вкладки
+ * (`catalogFilterSchemas`), иначе — один раз из роута `/api/shikimori/filters`
+ * (и в память). Роут нужен, только когда схема не пришла со страницей: источник
+ * переключили в панели (адрес пишется без серверной загрузки) или пришли
+ * переходом внутри сайта, а в памяти её ещё нет; ещё — повтор после сбоя
+ * сборки на сервере.
  */
-export async function loadFilterSchema(): Promise<CatalogFilterSchema> {
-  const known = catalogFilterSchemas.recall(SHIKIMORI_FILTER_SOURCE)
+export async function loadFilterSchema(api: ShikimoriApi = 'mix'): Promise<CatalogFilterSchema> {
+  const known = catalogFilterSchemas.recall(shikimoriFilterSource(api))
   if (known) return known
-  filterSchemaInflight ??= getShikimoriFilters()
-    .then((schema) => {
-      catalogFilterSchemas.remember(schema)
-      return schema
-    })
-    .finally(() => {
-      filterSchemaInflight = null
-    })
-  return await filterSchemaInflight
+  let inflight = filterSchemaInflight.get(api)
+  if (!inflight) {
+    inflight = getShikimoriFilters(api)
+      .then((schema) => {
+        catalogFilterSchemas.remember(schema)
+        return schema
+      })
+      .finally(() => {
+        filterSchemaInflight.delete(api)
+      })
+    filterSchemaInflight.set(api, inflight)
+  }
+  return await inflight
 }
 
 /**
@@ -400,6 +441,8 @@ export function demoQueryOf(extra: Extra | undefined): string {
  */
 export type LiveTransport = {
   fetchPage(query: {
+    /** Версия API Shikimori (`animes` — mix, `animes-rest`, `animes-graphql`). */
+    api: ShikimoriApi
     page: number
     limit: number
     search?: string
@@ -466,11 +509,13 @@ async function loadCharactersPage(
  * схеме, а неприменённое она возвращает списком `dropped` — молчание запрещено.
  */
 async function loadAnimePage(
+  api: ShikimoriApi,
   look: SourceLook,
   q: string,
   filters: Readonly<Record<string, string>>,
 ): Promise<PageResponse<CatalogItem>> {
   const query = {
+    api,
     page: look.page,
     limit: look.pageSize,
     ...(q ? { search: q } : {}),
@@ -540,9 +585,11 @@ function createLocalItemsSource(kind: 'products' | 'photos'): AdaptedSource<Cata
  * источник получает пустой `q` (каталог как есть), но сам `q` остаётся в extra
  * и доступен lib/search — сканирование без сужения источником.
  */
-function createAnimesSource(): AdaptedSource<CatalogItem> {
+function createAnimesSource(api: ShikimoriApi): AdaptedSource<CatalogItem> {
   return defineSource<CatalogItem>({
-    name: 'animes',
+    // Имя mix прежнее (`animes`): статистика и словарь lib/search по нему не
+    // меняются у адресов, сделанных до разделения на версии.
+    name: api === 'mix' ? 'animes' : `animes-${api}`,
     record: catalogRecord,
     search: { minLength: 2 },
     scan: { batchSize: SHIKIMORI_LIMIT_MAX },
@@ -552,9 +599,10 @@ function createAnimesSource(): AdaptedSource<CatalogItem> {
     // (`#lib/server/shikimori-schema.js`) и приезжают роутом `/api/shikimori/filters`.
     // Возможность видна панели (`capabilities.filters`) — UI гасит фильтры у
     // источников, которые их не объявляют.
-    filters: SHIKIMORI_FILTER_KEYS,
-    dictionary: () => getShikimoriTerms(),
-    data: (look, input) => loadAnimePage(look, input.q, input.filters),
+    // Версия решает состав: у `graphql` нет ключей студий (нет справочника).
+    filters: shikimoriFilterKeys(api),
+    dictionary: () => getShikimoriTerms(api),
+    data: (look, input) => loadAnimePage(api, look, input.q, input.filters),
   }).with(withSearchGate({ gate: 'srch' }))
 }
 
@@ -623,7 +671,10 @@ function makeSource(name: string): AdaptedSource<CatalogItem> {
       // фильтров. Возможностей нет — панель гасит опции поиска и поле запроса
       // (не «включено вхолостую», а честно недоступно).
       photos: createLocalItemsSource('photos').with(withTotalsGate({ gate: 'total' })),
-      animes: withLibSearch(createAnimesSource(), { gate: 'ls', name, ...channels }),
+      // Shikimori в трёх версиях API: всё, кроме транспорта и справочников, общее.
+      animes: withLibSearch(createAnimesSource('mix'), { gate: 'ls', name, ...channels }),
+      'animes-rest': withLibSearch(createAnimesSource('rest'), { gate: 'ls', name, ...channels }),
+      'animes-graphql': withLibSearch(createAnimesSource('graphql'), { gate: 'ls', name, ...channels }),
       'rm-rest': withLibSearch(createRickMortySource('rest'), { gate: 'ls', name, ...channels }),
       'rm-graphql': withLibSearch(createRickMortySource('graphql'), { gate: 'ls', name, ...channels }),
       // БД — НЕ второй реализации списка: данные читает тот же `fetchDbPosts`

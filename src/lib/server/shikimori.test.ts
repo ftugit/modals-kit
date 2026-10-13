@@ -15,8 +15,12 @@ import {
   SHIKIMORI_CACHE_MAX,
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_UA,
+  buildGraphqlAnimesRequest,
   buildUpstreamUrl,
   fetchAnimes,
+  fetchAnimesGraphql,
+  normalizeGraphqlAnime,
+  parseShikimoriApi,
   getTermArtifact,
   hasNextOf,
   normalizeAnime,
@@ -435,5 +439,110 @@ describe('ошибки API-маршрутов не уходят клиенту (
     expect(err).toBeInstanceOf(FetchError)
     expect(err.message).not.toContain('10.0.0.7')
     expect(err.cause.error).toBe(boom)
+  })
+})
+
+describe('версии API: rest / graphql / mix (ход 85)', () => {
+  /** Запись GraphQL `Anime` в том виде, в каком её отдаёт API (2026-10-13). */
+  const gqlRecord = (id: number, over: Record<string, unknown> = {}) => ({
+    id: String(id),
+    name: `Title ${id}`,
+    russian: `Тайтл ${id}`,
+    url: `https://shikimori.io/animes/${id}-title`,
+    kind: 'tv',
+    score: 7.82,
+    status: 'released',
+    episodes: 13,
+    airedOn: { date: '2016-04-03', year: 2016 },
+    poster: {
+      previewUrl: `https://shikimori.io/uploads/poster/animes/${id}/preview.webp`,
+      miniUrl: `https://shikimori.io/uploads/poster/animes/${id}/mini.webp`,
+    },
+    ...over,
+  })
+
+  it('версия из адреса: нет параметра — mix, незнакомая — ошибка, а не «молча mix»', () => {
+    expect(parseShikimoriApi(new URLSearchParams(''))).toEqual({ ok: true, api: 'mix' })
+    expect(parseShikimoriApi(new URLSearchParams('api=graphql'))).toEqual({ ok: true, api: 'graphql' })
+    expect(parseShikimoriApi(new URLSearchParams('api=soap')).ok).toBe(false)
+    const parsed = parseAnimesQuery(new URLSearchParams('api=rest&page=2'))
+    expect(parsed.ok && parsed.api).toBe('rest')
+    expect(parseAnimesQuery(new URLSearchParams('api=soap')).ok).toBe(false)
+  })
+
+  it('rest: жанры v1 едут параметром `genre`, тем же списком через запятую', () => {
+    const url = new URL(buildUpstreamUrl({ page: 1, limit: 5, genre: ['27', '!1'] }))
+    expect(url.searchParams.get('genre')).toBe('27,!1')
+    expect(url.searchParams.has('genre_v2')).toBe(false)
+  })
+
+  it('graphql: в документ попадают только заданные аргументы', () => {
+    const plain = buildGraphqlAnimesRequest({ page: 2, limit: 80 })
+    expect(plain.variables).toEqual({ page: 2, limit: 50, order: 'popularity' })
+    expect(plain.doc).toContain('animes(page: $page, limit: $limit, order: $order)')
+    expect(plain.doc).not.toContain('$genre')
+
+    const filtered = buildGraphqlAnimesRequest({
+      page: 1, limit: 5, search: 'naruto', genre: ['27', '!1'], season: '2014_2016', score: 7, kind: 'tv',
+    })
+    expect(filtered.variables).toMatchObject({ search: 'naruto', genre: '27,!1', season: '2014_2016', score: 7, kind: 'tv' })
+    expect(filtered.doc).toContain('$genre: String')
+    expect(filtered.doc).toContain('$score: Int')
+    expect(filtered.doc).toContain('genre: $genre')
+    expect(filtered.doc).not.toContain('studio')
+  })
+
+  it('graphql: запись → та же карточка, что у REST; мусор отбрасывается', () => {
+    expect(normalizeGraphqlAnime(gqlRecord(31964))).toEqual({
+      id: 31964,
+      name: 'Title 31964',
+      russian: 'Тайтл 31964',
+      poster: 'https://shikimori.io/uploads/poster/animes/31964/preview.webp',
+      thumb: 'https://shikimori.io/uploads/poster/animes/31964/mini.webp',
+      url: 'https://shikimori.io/animes/31964-title',
+      kind: 'tv',
+      score: 7.82,
+      status: 'released',
+      episodes: 13,
+      year: 2016,
+      airedOn: '2016-04-03',
+    })
+    expect(normalizeGraphqlAnime(gqlRecord(1, { score: 0, airedOn: null, poster: null }))).toMatchObject({
+      score: null, year: null, airedOn: null, poster: null, thumb: null,
+    })
+    expect(normalizeGraphqlAnime({ id: 'x', name: 'a' })).toBeNull()
+    expect(normalizeGraphqlAnime({ id: '1', name: '', russian: '' })).toBeNull()
+  })
+
+  it('graphql: страница — POST в GraphQL, повтор того же запроса — из кэша транспорта', async () => {
+    const bodies: string[] = []
+    const { fn, calls } = fakeFetch((_url, init) => {
+      bodies.push(String(init?.body))
+      return new Response(JSON.stringify({ data: { animes: [gqlRecord(1), gqlRecord(2)] } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    })
+    const page = await fetchAnimesGraphql({ page: 1, limit: 2 }, { ...deps, fetch: fn })
+    expect(calls).toEqual(['https://shikimori.io/api/graphql'])
+    expect(page).toMatchObject({ page: 1, limit: 2, hasNext: true })
+    expect(page.items.map((card) => card.id)).toEqual([1, 2])
+    expect(JSON.parse(bodies[0]!).variables).toEqual({ page: 1, limit: 2, order: 'popularity' })
+    await fetchAnimesGraphql({ page: 1, limit: 2 }, { ...deps, fetch: fn })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('словарь у версии свой: graphql читает названия GraphQL-ом, mix — REST-ом', async () => {
+    const { fn, calls } = fakeFetch((url) =>
+      url.endsWith('/graphql')
+        ? new Response(JSON.stringify({ data: { animes: [gqlRecord(1, { name: 'Naruto', russian: 'Наруто' })] } }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          })
+        : ok([apiRecord(2, { name: 'Bleach', russian: 'Блич' })]),
+    )
+    const graphql = await getTermArtifact({ ...deps, fetch: fn, api: 'graphql' })
+    const mix = await getTermArtifact({ ...deps, fetch: fn })
+    expect(graphql).toContain('наруто')
+    expect(mix).toContain('блич')
+    expect(calls.map((url) => new URL(url).pathname)).toEqual(['/api/graphql', '/api/animes'])
   })
 })

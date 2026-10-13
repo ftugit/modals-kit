@@ -5,6 +5,7 @@ import {
   DEMO_SRCS,
   demoExtraOf,
   demoHasFilterSchema,
+  demoShikimoriApi,
   demoStaticFilterSchema,
   ensureDemoPaginator,
 } from './definition'
@@ -76,5 +77,36 @@ describe('демо-пагинатор: Rick and Morty (REST и GraphQL)', () => 
       expect(adapter.capabilitiesFor({ src, cur: true }).totals).toBe(true)
       expect(adapter.capabilitiesFor({ src }).filters).toEqual({ keys: ['filters.status', 'filters.gender', 'filters.species', 'filters.type'] })
     }
+  })
+})
+
+describe('демо-пагинатор: Shikimori в трёх версиях API (ход 85)', () => {
+  beforeEach(() => {
+    resetRegistry()
+  })
+
+  it('animes — mix (адреса до разделения читаются по-старому), плюс rest и graphql', () => {
+    expect(DEMO_SRCS).toEqual(expect.arrayContaining(['animes', 'animes-rest', 'animes-graphql']))
+    expect(demoShikimoriApi('animes')).toBe('mix')
+    expect(demoShikimoriApi('animes-rest')).toBe('rest')
+    expect(demoShikimoriApi('animes-graphql')).toBe('graphql')
+    expect(demoShikimoriApi('rm-rest')).toBeNull()
+    expect(demoShikimoriApi(undefined)).toBeNull()
+    for (const src of ['animes', 'animes-rest', 'animes-graphql'] as const) {
+      expect(demoHasFilterSchema(src)).toBe(true)
+      expect(demoStaticFilterSchema(src)).toBeNull()
+    }
+  })
+
+  it('у graphql нет ключей студий: возможность фильтров объявляет сама версия', () => {
+    const adapter = getPaginator(ensureDemoPaginator('url')).adapter
+    const keysOf = (src: string) => {
+      const filters = adapter.capabilitiesFor({ src }).filters
+      return filters ? filters.keys : []
+    }
+    expect(keysOf('animes')).toEqual(expect.arrayContaining(['filters.studios.and', 'filters.studios.not']))
+    expect(keysOf('animes-rest')).toEqual(keysOf('animes'))
+    expect(keysOf('animes-graphql').some((key) => key.startsWith('filters.studios'))).toBe(false)
+    expect(keysOf('animes-graphql')).toEqual(expect.arrayContaining(['filters.genres.and', 'filters.kind']))
   })
 })

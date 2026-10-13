@@ -13,15 +13,19 @@
  * страницы сюда не ходит — она берёт схему из модуля напрямую. Отказ — 403 без тела.
  */
 import type { RequestHandler } from './$types'
-import { apiFailure } from '#lib/server/api-error.js'
+import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
 import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 import { sameOriginFetch } from '#lib/server/trusted-origins.js'
+import { parseShikimoriApi } from '#lib/server/shikimori.js'
 import { DEV } from 'esm-env'
 
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
   if (!sameOriginFetch(request, DEV)) return new Response(null, { status: 403 })
+  // Версия API (`?api=rest|graphql|mix`): у каждой версии своя схема.
+  const api = parseShikimoriApi(url.searchParams)
+  if (!api.ok) return apiInvalid(api.error)
   try {
-    const schema = await getShikimoriFilterSchema()
+    const schema = await getShikimoriFilterSchema({ api: api.api })
     return Response.json(schema, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     return apiFailure(error, 'api/shikimori/filters', 'Схема фильтров Shikimori недоступна')

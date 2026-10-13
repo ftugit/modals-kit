@@ -10,6 +10,7 @@ import {
   DEFAULT_DEMO_EXTRA,
   DEFAULT_GALLERY_EXTRA,
   demoHasFilterSchema,
+  demoShikimoriApi,
   demoStaticFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
@@ -40,7 +41,8 @@ setLiveServerTransport({
     // разбор, одна живая схема, одни связки. Иначе SSR-снапшот строился бы по
     // другим правилам, чем клиентская догрузка, — и «перезагрузка страницы
     // меняет выдачу» вернулось бы.
-    return await fetchAnimesPage({ query, filters: query.filters ?? {} })
+    const { api, filters, ...page } = query
+    return await fetchAnimesPage({ api, query: page, filters: filters ?? {} })
   },
 })
 
@@ -127,7 +129,7 @@ async function schemaOf(snapshot: PaginatorState<CatalogItem>): Promise<CatalogF
   const fixed = demoStaticFilterSchema(src)
   if (fixed) return fixed
   try {
-    return await getShikimoriFilterSchema()
+    return await getShikimoriFilterSchema({ api: demoShikimoriApi(src) ?? 'mix' })
   } catch {
     return null
   }

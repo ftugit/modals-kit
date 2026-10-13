@@ -1173,6 +1173,72 @@ async function checkBrowser(browser) {
   }
 }
 
+/**
+ * Три версии API (ход 85): `animes` — mix, `animes-rest`, `animes-graphql`.
+ * У каждой своя схема (вариант «c» хода 96: у GraphQL нет «Студий» — справочника
+ * нет), каталог своим API, SSR тем же конвейером; переключение версии в панели
+ * подтягивает схему этой версии.
+ */
+async function checkVersions(browser) {
+  console.log('— Версии API: rest / graphql / mix —');
+  const schemaOf = async (version) => {
+    const r = await fetch(`${BASE}/api/shikimori/filters?api=${version}`, { headers: { 'sec-fetch-site': 'same-origin' } });
+    return { status: r.status, body: await r.json() };
+  };
+  const rest = await schemaOf('rest');
+  const graphql = await schemaOf('graphql');
+  if (rest.status !== 200 || graphql.status !== 200) throw new Error(`схемы версий: rest ${rest.status}, graphql ${graphql.status}`);
+  const keysOf = (schema) => schema.fields.map((f) => f.key);
+  if (graphql.body.source !== 'shikimori-graphql' || keysOf(graphql.body).includes('studios'))
+    throw new Error(`схема graphql: ${graphql.body.source} / ${keysOf(graphql.body)}`);
+  if (rest.body.source !== 'shikimori-rest' || !keysOf(rest.body).includes('studios'))
+    throw new Error(`схема rest: ${rest.body.source} / ${keysOf(rest.body)}`);
+  const restGenres = rest.body.fields.find((f) => f.key === 'genres').options.length;
+  const gqlGenres = graphql.body.fields.find((f) => f.key === 'genres').options.length;
+  // REST — справочник v1 (46 жанров аниме), GraphQL — v2 (жанры + темы + аудитория).
+  if (restGenres >= gqlGenres) throw new Error(`жанры rest (${restGenres}) должны быть v1 — меньше v2 (${gqlGenres})`);
+  const bad = await fetch(`${BASE}/api/shikimori/filters?api=soap`, { headers: { 'sec-fetch-site': 'same-origin' } });
+  if (bad.status !== 400) throw new Error(`?api=soap → ${bad.status}, ожидался 400`);
+  console.log(`  ok  схемы: rest — студии есть, жанров ${restGenres} (v1); graphql — студий нет, жанров ${gqlGenres} (v2); чужая версия → 400`);
+
+  for (const version of ['rest', 'graphql']) {
+    const page = await api(`/api/shikimori/animes?api=${version}&limit=5`);
+    if (page.status !== 200 || page.body.items.length !== 5) throw new Error(`каталог ${version}: ${page.status} / ${page.body.items?.length}`);
+  }
+  const gqlStudio = await api('/api/shikimori/animes?api=graphql&limit=5&filters.studios.and=858');
+  if (gqlStudio.body.dropped?.[0]?.key !== 'filters.studios.and')
+    throw new Error(`graphql: фильтр студий не отсечён: ${JSON.stringify(gqlStudio.body.dropped)}`);
+  console.log('  ok  каталог rest и graphql отдаёт страницы; у graphql фильтр студий отсекается с причиной');
+
+  for (const src of ['animes-rest', 'animes-graphql']) {
+    const html = await fetch(`${U}?page.src=${src}&page.size=5`).then((r) => r.text());
+    const rows = [...html.matchAll(/data-testid="anime-(\d+)"/g)].length;
+    if (rows !== 5) throw new Error(`SSR ${src}: ${rows} тайтлов вместо 5`);
+  }
+  console.log('  ok  SSR версий: по 5 тайтлов в разметке у animes-rest и animes-graphql');
+
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+  const panel = page.locator('[data-testid="filters-panel"]');
+  const studios = panel.locator('select[data-select-native][name="page.filters.studios.and"]');
+  try {
+    await page.goto(`${U}?page.src=animes-graphql&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
+    await openFilters(page);
+    await waitFor(async () => await panel.isVisible(), { what: 'панель фильтров graphql' });
+    if ((await studios.count()) !== 0) throw new Error('у graphql в панели есть «Студии»');
+    const schemaResponse = page.waitForResponse((r) => r.url().includes('/api/shikimori/filters?api=rest'));
+    await page.locator('[data-testid="demo-panel"] select[name="page.src"]').selectOption('animes-rest');
+    const fetched = await schemaResponse;
+    if (fetched.status() !== 200) throw new Error(`схема rest после переключения: HTTP ${fetched.status()}`);
+    await waitFor(async () => (await studios.count()) === 1, { what: '«Студии» в панели rest' });
+    await waitFor(async () => (await rowsOf(page).count()) === 5, { what: '5 строк rest' });
+    console.log('  ok  панель: у graphql «Студий» нет; переключение на rest берёт схему ?api=rest, «Студии» появились');
+  } finally {
+    await context.close();
+  }
+}
+
 async function run() {
   await ensureServer();
   await checkApi();
@@ -1183,6 +1249,7 @@ async function run() {
     await checkBrowser(browser);
     await checkFiltersUi(browser);
     await checkFiltersNoJs(browser);
+    await checkVersions(browser);
     console.log(
       '\n✅ Живой источник Shikimori: SSR, стрелочная навигация, родной поиск, lib/search и панель фильтров (JS и без JS)',
     );
