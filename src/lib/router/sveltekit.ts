@@ -19,6 +19,7 @@ import { afterNavigate, goto, preloadData } from '$app/navigation'
 import { page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '#lib/paginate/index.js'
+import { watch } from './watch.svelte'
 import {
   createAddressWriter,
   type AddressChange,
@@ -64,9 +65,13 @@ const writer = browser
           : goto(href, { shallow: true, replace, state: state as App.PageState }),
       hash: () => window.location.hash,
       traverse: (delta) => window.history.go(delta),
+      here: () => new URL(window.location.href),
     })
   : null
 if (writer) window.addEventListener('popstate', () => writer.external())
+// Kit применяет обход после `popstate` асинхронно; перенос адреса страницы
+// после закрытия слоя ждёт именно этого (ход 100, `address.ts`).
+if (writer) watch(() => [page.url, page.shallow, page.state], () => writer.applied())
 
 /**
  * Якорь страницы при занятой записи истории (F39).
@@ -161,6 +166,16 @@ export function addressTraversing(): boolean {
 export function goAddress(delta: number): void {
   if (writer) writer.go(delta)
   else window.history.go(delta)
+}
+
+/**
+ * Объявить ключи строки запроса, которые принадлежат слою (например, цепочка
+ * модалок `?modal=`): при закрытии слоя писатель переносит на запись назначения
+ * адрес страницы, но не эти ключи (ход 100, `address.ts`).
+ * @internal
+ */
+export function claimLayerKeys(test: (key: string) => boolean): () => void {
+  return writer ? writer.layerKeys(test) : () => {}
 }
 
 /**

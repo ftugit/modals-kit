@@ -49,7 +49,13 @@ const historyGo = vi.fn()
   addEventListener: (type: string, fn: () => void) => {
     if (type === 'popstate') popstate.push(fn)
   },
-  location: { hash: '' },
+  location: {
+    hash: '',
+    // Адресная строка (ход 100: писатель читает её в `popstate`) — видимый адрес.
+    get href() {
+      return (page.shallow?.url ?? page.url).href + this.hash
+    },
+  },
   history: { go: historyGo },
 }
 const win = (globalThis as unknown as { window: { location: { hash: string } } }).window

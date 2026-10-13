@@ -12,10 +12,17 @@
 import { browser } from '$app/env'
 import { preloadData } from '$app/navigation'
 import { page } from '$app/state'
-import { addressTraversing, goAddress, visibleAddress, writeAddress } from '#lib/router/sveltekit.js'
+import {
+  addressTraversing,
+  claimLayerKeys,
+  goAddress,
+  visibleAddress,
+  writeAddress,
+} from '#lib/router/sveltekit.js'
 import { buildCore, type CoreOptions, type ReconfigurableCore } from '../build'
 import type { ChainEngine } from '../engine'
 import { urlStorage } from '../storages'
+import { CHAIN_KEY } from '../core'
 import type { Sources } from '../build'
 import type { ModalCore } from '../core-contract'
 import { makeRouteResolves } from './routes'
@@ -43,6 +50,8 @@ export const routeResolves = makeRouteResolves(
   Object.keys(import.meta.glob('/src/routes/**/+page.svelte')),
 )
 
+const isChainKey = (key: string): boolean => key === CHAIN_KEY || key.startsWith(`${CHAIN_KEY}.`)
+
 /**
  * Срез SvelteKit под `ChainEngine` — внутренняя деталь ядра.
  *
@@ -69,6 +78,9 @@ export const routeResolves = makeRouteResolves(
  * отправке (F40, решение владельца A).
  */
 export function svelteKitEngine(): ChainEngine {
+  // Цепочка в адресе — ключи СЛОЯ: закрытие модалки не переносит их на запись
+  // назначения, а адрес страницы, изменённый под модалкой, переносит (ход 100).
+  claimLayerKeys(isChainKey)
   const write = (url: string, state: Record<string, unknown>, replace: boolean): void => {
     // Отказ `goto` (маршрут не найден) не глотаем: он всплывёт как раньше.
     void writeAddress(() => ({ url, state }), { replace })

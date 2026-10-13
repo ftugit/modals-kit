@@ -19,7 +19,7 @@
  *   MODALS_PORT=4173 node test/browser/paginate.mjs
  */
 import { spawn } from 'node:child_process';
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 
 const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
 const U = process.env.PAGINATE_BASE ?? `http://127.0.0.1:${PORT}/paginator`;
@@ -659,6 +659,54 @@ async function run() {
     if (cardsBefore.join(',') !== cardsAfter.join(','))
       throw new Error(`после чистки адреса выдача изменилась: ${cardsBefore.slice(0, 3)} vs ${cardsAfter.slice(0, 3)}`);
     console.log('  ok  пустые ключи формы уходят заменой записи адреса (без перезагрузки, истории и перезапроса)');
+
+    // Ход 100: на узком экране список селекта — запись истории (слой). Выбор в
+    // нём пишет адрес страницы, закрытие списка — шаг назад; раньше этот шаг
+    // возвращал старый адрес, и выбор «откатывался» (url-хранилище).
+    for (const [label, opts, how] of [
+      ['узкое окно, мышь', { viewport: { width: 700, height: 900 } }, 'click'],
+      ['Pixel 7, касание', { ...devices['Pixel 7'] }, 'tap'],
+    ]) {
+      const ctx = await browser.newContext(opts);
+      const p = await ctx.newPage();
+      await p.goto(U, { waitUntil: 'networkidle' });
+      await sleep(600);
+      const pick = async (name, optionText) => {
+        const s = p.locator(`[data-testid="demo-panel"] select[name="${name}"]`);
+        await s.scrollIntoViewIfNeeded();
+        if (how === 'tap') await s.tap();
+        else await s.click({ force: true });
+        const opt = p.locator('[role="option"]:visible', { hasText: optionText }).first();
+        await opt.waitFor({ timeout: 5000 });
+        if (how === 'tap') await opt.tap();
+        else await opt.click();
+        await sleep(1500);
+        return s;
+      };
+      const src = await pick('page.src', 'Фото');
+      const q1 = new URL(p.url()).searchParams;
+      if ((await src.inputValue()) !== 'photos' || q1.get('page.src') !== 'photos')
+        throw new Error(`${label}: выбор источника откатился — select=${await src.inputValue()} url=${p.url()}`);
+      if ((await p.locator('[data-testid^="photo-"]').count()) === 0)
+        throw new Error(`${label}: список не сменился на фото`);
+      const size = await pick('page.size', '10');
+      const q2 = new URL(p.url()).searchParams;
+      if ((await size.inputValue()) !== '10' || q2.get('page.size') !== '10' || q2.get('page.src') !== 'photos')
+        throw new Error(`${label}: выбор размера откатился — size=${await size.inputValue()} url=${p.url()}`);
+      // «Назад» по-прежнему закрывает список, не трогая настройки.
+      const before = p.url();
+      if (how === 'tap') await size.tap();
+      else await size.click({ force: true });
+      await p.locator('[role="option"]:visible').first().waitFor({ timeout: 5000 });
+      await p.goBack();
+      await sleep(1200);
+      if ((await p.locator('[role="option"]:visible').count()) !== 0)
+        throw new Error(`${label}: «Назад» не закрыл список`);
+      if (p.url() !== before || (await size.inputValue()) !== '10')
+        throw new Error(`${label}: «Назад» по списку изменил настройки: ${before} → ${p.url()}`);
+      await ctx.close();
+      console.log(`  ok  ${label}: выбор в списке селекта меняет адрес и список (url), «Назад» только закрывает список`);
+    }
 
     console.log(
       '\n✅ Браузерный тест в Chromium пройден: скролл окна стабилен, персист настроек работает',
