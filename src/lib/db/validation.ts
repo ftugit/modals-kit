@@ -345,8 +345,8 @@ export const f = {
 /**
  * Проверки `defineResource`, добавленные в порте. Логика одна: ловить только те
  * конфигурации, которые иначе **молча** работают не так (а не те, что громко
- * упадут на первом запросе). Причины идут в `details.issues`, то есть видны в
- * dev-диагностике `toKitError`, но не нарушают публичный контракт ошибки.
+ * упадут на первом запросе). Причины идут в `details.issues`: в dev они видны в
+ * диагностике `toKitError` и в `toFormFailure`, в production клиенту не уходят.
  */
 const OP_LIST: Record<Operator, true> = {
   eq: true, ne: true, lt: true, lte: true, gt: true, gte: true,

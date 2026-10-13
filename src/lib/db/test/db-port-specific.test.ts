@@ -185,6 +185,22 @@ test("toFormFailure: тексты Standard Schema идут в fieldErrors по �
   const dev = toFormFailure(err, true);
   assert.equal(dev.data.fieldErrors.title[0], out.data.fieldErrors.title[0]);
 });
+test("toFormFailure (DB-2): внутренний текст БД — только в dev, в production общий текст вида", () => {
+  const raw = 'duplicate key value violates unique constraint "users_email_key"';
+  for (const kind of ["database", "conflict", "unavailable"] as const) {
+    const err = new DbFailure(kind, { issues: [raw] });
+    const prod = toFormFailure(err, false);
+    assert.equal(JSON.stringify(prod).includes("users_email_key"), false, kind);
+    assert.deepEqual(prod.data.formErrors, [err.message], kind);
+    assert.deepEqual(toFormFailure(err, true).data.formErrors, [raw], kind);
+    const kit = toKitError(err, true).body.diagnostic as { issues?: string[] };
+    assert.deepEqual(kit.issues, [raw], kind);
+    assert.equal(JSON.stringify(toKitError(err, false).body).includes("users_email_key"), false, kind);
+  }
+  // тексты схем (validation) — про присланные значения, их видно и в production
+  const invalid = new DbFailure("validation", { field: "title", issues: ["Too small"] });
+  assert.deepEqual(toFormFailure(invalid, false).data.fieldErrors, { title: ["Too small"] });
+});
 test("toKitError: 404 для not_found, SQL и cause наружу не уходят", async () => {
   const { status, body } = toKitError(new DbFailure("not_found"));
   assert.equal(status, 404);

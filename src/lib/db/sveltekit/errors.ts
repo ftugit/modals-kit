@@ -24,7 +24,10 @@ export interface KitErrorBody {
   /** Ошибки по полям (`validation`, а также `unique`/`check` у `conflict`). */
   errors?: readonly Omit<FieldError, "template">[];
   committed?: boolean;
-  /** Только в dev: код SQLSTATE и имя условия. SQL/параметры/cause — никогда. */
+  /**
+   * Только в dev: код SQLSTATE, имя условия и причины (`issues`: настройка
+   * ресурса, сбой транспорта). SQL/параметры/cause — никогда.
+   */
   diagnostic?: Record<string, unknown>;
 }
 
@@ -54,6 +57,7 @@ export function toKitError(
             sqlstate: e.details.sqlstate,
             condition: e.details.condition,
             field: e.details.field,
+            ...(e.details.issues?.length ? { issues: [...e.details.issues] } : {}),
           },
         }
       : {}),
@@ -66,6 +70,11 @@ export function toKitError(
  * сообщения схемы терялись (`fail('validation', key)`), поэтому в UI
  * доезжал только «Invalid input» — здесь они идут в `fieldErrors`
  * в формате `#lib/form/index.js`-ошибок (`path`/`message`).
+ *
+ * `issues` клиенту — только у `validation`: это тексты схем про присланные
+ * значения. У прочих видов там бывает внутреннее (сырой текст Postgres от
+ * транспорта, подсказки об инфраструктуре) — в production вместо них общий
+ * текст вида сбоя, сами причины — только в dev (DB-2).
  */
 export function toFormFailure(
   error: unknown,
@@ -88,7 +97,8 @@ export function toFormFailure(
       if (x.field) (fieldErrors[x.field] ??= []).push(x.message);
       else formErrors.push(x.message);
   } else if (e instanceof DbFailure) {
-    const messages = e.details.issues?.length ? [...e.details.issues] : [];
+    const shown = development || e.kind === "validation";
+    const messages = shown && e.details.issues?.length ? [...e.details.issues] : [];
     if (e.details.field) {
       fieldErrors[e.details.field] = messages.length ? messages : [e.message];
     } else formErrors.push(...(messages.length ? messages : [e.message]));

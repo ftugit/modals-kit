@@ -699,13 +699,13 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 91 группа в шести файлах (на PGlite выполняются 90: одна группа требует
+Тесты слоя — 92 группы в шести файлах (на PGlite выполняются 91: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
-| `src/lib/db/test/db-port-specific.test.ts` | 37 | поведение, которого в источнике не было (курсоры, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync.test.ts` | 18 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |

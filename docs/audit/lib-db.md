@@ -85,7 +85,7 @@
   ломаются); (2) `cursorCodecFromEnv` бросает ошибку, если kid из `DB_CURSOR_OLD_KEYS`
   совпал с активным; (3) тест «курсор, подписанный старым ключом, принимается после смены»;
   (4) `.env.example` и README — порядок смены. **Вопрос владельцу:** имя переменной.
-- [ ] **DB-2 — `toFormFailure` в production отдаёт клиенту внутренний текст БД**
+- [x] **DB-2 — `toFormFailure` в production отдаёт клиенту внутренний текст БД** — **исправлено (ход 109):** `issues` клиенту только у `validation`, прочее — общий текст вида; причины — в dev (`toFormFailure`, `diagnostic.issues` у `toKitError`); демо показывает русские тексты видов (`handle.ts` `KIND_TEXT`, `conflict` — «Такая запись уже есть»); тест в `db-port-specific.test.ts` (красный без правки).
   (подтверждено пробой). `sveltekit/errors.ts:80` кладёт `details.issues` в
   `formErrors`/`fieldErrors` без учёта `development`. По контракту (`errors.ts:37`)
   в `issues` лежат только тексты Standard Schema, но `adapters/proxy.ts:243` кладёт туда

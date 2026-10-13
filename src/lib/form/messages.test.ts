@@ -24,6 +24,16 @@ test('у каждого кода ошибки lib/form есть текст в ru
   expect([...codes].filter((c) => !(c in ru)).sort()).toEqual([])
 })
 
+// Ошибки полей `lib/db` (`FieldError.code`) показываются словарём формы: у каждого
+// кода, кроме `custom` (он несёт свой текст), должен быть русский текст.
+test('у кодов ошибок полей lib/db есть текст в ru', () => {
+  const doc = readFileSync(join(__dirname, '../db/errors.ts'), 'utf8')
+  const block = doc.slice(doc.indexOf('Коды совпадают'), doc.indexOf('export interface FieldError'))
+  const codes = [...block.matchAll(/`([\w.]+)`/g)].map((m) => m[1]!).filter((c) => c !== 'custom')
+  expect(codes).toEqual(expect.arrayContaining(['unique', 'check', 'invalid', 'required']))
+  expect(codes.filter((c) => !(c in ru)).sort()).toEqual([])
+})
+
 test('параметры подставляются', () => {
   const r = makeRenderer([ru])
   expect(r('rate.limited', { retryAfterMs: 2500 })).toBe('Слишком много попыток. Повторите через 3 с')
