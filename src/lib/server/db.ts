@@ -25,7 +25,7 @@ import { DbFailure } from '#lib/db/index.js'
 import type { Database, Driver, Limits } from '#lib/db/index.js'
 import { createSchemaAdmin } from './schema-admin'
 import {
-  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
+  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
   DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
 
@@ -93,8 +93,8 @@ function explainCursorConfig(build: () => ReturnType<typeof cursorCodecFromEnv>)
     return build()
   } catch (e) {
     throw new Error(
-      `DB_CURSOR_SECRET непригоден: ${(e as Error)?.message ?? e} ` +
-        `(нужна строка не короче 32 байт; без неё курсор выключать честнее, чем ронять приложение)`,
+      `Настройка курсора (DB_CURSOR_*) непригодна: ${(e as Error)?.message ?? e} ` +
+        `(секреты — не короче 32 байт; без DB_CURSOR_SECRET курсор выключать честнее, чем ронять приложение)`,
       { cause: e },
     )
   }
@@ -109,7 +109,7 @@ let cursorConfigError: unknown
 const cursorCodec = (() => {
   try {
     return explainCursorConfig(() =>
-      cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_OLD_KEYS })[key], {
+      cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS })[key], {
         ttlSeconds: DB_CURSOR_TTL_SECONDS,
       }),
     )

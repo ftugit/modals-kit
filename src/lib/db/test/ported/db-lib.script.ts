@@ -234,13 +234,12 @@ try {
       [["created_at", "desc"]],
     ] as const) {
       const ids = [];
-      let after: string | undefined;
+      let after: string | null = null;
       do {
         const p = await api.blog.cursor(a, { limit: 2, order, after });
         ids.push(...p.items.map((x) => x.id));
-        // DB-3 (открыто): `nextCursor` — `string | null`, а `after` принимает только
-        // `string | undefined`, поэтому естественное `after = p.nextCursor` не проходит типы.
-        after = p.nextCursor ?? undefined;
+        // DB-3: `after` принимает `null` — естественный цикл без `?? undefined`
+        after = p.nextCursor;
       } while (after);
       assert.equal(ids.length, 6);
       assert.equal(new Set(ids).size, 6);

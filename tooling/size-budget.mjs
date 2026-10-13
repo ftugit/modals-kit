@@ -56,9 +56,12 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // REVISION 2026-10-12 (ход 42, F39 — якорь при открытом слое заменяет запись истории):
 // все immutable 233.6 > 233.3 (обработчик клика по якорю в слое роутера). По постоянному
 // решению оператора — +5: 233.3 → 238.3. Остальные лимиты не тронуты.
+// REVISION 2026-10-14 (ход 112 — серверная ошибка закреплена за значением поля, `pins.ts`;
+// экран схемы на перехваченной отправке): весь JS 224.02 > 224.0. По постоянному решению
+// оператора — +5: 224 → 229. Остальные лимиты не тронуты.
 const LIMITS = {
   allImmutableGzip: 238.3 * KiB,
-  allJsGzip: 224 * KiB,
+  allJsGzip: 229 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,

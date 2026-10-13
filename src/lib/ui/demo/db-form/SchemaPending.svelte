@@ -1,11 +1,14 @@
 <script lang="ts">
   /**
    * Экран переноса схемы: показывается вместо страницы с базой, пока модели
-   * разошлись со схемой так, что само не применить. Отправка — нативный POST
-   * (`?/schema`, без перехвата): после переноса страница всё равно грузится заново,
-   * а секрет не должен задерживаться в состоянии клиента.
+   * разошлись со схемой так, что само не применить. Отправка — штатная для
+   * `lib/form`: сначала проверка клиентом, потом fetch на `/db-demo/submit`; без JS —
+   * нативный POST `?/schema`. После успеха страница перечитывает данные (`refreshAll`):
+   * `load` вернёт уже список.
    */
   import { untrack } from 'svelte'
+  import { refreshAll } from '$app/navigation'
+  import { jsonTransport } from '#lib/ui/demo/form/transport.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { Button } from '#lib/ui/primitives/index.js'
@@ -20,8 +23,17 @@
   const snapshot = untrack(() => screen)
   const form = bind(forms, schemaForm(snapshot), {
     action: '?/schema',
-    intercept: false,
+    transport: jsonTransport('/db-demo/submit'),
     continuation: untrack(() => seed),
+  })
+  // Успех перехваченной отправки: данные страницы перечитываются, экран уходит сам.
+  // Первый запуск не считается — продолжение без JS уже пришло с перезагрузкой.
+  let last = form.state.status
+  $effect(() => {
+    const now = form.state.status
+    if (now === last) return
+    last = now
+    if (now === 'success') void refreshAll()
   })
   const manual = snapshot.steps.filter((s) => !s.field)
 </script>

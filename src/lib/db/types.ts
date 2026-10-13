@@ -248,7 +248,8 @@ export interface ListInput {
   include?: readonly string[];
 }
 export interface CursorInput extends Omit<ListInput, "page"> {
-  after?: string;
+  /** Токен из `nextCursor` прошлой страницы; `null`/нет — первая страница (DB-3). */
+  after?: string | null;
 }
 export interface CursorPage<T> {
   items: T[];

@@ -24,6 +24,8 @@ export interface SchemaScreen {
   steps: readonly StepView[]
 }
 
+export const SCHEMA_FORM_ID = 'db_schema_resolve'
+
 /** Описание формы решений: секрет + по радиогруппе на каждый шаг с вариантами. */
 export function schemaForm(screen: SchemaScreen) {
   const fields: Record<string, ReturnType<typeof field.radio>> = {}
@@ -37,7 +39,7 @@ export function schemaForm(screen: SchemaScreen) {
         validate: [v.required()],
       })
   return defineForm({
-    id: 'db_schema_resolve',
+    id: SCHEMA_FORM_ID,
     revision: 1,
     actions: [{ id: 'submit', label: 'Выполнить', validate: 'full' }],
     fields: {

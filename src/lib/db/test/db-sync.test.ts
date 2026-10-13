@@ -608,6 +608,45 @@ test("sync: внешний ключ из db.references — после всех �
     assert.deepEqual(await fk(), []);
   }));
 
+test("ошибки полей: нарушенный внешний ключ — `reference` у поля при записи, `referenced` (общая) при удалении", () =>
+  withPg(async (pg, driver) => {
+    const author = defineResource({
+      key: "t.author",
+      table: "public.author",
+      primaryKey: "id",
+      fields: {
+        id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
+        name: field(s.text({ min: 1, max: 80 }), { ...open, create: () => true, required: true }),
+      },
+      policy: rules,
+      order: [["id", "asc"]],
+    } as Resource);
+    const linked = post({
+      author_id: f.uuid({
+        ...open, create: () => true, update: () => true, nullable: true,
+        db: { references: { resource: () => author } }, messages: { reference: "Автор не найден" },
+      }),
+    });
+    await defineSchema({ resources: [linked, author] }).sync(driver);
+    const db = createDb({ driver, limits: conservativeLimits });
+
+    // запись со ссылкой на несуществующего автора — ошибка поля, а не «такая запись уже есть»
+    const missing = await db.resource(linked).insert(ctx, { title: "без автора", author_id: crypto.randomUUID() }).catch((e: unknown) => e);
+    assert.ok(missing instanceof DbFailure && missing.kind === "conflict");
+    assert.deepEqual(missing.details.errors?.map((x) => [x.field, x.code, x.message]), [["author_id", "reference", "Автор не найден"]]);
+    assert.equal(toKitError(missing).status, 409);
+    const a = await db.resource(author).insert(ctx, { name: "Аня" });
+    const row = await db.resource(linked).insert(ctx, { title: "с автором", author_id: a.id });
+    const moved = await db.resource(linked).update(ctx, String(row.id), { author_id: crypto.randomUUID() }).catch((e: unknown) => e);
+    assert.deepEqual((moved as DbFailure).details.errors?.map((x) => [x.field, x.code]), [["author_id", "reference"]]);
+
+    // удаление автора, на которого ссылаются (no action) — общая ошибка `referenced`
+    const held = await db.resource(author).delete(ctx, String(a.id)).catch((e: unknown) => e);
+    assert.ok(held instanceof DbFailure && held.kind === "conflict");
+    assert.deepEqual(held.details.errors?.map((x) => [x.field, x.code]), [[undefined, "referenced"]]);
+    assert.deepEqual((await pg.query("SELECT count(*)::int AS n FROM author")).rows, [{ n: 1 }]);
+  }));
+
 test("defineResource: db.references проверяется при объявлении", () => {
   const bad = (references: unknown, nullable = true) => () =>
     post({ x: f.uuid({ ...open, nullable, db: { references } as never }) });

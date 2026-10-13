@@ -37,18 +37,18 @@ import type {
  * имя → поля. Имена с хешем приложение не знает, поэтому сопоставление здесь, а не
  * в `constraints` ресурса. `null` — модель не описывает таблицу (zod без `db.type`).
  */
-const managed = new WeakMap<object, Promise<Map<string, { kind: 'unique' | 'check'; fields: string[] }> | null>>();
-function managedConstraints(r: Resource): Promise<Map<string, { kind: 'unique' | 'check'; fields: string[] }> | null> {
+const managed = new WeakMap<object, Promise<Map<string, { kind: 'unique' | 'check' | 'reference'; fields: string[] }> | null>>();
+function managedConstraints(r: Resource): Promise<Map<string, { kind: 'unique' | 'check' | 'reference'; fields: string[] }> | null> {
   let p = managed.get(r);
   if (!p) {
     const byColumn = new Map(Object.entries(r.fields).map(([k, f]) => [f.column ?? k, k]));
     p = tableSpec(r)
       .then((spec) => {
-        const out = new Map<string, { kind: 'unique' | 'check'; fields: string[] }>();
+        const out = new Map<string, { kind: 'unique' | 'check' | 'reference'; fields: string[] }>();
         for (const o of spec.objects)
-          // внешние ключи сюда не идут: «нет такой записи» — не ошибка значения поля
-          if (o.kind === 'unique' || o.kind === 'check')
-            out.set(o.name, { kind: o.kind, fields: o.columns.map((c) => byColumn.get(c)).filter((k): k is string => !!k) });
+          // внешний ключ этой таблицы: нарушение = «связанной записи нет» (код `reference`)
+          if (o.kind !== 'index')
+            out.set(o.name, { kind: o.kind === 'foreign' ? 'reference' : o.kind, fields: o.columns.map((c) => byColumn.get(c)).filter((k): k is string => !!k) });
         return out;
       })
       .catch(() => null);
@@ -60,6 +60,8 @@ const DEFAULT_TEXT: Record<string, string> = {
   unique: 'Value already exists',
   check: 'Value violates a constraint',
   required: 'Required',
+  reference: 'Referenced record not found',
+  referenced: 'Record is referenced by other records',
 };
 /**
  * Ошибка PostgreSQL → ошибки полей, если поле известно и этот ctx сам его пишет
@@ -77,6 +79,18 @@ async function attachFieldErrors(
     const k = Object.keys(r.fields).find((key) => (r.fields[key].column ?? key) === e.details.column);
     if (k && grants(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx))
       errors = [fieldError(r.fields[k], k, 'required', DEFAULT_TEXT.required)];
+  } else if (state === '23503') {
+    // Нарушен внешний ключ. Свой ключ модели → ошибка поля «связанной записи нет»
+    // (если поле пишет этот ctx). Чужой ключ при вставке — тоже «нет связанной» (вставка
+    // нарушает только исходящие ключи), но без поля; при изменении не угадать, чей он, —
+    // тогда как раньше, без ошибок полей.
+    const c = e.details.constraint ? (await managedConstraints(r))?.get(e.details.constraint) : undefined;
+    if (c?.kind === 'reference' && c.fields.length && c.fields.every(writable))
+      errors =
+        c.fields.length === 1
+          ? [fieldError(r.fields[c.fields[0]], c.fields[0], 'reference', DEFAULT_TEXT.reference)]
+          : [fieldError(undefined, undefined, 'reference', DEFAULT_TEXT.reference, { fields: [...c.fields] })];
+    else if (!c && op === 'insert') errors = [fieldError(undefined, undefined, 'reference', DEFAULT_TEXT.reference)];
   } else if ((state === '23505' || state === '23514') && e.details.constraint) {
     const c = (await managedConstraints(r))?.get(e.details.constraint);
     if (c && c.fields.length && c.fields.every(writable)) {
@@ -236,7 +250,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     };
     if (cursor && !db.cursorCodec) fail('unsupported');
     const after = (input as CursorInput).after;
-    if (cursor && after !== undefined) {
+    // `null` — первая страница: цикл `after = page.nextCursor` проходит типы (DB-3)
+    if (cursor && after != null) {
       const values = await db.cursorCodec!.decode(after, scope);
       if (values.length !== order.length) fail('cursor');
       for (let i = 0; i < values.length; i++)
@@ -381,6 +396,9 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       ) {
         e.details.publicFields = Object.freeze([...registered.fields]);
       } else if (op !== 'delete' && draft) await attachFieldErrors(r, ctx, e, op, draft);
+      else if (op === 'delete' && e.details.sqlstate === '23503')
+        // удаление нарушает только входящие ключи: на строку ссылаются другие записи
+        e.details.errors = Object.freeze([fieldError(undefined, undefined, 'referenced', DEFAULT_TEXT.referenced)]);
       throw e;
     }
     if (!row) fail('not_found');

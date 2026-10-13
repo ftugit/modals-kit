@@ -11,6 +11,7 @@ import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { formRenderer } from '../messages-order'
 import { normalizeErrors, type FormError, type Result } from '../result'
+import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
 import { disabledState } from '../validate'
@@ -212,7 +213,8 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     store.set((current) => ({ ...current, shown: shown.errors, removed: shown.removed }))
   }
 
-  function applyResult(result: Result) {
+  function applyResult(result: Result, sent?: FormData) {
+    pins = pinErrors(result.errors, (n) => !!desc.byName[n], sent)
     const ctx: ErrorContext = {
       from: result.from,
       intent: desc.policy.intent.parse(store.getSnapshot().pendingIntent ?? 'submit').action,
@@ -251,11 +253,32 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
     const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
     const shown = display(ev.errors, ctx)
+    // закреплённые серверные ошибки решает syncPins по значению, а не уход с поля
+    const keep = (e: FormError) => e.path !== name || pinned(e)
     store.set((s) => ({
       ...s,
-      facts: [...s.facts.filter((e) => e.path !== name), ...ev.errors.filter((e) => e.path === name)],
-      shown: [...s.shown.filter((e) => e.path !== name), ...shown.errors.filter((e) => e.path === name)],
+      facts: [...s.facts.filter(keep), ...ev.errors.filter((e) => e.path === name)],
+      shown: [...s.shown.filter(keep), ...shown.errors.filter((e) => e.path === name)],
     }))
+    syncPins()
+  }
+
+  // серверная ошибка поля закреплена за отправленным значением (../pins)
+  let pins: Pin[] = []
+  const pinned = (e: FormError) => isPinned(pins, e)
+
+  function syncPins() {
+    if (!formEl || !pins.length) return
+    const s = store.getSnapshot()
+    const facts = reconcilePins(pins, s.facts, new FormData(formEl))
+    if (!facts) return
+    const ctx: ErrorContext = {
+      from: s.result?.from ?? 'fetch',
+      intent: desc.policy.intent.parse(s.pendingIntent ?? 'submit').action,
+      outcome: s.result?.outcome ?? s.outcome ?? 'not-applied',
+    }
+    const shown = display(facts, ctx)
+    store.set((cur) => ({ ...cur, facts, shown: shown.errors, removed: shown.removed }))
   }
 
   /**
@@ -442,6 +465,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
         if (o.intercept ?? true) form.setAttribute('novalidate', '')
         else form.removeAttribute('novalidate')
         assertEnvelope(form)
+        syncPins() // снять значения для ошибок продолжения; сверку ведёт onInput (см. ../pins)
         return () => { if (formEl === form) formEl = null }
       },
       ...(snapshot.pending ? { 'aria-busy': true as const } : {}),
@@ -546,6 +570,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
         }))
         if (cfg.ui.shouldValidate({ event: 'input', name: f.name, live: liveMode(),
                                     state: store.getSnapshot() })) recheck(f.name)
+        else syncPins() // recheck вызывает её сам
         scheduleCheck(f.name)
       },
     }
@@ -593,7 +618,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     machine.finish(begun.submission)
     if (stale) return result
 
-    applyResult(result)
+    applyResult(result, data)
     // Один id защищает только одну логическую отправку. После окончательного
     // исхода следующая отправка должна получить новый id, иначе сервер вернёт
     // кэш предыдущей операции.

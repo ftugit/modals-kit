@@ -972,9 +972,11 @@ test("field() принимает и zod-схему, и свою: один и т�
     (e) => e instanceof DbFailure && e.kind === "validation",
   );
 });
-test("cursorCodecFromEnv: без секрета курсора нет, старым ключам из кольца — есть", async () => {
+test("cursorCodecFromEnv: без секрета курсора нет, старым ключам из кольца — есть, ротация через DB_CURSOR_KID", async () => {
   assert.equal(cursorCodecFromEnv(() => undefined), undefined);
-  assert.throws(() => cursorCodecFromEnv(() => "short"), /cursor key|Invalid/);
+  // короткий секрет отказывает сам кодек (прежде вход отдавал «short» во ВСЕ переменные —
+  // с разбором DB_CURSOR_OLD_KEYS это уже отказ формата, а не длины)
+  assert.throws(() => cursorCodecFromEnv((k) => (k === "DB_CURSOR_SECRET" ? "short" : undefined)), /cursor key|Invalid/);
   const secret = "k".repeat(40);
   const codec = cursorCodecFromEnv((k) => (k === "DB_CURSOR_SECRET" ? secret : k === "DB_CURSOR_OLD_KEYS" ? "v0:" + "j".repeat(40) : undefined)),
     db = createDb({ driver: stubDriver(), limits: conservativeLimits, cursorCodec: codec });
@@ -982,6 +984,23 @@ test("cursorCodecFromEnv: без секрета курсора нет, стар�
   assert.deepEqual(await codec!.decode(token, { a: 1 }), ["x"]);
   await assert.rejects(() => codec!.decode(token, { a: 2 }), (e) => e instanceof DbFailure && e.kind === "cursor");
   assert.equal((await db.resource(posts).cursor({ principal: { roles: [] } })).nextCursor, null);
+  // DB-1: ротация — токен прежнего ключа проверяется после смены имени и секрета
+  const env = (vars: Record<string, string>) => (k: string) => vars[k];
+  const old = cursorCodecFromEnv(env({ DB_CURSOR_SECRET: "o".repeat(40) }))!;
+  const oldToken = await old.encode({ a: 1 }, ["y"]);
+  const rotated = cursorCodecFromEnv(
+    env({ DB_CURSOR_SECRET: "n".repeat(40), DB_CURSOR_KID: "v2", DB_CURSOR_OLD_KEYS: "v1:" + "o".repeat(40) }),
+  )!;
+  assert.deepEqual(await rotated.decode(oldToken, { a: 1 }), ["y"]);
+  assert.deepEqual(await old.decode(await rotated.encode({ a: 1 }, ["z"]), { a: 1 }).catch((e) => e.kind), "cursor");
+  // имя действующего ключа среди старых, дубль, битый формат, плохое имя — ошибка запуска
+  for (const [vars, re] of [
+    [{ DB_CURSOR_OLD_KEYS: "v1:" + "o".repeat(40) }, /занято действующим/],
+    [{ DB_CURSOR_KID: "v2", DB_CURSOR_OLD_KEYS: "v1:" + "o".repeat(40) + ",v1:" + "p".repeat(40) }, /повторяется/],
+    [{ DB_CURSOR_OLD_KEYS: "без-двоеточия" }, /kid:secret/],
+    [{ DB_CURSOR_KID: "v 2" }, /DB_CURSOR_KID/],
+  ] as const)
+    assert.throws(() => cursorCodecFromEnv(env({ DB_CURSOR_SECRET: "n".repeat(40), ...vars })), re);
 });
 /* ── pgproxy: транспорт подменён, сеть не нужна ─────────────────────────────── */
 test("proxyHttpAdapter: без сессии → транзакций нет, токен одноразовый, ответ по id", async () => {

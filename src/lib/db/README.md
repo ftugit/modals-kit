@@ -245,6 +245,15 @@ export const load: PageServerLoad = async (event) => {
 Без секрета `cursorCodecFromEnv` возвращает `undefined`, а `api.cursor` — `unsupported`
 (501): пагинатор обязан остаться на `page`.
 
+```ts
+let after: string | null = null // null — первая страница
+do {
+  const page = await api.cursor(ctx, { limit: 50, after })
+  handle(page.items)
+  after = page.nextCursor
+} while (after)
+```
+
 ## 4. Запись в actions
 
 Валидация схемы — часть `insert`/`update`/`delete`, отдельного `safeParse` в маршруте не
@@ -609,7 +618,9 @@ CHECK/индексы) не трогаются. Изменение схемы м�
 у поля. Ключ (имя `<таблица>_fk_<хеш>`) добавляется после всех таблиц и `NOT VALID` — старые
 строки без пары не мешают открытию, новые проверяются; пропал из модели — удаляется.
 `set null` требует `nullable`; `field` по умолчанию — первичный ключ цели. У таблиц без ключей
-отпечаток прежний.
+отпечаток прежний. Нарушение (`23503`, вид `conflict`, 409): запись со ссылкой на несуществующую
+строку — ошибка поля с кодом `reference` (если поле пишет этот ctx), удаление строки, на которую
+ссылаются, — общая ошибка `referenced`; тексты — `messages` поля или словарь форм.
 
 **Решение конфликтов.** Конфликт снимает человек: правкой модели (или данных) либо решением —
 
@@ -700,8 +711,10 @@ relations добавляются через `include`.
 
 Условия окружения: `DB_CURSOR_SECRET` (не короче 32 байт — более короткий ключ
 отказывается сам кодек, `createCursorCodec`, а не молча подписывает слабым HMAC),
-`DB_CURSOR_OLD_KEYS` (кольцо старых ключей для мягкой смены секрета,
-`kid:secret,...`), `DB_CURSOR_TTL_SECONDS` (по умолчанию 1800). Остальные имена
+`DB_CURSOR_KID` (имя действующего ключа в токене, по умолчанию `v1`), `DB_CURSOR_OLD_KEYS`
+(кольцо старых ключей для мягкой смены секрета, `kid:secret,...`; смена: новое имя в
+`DB_CURSOR_KID`, прежний секрет — под прежним именем; имя действующего ключа в кольце —
+ошибка запуска), `DB_CURSOR_TTL_SECONDS` (по умолчанию 1800). Остальные имена
 (`DATABASE_URL`, `DATABASE_DIR`, `DB_POOL_MAX`, `HYPERDRIVE_CONNECTION_STRING`, `VERCEL`)
 читает приложение — пакет принимает значения, а не env. Полный перечень с
 описанием каждого ключа (и разбором `403 origin.rejected` из `KIT_TRUSTED_ORIGINS`) —
@@ -727,14 +740,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 97 групп в шести файлах (на PGlite выполняются 96: одна группа требует
+Тесты слоя — 98 групп в шести файлах (на PGlite выполняются 97: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 23 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 24 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле) — один PGlite на файл |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

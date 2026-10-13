@@ -69,7 +69,7 @@ export const actions: Actions = {
   remove: (event) => act('remove', handleDbRemove(event.request, 'action', event.locals.dbCtx)),
   // Перенос схемы: успех (или «решать уже нечего») — заново на страницу, где теперь список.
   schema: async (event) => {
-    const handled = await handleSchemaResolve(event.request).catch((e) => failureHandled(e))
+    const handled = await handleSchemaResolve(event.request, 'action').catch((e) => failureHandled(e))
     if (!handled || handled.result.ok) redirect(303, event.url.pathname)
     return act('schema', Promise.resolve(handled))
   },

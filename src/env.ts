@@ -98,8 +98,12 @@ export const variables = defineEnvVars({
     schema: positiveInteger,
     description: 'Время жизни токена курсора, секунд. По умолчанию 1800.',
   },
+  DB_CURSOR_KID: {
+    schema: text,
+    description: 'Имя действующего секрета курсора (пишется в токен). По умолчанию v1; при смене секрета — новое имя.',
+  },
   DB_CURSOR_OLD_KEYS: {
     schema: text,
-    description: 'Прежние секреты на время ротации: kid:secret через запятую (kid ≠ v1).',
+    description: 'Прежние секреты на время ротации: kid:secret через запятую (kid ≠ DB_CURSOR_KID).',
   },
 })

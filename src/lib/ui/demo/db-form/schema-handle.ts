@@ -115,10 +115,11 @@ export async function schemaScreen(): Promise<SchemaScreen | null> {
   }
 }
 
-const error = (code: string, message: string): FormError => ({
-  id: `*:${code}:0`,
+const error = (code: string, message: string, path?: string): FormError => ({
+  id: `${path ?? '*'}:${code}:0`,
   code,
   message,
+  ...(path ? { path } : {}),
   origin: 'server',
 })
 
@@ -127,7 +128,7 @@ const error = (code: string, message: string): FormError => ({
  * просто ведёт на страницу. Описание строится из СВЕЖЕГО отчёта, поэтому вариант
  * с экрана, которого больше нет, отклоняет проверка вариантов, а не база.
  */
-export async function handleSchemaResolve(request: Request): Promise<Handled | null> {
+export async function handleSchemaResolve(request: Request, from: 'action' | 'fetch'): Promise<Handled | null> {
   const screen = await schemaScreen()
   if (!screen) return null
   return createFormHandler<{ message: string }>({
@@ -145,13 +146,12 @@ export async function handleSchemaResolve(request: Request): Promise<Handled | n
       if (!Object.keys(decisions).length)
         return fail([error('schema.nothing', 'Выберите, что сделать хотя бы с одним шагом')])
       const out = await schemaAdmin.resolve(values.token, decisions)
-      // Все отказы — общие (над формой), включая «секрет не подошёл»: ошибка под
-      // полем гаснет при потере фокуса, кнопка уезжает вверх и клик по ней
-      // промахивается (проверено в Chromium: сдвиг 22 px).
-      if (!out.ok) return fail([error(`schema.${out.reason}`, out.message)])
+      // «Секрет не подошёл» — под полем: ошибка закреплена за введённым значением
+      // (lib/form) и уходит при правке, а не на уходе с поля под нажатой кнопкой.
+      if (!out.ok) return fail([error(`schema.${out.reason}`, out.message, out.reason === 'token' ? 'token' : undefined)])
       commit()
       invalidateLiveCache()
       return { data: { message: 'Перенос выполнен' } }
     },
-  })(request, 'action')
+  })(request, from)
 }

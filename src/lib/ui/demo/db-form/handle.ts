@@ -10,6 +10,8 @@ import { db, posts } from '#lib/server/db.js'
 import { invalidateLiveCache } from '#lib/server/live-cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { dbCreate, dbRemove } from './description'
+import { SCHEMA_FORM_ID } from './schema'
+import { handleSchemaResolve } from './schema-handle'
 
 /**
  * Общие тексты видов сбоя для человека: `lib/db` отдаёт свои (английские,
@@ -134,7 +136,8 @@ export function handleDbRemove(
           invalidateLiveCache()
           return { data: { message: `удалено ${deleted}`, deleted } }
         } catch (e) {
-          return fail(toFormErrors(e))
+          // «на запись ссылаются» приходит общей ошибкой с кодом — текст из словаря
+          return fail(failureIssues(e) ?? toFormErrors(e))
         }
       },
     })(request, from))
@@ -153,6 +156,20 @@ export async function dispatchDbForm(
   const id = typeof probe?.get('__form_id') === 'string' ? (probe.get('__form_id') as string) : ''
   if (id === dbCreate.id) return handleDbCreate(request, from, dbCtx)
   if (id === dbRemove.id) return handleDbRemove(request, from, dbCtx)
+  if (id === SCHEMA_FORM_ID) {
+    // `null` — решать уже нечего (успел другой экземпляр): тот же итог, что у успеха —
+    // страница перечитает данные и покажет список
+    const handled = await handleSchemaResolve(request, from).catch((e) => failureHandled(e))
+    return handled ?? {
+      status: 200,
+      result: {
+        v: 1, formId: SCHEMA_FORM_ID, instance: `${SCHEMA_FORM_ID}:new`, from,
+        submissionId: '00000000-0000-4000-8000-000000000000', revision: 1,
+        values: {}, ok: true, status: 200, outcome: 'committed', errors: [],
+        data: { message: 'Схема уже в порядке' },
+      },
+    }
+  }
   return {
     status: 400,
     result: {
