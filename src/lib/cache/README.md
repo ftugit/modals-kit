@@ -101,6 +101,13 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 | `server/live-cache.ts` — память условного GET `/api/db-posts` | `live-cache:db-posts` | 64 | смысл 304 — ответ без ввода-вывода |
 | `ui/demo/form/handle.ts` — бронь отправки демо-формы | `demo-form:idempotency` | 10 000 | форме база не нужна: общая бронь сделала бы БД её единственной зависимостью |
 | `ui/demo/form/handle.ts` — счётчик созданных | `demo-form:stats` | 16 | демо; было списком email без предела, стало числом |
+| `server/shikimori.ts` — страницы каталога, справочники, словарь | `shikimori:pages`, `shikimori:json`, `shikimori:terms` | 256, 256, 1 | ответ чужого API на минуту (словарь — на час) |
+| `server/graphql.ts` — ответы GraphQL (Shikimori, R&M) | `graphql` | 256 | было без потолка (F59, закрыта) |
+| `server/rickmorty.ts` — страницы REST | `rickmorty-rest` | 200 | данные API неизменны |
+
+Лимит запусков к хосту, повторы и склейка одновременных запросов — не кэш: они в
+`fetch` приложения (`server/fetch.ts`, `#lib/fetch`). Транспорт получает хранилище
+явно (`deps.store`, по умолчанию `localStore`), тесты передают своё `memoryStore`.
 
 ## 6. План: где хранилище подключается при переделке
 
@@ -108,19 +115,11 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 
 | Место | Сейчас | Что будет | С какой работой |
 |---|---|---|---|
-| `server/shikimori.ts` `cache`, `jsonCache` | свои `Map` с потолком 256 | области `localStore` | свой fetch (хук в `init`) |
-| `server/shikimori.ts` `termsCache` | `let` на 1 час | область `localStore` | свой fetch |
-| `server/graphql.ts` `cache` | `Map` **без потолка** (F59: ключ из ввода пользователя R&M, память растёт без предела) | область `localStore` с потолком | свой fetch — первым шагом |
-| `server/rickmorty.ts` `restCache` | `Map` с потолком 200 | область `localStore` | свой fetch |
-| `server/shikimori.ts` `lastStartedAt`, `graphql.ts` `lastStartedAt` | две очереди к одному хосту | одна очередь на хост в процессе + 429/`Retry-After` | свой fetch |
-| `inflight`-карты (склейка одновременных запросов) | в каждом транспорте | остаются `Promise` в процессе (в хранилище их не положить); переезжают в хук | свой fetch |
 | `server/shikimori-schema.ts` `cached` | `let` на 30 мин | область `localStore` | три версии Shikimori (rest / graphql / mix) |
 | `form/server.ts` `windowThrottle` | своя `Map`, скользящее окно | область `localStore` | после решения: фиксированное окно на `incr` или скользящее (вопрос открыт) |
 | бронь отправки форм, пишущих в базу (`ui/demo/db-form`) | брони нет | `sharedStore` = Postgres, бронь в той же транзакции, что и данные | контракт lib/form ↔ lib/db |
 
-Где кэш живёт после хука — в хуке или в транспортах — решается вместе со своим fetch.
-
-Не подключаются и не будут: `inflight`-обещания, мемо конфигурации
+Не подключаются и не будут: обещания склейки запросов (живут в `#lib/fetch`), мемо конфигурации
 (`form-security.ts` `origins`), метаданные объектов (`WeakMap` в `lib/db` и
 `lib/form`), браузерные синглтоны (`paginate`, `modals`, `search`, `filters/schema-memory`,
 `demoFault` в `content/items.ts` — флаг демо в браузере).

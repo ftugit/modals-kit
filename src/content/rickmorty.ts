@@ -15,6 +15,8 @@
  * курсора у этого источника недоступен, а число страниц известно (`count`).
  */
 
+import { responseError } from '#lib/api-error.js'
+
 /** Версия API источника. */
 export type RickMortyApi = 'rest' | 'graphql'
 export const RICKMORTY_APIS: readonly RickMortyApi[] = ['rest', 'graphql']
@@ -93,12 +95,6 @@ export async function getCharactersPage({ api, page, limit, search, filters, sig
     qs.set(key, Array.isArray(value) ? value.join(',') : String(value))
   }
   const res = await fetch(`/api/rickmorty/characters?${qs}`, { signal })
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((body: { error?: string }) => body?.error)
-      .catch(() => null)
-    throw new Error(detail ?? `Персонажи Rick and Morty недоступны: ответ ${res.status}`)
-  }
+  if (!res.ok) throw await responseError(res, 'Персонажи Rick and Morty недоступны')
   return (await res.json()) as CharactersPage
 }

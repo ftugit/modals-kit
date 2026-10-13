@@ -13,14 +13,14 @@
  *   • ПУСТО ≠ ОШИБКА. REST на пустую выдачу отвечает 404
  *     `{"error":"There is nothing here"}`, GraphQL — `results: []` и
  *     `count: null`. Оба случая — пустая страница, а не сбой.
- *   • Ошибки сети/сервиса — `RickMortyUpstreamError` (общий слой §13.1): роут
- *     отдаёт их 502/504 с текстом, пагинатор показывает ErrorRow.
+ *   • Ошибки сети/сервиса — `FetchError` (`#lib/fetch`): роут отдаёт их
+ *     502/504 с текстом и кодом, пагинатор показывает ErrorRow.
  *
- * GraphQL идёт через общий транспорт `./graphql` (кэш, single-flight, зазор,
- * повтор): этот модуль знает только документ запроса и проекцию ответа. У REST
- * тот же минимум вежливости: таймаут, User-Agent, кэш на минуту и один запрос
- * на одинаковый адрес (данные API неизменны — сервис сам отдаёт
- * `cache-control: immutable`).
+ * Сеть у обеих версий — `fetch` приложения (`./fetch`: User-Agent, лимит хоста,
+ * таймаут, повторы, склейка одинаковых запросов). GraphQL идёт через общий
+ * транспорт `./graphql` (его кэш): этот модуль знает только документ запроса и
+ * проекцию ответа. У REST свой кэш на минуту (данные API неизменны — сервис сам
+ * отдаёт `cache-control: immutable`).
  */
 import {
   catalogFilterFieldNames,
@@ -28,8 +28,11 @@ import {
   validateCatalogFilterValues,
   type CatalogFilterSchema,
 } from '#lib/filters/index.js'
-import { fetchGraphql, GRAPHQL_UA } from './graphql'
-import { UpstreamError, upstreamFetch } from './upstream'
+import { FetchError, readJson, type AppFetch } from '#lib/fetch/index.js'
+import type { Store } from '#lib/cache/index.js'
+import { localStore } from './cache'
+import { upstream } from './fetch'
+import { fetchGraphql } from './graphql'
 import {
   RICKMORTY_API_PAGE_SIZE,
   RICKMORTY_APIS,
@@ -43,24 +46,16 @@ import { RICKMORTY_FILTER_SCHEMA } from '../../content/rickmorty-filters'
 export const RICKMORTY_REST = 'https://rickandmortyapi.com/api/character/'
 export const RICKMORTY_GRAPHQL = 'https://rickandmortyapi.com/graphql'
 
-/** Сбой API Rick and Morty; общий предок — `UpstreamError`. */
-export class RickMortyUpstreamError extends UpstreamError {
-  constructor(message: string, status = 502, options?: ErrorOptions) {
-    super(message, status, options)
-    this.name = 'RickMortyUpstreamError'
-  }
-}
-
 /** Параметры фильтра API — одинаковые у REST (query) и GraphQL (`FilterCharacter`). */
 export type RickMortyParams = Partial<Record<'name' | 'status' | 'gender' | 'species' | 'type', string>>
 
 /** Одна страница API: сколько всего и записи этой страницы. */
 type ApiPage = { count: number; results: RickMortyCharacter[] }
 
+/** Сеть — `fetch` приложения (`./fetch`), кэш — области хранилища (`localStore`). */
 export type RickMortyDeps = {
-  fetch?: typeof globalThis.fetch
-  now?: () => number
-  timeoutMs?: number
+  fetch?: AppFetch
+  store?: Store
 }
 
 /* ── окно страницы ─────────────────────────────────────────────────── */
@@ -103,13 +98,13 @@ const characters = (list: unknown): RickMortyCharacter[] =>
 
 const REST_TTL_MS = 60_000
 const REST_MAX_ENTRIES = 200
-const restCache = new Map<string, { at: number; value: ApiPage }>()
-const restInflight = new Map<string, Promise<ApiPage>>()
 
-/** Сброс кэша REST (тесты). */
-export function resetRickMortyTransport(): void {
-  restCache.clear()
-  restInflight.clear()
+const restCacheOf = (deps: RickMortyDeps): Store =>
+  (deps.store ?? localStore).scope('rickmorty-rest', { max: REST_MAX_ENTRIES })
+
+/** Сброс кэша REST в `localStore` (тесты). */
+export async function resetRickMortyTransport(): Promise<void> {
+  await restCacheOf({}).clear()
 }
 
 export function restUrl(page: number, params: RickMortyParams): string {
@@ -118,48 +113,28 @@ export function restUrl(page: number, params: RickMortyParams): string {
   return `${RICKMORTY_REST}?${qs}`
 }
 
-async function requestRest(url: string, deps: Required<RickMortyDeps>): Promise<ApiPage> {
-  let res: Response
-  try {
-    res = await deps.fetch(url, {
-      headers: { 'User-Agent': GRAPHQL_UA, accept: 'application/json' },
-      signal: AbortSignal.timeout(deps.timeoutMs),
-    })
-  } catch (error) {
-    throw new RickMortyUpstreamError('REST API недоступен', 504, { cause: error })
-  }
+async function restPage(page: number, params: RickMortyParams, deps: RickMortyDeps): Promise<ApiPage> {
+  const url = restUrl(page, params)
+  const cache = restCacheOf(deps)
+  const hit = await cache.get<ApiPage>(url)
+  if (hit) return hit
+  const res = await (deps.fetch ?? upstream)(url)
   // Пустая выдача у REST — 404 с телом `{"error":"There is nothing here"}`.
-  if (res.status === 404) return { count: 0, results: [] }
-  if (!res.ok) throw new RickMortyUpstreamError(`REST API ответил ${res.status}`, 502)
-  const body = (await res.json().catch(() => null)) as { info?: { count?: unknown }; results?: unknown } | null
-  if (!body || !Array.isArray(body.results)) throw new RickMortyUpstreamError('REST API: ответ без results', 502)
-  return { count: Number(body.info?.count) || 0, results: characters(body.results) }
+  const body = await readJson<{ info?: { count?: unknown }; results?: unknown } | null>(res, {
+    accept: (status) => status === 404 || (status >= 200 && status < 300),
+  })
+  const value: ApiPage =
+    res.status === 404
+      ? { count: 0, results: [] }
+      : body && Array.isArray(body.results)
+        ? { count: Number(body.info?.count) || 0, results: characters(body.results) }
+        : rejected()
+  await cache.set(url, value, REST_TTL_MS)
+  return value
 }
 
-async function restPage(page: number, params: RickMortyParams, deps: Required<RickMortyDeps>): Promise<ApiPage> {
-  const url = restUrl(page, params)
-  const hit = restCache.get(url)
-  if (hit && deps.now() - hit.at < REST_TTL_MS) return hit.value
-  let job = restInflight.get(url)
-  if (!job) {
-    job = requestRest(url, deps).then(
-      (value) => {
-        if (restCache.size >= REST_MAX_ENTRIES) {
-          const oldest = restCache.keys().next()
-          if (!oldest.done) restCache.delete(oldest.value)
-        }
-        restCache.set(url, { at: deps.now(), value })
-        restInflight.delete(url)
-        return value
-      },
-      (error) => {
-        restInflight.delete(url)
-        throw error
-      },
-    )
-    restInflight.set(url, job)
-  }
-  return await job
+function rejected(): never {
+  throw new FetchError('fetch.rejected', 'REST API: ответ без results')
 }
 
 /* ── GraphQL ───────────────────────────────────────────────────────── */
@@ -183,7 +158,7 @@ async function graphqlPage(page: number, params: RickMortyParams, deps: RickMort
         return { count: Number(list?.info?.count) || 0, results: characters(list?.results) }
       },
     },
-    deps.fetch ? { fetch: deps.fetch } : {},
+    deps,
   )
 }
 
@@ -242,11 +217,6 @@ export async function fetchCharactersPage(
   },
   deps: RickMortyDeps = {},
 ): Promise<CharactersPage> {
-  const resolved: Required<RickMortyDeps> = {
-    fetch: deps.fetch ?? upstreamFetch(),
-    now: deps.now ?? (() => Date.now()),
-    timeoutMs: deps.timeoutMs ?? 10_000,
-  }
   const { params: filterParams, dropped } = rickMortyFilterParams(query.filters ?? {})
   const params: RickMortyParams = { ...filterParams, ...(query.search ? { name: query.search } : {}) }
   const { pages, skip } = apiWindow(query.page, query.limit)
@@ -256,8 +226,8 @@ export async function fetchCharactersPage(
   for (const [index, apiPage] of pages.entries()) {
     if (index > 0 && (apiPage - 1) * RICKMORTY_API_PAGE_SIZE >= count) break
     const got = query.api === 'graphql'
-      ? await graphqlPage(apiPage, params, deps.fetch ? { fetch: deps.fetch } : {})
-      : await restPage(apiPage, params, resolved)
+      ? await graphqlPage(apiPage, params, deps)
+      : await restPage(apiPage, params, deps)
     count = got.count
     collected.push(...got.results)
   }

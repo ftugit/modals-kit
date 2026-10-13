@@ -16,6 +16,8 @@ import {
   resetShikimoriFilterSchema,
 } from './shikimori-schema'
 import { resetShikimoriTransport } from './shikimori'
+import { makeUpstream } from './fetch'
+import { memoryStore } from '#lib/cache/index.js'
 import { resetGraphqlTransport } from './graphql'
 import {
   CATALOG_FILTER_OPTIONS_LIMIT,
@@ -79,13 +81,12 @@ function stubUpstream(studios: { id: number; name: string }[]) {
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+/** Часы схемы и кэшей транспорта — одни: после TTL схемы устаревают и справочники. */
 function clock(start = 1_000_000) {
   let t = start
   return {
     now: () => t,
-    sleep: async (ms: number) => {
-      t += ms
-    },
+    store: memoryStore({ now: () => t }),
     advance: (ms: number) => {
       t += ms
     },
@@ -112,7 +113,7 @@ describe('живые справочники', () => {
   it('жанры, студии, enum' + 'ы и частоты читаются из API', async () => {
     const c = clock()
     const { fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const refs = await readShikimoriRefs({ fetch: fetchImpl })
     expect(refs.genres).toEqual([
       { id: '27', label: 'Сёнен' },
       { id: '133', label: 'Isekai' },
@@ -132,7 +133,7 @@ describe('сборка схемы', () => {
   it('поля схемы = объявленный состав, значения — из справочников', async () => {
     const c = clock()
     const { fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const refs = await readShikimoriRefs({ fetch: fetchImpl })
     const schema = buildShikimoriFilterSchema(refs, '2026-10-07T09:00:00.000Z')
 
     expect(schema.source).toBe('shikimori')
@@ -163,7 +164,7 @@ describe('сборка схемы', () => {
     const { fetchImpl } = stubUpstream(studios)
     const c = clock()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const refs = await readShikimoriRefs({ fetch: fetchImpl })
     const schema = buildShikimoriFilterSchema(refs, '2026-10-07T09:00:00.000Z')
     const field = schema.fields.find((item) => item.key === 'studios')!
     expect(field.options).toHaveLength(1934)
@@ -180,7 +181,7 @@ describe('сборка схемы', () => {
     const { fetchImpl } = stubUpstream(studios)
     const c = clock()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const refs = await readShikimoriRefs({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const refs = await readShikimoriRefs({ fetch: fetchImpl })
     const schema = buildShikimoriFilterSchema(refs, '2026-10-07T09:00:00.000Z')
     const field = schema.fields.find((item) => item.key === 'studios')!
     expect(field.options).toHaveLength(CATALOG_FILTER_OPTIONS_LIMIT)
@@ -195,16 +196,16 @@ describe('кэш схемы', () => {
   it('свежая схема не читает справочники повторно, после TTL — читает', async () => {
     const c = clock()
     const { calls, fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const first = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const first = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, store: c.store })
     const reads = calls.graphql + calls.rest
     expect(reads).toBeGreaterThan(0)
 
-    const second = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const second = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, store: c.store })
     expect(second).toBe(first)
     expect(calls.graphql + calls.rest).toBe(reads)
 
     c.advance(SHIKIMORI_SCHEMA_TTL_MS + 1)
-    const third = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, sleep: c.sleep })
+    const third = await getShikimoriFilterSchema({ fetch: fetchImpl, now: c.now, store: c.store })
     expect(third.builtAt).not.toBe(first.builtAt)
     expect(calls.graphql + calls.rest).toBeGreaterThan(reads)
   })
@@ -212,7 +213,7 @@ describe('кэш схемы', () => {
   it('одновременные обращения делят ОДНУ сборку', async () => {
     const clk = clock()
     const { calls, fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const deps = { fetch: fetchImpl, now: clk.now, sleep: clk.sleep }
+    const deps = { fetch: fetchImpl, now: clk.now, store: clk.store }
     const [a, b, c] = await Promise.all([
       getShikimoriFilterSchema(deps),
       getShikimoriFilterSchema(deps),
@@ -227,23 +228,23 @@ describe('кэш схемы', () => {
   it('упавшее обновление отдаёт предыдущую схему с её меткой', async () => {
     const c = clock()
     const ok = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const first = await getShikimoriFilterSchema({ fetch: ok.fetchImpl, now: c.now, sleep: c.sleep })
+    const first = await getShikimoriFilterSchema({ fetch: ok.fetchImpl, now: c.now, store: c.store })
     c.advance(SHIKIMORI_SCHEMA_TTL_MS + 1)
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const failing = (async () => {
+    const failing = makeUpstream(async () => {
       throw new Error('сеть упала')
-    }) as unknown as typeof globalThis.fetch
-    const second = await getShikimoriFilterSchema({ fetch: failing, now: c.now, sleep: c.sleep })
+    }, { sleep: async () => {} })
+    const second = await getShikimoriFilterSchema({ fetch: failing, now: c.now, store: c.store })
     expect(second).toBe(first)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 
   it('первая сборка без кэша падает честной ошибкой', async () => {
-    const failing = (async () => {
+    const failing = makeUpstream(async () => {
       throw new Error('сеть упала')
-    }) as unknown as typeof globalThis.fetch
-    await expect(getShikimoriFilterSchema({ fetch: failing, sleep: async () => {} })).rejects.toThrow(/недоступен/)
+    }, { sleep: async () => {} })
+    await expect(getShikimoriFilterSchema({ fetch: failing })).rejects.toThrow(/недоступен/)
   })
 })

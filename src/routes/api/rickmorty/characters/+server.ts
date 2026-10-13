@@ -8,17 +8,16 @@
  */
 import type { RequestHandler } from './$types'
 import { fetchCharactersPage, parseCharactersQuery } from '#lib/server/rickmorty.js'
-import { upstreamFailure } from '#lib/server/upstream.js'
+import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
 
 export const GET: RequestHandler = async ({ url }) => {
   const parsed = parseCharactersQuery(url.searchParams)
-  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
+  if (!parsed.ok) return apiInvalid(parsed.error)
 
   try {
     const page = await fetchCharactersPage(parsed.query)
     return Response.json(page, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
-    const { message, status } = upstreamFailure(error, 'api/rickmorty/characters')
-    return Response.json({ error: `Персонажи Rick and Morty недоступны: ${message}` }, { status })
+    return apiFailure(error, 'api/rickmorty/characters', 'Персонажи Rick and Morty недоступны')
   }
 }

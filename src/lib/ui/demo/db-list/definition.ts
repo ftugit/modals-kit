@@ -26,6 +26,7 @@
  * понимает оба адреса (`?page` → offset, `?page.after` → keyset), и ни одна из
  * страниц не выбирает транспорт руками.
  */
+import { responseError } from '#lib/api-error.js'
 import {
   createUrlAdapter,
   decorateSource,
@@ -266,11 +267,10 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   if (filter) q.set('flt', filter)
   if (order) q.set('ord', order)
   const res = await fetch(`/api/db-posts?${q}`, { signal: look.signal })
-  const body = (await res.json().catch(() => null)) as (PageResponse<DbPost> & { error?: string }) | null
   // Ошибка сервера обязана дойти до пагинатора как ошибка: пустой список он
   // читает как «данных нет», и это другое состояние.
-  if (!res.ok) throw new Error(body?.error ?? `db-posts: HTTP ${res.status}`)
-  return body as PageResponse<DbPost>
+  if (!res.ok) throw await responseError(res, 'db-posts')
+  return (await res.json()) as PageResponse<DbPost>
 }
 
 export const dbPostsSource = defineSource<DbPost>({

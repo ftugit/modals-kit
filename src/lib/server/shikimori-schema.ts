@@ -42,9 +42,9 @@ import { fetchGraphql } from './graphql'
 import {
   fetchShikimoriJson,
   probeShikimoriJson,
-  ShikimoriUpstreamError,
   type TransportDeps,
 } from './shikimori'
+import { FetchError } from '#lib/fetch/index.js'
 
 /** GraphQL-эндпоинт Shikimori: для универсального транспорта это просто адрес. */
 export const SHIKIMORI_GRAPHQL = 'https://shikimori.io/api/graphql'
@@ -176,10 +176,10 @@ export function parseEnumMessage(text: string): string[] {
 async function readEnum(name: EnumName, transport: TransportDeps): Promise<string[]> {
   const { status, text } = await probeShikimoriJson(`/animes?limit=1&${name}=zzz`, transport)
   if (status !== 422) {
-    throw new ShikimoriUpstreamError(`Справочник «${name}» недоступен: ответ ${status}`, 502)
+    throw new FetchError('fetch.status', `справочник «${name}» недоступен: ответ ${status}`, { upstreamStatus: status })
   }
   const values = parseEnumMessage(text)
-  if (!values.length) throw new ShikimoriUpstreamError(`Справочник «${name}»: пустой список значений`, 502)
+  if (!values.length) throw new FetchError('fetch.rejected', `справочник «${name}»: пустой список значений`)
   return values
 }
 

@@ -125,4 +125,5 @@ export const CORE_MODULES = [
   'src/lib/paginate',
   'src/lib/search',
   'src/lib/cache',
+  'src/lib/fetch',
 ]

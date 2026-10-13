@@ -8,6 +8,7 @@ import {
   resetRickMortyTransport,
   rickMortyFilterParams,
 } from './rickmorty'
+import { makeUpstream } from './fetch'
 
 /** Персонажи 1..n — как отдаёт API (с лишним полем `url`, которое мы срезаем). */
 const people = (from: number, to: number) =>
@@ -110,19 +111,22 @@ describe('fetchCharactersPage', () => {
     })
   })
 
-  it('сбой сервиса — RickMortyUpstreamError 502 с текстом без адреса', async () => {
-    const fetch = (async () => new Response('oops', { status: 500 })) as typeof globalThis.fetch
+  it('сбой сервиса — FetchError 502 с текстом без адреса; 5xx повторён один раз', async () => {
+    let calls = 0
+    const fetch = makeUpstream(async () => ((calls += 1), new Response('oops', { status: 500 })), { sleep: async () => {} })
     await expect(fetchCharactersPage({ api: 'rest', page: 1, limit: 20 }, { fetch })).rejects.toMatchObject({
-      name: 'RickMortyUpstreamError',
+      name: 'FetchError',
+      code: 'fetch.status',
       status: 502,
-      message: 'REST API ответил 500',
+      message: 'внешний сервис ответил 500',
     })
+    expect(calls).toBe(2)
   })
 
   it('сеть недоступна — 504', async () => {
-    const fetch = (async () => {
+    const fetch = makeUpstream(async () => {
       throw new TypeError('fetch failed')
-    }) as typeof globalThis.fetch
+    }, { sleep: async () => {} })
     await expect(fetchCharactersPage({ api: 'rest', page: 1, limit: 20 }, { fetch })).rejects.toMatchObject({ status: 504 })
   })
 

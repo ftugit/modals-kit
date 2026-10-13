@@ -8,7 +8,7 @@
  */
 import type { RequestHandler } from './$types'
 import { getTermArtifact } from '#lib/server/shikimori.js'
-import { upstreamFailure } from '#lib/server/upstream.js'
+import { apiFailure } from '#lib/server/api-error.js'
 
 export const GET: RequestHandler = async ({ request }) => {
   try {
@@ -17,7 +17,6 @@ export const GET: RequestHandler = async ({ request }) => {
       headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
     })
   } catch (error) {
-    const { message, status } = upstreamFailure(error, 'api/shikimori/terms')
-    return new Response(`Словарь Shikimori недоступен: ${message}`, { status })
+    return apiFailure(error, 'api/shikimori/terms', 'Словарь Shikimori недоступен')
   }
 }

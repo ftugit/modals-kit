@@ -249,7 +249,7 @@ describe('страница каталога с фильтрами: один ко
     const { calls, fetchImpl } = stubUpstream()
     const page = await fetchAnimesPage(
       { query: { page: 1, limit: 20, search: 'наруто' }, filters: { 'filters.genres.and': '27' } },
-      { fetch: fetchImpl, now: () => 0, sleep: async () => {} },
+      { fetch: fetchImpl },
     )
     expect(page.items).toHaveLength(1)
     expect(page.dropped).toBeUndefined()
@@ -262,7 +262,7 @@ describe('страница каталога с фильтрами: один ко
     const { calls, fetchImpl } = stubUpstream()
     await fetchAnimesPage(
       { query: { page: 1, limit: 20 }, filters: {} },
-      { fetch: fetchImpl, now: () => 0, sleep: async () => {} },
+      { fetch: fetchImpl },
     )
     expect(calls.some((call) => call.startsWith('POST') || call.includes('/studios'))).toBe(false)
     expect(calls).toHaveLength(1)
@@ -275,7 +275,7 @@ describe('страница каталога с фильтрами: один ко
         query: { page: 1, limit: 20, search: 'наруто' },
         filters: { 'filters.status': 'latest' },
       },
-      { fetch: fetchImpl, now: () => 0, sleep: async () => {} },
+      { fetch: fetchImpl },
     )
     const parsed = pageUrl(calls)
     expect(parsed.searchParams.has('search')).toBe(false)
@@ -288,7 +288,7 @@ describe('страница каталога с фильтрами: один ко
     const { calls, fetchImpl } = stubUpstream()
     const page = await fetchAnimesPage(
       { query: { page: 1, limit: 20 }, filters: { 'filters.kind': 'zzz' } },
-      { fetch: fetchImpl, now: () => 0, sleep: async () => {} },
+      { fetch: fetchImpl },
     )
     expect(pageUrl(calls).searchParams.has('kind')).toBe(false)
     expect(page.dropped).toEqual([{ key: 'filters.kind', reason: 'значение вне опций или границ схемы' }])

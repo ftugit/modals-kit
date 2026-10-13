@@ -14,12 +14,12 @@
  */
 import type { RequestHandler } from './$types'
 import { parseAnimesQuery } from '#lib/server/shikimori.js'
-import { upstreamFailure } from '#lib/server/upstream.js'
+import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
 import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseAnimesQuery(url.searchParams)
-  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
+  if (!parsed.ok) return apiInvalid(parsed.error)
 
   try {
     // Конвейер фильтров — общий с SSR-мостом (`fetchAnimesPage`), здесь только
@@ -29,7 +29,6 @@ export const GET: RequestHandler = async ({ url, request }) => {
     const page = await fetchAnimesPage(parsed, { signal: request.signal })
     return Response.json(page, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
-    const { message, status } = upstreamFailure(error, 'api/shikimori/animes')
-    return Response.json({ error: `Каталог Shikimori недоступен: ${message}` }, { status })
+    return apiFailure(error, 'api/shikimori/animes', 'Каталог Shikimori недоступен')
   }
 }

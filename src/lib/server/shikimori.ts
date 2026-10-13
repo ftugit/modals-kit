@@ -24,13 +24,16 @@
  *     переключение опций панели не долбят API заново); память кэша ограничена
  *     `SHIKIMORI_CACHE_MAX` адресами — ключ строится из ввода пользователя
  *     (`/api/shikimori/animes`), и без потолка процесс рос бы без предела (F10);
- *   • запуски запросов разнесены минимум на `MIN_GAP_MS` (кэш-мисс не может
- *     устроить залп);
- *   • один повтор на 429/5xx с паузой, дальше — честная ошибка;
- *   • у каждого запроса жёсткий таймаут.
+ *   • лимит запусков к хосту, User-Agent, таймаут, повторы на 429/5xx и
+ *     склейка одинаковых запросов — в `fetch` приложения (`./fetch`): лимит
+ *     общий у REST и GraphQL, потому что хост один.
+ * Ошибки сети — `FetchError` (`#lib/fetch`): текст для клиента, подробности в `cause`.
  */
 import { buildTermDictionary, serializeTermDictionary } from '#lib/search/fuzzy.js'
-import { UpstreamError, upstreamFetch } from './upstream'
+import { readJson, readText, type AppFetch } from '#lib/fetch/index.js'
+import type { Store } from '#lib/cache/index.js'
+import { localStore } from './cache'
+import { UPSTREAM_UA, upstream } from './fetch'
 import {
   SHIKIMORI_LIMIT_MAX,
   SHIKIMORI_ORDER,
@@ -51,8 +54,8 @@ export const SHIKIMORI_MEDIA = 'https://shikimori.io'
 export const SHIKIMORI_SEARCH_MAX = 120
 export { SHIKIMORI_LIMIT_MAX, SHIKIMORI_ORDER }
 
-/** User-Agent обязателен: Shikimori отказывает запросам без него. */
-export const SHIKIMORI_UA = 'modals-kit-demo/0.1 (+https://github.com/ftugit/modals-kit)'
+/** User-Agent обязателен: Shikimori отказывает запросам без него (ставит `fetch` приложения). */
+export const SHIKIMORI_UA = UPSTREAM_UA
 
 const CACHE_TTL_MS = 60_000
 /**
@@ -62,20 +65,9 @@ const CACHE_TTL_MS = 60_000
  * (баг F10, docs/audit/crutches.md). 256 страниц × ≤50 карточек — единицы МБ.
  */
 export const SHIKIMORI_CACHE_MAX = 256
-const MIN_GAP_MS = 250
-const RETRY_DELAY_MS = 1_000
-const UPSTREAM_TIMEOUT_MS = 10_000
 /** Сколько страниц популярности идёт в словарь коррекции первым заходом. */
 const TERMS_PAGES = 6
 const TERMS_TTL_MS = 60 * 60 * 1000
-
-/** Сбой REST API Shikimori; общий слой ошибок — `UpstreamError` (`./upstream`). */
-export class ShikimoriUpstreamError extends UpstreamError {
-  constructor(message: string, status = 502, options?: ErrorOptions) {
-    super(message, status, options)
-    this.name = 'ShikimoriUpstreamError'
-  }
-}
 
 export type AnimesQuery = {
   page: number
@@ -255,126 +247,46 @@ export function hasNextOf(items: readonly unknown[], limit: number): boolean {
   return items.length >= limit
 }
 
-// ── Кэш, троттлинг, повторы ────────────────────────────────────────────────
+// ── Сеть и кэш ─────────────────────────────────────────────────────────────
 
+/**
+ * Зависимости транспорта. Сеть — `fetch` приложения (`./fetch`: лимиты хоста,
+ * таймаут, повторы, склейка одинаковых запросов). Кэш — хранилище, в котором
+ * транспорт берёт свои области (`localStore` по умолчанию).
+ */
 export type TransportDeps = {
-  fetch?: typeof globalThis.fetch
-  now?: () => number
-  sleep?: (ms: number) => Promise<void>
-  cacheTtlMs?: number
-  minGapMs?: number
+  fetch?: AppFetch
+  store?: Store
 }
 
-type ResolvedDeps = Required<Pick<TransportDeps, 'fetch' | 'now' | 'sleep' | 'cacheTtlMs' | 'minGapMs'>>
+type Resolved = { fetch: AppFetch; pages: Store; json: Store; terms: Store }
 
-function resolveDeps(deps: TransportDeps): ResolvedDeps {
+function resolveDeps(deps: TransportDeps): Resolved {
+  const root = (deps.store ?? localStore).scope('shikimori')
   return {
-    fetch: deps.fetch ?? upstreamFetch(),
-    now: deps.now ?? (() => Date.now()),
-    sleep: deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms))),
-    cacheTtlMs: deps.cacheTtlMs ?? CACHE_TTL_MS,
-    minGapMs: deps.minGapMs ?? MIN_GAP_MS,
+    fetch: deps.fetch ?? upstream,
+    pages: root.scope('pages', { max: SHIKIMORI_CACHE_MAX }),
+    json: root.scope('json', { max: SHIKIMORI_CACHE_MAX }),
+    terms: root.scope('terms', { max: 1 }),
   }
 }
 
-type CacheEntry = { at: number; value: AnimesPage }
-
-/**
- * Чтение кэша по TTL: просроченная запись удаляется сразу, а не ждёт вытеснения.
- */
-function cacheGet<E extends { at: number }>(map: Map<string, E>, key: string, deps: ResolvedDeps): E | undefined {
-  const hit = map.get(key)
-  if (!hit) return undefined
-  if (deps.now() - hit.at < deps.cacheTtlMs) return hit
-  map.delete(key)
-  return undefined
+/** Сброс кэша транспорта в `localStore` (тесты; в приложении не нужен). */
+export async function resetShikimoriTransport(): Promise<void> {
+  await localStore.scope('shikimori').clear()
 }
 
-/**
- * Запись с потолком {@link SHIKIMORI_CACHE_MAX}: когда места нет, уходит самая
- * старая по вставке (порядок `Map`; как в `live-cache.ts`: точный LRU здесь стоит
- * дороже, чем даёт). Вставка идёт по времени, так что самая старая запись — она же
- * первая кандидатка на просрочку. Перезапись ключа переносит его в конец очереди.
- */
-function cacheSet<E>(map: Map<string, E>, key: string, entry: E): void {
-  map.delete(key)
-  while (map.size >= SHIKIMORI_CACHE_MAX) {
-    const oldest = map.keys().next()
-    if (oldest.done) break
-    map.delete(oldest.value)
-  }
-  map.set(key, entry)
-}
-
-const cache = new Map<string, CacheEntry>()
-const inflight = new Map<string, Promise<AnimesPage>>()
-let lastStartedAt = 0
-let startQueue: Promise<unknown> = Promise.resolve()
-
-/** Сброс состояния транспорта (тесты; в приложении не нужен). */
-export function resetShikimoriTransport(): void {
-  cache.clear()
-  inflight.clear()
-  jsonCache.clear()
-  jsonInflight.clear()
-  lastStartedAt = 0
-  startQueue = Promise.resolve()
-}
-
-/** Запуск задачи с соблюдением минимального зазора между обращениями к API. */
-function schedule<T>(task: () => Promise<T>, deps: ResolvedDeps): Promise<T> {
-  const prev = startQueue
-  const run = (async () => {
-    await prev.catch(() => undefined)
-    const wait = Math.max(0, deps.minGapMs - (deps.now() - lastStartedAt))
-    if (wait > 0) await deps.sleep(wait)
-    lastStartedAt = deps.now()
-    return task()
-  })()
-  startQueue = run.catch(() => undefined)
-  return run
-}
-
-/**
- * Один GET к API: повторы на 429/5xx, таймаут, User-Agent — ОДНО место для всех
- * обращений транспорта (страницы каталога, справочники схемы, пробы).
- */
-async function requestUpstreamJson(url: string, deps: ResolvedDeps): Promise<unknown> {
-  for (let attempt = 0; ; attempt += 1) {
-    let res: Response
-    try {
-      res = await deps.fetch(url, {
-        headers: { 'User-Agent': SHIKIMORI_UA, accept: 'application/json' },
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      })
-    } catch (error) {
-      throw new ShikimoriUpstreamError('Shikimori API недоступен', 504, { cause: error })
-    }
-    if (res.status === 429 || res.status >= 500) {
-      if (attempt === 0) {
-        await deps.sleep(RETRY_DELAY_MS)
-        continue
-      }
-      throw new ShikimoriUpstreamError(`Shikimori API ответил ${res.status}`, 502)
-    }
-    if (!res.ok) throw new ShikimoriUpstreamError(`Shikimori API ответил ${res.status}`, 502)
-    return await res.json()
-  }
-}
-
-async function requestUpstream(url: string, query: AnimesQuery, deps: ResolvedDeps): Promise<AnimesPage> {
-  const raw = await requestUpstreamJson(url, deps)
-  const list = Array.isArray(raw) ? raw : []
-  const items = list.map(normalizeAnime).filter((card): card is AnimeCard => card !== null)
-  return { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
+/** Один GET к API → JSON. Правила сети — в `fetch` приложения. */
+async function requestUpstreamJson(url: string, deps: Resolved, signal?: AbortSignal): Promise<unknown> {
+  return await readJson(await deps.fetch(url, { signal }))
 }
 
 /**
  * Страница каталога. Возвращает данные из кэша, если они моложе TTL; повторные
- * параллельные вызовы одного URL делят один запрос (single-flight).
+ * параллельные вызовы одного URL делят один запрос (склейка в `fetch`).
  *
- * `signal` влияет только на ОЖИДАНИЕ этого вызова: прерывание не отменяет уже
- * запущенный общий запрос (он дозаполнит кэш и не сломает других ожидающих).
+ * `signal` прерывает только ЭТО ожидание: общий запрос дойдёт до конца и не
+ * сломает других ожидающих.
  */
 export async function fetchAnimes(
   query: AnimesQuery,
@@ -383,65 +295,26 @@ export async function fetchAnimes(
   const deps = resolveDeps(transport)
   const url = buildUpstreamUrl(query)
 
-  const hit = cacheGet(cache, url, deps)
-  if (hit) return { ...hit.value, cached: true }
+  const hit = await deps.pages.get<AnimesPage>(url)
+  if (hit) return { ...hit, cached: true }
 
-  let job = inflight.get(url)
-  if (!job) {
-    job = schedule(() => requestUpstream(url, query, deps), deps).then(
-      (page) => {
-        cacheSet(cache, url, { at: deps.now(), value: page })
-        inflight.delete(url)
-        return page
-      },
-      (error) => {
-        inflight.delete(url)
-        throw error
-      },
-    )
-    inflight.set(url, job)
-  }
-
-  return await waitFor(job, signal)
-}
-
-/**
- * Ожидание общего запроса с возможностью отмены ТОЛЬКО своего ожидания:
- * прерывание не отменяет сам запрос (он дозаполнит кэш и не сломает других).
- */
-async function waitFor<T>(job: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return job
-  if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  return await new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'))
-    signal.addEventListener('abort', onAbort, { once: true })
-    job.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
-  })
+  const raw = await requestUpstreamJson(url, deps, signal)
+  const list = Array.isArray(raw) ? raw : []
+  const items = list.map(normalizeAnime).filter((card): card is AnimeCard => card !== null)
+  const page: AnimesPage = { items, page: query.page, limit: query.limit, hasNext: hasNextOf(items, query.limit) }
+  await deps.pages.set(url, page, CACHE_TTL_MS)
+  return page
 }
 
 // ── Справочники и пробы: тот же транспорт, другая проекция ─────────────────
-
-type JsonEntry = { at: number; value: unknown }
-const jsonCache = new Map<string, JsonEntry>()
-const jsonInflight = new Map<string, Promise<unknown>>()
 
 const absoluteApiUrl = (path: string): string =>
   path.startsWith('http') ? path : `${SHIKIMORI_API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
 
 /**
- * Произвольный GET к API с той же вежливостью, что и страницы каталога: кэш по
- * адресу, один запрос на всех (single-flight), минимальный зазор между ЛЮБЫМИ
- * обращениями, повторы. Формы ответа не знает — проекцию делает вызывающий.
- * Нужен зоне схемы фильтров (живые справочники) и всему, что не страница.
+ * Произвольный GET к API с тем же кэшем и той же сетью, что у страниц каталога.
+ * Формы ответа не знает — проекцию делает вызывающий. Нужен зоне схемы фильтров
+ * (живые справочники) и всему, что не страница.
  */
 export async function fetchShikimoriJson<T = unknown>(
   path: string,
@@ -449,25 +322,11 @@ export async function fetchShikimoriJson<T = unknown>(
 ): Promise<T> {
   const deps = resolveDeps(transport)
   const url = absoluteApiUrl(path)
-  const hit = cacheGet(jsonCache, url, deps)
-  if (hit) return hit.value as T
-
-  let job = jsonInflight.get(url) as Promise<T> | undefined
-  if (!job) {
-    job = schedule(() => requestUpstreamJson(url, deps), deps).then(
-      (value) => {
-        cacheSet(jsonCache, url, { at: deps.now(), value })
-        jsonInflight.delete(url)
-        return value as T
-      },
-      (error) => {
-        jsonInflight.delete(url)
-        throw error
-      },
-    )
-    jsonInflight.set(url, job)
-  }
-  return await waitFor(job, signal)
+  const hit = await deps.json.get<{ value: T }>(url)
+  if (hit) return hit.value
+  const value = (await requestUpstreamJson(url, deps, signal)) as T
+  await deps.json.set(url, { value }, CACHE_TTL_MS)
+  return value
 }
 
 /**
@@ -475,37 +334,18 @@ export async function fetchShikimoriJson<T = unknown>(
  * текст 422 перечисляет допустимые значения enum'а, и это единственный живой
  * справочник для `rating`/`duration`/`kind`/`status` (у `/constants/anime`
  * значений меньше, чем принимает сам параметр). Ответ пробы не кэшируется —
- * кэшируется её РЕЗУЛЬТАТ (схема), а повтор 429 делается здесь же.
+ * кэшируется её РЕЗУЛЬТАТ (схема). 429 и 5xx повторяет `fetch` приложения.
  */
 export async function probeShikimoriJson(
   path: string,
-  transport: TransportDeps = {},
+  { signal, ...transport }: TransportDeps & { signal?: AbortSignal } = {},
 ): Promise<{ status: number; text: string }> {
   const deps = resolveDeps(transport)
-  const url = absoluteApiUrl(path)
-  return await schedule(async () => {
-    for (let attempt = 0; ; attempt += 1) {
-      let res: Response
-      try {
-        res = await deps.fetch(url, {
-          headers: { 'User-Agent': SHIKIMORI_UA, accept: 'application/json' },
-          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-        })
-      } catch (error) {
-        throw new ShikimoriUpstreamError('Shikimori API недоступен', 504, { cause: error })
-      }
-      if (res.status === 429 && attempt === 0) {
-        await deps.sleep(RETRY_DELAY_MS)
-        continue
-      }
-      return { status: res.status, text: await res.text() }
-    }
-  }, deps)
+  const res = await deps.fetch(absoluteApiUrl(path), { signal })
+  return { status: res.status, text: await readText(res, { accept: () => true }) }
 }
 
 // ── Словарь коррекции (fuzzy) ──────────────────────────────────────────────
-
-let termsCache: { at: number; text: string } | null = null
 
 /**
  * Артефакт словаря `display\tdf` из названий популярной части каталога —
@@ -517,7 +357,8 @@ export async function getTermArtifact(
   { pages = TERMS_PAGES, signal, ...transport }: TransportDeps & { pages?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   const deps = resolveDeps(transport)
-  if (termsCache && deps.now() - termsCache.at < TERMS_TTL_MS) return termsCache.text
+  const hit = await deps.terms.get<string>('artifact')
+  if (hit !== undefined) return hit
 
   const texts: string[] = []
   for (let page = 1; page <= Math.max(1, pages); page += 1) {
@@ -529,11 +370,11 @@ export async function getTermArtifact(
     if (!res.hasNext) break
   }
   const text = serializeTermDictionary(buildTermDictionary(texts))
-  termsCache = { at: deps.now(), text }
+  await deps.terms.set('artifact', text, TERMS_TTL_MS)
   return text
 }
 
 /** Сброс словаря (тесты). */
-export function resetTermArtifact(): void {
-  termsCache = null
+export async function resetTermArtifact(): Promise<void> {
+  await localStore.scope('shikimori').scope('terms', { max: 1 }).clear()
 }

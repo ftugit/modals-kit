@@ -13,7 +13,7 @@
  * страницы сюда не ходит — она берёт схему из модуля напрямую. Отказ — 403 без тела.
  */
 import type { RequestHandler } from './$types'
-import { upstreamFailure } from '#lib/server/upstream.js'
+import { apiFailure } from '#lib/server/api-error.js'
 import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 import { sameOriginFetch } from '#lib/server/trusted-origins.js'
 import { DEV } from 'esm-env'
@@ -24,7 +24,6 @@ export const GET: RequestHandler = async ({ request }) => {
     const schema = await getShikimoriFilterSchema()
     return Response.json(schema, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
-    const { message, status } = upstreamFailure(error, 'api/shikimori/filters')
-    return Response.json({ error: `Схема фильтров Shikimori недоступна: ${message}` }, { status })
+    return apiFailure(error, 'api/shikimori/filters', 'Схема фильтров Shikimori недоступна')
   }
 }

@@ -19,6 +19,7 @@
  * приезжает роутом `/api/shikimori/filters` (`getShikimoriFilters`).
  */
 import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/filters/index.js'
+import { responseError } from '#lib/api-error.js'
 
 /** Максимум записей на страницу у Shikimori API: больше он молча режет до этого. */
 export const SHIKIMORI_LIMIT_MAX = 50
@@ -132,15 +133,9 @@ export async function getAnimesPage({ page, limit, search, filters, signal }: An
     params[key] = Array.isArray(value) ? value.join(',') : String(value)
   }
   const res = await fetch(apiUrl('/api/shikimori/animes', params), { signal })
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((body: { error?: string }) => body?.error)
-      .catch(() => null)
-    // Текст маршрута уже полный («Каталог Shikimori недоступен: <причина>», §13.1):
-    // своя приставка его только дублировала. Без тела — тот же вид из кода ответа.
-    throw new Error(detail ?? `Каталог Shikimori недоступен: ответ ${res.status}`)
-  }
+  // Текст маршрута уже полный («Каталог Shikimori недоступен: <причина>», §13.1):
+  // своя приставка его только дублировала. Без тела — тот же вид из кода ответа.
+  if (!res.ok) throw await responseError(res, 'Каталог Shikimori недоступен')
   return (await res.json()) as AnimesPage
 }
 
@@ -152,19 +147,13 @@ export async function getAnimesPage({ page, limit, search, filters, signal }: An
  */
 export async function getShikimoriFilters(signal?: AbortSignal): Promise<CatalogFilterSchema> {
   const res = await fetch('/api/shikimori/filters', { signal })
-  if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((body: { error?: string }) => body?.error)
-      .catch(() => null)
-    throw new Error(`Схема фильтров Shikimori недоступна: ${detail ?? res.status}`)
-  }
+  if (!res.ok) throw await responseError(res, 'Схема фильтров Shikimori недоступна')
   return validateCatalogFilterSchema(await res.json())
 }
 
 /** Артефакт словаря коррекции (`display\tdf`) с нашего бэкенда. */
 export async function getShikimoriTerms(signal?: AbortSignal): Promise<string> {
   const res = await fetch('/api/shikimori/terms', { signal })
-  if (!res.ok) throw new Error(`Словарь Shikimori недоступен: ${res.status}`)
+  if (!res.ok) throw await responseError(res, 'Словарь Shikimori недоступен')
   return await res.text()
 }

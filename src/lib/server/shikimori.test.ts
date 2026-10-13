@@ -18,7 +18,6 @@ import {
   buildUpstreamUrl,
   fetchAnimes,
   getTermArtifact,
-  ShikimoriUpstreamError,
   hasNextOf,
   normalizeAnime,
   fetchShikimoriJson,
@@ -30,6 +29,9 @@ import {
   yearOf,
   type AnimesQuery,
 } from './shikimori'
+import { FetchError } from '#lib/fetch/index.js'
+import { memoryStore } from '#lib/cache/index.js'
+import { makeUpstream } from './fetch'
 
 function ok(list: unknown[]): Response {
   return new Response(JSON.stringify(list), {
@@ -62,29 +64,32 @@ function apiRecord(id: number, over: Record<string, unknown> = {}) {
   }
 }
 
-/** Счётчик вызовов + поддельный fetch; `now`/`sleep` — ручные часы транспорта. */
+/**
+ * Поддельная сеть под `fetch` приложения: те же правила (лимит хоста, повторы,
+ * склейка), что в бою, на своих ручных часах — паузы лимита не старят кэш.
+ */
+let net = 0
 function fakeFetch(handler: (url: string, init?: RequestInit) => Response) {
   const calls: string[] = []
-  const fn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const lower = async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input)
     calls.push(url)
     return handler(url, init)
-  }) as unknown as typeof globalThis.fetch
+  }
+  const fn = makeUpstream(lower, { now: () => net, sleep: async (ms) => void (net += ms) })
   return { fn, calls }
 }
 
+/** Часы кэша и своё хранилище на каждый тест. */
 let clock = 0
-const deps = {
-  now: () => clock,
-  sleep: async (ms: number) => {
-    clock += ms
-  },
-}
+let deps: { store: ReturnType<typeof memoryStore> }
 
-beforeEach(() => {
-  resetShikimoriTransport()
-  resetTermArtifact()
+beforeEach(async () => {
+  await resetShikimoriTransport()
+  await resetTermArtifact()
   clock = 0
+  net = 0
+  deps = { store: memoryStore({ now: () => clock }) }
 })
 
 describe('parseAnimesQuery', () => {
@@ -213,7 +218,7 @@ describe('справочники схемы: общий GET и проба', () =
 
   it('fetchShikimoriJson: кэш справочников тоже с потолком (F10)', async () => {
     const { fn, calls } = fakeFetch(() => ok([]))
-    const at = (i: number) => fetchShikimoriJson(`/studios?i=${i}`, { fetch: fn, ...deps, minGapMs: 0 })
+    const at = (i: number) => fetchShikimoriJson(`/studios?i=${i}`, { fetch: fn, ...deps })
     for (let i = 0; i <= SHIKIMORI_CACHE_MAX; i += 1) await at(i)
     await at(SHIKIMORI_CACHE_MAX)
     expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 1)
@@ -298,7 +303,7 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
     const { fn, calls } = fakeFetch((url) =>
       ok(url.includes('page=1') ? Array.from({ length: 20 }, (_, i) => apiRecord(i + 1)) : [])
     )
-    const page = await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
+    const page = await fetchAnimes(query, { ...deps, fetch: fn })
     expect(calls[0]).toBe('https://shikimori.io/api/animes?page=1&limit=20&order=popularity')
     expect(page.items).toHaveLength(20)
     expect(page.hasNext).toBe(true)
@@ -307,15 +312,15 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
 
   it('вторая страница за концом каталога: пусто и hasNext=false', async () => {
     const { fn } = fakeFetch(() => ok([]))
-    const page = await fetchAnimes({ ...query, page: 99999 }, { ...deps, fetch: fn, minGapMs: 0 })
+    const page = await fetchAnimes({ ...query, page: 99999 }, { ...deps, fetch: fn })
     expect(page.items).toEqual([])
     expect(page.hasNext).toBe(false)
   })
 
   it('кэш: повторный тот же запрос не идёт в сеть, ответ помечен cached', async () => {
     const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
-    await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
-    const again = await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
+    await fetchAnimes(query, { ...deps, fetch: fn })
+    const again = await fetchAnimes(query, { ...deps, fetch: fn })
     expect(calls).toHaveLength(1)
     expect(again.cached).toBe(true)
   })
@@ -324,7 +329,7 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
   // копил ответы до конца жизни процесса.
   it('потолок кэша: сверх SHIKIMORI_CACHE_MAX вытесняется самый старый адрес', async () => {
     const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
-    const at = (page: number) => fetchAnimes({ ...query, page }, { ...deps, fetch: fn, minGapMs: 0 })
+    const at = (page: number) => fetchAnimes({ ...query, page }, { ...deps, fetch: fn })
     for (let page = 1; page <= SHIKIMORI_CACHE_MAX + 1; page += 1) await at(page)
     expect(calls).toHaveLength(SHIKIMORI_CACHE_MAX + 1)
     expect((await at(SHIKIMORI_CACHE_MAX + 1)).cached).toBe(true)
@@ -336,19 +341,19 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
   it('single-flight: параллельные вызовы одного URL делят один запрос', async () => {
     const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
     const [a, b] = await Promise.all([
-      fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 }),
-      fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 }),
+      fetchAnimes(query, { ...deps, fetch: fn }),
+      fetchAnimes(query, { ...deps, fetch: fn }),
     ])
     expect(calls).toHaveLength(1)
     expect(a.items).toEqual(b.items)
   })
 
-  it('разные запросы разнесены минимальным зазором (вежливость к API)', async () => {
-    const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
-    await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 250 })
-    await fetchAnimes({ ...query, page: 2 }, { ...deps, fetch: fn, minGapMs: 250 })
-    expect(calls).toHaveLength(2)
-    expect(clock).toBeGreaterThanOrEqual(250)
+  it('разные запросы идут под лимитом хоста (вежливость к API): пятый за секунду ждёт', async () => {
+    const at: number[] = []
+    const { fn, calls } = fakeFetch(() => (at.push(net), ok([apiRecord(1)])))
+    await Promise.all([1, 2, 3, 4, 5].map((page) => fetchAnimes({ ...query, page }, { ...deps, fetch: fn })))
+    expect(calls).toHaveLength(5)
+    expect(at).toEqual([0, 0, 0, 0, 1_000])
   })
 
   it('429 → один повтор с паузой; второй подряд — честная ошибка 502', async () => {
@@ -358,29 +363,29 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
       // Первый ответ — 429 («притормози»), повтор обязан пройти.
       return attempt === 1 ? new Response('slow down', { status: 429 }) : ok([apiRecord(1)])
     })
-    const page = await fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
+    const page = await fetchAnimes(query, { ...deps, fetch: fn })
     expect(page.items).toHaveLength(1)
     expect(calls).toHaveLength(2)
 
-    resetShikimoriTransport()
+    await deps.store.clear()
     const always = fakeFetch(() => new Response('boom', { status: 503 }))
     await expect(
-      fetchAnimes(query, { ...deps, fetch: always.fn, minGapMs: 0 })
-    ).rejects.toMatchObject({ name: 'ShikimoriUpstreamError', status: 502 })
+      fetchAnimes(query, { ...deps, fetch: always.fn })
+    ).rejects.toMatchObject({ name: 'FetchError', code: 'fetch.status', status: 502 })
     expect(always.calls).toHaveLength(2)
   })
 
   it('4xx без повторов и сетевой сбой → ошибка транспорта, а не пустая выдача', async () => {
     const bad = fakeFetch(() => new Response('nope', { status: 404 }))
-    await expect(fetchAnimes(query, { ...deps, fetch: bad.fn, minGapMs: 0 })).rejects.toMatchObject({
+    await expect(fetchAnimes(query, { ...deps, fetch: bad.fn })).rejects.toMatchObject({
       status: 502,
     })
     expect(bad.calls).toHaveLength(1)
 
-    const dead = (async () => {
+    const dead = makeUpstream(async () => {
       throw new Error('getaddrinfo ENOTFOUND')
-    }) as unknown as typeof globalThis.fetch
-    await expect(fetchAnimes(query, { ...deps, fetch: dead, minGapMs: 0 })).rejects.toMatchObject({
+    }, { sleep: async () => {} })
+    await expect(fetchAnimes(query, { ...deps, fetch: dead })).rejects.toMatchObject({
       status: 504,
     })
   })
@@ -388,8 +393,8 @@ describe('fetchAnimes: сеть, кэш, повторы', () => {
   it('отмена ожидания не глушит общий запрос (сосед дожидается данных)', async () => {
     const { fn, calls } = fakeFetch(() => ok([apiRecord(1)]))
     const controller = new AbortController()
-    const first = fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0, signal: controller.signal })
-    const second = fetchAnimes(query, { ...deps, fetch: fn, minGapMs: 0 })
+    const first = fetchAnimes(query, { ...deps, fetch: fn, signal: controller.signal })
+    const second = fetchAnimes(query, { ...deps, fetch: fn })
     controller.abort()
     await expect(first).rejects.toMatchObject({ name: 'AbortError' })
     expect((await second).items).toHaveLength(1)
@@ -407,7 +412,7 @@ describe('getTermArtifact: словарь коррекции из живого �
         apiRecord(2, { name: 'Bleach', russian: 'Блич' }),
       ])
     })
-    const text = await getTermArtifact({ ...deps, fetch: fn, minGapMs: 0 })
+    const text = await getTermArtifact({ ...deps, fetch: fn })
     expect(calls).toHaveLength(1)
     // Формат артефакта: «термин<TAB>частота», термины — русские и романдзи.
     const lines = text.trim().split('\n')
@@ -416,20 +421,19 @@ describe('getTermArtifact: словарь коррекции из живого �
     expect(text).toContain('наруто')
 
     // Второй вызов — из кэша (сеть не тронута).
-    await getTermArtifact({ ...deps, fetch: fn, minGapMs: 0 })
+    await getTermArtifact({ ...deps, fetch: fn })
     expect(calls).toHaveLength(1)
   })
 })
 
 describe('ошибки API-маршрутов не уходят клиенту (B8)', () => {
   it('сетевой сбой: текст без подробностей, исходная ошибка — в cause', async () => {
-    resetShikimoriTransport()
     const boom = new Error('connect ECONNREFUSED 10.0.0.7:443')
-    const dead = (async () => { throw boom }) as unknown as typeof globalThis.fetch
+    const dead = makeUpstream(async () => { throw boom }, { sleep: async () => {} })
     const query: AnimesQuery = { page: 1, limit: 20, order: 'popularity' }
-    const err = await fetchAnimes(query, { ...deps, fetch: dead, minGapMs: 0 }).catch((e) => e)
-    expect(err).toBeInstanceOf(ShikimoriUpstreamError)
+    const err = await fetchAnimes(query, { ...deps, fetch: dead }).catch((e) => e)
+    expect(err).toBeInstanceOf(FetchError)
     expect(err.message).not.toContain('10.0.0.7')
-    expect(err.cause).toBe(boom)
+    expect(err.cause.error).toBe(boom)
   })
 })
