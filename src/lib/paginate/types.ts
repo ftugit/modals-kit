@@ -4,7 +4,7 @@
 // Источник данных — АДАПТИРОВАННЫЙ объект слоя (`#lib/paginate/source.js`), а не
 // произвольная функция: пагинатор обязан знать возможности источника (поиск,
 // фильтры, totals) и раздавать их UI. Тип адаптера это фиксирует.
-import type { AdaptedSource, SourceCapabilities } from './source'
+import type { AdaptedSource, SourceCapabilities, SourceScope } from './source'
 
 export type MaybePromise<T> = T | Promise<T>
 
@@ -143,6 +143,12 @@ export type PaginatorAdapter<T> = {
    * строгая проверка записи невозможна.
    */
   extraKeys?(): readonly string[] | undefined
+  /**
+   * Выбранный источник композиции и ключи, которые сбрасывает смена выбора (см.
+   * `AdaptedSource.scopeOf`). Ядро сравнивает выбор до и после `setExtra`: сменился —
+   * ключи снимаются.
+   */
+  scopeOf?(extra: Extra): SourceScope
   /** URL-адаптер: базовый search-ключ (`?page`, `?page.size`, `?page.<key>`); нужен UI-компонентам форм без JS. */
   pageParam?: string
 }

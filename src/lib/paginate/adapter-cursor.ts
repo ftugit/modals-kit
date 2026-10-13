@@ -1,6 +1,6 @@
 import { BROWSER } from 'esm-env'
 import { createSessionDefaultStorage } from './storage-default'
-import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
+import { EMPTY_CAPABILITIES, type SourceCapabilities, type SourceScope } from './source'
 import type {
   AdapterInit,
   Extra,
@@ -25,6 +25,8 @@ export type CursorSource<T> = {
   capabilitiesFor?(extra: Extra): SourceCapabilities
   /** Ключи extra, которые понимает источник. */
   extraKeys?(): readonly string[]
+  /** Выбранный источник композиции и сбрасываемые сменой ключи (см. `AdaptedSource.scopeOf`). */
+  scopeOf?(extra: Extra): SourceScope
   load(input: {
     cursor?: string
     limit: number
@@ -200,5 +202,6 @@ export function createCursorAdapter<T>(options: {
     capabilities: { append: options.append ?? true },
     capabilitiesFor: (extra) => options.source.capabilitiesFor?.(extra) ?? EMPTY_CAPABILITIES,
     extraKeys: options.source.extraKeys ? () => options.source.extraKeys!() : undefined,
+    scopeOf: options.source.scopeOf ? (extra) => options.source.scopeOf!(extra) : undefined,
   }
 }

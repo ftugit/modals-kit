@@ -37,5 +37,6 @@ export function createLocalAdapter<T>(opts: {
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
     // Поверхность потребителя известна только если он её объявил: иначе не судим.
     extraKeys: opts.extraKeys ? () => [...opts.extraKeys!, ...source.extraKeys()] : undefined,
+    scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,
   }
 }

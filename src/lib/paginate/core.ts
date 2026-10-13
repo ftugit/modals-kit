@@ -721,6 +721,30 @@ function dropPositionKeys(
 }
 
 /**
+ * Смена источника композиции (`scopeOf`) снимает ключи слоя источников — запрос и
+ * фильтры — так же, как сброс окна снимает страницу: они описывали выдачу прежнего
+ * источника. Иначе они оставались в адресе: у нового источника не было поля, чтобы их
+ * снять, а совпавшее по имени значение молча сужало чужую выдачу. Ключ, присланный
+ * самим патчем, остаётся: «переключить и сразу отфильтровать» — одна запись.
+ */
+function dropScopeKeys(
+  before: Extra,
+  after: Extra,
+  adapter: PaginatorInstance['adapter'],
+  patch: Record<string, ExtraValue | undefined>,
+): Extra {
+  const was = adapter.scopeOf?.(before)
+  if (!was || adapter.scopeOf!(after).id === was.id) return after
+  let next: Extra | null = null
+  for (const key of was.keys) {
+    if (!(key in after) || key in patch) continue
+    next ??= { ...after }
+    delete next[key]
+  }
+  return next ?? after
+}
+
+/**
  * Ключи потребителя (см. RestorableState.extra): патч + persist, без загрузки.
  * `reload: true` — ключ влияет на данные источника (фильтр/вид контента) → сброс и
  * загрузка страницы 1 с новым extra.
@@ -754,7 +778,7 @@ export async function setExtra<T>(
       if (v === undefined) delete next[k]
       else next[k] = v
     }
-    return next
+    return dropScopeKeys(extra, next, instance.adapter, patchExtra)
   }
   if (options.reload ?? touchesData) {
     abortReplace(sessionOf(store, name))

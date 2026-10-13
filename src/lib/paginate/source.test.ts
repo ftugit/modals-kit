@@ -227,6 +227,16 @@ describe('composeSources: выбор источника по ключу extra', 
     expect([...combo.extraKeys()].sort()).toEqual(['kind', 'q'])
   })
 
+  it('scopeOf: выбранный вариант и ключи слоя источников; обёртка выбор не теряет', () => {
+    const combo = build([], [])
+    expect(combo.scopeOf?.({ src: 'b' })?.id).toBe('b')
+    expect(combo.scopeOf?.({})?.id).toBe('a')
+    expect([...(combo.scopeOf?.({})?.keys ?? [])].sort()).toEqual(['kind', 'q'])
+    expect(combo.scopeOf?.({ src: 'nope' })?.id).toBe('nope')
+    expect(combo.with(withTotalsGate({ gate: 'total' })).scopeOf?.({ src: 'b' })?.id).toBe('b')
+    expect(make([], { name: 'plain' }).scopeOf).toBeUndefined()
+  })
+
   it('неизвестный выбор — ошибка разработчика, а не пустая выдача', async () => {
     const combo = build([], [])
     await expect(combo.fetchPage({ page: 1, pageSize: 5 }, { src: 'nope' })).rejects.toThrow(/неизвестный источник/)
@@ -292,6 +302,39 @@ describe('связка со ядром: возможности в состоян
     // Переключились на «b»: его возможности, а не константа потребителя.
     expect(getState(store, 'capsTest').capabilities.search).toBeUndefined()
     expect(getState(store, 'capsTest').capabilities.totals).toBe(true)
+  })
+
+  it('смена источника снимает ключи прежнего (запрос, фильтры) — как сброс страницы', async () => {
+    const calls: Call[] = []
+    const source = composeSources<Rec>(
+      {
+        a: make(calls, { name: 'a', search: {}, filters: ['status'] }),
+        b: make(calls, { name: 'b', filters: ['status', 'kind'] }),
+      },
+      { select: (extra) => String(extra?.src ?? 'a') },
+    )
+    definePaginator<Rec>({ name: 'scopeTest', source, extraKeys: ['src', 'layout'], reloadKeys: ['src', 'q', 'status', 'kind'] })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'scopeTest')
+    await setExtra(store, 'scopeTest', { q: 'рик', status: 'alive', layout: 'grid' })
+    // Фильтр внутри того же источника ничего чужого не трогает.
+    await setExtra(store, 'scopeTest', { status: 'dead' })
+    expect(getState(store, 'scopeTest').extra).toMatchObject({ q: 'рик', status: 'dead' })
+    // Смена источника: запрос и фильтры сняты — и общий по имени `status`; ключ потребителя жив.
+    await setExtra(store, 'scopeTest', { src: 'b' })
+    expect(getState(store, 'scopeTest').extra).toEqual({ src: 'b', layout: 'grid' })
+    // «Мёртвый» ключ (его не понимает выбранный источник) тоже снимается при смене.
+    await setExtra(store, 'scopeTest', { kind: 'tv' })
+    await setExtra(store, 'scopeTest', { src: 'a' })
+    await setExtra(store, 'scopeTest', { kind: 'ova' })
+    await setExtra(store, 'scopeTest', { src: 'b' })
+    expect(getState(store, 'scopeTest').extra).toEqual({ src: 'b', layout: 'grid' })
+    expect(calls.at(-1)?.input).toMatchObject({ q: '', filters: {} })
+    expect(getState(store, 'scopeTest').page).toBe(1)
+    // Переключить и сразу отфильтровать — одна запись: ключ из патча остаётся.
+    await setExtra(store, 'scopeTest', { kind: 'tv' })
+    await setExtra(store, 'scopeTest', { src: 'a', status: 'alive' })
+    expect(getState(store, 'scopeTest').extra).toEqual({ src: 'a', status: 'alive', layout: 'grid' })
   })
 
   it('setExtra: ключ источника и ключ потребителя легальны, чужой — throw, снятие — легально', async () => {

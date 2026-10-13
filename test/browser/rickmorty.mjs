@@ -148,13 +148,18 @@ async function checkSwitch(browser) {
 
     await page.locator('[data-testid="demo-panel"] select[name="page.src"]').selectOption('rm-graphql');
     await waitFor(async () => page.url().includes('page.src=rm-graphql'), { what: 'src в адресе' });
+    // Смена источника снимает запрос и фильтры, как страницу (решение владельца, ход 112).
     const url = new URL(page.url());
-    if (url.searchParams.get('page.filters.status') !== 'alive' || url.searchParams.get('page.q') !== 'rick')
-      throw new Error(`после переключения фильтр/запрос пропали из адреса: ${url.search}`);
-    await waitFor(async () => same(await rowIds(), restIds), { what: 'та же выдача в GraphQL' });
+    if (url.searchParams.has('page.filters.status') || url.searchParams.has('page.q'))
+      throw new Error(`после переключения фильтр/запрос остались в адресе: ${url.search}`);
     const status = await page.locator('[data-testid="filters-panel"] select[name="page.filters.status"]').inputValue();
-    if (status !== 'alive') throw new Error(`форма фильтров после переключения: status=${status}`);
-    console.log(`  ok  REST → GraphQL: фильтр и запрос остались в адресе и форме, выдача та же (${restIds.join(',')})`);
+    if (status !== '') throw new Error(`форма фильтров после переключения: status=${status}`);
+    const typed = await page.locator('[data-testid="search-input"]').inputValue();
+    if (typed !== '') throw new Error(`поле запроса после переключения: «${typed}»`);
+    // Тот же набор вручную в GraphQL — та же выдача, что в REST.
+    await page.goto(`${U}?page.src=rm-graphql&${OPTS}&${FILTERED}`, { waitUntil: 'networkidle' });
+    await waitFor(async () => same(await rowIds(), restIds), { what: 'та же выдача в GraphQL' });
+    console.log(`  ok  REST → GraphQL: запрос и фильтр сняты (адрес, форма, поле); тот же набор в GraphQL — та же выдача (${restIds.join(',')})`);
 
     await page.locator('[data-testid="demo-panel"] select[name="page.src"]').selectOption('db');
     await waitFor(async () => page.url().includes('page.src=db'), { what: 'src=db в адресе' });
@@ -174,7 +179,7 @@ async function run() {
   try {
     await checkSsr(browser);
     await checkSwitch(browser);
-    console.log('\n✅ Rick and Morty: REST и GraphQL, окно страницы, SSR/без JS, фильтры переживают смену версии');
+    console.log('\n✅ Rick and Morty: REST и GraphQL, окно страницы, SSR/без JS, смена версии снимает запрос и фильтры');
   } finally {
     await browser.close();
     killServer();

@@ -94,6 +94,13 @@ export type AdaptedSource<T> = {
   recordFor(extra?: Extra): SourceRecordSpec<T>
   /** Ключи extra, которые понимает источник (`q` + объявленные фильтры). */
   extraKeys(): readonly string[]
+  /**
+   * Какой источник выбран для этого extra и какие ключи сбрасывает смена выбора. Есть
+   * только у композиции (`composeSources`): при смене выбора ядро снимает эти ключи
+   * вместе со сбросом страницы — запрос и фильтры одного источника не переезжают в
+   * другой. Обычный источник метода не имеет: выбирать не из чего.
+   */
+  scopeOf?(extra?: Extra): SourceScope
   /** Артефакт словаря терминов — источник отдаёт его lib/search (если подключён). */
   dictionary?(): Promise<string>
   /** Единственный путь к данным: страница + extra (разрешение внутри слоя). */
@@ -101,6 +108,9 @@ export type AdaptedSource<T> = {
   /** Дополнить источник (иммутабельно): `defineSource(...).with(withLibSearch(...))`. */
   with(decorator: SourceDecorator<T>): AdaptedSource<T>
 }
+
+/** Выбранный источник композиции: имя варианта и ключи extra, которые сбрасывает смена выбора. */
+export type SourceScope = { readonly id: string; readonly keys: readonly string[] }
 
 /** Спецификация источника — то, что объявляет автор источника. */
 export type SourceSpec<T> = {
@@ -139,12 +149,14 @@ function adapt<T>(core: SourceCore<T>): AdaptedSource<T> {
 /** Обёртка декоратора: поля не переопределены — делегируются базе. */
 function wrap<T>(base: AdaptedSource<T>, over: Partial<SourceCore<T>>): AdaptedSource<T> {
   const dictionary = over.dictionary ?? base.dictionary?.bind(base)
+  const scopeOf = over.scopeOf ?? base.scopeOf?.bind(base)
   return adapt<T>({
     name: over.name ?? base.name,
     capabilitiesFor: over.capabilitiesFor ?? ((extra) => base.capabilitiesFor(extra)),
     recordFor: over.recordFor ?? ((extra) => base.recordFor(extra)),
     extraKeys: over.extraKeys ?? (() => base.extraKeys()),
     ...(dictionary ? { dictionary } : {}),
+    ...(scopeOf ? { scopeOf } : {}),
     fetchPage: over.fetchPage ?? ((look, extra) => base.fetchPage(look, extra)),
   })
 }
@@ -268,6 +280,11 @@ export function defineSource<T>(spec: SourceSpec<T>): AdaptedSource<T> {
  * источника, который выбран сейчас. `extraKeys()` — объединение по всем
  * вариантам: ключ, понятный хотя бы одному из них, слой не запрещает (после
  * переключения он снова осмыслен).
+ *
+ * `scopeOf()` называет выбранный вариант; сменив его, ядро снимает ВСЕ ключи слоя
+ * источников (`q`, фильтры любого варианта) — так же, как сбрасывает страницу. Не только
+ * ключи прежнего: ключ, который не понимал ни прежний, ни новый (пришёл ссылкой), иначе
+ * висел бы в адресе без поля, которым его снять.
  */
 export function composeSources<T>(
   variants: Readonly<Record<string, AdaptedSource<T>>>,
@@ -292,6 +309,8 @@ export function composeSources<T>(
     capabilitiesFor: (extra) => pick(extra).capabilitiesFor(extra),
     recordFor: (extra) => pick(extra).recordFor(extra),
     extraKeys: () => allKeys,
+    // Неизвестный выбор здесь не бросает: им займутся `capabilitiesFor`/`fetchPage`.
+    scopeOf: (extra) => ({ id: opts.select(extra), keys: allKeys }),
     // async: неизвестный выбор — отказ промиса, а не синхронный throw из
     // середины кадра (у источника тот же контракт: только промис).
     async fetchPage(look, extra) {

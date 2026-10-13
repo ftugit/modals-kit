@@ -8,14 +8,15 @@
  *      показывает живую статистику перехвата (общий канал lib/search);
  *   2. фото: поиска нет — поле ВИДНО выключенным И С ПРИЧИНОЙ, тумблеры панели
  *      выключены с причиной;
- *   3. решение владельца 2026-10-07: «мёртвые» ключи НЕ снимаются — запрос и
- *      значение опции остаются и в адресе, и в записи localStorage (источник их
- *      просто не применяет), а выключенный тумблер не пишет ничего нового.
+ *   3. смена источника снимает запрос и фильтры — как страницу (решение владельца,
+ *      ход 112; отменяет решение 2026-10-07 «мёртвые ключи не снимаются»): и в адресе,
+ *      и в записи localStorage. Ключи потребителя (опция `ls`) остаются, а
+ *      выключенный тумблер не пишет ничего нового.
  *
  * ⚠️ Фильтры живого источника (панель, связки, чипы) требуют сети и проверяются
  * в shikimori.mjs; здесь про фильтры пинится только граница возможностей —
- * у источника без `capabilities.filters` панели нет, а «мёртвые» ключи
- * `page.filters.*` в адресе живут (решение владельца) и ничего не ломают.
+ * у источника без `capabilities.filters` панели нет; «мёртвый» ключ из ссылки
+ * ничего не ломает, а смена источника его снимает.
  *
  * Запуск:
  *   MODALS_PORT=4173 node test/browser/capabilities.mjs
@@ -207,20 +208,21 @@ async function run() {
     );
     console.log(`  ok  тот же запрос с lib/search: ${stats.trim()}`);
 
-    // ── 2. Фото: поиска нет — поле выключено с причиной, ключи ОСТАЮТСЯ ────
-    console.log('— Фото: источник без поиска (ключи не снимаются) —');
+    // ── 2. Фото: поиска нет — поле выключено с причиной, запрос СНЯТ ───────
+    console.log('— Фото: источник без поиска (смена источника снимает запрос) —');
     await switchSource(page, 'photos');
     await page.waitForSelector(`${HOST} [data-testid="photo-1"]`);
 
     const url = params(page);
     assert(
-      url.get('page.q') === 'PRODUCT 42',
-      `запрос обязан ОСТАТЬСЯ в адресе (решение 2026-10-07): ${search(page)}`,
+      !url.has('page.q'),
+      `смена источника обязана снять запрос, как страницу (ход 112): ${search(page)}`,
     );
     assert(
       url.get('page.ls') === 'true',
-      `значение опции тоже остаётся: ${search(page)}`,
+      `опция панели — ключ потребителя, она остаётся: ${search(page)}`,
     );
+    assert((await input.inputValue()) === '', `поле запроса обязано опустеть: «${await input.inputValue()}»`);
     assert(url.get('page.src') === 'photos', `выбор источника не записался: ${search(page)}`);
 
     assert(await input.isDisabled(), 'поле запроса обязано быть выключенным');
@@ -261,10 +263,10 @@ async function run() {
       `выдача обязана быть несужённым списком фото: ${JSON.stringify(photoIds.slice(0, 3))}`,
     );
     console.log(
-      `  ok  поле выключено с причиной, ключи живы: q=${url.get('page.q')} / ls=${url.get('page.ls')}`,
+      `  ok  поле выключено с причиной, запрос снят, опция цела: ls=${url.get('page.ls')}`,
     );
 
-    // ── 3. Фильтры: панель — свойство источника, ключи живут ───────────────
+    // ── 3. Фильтры: панель — свойство источника; смена источника снимает ключ ─
     console.log('— Фильтры: есть только там, где источник их объявляет —');
     await page.goto(`${U}?page.src=products&page.size=5&page.filters.kind=tv&${QUIET}`, {
       waitUntil: 'networkidle',
@@ -276,7 +278,7 @@ async function run() {
     );
     assert(
       params(page).get('page.filters.kind') === 'tv',
-      `«мёртвый» ключ фильтра обязан остаться в адресе: ${search(page)}`,
+      `«мёртвый» ключ из ссылки при загрузке не трогается: ${search(page)}`,
     );
     await switchSource(page, 'photos');
     await page.waitForSelector(`${HOST} [data-testid="photo-1"]`);
@@ -285,16 +287,16 @@ async function run() {
       'у фото фильтров нет — панель не рисуется',
     );
     assert(
-      params(page).get('page.filters.kind') === 'tv',
-      `ключ фильтра переживает смену источника: ${search(page)}`,
+      !params(page).has('page.filters.kind'),
+      `смена источника обязана снять и «мёртвый» ключ фильтра: ${search(page)}`,
     );
     assert(
       (await page.locator(`${HOST} [data-testid="catalog-filter-field"]`).count()) === 0,
       'контролов фильтров у источника без фильтров быть не должно',
     );
-    console.log('  ok  панели нет, ключ цел, выдача не сужена');
+    console.log('  ok  панели нет, ключ снят сменой источника, выдача не сужена');
 
-    // ── 4. То же в localStorage: «мёртвые» ключи остаются в записи ─────────
+    // ── 4. То же в localStorage: смена источника снимает запрос из записи ──
     console.log('— Переключение источника в localStorage-хранилище —');
     await page.goto(`${U}?page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
     await page.waitForSelector(`${HOST} [data-testid="card-1"]`);
@@ -322,7 +324,7 @@ async function run() {
         const raw = localStorage.getItem('pag:demo-local-ls');
         if (!raw) return false;
         const extra = JSON.parse(raw).extra ?? {};
-        return extra.src === 'photos' && extra.q === 'product 7';
+        return extra.src === 'photos' && !('q' in extra);
       },
       null,
       { timeout: 15000 },
@@ -332,9 +334,9 @@ async function run() {
       saved.page === 1,
       `смена источника обязана вернуть страницу 1, а не ${saved.page}`,
     );
-    console.log(`  ok  localStorage: src=photos, запрос цел, страница ${saved.page}`);
+    console.log(`  ok  localStorage: src=photos, запрос снят, страница ${saved.page}`);
 
-    console.log('\n✅ Этапы 1–2 + граница фильтров: возможности правят UI, причины видны, ключи живы');
+    console.log('\n✅ Этапы 1–2 + граница фильтров: возможности правят UI, причины видны, смена источника снимает запрос и фильтры');
   } finally {
     await browser.close();
     killServer();

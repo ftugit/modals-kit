@@ -528,6 +528,7 @@ export function createUrlAdapter<T>(opts: {
       ...Object.keys(opts.extraDefaults ?? {}),
       ...source.extraKeys(),
     ],
+    scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,
     persist(state: PaginatorState<T>) {
       if (!router) return // сервер / роутер не привязан — URL уже источник истины
       const own = ownKeys(state)
@@ -682,6 +683,8 @@ export function withUrlTakeover<T>(
       const union = new Set([...(base.extraKeys?.() ?? []), ...(channel.extraKeys?.() ?? [])])
       return union.size ? [...union] : undefined
     },
+    // Источник у каналов один — выбор и его ключи берутся у базы.
+    scopeOf: base.scopeOf ? (extra) => base.scopeOf!(extra) : undefined,
     // Форма без JS GET-ит в адрес при любом канале: ключ объявления остаётся.
     pageParam: baseParam,
     searchSpec: channel.searchSpec,

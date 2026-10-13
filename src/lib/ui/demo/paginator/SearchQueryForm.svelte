@@ -5,7 +5,7 @@
   // url-канал `bind`: до гидратации нативный GET (жив и без JS), после —
   // коммит в стор пагинатора тем же `setExtra` (sink), а адрес правит транспорт
   // хранилища. Ключ объявления — адресный (`page.q`), в стор он ложится как `q`.
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { defineForm, field, v } from '#lib/form/index.js'
   import { Input } from '#lib/ui/primitives/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
@@ -63,14 +63,17 @@
     },
   })
 
+  /** Последний запрос, отправленный ЭТИМ полем: его эхо из стора — не внешняя правка. */
+  let committed: string | null = null
+
   const form = bind(searchForms, desc, {
     url: {
       //Sink хоста: тот же `setExtra`, что был у самописной формы. Нормализация —
       // общая с lib search (та же, что у валидатора адреса).
-      commit: (patch) =>
-        void setExtra(getClientStore(), name, {
-          q: normalizeSearchQuery(String(patch[path] ?? ''), maxLength),
-        }),
+      commit: (patch) => {
+        committed = normalizeSearchQuery(String(patch[path] ?? ''), maxLength)
+        void setExtra(getClientStore(), name, { q: committed })
+      },
       // Зеркало bind получает значение из состояния (не из адреса) — как хост.
       seed: () => ({ [path]: query ?? '' }),
     },
@@ -97,6 +100,16 @@
   let typed = $state<string | null>(null)
   const value = $derived(typed ?? (hydrated ? String(query ?? '') : fromAddress))
 
+  // Запрос сменился НЕ отправкой этого поля (смена источника снимает `q`, «назад»,
+  // другой виджет) — набранный текст устарел: поле обязано показать стор. Эхо своей
+  // отправки набранное не трогает — иначе дописанное за время запроса стёрлось бы.
+  $effect.pre(() => {
+    const q = String(query ?? '')
+    untrack(() => {
+      if (q !== committed) typed = null
+    })
+  })
+
   let timer: ReturnType<typeof setTimeout> | undefined
   const stopTimer = () => clearTimeout(timer)
 
@@ -114,6 +127,7 @@
   function clear() {
     stopTimer()
     typed = ''
+    committed = ''
     vf.onInput('')
     void setExtra(getClientStore(), name, { q: '' })
   }

@@ -466,12 +466,18 @@ import ItemRow from './ItemRow.svelte'
           решения (контролы, связки, патч хранилища) — в api схемы.
         -->
         <div class="mt-4">
-          <FiltersPanel
-            {name}
-            schema={filterSchema}
-            extra={pagState().extra}
-            preserved={demoPreservedSearch(currentSearch())}
-          />
+          <!-- Форма фильтров принадлежит источнику: смена источника снимает фильтры
+               (ядро, `scopeOf`), и форма рождается заново пустой. Ключ — источник, а
+               не схема: у REST и GraphQL Rick and Morty схема одна, и прежняя форма
+               показывала бы снятое значение. -->
+          {#key cfg.src}
+            <FiltersPanel
+              {name}
+              schema={filterSchema}
+              extra={pagState().extra}
+              preserved={demoPreservedSearch(currentSearch())}
+            />
+          {/key}
         </div>
       {:else if gates.filters && shikiApi && filterSchemaError}
         <p
