@@ -87,7 +87,9 @@ export function handleDbCreate(
       order: SECURITY_LAYERS,
       async execute({ values, commit, fail }) {
         try {
-          const row = await db.resource(posts).insert(dbCtx, { title: String(values.title ?? '') })
+          // Значения формы как есть: на них метка «проверено схемой поля», и запись не повторит
+          // правила `title`. Копия (`{ title: … }`) метку потеряла бы — БД проверила бы заново.
+          const row = await db.resource(posts).insert(dbCtx, values)
           commit()
           // Условный GET не должен пережить собственную запись: «304» на следующем
           // тике спрятал бы строку, которую человек только что добавил.

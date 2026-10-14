@@ -33,11 +33,64 @@ export interface ColumnMeta {
   values?: readonly string[];
 }
 const META = "~kitDb";
-/** Метаданные колонки у схемы `s.*`; `undefined` — схема их не несёт. */
+/**
+ * Метаданные колонки: у схемы `s.*` — свои; у любой другой — из Standard JSON Schema
+ * (`~standard.jsonSchema`), если схема его реализует (поле `lib/form`, zod ≥ 4.2,
+ * valibot). `undefined` — схема о колонке ничего не знает, тип задаёт `db.type`.
+ */
 export function columnMeta(schema: unknown): ColumnMeta | undefined {
   if (!schema || typeof schema !== "object") return undefined;
   const m = (schema as Record<string, unknown>)[META];
-  return m && typeof m === "object" ? (m as ColumnMeta) : undefined;
+  if (m && typeof m === "object") return m as ColumnMeta;
+  return jsonColumnMeta(schema);
+}
+
+/**
+ * JSON Schema значения → тип колонки и ограничения для CHECK. Берётся только то, что
+ * совпадает по смыслу в обоих мирах: длина строки, включающие границы числа, набор
+ * значений. `pattern` не переносится: регулярные выражения JS и PostgreSQL разные.
+ * `null` в типе ничего не решает — NOT NULL задаёт поле БД (`nullable`).
+ */
+function jsonColumnMeta(schema: object): ColumnMeta | undefined {
+  const std = (schema as { "~standard"?: { jsonSchema?: { input?: unknown } } })["~standard"];
+  const input = std?.jsonSchema?.input;
+  if (typeof input !== "function") return undefined;
+  let j: Record<string, unknown>;
+  try {
+    j = (input as (o: { target: string }) => Record<string, unknown>)({ target: "draft-2020-12" });
+  } catch {
+    return undefined; // стандарт разрешает схеме отказаться описывать себя
+  }
+  if (!j || typeof j !== "object") return undefined;
+  const types = (Array.isArray(j.type) ? j.type : [j.type]).filter((t) => t !== "null");
+  if (types.length !== 1) return undefined;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+  const bounds = (min: unknown, max: unknown) =>
+    n(min) !== undefined || n(max) !== undefined ? { min: n(min), max: n(max) } : undefined;
+  switch (types[0]) {
+    case "string": {
+      if (j.format === "date") return { type: "date" };
+      if (j.format === "date-time") return { type: "timestamptz" };
+      if (j.format === "uuid") return { type: "uuid" };
+      const values = Array.isArray(j.enum) ? j.enum.filter((x): x is string => typeof x === "string") : undefined;
+      if (values?.length) return { type: "text", values };
+      const length = bounds(j.minLength, j.maxLength);
+      return { type: "text", ...(length ? { length } : {}) };
+    }
+    case "integer":
+    case "number": {
+      const range = bounds(j.minimum, j.maximum);
+      return { type: types[0] === "integer" ? "integer" : "double precision", ...(range ? { range } : {}) };
+    }
+    case "boolean":
+      return { type: "boolean" };
+    case "array": {
+      const items = j.items as Record<string, unknown> | undefined;
+      return items?.type === "string" ? { type: "text[]" } : undefined;
+    }
+    default:
+      return undefined;
+  }
 }
 /**
  * Ошибка с кодом: Standard Schema issue плюс `code`/`params` (для словаря текстов)

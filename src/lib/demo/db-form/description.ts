@@ -3,7 +3,11 @@
 // быть не может — валидация одна на оба пути.
 import { defineForm, field, v } from '#lib/form/index.js'
 
-/** Запись в таблицу демо. `title` — единственное, что решает сервер. */
+/**
+ * Запись в таблицу демо. `title` — единственное, что решает сервер. Правила поля
+ * описаны только здесь: модель (`#lib/server/posts.ts`) берёт это поле схемой колонки
+ * (`fieldSchema`), и из этих же правил получается CHECK таблицы.
+ */
 export const dbCreate = defineForm({
   // Имя формы попадает в `__form_instance`, а его сверяет INSTANCE_RE
   // (envelope.ts): `[a-z][a-z0-9_-]{0,31}:…` — точек и заглавных там нет. Форма с
@@ -16,9 +20,9 @@ export const dbCreate = defineForm({
   actions: [{ id: 'submit', label: 'Добавить', validate: 'full' }],
   fields: {
     title: field.text({
-      label: 'заголовок (минимум 3 символа)',
+      label: 'заголовок (от 3 до 120 символов)',
       placeholder: 'например: заметка из превью',
-      validate: [v.required(), v.minLength(3)],
+      validate: [v.required(), v.minLength(3), v.maxLength(120)],
     }),
   },
 })

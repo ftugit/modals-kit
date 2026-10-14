@@ -1,7 +1,9 @@
 # Формы и БД: правила один раз — разбор ответов других ИИ
 
 Вопрос: `~/prompts/db-form-validation.md`. Ответы: краткий вывод в переписке (далее **А**),
-`uploads/ANSWER2.md` (далее **Б**). Статус: **решения выбраны (ход 64, владелец поручил выбор), код не менялся.**
+`uploads/ANSWER2.md` (далее **Б**). Статус: **решения выбраны (ход 64, владелец поручил выбор); все
+пять шагов сделаны** (порядок работ внизу). Как пользоваться — README `lib/db` §4 «Правила один раз»
+и README `lib/form` «Поле как схема для других».
 
 ## В чём сходятся (и совпадает с нашим планом)
 
@@ -63,7 +65,19 @@
    свои тексты `messages` у поля; `failureIssues` → `ctx.fail(issues)` в `lib/form`.
    Ход 66: коды zod → коды правил форм; `insertMany` тоже привязывает к полю; подробный README.
    ✅ (ход 109) Русские тексты для `invalid` и `check` в `ru` `lib/form`; тест: у каждого кода `FieldError` есть текст.
-2. `lib/db`: `checks` в модели (при записи, в транзакции) и `validator(db, op)` для форм без записи.
-3. Метка проверки в обеих библиотеках (копия типа + тест договорённости с каждой стороны).
-4. Поля `lib/form` отдают ограничения через Standard JSON Schema → `lib/db` строит из них тип и CHECK.
-5. Демо: форма постов и модель из одного описания поля (убирает расхождение `max 120`).
+2. ✅ `lib/db`: `checks` в модели — при записи, после полей и `beforeWrite`, в транзакции записи;
+   нарушение `{ field?, code, params?, message? }`; `insertMany` с `checks` — `unsupported`.
+   `db.resource(r).validator(ctx, 'insert' | 'update' | 'check')` — Standard Schema для форм без
+   записи (у Б было `validator(db, op)`: у нас `db` уже в `db.resource`, а права требуют `ctx`).
+   Тесты: `src/lib/db/test/db-rules.test.ts`.
+3. ✅ Метка: `Symbol.for('modals-kit.validated-proof.v1')` → `{ fields: { поле: { schema, value } } }`,
+   копия типа в `src/lib/form/proof.ts` и `src/lib/db/proof.ts`, тест договорённости с каждой
+   стороны. Ставит `createFormHandler` перед `execute` (только полная проверка, только видимые
+   поля); `lib/db` сверяет объект схемы и значение после `normalize`.
+4. ✅ `fieldSchema(form, name)` в `lib/form` — Standard Schema + Standard JSON Schema поля;
+   `lib/db` (`columnMeta`) берёт тип и CHECK из `~standard.jsonSchema` любой схемы — поля формы,
+   zod ≥ 4.2, valibot. `pattern` в CHECK не переносится (разные диалекты регулярных выражений).
+5. ✅ Демо: правила `title` описаны только в форме `dbCreate` (`v.required()`, `v.minLength(3)`,
+   `v.maxLength(120)`), модель `posts` (`src/lib/server/posts.ts`) берёт поле через `fieldSchema`.
+   CHECK колонки и его имя прежние — развёрнутая БД изменений не видит
+   (`src/lib/server/form-db.test.ts`).

@@ -1,8 +1,9 @@
 import { policyBoolean } from './validation';
-import { DbFailure, fail, normalizeFailure, type FieldError } from './errors';
+import { DbFailure, fail, failFields, normalizeFailure, type FieldError } from './errors';
 import { tableSpec } from './sync/model';
-import { context, draftInput, freeze, grants, inputRecord, own } from './validation';
+import { checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
 import { fieldError, revalidateDraft, validateField } from './validation';
+import { readProof } from './proof';
 import {
   Sql,
   col,
@@ -17,6 +18,7 @@ import {
   table,
 } from './query/sql';
 import type {
+  CheckEvent,
   CursorInput,
   DataContext,
   Database,
@@ -63,6 +65,38 @@ const DEFAULT_TEXT: Record<string, string> = {
   reference: 'Referenced record not found',
   referenced: 'Record is referenced by other records',
 };
+/**
+ * Правила данных ресурса → ошибки полей. Пусто — нарушений нет. Нарушение без своего
+ * текста получает текст поля по коду (`messages`), иначе код уходит в словарь формы.
+ */
+async function runChecks(r: Resource, event: CheckEvent): Promise<FieldError[]> {
+  if (!r.checks) return [];
+  const found = await r.checks(event);
+  if (found === undefined) return [];
+  if (!Array.isArray(found)) throw new TypeError(`${r.key}: checks обязан вернуть массив нарушений или ничего`);
+  return found.map((i) => {
+    if (!i || typeof i.code !== 'string' || !i.code || (i.field !== undefined && !own(r.fields, i.field)))
+      throw new TypeError(`${r.key}: нарушение checks — { field?: поле ресурса, code: непустая строка, params?, message? }`);
+    return fieldError(
+      i.field ? r.fields[i.field] : undefined,
+      i.field,
+      i.code,
+      i.message ?? DEFAULT_TEXT[i.code] ?? i.code,
+      i.params,
+      i.message,
+    );
+  });
+}
+/** Снимок значений для `checks`: правило читает, но не меняет черновик записи. */
+const snapshot = (values: Row): Readonly<Row> => freeze(structuredClone(values));
+/** Ошибка поля → issue Standard Schema (как `failureIssues`). */
+const toIssue = (x: FieldError) => ({
+  message: x.message,
+  code: x.code,
+  ...(x.field ? { path: [x.field] } : {}),
+  ...(x.params ? { params: x.params } : {}),
+  ...(x.template !== undefined ? { template: x.template } : {}),
+});
 /**
  * Ошибка PostgreSQL → ошибки полей, если поле известно и этот ctx сам его пишет
  * (значит, значение прислал он и узнать «занято» ему можно). Иначе — без полей,
@@ -300,7 +334,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     let draft: Row | undefined;
     if (op !== 'delete') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys);
     let before: Row | undefined;
-    if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal)) {
+    if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || (op === 'update' && r.checks))) {
       const pre = new Sql(),
         predicate = await idWhere(ctx, op, pre, id);
       before = (
@@ -343,6 +377,17 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         protectedValues,
         validatedSnapshot,
       );
+      // правила данных — после полей и хука, в транзакции записи: что они прочли, то и запишется
+      if (r.checks) {
+        const errors = await runChecks(r, {
+          ctx,
+          operation: op as 'insert' | 'update',
+          db: dbx,
+          values: snapshot(draft),
+          ...(event.before ? { before: event.before } : {}),
+        });
+        if (errors.length) failFields(errors);
+      }
     }
     let sql: string;
     if (op === 'insert') {
@@ -563,9 +608,9 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     const ctx = context(ctx0);
     if (!Array.isArray(rows) || rows.length < 1 || rows.length > 5000)
       fail('validation', undefined, ['insertMany: массив от 1 до 5000 строк']);
-    if (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal)
+    if (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || r.checks)
       fail('unsupported', undefined, [
-        'insertMany недоступен с beforeWrite/afterWrite/validateFinal: им нужен построчный контроль результата',
+        'insertMany недоступен с beforeWrite/afterWrite/validateFinal/checks: им нужен построчный контроль в транзакции',
       ]);
     if (!policyBoolean(r.policy.insert(ctx))) fail('forbidden');
     const drafts: Row[] = [];
@@ -635,6 +680,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         r.hooks?.beforeWrite ||
         r.hooks?.afterWrite ||
         r.validateFinal ||
+        (op !== 'delete' && r.checks) ||
         // родитель и дети — вместе или никак: `restrict` на втором уровне откатывает всё
         (op === 'delete' && r.softDelete?.children)
       );
@@ -645,7 +691,52 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       }
       return write(db, ctx, op, id, input);
     });
+  /** Проверка без записи (`validator`): поля из входа + правила данных. */
+  async function check(ctx0: DataContext, operation: 'insert' | 'update' | 'check', input: unknown) {
+    const ctx = context(ctx0);
+    if (operation === 'insert' && !policyBoolean(r.policy.insert(ctx))) fail('forbidden');
+    if (!isRecord(input)) return { issues: [{ message: 'Invalid input', code: 'invalid' }] };
+    const proof = readProof(input);
+    const raw = inputRecord(input, db.limits.inputKeys);
+    const values: Row = {};
+    const errors: FieldError[] = [];
+    for (const k of Object.keys(raw)) {
+      // ключ не из ресурса — поле самой формы («запомнить меня»): не наше дело
+      if (!own(r.fields, k)) continue;
+      const f = r.fields[k];
+      if (
+        operation !== 'check' &&
+        (f.generated ||
+          f.createValue ||
+          k === r.primaryKey ||
+          k === r.ownerField ||
+          (operation === 'update' && f.immutable) ||
+          !grants(operation === 'insert' ? f.create : f.update, ctx))
+      )
+        fail('forbidden');
+      const one = await checkField(f, raw[k], k, true, proof);
+      if (one.errors) errors.push(...one.errors);
+      else values[k] = one.value;
+    }
+    if (operation === 'insert')
+      for (const [k, f] of Object.entries(r.fields))
+        if (f.required && !f.generated && !f.createValue && !own(raw, k))
+          errors.push(fieldError(f, k, 'required', DEFAULT_TEXT.required));
+    if (!errors.length) errors.push(...(await runChecks(r, { ctx, operation, db, values: snapshot(values) })));
+    return errors.length ? { issues: errors.map(toIssue) } : { value: values };
+  }
   return {
+    validator: (ctx, operation) => {
+      if (!['insert', 'update', 'check'].includes(operation))
+        fail('validation', undefined, ['validator: операция insert | update | check']);
+      return Object.freeze({
+        '~standard': Object.freeze({
+          version: 1 as const,
+          vendor: 'modals-kit/db',
+          validate: (input: unknown) => db.guard(() => check(ctx, operation, input)),
+        }),
+      });
+    },
     select: (ctx, input) => db.guard(async () => (await read(ctx, input)).items),
     cursor: (ctx, input) => db.guard(() => read(ctx, input, true)),
     get: (ctx, id, input = {}) =>

@@ -187,6 +187,37 @@ export interface Hooks {
     event: Omit<HookContext, "db" | "draft">,
   ) => void | Promise<void>;
 }
+/**
+ * Правила данных (`Resource.checks`): то, что видно только из БД или из нескольких
+ * полей сразу — «slug уже занят», «у черновика нет даты публикации». Выполняются
+ * всегда: при записи — в той же транзакции, после проверки полей и `beforeWrite`;
+ * в `validator` — над значениями формы, без записи.
+ */
+export interface CheckEvent {
+  readonly ctx: DataContext;
+  /** `check` — только из `validator(ctx, 'check')`: проверка без записи (форма входа). */
+  readonly operation: "insert" | "update" | "check";
+  /** При записи — транзакция записи; в `validator` — сама база. */
+  readonly db: Database;
+  /** Значения после проверки полей (и после `beforeWrite` при записи). */
+  readonly values: Readonly<Row>;
+  /** Строка до изменения — только у `update`. */
+  readonly before?: Readonly<Row>;
+}
+/**
+ * Нарушение правила данных. `field` — поле, у которого показать ошибку (нет — ошибка
+ * всей записи). Текст: `message` — свой текст правила (сильнее словарей); без него —
+ * `messages` поля по коду, иначе словарь формы по коду (`unique` → «Это значение уже занято»).
+ */
+export interface CheckIssue {
+  field?: string;
+  code: string;
+  params?: Record<string, unknown>;
+  message?: string;
+}
+export type Checks = (
+  event: CheckEvent,
+) => readonly CheckIssue[] | void | Promise<readonly CheckIssue[] | void>;
 export type Relations = Record<
   string,
   { resource: Resource; localField: string; foreignField: string }
@@ -214,6 +245,8 @@ export interface Resource<
   };
   order: Order;
   hooks?: Hooks;
+  /** Правила данных: при записи — всегда и в транзакции; см. `CheckEvent`. */
+  checks?: Checks;
   relations?: R;
   /** Только явно зарегистрированные metadata + grant могут попасть в публичную ошибку. */
   constraints?: Record<
@@ -280,6 +313,18 @@ export interface ResourceApi<
     patch: unknown,
   ): Promise<ResourceRow<F, R>>;
   delete(ctx: DataContext, id: unknown): Promise<ResourceRow<F, R>>;
+  /**
+   * Проверка без записи как Standard Schema — для форм, которые ничего не пишут
+   * (вход, сброс пароля): `createFormHandler({ schema: users.validator(ctx, 'check') })`.
+   * Проверяет поля ресурса, которые есть во входе (чужие ключи формы пропускает), и
+   * `checks`. `insert`/`update` — как настоящая запись: права на поля, у `insert` —
+   * обязательные поля. `check` — только значения и `checks`, без прав и обязательности.
+   * Ошибки — issues с `path: [поле]` и кодом; сбой БД — исключение, не issue.
+   */
+  validator(
+    ctx: DataContext,
+    operation: "insert" | "update" | "check",
+  ): StandardSchemaV1<unknown, Row>;
   /**
    * Пакетная вставка одним `INSERT … VALUES (…), (…)`: проверка каждой строки идёт
    * тем же путём, что и у `insert`, но Round-trip один (на chunk). Хуки/`validateFinal`

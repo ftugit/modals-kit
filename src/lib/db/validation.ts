@@ -1,6 +1,7 @@
 import { s } from "./schema";
 import { fail, failFields, type FieldError } from "./errors";
 import type { StandardSchema } from "./types";
+import { provenFor, readProof, type ValidatedProof } from "./proof";
 import type {
   DataContext,
   Field,
@@ -195,12 +196,15 @@ export async function checkField(
   value: unknown,
   key: string,
   normalize = true,
+  proof?: ValidatedProof,
 ): Promise<{ value: unknown; errors?: undefined } | { errors: FieldError[] }> {
   const required = () => ({ errors: [fieldError(field, key, "required", "Required")] });
   if (value === undefined) return required();
   let v = normalize && field.normalize ? field.normalize(value) : value;
   if (v === null) return field.nullable ? { value: null } : required();
   budget(v);
+  // Метка: это значение (уже после normalize) проверено этой же схемой — второй раз не нужно.
+  if (provenFor(proof, key, field.schema, v)) return { value: v };
   const parsed = await field.schema["~standard"].validate(v);
   if (parsed.issues) return { errors: parsed.issues.map((i) => issueError(field, key, i)) };
   v = parsed.value;
@@ -225,6 +229,8 @@ export async function draftInput(
   op: "insert" | "update",
   maxKeys: number,
 ): Promise<Row> {
+  // метку читаем у исходного объекта: копия (`inputRecord`) её не несёт
+  const proof = readProof(input);
   const draft = inputRecord(input, maxKeys);
   if (op === "update" && !Object.keys(draft).length) fail("validation");
   const errors: FieldError[] = [];
@@ -241,7 +247,7 @@ export async function draftInput(
     )
       fail("forbidden");
     // ошибки значений копим: форма должна увидеть все плохие поля сразу
-    const r_ = await checkField(f, draft[k], k);
+    const r_ = await checkField(f, draft[k], k, true, proof);
     if (r_.errors) errors.push(...r_.errors);
     else draft[k] = r_.value;
   }
@@ -421,6 +427,8 @@ function checkShape(r: Resource): void {
       typeof (r.validateFinal as { "~standard"?: unknown })["~standard"] !== "object")
   )
     push("validateFinal: обязан быть Standard Schema (s.* / field()/make()) — иначе проверка результата не выполняется, а запись падает на 500");
+  if (r.checks !== undefined && typeof r.checks !== "function")
+    push("checks: обязан быть функцией (event) => нарушения — иначе правила данных молча не выполняются");
   if (r.hooks)
     for (const [k, v] of Object.entries(r.hooks))
       if (typeof v !== "function") push(`hooks.${k}: обязан быть функцией`);

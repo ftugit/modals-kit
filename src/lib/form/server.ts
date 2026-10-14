@@ -11,6 +11,9 @@ import { normalizeErrors, stableId, type FormError, type Outcome, type Result } 
 import { issueError, runSchema, type IssueLike, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
 import { evaluate } from './submit'
+import { fieldSchema } from './standard'
+import { stampProof } from './proof'
+import { visibleFields } from './validate'
 import { nameProblem } from './policy'
 import type { SubmissionId } from './types'
 
@@ -435,6 +438,25 @@ export function windowThrottle<E = unknown>(
   }
 }
 
+/* ── метка проверки ────────────────────────────────────────────────── */
+
+/**
+ * Метка «эти значения проверены схемами полей» для `lib/db` (`proof.ts`): БД не
+ * повторит правила значения. Ставится, только когда действие проверяло форму целиком
+ * (`validate: 'full'`, без `relax` и `subset`), и только на видимые поля: скрытое и
+ * «свежее» поле форма не проверяла, значит и метки у него нет.
+ */
+function markValidated(d: FormDescription, values: Record<string, unknown>, intent: string): void {
+  const { action } = d.policy.intent.parse(intent)
+  const descriptor = d.actions.find((a) => a.id === action) ?? d.actions[0]!
+  if (descriptor.validate !== 'full' || descriptor.relax?.length || descriptor.subset) return
+  const visible = visibleFields(d, values)
+  const fields: Record<string, { schema: object; value: unknown }> = {}
+  for (const f of d.fields)
+    if (visible.has(f.name) && !f.fresh) fields[f.name] = { schema: fieldSchema(d, f.name), value: values[f.name] }
+  stampProof(values, fields)
+}
+
 /* ── обработчик ────────────────────────────────────────────────────── */
 
 export interface ExecuteContext<V = Record<string, unknown>> {
@@ -637,6 +659,7 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       }
 
       ctx.reached = 'executing'
+      markValidated(ctx.description, ev.values, ev.intent)
       let committed = false
       const afters: Array<() => Promise<void> | void> = []
       let out: { data?: T; redirect?: string }

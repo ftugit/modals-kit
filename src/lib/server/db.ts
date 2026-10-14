@@ -14,7 +14,8 @@
  * DATABASE_URL. Что само применить нельзя, ждёт решения, а запросы к БД до тех пор
  * отвечают `schema_pending` (503).
  */
-import { createDb, defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { createDb } from '#lib/db/index.js'
+import { posts } from './posts'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
@@ -33,38 +34,11 @@ import {
 // для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
 // и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
-export const posts = defineResource({
-  key: 'demo.post.v1',
-  table: 'public.demo_post',
-  primaryKey: 'id',
-  fields: {
-    // DEFAULT есть и у колонки, и у createValue: ресурс подставляет uuid сам, а прямой
-    // SQL (сид ниже) остаётся валидным.
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq', 'in'], db: { default: 'gen_random_uuid()' } }),
-    title: field(s.text({ min: 3, max: 120 }), {
-      read: () => true,
-      create: () => true,
-      update: () => true,
-      required: true,
-      normalize: (v) => (typeof v === 'string' ? v.trim() : v),
-      filters: ['eq', 'contains', 'startsWith'],
-      orderable: true,
-    }),
-    created_at: f.timestamp({ read: () => true, generated: true, orderable: true, filters: ['gt', 'gte', 'lt', 'lte'], db: { default: 'clock_timestamp()' } }),
-  },
-  policy: {
-    select: policy.publicRows(),
-    insert: policy.roles(['author']),
-    update: policy.ownerOrRoles('id', ['editor']),
-    // deny() для delete дал бы не 403, а not_found: строка, скрытая политикой,
-    // неотличима от отсутствующей — так не протекает факт существования.
-    delete: policy.roles(['author']),
-  },
-  order: [['created_at', 'desc']],
-})
+// Модель записей — в своём модуле: её проверяют тесты без окружения (`posts.ts`).
+export { posts }
 
 /**
- * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из `s.text`, индекс
+ * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил поля формы, индекс
  * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
  */
 export const schema = defineSchema({

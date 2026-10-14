@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { z } from "zod";
 import { afterAll, it } from "vitest";
-import { createDb, defineResource, f, field, policy, s, DbFailure, conservativeLimits } from "../index";
+import { createDb, defineResource, f, field, make, policy, s, DbFailure, conservativeLimits } from "../index";
 import { pgliteAdapter } from "../adapters/pglite";
 import { toKitError } from "../sveltekit/index";
 import { choices, defineSchema, stepKey } from "../sync/index";
@@ -260,10 +260,10 @@ test("sync: параллельные запуски не мешают друг �
     assert.equal((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM kit_schema")).rows[0]!.n, 1);
   }));
 
-test("sync: zod-поле без db.type — понятная ошибка; драйвер без транзакций — unsupported", () =>
+test("sync: схема без сведений о колонке и без db.type — понятная ошибка; драйвер без транзакций — unsupported", () =>
   withPg(async (_pg, driver) => {
-    const zodPost = post({ tag: field(z.string(), { ...open, nullable: true }) });
-    await assert.rejects(defineSchema({ resources: [zodPost] }).sync(driver), (e: unknown) =>
+    const opaque = post({ tag: field(make<string>("app/tag", () => true), { ...open, nullable: true }) });
+    await assert.rejects(defineSchema({ resources: [opaque] }).sync(driver), (e: unknown) =>
       e instanceof DbFailure && e.kind === "validation" && /db: \{ type/.test(String(e.details.issues)),
     );
     const typed = post({ tag: field(z.string(), { ...open, nullable: true, db: { type: "varchar(20)" } }) });
@@ -271,6 +271,20 @@ test("sync: zod-поле без db.type — понятная ошибка; др�
     assert.equal((await defineSchema({ resources: [typed] }).sync(driver)).applied.length, 0);
     const http: Driver = { ...driver, capabilities: { ...driver.capabilities, transactions: false } };
     await assert.rejects(defineSchema({ resources: [typed] }).sync(http), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
+  }));
+
+test("sync: zod 4 реализует Standard JSON Schema — тип колонки и CHECK из неё, без db.type", () =>
+  withPg(async (pg, driver) => {
+    const zodPost = post({ tag: field(z.string().min(2).max(20), { ...open, nullable: true }) });
+    assert.equal((await defineSchema({ resources: [zodPost] }).sync(driver)).status, "ok");
+    const col = await pg.query<{ data_type: string }>(
+      "SELECT data_type FROM information_schema.columns WHERE table_name = 'post' AND column_name = 'tag'",
+    );
+    assert.equal(col.rows[0]?.data_type, "text");
+    const checks = await pg.query<{ def: string }>(
+      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.post'::regclass AND contype = 'c'",
+    );
+    assert.ok(checks.rows.some((r) => /char_length\(tag\) >= 2.*char_length\(tag\) <= 20/.test(r.def)), JSON.stringify(checks.rows));
   }));
 
 /* ── мягкое удаление: что модель велит делать с детьми ─────────────────── */
