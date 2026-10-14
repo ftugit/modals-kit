@@ -38,6 +38,7 @@ import { searchQueryValidator } from '#lib/search/index.js'
 import {
   createLocalStorageStorage,
   createUrlAdapter,
+  decodeExtraValue,
   definePaginator,
   extraField,
   hasPaginator,
@@ -370,6 +371,17 @@ export function demoName(store: DemoStore): string {
 /** Текущий запрос из extra (`q`); пусто — сквозной проход, каталог как есть. */
 export function demoQueryOf(extra: Extra | undefined): string {
   return typeof extra?.q === 'string' ? extra.q.trim() : ''
+}
+
+/**
+ * Источник прямо из адреса — ДО инициализации пагинатора: лоадер по нему
+ * начинает сборку схемы фильтров параллельно с первой страницей. Тот же
+ * валидатор `src` и то же правило «последнее значение», что у
+ * `readPaginatorSearch`; итог лоадер всё равно сверяет со снапшотом.
+ */
+export function demoSrcOfSearch(params: URLSearchParams): DemoSrc {
+  const raw = params.getAll('page.src').at(-1)
+  return demoExtraOf(raw === undefined ? {} : { src: decodeExtraValue(raw) }).src
 }
 
 /** Выбор источника по extra: deny-safe разбор, мусор → источник по умолчанию. */

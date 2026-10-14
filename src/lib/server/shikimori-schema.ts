@@ -313,16 +313,22 @@ export async function readShikimoriRefs(
   api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
 ): Promise<ShikimoriRefs> {
   const graphql = api === 'graphql'
-  const [genres, studios, newest, pages] = await Promise.all([
+  // Все запросы сборки стартуют СРАЗУ: справочники enum'ов от остального не
+  // зависят, а раньше шли по одному после него — четыре лишних круговых
+  // задержки. Лимит Shikimori (5 rps / 90 rpm) соблюдает очередь `#lib/fetch`
+  // (`server/fetch.ts`: 4 rps / 80 rpm на хост), а не порядок вызовов здесь.
+  const ENUMS = ['kind', 'status', 'rating', 'duration'] as const
+  const [genres, studios, newest, pages, enumValues] = await Promise.all([
     api === 'rest' ? restGenres(transport) : graphqlGenres(transport),
     graphql ? Promise.resolve([]) : restStudios(transport),
     graphql ? graphqlNewestYear(transport) : restNewestYear(transport),
     api === 'rest' ? Promise.resolve([]) : samplePages(graphql ? SAMPLE_GENRES_DOC : SAMPLE_DOC, transport),
+    Promise.all(ENUMS.map((name) => (graphql ? readEnumGraphql(name, transport) : readEnum(name, transport)))),
   ])
   const enums = {} as Record<EnumName, readonly string[]>
-  for (const name of ['kind', 'status', 'rating', 'duration'] as const) {
-    enums[name] = graphql ? await readEnumGraphql(name, transport) : await readEnum(name, transport)
-  }
+  ENUMS.forEach((name, index) => {
+    enums[name] = enumValues[index]!
+  })
   return {
     genres,
     studios,

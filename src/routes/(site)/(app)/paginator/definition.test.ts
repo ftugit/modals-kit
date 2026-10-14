@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getPaginator, resetRegistry } from '#lib/paginate/index.js'
+import { getPaginator, readPaginatorSearch, resetRegistry } from '#lib/paginate/index.js'
 import {
   DEMO_RELOAD_KEYS,
+  DEFAULT_DEMO_EXTRA,
+  DEMO_EXTRA_SEARCH,
   DEMO_SRCS,
   demoExtraOf,
+  demoSrcOfSearch,
   demoHasFilterSchema,
   demoShikimoriApi,
   demoStaticFilterSchema,
@@ -108,5 +111,32 @@ describe('демо-пагинатор: Shikimori в трёх версиях API 
     expect(keysOf('animes-rest')).toEqual(keysOf('animes'))
     expect(keysOf('animes-graphql').some((key) => key.startsWith('filters.studios'))).toBe(false)
     expect(keysOf('animes-graphql')).toEqual(expect.arrayContaining(['filters.genres.and', 'filters.kind']))
+  })
+})
+
+/**
+ * P1 (ход 136): лоадер начинает сборку схемы фильтров по источнику из адреса,
+ * не дожидаясь пагинатора. Ранний разбор обязан давать ТОТ ЖЕ источник, что
+ * выберет пагинатор (`readPaginatorSearch` + дефолты + `demoExtraOf`), —
+ * иначе схема собиралась бы не для той выдачи (лоадер это ловит сверкой,
+ * но тогда пропадал бы выигрыш).
+ */
+describe('демо-пагинатор: источник из адреса до инициализации (P1)', () => {
+  const viaPaginator = (search: string) =>
+    demoExtraOf({
+      ...DEFAULT_DEMO_EXTRA,
+      ...readPaginatorSearch(new URLSearchParams(search), { pageParam: 'page', extra: DEMO_EXTRA_SEARCH }).extra,
+    }).src
+
+  it.each([
+    ...DEMO_SRCS.map((src) => `page.src=${src}`),
+    '',
+    'page.src=postgres',
+    'page.src=',
+    'page.src=animes&page.src=rm-rest',
+    'page.src=%22animes%22',
+    'page.size=10&q=x',
+  ])('«%s» → тот же источник, что у пагинатора', (search) => {
+    expect(demoSrcOfSearch(new URLSearchParams(search))).toBe(viaPaginator(search))
   })
 })

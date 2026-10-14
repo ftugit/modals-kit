@@ -12,6 +12,7 @@ import {
   DEFAULT_GALLERY_EXTRA,
   demoHasFilterSchema,
   demoShikimoriApi,
+  demoSrcOfSearch,
   demoStaticFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
@@ -79,18 +80,32 @@ export const load: PageServerLoad = async ({ url, isDataRequest }) => {
     extra: { ...DEFAULT_GALLERY_EXTRA },
   }))
 
-  const [snapshot, gallerySnapshot]: [PaginatorState<CatalogItem>, PaginatorState<DemoItem>] =
-    await Promise.all([
-      initServerPaginator<CatalogItem>(store, defaultName, { url: href }),
-      // Галерея — вторая полоса под своим префиксом `?gallery.*`, всегда фото.
-      initServerPaginator<DemoItem>(store, galleryName, { url: href }),
-    ])
+  // Схема фильтров собирается ПАРАЛЛЕЛЬНО с первой страницей: источник
+  // известен из адреса, ждать снапшота незачем. Страница с фильтрами и так
+  // ждёт ту же сборку (она одна на всех ждущих), а страница без фильтров
+  // раньше платила запрос страницы + сборку подряд — теперь большее из двух.
+  const earlySrc = demoSrcOfSearch(url.searchParams)
+  const earlySchema = isDataRequest ? Promise.resolve(null) : schemaOf(earlySrc)
 
+  const [snapshot, gallerySnapshot, early]: [
+    PaginatorState<CatalogItem>,
+    PaginatorState<DemoItem>,
+    CatalogFilterSchema | null,
+  ] = await Promise.all([
+    initServerPaginator<CatalogItem>(store, defaultName, { url: href }),
+    // Галерея — вторая полоса под своим префиксом `?gallery.*`, всегда фото.
+    initServerPaginator<DemoItem>(store, galleryName, { url: href }),
+    earlySchema,
+  ])
+
+  // Сверка с тем, что выбрал сам пагинатор: разойтись они не должны, но
+  // если разошлись — правда за снапшотом, схема берётся по нему.
+  const src = snapshot.extra?.src as DemoSrc | undefined
   const loaderData: PaginatorLoaderData = {
     defaultName,
     snapshot,
     gallerySnapshot,
-    filterSchema: isDataRequest ? null : await schemaOf(snapshot),
+    filterSchema: isDataRequest ? null : src === earlySrc ? early : await schemaOf(src),
   }
   return { loaderData }
 }
@@ -104,8 +119,7 @@ export const load: PageServerLoad = async ({ url, isDataRequest }) => {
  * фильтры работают только через неё) — поэтому сбой сборки не роняет страницу:
  * панель просто не показывается, а клиент попробует схему сам.
  */
-async function schemaOf(snapshot: PaginatorState<CatalogItem>): Promise<CatalogFilterSchema | null> {
-  const src = snapshot.extra?.src as DemoSrc | undefined
+async function schemaOf(src: DemoSrc | undefined): Promise<CatalogFilterSchema | null> {
   if (!demoHasFilterSchema(src)) return null
   const fixed = demoStaticFilterSchema(src)
   if (fixed) return fixed

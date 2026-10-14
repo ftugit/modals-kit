@@ -145,6 +145,38 @@ describe('живые справочники', () => {
   })
 })
 
+describe('параллельная сборка (P2)', () => {
+  it.each(['mix', 'rest', 'graphql'] as const)('%s: все запросы сборки стартуют сразу, справочники не ждут остальное', async (api) => {
+    // Сколько запросов делает полная сборка — замер обычным прогоном.
+    const plain = stubUpstream([{ id: 858, name: 'Wit Studio' }])
+    const expected = await readShikimoriRefs({ fetch: plain.fetchImpl }, api)
+    const total = plain.calls.rest + plain.calls.graphql
+    // Замер наполнил кэши транспорта — без сброса второй прогон взял бы
+    // справочники из них и не дошёл бы до сети.
+    await resetShikimoriTransport()
+    await resetGraphqlTransport()
+
+    // Теперь ни один ответ не приходит, пока не открыт шлюз: если какой-то
+    // запрос ждёт другого, к открытию шлюза он ещё не стартовал.
+    const gated = stubUpstream([{ id: 858, name: 'Wit Studio' }])
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    let started = 0
+    const held = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      started += 1
+      await gate
+      return gated.fetchImpl(input, init)
+    }) as typeof fetch
+    const running = readShikimoriRefs({ fetch: held }, api)
+    // Ключ кэша считается асинхронным хэшем — до `fetch` запросы доходят не за
+    // один тик. Ждём, пока число стартовавших перестанет расти (до 1 с).
+    for (let i = 0; i < 100 && started < total; i++) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(started).toBe(total)
+    open()
+    expect(await running).toEqual(expected)
+  })
+})
+
 describe('сборка схемы', () => {
   it('поля схемы = объявленный состав, значения — из справочников', async () => {
     const c = clock()
