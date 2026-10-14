@@ -79,7 +79,7 @@ type TaskProgress =
 | `lib/form` (`FormState.status` `idle/validating/submitting/queued/success/error`, `checking`) | статус отправки и асинхронных проверок | `form.task`; транспорт сообщает `progress` (строки ответа `/db-demo/submit`) |
 | `paginate/search` (`accumulator.ts`: `scanned`) | счёт просмотренных записей при нечётком поиске | `task` с `steps`: просмотрено N из M (если источник знает итог), иначе без числа |
 | `lib/fetch` | чтение ответа (`read.ts`) | `readTaskStream(res, onTask)`: разбор строк NDJSON; проценты байтов по `Content-Length` |
-| `lib/filters` (`schema-memory.ts`) | память схем во вкладке | ничего: загрузку схемы ведёт приложение (`CatalogDemo` `loadSchema`), состояние берёт из `lib/fetch` |
+| `paginate/filters` (`schema-memory.ts`) | память схем во вкладке | ничего: загрузку схемы ведёт приложение (`CatalogDemo` `loadSchema`), состояние берёт из `lib/fetch` |
 
 Глобальный лоадер на клиенте — **не lib, а UI** (`components/`):
 - список активных задач со `scope: 'global'` (или дольше порога);

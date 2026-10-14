@@ -1,6 +1,6 @@
 /**
  * Схема фильтров персонажей Rick and Morty — ВТОРАЯ реальная схема каталога
- * (F54): та же `lib/filters`, что у Shikimori, но другой источник, другие
+ * (F54): та же `paginate/filters`, что у Shikimori, но другой источник, другие
  * типы полей (`text`) и статические значения.
  *
  * Значения здесь полные и неизменные (их объявляет документация API,
@@ -15,7 +15,7 @@
  * фильтра, поэтому схема одна: переключение между ними не меняет ни ключей
  * адреса, ни формы — фильтры и поиск переживают смену транспорта.
  */
-import { catalogFilterFieldNames, type CatalogFilterField, type CatalogFilterSchema } from '#lib/filters/index.js'
+import { catalogFilterFieldNames, type CatalogFilterField, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
 
 export const RICKMORTY_FILTER_FIELDS: readonly CatalogFilterField[] = [

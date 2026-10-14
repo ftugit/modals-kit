@@ -45,7 +45,7 @@ import {
   type CatalogFilterOption,
   type CatalogFilterRule,
   type CatalogFilterSchema,
-} from '#lib/filters/index.js'
+} from '#lib/paginate/filters/index.js'
 import {
   SHIKIMORI_FILTER_SCHEMA_VERSION,
   shikimoriFilterSchemaSkeleton,

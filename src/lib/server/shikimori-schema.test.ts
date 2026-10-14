@@ -23,7 +23,7 @@ import {
   CATALOG_FILTER_OPTIONS_LIMIT,
   catalogFilterFieldNames,
   catalogFilterOptionsAreComplete,
-} from '#lib/filters/index.js'
+} from '#lib/paginate/filters/index.js'
 
 /**
  * Тексты 422 ровно в том виде, в каком их отдаёт API (записаны живьём,

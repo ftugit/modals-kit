@@ -41,7 +41,7 @@ test('ключ фильтра в компоненте — ошибка', () => {
 
 test('ключ фильтра в объявлении и в серверной зоне — норма', () => {
   assert.deepEqual(checkSource('src/content/shikimori-filters.ts', `const k = 'filters.kind'`), [])
-  assert.deepEqual(checkSource('src/lib/filters/url.ts', `const p = 'filters.genres.and'`), [])
+  assert.deepEqual(checkSource('src/lib/paginate/filters/url.ts', `const p = 'filters.genres.and'`), [])
   assert.deepEqual(checkSource('src/lib/server/shikimori-filters.ts', `drop: 'filters.score.max'`), [])
 })
 
@@ -92,7 +92,7 @@ test('тесты и сами инструменты правилам не под
 
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
-    'src/lib/filters/url.ts',
+    'src/lib/paginate/filters/url.ts',
     `import { page } from '$app/state'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
   )
   assert.equal(impure.length, 2)
@@ -100,7 +100,7 @@ test('модуль фильтров не тянет фреймворк и сер
 })
 
 test('модуль фильтров не трогает среду', () => {
-  const problems = checkSource('src/lib/filters/form.ts', `const v = window.location.search\nawait fetch('/api')\n`)
+  const problems = checkSource('src/lib/paginate/filters/form.ts', `const v = window.location.search\nawait fetch('/api')\n`)
   assert.equal(problems.length, 2)
   assert.match(problems[0].why, /адаптер/)
 })
@@ -111,7 +111,7 @@ test('здоровый модуль фильтров проходит', () => {
     `import { catalogFilterFieldNames } from './catalog-filter'`,
     `export const names = (field) => catalogFilterFieldNames(field)`,
   ].join('\n')
-  assert.deepEqual(checkSource('src/lib/filters/form.ts', src), [])
+  assert.deepEqual(checkSource('src/lib/paginate/filters/form.ts', src), [])
 })
 
 test('импорты разбираются вместе с `export … from`', () => {
@@ -144,7 +144,7 @@ test('в проекте нет нарушений границы «схема ж
 
 test('граница не фиктивна: зоны, которые защищаются, существуют', () => {
   const files = walk('src').map((file) => relative('.', file))
-  assert.ok(files.some((f) => f.startsWith('src/lib/filters/')), 'нет модуля фильтров')
+  assert.ok(files.some((f) => f.startsWith('src/lib/paginate/filters/')), 'нет модуля фильтров')
   assert.ok(files.includes('src/lib/server/shikimori-schema.ts'), 'нет зоны схемы')
   assert.ok(files.includes('src/content/shikimori-filters.ts'), 'нет общего объявления ключей')
 })

@@ -20,7 +20,7 @@ import {
 import { setLiveServerTransport, setRickMortyServerTransport } from './sources'
 import type { DemoSrc } from './definition'
 import type { DemoItem } from '../../../../content/items'
-import type { CatalogFilterSchema } from '#lib/filters/index.js'
+import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import type { CatalogItem } from './item-views'
 import type { PaginatorLoaderData } from './types'
 

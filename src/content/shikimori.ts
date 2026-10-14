@@ -18,7 +18,7 @@
  * (`#lib/server/shikimori-filters.js`) по живой схеме источника; готовая схема
  * приезжает роутом `/api/shikimori/filters` (`getShikimoriFilters`).
  */
-import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/filters/index.js'
+import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import { responseError } from '#lib/api-error.js'
 
 /** Максимум записей на страницу у Shikimori API: больше он молча режет до этого. */

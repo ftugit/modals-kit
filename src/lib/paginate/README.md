@@ -102,6 +102,9 @@ definePaginator({
   терминов, коррекция опечаток, статистика перехвата): `#lib/paginate/search/index.js`.
   Часть пакета, но отдельный вход — ядро пагинатора его не тянет. Документация —
   [`search/README.md`](./search/README.md).
+- `src/lib/paginate/filters/` — фильтры источника: схема → форма `lib/form`, ключи адреса
+  `?page.filters.*`, связки и серверная проверка, картина панели (`#lib/paginate/filters/index.js`).
+  Единственная связь с другим пакетом — `lib/form`. Документация — [`filters/README.md`](./filters/README.md).
 - `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`);
   `svelte/search/` — хуки поиска (`useSearchCorrection`, `useSearchStats`).
 - `src/lib/ui/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).

@@ -26,7 +26,7 @@
 // Здесь — настройки страницы (ключи, умолчания, регистрация пагинаторов);
 // источники данных и серверные мосты к ним — в `sources.ts`.
 import type { ShikimoriApi } from '../../../../content/shikimori'
-import type { CatalogFilterSchema } from '#lib/filters/index.js'
+import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import { SHIKIMORI_FILTER_RELOAD_KEYS, SHIKIMORI_FILTER_SEARCH } from '../../../../content/shikimori-filters'
 import type { RickMortyApi } from '../../../../content/rickmorty'
 import {

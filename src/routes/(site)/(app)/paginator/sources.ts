@@ -12,7 +12,7 @@ import {
   type AnimesPage,
   type ShikimoriApi,
 } from '../../../../content/shikimori'
-import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
+import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import { shikimoriFilterKeys, shikimoriFilterSource } from '../../../../content/shikimori-filters'
 import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
 import { RICKMORTY_FILTER_KEYS } from '../../../../content/rickmorty-filters'

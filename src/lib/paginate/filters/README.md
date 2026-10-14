@@ -1,4 +1,4 @@
-# lib/filters — фильтры каталога
+# paginate/filters — фильтры каталога
 
 Схема фильтров источника превращается в форму `lib/form`, в правила проверки и в адрес
 `?page.filters.<поле>[.<режим>]`. Модуль изоморфный, без фреймворка: один и тот же код работает
@@ -101,7 +101,7 @@ const schema: CatalogFilterSchema = {
 способ получить свежую схему.
 
 ```ts
-import { catalogFilterSchemas } from '#lib/filters/index.js'
+import { catalogFilterSchemas } from '#lib/paginate/filters/index.js'
 
 catalogFilterSchemas.remember(schema)           // под schema.source
 catalogFilterSchemas.recall('shikimori')        // схема или null
@@ -147,7 +147,7 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 | `catalog-filter.ts` | типы схемы, валидатор, пределы, порядок длинных полей, компиляция в форму, адрес, связки |
 | `view.ts` | чипы активных фильтров и патчи адреса для панели |
 | `schema-memory.ts` | память схем вкладки (§4) |
-| `index.ts` | публичный вход `#lib/filters/index.js` |
+| `index.ts` | публичный вход `#lib/paginate/filters/index.js` |
 
 | Тест | Что проверяет |
 |---|---|

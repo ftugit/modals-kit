@@ -171,7 +171,7 @@ src/lib/
 1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
    `modals/cores/sveltekit.ts` (`LoadLink` удалён в ходе 141).
 2. ✅ ход 160: `search` → `paginate/search` и `paginate/svelte/search` (UI на месте; подписи «lib/search» в демо стали «paginate/search»).
-3. `filters` → `paginate/filters` вместе с R2: разрез по ролям, один префикс, подписи (по
+3. ✅ ход 160 (перенос): `filters` → `paginate/filters`; далее вместе с R2: разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.
 4. `ui/*`, `shell`, `cn`, `js-only`, `use-drawer` → `components`, `hooks`, `utils.ts`.
 5. `ui/demo` → `demo` (по решению 3).

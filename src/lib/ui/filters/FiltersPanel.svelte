@@ -3,7 +3,7 @@
    * Панель фильтров каталога: связка «схема источника → хранилище пагинатора».
    *
    * Сложного здесь нет по устройству: всё, что можно посчитать, считает api
-   * схемы (`#lib/filters/index.js`) — какие контролы есть, что гасит связка и почему,
+   * схемы (`#lib/paginate/filters/index.js`) — какие контролы есть, что гасит связка и почему,
    * какие чипы висят, какой патч положить в extra, какой адрес снимает одно
    * значение. Этот компонент знает ровно три вещи, которых api знать не может:
    * имя пагинатора, канал-хранилище и путь страницы.
@@ -20,7 +20,7 @@
     catalogFilterRemoveValuePatch,
     catalogFilterView,
     type CatalogFilterSchema,
-  } from '#lib/filters/index.js'
+  } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
   import CatalogFilterForm from './CatalogFilterForm.svelte'
 

@@ -7,7 +7,7 @@
  *     пагинатор демо просит 5/10/20/40. Окно `(page, limit)` переводится в
  *     одну–три страницы API и вырезается (`apiWindow`): номер страницы демо и
  *     число страниц (`count` API) остаются честными при любом размере.
- *   • ФИЛЬТРЫ — та же `lib/filters`, что у Shikimori: deny-safe отбор
+ *   • ФИЛЬТРЫ — та же `paginate/filters`, что у Shikimori: deny-safe отбор
  *     объявленных ключей, типы и правила формы (`validateCatalogFilterValues`),
  *     неприменённое — списком `dropped` с причиной.
  *   • ПУСТО ≠ ОШИБКА. REST на пустую выдачу отвечает 404
@@ -27,7 +27,7 @@ import {
   catalogFilterFormData,
   validateCatalogFilterValues,
   type CatalogFilterSchema,
-} from '#lib/filters/index.js'
+} from '#lib/paginate/filters/index.js'
 import { FetchError, readJson, type AppFetch } from '#lib/fetch/index.js'
 import type { Store } from '#lib/cache/index.js'
 import { localStore } from './cache'

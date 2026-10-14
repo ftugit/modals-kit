@@ -2,7 +2,7 @@
   import { onMount, untrack } from 'svelte'
   import { report } from '#lib/app-errors.svelte.js'
   import { currentSearch } from '#lib/router/sveltekit.js'
-  import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/index.js'
+  import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
   import { shikimoriFilterSource } from '../../../../content/shikimori-filters'
   import { SHIKIMORI_APIS, type ShikimoriApi } from '../../../../content/shikimori'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'

@@ -23,7 +23,7 @@ const TEST_RE = /\.test\.(ts|mts|js|mjs)$|(^|\/)tooling\//
 export const UPSTREAM_ZONES = [/^src\/lib\/server\//, /^src\/routes\/api\//]
 
 /** Где объявлен контракт имён фильтров (единственное место, кроме тестов). */
-export const KEY_ZONES = [/^src\/lib\/filters\//, /^src\/content\/shikimori-filters\.ts$/]
+export const KEY_ZONES = [/^src\/lib\/paginate\/filters\//, /^src\/content\/shikimori-filters\.ts$/]
 
 /** Зона сборки схемы: значения, связки, кэш `builtAt`. */
 export const SCHEMA_ZONE = /^src\/lib\/server\/shikimori-schema\.ts$/
@@ -35,10 +35,10 @@ export const PIPELINE_ZONE = /^src\/lib\/server\/shikimori-filters\.ts$/
 export const SCHEMA_READERS = [/^src\/lib\/server\//, /^src\/routes\/api\//, /^src\/routes\/\(site\)\/\(app\)\/paginator\/\+page\.server\.ts$/]
 
 /**
- * Запрещённое в зоне чистых фильтров (`src/lib/filters`): модуль изоморфный и
+ * Запрещённое в зоне чистых фильтров (`src/lib/paginate/filters`): модуль изоморфный и
  * framework-free — его импортируют и серверная зона, и форма в браузере.
  */
-export const FILTERS_LIB = /^src\/lib\/filters\//
+export const FILTERS_LIB = /^src\/lib\/paginate\/filters\//
 export const FILTERS_LIB_FORBIDDEN_SPECIFIERS = [
   /^svelte(\/|$)/,
   /^@sveltejs\//,
@@ -60,7 +60,7 @@ export const CONTENT_RULES = [
     zones: [...KEY_ZONES, ...UPSTREAM_ZONES],
     why:
       'канонический ключ фильтра выписан в коде. Ключи объявлены один раз\n' +
-      '    (`src/lib/filters` + `content/shikimori-filters`) и раздаются\n' +
+      '    (`src/lib/paginate/filters` + `content/shikimori-filters`) и раздаются\n' +
       '    `catalogFilterFieldNames`; рукописный ключ в компоненте/роуте\n' +
       '    разъезжается со схемой молча — фильтр «есть», а параметра нет.',
   },
@@ -183,7 +183,7 @@ function lineOf(source, index) {
 
 /**
  * Проверяет ОДИН файл: правила содержимого + чистота зоны фильтров.
- * @param {string} relPath путь от корня проекта ('src/lib/filters/url.ts')
+ * @param {string} relPath путь от корня проекта ('src/lib/paginate/filters/url.ts')
  * @param {string} source
  * @returns {Array<{rule: string, line: number, found: string, why: string}>}
  */

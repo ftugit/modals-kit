@@ -18,7 +18,7 @@ import {
   catalogFilterFieldNames,
   type CatalogFilterField,
   type CatalogFilterSchema,
-} from '#lib/filters/index.js'
+} from '#lib/paginate/filters/index.js'
 import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
 import { SHIKIMORI_DEFAULT_API, type ShikimoriApi } from './shikimori'
 

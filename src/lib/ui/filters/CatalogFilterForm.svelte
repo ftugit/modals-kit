@@ -25,8 +25,8 @@
     CATALOG_FILTER_NOJS_OPTIONS,
     compileCatalogFilterSchema,
     parseCatalogFilterPath,
-  } from '#lib/filters/index.js'
-  import type { CatalogFilterSchema } from '#lib/filters/index.js'
+  } from '#lib/paginate/filters/index.js'
+  import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
   import { asLink } from '#lib/components/links/index.js'

@@ -32,7 +32,7 @@ import {
   validateCatalogFilterValues,
   type CatalogFilterSchema,
   type CatalogFilterValues,
-} from '#lib/filters/index.js'
+} from '#lib/paginate/filters/index.js'
 import { DEV } from 'esm-env'
 import { SHIKIMORI_DEFAULT_API, type AnimesPage, type ShikimoriApi } from '../../content/shikimori'
 import { fetchCatalogPage, type AnimesQuery, type TransportDeps } from './shikimori'
