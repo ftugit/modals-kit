@@ -7,6 +7,7 @@
 | [framework-imports.md](framework-imports.md) | Где `src/lib` обращается к SvelteKit напрямую, минуя адаптеры (задача 4). |
 | [crutches.md](crutches.md) | Реестр «костылей» с местом, причиной и правильной альтернативой (задача 3). |
 | [ratings.md](ratings.md) | Оценка 0–10 каждого файла `src/` с обоснованием (задача 5). |
+| [framework-agnostic.md](framework-agnostic.md) | Независимость библиотек от фреймворка (симуляция под React Router, `sim/react-router/`) и зашитые тексты интерфейса. |
 | [lib-db.md](lib-db.md) | Чек-лист `lib/db`: C1, F43 (исправлены, ход 48), C10-db (исправлен, ход 83), поиск багов DB-1…DB-11 (ход 43). |
 
 > **Пометка о переезде на SvelteKit 3 (ход 16, ветка `upgrade/kit3`).** Эти файлы — журнал решений, строки в них не
