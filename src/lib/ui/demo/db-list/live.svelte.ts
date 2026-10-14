@@ -1,5 +1,11 @@
 /**
- * Живая выдача демо: опрос ТЕКУЩЕГО окна с условным `GET`.
+ * Живая выдача демо: условный `GET` по адресу, который даёт список.
+ *
+ * Что спрашивать, решает список (`url`), что значит ответ — тоже он (`onData`):
+ * опросчик не сравнивает выдачи и не знает про окна. Список спрашивает «что
+ * появилось новее отметки» (`/api/db-posts?since=…`), а не переспрашивает
+ * текущее окно: сравнение целых страниц принимало за «новое» и свою запись, и
+ * переподписанный курсор.
  *
  * Почему опрос, а не push: на серверлесс-платформах долгоживущее соединение —
  * не данные, а обязательство (Vercel держит WebSocket в public beta и только с
@@ -14,10 +20,8 @@
  *   • на скрытой вкладке — пауза (см. `document.visibilityState`);
  *   • при ошибках — экспоненциальный backoff с `Retry-After`, сброс на успехе.
  *
- * Что делает «изменилось»: решение принимает СТРАНИЦА (`onFresh`), потому что
- * «переспросить окно» у пагинатора означают разное: в постраничном режиме это
- * `reset` на первую страницу, в курсорном — пересборка накопленных окон, и
- * убивать прокрутку пользователя без его согласия здесь не разрешено.
+ * `If-None-Match` уходит только на ТОТ ЖЕ адрес, что дал отпечаток: отметка
+ * сменилась — это другой вопрос, и чужой отпечаток к нему не относится.
  */
 
 /** Пауза = «пользователь не смотрит»: опрашивать незачем и нельзя. */
@@ -49,6 +53,8 @@ export function retryAfterMs(header: string | null, intervalMs: number): number 
 export type LiveHandle = {
   start: () => void
   stop: () => void
+  /** Спросить сейчас, не дожидаясь интервала (новая отметка после сброса списка). */
+  poke: () => void
   running: () => boolean
   /** Счётчики наружу: по ним пробы проверяют паузу и backoff без подглядывания внутрь. */
   stats: () => { ticks: number; changed: number; errors: number; waitMs: number }
@@ -57,8 +63,8 @@ export type LiveHandle = {
 export function createLive(options: {
   /** `null` — опрашивать нечего (режим или страница, где окна нет). */
   url: () => string | null
-  /** Данные изменились: страница решает, переспрашивать ли источник. */
-  onFresh: () => void
+  /** Ответ 200 с телом (304 сюда не доходит): что он значит, решает список. */
+  onData: (body: unknown) => void
   intervalMs?: number
   /** Один запрос не должен висеть вечно: висящий = сеть, а не «медленно». */
   timeoutMs?: number
@@ -69,6 +75,8 @@ export function createLive(options: {
   const doFetch: typeof fetch = options.fetchImpl ?? ((...args) => fetch(...args))
 
   let etag: string | null = null
+  /** Адрес, к которому относится `etag`. */
+  let etagUrl: string | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let inFlight = false
   let running = false
@@ -107,7 +115,7 @@ export function createLive(options: {
     inFlight = true
     ticks += 1
     const headers: Record<string, string> = {}
-    if (etag) headers['if-none-match'] = etag
+    if (etag && etagUrl === url) headers['if-none-match'] = etag
     let response: Response | null = null
     try {
       response = await doFetch(url, {
@@ -121,18 +129,14 @@ export function createLive(options: {
         errors = 0
         waitMs = intervalMs
       } else if (response.ok) {
-        const next = response.headers.get('etag')
+        const body: unknown = await response.json()
         errors = 0
         waitMs = intervalMs
-        if (etag === null) {
-          // Первая выдача — ЭТАЛОН сверки, а не «изменение»: иначе включение
-          // опроса само по себе сбрасывало бы окно на первую страницу.
-          etag = next
-        } else if (next !== etag) {
-          etag = next
-          changedCount += 1
-          options.onFresh()
-        }
+        etag = response.headers.get('etag')
+        etagUrl = url
+        changedCount += 1
+        // Ответ мог прийти уже после `stop()` — тогда он никому не нужен.
+        if (running) options.onData(body)
       } else throw new Error(`live: ${response.status}`)
     } catch {
       errors += 1
@@ -176,6 +180,11 @@ export function createLive(options: {
         document.removeEventListener('visibilitychange', onVisibility)
         onVisibility = null
       }
+    },
+    poke() {
+      if (!running) return
+      clear()
+      timer = setTimeout(() => void tick(), 0)
     },
     running: () => running,
     stats: () => ({ ticks, changed: changedCount, errors, waitMs }),

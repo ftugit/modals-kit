@@ -470,6 +470,34 @@ await step("API: запись обесценивает 304 — следующи�
   return `${after.status}, новая строка на месте, отпечаток сменился: ${after.headers.get("etag") !== etag}`;
 });
 
+await step("API ?since: отметка, затем только строки новее неё (с фильтром выдачи)", async () => {
+  const base0 = await (await fetch(API + "?since=")).json();
+  if (!base0.mark || !base0.markId || base0.items.length) throw new Error("базовый ответ: " + JSON.stringify(base0).slice(0, 120));
+  const quiet = await (await fetch(API + "?since=" + encodeURIComponent(base0.mark))).json();
+  // Строка-отметка может вернуться из-за точности времени — клиент отсеет её по markId.
+  if (quiet.items.some((r) => r.id !== base0.markId)) throw new Error("без записей пришли чужие строки: " + quiet.items.length);
+  const title = "since-" + Date.now().toString(36);
+  const html = await (await fetch(base)).text();
+  const r = await fetch(base + "?/create", form({ title }, envelopeOf(html, "db_demo_create")));
+  if (!r.ok && r.status !== 303 && r.status !== 200) throw new Error(`запись не прошла: ${r.status}`);
+  const fresh = await (await fetch(API + "?since=" + encodeURIComponent(base0.mark))).json();
+  const mine = fresh.items.filter((x) => x.title === title);
+  if (mine.length !== 1) throw new Error(`новой строки в ответе ${mine.length}`);
+  if (fresh.items[0].title !== title) throw new Error("свежие не первыми: " + fresh.items.map((x) => x.title).join(","));
+  const flt = encodeURIComponent(JSON.stringify({ field: "title", op: "eq", value: "нет-такой-" + title }));
+  const none = await (await fetch(API + "?since=" + encodeURIComponent(base0.mark) + "&flt=" + flt)).json();
+  if (none.items.length) throw new Error("фильтр выдачи не применён к опросу");
+  return `отметка ${base0.mark}, после записи — ${fresh.items.length} новых, под чужим фильтром — 0`;
+});
+await step("API ?since: смешанный адрес и мусор в отметке — 422, а не догадка", async () => {
+  const mixed = await fetch(API + "?since=&page=2");
+  const junk = await fetch(API + "?since=вчера");
+  const mb = await mixed.json();
+  if (mixed.status !== 422 || !/page/.test(mb.error)) throw new Error(`смешанный: ${mixed.status} ${mb.error}`);
+  if (junk.status !== 422) throw new Error(`мусор: ${junk.status}`);
+  return "422 / 422";
+});
+
 await step("/paginator: пункт «БД» рисует те же строки, что /db-demo", async () => {
   const html = await (await fetch(APP + "?page.src=db&page.size=5", { headers: { accept: "text/html" } })).text();
   const here = [...html.matchAll(/data-testid="db-([0-9a-f-]{8,})"/g)].map((m) => m[1]);

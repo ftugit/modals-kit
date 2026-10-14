@@ -521,6 +521,7 @@ export function createUrlAdapter<T>(opts: {
     loadPage: (req) =>
       source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal }, req.extra),
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
+    recordFor: (extra) => source.recordFor(extra),
     // Объявленные ключи: спецификация адреса + дефолты (поверхность потребителя)
     // плюс ключи источника (q и фильтры) — по ним `setExtra` проверяет запись.
     extraKeys: () => [
@@ -677,6 +678,7 @@ export function withUrlTakeover<T>(
     },
     capabilities: base.capabilities,
     capabilitiesFor: (extra) => base.capabilitiesFor(extra),
+    recordFor: base.recordFor ? (extra) => base.recordFor!(extra) : undefined,
     // Объявленная поверхность — максимум двух каналов: запись `setExtra`
     // судится по ней, а судить чужими ключами нельзя (deny-safe).
     extraKeys: () => {

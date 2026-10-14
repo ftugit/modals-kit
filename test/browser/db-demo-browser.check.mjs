@@ -109,6 +109,13 @@ try {
     const posted = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/db-demo/submit'), {
       timeout: 15_000,
     })
+    // Своя запись правит окно на месте (`patchItems`): запрос страницы списка
+    // после неё означал бы перезагрузку выдачи, от которой и уходили.
+    const listGets = []
+    const onReq = (r) => {
+      if (r.url().includes('/api/db-posts')) listGets.push(r.url())
+    }
+    page.on('request', onReq)
     await page.click('button[data-testid="create"]')
     const res = await posted
     if (res.status() === 403)
@@ -132,7 +139,9 @@ try {
       { timeout: 15_000 },
     )
     const alive = await page.evaluate(() => window.__probe)
+    page.off('request', onReq)
     if (alive !== 'alive') throw new Error(`страница перезагрузилась (метка пропала): ${alive}`)
+    if (listGets.length) throw new Error(`после записи список переспрошен: ${listGets.join(' ')}`)
     const first = await page.textContent('[data-testid="row"]')
     if (!first?.includes(title)) throw new Error(`созданная запись не первая в списке: ${first}`)
     return `метка жива, ответ ${type.split(';')[0]}, строка первая`
@@ -377,6 +386,115 @@ try {
     const d = await ticks()
     if (d !== c) throw new Error(`на скрытой вкладке опрос продолжается: ${c} → ${d}`)
     return `${b - a} тиков на виду, ${d - c} на скрытой`
+  })
+
+  /** Чужая запись — из второй вкладки: для первой это строка «извне». */
+  const foreignCreate = async (title) => {
+    const other = await browser.newPage()
+    try {
+      await other.goto(BASE, { waitUntil: 'networkidle' })
+      await other.fill('input[name="title"]', title)
+      const done = other.waitForResponse((r) => r.url().includes('/db-demo/submit'), { timeout: 15_000 })
+      await other.click('[data-testid="create"]')
+      if (!(await done).ok()) throw new Error('вторая вкладка не смогла записать')
+    } finally {
+      await other.close()
+    }
+  }
+  const pageGets = (sink) => (r) => {
+    // Опрос «что появилось» (`since=`) — не перезагрузка; запрос страницы — она.
+    if (r.url().includes('/api/db-posts') && !r.url().includes('since=')) sink.push(r.url())
+  }
+
+  await step('удаление: строка уходит из окна, счётчик −1, список не переспрошен', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    const total = Number((await page.textContent('[data-testid="total"]'))?.trim())
+    const [victim] = await rowIds()
+    const gets = []
+    const onReq = pageGets(gets)
+    page.on('request', onReq)
+    try {
+      await page.fill('input[name="ids"]', victim)
+      await page.click('[data-testid="remove"]')
+      await page.waitForFunction(
+        (id) => ![...document.querySelectorAll('[data-testid="row-id"]')].some((e) => e.textContent.trim() === id),
+        victim,
+        { timeout: 15_000 },
+      )
+      const now = Number((await page.textContent('[data-testid="total"]'))?.trim())
+      if (now !== total - 1) throw new Error(`счётчик ${total} → ${now}, ожидался ${total - 1}`)
+      if (gets.length) throw new Error(`список переспрошен: ${gets.join(' ')}`)
+      return `id ${victim.slice(0, 8)} убран, всего ${total} → ${now}`
+    } finally {
+      page.off('request', onReq)
+    }
+  })
+
+  await step('живой список: своя запись не даёт пилюли и не сбрасывает список', async () => {
+    await page.goto(`${BASE}?page.live=1`, { waitUntil: 'networkidle' })
+    // Отметка снимается сразу после включения опроса (`poke`).
+    await page.waitForResponse((r) => r.url().includes('since='), { timeout: 10_000 })
+    const gets = []
+    const onReq = pageGets(gets)
+    page.on('request', onReq)
+    try {
+      const title = `своя-live-${Date.now() % 1_000_000}`
+      await submitTitle(title)
+      await page.waitForFunction(
+        (t) => [...document.querySelectorAll('[data-testid="row"]')].some((e) => e.textContent.includes(t)),
+        title,
+        { timeout: 15_000 },
+      )
+      // Два с половиной тика опроса: старый путь за это время сбросил бы список.
+      await page.waitForTimeout(5_000)
+      if (await page.$('[data-testid="live-pill"]')) throw new Error('своя запись показана пилюлей как чужая')
+      if (gets.length) throw new Error(`список переспрошен: ${gets.join(' ')}`)
+      return 'пилюли нет, запросов страницы нет'
+    } finally {
+      page.off('request', onReq)
+    }
+  })
+
+  await step('живой список, страницы: чужая запись → пилюля с числом, клик — первая страница', async () => {
+    await page.goto(`${BASE}?page.live=1`, { waitUntil: 'networkidle' })
+    await page.waitForResponse((r) => r.url().includes('since='), { timeout: 10_000 })
+    const title = `чужая-${Date.now() % 1_000_000}`
+    await foreignCreate(title)
+    await page.waitForSelector('[data-testid="live-pill"]', { timeout: 10_000 })
+    const label = (await page.textContent('[data-testid="live-pill"]'))?.trim()
+    if (label !== '↑ 1 новая запись — показать') throw new Error(`подпись пилюли: ${label}`)
+    // В постраничном режиме строка сама в окно не встаёт: номера страниц читателя не двигаем.
+    if ((await cardTitles()).some((t) => t.includes(title))) throw new Error('строка встала в окно без клика')
+    await page.click('[data-testid="live-pill"]')
+    await page.waitForFunction(
+      (t) => [...document.querySelectorAll('[data-testid="row"]')].some((e) => e.textContent.includes(t)),
+      title,
+      { timeout: 15_000 },
+    )
+    await page.waitForFunction(() => !document.querySelector('[data-testid="live-pill"]'), undefined, { timeout: 5_000 })
+    return `«${label}», после клика строка в списке, пилюля ушла`
+  })
+
+  await step('живой список, курсор у начала: чужая запись встаёт сверху без перезагрузки', async () => {
+    await page.goto(`${BASE}?page.live=1&page.cur=1`, { waitUntil: 'networkidle' })
+    await page.waitForResponse((r) => r.url().includes('since='), { timeout: 10_000 })
+    const gets = []
+    const onReq = pageGets(gets)
+    page.on('request', onReq)
+    try {
+      const title = `чужая-cur-${Date.now() % 1_000_000}`
+      await foreignCreate(title)
+      await page.waitForFunction(
+        (t) => document.querySelector('[data-testid="row"]')?.textContent.includes(t),
+        title,
+        { timeout: 10_000 },
+      )
+      if (await page.$('[data-testid="live-pill"]')) throw new Error('у начала списка пилюли быть не должно')
+      if (gets.length) throw new Error(`список переспрошен: ${gets.join(' ')}`)
+      return 'первая строка — чужая запись, запросов страницы нет'
+    } finally {
+      page.off('request', onReq)
+    }
   })
 
   await step('итог: за всю сессию ошибок в консоли нет', async () => {

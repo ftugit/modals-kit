@@ -77,6 +77,16 @@ export type DbPostView = { id: string; title: string; created_at?: string }
 export type FailureMode = 'remove' | 'retry'
 
 /** Запрос страницы в том виде, в каком его понимает слой (`parseListInput`). */
+/**
+ * Ответ опроса «что появилось» (`/api/db-posts?since=…`).
+ * Базовый запрос (`since=` пусто) — `mark`/`markId`: отметка самой свежей строки
+ * выдачи, `items` пусты. Запрос с отметкой — строки новее неё, свежие первыми,
+ * не больше `DB_FRESH_LIMIT`.
+ */
+export type DbPostsFresh = { items: DbPost[]; mark?: string | null; markId?: string | null }
+/** Потолок строк в ответе опроса: больше — «50+», пилюля честно говорит «много». */
+export const DB_FRESH_LIMIT = 50
+
 export type DbPostsQuery = {
   /** Номер страницы (offset). Не используется, когда задан `after`. */
   page: number

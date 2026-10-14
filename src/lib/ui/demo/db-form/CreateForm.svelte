@@ -25,9 +25,11 @@
     seed?: Result | null
     /**
      * Успешная запись: страница НЕ перезагружается, поэтому список обновляет
-     * этот колбэк (он вызывает `reset` пагинатора — свежая страница из источника).
+     * этот колбэк — строкой из ответа (`null`, если сервер её не вернул).
+     * `true` — строка встала в окно списка, и оптимистичная карточка больше не
+     * нужна: форма её убирает.
      */
-    onApplied?: () => void
+    onApplied?: (created: DbPost | null) => boolean | void
     /**
      * Оптимистичная карточка: форма пишет в неё ДО ответа, заменяет строкой из
      * ответа и откатывает по отказу. Без неё форма ведёт себя как раньше.
@@ -64,7 +66,7 @@
     const was = last
     last = now
     if (!optimistic) {
-      if (now === 'success' && was !== 'success') onApplied?.()
+      if (now === 'success' && was !== 'success') onApplied?.(createdRow())
       return
     }
     if (now === 'submitting' && was !== 'submitting') {
@@ -77,15 +79,18 @@
       return
     }
     if (now === 'success' && was !== 'success') {
-      const created = (form.state.result?.data as { created?: DbPost } | undefined)?.created
-      if (tmpId) {
+      const created = createdRow()
+      const id = tmpId
+      if (id) {
         // Строки в ответе нет — карточка не имеет права притворяться записью:
         // убираем её и отдаём слово источнику (он её пришлёт, если она есть).
-        if (created) optimistic.confirm(tmpId, created)
-        else optimistic.drop(tmpId)
+        if (created) optimistic.confirm(id, created)
+        else optimistic.drop(id)
       }
       tmpId = null
-      onApplied?.()
+      // Строка встала в окно — карточка своё отслужила. Иначе (место знает только
+      // сервер) подтверждённая карточка остаётся до следующей загрузки списка.
+      if (onApplied?.(created) === true && id && created) optimistic.drop(id)
       return
     }
     if (now === 'error' && was !== 'error') {
@@ -95,6 +100,9 @@
       if (tmpId) optimistic.fail(tmpId, reason())
     }
   })
+
+  const createdRow = (): DbPost | null =>
+    (form.state.result?.data as { created?: DbPost } | undefined)?.created ?? null
 
   /** Текст отказа — тот же, что показывает форма, а не второй пересказ. */
   function reason(): string {

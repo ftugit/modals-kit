@@ -4,7 +4,7 @@
 // Источник данных — АДАПТИРОВАННЫЙ объект слоя (`#lib/paginate/source.js`), а не
 // произвольная функция: пагинатор обязан знать возможности источника (поиск,
 // фильтры, totals) и раздавать их UI. Тип адаптера это фиксирует.
-import type { AdaptedSource, SourceCapabilities, SourceScope } from './source'
+import type { AdaptedSource, SourceCapabilities, SourceRecordSpec, SourceScope } from './source'
 
 export type MaybePromise<T> = T | Promise<T>
 
@@ -136,6 +136,12 @@ export type PaginatorAdapter<T> = {
    * Пагинатор кладёт их в состояние — UI гасит функции, которых нет.
    */
   capabilitiesFor(extra: Extra): SourceCapabilities
+  /**
+   * Паспорт записи источника для текущего extra (`id`/`title`/`texts`). По нему
+   * `patchItems` узнаёт запись в окне. Метода нет — локальные правки окна
+   * невозможны (ядро откажет, а не будет угадывать идентичность).
+   */
+  recordFor?(extra: Extra): SourceRecordSpec<T>
   /**
    * Все ключи extra, которые пагинатор считает объявленными: источник
    * (`source.extraKeys()` — `q` и фильтры) плюс поверхность потребителя

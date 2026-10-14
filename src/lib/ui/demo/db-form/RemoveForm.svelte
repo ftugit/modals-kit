@@ -19,9 +19,9 @@
     seed?: Result | null
     /**
      * Успешная запись: страница НЕ перезагружается, поэтому список обновляет
-     * этот колбэк (он вызывает `reset` пагинатора — свежая страница из источника).
+     * этот колбэк — по `id` удалённых строк из ответа.
      */
-    onApplied?: () => void
+    onApplied?: (removed: readonly string[]) => void
   }
 
   let { seed = null, onApplied }: Props = $props()
@@ -48,7 +48,10 @@
     if (now === last) return
     const was = last
     last = now
-    if (now === 'success' && was !== 'success') onApplied?.()
+    if (now === 'success' && was !== 'success') {
+      const removed = (form.state.result?.data as { removed?: string[] } | undefined)?.removed
+      onApplied?.(removed ?? [])
+    }
   })
 </script>
 

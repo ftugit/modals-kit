@@ -11,17 +11,23 @@
    *
    * С JavaScript отправка идёт через транспорт `lib/form` (fetch на
    * `/db-demo/submit`), поэтому страница НЕ перезагружается: результат
-   * применяется к форме, а список обновляет `reset` пагинатора — свежая
-   * страница из источника. Нативный POST на `?/create`/`?/remove` остаётся
+   * применяется к форме, а список правится НА МЕСТЕ (`patchItems` пагинатора):
+   * строка из ответа встаёт в окно, счётчики сдвигаются, выдача не
+   * перезагружается. Нативный POST на `?/create`/`?/remove` остаётся
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageProps } from './$types'
   import Alert from '#lib/ui/primitives/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
-  import { usePaginatorActions } from '#lib/paginate/svelte/index.js'
-  import { DB_LIST_NAME, ensureDbListPaginator } from '#lib/ui/demo/db-list/definition.js'
+  import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import {
+    DB_LIST_NAME,
+    dbListExtraOf,
+    ensureDbListPaginator,
+    type DbPost,
+  } from '#lib/ui/demo/db-list/definition.js'
   import DbPostsList from '#lib/ui/demo/db-list/DbPostsList.svelte'
-  import { createOptimistic } from '#lib/ui/demo/db-list/optimistic.svelte.js'
+  import { createOptimistic, ownRowPlacement } from '#lib/ui/demo/db-list/optimistic.svelte.js'
   import CreateForm from '#lib/ui/demo/db-form/CreateForm.svelte'
   import RemoveForm from '#lib/ui/demo/db-form/RemoveForm.svelte'
   import SchemaPending from '#lib/ui/demo/db-form/SchemaPending.svelte'
@@ -42,17 +48,46 @@
     action?.result?.ok ? String((action.result.data as { message?: string } | undefined)?.message ?? '') : '',
   )
 
-  // Что делает успешная запись: обновляет источник пагинатора, а не страницу.
   // Регистрация нужна до `usePaginatorActions`: тело страницы исполняется раньше
   // тела дочернего компонента, а хост бросает «Unknown paginator» на неизвестном имени.
   ensureDbListPaginator()
   const list = usePaginatorActions(DB_LIST_NAME)
-  const refreshList = () => list.reset()
+  const listState = usePaginatorState<DbPost>(DB_LIST_NAME)
 
   // Хранилище оптимистичных строк создаёт СТРАНИЦА: его видят и форма (пишет), и
   // список (рисует). Внутри списка или формы оно означало бы, что второй половине
   // некуда девать карточку, а на уровне модуля — общую очередь на всех посетителей.
   const optimistic = createOptimistic()
+
+  /**
+   * Своя запись — правка окна, а не перезагрузка выдачи: строка из ответа встаёт
+   * туда, где её место по порядку, счётчики сдвигаются на один. Место неизвестно
+   * без сервера (фильтр, порядок по названию) — окно не трогаем, подтверждённая
+   * карточка остаётся до следующей загрузки. Строки в ответе нет — тогда и
+   * только тогда слово источнику (`reset`).
+   */
+  function onCreated(row: DbPost | null): boolean {
+    if (!row) {
+      list.reset()
+      return false
+    }
+    const at = ownRowPlacement(dbListExtraOf(listState().extra as Record<string, unknown>))
+    return at ? list.patchItems<DbPost>({ insert: row, at }) : false
+  }
+
+  /**
+   * Удаление — так же на месте. При фильтре запись вне окна могла и не входить в
+   * выдачу: такую не считаем (счётчик поправит следующая загрузка), видимую —
+   * убираем. Карточки, чья строка удалена, уходят вместе с ней: иначе убранная
+   * из окна строка «воскресла» бы подтверждённой карточкой.
+   */
+  function onRemoved(ids: readonly string[]): void {
+    const state = listState()
+    const filtered = Boolean(dbListExtraOf(state.extra as Record<string, unknown>).flt)
+    const visible = new Set(Object.values(state.pages).flat().map((r) => r.id))
+    for (const id of ids) if (!filtered || visible.has(id)) list.patchItems<DbPost>({ remove: id })
+    for (const card of optimistic.list()) if (card.row && ids.includes(card.row.id)) optimistic.drop(card.tmpId)
+  }
 
 </script>
 
@@ -71,8 +106,8 @@
     {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
   {:else}
     <div class="grid gap-6 md:grid-cols-2">
-      <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
-      <RemoveForm seed={seed('remove')} onApplied={refreshList} />
+      <CreateForm seed={seed('create')} onApplied={onCreated} {optimistic} />
+      <RemoveForm seed={seed('remove')} onApplied={onRemoved} />
     </div>
 
     <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />

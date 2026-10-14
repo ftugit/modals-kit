@@ -35,6 +35,7 @@ export function createLocalAdapter<T>(opts: {
     persist: (state) => storage.write(opts.name, state),
     capabilities: { append },
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
+    recordFor: (extra) => source.recordFor(extra),
     // Поверхность потребителя известна только если он её объявил: иначе не судим.
     extraKeys: opts.extraKeys ? () => [...opts.extraKeys!, ...source.extraKeys()] : undefined,
     scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,

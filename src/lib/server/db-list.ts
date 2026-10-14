@@ -20,10 +20,12 @@ import type { DataContext } from '#lib/db/index.js'
 import type { PageResponse } from '#lib/paginate/index.js'
 import { createPaginatorStore, initServerPaginator } from '#lib/paginate/index.js'
 import {
+  DB_FRESH_LIMIT,
   DB_LIST_PAGE_SIZE,
   ensureDbListPaginator,
   setDbPostsServerTransport,
   type DbPost,
+  type DbPostsFresh,
   type DbPostsQuery,
 } from '#lib/ui/demo/db-list/definition.js'
 import { DEMO_PRINCIPAL, db, posts } from './db'
@@ -160,6 +162,60 @@ export async function fetchDbPostsPage(
 ): Promise<PageResponse<DbPost> | { error: string; code: string; status: number }> {
   try {
     return await queryPage(query, ctx)
+  } catch (e) {
+    return explain(e)
+  }
+}
+
+/** `created_at` как строка ISO: драйвер может отдать `Date`, а в адрес едет текст. */
+const isoOf = (v: unknown): string | null =>
+  v instanceof Date ? v.toISOString() : typeof v === 'string' && v !== '' ? v : null
+
+/**
+ * Опрос «что появилось» — вместо переспроса текущего окна.
+ *
+ * Переспрос окна сравнивал отпечатки целой страницы: любая запись (в том числе
+ * своя, уже стоящая в окне) выглядела как «новое», и список сбрасывался. Здесь
+ * вопрос другой — «какие строки выдачи созданы позже отметки»: ответ не зависит ни
+ * от номера страницы, ни от порядка, ни от курсора, и своя строка в нём узнаётся
+ * по `id`.
+ *
+ *   `since` пусто  → базовая отметка: `created_at` и `id` самой свежей строки
+ *                    выдачи (под тем же фильтром);
+ *   `since=<ISO>`  → строки с `created_at > since` под фильтром выдачи, свежие
+ *                    первыми, не больше `DB_FRESH_LIMIT`.
+ *
+ * Условие соединяется с фильтром пользователя через `and` языка слоя: оператор
+ * `gt` у `created_at` объявлен ресурсом, поэтому это тот же deny-safe разбор, что
+ * у страницы. Точность: драйвер может отдать время с миллисекундами, а база
+ * хранит микросекунды, — строка-отметка может прийти в ответе сама; клиент
+ * отсеивает её по `markId` и по `id` уже показанных строк.
+ */
+export async function fetchDbPostsFresh(
+  query: { since: string; filter?: string },
+  ctx: DataContext,
+): Promise<DbPostsFresh | { error: string; code: string; status: number }> {
+  try {
+    const api = db.resource(posts)
+    const params = new URLSearchParams({ order: JSON.stringify([['created_at', 'desc'], ['id', 'asc']]) })
+    let filter = query.filter
+    if (query.since !== '') {
+      const cond = { field: 'created_at', op: 'gt', value: query.since }
+      let user: unknown = null
+      try {
+        user = filter ? JSON.parse(filter) : null
+      } catch {
+        // Битый фильтр пусть отвергнет слой своим `validation`, а не мы — 500.
+        user = undefined
+      }
+      if (user !== undefined) filter = JSON.stringify(user ? { and: [user, cond] } : cond)
+    }
+    if (filter) params.set('filter', filter)
+    params.set('limit', String(query.since === '' ? 1 : DB_FRESH_LIMIT))
+    const rows = (await api.select(ctx, parseListInput(params))) as DbPost[]
+    if (query.since !== '') return { items: rows }
+    const head = rows[0]
+    return { items: [], mark: head ? isoOf(head.created_at) : null, markId: head ? String(head.id) : null }
   } catch (e) {
     return explain(e)
   }

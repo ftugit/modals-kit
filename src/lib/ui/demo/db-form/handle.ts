@@ -118,7 +118,7 @@ export function handleDbRemove(
   request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
 ): Promise<Handled> {
   return withDb((db) =>
-    createFormHandler<{ message: string; deleted: number }>({
+    createFormHandler<{ message: string; deleted: number; removed: string[] }>({
       description: dbRemove,
       order: SECURITY_LAYERS,
       async execute({ values, commit, fail }) {
@@ -134,7 +134,9 @@ export function handleDbRemove(
           }
           commit()
           invalidateLiveCache()
-          return { data: { message: `удалено ${deleted}`, deleted } }
+          // `removed` — какие именно строки ушли: по ним список правит окно на
+          // месте (`patchItems`), а не перезагружается.
+          return { data: { message: `удалено ${deleted}`, deleted, removed: list } }
         } catch (e) {
           // «на запись ссылаются» приходит общей ошибкой с кодом — текст из словаря
           return fail(failureIssues(e) ?? toFormErrors(e))

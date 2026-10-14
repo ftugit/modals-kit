@@ -9,12 +9,14 @@ import {
   loadMore,
   onExternalPage,
   prefetchPage,
+  patchItems,
   reportAnchor,
   resetPaginator,
   retry,
   scrollToPage,
   setExtra,
   setPageSize,
+  type ItemPatch,
 } from '../core'
 import {
   canGo,
@@ -174,6 +176,8 @@ export type PaginatorActions = {
   prefetchPage(page: number): void
   setPageSize(pageSize: number): void
   setExtra(patch: Extra, options?: { reload?: boolean }): void
+  /** Локальная правка окна без запроса (см. `patchItems` ядра). `true` — окно изменилось. */
+  patchItems<T>(op: ItemPatch<T>): boolean
   loadPrev(): void
   requestMore(dir: 1 | -1): void
 }
@@ -192,6 +196,7 @@ export function usePaginatorActions(nameArg?: string): PaginatorActions {
     prefetchPage: (page) => void prefetchPage(store, name, page),
     setPageSize: (pageSize) => void setPageSize(store, name, pageSize),
     setExtra: (patch, options) => void setExtra(store, name, patch, options),
+    patchItems: (op) => patchItems(store, name, op),
   }
 }
 

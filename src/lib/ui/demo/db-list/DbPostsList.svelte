@@ -23,7 +23,7 @@
    * строка приехала в окно (`isAbsorbed`).
    */
   import { PaginatorHost, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import type { PaginatorState } from '#lib/paginate/index.js'
   import {
     EmptyState,
@@ -43,15 +43,16 @@
     DB_LIST_LIVE_KEY,
     DB_LIST_NAME,
     DB_LIST_PAGE_SIZES,
-    DB_LIST_POINTER_KEY,
     dbListExtraOf,
     ensureDbListPaginator,
     type DbListExtra,
     type DbPost,
+    type DbPostsFresh,
     type FailureMode,
   } from './definition'
   import { createLive } from './live.svelte'
-  import { isAbsorbed, pendingPlacement, type Optimistic } from './optimistic.svelte'
+  import { freshLabel, freshUrl, mergeFresh } from './fresh'
+  import { isAbsorbed, ownRowPlacement, pendingPlacement, type Optimistic } from './optimistic.svelte'
   import DbPostPendingRow from './DbPostPendingRow.svelte'
   import DbPostRow from './DbPostRow.svelte'
   import Button from '#lib/ui/primitives/Button.svelte'
@@ -115,38 +116,89 @@
   const actions = usePaginatorActions(name)
 
   /**
-   * Опрос текущего окна — тем же адресом, что и источник: «спросить то же самое»
-   * и «спросить первую страницу» это разные вопросы, и на второй ответ список
-   * уехал бы с того места, где читатель стоит.
+   * Живой список — опрос «что появилось» (`fresh.ts`), а не переспрос окна.
+   * Ответ — строки новее отметки под фильтром выдачи; известные (в окне, свои)
+   * отсеиваются. Что делать с остальными — правило «держать край» (LIVE-APPEND
+   * Р7): в курсорном режиме при порядке «новые сверху» и читателе у начала
+   * (порог 100 px) строки встают в голову окна сразу (`patchItems`, без
+   * перезагрузки). Иначе — пилюля с числом: читатель ушёл от начала или место
+   * строк в этом режиме знает только сервер, и двигать ему выдачу без просьбы
+   * нельзя. Клик по пилюле: курсор — те же строки в голову и наверх; страницы —
+   * сброс на первую (номера страниц после вставки сверху всё равно сдвинулись).
    */
-  const liveUrl = $derived.by(() => {
-    const state = listState()
-    const params = new URLSearchParams({ page: String(state.page), size: String(state.pageSize) })
-    if (extra.flt) params.set('flt', extra.flt)
-    if (extra.ord !== 'default') params.set('ord', extra.ord)
-    if (cursor) {
-      params.set('cur', '1')
-      if (extra.after) params.set('after', extra.after)
+  const visibleIds = $derived(new Set((Object.values(listState().pages ?? {}).flat() as DbPost[]).map((r) => r.id)))
+  /** Вставка в голову уместна: накопление и порядок по `created_at ↓`. */
+  const canPrepend = $derived(cursor && ownRowPlacement({ ord: extra.ord }) === 'head')
+  let mark = $state<string | null | undefined>(undefined)
+  let markId: string | null = null
+  let waiting = $state<DbPost[]>([])
+  /** Ожидающие, которых читатель ещё не видит (мог дойти до них сам). */
+  const unseen = $derived(waiting.filter((r) => !visibleIds.has(r.id)))
+  const atTop = (): boolean => typeof window !== 'undefined' && window.scrollY <= 100
+
+  /** Отметка заново: после сброса или смены выдачи старая говорит о другом списке. */
+  function rebaseline(): void {
+    mark = undefined
+    markId = null
+    waiting = []
+    live.poke()
+  }
+
+  function prependWaiting(): void {
+    const rows = unseen
+    // Старые первыми: каждая вставка встаёт перед предыдущей — итог «свежие сверху».
+    for (const r of [...rows].reverse()) actions.patchItems<DbPost>({ insert: r, at: 'head' })
+    if (rows[0]) {
+      mark = rows[0].created_at
+      markId = rows[0].id
     }
-    return `/api/db-posts?${params.toString()}`
-  })
-  /** Пилюля вместо автопрокрутки: читатель ушёл от начала — не его просьба. */
-  let fresh = $state(false)
+    waiting = []
+  }
+
+  function showWaiting(): void {
+    if (canPrepend) prependWaiting()
+    else {
+      actions.reset()
+      rebaseline()
+    }
+    window.scrollTo({ top: 0 })
+  }
+
   const live = createLive({
-    url: () => (extra.live ? liveUrl : null),
-    onFresh: () => {
-      // Порог 100 px — не украшение: ниже него человек уже смотрит на место, куда
-      // придут новые строки, и двигать ему прокрутку бессмысленно.
-      if (typeof window !== 'undefined' && window.scrollY <= 100) actions.reset()
-      else fresh = true
+    url: () => (extra.live ? freshUrl(extra.flt, mark) : null),
+    onData: (body) => {
+      const b = body as DbPostsFresh
+      if ('mark' in b) {
+        mark = b.mark ?? null
+        markId = b.markId ?? null
+        waiting = []
+        return
+      }
+      waiting = mergeFresh(waiting, b.items ?? [], {
+        markId,
+        known: (id) => visibleIds.has(id) || (optimistic?.own(id) ?? false),
+      })
+      if (unseen.length && canPrepend && atTop()) prependWaiting()
     },
   })
   $effect(() => {
-    if (extra.live) live.start()
-    else {
+    if (extra.live) {
+      live.start()
+      untrack(rebaseline)
+    } else {
       live.stop()
-      fresh = false
+      untrack(() => {
+        mark = undefined
+        waiting = []
+      })
     }
+  })
+  // Выдача сменилась (фильтр, порядок, режим) — отметка относится к прошлой.
+  let viewKey = ''
+  $effect(() => {
+    const key = `${extra.flt ?? ''}|${extra.ord}|${cursor}`
+    if (viewKey && key !== viewKey && untrack(() => extra.live)) untrack(rebaseline)
+    viewKey = key
   })
   onDestroy(() => live.stop())
 
@@ -234,10 +286,9 @@
     <!-- Состояние опроса видно текстом: «тихий» live-режим неотличим от сломанного,
          а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
     <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
-      <span>опрос окна: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
-      {#if fresh}
-        <Button variant="outline" size="xs" data-testid="live-pill"
-          onclick={() => { fresh = false; actions.reset() }}>↑ список изменился — показать</Button>
+      <span>опрос новых: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
+      {#if unseen.length}
+        <Button variant="outline" size="xs" data-testid="live-pill" onclick={showWaiting}>{freshLabel(unseen.length)}</Button>
       {/if}
     </p>
   {/if}

@@ -1,5 +1,8 @@
 /**
  * GET /api/db-posts?page=2&size=5&flt=<json>&ord=<порядок> — страница списка демо.
+ * GET /api/db-posts?since=<ISO>&flt=<json> — опрос «что появилось» (живой список):
+ * строки выдачи новее отметки; `since=` пусто — сама отметка. Не смешивается с
+ * `page`/`after`/`cur`/`size`/`ord`: это другой вопрос, а не другая страница.
  * GET /api/db-posts?after=<токен>&size=5&… — ТО ЖЕ САМОЕ продолжение по указателю:
  * `after` и `page` — два адреса одного конвейера (`queryPage`), и выбор между ними
  * делает сервер по наличию токена, а не по догадке клиента.
@@ -17,7 +20,7 @@
  */
 import { fingerprint, remember, revalidate, stableText } from '#lib/server/live-cache.js'
 import type { RequestHandler } from './$types'
-import { fetchDbPostsPage } from '#lib/server/db-list.js'
+import { fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
 import { DEMO_PRINCIPAL } from '#lib/server/db.js'
 import { DB_LIST_PAGE_SIZE } from '#lib/ui/demo/db-list/definition.js'
 
@@ -39,6 +42,18 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
   const key = url.search
   const hit = revalidate(key, request.headers.get('if-none-match'))
   if (hit !== null) return new Response(null, { status: 304, headers: { etag: hit, 'cache-control': 'no-store' } })
+  const ctx = locals.dbCtx ?? Object.freeze({ principal: DEMO_PRINCIPAL })
+  if (url.searchParams.has('since')) {
+    const since = url.searchParams.get('since') ?? ''
+    const mixed = ['page', 'after', 'cur', 'size', 'ord'].filter((k) => url.searchParams.has(k))
+    if (mixed.length || (since !== '' && Number.isNaN(Date.parse(since)))) {
+      const error = mixed.length
+        ? `Опрос «что появилось» не смешивается с ключами страницы: ${mixed.join(', ')}.`
+        : 'Отметка `since` — не время в формате ISO.'
+      return Response.json({ error, code: 'validation', status: 422 }, { status: 422, headers: { 'cache-control': 'no-store' } })
+    }
+    return reply(key, await fetchDbPostsFresh({ since, filter: url.searchParams.get('flt') ?? undefined }, ctx))
+  }
   const page = await fetchDbPostsPage(
     {
       page: num(url.searchParams.get('page'), 1, 1, 10_000),
@@ -52,11 +67,18 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
       // состояния), и как `on` (чекбокс нативного GET) — все три означают одно.
       cursor: ['1', 'true', 'on'].includes(url.searchParams.get('cur') ?? ''),
     },
-    locals.dbCtx ?? Object.freeze({ principal: DEMO_PRINCIPAL }),
+    ctx,
   )
+  return reply(key, page)
+}
+
+/** Ответ с отпечатком — общий для страницы и опроса; отказ отпечатка не получает. */
+type Failure = { error: string; code: string; status: number }
+
+async function reply(key: string, page: object | Failure): Promise<Response> {
   // Отказ — не состояние списка: его нельзя «закэшировать как текущее», и
   // валидатору он не отдаётся (иначе 304 спрячет исправленную ошибку).
-  if ('error' in page) return Response.json(page, { status: page.status, headers: { 'cache-control': 'no-store' } })
+  if ('error' in page) return Response.json(page, { status: (page as Failure).status, headers: { 'cache-control': 'no-store' } })
   const body = JSON.stringify(page)
   const etag = await fingerprint(stableText(page))
   remember(key, etag)

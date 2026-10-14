@@ -1,6 +1,6 @@
 import { BROWSER } from 'esm-env'
 import { createSessionDefaultStorage } from './storage-default'
-import { EMPTY_CAPABILITIES, type SourceCapabilities, type SourceScope } from './source'
+import { EMPTY_CAPABILITIES, type SourceCapabilities, type SourceRecordSpec, type SourceScope } from './source'
 import type {
   AdapterInit,
   Extra,
@@ -23,6 +23,8 @@ export type CursorSource<T> = {
    * объявляют объём позже (приводятся к `AdaptedSource` отдельной задачей).
    */
   capabilitiesFor?(extra: Extra): SourceCapabilities
+  /** Паспорт записи (см. `AdaptedSource.recordFor`): без него `patchItems` недоступен. */
+  recordFor?(extra: Extra): SourceRecordSpec<T>
   /** Ключи extra, которые понимает источник. */
   extraKeys?(): readonly string[]
   /** Выбранный источник композиции и сбрасываемые сменой ключи (см. `AdaptedSource.scopeOf`). */
@@ -201,6 +203,7 @@ export function createCursorAdapter<T>(options: {
     },
     capabilities: { append: options.append ?? true },
     capabilitiesFor: (extra) => options.source.capabilitiesFor?.(extra) ?? EMPTY_CAPABILITIES,
+    recordFor: options.source.recordFor ? (extra) => options.source.recordFor!(extra) : undefined,
     extraKeys: options.source.extraKeys ? () => options.source.extraKeys!() : undefined,
     scopeOf: options.source.scopeOf ? (extra) => options.source.scopeOf!(extra) : undefined,
   }

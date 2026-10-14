@@ -672,6 +672,102 @@ export async function resetPaginator<T>(store: Store, name: string): Promise<voi
 }
 
 /**
+ * Локальная правка окна: одна запись источника изменилась, и об этом известно
+ * БЕЗ запроса (своя форма уже получила строку от сервера). Окно правится на
+ * месте, счётчики сдвигаются на ±1, а список не перезагружается: у
+ * пользователя не мигает выдача и не теряется позиция.
+ *
+ *   `{ insert, at }` — новая запись. `at` — где её место в порядке выдачи:
+ *     `'head'` — перед первой записью коллекции (новые сверху), `'tail'` — за
+ *     последней. Окно меняется, только если это место в нём загружено: голова —
+ *     когда загружена страница 1; хвост — когда загружен конец (`hasNext ===
+ *     false`). В постраничном режиме окно держит размер страницы: вставка в
+ *     голову выталкивает последнюю запись на следующую страницу. Запись с тем же
+ *     `id` уже в окне (её принёс опрос) — это обновление, а не вторая копия.
+ *   `{ update }` — запись с тем же `id` заменяется везде, где она есть в окне.
+ *   `{ remove }` — запись с этим `id` уходит из окна.
+ *
+ * Вызвавший ручается, что запись относится к ТЕКУЩЕЙ выдаче (проходит её
+ * фильтр): ядро фильтр источника не исполняет. Поэтому `insert`/`remove`
+ * двигают `totalItems`/`totalPages` всегда, когда они известны, даже если
+ * место записи вне окна. Окно вне места правки не переспрашивается: сдвиг
+ * границ страниц станет виден при следующем переходе.
+ *
+ * Идентичность — `adapter.recordFor(extra).id`, тот же паспорт, что дедуплицирует
+ * поиск и строит ключи списка. Возвращает `true`, если изменилось само окно.
+ */
+export type ItemPatch<T> = { insert: T; at: 'head' | 'tail' } | { update: T } | { remove: string }
+
+export function patchItems<T>(store: Store, name: string, op: ItemPatch<T>): boolean {
+  const instance = getPaginator(name)
+  const state = getState<T>(store, name)
+  const record = instance.adapter.recordFor?.(state.extra)
+  if (!record) {
+    throw new Error(`patchItems("${name}"): адаптер не объявил recordFor — записи окна не опознать`)
+  }
+  const idOf = record.id as (item: T) => string
+  const findId = (id: string): boolean => state.loadedPages.some((p) => state.pages[p]?.some((it) => idOf(it) === id))
+  const replaceWhere = (id: string, fn: (items: T[]) => T[]): Record<number, T[]> => {
+    const pages: Record<number, T[]> = { ...state.pages }
+    for (const p of state.loadedPages) {
+      const items = pages[p]
+      if (items?.some((it) => idOf(it) === id)) pages[p] = fn(items)
+    }
+    return pages
+  }
+
+  if ('update' in op || ('insert' in op && findId(idOf(op.insert)))) {
+    const item = 'update' in op ? op.update : op.insert
+    const id = idOf(item)
+    if (!findId(id)) return false
+    const pages = replaceWhere(id, (items) => items.map((it) => (idOf(it) === id ? item : it)))
+    patch<T>(store, name, (s) => ({ ...s, pages }))
+    return true
+  }
+
+  const delta = 'insert' in op ? 1 : -1
+  const totalItems = state.totalItems == null ? null : Math.max(0, state.totalItems + delta)
+  const totalPages = totalItems == null ? state.totalPages : Math.max(1, Math.ceil(totalItems / state.pageSize))
+  const single = !appendOf(store, name)
+  let pages = state.pages
+  let hasNext = state.hasNext
+  let changed = false
+
+  if ('remove' in op) {
+    if (findId(op.remove)) {
+      pages = replaceWhere(op.remove, (items) => items.filter((it) => idOf(it) !== op.remove))
+      changed = true
+    }
+  } else if (state.loadedPages.length > 0) {
+    const first = state.loadedPages[0]
+    const last = state.loadedPages[state.loadedPages.length - 1]
+    if (op.at === 'head' && first === 1) {
+      const head = [op.insert, ...(state.pages[1] ?? [])]
+      // Постраничный режим держит размер страницы: последняя запись уходит на следующую.
+      const overflow = single && head.length > state.pageSize
+      pages = { ...state.pages, 1: overflow ? head.slice(0, state.pageSize) : head }
+      if (overflow) hasNext = true
+      changed = true
+    } else if (op.at === 'tail' && state.hasNext === false) {
+      const tail = state.pages[last] ?? []
+      if (single && tail.length >= state.pageSize) {
+        hasNext = true // место записи — новая следующая страница
+      } else {
+        pages = { ...state.pages, [last]: [...tail, op.insert] }
+        changed = true
+      }
+    }
+  }
+  // Постраничный режим со счётчиками: «есть следующая» — прямо из нового total.
+  if (single && totalPages != null) hasNext = state.page < totalPages
+
+  // Предзагруженные соседи нарезаны по старым границам — после сдвига они чужие.
+  dropPrefetched(sessionOf(store, name))
+  patch<T>(store, name, (s) => ({ ...s, pages, totalItems, totalPages, hasNext }))
+  return changed
+}
+
+/**
  * Смена размера страницы. Накопленные страницы под старую нарезку невалидны → сброс и
  * REPLACE-загрузка страницы, на которой лежит первый элемент текущей страницы
  * (пользователь остаётся «на том же месте» списка). pageSize/extra попадают в хранилище

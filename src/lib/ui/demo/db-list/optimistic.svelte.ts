@@ -49,10 +49,17 @@ export type Optimistic = {
   setResubmit: (fn: () => void) => void
   /** Сколько карточек сейчас в полёте (для счётчика и для «не спамить»). */
   inflight: () => number
+  /**
+   * `id` строк, подтверждённых ЭТОЙ вкладкой. Живут дольше карточек: карточка
+   * уходит, когда строка встала в окно, а опрос «что появилось» и после этого
+   * не должен выдать свою запись за чужую.
+   */
+  own: (id: string) => boolean
 }
 
 export function createOptimistic(): Optimistic {
   let resubmit: (() => void) | undefined
+  const ownIds = new Set<string>()
   let cards = $state<OptimisticCard[]>([])
   let failure: FailureMode = $state('retry')
   const find = (tmpId: string): OptimisticCard | undefined => cards.find((c) => c.tmpId === tmpId)
@@ -83,6 +90,7 @@ export function createOptimistic(): Optimistic {
     confirm(tmpId, row) {
       const card = find(tmpId)
       if (!card) return
+      ownIds.add(row.id)
       write(cards.map((c) => (c === card ? { ...c, state: 'settled', row, error: undefined } : c)))
     },
     fail(tmpId, message) {
@@ -106,6 +114,7 @@ export function createOptimistic(): Optimistic {
       write(cards.filter((c) => c.tmpId !== tmpId))
     },
     inflight: () => cards.filter((c) => c.state === 'pending').length,
+    own: (id) => ownIds.has(id),
   }
 }
 
@@ -117,18 +126,37 @@ export function createOptimistic(): Optimistic {
  * поэтому она остаётся в голове, а подпись в интерфейсе это и называет.
  */
 export function pendingPlacement(order: string | undefined): 'head' | 'tail' {
-  if (!order || order === 'default') return 'head'
+  const first = firstOrder(order)
+  return first?.[0] === 'created_at' && first[1] === 'asc' ? 'tail' : 'head'
+}
+
+/** Первая пара спеки порядка `?page.ord`; «как в слое» = `created_at ↓`. */
+function firstOrder(order: string | undefined): [string, string] | null {
+  if (!order || order === 'default') return ['created_at', 'desc']
   let pairs: unknown
   try {
     pairs = JSON.parse(order)
   } catch {
-    return 'head'
+    return null
   }
   const first = Array.isArray(pairs) ? pairs[0] : undefined
-  if (!Array.isArray(first) || first.length !== 2) return 'head'
-  const [field, dir] = first as [string, string]
-  if (dir === 'asc' && field === 'created_at') return 'tail'
-  return 'head'
+  if (!Array.isArray(first) || first.length !== 2) return null
+  return [String(first[0]), String(first[1])]
+}
+
+/**
+ * Куда встаёт СВОЯ подтверждённая запись в окне пагинатора (`patchItems`), либо
+ * `null`, если её место знает только сервер:
+ *   • при фильтре — ядро фильтр источника не исполняет, а строка может ему не
+ *     подходить (тогда ей в этой выдаче не место вовсе);
+ *   • при порядке по названию — сравнение строк в браузере не равно коллации базы.
+ * В этих случаях подтверждённая карточка остаётся карточкой до следующей загрузки.
+ */
+export function ownRowPlacement(extra: { flt?: string; ord?: string }): 'head' | 'tail' | null {
+  if (extra.flt) return null
+  const first = firstOrder(extra.ord)
+  if (first?.[0] !== 'created_at') return null
+  return first[1] === 'asc' ? 'tail' : 'head'
 }
 
 /**

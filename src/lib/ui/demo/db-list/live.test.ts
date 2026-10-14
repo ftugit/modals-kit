@@ -2,7 +2,7 @@
  * Политика опроса — проверяется без браузера и без живого таймера.
  *
  * Здесь важны ровно четыре утверждения, и все они — про «не навреди»: «ничего
- * нового» не должно читать базу (304 без вызова `onFresh`), ошибки не должны
+ * нового» не должно читать базу (304 без вызова `onData`), ошибки не должны
  * учащать запросы (backoff + `Retry-After`), скрытая вкладка обязана останавливать
  * опрос, а висящий запрос — не должен превращать тики в параллельные.
  */
@@ -47,13 +47,13 @@ describe('createLive', () => {
       headers: init.etag ? { etag: init.etag } : undefined,
     })
 
-  it('304 не поднимает «изменилось», новый ETag поднимает, и заголовок уходит дальше', async () => {
+  it('200 отдаёт тело списку, 304 — нет; отпечаток уходит только на свой адрес', async () => {
     const seen: string[] = []
-    const fresh: boolean[] = []
+    const bodies: unknown[] = []
     let first = true
+    let url = '/api/db-posts?since=a'
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-      const headers = new Headers(init?.headers)
-      seen.push(headers.get('if-none-match') ?? '')
+      seen.push(new Headers(init?.headers).get('if-none-match') ?? '')
       // Первый ответ — 200 с отпечатком; дальше сервер говорит «не изменилось».
       if (first) {
         first = false
@@ -62,45 +62,50 @@ describe('createLive', () => {
       return response({ status: 304 })
     })
     const live = createLive({
-      url: () => '/api/db-posts?page=1&size=5',
-      onFresh: () => {
-        fresh.push(true)
+      url: () => url,
+      onData: (body) => {
+        bodies.push(body)
       },
       intervalMs: 1_000,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
     live.start()
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(live.stats().ticks).toBe(1)
-    expect(fresh).toHaveLength(0) // первой страницы мы ещё не видели: «не с чем сравнить»
     expect(seen[0]).toBe('')
+    expect(bodies).toEqual([{ items: [] }])
     await vi.advanceTimersByTimeAsync(1_000)
     expect(seen[1]).toBe('W/"aaa"')
-    expect(live.stats().ticks).toBe(2)
-    expect(fresh).toHaveLength(0)
+    expect(bodies).toHaveLength(1) // 304 — «ничего нового», телу неоткуда взяться
+    // Отметка сменилась — другой вопрос: старый отпечаток к нему не относится.
+    url = '/api/db-posts?since=b'
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(seen[2]).toBe('')
     expect(live.stats().errors).toBe(0)
     live.stop()
   })
 
-  it('смена отпечатка зовёт onFresh ровно один раз на тик', async () => {
+  it('poke спрашивает сразу, не дожидаясь интервала; после stop — молчит', async () => {
+    const fetchImpl = vi.fn(async () => response({ etag: 'W/"x"' }))
     let calls = 0
-    let n = 0
-    const fetchImpl = vi.fn(async () => response({ etag: `W/"v${(n += 1)}"` }))
     const live = createLive({
       url: () => '/x',
-      onFresh: () => {
+      onData: () => {
         calls += 1
       },
-      intervalMs: 500,
+      intervalMs: 5_000,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
+    live.poke() // не запущен — ничего
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchImpl).not.toHaveBeenCalled()
     live.start()
-    await vi.advanceTimersByTimeAsync(500)
-    await vi.advanceTimersByTimeAsync(500)
-    // Первая выдача — эталон (ею ничего не обновляют), вторая — уже сравнение.
+    live.poke()
+    await vi.advanceTimersByTimeAsync(0)
     expect(calls).toBe(1)
     expect(live.stats().changed).toBe(1)
     live.stop()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(calls).toBe(1)
   })
 
   it('сбой удлиняет паузу, успех её обнуляет', async () => {
@@ -111,7 +116,7 @@ describe('createLive', () => {
     })
     const live = createLive({
       url: () => '/x',
-      onFresh: () => {},
+      onData: () => {},
       intervalMs: 1_000,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
@@ -147,7 +152,7 @@ describe('createLive', () => {
     )
     const live = createLive({
       url: () => '/x',
-      onFresh: () => {},
+      onData: () => {},
       intervalMs: 500,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
@@ -167,7 +172,7 @@ describe('createLive', () => {
     const fetchImpl = vi.fn(async () => response())
     const live = createLive({
       url: () => null,
-      onFresh: () => {},
+      onData: () => {},
       intervalMs: 300,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })

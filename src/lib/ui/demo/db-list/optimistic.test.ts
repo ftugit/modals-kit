@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createOptimistic,
   isAbsorbed,
+  ownRowPlacement,
   pendingPlacement,
   type OptimisticCard,
 } from './optimistic.svelte'
@@ -74,6 +75,17 @@ describe('оптимистичная карточка демо-БД', () => {
     expect(store.list()[1].state).toBe('pending')
   })
 
+  it('своя строка помнится и после ухода карточки', () => {
+    const store = createOptimistic()
+    const tmp = store.begin('своя')
+    const real = row({ id: '44444444-4444-4444-8444-444444444444', title: 'своя' })
+    expect(store.own(real.id)).toBe(false) // до ответа сервера id нет
+    store.confirm(tmp, real)
+    store.drop(tmp)
+    expect(store.list()).toHaveLength(0)
+    expect(store.own(real.id)).toBe(true)
+  })
+
   it('карточка всасывается по id и ТОЛЬКО по id', () => {
     const store = createOptimistic()
     const tmp = store.begin('приехавшая')
@@ -97,6 +109,17 @@ describe('оптимистичная карточка демо-БД', () => {
     // Чужой ключ порядка и мусор в адресе не должны уносить карточку в хвост.
     expect(pendingPlacement('[["title","asc"]]')).toBe('head')
     expect(pendingPlacement('{не json')).toBe('head')
+  })
+
+  it('своя запись правит окно, только когда её место известно без сервера', () => {
+    expect(ownRowPlacement({ ord: 'default' })).toBe('head')
+    expect(ownRowPlacement({})).toBe('head')
+    expect(ownRowPlacement({ ord: '[["created_at","asc"]]' })).toBe('tail')
+    // Порядок по названию: коллация базы ≠ сравнение строк в браузере.
+    expect(ownRowPlacement({ ord: '[["title","asc"]]' })).toBeNull()
+    // Фильтр: строка может ему не подходить, а ядро фильтр не исполняет.
+    expect(ownRowPlacement({ ord: 'default', flt: '{"field":"title","op":"contains","value":"x"}' })).toBeNull()
+    expect(ownRowPlacement({ ord: '{не json' })).toBeNull()
   })
 
   it('retry переводит карточку в полёт и зовёт форму ровно один раз', () => {

@@ -24,6 +24,20 @@ Headless-библиотека пагинации с разделением frame
   setExtra(store, name, { src: 'rm-rest' })                       // q и фильтры сняты
   setExtra(store, name, { src: 'rm-rest', 'filters.status': 'alive' }) // сразу с фильтром
   ```
+- **Локальные правки окна без запроса** (`patchItems`, аналог `setQueryData` в TanStack):
+  своя форма уже получила строку от сервера — окно правится на месте, счётчики
+  сдвигаются, выдача не перезагружается и позиция не теряется.
+  ```ts
+  const actions = usePaginatorActions('posts')
+  actions.patchItems<Post>({ insert: created, at: 'head' }) // новые сверху: в голову страницы 1
+  actions.patchItems<Post>({ update: edited })              // та же запись (по id) на месте
+  actions.patchItems<Post>({ remove: id })                  // убрать из окна, total − 1
+  ```
+  Окно меняется, только если место записи в нём загружено (голова — страница 1, хвост —
+  `hasNext === false`); постраничный режим держит размер страницы. Вызвавший ручается, что
+  запись проходит фильтр текущей выдачи: ядро фильтр источника не исполняет. Запись
+  узнаётся по паспорту источника (`adapter.recordFor(extra).id` — URL-, local- и
+  cursor-адаптеры пробрасывают его из источника); без паспорта правка отказывает.
 - **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/content/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
 - **Тонкий адаптер**:
   - `src/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
@@ -97,7 +111,7 @@ definePaginator({
   - `adapter-cursor.ts` — opaque cursor-адаптер.
   - `store.ts` — vanilla Store с поддержкой SSR и гидрации.
   - `registry.ts` — реестр экземпляров пагинаторов по имени.
-  - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra`, `setPageSize` и др.).
+  - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra`, `setPageSize`, `patchItems` и др.).
 - `src/lib/paginate/search/` — поиск поверх источника (fuzzy-сканирование, словарь
   терминов, коррекция опечаток, статистика перехвата): `#lib/paginate/search/index.js`.
   Часть пакета, но отдельный вход — ядро пагинатора его не тянет. Документация —
