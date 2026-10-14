@@ -3,6 +3,7 @@
 
 import { CheckRegistry, check, defaultRegistry, describe, issue, opaque, v } from '#lib/form/index.js'
 import type { Constraint, FieldType } from '#lib/form/index.js'
+import { phoneLengthOk } from '#lib/ui/primitives/phone.ts'
 
 // Открытые ключи: подсказки среды возвращаются расширением интерфейсов.
 declare module '#lib/form/index.js' {
@@ -40,14 +41,16 @@ defaultRegistry.registerType(ratingType)
 /**
  * Номер как его записывают люди (`+7 (999) 123-45-67`, `0049 30 1234567`) → одна
  * строка `+79991234567`: плюс и цифры. Без кода страны номер не восстановить — `null`.
- * Проверка — «плюс и 8–15 цифр» (E.164); существование номера здесь не проверяется.
+ * Проверка — длина по стране (`phoneLengthOk`: у +7 ровно 10 цифр после кода, у кода не
+ * из списка — 8–15 всего, E.164); существование номера здесь не проверяется. Та же
+ * функция работает в живой проверке до отправки и на сервере: недобранный номер — ошибка поля.
  */
 export function normalizePhone(raw: string): string | null {
   let s = raw.trim()
   if (s.startsWith('00')) s = `+${s.slice(2)}`
   if (!s.startsWith('+') || /[^\d\s().+-]/.test(s.slice(1)) || s.indexOf('+', 1) !== -1) return null
   const n = `+${s.replace(/\D/g, '')}`
-  return /^\+\d{8,15}$/.test(n) ? n : null
+  return /^\+\d{8,15}$/.test(n) && phoneLengthOk(n) ? n : null
 }
 
 /**

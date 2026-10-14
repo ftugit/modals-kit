@@ -3,7 +3,9 @@
 // Значение поля — ОДНА строка в международном виде (как E.164): `+79991234567`.
 // Код страны и национальная часть — только способ ввода: на сервер уходит склейка.
 // Проверку «номер существует» здесь не делаем (это libphonenumber и его метаданные,
-// сотни килобайт): маска страны задаёт группы цифр и их предел, и только.
+// сотни килобайт). Проверяем длину: у страны из списка — длина национальной части
+// обычного и мобильного номера (сверено с метаданными libphonenumber, типы fixed_line и
+// mobile; служебные номера вроде 8-800 с 14 цифрами сюда не входят), у остальных — E.164.
 
 export interface PhoneCountry {
   /** Код страны с плюсом: `+7`. */
@@ -12,6 +14,10 @@ export interface PhoneCountry {
   readonly label: string
   /** Группы национальной части (`[3, 3, 2, 2]` → `999 123-45-67`); без маски — тройки до предела. */
   readonly mask?: readonly number[]
+  /** Наименьшая длина национальной части; по умолчанию — сумма маски (длина ровно одна). */
+  readonly min?: number
+  /** Наибольшая; по умолчанию — сумма маски, без неё — остаток до 15 цифр E.164. */
+  readonly max?: number
   /** Префикс внутри страны (`8` у +7, `0` у многих): отбрасывается, если с ним цифр на одну больше предела. */
   readonly trunk?: string
 }
@@ -25,8 +31,9 @@ export const PHONE_COUNTRIES: readonly PhoneCountry[] = [
   { code: '+995', label: 'Грузия', mask: [3, 2, 2, 2], trunk: '0' },
   { code: '+996', label: 'Киргизия', mask: [3, 3, 3], trunk: '0' },
   { code: '+998', label: 'Узбекистан', mask: [2, 3, 2, 2] },
-  { code: '+358', label: 'Финляндия', trunk: '0' },
-  { code: '+49', label: 'Германия', trunk: '0' },
+  { code: '+358', label: 'Финляндия', min: 5, max: 10, trunk: '0' },
+  // по метаданным до 15, но E.164 — не больше 15 цифр вместе с кодом: 13
+  { code: '+49', label: 'Германия', min: 5, trunk: '0' },
   { code: '+90', label: 'Турция', mask: [3, 3, 2, 2], trunk: '0' },
   { code: '+1', label: 'США, Канада', mask: [3, 3, 4], trunk: '1' },
   // Код не из списка: плюс уже в поле, код страны набирается в начале номера.
@@ -36,12 +43,38 @@ export const PHONE_COUNTRIES: readonly PhoneCountry[] = [
 
 /** Всего цифр в номере по E.164 — с кодом страны. */
 const E164_MAX = 15
+/** Меньше восьми цифр вместе с кодом — не номер ни в одной стране (для кода не из списка). */
+const E164_MIN = 8
 
 const digitsOf = (s: string) => s.replace(/\D/g, '')
 
-/** Предел цифр национальной части: сумма маски или остаток до 15. */
+const maskSum = (country: PhoneCountry) => country.mask?.reduce((a, b) => a + b, 0)
+
+/** Предел цифр национальной части: `max`, сумма маски или остаток до 15. */
 export function nationalMax(country: PhoneCountry): number {
-  return country.mask ? country.mask.reduce((a, b) => a + b, 0) : E164_MAX - digitsOf(country.code).length
+  return Math.min(country.max ?? maskSum(country) ?? E164_MAX, E164_MAX - digitsOf(country.code).length)
+}
+
+/** Наименьшая длина национальной части: `min`, сумма маски или 1. */
+export const nationalMin = (country: PhoneCountry): number => country.min ?? maskSum(country) ?? 1
+
+/** Страна по номеру — самое длинное совпадение кода; строку «+» не выбирает. */
+const countryOf = (digits: string, countries: readonly PhoneCountry[]) =>
+  [...countries]
+    .filter((c) => digitsOf(c.code))
+    .sort((a, b) => b.code.length - a.code.length)
+    .find((c) => digits.startsWith(digitsOf(c.code)))
+
+/**
+ * Длина номера в значении поля (`+79991234567`) подходит стране: `+7 999 123` — нет,
+ * `+7 999 123-45-67` — да. Код не из списка — только рамка E.164 (8–15 цифр с кодом).
+ */
+export function phoneLengthOk(value: string, countries: readonly PhoneCountry[] = PHONE_COUNTRIES): boolean {
+  const all = digitsOf(value)
+  const country = countryOf(all, countries)
+  if (!country) return all.length >= E164_MIN && all.length <= E164_MAX
+  const national = all.length - digitsOf(country.code).length
+  return national >= nationalMin(country) && national <= nationalMax(country)
 }
 
 /** Группы для показа: `9991234567` → `999 123-45-67`; без маски — `123 456 789`. */
@@ -96,9 +129,7 @@ export function splitPhone(
   const international = s.startsWith('+') || s.startsWith('00')
   if (!international) return { country: fallback, national: cleanNational(s, fallback) }
   const all = digitsOf(s.startsWith('00') ? s.slice(2) : s)
-  const match = [...countries]
-    .sort((a, b) => b.code.length - a.code.length)
-    .find((c) => all.startsWith(digitsOf(c.code)))
+  const match = countryOf(all, countries) ?? countries.find((c) => !digitsOf(c.code))
   // без строки «+» в своём списке незнакомый код не на что положить
   if (!match) return { country: fallback, national: '' }
   return { country: match, national: all.slice(digitsOf(match.code).length).slice(0, nationalMax(match)) }

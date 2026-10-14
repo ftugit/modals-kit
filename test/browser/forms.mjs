@@ -484,6 +484,24 @@ ok('пути дают одинаковые ошибки',
     (await pg.locator('[data-phone-code] [data-select-trigger]').innerText()).trim() === '+358')
   await tel.fill('401234567')
   ok('телефон: смена кода из списка', await phoneValue() === '+358401234567', await phoneValue())
+  // Длина по стране: у +7 ровно 10 цифр после кода. Недобранный номер — ошибка у поля
+  // до отправки (живая проверка, та же функция, что на сервере).
+  const telErr = () => pg.locator('#signup-phone').evaluate((el) => {
+    const ids = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    return ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ')
+  })
+  await tel.fill('+7 999 123-45-6')
+  await tel.blur()
+  await pg.waitForFunction(() => document.querySelector('#signup-phone')?.getAttribute('aria-invalid') === 'true',
+    null, { timeout: 3000 }).catch(() => {})
+  ok('телефон: девять цифр у +7 — ошибка у поля до отправки',
+    await tel.getAttribute('aria-invalid') === 'true' && (await telErr()).includes('Введите номер полностью'),
+    `${await tel.getAttribute('aria-invalid')} | ${await telErr()}`)
+  await tel.fill('+7 999 123-45-67')
+  await tel.blur()
+  await pg.waitForTimeout(300)
+  ok('телефон: добрали десятую — ошибки нет', await tel.getAttribute('aria-invalid') === null)
+  await tel.fill('')
 
   // Вариант 'auto' у «О себе»: AutoTextarea растёт по тексту в пределах 3–8 строк.
   const about = pg.locator('#signup-about')
@@ -555,6 +573,9 @@ ok('пути дают одинаковые ошибки',
   const noCode = await (await post({ phone: '8 999 123-45-67' })).json()
   ok('сервер: номер без кода страны отклоняется у поля',
     (noCode.errors ?? []).some((e) => e.path === 'phone' && e.code === 'type.phone'), JSON.stringify(noCode.errors))
+  const short = await (await post({ phone: '+7 999 123-45-6' })).json()
+  ok('сервер: недобранный номер (+7, девять цифр) отклоняется у поля',
+    (short.errors ?? []).some((e) => e.path === 'phone' && e.code === 'type.phone'), JSON.stringify(short.errors))
   const bad = await (await post({ invite: '12ab56' })).json()
   ok('сервер: код не из цифр отклоняется правилом шаблона',
     (bad.errors ?? []).some((e) => e.path === 'invite' && e.code === 'pattern'), JSON.stringify(bad.errors))

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  PHONE_COUNTRIES, cleanNational, formatNational, joinPhone, nationalMax, placeholderFor, splitPhone,
+  PHONE_COUNTRIES, cleanNational, formatNational, joinPhone, nationalMax, nationalMin, phoneLengthOk, placeholderFor,
+  splitPhone,
 } from './phone'
 
 const by = (code: string) => PHONE_COUNTRIES.find((c) => c.code === code)!
@@ -8,6 +9,25 @@ const ru = by('+7')
 const fi = by('+358')
 
 describe('phone', () => {
+  it('длина по стране: маска — ровно, без маски — min…max, незнакомый код — E.164', () => {
+    expect(nationalMin(ru)).toBe(10)
+    expect(phoneLengthOk('+79991234567')).toBe(true)
+    expect(phoneLengthOk('+7999123456')).toBe(false)   // девять цифр у +7
+    expect(phoneLengthOk('+799912345678')).toBe(false) // одиннадцать
+    expect(phoneLengthOk('+37491234567')).toBe(true)   // Армения: 8
+    expect(phoneLengthOk('+375291234567')).toBe(true)  // Беларусь: 9
+    expect(phoneLengthOk('+37529123456')).toBe(false)
+    expect(phoneLengthOk('+12133734253')).toBe(true)
+    expect(phoneLengthOk('+1213373425')).toBe(false)
+    expect(phoneLengthOk('+3581234')).toBe(false)      // Финляндия: от 5
+    expect(phoneLengthOk('+35812345')).toBe(true)
+    expect(phoneLengthOk('+35812345678901')).toBe(false) // и до 10
+    expect(phoneLengthOk('+4930123')).toBe(true)        // Германия: от 5
+    expect(phoneLengthOk('+493012')).toBe(false)
+    expect(phoneLengthOk('+359888123456')).toBe(true)  // Болгарии нет в списке: 8–15 цифр
+    expect(phoneLengthOk('+3591234')).toBe(false)
+  })
+
   it('маска: группы и предел', () => {
     expect(nationalMax(ru)).toBe(10)
     expect(formatNational('9991234567', ru)).toBe('999 123-45-67')
@@ -15,8 +35,9 @@ describe('phone', () => {
     expect(placeholderFor(ru)).toBe('000 000-00-00')
   })
 
-  it('без маски: тройки до остатка E.164', () => {
-    expect(nationalMax(fi)).toBe(12)
+  it('без маски: тройки, предел страны (Финляндия 10), иначе остаток E.164', () => {
+    expect(nationalMax(fi)).toBe(10)
+    expect(nationalMax(by('+49'))).toBe(13) // 15 цифр E.164 минус «49»
     expect(formatNational('401234567', fi)).toBe('401 234 567')
   })
 

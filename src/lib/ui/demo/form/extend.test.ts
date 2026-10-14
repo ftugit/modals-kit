@@ -15,6 +15,8 @@ describe('тип phone (расширение приложения)', () => {
     expect(normalizePhone('+7 999 12')).toBeNull()
     expect(normalizePhone('+1234567890123456')).toBeNull()
     expect(normalizePhone('+7 999+123')).toBeNull()
+    expect(normalizePhone('+7 999 123-45-6')).toBeNull() // девять цифр у +7: длина по стране
+    expect(normalizePhone('+374 91 234 567')).toBe('+37491234567')
   })
 
   it('decode: пусто — пустое значение, ошибка — код type.phone', () => {
