@@ -446,6 +446,29 @@ ok('пути дают одинаковые ошибки',
   ok('интересы: нативный список — множественный',
     await pg.locator('select[name="topics"]').evaluate((el) => el.multiple))
 
+  // Телефон: код страны внутри поля, значение — одна строка в скрытом поле с именем.
+  const tel = pg.locator('#signup-phone')
+  const phoneValue = () => pg.locator('input[type=hidden][name=phone]').inputValue()
+  ok('телефон: видимые части без имени, имя — у скрытого поля',
+    await tel.getAttribute('name') === null && await pg.locator('input[type=hidden][name=phone]').count() === 1)
+  ok('телефон: код внутри рамки поля (слева от текста номера)', await pg.evaluate(() => {
+    const input = document.querySelector('#signup-phone').getBoundingClientRect()
+    const code = document.querySelector('[data-phone-code]').getBoundingClientRect()
+    return code.left > input.left && code.right < input.left + parseFloat(getComputedStyle(document.querySelector('#signup-phone')).paddingLeft)
+  }))
+  await tel.pressSequentially('89991234567')
+  ok('телефон: маска и префикс 8 на пределе', await tel.inputValue() === '999 123-45-67', await tel.inputValue())
+  ok('телефон: значение — одна строка', await phoneValue() === '+79991234567', await phoneValue())
+  await tel.fill('+375 29 123-45-67')
+  ok('телефон: вставка номера целиком выбирает код',
+    await pg.locator('[data-phone-code] select').inputValue() === '+375' && await phoneValue() === '+375291234567',
+    await phoneValue())
+  await tel.fill('+86 138 0013 8000')
+  ok('телефон: незнакомый код не теряется («другая страна»)', await phoneValue() === '+8613800138000', await phoneValue())
+  await pg.locator('[data-phone-code] select').selectOption('+7')
+  await tel.fill('9991234567')
+  ok('телефон: смена кода из списка', await phoneValue() === '+79991234567', await phoneValue())
+
   // Вариант 'auto' у «О себе»: AutoTextarea растёт по тексту в пределах 3–8 строк.
   const about = pg.locator('#signup-about')
   const height = () => about.evaluate((el) => el.getBoundingClientRect().height)
@@ -469,6 +492,13 @@ ok('пути дают одинаковые ошибки',
   await npg.goto(BASE, { waitUntil: 'domcontentloaded' })
   ok('без JS: у пароля нет глаза', await npg.locator('[data-password-input] button').count() === 0)
   ok('без JS: у числа нет кнопок шага', await npg.locator('[data-number-step]').count() === 0)
+  ok('без JS: телефон — одно поле type=tel с именем, без списка кодов',
+    await npg.locator('#signup-phone').getAttribute('name') === 'phone'
+      && await npg.locator('#signup-phone').getAttribute('type') === 'tel'
+      && await npg.locator('[data-phone-code]').count() === 0)
+  await npg.locator('#signup-phone').fill('+7 (999) 123-45-67')
+  ok('без JS: номер со скобками и дефисами браузер пропускает',
+    await npg.locator('#signup-phone').evaluate((el) => el.validity.valid))
   ok('без JS: код — обычное поле с шаблоном',
     await npg.locator('#signup-invite').getAttribute('pattern') === '\\d{6}'
       && await npg.locator('[data-otp-slot]').count() === 0)
@@ -483,6 +513,12 @@ ok('пути дают одинаковые ошибки',
   })
   const good = await (await post({ invite: '123456', topics: 'tips', digest: 'on' })).json()
   ok('сервер: код, интерес и переключатель принимаются', good.outcome === 'committed', JSON.stringify(good.errors ?? good.outcome))
+  const phone = await (await post({ phone: '+7 (999) 123-45-67' })).json()
+  ok('сервер: телефон приводится к одной строке', phone.outcome === 'committed' && phone.values?.phone === '+79991234567',
+    JSON.stringify(phone.values?.phone ?? phone.errors))
+  const noCode = await (await post({ phone: '8 999 123-45-67' })).json()
+  ok('сервер: номер без кода страны отклоняется у поля',
+    (noCode.errors ?? []).some((e) => e.path === 'phone' && e.code === 'type.phone'), JSON.stringify(noCode.errors))
   const bad = await (await post({ invite: '12ab56' })).json()
   ok('сервер: код не из цифр отклоняется правилом шаблона',
     (bad.errors ?? []).some((e) => e.path === 'invite' && e.code === 'pattern'), JSON.stringify(bad.errors))

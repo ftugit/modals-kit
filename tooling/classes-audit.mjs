@@ -91,7 +91,7 @@ const SCOPE = [
   'src/lib/ui/primitives/AffixSwap.svelte',
   'src/lib/ui/primitives/OtpInput.svelte',
   'src/lib/ui/primitives/PasswordStrength.svelte',
-  'src/lib/ui/primitives/PhoneField.svelte',
+  'src/lib/ui/primitives/PhoneInput.svelte',
   'src/lib/ui/primitives/AutoTextarea.svelte',
   'src/lib/ui/primitives/AutoWidthInput.svelte',
   'src/lib/ui/demo/modals/FloatingMenu.svelte',

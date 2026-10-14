@@ -336,9 +336,10 @@ import { Button } from '#lib/ui/primitives/index.js'
 
         <div class="grid gap-4 sm:grid-cols-2">
           <Field of={form.f.email} />
-          <Field of={form.f.age} />
+          <Field of={form.f.phone} />
           <Field of={form.f.password} />
           <Field of={form.f.confirm} />
+          <Field of={form.f.age} />
           <Field of={form.f.tax_id} />
           <Field of={form.f.card} />
           <Field of={form.f.rating} />

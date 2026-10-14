@@ -3,7 +3,7 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **197 / 404** файлов прочитано (пересчитано по таблицам, ход 118).
+Прогресс: **197 / 409** файлов прочитано (пересчитано по таблицам, ход 119).
 
 Средняя оценка по прочитанным: **8.8**.
 
@@ -464,23 +464,26 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `extend.ts` | 114 | — | ⏳ |  | setTimeout×1 |
-| `forms.config.ts` | 65 | — | ⏳ |  |  |
+| `extend.ts` | 160 | — | ⏳ |  | setTimeout×1 |
+| `extend.test.ts` | 27 | — | ⏳ |  |  |
+| `forms.config.ts` | 79 | — | ⏳ |  |  |
 | `handle.ts` | 116 | — | ⏳ |  | @sveltejs/kit×1 |
 | `index.ts` | 6 | — | ⏳ |  |  |
 | `psp.ts` | 69 | — | ⏳ |  |  |
-| `signup.ts` | 97 | — | ⏳ |  |  |
+| `signup.ts` | 123 | — | ⏳ |  |  |
 | `transport.ts` | 77 | — | ⏳ |  |  |
 
 ## `src/lib/ui/demo/form/ui/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
+| `AutoTextareaField.svelte` | 22 | — | ⏳ |  |  |
 | `CheckboxField.svelte` | 22 | — | ⏳ |  |  |
 | `Common.svelte` | 19 | — | ⏳ |  |  |
 | `Field.svelte` | 11 | — | ⏳ |  |  |
 | `FieldShell.svelte` | 36 | — | ⏳ |  |  |
 | `PasswordField.svelte` | 45 | — | ⏳ |  |  |
+| `PhoneField.svelte` | 20 | — | ⏳ |  |  |
 | `RatingField.svelte` | 23 | — | ⏳ |  |  |
 | `SelectField.svelte` | 27 | — | ⏳ |  |  |
 | `TextField.svelte` | 18 | — | ⏳ |  |  |
@@ -589,9 +592,9 @@
 | `OtpInput.svelte` | 138 | — | ⏳ |  |  |
 | `PasswordInput.svelte` | 90 | — | ⏳ |  | microtask×1, addEventListener×1 |
 | `PasswordStrength.svelte` | 74 | — | ⏳ |  |  |
-| `PhoneField.svelte` | 120 | — | ⏳ |  |  |
+| `PhoneInput.svelte` | 223 | — | ⏳ |  | $effect×1, window/document×2, untrack×2 |
 | `SearchField.svelte` | 50 | — | ⏳ |  |  |
-| `SearchInput.svelte` | 65 | — | ⏳ |  | addEventListener×1 |
+| `SearchInput.svelte` | 70 | — | ⏳ |  | addEventListener×1 |
 | `SearchMorph.svelte` | 144 | — | ⏳ |  | window/document×2, rAF×1, addEventListener×1 |
 | `Select.svelte` | 861 | — | ⏳ |  | $effect×5, window/document×15, setTimeout×1, microtask×2, untrack×1, addEventListener×7 |
 | `SelectList.svelte` | 562 | — | ⏳ |  | $effect×3, window/document×1, rAF×1 |
@@ -602,7 +605,9 @@
 | `Switch.svelte` | 38 | — | ⏳ |  |  |
 | `Textarea.svelte` | 18 | — | ⏳ |  |  |
 | `field.ts` | 14 | — | ⏳ |  |  |
-| `index.ts` | 46 | — | ⏳ |  |  |
+| `index.ts` | 47 | — | ⏳ |  |  |
+| `phone.test.ts` | 52 | — | ⏳ |  |  |
+| `phone.ts` | 106 | — | ⏳ |  |  |
 | `select-model.test.ts` | 66 | — | ⏳ |  |  |
 | `select-model.ts` | 77 | — | ⏳ |  |  |
 | `select-trace.ts` | 232 | — | ⏳ |  | window/document×14, setTimeout×1, addEventListener×1 |
