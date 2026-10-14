@@ -35,7 +35,7 @@
 `#lib/ui/demo/db-list/*` (`DbPostRow`, `cursor-mode`, тип `DbPost` — это перенос
 `/db-demo`), уже общие `lib/ui/{paginator,filters,primitives,settings}`.
 
-Хук — в `lib/ui/paginator`, а не в `#lib/paginate/search/svelte`: он склеивает `lib/form`
+Хук — в `lib/ui/paginator`, а не в `#lib/paginate/svelte/search`: он склеивает `lib/form`
 (форма для перехода без JS), роутер (`currentSearch`), `lib/paginate`
 (`setExtra`) и `paginate/search` (`normalizeSearchQuery`). Положить его в `paginate/search`
 — привязать независимую библиотеку к трём другим (правило «каждая lib работает
