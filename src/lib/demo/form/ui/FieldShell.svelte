@@ -9,7 +9,8 @@
   let { f, children }: { f: FieldView; children: Snippet } = $props()
 </script>
 
-<div class="space-y-1.5" class:opacity-100={true}>
+<!-- data-field — ручка тестов и стилей приложения: имя поля формы -->
+<div class="space-y-1.5" class:opacity-100={true} data-field={f.name}>
   <Label {...f.labelProps()}>
     {f.label}
     <!-- подсветка берётся из `has`, а не из наличия текста -->

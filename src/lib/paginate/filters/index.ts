@@ -1,5 +1,5 @@
 /**
- * Фильтры каталога: схема, значения, связки, адрес, форма.
+ * Фильтры каталога: схема, значения, связки, адрес, параметры формы.
  *
  * Модуль framework-free и изоморфный: его импортируют и серверная зона схемы,
  * и клиентская форма, и транспорт источника. Здесь НЕТ знаний о конкретном
@@ -8,15 +8,9 @@
  */
 export * from './schema'
 export * from './url'
-// form.ts — списком: `ruleCondition` нужна rules.ts, но это не API пакета
-export {
-  CATALOG_FILTER_MODE_LABEL,
-  CATALOG_FILTER_BOUND_LABEL,
-  compileCatalogFilterSchema,
-  stripDefaultCatalogFilterValues,
-  catalogFilterInitialState,
-  catalogFilterFormData,
-} from './form'
+// form.ts — списком: `ruleCondition`/`disableRulesFor` нужны соседям, но это не API пакета
+export { stripDefaultCatalogFilterValues, catalogFilterFormData, catalogFilterPolicy } from './form'
+export * from './params'
 export * from './rules'
 export * from './view'
 export * from './schema-memory'

@@ -404,6 +404,53 @@ export const v = {
   sameAs: (field: FieldPath) => describe<unknown>(
     (x, ctx) => (x === ctx.values[field] ? null : issue('sameAs', { field })),
     [opaque('браузер не умеет сравнивать поля между собой')]),
+
+  /**
+   * Не больше значения другого поля: нижняя граница диапазона («Год от» ≤ «Год до»).
+   * Пустое с любой стороны — не ошибка: диапазон может быть открытым. Числа
+   * сравниваются как числа, строки — как строки (ISO-даты и время упорядочены так же).
+   */
+  notAbove: (field: FieldPath) => describe<unknown>(
+    (x, ctx) => {
+      const other = ctx.values[field]
+      return ordered(x, other) === 1 ? issue('notAbove', { field, other }) : null
+    },
+    [opaque('браузер не умеет сравнивать поля между собой')]),
+
+  /** Не меньше значения другого поля: верхняя граница диапазона. Пустое — не ошибка. */
+  notBelow: (field: FieldPath) => describe<unknown>(
+    (x, ctx) => {
+      const other = ctx.values[field]
+      return ordered(x, other) === -1 ? issue('notBelow', { field, other }) : null
+    },
+    [opaque('браузер не умеет сравнивать поля между собой')]),
+
+  /**
+   * Нет общих значений с другим полем-списком: одно значение не может быть сразу
+   * «обязательным» и «исключённым». `values` — общие значения (для своего текста).
+   */
+  noOverlap: (field: FieldPath) => describe<unknown>(
+    (x, ctx) => {
+      const other = ctx.values[field]
+      if (!Array.isArray(x) || !Array.isArray(other) || !x.length || !other.length) return null
+      const theirs = new Set(other.map(String))
+      const values = [...new Set(x.map(String))].filter((item) => theirs.has(item))
+      return values.length ? issue('noOverlap', { field, values, count: values.length }) : null
+    },
+    [opaque('браузер не умеет сравнивать поля между собой')]),
+}
+
+/**
+ * Порядок двух значений для межполевых границ: 1 — первое больше, -1 — меньше,
+ * 0 — равны, несравнимы или одно из них пустое. Сравниваются только значения
+ * одного вида: число с числом, непустая строка со строкой.
+ */
+function ordered(a: unknown, b: unknown): -1 | 0 | 1 {
+  if (typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b))
+    return a > b ? 1 : a < b ? -1 : 0
+  if (typeof a === 'string' && typeof b === 'string' && a !== '' && b !== '')
+    return a > b ? 1 : a < b ? -1 : 0
+  return 0
 }
 
 /** Встроенные правила — такой же набор, как любой другой. */
@@ -427,4 +474,7 @@ export const BUILTIN_VALIDATORS: Record<string, (arg: any) => Validator<any>> = 
   maxSize: (a: any) => v.maxSize(a),
   strength: (a: any) => v.strength(a ?? 'good'),
   sameAs: (a: any) => v.sameAs(String(a)),
+  notAbove: (a: any) => v.notAbove(String(a)),
+  notBelow: (a: any) => v.notBelow(String(a)),
+  noOverlap: (a: any) => v.noOverlap(String(a)),
 }

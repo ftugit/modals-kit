@@ -1,12 +1,11 @@
 <script lang="ts">
   /**
-   * Панель фильтров каталога: связка «схема источника → хранилище пагинатора».
+   * Панель фильтров каталога: рамка вокруг формы фильтров одной схемы.
    *
-   * Сложного здесь нет по устройству: всё, что можно посчитать, считает api
-   * схемы (`#lib/paginate/filters/index.js`) — какие контролы есть, что гасит связка и почему,
-   * какие чипы висят, какой патч положить в extra, какой адрес снимает одно
-   * значение. Этот компонент знает ровно три вещи, которых api знать не может:
-   * имя пагинатора, канал-хранилище и путь страницы.
+   * Форму — какие поля, где и с какими подписями — пишет приложение: своё
+   * описание под схему (`describe`) и свой компонент (`form`), поля в котором
+   * расставлены руками. Панель знает то, чего не знает форма: имя пагинатора,
+   * канал-хранилище, путь страницы, чипы применённого набора и нарушения.
    *
    * Контролов нет — панели нет (пустая схема честно молчит). Удаление панели из
    * страницы ничего не ломает: она ни на что не подписывается, кроме состояния
@@ -21,8 +20,11 @@
     catalogFilterView,
     type CatalogFilterSchema,
   } from '#lib/paginate/filters/index.js'
+  import type { Component } from 'svelte'
+  import type { MessageDictionary } from '#lib/form/index.js'
+  import type { CatalogFilterDescribe } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
-  import CatalogFilterForm from './CatalogFilterForm.svelte'
+  import type { FilterFormProps } from './filter-form.svelte.js'
 
   interface Props {
     /** Имя пагинатора-владельца: единственный канал записи — его хранилище. */
@@ -36,6 +38,12 @@
     prefix?: string
     /** Чужие ключи адреса: их сохраняет и форма (скрытыми полями), и чипы. */
     preserved?: Record<string, string>
+    /** Описание формы под схему — функция приложения (та же, что у сервера). */
+    describe: CatalogFilterDescribe
+    /** Компонент фильтров этой схемы: поля расставлены руками. */
+    form: Component<FilterFormProps>
+    /** Словарь приложения для текстов нарушений. */
+    messages?: MessageDictionary
     class?: string
   }
 
@@ -46,11 +54,17 @@
     url = currentPathname(),
     prefix = 'page',
     preserved = {},
+    describe,
+    form: FilterForm,
+    messages,
     class: cls = '',
   }: Props = $props()
 
-  /** Вся картина панели — из схемы и extra: ни одного решения в разметке. */
-  const view = $derived(catalogFilterView(schema, extra, { url: { page: url, prefix, preserved } }))
+  /** Описание формы: имена полей — ключи адреса (`page.filters.kind`). */
+  const description = $derived(describe(schema, { prefix: prefix ? `${prefix}.` : '' }))
+
+  /** Вся картина панели — из схемы, описания и extra: ни одного решения в разметке. */
+  const view = $derived(catalogFilterView(schema, extra, { description, url: { page: url, prefix, preserved }, messages }))
 
   /**
    * Форма сеет значения ОДИН раз (её зеркало — черновик пользователя), поэтому
@@ -82,7 +96,7 @@
    */
   function apply(next: Record<string, string[]>) {
     const patch = catalogFilterExtraPatch(schema, next)
-    ownKey = chipsKey(catalogFilterView(schema, { ...extra, ...patch }).chips)
+    ownKey = chipsKey(catalogFilterView(schema, { ...extra, ...patch }, { description, prefix }).chips)
     void setExtra(getClientStore(), name, patch)
   }
 
@@ -138,22 +152,23 @@
     </summary>
     <div class="mt-3">
       <!--
-        Форма привязана к Описанию, собранному из схемы, поэтому смена схемы
-        (другой источник) пересоздаёт её целиком: имена полей и валидаторы —
-        из нового compile, значения — тем же `seed` из состояния. `formEpoch` —
-        то же для набора, изменённого вне формы.
+        Форма привязана к описанию, собранному из схемы, поэтому смена схемы
+        пересоздаёт её целиком: варианты и правила — из новой схемы, значения —
+        тем же `seed` из состояния. `formEpoch` — то же для набора, изменённого
+        вне формы.
       -->
-      {#key schema}
+      {#key description}
         {#key formEpoch}
-        <CatalogFilterForm
-          {schema}
-          values={extra}
-          {prefix}
-          action={view.formAction ?? url}
-          hidden={view.hidden}
-          resetHref={view.formAction ?? url}
-          onApply={apply}
-        />
+          <FilterForm
+            {description}
+            {schema}
+            values={extra}
+            {prefix}
+            action={view.formAction ?? url}
+            hidden={view.hidden}
+            resetHref={view.formAction ?? url}
+            onApply={apply}
+          />
         {/key}
       {/key}
     </div>

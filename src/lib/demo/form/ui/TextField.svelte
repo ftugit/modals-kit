@@ -11,6 +11,7 @@
 <FieldShell {f}>
   <Input
     {...f.attrs}
+    placeholder={f.placeholder}
     autoWidth={f.variant === 'auto'}
     onblur={() => f.setTouched()}
     oninput={(e) => f.onInput(e.currentTarget.value)}

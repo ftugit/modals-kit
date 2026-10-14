@@ -15,7 +15,14 @@
  * фильтра, поэтому схема одна: переключение между ними не меняет ни ключей
  * адреса, ни формы — фильтры и поиск переживают смену транспорта.
  */
-import { catalogFilterFieldNames, type CatalogFilterField, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
+import {
+  catalogFilterFieldNames,
+  filterParams,
+  type CatalogFilterField,
+  type CatalogFilterFormOptions,
+  type CatalogFilterSchema,
+} from '#lib/paginate/filters/index.js'
+import { defineForm, field, type FormDescription } from '#lib/form/index.js'
 import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
 
 export const RICKMORTY_FILTER_FIELDS: readonly CatalogFilterField[] = [
@@ -68,3 +75,21 @@ const textValue = commaListSearch((raw: ExtraValue): string | undefined => {
 export const RICKMORTY_FILTER_SEARCH: ExtraSearchSpec = Object.fromEntries(
   RICKMORTY_FILTER_KEYS.map((key) => [key, textValue]),
 )
+
+/**
+ * Форма фильтров Rick and Morty: поля и подписи — приложения, варианты — из
+ * схемы. Вид и подвид API ищет подстрокой, поэтому это текст, а не выбор.
+ */
+export function rickMortyFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
+  const filter = filterParams(schema, opts)
+  return defineForm({
+    id: 'rickmorty-filters',
+    policy: filter.policy,
+    fields: filter.fields({
+      status: field.select({ label: 'Статус', placeholder: 'Любое', ...filter.status }),
+      gender: field.select({ label: 'Пол', placeholder: 'Любое', ...filter.gender }),
+      species: field.text({ label: 'Вид (часть слова)', ...filter.species }),
+      type: field.text({ label: 'Подвид (часть слова)', ...filter.type }),
+    }),
+  })
+}

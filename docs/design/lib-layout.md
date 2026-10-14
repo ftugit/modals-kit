@@ -30,7 +30,8 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
    | Файл `paginate/filters/` | Что туда идёт |
    |---|---|
    | `schema.ts` | типы схемы, `validateCatalogFilterSchema`, `catalogFilterSafeName`, `catalogFilterFieldNames`, `CATALOG_FILTER_OPTIONS_LIMIT`, `CATALOG_FILTER_NOJS_OPTIONS`, `capCatalogFilterOptions`, `catalogFilterOptionsAreComplete`; память схем — `schema-memory.ts` |
-   | `form.ts` | схема → `lib/form`: `compileCatalogFilterSchema`, `stripDefaultCatalogFilterValues`, `catalogFilterInitialState`, `catalogFilterFormData` |
+   | `form.ts` | помощники над `lib/form`: `catalogFilterPolicy`, `stripDefaultCatalogFilterValues`, `catalogFilterFormData` (генератор полей удалён — см. п. 3) |
+   | `params.ts` | схема → параметры полей описания приложения: `filterParams` |
    | `url.ts` | ключи адреса: `parseCatalogFilterPath`, `readCatalogFilterValues`, `catalogFilterValuesFromSearch`, `canonicalCatalogFilterUrl`, `catalogFilterUrlWithout` |
    | `rules.ts` | связки и серверная проверка: `catalogRuleState`, `catalogFilterValueMap`, `catalogFilterViolations`, `validateCatalogFilterValues` |
    | `view.ts` | как есть: картина панели и патчи `extra`, `activeCatalogFilters` (данные чипов) |
@@ -43,9 +44,11 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
    `lib/server` (`shikimori.ts`, `shikimori-filters.ts`, `rickmorty.ts`), а в
    `paginate/source.ts:196` уже есть `FILTER_KEY_PREFIX` с комментарием «объявлен здесь ОДИН
    раз». Все места — на эту константу.
-3. **Русские подписи режимов и границ** (`CATALOG_FILTER_MODE_LABEL`, `CATALOG_FILTER_BOUND_LABEL`)
-   используются только в `compileCatalogFilterSchema` для подписей полей. Это текст UI в lib —
-   решение 4.
+3. ✅ **Подписи фильтров — в описании приложения.** Генератор полей
+   (`compileCatalogFilterSchema`) и словари подписей режимов/границ удалены: форму под каждую
+   схему описывает приложение (`shikimoriFilterForm`, `rickMortyFilterForm`), а `filterParams`
+   даёт полям варианты, границы, связки и межполевые правила. Компонент фильтров — свой у
+   каждой схемы, поля расставлены руками. Решение 4 больше не нужно.
 
 Не входит (нет практической пользы сейчас, ход 32): переименование `CatalogFilter*`,
 параметр вместо префикса, отделение схемы фильтров в спеку источника (R3 — записан).
@@ -122,7 +125,7 @@ src/lib/
 │   ├── links/                   ✅ ход 149: asLink + asModalLink (атрибуты на свою <a>/Button), один index
 │   ├── modals/                  ← ui/modals
 │   ├── paginator/               ← ui/paginator (вместе с compile.ts, event-log.ts)
-│   ├── filters/                 ← ui/filters (CatalogFilterForm, ActiveFilters)
+│   ├── filters/                 ← ui/filters (FiltersPanel, ActiveFilters, FilterActions, bindFilters)
 │   ├── shell/                   ← lib/shell (AppShell, CollapsingHeader, HeaderRowView,
 │   │                              HeaderSlot, PageHead, shell.svelte.ts, page.svelte.ts, prefs.ts)
 │   ├── header/  sidebar/        без изменений
@@ -166,9 +169,8 @@ src/lib/
    С хода 149 это не компонент, а атрибуты `asModalLink(...)` на свою `<a>` или `Button`
    (рядом `asLink`), импорт из одного `index`.
 3. Демо: `src/lib/demo/` или рядом с маршрутами в `src/routes/...`.
-4. Подписи режимов/границ фильтров: (а) словарь подписей — параметр
-   `compileCatalogFilterSchema` с русским по умолчанию, как `messages` в `lib/form`
-   (рекомендую: так устроена форма, API только расширяется); (б) оставить как есть.
+4. ✅ Подписи режимов/границ фильтров: сняты вместе с генератором полей — подписи пишет
+   описание формы приложения (см. п. 3 выше).
 
 ## Порядок (каждый шаг — отдельный коммит с гейтом)
 

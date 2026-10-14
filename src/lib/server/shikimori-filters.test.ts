@@ -63,8 +63,22 @@ const schema: CatalogFilterSchema = validateCatalogFilterSchema({
 
 describe('мэппинг значений в параметры API', () => {
   it('жанры: «и» повторением, «кроме» — префиксом `!`', () => {
-    const { params } = animesFilterQuery(schema, { 'filters.genres.and': '27,133', 'filters.genres.not': '133' })
-    expect(params.genre_v2).toEqual(['27', '133', '!133'])
+    const { params } = animesFilterQuery(schema, { 'filters.genres.and': '27', 'filters.genres.not': '133' })
+    expect(params.genre_v2).toEqual(['27', '!133'])
+  })
+
+  it('одно значение в «все из» и в «кроме» — ошибка формы: набор не применяется, причина у «кроме»', () => {
+    const { params, dropped } = animesFilterQuery(schema, {
+      'filters.genres.and': '27,133',
+      'filters.genres.not': '133',
+      'filters.kind': 'tv',
+    })
+    expect(params).toEqual({})
+    expect(dropped).toEqual([
+      { key: 'filters.genres.not', reason: 'значение выбрано и в «все из», и в «кроме»' },
+      { key: 'filters.genres.and', reason: 'набор отклонён: в нём есть ошибка' },
+      { key: 'filters.kind', reason: 'набор отклонён: в нём есть ошибка' },
+    ])
   })
 
   it('студии: «и» повторением, «кроме» — префиксом `!` (как у жанров)', () => {
@@ -95,7 +109,10 @@ describe('мэппинг значений в параметры API', () => {
   it('перевёрнутый диапазон лет не применяется и объясняет себя', () => {
     const { params, dropped } = animesFilterQuery(schema, { 'filters.year.min': 2020, 'filters.year.max': 2010 })
     expect(params.season).toBeUndefined()
-    expect(dropped.map((item) => item.key)).toContain('filters.year')
+    expect(dropped).toEqual([
+      { key: 'filters.year.min', reason: 'нижняя граница больше верхней' },
+      { key: 'filters.year.max', reason: 'набор отклонён: в нём есть ошибка' },
+    ])
   })
 
   it('параметры доезжают до адреса API одним списком через запятую', () => {

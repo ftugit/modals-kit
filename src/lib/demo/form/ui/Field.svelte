@@ -1,10 +1,11 @@
 <script lang="ts">
   // Выбор примитива по resolve — код приложения, один раз на проект.
   import type { FieldView } from '#lib/form/svelte/index.js'
-  import { forms } from '../forms.config'
+  import { fieldViews } from './resolve'
 
-  let { of }: { of: FieldView } = $props()
-  const Component = $derived(forms.resolveView(of))
+  // `of` может быть пустым: поля нет у источника (студии у GraphQL) — не рисуем.
+  let { of }: { of: FieldView | undefined } = $props()
+  const Component = $derived(of ? fieldViews.resolveView(of) : undefined)
 </script>
 
-<Component {...of} />
+{#if of && Component}<Component {...of} />{/if}

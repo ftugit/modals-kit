@@ -18,8 +18,8 @@
  *
  * Deny-safe на каждом шаге: значение, которого нет в опциях схемы, отсекает
  * `catalogFilterFormData`; значение, не прошедшее правила формы, отсекает
- * `validateCatalogFilterValues`; связки (`drop`) считает `catalogRuleState` — то же
- * условие формы, что гасит её поля (R1).
+ * `validateCatalogFilterValues` тем же описанием, что рисует форму
+ * (`shikimoriFilterForm`): связки, перевёрнутый диапазон, «все из» ∩ «кроме».
  * Неприменённое НЕ исчезает молча: возвращается списком `dropped` с причиной —
  * её показывают интерфейс и журнал.
  */
@@ -35,6 +35,7 @@ import {
 } from '#lib/paginate/filters/index.js'
 import { DEV } from 'esm-env'
 import { SHIKIMORI_DEFAULT_API, type AnimesPage, type ShikimoriApi } from '../../content/shikimori'
+import { shikimoriFilterForm } from '../../content/shikimori-filters'
 import { fetchCatalogPage, type AnimesQuery, type TransportDeps } from './shikimori'
 import { getShikimoriFilterSchema } from './shikimori-schema'
 import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
@@ -172,7 +173,7 @@ export function animesFilterQuery(
   if (searchRule) dropped.push({ key: 'q', reason: searchRule.reason })
 
   const formData = catalogFilterFormData(schema, usable)
-  const { values, errors } = validateCatalogFilterValues(schema, formData)
+  const { values, errors, failed } = validateCatalogFilterValues(schema, formData, shikimoriFilterForm)
   const mapped = animesFilterParams(schema, values, api)
 
   // Что дошло до значений, а что нет: неприменённое не исчезает молча — иначе
@@ -187,21 +188,17 @@ export function animesFilterQuery(
       applied.add(`filters.${key}`)
     }
   }
-  // Перевёрнутый диапазон объясняется отдельно: значения внутри границ поля, но
-  // вместе не значат ничего — причину называет связка смысла, а не «мусор».
+  // Ошибка поля называет свою причину у своего ключа: значения могут быть
+  // корректны поодиночке, но вместе не значат ничего.
   const explained = new Set<string>()
-  for (const field of schema.fields) {
-    if (field.type !== 'number') continue
-    const min = Number(usable[`filters.${field.key}.min`])
-    const max = Number(usable[`filters.${field.key}.max`])
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= max) continue
-    dropped.push({ key: `filters.${field.key}`, reason: 'нижняя граница больше верхней' })
-    explained.add(`filters.${field.key}.min`)
-    explained.add(`filters.${field.key}.max`)
+  for (const error of failed) {
+    if (error.code === 'link.blocked') continue // причина — у связки, ниже
+    const key = error.path ?? 'filters'
+    explained.add(key)
+    dropped.push({ key, reason: FAILED_REASON[error.code] ?? `значение не прошло проверку (${error.code})` })
   }
   // Связка, снявшая поле с ВЫБРАННЫМ значением, — отказ набора; объясняем
   // её причиной, а не «вне опций» (значение-то корректно, несовместим набор).
-  const rejected = errors.includes('link.blocked')
   const linkExplain = new Set<string>()
   for (const [key, rule] of rules.fields) {
     const field = schema.fields.find((item) => item.key === key)
@@ -217,14 +214,12 @@ export function animesFilterQuery(
     if (applied.has(key) || explained.has(key) || (owner !== undefined && linkExplain.has(owner))) continue
     dropped.push({
       key,
-      reason: rejected
-        ? 'набор отклонён связкой: значения несовместимы'
-        : 'значение вне опций или границ схемы',
+      reason: !errors.length
+        ? 'значение вне опций или границ схемы'
+        : errors.every((code) => code === 'link.blocked')
+          ? 'набор отклонён связкой: значения несовместимы'
+          : 'набор отклонён: в нём есть ошибка',
     })
-  }
-  for (const error of errors) {
-    if (error === 'link.blocked') continue // его причина уже названа по ключам
-    dropped.push({ key: 'filters', reason: `значение не прошло проверку (${error})` })
   }
 
   return {
@@ -233,6 +228,16 @@ export function animesFilterQuery(
     search: searchRule === undefined,
     ...(searchRule ? { searchReason: searchRule.reason } : {}),
   }
+}
+
+/** Причины отказа по кодам ошибок формы — для `dropped` и журнала. */
+const FAILED_REASON: Readonly<Record<string, string>> = {
+  notAbove: 'нижняя граница больше верхней',
+  noOverlap: 'значение выбрано и в «все из», и в «кроме»',
+  oneOf: 'значение вне опций или границ схемы',
+  minValue: 'значение вне опций или границ схемы',
+  maxValue: 'значение вне опций или границ схемы',
+  maxCount: 'выбрано больше значений, чем позволяет схема',
 }
 
 /**

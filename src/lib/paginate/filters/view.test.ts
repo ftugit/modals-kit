@@ -2,7 +2,7 @@
  * Api схемы глазами интерфейса: что компонент получает готовым.
  *
  * Проверяется то, ради чего этот слой существует: картина панели называет
- * сработавшие связки (поля гасит форма — `disabledWhen` её полей), патч хранилища снимает опустевшие ключи, не трогает
+ * ошибки формы над применённым набором (поля гасит форма — `disabledWhen`), патч хранилища снимает опустевшие ключи, не трогает
  * необъявленные и НЕ ПИШЕТ значение, снятое связкой (JS решает то же, что
  * делает браузер без JS, не отправляя выключенный контрол), а чипы несут
  * адрес, снимающий ровно одно значение.
@@ -13,7 +13,9 @@ import {
   catalogFilterRemoveValuePatch,
   catalogFilterView,
 } from './view'
-import type { CatalogFilterSchema } from './index'
+import { filterParams, type CatalogFilterSchema } from './index'
+import { defineForm, field } from '#lib/form/index.js'
+import { describeAll } from './test-describe'
 
 const schema: CatalogFilterSchema = {
   source: 'shikimori',
@@ -58,38 +60,53 @@ const schema: CatalogFilterSchema = {
   ],
 }
 
-describe('связки в картине панели', () => {
+/** Описание со всеми полями — на адресных именах, как в браузере. */
+const description = describeAll(schema, { prefix: 'page.' })
+
+describe('связки и ошибки в картине панели', () => {
   it('запрет поиска виден отдельно — у поиска свой канал', () => {
-    const view = catalogFilterView(schema, { 'filters.status': 'latest' })
+    const view = catalogFilterView(schema, { 'filters.status': 'latest' }, { description })
     expect(view.searchBlocked).toEqual({ id: 'search-with-latest', reason: 'поиск не работает' })
     expect(view.violations).toEqual([])
   })
 
   it('сработавшая связка названа в картине даже до выбора оценки', () => {
     // Объяснение блока нужно пользователю без JS и доступно у формы до её раскрытия.
-    const view = catalogFilterView(schema, { 'filters.status': 'anons' })
-    expect(view.violations.map((violation) => violation.id)).toEqual(['score-with-anons'])
+    const view = catalogFilterView(schema, { 'filters.status': 'anons' }, { description })
+    expect(view.violations.map((violation) => [violation.id, violation.keys[0]])).toEqual([['link.blocked', 'filters.score.min']])
     expect(view.searchBlocked).toBeUndefined()
   })
 
-  it('no-JS view retains a blocked value and its source-owned explanation', () => {
-    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' })
-    expect(view.violations).toHaveLength(1)
-    expect(view.violations[0]).toMatchObject({
-      id: 'score-with-anons',
-      drop: { field: 'score' },
-      message: 'у анонсов нет оценки',
-    })
+  it('no-JS: заблокированное значение остаётся чипом, ошибка формы объясняет отказ', () => {
+    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' }, { description })
+    expect(view.violations).toEqual([{
+      id: 'link.blocked',
+      message: '«Оценка» нельзя использовать вместе с «Статус»: у анонсов нет оценки',
+      keys: ['filters.score.min'],
+    }])
     expect(view.chips.some((chip) => chip.key === 'score' && chip.value === '5')).toBe(true)
   })
 
-  it('противоречие режимов одного поля — подсказка с подписью поля', () => {
-    const view = catalogFilterView(schema, { 'filters.genres.and': '1', 'filters.genres.not': '1' })
-    expect(view.violations).toEqual([{
-      id: 'contradictory-modes',
-      message: '«Жанры»: «Экшен» выбрано и в «все из», и в «кроме» — выдача будет пустой',
-      keys: ['filters.genres.and=1', 'filters.genres.not=1'],
-    }])
+  it('«все из» ∩ «кроме» и перевёрнутый диапазон — ошибки у своих полей', () => {
+    const view = catalogFilterView(schema, {
+      'filters.genres.and': '1', 'filters.genres.not': '1', 'filters.year.min': 2010, 'filters.year.max': 2001,
+    }, { description })
+    expect(view.violations.map((v) => [v.id, v.keys[0]])).toEqual([
+      ['noOverlap', 'filters.genres.not'],
+      ['notAbove', 'filters.year.min'],
+    ])
+  })
+
+  it('подписи чипов — из описания; поля, которого в описании нет, нет и в чипах', () => {
+    const filter = filterParams(schema, { prefix: 'page.' })
+    const own = defineForm({
+      id: 'own',
+      policy: filter.policy,
+      fields: filter.fields({ kind: field.select({ label: 'Формат', ...filter.kind }) }),
+    })
+    const view = catalogFilterView(schema, { 'filters.kind': 'tv', 'filters.genres.and': '1' }, { description: own })
+    expect(view.chips.map((chip) => [chip.path, chip.fieldLabel, chip.label])).toEqual([['filters.kind', 'Формат', 'ТВ']])
+    expect(view.count).toBe(1)
   })
 })
 
@@ -197,7 +214,7 @@ describe('адреса, которые получает компонент', () 
     const view = catalogFilterView(
       schema,
       { 'filters.genres.and': '1,2', 'filters.kind': 'tv' },
-      { url: { page: '/paginator', prefix: 'page', preserved: { 'page.size': '5' } } },
+      { description, url: { page: '/paginator', prefix: 'page', preserved: { 'page.size': '5' } } },
     )
     const chip = view.chips.find((item) => item.path === 'filters.genres.and' && item.value === '1')
     expect(chip?.href).toContain('page.filters.genres.and=2')
@@ -209,6 +226,7 @@ describe('адреса, которые получает компонент', () 
 
   it('форма получает action без своих фильтров и скрытые чужие ключи', () => {
     const view = catalogFilterView(schema, { 'filters.kind': 'tv' }, {
+      description,
       url: {
         page: '/paginator',
         preserved: { 'page.size': '5', 'page.filters.kind': 'tv', 'gallery.q': 'кот' },
@@ -225,7 +243,7 @@ describe('адреса, которые получает компонент', () 
 
   it('счётчик считает значения, а не поля', () => {
     const count = (extra: Record<string, string>) =>
-      catalogFilterView(schema, extra, { url: { page: '/paginator', prefix: 'page', preserved: {} } }).count
+      catalogFilterView(schema, extra, { description, url: { page: '/paginator', prefix: 'page', preserved: {} } }).count
     expect(count({ 'filters.genres.and': '1,2', 'filters.kind': 'tv' })).toBe(3)
     expect(count({})).toBe(0)
   })

@@ -116,7 +116,7 @@ export function catalogFilterFieldNames(descriptor: CatalogFilterField): string[
  * Имя схемы/поля: правило канона (до 96 символов, сегменты через `.:`), а не
  * правило имён формы b1: здесь проверяются КЛЮЧИ СХЕМЫ (данные источника), а
  * не имена полей разметки. Их совместимость с политикой формы проверяет
- * `compileCatalogFilterSchema` (там же, где строится определение).
+ * `defineForm` описания приложения (`filterParams().fields` даёт имена).
  */
 export function catalogFilterSafeName(name: string): boolean {
   return (

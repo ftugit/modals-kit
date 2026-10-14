@@ -16,9 +16,12 @@
  */
 import {
   catalogFilterFieldNames,
+  filterParams,
   type CatalogFilterField,
+  type CatalogFilterFormOptions,
   type CatalogFilterSchema,
 } from '#lib/paginate/filters/index.js'
+import { defineForm, field, type FormDescription } from '#lib/form/index.js'
 import { commaListSearch, type ExtraSearchSpec, type ExtraValue } from '#lib/paginate/index.js'
 import { SHIKIMORI_DEFAULT_API, type ShikimoriApi } from './shikimori'
 
@@ -139,4 +142,32 @@ export function shikimoriFilterSchemaSkeleton(api: ShikimoriApi = SHIKIMORI_DEFA
     version: SHIKIMORI_FILTER_SCHEMA_VERSION,
     fields: shikimoriFilterFields(api),
   }
+}
+
+/**
+ * Форма фильтров Shikimori: какие поля, в каком порядке и с какими подписями —
+ * решает приложение; варианты, границы, связки и межполевые правила приходят
+ * из живой схемы (`filterParams`). Одна функция на браузер (имена с адресным
+ * слоем `page.`) и сервер (без слоя): проверка значений идёт тем же описанием.
+ * Поля, которого у API нет (студии у GraphQL), в описании не будет.
+ */
+export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
+  const filter = filterParams(schema, opts)
+  return defineForm({
+    id: 'shikimori-filters',
+    policy: filter.policy,
+    fields: filter.fields({
+      'genres.and': field.multiselect({ label: 'Жанры · все из', placeholder: 'Не выбрано', ...filter.genres.and }),
+      'genres.not': field.multiselect({ label: 'Жанры · кроме', placeholder: 'Не выбрано', ...filter.genres.not }),
+      'studios.and': field.multiselect({ label: 'Студии · все из', placeholder: 'Не выбрано', ...filter.studios.and }),
+      'studios.not': field.multiselect({ label: 'Студии · кроме', placeholder: 'Не выбрано', ...filter.studios.not }),
+      kind: field.select({ label: 'Тип', placeholder: 'Любое', ...filter.kind }),
+      status: field.select({ label: 'Статус', placeholder: 'Любое', ...filter.status }),
+      rating: field.select({ label: 'Рейтинг', placeholder: 'Любое', ...filter.rating }),
+      duration: field.select({ label: 'Длительность', placeholder: 'Любое', ...filter.duration }),
+      'score.min': field.number({ label: 'Оценка · от', ...filter.score.min }),
+      'year.min': field.number({ label: 'Год · от', ...filter.year.min }),
+      'year.max': field.number({ label: 'Год · до', ...filter.year.max }),
+    }),
+  })
 }

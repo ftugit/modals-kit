@@ -3,7 +3,7 @@
   import { report } from '#lib/app-errors.svelte.js'
   import { currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-  import { shikimoriFilterSource } from '../../../../content/shikimori-filters'
+  import { shikimoriFilterForm, shikimoriFilterSource } from '../../../../content/shikimori-filters'
   import { SHIKIMORI_APIS, type ShikimoriApi } from '../../../../content/shikimori'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
   import {
@@ -42,6 +42,9 @@
   } from './definition'
   import { loadFilterSchema } from './sources'
   import { FiltersPanel } from '#lib/components/filters/index.js'
+  import { rickMortyFilterForm } from '../../../../content/rickmorty-filters'
+  import ShikimoriFilters from './ShikimoriFilters.svelte'
+  import RickMortyFilters from './RickMortyFilters.svelte'
   import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
@@ -463,8 +466,8 @@ import ItemRow from './ItemRow.svelte'
       {#if filterSchema && gates.filters}
         <!--
           Фильтры — свойство ИСТОЧНИКА (capabilities.filters): у товаров и фото
-          возможности нет, и панели нет. Схему рисует `FiltersPanel`, все
-          решения (контролы, связки, патч хранилища) — в api схемы.
+          возможности нет, и панели нет. Рамку рисует `FiltersPanel`, форму —
+          компонент схемы; варианты, связки и патч хранилища — в api схемы.
         -->
         <div class="mt-4">
           <!-- Форма фильтров принадлежит источнику: смена источника снимает фильтры
@@ -472,11 +475,14 @@ import ItemRow from './ItemRow.svelte'
                не схема: у REST и GraphQL Rick and Morty схема одна, и прежняя форма
                показывала бы снятое значение. -->
           {#key cfg.src}
+            <!-- Форма своя у каждой схемы: описание и компонент с ручной раскладкой. -->
             <FiltersPanel
               {name}
               schema={filterSchema}
               extra={pagState().extra}
               preserved={demoPreservedSearch(currentSearch())}
+              describe={shikiApi ? shikimoriFilterForm : rickMortyFilterForm}
+              form={shikiApi ? ShikimoriFilters : RickMortyFilters}
             />
           {/key}
         </div>

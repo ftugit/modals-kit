@@ -13,9 +13,11 @@
  *     канала состояния (`setExtra`): выбор пользователя пишется в хранилище, а
  *     не в адрес напрямую.
  *
- * Контролы формы здесь не собираются: их компилирует `compileCatalogFilterSchema`,
- * а гасят связки правила `disabledWhen` в том же определении формы.
+ * Поля формы здесь не собираются: их описывает приложение (`filterParams`),
+ * а гасят связки правила `disabledWhen` в том же описании. Подписи чипов —
+ * подписи полей этого описания: поля, которого в описании нет, нет и в чипах.
  */
+import type { FormDescription, MessageDictionary } from '#lib/form/index.js'
 import { catalogFilterFieldNames, type CatalogFilterBound, type CatalogFilterMode, type CatalogFilterSchema } from './schema'
 import { canonicalCatalogFilterUrl, catalogFilterUrlWithout, parseCatalogFilterPath, readCatalogFilterValues } from './url'
 import { stripDefaultCatalogFilterValues } from './form'
@@ -112,7 +114,7 @@ export type CatalogFilterView = {
   count: number
   /** Поиск запрещён связкой: показать причину рядом с полем запроса. */
   searchBlocked?: { id: string; reason: string }
-  /** Пояснения к активным связкам и смысловым противоречиям. */
+  /** Ошибки формы над применённым набором: связки, перевёрнутый диапазон, «все из» ∩ «кроме». */
   violations: readonly CatalogFilterViolation[]
 }
 
@@ -125,16 +127,30 @@ export type CatalogFilterView = {
 export function catalogFilterView(
   schema: CatalogFilterSchema,
   extra: Record<string, unknown> | undefined,
-  opts: { prefix?: string; url?: CatalogFilterUrlView } = {},
+  opts: {
+    /** Описание формы фильтров (имена — с адресным слоем `prefix.`): подписи и проверка. */
+    description: FormDescription
+    prefix?: string
+    url?: CatalogFilterUrlView
+    /** Словарь приложения для текстов нарушений. */
+    messages?: MessageDictionary
+  },
 ): CatalogFilterView {
   const values = readCatalogFilterValues(extra)
   const map = catalogFilterValueMap(extra)
   const search = catalogRuleState(schema, map).search
   const urlOpts = { prefix: opts.url?.prefix ?? opts.prefix ?? 'page', preserved: opts.url?.preserved ?? {} }
-  const chips: CatalogFilterChip[] = activeCatalogFilters(schema, values).map((chip) => ({
-    ...chip,
-    href: opts.url ? catalogFilterUrlWithout(opts.url.page, values, chip.path, chip.value, urlOpts) : '',
-  }))
+  const layer = urlOpts.prefix ? `${urlOpts.prefix}.` : ''
+  const chips: CatalogFilterChip[] = []
+  for (const chip of activeCatalogFilters(schema, values)) {
+    const described = opts.description.byName[layer + chip.path]
+    if (!described) continue
+    chips.push({
+      ...chip,
+      fieldLabel: described.label ?? chip.fieldLabel,
+      href: opts.url ? catalogFilterUrlWithout(opts.url.page, values, chip.path, chip.value, urlOpts) : '',
+    })
+  }
   return {
     source: schema.source,
     ...(schema.builtAt ? { builtAt: schema.builtAt } : {}),
@@ -149,8 +165,7 @@ export function catalogFilterView(
       .map(([name, value]) => ({ name, value })),
     count: chips.length,
     ...(search ? { searchBlocked: { id: search.id, reason: search.reason } } : {}),
-    // Поиск объясняется выше; остальное — предупреждения у фильтров.
-    violations: catalogFilterViolations(schema, map).filter((violation) => violation.drop !== 'q'),
+    violations: catalogFilterViolations(opts.description, schema, extra, { prefix: layer, messages: opts.messages }),
   }
 }
 

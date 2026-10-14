@@ -380,7 +380,35 @@ case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
 | `v.maxSize(bytes)` | `maxSize` | — | нативного атрибута нет; у `files` — предел на каждый файл |
 | `v.strength(level, o?)` | `strength` | `minlength` (граница уровня) | оценка в битах, не шаблон; заменяемая через `o.score` |
 | `v.sameAs(field)` | `sameAs` | — | браузер не умеет сравнивать поля — проверяет сервер |
+| `v.notAbove(field)` | `notAbove` | — | не больше значения другого поля: нижняя граница диапазона («от» ≤ «до»). Пустое с любой стороны — не ошибка. Числа — как числа, строки (ISO-даты, время) — по порядку. Параметры: `field`, `other` (значение соседа) |
+| `v.notBelow(field)` | `notBelow` | — | не меньше значения другого поля: верхняя граница диапазона. Остальное — как у `notAbove` |
+| `v.noOverlap(field)` | `noOverlap` | — | у двух списков нет общих значений («все из» и «кроме»). Параметры: `field`, `values` (общие значения), `count` |
 | `check(name)` | код проверки | — | асинхронная, см. [раздел](#асинхронные-проверки) |
+
+Межполевые правила (`sameAs`, `notAbove`, `notBelow`, `noOverlap`) ссылаются на
+соседа по имени поля и видят значения всей формы после декодирования. Атрибута
+у них нет: проверяют ядро в браузере и сервер одним `evaluate`.
+
+```ts
+defineForm({
+  id: 'catalog',
+  fields: {
+    // диапазон: ошибка встанет у той границы, которая нарушила порядок
+    'year.min': field.number({ label: 'Год от', validate: [v.notAbove('year.max')] }),
+    'year.max': field.number({ label: 'до', validate: [v.notBelow('year.min')] }),
+    // одно значение не может быть сразу обязательным и исключённым
+    'genres.and': field.multiselect({ label: 'Жанры', options }),
+    'genres.not': field.multiselect({
+      label: 'Без жанров', options,
+      validate: [v.noOverlap('genres.and')],
+      messages: { noOverlap: 'Жанр уже выбран в «Жанры»' },   // свой текст поля
+    }),
+  },
+})
+```
+
+Фильтры каталога получают эти правила готовыми из схемы источника
+(`filterParams`, см. `src/lib/paginate/filters/README.md`).
 
 `field.email()` задаёт представление и HTML-тип, но формат значения задаёт
 `v.email()`. Это необходимо для fetch-пути с `novalidate`: строки без структуры

@@ -6,19 +6,7 @@ import type { Transport } from '#lib/form/index.js'
 import { jsonTransport } from './transport'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'
-import CheckboxField from './ui/CheckboxField.svelte'
-import RatingField from './ui/RatingField.svelte'
-import PhoneField from './ui/PhoneField.svelte'
-import SelectField from './ui/SelectField.svelte'
-import PasswordField from './ui/PasswordField.svelte'
-import PasswordStrengthField from './ui/PasswordStrengthField.svelte'
-import NumberField from './ui/NumberField.svelte'
-import OtpField from './ui/OtpField.svelte'
-import SearchField from './ui/SearchField.svelte'
-import SwitchField from './ui/SwitchField.svelte'
-import TextField from './ui/TextField.svelte'
-import TextareaField from './ui/TextareaField.svelte'
-import AutoTextareaField from './ui/AutoTextareaField.svelte'
+import { resolve } from './ui/resolve'
 
 /**
  * Транспорт: единственное место, где происходит сетевой вызов.
@@ -27,24 +15,6 @@ import AutoTextareaField from './ui/AutoTextareaField.svelte'
  * «http.403» вместо причины.
  */
 export const httpTransport: Transport = jsonTransport('/form/submit')
-
-const resolve = (f: { input: string; variant?: string }) => {
-  switch (f.input) {
-    // Вариант из описания поля выбирает примитив: шкала сложности или просто глаз,
-    // поле по высоте текста или обычное.
-    case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
-    case 'rating': return RatingField          // свой тип — такой же гражданин
-    case 'phone': return PhoneField            // и второй: номер одной строкой
-    case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
-    case 'select': case 'radio': case 'multiselect': return SelectField
-    case 'checkbox': return CheckboxField
-    case 'switch': return SwitchField
-    case 'number': return NumberField
-    case 'search': return SearchField
-    case 'otp': return OtpField
-    default: return TextField
-  }
-}
 
 export const forms = createConfig({
   // Соответствие «представление → компонент приложения». Функция, не таблица.

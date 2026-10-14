@@ -310,7 +310,7 @@ async function run() {
       `смена источника обязана снять и «мёртвый» ключ фильтра: ${search(page)}`,
     );
     assert(
-      (await page.locator(`${HOST} [data-testid="catalog-filter-field"]`).count()) === 0,
+      (await page.locator(`${HOST} [data-testid="catalog-filter-form"] [data-field]`).count()) === 0,
       'контролов фильтров у источника без фильтров быть не должно',
     );
     console.log('  ok  панели нет, ключ снят сменой источника, выдача не сужена');

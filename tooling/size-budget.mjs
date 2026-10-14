@@ -80,9 +80,15 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // опрос «что появилось» вместо переспроса окна): факт весь JS 234.8, immutable 248.2,
 // /db-demo 194.3, /paginator 201.0 (ядро общее). По постоянному решению (≤ +5, сообщить):
 // весь JS 236, immutable 249.5, /db-demo 195.5, /paginator 202.
+// REVISION 2026-10-15 (фильтры = обычная форма: своё описание и компонент под схему,
+// поля — общий `Field` форм, `filterParams`, валидаторы notAbove/notBelow/noOverlap;
+// `Field` берёт только выбор компонента, без транспорта и проверок): факт весь JS 236.5
+// (+1.7), immutable 249.9 (+1.7), /form 169.8 (+0.8), /paginator 204.6 (+3.6). По
+// постоянному решению (≤ +5, сообщить): весь JS 237.5, immutable 251, /form 170.5,
+// /paginator 205.5.
 const LIMITS = {
-  allImmutableGzip: 249.5 * KiB,
-  allJsGzip: 236 * KiB,
+  allImmutableGzip: 251 * KiB,
+  allJsGzip: 237.5 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -90,7 +96,7 @@ const LIMITS = {
 
 const ROUTE_LIMITS = {
   '/': 143 * KiB,
-  '/form': 169.5 * KiB,
+  '/form': 170.5 * KiB,
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
@@ -106,7 +112,7 @@ const ROUTE_LIMITS = {
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
   // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
   // остальных маршрутов; вес самой страницы — отдельная находка (kit3-upgrade §12).
-  '/paginator': 202 * KiB,
+  '/paginator': 205.5 * KiB,
   // C16 (решение оператора, ход 34: «прибавь размера»): маршруты без лимита
   // получили «факт + 5» по сборке хода 34 — 175.5 / 124.1 / 118.8 / 125.6.
   // Ход 109: + экран переноса схемы (SchemaPending, форма решений) — факт 180.8;

@@ -41,7 +41,7 @@ import {
   type RickMortyApi,
   type RickMortyCharacter,
 } from '../../content/rickmorty'
-import { RICKMORTY_FILTER_SCHEMA } from '../../content/rickmorty-filters'
+import { RICKMORTY_FILTER_SCHEMA, rickMortyFilterForm } from '../../content/rickmorty-filters'
 import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
 
 export const RICKMORTY_REST = 'https://rickandmortyapi.com/api/character/'
@@ -185,7 +185,7 @@ export function rickMortyFilterParams(
     if (!declared.has(key)) dropped.push({ key, reason: 'поля нет в схеме источника' })
     else usable[key] = value
   }
-  const { values, errors } = validateCatalogFilterValues(schema, catalogFilterFormData(schema, usable))
+  const { values, errors } = validateCatalogFilterValues(schema, catalogFilterFormData(schema, usable), rickMortyFilterForm)
   const params: RickMortyParams = {}
   for (const [key, value] of Object.entries(values)) {
     if (typeof value === 'string' && value && (key === 'status' || key === 'gender' || key === 'species' || key === 'type')) {

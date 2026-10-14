@@ -332,8 +332,8 @@ async function checkFiltersUi(browser) {
     await page.goto(`${U}?page.src=animes&page.size=5&${OPTS}`, { waitUntil: 'networkidle' });
     await waitFor(async () => await panel.isVisible(), { what: 'панель фильтров' });
     const paths = await panel
-      .locator('[data-testid="catalog-filter-field"]')
-      .evaluateAll((els) => els.map((el) => el.dataset.filterPath));
+      .locator('[data-testid="catalog-filter-form"] [data-field]')
+      .evaluateAll((els) => els.map((el) => el.dataset.field.replace(/^page\./, '')));
     if (paths.join(',') !== expected.join(','))
       throw new Error(`контролы не совпали со схемой:\n ${paths}\n ${expected}`);
     if ((await panel.locator('[data-testid="filters-built-at"]').count()) !== 1)
@@ -376,7 +376,7 @@ async function checkFiltersUi(browser) {
       const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
       const tail = studioOptions[studioOptions.length - 1];
       if (studioOptions.length <= 200) throw new Error('студий меньше показа без JS — проверять хвост нечем');
-      if ((await panel.locator('[data-testid="catalog-filter-truncated"]').count()) !== 0)
+      if ((await panel.locator('[data-select-truncated]').count()) !== 0)
         throw new Error('с JS осталось пояснение «показаны не все значения»');
       const studiosSelect = page.locator('select[data-select-native][name="page.filters.studios.and"]');
       await openFilters(page);
@@ -466,7 +466,7 @@ async function checkFiltersUi(browser) {
     // Регрессия, которую ловим: у примитива Select раньше не было `id`, и
     // `<label for>` молча ничего не фокусировал.
     await openFilters(page) // подписи живут внутри <details>: сначала раскрыть
-    const labelCheck = await panel.locator('[data-testid="catalog-filter-field"]').evaluateAll((fields) =>
+    const labelCheck = await panel.locator('[data-testid="catalog-filter-form"] [data-field]').evaluateAll((fields) =>
       fields.map((field) => {
         const label = field.querySelector('label');
         const id = label?.getAttribute('for');
@@ -650,7 +650,7 @@ async function checkFiltersUi(browser) {
     });
     if (new URL(page.url()).searchParams.get('page.filters.status') === 'anons')
       throw new Error('проверка «до Применить» прошла уже после записи адреса');
-    const liveReason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
+    const liveReason = await panel.locator('[data-field-reason]').innerText();
     // В оценке стоит 8 с прошлого шага; текст один на пустое и заполненное
     // поле (R1) и обязан назвать виновника.
     if (!/«Статус»/.test(liveReason) || !/оценк/i.test(liveReason))
@@ -658,7 +658,7 @@ async function checkFiltersUi(browser) {
     console.log(`  ok  связка гасит поле до «Применить»: «${liveReason.trim()}»`);
     await page.locator('[data-testid="catalog-filter-submit"]').click();
     await waitFor(async () => page.url().includes('page.filters.status=anons'), { what: 'фильтр «анонс»' });
-    const reason = await panel.locator('[data-testid="catalog-filter-reason"]').innerText();
+    const reason = await panel.locator('[data-field-reason]').innerText();
     if (!/оценк/i.test(reason)) throw new Error(`причина гашения не из связки схемы: «${reason}»`);
     if (!(await panel.locator('input[name="page.filters.score.min"]').isDisabled()))
       throw new Error('поле оценки под связкой должно быть выключено');
@@ -777,8 +777,8 @@ async function checkFiltersNoJs(browser) {
 
   try {
     await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
-    const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-field"]');
-    const ssrPaths = await fields.evaluateAll((els) => els.map((el) => el.dataset.filterPath));
+    const fields = page.locator('[data-testid="filters-panel"] [data-testid="catalog-filter-form"] [data-field]');
+    const ssrPaths = await fields.evaluateAll((els) => els.map((el) => el.dataset.field.replace(/^page\./, '')));
     const schema = (await api('/api/shikimori/filters')).body;
     const expectedPaths = expectedFilterPaths(schema);
     if (ssrPaths.join(',') !== expectedPaths.join(','))
@@ -798,7 +798,7 @@ async function checkFiltersNoJs(browser) {
       const withTail = await native.locator('option').evaluateAll((els) => els.map((el) => [el.value, el.selected]));
       if (withTail.length !== 201 || !withTail.some(([value, selected]) => value === tail.value && selected))
         throw new Error(`без JS выбранная студия из хвоста не показана выбранной: ${withTail.length}`);
-      if ((await page.locator('[data-testid="catalog-filter-error"]').count()) !== 0)
+      if ((await page.locator('[data-testid="catalog-filter-form"] [aria-errormessage]').count()) !== 0)
         throw new Error('без JS студия из хвоста отклонена валидатором');
       console.log(`  ok  без JS: студий 200 из ${studioOptions.length} с пояснением; выбранная из хвоста — 201-й, выбрана, без ошибки`);
       await page.goto(`${U}?page.src=animes&page.size=5`, { waitUntil: 'domcontentloaded' });
@@ -908,10 +908,10 @@ async function checkFiltersNoJs(browser) {
     // Отказ показан ПОД ПОЛЕМ — тот же текст, что у валидатора (R1: один
     // текст на подсказку и отказ).
     const fieldError = page
-      .locator('[data-testid="catalog-filter-reason"]')
+      .locator('[data-field-reason]')
       .filter({ hasText: /нельзя использовать вместе с «Статус»/i });
     if ((await fieldError.count()) === 0) {
-      const all = await page.locator('[data-testid="catalog-filter-reason"]').allTextContents();
+      const all = await page.locator('[data-field-reason]').allTextContents();
       throw new Error(`отказ под полем не найден: ${JSON.stringify(all)}`);
     }
     const suppressed = await api('/api/shikimori/animes?limit=5&filters.status=anons&filters.score.min=5');

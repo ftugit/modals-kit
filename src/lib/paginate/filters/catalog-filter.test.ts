@@ -1,6 +1,6 @@
 /**
  * Unit-набор схемы фильтров: валидация схемы, деградация опций, канонический
- * адрес, deny-safe разбор значений и компиляция в определение формы b1.
+ * адрес, deny-safe разбор значений и параметры формы (`filterParams`).
  *
  * Порт канона проверяется ПОВЕДЕНЧЕСКИ (не строками исходника): имена полей,
  * режимы, дефолты границ и allowlist'ы — то, на что опираются форма и транспорт.
@@ -14,12 +14,11 @@ import {
   capCatalogFilterOptions,
   catalogFilterFieldNames,
   catalogFilterFormData,
-  catalogFilterInitialState,
   catalogFilterOptionsAreComplete,
   catalogFilterUrlWithout,
   catalogFilterValueMap,
   catalogFilterValuesFromSearch,
-  compileCatalogFilterSchema,
+  filterParams,
   parseCatalogFilterPath,
   readCatalogFilterValues,
   stripDefaultCatalogFilterValues,
@@ -27,6 +26,8 @@ import {
   validateCatalogFilterValues,
   type CatalogFilterSchema,
 } from './index'
+import { defineForm, field, makeRenderer, ru, evaluate } from '#lib/form/index.js'
+import { describeAll } from './test-describe'
 
 const schema: CatalogFilterSchema = {
   source: 'demo',
@@ -250,10 +251,10 @@ describe('деградация oversized-полей', () => {
     // значение из хвоста (не в первых 200) законно, чужое — нет: allowlist по всему списку
     const tail = new FormData()
     tail.append('filters.studios.or', 's3')
-    expect(validateCatalogFilterValues(capped, tail).errors).toEqual([])
+    expect(validateCatalogFilterValues(capped, tail, describeAll).errors).toEqual([])
     const foreign = new FormData()
     foreign.append('filters.studios.or', 'zzz')
-    expect(validateCatalogFilterValues(capped, foreign).errors).toEqual(['oneOf'])
+    expect(validateCatalogFilterValues(capped, foreign, describeAll).errors).toEqual(['oneOf'])
   })
 
   it('схема длиннее предела 5000 не проходит валидатор (защита от гигантских форм)', () => {
@@ -266,36 +267,117 @@ describe('деградация oversized-полей', () => {
   })
 })
 
-describe('компиляция в форму b1', () => {
-  it('поля, пути и дефолты границ', () => {
-    const compiled = compileCatalogFilterSchema(schema)
-    expect(compiled.paths).toEqual([
-      'filters.genres.and',
-      'filters.genres.not',
-      'filters.kind',
-      'filters.score.min',
-      'filters.year.min',
-      'filters.year.max',
-    ])
-    expect(compiled.defaults).toEqual({
-      'filters.score.min': '1',
-      'filters.year.min': '1900',
-      'filters.year.max': '2026',
+describe('параметры формы из схемы (filterParams)', () => {
+  it('описание приложения: свои подписи и порядок, варианты и границы — из схемы', () => {
+    const filter = filterParams(schema)
+    const d = defineForm({
+      id: 'own',
+      policy: filter.policy,
+      fields: filter.fields({
+        'year.max': field.number({ label: 'Год до', ...filter.year.max }),
+        'year.min': field.number({ label: 'Год от', ...filter.year.min }),
+        kind: field.select({ label: 'Формат', placeholder: 'Любой', ...filter.kind }),
+      }),
     })
-    const labels = compiled.definition.fields.map((field) => field.label)
-    expect(labels).toContain('Жанры · все из')
-    expect(labels).toContain('Оценка · от')
-    expect(labels).toContain('Тип')
+    expect(d.fields.map((f) => [f.name, f.label])).toEqual([
+      ['filters.year.max', 'Год до'],
+      ['filters.year.min', 'Год от'],
+      ['filters.kind', 'Формат'],
+    ])
+    // F45: край базы — подсказкой у пустого числового инпута, не значением
+    expect(d.byName['filters.year.min']?.placeholder).toBe('1900')
+    expect(d.byName['filters.year.max']?.placeholder).toBe('2026')
+    // свой ключ после развёртки побеждает
+    expect(d.byName['filters.kind']?.placeholder).toBe('Любой')
+    expect(d.attrsOf('filters.year.min').attrs).toMatchObject({ min: 1900, max: 2026 })
+  })
+
+  it('поле, которого у источника нет, не попадает в описание; неизвестный ключ даёт пустые параметры', () => {
+    const filter = filterParams(schema)
+    expect(filter.studios.and).toEqual({ validate: [] })
+    expect(filter.nothing).toEqual({ validate: [] })
+    const fields = filter.fields({
+      'studios.and': field.multiselect({ label: 'Студии', ...filter.studios.and }),
+      'genres.or': field.multiselect({ label: 'Жанры', ...filter.genres.or }), // режима нет у схемы
+      kind: field.select({ label: 'Тип', ...filter.kind }),
+    })
+    expect(Object.keys(fields)).toEqual(['filters.kind'])
+  })
+
+  it('развёртка чужого ключа в разработке даёт предупреждение', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const filter = filterParams(schema)
+    filter.fields({ 'genres.not': field.multiselect({ label: 'Кроме', ...filter.genres.and }) })
+    expect(warn).toHaveBeenCalledWith('[filters] поле «genres.not» получило параметры «genres.and»')
+    warn.mockClear()
+    filter.fields({ 'genres.not': field.multiselect({ label: 'Кроме', ...filter.genres.not }) })
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('адресный слой: имена и межполевые ссылки — с префиксом', () => {
+    const d = describeAll(schema, { prefix: 'page.' })
+    expect(d.fields.map((f) => f.name)).toEqual([
+      'page.filters.genres.and',
+      'page.filters.genres.not',
+      'page.filters.kind',
+      'page.filters.score.min',
+      'page.filters.year.min',
+      'page.filters.year.max',
+    ])
+    const render = makeRenderer([ru])
+    const data = new FormData()
+    data.set('page.filters.year.min', '2010')
+    data.set('page.filters.year.max', '2001')
+    data.append('page.filters.genres.and', '1')
+    data.append('page.filters.genres.not', '1')
+    const errors = evaluate(data, d, { render, requireEnvelope: false }).errors
+    expect(errors.map((e) => [e.path, e.code])).toEqual([
+      ['page.filters.genres.not', 'noOverlap'],
+      ['page.filters.year.min', 'notAbove'],
+    ])
   })
 
   it('опции — allowlist валидатора: чужое значение не проходит', () => {
-    const compiled = compileCatalogFilterSchema(schema)
     const form = new FormData()
     form.append('filters.genres.and', '1')
     form.append('filters.genres.and', 'чужое')
-    const { values, errors } = validateCatalogFilterValues(compiled.schema, form)
+    const { values, errors } = validateCatalogFilterValues(schema, form, describeAll)
     expect(errors).toEqual(['oneOf'])
     expect(values).toEqual({})
+  })
+
+  it('«все из» ∩ «кроме» и перевёрнутый диапазон — ошибки формы: набор отклоняется целиком', () => {
+    const overlap = new FormData()
+    overlap.append('filters.genres.and', '1')
+    overlap.append('filters.genres.not', '1')
+    overlap.set('filters.kind', 'tv')
+    expect(validateCatalogFilterValues(schema, overlap, describeAll)).toMatchObject({
+      values: {},
+      errors: ['noOverlap'],
+      failed: [{ path: 'filters.genres.not', code: 'noOverlap' }],
+    })
+    const reversed = new FormData()
+    reversed.set('filters.year.min', '2010')
+    reversed.set('filters.year.max', '2001')
+    expect(validateCatalogFilterValues(schema, reversed, describeAll).failed).toEqual([
+      { path: 'filters.year.min', code: 'notAbove' },
+    ])
+    const range = new FormData()
+    range.set('filters.year.min', '2001')
+    range.set('filters.year.max', '2010')
+    expect(validateCatalogFilterValues(schema, range, describeAll).values).toEqual({ year: { min: 2001, max: 2010 } })
+  })
+
+  it('поле, которого нет в описании приложения, не применяется', () => {
+    const onlyKind = (input: CatalogFilterSchema) => {
+      const filter = filterParams(input)
+      return defineForm({ id: 'k', policy: filter.policy, fields: filter.fields({ kind: field.select({ label: 'Тип', ...filter.kind }) }) })
+    }
+    const form = new FormData()
+    form.set('filters.kind', 'tv')
+    form.set('filters.score.min', '5')
+    expect(validateCatalogFilterValues(schema, form, onlyKind)).toMatchObject({ values: { kind: 'tv' }, errors: [] })
   })
 
   it('deny-safe разбор extra: чужое значение и мусор не доезжают до значений', () => {
@@ -313,7 +395,7 @@ describe('компиляция в форму b1', () => {
     expect(form.get('filters.unknown')).toBeNull()
   })
 
-  it('связка на поле входит в отказ набора; пустое запрещённое поле — нет', () => {
+  it('связка на поле входит в отказ набора; пустое запрещённое поле — нет; подписи связки — из описания', () => {
     const linked = {
       ...schema,
       rules: [
@@ -328,47 +410,40 @@ describe('компиляция в форму b1', () => {
     const bad = new FormData()
     bad.set('filters.kind', 'tv')
     bad.set('filters.score.min', '5')
-    const rejected = validateCatalogFilterValues(linked, bad)
+    const rejected = validateCatalogFilterValues(linked, bad, describeAll)
     expect(rejected.errors).toContain('link.blocked')
     // отказ касается ЦЕЛОГО набора: источник не получает ничего
     expect(rejected.values).toEqual({})
 
     const free = new FormData()
     free.set('filters.kind', 'tv')
-    const passed = validateCatalogFilterValues(linked, free)
+    const passed = validateCatalogFilterValues(linked, free, describeAll)
     // пустое запрещённое поле ничего не нарушает
     expect(passed.errors).toEqual([])
     expect(passed.values.kind).toBe('tv')
-    // связка — правило поля (`disabledWhen`) у каждого его пути; текст —
-    // словаря формы, своего у фильтров нет (rules.test сверяет строки)
-    const compiled = compileCatalogFilterSchema(linked)
-    expect(compiled.definition.byName['filters.score.min']?.disabledWhen).toEqual([{
+    // связка — правило поля (`disabledWhen`); поле и блокирующее названы
+    // подписями ОПИСАНИЯ, а не схемы; текст — словаря формы
+    const filter = filterParams(linked)
+    const d = defineForm({
+      id: 'linked',
+      policy: filter.policy,
+      fields: filter.fields({
+        kind: field.select({ label: 'Формат', ...filter.kind }),
+        'score.min': field.number({ label: 'Оценка от', ...filter.score.min }),
+      }),
+    })
+    expect(d.byName['filters.score.min']?.disabledWhen).toEqual([{
       when: { field: 'filters.kind', includes: 'tv' },
       reason: 'у ТВ нет оценки',
-      blockers: ['Тип'],
-      label: 'Оценка',
+      blockers: ['Формат'],
+      label: 'Оценка от',
     }])
-    expect(compiled.definition.byName['filters.kind']?.disabledWhen).toBeUndefined()
-    // F45: край базы — подсказкой у пустого числового инпута, не значением
-    expect(compiled.definition.byName['filters.score.min']?.placeholder).toBe('1')
-    expect(compiled.definition.byName['filters.kind']?.placeholder).toBeUndefined()
-    expect(compiled.definition.messages).toEqual({})
-  })
-
-  it('начальное состояние формы заполняется из адреса и дефолтов', () => {
-    const compiled = compileCatalogFilterSchema(schema)
-    const state = catalogFilterInitialState(
-      compiled.definition,
-      { 'filters.genres.and': ['1'], 'filters.score.min': ['7'] },
-      compiled.defaults,
-    )
-    expect(state.values['filters.genres.and']).toEqual(['1'])
-    expect(state.values['filters.score.min']).toBe('7')
-    expect(state.values['filters.year.max']).toBe('2026')
+    expect(d.byName['filters.kind']?.disabledWhen).toBeUndefined()
+    expect(d.messages).toEqual({})
   })
 
   it('опции доезжают до поля формы полными подписями; allowlist — по значениям', () => {
-    const compiled = compileCatalogFilterSchema({
+    const own: CatalogFilterSchema = {
       ...schema,
       rules: [],
       fields: [
@@ -383,19 +458,17 @@ describe('компиляция в форму b1', () => {
           ],
         },
       ],
-    })
-    const genreField = compiled.definition.fields.find((f) => f.name === 'filters.genres.and')
+    }
+    const genreField = describeAll(own).fields.find((f) => f.name === 'filters.genres.and')
     // Подпись и флаг доступности не теряются: поле видит «Драма», а не «2».
     expect(genreField?.options).toEqual([
       { value: '1', label: 'Экшен', count: undefined, disabled: true },
       { value: '2', label: 'Драма', count: undefined },
     ])
-    // allowlist по-прежнему по значениям: чужое отсекается, объявленное — нет.
     const form = new FormData()
     form.append('filters.genres.and', '1')
     form.append('filters.genres.and', 'чужое')
-    const { errors } = validateCatalogFilterValues(compiled.schema, form)
-    expect(errors).toEqual(['oneOf'])
+    expect(validateCatalogFilterValues(own, form, describeAll).errors).toEqual(['oneOf'])
   })
 })
 
@@ -438,7 +511,7 @@ describe('значение, скрытое лимитом показа', () => {
   it('значение вне обрезанного списка доезжает до значений', () => {
     const form = catalogFilterFormData(truncated, { 'filters.studios.and': '858,1933' })
     expect(form.getAll('filters.studios.and')).toEqual(['858', '1933'])
-    const { values, errors } = validateCatalogFilterValues(truncated, form)
+    const { values, errors } = validateCatalogFilterValues(truncated, form, describeAll)
     expect(errors).toEqual([])
     expect(values).toEqual({ studios: { and: ['858', '1933'] } })
   })
@@ -446,7 +519,7 @@ describe('значение, скрытое лимитом показа', () => {
   it('у поля с полным списком allowlist работает как прежде', () => {
     const form = catalogFilterFormData(truncated, { 'filters.kind': 'zzz' })
     expect(form.get('filters.kind')).toBeNull()
-    expect(validateCatalogFilterValues(truncated, form).values).toEqual({})
+    expect(validateCatalogFilterValues(truncated, form, describeAll).values).toEqual({})
   })
 
   it('чип различает «чужое значение» и «скрыто лимитом»', () => {
