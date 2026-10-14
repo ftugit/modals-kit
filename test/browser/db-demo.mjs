@@ -78,6 +78,36 @@ try {
   const after = (await notice.count()) ? await notice.textContent() : null
   ok('после клиентской навигации уведомление снято (form обнулён)', after === null, String(after))
   ok('без ошибок страницы', problems.length === 0, problems.join(' | '))
+
+  /* Ошибка сервера закреплена за значением поля (lib/form, pins): «,» проходит
+     проверку клиента (поле не пустое), но сервер не находит в нём ни одного id. */
+  const pinPage = await browser.newPage()
+  await pinPage.goto(BASE, { waitUntil: 'networkidle' })
+  await pinPage.waitForFunction(() => document.querySelector('[name="ids"]')?.form?.hasAttribute('novalidate'),
+    null, { timeout: 20_000 })
+  const ids = pinPage.locator('[name="ids"]')
+  const pinError = () => pinPage.evaluate(() => {
+    const input = document.querySelector('[name="ids"]')
+    if (input?.getAttribute('aria-invalid') !== 'true') return null
+    const ref = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    return ref.map((id) => document.getElementById(id)).find((n) => n?.matches('.text-destructive'))?.textContent?.trim()
+      ?? 'aria-invalid'
+  })
+  await ids.fill(',')
+  await pinPage.locator('[data-testid="remove"]').click()
+  await pinPage.waitForFunction(() => document.querySelector('[name="ids"]')?.getAttribute('aria-invalid') === 'true',
+    null, { timeout: 10_000 }).catch(() => {})
+  const pinned = await pinError()
+  ok('закреп: ошибка сервера под полем', pinned === 'скопируйте id из таблицы ниже', String(pinned))
+  await ids.press('End')
+  await ids.press('x')
+  await pinPage.waitForTimeout(100)
+  ok('закреп: правка значения снимает ошибку во время ввода', await pinError() === null, String(await pinError()))
+  await ids.press('Backspace')
+  await pinPage.waitForTimeout(100)
+  ok('закреп: возврат к отправленному значению показывает её снова', await pinError() === pinned, String(await pinError()))
+  ok('закреп: всё это без ухода с поля', await ids.evaluate((el) => el === document.activeElement))
+  await pinPage.close()
 } finally {
   await browser.close()
 }

@@ -339,6 +339,53 @@ ok('пути дают одинаковые ошибки',
   JSON.stringify(nojs.errors) === JSON.stringify(js.errors),
   `${nojs.errors.join('|')} против ${js.errors.join('|')}`)
 
+/* ── проверка клиента до отправки, ошибка сервера и её снятие правкой (ход 111) ── */
+{
+  console.log('— клиент до отправки, ошибка сервера за значением —')
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 3000 } })
+  const pg = await ctx.newPage()
+  let posts = 0
+  pg.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/form/submit') posts++ })
+  await pg.goto(BASE, { waitUntil: 'networkidle' })
+  await readyToSubmit(pg)
+  await fill(pg, { ...scenario, 'signup-email': 'not-an-email' })
+  await click(pg, 'Создать аккаунт')
+  await pg.waitForTimeout(600)
+  ok('клиент: неверное поле останавливает отправку до сети', posts === 0, `запросов: ${posts}`)
+  ok('клиент: ошибка показана у поля', await pg.locator('#signup-email').getAttribute('aria-invalid') === 'true')
+
+  // Ошибка, которую решает только сервер: адрес занят. Живая проверка в браузере идёт
+  // с задержкой, отправка сразу после ввода её опережает — ответ сервера и есть ошибка.
+  await fill(pg, { 'signup-email': 'taken@example.com', 'signup-confirm': scenario['signup-password'] })
+  await click(pg, 'Создать аккаунт')
+  await pg.waitForFunction(() => document.querySelector('#signup-email')?.getAttribute('aria-invalid') === 'true',
+    null, { timeout: 10000 }).catch(() => {})
+  const errorOf = () => pg.evaluate(() => {
+    const input = document.querySelector('#signup-email')
+    if (input?.getAttribute('aria-invalid') !== 'true') return null
+    const ids = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    return ids.map((id) => document.getElementById(id)).find((n) => n?.matches('.text-destructive'))?.textContent?.trim()
+      ?? 'aria-invalid'
+  })
+  const shown = await errorOf()
+  ok('сервер: отправка опередила живую проверку — ошибка адреса пришла ответом', posts === 1 && shown === 'Этот адрес уже занят', `${posts} / ${shown}`)
+  const email = pg.locator('#signup-email')
+  await email.focus()
+  await email.press('End')
+  await email.press('x')
+  await pg.waitForTimeout(100)
+  ok('сервер: правка значения снимает ошибку сразу, без ухода с поля', await errorOf() === null, String(await errorOf()))
+  await email.press('Backspace')
+  // Ошибку `unique` сервер дал по общему правилу (origin 'core'): клиент умеет проверить
+  // её сам, поэтому возврат значения снова запускает живую проверку — без закрепа
+  // (закреп — для ошибок, которые решает только сервер: см. db-demo.mjs).
+  await pg.waitForFunction(() => document.querySelector('#signup-email')?.getAttribute('aria-invalid') === 'true',
+    null, { timeout: 5000 }).catch(() => {})
+  ok('сервер: возврат к отклонённому значению — живая проверка показывает ошибку снова', await errorOf() === shown, String(await errorOf()))
+  ok('сервер: фокус остался в поле (без ухода)', await email.evaluate((el) => el === document.activeElement))
+  await ctx.close()
+}
+
 /* ── примитивы полей (ход 117): пароль с показом, число с шагом, код, переключатель, список ── */
 {
   console.log('— примитивы полей формы —')
