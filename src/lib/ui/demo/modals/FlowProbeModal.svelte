@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button } from '#lib/ui/primitives/index.js'
+import { Button } from '#lib/components/ui/index.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
   import { useModal, useModals } from '#lib/modals/svelte/index.js'
 

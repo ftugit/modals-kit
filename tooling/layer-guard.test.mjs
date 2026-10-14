@@ -64,7 +64,7 @@ test('сырой <input> на странице — ошибка, подсказ�
   const msg = checkTemplate(RULES, '<template><input name="q" /></template>', '/app/src/routes/search/+page.svelte');
   assert.ok(msg, 'должно вернуть ошибку');
   assert.match(msg, /Form.*from '#lib\/form\/svelte\/index\.js'/s, 'сообщение указывает на <Form>');
-  assert.match(msg, /primitives/, 'и на примитивы полей');
+  assert.match(msg, /#lib\/components\/ui\/index\.js/, 'и на примитивы полей');
 });
 
 test('<form>/<input> разрешены в lib/form', () => {
@@ -72,13 +72,13 @@ test('<form>/<input> разрешены в lib/form', () => {
 });
 
 test('примитивы полей и виджеты панелей — свои теги законны', () => {
-  assert.equal(checkTemplate(RULES, '<input />', '/app/src/lib/ui/primitives/Input.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<select></select>', '/app/src/lib/ui/primitives/NativeSelect.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<input />', '/app/src/lib/ui/settings/Toggle.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<input />', '/app/src/lib/components/ui/input/Input.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<select></select>', '/app/src/lib/components/ui/native-select/NativeSelect.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<input />', '/app/src/lib/components/settings/Toggle.svelte'), null);
 });
 
 test('оболочка (sidebar) — исключение владельца', () => {
-  assert.equal(checkTemplate(RULES, '<input type="checkbox" />', '/app/src/lib/shell/AppShell.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<input type="checkbox" />', '/app/src/lib/components/shell/AppShell.svelte'), null);
 });
 
 test('node_modules (Ark UI рендерит скрытые input сам) не под проверкой', () => {
@@ -95,21 +95,21 @@ test('<Form /> (компонент, не тег) не задевает прав�
 /* ── lib/form не знает про UI-примитивы ─────────────────────────────── */
 
 test('импорт примитивов внутрь lib/form запрещён', () => {
-  assert.ok(check('#lib/ui/primitives/index.js', '/app/src/lib/form/svelte/provider.svelte'));
-  assert.ok(check('#lib/ui/settings/index.js', '/app/src/lib/form/svelte/x.svelte'));
+  assert.ok(check('#lib/components/ui/index.js', '/app/src/lib/form/svelte/provider.svelte'));
+  assert.ok(check('#lib/components/settings/index.js', '/app/src/lib/form/svelte/x.svelte'));
 });
 
 test('импорт примитивов разрешён всем, кто вне lib/form', () => {
-  assert.equal(check('#lib/ui/primitives/index.js', '/app/src/routes/form/+page.svelte'), null);
-  assert.equal(check('#lib/ui/primitives/index.js', '/app/src/lib/ui/demo/form/ui/Field.svelte'), null);
-  // и другие #lib/ui-модули form-библиотеку не касаются
-  assert.equal(check('#lib/ui/cn.js', '/app/src/lib/form/svelte/config.ts'), null);
+  assert.equal(check('#lib/components/ui/index.js', '/app/src/routes/form/+page.svelte'), null);
+  assert.equal(check('#lib/components/ui/index.js', '/app/src/lib/ui/demo/form/ui/Field.svelte'), null);
+  // и прочие модули UI (например, #lib/utils.js) form-библиотеку не касаются
+  assert.equal(check('#lib/utils.js', '/app/src/lib/form/svelte/config.ts'), null);
 });
 
 test('template: <NativeSelect> вне кита блокируется с подсказкой enhanced Select', () => {
   const msg = checkTemplate(RULES, '<div><NativeSelect name="s" /></div>', '/app/src/routes/demo/+page.svelte');
   assert.match(msg, /только внутри кита/);
-  assert.match(msg, /#lib\/ui\/primitives/);
+  assert.match(msg, /#lib\/components\/ui/);
 });
 
 test('template: <NativeSelect /> самозакрытый тоже блокируется; enhanced <Select /> — нет', () => {
@@ -118,8 +118,8 @@ test('template: <NativeSelect /> самозакрытый тоже блокир�
 });
 
 test('template: кит собирает носитель сам — settings и shell легальны', () => {
-  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/ui/settings/Select.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/shell/sidebar.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/components/settings/Select.svelte'), null);
+  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/lib/components/shell/sidebar.svelte'), null);
 });
 
 /* ── обход lib/form (добавлено 2026-10-09 после разбора дыр узора) ────── */

@@ -27,7 +27,7 @@
     ResetButton,
     Skeleton,
     type SettingsField,
-  } from '#lib/ui/paginator/index.js'
+  } from '#lib/components/paginator/index.js'
   import {
     DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
@@ -41,7 +41,7 @@
     type DemoStore,
   } from './definition'
   import { loadFilterSchema } from './sources'
-  import { FiltersPanel } from '#lib/ui/filters/index.js'
+  import { FiltersPanel } from '#lib/components/filters/index.js'
   import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
@@ -53,7 +53,7 @@ import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
 import { useCursorMode } from '#lib/ui/demo/db-list/cursor-mode.svelte.js'
 import ItemRow from './ItemRow.svelte'
   import SearchBar from './SearchBar.svelte'
-  import Button from '#lib/ui/primitives/Button.svelte'
+  import Button from '#lib/components/ui/button/Button.svelte'
   import ShotTile from './ShotTile.svelte'
 
   const HOST_CLASS =

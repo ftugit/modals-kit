@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button } from '#lib/ui/primitives/index.js'
+import { Button } from '#lib/components/ui/index.js'
   import { onMount } from 'svelte'
   import { createModals, createRegistry, urlStorage } from '#lib/modals/index.js'
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'

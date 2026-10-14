@@ -71,7 +71,7 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // REVISION 2026-10-14 (ход 141 — Link вместо LoadLink, ModalTrigger рядом с ним в
 // components/links): сам код ссылки (своя предзагрузка, проверка роута, индикатор)
 // ≈0.5; остальное — сборщик разложил общий код на больше мелких чанков (адаптер
-// роутера, components/links, ui/modals отдельно), набор модулей маршрутов прежний.
+// роутера, components/links, components/modals отдельно), набор модулей маршрутов прежний.
 // Против c6eda0e: весь JS 231.4 → 233.8, immutable 244.5 → 246.8, /form 166.0 → 168.8,
 // /paginator 197.3 → 200.2, /db-demo 189.9 → 192.8. Дробление чанков отклонено в ходе
 // 127 — по постоянному решению (≤ +5, сообщить): весь JS 234.5, immutable 247.5,

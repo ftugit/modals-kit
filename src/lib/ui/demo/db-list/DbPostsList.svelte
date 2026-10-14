@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Список демо — обычный потребитель `#lib/paginate/index.js`: строки рисует `PageList`,
-   * навигацию и настройки — компоненты `#lib/ui/paginator/index.js`. Своего `slice`, своих
+   * навигацию и настройки — компоненты `#lib/components/paginator/index.js`. Своего `slice`, своих
    * ссылок «дальше» и своего чтения адреса здесь нет: адрес принадлежит
    * пагинатору (`?page`, `?page.size`, `?page.ord`, `?page.cur`, `?page.after`).
    *
@@ -35,7 +35,7 @@
     PageNav,
     PaginatorSettings,
     type SettingsField,
-  } from '#lib/ui/paginator/index.js'
+  } from '#lib/components/paginator/index.js'
   // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.
@@ -55,7 +55,7 @@
   import { isAbsorbed, ownRowPlacement, pendingPlacement, type Optimistic } from './optimistic.svelte'
   import DbPostPendingRow from './DbPostPendingRow.svelte'
   import DbPostRow from './DbPostRow.svelte'
-  import Button from '#lib/ui/primitives/Button.svelte'
+  import Button from '#lib/components/ui/button/Button.svelte'
   import ListMeta from './ListMeta.svelte'
   import { useCursorMode } from './cursor-mode.svelte'
 

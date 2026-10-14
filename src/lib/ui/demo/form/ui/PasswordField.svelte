@@ -1,7 +1,7 @@
 <script lang="ts">
   // Компонент приложения: пароль с показом (кнопка-глаз примитива появляется
   // после оживления). Шкала сложности — вариант 'strength', см. PasswordStrengthField.
-  import { PasswordInput } from '#lib/ui/primitives/index.js'
+  import { PasswordInput } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 

@@ -8,7 +8,7 @@
   import favicon from '#lib/assets/favicon.svg'
   import { appErrors } from '#lib/app-errors.svelte.js'
   import Error500 from '#lib/components/Error500.svelte'
-  import { setPageContext, PageHead } from '#lib/shell/index.js'
+  import { setPageContext, PageHead } from '#lib/components/shell/index.js'
   import 'virtual:uno.css'
   import '../app.css'
 

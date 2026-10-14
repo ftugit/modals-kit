@@ -55,7 +55,7 @@ not ok - ядро модалок не зависит ни от одного фр
 | Где | Что |
 |---|---|
 | `svelte/classes.ts` | классы хоста: фон, сцена, оболочка, хвост, скелетон, ошибка, спиннер, кадры входа/выхода |
-| `ui/modals/variants.ts` | CVA-наборы: `modalBackdropVariants`, `modalPopupVariants`; вид кнопок модалок (`ForceClose`, `CloseAllButton`) и ссылки на модалку даёт общий `Button` (`asModalLink` в `#lib/components/links`) |
+| `components/modals/variants.ts` | CVA-наборы: `modalBackdropVariants`, `modalPopupVariants`; вид кнопок модалок (`ForceClose`, `CloseAllButton`) и ссылки на модалку даёт общий `Button` (`asModalLink` в `#lib/components/links`) |
 | `src/app.css` | **только токены тем** — цвета и радиус; ни одного правила оформления |
 | `src/app.html` | база документа классами: фон, шрифт, размер, выделение, курсор кнопок |
 

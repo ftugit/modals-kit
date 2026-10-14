@@ -2,7 +2,7 @@
   // Обёртка поля — код приложения: она решает, где подпись, где подсказка
   // и где текст ошибки. Библиотека даёт идентификаторы, чтобы связи
   // доступности указывали на существующие узлы.
-  import { Label } from '#lib/ui/primitives/index.js'
+  import { Label } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import type { Snippet } from 'svelte'
 

@@ -169,9 +169,9 @@ const MODALS_LIB = /(^|\/)src\/lib\/modals\//;
 /** Кто имеет право на сырые form-теги и на собственный разбор тела. */
 const FORM_KEEPERS = [
   /(^|\/)src\/lib\/form\//,
-  /(^|\/)src\/lib\/ui\/primitives\//,
-  /(^|\/)src\/lib\/ui\/settings\//,
-  /(^|\/)src\/lib\/shell\//,
+  /(^|\/)src\/lib\/components\/ui\//,
+  /(^|\/)src\/lib\/components\/settings\//,
+  /(^|\/)src\/lib\/components\/shell\//,
   /(^|\/)node_modules\//,
   /(^|\/)tooling\//,
 ];
@@ -218,8 +218,8 @@ export const RULES = [
   {
     // Сырые form-теги живут ТОЛЬКО в библиотеке формы и в примитивах полей.
     // Потребитель (страница, фича, демо-блок) получает либо <Form> из
-    // '#lib/form/svelte/index.js', либо поле из примитивов ('#lib/ui/primitives/index.js',
-    // '#lib/ui/settings/index.js') — тогда семантика (hidden-пары, no-JS GET,
+    // '#lib/form/svelte/index.js', либо поле из примитивов ('#lib/components/ui/index.js',
+    // '#lib/components/settings/index.js') — тогда семантика (hidden-пары, no-JS GET,
     // aria-связи, оживление контролов) не теряется на каждом «удобном»
     // разметочном дубле. Исключение — оболочка (sidebar-чекбокс работает
     // без JS и не является полем).
@@ -232,9 +232,9 @@ export const RULES = [
     isTemplateCheck: true,
     allow: [
       /(^|\/)src\/lib\/form\//,
-      /(^|\/)src\/lib\/ui\/primitives\//,
-      /(^|\/)src\/lib\/ui\/settings\//,
-      /(^|\/)src\/lib\/shell\//,
+      /(^|\/)src\/lib\/components\/ui\//,
+      /(^|\/)src\/lib\/components\/settings\//,
+      /(^|\/)src\/lib\/components\/shell\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -245,8 +245,8 @@ export const RULES = [
         '  Форма и поля собираются только из компонентов:',
         '',
         "      import { Form } from '#lib/form/svelte/index.js';     // тег <form> + hidden-пары",
-        "      import { Input, Select, Checkbox } from '#lib/ui/primitives/index.js';",
-        "      import { Field, Select, Toggle } from '#lib/ui/settings/index.js'; // панели настроек",
+        "      import { Input, Select, Checkbox } from '#lib/components/ui/index.js';",
+        "      import { Field, Select, Toggle } from '#lib/components/settings/index.js'; // панели настроек",
         '',
         '  Почему: тег <form> обязан нести formProps() (метод, action, submit-',
         '  обработчик, novalidate после гидратации), а скрытые пары держат',
@@ -263,9 +263,9 @@ export const RULES = [
     pattern: /<NativeSelect([ \t\n/>])/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/ui\/primitives\//,
-      /(^|\/)src\/lib\/ui\/settings\//,
-      /(^|\/)src\/lib\/shell\//,
+      /(^|\/)src\/lib\/components\/ui\//,
+      /(^|\/)src\/lib\/components\/settings\//,
+      /(^|\/)src\/lib\/components\/shell\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -275,8 +275,8 @@ export const RULES = [
         '',
         '  Странице и демке положен расширенный select:',
         '',
-        "      import { Select } from '#lib/ui/primitives/index.js';              // список — панель, значение — носитель в нём",
-        "      import { Select as PanelSelect } from '#lib/ui/settings/index.js'; // панели настроек",
+        "      import { Select } from '#lib/components/ui/index.js';              // список — панель, значение — носитель в нём",
+        "      import { Select as PanelSelect } from '#lib/components/settings/index.js'; // панели настроек",
         '',
         '  Почему: enhanced <Select> оставляет форму и no-JS на нативном',
         '  <select>-носителе (с опциями — nativeList), а список рисует',
@@ -289,7 +289,7 @@ export const RULES = [
     // Библиотека формы рендерит поля САМА (bind/config/ui-политика);
     // импорт UI-примитива внутрь провайдера означал бы, что «свой field»
     // куда-то делся и его подменяют чужой разметкой.
-    pattern: /^#lib\/ui\/(primitives|settings)\//,
+    pattern: /^#lib\/components\/(ui|settings)\//,
     allow: [/.*/], // всем, кроме тех, кто в deny
     deny: [/(^|\/)src\/lib\/form\//],
     message: ({ source, importer }) =>

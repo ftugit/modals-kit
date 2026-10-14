@@ -17,7 +17,7 @@
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageProps } from './$types'
-  import Alert from '#lib/ui/primitives/Alert.svelte'
+  import Alert from '#lib/components/ui/alert/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Button from '#lib/ui/primitives/Button.svelte'
+  import Button from '#lib/components/ui/button/Button.svelte'
   // Экран остановки приложения (Q1). НИ строки из ошибки: причина живёт в консоли
   // разработчика (warn) и в логе сервера, пользователю — только факт сбоя.
 </script>

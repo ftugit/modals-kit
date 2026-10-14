@@ -10,7 +10,7 @@
     PaginatorSettings,
     Skeleton,
     type SettingsField,
-  } from '#lib/ui/paginator/index.js'
+  } from '#lib/components/paginator/index.js'
   import type { DemoItem } from '../../../../content/items'
   import {
     DEFAULT_GALLERY_EXTRA,

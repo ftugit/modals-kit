@@ -11,7 +11,7 @@
   import { jsonTransport } from '#lib/ui/demo/form/transport.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { Button } from '#lib/ui/primitives/index.js'
+  import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/ui/demo/form/forms.config.js'
   import Common from '#lib/ui/demo/form/ui/Common.svelte'
   import Field from '#lib/ui/demo/form/ui/Field.svelte'

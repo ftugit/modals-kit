@@ -115,7 +115,7 @@ src/lib/
 │   │   ├── select/              Select, SelectList, select-model.ts, select-trace.ts
 │   │   ├── search/              SearchField, SearchInput, SearchMorph
 │   │   ├── password/            PasswordInput, PasswordStrength
-│   │   ├── number-field/  phone-field/  otp-input/
+│   │   ├── number-field/  phone-input/  otp-input/  warning-icon/
 │   │   ├── separator/  skeleton/  spinner/  stat/  switch/
 │   │   └── field/               field.ts
 │   ├── settings/                ← ui/settings (Field, Select, Toggle)
@@ -181,7 +181,14 @@ src/lib/
 2. ✅ ход 160: `search` → `paginate/search` и `paginate/svelte/search` (UI на месте; подписи «lib/search» в демо стали «paginate/search»).
 3. ✅ ход 160: `filters` → `paginate/filters` вместе с R2 (подписи — решение 4 не принято, оставлены как есть): разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.
-4. `ui/*`, `shell`, `cn`, `js-only`, `use-drawer` → `components`, `hooks`, `utils.ts`.
+4. ✅ 14.10.2026: `ui/primitives` → `components/ui/<компонент>/` (папка на компонент, общий
+   `components/ui/index.ts`; папки названы по компоненту: `phone-input/` вместо `phone-field/`,
+   плюс `warning-icon/` для `WarningIcon`), `ui/{settings,modals,paginator,filters}` →
+   `components/…`, `lib/shell` → `components/shell`, `ui/cn.ts` → `utils.ts` (примитивы берут
+   `#lib/utils.js`, как в shadcn), `ui/js-only.svelte.ts` и `shell/use-drawer.svelte.ts` →
+   `hooks/`. Удалены `lib/ui/index.ts` (дубль барреля примитивов) и пустая `lib/index.ts`.
+   Стражи: `layer-guard` (FORM_KEEPERS, разрешения `<NativeSelect>`, запрет UI в `lib/form` —
+   теперь `#lib/components/(ui|settings)/`), `classes-audit`, `vite.config.ts` (прогрев).
 5. `ui/demo` → `demo` (по решению 3).
 
 В каждом шаге: пути в стражах (`tooling/core-purity.mjs` `CORE_MODULES`, `layer-guard`,

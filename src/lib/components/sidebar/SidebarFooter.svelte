@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useShell } from '#lib/shell/index.js'
+  import { useShell } from '#lib/components/shell/index.js'
   const shell = useShell()
 </script>
 

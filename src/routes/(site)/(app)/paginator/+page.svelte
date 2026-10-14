@@ -61,7 +61,7 @@
           <code class="rounded bg-muted/70 px-1">?page.&lt;опция&gt;</code> (replace, без
           window-скролла) — как цепочка у модалок. Ссылкой можно поделиться: восстановится всё,
           включая раскладку и флаги. То же — через localStorage. Всё вокруг списка — отдельные
-          компоненты из <code class="rounded bg-muted/70 px-1">ui/paginator</code>: уберите
+          компоненты из <code class="rounded bg-muted/70 px-1">components/paginator</code>: уберите
           ненужные.
         </p>
         <p class="mt-2 max-w-2xl text-muted-foreground">

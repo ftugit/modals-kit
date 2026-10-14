@@ -1,7 +1,7 @@
 <script lang="ts">
   // Одноразовый код (примитив OtpInput). Число ячеек — из правила длины поля
   // (`v.maxLength(n)` → `maxlength`), без него — 6.
-  import { OtpInput } from '#lib/ui/primitives/index.js'
+  import { OtpInput } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 

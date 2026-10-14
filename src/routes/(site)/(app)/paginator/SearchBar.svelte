@@ -3,9 +3,9 @@
   // Логика (форма, задержка, запись в стор, сброс) — хук `usePaginatorSearch`.
   import { Form } from '#lib/form/svelte/index.js'
   import { asLink } from '#lib/components/links/index.js'
-  import Button from '#lib/ui/primitives/Button.svelte'
-  import { SearchInput } from '#lib/ui/primitives/index.js'
-  import { usePaginatorSearch } from '#lib/ui/paginator/index.js'
+  import Button from '#lib/components/ui/button/Button.svelte'
+  import { SearchInput } from '#lib/components/ui/index.js'
+  import { usePaginatorSearch } from '#lib/components/paginator/index.js'
 
   interface Props {
     /** Имя пагинатора (оно же имя поиска: им пользуется lib search). */

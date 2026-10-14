@@ -4,7 +4,7 @@
   // `(app)` и `(modals-demo)`: при переходах между страницами шапка и
   // сайдбар не пересоздаются (C2). Кнопки шапки страница добавляет сама —
   // `useHeaderSlot` в своём компоненте; уходит страница — уходят и они.
-  import { AppShell, useHeaderSlot, useSidebarSlot } from '#lib/shell/index.js'
+  import { AppShell, useHeaderSlot, useSidebarSlot } from '#lib/components/shell/index.js'
   import {
     LogoSlot,
     NavSlot,

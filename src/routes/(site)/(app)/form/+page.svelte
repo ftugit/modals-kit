@@ -1,8 +1,8 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink } from '#lib/components/links/index.js'
-  import { Button, Fieldset } from '#lib/ui/primitives/index.js'
-  import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
+  import { Button, Fieldset } from '#lib/components/ui/index.js'
+  import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
   const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
@@ -18,7 +18,7 @@ import { asLink } from '#lib/components/links/index.js'
   import { normalizePsp, PSP_SAMPLES } from '#lib/ui/demo/form/psp.js'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '#lib/ui/demo/form/signup.js'
   import { createConfig } from '#lib/form/svelte/index.js'
-  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '#lib/ui/settings/index.js'
+  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '#lib/components/settings/index.js'
   import Common from '#lib/ui/demo/form/ui/Common.svelte'
   import Field from '#lib/ui/demo/form/ui/Field.svelte'
 
@@ -34,7 +34,7 @@ import { asLink } from '#lib/components/links/index.js'
   /* ── панель настроек — на самом механизме (этап 8) ─────────────────
      Второго состояния страница не держит: переключатели демо читают зеркало
      `settings`, а `opts` — геттеры над ним (C3). Имена полей = id, как в
-     фильтрах и пагинаторной панели; контролы — общие виджеты `#lib/ui/settings/index.js`
+     фильтрах и пагинаторной панели; контролы — общие виджеты `#lib/components/settings/index.js`
      (Select/Toggle поверх примитивов), аттрибуты — из `form.field(...)`. */
   /* Зеркало механизма старует пустым (дефолты описания — только для
      декода/сида); панель держит тот же список значений единственным

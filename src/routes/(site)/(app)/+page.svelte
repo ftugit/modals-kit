@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Button from '#lib/ui/primitives/Button.svelte'
+  import Button from '#lib/components/ui/button/Button.svelte'
   import { asLink } from '#lib/components/links/index.js'
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.

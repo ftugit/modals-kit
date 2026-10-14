@@ -1,8 +1,8 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink, useModalLink } from '#lib/components/links/index.js'
-  import { Button, buttonVariants, Fieldset } from '#lib/ui/primitives/index.js'
-  import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
+  import { Button, buttonVariants, Fieldset } from '#lib/components/ui/index.js'
+  import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
   // Порт src/features/modals/ModalsDemo.tsx оригинала: состав триггеров,
@@ -19,7 +19,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { CloseAllButton } from '#lib/ui/modals/index.js'
+  import { CloseAllButton } from '#lib/components/modals/index.js'
   import SettingsPanel from '#lib/ui/demo/modals/SettingsPanel.svelte'
   import SourcesPanel from '#lib/ui/demo/modals/SourcesPanel.svelte'
   import FloatingMenu from '#lib/ui/demo/modals/FloatingMenu.svelte'

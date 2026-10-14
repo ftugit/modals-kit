@@ -10,8 +10,8 @@
   import { bind, createConfig } from '#lib/form/svelte/index.js'
   import { defineForm, field } from '#lib/form/index.js'
   import { untrack } from 'svelte'
-  import { Input } from '#lib/ui/primitives/index.js'
-  import { Field as PanelField, Select as PanelSelect } from '#lib/ui/settings/index.js'
+  import { Input } from '#lib/components/ui/index.js'
+  import { Field as PanelField, Select as PanelSelect } from '#lib/components/settings/index.js'
 
   const m = useModals()
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Число с кнопками «−/+» (примитив NumberField). Значение уходит в форму той же
   // строкой, что у TextField: разбор числа — работа типа значения, не компонента.
-  import { NumberField } from '#lib/ui/primitives/index.js'
+  import { NumberField } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 

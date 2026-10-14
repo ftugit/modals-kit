@@ -21,7 +21,7 @@
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
   import { report } from '#lib/app-errors.svelte.js'
   import { ModalHost } from '#lib/modals/svelte/index.js'
-  import { BackdropCloseIcon, ModalError, Skeleton } from '#lib/ui/modals/index.js'
+  import { BackdropCloseIcon, ModalError, Skeleton } from '#lib/components/modals/index.js'
 
   interface Props {
     /** Область модалок ветки: постоянна для экземпляра (ветку задаёт папка). */

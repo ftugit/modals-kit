@@ -3,7 +3,7 @@
 
 import { CheckRegistry, check, defaultRegistry, describe, issue, opaque, v } from '#lib/form/index.js'
 import type { Constraint, FieldType } from '#lib/form/index.js'
-import { phoneLengthOk } from '#lib/ui/primitives/phone.ts'
+import { phoneLengthOk } from '#lib/components/ui/phone-input/phone.ts'
 
 // Открытые ключи: подсказки среды возвращаются расширением интерфейсов.
 declare module '#lib/form/index.js' {

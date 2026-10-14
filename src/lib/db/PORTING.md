@@ -301,7 +301,7 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 Порядок обновления копии (тот же, что и в 0-м пункте выше): `git archive <ref> | tar -x -C
 /home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
 '^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/ui/demo/{form,modals}/**`,
-`ui/paginator/fields/*` → `#lib/ui/settings/*`), затем вернуть своё: deps в `package.json`,
+`ui/paginator/fields/*` → `#lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
 `src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
 `src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/ui/demo/db-form/**`,
 `src/lib/ui/demo/db-list/**`. Дальше
@@ -310,11 +310,11 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 Что потребовало правок именно на `5d08da7`:
 
 - **`tooling/layer-guard.mjs` запретил сырые form-теги** (`pattern /<(form|input|select|textarea)([
-  \t\n>])/`, allow-list: `src/lib/form/`, `src/lib/ui/primitives/`, `src/lib/ui/settings/`,
-  `src/lib/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
+  \t\n>])/`, allow-list: `src/lib/form/`, `src/lib/components/ui/`, `src/lib/components/settings/`,
+  `src/lib/components/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
   `vite build`; смотрит по исходнику файла целиком, поэтому закомментированный тег в шапке тоже
   красит сборку. `src/routes/db-demo/+page.svelte` переписан на `Form` из `#lib/form/svelte/index.js` и
-  `Input`/`Button` из `#lib/ui/primitives/index.js`: `Form` требует `formProps()`, и демо отдаёт
+  `Input`/`Button` из `#lib/components/ui/index.js`: `Form` требует `formProps()`, и демо отдаёт
   `{ method: 'post', action, onsubmit: () => {} }` — submit остаётся нативным SvelteKit-путём
   (демо проверяет слой БД, а не формы кита), скрытые id-пары идут через `hiddenFields`.
 - `package.json` приложения изменился только скриптами (`test:browser:errors`) — зависимости не

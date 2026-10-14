@@ -21,7 +21,7 @@
 | Есть | Где | Чего не хватает для T8 |
 |---|---|---|
 | `EdgeTrigger = off\|direction\|edge\|chat\|manual` | `src/lib/paginate/types.ts:207` | `chat` описывает **жест** (грузить только в сторону движения), а не источник новых строк |
-| `LoadMoreLink` + `EdgeSentinel` + `prependBehavior` | `src/lib/ui/paginator`, `PaginatorHost.svelte` | строки, которой нет ни в одном ответе источника |
+| `LoadMoreLink` + `EdgeSentinel` + `prependBehavior` | `src/lib/components/paginator`, `PaginatorHost.svelte` | строки, которой нет ни в одном ответе источника |
 | `pending` | `core.ts:308` | только слоты-скелетоны по числу ожидаемых записей; «данные есть, ответа ещё нет» там выразить нечем |
 | `mode: accumulate\|single`, `extra` в адресе, `?page.after` (keyset) | ядро + `adapter-url.ts`, демо-источник (`#lib/ui/demo/db-list`) | точки «переспросить ТЕКУЩЕЕ окно, не сбрасывая его» (T6.2 `refresh`) |
 | возможности источника (`capabilitiesFor`) | `source.ts` | источника, который умеет расти без перезапроса страницы |

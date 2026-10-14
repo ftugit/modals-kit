@@ -1,7 +1,7 @@
 <script lang="ts">
   // Поле поиска с крестиком очистки (примитив SearchInput). Крестик шлёт обычное
   // событие ввода с пустым значением — форма узнаёт об очистке тем же путём.
-  import { SearchInput } from '#lib/ui/primitives/index.js'
+  import { SearchInput } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 

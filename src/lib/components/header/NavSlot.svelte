@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { variants, type VariantProps } from '#lib/ui/cn.js'
+  import { variants, type VariantProps } from '#lib/utils.js'
 
   export const navPillVariants = variants(
     // Своих классов нет и здесь: единственный «внешний» признак активного

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Те же соображения, что и у TextField: классы берём, управляемое значение — нет.
   import type { FieldView } from '#lib/form/svelte/index.js'
-  import { Textarea } from '#lib/ui/primitives/index.js'
+  import { Textarea } from '#lib/components/ui/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

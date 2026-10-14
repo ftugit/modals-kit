@@ -23,10 +23,10 @@
    * `aria-controls` на кнопке обязателен: по нему ловушка фокуса модалки
    * признаёт портированное меню своим (решение D31).
    */
-import { Button } from '#lib/ui/primitives/index.js'
+import { Button } from '#lib/components/ui/index.js'
   import { Portal } from '@ark-ui/svelte/portal'
   import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
-  import { cn } from '#lib/ui/cn.js'
+  import { cn } from '#lib/utils.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
 
   interface Props {

@@ -1,0 +1,42 @@
+<script lang="ts">
+  // Порт ForceClose из src/ui/modals/force-close.tsx оригинала.
+  // Принудительное закрытие (внешний вид; логика — lib/modals):
+  // единственный легальный выход из заблокированной модалки.
+  import { useModals } from '#lib/modals/svelte/index.js'
+  import Button from '#lib/components/ui/button/Button.svelte'
+  import type { HTMLButtonAttributes } from 'svelte/elements'
+
+  let {
+    /** Имя модалки; без него закрывается активная. */
+    name,
+    /** Закрыть всю стопку, включая заблокированные. */
+    all = false,
+    class: cls,
+    style,
+    children,
+    onclick,
+    ...rest
+  }: HTMLButtonAttributes & {
+    name?: string
+    all?: boolean
+    children?: import('svelte').Snippet
+  } = $props()
+
+  const m = useModals()
+</script>
+
+<!-- Вид — общий `Button` (вариант `destructive`): своего набора стилей у модалок нет. -->
+<Button
+  variant="destructive"
+  {...rest}
+  onclick={(event) => {
+    onclick?.(event)
+    if (all) m.modals.forceCloseAll()
+    else m.modals.forceClose(name)
+  }}
+  class={cls}
+  data-modal-btn=""
+  {style}
+>
+  {#if children}{@render children()}{:else}Закрыть принудительно{/if}
+</Button>

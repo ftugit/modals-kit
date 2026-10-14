@@ -56,7 +56,7 @@ const schema: CatalogFilterSchema = {
 | `CATALOG_FILTER_NOJS_OPTIONS` | 200 — показ без JS | `schema.ts` |
 | `CATALOG_FILTER_OPTIONS_LIMIT` | 5000 — защита от гигантских форм, не размер показа | `schema.ts` |
 | `capCatalogFilterOptions(schema)` | поле длиннее 200 упорядочивает по частоте, при равной — по подписи; поле длиннее 5000 обрезает (аварийно) и пишет `optionsTruncated` | `schema.ts` |
-| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#lib/ui/primitives/Select.svelte` |
+| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#lib/components/ui/select/Select.svelte` |
 
 **Почему первые 200 — нужные.** Порядок задаёт сборщик схемы: частые первыми. Без частот в
 первые 200 попали бы студии по алфавиту, и популярной «Wit Studio» там могло бы не оказаться.
@@ -77,7 +77,7 @@ const schema: CatalogFilterSchema = {
 ```
 
 Порядок `options` и есть порядок показа: `nativeLimit` берёт первые N. Так сделано в
-`#lib/ui/filters/CatalogFilterForm.svelte`, там же считается N для пояснения (тем же правилом:
+`#lib/components/filters/CatalogFilterForm.svelte`, там же считается N для пояснения (тем же правилом:
 первые N плюс выбранное).
 
 **Вес.** Страница каталога (`/paginator?page.src=animes`, 2026-10-12): HTML 234 KiB
@@ -157,6 +157,6 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 |---|---|
 | `catalog-filter.test.ts` | порядок длинного поля (частые первыми, дальше по подписи), короткое не трогается, хвост законен, чужое — `oneOf`, предел 5000 |
 | `schema-memory.test.ts` | память по `source`, замена, выключенная на сервере |
-| `src/lib/ui/primitives/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
+| `src/lib/components/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
 | `src/lib/server/shikimori-schema.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
 | `test/browser/shikimori.mjs` | без JS: 200 студий с пояснением, студия из хвоста по адресу показана выбранной и проходит проверку; с JS: поиск находит последнюю студию; переход внутри сайта — схемы нет в данных, панель из памяти; роут: 403 без заголовка |

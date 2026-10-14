@@ -22,7 +22,7 @@ import { createAttachmentKey } from 'svelte/attachments'
 import { chainToSearch, nextChain, routeHref } from '#lib/modals/index.js'
 import type { ChainOverrides, ChainEntry, RegisteredEntry, StackMode } from '#lib/modals/index.js'
 import { useModals } from '#lib/modals/svelte/index.js'
-import { useJsOnly } from '#lib/ui/js-only.svelte.js'
+import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
 import { blockClicks, defined, isModified, reflectTask, type LinkAttrs } from './state.svelte.js'
 
 export interface ModalLinkOptions extends ChainOverrides {

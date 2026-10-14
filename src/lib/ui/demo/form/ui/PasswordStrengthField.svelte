@@ -4,7 +4,7 @@
   // и проверка разошлись бы, и пользователь видел бы «надёжный» там, где
   // форма не пропускает.
   import { strengthOf, type StrengthLevel } from '#lib/form/index.js'
-  import { PasswordStrength } from '#lib/ui/primitives/index.js'
+  import { PasswordStrength } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 

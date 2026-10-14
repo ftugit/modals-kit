@@ -3,7 +3,7 @@
   // по тексту от трёх до восьми строк (примитив AutoTextarea). Без JS и в браузерах
   // без `field-sizing` поле остаётся обычным многострочным — значение то же.
   import type { FieldView } from '#lib/form/svelte/index.js'
-  import { AutoTextarea } from '#lib/ui/primitives/index.js'
+  import { AutoTextarea } from '#lib/components/ui/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()

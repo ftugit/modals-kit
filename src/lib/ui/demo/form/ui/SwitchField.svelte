@@ -1,6 +1,6 @@
 <script lang="ts">
   // Переключатель (примитив Switch): тот же флажок, роль switch — в attrs типа.
-  import { Label, Switch } from '#lib/ui/primitives/index.js'
+  import { Label, Switch } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
 
   let f: FieldView = $props()

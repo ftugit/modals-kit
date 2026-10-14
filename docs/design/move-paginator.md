@@ -27,22 +27,22 @@
 | `definition.test.ts` | `paginator/definition.test.ts` | проверяет API настроек (`demoExtraOf`, `DEMO_*`, `ensureDemoPaginator`); импортирует только `definition.ts` — имя остаётся (уточнено на шаге 1) |
 | `item-views.ts`, `types.ts` | `paginator/` | тип записей и данных загрузки этой страницы |
 | `ItemRow`, `ShotTile`, `AnimeRow`, `AnimeTile`, `CharacterRow`, `CharacterTile` | `paginator/` | решение владельца: карточки роута |
-| `FiltersPanel.svelte` | `src/lib/ui/filters/FiltersPanel.svelte` + экспорт из `index.ts` | общий: имя, схема, значения — о странице не знает |
-| `SearchQueryForm.svelte` — логика | `src/lib/ui/paginator/search.svelte.ts` → `usePaginatorSearch` + экспорт | общий хук без разметки |
+| `FiltersPanel.svelte` | `src/lib/components/filters/FiltersPanel.svelte` + экспорт из `index.ts` | общий: имя, схема, значения — о странице не знает |
+| `SearchQueryForm.svelte` — логика | `src/lib/components/paginator/search.svelte.ts` → `usePaginatorSearch` + экспорт | общий хук без разметки |
 | `SearchQueryForm.svelte` — разметка и тексты | `paginator/SearchBar.svelte` | поле, кнопки, подсказка — страницы |
 
 Не трогаем: `content/*.ts` (ими пользуется и `lib/server/*`),
 `#lib/ui/demo/db-list/*` (`DbPostRow`, `cursor-mode`, тип `DbPost` — это перенос
-`/db-demo`), уже общие `lib/ui/{paginator,filters,primitives,settings}`.
+`/db-demo`), уже общие `lib/components/{paginator,filters,ui,settings}`.
 
-Хук — в `lib/ui/paginator`, а не в `#lib/paginate/svelte/search`: он склеивает `lib/form`
+Хук — в `lib/components/paginator`, а не в `#lib/paginate/svelte/search`: он склеивает `lib/form`
 (форма для перехода без JS), роутер (`currentSearch`), `lib/paginate`
 (`setExtra`) и `paginate/search` (`normalizeSearchQuery`). Положить его в `paginate/search`
 — привязать независимую библиотеку к трём другим (правило «каждая lib работает
-одна»). Склейка поверх библиотек — это и есть `lib/ui/paginator`.
+одна»). Склейка поверх библиотек — это и есть `lib/components/paginator`.
 
 ```ts
-// src/lib/ui/paginator/search.svelte.ts — набросок API
+// src/lib/components/paginator/search.svelte.ts — набросок API
 const search = usePaginatorSearch(name, {
   path: 'page.q',
   label: 'Поиск по каталогу',
@@ -78,14 +78,14 @@ const search = usePaginatorSearch(name, {
   - [x] Проверки: `gate.sh`; размер `/paginator` 194.7 → 194.7; `paginate`.
 
 - [x] **2. Разделить поиск.**
-  - [x] `src/lib/ui/paginator/search.svelte.ts`: перенести из `SearchQueryForm`
+  - [x] `src/lib/components/paginator/search.svelte.ts`: перенести из `SearchQueryForm`
         объявление формы, задержку, нормализацию, запись через `setExtra`,
         «набранное против эха своей отправки» (`committed`), сброс набранного при
         внешней смене запроса, выключение до оживления. Тексты (`label`,
         `placeholder`) — параметрами, в хуке своих текстов нет.
-  - [x] Экспорт `usePaginatorSearch` из `src/lib/ui/paginator/index.ts`.
+  - [x] Экспорт `usePaginatorSearch` из `src/lib/components/paginator/index.ts`.
   - [x] `SearchBar.svelte` (пока в `demo/paginator`): `<Form>` + `SearchInput`
-        из `#lib/ui/primitives` (крестик очистки), «Найти» и ссылка «Сбросить»
+        из `#lib/components/ui` (крестик очистки), «Найти» и ссылка «Сбросить»
         только до оживления, причина выключения; тексты — нынешние, без изменений.
         Поведение уже есть в `SearchQueryForm` (ход 116) — переносится как есть.
   - [x] `DemoPaginator.svelte` → `SearchBar`; удалить `SearchQueryForm.svelte`.
@@ -95,11 +95,11 @@ const search = usePaginatorSearch(name, {
         Итог: всё зелёное; `/paginator` 194.7 → 195.0 (объект хука с геттерами).
 
 - [x] **3. `FiltersPanel` в общий модуль.**
-  - [x] `git mv` → `src/lib/ui/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
+  - [x] `git mv` → `src/lib/components/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
         `$app/state` → `currentPathname()` слоя роутера (то же `page.url.pathname`):
         в общих `lib/ui/*` фреймворк-импорты только через `#lib/paginate/sveltekit/router.js` (адрес — `#lib/address/sveltekit.js`).
-  - [x] `DemoPaginator.svelte` импортирует из `#lib/ui/filters/index.js`.
-  - [x] Комментарий в `src/lib/ui/paginator/PaginatorSettingsForm.svelte:6`.
+  - [x] `DemoPaginator.svelte` импортирует из `#lib/components/filters/index.js`.
+  - [x] Комментарий в `src/lib/components/paginator/PaginatorSettingsForm.svelte:6`.
   - [x] Проверки: `gate.sh`; `shikimori.mjs` (52 ok), `rickmorty.mjs`; `/paginator` 194.9.
 
 - [x] **4. Перенос в папку роута** `src/routes/(site)/(app)/paginator/`.
@@ -126,7 +126,7 @@ const search = usePaginatorSearch(name, {
   - [x] Комментарий в бывшем `definition.ts:89` — ссылается на `#lib/ui/demo/db-list`, который
         не переезжает: верен, без правки. Заодно `content/shikimori.ts` («см. loader.ts»).
   - [x] `docs/audit/ratings.md` — раздел `demo/paginator` убран, строки — в разделах роута,
-        `lib/ui/filters`, `lib/ui/paginator`; у `+page.*` оценка снята до перечтения;
+        `lib/components/filters`, `lib/components/paginator`; у `+page.*` оценка снята до перечтения;
         счётчик прогресса пересчитан по таблицам (197 / 404).
   - [x] README: `paginate/search` и `lib/paginate` упоминают `usePaginatorSearch`.
   - [x] Исторические записи (`crutches.md`, `framework-imports.md`, `kit3-upgrade.md`)
