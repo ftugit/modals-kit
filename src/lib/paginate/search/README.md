@@ -243,7 +243,7 @@ applyUrl серверной формы — отдельная задача (v2).
 
 ## Происхождение
 
-Библиотека перенесена из исходника SolidHono (`src/lib/paginate/search`) — логика,
+Библиотека перенесена из исходника SolidHono (`src/lib/search`) — логика,
 контракты и правила сохранены без упрощений; отличия порта ровно два:
 импорты смотрят на `#lib/paginate/index.js`, а Solid-хук `useSearchCorrection` заменён
 Svelte 5-обвязкой в `#lib/paginate/svelte/search/index.js`. Единственный файл канона, который
