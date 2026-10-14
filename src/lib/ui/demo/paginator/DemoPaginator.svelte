@@ -52,7 +52,7 @@
 import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
 import { useCursorMode } from '#lib/ui/demo/db-list/cursor-mode.svelte.js'
 import ItemRow from './ItemRow.svelte'
-  import SearchQueryForm from './SearchQueryForm.svelte'
+  import SearchBar from './SearchBar.svelte'
   import ShotTile from './ShotTile.svelte'
 
   const HOST_CLASS =
@@ -441,7 +441,7 @@ import ItemRow from './ItemRow.svelte'
         либо не объявлен источником (`gates`), либо выключен своим тумблером.
         Оба слоя независимы: lib/search работает и при выключенном родном.
       -->
-      <SearchQueryForm {name} {query} path="page.q" disabled={searchOff} hint={searchOffReason ?? undefined} />
+      <SearchBar {name} {query} path="page.q" disabled={searchOff} hint={searchOffReason ?? undefined} />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
         {#if gates.nativeSearch}
           Родной поиск ищет сам источник — подстрокой по названию (у живого каталога это

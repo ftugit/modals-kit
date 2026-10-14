@@ -24,7 +24,7 @@
 | `GalleryDemo.svelte` | `paginator/GalleryDemo.svelte` | вторая лента страницы |
 | `definition.ts` — настройки страницы (`DemoStore`, `DemoSrc`, `DEMO_*`, `DEFAULT_DEMO_*`, `DEMO_EXTRA_SEARCH`, `ensureDemoPaginator`, блок `GALLERY_*`) | `paginator/definition.ts` | настройки страницы |
 | `definition.ts` — источники данных (стр. ~432–697: транспорты `set*ServerTransport`, `loadAnimePage`, `loadCharactersPage`, `create*Source`, `makeSource`; `loadFilterSchema`) | `paginator/sources.ts` | демо-источники, нужны только этой странице |
-| `definition.test.ts` (проверяет источники) | `paginator/sources.test.ts` | идёт за источниками |
+| `definition.test.ts` | `paginator/definition.test.ts` | проверяет API настроек (`demoExtraOf`, `DEMO_*`, `ensureDemoPaginator`); импортирует только `definition.ts` — имя остаётся (уточнено на шаге 1) |
 | `item-views.ts`, `types.ts` | `paginator/` | тип записей и данных загрузки этой страницы |
 | `ItemRow`, `ShotTile`, `AnimeRow`, `AnimeTile`, `CharacterRow`, `CharacterTile` | `paginator/` | решение владельца: карточки роута |
 | `FiltersPanel.svelte` | `src/lib/ui/filters/FiltersPanel.svelte` + экспорт из `index.ts` | общий: имя, схема, значения — о странице не знает |
@@ -49,10 +49,12 @@ const search = usePaginatorSearch(name, {
   placeholder: 'Тайтл: «наруто», «naruto», «нарута»',
   maxLength: 120,          // по умолчанию 120
   debounce: 300,           // по умолчанию 300 мс
+  query: () => query,      // запрос из состояния пагинатора
   disabled: () => searchOff,
   reason: () => searchOffReason,
 })
-// → { form, field, value, disabled, reason, hydrated, resetHref, clear }
+// → { form, field, value, disabled, reason, hydrated, hasQuery, resetHref,
+//     hiddenFields, input, submit, clear }   (так реализовано на шаге 2)
 //   hydrated  — страница ожила: до этого (и без JS) разметка показывает «Найти»
 //               и ссылку «Сбросить»; после — только поле с крестиком (ход 116)
 //   resetHref — текущий адрес без запроса и указателя страницы
@@ -62,32 +64,35 @@ const search = usePaginatorSearch(name, {
 
 Каждый шаг — отдельный коммит после зелёных проверок; без пуша, пока не попросят.
 
-- [ ] **0. Исходная точка.** Ветка `upgrade/kit3`, дерево чистое, `HEAD` = `origin`.
-  Записать базу: `node tooling/size-budget.mjs` (`/paginator` 191.6, всё JS 224.1),
-  `gate.sh` → `GATE OK`.
+- [x] **0. Исходная точка.** Ветка `upgrade/kit3`, дерево чистое (`HEAD` впереди
+  `origin` на неотправленные коммиты — пуш не просили). База после `dc1ae7a`:
+  `/paginator` 194.7, всё JS 227.8; `gate.sh` → `GATE OK`.
 
-- [ ] **1. Отделить источники от настроек** (пока на месте, в `demo/paginator`).
-  - [ ] Вынести блок источников из `definition.ts` в `sources.ts`; `definition.ts`
-        импортирует из `sources.ts` то, что нужно `ensureDemoPaginator`.
-  - [ ] `definition.test.ts` → `sources.test.ts`.
-  - [ ] Поправить импорты `loader.ts`, `DemoPaginator.svelte`, `PaginatorDemo.svelte`.
-  - [ ] Проверки: `gate.sh`; размер `/paginator` не вырос.
+- [x] **1. Отделить источники от настроек** (`cb5ed95`) (пока на месте, в `demo/paginator`).
+  - [x] Вынести блок источников из `definition.ts` в `sources.ts`; `definition.ts`
+        импортирует из `sources.ts` то, что нужно `ensureDemoPaginator`
+        (`makeSource(name, select)` — выбор источника передаётся параметром,
+        чтобы не было кольца импортов; `gallerySource`).
+  - [x] ~~`definition.test.ts` → `sources.test.ts`~~ — тест проверяет `definition.ts`, имя оставлено.
+  - [x] Поправить импорты `loader.ts`, `DemoPaginator.svelte` (`PaginatorDemo.svelte` источников не берёт).
+  - [x] Проверки: `gate.sh`; размер `/paginator` 194.7 → 194.7; `paginate`.
 
-- [ ] **2. Разделить поиск.**
-  - [ ] `src/lib/ui/paginator/search.svelte.ts`: перенести из `SearchQueryForm`
+- [x] **2. Разделить поиск.**
+  - [x] `src/lib/ui/paginator/search.svelte.ts`: перенести из `SearchQueryForm`
         объявление формы, задержку, нормализацию, запись через `setExtra`,
         «набранное против эха своей отправки» (`committed`), сброс набранного при
         внешней смене запроса, выключение до оживления. Тексты (`label`,
         `placeholder`) — параметрами, в хуке своих текстов нет.
-  - [ ] Экспорт `usePaginatorSearch` из `src/lib/ui/paginator/index.ts`.
-  - [ ] `SearchBar.svelte` (пока в `demo/paginator`): `<Form>` + `SearchInput`
+  - [x] Экспорт `usePaginatorSearch` из `src/lib/ui/paginator/index.ts`.
+  - [x] `SearchBar.svelte` (пока в `demo/paginator`): `<Form>` + `SearchInput`
         из `#lib/ui/primitives` (крестик очистки), «Найти» и ссылка «Сбросить»
         только до оживления, причина выключения; тексты — нынешние, без изменений.
         Поведение уже есть в `SearchQueryForm` (ход 116) — переносится как есть.
-  - [ ] `DemoPaginator.svelte` → `SearchBar`; удалить `SearchQueryForm.svelte`.
-  - [ ] Проверки: `gate.sh` (layer-guard: поле только из примитивов/`lib/form`);
+  - [x] `DemoPaginator.svelte` → `SearchBar`; удалить `SearchQueryForm.svelte`.
+  - [x] Проверки: `gate.sh` (layer-guard: поле только из примитивов/`lib/form`);
         `rickmorty.mjs`, `shikimori.mjs` (поиск); `source-switch.mjs` (поле пустеет
         при смене источника); без JS: `?page.q=...` отправляется GET-формой.
+        Итог: всё зелёное; `/paginator` 194.7 → 195.0 (объект хука с геттерами).
 
 - [ ] **3. `FiltersPanel` в общий модуль.**
   - [ ] `git mv` → `src/lib/ui/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
