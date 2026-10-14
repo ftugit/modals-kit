@@ -6,7 +6,16 @@
  * кэш обычно и ломается: время, запись и чужой ключ.
  */
 import { describe, expect, it } from 'vitest'
-import { etagMatches, fingerprint, invalidateLiveCache, liveCacheSize, remember, revalidate } from './live-cache'
+import {
+  etagMatches,
+  fingerprint,
+  invalidateLiveCache,
+  LIVE_CACHE_TTL_MS,
+  liveCacheSize,
+  remember,
+  revalidate,
+  stableText,
+} from './live-cache'
 
 describe('память условного GET /api/db-posts', () => {
   it('свёрнутый и развёрнутый отпечаток эквивалентны, `*` — любой', () => {
@@ -44,8 +53,11 @@ describe('память условного GET /api/db-posts', () => {
   it('после TTL память отдаёт 200, каким бы ни был отпечаток', () => {
     invalidateLiveCache()
     remember('a', 'W/"1"', 1_000)
-    expect(revalidate('a', 'W/"1"', 2_000)).toBe('W/"1"') // 1 с — живём (тик опроса = 2 с)
-    expect(revalidate('a', 'W/"1"', 2_501)).toBeNull() // 1.5 с + 1 мс — истекло
+    // Два тика опроса (2 с и 4 с) после ответа 200 обязаны уйти в 304: при TTL
+    // короче интервала память не экономила бы ни одного чтения базы.
+    expect(revalidate('a', 'W/"1"', 3_000)).toBe('W/"1"')
+    expect(revalidate('a', 'W/"1"', 5_000)).toBe('W/"1"')
+    expect(revalidate('a', 'W/"1"', 1_000 + LIVE_CACHE_TTL_MS + 1)).toBeNull() // TTL + 1 мс — истекло
   })
 
   it('память ограничена: 65-й ключ вытесняет самый старый, а не все подряд', () => {
@@ -63,5 +75,17 @@ describe('память условного GET /api/db-posts', () => {
     expect(a).toBe(b)
     expect(a).not.toBe(c)
     expect(a).toMatch(/^W\/"[0-9a-f]{24}"$/)
+  })
+
+  it('переподписанный указатель не меняет отпечаток, другая строка — меняет', async () => {
+    const row = { id: '1', title: 'Пост', created_at: '2026-10-10T12:00:00.000Z' }
+    const tick1 = { items: [row], hasNext: true, extra: { after: 'tok.sig-1' } }
+    const tick2 = { items: [row], hasNext: true, extra: { after: 'tok.sig-2' } }
+    const changed = { items: [{ ...row, title: 'Другой' }], hasNext: true, extra: { after: 'tok.sig-3' } }
+    expect(await fingerprint(stableText(tick1))).toBe(await fingerprint(stableText(tick2)))
+    expect(await fingerprint(stableText(tick1))).not.toBe(await fingerprint(stableText(changed)))
+    // Прочие ключи extra — часть данных и в отпечаток входят.
+    expect(stableText({ items: [], extra: { after: 'x', mode: 'a' } })).toBe('{"items":[],"extra":{"mode":"a"}}')
+    expect(stableText({ items: [], totalItems: 0 })).toBe('{"items":[],"totalItems":0}')
   })
 })

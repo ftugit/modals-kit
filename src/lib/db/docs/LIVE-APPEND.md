@@ -218,7 +218,7 @@ T8.1, а не за желанием иметь красивый API.
 | `db-list/live.svelte.ts` | `createLive` + `backoffDelay`/`retryAfterMs`/`isHidden`: условный `GET`, пауза на скрытой, незаходящие запросы, `AbortSignal.timeout` |
 | `db-list/demo/db-form/CreateForm.svelte` | `begin` на переходе в `submitting`, `confirm`/`drop` на успехе, `fail` на отказе, `requestSubmit()` как повтор, значение поля не очищается |
 | `db-form/handle.ts` | `Result.data.created` + `invalidateLiveCache()` после `commit()` |
-| `api/db-posts/+server.ts`, `server/live-cache.ts` | `ETag` по байтам ответа, `If-None-Match` → 304 **до** обращения к базе, память 1.5 с на процесс, обесценивание любой записью |
+| `api/db-posts/+server.ts`, `server/live-cache.ts` | `ETag` по данным ответа (без переподписываемого `extra.after`), `If-None-Match` → 304 **до** обращения к базе, память 5 с на процесс, обесценивание любой записью |
 
 Мерка: `test/http/db-demo-http.check.mjs` — **35 проверок** (+5 новых: формат
 отпечатка, `304` без тела и с эхом, слабая/сильная форма и `*`, «чужой ключ не

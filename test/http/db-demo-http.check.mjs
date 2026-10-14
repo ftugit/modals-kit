@@ -439,6 +439,22 @@ await step("API: чужой ключ не получает чужой 304", asyn
   if (!JSON.parse(text).items.length) throw new Error("вторая страница пуста");
   return `200, отпечаток другой: ${b.headers.get("etag") !== etagA}`;
 });
+await step("API: курсорный режим — переподписанный указатель не меняет отпечаток", async () => {
+  // Токен подписывается на каждый запрос (в нём срок жизни). Отпечаток «всего
+  // тела» менялся из-за этого на каждом тике, и живой список сбрасывался без
+  // единой новой строки. Пауза больше секунды — чтобы подпись наверняка сменилась.
+  const q = "?size=3&cur=1";
+  const r1 = await fetch(API + q);
+  const b1 = JSON.parse(await r1.text());
+  await new Promise((r) => setTimeout(r, 1100));
+  const r2 = await fetch(API + q, { headers: { "if-none-match": r1.headers.get("etag") } });
+  if (r2.status !== 304) {
+    const b2 = JSON.parse(await r2.text());
+    throw new Error(`повтор ответил ${r2.status}; токен сменился: ${b1.extra?.after !== b2.extra?.after}`);
+  }
+  if (!b1.extra?.after) throw new Error("у курсорной страницы нет указателя — проверка ничего не доказала");
+  return "304 на повторе курсорной страницы";
+});
 await step("API: запись обесценивает 304 — следующий тик обязан её увидеть", async () => {
   const q = "?page=1&size=3";
   const etag = (await fetch(API + q)).headers.get("etag");
