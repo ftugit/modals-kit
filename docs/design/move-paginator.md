@@ -135,14 +135,17 @@ const search = usePaginatorSearch(name, {
 - [x] **6. Убрать папку.** `src/lib/ui/demo/paginator/` пуста и удалена;
   `grep -rn "ui/demo/paginator" src tooling test` → пусто (папка ушла вместе с шагом 4).
 
-- [ ] **7. Итоговая проверка.**
-  - [ ] `gate.sh` → `GATE OK`.
-  - [ ] `browser-all.sh capabilities paginate regressions`; `rickmorty.mjs`; `shikimori.mjs`.
-  - [ ] `url-storage.check.mjs` — до 8 ✓ (дальше превью падает по памяти PGlite в
-        песочнице, было и до переноса).
-  - [ ] Ручной проход `/paginator`: каталог, галерея, смена источника, поиск,
-        фильтры, `?fault=init`, без JS.
-  - [ ] Консоль браузера и сборки без новых предупреждений.
+- [x] **7. Итоговая проверка.**
+  - [x] `gate.sh` → `GATE OK` (vitest 916/916, tooling 107/107; один повтор после OOM песочницы).
+  - [x] `browser-all.sh` capabilities, paginate, regressions, errors, shell, forms, forms-a11y,
+        db-demo — все rc=0; `rickmorty.mjs` (с повтора: живой GraphQL-сервис один раз отдал
+        пустую выдачу, тот же адрес по SSR — 5 строк), `shikimori.mjs`, `source-switch.mjs`.
+  - [x] `url-storage.check.mjs` — 19 ✓, rc=0 (дальше 8 — превью в этот раз не упало по памяти).
+  - [x] Проход `/paginator` скриптом: каталог и галерея (2 хоста), смена источника,
+        поиск (JS: задержка и ×; без JS: GET, «Сбросить»), фильтры и чипы Rick and Morty,
+        `?fault=init`, без JS (запрос в поле, форма фильтров в разметке).
+  - [x] Консоль браузера чистая; в сборке предупреждений нет (только `PLUGIN_TIMINGS`).
+  - Размер: `/paginator` 194.7 → 194.9 KiB, весь JS 227.8 → 228.0 KiB.
 
 ## Не входит
 
