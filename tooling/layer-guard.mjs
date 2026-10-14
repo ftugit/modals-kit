@@ -390,13 +390,13 @@ export const RULES = [
     pattern: /\bexport const actions\s*[:=]/,
     isSourceCheck: true,
     allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
-    require: /from ['"]#lib\/(?:ui\/demo\/)?form\//,
+    require: /from ['"]#lib\/(?:demo\/)?form\//,
     message: ({ importer }) =>
       [
         `[layer-guard] form-экшены обязаны идти через '#lib/form/index.js'.`,
         `  файл: ${importer || '<точка входа>'}`,
         '',
-        "  Экшен = createFormHandler (или обёртка над ним, как '#lib/ui/demo/form/handle.ts'):",
+        "  Экшен = createFormHandler (или обёртка над ним, как '#lib/demo/form/handle.ts'):",
         '  тогда метод, origin, лимиты, имена, конверт и execute живут в одном',
         '  конвейере, а отказ приходит как Result, а не как страница фреймворка.',
       ].join('\n'),

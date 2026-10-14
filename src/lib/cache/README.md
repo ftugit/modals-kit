@@ -99,9 +99,9 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 | Место | Область | Потолок | Почему память |
 |---|---|---|---|
 | `server/live-cache.ts` — память условного GET `/api/db-posts` | `live-cache:db-posts` | 64 | смысл 304 — ответ без ввода-вывода |
-| `ui/demo/form/handle.ts` — бронь отправки демо-формы | `demo-form:idempotency` | 10 000 | форме база не нужна: общая бронь сделала бы БД её единственной зависимостью |
-| `ui/demo/form/handle.ts` — окна частоты отправок (`windowThrottle`) | `demo-form:throttle` | 10 000 | окно — 60 с на адрес; у встроенной карты ограничителя потолка нет, у области есть |
-| `ui/demo/form/handle.ts` — счётчик созданных | `demo-form:stats` | 16 | демо; было списком email без предела, стало числом |
+| `demo/form/handle.ts` — бронь отправки демо-формы | `demo-form:idempotency` | 10 000 | форме база не нужна: общая бронь сделала бы БД её единственной зависимостью |
+| `demo/form/handle.ts` — окна частоты отправок (`windowThrottle`) | `demo-form:throttle` | 10 000 | окно — 60 с на адрес; у встроенной карты ограничителя потолка нет, у области есть |
+| `demo/form/handle.ts` — счётчик созданных | `demo-form:stats` | 16 | демо; было списком email без предела, стало числом |
 | `server/shikimori.ts` — страницы каталога, справочники, словари версий | `shikimori:pages`, `shikimori:json`, `shikimori:terms` | 256, 256, 3 | ответ чужого API на минуту (словарь — на час, по одному на версию rest / graphql / mix) |
 | `server/shikimori-schema.ts` — собранные схемы фильтров версий | `shikimori:schemas` | 3 | срок `Infinity`: свежесть по метке схемы (30 мин), устаревшая отдаётся при сбое обновления |
 | `server/graphql.ts` — ответы GraphQL (Shikimori, R&M) | `graphql` | 256 | было без потолка (F59, закрыта) |
@@ -117,7 +117,7 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 
 | Место | Сейчас | Что будет | С какой работой |
 |---|---|---|---|
-| бронь отправки форм, пишущих в базу (`ui/demo/db-form`) | брони нет | `sharedStore` = Postgres, бронь в той же транзакции, что и данные | контракт lib/form ↔ lib/db |
+| бронь отправки форм, пишущих в базу (`demo/db-form`) | брони нет | `sharedStore` = Postgres, бронь в той же транзакции, что и данные | контракт lib/form ↔ lib/db |
 
 Не подключаются и не будут: обещания склейки запросов (живут в `#lib/fetch`), мемо конфигурации
 (`form-security.ts` `origins`), метаданные объектов (`WeakMap` в `lib/db` и

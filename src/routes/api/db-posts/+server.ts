@@ -22,7 +22,7 @@ import { fingerprint, remember, revalidate, stableText } from '#lib/server/live-
 import type { RequestHandler } from './$types'
 import { fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
 import { DEMO_PRINCIPAL } from '#lib/server/db.js'
-import { DB_LIST_PAGE_SIZE } from '#lib/ui/demo/db-list/definition.js'
+import { DB_LIST_PAGE_SIZE } from '#lib/demo/db-list/definition.js'
 
 /**
  * Значение по умолчанию и нижняя граница — РАЗНЫЕ числа: их совмещение в одном

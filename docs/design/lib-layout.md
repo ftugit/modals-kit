@@ -189,7 +189,9 @@ src/lib/
    `hooks/`. Удалены `lib/ui/index.ts` (дубль барреля примитивов) и пустая `lib/index.ts`.
    Стражи: `layer-guard` (FORM_KEEPERS, разрешения `<NativeSelect>`, запрет UI в `lib/form` —
    теперь `#lib/components/(ui|settings)/`), `classes-audit`, `vite.config.ts` (прогрев).
-5. `ui/demo` → `demo` (по решению 3).
+5. ✅ 14.10.2026: `ui/demo` → `src/lib/demo` (решение 3: в `src/lib`, потому что в демо есть серверные
+   обработчики, определения и загрузчики). Папки `lib/ui` больше нет. Страж `layer-guard`: экшен
+   демо-формы узнаётся по `#lib/demo/form/`.
 
 В каждом шаге: пути в стражах (`tooling/core-purity.mjs` `CORE_MODULES`, `layer-guard`,
 `size-budget`, `form-size`, `classes-audit`, `source-schema-guard`), README библиотек,

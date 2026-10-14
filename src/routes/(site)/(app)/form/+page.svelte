@@ -13,14 +13,14 @@ import { asLink } from '#lib/components/links/index.js'
     compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
     type FormDescription,
   } from '#lib/form/index.js'
-  import { code6Described, code6Plain, ratingType } from '#lib/ui/demo/form/extend.js'
-  import { checks, forms, formsCustomUi } from '#lib/ui/demo/form/forms.config.js'
-  import { normalizePsp, PSP_SAMPLES } from '#lib/ui/demo/form/psp.js'
-  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '#lib/ui/demo/form/signup.js'
+  import { code6Described, code6Plain, ratingType } from '#lib/demo/form/extend.js'
+  import { checks, forms, formsCustomUi } from '#lib/demo/form/forms.config.js'
+  import { normalizePsp, PSP_SAMPLES } from '#lib/demo/form/psp.js'
+  import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from '#lib/demo/form/signup.js'
   import { createConfig } from '#lib/form/svelte/index.js'
   import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '#lib/components/settings/index.js'
-  import Common from '#lib/ui/demo/form/ui/Common.svelte'
-  import Field from '#lib/ui/demo/form/ui/Field.svelte'
+  import Common from '#lib/demo/form/ui/Common.svelte'
+  import Field from '#lib/demo/form/ui/Field.svelte'
 
   let { form: actionResult }: { form?: { result?: Result } | null } = $props()
 

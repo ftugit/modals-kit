@@ -1,6 +1,6 @@
-# Перенос пагинатора из `lib/ui/demo` в роут — чеклист
+# Перенос пагинатора из `lib/demo` в роут — чеклист
 
-Первый шаг плана «растворить `lib/ui/demo`»: компоненты страницы живут в папке
+Первый шаг плана «растворить `lib/demo`»: компоненты страницы живут в папке
 своего роута, переиспользуемые — в общих модулях `lib/ui/*` (образец — shadcn
 `apps/v4`: `components/` против `app/(app)/(create)/components`; SvelteKit
 игнорирует в папке роута файлы без `+`, документация прямо советует держать их
@@ -16,7 +16,7 @@
 
 ## Что куда
 
-| Сейчас (`src/lib/ui/demo/paginator/`) | Куда | Почему |
+| Сейчас (`src/lib/demo/paginator/`) | Куда | Почему |
 |---|---|---|
 | `loader.ts` (`loadPaginatorDemo`) | тело `paginator/+page.server.ts` | один вызов, серверный код страницы |
 | `PaginatorDemo.svelte` | тело `paginator/+page.svelte` | сам экран страницы |
@@ -32,7 +32,7 @@
 | `SearchQueryForm.svelte` — разметка и тексты | `paginator/SearchBar.svelte` | поле, кнопки, подсказка — страницы |
 
 Не трогаем: `content/*.ts` (ими пользуется и `lib/server/*`),
-`#lib/ui/demo/db-list/*` (`DbPostRow`, `cursor-mode`, тип `DbPost` — это перенос
+`#lib/demo/db-list/*` (`DbPostRow`, `cursor-mode`, тип `DbPost` — это перенос
 `/db-demo`), уже общие `lib/components/{paginator,filters,ui,settings}`.
 
 Хук — в `lib/components/paginator`, а не в `#lib/paginate/svelte/search`: он склеивает `lib/form`
@@ -111,8 +111,8 @@ const search = usePaginatorSearch(name, {
         ветки `ctx.pathname`/`ctx.search` (вызов был один, с `url`) и неиспользуемый
         тип `PaginatorSearch`.
   - [x] Импорты: `./…` не меняются; `../../../../content/…` — та же глубина
-        (`routes/(site)/(app)/paginator` = `lib/ui/demo/paginator`), сверить;
-        `#lib/ui/demo/db-list/*` не меняются.
+        (`routes/(site)/(app)/paginator` = `lib/demo/paginator`), сверить;
+        `#lib/demo/db-list/*` не меняются.
   - [x] `tooling/source-schema-guard.mjs:35` `SCHEMA_READERS`: путь к
         `loader.ts` → `src/routes/(site)/(app)/paginator/+page.server.ts`
         (иначе сборка упадёт на чтении схемы — громко, не молча).
@@ -122,8 +122,8 @@ const search = usePaginatorSearch(name, {
         `src/routes` — подхватил); размер `/paginator` 194.9; `paginate`, `capabilities`.
 
 - [x] **5. Ссылки на старые пути.**
-  - [x] `src/lib/ui/demo/db-list/DbPostsList.svelte:72` (комментарий про `PaginatorDemo`).
-  - [x] Комментарий в бывшем `definition.ts:89` — ссылается на `#lib/ui/demo/db-list`, который
+  - [x] `src/lib/demo/db-list/DbPostsList.svelte:72` (комментарий про `PaginatorDemo`).
+  - [x] Комментарий в бывшем `definition.ts:89` — ссылается на `#lib/demo/db-list`, который
         не переезжает: верен, без правки. Заодно `content/shikimori.ts` («см. loader.ts»).
   - [x] `docs/audit/ratings.md` — раздел `demo/paginator` убран, строки — в разделах роута,
         `lib/components/filters`, `lib/components/paginator`; у `+page.*` оценка снята до перечтения;
@@ -132,7 +132,7 @@ const search = usePaginatorSearch(name, {
   - [x] Исторические записи (`crutches.md`, `framework-imports.md`, `kit3-upgrade.md`)
         не правим: это журнал, пути там — на момент находки.
 
-- [x] **6. Убрать папку.** `src/lib/ui/demo/paginator/` пуста и удалена;
+- [x] **6. Убрать папку.** `src/lib/demo/paginator/` пуста и удалена;
   `grep -rn "ui/demo/paginator" src tooling test` → пусто (папка ушла вместе с шагом 4).
 
 - [x] **7. Итоговая проверка.**

@@ -25,12 +25,12 @@
     dbListExtraOf,
     ensureDbListPaginator,
     type DbPost,
-  } from '#lib/ui/demo/db-list/definition.js'
-  import DbPostsList from '#lib/ui/demo/db-list/DbPostsList.svelte'
-  import { createOptimistic, ownRowPlacement } from '#lib/ui/demo/db-list/optimistic.svelte.js'
-  import CreateForm from '#lib/ui/demo/db-form/CreateForm.svelte'
-  import RemoveForm from '#lib/ui/demo/db-form/RemoveForm.svelte'
-  import SchemaPending from '#lib/ui/demo/db-form/SchemaPending.svelte'
+  } from '#lib/demo/db-list/definition.js'
+  import DbPostsList from '#lib/demo/db-list/DbPostsList.svelte'
+  import { createOptimistic, ownRowPlacement } from '#lib/demo/db-list/optimistic.svelte.js'
+  import CreateForm from '#lib/demo/db-form/CreateForm.svelte'
+  import RemoveForm from '#lib/demo/db-form/RemoveForm.svelte'
+  import SchemaPending from '#lib/demo/db-form/SchemaPending.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
   // тип выводит SvelteKit из `actions` (`PageProps['form']`).

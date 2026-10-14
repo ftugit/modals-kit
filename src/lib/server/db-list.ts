@@ -27,7 +27,7 @@ import {
   type DbPost,
   type DbPostsFresh,
   type DbPostsQuery,
-} from '#lib/ui/demo/db-list/definition.js'
+} from '#lib/demo/db-list/definition.js'
 import { DEMO_PRINCIPAL, db, posts } from './db'
 
 /**

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AnimeCard } from '../../../../content/shikimori'
-  import type { DbPost } from '#lib/ui/demo/db-list/definition.js'
+  import type { DbPost } from '#lib/demo/db-list/definition.js'
   import {
     catalogTestId,
     catalogTitle,

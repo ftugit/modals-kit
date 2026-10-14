@@ -20,9 +20,9 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
   import { CloseAllButton } from '#lib/components/modals/index.js'
-  import SettingsPanel from '#lib/ui/demo/modals/SettingsPanel.svelte'
-  import SourcesPanel from '#lib/ui/demo/modals/SourcesPanel.svelte'
-  import FloatingMenu from '#lib/ui/demo/modals/FloatingMenu.svelte'
+  import SettingsPanel from '#lib/demo/modals/SettingsPanel.svelte'
+  import SourcesPanel from '#lib/demo/modals/SourcesPanel.svelte'
+  import FloatingMenu from '#lib/demo/modals/FloatingMenu.svelte'
 
   // Живой контекст: геттеры видят смену ядра при смене источников.
   const m = useModals()

@@ -23,7 +23,7 @@
 | `EdgeTrigger = off\|direction\|edge\|chat\|manual` | `src/lib/paginate/types.ts:207` | `chat` описывает **жест** (грузить только в сторону движения), а не источник новых строк |
 | `LoadMoreLink` + `EdgeSentinel` + `prependBehavior` | `src/lib/components/paginator`, `PaginatorHost.svelte` | строки, которой нет ни в одном ответе источника |
 | `pending` | `core.ts:308` | только слоты-скелетоны по числу ожидаемых записей; «данные есть, ответа ещё нет» там выразить нечем |
-| `mode: accumulate\|single`, `extra` в адресе, `?page.after` (keyset) | ядро + `adapter-url.ts`, демо-источник (`#lib/ui/demo/db-list`) | точки «переспросить ТЕКУЩЕЕ окно, не сбрасывая его» (T6.2 `refresh`) |
+| `mode: accumulate\|single`, `extra` в адресе, `?page.after` (keyset) | ядро + `adapter-url.ts`, демо-источник (`#lib/demo/db-list`) | точки «переспросить ТЕКУЩЕЕ окно, не сбрасывая его» (T6.2 `refresh`) |
 | возможности источника (`capabilitiesFor`) | `source.ts` | источника, который умеет расти без перезапроса страницы |
 
 Вывод из таблицы один: **две независимые вещи** — «доставить новые строки» (ядро +
@@ -173,7 +173,7 @@ created_at }` — единственное, чего клиент знать н�
 ## 4. Порядок работ (и почему он такой)
 
 **T8.1 — демо без правки ядра (доказательство UX).**
-1. `src/lib/ui/demo/db-list/optimistic.svelte.ts`: `pending` (массив
+1. `src/lib/demo/db-list/optimistic.svelte.ts`: `pending` (массив
    `{ tmpId, row, state: 'pending' | 'failed' }`), `begin()/confirm()/fail()`,
    снимок для отката, `begin(title, reuseId)`.
 2. `DbPostsList`: `PageList` + до/после него (по порядку сортировки) — строки из
@@ -241,7 +241,7 @@ T8.1, а не за желанием иметь красивый API.
 опросом «что появилось» (`?since=`), своя запись правит окно через `patchItems` ядра, а
 `reset` после записи и на тике ушёл — см. [PLAN.md](PLAN.md), «Что выбрано и сделано».
 Вводить `state.shadow` ради одной демо-страницы — значит отдать половину `core.ts`
-за поведение, которое сегодня стоит 120 строк в `#lib/ui/demo`.
+за поведение, которое сегодня стоит 120 строк в `#lib/demo`.
 
 **Три вопроса закрыты моими же решениями, ждут подтверждения заказчика:**
 интервал 2 с (пауза на скрытой вкладке, backoff до 60 с); `totalItems` оптимистичной

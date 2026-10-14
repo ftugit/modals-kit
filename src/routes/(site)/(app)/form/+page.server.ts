@@ -1,6 +1,6 @@
 // Нативный путь: обычное действие SvelteKit поверх тех же слоёв.
 import { fail, type Actions } from '@sveltejs/kit'
-import { handleSignup } from '#lib/ui/demo/form/handle.js'
+import { handleSignup } from '#lib/demo/form/handle.js'
 
 export const actions: Actions = {
   default: async (event) => {

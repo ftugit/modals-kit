@@ -49,7 +49,7 @@ import {
   type PrependBehavior,
 } from '#lib/paginate/index.js'
 import type { CatalogItem } from './item-views'
-import { cursorExtraField, cursorPointerField } from '#lib/ui/demo/db-list/definition.js'
+import { cursorExtraField, cursorPointerField } from '#lib/demo/db-list/definition.js'
 import { gallerySource, makeSource } from './sources'
 
 export type DemoStore = 'url' | 'local' | 'none'
@@ -59,7 +59,7 @@ export type DemoStore = 'url' | 'local' | 'none'
  *
  * `db` — витрина `#lib/db/index.js`: список строк из живой БД. Он не «демо-данные рядом с
  * демо-данными»: реализация одна и та же, что у страницы `/db-demo`
- * (`#lib/ui/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
+ * (`#lib/demo/db-list`), включая режим курсора и SSR-транспорт. Здесь у него
  * только форма записи общая с каталогом.
  */
 export type DemoSrc =

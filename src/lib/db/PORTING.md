@@ -272,7 +272,7 @@ done
 (augmentation), `src/hooks.server.ts` (`dbHandle`), `src/lib/server/db.ts` (composition
 root), `src/lib/server/db-list.ts` + `src/routes/api/db-posts/**` (данные для пагинатора
 демо: SSR-транспорт и HTTP-доводка — один конвейер на оба пути) и `src/routes/db-demo/**`
-со `src/lib/ui/demo/db-{form,list}/**` (страница-витрина: формы — отдельные компоненты,
+со `src/lib/demo/db-{form,list}/**` (страница-витрина: формы — отдельные компоненты,
 список — пагинатор). Ниже — чек-лист того, что в приложении обязательно.
 
 ## 9. Интеграция в приложение: чек-лист и грабли
@@ -300,11 +300,11 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 
 Порядок обновления копии (тот же, что и в 0-м пункте выше): `git archive <ref> | tar -x -C
 /home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
-'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/ui/demo/{form,modals}/**`,
+'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/demo/{form,modals}/**`,
 `ui/paginator/fields/*` → `#lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
 `src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
-`src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/ui/demo/db-form/**`,
-`src/lib/ui/demo/db-list/**`. Дальше
+`src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/demo/db-form/**`,
+`src/lib/demo/db-list/**`. Дальше
 `npm install && npx svelte-kit sync && npx svelte-check && npm run build && npm run test:guard`.
 
 Что потребовало правок именно на `5d08da7`:

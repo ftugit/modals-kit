@@ -47,10 +47,10 @@
   import AnimeTile from './AnimeTile.svelte'
   import CharacterRow from './CharacterRow.svelte'
   import CharacterTile from './CharacterTile.svelte'
-  // Строка записи БД — общий компонент с `/db-demo` (`#lib/ui/demo/db-list`),
+  // Строка записи БД — общий компонент с `/db-demo` (`#lib/demo/db-list`),
 // здесь ей передаётся только оформление карточки и опознавательный testid.
-import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
-import { useCursorMode } from '#lib/ui/demo/db-list/cursor-mode.svelte.js'
+import DbPostRow from '#lib/demo/db-list/DbPostRow.svelte'
+import { useCursorMode } from '#lib/demo/db-list/cursor-mode.svelte.js'
 import ItemRow from './ItemRow.svelte'
   import SearchBar from './SearchBar.svelte'
   import Button from '#lib/components/ui/button/Button.svelte'
