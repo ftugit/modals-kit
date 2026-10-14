@@ -454,20 +454,36 @@ ok('пути дают одинаковые ошибки',
   ok('телефон: код внутри рамки поля (слева от текста номера)', await pg.evaluate(() => {
     const input = document.querySelector('#signup-phone').getBoundingClientRect()
     const code = document.querySelector('[data-phone-code]').getBoundingClientRect()
-    return code.left > input.left && code.right < input.left + parseFloat(getComputedStyle(document.querySelector('#signup-phone')).paddingLeft)
+    return code.left > input.left && code.right <= input.left + 0.5 + parseFloat(getComputedStyle(document.querySelector('#signup-phone')).paddingLeft)
   }))
   await tel.pressSequentially('89991234567')
   ok('телефон: маска и префикс 8 на пределе', await tel.inputValue() === '999 123-45-67', await tel.inputValue())
   ok('телефон: значение — одна строка', await phoneValue() === '+79991234567', await phoneValue())
   await tel.fill('+375 29 123-45-67')
   ok('телефон: вставка номера целиком выбирает код',
-    await pg.locator('[data-phone-code] select').inputValue() === '+375' && await phoneValue() === '+375291234567',
+    (await pg.locator('[data-phone-code] [data-select-trigger]').innerText()).trim() === '+375'
+      && await phoneValue() === '+375291234567',
     await phoneValue())
   await tel.fill('+86 138 0013 8000')
   ok('телефон: незнакомый код не теряется («другая страна»)', await phoneValue() === '+8613800138000', await phoneValue())
-  await pg.locator('[data-phone-code] select').selectOption('+7')
-  await tel.fill('9991234567')
-  ok('телефон: смена кода из списка', await phoneValue() === '+79991234567', await phoneValue())
+  // Код выбирается примитивом Select: открыть, найти по стране, выбрать.
+  ok('телефон: код — примитив Select (носитель без имени)',
+    await pg.locator('[data-phone-code] [data-select-root] select[data-select-native]:not([name])').count() === 1
+      && await pg.locator('[data-phone-code] [data-select-trigger]').count() === 1)
+  await pg.locator('[data-phone-code] select[data-select-native]').click({ force: true })
+  const codeList = pg.locator('[data-select-listbox]').last()
+  await codeList.waitFor({ state: 'visible' })
+  await pg.locator('[data-select-search-row] input').last().fill('Финл')
+  const finland = codeList.locator('[role="option"]', { hasText: '+358' })
+  ok('телефон: поиск кода по названию страны', await finland.count() === 1
+    && (await codeList.locator('[role="option"]').count()) === 1)
+  await finland.click()
+  await codeList.waitFor({ state: 'hidden' }).catch(() => {})
+  await pg.waitForTimeout(300)
+  ok('телефон: выбранный код виден в поле',
+    (await pg.locator('[data-phone-code] [data-select-trigger]').innerText()).trim() === '+358')
+  await tel.fill('401234567')
+  ok('телефон: смена кода из списка', await phoneValue() === '+358401234567', await phoneValue())
 
   // Вариант 'auto' у «О себе»: AutoTextarea растёт по тексту в пределах 3–8 строк.
   const about = pg.locator('#signup-about')

@@ -2,9 +2,8 @@
   // Телефон одной строкой (`+79991234567`). Образец — phone input для shadcn
   // (omeralpi/shadcn-phone-input: выбор страны встык с полем, значение E.164) и
   // Input Group из shadcn v4: код страны — текст ВНУТРИ рамки поля, а не соседний
-  // контрол. Здесь это InputShell + InputAffix слева, под текстом кода — родной
-  // `<select>` (прозрачный): системный список на телефоне, клавиатура и чтец экрана
-  // без своего попапа.
+  // контрол. Здесь это InputShell + InputAffix слева, в нём — примитив Select проекта
+  // (поиск по коду и стране, список через хост модалок) без рамки и фона.
   //
   // До оживления (и без JS) — одно обычное поле `type="tel"` с именем: номер целиком,
   // сервер приводит его к одной строке. После — код + национальная часть без имён и
@@ -16,6 +15,7 @@
   import { inputVariants } from './field'
   import InputAffix from './InputAffix.svelte'
   import InputShell from './InputShell.svelte'
+  import Select from './Select.svelte'
   import {
     PHONE_COUNTRIES, cleanNational, formatNational, joinPhone, placeholderFor, splitPhone, type PhoneCountry,
   } from './phone'
@@ -146,8 +146,11 @@
     oninput?.(e)
   }
 
-  function onCode(e: Event & { currentTarget: EventTarget & HTMLSelectElement }) {
-    const next = countries.find((c) => c.code === e.currentTarget.value) ?? fallback
+  // Подпись в поле — сам код, страна — пояснение в списке (поиск идёт по обоим).
+  const codeOptions = $derived(countries.map((c) => ({ value: c.code, label: c.code, hint: c.label })))
+
+  function onCode(values: string[]) {
+    const next = countries.find((c) => c.code === values[0]) ?? fallback
     country = next
     national = cleanNational(national, next)
     emit(joinPhone(next.code, national))
@@ -177,31 +180,25 @@
   <InputShell class={cls} data-phone-input="">
     <!-- Код — первым и в разметке: порядок табуляции совпадает с чтением (код, номер).
          Ширина кода меряется, отступ поля номера следует за ней. -->
-    <InputAffix side="start" interactive class="pl-3">
+    <InputAffix side="start" interactive class="pl-1">
       <span
         bind:offsetWidth={affixWidth}
-        class={cn(
-          'relative inline-flex items-center gap-1 rounded-sm text-sm tabular-nums text-foreground',
-          'has-[select:focus-visible]:ring-2 has-[select:focus-visible]:ring-ring/30',
-          disabled && 'opacity-50',
-        )}
+        class="inline-flex h-full items-center rounded-sm has-[select:focus-visible]:ring-2 has-[select:focus-visible]:ring-ring/30"
         data-phone-code=""
       >
-        <span aria-hidden="true">{country.code}</span>
-        <svg aria-hidden="true" viewBox="0 0 16 16" class="h-3 w-3 fill-none stroke-current stroke-2 text-muted-foreground">
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-        <select
+        <!-- Примитив Select без имени: код — способ ввода, в форму уходит склейка.
+             Рамку, фон и тень снимаем — код читается как часть поля. -->
+        <Select
           aria-label={codeLabel}
+          options={codeOptions}
           value={country.code}
-          {disabled}
-          class="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 disabled:cursor-not-allowed"
+          disabled={disabled ?? false}
+          listWidth="auto"
+          wrapperClass="w-auto"
+          class="h-8 w-auto gap-1 border-0 bg-transparent px-2 tabular-nums shadow-none focus-visible:ring-0 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground"
+          config={{ showClear: false, showSelectAll: false, showCount: false }}
           onchange={onCode}
-        >
-          {#each countries as c (c.code)}
-            <option value={c.code}>{c.code === '+' ? c.label : `${c.label} ${c.code}`}</option>
-          {/each}
-        </select>
+        />
       </span>
     </InputAffix>
     <input
@@ -214,7 +211,7 @@
       value={formatNational(national, country)}
       {disabled}
       class={cn(inputVariants(), 'tabular-nums', inputClass)}
-      style:padding-left={affixWidth ? `calc(${affixWidth}px + 1.125rem)` : `calc(${country.code.length}ch + 2rem)`}
+      style:padding-left={affixWidth ? `calc(${affixWidth}px + 0.25rem)` : `calc(${country.code.length}ch + 2rem)`}
       oninput={onNational}
     />
     <input bind:this={hiddenEl} type="hidden" {name} value={joined} {disabled} />

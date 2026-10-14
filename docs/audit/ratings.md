@@ -592,7 +592,7 @@
 | `OtpInput.svelte` | 138 | — | ⏳ |  |  |
 | `PasswordInput.svelte` | 90 | — | ⏳ |  | microtask×1, addEventListener×1 |
 | `PasswordStrength.svelte` | 74 | — | ⏳ |  |  |
-| `PhoneInput.svelte` | 223 | — | ⏳ |  | $effect×1, window/document×2, untrack×2 |
+| `PhoneInput.svelte` | 220 | — | ⏳ |  | $effect×1, window/document×2, untrack×2 |
 | `SearchField.svelte` | 50 | — | ⏳ |  |  |
 | `SearchInput.svelte` | 70 | — | ⏳ |  | addEventListener×1 |
 | `SearchMorph.svelte` | 144 | — | ⏳ |  | window/document×2, rAF×1, addEventListener×1 |
