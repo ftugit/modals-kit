@@ -198,6 +198,21 @@ try {
     if (first[0] !== seen[0]) throw new Error(`первая строка не вернулась к началу: ${first[0]} / ${seen[0]}`)
     return `${first.length} строк — те же, с которых начали`
   })
+  await step('SSR: битый токен объяснён по-русски (и /paginator)', async () => {
+    // Серверный путь снапшота вызывал слой напрямую и уносил в разметку его
+    // текст по умолчанию — «Ошибка загрузки: Invalid or expired cursor».
+    const forged = 'page.cur=1&page.after=' + 'A'.repeat(40) + '.BBBB'
+    const origin = new URL(BASE).origin
+    const seen = []
+    for (const href of [`${BASE}?${forged}`, `${origin}/paginator?page.src=db&${forged}`]) {
+      const html = await (await fetch(href)).text()
+      if (/Invalid or expired cursor/.test(html)) throw new Error(`английский текст слоя в SSR: ${href}`)
+      if (!html.includes('Токен страницы недействителен или устарел'))
+        throw new Error(`нет объяснения битого токена: ${href}`)
+      seen.push(new URL(href).pathname)
+    }
+    return `объяснение на ${seen.join(' и ')}`
+  })
   await step('тумблер выключается: ?page.cur снят, номера страниц вернулись', async () => {
     await page.goto(BASE, { waitUntil: 'networkidle' })
     // Первый шаг — включённый тумблер, второй — снятый: `toPatch` для toggle пишет

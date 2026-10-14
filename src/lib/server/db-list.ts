@@ -67,6 +67,10 @@ const EXPLAIN: Record<string, string> = {
     'Токен страницы недействителен или устарел (время жизни — DB_CURSOR_TTL_SECONDS, по умолчанию 30 минут). Начните с первой страницы.',
   schema_pending:
     'Модели разошлись со схемой базы — нужен перенос. Что изменится и кнопка «Выполнить» — на странице /db-demo.',
+  validation: 'Параметры списка не прошли проверку. Начните с первой страницы или сбросьте фильтры.',
+  forbidden: 'Нет доступа к этому списку.',
+  unavailable: 'База сейчас недоступна. Обновите страницу чуть позже.',
+  database: 'База не смогла выполнить запрос. Попробуйте ещё раз.',
 }
 
 async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageResponse<DbPost>> {
@@ -121,9 +125,25 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
  * строится тем же принципом, что ставит хук, — `DEMO_PRINCIPAL` один на
  * хук, снапшот и эндпоинт.
  */
-setDbPostsServerTransport((query) =>
-  queryPage(query, Object.freeze({ principal: DEMO_PRINCIPAL, signal: query.signal })),
-)
+setDbPostsServerTransport(async (query) => {
+  try {
+    return await queryPage(query, Object.freeze({ principal: DEMO_PRINCIPAL, signal: query.signal }))
+  } catch (e) {
+    // SSR-путь объясняет отказ теми же словами, что и эндпоинт: иначе снапшот
+    // уносил в разметку текст слоя по умолчанию («Invalid or expired cursor»).
+    if (e instanceof Error && e.name === 'AbortError') throw e
+    throw new Error(explain(e).error, { cause: e })
+  }
+})
+
+/** Отказ слоя → код, статус и текст для человека: один перевод на оба пути. */
+function explain(e: unknown): { error: string; code: string; status: number } {
+  const kit = toKitError(e, import.meta.env.DEV)
+  const code = String(kit.body.code ?? 'database')
+  // Тексты слоя по умолчанию — английские («Invalid or expired cursor»), в
+  // показ они не идут: только свои слова, неизвестный код — с его именем.
+  return { error: EXPLAIN[code] ?? `База отклонила запрос (код ${code}).`, code, status: kit.status }
+}
 
 /** Снапшот пагинатора для `+page.server.ts`: страница из адреса запроса. */
 export async function loadDbListSnapshot(url: string) {
@@ -141,8 +161,6 @@ export async function fetchDbPostsPage(
   try {
     return await queryPage(query, ctx)
   } catch (e) {
-    const kit = toKitError(e, import.meta.env.DEV)
-    const code = String(kit.body.code ?? 'database')
-    return { error: EXPLAIN[code] ?? String(kit.body.message ?? 'база отклонила запрос'), code, status: kit.status }
+    return explain(e)
   }
 }

@@ -12,6 +12,7 @@
    * страницы ничего не ломает: она ни на что не подписывается, кроме состояния
    * пагинатора, и нигде не регистрируется.
    */
+  import { untrack } from 'svelte'
   import { currentPathname } from '#lib/router/sveltekit.js'
   import { getClientStore, setExtra } from '#lib/paginate/index.js'
   import {
@@ -52,12 +53,37 @@
   const view = $derived(catalogFilterView(schema, extra, { url: { page: url, prefix, preserved } }))
 
   /**
+   * Форма сеет значения ОДИН раз (её зеркало — черновик пользователя), поэтому
+   * применённый набор, изменённый ВНЕ формы (снят чип, «Сбросить», «Назад»),
+   * пересоздаёт её — иначе контрол показывал бы снятое значение, и следующее
+   * «Применить» вернуло бы его. Своё «Применить» форму не пересоздаёт: фокус
+   * остаётся на кнопке, черновик уже равен применённому.
+   */
+  const chipsKey = (chips: readonly { path: string; value: string }[]): string =>
+    chips.map((chip) => `${chip.path}=${chip.value}`).join('&')
+  const appliedKey = $derived(chipsKey(view.chips))
+  let seenKey = untrack(() => appliedKey)
+  let ownKey: string | null = null
+  let formEpoch = $state(0)
+  $effect.pre(() => {
+    const key = appliedKey
+    untrack(() => {
+      if (key === seenKey) return
+      if (key !== ownKey) formEpoch++
+      seenKey = key
+      ownKey = null
+    })
+  })
+
+  /**
    * Применение набора: полный патч ОДНИМ `setExtra` — так ядро снимает
    * опустевшие ключи, сбрасывает указатель на первую страницу (reloadKeys) и
    * пишет всё в выбранное хранилище. Адрес обновляет persist адаптера, не форма.
    */
   function apply(next: Record<string, string[]>) {
-    void setExtra(getClientStore(), name, catalogFilterExtraPatch(schema, next))
+    const patch = catalogFilterExtraPatch(schema, next)
+    ownKey = chipsKey(catalogFilterView(schema, { ...extra, ...patch }).chips)
+    void setExtra(getClientStore(), name, patch)
   }
 
   /** Снятие одного значения (клик по чипу) — тем же каналом состояния. */
@@ -114,9 +140,11 @@
       <!--
         Форма привязана к Описанию, собранному из схемы, поэтому смена схемы
         (другой источник) пересоздаёт её целиком: имена полей и валидаторы —
-        из нового compile, значения — тем же `seed` из состояния.
+        из нового compile, значения — тем же `seed` из состояния. `formEpoch` —
+        то же для набора, изменённого вне формы.
       -->
       {#key schema}
+        {#key formEpoch}
         <CatalogFilterForm
           {schema}
           values={extra}
@@ -126,6 +154,7 @@
           resetHref={view.formAction ?? url}
           onApply={apply}
         />
+        {/key}
       {/key}
     </div>
   </details>

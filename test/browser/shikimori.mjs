@@ -594,6 +594,21 @@ async function checkFiltersUi(browser) {
       throw new Error('после снятия чипа должен остаться один активный фильтр');
     console.log('  ok  чип снял только своё значение (соседний фильтр и адрес целы)');
 
+    // Форма показывает ПРИМЕНЁННЫЙ набор и после снятия чипа: раньше она сеяла
+    // значения один раз, контрол «Тип» оставался «TV», и следующее «Применить»
+    // возвращало снятый фильтр.
+    const nativeValue = (n) =>
+      panel.locator(`select[data-select-native][name="page.filters.${n}"]`).evaluate((el) => el.value);
+    await waitFor(async () => (await nativeValue('kind')) === '', { what: 'контрол «Тип» пуст после снятия чипа' });
+    if ((await nativeValue('status')) !== 'released')
+      throw new Error(`после снятия чипа форма потеряла соседний фильтр: status=${await nativeValue('status')}`);
+    await openFilters(page);
+    await page.locator('[data-testid="catalog-filter-submit"]').click();
+    await page.waitForTimeout(600);
+    if (page.url().includes('page.filters.kind'))
+      throw new Error(`«Применить» после снятия чипа вернуло снятый фильтр: ${page.url()}`);
+    console.log('  ok  форма после снятия чипа показывает применённый набор; «Применить» его не возвращает');
+
     // Числовые контролы читаются как FormData.getAll() → string[]. Score и год
     // обязаны пережить этот путь до числового extra, URL и параметров API.
     console.log('— Оценка и год: JS FormData → extra → URL → API —');
