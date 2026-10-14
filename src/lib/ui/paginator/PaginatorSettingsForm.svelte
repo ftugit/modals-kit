@@ -106,7 +106,11 @@
   class={className ?? 'rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
 >
 
-  <div class="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3 lg:grid-cols-5">
+  <!-- Столбцы считаются от ширины ПАНЕЛИ (container query), а не окна: панель живёт и в
+       колонке страницы 896 px, и в боковой колонке галереи. От окна (`lg:grid-cols-5`) на
+       широком экране выходило 5 столбцов по ~160 px, и подсказки тянулись в высокие столбцы. -->
+  <div class="@container">
+  <div class="grid grid-cols-2 gap-x-4 gap-y-3 @lg:grid-cols-3 @5xl:grid-cols-5">
     {#if storeProp}
       <Field label={storeProp.label ?? 'Хранилище настроек и страницы'}>
         <Select
@@ -168,6 +172,7 @@
         {/if}
       {/each}
     {/each}
+  </div>
   </div>
 
   {#if js}
