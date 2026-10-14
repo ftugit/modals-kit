@@ -102,22 +102,24 @@ const search = usePaginatorSearch(name, {
   - [x] Комментарий в `src/lib/ui/paginator/PaginatorSettingsForm.svelte:6`.
   - [x] Проверки: `gate.sh`; `shikimori.mjs` (52 ok), `rickmorty.mjs`; `/paginator` 194.9.
 
-- [ ] **4. Перенос в папку роута** `src/routes/(site)/(app)/paginator/`.
-  - [ ] `git mv`: `definition.ts`, `sources.ts`, `sources.test.ts`, `item-views.ts`,
+- [x] **4. Перенос в папку роута** `src/routes/(site)/(app)/paginator/`.
+  - [x] `git mv`: `definition.ts`, `sources.ts`, `definition.test.ts`, `item-views.ts`,
         `types.ts`, `GalleryDemo.svelte`, `SearchBar.svelte`, шесть карточек;
         `DemoPaginator.svelte` → `CatalogDemo.svelte`.
-  - [ ] Тело `PaginatorDemo.svelte` → `+page.svelte`, файл удалить.
-  - [ ] Тело `loader.ts` → `+page.server.ts`, файл удалить.
-  - [ ] Импорты: `./…` не меняются; `../../../../content/…` — та же глубина
+  - [x] Тело `PaginatorDemo.svelte` → `+page.svelte`, файл удалить.
+  - [x] Тело `loader.ts` → `+page.server.ts`, файл удалить. Мёртвое не перенесено:
+        ветки `ctx.pathname`/`ctx.search` (вызов был один, с `url`) и неиспользуемый
+        тип `PaginatorSearch`.
+  - [x] Импорты: `./…` не меняются; `../../../../content/…` — та же глубина
         (`routes/(site)/(app)/paginator` = `lib/ui/demo/paginator`), сверить;
         `#lib/ui/demo/db-list/*` не меняются.
-  - [ ] `tooling/source-schema-guard.mjs:35` `SCHEMA_READERS`: путь к
+  - [x] `tooling/source-schema-guard.mjs:35` `SCHEMA_READERS`: путь к
         `loader.ts` → `src/routes/(site)/(app)/paginator/+page.server.ts`
         (иначе сборка упадёт на чтении схемы — громко, не молча).
-  - [ ] `tooling/source-schema-guard.test.mjs:76` — новый путь; `:36,56,74` —
+  - [x] `tooling/source-schema-guard.test.mjs:76` — новый путь (плюс проверка: `+page.svelte` той же папки схему читать не может); `:36,56,74` —
         примеры путей вне зон, заменить на существующие.
-  - [ ] Проверки: `gate.sh` (vitest подхватывает `src/**/*.test.ts`, в т. ч.
-        `src/routes`); размер `/paginator` тот же.
+  - [x] Проверки: `gate.sh` (vitest подхватывает `src/**/*.test.ts`, в т. ч.
+        `src/routes` — подхватил); размер `/paginator` 194.9; `paginate`, `capabilities`.
 
 - [ ] **5. Ссылки на старые пути.**
   - [ ] `src/lib/ui/demo/db-list/DbPostsList.svelte:72` (комментарий про `PaginatorDemo`).
