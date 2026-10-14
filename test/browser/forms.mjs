@@ -398,6 +398,22 @@ ok('пути дают одинаковые ошибки',
 
   ok('интересы: нативный список — множественный',
     await pg.locator('select[name="topics"]').evaluate((el) => el.multiple))
+
+  // Вариант 'auto' у «О себе»: AutoTextarea растёт по тексту в пределах 3–8 строк.
+  const about = pg.locator('#signup-about')
+  const height = () => about.evaluate((el) => el.getBoundingClientRect().height)
+  await about.fill('')
+  const h0 = await height()
+  await about.fill('1\n2\n3\n4\n5')
+  const h5 = await height()
+  await about.fill('1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12')
+  const h12 = await height()
+  await about.fill('1\n2\n3\n4\n5\n6\n7\n8')
+  const h8 = await height()
+  ok('о себе (auto): растёт по тексту', h5 > h0 + 20, `${h0} → ${h5}`)
+  ok('о себе (auto): потолок — восемь строк', Math.abs(h12 - h8) < 1 && h8 > h5, `${h8} / ${h12}`)
+  await about.fill('')
+  ok('о себе (auto): пустое — обратно к трём строкам', Math.abs(await height() - h0) < 1)
   await ctx.close()
 
   // Без JS: обычные поля, без кнопок оживления; сервер принимает новые значения.

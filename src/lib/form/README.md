@@ -313,7 +313,7 @@ const handle = createFormHandler({
 | `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления); с `variant: 'strength'` — `PasswordStrengthField` → `PasswordStrength` (тот же `PasswordInput` + шкала по `strengthOf`) |
 | `search` | `text` | `type="search"` | `SearchField` → `SearchInput` (крестик очистки после оживления) |
 | `otp` | `text` | `type="text" inputmode="numeric" autocomplete="one-time-code"` | `OtpField` → `OtpInput` (ячейки после оживления; число ячеек — из `v.maxLength(n)`, без него 6) |
-| `textarea` | `text` | — | `TextareaField` → `Textarea` |
+| `textarea` | `text` | — | `TextareaField` → `Textarea`; с `variant: 'auto'` — `AutoTextareaField` → `AutoTextarea` (высота по тексту, 3–8 строк) |
 | `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления); `range` — свой компонент |
 | `date`, `time`, `datetime-local` | `date` / `time` / `datetime` | `type` | `TextField` → `Input` |
 | `select`, `radio` | `select` | — | `SelectField` → `Select` |
@@ -344,9 +344,11 @@ digest: field.switch({ label: 'Присылать дайджест на почт
 // описание формы
 password: field.password({ label: 'Пароль', variant: 'strength', validate: [v.minLength(10), v.strength('good')] }),
 confirm: field.password({ label: 'Повторите пароль', validate: [v.sameAs('password')] }),   // просто глаз
+about: field.textarea({ label: 'О себе', variant: 'auto', validate: [v.maxLength(200)] }), // растёт по тексту
 
 // forms.config.ts
 case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
+case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
 ```
 
 Поля из рантайма (`FieldSpec`) принимают тот же `variant`; не строка — дефект `spec.limit`.

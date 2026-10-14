@@ -17,6 +17,7 @@ import SearchField from './ui/SearchField.svelte'
 import SwitchField from './ui/SwitchField.svelte'
 import TextField from './ui/TextField.svelte'
 import TextareaField from './ui/TextareaField.svelte'
+import AutoTextareaField from './ui/AutoTextareaField.svelte'
 
 /**
  * Транспорт: единственное место, где происходит сетевой вызов.
@@ -28,10 +29,11 @@ export const httpTransport: Transport = jsonTransport('/form/submit')
 
 const resolve = (f: { input: string; variant?: string }) => {
   switch (f.input) {
-    // Вариант из описания поля выбирает примитив: шкала сложности или просто глаз.
+    // Вариант из описания поля выбирает примитив: шкала сложности или просто глаз,
+    // поле по высоте текста или обычное.
     case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
     case 'rating': return RatingField          // свой тип — такой же гражданин
-    case 'textarea': return TextareaField
+    case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
     case 'select': case 'radio': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
     case 'switch': return SwitchField

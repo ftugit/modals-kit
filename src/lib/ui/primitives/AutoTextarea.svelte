@@ -37,11 +37,12 @@
 </script>
 
 <textarea
+  {...rest}
   bind:this={textareaEl}
   bind:value
   rows={minLines}
   class={cn(
-    'w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
+    'w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
     // Бывший `.field-autosize`: размер по содержимому, пол и потолок по
     // числу строк (переменные приходят из style ниже), резервный путь без
     // `field-sizing` прячет переполнение — как делал @supports-блок.
@@ -50,5 +51,4 @@
   )}
   style={`--field-min-lines: ${minLines}; --field-max-lines: ${maxLines}; ${typeof style === 'string' ? style : ''}`}
   data-autosize={fallback ? 'js' : 'css'}
-  {...rest}
 ></textarea>

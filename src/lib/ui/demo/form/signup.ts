@@ -73,7 +73,7 @@ function make(cardinality: 'first' | 'all') {
         help: 'Своё правило без описания: проверяется, но атрибута не даёт',
         validate: [luhn()],
       }),
-      about: field.textarea({ label: 'О себе', validate: [v.maxLength(200)] }),
+      about: field.textarea({ label: 'О себе', variant: 'auto', validate: [v.maxLength(200)] }),
       // Представления со своими примитивами: код (ячейки), множественный выбор,
       // переключатель. Число ячеек кода берётся из правила длины.
       invite: field.otp({
