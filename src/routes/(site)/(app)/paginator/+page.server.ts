@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types'
+import { afterResponse } from '#lib/server/after-response.js'
 import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
 import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
 import { fetchCharactersPage } from '#lib/server/rickmorty.js'
@@ -66,7 +67,7 @@ setRickMortyServerTransport({
  * любой запрос без JS) схему несёт: без неё нет ни разметки фильтров без JS,
  * ни гидратации.
  */
-export const load: PageServerLoad = async ({ url, isDataRequest }) => {
+export const load: PageServerLoad = async ({ url, isDataRequest, platform }) => {
   const store = createPaginatorStore()
   const defaultName = ensureDemoPaginator('url')
   store.update<CatalogItem>(defaultName, (state) => ({
@@ -109,7 +110,8 @@ export const load: PageServerLoad = async ({ url, isDataRequest }) => {
   // прогреет серверный кэш. Запуск — ПОСЛЕ страницы, не вместе с ней: у них общая
   // очередь лимита Shikimori, и ~10 запросов справочников задержали бы саму
   // страницу (замер: `__data.json` 0,6 → 2,3 с). Ошибку `schemaOf` превращает в `null`.
-  if (isDataRequest) void schemaOf(src)
+  // `afterResponse`: на Vercel/Cloudflare функцию не заморозят посреди сборки после ответа.
+  if (isDataRequest) afterResponse(schemaOf(src), { platform })
   const loaderData: PaginatorLoaderData = {
     defaultName,
     snapshot,

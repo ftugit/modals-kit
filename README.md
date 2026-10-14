@@ -65,6 +65,11 @@ Vercel — Settings → Environment Variables.
 
 Платформа задаёт сама: `VERCEL`, `E2B_SANDBOX_ID`.
 
+**Работа после ответа.** Начатое после ответа (сборка схемы фильтров Shikimori при переходе
+внутри сайта) идёт через `afterResponse` (`src/lib/server/after-response.ts`): на Vercel —
+`waitUntil` из `@vercel/functions`, на Cloudflare — `platform.context.waitUntil`, иначе промис
+просто выполняется. Вне Vercel `waitUntil` ничего не делает, настраивать ничего не нужно.
+
 ## API модалок
 
 | API | Вид | Описание |
