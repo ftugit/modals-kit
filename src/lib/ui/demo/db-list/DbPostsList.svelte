@@ -54,6 +54,7 @@
   import { isAbsorbed, pendingPlacement, type Optimistic } from './optimistic.svelte'
   import DbPostPendingRow from './DbPostPendingRow.svelte'
   import DbPostRow from './DbPostRow.svelte'
+  import Button from '#lib/ui/primitives/Button.svelte'
   import ListMeta from './ListMeta.svelte'
   import { useCursorMode } from './cursor-mode.svelte'
 
@@ -235,8 +236,8 @@
     <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
       <span>опрос окна: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
       {#if fresh}
-        <button class="rounded-md border border-border bg-card px-2 py-0.5 underline" data-testid="live-pill"
-          onclick={() => { fresh = false; actions.reset() }}>↑ список изменился — показать</button>
+        <Button variant="outline" size="xs" data-testid="live-pill"
+          onclick={() => { fresh = false; actions.reset() }}>↑ список изменился — показать</Button>
       {/if}
     </p>
   {/if}

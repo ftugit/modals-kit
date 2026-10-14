@@ -235,12 +235,7 @@
 
   <div class="flex flex-wrap items-center justify-end gap-2">
     {#if resetHref}
-      <a {...asLink(resetHref)}
-        data-testid="catalog-filter-reset"
-        class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-      >
-        Сбросить
-      </a>
+      <Button {...asLink(resetHref)} variant="outline" size="sm" data-testid="catalog-filter-reset">Сбросить</Button>
     {/if}
     <Button type="submit" size="sm" data-testid="catalog-filter-submit">Применить</Button>
   </div>

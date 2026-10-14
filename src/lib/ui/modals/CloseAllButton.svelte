@@ -3,8 +3,7 @@
   // «Закрыть всё» (внешний вид; логика — lib/modals): чистит всю стопку;
   // если внутри есть заблокированная — кнопка недоступна.
   import { useChain, useChainLocked, useModals } from '#lib/modals/svelte/index.js'
-  import { cn } from '#lib/ui/cn.js'
-  import { modalButtonVariants } from './variants'
+  import Button from '#lib/ui/primitives/Button.svelte'
   import type { HTMLButtonAttributes } from 'svelte/elements'
 
   let {
@@ -19,15 +18,16 @@
   const blocked = useChainLocked()
 </script>
 
-<button
-  type="button"
+<!-- Вид — общий `Button` (вариант `outline`): своего набора стилей у модалок нет. -->
+<Button
+  variant="outline"
   {...rest}
   onclick={() => m.modals.closeAll()}
   disabled={chain.current.length === 0 || blocked.value}
   title={blocked.value ? 'В стопке есть заблокированная модалка' : undefined}
-  class={cn(modalButtonVariants({ variant: 'quiet' }), cls)}
+  class={cls}
   data-modal-btn=""
   {style}
 >
   {#if children}{@render children()}{:else}Закрыть все ({chain.current.length}){/if}
-</button>
+</Button>

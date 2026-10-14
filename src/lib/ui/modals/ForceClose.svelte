@@ -3,8 +3,7 @@
   // Принудительное закрытие (внешний вид; логика — lib/modals):
   // единственный легальный выход из заблокированной модалки.
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { cn } from '#lib/ui/cn.js'
-  import { modalButtonVariants } from './variants'
+  import Button from '#lib/ui/primitives/Button.svelte'
   import type { HTMLButtonAttributes } from 'svelte/elements'
 
   let {
@@ -26,17 +25,18 @@
   const m = useModals()
 </script>
 
-<button
-  type="button"
+<!-- Вид — общий `Button` (вариант `destructive`): своего набора стилей у модалок нет. -->
+<Button
+  variant="destructive"
   {...rest}
   onclick={(event) => {
     onclick?.(event)
     if (all) m.modals.forceCloseAll()
     else m.modals.forceClose(name)
   }}
-  class={cn(modalButtonVariants({ variant: 'danger' }), cls)}
+  class={cls}
   data-modal-btn=""
   {style}
 >
   {#if children}{@render children()}{:else}Закрыть принудительно{/if}
-</button>
+</Button>

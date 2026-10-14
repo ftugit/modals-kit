@@ -3,6 +3,7 @@
   // Логика (форма, задержка, запись в стор, сброс) — хук `usePaginatorSearch`.
   import { Form } from '#lib/form/svelte/index.js'
   import { asLink } from '#lib/components/links/index.js'
+  import Button from '#lib/ui/primitives/Button.svelte'
   import { SearchInput } from '#lib/ui/primitives/index.js'
   import { usePaginatorSearch } from '#lib/ui/paginator/index.js'
 
@@ -72,21 +73,9 @@
   <!-- С JS поле применяется само (задержка), Enter — сразу: кнопки нужны только
        до оживления и без JS. -->
   {#if !search.hydrated}
-    <button
-      type="submit"
-      data-testid="search-submit"
-      disabled={search.disabled}
-      class="h-9 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent disabled:opacity-50"
-    >
-      Найти
-    </button>
+    <Button type="submit" variant="outline" data-testid="search-submit" disabled={search.disabled}>Найти</Button>
     {#if search.hasQuery}
-      <a {...asLink(search.resetHref)}
-        data-testid="search-clear"
-        class="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent"
-      >
-        Сбросить
-      </a>
+      <Button {...asLink(search.resetHref)} variant="outline" data-testid="search-clear">Сбросить</Button>
     {/if}
   {/if}
 </Form>

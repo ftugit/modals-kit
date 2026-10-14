@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from '#lib/ui/primitives/Button.svelte'
   // Экран остановки приложения (Q1). НИ строки из ошибки: причина живёт в консоли
   // разработчика (warn) и в логе сервера, пользователю — только факт сбоя.
 </script>
@@ -14,12 +15,6 @@
       Произошла внутренняя ошибка и приложение было остановлено, чтобы не показывать
       некорректные данные. Попробуйте обновить страницу.
     </p>
-    <button
-      class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-      onclick={() => location.reload()}
-      data-testid="error-500-reload"
-    >
-      Обновить страницу
-    </button>
+    <Button onclick={() => location.reload()} data-testid="error-500-reload">Обновить страницу</Button>
   </div>
 </div>

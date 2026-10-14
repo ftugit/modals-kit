@@ -27,7 +27,6 @@ import { Button } from '#lib/ui/primitives/index.js'
   import { Portal } from '@ark-ui/svelte/portal'
   import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
   import { cn } from '#lib/ui/cn.js'
-  import { modalButtonVariants } from '#lib/ui/modals/index.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
 
   interface Props {
@@ -163,9 +162,9 @@ import { Button } from '#lib/ui/primitives/index.js'
   })
 </script>
 
-<Button variant="plain" size="none"
+<Button variant="outline"
   ref={(el) => { buttonEl = el }}
-  class={cn(modalButtonVariants({ variant: 'quiet' }), cls)}
+  class={cls}
   data-modal-btn=""
   aria-haspopup="menu"
   aria-expanded={open}

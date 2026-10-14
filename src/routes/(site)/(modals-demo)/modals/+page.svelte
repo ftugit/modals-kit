@@ -59,16 +59,8 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <a {...asLink('/')}
-          class="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          Главная
-        </a>
-        <a {...asLink('/cycle')}
-          class="rounded-md bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          Цикл
-        </a>
+        <Button {...asLink('/')} variant="outline" size="sm">Главная</Button>
+        <Button {...asLink('/cycle')} variant="secondary" size="sm">Цикл</Button>
       </div>
     </header>
 

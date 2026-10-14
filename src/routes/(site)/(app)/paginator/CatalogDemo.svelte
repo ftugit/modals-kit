@@ -53,6 +53,7 @@ import DbPostRow from '#lib/ui/demo/db-list/DbPostRow.svelte'
 import { useCursorMode } from '#lib/ui/demo/db-list/cursor-mode.svelte.js'
 import ItemRow from './ItemRow.svelte'
   import SearchBar from './SearchBar.svelte'
+  import Button from '#lib/ui/primitives/Button.svelte'
   import ShotTile from './ShotTile.svelte'
 
   const HOST_CLASS =
@@ -485,14 +486,9 @@ import ItemRow from './ItemRow.svelte'
           data-testid="filters-schema-error"
         >
           {filterSchemaError}
-          <button
-            type="button"
-            class="rounded-md border border-border px-2 py-0.5 hover:bg-muted"
-            data-testid="filters-schema-retry"
-            onclick={() => loadSchema({ retry: true })}
-          >
+          <Button variant="outline" size="xs" data-testid="filters-schema-retry" onclick={() => loadSchema({ retry: true })}>
             Повторить
-          </button>
+          </Button>
         </p>
       {/if}
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
