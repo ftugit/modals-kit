@@ -50,7 +50,7 @@
     [GALLERY_NAME]: loaderData.gallerySnapshot,
   }}
 >
-  <div class="py-10 sm:py-14">
+  <div class="mx-auto w-full max-w-4xl py-10 sm:py-14">
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 class="font-display text-4xl font-semibold tracking-tight">Пагинатор</h1>

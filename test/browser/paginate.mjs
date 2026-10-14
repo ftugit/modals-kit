@@ -226,12 +226,19 @@ async function run() {
         await page.goto(url, { waitUntil: 'networkidle' });
         // при монтировании хост может сам запустить подгрузку (контейнер не заполнен) —
         // ждём тишины, иначе таймлайн начнётся на середине чужого запроса
+        // Один кадр без скелетонов — ещё не тишина: между цепочкой автоподгрузок (страница 2 → 3)
+        // бывает ~30 мс без скелетонов. Тишина = 0 скелетонов дольше транспорта демо (500 мс).
         await page.waitForFunction(
-          () => document.querySelectorAll('[data-testid="skeleton"]').length === 0,
+          () => {
+            const w = /** @type {any} */ (window);
+            if (document.querySelectorAll('[data-testid="skeleton"]').length > 0) w.__quietSince = 0;
+            else if (!w.__quietSince) w.__quietSince = performance.now();
+            return w.__quietSince > 0 && performance.now() - w.__quietSince > 800;
+          },
           null,
-          { timeout: 5000 },
+          { timeout: 8000, polling: 16 },
         );
-        await sleep(300);
+        await page.evaluate(() => delete (/** @type {any} */ (window).__quietSince));
         if (trigger === 'prepend') {
           const geom = await host.evaluate((el) => {
             el.scrollTop = el.scrollHeight;

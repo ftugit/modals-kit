@@ -759,7 +759,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 есть TS-транспиляция. `dist`-сборки, `fix-esm` и `npm pack` из прошлого жизненного цикла пакета
 больше нет: приложение компилирует исходники само.
 
-Есть и прогон на живых движках: `src/lib/db/probes/` — PGlite (`pglite.probe.mjs`),
+Есть и прогон на живых движках: `src/lib/db/probes/` — PGlite (`pglite.probe.mts`),
 нативный PostgreSQL 17 и четыре транспорта сразу (`transport-matrix.probe.mjs`, требуется
 поднятое окружение; матрица и выводы — [`docs/TRANSPORTS.md`](./docs/TRANSPORTS.md)); там же
 `testdb-encoding.probe.mjs` — ловушка `SQL_ASCII` для `icontains`, `pooler.probe.mjs` —

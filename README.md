@@ -28,6 +28,42 @@
   в dev по http без заголовка пропускает (`sameOriginFetch` в
   `src/lib/server/trusted-origins.ts`). От парсеров это не защищает: заголовок
   подделывается одной строкой. Отсекает чужие страницы в браузере и простые скачивания.
+- **filters** — фильтры каталога: схема источника превращается в форму `lib/form`, правила
+  проверки и адрес `?page.filters.*`. Документация — [`src/lib/filters/README.md`](./src/lib/filters/README.md).
+- **db** — серверный слой данных: ресурсы, курсорные страницы, синхронизация схемы из
+  моделей, адаптеры Postgres/PGlite/Hyperdrive. Демо — `/db-demo`. Документация —
+  [`src/lib/db/README.md`](./src/lib/db/README.md).
+- **cache** — хранилища «ключ → значение со сроком» с одним контрактом (кэш внешнего API,
+  бронь отправки формы, счётчик). Документация — [`src/lib/cache/README.md`](./src/lib/cache/README.md).
+- **fetch** — `fetch` для чужих сервисов: таймаут, повторы с `Retry-After`, лимит запусков на
+  хост, склейка одинаковых запросов. Документация — [`src/lib/fetch/README.md`](./src/lib/fetch/README.md).
+- **task** — один формат состояния задачи («лоадер») для ссылок, кнопок и индикаторов.
+  Документация — [`src/lib/task/README.md`](./src/lib/task/README.md).
+- **components/links** — ссылки приложения как атрибуты на свою `<a>` или `Button`:
+  `asLink`, `asModalLink`. Документация — [`src/lib/components/links/README.md`](./src/lib/components/links/README.md).
+
+## Переменные окружения
+
+Все необязательны: без них сайт работает целиком — база PGlite в памяти, курсорный режим и
+кнопка переноса схемы выключены. Перечень и проверки — `src/env.ts`, шаблон с пояснениями —
+`.env.example`. Локально — файл `.env` (читается в `npm run dev`) или переменные процесса; на
+Vercel — Settings → Environment Variables.
+
+| Переменная | Зачем | Без неё |
+|---|---|---|
+| `DATABASE_URL` | внешний Postgres | PGlite |
+| `HYPERDRIVE_CONNECTION_STRING` | Cloudflare Hyperdrive, перекрывает `DATABASE_URL` | — |
+| `DATABASE_DIR` | каталог PGlite на диске | PGlite в памяти |
+| `DB_POOL_MAX` | соединений в пуле | 1 на Vercel, иначе 4 |
+| `DB_CONNECT_TIMEOUT_MS` | таймаут соединения, мс | 30000 |
+| `DB_CURSOR_SECRET` | подпись курсора `?page.after`, не короче 32 байт | курсорный режим выключен |
+| `DB_CURSOR_TTL_SECONDS` | время жизни курсора, с | 1800 |
+| `DB_CURSOR_KID`, `DB_CURSOR_OLD_KEYS` | смена секрета курсора без поломки ссылок | `v1` |
+| `DB_ADMIN_TOKEN` | кнопка «Выполнить» переноса схемы на `/db-demo`, не короче 32 символов | кнопка выключена |
+| `KIT_TRUSTED_ORIGINS` | публичные адреса для проверки origin (CSRF); читается и при сборке | только локальные порты |
+| `PREVIEW_PORTS` | доверенные локальные порты | `5173,5174` |
+
+Платформа задаёт сама: `VERCEL`, `E2B_SANDBOX_ID`.
 
 ## API модалок
 

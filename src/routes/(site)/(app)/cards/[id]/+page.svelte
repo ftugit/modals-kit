@@ -5,7 +5,7 @@
   let { data }: import('./$types').PageProps = $props()
 </script>
 
-<div class="py-10 sm:py-14">
+<div class="mx-auto w-full max-w-4xl py-10 sm:py-14">
   <p class="text-xs uppercase tracking-wide text-muted-foreground">Карточка · SSR-страница</p>
   <h1 class="mt-2 text-3xl font-bold">{data.title}</h1>
   <p class="mt-4 max-w-prose text-muted-foreground">{data.body}</p>

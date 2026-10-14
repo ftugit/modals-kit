@@ -483,6 +483,9 @@
       if (host) openHostPopup()
     } else {
       open = false
+      // Догоняющий `click` того же нажатия не должен открыть список снова:
+      // окно в 250 мс выше (у попапа хоста время ставит и `closeFromHostFloating`).
+      lastClosedAt = Date.now()
       closeHostPopup()
       nativeEl?.focus({ preventScroll: true })
     }
@@ -538,6 +541,18 @@
     const wasOpen = open
     setOpen(true)
     if (!wasOpen && open) swallowTrailingClick(event)
+  }
+
+  /**
+   * Повторное нажатие по контролу закрывает список (переключатель). Пока список
+   * открыт, нативный `select` пропускает указатель (`pointer-events-none`), и
+   * нажатие приходит на видимую кнопку под ним. Догоняющий `click` после
+   * закрытия попадёт уже на нативный контрол — его гасит окно 250 мс в `setOpen`.
+   */
+  function closeFromTrigger(event: PointerEvent): void {
+    if (!open || disabled || event.button !== 0) return
+    event.preventDefault()
+    setOpen(false)
   }
 
   // Prevent Android's native picker, but do not open on pointerdown: touch
@@ -816,6 +831,7 @@
       tabindex="-1"
       class={cn(inputVariants({ size }), 'flex w-full items-center justify-between gap-2', cls)}
       data-select-trigger=""
+      onpointerdown={closeFromTrigger}
     >
       <span class="flex min-w-0 flex-1 items-center gap-1 text-left">
         {#if selected.length === 0}

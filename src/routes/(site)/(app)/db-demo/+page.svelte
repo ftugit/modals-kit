@@ -55,24 +55,27 @@
 
 </script>
 
-<h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
-<!-- Сводка (сколько записей, размер страницы, режим) живёт в `ListMeta` внутри
-     хоста: после отправки формы страница не перезагружается, поэтому серверные
-     цифры на этом месте остались бы вчерашними. -->
+<!-- Ширина и отступы — как у остальных демо-страниц (/modals, /form). -->
+<div class="mx-auto w-full max-w-4xl space-y-6 py-10 sm:py-14">
+  <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
+  <!-- Сводка (сколько записей, размер страницы, режим) живёт в `ListMeta` внутри
+       хоста: после отправки формы страница не перезагружается, поэтому серверные
+       цифры на этом месте остались бы вчерашними. -->
 
-{#if notice}
-  <p class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" role="status" data-testid="notice">
-    {notice}
-  </p>
-{/if}
+  {#if notice}
+    <p class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" role="status" data-testid="notice">
+      {notice}
+    </p>
+  {/if}
 
-{#if data.schema || !data.snapshot}
-  {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
-{:else}
-  <div class="grid gap-6 md:grid-cols-2">
-    <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
-    <RemoveForm seed={seed('remove')} onApplied={refreshList} />
-  </div>
+  {#if data.schema || !data.snapshot}
+    {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
+  {:else}
+    <div class="grid gap-6 md:grid-cols-2">
+      <CreateForm seed={seed('create')} onApplied={refreshList} {optimistic} />
+      <RemoveForm seed={seed('remove')} onApplied={refreshList} />
+    </div>
 
-  <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
-{/if}
+    <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
+  {/if}
+</div>

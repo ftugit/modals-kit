@@ -1716,6 +1716,30 @@ try {
     await page.close()
   })
 
+  // Ход 151: нажатие по открытому Select закрывает его (переключатель), а не
+  // требует клика мимо. Догоняющий click того же нажатия не открывает снова.
+  await run('R-45 Select: повторное нажатие по контролу закрывает список', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+    await gotoBase(page)
+    const native = page.locator('[data-select-root][data-enhanced] select[data-select-native]').first()
+    const isOpen = () => page.evaluate(() => !!document.querySelector('[data-select-listbox]'))
+    const press = async () => {
+      await native.click({ force: true })
+      await page.waitForTimeout(400) // переход 150 мс + окно 250 мс после закрытия
+    }
+    await press()
+    assert(await isOpen(), '1-е нажатие: список не открылся')
+    await press()
+    assert(!(await isOpen()), '2-е нажатие: список остался открытым')
+    await press()
+    assert(await isOpen(), '3-е нажатие: список не открылся снова')
+    ok('нажатие по Select: открыть → закрыть → открыть')
+    await page.mouse.click(5, 5)
+    await page.waitForFunction(() => !document.querySelector('[data-select-listbox]'), null, { timeout: 2_000 })
+    ok('клик мимо по-прежнему закрывает')
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
