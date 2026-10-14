@@ -10,6 +10,7 @@ import CheckboxField from './ui/CheckboxField.svelte'
 import RatingField from './ui/RatingField.svelte'
 import SelectField from './ui/SelectField.svelte'
 import PasswordField from './ui/PasswordField.svelte'
+import PasswordStrengthField from './ui/PasswordStrengthField.svelte'
 import NumberField from './ui/NumberField.svelte'
 import OtpField from './ui/OtpField.svelte'
 import SearchField from './ui/SearchField.svelte'
@@ -25,9 +26,10 @@ import TextareaField from './ui/TextareaField.svelte'
  */
 export const httpTransport: Transport = jsonTransport('/form/submit')
 
-const resolve = (f: { input: string }) => {
+const resolve = (f: { input: string; variant?: string }) => {
   switch (f.input) {
-    case 'password': return PasswordField
+    // Вариант из описания поля выбирает примитив: шкала сложности или просто глаз.
+    case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
     case 'rating': return RatingField          // свой тип — такой же гражданин
     case 'textarea': return TextareaField
     case 'select': case 'radio': case 'multiselect': return SelectField

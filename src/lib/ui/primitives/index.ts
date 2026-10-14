@@ -28,7 +28,7 @@ export { default as SearchInput } from './SearchInput.svelte'
 export { default as SearchMorph } from './SearchMorph.svelte'
 export { default as PhoneField } from './PhoneField.svelte'
 export { default as OtpInput } from './OtpInput.svelte'
-export { default as PasswordStrength, scorePassword, type StrengthView } from './PasswordStrength.svelte'
+export { default as PasswordStrength, type StrengthView } from './PasswordStrength.svelte'
 export { default as NumberField } from './NumberField.svelte'
 
 export { default as Select } from './Select.svelte'

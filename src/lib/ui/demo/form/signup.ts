@@ -38,6 +38,7 @@ function make(cardinality: 'first' | 'all') {
       // нижняя граница длины, и её же сообщает первое правило.
       password: field.password({
         label: 'Пароль',
+        variant: 'strength',
         help: 'Не короче десяти символов и достаточно стойкий: оценка вместо шаблона',
         validate: [v.required(), v.minLength(10), v.strength('good')],
       }),

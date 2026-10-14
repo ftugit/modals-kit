@@ -352,6 +352,20 @@ ok('пути дают одинаковые ошибки',
   await eye.click()
   ok('пароль: второй щелчок снова прячет', await pass.getAttribute('type') === 'password')
 
+  // Вариант 'strength' выбирает другой примитив: PasswordStrength = PasswordInput + шкала.
+  const meter = pg.locator('[data-password-input]:has(#signup-password) + [data-strength]')
+  ok('пароль (strength): шкала под полем', await meter.count() === 1)
+  ok('пароль (strength): оценка от strengthOf, 1–4',
+    ['1', '2', '3', '4'].includes(await meter.getAttribute('data-score') ?? ''), await meter.getAttribute('data-score'))
+  ok('пароль (strength): подпись с битами', /бит$/.test((await meter.innerText()).trim()), await meter.innerText())
+  await pass.fill('')
+  ok('пароль (strength): пустое поле — шкалы нет', await meter.count() === 0)
+  await pass.fill('secret-123')
+  await pg.locator('#signup-confirm').fill('secret-123')
+  ok('повтор пароля: без варианта — глаз есть, шкалы нет',
+    await pg.locator('[data-password-input]:has(#signup-confirm) button[aria-pressed]').count() === 1
+      && await pg.locator('[data-password-input]:has(#signup-confirm) + [data-strength]').count() === 0)
+
   const age = pg.locator('#signup-age')
   await age.fill('')
   await pg.locator('[data-number-field]:has(#signup-age) [data-number-step="up"]').click()

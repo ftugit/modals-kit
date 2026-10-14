@@ -26,6 +26,8 @@ export interface FieldSpec {
   readonly label: string
   readonly help?: string
   readonly placeholder?: string
+  /** Вариант показа для `resolve` приложения (см. `FieldOptions.variant`). */
+  readonly variant?: string
   /** Значение по умолчанию строкой. */
   readonly defaultAsString?: string
   readonly required?: boolean
@@ -84,6 +86,9 @@ export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): Compi
   if (typeof spec.label !== 'string' || spec.label.length === 0)
     defects.push(defect('spec.limit', at, 'подпись обязательна'))
 
+  if (spec.variant !== undefined && typeof spec.variant !== 'string')
+    defects.push(defect('spec.limit', at, 'вариант показа — строка'))
+
   const kind = spec.kind ?? registry.types.byInput(spec.input)?.kind
   if (!kind) {
     defects.push(defect('spec.unknown-kind', at, `представление '${spec.input}' не обслуживается`))
@@ -125,7 +130,7 @@ export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): Compi
   const field: FieldDescriptor = {
     name: `${prefix}${spec.name}`,
     kind, input: spec.input, order: 0,
-    label: spec.label, help: spec.help, placeholder: spec.placeholder,
+    label: spec.label, help: spec.help, placeholder: spec.placeholder, variant: spec.variant,
     defaultValue: spec.defaultAsString,
     validators,
     options: spec.options ? [...spec.options] : undefined,

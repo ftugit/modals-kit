@@ -23,6 +23,8 @@ export interface ResolveTarget {
   readonly name: string
   readonly input: InputMode
   readonly kind: ValueKind
+  /** Вариант показа из описания поля (`field.password({ variant: 'strength' })`). */
+  readonly variant?: string
 }
 
 /**

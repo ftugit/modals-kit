@@ -605,7 +605,7 @@
 | `NumberField.svelte` | 87 | — | ⏳ |  |  |
 | `OtpInput.svelte` | 138 | — | ⏳ |  |  |
 | `PasswordInput.svelte` | 90 | — | ⏳ |  | microtask×1, addEventListener×1 |
-| `PasswordStrength.svelte` | 161 | — | ⏳ |  |  |
+| `PasswordStrength.svelte` | 74 | — | ⏳ |  |  |
 | `PhoneField.svelte` | 120 | — | ⏳ |  |  |
 | `SearchField.svelte` | 50 | — | ⏳ |  |  |
 | `SearchInput.svelte` | 65 | — | ⏳ |  | addEventListener×1 |

@@ -186,6 +186,20 @@ suite('описание и ограничения', () => {
     expect(bad.errors.map((e) => `${e.path}:${e.code}`)).toEqual(expect.arrayContaining(['code:pattern', 'on:required']))
   })
 
+  test('variant доходит до описания и не меняет разметку поля', () => {
+    const d = defineForm({
+      id: 'variants',
+      fields: {
+        plain: field.password({ validate: [v.minLength(10)] }),
+        meter: field.password({ variant: 'strength', validate: [v.minLength(10)] }),
+      },
+    })
+    expect(d.byName.meter.variant).toBe('strength')
+    expect(d.byName.plain.variant).toBeUndefined()
+    const strip = (a: Record<string, unknown>) => { const { name: _n, id: _i, ...rest } = a; return rest }
+    expect(strip(d.attrsOf('meter').attrs)).toEqual(strip(d.attrsOf('plain').attrs))
+  })
+
   test('integer не ставит опасный step=1 при дробном min', () => {
     const d = defineForm({ id: 'intmin', fields: { n: field.number({ validate: [v.minValue(18.5), v.integer()] }) } })
     expect(d.attrsOf('n').attrs).toMatchObject({ type: 'number', min: 18.5, step: 'any' })
@@ -417,6 +431,12 @@ suite('поля из рантайма', () => {
   test('функции в спецификации запрещены', () => {
     const r = compileFieldSpec({ name: 'x', input: 'text', label: 'X', validate: () => null } as never)
     expect(r.ok).toBe(false)
+  })
+
+  test('variant: строка проходит, не строка — дефект', () => {
+    const r = compileFieldSpec({ name: 'x', input: 'password', label: 'X', variant: 'strength' })
+    expect(r.ok && r.field.variant).toBe('strength')
+    expect(compileFieldSpec({ name: 'x', input: 'password', label: 'X', variant: 1 } as never).ok).toBe(false)
   })
 
   test('имя проверяется до префикса', () => {

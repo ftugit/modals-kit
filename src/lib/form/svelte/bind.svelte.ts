@@ -58,6 +58,8 @@ export interface FieldView {
   readonly label?: string
   readonly help?: string
   readonly placeholder?: string
+  /** Вариант показа из описания поля: по нему `resolve` выбирает компонент. */
+  readonly variant?: string
   readonly options?: readonly { value: string; label: string; disabled?: boolean }[]
   /** Тексты: то, что вернул обработчик. Может быть пусто при невалидном поле. */
   readonly errors: readonly FormError[]
@@ -547,7 +549,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     return {
       name: f.name, input: f.input, kind: f.kind,
       attrs, skipped: base.skipped,
-      label: f.label, help: f.help, placeholder: f.placeholder, options: f.options,
+      label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
       errors, value, has,
       disabled: ls.disabled, reason: ls.reason,
       touched: snapshot.touched[f.name] === true,

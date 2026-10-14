@@ -64,6 +64,11 @@ export interface FieldDescriptor<V = unknown> {
   readonly label?: string
   readonly help?: string
   readonly placeholder?: string
+  /**
+   * Вариант показа внутри одного представления (см. `FieldOptions.variant`).
+   * Библиотека его не толкует — только передаёт в `resolve` и вид поля.
+   */
+  readonly variant?: string
   readonly defaultValue?: V
   readonly secret?: boolean
   readonly validators: readonly ValidatorRef[]
@@ -133,6 +138,12 @@ export interface FieldOptions<V = unknown> {
   help?: string
   /** Placeholder для нативного поля, если представление его поддерживает. */
   placeholder?: string
+  /**
+   * Вариант показа внутри одного представления: какой компонент рисовать,
+   * решает `resolve` приложения (`'strength'` — пароль со шкалой сложности).
+   * Библиотека строку не толкует: на значение, разметку и проверки она не влияет.
+   */
+  variant?: string
   /** Начальное значение поля до ввода пользователя. */
   defaultValue?: V
   /** Не возвращать значение в публичном `Result.values`; полезно для паролей и токенов. */
@@ -185,7 +196,8 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
           'Зарегистрируйте тип или укажите kind явно.')
       return {
         kind, input,
-        label: o.label, help: o.help, placeholder: o.placeholder, defaultValue: o.defaultValue,
+        label: o.label, help: o.help, placeholder: o.placeholder, variant: o.variant,
+        defaultValue: o.defaultValue,
         // пароль не возвращается наружу: возврат пароля в разметку — типовая дыра
         secret: o.secret ?? input === 'password',
         validators: o.validate ?? [],

@@ -310,7 +310,7 @@ const handle = createFormHandler({
 | Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
 |---|---|---|---|
 | `text`, `email`, `url`, `tel`, `color`, `hidden` | `text` | `type` | `TextField` → `Input` |
-| `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления) |
+| `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления); с `variant: 'strength'` — `PasswordStrengthField` → `PasswordStrength` (тот же `PasswordInput` + шкала по `strengthOf`) |
 | `search` | `text` | `type="search"` | `SearchField` → `SearchInput` (крестик очистки после оживления) |
 | `otp` | `text` | `type="text" inputmode="numeric" autocomplete="one-time-code"` | `OtpField` → `OtpInput` (ячейки после оживления; число ячеек — из `v.maxLength(n)`, без него 6) |
 | `textarea` | `text` | — | `TextareaField` → `Textarea` |
@@ -333,6 +333,23 @@ digest: field.switch({ label: 'Присылать дайджест на почт
 
 Без JS всё перечисленное остаётся обычным элементом формы: кнопки показа пароля,
 шага числа, крестик и ячейки кода рисуются только после оживления.
+
+### Вариант показа: `variant`
+
+Одно представление — несколько компонентов. Строка `variant` в описании поля доходит
+до `resolve` и до вида поля (`FieldView.variant`); библиотека её не толкует: на
+значение, `attrs` и проверки она не влияет. Компонент выбирает приложение.
+
+```ts
+// описание формы
+password: field.password({ label: 'Пароль', variant: 'strength', validate: [v.minLength(10), v.strength('good')] }),
+confirm: field.password({ label: 'Повторите пароль', validate: [v.sameAs('password')] }),   // просто глаз
+
+// forms.config.ts
+case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
+```
+
+Поля из рантайма (`FieldSpec`) принимают тот же `variant`; не строка — дефект `spec.limit`.
 
 ## Каталог валидаторов
 
