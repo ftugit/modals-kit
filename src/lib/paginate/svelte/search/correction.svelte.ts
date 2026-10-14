@@ -1,6 +1,6 @@
 // Svelte-обвязка lib search: подпись коррекции запроса. Слой повторяет
 // устройство `#lib/paginate/svelte/index.js` — та же схема доступа к состоянию
-// (аксессор + `.current`), то же правило: ядро (`#lib/search/index.js`) о Svelte не
+// (аксессор + `.current`), то же правило: ядро (`#lib/paginate/search/index.js`) о Svelte не
 // знает, обвязка живёт отдельным входом.
 //
 // Самой формы поиска здесь нет и быть не должно: поле запроса — обычное поле
@@ -8,8 +8,8 @@
 // (см. README). Хуков ровно столько, сколько нужно слою разметки: реактивная
 // подпись «искали X → показываем Y».
 import { createSubscriber } from 'svelte/reactivity'
-import { getSearchCorrection, onSearchCorrection } from '../registry'
-import type { SearchCorrectionInfo } from '../accumulator'
+import { getSearchCorrection, onSearchCorrection } from '../../search/registry'
+import type { SearchCorrectionInfo } from '../../search/accumulator'
 
 export type SearchCorrectionAccessor = (() => SearchCorrectionInfo | null) & {
   readonly current: SearchCorrectionInfo | null

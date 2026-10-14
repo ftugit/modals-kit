@@ -16,7 +16,7 @@ import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/filters/ind
 import { shikimoriFilterKeys, shikimoriFilterSource } from '../../../../content/shikimori-filters'
 import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
 import { RICKMORTY_FILTER_KEYS } from '../../../../content/rickmorty-filters'
-import { reportSearchCorrection, withLibSearch, type SearchCorrectionInfo } from '#lib/search/index.js'
+import { reportSearchCorrection, withLibSearch, type SearchCorrectionInfo } from '#lib/paginate/search/index.js'
 import {
   composeSources,
   defineSource,
@@ -167,7 +167,7 @@ async function loadAnimePage(
 /**
  * Паспорт записи каталога — ОДИН на все три источника демо: как читать любую
  * запись (id, заголовок, тексты) знает слой источника, а не потребитель. По
- * нему lib/search ранжирует и дедуплицирует, а вьюхи берут заголовки.
+ * нему paginate/search ранжирует и дедуплицирует, а вьюхи берут заголовки.
  */
 const catalogRecord: SourceRecordSpec<CatalogItem> = {
   id: (item) => String(item.id),
@@ -181,7 +181,7 @@ const catalogRecord: SourceRecordSpec<CatalogItem> = {
  * Товары умеют искать по названию: поиск реализован в самих данных
  * (`queryItemsPage` сужает корпус до пагинации), а наличие возможности
  * объявляет СПЕКА источника (`search`), не потребитель и не роут. Сканирование
- * разрешено (`scan`) — поверх работает lib/search (fuzzy по названию).
+ * разрешено (`scan`) — поверх работает paginate/search (fuzzy по названию).
  *
  * Фото — «просто данные»: ни `search`, ни `scan`, ни фильтров. Возможностей нет
  * → панель гасит опции поиска и поле запроса (честное «искать нечем»).
@@ -208,17 +208,17 @@ function createLocalItemsSource(kind: 'products' | 'photos'): AdaptedSource<Cata
 /**
  * Живой каталог Shikimori как источник: родной поиск (`q` уезжает ОТДЕЛЬНЫМ
  * полем `search`, не в фильтры), разрешение сканирования (лимит выдачи за один
- * запрос = размер батча lib/search: больше сервис молча режет до 50) и словарь
+ * запрос = размер батча paginate/search: больше сервис молча режет до 50) и словарь
  * терминов для коррекции опечаток. Totals Shikimori не отдаёт — номерной
  * навигации у него нет (R12: только стрелки).
  *
  * Тумблер `srch` — декоратор `withSearchGate`: при выключенном родном поиске
  * источник получает пустой `q` (каталог как есть), но сам `q` остаётся в extra
- * и доступен lib/search — сканирование без сужения источником.
+ * и доступен paginate/search — сканирование без сужения источником.
  */
 function createAnimesSource(api: ShikimoriApi): AdaptedSource<CatalogItem> {
   return defineSource<CatalogItem>({
-    // Имя mix прежнее (`animes`): статистика и словарь lib/search по нему не
+    // Имя mix прежнее (`animes`): статистика и словарь paginate/search по нему не
     // меняются у адресов, сделанных до разделения на версии.
     name: api === 'mix' ? 'animes' : `animes-${api}`,
     record: catalogRecord,
@@ -240,7 +240,7 @@ function createAnimesSource(api: ShikimoriApi): AdaptedSource<CatalogItem> {
 /**
  * Rick and Morty как источник: родной поиск по имени (`q` → `name` API),
  * фильтры из статической схемы, totals (`count` API) и сканирование для
- * lib/search батчами по странице API. Версия API — параметр, а не второй
+ * paginate/search батчами по странице API. Версия API — параметр, а не второй
  * источник: всё, кроме транспорта, у REST и GraphQL общее.
  */
 function createRickMortySource(api: RickMortyApi): AdaptedSource<CatalogItem> {
@@ -271,7 +271,7 @@ function createRickMortySource(api: RickMortyApi): AdaptedSource<CatalogItem> {
  *
  * Кто что объявляет:
  *  • `srch` гаснет у источников без родного поиска (см. `capabilities.search`);
- *  • `ls` — подключение lib/search (декоратор `withLibSearch`, ключ-тумблер
+ *  • `ls` — подключение paginate/search (декоратор `withLibSearch`, ключ-тумблер
  *    `gate`): без подключения `fuzzy` в возможностях нет, и панель гасит опцию;
  *  • `total` — декоратор `withTotalsGate`: тумблер снимает totals у ответа, и
  *    возможности честно объявляют `totals: false` (номера страниц гаснут).
@@ -283,9 +283,9 @@ export function makeSource(
   select: (extra: Extra | undefined) => string,
 ): AdaptedSource<CatalogItem> {
   // Каналы панели: статистика перехвата и подпись коррекции. Корректор словаря
-  // строит lib/search из `dictionary` САМОГО источника — те же каналы несут
+  // строит paginate/search из `dictionary` САМОГО источника — те же каналы несут
   // оба контура, а у источника без словаря подпись просто гаснет.
-  // Статистику перехвата панель берёт из ОБЩЕГО канала lib/search: `name` при
+  // Статистику перехвата панель берёт из ОБЩЕГО канала paginate/search: `name` при
   // подключении `withLibSearch` делает это автоматически (свой реестр странице
   // не нужен). Здесь остаётся только подпись коррекции.
   const channels = {
@@ -293,7 +293,7 @@ export function makeSource(
   }
   return composeSources<CatalogItem>(
     {
-      // Товары: родной поиск источника (тумблер `srch`) + lib/search поверх
+      // Товары: родной поиск источника (тумблер `srch`) + paginate/search поверх
       // (fuzzy-скан по названию: источник объявляет `scan`).
       products: withLibSearch(
         createLocalItemsSource('products')

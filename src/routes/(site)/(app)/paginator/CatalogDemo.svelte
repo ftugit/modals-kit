@@ -11,7 +11,7 @@
     PaginatorHost,
     usePaginatorState,
   } from '#lib/paginate/svelte/index.js'
-  import { useSearchCorrection, useSearchStats } from '#lib/search/svelte/index.js'
+  import { useSearchCorrection, useSearchStats } from '#lib/paginate/svelte/search/index.js'
   import {
     EmptyState,
     EndRow,
@@ -112,7 +112,7 @@ import ItemRow from './ItemRow.svelte'
     },
     {
       key: 'ls',
-      label: 'lib/search поверх источника (fuzzy)',
+      label: 'paginate/search поверх источника (fuzzy)',
       type: 'toggle',
       jsOnly: true,
       // Без JavaScript этот декоратор не запускается: не показываем тумблер как
@@ -370,16 +370,16 @@ import ItemRow from './ItemRow.svelte'
   )
 
   /**
-   * Живая статистика перехвата — хук ОБЩЕГО канала lib/search (тот же слой, что
+   * Живая статистика перехвата — хук ОБЩЕГО канала paginate/search (тот же слой, что
    * подпись коррекции): числом владеет поиск, а не разметка страницы.
    */
   const stats = useSearchStats(name)
 
   /**
-   * Deep-link с запросом и включённым lib/search: SSR-выдача пришла от
+   * Deep-link с запросом и включённым paginate/search: SSR-выдача пришла от
    * ИСТОЧНИКА (серверная подстрока — fuzzy на сервере не исполняется), а на
    * клиенте ту же страницу обязан показать перехватчик. Механика та же, что у
-   * `resyncSearch` из lib/search (перезапрос текущей страницы), но вызванная
+   * `resyncSearch` из paginate/search (перезапрос текущей страницы), но вызванная
    * напрямую: `resyncSearch` адресован поискам, зарегистрированным через
    * `defineSearch`, а здесь регистрация канонная (пагинатор + перехватчик,
    * как на странице shikimori у исходника) — экземпляра поиска в реестре нет.
@@ -440,7 +440,7 @@ import ItemRow from './ItemRow.svelte'
       <!--
         Поле запроса гаснет, когда запрос некуда применить: механизм поиска
         либо не объявлен источником (`gates`), либо выключен своим тумблером.
-        Оба слоя независимы: lib/search работает и при выключенном родном.
+        Оба слоя независимы: paginate/search работает и при выключенном родном.
       -->
       <SearchBar {name} {query} path="page.q" disabled={searchOff} hint={searchOffReason ?? undefined} />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
@@ -449,15 +449,15 @@ import ItemRow from './ItemRow.svelte'
           параметр <code>search</code> в API, у товаров — фильтр по своим данным):
           «наруто» и «naruto» находит, «нарута» — нет.{' '}
           {#if gates.libSearch}
-            lib/search добавляет fuzzy-ранжирование{#if gates.dictionary} и коррекцию по словарю
+            paginate/search добавляет fuzzy-ранжирование{#if gates.dictionary} и коррекцию по словарю
               источника{/if}; с выключенным родным поиском он сканирует источник без сужения —
             медленнее, но находит опечатки.
           {/if}
         {:else if gates.libSearch}
           Родного поиска у источника нет: запрос сужает выдачу только при включённом
-          lib/search (fuzzy-сканирование данных источника).
+          paginate/search (fuzzy-сканирование данных источника).
         {:else}
-          Источник не умеет искать: ни родного поиска, ни подключённого lib/search.
+          Источник не умеет искать: ни родного поиска, ни подключённого paginate/search.
         {/if}
       </p>
       {#if filterSchema && gates.filters}
@@ -492,7 +492,7 @@ import ItemRow from './ItemRow.svelte'
         </p>
       {/if}
       <p class="mt-1 text-xs text-muted-foreground" data-testid="search-state">
-        Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · lib/search:
+        Родной поиск: <b data-testid="search-native">{cfg.srch ? 'вкл' : 'выкл'}</b> · paginate/search:
         <b data-testid="search-ls">{cfg.ls ? 'вкл' : 'выкл'}</b>
         {#if correction()?.changed}
           · <span data-testid="search-correction"

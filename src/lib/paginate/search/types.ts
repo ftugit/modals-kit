@@ -20,8 +20,8 @@ export type SearchConfig<T> = {
    */
   source: AdaptedSource<T>
   /**
-   * Подключение lib/search поверх источника (fuzzy + коррекция). Требует
-   * `scan` у источника; паспорт записи и размер батча lib/search берёт у него
+   * Подключение paginate/search поверх источника (fuzzy + коррекция). Требует
+   * `scan` у источника; паспорт записи и размер батча paginate/search берёт у него
    * же. Без этого источник используется как есть (серверная подстрока и с JS).
    */
   fuzzy?: Omit<LibSearchOptions<T>, 'gate'>

@@ -173,7 +173,7 @@ describe('декораторы тумблеров', () => {
     expect(calls[0].input.q).toBe('')
     expect(calls[1].input.q).toBe('наруто')
     // Возможность поиска не исчезает: тумблер гасит ПРИМЕНЕНИЕ, сам q остаётся
-    // в extra (его читает lib/search — сканирование без сужения источником).
+    // в extra (его читает paginate/search — сканирование без сужения источником).
     expect(source.capabilitiesFor({ srch: false }).search).toEqual({ minLength: 1 })
   })
 
@@ -244,8 +244,8 @@ describe('composeSources: выбор источника по ключу extra', 
   })
 })
 
-describe('lib/search не обязателен: родной поиск источника самодостаточен', () => {
-  it('setExtra(q) перезагружает выдачу и доезжает до данных без всякого lib/search', async () => {
+describe('paginate/search не обязателен: родной поиск источника самодостаточен', () => {
+  it('setExtra(q) перезагружает выдачу и доезжает до данных без всякого paginate/search', async () => {
     const calls: Call[] = []
     definePaginator<Rec>({
       name: 'nativeTest',
@@ -261,7 +261,7 @@ describe('lib/search не обязателен: родной поиск исто
     expect(calls.at(-1)?.input.q).toBe('наруто')
     expect(getState(store, 'nativeTest').page).toBe(1) // смена запроса — с первой страницы
     expect(getState(store, 'nativeTest').capabilities.search).toEqual({ minLength: 2 })
-    // lib/search не подключён — fuzzy нет, и это видно панели (опция `ls` гаснет):
+    // paginate/search не подключён — fuzzy нет, и это видно панели (опция `ls` гаснет):
     // поиск источника самодостаточен, декоратор лишь добавляет fuzzy-контур.
     expect(getState(store, 'nativeTest').capabilities.fuzzy).toBeUndefined()
     expect(featureGates(getState(store, 'nativeTest').capabilities).libSearch).toBe(false)

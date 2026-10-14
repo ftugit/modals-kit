@@ -547,18 +547,18 @@ async function run() {
     await page.waitForFunction(() => document.querySelectorAll('[data-testid^="photo-"]').length > 0, {
       timeout: 15000,
     });
-    // Фото — «просто данные»: ни родного поиска, ни подключённого lib/search.
+    // Фото — «просто данные»: ни родного поиска, ни подключённого paginate/search.
     // Опции поиска и поле запроса погашены (включить нечего), а число страниц
     // источник отдаёт — эта опция работает.
     if (!(await field('srch').isDisabled()))
       throw new Error('у источника без поиска опция родного поиска должна быть погашена');
     if (!(await field('ls').isDisabled()))
-      throw new Error('у источника без lib/search опция fuzzy должна быть погашена');
+      throw new Error('у источника без paginate/search опция fuzzy должна быть погашена');
     if (await field('total').isDisabled())
       throw new Error('у источника с totals опция числа страниц должна работать');
     if (!(await page.locator('[data-testid="search-input"]').isDisabled()))
       throw new Error('когда искать нечем, поле запроса должно быть погашено');
-    console.log('  ok  фото: опции поиска и lib/search погашены, поле запроса погашено, totals работает');
+    console.log('  ok  фото: опции поиска и paginate/search погашены, поле запроса погашено, totals работает');
 
     // Погашенные опции не пишутся в адрес: ключ не «протекает» из панели мимо
     // возможности источника (и дефолты не засоряют адрес).
@@ -569,7 +569,7 @@ async function run() {
 
     // ── Товары: родной поиск источника по названию ──────────────────────────
     // Возможность объявлена ИСТОЧНИКОМ (`search` в спеке), поэтому опция srch
-    // доступна; lib/search подключён поверх (scan) — доступна и ls.
+    // доступна; paginate/search подключён поверх (scan) — доступна и ls.
     await page.goto(`${U}?page.src=products&page.ls=false&page.size=10`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => document.querySelectorAll('[data-testid^="card-"]').length === 10, {
       timeout: 15000,
@@ -577,7 +577,7 @@ async function run() {
     if (await field('srch').isDisabled())
       throw new Error('у товаров с родным поиском опция srch должна работать');
     if (await field('ls').isDisabled())
-      throw new Error('у товаров с разрешённым сканированием опция lib/search должна работать');
+      throw new Error('у товаров с разрешённым сканированием опция paginate/search должна работать');
     const searchInput = page.locator('[data-testid="search-input"]');
     if (await searchInput.isDisabled())
       throw new Error('когда искать есть чем, поле запроса должно быть активным');

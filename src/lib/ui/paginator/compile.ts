@@ -19,7 +19,7 @@ import type { SettingsField } from './types'
 /** Подписи возможностей для причины «источник не поддерживает …». */
 export const GATE_LABEL: Record<FeatureGate, string> = {
   nativeSearch: 'родной поиск',
-  libSearch: 'lib/search',
+  libSearch: 'paginate/search',
   filters: 'фильтры',
   totals: 'число страниц',
   dictionary: 'словарь опечаток',

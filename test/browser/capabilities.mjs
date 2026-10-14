@@ -4,8 +4,8 @@
  *
  * Что проверяется в браузере (и чего нет в paginate.mjs/shikimori.mjs):
  *   1. товары: оба слоя поиска (родной `srch` + `ls`) — возможности ИСТОЧНИКА;
- *      запрос обслуживается родным контуром, а с включённым lib/search панель
- *      показывает живую статистику перехвата (общий канал lib/search);
+ *      запрос обслуживается родным контуром, а с включённым paginate/search панель
+ *      показывает живую статистику перехвата (общий канал paginate/search);
  *   2. фото: поиска нет — поле ВИДНО выключенным И С ПРИЧИНОЙ, тумблеры панели
  *      выключены с причиной;
  *   3. смена источника снимает запрос и фильтры — как страницу (решение владельца,
@@ -121,20 +121,20 @@ async function run() {
   await ensureServer();
   const browser = await chromium.launch({ headless: true });
   try {
-    // lib/search is browser-only: no-JS must not present its switch as usable,
+    // paginate/search is browser-only: no-JS must not present its switch as usable,
     // while native source search remains available and the stored setting survives GET.
-    console.log('— lib/search: выключен до гидратации без потери параметра —');
+    console.log('— paginate/search: выключен до гидратации без потери параметра —');
     const noJs = await browser.newPage({
       viewport: { width: 1280, height: 1200 },
       javaScriptEnabled: false,
     });
     await noJs.goto(`${U}?page.src=products&page.ls=true&page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
-    assert(await panel(noJs, 'ls').isDisabled(), 'lib/search должен быть недоступен до гидратации');
+    assert(await panel(noJs, 'ls').isDisabled(), 'paginate/search должен быть недоступен до гидратации');
     assert(!(await panel(noJs, 'srch').isDisabled()), 'родной поиск источника остаётся доступным без JS');
     assert(
       (await noJs.locator('[data-testid="demo-panel"] [data-field-hint]').allInnerTexts())
         .some((text) => /после загрузки JavaScript/.test(text)),
-      'отключённое поле lib/search не объясняет, почему оно недоступно',
+      'отключённое поле paginate/search не объясняет, почему оно недоступно',
     );
     assert(
       (await noJs.locator('[data-testid="demo-panel"] input[type="hidden"][name="page.ls"]').first().inputValue()) === 'true',
@@ -166,20 +166,20 @@ async function run() {
     const page = await browser.newPage({ viewport: { width: 1280, height: 1200 } });
 
     // ── 1. Товары: оба слоя поиска — возможности источника ─────────────────
-    console.log('— Товары: родной поиск + lib/search —');
+    console.log('— Товары: родной поиск + paginate/search —');
     await page.goto(`${U}?page.src=products&page.size=5&${QUIET}`, { waitUntil: 'networkidle' });
     await page.waitForSelector(`${HOST} [data-testid="card-1"]`);
 
     const input = page.locator('[data-testid="search-input"]');
     assert(!(await input.isDisabled()), 'у товаров поле запроса обязано быть активно');
     assert(!(await panel(page, 'srch').isDisabled()), 'родной поиск товаров доступен');
-    assert(!(await panel(page, 'ls').isDisabled()), 'lib/search поверх товаров доступен');
+    assert(!(await panel(page, 'ls').isDisabled()), 'paginate/search поверх товаров доступен');
     assert(
       (await page.locator(`${HOST} [data-field-hint]`).count()) === 0,
       'причины отказа быть не должно: у источника есть оба слоя',
     );
 
-    // Родной контур (lib/search по умолчанию выключен): запрос обслуживает сам
+    // Родной контур (paginate/search по умолчанию выключен): запрос обслуживает сам
     // источник — подстрока по названию, регистр не важен.
     await input.fill('PRODUCT 42');
     await input.press('Enter');
@@ -190,25 +190,25 @@ async function run() {
       nativeIds.join(',') === 'card-42',
       `родной поиск обязан отдать ровно «Product 42»: ${JSON.stringify(nativeIds)}`,
     );
-    // Тулбар показывает состояние ОБОИХ слоёв: родной поиск включён, lib/search выключен.
+    // Тулбар показывает состояние ОБОИХ слоёв: родной поиск включён, paginate/search выключен.
     assert(
       (await page.locator('[data-testid="search-native"]').innerText()) === 'вкл',
       'родной слой обязан быть показан включённым',
     );
     assert(
       (await page.locator('[data-testid="search-ls"]').innerText()) === 'выкл',
-      'lib/search по умолчанию выключен — тулбар это отражает',
+      'paginate/search по умолчанию выключен — тулбар это отражает',
     );
     assert(
       (await page.locator('[data-testid="search-stats"]').count()) === 0,
-      'без lib/search живых счётчиков перехвата быть не должно',
+      'без paginate/search живых счётчиков перехвата быть не должно',
     );
     const size = (await page.locator('[data-testid="page-size"]').textContent()).trim();
     assert(size === '5', `размер страницы потерян при поиске: «${size}»`);
     console.log(`  ok  «PRODUCT 42» → ${nativeIds.join(', ')} (регистр не важен, подстрока)`);
 
-    // lib/search включён: другой контур того же запроса + живая статистика
-    // перехвата из ОБЩЕГО канала lib/search (панель её не считает сама).
+    // paginate/search включён: другой контур того же запроса + живая статистика
+    // перехвата из ОБЩЕГО канала paginate/search (панель её не считает сама).
     await toggle(page, 'ls');
     await urlHas(page, 'page.ls', 'true');
     await page.waitForSelector(`${HOST} [data-testid="card-42"]`, { timeout: 30000 });
@@ -220,9 +220,9 @@ async function run() {
     );
     assert(
       (await page.locator('[data-testid="search-ls"]').innerText()) === 'вкл',
-      'тулбар обязан отметить включённый lib/search',
+      'тулбар обязан отметить включённый paginate/search',
     );
-    console.log(`  ok  тот же запрос с lib/search: ${stats.trim()}`);
+    console.log(`  ok  тот же запрос с paginate/search: ${stats.trim()}`);
 
     // ── 2. Фото: поиска нет — поле выключено с причиной, запрос СНЯТ ───────
     console.log('— Фото: источник без поиска (смена источника снимает запрос) —');
@@ -260,7 +260,7 @@ async function run() {
     const offSrch = panel(page, 'srch');
     const offLs = panel(page, 'ls');
     assert(await offSrch.isDisabled(), 'тумблер «родной поиск» обязан быть выключен');
-    assert(await offLs.isDisabled(), 'тумблер «lib/search» обязан быть выключен');
+    assert(await offLs.isDisabled(), 'тумблер «paginate/search» обязан быть выключен');
     assert(
       hints.some((h) => /источник не поддерживает/.test(h)),
       `в панели нет причины отказа: ${JSON.stringify(hints)}`,

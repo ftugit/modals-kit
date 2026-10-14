@@ -35,9 +35,9 @@
 `#lib/ui/demo/db-list/*` (`DbPostRow`, `cursor-mode`, тип `DbPost` — это перенос
 `/db-demo`), уже общие `lib/ui/{paginator,filters,primitives,settings}`.
 
-Хук — в `lib/ui/paginator`, а не в `#lib/search/svelte`: он склеивает `lib/form`
+Хук — в `lib/ui/paginator`, а не в `#lib/paginate/search/svelte`: он склеивает `lib/form`
 (форма для перехода без JS), роутер (`currentSearch`), `lib/paginate`
-(`setExtra`) и `lib/search` (`normalizeSearchQuery`). Положить его в `lib/search`
+(`setExtra`) и `paginate/search` (`normalizeSearchQuery`). Положить его в `paginate/search`
 — привязать независимую библиотеку к трём другим (правило «каждая lib работает
 одна»). Склейка поверх библиотек — это и есть `lib/ui/paginator`.
 
@@ -128,7 +128,7 @@ const search = usePaginatorSearch(name, {
   - [x] `docs/audit/ratings.md` — раздел `demo/paginator` убран, строки — в разделах роута,
         `lib/ui/filters`, `lib/ui/paginator`; у `+page.*` оценка снята до перечтения;
         счётчик прогресса пересчитан по таблицам (197 / 404).
-  - [x] README: `lib/search` и `lib/paginate` упоминают `usePaginatorSearch`.
+  - [x] README: `paginate/search` и `lib/paginate` упоминают `usePaginatorSearch`.
   - [x] Исторические записи (`crutches.md`, `framework-imports.md`, `kit3-upgrade.md`)
         не правим: это журнал, пути там — на момент находки.
 

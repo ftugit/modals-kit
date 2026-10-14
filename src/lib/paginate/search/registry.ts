@@ -1,7 +1,7 @@
 // Реестр поисков по name (порядок как у lib/paginate R9/R17): одна регистрация,
 // клиент и сервер импортируют её же; неизвестное имя → throw (deny by default).
 //
-// defineSearch НЕ создаёт нового ядра данных: он ПОДКЛЮЧАЕТ lib/search к
+// defineSearch НЕ создаёт нового ядра данных: он ПОДКЛЮЧАЕТ paginate/search к
 // источнику пагинатора (withLibSearch) и регистрирует пагинатор на
 // URL-адаптере, объявляя запрос `q` ключом его extra. Пустой запрос —
 // сквозной проход к базовому источнику (обычный каталог); с запросом тот же
@@ -63,7 +63,7 @@ export function defineSearch<T>(config: SearchConfig<T>): SearchInstance {
     debounce: config.debounce ?? 300,
     maxQueryLength,
   }
-  // Подключение lib/search — декоратор источника (нужно `scan` в спеке); без
+  // Подключение paginate/search — декоратор источника (нужно `scan` в спеке); без
   // fuzzy-опций базовый источник работает как есть (серверное сужение по q).
   const source = config.fuzzy
     ? withLibSearch<T>(config.source, { ...config.fuzzy, minLength })

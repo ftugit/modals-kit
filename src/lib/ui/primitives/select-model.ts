@@ -1,4 +1,4 @@
-import { matchesQuery, prepareQuery, prepareTexts, type PreparedText } from '#lib/search/fuzzy.js';
+import { matchesQuery, prepareQuery, prepareTexts, type PreparedText } from '#lib/paginate/search/fuzzy.js';
 
 export type SelectSearchMode = 'off' | 'value' | 'label' | 'both';
 
@@ -52,7 +52,7 @@ function queryTokens(query: string): string[] {
  *
  * - `value` — подстрока значения (коды, id: опечатки там не бывают «почти верными»).
  * - `label` (и `both`) — по тому, что человек ВИДИТ: подпись вместе с
- *   пояснением, через `matchesQuery` из lib/search — подстрока, начало слова и
+ *   пояснением, через `matchesQuery` из paginate/search — подстрока, начало слова и
  *   опечатки («kioto» → «Kyoto Animation», «сенэн» → «Сёнен»), без шумной
  *   подпоследовательности. Запрос без букв и цифр («-») — подстрокой.
  *

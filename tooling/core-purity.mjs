@@ -122,8 +122,7 @@ export function formatProblems(relPath, problems, root = 'src/lib/modals') {
 export const CORE_MODULES = [
   'src/lib/modals',
   'src/lib/form',
-  'src/lib/paginate',
-  'src/lib/search',
+  'src/lib/paginate', // вместе с search/ и filters/ — части пакета
   'src/lib/cache',
   'src/lib/fetch',
 ]

@@ -45,7 +45,7 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
 
 Не входит (нет практической пользы сейчас, ход 32): переименование `CatalogFilter*`,
 параметр вместо префикса, отделение схемы фильтров в спеку источника (R3 — записан).
-R4/R5 (Select + `lib/search`, no-JS) — отдельно, после этого плана.
+R4/R5 (Select + `paginate/search`, no-JS) — отдельно, после этого плана.
 
 ## Почему `lib/router` нельзя просто разложить по адаптерам
 
@@ -87,12 +87,12 @@ src/lib/
 │   └── svelte/                  ссылка на модалку — `asModalLink` в components/links (ход 149)
 ├── paginate/
 │   ├── (ядро без изменений)
-│   ├── search/                  ← lib/search/*.ts (accumulator, core, dictionary, fuzzy,
+│   ├── search/                  ← paginate/search/*.ts (accumulator, core, dictionary, fuzzy,
 │   │                              registry, stats, types, index, тесты, README)
 │   ├── filters/                 ← lib/filters/*, разрезан по ролям (см. R2): schema, form,
 │   │                              url, rules, view, index, тесты
 │   ├── svelte/                  как есть
-│   │   └── search/              ← lib/search/svelte/* (correction, stats)
+│   │   └── search/              ← paginate/svelte/search/* (correction, stats)
 │   └── sveltekit/               НОВЫЙ адаптер
 │       └── router.ts            ← из router/sveltekit.ts: svelteKitRouter,
 │                                  currentSearch, currentPathname
@@ -130,7 +130,7 @@ src/lib/
 └── server/                      без изменений (в Kit 3 серверной считается любая папка /server/)
 ```
 
-Удаляются: `lib/router`, `lib/search`, `lib/filters`, `lib/shell`, `lib/ui`,
+Удаляются: `lib/router`, `paginate/search`, `lib/filters`, `lib/shell`, `lib/ui`,
 пустая заготовка `lib/index.ts`.
 
 ## Правила зависимостей (закрепить стражем)
@@ -170,7 +170,7 @@ src/lib/
 
 1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
    `modals/cores/sveltekit.ts` (`LoadLink` удалён в ходе 141).
-2. `search` → `paginate/search` и `paginate/svelte/search`.
+2. ✅ ход 160: `search` → `paginate/search` и `paginate/svelte/search` (UI на месте; подписи «lib/search» в демо стали «paginate/search»).
 3. `filters` → `paginate/filters` вместе с R2: разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.
 4. `ui/*`, `shell`, `cn`, `js-only`, `use-drawer` → `components`, `hooks`, `utils.ts`.

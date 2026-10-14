@@ -7,10 +7,10 @@
  *  2. SSR: страница с `?page.src=animes` приходит с тайтлами В РАЗМЕТКЕ
  *     (сервер сходил в API сам, без HTTP-запроса к себе и без выгрузки каталога);
  *  3. Числа страниц у источника нет by design → навигация стрелками, без номеров;
- *  4. Родной поиск источника: `q` → `search` в API — работает БЕЗ lib/search;
- *  5. `srch=off` — запрос до API не доходит, но lib/search продолжает искать
+ *  4. Родной поиск источника: `q` → `search` в API — работает БЕЗ paginate/search;
+ *  5. `srch=off` — запрос до API не доходит, но paginate/search продолжает искать
  *     (сканирование каталога без сужения);
- *  6. lib/search: опечатка «нарута» исправляется словарём, в панели появляется
+ *  6. paginate/search: опечатка «нарута» исправляется словарём, в панели появляется
  *     подпись подмены запроса, и находится «Наруто», которого родной поиск без
  *     коррекции не находит.
  *
@@ -340,7 +340,7 @@ async function checkFiltersUi(browser) {
       throw new Error('панель не показывает метку сборки схемы');
     console.log(`  ok  контролов ${paths.length} — ровно объявленные схемой пути (режимы и границы включены)`);
 
-    // R4: поиск по подписи терпит опечатку (matchesQuery lib/search), но не шумит.
+    // R4: поиск по подписи терпит опечатку (matchesQuery paginate/search), но не шумит.
     {
       const studioOptions = schema.fields.find((item) => item.key === 'studios').options;
       const madhouse = studioOptions.find((o) => o.label.toLowerCase() === 'madhouse');
@@ -1084,11 +1084,11 @@ async function checkBrowser(browser) {
       return texts.some((t) => /наруто/i.test(t));
     }, { what: 'результаты родного поиска' });
     const nativeState = await page.locator('[data-testid="search-state"]').innerText();
-    if (!/Родной поиск: вкл/.test(nativeState) || !/lib\/search: выкл/.test(nativeState))
+    if (!/Родной поиск: вкл/.test(nativeState) || !/paginate\/search: выкл/.test(nativeState))
       throw new Error(`состояние опций не отражает матрицу: ${nativeState}`);
-    console.log('  ok  родной поиск работает БЕЗ lib/search (q → search в API, ключ в адресе)');
+    console.log('  ok  родной поиск работает БЕЗ paginate/search (q → search в API, ключ в адресе)');
 
-    // Опечатка без lib/search: коррекции нет (подпись «искали …» не появляется).
+    // Опечатка без paginate/search: коррекции нет (подпись «искали …» не появляется).
     await input.fill('нарута');
     await input.press('Enter');
     await waitFor(async () => page.url().includes(`page.q=${encodeURIComponent('нарута')}`), {
@@ -1097,18 +1097,18 @@ async function checkBrowser(browser) {
     await sleep(1500);
     const noLsState = await page.locator('[data-testid="search-state"]').innerText();
     if (/искали/.test(noLsState))
-      throw new Error(`без lib/search подписи коррекции быть не должно: ${noLsState}`);
-    console.log('  ok  без lib/search опечатка идёт в API как есть (коррекции нет)');
+      throw new Error(`без paginate/search подписи коррекции быть не должно: ${noLsState}`);
+    console.log('  ok  без paginate/search опечатка идёт в API как есть (коррекции нет)');
 
-    console.log('— lib/search поверх того же поиска: коррекция и подпись —');
+    console.log('— paginate/search поверх того же поиска: коррекция и подпись —');
     await page.locator('[data-testid="demo-panel"] input[name="page.ls"][type="checkbox"]').evaluate((el) => el.click());
     await waitFor(async () => (await page.locator('[data-testid="search-ls"]').innerText()) === 'вкл', {
-      what: 'тумблер lib/search включён',
+      what: 'тумблер paginate/search включён',
     });
     await waitFor(async () => {
       const texts = await rowsOf(page).allInnerTexts();
       return texts.some((t) => /наруто/i.test(t));
-    }, { what: 'lib/search нашёл «Наруто» по «нарута»', timeout: 30000 });
+    }, { what: 'paginate/search нашёл «Наруто» по «нарута»', timeout: 30000 });
     const correctionNote = await page.locator('[data-testid="search-correction"]').innerText();
     if (!/искали «нарута», показываем «наруто»/i.test(correctionNote))
       throw new Error(`подпись коррекции не та: «${correctionNote}»`);
@@ -1116,20 +1116,20 @@ async function checkBrowser(browser) {
     console.log(`  ok  коррекция опечатки: ${correctionNote.replace(/\s+/g, ' ').trim()}`);
     console.log(`      сужение родным поиском после коррекции: ${statsWithSrch.replace(/\s+/g, ' ').trim()}`);
 
-    console.log('— Тумблер «родной поиск» выключен: lib/search ищет без сужения —');
+    console.log('— Тумблер «родной поиск» выключен: paginate/search ищет без сужения —');
     await page.locator('[data-testid="demo-panel"] input[name="page.srch"][type="checkbox"]').evaluate((el) => el.click());
     await waitFor(async () => (await page.locator('[data-testid="search-native"]').innerText()) === 'выкл', {
       what: 'тумблер родного поиска выключен',
     });
-    // lib/search жив (тумблер `ls` включён) — искать по-прежнему есть чем,
+    // paginate/search жив (тумблер `ls` включён) — искать по-прежнему есть чем,
     // поэтому поле запроса ОСТАЁТСЯ активным: гасится родное применение
     // запроса источником, а не возможность искать вообще.
     if (await input.isDisabled())
-      throw new Error('при включённом lib/search поле поиска должно оставаться активным');
+      throw new Error('при включённом paginate/search поле поиска должно оставаться активным');
     await waitFor(async () => {
       const texts = await rowsOf(page).allInnerTexts();
       return texts.some((t) => /наруто/i.test(t));
-    }, { what: 'lib/search нашёл по каталогу без сужения', timeout: 30000 });
+    }, { what: 'paginate/search нашёл по каталогу без сужения', timeout: 30000 });
     const statsNoSrch = await page.locator('[data-testid="search-stats"]').innerText();
     if (!/просмотрено \d+/.test(statsNoSrch))
       throw new Error(`нет живой статистики сканирования: ${statsNoSrch}`);
@@ -1165,7 +1165,7 @@ async function checkBrowser(browser) {
     bothOff.searchParams.set('page.srch', 'false');
     await page.goto(bothOff.toString(), { waitUntil: 'networkidle' });
     await waitFor(async () => (await rowsOf(page).count()) === 5, { what: 'каталог без поиска' });
-    // Поиска нет вовсе (ни родного, ни lib/search) — поле запроса погашено,
+    // Поиска нет вовсе (ни родного, ни paginate/search) — поле запроса погашено,
     // и это следует из возможностей источника, а не из имени `src`.
     const searchInput = page.locator('[data-testid="search-input"]');
     await waitFor(async () => await searchInput.isDisabled(), { what: 'поле поиска погашено без поиска вовсе' });
@@ -1266,7 +1266,7 @@ async function run() {
     await checkFiltersNoJs(browser);
     await checkVersions(browser);
     console.log(
-      '\n✅ Живой источник Shikimori: SSR, стрелочная навигация, родной поиск, lib/search и панель фильтров (JS и без JS)',
+      '\n✅ Живой источник Shikimori: SSR, стрелочная навигация, родной поиск, paginate/search и панель фильтров (JS и без JS)',
     );
   } finally {
     await browser.close();

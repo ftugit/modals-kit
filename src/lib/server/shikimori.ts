@@ -12,7 +12,7 @@
  *   • `limit` — «сколько отдавать»; максимум 50, больше он МОЛЧА режет до 50;
  *   • `page` — с 1; страница за концом каталога отдаёт `[]` (не 404);
  *   • `search` — подстрокой по названиям (русским и романдзи); опечатки он
- *     НЕ исправляет («нарута» находит только «Нарутару») — это работа lib/search;
+ *     НЕ исправляет («нарута» находит только «Нарутару») — это работа paginate/search;
  *   • `order` — popularity | ranked | name | aired_on | id;
  *   • заголовков `Link`/`X-Total-Count` нет: полного числа страниц API не даёт,
  *     поэтому `hasNext` выводится из «страница заполнена целиком», а PageNav у
@@ -29,7 +29,7 @@
  *     общий у REST и GraphQL, потому что хост один.
  * Ошибки сети — `FetchError` (`#lib/fetch`): текст для клиента, подробности в `cause`.
  */
-import { buildTermDictionary, serializeTermDictionary } from '#lib/search/fuzzy.js'
+import { buildTermDictionary, serializeTermDictionary } from '#lib/paginate/search/fuzzy.js'
 import { readJson, readText, type AppFetch } from '#lib/fetch/index.js'
 import type { Store } from '#lib/cache/index.js'
 import { localStore } from './cache'
@@ -508,7 +508,7 @@ export async function probeShikimoriJson(
 
 /**
  * Артефакт словаря `display\tdf` из названий популярной части каталога —
- * тот же формат, что у канона (`lib/search/dictionary.ts` его и разбирает).
+ * тот же формат, что у канона (`paginate/search/dictionary.ts` его и разбирает).
  * Строится из ЖИВОГО API (несколько страниц популярности), поэтому работает
  * без предварительной выгрузки каталога; кэшируется на час.
  */

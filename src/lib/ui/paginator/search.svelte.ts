@@ -2,22 +2,22 @@
 // логика отдельно, разметка — у страницы). Поле и кнопки рисует страница,
 // хук отдаёт им значение, обработчики и флаги.
 //
-// Поле запроса — обычное поле lib/form (предписание `lib/search/svelte`:
+// Поле запроса — обычное поле lib/form (предписание `paginate/svelte/search`:
 // «поле запроса — обычное поле lib form, транспорт — GET-форма, а commit —
 // setSearchQuery»). Форма объявлена (`field.search`), транспорт — url-канал
 // `bind`: до оживления нативный GET (жив и без JS), после — коммит в стор
 // пагинатора тем же `setExtra`, а адрес правит транспорт хранилища. Ключ
 // объявления — адресный (`page.q`), в стор он ложится как `q`.
 //
-// Хук — в `lib/ui/paginator`, а не в `lib/search`: он склеивает lib/form,
-// роутер, lib/paginate и lib/search; положить его в одну из них — привязать
+// Хук — в `lib/ui/paginator`, а не в `paginate/search`: он склеивает lib/form,
+// роутер, lib/paginate и paginate/search; положить его в одну из них — привязать
 // независимую библиотеку к трём другим.
 import { onMount, untrack } from 'svelte'
 import { defineForm, field, v } from '#lib/form/index.js'
 import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
 import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
 import { getClientStore, setExtra } from '#lib/paginate/index.js'
-import { normalizeSearchQuery } from '#lib/search/index.js'
+import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
 
 export interface PaginatorSearchOptions {
   /** Адресный ключ запроса: `page.q` — его пишет GET-форма без JS и адаптер с JS. */

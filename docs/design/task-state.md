@@ -77,7 +77,7 @@ type TaskProgress =
 | `lib/modals` (`loader.ts`, `RuntimeStatus` `idle/loading/ready/error`) | статус модалки, `preloadModal` | `task` у записи модалки; загрузчик (`loader`) может сообщать `progress` (опция `report(task)` вторым аргументом) |
 | `lib/paginate` (`PaginatorState.status` `init/idle/loading/error`, `pending`) | статус и ожидаемая страница | селектор `taskOf(state)`; транспорт источника может сообщать `progress`, строки из ответа доходят до состояния |
 | `lib/form` (`FormState.status` `idle/validating/submitting/queued/success/error`, `checking`) | статус отправки и асинхронных проверок | `form.task`; транспорт сообщает `progress` (строки ответа `/db-demo/submit`) |
-| `lib/search` (`accumulator.ts`: `scanned`) | счёт просмотренных записей при нечётком поиске | `task` с `steps`: просмотрено N из M (если источник знает итог), иначе без числа |
+| `paginate/search` (`accumulator.ts`: `scanned`) | счёт просмотренных записей при нечётком поиске | `task` с `steps`: просмотрено N из M (если источник знает итог), иначе без числа |
 | `lib/fetch` | чтение ответа (`read.ts`) | `readTaskStream(res, onTask)`: разбор строк NDJSON; проценты байтов по `Content-Length` |
 | `lib/filters` (`schema-memory.ts`) | память схем во вкладке | ничего: загрузку схемы ведёт приложение (`CatalogDemo` `loadSchema`), состояние берёт из `lib/fetch` |
 
@@ -97,7 +97,7 @@ type TaskProgress =
 | `<Button>` | 42 | формы (`/form` ×5, `CreateForm`, `RemoveForm`, `SchemaPending`), `CatalogFilterForm`, `PageNav`, демо модалок | lib/form, lib/paginate или своё действие | **у `Button` нет состояния загрузки**: проп `task?: TaskState` → спиннер, процент, `aria-busy`, `disabled` |
 | Простые `<a href>` (переходы Kit) | ~20 | `NavSlot`, `SidebarNav`, `LogoSlot`, `SiteFooter`, `ErrorPage`, главная, `/cards/[id]`, `/form`, `AnimeRow`, `/modals` | lib/router (`navigating`, вариант (а)) | ✅ ход 138: `Link` (с хода 149 — атрибуты `asLink` на свою `<a>`) — обычная `<a href>`; `linkTask(href)` из `#lib/router/sveltekit.js` сравнивает адрес с `navigating.to.url` (путь + query, без якоря); спиннер через 150 мс, `aria-busy`. Тип `TaskState` — `#lib/task`. Заменены все простые ссылки, кроме `LoadLink`/`ModalTrigger` |
 | Ссылки пагинатора | 4 | `PageLink`, `LoadMoreLink`, `ResetButton`, `ErrorRow` (повтор) | lib/paginate | читать `taskOf(state)`, спиннер на той ссылке, которую нажали (`pending.page`) |
-| Поиск каталога | 1 | `SearchBar` (`SearchInput`) | lib/paginate + lib/search | спиннер или процент в поле |
+| Поиск каталога | 1 | `SearchBar` (`SearchInput`) | lib/paginate + paginate/search | спиннер или процент в поле |
 | Чипы и сброс фильтров | 2 | `ActiveFilters`, ссылка «Сбросить» в `CatalogFilterForm` | lib/paginate | как у ссылок пагинатора |
 | Панель фильтров (схема ещё не пришла) | 1 | `CatalogDemo` → `FiltersPanel` | строки `/api/shikimori/filters` | «Собираем схему фильтров: 60%» вместо пустоты |
 | Экран переноса схемы | 1 | `SchemaPending` («Выполнить», затем `refreshAll`) | lib/form + строки `/db-demo/submit`; `refreshAll` — вариант (а) | процент шагов переноса |

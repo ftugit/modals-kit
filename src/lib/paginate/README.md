@@ -41,7 +41,7 @@ import { defineSource, definePaginator, createUrlAdapter } from '#lib/paginate/i
 const products = defineSource<Product>({
   name: 'products',
   record: { id: (r) => String(r.id), title: (r) => r.title, texts: (r) => [r.title] },
-  scan: {},        // lib/search может сканировать (fuzzy по названию)
+  scan: {},        // paginate/search может сканировать (fuzzy по названию)
   totals: true,    // источник отдаёт число страниц
   data: async ({ page, pageSize, signal }) => {
     const res = await fetch(`/api/products?page=${page}&size=${pageSize}`, { signal })
@@ -98,5 +98,10 @@ definePaginator({
   - `store.ts` — vanilla Store с поддержкой SSR и гидрации.
   - `registry.ts` — реестр экземпляров пагинаторов по имени.
   - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra`, `setPageSize` и др.).
-- `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`).
-- `src/lib/ui/paginator/` — готовые UI-компоненты.
+- `src/lib/paginate/search/` — поиск поверх источника (fuzzy-сканирование, словарь
+  терминов, коррекция опечаток, статистика перехвата): `#lib/paginate/search/index.js`.
+  Часть пакета, но отдельный вход — ядро пагинатора его не тянет. Документация —
+  [`search/README.md`](./search/README.md).
+- `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`);
+  `svelte/search/` — хуки поиска (`useSearchCorrection`, `useSearchStats`).
+- `src/lib/ui/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).

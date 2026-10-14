@@ -34,7 +34,7 @@ import {
   RICKMORTY_FILTER_SCHEMA,
   RICKMORTY_FILTER_SEARCH,
 } from '../../../../content/rickmorty-filters'
-import { searchQueryValidator } from '#lib/search/index.js'
+import { searchQueryValidator } from '#lib/paginate/search/index.js'
 import {
   createLocalStorageStorage,
   createUrlAdapter,

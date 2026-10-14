@@ -3,7 +3,7 @@
  *
  * Собирается из ЖИВОГО каталога (несколько страниц популярности) и кэшируется
  * на час — см. `getTermArtifact`. Формат тот же, что у канона: его разбирает
- * `createLazyCorrector` из `#lib/search/index.js`, а fuzzy-сопоставление исполняется
+ * `createLazyCorrector` из `#lib/paginate/search/index.js`, а fuzzy-сопоставление исполняется
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'

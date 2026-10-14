@@ -11,7 +11,7 @@
  * fuzzy-контур по архитектуре не запускается (`isServerSide()`).
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { defineSource, type AdaptedSource, type Extra, type PageRequest } from '../paginate'
+import { defineSource, type AdaptedSource, type Extra, type PageRequest } from '#lib/paginate/index.js'
 import { withLibSearch } from './accumulator'
 import type { SearchInterceptStats } from './accumulator'
 import { getSearchStats, onSearchStats, reportSearchStats, resetSearchStats } from './stats'

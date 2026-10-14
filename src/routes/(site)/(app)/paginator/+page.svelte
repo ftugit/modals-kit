@@ -70,8 +70,8 @@
           <b>живой каталог Shikimori</b> — прямые запросы к его API через бэкенд (серверный
           эндпоинт с кэшем и троттлингом, без выгрузки каталога). Поиск — два независимых слоя:
           родной поиск источника (<code class="rounded bg-muted/70 px-1">q</code> →{' '}
-          <code class="rounded bg-muted/70 px-1">search</code> в API, работает без lib/search) и
-          lib/search поверх него (fuzzy-ранжирование и коррекция опечаток). Обе опции — тумблеры
+          <code class="rounded bg-muted/70 px-1">search</code> в API, работает без paginate/search) и
+          paginate/search поверх него (fuzzy-ранжирование и коррекция опечаток). Обе опции — тумблеры
           демо-панели.
         </p>
       </div>

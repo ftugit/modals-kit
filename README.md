@@ -12,10 +12,10 @@
   [`src/lib/paginate/README.md`](./src/lib/paginate/README.md).
 - **search** — поиск как перехват пагинатора: `defineSearch` подменяет источник и
   регистрирует его на URL-адаптере, запрос живёт в extra (`?search.q`), fuzzy-ядро
-  изоморфно. Документация — [`src/lib/search/README.md`](./src/lib/search/README.md).
+  изоморфно. Документация — [`src/lib/paginate/search/README.md`](./src/lib/paginate/search/README.md).
   В демо (`/paginator`) пагинатор и поиск — ОДИН раздел: источник выбирается
   панелью (локальные товары/фото, живые каталоги Shikimori и Rick and Morty), а тумблеры гасят
-  родной поиск источника и слой lib/search независимо. Живые источники ходят не к
+  родной поиск источника и слой paginate/search независимо. Живые источники ходят не к
   API напрямую, а в свои эндпоинты (`/api/shikimori/*`, `/api/rickmorty/characters`):
   кэш, троттлинг и User-Agent живут на сервере, без выгрузки каталога в файл.
   Длинные списки фильтров: с JS поиск по всем значениям (студий 1934), без JS — первые 200

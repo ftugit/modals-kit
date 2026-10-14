@@ -3,7 +3,7 @@
  *
  * Источник здесь не «функция, которая что-то возвращает», а адаптированный
  * объект: он ОБЪЯВЛЯЕТ свои возможности (родной поиск, разрешение сканирования
- * для lib/search, фильтры, полные totals), носит паспорт записи (id/title/texts)
+ * для paginate/search, фильтры, полные totals), носит паспорт записи (id/title/texts)
  * и получает на вход только то, что понимает (`SourceInput`, без UI-ключей).
  *
  * Правила слоя (инварианты этапа):
@@ -30,9 +30,9 @@ const SOURCE_BRAND: unique symbol = Symbol('modals-kit.adapted-source')
 /** Как слой обращается к данным: страница и отменяемость. UI-ключей здесь нет. */
 export type SourceLook = { page: number; pageSize: number; signal?: AbortSignal }
 
-/** Паспорт записи: как читать ЛЮБУЮ запись источника (вьюхи, lib/search, словарь). */
+/** Паспорт записи: как читать ЛЮБУЮ запись источника (вьюхи, paginate/search, словарь). */
 export type SourceRecordSpec<T> = {
-  /** Стабильный id записи (дедупликация в lib/search, ключи списков). */
+  /** Стабильный id записи (дедупликация в paginate/search, ключи списков). */
   id: (record: T) => string
   /** Человекочитаемое название (заголовок строки/плитки). */
   title: (record: T) => string
@@ -65,10 +65,10 @@ export type SourceCapabilities = {
   /**
    * РАЗРЕШЕНИЕ сканирования (ставит `scan` в спеке): источник допускает, что
    * его просмотрят страницами целиком. Само по себе поиска не даёт — поиск
-   * поверх появляется только с подключённым lib/search (`fuzzy`).
+   * поверх появляется только с подключённым paginate/search (`fuzzy`).
    */
   scan?: { batchSize?: number }
-  /** lib/search подключён поверх источника (fuzzy-скан): ставит `withLibSearch`. */
+  /** paginate/search подключён поверх источника (fuzzy-скан): ставит `withLibSearch`. */
   fuzzy?: { minLength: number; batchSize?: number }
   /** Фильтры источника: ключи extra, которые он понимает (этап 3 добавит схему). */
   filters?: { keys: readonly string[] }
@@ -101,7 +101,7 @@ export type AdaptedSource<T> = {
    * другой. Обычный источник метода не имеет: выбирать не из чего.
    */
   scopeOf?(extra?: Extra): SourceScope
-  /** Артефакт словаря терминов — источник отдаёт его lib/search (если подключён). */
+  /** Артефакт словаря терминов — источник отдаёт его paginate/search (если подключён). */
   dictionary?(): Promise<string>
   /** Единственный путь к данным: страница + extra (разрешение внутри слоя). */
   fetchPage(look: SourceLook, extra?: Extra): Promise<PageResponse<T>>
@@ -262,7 +262,7 @@ export function defineSource<T>(spec: SourceSpec<T>): AdaptedSource<T> {
       if (!spec.search && typeof rawQuery === 'string' && rawQuery.trim() !== '') {
         devWarn(
           `[source:${spec.name}] запрос «${rawQuery}» отброшен: источник не объявляет родной поиск ` +
-            `(нужен \`search\` в спеке либо lib/search поверх \`scan\`).`,
+            `(нужен \`search\` в спеке либо paginate/search поверх \`scan\`).`,
         )
       }
       return spec.data(look, {
@@ -321,9 +321,9 @@ export function composeSources<T>(
 
 /**
  * Декоратор «тумблер родного поиска»: при `extra[gate] === false` источник
- * получает ПУСТОЙ запрос, хотя `q` остаётся в extra — его читает lib/search,
+ * получает ПУСТОЙ запрос, хотя `q` остаётся в extra — его читает paginate/search,
  * и тогда работает сканирование без сужения источником. Это механизм слоя, а
- * не ветка внутри источника: и пагинатор, и lib/search видят одну картину.
+ * не ветка внутри источника: и пагинатор, и paginate/search видят одну картину.
  */
 export function withSearchGate<T>(opts: { gate: string; key?: string }): SourceDecorator<T> {
   const key = opts.key ?? 'q'
@@ -383,7 +383,7 @@ export type SourceOverrides<T> = {
   fetchPage: (base: AdaptedSource<T>, look: SourceLook, extra?: Extra) => Promise<PageResponse<T>>
 }
 
-/** Публичный конструктор обёрток (lib/search, транспорт SSR и прочие слои). */
+/** Публичный конструктор обёрток (paginate/search, транспорт SSR и прочие слои). */
 export function decorateSource<T>(over: SourceOverrides<T>): SourceDecorator<T> {
   return (base) =>
     wrap<T>(base, {
@@ -402,7 +402,7 @@ export function decorateSource<T>(over: SourceOverrides<T>): SourceDecorator<T> 
 
 /**
  * Средовой признак «серверный рендер» без привязки к фреймворку: там, где нет
- * `window` (Node/SSR), клиентские контуры (fuzzy lib/search) не исполняются —
+ * `window` (Node/SSR), клиентские контуры (fuzzy paginate/search) не исполняются —
  * работает серверное сужение источника.
  */
 export function isServerSide(): boolean {

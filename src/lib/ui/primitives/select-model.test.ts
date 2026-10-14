@@ -63,7 +63,7 @@ describe('поиск по вариантам select', () => {
     expect(matchesSelectOption(genres[1], '', 'value')).toBe(true)
   })
 
-  // R4 (решение B): подпись ищется через matchesQuery lib/search — опечатки
+  // R4 (решение B): подпись ищется через matchesQuery paginate/search — опечатки
   // находятся, слабая подпоследовательность (шум на длинных справочниках) — нет.
   const studios = [
     option('1', 'MADHOUSE'),

@@ -103,15 +103,15 @@ export type SearchInterceptorOptions<T> = {
 }
 
 /**
- * Опции подключения lib/search к источнику. `gate` — ключ extra, которым
- * ПОТРЕБИТЕЛЬ гасит lib/search (демо: `ls`): при `false` перехват не работает,
+ * Опции подключения paginate/search к источнику. `gate` — ключ extra, которым
+ * ПОТРЕБИТЕЛЬ гасит paginate/search (демо: `ls`): при `false` перехват не работает,
  * источник отдаёт каталог как есть.
  */
 export type LibSearchOptions<T> = Omit<SearchInterceptorOptions<T>, 'source'> & {
   gate?: string
   /**
    * Имя поиска (как у пагинатора): с ним живая статистика перехвата попадает в
-   * ОБЩИЙ канал lib/search (`getSearchStats`/`onSearchStats`), и панели не нужен
+   * ОБЩИЙ канал paginate/search (`getSearchStats`/`onSearchStats`), и панели не нужен
    * собственный реестр. Без имени статистика идёт только в потребительский
    * `onStats`.
    */
@@ -388,7 +388,7 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
 }
 
 /**
- * Подключить lib/search к адаптированному источнику: декоратор слоя источника.
+ * Подключить paginate/search к адаптированному источнику: декоратор слоя источника.
  *
  * Требование — РАЗРЕШЕНИЕ СКАНИРОВАНИЯ у источника (`scan` в спеке): без него
  * подключение — ошибка разработчика (fuzzy не на что натягивать, а «включено,
@@ -410,14 +410,14 @@ export function withLibSearch<T>(
   /**
    * Публикация статистики — ОДНА точка на все контуры: и активный перехват
    * (аккумулятор), и «перехват не в цепочке» (`inactive`) идут через неё,
-   * поэтому канал lib/search и потребительский `onStats` гасят счётчики
+   * поэтому канал paginate/search и потребительский `onStats` гасят счётчики
    * вместе, а не расходятся.
    */
   const publishStats = (stats: SearchInterceptStats | null): void => {
     if (searchName) reportSearchStats(searchName, stats)
     userOnStats?.(stats)
   }
-  // Коррекция опечаток: либо её дал потребитель, либо lib/search берёт СЛОВАРЬ
+  // Коррекция опечаток: либо её дал потребитель, либо paginate/search берёт СЛОВАРЬ
   // у самого источника (`dictionary` в спеке `defineSource`) — корректор при
   // этом строится один раз и лениво, а роут не дублирует ни загрузку, ни разбор.
   const lazyCorrector = !opts.correct && source.dictionary
@@ -451,7 +451,7 @@ export function withLibSearch<T>(
   const assertScannable = (extra?: Extra): void => {
     if (source.capabilitiesFor(extra).scan) return
     throw new Error(
-      `lib/search: источник «${source.name}» не разрешает сканирование — добавьте \`scan\` в спеку ` +
+      `paginate/search: источник «${source.name}» не разрешает сканирование — добавьте \`scan\` в спеку ` +
         `defineSource(...) либо не подключайте withLibSearch к нему.`,
     )
   }

@@ -28,7 +28,7 @@ import {
   type PageRequest,
   type PageResponse,
   type SourceRecordSpec,
-} from '../paginate'
+} from '#lib/paginate/index.js'
 
 type Rec = { id: string; title: string }
 
@@ -367,7 +367,7 @@ describe('накопитель: бюджет, потолок, параллель
   })
 })
 
-describe('подключение lib/search к источнику (слой источника)', () => {
+describe('подключение paginate/search к источнику (слой источника)', () => {
   const scanSource = (calls: PageRequest[], over: { scan?: { batchSize?: number } } = {}) =>
     testSource(
       async (req) => {

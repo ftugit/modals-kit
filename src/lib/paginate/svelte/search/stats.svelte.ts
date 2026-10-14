@@ -1,12 +1,12 @@
 // Svelte 5-хук lib search: живая статистика перехвата (скачано/подошло/…).
 //
-// Слой тот же, что у подписи коррекции (`correction.svelte.ts`): ядро lib/search
+// Слой тот же, что у подписи коррекции (`correction.svelte.ts`): ядро paginate/search
 // о фреймворке не знает, реактивность живёт в тонком биндинге, а состояние —
 // в общем канале (`../stats`), поэтому несколько хуков на одно имя видят одни
 // и те же числа.
 import { createSubscriber } from 'svelte/reactivity'
-import { getSearchStats, onSearchStats } from '../stats'
-import type { SearchInterceptStats } from '../accumulator'
+import { getSearchStats, onSearchStats } from '../../search/stats'
+import type { SearchInterceptStats } from '../../search/accumulator'
 
 export type SearchStatsAccessor = (() => SearchInterceptStats | null) & {
   readonly current: SearchInterceptStats | null
