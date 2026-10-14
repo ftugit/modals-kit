@@ -70,9 +70,15 @@ export const posts = defineResource({
 export const schema = defineSchema({
   resources: [posts],
   sql: [
+    // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
+    // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,
+    // «Запись 1» — самая старая. Новый id, а не правка старого: изменённый текст под прежним
+    // id на уже развёрнутой БД — конфликт `sql_changed` и 503 до решения.
     {
-      id: 'demo-post-seed',
-      text: `INSERT INTO public.demo_post (title) SELECT 'Запись ' || n FROM generate_series(1, 7) n
+      id: 'demo-post-seed-500',
+      text: `INSERT INTO public.demo_post (title, created_at)
+               SELECT 'Запись ' || n, clock_timestamp() - (501 - n) * interval '1 minute'
+               FROM generate_series(1, 500) n
                WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
     },
   ],

@@ -311,21 +311,27 @@ await step('?page.ord=[["title","asc"]] меняет порядок (поряд�
   if (new Set(asc).size !== asc.length) throw new Error("id повторяются в выдаче");
   return `${asc.length} строк, первая — «${(html.match(/data-testid="row"[\s\S]{0,400}?>\s*([^<]{1,40})</) ?? [, "—"])[1].trim()}»`;
 });
-await step("?page.ord asc = обратный к ?page.ord desc (одна полная страница)", async () => {
-  const at = async (dir) => {
-    const r = await fetch(base + `?page.size=20&page.ord=${encodeURIComponent(JSON.stringify([["title", dir]]))}`, {
+await step("?page.ord asc = обратный к ?page.ord desc (первая страница asc = хвост desc)", async () => {
+  // Зеркало — по ВСЕЙ выдаче, а не по одной странице: при сиде больше страницы первая
+  // страница asc совпадает с перевёрнутым ХВОСТОМ desc, а не с его первой страницей.
+  const SIZE = 20;
+  const at = async (dir, page = 1) => {
+    const r = await fetch(base + `?page=${page}&page.size=${SIZE}&page.ord=${encodeURIComponent(JSON.stringify([["title", dir]]))}`, {
       headers: { accept: "text/html" },
     });
     const html = await r.text();
     if (/data-testid="error-row"/.test(html)) throw new Error(`отказ при order ${dir}: ` + html.slice(0, 120));
-    return ids(html);
+    const total = Number((html.match(/data-testid="total"[^>]*>\s*(\d+)/) ?? [])[1]);
+    return { ids: ids(html), total };
   };
   const asc = await at("asc");
-  const desc = await at("desc");
-  if (asc.length < 2) throw new Error(`мало строк для сравнения: ${asc.length}`);
-  if (asc.length !== desc.length || desc.join() !== [...asc].reverse().join())
-    throw new Error(`asc(${asc.length}) и desc(${desc.length}) — не зеркало: ${asc.join().slice(0, 40)} / ${desc.join().slice(0, 40)}`);
-  return `${asc.length} строк в двух направлениях`;
+  if (asc.ids.length < 2) throw new Error(`мало строк для сравнения: ${asc.ids.length}`);
+  if (!Number.isFinite(asc.total) || asc.total < asc.ids.length) throw new Error(`нет счётчика total: ${asc.total}`);
+  const last = Math.ceil(asc.total / SIZE);
+  const tail = [...(last > 1 ? (await at("desc", last - 1)).ids : []), ...(await at("desc", last)).ids].slice(-asc.ids.length);
+  if (tail.join() !== [...asc.ids].reverse().join())
+    throw new Error(`asc(${asc.ids.length}) и хвост desc(${tail.length}) — не зеркало: ${asc.ids.join().slice(0, 40)} / ${tail.join().slice(0, 40)}`);
+  return `${asc.ids.length} строк из ${asc.total}, хвост desc — страницы ${Math.max(1, last - 1)}–${last}`;
 });
 await step("мусор в ?page.ord не просачивается (ErrorRow, не 500)", async () => {
   const r = await fetch(base + "?page.ord=" + encodeURIComponent("title:asc"), { headers: { accept: "text/html" } });
