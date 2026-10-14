@@ -1,33 +1,33 @@
 /**
- * Слой фреймворка: роутер SvelteKit — единственная точка, где библиотека читает адрес.
+ * Адаптер `#lib/address` к SvelteKit — единственная точка, где приложение
+ * читает и пишет адрес через `$app/state` и `$app/navigation`.
  *
- * Соответствие исходнику (`SolidHono`): `fastedge/router.tsx` (`useNavigate`,
- * `useLocation`) + `fastedge/context.ts` (`useAppStore().search` / `.pathname`).
- * В порте роль фреймворка играет SvelteKit, то есть `$app/state` и
- * `$app/navigation` — но ровно здесь: компоненты и фичи `$app/*` не импортируют.
+ * Здесь живёт ОДИН писатель адреса на приложение (ядро — `./core.ts`): модалки
+ * (`#lib/modals/cores/sveltekit.js`), пагинатор (`#lib/paginate/sveltekit/router.js`)
+ * и флаги «мелких» записей (`shallowFlag`) пишут через одну очередь, иначе
+ * записи затирали бы друг друга (F41). Адаптеры чужих библиотек берут отсюда
+ * `visibleAddress`/`writeAddress` и не заводят своих писателей.
  *
  * Почему это важно, а не стилистика: у каждой «своей» копии чтения адреса
  * свой формат и своя реактивность. `window.location.search` внутри `$derived`
  * зависимостей не даёт вовсе — значение застывает на моменте создания, — а
  * `history.pushState` в обход роутера SvelteKit перетирается и предупреждает
- * в консоли. Слой фреймворка убирает оба класса ошибок разом: срез адреса
- * берётся у `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт
- * через `goto`.
+ * в консоли. Адаптер убирает оба класса ошибок разом: срез адреса берётся у
+ * `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт через `goto`.
  */
 import { browser } from '$app/env'
-import { afterNavigate, goto, preloadData } from '$app/navigation'
+import { goto } from '$app/navigation'
 import { navigating, page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
-import type { MinimalRouter } from '#lib/paginate/index.js'
 import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
-import { watch } from './watch.svelte'
+import { watch } from './svelte/watch.svelte'
 import { createLayerLinks } from './layer-links'
 import {
   createAddressWriter,
   type AddressChange,
   type AddressSnapshot,
   type AddressWriteOptions,
-} from './address'
+} from './core'
 
 /**
  * Видимый адрес — по документации shallow routing SvelteKit 3: `page.url` —
@@ -246,16 +246,6 @@ export function claimLayerKeys(test: (key: string) => boolean): () => void {
   return writer ? writer.layerKeys(test) : () => {}
 }
 
-/**
- * Search видимого адреса. Реактивен: чтение внутри `$derived`/`$effect`
- * перезапускается на каждой навигации и «мелкой» записи (в том числе back/forward).
- * Учитывает записи, которые ещё в полёте (F41). На сервере — адрес запроса,
- * как `app.search` исходника на SSR.
- */
-export function currentSearch(): Record<string, unknown> {
-  return Object.fromEntries(visibleAddress().url.searchParams)
-}
-
 /** Видимый адрес целиком (с учётом «мелких» записей) — сравнить «до» и «после». */
 export function visibleHref(): string {
   return visibleUrl().href
@@ -302,98 +292,6 @@ export function linkTask(href: string | null | undefined): TaskState {
   return { status: 'pending', scope: 'local', label: 'Переход' }
 }
 
-/** Путь текущего рендера — для `action` формы без JS (аналог `app.pathname`). */
-export function currentPathname(): string {
-  return page.url.pathname
-}
-
-/**
- * Адрес из среза search: путь + строка запроса. Одна сборка на все записи,
- * чтобы `navigate` и `syncAddress` не разъезжались в формате.
- *
- * `#фрагмент` сюда не входит: его дописывает писатель в момент ОТПРАВКИ, из
- * адресной строки (баг F9, решение владельца A). Пагинатор меняет только
- * search, а якорь принадлежит странице; из `page.*` его брать нельзя — клик по
- * ссылке-якорю обновляет только `page.url`.
- */
-function hrefOf(pathname: string, search: Record<string, unknown>): string {
-  const params = new URLSearchParams()
-  for (const [k, v] of Object.entries(search)) {
-    if (v == null) continue
-    if (Array.isArray(v)) for (const item of v) params.append(k, String(item))
-    else params.set(k, String(v))
-  }
-  const qs = params.toString()
-  return `${pathname}${qs ? `?${qs}` : ''}`
-}
-
-const searchOf = (url: URL): Record<string, unknown> => Object.fromEntries(url.searchParams)
-
-/**
- * Роутер под контракт URL-транспорта пагинатора (`PaginatorAdapter.setRouter`).
- *
- * Хост отдаёт его адаптеру сам — по признаку `setRouter` (канон: `bindsUrl`).
- * Фичи про существование адреса не знают: ни роутера, ни разбора `?page`.
- *
- * Вызывать ПРИ ИНИЦИАЛИЗАЦИИ компонента (верхний уровень `<script>`): роутер
- * регистрирует `afterNavigate`, а это функция жизненного цикла.
- *
- * Запись адреса (`syncAddress`) до готовности роутера SvelteKit ставится в
- * очередь (F12: адрес `?page.q=` после нативной GET-формы). Навигация до запуска
- * роутера по-прежнему запрещена (`navigation_before_start`); `onMount` хоста
- * выполняется ДО запуска, а `afterNavigate` — после (и при гидрации, и при
- * монтировании компонента позже), поэтому очередь сбрасывается в первом
- * `afterNavigate`. В 3.0.1 без очереди запись проходит лишь потому, что `goto`
- * успевает несколько раз уступить микрозадачу до проверки — это тайминг
- * внутренностей, а не контракт. Срез адреса вычисляется в момент записи.
- * https://svelte.dev/docs/kit/$app-navigation#afterNavigate
- */
-export function svelteKitRouter(): MinimalRouter {
-  let ready = false
-  let queued: Array<() => void> = []
-  afterNavigate(() => {
-    if (ready) return
-    ready = true
-    const run = queued
-    queued = []
-    for (const write of run) write()
-  })
-  return {
-    navigate(opts) {
-      // Переход с загрузкой — тоже через писателя: следующая «мелкая» запись
-      // (модалка) строится от его цели и уходит после него, а состояние текущей
-      // записи (цепочка модалок) переносится, а не теряется.
-      // Скролл и фокус — `reset: false` в коммите писателя.
-      return writeAddress(
-        (cur) => ({ url: hrefOf(cur.url.pathname, opts.search(searchOf(cur.url))) }),
-        { replace: opts.replace ?? true, load: true },
-      )
-    },
-    /**
-     * Замена ТЕКУЩЕЙ записи истории без перехода: shallow-`goto` SvelteKit
-     * (`shallow: true, replace: true`) — адрес меняется, но загрузка не перезапускается, разметка не
-     * перерисовывается, браузер ничего не запрашивает. Нужна там, где адрес надо
-     * ПОПРАВИТЬ, а не «пойти» (например, убрать пустые ключи нативной формы).
-     * Соседний `history.replaceState` не годится: SvelteKit не узнал бы о правке
-     * и вернул бы старый адрес на следующем чтении.
-     */
-    syncAddress(opts) {
-      // Срез — намерение писателя, а не `page.*`: пока чужая запись (модалка) в
-      // полёте, `page.*` ещё старый, и её ключи были бы затёрты (F41). Состояние
-      // записи не копируется целиком — оно остаётся тем, что видит писатель.
-      const write = () => {
-        void writeAddress(
-          (cur) => ({ url: hrefOf(cur.url.pathname, opts.search(searchOf(cur.url))) }),
-          { replace: true },
-        )
-      }
-      if (ready) write()
-      else queued.push(write)
-    },
-    currentSearch,
-  }
-}
-
 /**
  * Флаг «мелкой» записи истории (shallow routing) для UI, у которого «Назад»
  * должен ЗАКРЫВАТЬ, а не уводить со страницы: мобильная панель и т. п.
@@ -423,26 +321,4 @@ export function shallowFlag(key: string): { readonly on: boolean; push(): void }
       })
     },
   }
-}
-
-/**
- * Исход предзагрузки адреса — по контракту SvelteKit 3 (`preloadData`:
- * `loaded | redirect | error` + `status`, sveltejs/kit#12579). Отказ самой
- * предзагрузки (сеть, чанк) — исключение, тоже `error`.
- */
-export type PreloadOutcome =
-  | { kind: 'loaded'; status: number }
-  | { kind: 'redirect'; location: string }
-  | { kind: 'error'; status: number | null; message: string }
-
-export async function preloadOutcome(href: string): Promise<PreloadOutcome> {
-  let r: Awaited<ReturnType<typeof preloadData>>
-  try {
-    r = await preloadData(href)
-  } catch (error) {
-    return { kind: 'error', status: null, message: error instanceof Error ? error.message : String(error) }
-  }
-  if (r.type === 'redirect') return { kind: 'redirect', location: r.location }
-  if (r.type === 'error') return { kind: 'error', status: r.status, message: r.error.message }
-  return { kind: 'loaded', status: r.status }
 }

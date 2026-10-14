@@ -172,8 +172,12 @@ src/lib/
 
 ## Порядок (каждый шаг — отдельный коммит с гейтом)
 
-1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
-   `modals/cores/sveltekit.ts` (`LoadLink` удалён в ходе 141).
+1. ✅ 14.10.2026: `router` → `lib/address` (`core.ts`, `layer-links.ts`, `svelte/watch.svelte.ts`,
+   `sveltekit.ts` — писатель, `visibleAddress`/`writeAddress`/`goAddress`/`shallowFlag`/
+   `claimLayerKeys`, а также `visibleHref`/`resolveHref`/`linkTask`) + `paginate/sveltekit/router.ts`
+   (`svelteKitRouter`, `currentSearch`, `currentPathname`) + `preloadOutcome` в
+   `modals/cores/sveltekit.ts`. Страж `core-purity`: `address` в списке ядер, зона
+   `sveltekit/` / `sveltekit.ts` рядом с `cores/<фреймворк>.ts`.
 2. ✅ ход 160: `search` → `paginate/search` и `paginate/svelte/search` (UI на месте; подписи «lib/search» в демо стали «paginate/search»).
 3. ✅ ход 160: `filters` → `paginate/filters` вместе с R2 (подписи — решение 4 не принято, оставлены как есть): разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.

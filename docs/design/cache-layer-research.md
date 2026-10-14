@@ -60,7 +60,7 @@
 `paginate/store.ts` `clientStore`, `paginate/registry.ts`, `paginate/core.ts` (сеансы, WeakMap),
 `storage-default.ts` (на сервере уже no-op, C11), `search/stats.ts`, `search/registry.ts`,
 `modals/store.ts` `client`, `filters/schema-memory.ts` (решение хода 73: схема в RAM
-вкладки), `paginator/definition.ts` l.220 `filterSchemaInflight`, `router/sveltekit.ts` `writer`.
+вкладки), `paginator/definition.ts` l.220 `filterSchemaInflight`, `address/sveltekit.ts` `writer`.
 
 ### 2.4. Демо-данные
 

@@ -4,7 +4,7 @@
 // «Back закрывает» — флаг в `page.state` (shallow routing SvelteKit) через слой
 // роутера, а не нативный `history.pushState` (баг F6, docs/audit/crutches.md).
 import { onMount } from 'svelte'
-import { goAddress, shallowFlag, visibleAddress } from '#lib/router/sveltekit.js'
+import { goAddress, shallowFlag, visibleAddress } from '#lib/address/sveltekit.js'
 
 export interface DrawerOptions {
   input: () => HTMLInputElement | undefined

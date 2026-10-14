@@ -38,6 +38,9 @@ export const FRAMEWORK_ZONES = [
   /^vue\//,
   // ядра среды: имя фреймворка — в имени файла
   /^cores\/[a-z-]+\.ts$/,
+  // адаптеры к метафреймворку: имя — в имени папки или файла (`paginate/sveltekit/`,
+  // `address/sveltekit.ts`), так же явно, как `cores/<фреймворк>.ts`
+  /^sveltekit(\/|\.ts$|\.test\.ts$)/,
 ]
 
 const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s[^'"\n]*?from\s*['"]([^'"]+)['"]/g
@@ -120,6 +123,7 @@ export function formatProblems(relPath, problems, root = 'src/lib/modals') {
  * Новые ядра добавляются сюда, а не в обход проверки.
  */
 export const CORE_MODULES = [
+  'src/lib/address',
   'src/lib/modals',
   'src/lib/form',
   'src/lib/paginate', // вместе с search/ и filters/ — части пакета

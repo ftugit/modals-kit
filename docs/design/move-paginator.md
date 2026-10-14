@@ -97,7 +97,7 @@ const search = usePaginatorSearch(name, {
 - [x] **3. `FiltersPanel` в общий модуль.**
   - [x] `git mv` → `src/lib/ui/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
         `$app/state` → `currentPathname()` слоя роутера (то же `page.url.pathname`):
-        в общих `lib/ui/*` фреймворк-импорты только через `#lib/router/sveltekit.js`.
+        в общих `lib/ui/*` фреймворк-импорты только через `#lib/paginate/sveltekit/router.js` (адрес — `#lib/address/sveltekit.js`).
   - [x] `DemoPaginator.svelte` импортирует из `#lib/ui/filters/index.js`.
   - [x] Комментарий в `src/lib/ui/paginator/PaginatorSettingsForm.svelte:6`.
   - [x] Проверки: `gate.sh`; `shikimori.mjs` (52 ok), `rickmorty.mjs`; `/paginator` 194.9.

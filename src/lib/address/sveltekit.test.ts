@@ -61,7 +61,8 @@ const historyGo = vi.fn()
 }
 const win = (globalThis as unknown as { window: { location: { hash: string } } }).window
 
-const { svelteKitRouter, shallowFlag, currentSearch, linkTask, resolveHref } = await import('./sveltekit')
+const { shallowFlag, linkTask, resolveHref } = await import('./sveltekit')
+const { svelteKitRouter, currentSearch } = await import('#lib/paginate/sveltekit/router.js')
 const { svelteKitEngine } = await import('#lib/modals/cores/sveltekit.js')
 
 const tick = async () => {

@@ -15,7 +15,7 @@
 import { onMount, untrack } from 'svelte'
 import { defineForm, field, v } from '#lib/form/index.js'
 import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
-import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
+import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
 import { getClientStore, setExtra } from '#lib/paginate/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
 

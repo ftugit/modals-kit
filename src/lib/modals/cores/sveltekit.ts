@@ -18,7 +18,7 @@ import {
   goAddress,
   visibleAddress,
   writeAddress,
-} from '#lib/router/sveltekit.js'
+} from '#lib/address/sveltekit.js'
 import { buildCore, type CoreOptions, type ReconfigurableCore } from '../build'
 import type { ChainEngine } from '../engine'
 import { urlStorage } from '../storages'
@@ -70,7 +70,7 @@ const isChainKey = (key: string): boolean => key === CHAIN_KEY || key.startsWith
  * маршрута. Ядро же пишет и сразу перечитывает адрес/состояние (`build.ts`:
  * запись → `notify()`), а следующая запись сливает чужие ключи с `state()`.
  * Поэтому движок пишет и читает через общего писателя адреса слоя роутера
- * (`#lib/router/sveltekit.js`): до применения записи — намерение (своё И чужое:
+ * (`#lib/address/sveltekit.js`): до применения записи — намерение (своё И чужое:
  * пагинатор и флаги пишут туда же), после — снова `page.*`. Своей копии
  * «незавершённой записи» у движка больше нет. Контракт `ChainEngine` остаётся
  * синхронным; служебную запись истории и адресную строку браузера движок не
@@ -186,3 +186,31 @@ export function svelteKitCore(
  *
  * Опечатка в `'/films/[id]'` — ошибка типов, а не 404 у пользователя.
  */
+
+/* ── предзагрузка для ссылок ─────────────────────────────────────────── */
+// `asLink` (ссылка на страницу) проверяет адрес до перехода тем же ядром, что и
+// `asModalLink`: битый маршрут блокируется, ошибка загрузчика показывается у
+// ссылки, а не страницей 404. Поэтому исход предзагрузки живёт рядом с
+// `preload`/`resolves` движка, а не в адаптере адреса.
+
+/**
+ * Исход предзагрузки адреса — по контракту SvelteKit 3 (`preloadData`:
+ * `loaded | redirect | error` + `status`, sveltejs/kit#12579). Отказ самой
+ * предзагрузки (сеть, чанк) — исключение, тоже `error`.
+ */
+export type PreloadOutcome =
+  | { kind: 'loaded'; status: number }
+  | { kind: 'redirect'; location: string }
+  | { kind: 'error'; status: number | null; message: string }
+
+export async function preloadOutcome(href: string): Promise<PreloadOutcome> {
+  let r: Awaited<ReturnType<typeof preloadData>>
+  try {
+    r = await preloadData(href)
+  } catch (error) {
+    return { kind: 'error', status: null, message: error instanceof Error ? error.message : String(error) }
+  }
+  if (r.type === 'redirect') return { kind: 'redirect', location: r.location }
+  if (r.type === 'error') return { kind: 'error', status: r.status, message: r.error.message }
+  return { kind: 'loaded', status: r.status }
+}

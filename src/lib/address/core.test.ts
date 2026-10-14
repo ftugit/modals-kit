@@ -1,6 +1,6 @@
 // Ядро писателя адреса (F41) без фреймворка: среда — подставная.
 import { describe, expect, it } from 'vitest'
-import { createAddressWriter, type AddressCommit, type AddressSnapshot } from './address'
+import { createAddressWriter, type AddressCommit, type AddressSnapshot } from './core'
 
 function env(start = 'http://app.test/films') {
   let real: AddressSnapshot = { url: new URL(start), state: {} }

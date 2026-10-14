@@ -11,7 +11,8 @@
 import { goto } from '$app/navigation'
 import { createAttachmentKey } from 'svelte/attachments'
 import { routeResolves } from '#lib/modals/cores/sveltekit.js'
-import { linkTask, preloadOutcome, resolveHref, visibleHref } from '#lib/router/sveltekit.js'
+import { linkTask, resolveHref, visibleHref } from '#lib/address/sveltekit.js'
+import { preloadOutcome } from '#lib/modals/cores/sveltekit.js'
 import type { TaskState } from '#lib/task/index.js'
 import { blockClicks, defined, isModified, reflectTask, type LinkAttrs } from './state.svelte.js'
 

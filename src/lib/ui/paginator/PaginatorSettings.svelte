@@ -13,7 +13,7 @@
    * считается компилятором (гаты), механизмом (гидратация) и формой
    * (связки `enabledBy` → `disabledWhen`), а показывает его `FieldView`.
    */
-  import { currentPathname, currentSearch } from '#lib/router/sveltekit.js'
+  import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { featureGates, getPaginator, type Extra, type ExtraValue } from '#lib/paginate/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import type { Snippet } from 'svelte'

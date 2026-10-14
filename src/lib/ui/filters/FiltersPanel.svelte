@@ -13,7 +13,7 @@
    * пагинатора, и нигде не регистрируется.
    */
   import { untrack } from 'svelte'
-  import { currentPathname } from '#lib/router/sveltekit.js'
+  import { currentPathname } from '#lib/paginate/sveltekit/router.js'
   import { getClientStore, setExtra } from '#lib/paginate/index.js'
   import {
     catalogFilterExtraPatch,

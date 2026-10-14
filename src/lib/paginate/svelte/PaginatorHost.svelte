@@ -38,10 +38,9 @@
     type ResolvedHostOptions,
   } from './context.svelte'
   import { readPaginatorSearch, type ExtraSearchSpec } from '../adapter-url'
-  import {
-    currentSearch as frameworkSearch,
-    svelteKitRouter,
-  } from '#lib/router/sveltekit.js'
+  // Роутер фреймворка — из адаптера пакета `paginate/sveltekit`, а не из чужой
+  // библиотеки: адрес по-прежнему пишет общий писатель `#lib/address`.
+  import { currentSearch as frameworkSearch, svelteKitRouter } from '../sveltekit/router'
 
   interface Props<T> {
     name: string

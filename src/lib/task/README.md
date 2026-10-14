@@ -8,7 +8,7 @@
 | Слой | Что делает | Пример |
 |---|---|---|
 | Ядро библиотеки | говорит **своими** словами; `#lib/task` не импортирует | `PaginatorState.status: 'loading'`, `RuntimeStatus` модалок |
-| Адаптер к фреймворку | переводит слова ядра в `TaskState` | `linkTask(href)` в `#lib/router/sveltekit.js` |
+| Адаптер к фреймворку | переводит слова ядра в `TaskState` | `linkTask(href)` в `#lib/address/sveltekit.js` |
 | UI | читает только `TaskState` | `asLink(href, { task })` (`#lib/components/links`) |
 
 Ядро без адаптера работает как раньше. Формат меняется здесь и в адаптерах, ядра не трогаются.

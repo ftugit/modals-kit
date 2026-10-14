@@ -1282,7 +1282,7 @@ try {
   })
 
   /* ── R-30 (F9): запись адреса пагинатором не стирает #якорь ───────── */
-  // `hrefOf` (router/sveltekit.ts) собирал только путь + `?search`, и каждая
+  // `hrefOf` (paginate/sveltekit/router.ts) собирал только путь + `?search`, и каждая
   // запись адреса (`syncAddress` → `replaceState`) выбрасывала фрагмент.
   await run('R-30 запись адреса пагинатором сохраняет #якорь', async () => {
     const origin = new URL(BASE).origin
