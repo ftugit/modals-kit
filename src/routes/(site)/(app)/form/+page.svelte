@@ -354,14 +354,13 @@ import { asLink } from '#lib/components/links/index.js'
           {#each form.rows('items').keys as key (key)}
             <div data-row={key} class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
               {#each form.rows('items').row(key) as f (f.name)}<Field of={f} />{/each}
-              <Button variant="plain" size="none"  class="self-end rounded-md border border-border px-3 py-2 text-xs"
+              <Button variant="outline" class="self-end"
                       onclick={() => form.apply([editor.removeRow('items', key)])}>
                 Удалить
               </Button>
             </div>
           {/each}
-          <Button variant="plain" size="none" 
-                  class="rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+          <Button variant="outline" size="sm" class="self-start"
                   onclick={() => form.apply([editor.addRow('items', `r${Date.now() % 100000}`)])}>
             + Позиция
           </Button>
@@ -375,17 +374,14 @@ import { asLink } from '#lib/components/links/index.js'
         {/if}
 
         <div class="flex flex-wrap gap-2">
-          <Button variant="plain" size="none" 
-                  class="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
+          <Button variant="outline"
                   onclick={addRuntimeField}>
             + Поле из рантайма
           </Button>
-          <Button variant="plain" size="none" type="submit" {...form.intent('submit')}
-                  class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50">
+          <Button type="submit" {...form.intent('submit')}>
             {form.state.pendingIntent === 'submit' ? 'Отправка…' : 'Создать аккаунт'}
           </Button>
-          <Button variant="plain" size="none" type="submit" {...form.intent('save-draft')}
-                  class="rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50">
+          <Button variant="outline" type="submit" {...form.intent('save-draft')}>
             {form.state.pendingIntent === 'save-draft' ? 'Сохранение…' : 'Сохранить черновик'}
           </Button>
         </div>

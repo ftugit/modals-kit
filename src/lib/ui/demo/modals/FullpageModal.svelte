@@ -18,9 +18,7 @@ import { Button } from '#lib/ui/primitives/index.js'
         size: fullpage · без радиуса · иконка закрытия на фоне скрыта
       </div>
     </div>
-    <Button variant="plain" size="none"
-      
-      class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+    <Button size="sm"
       onclick={() => m.modals.close()}
     >
       Закрыть

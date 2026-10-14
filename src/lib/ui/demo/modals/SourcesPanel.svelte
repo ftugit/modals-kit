@@ -109,13 +109,13 @@ import { Button } from '#lib/ui/primitives/index.js'
   </div>
 
   <div class="flex flex-wrap gap-2">
-    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
+    <Button disabled={!has('url')} onclick={() => m.modals.open('card', { params: { id: 1 }, source: 'url' })}>
       Открыть в url
     </Button>
-    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
+    <Button disabled={!has('local')} onclick={() => m.modals.open('card', { params: { id: 2 }, source: 'local' })}>
       Открыть в localStorage
     </Button>
-    <Button variant="plain" size="none" class="cursor-pointer rounded-lg bg-primary px-3 py-2 text-[0.88rem] text-primary-foreground disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
+    <Button disabled={!has('memory')} onclick={() => m.modals.open('card', { params: { id: 3 }, source: 'memory' })}>
       Открыть в memory
     </Button>
   </div>

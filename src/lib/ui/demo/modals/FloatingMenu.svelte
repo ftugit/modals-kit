@@ -214,9 +214,7 @@ import { Button } from '#lib/ui/primitives/index.js'
         data-floating-menu-head=""
       >
         <span class="text-[0.95rem] font-semibold" data-floating-menu-title="">{label}</span>
-        <Button variant="plain" size="none"
-          
-          class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent hover:bg-accent"
+        <Button variant="ghost" size="icon"
           data-floating-menu-close=""
           aria-label="Закрыть меню"
           onclick={() => closeMenu()}

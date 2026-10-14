@@ -85,9 +85,7 @@ import { Button } from '#lib/ui/primitives/index.js'
         {ldr.loading ? 'загрузка…' : 'готово'}
       </div>
     </div>
-    <Button variant="plain" size="none"
-      
-      class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+    <Button variant="ghost" size="icon-sm" class="text-muted-foreground"
       onclick={() => m.modals.close()}
       aria-label="Закрыть текущую"
     >
