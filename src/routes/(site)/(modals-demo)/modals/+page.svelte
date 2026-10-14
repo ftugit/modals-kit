@@ -1,6 +1,6 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Button } from '#lib/ui/primitives/index.js'
+import { Button, Link } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -57,18 +57,18 @@ import { Button } from '#lib/ui/primitives/index.js'
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <a
+        <Link
           href="/"
           class="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           Главная
-        </a>
-        <a
+        </Link>
+        <Link
           href="/cycle"
           class="rounded-md bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           Цикл
-        </a>
+        </Link>
       </div>
     </header>
 
@@ -137,22 +137,22 @@ import { Button } from '#lib/ui/primitives/index.js'
             Ссылка с переадресацией
           </LoadLink>
           <!-- обычная ссылка: функция сама гасит переход -->
-          <a
+          <Link
             href="?modal=card"
             onclick={(event) => openFromEvent(event, 'card', { id: 99 })}
             class="text-sm font-medium text-foreground underline decoration-dotted underline-offset-4"
           >
             обычная ссылка в обход компонента
-          </a>
+          </Link>
           <!-- кнопка на незарегистрированную заблокирована сразу,
                поэтому саму ошибку показываем открытием в обход кнопки -->
-          <a
+          <Link
             href="?modal=ghost"
             onclick={(event) => openFromEvent(event, 'ghost')}
             class="text-sm font-medium text-destructive underline decoration-dotted underline-offset-4"
           >
             ошибка «нет такой модалки»
-          </a>
+          </Link>
         </div>
         <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>
              не показал бы подсказку, когда JS включён, но ещё не загрузился. -->

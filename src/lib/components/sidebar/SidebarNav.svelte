@@ -18,6 +18,7 @@
 </script>
 
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   import { page } from '$app/state'
   import { NAV_ITEMS } from '../header/nav'
 </script>
@@ -28,12 +29,12 @@
   </span>
   {#each NAV_ITEMS as item}
     {@const active = page.url.pathname === item.to}
-    <a
+    <Link
       href={item.to}
       class={sidebarNavItemVariants({ active })}
       aria-current={active ? 'page' : undefined}
     >
       <span>{item.label}</span>
-    </a>
+    </Link>
   {/each}
 </nav>

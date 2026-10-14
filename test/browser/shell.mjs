@@ -210,6 +210,65 @@ async function run() {
       await page.close()
     }
 
+    // 7. Link (ход 138): под капотом обычная <a>; с JS — индикатор у той
+    // ссылки, на чей адрес идёт переход SvelteKit (адаптер `linkTask`).
+    {
+      const NAV = 'nav[aria-label="Основная навигация"]'
+      // Без JS — простые ссылки, индикатора в разметке нет.
+      const html = await (await fetch(BASE + '/form')).text()
+      assert.match(html, /<a[^>]*href="\/paginator"/, 'SSR: пункт меню — обычная <a href>')
+      assert.ok(!html.includes('data-task-indicator'), 'SSR: индикатора в разметке нет')
+      {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, javaScriptEnabled: false })
+        const page = await context.newPage()
+        await page.goto(BASE + '/form', { waitUntil: 'load' })
+        await page.locator(`${NAV} a[href="/paginator"]`).click()
+        await page.waitForURL('**/paginator', { timeout: 15000 })
+        await context.close()
+      }
+      ok('Link без JS: обычная ссылка, браузер переходит сам')
+
+      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+      await page.goto(BASE + '/form', { waitUntil: 'networkidle' })
+      await page.waitForFunction(() => document.querySelector('form')?.hasAttribute('novalidate'))
+      // Медленный сервер: данные следующей страницы приходят через 1,5 с.
+      let slowed = 0
+      await page.route('**/__data.json*', async (route) => {
+        slowed++
+        await sleep(1500)
+        await route.continue()
+      })
+      const target = page.locator(`${NAV} a[href="/paginator"]`)
+      const other = page.locator(`${NAV} a[href="/modals"]`)
+      const t0 = Date.now()
+      await target.click()
+      await page.waitForSelector(`${NAV} a[href="/paginator"][data-task-state="pending"]`, { timeout: 1200 })
+      const shownAfter = Date.now() - t0
+      assert.ok(shownAfter >= 140, `индикатор не раньше задержки 150 мс (показан через ${shownAfter} мс)`)
+      assert.equal(await target.getAttribute('aria-busy'), 'true', 'нажатая ссылка — aria-busy')
+      assert.equal(await target.locator('[data-task-indicator]').count(), 1, 'спиннер внутри нажатой ссылки')
+      assert.equal(await other.getAttribute('data-task-state'), null, 'у соседней ссылки индикатора нет')
+      await page.waitForURL('**/paginator', { timeout: 15000 })
+      await page.waitForFunction(() => !document.querySelector('[data-task-state]'), null, { timeout: 5000 })
+      assert.ok(slowed > 0, 'переход действительно ждал данные (__data.json перехвачен)')
+      ok(`Link с JS: медленный переход — спиннер у нажатой ссылки через ${shownAfter} мс, после перехода снят`)
+
+      // «Мелкая» запись адреса (модалка) держит navigating 1–2 мс — не мигает.
+      await page.unroute('**/__data.json*')
+      await page.goto(BASE + '/modals', { waitUntil: 'networkidle' })
+      await page.evaluate(() => {
+        window.__taskFlash = 0
+        new MutationObserver((list) => {
+          for (const m of list) if (m.target.getAttribute?.('data-task-state')) window.__taskFlash++
+        }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-task-state'] })
+      })
+      await page.locator('a[href*="modal=fullpage"]').first().click()
+      await sleep(800)
+      assert.equal(await page.evaluate(() => window.__taskFlash), 0, 'открытие модалки не зажгло индикатор ссылок')
+      ok('Link: «мелкая» запись адреса (открытие модалки) индикатор не зажигает')
+      await page.close()
+    }
+
     console.log(`\n✅ shell-browser: ${passed} проверок пройдено`)
   } finally {
     await browser.close()

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
@@ -74,12 +75,12 @@
           демо-панели.
         </p>
       </div>
-      <a
+      <Link
         href="/"
         class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
       >
         ← на главную
-      </a>
+      </Link>
     </div>
 
     <div class="mt-5">

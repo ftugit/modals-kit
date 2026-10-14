@@ -29,7 +29,7 @@
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
-  import { Button, Input, Select } from '#lib/ui/primitives/index.js'
+  import { Button, Input, Select, Link } from '#lib/ui/primitives/index.js'
 
   interface Props {
     /** Схема источника: по ней компилируется описание полей (единый код-путь с сервером). */
@@ -234,13 +234,13 @@
 
   <div class="flex flex-wrap items-center justify-end gap-2">
     {#if resetHref}
-      <a
+      <Link
         href={resetHref}
         data-testid="catalog-filter-reset"
         class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
       >
         Сбросить
-      </a>
+      </Link>
     {/if}
     <Button type="submit" size="sm" data-testid="catalog-filter-submit">Применить</Button>
   </div>

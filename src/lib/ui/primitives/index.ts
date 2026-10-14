@@ -1,4 +1,6 @@
 export { default as Button, buttonVariants, type ButtonVariants } from './Button.svelte'
+export { default as Link, LINK_TASK_DELAY_MS } from './Link.svelte'
+export { default as TaskIndicator } from './TaskIndicator.svelte'
 export { default as Badge, badgeVariants, type BadgeVariants } from './Badge.svelte'
 export { default as Alert, alertVariants, type AlertProps } from './Alert.svelte'
 export { default as Card, cardVariants, type CardVariants } from './Card.svelte'

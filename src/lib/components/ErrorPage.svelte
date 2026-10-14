@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   // Содержимое страницы ошибок SvelteKit — общее для двух границ (C2):
   // `routes/(site)/+error.svelte` (внутри каркаса, его `<main>`) и корневой
   // `routes/+error.svelte` (/cycle, /spike и сбой самого каркаса — `<main>`
@@ -20,7 +21,7 @@
     <div class="flex max-w-md flex-col items-center gap-3 text-center" role="alert">
       <span class="text-5xl font-black tracking-tight text-muted-foreground">{page.status}</span>
       <h1 class="text-lg font-semibold">Страница не найдена или недоступна</h1>
-      <a class="text-sm text-primary underline" href="/">На главную</a>
+      <Link class="text-sm text-primary underline" href="/">На главную</Link>
     </div>
   </div>
 {/if}

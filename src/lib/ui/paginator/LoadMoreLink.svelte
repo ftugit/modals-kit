@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { LoadMoreSlot, type LoadMoreSlotRender } from '#lib/paginate/svelte/index.js'
-  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { buttonVariants, Link } from '#lib/ui/primitives/index.js'
   import Spinner from './Spinner.svelte'
 
   /**
@@ -49,7 +49,7 @@
     {/snippet}
     <div class="flex justify-center py-1">
       {#if p.href !== null}
-        <a
+        <Link
           href={p.href}
           data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
           class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
@@ -60,7 +60,7 @@
             <Spinner />
           {/if}
           {@render text(p)}
-        </a>
+        </Link>
       {:else}
         <button
           type="button"

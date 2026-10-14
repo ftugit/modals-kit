@@ -2,7 +2,7 @@
   // Разметка поиска страницы: поле, кнопки, причина выключения и тексты.
   // Логика (форма, задержка, запись в стор, сброс) — хук `usePaginatorSearch`.
   import { Form } from '#lib/form/svelte/index.js'
-  import { SearchInput } from '#lib/ui/primitives/index.js'
+  import { SearchInput, Link } from '#lib/ui/primitives/index.js'
   import { usePaginatorSearch } from '#lib/ui/paginator/index.js'
 
   interface Props {
@@ -80,13 +80,13 @@
       Найти
     </button>
     {#if search.hasQuery}
-      <a
+      <Link
         href={search.resetHref}
         data-testid="search-clear"
         class="inline-flex h-9 items-center rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-xs hover:bg-accent"
       >
         Сбросить
-      </a>
+      </Link>
     {/if}
   {/if}
 </Form>

@@ -73,7 +73,7 @@ type TaskProgress =
 
 | Lib | Что есть сейчас | Что добавить в lib |
 |---|---|---|
-| `lib/router` (`sveltekit.ts`, `LoadLink`) | `preloadOutcome`, `navigating` из `$app/state` | геттер `navigationTask()` → `TaskState` (`scope: 'local'`); цель перехода `to.url`, чтобы ссылка узнала себя |
+| `lib/router` (`sveltekit.ts`, `LoadLink`) | `preloadOutcome`, `navigating` из `$app/state` | ✅ `linkTask(href)` → `TaskState` (`scope: 'local'`); цель перехода `to.url`, чтобы ссылка узнала себя |
 | `lib/modals` (`loader.ts`, `RuntimeStatus` `idle/loading/ready/error`) | статус модалки, `preloadModal` | `task` у записи модалки; загрузчик (`loader`) может сообщать `progress` (опция `report(task)` вторым аргументом) |
 | `lib/paginate` (`PaginatorState.status` `init/idle/loading/error`, `pending`) | статус и ожидаемая страница | селектор `taskOf(state)`; транспорт источника может сообщать `progress`, строки из ответа доходят до состояния |
 | `lib/form` (`FormState.status` `idle/validating/submitting/queued/success/error`, `checking`) | статус отправки и асинхронных проверок | `form.task`; транспорт сообщает `progress` (строки ответа `/db-demo/submit`) |
@@ -95,7 +95,7 @@ type TaskProgress =
 | `ModalTrigger` | 28 | `/modals`, `CardModal`, `FullpageModal` | lib/modals | уже есть спиннер (`ButtonIndicator`); добавить процент и сообщение глобальному лоадеру |
 | `LoadLink` | 9 | `/modals` | lib/router | то же |
 | `<Button>` | 42 | формы (`/form` ×5, `CreateForm`, `RemoveForm`, `SchemaPending`), `CatalogFilterForm`, `PageNav`, демо модалок | lib/form, lib/paginate или своё действие | **у `Button` нет состояния загрузки**: проп `task?: TaskState` → спиннер, процент, `aria-busy`, `disabled` |
-| Простые `<a href>` (переходы Kit) | ~20 | `NavSlot`, `SidebarNav`, `LogoSlot`, `SiteFooter`, `ErrorPage`, главная, `/cards/[id]`, `/form`, `AnimeRow`, `/modals` | lib/router (`navigating`, вариант (а)) | **нет общего компонента ссылки**: `Link` сравнивает свой `href` с целью перехода и крутит спиннер у себя |
+| Простые `<a href>` (переходы Kit) | ~20 | `NavSlot`, `SidebarNav`, `LogoSlot`, `SiteFooter`, `ErrorPage`, главная, `/cards/[id]`, `/form`, `AnimeRow`, `/modals` | lib/router (`navigating`, вариант (а)) | ✅ ход 138: `Link` (`#lib/ui/primitives`) — обычная `<a href>`; `linkTask(href)` из `#lib/router/sveltekit.js` сравнивает адрес с `navigating.to.url` (путь + query, без якоря); спиннер через 150 мс, `aria-busy`. Тип `TaskState` — `#lib/task`. Заменены все простые ссылки, кроме `LoadLink`/`ModalTrigger` |
 | Ссылки пагинатора | 4 | `PageLink`, `LoadMoreLink`, `ResetButton`, `ErrorRow` (повтор) | lib/paginate | читать `taskOf(state)`, спиннер на той ссылке, которую нажали (`pending.page`) |
 | Поиск каталога | 1 | `SearchBar` (`SearchInput`) | lib/paginate + lib/search | спиннер или процент в поле |
 | Чипы и сброс фильтров | 2 | `ActiveFilters`, ссылка «Сбросить» в `CatalogFilterForm` | lib/paginate | как у ссылок пагинатора |

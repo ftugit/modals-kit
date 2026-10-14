@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   /**
    * Активные фильтры списком — только разметка.
    *
@@ -54,7 +55,7 @@
   {/if}
   {#if chips.length}
     {#each chips as chip (chip.path + '=' + chip.value)}
-      <a
+      <Link
         href={chip.href || undefined}
         onclick={(event) => click(event, chip)}
         data-testid="active-filter"
@@ -70,7 +71,7 @@
         <span>{chip.label}</span>
         <span aria-hidden="true">✕</span>
         <span class="sr-only">— убрать этот фильтр</span>
-      </a>
+      </Link>
     {/each}
   {:else}
     <span class="text-xs text-muted-foreground" data-testid="active-filters-empty">Фильтры не выбраны</span>

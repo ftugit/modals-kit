@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { buttonVariants, Link } from '#lib/ui/primitives/index.js'
   import { usePageHref, usePaginatorActions } from '#lib/paginate/svelte/index.js'
 
   interface Props {
@@ -41,7 +41,7 @@
 </script>
 
 {#if href !== null && !current && !disabled}
-  <a
+  <Link
     class={cls}
     {href}
     aria-label={label}
@@ -58,7 +58,7 @@
     {:else}
       {page}
     {/if}
-  </a>
+  </Link>
 {:else if href !== null}
   <span
     class={cls}

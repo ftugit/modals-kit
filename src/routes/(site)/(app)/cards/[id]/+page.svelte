@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
   let { data }: import('./$types').PageProps = $props()
@@ -13,10 +14,10 @@
     <code class="rounded bg-muted/70 px-1">card</code>: без JavaScript ссылка триггера ведёт
     сюда, с JavaScript тот же клик открывает модалку поверх демо.
   </p>
-  <a
+  <Link
     href="/modals"
     class="mt-6 inline-block rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
   >
     ← К демо модалок
-  </a>
+  </Link>
 </div>

@@ -40,7 +40,8 @@ vi.mock('$app/navigation', () => ({
   // Роутер готов сразу: в тесте SvelteKit «уже запущен».
   afterNavigate: (fn: () => void) => fn(),
 }))
-vi.mock('$app/state', () => ({ page }))
+const navigating: { to: { url: URL } | null; willUnload: boolean | null } = { to: null, willUnload: null }
+vi.mock('$app/state', () => ({ page, navigating }))
 vi.mock('$app/env', () => ({ browser: true }))
 
 const popstate: Array<() => void> = []
@@ -60,7 +61,7 @@ const historyGo = vi.fn()
 }
 const win = (globalThis as unknown as { window: { location: { hash: string } } }).window
 
-const { svelteKitRouter, shallowFlag, currentSearch } = await import('./sveltekit')
+const { svelteKitRouter, shallowFlag, currentSearch, linkTask } = await import('./sveltekit')
 const { svelteKitEngine } = await import('#lib/modals/cores/sveltekit.js')
 
 const tick = async () => {
@@ -226,5 +227,46 @@ describe('писатель и обход ядра модалок', () => {
     expect(addressTraversing()).toBe(true)
     for (const fn of popstate) fn()
     expect(addressTraversing()).toBe(false)
+  })
+})
+
+describe('linkTask: переход идёт именно на адрес ссылки (адаптер #lib/task)', () => {
+  beforeEach(() => {
+    page.url = new URL('http://app.test/films')
+    page.shallow = null
+    navigating.to = null
+    navigating.willUnload = null
+  })
+  const go = (href: string, willUnload = false) => {
+    navigating.to = { url: new URL(href, 'http://app.test') }
+    navigating.willUnload = willUnload
+  }
+
+  it('перехода нет — покой у всех', () => {
+    expect(linkTask('/paginator').status).toBe('idle')
+  })
+
+  it('совпадают путь и query — ожидание; якорь не в счёт', () => {
+    go('/paginator?page.src=animes')
+    expect(linkTask('/paginator?page.src=animes').status).toBe('pending')
+    expect(linkTask('/paginator?page.src=animes#top').status).toBe('pending')
+    expect(linkTask('/paginator').status).toBe('idle')
+    expect(linkTask('/paginator?page.src=db').status).toBe('idle')
+    expect(linkTask('/form').status).toBe('idle')
+  })
+
+  it('относительный адрес — от видимого адреса, в том числе после «мелкой» записи', () => {
+    page.shallow = { url: new URL('http://app.test/modals') }
+    go('/modals?modal=card')
+    expect(linkTask('?modal=card').status).toBe('pending')
+  })
+
+  it('чужой origin, выгрузка документа, пустой href — покой', () => {
+    go('/paginator')
+    expect(linkTask('https://shikimori.io/paginator').status).toBe('idle')
+    expect(linkTask(undefined).status).toBe('idle')
+    expect(linkTask('').status).toBe('idle')
+    go('/paginator', true)
+    expect(linkTask('/paginator').status).toBe('idle')
   })
 })

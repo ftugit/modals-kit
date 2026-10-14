@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   import { animeKindLabel, animeStatusLabel, animeTitle, type AnimeCard } from '../../../../content/shikimori'
 
   interface Props {
@@ -17,7 +18,7 @@
   каталога у канона. Ссылки ведут на страницу тайтла, смещение правой части
   держат только атомарные утилиты, `shrink-0` защищает оценку от сжатия.
 -->
-<a
+<Link
   data-testid={`anime-${item.id}`}
   href={item.url}
   rel="noreferrer noopener"
@@ -39,4 +40,4 @@
     {animeKindLabel(item.kind)} · {animeStatusLabel(item.status)}{year}
   </span>
   <span class="w-14 shrink-0 text-right text-xs font-medium">{score}</span>
-</a>
+</Link>

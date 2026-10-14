@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   import { NAV_ITEMS } from './nav'
 </script>
 
@@ -9,9 +10,9 @@
     </span>
     <nav class="flex flex-wrap gap-5 text-sm" aria-label="Разделы сайта">
       {#each NAV_ITEMS as item}
-        <a href={item.to} class="text-muted-foreground transition-colors hover:text-foreground">
+        <Link href={item.to} class="text-muted-foreground transition-colors hover:text-foreground">
           {item.label}
-        </a>
+        </Link>
       {/each}
     </nav>
   </div>

@@ -16,9 +16,10 @@
  */
 import { browser } from '$app/env'
 import { afterNavigate, goto, preloadData } from '$app/navigation'
-import { page } from '$app/state'
+import { navigating, page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import type { MinimalRouter } from '#lib/paginate/index.js'
+import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
 import { watch } from './watch.svelte'
 import { createLayerLinks } from './layer-links'
 import {
@@ -253,6 +254,34 @@ export function claimLayerKeys(test: (key: string) => boolean): () => void {
  */
 export function currentSearch(): Record<string, unknown> {
   return Object.fromEntries(visibleAddress().url.searchParams)
+}
+
+/**
+ * Адаптер `#lib/task` для переходов SvelteKit: идёт ли переход ИМЕННО на этот
+ * адрес. Читает `navigating` (реактивно: вызов внутри `$derived` или разметки
+ * перестраивается на начало и конец перехода).
+ *
+ * - Адрес ссылки разрешается от ВИДИМОГО адреса (`?modal=card` — относительно
+ *   текущей страницы, в том числе после «мелкой» записи).
+ * - Совпадение — origin, путь и query; якорь не в счёт.
+ * - Переход, который выгружает документ (`willUnload`), — дело браузера: его
+ *   полоска уже идёт, своя не нужна.
+ * - На сервере `navigating` пуст — всегда покой (разметка без JS чистая).
+ *
+ * `navigating` бывает непустым и у «мелких» записей адреса (модалки, пагинатор:
+ * 1–2 мс, замер хода 129) — поэтому `Link` показывает индикатор с задержкой.
+ */
+export function linkTask(href: string | null | undefined): TaskState {
+  const to = navigating.to?.url
+  if (!href || !to || navigating.willUnload) return IDLE_TASK
+  let target: URL
+  try {
+    target = new URL(href, visibleUrl().href)
+  } catch {
+    return IDLE_TASK
+  }
+  if (target.origin !== to.origin || target.pathname !== to.pathname || target.search !== to.search) return IDLE_TASK
+  return { status: 'pending', scope: 'local', label: 'Переход' }
 }
 
 /** Путь текущего рендера — для `action` формы без JS (аналог `app.pathname`). */

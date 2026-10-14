@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link } from '#lib/ui/primitives/index.js'
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.
 
@@ -59,20 +60,20 @@
       <section class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
         <h2 class="text-xl font-semibold tracking-tight">{d.title}</h2>
         <p class="my-4 text-sm leading-relaxed text-muted-foreground">{d.text}</p>
-        <a
+        <Link
           href={d.href}
           class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Открыть демо
-        </a>
+        </Link>
         {#if import.meta.env.DEV && d.href === '/paginator'}
           <div class="mt-3">
-            <a
+            <Link
               href="/paginator?selectTrace=1&page.src=animes"
               class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
             >
               Открыть Select trace (dev)
-            </a>
+            </Link>
           </div>
         {/if}
       </section>
