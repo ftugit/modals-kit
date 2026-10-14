@@ -53,9 +53,9 @@ const schema: CatalogFilterSchema = {
 
 | Что | Значение | Где |
 |---|---|---|
-| `CATALOG_FILTER_NOJS_OPTIONS` | 200 — показ без JS | `catalog-filter.ts` |
-| `CATALOG_FILTER_OPTIONS_LIMIT` | 5000 — защита от гигантских форм, не размер показа | `catalog-filter.ts` |
-| `capCatalogFilterOptions(schema)` | поле длиннее 200 упорядочивает по частоте, при равной — по подписи; поле длиннее 5000 обрезает (аварийно) и пишет `optionsTruncated` | `catalog-filter.ts` |
+| `CATALOG_FILTER_NOJS_OPTIONS` | 200 — показ без JS | `schema.ts` |
+| `CATALOG_FILTER_OPTIONS_LIMIT` | 5000 — защита от гигантских форм, не размер показа | `schema.ts` |
+| `capCatalogFilterOptions(schema)` | поле длиннее 200 упорядочивает по частоте, при равной — по подписи; поле длиннее 5000 обрезает (аварийно) и пишет `optionsTruncated` | `schema.ts` |
 | `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#lib/ui/primitives/Select.svelte` |
 
 **Почему первые 200 — нужные.** Порядок задаёт сборщик схемы: частые первыми. Без частот в
@@ -144,8 +144,12 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 
 | Файл | Что внутри |
 |---|---|
-| `catalog-filter.ts` | типы схемы, валидатор, пределы, порядок длинных полей, компиляция в форму, адрес, связки |
-| `view.ts` | чипы активных фильтров и патчи адреса для панели |
+| `schema.ts` | типы схемы, проверка схемы, имена полей, пределы, порядок длинных полей |
+| `url.ts` | ключи адреса `?page.filters.*` (префикс — `FILTER_KEY_PREFIX` ядра), значения из адреса и extra, канонический адрес |
+| `form.ts` | компиляция схемы в форму `lib/form`, начальное состояние, FormData, подписи режимов и границ |
+| `rules.ts` | серверная проверка значений, сработавшие связки, нарушения |
+| `view.ts` | чипы активных фильтров (`activeCatalogFilters`) и патчи адреса для панели |
+| `internal.ts` | общие константы режимов и границ — не API, `index.ts` их не отдаёт |
 | `schema-memory.ts` | память схем вкладки (§4) |
 | `index.ts` | публичный вход `#lib/paginate/filters/index.js` |
 

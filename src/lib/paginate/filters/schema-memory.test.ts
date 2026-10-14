@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCatalogFilterSchemaMemory } from './schema-memory'
-import type { CatalogFilterSchema } from './catalog-filter'
+import type { CatalogFilterSchema } from './index'
 
 const schema = (source: string, builtAt: string): CatalogFilterSchema => ({
   source, version: 1, builtAt, fields: [{ key: 'kind', label: 'Тип', type: 'select', options: [{ value: 'tv', label: 'TV' }] }],

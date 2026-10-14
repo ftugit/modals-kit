@@ -26,7 +26,7 @@ import {
   validateCatalogFilterSchema,
   validateCatalogFilterValues,
   type CatalogFilterSchema,
-} from './catalog-filter'
+} from './index'
 
 const schema: CatalogFilterSchema = {
   source: 'demo',

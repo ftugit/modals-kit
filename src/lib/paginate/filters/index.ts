@@ -6,6 +6,17 @@
  * каталоге — источник приходит схемой (`CatalogFilterSchema`), как и в каноне
  * (`ftugit/SolidHono@shiki-final`, `src/lib/search/catalog-filter.ts`).
  */
-export * from './catalog-filter'
+export * from './schema'
+export * from './url'
+// form.ts — списком: `ruleCondition` нужна rules.ts, но это не API пакета
+export {
+  CATALOG_FILTER_MODE_LABEL,
+  CATALOG_FILTER_BOUND_LABEL,
+  compileCatalogFilterSchema,
+  stripDefaultCatalogFilterValues,
+  catalogFilterInitialState,
+  catalogFilterFormData,
+} from './form'
+export * from './rules'
 export * from './view'
 export * from './schema-memory'

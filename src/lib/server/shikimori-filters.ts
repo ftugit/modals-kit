@@ -37,6 +37,7 @@ import { DEV } from 'esm-env'
 import { SHIKIMORI_DEFAULT_API, type AnimesPage, type ShikimoriApi } from '../../content/shikimori'
 import { fetchCatalogPage, type AnimesQuery, type TransportDeps } from './shikimori'
 import { getShikimoriFilterSchema } from './shikimori-schema'
+import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
 
 /** Что из запрошенного не применяется и почему (для UI, лога и отладки). */
 export type DroppedFilter = { key: string; reason: string }
@@ -274,7 +275,7 @@ export async function fetchAnimesPage(
 export function filtersOfExtra(extra: Record<string, unknown> | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(extra ?? {})) {
-    if (key.startsWith('filters.')) out[key] = value
+    if (key.startsWith(FILTER_KEY_PREFIX)) out[key] = value
   }
   return out
 }

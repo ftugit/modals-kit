@@ -44,6 +44,7 @@ import {
   type AnimeCard,
   type ShikimoriApi,
 } from '../../content/shikimori'
+import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
 
 /** База REST API (домен, на который переадресует shikimori.one). */
 export const SHIKIMORI_API_BASE = 'https://shikimori.io/api'
@@ -177,9 +178,9 @@ export function parseAnimesQuery(params: URLSearchParams): ParseOk | ParseFail {
 export function readFilterParams(params: URLSearchParams): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [key, raw] of params.entries()) {
-    if (!key.startsWith('filters.') || raw === '') continue
+    if (!key.startsWith(FILTER_KEY_PREFIX) || raw === '') continue
     if (raw.length > 400) continue
-    const path = key.slice('filters.'.length)
+    const path = key.slice(FILTER_KEY_PREFIX.length)
     // Форма ключа: `filters.<поле>` или `filters.<поле>.<режим|граница>` —
     // односегментные ключи есть у select-полей (`filters.kind`).
     if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)?$/.test(path)) continue

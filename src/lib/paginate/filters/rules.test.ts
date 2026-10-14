@@ -19,7 +19,7 @@ import {
   catalogRuleState,
   compileCatalogFilterSchema,
   type CatalogFilterSchema,
-} from './catalog-filter'
+} from './index'
 
 const schema: CatalogFilterSchema = {
   source: 'links',

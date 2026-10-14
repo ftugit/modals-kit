@@ -25,7 +25,7 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
 `extra` — свои договорённости пакета, а не чужие. Значит, от R2 остаётся только то, что даёт
 практическую пользу:
 
-1. **Разрезать `catalog-filter.ts` (1029 строк) по ролям** — без изменения поведения и имён:
+1. ✅ ход 160. **Разрезать `catalog-filter.ts` (1029 строк) по ролям** — без изменения поведения и имён:
 
    | Файл `paginate/filters/` | Что туда идёт |
    |---|---|
@@ -35,7 +35,11 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
    | `rules.ts` | связки и серверная проверка: `catalogRuleState`, `catalogFilterValueMap`, `catalogFilterViolations`, `validateCatalogFilterValues` |
    | `view.ts` | как есть: картина панели и патчи `extra`, `activeCatalogFilters` (данные чипов) |
 
-2. **Один префикс.** Литерал `'filters.'` сейчас повторён 5 раз в `catalog-filter.ts` и 5 раз в
+   Отличия от таблицы (ход 160): `modes`/`bounds` нужны трём файлам — вынесены в `internal.ts`,
+   его `index.ts` не отдаёт; `ruleCondition` нужна `rules.ts`, но перенос дал бы цикл
+   (`rules` → `form` ради компиляции схемы), поэтому она в `form.ts`, а `index.ts`
+   отдаёт `form.ts` списком без неё. Публичный API — тот же набор имён (сверено скриптом).
+2. ✅ ход 160. **Один префикс.** Литерал `'filters.'` сейчас повторён 5 раз в `catalog-filter.ts` и 5 раз в
    `lib/server` (`shikimori.ts`, `shikimori-filters.ts`, `rickmorty.ts`), а в
    `paginate/source.ts:196` уже есть `FILTER_KEY_PREFIX` с комментарием «объявлен здесь ОДИН
    раз». Все места — на эту константу.
@@ -171,7 +175,7 @@ src/lib/
 1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
    `modals/cores/sveltekit.ts` (`LoadLink` удалён в ходе 141).
 2. ✅ ход 160: `search` → `paginate/search` и `paginate/svelte/search` (UI на месте; подписи «lib/search» в демо стали «paginate/search»).
-3. ✅ ход 160 (перенос): `filters` → `paginate/filters`; далее вместе с R2: разрез по ролям, один префикс, подписи (по
+3. ✅ ход 160: `filters` → `paginate/filters` вместе с R2 (подписи — решение 4 не принято, оставлены как есть): разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.
 4. `ui/*`, `shell`, `cn`, `js-only`, `use-drawer` → `components`, `hooks`, `utils.ts`.
 5. `ui/demo` → `demo` (по решению 3).

@@ -4,6 +4,7 @@
  *
  * Компонент остаётся разметкой — всё, что можно посчитать, считается здесь:
  *
+ *   • `activeCatalogFilters` — данные чипов из применённых значений;
  *   • `catalogFilterView` — картина панели из СХЕМЫ + `extra` пагинатора
  *     (применённый набор): чипы, счётчик, адреса формы, запрет поиска и
  *     пояснения к связкам. Связки считает `catalogRuleState` — тем же
@@ -15,21 +16,65 @@
  * Контролы формы здесь не собираются: их компилирует `compileCatalogFilterSchema`,
  * а гасят связки правила `disabledWhen` в том же определении формы.
  */
-import {
-  activeCatalogFilters,
-  canonicalCatalogFilterUrl,
-  catalogFilterUrlWithout,
-  catalogFilterFieldNames,
-  catalogFilterValueMap,
-  catalogFilterViolations,
-  catalogRuleState,
-  parseCatalogFilterPath,
-  readCatalogFilterValues,
-  stripDefaultCatalogFilterValues,
-  type ActiveCatalogFilter,
-  type CatalogFilterSchema,
-  type CatalogFilterViolation,
-} from './catalog-filter'
+import { catalogFilterFieldNames, type CatalogFilterBound, type CatalogFilterMode, type CatalogFilterSchema } from './schema'
+import { canonicalCatalogFilterUrl, catalogFilterUrlWithout, parseCatalogFilterPath, readCatalogFilterValues } from './url'
+import { stripDefaultCatalogFilterValues } from './form'
+import { catalogFilterValueMap, catalogFilterViolations, catalogRuleState, type CatalogFilterViolation } from './rules'
+
+export type ActiveCatalogFilter = {
+  /** Имя поля формы: `filters.genres.not`. */
+  path: string
+  key: string
+  mode?: CatalogFilterMode
+  /** Граница числового фильтра («Оценка · от: 7»). */
+  bound?: CatalogFilterBound
+  value: string
+  /** Подпись значения из схемы (если опция известна) или само значение. */
+  label: string
+  fieldLabel: string
+  /** Режим `not`: значение исключено — чип красный. */
+  excluded: boolean
+  /** Значение отсутствует в опциях схемы (мусор из адреса). */
+  unknown: boolean
+  /**
+   * Значение отсутствует В ПОКАЗАННЫХ опциях, но поле объявило `optionsTruncated`:
+   * оно может быть настоящим (скрыто лимитом показа), поэтому и причина другая,
+   * чем у мусора, — источник такое значение принимает.
+   */
+  hiddenByLimit?: boolean
+}
+
+/** Активные фильтры списком: по одному элементу на значение. */
+export function activeCatalogFilters(
+  schema: CatalogFilterSchema | undefined,
+  values: Record<string, string[]>,
+): ActiveCatalogFilter[] {
+  const byKey = new Map((schema?.fields ?? []).map((descriptor) => [descriptor.key, descriptor]))
+  const out: ActiveCatalogFilter[] = []
+  for (const [path, list] of Object.entries(values)) {
+    const parsed = parseCatalogFilterPath(path)
+    if (!parsed) continue
+    const descriptor = byKey.get(parsed.key)
+    for (const value of list) {
+      const option = descriptor?.options?.find((item) => item.value === value)
+      const missing = !!descriptor?.options && !option
+      const hiddenByLimit = missing && !!descriptor?.optionsTruncated
+      out.push({
+        path,
+        key: parsed.key,
+        mode: parsed.mode,
+        bound: parsed.bound,
+        value,
+        label: option?.label ?? value,
+        fieldLabel: descriptor?.label ?? parsed.key,
+        excluded: parsed.mode === 'not',
+        unknown: missing && !hiddenByLimit,
+        ...(hiddenByLimit ? { hiddenByLimit: true } : {}),
+      })
+    }
+  }
+  return out
+}
 
 /** Патч канала состояния: ключ extra → значение (или снятие). */
 export type CatalogFilterPatch = Record<string, string | number | undefined>

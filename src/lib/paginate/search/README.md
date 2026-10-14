@@ -250,5 +250,5 @@ Svelte 5-обвязкой в `#lib/paginate/svelte/search/index.js`. Единс�
 сюда не переносился, — `catalog-filter.ts` (схема фильтров каталога → форма →
 адрес): он построен на form-API канона (`@/lib/form/core`: `defineForm`,
 `field`, `safeName`, `validators`), которого в порте форм нет, и принадлежит
-витрине каталога, а не механике поиска. Если он понадобится, это отдельная
-задача с адаптацией под `#lib/form/index.js`.
+витрине каталога, а не механике поиска. Он портирован отдельно, с адаптацией под
+`#lib/form/index.js`: соседний `paginate/filters` (`schema.ts`, `url.ts`, `form.ts`, `rules.ts`).

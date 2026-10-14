@@ -18,7 +18,7 @@
  * и пользователей, а схема одного запроса не должна становиться ответом другому.
  */
 import { BROWSER } from 'esm-env'
-import type { CatalogFilterSchema } from './catalog-filter'
+import type { CatalogFilterSchema } from './schema'
 
 export interface CatalogFilterSchemaMemory {
   /** Запомнить схему под её `source` (повторная — заменяет прежнюю). */

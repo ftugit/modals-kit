@@ -13,7 +13,7 @@ import {
   catalogFilterRemoveValuePatch,
   catalogFilterView,
 } from './view'
-import type { CatalogFilterSchema } from './catalog-filter'
+import type { CatalogFilterSchema } from './index'
 
 const schema: CatalogFilterSchema = {
   source: 'shikimori',

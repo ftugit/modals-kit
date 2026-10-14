@@ -42,6 +42,7 @@ import {
   type RickMortyCharacter,
 } from '../../content/rickmorty'
 import { RICKMORTY_FILTER_SCHEMA } from '../../content/rickmorty-filters'
+import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
 
 export const RICKMORTY_REST = 'https://rickandmortyapi.com/api/character/'
 export const RICKMORTY_GRAPHQL = 'https://rickandmortyapi.com/graphql'
@@ -195,7 +196,7 @@ export function rickMortyFilterParams(
   // (значение вне опций выбора, слишком длинный текст) или общая формулировка.
   const reason = errors.length ? `значение не прошло проверку (${errors.join(', ')})` : 'значение вне опций схемы'
   for (const key of Object.keys(usable)) {
-    if (!(key.slice('filters.'.length) in params)) dropped.push({ key, reason })
+    if (!(key.slice(FILTER_KEY_PREFIX.length) in params)) dropped.push({ key, reason })
   }
   return { params, dropped }
 }
@@ -261,6 +262,6 @@ export function parseCharactersQuery(
     return { ok: false, error: `limit: целое от 1 до ${RICKMORTY_LIMIT_MAX}` }
   const search = (params.get('search') ?? '').trim().slice(0, 120)
   const filters: Record<string, string> = {}
-  for (const [key, value] of params) if (key.startsWith('filters.')) filters[key] = value
+  for (const [key, value] of params) if (key.startsWith(FILTER_KEY_PREFIX)) filters[key] = value
   return { ok: true, query: { api: api as RickMortyApi, page, limit, ...(search ? { search } : {}), filters } }
 }
