@@ -37,10 +37,10 @@
     demoQueryOf,
     demoShikimoriApi,
     demoStaticFilterSchema,
-    loadFilterSchema,
     type DemoExtra,
     type DemoStore,
   } from './definition'
+  import { loadFilterSchema } from './sources'
   import FiltersPanel from './FiltersPanel.svelte'
   import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'

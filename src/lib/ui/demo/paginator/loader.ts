@@ -14,9 +14,8 @@ import {
   demoStaticFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
-  setLiveServerTransport,
-  setRickMortyServerTransport,
 } from './definition'
+import { setLiveServerTransport, setRickMortyServerTransport } from './sources'
 import type { DemoSrc } from './definition'
 import type { DemoItem } from '../../../../content/items'
 import type { CatalogFilterSchema } from '#lib/filters/index.js'
