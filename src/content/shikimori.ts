@@ -143,8 +143,9 @@ function apiUrl(path: string, params?: Record<string, string | number | undefine
 
 /**
  * Страница каталога у нашего бэкенда. Живой источник обслуживается на клиенте:
- * SSR-снапшот для него не строится (см. loader.ts) — серверу пришлось бы
- * вызывать собственный HTTP-эндпоинт, не добавляя ничего к клиентской загрузке.
+ * SSR-снапшот строится не через него, а серверным мостом (см. `+page.server.ts`
+ * страницы `/paginator`) — иначе серверу пришлось бы вызывать собственный
+ * HTTP-эндпоинт, не добавляя ничего к клиентской загрузке.
  */
 export async function getAnimesPage({ api, page, limit, search, filters, signal }: AnimesQuery): Promise<AnimesPage> {
   if (typeof window === 'undefined') {

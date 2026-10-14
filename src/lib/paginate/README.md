@@ -28,7 +28,7 @@ Headless-библиотека пагинации с разделением frame
 - **Тонкий адаптер**:
   - `src/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
 - **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер слоя фреймворка (`src/lib/router/sveltekit.ts`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса хост берёт у адаптера (`searchSpec`), поэтому спецификация не живёт в двух местах.
-- **Готовые UI-компоненты**: `src/lib/ui/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `EventLog` и др.).
+- **Готовые UI-компоненты**: `src/lib/ui/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
 ## Быстрый старт
 

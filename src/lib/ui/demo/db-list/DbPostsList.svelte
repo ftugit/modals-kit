@@ -69,7 +69,7 @@
   let { snapshot = null, showRaw = true, optimistic = null }: Props = $props()
 
   // Регистрация на стороне компонента — так же, как в демо пагинатора
-  // (`lib/ui/demo/paginator/PaginatorDemo.svelte`): тело родителя выполняется до
+  // (`routes/(site)/(app)/paginator/+page.svelte`): тело родителя выполняется до
   // инициализации `<PaginatorHost>`, поэтому хост заведомо видит экземпляр.
   // Функция идемпотентна (guard `hasPaginator`).
   ensureDbListPaginator()

@@ -36,6 +36,24 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 приложение. Связь тонкая: `commit` — это `setSearchQuery`, ресинк deep-link'а —
 `resyncSearch` при монтировании хоста результатов.
 
+Готовая склейка «поле lib form → стор пагинатора» без разметки — хук
+`usePaginatorSearch` из `#lib/ui/paginator/index.js` (форма, задержка,
+нормализация, «Найти»/«Сбросить» только до оживления, крестик — `clear`).
+Он живёт в `lib/ui/paginator`, а не здесь: склеивает lib form, роутер,
+lib paginate и lib search, а библиотека поиска от них не зависит.
+
+```svelte
+<script>
+  const search = usePaginatorSearch(name, { path: 'page.q', label: 'Поиск', query: () => query })
+</script>
+<Form form={search.form} hiddenFields={search.hiddenFields} onsubmit={search.submit}>
+  <SearchInput {...search.field.attrs} value={search.value} oninput={search.input} onClear={search.clear} />
+  {#if !search.hydrated}<button type="submit">Найти</button>{/if}
+</Form>
+```
+
+Пример страницы — `src/routes/(site)/(app)/paginator/SearchBar.svelte`.
+
 ## Подключение (три шага)
 
 ```ts

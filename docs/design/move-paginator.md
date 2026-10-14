@@ -121,15 +121,19 @@ const search = usePaginatorSearch(name, {
   - [x] Проверки: `gate.sh` (vitest подхватывает `src/**/*.test.ts`, в т. ч.
         `src/routes` — подхватил); размер `/paginator` 194.9; `paginate`, `capabilities`.
 
-- [ ] **5. Ссылки на старые пути.**
-  - [ ] `src/lib/ui/demo/db-list/DbPostsList.svelte:72` (комментарий про `PaginatorDemo`).
-  - [ ] Комментарий в бывшем `definition.ts:89`.
-  - [ ] `docs/audit/ratings.md` — раздел `demo/paginator` (живая таблица): новые пути.
-  - [ ] Исторические записи (`crutches.md`, `framework-imports.md`, `kit3-upgrade.md`)
+- [x] **5. Ссылки на старые пути.**
+  - [x] `src/lib/ui/demo/db-list/DbPostsList.svelte:72` (комментарий про `PaginatorDemo`).
+  - [x] Комментарий в бывшем `definition.ts:89` — ссылается на `#lib/ui/demo/db-list`, который
+        не переезжает: верен, без правки. Заодно `content/shikimori.ts` («см. loader.ts»).
+  - [x] `docs/audit/ratings.md` — раздел `demo/paginator` убран, строки — в разделах роута,
+        `lib/ui/filters`, `lib/ui/paginator`; у `+page.*` оценка снята до перечтения;
+        счётчик прогресса пересчитан по таблицам (197 / 404).
+  - [x] README: `lib/search` и `lib/paginate` упоминают `usePaginatorSearch`.
+  - [x] Исторические записи (`crutches.md`, `framework-imports.md`, `kit3-upgrade.md`)
         не правим: это журнал, пути там — на момент находки.
 
-- [ ] **6. Убрать папку.** `src/lib/ui/demo/paginator/` пуста и удалена;
-  `grep -rn "ui/demo/paginator" src tooling test` → только исторические документы.
+- [x] **6. Убрать папку.** `src/lib/ui/demo/paginator/` пуста и удалена;
+  `grep -rn "ui/demo/paginator" src tooling test` → пусто (папка ушла вместе с шагом 4).
 
 - [ ] **7. Итоговая проверка.**
   - [ ] `gate.sh` → `GATE OK`.

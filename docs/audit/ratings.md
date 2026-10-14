@@ -3,7 +3,7 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **192 / 395** файлов прочитано.
+Прогресс: **197 / 404** файлов прочитано (пересчитано по таблицам, ход 118).
 
 Средняя оценка по прочитанным: **8.8**.
 
@@ -19,7 +19,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `items.test.ts` | 52 | 10 | прочитан | Тесты поведения (totals по найденному, регистр, пустая выдача), а не реализации. |  |
-| `items.ts` | 104 | 7 | прочитан | Локальный источник демо, честный пагинатор (сужение до пагинации). −1 K4/K10: `demoFault` — глобальный флаг модуля, который включает `PaginatorDemo` и никто не сбрасывает: после визита на `?fault=init` клиентская навигация на `/paginator` без `fault` продолжает падать до перезагрузки. −1 K10: `validateItemsQuery` не используется нигде в `src` (мёртвый экспорт). −1 K5: проверка `typeof window` вместо `BROWSER` из `esm-env`/`browser`. | setTimeout×1 |
+| `items.ts` | 104 | 7 | прочитан | Локальный источник демо, честный пагинатор (сужение до пагинации). −1 K4/K10: `demoFault` — глобальный флаг модуля, который включает `/paginator` (`+page.svelte` роута) и никто не сбрасывает: после визита на `?fault=init` клиентская навигация на `/paginator` без `fault` продолжает падать до перезагрузки. −1 K10: `validateItemsQuery` не используется нигде в `src` (мёртвый экспорт). −1 K5: проверка `typeof window` вместо `BROWSER` из `esm-env`/`browser`. | setTimeout×1 |
 | `shikimori-filters.ts` | 117 | 9 | прочитан | Одно объявление полей, из него выводятся ключи адреса и reload-ключи; факты API проверены живьём и записаны. −1 K8: модуль из `src/content` (прикладной код), а импортируют его `$lib/server/*` (см. framework-imports.md, «Смежное»). |  |
 | `shikimori.ts` | 169 | 8 | прочитан | Клиентский транспорт только к собственному бэкенду, схема проверяется валидатором. −1 K9: ответ каталога `(await res.json()) as AnimesPage` не проверяется, хотя схему фильтров рядом валидируют. −1 K10: разбор ошибки ответа скопирован дважды (`getAnimesPage`, `getShikimoriFilters`). |  |
 
@@ -502,25 +502,6 @@
 | `registry.ts` | 70 | — | ⏳ |  | setTimeout×1, any×1 |
 | `sources.svelte.ts` | 16 | — | ⏳ |  |  |
 
-## `src/lib/ui/demo/paginator/`
-
-| Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
-|---|---:|:---:|:---:|---|---|
-| `AnimeRow.svelte` | 43 | — | ⏳ |  | relative-out-of-lib×1 |
-| `AnimeTile.svelte` | 28 | — | ⏳ |  | relative-out-of-lib×1 |
-| `DemoPaginator.svelte` | 568 | — | ⏳ |  | $effect×1, untrack×2 |
-| `FiltersPanel.svelte` | 136 | — | ⏳ |  | $app/×1 |
-| `GalleryDemo.svelte` | 129 | — | ⏳ |  | relative-out-of-lib×1 |
-| `ItemRow.svelte` | 21 | — | ⏳ |  |  |
-| `PaginatorDemo.svelte` | 115 | — | ⏳ |  | relative-out-of-lib×1, window/document×2 |
-| `SearchQueryForm.svelte` | 195 | — | ⏳ |  | setTimeout×1, svelte-ignore×3 |
-| `ShotTile.svelte` | 36 | — | ⏳ |  | relative-out-of-lib×1 |
-| `definition.test.ts` | 51 | — | ⏳ |  |  |
-| `definition.ts` | 631 | — | ⏳ |  | relative-out-of-lib×3 |
-| `item-views.ts` | 77 | — | ⏳ |  | relative-out-of-lib×2 |
-| `loader.ts` | 110 | — | ⏳ |  | relative-out-of-lib×1 |
-| `types.ts` | 23 | — | ⏳ |  | relative-out-of-lib×1 |
-
 ## `src/lib/ui/demo/spike/`
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
@@ -533,7 +514,8 @@
 |---|---:|:---:|:---:|---|---|
 | `ActiveFilters.svelte` | 79 | — | ⏳ |  |  |
 | `CatalogFilterForm.svelte` | 235 | — | ⏳ |  | svelte-ignore×2 |
-| `index.ts` | 3 | — | ⏳ |  |  |
+| `FiltersPanel.svelte` | 137 | — | ⏳ |  |  |
+| `index.ts` | 4 | — | ⏳ |  |  |
 
 ## `src/lib/ui/modals/`
 
@@ -575,7 +557,8 @@
 | `compile.test.ts` | 165 | — | ⏳ |  |  |
 | `compile.ts` | 229 | — | ⏳ |  |  |
 | `event-log.ts` | 19 | — | ⏳ |  | any×1 |
-| `index.ts` | 25 | — | ⏳ |  |  |
+| `index.ts` | 26 | — | ⏳ |  |  |
+| `search.svelte.ts` | 214 | — | ⏳ |  | setTimeout×1, untrack×1 |
 | `types.ts` | 55 | — | ⏳ |  |  |
 
 ## `src/lib/ui/primitives/`
@@ -741,8 +724,22 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `+page.server.ts` | 16 | 10 | прочитан | Тонкий server load, вся логика — в `loader` демо; решение о чистке адреса задокументировано. |  |
-| `+page.svelte` | 21 | 9 | прочитан | Тонкий маршрут. −1 K9: ручной `interface Props { data: PageData }` вместо `PageProps`. |  |
+| `+page.server.ts` | 118 | — | ⏳ | Ход 118: сюда перенесено тело `lib/ui/demo/paginator/loader.ts`; оценка снята до перечтения. |  |
+| `+page.svelte` | 120 | — | ⏳ | Ход 118: сюда перенесено тело `PaginatorDemo.svelte`; оценка снята до перечтения. | window/document×2 |
+| `AnimeRow.svelte` | 43 | — | ⏳ |  |  |
+| `AnimeTile.svelte` | 28 | — | ⏳ |  |  |
+| `CatalogDemo.svelte` | 622 | — | ⏳ |  | $effect×1, untrack×2 |
+| `CharacterRow.svelte` | 34 | — | ⏳ |  |  |
+| `CharacterTile.svelte` | 25 | — | ⏳ |  |  |
+| `GalleryDemo.svelte` | 129 | — | ⏳ |  |  |
+| `ItemRow.svelte` | 21 | — | ⏳ |  |  |
+| `SearchBar.svelte` | 94 | — | ⏳ |  | svelte-ignore×1 |
+| `ShotTile.svelte` | 36 | — | ⏳ |  |  |
+| `definition.test.ts` | 113 | — | ⏳ |  |  |
+| `definition.ts` | 442 | — | ⏳ |  |  |
+| `item-views.ts` | 85 | — | ⏳ |  |  |
+| `sources.ts` | 347 | — | ⏳ |  |  |
+| `types.ts` | 23 | — | ⏳ |  |  |
 
 ## `src/routes/spike/`
 
