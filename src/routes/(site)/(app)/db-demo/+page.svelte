@@ -16,6 +16,7 @@
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageProps } from './$types'
+  import Alert from '#lib/ui/primitives/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
   import { usePaginatorActions } from '#lib/paginate/svelte/index.js'
   import { DB_LIST_NAME, ensureDbListPaginator } from '#lib/ui/demo/db-list/definition.js'
@@ -63,9 +64,7 @@
        цифры на этом месте остались бы вчерашними. -->
 
   {#if notice}
-    <p class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" role="status" data-testid="notice">
-      {notice}
-    </p>
+    <Alert variant="success" role="status" data-testid="notice">{notice}</Alert>
   {/if}
 
   {#if data.schema || !data.snapshot}

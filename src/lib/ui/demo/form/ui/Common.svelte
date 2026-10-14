@@ -1,18 +1,15 @@
 <script lang="ts">
   // Общий блок: ошибки без пути. Код приложения.
   import type { FormError } from '#lib/form/index.js'
+  import Alert from '#lib/ui/primitives/Alert.svelte'
 
   let { errors, title }: { errors: readonly FormError[]; title?: string } = $props()
 </script>
 
-<!-- без bg-подложки: text-destructive на 5%-тонированном фоне даёт 4.36:1.
-     Рамка и цвет текста держат сигнал в обеих темах. -->
+<!-- Alert держит текст цветом `foreground`: красный текст на тонированном фоне
+     не добирает 4.5:1 (было 4.36:1); сигнал несут рамка и подложка. -->
 {#if errors.length}
-  <div role="alert" aria-live="assertive"
-       class="rounded-lg border border-destructive/40 px-3 py-2">
-    {#if title}<div class="mb-1 text-xs font-semibold text-destructive">{title}</div>{/if}
-    {#each errors as e (e.id)}
-      <p class="text-sm text-destructive">{e.message}</p>
-    {/each}
-  </div>
+  <Alert variant="destructive" aria-live="assertive" {title}>
+    {#each errors as e (e.id)}<p>{e.message}</p>{/each}
+  </Alert>
 {/if}

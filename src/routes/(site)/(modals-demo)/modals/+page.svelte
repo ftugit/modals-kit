@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink, useModalLink } from '#lib/components/links/index.js'
-  import { Button, buttonVariants } from '#lib/ui/primitives/index.js'
+  import { Button, buttonVariants, Fieldset } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -64,8 +64,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
       </div>
     </header>
 
-    <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
-      <legend class="sr-only">Демо модалок</legend>
+    <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Демо модалок" legendVariant="hidden" class="block">
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <!-- Обычные модалки НЕ копируют defaultMobile в override: направление
@@ -183,7 +182,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
          на узком экране получает слой хоста. Источники — состояние
          приложения (sources.svelte.ts), панель пишет прямо в него. -->
       <SourcesPanel />
-    </fieldset>
+    </Fieldset>
 
     <p class="text-xs text-muted-foreground">
       В мобильном режиме размеры не действуют: модалка занимает всю ширину (верх/низ) или всю

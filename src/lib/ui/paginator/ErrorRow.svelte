@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { buttonVariants } from '#lib/ui/primitives/index.js'
+  import { Alert, buttonVariants } from '#lib/ui/primitives/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
 
   interface Props {
@@ -22,19 +22,13 @@
   {#if children}
     {@render children({ error: pagState().error, retry })}
   {:else}
-    <div
-      role="alert"
-      data-testid="error-row"
-      class="my-2 flex items-center justify-between rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-    >
-      <span>Ошибка загрузки: {pagState().error ?? 'неизвестная ошибка'}</span>
-      <button
-        type="button"
-        class={buttonVariants({ variant: 'outline', size: 'sm' })}
-        onclick={() => retry()}
-      >
-        {retryLabel}
-      </button>
-    </div>
+    <Alert variant="destructive" data-testid="error-row" class="my-2">
+      <div class="flex items-center justify-between gap-3 justify-self-stretch">
+        <span>Ошибка загрузки: {pagState().error ?? 'неизвестная ошибка'}</span>
+        <button type="button" class={buttonVariants({ variant: 'outline', size: 'sm' })} onclick={() => retry()}>
+          {retryLabel}
+        </button>
+      </div>
+    </Alert>
   {/if}
 {/if}

@@ -574,7 +574,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `AffixSwap.svelte` | 41 | — | ⏳ |  |  |
-| `Alert.svelte` | 49 | — | ⏳ |  |  |
+| `Alert.svelte` | 60 | — | ⏳ |  | по shadcn v4 (title + описание + иконка); используется: уведомление `/db-demo`, общая ошибка формы, строка ошибки пагинатора |
 | `AutoTextarea.svelte` | 55 | — | ⏳ |  | addEventListener×1 |
 | `Badge.svelte` | 54 | — | ⏳ |  |  |
 | `Button.svelte` | 81 | — | ⏳ |  | $effect×1 |
@@ -586,7 +586,7 @@
 | `CardHeader.svelte` | 19 | — | ⏳ |  |  |
 | `CardTitle.svelte` | 19 | — | ⏳ |  |  |
 | `Checkbox.svelte` | 37 | — | ⏳ |  |  |
-| `Fieldset.svelte` | 30 | — | ⏳ |  |  |
+| `Fieldset.svelte` | 45 | — | ⏳ |  | по shadcn v4 (legend/label/hidden + description); используется: `/form` ×3, `/modals` |
 | `Input.svelte` | 17 | — | ⏳ |  |  |
 | `InputAffix.svelte` | 27 | — | ⏳ |  |  |
 | `InputShell.svelte` | 19 | — | ⏳ |  |  |

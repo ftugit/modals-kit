@@ -203,7 +203,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
 
-  const rows = () => pg.locator('fieldset[class*="space-y-3"] [data-row]').count()
+  const rows = () => pg.locator('fieldset', { has: pg.locator('legend', { hasText: 'Позиции' }) }).locator('[data-row]').count()
   ok('группа начинается с одной строки', await rows() === 1)
   await click(pg, '+ Позиция')
   ok('строка добавлена', await rows() === 2)

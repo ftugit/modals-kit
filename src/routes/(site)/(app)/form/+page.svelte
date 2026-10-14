@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink } from '#lib/components/links/index.js'
-  import { Button } from '#lib/ui/primitives/index.js'
+  import { Button, Fieldset } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
@@ -290,8 +290,7 @@ import { asLink } from '#lib/components/links/index.js'
 
     <!-- ── настройки ─────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
-        <legend class="sr-only">Настройки формы</legend>
+      <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Настройки формы" legendVariant="hidden" class="grid gap-4 sm:grid-cols-2">
         {#each ['mode', 'invalid_from', 'intercept', 'live', 'cardinality', 'markup', 'parallel'] as name (name)}
           {@const v = settings.field(name)!}
           <PanelField label={v.label ?? name}>
@@ -314,7 +313,7 @@ import { asLink } from '#lib/components/links/index.js'
             <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
           {/if}
         </div>
-      </fieldset>
+      </Fieldset>
       <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>
              не показал бы подсказку, когда JS включён, но ещё не загрузился. -->
         {#if jsOnly()}<p class="mt-3 text-xs text-muted-foreground" data-js-only-hint>Настройки неактивны — {JS_ONLY_REASON}.</p>{/if}
@@ -349,8 +348,7 @@ import { asLink } from '#lib/components/links/index.js'
         <Field of={form.f.agree} />
 
         <!-- повторяемая группа: ключи стабильны, индекс — производное -->
-        <fieldset class="space-y-3 rounded-lg border border-border p-3">
-          <legend class="px-1 text-xs font-medium text-muted-foreground">Позиции</legend>
+        <Fieldset legend="Позиции" legendVariant="label" class="gap-3 rounded-lg border border-border p-3">
           {#each form.rows('items').keys as key (key)}
             <div data-row={key} class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
               {#each form.rows('items').row(key) as f (f.name)}<Field of={f} />{/each}
@@ -364,7 +362,7 @@ import { asLink } from '#lib/components/links/index.js'
                   onclick={() => form.apply([editor.addRow('items', `r${Date.now() % 100000}`)])}>
             + Позиция
           </Button>
-        </fieldset>
+        </Fieldset>
 
         <!-- поле, созданное в рантайме: та же операция, те же атрибуты -->
         {#if form.custom().length}
@@ -396,8 +394,7 @@ import { asLink } from '#lib/components/links/index.js'
     {/if}
 
     <!-- ── песочница расширения ──────────────────────────────────── -->
-    <fieldset disabled={jsOnly()} data-js-only-settings="" class="m-0 min-w-0 border-0 p-0">
-      <legend class="sr-only">Настройки расширения</legend>
+    <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Настройки расширения" legendVariant="hidden" class="block">
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
         <div class="mb-3 grid gap-4 sm:grid-cols-2">
@@ -486,7 +483,7 @@ import { asLink } from '#lib/components/links/index.js'
           в <code>source</code>, чтобы было чем манипулировать.
         </p>
         </section>
-    </fieldset>
+    </Fieldset>
 
     <!-- ── отчёт: собирается обходом реестра ─────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
