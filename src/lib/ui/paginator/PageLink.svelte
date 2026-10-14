@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   import { buttonVariants } from '#lib/ui/primitives/index.js'
   import { usePageHref, usePaginatorActions } from '#lib/paginate/svelte/index.js'
 
@@ -42,9 +42,8 @@
 </script>
 
 {#if href !== null && !current && !disabled}
-  <Link
+  <a {...asLink(href)}
     class={cls}
-    {href}
     aria-label={label}
     aria-current={current ? 'page' : undefined}
     onmouseenter={() => prefetchPage(page)}
@@ -59,7 +58,7 @@
     {:else}
       {page}
     {/if}
-  </Link>
+  </a>
 {:else if href !== null}
   <span
     class={cls}

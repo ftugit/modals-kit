@@ -145,8 +145,6 @@ export const MODAL_ERROR_CLASS =
 export const MODAL_ERROR_TITLE_CLASS = 'text-sm font-semibold'
 export const MODAL_ERROR_HINT_CLASS =
   'text-xs text-[color-mix(in_oklab,var(--destructive)_78%,var(--muted-foreground))]'
-export const MODAL_SPINNER_CLASS =
-  'size-3.5 rounded-full border-2 border-current border-t-transparent animate-spin animate-[spin_0.7s_linear_infinite]!'
 
 /* ── анимации открытия/закрытия ───────────────────────────────────── */
 

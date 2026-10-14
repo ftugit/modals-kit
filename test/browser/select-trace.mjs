@@ -22,7 +22,7 @@ function withTraceValue(url, value) {
 }
 
 async function openInnerSelect(page) {
-  await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+  await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).click()
   await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
   await page.locator('[data-modal-layer][data-active] select').first().click({ force: true })
   await page.waitForSelector('[data-host-floating]', { state: 'visible' })

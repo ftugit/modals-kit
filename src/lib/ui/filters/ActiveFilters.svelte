@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   /**
    * Активные фильтры списком — только разметка.
    *
@@ -55,8 +55,7 @@
   {/if}
   {#if chips.length}
     {#each chips as chip (chip.path + '=' + chip.value)}
-      <Link
-        href={chip.href || undefined}
+      <a {...asLink(chip.href || undefined)}
         onclick={(event) => click(event, chip)}
         data-testid="active-filter"
         data-filter-path={chip.path}
@@ -71,7 +70,7 @@
         <span>{chip.label}</span>
         <span aria-hidden="true">✕</span>
         <span class="sr-only">— убрать этот фильтр</span>
-      </Link>
+      </a>
     {/each}
   {:else}
     <span class="text-xs text-muted-foreground" data-testid="active-filters-empty">Фильтры не выбраны</span>

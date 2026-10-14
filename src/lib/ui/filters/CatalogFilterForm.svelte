@@ -29,7 +29,7 @@
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   import { Button, Input, Select } from '#lib/ui/primitives/index.js'
 
   interface Props {
@@ -235,13 +235,12 @@
 
   <div class="flex flex-wrap items-center justify-end gap-2">
     {#if resetHref}
-      <Link
-        href={resetHref}
+      <a {...asLink(resetHref)}
         data-testid="catalog-filter-reset"
         class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
       >
         Сбросить
-      </Link>
+      </a>
     {/if}
     <Button type="submit" size="sm" data-testid="catalog-filter-submit">Применить</Button>
   </div>

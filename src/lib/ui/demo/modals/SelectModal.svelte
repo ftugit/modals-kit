@@ -3,7 +3,6 @@ import { Button } from '#lib/ui/primitives/index.js'
   import { Select } from '#lib/ui/index.js'
   import FloatingMenu from './FloatingMenu.svelte'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { modalTriggerVariants } from '#lib/ui/modals/index.js'
   const genres = [
     { value: 'action', label: 'Боевик' },
     { value: 'drama', label: 'Драма', hint: 'включая мелодраму' },
@@ -43,9 +42,7 @@ import { Button } from '#lib/ui/primitives/index.js'
       sheetOnNarrow={false}
       items={[{ label: 'Этот оверлей не прижимается', hint: 'sheetOnNarrow=false' }]}
     />
-    <Button variant="plain" size="none"
-      
-      class={modalTriggerVariants()}
+    <Button variant="outline"
       onclick={() => m.modals.openLayer({ content: storagelessHere })}
     >
       Без хранилища поверх

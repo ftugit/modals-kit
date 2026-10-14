@@ -92,10 +92,10 @@ type TaskProgress =
 
 | Что | Сколько | Где | Источник состояния | Что нужно |
 |---|---:|---|---|---|
-| `ModalTrigger` | 28 | `/modals`, `CardModal`, `FullpageModal` | lib/modals | уже есть спиннер (`ButtonIndicator`); добавить процент и сообщение глобальному лоадеру |
-| `LoadLink` | — | — | — | ✅ ход 141: удалён, функционал в `Link` (`#lib/components/links`): битая ссылка блокируется («!», без `href`), `navigateOnError={false}` держит ошибку на ссылке, `replace` |
+| Ссылки на модалки (`asModalLink`) | 14 | `/modals`, `CardModal`, `FullpageModal` | lib/modals | ✅ ход 149: `<Button {...asModalLink(…)}>` — спиннер и «!» общим правилом CSS; осталось: процент и сообщение глобальному лоадеру |
+| `LoadLink` | — | — | — | ✅ ход 141: удалён, функционал в `Link`, с хода 149 — `asLink` (`#lib/components/links`): битая ссылка блокируется («!», без `href`), `navigateOnError={false}` держит ошибку на ссылке, `replace` |
 | `<Button>` | 42 | формы (`/form` ×5, `CreateForm`, `RemoveForm`, `SchemaPending`), `CatalogFilterForm`, `PageNav`, демо модалок | lib/form, lib/paginate или своё действие | **у `Button` нет состояния загрузки**: проп `task?: TaskState` → спиннер, процент, `aria-busy`, `disabled` |
-| Простые `<a href>` (переходы Kit) | ~20 | `NavSlot`, `SidebarNav`, `LogoSlot`, `SiteFooter`, `ErrorPage`, главная, `/cards/[id]`, `/form`, `AnimeRow`, `/modals` | lib/router (`navigating`, вариант (а)) | ✅ ход 138: `Link` (с хода 141 — `#lib/components/links`) — обычная `<a href>`; `linkTask(href)` из `#lib/router/sveltekit.js` сравнивает адрес с `navigating.to.url` (путь + query, без якоря); спиннер через 150 мс, `aria-busy`. Тип `TaskState` — `#lib/task`. Заменены все простые ссылки, кроме `LoadLink`/`ModalTrigger` |
+| Простые `<a href>` (переходы Kit) | ~20 | `NavSlot`, `SidebarNav`, `LogoSlot`, `SiteFooter`, `ErrorPage`, главная, `/cards/[id]`, `/form`, `AnimeRow`, `/modals` | lib/router (`navigating`, вариант (а)) | ✅ ход 138: `Link` (с хода 149 — атрибуты `asLink` на свою `<a>`) — обычная `<a href>`; `linkTask(href)` из `#lib/router/sveltekit.js` сравнивает адрес с `navigating.to.url` (путь + query, без якоря); спиннер через 150 мс, `aria-busy`. Тип `TaskState` — `#lib/task`. Заменены все простые ссылки, кроме `LoadLink`/`ModalTrigger` |
 | Ссылки пагинатора | 4 | `PageLink`, `LoadMoreLink`, `ResetButton`, `ErrorRow` (повтор) | lib/paginate | читать `taskOf(state)`, спиннер на той ссылке, которую нажали (`pending.page`) |
 | Поиск каталога | 1 | `SearchBar` (`SearchInput`) | lib/paginate + lib/search | спиннер или процент в поле |
 | Чипы и сброс фильтров | 2 | `ActiveFilters`, ссылка «Сбросить» в `CatalogFilterForm` | lib/paginate | как у ссылок пагинатора |
@@ -118,7 +118,7 @@ type TaskProgress =
 | P4 | `CatalogDemo` `loadSchema` | при переходе внутри сайта схема запрашивается **после** того, как страница смонтирована | начать запрос в момент нажатия, вместе с `__data.json` | время сборки схемы перекрывается с переходом | лишний запрос, если переход отменили; закрывается сигналом отмены |
 | — | `db-demo/+page.server.ts` | список, а экран схемы — только при ошибке | оставить | — | последовательность намеренная: исправная страница не платит лишний запрос |
 | — | `defineSchema.sync` | `upToDate`, затем `recorded(tx)` в транзакции | оставить | — | повтор только на пути переноса, под блокировкой: так и нужно |
-| — | `ModalTrigger` / `Link navigateOnError={false}`: загрузка, потом открытие или переход | оставить | — | — | так задумано: модалка или страница открывается уже с данными |
+| — | `asModalLink` / `asLink(href, { navigateOnError: false })`: загрузка, потом открытие или переход | оставить | — | — | так задумано: модалка или страница открывается уже с данными |
 
 Запуск базы и сборка схемы Shikimori в рамках одной задачи сейчас **нигде не встречаются вместе**. Если появятся, их можно запускать параллельно, они независимы.
 

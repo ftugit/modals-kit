@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   import { NAV_ITEMS } from './nav'
 </script>
 
@@ -10,9 +10,9 @@
     </span>
     <nav class="flex flex-wrap gap-5 text-sm" aria-label="Разделы сайта">
       {#each NAV_ITEMS as item}
-        <Link href={item.to} class="text-muted-foreground transition-colors hover:text-foreground">
+        <a {...asLink(item.to)} class="text-muted-foreground transition-colors hover:text-foreground">
           {item.label}
-        </Link>
+        </a>
       {/each}
     </nav>
   </div>

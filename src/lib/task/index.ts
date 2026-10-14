@@ -7,7 +7,7 @@
  *    `RuntimeStatus` модалок…) и этот модуль не импортирует никогда;
  *  - адаптер библиотеки к фреймворку переводит её слова в `TaskState`
  *    (`#lib/router/sveltekit.js` → `linkTask`, дальше — адаптеры остальных);
- *  - UI читает только `TaskState` (`TaskIndicator`, `Link`).
+ *  - UI читает только `TaskState` (`asLink` в `#lib/components/links`).
  *
  * Модуль чистый: ни фреймворка, ни DOM — только тип и арифметика.
  */

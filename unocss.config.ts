@@ -1,4 +1,5 @@
 import { defineConfig, presetWind4 } from 'unocss';
+import { LINK_INDICATOR_CSS } from './src/lib/components/links/indicator';
 
 /**
  * UnoCSS 66 / presetWind4 со встроенным reset'ом (Tailwind v4 preflight).
@@ -22,6 +23,9 @@ export default defineConfig({
       preflights: { reset: true } 
     })
   ],
+  // Вид состояния ссылок `asLink`/`asModalLink` (спиннер, «!», %): элемент
+  // принадлежит потребителю, поэтому правило одно и глобальное.
+  preflights: [{ getCSS: () => LINK_INDICATOR_CSS }],
   shortcuts: {
     'nav-pill': 'rounded-full px-3.5 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
     'nav-pill-active': 'bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground',

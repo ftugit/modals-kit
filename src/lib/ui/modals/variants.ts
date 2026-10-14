@@ -12,7 +12,7 @@ import {
  *
  * Всё оформление — атомарные утилиты UnoCSS/presetWind4; CSS-файла у
  * модальной системы нет вовсе. Маркер-классов тоже: снаружи система видна
- * по data-атрибутам (`data-modal-trigger`, `data-modal-btn`,
+ * по data-атрибутам (`data-modal-link`, `data-modal-btn`,
  * `data-modal-popup`…), их ставят компоненты.
  *
  * Общие части оболочки/фона берутся из `#lib/modals/svelte/classes.js` —
@@ -69,19 +69,6 @@ export const modalButtonVariants = variants(
     variant: 'default',
     size: 'md',
   },
-)
-
-/**
- * Триггер модалки: та же геометрия, но с карточным фоном и состояниями
- * загрузки/ошибки/открытия (data-state ставит ModalTrigger/Link).
- *
- * У состояния ошибки есть и ховер-двойник: без него ховер (одинаковая
- * специфичность, но позже в таблице утилит) перекрашивал бы кнопку в accent.
- */
-export const modalTriggerVariants = variants(
-  `${ACTION_BASE} border border-border bg-card text-card-foreground shadow-[0_1px_2px_color-mix(in_oklab,var(--foreground)_6%,transparent)] hover:bg-accent hover:text-accent-foreground data-[state=loading]:cursor-not-allowed data-[state=error]:cursor-not-allowed data-[state=open]:cursor-not-allowed data-[state=loading]:opacity-65 data-[state=error]:opacity-65 data-[state=open]:opacity-85 data-[state=error]:bg-destructive data-[state=error]:text-destructive-foreground data-[state=error]:hover:bg-destructive data-[state=error]:hover:text-destructive-foreground`,
-  {},
-  {},
 )
 
 export type ModalButtonVariants = VariantProps<{

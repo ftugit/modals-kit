@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
@@ -75,12 +75,11 @@
           демо-панели.
         </p>
       </div>
-      <Link
-        href="/"
+      <a {...asLink('/')}
         class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
       >
         ← на главную
-      </Link>
+      </a>
     </div>
 
     <div class="mt-5">

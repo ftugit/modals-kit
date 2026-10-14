@@ -1,6 +1,6 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Link } from '#lib/components/links/index.js'
+import { asLink } from '#lib/components/links/index.js'
   import { Button } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
@@ -285,10 +285,10 @@ import { Link } from '#lib/components/links/index.js'
           один обработчик — массив на входе, массив на выходе.
         </p>
       </div>
-      <Link href="/modals"
+      <a {...asLink('/modals')}
          class="rounded-md border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
         Модалки
-      </Link>
+      </a>
     </header>
 
     <!-- ── настройки ─────────────────────────────────────────────── -->

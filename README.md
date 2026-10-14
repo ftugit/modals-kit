@@ -76,7 +76,7 @@
 | `ChainEngine`, `memoryEngine()` | тип и фабрика | Описывают среду URL и истории и создают её память-реализацию. |
 | `ModalHost` | Svelte-компонент | Монтирует контекст, сцену, историю, фокус и визуальную оболочку стопки. |
 | `Layers`, `Tails`, `ModalContent` | Svelte-компоненты | Рендерят слои, хвосты и содержимое одной зарегистрированной модалки. |
-| `ModalTrigger` | Svelte-компонент | Открывает зарегистрированную модалку и при доступном href работает как ссылка. |
+| `useModalLink()` → `asModalLink()` | Svelte-хук (`#lib/components/links`) | Атрибуты для своей `<a>` или `Button`: открывает зарегистрированную модалку, без JS — ссылка на её `route`. |
 | `useChain()`, `useModalDepth()`, `useModalsOpen()`, `useChainLocked()`, `useHostConfig()` | Svelte-хуки | Возвращают живые read-only представления цепочки, её состояния и конфигурации хоста. |
 | `useModal()`, `ModalHandle` | Svelte-хук и тип | Возвращают живой контекст текущего содержимого модалки. |
 | `useModalState()`, `ModalStateHandle` | Svelte-хук и тип | Возвращают resolved-запись и runtime-состояние модалки по имени или индексу. |

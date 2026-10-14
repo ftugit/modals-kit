@@ -304,7 +304,7 @@
 | `Layers.svelte` | 39 | 10 | прочитан | Ход 12: без замечаний |  |
 | `ModalContent.svelte` | 91 | 8 | прочитан | Ход 12: C13 — показывает сырой rt.error; renderError/renderSkeleton через as any | $effect×1, any×4, untrack×1 |
 | `ModalHost.svelte` | 1171 | 4 | прочитан | Ход 12: F26 (утечка зеркал/загрузчиков при каждом переподключении, +1 на переход /modals↔/), F27 (attach не в untrack); сериализатор стиля без экранирования (сток F28); 3 копии css(); closeFloating(…,'escape') для «Назад»; K9 any (:102, :974, :1022) Ход 13: F26/F27 исправлены (31668f1); F38 — нет синхронизации цепочки при переходе в той же области (ждёт решения). | $effect×9, window/document×16, setTimeout×3, rAF×3, microtask×1, any×4, untrack×6, addEventListener×4 |
-| `ModalTrigger.svelte` | 202 | 5 | прочитан | Ход 12: F29 (открытие после await preload на чужой странице); импорт $lib/ui/modals (lib→ui, K8); кандидат — href из нереактивного location Ход 13: F29 исправлен (31668f1); кандидат подтверждён как F37 (ждёт решения API). | $effect×2 **Ход 141:** перенесён в `src/lib/components/links/` (UI над модалками рядом с `Link`); нарушение lib→ui снято. |
+| `ModalTrigger.svelte` | 202 | 5 | прочитан | Ход 12: F29 (открытие после await preload на чужой странице); импорт $lib/ui/modals (lib→ui, K8); кандидат — href из нереактивного location Ход 13: F29 исправлен (31668f1); кандидат подтверждён как F37 (ждёт решения API). | $effect×2 **Ход 141:** перенесён в `src/lib/components/links/` (UI над модалками рядом с `Link`); нарушение lib→ui снято. **Ход 149:** компонент удалён — `asModalLink`/`asLink` в `components/links/*.svelte.ts` (атрибуты на свою `<a>`/`Button`). |
 | `Tails.svelte` | 84 | 6 | прочитан | Ход 12: F31 (entered не чистится — нет анимации у повторного хвоста); копия сериализатора стиля Ход 13: F31 исправлен (31668f1). | $effect×1, rAF×1 |
 | `classes.ts` | 171 | 10 | прочитан | Ход 12: без замечаний |  |
 | `context.ts` | 221 | 9 | прочитан | Ход 12: прочитан, без существенных замечаний | window/document×2 |
@@ -361,7 +361,7 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `LoadLink.svelte` | 112 | 8 | прочитан | Пересмотрено в ходе 6 после исправления C4 (4866d35). Ссылка работает без JS, «битая» — уже в SSR (K6). Исход предзагрузки — через адаптер `preloadOutcome` по контракту kit 3; переадресация не ошибка, отказ предзагрузки не оставляет вечное `loading` (K3). Ограничение kit 2.x (ошибка загрузчика не видна, sveltejs/kit#12399) описано в JSDoc `navigateOnError` — не дефект кода. −1 K2: флаг гидрации `pending` выставляется через `$effect` (идиоматичнее `onMount`); −1 K10: шапка ещё говорит «preloadData/goto из $app/navigation», хотя preloadData теперь через адаптер. | $effect×1, $app/×1 **Ход 141:** удалён — функционал (битая ссылка, `navigateOnError`, `replace`) в `src/lib/components/links/Link.svelte`. |
+| `LoadLink.svelte` | 112 | 8 | прочитан | Пересмотрено в ходе 6 после исправления C4 (4866d35). Ссылка работает без JS, «битая» — уже в SSR (K6). Исход предзагрузки — через адаптер `preloadOutcome` по контракту kit 3; переадресация не ошибка, отказ предзагрузки не оставляет вечное `loading` (K3). Ограничение kit 2.x (ошибка загрузчика не видна, sveltejs/kit#12399) описано в JSDoc `navigateOnError` — не дефект кода. −1 K2: флаг гидрации `pending` выставляется через `$effect` (идиоматичнее `onMount`); −1 K10: шапка ещё говорит «preloadData/goto из $app/navigation», хотя preloadData теперь через адаптер. | $effect×1, $app/×1 **Ход 141:** удалён — функционал (битая ссылка, `navigateOnError`, `replace`) в `src/lib/components/links/Link.svelte`. **Ход 149:** компонент удалён — `asModalLink`/`asLink` в `components/links/*.svelte.ts` (атрибуты на свою `<a>`/`Button`). |
 | `sveltekit.ts` | 211 | 9 | прочитан | Ход 10: F12 исправлен (614e35a) — syncAddress копится до afterNavigate, регрессия R-32. −1 K9: page.state приводится к Record<string, unknown> — App.PageState не объявлен | $app/×3, window/document×15, history.*State×3, sveltekit-internal×1, addEventListener×1 |
 
 ## `src/lib/search/`
@@ -530,7 +530,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `BackdropCloseIcon.svelte` | 8 | — | ⏳ |  |  |
-| `ButtonIndicator.svelte` | 18 | — | ⏳ |  |  |
+| `ButtonIndicator.svelte` | — | — | удалён | Ход 149: спиннер/«!» ссылок — одно правило CSS (`components/links/indicator.ts`). |  |
 | `CloseAllButton.svelte` | 34 | — | ⏳ |  |  |
 | `CloseIcon.svelte` | 18 | — | ⏳ |  |  |
 | `ForceClose.svelte` | 43 | — | ⏳ |  |  |

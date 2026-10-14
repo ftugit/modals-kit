@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Link, ModalTrigger } from '#lib/components/links/index.js'
-  import { Button } from '#lib/ui/primitives/index.js'
+import { asLink, useModalLink } from '#lib/components/links/index.js'
+  import { Button, buttonVariants } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -10,22 +10,23 @@ import { Link, ModalTrigger } from '#lib/components/links/index.js'
   // страница читает живой контекст, а настройки шлёт через
   // modals.configure() — конфигурация хоста и так живёт в сторе ядра.
   // Отличия от оригинала (не фичи, а среда):
-  //   • LoadLink (быстрый роутер) → `Link` (`#lib/components/links`):
+  //   • LoadLink (быстрый роутер) → `asLink` (`#lib/components/links`):
   //     спиннер на ссылке, битая ссылка блокируется ядром через таблицу
-  //     роутов (осмотр 1.10-2, №30/№31), `navigateOnError={false}` держит
+  //     роутов (осмотр 1.10-2, №30/№31), `navigateOnError: false` держит
   //     ошибку загрузчика на ссылке;
   //   • «Pager Demo» → «Цикл» (/cycle): страницы /paginator в порте нет;
   //   • SourcesPanel — расширение порта: выбор источников цепочки
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { CloseAllButton, modalTriggerVariants } from '#lib/ui/modals/index.js'
+  import { CloseAllButton } from '#lib/ui/modals/index.js'
   import SettingsPanel from '#lib/ui/demo/modals/SettingsPanel.svelte'
   import SourcesPanel from '#lib/ui/demo/modals/SourcesPanel.svelte'
   import FloatingMenu from '#lib/ui/demo/modals/FloatingMenu.svelte'
 
   // Живой контекст: геттеры видят смену ядра при смене источников.
   const m = useModals()
+  const asModalLink = useModalLink()
   /**
    * Модалка БЕЗ хранилища: `openLayer` кладёт в цепочку transient-запись.
    * Содержимое живёт в памяти вкладки, в адрес не попадает и перезагрузку
@@ -58,18 +59,16 @@ import { Link, ModalTrigger } from '#lib/components/links/index.js'
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <Link
-          href="/"
+        <a {...asLink('/')}
           class="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           Главная
-        </Link>
-        <Link
-          href="/cycle"
+        </a>
+        <a {...asLink('/cycle')}
           class="rounded-md bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           Цикл
-        </Link>
+        </a>
       </div>
     </header>
 
@@ -79,27 +78,27 @@ import { Link, ModalTrigger } from '#lib/components/links/index.js'
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <!-- Обычные модалки НЕ копируют defaultMobile в override: направление
                остаётся политикой хоста и меняется вместе с его настройками. -->
-          <ModalTrigger name="card" params={{ id: 7 }}>
+          <Button {...asModalLink('card', { id: 7 })} variant="outline">
             Открыть карточку
-          </ModalTrigger>
-          <ModalTrigger name="card" params={{ id: 42, slow: true }}>
+          </Button>
+          <Button {...asModalLink('card', { id: 42, slow: true })} variant="outline">
             С загрузчиком (до 3 c)
-          </ModalTrigger>
-          <ModalTrigger name="fullpage">Полноэкранная</ModalTrigger>
+          </Button>
+          <Button {...asModalLink('fullpage')} variant="outline">Полноэкранная</Button>
           <!-- Без параметров и override: стартовая точка browser-проверки потока. -->
-          <ModalTrigger name="flow-probe">Проверить наследование</ModalTrigger>
-          <ModalTrigger name="select">Select внутри модалки</ModalTrigger>
-          <ModalTrigger name="card" params={{ id: 77 }} noForward>
+          <Button {...asModalLink('flow-probe')} variant="outline">Проверить наследование</Button>
+          <Button {...asModalLink('select')} variant="outline">Select внутри модалки</Button>
+          <Button {...asModalLink('card', { id: 77 }, { noForward: true })} variant="outline">
             Без «Вперёд»
-          </ModalTrigger>
-          <ModalTrigger name="ghost">Несуществующая</ModalTrigger>
-          <ModalTrigger name="broken-route" params={{ id: 1 }}>
+          </Button>
+          <Button {...asModalLink('ghost')} variant="outline">Несуществующая</Button>
+          <Button {...asModalLink('broken-route', { id: 1 })} variant="outline">
             Битый route
-          </ModalTrigger>
+          </Button>
           <FloatingMenu
             label="Меню на странице"
             mobile="bottom"
-            class={modalTriggerVariants()}
+            class={buttonVariants({ variant: 'outline' })}
             items={[
               { label: 'Открыть карточку', hint: 'обычная модалка', onSelect: () => m.modals.open('card', { params: { id: 11 } }) },
               { label: 'Полноэкранная', onSelect: () => m.modals.open('fullpage') },
@@ -110,55 +109,70 @@ import { Link, ModalTrigger } from '#lib/components/links/index.js'
           <FloatingMenu
             label="Меню без мобильного режима"
             sheetOnNarrow={false}
-            class={modalTriggerVariants()}
+            class={buttonVariants({ variant: 'outline' })}
             items={[
               { label: 'Эта кнопка всегда выпадашка', hint: 'sheetOnNarrow=false' },
               { label: 'Открыть карточку', onSelect: () => m.modals.open('card', { params: { id: 12 } }) },
               { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
             ]}
           />
-          <Button variant="plain" size="none"  class={modalTriggerVariants()} onclick={openStorageless}>
+          <Button variant="outline" onclick={openStorageless}>
             Модалка без хранилища
           </Button>
           <CloseAllButton />
           <!-- ссылка на страницу, которая ждёт loader (1.5 c) и крутит
                спиннер, как триггер модалки (порт LoadLink оригинала — теперь Link) -->
-          <Link href="/cards/501?slow=1" class={modalTriggerVariants()}>
+          <Button {...asLink('/cards/501?slow=1')} variant="outline">
             Страница со спиннером
-          </Link>
-          <Link href="/no-such-page/1" class={modalTriggerVariants()}>
+          </Button>
+          <Button {...asLink('/no-such-page/1')} variant="outline">
             Битая ссылка
-          </Link>
+          </Button>
           <!-- исходы загрузчика: ошибка (страницу покажет её +error), ошибка
                с navigateOnError={false} (остаёмся, «!» на ссылке) и штатная
                переадресация — не ошибка -->
-          <Link href="/cards/404?fail=1" class={modalTriggerVariants()}>
+          <Button {...asLink('/cards/404?fail=1')} variant="outline">
             Загрузчик с ошибкой
-          </Link>
-          <Link href="/cards/404?fail=1&stay=1" navigateOnError={false} class={modalTriggerVariants()}>
+          </Button>
+          <Button {...asLink('/cards/404?fail=1&stay=1', { navigateOnError: false })} variant="outline">
             Ошибка — остаться на месте
-          </Link>
-          <Link href="/cards/307?moved=1" class={modalTriggerVariants()}>
+          </Button>
+          <Button {...asLink('/cards/307?moved=1')} variant="outline">
             Ссылка с переадресацией
-          </Link>
+          </Button>
           <!-- обычная ссылка: функция сама гасит переход -->
-          <Link
-            href="?modal=card"
+          <a {...asLink('?modal=card')}
             onclick={(event) => openFromEvent(event, 'card', { id: 99 })}
             class="text-sm font-medium text-foreground underline decoration-dotted underline-offset-4"
           >
             обычная ссылка в обход компонента
-          </Link>
+          </a>
           <!-- кнопка на незарегистрированную заблокирована сразу,
                поэтому саму ошибку показываем открытием в обход кнопки -->
-          <Link
-            href="?modal=ghost"
+          <a {...asLink('?modal=ghost')}
             onclick={(event) => openFromEvent(event, 'ghost')}
             class="text-sm font-medium text-destructive underline decoration-dotted underline-offset-4"
           >
             ошибка «нет такой модалки»
-          </Link>
+          </a>
         </div>
+        <!-- Свой вид загрузки поверх того же `asLink`: вся карточка — ссылка,
+             спиннер — оверлеем по `group-data-[state=loading]`. Общий значок
+             перед текстом убран `before:hidden`. -->
+        <a
+          {...asLink('/cards/502?slow=1')}
+          data-testid="overlay-card-link"
+          class="group relative mb-3 block max-w-sm rounded-lg border border-border bg-background p-3 text-sm transition-colors before:hidden hover:bg-accent"
+        >
+          <span class="block font-medium">Карточка 502</span>
+          <span class="block text-xs text-muted-foreground">Медленная страница (1,5 с): вся карточка — ссылка, загрузка — оверлеем</span>
+          <span
+            class="absolute inset-0 hidden place-items-center rounded-lg bg-background/70 group-data-[state=loading]:grid"
+            aria-hidden="true"
+          >
+            <span class="size-5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>
+          </span>
+        </a>
         <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>
              не показал бы подсказку, когда JS включён, но ещё не загрузился. -->
         {#if jsOnly()}<p class="mb-3 text-xs text-muted-foreground" data-js-only-hint>Настройки неактивны — {JS_ONLY_REASON}.</p>{/if}
@@ -213,9 +227,7 @@ import { Link, ModalTrigger } from '#lib/components/links/index.js'
           { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
         ]}
       />
-      <Button variant="plain" size="none"
-        
-        class={modalTriggerVariants()}
+      <Button variant="outline"
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку

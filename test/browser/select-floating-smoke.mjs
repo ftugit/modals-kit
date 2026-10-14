@@ -105,7 +105,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
     await page.goto(BASE, { waitUntil: 'networkidle' })
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).click()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 })
     const modalSelects = page.locator('[data-modal-layer][data-active] [data-select-root]')
 

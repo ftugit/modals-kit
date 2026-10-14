@@ -658,7 +658,7 @@ try {
   await run('R-21 outside click закрывает Select, но не действие модалки под ним', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await gotoBase(page)
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).click()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
     await page.waitForTimeout(320)
 
@@ -717,7 +717,7 @@ try {
   await run('R-22 single Select deselects current option, preserves default, stays open', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await gotoBase(page)
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).click()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).click()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
 
     const selects = page.locator('[data-modal-stage] [data-select-native]')
@@ -783,7 +783,7 @@ try {
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
     await gotoBase(page)
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).tap()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
 
     const selects = page.locator('[data-modal-stage] [data-select-native]')
@@ -905,7 +905,7 @@ try {
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
     await gotoBase(page)
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).tap()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
 
     const multiple = page.locator('[data-modal-stage] select[data-select-native-multiple]').first()
@@ -943,7 +943,7 @@ try {
 
     await page.keyboard.press('Escape')
     await page.locator('[data-modal-stage]').waitFor({ state: 'detached' })
-    const card = page.locator('[data-modal-trigger]').filter({ hasText: 'Открыть карточку' }).first()
+    const card = page.locator('[data-modal-link]').filter({ hasText: 'Открыть карточку' }).first()
     await card.tap()
     await page.getByText('Карточка #7', { exact: true }).waitFor({ state: 'visible' })
     assert((await page.locator('[data-modal-stage]').count()) === 1,
@@ -960,7 +960,7 @@ try {
       viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
     })
     await gotoBase(page)
-    await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+    await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).tap()
     await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
 
     const multiple = page.locator('[data-modal-stage] select[data-select-native-multiple]').first()
@@ -1255,7 +1255,7 @@ try {
     assert(new URL(page.url()).pathname === '/modals', `ушли со страницы: ${page.url()}`)
     const stayTitle = await stay.getAttribute('title')
     assert(/ошибка 404/.test(stayTitle ?? ''), `в подсказке нет причины: ${stayTitle}`)
-    assert((await stay.locator('[data-task-indicator="error"] svg').count()) === 1, 'нет знака «!»')
+    assert(/svg/.test(await stay.evaluate((el) => { const s = getComputedStyle(el, '::before'); return s.maskImage || s.webkitMaskImage })), 'нет знака «!» (::before)')
     ok(`navigateOnError={false}: остались на /modals, «!» на ссылке, подсказка «${stayTitle}»`)
     await page.close()
 
@@ -1265,9 +1265,14 @@ try {
     assert(broken, 'SSR: битая ссылка не помечена')
     assert(!/\shref=/.test(broken.split('>')[0]), `SSR: у битой ссылки остался href: ${broken.slice(0, 200)}`)
     assert(/aria-disabled="true"/.test(broken) && /Страницы \/no-such-page\/1 не существует/.test(broken), 'SSR: нет aria-disabled или причины')
-    assert(/data-task-indicator="error"/.test(broken), 'SSR: нет знака «!»')
+    assert(/data-link/.test(broken), 'SSR: нет маркера data-link — «!» не нарисуется')
     page = await browser.newPage()
     await gotoBase(page)
+    const brokenMask = await page.getByText('Битая ссылка', { exact: true }).evaluate((el) => {
+      const s = getComputedStyle(el, '::before')
+      return s.maskImage || s.webkitMaskImage
+    })
+    assert(/svg/.test(brokenMask), `битая ссылка без знака «!»: ${brokenMask}`)
     // Playwright сам не кликает aria-disabled — жмём принудительно, как упорный пользователь.
     await page.getByText('Битая ссылка', { exact: true }).click({ force: true })
     await page.waitForTimeout(500)
@@ -1381,9 +1386,10 @@ try {
     await page.addInitScript(() => { Math.random = () => 0.9 })
     await page.goto(`${origin}/modals?modal=card&modal.0.id=1`, { waitUntil: 'networkidle' })
     await page.waitForSelector('[data-modal-layer][data-active] [data-modal-content]', { timeout: 10_000 })
-    const trigger = page.locator('[data-modal-layer][data-active] a[data-modal-trigger]').first()
+    const trigger = page.locator('[data-modal-layer][data-active] a[data-modal-link]').first()
     await trigger.click()
-    assert((await trigger.getAttribute('data-state')) === 'loading', 'триггер не ушёл в загрузку')
+    // Спиннер — через 150 мс (LINK_TASK_DELAY_MS), как у всех ссылок.
+    await page.waitForSelector('[data-modal-layer][data-active] a[data-modal-link][data-state="loading"]', { timeout: 2_000 })
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => !document.querySelector('[data-modal-popup]'), null, { timeout: 5_000 })
     await page.waitForTimeout(3600) // медленный загрузчик карточки: до 3 с
@@ -1408,7 +1414,7 @@ try {
         })
         mo.observe(document.body, { subtree: true, childList: true, attributes: true })
       })
-      await page.locator('[data-modal-layer][data-active] a[data-modal-trigger]').first().click()
+      await page.locator('[data-modal-layer][data-active] a[data-modal-link]').first().click()
       await page.waitForSelector('[data-modal-tail][data-depth="1"]', { timeout: 10_000 })
       await page.waitForTimeout(500)
       return page.evaluate(() => window.__tailFirst)
@@ -1429,7 +1435,7 @@ try {
     const origin = new URL(BASE).origin
     const page = await browser.newPage()
     const hrefs = () => page.evaluate(() =>
-      [...document.querySelectorAll('a[data-modal-trigger]')]
+      [...document.querySelectorAll('a[data-modal-link]')]
         .map((a) => a.getAttribute('href') ?? '')
         .filter((h) => h.includes('modal=')))
     // Переход — обычной ссылкой: его перехватывает роутер SvelteKit (без перезагрузки).
@@ -1438,14 +1444,14 @@ try {
     }, href)
     await page.goto(`${origin}/modals?probe=1`, { waitUntil: 'networkidle' })
     await page.waitForFunction(() =>
-      document.querySelectorAll('a[data-modal-trigger][href*="modal="]').length > 0, null, { timeout: 10_000 })
+      document.querySelectorAll('a[data-modal-link][href*="modal="]').length > 0, null, { timeout: 10_000 })
     const start = await hrefs()
     assert(start.length > 0 && start.every((h) => h.startsWith('/modals?probe=1&')), `стартовые href: ${start}`)
     for (const [target, prefix] of [['/modals?probe=2', '/modals?probe=2&'], ['/modals', '/modals?modal=']]) {
       await clientNav(target)
       await page.waitForURL(`${origin}${target}`)
       await page.waitForFunction((p) => {
-        const hs = [...document.querySelectorAll('a[data-modal-trigger][href*="modal="]')].map((a) => a.getAttribute('href'))
+        const hs = [...document.querySelectorAll('a[data-modal-link][href*="modal="]')].map((a) => a.getAttribute('href'))
         return hs.length > 0 && hs.every((h) => h.startsWith(p))
       }, prefix, { timeout: 5_000 }).catch(async () => {
         throw new Error(`после перехода на ${target} href устарели: ${await hrefs()}`)
@@ -1527,7 +1533,7 @@ try {
       const errors = []
       page.on('pageerror', (e) => errors.push(e.message))
       await page.goto(`${origin}/modals`, { waitUntil: 'networkidle' })
-      await page.locator('[data-modal-trigger]', { hasText: 'Select внутри модалки' }).tap()
+      await page.locator('[data-modal-link]', { hasText: 'Select внутри модалки' }).tap()
       await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
       await page.locator('[data-modal-stage] [data-select-native]').first().tap({ force: true })
       await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
@@ -1540,7 +1546,7 @@ try {
         return {
           stage: !!document.querySelector('[data-modal-stage]'),
           select: !!a?.matches('[data-modal-stage] [data-select-native]'),
-          trigger: !!a?.matches('[data-modal-trigger]'),
+          trigger: !!a?.matches('[data-modal-link]'),
         }
       })
       if (step === -1) assert(state.stage && state.select, `${scenario}: ${JSON.stringify(state)}`)
@@ -1657,7 +1663,7 @@ try {
     const url = () => page.evaluate(() => location.pathname + location.search + location.hash)
     await page.goto(BASE, { waitUntil: 'networkidle' })
     const start = await url()
-    await page.locator('a[data-modal-trigger]').first().click()
+    await page.locator('a[data-modal-link]').first().click()
     await page.waitForSelector('[role="dialog"]')
     await page.waitForFunction((u) => location.pathname + location.search + location.hash !== u, start)
     const opened = await url()
@@ -1680,12 +1686,33 @@ try {
     assert(await page.evaluate(() => location.pathname) === new URL(BASE).pathname, 'Escape увёл со страницы')
     ok(`Escape закрывает окно и снимает его из адреса: ${await url()}`)
     // Открыть снова и закрыть: прежний «залипший» адрес не возвращается.
-    await page.locator('a[data-modal-trigger]').first().click()
+    await page.locator('a[data-modal-link]').first().click()
     await page.waitForSelector('[role="dialog"]')
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, null, { timeout: 5000 })
     await page.waitForFunction(() => !location.search.includes('modal='), null, { timeout: 5000 })
     ok('повторное открытие и закрытие работают')
+    await page.close()
+  })
+
+  // Ход 149: свой вид загрузки поверх `asLink` — оверлей по group-data-[state=loading],
+  // общий значок убран утилитой `before:hidden` (утилиты идут после preflight).
+  await run('R-44 asLink: карточка-ссылка с оверлеем вместо общего спиннера', async () => {
+    const page = await browser.newPage()
+    await gotoBase(page)
+    const card = page.locator('[data-testid="overlay-card-link"]')
+    assert((await card.getAttribute('href')) === '/cards/502?slow=1', 'карточка — не обычная ссылка')
+    await card.click()
+    await page.waitForSelector('[data-testid="overlay-card-link"][data-state="loading"]', { timeout: 1_200 })
+    const look = await card.evaluate((el) => ({
+      overlay: getComputedStyle(el.querySelector('span[aria-hidden="true"]')).display,
+      before: getComputedStyle(el, '::before').display,
+      busy: el.getAttribute('aria-busy'),
+    }))
+    assert(look.overlay === 'grid' && look.before === 'none' && look.busy === 'true', `вид загрузки: ${JSON.stringify(look)}`)
+    ok('загрузка — оверлеем на карточке, общий значок скрыт, aria-busy')
+    await page.waitForURL((url) => url.pathname === '/cards/502', { timeout: 10_000 })
+    ok('после загрузчика — переход на /cards/502')
     await page.close()
   })
 

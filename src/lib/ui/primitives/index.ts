@@ -1,5 +1,4 @@
 export { default as Button, buttonVariants, type ButtonVariants } from './Button.svelte'
-export { default as TaskIndicator } from './TaskIndicator.svelte'
 export { default as WarningIcon } from './WarningIcon.svelte'
 export { default as Badge, badgeVariants, type BadgeVariants } from './Badge.svelte'
 export { default as Alert, alertVariants, type AlertProps } from './Alert.svelte'

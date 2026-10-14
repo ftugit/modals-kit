@@ -2,7 +2,7 @@
   import { variants, type VariantProps } from '../cn'
 
   export const buttonVariants = variants(
-    'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
+    'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
     {
       variant: {
         default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
@@ -42,14 +42,23 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import type { HTMLButtonAttributes } from 'svelte/elements'
+  import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements'
 
   interface Props extends HTMLButtonAttributes, ButtonVariants {
     children?: Snippet
     /**
+     * Есть ключ `href` — рисуется `<a>` с тем же видом: ссылка в облике кнопки
+     * без JS остаётся ссылкой. `null` — заблокированная ссылка (`<a>` без
+     * адреса), так её отдают `asLink`/`asModalLink`:
+     *
+     *     <Button {...asModalLink('card', { id: 7 })} variant="outline">Карточка</Button>
+     */
+    href?: string | null
+    /**
      * Forwarded ref: узел <button> в руки потребителю. Нужен вместо
      * `bind:this`, которое у компонента отдаёт экземпляр, а не элемент
-     * (фокус-менеджмент и геометрия триггера опираются на узел).
+     * (фокус-менеджмент и геометрия триггера опираются на узел). У `<a>`
+     * (`href`) не вызывается.
      */
     ref?: (el: HTMLButtonElement | null) => void
   }
@@ -59,22 +68,36 @@
     size,
     class: cls,
     type = 'button',
+    href,
     children,
     ref,
     ...rest
   }: Props = $props()
 
   let self = $state<HTMLButtonElement | null>(null)
-  // ref — эффект, а не attach: `attach` из spread компайлер не применяет,
-  // а потребителю нужен именно элемент (getBoundingClientRect, focus()).
+  // ref — эффект: потребителю нужен именно элемент (getBoundingClientRect, focus()).
   $effect(() => ref?.(self))
 </script>
 
-<button
-  bind:this={self}
-  {type}
-  class={buttonVariants({ variant, size, class: cls })}
-  {...rest}
->
-  {#if children}{@render children()}{/if}
-</button>
+<!-- `data-slot="button"`: по нему общее правило индикатора ссылок
+     (`components/links/indicator.ts`) убирает свой отступ — у кнопки есть `gap`. -->
+{#if href !== undefined}
+  <a
+    href={href ?? undefined}
+    data-slot="button"
+    class={buttonVariants({ variant, size, class: cls })}
+    {...rest as HTMLAnchorAttributes}
+  >
+    {#if children}{@render children()}{/if}
+  </a>
+{:else}
+  <button
+    bind:this={self}
+    {type}
+    data-slot="button"
+    class={buttonVariants({ variant, size, class: cls })}
+    {...rest}
+  >
+    {#if children}{@render children()}{/if}
+  </button>
+{/if}

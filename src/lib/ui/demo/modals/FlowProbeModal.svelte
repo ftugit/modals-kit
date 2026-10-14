@@ -2,7 +2,6 @@
 import { Button } from '#lib/ui/primitives/index.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
   import { useModal, useModals } from '#lib/modals/svelte/index.js'
-  import { modalTriggerVariants } from '#lib/ui/modals/index.js'
 
   const m = useModals()
   const me = useModal()
@@ -62,16 +61,16 @@ import { Button } from '#lib/ui/primitives/index.js'
   </p>
 
   <div class="flex flex-wrap gap-2.5">
-    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="random-modal" onclick={openRandomModal}>
+    <Button variant="outline" data-probe-action="random-modal" onclick={openRandomModal}>
       Открыть с случайным направлением
     </Button>
-    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="inherited-modal" onclick={openInheritedModal}>
+    <Button variant="outline" data-probe-action="inherited-modal" onclick={openInheritedModal}>
       Открыть без направления
     </Button>
-    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="plain-transient" onclick={openPlainTransient}>
+    <Button variant="outline" data-probe-action="plain-transient" onclick={openPlainTransient}>
       Без хранилища
     </Button>
-    <Button variant="plain" size="none"  class={modalTriggerVariants()} data-probe-action="random-transient" onclick={openRandomTransient}>
+    <Button variant="outline" data-probe-action="random-transient" onclick={openRandomTransient}>
       Без хранилища со случайным направлением
     </Button>
   </div>
@@ -85,9 +84,7 @@ import { Button } from '#lib/ui/primitives/index.js'
   <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="plain">
     <h2>Модалка без хранилища</h2>
     <p class="text-[0.85rem] text-muted-foreground">У этой записи нет собственного направления.</p>
-    <Button variant="plain" size="none"
-      
-      class={modalTriggerVariants()}
+    <Button variant="outline"
       data-probe-action="registered-from-transient"
       onclick={openRegisteredFromPlainTransient}
     >

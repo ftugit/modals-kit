@@ -2,11 +2,12 @@
   // Порт FullpageModal из src/features/modals/demo-modals.tsx оригинала.
 import { Button } from '#lib/ui/primitives/index.js'
   import { useModal, useModals } from '#lib/modals/svelte/index.js'
-  import { ModalTrigger } from '#lib/components/links/index.js'
+  import { useModalLink } from '#lib/components/links/index.js'
   import { CloseAllButton } from '#lib/ui/modals/index.js'
 
   const me = useModal()
   const m = useModals()
+  const asModalLink = useModalLink()
 </script>
 
 <div class="flex min-h-0 flex-auto flex-col">
@@ -39,9 +40,9 @@ import { Button } from '#lib/ui/primitives/index.js'
       {/each}
     </div>
     <div class="mt-5 flex flex-wrap gap-2">
-      <ModalTrigger name="card" params={{ id: 501 }}>
+      <Button {...asModalLink('card', { id: 501 })} variant="outline">
         Открыть карточку поверх
-      </ModalTrigger>
+      </Button>
       <CloseAllButton />
     </div>
   </div>

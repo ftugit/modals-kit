@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { LoadMoreSlot, type LoadMoreSlotRender } from '#lib/paginate/svelte/index.js'
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   import { buttonVariants } from '#lib/ui/primitives/index.js'
   import Spinner from './Spinner.svelte'
 
@@ -50,8 +50,7 @@
     {/snippet}
     <div class="flex justify-center py-1">
       {#if p.href !== null}
-        <Link
-          href={p.href}
+        <a {...asLink(p.href)}
           data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
           class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
           aria-busy={p.loading}
@@ -61,7 +60,7 @@
             <Spinner />
           {/if}
           {@render text(p)}
-        </Link>
+        </a>
       {:else}
         <button
           type="button"

@@ -98,7 +98,7 @@ async function run() {
 
     // ── 0. Триггеры no-JS и после гидратации ────────────────────────────────
     {
-      console.log('— ModalTrigger: route до гидратации, client-only после —');
+      console.log('— asModalLink: route до гидратации, client-only после —');
       const page = await browser.newPage({
         viewport: { width: 1280, height: 860 },
         javaScriptEnabled: false,
@@ -136,7 +136,7 @@ async function run() {
       assert(initialSettings.routeLinks.every(Boolean), `no-JS route links: ${JSON.stringify(initialSettings.routeLinks)}`)
       ok('без JS ссылки на главную и цикл остаются доступны');
 
-      const card = page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first();
+      const card = page.locator('[data-modal-link]', { hasText: 'Открыть карточку' }).first();
       const cardState = await card.evaluate((el) => ({
         tag: el.tagName,
         href: el.getAttribute('href'),
@@ -146,13 +146,13 @@ async function run() {
       ok('без JS route-триггер остаётся доступной ссылкой /cards/7');
 
       for (const label of ['Полноэкранная', 'Проверить наследование', 'Select внутри модалки', 'Несуществующая', 'Битый route']) {
-        const trigger = page.locator('[data-modal-trigger]', { hasText: label }).first();
+        const trigger = page.locator('[data-modal-link]', { hasText: label }).first();
         const state = await trigger.evaluate((el) => ({
           tag: el.tagName,
-          disabled: el instanceof HTMLButtonElement && el.disabled,
+          disabled: el.getAttribute('aria-disabled') === 'true',
           href: el.getAttribute('href'),
         }));
-        assert(state.tag === 'BUTTON' && state.disabled && state.href === null, `no-JS ${label} доступен: ${JSON.stringify(state)}`);
+        assert(state.tag === 'A' && state.disabled && state.href === null, `no-JS ${label} доступен: ${JSON.stringify(state)}`);
         ok(`без JS «${label}» неактивен`);
       }
       await card.click();
@@ -167,7 +167,7 @@ async function run() {
       const hydrated = await browser.newPage({ viewport: { width: 1280, height: 860 } });
       await hydrated.goto(BASE, { waitUntil: 'networkidle' });
       await hydrated.waitForFunction(() => {
-        const trigger = [...document.querySelectorAll('[data-modal-trigger]')].find((el) => el.textContent?.includes('Полноэкранная'));
+        const trigger = [...document.querySelectorAll('[data-modal-link]')].find((el) => el.textContent?.includes('Полноэкранная'));
         const settings = [...document.querySelectorAll('[data-js-only-settings]')]
         return trigger && !trigger.hasAttribute('data-pending')
           && settings.length === 1
@@ -180,17 +180,17 @@ async function run() {
         nodes.length === 9 && nodes.every((n) => !n.matches(':disabled')));
       assert(selectsEnabled, 'после гидратации поля настроек/источников не включились');
       ok('после гидратации Select источников включён');
-      const fullpage = hydrated.locator('[data-modal-trigger]', { hasText: 'Полноэкранная' }).first();
+      const fullpage = hydrated.locator('[data-modal-link]', { hasText: 'Полноэкранная' }).first();
       const fullpageState = await fullpage.evaluate((el) => ({ tag: el.tagName, href: el.getAttribute('href') }));
       assert(fullpageState.tag === 'A' && fullpageState.href?.includes('modal=fullpage'), `hydrated route-less trigger: ${JSON.stringify(fullpageState)}`);
       ok('после гидратации обычная client-only модалка доступна');
       for (const label of ['Несуществующая', 'Битый route']) {
-        const trigger = hydrated.locator('[data-modal-trigger]', { hasText: label }).first();
+        const trigger = hydrated.locator('[data-modal-link]', { hasText: label }).first();
         const state = await trigger.evaluate((el) => ({
           tag: el.tagName,
-          disabled: el instanceof HTMLButtonElement && el.disabled,
+          disabled: el.getAttribute('aria-disabled') === 'true' && !el.hasAttribute('href'),
         }));
-        assert(state.tag === 'BUTTON' && state.disabled, `невалидный сценарий «${label}» включился: ${JSON.stringify(state)}`);
+        assert(state.tag === 'A' && state.disabled, `невалидный сценарий «${label}» включился: ${JSON.stringify(state)}`);
         ok(`после гидратации сценарий «${label}» остаётся выключенным`);
       }
       await fullpage.click();
@@ -207,7 +207,7 @@ async function run() {
       console.log('— Слои 1→2→3, классы, data-anchor, transform —');
       await page.goto(BASE, { waitUntil: 'networkidle' });
 
-      await page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first().click();
+      await page.locator('[data-modal-link]', { hasText: 'Открыть карточку' }).first().click();
       await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 });
       ok('1 слой: [data-modal-stage] виден, backdrop на месте');
       const anchor1 = await page.locator('[data-modal-stage]').getAttribute('data-anchor');
@@ -215,7 +215,7 @@ async function run() {
       ok('data-anchor="center" на desktop');
 
       await page
-        .locator('[data-modal-layer][data-active] [data-modal-trigger]', { hasText: 'Открыть ещё одну' })
+        .locator('[data-modal-layer][data-active] [data-modal-link]', { hasText: 'Открыть ещё одну' })
         .click();
       await waitForLayers(page, 2);
       ok('2 слоя: нижний слой остался смонтированным');
@@ -231,7 +231,7 @@ async function run() {
       ok('хвост: z-index отрицательный (под активной оболочкой)');
 
       await page
-        .locator('[data-modal-layer][data-active] [data-modal-trigger]', { hasText: 'Открыть ещё одну' })
+        .locator('[data-modal-layer][data-active] [data-modal-link]', { hasText: 'Открыть ещё одну' })
         .click();
       await waitForLayers(page, 3);
       const tails3 = await page.locator('[data-modal-tail]').count();
@@ -258,7 +258,7 @@ async function run() {
       await page.goto(BASE + '?modal=card&modal.0.id=7', { waitUntil: 'networkidle' });
       await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 });
       await page
-        .locator('[data-modal-layer][data-active] [data-modal-trigger]', { hasText: 'Открыть ещё одну' })
+        .locator('[data-modal-layer][data-active] [data-modal-link]', { hasText: 'Открыть ещё одну' })
         .click();
       await waitForLayers(page, 2);
       await page.keyboard.press('Escape');
@@ -277,7 +277,7 @@ async function run() {
       const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
       console.log('— F40: #якорь страницы при открытии/закрытии модалки —');
       await page.goto(BASE + '#f40', { waitUntil: 'networkidle' });
-      await page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first().click();
+      await page.locator('[data-modal-link]', { hasText: 'Открыть карточку' }).first().click();
       await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 });
       await page.waitForFunction(() => location.search.includes('modal='), null, { timeout: 5000 });
       const opened = await page.evaluate(() => ({ search: location.search, hash: location.hash }));
@@ -309,10 +309,10 @@ async function run() {
       const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
       console.log('— history.back / forward —');
       await page.goto(BASE, { waitUntil: 'networkidle' });
-      await page.locator('[data-modal-trigger]', { hasText: 'Открыть карточку' }).first().click();
+      await page.locator('[data-modal-link]', { hasText: 'Открыть карточку' }).first().click();
       await page.locator('[data-modal-stage]').waitFor({ state: 'visible', timeout: 5000 });
       await page
-        .locator('[data-modal-layer][data-active] [data-modal-trigger]', { hasText: 'Открыть ещё одну' })
+        .locator('[data-modal-layer][data-active] [data-modal-link]', { hasText: 'Открыть ещё одну' })
         .click();
       await waitForLayers(page, 2);
       await page.goBack();

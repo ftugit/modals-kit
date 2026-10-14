@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/components/links/index.js'
+  import { asLink } from '#lib/components/links/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
   let { data }: import('./$types').PageProps = $props()
@@ -14,10 +14,9 @@
     <code class="rounded bg-muted/70 px-1">card</code>: без JavaScript ссылка триггера ведёт
     сюда, с JavaScript тот же клик открывает модалку поверх демо.
   </p>
-  <Link
-    href="/modals"
+  <a {...asLink('/modals')}
     class="mt-6 inline-block rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
   >
     ← К демо модалок
-  </Link>
+  </a>
 </div>

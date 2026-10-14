@@ -6,9 +6,9 @@
 import { Button } from '#lib/ui/primitives/index.js'
   import { Input } from '#lib/ui/primitives/index.js'
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '#lib/modals/svelte/index.js'
-  import { ModalTrigger } from '#lib/components/links/index.js'
+  import { useModalLink } from '#lib/components/links/index.js'
   import { entryLabel } from '#lib/modals/index.js'
-  import { CloseAllButton, modalTriggerVariants } from '#lib/ui/modals/index.js'
+  import { CloseAllButton } from '#lib/ui/modals/index.js'
   import { Select } from '#lib/ui/index.js'
   import FloatingMenu from './FloatingMenu.svelte'
 
@@ -19,6 +19,7 @@ import { Button } from '#lib/ui/primitives/index.js'
   } = $props()
 
   const m = useModals()
+  const asModalLink = useModalLink()
   const me = useModal<{ id?: number; slow?: boolean }>()
   const chain = useChain()
   const ldr = useLoader<{ title: string; body: string }>()
@@ -169,49 +170,36 @@ import { Button } from '#lib/ui/primitives/index.js'
   <div class="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
     <!-- Прижатие не копируем в override: дочерняя запись получает текущую
          политику хоста и при необходимости наследует якорь снизу в Host. -->
-    <ModalTrigger
-      name="card"
-      params={{ id: next.id, slow: next.slow }}
-      size={next.size}
-      color={next.color}
-      tailColor={next.tailColor}
-    >
+    <Button {...asModalLink('card', { id: next.id, slow: next.slow }, { size: next.size, color: next.color, tailColor: next.tailColor })} variant="outline">
       Открыть ещё одну
-    </ModalTrigger>
-    <ModalTrigger
-      name="card"
-      params={{ id: next.id }}
-      noForward
-      title="Закроется — «Вперёд» её уже не вернёт"
-    >
+    </Button>
+    <Button {...asModalLink('card', { id: next.id }, { noForward: true })} variant="outline" title="Закроется — «Вперёд» её уже не вернёт">
       Без «Вперёд»
-    </ModalTrigger>
-    <ModalTrigger name="fullpage">
+    </Button>
+    <Button {...asModalLink('fullpage')} variant="outline">
       Полноэкранная
-    </ModalTrigger>
-    <ModalTrigger name="ghost">
+    </Button>
+    <Button {...asModalLink('ghost')} variant="outline">
       Несуществующая
-    </ModalTrigger>
+    </Button>
     <CloseAllButton />
-    <ModalTrigger name="locked">
+    <Button {...asModalLink('locked')} variant="outline">
       Заблокированная
-    </ModalTrigger>
+    </Button>
     <!-- Режимы стопки — опция порта `stack` (§6 №9), в демо оригинала
          их нет. Цель — fullpage: у неё нет route, поэтому в href ВИДНО,
          как перестраивается адрес. Стоишь в card,card,card:
            «С новой стопкой»  → href и клик ведут на ?modal=fullpage
            «В начало стопки»  → ?modal=card,fullpage (первая осталась) -->
-    <ModalTrigger name="fullpage" stack="new">
+    <Button {...asModalLink('fullpage', {}, { stack: 'new' })} variant="outline">
       С новой стопкой
-    </ModalTrigger>
-    <ModalTrigger name="fullpage" stack="first">
+    </Button>
+    <Button {...asModalLink('fullpage', {}, { stack: 'first' })} variant="outline">
       В начало стопки
-    </ModalTrigger>
+    </Button>
     <!-- Модалка без хранилища поверх этой: transient-запись ложится на
          вершину цепочки, в адрес не попадает. -->
-    <Button variant="plain" size="none"
-      
-      class={modalTriggerVariants()}
+    <Button variant="outline"
       onclick={() => m.modals.openLayer({ content: storagelessInCard })}
     >
       Без хранилища поверх
@@ -235,9 +223,7 @@ import { Button } from '#lib/ui/primitives/index.js'
           { label: 'Закрыть всё', onSelect: () => m.modals.closeAll() },
         ]}
       />
-      <Button variant="plain" size="none"
-        
-        class={modalTriggerVariants()}
+      <Button variant="outline"
         onclick={() => m.modals.open('select', { stack: 'new' })}
       >
         Перейти на демо-модалку

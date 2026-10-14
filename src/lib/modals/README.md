@@ -55,7 +55,7 @@ not ok - ядро модалок не зависит ни от одного фр
 | Где | Что |
 |---|---|
 | `svelte/classes.ts` | классы хоста: фон, сцена, оболочка, хвост, скелетон, ошибка, спиннер, кадры входа/выхода |
-| `ui/modals/variants.ts` | CVA-наборы: `modalBackdropVariants`, `modalPopupVariants`, `modalButtonVariants`, `modalTriggerVariants` |
+| `ui/modals/variants.ts` | CVA-наборы: `modalBackdropVariants`, `modalPopupVariants`, `modalButtonVariants`; вид ссылки на модалку даёт `Button` (`asModalLink` в `#lib/components/links`) |
 | `src/app.css` | **только токены тем** — цвета и радиус; ни одного правила оформления |
 | `src/app.html` | база документа классами: фон, шрифт, размер, выделение, курсор кнопок |
 
@@ -68,8 +68,8 @@ not ok - ядро модалок не зависит ни от одного фр
 Маркер-классов тоже больше нет: снаружи система и её примитивы видны
 **только по data-атрибутам и id** — `data-modal-backdrop`, `data-modal-popup`,
 `data-modal-stage`, `data-modal-layer`, `data-modal-tail`, `data-modal-btn`,
-`data-modal-trigger`, `data-modal-skeleton`, `data-modal-error`,
-`data-modal-spinner`, `data-select-*`, `data-fe-sidebar-*`, `data-sidebar-zone`.
+`data-modal-link`, `data-modal-skeleton`, `data-modal-error`,
+`data-select-*`, `data-fe-sidebar-*`, `data-sidebar-zone`.
 Их ставят компоненты, по ним ходят тесты и внешние стили. Следит за этим
 `tooling/classes-audit.mjs`: он ищет маркеры и утилиты, для которых нет правил.
 

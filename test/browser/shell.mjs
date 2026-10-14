@@ -217,7 +217,7 @@ async function run() {
       // Без JS — простые ссылки, индикатора в разметке нет.
       const html = await (await fetch(BASE + '/form')).text()
       assert.match(html, /<a[^>]*href="\/paginator"/, 'SSR: пункт меню — обычная <a href>')
-      assert.ok(!html.includes('data-task-indicator'), 'SSR: индикатора в разметке нет')
+      assert.ok(!/data-state="loading"/.test(html), 'SSR: индикатора в разметке нет')
       {
         const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, javaScriptEnabled: false })
         const page = await context.newPage()
@@ -246,7 +246,7 @@ async function run() {
       const shownAfter = Date.now() - t0
       assert.ok(shownAfter >= 140, `индикатор не раньше задержки 150 мс (показан через ${shownAfter} мс)`)
       assert.equal(await target.getAttribute('aria-busy'), 'true', 'нажатая ссылка — aria-busy')
-      assert.equal(await target.locator('[data-task-indicator]').count(), 1, 'спиннер внутри нажатой ссылки')
+      assert.equal(await target.evaluate((el) => getComputedStyle(el, '::before').animationName), 'link-indicator-spin', 'спиннер (::before) у нажатой ссылки')
       assert.equal(await other.getAttribute('data-state'), null, 'у соседней ссылки индикатора нет')
       await page.waitForURL('**/paginator', { timeout: 15000 })
       await page.waitForFunction(() => !document.querySelector('nav a[data-state="loading"]'), null, { timeout: 5000 })
@@ -259,7 +259,7 @@ async function run() {
       await page.evaluate(() => {
         window.__taskFlash = 0
         new MutationObserver((list) => {
-          for (const m of list) if (m.target.getAttribute?.('data-state') === 'loading' && !m.target.hasAttribute('data-modal-trigger')) window.__taskFlash++
+          for (const m of list) if (m.target.getAttribute?.('data-state') === 'loading' && !m.target.hasAttribute('data-modal-link')) window.__taskFlash++
         }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-state'] })
       })
       await page.locator('a[href*="modal=fullpage"]').first().click()
