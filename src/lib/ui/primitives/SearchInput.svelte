@@ -1,11 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { HTMLInputAttributes } from 'svelte/elements'
+  import type { ClassValue, HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../cn'
   import SearchField from './SearchField.svelte'
 
-  interface Props extends Omit<HTMLInputAttributes, 'type' | 'value'> {
+  interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'class'> {
     value?: string
+    /** Классы обёртки (раскладка: ширина, flex). */
+    class?: ClassValue | null
+    /** Классы самого `<input>` (вид поля). */
+    inputClass?: ClassValue | null
     clearLabel?: string
     onClear?: () => void
   }
@@ -14,6 +18,7 @@
     value = $bindable(''),
     clearLabel = 'Очистить поиск',
     class: cls,
+    inputClass,
     disabled = false,
     onClear,
     ...rest
@@ -51,14 +56,14 @@
   class={cls}
 >
   <input
+    {...rest}
     bind:this={inputEl}
     bind:value
     type="search"
     {disabled}
     class={cn(
       'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 pr-9 [&::-webkit-search-cancel-button]:appearance-none',
-      cls,
+      inputClass,
     )}
-    {...rest}
   />
 </SearchField>

@@ -213,7 +213,7 @@
       pageSizes={DB_LIST_PAGE_SIZES}
       fields={FIELDS}
       values={dbListExtraOf}
-      noscriptHint="Без JavaScript работают размер страницы, сортировка и режим курсора — все три ключи адреса (?page.size, ?page.ord, ?page.cur). Указатель следующего шага (?page.after) сервер выдаёт подписанным, поэтому ссылка «дальше» ведёт туда же, куда клик с JavaScript."
+      fallbackHint="Пока JavaScript не загружен, работают размер страницы, сортировка и режим курсора — все три ключи адреса (?page.size, ?page.ord, ?page.cur). Указатель следующего шага (?page.after) сервер выдаёт подписанным, поэтому ссылка «дальше» ведёт туда же, куда клик с JavaScript."
     >
       {#snippet footer(ctx)}
         Страница <b data-testid="panel-page">{ctx.page}</b>, размер <b data-testid="panel-size">{ctx.pageSize}</b>.

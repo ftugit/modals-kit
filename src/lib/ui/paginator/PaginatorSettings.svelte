@@ -35,7 +35,7 @@
     footer?: Snippet<[{ pageSize: number; page: number }]>
     class?: string
     applyLabel?: string
-    noscriptHint?: string
+    fallbackHint?: string
   }
 
   let {
@@ -47,7 +47,7 @@
     footer,
     class: className,
     applyLabel,
-    noscriptHint,
+    fallbackHint,
   }: Props<V> = $props()
   // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
   // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
@@ -109,6 +109,6 @@
     {footer}
     class={className}
     {applyLabel}
-    {noscriptHint}
+    {fallbackHint}
   />
 {/key}

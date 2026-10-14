@@ -268,6 +268,7 @@ async function run(jsEnabled) {
       emailDisabled: !email || email.matches(':disabled'),
       submitDisabled: !submit || submit.matches(':disabled'),
       routeHref: route?.getAttribute('href') ?? null,
+      hint: document.querySelector('[data-js-only-hint]')?.textContent?.trim() ?? null,
     }
   })
   await fill(pg, scenario)
@@ -330,6 +331,9 @@ ok('после гидратации JS-настройки включены',
   js.settingsState.count === 2
     && js.settingsState.disabled.every((disabled) => !disabled)
     && js.settingsState.controlsDisabled.every((disabled) => !disabled), JSON.stringify(js.settingsState))
+ok('пока страница не ожила, подсказка о неактивных настройках видна',
+  nojs.settingsState.hint === 'Настройки неактивны — доступно после загрузки JavaScript.', String(nojs.settingsState.hint))
+ok('после оживления подсказка о неактивных настройках скрыта', js.settingsState.hint === null, String(js.settingsState.hint))
 ok('без скрипта значения возвращаются', nojs.kept === 'a@b.io')
 ok('пути дают одинаковые ошибки',
   JSON.stringify(nojs.errors) === JSON.stringify(js.errors),

@@ -317,7 +317,9 @@ import { Button } from '#lib/ui/primitives/index.js'
           {/if}
         </div>
       </fieldset>
-      <noscript><p class="mt-3 text-xs text-muted-foreground">Без JS: неактивны — {JS_ONLY_REASON}.</p></noscript>
+      <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>
+             не показал бы подсказку, когда JS включён, но ещё не загрузился. -->
+        {#if jsOnly()}<p class="mt-3 text-xs text-muted-foreground" data-js-only-hint>Настройки неактивны — {JS_ONLY_REASON}.</p>{/if}
     </section>
 
     <!-- ── форма ─────────────────────────────────────────────────── -->

@@ -40,7 +40,8 @@
     footer?: Snippet<[{ pageSize: number; page: number }]>
     class?: string
     applyLabel?: string
-    noscriptHint?: string
+    /** Подсказка рядом с «Применить»: видна, пока страница не ожила (и без JS). */
+    fallbackHint?: string
   }
 
   let {
@@ -57,7 +58,7 @@
     footer,
     class: className,
     applyLabel = 'Применить',
-    noscriptHint,
+    fallbackHint,
   }: Props<V> = $props()
 
   const panelForms = createConfig({
@@ -174,8 +175,8 @@
       <button type="submit" class={buttonVariants({ size: 'sm' })}>
         {applyLabel}
       </button>
-      {#if noscriptHint}
-        <span class="text-xs text-muted-foreground">{noscriptHint}</span>
+      {#if fallbackHint}
+        <span class="text-xs text-muted-foreground">{fallbackHint}</span>
       {/if}
     </div>
   {/if}

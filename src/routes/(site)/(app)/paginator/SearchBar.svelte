@@ -51,8 +51,8 @@
 >
   <!-- Крестик очистки появляется после оживления (сброс — работа JS);
        `type="search"` и прятанье родного крестика браузера — в примитиве. -->
-  <div class="flex min-w-56 flex-1">
-    <SearchInput
+  <SearchInput
+      class="min-w-56"
       {...search.field.attrs}
       data-testid="search-input"
       disabled={search.hydrated && search.disabled}
@@ -64,7 +64,6 @@
       oninput={search.input}
       onClear={search.clear}
     />
-  </div>
   {#if search.disabled && search.reason}
     <!-- Причина — последней строкой формы: рядом с полем, которое не принимает ввод. -->
     <span class="order-last w-full text-xs text-muted-foreground" data-field-hint>{search.reason}</span>
