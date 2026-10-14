@@ -94,11 +94,13 @@ const search = usePaginatorSearch(name, {
         при смене источника); без JS: `?page.q=...` отправляется GET-формой.
         Итог: всё зелёное; `/paginator` 194.7 → 195.0 (объект хука с геттерами).
 
-- [ ] **3. `FiltersPanel` в общий модуль.**
-  - [ ] `git mv` → `src/lib/ui/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
-  - [ ] `DemoPaginator.svelte` импортирует из `#lib/ui/filters/index.js`.
-  - [ ] Комментарий в `src/lib/ui/paginator/PaginatorSettingsForm.svelte:6`.
-  - [ ] Проверки: `gate.sh`; `shikimori.mjs` (фильтры, чипы, шаг F5).
+- [x] **3. `FiltersPanel` в общий модуль.**
+  - [x] `git mv` → `src/lib/ui/filters/FiltersPanel.svelte`; экспорт из `index.ts`.
+        `$app/state` → `currentPathname()` слоя роутера (то же `page.url.pathname`):
+        в общих `lib/ui/*` фреймворк-импорты только через `#lib/router/sveltekit.js`.
+  - [x] `DemoPaginator.svelte` импортирует из `#lib/ui/filters/index.js`.
+  - [x] Комментарий в `src/lib/ui/paginator/PaginatorSettingsForm.svelte:6`.
+  - [x] Проверки: `gate.sh`; `shikimori.mjs` (52 ok), `rickmorty.mjs`; `/paginator` 194.9.
 
 - [ ] **4. Перенос в папку роута** `src/routes/(site)/(app)/paginator/`.
   - [ ] `git mv`: `definition.ts`, `sources.ts`, `sources.test.ts`, `item-views.ts`,

@@ -12,7 +12,7 @@
    * страницы ничего не ломает: она ни на что не подписывается, кроме состояния
    * пагинатора, и нигде не регистрируется.
    */
-  import { page } from '$app/state'
+  import { currentPathname } from '#lib/router/sveltekit.js'
   import { getClientStore, setExtra } from '#lib/paginate/index.js'
   import {
     catalogFilterExtraPatch,
@@ -20,7 +20,8 @@
     catalogFilterView,
     type CatalogFilterSchema,
   } from '#lib/filters/index.js'
-  import { ActiveFilters, CatalogFilterForm } from '#lib/ui/filters/index.js'
+  import ActiveFilters from './ActiveFilters.svelte'
+  import CatalogFilterForm from './CatalogFilterForm.svelte'
 
   interface Props {
     /** Имя пагинатора-владельца: единственный канал записи — его хранилище. */
@@ -41,7 +42,7 @@
     name,
     schema,
     extra,
-    url = page.url.pathname,
+    url = currentPathname(),
     prefix = 'page',
     preserved = {},
     class: cls = '',

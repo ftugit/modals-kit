@@ -41,7 +41,7 @@
     type DemoStore,
   } from './definition'
   import { loadFilterSchema } from './sources'
-  import FiltersPanel from './FiltersPanel.svelte'
+  import { FiltersPanel } from '#lib/ui/filters/index.js'
   import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
   import AnimeRow from './AnimeRow.svelte'
   import AnimeTile from './AnimeTile.svelte'
