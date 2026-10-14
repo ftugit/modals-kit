@@ -4,7 +4,7 @@
   // Скелетона до гидратации нет: кнопка и без JS — рабочая ссылка, а мигающая
   // заглушка только дёргала вёрстку на каждом холодном рендере.
   import { MODAL_SPINNER_CLASS } from '#lib/modals/svelte/classes.js'
-  import WarningIcon from './WarningIcon.svelte'
+  import WarningIcon from '#lib/ui/primitives/WarningIcon.svelte'
 
   let { state }: { state: 'idle' | 'loading' | 'open' | 'error' } = $props()
 </script>

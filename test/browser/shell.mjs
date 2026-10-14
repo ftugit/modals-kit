@@ -242,14 +242,14 @@ async function run() {
       const other = page.locator(`${NAV} a[href="/modals"]`)
       const t0 = Date.now()
       await target.click()
-      await page.waitForSelector(`${NAV} a[href="/paginator"][data-task-state="pending"]`, { timeout: 1200 })
+      await page.waitForSelector(`${NAV} a[href="/paginator"][data-state="loading"]`, { timeout: 1200 })
       const shownAfter = Date.now() - t0
       assert.ok(shownAfter >= 140, `индикатор не раньше задержки 150 мс (показан через ${shownAfter} мс)`)
       assert.equal(await target.getAttribute('aria-busy'), 'true', 'нажатая ссылка — aria-busy')
       assert.equal(await target.locator('[data-task-indicator]').count(), 1, 'спиннер внутри нажатой ссылки')
-      assert.equal(await other.getAttribute('data-task-state'), null, 'у соседней ссылки индикатора нет')
+      assert.equal(await other.getAttribute('data-state'), null, 'у соседней ссылки индикатора нет')
       await page.waitForURL('**/paginator', { timeout: 15000 })
-      await page.waitForFunction(() => !document.querySelector('[data-task-state]'), null, { timeout: 5000 })
+      await page.waitForFunction(() => !document.querySelector('nav a[data-state="loading"]'), null, { timeout: 5000 })
       assert.ok(slowed > 0, 'переход действительно ждал данные (__data.json перехвачен)')
       ok(`Link с JS: медленный переход — спиннер у нажатой ссылки через ${shownAfter} мс, после перехода снят`)
 
@@ -259,8 +259,8 @@ async function run() {
       await page.evaluate(() => {
         window.__taskFlash = 0
         new MutationObserver((list) => {
-          for (const m of list) if (m.target.getAttribute?.('data-task-state')) window.__taskFlash++
-        }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-task-state'] })
+          for (const m of list) if (m.target.getAttribute?.('data-state') === 'loading' && !m.target.hasAttribute('data-modal-trigger')) window.__taskFlash++
+        }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-state'] })
       })
       await page.locator('a[href*="modal=fullpage"]').first().click()
       await sleep(800)

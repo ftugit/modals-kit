@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   // Содержимое страницы ошибок SvelteKit — общее для двух границ (C2):
   // `routes/(site)/+error.svelte` (внутри каркаса, его `<main>`) и корневой
   // `routes/+error.svelte` (/cycle, /spike и сбой самого каркаса — `<main>`

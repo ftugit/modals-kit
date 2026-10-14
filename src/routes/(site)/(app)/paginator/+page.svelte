@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'

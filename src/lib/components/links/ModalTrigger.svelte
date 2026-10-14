@@ -9,10 +9,14 @@
   //   • состояние idle/loading/open/error
   //   • модификаторы и среднюю кнопку отдаёт браузеру, как обычная ссылка
   //   • блокируется для незарегистрированного имени
-  import { chainToSearch, nextChain, routeHref } from '../core'
-  import type { ChainOverrides, RegisteredEntry, StackMode } from '../types'
+  //
+  // Лежит рядом с `Link` (`#lib/components/links`): это UI над модалками и
+  // фреймворком, а не часть библиотеки модалок — механику стопки она даёт
+  // через публичные `#lib/modals` и `#lib/modals/svelte`.
+  import { chainToSearch, nextChain, routeHref } from '#lib/modals/index.js'
+  import type { ChainOverrides, RegisteredEntry, StackMode } from '#lib/modals/index.js'
+  import { useModals } from '#lib/modals/svelte/index.js'
   import { ButtonIndicator, modalTriggerVariants } from '#lib/ui/modals/index.js'
-  import { useModals } from './context'
 
   /** Публичные props триггера зарегистрированной модалки. */
   interface Props extends ChainOverrides {

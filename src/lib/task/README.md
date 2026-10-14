@@ -9,7 +9,7 @@
 |---|---|---|
 | Ядро библиотеки | говорит **своими** словами; `#lib/task` не импортирует | `PaginatorState.status: 'loading'`, `RuntimeStatus` модалок |
 | Адаптер к фреймворку | переводит слова ядра в `TaskState` | `linkTask(href)` в `#lib/router/sveltekit.js` |
-| UI | читает только `TaskState` | `TaskIndicator`, `Link` (`#lib/ui/primitives`) |
+| UI | читает только `TaskState` | `TaskIndicator` (`#lib/ui/primitives`), `Link` (`#lib/components/links`) |
 
 Ядро без адаптера работает как раньше. Формат меняется здесь и в адаптерах, ядра не трогаются.
 
@@ -46,10 +46,11 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 
 ## Показ
 
-`TaskIndicator` (`#lib/ui/primitives`) рисует спиннер, а если есть процент — число рядом с ним.
-`Link` — обычная `<a href>` (без JavaScript работает как ссылка). С JavaScript она сама
-узнаёт, что переход SvelteKit идёт на её адрес (`linkTask`), и через 150 мс показывает
-индикатор. Короткие переходы и записи адреса модалками не мигают.
+`TaskIndicator` (`#lib/ui/primitives`) рисует спиннер, а если есть процент — число рядом с ним;
+ошибку — знак «!». `Link` (`#lib/components/links`) — обычная `<a href>` (без JavaScript
+работает как ссылка). С JavaScript она сама узнаёт, что переход SvelteKit идёт на её адрес
+(`linkTask`), и через 150 мс показывает индикатор. Короткие переходы и записи адреса модалками
+не мигают. Битая ссылка (адреса нет среди страниц) — `TaskState` с ошибкой: «!» и причина.
 
 ## Что ещё не сделано
 

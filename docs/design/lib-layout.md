@@ -58,7 +58,7 @@ R4/R5 (Select + `lib/search`, no-JS) — отдельно, после этого
 2. **Привязки SvelteKit для чужих lib**: роутер пагинатора (`svelteKitRouter`,
    `currentSearch`, `currentPathname`), предзагрузка (`preloadOutcome`). Переезжают в адаптеры
    своих lib.
-3. **`LoadLink.svelte`** — UI → `components/modals`.
+3. **`LoadLink.svelte`** — ✅ ход 141: удалён, функционал в `components/links/Link.svelte`.
 
 Под React: `address/core.ts` без изменений; пишется `address/react-router.ts` — четыре
 функции `AddressWriterDeps` (`read`, `commit`, `hash`, `traverse`); затем
@@ -84,7 +84,7 @@ src/lib/
 │                                  (+ sveltekit.test.ts)
 ├── modals/                      как есть, плюс:
 │   ├── cores/sveltekit.ts       + preloadOutcome ← router/sveltekit.ts
-│   └── svelte/ModalTrigger.svelte  без импорта из components (решение 2)
+│   └── svelte/                  ModalTrigger уже вынесен в components/links (ход 141)
 ├── paginate/
 │   ├── (ядро без изменений)
 │   ├── search/                  ← lib/search/*.ts (accumulator, core, dictionary, fuzzy,
@@ -115,7 +115,8 @@ src/lib/
 │   │   ├── separator/  skeleton/  spinner/  stat/  switch/
 │   │   └── field/               field.ts
 │   ├── settings/                ← ui/settings (Field, Select, Toggle)
-│   ├── modals/                  ← ui/modals + router/LoadLink.svelte
+│   ├── links/                   ✅ ход 141: Link + ModalTrigger, один index
+│   ├── modals/                  ← ui/modals
 │   ├── paginator/               ← ui/paginator (вместе с compile.ts, event-log.ts)
 │   ├── filters/                 ← ui/filters (CatalogFilterForm, ActiveFilters)
 │   ├── shell/                   ← lib/shell (AppShell, CollapsingHeader, HeaderRowView,
@@ -147,18 +148,18 @@ src/lib/
 
 | Сейчас | После |
 |---|---|
-| `modals/svelte/ModalTrigger.svelte` → `ui/modals` (lib импортирует UI) | lib без оформления, кнопка в `components/modals` (решение 2) |
+| `modals/svelte/ModalTrigger.svelte` → `ui/modals` (lib импортирует UI) | ✅ ход 141: целиком в `components/links` рядом с `Link` |
 | `modals/cores/sveltekit.ts` → `router/sveltekit.ts` | → `address/sveltekit.ts` (lib → lib) |
 | `paginate/svelte/PaginatorHost.svelte` → `router/sveltekit.ts` | роутер приходит из `paginate/sveltekit` |
-| `router/LoadLink.svelte` → `modals/cores` и `ui/modals` (цикл router ↔ modals) | `components/modals/LoadLink.svelte` |
+| `router/LoadLink.svelte` → `modals/cores` и `ui/modals` (цикл router ↔ modals) | ✅ ход 141: удалён, `components/links/Link.svelte` |
 | `filters`: префикс `filters.`, поле `q`, `extra` пагинатора — чужие договорённости | внутренние договорённости пакета `paginate` |
 
 ## Решения (нужны до начала)
 
 1. `lib/address` — отдельная lib (рекомендую) или писатель передаётся в каждый адаптер извне.
-2. `ModalTrigger`: поведение без оформления в lib + кнопка с оформлением в
-   `components/modals` (меняет API). `ModalHost`, `Layers`, `Tails` остаются в адаптере:
-   механика стопки (фокус, история, слои) со структурными классами, а не оформление.
+2. ~~`ModalTrigger`: поведение в lib + кнопка в `components/modals`~~ — решено в ходе 141
+   иначе: триггер целиком — UI над модалками и фреймворком, лежит в `components/links` рядом
+   с `Link`, импорт из одного `index`.
 3. Демо: `src/lib/demo/` или рядом с маршрутами в `src/routes/...`.
 4. Подписи режимов/границ фильтров: (а) словарь подписей — параметр
    `compileCatalogFilterSchema` с русским по умолчанию, как `messages` в `lib/form`
@@ -167,7 +168,7 @@ src/lib/
 ## Порядок (каждый шаг — отдельный коммит с гейтом)
 
 1. `router` → `lib/address` + `paginate/sveltekit/router.ts` + `preloadOutcome` в
-   `modals/cores/sveltekit.ts` + `LoadLink` в `components/modals`.
+   `modals/cores/sveltekit.ts` (`LoadLink` удалён в ходе 141).
 2. `search` → `paginate/search` и `paginate/svelte/search`.
 3. `filters` → `paginate/filters` вместе с R2: разрез по ролям, один префикс, подписи (по
    решению 4). Поведение не меняется — тесты фильтров и `shikimori.mjs` зелёные до и после.

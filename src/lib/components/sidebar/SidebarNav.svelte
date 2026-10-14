@@ -18,7 +18,7 @@
 </script>
 
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   import { page } from '$app/state'
   import { NAV_ITEMS } from '../header/nav'
 </script>

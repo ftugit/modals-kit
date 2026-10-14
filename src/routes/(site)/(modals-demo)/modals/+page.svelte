@@ -1,6 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Button, Link } from '#lib/ui/primitives/index.js'
+import { Link, ModalTrigger } from '#lib/components/links/index.js'
+  import { Button } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -9,16 +10,16 @@ import { Button, Link } from '#lib/ui/primitives/index.js'
   // страница читает живой контекст, а настройки шлёт через
   // modals.configure() — конфигурация хоста и так живёт в сторе ядра.
   // Отличия от оригинала (не фичи, а среда):
-  //   • LoadLink (быстрый роутер) → порт src/lib/router/LoadLink.svelte:
-  //     preloadData+goto и спиннер на ссылке, битая ссылка блокируется
-  //     ядром через таблицу роутов (осмотр 1.10-2, №30/№31);
+  //   • LoadLink (быстрый роутер) → `Link` (`#lib/components/links`):
+  //     спиннер на ссылке, битая ссылка блокируется ядром через таблицу
+  //     роутов (осмотр 1.10-2, №30/№31), `navigateOnError={false}` держит
+  //     ошибку загрузчика на ссылке;
   //   • «Pager Demo» → «Цикл» (/cycle): страницы /paginator в порте нет;
   //   • SourcesPanel — расширение порта: выбор источников цепочки
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel } from '#lib/modals/index.js'
-  import { ModalTrigger, useModals } from '#lib/modals/svelte/index.js'
+  import { useModals } from '#lib/modals/svelte/index.js'
   import { CloseAllButton, modalTriggerVariants } from '#lib/ui/modals/index.js'
-  import LoadLink from '#lib/router/LoadLink.svelte'
   import SettingsPanel from '#lib/ui/demo/modals/SettingsPanel.svelte'
   import SourcesPanel from '#lib/ui/demo/modals/SourcesPanel.svelte'
   import FloatingMenu from '#lib/ui/demo/modals/FloatingMenu.svelte'
@@ -121,21 +122,25 @@ import { Button, Link } from '#lib/ui/primitives/index.js'
           </Button>
           <CloseAllButton />
           <!-- ссылка на страницу, которая ждёт loader (1.5 c) и крутит
-               спиннер, как триггер модалки: порт LoadLink оригинала -->
-          <LoadLink href="/cards/501?slow=1" class={modalTriggerVariants()}>
+               спиннер, как триггер модалки (порт LoadLink оригинала — теперь Link) -->
+          <Link href="/cards/501?slow=1" class={modalTriggerVariants()}>
             Страница со спиннером
-          </LoadLink>
-          <LoadLink href="/no-such-page/1" class={modalTriggerVariants()}>
+          </Link>
+          <Link href="/no-such-page/1" class={modalTriggerVariants()}>
             Битая ссылка
-          </LoadLink>
-          <!-- исходы загрузчика: ошибка (ссылка видит её до перехода, страницу
-               покажет её +error) и штатная переадресация — не ошибка -->
-          <LoadLink href="/cards/404?fail=1" class={modalTriggerVariants()}>
+          </Link>
+          <!-- исходы загрузчика: ошибка (страницу покажет её +error), ошибка
+               с navigateOnError={false} (остаёмся, «!» на ссылке) и штатная
+               переадресация — не ошибка -->
+          <Link href="/cards/404?fail=1" class={modalTriggerVariants()}>
             Загрузчик с ошибкой
-          </LoadLink>
-          <LoadLink href="/cards/307?moved=1" class={modalTriggerVariants()}>
+          </Link>
+          <Link href="/cards/404?fail=1&stay=1" navigateOnError={false} class={modalTriggerVariants()}>
+            Ошибка — остаться на месте
+          </Link>
+          <Link href="/cards/307?moved=1" class={modalTriggerVariants()}>
             Ссылка с переадресацией
-          </LoadLink>
+          </Link>
           <!-- обычная ссылка: функция сама гасит переход -->
           <Link
             href="?modal=card"

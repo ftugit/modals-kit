@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
   let { data }: import('./$types').PageProps = $props()

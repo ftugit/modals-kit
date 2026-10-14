@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   import { NAV_ITEMS } from './nav'
 </script>
 

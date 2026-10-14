@@ -61,7 +61,7 @@ const historyGo = vi.fn()
 }
 const win = (globalThis as unknown as { window: { location: { hash: string } } }).window
 
-const { svelteKitRouter, shallowFlag, currentSearch, linkTask } = await import('./sveltekit')
+const { svelteKitRouter, shallowFlag, currentSearch, linkTask, resolveHref } = await import('./sveltekit')
 const { svelteKitEngine } = await import('#lib/modals/cores/sveltekit.js')
 
 const tick = async () => {
@@ -268,5 +268,26 @@ describe('linkTask: переход идёт именно на адрес ссы�
     expect(linkTask('').status).toBe('idle')
     go('/paginator', true)
     expect(linkTask('/paginator').status).toBe('idle')
+  })
+})
+
+describe('resolveHref: куда ведёт ссылка (от видимого адреса)', () => {
+  beforeEach(() => {
+    page.url = new URL('http://app.test/cards/1')
+    page.shallow = null
+  })
+  it('относительные адреса — от текущей страницы, не от корня', () => {
+    expect(resolveHref('?modal=card')?.url.pathname).toBe('/cards/1')
+    expect(resolveHref('2')?.url.pathname).toBe('/cards/2')
+    expect(resolveHref('#top')?.url.pathname).toBe('/cards/1')
+    page.shallow = { url: new URL('http://app.test/modals') }
+    expect(resolveHref('?modal=card')?.url.pathname).toBe('/modals')
+  })
+  it('свой origin — local, чужой — нет; пусто — null', () => {
+    expect(resolveHref('/form')?.local).toBe(true)
+    expect(resolveHref('https://shikimori.io/x')?.local).toBe(false)
+    expect(resolveHref('mailto:a@b.c')?.local).toBe(false)
+    expect(resolveHref('')).toBeNull()
+    expect(resolveHref(undefined)).toBeNull()
   })
 })

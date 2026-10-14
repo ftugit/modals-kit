@@ -29,7 +29,8 @@
   import type { CatalogFilterSchema } from '#lib/filters/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import type { FormDescription } from '#lib/form/index.js'
-  import { Button, Input, Select, Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
+  import { Button, Input, Select } from '#lib/ui/primitives/index.js'
 
   interface Props {
     /** Схема источника: по ней компилируется описание полей (единый код-путь с сервером). */

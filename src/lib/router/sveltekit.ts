@@ -256,6 +256,28 @@ export function currentSearch(): Record<string, unknown> {
   return Object.fromEntries(visibleAddress().url.searchParams)
 }
 
+/** Видимый адрес целиком (с учётом «мелких» записей) — сравнить «до» и «после». */
+export function visibleHref(): string {
+  return visibleUrl().href
+}
+
+/**
+ * Куда на самом деле ведёт `href` ссылки: разбор от ВИДИМОГО адреса
+ * (`?modal=card`, `details`, `#top` — относительно текущей страницы, в том
+ * числе после «мелкой» записи). `local` — тот же origin, то есть страница
+ * этого приложения, а не чужой сайт. Пустой или неразборчивый адрес — `null`.
+ */
+export function resolveHref(href: string | null | undefined): { url: URL; local: boolean } | null {
+  if (!href) return null
+  const base = visibleUrl()
+  try {
+    const url = new URL(href, base.href)
+    return { url, local: url.origin === base.origin }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Адаптер `#lib/task` для переходов SvelteKit: идёт ли переход ИМЕННО на этот
  * адрес. Читает `navigating` (реактивно: вызов внутри `$derived` или разметки
@@ -273,13 +295,9 @@ export function currentSearch(): Record<string, unknown> {
  */
 export function linkTask(href: string | null | undefined): TaskState {
   const to = navigating.to?.url
-  if (!href || !to || navigating.willUnload) return IDLE_TASK
-  let target: URL
-  try {
-    target = new URL(href, visibleUrl().href)
-  } catch {
-    return IDLE_TASK
-  }
+  if (!to || navigating.willUnload) return IDLE_TASK
+  const target = resolveHref(href)?.url
+  if (!target) return IDLE_TASK
   if (target.origin !== to.origin || target.pathname !== to.pathname || target.search !== to.search) return IDLE_TASK
   return { status: 'pending', scope: 'local', label: 'Переход' }
 }

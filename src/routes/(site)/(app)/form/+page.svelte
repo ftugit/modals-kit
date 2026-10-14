@@ -1,6 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { Button, Link } from '#lib/ui/primitives/index.js'
+import { Link } from '#lib/components/links/index.js'
+  import { Button } from '#lib/ui/primitives/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/ui/js-only.svelte.js'
   const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,

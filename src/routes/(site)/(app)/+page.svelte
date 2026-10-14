@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link } from '#lib/ui/primitives/index.js'
+  import { Link } from '#lib/components/links/index.js'
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.
 

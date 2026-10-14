@@ -1194,12 +1194,12 @@ try {
     await page.close()
   })
 
-  /* ── R-29 (C4): LoadLink различает исходы загрузчика ─────────────── */
+  /* ── R-29 (C4): Link (бывший LoadLink) различает исходы загрузчика ── */
   // Исход читает адаптер `preloadOutcome` по контракту kit 3 (`loaded |
   // redirect | error`). Было: `type !== 'loaded'` считалось ошибкой — штатная
   // переадресация рисовалась ошибкой, а отказ preloadData оставлял ссылку в
   // вечном `loading`.
-  await run('R-29 LoadLink: переадресация — не ошибка, отказ предзагрузки — ошибка', async () => {
+  await run('R-29 Link: переадресация — не ошибка, отказ предзагрузки — ошибка, битая ссылка заблокирована', async () => {
     const watch = (page, href) => page.evaluate((h) => {
       window.__llStates = []
       const a = document.querySelector(`a[href="${h}"]`)
@@ -1234,16 +1234,45 @@ try {
     ok(`отказ загрузки кода: не застряли в loading (${where === '/modals' ? 'ссылка вышла из loading' : `переход на ${where}`})`)
     await page.close()
 
-    // 3. Ошибка загрузчика: страницу показывает её +error; в kit 3 ссылка видит ошибку до перехода.
+    // 3. Ошибка загрузчика по умолчанию: переход ведёт SvelteKit, страницу показывает её +error.
     page = await browser.newPage()
     await gotoBase(page)
-    await watch(page, '/cards/404?fail=1')
     await page.locator('a[href="/cards/404?fail=1"]').click()
     await page.waitForURL((u) => u.pathname === '/cards/404', { timeout: 10000 })
     await page.waitForFunction(() => document.body.innerText.includes('404'), null, { timeout: 10000 })
-    states = await page.evaluate(() => window.__llStates)
-    assert(states.includes('error'), `ошибка загрузчика не видна ссылке: ${JSON.stringify(states)}`)
-    ok('ошибка загрузчика: ссылка видит её до перехода (контракт kit 3)')
+    ok('ошибка загрузчика: по умолчанию — страница +error')
+    await page.close()
+
+    // 4. navigateOnError={false}: остаёмся на месте, ошибка на ссылке («!» + текст).
+    page = await browser.newPage()
+    await gotoBase(page)
+    const stay = page.locator('a[href="/cards/404?fail=1&stay=1"]')
+    await stay.click()
+    await page.waitForFunction(
+      () => document.querySelector('a[href="/cards/404?fail=1&stay=1"]')?.getAttribute('data-state') === 'error',
+      null, { timeout: 10000 },
+    )
+    assert(new URL(page.url()).pathname === '/modals', `ушли со страницы: ${page.url()}`)
+    const stayTitle = await stay.getAttribute('title')
+    assert(/ошибка 404/.test(stayTitle ?? ''), `в подсказке нет причины: ${stayTitle}`)
+    assert((await stay.locator('[data-task-indicator="error"] svg').count()) === 1, 'нет знака «!»')
+    ok(`navigateOnError={false}: остались на /modals, «!» на ссылке, подсказка «${stayTitle}»`)
+    await page.close()
+
+    // 5. Битая ссылка: заблокирована уже в SSR (нет href, aria-disabled, «!», причина), клик ничего не делает.
+    const html = await (await fetch(new URL('/modals', BASE))).text()
+    const broken = html.match(/<a[^>]*data-state="error"[^>]*>(?:(?!<\/a>)[\s\S])*?Битая ссылка[\s\S]*?<\/a>/)?.[0] ?? ''
+    assert(broken, 'SSR: битая ссылка не помечена')
+    assert(!/\shref=/.test(broken.split('>')[0]), `SSR: у битой ссылки остался href: ${broken.slice(0, 200)}`)
+    assert(/aria-disabled="true"/.test(broken) && /Страницы \/no-such-page\/1 не существует/.test(broken), 'SSR: нет aria-disabled или причины')
+    assert(/data-task-indicator="error"/.test(broken), 'SSR: нет знака «!»')
+    page = await browser.newPage()
+    await gotoBase(page)
+    // Playwright сам не кликает aria-disabled — жмём принудительно, как упорный пользователь.
+    await page.getByText('Битая ссылка', { exact: true }).click({ force: true })
+    await page.waitForTimeout(500)
+    assert(new URL(page.url()).pathname === '/modals', `битая ссылка увела на ${page.url()}`)
+    ok('битая ссылка: в SSR без href, aria-disabled, «!» и причина; клик с JS ничего не делает')
     await page.close()
   })
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Порт WarningIcon из src/components/icons.tsx оригинала (модальная зона).
+  // Порт WarningIcon из src/components/icons.tsx оригинала. Общий знак «!»:
+  // ошибка триггера модалки, битая ссылка `Link`, ошибка в модалке.
   // Размер — инлайн-атрибутами: в оригинале Tailwind-классы size-*, но иконка
   // лежит вне зоны UnoCSS-токенов демо, и класс мог бы молча не примениться.
   let { size = 20 }: { size?: number } = $props()

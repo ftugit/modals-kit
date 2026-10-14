@@ -7,7 +7,7 @@ export const load: PageLoad = async ({ params, url }) => {
   if (url.searchParams.get('slow') === '1') {
     await new Promise((resolve) => setTimeout(resolve, 1500))
   }
-  // Демо-ручки для LoadLink (C4): исход загрузчика, который ссылка обязана
+  // Демо-ручки для Link (бывший LoadLink, C4): исход загрузчика, который ссылка обязана
   // различать, — ошибка (`status ≥ 400` в ответе preloadData) и штатная
   // переадресация (`type: 'redirect'`).
   if (url.searchParams.get('fail') === '1') {

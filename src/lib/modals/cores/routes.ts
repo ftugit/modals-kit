@@ -31,6 +31,8 @@ export function routePattern(file: string): RegExp {
     if (/^\[.+\]$/.test(seg)) parts.push('/([^/]+)')
     else parts.push('/' + seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   }
+  // Только группы (`(site)/(app)/+page.svelte`) — это тоже корень `/`.
+  if (parts.length === 0) return /^\/$/
   return new RegExp(`^${parts.join('')}$`)
 }
 

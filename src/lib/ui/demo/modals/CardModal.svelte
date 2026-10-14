@@ -6,7 +6,7 @@
 import { Button } from '#lib/ui/primitives/index.js'
   import { Input } from '#lib/ui/primitives/index.js'
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '#lib/modals/svelte/index.js'
-  import { ModalTrigger } from '#lib/modals/svelte/index.js'
+  import { ModalTrigger } from '#lib/components/links/index.js'
   import { entryLabel } from '#lib/modals/index.js'
   import { CloseAllButton, modalTriggerVariants } from '#lib/ui/modals/index.js'
   import { Select } from '#lib/ui/index.js'

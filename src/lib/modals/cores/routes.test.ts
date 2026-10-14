@@ -45,3 +45,13 @@ test('makeRouteResolves: внешние адреса истинны, ?/# отб�
   assert.equal(resolves('/no-such-page/1'), false)
   assert.equal(resolves('/cards/1/extra'), false)
 })
+
+test('routePattern: корень внутри групп — тоже `/` (Link в шапке ведёт на главную)', () => {
+  const root = routePattern('/src/routes/(site)/(app)/+page.svelte')
+  assert.equal(root.test('/'), true)
+  assert.equal(root.test(''), false)
+  assert.equal(root.test('/form'), false)
+  const resolves = makeRouteResolves(['/src/routes/(site)/(app)/+page.svelte'])
+  assert.equal(resolves('/'), true)
+  assert.equal(resolves('/?page.src=animes'), true)
+})
