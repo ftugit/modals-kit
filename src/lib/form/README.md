@@ -309,12 +309,12 @@ const handle = createFormHandler({
 
 | Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
 |---|---|---|---|
-| `text`, `email`, `url`, `tel`, `color`, `hidden` | `text` | `type` | `TextField` → `Input` |
+| `text`, `email`, `url`, `tel`, `color`, `hidden` | `text` | `type` | `TextField` → `Input`; с `variant: 'auto'` — `Input autoWidth` (ширина по тексту) |
 | `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления); с `variant: 'strength'` — `PasswordStrengthField` → `PasswordStrength` (тот же `PasswordInput` + шкала по `strengthOf`) |
 | `search` | `text` | `type="search"` | `SearchField` → `SearchInput` (крестик очистки после оживления) |
 | `otp` | `text` | `type="text" inputmode="numeric" autocomplete="one-time-code"` | `OtpField` → `OtpInput` (ячейки после оживления; число ячеек — из `v.maxLength(n)`, без него 6) |
 | `textarea` | `text` | — | `TextareaField` → `Textarea`; с `variant: 'auto'` — `AutoTextareaField` → `AutoTextarea` (высота по тексту, 3–8 строк) |
-| `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления); `range` — свой компонент |
+| `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления; с `variant: 'auto'` — `autoWidth`, ширина по числу); `range` — свой компонент |
 | `date`, `time`, `datetime-local` | `date` / `time` / `datetime` | `type` | `TextField` → `Input` |
 | `select`, `radio` | `select` | — | `SelectField` → `Select` |
 | `multiselect` | `multiselect` | `multiple` | `SelectField` → `Select multiple` |
@@ -345,10 +345,14 @@ digest: field.switch({ label: 'Присылать дайджест на почт
 password: field.password({ label: 'Пароль', variant: 'strength', validate: [v.minLength(10), v.strength('good')] }),
 confirm: field.password({ label: 'Повторите пароль', validate: [v.sameAs('password')] }),   // просто глаз
 about: field.textarea({ label: 'О себе', variant: 'auto', validate: [v.maxLength(200)] }), // растёт по тексту
+sku: field.text({ label: 'Артикул', variant: 'auto', validate: [v.maxLength(16)] }),       // ширина по тексту
+qty: field.number({ label: 'Количество', variant: 'auto', validate: [v.minValue(1)] }),    // ширина по числу
 
 // forms.config.ts
 case 'password': return f.variant === 'strength' ? PasswordStrengthField : PasswordField
 case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
+// text/number: тот же компонент, вариант — проп примитива
+<Input {...f.attrs} autoWidth={f.variant === 'auto'} />
 ```
 
 Поля из рантайма (`FieldSpec`) принимают тот же `variant`; не строка — дефект `spec.limit`.

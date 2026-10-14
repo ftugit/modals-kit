@@ -99,8 +99,8 @@ function make(cardinality: 'first' | 'all') {
       }),
       digest: field.switch({ label: 'Присылать дайджест на почту' }),
       // повторяемая группа: ключ строки стабилен, индекс — производное
-      'items.r1.sku': field.text({ label: 'Артикул', validate: [v.maxLength(16)] }),
-      'items.r1.qty': field.number({ label: 'Количество', validate: [v.minValue(1), v.maxValue(99)] }),
+      'items.r1.sku': field.text({ label: 'Артикул', variant: 'auto', validate: [v.maxLength(16)] }),
+      'items.r1.qty': field.number({ label: 'Количество', variant: 'auto', validate: [v.minValue(1), v.maxValue(99)] }),
       agree: field.checkbox({ label: 'Согласен с условиями', validate: [v.required()] }),
     },
   })

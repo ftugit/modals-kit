@@ -500,6 +500,26 @@ ok('пути дают одинаковые ошибки',
   ok('о себе (auto): потолок — восемь строк', Math.abs(h12 - h8) < 1 && h8 > h5, `${h8} / ${h12}`)
   await about.fill('')
   ok('о себе (auto): пустое — обратно к трём строкам', Math.abs(await height() - h0) < 1)
+
+  // Вариант 'auto' у «Артикул» (text) и «Количество» (number): ширина по значению, а не
+  // вся строка; кнопки «−/+» числа остаются внутри рамки.
+  for (const [name, short, long] of [['items.r1.sku', 'A1', 'ABCDEFGHIJKLMNOP'], ['items.r1.qty', '1', '99999999']]) {
+    const input = pg.locator(`[name="${name}"]`)
+    const width = () => input.evaluate((el) => el.getBoundingClientRect().width)
+    const row = await input.evaluate((el) => el.parentElement.parentElement.getBoundingClientRect().width)
+    await input.fill(short)
+    const w0 = await width()
+    await input.fill(long)
+    const w1 = await width()
+    ok(`${name} (auto): уже строки и растёт по значению`, w0 < row * 0.8 && w1 > w0 + 20, `${w0} → ${w1}, строка ${row}`)
+    await input.fill('')
+  }
+  const steps = await pg.locator('[name="items.r1.qty"]').evaluate((el) => {
+    const box = el.getBoundingClientRect()
+    const up = el.parentElement.querySelector('[data-number-step="up"]')?.getBoundingClientRect()
+    return up ? up.right <= box.right + 1 && up.left >= box.left : false
+  })
+  ok('items.r1.qty (auto): кнопки «−/+» внутри рамки поля', steps)
   await ctx.close()
 
   // Без JS: обычные поля, без кнопок оживления; сервер принимает новые значения.

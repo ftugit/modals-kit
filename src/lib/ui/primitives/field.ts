@@ -1,3 +1,4 @@
+/* @unocss-include */
 // Базовые классы полей и их размеры. Перенесено из `input.tsx` оригинала
 // без правок значений: плану запрещено подбирать оформление.
 import { variants, type VariantProps } from '../cn'
@@ -11,3 +12,12 @@ export const inputVariants = variants(
 )
 
 export type InputVariants = VariantProps<typeof inputVariants>
+
+/**
+ * Ширина по содержимому (`autoWidth` у `Input` и `NumberField`): поле растёт с текстом
+ * от `minChars` символов до ширины родителя. Это `field-sizing: content` — чистый CSS,
+ * JS не нужен; браузер без него рисует поле родной ширины, значение то же.
+ * Наименьшая ширина — `--field-min-width`, её ставит примитив.
+ */
+export const AUTO_WIDTH_CLASS =
+  'field-sizing-content w-auto self-start max-w-full transition-[width] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms]'

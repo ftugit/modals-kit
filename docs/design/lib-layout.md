@@ -106,7 +106,7 @@ src/lib/
 │   │   ├── button/              Button, ButtonGroup
 │   │   ├── card/                Card, CardContent, CardDescription, CardFooter,
 │   │   │                        CardHeader, CardTitle
-│   │   ├── input/               Input, InputAffix, InputShell, AffixSwap, AutoWidthInput
+│   │   ├── input/               Input (autoWidth), InputAffix, InputShell, AffixSwap
 │   │   ├── textarea/            Textarea, AutoTextarea
 │   │   ├── select/              Select, SelectList, select-model.ts, select-trace.ts
 │   │   ├── search/              SearchField, SearchInput, SearchMorph

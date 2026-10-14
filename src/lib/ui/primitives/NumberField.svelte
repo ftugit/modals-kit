@@ -5,11 +5,16 @@
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../cn'
+  import { AUTO_WIDTH_CLASS } from './field'
 
   interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'size'> {
     value?: number | string | null
     decrementLabel?: string
     incrementLabel?: string
+    /** Ширина по числу вместо всей строки (кнопки «−/+» остаются внутри рамки). */
+    autoWidth?: boolean
+    /** Наименьшая ширина при `autoWidth`, в символах (без места под кнопки). */
+    minChars?: number
   }
 
   let {
@@ -17,7 +22,10 @@
     disabled = false,
     decrementLabel = 'Уменьшить',
     incrementLabel = 'Увеличить',
+    autoWidth = false,
+    minChars = 4,
     class: cls,
+    style,
     ...rest
   }: Props = $props()
 
@@ -61,7 +69,9 @@
   }
 </script>
 
-<div class="relative flex items-center" data-number-field="">
+<!-- С `autoWidth` обёртка по ширине поля: кнопки позиционируются от неё и должны
+     остаться внутри рамки, а не уехать к краю строки. -->
+<div class={autoWidth ? 'relative inline-flex w-fit max-w-full items-center' : 'relative flex items-center'} data-number-field="">
   <!-- Чужие атрибуты — первыми: `type` поля задаёт сам примитив. -->
   <input
     {...rest}
@@ -72,8 +82,11 @@
     class={cn(
       'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
       mounted && 'pr-16',
+      // Место под кнопки (pr-16) и отступ слева (px-3) — сверх ширины самого числа.
+      autoWidth && [AUTO_WIDTH_CLASS, mounted ? 'min-w-[calc(var(--field-min-width)+4.75rem)]' : 'min-w-[calc(var(--field-min-width)+1.5rem)]'],
       cls,
     )}
+    style={autoWidth ? `--field-min-width: ${minChars}ch;${style ? ` ${style}` : ''}` : style}
   />
   {#if mounted}
     <span class="absolute right-1 flex items-center gap-0.5">

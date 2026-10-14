@@ -91,7 +91,6 @@ const SCOPE = [
   'src/lib/ui/primitives/PasswordStrength.svelte',
   'src/lib/ui/primitives/PhoneInput.svelte',
   'src/lib/ui/primitives/AutoTextarea.svelte',
-  'src/lib/ui/primitives/AutoWidthInput.svelte',
   'src/lib/ui/demo/modals/FloatingMenu.svelte',
   'src/lib/ui/demo/modals/SourcesPanel.svelte',
   'src/lib/ui/demo/modals/SelectModal.svelte',

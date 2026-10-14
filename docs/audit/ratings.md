@@ -576,7 +576,6 @@
 | `AffixSwap.svelte` | 41 | — | ⏳ |  |  |
 | `Alert.svelte` | 49 | — | ⏳ |  |  |
 | `AutoTextarea.svelte` | 55 | — | ⏳ |  | addEventListener×1 |
-| `AutoWidthInput.svelte` | 23 | — | ⏳ |  |  |
 | `Badge.svelte` | 54 | — | ⏳ |  |  |
 | `Button.svelte` | 81 | — | ⏳ |  | $effect×1 |
 | `ButtonGroup.svelte` | 26 | — | ⏳ |  |  |
