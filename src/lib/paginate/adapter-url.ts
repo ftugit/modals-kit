@@ -351,7 +351,7 @@ export function createUrlAdapter<T>(opts: {
 }): PaginatorAdapter<T> & {
   setRouter(router: MinimalRouter | null): void
   /** Спецификация ключей адреса — хост читает её вместо дублирующих пропсов. */
-  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[] }
+  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[]; extraDefaults?: Extra }
 } {
   const source = assertAdaptedSource<T>(opts.source, `createUrlAdapter("${opts.name}")`)
   const pageSize = opts.pageSize ?? 20
@@ -452,7 +452,7 @@ export function createUrlAdapter<T>(opts: {
      * Транспорт объявляет себя сам: хост читает отсюда `pageParam`/`extra`/`pageSizes`
      * для разбора back/forward и не может разойтись с адаптером.
      */
-    searchSpec: { pageParam, extra: opts.extraSearch, pageSizes: opts.pageSizes },
+    searchSpec: { pageParam, extra: opts.extraSearch, pageSizes: opts.pageSizes, extraDefaults: opts.extraDefaults },
     /**
      * Разбор внешнего состояния живёт ЗДЕСЬ: адрес — хранилище этого адаптера.
      * Все объявленные ключи присутствуют в `extra` явно; ключ, исчезнувший из
@@ -623,7 +623,7 @@ export function withUrlTakeover<T>(
   },
 ): PaginatorAdapter<T> & {
   setRouter(router: MinimalRouter | null): void
-  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[] }
+  searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[]; extraDefaults?: Extra }
 } {
   const channel = createUrlAdapter<T>({
     name: url.name ?? 'url-channel',

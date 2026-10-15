@@ -18,6 +18,7 @@ import {
   deriveMeta,
   distributeRoundRobin,
   encodeExtraValue,
+  externalExtraDiff,
   extraField,
   flattenPages,
   getPaginator,
@@ -1325,5 +1326,57 @@ describe('хранилище адаптера по умолчанию на се�
     const init = await adapter.getInitial()
     expect(init.page).toBe(1)
     expect(init.extra).toEqual({})
+  })
+})
+
+describe('externalExtraDiff: «ключа нет» = значение по умолчанию', () => {
+  const defaults = { cur: false, after: '', ord: 'default', live: false }
+
+  it('адрес с одними умолчаниями против пустого состояния — изменений нет', () => {
+    // Оживление /db-demo?page=3: разбор адреса подставил умолчания, стор их не хранит.
+    expect(externalExtraDiff({ ...defaults }, {}, defaults)).toEqual({})
+  })
+
+  it('явное умолчание в состоянии против отсутствия в адресе — изменений нет', () => {
+    expect(externalExtraDiff({ cur: false }, { cur: false }, defaults)).toEqual({})
+    expect(externalExtraDiff({ cur: undefined }, { cur: false }, defaults)).toEqual({})
+  })
+
+  it('настоящая разница отдаётся значением из адреса', () => {
+    expect(externalExtraDiff({ ...defaults, ord: 'old' }, {}, defaults)).toEqual({ ord: 'old' })
+    expect(externalExtraDiff({ ...defaults }, { ord: 'old' }, defaults)).toEqual({ ord: 'default' })
+  })
+
+  it('ключ без умолчания, исчезнувший из адреса, — снятие', () => {
+    const diff = externalExtraDiff({ flt: undefined }, { flt: 'a' }, defaults)
+    expect(Object.keys(diff)).toEqual(['flt'])
+    expect(diff.flt).toBeUndefined()
+    expect(externalExtraDiff({ flt: undefined }, {}, defaults)).toEqual({})
+  })
+
+  it('keepAbsent: отсутствие указателя в адресе его не снимает, новое значение — меняет', () => {
+    const keep = new Set(['after'])
+    // Оживление: указатель пришёл из ответа сервера, адрес его не содержит.
+    expect(externalExtraDiff({ ...defaults }, { after: 'T0' }, defaults, keep)).toEqual({})
+    expect(externalExtraDiff({ x: undefined }, { x: 'T0' }, undefined, new Set(['x']))).toEqual({})
+    // Адрес называет другой указатель — это изменение.
+    expect(externalExtraDiff({ ...defaults, after: 'T1' }, { after: 'T0' }, defaults, keep)).toEqual({ after: 'T1' })
+    // Без keepAbsent то же отсутствие — снятие.
+    expect(externalExtraDiff({ ...defaults }, { after: 'T0' }, defaults)).toEqual({ after: '' })
+  })
+
+  it('без умолчаний — строгое сравнение', () => {
+    expect(externalExtraDiff({ a: 1 }, { a: 1 })).toEqual({})
+    expect(externalExtraDiff({ a: 1 }, {})).toEqual({ a: 1 })
+  })
+
+  it('URL-адаптер отдаёт свои умолчания хосту через searchSpec', () => {
+    const adapter = createUrlAdapter({
+      name: 'eed-spec',
+      source: sourceOf(async () => ({ items: [] })),
+      pageSize: 5,
+      extraDefaults: { cur: false },
+    })
+    expect(adapter.searchSpec.extraDefaults).toEqual({ cur: false })
   })
 })

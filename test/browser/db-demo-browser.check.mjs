@@ -83,6 +83,31 @@ try {
     return `${new URL(page.url()).search} → ${(await rowIds()).length} других строк`
   })
 
+  // Регрессия: прямая загрузка ?page=N после гидрации сбрасывалась на первую
+  // страницу и запрашивала список, о котором пользователь не просил (разбор адреса
+  // подставлял умолчания ключей, а хост считал каждое из них «изменением»).
+  const page2Ids = await rowIds()
+  await step('прямая загрузка ?page=2 держится после гидрации, без запроса', async () => {
+    const direct = await browser.newPage()
+    const listCalls = []
+    direct.on('request', (r) => {
+      if (r.url().includes('/api/db-posts')) listCalls.push(r.url())
+    })
+    direct.on('pageerror', (e) => problems.push(`pageerror: ${e.message.split('\n')[0]}`))
+    try {
+      await direct.goto(`${BASE}?page=2`, { waitUntil: 'networkidle' })
+      await direct.waitForTimeout(800)
+      const url = new URL(direct.url())
+      if (url.searchParams.get('page') !== '2') throw new Error(`адрес сброшен: ${url.search || '(пусто)'}`)
+      const ids = await direct.$$eval('[data-testid="row-id"]', (els) => els.map((e) => e.textContent.trim()))
+      if (ids.join() !== page2Ids.join()) throw new Error(`строки не второй страницы: ${ids.slice(0, 3).join(',')}…`)
+      if (listCalls.length) throw new Error(`лишний запрос списка: ${listCalls[0]}`)
+      return `${url.search}, ${ids.length} строк, запросов списка 0`
+    } finally {
+      await direct.close()
+    }
+  })
+
   const totalBefore = Number((await page.textContent('[data-testid="total"]'))?.trim())
   // `total` рисуется `ListMeta` из состояния пагинатора: после точечного
   // обновления он меняется, серверная шапка страницы — нет.

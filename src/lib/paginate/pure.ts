@@ -1,7 +1,7 @@
 // Чистые функции ядра — без эффектов, без реактивности, тестируются без браузера.
 // Дословный порт pure.ts React-версии + pagesList (бывшие атомы) со стабильными ссылками
 // на группы — чтобы список страниц не обновлял неизменившиеся страницы (см. pagesList).
-import type { PageGroup, PageResponse, PaginatorState, ViewState } from './types'
+import type { Extra, ExtraValue, PageGroup, PageResponse, PaginatorState, ViewState } from './types'
 
 export type DerivedMeta = {
   totalItems: number | null
@@ -110,4 +110,36 @@ export function pagesList<T>(
   if (p && p.mode === 'prepend') groups.unshift(reusePending(p.page, p.count))
   if (p && p.mode === 'append') groups.push(reusePending(p.page, p.count))
   return groups
+}
+
+/**
+ * Ключи внешнего состояния (адрес после back/forward или при оживлении), которые
+ * ДЕЙСТВИТЕЛЬНО отличаются от состояния пагинатора. «Ключа нет» равно значению по
+ * умолчанию: адаптер не пишет умолчания в адрес, а разбор адреса их подставляет, — без
+ * этого правила каждый ключ с умолчанием выглядел «изменённым», и хост сбрасывал список
+ * на первую страницу запросом, о котором пользователь не просил.
+ *
+ * Значение `undefined` во внешнем состоянии (ключ исчез из адреса, умолчания нет)
+ * остаётся снятием ключа: оно отличается от любого значения в состоянии.
+ *
+ * `keepAbsent` — ключи, ОТСУТСТВИЕ которых во внешнем состоянии не значит «снять».
+ * Нужны при первом сравнении после оживления: указатель следующего шага (позиционный
+ * ключ) пришёл в снимок из ответа сервера, а адрес его ещё не содержит — сервер адрес
+ * не переписывает. Снять его значило бы потерять продолжение списка.
+ */
+export function externalExtraDiff(
+  external: Readonly<Record<string, ExtraValue | undefined>>,
+  current: Readonly<Extra>,
+  defaults?: Readonly<Extra>,
+  keepAbsent?: ReadonlySet<string>,
+): Record<string, ExtraValue | undefined> {
+  const effective = (src: Readonly<Record<string, ExtraValue | undefined>>, key: string) =>
+    src[key] === undefined ? defaults?.[key] : src[key]
+  const diff: Record<string, ExtraValue | undefined> = {}
+  for (const key of Object.keys(external)) {
+    const ext = effective(external, key)
+    if (keepAbsent?.has(key) && ext === defaults?.[key]) continue
+    if (ext !== effective(current, key)) diff[key] = external[key]
+  }
+  return diff
 }

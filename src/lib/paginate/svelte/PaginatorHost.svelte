@@ -18,7 +18,7 @@
     setExtra,
     setPageSize,
   } from '../core'
-  import { canLoadMore, pickCurrentPage } from '../pure'
+  import { canLoadMore, externalExtraDiff, pickCurrentPage } from '../pure'
   import { getPaginator, onPaginatorError } from '../registry'
   import { createPaginatorStore, getClientStore, type Store } from '../store'
   import type {
@@ -580,16 +580,20 @@
     }
   })
 
+  // Первое сравнение — с адресом, из которого собран снимок сервера. Указатель
+  // следующего шага в снимке есть, а в адресе его ещё нет: это не «снять», а «сервер
+  // не мог дописать адрес». Дальше (назад/вперёд) отсутствие указателя снимает его.
+  let firstExternal = true
   $effect(() => {
     const ext = effectiveExternalRestorable
     if (!ext) return
     untrack(() => {
       const s = getState(store, name)
+      const keepAbsent = firstExternal ? instance.positionKeys : undefined
+      firstExternal = false
       if (ext.extra) {
-        const diff: Extra = {}
-        for (const [k, v] of Object.entries(ext.extra)) {
-          if (s.extra[k] !== v) diff[k] = v as ExtraValue
-        }
+        // Умолчания — у адаптера (адрес их не хранит) или у хоста (проп): «ключа нет» = умолчание.
+        const diff = externalExtraDiff(ext.extra, s.extra, spec.extraDefaults ?? init.extraDefaults, keepAbsent)
         if (Object.keys(diff).length > 0) {
           void setExtra(store, name, diff)
         }
