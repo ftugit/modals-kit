@@ -9,7 +9,7 @@
    * `fetch` в обход него здесь запрещён сборкой (`npm run test:guard`).
    */
   import { untrack } from 'svelte'
-  import { bind, Form } from '#lib/form/svelte/index.js'
+  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
   import { Button } from '#lib/components/ui/index.js'
@@ -129,5 +129,5 @@
   <Field of={form.f.title} />
   <!-- поле только формы: в базу не идёт (сервер отдаёт базе pick(['title'])) -->
   <Field of={form.f.agree} />
-  <Button type="submit" data-testid="create">Добавить</Button>
+  <Button type="submit" data-testid="create" task={formTask(form.state)}>Добавить</Button>
 </Form>

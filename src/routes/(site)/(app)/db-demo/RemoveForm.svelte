@@ -5,7 +5,7 @@
    * список, поэтому поле видимое и текстовое (значение можно скопировать).
    */
   import { untrack } from 'svelte'
-  import { bind, Form } from '#lib/form/svelte/index.js'
+  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
   import { Button } from '#lib/components/ui/index.js'
@@ -58,5 +58,5 @@
 <Form form={form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
   <Common errors={form.common} title="Удаление отклонено" />
   <Field of={form.f.ids} />
-  <Button variant="outline" type="submit" data-testid="remove">Удалить</Button>
+  <Button variant="outline" type="submit" data-testid="remove" task={formTask(form.state)}>Удалить</Button>
 </Form>

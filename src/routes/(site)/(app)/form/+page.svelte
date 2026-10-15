@@ -7,7 +7,7 @@ import { asLink } from '#lib/components/links/index.js'
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
-  import { bind, Form, type LiveMode } from '#lib/form/svelte/index.js'
+  import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
     compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
@@ -376,10 +376,11 @@ import { asLink } from '#lib/components/links/index.js'
                   onclick={addRuntimeField}>
             + Поле из рантайма
           </Button>
-          <Button type="submit" {...form.intent('submit')}>
+          <Button type="submit" {...form.intent('submit')} task={formTask(form.state, 'submit')}>
             {form.state.pendingIntent === 'submit' ? 'Отправка…' : 'Создать аккаунт'}
           </Button>
-          <Button variant="outline" type="submit" {...form.intent('save-draft')}>
+          <Button variant="outline" type="submit" {...form.intent('save-draft')}
+                  task={formTask(form.state, 'save-draft')}>
             {form.state.pendingIntent === 'save-draft' ? 'Сохранение…' : 'Сохранить черновик'}
           </Button>
         </div>

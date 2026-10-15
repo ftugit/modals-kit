@@ -9,7 +9,7 @@
   import { untrack } from 'svelte'
   import { refreshAll } from '$app/navigation'
   import { jsonTransport } from '#lib/components/form/transport.js'
-  import { bind, Form } from '#lib/form/svelte/index.js'
+  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
@@ -74,7 +74,7 @@
         {#if step.field}<Field of={form.f[step.field]!} />{/if}
       {/each}
       <Field of={form.f.token!} />
-      <Button type="submit" data-testid="schema-run">Выполнить</Button>
+      <Button type="submit" data-testid="schema-run" task={formTask(form.state)}>Выполнить</Button>
     </Form>
   {/if}
 </section>

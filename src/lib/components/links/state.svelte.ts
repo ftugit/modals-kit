@@ -102,6 +102,9 @@ function overlay(el: HTMLElement, name: string, value: () => string | null): voi
     const before = el.getAttribute(name)
     el.setAttribute(name, next)
     return () => {
+      // Атрибут успел сменить его владелец (разметка Svelte, `form.intent()`
+      // снимает свой `aria-busy`) — его значение свежее нашего «прежнего».
+      if (el.getAttribute(name) !== next) return
       if (before === null) el.removeAttribute(name)
       else el.setAttribute(name, before)
     }

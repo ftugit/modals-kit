@@ -3,7 +3,7 @@
  *   • медленный переход SvelteKit зажигает полоску сверху (без процента) и гасит её;
  *   • быстрый переход и открытие модалки полоску не зажигают (задержка 150 мс);
  *   • без JS полоски в разметке нет;
- *   • кнопка с `task` (отправка формы): спиннер на нажатой, полоска, повторный клик гасится.
+ *   • кнопка с `task` (отправка формы): спиннер на нажатой, полоска, после ответа всё снято.
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -99,6 +99,31 @@ async function run() {
       assert.ok(labels.every((l) => l === 'Загрузка модалки'), `подписи полоски: ${labels}`)
       assert.equal(await page.locator('[data-testid=loader-bar]').count(), 0, 'после открытия полоски нет')
       ok('модалка: полоска только на время её загрузки')
+      await page.close()
+    }
+    {
+      // Кнопка с `task={formTask(form.state, intent)}`: спиннер у нажатой, полоска,
+      // после ответа всё снято (в том числе `aria-busy`, который ставит и сама форма).
+      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+      await page.goto(BASE + '/form', { waitUntil: 'networkidle' })
+      await page.route('**/form/submit', async (route) => {
+        await sleep(900)
+        await route.continue()
+      })
+      const draft = page.locator('button[name=intent][value=save-draft]')
+      const create = page.locator('button[name=intent][value=submit]')
+      await draft.click()
+      await sleep(400)
+      assert.equal(await draft.getAttribute('data-state'), 'loading', 'спиннер у нажатой')
+      assert.equal(await draft.getAttribute('aria-busy'), 'true')
+      assert.equal(await create.getAttribute('data-state'), null, 'у второй кнопки спиннера нет')
+      assert.equal(await page.locator('[data-testid=loader-bar]').count(), 1, 'отправка видна в полоске')
+      ok('отправка формы: спиннер у нажатой кнопки и полоска')
+      await page.waitForFunction(() => !document.querySelector('[data-testid=loader-bar]'), null, { timeout: 5000 })
+      await sleep(100)
+      assert.equal(await draft.getAttribute('data-state'), null)
+      assert.equal(await draft.getAttribute('aria-busy'), null, 'aria-busy снят')
+      ok('после ответа состояние снято')
       await page.close()
     }
     {
