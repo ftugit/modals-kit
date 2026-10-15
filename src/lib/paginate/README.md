@@ -121,6 +121,9 @@ definePaginator({
   Единственная связь с другим пакетом — `lib/form`. Документация — [`filters/README.md`](./filters/README.md).
 - `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`,
   `paginatorTask(state, page?)` — загрузка в формате задачи `#lib/task` для ссылок и глобального лоадера;
-  тип повторён структурно, пакет от `#lib/task` не зависит);
+  тип повторён структурно, пакет от `#lib/task` не зависит. Ход загрузки источник сообщает через
+  `look.report(progress)` (`SourceLook`/`PageRequest`): ядро кладёт его в `state.progress` как есть,
+  устаревший запрос не пишет; `paginatorTask` отдаёт его, если он уже в формате задачи —
+  так `fetchWithTask(url, { onTask: look.report })` из `#lib/fetch` даёт процент у ссылки страницы);
   `svelte/search/` — хуки поиска (`useSearchCorrection`, `useSearchStats`).
 - `src/lib/components/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).

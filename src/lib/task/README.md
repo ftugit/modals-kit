@@ -57,8 +57,34 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 <a {...asLink('/export', { task: () => exportTask })}>Экспорт</a>
 ```
 
-## Что ещё не сделано
+## Кто отдаёт `TaskState`
 
-Ход 138 — только то, что нужно ссылкам (`asLink`). Полоска сверху, глобальный лоадер, адаптеры
-пагинатора, форм, модалок, поиска и строки состояния в ответах сервера — по плану
-`docs/design/task-state.md`, отдельным решением владельца.
+| Откуда | Адаптер | Где видно |
+|---|---|---|
+| переход SvelteKit, ссылка | `navigationTask()`, `linkTask(href)` — `#lib/address/sveltekit.js` | ссылка, полоса |
+| модалка | `asModalLink` (`#lib/components/links`) | ссылка-открывашка, полоса |
+| пагинатор | `paginatorTask(state, page?)` — `#lib/paginate/svelte` | ссылка страницы, «Ещё», «Сброс», поиск, полоса |
+| форма | `formTask(state, intent?)` — `#lib/form/svelte` | `Button task`, полоса |
+| своё | `trackTask(() => task)` — `#lib/components/loader` | полоса |
+
+Полоса сверху — `LoaderBar` (`#lib/components/loader`), один раз в корневом layout.
+
+## Ход сервера: строки ответа
+
+Долгое ожидание на сервере (запуск базы, сборка схемы фильтров, очередь лимита чужого API,
+повторы) приходит в ответе на тот же запрос — строками NDJSON, по одной на событие, последняя
+строка — сам ответ:
+
+```
+{"task":{"status":"pending","scope":"global","label":"Запуск базы","progress":{"kind":"steps","done":1,"total":4,"step":"Проверка схемы"}}}
+{"result":{"status":200,"headers":{"content-type":"application/json"},"body":{…}}}
+```
+
+- строки идут, только если клиент их попросил (`accept: TASK_STREAM_ACCEPT`) и сервер правда
+  ждал; иначе ответ прежний, байт в байт; таймеров нет;
+- клиент: `fetchWithTask(url, { onTask })` / `readTaskStream(res, onTask)` из `#lib/fetch` — ход
+  в `onTask`, на выходе тот же `Response` с настоящим кодом;
+- сервер приложения: `taskResponse(request, run, { watch })` — `src/lib/server/task-stream.ts`;
+- ход доходит до показа через ядра своими словами: `PageRequest.report` → `state.progress`
+  пагинатора, `TransportRequest.report` → `FormState.progress` формы; адаптеры
+  `paginatorTask`/`formTask` отдают его как задачу.
