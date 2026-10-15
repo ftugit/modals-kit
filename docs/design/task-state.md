@@ -166,8 +166,6 @@ type TaskProgress =
 
 - полоска стоит в корневом `+layout.svelte` (есть и на `/cycle`, `/spike`); `register` — это
   `trackTask(read)`;
-- `Button` на время задачи не `disabled`: клик гасится сразу, спиннер и `aria-busy` — через
-  150 мс. `disabled` уводил бы фокус с кнопки, а тусклость мигала бы на коротких отправках;
 - форма: `formTask(form.state, intent?)` вместо `form.task`, пагинатор: `paginatorTask(state, page?)`
   вместо `taskOf` — тип `TaskState` повторён структурно: страж формы запрещает рантайму формы
   импортировать что-либо вне пакета;

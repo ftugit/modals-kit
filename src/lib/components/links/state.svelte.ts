@@ -111,7 +111,7 @@ export function taskAttrs(read: () => TaskState): { 'data-task': ''; [attachment
 /** Вложение из `taskAttrs` — для `{@attach}` там, где spread неудобен (`Button`). */
 export function taskAttachment(read: () => TaskState): Attachment<HTMLElement> {
   return (el) => {
-    // Без `aria-disabled`: кнопка не тускнеет на коротких задачах (мигание).
+    // Доступность не трогаем: `Button` сам ставит `disabled`, сырой элемент — его компонент.
     reflectTask(el, read)
     const block = (e: Event) => {
       if (read().status !== 'pending') return

@@ -67,8 +67,8 @@
      * Задача, которую ведёт кнопка (`#lib/task`): отправка формы, загрузка.
      * Пока `pending` — спиннер (через 150 мс) и процент, если он известен,
      * тем же правилом CSS, что у ссылок, и `aria-busy`; повторный клик гасится
-     * сразу; задача видна в глобальном лоадере. `error` — знак «!» и
-     * причина в `title`. Фокус не теряется: кнопка не становится `disabled`.
+     * сразу; кнопка `disabled` (у `<a>` — `aria-disabled`); задача видна в
+     * глобальном лоадере. `error` — знак «!» и причина в `title`.
      *
      *     <Button type="submit" task={formTask(form.state)}>Добавить</Button>
      */
@@ -90,6 +90,9 @@
   // Вложение задачи — только когда она есть. Выражение `{@attach}` зависит от
   // `hasTask`, а не от `task`: смена состояния задачи вложение не пересоздаёт.
   const hasTask = $derived(task !== undefined)
+  // Пока задача идёт, кнопка недоступна сразу (без задержки спиннера); свой
+  // `disabled`/`aria-disabled` потребителя действует как прежде.
+  const busy = $derived(task?.status === 'pending')
   const attachTask = taskAttachment(() => task ?? IDLE_TASK)
 
   let self = $state<HTMLButtonElement | null>(null)
@@ -107,6 +110,7 @@
     class={buttonVariants({ variant, size, class: cls })}
     data-task={hasTask ? '' : undefined}
     {...rest as HTMLAnchorAttributes}
+    aria-disabled={busy ? 'true' : (rest as HTMLAnchorAttributes)['aria-disabled']}
     {@attach hasTask ? attachTask : undefined}
   >
     {#if children}{@render children()}{/if}
@@ -119,6 +123,7 @@
     class={buttonVariants({ variant, size, class: cls })}
     data-task={hasTask ? '' : undefined}
     {...rest}
+    disabled={busy || rest.disabled}
     {@attach hasTask ? attachTask : undefined}
   >
     {#if children}{@render children()}{/if}
