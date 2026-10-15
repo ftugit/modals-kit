@@ -41,6 +41,9 @@
     type DemoStore,
   } from './definition'
   import { loadFilterSchema } from './sources'
+  import type { StreamTask } from '#lib/fetch/index.js'
+  import { IDLE_TASK, taskPercent } from '#lib/task/index.js'
+  import { trackTask } from '#lib/components/loader/loader.svelte.js'
   import { FiltersPanel } from '#lib/components/filters/index.js'
   import { rickMortyFilterForm } from '../../../../content/rickmorty-filters'
   import ShikimoriFilters from './ShikimoriFilters.svelte'
@@ -329,11 +332,22 @@ import ItemRow from './ItemRow.svelte'
   let filterSchemaErrors = $state<Partial<Record<ShikimoriApi, string>>>({})
   const filterSchemaError = $derived(shikiApi ? (filterSchemaErrors[shikiApi] ?? null) : null)
 
+  /**
+   * Ход сборки схемы на сервере (строки ответа `/api/shikimori/filters`): пока он
+   * идёт, на месте панели — «Собираем схему фильтров: N%», и та же задача — в общей
+   * полосе сверху.
+   */
+  let schemaTasks = $state<Partial<Record<ShikimoriApi, StreamTask>>>({})
+  const schemaTask = $derived(shikiApi ? (schemaTasks[shikiApi] ?? null) : null)
+  const schemaPercent = $derived(taskPercent(schemaTask))
+  $effect(() => trackTask(() => schemaTask ?? IDLE_TASK))
+
   function loadSchema(options: { retry?: boolean } = {}): void {
     const api = shikiApi
     if (!api) return
     if (options.retry) delete filterSchemaErrors[api]
-    void loadFilterSchema(api)
+    void loadFilterSchema(api, (task) => (schemaTasks[api] = task))
+      .finally(() => delete schemaTasks[api])
       .then((loaded) => {
         liveSchemas[api] = loaded
         delete filterSchemaErrors[api]
@@ -486,6 +500,10 @@ import ItemRow from './ItemRow.svelte'
             />
           {/key}
         </div>
+      {:else if gates.filters && shikiApi && schemaTask}
+        <p class="mt-3 text-xs text-muted-foreground" data-testid="filters-schema-loading" role="status">
+          Собираем схему фильтров{schemaPercent === null ? '…' : `: ${schemaPercent}%`}
+        </p>
       {:else if gates.filters && shikiApi && filterSchemaError}
         <p
           class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"

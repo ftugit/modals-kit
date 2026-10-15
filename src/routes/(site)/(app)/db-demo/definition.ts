@@ -27,6 +27,7 @@
  * страниц не выбирает транспорт руками.
  */
 import { responseError } from '#lib/api-error.js'
+import { fetchWithTask } from '#lib/fetch/index.js'
 import {
   createUrlAdapter,
   decorateSource,
@@ -278,7 +279,8 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   if (cursorOn) q.set(DB_LIST_MODE_KEY, '1')
   if (filter) q.set('flt', filter)
   if (order) q.set('ord', order)
-  const res = await fetch(`/api/db-posts?${q}`, { signal: look.signal })
+  // Первый запрос будит базу (подключение, сверка схемы): ход — строками ответа.
+  const res = await fetchWithTask(`/api/db-posts?${q}`, { signal: look.signal, onTask: look.report })
   // Ошибка сервера обязана дойти до пагинатора как ошибка: пустой список он
   // читает как «данных нет», и это другое состояние.
   if (!res.ok) throw await responseError(res, 'db-posts')

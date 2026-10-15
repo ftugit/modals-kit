@@ -97,6 +97,11 @@ export interface TransportRequest {
   data: FormData
   accept: readonly string[]
   signal?: AbortSignal
+  /**
+   * Транспорт сообщает ход отправки (ожидание сервера, байты). Ядро кладёт значение
+   * в `FormState.progress` как есть и не толкует; устаревшая отправка не пишет.
+   */
+  report?: (progress: unknown) => void
 }
 export type Transport<T = unknown> = (req: TransportRequest) => Promise<TransportOutcome<T>>
 
@@ -204,6 +209,8 @@ export interface RunSubmitInput<T = unknown> {
   intent?: string
   /** Заголовок Accept для транспорта. */
   accept?: readonly string[]
+  /** Ход отправки от транспорта (`TransportRequest.report`). */
+  report?: (progress: unknown) => void
 }
 
 /**
@@ -241,6 +248,7 @@ export async function runSubmit<T>(input: RunSubmitInput<T>): Promise<Result<T>>
       envelope, data,
       accept: input.accept ?? ['application/json', 'text/html;q=0.5'],
       signal: submission.controller.signal,
+      ...(input.report ? { report: input.report } : {}),
     })
   } catch (e) {
     outcome = { kind: 'network', code: 'network.failed', detail: String(e) }

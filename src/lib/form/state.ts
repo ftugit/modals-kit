@@ -9,6 +9,8 @@ export interface FormState {
   readonly pending: boolean
   /** Какое именно действие в полёте: из двух кнопок занята только нажатая. */
   readonly pendingIntent?: string
+  /** Ход отправки, как его сообщил транспорт; смысл имеет, пока `pending`. */
+  readonly progress?: unknown
   readonly values: Readonly<Record<string, unknown>>   // снимок для рендера; истина — DOM
   readonly dirty: Readonly<Record<FieldPath, boolean>>
   readonly touched: Readonly<Record<FieldPath, boolean>>

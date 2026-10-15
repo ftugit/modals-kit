@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import type { TaskState } from '#lib/task/index.js'
 import { FetchError } from './errors.js'
-import { readTaskStream, type StreamTask } from './stream.js'
+import { fetchWithTask, readTaskStream, TASK_STREAM_ACCEPT, type StreamTask } from './stream.js'
 
 const ndjson = (...lines: string[]) =>
   new Response(lines.join('\n') + '\n', { headers: { 'content-type': 'application/x-ndjson; charset=utf-8' } })
@@ -50,5 +51,26 @@ describe('readTaskStream', () => {
     const err = await readTaskStream(ndjson('{oops'), () => {}).catch((e) => e)
     expect(err).toBeInstanceOf(FetchError)
     expect(err.code).toBe('fetch.parse')
+  })
+})
+
+describe('fetchWithTask', () => {
+  it('без onTask — обычный fetch без своего accept; с ним — accept строк и чтение хода', async () => {
+    const seen: (string | null)[] = []
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      seen.push(new Headers(init?.headers).get('accept'))
+      return ndjson('{"task":{"status":"pending","scope":"local","label":"Очередь"}}', '{"result":{"status":200,"text":"ok"}}')
+    })
+    await fetchWithTask('http://x/a')
+    const tasks: StreamTask[] = []
+    const res = await fetchWithTask('http://x/a', { onTask: (t) => tasks.push(t) })
+    expect(seen).toEqual([null, TASK_STREAM_ACCEPT])
+    expect(await res.text()).toBe('ok')
+    expect(tasks).toEqual([{ status: 'pending', scope: 'local', label: 'Очередь' }])
+    spy.mockRestore()
+  })
+
+  it('ход — тот же формат, что TaskState, без зависимости от #lib/task', () => {
+    expectTypeOf<StreamTask>().toExtend<TaskState>()
   })
 })

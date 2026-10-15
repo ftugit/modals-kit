@@ -4,7 +4,8 @@
  *   • быстрый переход и открытие модалки полоску не зажигают (задержка 150 мс);
  *   • без JS полоски в разметке нет;
  *   • кнопка с `task` (отправка формы): спиннер на нажатой, полоска, после ответа всё снято;
- *   • пагинатор: спиннер у грузящейся страницы, в поле поиска и у «Сброс».
+ *   • пагинатор: спиннер у грузящейся страницы, в поле поиска и у «Сброс»;
+ *   • ход сервера строками: полоса с подписью и процент у страницы списка и на кнопке формы.
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -171,6 +172,84 @@ async function run() {
       const reset = await seen('BUTTON')
       assert.equal(reset.text, 'Сброс')
       ok('«Сброс»: спиннер у кнопки на время загрузки, затем снят')
+      await page.close()
+    }
+    {
+      // Ход сервера строками (docs/design/task-state.md, часть Б). Холодный запуск базы
+      // локально не повторить (страница уже открыла её на сервере), поэтому сервер
+      // «ждёт» в браузере: `fetch` с запросом строк получает поток — четыре строки хода
+      // с паузой, затем настоящий ответ последней строкой. Дальше путь настоящий:
+      // `fetchWithTask` → `readTaskStream` → состояние списка/формы → ссылка, кнопка, полоса.
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.addInitScript(() => {
+        const real = window.fetch.bind(window)
+        window.fetch = async (input, init = {}) => {
+          const url = String(input instanceof Request ? input.url : input)
+          const accept = new Headers(init.headers).get('accept') ?? ''
+          // Только после включения тестом: загрузки при гидрации идут как есть.
+          if (!window.__slow || !accept.includes('x-ndjson') || !/\/api\/db-posts|\/db-demo\/submit/.test(url))
+            return real(input, init)
+          const enc = new TextEncoder()
+          const line = (v) => enc.encode(JSON.stringify(v) + '\n')
+          const stream = new ReadableStream({
+            async start(c) {
+              const steps = ['Подключение', 'Проверка схемы', 'Таблица demo_post', 'Скрипт demo-post-seed-500']
+              for (let done = 0; done < 4; done++) {
+                c.enqueue(line({ task: { status: 'pending', scope: 'global', label: 'Запуск базы', progress: { kind: 'steps', done, total: 4, step: steps[done] } } }))
+                await new Promise((r) => setTimeout(r, 350))
+              }
+              const res = await real(input, { ...init, headers: { accept: 'application/json' } })
+              const headers = Object.fromEntries(res.headers)
+              c.enqueue(line({ result: { status: res.status, headers, body: await res.json() } }))
+              c.close()
+            },
+          })
+          return new Response(stream, { headers: { 'content-type': 'application/x-ndjson; charset=utf-8' } })
+        }
+      })
+      await page.goto(BASE + '/db-demo', { waitUntil: 'networkidle' })
+      await page.evaluate(() => {
+        window.__slow = true
+        window.__seen = []
+        const snap = () => {
+          const bar = document.querySelector('[data-testid=loader-bar]')
+          const el = document.querySelector('[data-task-percent]')
+          const s = {
+            bar: bar ? bar.getAttribute('aria-label') : null,
+            now: bar ? bar.getAttribute('aria-valuenow') : null,
+            tag: el ? el.tagName : null,
+            text: el ? (el.textContent || '').trim().slice(0, 12) : null,
+            percent: el ? el.getAttribute('data-task-percent') : null,
+          }
+          if (JSON.stringify(window.__seen.at(-1)) !== JSON.stringify(s)) window.__seen.push(s)
+        }
+        new MutationObserver(snap).observe(document.body, { attributes: true, childList: true, subtree: true })
+      })
+      const settle = async () => {
+        await page.waitForFunction(() => window.__seen.some((s) => s.bar?.startsWith('Запуск базы')), null, { timeout: 5000 })
+        await page.waitForFunction(() => !document.querySelector('[data-testid=loader-bar]'), null, { timeout: 10000 })
+        return page.evaluate(() => window.__seen.splice(0))
+      }
+
+      // Клик без наведения: иначе страницу 2 заранее подгрузит prefetch (без хода) и
+      // переход будет мгновенным.
+      await page.locator('a[data-link][href^="?page=2"]').first().evaluate((a) => a.click())
+      let log = await settle()
+      const bars = [...new Set(log.map((s) => s.bar).filter(Boolean))]
+      assert.ok(bars.includes('Запуск базы — шаг 2 из 4: Проверка схемы'), JSON.stringify(bars))
+      const linkPercents = log.filter((s) => s.tag === 'SPAN' && s.text === '2').map((s) => Number(s.percent))
+      assert.ok(linkPercents.length >= 2 && linkPercents.at(-1) > linkPercents[0], `процент у страницы 2 растёт: ${linkPercents}`)
+      assert.equal(await page.locator('[data-task-percent]').count(), 0, 'после ответа процент снят')
+      ok(`ход сервера у страницы списка: полоса «${bars[1]}», процент у страницы ${linkPercents.join('→')}`)
+
+      await page.fill('input[name="title"]', `ход-${Date.now() % 100000}`)
+      await page.check('input[name="agree"]')
+      await page.locator('[data-testid=create]').click()
+      log = await settle()
+      const buttonPercents = log.filter((s) => s.tag === 'BUTTON').map((s) => Number(s.percent))
+      assert.ok(buttonPercents.length >= 2 && buttonPercents.at(-1) > buttonPercents[0], `процент на кнопке растёт: ${buttonPercents}`)
+      await page.waitForFunction(() => document.querySelector('[data-testid=create]')?.getAttribute('aria-busy') === null, null, { timeout: 5000 })
+      ok(`ход сервера при отправке формы: процент на кнопке ${buttonPercents.join('→')}, затем снят`)
       await page.close()
     }
     {

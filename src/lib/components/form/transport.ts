@@ -9,6 +9,7 @@
 // и исходом `unknown`: запрос мог дожить до записи, и врать «не применилось»
 // здесь честнее, чем молча проглотить сбой.
 import type { Result, Transport } from '#lib/form/index.js'
+import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
 
 /** Что сказать человеку по коду, пока не подоспел текст из тела. */
 const REASON: Record<number, string> = {
@@ -28,11 +29,15 @@ export function jsonTransport(path: string): Transport {
   return async (req) => {
     let res: Response
     try {
-      res = await fetch(path, {
+      // Ход долгой отправки (запуск базы, перенос схемы) — строками ответа
+      // (`#lib/fetch` `readTaskStream`); итог тот же `Response`.
+      const report = req.report
+      res = await fetchWithTask(path, {
         method: 'POST',
         body: req.data,
         headers: { accept: 'application/json' },
         signal: req.signal,
+        ...(report ? { onTask: (task: StreamTask) => report(task) } : {}),
       })
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') return { kind: 'abort', reason: 'aborted' }

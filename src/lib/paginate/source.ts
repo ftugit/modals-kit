@@ -28,7 +28,13 @@ import type { Extra, PageResponse } from './types'
 const SOURCE_BRAND: unique symbol = Symbol('modals-kit.adapted-source')
 
 /** Как слой обращается к данным: страница и отменяемость. UI-ключей здесь нет. */
-export type SourceLook = { page: number; pageSize: number; signal?: AbortSignal }
+export type SourceLook = {
+  page: number
+  pageSize: number
+  signal?: AbortSignal
+  /** Ход загрузки для показа ожидания (`PageRequest.report`); значение — на усмотрение источника. */
+  report?: (progress: unknown) => void
+}
 
 /** Паспорт записи: как читать ЛЮБУЮ запись источника (вьюхи, paginate/search, словарь). */
 export type SourceRecordSpec<T> = {

@@ -16,6 +16,12 @@ describe('paginatorTask', () => {
     expect(paginatorTask(loading(3), 3).status).toBe('pending')
     expect(paginatorTask(loading(3), 4).status).toBe('idle')
   })
+  it('ход от источника в формате задачи — как есть; чужой вид — без подробностей', () => {
+    const progress = { status: 'pending', scope: 'global', label: 'Запуск базы', progress: { kind: 'steps', done: 1, total: 4 } }
+    expect(paginatorTask({ ...loading(3), progress }, 3)).toBe(progress)
+    expect(paginatorTask({ ...loading(3), progress: 0.5 })).toEqual({ status: 'pending', scope: 'local' })
+    expect(paginatorTask({ status: 'idle', pending: null, progress }).status).toBe('idle')
+  })
   it('совместим с TaskState без зависимости от #lib/task', () => {
     expectTypeOf(paginatorTask).returns.toExtend<TaskState>()
   })

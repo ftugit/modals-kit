@@ -20,6 +20,7 @@
  */
 import { validateCatalogFilterSchema, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import { responseError } from '#lib/api-error.js'
+import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
 
 /** Максимум записей на страницу у Shikimori API: больше он молча режет до этого. */
 export const SHIKIMORI_LIMIT_MAX = 50
@@ -85,6 +86,8 @@ export type AnimesQuery = {
    */
   filters?: Readonly<Record<string, unknown>>
   signal?: AbortSignal
+  /** Ход ожидания сервера (очередь лимита, сборка схемы) — `#lib/fetch` `readTaskStream`. */
+  onTask?: (task: StreamTask) => void
 }
 
 export type AnimesPage = {
@@ -147,7 +150,7 @@ function apiUrl(path: string, params?: Record<string, string | number | undefine
  * страницы `/paginator`) — иначе серверу пришлось бы вызывать собственный
  * HTTP-эндпоинт, не добавляя ничего к клиентской загрузке.
  */
-export async function getAnimesPage({ api, page, limit, search, filters, signal }: AnimesQuery): Promise<AnimesPage> {
+export async function getAnimesPage({ api, page, limit, search, filters, signal, onTask }: AnimesQuery): Promise<AnimesPage> {
   if (typeof window === 'undefined') {
     throw new Error('[shikimori] живой источник запрашивается только из браузера')
   }
@@ -158,7 +161,7 @@ export async function getAnimesPage({ api, page, limit, search, filters, signal 
     if (value === undefined || value === null || value === '') continue
     params[key] = Array.isArray(value) ? value.join(',') : String(value)
   }
-  const res = await fetch(apiUrl('/api/shikimori/animes', params), { signal })
+  const res = await fetchWithTask(apiUrl('/api/shikimori/animes', params), { signal, onTask })
   // Текст маршрута уже полный («Каталог Shikimori недоступен: <причина>», §13.1):
   // своя приставка его только дублировала. Без тела — тот же вид из кода ответа.
   if (!res.ok) throw await responseError(res, 'Каталог Shikimori недоступен')
@@ -174,8 +177,10 @@ export async function getAnimesPage({ api, page, limit, search, filters, signal 
 export async function getShikimoriFilters(
   api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
   signal?: AbortSignal,
+  onTask?: (task: StreamTask) => void,
 ): Promise<CatalogFilterSchema> {
-  const res = await fetch(apiUrl('/api/shikimori/filters', { api: apiParam(api) }), { signal })
+  // Сборка схемы на сервере — около десятка запросов к Shikimori: ход идёт строками.
+  const res = await fetchWithTask(apiUrl('/api/shikimori/filters', { api: apiParam(api) }), { signal, onTask })
   if (!res.ok) throw await responseError(res, 'Схема фильтров Shikimori недоступна')
   return validateCatalogFilterSchema(await res.json())
 }

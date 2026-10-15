@@ -610,7 +610,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     if (!begun.go) return undefined
 
     store.set((s) => ({
-      ...s, status: 'submitting', pending: true, pendingIntent: raw,
+      ...s, status: 'submitting', pending: true, pendingIntent: raw, progress: undefined,
       submitCount: s.submitCount + 1,
     }))
 
@@ -619,6 +619,10 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       submission: begun.submission,
       transport: o.transport ?? cfg.config.transport ?? notConfigured,
       render,
+      // ход пишет только живая отправка: устаревшая чужое состояние не трогает
+      report: (progress) => {
+        if (!machine.stale(begun.submission, desc.revision)) store.set((s) => ({ ...s, progress }))
+      },
     })
 
     // сверка актуальности ДО освобождения машины: после finish текущая отправка
@@ -626,6 +630,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const stale = machine.stale(begun.submission, desc.revision)
     machine.finish(begun.submission)
     if (stale) return result
+    store.set((s) => (s.progress === undefined ? s : { ...s, progress: undefined }))
 
     applyResult(result, data)
     // Один id защищает только одну логическую отправку. После окончательного

@@ -69,6 +69,23 @@ export async function readTaskStream(res: Response, onTask: (task: StreamTask) =
   return new Response(new Blob(chunks as BlobPart[]), { status: res.status, statusText: res.statusText, headers: res.headers })
 }
 
+/**
+ * `fetch`, который просит ход и читает его. С `onTask` — заголовок
+ * `accept: TASK_STREAM_ACCEPT` и `readTaskStream`; без него — обычный `fetch`.
+ *
+ *     const res = await fetchWithTask(`/api/db-posts?${q}`, { signal, onTask: look.report })
+ */
+export async function fetchWithTask(
+  input: string | URL | Request,
+  init: RequestInit & { onTask?: (task: StreamTask) => void } = {},
+): Promise<Response> {
+  const { onTask, ...rest } = init
+  if (!onTask) return fetch(input, rest)
+  const headers = new Headers(rest.headers)
+  headers.set('accept', TASK_STREAM_ACCEPT)
+  return readTaskStream(await fetch(input, { ...rest, headers }), onTask)
+}
+
 async function readLines(body: ReadableStream<Uint8Array>, onTask: (task: StreamTask) => void): Promise<Response> {
   const reader = body.getReader()
   const decoder = new TextDecoder()

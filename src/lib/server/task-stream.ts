@@ -84,18 +84,34 @@ export function taskResponse(
     const encoder = new TextEncoder()
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined
     let done = false
+    // Клиент ушёл (поток отменён) — писать и закрывать уже нечего: без этих
+    // проверок `enqueue`/`close` бросают, и необработанный отказ роняет процесс.
+    let gone = false
     const line = (value: unknown) => {
+      if (gone) return
       try {
         controller!.enqueue(encoder.encode(JSON.stringify(value) + '\n'))
       } catch {
-        // Клиент ушёл, поток закрыт: писать некому.
+        gone = true
+      }
+    }
+    const close = () => {
+      if (gone) return
+      gone = true
+      try {
+        controller!.close()
+      } catch {
+        // уже закрыт
       }
     }
     const report: TaskReport = (task) => {
       if (done) return
       if (!controller) {
         // `start` вызывается синхронно в конструкторе: контроллер есть сразу.
-        const stream = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) })
+        const stream = new ReadableStream<Uint8Array>({
+          start: (c) => void (controller = c),
+          cancel: () => void (gone = true),
+        })
         resolve(
           new Response(stream, {
             headers: {
@@ -113,19 +129,26 @@ export function taskResponse(
       done = true
       for (const stop of unwatch) stop()
     }
+    const failed = (error: unknown) => {
+      console.error('[task-stream]', error)
+      line({ result: { status: 500, body: apiErrorBody('Внутренняя ошибка сервера', 'internal') } })
+      close()
+    }
     current.run(report, run).then(
       async (res) => {
         finish()
         if (!controller) return resolve(res)
-        line({ result: await resultOf(res) })
-        controller.close()
+        try {
+          line({ result: await resultOf(res) })
+          close()
+        } catch (error) {
+          failed(error)
+        }
       },
       (error: unknown) => {
         finish()
         if (!controller) return reject(error)
-        console.error('[task-stream]', error)
-        line({ result: { status: 500, body: apiErrorBody('Внутренняя ошибка сервера', 'internal') } })
-        controller.close()
+        failed(error)
       },
     )
   })

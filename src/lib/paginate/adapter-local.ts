@@ -31,7 +31,7 @@ export function createLocalAdapter<T>(opts: {
       }
     },
     loadPage: (req) =>
-      source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal }, req.extra),
+      source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal, report: req.report }, req.extra),
     persist: (state) => storage.write(opts.name, state),
     capabilities: { append },
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),

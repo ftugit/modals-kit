@@ -16,6 +16,7 @@
  */
 
 import { responseError } from '#lib/api-error.js'
+import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
 
 /** Версия API источника. */
 export type RickMortyApi = 'rest' | 'graphql'
@@ -52,6 +53,8 @@ export type CharactersQuery = {
   /** Фильтры в канонических ключах схемы (`filters.status`, …). */
   filters?: Readonly<Record<string, unknown>>
   signal?: AbortSignal
+  /** Ход ожидания сервера (очередь лимита, сборка схемы) — `#lib/fetch` `readTaskStream`. */
+  onTask?: (task: StreamTask) => void
 }
 
 export type CharactersPage = {
@@ -84,7 +87,7 @@ export function rickMortyTexts(item: RickMortyCharacter): string[] {
  * Страница персонажей из браузера — через наш эндпоинт. Ошибка сервера едет
  * текстом причины (502/504 → ErrorRow пагинатора), а не пустым списком.
  */
-export async function getCharactersPage({ api, page, limit, search, filters, signal }: CharactersQuery): Promise<CharactersPage> {
+export async function getCharactersPage({ api, page, limit, search, filters, signal, onTask }: CharactersQuery): Promise<CharactersPage> {
   if (typeof window === 'undefined') {
     throw new Error('[rickmorty] живой источник запрашивается из браузера; на сервере — мост лоадера')
   }
@@ -94,7 +97,7 @@ export async function getCharactersPage({ api, page, limit, search, filters, sig
     if (value === undefined || value === null || value === '') continue
     qs.set(key, Array.isArray(value) ? value.join(',') : String(value))
   }
-  const res = await fetch(`/api/rickmorty/characters?${qs}`, { signal })
+  const res = await fetchWithTask(`/api/rickmorty/characters?${qs}`, { signal, onTask })
   if (!res.ok) throw await responseError(res, 'Персонажи Rick and Morty недоступны')
   return (await res.json()) as CharactersPage
 }

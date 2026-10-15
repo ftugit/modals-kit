@@ -89,3 +89,20 @@ describe('taskResponse', () => {
     expect(currentReport()).toBeUndefined()
   })
 })
+
+describe('taskResponse: клиент ушёл', () => {
+  it('отмена потока до результата не роняет процесс и не пишет в закрытый поток', async () => {
+    let finish!: () => void
+    const res = await taskResponse(ask(), async () => {
+      currentReport()!(step(1))
+      await new Promise<void>((r) => (finish = r))
+      currentReport()!(step(2))
+      return json({ ok: true })
+    })
+    await res.body!.cancel()
+    finish()
+    await new Promise((r) => setTimeout(r, 10))
+    // дошли сюда — исключения из close/enqueue не было
+    expect(res.bodyUsed).toBe(true)
+  })
+})

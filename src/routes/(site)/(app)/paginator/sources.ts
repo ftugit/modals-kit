@@ -3,6 +3,7 @@
 // мосты к ним (SSR строит снапшот без похода в собственный HTTP-эндпоинт).
 // Настройки страницы (ключи, умолчания, регистрация пагинаторов) — в
 // `definition.ts`: он берёт отсюда `makeSource` и `gallerySource`.
+import type { StreamTask } from '#lib/fetch/index.js'
 import { getItemsPage } from '../../../../content/items'
 import {
   SHIKIMORI_LIMIT_MAX,
@@ -31,8 +32,12 @@ import {
 import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
 import { DB_LIST_FILTER_KEYS, fetchDbPosts, withDbCursor } from '../db-demo/definition'
 
-/** Запросы схем в полёте (по версии API): параллельные вызовы ждут один ответ. */
-const filterSchemaInflight = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>()
+/**
+ * Запросы схем в полёте (по версии API): параллельные вызовы ждут один ответ и
+ * получают его ход (последнее состояние — сразу).
+ */
+type SchemaInflight = { done: Promise<CatalogFilterSchema>; listeners: Set<(task: StreamTask) => void>; last?: StreamTask }
+const filterSchemaInflight = new Map<ShikimoriApi, SchemaInflight>()
 
 /**
  * Схема фильтров живого источника версии `api`: из памяти вкладки
@@ -42,12 +47,19 @@ const filterSchemaInflight = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>
  * переходом внутри сайта, а в памяти её ещё нет; ещё — повтор после сбоя
  * сборки на сервере.
  */
-export async function loadFilterSchema(api: ShikimoriApi = 'mix'): Promise<CatalogFilterSchema> {
+export async function loadFilterSchema(
+  api: ShikimoriApi = 'mix',
+  onTask?: (task: StreamTask) => void,
+): Promise<CatalogFilterSchema> {
   const known = catalogFilterSchemas.recall(shikimoriFilterSource(api))
   if (known) return known
   let inflight = filterSchemaInflight.get(api)
   if (!inflight) {
-    inflight = getShikimoriFilters(api)
+    const entry = { listeners: new Set<(task: StreamTask) => void>() } as SchemaInflight
+    entry.done = getShikimoriFilters(api, undefined, (task) => {
+      entry.last = task
+      for (const listener of entry.listeners) listener(task)
+    })
       .then((schema) => {
         catalogFilterSchemas.remember(schema)
         return schema
@@ -55,9 +67,17 @@ export async function loadFilterSchema(api: ShikimoriApi = 'mix'): Promise<Catal
       .finally(() => {
         filterSchemaInflight.delete(api)
       })
-    filterSchemaInflight.set(api, inflight)
+    inflight = entry
+    filterSchemaInflight.set(api, entry)
   }
-  return await inflight
+  if (!onTask) return await inflight.done
+  inflight.listeners.add(onTask)
+  if (inflight.last) onTask(inflight.last)
+  try {
+    return await inflight.done
+  } finally {
+    inflight.listeners.delete(onTask)
+  }
 }
 
 // ── Мост к живому источнику на сервере ─────────────────────────────────────
@@ -126,7 +146,7 @@ async function loadCharactersPage(
   }
   const res = rickMortyTransport
     ? await rickMortyTransport.fetchPage(query)
-    : await getCharactersPage({ ...query, signal: look.signal })
+    : await getCharactersPage({ ...query, signal: look.signal, onTask: look.report })
   for (const item of res.dropped ?? []) {
     console.warn(`[rickmorty] фильтр «${item.key}» не применён: ${item.reason}`)
   }
@@ -154,7 +174,7 @@ async function loadAnimePage(
   }
   const res = liveTransport
     ? await liveTransport.fetchPage(query)
-    : await getAnimesPage({ ...query, signal: look.signal })
+    : await getAnimesPage({ ...query, signal: look.signal, onTask: look.report })
   if (res.dropped?.length) {
     for (const item of res.dropped) {
       console.warn(`[shikimori] фильтр «${item.key}» не применён: ${item.reason}`)

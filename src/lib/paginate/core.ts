@@ -38,6 +38,14 @@ function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Ход загрузки от источника → `state.progress`; отменённый или устаревший запрос не пишет. */
+function progressOf<T>(store: Store, name: string, reqId: number, signal: AbortSignal) {
+  return (progress: unknown): void => {
+    if (signal.aborted || getState<T>(store, name).reqId !== reqId) return
+    patch<T>(store, name, (s) => ({ ...s, progress }))
+  }
+}
+
 /**
  * persist не критичен для отображения: состояние не ломается (SPEC §3.3).
  * Q1: вместо `console.warn` — конверт `persist-failed` в приёмники (хост решает
@@ -270,6 +278,7 @@ export async function fetchReplace<T>(
     page,
     status: 'loading',
     error: null,
+    progress: undefined,
     // D17: REPLACE-скелетоны = pageSize слотов pending-группы.
     pending: { page, mode: 'replace', count: s.pageSize },
   }))
@@ -280,6 +289,7 @@ export async function fetchReplace<T>(
       pageSize: getState<T>(store, name).pageSize,
       extra: getState<T>(store, name).extra,
       signal: ac.signal,
+      report: progressOf<T>(store, name, reqId, ac.signal),
     })) as PageResponse<T>
   } catch (error) {
     if (ac.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
@@ -453,6 +463,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     status: 'loading',
     pending: { page: target, mode: dir > 0 ? 'append' : 'prepend', count },
     error: null,
+    progress: undefined,
   }))
   // Интент стреляет в момент старта, до данных (D17/раунд-5). Контракт D16 как в
   // оригинале (page = подгруженная страница). UX «скролл не меняет положение»
@@ -470,6 +481,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
       pageSize: state.pageSize,
       extra: state.extra,
       signal: ac.signal,
+      report: progressOf<T>(store, name, reqId, ac.signal),
     })) as PageResponse<T>
   } catch (error) {
     if (session.replaceAbort === ac) session.replaceAbort = null

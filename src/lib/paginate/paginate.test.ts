@@ -587,6 +587,30 @@ describe('core operations & lifecycle', () => {
     expect(state.status).toBe('idle')
   })
 
+  it('report: ход источника пишется в state.progress, устаревший запрос — нет', async () => {
+    let release!: () => void
+    let report!: PageRequest['report']
+    const fake = fakeAdapter({ page: 1 }, async (req) => {
+      if (req.page === 2) {
+        report = req.report
+        req.report?.({ status: 'pending', scope: 'global', label: 'L' })
+        await new Promise<void>((r) => (release = r))
+      }
+      return { items: ['a'], totalPages: 3 }
+    })
+    definePaginator({ name: 'reportTest', adapter: fake.adapter })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'reportTest')
+    const going = goToPage(store, 'reportTest', 2)
+    await Promise.resolve()
+    expect(getState(store, 'reportTest').progress).toEqual({ status: 'pending', scope: 'global', label: 'L' })
+    await goToPage(store, 'reportTest', 3) // обгоняет: запрос страницы 2 устарел
+    report?.('stale')
+    expect(getState(store, 'reportTest').progress).toBeUndefined()
+    release()
+    await going
+  })
+
   it('prefetchPage caches data for instant navigation', async () => {
     const fake = fakeAdapter({ page: 1 })
     definePaginator({ name: 'prefTest', adapter: fake.adapter })

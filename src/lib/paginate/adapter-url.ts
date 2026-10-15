@@ -519,7 +519,7 @@ export function createUrlAdapter<T>(opts: {
       return `?${params.toString()}`
     },
     loadPage: (req) =>
-      source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal }, req.extra),
+      source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal, report: req.report }, req.extra),
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
     recordFor: (extra) => source.recordFor(extra),
     // Объявленные ключи: спецификация адреса + дефолты (поверхность потребителя)

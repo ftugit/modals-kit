@@ -8,7 +8,17 @@ import type { AdaptedSource, SourceCapabilities, SourceRecordSpec, SourceScope }
 
 export type MaybePromise<T> = T | Promise<T>
 
-export type PageRequest = { page: number; pageSize: number; signal?: AbortSignal; extra?: Extra }
+export type PageRequest = {
+  page: number
+  pageSize: number
+  signal?: AbortSignal
+  extra?: Extra
+  /**
+   * Источник сообщает ход загрузки (ожидание сервера, байты). Ядро кладёт значение
+   * в `state.progress` как есть и не толкует; устаревший запрос не пишет.
+   */
+  report?: (progress: unknown) => void
+}
 
 /** Конверт ответа источника. meta: хотя бы одно поле; приоритет вывода — deriveMeta. */
 export type PageResponse<T> = {
@@ -74,6 +84,11 @@ export type PaginatorState<T> = RestorableState & {
   hasPrev: boolean | null
   /** Внутренний счётчик гонок. В state (per-store) — SSR-конкурентность безопасна (D4). */
   reqId: number
+  /**
+   * Ход текущей загрузки, как его сообщил источник (`PageRequest.report`); ядро не
+   * толкует. Смысл имеет, пока `status === 'loading'`; новая загрузка его сбрасывает.
+   */
+  progress?: unknown
   /** Opaque source/adapter state; paginator stores it but never interprets it. */
   sourceState?: string
   /**
