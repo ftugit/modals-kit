@@ -35,7 +35,7 @@
 
 | Атрибут | Когда |
 |---|---|
-| `data-state="loading"`, `aria-busy="true"` | идёт переход на этот адрес или загрузчик модалки — через 150 мс (`LINK_TASK_DELAY_MS`) |
+| `data-state="loading"`, `aria-busy="true"` | идёт переход на этот адрес или загрузчик модалки — через 150 мс (`TASK_DELAY_MS` из `components/loader`) |
 | `data-task-percent` | у задачи есть честный процент (`task` из `#lib/task`) |
 | `data-state="error"` + `title` | битая ссылка, ошибка загрузчика при `navigateOnError: false`, ошибка загрузчика модалки |
 | `data-state="open"`, `aria-disabled` | модалка этой ссылки открыта; повторный клик гасится |

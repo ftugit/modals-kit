@@ -7,15 +7,11 @@
 //   data-state="error"   — знак «!», причина в `title`
 //   data-task-percent    — процент рядом со спиннером, если ход известен
 //   aria-busy="true"     — пока показан спиннер
+//
+// Каждая такая задача попадает и в глобальный лоадер (`components/loader`).
 import type { Attachment } from 'svelte/attachments'
 import { taskPercent, type TaskState } from '#lib/task/index.js'
-
-/**
- * Задержка показа спиннера: переход, который уложился в неё, не мигает.
- * «Мелкие» записи адреса (модалки, пагинатор) держат `navigating` 1–2 мс
- * (замер хода 129) и сюда не доходят вовсе.
- */
-export const LINK_TASK_DELAY_MS = 150
+import { TASK_DELAY_MS, trackTask } from '../loader/loader.svelte.js'
 
 /**
  * Атрибуты, которые `asLink`/`asModalLink` кладут на элемент. Только то, что
@@ -76,7 +72,7 @@ export function reflectTask(el: HTMLElement, read: () => TaskState, options: Ref
       shown = false
       return
     }
-    const timer = setTimeout(() => (shown = true), LINK_TASK_DELAY_MS)
+    const timer = setTimeout(() => (shown = true), TASK_DELAY_MS)
     return () => clearTimeout(timer)
   })
 
@@ -89,6 +85,9 @@ export function reflectTask(el: HTMLElement, read: () => TaskState, options: Ref
     if (percent === null) el.removeAttribute('data-task-percent')
     else el.setAttribute('data-task-percent', String(percent))
   })
+
+  // Та же задача — в общую полосу сверху (`components/loader`).
+  $effect(() => trackTask(() => task))
 
   overlay(el, 'aria-busy', () => (shown ? 'true' : null))
   overlay(el, 'title', () => (task.status === 'error' ? task.message : null))

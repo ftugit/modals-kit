@@ -1388,7 +1388,7 @@ try {
     await page.waitForSelector('[data-modal-layer][data-active] [data-modal-content]', { timeout: 10_000 })
     const trigger = page.locator('[data-modal-layer][data-active] a[data-modal-link]').first()
     await trigger.click()
-    // Спиннер — через 150 мс (LINK_TASK_DELAY_MS), как у всех ссылок.
+    // Спиннер — через 150 мс (TASK_DELAY_MS), как у всех ссылок.
     await page.waitForSelector('[data-modal-layer][data-active] a[data-modal-link][data-state="loading"]', { timeout: 2_000 })
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => !document.querySelector('[data-modal-popup]'), null, { timeout: 5_000 })

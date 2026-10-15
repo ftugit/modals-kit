@@ -8,6 +8,7 @@
   import favicon from '#lib/assets/favicon.svg'
   import { appErrors } from '#lib/app-errors.svelte.js'
   import Error500 from '#lib/components/Error500.svelte'
+  import { LoaderBar } from '#lib/components/loader/index.js'
   import { setPageContext, PageHead } from '#lib/components/shell/index.js'
   import 'virtual:uno.css'
   import '../app.css'
@@ -23,6 +24,7 @@
 </svelte:head>
 
 <PageHead defaultTitle="dd modals" />
+<LoaderBar />
 
 {#if appErrors.critical}
   <!-- фатал заменяет всё целиком: ориентир main — здесь -->

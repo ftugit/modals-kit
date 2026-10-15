@@ -293,6 +293,16 @@ export function linkTask(href: string | null | undefined): TaskState {
 }
 
 /**
+ * Состояние перехода SvelteKit целиком (любая ссылка, `goto`, «Назад») — для
+ * глобального лоадера. Процента нет: `load` не сообщает ход, полоса без числа.
+ * Уход со страницы (`willUnload`) показывает сам браузер.
+ */
+export function navigationTask(): TaskState {
+  if (!navigating.to || navigating.willUnload) return IDLE_TASK
+  return { status: 'pending', scope: 'local', label: 'Переход' }
+}
+
+/**
  * Флаг «мелкой» записи истории (shallow routing) для UI, у которого «Назад»
  * должен ЗАКРЫВАТЬ, а не уводить со страницы: мобильная панель и т. п.
  *

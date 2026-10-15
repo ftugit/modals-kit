@@ -93,9 +93,14 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // 242.2 (+5.7), immutable 249.9 → 255.7 (+5.8), /db-demo 195.3 → 201.1 (+5.8), /form
 // 169.8 → 170.0. Решение оператора («Да, увеличивай»): весь JS 243, immutable 256.5,
 // /db-demo 201.5.
+// REVISION 2026-10-15, ход 189 (глобальный лоадер, docs/design/task-state.md §6 шаг 1):
+// полоска сверху в корневом layout — на КАЖДОМ маршруте +1.1–1.2. Факт: весь JS 243.2,
+// immutable 256.8, /form 171.1, /paginator 206.0, /db-demo 202.3, /cards/[id] 138.7.
+// По постоянному решению оператора (+5, сообщить): весь JS 244, immutable 257.5, /form 171.5,
+// /paginator 206.5, /db-demo 203, /cards/[id] 139.5.
 const LIMITS = {
-  allImmutableGzip: 256.5 * KiB,
-  allJsGzip: 243 * KiB,
+  allImmutableGzip: 257.5 * KiB,
+  allJsGzip: 244 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -103,7 +108,7 @@ const LIMITS = {
 
 const ROUTE_LIMITS = {
   '/': 143 * KiB,
-  '/form': 170.5 * KiB,
+  '/form': 171.5 * KiB,
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
@@ -119,7 +124,7 @@ const ROUTE_LIMITS = {
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
   // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
   // остальных маршрутов; вес самой страницы — отдельная находка (kit3-upgrade §12).
-  '/paginator': 205.5 * KiB,
+  '/paginator': 206.5 * KiB,
   // C16 (решение оператора, ход 34: «прибавь размера»): маршруты без лимита
   // получили «факт + 5» по сборке хода 34 — 175.5 / 124.1 / 118.8 / 125.6.
   // Ход 109: + экран переноса схемы (SchemaPending, форма решений) — факт 180.8;
@@ -127,10 +132,10 @@ const ROUTE_LIMITS = {
   // Ход 112: + закреплённые ошибки формы (pins) и смена источника в ядре пагинатора
   // (общее со списком БД) — факт 181.6 → 182.5.
   // Ход 185: модель `posts` в браузере (форма из модели) — факт 201.1, см. REVISION у LIMITS.
-  '/db-demo': 201.5 * KiB,
+  '/db-demo': 203 * KiB,
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
-  '/cards/[id]': 138.6 * KiB,
+  '/cards/[id]': 139.5 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

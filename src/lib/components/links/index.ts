@@ -7,4 +7,4 @@
 // одно правило CSS (`indicator.ts`), подключённое в `unocss.config.ts`.
 export { asLink, type LinkOptions } from './link.svelte.js'
 export { useModalLink, type ModalLinkOptions } from './modal-link.svelte.js'
-export { LINK_TASK_DELAY_MS, type LinkAttrs } from './state.svelte.js'
+export { type LinkAttrs } from './state.svelte.js'
