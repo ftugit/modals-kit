@@ -43,6 +43,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements'
+  import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
+  import { reflectTask } from '../../links/state.svelte.js'
 
   interface Props extends HTMLButtonAttributes, ButtonVariants {
     children?: Snippet
@@ -61,6 +63,16 @@
      * (`href`) не вызывается.
      */
     ref?: (el: HTMLButtonElement | null) => void
+    /**
+     * Задача, которую ведёт кнопка (`#lib/task`): отправка формы, загрузка.
+     * Пока `pending` — спиннер (через 150 мс) и процент, если он известен,
+     * тем же правилом CSS, что у ссылок, и `aria-busy`; повторный клик гасится
+     * сразу; задача видна в глобальном лоадере. `error` — знак «!» и
+     * причина в `title`. Фокус не теряется: кнопка не становится `disabled`.
+     *
+     *     <Button type="submit" task={formTask(form.state)}>Добавить</Button>
+     */
+    task?: TaskState
   }
 
   let {
@@ -71,8 +83,27 @@
     href,
     children,
     ref,
+    task,
     ...rest
   }: Props = $props()
+
+  // Вложение ставится, только когда задача есть; смена её состояния вложение
+  // не пересоздаёт (выражение `{@attach}` зависит от `hasTask`, не от `task`).
+  const hasTask = $derived(task !== undefined)
+  const pending = () => task?.status === 'pending'
+  function attachTask(el: HTMLElement) {
+    // Без `aria-disabled`: кнопка не тускнеет на коротких отправках (мигание);
+    // занятость видна по `aria-busy` и спиннеру через 150 мс.
+    reflectTask(el, () => task ?? IDLE_TASK)
+    // Повторный клик во время задачи: ни отправки формы, ни обработчиков потребителя.
+    const block = (e: Event) => {
+      if (!pending()) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+    el.addEventListener('click', block, true)
+    return () => el.removeEventListener('click', block, true)
+  }
 
   let self = $state<HTMLButtonElement | null>(null)
   // ref — эффект: потребителю нужен именно элемент (getBoundingClientRect, focus()).
@@ -80,13 +111,16 @@
 </script>
 
 <!-- `data-slot="button"`: по нему общее правило индикатора ссылок
-     (`components/links/indicator.ts`) убирает свой отступ — у кнопки есть `gap`. -->
+     (`components/links/indicator.ts`) убирает свой отступ — у кнопки есть `gap`.
+     `data-task`: то же правило рисует состояние задачи кнопки. -->
 {#if href !== undefined}
   <a
     href={href ?? undefined}
     data-slot="button"
+    data-task={hasTask ? '' : undefined}
     class={buttonVariants({ variant, size, class: cls })}
     {...rest as HTMLAnchorAttributes}
+    {@attach hasTask ? attachTask : undefined}
   >
     {#if children}{@render children()}{/if}
   </a>
@@ -95,8 +129,10 @@
     bind:this={self}
     {type}
     data-slot="button"
+    data-task={hasTask ? '' : undefined}
     class={buttonVariants({ variant, size, class: cls })}
     {...rest}
+    {@attach hasTask ? attachTask : undefined}
   >
     {#if children}{@render children()}{/if}
   </button>

@@ -1,4 +1,4 @@
-// Вид состояния ссылок `asLink`/`asModalLink` — ОДНО правило на весь сайт.
+// Вид состояния ссылок `asLink`/`asModalLink` и `Button` с `task` — ОДНО правило на весь сайт.
 //
 // Почему CSS, а не разметка: `as*` не владеет элементом, потребитель ставит
 // его на свою `<a>` или на `Button`. Атрибуты состояния (`data-state`,
@@ -13,7 +13,8 @@
 const WARNING_MASK =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 7v6M12 17h.01'/%3E%3C/svg%3E\")"
 
-const LINK = ':where([data-link],[data-modal-link])'
+// `data-task` — `Button` с задачей (`task`): тот же вид, что у ссылок.
+const LINK = ':where([data-link],[data-modal-link],[data-task])'
 
 export const LINK_INDICATOR_CSS = `
 ${LINK}[data-state=loading]::before,
