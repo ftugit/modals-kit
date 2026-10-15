@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, it } from "vitest";
-import { createDb, defineResource, f, field, policy, s, DbFailure, conservativeLimits, failureIssues } from "../index";
+import { createDb, defineResource, f, field, policy, s, DbFailure, conservativeLimits, failureIssues, liveCapabilities } from "../index";
 import type { CheckEvent, Database, Fields, Resource, StandardSchema } from "../index";
 import { pgliteAdapter } from "../adapters/pglite";
 import { defineSchema } from "../sync/index";
@@ -401,4 +401,183 @@ test("store: описание требует db.type, CHECK из правил н
   const r = posts(countedText(), {}, { pin: field(s.text({ min: 4, max: 6 }), { ...rw, nullable: true, store: (v) => v, db: { type: "text" } }) });
   const spec = await tableSpec(r);
   assert.equal(spec.objects.filter((o) => o.kind === "check" && o.columns.includes("pin")).length, 0);
+});
+
+/* ── системные поля времени (`timestamps`) ─────────────────────────────── */
+
+function stamped(more: Partial<Resource> & { timestamps?: unknown } = {}) {
+  return defineResource({
+    key: "t.rules.stamped",
+    table: "public.rules_stamped",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ["eq"] }),
+      title: f.text({ ...rw, required: true }),
+    },
+    policy: rules,
+    order: [["created_at", "desc"]],
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at", deletedAt: "deleted_at" },
+    ...(more as object),
+  } as Parameters<typeof defineResource>[0]);
+}
+const tsIssues = (fn: () => unknown) => {
+  try {
+    fn();
+  } catch (e) {
+    return ((e as DbFailure).details.issues as string[] | undefined)?.join(" | ") ?? String(e);
+  }
+  return "";
+};
+
+test("timestamps: поля, DEFAULT базы и индексы под опрос создаются из модели", () => {
+  const r = stamped();
+  assert.deepEqual(Object.keys(r.fields), ["id", "title", "created_at", "updated_at", "deleted_at"]);
+  for (const k of ["created_at", "updated_at", "deleted_at"]) {
+    const fl = r.fields[k as keyof typeof r.fields] as import("../index").Field;
+    assert.ok(fl.generated && fl.immutable && fl.orderable, k);
+    assert.deepEqual(fl.filters, ["gt", "gte", "lt", "lte"]);
+  }
+  assert.equal(r.softDelete?.field, "deleted_at");
+  assert.deepEqual(r.db?.indexes, [["updated_at", "id"]]);
+  return withDb([r], async (_db, pg) => {
+    const cols = await pg.query<{ column_name: string; column_default: string | null; is_nullable: string }>(
+      "SELECT column_name, column_default, is_nullable FROM information_schema.columns WHERE table_name = 'rules_stamped' ORDER BY column_name",
+    );
+    const by = Object.fromEntries(cols.rows.map((c) => [c.column_name, c]));
+    assert.equal(by.created_at.column_default, "clock_timestamp()");
+    assert.equal(by.updated_at.column_default, "clock_timestamp()");
+    assert.equal(by.deleted_at.column_default, null);
+    assert.equal(by.deleted_at.is_nullable, "YES");
+    const idx = await pg.query<{ indexdef: string }>("SELECT indexdef FROM pg_indexes WHERE tablename = 'rules_stamped'");
+    const defs = idx.rows.map((x) => x.indexdef).join("\n");
+    // изменённые — среди живых строк; удалённые — среди удалённых (частичный по живым был бы пуст)
+    assert.match(defs, /\(updated_at, id\) WHERE \(deleted_at IS NULL\)/);
+    assert.match(defs, /\(deleted_at, id\) WHERE \(deleted_at IS NOT NULL\)/);
+  });
+});
+
+test("timestamps: время ставит база; клиент его не пишет; update двигает updated_at", () => {
+  const r = stamped();
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const row = (await api.insert(ctx, { title: "Первая" })) as Record<string, string | null>;
+    assert.ok(row.created_at && row.updated_at, "обе метки из базы");
+    assert.equal(row.deleted_at, null);
+    await assert.rejects(api.insert(ctx, { title: "x", created_at: "2000-01-01T00:00:00Z" }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    await assert.rejects(api.update(ctx, row.id, { updated_at: "2000-01-01T00:00:00Z" }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    const next = (await api.update(ctx, row.id, { title: "Правка" })) as Record<string, string>;
+    assert.ok(Date.parse(next.updated_at) > Date.parse(row.updated_at), `${next.updated_at} > ${row.updated_at}`);
+    assert.equal(next.created_at, row.created_at, "created_at не меняется");
+  });
+});
+
+test("timestamps: мягкое удаление скрывает строку; удалённые не видит и не восстанавливает никто по умолчанию", () => {
+  const r = stamped();
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const row = (await api.insert(ctx, { title: "Удаляемая" })) as Record<string, string>;
+    const gone = (await api.delete(ctx, row.id)) as Record<string, string | null>;
+    assert.ok(gone.deleted_at, "метку поставила база");
+    assert.equal((await api.select(ctx)).length, 0);
+    assert.equal(await api.count(ctx), 0);
+    await assert.rejects(api.get(ctx, row.id), (e: unknown) => e instanceof DbFailure && e.kind === "not_found");
+    await assert.rejects(api.select(ctx, { includeDeleted: true }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    await assert.rejects(api.restore(ctx, row.id), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    await assert.rejects(api.delete(ctx, row.id), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "второй раз не удаляется");
+  });
+});
+
+test("timestamps: readDeleted открывает удалённые и restore; restore снимает метку и двигает updated_at", () => {
+  const r = stamped({
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at", deletedAt: { field: "deleted_at", readDeleted: ["admin"] } },
+  });
+  const admin = { principal: { roles: ["admin"] } };
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const row = (await api.insert(ctx, { title: "Вернётся" })) as Record<string, string>;
+    const live = (await api.insert(ctx, { title: "Живая" })) as Record<string, string>;
+    const gone = (await api.delete(ctx, row.id)) as Record<string, string>;
+    assert.equal((await api.select(admin, { includeDeleted: true })).length, 2);
+    await assert.rejects(api.restore(ctx, row.id), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    await assert.rejects(api.restore(admin, live.id), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "не удалена — нечего восстанавливать");
+    const back = (await api.restore(admin, row.id)) as Record<string, string | null>;
+    assert.equal(back.deleted_at, null);
+    assert.ok(Date.parse(back.updated_at!) > Date.parse(gone.updated_at), "восстановление — изменение для опроса");
+    assert.equal((await api.select(ctx)).length, 2);
+  });
+});
+
+test("timestamps: политика restore сужает восстановление; без мягкого удаления restore — unsupported", () => {
+  const r = stamped({
+    timestamps: { createdAt: "created_at", deletedAt: { field: "deleted_at", readDeleted: ["admin"] } },
+    policy: { ...rules, restore: () => ({ field: "title", op: "eq", value: "можно" }) },
+  });
+  const plain = defineResource({
+    key: "t.rules.plain",
+    table: "public.rules_plain",
+    primaryKey: "id",
+    fields: { id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ["eq"] }) },
+    policy: rules,
+    order: [["id", "asc"]],
+  });
+  const admin = { principal: { roles: ["admin"] } };
+  return withDb([r, plain], async (db) => {
+    const api = db.resource(r);
+    const yes = (await api.insert(ctx, { title: "можно" })) as Record<string, string>;
+    const no = (await api.insert(ctx, { title: "нельзя" })) as Record<string, string>;
+    await api.delete(ctx, yes.id);
+    await api.delete(ctx, no.id);
+    await assert.rejects(api.restore(admin, no.id), (e: unknown) => e instanceof DbFailure && e.kind === "not_found");
+    assert.equal(((await api.restore(admin, yes.id)) as Record<string, unknown>).deleted_at, null);
+    await assert.rejects(db.resource(plain).restore(admin, "00000000-0000-4000-8000-000000000000"), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
+  });
+});
+
+test("timestamps: ошибки объявления — поле и в fields, вместе с softDelete, неизвестный ключ", async () => {
+  const dup = tsIssues(() =>
+    stamped({
+      fields: {
+        id: f.uuid({ read: () => true, orderable: true, filters: ["eq"] }),
+        created_at: f.timestamp({ read: () => true, orderable: true }),
+      },
+    }),
+  );
+  assert.match(dup, /поле «created_at» объявлено и в fields/);
+  const both = tsIssues(() =>
+    stamped({ softDelete: { field: "title", value: () => "x", readDeleted: [] } }),
+  );
+  assert.match(both, /timestamps\.deletedAt и softDelete вместе/);
+  assert.match(tsIssues(() => stamped({ timestamps: { createdOn: "x" } as never })), /timestamps\.createdOn: неизвестный ключ/);
+  assert.match(tsIssues(() => stamped({ timestamps: { createdAt: "same", updatedAt: "same" } })), /уже занято/);
+});
+
+test("timestamps: liveCapabilities выводит, что опрашивать", async () => {
+  assert.deepEqual(liveCapabilities(stamped()), { inserted: true, updated: true, deleted: true });
+  assert.deepEqual(liveCapabilities(stamped({ timestamps: { createdAt: "created_at" } })), { inserted: true, updated: false, deleted: false });
+  assert.deepEqual(liveCapabilities(stamped({ timestamps: { createdAt: "created_at", updatedAt: "updated_at" } })), { inserted: true, updated: true, deleted: false });
+});
+
+test("timestamps: каскад мягкого удаления ставит детям время базы", () => {
+  const parent = stamped({
+    timestamps: { createdAt: "created_at", deletedAt: { field: "deleted_at", children: () => [{ resource: child, field: "parent_id", onDelete: "cascade" }] } },
+  });
+  const child: Resource = defineResource({
+    key: "t.rules.child",
+    table: "public.rules_child",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ["eq"] }),
+      parent_id: f.uuid({ ...rw, required: true, filters: ["eq"] }),
+    },
+    policy: rules,
+    order: [["id", "asc"]],
+    timestamps: { deletedAt: "deleted_at" },
+  });
+  return withDb([parent, child], async (db, pg) => {
+    const p = (await db.resource(parent).insert(ctx, { title: "Родитель" })) as Record<string, string>;
+    await db.resource(child).insert(ctx, { parent_id: p.id });
+    await db.resource(parent).delete(ctx, p.id);
+    const rows = await pg.query<{ deleted_at: Date | null }>("SELECT deleted_at FROM public.rules_child");
+    assert.ok(rows.rows[0].deleted_at instanceof Date, "ребёнок помечен");
+  });
 });

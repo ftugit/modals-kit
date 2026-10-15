@@ -44,8 +44,12 @@ export const posts = defineResource({
       nullable: true,
       fill: (values) => slugOf(values.title),
     }),
-    created_at: f.timestamp({ read: () => true, generated: true, orderable: true, filters: ['gt', 'gte', 'lt', 'lte'], db: { default: 'clock_timestamp()' } }),
   },
+  // Системные поля: время ставит база. `deleted_at` — мягкое удаление: форма удаления
+  // ставит метку, список её скрывает; удалённые видит только админ (его пока нет —
+  // `readDeleted` не задан, значит никто). `updated_at`/`deleted_at` нужны опросу
+  // изменений (`liveCapabilities`, docs/design/live-update.md §5).
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
   policy: {
     select: policy.publicRows(),
     insert: policy.roles(['author']),

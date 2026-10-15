@@ -103,9 +103,15 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // Факт: весь JS 244.9, immutable 258.5, /form 172.3, /paginator 207.5, /db-demo 203.7.
 // То же решение (+5, сообщить): весь JS 245.5, immutable 259, /form 173, /paginator 208,
 // /db-demo 204.5.
+// REVISION 2026-10-15, ход 198 (исправления пагинатора: сравнение «ключа нет = умолчание»
+// при оживлении, стартовая страница у роутера; `timestamps`/`restore`/`liveCapabilities` в
+// `lib/db` — модель `posts` едет в браузер вместе с `defineResource`). Факт: весь JS 245.7
+// (+0.8 к ходу 189), immutable 259.3, /db-demo 204.5+ (порог), /paginator 207.7, /form 172.3.
+// По постоянному решению оператора (≤ +5, сообщить): весь JS 246.5, immutable 260,
+// /db-demo 205.5.
 const LIMITS = {
-  allImmutableGzip: 259 * KiB,
-  allJsGzip: 245.5 * KiB,
+  allImmutableGzip: 260 * KiB,
+  allJsGzip: 246.5 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -137,7 +143,7 @@ const ROUTE_LIMITS = {
   // Ход 112: + закреплённые ошибки формы (pins) и смена источника в ядре пагинатора
   // (общее со списком БД) — факт 181.6 → 182.5.
   // Ход 185: модель `posts` в браузере (форма из модели) — факт 201.1, см. REVISION у LIMITS.
-  '/db-demo': 204.5 * KiB,
+  '/db-demo': 205.5 * KiB,
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
   '/cards/[id]': 139.5 * KiB,

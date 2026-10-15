@@ -2,7 +2,7 @@ import { policyBoolean } from './validation';
 import { DbFailure, fail, failFields, normalizeFailure, type FieldError } from './errors';
 import { tableSpec } from './sync/model';
 import { checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
-import { fieldError, revalidateDraft, validateField } from './validation';
+import { fieldError, revalidateDraft, timestampField, validateField } from './validation';
 import { readProof } from './proof';
 import {
   Sql,
@@ -65,6 +65,23 @@ const DEFAULT_TEXT: Record<string, string> = {
   reference: 'Referenced record not found',
   referenced: 'Record is referenced by other records',
 };
+/** Колонка поля в SQL присваивания (`SET <колонка> = …`). */
+const assignee = (x: Resource, k: string) => ident(x.fields[k].column ?? k);
+/**
+ * Присваивание метки мягкого удаления. Метка из `timestamps.deletedAt` — время базы
+ * (`clock_timestamp()`): часы приложения не участвуют. Ручной `softDelete` — его `value`.
+ */
+async function softDeleteAssignment(x: Resource, s: Sql, ctx: DataContext): Promise<string> {
+  const k = x.softDelete!.field;
+  if (timestampField(x, 'deletedAt') === k) return `${assignee(x, k)} = clock_timestamp()`;
+  const value = await validateField(x.fields[k], x.softDelete!.value(ctx), k);
+  return `${assignee(x, k)} = ${s.fieldParam(x.fields[k], value)}`;
+}
+/** `updatedAt = clock_timestamp()` для `update`/`restore`; нет метки — ничего. */
+function touchAssignment(x: Resource): string[] {
+  const k = timestampField(x, 'updatedAt');
+  return k ? [`${assignee(x, k)} = clock_timestamp()`] : [];
+}
 /**
  * Правила данных ресурса → ошибки полей. Пусто — нарушений нет. Нарушение без своего
  * текста получает текст поля по коду (`messages`), иначе код уходит в словарь формы.
@@ -199,8 +216,15 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     }
     return `(${policy}) AND (${client}) AND (${deleted})`;
   }
-  async function idWhere(ctx: DataContext, op: 'update' | 'delete', s: Sql, id: unknown) {
+  async function idWhere(ctx: DataContext, op: 'update' | 'delete' | 'restore', s: Sql, id: unknown) {
     const v = await validateField(r.fields[r.primaryKey], id, r.primaryKey);
+    if (op === 'restore') {
+      // Восстановить = увидеть удалённую: право `readDeleted` (where проверит его при
+      // includeDeleted) и политика `restore`, а без неё — та же, что у `delete`.
+      const rule = (r.policy.restore ?? r.policy.delete)(ctx);
+      const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule });
+      return `(${predicate}) AND ${col(r, r.softDelete!.field)} IS NOT NULL AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
+    }
     return `(${await where(ctx, op, s)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
   }
   async function includes(ctx: DataContext, names: readonly string[] | undefined, s: Sql) {
@@ -324,7 +348,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   async function write(
     dbx: Database,
     ctx: DataContext,
-    op: 'insert' | 'update' | 'delete',
+    op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
   ): Promise<Out> {
@@ -333,7 +357,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     if (op === 'insert' && !policyBoolean(r.policy.insert(ctx))) fail('forbidden');
     let draft: Row | undefined;
     const filled = new Set<string>();
-    if (op !== 'delete') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys, filled);
+    if (op === 'insert' || op === 'update') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys, filled);
     let before: Row | undefined;
     if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || (op === 'update' && r.checks))) {
       const pre = new Sql(),
@@ -363,7 +387,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     );
     const event: HookContext = {
       ctx,
-      operation: op,
+      // Для хуков восстановление — изменение строки.
+      operation: op === 'restore' ? 'update' : op,
       db: dbx,
       before: before ? freeze({ ...before }) : undefined,
       draft,
@@ -400,19 +425,16 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const predicate = await idWhere(ctx, op, s, id);
       if (op === 'delete' && !r.softDelete) sql = `DELETE FROM ${table(r)} WHERE ${predicate}`;
       else {
-        const patch =
+        const sets =
           op === 'delete'
-            ? {
-                [r.softDelete!.field]: await validateField(
-                  r.fields[r.softDelete!.field],
-                  r.softDelete!.value(ctx),
-                  r.softDelete!.field,
-                ),
-              }
-            : draft!;
-        sql = `UPDATE ${table(r)} SET ${Object.entries(patch)
-          .map(([k, v]) => ident(r.fields[k].column ?? k) + ' = ' + s.fieldParam(r.fields[k], v))
-          .join(',')} WHERE ${predicate}`;
+            ? [await softDeleteAssignment(r as unknown as Resource, s, ctx)]
+            : op === 'restore'
+              ? [`${assignee(r as unknown as Resource, r.softDelete!.field)} = NULL`, ...touchAssignment(r as unknown as Resource)]
+              : [
+                  ...Object.entries(draft!).map(([k, v]) => assignee(r as unknown as Resource, k) + ' = ' + s.fieldParam(r.fields[k], v)),
+                  ...touchAssignment(r as unknown as Resource),
+                ];
+        sql = `UPDATE ${table(r)} SET ${sets.join(',')} WHERE ${predicate}`;
       }
     }
     let row: Row | undefined;
@@ -441,7 +463,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         registered.fields.every((k) => own(r.fields, k) && grants(r.fields[k].read, ctx))
       ) {
         e.details.publicFields = Object.freeze([...registered.fields]);
-      } else if (op !== 'delete' && draft) await attachFieldErrors(r, ctx, e, op, draft);
+      } else if ((op === 'insert' || op === 'update') && draft) await attachFieldErrors(r, ctx, e, op, draft);
       else if (op === 'delete' && e.details.sqlstate === '23503')
         // удаление нарушает только входящие ключи: на строку ссылаются другие записи
         e.details.errors = Object.freeze([fieldError(undefined, undefined, 'referenced', DEFAULT_TEXT.referenced)]);
@@ -506,19 +528,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
           fail('unsupported', undefined, [
             `${[...path, child.key].join(' → ')}: каскад по кругу или глубже 8 уровней не поддерживается`,
           ]);
-        const value = await validateField(
-          child.fields[child.softDelete.field],
-          child.softDelete.value(ctx),
-          child.softDelete.field,
-        );
-        await dbx.query(
-          withSignal(
-            s.statement(
-              `UPDATE ${table(child)} SET ${ident(child.fields[child.softDelete.field].column ?? child.softDelete.field)} = ${s.fieldParam(child.fields[child.softDelete.field], value)} WHERE ${match}`,
-            ),
-            ctx,
-          ),
-        );
+        const set = await softDeleteAssignment(child, s, ctx);
+        await dbx.query(withSignal(s.statement(`UPDATE ${table(child)} SET ${set} WHERE ${match}`), ctx));
         // Следующий уровень: ключи детей, связанных с ключами этого уровня (без условия
         // «не удалён» — они только что получили метку).
         queue.push({
@@ -671,7 +682,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   }
   const mutate = (
     ctx0: DataContext,
-    op: 'insert' | 'update' | 'delete',
+    op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
   ) =>
@@ -681,7 +692,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         r.hooks?.beforeWrite ||
         r.hooks?.afterWrite ||
         r.validateFinal ||
-        (op !== 'delete' && r.checks) ||
+        ((op === 'insert' || op === 'update') && r.checks) ||
         // родитель и дети — вместе или никак: `restrict` на втором уровне откатывает всё
         (op === 'delete' && r.softDelete?.children)
       );
@@ -779,6 +790,10 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     insert: (ctx, input) => mutate(ctx, 'insert', undefined, input),
     update: (ctx, id, input) => mutate(ctx, 'update', id, input),
     delete: (ctx, id) => mutate(ctx, 'delete', id, undefined),
+    restore: (ctx, id) => {
+      if (!r.softDelete) return Promise.reject(new DbFailure('unsupported'));
+      return mutate(ctx, 'restore', id, undefined);
+    },
     insertMany: (ctx, rows, opts) => db.guard(() => insertMany(ctx, rows, opts)),
     estimate: (ctx, input) => db.guard(() => estimate(ctx, input ?? {})),
   };

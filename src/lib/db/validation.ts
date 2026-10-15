@@ -8,9 +8,12 @@ import type {
   Fields,
   Grant,
   Operator,
+  LiveCapabilities,
   Resource,
   Relations,
   Row,
+  TimestampFields,
+  Timestamps,
 } from "./types";
 /** Policy/grant callback не может разрешать доступ через truthy non-boolean. */
 export function policyBoolean(value: unknown): boolean {
@@ -518,10 +521,111 @@ function checkShape(r: Resource): void {
   if (bad.length) fail("validation", undefined, bad);
 }
 
-export function defineResource<F extends Fields, R extends Relations = {}>(
-  r: Resource<F, R>,
-): Resource<F, R> {
-  if (!r.key || !r.policy || !r.fields || !own(r.fields, r.primaryKey))
+/** Имя поля системной метки: `timestamps` в объектной и строковой форме. */
+export function timestampField(
+  r: Pick<Resource, "timestamps">,
+  kind: keyof Timestamps,
+): string | undefined {
+  const v = r.timestamps?.[kind];
+  return typeof v === "string" ? v : v?.field;
+}
+
+/** Что ресурс умеет сообщить опросу изменений (см. `LiveCapabilities`). */
+export function liveCapabilities(r: Pick<Resource, "timestamps">): LiveCapabilities {
+  return {
+    inserted: true,
+    updated: timestampField(r, "updatedAt") !== undefined,
+    deleted: timestampField(r, "deletedAt") !== undefined,
+  };
+}
+
+const TIMESTAMP_KEYS = ["createdAt", "updatedAt", "deletedAt"] as const;
+/**
+ * `timestamps` → системные поля, мягкое удаление и индексы под опрос. Идёт до
+ * остальных проверок: порядок, индексы и связи могут ссылаться на эти поля.
+ */
+function expandTimestamps(r: Resource): Resource {
+  const t = r.timestamps as unknown;
+  if (t === undefined) return r;
+  const issues: string[] = [];
+  if (!isRecord(t)) fail("validation", undefined, ["timestamps: объект { createdAt?, updatedAt?, deletedAt? }"]);
+  for (const k of Object.keys(t))
+    if (!(TIMESTAMP_KEYS as readonly string[]).includes(k))
+      issues.push(`timestamps.${k}: неизвестный ключ — есть createdAt, updatedAt, deletedAt`);
+  const raw = t.deletedAt;
+  const deleted = typeof raw === "string" ? { field: raw } : raw;
+  if (deleted !== undefined && (!isRecord(deleted) || typeof deleted.field !== "string"))
+    issues.push("timestamps.deletedAt: имя поля или { field, readDeleted?, children? }");
+  const names: Partial<Record<(typeof TIMESTAMP_KEYS)[number], string>> = {};
+  for (const k of TIMESTAMP_KEYS) {
+    const name = k === "deletedAt" ? (isRecord(deleted) ? deleted.field : undefined) : t[k];
+    if (name === undefined) continue;
+    if (typeof name !== "string" || !name) {
+      issues.push(`timestamps.${k}: имя поля — непустая строка`);
+      continue;
+    }
+    if (r.fields && own(r.fields, name))
+      issues.push(`timestamps.${k}: поле «${name}» объявлено и в fields — системное поле создаёт timestamps`);
+    if (Object.values(names).includes(name)) issues.push(`timestamps.${k}: имя «${name}» уже занято другой меткой`);
+    names[k] = name;
+  }
+  if (names.deletedAt && r.softDelete)
+    issues.push("timestamps.deletedAt и softDelete вместе: мягкое удаление задаётся чем-то одним");
+  if (issues.length) fail("validation", undefined, issues);
+  const system = (nullable: boolean): Field<unknown> => ({
+    schema: s.timestamp(),
+    kind: "timestamp",
+    read: () => true,
+    generated: true,
+    immutable: true,
+    orderable: true,
+    filters: ["gt", "gte", "lt", "lte"],
+    ...(nullable ? { nullable: true } : { db: { default: "clock_timestamp()" } }),
+  });
+  const fields: Fields = { ...r.fields };
+  if (names.createdAt) fields[names.createdAt] = system(false);
+  if (names.updatedAt) fields[names.updatedAt] = system(false);
+  if (names.deletedAt) fields[names.deletedAt] = system(true);
+  // Опрос спрашивает «изменённые после метки» — индекс по метке и ключу. Индекс под
+  // «удалённые после метки» строит `defineSchema` сам: ему нужно своё условие
+  // (`IS NOT NULL`), а индексы ресурса с мягким удалением — по живым строкам.
+  const indexes = [...(r.db?.indexes ?? [])];
+  if (
+    names.updatedAt &&
+    !indexes.some((x) => x.length === 2 && x[0] === names.updatedAt && x[1] === r.primaryKey)
+  )
+    indexes.push([names.updatedAt, r.primaryKey]);
+  const d = deleted as { field: string; readDeleted?: Grant; children?: () => readonly import("./types").SoftDeleteChild[] } | undefined;
+  return {
+    ...r,
+    fields,
+    timestamps: Object.freeze({ ...names }),
+    ...(indexes.length ? { db: { ...r.db, indexes } } : {}),
+    ...(d
+      ? {
+          softDelete: {
+            field: d.field,
+            // Не вызывается: метку ставит база (`clock_timestamp()`), см. resource.ts.
+            value: () => undefined,
+            readDeleted: d.readDeleted ?? [],
+            ...(d.children ? { children: d.children } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+export function defineResource<
+  F extends Fields,
+  R extends Relations = {},
+  const T extends Timestamps | undefined = undefined,
+>(
+  input: Omit<Resource<F, R>, "timestamps"> & { timestamps?: T },
+): Resource<F & TimestampFields<T>, R> {
+  if (!input || !input.key || !input.policy || !input.fields)
+    fail("validation", undefined, ["key/policy/fields/primaryKey обязательны"]);
+  const r = expandTimestamps(input as unknown as Resource) as unknown as Resource<F & TimestampFields<T>, R>;
+  if (!own(r.fields, r.primaryKey))
     fail("validation", undefined, ["key/policy/fields/primaryKey обязательны"]);
   checkShape(r as unknown as Resource);
   const identifier = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -554,7 +658,7 @@ export function defineResource<F extends Fields, R extends Relations = {}>(
       Object.fromEntries(
         Object.entries(r.fields).map(([k, v]) => [k, Object.freeze({ ...v })]),
       ),
-    ) as F,
+    ) as F & TimestampFields<T>,
     order: Object.freeze(r.order.map((x) => Object.freeze([...x]) as typeof x)),
   });
 }

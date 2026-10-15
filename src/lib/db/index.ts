@@ -1,7 +1,7 @@
 export * from "./types";
 export * from "./database";
 export * from "./errors";
-export { defineResource, field, f } from "./validation";
+export { defineResource, field, f, liveCapabilities } from "./validation";
 export { s, make } from "./schema";
 export { policy } from "./policy";
 export { createCursorCodec } from "./cursor/codec";

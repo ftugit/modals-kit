@@ -256,6 +256,8 @@ export interface Resource<
     insert: (ctx: DataContext) => boolean;
     update: (ctx: DataContext) => Filter;
     delete: (ctx: DataContext) => Filter;
+    /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `delete`. */
+    restore?: (ctx: DataContext) => Filter;
   };
   order: Order;
   hooks?: Hooks;
@@ -279,11 +281,57 @@ export interface Resource<
      */
     children?: () => readonly SoftDeleteChild[];
   };
+  /**
+   * Системные поля времени. Значение — имя поля (и колонки); поле создаёт
+   * `defineResource`, объявлять его в `fields` нельзя. Каждое — время, читается всеми,
+   * кто видит строку, клиент его не пишет, значение ставит база (`clock_timestamp()`),
+   * сортировка и фильтры `gt/gte/lt/lte` разрешены.
+   *
+   * - `createdAt` — при вставке;
+   * - `updatedAt` — при вставке и при каждом `update` (и `restore`);
+   * - `deletedAt` — мягкое удаление: `delete` ставит метку, чтение её скрывает,
+   *   `restore` снимает. Удалённые не видит и не восстанавливает никто, пока не задано
+   *   `readDeleted` в объектной форме. Несовместимо с ручным `softDelete`.
+   *
+   * Что из этого следует для опроса изменений — `liveCapabilities(resource)`.
+   */
+  timestamps?: Timestamps;
   /** Индексы и составная уникальность для `defineSchema`. */
   db?: {
     indexes?: readonly (readonly string[])[];
     unique?: readonly (readonly string[])[];
   };
+}
+export interface Timestamps {
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?:
+    | string
+    | {
+        field: string;
+        /** Кто видит удалённые (`includeDeleted`) и может их восстановить. Нет — никто. */
+        readDeleted?: Grant;
+        children?: () => readonly SoftDeleteChild[];
+      };
+}
+/** Поля, которые `defineResource` создаёт из `timestamps` (для типа строки). */
+export type TimestampFields<T extends Timestamps | undefined> = T extends Timestamps
+  ? { [K in Extract<T["createdAt"], string>]: Field<string> } & {
+      [K in Extract<T["updatedAt"], string>]: Field<string>;
+    } & {
+      [K in T["deletedAt"] extends { field: infer N }
+        ? Extract<N, string>
+        : Extract<T["deletedAt"], string>]: Field<string | null>;
+    }
+  : {};
+/**
+ * Что ресурс умеет сообщить опросу изменений — выводится из `timestamps`:
+ * новые строки — всегда, изменённые — есть `updatedAt`, удалённые — есть `deletedAt`.
+ */
+export interface LiveCapabilities {
+  inserted: true;
+  updated: boolean;
+  deleted: boolean;
 }
 export interface ListInput {
   fields?: readonly string[];
@@ -327,6 +375,12 @@ export interface ResourceApi<
     patch: unknown,
   ): Promise<ResourceRow<F, R>>;
   delete(ctx: DataContext, id: unknown): Promise<ResourceRow<F, R>>;
+  /**
+   * Снять метку мягкого удаления. Нужны право `readDeleted` (иначе `forbidden`) и
+   * политика `restore` (нет — `delete`); строка не удалена или не видна — `not_found`.
+   * Хукам записи это `update`. Без мягкого удаления — `unsupported`.
+   */
+  restore(ctx: DataContext, id: unknown): Promise<ResourceRow<F, R>>;
   /**
    * Проверка без записи как Standard Schema — для форм, которые ничего не пишут
    * (вход, сброс пароля): `createFormHandler({ schema: users.validator(ctx, 'check') })`.

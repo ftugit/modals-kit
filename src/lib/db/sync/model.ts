@@ -2,6 +2,7 @@ import { fail } from "../errors";
 import { ident } from "../query/sql";
 import { columnMeta } from "../schema";
 import type { Resource } from "../types";
+import { timestampField } from "../validation";
 
 /** Колонка таблицы, как её описывает модель. */
 export interface ColumnSpec {
@@ -144,15 +145,15 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
 
   const colOf = (k: string) => r.fields[k]!.column ?? k;
   const pk = colOf(r.primaryKey);
-  const index = async (kind: "index" | "unique", keys: string[]) => {
-    const body = `(${keys.join(", ")})${where ? " WHERE " + where : ""}`;
+  const index = async (kind: "index" | "unique", keys: string[], only = where) => {
+    const body = `(${keys.join(", ")})${only ? " WHERE " + only : ""}`;
     const n = await named(kind, body);
     objects.push({
       kind,
       name: n,
       sql: `CREATE ${kind === "unique" ? "UNIQUE " : ""}INDEX ${ident(n)} ON ${qualified} ${body}`,
       columns: keys.map((k) => k.split(" ")[0]!.replace(/"/g, "")),
-      where,
+      where: only,
     });
   };
   // keyset: сортировка ресурса + primaryKey, ровно как её пишет orderSQL
@@ -162,6 +163,11 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
   for (const [k, f] of Object.entries(r.fields)) if (f.db?.unique) await index("unique", [ident(colOf(k))]);
   for (const keys of r.db?.unique ?? []) await index("unique", keys.map((k) => ident(colOf(k))));
   for (const keys of r.db?.indexes ?? []) await index("index", keys.map((k) => ident(colOf(k))));
+  // Опрос удалённых (`timestamps.deletedAt`) спрашивает «удалены после метки» — это
+  // только удалённые строки, поэтому индекс по ним, а не частичный по живым.
+  const tombstone = timestampField(r, "deletedAt");
+  if (tombstone && deleted)
+    await index("index", [ident(deleted), ident(pk)], `${ident(deleted)} IS NOT NULL`);
   for (const [k, f] of Object.entries(r.fields)) {
     const ref = f.db?.references;
     if (!ref) continue;
