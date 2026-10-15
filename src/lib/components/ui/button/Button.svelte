@@ -44,7 +44,7 @@
   import type { Snippet } from 'svelte'
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements'
   import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
-  import { reflectTask } from '../../links/state.svelte.js'
+  import { taskAttachment } from '../../links/state.svelte.js'
 
   interface Props extends HTMLButtonAttributes, ButtonVariants {
     children?: Snippet
@@ -87,23 +87,10 @@
     ...rest
   }: Props = $props()
 
-  // Вложение ставится, только когда задача есть; смена её состояния вложение
-  // не пересоздаёт (выражение `{@attach}` зависит от `hasTask`, не от `task`).
+  // Вложение задачи — только когда она есть. Выражение `{@attach}` зависит от
+  // `hasTask`, а не от `task`: смена состояния задачи вложение не пересоздаёт.
   const hasTask = $derived(task !== undefined)
-  const pending = () => task?.status === 'pending'
-  function attachTask(el: HTMLElement) {
-    // Без `aria-disabled`: кнопка не тускнеет на коротких отправках (мигание);
-    // занятость видна по `aria-busy` и спиннеру через 150 мс.
-    reflectTask(el, () => task ?? IDLE_TASK)
-    // Повторный клик во время задачи: ни отправки формы, ни обработчиков потребителя.
-    const block = (e: Event) => {
-      if (!pending()) return
-      e.preventDefault()
-      e.stopImmediatePropagation()
-    }
-    el.addEventListener('click', block, true)
-    return () => el.removeEventListener('click', block, true)
-  }
+  const attachTask = taskAttachment(() => task ?? IDLE_TASK)
 
   let self = $state<HTMLButtonElement | null>(null)
   // ref — эффект: потребителю нужен именно элемент (getBoundingClientRect, focus()).
@@ -117,8 +104,8 @@
   <a
     href={href ?? undefined}
     data-slot="button"
-    data-task={hasTask ? '' : undefined}
     class={buttonVariants({ variant, size, class: cls })}
+    data-task={hasTask ? '' : undefined}
     {...rest as HTMLAnchorAttributes}
     {@attach hasTask ? attachTask : undefined}
   >
@@ -129,8 +116,8 @@
     bind:this={self}
     {type}
     data-slot="button"
-    data-task={hasTask ? '' : undefined}
     class={buttonVariants({ variant, size, class: cls })}
+    data-task={hasTask ? '' : undefined}
     {...rest}
     {@attach hasTask ? attachTask : undefined}
   >

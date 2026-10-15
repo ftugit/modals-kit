@@ -18,6 +18,8 @@ import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/sv
 import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
 import { getClientStore, setExtra } from '#lib/paginate/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
+import type { TaskState } from '#lib/task/index.js'
+import { useActionTask } from './action-task.svelte.js'
 
 export interface PaginatorSearchOptions {
   /** Адресный ключ запроса: `page.q` — его пишет GET-форма без JS и адаптер с JS. */
@@ -66,6 +68,8 @@ export interface PaginatorSearch {
   submit(event: SubmitEvent): void
   /** Очистить запрос (крестик поля). */
   clear(): void
+  /** Идёт выдача, запрошенная ЭТИМ полем (`#lib/task`): спиннер в поле, глобальный лоадер. */
+  readonly task: TaskState
 }
 
 /**
@@ -101,13 +105,19 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
 
   /** Последний запрос, отправленный ЭТИМ полем: его эхо из стора — не внешняя правка. */
   let committed: string | null = null
+  // Новый запрос (не тот же самый) перезагружает выдачу — это задача поля.
+  const action = useActionTask(name)
+  const send = (q: string) => {
+    if (q !== String(o.query() ?? '')) action.fire()
+    committed = q
+    void setExtra(getClientStore(), name, { q })
+  }
 
   const form = bind(config, desc, {
     url: {
       // Нормализация — общая с lib search (та же, что у валидатора адреса).
       commit: (patch) => {
-        committed = normalizeSearchQuery(String(patch[path] ?? ''), maxLength)
-        void setExtra(getClientStore(), name, { q: committed })
+        send(normalizeSearchQuery(String(patch[path] ?? ''), maxLength))
       },
       // Зеркало bind получает значение из состояния (не из адреса).
       seed: () => ({ [path]: o.query() ?? '' }),
@@ -187,6 +197,9 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
     get hiddenFields() {
       return preserved
     },
+    get task() {
+      return action.task()
+    },
     input(event) {
       const raw = (event.currentTarget as HTMLInputElement).value.slice(0, maxLength)
       typed = raw
@@ -205,9 +218,8 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
     clear() {
       stopTimer()
       typed = ''
-      committed = ''
       vf.onInput('')
-      void setExtra(getClientStore(), name, { q: '' })
+      send('')
     },
   }
 }

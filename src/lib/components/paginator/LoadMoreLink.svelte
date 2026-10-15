@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { LoadMoreSlot, type LoadMoreSlotRender } from '#lib/paginate/svelte/index.js'
-  import { asLink } from '#lib/components/links/index.js'
+  import { asLink, taskAttrs } from '#lib/components/links/index.js'
   import { buttonVariants } from '#lib/components/ui/index.js'
-  import Spinner from './Spinner.svelte'
+  import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
 
   /**
    * Ссылка/кнопка «показать ещё» — 1-в-1 с исходником
@@ -32,6 +32,10 @@
 
   let { dir, name, action = 'auto', always = false, label, class: className }: Props = $props()
 
+  // Загрузка слота — задача ссылки: вид и задержка 150 мс — общие (`components/links`).
+  const PENDING: TaskState = { status: 'pending', scope: 'local' }
+  const taskOf = (p: LoadMoreSlotRender) => () => (p.loading ? PENDING : IDLE_TASK)
+
   function defaultText(p: LoadMoreSlotRender): string {
     return p.dir === -1
       ? `↑ показать предыдущую страницу (${p.page})`
@@ -50,28 +54,21 @@
     {/snippet}
     <div class="flex justify-center py-1">
       {#if p.href !== null}
-        <a {...asLink(p.href)}
+        <a {...asLink(p.href, { task: taskOf(p) })}
           data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
           class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
-          aria-busy={p.loading}
           onclick={p.onClick}
         >
-          {#if p.loading}
-            <Spinner />
-          {/if}
           {@render text(p)}
         </a>
       {:else}
         <button
           type="button"
+          {...taskAttrs(taskOf(p))}
           data-testid={p.dir === -1 ? 'load-prev' : 'load-next'}
           class={className ?? buttonVariants({ variant: 'ghost', size: 'xs' })}
-          disabled={p.loading}
           onclick={() => p.load()}
         >
-          {#if p.loading}
-            <Spinner />
-          {/if}
           {@render text(p)}
         </button>
       {/if}

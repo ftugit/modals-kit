@@ -50,6 +50,8 @@ ${LINK}[aria-disabled=true] { cursor: not-allowed; }
 ${LINK}:not([data-slot=button])[aria-disabled=true] { opacity: 0.65; }
 :where([data-slot=button])${LINK}::before { margin-inline-end: 0; }
 :where([data-slot=button])${LINK}::after { margin-inline-start: 0; }
+[data-task-spinner] { display: none; }
+input[data-state=loading] ~ [data-task-spinner] { display: flex; }
 @keyframes link-indicator-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   ${LINK}[data-state=loading]::before { animation-duration: 2s; }

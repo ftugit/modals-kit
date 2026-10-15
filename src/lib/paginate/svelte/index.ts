@@ -5,6 +5,7 @@ export { default as EdgeSentinel } from './EdgeSentinel.svelte'
 export { default as LoadMoreSlot, type LoadMoreSlotRender } from './LoadMoreSlot.svelte'
 export { default as PendingIndicator, type PendingIndicatorRender } from './PendingIndicator.svelte'
 export { default as PaginatorScope } from './PaginatorScope.svelte'
+export { paginatorTask } from './task'
 
 export {
   DEFAULT_HOST_OPTIONS,

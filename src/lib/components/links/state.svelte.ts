@@ -9,7 +9,7 @@
 //   aria-busy="true"     — пока показан спиннер
 //
 // Каждая такая задача попадает и в глобальный лоадер (`components/loader`).
-import type { Attachment } from 'svelte/attachments'
+import { createAttachmentKey, type Attachment } from 'svelte/attachments'
 import { taskPercent, type TaskState } from '#lib/task/index.js'
 import { TASK_DELAY_MS, trackTask } from '../loader/loader.svelte.js'
 
@@ -92,6 +92,35 @@ export function reflectTask(el: HTMLElement, read: () => TaskState, options: Ref
   overlay(el, 'aria-busy', () => (shown ? 'true' : null))
   overlay(el, 'title', () => (task.status === 'error' ? task.message : null))
   if (options.busy) overlay(el, 'aria-disabled', () => (options.busy!() ? 'true' : null))
+}
+
+const TASK = createAttachmentKey()
+
+/**
+ * Состояние задачи на любой кнопке или ссылке без `asLink`: тот же вид, что у
+ * ссылок (спиннер через 150 мс, процент, «!»), `aria-busy`, глобальный лоадер;
+ * клик во время задачи гасится сразу (ни отправки формы, ни обработчиков).
+ * Так задачу показывают `Button` (`task`) и сырые кнопки компонентов:
+ *
+ *     <button {...taskAttrs(() => paginatorTask(state()))} class="…">Сброс</button>
+ */
+export function taskAttrs(read: () => TaskState): { 'data-task': ''; [attachment: symbol]: Attachment<HTMLElement> } {
+  return { 'data-task': '', [TASK]: taskAttachment(read) }
+}
+
+/** Вложение из `taskAttrs` — для `{@attach}` там, где spread неудобен (`Button`). */
+export function taskAttachment(read: () => TaskState): Attachment<HTMLElement> {
+  return (el) => {
+    // Без `aria-disabled`: кнопка не тускнеет на коротких задачах (мигание).
+    reflectTask(el, read)
+    const block = (e: Event) => {
+      if (read().status !== 'pending') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+    el.addEventListener('click', block, true)
+    return () => el.removeEventListener('click', block, true)
+  }
 }
 
 /** Свой атрибут поверх чужого: пока `value()` не `null` — свой, потом — прежний. */

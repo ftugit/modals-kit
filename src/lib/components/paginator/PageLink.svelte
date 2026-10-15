@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { asLink } from '#lib/components/links/index.js'
+  import { asLink, taskAttrs } from '#lib/components/links/index.js'
   import { buttonVariants } from '#lib/components/ui/index.js'
-  import { usePageHref, usePaginatorActions } from '#lib/paginate/svelte/index.js'
+  import { paginatorTask, usePageHref, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
 
   interface Props {
     page: number
@@ -31,6 +31,9 @@
   const hrefGetter = usePageHref(() => page, name)
   const href = $derived(hrefGetter())
   const { goPage, prefetchPage } = usePaginatorActions(name)
+  // Спиннер у страницы, которая грузится (тот же вид, что у ссылок).
+  const pagState = usePaginatorState(name)
+  const task = () => paginatorTask(pagState(), page)
 
   const cls = $derived(
     className ??
@@ -42,7 +45,7 @@
 </script>
 
 {#if href !== null && !current && !disabled}
-  <a {...asLink(href)}
+  <a {...asLink(href, { task })}
     class={cls}
     aria-label={label}
     aria-current={current ? 'page' : undefined}
@@ -60,7 +63,10 @@
     {/if}
   </a>
 {:else if href !== null}
+  <!-- Текущая страница, пока грузится, — со спиннером: нажатая ссылка
+       сразу становится текущей, и задача видна здесь. -->
   <span
+    {...taskAttrs(task)}
     class={cls}
     aria-label={label}
     aria-current={current ? 'page' : undefined}

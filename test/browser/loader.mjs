@@ -3,7 +3,8 @@
  *   • медленный переход SvelteKit зажигает полоску сверху (без процента) и гасит её;
  *   • быстрый переход и открытие модалки полоску не зажигают (задержка 150 мс);
  *   • без JS полоски в разметке нет;
- *   • кнопка с `task` (отправка формы): спиннер на нажатой, полоска, после ответа всё снято.
+ *   • кнопка с `task` (отправка формы): спиннер на нажатой, полоска, после ответа всё снято;
+ *   • пагинатор: спиннер у грузящейся страницы, в поле поиска и у «Сброс».
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -124,6 +125,52 @@ async function run() {
       assert.equal(await draft.getAttribute('data-state'), null)
       assert.equal(await draft.getAttribute('aria-busy'), null, 'aria-busy снят')
       ok('после ответа состояние снято')
+      await page.close()
+    }
+    {
+      // Пагинатор (демо-источник с задержкой): спиннер у того, кто запустил загрузку.
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(BASE + '/paginator', { waitUntil: 'networkidle' })
+      await page.evaluate(() => {
+        window.__seen = []
+        new MutationObserver((ms) => {
+          for (const m of ms) {
+            const el = m.target
+            if (el.getAttribute('data-state') !== 'loading') continue
+            const spinner = el.parentElement?.querySelector('[data-task-spinner]')
+            window.__seen.push({
+              tag: el.tagName,
+              text: (el.textContent || '').trim().slice(0, 20),
+              busy: el.getAttribute('aria-busy'),
+              spinner: spinner ? getComputedStyle(spinner).display : null,
+              bar: Boolean(document.querySelector('[data-testid=loader-bar]')),
+            })
+          }
+        }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-state'] })
+      })
+      const seen = async (tag) => {
+        await page.waitForFunction((t) => window.__seen.some((s) => s.tag === t), tag, { timeout: 5000 })
+        await page.waitForFunction(() => !document.querySelector('[data-state=loading]'), null, { timeout: 8000 })
+        return (await page.evaluate(() => window.__seen.splice(0))).find((s) => s.tag === tag)
+      }
+
+      await page.locator('a[data-link][href^="?page=2"]').first().click()
+      const span = await seen('SPAN')
+      assert.equal(span.text, '2', 'спиннер у страницы 2, ставшей текущей')
+      assert.equal(span.busy, 'true')
+      ok('страница пагинатора: спиннер у грузящейся страницы, затем снят')
+
+      await page.locator('input[type=search]').click()
+      await page.keyboard.type('nar', { delay: 30 })
+      const input = await seen('INPUT')
+      assert.equal(input.spinner, 'flex', 'спиннер в поле поиска виден')
+      assert.equal(input.busy, 'true')
+      ok('поиск: спиннер в поле на время выдачи, затем снят')
+
+      await page.getByRole('button', { name: 'Сброс' }).click()
+      const reset = await seen('BUTTON')
+      assert.equal(reset.text, 'Сброс')
+      ok('«Сброс»: спиннер у кнопки на время загрузки, затем снят')
       await page.close()
     }
     {

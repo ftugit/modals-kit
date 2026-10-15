@@ -65,6 +65,7 @@
       title={search.disabled ? search.reason : undefined}
       oninput={search.input}
       onClear={search.clear}
+      task={search.task}
     />
   {#if search.disabled && search.reason}
     <!-- Причина — последней строкой формы: рядом с полем, которое не принимает ввод. -->
