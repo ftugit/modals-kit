@@ -126,10 +126,9 @@ export function usePaginatorHost(store: Store, name: string, addr: RouterAddress
 
   useEffect(() => {
     if (bindsUrl) adapter.setRouter!(routerPaginateRouter(addr!))
-    // The core falls back to `window.location` for the first page and never asks
-    // the injected router (audit finding) — under a memory/hash router they differ,
-    // so the host passes the router's address explicitly.
-    void initPaginator(store, name, bindsUrl ? { url: addr!.writer.visible().url.search } : undefined)
+    // The first page comes from the injected router (set just above): the URL
+    // adapter asks it before `window.location`.
+    void initPaginator(store, name)
     return () => {
       if (bindsUrl) adapter.setRouter!(null)
     }

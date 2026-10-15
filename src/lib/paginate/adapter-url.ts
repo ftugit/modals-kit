@@ -476,10 +476,19 @@ export function createUrlAdapter<T>(opts: {
     },
 
     getInitial(ctx) {
-      const url =
-        ctx?.url ?? opts.getUrl?.() ?? (typeof window !== 'undefined' ? window.location.search : '')
-      const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : url
-      const params = new URLSearchParams(query)
+      // Порядок: адрес запроса (SSR) → `getUrl` → подключённый роутер → `window`.
+      // Роутер раньше `window`: под memory/hash-роутером адрес приложения не равен
+      // адресу вкладки, и первая страница бралась бы не та.
+      const url = ctx?.url ?? opts.getUrl?.()
+      let params: URLSearchParams
+      const fromRouter = url == null ? router?.currentSearch?.() : undefined
+      if (url == null && fromRouter) {
+        params = new URLSearchParams()
+        for (const [k, v] of Object.entries(fromRouter)) if (v != null) params.set(k, String(v))
+      } else {
+        const raw = url ?? (typeof window !== 'undefined' ? window.location.search : '')
+        params = new URLSearchParams(raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw)
+      }
       if (BROWSER) lastInitSearch = Object.fromEntries(params)
       const r = readPaginatorSearch(params, searchOpts)
       return { page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: r.extra }

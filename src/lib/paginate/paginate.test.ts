@@ -1380,3 +1380,28 @@ describe('externalExtraDiff: «ключа нет» = значение по ум�
     expect(adapter.searchSpec.extraDefaults).toEqual({ cur: false })
   })
 })
+
+describe('URL-адаптер: стартовая страница у подключённого роутера', () => {
+  const make = () =>
+    createUrlAdapter({ name: 'init-router', source: sourceOf(async () => ({ items: [] })), pageSize: 5 })
+
+  it('роутер раньше window: под memory/hash-роутером адрес вкладки другой', async () => {
+    vi.stubGlobal('window', { location: { search: '?page=7' } })
+    try {
+      const adapter = make()
+      adapter.setRouter({ navigate: () => {}, currentSearch: () => ({ page: '3', 'page.size': 10 }) })
+      expect(await adapter.getInitial()).toMatchObject({ page: 3, pageSize: 10 })
+      // Без роутера — адрес вкладки, как раньше.
+      adapter.setRouter(null)
+      expect(await adapter.getInitial()).toMatchObject({ page: 7 })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('адрес запроса (ctx.url) главнее роутера', async () => {
+    const adapter = make()
+    adapter.setRouter({ navigate: () => {}, currentSearch: () => ({ page: '3' }) })
+    expect(await adapter.getInitial({ url: '/x?page=2' })).toMatchObject({ page: 2 })
+  })
+})
