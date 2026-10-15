@@ -140,6 +140,27 @@ await ensureOk(res, { accept? })      // только код
 «ничего не найдено» у REST Rick and Morty, 422 со списком значений у пробы Shikimori
 (`accept: () => true`).
 
+### Ход долгой операции в ответе: `readTaskStream`
+
+Сервер, который ждёт долгую операцию (запуск базы, очередь лимита), может ответить
+строками NDJSON — сначала ход, последней строкой сам ответ. Строки приходят, только если
+запрос их попросил и сервер правда ждал; иначе ответ обычный.
+
+```ts
+import { readTaskStream, TASK_STREAM_ACCEPT } from '#lib/fetch/index.js'
+
+const raw = await fetch('/api/db-posts?page=2', { headers: { accept: TASK_STREAM_ACCEPT }, signal })
+const res = await readTaskStream(raw, (task) => (state.task = task)) // ход: { status: 'pending', scope, label?, progress? }
+if (!res.ok) throw …            // код, заголовки и тело — как без строк
+const page = await res.json()
+```
+
+- строка `{"result":{"status","headers","body"|"text"}}` превращается в обычный `Response`:
+  код ошибки, пришедшей после начала строк, тот же, что без них;
+- обычный ответ с `Content-Length` (без сжатия) читается здесь и сообщает ход байтами;
+- поток оборвался до результата — `fetch.network`, кривая строка — `fetch.parse`;
+- серверная сторона в приложении — `src/lib/server/task-stream.ts` (`taskResponse`).
+
 ## 9. Тесты
 
 `clock` подменяет время: `sleep` двигает его мгновенно, паузы и лимиты проверяются
