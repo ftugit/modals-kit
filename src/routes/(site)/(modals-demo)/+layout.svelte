@@ -2,8 +2,8 @@
   // Ветка демо модалок (/modals): своя область (demoScope) и носители, которые
   // переключает панель демо. Выбор «память» здесь не трогает deep-link'и
   // остального сайта (решение оператора 2026-10-10) — у них своя ветка `(app)`.
-  import { demoScope } from '#lib/demo/modals/registry.js'
-  import { demoSources } from '#lib/demo/modals/sources.svelte.js'
+  import { demoScope } from './registry'
+  import { demoSources } from './sources.svelte'
   import ModalSystem from '../ModalSystem.svelte'
 
   let { children } = $props()

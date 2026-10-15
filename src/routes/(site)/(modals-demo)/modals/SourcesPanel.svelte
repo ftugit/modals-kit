@@ -11,7 +11,7 @@ import { Button } from '#lib/components/ui/index.js'
   import { onMount, untrack } from 'svelte'
   import { Select } from '#lib/components/ui/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { demoSources } from './sources.svelte'
+  import { demoSources } from '../sources.svelte'
 
   const m = useModals()
   const active = $derived(demoSources.list)
