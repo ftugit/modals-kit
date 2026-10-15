@@ -13,9 +13,9 @@ import { tableSpec } from '#lib/db/sync/model.js'
 import { formParams } from '#lib/db/form.js'
 import { buildEnvelope, readProof } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
-import { dbCreate } from '#lib/demo/db-form/description.js'
-import { posts, slugOf } from '#lib/demo/db-form/posts.js'
-import { createPrepare, stripLinks } from '#lib/demo/db-form/prepare.js'
+import { dbCreate } from './description'
+import { posts, slugOf } from '../../../../content/posts'
+import { createPrepare, stripLinks } from './prepare'
 
 const author = { principal: { roles: ['author'] } }
 let pg: PGlite | undefined

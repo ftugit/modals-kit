@@ -117,7 +117,7 @@ const idempotency = storeIdempotency(localStore.scope('demo-form:idempotency', {
 
 | Место | Сейчас | Что будет | С какой работой |
 |---|---|---|---|
-| бронь отправки форм, пишущих в базу (`demo/db-form`) | брони нет | `sharedStore` = Postgres, бронь в той же транзакции, что и данные | контракт lib/form ↔ lib/db |
+| бронь отправки форм, пишущих в базу (`/db-demo`) | брони нет | `sharedStore` = Postgres, бронь в той же транзакции, что и данные | контракт lib/form ↔ lib/db |
 
 Не подключаются и не будут: обещания склейки запросов (живут в `#lib/fetch`), мемо конфигурации
 (`form-security.ts` `origins`), метаданные объектов (`WeakMap` в `lib/db` и

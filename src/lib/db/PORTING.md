@@ -272,9 +272,9 @@ done
 может задеть и его — при переносе новой ревизии сверяют шесть мест: `src/app.d.ts`
 (augmentation), `src/hooks.server.ts` (`dbHandle`), `src/lib/server/db.ts` (composition
 root), `src/lib/server/db-list.ts` + `src/routes/api/db-posts/**` (данные для пагинатора
-демо: SSR-транспорт и HTTP-доводка — один конвейер на оба пути) и `src/routes/db-demo/**`
-со `src/lib/demo/db-{form,list}/**` (страница-витрина: формы — отдельные компоненты,
-список — пагинатор). Ниже — чек-лист того, что в приложении обязательно.
+демо: SSR-транспорт и HTTP-доводка — один конвейер на оба пути) и `src/routes/(site)/(app)/db-demo/**`
+с моделью `src/content/posts.ts` (страница-витрина: формы — отдельные компоненты в папке роута,
+список — пагинатор; его же берёт `/paginator`). Ниже — чек-лист того, что в приложении обязательно.
 
 ## 9. Интеграция в приложение: чек-лист и грабли
 
@@ -304,8 +304,7 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 '^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/demo/{form,modals}/**`,
 `ui/paginator/fields/*` → `#lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
 `src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
-`src/routes/api/db-posts/**`, `src/routes/db-demo/**`, `src/lib/demo/db-form/**`,
-`src/lib/demo/db-list/**`. Дальше
+`src/routes/api/db-posts/**`, `src/routes/(site)/(app)/db-demo/**`, `src/content/posts.ts`. Дальше
 `npm install && npx svelte-kit sync && npx svelte-check && npm run build && npm run test:guard`.
 
 Что потребовало правок именно на `5d08da7`:

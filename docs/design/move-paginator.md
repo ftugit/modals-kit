@@ -149,7 +149,8 @@ const search = usePaginatorSearch(name, {
 
 ## Не входит
 
-- Перенос `/db-demo` (и `demo/db-list`) и остальных `demo/*`.
+- Перенос `/db-demo` (и `demo/db-list`) и остальных `demo/*` — сделан в ходе 186,
+  [dissolve-demo.md](dissolve-demo.md).
 - `lib/ui` → `components/` (план раскладки `src/lib`).
 - Известные находки, не связанные с переносом: устаревший `<select>` в
   `CatalogFilterForm` после снятия чипа; глобальный `demoFault` в `content/items.ts`.

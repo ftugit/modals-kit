@@ -23,7 +23,7 @@
 | `EdgeTrigger = off\|direction\|edge\|chat\|manual` | `src/lib/paginate/types.ts:207` | `chat` описывает **жест** (грузить только в сторону движения), а не источник новых строк |
 | `LoadMoreLink` + `EdgeSentinel` + `prependBehavior` | `src/lib/components/paginator`, `PaginatorHost.svelte` | строки, которой нет ни в одном ответе источника |
 | `pending` | `core.ts:308` | только слоты-скелетоны по числу ожидаемых записей; «данные есть, ответа ещё нет» там выразить нечем |
-| `mode: accumulate\|single`, `extra` в адресе, `?page.after` (keyset) | ядро + `adapter-url.ts`, демо-источник (`#lib/demo/db-list`) | точки «переспросить ТЕКУЩЕЕ окно, не сбрасывая его» (T6.2 `refresh`) |
+| `mode: accumulate\|single`, `extra` в адресе, `?page.after` (keyset) | ядро + `adapter-url.ts`, демо-источник (папка роута `/db-demo`) | точки «переспросить ТЕКУЩЕЕ окно, не сбрасывая его» (T6.2 `refresh`) |
 | возможности источника (`capabilitiesFor`) | `source.ts` | источника, который умеет расти без перезапроса страницы |
 
 Вывод из таблицы один: **две независимые вещи** — «доставить новые строки» (ядро +
@@ -173,7 +173,7 @@ created_at }` — единственное, чего клиент знать н�
 ## 4. Порядок работ (и почему он такой)
 
 **T8.1 — демо без правки ядра (доказательство UX).**
-1. `src/lib/demo/db-list/optimistic.svelte.ts`: `pending` (массив
+1. `src/routes/(site)/(app)/db-demo/optimistic.svelte.ts`: `pending` (массив
    `{ tmpId, row, state: 'pending' | 'failed' }`), `begin()/confirm()/fail()`,
    снимок для отката, `begin(title, reuseId)`.
 2. `DbPostsList`: `PageList` + до/после него (по порядку сортировки) — строки из
@@ -211,13 +211,13 @@ T8.1, а не за желанием иметь красивый API.
 
 | файл | что добавилось |
 |---|---|
-| `db-list/optimistic.svelte.ts` | карточка `pending / failed / settled`, `begin(title, reuseId)`, `confirm/fail/retry/drop`, `isAbsorbed` (по id), `pendingPlacement` (по порядку сортировки) |
-| `db-list/DbPostRow.svelte` | `item: DbPostView` (без `created_at`), `pending`, `renderActions` — та же разметка для серверной строки и для карточки |
-| `db-list/DbPostPendingRow.svelte` | обёртка карточки: кнопки «повторить»/«убрать» и «ждём сервер» |
-| `db-list/DbPostsList.svelte` | карточки в теле списка (голова/хвост по порядку), опрос текущего окна, пилюля «список изменился», поле панели `При отказе записи` |
-| `db-list/live.svelte.ts` | `createLive` + `backoffDelay`/`retryAfterMs`/`isHidden`: условный `GET`, пауза на скрытой, незаходящие запросы, `AbortSignal.timeout` |
-| `db-list/demo/db-form/CreateForm.svelte` | `begin` на переходе в `submitting`, `confirm`/`drop` на успехе, `fail` на отказе, `requestSubmit()` как повтор, значение поля не очищается |
-| `db-form/handle.ts` | `Result.data.created` + `invalidateLiveCache()` после `commit()` |
+| `db-demo/optimistic.svelte.ts` | карточка `pending / failed / settled`, `begin(title, reuseId)`, `confirm/fail/retry/drop`, `isAbsorbed` (по id), `pendingPlacement` (по порядку сортировки) |
+| `db-demo/DbPostRow.svelte` | `item: DbPostView` (без `created_at`), `pending`, `renderActions` — та же разметка для серверной строки и для карточки |
+| `db-demo/DbPostPendingRow.svelte` | обёртка карточки: кнопки «повторить»/«убрать» и «ждём сервер» |
+| `db-demo/DbPostsList.svelte` | карточки в теле списка (голова/хвост по порядку), опрос текущего окна, пилюля «список изменился», поле панели `При отказе записи` |
+| `db-demo/live.svelte.ts` | `createLive` + `backoffDelay`/`retryAfterMs`/`isHidden`: условный `GET`, пауза на скрытой, незаходящие запросы, `AbortSignal.timeout` |
+| `db-demo/CreateForm.svelte` | `begin` на переходе в `submitting`, `confirm`/`drop` на успехе, `fail` на отказе, `requestSubmit()` как повтор, значение поля не очищается |
+| `db-demo/handle.ts` | `Result.data.created` + `invalidateLiveCache()` после `commit()` |
 | `api/db-posts/+server.ts`, `server/live-cache.ts` | `ETag` по данным ответа (без переподписываемого `extra.after`), `If-None-Match` → 304 **до** обращения к базе, память 5 с на процесс, обесценивание любой записью |
 
 Мерка: `test/http/db-demo-http.check.mjs` — **35 проверок** (+5 новых: формат
@@ -241,7 +241,7 @@ T8.1, а не за желанием иметь красивый API.
 опросом «что появилось» (`?since=`), своя запись правит окно через `patchItems` ядра, а
 `reset` после записи и на тике ушёл — см. [PLAN.md](PLAN.md), «Что выбрано и сделано».
 Вводить `state.shadow` ради одной демо-страницы — значит отдать половину `core.ts`
-за поведение, которое сегодня стоит 120 строк в `#lib/demo`.
+за поведение, которое сегодня стоит 120 строк в демо-странице.
 
 **Три вопроса закрыты моими же решениями, ждут подтверждения заказчика:**
 интервал 2 с (пауза на скрытой вкладке, backoff до 60 с); `totalItems` оптимистичной

@@ -132,7 +132,8 @@ src/lib/
 │   └── ErrorPage.svelte, Error500.svelte   без изменений
 │
 │  ── ПРИЛОЖЕНИЕ ──
-├── demo/                        ← ui/demo/* (решение 3): в демо есть серверные обработчики
+├── demo/                        ← ui/demo/* (решение 3) — ход 186: папка убрана, куски разнесены
+│                                  по папкам роутов и components/form (dissolve-demo.md); было: в демо есть серверные обработчики
 │                                  (handle.ts), определения и загрузчики — не только компоненты
 └── server/                      без изменений (в Kit 3 серверной считается любая папка /server/)
 ```
@@ -168,7 +169,8 @@ src/lib/
    иначе: ссылка на модалку — UI над модалками и фреймворком, лежит в `components/links`.
    С хода 149 это не компонент, а атрибуты `asModalLink(...)` на свою `<a>` или `Button`
    (рядом `asLink`), импорт из одного `index`.
-3. Демо: `src/lib/demo/` или рядом с маршрутами в `src/routes/...`.
+3. Демо: `src/lib/demo/` или рядом с маршрутами в `src/routes/...`. Ход 161 — `src/lib/demo/`
+   (промежуточно); ход 186 — рядом с маршрутами, общее в `components/` ([dissolve-demo.md](dissolve-demo.md)).
 4. ✅ Подписи режимов/границ фильтров: сняты вместе с генератором полей — подписи пишет
    описание формы приложения (см. п. 3 выше).
 
@@ -193,7 +195,8 @@ src/lib/
    теперь `#lib/components/(ui|settings)/`), `classes-audit`, `vite.config.ts` (прогрев).
 5. ✅ 14.10.2026: `ui/demo` → `src/lib/demo` (решение 3: в `src/lib`, потому что в демо есть серверные
    обработчики, определения и загрузчики). Папки `lib/ui` больше нет. Страж `layer-guard`: экшен
-   демо-формы узнаётся по `#lib/demo/form/`.
+   демо-формы узнаётся по `#lib/demo/form/` (ход 186: по обёртке `./handle` рядом с маршрутом —
+   папки `src/lib/demo` больше нет, см. [dissolve-demo.md](dissolve-demo.md)).
 
 В каждом шаге: пути в стражах (`tooling/core-purity.mjs` `CORE_MODULES`, `layer-guard`,
 `size-budget`, `form-size`, `classes-audit`, `source-schema-guard`), README библиотек,

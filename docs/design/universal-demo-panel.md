@@ -21,8 +21,8 @@
 | Раздел | Панель | Устройство |
 |---|---|---|
 | `/paginator` (демо + галерея), `/db-demo` | `lib/components/paginator/PaginatorSettings.svelte` — общий компонент, 3 подключения | `SettingsField[]` → `compileDemoPanelSchema` → `bind` → виджеты `#lib/components/settings/index.js` |
-| `/modals`, настройки хоста | `lib/demo/modals/SettingsPanel.svelte`, 209 строк, собрана вручную | `defineForm` + `field.select` ×8 + `bind` + виджеты; запись — `m.modals.configure` |
-| `/modals`, источники | `lib/demo/modals/SourcesPanel.svelte` | на механизм не переведена (этап 8: «оставлено на решение оператора») |
+| `/modals`, настройки хоста | `routes/(site)/(modals-demo)/modals/SettingsPanel.svelte`, 209 строк, собрана вручную | `defineForm` + `field.select` ×8 + `bind` + виджеты; запись — `m.modals.configure` |
+| `/modals`, источники | `routes/(site)/(modals-demo)/modals/SourcesPanel.svelte` | на механизм не переведена (этап 8: «оставлено на решение оператора») |
 | `/form` | разметка прямо в `routes/form/+page.svelte` | `defineForm` + `bind` + виджеты; запись — состояние страницы |
 
 Наблюдения:

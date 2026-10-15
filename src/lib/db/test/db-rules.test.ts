@@ -3,7 +3,7 @@
  * `validator` для форм без записи, метка проверки, тип/CHECK из Standard JSON Schema,
  * `fill` и `store` у поля. Своя схема поля здесь — заглушка со счётчиком вызовов: так
  * видно, выполнялась ли проверка второй раз. Настоящую пару «модель → форма»
- * (`formParams`, `pick`) проверяет `src/lib/server/form-db.test.ts`.
+ * (`formParams`, `pick`) проверяет `src/routes/(site)/(app)/db-demo/form-db.test.ts`.
  */
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";

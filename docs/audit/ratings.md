@@ -3,7 +3,7 @@
 Методика, рубрика и критерии K1–K10 — в [README.md](README.md). Статус: `прочитан` — файл прочитан целиком;
 `⏳` — ещё не прочитан (оценки нет). Колонка «Предскан» — автоматические признаки, НЕ вердикт.
 
-Прогресс: **197 / 414** файлов прочитано (пересчитано по таблицам, ход 129).
+Прогресс: **195 / 408** файлов прочитано (пересчитано по таблицам, ход 186).
 
 Средняя оценка по прочитанным: **8.8**.
 
@@ -429,13 +429,7 @@
 | `index.ts` | 2 | — | ⏳ |  |  |
 | `js-only.svelte.ts` | 24 | — | ⏳ |  |  |
 
-## `src/lib/ui/demo/cycle/`
-
-| Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
-|---|---:|:---:|:---:|---|---|
-| `CycleDemo.svelte` | 203 | — | ⏳ |  | window/document×2, any×2, addEventListener×1 |
-
-## `src/lib/ui/demo/db-form/`
+## `src/routes/(site)/(app)/db-demo/` — формы (ход 186: из `ui/demo/db-form`; модель — `src/content/posts.ts`)
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
@@ -444,7 +438,7 @@
 | `description.ts` | 43 | — | ⏳ |  |  |
 | `handle.ts` | 149 | — | ⏳ |  |  |
 
-## `src/lib/ui/demo/db-list/`
+## `src/routes/(site)/(app)/db-demo/` — список (ход 186: из `ui/demo/db-list`; его же берёт `/paginator`)
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
@@ -460,23 +454,22 @@
 | `optimistic.svelte.ts` | 144 | — | ⏳ |  |  |
 | `optimistic.test.ts` | 119 | — | ⏳ |  |  |
 
-## `src/lib/ui/demo/form/`
+## `src/routes/(site)/(app)/form/` — файлы страницы (ход 186: из `ui/demo/form`)
+
+| Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
+|---|---:|:---:|:---:|---|---|
+| `handle.ts` | 116 | — | ⏳ |  | @sveltejs/kit×1 |
+| `psp.ts` | 69 | — | ⏳ |  |  |
+| `signup.ts` | 123 | — | ⏳ |  |  |
+
+## `src/lib/components/form/` (ход 186: из `ui/demo/form/ui` + настройка форм)
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `extend.ts` | 160 | — | ⏳ |  | setTimeout×1 |
 | `extend.test.ts` | 27 | — | ⏳ |  |  |
 | `forms.config.ts` | 79 | — | ⏳ |  |  |
-| `handle.ts` | 116 | — | ⏳ |  | @sveltejs/kit×1 |
-| `index.ts` | 6 | — | ⏳ |  |  |
-| `psp.ts` | 69 | — | ⏳ |  |  |
-| `signup.ts` | 123 | — | ⏳ |  |  |
 | `transport.ts` | 77 | — | ⏳ |  |  |
-
-## `src/lib/ui/demo/form/ui/`
-
-| Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
-|---|---:|:---:|:---:|---|---|
 | `AutoTextareaField.svelte` | 22 | — | ⏳ |  |  |
 | `CheckboxField.svelte` | 22 | — | ⏳ |  |  |
 | `Common.svelte` | 19 | — | ⏳ |  |  |
@@ -494,7 +487,7 @@
 | `TextField.svelte` | 18 | — | ⏳ |  |  |
 | `TextareaField.svelte` | 25 | — | ⏳ |  |  |
 
-## `src/lib/ui/demo/modals/`
+## `src/routes/(site)/(modals-demo)/` (ход 186: из `ui/demo/modals`; панели — в `modals/`)
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
@@ -504,17 +497,10 @@
 | `FullpageModal.svelte` | 49 | — | ⏳ |  |  |
 | `LockedModal.svelte` | 14 | — | ⏳ |  |  |
 | `SelectModal.svelte` | 72 | — | ⏳ |  |  |
-| `SettingsPanel.svelte` | 210 | — | ⏳ |  | $effect×2, untrack×2 |
-| `SourcesPanel.svelte` | 136 | — | ⏳ |  | $effect×1, window/document×7, setTimeout×2, untrack×1, addEventListener×2 |
-| `index.ts` | 10 | — | ⏳ |  |  |
+| `modals/SettingsPanel.svelte` | 210 | — | ⏳ |  | $effect×2, untrack×2 |
+| `modals/SourcesPanel.svelte` | 136 | — | ⏳ |  | $effect×1, window/document×7, setTimeout×2, untrack×1, addEventListener×2 |
 | `registry.ts` | 70 | — | ⏳ |  | setTimeout×1, any×1 |
 | `sources.svelte.ts` | 16 | — | ⏳ |  |  |
-
-## `src/lib/ui/demo/spike/`
-
-| Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
-|---|---:|:---:|:---:|---|---|
-| `SpikeDemo.svelte` | 215 | — | ⏳ |  | $app/×2, window/document×31, sveltekit-internal×1, any×7, addEventListener×1 |
 
 ## `src/lib/ui/filters/`
 
@@ -695,7 +681,7 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `+page.svelte` | 8 | 10 | прочитан | Тонкий маршрут, демо — в `$lib/ui/demo/cycle` (соглашение проекта). |  |
+| `+page.svelte` | 202 | — | ⏳ | Ход 186: сюда перенесено тело `CycleDemo.svelte` (папки `lib/demo` больше нет); оценка снята до перечтения. | window/document×2, any×2, addEventListener×1 |
 
 ## `src/routes/(site)/(app)/db-demo/`
 
@@ -754,4 +740,4 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `+page.svelte` | 8 | 10 | прочитан | Тонкий маршрут, демо — в `$lib/ui/demo/spike`. |  |
+| `+page.svelte` | 214 | — | ⏳ | Ход 186: сюда перенесено тело `SpikeDemo.svelte`; оценка снята до перечтения. | $app/×2, window/document×31, sveltekit-internal×1, any×7, addEventListener×1 |

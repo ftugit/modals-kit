@@ -3,7 +3,7 @@
 // быть не может — валидация одна на оба пути.
 import { defineForm, field, v } from '#lib/form/index.js'
 import { formParams } from '#lib/db/form.js'
-import { posts } from './posts'
+import { posts } from '../../../../content/posts'
 
 /** Параметры полей из модели: правила `title` описаны там, здесь — только показ. */
 const post = formParams(posts)

@@ -4,7 +4,7 @@
    * заголовок, счётчик записей, notice серверного итога и порядок блоков.
    *
    * Список — пагинатор (`DbPostsList` + `#lib/paginate/index.js`), формы — отдельные
-   * компоненты `db-form/{Create,Remove}Form.svelte` (как в демо форм): `bind`,
+   * компоненты `./{Create,Remove}Form.svelte` (как в демо форм): `bind`,
    * `Form`, `Common`/`Field` живут там, страница отдаёт им лишь результат
    * экшена. Строки приходят SSR-снапшотом, поэтому без JavaScript видны и
    * они, и номера страниц.
@@ -25,12 +25,12 @@
     dbListExtraOf,
     ensureDbListPaginator,
     type DbPost,
-  } from '#lib/demo/db-list/definition.js'
-  import DbPostsList from '#lib/demo/db-list/DbPostsList.svelte'
-  import { createOptimistic, ownRowPlacement } from '#lib/demo/db-list/optimistic.svelte.js'
-  import CreateForm from '#lib/demo/db-form/CreateForm.svelte'
-  import RemoveForm from '#lib/demo/db-form/RemoveForm.svelte'
-  import SchemaPending from '#lib/demo/db-form/SchemaPending.svelte'
+  } from './definition'
+  import DbPostsList from './DbPostsList.svelte'
+  import { createOptimistic, ownRowPlacement } from './optimistic.svelte'
+  import CreateForm from './CreateForm.svelte'
+  import RemoveForm from './RemoveForm.svelte'
+  import SchemaPending from './SchemaPending.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
   // тип выводит SvelteKit из `actions` (`PageProps['form']`).

@@ -8,7 +8,7 @@
  * расхождение «клиент проверяет одно, сервер другое» здесь невозможно.
  */
 import type { RequestHandler } from './$types'
-import { dispatchDbForm } from '#lib/demo/db-form/handle.js'
+import { dispatchDbForm } from '../handle'
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   const { result, status } = await dispatchDbForm(request, 'fetch', locals.dbCtx)

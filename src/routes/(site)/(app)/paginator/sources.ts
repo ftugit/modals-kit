@@ -29,7 +29,7 @@ import {
   type SourceRecordSpec,
 } from '#lib/paginate/index.js'
 import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
-import { DB_LIST_FILTER_KEYS, fetchDbPosts, withDbCursor } from '#lib/demo/db-list/definition.js'
+import { DB_LIST_FILTER_KEYS, fetchDbPosts, withDbCursor } from '../db-demo/definition'
 
 /** Запросы схем в полёте (по версии API): параллельные вызовы ждут один ответ. */
 const filterSchemaInflight = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>()

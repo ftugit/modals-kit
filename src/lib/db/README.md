@@ -786,7 +786,7 @@ await schema.sync(driver, { resolve: { [stepKey(report.conflicts[0])]: 'rename' 
 Дубли под уникальностью, `NULL` под `NOT NULL` и обязательная колонка без DEFAULT вариантов не
 имеют (`choices` → `[]`): их снимает правка данных или модели.
 
-Приложение показывает это экраном на страницах с БД (`src/lib/demo/db-form/SchemaPending.svelte`):
+Приложение показывает это экраном на страницах с БД (`src/routes/(site)/(app)/db-demo/SchemaPending.svelte`):
 кнопка «Выполнить» спрашивает `DB_ADMIN_TOKEN` (`src/lib/server/schema-admin.ts` сверяет его
 за постоянное время до обращения к БД); без переменной кнопки нет, экран объясняет, что задать.
 

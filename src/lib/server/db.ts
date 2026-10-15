@@ -15,7 +15,7 @@
  * отвечают `schema_pending` (503).
  */
 import { createDb } from '#lib/db/index.js'
-import { posts } from '#lib/demo/db-form/posts.js'
+import { posts } from '../../content/posts'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
@@ -34,7 +34,7 @@ import {
 // для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
 // и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
-// Модель записей — общий модуль (`#lib/demo/db-form/posts.ts`): по ней строится и форма.
+// Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
 export { posts }
 
 /**

@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Форма добавления записи — отдельный компонент, как и остальные формы демо
-   * (`src/lib/demo/form/*`): связка `bind` + `Form` + `Common`/`Field`
+   * (`src/lib/components/form/*`): связка `bind` + `Form` + `Common`/`Field`
    * живёт здесь, страница передаёт только результат экшена.
    *
    * Отправка идёт нативным `form`-путём (action `?/create`), потому что слой
@@ -17,8 +17,8 @@
   import Common from '#lib/components/form/Common.svelte'
   import Field from '#lib/components/form/Field.svelte'
   import { dbCreate } from './description'
-  import type { DbPost } from '#lib/demo/db-list/definition.js'
-  import type { Optimistic } from '#lib/demo/db-list/optimistic.svelte.js'
+  import type { DbPost } from './definition'
+  import type { Optimistic } from './optimistic.svelte'
 
   interface Props {
     /** Ответ экшена `?/create` — continuation нативного пути (без JavaScript). */
