@@ -21,7 +21,8 @@
 import { fingerprint, remember, revalidate, stableText } from '#lib/server/live-cache.js'
 import type { RequestHandler } from './$types'
 import { fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
-import { DEMO_PRINCIPAL } from '#lib/server/db.js'
+import { DEMO_PRINCIPAL, watchDb } from '#lib/server/db.js'
+import { taskResponse } from '#lib/server/task-stream.js'
 import { DB_LIST_PAGE_SIZE } from '../../(site)/(app)/db-demo/definition'
 
 /**
@@ -35,7 +36,11 @@ const num = (raw: string | null, fallback: number, min: number, max: number): nu
   return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.trunc(v))) : fallback
 }
 
-export const GET: RequestHandler = async ({ url, request, locals }) => {
+// Первый запрос будит базу (подключение, сверка схемы): ход — строками ответа, если
+// клиент их просил (`task-stream.ts`); иначе ответ прежний.
+export const GET: RequestHandler = (event) => taskResponse(event.request, () => handle(event), { watch: [watchDb] })
+
+async function handle({ url, request, locals }: Parameters<RequestHandler>[0]): Promise<Response> {
   // Условный GET живого списка проверяется ДО обращения к базе: иначе «ничего
   // нового» стоило бы ровно столько же, сколько «новое», — то есть выбор между
   // опросом и push сводился бы к «опрос дороже».

@@ -9,8 +9,17 @@
  */
 import type { RequestHandler } from './$types'
 import { dispatchDbForm } from '../handle'
+import { watchDb } from '#lib/server/db.js'
+import { taskResponse } from '#lib/server/task-stream.js'
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-  const { result, status } = await dispatchDbForm(request, 'fetch', locals.dbCtx)
-  return Response.json(result, { status: status === 0 ? 200 : status })
-}
+// Ход запуска базы и переноса схемы — строками ответа, если клиент их просил
+// (`task-stream.ts`); иначе ответ прежний.
+export const POST: RequestHandler = ({ request, locals }) =>
+  taskResponse(
+    request,
+    async () => {
+      const { result, status } = await dispatchDbForm(request, 'fetch', locals.dbCtx)
+      return Response.json(result, { status: status === 0 ? 200 : status })
+    },
+    { watch: [watchDb] },
+  )

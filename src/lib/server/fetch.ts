@@ -15,7 +15,9 @@
  * страницы — Kit предупредил бы от её имени. Без `init` (тесты, утилиты) —
  * `globalThis.fetch` в момент вызова.
  */
-import { createFetch, type AppFetch, type CreateFetchOptions, type FetchClock } from '#lib/fetch/index.js'
+import { createFetch, type AppFetch, type CreateFetchOptions, type FetchClock, type FetchWait } from '#lib/fetch/index.js'
+import type { TaskState } from '#lib/task/index.js'
+import { currentReport } from './task-stream'
 
 /** User-Agent обязателен: Shikimori отказывает запросам без него. */
 export const UPSTREAM_UA = 'modals-kit-demo/0.1 (+https://github.com/ftugit/modals-kit)'
@@ -54,4 +56,28 @@ export function makeUpstream(
 }
 
 /** `fetch` приложения для чужих сервисов: один на процесс, лимиты общие. */
-export const upstream: AppFetch = makeUpstream()
+const base = makeUpstream()
+
+/**
+ * Ожидание вызова — словами для человека (полоса и строки хода, `task-stream.ts`).
+ * Без процента: очередь и паузы не измеряются честно.
+ */
+export function waitTask(wait: FetchWait): Extract<TaskState, { status: 'pending' }> {
+  const label =
+    wait.reason === 'retry'
+      ? `Повтор ${wait.attempt} из ${wait.attempts}`
+      : wait.waitMs !== undefined
+        ? `Очередь API: ~${Math.max(1, Math.ceil(wait.waitMs / 1000))} с`
+        : `Очередь API: впереди ${wait.ahead}`
+  return { status: 'pending', scope: 'local', label }
+}
+
+/**
+ * Общий `fetch` к чужим сервисам. Внутри запроса со строками хода (`taskResponse`)
+ * его ожидания — очередь лимита, повторы — уходят клиенту; вне его ничего не меняется.
+ */
+export const upstream: AppFetch = (input, init) => {
+  const report = currentReport()
+  if (!report || init?.onWait) return base(input, init)
+  return base(input, { ...init, onWait: (wait) => report(waitTask(wait)) })
+}

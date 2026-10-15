@@ -21,10 +21,12 @@ import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
 import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
-import { defineSchema } from '#lib/db/sync/index.js'
+import { defineSchema, type SyncStep } from '#lib/db/sync/index.js'
 import { DbFailure } from '#lib/db/index.js'
 import type { Database, Driver, Limits } from '#lib/db/index.js'
 import { createSchemaAdmin } from './schema-admin'
+import { sharedTask } from './task-stream'
+import type { TaskState } from '#lib/task/index.js'
 import {
   DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
   DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
@@ -41,7 +43,7 @@ export { posts }
  * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил полей модели, индекс
  * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
  */
-export const schema = defineSchema({
+const schemaSpec = {
   resources: [posts],
   sql: [
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
@@ -56,7 +58,35 @@ export const schema = defineSchema({
                WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
     },
   ],
-})
+}
+export const schema = defineSchema(schemaSpec)
+
+/** Этап сверки схемы — словами для человека (`taskLabel`: «шаг N из M: …»). */
+export function schemaStepName(step: SyncStep): string | undefined {
+  if (step.step === 'check') return 'Проверка схемы'
+  if (step.step === 'table') return `Таблица ${step.name?.replace(/^public\./, '')}`
+  if (step.step === 'sql') return `Скрипт ${step.name}`
+  return undefined
+}
+
+/** Ход сверки → состояние задачи с подписью `label`. */
+export function schemaStepTask(label: string, step: SyncStep, offset = 0): TaskState {
+  const name = schemaStepName(step)
+  return {
+    status: 'pending',
+    scope: 'global',
+    label,
+    progress: { kind: 'steps', done: offset + step.done, total: offset + step.total, ...(name ? { step: name } : {}) },
+  }
+}
+
+/**
+ * Запуск базы — общая операция процесса: подключение и сверка схемы (`openDriver`).
+ * Её ход получают все запросы, которые её ждут: `taskResponse(request, run, { watch: [watchDb] })`.
+ */
+const dbStart = sharedTask()
+export const watchDb = dbStart.watch
+const DB_START_LABEL = 'Запуск базы'
 
 /**
  * Принцип демо-«автора»: один на хук, на SSR-снапшот пагинатора и на
@@ -131,6 +161,14 @@ export const schemaAdmin = createSchemaAdmin({
 async function openDriver(): Promise<Driver> {
   let driver: Driver
   let close: (() => Promise<void>) | undefined
+  // Подключение — этап до сверки: всего 1 + (проверка + таблицы + скрипты).
+  const syncTotal = 1 + schemaSpec.resources.length + schemaSpec.sql.length
+  dbStart.report({
+    status: 'pending',
+    scope: 'global',
+    label: DB_START_LABEL,
+    progress: { kind: 'steps', done: 0, total: 1 + syncTotal, step: 'Подключение' },
+  })
   try {
     if (cursorConfigError) throw cursorConfigError
     if (HYPERDRIVE_CONNECTION_STRING) {
@@ -157,6 +195,7 @@ async function openDriver(): Promise<Driver> {
     // запросы отвечают `schema_pending`, пока его не снимут.
     raw = close ? { ...driver, close } : driver
     const gated = await schema.gate(raw, {
+      onStep: (step) => dbStart.report(schemaStepTask(DB_START_LABEL, step, 1)),
       onReport: (r) =>
         console[r.status === 'ok' ? 'info' : 'warn'](
           `[db] схема: применено ${r.applied.length}, конфликтов ${r.conflicts.length}, ждут решения ${r.notices.length}`,
@@ -179,5 +218,7 @@ async function openDriver(): Promise<Driver> {
     raw = undefined
     await close?.()
     throw e
+  } finally {
+    dbStart.end()
   }
 }

@@ -64,6 +64,7 @@ import {
 } from './shikimori'
 import { FetchError, readText } from '#lib/fetch/index.js'
 import { upstream } from './fetch'
+import { sharedTask, withoutReport, type TaskWatch } from './task-stream'
 
 export { SHIKIMORI_GRAPHQL }
 
@@ -311,20 +312,35 @@ const samplePages = (doc: string, transport: TransportDeps): Promise<SamplePage[
 export async function readShikimoriRefs(
   transport: TransportDeps = {},
   api: ShikimoriApi = SHIKIMORI_DEFAULT_API,
+  progress?: (done: number, total: number) => void,
 ): Promise<ShikimoriRefs> {
   const graphql = api === 'graphql'
+  // Ход сборки — по готовым справочникам: все стартуют сразу (ниже), поэтому
+  // `total` известен до первого ответа.
+  let total = 0
+  let done = 0
+  const leaf = <T>(work: Promise<T>): Promise<T> => {
+    total += 1
+    return work.then((value) => {
+      done += 1
+      progress?.(done, total)
+      return value
+    })
+  }
   // Все запросы сборки стартуют СРАЗУ: справочники enum'ов от остального не
   // зависят, а раньше шли по одному после него — четыре лишних круговых
   // задержки. Лимит Shikimori (5 rps / 90 rpm) соблюдает очередь `#lib/fetch`
   // (`server/fetch.ts`: 4 rps / 80 rpm на хост), а не порядок вызовов здесь.
   const ENUMS = ['kind', 'status', 'rating', 'duration'] as const
-  const [genres, studios, newest, pages, enumValues] = await Promise.all([
-    api === 'rest' ? restGenres(transport) : graphqlGenres(transport),
-    graphql ? Promise.resolve([]) : restStudios(transport),
-    graphql ? graphqlNewestYear(transport) : restNewestYear(transport),
-    api === 'rest' ? Promise.resolve([]) : samplePages(graphql ? SAMPLE_GENRES_DOC : SAMPLE_DOC, transport),
-    Promise.all(ENUMS.map((name) => (graphql ? readEnumGraphql(name, transport) : readEnum(name, transport)))),
+  const reading = Promise.all([
+    leaf(api === 'rest' ? restGenres(transport) : graphqlGenres(transport)),
+    graphql ? Promise.resolve([]) : leaf(restStudios(transport)),
+    leaf(graphql ? graphqlNewestYear(transport) : restNewestYear(transport)),
+    api === 'rest' ? Promise.resolve([]) : leaf(samplePages(graphql ? SAMPLE_GENRES_DOC : SAMPLE_DOC, transport)),
+    Promise.all(ENUMS.map((name) => leaf(graphql ? readEnumGraphql(name, transport) : readEnum(name, transport)))),
   ])
+  progress?.(0, total)
+  const [genres, studios, newest, pages, enumValues] = await reading
   const enums = {} as Record<EnumName, readonly string[]>
   ENUMS.forEach((name, index) => {
     enums[name] = enumValues[index]!
@@ -434,6 +450,22 @@ const schemasOf = (store: Store | undefined): Store =>
  */
 const building = new Map<ShikimoriApi, Promise<CatalogFilterSchema>>()
 
+/** Ход сборок — по версии; его получают все, кто ждёт сборку (`watchSchemaBuild`). */
+const buildTasks = new Map<ShikimoriApi, ReturnType<typeof sharedTask>>()
+const buildTask = (api: ShikimoriApi) => {
+  let task = buildTasks.get(api)
+  if (!task) buildTasks.set(api, (task = sharedTask()))
+  return task
+}
+
+/**
+ * Подписка на ход сборки схемы версии `api` — для строк хода ответа:
+ * `taskResponse(request, run, { watch: [watchSchemaBuild(api)] })`. Сборки нет — событий нет.
+ */
+export function watchSchemaBuild(api: ShikimoriApi): TaskWatch {
+  return (report) => buildTask(api).watch(report)
+}
+
 /** Сброс кэша схем в `localStore` (тесты; в приложении не нужен). */
 export function resetShikimoriFilterSchema(): void {
   building.clear()
@@ -455,7 +487,14 @@ export async function getShikimoriFilterSchema(deps: SchemaDeps = {}): Promise<C
   let pending = building.get(api)
   if (!pending) {
     const startedAt = now()
-    pending = readShikimoriRefs(transport, api)
+    const task = buildTask(api)
+    // Сборка общая: её ожидания (очередь лимита) не уходят в ответ тому, кто её
+    // начал, — ход у всех один, по справочникам.
+    pending = withoutReport(() =>
+      readShikimoriRefs(transport, api, (done, total) =>
+        task.report({ status: 'pending', scope: 'global', label: 'Собираем схему фильтров', progress: { kind: 'steps', done, total } }),
+      ),
+    )
       .then(async (refs) => {
         const schema = buildShikimoriFilterSchema(refs, new Date(startedAt).toISOString(), api)
         await schemas.set<CachedSchema>(api, { at: now(), schema }, Infinity)
@@ -474,6 +513,7 @@ export async function getShikimoriFilterSchema(deps: SchemaDeps = {}): Promise<C
       })
       .finally(() => {
         building.delete(api)
+        task.end()
       })
     building.set(api, pending)
   }

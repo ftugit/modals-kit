@@ -35,6 +35,35 @@ export function currentReport(): TaskReport | undefined {
   return current.getStore()
 }
 
+/** Выполнить без отчёта запроса: ожидания общей операции не уходят первому, кто её начал. */
+export function withoutReport<T>(run: () => T): T {
+  return current.exit(run)
+}
+
+/**
+ * Общая долгая операция процесса (запуск базы, сборка схемы): её ход получают все
+ * запросы, которые её ждут, а присоединившийся — сразу последнее состояние.
+ * `end()` — операция закончилась, повторять нечего.
+ */
+export function sharedTask(): { report: TaskReport; end(): void; watch: TaskWatch } {
+  const listeners = new Set<TaskReport>()
+  let last: TaskState | undefined
+  return {
+    report(task) {
+      last = task
+      for (const listener of listeners) listener(task)
+    },
+    end() {
+      last = undefined
+    },
+    watch(report) {
+      listeners.add(report)
+      if (last) report(last)
+      return () => void listeners.delete(report)
+    },
+  }
+}
+
 /** Клиент просит строки хода. */
 export function wantsTaskStream(request: Request): boolean {
   return (request.headers.get('accept') ?? '').includes(TASK_STREAM_TYPE)

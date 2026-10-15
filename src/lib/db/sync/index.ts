@@ -68,6 +68,19 @@ export type Choice = "apply" | "rename" | "replace";
 /** Решения по шагам: ключ — `stepKey(step)`. */
 export type Resolution = Readonly<Record<string, Choice>>;
 
+/**
+ * Ход сверки — для показа ожидания (`onStep`). Этапы: `check` (быстрая проверка),
+ * `table` (по ресурсу, `name` — таблица), `sql` (по ручному скрипту, `name` — `id`).
+ * `done` — сколько этапов позади, `total` = 1 + ресурсы + скрипты; последнее событие —
+ * `done === total` без `step`. Быстрая проверка, которой хватило, сразу даёт итог.
+ */
+export interface SyncStep {
+  done: number;
+  total: number;
+  step?: "check" | "table" | "sql";
+  name?: string;
+}
+
 /** Устойчивый ключ шага: по нему экран решений и сервер говорят об одном шаге. */
 export function stepKey(step: Step): string {
   return `${step.kind}:${step.table}:${step.column ?? ""}`;
@@ -83,12 +96,15 @@ export function choices(step: Step): readonly Choice[] {
 
 export interface DbSchema {
   /** `resolve` — решения человека по конфликтам и ожидающим шагам (см. `choices`). */
-  sync(driver: Driver, options?: { resolve?: Resolution }): Promise<SchemaReport>;
+  sync(driver: Driver, options?: { resolve?: Resolution; onStep?: (step: SyncStep) => void }): Promise<SchemaReport>;
   /**
    * `sync` + драйвер, который при конфликтах отвечает `schema_pending`, пока их не снимут.
    * `onReport` — для журнала: что применено и чего ждём.
    */
-  gate(driver: Driver, options?: { onReport?: (report: SchemaReport) => void }): Promise<Driver>;
+  gate(
+    driver: Driver,
+    options?: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void },
+  ): Promise<Driver>;
 }
 
 const OK: SchemaReport = Object.freeze({ status: "ok", applied: [], resolved: [], conflicts: [], notices: [] });
@@ -151,14 +167,26 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
     return true;
   }
 
-  async function sync(driver: Driver, options: { resolve?: Resolution } = {}): Promise<SchemaReport> {
+  async function sync(
+    driver: Driver,
+    options: { resolve?: Resolution; onStep?: (step: SyncStep) => void } = {},
+  ): Promise<SchemaReport> {
     if (!driver?.capabilities?.transactions)
       throw new DbFailure("unsupported", {}, new Error("defineSchema: нужен транзакционный драйвер (pg, PGlite, Hyperdrive)"));
+    const total = 1 + spec.resources.length + (spec.sql?.length ?? 0);
+    const step = (done: number, name?: SyncStep["step"], what?: string) =>
+      options.onStep?.(name ? { done, total, step: name, ...(what === undefined ? {} : { name: what }) } : { done, total });
+    // В цикле скриптов имя `step` занято шагом SQL — этап отмечает `onSql`.
+    const onSql = (index: number, id: string) => step(1 + spec.resources.length + index, "sql", id);
+    step(0, "check");
     const { specs, want } = await prepare();
     const decisions = options.resolve ?? {};
     const deciding = Object.keys(decisions).length > 0;
-    if (!deciding && (await upToDate(driver))) return OK;
-    return driver.transaction(async (tx) => {
+    if (!deciding && (await upToDate(driver))) {
+      step(total);
+      return OK;
+    }
+    const report = await driver.transaction(async (tx) => {
       const run = (text: string, values: unknown[] = []) => tx.query({ text, values });
       await run("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [kit]);
       if (kitParts[0] !== "public") await run(`CREATE SCHEMA IF NOT EXISTS ${ident(kitParts[0]!)}`);
@@ -182,7 +210,8 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
         notices: Step[] = [],
         foreign: Step[] = [];
       const used = new Set<string>();
-      for (const s of specs) {
+      for (const [index, s] of specs.entries()) {
+        step(1 + index, "table", spec.resources[index]!.table);
         const prev = have.get("table\0" + s.qualified);
         if (prev?.hash === s.fingerprint) continue;
         const detail = (typeof prev?.detail === "string" ? JSON.parse(prev.detail) : prev?.detail) as
@@ -226,7 +255,8 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
         // Решение по шагу, которого нет в плане: экран устарел (другой экземпляр уже
         // применил или модель сменилась) — откат всего прогона, а не частичное применение.
         throw new DbFailure("conflict", { issues: [`defineSchema: шагов больше нет в плане: ${unknown.join(", ")}`] });
-      for (const step of spec.sql ?? []) {
+      for (const [index, step] of (spec.sql ?? []).entries()) {
+        onSql(index, step.id);
         const hash = want.get("sql\0" + step.id)!;
         const prev = have.get("sql\0" + step.id);
         if (prev && prev.hash !== hash) {
@@ -247,10 +277,15 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
         notices: Object.freeze(notices),
       }) as SchemaReport;
     });
+    step(total);
+    return report;
   }
 
-  async function gate(driver: Driver, options: { onReport?: (report: SchemaReport) => void } = {}): Promise<Driver> {
-    const report = await sync(driver);
+  async function gate(
+    driver: Driver,
+    options: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void } = {},
+  ): Promise<Driver> {
+    const report = await sync(driver, { onStep: options.onStep });
     if (report !== OK) options.onReport?.(report);
     let pending = report.status === "pending";
     const pass = async () => {

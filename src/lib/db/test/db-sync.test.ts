@@ -11,6 +11,7 @@ import { createDb, defineResource, f, field, make, policy, s, DbFailure, conserv
 import { pgliteAdapter } from "../adapters/pglite";
 import { toKitError } from "../sveltekit/index";
 import { choices, defineSchema, stepKey } from "../sync/index";
+import type { SyncStep } from "../sync/index";
 import type { Driver, Fields, Resource, SoftDeleteChild } from "../index";
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000);
@@ -228,6 +229,22 @@ test("sync: уникальность — дубли дают конфликт, �
       await assert.rejects(pg2.query("INSERT INTO post (title, slug) VALUES ('Ещё', 'a')"), /duplicate key/);
     }),
   ));
+
+test("sync onStep: этапы по порядку (проверка, таблица, скрипт, итог); быстрая проверка — сразу итог", () =>
+  withPg(async (_pg, driver) => {
+    const schema = defineSchema({ resources: [post()], sql: [{ id: "seed", text: "SELECT 1" }] });
+    const steps: SyncStep[] = [];
+    await schema.gate(driver, { onStep: (step) => steps.push(step) });
+    assert.deepEqual(steps, [
+      { done: 0, total: 3, step: "check" },
+      { done: 1, total: 3, step: "table", name: "public.post" },
+      { done: 2, total: 3, step: "sql", name: "seed" },
+      { done: 3, total: 3 },
+    ]);
+    steps.length = 0;
+    await schema.sync(driver, { onStep: (step) => steps.push(step) });
+    assert.deepEqual(steps, [{ done: 0, total: 3, step: "check" }, { done: 3, total: 3 }]);
+  }));
 
 test("sync: ручной SQL выполняется один раз; изменённый текст под тем же id — конфликт", () =>
   withPg(async (pg, driver) => {

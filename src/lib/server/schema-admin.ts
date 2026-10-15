@@ -8,7 +8,7 @@
  */
 import { DbFailure, normalizeFailure } from '#lib/db/index.js'
 import type { Driver } from '#lib/db/index.js'
-import type { Choice, DbSchema, Resolution, SchemaReport } from '#lib/db/sync/index.js'
+import type { Choice, DbSchema, Resolution, SchemaReport, SyncStep } from '#lib/db/sync/index.js'
 
 export type ResolveOutcome =
   | { ok: true; report: SchemaReport }
@@ -24,7 +24,7 @@ export interface SchemaAdmin {
   /** Что ждёт решения сейчас (автоматические шаги при этом применяются — они безопасны). */
   status(): Promise<SchemaReport>
   /** Выполнить решения. Секрет сверяется до любого обращения к БД. */
-  resolve(token: unknown, decisions: Resolution): Promise<ResolveOutcome>
+  resolve(token: unknown, decisions: Resolution, options?: { onStep?: (step: SyncStep) => void }): Promise<ResolveOutcome>
 }
 
 const CHOICES: ReadonlySet<string> = new Set<Choice>(['apply', 'rename', 'replace'])
@@ -62,7 +62,7 @@ export function createSchemaAdmin(options: {
     async status() {
       return schema.sync(await driver())
     },
-    async resolve(given, decisions) {
+    async resolve(given, decisions, options = {}) {
       if (!token)
         return {
           ok: false,
@@ -80,7 +80,7 @@ export function createSchemaAdmin(options: {
       try {
         return {
           ok: true,
-          report: await schema.sync(await driver(), { resolve: decisions }),
+          report: await schema.sync(await driver(), { resolve: decisions, onStep: options.onStep }),
         }
       } catch (e) {
         // Секрет подтверждён — причина видна тому, кто переносит (текст БД нужен ему,

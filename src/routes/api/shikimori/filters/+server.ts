@@ -14,7 +14,8 @@
  */
 import type { RequestHandler } from './$types'
 import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
-import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
+import { getShikimoriFilterSchema, watchSchemaBuild } from '#lib/server/shikimori-schema.js'
+import { taskResponse } from '#lib/server/task-stream.js'
 import { sameOriginFetch } from '#lib/server/trusted-origins.js'
 import { parseShikimoriApi } from '#lib/server/shikimori.js'
 import { DEV } from 'esm-env'
@@ -24,10 +25,17 @@ export const GET: RequestHandler = async ({ request, url }) => {
   // Версия API (`?api=rest|graphql|mix`): у каждой версии своя схема.
   const api = parseShikimoriApi(url.searchParams)
   if (!api.ok) return apiInvalid(api.error)
-  try {
-    const schema = await getShikimoriFilterSchema({ api: api.api })
-    return Response.json(schema, { headers: { 'cache-control': 'no-store' } })
-  } catch (error) {
-    return apiFailure(error, 'api/shikimori/filters', 'Схема фильтров Shikimori недоступна')
-  }
+  // Сборка схемы — около десятка запросов к Shikimori: её ход идёт строками ответа.
+  return taskResponse(
+    request,
+    async () => {
+      try {
+        const schema = await getShikimoriFilterSchema({ api: api.api })
+        return Response.json(schema, { headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        return apiFailure(error, 'api/shikimori/filters', 'Схема фильтров Shikimori недоступна')
+      }
+    },
+    { watch: [watchSchemaBuild(api.api)] },
+  )
 }

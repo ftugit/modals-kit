@@ -129,7 +129,12 @@ describe('живые справочники', () => {
   it('жанры, студии, enum' + 'ы и частоты читаются из API', async () => {
     const c = clock()
     const { fetchImpl } = stubUpstream([{ id: 858, name: 'Wit Studio' }])
-    const refs = await readShikimoriRefs({ fetch: fetchImpl })
+    const ticks: [number, number][] = []
+    const refs = await readShikimoriRefs({ fetch: fetchImpl }, undefined, (done, total) => ticks.push([done, total]))
+    // Ход сборки: сначала 0 из N (все запросы уже стартовали), затем по справочнику.
+    expect(ticks[0]).toEqual([0, ticks[0]![1]])
+    expect(ticks.at(-1)).toEqual([ticks[0]![1], ticks[0]![1]])
+    expect(ticks.map(([done]) => done)).toEqual(Array.from({ length: ticks.length }, (_, i) => i))
     expect(refs.genres).toEqual([
       { id: '27', label: 'Сёнен' },
       { id: '133', label: 'Isekai' },

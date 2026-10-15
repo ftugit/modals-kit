@@ -11,7 +11,9 @@ import { FetchError } from '#lib/fetch/index.js'
 import { apiErrorInstruction, readApiError } from '#lib/api-error.js'
 import { normalizeService } from '#lib/form/index.js'
 import { apiFailure, apiInvalid } from './api-error'
-import { captureUpstreamFetch, makeUpstream, UPSTREAM_UA } from './fetch'
+import { captureUpstreamFetch, makeUpstream, upstream, UPSTREAM_UA, waitTask } from './fetch'
+import { readTaskStream, TASK_STREAM_ACCEPT } from '#lib/fetch/index.js'
+import { taskResponse } from './task-stream'
 import { fetchGraphql, resetGraphqlTransport } from './graphql'
 import { fetchShikimoriJson, resetShikimoriTransport } from './shikimori'
 
@@ -156,5 +158,28 @@ describe('тело отказа на клиенте и в lib/form', () => {
     })
     expect(general).toMatchObject({ path: undefined, code: 'external.fetch.timeout' })
     expect(general!.message).toContain('не ответил вовремя')
+  })
+})
+
+describe('ожидания upstream → строки хода', () => {
+  it('подписи ожиданий', () => {
+    expect(waitTask({ reason: 'queue', host: 'h', ahead: 2 }).label).toBe('Очередь API: впереди 2')
+    expect(waitTask({ reason: 'queue', host: 'h', ahead: 0, waitMs: 1200 }).label).toBe('Очередь API: ~2 с')
+    expect(waitTask({ reason: 'retry', attempt: 2, attempts: 2, waitMs: 500 }).label).toBe('Повтор 2 из 2')
+  })
+
+  it('внутри taskResponse очередь хоста уходит клиенту строкой; вне — ничего', async () => {
+    captureUpstreamFetch((async () => ok({ ok: 1 })) as typeof globalThis.fetch)
+    const request = new Request('http://x/api', { headers: { accept: TASK_STREAM_ACCEPT } })
+    const res = await taskResponse(request, async () => {
+      const [a] = await Promise.all([upstream('https://shikimori.io/a'), upstream('https://shikimori.io/b')])
+      return Response.json(await a.json())
+    })
+    const seen: unknown[] = []
+    const back = await readTaskStream(res, (task) => seen.push(task))
+    expect(seen).toEqual([{ status: 'pending', scope: 'local', label: 'Очередь API: впереди 1' }])
+    expect(await back.json()).toEqual({ ok: 1 })
+    // Без строк ответа — обычный вызов.
+    expect((await upstream('https://shikimori.io/c')).status).toBe(200)
   })
 })

@@ -65,7 +65,26 @@ export interface FetchInit extends RequestInit {
   idempotent?: boolean
   /** Склеивать ли этот вызов с одинаковыми (см. `CreateFetchOptions.dedupe`). */
   dedupe?: boolean
+  /**
+   * Вызов ждёт — для показа ожидания: очередь лимита хоста или пауза перед
+   * повтором. Склеенный вызов получает ожидания общего запроса, включая последнее
+   * случившееся до него.
+   */
+  onWait?: (wait: FetchWait) => void
 }
+
+/**
+ * Почему вызов ждёт.
+ * - `queue`: место в лимитах хоста. `ahead` — сколько вызовов впереди (известно
+ *   при входе в очередь); `waitMs` — пауза до запуска, когда она уже посчитана.
+ * - `retry`: пауза перед попыткой `attempt` из `attempts` (`Retry-After` или
+ *   экспонента).
+ */
+export type FetchWait =
+  | { reason: 'queue'; host: string; ahead: number; waitMs?: number }
+  | { reason: 'retry'; attempt: number; attempts: number; waitMs: number }
+
+type Notify = ((wait: FetchWait) => void) | undefined
 
 /** Совместим с `fetch`: тот же вызов, тот же `Response`. */
 export type AppFetch = (input: string | URL | Request, init?: FetchInit) => Promise<Response>
@@ -107,9 +126,13 @@ type HostState = {
   blockedUntil: number
   /** Хвост очереди: запуски идут строго по порядку. */
   tail: Promise<void>
+  /** Сколько вызовов сейчас в очереди (для `onWait`). */
+  queued: number
 }
 
 type Snapshot = { status: number; statusText: string; headers: [string, string][]; body: ArrayBuffer | null }
+/** Общий запрос в полёте и те, кто ждёт его ожиданий (`onWait`). */
+type InflightEntry = { shared: Promise<Snapshot>; listeners: Set<(wait: FetchWait) => void>; last?: FetchWait }
 
 /**
  * Обёртка над `fetch` с тем, что нужно каждому обращению к чужому сервису:
@@ -128,12 +151,12 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
   const baseTimeout = options.timeoutMs ?? 10_000
   const baseRetry = options.retry
   const hosts = new Map<string, HostState>()
-  const inflight = new Map<string, Promise<Snapshot>>()
+  const inflight = new Map<string, InflightEntry>()
   const lower = (input: string | URL | Request, init?: RequestInit) =>
     (options.fetch ?? globalThis.fetch)(input, init)
 
   for (const [name, policy] of Object.entries(options.hosts ?? {})) {
-    hosts.set(name, { policy, starts: [], blockedUntil: 0, tail: Promise.resolve() })
+    hosts.set(name, { policy, starts: [], blockedUntil: 0, tail: Promise.resolve(), queued: 0 })
   }
 
   const retryFor = (call: RetryPolicy | false | undefined): Required<RetryPolicy> | null => {
@@ -142,19 +165,23 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
   }
 
   /** Ждать места в лимитах хоста. Порядок запусков — порядок вызовов. */
-  async function acquire(host: HostState, signal: AbortSignal | undefined): Promise<void> {
+  async function acquire(name: string, host: HostState, signal: AbortSignal | undefined, notify: Notify): Promise<void> {
     const prev = host.tail
     let release!: () => void
     host.tail = new Promise<void>((r) => (release = r))
+    const ahead = host.queued++
     try {
+      if (ahead > 0) notify?.({ reason: 'queue', host: name, ahead })
       await abortable(prev, signal)
       for (;;) {
         const wait = waitTime(host, clock.now())
         if (wait <= 0) break
+        notify?.({ reason: 'queue', host: name, ahead: 0, waitMs: wait })
         await clock.sleep(wait, signal)
       }
       host.starts.push(clock.now())
     } finally {
+      host.queued -= 1
       // Очередь не рвётся: следующий ждёт предыдущего, даже если этот прерван.
       prev.then(release, release)
     }
@@ -167,9 +194,10 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
     init: RequestInit,
     timeoutMs: number,
     signal: AbortSignal | undefined,
+    notify: Notify,
   ): Promise<Response> {
     const host = hosts.get(url.hostname)
-    if (host) await acquire(host, signal)
+    if (host) await acquire(url.hostname, host, signal, notify)
     const timeout = AbortSignal.timeout(timeoutMs)
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
     try {
@@ -189,6 +217,7 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
     init: RequestInit,
     call: FetchInit,
     signal: AbortSignal | undefined,
+    notify: Notify,
   ): Promise<Response> {
     const retry = retryFor(call.retry)
     const repeatable = call.idempotent ?? IDEMPOTENT.has(method)
@@ -197,10 +226,12 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
     for (let n = 1; ; n += 1) {
       let res: Response
       try {
-        res = await attempt(method, url, input, init, timeoutMs, signal)
+        res = await attempt(method, url, input, init, timeoutMs, signal, notify)
       } catch (error) {
         if (!(error instanceof FetchError) || n >= attempts) throw error
-        await clock.sleep(backoff(retry!, n, clock), signal)
+        const waitMs = backoff(retry!, n, clock)
+        notify?.({ reason: 'retry', attempt: n + 1, attempts, waitMs })
+        await clock.sleep(waitMs, signal)
         continue
       }
       const asked = retryAfter(res, clock.now())
@@ -211,12 +242,14 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
       if (!retry || n >= attempts || !retry.statuses.includes(res.status)) return res
       if (asked !== null && asked > retry.maxDelayMs) return res
       await res.body?.cancel().catch(() => undefined)
-      await clock.sleep(asked ?? backoff(retry, n, clock), signal)
+      const waitMs = asked ?? backoff(retry, n, clock)
+      notify?.({ reason: 'retry', attempt: n + 1, attempts, waitMs })
+      await clock.sleep(waitMs, signal)
     }
   }
 
   return async function appFetch(input, init = {}) {
-    const { timeoutMs, retry, idempotent, dedupe, signal, ...rest } = init
+    const { timeoutMs, retry, idempotent, dedupe, signal, onWait, ...rest } = init
     signal?.throwIfAborted()
     const url = new URL(input instanceof Request ? input.url : String(input))
     const method = (rest.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
@@ -236,22 +269,38 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
       (dedupe ?? options.dedupe ?? true) &&
       (safeRead || safeWithBody) &&
       !(input instanceof Request && input.body)
-    if (!canShare) return await run(method, url, input, lowerInit, call, signal ?? undefined)
+    if (!canShare) return await run(method, url, input, lowerInit, call, signal ?? undefined, onWait)
 
     const key = JSON.stringify([method, url.href, [...headers].sort(), typeof body === 'string' ? body : null])
-    let shared = inflight.get(key)
-    if (!shared) {
+    let entry = inflight.get(key)
+    if (!entry) {
+      // Ожидания общего запроса — всем, кто его ждёт; последнее помнится для
+      // присоединившихся позже (наследуют ход).
+      const made = { listeners: new Set() } as InflightEntry
+      const notify = (wait: FetchWait) => {
+        made.last = wait
+        for (const listener of made.listeners) listener(wait)
+      }
       // Общий запрос не знает ни одного `signal` ожидающих: уход одного не рвёт
       // запрос остальным. Сверху его держит только таймаут попытки.
-      shared = run(method, url, input, lowerInit, call, undefined)
+      made.shared = run(method, url, input, lowerInit, call, undefined, notify)
         .then((res) => snapshot(res, method, url))
         .finally(() => inflight.delete(key))
       // Все ожидающие могли уйти: отказ общего запроса тогда некому принять.
-      shared.catch(() => undefined)
-      inflight.set(key, shared)
+      made.shared.catch(() => undefined)
+      entry = made
+      inflight.set(key, made)
     }
-    const snap = await abortable(shared, signal ?? undefined)
-    return new Response(snap.body, { status: snap.status, statusText: snap.statusText, headers: snap.headers })
+    if (onWait) {
+      entry.listeners.add(onWait)
+      if (entry.last) onWait(entry.last)
+    }
+    try {
+      const snap = await abortable(entry.shared, signal ?? undefined)
+      return new Response(snap.body, { status: snap.status, statusText: snap.statusText, headers: snap.headers })
+    } finally {
+      if (onWait) entry.listeners.delete(onWait)
+    }
   }
 }
 

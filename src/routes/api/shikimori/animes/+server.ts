@@ -16,19 +16,28 @@ import type { RequestHandler } from './$types'
 import { parseAnimesQuery } from '#lib/server/shikimori.js'
 import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
 import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
+import { watchSchemaBuild } from '#lib/server/shikimori-schema.js'
+import { taskResponse } from '#lib/server/task-stream.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseAnimesQuery(url.searchParams)
   if (!parsed.ok) return apiInvalid(parsed.error)
 
-  try {
-    // Конвейер фильтров — общий с SSR-мостом (`fetchAnimesPage`), здесь только
-    // HTTP: разбор адреса, JSON и коды ошибок.
-    // signal запроса: если браузер ушёл (сменил страницу/запрос), сервер
-    // перестаёт ждать ответа. Общий запрос к API при этом дозаполнит кэш.
-    const page = await fetchAnimesPage(parsed, { signal: request.signal })
-    return Response.json(page, { headers: { 'cache-control': 'no-store' } })
-  } catch (error) {
-    return apiFailure(error, 'api/shikimori/animes', 'Каталог Shikimori недоступен')
-  }
+  // Ожидания (сборка схемы для фильтров, очередь лимита Shikimori) — строками ответа.
+  return taskResponse(
+    request,
+    async () => {
+      try {
+        // Конвейер фильтров — общий с SSR-мостом (`fetchAnimesPage`), здесь только
+        // HTTP: разбор адреса, JSON и коды ошибок.
+        // signal запроса: если браузер ушёл (сменил страницу/запрос), сервер
+        // перестаёт ждать ответа. Общий запрос к API при этом дозаполнит кэш.
+        const page = await fetchAnimesPage(parsed, { signal: request.signal })
+        return Response.json(page, { headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        return apiFailure(error, 'api/shikimori/animes', 'Каталог Shikimori недоступен')
+      }
+    },
+    { watch: [watchSchemaBuild(parsed.api)] },
+  )
 }

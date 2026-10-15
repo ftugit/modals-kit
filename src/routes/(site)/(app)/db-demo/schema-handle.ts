@@ -4,7 +4,8 @@ import { choices, stepKey } from '#lib/db/sync/index.js'
 import type { Choice, SchemaReport } from '#lib/db/sync/index.js'
 import type { FormError } from '#lib/form/index.js'
 import { createFormHandler, type Handled } from '#lib/form/server.js'
-import { schemaAdmin } from '#lib/server/db.js'
+import { schemaAdmin, schemaStepTask } from '#lib/server/db.js'
+import { currentReport } from '#lib/server/task-stream.js'
 import { invalidateLiveCache } from '#lib/server/live-cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { schemaForm, type SchemaScreen, type StepView } from './schema'
@@ -145,7 +146,11 @@ export async function handleSchemaResolve(request: Request, from: 'action' | 'fe
       }
       if (!Object.keys(decisions).length)
         return fail([error('schema.nothing', 'Выберите, что сделать хотя бы с одним шагом')])
-      const out = await schemaAdmin.resolve(values.token, decisions)
+      // Ход переноса — строками ответа, если клиент их просил (`taskResponse`).
+      const report = currentReport()
+      const out = await schemaAdmin.resolve(values.token, decisions, {
+        onStep: report && ((step) => report(schemaStepTask('Перенос схемы', step))),
+      })
       // «Секрет не подошёл» — под полем: ошибка закреплена за введённым значением
       // (lib/form) и уходит при правке, а не на уходе с поля под нажатой кнопкой.
       if (!out.ok) return fail([error(`schema.${out.reason}`, out.message, out.reason === 'token' ? 'token' : undefined)])

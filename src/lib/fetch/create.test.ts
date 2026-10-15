@@ -353,3 +353,47 @@ describe('склейка безопасного POST', () => {
     expect(s.calls).toHaveLength(3)
   })
 })
+
+describe('onWait: почему вызов ждёт', () => {
+  it('очередь хоста: «впереди N», затем пауза до запуска', async () => {
+    const v = virtualClock()
+    const s = stub(() => json({}), v.now)
+    const f = createFetch({ fetch: s.fetch, clock: v.clock, hosts: { 'a.test': { rps: 1 } }, dedupe: false })
+    const waits: unknown[] = []
+    await Promise.all([f('https://a.test/1'), f('https://a.test/2', { onWait: (w) => waits.push(w) })])
+    expect(waits).toEqual([
+      { reason: 'queue', host: 'a.test', ahead: 1 },
+      { reason: 'queue', host: 'a.test', ahead: 0, waitMs: 1000 },
+    ])
+  })
+
+  it('повтор: номер попытки и пауза', async () => {
+    const v = virtualClock()
+    const s = stub((n) => (n < 2 ? json({}, 503) : json({ ok: true })))
+    const f = createFetch({ fetch: s.fetch, clock: v.clock, retry: { baseDelayMs: 100, attempts: 3 } })
+    const waits: unknown[] = []
+    await f('https://a.test/x', { onWait: (w) => waits.push(w) })
+    expect(waits).toEqual([{ reason: 'retry', attempt: 2, attempts: 3, waitMs: 100 }])
+  })
+
+  it('склеенный вызов наследует ход: последнее ожидание сразу, дальнейшие — по мере', async () => {
+    let wake!: () => void
+    const clock: Partial<FetchClock> = {
+      now: () => 0,
+      random: () => 1,
+      sleep: () => new Promise<void>((r) => (wake = r)),
+    }
+    const s = stub((n) => (n < 2 ? json({}, 503) : json({ ok: true })))
+    const f = createFetch({ fetch: s.fetch, clock, retry: { baseDelayMs: 100, attempts: 2 } })
+    const first: unknown[] = []
+    const second: unknown[] = []
+    const a = f('https://a.test/x', { onWait: (w) => first.push(w) })
+    await new Promise((r) => setTimeout(r, 0)) // первая попытка ответила 503, идёт пауза
+    const b = f('https://a.test/x', { onWait: (w) => second.push(w) })
+    expect(second).toEqual(first) // присоединившийся сразу видит текущее ожидание
+    wake()
+    await Promise.all([a, b])
+    expect(first).toEqual([{ reason: 'retry', attempt: 2, attempts: 2, waitMs: 100 }])
+    expect(s.calls).toHaveLength(2)
+  })
+})

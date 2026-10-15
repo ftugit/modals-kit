@@ -741,6 +741,17 @@ return schema.gate(driver, { onReport: (r) => console.warn(r) })
 `db: { unique: [[…]], indexes: [[…]] }` у ресурса. У ресурса с `softDelete` индексы частичные —
 по неудалённым строкам (удалённый `slug` можно занять снова).
 
+Ход сверки для показа ожидания — `onStep` у `gate` и `sync`:
+
+```ts
+schema.gate(driver, { onStep: ({ done, total, step, name }) => show(done, total, step, name) })
+// { done: 0, total: 3, step: 'check' } → { done: 1, step: 'table', name: 'public.post' }
+// → { done: 2, step: 'sql', name: 'seed' } → { done: 3, total: 3 }   (total = 1 + ресурсы + скрипты)
+```
+
+Быстрой проверки хватило — сразу итог `{ done: total, total }`. Слова для человека
+(«Таблица …») — у приложения, пакет отдаёт только этапы.
+
 При открытии БД (`gate` → `sync`):
 
 1. Один SELECT из `kit_schema`: отпечатки моделей и `id` ручного SQL совпали — ничего не делать.
@@ -891,14 +902,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 113 групп в семи файлах (на PGlite выполняются 112: одна группа требует
+Тесты слоя — 114 групп в семи файлах (на PGlite выполняются 113: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 25 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 26 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
 | `src/lib/db/test/db-rules.test.ts` | 14 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
