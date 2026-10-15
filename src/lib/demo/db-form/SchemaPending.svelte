@@ -8,13 +8,13 @@
    */
   import { untrack } from 'svelte'
   import { refreshAll } from '$app/navigation'
-  import { jsonTransport } from '#lib/demo/form/transport.js'
+  import { jsonTransport } from '#lib/components/form/transport.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { Button } from '#lib/components/ui/index.js'
-  import { forms } from '#lib/demo/form/forms.config.js'
-  import Common from '#lib/demo/form/ui/Common.svelte'
-  import Field from '#lib/demo/form/ui/Field.svelte'
+  import { forms } from '#lib/components/form/forms.config.js'
+  import Common from '#lib/components/form/Common.svelte'
+  import Field from '#lib/components/form/Field.svelte'
   import { schemaForm, type SchemaScreen } from './schema'
 
   let { screen, seed = null }: { screen: SchemaScreen; seed?: Result | null } = $props()

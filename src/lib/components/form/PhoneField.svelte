@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Компонент приложения для `field.phone(...)` (тип `phone` из ../extend.ts).
+  // Компонент приложения для `field.phone(...)` (тип `phone` из ./extend.ts).
   // Значение — одна строка `+79991234567`: примитив склеивает код и номер сам и
   // отдаёт готовое значение; имя, id, подпись и связи доступности — из `attrs`.
   import type { FieldView } from '#lib/form/svelte/index.js'

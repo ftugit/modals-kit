@@ -101,7 +101,7 @@ test('импорт примитивов внутрь lib/form запрещён',
 
 test('импорт примитивов разрешён всем, кто вне lib/form', () => {
   assert.equal(check('#lib/components/ui/index.js', '/app/src/routes/form/+page.svelte'), null);
-  assert.equal(check('#lib/components/ui/index.js', '/app/src/lib/demo/form/ui/Field.svelte'), null);
+  assert.equal(check('#lib/components/ui/index.js', '/app/src/lib/components/form/Field.svelte'), null);
   // и прочие модули UI (например, #lib/utils.js) form-библиотеку не касаются
   assert.equal(check('#lib/utils.js', '/app/src/lib/form/svelte/config.ts'), null);
 });
@@ -163,7 +163,7 @@ test('source: createElement("form") запрещён', () => {
 test('source: form-экшены обязаны идти через #lib/form', () => {
   assert.ok(checkSource(RULES, 'export const actions = { default: async () => ({}) }', SERVER));
   assert.equal(
-    checkSource(RULES, "import { handleSignup } from '#lib/demo/form/handle.js'\nexport const actions = {}", SERVER),
+    checkSource(RULES, "import { handleSignup } from './handle'\nexport const actions = {}", SERVER),
     null,
     'обёртка над слоями — легальный путь',
   );
@@ -180,7 +180,7 @@ test('source: разбор тела маршрутом запрещён, фай�
     checkSource(
       RULES,
       "import { createFormHandler } from '#lib/form/server.js'\nconst p = await request.clone().formData()",
-      '/app/src/lib/demo/form/handle.ts',
+      '/app/src/routes/(site)/(app)/form/handle.ts',
     ),
     null,
     'probe до слоёв остаётся легальным: файл знает про createFormHandler',

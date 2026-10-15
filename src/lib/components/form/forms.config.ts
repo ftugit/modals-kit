@@ -6,7 +6,7 @@ import type { Transport } from '#lib/form/index.js'
 import { jsonTransport } from './transport'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'
-import { resolve } from './ui/resolve'
+import { resolve } from './resolve'
 
 /**
  * Транспорт: единственное место, где происходит сетевой вызов.

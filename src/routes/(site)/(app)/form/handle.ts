@@ -11,8 +11,8 @@ import {
 import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { applyOps, editor, groupRows, type FormDescription, type SchemaOp } from '#lib/form/index.js'
-import './extend'
-import { checks } from './extend'
+import '#lib/components/form/extend.js'
+import { checks } from '#lib/components/form/extend.js'
 import { resolveDescription, signup } from './signup'
 
 // Бронь отправки — в памяти процесса: этой форме база не нужна, и общая бронь

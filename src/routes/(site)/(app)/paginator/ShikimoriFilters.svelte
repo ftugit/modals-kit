@@ -6,7 +6,7 @@
    * в форме: `Field` с пустым `of` ничего не рисует.
    */
   import { Form } from '#lib/form/svelte/index.js'
-  import Field from '#lib/demo/form/ui/Field.svelte'
+  import Field from '#lib/components/form/Field.svelte'
   import { bindFilters, FilterActions, type FilterFormProps } from '#lib/components/filters/index.js'
 
   let props: FilterFormProps = $props()

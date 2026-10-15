@@ -158,7 +158,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 есть. Если бы выбранной студии из хвоста не было среди опций, выбор пропал бы при следующей
 отправке формы.
 
-**Где это включено.** Поле выбора демо-форм (`#lib/demo/form/ui/SelectField.svelte`) — то же
+**Где это включено.** Поле выбора демо-форм (`#lib/components/form/SelectField.svelte`) — то же
 для фильтров и остальных форм:
 
 ```svelte
