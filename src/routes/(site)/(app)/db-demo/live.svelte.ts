@@ -183,6 +183,11 @@ export function createLive(options: {
     },
     poke() {
       if (!running) return
+      // Новый вопрос (отметка заново) обязан получить тело: с прежним `etag` того же
+      // адреса сервер ответил бы 304, `onData` не случился бы, и отметка осталась бы
+      // пустой, пока следующая чужая запись не станет отметкой вместо пилюли.
+      etag = null
+      etagUrl = null
       clear()
       timer = setTimeout(() => void tick(), 0)
     },

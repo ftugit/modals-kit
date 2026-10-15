@@ -181,8 +181,12 @@
       if (unseen.length && canPrepend && atTop()) prependWaiting()
     },
   })
+  // Зависимость — только «включён ли опрос»: `extra` пересобирается на каждое изменение
+  // состояния списка (загрузка, ход загрузки, вставка строк), и эффект на нём сбрасывал
+  // бы отметку посреди опроса.
+  const liveOn = $derived(!!extra.live)
   $effect(() => {
-    if (extra.live) {
+    if (liveOn) {
       live.start()
       untrack(rebaseline)
     } else {

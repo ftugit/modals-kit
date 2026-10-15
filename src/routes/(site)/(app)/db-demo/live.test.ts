@@ -84,6 +84,23 @@ describe('createLive', () => {
     live.stop()
   })
 
+  it('poke — новый вопрос: без прежнего отпечатка, чтобы ответ пришёл с телом', async () => {
+    const seen: string[] = []
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('if-none-match') ?? '')
+      return response({ etag: 'W/"same"' })
+    })
+    const live = createLive({ url: () => '/x?since=', onData: () => {}, intervalMs: 1_000, fetchImpl: fetchImpl as unknown as typeof fetch })
+    live.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(seen.slice(0, 2)).toEqual(['', 'W/"same"'])
+    live.poke() // отметка заново: тот же адрес, но ответ обязан прийти телом
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen[2]).toBe('')
+    live.stop()
+  })
+
   it('poke спрашивает сразу, не дожидаясь интервала; после stop — молчит', async () => {
     const fetchImpl = vi.fn(async () => response({ etag: 'W/"x"' }))
     let calls = 0
