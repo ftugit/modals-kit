@@ -86,9 +86,16 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // (+1.7), immutable 249.9 (+1.7), /form 169.8 (+0.8), /paginator 204.6 (+3.6). По
 // постоянному решению (≤ +5, сообщить): весь JS 237.5, immutable 251, /form 170.5,
 // /paginator 205.5.
+// REVISION 2026-10-15, ход 185 (формы и БД: форма строится из модели — `formParams(posts)`, модель
+// `posts` теперь общий модуль и едет в браузер со своим `lib/db`: `defineResource`, схемы
+// `s.*`, переходник; плюс флажок согласия, подсказка `prepare`, адрес записи в строке).
+// Таблица SQLSTATE (≈9 КБ) из браузера убрана пометкой `@__PURE__`. Факт: весь JS 236.5 →
+// 242.2 (+5.7), immutable 249.9 → 255.7 (+5.8), /db-demo 195.3 → 201.1 (+5.8), /form
+// 169.8 → 170.0. Решение оператора («Да, увеличивай»): весь JS 243, immutable 256.5,
+// /db-demo 201.5.
 const LIMITS = {
-  allImmutableGzip: 251 * KiB,
-  allJsGzip: 237.5 * KiB,
+  allImmutableGzip: 256.5 * KiB,
+  allJsGzip: 243 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -119,7 +126,8 @@ const ROUTE_LIMITS = {
   // ленивый импорт не годится: без JS сервер отрисовал бы пустое место вместо экрана.
   // Ход 112: + закреплённые ошибки формы (pins) и смена источника в ядре пагинатора
   // (общее со списком БД) — факт 181.6 → 182.5.
-  '/db-demo': 195.5 * KiB,
+  // Ход 185: модель `posts` в браузере (форма из модели) — факт 201.1, см. REVISION у LIMITS.
+  '/db-demo': 201.5 * KiB,
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
   '/cards/[id]': 138.6 * KiB,

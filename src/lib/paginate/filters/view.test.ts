@@ -13,7 +13,7 @@ import {
   catalogFilterRemoveValuePatch,
   catalogFilterView,
 } from './view'
-import { filterParams, type CatalogFilterSchema } from './index'
+import { formParams, type CatalogFilterSchema } from './index'
 import { defineForm, field } from '#lib/form/index.js'
 import { describeAll } from './test-describe'
 
@@ -98,7 +98,7 @@ describe('связки и ошибки в картине панели', () => {
   })
 
   it('подписи чипов — из описания; поля, которого в описании нет, нет и в чипах', () => {
-    const filter = filterParams(schema, { prefix: 'page.' })
+    const filter = formParams(schema, { prefix: 'page.' })
     const own = defineForm({
       id: 'own',
       policy: filter.policy,

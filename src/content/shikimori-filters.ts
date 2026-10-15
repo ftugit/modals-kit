@@ -16,7 +16,7 @@
  */
 import {
   catalogFilterFieldNames,
-  filterParams,
+  formParams,
   type CatalogFilterField,
   type CatalogFilterFormOptions,
   type CatalogFilterSchema,
@@ -147,12 +147,12 @@ export function shikimoriFilterSchemaSkeleton(api: ShikimoriApi = SHIKIMORI_DEFA
 /**
  * Форма фильтров Shikimori: какие поля, в каком порядке и с какими подписями —
  * решает приложение; варианты, границы, связки и межполевые правила приходят
- * из живой схемы (`filterParams`). Одна функция на браузер (имена с адресным
+ * из живой схемы (`formParams`). Одна функция на браузер (имена с адресным
  * слоем `page.`) и сервер (без слоя): проверка значений идёт тем же описанием.
  * Поля, которого у API нет (студии у GraphQL), в описании не будет.
  */
 export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
-  const filter = filterParams(schema, opts)
+  const filter = formParams(schema, opts)
   return defineForm({
     id: 'shikimori-filters',
     policy: filter.policy,

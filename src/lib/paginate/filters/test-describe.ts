@@ -1,17 +1,17 @@
 /**
- * Только для тестов: описание формы со ВСЕМИ полями схемы через `filterParams` —
+ * Только для тестов: описание формы со ВСЕМИ полями схемы через `formParams` —
  * так, как написало бы его приложение, если бы рисовало всё подряд. Подпись —
  * подпись схемы. В пакет не экспортируется.
  */
 import { defineForm, field, type FieldDraft, type FormDescription } from '#lib/form/index.js'
 import { FILTER_KEY_PREFIX } from '../source'
-import { filterParams, type CatalogFilterFormOptions, type FilterFieldParams } from './params'
+import { formParams, type CatalogFilterFormOptions, type FilterFieldParams } from './params'
 import { catalogFilterFieldNames, validateCatalogFilterSchema, type CatalogFilterSchema } from './schema'
 import { parseCatalogFilterPath } from './url'
 
 export function describeAll(input: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
   const schema = validateCatalogFilterSchema(input)
-  const filter = filterParams(schema, opts)
+  const filter = formParams(schema, opts)
   const drafts: Record<string, FieldDraft<any>> = {}
   for (const descriptor of schema.fields) {
     for (const path of catalogFilterFieldNames(descriptor)) {

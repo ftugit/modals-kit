@@ -458,3 +458,86 @@ suite('ctx.fail принимает issues Standard Schema (ошибки БД б�
     expect(r.errors.map((e) => [e.path, e.message])).toEqual([['name', 'занято']])
   })
 })
+
+suite('pick и prepare', () => {
+  const schema = { '~standard': { version: 1, vendor: 'other', validate: (x: unknown) => ({ value: x }) } }
+  const min3 = v.minLength(3)
+  const rules = [v.required(), min3]
+  const make = (validate = rules, extra = {}) => defineForm({
+    id: 'pp',
+    fields: {
+      title: field.text({ validate, rulesFrom: { schema, rules } }),
+      note: field.text({}),
+      hidden: field.text({ rulesFrom: { schema, rules: [] }, visibleWhen: { field: 'note', equals: 'show' } }),
+    },
+    ...extra,
+  })
+  const run = async (d: ReturnType<typeof make>, entries: Record<string, string>, o: Record<string, unknown> = {}) => {
+    const seen: { picked?: object; values?: object } = {}
+    const h = createFormHandler({
+      description: d, ...o,
+      execute: (c) => { seen.values = c.values; seen.picked = c.pick(['title', 'note', 'hidden']); c.commit(); return {} },
+    })
+    const r = await h(post({ ...envelopeOf({}, d), ...entries }))
+    return { r, ...seen }
+  }
+  const proofOf = (x: unknown) => (x as Record<symbol, { fields: Record<string, { schema: object; value: unknown }> }>)[
+    Symbol.for('modals-kit.validated-proof.v1')]
+
+  test('pick: копия перечисленных полей; метка — только у полей с rulesFrom; values без метки', async () => {
+    const { picked, values } = await run(make(), { title: 'Заметка', note: 'x' })
+    expect(picked).toEqual({ title: 'Заметка', note: 'x', hidden: '' })
+    expect(proofOf(picked)?.fields).toEqual({ title: { schema, value: 'Заметка' } })
+    expect(proofOf(values)).toBeUndefined()
+  })
+
+  test('pick: правила из rulesFrom заменены — метки нет; свои рядом с выданными — метка есть', async () => {
+    expect(proofOf((await run(make([v.required()]), { title: 'Заметка' })).picked)?.fields).toEqual({})
+    const more = await run(make([...rules, v.maxLength(10)]), { title: 'Заметка' })
+    expect(Object.keys(proofOf(more.picked)?.fields ?? {})).toEqual(['title'])
+  })
+
+  test('pick: скрытое поле и неполная проверка (relax) метку не получают; чужое имя — ошибка', async () => {
+    const shown = await run(make(), { title: 'Заметка', note: 'show', hidden: 'h' })
+    expect(Object.keys(proofOf(shown.picked)?.fields ?? {}).sort()).toEqual(['hidden', 'title'])
+    const hidden = await run(make(), { title: 'Заметка', note: 'x', hidden: 'h' })
+    expect(Object.keys(proofOf(hidden.picked)?.fields ?? {})).toEqual(['title'])
+    const relaxed = make(rules, { actions: [{ id: 'submit', label: 'ok', validate: 'full', relax: ['note'] }] })
+    expect(proofOf((await run(relaxed, { title: 'Заметка' })).picked)?.fields).toEqual({})
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const h = createFormHandler({ description: make(), execute: (c) => { c.pick(['nope' as never]); c.commit(); return {} } })
+    const r = await h(post({ ...envelopeOf({}, make()), title: 'Заметка' }))
+    quiet.mockRestore()
+    expect(r.result.errors.map((e) => e.code)).toEqual(['handler.failed'])
+  })
+
+  test('prepare: до правил; { value, note } → notes; при ошибке в поле — подготовленное значение', async () => {
+    const prepare = {
+      title: (x: unknown) => {
+        const s = String(x)
+        const clean = s.replace(/https?:\/\/\S+/g, '').trim()
+        return clean === s ? s : { value: clean, note: 'удалены ссылки' }
+      },
+    }
+    const ok = await run(make(), { title: 'Заметка http://x.y' }, { prepare })
+    expect(ok.r.result.ok).toBe(true)
+    expect(ok.r.result.notes).toEqual({ title: 'удалены ссылки' })
+    expect(proofOf(ok.picked)?.fields['title']?.value).toBe('Заметка')
+    const bad = await run(make(), { title: 'ab http://x.y' }, { prepare })
+    expect(bad.r.result.errors.map((e) => e.code)).toEqual(['minLength'])
+    expect(bad.r.result.values['title']).toBe('ab')
+    expect(bad.r.result.notes).toEqual({ title: 'удалены ссылки' })
+    const plain = await run(make(), { title: 'Заметка' }, { prepare })
+    expect(plain.r.result.notes).toBeUndefined()
+    // простое значение (без note) тоже заменяет
+    const upper = await run(make(), { title: 'abc' }, { prepare: { title: (x: unknown) => String(x).toUpperCase() } })
+    expect(proofOf(upper.picked)?.fields['title']?.value).toBe('ABC')
+  })
+
+  test('prepare: поле не из формы или не функция — ошибка при создании', () => {
+    expect(() => createFormHandler({ description: make(), prepare: { nope: (x: unknown) => x }, execute: () => ({}) }))
+      .toThrow(/prepare\.nope: нет такого поля/)
+    expect(() => createFormHandler({ description: make(), prepare: { title: 'x' as never }, execute: () => ({}) }))
+      .toThrow(/prepare\.title: обязан быть функцией/)
+  })
+})

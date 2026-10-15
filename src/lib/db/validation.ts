@@ -228,6 +228,8 @@ export async function draftInput(
   input: unknown,
   op: "insert" | "update",
   maxKeys: number,
+  /** Сюда складываются ключи, заполненные `fill`: дальше они server-owned, как `createValue`. */
+  filled?: Set<string>,
 ): Promise<Row> {
   // метку читаем у исходного объекта: копия (`inputRecord`) её не несёт
   const proof = readProof(input);
@@ -252,14 +254,35 @@ export async function draftInput(
     else draft[k] = r_.value;
   }
   if (op === "insert")
+    for (const [k, f] of Object.entries(r.fields))
+      if (f.createValue) draft[k] = await validateField(f, f.createValue(ctx), k);
+  // `fill` видит только проверенные значения: при ошибках переданных полей он не
+  // вызывается (заголовок с ошибкой не годится для адреса), а его поле не считается
+  // пропущенным — человек увидит ошибку там, где она есть.
+  const canFill = !errors.length;
+  if (canFill)
     for (const [k, f] of Object.entries(r.fields)) {
-      if (f.createValue)
-        draft[k] = await validateField(f, f.createValue(ctx), k);
-      else if (f.required && !f.generated && !own(draft, k))
-        errors.push(fieldError(f, k, "required", "Required"));
+      if (!f.fill || own(draft, k)) continue;
+      const value = await f.fill(freeze(structuredClone(draft)), ctx, op);
+      if (value === undefined) continue;
+      const one = await checkField(f, value, k, true);
+      if (one.errors) errors.push(...one.errors);
+      else {
+        draft[k] = one.value;
+        filled?.add(k);
+      }
     }
+  if (op === "insert")
+    for (const [k, f] of Object.entries(r.fields))
+      if (f.required && !f.generated && !own(draft, k) && (canFill || !f.fill))
+        errors.push(fieldError(f, k, "required", "Required"));
   if (errors.length) failFields(errors);
+  for (const k of Object.keys(draft)) draft[k] = await stored(r.fields[k]!, draft[k], ctx);
   return draft;
+}
+/** `store` поля: после правил, `null` не трогает. */
+export async function stored(f: Field, value: unknown, ctx: DataContext): Promise<unknown> {
+  return f.store && value !== null && value !== undefined ? f.store(value, ctx) : value;
 }
 /** После before-hook повторяем schema и запрещаем изменение server-owned полей. */
 export async function revalidateDraft(
@@ -300,7 +323,8 @@ export async function revalidateDraft(
       !own(validatedSnapshot, k) ||
       JSON.stringify(v) !== validatedSnapshot[k]
     )
-      draft[k] = await validateField(f, v, k, false);
+      // хук положил новое значение: те же правила, затем тот же `store`
+      draft[k] = await stored(f, await validateField(f, v, k, false), ctx);
   }
   for (const [k, v] of Object.entries(protectedValues))
     if (!own(draft, k) || JSON.stringify(draft[k]) !== JSON.stringify(v))
@@ -455,6 +479,14 @@ function checkShape(r: Resource): void {
       push(`fields.${name}: generated + create/update — write-маска не имеет смысла`);
     if (f.generated && f.required) push(`fields.${name}: generated + required — поле никогда не придёт от клиента`);
     if (f.immutable && f.update !== undefined) push(`fields.${name}: immutable + update-маска`);
+    for (const fn of ["fill", "store"] as const)
+      if (f[fn] !== undefined && typeof f[fn] !== "function") push(`fields.${name}.${fn}: обязан быть функцией`);
+    if (f.fill && (f.generated || f.createValue))
+      push(`fields.${name}: fill + ${f.generated ? "generated" : "createValue"} — значение поля уже задаёт другой источник`);
+    if (f.store && f.generated) push(`fields.${name}: store + generated — поле пишет только БД`);
+    // правила описывают вход (пароль), а колонка хранит результат (хэш): тип из правил был бы ложью
+    if (f.store && !f.db?.type)
+      push(`fields.${name}: store без db.type — колонка хранит результат store, а не то, что описывают правила поля`);
     if (f.db !== undefined) {
       if (!f.db || typeof f.db !== "object") push(`fields.${name}.db: обязан быть объектом { type?, default?, unique?, references? }`);
       else {

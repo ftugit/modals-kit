@@ -13,6 +13,10 @@
     />
     <Label {...f.labelProps()}>{f.label}</Label>
   </div>
+  {#if f.note}
+    <!-- подсказка сервера: значение изменил prepare; id входит в aria-describedby -->
+    <p {...f.noteProps()} class="text-xs text-muted-foreground" data-field-note>{f.note}</p>
+  {/if}
   {#if f.errors[0]}
     <p {...f.errorProps()} class="text-xs font-medium text-destructive">{f.errors[0].message}</p>
   {:else if f.has}

@@ -7,7 +7,7 @@
  *
  * ```ts
  * export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions) {
- *   const filter = filterParams(schema, opts)
+ *   const filter = formParams(schema, opts)
  *   return defineForm({
  *     id: 'shikimori-filters',
  *     policy: filter.policy,
@@ -84,7 +84,7 @@ const warn = (message: string) => {
   if (DEV) console.warn(`[filters] ${message}`)
 }
 
-export function filterParams(input: CatalogFilterSchema, opts: CatalogFilterFormOptions = {}): FilterParams {
+export function formParams(input: CatalogFilterSchema, opts: CatalogFilterFormOptions = {}): FilterParams {
   const schema = validateCatalogFilterSchema(input)
   const prefix = opts.prefix ?? ''
   const byKey = new Map(schema.fields.map((descriptor) => [descriptor.key, descriptor]))

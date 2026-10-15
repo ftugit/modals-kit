@@ -117,6 +117,20 @@ export interface Field<T = unknown> {
   nullable?: boolean;
   normalize?: (v: unknown) => unknown;
   createValue?: (ctx: DataContext) => unknown;
+  /**
+   * Заполнить, если поле не передано: `values` — уже проверенные переданные поля.
+   * `undefined` — не заполнять (так при `update` поле остаётся как было). Значение
+   * проходит правила поля. Переданное значение (если `create`/`update` разрешает)
+   * побеждает: `fill` его не трогает.
+   */
+  fill?: (values: Readonly<Row>, ctx: DataContext, operation: "insert" | "update") => unknown | Promise<unknown>;
+  /**
+   * Как хранить: вызывается ПОСЛЕ правил поля (и после `fill`), до `beforeWrite`,
+   * `checks` и SQL — например, хэш пароля. `null` не передаётся. Правила поля описывают
+   * то, что приходит, а не то, что лежит в колонке, поэтому нужен явный `db.type`, и
+   * CHECK из правил не строится.
+   */
+  store?: (value: unknown, ctx: DataContext) => unknown | Promise<unknown>;
   filters?: readonly Operator[];
   orderable?: boolean;
   /** Колонка в БД: то, чего не видно из схемы поля (см. `#lib/db/sync/index.js`). */

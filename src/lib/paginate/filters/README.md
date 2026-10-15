@@ -48,7 +48,7 @@ const schema: CatalogFilterSchema = {
 
 ```ts
 export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions) {
-  const filter = filterParams(schema, opts)
+  const filter = formParams(schema, opts)
   return defineForm({
     id: 'shikimori-filters',
     policy: filter.policy,               // предел вариантов поднят до предела схемы (5000)
@@ -66,7 +66,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 Свои ключи пишутся **после** развёртки, иначе развёртка их перекроет. Свой валидатор — рядом с
 выданными: `validate: [...filter.year.min.validate, v.integer()]`.
 
-**Что даёт `filterParams(schema, { prefix })`** — по ключу схемы и его режиму/границе:
+**Что даёт `formParams(schema, { prefix })`** — по ключу схемы и его режиму/границе:
 
 | Параметр | Откуда |
 |---|---|
@@ -241,7 +241,7 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 |---|---|
 | `schema.ts` | типы схемы, проверка схемы, имена полей, пределы, порядок длинных полей |
 | `url.ts` | ключи адреса `?page.filters.*` (префикс — `FILTER_KEY_PREFIX` ядра), значения из адреса и extra, канонический адрес |
-| `params.ts` | `filterParams`: параметры полей описания приложения из схемы (§2) |
+| `params.ts` | `formParams`: параметры полей описания приложения из схемы (§2) |
 | `form.ts` | помощники: политика формы, список допустимых, связки → `disabledWhen`, снятие значений по умолчанию, FormData |
 | `rules.ts` | серверная проверка значений по описанию, сработавшие связки, нарушения (ошибки формы) |
 | `view.ts` | чипы активных фильтров (`activeCatalogFilters`) и патчи адреса для панели |
@@ -252,7 +252,7 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 
 | Тест | Что проверяет |
 |---|---|
-| `catalog-filter.test.ts` | порядок длинного поля (частые первыми, дальше по подписи), короткое не трогается, хвост законен, чужое — `oneOf`, предел 5000; `filterParams`: свои подписи и порядок, пропуск отсутствующих полей, префикс, `noOverlap`/`notAbove`, подписи связок из описания, предупреждение о чужом ключе |
+| `catalog-filter.test.ts` | порядок длинного поля (частые первыми, дальше по подписи), короткое не трогается, хвост законен, чужое — `oneOf`, предел 5000; `formParams`: свои подписи и порядок, пропуск отсутствующих полей, префикс, `noOverlap`/`notAbove`, подписи связок из описания, предупреждение о чужом ключе |
 | `rules.test.ts` | связки в живой форме и при отказе, нарушения панели — ошибки формы, словарь приложения |
 | `view.test.ts` | чипы из описания, нарушения применённого набора, патчи, адреса |
 | `src/lib/form/range.test.ts` | `notAbove`/`notBelow`/`noOverlap`: ошибки, пустые стороны, даты, реестр |

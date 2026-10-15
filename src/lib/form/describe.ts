@@ -52,6 +52,18 @@ export interface DisableRule {
   readonly message?: string
 }
 
+/**
+ * Правила поля сгенерированы из чужой схемы (например, `formParams` модели БД):
+ * `schema` — сам объект схемы, `rules` — валидаторы, которые из неё получились.
+ * `pick` на сервере ставит метку «проверено» с этой схемой — получатель (`lib/db`)
+ * не повторит её правила. Метка ставится, только если все `rules` остались в
+ * `validate` поля: правила заменили — метки нет, получатель проверит сам.
+ */
+export interface RulesFrom {
+  readonly schema: object
+  readonly rules: readonly ValidatorRef[]
+}
+
 /** Откуда берётся «поле невалидно»: по факту ошибки или по тому, что показано. */
 export type InvalidFrom = 'fact' | 'shown'
 
@@ -72,6 +84,8 @@ export interface FieldDescriptor<V = unknown> {
   readonly defaultValue?: V
   readonly secret?: boolean
   readonly validators: readonly ValidatorRef[]
+  /** Откуда правила поля (см. `FieldOptions.rulesFrom`). */
+  readonly rulesFrom?: RulesFrom
   /** Тексты ошибок поля по коду (F56); в словарь формы попадают как «поле:код». */
   readonly messages?: Readonly<Record<string, string>>
   readonly options?: readonly Option[]
@@ -150,6 +164,8 @@ export interface FieldOptions<V = unknown> {
   secret?: boolean
   /** Валидаторы поля: функции или сериализуемые ссылки на реестр. */
   validate?: readonly ValidatorRef[]
+  /** Откуда правила: ставит генератор параметров (`formParams`), руками не пишется. */
+  rulesFrom?: RulesFrom
   /**
    * Тексты ошибок ЭТОГО поля по коду: `{ minValue: 'Вам должно быть {min}' }`
    * (F56). Сильнее словарей формы и приложения, слабее `.message()` валидатора.
@@ -201,6 +217,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         // пароль не возвращается наружу: возврат пароля в разметку — типовая дыра
         secret: o.secret ?? input === 'password',
         validators: o.validate ?? [],
+        rulesFrom: o.rulesFrom,
         messages: o.messages,
         options: o.options?.map((x) => (typeof x === 'string' ? { value: x, label: x } : x)),
         visibleWhen: o.visibleWhen,

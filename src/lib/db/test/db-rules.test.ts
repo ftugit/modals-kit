@@ -1,9 +1,9 @@
 /**
- * Правила один раз (docs/design/db-form-validation-answers.md, шаги 2–4):
- * `checks` в модели, `validator` для форм без записи, метка проверки и тип/CHECK из
- * Standard JSON Schema. Своя схема поля здесь — заглушка со счётчиком вызовов: так
- * видно, выполнялась ли проверка второй раз. Поле `lib/form` с той же ролью проверяет
- * `src/lib/server/form-db.test.ts`.
+ * Правила один раз (docs/design/db-form-validation-answers.md): `checks` в модели,
+ * `validator` для форм без записи, метка проверки, тип/CHECK из Standard JSON Schema,
+ * `fill` и `store` у поля. Своя схема поля здесь — заглушка со счётчиком вызовов: так
+ * видно, выполнялась ли проверка второй раз. Настоящую пару «модель → форма»
+ * (`formParams`, `pick`) проверяет `src/lib/server/form-db.test.ts`.
  */
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
@@ -312,4 +312,93 @@ test("validator('insert'): обязательные поля и права ка�
     assert.equal(title.calls, calls);
     assert.throws(() => api.validator(ctx, "delete" as never), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
   });
+});
+
+test("fill: заполняет непереданное из проверенных значений; переданное побеждает; результат проходит правила", () => {
+  const calls: { values: unknown; operation: string }[] = [];
+  const slug = (max: number) =>
+    field(s.text({ max }), {
+      read: () => true,
+      nullable: true,
+      filters: ["eq"],
+      fill: (values, _c, operation) => {
+        calls.push({ values, operation });
+        if (operation === "update") return values.title === undefined ? undefined : `u-${String(values.title).toLowerCase()}`;
+        return String(values.title).toLowerCase().replace(/\s+/g, "-");
+      },
+    });
+  const r = posts(countedText(), {}, { slug: slug(80) });
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const row = await api.insert(ctx, { title: "  Первая Заметка " });
+    assert.equal(row.slug, "первая-заметка", "fill видит значение после normalize и правил");
+    assert.ok(Object.isFrozen(calls[0]?.values), "fill получает снимок только для чтения");
+    // без create-маски поле передать нельзя: заполняет только fill
+    await assert.rejects(api.insert(ctx, { title: "Вторая", slug: "своё" }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    const n = calls.length;
+    await assert.rejects(api.insert(ctx, { title: "ab" }), (e: unknown) => failureIssues(e)?.map((i) => i.path?.[0]).join() === "title");
+    assert.equal(calls.length, n, "при ошибке переданных полей fill не вызывается");
+    await api.update(ctx, row.id, { title: "Новая" });
+    assert.equal((await api.select(ctx)).find((x) => x.id === row.id)?.slug, "u-новая");
+    assert.equal(calls.at(-1)?.operation, "update", "при update fill узнаёт операцию и видит только переданное");
+  });
+});
+
+test("fill: переданное значение побеждает; ошибка результата — ошибка поля; хук не меняет заполненное", () => {
+  const r = posts(
+    countedText(),
+    { hooks: { beforeWrite: ({ draft }) => { if (draft && draft.title === "Хук") draft.slug = "подмена"; } } },
+    { slug: field(s.text({ max: 5 }), { ...rw, nullable: true, filters: ["eq"], fill: (v) => String(v.title).toLowerCase() }) },
+  );
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    assert.equal((await api.insert(ctx, { title: "Длинный заголовок", slug: "own" })).slug, "own", "переданное — как есть, fill не трогает");
+    await assert.rejects(api.insert(ctx, { title: "Длинный заголовок" }), (e: unknown) => {
+      const i = failureIssues(e)?.[0];
+      return i?.path?.[0] === "slug" && (i as { code?: string }).code === "maxLength";
+    });
+    await assert.rejects(api.insert(ctx, { title: "Хук" }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    const required = posts(countedText(), {}, { slug: f.text({ ...rw, required: true, filters: ["eq"], fill: () => "auto" }) });
+    const v = await db.resource(required).validator(ctx, "insert")["~standard"].validate({ title: "Заметка" });
+    assert.equal(v.issues, undefined, "validator: обязательное поле с fill не требуется во входе");
+  });
+});
+
+test("store: после правил (правила видят вход), результат в колонке; null не трогает; метка не мешает", () => {
+  const secret = countedText();
+  const r = posts(countedText(), {}, {
+    secret: field(secret as unknown as StandardSchema<string>, {
+      read: () => true,
+      create: () => true,
+      update: () => true,
+      nullable: true,
+      store: async (v) => "h:" + [...String(v)].reverse().join(""),
+      db: { type: "text" },
+    }),
+  });
+  return withDb([r], async (db, pg) => {
+    const api = db.resource(r);
+    const row = await api.insert(ctx, { title: "Заметка", secret: "пароль12" });
+    assert.equal(row.secret, "h:21ьлорап");
+    await assert.rejects(api.insert(ctx, { title: "Заметка", secret: "ab" }), (e: unknown) => failureIssues(e)?.[0]?.path?.[0] === "secret");
+    assert.equal((await api.insert(ctx, { title: "Заметка", secret: null })).secret, null);
+    const calls = secret.calls;
+    const proven = await api.insert(ctx, stamp({ title: "Заметка", secret: "пароль12" }, { secret: { schema: secret, value: "пароль12" } }));
+    assert.equal(secret.calls, calls, "метка снимает повтор правил");
+    assert.equal(proven.secret, "h:21ьлорап", "store выполняется и с меткой");
+    await api.update(ctx, row.id, { secret: "новый123" });
+    const stored = await pg.query<{ secret: string }>("SELECT secret FROM public.rules_post WHERE id = $1", [row.id]);
+    assert.equal(stored.rows[0]?.secret, "h:321йывон");
+  });
+});
+
+test("store: описание требует db.type, CHECK из правил не строится; fill + createValue — ошибка описания", async () => {
+  const shape = (extra: Fields) => () => posts(countedText(), {}, extra);
+  const has = (re: RegExp) => (e: unknown) => e instanceof DbFailure && (e.details.issues ?? []).some((x) => re.test(String(x)));
+  assert.throws(shape({ pin: field(s.text({ min: 4 }), { ...rw, store: (v) => v }) }), has(/store без db\.type/));
+  assert.throws(shape({ pin: f.text({ ...rw, fill: () => "x", createValue: () => "y" }) }), has(/fill \+ createValue/));
+  assert.throws(shape({ pin: f.text({ ...rw, fill: "x" as never }) }), has(/fill: обязан быть функцией/));
+  const r = posts(countedText(), {}, { pin: field(s.text({ min: 4, max: 6 }), { ...rw, nullable: true, store: (v) => v, db: { type: "text" } }) });
+  const spec = await tableSpec(r);
+  assert.equal(spec.objects.filter((o) => o.kind === "check" && o.columns.includes("pin")).length, 0);
 });

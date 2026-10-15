@@ -11,7 +11,6 @@ import { normalizeErrors, stableId, type FormError, type Outcome, type Result } 
 import { issueError, runSchema, type IssueLike, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
 import { evaluate } from './submit'
-import { fieldSchema } from './standard'
 import { stampProof } from './proof'
 import { visibleFields } from './validate'
 import { nameProblem } from './policy'
@@ -441,26 +440,40 @@ export function windowThrottle<E = unknown>(
 /* ── метка проверки ────────────────────────────────────────────────── */
 
 /**
- * Метка «эти значения проверены схемами полей» для `lib/db` (`proof.ts`): БД не
- * повторит правила значения. Ставится, только когда действие проверяло форму целиком
- * (`validate: 'full'`, без `relax` и `subset`), и только на видимые поля: скрытое и
- * «свежее» поле форма не проверяла, значит и метки у него нет.
+ * Какие поля можно пометить «проверено» для получателя (`lib/db`, `proof.ts`): действие
+ * проверяло форму целиком (`validate: 'full'`, без `relax` и `subset`), поле видимо и не
+ * «свежее», правила поля сгенерированы из чужой схемы (`rulesFrom`) и все остались в
+ * `validate`. Ответ — имя → схема; значение берёт `pick` в момент вызова.
  */
-function markValidated(d: FormDescription, values: Record<string, unknown>, intent: string): void {
+function provenSchemas(d: FormDescription, values: Record<string, unknown>, intent: string): Map<string, object> {
+  const out = new Map<string, object>()
   const { action } = d.policy.intent.parse(intent)
   const descriptor = d.actions.find((a) => a.id === action) ?? d.actions[0]!
-  if (descriptor.validate !== 'full' || descriptor.relax?.length || descriptor.subset) return
+  if (descriptor.validate !== 'full' || descriptor.relax?.length || descriptor.subset) return out
   const visible = visibleFields(d, values)
-  const fields: Record<string, { schema: object; value: unknown }> = {}
-  for (const f of d.fields)
-    if (visible.has(f.name) && !f.fresh) fields[f.name] = { schema: fieldSchema(d, f.name), value: values[f.name] }
-  stampProof(values, fields)
+  for (const f of d.fields) {
+    const from = f.rulesFrom
+    if (!from || !visible.has(f.name) || f.fresh) continue
+    if (from.rules.every((r) => f.validators.includes(r))) out.set(f.name, from.schema)
+  }
+  return out
 }
+
+/** `{ value, note }` из `prepare`: новое значение и подсказка к полю. */
+const isNoted = (x: unknown): x is { value: unknown; note: string } =>
+  !!x && typeof x === 'object' && Object.getPrototypeOf(x) === Object.prototype &&
+  Object.keys(x).length === 2 && 'value' in x && typeof (x as { note?: unknown }).note === 'string'
 
 /* ── обработчик ────────────────────────────────────────────────────── */
 
 export interface ExecuteContext<V = Record<string, unknown>> {
   readonly values: V
+  /**
+   * Копия только перечисленных полей — то, что уходит получателю (`lib/db`). На ней
+   * метка «проверено» для полей с правилами из чужой схемы (`rulesFrom`): получатель
+   * не повторит эти правила. `values` метки не несут. Поле не из формы — ошибка.
+   */
+  pick<K extends keyof V & string>(keys: readonly K[]): Pick<V, K>
   readonly intent: string
   readonly request: Request
   /** Явное подтверждение успеха. «Не упало — значит хорошо» даёт «неизвестно». */
@@ -501,6 +514,14 @@ export interface HandlerOptions<T = unknown, E = unknown> {
   checks?: CheckRegistry
   /** Внешняя схема: ещё один источник ошибок. */
   schema?: StandardSchemaLike
+  /**
+   * Подготовка значения ДО правил формы, только на сервере (списки слов не уходят в
+   * браузер): `(value, values) => новое` или `{ value, note }` — `note` уходит в
+   * `Result.notes` подсказкой к полю. Правила проверяют уже подготовленное значение,
+   * а при ошибке в поле возвращается оно же: человек видит то, что будет сохранено.
+   * Синхронно: внешняя модерация — в `checks`/`execute`.
+   */
+  prepare?: Readonly<Record<string, (value: unknown, values: Readonly<Record<string, unknown>>) => unknown>>
   /** Хранилище идемпотентности: повтор не выполняется заново. */
   idempotency?: IdempotencyStore
   /** Ограничение частоты: отказ ДО чтения тела. */
@@ -540,6 +561,21 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
     throw new Error('[form] order обязан содержать bodyLayer и namesLayer')
   if (o.idempotency && !o.idempotency.reserve !== !o.idempotency.release)
     throw new Error('[form] IdempotencyStore: reserve и release реализуются только вместе')
+  for (const [name, fn] of Object.entries(o.prepare ?? {}))
+    if (!base.byName[name] || typeof fn !== 'function')
+      throw new Error(`[form] prepare.${name}: ${base.byName[name] ? 'обязан быть функцией' : 'нет такого поля в форме'}`)
+  const prepare = o.prepare && Object.keys(o.prepare).length
+    ? (values: Record<string, unknown>) => {
+      const notes: Record<string, string> = {}
+      for (const [name, fn] of Object.entries(o.prepare!)) {
+        if (!(name in values)) continue
+        const out = fn(values[name], Object.freeze({ ...values }))
+        if (isNoted(out)) { values[name] = out.value; notes[name] = out.note }
+        else values[name] = out
+      }
+      return notes
+    }
+    : undefined
 
   return async function handle(request: Request, from: 'action' | 'fetch' = 'action', event?: E):
     Promise<Handled<T>> {
@@ -605,13 +641,14 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       // обычно уже поднято слоем имён; здесь — если order поставил его до тела
       await resolveSource(ctx)
 
-      const ev = evaluate(ctx.form!, ctx.description, { render, instance: o.instance })
+      const ev = evaluate(ctx.form!, ctx.description, { render, instance: o.instance, prepare })
       if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
 
       currentIntent = ev.intent
       const submissionId = ev.envelope!.submissionId
       const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
-        make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues })
+        make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues,
+               ...(ev.notes ? { notes: ev.notes } : {}) })
 
       ctx.reached = 'validating'
       const errors = [...ev.errors]
@@ -659,7 +696,19 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       }
 
       ctx.reached = 'executing'
-      markValidated(ctx.description, ev.values, ev.intent)
+      const proven = provenSchemas(ctx.description, ev.values, ev.intent)
+      const pick = (keys: readonly string[]) => {
+        const out: Record<string, unknown> = {}
+        const fields: Record<string, { schema: object; value: unknown }> = {}
+        for (const k of keys) {
+          if (!ctx.description.byName[k]) throw new Error(`[form] pick: нет поля '${k}' в форме`)
+          if (!(k in ev.values)) continue
+          out[k] = ev.values[k]
+          const schema = proven.get(k)
+          if (schema) fields[k] = { schema, value: ev.values[k] }
+        }
+        return stampProof(out, fields)
+      }
       let committed = false
       const afters: Array<() => Promise<void> | void> = []
       let out: { data?: T; redirect?: string }
@@ -667,6 +716,7 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       try {
         out = await o.execute({
           values: ev.values, intent: ev.intent, request,
+          pick: pick as ExecuteContext['pick'],
           commit: () => { committed = true; ctx.reached = 'committed' },
           after: (fn) => { afters.push(fn) },
           fail: (list, outcome) => {

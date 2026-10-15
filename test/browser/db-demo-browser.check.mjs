@@ -103,6 +103,7 @@ try {
     await page.waitForFunction(() => window.__probe === 'alive')
     const title = 'браузер-' + Date.now().toString(36)
     await page.fill('input[name="title"]', title)
+    await page.check('input[name="agree"]')
     // Статус собственного POST важен: 403 здесь — не отказ слоя, а CSRF-проверка
     // Kit (порт превью не в списке trusted origins), и без него шаг выглядел бы
     // как «форма не отвечает».
@@ -255,6 +256,7 @@ try {
   const firstTitle = () => page.$eval('[data-testid="row"]', (el) => el.querySelector('span').textContent.trim())
   const submitTitle = async (title) => {
     await page.fill('input[name="title"]', title)
+    await page.check('input[name="agree"]')
     await page.click('[data-testid="create"]')
   }
 
@@ -394,6 +396,7 @@ try {
     try {
       await other.goto(BASE, { waitUntil: 'networkidle' })
       await other.fill('input[name="title"]', title)
+      await other.check('input[name="agree"]')
       const done = other.waitForResponse((r) => r.url().includes('/db-demo/submit'), { timeout: 15_000 })
       await other.click('[data-testid="create"]')
       if (!(await done).ok()) throw new Error('вторая вкладка не смогла записать')
@@ -495,6 +498,55 @@ try {
     } finally {
       page.off('request', onReq)
     }
+  })
+
+  await step('без согласия форма не уходит: текст под флажком, запроса нет', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    let posts = 0
+    const watch = (r) => {
+      if (r.method() === 'POST' && r.url().includes('/db-demo/submit')) posts += 1
+    }
+    page.on('request', watch)
+    try {
+      await page.fill('input[name="title"]', `без-согласия-${Date.now() % 1_000_000}`)
+      await page.uncheck('input[name="agree"]')
+      await page.click('[data-testid="create"]')
+      await page.waitForFunction(
+        () => document.querySelector('#db-create-form')?.textContent.includes('Подтвердите согласие с правилами'),
+        null,
+        { timeout: 10_000 },
+      )
+      if (posts) throw new Error(`ушло ${posts} запросов при неотмеченном флажке`)
+      return '«Подтвердите согласие с правилами», POST не было'
+    } finally {
+      page.off('request', watch)
+    }
+  })
+
+  await step('ссылки убраны на сервере: подсказка под полем, в базе очищенный заголовок и адрес из него', async () => {
+    await page.goto(BASE, { waitUntil: 'networkidle' })
+    const stem = `ссылка-${Date.now() % 1_000_000}`
+    await page.fill('input[name="title"]', `${stem} https://example.com/x`)
+    await page.check('input[name="agree"]')
+    const done = page.waitForResponse((r) => r.url().includes('/db-demo/submit'), { timeout: 15_000 })
+    await page.click('[data-testid="create"]')
+    if (!(await done).ok()) throw new Error('запись не прошла')
+    await page.waitForFunction(
+      (t) => [...document.querySelectorAll('[data-testid="row"]')].some((e) => e.textContent.includes(t)),
+      stem,
+      { timeout: 15_000 },
+    )
+    const row = await page.$$eval('[data-testid="row"]', (els, t) => els.find((e) => e.textContent.includes(t))?.textContent ?? '', stem)
+    if (row.includes('example.com')) throw new Error(`ссылка дошла до базы: ${row.slice(0, 120)}`)
+    const slug = await page.$$eval('[data-testid="row"]', (els, t) =>
+      els.find((e) => e.textContent.includes(t))?.querySelector('[data-testid="row-slug"]')?.textContent ?? '', stem)
+    if (slug !== `/${stem}`) throw new Error(`адрес записи: ${JSON.stringify(slug)}`)
+    const note = (await page.textContent('#db-create-form [data-field-note]'))?.trim()
+    if (note !== 'Текст изменён: удалены ссылки') throw new Error(`подсказка: ${JSON.stringify(note)}`)
+    const described = await page.getAttribute('input[name="title"]', 'aria-describedby')
+    const noteId = await page.getAttribute('#db-create-form [data-field-note]', 'id')
+    if (!described?.split(' ').includes(noteId)) throw new Error(`aria-describedby без подсказки: ${described}`)
+    return `«${stem}», адрес ${slug}, подсказка «${note}»`
   })
 
   await step('итог: за всю сессию ошибок в консоли нет', async () => {

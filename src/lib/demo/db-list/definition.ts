@@ -63,6 +63,8 @@ export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_MODE_KEY, DB_LIST_POIN
 export interface DbPost {
   id: string
   title: string
+  /** Адрес записи: модель заполняет его из заголовка (`fill`); у сида — `null`. */
+  slug?: string | null
   created_at: string
 }
 
@@ -71,7 +73,7 @@ export interface DbPost {
  * сервер), а компонента строки одна — иначе «моментальная» строка выглядела бы
  * иначе, чем пришедшая с сервера, и демо проверяло бы не то.
  */
-export type DbPostView = { id: string; title: string; created_at?: string }
+export type DbPostView = { id: string; title: string; slug?: string | null; created_at?: string }
 
 /** Отказ записи: убрать карточку или оставить с повтором (см. `LIVE-APPEND.md`, Р5). */
 export type FailureMode = 'remove' | 'retry'

@@ -31,12 +31,17 @@ export interface ColumnMeta {
   range?: { min?: number; max?: number };
   /** Допустимые значения (enum). */
   values?: readonly string[];
+  /**
+   * У схемы есть правило, которого здесь нет (`pattern`): описание неполное. CHECK его
+   * и так не переносит, а генератор параметров формы (`#lib/db/form.js`) не обещает по
+   * такой схеме «проверено» — БД проверит сама.
+   */
+  partial?: true;
 }
 const META = "~kitDb";
 /**
  * Метаданные колонки: у схемы `s.*` — свои; у любой другой — из Standard JSON Schema
- * (`~standard.jsonSchema`), если схема его реализует (поле `lib/form`, zod ≥ 4.2,
- * valibot). `undefined` — схема о колонке ничего не знает, тип задаёт `db.type`.
+ * (`~standard.jsonSchema`), если схема его реализует (zod ≥ 4.2, valibot). `undefined` — схема о колонке ничего не знает, тип задаёт `db.type`.
  */
 export function columnMeta(schema: unknown): ColumnMeta | undefined {
   if (!schema || typeof schema !== "object") return undefined;
@@ -216,7 +221,11 @@ export const text = (o: TextOptions = {}): StandardSchemaV1<unknown, string> =>
           : failWith("Invalid string", "pattern");
     }
     return true;
-  }, { type: "text", ...(o.min !== undefined || o.max !== undefined ? { length: { min: o.min, max: o.max } } : {}) });
+  }, {
+    type: "text",
+    ...(o.min !== undefined || o.max !== undefined ? { length: { min: o.min, max: o.max } } : {}),
+    ...(o.pattern !== undefined ? { partial: true as const } : {}),
+  });
 export const uuid = (): StandardSchemaV1<unknown, string> =>
   make(
     "kit-db/uuid",

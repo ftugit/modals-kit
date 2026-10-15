@@ -167,10 +167,10 @@ npm run test:db     # == npx vitest run src/lib/db — седьмой файл, 
 # ✓ src/lib/db/test/db-structure.test.ts       6 групп  (границы слоя)
 # ✓ src/lib/db/test/db-port-specific.test.ts  38 групп  (новое поведение)
 # ✓ src/lib/db/test/db-sync.test.ts           25 групп  (схема из моделей, решения конфликтов, softDelete.children, ошибки полей)
-# ✓ src/lib/db/test/db-rules.test.ts          10 групп  (метка проверки, JSON Schema → CHECK, checks, validator)
+# ✓ src/lib/db/test/db-rules.test.ts          14 групп  (метка проверки, JSON Schema → CHECK, checks, validator, fill, store)
 # ✓ src/lib/db/test/db-ported.test.ts          3 it'а: db-lib 16, db-hardening 5, db-followup 9
 # ✓ src/lib/db/test/db-docs.test.ts            1 группа: README/PORTING против кода
-# ИТОГО 109 групп; на PGlite выполняются 108 — одна группа db-followup требует нативного PG
+# ИТОГО 113 групп; на PGlite выполняются 112 — одна группа db-followup требует нативного PG
 npm run test        # всё приложение: vitest по src + node --test tooling/ (стражи, 88 тестов guard'а)
 npm run check       # svelte-check: 0 ошибок
 # то же против нативного PostgreSQL 17 (портированные наборы идут через pgAdapter):

@@ -76,10 +76,13 @@ export interface FieldView {
   readonly disabled?: boolean
   /** Причина выключения — рисуется в helper-слоте; бывает только у выключенного поля. */
   readonly reason?: string
+  /** `Result.notes`: значение изменил `prepare`. */
+  readonly note?: string
 
   labelProps(): { for: string }
   helpProps(): { id: string } | undefined
   errorProps(): { id: string; role: 'alert' } | undefined
+  noteProps(): { id: string } | undefined
 
   setTouched(v?: boolean): void
   onInput(raw: unknown): void
@@ -526,12 +529,15 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const value = snapshot.values[f.name]
     const helpId = `${id}-help`
     const errorId = `${id}-error`
+    const noteId = `${id}-note`
+    const note = snapshot.result?.notes?.[f.name]
     const has = hasError(f.name, snapshot.facts, snapshot.shown, invalidMode(f.name))
     // Канал fieldState → правила disabledWhen → объявление (инвариант — в fieldLinkState).
     const ls = fieldLinkState(f, o.fieldState?.(f.name, snapshot.values) ?? disabledState(desc, f, snapshot.values, render))
     const describedBy = cfg.ui.describedBy({
       help: f.help || ls.reason ? helpId : undefined,
       error: errors.length ? errorId : undefined,
+      note: note && noteId,
     })
 
     const base = desc.attrsOf(f.name)
@@ -551,7 +557,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
       errors, value, has,
-      disabled: ls.disabled, reason: ls.reason,
+      disabled: ls.disabled, reason: ls.reason, note,
       touched: snapshot.touched[f.name] === true,
       dirty: snapshot.dirty[f.name] === true,
       fresh: snapshot.fresh[f.name] === true,
@@ -559,6 +565,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       labelProps: () => ({ for: id }),
       helpProps: () => (f.help || ls.reason ? { id: helpId } : undefined),
       errorProps: () => (errors.length ? { id: errorId, role: 'alert' as const } : undefined),
+      noteProps: () => (note ? { id: noteId } : undefined),
       setTouched: (val = true) => {
         store.set((s) => ({ ...s, touched: { ...s.touched, [f.name]: val } }))
         if (cfg.ui.shouldValidate({ event: 'blur', name: f.name, live: liveMode(),

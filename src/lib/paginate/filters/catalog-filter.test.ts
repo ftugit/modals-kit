@@ -1,6 +1,6 @@
 /**
  * Unit-набор схемы фильтров: валидация схемы, деградация опций, канонический
- * адрес, deny-safe разбор значений и параметры формы (`filterParams`).
+ * адрес, deny-safe разбор значений и параметры формы (`formParams`).
  *
  * Порт канона проверяется ПОВЕДЕНЧЕСКИ (не строками исходника): имена полей,
  * режимы, дефолты границ и allowlist'ы — то, на что опираются форма и транспорт.
@@ -18,7 +18,7 @@ import {
   catalogFilterUrlWithout,
   catalogFilterValueMap,
   catalogFilterValuesFromSearch,
-  filterParams,
+  formParams,
   parseCatalogFilterPath,
   readCatalogFilterValues,
   stripDefaultCatalogFilterValues,
@@ -267,9 +267,9 @@ describe('деградация oversized-полей', () => {
   })
 })
 
-describe('параметры формы из схемы (filterParams)', () => {
+describe('параметры формы из схемы (formParams)', () => {
   it('описание приложения: свои подписи и порядок, варианты и границы — из схемы', () => {
-    const filter = filterParams(schema)
+    const filter = formParams(schema)
     const d = defineForm({
       id: 'own',
       policy: filter.policy,
@@ -293,7 +293,7 @@ describe('параметры формы из схемы (filterParams)', () => {
   })
 
   it('поле, которого у источника нет, не попадает в описание; неизвестный ключ даёт пустые параметры', () => {
-    const filter = filterParams(schema)
+    const filter = formParams(schema)
     expect(filter.studios.and).toEqual({ validate: [] })
     expect(filter.nothing).toEqual({ validate: [] })
     const fields = filter.fields({
@@ -306,7 +306,7 @@ describe('параметры формы из схемы (filterParams)', () => {
 
   it('развёртка чужого ключа в разработке даёт предупреждение', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const filter = filterParams(schema)
+    const filter = formParams(schema)
     filter.fields({ 'genres.not': field.multiselect({ label: 'Кроме', ...filter.genres.and }) })
     expect(warn).toHaveBeenCalledWith('[filters] поле «genres.not» получило параметры «genres.and»')
     warn.mockClear()
@@ -371,7 +371,7 @@ describe('параметры формы из схемы (filterParams)', () => {
 
   it('поле, которого нет в описании приложения, не применяется', () => {
     const onlyKind = (input: CatalogFilterSchema) => {
-      const filter = filterParams(input)
+      const filter = formParams(input)
       return defineForm({ id: 'k', policy: filter.policy, fields: filter.fields({ kind: field.select({ label: 'Тип', ...filter.kind }) }) })
     }
     const form = new FormData()
@@ -423,7 +423,7 @@ describe('параметры формы из схемы (filterParams)', () => {
     expect(passed.values.kind).toBe('tv')
     // связка — правило поля (`disabledWhen`); поле и блокирующее названы
     // подписями ОПИСАНИЯ, а не схемы; текст — словаря формы
-    const filter = filterParams(linked)
+    const filter = formParams(linked)
     const d = defineForm({
       id: 'linked',
       policy: filter.policy,

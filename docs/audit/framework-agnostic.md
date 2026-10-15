@@ -85,5 +85,5 @@
 3. Порядок: модалки (загрузчик + хост) → ссылки и хуки → задача/адрес → `validate.ts`/`external.ts`.
 4. Проверка: `cyr-scan` по `src/lib/{address,modals,paginate,form,task,db}` и хукам — пусто вне словарей по умолчанию.
 
-Подписи фильтров сняты: их пишет описание формы приложения (`filterParams`, см.
+Подписи фильтров сняты: их пишет описание формы приложения (`formParams`, см.
 `src/lib/paginate/filters/README.md`). План по остальным пунктам — `docs/design/port-plan.md`.

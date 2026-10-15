@@ -53,6 +53,10 @@
   data-pending={pending ? 'true' : undefined}
 >
   <span class="min-w-0 flex-1 truncate">{item.title}</span>
+  {#if item.slug}
+    <!-- адрес записи: его заполнила модель из заголовка (fill), форма его не передаёт -->
+    <code class="hidden max-w-40 truncate text-xs text-muted-foreground sm:inline" data-testid="row-slug">/{item.slug}</code>
+  {/if}
   <span class="text-xs text-muted-foreground">
     {item.created_at ?? (pending ? '— назначит сервер —' : '')}
   </span>

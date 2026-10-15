@@ -17,7 +17,7 @@
  */
 import {
   catalogFilterFieldNames,
-  filterParams,
+  formParams,
   type CatalogFilterField,
   type CatalogFilterFormOptions,
   type CatalogFilterSchema,
@@ -81,7 +81,7 @@ export const RICKMORTY_FILTER_SEARCH: ExtraSearchSpec = Object.fromEntries(
  * схемы. Вид и подвид API ищет подстрокой, поэтому это текст, а не выбор.
  */
 export function rickMortyFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
-  const filter = filterParams(schema, opts)
+  const filter = formParams(schema, opts)
   return defineForm({
     id: 'rickmorty-filters',
     policy: filter.policy,

@@ -15,7 +15,7 @@
  * отвечают `schema_pending` (503).
  */
 import { createDb } from '#lib/db/index.js'
-import { posts } from './posts'
+import { posts } from '#lib/demo/db-form/posts.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
@@ -34,11 +34,11 @@ import {
 // для любого адаптера (Node — `process.env`, Workers — `platform.env`), в dev — ещё
 // и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
-// Модель записей — в своём модуле: её проверяют тесты без окружения (`posts.ts`).
+// Модель записей — общий модуль (`#lib/demo/db-form/posts.ts`): по ней строится и форма.
 export { posts }
 
 /**
- * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил поля формы, индекс
+ * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил полей модели, индекс
  * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
  */
 export const schema = defineSchema({

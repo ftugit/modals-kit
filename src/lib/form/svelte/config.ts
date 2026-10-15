@@ -35,7 +35,7 @@ export interface UiPolicy {
   /** Идентификатор элемента поля. */
   fieldId(formId: string, name: string): string
   /** Состав `aria-describedby` из идентификаторов подсказки и ошибки. */
-  describedBy(parts: { help?: string; error?: string }): string | undefined
+  describedBy(parts: { help?: string; error?: string; note?: string }): string | undefined
   /** Когда перепроверять поле на вводе и уходе. */
   shouldValidate(e: {
     event: 'input' | 'blur'
@@ -49,7 +49,7 @@ export interface UiPolicy {
 
 export const defaultUi: UiPolicy = {
   fieldId: (formId, name) => `${formId}-${name.replace(/\./g, '-')}`,
-  describedBy: ({ help, error }) => [help, error].filter(Boolean).join(' ') || undefined,
+  describedBy: ({ help, error, note }) => [help, error, note].filter(Boolean).join(' ') || undefined,
   shouldValidate: ({ event, name, live, state }) => {
     // эскалация: поле с ошибкой после неудачной отправки проверяется на вводе
     if (state.submitCount > 0 && state.facts.some((e) => e.path === name)) return true

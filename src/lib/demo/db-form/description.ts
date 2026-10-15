@@ -2,11 +2,16 @@
 // (createFormHandler). Разъезда «клиент проверяет одно, сервер другое» здесь
 // быть не может — валидация одна на оба пути.
 import { defineForm, field, v } from '#lib/form/index.js'
+import { formParams } from '#lib/db/form.js'
+import { posts } from './posts'
+
+/** Параметры полей из модели: правила `title` описаны там, здесь — только показ. */
+const post = formParams(posts)
 
 /**
- * Запись в таблицу демо. `title` — единственное, что решает сервер. Правила поля
- * описаны только здесь: модель (`#lib/server/posts.ts`) берёт это поле схемой колонки
- * (`fieldSchema`), и из этих же правил получается CHECK таблицы.
+ * Запись в таблицу демо. Валидаторы `title` форма получает из модели (`...post.title`:
+ * обязательное, 3–120 символов) и ничего не пишет руками. `agree` — поле только формы:
+ * в базу оно не идёт (сервер отдаёт базе `pick(['title'])`).
  */
 export const dbCreate = defineForm({
   // Имя формы попадает в `__form_instance`, а его сверяет INSTANCE_RE
@@ -14,17 +19,22 @@ export const dbCreate = defineForm({
   // id вида `db-demo.create` роняет каждую отправку на 400 envelope.invalid,
   // поэтому id только в этом алфавите.
   id: 'db_demo_create',
-  revision: 1,
+  revision: 2,
   // Единственное действие = `submit`: нативный путь маршрутизируется именем
   //  form-экшена (`?/create`), а не интентом, и сервер обязан принять именно его.
   actions: [{ id: 'submit', label: 'Добавить', validate: 'full' }],
-  fields: {
+  fields: post.fields({
     title: field.text({
       label: 'заголовок (от 3 до 120 символов)',
       placeholder: 'например: заметка из превью',
-      validate: [v.required(), v.minLength(3), v.maxLength(120)],
+      ...post.title,
     }),
-  },
+    agree: field.checkbox({
+      label: 'Согласен с правилами публикации',
+      validate: [v.required()],
+      messages: { required: 'Подтвердите согласие с правилами' },
+    }),
+  }),
 })
 
 /**

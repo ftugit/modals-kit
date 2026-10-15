@@ -435,54 +435,106 @@ const handler = createFormHandler({
 - Своя схема через `make(vendor, check)`: `check` может вернуть `{ message, code, params? }`
   (`CodedIssue`) — код дойдёт до формы так же, как у `s.*`.
 
-### Правила один раз: поле формы, `checks`, `validator`, метка проверки
+### Правила один раз: модель → форма, `fill`/`store`, `checks`, `validator`, метка проверки
 
 Кто за что отвечает (разбор — `docs/design/db-form-validation-answers.md`):
 
 | Правило | Где описано | Кто проверяет |
 |---|---|---|
-| Значение поля (длина, границы, набор) | схема поля — `s.*`, zod или **поле формы** `fieldSchema(form, 'title')` | форма; БД — если метки нет или она не совпала |
-| Своё правило формы (`sameAs`, файлы, `check`) | форма | только форма |
+| Значение поля (длина, границы, набор, обязательность) | схема поля модели — `s.text({ min: 3, max: 120 })`, `required` | форма (валидаторы из модели, `formParams`); БД — если метки нет или она не совпала |
+| Своё правило формы (`sameAs`, файлы, `check`), поле не из модели («согласен») | форма | только форма |
+| Очистка ввода (ссылки, запрещённые слова) | `prepare` обработчика формы | только сервер формы, до правил; импорт в БД её не проходит |
 | Правило данных («slug занят», «черновик без даты») | `checks` модели | только БД, всегда, в транзакции записи |
 | Последняя защита | CHECK, индексы PostgreSQL | PostgreSQL |
 
-**Поле формы схемой колонки.** `fieldSchema(form, name)` из `lib/form` — это Standard Schema
-(проверка значения правилами поля) и Standard JSON Schema (ограничения). Модель берёт его как
-любую схему, а `defineSchema` строит из JSON Schema тип и CHECK (§6):
+**Форма из модели: `formParams`.** Переходник `#lib/db/form.js` (ядро `lib/db` форму не
+импортирует; переходник нужен только тем, кто использует обе библиотеки) — как `formParams`
+у фильтров пагинатора:
 
 ```ts
-import { fieldSchema } from '#lib/form/index.js'
-import { postForm } from '$lib/post-form'   // изоморфное описание формы
-
+// модель — общий модуль (форма работает и в браузере): только поля, права и порядок, без соединения
 export const posts = defineResource({
   fields: {
-    title: field(fieldSchema<string>(postForm, 'title'), { read: () => true, create: () => true, required: true }),
+    title: field(s.text({ min: 3, max: 120 }), { read: () => true, create: () => true, required: true, … }),
     // …
   },
   // …
 })
+
+// описание формы
+import { formParams } from '#lib/db/form.js'
+const post = formParams(posts)
+export const dbCreate = defineForm({
+  id: 'db_demo_create',
+  fields: post.fields({
+    title: field.text({ label: 'Заголовок', ...post.title }),   // required + minLength(3) + maxLength(120)
+    agree: field.checkbox({ label: 'Согласен с правилами', validate: [v.required()] }),   // только форма
+  }),
+})
 ```
 
-**Метка проверки.** `createFormHandler` после полной проверки ставит на `ctx.values` метку
-«проверено схемой поля» (неперечисляемое свойство-символ `Symbol.for('modals-kit.validated-proof.v1')`).
-`insert`/`update` читают её и не повторяют правила схемы, если совпало всё: объект схемы поля
-(`proof.schema === field.schema`) и значение **после** `normalize` (строки, числа, булевы —
-`Object.is`, массивы таких — поэлементно). Не совпало что-то одно — поле проверяется полностью.
-Поэтому значения формы передают в запись как есть:
+| Модель | Валидатор формы |
+|---|---|
+| `required: true` без `fill`/`createValue`/`generated` | `v.required()` |
+| `s.text({ min, max })` | `v.minLength`, `v.maxLength` |
+| `s.integer({ min, max })` | `v.integer()`, `v.minValue`, `v.maxValue` |
+| `s.enum([...])` | `v.oneOf([...])` |
+| zod ≥ 4.2, valibot (Standard JSON Schema) | длина, границы, набор — что известно |
+
+Свой валидатор — рядом с выданными: `validate: [...post.title.validate, v.email()]`.
+`post.fields({...})` в разработке предупреждает, если поле формы развернуло параметры чужого
+поля модели. Поле модели с именем `fields` занято обёрткой — `formParams` откажет.
+
+**Метка проверки.** Если правила схемы переведены в валидаторы формы целиком (`s.text` без
+`pattern`, `s.integer`, `s.enum`, `s.boolean`; у необязательного поля — без `min`: пустое поле
+форма не проверяет на длину), параметры несут `rulesFrom: { schema, rules }`. На сервере формы
+`pick` отдаёт копию нужных полей с меткой «проверено этой схемой» (неперечисляемое
+свойство-символ `Symbol.for('modals-kit.validated-proof.v1')`):
 
 ```ts
-async execute({ values, commit, fail }) {
-  await db.resource(posts).insert(dbCtx, values)   // не { title: values.title } — копия теряет метку
+async execute({ values, pick, commit }) {
+  await db.resource(posts).insert(dbCtx, pick(['title']))   // только поля модели; agree остаётся у формы
   commit()
   return {}
 }
 ```
 
+`insert`/`update` читают метку и не повторяют правила схемы, если совпало всё: объект схемы
+(`proof.schema === field.schema`) и значение **после** `normalize` (строки, числа, булевы —
+`Object.is`, массивы таких — поэлементно). Не совпало что-то одно — поле проверяется полностью.
+Метки нет и у поля, чьи выданные правила форма заменила (`validate: [v.required()]` вместо
+`...post.title`). Отдать в запись `values` целиком нельзя: поле не из модели (`agree`) — отказ
+`forbidden`, а не молчаливый пропуск (опечатка в имени не теряется).
+
 Метка — только способ не проверять дважды, не доверие: её может поставить лишь код приложения,
 а он и так может записать что угодно. `checks`, CHECK и индексы выполняются всегда; метка не
 переживает копию объекта, JSON и HTTP — получатель просто проверит заново. Тип и ключ метки
 скопированы в обе библиотеки (`src/lib/db/proof.ts`, `src/lib/form/proof.ts`), совпадение держат
-тесты с каждой стороны.
+тесты с каждой стороны. Запись из кода (импорт, бэкап) идёт без метки — правила модели
+проверяются, очистка формы (`prepare`) — нет.
+
+**`fill` — заполнить, если не передано.** `(values, ctx, operation) => значение | undefined`:
+`values` — уже проверенные переданные поля (снимок только для чтения). Вызывается после
+проверки переданных полей и только если они без ошибок; результат проходит правила поля.
+`undefined` — не заполнять (так у `update` поле остаётся как было). Переданное значение
+(если `create`/`update` его разрешает) побеждает. Заполненное — server-owned, как
+`createValue`: `beforeWrite` его не меняет. Обязательное поле с `fill` во входе не требуется.
+
+```ts
+slug: field(s.text({ max: 80 }), { read: () => true, nullable: true, fill: (v) => slugOf(v.title) }),
+```
+
+**`store` — как хранить.** `(value, ctx) => значение` (может быть асинхронной), вызывается после
+правил поля и `fill`, до `beforeWrite`, `checks` и SQL; `null` не передаётся. Правила описывают
+то, что приходит (пароль 8–72), а колонка хранит результат (хэш), поэтому нужен явный `db.type`
+(без него `defineResource` откажет), и CHECK из правил не строится. Метка `store` не отменяет.
+
+```ts
+password: field(s.text({ min: 8, max: 72 }), { create: () => true, read: () => false, store: (v) => hash(v), db: { type: 'text' } }),
+```
+
+Порядок записи: вход → `normalize` → правила полей (или метка) → `createValue`/`fill` →
+`store` → `beforeWrite` → `checks` → SQL.
 
 **`checks` — правила данных в модели.** Выполняются при каждой записи: после проверки полей и
 `beforeWrite`, в той же транзакции (поэтому ресурсу с `checks` нужен транспорт с транзакциями,
@@ -680,7 +732,7 @@ return schema.gate(driver, { onReport: (r) => console.warn(r) })
 
 Таблица строится из ресурса: тип колонки — из схемы поля (`s.text` → `text`, `f.timestamp` →
 `timestamptz`, `s.json` → `jsonb`, …; у чужих схем — из Standard JSON Schema, если схема его
-реализует: поле формы `fieldSchema`, zod ≥ 4.2, valibot; иначе `db: { type }`, без него открытие
+реализует: zod ≥ 4.2, valibot; иначе `db: { type }`, без него открытие
 БД отказывает `validation` с именем поля), `NOT NULL` — если поле не `nullable` (метка `softDelete`
 всегда допускает NULL), `DEFAULT` — `db: { default: 'clock_timestamp()' }`, `CHECK` — из
 `s.text({ min, max })`, `s.integer({ min, max })`, `s.enum` или из JSON Schema (`minLength`/`maxLength`,
@@ -773,6 +825,7 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
 | `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
 | `#lib/db/zod.js` | `z` (zod) + `field`/`f`/`defineResource`: позволяет переносить схемы вида `field(z.string().min(1), {...})` без правок; пакет zod не тянет, импорт опциональный |
+| `#lib/db/form.js` | `formParams(resource)` → параметры полей формы из модели (`...post.title`, `post.fields({...})`) + типы `DbFieldParams`, `DbFormParams`; ядро (`index.js`) от `#lib/form` не зависит (§4) |
 
 `withTestDb(fn, options)` — тестовая БД одним вызовом, чтобы приложению не пришлось тащить
 Docker. С `url` (или env `KIT_TEST_PG_URL`) это настоящий PostgreSQL в уникальной схеме
@@ -790,11 +843,13 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 мешают друг другу. `pg`/PGlite подгружаются динамически и в production-сборку не попадают.
 
 `Field`-флаги: `column`, `schema`, `kind`, `read`/`create`/`update` (Grant),
-`generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `filters`,
+`generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `fill` и `store` (§4), `filters`,
 `orderable`, `db` (`type`/`default`/`unique`, §6), `messages` (свои тексты ошибок по коду, §4). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
 `policy`, `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `db` (§6).
 `db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`,
 `insertMany`, `validator(ctx, 'insert' | 'update' | 'check')` (проверка без записи, §4).
+`#lib/db/form.js`: `formParams(resource)` — параметры полей формы из модели (§4; переходник
+импортирует `lib/form`, ядро — нет).
 
 `softDelete.children: () => [{ resource, field, onDelete }]` — что делать с дочерними записями
 при мягком удалении (`field` — поле ребёнка с ключом родителя). `cascade` помечает удалёнными
@@ -836,7 +891,7 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 109 групп в семи файлах (на PGlite выполняются 108: одна группа требует
+Тесты слоя — 113 групп в семи файлах (на PGlite выполняются 112: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
@@ -844,7 +899,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync.test.ts` | 25 | схема из моделей (`defineSchema`: каждый вид изменения, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
-| `src/lib/db/test/db-rules.test.ts` | 10 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи |
+| `src/lib/db/test/db-rules.test.ts` | 14 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

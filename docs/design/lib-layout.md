@@ -31,7 +31,7 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
    |---|---|
    | `schema.ts` | типы схемы, `validateCatalogFilterSchema`, `catalogFilterSafeName`, `catalogFilterFieldNames`, `CATALOG_FILTER_OPTIONS_LIMIT`, `CATALOG_FILTER_NOJS_OPTIONS`, `capCatalogFilterOptions`, `catalogFilterOptionsAreComplete`; память схем — `schema-memory.ts` |
    | `form.ts` | помощники над `lib/form`: `catalogFilterPolicy`, `stripDefaultCatalogFilterValues`, `catalogFilterFormData` (генератор полей удалён — см. п. 3) |
-   | `params.ts` | схема → параметры полей описания приложения: `filterParams` |
+   | `params.ts` | схема → параметры полей описания приложения: `formParams` |
    | `url.ts` | ключи адреса: `parseCatalogFilterPath`, `readCatalogFilterValues`, `catalogFilterValuesFromSearch`, `canonicalCatalogFilterUrl`, `catalogFilterUrlWithout` |
    | `rules.ts` | связки и серверная проверка: `catalogRuleState`, `catalogFilterValueMap`, `catalogFilterViolations`, `validateCatalogFilterValues` |
    | `view.ts` | как есть: картина панели и патчи `extra`, `activeCatalogFilters` (данные чипов) |
@@ -46,7 +46,7 @@ R2 (ход 31–34): `lib/filters` — не библиотека (F53). По с�
    раз». Все места — на эту константу.
 3. ✅ **Подписи фильтров — в описании приложения.** Генератор полей
    (`compileCatalogFilterSchema`) и словари подписей режимов/границ удалены: форму под каждую
-   схему описывает приложение (`shikimoriFilterForm`, `rickMortyFilterForm`), а `filterParams`
+   схему описывает приложение (`shikimoriFilterForm`, `rickMortyFilterForm`), а `formParams`
    даёт полям варианты, границы, связки и межполевые правила. Компонент фильтров — свой у
    каждой схемы, поля расставлены руками. Решение 4 больше не нужно.
 

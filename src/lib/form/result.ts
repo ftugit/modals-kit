@@ -46,6 +46,11 @@ export interface Result<TData = unknown> {
   readonly warnings?: readonly FormError[]
   /** Значения без секретных полей. */
   readonly values: Record<string, unknown>
+  /**
+   * Подсказки сервера к полям, значение которых изменил `prepare` («Текст изменён:
+   * удалены ссылки»). Текст задаёт приложение; живут до следующей отправки.
+   */
+  readonly notes?: Readonly<Record<string, string>>
   /** Данные успешного действия. */
   readonly data?: TData
   /** Переход: только относительный и только из проверенных значений. */

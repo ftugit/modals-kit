@@ -51,6 +51,7 @@ try {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   const title = `db-demo notice ${Date.now()}`
   await page.locator('#db-create-form input[name="title"]').fill(title)
+  await page.locator('#db-create-form input[name="agree"]').check()
   await Promise.all([
     page.waitForURL((u) => u.search.includes('/create'), { timeout: 15_000 }),
     page.locator('#db-create-form [data-testid="create"]').click(),

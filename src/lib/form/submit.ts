@@ -14,6 +14,11 @@ export interface EvaluateOptions extends ValidateOptions {
   instance?: string
   /** `false` — для локальной перепроверки, где конверта может не быть. */
   requireEnvelope?: boolean
+  /**
+   * Подготовка значений ПОСЛЕ разбора и ДО правил (только сервер, `createFormHandler`
+   * `prepare`): меняет `values` на месте, возвращает подсказки к полям.
+   */
+  prepare?: (values: Record<string, unknown>) => Record<string, string> | undefined
 }
 
 /** Вердикт evaluate: конверт, значения и ошибки. */
@@ -30,6 +35,8 @@ export interface Evaluation {
   intent: string
   /** Отказ конверта: дальше разбирать нечего. */
   fatal?: FormError
+  /** Подсказки `prepare` к изменённым полям. */
+  notes?: Record<string, string>
 }
 
 /**
@@ -59,6 +66,7 @@ export function evaluate(form: EntrySource, d: FormDescription, o: EvaluateOptio
   const { action } = d.policy.intent.parse(intent)
   const descriptor = d.actions.find((a) => a.id === action) ?? d.actions[0]!
   const { values, structural } = decode(form, d)
+  const notes = o.prepare?.(values)
 
   const errors = descriptor.validate === 'none' ? [] : validateForm(d, values, {
     relax: descriptor.relax,
@@ -70,6 +78,7 @@ export function evaluate(form: EntrySource, d: FormDescription, o: EvaluateOptio
 
   return {
     envelope, values, intent,
+    ...(notes && Object.keys(notes).length ? { notes } : {}),
     publicValues: stripSecret(values, d),
     errors: normalizeErrors(errors, o.render, d.policy.limits),
   }

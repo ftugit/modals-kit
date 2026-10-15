@@ -332,7 +332,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       s = new Sql();
     if (op === 'insert' && !policyBoolean(r.policy.insert(ctx))) fail('forbidden');
     let draft: Row | undefined;
-    if (op !== 'delete') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys);
+    const filled = new Set<string>();
+    if (op !== 'delete') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys, filled);
     let before: Row | undefined;
     if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || (op === 'update' && r.checks))) {
       const pre = new Sql(),
@@ -349,14 +350,14 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       ).rows[0];
       if (!before) fail('not_found');
     }
-    const protectedValues =
-      op === 'insert'
-        ? Object.fromEntries(
-            Object.keys(r.fields)
-              .filter((k) => r.fields[k].createValue)
-              .map((k) => [k, JSON.parse(JSON.stringify(draft![k]))]),
-          )
-        : {};
+    // server-owned: `createValue` и то, что заполнил `fill`, — хук их не меняет
+    const protectedValues = draft
+      ? Object.fromEntries(
+          Object.keys(r.fields)
+            .filter((k) => (op === 'insert' && r.fields[k].createValue) || filled.has(k))
+            .map((k) => [k, JSON.parse(JSON.stringify(draft![k]))]),
+        )
+      : {};
     const validatedSnapshot = Object.fromEntries(
       Object.entries(draft ?? {}).map(([k, v]) => [k, JSON.stringify(v)]),
     );
@@ -720,7 +721,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     }
     if (operation === 'insert')
       for (const [k, f] of Object.entries(r.fields))
-        if (f.required && !f.generated && !f.createValue && !own(raw, k))
+        if (f.required && !f.generated && !f.createValue && !f.fill && !own(raw, k))
           errors.push(fieldError(f, k, 'required', DEFAULT_TEXT.required));
     if (!errors.length) errors.push(...(await runChecks(r, { ctx, operation, db, values: snapshot(values) })));
     return errors.length ? { issues: errors.map(toIssue) } : { value: values };

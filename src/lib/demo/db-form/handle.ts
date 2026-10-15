@@ -10,6 +10,7 @@ import { db, posts } from '#lib/server/db.js'
 import { invalidateLiveCache } from '#lib/server/live-cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { dbCreate, dbRemove } from './description'
+import { createPrepare } from './prepare'
 import { SCHEMA_FORM_ID } from './schema'
 import { handleSchemaResolve } from './schema-handle'
 
@@ -82,14 +83,17 @@ export function handleDbCreate(
   request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
 ): Promise<Handled> {
   return withDb((db) =>
-    createFormHandler<{ message: string; created?: { id: string; title: string; created_at: string } }>({
+    createFormHandler<{ message: string; created?: { id: string; title: string; slug: string | null; created_at: string } }>({
       description: dbCreate,
       order: SECURITY_LAYERS,
-      async execute({ values, commit, fail }) {
+      // Только сервер и ДО правил формы: правила (3–120) проверяют уже очищенный заголовок,
+      // а при ошибке в поле вернётся он же — человек видит то, что будет сохранено.
+      prepare: createPrepare,
+      async execute({ pick, commit, fail }) {
         try {
-          // Значения формы как есть: на них метка «проверено схемой поля», и запись не повторит
-          // правила `title`. Копия (`{ title: … }`) метку потеряла бы — БД проверила бы заново.
-          const row = await db.resource(posts).insert(dbCtx, values)
+          // В базу — только её поля: `agree` остаётся у формы. `pick` ставит на копию метку
+          // «проверено» для `title`, и запись не повторит правила модели.
+          const row = await db.resource(posts).insert(dbCtx, pick(['title']))
           commit()
           // Условный GET не должен пережить собственную запись: «304» на следующем
           // тике спрятал бы строку, которую человек только что добавил.
@@ -103,6 +107,7 @@ export function handleDbCreate(
               created: {
                 id: String(row.id ?? ''),
                 title: String(row.title ?? ''),
+                slug: typeof row.slug === 'string' ? row.slug : null,
                 created_at: String(row.created_at ?? ''),
               },
             },

@@ -18,6 +18,10 @@
     <p {...f.helpProps()} class="text-xs text-muted-foreground"
        data-field-reason={f.reason ? '' : undefined}>{f.reason ?? f.help}</p>
   {/if}
+  {#if f.note}
+    <!-- подсказка сервера: значение изменил prepare; id входит в aria-describedby -->
+    <p {...f.noteProps()} class="text-xs text-muted-foreground" data-field-note>{f.note}</p>
+  {/if}
   {#if f.errors[0]}
     <p {...f.errorProps()} class="text-xs font-medium text-destructive">{f.errors[0].message}</p>
   {:else if f.has}
