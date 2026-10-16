@@ -33,7 +33,7 @@
     DEMO_PAGE_SIZES,
     demoExtraOf,
     demoHashAnchor,
-    demoPreservedSearch,
+    demoFilterSearch,
     demoQueryOf,
     demoShikimoriApi,
     demoStaticFilterSchema,
@@ -493,7 +493,7 @@ import ItemRow from './ItemRow.svelte'
               {name}
               schema={filterSchema}
               extra={pagState().extra}
-              preserved={demoPreservedSearch(name, currentSearch())}
+              search={demoFilterSearch(currentSearch())}
               describe={shikiApi ? shikimoriFilterForm : rickMortyFilterForm}
               form={shikiApi ? ShikimoriFilters : RickMortyFilters}
             />

@@ -41,7 +41,7 @@ test('ключ фильтра в компоненте — ошибка', () => {
 
 test('ключ фильтра в объявлении и в серверной зоне — норма', () => {
   assert.deepEqual(checkSource('src/content/shikimori-filters.ts', `const k = 'filters.kind'`), [])
-  assert.deepEqual(checkSource('src/lib/paginate/filters/url.ts', `const p = 'filters.genres.and'`), [])
+  assert.deepEqual(checkSource('src/lib/paginate/filters/values.ts', `const p = 'filters.genres.and'`), [])
   assert.deepEqual(checkSource('src/lib/server/shikimori-filters.ts', `drop: 'filters.score.max'`), [])
 })
 
@@ -92,7 +92,7 @@ test('тесты и сами инструменты правилам не под
 
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
-    'src/lib/paginate/filters/url.ts',
+    'src/lib/paginate/filters/values.ts',
     `import { page } from '$app/state'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
   )
   assert.equal(impure.length, 2)

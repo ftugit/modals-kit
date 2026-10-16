@@ -39,7 +39,7 @@ import {
   type CatalogFilterSchema,
 } from './schema'
 import { catalogFilterPolicy, disableRulesFor, optionsAllowlist } from './form'
-import { parseCatalogFilterPath } from './url'
+import { parseCatalogFilterPath } from './values'
 
 /** Что схема даёт одному полю формы. `validate` есть всегда — его удобно дополнять. */
 export interface FilterFieldParams {

@@ -183,7 +183,7 @@ function lineOf(source, index) {
 
 /**
  * Проверяет ОДИН файл: правила содержимого + чистота зоны фильтров.
- * @param {string} relPath путь от корня проекта ('src/lib/paginate/filters/url.ts')
+ * @param {string} relPath путь от корня проекта ('src/lib/paginate/filters/values.ts')
  * @param {string} source
  * @returns {Array<{rule: string, line: number, found: string, why: string}>}
  */

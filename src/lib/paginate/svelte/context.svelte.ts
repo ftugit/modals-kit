@@ -222,7 +222,9 @@ export function usePageHref(
  * Ссылка на действие пагинатора — для UI, который сам решает, рисовать ссылку или
  * кнопку (как `PageLink`): `null` — у транспорта ссылок нет, нужна кнопка.
  *   `'reset'` — то же, что `reset()`: первая страница без указателя позиции;
- *   `'retry'` — то же, что `retry()`: текущее состояние ещё раз;
+ *   `'retry'` — то же, что `retry()`: текущее состояние ещё раз. Ссылка БЕЗ якоря:
+ *     адрес, отличный от текущего только якорем, браузер считает прокруткой к якорю и
+ *     сервер не спрашивает — без JS повтор ничего бы не сделал;
  *   `{ page, patch }` — страница с правкой extra (`{ q: undefined }` — без запроса).
  * Как это выглядит во внешнем хранилище, решает адаптер (`linkFor` → `hrefFor`).
  */
@@ -231,22 +233,31 @@ export function useLinkTo(
   name?: string,
 ): () => string | null {
   const ctx = useCtx('useLinkTo', name)
-  return linkGetter(ctx, () => {
-    const t = typeof target === 'function' ? target() : target
-    if (t === 'reset') return resetTarget(ctx.name)
-    if (t === 'retry') return { page: getState(ctx.store, ctx.name).page }
-    return t
-  })
+  const pick = () => (typeof target === 'function' ? target() : target)
+  return linkGetter(
+    ctx,
+    () => {
+      const t = pick()
+      if (t === 'reset') return resetTarget(ctx.name)
+      if (t === 'retry') return { page: getState(ctx.store, ctx.name).page }
+      return t
+    },
+    () => pick() !== 'retry',
+  )
 }
 
-function linkGetter(ctx: PaginatorContextValue, target: () => LinkTarget): () => string | null {
+function linkGetter(
+  ctx: PaginatorContextValue,
+  target: () => LinkTarget,
+  withAnchor: () => boolean = () => true,
+): () => string | null {
   if (!getPaginator(ctx.name).adapter.hrefFor) return () => null
   return () => {
     const search = ctx.currentSearch?.() ?? undefined
     const href = linkFor(ctx.name, target(), { search, extra: ctx.linkExtra?.() ?? null })
     if (href == null) return null
     // Якорь читается при каждом вычислении: у хоста это реактивный геттер.
-    const anchor = ctx.hashAnchor
+    const anchor = withAnchor() ? ctx.hashAnchor : undefined
     return anchor ? `${href}#${anchor}` : href
   }
 }

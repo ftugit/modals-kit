@@ -7,7 +7,7 @@ import { defineForm, field, type FieldDraft, type FormDescription } from '#lib/f
 import { FILTER_KEY_PREFIX } from '../source'
 import { formParams, type CatalogFilterFormOptions, type FilterFieldParams } from './params'
 import { catalogFilterFieldNames, validateCatalogFilterSchema, type CatalogFilterSchema } from './schema'
-import { parseCatalogFilterPath } from './url'
+import { parseCatalogFilterPath } from './values'
 
 export function describeAll(input: CatalogFilterSchema, opts?: CatalogFilterFormOptions): FormDescription {
   const schema = validateCatalogFilterSchema(input)

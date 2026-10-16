@@ -18,5 +18,5 @@
     <Field of={filters.f.species} />
     <Field of={filters.f.type} />
   </div>
-  <FilterActions resetHref={props.resetHref} />
+  <FilterActions resetHref={props.resetHref} onReset={props.onReset} />
 </Form>

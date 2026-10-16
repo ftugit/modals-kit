@@ -65,20 +65,20 @@ const description = describeAll(schema, { prefix: 'page.' })
 
 describe('связки и ошибки в картине панели', () => {
   it('запрет поиска виден отдельно — у поиска свой канал', () => {
-    const view = catalogFilterView(schema, { 'filters.status': 'latest' }, { description })
+    const view = catalogFilterView(schema, { 'filters.status': 'latest' }, { description, prefix: 'page' })
     expect(view.searchBlocked).toEqual({ id: 'search-with-latest', reason: 'поиск не работает' })
     expect(view.violations).toEqual([])
   })
 
   it('сработавшая связка названа в картине даже до выбора оценки', () => {
     // Объяснение блока нужно пользователю без JS и доступно у формы до её раскрытия.
-    const view = catalogFilterView(schema, { 'filters.status': 'anons' }, { description })
+    const view = catalogFilterView(schema, { 'filters.status': 'anons' }, { description, prefix: 'page' })
     expect(view.violations.map((violation) => [violation.id, violation.keys[0]])).toEqual([['link.blocked', 'filters.score.min']])
     expect(view.searchBlocked).toBeUndefined()
   })
 
   it('no-JS: заблокированное значение остаётся чипом, ошибка формы объясняет отказ', () => {
-    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' }, { description })
+    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' }, { description, prefix: 'page' })
     expect(view.violations).toEqual([{
       id: 'link.blocked',
       message: '«Оценка» нельзя использовать вместе с «Статус»: у анонсов нет оценки',
@@ -90,7 +90,7 @@ describe('связки и ошибки в картине панели', () => {
   it('«все из» ∩ «кроме» и перевёрнутый диапазон — ошибки у своих полей', () => {
     const view = catalogFilterView(schema, {
       'filters.genres.and': '1', 'filters.genres.not': '1', 'filters.year.min': 2010, 'filters.year.max': 2001,
-    }, { description })
+    }, { description, prefix: 'page' })
     expect(view.violations.map((v) => [v.id, v.keys[0]])).toEqual([
       ['noOverlap', 'filters.genres.not'],
       ['notAbove', 'filters.year.min'],
@@ -104,7 +104,7 @@ describe('связки и ошибки в картине панели', () => {
       policy: filter.policy,
       fields: filter.fields({ kind: field.select({ label: 'Формат', ...filter.kind }) }),
     })
-    const view = catalogFilterView(schema, { 'filters.kind': 'tv', 'filters.genres.and': '1' }, { description: own })
+    const view = catalogFilterView(schema, { 'filters.kind': 'tv', 'filters.genres.and': '1' }, { description: own, prefix: 'page' })
     expect(view.chips.map((chip) => [chip.path, chip.fieldLabel, chip.label])).toEqual([['filters.kind', 'Формат', 'ТВ']])
     expect(view.count).toBe(1)
   })
@@ -209,41 +209,40 @@ describe('патч хранилища', () => {
   })
 })
 
-describe('адреса, которые получает компонент', () => {
-  it('чипы несут адрес, снимающий ровно одно значение', () => {
+describe('ссылки панели строит хранилище пагинатора, не фильтры', () => {
+  it('чип несёт патч, снимающий ровно одно значение, и ссылку на этот патч', () => {
+    const asked: Record<string, unknown>[] = []
     const view = catalogFilterView(
       schema,
       { 'filters.genres.and': '1,2', 'filters.kind': 'tv' },
-      { description, url: { page: '/paginator', prefix: 'page', preserved: { 'page.size': '5' } } },
+      { description, prefix: 'page', href: (patch) => (asked.push(patch), `link#${asked.length}`) },
     )
     const chip = view.chips.find((item) => item.path === 'filters.genres.and' && item.value === '1')
-    expect(chip?.href).toContain('page.filters.genres.and=2')
-    expect(chip?.href).not.toContain('=1')
-    expect(chip?.href).toContain('page.size=5')
+    expect(chip?.patch['filters.genres.and']).toBe('2')
+    expect(chip?.patch['filters.kind']).toBe('tv')
+    expect(asked).toContainEqual(chip?.patch)
+    expect(chip?.href).toMatch(/^link#/)
     expect(chip?.label).toBe('Экшен')
     expect(chip?.fieldLabel).toBe('Жанры')
   })
 
-  it('форма получает action без своих фильтров и скрытые чужие ключи', () => {
-    const view = catalogFilterView(schema, { 'filters.kind': 'tv' }, {
-      description,
-      url: {
-        page: '/paginator',
-        preserved: { 'page.size': '5', 'page.filters.kind': 'tv', 'gallery.q': 'кот' },
-      },
-    })
-    // `action` — с сохранёнными ключами каталога, но БЕЗ своих фильтров и без
-    // указателя страницы: новый набор начинается с первой.
-    expect(view.formAction).toBe('/paginator?gallery.q=%D0%BA%D0%BE%D1%82&page.size=5')
-    expect(view.hidden).toEqual([
-      { name: 'page.size', value: '5' },
-      { name: 'gallery.q', value: 'кот' },
-    ])
+  it('«Сбросить» — патч, снимающий все объявленные фильтры', () => {
+    const view = catalogFilterView(schema, { 'filters.kind': 'tv' }, { description, prefix: 'page', href: () => '?x' })
+    expect(Object.values(view.reset.patch).every((value) => value === undefined)).toBe(true)
+    expect(Object.keys(view.reset.patch)).toContain('filters.kind')
+    expect(view.reset.href).toBe('?x')
+  })
+
+  it('у хранилища нет ссылок — href null (UI рисует кнопки), патчи на месте', () => {
+    const view = catalogFilterView(schema, { 'filters.kind': 'tv' }, { description, prefix: 'page', href: () => null })
+    expect(view.chips[0]?.href).toBeNull()
+    expect(view.chips[0]?.patch['filters.kind']).toBeUndefined()
+    expect(view.reset.href).toBeNull()
+    expect(catalogFilterView(schema, { 'filters.kind': 'tv' }, { description, prefix: 'page' }).reset.href).toBeNull()
   })
 
   it('счётчик считает значения, а не поля', () => {
-    const count = (extra: Record<string, string>) =>
-      catalogFilterView(schema, extra, { description, url: { page: '/paginator', prefix: 'page', preserved: {} } }).count
+    const count = (extra: Record<string, string>) => catalogFilterView(schema, extra, { description, prefix: 'page' }).count
     expect(count({ 'filters.genres.and': '1,2', 'filters.kind': 'tv' })).toBe(3)
     expect(count({})).toBe(0)
   })

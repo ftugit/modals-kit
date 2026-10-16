@@ -7,7 +7,7 @@
  * (`ftugit/SolidHono@shiki-final`, `src/lib/search/catalog-filter.ts`).
  */
 export * from './schema'
-export * from './url'
+export * from './values'
 // form.ts — списком: `ruleCondition`/`disableRulesFor` нужны соседям, но это не API пакета
 export { stripDefaultCatalogFilterValues, catalogFilterFormData, catalogFilterPolicy } from './form'
 export * from './params'

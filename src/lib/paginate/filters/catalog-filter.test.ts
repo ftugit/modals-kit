@@ -10,14 +10,11 @@ import {
   CATALOG_FILTER_NOJS_OPTIONS,
   CATALOG_FILTER_OPTIONS_LIMIT,
   activeCatalogFilters,
-  canonicalCatalogFilterUrl,
   capCatalogFilterOptions,
   catalogFilterFieldNames,
   catalogFilterFormData,
   catalogFilterOptionsAreComplete,
-  catalogFilterUrlWithout,
   catalogFilterValueMap,
-  catalogFilterValuesFromSearch,
   formParams,
   parseCatalogFilterPath,
   readCatalogFilterValues,
@@ -165,29 +162,11 @@ describe('имена полей и адрес', () => {
     expect(stripped).toEqual({ 'filters.year.min': '1990', 'filters.genres.and': ['1'] })
   })
 
-  it('адрес каноничен: ключи сортируются, чужие сохраняются, своя страница сбрасывается', () => {
-    const url = canonicalCatalogFilterUrl(
-      '/demo',
-      { 'filters.genres.and': ['1', '2'], 'filters.score.min': 7, page: '3' },
-      { prefix: 'page', preserved: { 'gallery.size': '12', 'page.size': '20' } },
-    )
-    expect(url).toBe('/demo?gallery.size=12&page.filters.genres.and=1%2C2&page.filters.score.min=7&page.size=20')
-  })
-
-  it('снятие одного чипа не трогает остальные значения', () => {
-    const url = catalogFilterUrlWithout('/demo', { 'filters.genres.and': ['1', '2'], 'filters.kind': ['tv'] }, 'filters.genres.and', '1')
-    expect(url).toBe('/demo?page.filters.genres.and=2&page.filters.kind=tv')
-  })
-
-  it('значения из адреса: свой префикс пагинатора срезается, числа сохраняются числами', () => {
-    const values = catalogFilterValuesFromSearch(
-      { 'page.filters.genres.and': '1,2', 'page.filters.score.min': 8, 'page.q': 'наруто', 'gallery.filters.kind': 'tv' },
-      'page',
-    )
-    expect(values).toEqual({ 'filters.genres.and': ['1', '2'], 'filters.score.min': ['8'] })
-    expect(readCatalogFilterValues({ 'filters.kind': 'tv', 'filters.score.min': 6 })).toEqual({
+  it('значения из extra: списки строкой через запятую, числа сохраняются', () => {
+    expect(readCatalogFilterValues({ 'filters.kind': 'tv', 'filters.score.min': 6, 'filters.genres.and': '1,2', q: 'x' })).toEqual({
       'filters.kind': ['tv'],
       'filters.score.min': ['6'],
+      'filters.genres.and': ['1', '2'],
     })
   })
 

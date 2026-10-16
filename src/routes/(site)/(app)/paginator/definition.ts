@@ -42,7 +42,6 @@ import {
   extraField,
   getPaginator,
   hasPaginator,
-  type CarriedField,
   type EdgeTrigger,
   type Extra,
   type ExtraSearchSpec,
@@ -217,30 +216,18 @@ export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterS
 }
 
 /**
- * Чужие ключи адреса — для адресов ссылок и нативной формы фильтров.
- *
- * Своё отбрасывается: указатель страницы каталога (новый набор фильтров
- * начинается с первой) и ключи ЕГО фильтров (их заменяет форма). Ключи модалки
- * — состояние слоя модалок, а не фильтров. Всё остальное (размер страницы,
- * источник, вторая полоса `?gallery.*`) обязано пережить смену фильтров.
- */
-/**
- * Что нативная форма фильтров обязана пронести дальше (`page.size`, `page.src`, …):
- * всё, кроме указателя страницы, самих фильтров и модалок. Что из адреса своё и как
- * оно названо, решает адаптер пагинатора (`carryFields`); демо снимает только чужой
- * слой модалок — форма фильтров их закрывает.
+ * Срез адреса для панели фильтров — без слоя модалок: модалка — чужое состояние,
+ * и смена фильтров (ссылка чипа, «Сбросить», форма без JS) её закрывает. Что в
+ * адресе своё и как оно названо, решает адаптер пагинатора (`linkFor`,
+ * `carryFields`); демо только убирает чужой слой.
  *
  * Вызывающий передаёт ЖИВОЙ срез адреса — `currentSearch()` слоя роутера, а не
  * `page.url.search`: пагинатор пишет адрес «мелкой» записью истории, и
  * `page.url` после неё устаревает (баг F5, docs/audit/crutches.md).
  */
-export function demoPreservedSearch(
-  name: string,
-  search: Readonly<Record<string, unknown>> | null,
-): Record<string, string> {
-  const fields: CarriedField[] = getPaginator(name).adapter.carryFields?.(search, ['filters.*']) ?? []
-  const out: Record<string, string> = {}
-  for (const { name: key, value } of fields) {
+export function demoFilterSearch(search: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(search)) {
     if (key === 'modal' || key.startsWith('modal.')) continue
     out[key] = value
   }

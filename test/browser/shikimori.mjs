@@ -866,6 +866,12 @@ async function checkFiltersNoJs(browser) {
     );
     console.log(`      чип из схемы: ${chip.replace(/\s+/g, ' ').trim()}`);
 
+    // «Сбросить» — ссылка от адаптера (ход 247): без своих фильтров, чужие ключи целы.
+    const resetHref = await page.locator('[data-testid="catalog-filter-reset"]').getAttribute('href');
+    if (!resetHref || resetHref.includes('page.filters.') || !resetHref.includes('page.size=5') || !resetHref.includes('page.src=animes'))
+      throw new Error(`без JS «Сбросить» ведёт не туда: ${resetHref}`);
+    console.log('  ok  без JS «Сбросить» — ссылка без фильтров, размер и источник целы');
+
     // Снятие чипа — настоящая ссылка: без JS это обычный переход.
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded' }),

@@ -17,7 +17,7 @@ import {
 } from '#lib/form/index.js'
 import { FILTER_KEY_PREFIX } from '../source'
 import { validateCatalogFilterSchema, type CatalogFilterMode, type CatalogFilterRule, type CatalogFilterSchema } from './schema'
-import { parseCatalogFilterPath } from './url'
+import { parseCatalogFilterPath } from './values'
 import { catalogFilterFormData, ruleCondition } from './form'
 import type { CatalogFilterDescribe } from './params'
 

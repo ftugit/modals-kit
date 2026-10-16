@@ -35,5 +35,5 @@
       <Field of={filters.f['year.max']} />
     </div>
   </div>
-  <FilterActions resetHref={props.resetHref} />
+  <FilterActions resetHref={props.resetHref} onReset={props.onReset} />
 </Form>

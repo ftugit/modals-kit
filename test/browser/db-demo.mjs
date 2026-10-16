@@ -145,6 +145,11 @@ try {
     JSON.stringify({ asked, url: curPage.url() }))
   ok('прочий отказ — кнопка «Повторить»',
     (await errRow.locator('a, button').allInnerTexts()).join() === 'Повторить', (await errRow.allInnerTexts()).join(' | '))
+  // Без якоря: адрес, отличный от текущего только якорем, браузер без JS не загружает
+  // заново (прокрутка к якорю), и повтор ничего бы не сделал. Проверено и без JS:
+  // отказ эмулировали на сервере (ход 247), ссылка загрузила список.
+  const retryHref = await errRow.locator('a').getAttribute('href').catch(() => null)
+  ok('«Повторить» — ссылка на текущий адрес без якоря', retryHref !== null && !retryHref.includes('#'), String(retryHref))
   await errRow.locator('a, button').click()
   await errRow.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
   ok('«Повторить» загружает первую страницу', await errRow.count() === 0)

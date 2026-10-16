@@ -12,11 +12,10 @@
    * пагинатора, и нигде не регистрируется.
    */
   import { untrack } from 'svelte'
-  import { currentPathname } from '#lib/paginate/sveltekit/router.js'
-  import { getClientStore, getPaginator, setExtra } from '#lib/paginate/index.js'
+  import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
+  import { getClientStore, getPaginator, linkFor, setExtra } from '#lib/paginate/index.js'
   import {
     catalogFilterExtraPatch,
-    catalogFilterRemoveValuePatch,
     catalogFilterView,
     type CatalogFilterSchema,
   } from '#lib/paginate/filters/index.js'
@@ -33,10 +32,14 @@
     schema: CatalogFilterSchema
     /** Значения фильтров из состояния пагинатора (`extra`), не из адреса. */
     extra: Record<string, unknown> | undefined
-    /** Путь страницы каталога для адресов ссылок (по умолчанию — текущий). */
+    /** Путь страницы каталога: `action` формы и начало ссылок (по умолчанию — текущий). */
     url?: string
-    /** Чужие ключи адреса: их сохраняет и форма (скрытыми полями), и чипы. */
-    preserved?: Record<string, string>
+    /**
+     * Срез адреса, от которого адаптер строит ссылки и скрытые поля (по умолчанию —
+     * живой адрес). Приложение передаёт свой, если часть чужого состояния не должна
+     * переживать смену фильтров (например, открытая модалка).
+     */
+    search?: Readonly<Record<string, unknown>>
     /** Описание формы под схему — функция приложения (та же, что у сервера). */
     describe: CatalogFilterDescribe
     /** Компонент фильтров этой схемы: поля расставлены руками. */
@@ -51,7 +54,7 @@
     schema,
     extra,
     url = currentPathname(),
-    preserved = {},
+    search: searchProp,
     describe,
     form: FilterForm,
     messages,
@@ -66,8 +69,20 @@
   /** Описание формы: имена полей — ключи хранилища (`page.filters.kind`). */
   const description = $derived(describe(schema, { prefix: prefix ? `${prefix}.` : '' }))
 
+  /**
+   * Адрес — только через адаптер: ссылку на «первую страницу после патча» строит
+   * `linkFor` (у хранилища без адреса — `null`, и UI рисует кнопки), скрытые поля
+   * формы — `carryFields` (всё, кроме своих фильтров и указателя страницы).
+   */
+  const search = $derived(searchProp ?? currentSearch())
+  const href = (patch: Record<string, string | number | undefined>): string | null => {
+    const query = linkFor(name, { page: 1, patch }, { search })
+    return query === null ? null : url + query
+  }
+  const hidden = $derived(getPaginator(name).adapter.carryFields?.(search, ['filters.*']) ?? [])
+
   /** Вся картина панели — из схемы, описания и extra: ни одного решения в разметке. */
-  const view = $derived(catalogFilterView(schema, extra, { description, url: { page: url, prefix, preserved }, messages }))
+  const view = $derived(catalogFilterView(schema, extra, { description, prefix, href, messages }))
 
   /**
    * Форма сеет значения ОДИН раз (её зеркало — черновик пользователя), поэтому
@@ -104,13 +119,14 @@
   }
 
   /** Снятие одного значения (клик по чипу) — тем же каналом состояния. */
-  function remove(chip: { path: string; value: string }): boolean {
-    void setExtra(
-      getClientStore(),
-      name,
-      catalogFilterRemoveValuePatch(schema, extra, chip.path, chip.value),
-    )
+  function remove(chip: { patch: Record<string, string | number | undefined> }): boolean {
+    void setExtra(getClientStore(), name, chip.patch)
     return true
+  }
+
+  /** «Сбросить» с JS — тот же канал: адрес пишет хранилище, форма пересоздаётся по чипам. */
+  function reset() {
+    void setExtra(getClientStore(), name, view.reset.patch)
   }
 </script>
 
@@ -167,9 +183,10 @@
             {schema}
             values={extra}
             {prefix}
-            action={view.formAction ?? url}
-            hidden={view.hidden}
-            resetHref={view.formAction ?? url}
+            action={url}
+            {hidden}
+            resetHref={view.reset.href ?? undefined}
+            onReset={reset}
             onApply={apply}
           />
         {/key}

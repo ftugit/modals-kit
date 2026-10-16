@@ -19,7 +19,7 @@
  */
 import type { FormDescription, MessageDictionary } from '#lib/form/index.js'
 import { catalogFilterFieldNames, type CatalogFilterBound, type CatalogFilterMode, type CatalogFilterSchema } from './schema'
-import { canonicalCatalogFilterUrl, catalogFilterUrlWithout, parseCatalogFilterPath, readCatalogFilterValues } from './url'
+import { parseCatalogFilterPath, readCatalogFilterValues } from './values'
 import { stripDefaultCatalogFilterValues } from './form'
 import { catalogFilterValueMap, catalogFilterViolations, catalogRuleState, type CatalogFilterViolation } from './rules'
 
@@ -82,34 +82,24 @@ export function activeCatalogFilters(
 export type CatalogFilterPatch = Record<string, string | number | undefined>
 
 /**
- * Как фильтры связаны с адресом: путь страницы каталога, префикс ключей и ЧУЖИЕ
- * ключи, которые обязаны пережить смену набора. Передан — значит компонент
- * получает готовые адреса и ничего не считает сам.
+ * Ссылка на состояние после патча — ответ хранилища пагинатора (`linkFor`):
+ * `null`, если у хранилища ссылок нет (local/cursor) — UI рисует кнопку.
  */
-export type CatalogFilterUrlView = {
-  /** Путь каталога: он же `action` нативной формы (`/paginator`). */
-  page: string
-  prefix?: string
-  /** Чужие ключи адреса (соседний пагинатор, размер страницы, источник). */
-  preserved?: Record<string, string>
-}
+export type CatalogFilterHref = (patch: CatalogFilterPatch) => string | null
 
-/** Чип активного фильтра: значение плюс адрес, снимающий ТОЛЬКО его. */
-export type CatalogFilterChip = ActiveCatalogFilter & { href: string }
+/**
+ * Чип активного фильтра: значение, патч, снимающий ТОЛЬКО его, и ссылка на тот же
+ * патч (`null` — у хранилища ссылок нет).
+ */
+export type CatalogFilterChip = ActiveCatalogFilter & { patch: CatalogFilterPatch; href: string | null }
 
 /** Что пользователь видит в панели фильтров — целиком из схемы и extra. */
 export type CatalogFilterView = {
   source: string
   builtAt?: string
   chips: readonly CatalogFilterChip[]
-  /**
-   * `action` нативной формы (GET на страницу каталога) — без запроса: адрес
-   * GET-формы браузер целиком заменяет своими полями, поэтому чужие ключи едут
-   * скрытыми полями (`hidden`), а не в action.
-   */
-  formAction?: string
-  /** Скрытые поля формы: чужие ключи адреса, которые обязаны пережить отправку. */
-  hidden: readonly { name: string; value: string }[]
+  /** «Сбросить»: патч, снимающий все фильтры, и ссылка на него (`null` — кнопка). */
+  reset: { patch: CatalogFilterPatch; href: string | null }
   /** Число применённых значений — для счётчика на кнопке. */
   count: number
   /** Поиск запрещён связкой: показать причину рядом с полем запроса. */
@@ -130,8 +120,10 @@ export function catalogFilterView(
   opts: {
     /** Описание формы фильтров (имена — с адресным слоем `prefix.`): подписи и проверка. */
     description: FormDescription
+    /** Слой имён полей у хранилища (`page` → `page.filters.kind`); пусто — без слоя. */
     prefix?: string
-    url?: CatalogFilterUrlView
+    /** Ссылка на состояние после патча (`linkFor` пагинатора); нет — ссылок нет. */
+    href?: CatalogFilterHref
     /** Словарь приложения для текстов нарушений. */
     messages?: MessageDictionary
   },
@@ -139,30 +131,21 @@ export function catalogFilterView(
   const values = readCatalogFilterValues(extra)
   const map = catalogFilterValueMap(extra)
   const search = catalogRuleState(schema, map).search
-  const urlOpts = { prefix: opts.url?.prefix ?? opts.prefix ?? 'page', preserved: opts.url?.preserved ?? {} }
-  const layer = urlOpts.prefix ? `${urlOpts.prefix}.` : ''
+  const layer = opts.prefix ? `${opts.prefix}.` : ''
+  const href = (patch: CatalogFilterPatch): string | null => opts.href?.(patch) ?? null
   const chips: CatalogFilterChip[] = []
   for (const chip of activeCatalogFilters(schema, values)) {
     const described = opts.description.byName[layer + chip.path]
     if (!described) continue
-    chips.push({
-      ...chip,
-      fieldLabel: described.label ?? chip.fieldLabel,
-      href: opts.url ? catalogFilterUrlWithout(opts.url.page, values, chip.path, chip.value, urlOpts) : '',
-    })
+    const patch = catalogFilterRemoveValuePatch(schema, extra, chip.path, chip.value)
+    chips.push({ ...chip, fieldLabel: described.label ?? chip.fieldLabel, patch, href: href(patch) })
   }
+  const resetPatch = catalogFilterExtraPatch(schema, {})
   return {
     source: schema.source,
     ...(schema.builtAt ? { builtAt: schema.builtAt } : {}),
     chips,
-    ...(opts.url ? { formAction: canonicalCatalogFilterUrl(opts.url.page, {}, urlOpts) } : {}),
-    // Скрытые поля формы — ЧУЖИЕ ключи адреса: свои фильтры форма заменяет
-    // сама, а её указатель страницы (новый набор начинается с первой) не
-    // сохраняется. Правило то же, что у `searchFromValues`, иначе форма и
-    // адрес разошлись бы в том, какие ключи «свои».
-    hidden: Object.entries(opts.url?.preserved ?? {})
-      .filter(([name]) => name !== urlOpts.prefix && !name.startsWith(`${urlOpts.prefix}.filters.`))
-      .map(([name, value]) => ({ name, value })),
+    reset: { patch: resetPatch, href: href(resetPatch) },
     count: chips.length,
     ...(search ? { searchBlocked: { id: search.id, reason: search.reason } } : {}),
     violations: catalogFilterViolations(opts.description, schema, extra, { prefix: layer, messages: opts.messages }),

@@ -11,7 +11,7 @@ import {
   type FieldCondition,
 } from '#lib/form/index.js'
 import { catalogFilterFieldNames, CATALOG_FILTER_OPTIONS_LIMIT, catalogFilterOptionsAreComplete, type CatalogFilterField, type CatalogFilterRule, type CatalogFilterSchema } from './schema'
-import { parseCatalogFilterPath } from './url'
+import { parseCatalogFilterPath } from './values'
 
 /**
  * Политика формы фильтров: единственное отличие от умолчательной — предел
