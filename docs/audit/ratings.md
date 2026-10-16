@@ -351,7 +351,7 @@
 | `EdgeSentinel.svelte` | 46 | 10 | прочитан | Сентинел края: регистрация в эффекте, имя через untrack с объяснением. | $effect×1, untrack×1 |
 | `LoadMoreSlot.svelte` | 93 | 9 | прочитан | Headless-слот с href (работает без JS) и preventDefault при клике — правильное прогрессивное улучшение. Мелочь: `Math.min(...loaded)` на каждый перерасчёт. | untrack×1 |
 | `PageAnchor.svelte` | 53 | 9 | прочитан | Маркер начала страницы. Мелочь: `anchorEl` привязан через bind:this, но нигде не читается (мёртвая переменная). | $effect×1, untrack×1 |
-| `PaginatorHost.svelte` | 671 | 8 | прочитан | Ход 10: C11 (d1a5087) — scrollDriver ставится в onMount и снимается в cleanup, режим накопления в Session стора, общий адаптер не мутируется; снапшот loading восстанавливает ядро (F13); было 6. −1: прямой импорт $lib/router/sveltekit в фреймворконезависимом слое (единственная точка D2, задокументировано). −1: 662 строки, хост совмещает жесты, триггеры и prepend-удержание | $effect×8, window/document×1, rAF×3, any×8, svelte-ignore×1, untrack×2 |
+| `PaginatorHost.svelte` | 623 | 8 | прочитан | Ход 10: C11 (d1a5087) — scrollDriver ставится в onMount и снимается в cleanup, режим накопления в Session стора, общий адаптер не мутируется; снапшот loading восстанавливает ядро (F13); было 6. −1: прямой импорт $lib/router/sveltekit в фреймворконезависимом слое (единственная точка D2, задокументировано). −1: 662 строки, хост совмещает жесты, триггеры и prepend-удержание | $effect×8, window/document×1, rAF×3, any×8, svelte-ignore×1, untrack×2 |
 | `PaginatorScope.svelte` | 33 | 9 | прочитан | Скоуп стора: снапшоты один раз через untrack. `typeof window` вместо `esm-env` (K8). | untrack×1 |
 | `PendingIndicator.svelte` | 42 | 10 | прочитан | Индикатор ожидания, чистый $derived. | untrack×1 |
 | `context.svelte.ts` | 243 | 9 | прочитан | Контекст и хуки на рунах; подписки в $effect (на SSR не исполняются). `typeof window` в `useScopeStore` (K8). | $effect×2 |
@@ -534,10 +534,11 @@
 |---|---:|:---:|:---:|---|---|
 | `EmptyState.svelte` | 35 | — | ⏳ |  | untrack×1 |
 | `EndRow.svelte` | 36 | — | ⏳ |  | untrack×1 |
-| `ErrorRow.svelte` | 64 | — | ⏳ |  | untrack×1 |
+| `ErrorRow.svelte` | 82 | — | ⏳ |  | untrack×1 |
 | `EventLog.svelte` | 50 | — | ⏳ |  | untrack×1 |
 | `LoadMoreLink.svelte` | 81 | — | ⏳ |  |  |
 | `LoadingIndicator.svelte` | 38 | — | ⏳ |  | untrack×1 |
+| `LiveStatus.svelte` | 31 | — | ⏳ | Ход 246: озвучка загрузки и ошибок, вынесена из хоста — пагинатор текстов не пишет |  |
 | `PageColumns.svelte` | 190 | — | ⏳ |  | $effect×1, untrack×1 |
 | `PageDivider.svelte` | 25 | — | ⏳ |  |  |
 | `PageLink.svelte` | 93 | — | ⏳ |  | untrack×1 |
@@ -546,7 +547,7 @@
 | `PaginatorSettings.svelte` | 115 | — | ⏳ |  | window/document×2, untrack×1 |
 | `PaginatorSettingsForm.svelte` | 201 | — | ⏳ |  | svelte-ignore×2 |
 | `ReplaceLoadingRow.svelte` | 36 | — | ⏳ |  | untrack×1 |
-| `ResetButton.svelte` | 31 | — | ⏳ |  | untrack×1 |
+| `ResetButton.svelte` | 47 | — | ⏳ |  | untrack×1 |
 | `Skeleton.svelte` | 15 | — | ⏳ |  |  |
 | `Spinner.svelte` | 34 | — | ⏳ |  |  |
 | `StatusRow.svelte` | 22 | — | ⏳ |  |  |
@@ -554,7 +555,7 @@
 | `compile.ts` | 229 | — | ⏳ |  |  |
 | `event-log.ts` | 19 | — | ⏳ |  | any×1 |
 | `index.ts` | 26 | — | ⏳ |  |  |
-| `search.svelte.ts` | 214 | — | ⏳ |  | setTimeout×1, untrack×1 |
+| `search.svelte.ts` | 223 | — | ⏳ |  | setTimeout×1, untrack×1 |
 | `types.ts` | 55 | — | ⏳ |  |  |
 
 ## `src/lib/ui/primitives/`
