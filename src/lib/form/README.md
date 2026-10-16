@@ -323,7 +323,8 @@ const handle = createFormHandler({
 | `multiselect` | `multiselect` | `multiple` | `SelectField` → `Select multiple` |
 | `checkbox` | `checkbox` | `type="checkbox" value="on"` | `CheckboxField` → `Checkbox` |
 | `switch` | `checkbox` | `type="checkbox" role="switch" value="on"` | `SwitchField` → `Switch` |
-| `file`, `files` | `file` / `files` | `type="file"` (`multiple`) | — |
+| `file`, `files` | `file` / `files` | `type="file"` (`multiple`) | `file`: `FileField` → `FileInput` |
+| `fields` | `fields` (вложенный: записи `имя.…`) | — | `FieldSetField` → места под поля из `TextField`, `SelectField`, `NumberField` (см. «Набор полей от пользователя») |
 
 `otp` и `switch` — не новые типы значения, а представления существующих: код — это
 строка (длину и цифры задают правила `v.maxLength(6)`, `v.pattern({ source: '\\d{6}' })`,
@@ -653,8 +654,9 @@ rows.remove(key)
 
 Операция — данные (`editor.addRow`), в браузере она применяется к описанию в памяти.
 Сам сервер служебные действия (`mutate-schema`) не выполняет: строки восстанавливает
-маршрут — по ключам строк в теле, правила берутся из серверного шаблона группы (демо:
-`routes/(site)/(app)/form/handle.ts`, `expandFor`). Клиент передаёт только ключ.
+маршрут — по ключам строк в теле, правила берутся из серверного шаблона группы. Клиент
+передаёт только ключ. Живого примера в демо нет (убран в ходе 228): поля, которые
+собирает пользователь, — это поле `field.fields`, а не строки.
 
 ## Поля из рантайма
 
@@ -680,50 +682,69 @@ if (r.ok) form.apply([editor.add(r.field)])        // поле появится 
 ## Набор полей от пользователя
 
 Пользователь собирает поля сам (коллекция: «описание», «ссылка»…) и выбирает им
-правила. Разработчик описывает, из чего собирать: каталог видов и схему валидаторов
-с пределами аргументов. `compile` приводит описания пользователя к схеме.
+правила. Для формы это **одно поле** рядом с `text`, `number`, `email`: `field.fields`.
+В нём разработчик описывает, из чего собирать: каталог видов и схему валидаторов с
+пределами аргументов.
 
 ```ts
-import { defineFieldKit } from '#lib/form/index.js'
-
-const kit = defineFieldKit({
-  limits: { fields: 20 },                          // предел самого набора
-  rules: {                                         // схема валидаторов
-    required: {},
-    maxLength: { min: 1, max: 5000, default: 500 },
-    minValue: { min: -1_000_000, max: 1_000_000 },
-  },
-  kinds: {
-    textarea: { input: 'textarea', extra: ['required', 'maxLength'] },
-    email: { input: 'email', locked: ['email'], extra: ['required', 'maxLength'], rules: { maxLength: { max: 254 } } },
-    tel: { input: 'tel', locked: [{ rule: 'pattern', arg: 'e164' }], extra: ['required'] },
-    number: { input: 'number', extra: ['required', 'minValue'] },
-  },
-})
-
-kit.rulesFor('email')   // { locked: [{ rule: 'email' }], extra: [...], limits: { maxLength: { min: 1, max: 254, default: 254 } } }
-const r = kit.compile([{ name: 'link', kind: 'textarea', label: 'Ссылка', rules: [{ rule: 'maxLength', arg: 9_999_999 }] }])
-// r.ok → r.specs (хранить), r.fields (дескрипторы с префиксом u_), r.changes:
-// [{ field: 'link', rule: 'maxLength', code: 'clamped', from: 9999999, to: 5000 }]
+export const collection = defineForm({ id: 'collection', fields: {
+  title: field.text({ label: 'Название', validate: [v.required(), v.maxLength(120)] }),
+  props: field.fields({ label: 'Поля записи', max: 20,          // предел самого набора
+    rules: {                                                  // схема валидаторов
+      required: {},
+      maxLength: { min: 1, max: 5000, default: 500 },
+      minValue: { min: -1_000_000, max: 1_000_000 },
+    },
+    kinds: {                                                  // каталог видов
+      textarea: { label: 'Текст', input: 'textarea', extra: ['required', 'maxLength'] },
+      email: { label: 'Почта', input: 'email', locked: ['email'], extra: ['required', 'maxLength'], rules: { maxLength: { max: 254 } } },
+      tel: { label: 'Телефон', input: 'tel', locked: [{ rule: 'pattern', arg: 'e164' }], extra: ['required'] },
+      number: { label: 'Число', input: 'number', extra: ['required', 'minValue'] },
+    } }),
+} })
+// <Field of={form.f.props} />  — места под поля рисует компонент приложения
 ```
+
+Значение поля — список `FieldSetItem`, уже приведённый к пределам на обеих сторонах:
+`execute` получает проверенный список, его и хранят. Элемент самодостаточен:
+`{ name, preset, input, label, rules }`, правила вида — внутри `rules`.
 
 | Правило | Как |
 |---|---|
 | `locked` | правила вида: всегда есть у поля, снять или заменить нельзя; выбор только добавляет |
-| `extra` | что пользователь может добавить; правило не из списка — дефект `kit.rule-not-allowed` |
-| `min`/`max` | аргумент вне пределов заменяется ближайшей границей (`clamped`); число может быть отрицательным |
-| `default` | правило, которого пользователь не выбрал, добавляется с этим значением (`added`); выбранное без значения получает его же (`defaulted`) |
+| `extra` | что пользователь может добавить; правило не из списка — ошибка `kit.rule-not-allowed` |
+| `min`/`max` | значение вне пределов заменяется ближайшей границей; число может быть отрицательным |
+| `default` | правило, которого пользователь не выбрал, добавляется с этим значением; выбранное без значения получает его же |
 | пределы вида | только сужают пределы схемы; значение по умолчанию сужается вместе с ними |
 | «нет предела» | отсутствие ключа, `undefined`, `null`, `false`, `''` — своих чисел у библиотеки нет |
-| неверная настройка | правило не из реестра, `min > max`, предел не число — исключение при `defineFieldKit` |
+| неверная настройка | правило не из реестра, `min > max`, предел не число — исключение при объявлении |
 
-Хранить — `r.specs` (сериализуемые `FieldSpec`), сервер поднимает их через
-`createAppSource`, клиент собирает то же описание: `ageFields(appendFields(base,
-compileFieldSpecs(specs).fields))`. Проверка идёт в момент записи: когда схема стала
-строже, старые записи не перепроверяются, при правке обязаны пройти новые правила.
-Тексты для человека (имена видов, правил, замены) выбирает приложение по кодам.
-Живой пример — страница `/fields` (`routes/(site)/(app)/fields/`): конструктор набора,
-форма записи на нём и пример записи; набор и запись лежат в `#lib/cache`.
+Записи в разметке — по местам: `props.s1.label`, `props.s1.kind`, `props.s1.rules`
+(повторяется), `props.s1.max_length` (значение правила, имя в snake_case;
+`fieldSetName(name, slot, part)`). Место без названия не считается, порядок — порядок
+появления в форме. Слой имён пропускает ключи `props.…` (тип объявлен `nested`), лишний
+уровень и повтор одиночной записи — ошибка разбора. Ошибки лежат на подпутях:
+`props.s1.max_length`, `props.s1.rules`, `props.s1.kind`; предел набора — на `props`.
+При отказе набранное возвращается в разметку — без JS ничего не теряется.
+
+Сохранённый набор снова становится формой — как есть или с полями из кода:
+
+```ts
+const record = defineForm({ id: 'record', from: saved,       // поля набора: u_s1, u_s2…
+  fields: { title: field.text({ label: 'Название' }), image: field.file({ label: 'Файл' }) } })
+```
+
+Поля из `from` идут первыми, с префиксом `u_`, и не считаются «новыми» — `required`
+действует сразу. Каталог для этого не нужен: правила уже в значении. Сервер строит
+форму записи из сохранённого (`source: { resolve: async () => defineForm({ from: … }) }`),
+а не из тела запроса. Проверка идёт в момент записи: когда схема стала строже, старые
+записи не перепроверяются, при правке обязаны пройти новые правила.
+
+Тексты для человека (подписи видов — в `kinds[…].label`, правил — в компоненте) выбирает
+приложение. Замены при сохранении (что было обрезано до предела) разбор не сообщает:
+значение приходит уже приведённым. Живой пример — страница `/fields`
+(`routes/(site)/(app)/fields/`): форма набора, форма записи на нём и пример записи;
+набор и запись лежат в `#lib/cache`. Компонент поля — `src/lib/components/form/FieldSetField.svelte`.
 
 ## Внешние схемы
 
