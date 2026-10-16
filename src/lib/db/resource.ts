@@ -237,7 +237,11 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     }
     return `(${policy}) AND (${client}) AND (${deleted})`;
   }
-  async function idWhere(ctx: DataContext, op: 'update' | 'delete' | 'restore', s: Sql, id: unknown) {
+  /**
+   * Строка по ключу для изменения. `force` — удаление навсегда: удалённую (мягко) строку оно
+   * достаёт только у того, кто видит удалённые (`readDeleted`), иначе — только живую.
+   */
+  async function idWhere(ctx: DataContext, op: 'update' | 'delete' | 'restore', s: Sql, id: unknown, force = false) {
     const v = await validateField(r.fields[r.primaryKey], id, r.primaryKey);
     if (op === 'restore') {
       // Восстановить = увидеть удалённую: право `readDeleted` (where проверит его при
@@ -245,7 +249,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule(r, 'restore', ctx) });
       return `(${predicate}) AND ${col(r, r.softDelete!.field)} IS NOT NULL AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
     }
-    return `(${await where(ctx, op, s)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
+    const withDeleted = force && !!r.softDelete && grants(r.softDelete.readDeleted, ctx);
+    return `(${await where(ctx, op, s, undefined, withDeleted)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
   }
   async function includes(ctx: DataContext, names: readonly string[] | undefined, s: Sql) {
     if (names === undefined) return { joins: '', select: '', keys: [] as string[] };
@@ -371,6 +376,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
+    force = false,
   ): Promise<Out> {
     const keys = readable(r, ctx),
       s = new Sql();
@@ -381,7 +387,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     let before: Row | undefined;
     if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || (op === 'update' && r.checks))) {
       const pre = new Sql(),
-        predicate = await idWhere(ctx, op, pre, id);
+        predicate = await idWhere(ctx, op, pre, id, force);
       before = (
         await dbx.query(
           withSignal(
@@ -442,8 +448,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         ? `INSERT INTO ${table(r)} (${entries.map(([k]) => ident(r.fields[k].column ?? k)).join(',')}) VALUES (${entries.map(([k, v]) => s.fieldParam(r.fields[k], v)).join(',')})`
         : `INSERT INTO ${table(r)} DEFAULT VALUES`;
     } else {
-      const predicate = await idWhere(ctx, op, s, id);
-      if (op === 'delete' && !r.softDelete) sql = `DELETE FROM ${table(r)} WHERE ${predicate}`;
+      const predicate = await idWhere(ctx, op, s, id, force);
+      if (op === 'delete' && (!r.softDelete || force)) sql = `DELETE FROM ${table(r)} WHERE ${predicate}`;
       else {
         const sets =
           op === 'delete'
@@ -490,7 +496,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       throw e;
     }
     if (!row) fail('not_found');
-    if (op === 'delete' && r.softDelete?.children) await softDeleteChildren(dbx, ctx, id);
+    if (op === 'delete' && !force && r.softDelete?.children) await softDeleteChildren(dbx, ctx, id);
     if (op !== 'delete' && r.validateFinal) {
       const checked = await r.validateFinal['~standard'].validate(row);
       if (checked.issues) fail('validation');
@@ -705,6 +711,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
+    force = false,
   ) =>
     db.guard(async () => {
       const ctx = context(ctx0);
@@ -714,15 +721,40 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         r.validateFinal ||
         ((op === 'insert' || op === 'update') && r.checks) ||
         // родитель и дети — вместе или никак: `restrict` на втором уровне откатывает всё
-        (op === 'delete' && r.softDelete?.children)
+        (op === 'delete' && !force && r.softDelete?.children)
       );
       if (needsTransaction) {
         // На HTTP это отказывает ДО запроса/мутации, а не эмулирует atomic hooks.
         if (!db.driver.capabilities.transactions) throw new DbFailure('unsupported');
-        return db.transaction((tx) => write(tx, ctx, op, id, input));
+        return db.transaction((tx) => write(tx, ctx, op, id, input, force));
       }
-      return write(db, ctx, op, id, input);
+      return write(db, ctx, op, id, input, force);
     });
+  /**
+   * Какие из строк этот ctx может удалить — без удаления: правило `delete`, только живые.
+   * `soft` — как модель удаляет по умолчанию.
+   */
+  async function canDelete(ctx0: DataContext, ids: readonly unknown[]) {
+    const ctx = context(ctx0);
+    if (!Array.isArray(ids) || !ids.length || ids.length > db.limits.inValues)
+      fail('validation', undefined, [`canDelete: от 1 до ${db.limits.inValues} ключей`]);
+    const pk = r.fields[r.primaryKey];
+    const values = await Promise.all(ids.map((id) => validateField(pk, id, r.primaryKey)));
+    const s = new Sql();
+    const predicate = await where(ctx, 'delete', s);
+    const rows = (
+      await db.query(
+        withSignal(
+          s.statement(
+            `SELECT ${projection(r, [r.primaryKey])} FROM ${table(r)} WHERE (${predicate}) AND ${col(r, r.primaryKey)} IN (${values.map((v) => s.fieldParam(pk, v)).join(',')})`,
+          ),
+          ctx,
+        ),
+      )
+    ).rows;
+    const found = new Set(rows.map((x) => JSON.stringify(x[r.primaryKey])));
+    return { allowed: values.filter((v, i) => found.has(JSON.stringify(v)) && values.indexOf(v) === i), soft: !!r.softDelete };
+  }
   /** Проверка без записи (`validator`): поля из входа + правила данных. */
   async function check(ctx0: DataContext, operation: 'insert' | 'update' | 'check', input: unknown) {
     const ctx = context(ctx0);
@@ -805,7 +837,12 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       }),
     insert: (ctx, input) => mutate(ctx, 'insert', undefined, input),
     update: (ctx, id, input) => mutate(ctx, 'update', id, input),
-    delete: (ctx, id) => mutate(ctx, 'delete', id, undefined),
+    delete: (ctx, id, options) => {
+      if (options !== undefined && (!isRecord(options) || Object.keys(options).some((k) => k !== 'force') || (options.force !== undefined && typeof options.force !== 'boolean')))
+        return Promise.reject(new DbFailure('validation', { issues: ['delete: опции { force?: boolean }'] }));
+      return mutate(ctx, 'delete', id, undefined, options?.force === true);
+    },
+    canDelete: (ctx, ids) => db.guard(() => canDelete(ctx, ids)),
     restore: (ctx, id) => {
       if (!r.softDelete) return Promise.reject(new DbFailure('unsupported'));
       return mutate(ctx, 'restore', id, undefined);

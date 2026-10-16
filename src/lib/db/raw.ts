@@ -117,6 +117,14 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
         return byId(ctx, id, (s, match) => `UPDATE ${table(r)} SET ${sets(s, row).join(",")} WHERE ${match} RETURNING ${projection(r, all)}`);
       }),
     delete: (ctx, id) => db.guard(() => byId(ctx, id, (_s, match) => `DELETE FROM ${table(r)} WHERE ${match} RETURNING ${projection(r, all)}`)),
+    canDelete: (ctx0, ids) =>
+      db.guard(async () => {
+        const ctx = context(ctx0);
+        if (!Array.isArray(ids) || !ids.length) fail("validation");
+        const s = new Sql();
+        const rows = await run(ctx, s, `SELECT ${projection(r, [r.primaryKey])} FROM ${table(r)} WHERE ${col(r, r.primaryKey)} IN (${ids.map((v) => s.param(v)).join(",")})`);
+        return { allowed: rows.map((x) => x[r.primaryKey]), soft: false };
+      }),
     cursor: unsupported,
     restore: unsupported,
     estimate: unsupported,

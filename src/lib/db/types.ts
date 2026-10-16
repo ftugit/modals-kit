@@ -383,7 +383,14 @@ export interface ResourceApi<
     id: unknown,
     patch: unknown,
   ): Promise<ResourceRow<F, R>>;
-  delete(ctx: DataContext, id: unknown): Promise<ResourceRow<F, R>>;
+  /**
+   * Удалить одну запись по правилу `delete`. У модели с мягким удалением — метка; `force: true`
+   * — навсегда (удалённую строку достаёт только тот, кто видит удалённые). Ссылки на запись
+   * других записей — ошибка базы (`conflict`, код `referenced`).
+   */
+  delete(ctx: DataContext, id: unknown, options?: { force?: boolean }): Promise<ResourceRow<F, R>>;
+  /** Какие из записей этот ctx может удалить — без удаления; `soft` — удаление по умолчанию мягкое. */
+  canDelete(ctx: DataContext, ids: readonly unknown[]): Promise<{ allowed: unknown[]; soft: boolean }>;
   /**
    * Снять метку мягкого удаления. Нужны право `readDeleted` (иначе `forbidden`) и
    * политика `restore` (нет — `delete`); строка не удалена или не видна — `not_found`.
