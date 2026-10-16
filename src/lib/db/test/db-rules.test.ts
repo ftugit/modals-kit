@@ -551,6 +551,24 @@ test("timestamps: ошибки объявления — поле и в fields, �
   assert.match(tsIssues(() => stamped({ timestamps: { createdAt: "same", updatedAt: "same" } })), /уже занято/);
 });
 
+test("timestamps: null, '' и отсутствие ключа — метка выключена", async () => {
+  const keys = (r: Resource) => Object.keys(r.fields).filter((k) => k.endsWith("_at"));
+  const t = (timestamps: unknown) => stamped({ order: [["id", "asc"]], timestamps } as never) as unknown as Resource;
+  assert.deepEqual(keys(t({ createdAt: "created_at", updatedAt: null, deletedAt: "" })), ["created_at"]);
+  assert.deepEqual(keys(t({ createdAt: "", updatedAt: undefined, deletedAt: { field: "" } })), []);
+  assert.deepEqual(keys(t({ deletedAt: { field: null, readDeleted: ["admin"] } })), []);
+  for (const v of [null, {}, { createdAt: null }]) {
+    const r = t(v);
+    assert.equal(r.timestamps, undefined, JSON.stringify(v));
+    assert.equal(r.softDelete, undefined);
+    assert.deepEqual(liveCapabilities(r), { inserted: true, updated: false, deleted: false });
+  }
+  const del = t({ deletedAt: null, updatedAt: "updated_at" });
+  assert.equal(del.softDelete, undefined, "без deletedAt удаление — настоящее");
+  assert.deepEqual(del.timestamps, { updatedAt: "updated_at" });
+  assert.match(tsIssues(() => t({ createdAt: 5 })), /timestamps\.createdAt: имя поля/);
+});
+
 test("timestamps: liveCapabilities выводит, что опрашивать", async () => {
   assert.deepEqual(liveCapabilities(stamped()), { inserted: true, updated: true, deleted: true });
   assert.deepEqual(liveCapabilities(stamped({ timestamps: { createdAt: "created_at" } })), { inserted: true, updated: false, deleted: false });

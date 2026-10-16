@@ -527,7 +527,8 @@ export function timestampField(
   kind: keyof Timestamps,
 ): string | undefined {
   const v = r.timestamps?.[kind];
-  return typeof v === "string" ? v : v?.field;
+  const name = typeof v === "string" ? v : v?.field;
+  return name || undefined;
 }
 
 /** Что ресурс умеет сообщить опросу изменений (см. `LiveCapabilities`). */
@@ -540,26 +541,33 @@ export function liveCapabilities(r: Pick<Resource, "timestamps">): LiveCapabilit
 }
 
 const TIMESTAMP_KEYS = ["createdAt", "updatedAt", "deletedAt"] as const;
+/** Пустое значение опции — выключено: `undefined`, `null`, `''`. */
+const off = (v: unknown): v is undefined | null | "" => v === undefined || v === null || v === "";
 /**
  * `timestamps` → системные поля, мягкое удаление и индексы под опрос. Идёт до
  * остальных проверок: порядок, индексы и связи могут ссылаться на эти поля.
  */
 function expandTimestamps(r: Resource): Resource {
   const t = r.timestamps as unknown;
-  if (t === undefined) return r;
+  // `null` — выключено, как и отсутствие ключа (так же внутри: `null`, `''`, `{ field: '' }`)
+  if (t === undefined || t === null) {
+    const { timestamps: _off, ...rest } = r;
+    return rest as Resource;
+  }
   const issues: string[] = [];
   if (!isRecord(t)) fail("validation", undefined, ["timestamps: объект { createdAt?, updatedAt?, deletedAt? }"]);
   for (const k of Object.keys(t))
     if (!(TIMESTAMP_KEYS as readonly string[]).includes(k))
       issues.push(`timestamps.${k}: неизвестный ключ — есть createdAt, updatedAt, deletedAt`);
   const raw = t.deletedAt;
-  const deleted = typeof raw === "string" ? { field: raw } : raw;
+  const deleted0 = typeof raw === "string" || raw === null ? { field: raw } : raw;
+  const deleted = isRecord(deleted0) && off(deleted0.field) ? undefined : deleted0;
   if (deleted !== undefined && (!isRecord(deleted) || typeof deleted.field !== "string"))
     issues.push("timestamps.deletedAt: имя поля или { field, readDeleted?, children? }");
   const names: Partial<Record<(typeof TIMESTAMP_KEYS)[number], string>> = {};
   for (const k of TIMESTAMP_KEYS) {
     const name = k === "deletedAt" ? (isRecord(deleted) ? deleted.field : undefined) : t[k];
-    if (name === undefined) continue;
+    if (off(name)) continue;
     if (typeof name !== "string" || !name) {
       issues.push(`timestamps.${k}: имя поля — непустая строка`);
       continue;
@@ -572,6 +580,10 @@ function expandTimestamps(r: Resource): Resource {
   if (names.deletedAt && r.softDelete)
     issues.push("timestamps.deletedAt и softDelete вместе: мягкое удаление задаётся чем-то одним");
   if (issues.length) fail("validation", undefined, issues);
+  if (!Object.keys(names).length) {
+    const { timestamps: _off, ...rest } = r;
+    return rest as Resource;
+  }
   const system = (nullable: boolean): Field<unknown> => ({
     schema: s.timestamp(),
     kind: "timestamp",
@@ -618,7 +630,7 @@ function expandTimestamps(r: Resource): Resource {
 export function defineResource<
   F extends Fields,
   R extends Relations = {},
-  const T extends Timestamps | undefined = undefined,
+  const T extends Timestamps | null | undefined = undefined,
 >(
   input: Omit<Resource<F, R>, "timestamps"> & { timestamps?: T },
 ): Resource<F & TimestampFields<T>, R> {

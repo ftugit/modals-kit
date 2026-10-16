@@ -889,7 +889,8 @@ export const posts = defineResource({
 (`includeDeleted`) и не восстанавливает никто, пока не задан `readDeleted` в объектной форме;
 `restore` нужна ещё политика `restore` (нет — `delete`), не удалённая строка — `not_found`,
 ресурс без мягкого удаления — `unsupported`. Для хуков восстановление — `update`. Вместе с
-ручным `softDelete` — `validation`.
+ручным `softDelete` — `validation`. Пустое значение — метка выключена: `null`, `''`, нет ключа
+(у объектной формы — `{ field: '' }` или `{ field: null }`); `timestamps: null` — все три.
 
 `liveCapabilities(resource)` → `{ inserted: true, updated, deleted }` — что ресурс умеет
 сообщить опросу изменений: новые — всегда, изменённые — есть `updatedAt`, удалённые — есть
@@ -935,7 +936,7 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 122 группы в семи файлах (на PGlite выполняются 121: одна группа требует
+Тесты слоя — 123 группы в семи файлах (на PGlite выполняются 122: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
@@ -943,7 +944,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync.test.ts` | 26 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
-| `src/lib/db/test/db-rules.test.ts` | 22 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, `liveCapabilities`, каскад) |
+| `src/lib/db/test/db-rules.test.ts` | 23 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, каскад) |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

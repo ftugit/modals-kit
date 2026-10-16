@@ -302,26 +302,29 @@ export interface Resource<
     unique?: readonly (readonly string[])[];
   };
 }
+/** Пустое значение (`null`, `''`, нет ключа) — метка выключена. */
 export interface Timestamps {
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   deletedAt?:
     | string
+    | null
     | {
-        field: string;
+        field: string | null;
         /** Кто видит удалённые (`includeDeleted`) и может их восстановить. Нет — никто. */
         readDeleted?: Grant;
         children?: () => readonly SoftDeleteChild[];
       };
 }
 /** Поля, которые `defineResource` создаёт из `timestamps` (для типа строки). */
-export type TimestampFields<T extends Timestamps | undefined> = T extends Timestamps
-  ? { [K in Extract<T["createdAt"], string>]: Field<string> } & {
-      [K in Extract<T["updatedAt"], string>]: Field<string>;
+type TimestampName<V> = Exclude<Extract<V, string>, "">;
+export type TimestampFields<T extends Timestamps | null | undefined> = T extends Timestamps
+  ? { [K in TimestampName<T["createdAt"]>]: Field<string> } & {
+      [K in TimestampName<T["updatedAt"]>]: Field<string>;
     } & {
       [K in T["deletedAt"] extends { field: infer N }
-        ? Extract<N, string>
-        : Extract<T["deletedAt"], string>]: Field<string | null>;
+        ? TimestampName<N>
+        : TimestampName<T["deletedAt"]>]: Field<string | null>;
     }
   : {};
 /**
