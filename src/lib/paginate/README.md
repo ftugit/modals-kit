@@ -43,7 +43,8 @@ Headless-библиотека пагинации с разделением frame
   UI по нему выбирает действие. `ErrorRow` при истёкшем токене курсора (`cursor`)
   предлагает «Начать сначала» (`reset`), при прочих — «Повторить» (`retry`): повтор
   отправил бы тот же токен. `reset` снимает позиционные ключи (`positionKeys`) — начало
-  выдачи не несёт указатель прошлого окна.
+  выдачи не несёт указатель прошлого окна. Обе кнопки — как `PageLink`: если у адаптера
+  есть адрес, UI рисует ссылку (работает без JS, с JS клик перехвачен), иначе кнопку.
   ```svelte
   <ErrorRow {name} />                                   <!-- коды по умолчанию: ['cursor'] -->
   <ErrorRow {name} restartCodes={['cursor', 'gone']} /> <!-- свои коды источника -->
@@ -51,8 +52,21 @@ Headless-библиотека пагинации с разделением frame
 - **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/content/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
 - **Тонкий адаптер**:
   - `src/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
-- **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер адаптера пакета (`src/lib/paginate/sveltekit/router.ts`; адрес пишет общий писатель `#lib/address`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса хост берёт у адаптера (`searchSpec`), поэтому спецификация не живёт в двух местах.
-- **Готовые UI-компоненты**: `src/lib/components/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
+- **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер адаптера пакета (`src/lib/paginate/sveltekit/router.ts`; адрес пишет общий писатель `#lib/address`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса, их умолчания (`extraDefaults`) и размеры страниц знает только адаптер; у хоста таких пропсов нет.
+- **Адрес наружу — только через адаптер** (ход 246). Ядро и хуки говорят на языке цели, не адреса;
+  что из этого получится — ссылка, имя поля формы или ничего — решает адаптер:
+  ```ts
+  linkFor(name, resetTarget(name), { search })   // '?page.q=nar' у URL-адаптера, null у local/cursor
+  linkFor(name, { page: 1, patch: { q: undefined } }, { search }) // ссылка «снять поиск»
+  adapter.fieldName('q')                        // 'page.q' у URL-адаптера, 'q' без адреса
+  adapter.carryFields(search, ['filters.*'])    // что нативная форма несёт скрытыми полями; без адреса []
+  ```
+  В Svelte — `useLinkTo('reset' | 'retry' | цель, name)`: геттер ссылки или `null`.
+  Тот же `extraDefaults` принимают все адаптеры (и `definePaginator({ source, extraDefaults })`):
+  `getInitial` кладёт умолчания под прочитанное из хранилища.
+- **Пагинатор не рисует UI и не пишет текст**: у `PaginatorHost` нет своих надписей — `ariaLabel`
+  обязателен, озвучку загрузки и ошибок ставит UI-компонент `<LiveStatus {name} />`.
+- **Готовые UI-компоненты**: `src/lib/components/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
 ## Быстрый старт
 
@@ -90,10 +104,11 @@ definePaginator({
 ```svelte
 <script lang="ts">
   import { PaginatorHost } from '#lib/paginate/svelte/index.js'
-  import { PageList, PageNav, LoadingIndicator, LoadMoreLink } from '#lib/components/paginator/index.js'
+  import { PageList, PageNav, LiveStatus, LoadingIndicator, LoadMoreLink } from '#lib/components/paginator/index.js'
 </script>
 
-<PaginatorHost name="products" class="h-[500px] overflow-y-auto">
+<PaginatorHost name="products" ariaLabel="Товары" class="h-[500px] overflow-y-auto">
+  <LiveStatus name="products" />
   <LoadingIndicator />
   <LoadMoreLink dir={-1} />
   

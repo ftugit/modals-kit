@@ -6,17 +6,20 @@ import {
   getState,
   goToPage,
   initPaginator,
+  linkFor,
   loadMore,
   onExternalPage,
   prefetchPage,
   patchItems,
   reportAnchor,
   resetPaginator,
+  resetTarget,
   retry,
   scrollToPage,
   setExtra,
   setPageSize,
   type ItemPatch,
+  type LinkTarget,
 } from '../core'
 import {
   canGo,
@@ -212,16 +215,35 @@ export function usePageHref(
   page: number | (() => number),
   name?: string,
 ): () => string | null {
-  const ctx = useCtx('usePageHref', name)
-  const pageOf = () => (typeof page === 'function' ? page() : page)
-  const adapter = getPaginator(ctx.name).adapter
-  if (!adapter.hrefFor) return () => null
-  const currentSearch = ctx.currentSearch
+  return linkGetter(useCtx('usePageHref', name), () => ({ page: typeof page === 'function' ? page() : page }))
+}
 
+/**
+ * Ссылка на действие пагинатора — для UI, который сам решает, рисовать ссылку или
+ * кнопку (как `PageLink`): `null` — у транспорта ссылок нет, нужна кнопка.
+ *   `'reset'` — то же, что `reset()`: первая страница без указателя позиции;
+ *   `'retry'` — то же, что `retry()`: текущее состояние ещё раз;
+ *   `{ page, patch }` — страница с правкой extra (`{ q: undefined }` — без запроса).
+ * Как это выглядит во внешнем хранилище, решает адаптер (`linkFor` → `hrefFor`).
+ */
+export function useLinkTo(
+  target: 'reset' | 'retry' | LinkTarget | (() => 'reset' | 'retry' | LinkTarget),
+  name?: string,
+): () => string | null {
+  const ctx = useCtx('useLinkTo', name)
+  return linkGetter(ctx, () => {
+    const t = typeof target === 'function' ? target() : target
+    if (t === 'reset') return resetTarget(ctx.name)
+    if (t === 'retry') return { page: getState(ctx.store, ctx.name).page }
+    return t
+  })
+}
+
+function linkGetter(ctx: PaginatorContextValue, target: () => LinkTarget): () => string | null {
+  if (!getPaginator(ctx.name).adapter.hrefFor) return () => null
   return () => {
-    const p = pageOf()
-    const search = currentSearch?.() ?? undefined
-    const href = adapter.hrefFor!(p, { search, extra: ctx.linkExtra?.() ?? null })
+    const search = ctx.currentSearch?.() ?? undefined
+    const href = linkFor(ctx.name, target(), { search, extra: ctx.linkExtra?.() ?? null })
     if (href == null) return null
     // Якорь читается при каждом вычислении: у хоста это реактивный геттер.
     const anchor = ctx.hashAnchor

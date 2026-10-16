@@ -3,7 +3,7 @@
 // приезжают пагинатору, а вызов данных идёт единственным путём (`fetchPage`).
 import { createSessionDefaultStorage } from './storage-default'
 import { assertAdaptedSource, type AdaptedSource } from './source'
-import type { PaginatorAdapter, PaginatorStorage } from './types'
+import type { Extra, PaginatorAdapter, PaginatorStorage } from './types'
 
 export function createLocalAdapter<T>(opts: {
   name: string
@@ -13,6 +13,8 @@ export function createLocalAdapter<T>(opts: {
   append?: boolean
   /** Ключи extra, объявленные потребителем (для строгой проверки `setExtra`). */
   extraKeys?: readonly string[]
+  /** Значения extra по умолчанию: под восстановленными из хранилища. */
+  extraDefaults?: Extra
 }): PaginatorAdapter<T> {
   const source = assertAdaptedSource<T>(opts.source, `createLocalAdapter("${opts.name}")`)
   const storage = opts.storage ?? createSessionDefaultStorage()
@@ -27,7 +29,7 @@ export function createLocalAdapter<T>(opts: {
         pageSize: restored?.pageSize ?? pageSize,
         totalItems: restored?.totalItems ?? null,
         totalPages: restored?.totalPages ?? null,
-        extra: restored?.extra ?? {},
+        extra: { ...(opts.extraDefaults ?? {}), ...(restored?.extra ?? {}) },
       }
     },
     loadPage: (req) =>
@@ -39,5 +41,9 @@ export function createLocalAdapter<T>(opts: {
     // Поверхность потребителя известна только если он её объявил: иначе не судим.
     extraKeys: opts.extraKeys ? () => [...opts.extraKeys!, ...source.extraKeys()] : undefined,
     scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,
+    extraDefaults: opts.extraDefaults,
+    // Адреса нет: имя поля — сам ключ, переносить формой нечего, ссылок нет (`hrefFor`).
+    fieldName: (key) => key,
+    carryFields: () => [],
   }
 }

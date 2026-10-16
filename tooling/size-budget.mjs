@@ -141,9 +141,12 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // весь JS 256.6, immutable 270.3, /form 178.7 (всего +3.7 к ходу 237). Лимиты = факт + 0.5.
 // Ход 242, ошибка курсора (`errorCode`, «Начать сначала» в `ErrorRow`): /paginator 211.1 → 211.4,
 // /db-demo 208.8 → 209.0. Лимиты = факт + 0.5.
+// Ход 246, адрес — у адаптеров (`linkFor`, `fieldName`, `carryFields`), ссылки «Начать сначала»/
+// «Повторить»/«Сброс», `LiveStatus` вместо текстов хоста: весь JS 256.8 → 257.1, immutable 270.5 → 270.8,
+// /paginator 211.4 → 211.7, /db-demo 209.0 → 209.4. Лимиты = факт + 0.5.
 const LIMITS = {
-  allImmutableGzip: 270.8 * KiB,
-  allJsGzip: 257.1 * KiB,
+  allImmutableGzip: 271.3 * KiB,
+  allJsGzip: 257.6 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -167,7 +170,7 @@ const ROUTE_LIMITS = {
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
   // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
   // остальных маршрутов; вес самой страницы — отдельная находка (docs/plan.md).
-  '/paginator': 211.9 * KiB,
+  '/paginator': 212.2 * KiB,
   // C16 (решение оператора, ход 34: «прибавь размера»): маршруты без лимита
   // получили «факт + 5» по сборке хода 34 — 175.5 / 124.1 / 118.8 / 125.6.
   // Ход 109: + экран переноса схемы (SchemaPending, форма решений) — факт 180.8;
@@ -175,7 +178,7 @@ const ROUTE_LIMITS = {
   // Ход 112: + закреплённые ошибки формы (pins) и смена источника в ядре пагинатора
   // (общее со списком БД) — факт 181.6 → 182.5.
   // Ход 185: модель `posts` в браузере (форма из модели) — факт 201.1, см. REVISION у LIMITS.
-  '/db-demo': 209.5 * KiB,
+  '/db-demo': 209.9 * KiB,
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
   '/cards/[id]': 139.5 * KiB,

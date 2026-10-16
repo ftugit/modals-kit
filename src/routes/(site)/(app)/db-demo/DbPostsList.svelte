@@ -29,6 +29,7 @@
     EmptyState,
     EndRow,
     ErrorRow,
+    LiveStatus,
     LoadMoreLink,
     LoadingIndicator,
     PageList,
@@ -299,6 +300,7 @@
 
   <ListMeta {showRaw} />
   <LoadingIndicator {name} text="Загружаю страницу…" />
+  <LiveStatus {name} />
   <ErrorRow {name} />
 
   <div class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card" data-testid="rows">

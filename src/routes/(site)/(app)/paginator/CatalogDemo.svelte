@@ -16,6 +16,7 @@
     EmptyState,
     EndRow,
     ErrorRow,
+    LiveStatus,
     EventLog,
     LoadMoreLink,
     LoadingIndicator,
@@ -29,7 +30,6 @@
     type SettingsField,
   } from '#lib/components/paginator/index.js'
   import {
-    DEFAULT_DEMO_EXTRA,
     DEMO_PAGE_SIZES,
     demoExtraOf,
     demoHashAnchor,
@@ -417,7 +417,6 @@ import ItemRow from './ItemRow.svelte'
   onError={report}
   class={HOST_CLASS}
   ariaLabel="Демо пагинатора"
-  extraDefaults={DEFAULT_DEMO_EXTRA}
   mode={cfg.mode}
   topTrigger={cfg.topTrigger}
   bottomTrigger={cfg.bottomTrigger}
@@ -459,7 +458,7 @@ import ItemRow from './ItemRow.svelte'
         либо не объявлен источником (`gates`), либо выключен своим тумблером.
         Оба слоя независимы: paginate/search работает и при выключенном родном.
       -->
-      <SearchBar {name} {query} path="page.q" disabled={searchOff} hint={searchOffReason ?? undefined} />
+      <SearchBar {name} {query} disabled={searchOff} hint={searchOffReason ?? undefined} />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
         {#if gates.nativeSearch}
           Родной поиск ищет сам источник — подстрокой по названию (у живого каталога это
@@ -494,7 +493,7 @@ import ItemRow from './ItemRow.svelte'
               {name}
               schema={filterSchema}
               extra={pagState().extra}
-              preserved={demoPreservedSearch(currentSearch())}
+              preserved={demoPreservedSearch(name, currentSearch())}
               describe={shikiApi ? shikimoriFilterForm : rickMortyFilterForm}
               form={shikiApi ? ShikimoriFilters : RickMortyFilters}
             />
@@ -625,6 +624,7 @@ import ItemRow from './ItemRow.svelte'
     </PageList>
   {/if}
 
+  <LiveStatus {name} />
   <ErrorRow {name} />
   <ReplaceLoadingRow {name} when={!cfg.skel} />
 

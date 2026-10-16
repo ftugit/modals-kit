@@ -10,8 +10,6 @@
   interface Props {
     /** Имя пагинатора (оно же имя поиска: им пользуется lib search). */
     name: string
-    /** Адресный ключ запроса: `page.q`. */
-    path: string
     /** Текущий запрос из состояния пагинатора. */
     query?: string
     /** Запрос выключен опцией панели или источником. */
@@ -20,7 +18,7 @@
     hint?: string
   }
 
-  let { name, path, query, disabled = false, hint }: Props = $props()
+  let { name, query, disabled = false, hint }: Props = $props()
 
   const LABEL = 'Поиск по каталогу'
   const PLACEHOLDER = 'Тайтл: «наруто», «naruto», «нарута»'
@@ -29,7 +27,6 @@
   // выключение и причина читаются живыми — через функции.
   // svelte-ignore state_referenced_locally
   const search = usePaginatorSearch(name, {
-    path,
     label: LABEL,
     placeholder: PLACEHOLDER,
     query: () => query,
@@ -75,7 +72,7 @@
        до оживления и без JS. -->
   {#if !search.hydrated}
     <Button type="submit" variant="outline" data-testid="search-submit" disabled={search.disabled}>Найти</Button>
-    {#if search.hasQuery}
+    {#if search.hasQuery && search.resetHref !== null}
       <Button {...asLink(search.resetHref)} variant="outline" data-testid="search-clear">Сбросить</Button>
     {/if}
   {/if}

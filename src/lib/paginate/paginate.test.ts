@@ -14,6 +14,8 @@ import {
   withTotalsGate,
   decodeExtraValue,
   definePaginator,
+  linkFor,
+  resetTarget,
   defineSource,
   deriveMeta,
   distributeRoundRobin,
@@ -531,6 +533,76 @@ describe('URL adapter & extra search', () => {
     })
     expect(adapter.pageParam).toBe('gallery')
     expect(adapter.hrefFor?.(2, { search: {} })).toContain('gallery=2')
+  })
+})
+
+describe('адрес принадлежит адаптеру: ссылки, имена полей, перенос, умолчания', () => {
+  beforeEach(() => {
+    resetRegistry()
+  })
+  const urlAdapter = () =>
+    createUrlAdapter({
+      name: 'addr',
+      source: sourceOf(async () => ({ items: [] })),
+      pageParam: 'page',
+      extraSearch: { q: extraField('text'), after: extraField('text'), src: extraField('text'), 'filters.kind': extraField('text') },
+      extraDefaults: { src: 'products' },
+    })
+  const search = { page: '3', 'page.q': 'nar', 'page.after': 'tok', 'page.filters.kind': 'tv', 'page.src': 'animes', modal: 'x' }
+
+  it('url: ссылка с правкой — снятый ключ уходит, поставленный пишется, умолчание не пишется', () => {
+    const a = urlAdapter()
+    expect(a.hrefFor!(1, { search, patch: { after: undefined } })).toBe('?page.q=nar&page.filters.kind=tv&page.src=animes&modal=x')
+    expect(a.hrefFor!(1, { search, patch: { q: undefined, src: 'products' } })).toBe('?page.after=tok&page.filters.kind=tv&modal=x')
+    // правка сильнее и дописки из extra состояния
+    expect(a.hrefFor!(2, { search: {}, extra: { after: 'old' }, patch: { after: 'new' } })).toBe('?page=2&page.after=new')
+  })
+
+  it('url: имя поля и перенос формой — своё по drop, указатель страницы никогда', () => {
+    const a = urlAdapter()
+    expect(a.fieldName!('q')).toBe('page.q')
+    const names = (drop: string[]) => a.carryFields!(search, drop).map((f) => f.name)
+    expect(names(['q'])).toEqual(['page.after', 'page.filters.kind', 'page.src', 'modal'])
+    expect(names(['filters.*'])).toEqual(['page.q', 'page.after', 'page.src', 'modal'])
+    expect(names(['*'])).toEqual(['modal'])
+  })
+
+  it('url: getInitial кладёт умолчания под адрес', async () => {
+    const a = urlAdapter()
+    expect((await a.getInitial({ url: '/x?page.q=a' })).extra).toEqual({ src: 'products', q: 'a' })
+    expect((await a.getInitial({ url: '/x?page.src=animes' })).extra).toEqual({ src: 'animes' })
+  })
+
+  it('local и cursor: адреса нет — имя поля сам ключ, переносить нечего, ссылок нет; умолчания свои', async () => {
+    const local = createLocalAdapter({
+      name: 'loc', source: sourceOf(async () => ({ items: [] })), storage: createMemoryStorage(), extraDefaults: { layout: 'list' },
+    })
+    const cursor = createCursorAdapter({
+      name: 'cur', storage: createMemoryStorage(), extraDefaults: { layout: 'grid' },
+      source: { id: 's', capabilities: { offsetRecovery: false, stableAcrossSessions: true }, load: async () => ({ items: [], hasNext: false }) },
+    })
+    for (const a of [local, cursor]) {
+      expect(a.fieldName!('q')).toBe('q')
+      expect(a.carryFields!(search, [])).toEqual([])
+      expect(a.hrefFor).toBeUndefined()
+    }
+    expect((await local.getInitial()).extra).toEqual({ layout: 'list' })
+    expect((await cursor.getInitial()).extra).toEqual({ layout: 'grid' })
+  })
+
+  it('definePaginator({ source, extraDefaults }) отдаёт умолчания local-адаптеру', async () => {
+    definePaginator({ name: 'defs', source: sourceOf(async () => ({ items: [] })), storage: createMemoryStorage(), extraDefaults: { mode: 'single' } })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'defs')
+    expect(getState(store, 'defs').extra).toEqual({ mode: 'single' })
+  })
+
+  it('linkFor(resetTarget): ссылка сброса — первая страница без позиционных ключей; без hrefFor — null', () => {
+    definePaginator({ name: 'linked', adapter: urlAdapter(), positionKeys: ['after'] })
+    expect(resetTarget('linked')).toEqual({ page: 1, patch: { after: undefined } })
+    expect(linkFor('linked', resetTarget('linked'), { search })).toBe('?page.q=nar&page.filters.kind=tv&page.src=animes&modal=x')
+    definePaginator({ name: 'plain', source: sourceOf(async () => ({ items: [] })) })
+    expect(linkFor('plain', resetTarget('plain'), { search })).toBeNull()
   })
 })
 

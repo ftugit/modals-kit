@@ -99,6 +99,8 @@ export function createCursorAdapter<T>(options: {
   storage?: PaginatorStorage
   pageSize?: number
   append?: boolean
+  /** Значения extra по умолчанию: под восстановленными из хранилища. */
+  extraDefaults?: Extra
 }): PaginatorAdapter<T> {
   const storage = options.storage ?? createSessionDefaultStorage()
   const pageSize = options.pageSize ?? 20
@@ -190,7 +192,7 @@ export function createCursorAdapter<T>(options: {
         pageSize: restored?.pageSize ?? pageSize,
         totalItems: restored?.totalItems ?? null,
         totalPages: restored?.totalPages ?? null,
-        extra: restored?.extra ?? {},
+        extra: { ...(options.extraDefaults ?? {}), ...(restored?.extra ?? {}) },
         sourceState: restored?.sourceState,
       }
     },
@@ -206,5 +208,9 @@ export function createCursorAdapter<T>(options: {
     recordFor: options.source.recordFor ? (extra) => options.source.recordFor!(extra) : undefined,
     extraKeys: options.source.extraKeys ? () => options.source.extraKeys!() : undefined,
     scopeOf: options.source.scopeOf ? (extra) => options.source.scopeOf!(extra) : undefined,
+    extraDefaults: options.extraDefaults,
+    // Адреса нет (см. выше): имя поля — сам ключ, переносить формой нечего.
+    fieldName: (key) => key,
+    carryFields: () => [],
   }
 }

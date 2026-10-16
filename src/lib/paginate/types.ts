@@ -130,7 +130,22 @@ export type AdapterInitContext = { url?: string }
  * в другой адрес, чем клик с JavaScript. Адрес сильнее: дописывается только то,
  * чего в срезе поиска нет.
  */
-export type HrefContext = { search?: Record<string, unknown> | null; extra?: Extra | null }
+export type HrefContext = {
+  search?: Record<string, unknown> | null
+  extra?: Extra | null
+  /**
+   * Чем ссылка отличается от текущего состояния: ключ extra со значением — поставить,
+   * с `undefined` — снять. Так строятся «начать сначала» (снять указатель позиции) и
+   * «сбросить запрос» — без знания, как ключи названы во внешнем хранилище.
+   */
+  patch?: ExtraPatch | null
+}
+
+/** Правка extra: значение — поставить, `undefined` — снять. */
+export type ExtraPatch = Readonly<Record<string, ExtraValue | undefined>>
+
+/** Поле формы без JS: имя во внешнем хранилище и значение. */
+export type CarriedField = { name: string; value: string }
 
 export type PaginatorAdapter<T> = {
   /**
@@ -178,6 +193,24 @@ export type PaginatorAdapter<T> = {
   scopeOf?(extra: Extra): SourceScope
   /** URL-адаптер: базовый search-ключ (`?page`, `?page.size`, `?page.<key>`); нужен UI-компонентам форм без JS. */
   pageParam?: string
+  /**
+   * Значения extra по умолчанию — часть объявления транспорта: `getInitial` кладёт их
+   * под восстановленные, хост сравнивает с ними внешние правки. Хост и загрузчик
+   * своих умолчаний не держат.
+   */
+  extraDefaults?: Extra
+  /**
+   * Имя ключа extra в форме без JS (URL: `q` → `page.q`; без адреса — сам ключ).
+   * UI не собирает имена сам: формат внешнего хранилища знает только транспорт.
+   */
+  fieldName?(key: string): string
+  /**
+   * Что форма без JS обязана пронести скрытыми полями, чтобы отправка не стёрла
+   * остальное состояние: чужие ключи адреса и свои, кроме `drop`. Указатель
+   * страницы не переносится никогда (новая отправка — первая страница). `drop`:
+   * ключ extra, `'префикс.*'` или `'*'` — все свои. Без адреса — пусто.
+   */
+  carryFields?(search: Record<string, unknown> | null | undefined, drop: readonly string[]): CarriedField[]
 }
 
 /** Результат `observeExternal`: как транспорт видит текущее внешнее состояние. */
@@ -239,6 +272,8 @@ export type PaginatorConfig<T> =
       storage?: PaginatorStorage
       /** Ключи extra, объявленные потребителем (строгая проверка записи `setExtra`). */
       extraKeys?: readonly string[]
+      /** Значения extra по умолчанию (уходят в local-адаптер, см. `PaginatorAdapter.extraDefaults`). */
+      extraDefaults?: Extra
       maxPages?: number
       /** Ключи extra, влияющие на данные источника (смена → сброс + загрузка стр. 1). */
       reloadKeys?: readonly string[]

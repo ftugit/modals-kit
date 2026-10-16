@@ -73,16 +73,11 @@
 
   // Чужие ключи адреса — через слой фреймворка (канон: панель читает
   // `app.search`), а не `window.location.search`: прямое чтение адреса не
-  // даёт `$derived` зависимостей, и копии чужих ключей застывали.
-  const foreignParams = $derived.by((): [string, string][] => {
-    const base = pageParam
-    const out: [string, string][] = []
-    for (const [k, v] of Object.entries(currentSearch())) {
-      if (k === base || k.startsWith(`${base}.`)) continue
-      out.push([k, String(v)])
-    }
-    return out
-  })
+  // даёт `$derived` зависимостей, и копии чужих ключей застывали. Что в адресе
+  // чужое, решает адаптер (`carryFields`, `'*'` — все свои ключи несёт сама форма).
+  const foreignParams = $derived.by((): [string, string][] =>
+    (getPaginator(pagState().name).adapter.carryFields?.(currentSearch(), ['*']) ?? []).map((f) => [f.name, f.value]),
+  )
 
   const schema = $derived(
     compileDemoPanelSchema<V>({

@@ -9,11 +9,9 @@ import {
   type PaginatorState,
 } from '#lib/paginate/index.js'
 import {
-  DEFAULT_DEMO_EXTRA,
-  DEFAULT_GALLERY_EXTRA,
   demoHasFilterSchema,
   demoShikimoriApi,
-  demoSrcOfSearch,
+  demoSrcOfUrl,
   demoStaticFilterSchema,
   ensureDemoPaginator,
   ensureGalleryPaginator,
@@ -68,25 +66,17 @@ setRickMortyServerTransport({
  * ни гидратации.
  */
 export const load: PageServerLoad = async ({ url, isDataRequest, platform }) => {
+  // Умолчания extra — у адаптеров (`extraDefaults`): `getInitial` кладёт их под адрес.
   const store = createPaginatorStore()
   const defaultName = ensureDemoPaginator('url')
-  store.update<CatalogItem>(defaultName, (state) => ({
-    ...state,
-    extra: { ...DEFAULT_DEMO_EXTRA },
-  }))
-
   const href = `${url.pathname}${url.search}`
   const galleryName = ensureGalleryPaginator()
-  store.update<CatalogItem>(galleryName, (state) => ({
-    ...state,
-    extra: { ...DEFAULT_GALLERY_EXTRA },
-  }))
 
   // Схема фильтров собирается ПАРАЛЛЕЛЬНО с первой страницей: источник
   // известен из адреса, ждать снапшота незачем. Страница с фильтрами и так
   // ждёт ту же сборку (она одна на всех ждущих), а страница без фильтров
   // раньше платила запрос страницы + сборку подряд — теперь большее из двух.
-  const earlySrc = demoSrcOfSearch(url.searchParams)
+  const earlySrc = await demoSrcOfUrl(defaultName, href)
   const earlySchema = isDataRequest ? Promise.resolve(null) : schemaOf(earlySrc)
 
   const [snapshot, gallerySnapshot, early]: [

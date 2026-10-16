@@ -12,6 +12,7 @@ export {
   hashAnchorFor,
   useCtx,
   usePageHref,
+  useLinkTo,
   usePaginator,
   usePaginatorActions,
   usePaginatorEvents,

@@ -4,6 +4,7 @@
   import {
     EmptyState,
     ErrorRow,
+    LiveStatus,
     LoadingIndicator,
     PageColumns,
     PageNav,
@@ -13,10 +14,7 @@
   } from '#lib/components/paginator/index.js'
   import type { DemoItem } from '../../../../content/items'
   import {
-    DEFAULT_GALLERY_EXTRA,
-    GALLERY_EXTRA_SEARCH,
     GALLERY_NAME,
-    GALLERY_PAGE_PARAM,
     GALLERY_PAGE_SIZES,
     ensureGalleryPaginator,
     galleryExtraOf,
@@ -86,13 +84,9 @@
     <PaginatorHost
       {name}
       onError={report}
-      pageParam={GALLERY_PAGE_PARAM}
       class="h-[360px] scroll-mt-20 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm"
       ariaLabel="Галерея"
       {snapshot}
-      extraSearch={GALLERY_EXTRA_SEARCH}
-      pageSizes={GALLERY_PAGE_SIZES}
-      extraDefaults={DEFAULT_GALLERY_EXTRA}
       mode="single"
       topTrigger="off"
       bottomTrigger="off"
@@ -124,5 +118,6 @@
       <Skeleton height={shotHeight(ctx.index + 1)} />
     {/snippet}
   </PageColumns>
+  <LiveStatus {name} />
   <ErrorRow {name} />
 {/snippet}

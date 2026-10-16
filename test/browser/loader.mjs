@@ -170,10 +170,11 @@ async function run() {
       assert.equal(input.busy, 'true')
       ok('поиск: спиннер в поле на время выдачи, затем снят')
 
-      await page.getByRole('button', { name: 'Сброс' }).click()
-      const reset = await seen('BUTTON')
+      // У URL-адаптера «Сброс» — ссылка (работает без JS); спиннер тот же.
+      await page.getByRole('link', { name: 'Сброс' }).click()
+      const reset = await seen('A')
       assert.equal(reset.text, 'Сброс')
-      ok('«Сброс»: спиннер у кнопки на время загрузки, затем снят')
+      ok('«Сброс»: спиннер у ссылки на время загрузки, затем снят')
       await page.close()
     }
     {

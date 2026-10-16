@@ -37,7 +37,6 @@
     useScopeStore,
     type ResolvedHostOptions,
   } from './context.svelte'
-  import { readPaginatorSearch, type ExtraSearchSpec } from '../adapter-url'
   // Роутер фреймворка — из адаптера пакета `paginate/sveltekit`, а не из чужой
   // библиотеки: адрес по-прежнему пишет общий писатель `#lib/address`.
   import { currentSearch as frameworkSearch, svelteKitRouter } from '../sveltekit/router'
@@ -45,11 +44,12 @@
   interface Props<T> {
     name: string
     class?: string
-    ariaLabel?: string
-    pageParam?: string
-    extraSearch?: ExtraSearchSpec
-    pageSizes?: readonly number[]
-    extraDefaults?: Extra
+    /**
+     * Имя области для скринридера — текст UI, поэтому обязателен: своих текстов у
+     * пагинатора нет. Ключи адреса и умолчания extra хост не принимает — их
+     * объявляет адаптер (`searchSpec`, `extraDefaults`), второй экземпляр разошёлся бы.
+     */
+    ariaLabel: string
     snapshot?: PaginatorState<T> | null
     externalPage?: number | null
     externalRestorable?: { pageSize?: number; extra: Extra } | null
@@ -73,10 +73,6 @@
     name: nameProp,
     class: className,
     ariaLabel,
-    pageParam: pageParamProp,
-    extraSearch: extraSearchProp,
-    pageSizes: pageSizesProp,
-    extraDefaults,
     snapshot: snapProp,
     externalPage: externalPageProp,
     externalRestorable: externalRestorableProp,
@@ -106,10 +102,6 @@
   const init = untrack(() => ({
     name: nameProp,
     snapshot: snapProp,
-    extraDefaults,
-    pageParam: pageParamProp,
-    extraSearch: extraSearchProp,
-    pageSizes: pageSizesProp,
   }))
   const name = init.name
 
@@ -129,18 +121,12 @@
   // адаптер, что владеет адресом: `observeExternal`/ключ адреса.
   const initialExternalPage = ((): number | null => {
     if (externalPageProp != null) return externalPageProp
-    const a = instance.adapter as {
-      setRouter?: unknown
-      observeExternal?: (search: Record<string, unknown>) => { page?: number | null } | null
-      searchSpec?: { pageParam?: string }
-    }
+    const a = instance.adapter as { setRouter?: unknown } & typeof instance.adapter
     if (typeof a.setRouter !== 'function') return null
     const search = currentSearchProp ? currentSearchProp() : frameworkSearch()
     if (!search) return null
-    const observed = a.observeExternal?.(search)
-    if (observed?.page != null) return observed.page
-    const n = Number(search[a.searchSpec?.pageParam ?? 'page'])
-    return Number.isInteger(n) && n >= 1 ? n : null
+    // Что значит адрес, решает транспорт: своего разбора у хоста нет.
+    return a.observeExternal?.(search)?.page ?? null
   })()
 
   let snap = init.snapshot
@@ -158,7 +144,8 @@
 
   if (snap) store.hydrate(name, snap)
 
-  const initialExtraDefaults = init.extraDefaults
+  // Умолчания extra — объявление адаптера (не проп хоста).
+  const initialExtraDefaults = instance.adapter.extraDefaults
   if (initialExtraDefaults) {
     store.update(name, (s) => ({ ...s, extra: { ...initialExtraDefaults, ...s.extra } }))
   }
@@ -496,10 +483,6 @@
   // Роутер создаётся при инициализации: он регистрирует afterNavigate и до него
   // копит записи адреса (F12 — запись во время гидрации обрывала её).
   const router = bindsUrl ? svelteKitRouter() : null
-  const spec = adapter.searchSpec ?? {}
-  const effectivePageParam = init.pageParam ?? spec.pageParam ?? 'page'
-  const effectiveExtraSearch = init.extraSearch ?? spec.extra
-  const effectivePageSizes = init.pageSizes ?? spec.pageSizes
 
   // Срез поиска даёт слой фреймворка (SvelteKit) — не `window.location`:
   // прямое чтение адреса не реактивно и обходит роутер.
@@ -518,34 +501,13 @@
   const effectiveExternalPage = $derived.by(() => {
     if (externalPageProp != null) return externalPageProp
     if (!bindsUrl) return null
-    const observed = externalObserved
-    if (observed && observed.page != null) return observed.page
-    if (resolvedSearch && resolvedSearch[effectivePageParam] != null) {
-      const n = Number(resolvedSearch[effectivePageParam])
-      return Number.isInteger(n) && n >= 1 ? n : null
-    }
-    return null
+    return externalObserved?.page ?? null
   })
 
   const effectiveExternalRestorable = $derived.by(() => {
     if (!bindsUrl) return externalRestorableProp
-    if (externalObserved && externalObserved.restorable) return externalObserved.restorable
-    if (!effectiveExtraSearch && !effectivePageSizes) return externalRestorableProp
-    if (resolvedSearch) {
-      const params = new URLSearchParams()
-      for (const [k, v] of Object.entries(resolvedSearch)) {
-        if (v == null) continue
-        params.set(k, String(v))
-      }
-      const r = readPaginatorSearch(params, {
-        pageParam: effectivePageParam,
-        extra: effectiveExtraSearch,
-        pageSizes: effectivePageSizes,
-      })
-      const extra: Extra = { ...(extraDefaults ?? {}), ...r.extra }
-      return { pageSize: r.pageSize ?? instance.pageSize, extra }
-    }
-    return null
+    // Разбор адреса — работа транспорта (`observeExternal`); второго разбора у хоста нет.
+    return externalObserved?.restorable ?? externalRestorableProp ?? null
   })
 
   onMount(() => {
@@ -592,8 +554,8 @@
       const keepAbsent = firstExternal ? instance.positionKeys : undefined
       firstExternal = false
       if (ext.extra) {
-        // Умолчания — у адаптера (адрес их не хранит) или у хоста (проп): «ключа нет» = умолчание.
-        const diff = externalExtraDiff(ext.extra, s.extra, spec.extraDefaults ?? init.extraDefaults, keepAbsent)
+        // Умолчания — у адаптера (адрес их не хранит): «ключа нет» = умолчание.
+        const diff = externalExtraDiff(ext.extra, s.extra, instance.adapter.extraDefaults, keepAbsent)
         if (Object.keys(diff).length > 0) {
           void setExtra(store, name, diff)
         }
@@ -646,7 +608,7 @@
   data-paginator-host={name}
   role="region"
   aria-busy={currentState.status === 'loading'}
-  aria-label={ariaLabel ?? `Пагинатор ${name}`}
+  aria-label={ariaLabel}
   onscroll={handleScroll}
   onwheel={handleWheel}
   ontouchstart={handleTouchStart}
@@ -655,18 +617,6 @@
   tabindex={scrollable ? 0 : undefined}
   style:overflow-anchor={prependBehavior !== 'js' && nativeAnchoring ? 'auto' : 'none'}
 >
-  <div
-    class="sr-only"
-    aria-live="polite"
-    aria-atomic="true"
-    style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;"
-  >
-    {currentState.status === 'loading'
-      ? 'Загрузка элементов...'
-      : currentState.error
-        ? `Ошибка: ${currentState.error}`
-        : `Страница ${currentState.page}`}
-  </div>
   {#if children}
     {@render children()}
   {/if}

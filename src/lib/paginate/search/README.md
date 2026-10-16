@@ -83,8 +83,9 @@ export const load = ({ url }) => /* … */ void url
   <input name="search.q" value={q} />
 </form>
 
-<PaginatorHost name="my-search" snapshot={data.snapshot} mode="single"
-  topTrigger="off" bottomTrigger="off" extraDefaults={{ q: '' }}>
+<!-- Умолчание `q: ''` — у адаптера: createUrlAdapter({ …, extraDefaults: { q: '' } }). -->
+<PaginatorHost name="my-search" ariaLabel="Результаты поиска" snapshot={data.snapshot} mode="single"
+  topTrigger="off" bottomTrigger="off">
   {#snippet children()}
     <!-- items… -->
     <PageNav name="my-search" />
@@ -230,7 +231,7 @@ lib search — **не хранилище и не транспорт**. Адре�
   виртуальной страницы; перехватчик строит страницы «водяным знаком» (повтор
   шагов 1..p), выданные id заморожены — deep-link ≡ проходу кликами, без
   дублей и потерь.
-- `extraDefaults={{ q: '' }}` на хосте обязателен: back/forward на адрес без
+- `extraDefaults: { q: '' }` у адаптера обязателен: back/forward на адрес без
   `.q` должен сбросить запрос (diff externalRestorable сравнивает только
   присутствующие ключи).
 

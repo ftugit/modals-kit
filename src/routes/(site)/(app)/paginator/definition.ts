@@ -38,10 +38,11 @@ import { searchQueryValidator } from '#lib/paginate/search/index.js'
 import {
   createLocalStorageStorage,
   createUrlAdapter,
-  decodeExtraValue,
   definePaginator,
   extraField,
+  getPaginator,
   hasPaginator,
+  type CarriedField,
   type EdgeTrigger,
   type Extra,
   type ExtraSearchSpec,
@@ -193,8 +194,6 @@ export type DemoConfig = DemoExtra & {
  */
 export const DEMO_PAGE_SIZES = [5, 10, 20, 40] as const
 
-/** Префикс адресных ключей пагинатора демо (`?page…`). */
-export const DEMO_PAGE_PREFIX = 'page'
 
 /**
  * Источники, у которых есть ЧТО собирать: схема фильтров строится сервером из
@@ -226,25 +225,22 @@ export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterS
  * источник, вторая полоса `?gallery.*`) обязано пережить смену фильтров.
  */
 /**
- * Ключи адреса, которые нативная форма фильтров обязана пронести дальше
- * (`page.size`, `page.src`, …): всё, кроме указателя, самих фильтров и модалок.
+ * Что нативная форма фильтров обязана пронести дальше (`page.size`, `page.src`, …):
+ * всё, кроме указателя страницы, самих фильтров и модалок. Что из адреса своё и как
+ * оно названо, решает адаптер пагинатора (`carryFields`); демо снимает только чужой
+ * слой модалок — форма фильтров их закрывает.
  *
  * Вызывающий передаёт ЖИВОЙ срез адреса — `currentSearch()` слоя роутера, а не
  * `page.url.search`: пагинатор пишет адрес «мелкой» записью истории, и
  * `page.url` после неё устаревает (баг F5, docs/audit/crutches.md).
  */
 export function demoPreservedSearch(
-  search: string | URLSearchParams | Readonly<Record<string, unknown>>,
+  name: string,
+  search: Readonly<Record<string, unknown>> | null,
 ): Record<string, string> {
-  const params =
-    typeof search === 'string' || search instanceof URLSearchParams
-      ? new URLSearchParams(search)
-      : new URLSearchParams(
-          Object.entries(search).flatMap(([k, v]) => (v == null ? [] : [[k, String(v)] as [string, string]])),
-        )
+  const fields: CarriedField[] = getPaginator(name).adapter.carryFields?.(search, ['filters.*']) ?? []
   const out: Record<string, string> = {}
-  for (const [key, value] of params) {
-    if (key === DEMO_PAGE_PREFIX || key.startsWith(`${DEMO_PAGE_PREFIX}.filters.`)) continue
+  for (const { name: key, value } of fields) {
     if (key === 'modal' || key.startsWith('modal.')) continue
     out[key] = value
   }
@@ -374,14 +370,12 @@ export function demoQueryOf(extra: Extra | undefined): string {
 }
 
 /**
- * Источник прямо из адреса — ДО инициализации пагинатора: лоадер по нему
- * начинает сборку схемы фильтров параллельно с первой страницей. Тот же
- * валидатор `src` и то же правило «последнее значение», что у
- * `readPaginatorSearch`; итог лоадер всё равно сверяет со снапшотом.
+ * Источник по адресу — ДО загрузки страницы: лоадер по нему начинает сборку схемы
+ * фильтров параллельно с первой страницей. Адрес читает адаптер пагинатора
+ * (`getInitial`), своего разбора у демо нет; итог лоадер всё равно сверяет со снапшотом.
  */
-export function demoSrcOfSearch(params: URLSearchParams): DemoSrc {
-  const raw = params.getAll('page.src').at(-1)
-  return demoExtraOf(raw === undefined ? {} : { src: decodeExtraValue(raw) }).src
+export async function demoSrcOfUrl(name: string, url: string): Promise<DemoSrc> {
+  return selectSrc((await getPaginator(name).adapter.getInitial({ url })).extra)
 }
 
 /** Выбор источника по extra: deny-safe разбор, мусор → источник по умолчанию. */
@@ -414,6 +408,7 @@ export function ensureDemoPaginator(store: DemoStore): string {
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
       positionKeys: DEMO_POSITION_KEYS,
+      extraDefaults: DEFAULT_DEMO_EXTRA,
       storage: store === 'local' ? createLocalStorageStorage() : undefined,
     })
   }

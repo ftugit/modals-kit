@@ -149,6 +149,27 @@ export type UrlRestorable = {
   extra: Extra
 }
 
+/**
+ * Поля адреса, которые форма без JS должна пронести (см. `PaginatorAdapter.carryFields`):
+ * чужие ключи — всегда, свои — кроме `drop`, указатель страницы — никогда.
+ */
+function carryAddressFields(
+  search: Record<string, unknown> | null,
+  base: string,
+  drop: readonly string[],
+): { name: string; value: string }[] {
+  const all = drop.includes('*')
+  const dropped = (key: string) =>
+    all || drop.some((d) => (d.endsWith('.*') ? key.startsWith(d.slice(0, -1)) : key === d))
+  const out: { name: string; value: string }[] = []
+  for (const [name, value] of Object.entries(search ?? {})) {
+    if (value == null || name === base) continue
+    if (name.startsWith(`${base}.`) && dropped(name.slice(base.length + 1))) continue
+    out.push({ name, value: String(value) })
+  }
+  return out
+}
+
 /** Разбор всех ключей пагинатора из URLSearchParams (единый парсер роута и адаптера). */
 export function readPaginatorSearch(
   params: URLSearchParams,
@@ -453,6 +474,7 @@ export function createUrlAdapter<T>(opts: {
      * для разбора back/forward и не может разойтись с адаптером.
      */
     searchSpec: { pageParam, extra: opts.extraSearch, pageSizes: opts.pageSizes, extraDefaults: opts.extraDefaults },
+    extraDefaults: opts.extraDefaults,
     /**
      * Разбор внешнего состояния живёт ЗДЕСЬ: адрес — хранилище этого адаптера.
      * Все объявленные ключи присутствуют в `extra` явно; ключ, исчезнувший из
@@ -491,11 +513,12 @@ export function createUrlAdapter<T>(opts: {
       }
       if (BROWSER) lastInitSearch = Object.fromEntries(params)
       const r = readPaginatorSearch(params, searchOpts)
-      return { page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: r.extra }
+      return { page: r.page ?? 1, pageSize: r.pageSize ?? pageSize, extra: { ...(opts.extraDefaults ?? {}), ...r.extra } }
     },
     hrefFor(page, ctx?: HrefContext) {
       const search = ctx?.search ?? currentSearch()
       if (!search) return null
+      const patch = ctx?.patch ?? {}
       const params = new URLSearchParams()
       let seen = false
       for (const [key, value] of Object.entries(search)) {
@@ -504,6 +527,8 @@ export function createUrlAdapter<T>(opts: {
           if (page !== 1) params.set(pageParam, String(page))
           seen = true
         } else if (value != null) {
+          // Ключ, который правит ссылка, решает правка, а не текущий адрес.
+          if (key.startsWith(`${pageParam}.`) && key.slice(pageParam.length + 1) in patch) continue
           params.set(key, String(value))
         }
       }
@@ -520,13 +545,20 @@ export function createUrlAdapter<T>(opts: {
         for (const key of extraKeys) {
           const v = extra[key]
           if (v === undefined || v === null || v === '') continue
-          if (`${pageParam}.${key}` in search) continue
+          if (key in patch || `${pageParam}.${key}` in search) continue
           if (opts.extraDefaults && key in opts.extraDefaults && opts.extraDefaults[key] === v) continue
           params.set(`${pageParam}.${key}`, String(v))
         }
       }
+      for (const [key, v] of Object.entries(patch)) {
+        if (v === undefined || v === null || v === '') continue
+        if (opts.extraDefaults && key in opts.extraDefaults && opts.extraDefaults[key] === v) continue
+        params.set(`${pageParam}.${key}`, String(v))
+      }
       return `?${params.toString()}`
     },
+    fieldName: (key) => `${pageParam}.${key}`,
+    carryFields: (search, drop) => carryAddressFields(search ?? currentSearch(), pageParam, drop),
     loadPage: (req) =>
       source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal, report: req.report }, req.extra),
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
@@ -685,6 +717,10 @@ export function withUrlTakeover<T>(
         : takes
       return carries ? channel.hrefFor!(page, ctx) : (base.hrefFor?.(page, ctx) ?? null)
     },
+    // Форма без JS отправляется в адрес при любом канале — имена и перенос у адреса.
+    fieldName: (key) => channel.fieldName!(key),
+    carryFields: (search, drop) => channel.carryFields!(search, drop),
+    extraDefaults: url.extraDefaults ?? base.extraDefaults,
     capabilities: base.capabilities,
     capabilitiesFor: (extra) => base.capabilitiesFor(extra),
     recordFor: base.recordFor ? (extra) => base.recordFor!(extra) : undefined,

@@ -6,7 +6,7 @@ import {
   DEMO_EXTRA_SEARCH,
   DEMO_SRCS,
   demoExtraOf,
-  demoSrcOfSearch,
+  demoSrcOfUrl,
   demoHasFilterSchema,
   demoShikimoriApi,
   demoStaticFilterSchema,
@@ -136,7 +136,7 @@ describe('демо-пагинатор: источник из адреса до �
     'page.src=animes&page.src=rm-rest',
     'page.src=%22animes%22',
     'page.size=10&q=x',
-  ])('«%s» → тот же источник, что у пагинатора', (search) => {
-    expect(demoSrcOfSearch(new URLSearchParams(search))).toBe(viaPaginator(search))
+  ])('«%s» → тот же источник, что у пагинатора', async (search) => {
+    expect(await demoSrcOfUrl(ensureDemoPaginator('url'), `/paginator?${search}`)).toBe(viaPaginator(search))
   })
 })

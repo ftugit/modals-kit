@@ -6,8 +6,9 @@
 // «поле запроса — обычное поле lib form, транспорт — GET-форма, а commit —
 // setSearchQuery»). Форма объявлена (`field.search`), транспорт — url-канал
 // `bind`: до оживления нативный GET (жив и без JS), после — коммит в стор
-// пагинатора тем же `setExtra`, а адрес правит транспорт хранилища. Ключ
-// объявления — адресный (`page.q`), в стор он ложится как `q`.
+// пагинатора тем же `setExtra`, а адрес правит транспорт хранилища. Имя поля,
+// перенос остального адреса и ссылку «Сбросить» даёт адаптер пагинатора
+// (`fieldName('q')`, `carryFields`, `linkFor`): формат хранилища хук не знает.
 //
 // Хук — в `lib/components/paginator`, а не в `paginate/search`: он склеивает lib/form,
 // роутер, lib/paginate и paginate/search; положить его в одну из них — привязать
@@ -16,14 +17,12 @@ import { onMount, untrack } from 'svelte'
 import { defineForm, field, v } from '#lib/form/index.js'
 import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
 import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
-import { getClientStore, setExtra } from '#lib/paginate/index.js'
+import { getClientStore, getPaginator, linkFor, setExtra } from '#lib/paginate/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
 import type { TaskState } from '#lib/task/index.js'
 import { useActionTask } from './action-task.svelte.js'
 
 export interface PaginatorSearchOptions {
-  /** Адресный ключ запроса: `page.q` — его пишет GET-форма без JS и адаптер с JS. */
-  path: string
   /** Подпись поля — текст страницы; своих текстов у хука нет. */
   label: string
   placeholder?: string
@@ -58,9 +57,9 @@ export interface PaginatorSearch {
   readonly hydrated: boolean
   /** В адресе есть запрос — есть что сбрасывать ссылкой до оживления. */
   readonly hasQuery: boolean
-  /** Текущий адрес без запроса и указателя страницы — ссылка «Сбросить» без JS. */
-  readonly resetHref: string
-  /** Чужие ключи адреса — скрытыми полями формы: GET-отправка их не сотрёт. */
+  /** Первая страница без запроса — ссылка «Сбросить» без JS; `null` — у транспорта ссылок нет. */
+  readonly resetHref: string | null
+  /** Остальное состояние адреса — скрытыми полями формы: GET-отправка его не сотрёт. */
   readonly hiddenFields: readonly { name: string; value: string }[]
   /** Обработчик ввода поля: живая проверка сразу, применение — с задержкой. */
   input(event: Event): void
@@ -78,7 +77,7 @@ export interface PaginatorSearch {
  *
  * ```svelte
  * <script>
- *   const search = usePaginatorSearch(name, { path: 'page.q', label: 'Поиск', query: () => query })
+ *   const search = usePaginatorSearch(name, { label: 'Поиск', query: () => query })
  * </script>
  * <Form form={search.form} hiddenFields={search.hiddenFields} onsubmit={search.submit}>
  *   <SearchInput {...search.field.attrs} value={search.value} oninput={search.input} onClear={search.clear} />
@@ -87,7 +86,10 @@ export interface PaginatorSearch {
  * ```
  */
 export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): PaginatorSearch {
-  const { path, maxLength = 120, debounce = 300 } = o
+  const { maxLength = 120, debounce = 300 } = o
+  const adapter = getPaginator(name).adapter
+  // Имя поля во внешнем хранилище (URL: `page.q`) — решение транспорта.
+  const path = adapter.fieldName?.('q') ?? 'q'
   const isDisabled = () => o.disabled?.() ?? false
 
   // Настройка одна на поиск: компонент поля пишет страница, транспорт url-режиму
@@ -155,20 +157,16 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
   let timer: ReturnType<typeof setTimeout> | undefined
   const stopTimer = () => clearTimeout(timer)
 
-  /** Свой ключ запроса и указатель страницы не переносятся: новый запрос — с первой страницы. */
-  const preserved = $derived(
-    Object.entries(currentSearch())
-      .filter(([key]) => key !== path && key !== 'page')
-      .map(([key, val]) => ({ name: key, value: String(val) })),
-  )
+  /** Свой запрос не переносится (его несёт поле), указатель страницы — тоже: новый запрос — с первой. */
+  const preserved = $derived(adapter.carryFields?.(currentSearch(), ['q']) ?? [])
 
   /**
    * «Сбросить» без JS — ссылка, а не `type="reset"`: сброс формы вернул бы поле
    * к значению из разметки, т. е. к тому же запросу.
    */
   const resetHref = $derived.by(() => {
-    const qs = new URLSearchParams(preserved.map((f) => [f.name, f.value])).toString()
-    return qs ? `${currentPathname()}?${qs}` : currentPathname()
+    const href = linkFor(name, { page: 1, patch: { q: undefined } }, { search: currentSearch() })
+    return href === null ? null : `${currentPathname()}${href}`
   })
 
   return {

@@ -6,7 +6,7 @@ import { canLoadMore, deriveMeta, flattenPages } from './pure'
 import type { LibError, ScrollDriver } from './types'
 import { getPaginator, type LastAction, type PaginatorInstance } from './registry'
 import { initialState, type Store } from './store'
-import type { AdapterInit, AdapterInitContext, Extra, ExtraValue, PageResponse, PaginatorState } from './types'
+import type { AdapterInit, AdapterInitContext, Extra, ExtraPatch, ExtraValue, HrefContext, PageResponse, PaginatorState } from './types'
 
 export function getState<T>(store: Store, name: string): PaginatorState<T> {
   return store.state<T>(name)()
@@ -683,16 +683,48 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
  * (persist начального состояния → page 1) и загрузить первую страницу заново. In-flight запросы
  * отбрасываются bump'ом reqId.
  */
+/**
+ * Куда ведёт сброс: первая страница без указателя позиции (`positionKeys`) — он описывает
+ * место в прошлом окне. Оставь его — первая страница ушла бы с ним же (истёкший токен →
+ * тот же отказ, и «начать сначала» не начинало бы). Одна цель и для `resetPaginator`,
+ * и для ссылки (`linkFor`): кнопка с JS и ссылка без него не расходятся.
+ */
+export function resetTarget(name: string): LinkTarget {
+  const patch: Record<string, undefined> = {}
+  for (const key of getPaginator(name).positionKeys) patch[key] = undefined
+  return { page: 1, patch }
+}
+
+/** Цель ссылки: страница и правка extra относительно текущего состояния. */
+export type LinkTarget = { page: number; patch?: ExtraPatch }
+
+/**
+ * Ссылка на состояние — ответ транспорта: как оно выглядит во внешнем хранилище,
+ * знает только адаптер. `null` — у транспорта ссылок нет (local/memory/cursor):
+ * UI рисует кнопку.
+ */
+export function linkFor(name: string, target: LinkTarget, ctx: HrefContext = {}): string | null {
+  const adapter = getPaginator(name).adapter
+  return adapter.hrefFor ? adapter.hrefFor(target.page, { ...ctx, patch: target.patch ?? ctx.patch }) : null
+}
+
+function applyExtraPatch(extra: Extra, patch: ExtraPatch | undefined): Extra {
+  if (!patch) return extra
+  const next: Record<string, ExtraValue> = { ...extra }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key]
+    else next[key] = value
+  }
+  return next
+}
+
 export async function resetPaginator<T>(store: Store, name: string): Promise<void> {
   const instance = getPaginator(name)
   abortReplace(sessionOf(store, name))
   sessionOf(store, name).lastAction = null
   dropPrefetched(sessionOf(store, name))
   patch<T>(store, name, (s) => {
-    // Сброс — начало выдачи: указатель «следующего шага» (`positionKeys`) описывает место
-    // в прошлом окне. Оставь его — первая страница ушла бы с ним же (истёкший токен →
-    // тот же отказ, и «Начать сначала» не начинало бы).
-    const extra = dropPositionKeys(s.extra, instance.positionKeys, {})
+    const extra = applyExtraPatch(s.extra, resetTarget(name).patch)
     return {
       ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
       reqId: s.reqId + 1,

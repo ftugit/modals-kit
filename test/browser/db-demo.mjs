@@ -125,9 +125,10 @@ try {
   if (await errRow.getAttribute('data-error-code') === 'unsupported') {
     console.log('  SKIP курсор: на сервере не задан DB_CURSOR_SECRET')
   } else {
-  ok('курсор: истёкший токен — код cursor и кнопка «Начать сначала»',
+  ok('курсор: истёкший токен — код cursor и «Начать сначала» (ссылка от URL-адаптера)',
     await errRow.getAttribute('data-error-code') === 'cursor'
-      && (await errRow.locator('button').allInnerTexts()).join() === 'Начать сначала',
+      && (await errRow.locator('a, button').allInnerTexts()).join() === 'Начать сначала'
+      && await errRow.locator('a').count() === 1,
     (await errRow.allInnerTexts()).join(' | '))
   // Прочий отказ (база упала) — повтор осмыслен. Ответ подменяется один раз.
   const asked = []
@@ -136,18 +137,36 @@ try {
     await route.fulfill({ status: 500, contentType: 'application/json',
       body: JSON.stringify({ error: 'База не смогла выполнить запрос.', code: 'database' }) })
   }, { times: 1 })
-  await errRow.locator('button').click()
+  await errRow.locator('a, button').click()
   await curPage.waitForFunction(() => document.querySelector('[data-testid="error-row"]')?.getAttribute('data-error-code') === 'database',
     null, { timeout: 10_000 }).catch(() => {})
   ok('курсор: «Начать сначала» идёт без токена и снимает его из адреса',
     asked.length === 1 && asked[0] === null && !new URL(curPage.url()).searchParams.has('page.after'),
     JSON.stringify({ asked, url: curPage.url() }))
   ok('прочий отказ — кнопка «Повторить»',
-    (await errRow.locator('button').allInnerTexts()).join() === 'Повторить', (await errRow.allInnerTexts()).join(' | '))
-  await errRow.locator('button').click()
+    (await errRow.locator('a, button').allInnerTexts()).join() === 'Повторить', (await errRow.allInnerTexts()).join(' | '))
+  await errRow.locator('a, button').click()
   await errRow.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
   ok('«Повторить» загружает первую страницу', await errRow.count() === 0)
   ok('курсор: без ошибок страницы', curProblems.length === 0, curProblems.join(' | '))
+
+  /* Без JS карточку видно (первая страница не загрузилась на сервере), и кнопки —
+     ссылки от адаптера: «Начать сначала» ведёт на первую страницу без токена. */
+  const nojs = await browser.newContext({ javaScriptEnabled: false })
+  const np = await nojs.newPage()
+  await np.goto(`${BASE}?page.cur=1&page.after=bogusToken123`, { waitUntil: 'domcontentloaded' })
+  const nRow = np.locator('[data-testid="error-row"]')
+  const restartLink = nRow.locator('a', { hasText: 'Начать сначала' })
+  const restartHref = await restartLink.getAttribute('href').catch(() => null)
+  ok('без JS: «Начать сначала» — ссылка без токена', restartHref !== null && !restartHref.includes('after='), String(restartHref))
+  await restartLink.click()
+  await np.waitForLoadState('domcontentloaded')
+  ok('без JS: по ссылке — первая страница без ошибки, строки на месте',
+    await np.locator('[data-testid="error-row"]').count() === 0
+      && !new URL(np.url()).searchParams.has('page.after')
+      && await np.locator('[data-testid="rows"]').count() === 1,
+    np.url())
+  await nojs.close()
   }
   await curPage.close()
 } finally {

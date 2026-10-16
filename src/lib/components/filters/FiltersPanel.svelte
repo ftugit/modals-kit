@@ -13,7 +13,7 @@
    */
   import { untrack } from 'svelte'
   import { currentPathname } from '#lib/paginate/sveltekit/router.js'
-  import { getClientStore, setExtra } from '#lib/paginate/index.js'
+  import { getClientStore, getPaginator, setExtra } from '#lib/paginate/index.js'
   import {
     catalogFilterExtraPatch,
     catalogFilterRemoveValuePatch,
@@ -35,7 +35,6 @@
     extra: Record<string, unknown> | undefined
     /** Путь страницы каталога для адресов ссылок (по умолчанию — текущий). */
     url?: string
-    prefix?: string
     /** Чужие ключи адреса: их сохраняет и форма (скрытыми полями), и чипы. */
     preserved?: Record<string, string>
     /** Описание формы под схему — функция приложения (та же, что у сервера). */
@@ -52,7 +51,6 @@
     schema,
     extra,
     url = currentPathname(),
-    prefix = 'page',
     preserved = {},
     describe,
     form: FilterForm,
@@ -60,7 +58,12 @@
     class: cls = '',
   }: Props = $props()
 
-  /** Описание формы: имена полей — ключи адреса (`page.filters.kind`). */
+  /**
+   * Слой имён полей — у адаптера пагинатора: URL-транспорт кладёт фильтры в
+   * `page.filters.kind`, транспорт без адреса — в `filters.kind`. Панель его не выбирает.
+   */
+  const prefix = untrack(() => getPaginator(name).adapter.pageParam ?? '')
+  /** Описание формы: имена полей — ключи хранилища (`page.filters.kind`). */
   const description = $derived(describe(schema, { prefix: prefix ? `${prefix}.` : '' }))
 
   /** Вся картина панели — из схемы, описания и extra: ни одного решения в разметке. */
