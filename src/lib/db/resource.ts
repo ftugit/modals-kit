@@ -83,16 +83,24 @@ function touchAssignment(x: Resource, draft?: Row): string[] {
  * Правила данных ресурса → ошибки полей. Пусто — нарушений нет. Нарушение без своего
  * текста получает текст поля по коду (`messages`), иначе код уходит в словарь формы.
  */
+/** Поле нарушения: поле ресурса или ключ внутри JSON-поля (`data.mail`) — значения пользовательских полей. */
+const checkPath = (r: Resource, path: string) => {
+  const [head, ...rest] = path.split('.');
+  if (!own(r.fields, head!)) return false;
+  return !rest.length || (r.fields[head!]!.kind === 'json' && rest.every(Boolean));
+};
 async function runChecks(r: Resource, event: CheckEvent): Promise<FieldError[]> {
   if (!r.checks) return [];
   const found = await r.checks(event);
   if (found === undefined) return [];
   if (!Array.isArray(found)) throw new TypeError(`${r.key}: checks обязан вернуть массив нарушений или ничего`);
   return found.map((i) => {
-    if (!i || typeof i.code !== 'string' || !i.code || (i.field !== undefined && !own(r.fields, i.field)))
-      throw new TypeError(`${r.key}: нарушение checks — { field?: поле ресурса, code: непустая строка, params?, message? }`);
+    if (!i || typeof i.code !== 'string' || !i.code || (i.field !== undefined && !checkPath(r, i.field)))
+      throw new TypeError(
+        `${r.key}: нарушение checks — { field?: поле ресурса или ключ JSON-поля (data.key), code: непустая строка, params?, message? }`,
+      );
     return fieldError(
-      i.field ? r.fields[i.field] : undefined,
+      i.field ? r.fields[i.field.split('.')[0]!] : undefined,
       i.field,
       i.code,
       i.message ?? DEFAULT_TEXT[i.code] ?? i.code,
@@ -107,7 +115,7 @@ const snapshot = (values: Row): Readonly<Row> => freeze(structuredClone(values))
 const toIssue = (x: FieldError) => ({
   message: x.message,
   code: x.code,
-  ...(x.field ? { path: [x.field] } : {}),
+  ...(x.field ? { path: x.field.split('.') } : {}),
   ...(x.params ? { params: x.params } : {}),
   ...(x.template !== undefined ? { template: x.template } : {}),
 });

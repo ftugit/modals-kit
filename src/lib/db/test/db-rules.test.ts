@@ -342,6 +342,39 @@ test("checks: свой текст, messages поля, ошибка всей за
   );
 });
 
+test("checks: ключ внутри JSON-поля (data.mail) — путь issue ['data', 'mail']; у обычного поля ключа нет", () => {
+  const r = posts(
+    countedText(),
+    {
+      checks: ({ values }) => {
+        const data = (values.data ?? {}) as Record<string, unknown>;
+        if (values.title === "Мимо") return [{ field: "slug.x", code: "invalid" }];
+        return typeof data.mail === "string" && !data.mail.includes("@") ? [{ field: "data.mail", code: "email" }] : undefined;
+      },
+    },
+    { data: f.json({ ...rw, nullable: true, messages: { email: "Почта записи неверна" } }) },
+  );
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const issues = async (row: Record<string, unknown>) => {
+      try {
+        await api.insert(ctx, row as never);
+      } catch (e) {
+        return failureIssues(e) ?? String(e);
+      }
+      return null;
+    };
+    assert.deepEqual(await issues({ title: "Запись", data: { mail: "abc" } }), [
+      { message: "Почта записи неверна", code: "email", path: ["data", "mail"], template: "Почта записи неверна" },
+    ]);
+    assert.equal(await issues({ title: "Запись", data: { mail: "a@b.ru" } }), null);
+    await assert.rejects(api.insert(ctx, { title: "Мимо" } as never), (e: unknown) => {
+      const cause = (e as { cause?: unknown }).cause;
+      return /ключ JSON-поля/.test(String(cause instanceof Error ? cause.message : e));
+    }, "ключ внутри не-JSON поля — ошибка правила");
+  });
+});
+
 /* ── validator: проверка без записи для форм, которые ничего не пишут ── */
 
 test("validator('check'): только значения из входа и checks; чужие ключи формы пропускаются; ничего не пишет", () => {

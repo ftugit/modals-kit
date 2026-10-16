@@ -32,7 +32,7 @@ const messages: Record<FailureKind, string> = {
  * `type.date`, `type.datetime`) плюс свои: `unique`, `check`, `invalid`, `custom`.
  */
 export interface FieldError {
-  /** Поле ресурса. Нет — ошибка про запись целиком (составной unique). */
+  /** Поле ресурса (у JSON-колонки — с ключом внутри: `data.mail`). Нет — ошибка про запись целиком (составной unique). */
   field?: string;
   code: string;
   params?: Record<string, unknown>;
@@ -50,7 +50,8 @@ export interface FieldError {
  */
 export interface FailureIssue {
   message: string;
-  path?: readonly [string];
+  /** Путь поля: `['title']`; у ключа внутри JSON-колонки — `['data', 'mail']`. */
+  path?: readonly [string, ...string[]];
   code: string;
   params?: Record<string, unknown>;
   template?: string;
@@ -148,7 +149,7 @@ export function failureIssues(error: unknown): FailureIssue[] | null {
   return error.details.errors.map((x) => ({
     message: x.message,
     code: x.code,
-    ...(x.field ? { path: [x.field] as const } : {}),
+    ...(x.field ? { path: x.field.split(".") as [string, ...string[]] } : {}),
     ...(x.params ? { params: x.params } : {}),
     ...(x.template !== undefined ? { template: x.template } : {}),
   }));
