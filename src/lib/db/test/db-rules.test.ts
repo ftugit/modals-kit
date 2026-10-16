@@ -807,3 +807,30 @@ test("protect: системные поля можно передать, оста
     await assert.rejects(api.update(ctx, id, { created_at: "2018-01-01T00:00:00Z" }), forbidden, "исходная модель защищена");
   });
 });
+
+test("raw: запись как есть (свой id, даты, хэш), без хуков и updated_at; чтение — все строки и поля", () => {
+  const seen: string[] = [];
+  const r = hidden({ hooks: { beforeWrite: () => void seen.push("w"), afterRead: () => void seen.push("r") } });
+  return withDb([r], async (db, pg) => {
+    const api = db.resource(r);
+    const id = "00000000-0000-4000-8000-000000000002";
+    const row = (await api.raw((m) => m.insert(ctx, { id, title: "x", created_at: "2020-01-01T00:00:00Z", updated_at: "2020-01-02T00:00:00Z", deleted_at: "2020-01-03T00:00:00Z", secret: "готовый" }))) as Record<string, string>;
+    assert.equal(row.id, id);
+    assert.equal(row.secret, "готовый", "store не вызывается, маска read не действует");
+    assert.equal(row.deleted_at, "2020-01-03T00:00:00.000000Z");
+    await api.raw(async (m) => {
+      assert.equal(m.behavior().raw, true);
+      assert.equal((await m.select(ctx)).length, 1, "удалённая и скрытая политикой — видна");
+      assert.equal(await m.count(ctx, { filter: { field: "secret", op: "eq", value: "готовый" } }), 1, "фильтр по любому полю");
+      const up = (await m.update(ctx, id, { title: "y" })) as Record<string, string>;
+      assert.equal(up.updated_at, "2020-01-02T00:00:00.000000Z", "updated_at не двигается");
+      await assert.rejects(m.insert(ctx, { nope: 1 }), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+      await assert.rejects(m.cursor(ctx), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
+      await assert.rejects(m.without(["policy"], () => 1), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+      await m.delete(ctx, id);
+    });
+    assert.deepEqual(seen, [], "хуков нет ни при записи, ни при чтении");
+    assert.equal((await pg.query("SELECT 1 FROM public.rules_hidden")).rows.length, 0, "delete — настоящий DELETE");
+    await assert.rejects(api.raw((m) => m.insert(ctx, { id: "не uuid", title: "z" })), (e: unknown) => e instanceof DbFailure, "проверяет сам Postgres");
+  });
+});

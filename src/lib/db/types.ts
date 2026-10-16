@@ -442,6 +442,13 @@ export interface ResourceApi<
   without<T>(paths: readonly string[], fn: (api: ResourceApi<F, R>) => T | Promise<T>): Promise<T>;
   /** Что модель делает сама и что у этого экземпляра выключено. */
   behavior(): ModelBehavior;
+  /**
+   * Сырой экземпляр: что передали, то и записано; чтение — все строки и поля, без хуков и
+   * белых списков. Остаются имена полей → колонки (неизвестное — `validation`), параметры
+   * SQL, транзакция, отмена. `cursor`, `restore`, `estimate`, `validator`, `include` —
+   * `unsupported`.
+   */
+  raw<T>(fn: (api: ResourceApi<F, R>) => T | Promise<T>): Promise<T>;
 }
 /** Поведение модели (`behavior()`): метки времени, что умеет опрос, что выключено. */
 export interface ModelBehavior {

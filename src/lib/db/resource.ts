@@ -5,6 +5,7 @@ import { allows, checkField, context, draftInput, freeze, grants, inputRecord, i
 import { fieldError, revalidateDraft, systemField, timestampField, unprotected, validateField } from './validation';
 import { readProof } from './proof';
 import { behavior, originOf, withoutPaths } from './clone';
+import { rawApi, rawResource } from './raw';
 import {
   Sql,
   col,
@@ -178,6 +179,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   r: Resource<F, R>,
 ): ResourceApi<F, R> {
   type Out = ResourceRow<F, R>;
+  if (originOf(r as unknown as Resource).raw) return rawApi(db, r as unknown as Resource) as unknown as ResourceApi<F, R>;
   /**
    * Отмена: Statement.signal берётся из контекста запроса. Драйвер решает, что
    * с ней делать (pg — обрывает соединение, PGlite — игнорирует, см. adapters).
@@ -811,6 +813,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     insertMany: (ctx, rows, opts) => db.guard(() => insertMany(ctx, rows, opts)),
     without: (paths, fn) => db.guard(async () => fn(resourceApi(db, withoutPaths(r as unknown as Resource, paths) as unknown as Resource<F, R>))),
     behavior: () => behavior(r as unknown as Resource),
+    raw: (fn) => db.guard(async () => fn(resourceApi(db, rawResource(r as unknown as Resource) as unknown as Resource<F, R>))),
     estimate: (ctx, input) => db.guard(() => estimate(ctx, input ?? {})),
   };
 }
