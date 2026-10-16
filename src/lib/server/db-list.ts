@@ -15,6 +15,7 @@
  *                      был бы ВТОРЫМ запросом на каждый шаг, а номеров страницы в
  *                      потоке всё равно нет.
  */
+import { ApiError } from '#lib/api-error.js'
 import { parseListInput, toKitError } from '#lib/db/sveltekit/index.js'
 import type { DataContext } from '#lib/db/index.js'
 import type { PageResponse } from '#lib/paginate/index.js'
@@ -133,8 +134,11 @@ setDbPostsServerTransport(async (query) => {
   } catch (e) {
     // SSR-путь объясняет отказ теми же словами, что и эндпоинт: иначе снапшот
     // уносил в разметку текст слоя по умолчанию («Invalid or expired cursor»).
+    // Код едет вместе с текстом (`ApiError`, как у браузерного пути): по нему строка
+    // ошибки решает, предложить повтор или начало с первой страницы.
     if (e instanceof Error && e.name === 'AbortError') throw e
-    throw new Error(explain(e).error, { cause: e })
+    const { error, code, status } = explain(e)
+    throw new ApiError({ error, code }, status)
   }
 })
 

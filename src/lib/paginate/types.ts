@@ -76,6 +76,12 @@ export type PaginatorState<T> = RestorableState & {
   pages: Record<number, T[]>
   status: 'init' | 'idle' | 'loading' | 'error'
   error: string | null
+  /**
+   * Код отказа — строковое поле `code` брошенной ошибки (`ApiError`, ошибки слоя), иначе
+   * `null`. Ядро его не толкует: по нему UI решает, что предложить — повтор (сбой сети,
+   * база занята) или начало с первой страницы (истёкший токен: повтор отправил бы его же).
+   */
+  errorCode: string | null
   /** D17: страница в полёте (скелетоны-слоты как часть view-модели, а не оверлей). */
   pending: PendingPage | null
   /** Из meta источника; null = неизвестно → только стрелки (R12). */

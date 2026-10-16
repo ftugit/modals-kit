@@ -38,6 +38,12 @@ function errMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Строковый `code` брошенной ошибки (контракт `PaginatorState.errorCode`), иначе `null`. */
+function errCode(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' && code !== '' ? code : null
+}
+
 /** Ход загрузки от источника → `state.progress`; отменённый или устаревший запрос не пишет. */
 function progressOf<T>(store: Store, name: string, reqId: number, signal: AbortSignal) {
   return (progress: unknown): void => {
@@ -264,6 +270,7 @@ export async function fetchReplace<T>(
       pages: { [page]: prefetched.items },
       pending: null,
       error: null,
+      errorCode: null,
     }))
     mergeResponseExtra<T>(store, name, prefetched)
     sessionOf(store, name).scrollDriver?.({ type: 'top' })
@@ -278,6 +285,7 @@ export async function fetchReplace<T>(
     page,
     status: 'loading',
     error: null,
+    errorCode: null,
     progress: undefined,
     // D17: REPLACE-скелетоны = pageSize слотов pending-группы.
     pending: { page, mode: 'replace', count: s.pageSize },
@@ -300,6 +308,7 @@ export async function fetchReplace<T>(
       ...s,
       status: 'error',
       error: errMessage(error),
+      errorCode: errCode(error),
       pending: null,
     }))
     instance.emitter.emit({ type: 'error', error, page, phase })
@@ -320,6 +329,7 @@ export async function fetchReplace<T>(
     hasPrev: page > 1 ? null : false,
     status: 'idle',
     error: null,
+    errorCode: null,
     pending: null,
   }))
   // Указатель следующего шага — из того же ответа, что и строки: отдельного
@@ -361,7 +371,7 @@ export async function initPaginator<T>(
   try {
     init = (await instance.adapter.getInitial(ctx)) as AdapterInit<T>
   } catch (error) {
-    patch<T>(store, name, (s) => ({ ...s, status: 'error', error: errMessage(error) }))
+    patch<T>(store, name, (s) => ({ ...s, status: 'error', error: errMessage(error), errorCode: errCode(error) }))
     instance.emitter.emit({ type: 'error', error, page: null, phase: 'init' })
     notifyError(instance, 'init-failed', error, { page: null, phase: 'init' })
     return
@@ -463,6 +473,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     status: 'loading',
     pending: { page: target, mode: dir > 0 ? 'append' : 'prepend', count },
     error: null,
+    errorCode: null,
     progress: undefined,
   }))
   // Интент стреляет в момент старта, до данных (D17/раунд-5). Контракт D16 как в
@@ -490,6 +501,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
       ...s,
       status: 'error',
       error: errMessage(error),
+      errorCode: errCode(error),
       pending: null,
     }))
     instance.emitter.emit({ type: 'error', error, page: target, phase: 'append' })
@@ -547,6 +559,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
     status: 'idle',
     pending: null,
     error: null,
+    errorCode: null,
   }))
   mergeResponseExtra<T>(store, name, resp)
   instance.emitter.emit({
@@ -591,7 +604,7 @@ export async function retry<T>(store: Store, name: string): Promise<void> {
     await loadMore<T>(store, name, last.dir)
     return
   }
-  patch<T>(store, name, (s) => (s.status === 'error' ? { ...s, status: 'init', error: null } : s))
+  patch<T>(store, name, (s) => (s.status === 'error' ? { ...s, status: 'init', error: null, errorCode: null } : s))
   await initPaginator<T>(store, name)
 }
 
@@ -675,10 +688,16 @@ export async function resetPaginator<T>(store: Store, name: string): Promise<voi
   abortReplace(sessionOf(store, name))
   sessionOf(store, name).lastAction = null
   dropPrefetched(sessionOf(store, name))
-  patch<T>(store, name, (s) => ({
-    ...initialState<T>(name, s.pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
-    reqId: s.reqId + 1,
-  }))
+  patch<T>(store, name, (s) => {
+    // Сброс — начало выдачи: указатель «следующего шага» (`positionKeys`) описывает место
+    // в прошлом окне. Оставь его — первая страница ушла бы с ним же (истёкший токен →
+    // тот же отказ, и «Начать сначала» не начинало бы).
+    const extra = dropPositionKeys(s.extra, instance.positionKeys, {})
+    return {
+      ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
+      reqId: s.reqId + 1,
+    }
+  })
   safePersist(store, name) // storage/URL ← исходный указатель (page 1)
   await initPaginator<T>(store, name) // status 'init' → свежая загрузка страницы 1
 }

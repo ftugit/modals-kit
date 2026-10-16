@@ -71,6 +71,7 @@ function makeState(overrides: Partial<PaginatorState<unknown>> = {}): PaginatorS
     pages: {},
     status: 'idle',
     error: null,
+    errorCode: null,
     pending: null,
     hasNext: null,
     hasPrev: null,
@@ -731,6 +732,51 @@ describe('core operations & lifecycle', () => {
     await retry(store, 'errTest')
     expect(getState(store, 'errTest').status).toBe('idle')
     expect(getState(store, 'errTest').pages[1]).toEqual(['p1'])
+  })
+
+  it('errorCode: код брошенной ошибки сохраняется, успех и повтор его снимают', async () => {
+    let fail: unknown = Object.assign(new Error('токен устарел'), { code: 'cursor' })
+    const fake = fakeAdapter({ page: 1 }, async ({ page }) => {
+      if (fail) throw fail
+      return { items: [`p${page}`], totalPages: 3 }
+    })
+    definePaginator({ name: 'codeTest', adapter: fake.adapter })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'codeTest')
+    expect(getState(store, 'codeTest')).toMatchObject({ status: 'error', error: 'токен устарел', errorCode: 'cursor' })
+
+    // ошибка без строкового кода — код неизвестен, а не прошлый
+    fail = new Error('network failed')
+    await retry(store, 'codeTest')
+    expect(getState(store, 'codeTest')).toMatchObject({ status: 'error', errorCode: null })
+
+    fail = null
+    await retry(store, 'codeTest')
+    expect(getState(store, 'codeTest')).toMatchObject({ status: 'idle', error: null, errorCode: null })
+  })
+
+  it('reset снимает позиционный ключ: начало выдачи не несёт указатель прошлого окна', async () => {
+    const seen: Array<string | undefined> = []
+    const fake = fakeAdapter({ page: 2, pageSize: 20, extra: { kind: 'a', after: 'expired' } }, async ({ page, extra }) => {
+      seen.push(extra?.after as string | undefined)
+      if (extra?.after === 'expired') throw Object.assign(new Error('токен устарел'), { code: 'cursor' })
+      return { items: [`p${page}`], totalPages: 3 }
+    })
+    // как адрес: getInitial читает то, что записал persist
+    let saved: PaginatorState<unknown> | null = null
+    fake.persist.mockImplementation(((st: PaginatorState<unknown>) => { saved = st }) as never)
+    fake.getInitial.mockImplementation(async () =>
+      saved ? { page: saved.page, pageSize: saved.pageSize, extra: saved.extra } : { page: 2, pageSize: 20, extra: { kind: 'a', after: 'expired' } })
+    definePaginator({ name: 'resetPos', adapter: fake.adapter, positionKeys: ['after'] })
+    const store = createPaginatorStore()
+    await initPaginator(store, 'resetPos')
+    expect(getState(store, 'resetPos').errorCode).toBe('cursor')
+
+    await resetPaginator(store, 'resetPos')
+    const s = getState(store, 'resetPos')
+    expect(s).toMatchObject({ status: 'idle', page: 1, errorCode: null })
+    expect(s.extra).toEqual({ kind: 'a' })
+    expect(seen.at(-1)).toBeUndefined()
   })
 })
 

@@ -19,6 +19,10 @@
  * придержаны), то есть обычным POST без JS — именно этот путь даёт `form`. Затем
  * скрипты отпускаются, страница гидратируется, и переход идёт по ссылке шапки.
  * Тест пишет одну запись в демо-базу (заголовок с отметкой времени).
+ *
+ *   2. строка ошибки списка выбирает действие по коду отказа: истёкший токен
+ *      курсора — «Начать сначала» (повтор отправил бы тот же токен), прочие —
+ *      «Повторить». Регрессия: всегда «Повторить», ошибка повторялась бесконечно.
  */
 import { chromium } from 'playwright'
 
@@ -109,6 +113,43 @@ try {
   ok('закреп: возврат к отправленному значению показывает её снова', await pinError() === pinned, String(await pinError()))
   ok('закреп: всё это без ухода с поля', await ids.evaluate((el) => el === document.activeElement))
   await pinPage.close()
+
+  /* Код отказа решает, что предложить. Токен — правдоподобный по форме, но не
+     подписанный этим сервером: слой отвечает кодом `cursor` уже в SSR-снимке. */
+  const curPage = await browser.newPage()
+  const curProblems = []
+  curPage.on('pageerror', (e) => curProblems.push(e.message))
+  await curPage.goto(`${BASE}?page.cur=1&page.after=bogusToken123`, { waitUntil: 'networkidle' })
+  const errRow = curPage.locator('[data-testid="error-row"]')
+  // Без DB_CURSOR_SECRET курсор выключен (код `unsupported`) — проверять нечего.
+  if (await errRow.getAttribute('data-error-code') === 'unsupported') {
+    console.log('  SKIP курсор: на сервере не задан DB_CURSOR_SECRET')
+  } else {
+  ok('курсор: истёкший токен — код cursor и кнопка «Начать сначала»',
+    await errRow.getAttribute('data-error-code') === 'cursor'
+      && (await errRow.locator('button').allInnerTexts()).join() === 'Начать сначала',
+    (await errRow.allInnerTexts()).join(' | '))
+  // Прочий отказ (база упала) — повтор осмыслен. Ответ подменяется один раз.
+  const asked = []
+  await curPage.route('**/api/db-posts?*', async (route) => {
+    asked.push(new URL(route.request().url()).searchParams.get('after'))
+    await route.fulfill({ status: 500, contentType: 'application/json',
+      body: JSON.stringify({ error: 'База не смогла выполнить запрос.', code: 'database' }) })
+  }, { times: 1 })
+  await errRow.locator('button').click()
+  await curPage.waitForFunction(() => document.querySelector('[data-testid="error-row"]')?.getAttribute('data-error-code') === 'database',
+    null, { timeout: 10_000 }).catch(() => {})
+  ok('курсор: «Начать сначала» идёт без токена и снимает его из адреса',
+    asked.length === 1 && asked[0] === null && !new URL(curPage.url()).searchParams.has('page.after'),
+    JSON.stringify({ asked, url: curPage.url() }))
+  ok('прочий отказ — кнопка «Повторить»',
+    (await errRow.locator('button').allInnerTexts()).join() === 'Повторить', (await errRow.allInnerTexts()).join(' | '))
+  await errRow.locator('button').click()
+  await errRow.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+  ok('«Повторить» загружает первую страницу', await errRow.count() === 0)
+  ok('курсор: без ошибок страницы', curProblems.length === 0, curProblems.join(' | '))
+  }
+  await curPage.close()
 } finally {
   await browser.close()
 }

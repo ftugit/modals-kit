@@ -21,6 +21,7 @@ export function initialState<T>(
     pages: {},
     status: 'init',
     error: null,
+    errorCode: null,
     pending: null,
     hasNext: null,
     hasPrev: null,
