@@ -88,6 +88,16 @@ export const ru: MessageDictionary = {
   'body.too-large': 'Запрос слишком большой',
   'body.too-many-keys': 'Запрос содержит слишком много полей',
   'request.too-many': 'Поле передано слишком много раз',
+  // набор полей от пользователя (`defineFieldKit`)
+  'kit.not-list': 'Описание полей не распознано',
+  'kit.too-many-fields': (p) => `Полей ${p['count']}, можно не больше ${p['max']}`,
+  'kit.field-shape': 'Описание поля не распознано',
+  'kit.unknown-kind': 'Такого вида поля нет',
+  'kit.rule-not-allowed': 'Это правило не подходит к виду поля',
+  'kit.rule-duplicate': 'Правило выбрано дважды',
+  'kit.arg-type': 'Значение правила — число',
+  'kit.arg-missing': 'Укажите значение правила',
+  'kit.spec': 'Поле описано неверно: проверьте его правила',
   'file.too-large': (p) => `Файл ${p['name'] ?? ''} слишком большой`.replace('  ', ' '),
   'rate.limited': (p) => {
     const s = Math.ceil(Number(p['retryAfterMs'] ?? 0) / 1000)
