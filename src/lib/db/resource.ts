@@ -5,7 +5,7 @@ import { allows, checkField, context, draftInput, freeze, grants, inputRecord, i
 import { fieldError, revalidateDraft, systemField, timestampField, unprotected, validateField } from './validation';
 import { readProof } from './proof';
 import { behavior, originOf, withoutPaths } from './clone';
-import { assignee, insertAllowed, rule, softDeleteAssignment } from './rules';
+import { accessKeys, accessSQL, assignee, checkKeys, filterKeys, insertAllowed, rule, softDeleteAssignment } from './rules';
 import { chainPlan } from './chain';
 import { rawApi, rawResource } from './raw';
 import {
@@ -209,12 +209,18 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       true,
     );
     const client = await filterSQL(r, ctx, filter, s, db.limits);
+    // ключи доступа: чтение — переданные в фильтре; изменение и удаление по id — из строки
+    let access = 'TRUE';
+    if (op === 'select') {
+      const keys = filterKeys(r as unknown as Resource, filter);
+      if (keys.size) await checkKeys(db, r as unknown as Resource, 'select', ctx, keys);
+    } else access = await accessSQL(r as unknown as Resource, op === 'update' ? 'update' : 'delete', ctx, s, db.limits);
     let deleted = 'TRUE';
     if (r.softDelete) {
       if (includeDeleted && !grants(r.softDelete.readDeleted, ctx)) fail('forbidden');
       if (!includeDeleted) deleted = col(r, r.softDelete.field) + ' IS NULL';
     }
-    return `(${policy}) AND (${client}) AND (${deleted})`;
+    return `(${policy}) AND (${access}) AND (${client}) AND (${deleted})`;
   }
   /**
    * Строка по ключу для изменения. `force` — удаление навсегда: удалённую (мягко) строку оно
@@ -349,6 +355,19 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     });
     return { items, nextCursor };
   }
+  /**
+   * Ключи доступа при записи. Вставка — все ключи обязательны и проходят все; изменение —
+   * новое значение ключа проверяется как при вставке (перенести строку туда, куда нельзя
+   * писать, нельзя).
+   */
+  async function writeKeys(dbx: Database, ctx: DataContext, op: 'insert' | 'update', draft: Row) {
+    const values = new Map<string, unknown[]>();
+    for (const [k] of accessKeys(r as unknown as Resource)) {
+      if (op === 'insert' && (!own(draft, k) || draft[k] == null)) fail('forbidden', k);
+      if (own(draft, k)) values.set(k, [draft[k]]);
+    }
+    if (values.size) await checkKeys(dbx, r as unknown as Resource, 'insert', ctx, values);
+  }
   async function write(
     dbx: Database,
     ctx: DataContext,
@@ -420,6 +439,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         if (errors.length) failFields(errors);
       }
     }
+    if (draft) await writeKeys(dbx, ctx, op as 'insert' | 'update', draft);
     let sql: string;
     if (op === 'insert') {
       const entries = Object.entries(draft!);
@@ -579,6 +599,15 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     const drafts: Row[] = [];
     for (const row of rows) drafts.push(await draftInput(r, ctx, row, 'insert', db.limits.inputKeys));
     const keys = Object.keys(drafts[0]!);
+    if (accessKeys(r as unknown as Resource).length) {
+      const values = new Map<string, unknown[]>();
+      for (const d of drafts)
+        for (const [k] of accessKeys(r as unknown as Resource)) {
+          if (!own(d, k) || d[k] == null) fail('forbidden', k);
+          values.set(k, [...(values.get(k) ?? []), d[k]]);
+        }
+      await checkKeys(db, r as unknown as Resource, 'insert', ctx, values);
+    }
     for (const d of drafts)
       if (Object.keys(d).length !== keys.length || !keys.every((k) => own(d, k)))
         fail('validation', undefined, [

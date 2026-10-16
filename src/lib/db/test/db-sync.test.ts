@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { z } from "zod";
 import { afterAll, it } from "vitest";
-import { createDb, defineResource, f, field, make, policy, s, DbFailure, conservativeLimits } from "../index";
+import { createDb, defineResource, f, field, link, make, owner, policy, s, DbFailure, conservativeLimits } from "../index";
 import { pgliteAdapter } from "../adapters/pglite";
 import { toKitError } from "../sveltekit/index";
 import { choices, defineSchema, stepKey } from "../sync/index";
@@ -455,6 +455,150 @@ test("цепочка: выключенное у корня (without, raw) пер
     const other = (await pg.query<{ id: string }>("SELECT id FROM fpost WHERE deleted_at IS NULL")).rows[0]!.id;
     await db.resource(rs.posts).raw(async (p) => (await p.chain(ctx, other)).delete());
     assert.deepEqual([await count(pg, "fpost", `id = '${other}'`), await count(pg, "comment", `post_id = '${other}'`)], [0, 0], "сырой корень — всё навсегда");
+  }));
+
+/* ── ключи доступа (model-automation.md §14, §11 шаг 8) — сценарий chain-acl-keys.sim ── */
+
+/** Записи (видимость и кто комментирует — у самой записи) и комментарии с ключами доступа. */
+function board() {
+  const me = (ctx: { principal: { id?: string } }) => ctx.principal.id ?? "";
+  const posts: Resource = defineResource({
+    key: "t.apost",
+    table: "public.apost",
+    primaryKey: "id",
+    fields: {
+      id: f.text({ ...open, orderable: true, filters: ["eq"] }),
+      author_id: f.text({ ...open }),
+      visibility: f.text({ ...open }),
+      comment_mode: f.text({ ...open }),
+    },
+    policy: {
+      select: (ctx) => ({ or: [{ field: "visibility", op: "eq", value: "all" }, { field: "author_id", op: "eq", value: me(ctx) }] }),
+      update: (ctx) => ({ field: "author_id", op: "eq", value: me(ctx) }),
+      comment: (ctx) => ({
+        or: [
+          { field: "comment_mode", op: "eq", value: "all" },
+          { and: [{ field: "comment_mode", op: "eq", value: "author" }, { field: "author_id", op: "eq", value: me(ctx) }] },
+        ],
+      }),
+    },
+    order: [],
+    timestamps: { deletedAt: "deleted_at" },
+  });
+  const comments: Resource = defineResource({
+    key: "t.acomment",
+    table: "public.acomment",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
+      post_id: f.text({ ...open, filters: ["eq", "in"], db: { references: { resource: () => posts, chain: true } } }),
+      author_id: f.text({ ...open, filters: ["eq", "in"] }),
+      body: f.text({ ...open, nullable: true, orderable: true, filters: ["eq"] }),
+    },
+    access: { author_id: owner(), post_id: link({ select: "select", insert: "comment", delete: "update" }) },
+    order: [["body", "asc"]],
+    timestamps: { deletedAt: "deleted_at" },
+  });
+  return { posts, comments };
+}
+const as = (id: string) => ({ principal: { id, roles: [] } });
+const denied = (field?: string) => (e: unknown) => e instanceof DbFailure && e.kind === "forbidden" && (field === undefined || e.details.field === field);
+
+test("ключи доступа: чтение — переданные ключи проверяются, без ключей — всё; вставка — все ключи; по id — один разрешающий", () =>
+  withPg(async (pg, driver) => {
+    const { posts, comments } = board();
+    await defineSchema({ resources: [posts, comments] }).sync(driver);
+    await pg.exec(`INSERT INTO apost (id, author_id, visibility, comment_mode) VALUES ('P','B','all','all'), ('P2','B','all','author'), ('H','B','author','all');
+      INSERT INTO acomment (post_id, author_id, body) VALUES ('P','C','c1'), ('P','B','c2'), ('H','C','c3');`);
+    const db = createDb({ driver, limits: conservativeLimits, resources: [posts, comments] });
+    const api = db.resource(comments);
+    const bodies = async (ctx: object, filter?: object) => (await api.select(ctx as never, filter ? { filter: filter as never } : {})).map((x) => x.body);
+    // чтение
+    assert.deepEqual(await bodies(as("C")), ["c1", "c2", "c3"], "без ключей — всё (ORM, а не API)");
+    assert.deepEqual(await bodies(as("C"), { field: "author_id", op: "eq", value: "C" }), ["c1", "c3"], "мои");
+    await assert.rejects(bodies(as("C"), { field: "author_id", op: "eq", value: "B" }), denied("author_id"), "чужие «мои»");
+    assert.deepEqual(await bodies(as("C"), { field: "post_id", op: "eq", value: "P" }), ["c1", "c2"]);
+    await assert.rejects(bodies(as("C"), { field: "post_id", op: "in", value: ["P", "H"] }), denied("post_id"), "H видна только автору");
+    assert.deepEqual(await bodies(as("B"), { field: "post_id", op: "eq", value: "H" }), ["c3"]);
+    assert.deepEqual(
+      await bodies(as("C"), { and: [{ field: "post_id", op: "eq", value: "P" }, { field: "author_id", op: "eq", value: "C" }] }),
+      ["c1"],
+      "оба ключа — обе проверки",
+    );
+    assert.deepEqual(await bodies(as("C"), { not: { field: "author_id", op: "eq", value: "B" } }), ["c1", "c3"], "отрицание — не ключ");
+    assert.equal(await api.count(as("C"), { filter: { field: "post_id", op: "eq", value: "P" } } as never), 2);
+    await assert.rejects(api.count(as("C"), { filter: { field: "post_id", op: "eq", value: "H" } } as never), denied("post_id"));
+    // вставка
+    await assert.rejects(api.insert(as("C"), { post_id: "P", body: "n1" }), denied("author_id"), "без владельца");
+    await assert.rejects(api.insert(as("C"), { post_id: "P", author_id: "B", body: "n2" }), denied("author_id"), "от имени другого");
+    await assert.rejects(api.insert(as("C"), { author_id: "C", body: "n0" }), denied("post_id"), "без записи");
+    const n3 = await api.insert(as("C"), { post_id: "P", author_id: "C", body: "n3" });
+    await assert.rejects(api.insert(as("C"), { post_id: "P2", author_id: "C", body: "n4" }), denied("post_id"), "P2 комментирует только автор");
+    await api.insert(as("B"), { post_id: "P2", author_id: "B", body: "n5" });
+    await assert.rejects(api.insertMany(as("C"), [{ post_id: "P", author_id: "C", body: "m1" }, { post_id: "P2", author_id: "C", body: "m2" }]), denied("post_id"));
+    assert.equal((await api.insertMany(as("C"), [{ post_id: "P", author_id: "C", body: "m1" }])).length, 1);
+    // изменение и удаление по id: ключи из строки, достаточно одного
+    const id = async (body: string) => (await pg.query<{ id: string }>("SELECT id FROM acomment WHERE body = $1", [body])).rows[0]!.id;
+    await api.update(as("C"), await id("c1"), { body: "c1!" });
+    await assert.rejects(api.update(as("C"), await id("c2"), { body: "x" }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "чужой");
+    await assert.rejects(api.update(as("B"), await id("c1!"), { body: "x" }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "у post_id нет update");
+    await assert.rejects(api.update(as("C"), n3.id, { post_id: "P2" }), denied("post_id"), "перенести туда, куда нельзя писать");
+    assert.deepEqual((await api.canDelete(as("B"), [await id("c1!"), await id("c2")])).allowed.length, 2, "автор записи удаляет чужое");
+    assert.deepEqual((await api.canDelete(as("C"), [await id("c1!"), await id("c2")])).allowed, [await id("c1!")]);
+    await api.delete(as("B"), await id("c1!"));
+    // цепочка: автор записи — всё, посторонний — только своё
+    const plan = (who: string) => db.resource(posts).without(["policy.update"], (p) => p.chain(as(who), "P"));
+    assert.deepEqual((await plan("B")).links.map((l) => [l.allowed, l.total]), [[3, 3]]);
+    assert.deepEqual((await plan("C")).links.map((l) => [l.allowed, l.total]), [[2, 3]]);
+    // мягко удалённая запись: «мои» видны, комментарии записи — нет
+    await pg.exec("UPDATE apost SET deleted_at = now() WHERE id = 'H'");
+    assert.ok((await bodies(as("C"), { field: "author_id", op: "eq", value: "C" })).includes("c3" as never));
+    await assert.rejects(bodies(as("B"), { field: "post_id", op: "eq", value: "H" }), denied("post_id"));
+    // without(['access']) — без ключей доступа
+    assert.equal((await api.without(["access"], (c) => c.insert(as("C"), { post_id: "P2", author_id: "B", body: "w" }))).body, "w");
+  }));
+
+test("ключи доступа: ошибки объявления; owner(ops); правило, которого у цели нет; ссылка модели на себя", () =>
+  withPg(async (pg, driver) => {
+    const { posts } = board();
+    const bad = (access: unknown, fields: Fields = {}) => () =>
+      defineResource({
+        key: "t.bad", table: "public.bad", primaryKey: "id",
+        fields: { id: f.uuid({ ...open, orderable: true }), post_id: f.text({ ...open, db: { references: { resource: () => posts } } }), who: f.text({ ...open }), ...fields },
+        access, order: [],
+      } as never);
+    const says = (re: RegExp) => (e: unknown) => e instanceof DbFailure && re.test(String(e.details.issues));
+    assert.throws(bad({ nope: owner() }), says(/access\.nope: нет такого поля/));
+    assert.throws(bad({ id: owner() }), says(/не первичный ключ/));
+    assert.throws(bad({ who: link({ select: "select" }) }), says(/нужна db\.references/));
+    assert.throws(bad({ post_id: link({ read: "select" } as never) }), says(/имя правила policy цели/));
+    assert.throws(bad({ who: owner(["read"] as never) }), says(/owner\(ops\)/));
+    assert.throws(bad({ who: { kind: "x" } }), says(/owner\(\) или link/));
+    // owner только для чтения; правило цели, которого нет, — validation при использовании
+    const m = defineResource({
+      key: "t.own", table: "public.own", primaryKey: "id",
+      fields: { id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }), who: f.text({ ...open, filters: ["eq"] }), post_id: f.text({ ...open, filters: ["eq"], db: { references: { resource: () => posts } } }) },
+      access: { who: owner(["select"]), post_id: link({ select: "nope" }) }, order: [],
+    });
+    await defineSchema({ resources: [posts, m] }).sync(driver);
+    await pg.exec(`INSERT INTO apost (id, author_id, visibility, comment_mode) VALUES ('P','B','all','all'); INSERT INTO own (who, post_id) VALUES ('C','P')`);
+    const db = createDb({ driver, limits: conservativeLimits });
+    assert.equal((await db.resource(m).select(as("C"), { filter: { field: "who", op: "eq", value: "C" } })).length, 1);
+    await assert.rejects(db.resource(m).insert(as("C"), { who: "C", post_id: "P" }), denied("who"), "owner без insert");
+    const row = (await pg.query<{ id: string }>("SELECT id FROM own")).rows[0]!.id;
+    await assert.rejects(db.resource(m).delete(as("C"), row), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "ни один ключ не разрешает delete");
+    await assert.rejects(db.resource(m).select(as("C"), { filter: { field: "post_id", op: "eq", value: "P" } }), says(/нет правила policy\.nope/));
+    // ссылка на себя: подзапрос цели под своим именем, внешняя колонка не перекрыта
+    const tree: Resource = defineResource({
+      key: "t.atree", table: "public.atree", primaryKey: "id",
+      fields: { id: f.text({ ...open, orderable: true, filters: ["eq"] }), parent_id: f.text({ ...open, nullable: true, db: { references: { resource: () => tree } } }), who: f.text({ ...open, filters: ["eq"] }) },
+      policy: { update: (ctx) => ({ field: "who", op: "eq", value: ctx.principal.id ?? "" }) },
+      access: { parent_id: link({ delete: "update" }) }, order: [],
+    });
+    await defineSchema({ resources: [posts, m, tree] }).sync(driver);
+    await pg.exec(`INSERT INTO atree VALUES ('r', NULL, 'A'), ('k', 'r', 'C')`);
+    await assert.rejects(db.resource(tree).delete(as("C"), "k"), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "решает строка-родитель, а не сама строка");
+    await db.resource(tree).delete(as("A"), "k");
   }));
 
 /* ── Ошибки полей: все сразу, с кодом и своим текстом; ограничения БД — к полю ── */

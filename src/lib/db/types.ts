@@ -253,6 +253,13 @@ export interface Resource<
    * для неё.
    */
   policy?: Policy;
+  /**
+   * Ключи доступа (§14 model-automation): права включает значение ключа в запросе.
+   * Чтение — каждый ключ, переданный в фильтре (`eq`/`in`), проверяется; без ключей — как
+   * без `access`. Вставка — все ключи обязательны и проходят все. Изменение и удаление по
+   * id — ключи из строки, достаточно одного разрешающего. `policy` действует всегда.
+   */
+  access?: Readonly<Record<string, AccessKey>>;
   order: Order;
   hooks?: Hooks;
   /** Правила данных: при записи — всегда и в транзакции; см. `CheckEvent`. */
@@ -290,7 +297,18 @@ export interface Resource<
     unique?: readonly (readonly string[])[];
   };
 }
+/** Операции, которые разрешает ключ доступа. */
+export type AccessOp = "select" | "insert" | "update" | "delete";
+/** Ключ доступа: `owner()` или `link({ операция: правило цели })` из `#lib/db`. */
+export type AccessKey =
+  | { readonly kind: "owner"; readonly ops: readonly AccessOp[] }
+  | { readonly kind: "link"; readonly rules: Readonly<Partial<Record<AccessOp, string>>> };
+/**
+ * Правила строк по операциям и именованные правила (`comment`, `createPost`), которые
+ * спрашивают ключи доступа других моделей (`link({ insert: 'comment' })`).
+ */
 export interface Policy {
+  [rule: string]: ((ctx: DataContext) => Filter) | undefined;
   select?: (ctx: DataContext) => Filter;
   insert?: (ctx: DataContext) => boolean;
   update?: (ctx: DataContext) => Filter;

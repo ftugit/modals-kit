@@ -473,6 +473,25 @@ function checkShape(r: Resource): void {
   else
     for (const [op, v] of Object.entries(r.policy ?? {}))
       if (typeof v !== "function") push(`policy.${op}: обязан быть (ctx) => Filter`);
+  if (r.access !== undefined) {
+    if (!isRecord(r.access)) push("access: объект { поле: owner() | link({ операция: правило }) }");
+    else
+      for (const [k, key] of Object.entries(r.access)) {
+        const f = own(r.fields, k) ? r.fields[k] : undefined;
+        const ops = ["select", "insert", "update", "delete"];
+        if (!f) push(`access.${k}: нет такого поля`);
+        else if (k === r.primaryKey) push(`access.${k}: ключ доступа — не первичный ключ`);
+        if (!isRecord(key) || (key.kind !== "owner" && key.kind !== "link")) push(`access.${k}: owner() или link({ … })`);
+        else if (key.kind === "owner" && !(Array.isArray(key.ops) && key.ops.every((o) => ops.includes(o))))
+          push(`access.${k}: owner(ops) — операции из ${ops.join("|")}`);
+        else if (key.kind === "link") {
+          if (!isRecord(key.rules) || Object.entries(key.rules).some(([o, n]) => !ops.includes(o) || typeof n !== "string" || !n))
+            push(`access.${k}: link({ ${ops.join("?, ")}? }) — имя правила policy цели`);
+          if (f && !f.db?.references) push(`access.${k}: link — у поля нужна db.references (модель, чьё правило спрашивать)`);
+          else if (f?.db?.references?.field !== undefined) push(`access.${k}: link — ссылка на первичный ключ цели`);
+        }
+      }
+  }
   for (const [name, f] of Object.entries(r.fields)) {
     if (!f || typeof f !== "object") {
       push(`fields.${name}: отсутствует описание поля`);
@@ -644,7 +663,7 @@ function expandTimestamps(r: Resource): Resource {
 }
 
 /** Необязательные опции модели и поля, у которых `null` значит «нет»: дальше их просто нет. */
-const OPTIONAL_KEYS = ["ownerField", "mandatoryRead", "policy", "hooks", "checks", "relations", "constraints", "validateFinal", "softDelete", "db"] as const;
+const OPTIONAL_KEYS = ["ownerField", "mandatoryRead", "policy", "access", "hooks", "checks", "relations", "constraints", "validateFinal", "softDelete", "db"] as const;
 const dropNull = <T extends object>(o: T): T =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as T;
 /**
@@ -654,7 +673,7 @@ const dropNull = <T extends object>(o: T): T =>
 function withoutEmpty(r: Resource): Resource {
   const out = { ...r } as Record<string, unknown>;
   for (const k of OPTIONAL_KEYS) if (out[k] === null) delete out[k];
-  for (const k of ["policy", "hooks"] as const) if (isRecord(out[k])) out[k] = dropNull(out[k] as object);
+  for (const k of ["policy", "hooks", "access"] as const) if (isRecord(out[k])) out[k] = dropNull(out[k] as object);
   out.fields = Object.fromEntries(
     Object.entries(r.fields).map(([k, f]) => [k, f && typeof f === "object" ? dropNull(f) : f]),
   );

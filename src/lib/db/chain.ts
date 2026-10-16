@@ -9,7 +9,7 @@ import { DbFailure, fail } from "./errors";
 import { col, filterSQL, projection, Sql, table } from "./query/sql";
 import { applicable, originOf, withoutPaths } from "./clone";
 import { rawResource } from "./raw";
-import { rule, softDeleteAssignment } from "./rules";
+import { accessSQL, rule, softDeleteAssignment } from "./rules";
 import { grants, timestampField, validateField } from "./validation";
 import type { DataContext, Database, Fields, Resource, Row } from "./types";
 
@@ -88,7 +88,7 @@ const isRaw = (m: Resource) => originOf(m).raw;
 
 /** Условие «этот ctx может удалить строку» модели — SQL. */
 async function deletable(db: Database, m: Resource, ctx: DataContext, s: Sql): Promise<string> {
-  return isRaw(m) ? "TRUE" : filterSQL(m, ctx, rule(m, "delete", ctx), s, db.limits, true);
+  return isRaw(m) ? "TRUE" : `(${await filterSQL(m, ctx, rule(m, "delete", ctx), s, db.limits, true)}) AND (${await accessSQL(m, "delete", ctx, s, db.limits)})`;
 }
 const liveSQL = (m: Resource) => (m.softDelete && !isRaw(m) ? ` AND ${col(m, m.softDelete.field)} IS NULL` : "");
 

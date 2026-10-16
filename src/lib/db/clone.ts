@@ -10,7 +10,6 @@ import type { Resource, Row } from "./types";
 
 /** Опции поля, которые можно выключить: права поля и автоматика значения. */
 const FIELD_OPTIONS = ["read", "create", "update", "normalize", "createValue", "fill", "store", "required"] as const;
-const POLICY_OPS = ["select", "insert", "update", "delete", "restore"] as const;
 const HOOKS = ["beforeWrite", "afterWrite", "afterRead", "afterCommit"] as const;
 /** Ключи без опции в схеме: поведение, которое снимает сам экземпляр. */
 export const BEHAVIOR_KEYS = ["protect"] as const;
@@ -32,8 +31,12 @@ function applies(source: Row, model: Resource, path: string): string | undefined
       return parts.length === 1 ? undefined : `${path}: неизвестный путь`;
     case "policy":
       if (parts.length === 1) return has(source, "policy") && Object.values(source.policy as Row).some((v) => v != null) ? undefined : no("policy");
-      if (parts.length === 2 && (POLICY_OPS as readonly string[]).includes(second!)) return has(source.policy, second!) ? undefined : no(`policy.${second}`);
-      return `${path}: неизвестный путь — есть policy, policy.select|insert|update|delete|restore`;
+      if (parts.length === 2) return has(source.policy, second!) ? undefined : no(`policy.${second}`);
+      return `${path}: неизвестный путь — есть policy, policy.<правило>`;
+    case "access":
+      if (parts.length === 1) return has(source, "access") ? undefined : no("access");
+      if (parts.length === 2) return has(source.access, second!) ? undefined : no(path);
+      return `${path}: неизвестный путь`;
     case "grants":
       if (parts.length !== 1) return `${path}: неизвестный путь`;
       return Object.values(fields).some((f) => has(f, "read") || has(f, "create") || has(f, "update")) ? undefined : no("масок полей");
@@ -74,7 +77,7 @@ function nulled(source: Row, paths: readonly string[]): Row {
   for (const path of paths) {
     const [head, second, third] = path.split(".");
     if (head === "protect") continue;
-    if (head === "policy" || head === "hooks") {
+    if (head === "policy" || head === "hooks" || head === "access") {
       if (!second) out[head] = null;
       else out[head] = { ...(out[head] as Row), [second]: null };
     } else if (head === "checks" || head === "validateFinal") out[head] = null;

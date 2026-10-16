@@ -828,7 +828,7 @@ keyset-индекс, который обязана порождать `order`).
 
 | Экспорт | Что |
 |---|---|
-| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `failFields`, `failureIssues` (+ типы `FieldError`, `FailureIssue`), `defineResource`, `field`, `f`, `s`, `make`, `policy`, `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
+| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `failFields`, `failureIssues` (+ типы `FieldError`, `FailureIssue`), `defineResource`, `field`, `f`, `s`, `make`, `policy`, `owner`, `link` (ключи доступа, §7), `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
 | `#lib/db/schema.js` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` (предикат вправе вернуть `CodedIssue` — код и параметры дойдут до формы) |
 | `#lib/db/adapters/pg.js` | `pgAdapter` |
 | `#lib/db/adapters/pglite.js` | `pgliteAdapter` |
@@ -862,7 +862,7 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 `generated`, `createValue`, `immutable` при `update` — клиент не пишет при любой маске),
 `generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `fill` и `store` (§4), `filters`,
 `orderable`, `db` (`type`/`default`/`unique`, §6), `messages` (свои тексты ошибок по коду, §4). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
-`policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `restore` без своего — как `delete`), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
+`policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `restore` без своего — как `delete`; другие ключи — именованные правила для ключей доступа), `access` (ключи доступа, §7), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
 `db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`, `canDelete`, `chain`, `restore`,
 `insertMany`, `validator(ctx, 'insert' | 'update' | 'check')` (проверка без записи, §4), `without`, `behavior`, `raw` (ниже).
 `#lib/db/form.js`: `formParams(resource)` — параметры полей формы из модели (§4; переходник
@@ -912,7 +912,7 @@ await api.without(['timestamps.deletedAt'], (p) => p.delete(ctx, id))           
 api.behavior() // { timestamps: { createdAt, updatedAt, deletedAt }, live: { inserted, updated, deleted }, off: [], raw: false }
 ```
 
-Пути — пути схемы: `policy`, `policy.<операция>`, `grants` (маски всех полей), `hooks`,
+Пути — пути схемы: `policy`, `policy.<правило>`, `access`, `access.<поле>`, `grants` (маски всех полей), `hooks`,
 `hooks.<хук>`, `checks`, `validateFinal`, `timestamps.createdAt|updatedAt|deletedAt`, `softDelete`,
 `fields.<поле|*>.read|create|update|normalize|createValue|fill|store|required`; и `protect`
 (ниже). Выключенное поле метки клон не знает: `timestamps.updatedAt` — метка не двигается и не
@@ -974,6 +974,35 @@ await plan.delete({ force: true })  // всё навсегда, и уже мяг
 уровень. Предел — `createDb({ chainRows })` строк (по умолчанию 10000) и 64 уровня. Уже мягко
 удалённый корень показывается для удаления навсегда (`root.soft: false`). Выключенное у
 экземпляра (`without`, `raw`) действует и на звенья.
+
+**Ключи доступа — `access`.** Поле-ключ включает проверку прав, когда его значение есть в
+запросе (§14 `docs/design/model-automation.md`). `owner(ops?)` — значение сравнивается с
+`ctx.principal.id`; `link({ операция: правило })` — поле ссылается на модель (`db.references`,
+на первичный ключ), и операция проверяется правилом цели: строка цели жива, проходит её
+`policy.select` и названное правило (`select` или именованное правило её `policy`). Нет операции
+в описании — ключ её не разрешает.
+
+```ts
+// модель записи: именованное правило — кто может комментировать
+policy: { select: …, update: …, comment: (ctx) => ({ field: 'comment_mode', op: 'eq', value: 'all' }) },
+// модель комментария
+access: { author_id: owner(), post_id: link({ select: 'select', insert: 'comment', delete: 'update' }) },
+```
+
+- **Чтение** (`select`, `count`, `cursor`, `estimate`): каждое значение ключа, переданное в
+  фильтре (`eq`/`in`, не под `not`), проверяется — один запрос на все значения, а не на каждую
+  строку. Не прошло — `forbidden` с полем ключа. Без ключей — без проверки (это ORM, а не API:
+  маршрут сам просит комментарии записи). `get` по id ключей не передаёт.
+- **Вставка** (`insert`, `insertMany`): все ключи обязательны (нет или `null` — `forbidden`) и
+  все проходят. Владельца удобно ставить `createValue: (ctx) => ctx.principal.id`.
+- **Изменение и удаление по id** (`update`, `delete`, `restore`, `canDelete`, звенья цепочки):
+  ключи берутся из строки, достаточно одного разрешающего операцию (`restore` — как `delete`);
+  ни один не разрешает — строки «нет» (`not_found`). Новое значение ключа в `update`
+  проверяется как при вставке.
+- `policy` модели действует всегда и может сузить. Мягкое удаление — не права: удаление записи
+  не прячет её комментарии от «моих». `without(['access'])` выключает ключи, `raw` — тоже.
+- Правило цели — правило её строк: условия по другим моделям (видимость коллекции записи) в
+  нём пока не выражаются.
 Строки `select` типизированы как `Partial<…>` — проекция вправе вернуть не все поля, а
 relations добавляются через `include`.
 
@@ -1008,14 +1037,14 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 135 групп в семи файлах (на PGlite выполняются 134: одна группа требует
+Тесты слоя — 137 групп в семи файлах (на PGlite выполняются 136: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 29 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
+| `src/lib/db/test/db-sync.test.ts` | 31 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), ключи доступа (`access`: чтение, вставка, по id, перенос, цепочка, ошибки объявления, ссылка на себя), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
 | `src/lib/db/test/db-rules.test.ts` | 32 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, цепочка ставит время базы); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ force })` и `canDelete` |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |

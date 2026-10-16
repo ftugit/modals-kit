@@ -45,6 +45,10 @@ export const posts = defineResource({
       nullable: true,
       fill: (values) => slugOf(values.title),
     }),
+    // Автор: ставит сервер из того, кто пишет (`createValue`), передать нельзя. Входа в демо
+    // нет — у гостя id нет, и у его записей автора нет (NULL). Ключом доступа (`access`) поле
+    // станет, когда появится вход: без id вставка с ключом «владелец» невозможна.
+    author_id: f.text({ createValue: (ctx) => ctx.principal.id ?? null, nullable: true }),
   },
   // Системные поля: время ставит база. `deleted_at` — мягкое удаление: форма удаления
   // ставит метку, список её скрывает; удалённые видит только админ (его пока нет —
@@ -54,7 +58,7 @@ export const posts = defineResource({
   policy: {
     select: policy.publicRows(),
     insert: policy.roles(['author']),
-    update: policy.ownerOrRoles('id', ['editor']),
+    update: policy.ownerOrRoles('author_id', ['editor']),
     // deny() для delete дал бы не 403, а not_found: строка, скрытая политикой,
     // неотличима от отсутствующей — так не протекает факт существования.
     delete: policy.roles(['author']),
