@@ -432,6 +432,25 @@ export interface ResourceApi<
     ctx: DataContext,
     input?: Pick<ListInput, "filter" | "includeDeleted">,
   ): Promise<{ rows: number; exact: boolean; method: "reltuples" | "explain" | "count" }>;
+  /**
+   * Временный экземпляр без части автоматики: `fn` получает ту же модель, собранную из
+   * описания с `null` по путям схемы (`'timestamps.updatedAt'`, `'policy'`, `'grants'`,
+   * `'hooks'`, `'fields.*.store'`, `'protect'`, …). Остальной код модель не теряет. Путь,
+   * которого у модели нет, — `validation`. Вложенный `without` складывает пути. Таблицу
+   * клон не описывает: синхронизация схемы идёт только по исходной модели.
+   */
+  without<T>(paths: readonly string[], fn: (api: ResourceApi<F, R>) => T | Promise<T>): Promise<T>;
+  /** Что модель делает сама и что у этого экземпляра выключено. */
+  behavior(): ModelBehavior;
+}
+/** Поведение модели (`behavior()`): метки времени, что умеет опрос, что выключено. */
+export interface ModelBehavior {
+  readonly timestamps: Readonly<{ createdAt?: string; updatedAt?: string; deletedAt?: string }>;
+  readonly live: LiveCapabilities;
+  /** Выключенные пути (`without`), по порядку. */
+  readonly off: readonly string[];
+  /** Сырой экземпляр (`raw`): выключено всё. */
+  readonly raw: boolean;
 }
 export interface CursorCodec {
   encode(scope: unknown, values: readonly unknown[]): Promise<string>;

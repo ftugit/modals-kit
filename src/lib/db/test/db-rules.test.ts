@@ -672,3 +672,113 @@ test("timestamps: каскад мягкого удаления ставит де
     assert.ok(rows.rows[0].deleted_at instanceof Date, "ребёнок помечен");
   });
 });
+
+/* ── without и behavior (model-automation.md §5, §8, §11 шаг 3) ───────── */
+
+function hidden(more: Record<string, unknown> = {}) {
+  return defineResource({
+    key: "t.rules.hidden",
+    table: "public.rules_hidden",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ createValue: () => crypto.randomUUID(), orderable: true, filters: ["eq"] }),
+      title: f.text({ required: true, filters: ["eq"] }),
+      secret: f.text({ nullable: true, read: [], db: { type: "text" }, store: (v) => `hash:${String(v)}` }),
+    },
+    policy: { select: () => ({ field: "title", op: "eq", value: "видно" }) },
+    order: [["created_at", "asc"]],
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at", deletedAt: "deleted_at" },
+    ...more,
+  } as Parameters<typeof defineResource>[0]) as unknown as Resource;
+}
+
+test("without: клон без updatedAt не двигает метку и её не знает; исходная модель двигает", () => {
+  const r = hidden();
+  return withDb([r], async (db, pg) => {
+    const api = db.resource(r);
+    const row = (await api.insert(ctx, { title: "видно" })) as Record<string, string>;
+    const quiet = await api.without(["timestamps.updatedAt"], async (m) => {
+      assert.deepEqual(m.behavior().off, ["timestamps.updatedAt"]);
+      assert.deepEqual(m.behavior().live, { inserted: true, updated: false, deleted: true });
+      return (await m.update(ctx, row.id, { title: "видно" })) as Record<string, unknown>;
+    });
+    assert.equal(quiet.updated_at, undefined, "клон поля не знает");
+    const db1 = await pg.query<{ u: string }>("SELECT updated_at::text AS u FROM public.rules_hidden");
+    assert.equal(Date.parse(db1.rows[0].u.replace(" ", "T").replace(/\+00$/, "Z")), Date.parse(row.updated_at));
+    const loud = (await api.update(ctx, row.id, { title: "видно" })) as Record<string, string>;
+    assert.ok(Date.parse(loud.updated_at) > Date.parse(row.updated_at));
+    assert.deepEqual(api.behavior().off, []);
+    assert.deepEqual(api.behavior().timestamps, { createdAt: "created_at", updatedAt: "updated_at", deletedAt: "deleted_at" });
+  });
+});
+
+test("without: policy и grants — только в колбэке; параллельный код права не теряет; вложенный складывает", () => {
+  const r = hidden();
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    await api.insert(ctx, { title: "видно", secret: "s" });
+    await api.insert(ctx, { title: "скрыто" });
+    const [inside, outside] = await Promise.all([
+      api.without(["policy"], (m) => m.select(ctx)),
+      api.select(ctx),
+    ]);
+    assert.equal(inside.length, 2);
+    assert.equal(outside.length, 1, "соседний запрос видит правила");
+    await api.without(["policy"], async (m) => {
+      assert.equal((await m.select(ctx))[0]!.secret, undefined, "маски полей на месте");
+      await m.without(["grants"], async (m2) => {
+        assert.deepEqual(m2.behavior().off, ["policy", "grants"]);
+        const rows = await m2.select(ctx, { filter: { field: "title", op: "eq", value: "видно" } });
+        assert.equal(rows[0]!.secret, "hash:s");
+      });
+    });
+  });
+});
+
+test("without: deletedAt — удаление навсегда и видны удалённые; store и hooks выключаются; в транзакции", () => {
+  const seen: string[] = [];
+  const r = hidden({ policy: undefined, hooks: { beforeWrite: () => void seen.push("before") } });
+  return withDb([r], async (db, pg) => {
+    const api = db.resource(r);
+    const a = (await api.insert(ctx, { title: "a", secret: "x" })) as Record<string, string>;
+    const b = (await api.insert(ctx, { title: "b" })) as Record<string, string>;
+    assert.deepEqual(seen, ["before", "before"]);
+    await api.delete(ctx, a.id);
+    await api.without(["timestamps.deletedAt"], async (m) => {
+      assert.equal((await m.select(ctx)).length, 2, "удалённая видна: поля метки у клона нет");
+      await m.delete(ctx, b.id);
+    });
+    assert.equal((await pg.query("SELECT 1 FROM public.rules_hidden")).rows.length, 1, "b стёрта навсегда");
+    const calls = seen.length;
+    await api.without(["fields.*.store", "hooks"], (m) => m.insert(ctx, { title: "c", secret: "готовый-хэш" }));
+    assert.equal(seen.length, calls, "хуки клона выключены");
+    const raw = await pg.query<{ secret: string }>("SELECT secret FROM public.rules_hidden WHERE title = 'c'");
+    assert.equal(raw.rows[0].secret, "готовый-хэш");
+    await assert.rejects(
+      db.transaction(async (tx) => {
+        await tx.resource(r).without(["hooks"], (m) => m.insert(ctx, { title: "d" }));
+        throw new Error("откат");
+      }),
+    );
+    assert.equal((await pg.query("SELECT 1 FROM public.rules_hidden WHERE title = 'd'")).rows.length, 0, "клон пишет в ту же транзакцию");
+  });
+});
+
+test("without: путь, которого нет у модели, неизвестный путь и пустой список — validation", async () => {
+  const r = hidden({ policy: undefined });
+  await withDb([r], async (db) => {
+    const api = db.resource(r);
+    const issues = async (paths: string[]) => {
+      const e = await api.without(paths, () => 1).catch((x: unknown) => x);
+      assert.ok(e instanceof DbFailure && e.kind === "validation", String(e));
+      return ((e as DbFailure).details.issues as string[]).join(" | ");
+    };
+    assert.match(await issues(["policy"]), /нет policy/);
+    assert.match(await issues(["softDelete"]), /нет softDelete/);
+    assert.match(await issues(["fields.*.fill"]), /нет полей с fill/);
+    assert.match(await issues(["fields.title.color"]), /неизвестный путь/);
+    assert.match(await issues(["timestamps.deletedAt.children"]), /нет timestamps\.deletedAt\.children/);
+    assert.match(await issues([]), /непустой список/);
+    assert.equal(await api.without(["protect", "fields.secret.store"], (m) => m.behavior().off.join()), "protect,fields.secret.store");
+  });
+});

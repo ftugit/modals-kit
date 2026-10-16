@@ -4,6 +4,7 @@ import { tableSpec } from './sync/model';
 import { allows, checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
 import { fieldError, revalidateDraft, timestampField, validateField } from './validation';
 import { readProof } from './proof';
+import { behavior, originOf, withoutPaths } from './clone';
 import {
   Sql,
   col,
@@ -41,6 +42,8 @@ import type {
  */
 const managed = new WeakMap<object, Promise<Map<string, { kind: 'unique' | 'check' | 'reference'; fields: string[] }> | null>>();
 function managedConstraints(r: Resource): Promise<Map<string, { kind: 'unique' | 'check' | 'reference'; fields: string[] }> | null> {
+  // ограничения строит исходная модель: клон (`without`) таблицу не описывает
+  r = originOf(r).origin;
   let p = managed.get(r);
   if (!p) {
     const byColumn = new Map(Object.entries(r.fields).map(([k, f]) => [f.column ?? k, k]));
@@ -807,6 +810,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       return mutate(ctx, 'restore', id, undefined);
     },
     insertMany: (ctx, rows, opts) => db.guard(() => insertMany(ctx, rows, opts)),
+    without: (paths, fn) => db.guard(async () => fn(resourceApi(db, withoutPaths(r as unknown as Resource, paths) as unknown as Resource<F, R>))),
+    behavior: () => behavior(r as unknown as Resource),
     estimate: (ctx, input) => db.guard(() => estimate(ctx, input ?? {})),
   };
 }

@@ -690,7 +690,7 @@ export function defineResource<
     if (!own(r.fields, k)) fail("validation");
   if (r.softDelete && !own(r.fields, r.softDelete.field))
     fail("validation", r.softDelete.field, ["softDelete.field: нет такой колонки"]);
-  return Object.freeze({
+  const done = Object.freeze({
     ...r,
     fields: Object.freeze(
       Object.fromEntries(
@@ -699,4 +699,17 @@ export function defineResource<
     ) as F & TimestampFields<T>,
     order: Object.freeze(r.order.map((x) => Object.freeze([...x]) as typeof x)),
   });
+  MODELS.set(done, { source: input as unknown as Resource, origin: done, off: [], raw: false });
+  return done;
 }
+/**
+ * Откуда модель: исходное описание (до разворота `timestamps`), исходная модель и что
+ * выключено (`without`), признак `raw`. У обычной модели `origin` — она сама.
+ */
+export interface ModelOrigin {
+  readonly source: Resource;
+  readonly origin: Resource;
+  readonly off: readonly string[];
+  readonly raw: boolean;
+}
+export const MODELS = new WeakMap<object, ModelOrigin>();
