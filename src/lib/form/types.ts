@@ -6,6 +6,7 @@
 //     declare module '#lib/form/index.js' {
 //       interface FieldValues { rating: number | null }
 //     }
+import type { FieldSetItem } from './kit'
 
 /** Тип значения → что он декодирует. Расширяется потребителем. */
 export interface FieldValues {
@@ -19,6 +20,8 @@ export interface FieldValues {
   multiselect: readonly string[]
   file: File | null
   files: readonly File[]
+  /** Поля, которые собрал пользователь (`field.fields`). */
+  fields: readonly FieldSetItem[]
 }
 export type ValueKind = (keyof FieldValues & string) | (string & {})
 
@@ -31,6 +34,8 @@ export interface InputModes {
   file: true; files: true
   /** Одноразовый код: строка цифр, ячейки рисует компонент приложения. */
   otp: true
+  /** Набор полей от пользователя: места под поля рисует компонент приложения. */
+  fields: true
 }
 export type InputMode = (keyof InputModes & string) | (string & {})
 

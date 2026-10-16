@@ -14,7 +14,6 @@
  *   6. подсветка по показу гаснет;
  *   7. песочница: без регистрации типа описание не объявляется;
  *   8. чужая служба: нормализация до обработчика;
- *   9. повторяемая группа: добавление и удаление строки по стабильному ключу;
  *  10. асинхронная проверка: ошибка приходит после паузы;
  *  11. серверные слои: неизвестное поле отклоняется, идемпотентность;
  *  12. сложность пароля: оценка вместо шаблона, шкала совпадает с проверкой.
@@ -197,24 +196,11 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.close()
 }
 
-/* ── 9–11. динамика и асинхронная проверка ───────────────────────── */
+/* ── 10–11. асинхронная проверка ─────────────────────────────────── */
 {
   const pg = await browser.newPage({ viewport: { width: 1280, height: 3200 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
-
-  const rows = () => pg.locator('fieldset', { has: pg.locator('legend', { hasText: 'Позиции' }) }).locator('[data-row]').count()
-  ok('группа начинается с одной строки', await rows() === 1)
-  await click(pg, '+ Позиция')
-  ok('строка добавлена', await rows() === 2)
-  const keys = await pg.locator('[data-row]').evaluateAll((els) => els.map((e) => e.dataset['row']))
-  await pg.evaluate((k) => {
-    const row = document.querySelector(`[data-row="${k}"]`)
-    row?.querySelector(':scope > button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-  }, keys[0])
-  await pg.waitForTimeout(300)
-  ok('удалена именно своя строка', await rows() === 1
-    && (await pg.locator('[data-row]').getAttribute('data-row')) === keys[1])
 
   await pg.fill('#signup-email', 'taken@example.com')
   await pg.locator('#signup-email').blur()
@@ -514,25 +500,6 @@ ok('пути дают одинаковые ошибки',
   await about.fill('')
   ok('о себе (auto): пустое — обратно к трём строкам', Math.abs(await height() - h0) < 1)
 
-  // Вариант 'auto' у «Артикул» (text) и «Количество» (number): ширина по значению, а не
-  // вся строка; кнопки «−/+» числа остаются внутри рамки.
-  for (const [name, short, long] of [['items.r1.sku', 'A1', 'ABCDEFGHIJKLMNOP'], ['items.r1.qty', '1', '99999999']]) {
-    const input = pg.locator(`[name="${name}"]`)
-    const width = () => input.evaluate((el) => el.getBoundingClientRect().width)
-    const row = await input.evaluate((el) => el.parentElement.parentElement.getBoundingClientRect().width)
-    await input.fill(short)
-    const w0 = await width()
-    await input.fill(long)
-    const w1 = await width()
-    ok(`${name} (auto): уже строки и растёт по значению`, w0 < row * 0.8 && w1 > w0 + 20, `${w0} → ${w1}, строка ${row}`)
-    await input.fill('')
-  }
-  const steps = await pg.locator('[name="items.r1.qty"]').evaluate((el) => {
-    const box = el.getBoundingClientRect()
-    const up = el.parentElement.querySelector('[data-number-step="up"]')?.getBoundingClientRect()
-    return up ? up.right <= box.right + 1 && up.left >= box.left : false
-  })
-  ok('items.r1.qty (auto): кнопки «−/+» внутри рамки поля', steps)
   await ctx.close()
 
   // Без JS: обычные поля, без кнопок оживления; сервер принимает новые значения.

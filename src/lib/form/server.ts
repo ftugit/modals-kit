@@ -171,9 +171,15 @@ export const namesLayer: Layer = async (ctx) => {
   await resolveSource(ctx)
   const { form, description: d } = ctx
   const envelope = new Set(Object.values(d.policy.envelopeKeys))
+  // вложенный тип держит значение в `имя.…`: такие ключи — его, форму записей проверит decode
+  const nested = d.fields.filter((f) => d.registry.types.get(f.kind).nested).map((f) => `${f.name}.`)
 
   for (const key of new Set(form.keys())) {
     if (envelope.has(key)) continue
+    if (nested.some((head) => key.startsWith(head))) {
+      if (nameProblem(key, d.policy.names)) return reject(400, 'request.unexpected-field', { name: key })
+      continue
+    }
     const field = d.byName[key]
     if (!field) return reject(400, 'request.unexpected-field', { name: key })
     if (nameProblem(key, d.policy.names)) return reject(400, 'request.unexpected-field', { name: key })

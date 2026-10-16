@@ -2,7 +2,9 @@
 import { BOUND_PAIRS, boundValue, type Constraint, type ConstraintKind } from './constraints'
 import { applies, projectAttrs, type ProjectedAttrs } from './field-types'
 import { defaultPolicy, nameProblem, type FormPolicy } from './policy'
+import { defineFieldKit, type FieldKit, type FieldKitOptions, type FieldSetItem, type KitBound } from './kit'
 import { createRegistry, defaultRegistry, type Registry } from './registry'
+import { compileFieldSpecs, type FieldSpec } from './spec'
 import { safeObject, type FieldPath, type FormId, type InputMode, type Revision, type ValueKind } from './types'
 import { constraintsOf, type ValidatorRef } from './validators'
 
@@ -102,6 +104,8 @@ export interface FieldDescriptor<V = unknown> {
   readonly cardinality?: 'first' | 'all'
   readonly invalidFrom?: InvalidFrom
   readonly fresh?: boolean
+  /** Каталог видов и пределы набора `field.fields`: по нему разбор приводит значение. */
+  readonly fieldSet?: FieldKit
 }
 
 /** Описание submit-намерения формы. */
@@ -203,8 +207,12 @@ export type FieldDraft<V = unknown> = Omit<FieldDescriptor<V>, 'name' | 'order'>
  * своего типа — без правки библиотеки.
  */
 export function makeFieldSugar(registry: Registry = defaultRegistry) {
-  return new Proxy({} as Record<string, <V>(o?: FieldOptions<V>) => FieldDraft<V>>, {
-    get: (_t, input: string) => (o: FieldOptions = {}) => {
+  return new Proxy({} as FieldSugar, {
+    get: (_t, input: string) => (o: FieldOptions & Partial<FieldSetOptions> = {}) => {
+      // набор полей от пользователя: каталог собирается сразу — неверный падает при объявлении
+      const fieldSet = input === 'fields'
+        ? defineFieldKit({ limits: { fields: o.max }, rules: o.rules ?? {}, kinds: o.kinds ?? {}, registry, prefix: o.prefix })
+        : undefined
       const kind = o.kind ?? registry.types.byInput(input)?.kind
       if (!kind)
         throw new Error(
@@ -228,9 +236,30 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         reason: o.disabled ? o.reason : undefined,
         cardinality: o.cardinality,
         invalidFrom: o.invalidFrom,
+        ...(fieldSet ? { fieldSet } : {}),
       } as FieldDraft
     },
   })
+}
+
+/**
+ * Настройка `field.fields`: из чего пользователь собирает поля. Значение поля —
+ * список `FieldSetItem`, приведённый к этим пределам на обеих сторонах.
+ */
+export interface FieldSetOptions extends FieldOptions<readonly FieldSetItem[]> {
+  /** Сколько полей можно создать; «нет предела» — `undefined`/`null`/`false`/`''`. */
+  readonly max?: KitBound
+  /** Схема валидаторов: доступные правила и пределы их аргументов. */
+  readonly rules: FieldKitOptions['rules']
+  /** Каталог видов: представление, правила вида, правила на выбор. */
+  readonly kinds: FieldKitOptions['kinds']
+  /** Префикс имён полей в форме записи, `u_` по умолчанию. */
+  readonly prefix?: string
+}
+
+/** Сахар `field.*`: любое представление из реестра плюс набор полей от пользователя. */
+export type FieldSugar = Record<string, <V>(o?: FieldOptions<V>) => FieldDraft<V>> & {
+  fields(o: FieldSetOptions): FieldDraft<readonly FieldSetItem[]>
 }
 
 /** field.* на defaultRegistry для краткого описания встроенных полей. */
@@ -278,6 +307,8 @@ export function checkFieldDefinition(
     return out
   }
   const type = types.get(f.kind)
+  if (type.nested && f.kind === 'fields' && !f.fieldSet)
+    out.push(defect('spec.limit', f.name, 'набору полей нужен каталог: объявляйте через field.fields({ rules, kinds })'))
   for (const [i, ref] of f.validators.entries()) {
     try { validators.resolve(ref) } catch (e) {
       const label = typeof ref === 'function' ? `#${i}` : ref.name
@@ -343,6 +374,12 @@ export interface FormDefinition {
   revision?: Revision
   /** Словарь `имя поля → черновик поля`; имя станет `FieldDescriptor.name`. */
   fields: Record<string, FieldDraft<any>>
+  /**
+   * Сохранённые поля (значение `field.fields` или любые `FieldSpec`): идут первыми,
+   * с префиксом `u_`, затем `fields`. Так сохранённый набор становится формой
+   * записи — как есть или с полями из кода.
+   */
+  from?: readonly FieldSpec[]
   /** Список submit-намерений. Если не задан, создаётся `submit/full`. */
   actions?: readonly ActionDescriptor[]
   /**
@@ -412,11 +449,27 @@ export function defineForm(def: FormDefinition): FormDescription {
   const names = Object.keys(def.fields)
   const defects: FieldDefect[] = []
 
-  if (names.length > policy.limits.fields)
-    defects.push(defect('spec.limit', def.id, `полей ${names.length}, предел ${policy.limits.fields}`))
+  // Сохранённые поля — данные, не код: компилируются той же проверкой, что поля из
+  // рантайма. Они уже были показаны, поэтому не «новые в этом круге» (`fresh`).
+  let saved: FieldDescriptor[] = []
+  if (def.from?.length) {
+    const compiled = compileFieldSpecs(def.from, { registry, policy })
+    if (compiled.ok) saved = compiled.fields.map(({ fresh: _fresh, ...f }) => f)
+    else defects.push(...compiled.defects)
+  }
+  const total = saved.length + names.length
+  if (total > policy.limits.fields)
+    defects.push(defect('spec.limit', def.id, `полей ${total}, предел ${policy.limits.fields}`))
 
-  const fields: FieldDescriptor[] = names.map((name, order) =>
-    ({ ...def.fields[name]!, name, order }) as FieldDescriptor)
+  const fields: FieldDescriptor[] = [
+    ...saved,
+    ...names.map((name) => ({ ...def.fields[name]!, name }) as FieldDescriptor),
+  ].map((f, order) => ({ ...f, order }))
+  const taken = new Set<string>()
+  for (const f of fields) {
+    if (taken.has(f.name)) defects.push(defect('spec.name-invalid', f.name, `имя '${f.name}' уже занято сохранённым полем`))
+    taken.add(f.name)
+  }
 
   for (const f of fields) defects.push(...checkFieldDefinition(f, registry, policy))
   if (defects.some((d) => d.severity === 'error')) throw new FormDefinitionError(defects, def.id)

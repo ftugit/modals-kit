@@ -21,6 +21,8 @@ export interface KitArgLimits { readonly min?: KitBound; readonly max?: KitBound
 
 /** Вид поля в каталоге. */
 export interface KitKind {
+  /** Подпись вида для выбора в интерфейсе; текст выбирает приложение. */
+  readonly label?: string
   readonly input: InputMode
   readonly kind?: ValueKind
   /** Правила вида: всегда есть у поля этого вида, снять или заменить нельзя. */
@@ -29,6 +31,15 @@ export interface KitKind {
   readonly extra?: readonly string[]
   /** Пределы вида: только сужают пределы набора. */
   readonly rules?: Readonly<Record<string, KitArgLimits>>
+}
+
+/**
+ * Поле, созданное пользователем, — самодостаточная спецификация: правила вида уже
+ * внутри `rules`, поэтому из сохранённого списка форма строится без каталога
+ * (`defineForm({ from })`). `preset` — ключ вида из каталога `kinds`.
+ */
+export interface FieldSetItem extends FieldSpec {
+  readonly preset: string
 }
 
 /** Настройка набора. */
@@ -74,7 +85,7 @@ export interface KitDefect {
 }
 
 export type KitResult =
-  | { ok: true; specs: FieldSpec[]; fields: FieldDescriptor[]; changes: KitChange[] }
+  | { ok: true; specs: FieldSetItem[]; fields: FieldDescriptor[]; changes: KitChange[] }
   | { ok: false; defects: KitDefect[]; changes: KitChange[] }
 
 /** Действующие пределы правила у вида. */
@@ -90,6 +101,9 @@ export interface KitRulesFor {
 export interface FieldKit {
   /** Виды в порядке объявления. */
   readonly kinds: readonly string[]
+  /** Предел числа полей; `undefined` — без предела. */
+  readonly max: number | undefined
+  labelOf(kind: string): string | undefined
   inputOf(kind: string): InputMode | undefined
   rulesFor(kind: string): KitRulesFor | undefined
   compile(list: unknown): KitResult
@@ -146,7 +160,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
   }
   const maxFields = bound(o.limits?.fields, 'limits.fields')
 
-  const catalog = new Map<string, { input: InputMode; kind?: ValueKind } & KitRulesFor>()
+  const catalog = new Map<string, { input: InputMode; kind?: ValueKind; label?: string } & KitRulesFor>()
   for (const [name, k] of Object.entries(o.kinds ?? {})) {
     const where = `kinds.${name}`
     if (!registry.types.byInput(k.input) && !k.kind)
@@ -162,7 +176,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
       const l = narrow(parent[r]!, k.rules?.[r] ? limitsOf(k.rules[r], `${where}.rules.${r}`) : undefined, `${where}.rules.${r}`)
       if (hasLimits(l)) limits[r] = l
     }
-    catalog.set(name, { input: k.input, ...(k.kind ? { kind: k.kind } : {}), locked, extra, limits })
+    catalog.set(name, { input: k.input, ...(k.kind ? { kind: k.kind } : {}), ...(k.label ? { label: k.label } : {}), locked, extra, limits })
   }
 
   function compile(list: unknown): KitResult {
@@ -174,7 +188,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
         ok: false, changes,
         defects: [{ code: 'kit.too-many-fields', params: { count: list.length, max: maxFields }, message: `полей ${list.length}, предел ${maxFields}` }],
       }
-    const specs: FieldSpec[] = []
+    const specs: FieldSetItem[] = []
     for (const raw of list as unknown[]) {
       const u = raw as Partial<KitField> | null
       if (!u || typeof u !== 'object' || typeof u.name !== 'string' || typeof u.kind !== 'string' || typeof u.label !== 'string') {
@@ -222,7 +236,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
         changes.push({ field, rule, code: 'added', to: d })
       }
       specs.push({
-        name: field, input: k.input, ...(k.kind ? { kind: k.kind } : {}), label: u.label,
+        name: field, preset: u.kind, input: k.input, ...(k.kind ? { kind: k.kind } : {}), label: u.label,
         ...(typeof u.help === 'string' && u.help ? { help: u.help } : {}),
         rules: [...k.locked, ...rules],
       })
@@ -250,6 +264,8 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
 
   return {
     kinds: [...catalog.keys()],
+    max: maxFields,
+    labelOf: (kind) => catalog.get(kind)?.label,
     inputOf: (kind) => catalog.get(kind)?.input,
     rulesFor: (kind) => {
       const k = catalog.get(kind)

@@ -1,5 +1,5 @@
 /**
- * Браузерные проверки страницы `/fields` (конструктор полей). Идут на УЖЕ
+ * Браузерные проверки страницы `/fields` (поле `field.fields` и `defineForm({ from })`). Идут на УЖЕ
  * работающий сервер со свежим процессом: набор и запись живут в его кэше.
  *
  *   npm run build && npx vite preview --port 5173 &
@@ -7,12 +7,12 @@
  *
  * Что проверяется:
  *   1. набранное название открывает следующую ячейку, «Удалить» её прячет;
- *   2. сохранение: значение за пределом набора заменяется, замена названа;
+ *   2. сохранение: значение за пределом набора заменяется;
  *   3. после сохранения появляется форма записи с полями набора;
  *   4. правило, которого нет у вида, отклоняется у поля «Правила»;
  *   5. запись: обязательные поля, сверка содержимого файла на сервере;
  *   6. пример записи: название, изображение data URL, значения полей;
- *   7. путь без скрипта: сохранение набора и отправка записи.
+ *   7. путь без скрипта: сохранение набора, отправка записи, отказ с набранным на месте.
  */
 import { chromium } from 'playwright'
 
@@ -46,20 +46,20 @@ const consoleErrors = []
   /* 1. ячейки */
   ok('пустая страница: одна ячейка, формы записи нет',
     (await pg.locator('[data-slot^="s"]').count()) === 1 && (await pg.locator('#fields-record').count()) === 0)
-  await pg.fill(b('fields.s1.label'), 'Сайт')
-  await pg.locator(b('fields.s1.kind')).selectOption('url')
+  await pg.fill(b('props.s1.label'), 'Сайт')
+  await pg.locator(b('props.s1.kind')).selectOption('url')
   await pg.waitForSelector('[data-slot="s2"]')
   ok('название открывает следующую ячейку', (await pg.locator('[data-slot="s2"]').count()) === 1)
   ok('у вида «Ссылка» правило вида названо', (await pg.locator('[data-slot="s1"]').innerText()).includes('Всегда: проверка ссылки'))
 
-  await pg.fill(b('fields.s2.label'), 'Возраст')
-  await pg.locator(b('fields.s2.kind')).selectOption('number')
-  await pg.locator(b('fields.s2.rules')).selectOption(['required', 'maxValue'])
-  await pg.waitForSelector(b('fields.s2.max_value'))
-  ok('выбранное правило со значением даёт поле числа', (await pg.locator(b('fields.s2.max_value')).count()) === 1)
-  await pg.fill(b('fields.s2.max_value'), '99999999')
+  await pg.fill(b('props.s2.label'), 'Возраст')
+  await pg.locator(b('props.s2.kind')).selectOption('number')
+  await pg.locator(b('props.s2.rules')).selectOption(['required', 'maxValue'])
+  await pg.waitForSelector(b('props.s2.max_value'))
+  ok('выбранное правило со значением даёт поле числа', (await pg.locator(b('props.s2.max_value')).count()) === 1)
+  await pg.fill(b('props.s2.max_value'), '99999999')
 
-  await pg.fill(b('fields.s3.label'), 'Лишнее')
+  await pg.fill(b('props.s3.label'), 'Лишнее')
   await pg.waitForSelector('[data-slot="s4"]')
   await pg.click('[data-testid="remove-s3"]')
   ok('«Удалить» прячет ячейку', (await pg.locator('[data-slot="s3"]').count()) === 0
@@ -70,23 +70,22 @@ const consoleErrors = []
   await pg.waitForSelector('[data-testid="saved-set"]')
   const saved = await pg.locator('[data-testid="saved-set"]').innerText()
   ok('набор сохранён, версия 1, полей 2', saved.includes('версия 1') && saved.includes('полей: 2'), saved)
-  ok('замена за пределом названа', saved.includes('«Возраст», Макс. значение: 99999999 → 1000000'), saved)
-  ok('конструктор показывает значение после замены',
-    (await pg.inputValue(b('fields.s2.max_value'))) === '1000000')
+  ok('значение за пределом заменено при сохранении',
+    (await pg.inputValue(b('props.s2.max_value'))) === '1000000')
   await pg.waitForSelector('#fields-record')
   ok('форма записи: название, изображение и поля набора',
     (await pg.locator(r('title')).count()) === 1 && (await pg.locator(r('image')).count()) === 1
     && (await pg.locator(r('u_s1')).count()) === 1 && (await pg.locator(r('u_s2')).count()) === 1)
 
   /* 4. правило не того вида */
-  await pg.locator(b('fields.s1.kind')).selectOption('text')
-  await pg.locator(b('fields.s1.rules')).selectOption(['minLength'])
-  await pg.locator(b('fields.s1.kind')).selectOption('number')
+  await pg.locator(b('props.s1.kind')).selectOption('text')
+  await pg.locator(b('props.s1.rules')).selectOption(['minLength'])
+  await pg.locator(b('props.s1.kind')).selectOption('number')
   await pg.click('[data-testid="save"]')
-  await pg.waitForFunction(() => document.querySelector('[data-field="fields.s1.rules"]')?.textContent?.includes('недоступно') ||
-    document.querySelector('[data-field="fields.s1.rules"] [id$="-error"]'))
-  ok('правило не того вида — ошибка у «Правила»', (await errorsOf(pg, 'fields.s1.rules')).length > 'Правила'.length,
-    await errorsOf(pg, 'fields.s1.rules'))
+  await pg.waitForFunction(() => document.querySelector('[data-field="props.s1.rules"]')?.textContent?.includes('недоступно') ||
+    document.querySelector('[data-field="props.s1.rules"] [id$="-error"]'))
+  ok('правило не того вида — ошибка у «Правила»', (await errorsOf(pg, 'props.s1.rules')).length > 'Правила'.length,
+    await errorsOf(pg, 'props.s1.rules'))
   ok('набор не перезаписан', (await pg.locator('[data-testid="saved-set"]').innerText()).includes('версия 1'))
 
   /* 5. запись */
@@ -126,8 +125,8 @@ const consoleErrors = []
   await pg.goto(BASE)
   ok('без JS: сохранённый набор и пустая ячейка на месте',
     (await pg.locator('[data-slot="s1"]').count()) === 1 && (await pg.locator('[data-slot="s3"]').count()) === 1)
-  await pg.fill(b('fields.s3.label'), 'Комментарий')
-  await pg.locator(b('fields.s3.kind')).selectOption('textarea')
+  await pg.fill(b('props.s3.label'), 'Комментарий')
+  await pg.locator(b('props.s3.kind')).selectOption('textarea')
   await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="save"]')])
   const saved = await pg.locator('[data-testid="saved-set"]').innerText()
   ok('без JS: набор сохранён (версия 2, полей 3)', saved.includes('версия 2') && saved.includes('полей: 3'), saved)
@@ -141,6 +140,16 @@ const consoleErrors = []
   await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="record-submit"]')])
   const view = await pg.locator('[data-testid="record-view"]').innerText().catch(() => '')
   ok('без JS: запись заменена', view.includes('Без скрипта') && view.includes('Комментарий') && view.includes('https://example.org'), view)
+
+  // отказ без JS: набранное возвращается в разметку, ошибка — у своего места
+  await pg.fill(b('props.s4.label'), 'Плохое')
+  await pg.locator(b('props.s4.kind')).selectOption('number')
+  await pg.locator(b('props.s4.rules')).selectOption(['minLength'])
+  await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="save"]')])
+  ok('без JS: отказ — ошибка у «Правила» места, набранное на месте',
+    (await errorsOf(pg, 'props.s4.rules')).includes('не подходит') && (await pg.inputValue(b('props.s4.label'))) === 'Плохое',
+    await errorsOf(pg, 'props.s4.rules'))
+  ok('без JS: набор после отказа не перезаписан', (await pg.locator('[data-testid="saved-set"]').innerText()).includes('версия 2'))
   await ctx.close()
 }
 

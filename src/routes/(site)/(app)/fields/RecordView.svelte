@@ -1,6 +1,6 @@
 <script lang="ts">
   // Пример сохранённой записи: название, изображение (data URL из кэша) и поля набора.
-  import type { SavedRecord } from './kit'
+  import type { SavedRecord } from './forms'
 
   let { record }: { record: SavedRecord } = $props()
 </script>

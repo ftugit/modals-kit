@@ -128,7 +128,7 @@ export function validateForm(
     if (!f) continue
     structuralByPath.set(s.path, [
       ...(structuralByPath.get(s.path) ?? []),
-      toError({ code: s.code, params: s.params }, s.path, f),
+      toError({ code: s.code, params: s.params }, s.at ? `${s.path}.${s.at}` : s.path, f),
     ])
   }
 

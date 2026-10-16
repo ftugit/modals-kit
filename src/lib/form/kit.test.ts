@@ -1,5 +1,6 @@
 import { describe as suite, expect, test } from 'vitest'
-import { ageFields, appendFields, defineFieldKit, defineForm, validateForm, type KitField } from './index'
+import { ageFields, appendFields, defineForm, validateForm } from './index'
+import { defineFieldKit, type KitField } from './kit'
 
 const kit = defineFieldKit({
   limits: { fields: 4 },

@@ -1,15 +1,13 @@
 // Разбор записей в значения. Один код-путь: его зовут и браузер, и сервер
 // над одним и тем же FormData.
 import type { FormDescription } from './describe'
+import type { EntrySource } from './field-types'
 import { safeObject, type FieldPath } from './types'
 
-/** Минимальный контракт источника: и FormData, и тестовый объект. */
-export interface EntrySource {
-  getAll(name: string): (string | File)[] | FormDataEntryValue[]
-  keys(): IterableIterator<string> | Iterable<string>
-}
+export type { EntrySource }
 
-export interface Structural { path: FieldPath; code: string; params?: Record<string, unknown> }
+/** Отказ разбора поля `path`; `at` — подпуть внутри вложенного поля. */
+export interface Structural { path: FieldPath; code: string; params?: Record<string, unknown>; at?: string }
 
 export interface Decoded {
   values: Record<string, unknown>
@@ -28,9 +26,11 @@ export function decode(form: EntrySource, d: FormDescription): Decoded {
   const structural: Structural[] = []
   for (const f of d.fields) {
     const type = d.registry.types.get(f.kind)
-    const r = type.decode(form.getAll(f.name) as (string | File)[], { path: f.name, input: f.input })
-    if (r.ok) values[f.name] = r.value
-    else { values[f.name] = type.empty; structural.push({ path: f.name, code: r.code, params: r.params }) }
+    const r = type.decode(form.getAll(f.name) as (string | File)[], { path: f.name, input: f.input, form, field: f })
+    if (r.ok) { values[f.name] = r.value; continue }
+    values[f.name] = r.value ?? type.empty
+    for (const i of [r, ...(r.more ?? [])])
+      structural.push({ path: f.name, code: i.code, params: i.params, ...(i.at ? { at: i.at } : {}) })
   }
   return { values, structural }
 }
@@ -46,7 +46,7 @@ export function encode(values: Record<string, unknown>, d: FormDescription): For
     const v = values[f.name]
     if (v === undefined) continue
     const pairs: Array<[string, string | File]> = []
-    d.registry.types.get(f.kind).encode(v, f.name, pairs)
+    d.registry.types.get(f.kind).encode(v, f.name, pairs, { field: f })
     for (const [k, val] of pairs) out.append(k, val as string)
   }
   return out

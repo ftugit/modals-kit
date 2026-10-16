@@ -52,7 +52,8 @@ export const defaultUi: UiPolicy = {
   describedBy: ({ help, error, note }) => [help, error, note].filter(Boolean).join(' ') || undefined,
   shouldValidate: ({ event, name, live, state }) => {
     // эскалация: поле с ошибкой после неудачной отправки проверяется на вводе
-    if (state.submitCount > 0 && state.facts.some((e) => e.path === name)) return true
+    // (у вложенного поля ошибка может лежать на подпути: `props.s1.label`)
+    if (state.submitCount > 0 && state.facts.some((e) => e.path === name || e.path?.startsWith(`${name}.`))) return true
     if (event === 'blur') return live === 'on-blur' || live === 'after-touched'
     if (live === 'on-input') return true
     return live === 'after-touched' && state.touched[name] === true

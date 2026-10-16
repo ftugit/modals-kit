@@ -1,6 +1,7 @@
-// Десять встроенных типов. Регистрируются ТЕМ ЖЕ способом, что и пользовательские:
+// Одиннадцать встроенных типов. Регистрируются ТЕМ ЖЕ способом, что и пользовательские:
 // иначе у пользовательских был бы другой контракт и они отстали бы от развития.
 import { type Constraint } from './constraints'
+import { fieldSetType } from './field-set'
 import type { DecodeResult, FieldType, Projection } from './field-types'
 import type { HtmlAttrs, InputMode, ValueKind } from './types'
 
@@ -219,5 +220,5 @@ export const filesType: FieldType<readonly File[]> = {
 /** Все встроенные типы значения, регистрируемые createRegistry(). */
 export const BUILTIN_TYPES = [
   textType, numberType, checkboxType, dateType, timeType, datetimeType,
-  selectType, multiselectType, fileType, filesType,
+  selectType, multiselectType, fileType, filesType, fieldSetType,
 ] as const

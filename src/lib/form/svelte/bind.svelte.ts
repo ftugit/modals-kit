@@ -65,6 +65,10 @@ export interface FieldView {
   readonly errors: readonly FormError[]
 
   readonly value: unknown
+  /** Значение по умолчанию из описания: им поле стартует, пока `value` не задано. */
+  readonly defaultValue?: unknown
+  /** Каталог `field.fields`: виды и правила для мест под поля. */
+  readonly fieldSet?: FieldDescriptor['fieldSet']
   /** Факт невалидности. Источник настраивается: по факту или по показу. */
   readonly has: boolean
   readonly touched: boolean
@@ -259,11 +263,13 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
     const shown = display(ev.errors, ctx)
     // закреплённые серверные ошибки решает syncPins по значению, а не уход с поля
-    const keep = (e: FormError) => e.path !== name || pinned(e)
+    // подпути вложенного поля (`props.s1.label`) перепроверяются вместе с ним
+    const own = (e: FormError) => e.path === name || !!e.path?.startsWith(`${name}.`)
+    const keep = (e: FormError) => !own(e) || pinned(e)
     store.set((s) => ({
       ...s,
-      facts: [...s.facts.filter(keep), ...ev.errors.filter((e) => e.path === name)],
-      shown: [...s.shown.filter(keep), ...shown.errors.filter((e) => e.path === name)],
+      facts: [...s.facts.filter(keep), ...ev.errors.filter(own)],
+      shown: [...s.shown.filter(keep), ...shown.errors.filter(own)],
     }))
     syncPins()
   }
@@ -525,7 +531,10 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
 
   function viewOf(f: FieldDescriptor): FieldView {
     const id = cfg.ui.fieldId(desc.id, f.name)
-    const errors = byField[f.name] ?? []
+    // у вложенного поля (`field.fields`) ошибки и на подпутях: `props.s1.max_length`
+    const errors = desc.registry.types.get(f.kind).nested
+      ? Object.entries(byField).filter(([p]) => p === f.name || p.startsWith(`${f.name}.`)).flatMap(([, e]) => e)
+      : byField[f.name] ?? []
     const value = snapshot.values[f.name]
     const helpId = `${id}-help`
     const errorId = `${id}-error`
@@ -557,6 +566,8 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
       errors, value, has,
+      ...(f.defaultValue !== undefined ? { defaultValue: f.defaultValue } : {}),
+      ...(f.fieldSet ? { fieldSet: f.fieldSet } : {}),
       disabled: ls.disabled, reason: ls.reason, note,
       touched: snapshot.touched[f.name] === true,
       dirty: snapshot.dirty[f.name] === true,

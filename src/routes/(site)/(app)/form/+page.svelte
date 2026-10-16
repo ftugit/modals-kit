@@ -10,7 +10,7 @@ import { asLink } from '#lib/components/links/index.js'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
-    createRegistry, defaultRegistry, defineForm, editor, field,
+    createRegistry, defaultRegistry, defineForm, field,
     type FormDescription,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
@@ -328,23 +328,6 @@ import { asLink } from '#lib/components/links/index.js'
         </div>
         <Field of={form.f.digest} />
         <Field of={form.f.agree} />
-
-        <!-- повторяемая группа: ключи стабильны, индекс — производное -->
-        <Fieldset legend="Позиции" legendVariant="label" class="gap-3 rounded-lg border border-border p-3">
-          {#each form.rows('items').keys as key (key)}
-            <div data-row={key} class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-              {#each form.rows('items').row(key) as f (f.name)}<Field of={f} />{/each}
-              <Button variant="outline" class="self-end"
-                      onclick={() => form.apply([editor.removeRow('items', key)])}>
-                Удалить
-              </Button>
-            </div>
-          {/each}
-          <Button variant="outline" size="sm" class="self-start"
-                  onclick={() => form.apply([editor.addRow('items', `r${Date.now() % 100000}`)])}>
-            + Позиция
-          </Button>
-        </Fieldset>
 
         <div class="flex flex-wrap gap-2">
           <Button type="submit" {...form.intent('submit')} task={formTask(form.state, 'submit')}>

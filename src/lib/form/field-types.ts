@@ -10,14 +10,33 @@
 // Второй таблицы нет: применимость и проекция живут в одном месте, у владельца.
 import type { Constraint, ConstraintKind } from './constraints'
 import { keep } from './keep'
+import type { FieldDescriptor } from './describe'
 import type { HtmlAttrs, InputMode, ValueKind } from './types'
 
+/** Источник записей формы: и FormData, и тестовый объект. */
+export interface EntrySource {
+  getAll(name: string): (string | File)[] | FormDataEntryValue[]
+  keys(): IterableIterator<string> | Iterable<string>
+}
+
 /** Контекст декодирования значения поля. */
-export interface DecodeContext { path: string; input: InputMode }
-/** Результат decode() типа поля. */
+export interface DecodeContext {
+  path: string
+  input: InputMode
+  /** Все записи формы — для вложенного типа (`nested`): его значение живёт в `имя.…`. */
+  form?: EntrySource
+  /** Дескриптор поля: настройка, которую сахар положил для типа. */
+  field?: FieldDescriptor<any>
+}
+/** Отказ разбора. `at` — подпуть внутри поля (`s1.max_length`), ошибка ляжет на `имя.at`. */
+export interface DecodeIssue { code: string; params?: Record<string, unknown>; at?: string }
+/**
+ * Результат decode() типа поля; `more` — остальные отказы вложенного типа, `value` —
+ * что показать обратно при отказе (иначе `empty`): набор полей без JS не теряет набранное.
+ */
 export type DecodeResult<V> =
   | { ok: true; value: V }
-  | { ok: false; code: string; params?: Record<string, unknown> }
+  | ({ ok: false; more?: readonly DecodeIssue[]; value?: V } & DecodeIssue)
 
 /** Контекст проекции ограничения в HTML-атрибуты. */
 export interface ProjectContext {
@@ -40,9 +59,14 @@ export interface FieldType<V = unknown> {
   /** Представления, которые обслуживает тип. Первое — умолчание сахара. */
   readonly inputs: readonly InputMode[]
   readonly multiple: boolean
+  /**
+   * Значение живёт в записях `имя.…`, а не под самим именем: слой имён пропускает
+   * такие ключи, а `decode` получает все записи формы в `ctx.form`.
+   */
+  readonly nested?: boolean
   readonly empty: V
   decode(entries: readonly (string | File)[], ctx: DecodeContext): DecodeResult<V>
-  encode(value: V, name: string, out: Array<[string, string | File]>): void
+  encode(value: V, name: string, out: Array<[string, string | File]>, ctx?: { field?: FieldDescriptor<any> }): void
   /** Применимость и проекция в одной записи. */
   readonly constraints: Readonly<Partial<Record<ConstraintKind, Projection>>>
   /** Атрибуты самого представления, не зависящие от правил. */

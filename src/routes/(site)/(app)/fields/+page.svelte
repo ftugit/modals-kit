@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Конструктор полей: набор полей (`defineFieldKit`) → форма записи на нём → пример
-  // записи. Набор и запись живут в кэше процесса (`#lib/cache`), по одному.
+  // Конструктор полей: форма с полем `field.fields` → форма записи на сохранённом
+  // наборе (`defineForm({ from })`) → пример записи. Набор и запись живут в кэше
+  // процесса (`#lib/cache`), по одному.
   import type { Result } from '#lib/form/index.js'
-  import Builder from './Builder.svelte'
+  import CollectionForm from './CollectionForm.svelte'
   import RecordForm from './RecordForm.svelte'
   import RecordView from './RecordView.svelte'
   import type { PageData } from './$types'
@@ -28,7 +29,7 @@
   </header>
 
   {#key data.set?.version ?? 0}
-    <Builder set={data.set} seed={seed('save')} />
+    <CollectionForm set={data.set} seed={seed('save')} />
   {/key}
 
   {#if data.set}

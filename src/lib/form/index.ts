@@ -25,7 +25,11 @@ export * from './schema'
 export * from './proof'
 export * from './editor'
 export * from './spec'
-export * from './kit'
+// каталог набора — внутренность `field.fields`: наружу только типы
+export type {
+  FieldKit, FieldSetItem, KitArgLimits, KitBound, KitDefect, KitField, KitKind, KitRuleLimits, KitRulesFor,
+} from './kit'
+export * from './field-set'
 export * from './source'
 export * from './continuation'
 export * from './url'

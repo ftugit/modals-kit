@@ -16,9 +16,6 @@ function make(cardinality: 'first' | 'all') {
       { id: 'submit', label: 'Создать аккаунт', validate: 'full' },
       // Действие снимает ВИД ограничения, а не имя правила.
       { id: 'save-draft', label: 'Сохранить черновик', validate: 'partial', relax: ['required'] },
-      // операции над набором полей — такие же действия, но без проверки
-      { id: 'add-row', label: '+ позиция', validate: 'none', sideEffect: 'mutate-schema' },
-      { id: 'remove-row', validate: 'none', sideEffect: 'mutate-schema' },
     ],
     fields: {
       email: field.email({
@@ -97,9 +94,6 @@ function make(cardinality: 'first' | 'all') {
         ],
       }),
       digest: field.switch({ label: 'Присылать дайджест на почту' }),
-      // повторяемая группа: ключ строки стабилен, индекс — производное
-      'items.r1.sku': field.text({ label: 'Артикул', variant: 'auto', validate: [v.maxLength(16)] }),
-      'items.r1.qty': field.number({ label: 'Количество', variant: 'auto', validate: [v.minValue(1), v.maxValue(99)] }),
       agree: field.checkbox({ label: 'Согласен с условиями', validate: [v.required()] }),
     },
   })
@@ -115,7 +109,6 @@ export const SPEC_ALL = 2
  * Источник описания. Принимает версию ИЗ КОНВЕРТА, а не «самую свежую»:
  * страница, открытая до переключения, получит своё описание.
  */
-export function resolveDescription(formId: unknown, specVersion: unknown) {
-  if (formId !== 'signup') return undefined
-  return Number(specVersion) === SPEC_ALL ? signupAll : signup
+export function resolveDescription(specVersion: number | undefined) {
+  return specVersion === SPEC_ALL ? signupAll : signup
 }

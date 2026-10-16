@@ -88,8 +88,9 @@ export const ru: MessageDictionary = {
   'body.too-large': 'Запрос слишком большой',
   'body.too-many-keys': 'Запрос содержит слишком много полей',
   'request.too-many': 'Поле передано слишком много раз',
-  // набор полей от пользователя (`defineFieldKit`)
+  // набор полей от пользователя (`field.fields`)
   'kit.not-list': 'Описание полей не распознано',
+  'type.fields': 'Набор полей не распознан',
   'kit.too-many-fields': (p) => `Полей ${p['count']}, можно не больше ${p['max']}`,
   'kit.field-shape': 'Описание поля не распознано',
   'kit.unknown-kind': 'Такого вида поля нет',

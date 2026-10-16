@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Форма записи на сохранённом наборе: название, изображение и поля набора.
-   * Описание то же, что поднимает сервер (`recordForm`), версия набора едет в
-   * конверте — запись на устаревшем наборе сервер отклонит, а не примет молча.
+   * Форма записи на сохранённом наборе: поля набора, название и изображение.
+   * Описание то же, что строит сервер (`recordForm` — `defineForm({ from })`):
+   * запись на устаревшем наборе сервер отклонит, а не примет молча.
    */
   import { untrack } from 'svelte'
   import { invalidateAll } from '$app/navigation'
@@ -13,16 +13,15 @@
   import { Button } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import Field from '#lib/components/form/Field.svelte'
-  import { recordForm, type SavedSet } from './kit'
+  import { recordForm, type SavedSet } from './forms'
 
   let { set, seed = null }: { set: SavedSet; seed?: Result | null } = $props()
 
-  const form = bind(forms, untrack(() => recordForm(set.specs)), {
+  const form = bind(forms, untrack(() => recordForm(set)), {
     action: '?/record',
     live: 'on-submit',
     transport: jsonTransport('/fields/record'),
     continuation: untrack(() => seed),
-    specVersion: untrack(() => set.version),
   })
 
   let last = form.state.status
@@ -41,9 +40,9 @@
   </div>
   <Form id="fields-record" {form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
     <Common errors={form.common} title="Запись не сохранена" />
+    {#each form.custom() as f (f.name)}<Field of={f} />{/each}
     <Field of={form.f.title} />
     <Field of={form.f.image} />
-    {#each form.custom() as f (f.name)}<Field of={f} />{/each}
     <Button type="submit" data-testid="record-submit" task={formTask(form.state)}>Отправить</Button>
   </Form>
 </section>
