@@ -157,8 +157,6 @@ export function validateForm(
       for (const ref of f.validators) {
         const kinds = kindsOf(ref)
         if (kinds.some((k) => relax.has(k))) continue
-        // мягкий первый круг: поле, созданное в этом круге, не ругается обязательностью
-        if (f.fresh && kinds.includes('required')) continue
         let fn
         try { fn = d.registry.validators.resolve(ref) } catch { continue }
         const issue = fn(values[f.name], { path: f.name, values, constraints })

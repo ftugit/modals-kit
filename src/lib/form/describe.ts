@@ -104,7 +104,6 @@ export interface FieldDescriptor<V = unknown> {
   readonly reason?: string
   readonly cardinality?: 'first' | 'all'
   readonly invalidFrom?: InvalidFrom
-  readonly fresh?: boolean
   /** Каталог видов и пределы набора `field.fields`: по нему разбор приводит значение. */
   readonly fieldSet?: FieldKit
   /** Сохранённое поле, из которого собран дескриптор (`defineForm({ from })`). */
@@ -119,7 +118,6 @@ export interface ActionDescriptor {
   /** Виды ограничений, снятые действием: черновик снимает обязательность. */
   readonly relax?: readonly ConstraintKind[]
   readonly subset?: readonly FieldPath[]
-  readonly sideEffect?: 'mutate-schema' | 'submit' | 'none'
 }
 
 /* ── дефекты описания ──────────────────────────────────────────────── */
@@ -214,7 +212,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
     get: (_t, input: string) => (o: FieldOptions & Partial<FieldSetOptions> = {}) => {
       // набор полей от пользователя: каталог собирается сразу — неверный падает при объявлении
       const fieldSet = input === 'fields'
-        ? defineFieldKit({ limits: { fields: o.max }, rules: o.rules ?? {}, kinds: o.kinds ?? {}, registry, prefix: o.prefix })
+        ? defineFieldKit({ limits: { fields: o.max }, rules: o.rules ?? {}, kinds: o.kinds ?? {}, registry })
         : undefined
       const kind = o.kind ?? registry.types.byInput(input)?.kind
       if (!kind)
@@ -256,8 +254,6 @@ export interface FieldSetOptions extends FieldOptions<readonly FieldSetItem[]> {
   readonly rules: FieldKitOptions['rules']
   /** Каталог видов: представление, правила вида, правила на выбор. */
   readonly kinds: FieldKitOptions['kinds']
-  /** Префикс имён полей в форме записи, `u_` по умолчанию. */
-  readonly prefix?: string
 }
 
 /** Сахар `field.*`: любое представление из реестра плюс набор полей от пользователя. */
@@ -431,11 +427,11 @@ export interface FormDescription {
 }
 
 const DEFAULT_ACTIONS: readonly ActionDescriptor[] = [
-  { id: 'submit', validate: 'full', sideEffect: 'submit' },
+  { id: 'submit', validate: 'full' },
 ]
 const FIELD_SET_ACTIONS: readonly ActionDescriptor[] = [
-  { id: FIELD_SET_ADD, validate: 'none', sideEffect: 'mutate-schema' },
-  { id: FIELD_SET_REMOVE, validate: 'none', sideEffect: 'mutate-schema' },
+  { id: FIELD_SET_ADD, validate: 'none' },
+  { id: FIELD_SET_REMOVE, validate: 'none' },
 ]
 
 /**
@@ -456,13 +452,12 @@ export function defineForm(def: FormDefinition): FormDescription {
   const names = Object.keys(def.fields)
   const defects: FieldDefect[] = []
 
-  // Сохранённые поля — данные, не код: компилируются той же проверкой, что поля из
-  // рантайма. Они уже были показаны, поэтому не «новые в этом круге» (`fresh`).
+  // Сохранённые поля — данные, не код: компилируются той же проверкой, что поля из рантайма.
   let saved: FieldDescriptor[] = []
   if (def.from?.length) {
     const compiled = compileFieldSpecs(def.from, { registry, policy })
     // порядок дескрипторов — порядок спецификаций: при успехе компилируется каждая
-    if (compiled.ok) saved = compiled.fields.map(({ fresh: _fresh, ...f }, i) => ({ ...f, spec: def.from![i]! }))
+    if (compiled.ok) saved = compiled.fields.map((f, i) => ({ ...f, spec: def.from![i]! }))
     else defects.push(...compiled.defects)
   }
   const total = saved.length + names.length

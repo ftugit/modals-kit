@@ -30,13 +30,6 @@ export type StandardResult<T> =
   | { readonly issues: readonly IssueLike[] }
 
 /**
- * Проверка на контракт Standard Schema (`~standard`).
- * @param x Что угодно.
- */
-export const isStandardSchema = (x: unknown): x is StandardSchemaLike =>
-  !!x && typeof x === 'object' && '~standard' in x
-
-/**
  * Перевести один issue в ошибку формы. Путь склеивается в `path`. Есть строковый
  * `code` — он и параметры идут в словарь; нет — код `schema`, текст как есть.
  * @param i Issue (Standard Schema, возможно с `code`/`params`/`template`).

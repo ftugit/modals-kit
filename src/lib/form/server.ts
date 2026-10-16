@@ -460,7 +460,7 @@ function provenSchemas(d: FormDescription, values: Record<string, unknown>, inte
   const visible = visibleFields(d, values)
   for (const f of d.fields) {
     const from = f.rulesFrom
-    if (!from || !visible.has(f.name) || f.fresh) continue
+    if (!from || !visible.has(f.name)) continue
     if (from.rules.every((r) => f.validators.includes(r))) out.set(f.name, from.schema)
   }
   return out

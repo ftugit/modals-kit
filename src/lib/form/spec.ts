@@ -135,7 +135,6 @@ export function compileFieldSpec(spec: FieldSpec, o: CompileOptions = {}): Compi
     validators,
     options: spec.options ? [...spec.options] : undefined,
     visibleWhen: spec.visibleWhen,
-    fresh: true,
   }
 
   defects.push(...checkFieldDefinition(field, registry, policy))

@@ -129,9 +129,13 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // набора без JS; места для разметки в ядре `field-set.ts`, он в общем чанке формы; компонент
 // `FieldSetField` из общего `resolve` убран). Факт: весь JS 254.1, immutable 267.8, /form 176.3 (−0.7),
 // /modals 176.6, /fields 171.2. Лимиты = факт + ≈0.5, сообщено владельцу.
+// REVISION 2026-10-16, ход 237 (чистка lib/form: удалены редактор набора и строки групп
+// `editor.ts`, `form.apply`/`form.rows`/`form.custom`, продолжение, стратегия файлов, devtools,
+// `createAppSource`, пометка `fresh`). Факт: весь JS 252.9 (−1.2), immutable 266.6, /form 175.0,
+// /modals 175.3, /paginator 210.9, /db-demo 208.5, /fields 169.9. Лимиты опущены до факт + 0.5.
 const LIMITS = {
-  allImmutableGzip: 268.3 * KiB,
-  allJsGzip: 254.6 * KiB,
+  allImmutableGzip: 267.1 * KiB,
+  allJsGzip: 253.4 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -139,7 +143,7 @@ const LIMITS = {
 
 const ROUTE_LIMITS = {
   '/': 143 * KiB,
-  '/form': 177.5 * KiB,
+  '/form': 175.5 * KiB,
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
@@ -149,13 +153,13 @@ const ROUTE_LIMITS = {
   // поиск вариантов Select через matchesQuery paginate/search (R4, решение B): ядро fuzzy
   // (foldKey, взвешенный DL) едет в общий чанк примитивов, +1.4 на каждом маршруте;
   // /modals 161.0 > 160. По постоянному решению оператора — +5.
-  '/modals': 177 * KiB,
+  '/modals': 175.8 * KiB,
   // Пагинатор с живым источником, paginate/search и панелью фильтров. Ход 16 (решение
   // оператора): 138.6 → 196.5 = факт 191.5 + 5. Прежние «факт 120.3» и 138.6 были
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
   // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
   // остальных маршрутов; вес самой страницы — отдельная находка (docs/plan.md).
-  '/paginator': 213.5 * KiB,
+  '/paginator': 211.4 * KiB,
   // C16 (решение оператора, ход 34: «прибавь размера»): маршруты без лимита
   // получили «факт + 5» по сборке хода 34 — 175.5 / 124.1 / 118.8 / 125.6.
   // Ход 109: + экран переноса схемы (SchemaPending, форма решений) — факт 180.8;
@@ -163,12 +167,13 @@ const ROUTE_LIMITS = {
   // Ход 112: + закреплённые ошибки формы (pins) и смена источника в ядре пагинатора
   // (общее со списком БД) — факт 181.6 → 182.5.
   // Ход 185: модель `posts` в браузере (форма из модели) — факт 201.1, см. REVISION у LIMITS.
-  '/db-demo': 211 * KiB,
+  '/db-demo': 209 * KiB,
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
   '/cards/[id]': 139.5 * KiB,
   // Ход 224: конструктор полей — факт 169.9. Ход 236: хук `fieldSet` — факт 171.2.
-  '/fields': 171.7 * KiB,
+  // Ход 237: чистка lib/form — факт 169.9.
+  '/fields': 170.4 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

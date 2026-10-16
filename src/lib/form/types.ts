@@ -34,42 +34,18 @@ export interface InputModes {
   file: true; files: true
   /** Одноразовый код: строка цифр, ячейки рисует компонент приложения. */
   otp: true
-  /** Набор полей от пользователя: места под поля рисует компонент приложения. */
+  /** Набор полей от пользователя: места расставляет разметка приложения (`fieldSet`). */
   fields: true
 }
 export type InputMode = (keyof InputModes & string) | (string & {})
 
 export type FieldPath = string
-export type RowKey = string        // выдаёт ядро или сервер, НИКОГДА не индекс массива
 export type FormId = string
 export type InstanceId = string
 export type SubmissionId = string
 export type Revision = number
 
 export type HtmlAttrs = Record<string, unknown>
-
-/**
- * Корень составного пути: `items.r1.sku` → `items`. Нужен проверке
- * согласованности состояния группы.
- * @param path Составной путь поля.
- * @returns Имя корневого сегмента.
- */
-export function root(path: FieldPath): string {
-  return path.split('.')[0]!
-}
-
-/**
- * Индексное представление — ПРОИЗВОДНОЕ. Ошибка адресуется ключом, не индексом.
- * @param path Путь с ключами строк: `items.r1.sku`.
- * @param rowKeys Ключи строк группы в порядке объявления.
- * @returns Путь с индексами строк: `items.0.sku`.
- */
-export function toIndexPath(path: FieldPath, rowKeys: readonly RowKey[]): string {
-  return path.split('.').map((p) => {
-    const i = rowKeys.indexOf(p)
-    return i === -1 ? p : String(i)
-  }).join('.')
-}
 
 /**
  * Объект без прототипа: `__proto__` в нём — обычный ключ.

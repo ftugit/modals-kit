@@ -1,11 +1,11 @@
 // Модульные тесты ядра: без фреймворка, без DOM, без сети.
 import { describe as suite, expect, test } from 'vitest'
 import {
-  applyOps, assertConsistent, checkStale, compileFieldSpec, createRegistry, defineForm,
+  checkStale, compileFieldSpec, createRegistry, defineForm,
   fieldLinkState,
-  degrade, editor, evaluate, fieldSetHash, FormDefinitionError, groupRows, InvariantError,
-  makeContinuation, makeRenderer, normalizeErrors, projectAttrs, reconcile, ru,
-  addressedTo, assertQueuedProtocol, effectiveMode, hasError, invalidFromFor,
+  evaluate, fieldSetHash, FormDefinitionError,
+  makeRenderer, normalizeErrors, projectAttrs, ru,
+  assertQueuedProtocol, hasError, invalidFromFor,
   applyHandler, split, makeFieldSugar, normalizeService, policyWith, QueuedWithoutProtocolError,
   SubmitMachine,
   type ErrorContext, type FieldSpec, type FormError, type Result,
@@ -54,7 +54,6 @@ const signup = defineForm({
   actions: [
     { id: 'submit', validate: 'full' },
     { id: 'save-draft', validate: 'partial', relax: ['required'] },
-    { id: 'add-row', validate: 'none', sideEffect: 'mutate-schema' },
   ],
   fields: {
     email: field.email({ validate: [v.required(), v.maxLength(320)] }),
@@ -372,61 +371,6 @@ suite('чужие службы', () => {
   })
 })
 
-suite('изменение набора полей', () => {
-  const order = defineForm({
-    id: 'order',
-    fields: {
-      'items.r1.sku': field.text({}),
-      'items.r1.qty': field.number({ validate: [v.minValue(1)] }),
-    },
-  })
-
-  test('строка копируется по стабильному ключу', () => {
-    const next = applyOps(order, [editor.addRow('items', 'r7')])
-    expect(groupRows(next.fields)).toEqual({ items: ['r1', 'r7'] })
-    expect(next.attrsOf('items.r7.qty').attrs['min']).toBe(1)
-  })
-
-  test('удаление строки не задевает соседей', () => {
-    const next = applyOps(order, [editor.addRow('items', 'r7'), editor.removeRow('items', 'r1')])
-    expect(groupRows(next.fields)).toEqual({ items: ['r7'] })
-  })
-
-  test('ревизия растёт один раз на пакет', () => {
-    const next = applyOps(order, [editor.addRow('items', 'r2'), editor.addRow('items', 'r3')])
-    expect(next.revision).toBe(order.revision + 1)
-  })
-
-  test('новое поле помечено свежим и не ругается обязательностью', () => {
-    const spec: FieldSpec = { name: 'phone', input: 'tel', label: 'Телефон', required: true }
-    const compiled = compileFieldSpec(spec)
-    expect(compiled.ok).toBe(true)
-    if (!compiled.ok) return
-    const next = applyOps(signup, [editor.add(compiled.field)])
-    const ev = evaluate(body({ email: 'a@b.io', age: '30', agree: 'on' }, envelope('signup', 2)),
-                        next, { render })
-    expect(ev.errors.some((e) => e.path === 'u_phone')).toBe(false)
-  })
-
-  test('инвариант ловит осиротевшую ошибку', () => {
-    const next = applyOps(signup, [editor.remove('email')])
-    expect(() => assertConsistent(next, {
-      facts: [{ id: '1', code: 'required', path: 'email', origin: 'core' }], values: {},
-    })).toThrow(InvariantError)
-  })
-
-  test('перенос состояния сбрасывает ошибки менявшегося поля', () => {
-    const next = applyOps(order, [editor.patch('items.r1.qty', { validators: [v.minValue(5)] })])
-    const moved = reconcile(next, order, {
-      values: { 'items.r1.qty': 3 },
-      facts: [{ id: '1', code: 'minValue', path: 'items.r1.qty', origin: 'core' }],
-      dirty: {}, touched: {},
-    })
-    expect(moved.facts).toHaveLength(0)
-    expect(moved.values['items.r1.qty']).toBe(3)
-  })
-})
-
 suite('поля из рантайма', () => {
   test('функции в спецификации запрещены', () => {
     const r = compileFieldSpec({ name: 'x', input: 'text', label: 'X', validate: () => null } as never)
@@ -456,7 +400,7 @@ suite('поля из рантайма', () => {
   })
 })
 
-suite('устаревание и продолжение', () => {
+suite('устаревание', () => {
   test('совпадение ревизии и состава — не рассинхрон', () => {
     expect(checkStale(signup, { revision: 1, fieldSetHash: fieldSetHash(signup) }, {}))
       .toEqual({ stale: false })
@@ -469,42 +413,9 @@ suite('устаревание и продолжение', () => {
     expect(verdict.carried).toEqual({ email: 'a@b.io' })
     expect(verdict.dropped).toEqual(['gone'])
   })
-
-  test('продолжение адресовано: чужое не применяется', () => {
-    const c = makeContinuation({
-      formId: 'signup', instance: 'signup:new', revision: 1, submissionId: SUB,
-      rowKeys: [], values: {},
-    })
-    expect(addressedTo(c, { formId: 'signup', instance: 'signup:new' })).toBe(true)
-    expect(addressedTo(c, { formId: 'signup', instance: 'signup:edit-1' })).toBe(false)
-  })
-
-  test('срок жизни соблюдается', () => {
-    const c = makeContinuation({
-      formId: 'f', instance: 'f:new', revision: 1, submissionId: SUB, rowKeys: [], values: {},
-    }, 1000, 500)
-    expect(addressedTo(c, { formId: 'f', instance: 'f:new' }, 1400)).toBe(true)
-    expect(addressedTo(c, { formId: 'f', instance: 'f:new' }, 1600)).toBe(false)
-  })
-
-  test('деградация не отбрасывает ошибки', () => {
-    const errors: FormError[] = Array.from({ length: 10 }, (_, i) =>
-      ({ id: `e${i}`, code: 'required', message: 'Обязательное поле', path: `f${i}`, origin: 'core' }))
-    const result = { v: 1, formId: 'f', instance: 'f:new', submissionId: SUB, ok: false,
-                     status: 422, outcome: 'not-applied', errors, values: {}, revision: 1,
-                     from: 'action' } as Result
-    const big = makeContinuation({
-      formId: 'f', instance: 'f:new', revision: 1, submissionId: SUB, rowKeys: [],
-      values: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`f${i}`, 'x'.repeat(300)])),
-      result,
-    })
-    const d = degrade(big, { maxBytes: 1200 })
-    expect(d.level).toBeGreaterThan(0)
-    expect(d.continuation.result!.errors).toHaveLength(10)
-  })
 })
 
-suite('исход и файлы', () => {
+suite('исход', () => {
   // Без outcome: каждый тест задаёт свой исход поверх базы.
   const base: Omit<Result, 'outcome'> = { v: 1, formId: 'f', instance: 'f:new', submissionId: SUB, ok: true,
                  status: 200, errors: [], values: {}, revision: 1, from: 'fetch' }
@@ -515,12 +426,6 @@ suite('исход и файлы', () => {
     expect(() => assertQueuedProtocol({
       ...base, outcome: 'queued', data: { pollUrl: '/p', statusUrl: '/s' },
     })).not.toThrow()
-  })
-
-  test('режим reference без возможности загрузки деградирует', () => {
-    const s = { mode: 'reference' as const, maxBytes: 1, endpoint: '/u' }
-    expect(effectiveMode(s, true)).toBe('reference')
-    expect(effectiveMode(s, false)).toBe('inline')
   })
 })
 

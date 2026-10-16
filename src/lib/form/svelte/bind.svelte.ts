@@ -4,7 +4,6 @@
 import { createAttachmentKey } from 'svelte/attachments'
 import { AsyncRunner, asyncRefsOf, valuesForChecks, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
-import { applyOps, editor, groupRows, reconcile, type SchemaOp } from '../editor'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import type { UrlCommitVia, UrlFormOptions } from '../url'
@@ -15,7 +14,7 @@ import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
 import { disabledState } from '../validate'
-import type { HtmlAttrs, RowKey } from '../types'
+import type { HtmlAttrs } from '../types'
 import type { BoundConfig, LiveMode } from './config'
 import { DEV } from 'esm-env'
 
@@ -73,7 +72,6 @@ export interface FieldView {
   readonly has: boolean
   readonly touched: boolean
   readonly dirty: boolean
-  readonly fresh: boolean
   /** Идёт асинхронная проверка. */
   readonly checking: boolean
   /** Поле выключено связкой: видно, но недоступно (disabled ≠ скрыто). */
@@ -130,37 +128,22 @@ export interface BindOptions {
   fieldState?: (name: string, values: Readonly<Record<string, unknown>>) => FieldLink | undefined
 }
 
-/** Повторяемая группа: ключи стабильны, индекс — производное. */
-export interface RowsView {
-  readonly keys: readonly RowKey[]
-  row(key: RowKey): readonly FieldView[]
-  add(): IntentProps
-  remove(key: RowKey): IntentProps
-  move(key: RowKey, dir: 'up' | 'down'): IntentProps
-  rowProps(key: RowKey): { 'data-row': string }
-}
-
 /**
  * Связать описание формы с реактивностью Svelte.
  * @param cfg Настройка проекта из `createConfig`.
- * @param initial Описание формы.
+ * @param desc Описание формы.
  * @param o Перекрытия для этой формы.
- * @returns Связка: состояние, поля, отправка, операции над набором.
+ * @returns Связка: состояние, поля, отправка.
  */
-export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions = {}) {
-  // описание изменяемо: операции над набором полей строят НОВОЕ описание
-  let desc = $state.raw<FormDescription>(initial)
-  
-  const instance = o.instance ?? `${initial.id}:new`
-  const action = o.action ?? `${cfg.config.actionBase ?? ''}/${initial.id}`
-  const render = formRenderer(initial.messages as never, cfg.config.messages,
-                              initial.policy.interpolate)
+export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {}) {
+  const instance = o.instance ?? `${desc.id}:new`
+  const action = o.action ?? `${cfg.config.actionBase ?? ''}/${desc.id}`
+  const render = formRenderer(desc.messages as never, cfg.config.messages,
+                              desc.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
   const asyncErrorIds = new Map<string, string>()
 
-  // начальное состояние — из начального описания: локальное чтение $state.raw
-  // захватывает только начальное значение (предупреждение компилятора)
-  const store = new FormStore(initialState(initial.revision))
+  const store = new FormStore(initialState(desc.revision))
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
 
   let submissionId = o.submissionId ?? crypto.randomUUID()
@@ -189,7 +172,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   // адрес сеет сервер в load, хост читает состояние). Валидация молчит: fields
   // показывают значения, а не претензии.
   if (o.url?.seed) {
-    const seeded = o.url.seed(initial)
+    const seeded = o.url.seed(desc)
     if (seeded) store.set((st) => ({ ...st, values: { ...st.values, ...seeded } }))
   }
 
@@ -321,47 +304,6 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     })
   }
 
-  /* ── изменение набора полей ─────────────────────────────────────── */
-
-  /**
-   * Операция — данные: та же `applyOps` применяется на сервере при нативной
-   * отправке. Состояние переносится одним проходом, ошибки менявшихся полей
-   * сбрасываются.
-   */
-  function apply(ops: readonly SchemaOp[]): FormDescription {
-    const before = desc
-    const next = applyOps(before, ops)
-    const moved = reconcile(next, before, {
-      values: store.getSnapshot().values,
-      facts: store.getSnapshot().facts,
-      dirty: store.getSnapshot().dirty,
-      touched: store.getSnapshot().touched,
-    })
-    desc = next
-    const fresh: Record<string, true> = {}
-    for (const f of next.fields) if (f.fresh) fresh[f.name] = true
-    store.set((s) => ({
-      ...s, revision: next.revision, values: moved.values, facts: moved.facts,
-      dirty: moved.dirty, touched: moved.touched, fresh,
-      shown: display(moved.facts, { from: 'fetch', intent: 'submit', outcome: 'not-applied' }).errors,
-    }))
-    return next
-  }
-
-  function rows(group: string): RowsView {
-    const keys = groupRows(desc.fields)[group] ?? []
-    const i = (action: string, arg?: string) => intent(desc.policy.intent.format(action, arg))
-    return {
-      keys,
-      row: (key) => desc.fields
-        .filter((f) => f.name.startsWith(`${group}.${key}.`))
-        .map((f) => viewOf(f)),
-      add: () => i('add-row', group),
-      remove: (key) => i('remove-row', `${group}:${key}`),
-      move: (key, dir) => i('move-row', `${group}:${key}:${dir}`),
-      rowProps: (key) => ({ 'data-row': key }),
-    }
-  }
 
   /** Собрать набор объявленных ключей из DOM и отдать sink'у хоста. */
   // Дубль-страх sink'а: blur-овый `change` приходит и когда значение не
@@ -488,7 +430,6 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   function assertPlacement(el: HTMLFormElement) {
     if (!DEV) return
     const missing = desc.fields
-      .filter((f) => !f.name.startsWith('u_'))       // runtime-семья custom() живёт не в объявлении
       .filter((f) => !el.querySelector(`[name="${f.name}"]`))
       .map((f) => f.name)
     if (missing.length)
@@ -571,7 +512,6 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
       disabled: ls.disabled, reason: ls.reason, note,
       touched: snapshot.touched[f.name] === true,
       dirty: snapshot.dirty[f.name] === true,
-      fresh: snapshot.fresh[f.name] === true,
       checking: snapshot.checking[f.name] === true,
       labelProps: () => ({ for: id }),
       helpProps: () => (f.help || ls.reason ? { id: helpId } : undefined),
@@ -653,8 +593,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
   }
 
   return {
-    // геттер: apply() строит новое описание, связка отдаёт актуальное
-    get description() { return desc },
+    description: desc,
     instance,
     get state() { return snapshot },
     get values() { return snapshot.values },
@@ -663,9 +602,7 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     get facts() { return snapshot.facts },
     get shown() { return snapshot.shown },
     get submitVisible() { return !hydrated },
-    formProps, hidden, intent, submit, lift, redisplay, apply, rows,
-    /** Поля, созданные в рантайме: отличаются только префиксом имени. */
-    custom: (prefix = 'u_') => desc.fields.filter((f) => f.name.startsWith(prefix)).map(viewOf),
+    formProps, hidden, intent, submit, lift, redisplay,
     /**
      * Поля сохранённого набора (`defineForm({ from })`) в его порядке: `item` — поле
      * схемы (вид `preset`, подпись, правила), `f` — вид поля. Цикл и обёртку пишет разметка.

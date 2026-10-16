@@ -151,11 +151,6 @@ export class SubmitMachine {
   }
 
   /**
-   * Устарела ли отправка: отменена, вытеснена или описание сменило ревизию.
-   * @param s Ручка отправки.
-   * @param revision Ревизия на момент сверки.
-   */
-  /**
    * Асинхронно занять слот. В режиме queue ожидает реального освобождения,
    * поэтому отложенная отправка не теряется.
    */
@@ -170,6 +165,11 @@ export class SubmitMachine {
     }
   }
 
+  /**
+   * Устарела ли отправка: отменена, вытеснена или описание сменило ревизию.
+   * @param s Ручка отправки.
+   * @param revision Ревизия на момент сверки.
+   */
   stale(s: SubmissionHandle, revision: Revision): boolean {
     return this.#current !== s || s.controller.signal.aborted || s.rev !== revision
   }

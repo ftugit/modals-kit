@@ -27,7 +27,6 @@ export interface FormState {
   readonly removed: number
   /** Поля, по которым идёт асинхронная проверка. */
   readonly checking: Readonly<Record<FieldPath, true>>
-  readonly fresh: Readonly<Record<FieldPath, true>>
   readonly result?: Result
   readonly outcome?: Outcome
 }
@@ -40,7 +39,7 @@ export interface FormState {
 export const initialState = (revision: Revision, values: Record<string, unknown> = {}): FormState => ({
   revision, status: 'idle', pending: false, values,
   dirty: {}, touched: {}, submitCount: 0, facts: [], shown: [], removed: 0,
-  checking: {}, fresh: {},
+  checking: {},
 })
 
 /**

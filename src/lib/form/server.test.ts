@@ -1,6 +1,6 @@
 // Модульные тесты серверного приёма (lib/form/server.ts): без сети, на Request/FormData.
 import { describe as suite, expect, test, vi } from 'vitest'
-import { buildEnvelope, createAppSource, defineForm, makeFieldSugar } from './index'
+import { buildEnvelope, defineForm, makeFieldSugar } from './index'
 import { v } from './validators'
 import { createFormHandler, MemoryIdempotencyStore, storeIdempotency, windowThrottle, type IdempotencyStore } from './server'
 import { memoryStore } from '../cache/index'
@@ -296,14 +296,19 @@ suite('идемпотентность: параллельный повтор (F1
 })
 
 suite('поля из источника (F16)', () => {
+  // сервер строит форму из сохранённого набора сам, по конверту: `defineForm({ from })`
   const make = (required = false) => {
     let loads = 0
-    const store = {
-      load: async () => { loads++; return [{ name: 'color', input: 'text' as const, label: 'Цвет', required, rules: [{ rule: 'pattern', arg: 'e164' }] }] },
-      currentVersion: async () => 1,
+    const source = {
+      resolve: async () => {
+        loads++
+        return defineForm({ id: 'probe', fields: { name: field.text({}) },
+          from: [{ name: 'color', input: 'text', label: 'Цвет', required, rules: [{ rule: 'pattern', arg: 'e164' }] }] })
+      },
+      revision: async () => base.revision,
     }
     const h = createFormHandler({
-      description: base, source: createAppSource({ probe: base }, store),
+      description: base, source,
       execute: (c) => { c.commit(); return { data: c.values } },
     })
     return { h, loads: () => loads }

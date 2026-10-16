@@ -112,7 +112,7 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
         ...(f.disabled ? { disabled: true } : {}),
       },
       skipped: [], label, errors, value, has: errors.length > 0,
-      touched: false, dirty: false, fresh: false, checking: false,
+      touched: false, dirty: false, checking: false,
       labelProps: () => ({ for: id }),
       helpProps: () => undefined,
       errorProps: () => (errors.length ? { id: errorId, role: 'alert' as const } : undefined),

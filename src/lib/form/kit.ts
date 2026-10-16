@@ -5,7 +5,6 @@
 // Пользователь присылает описания полей — данные, а не код. `compile` приводит
 // их к пределам, добавляет правила вида и правила по умолчанию и говорит, что
 // заменил. Тексты для человека выбирает приложение: здесь только коды.
-import type { FieldDescriptor } from './describe'
 import type { FormPolicy } from './policy'
 import { defaultRegistry, type Registry } from './registry'
 import { compileFieldSpecs, type FieldSpec, type SpecRule } from './spec'
@@ -52,8 +51,6 @@ export interface FieldKitOptions {
   readonly kinds: Readonly<Record<string, KitKind>>
   readonly registry?: Registry
   readonly policy?: FormPolicy
-  /** Префикс имён полей, `u_` по умолчанию (как у `compileFieldSpec`). */
-  readonly prefix?: string
 }
 
 /** Описание поля от пользователя: данные, не код. */
@@ -85,7 +82,7 @@ export interface KitDefect {
 }
 
 export type KitResult =
-  | { ok: true; specs: FieldSetItem[]; fields: FieldDescriptor[]; changes: KitChange[] }
+  | { ok: true; specs: FieldSetItem[]; changes: KitChange[] }
   | { ok: false; defects: KitDefect[]; changes: KitChange[] }
 
 /** Действующие пределы правила у вида. */
@@ -242,7 +239,8 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
       })
     }
     if (defects.length) return { ok: false, defects, changes }
-    const prefix = o.prefix ?? 'u_'
+    // та же проверка, что у `defineForm({ from })`: имена с префиксом `u_`
+    const prefix = 'u_'
     const compiled = compileFieldSpecs(specs, { registry, policy: o.policy, prefix })
     if (!compiled.ok) {
       // дефекты компиляции (конфликт границ, общий предел политики) — у своего поля
@@ -259,7 +257,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
         }),
       }
     }
-    return { ok: true, specs, fields: compiled.fields, changes }
+    return { ok: true, specs, changes }
   }
 
   return {

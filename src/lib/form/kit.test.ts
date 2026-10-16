@@ -1,5 +1,5 @@
 import { describe as suite, expect, test } from 'vitest'
-import { ageFields, appendFields, defineForm, validateForm } from './index'
+import { defineForm, validateForm } from './index'
 import { defineFieldKit, type KitField } from './kit'
 
 const kit = defineFieldKit({
@@ -22,11 +22,10 @@ const kit = defineFieldKit({
   },
 })
 
-const base = defineForm({ id: 'record', fields: {} })
 const errorsOf = (list: KitField[], values: Record<string, unknown>) => {
   const r = kit.compile(list)
   if (!r.ok) throw new Error(JSON.stringify(r.defects))
-  return validateForm(ageFields(appendFields(base, r.fields)), values, { cardinality: 'all' }).map((e) => `${e.path}:${e.code}`)
+  return validateForm(defineForm({ id: 'record', from: r.specs, fields: {} }), values, { cardinality: 'all' }).map((e) => `${e.path}:${e.code}`)
 }
 
 suite('defineFieldKit: схема валидаторов с пределами', () => {

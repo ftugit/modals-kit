@@ -148,7 +148,6 @@ suite('defineForm({ from }) — сохранённый набор снова ф�
   test('как есть: поля набора с префиксом, не «новые»', () => {
     const d = defineForm({ id: 'record', from: saved, fields: {} })
     expect(d.fields.map((f) => f.name)).toEqual(['u_s1', 'u_s2'])
-    expect(d.fields.every((f) => !f.fresh)).toBe(true)
     expect(d.byName['u_s2']!.input).toBe('email')
   })
 
