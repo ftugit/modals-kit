@@ -2,7 +2,7 @@ import { policyBoolean } from './validation';
 import { DbFailure, fail, failFields, normalizeFailure, type FieldError } from './errors';
 import { tableSpec } from './sync/model';
 import { allows, checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
-import { fieldError, revalidateDraft, timestampField, validateField } from './validation';
+import { fieldError, revalidateDraft, systemField, timestampField, unprotected, validateField } from './validation';
 import { readProof } from './proof';
 import { behavior, originOf, withoutPaths } from './clone';
 import {
@@ -91,10 +91,13 @@ async function softDeleteAssignment(x: Resource, s: Sql, ctx: DataContext): Prom
   const value = await validateField(x.fields[k], x.softDelete!.value(ctx), k);
   return `${assignee(x, k)} = ${s.fieldParam(x.fields[k], value)}`;
 }
-/** `updatedAt = clock_timestamp()` для `update`/`restore`; нет метки — ничего. */
-function touchAssignment(x: Resource): string[] {
+/**
+ * `updatedAt = clock_timestamp()` для `update`/`restore`; нет метки — ничего. Метку передали
+ * сами (`without(['protect'])`) — в этой операции она не двигается.
+ */
+function touchAssignment(x: Resource, draft?: Row): string[] {
   const k = timestampField(x, 'updatedAt');
-  return k ? [`${assignee(x, k)} = clock_timestamp()`] : [];
+  return k && !(draft && own(draft, k)) ? [`${assignee(x, k)} = clock_timestamp()`] : [];
 }
 /**
  * Правила данных ресурса → ошибки полей. Пусто — нарушений нет. Нарушение без своего
@@ -447,7 +450,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
               ? [`${assignee(r as unknown as Resource, r.softDelete!.field)} = NULL`, ...touchAssignment(r as unknown as Resource)]
               : [
                   ...Object.entries(draft!).map(([k, v]) => assignee(r as unknown as Resource, k) + ' = ' + s.fieldParam(r.fields[k], v)),
-                  ...touchAssignment(r as unknown as Resource),
+                  ...touchAssignment(r as unknown as Resource, draft),
                 ];
         sql = `UPDATE ${table(r)} SET ${sets.join(',')} WHERE ${predicate}`;
       }
@@ -733,11 +736,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const f = r.fields[k];
       if (
         operation !== 'check' &&
-        (f.generated ||
-          f.createValue ||
-          k === r.primaryKey ||
-          k === r.ownerField ||
-          (operation === 'update' && f.immutable) ||
+        ((systemField(r as unknown as Resource, k, operation) && !unprotected(r as unknown as Resource)) ||
           !allows(operation === 'insert' ? f.create : f.update, ctx))
       )
         fail('forbidden');

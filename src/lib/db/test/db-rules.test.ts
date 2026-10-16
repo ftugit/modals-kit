@@ -782,3 +782,28 @@ test("without: путь, которого нет у модели, неизвес
     assert.equal(await api.without(["protect", "fields.secret.store"], (m) => m.behavior().off.join()), "protect,fields.secret.store");
   });
 });
+
+test("protect: системные поля можно передать, остальная автоматика работает; без protect — forbidden", () => {
+  const r = hidden({ policy: undefined });
+  const forbidden = (e: unknown) => e instanceof DbFailure && e.kind === "forbidden";
+  return withDb([r], async (db) => {
+    const api = db.resource(r);
+    const id = "00000000-0000-4000-8000-000000000001";
+    await assert.rejects(api.insert(ctx, { id, title: "x" }), forbidden);
+    const row = (await api.without(["protect"], (m) =>
+      m.insert(ctx, { id, title: "перенос", created_at: "2020-01-01T00:00:00.000000Z", secret: "p" }),
+    )) as Record<string, string>;
+    assert.equal(row.id, id, "свой id");
+    assert.equal(row.created_at, "2020-01-01T00:00:00.000000Z", "своя дата");
+    assert.ok(Date.parse(row.updated_at) > Date.parse("2024-01-01"), "непереданное — DEFAULT базы");
+    const fresh = (await api.without(["protect"], (m) => m.insert(ctx, { title: "без id" }))) as Record<string, string>;
+    assert.match(fresh.id, /^[0-9a-f-]{36}$/, "не передали — createValue");
+    const moved = (await api.without(["protect"], (m) => m.update(ctx, id, { created_at: "2019-01-01T00:00:00.000000Z" }))) as Record<string, string>;
+    assert.equal(moved.created_at, "2019-01-01T00:00:00.000000Z");
+    assert.ok(Date.parse(moved.updated_at) > Date.parse(row.updated_at), "updated_at двигается, если его не передали");
+    const fixed = (await api.without(["protect"], (m) => m.update(ctx, id, { title: "т", updated_at: "2021-01-01T00:00:00.000000Z" }))) as Record<string, string>;
+    assert.equal(fixed.updated_at, "2021-01-01T00:00:00.000000Z", "передали updated_at — сдвига нет");
+    await assert.rejects(api.without(["protect"], (m) => m.insert(ctx, { title: "x", created_at: "не дата" })), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+    await assert.rejects(api.update(ctx, id, { created_at: "2018-01-01T00:00:00Z" }), forbidden, "исходная модель защищена");
+  });
+});

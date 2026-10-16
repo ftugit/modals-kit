@@ -36,6 +36,16 @@ export function grants(grant: Grant | undefined, ctx: DataContext): boolean {
 export function allows(mask: Grant | null | undefined, ctx: DataContext): boolean {
   return mask == null || grants(mask, ctx);
 }
+/**
+ * Системное поле: его заполняет модель или база, клиент не передаёт — `primaryKey`,
+ * `ownerField`, `generated`, `createValue`, `immutable` при `update`.
+ */
+export function systemField(r: Resource, k: string, op: "insert" | "update" | "check"): boolean {
+  const f = r.fields[k]!;
+  return !!(f.generated || f.createValue || k === r.primaryKey || k === r.ownerField || (op === "update" && f.immutable));
+}
+/** Защита системных полей выключена: `without(['protect'])`. */
+export const unprotected = (r: Resource): boolean => !!MODELS.get(r)?.off.includes("protect");
 export function own(o: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(o, key);
 }
@@ -250,11 +260,7 @@ export async function draftInput(
     const f = own(r.fields, k) ? r.fields[k] : undefined;
     if (
       !f ||
-      f.generated ||
-      f.createValue ||
-      k === r.primaryKey ||
-      k === r.ownerField ||
-      (op === "update" && f.immutable) ||
+      (systemField(r, k, op) && !unprotected(r)) ||
       !allows(op === "insert" ? f.create : f.update, ctx)
     )
       fail("forbidden");
@@ -265,7 +271,8 @@ export async function draftInput(
   }
   if (op === "insert")
     for (const [k, f] of Object.entries(r.fields))
-      if (f.createValue) draft[k] = await validateField(f, f.createValue(ctx), k);
+      // без защиты (`without(['protect'])`) переданное значение побеждает
+      if (f.createValue && !(unprotected(r) && own(draft, k))) draft[k] = await validateField(f, f.createValue(ctx), k);
   // `fill` видит только проверенные значения: при ошибках переданных полей он не
   // вызывается (заголовок с ошибкой не годится для адреса), а его поле не считается
   // пропущенным — человек увидит ошибку там, где она есть.
@@ -321,11 +328,7 @@ export async function revalidateDraft(
       if (JSON.stringify(v) !== JSON.stringify(protectedValues[k]))
         fail("forbidden");
     } else if (
-      f.generated ||
-      f.createValue ||
-      k === r.primaryKey ||
-      k === r.ownerField ||
-      (op === "update" && f.immutable) ||
+      (systemField(r, k, op) && !unprotected(r)) ||
       !allows(op === "insert" ? f.create : f.update, ctx)
     )
       fail("forbidden");
