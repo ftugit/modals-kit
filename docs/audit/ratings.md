@@ -475,11 +475,13 @@
 | `Common.svelte` | 19 | — | ⏳ |  |  |
 | `Field.svelte` | 11 | — | ⏳ |  |  |
 | `FieldShell.svelte` | 36 | — | ⏳ |  |  |
+| `HiddenField.svelte` | 12 | — | ⏳ | Добавлен в ходе 241 (скрытое поле в демо `/form`). |  |
 | `NumberField.svelte` | 18 | — | ⏳ | Добавлен в ходе 117 (поля формы на примитивах). |  |
 | `OtpField.svelte` | 21 | — | ⏳ | Добавлен в ходе 117 (поля формы на примитивах). |  |
 | `PasswordField.svelte` | 19 | — | ⏳ |  |  |
 | `PasswordStrengthField.svelte` | 32 | — | ⏳ | Добавлен в ходе 117 (поля формы на примитивах). |  |
 | `PhoneField.svelte` | 20 | — | ⏳ |  |  |
+| `RangeField.svelte` | 24 | — | ⏳ | Добавлен в ходе 241 (ползунок в демо `/form`). |  |
 | `RatingField.svelte` | 23 | — | ⏳ |  |  |
 | `SearchField.svelte` | 19 | — | ⏳ | Добавлен в ходе 117 (поля формы на примитивах). |  |
 | `SelectField.svelte` | 28 | — | ⏳ |  |  |

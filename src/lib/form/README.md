@@ -142,25 +142,22 @@ export const forms = createConfig({
 
 Ядро приезжает исходниками и не зависит от сборщика. Схема для любого фреймворка:
 
-1. **Алиас на исходники.** Никаких пакетов — прямой импорт модулей ядра:
+1. **Импорт исходников.** Никаких пакетов — прямой импорт модулей по полному пути
+   через `imports` в `package.json` (в этом репозитории `#lib/*` → `src/lib/*`):
 
    ```ts
-   // vite.config.ts вашего приложения
-   // form — путь к исходникам библиотеки
-   resolve: { alias: [
-     { find: /^@form$/, replacement: `${form}/index.ts` },
-     // суффиксы — зоны библиотеки: адаптеры движков и серверная половина
-     { find: /^@form\/(.+)$/, replacement: `${form}/$1` },
-   ] }
+   import { defineForm, field, v } from '#lib/form/index.js'     // ядро
+   import { bind, Form } from '#lib/form/svelte/index.js'        // адаптер Svelte
+   import { createFormHandler } from '#lib/form/server.js'       // серверная половина
    ```
 
-   В `index.ts` нет ни одного фреймворка: точка входа ядра чиста. Суффиксные
-   алиасы открывают зоны библиотеки: `@form/svelte`, `@form/server`.
+   В `index.ts` нет ни одного фреймворка: точка входа ядра чиста. Зоны библиотеки —
+   отдельные точки входа: `svelte/index.ts` и `server.ts`.
 
 2. **Реализовать транспорт** — единственное место, где ядро касается сети:
 
    ```ts
-   import type { Transport } from '@form'
+   import type { Transport } from '#lib/form/index.js'
 
    export const fetchTransport: Transport = async (req) => {
      const r = await fetch(url, { method: 'POST', body: req.data, signal: req.signal })
@@ -187,7 +184,7 @@ export const forms = createConfig({
 
 ## Адаптеры движков
 
-Сейчас зона одна — `svelte/` (`@form/svelte`). Адаптеры React и Solid удалены
+Сейчас зона одна — `svelte/` (`#lib/form/svelte/index.js`). Адаптеры React и Solid удалены
 (аудит, C9): они не использовались, не проверялись тестами и уже разошлись со
 Svelte-версией; будут написаны заново по тому же контракту.
 
@@ -210,8 +207,7 @@ import {
   FormStore, initialState, SubmitMachine, runSubmit, evaluate,
   applyHandler, split, hasError, invalidFromFor,
   AsyncRunner, buildEnvelope, makeRenderer, ru,
-  editor, applyOps, reconcile,
-} from '@form'
+} from '#lib/form/index.js'
 
 export function useForm(description, opts) {
   const store = useRef(new FormStore(initialState(description.revision)))
@@ -306,22 +302,23 @@ const handle = createFormHandler({
 Представление (`input`) — то, как поле выглядит; тип значения (`kind`) — что из него
 декодируется. `field.<представление>(...)` находит тип по представлению. Библиотека
 отдаёт только `attrs`; компонент под представление выбирает приложение в `resolve`
-(в демо — `src/lib/components/form/forms.config.ts`, примитивы — `#lib/components/ui`).
+(в демо — `src/lib/components/form/resolve.ts`, примитивы — `#lib/components/ui`).
 
 | Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
 |---|---|---|---|
-| `text`, `email`, `url`, `tel`, `color`, `hidden` | `text` | `type` | `TextField` → `Input`; с `variant: 'auto'` — `Input autoWidth` (ширина по тексту) |
+| `text`, `email`, `url`, `tel`, `color` | `text` | `type` | `TextField` → `Input`; с `variant: 'auto'` — `Input autoWidth` (ширина по тексту); у `color` пустое значение показывается как `defaultValue` |
+| `hidden` | `text` | `type="hidden"`, `required` не выводится | `HiddenField` → `Input` без подписи и подсказки |
 | `password` | `text` | `type="password"`, значение не возвращается в разметку | `PasswordField` → `PasswordInput` (показ пароля после оживления); с `variant: 'strength'` — `PasswordStrengthField` → `PasswordStrength` (тот же `PasswordInput` + шкала по `strengthOf`) |
 | `search` | `text` | `type="search"` | `SearchField` → `SearchInput` (крестик очистки после оживления) |
 | `otp` | `text` | `type="text" inputmode="numeric" autocomplete="one-time-code"` | `OtpField` → `OtpInput` (ячейки после оживления; число ячеек — из `v.maxLength(n)`, без него 6) |
 | `textarea` | `text` | — | `TextareaField` → `Textarea`; с `variant: 'auto'` — `AutoTextareaField` → `AutoTextarea` (высота по тексту, 3–8 строк) |
-| `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления; с `variant: 'auto'` — `autoWidth`, ширина по числу); `range` — свой компонент |
+| `number`, `range` | `number` | `type`, `inputmode="numeric"`, `step="any"` | `number`: `NumberField` → `NumberField` (кнопки «−/+» после оживления; с `variant: 'auto'` — `autoWidth`, ширина по числу); `range`: `RangeField` → `Input` и текущее значение рядом |
 | `date`, `time`, `datetime-local` | `date` / `time` / `datetime` | `type` | `TextField` → `Input` |
 | `select`, `radio` | `select` | — | `SelectField` → `Select` |
 | `multiselect` | `multiselect` | `multiple` | `SelectField` → `Select multiple` |
 | `checkbox` | `checkbox` | `type="checkbox" value="on"` | `CheckboxField` → `Checkbox` |
 | `switch` | `checkbox` | `type="checkbox" role="switch" value="on"` | `SwitchField` → `Switch` |
-| `file`, `files` | `file` / `files` | `type="file"` (`multiple`) | `file`: `FileField` → `FileInput` |
+| `file`, `files` | `file` / `files` | `type="file"` (у `files` — `multiple`) | `FileField` → `FileInput` (`files` — массив `File[]`) |
 | `fields` | `fields` (вложенный: записи `имя.…`) | — | **не рисуется** (`Field` его пропускает): места расставляет приложение хуком `fieldSet` (см. «Набор полей от пользователя») |
 
 `otp` и `switch` — не новые типы значения, а представления существующих: код — это
@@ -465,7 +462,7 @@ signup.registry.registerValidator('inn', inn)   // сериализуемая с
 
 Расширение относится к **виду ограничения**, а не к типу значения: словарь видов
 открыт, как и ключи типов. Новое правило либо находит существующий вид
-(`pattern`, `minBound`-подобные…), либо получает `opaque` — честно, без догадок.
+(`pattern`, `minMagnitude`…), либо получает `opaque` — честно, без догадок.
 
 Типы значения расширяются так же:
 
@@ -525,7 +522,9 @@ signup.registry.registerType({
 
 4. **Что проверяется.** Действие задаёт объём: `validate: 'partial'` со
    `relax: ['required']` (черновик), `subset: ['email']` (проверить одно поле),
-   `validate: 'none'` (операции над набором — добавление строк).
+   `validate: 'none'` (операции над набором — добавление строк). Кнопка такого
+   действия (`form.intent(id)`) получает `formnovalidate`: без JS браузер иначе
+   проверил бы по атрибутам все поля и не пустил бы черновик без пароля.
 
 ## Выключение полей по значениям
 
@@ -589,20 +588,44 @@ score: field.text({
 Разработчик получает уже наши имена — иначе ему пришлось бы разбирать чужой
 формат второй раз.
 
-```ts
-import { registerErrorInstruction } from '#lib/form/index.js'   // registry.registerInstruction
+Инструкция регистрируется методом реестра (`registry.registerInstruction`): общего —
+`defaultRegistry` — или своего (`createRegistry()`).
 
-registry.registerInstruction({
+```ts
+import { defaultRegistry as registry, type ErrorInstruction } from '#lib/form/index.js'
+
+export const apiInstruction: ErrorInstruction = {
   id: 'external-api',
   parse: ({ status, body }) => body?.errors ?? null,   // null — формат не её
   aliases: { user_email: 'email' },                    // имя службы → наше
   codeAliases: { EMAIL_TAKEN: 'email' },               // код → поле, если поле не названо
   messages: { EMAIL_TAKEN: 'Этот адрес уже занят' },
-})
+}
+registry.registerInstruction(apiInstruction)
 ```
 
 Нормализованная ошибка хранит `source` — «увести в канал именно эту службу»
 или «не показывать вот этот код» делается без повторного разбора тела.
+
+Ответ службы переводится там, где её вызывают, — в `execute`: `normalizeService`
+разбирает тело по переданной инструкции, а `ctx.fail` отдаёт ошибки форме
+(инструкция и образцы ответов — `src/routes/(site)/(app)/form/psp.ts`).
+
+```ts
+import { normalizeService } from '#lib/form/index.js'
+import { apiInstruction } from './instructions'   // инструкция из примера выше
+
+async execute({ values, commit, fail }) {
+  const res = await fetch(SERVICE_URL, { method: 'POST', body: JSON.stringify(values) })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    // наши имена полей и тексты; формат не узнан — одна общая ошибка `service.<код>`
+    fail(normalizeService({ status: res.status, body, instruction: apiInstruction }))
+  }
+  commit()
+  return { data: await res.json() }
+}
+```
 
 ## Асинхронные проверки
 
@@ -938,8 +961,23 @@ defineForm({ id: 'signup', policy, fields: { /* … */ } })
 |---|---|---|
 | `not-applied` | проверка не прошла или отказ слоя | показать ошибки |
 | `committed` | действие зафиксировано `commit()` | успех |
-| `unknown` | сеть упала в полёте | **не** отправлять повторно; исход `queued` с `pollUrl`/`statusUrl` — опрос |
-| `queued` | принято, результат позже | опрос или ссылка без скрипта |
+| `unknown` | сеть упала в полёте, `execute` упал или не позвал `commit()` | **не** отправлять повторно; адаптер сообщает в `onError` (`outcome-unknown`) |
+| `queued` | принято, результат позже | опрос (`pollUntilDone`) или ссылка `statusUrl` без скрипта |
+
+`createFormHandler` исход `queued` пока не выдаёт: `execute` возвращает только
+успех (`commit()`) или отказ. Протокол очереди (`queuedData`, `assertQueuedProtocol`,
+`pollUntilDone`) есть в ядре для собственного приёмника.
+
+Переход после успеха: `execute` возвращает `{ redirect: '/путь' }`, библиотека
+пропускает только адрес своего сайта (`Result.redirect`). Переходит маршрут или
+страница — библиотека сама не уводит:
+
+```ts
+// +page.server.ts — без скрипта
+if (result.ok && result.redirect) redirect(303, result.redirect)
+// +page.svelte — после перехвата
+$effect(() => { if (form.state.result?.redirect) goto(form.state.result.redirect) })
+```
 
 Идемпотентность: повтор одной отправки с тем же `submissionId` возвращает
 прежний результат, обработчик не вызывается. После окончательного исхода
