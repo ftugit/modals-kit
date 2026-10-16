@@ -534,7 +534,7 @@
 |---|---:|:---:|:---:|---|---|
 | `EmptyState.svelte` | 35 | — | ⏳ |  | untrack×1 |
 | `EndRow.svelte` | 36 | — | ⏳ |  | untrack×1 |
-| `ErrorRow.svelte` | 41 | — | ⏳ |  | untrack×1 |
+| `ErrorRow.svelte` | 64 | — | ⏳ |  | untrack×1 |
 | `EventLog.svelte` | 50 | — | ⏳ |  | untrack×1 |
 | `LoadMoreLink.svelte` | 81 | — | ⏳ |  |  |
 | `LoadingIndicator.svelte` | 38 | — | ⏳ |  | untrack×1 |

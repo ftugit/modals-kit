@@ -196,7 +196,8 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
    (Позже список демо переведён на пагинатор приложения: ключи адреса — `?db`,
    `?db.size`, `?db.flt`, `?db.ord`, а отказ по неизвестному ключу показывает
    `/api/db-posts` = 422 `validation`; на странице битый фильтр не 500 и не пусто,
-   а состояние `error` пагинатора — `ErrorRow` с причиной и «Повторить».)
+   а состояние `error` пагинатора — `ErrorRow` с причиной и «Повторить»; при истёкшем
+   токене курсора (код `cursor`) — «Начать сначала».)
    Зонд составной коллекции: `node src/lib/db/probes/shikimori-view.probe.mjs` (реальный PG 17,
    VIEW + `INSTEAD OF` + скоуп по `principal` + маски полей связи) → `PROBE_OK`.
 4. Сквозной прогон без браузера: `node src/lib/db/probes/http-roundtrip.mjs` против запущенного
