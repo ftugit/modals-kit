@@ -7,11 +7,13 @@
 //     props.s1.rules        выбранные правила (повторяется)
 //     props.s1.max_length   значение правила: имя правила в snake_case
 //
-// Места (`s1`) — сегменты имени, порядок — порядок первого появления в форме.
+// Места (`s1`, у новых — случайный ключ `fxxxxxx`) — сегменты имени, порядок — порядок
+// первого появления в форме. Места рисует приложение (`fieldSet` в `#lib/form/svelte`).
 // Разбор приводит список к пределам каталога (`kinds`, `rules`, `max` у `field.fields`):
 // значение вне пределов заменяется, правило по умолчанию добавляется, правило вида
 // снять нельзя. Каталог лежит в дескрипторе (`fieldSet`), его кладёт сахар.
-import type { DecodeIssue, FieldType } from './field-types'
+import type { FormDescription } from './describe'
+import type { DecodeIssue, EntrySource, FieldType } from './field-types'
 import type { FieldKit, FieldSetItem, KitDefect, KitField } from './kit'
 
 /** Часть имени для значения правила: `maxLength` → `max_length`. */
@@ -39,36 +41,131 @@ function issueAt(slot: string | undefined, d: KitDefect): string | undefined {
   }
 }
 
+/** Места набора, как их несёт форма: по порядку появления; `shape` — места с лишним уровнем или повтором. */
+function readSlots(form: EntrySource, name: string) {
+  const head = `${name}.`
+  const slots: string[] = []
+  const shape: string[] = []
+  for (const key of new Set(form.keys())) {
+    if (!key.startsWith(head)) continue
+    const [slot = '', part, ...rest] = key.slice(head.length).split('.')
+    if (!slots.includes(slot)) slots.push(slot)
+    // лишний уровень или повтор одиночной записи — ошибка клиента, а не «взять первое»
+    if ((!part || rest.length || (part !== 'rules' && form.getAll(key).length > 1)) && !shape.includes(slot)) shape.push(slot)
+  }
+  return { slots, shape }
+}
+
+/** Описание места из записей: название как есть, правила со значениями (нечисло — строкой). */
+function readSlot(form: EntrySource, name: string, slot: string): KitField {
+  const one = (part: string) => text(form.getAll(fieldSetName(name, slot, part))[0])
+  const rules = form.getAll(fieldSetName(name, slot, 'rules')).map((r) => {
+    const rule = text(r)
+    const raw = one(rule).trim()
+    const n = Number(raw)
+    // нечисло уходит каталогу как есть: он назовёт ошибку у своего правила
+    return raw === '' ? { rule } : { rule, arg: Number.isFinite(n) ? n : raw }
+  })
+  return { name: slot, kind: one('kind'), label: one('label').trim(), rules }
+}
+
+const asItem = (kit: FieldKit, x: KitField): FieldSetItem => ({
+  name: x.name, preset: x.kind, label: x.label, input: kit.inputOf(x.kind) ?? 'text', rules: x.rules ?? [],
+})
+
+/** Намерения кнопок набора: «+ поле» (`fields-add:имя`) и «Удалить» (`fields-remove:имя.ключ`). */
+export const FIELD_SET_ADD = 'fields-add'
+export const FIELD_SET_REMOVE = 'fields-remove'
+
+/**
+ * Новый ключ места: случайный, а не «следующий номер» — удалённое поле не отдаёт свой
+ * ключ новому, и старые значения под этим ключом не приписываются чужому полю.
+ * @param taken Занятые ключи набора.
+ */
+export function fieldSetKey(taken: readonly string[] = []): string {
+  const ABC = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  for (;;) {
+    const key = `f${Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => ABC[b % ABC.length]).join('')}`
+    if (!taken.includes(key)) return key
+  }
+}
+
+/** Пустое место первого вида каталога. */
+export function blankFieldSetItem(kit: FieldKit, taken: readonly string[]): FieldSetItem {
+  const preset = kit.kinds[0] ?? ''
+  return { name: fieldSetKey(taken), preset, label: '', input: kit.inputOf(preset) ?? 'text', rules: [] }
+}
+
+/** Место в разметке: правила — выбранные (без правил вида), их числа — строками, как в поле ввода. */
+export interface FieldSetDraft {
+  key: string
+  preset: string
+  label: string
+  rules: string[]
+  args: Record<string, string>
+}
+
+/** Место из поля набора — для разметки. */
+export function fieldSetDraft(kit: FieldKit, x: FieldSetItem): FieldSetDraft {
+  const locked = kit.rulesFor(x.preset)?.locked ?? []
+  const chosen = (x.rules ?? []).filter((r) => !locked.some((l) => l.rule === r.rule))
+  return {
+    key: x.name, preset: x.preset, label: x.label, rules: chosen.map((r) => r.rule),
+    args: Object.fromEntries(chosen.filter((r) => r.arg !== undefined).map((r) => [r.rule, String(r.arg)])),
+  }
+}
+
+/** Поля набора из мест: место без названия не поле. Пределы применит разбор на сервере. */
+export const fieldSetItems = (kit: FieldKit, drafts: readonly FieldSetDraft[]): FieldSetItem[] =>
+  drafts.filter((d) => d.label.trim()).map((d) => ({
+    name: d.key, preset: d.preset, label: d.label.trim(), input: kit.inputOf(d.preset) ?? 'text',
+    rules: d.rules.map((rule) => (d.args[rule] ? { rule, arg: Number(d.args[rule]) } : { rule })),
+  }))
+
+/**
+ * Правила места: `choices` — на выбор (разрешённые виду и уже выбранные, чтобы выбранное
+ * можно было снять), `withArgs` — выбранные, у которых в схеме есть пределы числа.
+ */
+export function fieldSetRules(kit: FieldKit, d: FieldSetDraft) {
+  const r = kit.rulesFor(d.preset)
+  return {
+    locked: r?.locked ?? [],
+    choices: [...new Set([...(r?.extra ?? []), ...d.rules])],
+    withArgs: d.rules.filter((x) => r?.limits[x]).map((x) => ({ rule: x, default: r!.limits[x]!.default })),
+  }
+}
+
+/**
+ * Кнопка набора, нажатая без JavaScript: форма ушла с намерением «+ поле» или «Удалить».
+ * Ничего не сохраняется — возвращаются места как есть (и пустые) плюс новое или без удалённого.
+ * @param form Записи формы.
+ * @param d Описание формы.
+ * @param intent Намерение из конверта.
+ * @returns Имя поля и места для показа или `undefined`, если намерение не кнопки набора.
+ */
+export function fieldSetOp(form: EntrySource, d: FormDescription, intent: string):
+  { name: string; items: FieldSetItem[] } | undefined {
+  const { action, arg = '' } = d.policy.intent.parse(intent)
+  if (action !== FIELD_SET_ADD && action !== FIELD_SET_REMOVE) return undefined
+  const dot = arg.indexOf('.')
+  const name = action === FIELD_SET_ADD ? arg : arg.slice(0, dot)
+  const kit = d.byName[name]?.fieldSet
+  if (!kit) return undefined
+  let items = readSlots(form, name).slots.map((slot) => asItem(kit, readSlot(form, name, slot)))
+  if (action === FIELD_SET_REMOVE) items = items.filter((x) => x.name !== arg.slice(dot + 1))
+  else if (kit.max === undefined || items.length < kit.max) items = [...items, blankFieldSetItem(kit, items.map((x) => x.name))]
+  return { name, items }
+}
+
 /** Встроенный тип набора полей от пользователя: `field.fields({ max, rules, kinds })`. */
 export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
   kind: 'fields', inputs: ['fields'], multiple: false, nested: true, empty: [],
   decode(_entries, ctx) {
     const kit = ctx.field?.fieldSet as FieldKit | undefined
     if (!kit || !ctx.form) return { ok: false, code: 'type.fields' }
-    const head = `${ctx.path}.`
-    const slots: string[] = []
-    const shape: string[] = []
-    for (const key of new Set(ctx.form.keys())) {
-      if (!key.startsWith(head)) continue
-      const [slot = '', part, ...rest] = key.slice(head.length).split('.')
-      if (!slots.includes(slot)) slots.push(slot)
-      // лишний уровень или повтор одиночной записи — ошибка клиента, а не «взять первое»
-      if ((!part || rest.length || (part !== 'rules' && ctx.form.getAll(key).length > 1)) && !shape.includes(slot)) shape.push(slot)
-    }
-    const one = (slot: string, part: string) => text(ctx.form!.getAll(fieldSetName(ctx.path, slot, part))[0])
-    const list: KitField[] = []
-    for (const slot of slots) {
-      const label = one(slot, 'label').trim()
-      if (!label) continue
-      const rules = ctx.form.getAll(fieldSetName(ctx.path, slot, 'rules')).map((r) => {
-        const rule = text(r)
-        const raw = one(slot, rule).trim()
-        const n = Number(raw)
-        // нечисло уходит каталогу как есть: он назовёт ошибку у своего правила
-        return raw === '' ? { rule } : { rule, arg: Number.isFinite(n) ? n : raw }
-      })
-      list.push({ name: slot, kind: one(slot, 'kind'), label, rules })
-    }
+    const { slots, shape } = readSlots(ctx.form, ctx.path)
+    // место без названия не считается: так «пустое место» не становится полем
+    const list = slots.map((slot) => readSlot(ctx.form!, ctx.path, slot)).filter((x) => x.label)
     const issues: DecodeIssue[] = shape.map((slot) => ({ code: 'kit.field-shape', at: slot }))
     const r = kit.compile(list)
     if (r.ok && !issues.length) return { ok: true, value: r.specs }
@@ -78,10 +175,7 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
     }
     const [first, ...more] = issues
     // набранное возвращается в разметку как есть: правило вида внутри не нужно, место знает вид
-    const value = list.map((x): FieldSetItem => ({
-      name: x.name, preset: x.kind, label: x.label, input: kit.inputOf(x.kind) ?? 'text', rules: x.rules ?? [],
-    }))
-    return { ok: false, ...first!, value, ...(more.length ? { more } : {}) }
+    return { ok: false, ...first!, value: list.map((x) => asItem(kit, x)), ...(more.length ? { more } : {}) }
   },
   encode(value, name, out, ctx) {
     const kit = ctx?.field?.fieldSet as FieldKit | undefined
@@ -100,7 +194,7 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
   constraints: { required: true },
   attrs: () => ({}),
   degradation: {
-    withoutJs: 'места под поля отрисованы сервером; поле убирается стиранием названия',
+    withoutJs: '«+ поле» и «Удалить» — отправка формы с намерением: сервер возвращает места без сохранения',
     lost: 'список правил меняется сразу при смене вида — без скрипта после отправки',
   },
 }

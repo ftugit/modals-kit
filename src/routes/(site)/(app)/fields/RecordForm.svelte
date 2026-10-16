@@ -13,6 +13,7 @@
   import { Button } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import Field from '#lib/components/form/Field.svelte'
+  import SchemaFields from './SchemaFields.svelte'
   import { recordForm, type SavedSet } from './forms'
 
   let { set, seed = null }: { set: SavedSet; seed?: Result | null } = $props()
@@ -40,7 +41,7 @@
   </div>
   <Form id="fields-record" {form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
     <Common errors={form.common} title="Запись не сохранена" />
-    {#each form.custom() as f (f.name)}<Field of={f} />{/each}
+    <SchemaFields {form} />
     <Field of={form.f.title} />
     <Field of={form.f.image} />
     <Button type="submit" data-testid="record-submit" task={formTask(form.state)}>Отправить</Button>

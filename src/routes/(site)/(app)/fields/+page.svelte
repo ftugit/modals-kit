@@ -13,7 +13,8 @@
   // Ответ экшена без JavaScript. Успех не сеется: форма собирается из сохранённого,
   // с поправками набора, а не из того, что было набрано.
   const seed = (intent: string) =>
-    action?.intent === intent && action.result && !action.result.ok ? action.result : null
+    action?.intent === intent && action.result && (!action.result.ok || action.result.outcome === 'not-applied')
+      ? action.result : null
 </script>
 
 <svelte:head>
@@ -38,5 +39,5 @@
     {/key}
   {/if}
 
-  {#if data.record}<RecordView record={data.record} />{/if}
+  {#if data.record}<RecordView record={data.record} set={data.set} />{/if}
 </div>

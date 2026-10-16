@@ -84,5 +84,9 @@ export interface SavedRecord {
   readonly title: string
   /** `data:image/…;base64,…` — тип по содержимому файла, а не по заявке браузера. */
   readonly image: string
-  readonly entries: readonly { readonly label: string; readonly value: string }[]
+  /**
+   * Значения полей набора по ключу (`{ f7k2m9q: 'https://…' }`). Подписи здесь нет:
+   * их берёт показ из набора, ключа нет в наборе — значение хранится, но не выводится.
+   */
+  readonly values: Readonly<Record<string, unknown>>
 }

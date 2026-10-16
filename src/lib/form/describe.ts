@@ -2,6 +2,7 @@
 import { BOUND_PAIRS, boundValue, type Constraint, type ConstraintKind } from './constraints'
 import { applies, projectAttrs, type ProjectedAttrs } from './field-types'
 import { defaultPolicy, nameProblem, type FormPolicy } from './policy'
+import { FIELD_SET_ADD, FIELD_SET_REMOVE } from './field-set'
 import { defineFieldKit, type FieldKit, type FieldKitOptions, type FieldSetItem, type KitBound } from './kit'
 import { createRegistry, defaultRegistry, type Registry } from './registry'
 import { compileFieldSpecs, type FieldSpec } from './spec'
@@ -106,6 +107,8 @@ export interface FieldDescriptor<V = unknown> {
   readonly fresh?: boolean
   /** Каталог видов и пределы набора `field.fields`: по нему разбор приводит значение. */
   readonly fieldSet?: FieldKit
+  /** Сохранённое поле, из которого собран дескриптор (`defineForm({ from })`). */
+  readonly spec?: FieldSpec & { readonly preset?: string }
 }
 
 /** Описание submit-намерения формы. */
@@ -430,6 +433,10 @@ export interface FormDescription {
 const DEFAULT_ACTIONS: readonly ActionDescriptor[] = [
   { id: 'submit', validate: 'full', sideEffect: 'submit' },
 ]
+const FIELD_SET_ACTIONS: readonly ActionDescriptor[] = [
+  { id: FIELD_SET_ADD, validate: 'none', sideEffect: 'mutate-schema' },
+  { id: FIELD_SET_REMOVE, validate: 'none', sideEffect: 'mutate-schema' },
+]
 
 /**
  * Словарь формы с текстами полей (F56): `messages` поля ложатся ключами
@@ -454,7 +461,8 @@ export function defineForm(def: FormDefinition): FormDescription {
   let saved: FieldDescriptor[] = []
   if (def.from?.length) {
     const compiled = compileFieldSpecs(def.from, { registry, policy })
-    if (compiled.ok) saved = compiled.fields.map(({ fresh: _fresh, ...f }) => f)
+    // порядок дескрипторов — порядок спецификаций: при успехе компилируется каждая
+    if (compiled.ok) saved = compiled.fields.map(({ fresh: _fresh, ...f }, i) => ({ ...f, spec: def.from![i]! }))
     else defects.push(...compiled.defects)
   }
   const total = saved.length + names.length
@@ -493,7 +501,8 @@ export function defineForm(def: FormDefinition): FormDescription {
     id: def.id,
     revision: def.revision ?? 1,
     fields, byName,
-    actions: def.actions ?? DEFAULT_ACTIONS,
+    // кнопки набора полей — действия без проверки: без JS сервер возвращает места, не сохраняя
+    actions: fields.some((f) => f.fieldSet) ? [...(def.actions ?? DEFAULT_ACTIONS), ...FIELD_SET_ACTIONS] : def.actions ?? DEFAULT_ACTIONS,
     messages: formMessages(def.messages, fields),
     cardinality: def.cardinality ?? 'first',
     invalidFrom: def.invalidFrom ?? 'fact',

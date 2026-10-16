@@ -666,6 +666,11 @@ export function bind(cfg: BoundConfig, initial: FormDescription, o: BindOptions 
     formProps, hidden, intent, submit, lift, redisplay, apply, rows,
     /** Поля, созданные в рантайме: отличаются только префиксом имени. */
     custom: (prefix = 'u_') => desc.fields.filter((f) => f.name.startsWith(prefix)).map(viewOf),
+    /**
+     * Поля сохранённого набора (`defineForm({ from })`) в его порядке: `item` — поле
+     * схемы (вид `preset`, подпись, правила), `f` — вид поля. Цикл и обёртку пишет разметка.
+     */
+    from: () => desc.fields.filter((f) => f.spec).map((f) => ({ item: f.spec!, f: viewOf(f) })),
     get f() { return fieldProxy },
     field: (name: string) => (desc.byName[name] ? viewOf(desc.byName[name]!) : undefined),
     /** S5 (url-канал): коммит текущего состояния формы в sink хоста, как если бы

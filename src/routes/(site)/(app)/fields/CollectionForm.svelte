@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Форма набора: одно поле `field.fields`. Места под поля рисует его компонент
-   * (`#lib/components/form/FieldSetField.svelte`), пределы проверяет форма.
+   * Форма набора: одно поле `field.fields`. Места под поля расставляет разметка
+   * приложения (`SchemaBuilder`), пределы проверяет форма.
    */
   import { untrack } from 'svelte'
   import { invalidateAll } from '$app/navigation'
@@ -11,7 +11,7 @@
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
-  import Field from '#lib/components/form/Field.svelte'
+  import SchemaBuilder from './SchemaBuilder.svelte'
   import { collectionForm, type SavedSet } from './forms'
 
   let { set, seed = null }: { set: SavedSet | null; seed?: Result | null } = $props()
@@ -38,9 +38,12 @@
 <section class="space-y-3" aria-labelledby="fields-step-builder">
   <h2 id="fields-step-builder" class="text-xl font-semibold">1. Набор полей</h2>
   <Form id="fields-builder" {form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
+    <!-- Enter в поле без JS нажимает ПЕРВУЮ кнопку отправки: ею должна быть «Сохранить»,
+         а не «Удалить» первого места. Скрытая копия — первая; с JS кнопки мест — type="button". -->
+    <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
     <Common errors={form.common} title="Набор не сохранён" />
-    <Field of={form.f.props} />
-    <Button type="submit" data-testid="save" task={formTask(form.state)}>Сохранить</Button>
+    <SchemaBuilder {form} name="props" />
+    <Button type="submit" data-testid="save" {...form.intent('submit')} task={formTask(form.state)}>Сохранить</Button>
   </Form>
 
   {#if set}

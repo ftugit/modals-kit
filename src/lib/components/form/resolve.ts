@@ -5,7 +5,6 @@
 import { createConfig } from '#lib/form/svelte/index.js'
 import CheckboxField from './CheckboxField.svelte'
 import FileField from './FileField.svelte'
-import FieldSetField from './FieldSetField.svelte'
 import RatingField from './RatingField.svelte'
 import PhoneField from './PhoneField.svelte'
 import SelectField from './SelectField.svelte'
@@ -30,7 +29,6 @@ export const resolve = (f: { input: string; variant?: string }) => {
     case 'select': case 'radio': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
     case 'file': return FileField
-    case 'fields': return FieldSetField        // набор полей от пользователя
     case 'switch': return SwitchField
     case 'number': return NumberField
     case 'search': return SearchField

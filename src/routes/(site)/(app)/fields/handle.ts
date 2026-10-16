@@ -47,8 +47,6 @@ function base64(b: Uint8Array): string {
   return btoa(bin)
 }
 
-const show = (v: unknown) => (v === undefined || v === null || v === '' ? '—' : String(v))
-
 const record = createFormHandler<{ title: string }, RequestEvent>({
   description: recordForm(null),
   // Форму записи сервер строит из сохранённого набора, а не из тела запроса: поле,
@@ -69,7 +67,7 @@ const record = createFormHandler<{ title: string }, RequestEvent>({
       n: (savedRecord()?.n ?? 0) + 1,
       title: String(values['title']),
       image: `data:${type};base64,${base64(bytes)}`,
-      entries: fields.map((s) => ({ label: s.label, value: show(values[`u_${s.name}`]) })),
+      values: Object.fromEntries(fields.map((s) => [s.name, values[`u_${s.name}`] ?? null])),
     }, Infinity)
     commit()
     return { data: { title: String(values['title']) } }

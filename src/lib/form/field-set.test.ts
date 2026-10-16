@@ -5,6 +5,7 @@ import {
   type FieldSetItem,
 } from './index'
 import { createFormHandler } from './server'
+import { FIELD_SET_ADD, FIELD_SET_REMOVE, fieldSetDraft, fieldSetItems, fieldSetKey, fieldSetOp, fieldSetRules } from './field-set'
 
 const props = () => field.fields({
   label: 'Поля записи', max: 3,
@@ -171,5 +172,78 @@ suite('defineForm({ from }) — сохранённый набор снова ф�
   test('испорченный набор — дефект объявления, а не молчаливый пропуск', () => {
     expect(() => defineForm({ id: 'r', from: [{ name: 'x', input: 'text', label: '' }], fields: {} }))
       .toThrow(FormDefinitionError)
+  })
+})
+
+suite('кнопки набора без JS и ключи мест', () => {
+  test('ключ места случайный, по правилам имён, не совпадает с занятыми', () => {
+    const keys = new Set<string>()
+    for (let i = 0; i < 200; i++) keys.add(fieldSetKey([...keys]))
+    expect(keys.size).toBe(200)
+    for (const k of keys) expect(k).toMatch(/^f[a-z0-9]{6}$/)
+  })
+
+  test('форма с набором сама объявляет действия «добавить» и «удалить»', () => {
+    const names = collection.actions.map((a) => a.id)
+    expect(names).toContain(FIELD_SET_ADD)
+    expect(names).toContain(FIELD_SET_REMOVE)
+    const plain = defineForm({ id: 'plain', fields: { title: field.text({ label: 'Т' }) } })
+    expect(plain.actions.map((a) => a.id)).not.toContain(FIELD_SET_ADD)
+  })
+
+  test('добавить: все места, включая пустые, плюс пустое; удалить: без указанного; предел держится', () => {
+    const form = data([['props.fa.label', 'Автор'], ['props.fa.kind', 'text'], ['props.fb.label', '']])
+    const add = fieldSetOp(form, collection, `${FIELD_SET_ADD}:props`)!
+    expect(add.name).toBe('props')
+    expect(add.items.map((x) => x.name).slice(0, 2)).toEqual(['fa', 'fb'])
+    expect(add.items).toHaveLength(3)
+    expect(add.items[2]).toMatchObject({ preset: 'text', label: '' })
+    const rm = fieldSetOp(form, collection, `${FIELD_SET_REMOVE}:props.fa`)!
+    expect(rm.items.map((x) => x.name)).toEqual(['fb'])
+    const full = data([['props.fa.label', 'А'], ['props.fb.label', 'Б'], ['props.fc.label', 'В']])
+    expect(fieldSetOp(full, collection, `${FIELD_SET_ADD}:props`)!.items).toHaveLength(3)
+    expect(fieldSetOp(form, collection, 'submit')).toBeUndefined()
+    expect(fieldSetOp(form, collection, `${FIELD_SET_ADD}:title`)).toBeUndefined()
+  })
+
+  test('сервер на кнопку набора возвращает места и не выполняет', async () => {
+    let ran = 0
+    const h = createFormHandler({ description: collection, execute: (c) => { ran++; c.commit(); return { data: c.values } } })
+    const env = buildEnvelope({ formId: 'collection', revision: 1, instance: 'collection:new', submissionId: crypto.randomUUID() },
+      collection.policy)
+    const r = await h(new Request('http://x/f', {
+      method: 'POST', body: new URLSearchParams({ ...env, [collection.policy.envelopeKeys.intent]: `${FIELD_SET_ADD}:props`, title: '', 'props.fa.label': 'Автор', 'props.fa.kind': 'text' }),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    }))
+    expect(ran).toBe(0)
+    expect(r.status).toBe(200)
+    expect(r.result).toMatchObject({ ok: true, outcome: 'not-applied' })
+    expect((r.result.values as { props: FieldSetItem[] }).props).toHaveLength(2)
+  })
+
+  test('form.from: у полей набора есть исходное поле схемы', () => {
+    const saved: FieldSetItem[] = [{ name: 'fa', preset: 'email', input: 'email', label: 'Почта' }]
+    const d = defineForm({ id: 'rec', from: saved, fields: {} })
+    expect(d.fields[0]!.spec).toMatchObject({ name: 'fa', preset: 'email', label: 'Почта' })
+  })
+})
+
+suite('места для разметки', () => {
+  const kit = collection.byName['props']!.fieldSet!
+  test('место из поля: правила вида не в выбранных, числа строками; обратно — только с названием', () => {
+    const d = fieldSetDraft(kit, { name: 'fa', preset: 'email', input: 'email', label: 'Почта',
+      rules: [{ rule: 'email' }, { rule: 'required' }] })
+    expect(d).toEqual({ key: 'fa', preset: 'email', label: 'Почта', rules: ['required'], args: {} })
+    const t = fieldSetDraft(kit, { name: 'fb', preset: 'text', input: 'text', label: 'А', rules: [{ rule: 'maxLength', arg: 50 }] })
+    expect(t.args).toEqual({ maxLength: '50' })
+    expect(fieldSetItems(kit, [t, { ...t, key: 'fc', label: '  ' }])).toEqual([
+      { name: 'fb', preset: 'text', label: 'А', input: 'text', rules: [{ rule: 'maxLength', arg: 50 }] }])
+  })
+  test('правила места: на выбор разрешённые виду и уже выбранные, числа — у правил с пределами', () => {
+    const r = fieldSetRules(kit, { key: 'fa', preset: 'text', label: 'А', rules: ['maxLength', 'minValue'], args: {} })
+    expect(r.choices).toEqual(['required', 'maxLength', 'minValue'])
+    // у вида «Строка» пределов `minValue` нет: правило выбрано, но числа ему не положено
+    expect(r.withArgs.map((a) => a.rule)).toEqual(['maxLength'])
+    expect(r.withArgs[0]!.default).toBe(200)
   })
 })

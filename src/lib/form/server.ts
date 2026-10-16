@@ -11,6 +11,7 @@ import { normalizeErrors, stableId, type FormError, type Outcome, type Result } 
 import { issueError, runSchema, type IssueLike, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
 import { evaluate } from './submit'
+import { fieldSetOp } from './field-set'
 import { stampProof } from './proof'
 import { visibleFields } from './validate'
 import { nameProblem } from './policy'
@@ -655,6 +656,14 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
         make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues,
                ...(ev.notes ? { notes: ev.notes } : {}) })
+
+      // кнопка набора полей без JS: места возвращаются с новым или без удалённого, ничего не выполняется
+      const op = fieldSetOp(ctx.form!, ctx.description, ev.intent)
+      if (op)
+        return finish({ status: status.ok, result: make({
+          ok: true, status: status.ok, outcome: 'not-applied', submissionId, instance: ev.envelope!.instance,
+          values: { ...ev.publicValues, [op.name]: op.items },
+        }) })
 
       ctx.reached = 'validating'
       const errors = [...ev.errors]

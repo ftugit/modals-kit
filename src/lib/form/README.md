@@ -324,7 +324,7 @@ const handle = createFormHandler({
 | `checkbox` | `checkbox` | `type="checkbox" value="on"` | `CheckboxField` → `Checkbox` |
 | `switch` | `checkbox` | `type="checkbox" role="switch" value="on"` | `SwitchField` → `Switch` |
 | `file`, `files` | `file` / `files` | `type="file"` (`multiple`) | `file`: `FileField` → `FileInput` |
-| `fields` | `fields` (вложенный: записи `имя.…`) | — | `FieldSetField` → места под поля из `TextField`, `SelectField`, `NumberField` (см. «Набор полей от пользователя») |
+| `fields` | `fields` (вложенный: записи `имя.…`) | — | **не рисуется** (`Field` его пропускает): места расставляет приложение хуком `fieldSet` (см. «Набор полей от пользователя») |
 
 `otp` и `switch` — не новые типы значения, а представления существующих: код — это
 строка (длину и цифры задают правила `v.maxLength(6)`, `v.pattern({ source: '\\d{6}' })`,
@@ -702,8 +702,51 @@ export const collection = defineForm({ id: 'collection', fields: {
       number: { label: 'Число', input: 'number', extra: ['required', 'minValue'] },
     } }),
 } })
-// <Field of={form.f.props} />  — места под поля рисует компонент приложения
 ```
+
+Форма это поле **сама не рисует**: `<Field of={form.f.props} />` ничего не выводит. Где
+цикл по местам, где «+ поле», какие обёртки и классы — решает разметка приложения.
+Хук `fieldSet` (`#lib/form/svelte`) даёт места с готовыми видами контролов (их рисует
+обычный `Field` или свой компонент) и пропсы кнопок:
+
+```svelte
+<script lang="ts">
+  import { fieldSet } from '#lib/form/svelte/index.js'
+  const set = fieldSet(form, 'props', {
+    labels: { label: 'Название поля', kind: 'Вид', rules: 'Правила' },
+    rule: (r) => RULE_LABEL[r] ?? r,          // подписи правил — тексты приложения
+  })
+</script>
+
+{#each set.errors as e (e.id)}<p role="alert">{e.message}</p>{/each}   <!-- предел набора -->
+{#each set.rows as row (row.key)}
+  <div class="card">
+    <Field of={row.label} /> <Field of={row.kind} /> <Field of={row.rules} />
+    {#each row.args as a (a.name)}<Field of={a} />{/each}           <!-- числа выбранных правил -->
+    <Button {...set.removeProps(row)}>Удалить</Button>
+  </div>
+{/each}
+<Button {...set.addProps()}>+ поле</Button>                         <!-- disabled на пределе -->
+```
+
+| Часть | Что |
+|---|---|
+| `rows` | места по порядку: `key`, `preset`, виды `label`/`kind`/`rules`, `args`, `locked` (правила вида), `errors` места, `filled` |
+| `errors`, `full` | ошибки набора целиком; предел `max` достигнут |
+| `addProps()`, `removeProps(row)` | пропсы кнопок; `add()`, `remove(key)` — то же из своего кода |
+
+Пустого места заранее нет: место появляется по «+ поле». Ключ нового места случайный
+(`f` + 6 знаков, `fieldSetKey`): удалённое поле не отдаёт свой ключ новому, и значения
+записей под старым ключом не приписываются чужому полю.
+
+**Без JavaScript** кнопки — отправка формы с намерением `fields-add:props` и
+`fields-remove:props.<ключ>`. Эти действия форма объявляет сама, когда в ней есть
+`field.fields`. Сервер ничего не выполняет и не проверяет: возвращает `ok: true`,
+`outcome: 'not-applied'` (статус 200) и в `values.props` — места как есть (и пустые) плюс
+новое или без удалённого. Страница сеет такой ответ в форму так же, как отказ. После
+оживления кнопки становятся `type="button"`. Без JS Enter в поле нажимает **первую**
+кнопку отправки формы — ставьте первой свою кнопку сохранения (на `/fields` — скрытая копия
+`<button type="submit" hidden>` в начале формы), иначе Enter нажмёт «Удалить» первого места.
 
 Значение поля — список `FieldSetItem`, уже приведённый к пределам на обеих сторонах:
 `execute` получает проверенный список, его и хранят. Элемент самодостаточен:
@@ -719,19 +762,28 @@ export const collection = defineForm({ id: 'collection', fields: {
 | «нет предела» | отсутствие ключа, `undefined`, `null`, `false`, `''` — своих чисел у библиотеки нет |
 | неверная настройка | правило не из реестра, `min > max`, предел не число — исключение при объявлении |
 
-Записи в разметке — по местам: `props.s1.label`, `props.s1.kind`, `props.s1.rules`
-(повторяется), `props.s1.max_length` (значение правила, имя в snake_case;
+Записи в разметке — по местам: `props.f7k2m9q.label`, `….kind`, `….rules`
+(повторяется), `….max_length` (значение правила, имя в snake_case;
 `fieldSetName(name, slot, part)`). Место без названия не считается, порядок — порядок
 появления в форме. Слой имён пропускает ключи `props.…` (тип объявлен `nested`), лишний
 уровень и повтор одиночной записи — ошибка разбора. Ошибки лежат на подпутях:
-`props.s1.max_length`, `props.s1.rules`, `props.s1.kind`; предел набора — на `props`.
+`props.<ключ>.max_length`, `….rules`, `….kind`; предел набора — на `props`.
 При отказе набранное возвращается в разметку — без JS ничего не теряется.
 
 Сохранённый набор снова становится формой — как есть или с полями из кода:
 
 ```ts
-const record = defineForm({ id: 'record', from: saved,       // поля набора: u_s1, u_s2…
+const record = defineForm({ id: 'record', from: saved,       // поля набора: u_<ключ>…
   fields: { title: field.text({ label: 'Название' }), image: field.file({ label: 'Файл' }) } })
+```
+
+И здесь поля набора расставляет разметка: `form.from()` отдаёт их по порядку вместе с
+исходным полем схемы — по `item.preset` можно взять свой компонент.
+
+```svelte
+{#each form.from() as { item, f } (f.name)}
+  {#if item.preset === 'email'}<MyEmail of={f} />{:else}<Field of={f} />{/if}
+{/each}
 ```
 
 Поля из `from` идут первыми, с префиксом `u_`, и не считаются «новыми» — `required`
@@ -740,11 +792,34 @@ const record = defineForm({ id: 'record', from: saved,       // поля наб�
 а не из тела запроса. Проверка идёт в момент записи: когда схема стала строже, старые
 записи не перепроверяются, при правке обязаны пройти новые правила.
 
+Запись хранит значения **по ключу** (`{ title, image, values: { f7k2m9q: '…' } }`), подписи
+в ней нет: показ берёт подпись из текущего набора, ключа в наборе нет — значение не
+выводится. Ключи форма по умолчанию не сверяет с записями. Если новый ключ или смена вида
+должны быть запрещены, пока у записей есть значение под ключом, — это проверка приложения в
+`execute`, например в PG (jsonb):
+
+```ts
+execute: async (c) => {
+  for (const it of c.values.props) {                      // новые и сменившие вид ключи
+    if (!changed(it)) continue
+    const { rows } = await sql`SELECT EXISTS (SELECT 1 FROM records
+      WHERE collection_id = ${id} AND data ? ${it.name}) AS used`   // и удалённые мягко
+    if (rows[0].used) c.fail([{ path: ['props', it.name, 'kind'], code: 'key.used', message: 'Ключ уже занят записями' }])
+  }
+  …
+}
+```
+
+Удалённый ключ так же нельзя занять, пока записи его держат; случайные ключи делают
+совпадение почти невозможным. Под `?` — GIN-индекс на `data`; все ключи записей —
+`jsonb_object_keys(data)`. Текст ошибки выбирает приложение.
+
 Тексты для человека (подписи видов — в `kinds[…].label`, правил — в компоненте) выбирает
 приложение. Замены при сохранении (что было обрезано до предела) разбор не сообщает:
 значение приходит уже приведённым. Живой пример — страница `/fields`
 (`routes/(site)/(app)/fields/`): форма набора, форма записи на нём и пример записи;
-набор и запись лежат в `#lib/cache`. Компонент поля — `src/lib/components/form/FieldSetField.svelte`.
+набор и запись лежат в `#lib/cache`. Разметка набора — `SchemaBuilder.svelte`, полей
+записи — `SchemaFields.svelte` в той же папке.
 
 ## Внешние схемы
 

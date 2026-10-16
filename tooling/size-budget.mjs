@@ -125,9 +125,13 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // чанк формы, компонент места под поля (`FieldSetField`) — в общий `resolve`. Строки `/form`
 // убраны (−). Весь JS +0.5 (253.7). Маршруты с формой: /form 177.0, /modals 175.4,
 // /paginator 212.9, /db-demo 210.5 (+0.9…2.9). Лимиты = факт + ≈0.5, сообщено владельцу.
+// REVISION 2026-10-16, ход 236 (места набора расставляет приложение — хук `fieldSet`; кнопки
+// набора без JS; места для разметки в ядре `field-set.ts`, он в общем чанке формы; компонент
+// `FieldSetField` из общего `resolve` убран). Факт: весь JS 254.1, immutable 267.8, /form 176.3 (−0.7),
+// /modals 176.6, /fields 171.2. Лимиты = факт + ≈0.5, сообщено владельцу.
 const LIMITS = {
-  allImmutableGzip: 267.5 * KiB,
-  allJsGzip: 254 * KiB,
+  allImmutableGzip: 268.3 * KiB,
+  allJsGzip: 254.6 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -145,7 +149,7 @@ const ROUTE_LIMITS = {
   // поиск вариантов Select через matchesQuery paginate/search (R4, решение B): ядро fuzzy
   // (foldKey, взвешенный DL) едет в общий чанк примитивов, +1.4 на каждом маршруте;
   // /modals 161.0 > 160. По постоянному решению оператора — +5.
-  '/modals': 176 * KiB,
+  '/modals': 177 * KiB,
   // Пагинатор с живым источником, paginate/search и панелью фильтров. Ход 16 (решение
   // оператора): 138.6 → 196.5 = факт 191.5 + 5. Прежние «факт 120.3» и 138.6 были
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
@@ -163,8 +167,8 @@ const ROUTE_LIMITS = {
   '/cycle': 137.1 * KiB,
   '/spike': 131.8 * KiB,
   '/cards/[id]': 139.5 * KiB,
-  // Ход 224: конструктор полей — факт 169.9.
-  '/fields': 171 * KiB,
+  // Ход 224: конструктор полей — факт 169.9. Ход 236: хук `fieldSet` — факт 171.2.
+  '/fields': 171.7 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {
