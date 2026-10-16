@@ -16,7 +16,10 @@
  *   8. чужая служба: нормализация до обработчика;
  *  10. асинхронная проверка: ошибка приходит после паузы;
  *  11. серверные слои: неизвестное поле отклоняется, идемпотентность;
- *  12. сложность пароля: оценка вместо шаблона, шкала совпадает с проверкой.
+ *  12. сложность пароля: оценка вместо шаблона, шкала совпадает с проверкой;
+ *  14. ещё поля (url, период, время, ползунок, цвет, файлы, скрытое), видимость
+ *      по значению, проверка части полей, ответы сервера (переход, «неизвестно»),
+ *      описания опций панели; то же без скрипта.
  *  Поля, которые собирает пользователь, — `test/browser/fields.mjs` (страница `/fields`).
  */
 import { chromium } from 'playwright'
@@ -541,6 +544,139 @@ ok('пути дают одинаковые ошибки',
   const bad = await (await post({ invite: '12ab56' })).json()
   ok('сервер: код не из цифр отклоняется правилом шаблона',
     (bad.errors ?? []).some((e) => e.path === 'invite' && e.code === 'pattern'), JSON.stringify(bad.errors))
+  await nctx.close()
+}
+
+/* ── 14. ещё поля, видимость, часть полей, ответы сервера ─────────── */
+{
+  const valid = {
+    'signup-password': 'longenough1', 'signup-confirm': 'longenough1', 'signup-age': '30',
+    'signup-tax_id': '7712345678', 'signup-card': '4242424242424242', 'signup-agree': 'on',
+  }
+  const errorOf = (pg, id) => pg.locator(`#${id}`).evaluate((el) => {
+    const ids = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    return ids.map((x) => document.getElementById(x)?.textContent ?? '').join(' ')
+  })
+  const open = async (ctx) => {
+    const pg = await ctx.newPage()
+    const warnings = []
+    pg.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') warnings.push(m.text()) })
+    await pg.goto(BASE, { waitUntil: 'networkidle' })
+    await readyToSubmit(pg)
+    return { pg, warnings }
+  }
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 3600 } })
+  const { pg, warnings } = await open(ctx)
+  ok('ещё поля: загрузка без предупреждений в консоли', warnings.length === 0, warnings.join(' | '))
+
+  // описания опций панели — рядом с подписью, как у пагинатора, и в aria-describedby
+  const hint = () => pg.locator('#answer-help').innerText()
+  ok('панель: у выбранной опции есть описание, на него указывает select',
+    await pg.locator('#answer').getAttribute('aria-describedby') === 'answer-help'
+      && /готово/.test(await hint()), await hint())
+  await pick(pg, 'Ответ сервера', 'переход')
+  ok('панель: описание меняется вместе с опцией', /303/.test(await hint()), await hint())
+  ok('скрытое поле несёт выбор панели', await pg.locator('input[type=hidden][name=answer]').inputValue() === 'redirect')
+  const table = await pg.locator('section:has-text("Ограничения → атрибуты") tbody').innerText()
+  ok('скрытое поле видно только в таблице атрибутов',
+    /answer\s.*type="hidden"/.test(table) && await pg.locator('label[for="signup-answer"]').count() === 0)
+
+  const attr = (id, name) => pg.locator(`#${id}`).getAttribute(name)
+  ok('ещё поля: представления дают свои типы',
+    await attr('signup-site', 'type') === 'url' && await attr('signup-call_at', 'type') === 'time'
+      && await attr('signup-meet_at', 'type') === 'datetime-local' && await attr('signup-letters', 'type') === 'range'
+      && await attr('signup-letters', 'max') === '30' && await attr('signup-accent', 'type') === 'color')
+  ok('цвет: значение по умолчанию из описания', await pg.inputValue('#signup-accent') === '#2563eb')
+  ok('период: границы дат в разметке',
+    await attr('signup-from_date', 'min') === '2026-01-01' && await attr('signup-to_date', 'max') === '2027-12-31')
+
+  await pg.fill('#signup-site', 'не адрес')
+  await pg.locator('#signup-site').blur()
+  await pg.waitForTimeout(300)
+  ok('ссылка: строка без схемы — ошибка у поля', await attr('signup-site', 'aria-invalid') === 'true', await errorOf(pg, 'signup-site'))
+  await pg.fill('#signup-site', 'https://example.com')
+  await pg.fill('#signup-from_date', '2026-05-10')
+  await pg.fill('#signup-to_date', '2026-05-01')
+  await pg.locator('#signup-to_date').blur()
+  await pg.waitForTimeout(300)
+  ok('период: «по» раньше «с» — ошибка сравнения полей', /нижней границы/.test(await errorOf(pg, 'signup-to_date')),
+    await errorOf(pg, 'signup-to_date'))
+  await pg.fill('#signup-to_date', '2026-05-20')
+  await pg.locator('#signup-to_date').blur()
+
+  ok('видимость: «Компания» скрыта, пока флажок не отмечен', await pg.locator('#signup-company').count() === 0)
+  await pg.locator('label[for="signup-from_company"]').click()
+  await pg.waitForTimeout(200)
+  ok('видимость: флажок показывает «Компанию» и файлы',
+    await pg.locator('#signup-company').count() === 1 && await attr('signup-docs', 'multiple') !== null)
+  await pg.locator('label[for="signup-from_company"]').click()
+
+  // часть полей: проверяются только почта и телефон
+  await pg.fill('#signup-email', 'плохо')
+  await click(pg, 'Проверить контакты')
+  await pg.waitForTimeout(1200)
+  ok('часть полей: ошибка у почты, пароль не проверялся',
+    await attr('signup-email', 'aria-invalid') === 'true' && await attr('signup-password', 'aria-invalid') === null)
+  await pg.fill('#signup-email', 'contacts@example.com')
+  await click(pg, 'Проверить контакты')
+  await pg.locator('[data-checked]').waitFor({ timeout: 10000 }).catch(() => {})
+  ok('часть полей: почта и телефон в порядке', await pg.locator('[data-checked]').count() === 1)
+
+  // переход: сервер велел перейти — страница переходит сама
+  await fill(pg, { ...valid, 'signup-email': 'redirect@example.com' })
+  await click(pg, 'Создать аккаунт')
+  const moved = await pg.waitForURL(/\/form\?sent=1$/, { timeout: 10000 }).then(() => true).catch(() => false)
+  ok('переход: после ответа адрес /form?sent=1 и сообщение', moved && await pg.locator('[data-sent]').count() === 1, pg.url())
+  await ctx.close()
+
+  // «неизвестно»: сервер не подтвердил успех — исход unknown и событие в канале
+  const uctx = await browser.newContext({ viewport: { width: 1280, height: 3600 } })
+  const { pg: upg } = await open(uctx)
+  await pick(upg, 'Ответ сервера', 'неизвестно')
+  await fill(upg, { ...valid, 'signup-email': 'unknown@example.com' })
+  await click(upg, 'Создать аккаунт')
+  await upg.locator('[data-system-channel]').waitFor({ timeout: 10000 }).catch(() => {})
+  const channel = await upg.locator('[data-system-channel]').innerText().catch(() => '')
+  ok('«неизвестно»: событие outcome-unknown в канале системных ошибок', /outcome-unknown/.test(channel), channel)
+  ok('«неизвестно»: успехом не показано', await upg.locator('text=Готово. Исход').count() === 0)
+  await uctx.close()
+
+  // без скрипта
+  const nctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 3600 } })
+  const npg = await nctx.newPage()
+  await npg.goto(BASE, { waitUntil: 'domcontentloaded' })
+  ok('без JS: кнопки частичной проверки не требуют всех полей (formnovalidate)',
+    await npg.locator('button[value="check-contacts"]').getAttribute('formnovalidate') !== null
+      && await npg.locator('button[value="save-draft"]').getAttribute('formnovalidate') !== null
+      && await npg.locator('button[value="submit"]').getAttribute('formnovalidate') === null)
+  await Promise.all([npg.waitForLoadState('load'), npg.locator('button[value="check-contacts"]').click()])
+  await npg.waitForTimeout(300)
+  ok('без JS: «Проверить контакты» — ошибка только у почты',
+    await npg.locator('#signup-email').getAttribute('aria-invalid') === 'true'
+      && await npg.locator('#signup-password').getAttribute('aria-invalid') === null)
+  await fill(npg, { ...valid, 'signup-email': 'nojs-company@example.com' })
+  await npg.locator('#signup-from_company').check({ force: true })
+  await Promise.all([npg.waitForLoadState('load'), npg.locator('button[value="submit"]').click()])
+  await npg.waitForTimeout(300)
+  ok('без JS: после отправки с флажком «Компания» появилась и требуется',
+    await npg.locator('#signup-company').count() === 1
+      && await npg.locator('#signup-company').getAttribute('aria-invalid') === 'true')
+  const docsText = await npg.locator('[data-field="docs"]').innerText().catch(() => '')
+  ok('без JS: файлы — правило «хотя бы один»', /хотя бы один файл/.test(docsText), docsText)
+
+  const redirect = await nctx.request.post(BASE, {
+    // accept: text/html — как у браузера; иначе SvelteKit отвечает JSON для use:enhance
+    headers: { origin: new URL(BASE).origin, accept: 'text/html' }, maxRedirects: 0,
+    multipart: {
+      __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
+      __form_submission: crypto.randomUUID(), intent: 'submit', answer: 'redirect',
+      email: 'nojs-redirect@example.com', password: 'longenough1', confirm: 'longenough1',
+      age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
+    },
+  })
+  ok('без JS: «переход» — ответ 303 на /form?sent=1',
+    redirect.status() === 303 && redirect.headers()['location'] === '/form?sent=1',
+    `${redirect.status()} ${redirect.headers()['location']}`)
   await nctx.close()
 }
 

@@ -7,6 +7,10 @@ import { emailTaken, inn, luhn } from '#lib/components/form/extend.js'
  * Кардинальность ошибок — свойство ОПИСАНИЯ: его обязаны видеть обе стороны.
  * Настройка на стороне адаптера развела бы пути — сервер о ней не знает.
  */
+/** Ответы, которые умеет изобразить демо-сервер (`handle.ts`). */
+export const ANSWERS = ['accept', 'redirect', 'unknown'] as const
+export type Answer = (typeof ANSWERS)[number]
+
 function make(cardinality: 'first' | 'all') {
   return defineForm({
     id: 'signup',
@@ -16,6 +20,10 @@ function make(cardinality: 'first' | 'all') {
       { id: 'submit', label: 'Создать аккаунт', validate: 'full' },
       // Действие снимает ВИД ограничения, а не имя правила.
       { id: 'save-draft', label: 'Сохранить черновик', validate: 'partial', relax: ['required'] },
+      // Проверяет только перечисленные поля: остальные не трогаются ни в браузере,
+      // ни на сервере. Без JS кнопка получает formnovalidate — иначе браузер
+      // потребовал бы и пароль.
+      { id: 'check-contacts', label: 'Проверить контакты', validate: 'full', subset: ['email', 'phone'] },
     ],
     fields: {
       email: field.email({
@@ -95,6 +103,53 @@ function make(cardinality: 'first' | 'all') {
       }),
       digest: field.switch({ label: 'Присылать дайджест на почту' }),
       agree: field.checkbox({ label: 'Согласен с условиями', validate: [v.required()] }),
+
+      // ── Ещё поля: остальные встроенные представления и правила ──────────
+      site: field.url({
+        label: 'Сайт',
+        placeholder: 'https://example.com',
+        help: 'Адрес целиком, со схемой https://',
+        validate: [v.url(), v.maxLength(200)],
+      }),
+      // Период: обе границы необязательны, «по» не раньше «с» — сравнение полей
+      // делает только ядро, у браузера такого атрибута нет.
+      from_date: field.date({
+        label: 'Доступ с',
+        help: 'Не раньше 1 января 2026',
+        validate: [v.minDate('2026-01-01')],
+      }),
+      to_date: field.date({
+        label: 'Доступ по',
+        help: 'Не позже конца 2027 и не раньше даты «с»',
+        validate: [v.maxDate('2027-12-31'), v.notBelow('from_date')],
+      }),
+      call_at: field.time({ label: 'Удобное время звонка' }),
+      meet_at: field['datetime-local']({ label: 'Встреча' }),
+      letters: field.range({
+        label: 'Писем в месяц',
+        defaultValue: 4,
+        validate: [v.minValue(0), v.maxValue(30), v.step(1)],
+      }),
+      accent: field.color({ label: 'Цвет профиля', defaultValue: '#2563eb' }),
+      // Видимость по значению другого поля: условие — данные, поэтому сервер
+      // считает его сам. Скрытое поле не проверяется и не требуется.
+      from_company: field.checkbox({ label: 'Я от компании' }),
+      company: field.text({
+        label: 'Компания',
+        visibleWhen: { field: 'from_company', equals: true },
+        validate: [v.required(), v.maxLength(120)],
+      }),
+      docs: field.files({
+        label: 'Карточка компании',
+        help: 'От одного до трёх файлов: картинка или PDF до 512 КБ',
+        visibleWhen: { field: 'from_company', equals: true },
+        validate: [v.minCount(1), v.maxCount(3), v.accept(['image/*', 'application/pdf']), v.maxSize(512 * 1024)],
+        messages: { minCount: 'Прикрепите хотя бы один файл', maxCount: 'Не больше трёх файлов' },
+      }),
+      // Скрытое поле: какой ответ изобразит сервер (панель «Ответ сервера»).
+      // Только для демо — настоящая форма не даёт клиенту выбирать исход.
+      // Правила нет: незнакомое или пустое значение сервер читает как «принято».
+      answer: field.hidden({ defaultValue: 'accept' }),
     },
   })
 }

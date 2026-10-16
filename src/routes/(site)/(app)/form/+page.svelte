@@ -7,10 +7,12 @@ import { asLink } from '#lib/components/links/index.js'
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
-  import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
+  import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
-    createRegistry, defaultRegistry, defineForm, field,
+    createRegistry, defaultRegistry, defineForm, field, isVisible,
     type FormDescription,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
@@ -42,8 +44,53 @@ import { asLink } from '#lib/components/links/index.js'
   const PANEL_DEFAULTS: Record<string, string | boolean> = {
     mode: 'as-is', invalid_from: 'fact', intercept: 'js', live: 'after-touched',
     cardinality: 'first', markup: 'default', parallel: 'block',
-    sample: 'поле и код известны', with_type: false, described: false,
+    sample: 'поле и код известны', with_type: false, described: false, answer: 'accept',
   }
+
+  /* Описание выбранного значения — рядом с подписью поля панели, как у
+     пагинатора (`settings/Field` `hint`): что именно изменится в форме. Тексты —
+     забота страницы, а не библиотеки: в `Option` описания нет. */
+  const HINTS: Record<string, Record<string, string>> = {
+    mode: {
+      'as-is': 'ошибки остаются у своих полей',
+      'one-block': 'обработчик стирает имена полей: все ошибки уходят в общий блок над формой, подсветка переключается «по показу»',
+      'drop-code': 'обработчик выбрасывает ошибку «слишком коротко»: текста нет, но поле знает, что неверно',
+      'to-channel': 'ошибки почты уходят в «Внешний канал» под формой и в самой форме не видны',
+    },
+    invalid_from: {
+      fact: 'поле красное, если ошибка есть, даже когда обработчик убрал её текст',
+      shown: 'поле красное, только если его ошибка показана',
+    },
+    intercept: {
+      js: 'отправка запросом из скрипта, страница не перезагружается',
+      native: 'обычная отправка браузером: страница перезагружается, ошибки приходят в новой разметке',
+    },
+    live: {
+      'after-touched': 'проверка при уходе из поля, а после первого ухода — на каждом вводе',
+      'on-blur': 'проверка только при уходе из поля',
+      'on-input': 'проверка на каждом вводе, даже до первого ухода',
+      'on-submit': 'проверка только при отправке',
+    },
+    cardinality: {
+      first: 'у поля видна одна ошибка — первая по порядку правил',
+      all: 'у поля виден весь список ошибок; это свойство описания, поэтому форма собирается заново, и сервер получает ту же настройку',
+    },
+    markup: {
+      default: 'идентификаторы полей вида signup-email, проверка — по «Режиму живой проверки»',
+      custom: 'свои идентификаторы (fld_signup__email) и проверка на каждом вводе: настройка приложения, библиотека не меняется',
+    },
+    parallel: {
+      block: 'пока отправка идёт, повторное нажатие не уходит',
+      replace: 'новая отправка отменяет идущую',
+      queue: 'новая отправка ждёт конца текущей и уходит сама',
+    },
+    answer: {
+      accept: 'сервер сохраняет и отвечает «готово»',
+      redirect: 'сервер сохраняет и велит перейти на другой адрес: со скриптом переходит страница, без него — ответ 303',
+      unknown: 'сервер не подтвердил успех: исход «неизвестно», повтор может задвоить запись; событие уходит в канал системных ошибок',
+    },
+  }
+  const hintOf = (name: string) => HINTS[name]?.[String(sv(name))]
   const sv = (name: string) => settings.values[name] ?? PANEL_DEFAULTS[name]
 
   const panelCfg = createConfig({
@@ -115,6 +162,15 @@ import { asLink } from '#lib/components/links/index.js'
           { value: 'queue', label: 'очередь' },
         ],
       }),
+      answer: field.select({
+        label: 'Ответ сервера',
+        defaultValue: PANEL_DEFAULTS.answer,
+        options: [
+          { value: 'accept', label: 'принято' },
+          { value: 'redirect', label: 'переход' },
+          { value: 'unknown', label: 'неизвестно' },
+        ],
+      }),
       sample: field.select({
         label: 'Образец чужой службы',
         defaultValue: PANEL_DEFAULTS.sample,
@@ -153,6 +209,21 @@ import { asLink } from '#lib/components/links/index.js'
      читает их лениво, в момент использования, поэтому эффект-синхронизатор с его
      лишним тактом рассинхрона не нужен.
      https://svelte.dev/docs/svelte/$effect#When-not-to-use-$effect */
+  /* Канал системных ошибок (Q1): исход «неизвестно», ошибки чужой службы,
+     предупреждения. У проекта это `report` (`forms.config.ts`); здесь канал
+     показан на странице. Четыре связки поднимают одно продолжение — хранится
+     последнее событие, а не список. */
+  let systemEvent = $state<{ code: string; outcome: string; from: string } | null>(null)
+  const sink: ErrorSink = (e) => {
+    const ctx = (e.ctx ?? {}) as { outcome?: string; from?: string }
+    systemEvent = { code: e.code, outcome: ctx.outcome ?? '—', from: ctx.from ?? '—' }
+  }
+  const SYSTEM_TEXT: Record<string, string> = {
+    'outcome-unknown': 'исход неизвестен: сервер не подтвердил, что всё сохранилось',
+    'external-error': 'ошибка чужой службы',
+    warnings: 'предупреждение после сохранения',
+  }
+
   const opts = {
     action: '/form',
     instance: 'signup:new',
@@ -162,6 +233,7 @@ import { asLink } from '#lib/components/links/index.js'
     get parallel() { return sv('parallel') as ParallelPolicy },
     get invalidFrom() { return sv('invalid_from') as InvalidFrom },
     onErrors: handler,
+    onError: sink,
     // результат действия передаётся ПРИ СВЯЗЫВАНИИ: без скрипта эффектов нет,
     // и ошибки обязаны оказаться уже в серверной разметке
     continuation: initialResult,
@@ -229,6 +301,24 @@ import { asLink } from '#lib/components/links/index.js'
 
   $effect(() => { form.lift(actionResult?.result) })
 
+  // Переход из ответа сервера (`Result.redirect`) после перехвата: библиотека адрес
+  // проверила и отдала, переходит приложение. Без скрипта маршрут ответил 303.
+  // Один переход на отправку: возврат к связке с тем же результатом не уводит снова.
+  let followed = ''
+  $effect(() => {
+    const r = form.state.result
+    if (!r?.redirect || r.submissionId === followed) return
+    followed = r.submissionId
+    void goto(r.redirect)
+  })
+  const sent = $derived(page.url.searchParams.get('sent') === '1')
+
+  // Видимость — то же условие, что считает сервер: без скрипта поле появится
+  // после отправки с отмеченным флажком.
+  const companyVisible = $derived(isVisible(description.byName['company']?.visibleWhen, form.state.values))
+  const checked = $derived(
+    (form.state.result?.ok && (form.state.result.data as { checked?: string[] } | undefined)?.checked) || null)
+
   // Внешний канал: что ушло бы в него из текущих фактов — вычисление, а не
   // эффект (C3). Сама отправка — отдельно от обработчика: его зовут и для
   // предпросмотра, а предпросмотр ничего слать не должен.
@@ -250,6 +340,9 @@ import { asLink } from '#lib/components/links/index.js'
      ошибки. Монтирование изменением не считается само собой. */
   function onPanelChange(name: string, value: string) {
     settings.field(name)?.onInput(value)
+    // Ответ сервера уходит скрытым полем `answer`: во все связки, чтобы смена
+    // «первая/все» или разметки его не сбросила.
+    if (name === 'answer') for (const b of Object.values(bound)) b.f.answer?.onInput(value)
     if (name !== 'mode') return
     if (value === 'one-block') settings.field('invalid_from')?.onInput('shown')
     form.redisplay()
@@ -273,14 +366,16 @@ import { asLink } from '#lib/components/links/index.js'
     <!-- ── настройки ─────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
       <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Настройки формы" legendVariant="hidden" class="grid gap-4 sm:grid-cols-2">
-        {#each ['mode', 'invalid_from', 'intercept', 'live', 'cardinality', 'markup', 'parallel'] as name (name)}
+        {#each ['mode', 'invalid_from', 'intercept', 'live', 'cardinality', 'markup', 'parallel', 'answer'] as name (name)}
           {@const v = settings.field(name)!}
-          <PanelField label={v.label ?? name}>
+          {@const hint = hintOf(name)}
+          <PanelField label={v.label ?? name} {hint} hintId={`${name}-help`}>
             <PanelSelect
               value={String(v.value ?? PANEL_DEFAULTS[name] ?? '')}
               options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
               onChange={(x) => onPanelChange(name, x)}
               {...v.attrs}
+              aria-describedby={hint ? `${name}-help` : undefined}
             />
           </PanelField>
         {/each}
@@ -307,7 +402,16 @@ import { asLink } from '#lib/components/links/index.js'
 
         <Common errors={form.common} title="Проверьте форму" />
 
-        {#if form.state.result?.ok}
+        {#if sent}
+          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-sent>
+            Сервер велел перейти сюда: <code>/form?sent=1</code>. <a class="underline" href="/form">Открыть форму заново</a>
+          </div>
+        {/if}
+        {#if checked}
+          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-checked>
+            Почта и телефон в порядке. Остальные поля не проверялись.
+          </div>
+        {:else if form.state.result?.ok}
           <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
             Готово. Исход: <b>{form.state.outcome}</b>
           </div>
@@ -329,6 +433,28 @@ import { asLink } from '#lib/components/links/index.js'
         <Field of={form.f.digest} />
         <Field of={form.f.agree} />
 
+        <!-- ── ещё поля: остальные представления и правила ── -->
+        <Fieldset legend="Ещё поля" class="space-y-4 border-t border-border pt-4" data-more-fields="">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <Field of={form.f.site} />
+            <Field of={form.f.letters} />
+            <Field of={form.f.from_date} />
+            <Field of={form.f.to_date} />
+            <Field of={form.f.call_at} />
+            <Field of={form.f.meet_at} />
+            <Field of={form.f.accent} />
+          </div>
+          <Field of={form.f.from_company} />
+          {#if companyVisible}
+            <div class="grid gap-4 sm:grid-cols-2">
+              <Field of={form.f.company} />
+              <Field of={form.f.docs} />
+            </div>
+          {/if}
+          <!-- скрытое: видно только в таблице «Ограничения → атрибуты» -->
+          <Field of={form.f.answer} />
+        </Fieldset>
+
         <div class="flex flex-wrap gap-2">
           <Button type="submit" {...form.intent('submit')} task={formTask(form.state, 'submit')}>
             {form.state.pendingIntent === 'submit' ? 'Отправка…' : 'Создать аккаунт'}
@@ -337,9 +463,21 @@ import { asLink } from '#lib/components/links/index.js'
                   task={formTask(form.state, 'save-draft')}>
             {form.state.pendingIntent === 'save-draft' ? 'Сохранение…' : 'Сохранить черновик'}
           </Button>
+          <Button variant="outline" type="submit" {...form.intent('check-contacts')}
+                  task={formTask(form.state, 'check-contacts')}>
+            {form.state.pendingIntent === 'check-contacts' ? 'Проверка…' : 'Проверить контакты'}
+          </Button>
         </div>
       </Form>
     </section>
+
+    {#if systemEvent}
+      <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm" data-system-channel>
+        <div class="mb-2 text-sm font-semibold">Канал системных ошибок</div>
+        <p class="text-sm">{SYSTEM_TEXT[systemEvent.code] ?? systemEvent.code}</p>
+        <p class="mt-1 font-mono text-xs text-muted-foreground">{systemEvent.code} · исход: {systemEvent.outcome} · путь: {systemEvent.from}</p>
+      </section>
+    {/if}
 
     {#if channelLog.length}
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">

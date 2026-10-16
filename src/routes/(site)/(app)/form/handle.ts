@@ -12,7 +12,7 @@ import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import '#lib/components/form/extend.js'
 import { checks } from '#lib/components/form/extend.js'
-import { resolveDescription, signup } from './signup'
+import { ANSWERS, resolveDescription, signup, type Answer } from './signup'
 
 // Бронь отправки — в памяти процесса: этой форме база не нужна, и общая бронь
 // сделала бы сервер БД её единственной зависимостью (см. `#lib/server/cache.ts`).
@@ -46,9 +46,23 @@ const handler = createFormHandler<unknown, RequestEvent>({
   checks,
   idempotency,
   throttle,
-  async execute({ values, commit }) {
-    demo.incr('created', Infinity)
+  async execute({ values, intent, commit }) {
+    // «Проверить контакты» ничего не создаёт: правила своих полей уже прошли.
+    if (intent === 'check-contacts') {
+      commit()
+      return { data: { checked: ['email', 'phone'] } }
+    }
+    // Демо: ответ выбирает скрытое поле `answer` (панель «Ответ сервера»).
+    const answer = (ANSWERS as readonly string[]).includes(String(values['answer'])) ? values['answer'] as Answer : 'accept'
+    // «Неизвестно»: обработчик не подтвердил успех (`commit` не вызван) —
+    // библиотека не выдаёт это за успех, исход `unknown`, повтор не советуется.
+    if (answer === 'unknown') return {}
+    // Считаются только созданные: черновик аккаунта не создаёт.
+    if (intent === 'submit') demo.incr('created', Infinity)
     commit()
+    // «Переход»: адрес уходит в `Result.redirect`; без JS маршрут отвечает 303,
+    // с JS страница переходит сама (`+page.svelte`).
+    if (answer === 'redirect') return { data: { email: values['email'] }, redirect: '/form?sent=1' }
     return { data: { email: values['email'] } }
   },
 })

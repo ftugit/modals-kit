@@ -133,9 +133,13 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // `editor.ts`, `form.apply`/`form.rows`/`form.custom`, продолжение, стратегия файлов, devtools,
 // `createAppSource`, пометка `fresh`). Факт: весь JS 252.9 (−1.2), immutable 266.6, /form 175.0,
 // /modals 175.3, /paginator 210.9, /db-demo 208.5, /fields 169.9. Лимиты опущены до факт + 0.5.
+// REVISION 2026-10-16, ход 241 (демо `/form` покрывает остальное lib/form: url, период дат,
+// время, ползунок `RangeField`, цвет, файлы списком, скрытое `HiddenField`, видимость,
+// проверка части полей, ответы сервера, описания опций панели). Весь JS +2.7 (255.6),
+// immutable 269.3, /form 177.7 (+2.7). По постоянному решению (≤ +5, сообщить): факт + 0.5.
 const LIMITS = {
-  allImmutableGzip: 267.1 * KiB,
-  allJsGzip: 253.4 * KiB,
+  allImmutableGzip: 269.8 * KiB,
+  allJsGzip: 256.1 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -143,7 +147,7 @@ const LIMITS = {
 
 const ROUTE_LIMITS = {
   '/': 143 * KiB,
-  '/form': 175.5 * KiB,
+  '/form': 178.2 * KiB,
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)

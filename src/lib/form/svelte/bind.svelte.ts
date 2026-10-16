@@ -463,7 +463,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(id).action)
     return {
       name: desc.policy.envelopeKeys.intent, value: id,
-      ...(descriptor?.validate === 'none' ? { formnovalidate: true } : {}),
+      // Браузер проверяет ВСЕ поля по атрибутам: действие, которое проверяет не всё
+      // (без проверки, без обязательности, часть полей), он заблокировал бы без JS.
+      ...(descriptor && (descriptor.validate !== 'full' || descriptor.relax?.length || descriptor.subset)
+        ? { formnovalidate: true } : {}),
       ...(snapshot.pending ? { disabled: true, 'aria-busy': true as const } : {}),
     }
   }
