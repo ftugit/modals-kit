@@ -179,11 +179,11 @@
 | `async.ts` | 234 | 9 | прочитан | Ход 10: F21 (6068f80); ход 11: B7 (f1d90b3) — кэш ≤ CACHE_MAX=200, вытеснение старейших. Было 8. Остаётся: 2 дубля JSDoc (K10). | setTimeout×2, any×1 |
 | `builtins.ts` | 219 | 9 | прочитан | numberType ставит inputmode=numeric на type=number: моб. клавиатура без точки/минуса, ядро их принимает (на устройстве не проверено) |  |
 | `constraints.ts` | 77 | 10 | прочитан | словарь видов ограничений + opaque; без замечаний |  |
-| `continuation.ts` | 110 | 9 | прочитан | дубли JSDoc; иначе образцово |  |
+| `continuation.ts` | 110 | 9 | прочитан | дубли JSDoc; иначе образцово | **удалён в ходе 237** (не использовался) |
 | `decode.ts` | 66 | 9 | прочитан | безвредный каст val as string |  |
 | `describe.ts` | 371 | 9 | прочитан | attrsOf отдаёт кэшированный изменяемый объект; checkFieldDefinition без JSDoc | any×2 |
-| `devtools.ts` | 102 | 9 | прочитан | unknownKind считается по подстроке текста 'не знает вида' — связь по сообщению |  |
-| `editor.ts` | 252 | 8 | прочитан | дубль JSDoc; InvariantError без name; reconcile: null-значение подменяется default |  |
+| `devtools.ts` | 102 | 9 | прочитан | unknownKind считается по подстроке текста 'не знает вида' — связь по сообщению | **удалён в ходе 237** (не использовался) |
+| `editor.ts` | 252 | 8 | прочитан | дубль JSDoc; InvariantError без name; reconcile: null-значение подменяется default | **удалён в ходе 237** (не использовался) |
 | `envelope.ts` | 87 | 9 | прочитан | specVersion Number() без проверки NaN (уходит в source.resolve) |  |
 | `errors.ts` | 155 | 9 | прочитан | K10: дубли JSDoc 69–72, 86–89 |  |
 | `external.ts` | 89 | 9 | прочитан | aliases[r.field] по обычному объекту (constructor/__proto__ из ответа службы → не-строковый path); дубль JSDoc 202–206 |  |
@@ -202,13 +202,13 @@
 | `schema.ts` | 56 | 9 | прочитан | K10: осиротевший дубль JSDoc 45–50 |  |
 | `server.test.ts` | 207 | — | ⏳ |  |  |
 | `server.ts` | 625 | 8 | прочитан | Ход 10: F16 (ac97fc1), F17 (e0c25b0), F18 (53ebff1, key обязателен), F19 (df5b4ab, reserve/release), detail (ef92227) исправлены; было 4. −1 F24 (на удержании): служебные intent'ы с mutate-schema сервер не применяет, спецполя нет. −1 K10: 2 дубля JSDoc, опечатка «Своий» (стр. 372) | ts-ignore/expect×1 |
-| `source.ts` | 129 | 8 | прочитан | revision = base.revision + version — коллизии (2+1 = 1+2); дубли JSDoc |  |
+| `source.ts` | 129 | 8 | прочитан | revision = base.revision + version — коллизии (2+1 = 1+2); дубли JSDoc || ход 237: `createAppSource` (и его `revision`) удалён, дубли JSDoc сняты |
 | `spec.ts` | 168 | 9 | прочитан | UNSAFE_PATTERN ловит только вложенный квантификатор, не альтернации ((a\|a)*); честно назван эвристикой |  |
 | `state.ts` | 115 | 9 | прочитан | Ход 10: F15 исправлен (05cd06f) — share() заходит только в простые объекты/массивы, тест File/Date; было 6. Остаётся: дубль JSDoc |  |
 | `strength.ts` | 143 | 8 | прочитан | K10: мёртвое выражение pool + (classes === 1 ? 0 : 0), стр. 52 |  |
 | `submit.ts` | 255 | 8 | прочитан | JSDoc от stale() приклеен к acquire(), у stale нет; abort() бросает ожидающих acquire без завершения промиса |  |
 | `types.ts` | 75 | 10 | прочитан | типы-бренды и HtmlAttrs; без замечаний |  |
-| `upload.ts` | 30 | 9 | прочитан | effectiveMode деградирует reference→inline; мелочи |  |
+| `upload.ts` | 30 | 9 | прочитан | effectiveMode деградирует reference→inline; мелочи | **удалён в ходе 237** (не использовался) |
 | `url.test.ts` | 61 | 9 | прочитан | кодек и согласие с POST-декодером проверены |  |
 | `url.ts` | 88 | 9 | прочитан | чистый кодек; без существенных замечаний |  |
 | `validate.ts` | 107 | 9 | прочитан | тихий catch неразрешённого валидатора; смягчено проверкой defineForm (spec.validator-invalid) |  |
