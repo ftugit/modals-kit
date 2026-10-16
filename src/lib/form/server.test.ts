@@ -282,10 +282,10 @@ suite('идемпотентность: параллельный повтор (F1
 })
 
 suite('поля из источника (F16)', () => {
-  const make = () => {
+  const make = (required = false) => {
     let loads = 0
     const store = {
-      load: async () => { loads++; return [{ name: 'color', input: 'text' as const, label: 'Цвет', rules: [{ rule: 'pattern', arg: 'e164' }] }] },
+      load: async () => { loads++; return [{ name: 'color', input: 'text' as const, label: 'Цвет', required, rules: [{ rule: 'pattern', arg: 'e164' }] }] },
       currentVersion: async () => 1,
     }
     const h = createFormHandler({
@@ -306,11 +306,18 @@ suite('поля из источника (F16)', () => {
 
   test('правила поля из источника действуют на сервере', async () => {
     const { h } = make()
-    // required у «свежего» поля в первом круге не навязывается (source.ts) — проверяем шаблон
     expect((await h(sent({ u_color: '+79991234567' }))).result.ok).toBe(true)
     const r = await h(sent({ u_color: 'red' }))
     expect(r.result.ok).toBe(false)
     expect(r.result.errors.map((e) => e.path)).toContain('u_color')
+  })
+
+  test('обязательное поле из источника: пустое значение отклоняет сервер', async () => {
+    const { h } = make(true)
+    const r = await h(sent({ u_color: '' }))
+    expect(r.result.ok).toBe(false)
+    expect(r.result.errors).toContainEqual(expect.objectContaining({ path: 'u_color', code: 'required' }))
+    expect((await h(sent({}))).result.errors.map((e) => `${e.path}:${e.code}`)).toContain('u_color:required')
   })
 
   test('поле, которого нет ни в базе, ни в источнике, по-прежнему отказ', async () => {

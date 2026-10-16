@@ -3,7 +3,7 @@
 // Набор полей НЕ приходит от клиента: сервер поднимает описание сам по
 // идентификатору и версии из конверта. Клиент, назначающий себе поля,
 // назначал бы себе проверки.
-import { applyOps, editor } from './editor'
+import { ageFields, applyOps, editor } from './editor'
 import type { FieldDescriptor, FormDescription } from './describe'
 import { compileFieldSpecs, type FieldSpec } from './spec'
 import type { FormId, InstanceId, Revision } from './types'
@@ -70,7 +70,9 @@ export function createAppSource(
         registry: d.registry, policy: d.policy, allowCustomPattern: o.allowCustomPattern,
       })
       if (!compiled.ok) throw new SpecSourceError(compiled.defects)
-      return appendFields(d, compiled.fields)
+      // Сохранённые поля не «новые в этом круге»: страница их уже показала (версия —
+      // из конверта). Пометка `fresh` здесь выключила бы `required` на сервере навсегда.
+      return ageFields(appendFields(d, compiled.fields))
     },
     async revision(ctx) {
       return need(ctx.formId).revision + (await store.currentVersion(ctx.formId))
