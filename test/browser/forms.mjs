@@ -18,7 +18,7 @@
  *  11. серверные слои: неизвестное поле отклоняется, идемпотентность;
  *  12. сложность пароля: оценка вместо шаблона, шкала совпадает с проверкой;
  *  14. ещё поля (url, период, время, ползунок, цвет, файлы, скрытое), видимость
- *      по значению, проверка части полей, ответы сервера (переход, «неизвестно»),
+ *      по значению, проверка части полей, ответы сервера (переход, очередь, «неизвестно»),
  *      описания опций панели; то же без скрипта.
  *  Поля, которые собирает пользователь, — `test/browser/fields.mjs` (страница `/fields`).
  */
@@ -641,6 +641,22 @@ ok('пути дают одинаковые ошибки',
   ok('«неизвестно»: успехом не показано', await upg.locator('text=Готово. Исход').count() === 0)
   await uctx.close()
 
+  // «в очереди»: ответ сразу, запись готова через 5 секунд — страница опрашивает сама
+  const qctx = await browser.newContext({ viewport: { width: 1280, height: 3600 } })
+  const { pg: qpg } = await open(qctx)
+  await pick(qpg, 'Ответ сервера', 'в очереди')
+  await fill(qpg, { ...valid, 'signup-email': 'queued@example.com' })
+  const t0 = Date.now()
+  await click(qpg, 'Создать аккаунт')
+  const sawQueued = await qpg.locator('[data-queued]').waitFor({ timeout: 5000 }).then(() => true).catch(() => false)
+  ok('очередь: сразу «Принято» и ссылка на статус',
+    sawQueued && /\/form\?job=/.test(await qpg.locator('[data-queued] a').getAttribute('href') ?? ''))
+  const done = await qpg.locator('text=Готово. Исход: committed').waitFor({ timeout: 12000 }).then(() => true).catch(() => false)
+  const took = Date.now() - t0
+  ok('очередь: через ~5 с запись успешна, баннер очереди снят',
+    done && took >= 4500 && await qpg.locator('[data-queued]').count() === 0, `${took} мс`)
+  await qctx.close()
+
   // без скрипта
   const nctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 3600 } })
   const npg = await nctx.newPage()
@@ -674,6 +690,30 @@ ok('пути дают одинаковые ошибки',
       age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
     },
   })
+  const queuedRes = await nctx.request.post(new URL('/form/submit', BASE).href, {
+    headers: { origin: new URL(BASE).origin },
+    multipart: {
+      __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
+      __form_submission: crypto.randomUUID(), intent: 'submit', answer: 'queued',
+      email: 'nojs-queued@example.com', password: 'longenough1', confirm: 'longenough1',
+      age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
+    },
+  })
+  const q = await queuedRes.json()
+  ok('сервер: «в очереди» — 202, исход queued, адреса опроса и статуса',
+    queuedRes.status() === 202 && q.outcome === 'queued' && /job=/.test(q.data?.pollUrl ?? '') && /job=/.test(q.data?.statusUrl ?? ''),
+    JSON.stringify({ status: queuedRes.status(), outcome: q.outcome, data: q.data }))
+  const early = await (await nctx.request.get(new URL(q.data.pollUrl, BASE).href)).json()
+  await npg.goto(new URL(q.data.statusUrl, BASE).href, { waitUntil: 'domcontentloaded' })
+  ok('без JS: статус заявки — ещё в очереди', early.done === false
+    && /ещё в очереди/.test(await npg.locator('[data-job-status]').innerText()))
+  await npg.waitForTimeout(5200)
+  await npg.reload({ waitUntil: 'domcontentloaded' })
+  const late = await (await nctx.request.get(new URL(q.data.pollUrl, BASE).href)).json()
+  ok('без JS: через 5 с заявка выполнена, опрос отдаёт итог committed',
+    /выполнена/.test(await npg.locator('[data-job-status]').innerText()) && late.done === true && late.result?.outcome === 'committed',
+    JSON.stringify(late))
+
   ok('без JS: «переход» — ответ 303 на /form?sent=1',
     redirect.status() === 303 && redirect.headers()['location'] === '/form?sent=1',
     `${redirect.status()} ${redirect.headers()['location']}`)

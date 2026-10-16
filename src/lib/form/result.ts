@@ -34,7 +34,7 @@ export interface Result<TData = unknown> {
   readonly instance: InstanceId
   /** Идентификатор отправки: ключ идемпотентности. */
   readonly submissionId: SubmissionId
-  /** Прошла ли проверка и фиксация. */
+  /** Прошла ли проверка и фиксация (у `queued` — принята заявка, итог позже). */
   readonly ok: boolean
   /** HTTP-код из политики статусов. */
   readonly status: number
@@ -61,6 +61,13 @@ export interface Result<TData = unknown> {
   readonly from: 'action' | 'fetch'
 }
 
+
+/**
+ * Исход окончателен для этого `submissionId` (зафиксировано, неизвестно, принято в
+ * очередь): следующая отправка — новая операция с новым id, иначе сервер вернёт кэш.
+ */
+export const isSettled = (r: Result): boolean =>
+  r.outcome === 'committed' || r.outcome === 'unknown' || r.outcome === 'queued'
 
 /**
  * FNV-1a по стабильной сериализации: одинаковые параметры — одинаковый `id`.

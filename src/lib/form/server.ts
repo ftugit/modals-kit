@@ -8,6 +8,7 @@ import type { FormDescription } from './describe'
 import type { MessageDictionary } from './messages'
 import { formRenderer } from './messages-order'
 import { normalizeErrors, stableId, type FormError, type Outcome, type Result } from './result'
+import { assertQueuedProtocol, type QueuedData } from './queued'
 import { issueError, runSchema, type IssueLike, type StandardSchemaLike } from './schema'
 import type { DescriptionSource } from './source'
 import { evaluate } from './submit'
@@ -539,8 +540,20 @@ export interface HandlerOptions<T = unknown, E = unknown> {
   observe?: (e: Record<string, unknown>) => void
   /** Свой порядок слоёв. Обязательные выбрасывать нельзя. */
   order?: readonly Layer[]
-  /** Бизнес-действие: обязано позвать `commit()` или `fail()`. */
-  execute(ctx: ExecuteContext): Promise<{ data?: T; redirect?: string }> | { data?: T; redirect?: string }
+  /**
+   * Бизнес-действие: обязано позвать `commit()` или `fail()`. Принятая в очередь
+   * заявка — тоже `commit()` (заявка записана) плюс `queued`: исход `queued`, адреса
+   * опроса уходят в `Result.data` (`queuedData`).
+   */
+  execute(ctx: ExecuteContext): Promise<ExecuteOutput<T>> | ExecuteOutput<T>
+}
+
+/** Ответ бизнес-действия: данные, переход или заявка в очереди. */
+export interface ExecuteOutput<T = unknown> {
+  data?: T
+  redirect?: string
+  /** Результат будет позже: опрос `pollUrl`, без скрипта — ссылка `statusUrl`. */
+  queued?: QueuedData
 }
 
 export interface Handled<T = unknown> { result: Result<T>; status: number }
@@ -726,7 +739,7 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       }
       let committed = false
       const afters: Array<() => Promise<void> | void> = []
-      let out: { data?: T; redirect?: string }
+      let out: ExecuteOutput<T>
 
       try {
         out = await o.execute({
@@ -785,12 +798,16 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
         }
       }
 
-      const result = withId({
-        ok: true, status: status.ok, outcome: 'committed',
-        data: out.data, redirect: safeRedirect(out.redirect),
-      })
+      // Очередь: принято, итог позже. Без адресов опроса исход — тупик (ошибка разработки).
+      const result = out.queued
+        ? withId({ ok: true, status: status.queued, outcome: 'queued', data: out.queued as T })
+        : withId({
+          ok: true, status: status.ok, outcome: 'committed',
+          data: out.data, redirect: safeRedirect(out.redirect),
+        })
+      assertQueuedProtocol(result)
       if (o.idempotency) await o.idempotency.put(submissionId, result, IDEMPOTENCY_TTL_MS)
-      return finish({ status: status.ok, result })
+      return finish({ status: result.status, result })
     } catch (e) {
       // Текст исключения (адреса, логины БД, пути) клиенту не отдаётся.
       failure = e

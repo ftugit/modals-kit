@@ -35,9 +35,10 @@ export interface EnvelopeKeys {
   readonly intent: string
 }
 
-/** Канонические HTTP-коды исходов: ок, проверка не прошла, «неизвестно», прервано. */
+/** Канонические HTTP-коды исходов: ок, принято в очередь, проверка не прошла, «неизвестно», прервано. */
 export interface StatusPolicy {
   readonly ok: number
+  readonly queued: number
   readonly validationFailed: number
   readonly unknown: number
   readonly aborted: number
@@ -77,7 +78,7 @@ export const defaultPolicy: FormPolicy = {
     id: '__form_id', rev: '__form_rev', instance: '__form_instance',
     submission: '__form_submission', spec: '__form_spec', intent: 'intent',
   },
-  status: { ok: 200, validationFailed: 422, unknown: 0, aborted: 0 },
+  status: { ok: 200, queued: 202, validationFailed: 422, unknown: 0, aborted: 0 },
   intent: {
     format: (action, arg) => (arg === undefined ? action : `${action}:${arg}`),
     parse: (raw) => {

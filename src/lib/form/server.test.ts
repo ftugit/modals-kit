@@ -567,3 +567,36 @@ suite('pick и prepare', () => {
       .toThrow(/prepare\.title: обязан быть функцией/)
   })
 })
+
+suite('очередь: принято, итог позже', () => {
+  test('execute с queued даёт исход queued, 202 и адреса опроса в data', async () => {
+    const h = createFormHandler({
+      description: base,
+      execute: (c) => { c.commit(); return { queued: { pollUrl: '/p?job=1', statusUrl: '/s?job=1', etaMs: 5000 } } },
+    })
+    const { result, status } = await h(post({ ...envelopeOf(), name: 'a' }))
+    expect(status).toBe(202)
+    expect(result).toMatchObject({ ok: true, outcome: 'queued', status: 202,
+      data: { pollUrl: '/p?job=1', statusUrl: '/s?job=1', etaMs: 5000 } })
+  })
+
+  test('без commit заявка не принята: исход «неизвестно»', async () => {
+    const h = createFormHandler({
+      description: base, execute: () => ({ queued: { pollUrl: '/p', statusUrl: '/s' } }),
+    })
+    expect((await h(post({ ...envelopeOf(), name: 'a' }))).result.outcome).toBe('unknown')
+  })
+
+  test('очередь без адресов — ошибка разработки, наружу без текста исключения', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const h = createFormHandler({
+      description: base,
+      execute: (c) => { c.commit(); return { queued: { pollUrl: '', statusUrl: undefined as never } } },
+    })
+    const { result } = await h(post({ ...envelopeOf(), name: 'a' }))
+    expect(result.ok).toBe(false)
+    expect(result.outcome).toBe('committed')
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
+  })
+})

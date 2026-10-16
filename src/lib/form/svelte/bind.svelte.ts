@@ -9,7 +9,7 @@ import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type
 import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
 import { formRenderer } from '../messages-order'
-import { normalizeErrors, type FormError, type Result } from '../result'
+import { isSettled, normalizeErrors, type FormError, type Result } from '../result'
 import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
 import { FormStore, initialState, type FormState } from '../state'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
@@ -215,7 +215,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     const shown = display(result.errors, ctx)
     store.set((s) => ({
       ...s,
-      status: result.ok ? 'success' : result.outcome === 'queued' ? 'queued' : 'error',
+      status: result.outcome === 'queued' ? 'queued' : result.ok ? 'success' : 'error',
       pending: false, pendingIntent: undefined,
       result, outcome: result.outcome,
       facts: result.errors, shown: shown.errors, removed: shown.removed,
@@ -236,7 +236,8 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     if (!result || result === lifted) return
     if (result.formId !== desc.id || result.instance !== instance) return
     lifted = result
-    submissionId = result.submissionId
+    // окончательный итог (без JS, опрос очереди) — следующая отправка с новым id
+    submissionId = isSettled(result) ? crypto.randomUUID() : result.submissionId
     applyResult(result)
   }
 
@@ -587,11 +588,8 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     store.set((s) => (s.progress === undefined ? s : { ...s, progress: undefined }))
 
     applyResult(result, data)
-    // Один id защищает только одну логическую отправку. После окончательного
-    // исхода следующая отправка должна получить новый id, иначе сервер вернёт
-    // кэш предыдущей операции.
-    if (result.outcome === 'committed' || result.outcome === 'unknown')
-      submissionId = crypto.randomUUID()
+    // один id — одна логическая отправка (`isSettled`)
+    if (isSettled(result)) submissionId = crypto.randomUUID()
     return result
   }
 

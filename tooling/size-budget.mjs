@@ -137,9 +137,11 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // время, ползунок `RangeField`, цвет, файлы списком, скрытое `HiddenField`, видимость,
 // проверка части полей, ответы сервера, описания опций панели). Весь JS +2.7 (255.6),
 // immutable 269.3, /form 177.7 (+2.7). По постоянному решению (≤ +5, сообщить): факт + 0.5.
+// Ход 242 (симуляция очереди на `/form`: опрос `pollUntilDone`, итог в форму): +1.0 —
+// весь JS 256.6, immutable 270.3, /form 178.7 (всего +3.7 к ходу 237). Лимиты = факт + 0.5.
 const LIMITS = {
-  allImmutableGzip: 269.8 * KiB,
-  allJsGzip: 256.1 * KiB,
+  allImmutableGzip: 270.8 * KiB,
+  allJsGzip: 257.1 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -147,7 +149,7 @@ const LIMITS = {
 
 const ROUTE_LIMITS = {
   '/': 143 * KiB,
-  '/form': 178.2 * KiB,
+  '/form': 179.2 * KiB,
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)

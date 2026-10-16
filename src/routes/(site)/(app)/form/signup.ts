@@ -8,7 +8,7 @@ import { emailTaken, inn, luhn } from '#lib/components/form/extend.js'
  * Настройка на стороне адаптера развела бы пути — сервер о ней не знает.
  */
 /** Ответы, которые умеет изобразить демо-сервер (`handle.ts`). */
-export const ANSWERS = ['accept', 'redirect', 'unknown'] as const
+export const ANSWERS = ['accept', 'redirect', 'queued', 'unknown'] as const
 export type Answer = (typeof ANSWERS)[number]
 
 function make(cardinality: 'first' | 'all') {

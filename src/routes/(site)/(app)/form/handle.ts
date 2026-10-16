@@ -8,6 +8,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import {
   createFormHandler, storeIdempotency, windowThrottle, type Handled,
 } from '#lib/form/server.js'
+import type { PollOutcome, Result } from '#lib/form/index.js'
 import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import '#lib/components/form/extend.js'
@@ -35,6 +36,36 @@ const throttle = windowThrottle<RequestEvent>({
 const demo = localStore.scope('demo-form:stats', { max: 16 })
 export const createdCount = (): number => demo.get<number>('created') ?? 0
 
+/* ── очередь (симуляция) ────────────────────────────────────────────
+   «В очереди»: сервер принимает заявку и отвечает сразу, а запись становится
+   успешной через QUEUE_DELAY_MS. Таймеров нет: готовность — сравнение времени
+   при опросе. Заявка живёт сутки, потолок — 1000 заявок. */
+export const QUEUE_DELAY_MS = 5_000
+const QUEUE_TTL_MS = 24 * 60 * 60 * 1000
+interface Job { readyAt: number; email: unknown; done: boolean; count: boolean }
+const jobs = localStore.scope('demo-form:jobs', { max: 1_000 })
+
+/** Состояние заявки: `undefined` — заявки нет (истекла или чужой адрес). */
+export function jobStatus(id: string): PollOutcome | undefined {
+  const job = jobs.get<Job>(id)
+  if (!job) return undefined
+  const left = job.readyAt - Date.now()
+  if (left > 0) return { done: false, retryAfterMs: Math.min(left, 1_000) }
+  if (!job.done) {
+    // запись «случилась»: считаем один раз, при первом опросе после срока
+    if (job.count) demo.incr('created', Infinity)
+    jobs.set(id, { ...job, done: true }, QUEUE_TTL_MS)
+  }
+  // Итог очереди собирает приложение: та же форма и экземпляр, иначе связка его
+  // не примет (`lift`); значения пустые — в полях остаётся набранное.
+  const result: Result = {
+    v: 1, formId: signup.id, instance: `${signup.id}:new`, submissionId: id,
+    ok: true, status: 200, outcome: 'committed', errors: [], values: {},
+    revision: signup.revision, from: 'fetch', data: { email: job.email },
+  }
+  return { done: true, result }
+}
+
 const handler = createFormHandler<unknown, RequestEvent>({
   description: signup,
   // Режим ошибок — версия описания из конверта (`__form_spec`): страница, открытая до
@@ -57,6 +88,15 @@ const handler = createFormHandler<unknown, RequestEvent>({
     // «Неизвестно»: обработчик не подтвердил успех (`commit` не вызван) —
     // библиотека не выдаёт это за успех, исход `unknown`, повтор не советуется.
     if (answer === 'unknown') return {}
+    // «В очереди»: заявка принята (`commit`), запись — через 5 секунд. Адрес
+    // опроса — для скрипта, адрес статуса — ссылка без него.
+    if (answer === 'queued') {
+      const job = crypto.randomUUID()
+      jobs.set(job, { readyAt: Date.now() + QUEUE_DELAY_MS, email: values['email'], done: false,
+                     count: intent === 'submit' }, QUEUE_TTL_MS)
+      commit()
+      return { queued: { pollUrl: `/form/submit?job=${job}`, statusUrl: `/form?job=${job}`, etaMs: QUEUE_DELAY_MS } }
+    }
     // Считаются только созданные: черновик аккаунта не создаёт.
     if (intent === 'submit') demo.incr('created', Infinity)
     commit()

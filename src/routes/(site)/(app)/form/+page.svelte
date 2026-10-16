@@ -12,8 +12,8 @@ import { asLink } from '#lib/components/links/index.js'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
-    createRegistry, defaultRegistry, defineForm, field, isVisible,
-    type FormDescription,
+    createRegistry, defaultRegistry, defineForm, field, isVisible, pollUntilDone, queuedData,
+    type FormDescription, type PollOutcome,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
   import { checks, forms, formsCustomUi } from '#lib/components/form/forms.config.js'
@@ -24,7 +24,10 @@ import { asLink } from '#lib/components/links/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import Field from '#lib/components/form/Field.svelte'
 
-  let { form: actionResult }: { form?: { result?: Result } | null } = $props()
+  let { form: actionResult, data }: {
+    form?: { result?: Result } | null
+    data: { job: { done: boolean } | { missing: true } | null }
+  } = $props()
 
   /** Снимок результата действия на момент связывания — читается намеренно один раз. */
   const initialResult = untrack(() => actionResult?.result ?? null)
@@ -87,6 +90,7 @@ import { asLink } from '#lib/components/links/index.js'
     answer: {
       accept: 'сервер сохраняет и отвечает «готово»',
       redirect: 'сервер сохраняет и велит перейти на другой адрес: со скриптом переходит страница, без него — ответ 303',
+      queued: 'сервер принимает заявку и отвечает сразу, а запись готова через 5 секунд: страница сама спрашивает, готово ли; без скрипта — ссылка на статус',
       unknown: 'сервер не подтвердил успех: исход «неизвестно», повтор может задвоить запись; событие уходит в канал системных ошибок',
     },
   }
@@ -168,6 +172,7 @@ import { asLink } from '#lib/components/links/index.js'
         options: [
           { value: 'accept', label: 'принято' },
           { value: 'redirect', label: 'переход' },
+          { value: 'queued', label: 'в очереди' },
           { value: 'unknown', label: 'неизвестно' },
         ],
       }),
@@ -313,6 +318,28 @@ import { asLink } from '#lib/components/links/index.js'
   })
   const sent = $derived(page.url.searchParams.get('sent') === '1')
 
+  // Очередь: пока исход `queued`, спрашиваем сервер по `pollUrl` (пауза — от него,
+  // `pollUntilDone`); итог поднимается в форму как обычный результат. Уход со
+  // страницы или новая отправка обрывают опрос.
+  const queued = $derived(form.state.status === 'queued' && form.state.result ? queuedData(form.state.result) : undefined)
+  const poll = async (url: string, signal?: AbortSignal): Promise<PollOutcome> => {
+    const r = await fetch(url, { signal, headers: { accept: 'application/json' } })
+    if (!r.ok) throw new Error(`опрос очереди: HTTP ${r.status}`)
+    return r.json()
+  }
+  let pollFailed = $state(false)
+  $effect(() => {
+    const q = queued
+    if (!q) return
+    const bound = form
+    const stop = new AbortController()
+    pollFailed = false
+    pollUntilDone(q, poll, { signal: stop.signal })
+      .then((final) => { if (final) bound.lift(final); else if (!stop.signal.aborted) pollFailed = true })
+      .catch(() => { if (!stop.signal.aborted) pollFailed = true })
+    return () => stop.abort()
+  })
+
   // Видимость — то же условие, что считает сервер: без скрипта поле появится
   // после отправки с отмеченным флажком.
   const companyVisible = $derived(isVisible(description.byName['company']?.visibleWhen, form.state.values))
@@ -407,7 +434,23 @@ import { asLink } from '#lib/components/links/index.js'
             Сервер велел перейти сюда: <code>/form?sent=1</code>. <a class="underline" href="/form">Открыть форму заново</a>
           </div>
         {/if}
-        {#if checked}
+        {#if data.job}
+          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-job-status>
+            {#if 'missing' in data.job}
+              Заявки нет: срок хранения истёк или адрес неверный.
+            {:else if data.job.done}
+              Заявка выполнена: запись сохранена.
+            {:else}
+              Заявка ещё в очереди. Обновите страницу через несколько секунд.
+            {/if}
+          </div>
+        {/if}
+        {#if queued}
+          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-queued role="status">
+            Принято. Запись будет готова примерно через {Math.round((queued.etaMs ?? 0) / 1000)} с{pollFailed ? '' : ' — спрашиваем сервер…'}
+            <a class="underline" href={queued.statusUrl}>Статус заявки</a>
+          </div>
+        {:else if checked}
           <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-checked>
             Почта и телефон в порядке. Остальные поля не проверялись.
           </div>
