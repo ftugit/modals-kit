@@ -37,32 +37,22 @@ const demo = localStore.scope('demo-form:stats', { max: 16 })
 export const createdCount = (): number => demo.get<number>('created') ?? 0
 
 /**
- * Разворот описания по фактическому составу данных — серверная половина
- * операций клиента (README библиотеки: «тот же SchemaOp применяется в памяти
- * при перехвате и на сервере при нативной отправке»). Строка повторяемой
- * группы и пользовательское `u_`-поле приходят в теле, когда клиент уже
- * применил операции до отправки. Валидаторы строк — из СЕРВЕРНОГО шаблона
- * группы, клиент передаёт только ключ; `u_`-поля принимаются как значения
- * без серверной проверки: их правила живут в реестре клиента, постоянное
- * хранение — `createAppSource` с `UserFieldStore`.
+ * Строки повторяемой группы по ключам из тела: клиент добавил строку до отправки.
+ * Валидаторы строк — из СЕРВЕРНОГО шаблона группы, клиент передаёт только ключ.
+ * Поля, которые собирает пользователь, живут на `/fields` (`defineFieldKit` +
+ * `createAppSource`): набор поднимает сервер, а не тело запроса.
  */
 function expandFor(base: FormDescription, form: FormData | null): FormDescription {
   if (!form) return base
   const ops: SchemaOp[] = []
   const rows = new Set<string>()
   const groups = new Set(Object.keys(groupRows(base.fields)))
-  let order = base.fields.length
   for (const key of form.keys()) {
     if (typeof key !== 'string' || base.byName[key]) continue
     const m = /^([a-z][a-z0-9_]*)\.([a-z0-9_]+)\./.exec(key)
     if (m && groups.has(m[1]!) && !rows.has(m[2]!)) {
       rows.add(m[2]!)
       ops.push(editor.addRow(m[1]!, m[2]!))
-    } else if (key.startsWith('u_')) {
-      ops.push(editor.add({
-        name: key, kind: 'text', input: 'text', label: key,
-        order: ++order, validators: [],
-      }))
     }
   }
   return ops.length ? applyOps(base, ops) : base

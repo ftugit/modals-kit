@@ -19,7 +19,6 @@ function make(cardinality: 'first' | 'all') {
       // операции над набором полей — такие же действия, но без проверки
       { id: 'add-row', label: '+ позиция', validate: 'none', sideEffect: 'mutate-schema' },
       { id: 'remove-row', validate: 'none', sideEffect: 'mutate-schema' },
-      { id: 'add-field', label: '+ поле', validate: 'none', sideEffect: 'mutate-schema' },
     ],
     fields: {
       email: field.email({

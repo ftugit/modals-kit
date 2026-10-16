@@ -10,7 +10,7 @@ import { asLink } from '#lib/components/links/index.js'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
-    compileFieldSpec, createRegistry, defaultRegistry, defineForm, editor, field,
+    createRegistry, defaultRegistry, defineForm, editor, field,
     type FormDescription,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
@@ -244,24 +244,6 @@ import { asLink } from '#lib/components/links/index.js'
       .map(([k, val]) => (val === true ? k : `${k}="${val}"`))
       .join(' ') || '—'
 
-  /**
-   * Поле из рантайма: приложение отдаёт СПЕЦИФИКАЦИЮ, библиотека её
-   * компилирует и проверяет. Функции в спецификации запрещены.
-   */
-  let runtimeCount = 0
-  function addRuntimeField() {
-    const compiled = compileFieldSpec({
-      name: `extra${++runtimeCount}`,
-      input: 'tel',
-      label: `Телефон ${runtimeCount}`,
-      help: 'Создано в рантайме: шаблон пришёл из реестра приложения',
-      required: true,
-      rules: [{ rule: 'pattern', arg: 'e164' }],
-    }, { registry: defaultRegistry, policy: description.policy })
-    if (!compiled.ok) { console.error(compiled.defects); return }
-    form.apply([editor.add(compiled.field)])
-  }
-
   /* Смена обработчика — реакция на действие пользователя, а не на состояние
      (C3): «всё в общий» переставляет источник подсветки (пишем В ЗЕРКАЛО, чтобы
      селектор показывал актуальное значение) и перекрашивает уже показанные
@@ -364,18 +346,7 @@ import { asLink } from '#lib/components/links/index.js'
           </Button>
         </Fieldset>
 
-        <!-- поле, созданное в рантайме: та же операция, те же атрибуты -->
-        {#if form.custom().length}
-          <div class="grid gap-4 sm:grid-cols-2">
-            {#each form.custom() as f (f.name)}<Field of={f} />{/each}
-          </div>
-        {/if}
-
         <div class="flex flex-wrap gap-2">
-          <Button variant="outline"
-                  onclick={addRuntimeField}>
-            + Поле из рантайма
-          </Button>
           <Button type="submit" {...form.intent('submit')} task={formTask(form.state, 'submit')}>
             {form.state.pendingIntent === 'submit' ? 'Отправка…' : 'Создать аккаунт'}
           </Button>
