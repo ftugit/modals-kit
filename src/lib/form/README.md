@@ -964,9 +964,27 @@ defineForm({ id: 'signup', policy, fields: { /* … */ } })
 | `unknown` | сеть упала в полёте, `execute` упал или не позвал `commit()` | **не** отправлять повторно; адаптер сообщает в `onError` (`outcome-unknown`) |
 | `queued` | принято, результат позже | опрос (`pollUntilDone`) или ссылка `statusUrl` без скрипта |
 
-`createFormHandler` исход `queued` пока не выдаёт: `execute` возвращает только
-успех (`commit()`) или отказ. Протокол очереди (`queuedData`, `assertQueuedProtocol`,
-`pollUntilDone`) есть в ядре для собственного приёмника.
+Очередь: `execute` зовёт `commit()` (заявка записана) и возвращает `queued` с адресами.
+Ответ — `202`, исход `queued`, адреса — в `Result.data` (`queuedData(result)`); без
+`pollUrl`/`statusUrl` это ошибка разработки (`assertQueuedProtocol`). Опрашивает
+страница: `pollUntilDone` берёт паузу из ответа сервера и возвращает итоговый `Result`,
+его поднимает `form.lift(итог)`. Связка после `queued`, как и после `committed`/`unknown`,
+берёт новый `submissionId`.
+
+```ts
+// сервер
+async execute({ values, commit }) {
+  const job = await enqueue(values)          // ваша очередь
+  commit()
+  return { queued: { pollUrl: `/jobs/${job}.json`, statusUrl: `/jobs/${job}`, etaMs: 5000 } }
+}
+// страница: опрос, пока исход queued; ответ опроса — { done, retryAfterMs } или { done, result }
+const q = form.state.result && queuedData(form.state.result)
+if (q) pollUntilDone(q, (url, signal) => fetch(url, { signal }).then((r) => r.json()), { signal })
+  .then((final) => final && form.lift(final))
+```
+
+Пример — `/form`, «Ответ сервера» → «в очереди» (`handle.ts` `jobStatus`).
 
 Переход после успеха: `execute` возвращает `{ redirect: '/путь' }`, библиотека
 пропускает только адрес своего сайта (`Result.redirect`). Переходит маршрут или
