@@ -1,8 +1,9 @@
 // Запуск: node src/lib/db/probes/chain-acl-keys.sim.mjs (из корня проекта). Итоги — docs/design/model-automation.md §14.
-// Симуляция «права по переданным ключам» (модель владельца, ход 214): права связи включаются
-// ключом, переданным в запрос. Ключ «владелец» — сравнить с текущим пользователем; ключ
-// «запись» — спросить у записи её правило. Запись/изменение/удаление по id — ключи берутся из
-// самой строки. Запрос без единого ключа доступа — отказ (иначе права обходятся).
+// Симуляция «права по переданным ключам» (модель владельца, ходы 214–215): права связи
+// включаются ключом, переданным в запрос; без ключей — всё (это ORM, а не API). Ключ «владелец» —
+// сравнить с текущим пользователем; ключ «запись» — спросить у записи её правило. Вставка —
+// все ключи обязательны и проходят все. Изменение/удаление по id — ключи из самой строки,
+// достаточно одного разрешающего (автор ИЛИ тот, кому разрешает запись).
 import { PGlite } from '@electric-sql/pglite'
 
 const db = new PGlite()
@@ -33,12 +34,14 @@ const ask = async (sql) => (await db.query(`SELECT (${sql}) AS ok`)).rows[0].ok
 // Ключи доступа модели комментария.
 const access = {
   author_id: { check: async (me, v) => v === me },                       // «владелец» = я
-  post_id: { check: async (me, v, op) => ask(postRules[op === 'insert' ? 'comment' : 'select'](me, v)) },
+  // правило записи по операции комментария; нет правила — ключ эту операцию не разрешает
+  post_id: { rules: { select: 'select', insert: 'comment', delete: 'update' },
+    check: async (me, v, op) => { const r = access.post_id.rules[op]; return r ? ask(postRules[r](me, v)) : false } },
 }
 const ERR = 'отказ'
 async function list(me, keys) {
   const used = Object.keys(keys).filter((k) => k in access)
-  if (!used.length) return `${ERR}: нет ключа доступа (author_id или post_id)`
+  if (!used.length) return (await db.query(`SELECT id FROM comments WHERE deleted_at IS NULL ORDER BY id`)).rows.map((r) => r.id)
   for (const k of used) if (!(await access[k].check(me, keys[k], 'select'))) return `${ERR}: ${k} недоступен`
   const where = used.map((k) => `${k} = ${q(keys[k])}`).join(' AND ')
   return (await db.query(`SELECT id FROM comments WHERE deleted_at IS NULL AND ${where} ORDER BY id`)).rows.map((r) => r.id)
@@ -51,12 +54,12 @@ async function insert(me, row) {
   await db.query(`INSERT INTO comments (id, post_id, author_id, body) VALUES (${q(row.id)}, ${q(row.post_id)}, ${q(row.author_id)}, 'x')`)
   return 'ok'
 }
-// Изменение/удаление по id: ключи — из самой строки; все ключи обязаны пройти.
+// Изменение/удаление по id: ключи — из самой строки; достаточно одного разрешающего.
 async function byId(me, id, op) {
   const row = (await db.query(`SELECT * FROM comments WHERE id = ${q(id)} AND deleted_at IS NULL`)).rows[0]
   if (!row) return `${ERR}: нет строки`
-  for (const k of Object.keys(access)) if (!(await access[k].check(me, row[k], op))) return `${ERR}: ${k} недоступен`
-  return 'ok'
+  for (const k of Object.keys(access)) if (await access[k].check(me, row[k], op)) return `ok (разрешил ${k})`
+  return `${ERR}: ни один ключ не разрешает`
 }
 // Удаление цепочкой от записи: у комментария правило удаления «я автор ИЛИ правлю запись».
 async function canDeleteForPost(me, post) {
@@ -78,12 +81,15 @@ log('8. C: пишет к P от себя', await insert('C', { id: 'n3', post_id
 log('9. C: пишет к P2 (режим «автор записи»)', await insert('C', { id: 'n4', post_id: 'P2', author_id: 'C' }))
 log('10. C: правит c1 (свой)', await byId('C', 'c1', 'update'))
 log('11. C: правит c2 (чужой)', await byId('C', 'c2', 'update'))
+log('11a. B (автор записи P): удаляет чужой c1', await byId('B', 'c1', 'delete'))
+log('11b. B: правит чужой c1', await byId('B', 'c1', 'update'))
 await db.exec(`update collections set read_mode = 'owner' where id = 'K'`)
 console.log('— A сделал K «для создателя» —')
 log('12. C: «мои» (author_id=C) — даже если выкинули', await list('C', { author_id: 'C' }))
 log('13. C: комментарии записи P (post_id=P)', await list('C', { post_id: 'P' }))
 log('14. C: мои в P (оба ключа)', await list('C', { post_id: 'P', author_id: 'C' }))
 log('15. C: правит свой c1', await byId('C', 'c1', 'update'))
+log('15a. C: все комментарии без ключей', await list('C', {}))
 log('16. C: пишет к P', await insert('C', { id: 'n5', post_id: 'P', author_id: 'C' }))
 log('17. A: комментарии записи P', await list('A', { post_id: 'P' }))
 log('18. B (автор P): комментарии своей записи P', await list('B', { post_id: 'P' }))
