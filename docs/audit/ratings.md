@@ -170,7 +170,7 @@
 | `rules.test.ts` | 105 | 10 | прочитан | Запрет поиска, несовместимые поля, противоречие режимов, полная проверка, отсутствие схемы (K7). **Ход 27 (C6) — удалён** вместе с `rules.ts`; тесты значений — в `catalog-filter.test.ts`, связок — в `lib/links/catalog.test.ts`. |  |
 | `rules.ts` | 163 | 9 | прочитан | Связки — одна чистая функция для источника и формы; противоречие режимов выведено из смысла `and`/`not` и честно помечено как подсказка (K3). −1 K10: проверка «все условия выполнены» повторена в четырёх функциях вместо `catalogFilterRuleFires`; `schema!` вместо сужения типа. **Ход 27 (C6) — удалён:** связки фильтров считает один словарь `lib/links/catalog.ts`; `catalogFilterValueMap` и типы переехали в `catalog-filter.ts`. |  |
 | `view.test.ts` | 397 | 9 | прочитан | Контролы из объявления, связки с причиной и виновником, патчи, адреса чипов и формы, счётчик (K7). −1 K10: опечатка в имени («несоступное»), одно имя теста по-английски среди русских. **Ход 27 (C6):** тесты удалённых `catalogFilterControls`/`catalogFilterFieldStates` убраны, связки панели проверяются по картине. |  |
-| `view.ts` | 413 | 9 | прочитан | Компонент получает готовую картину (контролы, чипы, причины, адреса, патчи) — логика не размазана по разметке; дроп подавленных значений у сборщика входа, как браузер без JS (K8, K6). −1 K10: текст `link.blocked` продублирован строкой (сознательно, «прибито» тестами), а разбор значений `filters.*` из extra существует в трёх почти одинаковых копиях (`readCatalogFilterValues`, `catalogFilterValueMap`, `catalogFilterFormData.read`). **Ход 27 (C6):** удалены мёртвые `catalogFilterControls`/`catalogFilterFieldStates` и дубль текста `link.blocked`; картина панели и сборщик чипа считают связки словарём `lib/links/catalog.ts`. |  |
+| `view.ts` | 240 | 9 | прочитан | Компонент получает готовую картину (контролы, чипы, причины, адреса, патчи) — логика не размазана по разметке; дроп подавленных значений у сборщика входа, как браузер без JS (K8, K6). −1 K10: текст `link.blocked` продублирован строкой (сознательно, «прибито» тестами), а разбор значений `filters.*` из extra существует в трёх почти одинаковых копиях (`readCatalogFilterValues`, `catalogFilterValueMap`, `catalogFilterFormData.read`). **Ход 27 (C6):** удалены мёртвые `catalogFilterControls`/`catalogFilterFieldStates` и дубль текста `link.blocked`; картина панели и сборщик чипа считают связки словарём `lib/links/catalog.ts`. |  |
 
 ## `src/lib/form/`
 
@@ -354,7 +354,7 @@
 | `PaginatorHost.svelte` | 623 | 8 | прочитан | Ход 10: C11 (d1a5087) — scrollDriver ставится в onMount и снимается в cleanup, режим накопления в Session стора, общий адаптер не мутируется; снапшот loading восстанавливает ядро (F13); было 6. −1: прямой импорт $lib/router/sveltekit в фреймворконезависимом слое (единственная точка D2, задокументировано). −1: 662 строки, хост совмещает жесты, триггеры и prepend-удержание | $effect×8, window/document×1, rAF×3, any×8, svelte-ignore×1, untrack×2 |
 | `PaginatorScope.svelte` | 33 | 9 | прочитан | Скоуп стора: снапшоты один раз через untrack. `typeof window` вместо `esm-env` (K8). | untrack×1 |
 | `PendingIndicator.svelte` | 42 | 10 | прочитан | Индикатор ожидания, чистый $derived. | untrack×1 |
-| `context.svelte.ts` | 243 | 9 | прочитан | Контекст и хуки на рунах; подписки в $effect (на SSR не исполняются). `typeof window` в `useScopeStore` (K8). | $effect×2 |
+| `context.svelte.ts` | 280 | 9 | прочитан | Контекст и хуки на рунах; подписки в $effect (на SSR не исполняются). `typeof window` в `useScopeStore` (K8). | $effect×2 |
 | `index.ts` | 30 | 10 | прочитан | Баррель Svelte-адаптера. |  |
 
 ## `src/lib/router/`
@@ -508,9 +508,9 @@
 
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
-| `ActiveFilters.svelte` | 79 | — | ⏳ |  |  |
+| `ActiveFilters.svelte` | 87 | — | ⏳ |  |  |
 | `CatalogFilterForm.svelte` | 235 | — | ⏳ |  | svelte-ignore×2 |
-| `FiltersPanel.svelte` | 166 | — | ⏳ |  |  |
+| `FiltersPanel.svelte` | 200 | — | ⏳ |  |  |
 | `index.ts` | 4 | — | ⏳ |  |  |
 
 ## `src/lib/ui/modals/`

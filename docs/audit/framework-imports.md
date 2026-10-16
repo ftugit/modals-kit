@@ -83,7 +83,7 @@ RESULT: STALE (bug)
 Видимый эффект: ссылка «сбросить» фильтров и форма без перехвата вернут старый размер страницы.
 Исправление в одну строку: `demoPreservedSearch(currentSearch())` через адаптер роутера
 (после `8369674` он отдаёт живой адрес). ~~Не исправлено~~ **Исправлено** (`9668989`, «F5: свежий поиск в
-preserved и action формы фильтров»); сейчас — `paginator/CatalogDemo.svelte`: `preserved={demoPreservedSearch(currentSearch())}`.
+preserved и action формы фильтров»); сейчас — `paginator/CatalogDemo.svelte`: `search={demoFilterSearch(currentSearch())}`, а ссылки и скрытые поля строит адаптер (`linkFor`, `carryFields`, ход 247).
 
 ## Смежное: зависимость `lib` от прикладной папки `src/content`
 
