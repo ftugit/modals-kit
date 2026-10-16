@@ -14,7 +14,7 @@ import { pgliteAdapter } from "../adapters/pglite";
 import { defineSchema } from "../sync/index";
 import { tableSpec } from "../sync/model";
 import { VALIDATED_PROOF, readProof, sameValue } from "../proof";
-import { rule } from "../resource";
+import { rule } from "../rules";
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000);
 
@@ -27,7 +27,7 @@ async function withDb(resources: Resource[], fn: (db: Database, pg: PGlite) => P
   await shared.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   const driver = pgliteAdapter(shared);
   assert.equal((await defineSchema({ resources }).sync(driver)).status, "ok");
-  await fn(createDb({ driver, limits: conservativeLimits }), shared);
+  await fn(createDb({ driver, limits: conservativeLimits, resources }), shared);
 }
 const ctx = { principal: { roles: [] as string[] } };
 const rules = { select: policy.publicRows(), insert: () => true, update: policy.publicRows(), delete: policy.publicRows() };
@@ -648,26 +648,25 @@ test("timestamps: liveCapabilities выводит, что опрашивать",
   assert.deepEqual(liveCapabilities(stamped({ timestamps: { createdAt: "created_at", updatedAt: "updated_at" } })), { inserted: true, updated: true, deleted: false });
 });
 
-test("timestamps: каскад мягкого удаления ставит детям время базы", () => {
-  const parent = stamped({
-    timestamps: { createdAt: "created_at", deletedAt: { field: "deleted_at", children: () => [{ resource: child, field: "parent_id", onDelete: "cascade" }] } },
-  });
+test("timestamps: цепочка ставит детям время базы; children — заменено цепочкой (ошибка объявления)", () => {
+  const parent = stamped({ timestamps: { createdAt: "created_at", deletedAt: "deleted_at" } });
   const child: Resource = defineResource({
     key: "t.rules.child",
     table: "public.rules_child",
     primaryKey: "id",
     fields: {
       id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ["eq"] }),
-      parent_id: f.uuid({ ...rw, required: true, filters: ["eq"] }),
+      parent_id: f.uuid({ ...rw, required: true, filters: ["eq"], db: { references: { resource: () => parent, chain: true } } }),
     },
     policy: rules,
     order: [["id", "asc"]],
     timestamps: { deletedAt: "deleted_at" },
   });
+  assert.match(tsIssues(() => stamped({ timestamps: { deletedAt: { field: "deleted_at", children: () => [] } } as never })), /children: заменено цепочкой/);
   return withDb([parent, child], async (db, pg) => {
     const p = (await db.resource(parent).insert(ctx, { title: "Родитель" })) as Record<string, string>;
     await db.resource(child).insert(ctx, { parent_id: p.id });
-    await db.resource(parent).delete(ctx, p.id);
+    await (await db.resource(parent).chain(ctx, p.id)).delete();
     const rows = await pg.query<{ deleted_at: Date | null }>("SELECT deleted_at FROM public.rules_child");
     assert.ok(rows.rows[0].deleted_at instanceof Date, "ребёнок помечен");
   });
@@ -777,7 +776,7 @@ test("without: путь, которого нет у модели, неизвес
     assert.match(await issues(["softDelete"]), /нет softDelete/);
     assert.match(await issues(["fields.*.fill"]), /нет полей с fill/);
     assert.match(await issues(["fields.title.color"]), /неизвестный путь/);
-    assert.match(await issues(["timestamps.deletedAt.children"]), /нет timestamps\.deletedAt\.children/);
+    assert.match(await issues(["timestamps.deletedAt.children"]), /неизвестный путь/);
     assert.match(await issues([]), /непустой список/);
     assert.equal(await api.without(["protect", "fields.secret.store"], (m) => m.behavior().off.join()), "protect,fields.secret.store");
   });

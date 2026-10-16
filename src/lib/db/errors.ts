@@ -73,6 +73,10 @@ export class DbFailure extends Error {
       committed?: boolean;
       /** Тексты из Standard Schema: только про присланные значения, не про БД. */
       issues?: readonly string[];
+      /** Цепочка удаления: звено, путь от корня (ключи моделей) и сколько строк упёрлось. */
+      model?: string;
+      path?: readonly string[];
+      count?: number;
     } = {},
     readonly cause?: unknown,
   ) {
@@ -94,7 +98,7 @@ export function normalizeFailure(error: unknown): DbFailure {
       ? e.code
       : undefined;
   let kind: FailureKind = "database";
-  if (code === "23505" || code === "23503") kind = "conflict";
+  if (code === "23505" || code === "23503" || code === "23001") kind = "conflict";
   else if (code === "23502" || code === "23514" || code?.startsWith("22"))
     kind = "validation";
   // Отказ прав НА СТОРОНЕ БД (триггер/RLS/GRANT) — это 403, а не «внутренняя ошибка».

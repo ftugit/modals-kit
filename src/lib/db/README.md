@@ -773,11 +773,13 @@ CHECK/индексы) не трогаются. Изменение схемы м�
 (pg, PGlite, Hyperdrive); без транзакций — `unsupported`. Роль из `DATABASE_URL` должна
 иметь право `CREATE` на схему.
 
-**Внешние ключи.** `db: { references: { resource: () => authors, field?: 'id', onDelete?: 'no action' | 'restrict' | 'cascade' | 'set null' } }`
+**Внешние ключи.** `db: { references: { resource: () => authors, field?: 'id', onDelete?: 'no action' | 'restrict', chain?: true } }`
 у поля. Ключ (имя `<таблица>_fk_<хеш>`) добавляется после всех таблиц и `NOT VALID` — старые
 строки без пары не мешают открытию, новые проверяются; пропал из модели — удаляется.
-`set null` требует `nullable`; `field` по умолчанию — первичный ключ цели. У таблиц без ключей
-отпечаток прежний. Нарушение (`23503`, вид `conflict`, 409): запись со ссылкой на несуществующую
+`field` по умолчанию — первичный ключ цели. База сама связанные строки не удаляет и не
+обнуляет (`cascade`/`set null` — ошибка объявления): это делает цепочка удаления (`chain: true`,
+§7); колонке такой ссылки строится индекс. У таблиц без ключей
+отпечаток прежний. Нарушение (`23503`/`23001`, вид `conflict`, 409): запись со ссылкой на несуществующую
 строку — ошибка поля с кодом `reference` (если поле пишет этот ctx), удаление строки, на которую
 ссылаются, — общая ошибка `referenced`; тексты — `messages` поля или словарь форм.
 
@@ -861,7 +863,7 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 `generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `fill` и `store` (§4), `filters`,
 `orderable`, `db` (`type`/`default`/`unique`, §6), `messages` (свои тексты ошибок по коду, §4). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
 `policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `restore` без своего — как `delete`), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
-`db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`, `canDelete`, `restore`,
+`db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`, `canDelete`, `chain`, `restore`,
 `insertMany`, `validator(ctx, 'insert' | 'update' | 'check')` (проверка без записи, §4), `without`, `behavior`, `raw` (ниже).
 `#lib/db/form.js`: `formParams(resource)` — параметры полей формы из модели (§4; переходник
 импортирует `lib/form`, ядро — нет).
@@ -911,8 +913,7 @@ api.behavior() // { timestamps: { createdAt, updatedAt, deletedAt }, live: { ins
 ```
 
 Пути — пути схемы: `policy`, `policy.<операция>`, `grants` (маски всех полей), `hooks`,
-`hooks.<хук>`, `checks`, `validateFinal`, `timestamps.createdAt|updatedAt|deletedAt`,
-`timestamps.deletedAt.children`, `softDelete`, `softDelete.children`,
+`hooks.<хук>`, `checks`, `validateFinal`, `timestamps.createdAt|updatedAt|deletedAt`, `softDelete`,
 `fields.<поле|*>.read|create|update|normalize|createValue|fill|store|required`; и `protect`
 (ниже). Выключенное поле метки клон не знает: `timestamps.updatedAt` — метка не двигается и не
 читается; `timestamps.deletedAt` — удаление навсегда и удалённые видны. Путь, которого у модели
@@ -951,12 +952,28 @@ await users.raw((u) => u.insertMany(ctx, rowsFromOldDb)) // свои id, дат�
 без удаления: `{ allowed: [ключи, которые этот ctx может удалить], soft }` (только живые строки,
 `soft` — удаление по умолчанию мягкое).
 
-`softDelete.children: () => [{ resource, field, onDelete }]` — что делать с дочерними записями
-при мягком удалении (`field` — поле ребёнка с ключом родителя). `cascade` помечает удалёнными
-детей, внуков и дальше (у ребёнка обязан быть `softDelete`, иначе `validation`; круг или
-глубже 8 уровней — `unsupported`); `restrict` отказывает `conflict` (409), пока есть
-неудалённые дети, и откатывает всё. Родитель и дети — одна транзакция; политики детей не
-применяются, как у каскада внешнего ключа в самой БД.
+**Цепочка удаления — `chain(ctx, id)`.** Ссылка-принадлежность `references: { resource: () => posts,
+chain: true }` (только на первичный ключ цели) говорит: строка живёт вместе с целью. Из таких
+ссылок моделей, переданных в `createDb({ resources })`, строится цепочка; круг принадлежности
+между моделями — ошибка `createDb` (ссылка модели на себя — дерево — можно). Без `resources` —
+`unsupported`. `chain` ничего не удаляет: возвращает корень и звенья с правами.
+
+```ts
+const plan = await posts.chain(ctx, id)
+// plan.root  { model, id, allowed, soft }
+// plan.links [{ model, path, ids, allowed, total, soft }]  — allowed: сколько из total можно удалить
+await plan.delete()                 // мягкий корень — все звенья мягко
+await plan.delete({ force: true })  // всё навсегда, и уже мягко удалённые дети
+```
+
+`plan.delete` в одной транзакции собирает цепочку заново с блокировкой строк и проверяет:
+корень или звено не разрешены правилом `delete` — `forbidden` с `{ model, path, count }`; при
+мягком удалении звено без мягкого удаления — `unsupported` с тем же. Удаляет с конца (дерево — с
+нижних уровней), корень последним; ошибка SQL откатывает всё. Звено с хуками или
+`validateFinal` удаляется по одной строке через свой `delete`, без них — одним запросом на
+уровень. Предел — `createDb({ chainRows })` строк (по умолчанию 10000) и 64 уровня. Уже мягко
+удалённый корень показывается для удаления навсегда (`root.soft: false`). Выключенное у
+экземпляра (`without`, `raw`) действует и на звенья.
 Строки `select` типизированы как `Partial<…>` — проекция вправе вернуть не все поля, а
 relations добавляются через `include`.
 
@@ -991,15 +1008,15 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 132 группы в семи файлах (на PGlite выполняются 131: одна группа требует
+Тесты слоя — 135 групп в семи файлах (на PGlite выполняются 134: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
-| `src/lib/db/test/db-sync.test.ts` | 26 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), `softDelete.children`, ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
-| `src/lib/db/test/db-rules.test.ts` | 32 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, каскад); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ force })` и `canDelete` |
+| `src/lib/db/test/db-sync.test.ts` | 29 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
+| `src/lib/db/test/db-rules.test.ts` | 32 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи, `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, цепочка ставит время базы); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ force })` и `canDelete` |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |

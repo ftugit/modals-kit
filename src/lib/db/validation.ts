@@ -445,8 +445,8 @@ function checkShape(r: Resource): void {
       push('softDelete.value: обязан быть (ctx) => значение — иначе метка удаляется как undefined');
     if (!isGrantShape(r.softDelete.readDeleted))
       push("softDelete.readDeleted: обязан быть Grant (иначе includeDeleted всегда запрещён)");
-    if (r.softDelete.children !== undefined && typeof r.softDelete.children !== "function")
-      push("softDelete.children: обязан быть () => [{ resource, field, onDelete }] — функция, чтобы ресурсы могли ссылаться друг на друга");
+    if ((r.softDelete as { children?: unknown }).children !== undefined)
+      push("softDelete.children: заменено цепочкой удаления — ссылка-принадлежность references: { resource, chain: true } и chain(ctx, id)");
   }
   if (r.db !== undefined)
     for (const kind of ["indexes", "unique"] as const) {
@@ -511,12 +511,16 @@ function checkShape(r: Resource): void {
         const ref = f.db.references;
         if (ref !== undefined) {
           if (!ref || typeof ref !== "object" || typeof ref.resource !== "function")
-            push(`fields.${name}.db.references: { resource: () => Resource, field?, onDelete? }`);
+            push(`fields.${name}.db.references: { resource: () => Resource, field?, onDelete?, chain? }`);
           else {
             if (ref.field !== undefined && (typeof ref.field !== "string" || !ref.field)) push(`fields.${name}.db.references.field: непустая строка`);
-            if (ref.onDelete !== undefined && !["no action", "restrict", "cascade", "set null"].includes(ref.onDelete))
-              push(`fields.${name}.db.references.onDelete: no action | restrict | cascade | set null`);
-            if (ref.onDelete === "set null" && !f.nullable) push(`fields.${name}.db.references: onDelete «set null» у поля без nullable`);
+            if (ref.onDelete !== undefined && !["no action", "restrict"].includes(ref.onDelete))
+              push(
+                ["cascade", "set null"].includes(ref.onDelete as string)
+                  ? `fields.${name}.db.references.onDelete: «${ref.onDelete}» убран — связанные записи удаляет цепочка (chain: true и chain(ctx, id))`
+                  : `fields.${name}.db.references.onDelete: no action | restrict`,
+              );
+            if (ref.chain !== undefined && typeof ref.chain !== "boolean") push(`fields.${name}.db.references.chain: boolean`);
           }
         }
       }
@@ -574,7 +578,9 @@ function expandTimestamps(r: Resource): Resource {
   const deleted0 = typeof raw === "string" || raw === null ? { field: raw } : raw;
   const deleted = isRecord(deleted0) && off(deleted0.field) ? undefined : deleted0;
   if (deleted !== undefined && (!isRecord(deleted) || typeof deleted.field !== "string"))
-    issues.push("timestamps.deletedAt: имя поля или { field, readDeleted?, children? }");
+    issues.push("timestamps.deletedAt: имя поля или { field, readDeleted? }");
+  if (isRecord(deleted) && deleted.children !== undefined)
+    issues.push("timestamps.deletedAt.children: заменено цепочкой удаления — ссылка-принадлежность references: { resource, chain: true } и chain(ctx, id)");
   const names: Partial<Record<(typeof TIMESTAMP_KEYS)[number], string>> = {};
   for (const k of TIMESTAMP_KEYS) {
     const name = k === "deletedAt" ? (isRecord(deleted) ? deleted.field : undefined) : t[k];
@@ -618,7 +624,7 @@ function expandTimestamps(r: Resource): Resource {
     !indexes.some((x) => x.length === 2 && x[0] === names.updatedAt && x[1] === r.primaryKey)
   )
     indexes.push([names.updatedAt, r.primaryKey]);
-  const d = deleted as { field: string; readDeleted?: Grant; children?: () => readonly import("./types").SoftDeleteChild[] } | undefined;
+  const d = deleted as { field: string; readDeleted?: Grant } | undefined;
   return {
     ...r,
     fields,
@@ -631,7 +637,6 @@ function expandTimestamps(r: Resource): Resource {
             // Не вызывается: метку ставит база (`clock_timestamp()`), см. resource.ts.
             value: () => undefined,
             readDeleted: d.readDeleted ?? [],
-            ...(d.children ? { children: d.children } : {}),
           },
         }
       : {}),

@@ -47,18 +47,11 @@ function applies(source: Row, model: Resource, path: string): string | undefined
     case "timestamps": {
       if (!["createdAt", "updatedAt", "deletedAt"].includes(second ?? "")) return `${path}: неизвестный путь — есть timestamps.createdAt|updatedAt|deletedAt`;
       if (!timestampField(model, second as "createdAt")) return no(path);
-      if (parts.length === 2) return undefined;
-      if (second === "deletedAt" && third === "children" && parts.length === 3) {
-        const d = (source.timestamps as Row).deletedAt;
-        return has(d, "children") ? undefined : no(path);
-      }
-      return `${path}: неизвестный путь`;
+      return parts.length === 2 ? undefined : `${path}: неизвестный путь`;
     }
     case "softDelete":
       if (!has(source, "softDelete")) return no("softDelete");
-      if (parts.length === 1) return undefined;
-      if (parts.length === 2 && second === "children") return has(source.softDelete, "children") ? undefined : no(path);
-      return `${path}: неизвестный путь`;
+      return parts.length === 1 ? undefined : `${path}: неизвестный путь`;
     case "fields": {
       if (parts.length !== 3 || !(FIELD_OPTIONS as readonly string[]).includes(third!))
         return `${path}: неизвестный путь — fields.<поле|*>.${FIELD_OPTIONS.join("|")}`;
@@ -87,11 +80,8 @@ function nulled(source: Row, paths: readonly string[]): Row {
     } else if (head === "checks" || head === "validateFinal") out[head] = null;
     else if (head === "grants") for (const k of Object.keys(fields)) for (const m of ["read", "create", "update"]) setField(k, m, null);
     else if (head === "timestamps") {
-      const t = { ...(out.timestamps as Row) };
-      if (third === "children") t.deletedAt = { ...(t.deletedAt as Row), children: null };
-      else t[second!] = null;
-      out.timestamps = t;
-    } else if (head === "softDelete") out.softDelete = second ? { ...(out.softDelete as Row), children: null } : null;
+      out.timestamps = { ...(out.timestamps as Row), [second!]: null };
+    } else if (head === "softDelete") out.softDelete = null;
     else if (head === "fields") for (const k of second === "*" ? Object.keys(fields) : [second!]) setField(k, third!, null);
   }
   return out;

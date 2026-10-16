@@ -158,25 +158,21 @@ export interface ColumnOptions {
    * Внешний ключ: значение поля — ключ записи другого ресурса. Ресурс задаётся
    * функцией (ссылки бывают взаимными, порядок загрузки модулей не важен).
    * `field` — поле цели (по умолчанию её `primaryKey`), `onDelete` — что делает БД при
-   * настоящем удалении цели (по умолчанию `no action`; мягкое удаление — `softDelete.children`).
+   * настоящем удалении цели (по умолчанию `no action`), `chain` — принадлежность (цепочка удаления).
    */
   references?: ColumnReference;
 }
 export interface ColumnReference {
   resource: () => Resource;
   field?: string;
-  onDelete?: "no action" | "restrict" | "cascade" | "set null";
-}
-/**
- * Что делать с дочерними записями при мягком удалении родителя.
- * `cascade` — пометить удалёнными и их (у дочернего ресурса обязан быть `softDelete`);
- * `restrict` — не удалять, пока есть неудалённые дочерние (`conflict`, 409).
- */
-export interface SoftDeleteChild {
-  resource: Resource;
-  /** Поле дочернего ресурса, в котором лежит `primaryKey` родителя. */
-  field: string;
-  onDelete: "cascade" | "restrict";
+  /** Что база делает при настоящем удалении цели, на которую ссылаются: отказ. */
+  onDelete?: "no action" | "restrict";
+  /**
+   * Принадлежность: строка живёт только вместе с целью (комментарий → запись) и входит в
+   * цепочку удаления цели (`chain`). Без флага — указатель: удаление цели при живой ссылке —
+   * ошибка базы. Колонке ссылки-принадлежности `defineSchema` строит индекс.
+   */
+  chain?: boolean;
 }
 export type Fields = Record<string, Field>;
 export type InferRow<F extends Fields> = {
@@ -272,12 +268,6 @@ export interface Resource<
     field: string;
     value: (ctx: DataContext) => unknown;
     readDeleted: Grant;
-    /**
-     * Дочерние ресурсы и правило для каждого. Функция — чтобы ресурсы могли ссылаться
-     * друг на друга (родитель объявлен раньше ребёнка). Как и каскад внешнего ключа,
-     * правило выполняется без политик дочернего ресурса.
-     */
-    children?: () => readonly SoftDeleteChild[];
   };
   /**
    * Системные поля времени. Значение — имя поля (и колонки); поле создаёт
@@ -319,7 +309,6 @@ export interface Timestamps {
         field: string | null;
         /** Кто видит удалённые (`includeDeleted`) и может их восстановить. Нет — никто. */
         readDeleted?: Grant;
-        children?: () => readonly SoftDeleteChild[];
       };
 }
 /** Поля, которые `defineResource` создаёт из `timestamps` (для типа строки). */
@@ -391,6 +380,12 @@ export interface ResourceApi<
   delete(ctx: DataContext, id: unknown, options?: { force?: boolean }): Promise<ResourceRow<F, R>>;
   /** Какие из записей этот ctx может удалить — без удаления; `soft` — удаление по умолчанию мягкое. */
   canDelete(ctx: DataContext, ids: readonly unknown[]): Promise<{ allowed: unknown[]; soft: boolean }>;
+  /**
+   * Цепочка удаления записи: звенья по ссылкам-принадлежностям (`references.chain`) из
+   * `createDb({ resources })` и права на их удаление — ничего не удаляет. Удаляет
+   * `plan.delete({ force })`. Выключенное у экземпляра (`without`, `raw`) переходит на звенья.
+   */
+  chain(ctx: DataContext, id: unknown): Promise<import("./chain").ChainPlan>;
   /**
    * Снять метку мягкого удаления. Нужны право `readDeleted` (иначе `forbidden`) и
    * политика `restore` (нет — `delete`); строка не удалена или не видна — `not_found`.

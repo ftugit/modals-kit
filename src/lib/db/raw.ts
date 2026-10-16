@@ -7,6 +7,7 @@
  * поле — `validation`), значения — параметрами SQL, транзакция, отмена по `signal`.
  */
 import { DbFailure, fail } from "./errors";
+import { chainPlan } from "./chain";
 import { col, filterSQL, ident, projection, Sql, table, orderSQL } from "./query/sql";
 import { context, inputRecord, isRecord, MODELS, own } from "./validation";
 import type { DataContext, Database, Filter, Limits, Order, Resource, ResourceApi, Row } from "./types";
@@ -125,6 +126,7 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
         const rows = await run(ctx, s, `SELECT ${projection(r, [r.primaryKey])} FROM ${table(r)} WHERE ${col(r, r.primaryKey)} IN (${ids.map((v) => s.param(v)).join(",")})`);
         return { allowed: rows.map((x) => x[r.primaryKey]), soft: false };
       }),
+    chain: (ctx, id) => db.guard(() => chainPlan(db, r, context(ctx), id)),
     cursor: unsupported,
     restore: unsupported,
     estimate: unsupported,

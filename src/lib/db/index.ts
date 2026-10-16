@@ -7,4 +7,5 @@ export { policy } from "./policy";
 export { createCursorCodec } from "./cursor/codec";
 export { withRetry } from "./ops";
 export type { RetryOptions } from "./ops";
+export type { ChainLink, ChainPlan } from "./chain";
 // Драйверы намеренно НЕ реэкспортируются: клиентская/edge сборка не тянет pg/PGlite.

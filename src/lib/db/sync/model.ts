@@ -145,7 +145,7 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
 
   const colOf = (k: string) => r.fields[k]!.column ?? k;
   const pk = colOf(r.primaryKey);
-  const index = async (kind: "index" | "unique", keys: string[], only = where) => {
+  const index = async (kind: "index" | "unique", keys: string[], only: string | null | undefined = where) => {
     const body = `(${keys.join(", ")})${only ? " WHERE " + only : ""}`;
     const n = await named(kind, body);
     objects.push({
@@ -153,7 +153,7 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
       name: n,
       sql: `CREATE ${kind === "unique" ? "UNIQUE " : ""}INDEX ${ident(n)} ON ${qualified} ${body}`,
       columns: keys.map((k) => k.split(" ")[0]!.replace(/"/g, "")),
-      where: only,
+      where: only ?? undefined,
     });
   };
   // keyset: сортировка ресурса + primaryKey, ровно как её пишет orderSQL
@@ -181,6 +181,8 @@ export async function tableSpec(r: Resource): Promise<TableSpec> {
       `FOREIGN KEY (${ident(colOf(k))}) REFERENCES ${tQualified} (${ident(target.fields[targetKey]!.column ?? targetKey)})` +
       ` ON DELETE ${(ref.onDelete ?? "no action").toUpperCase()}`;
     objects.push({ kind: "foreign", name: await named("foreign", body), sql: body, columns: [colOf(k)] });
+    // цепочка удаления ищет детей по этой колонке, при удалении навсегда — и удалённых
+    if (ref.chain) await index("index", [ident(colOf(k))], null);
   }
 
   const fingerprint = (

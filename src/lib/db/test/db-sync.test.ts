@@ -1,5 +1,5 @@
 /**
- * Схема из моделей (`#lib/db/sync/index.js`) и правила мягкого удаления детей.
+ * Схема из моделей (`#lib/db/sync/index.js`) и цепочка удаления.
  * Каждая проверка — на своём PGlite в памяти: это настоящий PostgreSQL, поэтому
  * `pg_catalog`, `format_type`, advisory-блокировка и DDL в транзакции — те же, что на сервере.
  */
@@ -12,7 +12,7 @@ import { pgliteAdapter } from "../adapters/pglite";
 import { toKitError } from "../sveltekit/index";
 import { choices, defineSchema, stepKey } from "../sync/index";
 import type { SyncStep } from "../sync/index";
-import type { Driver, Fields, Resource, SoftDeleteChild } from "../index";
+import type { Driver, Fields, Resource } from "../index";
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000);
 
@@ -304,123 +304,157 @@ test("sync: zod 4 реализует Standard JSON Schema — тип колон�
     assert.ok(checks.rows.some((r) => /char_length\(tag\) >= 2.*char_length\(tag\) <= 20/.test(r.def)), JSON.stringify(checks.rows));
   }));
 
-/* ── мягкое удаление: что модель велит делать с детьми ─────────────────── */
+/* ── цепочка удаления (model-automation.md §10, §11 шаг 7) ─────────────── */
 
-function family(onComments: SoftDeleteChild["onDelete"], onVotes: SoftDeleteChild["onDelete"] = "cascade") {
-  const soft = (extra: Partial<Resource["softDelete"]> = {}) => ({
-    field: "deleted_at",
-    value: () => new Date().toISOString(),
-    readDeleted: () => true,
-    ...extra,
-  });
-  const base = (key: string, table: string, fields: Fields, children?: () => readonly SoftDeleteChild[]) =>
+/** Запись ⊃ комментарии ⊃ голоса; у всех мягкое удаление. `votesSoft: false` — голоса удаляются только навсегда. */
+function family(o: { votesSoft?: boolean; commentDelete?: Resource["policy"]; commentHooks?: Resource["hooks"] } = {}) {
+  const base = (key: string, table: string, fields: Fields, more: Partial<Resource> = {}) =>
     defineResource({
       key,
       table,
       primaryKey: "id",
-      fields: {
-        id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
-        deleted_at: f.timestamp({ ...open, nullable: true }),
-        ...fields,
-      },
+      fields: { id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }), ...fields },
       policy: rules,
       order: [],
-      softDelete: soft(children ? { children } : {}),
+      timestamps: { deletedAt: { field: "deleted_at", readDeleted: () => true } },
+      ...more,
     } as Resource);
-  const votes = base("t.vote", "public.vote", { comment_id: f.uuid({ ...open }) });
-  const comments = base("t.comment", "public.comment", { post_id: f.uuid({ ...open }) }, () => [
-    { resource: votes, field: "comment_id", onDelete: onVotes },
-  ]);
-  const posts = base("t.fpost", "public.fpost", { title: f.text({ ...open, create: () => true }) }, () => [
-    { resource: comments, field: "post_id", onDelete: onComments },
-  ]);
+  const posts: Resource = base("t.fpost", "public.fpost", { title: f.text({ ...open, create: () => true }) });
+  const comments: Resource = base(
+    "t.comment",
+    "public.comment",
+    { post_id: f.uuid({ ...open, db: { references: { resource: () => posts, chain: true } } }), author: f.text({ ...open, nullable: true }) },
+    { ...(o.commentDelete ? { policy: o.commentDelete } : {}), ...(o.commentHooks ? { hooks: o.commentHooks } : {}) },
+  );
+  const votes: Resource = base(
+    "t.vote",
+    "public.vote",
+    { comment_id: f.uuid({ ...open, db: { references: { resource: () => comments, chain: true } } }) },
+    o.votesSoft === false ? { timestamps: undefined } : {},
+  );
   return { posts, comments, votes };
 }
 async function seedFamily(pg: PGlite, driver: Driver, rs: ReturnType<typeof family>) {
   await defineSchema({ resources: [rs.posts, rs.comments, rs.votes] }).sync(driver);
   const id = (await pg.query<{ id: string }>("INSERT INTO fpost (title) VALUES ('p') RETURNING id")).rows[0]!.id;
   const other = (await pg.query<{ id: string }>("INSERT INTO fpost (title) VALUES ('q') RETURNING id")).rows[0]!.id;
-  const c = (await pg.query<{ id: string }>("INSERT INTO comment (post_id) VALUES ($1), ($1), ($2) RETURNING id", [id, other])).rows;
+  const c = (await pg.query<{ id: string }>("INSERT INTO comment (post_id, author) VALUES ($1, 'я'), ($1, 'чужой'), ($2, 'я') RETURNING id", [id, other])).rows;
   await pg.query("INSERT INTO vote (comment_id) VALUES ($1), ($2), ($3)", [c[0]!.id, c[1]!.id, c[2]!.id]);
-  return { id, db: createDb({ driver, limits: conservativeLimits }) };
+  return { id, comments: c.map((x) => x.id), db: createDb({ driver, limits: conservativeLimits, resources: [rs.posts, rs.comments, rs.votes] }) };
 }
-const live = async (pg: PGlite, table: string) =>
-  (await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE deleted_at IS NULL`)).rows[0]!.n;
+const count = async (pg: PGlite, table: string, where = "TRUE") =>
+  (await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`)).rows[0]!.n;
+const live = (pg: PGlite, table: string) => count(pg, table, "deleted_at IS NULL");
 
-test("softDelete.children: cascade помечает детей и внуков, restrict откатывает удаление родителя", () =>
+test("цепочка: chain собирает звенья и права, ничего не удаляя; мягкий корень — мягко всё; force — навсегда, и удалённых детей", () =>
   withPg(async (pg, driver) => {
-    const cascade = family("cascade");
-    const { id, db } = await seedFamily(pg, driver, cascade);
-    await db.resource(cascade.posts).delete(ctx, id);
-    // у второй записи всё осталось: один комментарий и один голос
-    assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await live(pg, "vote")], [1, 1, 1]);
+    const rs = family();
+    const { id, comments, db } = await seedFamily(pg, driver, rs);
+    const idx = await pg.query<{ def: string }>("SELECT indexdef AS def FROM pg_indexes WHERE tablename = 'comment'");
+    assert.ok(idx.rows.some((x) => /\(post_id\)$/.test(x.def)), "полный индекс по ссылке — и для удалённых детей");
+    const plan = await db.resource(rs.posts).chain(ctx, id);
+    assert.deepEqual(plan.root, { model: "t.fpost", id, allowed: true, soft: true });
+    assert.deepEqual(
+      plan.links.map((l) => [l.model, l.path.join(">"), l.total, l.allowed, l.soft]),
+      [["t.comment", "t.fpost>t.comment", 2, 2, true], ["t.vote", "t.fpost>t.comment>t.vote", 2, 2, true]],
+    );
+    assert.deepEqual([...plan.links[0]!.ids].sort(), comments.slice(0, 2).sort());
+    assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await live(pg, "vote")], [2, 3, 3], "chain ничего не удалил");
+    const done = await plan.delete();
+    assert.deepEqual(done.links, [{ model: "t.comment", count: 2 }, { model: "t.vote", count: 2 }]);
+    assert.ok(done.root.deleted_at, "корень помечен последним");
+    assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await live(pg, "vote")], [1, 1, 1], "у второй записи всё на месте");
+    // мягко удалённая запись: удалить навсегда — с её уже удалёнными детьми (без них база не даст)
+    const again = await db.resource(rs.posts).chain(ctx, id);
+    assert.deepEqual([again.root.soft, again.links.map((l) => l.total)], [false, [2, 2]], "удалённый корень — только навсегда");
+    await again.delete({ force: true });
+    assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [1, 1, 1], "стёрто навсегда");
+  }));
+
+test("цепочка: не хватает прав — forbidden с моделью, путём и числом; звено без мягкого удаления — unsupported; ничего не удалено", () =>
+  withPg(async (pg, driver) => {
+    const rs = family({ commentDelete: { ...rules, delete: () => ({ field: "author", op: "eq", value: "я" }) } });
+    const { id, db } = await seedFamily(pg, driver, rs);
+    const plan = await db.resource(rs.posts).chain(ctx, id);
+    assert.deepEqual(plan.links.map((l) => [l.model, l.allowed, l.total]), [["t.comment", 1, 2], ["t.vote", 2, 2]]);
+    const e = await plan.delete().catch((x: unknown) => x);
+    assert.ok(e instanceof DbFailure && e.kind === "forbidden");
+    assert.deepEqual([e.details.model, e.details.path, e.details.count], ["t.comment", ["t.fpost", "t.comment"], 1]);
+    assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await live(pg, "vote")], [2, 3, 3]);
   }).then(() =>
-    withPg(async (pg2, driver2) => {
-      const restrict = family("cascade", "restrict");
-      const seeded = await seedFamily(pg2, driver2, restrict);
-      await assert.rejects(seeded.db.resource(restrict.posts).delete(ctx, seeded.id), (e: unknown) =>
-        e instanceof DbFailure && e.kind === "conflict" && e.details.constraint === "t.comment->t.vote",
-      );
-      // откат целиком: и запись, и её комментарии живы
-      assert.deepEqual([await live(pg2, "fpost"), await live(pg2, "comment"), await live(pg2, "vote")], [2, 3, 3]);
-      await pg2.query("UPDATE vote SET deleted_at = now()");
-      await seeded.db.resource(restrict.posts).delete(ctx, seeded.id);
-      assert.deepEqual([await live(pg2, "fpost"), await live(pg2, "comment")], [1, 1]);
+    withPg(async (pg, driver) => {
+      const rs = family({ votesSoft: false });
+      const { id, db } = await seedFamily(pg, driver, rs);
+      const plan = await db.resource(rs.posts).chain(ctx, id);
+      const e = await plan.delete().catch((x: unknown) => x);
+      assert.ok(e instanceof DbFailure && e.kind === "unsupported", String(e));
+      assert.deepEqual([e.details.model, e.details.count], ["t.vote", 2]);
+      assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await count(pg, "vote")], [2, 3, 3], "откат целиком");
+      await plan.delete({ force: true });
+      assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [1, 1, 1], "навсегда — можно");
     }),
   ));
 
-test("softDelete.children: cascade без softDelete у ребёнка — validation; цикл — unsupported", () =>
+test("цепочка: круг принадлежности — ошибка createDb; дерево удаляется с нижних уровней; индекс по колонке; без resources — unsupported", () =>
   withPg(async (pg, driver) => {
-    const hard = defineResource({
-      key: "t.hard",
-      table: "public.hard",
-      primaryKey: "id",
-      fields: { id: f.uuid({ ...open, orderable: true, filters: ["eq"] }), post_id: f.uuid({ ...open }) },
-      policy: rules,
+    const a: Resource = defineResource({
+      key: "t.a", table: "public.a", primaryKey: "id",
+      fields: { id: f.uuid({ ...open, orderable: true, filters: ["eq"] }), b_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => b, chain: true } } }) },
       order: [],
-    } as Resource);
-    const parent = post(
-      { deleted_at: f.timestamp({ ...open, nullable: true }) },
-      {
-        softDelete: {
-          field: "deleted_at",
-          value: () => new Date().toISOString(),
-          readDeleted: () => true,
-          children: () => [{ resource: hard, field: "post_id", onDelete: "cascade" }],
-        },
-      },
+    });
+    const b: Resource = defineResource({
+      key: "t.b", table: "public.b", primaryKey: "id",
+      fields: { id: f.uuid({ ...open, orderable: true, filters: ["eq"] }), a_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => a, chain: true } } }) },
+      order: [],
+    });
+    assert.throws(() => createDb({ driver, limits: conservativeLimits, resources: [a, b] }), (e: unknown) =>
+      e instanceof DbFailure && /круг принадлежности/.test(String(e.details.issues)),
     );
-    await defineSchema({ resources: [parent, hard] }).sync(driver);
-    const id = (await pg.query<{ id: string }>("INSERT INTO post (title) VALUES ('abc') RETURNING id")).rows[0]!.id;
-    const db = createDb({ driver, limits: conservativeLimits });
-    await assert.rejects(db.resource(parent).delete(ctx, id), (e: unknown) =>
-      e instanceof DbFailure && e.kind === "validation" && /cascade требует softDelete/.test(String(e.details.issues)),
-    );
-    assert.equal(await live(pg, "post"), 1);
-
-    // дерево комментариев: ребёнок того же ресурса — каскад по кругу
     const tree: Resource = defineResource({
-      key: "t.tree",
-      table: "public.tree",
-      primaryKey: "id",
+      key: "t.tree", table: "public.tree", primaryKey: "id",
       fields: {
         id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
-        parent_id: f.uuid({ ...open, nullable: true }),
-        deleted_at: f.timestamp({ ...open, nullable: true }),
+        parent_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => tree, chain: true, onDelete: "restrict" } } }),
       },
-      policy: rules,
       order: [],
-      softDelete: {
-        field: "deleted_at",
-        value: () => new Date().toISOString(),
-        readDeleted: () => true,
-        children: () => [{ resource: tree, field: "parent_id", onDelete: "cascade" }],
-      },
-    } as Resource);
+    });
     await defineSchema({ resources: [tree] }).sync(driver);
+    const idx = await pg.query<{ def: string }>("SELECT indexdef AS def FROM pg_indexes WHERE tablename = 'tree'");
+    assert.ok(idx.rows.some((x) => /\(parent_id\)$/.test(x.def)), JSON.stringify(idx.rows));
     const root = (await pg.query<{ id: string }>("INSERT INTO tree DEFAULT VALUES RETURNING id")).rows[0]!.id;
-    await assert.rejects(db.resource(tree).delete(ctx, root), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
-    assert.equal(await live(pg, "tree"), 1);
+    const kid = (await pg.query<{ id: string }>("INSERT INTO tree (parent_id) VALUES ($1) RETURNING id", [root])).rows[0]!.id;
+    await pg.query("INSERT INTO tree (parent_id) VALUES ($1), ($1)", [kid]);
+    const plain = createDb({ driver, limits: conservativeLimits });
+    await assert.rejects(plain.resource(tree).chain(ctx, root), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
+    await assert.rejects(plain.resource(tree).delete(ctx, root), (e: unknown) => e instanceof DbFailure && e.kind === "conflict", "без цепочки — отказ базы");
+    const db = createDb({ driver, limits: conservativeLimits, resources: [tree] });
+    const plan = await db.resource(tree).chain(ctx, root);
+    assert.deepEqual(plan.links.map((l) => [l.model, l.total]), [["t.tree", 3]]);
+    await plan.delete();
+    assert.equal(await count(pg, "tree"), 0, "restrict-ссылки удалены с нижнего уровня");
+  }));
+
+test("цепочка: у звена с хуками — удаление по одной строке через его delete (хуки видят каждую)", () =>
+  withPg(async (pg, driver) => {
+    const ops: string[] = [];
+    const rs = family({ commentHooks: { beforeWrite: ({ operation }) => void ops.push(operation) } });
+    const { id, db } = await seedFamily(pg, driver, rs);
+    const done = await (await db.resource(rs.posts).chain(ctx, id)).delete();
+    assert.deepEqual(done.links.map((l) => l.count), [2, 2]);
+    assert.deepEqual(ops, ["delete", "delete"]);
+    assert.deepEqual([await live(pg, "comment"), await live(pg, "vote")], [1, 1]);
+  }));
+
+test("цепочка: выключенное у корня (without, raw) переходит на звенья", () =>
+  withPg(async (pg, driver) => {
+    const rs = family({ commentDelete: { ...rules, delete: () => false } });
+    const { id, db } = await seedFamily(pg, driver, rs);
+    await assert.rejects((await db.resource(rs.posts).chain(ctx, id)).delete(), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
+    const done = await db.resource(rs.posts).without(["policy"], async (p) => (await p.chain(ctx, id)).delete());
+    assert.deepEqual(done.links.map((l) => l.count), [2, 2], "policy выключена и у комментариев");
+    const other = (await pg.query<{ id: string }>("SELECT id FROM fpost WHERE deleted_at IS NULL")).rows[0]!.id;
+    await db.resource(rs.posts).raw(async (p) => (await p.chain(ctx, other)).delete());
+    assert.deepEqual([await count(pg, "fpost", `id = '${other}'`), await count(pg, "comment", `post_id = '${other}'`)], [0, 0], "сырой корень — всё навсегда");
   }));
 
 /* ── Ошибки полей: все сразу, с кодом и своим текстом; ограничения БД — к полю ── */
@@ -611,7 +645,7 @@ test("sync: внешний ключ из db.references — после всех �
     await pg.query("INSERT INTO post (title, author_id) VALUES ('Сирота', gen_random_uuid())");
 
     const linked = post({
-      author_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => author, onDelete: "set null" } } }),
+      author_id: f.uuid({ ...open, nullable: true, db: { references: { resource: () => author, onDelete: "restrict" } } }),
     });
     // ссылающаяся таблица раньше цели — порядок ресурсов не важен
     const report = await defineSchema({ resources: [linked, author] }).sync(driver);
@@ -622,12 +656,11 @@ test("sync: внешний ключ из db.references — после всех �
       )).rows;
     const [made] = await fk();
     assert.match(made!.name, /^post_fk_[0-9a-f]{8}$/);
-    assert.match(made!.def, /REFERENCES author\(id\) ON DELETE SET NULL NOT VALID/);
+    assert.match(made!.def, /REFERENCES author\(id\) ON DELETE RESTRICT NOT VALID/);
     await assert.rejects(pg.query("INSERT INTO post (title, author_id) VALUES ('Новая', gen_random_uuid())"), /foreign key/);
     const [{ id }] = (await pg.query<{ id: string }>("INSERT INTO author (name) VALUES ('Аня') RETURNING id")).rows;
     await pg.query("INSERT INTO post (title, author_id) VALUES ('Своя', $1)", [id]);
-    await pg.query("DELETE FROM author");
-    assert.deepEqual((await pg.query("SELECT count(*)::int AS n FROM post WHERE author_id IS NULL AND title = 'Своя'")).rows, [{ n: 1 }]);
+    await assert.rejects(pg.query("DELETE FROM author"), /foreign key/, "на автора ссылаются — база отказывает");
 
     // на пустой БД: CREATE TABLE обеих, внешний ключ последним
     await pg.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
@@ -685,6 +718,8 @@ test("defineResource: db.references проверяется при объявле
     e instanceof DbFailure && (e.details.issues ?? []).some((x) => re.test(x));
   assert.throws(bad({ resource: "author" }), says(/db\.references/));
   assert.throws(bad({ resource: () => post(), onDelete: "drop" }), says(/onDelete/));
-  assert.throws(bad({ resource: () => post(), onDelete: "set null" }, false), says(/set null/));
+  assert.throws(bad({ resource: () => post(), onDelete: "set null" }), says(/«set null» убран — связанные записи удаляет цепочка/));
+  assert.throws(bad({ resource: () => post(), onDelete: "cascade" }), says(/«cascade» убран/));
+  assert.throws(bad({ resource: () => post(), chain: "да" }), says(/chain: boolean/));
   return Promise.resolve();
 });

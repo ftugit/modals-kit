@@ -1,6 +1,7 @@
 import { DbFailure, normalizeFailure } from "./errors";
 import { resourceApi } from "./resource";
-import type { CursorCodec, Database, Driver, Limits } from "./types";
+import { CHAIN_KIT, chainKit, type ChainKit } from "./chain";
+import type { CursorCodec, Database, Driver, Limits, Resource } from "./types";
 export interface DbOptions {
   driver: Driver;
   limits: Limits;
@@ -8,6 +9,14 @@ export interface DbOptions {
   /** Максимальное ожидание observer; сам callback не отменяется. Default 100ms. */
   observerTimeoutMs?: number;
   onError?: (failure: DbFailure) => void | Promise<void>;
+  /**
+   * Модели приложения — тот же список, что у `defineSchema`. Из их ссылок-принадлежностей
+   * (`references.chain`) строится цепочка удаления (`chain`); круг принадлежности между
+   * моделями — ошибка здесь же.
+   */
+  resources?: readonly Resource[];
+  /** Предел строк одной цепочки удаления. По умолчанию 10000. */
+  chainRows?: number;
 }
 export function createDb(options: DbOptions): Database {
   const observerTimeoutMs = options.observerTimeoutMs ?? 100;
@@ -48,6 +57,9 @@ export function createDb(options: DbOptions): Database {
   }
   if (checked.pageSize > checked.maxPageSize)
     throw new Error("Invalid page size limits");
+  const chainRows = options.chainRows ?? 10_000;
+  if (!Number.isSafeInteger(chainRows) || chainRows < 1) throw new Error("Invalid chainRows");
+  const kit: ChainKit | undefined = options.resources ? chainKit(options.resources, chainRows) : undefined;
   const limits = Object.freeze(checked),
     reported = new WeakSet<DbFailure>();
   async function guard<T>(fn: () => Promise<T>): Promise<T> {
@@ -134,6 +146,7 @@ export function createDb(options: DbOptions): Database {
         else await guard(() => flush([cb]));
       },
     };
+    if (kit) Object.defineProperty(db, CHAIN_KIT, { value: kit });
     Object.defineProperty(db, "finish", {
       value: () => {
         active = false;
