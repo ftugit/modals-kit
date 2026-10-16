@@ -1,5 +1,5 @@
 import { fail } from "../errors";
-import { grants, own, validateField } from "../validation";
+import { allows, own, validateField } from "../validation";
 import type {
   DataContext,
   Field,
@@ -65,12 +65,12 @@ export function readable(
     ...(r.ownerField ? [r.ownerField] : []),
     ...(r.mandatoryRead ?? []),
   ];
-  if (mandatory.some((k) => !grants(r.fields[k].read, ctx))) fail("forbidden");
+  if (mandatory.some((k) => !allows(r.fields[k].read, ctx))) fail("forbidden");
   return [
     ...new Set([
       ...mandatory,
       ...(requested ?? Object.keys(r.fields)).filter(
-        (k) => own(r.fields, k) && grants(r.fields[k].read, ctx),
+        (k) => own(r.fields, k) && allows(r.fields[k].read, ctx),
       ),
     ]),
   ];
@@ -86,7 +86,7 @@ export function orderBy(r: Resource, ctx: DataContext, input?: Order): Order {
       typeof k !== "string" ||
       !own(r.fields, k) ||
       !r.fields[k].orderable ||
-      !grants(r.fields[k].read, ctx) ||
+      !allows(r.fields[k].read, ctx) ||
       !["asc", "desc"].includes(d) ||
       seen.has(k)
     )
@@ -97,7 +97,7 @@ export function orderBy(r: Resource, ctx: DataContext, input?: Order): Order {
   if (!seen.has(r.primaryKey)) {
     if (
       !r.fields[r.primaryKey].orderable ||
-      !grants(r.fields[r.primaryKey].read, ctx)
+      !allows(r.fields[r.primaryKey].read, ctx)
     )
       fail("forbidden");
     result.push([r.primaryKey, "asc"]);
@@ -171,7 +171,7 @@ export async function filterSQL(
     const { field, op } = node;
     if (typeof field !== "string" || !own(r.fields, field)) fail("forbidden");
     const f = r.fields[field];
-    if (!trusted && (!grants(f.read, ctx) || !f.filters?.includes(op)))
+    if (!trusted && (!allows(f.read, ctx) || !f.filters?.includes(op)))
       fail("forbidden");
     const c = col(r, field);
     if (op === "isNull" || op === "isNotNull")

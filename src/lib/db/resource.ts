@@ -1,7 +1,7 @@
 import { policyBoolean } from './validation';
 import { DbFailure, fail, failFields, normalizeFailure, type FieldError } from './errors';
 import { tableSpec } from './sync/model';
-import { checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
+import { allows, checkField, context, draftInput, freeze, grants, inputRecord, isRecord, own } from './validation';
 import { fieldError, revalidateDraft, timestampField, validateField } from './validation';
 import { readProof } from './proof';
 import {
@@ -65,6 +65,17 @@ const DEFAULT_TEXT: Record<string, string> = {
   reference: 'Referenced record not found',
   referenced: 'Record is referenced by other records',
 };
+/**
+ * Правило строк операции. Нет `policy` или правила — без ограничения; `restore` без своего
+ * правила — как `delete`.
+ */
+export function rule(x: Resource, op: 'select' | 'update' | 'delete' | 'restore', ctx: DataContext): Filter {
+  const p = x.policy;
+  const fn = op === 'restore' ? (p?.restore ?? p?.delete) : p?.[op];
+  return fn ? fn(ctx) : true;
+}
+/** Право вставки: нет правила — можно. */
+export const insertAllowed = (x: Resource, ctx: DataContext): boolean => !x.policy?.insert || policyBoolean(x.policy.insert(ctx));
 /** Колонка поля в SQL присваивания (`SET <колонка> = …`). */
 const assignee = (x: Resource, k: string) => ident(x.fields[k].column ?? k);
 /**
@@ -122,13 +133,15 @@ const toIssue = (x: FieldError) => ({
 async function attachFieldErrors(
   r: Resource, ctx: DataContext, e: DbFailure, op: 'insert' | 'update', draft: Row,
 ): Promise<void> {
+  // значение пришло от этого ctx: поле передано им, а не подставлено сервером
+  const serverOwned = (k: string) => !!(r.fields[k].createValue || r.fields[k].generated || k === r.primaryKey || k === r.ownerField);
   const writable = (k: string) =>
-    own(r.fields, k) && own(draft, k) && grants(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx);
+    own(r.fields, k) && own(draft, k) && !serverOwned(k) && allows(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx);
   const state = e.details.sqlstate;
   let errors: FieldError[] = [];
   if (state === '23502' && e.details.column) {
     const k = Object.keys(r.fields).find((key) => (r.fields[key].column ?? key) === e.details.column);
-    if (k && grants(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx))
+    if (k && !serverOwned(k) && allows(op === 'insert' ? r.fields[k].create : r.fields[k].update, ctx))
       errors = [fieldError(r.fields[k], k, 'required', DEFAULT_TEXT.required)];
   } else if (state === '23503') {
     // Нарушен внешний ключ. Свой ключ модели → ошибка поля «связанной записи нет»
@@ -203,7 +216,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     const policy = await filterSQL(
       r,
       ctx,
-      policyOverride ? policyOverride.value : r.policy[op](ctx),
+      policyOverride ? policyOverride.value : rule(r, op, ctx),
       s,
       db.limits,
       true,
@@ -221,8 +234,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     if (op === 'restore') {
       // Восстановить = увидеть удалённую: право `readDeleted` (where проверит его при
       // includeDeleted) и политика `restore`, а без неё — та же, что у `delete`.
-      const rule = (r.policy.restore ?? r.policy.delete)(ctx);
-      const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule });
+      const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule(r, 'restore', ctx) });
       return `(${predicate}) AND ${col(r, r.softDelete!.field)} IS NOT NULL AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
     }
     return `(${await where(ctx, op, s)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
@@ -248,12 +260,12 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         target.table === r.table ||
         rel.foreignField !== target.primaryKey ||
         !own(r.fields, rel.localField) ||
-        !grants(r.fields[rel.localField].read, ctx)
+        !allows(r.fields[rel.localField].read, ctx)
       )
         fail('unsupported');
       const fields = readable(target, ctx),
         alias = ident('_db_include_' + keys.length);
-      const policy = await filterSQL(target, ctx, target.policy.select(ctx), s, db.limits, true);
+      const policy = await filterSQL(target, ctx, rule(target, 'select', ctx), s, db.limits, true);
       const deleted = target.softDelete
         ? ' AND ' + col(target, target.softDelete.field) + ' IS NULL'
         : '';
@@ -292,7 +304,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       (!cursor && own(input, 'after'))
     )
       fail('validation');
-    const policy = r.policy.select(ctx);
+    const policy = rule(r, 'select', ctx);
     let predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted, {
       value: policy,
     });
@@ -354,7 +366,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   ): Promise<Out> {
     const keys = readable(r, ctx),
       s = new Sql();
-    if (op === 'insert' && !policyBoolean(r.policy.insert(ctx))) fail('forbidden');
+    if (op === 'insert' && !insertAllowed(r, ctx)) fail('forbidden');
     let draft: Row | undefined;
     const filled = new Set<string>();
     if (op === 'insert' || op === 'update') draft = await draftInput(r, ctx, input, op, db.limits.inputKeys, filled);
@@ -460,7 +472,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         registered &&
         e.details.sqlstate === registered.sqlstate &&
         grants(registered.expose, ctx) &&
-        registered.fields.every((k) => own(r.fields, k) && grants(r.fields[k].read, ctx))
+        registered.fields.every((k) => own(r.fields, k) && allows(r.fields[k].read, ctx))
       ) {
         e.details.publicFields = Object.freeze([...registered.fields]);
       } else if ((op === 'insert' || op === 'update') && draft) await attachFieldErrors(r, ctx, e, op, draft);
@@ -553,7 +565,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       fail('validation');
     // Предикат строится ДО выбора метода: так политика, права на поля фильтра и
     // `readDeleted` проверяются всегда, а не только когда фильтр задан (DB-4).
-    const policy = r.policy.select(ctx);
+    const policy = rule(r, 'select', ctx);
     const s2 = new Sql();
     const predicate = await where(ctx, 'select', s2, input.filter, input.includeDeleted ?? false, {
       value: policy,
@@ -624,7 +636,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       fail('unsupported', undefined, [
         'insertMany недоступен с beforeWrite/afterWrite/validateFinal/checks: им нужен построчный контроль в транзакции',
       ]);
-    if (!policyBoolean(r.policy.insert(ctx))) fail('forbidden');
+    if (!insertAllowed(r, ctx)) fail('forbidden');
     const drafts: Row[] = [];
     for (const row of rows) drafts.push(await draftInput(r, ctx, row, 'insert', db.limits.inputKeys));
     const keys = Object.keys(drafts[0]!);
@@ -706,7 +718,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
   /** Проверка без записи (`validator`): поля из входа + правила данных. */
   async function check(ctx0: DataContext, operation: 'insert' | 'update' | 'check', input: unknown) {
     const ctx = context(ctx0);
-    if (operation === 'insert' && !policyBoolean(r.policy.insert(ctx))) fail('forbidden');
+    if (operation === 'insert' && !insertAllowed(r, ctx)) fail('forbidden');
     if (!isRecord(input)) return { issues: [{ message: 'Invalid input', code: 'invalid' }] };
     const proof = readProof(input);
     const raw = inputRecord(input, db.limits.inputKeys);
@@ -723,7 +735,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
           k === r.primaryKey ||
           k === r.ownerField ||
           (operation === 'update' && f.immutable) ||
-          !grants(operation === 'insert' ? f.create : f.update, ctx))
+          !allows(operation === 'insert' ? f.create : f.update, ctx))
       )
         fail('forbidden');
       const one = await checkField(f, raw[k], k, true, proof);

@@ -14,6 +14,7 @@ import { pgliteAdapter } from "../adapters/pglite";
 import { defineSchema } from "../sync/index";
 import { tableSpec } from "../sync/model";
 import { VALIDATED_PROOF, readProof, sameValue } from "../proof";
+import { rule } from "../resource";
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000);
 
@@ -78,6 +79,78 @@ function posts(title: ReturnType<typeof countedText>, more: Partial<Resource> = 
 }
 const stamp = <T extends object>(values: T, fields: Record<string, { schema: object; value: unknown }>): T =>
   Object.defineProperty(values, VALIDATED_PROOF, { value: { fields }, enumerable: false });
+
+/* ── маски полей и правила строк по умолчанию (model-automation.md §9, §11 шаг 2) ── */
+
+test("маски: нет ключа или null — всем, [] — никому; policy без ключа или null — без ограничения", () => {
+  const open = defineResource({
+    key: "t.rules.open",
+    table: "public.rules_open",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ createValue: () => crypto.randomUUID(), orderable: true, filters: ["eq"] }),
+      title: f.text({ required: true }),
+      note: f.text({ nullable: true, read: null, create: null, update: null }),
+      secret: f.text({ nullable: true, read: [], create: [], update: [] }),
+      admin: f.text({ nullable: true, create: ["admin"], update: ["admin"] }),
+    },
+    order: [["id", "asc"]],
+  });
+  const nullPolicy = defineResource({
+    key: "t.rules.nullpolicy",
+    table: "public.rules_nullpolicy",
+    primaryKey: "id",
+    fields: { id: f.uuid({ createValue: () => crypto.randomUUID(), orderable: true, filters: ["eq"] }), title: f.text({}) },
+    policy: null as never,
+    hooks: null as never,
+    order: [["id", "asc"]],
+  });
+  const forbidden = (e: unknown) => e instanceof DbFailure && e.kind === "forbidden";
+  return withDb([open, nullPolicy], async (db) => {
+    const api = db.resource(open);
+    const row = await api.insert(ctx, { title: "a", note: "n" });
+    assert.deepEqual(Object.keys(row).sort(), ["admin", "id", "note", "title"], "secret не читается: read: []");
+    await assert.rejects(api.insert(ctx, { title: "b", secret: "x" }), forbidden);
+    await assert.rejects(api.insert(ctx, { title: "b", admin: "x" }), forbidden);
+    await api.insert({ principal: { roles: ["admin"] } }, { title: "b", admin: "x" });
+    await assert.rejects(api.update(ctx, row.id, { secret: "x" }), forbidden);
+    await assert.rejects(api.insert(ctx, { id: crypto.randomUUID(), title: "c" }), forbidden, "системное поле — не по маске");
+    assert.equal((await api.update(ctx, row.id, { note: "m" })).note, "m");
+    assert.equal((await api.select(ctx)).length, 2, "нет policy — видны все");
+    await api.delete(ctx, row.id);
+    const other = db.resource(nullPolicy);
+    const x = await other.insert(ctx, { title: "z" });
+    assert.equal((await other.update(ctx, x.id, { title: "y" })).title, "y");
+    await other.delete(ctx, x.id);
+    assert.equal(await other.count(ctx), 0);
+  });
+});
+
+test("policy: правило без ключа — без ограничения только для этой операции; restore без своего — как delete, без обоих — всем", async () => {
+  const half = defineResource({
+    key: "t.rules.half",
+    table: "public.rules_half",
+    primaryKey: "id",
+    fields: { id: f.uuid({ createValue: () => crypto.randomUUID(), orderable: true, filters: ["eq"] }), title: f.text({}) },
+    policy: { insert: () => false, delete: () => ({ field: "title", op: "eq", value: "можно" }) },
+    order: [["id", "asc"]],
+    timestamps: { deletedAt: { field: "deleted_at", readDeleted: [] as string[] } },
+  });
+  const forbidden = (e: unknown) => e instanceof DbFailure && e.kind === "forbidden";
+  await withDb([half], async (db, pg) => {
+    const api = db.resource(half);
+    await assert.rejects(api.insert(ctx, { title: "можно" }), forbidden);
+    await pg.exec("INSERT INTO public.rules_half (id, title) VALUES (gen_random_uuid(), 'можно'), (gen_random_uuid(), 'нельзя')");
+    const rows = await api.select(ctx, { order: [["id", "asc"]] });
+    assert.equal(rows.length, 2, "select без правила — все");
+    const no = rows.find((r) => r.title === "нельзя")!;
+    await assert.rejects(api.delete(ctx, no.id), (e: unknown) => e instanceof DbFailure && e.kind === "not_found");
+    assert.equal((await api.update(ctx, no.id, { title: "x" })).title, "x", "update без правила — можно");
+  });
+  assert.deepEqual(rule(half, "restore", ctx), { field: "title", op: "eq", value: "можно" }, "restore — как delete");
+  assert.equal(rule({ ...half, policy: {} } as Resource, "restore", ctx), true);
+  assert.equal(rule({ ...half, policy: { restore: () => false } } as Resource, "restore", ctx), false);
+});
 
 /* ── договорённость о метке (копия типа в lib/form: src/lib/form/proof.test.ts) ── */
 
@@ -318,7 +391,7 @@ test("fill: заполняет непереданное из проверенн�
   const calls: { values: unknown; operation: string }[] = [];
   const slug = (max: number) =>
     field(s.text({ max }), {
-      read: () => true,
+      create: [],
       nullable: true,
       filters: ["eq"],
       fill: (values, _c, operation) => {
@@ -333,7 +406,7 @@ test("fill: заполняет непереданное из проверенн�
     const row = await api.insert(ctx, { title: "  Первая Заметка " });
     assert.equal(row.slug, "первая-заметка", "fill видит значение после normalize и правил");
     assert.ok(Object.isFrozen(calls[0]?.values), "fill получает снимок только для чтения");
-    // без create-маски поле передать нельзя: заполняет только fill
+    // маска create: [] — передать нельзя никому: заполняет только fill
     await assert.rejects(api.insert(ctx, { title: "Вторая", slug: "своё" }), (e: unknown) => e instanceof DbFailure && e.kind === "forbidden");
     const n = calls.length;
     await assert.rejects(api.insert(ctx, { title: "ab" }), (e: unknown) => failureIssues(e)?.map((i) => i.path?.[0]).join() === "title");

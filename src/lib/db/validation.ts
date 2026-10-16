@@ -29,6 +29,13 @@ export function grants(grant: Grant | undefined, ctx: DataContext): boolean {
     ? policyBoolean(grant(ctx))
     : !!grant?.some((r) => ctx.principal.roles.includes(r));
 }
+/**
+ * Маска поля (`read`/`create`/`update`): нет ключа или `null` — всем, `[]` — никому,
+ * список ролей или функция — как `grants`. Строгие права (`readDeleted`, `expose`) — `grants`.
+ */
+export function allows(mask: Grant | null | undefined, ctx: DataContext): boolean {
+  return mask == null || grants(mask, ctx);
+}
 export function own(o: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(o, key);
 }
@@ -248,7 +255,7 @@ export async function draftInput(
       k === r.primaryKey ||
       k === r.ownerField ||
       (op === "update" && f.immutable) ||
-      !grants(op === "insert" ? f.create : f.update, ctx)
+      !allows(op === "insert" ? f.create : f.update, ctx)
     )
       fail("forbidden");
     // ошибки значений копим: форма должна увидеть все плохие поля сразу
@@ -319,7 +326,7 @@ export async function revalidateDraft(
       k === r.primaryKey ||
       k === r.ownerField ||
       (op === "update" && f.immutable) ||
-      !grants(op === "insert" ? f.create : f.update, ctx)
+      !allows(op === "insert" ? f.create : f.update, ctx)
     )
       fail("forbidden");
     if (
@@ -459,8 +466,10 @@ function checkShape(r: Resource): void {
   if (r.hooks)
     for (const [k, v] of Object.entries(r.hooks))
       if (typeof v !== "function") push(`hooks.${k}: обязан быть функцией`);
-  for (const [op, v] of Object.entries(r.policy))
-    if (typeof v !== "function") push(`policy.${op}: обязан быть (ctx) => Filter`);
+  if (r.policy !== undefined && !isRecord(r.policy)) push("policy: объект { select?, insert?, update?, delete?, restore? }");
+  else
+    for (const [op, v] of Object.entries(r.policy ?? {}))
+      if (typeof v !== "function") push(`policy.${op}: обязан быть (ctx) => Filter`);
   for (const [name, f] of Object.entries(r.fields)) {
     if (!f || typeof f !== "object") {
       push(`fields.${name}: отсутствует описание поля`);
@@ -468,8 +477,7 @@ function checkShape(r: Resource): void {
     }
     if (!f.schema || typeof (f.schema as { "~standard"?: unknown })["~standard"] !== "object")
       push(`fields.${name}.schema: обязан быть Standard Schema (s.* / field(z.*) / make())`);
-    if (!isGrantShape(f.read)) push(`fields.${name}.read: обязан быть Grant`);
-    for (const mask of ["create", "update"] as const)
+    for (const mask of ["read", "create", "update"] as const)
       if (f[mask] !== undefined && !isGrantShape(f[mask])) push(`fields.${name}.${mask}: обязан быть Grant`);
     if (f.filters !== undefined) {
       if (!Array.isArray(f.filters)) push(`fields.${name}.filters: обязан быть массивом операторов`);
@@ -627,6 +635,24 @@ function expandTimestamps(r: Resource): Resource {
   };
 }
 
+/** Необязательные опции модели и поля, у которых `null` значит «нет»: дальше их просто нет. */
+const OPTIONAL_KEYS = ["ownerField", "mandatoryRead", "policy", "hooks", "checks", "relations", "constraints", "validateFinal", "softDelete", "db"] as const;
+const dropNull = <T extends object>(o: T): T =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as T;
+/**
+ * `null` в опции — опции нет (маска «всем», правила нет, хука нет). Объекты верхнего
+ * уровня (`policy`, `hooks`) и опции полей чистятся так же.
+ */
+function withoutEmpty(r: Resource): Resource {
+  const out = { ...r } as Record<string, unknown>;
+  for (const k of OPTIONAL_KEYS) if (out[k] === null) delete out[k];
+  for (const k of ["policy", "hooks"] as const) if (isRecord(out[k])) out[k] = dropNull(out[k] as object);
+  out.fields = Object.fromEntries(
+    Object.entries(r.fields).map(([k, f]) => [k, f && typeof f === "object" ? dropNull(f) : f]),
+  );
+  return out as unknown as Resource;
+}
+
 export function defineResource<
   F extends Fields,
   R extends Relations = {},
@@ -634,11 +660,11 @@ export function defineResource<
 >(
   input: Omit<Resource<F, R>, "timestamps"> & { timestamps?: T },
 ): Resource<F & TimestampFields<T>, R> {
-  if (!input || !input.key || !input.policy || !input.fields)
-    fail("validation", undefined, ["key/policy/fields/primaryKey обязательны"]);
-  const r = expandTimestamps(input as unknown as Resource) as unknown as Resource<F & TimestampFields<T>, R>;
+  if (!input || !input.key || !isRecord(input.fields))
+    fail("validation", undefined, ["key/fields/primaryKey обязательны"]);
+  const r = expandTimestamps(withoutEmpty(input as unknown as Resource)) as unknown as Resource<F & TimestampFields<T>, R>;
   if (!own(r.fields, r.primaryKey))
-    fail("validation", undefined, ["key/policy/fields/primaryKey обязательны"]);
+    fail("validation", undefined, ["key/fields/primaryKey обязательны"]);
   checkShape(r as unknown as Resource);
   const identifier = /^[A-Za-z_][A-Za-z0-9_]*$/;
   if (

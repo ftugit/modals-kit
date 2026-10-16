@@ -108,9 +108,10 @@ export interface Field<T = unknown> {
   column?: string;
   schema: StandardSchema<T>;
   kind?: "scalar" | "bigint" | "decimal" | "date" | "timestamp" | "json";
-  read: Grant;
-  create?: Grant;
-  update?: Grant;
+  /** Маски: нет ключа или `null` — всем, `[]` — никому, роли или функция — по ним. */
+  read?: Grant | null;
+  create?: Grant | null;
+  update?: Grant | null;
   generated?: boolean;
   immutable?: boolean;
   required?: boolean;
@@ -251,14 +252,11 @@ export interface Resource<
   ownerField?: string;
   fields: F;
   mandatoryRead?: readonly string[];
-  policy: {
-    select: (ctx: DataContext) => Filter;
-    insert: (ctx: DataContext) => boolean;
-    update: (ctx: DataContext) => Filter;
-    delete: (ctx: DataContext) => Filter;
-    /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `delete`. */
-    restore?: (ctx: DataContext) => Filter;
-  };
+  /**
+   * Правила строк. Нет `policy` (или `null`) — без ограничения; нет правила операции — то же
+   * для неё.
+   */
+  policy?: Policy;
   order: Order;
   hooks?: Hooks;
   /** Правила данных: при записи — всегда и в транзакции; см. `CheckEvent`. */
@@ -301,6 +299,14 @@ export interface Resource<
     indexes?: readonly (readonly string[])[];
     unique?: readonly (readonly string[])[];
   };
+}
+export interface Policy {
+  select?: (ctx: DataContext) => Filter;
+  insert?: (ctx: DataContext) => boolean;
+  update?: (ctx: DataContext) => Filter;
+  delete?: (ctx: DataContext) => Filter;
+  /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `delete`. */
+  restore?: (ctx: DataContext) => Filter;
 }
 /** Пустое значение (`null`, `''`, нет ключа) — метка выключена. */
 export interface Timestamps {

@@ -37,10 +37,11 @@ export const posts = defineResource({
       filters: ['eq', 'contains', 'startsWith'],
       orderable: true,
     }),
-    // Адрес записи: заполняется сам из заголовка (`fill`), передать его нельзя — нет
-    // create-маски. У старых записей (сид) адреса нет: колонка допускает NULL.
+    // Адрес записи: заполняется сам из заголовка (`fill`), передать его нельзя — маски
+    // `[]` («никому»; без маски — всем). У старых записей (сид) адреса нет: колонка допускает NULL.
     slug: field(s.text({ max: 80 }), {
-      read: () => true,
+      create: [],
+      update: [],
       nullable: true,
       fill: (values) => slugOf(values.title),
     }),
