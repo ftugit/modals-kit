@@ -52,14 +52,23 @@ export function encode(values: Record<string, unknown>, d: FormDescription): For
   return out
 }
 
+const isBlob = (x: unknown) => typeof Blob !== 'undefined' && x instanceof Blob
+
 /**
- * Значения без secret-полей: пароль не возвращается наружу.
+ * Значения, которые можно вернуть наружу: без secret-полей (пароль) и без файлов.
+ * Файл назад не едет: ответ — JSON (у нативного пути — сериализация фреймворка,
+ * которая `File` не берёт), а поле файла значение из разметки всё равно не примет.
  * @param values Полные значения.
  * @param d Описание формы.
- * @returns Копия без секретных полей.
+ * @returns Копия без секретных полей и файлов.
  */
 export function stripSecret(values: Record<string, unknown>, d: FormDescription) {
   const out = safeObject<unknown>()
-  for (const f of d.fields) if (!f.secret && f.name in values) out[f.name] = values[f.name]
+  for (const f of d.fields) {
+    if (f.secret || !(f.name in values)) continue
+    const x = values[f.name]
+    if (isBlob(x) || (Array.isArray(x) && x.some(isBlob))) continue
+    out[f.name] = x
+  }
   return out
 }

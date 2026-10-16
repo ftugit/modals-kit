@@ -42,6 +42,20 @@ suite('переход после успеха (F17)', () => {
   })
 })
 
+suite('файл в ответе', () => {
+  test('значение файла назад не отдаётся: ответ остаётся JSON-ом', async () => {
+    const d = defineForm({ id: 'probe', fields: { name: field.text({}), pic: field.file({}) } })
+    const h = createFormHandler({ description: d, execute: (c) => c.fail([{ message: 'нет', path: ['name'] }]) })
+    const body = new FormData()
+    for (const [k, x] of Object.entries(envelopeOf({}, d))) body.set(k, String(x))
+    body.set('name', 'a')
+    body.set('pic', new File([new Uint8Array([1, 2, 3])], 'a.bin', { type: 'application/octet-stream' }))
+    const r = await h(new Request('http://x/form', { method: 'POST', body }))
+    expect(r.result.ok).toBe(false)
+    expect(r.result.values).toEqual({ name: 'a' })
+  })
+})
+
 suite('сбой вне execute', () => {
   test('текст исключения не уходит клиенту, но доступен телеметрии', async () => {
     const seen: Record<string, unknown>[] = []

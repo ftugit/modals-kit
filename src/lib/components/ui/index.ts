@@ -10,6 +10,7 @@ export { default as CardContent } from './card/CardContent.svelte'
 export { default as CardFooter } from './card/CardFooter.svelte'
 
 export { default as Input } from './input/Input.svelte'
+export { default as FileInput } from './file-input/FileInput.svelte'
 export { default as Textarea } from './textarea/Textarea.svelte'
 export { default as NativeSelect } from './native-select/NativeSelect.svelte'
 export { default as Checkbox, checkboxVariants, type CheckboxVariants } from './checkbox/Checkbox.svelte'
