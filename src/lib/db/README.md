@@ -34,7 +34,7 @@
 · [Схема и миграции](#6-схема-и-миграции)
 · [Публичный API](#7-публичный-api)
 · [Свой код в TypeScript](#8-свой-код-в-typescript)
-· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · что не сделано — [docs/PLAN.md](./docs/PLAN.md)
+· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · что не сделано — [docs/plan.md](../../../docs/plan.md) (общий план проекта)
 
 ## Установка
 
@@ -437,7 +437,7 @@ const handler = createFormHandler({
 
 ### Правила один раз: модель → форма, `fill`/`store`, `checks`, `validator`, метка проверки
 
-Кто за что отвечает (разбор — `docs/design/db-form-validation-answers.md`):
+Кто за что отвечает:
 
 | Правило | Где описано | Кто проверяет |
 |---|---|---|
@@ -983,7 +983,7 @@ await posts.delete(ctx, id, { chain: true })  // то же без просмот
 экземпляра (`without`, `raw`) действует и на звенья.
 
 **Ключи доступа — `access`.** Поле-ключ включает проверку прав, когда его значение есть в
-запросе (§14 `docs/design/model-automation.md`). `owner(ops?)` — значение сравнивается с
+запросе. `owner(ops?)` — значение сравнивается с
 `ctx.principal.id`; `link({ операция: правило })` — поле ссылается на модель (`db.references`,
 на первичный ключ), и операция проверяется правилом цели: строка цели жива, проходит её
 `policy.select` и названное правило (`select` или именованное правило её `policy`). Нет операции

@@ -304,7 +304,7 @@ test("sync: zod 4 реализует Standard JSON Schema — тип колон�
     assert.ok(checks.rows.some((r) => /char_length\(tag\) >= 2.*char_length\(tag\) <= 20/.test(r.def)), JSON.stringify(checks.rows));
   }));
 
-/* ── цепочка удаления (model-automation.md §10, §11 шаг 7) ─────────────── */
+/* ── цепочка удаления (README §7) ─────────────── */
 
 /** Запись ⊃ комментарии ⊃ голоса; у всех мягкое удаление. `votesSoft: false` — голоса удаляются только навсегда. */
 function family(o: { votesSoft?: boolean; commentDelete?: Resource["policy"]; commentHooks?: Resource["hooks"] } = {}) {
@@ -508,7 +508,7 @@ test("цепочка: выключенное у корня (without, raw) пер
     assert.deepEqual([await count(pg, "fpost", `id = '${other}'`), await count(pg, "comment", `post_id = '${other}'`)], [0, 0], "сырой корень — всё навсегда");
   }));
 
-/* ── ключи доступа (model-automation.md §14, §11 шаг 8) — сценарий chain-acl-keys.sim ── */
+/* ── ключи доступа (README §7) — сценарий chain-acl-keys.sim ── */
 
 /** Записи (видимость и кто комментирует — у самой записи) и комментарии с ключами доступа. */
 function board() {

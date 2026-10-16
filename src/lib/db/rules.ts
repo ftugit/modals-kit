@@ -29,7 +29,7 @@ export async function softDeleteAssignment(x: Resource, s: Sql, ctx: DataContext
   return `${assignee(x, k)} = ${s.fieldParam(x.fields[k], value)}`;
 }
 
-/* ── ключи доступа (`access`, model-automation.md §14) ─────────────────── */
+/* ── ключи доступа (`access`, README §7) ─────────────────────────────────── */
 
 /** Ключи доступа модели; у сырого экземпляра их нет. */
 export const accessKeys = (m: Resource): [string, AccessKey][] => (m.access && !originOf(m).raw ? Object.entries(m.access) : []);

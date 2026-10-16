@@ -1,5 +1,5 @@
-// Запуск: node src/lib/db/probes/chain-acl.sim.mjs (из корня проекта). Результаты — docs/design/model-automation.md §13.
-// Симуляция «права через связь» (model-automation.md §12) на PGlite.
+// Запуск: node src/lib/db/probes/chain-acl.sim.mjs (из корня проекта). Итог — README §7 «Ключи доступа».
+// Симуляция «права через связь» (проектирование ключей доступа, ходы 212–215) на PGlite.
 // SQL собирается так, как его собирал бы компилятор правил: узел `via(поле, правило)` —
 // EXISTS по первичному ключу связанной таблицы с её правилом внутри (рекурсивно).
 import { PGlite } from '@electric-sql/pglite'

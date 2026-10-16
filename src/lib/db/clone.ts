@@ -1,7 +1,7 @@
 /**
  * Временный экземпляр модели без части автоматики (`without`): та же модель, заново
  * собранная из её описания, где выбранные опции заменены на `null`. Операции об этом не
- * знают — у них просто другая схема (docs/design/model-automation.md §1, §8).
+ * знают — у них просто другая схема (README §7 «Разовое отключение автоматики»).
  */
 import { fail } from "./errors";
 import { defineResource, isRecord, MODELS, own, timestampField, type ModelOrigin } from "./validation";

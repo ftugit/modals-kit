@@ -1,5 +1,5 @@
 /**
- * Правила один раз (docs/design/db-form-validation-answers.md): `checks` в модели,
+ * Правила один раз (README §4): `checks` в модели,
  * `validator` для форм без записи, метка проверки, тип/CHECK из Standard JSON Schema,
  * `fill` и `store` у поля. Своя схема поля здесь — заглушка со счётчиком вызовов: так
  * видно, выполнялась ли проверка второй раз. Настоящую пару «модель → форма»
@@ -80,7 +80,7 @@ function posts(title: ReturnType<typeof countedText>, more: Partial<Resource> = 
 const stamp = <T extends object>(values: T, fields: Record<string, { schema: object; value: unknown }>): T =>
   Object.defineProperty(values, VALIDATED_PROOF, { value: { fields }, enumerable: false });
 
-/* ── маски полей и правила строк по умолчанию (model-automation.md §9, §11 шаг 2) ── */
+/* ── маски полей и правила строк по умолчанию (README §7) ── */
 
 test("маски: нет ключа или null — всем, [] — никому; policy без ключа или null — без ограничения", () => {
   const open = defineResource({
@@ -672,7 +672,7 @@ test("timestamps: цепочка ставит детям время базы; ch
   });
 });
 
-/* ── without и behavior (model-automation.md §5, §8, §11 шаг 3) ───────── */
+/* ── without и behavior (README §7) ───────── */
 
 function hidden(more: Record<string, unknown> = {}) {
   return defineResource({

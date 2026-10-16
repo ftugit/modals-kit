@@ -1,5 +1,5 @@
 /**
- * Ход долгой операции — строками в ответе на сам запрос (docs/design/task-state.md).
+ * Ход долгой операции — строками в ответе на сам запрос (`src/lib/task/README.md`).
  *
  *     {"task":{"status":"pending","scope":"global","label":"Запуск базы","progress":{…}}}
  *     {"task":{…}}
