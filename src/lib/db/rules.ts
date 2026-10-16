@@ -124,3 +124,50 @@ export async function checkKeys(
   const denied = asks.findIndex((_, i) => row[`k${i}`] !== true);
   if (denied >= 0) fail("forbidden", asks[denied]!.k);
 }
+
+/* ── примерное число строк (`estimate`) ────────────────────────────────── */
+
+/**
+ * Примерное число строк. Пользователю видна вся таблица (`wholeTable`) — статистика
+ * планировщика (`reltuples`), без неё (вьюха, таблица без ANALYZE) — `count`. Иначе — оценка
+ * плана (`EXPLAIN`), без неё — `count`. `predicate` уже собран в `s`.
+ */
+export async function estimateRows(
+  db: Database,
+  r: Resource,
+  ctx: DataContext,
+  s: Sql,
+  predicate: string,
+  wholeTable: boolean,
+): Promise<{ rows: number; exact: boolean; method: "reltuples" | "explain" | "count" }> {
+  const signal = ctx.signal ? { signal: ctx.signal } : {};
+  if (wholeTable) {
+    // Только для реальных таблиц: у вьюхи reltuples = 0 — это было бы «0 строк».
+    const parts = r.table.split(".");
+    const q = new Sql();
+    const res = await db.query({
+      ...q.statement(
+        `SELECT GREATEST(0, c.reltuples)::bigint AS n FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace
+         WHERE ns.nspname = ${q.param(parts.length > 1 ? parts[0]! : "public")} AND c.relname = ${q.param(parts[parts.length - 1]!)}
+           AND c.relkind IN ('r', 'p', 'm')`,
+      ),
+      ...signal,
+    });
+    const raw = res.rows[0]?.n;
+    const n = raw === undefined || raw === null ? -1 : Number(raw);
+    if (n >= 0) return { rows: n, exact: false, method: "reltuples" };
+  } else
+    try {
+      const e = await db.query({ ...s.statement(`EXPLAIN (FORMAT JSON) SELECT 1 FROM ${table(r)} WHERE ${predicate}`), ...signal });
+      const cell = Object.values(e.rows[0] ?? {})[0];
+      const plan = typeof cell === "string" ? JSON.parse(cell) : cell;
+      const first = Array.isArray(plan) ? plan[0] : plan;
+      const rows = Number((first as { Plan?: { "Plan Rows"?: number } })?.Plan?.["Plan Rows"]);
+      if (Number.isFinite(rows) && rows >= 0) return { rows: Math.round(rows), exact: false, method: "explain" };
+    } catch {
+      // Транспорт без EXPLAIN или старый pg: считаем точно, а не возвращаем мусор.
+    }
+  const c = await db.query({ ...s.statement(`SELECT count(*)::bigint AS n FROM ${table(r)} WHERE ${predicate}`), ...signal });
+  return { rows: Number(c.rows[0]!.n), exact: true, method: "count" };
+}

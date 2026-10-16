@@ -834,7 +834,7 @@ test("raw: запись как есть (свой id, даты, хэш), без 
   });
 });
 
-test("delete({ force }): навсегда при мягком удалении; удалённую достаёт только readDeleted; canDelete — без удаления", () => {
+test("delete({ hard }): навсегда при мягком удалении; удалённую достаёт только readDeleted; canDelete — без удаления", () => {
   const r = hidden({
     policy: { delete: () => ({ field: "title", op: "ne", value: "чужая" }) },
     timestamps: { createdAt: "created_at", deletedAt: { field: "deleted_at", readDeleted: ["admin"] } },
@@ -848,14 +848,15 @@ test("delete({ force }): навсегда при мягком удалении; 
     const missing = "00000000-0000-4000-8000-0000000000ff";
     assert.deepEqual(await api.canDelete(ctx, [a.id, other.id, missing, a.id]), { allowed: [a.id], soft: true });
     assert.equal((await pg.query("SELECT 1 FROM public.rules_hidden")).rows.length, 3, "canDelete ничего не удалил");
-    await api.delete(ctx, a.id, { force: true });
+    await api.delete(ctx, a.id, { hard: true });
     assert.equal((await pg.query(`SELECT 1 FROM public.rules_hidden WHERE id = '${a.id}'`)).rows.length, 0, "стёрта");
     await api.delete(ctx, b.id);
-    await assert.rejects(api.delete(ctx, b.id, { force: true }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "удалённую не видит");
-    await api.delete(admin, b.id, { force: true });
+    await assert.rejects(api.delete(ctx, b.id, { hard: true }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "удалённую не видит");
+    await api.delete(admin, b.id, { hard: true });
     assert.equal((await pg.query(`SELECT 1 FROM public.rules_hidden WHERE id = '${b.id}'`)).rows.length, 0, "readDeleted стёр удалённую");
-    await assert.rejects(api.delete(ctx, other.id, { force: true }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "правило delete действует");
-    await assert.rejects(api.delete(ctx, other.id, { hard: true } as never), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+    await assert.rejects(api.delete(ctx, other.id, { hard: true }), (e: unknown) => e instanceof DbFailure && e.kind === "not_found", "правило delete действует");
+    await assert.rejects(api.delete(ctx, other.id, { force: true } as never), (e: unknown) => e instanceof DbFailure && e.kind === "validation", "прежнее имя");
+    await assert.rejects(api.delete(ctx, other.id, { hard: "да" } as never), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
     await assert.rejects(api.canDelete(ctx, []), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
   });
 });

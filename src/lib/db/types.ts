@@ -391,17 +391,19 @@ export interface ResourceApi<
     patch: unknown,
   ): Promise<ResourceRow<F, R>>;
   /**
-   * Удалить одну запись по правилу `delete`. У модели с мягким удалением — метка; `force: true`
-   * — навсегда (удалённую строку достаёт только тот, кто видит удалённые). Ссылки на запись
-   * других записей — ошибка базы (`conflict`, код `referenced`).
+   * Удалить запись по правилу `delete`. У модели с мягким удалением — метка; `hard: true`
+   * — навсегда (удалённую строку достаёт только тот, кто видит удалённые). Без `chain` —
+   * только эта запись: ссылки на неё других записей — ошибка базы (`conflict`, код
+   * `referenced`). `chain: true` — вместе с цепочкой, как `(await chain(ctx, id)).delete()`,
+   * но без отдельного вызова; ответ — удалённая запись.
    */
-  delete(ctx: DataContext, id: unknown, options?: { force?: boolean }): Promise<ResourceRow<F, R>>;
+  delete(ctx: DataContext, id: unknown, options?: { hard?: boolean; chain?: boolean }): Promise<ResourceRow<F, R>>;
   /** Какие из записей этот ctx может удалить — без удаления; `soft` — удаление по умолчанию мягкое. */
   canDelete(ctx: DataContext, ids: readonly unknown[]): Promise<{ allowed: unknown[]; soft: boolean }>;
   /**
    * Цепочка удаления записи: звенья по ссылкам-принадлежностям (`references.chain`) из
    * `createDb({ resources })` и права на их удаление — ничего не удаляет. Удаляет
-   * `plan.delete({ force })`. Выключенное у экземпляра (`without`, `raw`) переходит на звенья.
+   * `plan.delete({ hard })`. Выключенное у экземпляра (`without`, `raw`) переходит на звенья.
    */
   chain(ctx: DataContext, id: unknown): Promise<import("./chain").ChainPlan>;
   /**

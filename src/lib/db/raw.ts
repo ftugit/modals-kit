@@ -7,8 +7,9 @@
  * поле — `validation`), значения — параметрами SQL, транзакция, отмена по `signal`.
  */
 import { DbFailure, fail } from "./errors";
-import { chainPlan } from "./chain";
-import { col, filterSQL, ident, projection, Sql, table, orderSQL } from "./query/sql";
+import { chainDelete, chainPlan, deleteOptions } from "./chain";
+import { estimateRows } from "./rules";
+import { col, expr, filterSQL, ident, projection, Sql, table, orderSQL } from "./query/sql";
 import { context, inputRecord, isRecord, MODELS, own } from "./validation";
 import type { DataContext, Database, Filter, Limits, Order, Resource, ResourceApi, Row } from "./types";
 
@@ -53,14 +54,39 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
     const ctx = context(ctx0);
     if (!isRecord(input)) fail("validation");
     for (const k of Object.keys(input))
-      if (!["fields", "filter", "order", "page", "limit", "includeDeleted"].includes(k))
-        fail(k === "include" || k === "after" ? "unsupported" : "validation", undefined, [`raw: ${k} не поддерживается`]);
+      if (!["fields", "filter", "order", "page", "limit", "includeDeleted", "include"].includes(k))
+        fail(k === "after" ? "unsupported" : "validation", undefined, [`raw: ${k} не поддерживается`]);
     const limit = (input.limit as number | undefined) ?? db.limits.pageSize;
     const page = (input.page as number | undefined) ?? 1;
     if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(page) || page < 1) fail("validation");
     const s = new Sql();
     const predicate = await where(ctx, s, input.filter as Filter | undefined);
-    return run(ctx, s, `SELECT ${projection(r, keysOf(input.fields))} FROM ${table(r)} WHERE ${predicate} ORDER BY ${orderSQL(r, order(input.order))} LIMIT ${s.param(limit)} OFFSET ${s.param((page - 1) * limit)}`);
+    const inc = includes(input.include, s);
+    return run(ctx, s, `SELECT ${projection(r, keysOf(input.fields))}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicate} ORDER BY ${orderSQL(r, order(input.order))} LIMIT ${s.param(limit)} OFFSET ${s.param((page - 1) * limit)}`);
+  }
+  /**
+   * Связанные записи сырого экземпляра — тоже сырые: все поля, без правил строк, удалённые
+   * тоже. Ограничения те же, что у обычного `include`: связь по первичному ключу цели, не на
+   * свою таблицу, не больше 8.
+   */
+  function includes(names: unknown, s: Sql) {
+    if (names === undefined) return { joins: "", select: "" };
+    if (!Array.isArray(names) || names.length > 8 || new Set(names).size !== names.length) fail("validation");
+    const joins: string[] = [];
+    const select: string[] = [];
+    names.forEach((name, i) => {
+      if (typeof name !== "string" || !r.relations || !own(r.relations, name) || own(r.fields, name)) fail("validation", undefined, [`raw: нет связи ${String(name)}`]);
+      const rel = r.relations[name]!;
+      const target = rel.resource;
+      if (target.table === r.table || rel.foreignField !== target.primaryKey || !own(r.fields, rel.localField)) fail("unsupported");
+      const alias = ident("_db_include_" + i);
+      const object = `jsonb_build_object(${Object.keys(target.fields).map((k) => `${s.param(k)}::text, ${expr(target, k)}`).join(", ")})`;
+      joins.push(
+        ` LEFT JOIN LATERAL (SELECT ${object} AS payload FROM ${table(target)} WHERE ${col(target, rel.foreignField)} = ${col(r, rel.localField)} LIMIT 1) ${alias} ON TRUE`,
+      );
+      select.push(`${alias}.payload AS ${ident(name)}`);
+    });
+    return { joins: joins.join(""), select: select.length ? ", " + select.join(", ") : "" };
   }
   async function insertRows(ctx: DataContext, rows: Row[], dbx: Database, ignore: boolean) {
     const keys = Object.keys(rows[0]!);
@@ -117,7 +143,13 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
         if (!Object.keys(row).length) fail("validation");
         return byId(ctx, id, (s, match) => `UPDATE ${table(r)} SET ${sets(s, row).join(",")} WHERE ${match} RETURNING ${projection(r, all)}`);
       }),
-    delete: (ctx, id) => db.guard(() => byId(ctx, id, (_s, match) => `DELETE FROM ${table(r)} WHERE ${match} RETURNING ${projection(r, all)}`)),
+    // сырой экземпляр удаляет только навсегда: `hard` ничего не меняет, `chain` — со звеньями (тоже сырыми)
+    delete: (ctx, id, options) =>
+      db.guard(() =>
+        deleteOptions(options, true).chain
+          ? chainDelete(db, r, context(ctx), id, true)
+          : byId(ctx, id, (_s, match) => `DELETE FROM ${table(r)} WHERE ${match} RETURNING ${projection(r, all)}`),
+      ),
     canDelete: (ctx0, ids) =>
       db.guard(async () => {
         const ctx = context(ctx0);
@@ -129,7 +161,14 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
     chain: (ctx, id) => db.guard(() => chainPlan(db, r, context(ctx), id)),
     cursor: unsupported,
     restore: unsupported,
-    estimate: unsupported,
+    // видна вся таблица, и удалённые тоже: без фильтра — статистика планировщика
+    estimate: (ctx0, input = {}) =>
+      db.guard(async () => {
+        const ctx = context(ctx0);
+        if (!isRecord(input) || Object.keys(input).some((k) => !["filter", "includeDeleted"].includes(k))) fail("validation");
+        const s = new Sql();
+        return estimateRows(db, r, ctx, s, await where(ctx, s, input.filter), !input.filter);
+      }),
     validator: () => {
       throw new DbFailure("unsupported", { issues: ["raw: у сырого экземпляра нет проверки"] });
     },

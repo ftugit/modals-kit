@@ -2,7 +2,7 @@
  * Цепочка удаления (docs/design/model-automation.md §10). Ссылка-принадлежность
  * (`references: { resource, chain: true }`) значит «строка живёт только вместе с целью».
  * `chain(ctx, id)` собирает записи цепочки и права на их удаление, ничего не удаляя;
- * `plan.delete({ force })` собирает их заново в транзакции с блокировкой строк, проверяет и
+ * `plan.delete({ hard })` собирает их заново в транзакции с блокировкой строк, проверяет и
  * удаляет с конца, корень — последним.
  */
 import { DbFailure, fail } from "./errors";
@@ -110,10 +110,10 @@ export interface ChainPlan {
   /**
    * Удалить корень и цепочку в одной транзакции: собрать заново с блокировкой строк,
    * проверить, удалить с конца, корень — последним. Мягкий корень — все звенья мягко (не
-   * умеет — `unsupported` с `{ model, path, count }`); `force` или корень без мягкого
+   * умеет — `unsupported` с `{ model, path, count }`); `hard` или корень без мягкого
    * удаления — всё навсегда. Не хватает прав — `forbidden` с `{ model, path, count }`.
    */
-  delete(options?: { force?: boolean }): Promise<{ root: Row; links: readonly { model: string; count: number }[] }>;
+  delete(options?: { hard?: boolean }): Promise<{ root: Row; links: readonly { model: string; count: number }[] }>;
 }
 
 interface Entry {
@@ -200,16 +200,37 @@ export async function chainPlan(db: Database, root: Resource, ctx: DataContext, 
         Object.freeze({ model: e.origin.key, path: Object.freeze(e.path), ids: Object.freeze(e.ids), allowed: e.allowed, total: e.total, soft: !!e.model.softDelete && !isRaw(e.model) }),
       ),
     ),
-    delete: (options?: { force?: boolean }) =>
+    delete: (options?: { hard?: boolean }) =>
       db.guard(async () => {
-        if (options !== undefined && (typeof options !== "object" || Object.keys(options).some((k) => k !== "force")))
-          fail("validation", undefined, ["delete: опции { force?: boolean }"]);
+        const o = deleteOptions(options, false);
         if (!db.driver.capabilities.transactions) fail("unsupported");
-        const hard = options?.force === true || !softRoot(root);
-        return db.transaction((tx) => execute(tx, kit, root, ctx, view.pk, hard));
+        return db.transaction((tx) => execute(tx, kit, root, ctx, view.pk, o.hard || !softRoot(root)));
       }),
   });
   return plan;
+}
+
+/** Опции удаления: `hard` — навсегда; `chain` — с цепочкой (только у `delete` модели). */
+export function deleteOptions(options: unknown, chain: boolean): { hard: boolean; chain: boolean } {
+  const keys = chain ? ["hard", "chain"] : ["hard"];
+  const o = options as Record<string, unknown> | undefined;
+  if (
+    o !== undefined &&
+    (o === null || typeof o !== "object" || Array.isArray(o) || Object.entries(o).some(([k, v]) => !keys.includes(k) || (v !== undefined && typeof v !== "boolean")))
+  )
+    fail("validation", undefined, [`delete: опции { ${keys.map((k) => `${k}?: boolean`).join(", ")} }`]);
+  return { hard: o?.hard === true, chain: o?.chain === true };
+}
+
+/**
+ * `delete(ctx, id, { chain: true })`: цепочка без отдельного `chain()` — та же транзакция,
+ * блокировка, проверки и порядок, что у `plan.delete`. Возвращает удалённый корень.
+ */
+export async function chainDelete(db: Database, root: Resource, ctx: DataContext, id: unknown, hard: boolean): Promise<Row> {
+  const kit = (db as unknown as { [CHAIN_KIT]?: ChainKit })[CHAIN_KIT];
+  if (!kit) fail("unsupported", undefined, ["delete({ chain }): передайте список моделей в createDb({ resources })"]);
+  if (!db.driver.capabilities.transactions) fail("unsupported");
+  return (await db.transaction((tx) => execute(tx, kit, root, ctx, id, hard || !softRoot(root)))).root;
 }
 
 async function execute(tx: Database, kit: ChainKit, root: Resource, ctx: DataContext, id: unknown, hard: boolean) {
@@ -242,7 +263,7 @@ async function execute(tx: Database, kit: ChainKit, root: Resource, ctx: DataCon
     }
     out.push({ model: e.origin.key, count: e.total });
   }
-  const row = await tx.resource(root).delete(ctx, id, hard && softRoot(root) ? { force: true } : undefined);
+  const row = await tx.resource(root).delete(ctx, id, hard && softRoot(root) ? { hard: true } : undefined);
   return { root: row, links: Object.freeze(out.reverse()) };
 }
 

@@ -5,8 +5,8 @@ import { allows, checkField, context, draftInput, freeze, grants, inputRecord, i
 import { fieldError, revalidateDraft, systemField, timestampField, unprotected, validateField } from './validation';
 import { readProof } from './proof';
 import { behavior, originOf, withoutPaths } from './clone';
-import { accessKeys, accessSQL, assignee, checkKeys, filterKeys, insertAllowed, rule, softDeleteAssignment } from './rules';
-import { chainPlan } from './chain';
+import { accessKeys, accessSQL, assignee, checkKeys, estimateRows, filterKeys, insertAllowed, rule, softDeleteAssignment } from './rules';
+import { chainDelete, chainPlan, deleteOptions } from './chain';
 import { rawApi, rawResource } from './raw';
 import {
   Sql,
@@ -223,10 +223,10 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     return `(${policy}) AND (${access}) AND (${client}) AND (${deleted})`;
   }
   /**
-   * Строка по ключу для изменения. `force` — удаление навсегда: удалённую (мягко) строку оно
+   * Строка по ключу для изменения. `hard` — удаление навсегда: удалённую (мягко) строку оно
    * достаёт только у того, кто видит удалённые (`readDeleted`), иначе — только живую.
    */
-  async function idWhere(ctx: DataContext, op: 'update' | 'delete' | 'restore', s: Sql, id: unknown, force = false) {
+  async function idWhere(ctx: DataContext, op: 'update' | 'delete' | 'restore', s: Sql, id: unknown, hard = false) {
     const v = await validateField(r.fields[r.primaryKey], id, r.primaryKey);
     if (op === 'restore') {
       // Восстановить = увидеть удалённую: право `readDeleted` (where проверит его при
@@ -234,7 +234,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule(r, 'restore', ctx) });
       return `(${predicate}) AND ${col(r, r.softDelete!.field)} IS NOT NULL AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
     }
-    const withDeleted = force && !!r.softDelete && grants(r.softDelete.readDeleted, ctx);
+    const withDeleted = hard && !!r.softDelete && grants(r.softDelete.readDeleted, ctx);
     return `(${await where(ctx, op, s, undefined, withDeleted)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
   }
   async function includes(ctx: DataContext, names: readonly string[] | undefined, s: Sql) {
@@ -374,7 +374,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
-    force = false,
+    hard = false,
   ): Promise<Out> {
     const keys = readable(r, ctx),
       s = new Sql();
@@ -385,7 +385,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     let before: Row | undefined;
     if (op !== 'insert' && (r.hooks?.beforeWrite || r.hooks?.afterWrite || r.validateFinal || (op === 'update' && r.checks))) {
       const pre = new Sql(),
-        predicate = await idWhere(ctx, op, pre, id, force);
+        predicate = await idWhere(ctx, op, pre, id, hard);
       before = (
         await dbx.query(
           withSignal(
@@ -447,8 +447,8 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         ? `INSERT INTO ${table(r)} (${entries.map(([k]) => ident(r.fields[k].column ?? k)).join(',')}) VALUES (${entries.map(([k, v]) => s.fieldParam(r.fields[k], v)).join(',')})`
         : `INSERT INTO ${table(r)} DEFAULT VALUES`;
     } else {
-      const predicate = await idWhere(ctx, op, s, id, force);
-      if (op === 'delete' && (!r.softDelete || force)) sql = `DELETE FROM ${table(r)} WHERE ${predicate}`;
+      const predicate = await idWhere(ctx, op, s, id, hard);
+      if (op === 'delete' && (!r.softDelete || hard)) sql = `DELETE FROM ${table(r)} WHERE ${predicate}`;
       else {
         const sets =
           op === 'delete'
@@ -535,53 +535,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     // было бы «0 строк» вместо правдоподобной оценки.
     const wholeTable =
       !input.filter && policy === true && (!r.softDelete || input.includeDeleted === true);
-    if (wholeTable) {
-      const parts = r.table.split('.');
-      const name = parts[parts.length - 1]!;
-      const schema = parts.length > 1 ? parts[0]! : 'public';
-      const s = new Sql();
-      const res = await db.query(
-        withSignal(
-          s.statement(
-            `SELECT GREATEST(0, c.reltuples)::bigint AS n FROM pg_catalog.pg_class c
-              JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace
-             WHERE ns.nspname = ${s.param(schema)} AND c.relname = ${s.param(name)}
-               AND c.relkind IN ('r', 'p', 'm')`,
-          ),
-          ctx,
-        ),
-      );
-      const raw = res.rows[0]?.n;
-      const n = raw === undefined || raw === null ? -1 : Number(raw);
-      if (n >= 0) return { rows: n, exact: false, method: 'reltuples' as const };
-    }
-    if (wholeTable) {
-      // Статистики нет (вьюха, таблица без ANALYZE) — честный count.
-      const c = await db.query(
-        withSignal(s2.statement(`SELECT count(*)::bigint AS n FROM ${table(r)} WHERE ${predicate}`), ctx),
-      );
-      return { rows: Number(c.rows[0]!.n), exact: true, method: 'count' as const };
-    }
-    try {
-      const e = await db.query(
-        withSignal(
-          s2.statement(`EXPLAIN (FORMAT JSON) SELECT 1 FROM ${table(r)} WHERE ${predicate}`),
-          ctx,
-        ),
-      );
-      const cell = Object.values(e.rows[0] ?? {})[0];
-      const plan = typeof cell === 'string' ? JSON.parse(cell) : cell;
-      const first = Array.isArray(plan) ? plan[0] : plan;
-      const rows = Number((first as { Plan?: { 'Plan Rows'?: number } })?.Plan?.['Plan Rows']);
-      if (Number.isFinite(rows) && rows >= 0)
-        return { rows: Math.round(rows), exact: false, method: 'explain' as const };
-    } catch {
-      // Транспорт без EXPLAIN или старый pg: считаем точно, а не возвращаем мусор.
-    }
-    const c = await db.query(
-      withSignal(s2.statement(`SELECT count(*)::bigint AS n FROM ${table(r)} WHERE ${predicate}`), ctx),
-    );
-    return { rows: Number(c.rows[0]!.n), exact: true, method: 'count' as const };
+    return estimateRows(db, r as unknown as Resource, ctx, s2, predicate, wholeTable);
   }
   async function insertMany(
     ctx0: DataContext,
@@ -665,7 +619,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     op: 'insert' | 'update' | 'delete' | 'restore',
     id: unknown,
     input: unknown,
-    force = false,
+    hard = false,
   ) =>
     db.guard(async () => {
       const ctx = context(ctx0);
@@ -678,9 +632,9 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       if (needsTransaction) {
         // На HTTP это отказывает ДО запроса/мутации, а не эмулирует atomic hooks.
         if (!db.driver.capabilities.transactions) throw new DbFailure('unsupported');
-        return db.transaction((tx) => write(tx, ctx, op, id, input, force));
+        return db.transaction((tx) => write(tx, ctx, op, id, input, hard));
       }
-      return write(db, ctx, op, id, input, force);
+      return write(db, ctx, op, id, input, hard);
     });
   /**
    * Какие из строк этот ctx может удалить — без удаления: правило `delete`, только живые.
@@ -789,11 +743,13 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       }),
     insert: (ctx, input) => mutate(ctx, 'insert', undefined, input),
     update: (ctx, id, input) => mutate(ctx, 'update', id, input),
-    delete: (ctx, id, options) => {
-      if (options !== undefined && (!isRecord(options) || Object.keys(options).some((k) => k !== 'force') || (options.force !== undefined && typeof options.force !== 'boolean')))
-        return Promise.reject(new DbFailure('validation', { issues: ['delete: опции { force?: boolean }'] }));
-      return mutate(ctx, 'delete', id, undefined, options?.force === true);
-    },
+    delete: (ctx, id, options) =>
+      db.guard(() => {
+        const o = deleteOptions(options, true);
+        return o.chain
+          ? chainDelete(db, r as unknown as Resource, context(ctx), id, o.hard)
+          : mutate(ctx, 'delete', id, undefined, o.hard);
+      }) as Promise<Out>,
     canDelete: (ctx, ids) => db.guard(() => canDelete(ctx, ids)),
     chain: (ctx, id) => db.guard(() => chainPlan(db, r as unknown as Resource, context(ctx), id)),
     restore: (ctx, id) => {

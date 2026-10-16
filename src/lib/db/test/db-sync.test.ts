@@ -323,8 +323,12 @@ function family(o: { votesSoft?: boolean; commentDelete?: Resource["policy"]; co
   const comments: Resource = base(
     "t.comment",
     "public.comment",
-    { post_id: f.uuid({ ...open, db: { references: { resource: () => posts, chain: true } } }), author: f.text({ ...open, nullable: true }) },
-    { ...(o.commentDelete ? { policy: o.commentDelete } : {}), ...(o.commentHooks ? { hooks: o.commentHooks } : {}) },
+    { post_id: f.uuid({ ...open, filters: ["eq"], db: { references: { resource: () => posts, chain: true } } }), author: f.text({ ...open, nullable: true }) },
+    {
+      relations: { post: { resource: posts, localField: "post_id", foreignField: "id" } },
+      ...(o.commentDelete ? { policy: o.commentDelete } : {}),
+      ...(o.commentHooks ? { hooks: o.commentHooks } : {}),
+    },
   );
   const votes: Resource = base(
     "t.vote",
@@ -346,7 +350,7 @@ const count = async (pg: PGlite, table: string, where = "TRUE") =>
   (await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`)).rows[0]!.n;
 const live = (pg: PGlite, table: string) => count(pg, table, "deleted_at IS NULL");
 
-test("цепочка: chain собирает звенья и права, ничего не удаляя; мягкий корень — мягко всё; force — навсегда, и удалённых детей", () =>
+test("цепочка: chain собирает звенья и права, ничего не удаляя; мягкий корень — мягко всё; hard — навсегда, и удалённых детей", () =>
   withPg(async (pg, driver) => {
     const rs = family();
     const { id, comments, db } = await seedFamily(pg, driver, rs);
@@ -367,7 +371,7 @@ test("цепочка: chain собирает звенья и права, нич�
     // мягко удалённая запись: удалить навсегда — с её уже удалёнными детьми (без них база не даст)
     const again = await db.resource(rs.posts).chain(ctx, id);
     assert.deepEqual([again.root.soft, again.links.map((l) => l.total)], [false, [2, 2]], "удалённый корень — только навсегда");
-    await again.delete({ force: true });
+    await again.delete({ hard: true });
     assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [1, 1, 1], "стёрто навсегда");
   }));
 
@@ -390,7 +394,7 @@ test("цепочка: не хватает прав — forbidden с модель
       assert.ok(e instanceof DbFailure && e.kind === "unsupported", String(e));
       assert.deepEqual([e.details.model, e.details.count], ["t.vote", 2]);
       assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await count(pg, "vote")], [2, 3, 3], "откат целиком");
-      await plan.delete({ force: true });
+      await plan.delete({ hard: true });
       assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [1, 1, 1], "навсегда — можно");
     }),
   ));
@@ -443,6 +447,53 @@ test("цепочка: у звена с хуками — удаление по о
     assert.deepEqual(done.links.map((l) => l.count), [2, 2]);
     assert.deepEqual(ops, ["delete", "delete"]);
     assert.deepEqual([await live(pg, "comment"), await live(pg, "vote")], [1, 1]);
+  }));
+
+test("delete({ chain: true }): цепочка без отдельного chain(); ответ — запись; отказ откатывает всё; без resources — unsupported", () =>
+  withPg(async (pg, driver) => {
+    const rs = family({ commentDelete: { ...rules, delete: () => ({ field: "author", op: "eq", value: "я" }) } });
+    const { id, db } = await seedFamily(pg, driver, rs);
+    await assert.rejects(db.resource(rs.posts).delete(ctx, id, { chain: true }), (e: unknown) =>
+      e instanceof DbFailure && e.kind === "forbidden" && e.details.model === "t.comment" && e.details.count === 1,
+    );
+    assert.deepEqual([await live(pg, "fpost"), await live(pg, "comment"), await live(pg, "vote")], [2, 3, 3], "ничего не удалено");
+    const other = (await pg.query<{ id: string }>("SELECT id FROM fpost WHERE id <> $1", [id])).rows[0]!.id;
+    const row = await db.resource(rs.posts).delete(ctx, other, { chain: true });
+    assert.equal(row.id, other);
+    assert.ok(row.deleted_at, "мягко: корень помечен");
+    assert.deepEqual([await live(pg, "comment"), await live(pg, "vote")], [2, 2], "дети второй записи помечены");
+    await db.resource(rs.posts).without(["policy"], (p) => p.delete(ctx, other, { chain: true, hard: true }));
+    assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [1, 2, 2], "навсегда — с уже удалёнными детьми");
+    await db.resource(rs.posts).raw((p) => p.delete(ctx, id, { chain: true }));
+    assert.deepEqual([await count(pg, "fpost"), await count(pg, "comment"), await count(pg, "vote")], [0, 0, 0], "сырой — всё навсегда");
+    const plain = createDb({ driver, limits: conservativeLimits });
+    await assert.rejects(plain.resource(rs.posts).delete(ctx, id, { chain: true }), (e: unknown) => e instanceof DbFailure && e.kind === "unsupported");
+    await assert.rejects(plain.resource(rs.posts).delete(ctx, id, { cascade: true } as never), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+  }));
+
+test("raw: связанные записи — тоже сырые (удалённые, все поля); estimate видит удалённые", () =>
+  withPg(async (pg, driver) => {
+    const rs = family();
+    const { id, db } = await seedFamily(pg, driver, rs);
+    await pg.query("UPDATE fpost SET deleted_at = now() WHERE id = $1", [id]);
+    const filter = { field: "post_id", op: "eq", value: id } as const;
+    const normal = await db.resource(rs.comments).select(ctx, { include: ["post"], filter } as never);
+    assert.ok(normal.length === 2 && normal.every((x) => (x as Record<string, unknown>).post === null), "обычный: удалённая запись скрыта");
+    const raw = await db.resource(rs.comments).raw((c) => c.select(ctx, { include: ["post"], filter } as never));
+    assert.equal(raw.length, 2);
+    for (const x of raw) {
+      const post = (x as Record<string, Record<string, unknown>>).post!;
+      assert.equal(post.id, id);
+      assert.ok(post.deleted_at, "сырой: удалённая запись видна, с меткой");
+    }
+    await assert.rejects(db.resource(rs.comments).raw((c) => c.select(ctx, { include: ["nope"] } as never)), (e: unknown) => e instanceof DbFailure && e.kind === "validation");
+    await pg.query("UPDATE comment SET deleted_at = now() WHERE post_id = $1", [id]);
+    const some = await db.resource(rs.comments).raw((c) => c.estimate(ctx, { filter }));
+    assert.ok(some.rows >= 1 && ["explain", "count"].includes(some.method), JSON.stringify(some));
+    await pg.exec("ANALYZE comment");
+    const whole = await db.resource(rs.comments).raw((c) => c.estimate(ctx));
+    assert.deepEqual([whole.rows, whole.method], [3, "reltuples"], "вся таблица, и удалённые");
+    assert.equal((await db.resource(rs.comments).estimate(ctx)).rows, 1, "обычный: удалённые скрыты");
   }));
 
 test("цепочка: выключенное у корня (without, raw) переходит на звенья", () =>
