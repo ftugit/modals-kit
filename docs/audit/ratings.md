@@ -177,7 +177,7 @@
 | Файл | Строк | Оценка | Статус | Замечания (критерии) | Предскан |
 |---|---:|:---:|:---:|---|---|
 | `async.ts` | 234 | 9 | прочитан | Ход 10: F21 (6068f80); ход 11: B7 (f1d90b3) — кэш ≤ CACHE_MAX=200, вытеснение старейших. Было 8. Остаётся: 2 дубля JSDoc (K10). | setTimeout×2, any×1 |
-| `builtins.ts` | 219 | 9 | прочитан | numberType ставит inputmode=numeric на type=number: моб. клавиатура без точки/минуса, ядро их принимает (на устройстве не проверено) |  |
+| `builtins.ts` | 226 | 9 | прочитан | numberType ставит inputmode=numeric на type=number: моб. клавиатура без точки/минуса, ядро их принимает (на устройстве не проверено) |  |
 | `constraints.ts` | 77 | 10 | прочитан | словарь видов ограничений + opaque; без замечаний |  |
 | `continuation.ts` | 110 | 9 | прочитан | дубли JSDoc; иначе образцово | **удалён в ходе 237** (не использовался) |
 | `decode.ts` | 66 | 9 | прочитан | безвредный каст val as string |  |
@@ -590,7 +590,7 @@
 | `SearchInput.svelte` | 70 | — | ⏳ |  | addEventListener×1 |
 | `SearchMorph.svelte` | 144 | — | ⏳ |  | window/document×2, rAF×1, addEventListener×1 |
 | `Select.svelte` | 861 | — | ⏳ |  | $effect×5, window/document×15, setTimeout×1, microtask×2, untrack×1, addEventListener×7 |
-| `SelectList.svelte` | 562 | — | ⏳ |  | $effect×3, window/document×1, rAF×1 |
+| `SelectList.svelte` | 569 | — | ⏳ |  | $effect×3, window/document×1, rAF×1 |
 | `Separator.svelte` | 50 | — | ⏳ |  |  |
 | `Skeleton.svelte` | 38 | — | ⏳ |  |  |
 | `Spinner.svelte` | 41 | — | ⏳ |  |  |
