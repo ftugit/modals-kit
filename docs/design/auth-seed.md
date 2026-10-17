@@ -90,6 +90,11 @@ replay-атаки украденным токеном, плохой UX (лишн
 
 ## 5. Шаги внедрения
 
+Оболочка API написана каркасом (`src/lib/auth`, ход 251): `api.ts` — голые функции
+(тела пустые, правила статьи помечены «статья: N»), `ports.ts` — что даёт приложение,
+`sveltekit.ts` — связка с хвостами и фасад `auth(event)` для REST и POST одновременно,
+`README.md` — цепочка вызова и таблица покрытия. Внедрение = наполнить тела по шагам ниже.
+
 1. **identity** — ресурс `lib/db` (`demo.identity`: pubkey, createdAt, tokenVersion; ключ
    доступа — см. §7 README `lib/db`; у гостя прав нет).
 2. **challenge** — `POST /api/auth/challenge`: nonce в `#lib/cache` (TTL 2 мин, одноразовый).
