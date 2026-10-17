@@ -6,7 +6,6 @@
 //     props.s1.kind         ключ вида из каталога
 //     props.s1.rules        выбранные правила (повторяется)
 //     props.s1.max_length   значение правила: имя правила в snake_case
-//     props.s1.rules_kind   вид, для которого рисовались правила (см. readSlot)
 //
 // Места (`s1`, у новых — случайный ключ `fxxxxxx`) — сегменты имени, порядок — порядок
 // первого появления в форме. Места рисует приложение (`fieldSet` в `#lib/form/svelte`).
@@ -67,12 +66,11 @@ function readSlot(form: EntrySource, name: string, slot: string): KitField {
     // нечисло уходит каталогу как есть: он назовёт ошибку у своего правила
     return raw === '' ? { rule } : { rule, arg: Number.isFinite(n) ? n : raw }
   })
-  const kind = one('kind')
-  // `rules_kind` — вид, для которого рисовали список правил. С видом без скрипта
-  // ничего не происходит до отправки: старый выбор приходит вместе с новым видом.
-  // Вид не совпал — выбор сбрасывается целиком, как при смене вида с JS.
-  const rendered = one('rules_kind')
-  return { name: slot, kind, label: one('label').trim(), rules: rendered && rendered !== kind ? [] : rules }
+  // Правила возвращаются как есть: без скрипта список правил показывает ВСЕ
+  // правила схемы, и правило не своего вида остаётся в набранном. Отбраковка —
+  // дело схемы (`compile`): лишнее отклоняется ошибкой у «Правил», а не
+  // молчаливым сбросом.
+  return { name: slot, kind: one('kind'), label: one('label').trim(), rules }
 }
 
 const asItem = (kit: FieldKit, x: KitField): FieldSetItem => ({
@@ -197,9 +195,6 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
     for (const item of Array.isArray(value) ? value : []) {
       out.push([fieldSetName(name, item.name, 'label'), item.label])
       out.push([fieldSetName(name, item.name, 'kind'), item.preset])
-      // вид, для которого рисовались правила (см. readSlot): значение всегда
-      // совпадает с видом места — сброс правил нужен только хосту без скрипта
-      out.push([fieldSetName(name, item.name, 'rules_kind'), item.preset])
       const locked = kit?.rulesFor(item.preset)?.locked ?? []
       for (const r of item.rules ?? []) {
         if (locked.some((l) => l.rule === r.rule)) continue
@@ -213,6 +208,6 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
   attrs: () => ({}),
   degradation: {
     withoutJs: '«+ поле» и «Удалить» — отправка формы с намерением: сервер возвращает места без сохранения',
-    lost: 'смена вида сразу сбрасывает выбранные правила; без скрипта — после отправки',
+    lost: 'без скрипта список правил показывает все правила схемы, лишнее отклонит проверка',
   },
 }

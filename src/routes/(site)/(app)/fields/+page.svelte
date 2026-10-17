@@ -4,12 +4,12 @@
    * (запись на наборе) и «Результат» (просмотр). На каждом шаге — только его
    * действие; шаги сверху слева становятся ссылками, когда их уже заполняли.
    *
-   * Шаг живёт в адресе (`?step=…`), поэтому шаги, «Вернуться» и переходы после
-   * сохранения работают и без скрипта. Назад — форма прошлого шага в режиме
-   * правки: она собирается из сохранённого набора и записи, а не с нуля.
+   * Шаг живёт в адресе (`?step=…`), поэтому навигация по шагам и переходы
+   * после сохранения работают и без скрипта. Назад — форма прошлого шага в
+   * режиме правки: она собирается из сохранённого набора и записи, а не с нуля.
    */
+  import { page } from '$app/state'
   import type { Result } from '#lib/form/index.js'
-  import { Button } from '#lib/components/ui/index.js'
   import CollectionForm from './CollectionForm.svelte'
   import RecordForm from './RecordForm.svelte'
   import RecordView from './RecordView.svelte'
@@ -34,6 +34,16 @@
     action?.intent === intent && action.result && (!action.result.ok || action.result.outcome === 'not-applied')
       ? action.result : null
 
+  /**
+   * Отправка идёт — шаги не кликаются. Замок пишет форма в состояние ЗАПИСИ
+   * истории (`page.state`, уровень роутера): у каждой записи свой, «назад/
+   * вперёд» чужой замок не снимает и не наследует.
+   */
+  const locked = $derived(page.state.fieldsNavLocked === true)
+  const guard = (e: Event) => {
+    if (locked) e.preventDefault()
+  }
+
   /** Шаги сверху слева: ссылка — когда шаг заполнен, текст — пока нет. */
   const STEPS: readonly { key: FieldsStep; label: string }[] = [
     { key: 'build', label: 'Сборка' },
@@ -42,13 +52,6 @@
   ]
   const filled = (key: FieldsStep): boolean => (key === 'build' ? !!data.set : !!data.record)
   const href = (key: FieldsStep) => `/fields?step=${key}`
-
-  /** Кнопка «вернуться» — на каждом шаге, кроме первого. */
-  const back = $derived(
-    step === 'fill' ? { href: href('build'), label: 'Вернуться к сборке' }
-      : step === 'result' ? { href: href('fill'), label: 'Вернуться к заполнению' }
-      : null,
-  )
 </script>
 
 <svelte:head>
@@ -71,15 +74,17 @@
         {#if filled(s.key)}
           <a
             href={href(s.key)}
-            class="font-medium underline-offset-4 hover:underline"
+            class="font-medium underline-offset-4 hover:underline {locked ? 'pointer-events-none opacity-50' : ''}"
+            aria-disabled={locked ? 'true' : undefined}
             aria-current={step === s.key ? 'step' : undefined}
+            onclick={guard}
           >{s.label}</a>
         {:else}
           <span class="text-muted-foreground" aria-current={step === s.key ? 'step' : undefined}>{s.label}</span>
         {/if}
       {/each}
     </nav>
-    {#if step === 'result'}
+    {#if step !== 'build'}
       <span class="ms-auto"><ResetAction /></span>
     {/if}
   </div>
@@ -96,7 +101,4 @@
     <RecordView record={data.record} set={data.set} />
   {/if}
 
-  {#if back}
-    <p><Button href={back.href} variant="outline" size="sm">{back.label}</Button></p>
-  {/if}
 </div>

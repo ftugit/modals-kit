@@ -53,9 +53,6 @@
         <Field of={row.kind} />
       </div>
       <Field of={row.rules} />
-      <!-- правило вида — пункт внутри «Правила»; значение вида для списка правил
-           едет служебным полем (сброс выбора при смене вида без скрипта) -->
-      <Field of={row.rulesKind} />
       {#if row.args.length}
         <div class="grid gap-3 sm:grid-cols-2">
           {#each row.args as a (a.name)}<Field of={a} />{/each}

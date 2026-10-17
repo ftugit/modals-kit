@@ -4,7 +4,8 @@
    * приложения (`SchemaBuilder`), пределы проверяет форма.
    */
   import { untrack } from 'svelte'
-  import { goto, invalidateAll } from '$app/navigation'
+  import { goto, replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
@@ -29,19 +30,25 @@
     continuation: untrack(() => seed),
   })
 
-  // Успех: набор лёг в кэш — уходим на следующий шаг (перечитывать данные
-  // незачем: переход перезапускает загрузку), форма записи строится из
-  // сохранённого набора. Прыжок на шаг работает и без скрипта — экшен
-  // редиректит тем же адресом.
+  // Успех НАСТОЯЩЕГО сохранения уводит на следующий шаг: один `goto`, без
+  // `invalidateAll` рядом — два запуска загрузки наперегонки возвращаются в
+  // непредсказуемом порядке и оставляют страницу на прежних данных, `goto`
+  // перезапускает загрузку сам. Ответ кнопок мест (`not-applied`) тоже
+  // «успех», но переход не он — смотрим на исход.
   let last = form.state.status
   $effect(() => {
     const now = form.state.status
     if (now === last) return
     last = now
-    if (now === 'success') {
-      void invalidateAll()
-      void goto(next)
-    }
+    if (now === 'success' && form.state.outcome !== 'not-applied') void goto(next)
+  })
+  // Пока идёт отправка, шаги не кликаются. Замок живёт в состоянии ЗАПИСИ
+  // истории (`page.state`, уровень роутера), а не в общем модуле: у каждого
+  // шага свой, «назад/вперёд» чужой замок не снимает и не наследует.
+  $effect(() => {
+    const pending = form.state.pending
+    if (!!page.state.fieldsNavLocked !== pending)
+      void replaceState(page.url.href, { ...page.state, fieldsNavLocked: pending })
   })
 </script>
 
@@ -49,7 +56,7 @@
   <h2 id="fields-step-builder" class="text-xl font-semibold">Создание полей</h2>
   <Form id="fields-builder" {form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
     <!-- Enter в поле без JS нажимает ПЕРВУЮ кнопку отправки: ею должна быть «Сохранить»,
-         а не «Удалить» первого места. Скрытая копия — первая; с JS кнопки мест — type="button". -->
+         а не «Удалить» первого места. Скрытая копия — первая. -->
     <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
     <Common errors={form.common} title="Набор не сохранён" />
     <SchemaBuilder {form} name="props" />

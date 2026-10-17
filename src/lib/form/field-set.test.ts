@@ -110,45 +110,40 @@ suite('field.fields — поле формы', () => {
     const pairs = [...encode(values, collection).entries()].map(([k, x]) => `${k}=${x}`)
     expect(pairs).toEqual(expect.arrayContaining([
       'props.s1.label=Почта', 'props.s1.kind=email', 'props.s2.rules=minValue', 'props.s2.min_value=-5',
-      // вид, для которого рисовались правила: с ним видно смену вида без скрипта
-      'props.s1.rules_kind=email', 'props.s2.rules_kind=number',
     ]))
     expect(pairs).not.toContain('props.s1.rules=email')
+    expect(pairs.some((x) => x.includes('rules_kind'))).toBe(false)
     expect(decode(encode(values, collection), collection).values['props']).toEqual(values['props'])
   })
 
-  test('смена вида без скрипта сбрасывает выбранные правила целиком', () => {
-    // без скрипта список правил не перерисовывается при смене вида: старый выбор
-    // приходит вместе с новым видом. `rules_kind` помнит вид, для которого его
-    // рисовали, — не совпал, выбор сброшен
-    const { values, structural } = decode(data([
-      ['props.s1.label', 'Год'], ['props.s1.kind', 'number'], ['props.s1.rules_kind', 'text'],
-      ['props.s1.rules', 'maxLength'], ['props.s1.max_length', '20'],
-      ['props.s1.rules', 'minValue'], ['props.s1.min_value', '5'],
+  test('без скрипта правило не своего вида возвращается в разметку и отклоняется схемой', () => {
+    // список правил без JS показывает ВСЕ правила схемы: выбрали «Мин. длину»,
+    // сменили вид на «Число» — набор приходит как есть, лишнее отклоняет проверка
+    const { structural, values } = decode(data([
+      ['props.s1.label', 'Год'], ['props.s1.kind', 'number'],
+      ['props.s1.rules', 'minLength'], ['props.s1.min_length', '20'],
     ]), collection)
-    expect(structural).toEqual([])
-    expect((values['props'] as FieldSetItem[])[0]!.rules).toEqual([])
+    expect(structural.map((x) => `${x.at}|${x.code}`)).toEqual(['s1.rules|kit.rule-not-allowed'])
+    // набранное возвращается: пользователь видит свой выбор и снимает лишнее
+    expect((values['props'] as FieldSetItem[])[0]!.rules).toEqual([{ rule: 'minLength', arg: 20 }])
 
-    // тот же вид, что и у списка правил, — выбор остаётся (и проверяется как обычно)
+    // правила своего вида проходят как обычно
     const same = decode(data([
-      ['props.s1.label', 'Год'], ['props.s1.kind', 'number'], ['props.s1.rules_kind', 'number'],
+      ['props.s1.label', 'Год'], ['props.s1.kind', 'number'],
       ['props.s1.rules', 'minValue'], ['props.s1.min_value', '5'],
     ]), collection)
     expect(same.structural).toEqual([])
     expect((same.values['props'] as FieldSetItem[])[0]!.rules).toEqual([{ rule: 'minValue', arg: 5 }])
   })
 
-  test('пересборка мест (намерения) тоже сбрасывает правила при смене вида', () => {
+  test('пересборка мест (намерение «+ поле») сохраняет набор как есть', () => {
     const form = data([
-      ['props.fa.label', 'Год'], ['props.fa.kind', 'number'], ['props.fa.rules_kind', 'text'],
+      ['props.fa.label', 'Год'], ['props.fa.kind', 'number'],
       ['props.fa.rules', 'maxLength'], ['props.fa.max_length', '20'],
     ])
     const add = fieldSetOp(form, collection, `${FIELD_SET_ADD}:props`)!
-    // правило прежнего вида сброшено; «+ поле» добавил пустое место
-    expect(add.items.map((x) => [x.name, x.preset, x.rules])).toEqual([
-      ['fa', 'number', []],
-      [add.items[1]!.name, 'text', []],
-    ])
+    // правила не тронуты: пользователь видит их и правит сам, лишнее отклонит проверка
+    expect(add.items[0]).toMatchObject({ name: 'fa', preset: 'number', rules: [{ rule: 'maxLength', arg: 20 }] })
   })
 
   test('правило вида в отправке — дубль, а не отказ «не для вида»', () => {

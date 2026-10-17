@@ -98,6 +98,9 @@ export interface KitRulesFor {
 export interface FieldKit {
   /** Виды в порядке объявления. */
   readonly kinds: readonly string[]
+  /** Правила схемы: весь список. Без скрипта список правил места показывает
+   * его целиком — по виду отфильтрует скрипт, лишнее отклонит проверка. */
+  readonly rules: readonly string[]
   /** Предел числа полей; `undefined` — без предела. */
   readonly max: number | undefined
   labelOf(kind: string): string | undefined
@@ -262,6 +265,7 @@ export function defineFieldKit(o: FieldKitOptions): FieldKit {
 
   return {
     kinds: [...catalog.keys()],
+    rules: Object.keys(parent),
     max: maxFields,
     labelOf: (kind) => catalog.get(kind)?.label,
     inputOf: (kind) => catalog.get(kind)?.input,

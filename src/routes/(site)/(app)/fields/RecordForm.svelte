@@ -5,7 +5,8 @@
    * запись на устаревшем наборе сервер отклонит, а не примет молча.
    */
   import { untrack } from 'svelte'
-  import { goto, invalidateAll } from '$app/navigation'
+  import { goto, replaceState } from '$app/navigation'
+  import { page } from '$app/state'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
@@ -32,15 +33,19 @@
     continuation: untrack(() => seed),
   })
 
+  // тот же принцип, что в сборке: один `goto` после настоящего успеха
+  // (`not-applied` тоже «успех», но переход не он), замок — в `page.state`
   let last = form.state.status
   $effect(() => {
     const now = form.state.status
     if (now === last) return
     last = now
-    if (now === 'success') {
-      void invalidateAll()
-      void goto(next)
-    }
+    if (now === 'success' && form.state.outcome !== 'not-applied') void goto(next)
+  })
+  $effect(() => {
+    const pending = form.state.pending
+    if (!!page.state.fieldsNavLocked !== pending)
+      void replaceState(page.url.href, { ...page.state, fieldsNavLocked: pending })
   })
 </script>
 

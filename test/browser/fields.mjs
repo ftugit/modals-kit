@@ -12,11 +12,15 @@
  *   3. правило вида показано внутри «Правила» выбранным и недосягаемым; смена вида
  *      сбрасывает выбранные правила;
  *   4. Enter в поле сохраняет набор и уводит на «Заполнение»; назад — шаги в режиме
- *      правки: прежние значения на месте, прежнее изображение видно;
+ *      правки: прежние значения на месте, прежнее изображение видно; быстрый щелчок
+ *      по шагу во время отправки заблокирован и данные после отправки свежие;
+ *      навигация — только ссылки шагов сверху (кнопок возврата нет), сброс виден
+ *      со второго шага;
  *   5. запись: обязательные поля, сверка содержимого файла на сервере;
  *   6. результат: значения по ключу, подписи — из текущего набора, удалённое поле не выводится;
- *   7. путь без скрипта: «+ поле» и «Удалить» отправкой формы, набранное не теряется,
- *      смена вида сбрасывает правила после отправки, шаги и сохранения через адрес;
+ *   7. путь без скрипта: «+ поле» и «Удалить» тем же механизмом (отправка формы,
+ *      места возвращает сервер), в «Правилах» все правила схемы — лишнее для вида
+ *      отклоняет проверка, набранное не теряется;
  *   8. сброс: очищает набор и запись и возвращает на «Сборку».
  */
 import { chromium } from 'playwright'
@@ -45,6 +49,16 @@ const waitH2 = (pg, text) => pg.waitForFunction((t) => document.querySelector('h
 
 const KEY = /^f[a-z0-9]{6}$/
 const rows = (pg) => pg.locator('[data-set-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-set-row')))
+// с JS место приходит ответом отправки: клик — и ждём, пока состав мест совпадёт
+const addPlace = async (pg, expect) => {
+  const before = await pg.locator('[data-set-row]').count()
+  await pg.click('[data-testid="add-field"]')
+  await pg.waitForFunction((n) => document.querySelectorAll('[data-set-row]').length === n, expect ?? before + 1)
+}
+const removePlace = async (pg, key) => {
+  await pg.click(`[data-testid="remove-${key}"]`)
+  await pg.waitForFunction((k) => ![...document.querySelectorAll('[data-set-row]')].some((e) => e.getAttribute('data-set-row') === k), key)
+}
 const chosenRules = (pg, name) =>
   pg.locator(b(`props.${name}.rules`)).evaluate((el) => Array.from(el.selectedOptions).filter((o) => !o.disabled).map((o) => o.value))
 
@@ -58,15 +72,17 @@ let k1, k2
   pg.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('status of 422')) consoleErrors.push(m.text()) })
   pg.on('pageerror', (e) => consoleErrors.push(String(e)))
   await pg.goto(BASE, { waitUntil: 'networkidle' })
-  // ожила: кнопки набора стали type="button"
-  await pg.waitForSelector('[data-testid="add-field"][type="button"]')
 
   /* 1. шаги и места */
-  ok('старт: «Сборка», мест нет, формы записи нет, шаги без ссылок',
+  ok('старт: «Сборка», мест нет, формы записи и сброса нет, шаги без ссылок',
     (await rows(pg)).length === 0 && (await pg.locator('#fields-record').count()) === 0
+    && (await pg.locator('[data-testid="reset"]').count()) === 0
     && (await pg.locator('h2').first().innerText()) === 'Создание полей'
     && (await navLinks(pg)).length === 0, (await navLinks(pg)).join(','))
   await pg.click('[data-testid="add-field"]')
+  // ожила: список усилился (data-enhanced), место пришло ответом отправки
+  await pg.waitForSelector('[data-select-root][data-enhanced]')
+  await pg.waitForSelector('[data-set-row]')
   ;[k1] = await rows(pg)
   ok('«+ поле» добавляет место со случайным ключом', KEY.test(k1 ?? ''), k1)
   await pg.fill(b(`props.${k1}.label`), 'Сайт')
@@ -82,7 +98,7 @@ let k1, k2
   ok('у вида «Ссылка» правило вида названо в строке',
     (await pg.locator(`[data-set-row="${k1}"]`).innerText()).includes('Всегда: проверка ссылки'))
 
-  await pg.click('[data-testid="add-field"]')
+  await addPlace(pg)
   k2 = (await rows(pg))[1]
   await pg.fill(b(`props.${k2}.label`), 'Возраст')
   await pg.locator(b(`props.${k2}.kind`)).selectOption('number')
@@ -101,15 +117,15 @@ let k1, k2
   await pg.waitForSelector(b(`props.${k2}.max_value`))
   await pg.fill(b(`props.${k2}.max_value`), '99999999')
 
-  await pg.click('[data-testid="add-field"]')
+  await addPlace(pg)
   const k3 = (await rows(pg))[2]
   await pg.fill(b(`props.${k3}.label`), 'Лишнее')
-  await pg.click(`[data-testid="remove-${k3}"]`)
-  await pg.click('[data-testid="add-field"]')
+  await removePlace(pg, k3)
+  await addPlace(pg)
   const after = await rows(pg)
   ok('«Удалить» убирает место; новое место — под новым ключом',
     after.length === 3 && !after.includes(k3) && KEY.test(after[2] ?? ''), after.join(','))
-  await pg.click(`[data-testid="remove-${after[2]}"]`)
+  await removePlace(pg, after[2])
 
   /* 4. сохранение по Enter — и шаг «Заполнение» */
   await pg.focus(b(`props.${k1}.label`))
@@ -159,7 +175,10 @@ let k1, k2
     (await pg.inputValue(r('title'))) === 'Котик' && (await pg.inputValue(r(`u_${k2}`))) === '42')
   ok('прежнее изображение показано рядом с полем файла',
     (await pg.locator('figure img').count()) === 1)
-  await pg.click('a:text("Вернуться к сборке")')
+  ok('на заполнении сброс уже виден, кнопок возврата нет',
+    (await pg.locator('[data-testid="reset"]').count()) === 1
+    && !(await pg.locator('body').innerText()).includes('Вернуться'))
+  await goStep(pg, 'Сборка')
   await waitH2(pg, 'Создание полей')
   const saved = await pg.locator('[data-testid="saved-set"]').innerText()
   ok('назад: сборка в режиме правки — сохранённый набор на месте (версия 1, полей 2)',
@@ -169,7 +188,7 @@ let k1, k2
 
   // подпись — из текущего набора; поле убрали из набора — значение не выводится
   await pg.fill(b(`props.${k1}.label`), 'Адрес')
-  await pg.click(`[data-testid="remove-${k2}"]`)
+  await removePlace(pg, k2)
   await pg.click('[data-testid="save"]')
   await waitH2(pg, 'Заполнение')
   await goStep(pg, 'Результат')
@@ -177,6 +196,27 @@ let k1, k2
   const renamed = await viewText()
   ok('пример: новая подпись из набора, удалённого поля нет',
     renamed.includes('Адрес') && !renamed.includes('Сайт') && !renamed.includes('Возраст') && renamed.includes('https://example.com'), renamed)
+
+  /* 4в. быстрый щелчок по шагу во время отправки не ломает ход */
+  await goStep(pg, 'Сборка')
+  await waitH2(pg, 'Создание полей')
+  // замедлили сохранение: ответ придёт, когда рука уже потянется к шагам
+  await pg.route('**/fields/save', async (route) => {
+    await new Promise((r) => setTimeout(r, 800))
+    await route.continue()
+  })
+  await pg.click('[data-testid="save"]')
+  // замок виден в разметке: ссылка шага получает aria-disabled (pointer-events-none
+  // появился бы на том же ходу, но щёлкать надо по уже запертой ссылке)
+  await pg.locator('nav[aria-label="Шаги"] a[aria-disabled="true"]', { hasText: 'Заполнение' }).waitFor({ timeout: 3000 })
+  // force: щелчок сквозь pointer-events-none — события уходят сквозь ссылку, шва нет
+  await pg.click('nav[aria-label="Шаги"] a:text("Заполнение")', { force: true })
+  ok('щелчок по шагу во время отправки заблокирован', !pg.url().includes('step=fill'), pg.url())
+  await pg.waitForURL(/fields\?step=fill/)
+  ok('после отправки страница открыта на свежих данных — запись сохраняется',
+    (await pg.locator(r(`u_${k1}`)).count()) === 1, pg.url())
+  await pg.unroute('**/fields/save')
+
   ok('консоль без ошибок', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300))
   await ctx.close()
 }
@@ -187,6 +227,9 @@ let k1, k2
   const pg = await ctx.newPage()
   await pg.goto(`${BASE}?step=build`)
   ok('без JS: сохранённый набор на месте, пустого места нет', (await rows(pg)).join() === k1, (await rows(pg)).join())
+  // версию снимаем до операций: «+ поле»/«Удалить» число сохранений не меняют
+  const versionOf = (t) => t.match(/версия (\d+)/)?.[1] ?? '?'
+  const vNojs = versionOf(await pg.locator('[data-testid="saved-set"]').innerText())
 
   // набранное до «+ поле» не теряется
   await pg.fill(b(`props.${k1}.label`), 'Адрес')
@@ -197,23 +240,36 @@ let k1, k2
   const k4 = two[1]
   await pg.fill(b(`props.${k4}.label`), 'Комментарий')
 
-  // смена вида без скрипта: правила прежнего вида сбрасываются после отправки
-  await pg.locator(b(`props.${k4}.rules`)).selectOption(['minLength'])
+  // без JS список правил показывает ВСЕ правила схемы: фильтр по виду включит оживление
+  const allRules = await pg.locator(b(`props.${k4}.rules`)).evaluate((el) => Array.from(el.options).map((o) => o.value))
+  ok('без JS: в «Правилах» все правила схемы, фильтр по виду — после оживления',
+    allRules.includes('minValue') && allRules.includes('maxLength'), allRules.join(','))
+  // смена вида без скрипта: правила остаются как набрано, лишнее отклонит проверка
+  await pg.locator(b(`props.${k4}.rules`)).selectOption(['maxLength'])
   await pg.locator(b(`props.${k4}.kind`)).selectOption('number')
   await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="add-field"]')])
-  ok('без JS: смена вида сбрасывает выбранные правила после отправки',
-    (await chosenRules(pg, k4)).length === 0, (await chosenRules(pg, k4)).join(','))
+  ok('без JS: правила остаются при смене вида — их правит пользователь',
+    (await chosenRules(pg, k4)).join() === 'maxLength', (await chosenRules(pg, k4)).join(','))
   const k5 = (await rows(pg))[2]
   await Promise.all([pg.waitForNavigation(), pg.click(`[data-testid="remove-${k5}"]`)])
   ok('без JS: «Удалить» убирает место, остальное на месте', (await rows(pg)).join() === [k1, k4].join())
-  // возвращаем комментарию многострочный вид
-  await pg.locator(b(`props.${k4}.kind`)).selectOption('textarea')
-  ok('без JS: кнопки набора ничего не сохранили', (await pg.locator('[data-testid="saved-set"]').innerText()).includes('версия 2'))
+  ok('без JS: кнопки набора ничего не сохранили', versionOf(await pg.locator('[data-testid="saved-set"]').innerText()) === vNojs,
+    await pg.locator('[data-testid="saved-set"]').innerText())
 
+  // лишнее для вида отклоняется ошибкой у «Правил»; сохранения не было
+  await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="save"]')])
+  ok('без JS: правило не своего вида отклонено схемой',
+    (await errorsOf(pg, `props.${k4}.rules`)).includes('не подходит'), await errorsOf(pg, `props.${k4}.rules`))
+  ok('без JS: набор после отказа на месте', versionOf(await pg.locator('[data-testid="saved-set"]').innerText()) === vNojs,
+    await pg.locator('[data-testid="saved-set"]').innerText())
+
+  // пользователь чинит: вид возвращается — правило подходит, сохранение уводит дальше
+  await pg.locator(b(`props.${k4}.kind`)).selectOption('textarea')
   await Promise.all([pg.waitForNavigation(), pg.click('[data-testid="save"]')])
   ok('без JS: сохранение уводит на «Заполнение»',
     pg.url().includes('step=fill') && (await pg.locator('h2').first().innerText()) === 'Заполнение', pg.url())
-  ok('без JS: новое поле в форме записи', (await pg.locator(r(`u_${k4}`)).count()) === 1)
+  ok('без JS: сброс виден на заполнении, новое поле в форме записи',
+    (await pg.locator('[data-testid="reset"]').count()) === 1 && (await pg.locator(r(`u_${k4}`)).count()) === 1)
 
   await pg.fill(r('title'), 'Без скрипта')
   await pg.fill(r(`u_${k1}`), 'https://example.org')
