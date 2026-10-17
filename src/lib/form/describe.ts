@@ -422,7 +422,7 @@ export interface FormDescription {
   readonly policy: FormPolicy
   /** Атрибуты считает ядро: примитив получает готовый набор, а не правила. */
   attrsOf(name: string): ProjectedAttrs
-  /** Ограничения поля — для отчёта, devtools и диагностики. */
+  /** Ограничения поля — для отчёта и диагностики. */
   constraintsOf(name: string): readonly Constraint[]
 }
 

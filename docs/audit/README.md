@@ -4,10 +4,14 @@
 
 | Файл | Что внутри |
 |---|---|
-| [framework-imports.md](framework-imports.md) | Где `src/lib` обращается к SvelteKit напрямую, минуя адаптеры (задача 4). |
 | [crutches.md](crutches.md) | Реестр «костылей» с местом, причиной и правильной альтернативой (задача 3). |
 | [ratings.md](ratings.md) | Оценка 0–10 каждого файла `src/` с обоснованием (задача 5). |
-| [framework-agnostic.md](framework-agnostic.md) | Независимость библиотек от фреймворка (симуляция под React Router, `sim/react-router/`) и зашитые тексты интерфейса. |
+
+Удалены как выполненные (история — в git): `framework-imports.md` (аудит импортов — замещён
+постоянной проверкой `tooling/layer-guard.mjs` на сборке) и `framework-agnostic.md` (аудит
+завершён: ядра чистые, симуляция — `sim/react-router/`; остаток «Тексты интерфейса» — в
+`docs/plan.md` §5 и `design/port-plan.md`). Ссылки на них внутри журналов ниже — на записи
+в git-истории.
 
 > **Пометка о переезде на SvelteKit 3 (ход 16, ветка `upgrade/kit3`).** Эти файлы — журнал решений, строки в них не
 > переписываются. Пути вида `$lib/…`, `$env/…`, `$app/environment`, `svelte.config.js` относятся к коду **до** переезда:

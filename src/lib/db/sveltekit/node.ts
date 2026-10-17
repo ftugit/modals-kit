@@ -146,10 +146,6 @@ export async function openNodeDatabase(
     },
   };
 }
-export function pgliteDriver(db: PGlite): Driver {
-  return pgliteAdapter(db);
-}
-
 export interface PgPoolOptions {
   connectionString: string;
   /**
@@ -245,17 +241,5 @@ export function openPgPool(options: PgPoolOptions): PgRuntime {
     pool,
     driver: pgAdapter(pool, maxInFlight, transactionTimeoutMs),
     close: () => pool.end(),
-  };
-}
-/** `process.env` или `platform.env` — одна форма доступа к настройкам. */
-export function envReader(
-  ...sources: (Record<string, string | undefined> | undefined)[]
-): (key: string) => string | undefined {
-  return (key) => {
-    for (const source of sources) {
-      const value = source?.[key];
-      if (typeof value === "string" && value) return value;
-    }
-    return undefined;
   };
 }

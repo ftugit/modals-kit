@@ -66,7 +66,8 @@
 import { createDb, conservativeLimits, defineResource, f, field, policy, s, type Driver } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
-import { openNodeDatabase, openPgPool, envReader } from '#lib/db/sveltekit/node.js'
+import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
+import { DATABASE_DIR, DATABASE_URL, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_POOL_MAX, VERCEL } from '$app/env/private'
 import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 
@@ -97,22 +98,22 @@ export const posts = defineResource({
 // Таблицы — из ресурсов (§6): в проде достаточно DATABASE_URL.
 export const schema = defineSchema({ resources: [posts] })
 
-const env = envReader(process.env, import.meta.env as Record<string, string | undefined>)
-
 // Соединение откроется при первом запросе к БД, а не здесь: страницы без БД её не поднимают.
 // Движок выбирает окружение, остальной код от него не зависит.
 export const db = createDb({
   driver: lazyDriver(openDriver),
   limits: conservativeLimits,
-  cursorCodec: cursorCodecFromEnv(env),               // без DB_CURSOR_SECRET → undefined (только page)
+  cursorCodec: cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS })[key], {
+    ttlSeconds: 60 * 60 * 24 * 30,
+  }),   // без DB_CURSOR_SECRET → undefined (только page)
 })
 
 async function openDriver(): Promise<Driver> {
-  const driver = env('DATABASE_URL')
-    ? openPgPool({ connectionString: env('DATABASE_URL')!,
-                   max: Number(env('DB_POOL_MAX') ?? (env('VERCEL') ? 1 : 4)) }).driver
-    : pgliteAdapter((await openNodeDatabase(process.cwd(), env('DATABASE_DIR') ?? 'data/postgres',
-                                            { memory: !env('DATABASE_DIR') })).db)
+  const driver = DATABASE_URL
+    ? openPgPool({ connectionString: DATABASE_URL,
+                   max: DB_POOL_MAX ?? (VERCEL ? 1 : 4) }).driver
+    : pgliteAdapter((await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres',
+                                            { memory: !DATABASE_DIR })).db)
   return schema.gate(driver) // недостающее создаётся само; конфликт → запросы отвечают schema_pending
 }
 ```
@@ -839,7 +840,7 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/adapters/proxy.js` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
 | `#lib/db/sync/index.js` | `defineSchema`, `canonicalType`, типы `SchemaSpec`, `SchemaReport`, `SqlStep`, `Step`, `DbSchema` |
 | `#lib/db/sveltekit/index.js` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
-| `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `pgliteDriver`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir`, `envReader` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
+| `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
 | `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
 | `#lib/db/zod.js` | `z` (zod) + `field`/`f`/`defineResource`: позволяет переносить схемы вида `field(z.string().min(1), {...})` без правок; пакет zod не тянет, импорт опциональный |
 | `#lib/db/form.js` | `formParams(resource)` → параметры полей формы из модели (`...post.title`, `post.fields({...})`) + типы `DbFieldParams`, `DbFormParams`; ядро (`index.js`) от `#lib/form` не зависит (§4) |

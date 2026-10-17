@@ -19,9 +19,6 @@ export interface MinimalEvent {
   readonly params?: Record<string, string>;
   readonly platform?: unknown;
 }
-export interface ResolveInput {
-  readonly event: MinimalEvent;
-}
 export type Principal = { readonly id?: string; readonly roles: readonly string[] };
 export type ResolvePrincipal = (
   event: MinimalEvent,

@@ -152,7 +152,7 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // каждый маршрут +0.3…+0.8 (/fields 171.3 → 172.6). «≤ +5 КБ, сообщить». Лимиты = факт + 0.5.
 const LIMITS = {
   allImmutableGzip: 273.5 * KiB,
-  allJsGzip: 259.5 * KiB,
+  allJsGzip: 260.0 * KiB, // ход 250: лимит совпал с фактом на границе округления — запас 0.5 восстановлен
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
