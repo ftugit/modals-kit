@@ -1,5 +1,5 @@
 /**
- * Адаптер каркаса авторизации под SvelteKit: собирает порты из существующих
+ * Gateway модуля пользователя — подключение приложения (SvelteKit): собирает порты из существующих
  * хвостов проекта и переводит голые результаты в HTTP. Файл — скелет связки:
  * тела пустые, каждое место помечено, ЧТО сюда подключается. В routes не
  * импортируется никем — каркас оценивается чтением, не прогоном.
@@ -8,7 +8,8 @@
  * POST (`+page.server.ts`) — у обоих есть `event.cookies` и тело запроса.
  */
 import type { AuthPorts } from './ports.js'
-import type { AuthResult, Principal } from './types.js'
+import type { UserResult } from './user.js'
+import type { Principal } from './types.js'
 
 /** Структурный срез SvelteKit-события: куки + тело — этого ядру достаточно. */
 export interface AuthEvent {
@@ -51,13 +52,13 @@ export function authPorts(event: AuthEvent): AuthPorts {
  *   const result = await auth.login(args)     // шаг входа
  */
 export function auth(event: AuthEvent): {
-  verify(): Promise<AuthResult<Principal>>
-  login(args: { pubkey: string; nonce: string; signature: string }): Promise<AuthResult<Principal>>
-  renew(): Promise<AuthResult<Principal>>
-  logout(): Promise<AuthResult<null>>
-  logoutEverywhere(): Promise<AuthResult<null>>
-  listSessions(): Promise<AuthResult<import('./types.js').SessionView[]>>
-  deleteIdentity(): Promise<AuthResult<null>>
+  verify(): Promise<UserResult<Principal>>
+  login(args: { pubkey: string; nonce: string; signature: string }): Promise<UserResult<Principal>>
+  renew(): Promise<UserResult<Principal>>
+  logout(): Promise<UserResult<null>>
+  logoutEverywhere(): Promise<UserResult<null>>
+  listSessions(): Promise<UserResult<import('./types.js').SessionView[]>>
+  deleteIdentity(): Promise<UserResult<null>>
 } {
   void event
   throw skeleton('auth')
@@ -71,7 +72,7 @@ export function auth(event: AuthEvent): {
  * Гость → `undefined`: права решают ключи доступа (README `lib/db` §7), у
  * гостя их нет. В `hooks.server.ts` ничего не меняется, пока каркас не внедрён.
  */
-export function principalOf(result: AuthResult<Principal>): Principal | undefined {
+export function principalOf(result: UserResult<Principal>): Principal | undefined {
   void result
   throw skeleton('principalOf')
 }
@@ -80,7 +81,7 @@ export function principalOf(result: AuthResult<Principal>): Principal | undefine
  * Перевод результата в HTTP — одинаково для `Response` REST-маршрута и
  * `fail/redirect` экшена (тексты кодов выбирает владелец, каркас несёт коды).
  */
-export function toHttpStatus(result: AuthResult<unknown>): number {
+export function toHttpStatus(result: UserResult<unknown>): number {
   void result
   throw skeleton('toHttpStatus')
 }

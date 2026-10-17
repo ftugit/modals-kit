@@ -36,25 +36,10 @@ export type SessionRecord = {
 /** Результат `verify` — то, что получает `dbHandle` как доверенный principal. */
 export type Principal = { id: string }
 
-/** Коды результата. Русские тексты выбирает владелец — каркас несёт только коды. */
-export type AuthCode =
-  | 'auth.nonce-unknown'      // challenge истёк или уже потрачен
-  | 'auth.signature'          // подпись nonce не сошлась
-  | 'auth.identity-unknown'   // identity удалён
-  | 'auth.token'              // токен не читается / подпись токена чужая
-  | 'auth.kid-unknown'        // токен подписан неизвестным ключом (после ротации)
-  | 'auth.expired'            // access истёк (статья: короткий exp)
-  | 'auth.revoked'            // jti в чёрном списке (статья: blacklisting)
-  | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
-  | 'auth.version'            // tokenVersion не совпал (статья: versioning)
-  | 'auth.anomaly'            // счётчик подсетей превысил порог (практики: мониторинг)
-  | 'auth.unauthenticated'    // cookie нет — просто гость
-
-/** Голый результат: ок с данными или код без данных. */
-export type AuthResult<T> = { ok: true; value: T } | { ok: false; code: AuthCode }
-
-/** Ответы API. */
+/** Ответы API — данные без ошибок; ошибки (код+путь) — `error.ts`. */
 export type Challenge = { nonce: string; expiresAt: number }
 export type SessionView = { jti: string; createdAt: number; expiresAt: number; subnet: string | undefined }
 export type KeyView = { kid: string; retired: readonly string[] }
 export type RevocationEntry = { jti: string; until: number }
+/** Профиль: только псевдоним и момент создания — личных данных нет (§4). */
+export type ProfileView = { id: string; createdAt: number }
