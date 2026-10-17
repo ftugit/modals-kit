@@ -10,6 +10,7 @@
 //   ?page.<key>=<v>    — ключи потребителя (RestorableState.extra), объявленные в extraSearch
 // Один пагинатор = один базовый ключ (pageParam), несколько пагинаторов — разные ключи.
 import { BROWSER, DEV } from 'esm-env'
+import { carryQuery, claimQuery, nextSearch } from '#lib/address/keys.js'
 import { assertAdaptedSource, type AdaptedSource } from './source'
 import type {
   Extra,
@@ -153,23 +154,6 @@ export type UrlRestorable = {
  * Поля адреса, которые форма без JS должна пронести (см. `PaginatorAdapter.carryFields`):
  * чужие ключи — всегда, свои — кроме `drop`, указатель страницы — никогда.
  */
-function carryAddressFields(
-  search: Record<string, unknown> | null,
-  base: string,
-  drop: readonly string[],
-): { name: string; value: string }[] {
-  const all = drop.includes('*')
-  const dropped = (key: string) =>
-    all || drop.some((d) => (d.endsWith('.*') ? key.startsWith(d.slice(0, -1)) : key === d))
-  const out: { name: string; value: string }[] = []
-  for (const [name, value] of Object.entries(search ?? {})) {
-    if (value == null || name === base) continue
-    if (name.startsWith(`${base}.`) && dropped(name.slice(base.length + 1))) continue
-    out.push({ name, value: String(value) })
-  }
-  return out
-}
-
 /** Разбор всех ключей пагинатора из URLSearchParams (единый парсер роута и адаптера). */
 export function readPaginatorSearch(
   params: URLSearchParams,
@@ -336,6 +320,8 @@ export type MinimalRouter = {
   navigate(opts: {
     search: (prev: Record<string, unknown>) => Record<string, unknown>
     replace?: boolean
+    /** Владелец ключей адреса (бронь `#lib/address`), для проверки прав писателем. */
+    owner?: string
   }): void | Promise<unknown>
   /**
    * Привести адрес к виду без перехода (замена текущей записи истории) — там, где
@@ -343,7 +329,11 @@ export type MinimalRouter = {
    * Необязателен: роутер без такой возможности просто оставляет адрес как есть,
    * а на сервере адрес править нечем и не нужно (пустое значение = отсутствие ключа).
    */
-  syncAddress?(opts: { search: (prev: Record<string, unknown>) => Record<string, unknown> }): void
+  syncAddress?(opts: {
+    search: (prev: Record<string, unknown>) => Record<string, unknown>
+    /** Владелец ключей адреса (бронь `#lib/address`), для проверки прав писателем. */
+    owner?: string
+  }): void
   currentSearch?: () => Record<string, unknown>
 }
 
@@ -378,6 +368,11 @@ export function createUrlAdapter<T>(opts: {
   const pageSize = opts.pageSize ?? 20
   const pageParam = opts.pageParam ?? 'page'
   const append = opts.append ?? true
+  // Ключи адреса бронируются здесь, при создании адаптера: один пагинатор —
+  // один базовый ключ и его семейство (`page`, `page.*`). Второй претендент на
+  // тот же ключ — исключение ещё на старте (несколько пагинаторов — разные ключи).
+  const queryOwner = `paginate:${pageParam}`
+  claimQuery(queryOwner, pageParam, `${pageParam}.*`)
   const searchOpts: PaginatorSearchOptions = {
     pageParam,
     pageSizes: opts.pageSizes,
@@ -458,12 +453,15 @@ export function createUrlAdapter<T>(opts: {
     prev: Record<string, unknown>,
     own: Record<string, ExtraValue>,
   ): Record<string, unknown> {
-    const next: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(prev)) {
-      if (k === pageParam || k.startsWith(`${pageParam}.`)) continue
-      next[k] = v
-    }
-    return { ...next, ...own }
+    // Сброс прежнего семейства своих ключей — общая алгебра адреса
+    // (`#lib/address/keys`); чужие ключи она сохраняет в значении и порядке.
+    // Свои значения подмешиваются типизированными, как их отдал `ownKeys`.
+    const rest = Object.fromEntries(
+      new URLSearchParams(
+        nextSearch(queryOwner, searchToParams(prev), {}, { drop: [pageParam, `${pageParam}.*`] }),
+      ).entries(),
+    )
+    return { ...rest, ...own }
   }
 
   return {
@@ -558,7 +556,11 @@ export function createUrlAdapter<T>(opts: {
       return `?${params.toString()}`
     },
     fieldName: (key) => `${pageParam}.${key}`,
-    carryFields: (search, drop) => carryAddressFields(search ?? currentSearch(), pageParam, drop),
+    carryFields: (search, drop) =>
+      carryQuery(queryOwner, searchToParams(search ?? currentSearch() ?? {}), [
+        pageParam,
+        ...drop.map((d) => `${pageParam}.${d}`),
+      ]),
     loadPage: (req) =>
       source.fetchPage({ page: req.page, pageSize: req.pageSize, signal: req.signal, report: req.report }, req.extra),
     capabilitiesFor: (extra) => source.capabilitiesFor(extra),
@@ -599,7 +601,7 @@ export function createUrlAdapter<T>(opts: {
        */
       if (router.syncAddress) {
         inflight = want
-        router.syncAddress({ search })
+        router.syncAddress({ search, owner: queryOwner })
         // Флаг держится до микротаски: пока фреймворк не применил новый адрес в
         // реактивном срезе, повторная запись того же `want` не нужна.
         void Promise.resolve().then(() => {
@@ -608,7 +610,7 @@ export function createUrlAdapter<T>(opts: {
         return
       }
       inflight = want
-      void Promise.resolve(router.navigate({ search, replace: true })).finally(() => {
+      void Promise.resolve(router.navigate({ search, replace: true, owner: queryOwner })).finally(() => {
         if (inflight === want) inflight = null
       })
     },

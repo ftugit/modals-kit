@@ -87,7 +87,7 @@ export function svelteKitRouter(): MinimalRouter {
       // Скролл и фокус — `reset: false` в коммите писателя.
       return writeAddress(
         (cur) => ({ url: hrefOf(cur.url.pathname, opts.search(searchOf(cur.url))) }),
-        { replace: opts.replace ?? true, load: true },
+        { replace: opts.replace ?? true, load: true, owner: opts.owner },
       )
     },
     /**
@@ -105,7 +105,7 @@ export function svelteKitRouter(): MinimalRouter {
       const write = () => {
         void writeAddress(
           (cur) => ({ url: hrefOf(cur.url.pathname, opts.search(searchOf(cur.url))) }),
-          { replace: true },
+          { replace: true, owner: opts.owner },
         )
       }
       if (ready) write()

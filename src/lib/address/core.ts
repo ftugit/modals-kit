@@ -50,6 +50,8 @@
  * Таймеров нет: очередь продвигается завершением коммита и событиями среды.
  */
 
+import { checkKeys } from './keys.js'
+
 export interface AddressSnapshot {
   /** Видимый адрес без `#фрагмента` (фрагмент принадлежит странице). */
   readonly url: Readonly<URL>
@@ -70,6 +72,11 @@ export interface AddressWriteOptions {
   readonly replace: boolean
   /** Обычная навигация с загрузкой данных, а не «мелкая» запись. */
   readonly load?: boolean
+  /**
+   * Владелец правки (бронь `claimQuery` из `keys.ts`): при том же пути
+   * изменившиеся ключи обязаны быть своими, чужое — запись отклоняется.
+   */
+  readonly owner?: string
 }
 
 export interface AddressCommit {
@@ -316,6 +323,10 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
       const url = new URL(raw, current.url)
       const hash = typeof next.url === 'string' && raw.includes('#') ? url.hash : null
       url.hash = ''
+      // Та же страница — правка адреса, и ключи обязаны быть своими (бронь
+      // `keys.ts`). Чужой ключ — отклонение записи, мимо брони не пройти.
+      if (options.owner && url.pathname === current.url.pathname)
+        checkKeys(options.owner, current.url.search, url.search)
       const state = { ...(next.state ?? current.state) }
       const load = options.load ?? false
       const inheritState = carry !== null && next.state === undefined

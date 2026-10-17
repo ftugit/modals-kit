@@ -5,6 +5,7 @@
 // разрешения маршрута). Проверяется ИТОГОВЫЙ адрес и состояние записи, а не
 // число вызовов.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { claimQuery, resetQueryClaims } from './keys.js'
 
 type GotoOpts = { shallow?: boolean; replace?: boolean; state?: Record<string, unknown>; reset?: boolean }
 type Call = { url: string; opts: GotoOpts; apply: () => void; resolve: () => void; reject: (e: unknown) => void }
@@ -79,6 +80,11 @@ const setPage = (search: (prev: Record<string, unknown>) => Record<string, unkno
   svelteKitRouter().syncAddress!({ search })
 
 beforeEach(async () => {
+  // Бронь ключей, как при живой загрузке приложения: адаптер пагинатора
+  // бронирует `page`, ядро модалок — цепочку `modal` (при первом же `chainToSearch`).
+  resetQueryClaims()
+  claimQuery('paginate:page', 'page', 'page.*')
+  claimQuery('modals', 'modal', 'modal.*')
   // Довести хвосты предыдущего теста, затем начать с чистой страницы.
   for (const c of calls) c.resolve()
   await tick()

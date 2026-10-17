@@ -8,7 +8,7 @@
    * после сохранения работают и без скрипта. Назад — форма прошлого шага в
    * режиме правки: она собирается из сохранённого набора и записи, а не с нуля.
    */
-  import { page } from '$app/state'
+  import { Steps, useSteps } from '#lib/components/steps/index.js'
   import type { Result } from '#lib/form/index.js'
   import CollectionForm from './CollectionForm.svelte'
   import RecordForm from './RecordForm.svelte'
@@ -35,15 +35,12 @@
       ? action.result : null
 
   /**
-   * Отправка идёт — шаги не кликаются. Замок пишет форма в состояние ЗАПИСИ
-   * истории (`page.state`, уровень роутера): у каждой записи свой, «назад/
-   * вперёд» чужой замок не снимает и не наследует.
+   * Шаги — компонент над бронью адреса: хост бронирует `step` (чужие ключи
+   * адреса — цепочка модалок, страница пагинатора — не теряются), строит
+   * ссылки, показывает замок полёта. Сам замок пишет форма в состояние ЗАПИСИ
+   * истории (`page.state`): у каждой записи свой, «назад/вперёд» чужой не
+   * снимает. Заполненность шага знает страница — у неё данные.
    */
-  const locked = $derived(page.state.fieldsNavLocked === true)
-  const guard = (e: Event) => {
-    if (locked) e.preventDefault()
-  }
-
   /** Шаги сверху слева: ссылка — когда шаг заполнен, текст — пока нет. */
   const STEPS: readonly { key: FieldsStep; label: string }[] = [
     { key: 'build', label: 'Сборка' },
@@ -51,7 +48,12 @@
     { key: 'result', label: 'Результат' },
   ]
   const filled = (key: FieldsStep): boolean => (key === 'build' ? !!data.set : !!data.record)
-  const href = (key: FieldsStep) => `/fields?step=${key}`
+  const steps = useSteps({
+    owner: 'fields',
+    steps: () => STEPS.map((s) => ({ ...s, filled: filled(s.key) })),
+    current: () => step,
+    lockKey: 'fieldsNavLocked',
+  })
 </script>
 
 <svelte:head>
@@ -68,37 +70,30 @@
 
   <!-- шаги сверху слева; на «Результате» справа от них — ссылка сброса -->
   <div class="flex items-baseline gap-4">
-    <nav aria-label="Шаги" class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-      {#each STEPS as s, i (s.key)}
-        {#if i > 0}<span aria-hidden="true" class="text-muted-foreground">/</span>{/if}
-        {#if filled(s.key)}
-          <a
-            href={href(s.key)}
-            class="font-medium underline-offset-4 hover:underline {locked ? 'pointer-events-none opacity-50' : ''}"
-            aria-disabled={locked ? 'true' : undefined}
-            aria-current={step === s.key ? 'step' : undefined}
-            onclick={guard}
-          >{s.label}</a>
-        {:else}
-          <span class="text-muted-foreground" aria-current={step === s.key ? 'step' : undefined}>{s.label}</span>
-        {/if}
-      {/each}
-    </nav>
+    <span><Steps host={steps} label="Шаги" /></span>
     {#if step !== 'build'}
       <span class="ms-auto"><ResetAction /></span>
     {/if}
   </div>
 
-  {#if step === 'build'}
-    {#key data.set?.version ?? 0}
-      <CollectionForm set={data.set} seed={seed('save')} />
-    {/key}
-  {:else if step === 'fill' && data.set}
-    {#key `${data.set.version}:${data.record?.n ?? 0}`}
-      <RecordForm set={data.set} previous={data.record} seed={seed('record')} />
-    {/key}
-  {:else if step === 'result' && data.record}
-    <RecordView record={data.record} set={data.set} />
-  {/if}
-
+  <!-- логика каждого шага — свой сниппет компонента (без второй навигации) -->
+  <Steps host={steps} label="" nav={false}>
+    {#snippet build()}
+      {#key data.set?.version ?? 0}
+        <CollectionForm set={data.set} seed={seed('save')} />
+      {/key}
+    {/snippet}
+    {#snippet fill()}
+      {#if data.set}
+        {#key `${data.set.version}:${data.record?.n ?? 0}`}
+          <RecordForm set={data.set} previous={data.record} seed={seed('record')} />
+        {/key}
+      {/if}
+    {/snippet}
+    {#snippet result()}
+      {#if data.record}
+        <RecordView record={data.record} set={data.set} />
+      {/if}
+    {/snippet}
+  </Steps>
 </div>

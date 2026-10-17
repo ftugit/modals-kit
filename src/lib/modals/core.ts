@@ -1,6 +1,7 @@
 // Ядро: кодирование цепочки в адрес, разрешение записей, геометрия хвостов,
 // блокировки. Framework-agnostic — не знает ни про фреймворк, ни про URL-объект,
 // ни про DOM. Порт core.ts оригинала (SolidHono@shiki-final).
+import { claimQuery, nextSearch } from '#lib/address/keys.js'
 import { isRegistered } from './types'
 import { isBoxDimension, isMobileOverride, isSafeCssColor } from './validate'
 import type {
@@ -267,10 +268,11 @@ export function chainToSearch(
   lookup: Lookup,
   base?: URLSearchParams,
 ): string {
-  const params = new URLSearchParams(base ? base.toString() : '')
-  for (const key of [...params.keys()]) {
-    if (key === CHAIN_KEY || key.startsWith(`${CHAIN_KEY}.`)) params.delete(key)
-  }
+  // Бронь ключей цепочки и сброс прежней цепочки — общая алгебра адреса
+  // (`#lib/address/keys`); формат своей цепочки (одно значение через запятую
+  // плюс `modal.N.…`) — местный.
+  claimQuery('modals', CHAIN_KEY, `${CHAIN_KEY}.*`)
+  const params = new URLSearchParams(nextSearch('modals', base ?? '', {}, { drop: [`${CHAIN_KEY}.*`] }))
   for (const [key, values] of Object.entries(encodeChain(chain, lookup))) {
     for (const v of values) params.append(key, v)
   }

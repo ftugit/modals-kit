@@ -83,7 +83,7 @@ export function svelteKitEngine(): ChainEngine {
   claimLayerKeys(isChainKey)
   const write = (url: string, state: Record<string, unknown>, replace: boolean): void => {
     // Отказ `goto` (маршрут не найден) не глотаем: он всплывёт как раньше.
-    void writeAddress(() => ({ url, state }), { replace })
+    void writeAddress(() => ({ url, state }), { replace, owner: 'modals' })
   }
 
   return {

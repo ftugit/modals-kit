@@ -5,4 +5,5 @@
  * функций `AddressWriterDeps` (`read`, `commit`, `hash`, `traverse`).
  */
 export * from './core'
+export * from './keys'
 export * from './layer-links'
