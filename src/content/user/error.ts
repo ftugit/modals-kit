@@ -1,17 +1,20 @@
 /**
- * Ошибки модуля пользователя — контракт с формой и REST.
+ * Инструкции ошибок модуля пользователя — перевод голого факта API в ошибки
+ * формы. Ядро (`user.ts`) не знает про валидаторы и `lib/form`: возвращает
+ * `{ code, path?, args? }` — «юзера не существует» это доменный факт.
  *
- * Формат — тот же, что понимает `lib/form` (код + путь + причины), поэтому
- * `AuthError` ложится в `ctx.fail` как есть, а REST переводит коды в статусы
- * таблицей ниже. Ядро API валидаторов не знает: голый `AuthResult` (см.
- * `types.ts`) несёт только код — «юзера не существует» это доменный факт,
- * а не проверка формы.
+ * Инструкция знает, КАК факт показывается: какой путь у формы, какой код
+ * уходит в `ctx.fail`, какие параметры подстановки. РЕАЛЬНАЯ инструкция
+ * появится при внедрении; сейчас — реестр кодов с заготовками и эмуляция
+ * (`demoInstruction`) для проверки цепочки.
  *
- * Тексты кодов выбирает владелец: словарь по умолчанию — в UI (gateway),
- * как у всех ошибок `lib/form` (`ru`-тексты рядом с потребителем).
+ * Формат ошибки — `FormError` из `lib/form` (код + путь + params, id считает
+ * форма): `ctx.fail(toFormErrors(instruction(fact)))` — и форма показит текст
+ * у пути. Тексты кодов выбирает владелец: словарь по умолчанию — в UI.
  */
+import type { FormError } from '#lib/form/result.js'
 
-/** Доменная ошибка модуля пользователя: код + путь (куда показывать). */
+/** Доменные коды модуля пользователя. */
 export type AuthErrorCode =
   | 'auth.nonce-unknown'      // challenge истёк или уже потрачен
   | 'auth.signature'          // подпись nonce не сошлась
@@ -23,42 +26,78 @@ export type AuthErrorCode =
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
   | 'auth.version'            // tokenVersion не совпал («выйти со всех»)
   | 'auth.anomaly'            // счётчик подсетей превысил порог
-  | 'auth.identity-exists'    // вход новым ключом, а identity уже есть (регистрация повторно)
-  | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта и т.п.)
+  | 'auth.identity-exists'    // регистрация повторно тем же ключом
+  | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
 
-/** Путь ошибки: имя поля формы или общий (баннер над формой). */
-export type AuthErrorPath = string // 'pubkey' | 'signature' | '' — общий
-
-/** Ошибка в проводке `lib/form`: код + путь + опциональные причины. */
-export type AuthError = {
+/** Голый факт из API: доменный код без знания о форме. */
+export type AuthFact = {
   code: AuthErrorCode
-  path: AuthErrorPath
-  /** Аргументы текста (не строки): количество, имя шага — выбирает словарь UI. */
+  /** Имя поля формы, если ошибка у поля; нет — общая. */
+  path?: string
   args?: Record<string, string | number>
 }
 
-/**
- * Инструкция для `lib/form`: `ctx.fail(...)` принимает список таких фактов
- * (прецедент — серверные ошибки полей `lib/form`), форма показит текст у пути.
- * `AuthError` уже в этой форме — отдельная инструкция не нужна.
- */
-export const authInstruction = (error: AuthError) => [error] // форма принимает список
+/** Инструкция: факт → список ошибок формы (проводка `ctx.fail`). */
+export type AuthInstruction = (fact: AuthFact) => readonly FormError[]
 
 /**
- * Код → HTTP-статус для REST (`+server.ts`). Форма об этом не знает:
- * для POST-экшена статус выбирает `fail(422)`.
+ * Реестр инструкций — код → проводка. Наполнится при внедрении; сейчас —
+ * общий случай: путь из факта, подстановки из аргументов.
  */
-export const AUTH_STATUS: Record<AuthErrorCode, number> = {
-  'auth.nonce-unknown': 422,
-  'auth.signature': 401,
-  'auth.identity-unknown': 404,
-  'auth.token': 401,
-  'auth.kid-unknown': 401,
-  'auth.expired': 401,
-  'auth.revoked': 401,
-  'auth.session-unknown': 401,
-  'auth.version': 401,
-  'auth.anomaly': 403,
-  'auth.identity-exists': 409,
-  'auth.confirm': 422,
+const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
+  'auth.nonce-unknown': (f) => [fieldError(f, { path: 'signature', retryable: true })],
+  'auth.signature': (f) => [fieldError(f, { path: 'signature' })],
+  'auth.identity-unknown': (f) => [fieldError(f, { path: 'pubkey' })],
+  'auth.identity-exists': (f) => [fieldError(f, { path: 'pubkey' })],
+  'auth.token': () => [generalError('auth.token')],
+  'auth.kid-unknown': () => [generalError('auth.kid-unknown', { retryable: true })],
+  'auth.expired': () => [generalError('auth.expired')],
+  'auth.revoked': () => [generalError('auth.revoked')],
+  'auth.session-unknown': () => [generalError('auth.session-unknown')],
+  'auth.version': () => [generalError('auth.version')],
+  'auth.anomaly': () => [generalError('auth.anomaly')],
+  'auth.confirm': (f) => [fieldError(f)],
 }
+
+/** Ошибка поля: путь обязателен — из факта или из инструкции. */
+function fieldError(fact: AuthFact, fixed?: { path?: string; retryable?: boolean }): FormError {
+  const path = fixed?.path ?? fact.path
+  if (!path) throw new Error(`инструкция ${fact.code}: нет пути (факт без пути)`)
+  return error(fact, path, fixed?.retryable)
+}
+
+/** Общая ошибка: без пути — баннер над формой. */
+function generalError(code: AuthErrorCode, opts?: { retryable?: boolean }): FormError {
+  return { id: '', code, origin: 'external', retryable: opts?.retryable }
+}
+
+function error(fact: AuthFact, path: string, retryable?: boolean): FormError {
+  return {
+    id: '',
+    code: fact.code,
+    origin: 'external',
+    path,
+    params: fact.args,
+    ...(retryable ? { retryable: true } : {}),
+  }
+}
+
+/** Проводка по умолчанию: реестр с откатом к общему случаю. */
+export const instruction: AuthInstruction = (fact) =>
+  (INSTRUCTIONS[fact.code] ?? ((f) => [fieldError(f, { path: f.path ?? '' })]))(fact)
+
+/**
+ * Список фактов → ошибки формы. Вызов в экшене:
+ *
+ *   const r = await user.login(ports, args)
+ *   if (!r.ok) ctx.fail(toFormErrors(instruction(r.error)))
+ */
+export const toFormErrors = (facts: readonly AuthFact[]): readonly FormError[] =>
+  facts.flatMap(instruction)
+
+/** Эмуляция для проверки цепочки (ход 251): факты, как их отдаст API. */
+export const demoFacts = (): readonly AuthFact[] => [
+  { code: 'auth.identity-unknown' },                       // API не знает путей
+  { code: 'auth.signature' },
+  { code: 'auth.anomaly' },
+]

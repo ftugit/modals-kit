@@ -17,12 +17,16 @@ import type {
   RevocationEntry,
   SessionView,
 } from './types.js'
-import type { AuthError } from './error.js'
+import type { AuthFact } from './error.js'
 
-/** Результат функции API: данные, доменная ошибка или отказ валидации. */
+/**
+ * Результат функции API: данные или голый факт (код + путь без знания о
+ * форме). Перевод факта в ошибки формы — инструкция (`error.ts`), в HTTP —
+ * gateway; ядро не знает ни валидаторов, ни ответов.
+ */
 export type UserResult<T> =
   | { ok: true; value: T }
-  | { ok: false; error: AuthError }
+  | { ok: false; fact: AuthFact }
 
 /** Срок жизни access — 15 минут (статья: 2, короткий exp). */
 export const ACCESS_TTL_SEC = 15 * 60
