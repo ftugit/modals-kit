@@ -1,52 +1,68 @@
 /**
- * Порты каркаса авторизации — что приложение обязано дать ядру. Ни один порт
- * не знает про фреймворк; связка с существующими хвостами проекта — в
- * `gateway.svelte.ts` (каркас, TODO на месте каждой связки).
+ * Порты ядра — что приложение обязано дать. Ни один порт не знает про
+ * фреймворк; связка с хвостами проекта — `gateway.svelte.ts` (скелет, TODO
+ * на месте каждой связки).
  *
- * Где что живёт (план: docs/design/auth-seed.md §5):
- *  - challenge/сессии/чёрный список — `#lib/cache` (`Store`, область 'auth'),
- *    для форм, пишущих в базу, — Postgres-хранилище из README `lib/cache` §6;
- *  - identity — ресурс `lib/db` (`defineResource` + ключи доступа, README §7);
- *  - ключи подписи и срок жизни — `src/env.ts` (`defineEnvVars`), ротация по
- *    схеме курсорных ключей (`DB_CURSOR_KID`/`DB_CURSOR_OLD_KEYS`);
- *  - подпись nonce — WebCrypto в браузере пользователя, проверка — на сервере.
+ * Где что живёт:
+ *  - записи продления, баны, nonce, отметка активности — `#lib/cache`
+ *    (`Store`, область 'auth'); активность — НЕ колонка auth, чтобы не
+ *    двигать её `updated_at` и не вести личный журнал (§4): TTL-ключ в кэше;
+ *  - строки auth/профиль — ресурсы `schema.ts` через `lib/db`;
+ *  - ключи подписи сервера и сроки — `src/env.ts` (ротация по схеме
+ *    курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`).
  */
-import type { AccessTokenClaims, ProfileView, SessionRecord } from './types.js'
+import type { AccessTokenClaims, Blocked, ProfileView, RenewalClaims, SessionRecord } from './types.js'
 
-/** Одноразовый challenge на вход (TTL минуты, тратится один раз). */
+/** Одноразовый nonce на подпись (TTL минуты, тратится один раз). */
 export interface ChallengePort {
   issue(nonce: string, ttlSeconds: number): Promise<void>
   /** `true` — nonce был и потрачен; повторно тот же nonce не проходит. */
   consume(nonce: string): Promise<boolean>
 }
 
-/** Живые сессии (брони). Отзыв = удалить запись. */
-export interface SessionStorePort {
+/**
+ * Записи токенов продления — единственное хранимое состояние сессий.
+ * Блокировка (одноразовость, выход) держит запись до конца срока: повторное
+ * предъявление погашенного токена — сигнал кражи, сессия гасится целиком.
+ */
+export interface RenewalStorePort {
   create(record: SessionRecord): Promise<void>
+  /** Погашенная/отозванная запись — `undefined` (бан неотличим от отсутствия). */
   get(jti: string): Promise<SessionRecord | undefined>
-  revoke(jti: string): Promise<void>
-  listByIdentity(sub: string): Promise<SessionRecord[]>
+  /** Погасить с сохранением до конца срока (одноразовость, выход). */
+  block(jti: string, ttlSeconds: number): Promise<void>
   revokeAllByIdentity(sub: string): Promise<void>
 }
 
-/** Чёрный список `jti` (статья, способ 1). Запись с TTL = остаток жизни токена. */
-export interface BlacklistPort {
-  add(jti: string, ttlSeconds: number): Promise<void>
-  has(jti: string): Promise<boolean>
+/**
+ * Таблица auth. «Двойной select» точки продления: строка auth спрашивается
+ * ВМЕСТЕ с баном предъявленного jti (хранилище продлений) — два чтения в
+ * один момент, отказ = кик. Реализация — на совести адаптера.
+ */
+export interface AuthStorePort {
+  findBySeed(seed: string): Promise<{ id: string; tokenVersion: number; deleted: boolean } | undefined>
+  create(seed: string): Promise<{ id: string; tokenVersion: number }>
+  /** Живая строка для фаервола: версия, метка удаления, объект блокировки. */
+  get(id: string): Promise<{ id: string; tokenVersion: number; deletedAt: number | null; blocked: Blocked | null } | undefined>
+  bumpTokenVersion(id: string): Promise<number>
+  /** Заявка на удаление: мягкая метка, вход закрыт, сессии гасятся. */
+  markDeleted(id: string, at: number): Promise<void>
+  /** Исполнитель через n дней: seed и security стираются, строка-надгробие остаётся. */
+  wipeCredentials(id: string): Promise<void>
 }
 
-/** Auth: строка (seed, tokenVersion) — больше ничего (§4). Профиль — отдельно. */
-export interface IdentityStorePort {
-  findBySeed(seed: string): Promise<{ id: string; tokenVersion: number } | undefined>
-  create(seed: string): Promise<{ id: string; tokenVersion: number }>
-  remove(id: string): Promise<void>
-  tokenVersion(id: string): Promise<number | undefined>
-  bumpTokenVersion(id: string): Promise<number>
+/** Профиль (никнейм, адрес аватара) — таблица `demo_profile`, владелец по auth_id. */
+export interface ProfileStorePort {
+  create(authId: string): Promise<void>
+  get(authId: string): Promise<ProfileView | undefined>
+  update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
+  /** Исполнитель удаления (через n дней после заявки). */
+  remove(authId: string): Promise<void>
 }
 
 /**
- * Ключи подписи (статья, способ 3): текущий пишет, отставшие принимают до
- * конца их срока — та же схема, что у курсорных ключей `lib/db`.
+ * Ключи подписи сервера (гайд, способ 3): текущий пишет, отставшие принимают
+ * до конца их срока — та же схема, что у курсорных ключей `lib/db`.
  */
 export interface KeysPort {
   current(): { kid: string; secret: string }
@@ -55,17 +71,15 @@ export interface KeysPort {
   retire(kid: string): Promise<void>
 }
 
-/** Подпись и разбор токена (HS256 через WebCrypto или JWS-библиотека — выбор реализации). */
+/** Подпись и разбор токенов (HS256 через WebCrypto или JWS — выбор реализации). */
 export interface TokenPort {
-  sign(claims: AccessTokenClaims, secret: string): Promise<string>
-  verify(token: string, secret: string): Promise<AccessTokenClaims | 'bad-signature' | 'expired'>
+  sign(claims: AccessTokenClaims | RenewalClaims, secret: string): Promise<string>
+  verify(token: string, secret: string): Promise<AccessTokenClaims | RenewalClaims | 'bad-signature' | 'expired'>
 }
 
 /**
- * Подпись и проверка для ядра. Реализация по умолчанию — `keys.ts`
- * (изоморфный WebCrypto Ed25519), подмена — в тестах. У клиента с JS те же
- * функции выполняются в браузере: приватный ключ не покидает устройство,
- * на сервер уходит только подпись — проверка идёт по seed.
+ * Подпись и проверка seed-модели. Реализация по умолчанию — `keys.ts`
+ * (`@noble/ed25519`, изоморфно); подмена — в тестах.
  */
 export interface CryptoPort {
   sign(payload: string, secret: string): Promise<string>
@@ -73,9 +87,9 @@ export interface CryptoPort {
 }
 
 /**
- * Куки — единственный разрешённый носитель токена (практики статьи: HttpOnly,
- * Secure; в localStorage токен не пишем). Каркас не знает Response: адаптер
- * подставляет куки и REST-ответа, и POST-экшена.
+ * Куки — единственный разрешённый носитель токенов (гайд: HttpOnly, Secure;
+ * в localStorage не пишем). Access и продление — раздельные куки; имена —
+ * константы `auth.ts`. Адаптер подставляет куки и REST-ответа, и POST-экшена.
  */
 export interface CookiePort {
   get(name: string): string | undefined
@@ -88,40 +102,15 @@ export interface ClockPort {
   now(): number
 }
 
-/**
- * Мониторинг аномалий (практики статьи): «токен ходит из многих мест».
- * Хеш подсети, счётчик в памяти с TTL минут; сам IP не хранится (§4).
- */
-export interface NetworkPort {
-  subnetHash(): string | undefined
-  count(otherSubnetHash: string): number
-}
-
-/** Профиль (никнейм, адрес аватара) — таблица `demo_profile`, владелец по auth_id. */
-export interface ProfileStorePort {
-  create(authId: string): Promise<void>
-  get(authId: string): Promise<ProfileView | undefined>
-  update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
-  remove(authId: string): Promise<void>
-}
-
-/** Настройки — только из доверенного окружения (прецедент `src/env.ts`). */
-export interface ConfigPort {
-  get(name: string): string | undefined
-}
-
 /** Всё, что нужно ядру. Собирает адаптер. */
 export interface AuthPorts {
   challenge: ChallengePort
-  sessions: SessionStorePort
-  blacklist: BlacklistPort
-  identities: IdentityStorePort
-  profile: ProfileStorePort
+  renewals: RenewalStorePort
+  auths: AuthStorePort
+  profiles: ProfileStorePort
   keys: KeysPort
   tokens: TokenPort
   crypto: CryptoPort
   cookies: CookiePort
   clock: ClockPort
-  network: NetworkPort
-  config: ConfigPort
 }

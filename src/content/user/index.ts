@@ -5,6 +5,6 @@
  */
 export * from './types.js'
 export * from './error.js'
-export * from './user.js'
+export * from './auth.js'
 export * from './ports.js'
-export { generateKeyPair, sign as signWithSecret, verify as verifyWithSeed } from './keys.js'
+export { generateKeyPair, seedOf, sign as signWithSecret, verify as verifyWithSeed } from './keys.js'

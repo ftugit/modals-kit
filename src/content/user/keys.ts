@@ -1,19 +1,19 @@
 /**
- * Криптография seed-модели — изоморфный WebCrypto (Ed25519): один и тот же
- * код работает и на сервере, и у клиента. По плану (auth-seed.md §1) у юзера
- * с JS генерация связки и подписание challenge выполняются в браузере —
- * приватный ключ не покидает устройство; сервер знает только seed (публичный)
- * и проверяет подпись им же (`verify` не принимает секрет).
+ * Криптография seed-модели — `@noble/ed25519` (семья noble, без зависимостей:
+ * SHA-512 для async-методов берёт из WebCrypto; ~3,5 КиБ gzip, когда попадёт
+ * в чанк роута входа). Один и тот же код работает на сервере и у клиента:
+ * по плану (auth-seed.md §1) связку генерирует приложение (у юзера с JS —
+ * в браузере), login ждёт конечный публичный ключ (seed); приватный не
+ * покидает устройство, сервер проверяет подпись публичным.
  *
- * Формат — base64url без паддинга. seed = raw-ключ (32 байта → 43 символа,
- * как в `schema.ts`); secret = pkcs8 (WebCrypto не импортирует raw как
- * приватный ключ Ed25519). В БД хранится только seed.
+ * Формат — base64url без паддинга: secret и seed — ровно 32 байта (43
+ * символа). Публичный выводится из приватного детерминированно (`seedOf`),
+ * поэтому хранить нужно одно значение — secret; seed восстанавливается где
+ * угодно. В БД хранится только seed.
  */
+import * as ed from '@noble/ed25519'
 
-const ED25519 = { name: 'Ed25519' } as const
-const enc = new TextEncoder()
-
-/** Связка ключей: seed (публичный) + secret (приватный, не для сервера). */
+/** Связка: secret (приватный, не для сервера) + seed (публичный, «логин»). */
 export type KeyPair = { seed: string; secret: string }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -30,20 +30,20 @@ function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-/** Генерация связки: у клиента с JS — в браузере, seed уходит на сервер один раз (регистрация). */
+/** Генерация связки: у клиента с JS — в браузере; наружу уходит только seed (регистрация). */
 export async function generateKeyPair(): Promise<KeyPair> {
-  const pair = (await crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])) as CryptoKeyPair
-  const [seed, secret] = await Promise.all([
-    crypto.subtle.exportKey('raw', pair.publicKey),
-    crypto.subtle.exportKey('pkcs8', pair.privateKey),
-  ])
-  return { seed: toBase64Url(new Uint8Array(seed)), secret: toBase64Url(new Uint8Array(secret)) }
+  const secret = crypto.getRandomValues(new Uint8Array(32))
+  return { secret: toBase64Url(secret), seed: toBase64Url(await ed.getPublicKeyAsync(secret)) }
 }
 
-/** Подпись приватным ключом — локально у владельца; наружу уходит только подпись. */
+/** Публичный (seed) из приватного — детерминированно, всегда один и тот же. */
+export async function seedOf(secret: string): Promise<string> {
+  return toBase64Url(await ed.getPublicKeyAsync(fromBase64Url(secret)))
+}
+
+/** Подпись приватным — локально у владельца; наружу уходит только подпись. */
 export async function sign(payload: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey('pkcs8', fromBase64Url(secret), ED25519, false, ['sign'])
-  return toBase64Url(new Uint8Array(await crypto.subtle.sign(ED25519, key, enc.encode(payload))))
+  return toBase64Url(await ed.signAsync(new TextEncoder().encode(payload), fromBase64Url(secret)))
 }
 
 /**
@@ -53,8 +53,11 @@ export async function sign(payload: string, secret: string): Promise<string> {
  */
 export async function verify(payload: string, signature: string, seed: string): Promise<boolean> {
   try {
-    const key = await crypto.subtle.importKey('raw', fromBase64Url(seed), ED25519, false, ['verify'])
-    return await crypto.subtle.verify(ED25519, key, fromBase64Url(signature), enc.encode(payload))
+    return await ed.verifyAsync(
+      fromBase64Url(signature),
+      new TextEncoder().encode(payload),
+      fromBase64Url(seed),
+    )
   } catch {
     return false
   }

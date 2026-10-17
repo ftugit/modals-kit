@@ -25,8 +25,8 @@ export type AuthErrorCode =
   | 'auth.revoked'            // jti в чёрном списке
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
   | 'auth.version'            // tokenVersion не совпал («выйти со всех»)
-  | 'auth.anomaly'            // счётчик подсетей превысил порог
-  | 'auth.identity-exists'    // регистрация повторно тем же ключом
+  | 'auth.blocked'            // аккаунт заблокирован (объект blocked)
+  | 'auth.delete-pending'     // удаление заявлено, грейс не кончился
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
 
 /** Голый факт из API: доменный код без знания о форме. */
@@ -48,14 +48,14 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.nonce-unknown': (f) => [fieldError(f, { path: 'signature', retryable: true })],
   'auth.signature': (f) => [fieldError(f, { path: 'signature' })],
   'auth.identity-unknown': (f) => [fieldError(f, { path: 'seed' })],
-  'auth.identity-exists': (f) => [fieldError(f, { path: 'seed' })],
   'auth.token': () => [generalError('auth.token')],
   'auth.kid-unknown': () => [generalError('auth.kid-unknown', { retryable: true })],
   'auth.expired': () => [generalError('auth.expired')],
   'auth.revoked': () => [generalError('auth.revoked')],
   'auth.session-unknown': () => [generalError('auth.session-unknown')],
   'auth.version': () => [generalError('auth.version')],
-  'auth.anomaly': () => [generalError('auth.anomaly')],
+  'auth.blocked': () => [generalError('auth.blocked')],
+  'auth.delete-pending': () => [generalError('auth.delete-pending')],
   'auth.confirm': (f) => [fieldError(f)],
 }
 
@@ -99,5 +99,5 @@ export const toFormErrors = (facts: readonly AuthFact[]): readonly FormError[] =
 export const demoFacts = (): readonly AuthFact[] => [
   { code: 'auth.identity-unknown' },                       // API не знает путей
   { code: 'auth.signature' },
-  { code: 'auth.anomaly' },
+  { code: 'auth.blocked' },
 ]

@@ -23,7 +23,7 @@ describe('цепочка: факт API → инструкция → ошибки
   })
 
   test('общие ошибки без пути — баннер над формой', () => {
-    for (const code of ['auth.anomaly', 'auth.revoked', 'auth.version'] as const) {
+    for (const code of ['auth.blocked', 'auth.revoked', 'auth.version'] as const) {
       const [e] = instruction({ code })
       expect(e.path).toBeUndefined()
       expect(e.code).toBe(code)

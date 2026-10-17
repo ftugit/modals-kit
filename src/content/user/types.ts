@@ -1,46 +1,55 @@
 /**
- * Типы каркаса авторизации. Ядро (`api.ts`) не знает ни Request/Response, ни
- * SvelteKit: голые данные на входе, голый результат с кодом на выходе —
- * один и тот же вызов годится для REST (`+server.ts`) и POST-экшена
- * (`+page.server.ts`), перевод — в адаптере (`sveltekit.ts`).
- *
- * Каркас без реализации: тела бросают `Error` с указанием на план
- * (`docs/design/auth-seed.md`). Оценивается ЦЕПОЧКА вызова и покрытие
- * правил статьи об отзыве токенов, не поведение.
+ * Типы модуля пользователя. Ядро (`auth.ts`) не знает ни Request/Response,
+ * ни SvelteKit: голые данные на входе, голый факт на выходе — перевод в HTTP
+ * делает gateway, в ошибки формы — инструкции (`error.ts`).
  */
 
-/** Токен доступа: короткий (15 минут, статья §«short lifespan»). */
+/**
+ * Временный токен: короткий (15 минут), БЕЗ jti — не хранится и не банится
+ * (запрещается у точки продления — `renew`, «фаервол приложения»). Подпись и
+ * exp проверяются без обращения к хранилищу.
+ */
 export type AccessTokenClaims = {
-  /** JWT ID — ключ сессии и ключ чёрного списка. */
-  jti: string
-  /** Идентификатор строки auth (seed = псевдоним, приватность §4 плана). */
+  /** Чей токен — id строки auth. */
   sub: string
-  /** Версия токенов identity: не совпала — все токены мертвы (статья, «versioning»). */
+  /** Версия токенов identity: не совпала — все токены мертвы (гайд, способ 4). */
   ver: number
-  /** Ключ подписи: ротация секрета (статья, «rotating secrets»). */
+  /** Ключ подписи сервера: ротация (гайд, способ 3). */
   kid: string
   iat: number
   exp: number
 }
 
-/** Сессия в хранилище (бронь `#lib/cache`): источник правды о живости. */
+/** Токен продления: одноразовый; запись хранится и при использовании блокируется. */
+export type RenewalClaims = {
+  /** Ключ записи в хранилище (и бана на остаток срока — для ловли повтора). */
+  jti: string
+  sub: string
+  iat: number
+  exp: number
+}
+
+/** Запись токена продления — единственное хранимое состояние сессии. */
 export type SessionRecord = {
   jti: string
   sub: string
-  /** Хеш подсети клиента для счётчика аномалий; сам IP не хранится (§4 плана). */
-  subnet: string | undefined
   createdAt: number
   expiresAt: number
 }
 
-/** Результат `verify` — то, что получает `dbHandle` как доверенный principal. */
+/** Объект блокировки аккаунта (поле `blocked` таблицы auth). */
+export type Blocked = {
+  reason: string
+  at: number
+  /** До какого времени; нет — бессрочно. */
+  until?: number
+}
+
+/** Доверенный principal — из клеймов access без похода в хранилище. */
 export type Principal = { id: string }
 
 /** Ответы API — данные без ошибок; ошибки (код+путь) — `error.ts`. */
 export type Challenge = { nonce: string; expiresAt: number }
-export type SessionView = { jti: string; createdAt: number; expiresAt: number; subnet: string | undefined }
-export type KeyView = { kid: string; retired: readonly string[] }
-export type RevocationEntry = { jti: string; until: number }
 /** Профиль: никнейм и адрес аватара — и больше никаких данных (§4). */
 export type ProfileView = {
   id: string

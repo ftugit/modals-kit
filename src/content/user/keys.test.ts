@@ -1,17 +1,22 @@
 /**
- * Изоморфная криптография связки ключей (ход 251): генерация, подписание
- * приватным, проверка публичным (seed) — без передачи секрета. Тот же код
- * пойдёт в браузер юзера с JS.
+ * Связка ключей на `@noble/ed25519` (ход 251): генерация, вывод публичного
+ * из приватного, подписание, проверка без приватного. Тот же код пойдёт
+ * в браузер юзера с JS.
  */
 import { describe, expect, test } from 'vitest'
-import { generateKeyPair, sign, verify } from './keys.js'
+import { generateKeyPair, seedOf, sign, verify } from './keys.js'
 
-describe('связка ключей (WebCrypto Ed25519)', () => {
-  test('генерация: seed — 43 символа base64url (32 байта), secret длиннее', async () => {
+describe('связка ключей (@noble/ed25519)', () => {
+  test('генерация: secret и seed — по 43 символа base64url (32 байта)', async () => {
     const { seed, secret } = await generateKeyPair()
     expect(seed).toMatch(/^[A-Za-z0-9_-]{43}$/)
-    expect(secret.length).toBeGreaterThan(43)
-    expect(secret).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  })
+
+  test('публичный выводится из приватного и всегда один и тот же', async () => {
+    const { seed, secret } = await generateKeyPair()
+    expect(await seedOf(secret)).toBe(seed)
+    expect(await seedOf(secret)).toBe(await seedOf(secret))
   })
 
   test('подпись приватным → проверка публичным (seed): true; секрет не нужен', async () => {
@@ -36,7 +41,7 @@ describe('связка ключей (WebCrypto Ed25519)', () => {
     expect(await verify('payload', '!!!', '!!!')).toBe(false)
   })
 
-  test('подписи детерминированы и коротки (64 байта → 86 символов base64url)', async () => {
+  test('подписи детерминированы (RFC 8032) и коротки (64 байта → 86 символов)', async () => {
     const { seed, secret } = await generateKeyPair()
     const a = await sign('payload', secret)
     const b = await sign('payload', secret)

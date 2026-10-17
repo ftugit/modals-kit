@@ -26,32 +26,42 @@ export const auth = defineResource({
   fields: {
     // DEFAULT есть и у колонки, и у createValue — как у `posts.ts`.
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
+    // Nullable: исполнитель удаления стирает seed через n дней (надгробие).
+    // unique с NULL не мешает — таких строк может быть сколько угодно.
     seed: field(SEED, {
-      read: () => true, create: () => true, update: () => false, required: true,
+      read: () => true, create: () => true, update: [], required: true, nullable: true,
       orderable: true, filters: ['eq'],
       db: { unique: true }, // один аккаунт на связку ключей
     }),
     /**
      * Дополнительная защита (2fa, пароль) — резерв: массив создаётся пустым,
      * писать его из запросов нельзя (`[]` — «никому»); права и форму завести
-     * вместе с первой защитой. Сейчас — только место в схеме.
+     * вместе с первой защитой. Исполнитель удаления стирает вместе с seed.
      */
     security: field(s.array(s.json(), { max: 8 }), {
       read: () => true, create: [], update: [],
       db: { default: "'{}'::jsonb[]" },
     }),
-    // Отметка активности: обновит `noteActivity`; сам IP не хранится (§4).
-    last_seen_at: f.timestamp({ read: () => true, nullable: true }),
+    /**
+     * Объект блокировки аккаунта (тип `Blocked`: reason, at, until?).
+     * Пишет блокировщик — роли ещё нет, запись закрыта (`[]`) до её появления;
+     * проверяют login/renew (фаервол) — факты `auth.blocked`.
+     */
+    blocked: f.json({ read: () => true, create: [], update: [], nullable: true }),
     // «Выйти со всех устройств»: `logoutEverywhere` инкрементирует.
     token_version: field(s.integer({ min: 0, max: 1_000_000 }), {
       read: () => true, create: () => true, update: () => true, required: true,
       db: { default: '0' },
     }),
   },
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  // Soft delete: `deleted_at` — метка заявки на удаление; через n дней
+  // исполнитель чистит seed/security. Активность (last_seen) — НЕ колонка:
+  // она не должна двигать `updated_at` (решение владельца), ей место в
+  // `#lib/cache` с TTL — и меньше личных данных (§4).
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
   policy: {
-    // Читает и правит владелец строки; создаёт сервер (регистрация, вход).
-    // Ключи доступа приходят из сессии (README lib/db §7).
+    // Читает и правит владелец строки; создаёт сервер (вход). Ключи доступа
+    // приходят из сессии (README lib/db §7).
     select: policy.ownerOrRoles('id', ['admin']),
     insert: policy.roles(['server']),
     update: policy.ownerOrRoles('id', ['admin']),
@@ -94,7 +104,8 @@ export const profile = defineResource({
       read: () => true, create: () => true, update: () => true, nullable: true,
     }),
   },
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  // Soft delete: заявка ставит метку; исполнитель через n дней удаляет строку.
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
   policy: {
     // Владелец профиля определяется по auth_id.
     select: policy.ownerOrRoles('auth_id', ['admin']),
