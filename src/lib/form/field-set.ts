@@ -6,6 +6,7 @@
 //     props.s1.kind         ключ вида из каталога
 //     props.s1.rules        выбранные правила (повторяется)
 //     props.s1.max_length   значение правила: имя правила в snake_case
+//     props.s1.rules_kind   вид, для которого рисовались правила (см. readSlot)
 //
 // Места (`s1`, у новых — случайный ключ `fxxxxxx`) — сегменты имени, порядок — порядок
 // первого появления в форме. Места рисует приложение (`fieldSet` в `#lib/form/svelte`).
@@ -66,7 +67,12 @@ function readSlot(form: EntrySource, name: string, slot: string): KitField {
     // нечисло уходит каталогу как есть: он назовёт ошибку у своего правила
     return raw === '' ? { rule } : { rule, arg: Number.isFinite(n) ? n : raw }
   })
-  return { name: slot, kind: one('kind'), label: one('label').trim(), rules }
+  const kind = one('kind')
+  // `rules_kind` — вид, для которого рисовали список правил. С видом без скрипта
+  // ничего не происходит до отправки: старый выбор приходит вместе с новым видом.
+  // Вид не совпал — выбор сбрасывается целиком, как при смене вида с JS.
+  const rendered = one('rules_kind')
+  return { name: slot, kind, label: one('label').trim(), rules: rendered && rendered !== kind ? [] : rules }
 }
 
 const asItem = (kit: FieldKit, x: KitField): FieldSetItem => ({
@@ -165,7 +171,16 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
     if (!kit || !ctx.form) return { ok: false, code: 'type.fields' }
     const { slots, shape } = readSlots(ctx.form, ctx.path)
     // место без названия не считается: так «пустое место» не становится полем
-    const list = slots.map((slot) => readSlot(ctx.form!, ctx.path, slot)).filter((x) => x.label)
+    const list = slots
+      .map((slot) => readSlot(ctx.form!, ctx.path, slot))
+      .filter((x) => x.label)
+      .map((x) => {
+        // правило вида в отправке отдельно не нужно: каталог добавит его сам.
+        // Прислали дубль (он мог попасть в нативный select как выбранный) —
+        // отбрасываем по имени, не дожидаясь отказа «не для вида».
+        const locked = new Set((kit.rulesFor(x.kind)?.locked ?? []).map((l) => l.rule))
+        return locked.size ? { ...x, rules: (x.rules ?? []).filter((r) => !locked.has(r.rule)) } : x
+      })
     const issues: DecodeIssue[] = shape.map((slot) => ({ code: 'kit.field-shape', at: slot }))
     const r = kit.compile(list)
     if (r.ok && !issues.length) return { ok: true, value: r.specs }
@@ -182,6 +197,9 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
     for (const item of Array.isArray(value) ? value : []) {
       out.push([fieldSetName(name, item.name, 'label'), item.label])
       out.push([fieldSetName(name, item.name, 'kind'), item.preset])
+      // вид, для которого рисовались правила (см. readSlot): значение всегда
+      // совпадает с видом места — сброс правил нужен только хосту без скрипта
+      out.push([fieldSetName(name, item.name, 'rules_kind'), item.preset])
       const locked = kit?.rulesFor(item.preset)?.locked ?? []
       for (const r of item.rules ?? []) {
         if (locked.some((l) => l.rule === r.rule)) continue
@@ -195,6 +213,6 @@ export const fieldSetType: FieldType<readonly FieldSetItem[]> = {
   attrs: () => ({}),
   degradation: {
     withoutJs: '«+ поле» и «Удалить» — отправка формы с намерением: сервер возвращает места без сохранения',
-    lost: 'список правил меняется сразу при смене вида — без скрипта после отправки',
+    lost: 'смена вида сразу сбрасывает выбранные правила; без скрипта — после отправки',
   },
 }

@@ -57,13 +57,15 @@
     <!-- адрес записи: его заполнила модель из заголовка (fill), форма его не передаёт -->
     <code class="hidden max-w-40 truncate text-xs text-muted-foreground sm:inline" data-testid="row-slug">/{item.slug}</code>
   {/if}
-  <span class="text-xs text-muted-foreground">
+  <!-- время и id — с пределом ширины: без него на телефоне они выедали
+       название. Полные значения остаются в тексте (копирование) и в подсказке. -->
+  <span class="max-w-28 truncate text-xs text-muted-foreground" title={item.created_at}>
     {item.created_at ?? (pending ? '— назначит сервер —' : '')}
   </span>
   {#if renderActions}
     <span class="flex shrink-0 items-center gap-1">{@render renderActions()}</span>
   {/if}
-  <code class="text-xs text-muted-foreground" data-testid={full ? 'row-id' : undefined}>
+  <code class="max-w-28 truncate text-xs text-muted-foreground" data-testid={full ? 'row-id' : undefined} title={item.id}>
     {full ? item.id : item.id.slice(0, 8)}
   </code>
 </div>

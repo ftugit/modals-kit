@@ -11,7 +11,7 @@
 </script>
 
 <section class="space-y-3" aria-labelledby="fields-step-view" data-testid="record-view">
-  <h2 id="fields-step-view" class="text-xl font-semibold">3. Сохранённая запись</h2>
+  <h2 id="fields-step-view" class="text-xl font-semibold">Просмотр</h2>
   <article class="space-y-3 rounded-xl border border-border bg-card p-4">
     <h3 class="text-lg font-medium" data-testid="record-title">{record.title}</h3>
     <img src={record.image} alt={record.title} class="max-h-64 max-w-full rounded-md border border-border" />

@@ -15,15 +15,20 @@
     required: 'Обязательное', minLength: 'Мин. длина', maxLength: 'Макс. длина',
     minValue: 'Мин. значение', maxValue: 'Макс. значение', integer: 'Целое число',
   }
-  /** Правила вида, которые снять нельзя, — словами. */
+  /**
+   * Правила вида, которые снять нельзя. Показываются ВНУТРИ списка «Правила»
+   * выбранным пунктом — картинка того, что каталог добавит полю сам.
+   */
   const LOCKED_LABEL: Record<string, string> = {
-    email: 'проверка адреса почты', url: 'проверка ссылки', pattern: 'номер в формате +79991234567',
+    email: 'Всегда: проверка адреса почты',
+    url: 'Всегда: проверка ссылки',
+    pattern: 'Всегда: номер в формате +79991234567',
   }
 
   // svelte-ignore state_referenced_locally
   const set = fieldSet(form, name, {
     labels: { label: 'Название поля', kind: 'Вид', rules: 'Правила' },
-    rule: (r) => RULE_LABEL[r] ?? r,
+    rule: (r) => RULE_LABEL[r] ?? LOCKED_LABEL[r] ?? r,
     placeholder: 'например, «Ссылка»',
   })
   const f = $derived(form.f[name])
@@ -48,9 +53,9 @@
         <Field of={row.kind} />
       </div>
       <Field of={row.rules} />
-      {#if row.locked.length}
-        <p class="text-xs text-muted-foreground">Всегда: {row.locked.map((r) => LOCKED_LABEL[r.rule] ?? r.rule).join(', ')}</p>
-      {/if}
+      <!-- правило вида — пункт внутри «Правила»; значение вида для списка правил
+           едет служебным полем (сброс выбора при смене вида без скрипта) -->
+      <Field of={row.rulesKind} />
       {#if row.args.length}
         <div class="grid gap-3 sm:grid-cols-2">
           {#each row.args as a (a.name)}<Field of={a} />{/each}

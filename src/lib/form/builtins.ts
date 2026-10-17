@@ -196,7 +196,9 @@ const fileConstraints = {
 /** Встроенный тип одного файла. */
 export const fileType: FieldType<File | null> = {
   kind: 'file', inputs: ['file'], multiple: false, empty: null,
-  decode: (e) => { const f = e[0]; return ok(f && typeof f !== 'string' ? f : null) },
+  // пустой файл браузер отдаёт заглушкой с именем '' — это «поле не трогали»,
+  // а не файл: без этого `required` считал бы его заполненным, а `accept` ругался
+  decode: (e) => { const f = e[0]; return ok(f && typeof f !== 'string' && f.name ? f : null) },
   encode: (v, n, out) => { if (v) out.push([n, v]) },
   constraints: fileConstraints,
   attrs: () => ({ type: 'file' }),

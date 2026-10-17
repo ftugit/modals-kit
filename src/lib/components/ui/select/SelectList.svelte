@@ -344,6 +344,14 @@
     if (config.clearSearchOnSelect) query = ''
   }
 
+  /**
+   * «Очистить» снимает только то, что можно снова выбрать: выбранный
+   * выключенный пункт назад не вернуть — его уносить нельзя.
+   */
+  function clearSelection() {
+    applySelection(selected.filter((o) => o.disabled))
+  }
+
   function choose(option: SelectOption) {
     if (option.disabled) return
     const next = selectedAfterToggle(selected, option, multiple)
@@ -384,7 +392,7 @@
         class={cn('h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-accent', sheetOnly)}
         data-select-mobile-count=""
         aria-label={`Снять выделение: выбрано ${selected.length}`}
-        onclick={() => applySelection([])}
+        onclick={clearSelection}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
           <path d="m4 4 8 8m0-8-8 8" />
@@ -440,7 +448,7 @@
         class={cn('h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground', sheetOnly)}
         data-select-mobile-action=""
         aria-label="Очистить"
-        onclick={() => applySelection([])}
+        onclick={clearSelection}
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
           <circle cx="8" cy="8" r="5.5" /><path d="m5.5 10.5 5-5" />
@@ -554,7 +562,7 @@
       {/if}
       {#if config.showClear}
         <button type="button" class="rounded-md px-2 py-1 text-muted-foreground hover:bg-accent"
-          onclick={() => applySelection([])}>Очистить</button>
+          onclick={clearSelection}>Очистить</button>
       {/if}
     </div>
   {/if}

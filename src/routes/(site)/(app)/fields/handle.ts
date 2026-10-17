@@ -13,6 +13,8 @@ import { IMAGE_MAX_BYTES, collectionForm, recordForm, type SavedRecord, type Sav
 const store = localStore.scope('fields-demo', { max: 2 })
 export const savedSet = (): SavedSet | null => store.get<SavedSet>('set') ?? null
 export const savedRecord = (): SavedRecord | null => store.get<SavedRecord>('record') ?? null
+/** Сброс демо: очищает набор и запись (шаг «Сбора» стартует с пустой формы). */
+export const clearFieldsDemo = (): void => store.clear()
 
 /* ── набор ────────────────────────────────────────────────────────── */
 
@@ -52,21 +54,31 @@ const record = createFormHandler<{ title: string }, RequestEvent>({
   // Форму записи сервер строит из сохранённого набора, а не из тела запроса: поле,
   // которого в наборе уже нет, — отказ «неизвестное поле», а не тихий приём.
   source: {
-    resolve: async () => recordForm(savedSet()),
+    // описание строится из сохранённого набора И сохранённой записи: запись
+    // возвращает форму в режим правки (прежние значения, необязательное фото)
+    resolve: async () => recordForm(savedSet(), savedRecord()),
     revision: async () => savedSet()?.version ?? 1,
   },
   order: SECURITY_LAYERS,
   limits: { maxFileSize: IMAGE_MAX_BYTES },
   async execute({ values, commit, fail }) {
-    const file = values['image'] as File
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const type = sniff(bytes)
-    if (!type) return fail([{ message: 'не изображение', code: 'accept', path: ['image'], params: { name: file.name } }])
+    const previous = savedRecord()
+    const file = values['image'] as File | null
+    // пустое поле файла в режиме правки — оставить прежнее изображение
+    let image = previous?.image ?? ''
+    if (file) {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const type = sniff(bytes)
+      if (!type) return fail([{ message: 'не изображение', code: 'accept', path: ['image'], params: { name: file.name } }])
+      image = `data:${type};base64,${base64(bytes)}`
+    } else if (!image) {
+      return fail([{ message: 'обязательно', code: 'required', path: ['image'] }])
+    }
     const fields = savedSet()?.fields ?? []
     store.set<SavedRecord>('record', {
-      n: (savedRecord()?.n ?? 0) + 1,
+      n: (previous?.n ?? 0) + 1,
       title: String(values['title']),
-      image: `data:${type};base64,${base64(bytes)}`,
+      image,
       values: Object.fromEntries(fields.map((s) => [s.name, values[`u_${s.name}`] ?? null])),
     }, Infinity)
     commit()

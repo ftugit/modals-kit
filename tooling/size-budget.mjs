@@ -144,9 +144,12 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // Ход 246, адрес — у адаптеров (`linkFor`, `fieldName`, `carryFields`), ссылки «Начать сначала»/
 // «Повторить»/«Сброс», `LiveStatus` вместо текстов хоста: весь JS 256.8 → 257.1, immutable 270.5 → 270.8,
 // /paginator 211.4 → 211.7, /db-demo 209.0 → 209.4. Лимиты = факт + 0.5.
+// Ход 248, `/fields` шагами (сборка → заполнение → результат), правило вида в списке «Правила»,
+// сброс правил при смене вида, предел длины у времени и id строки БД: весь JS 257.1 → 258.2,
+// immutable 270.8 → 271.9, /fields 170.2 → 171.3. Лимиты = факт + 0.5.
 const LIMITS = {
-  allImmutableGzip: 271.3 * KiB,
-  allJsGzip: 257.6 * KiB,
+  allImmutableGzip: 272.4 * KiB,
+  allJsGzip: 258.7 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -184,7 +187,7 @@ const ROUTE_LIMITS = {
   '/cards/[id]': 139.5 * KiB,
   // Ход 224: конструктор полей — факт 169.9. Ход 236: хук `fieldSet` — факт 171.2.
   // Ход 237: чистка lib/form — факт 169.9.
-  '/fields': 170.4 * KiB,
+  '/fields': 171.8 * KiB,
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

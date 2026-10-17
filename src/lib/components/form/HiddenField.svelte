@@ -9,4 +9,4 @@
   const value = $derived(f.attrs.value === '' || f.attrs.value === undefined ? (f.defaultValue ?? '') : f.attrs.value)
 </script>
 
-<Input {...f.attrs} {value} />
+<Input {...f.attrs} type="hidden" {value} />

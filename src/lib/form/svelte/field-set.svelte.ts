@@ -43,6 +43,12 @@ export interface FieldSetRow {
   readonly args: readonly FieldView[]
   /** Правила вида: всегда есть у поля, снять нельзя. */
   readonly locked: readonly SpecRule[]
+  /**
+   * Служебное поле `rules_kind`: вид, для которого рисовали список правил.
+   * Его значение — `preset` места; сервер сбрасывает выбор правил, когда
+   * присланный вид с ним не совпадает (смена вида без скрипта).
+   */
+  readonly rulesKind: FieldView
   /** Ошибки места целиком (не отдельного контрола). */
   readonly errors: readonly FormError[]
   /** Название набрано: место станет полем при отправке. */
@@ -127,16 +133,32 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
 
   function view(row: FieldSetDraft): FieldSetRow {
     const r = fieldSetRules(kit!, row)
+    // правило вида показываем ВНУТРИ списка правил выбранным и недосягаемым:
+    // оно и так стоит у поля, отдельной отправки не требует (encode его пропускает)
+    const lockedNames = r.locked.map((l) => l.rule)
     return {
       key: row.key, preset: row.preset, locked: r.locked, filled: !!row.label.trim(),
       errors: errorsAt(`${name}.${row.key}`),
       label: sub(row, 'label', 'text', o.labels.label, row.label, (raw) => (row.label = String(raw ?? '')),
                  o.placeholder ? { placeholder: o.placeholder } : {}),
-      kind: sub(row, 'kind', 'select', o.labels.kind, row.preset, (raw) => (row.preset = String(raw ?? '')),
-                { options: kindOptions }),
-      rules: sub(row, 'rules', 'multiselect', o.labels.rules, row.rules,
-                 (raw) => (row.rules = (Array.isArray(raw) ? raw : []).map(String)),
-                 { options: r.choices.map((x) => ({ value: x, label: ruleText(x) })) }),
+      kind: sub(row, 'kind', 'select', o.labels.kind, row.preset, (raw) => {
+        const next = String(raw ?? '')
+        // сменили вид — выбранные правила обнуляются: они были про прежний вид
+        if (next !== row.preset) { row.rules = []; row.args = {} }
+        row.preset = next
+      }, { options: kindOptions }),
+      rules: sub(row, 'rules', 'multiselect', o.labels.rules, [...lockedNames, ...row.rules],
+                 (raw) => {
+                   // правило вида — только в картинке: в выбор и в отправку не попадает
+                   row.rules = (Array.isArray(raw) ? raw : []).map(String).filter((x) => !lockedNames.includes(x))
+                 },
+                 {
+                   options: [
+                     ...r.locked.map((l) => ({ value: l.rule, label: ruleText(l.rule), disabled: true })),
+                     ...r.choices.map((x) => ({ value: x, label: ruleText(x) })),
+                   ],
+                 }),
+      rulesKind: sub(row, 'rules_kind', 'hidden', '', row.preset, () => {}),
       args: r.withArgs.map((a) => sub(row, a.rule, 'number', ruleText(a.rule), row.args[a.rule] ?? '',
         (raw) => (row.args[a.rule] = String(raw ?? '')), a.default !== undefined ? { placeholder: String(a.default) } : {})),
     }

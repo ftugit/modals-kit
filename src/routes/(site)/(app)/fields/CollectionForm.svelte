@@ -4,7 +4,7 @@
    * приложения (`SchemaBuilder`), пределы проверяет форма.
    */
   import { untrack } from 'svelte'
-  import { invalidateAll } from '$app/navigation'
+  import { goto, invalidateAll } from '$app/navigation'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
@@ -14,7 +14,12 @@
   import SchemaBuilder from './SchemaBuilder.svelte'
   import { collectionForm, type SavedSet } from './forms'
 
-  let { set, seed = null }: { set: SavedSet | null; seed?: Result | null } = $props()
+  let {
+    set,
+    seed = null,
+    /** Куда идти после сохранения набора — следующий шаг. */
+    next = '/fields?step=fill',
+  }: { set: SavedSet | null; seed?: Result | null; next?: string } = $props()
 
   // Сохранённый набор — начальное значение поля; набранное (и ответ без JS) сильнее.
   const form = bind(forms, untrack(() => collectionForm(set?.fields)), {
@@ -24,19 +29,24 @@
     continuation: untrack(() => seed),
   })
 
-  // Успех: набор лёг в кэш — страница перечитывает данные, форма пересобирается
-  // из сохранённого (с поправками пределов), появляется форма записи.
+  // Успех: набор лёг в кэш — уходим на следующий шаг (перечитывать данные
+  // незачем: переход перезапускает загрузку), форма записи строится из
+  // сохранённого набора. Прыжок на шаг работает и без скрипта — экшен
+  // редиректит тем же адресом.
   let last = form.state.status
   $effect(() => {
     const now = form.state.status
     if (now === last) return
     last = now
-    if (now === 'success') void invalidateAll()
+    if (now === 'success') {
+      void invalidateAll()
+      void goto(next)
+    }
   })
 </script>
 
 <section class="space-y-3" aria-labelledby="fields-step-builder">
-  <h2 id="fields-step-builder" class="text-xl font-semibold">1. Набор полей</h2>
+  <h2 id="fields-step-builder" class="text-xl font-semibold">Создание полей</h2>
   <Form id="fields-builder" {form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
     <!-- Enter в поле без JS нажимает ПЕРВУЮ кнопку отправки: ею должна быть «Сохранить»,
          а не «Удалить» первого места. Скрытая копия — первая; с JS кнопки мест — type="button". -->

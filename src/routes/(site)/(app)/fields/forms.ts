@@ -61,20 +61,55 @@ export const IMAGE_MAX_BYTES = 1024 * 1024
 /**
  * Форма записи: поля сохранённого набора (имена `u_…`), затем название и изображение.
  * Её же поднимает сервер — описание из сохранённого, а не из тела запроса.
+ *
+ * С `previous` — режим правки: прежние значения возвращаются в поля, а пустой
+ * выбор файла оставляет прежнее изображение (браузер файл назад не отдаёт).
  */
-export const recordForm = (set: SavedSet | null): FormDescription => defineForm({
+export const recordForm = (set: SavedSet | null, previous?: SavedRecord | null): FormDescription => defineForm({
   id: 'fields-record',
   revision: set?.version ?? 1,
   actions: [{ id: 'submit', label: 'Отправить', validate: 'full' }],
-  from: set?.fields ?? [],
+  from: (set?.fields ?? []).map((f) => {
+    const was = previous?.values[f.name]
+    return was === undefined || was === null || was === '' ? f : { ...f, defaultAsString: String(was) }
+  }),
   fields: {
-    title: field.text({ label: 'Название', validate: [v.required(), v.maxLength(120)] }),
+    title: field.text({
+      label: 'Название',
+      validate: [v.required(), v.maxLength(120)],
+      ...(previous?.title ? { defaultValue: previous.title } : {}),
+    }),
     image: field.file({
       label: 'Изображение',
-      help: 'PNG, JPEG, WebP или GIF, до 1 МБ',
-      validate: [v.required(), v.accept([...IMAGE_TYPES]), v.maxSize(IMAGE_MAX_BYTES)],
+      help: previous
+        ? 'PNG, JPEG, WebP или GIF, до 1 МБ; пустое поле — останется прежнее изображение'
+        : 'PNG, JPEG, WebP или GIF, до 1 МБ',
+      validate: [...(previous ? [] : [v.required()]), v.accept([...IMAGE_TYPES]), v.maxSize(IMAGE_MAX_BYTES)],
     }),
   },
+})
+
+/** Шаги демо: сборка набора полей, заполнение записи, просмотр результата. */
+export type FieldsStep = 'build' | 'fill' | 'result'
+
+/**
+ * Текущий шаг. `?step=…` — прыжок к своему шагу (к заполненному); без параметра —
+ * самый дальний шаг с данными: запись → результат, набор → заполнение, иначе сборка.
+ */
+export const stepOf = (want: string | null, hasSet: boolean, hasRecord: boolean): FieldsStep => {
+  const derived: FieldsStep = hasRecord ? 'result' : hasSet ? 'fill' : 'build'
+  if (want === 'build') return 'build'
+  if (want === 'fill') return hasSet ? 'fill' : derived
+  if (want === 'result') return hasRecord ? 'result' : derived
+  return derived
+}
+
+/** Форма сброса: очищает набор и запись, возвращает на шаг «Сбора». Без полей. */
+export const resetForm = (): FormDescription => defineForm({
+  id: 'fields-reset',
+  revision: 1,
+  actions: [{ id: 'reset', label: 'Сбросить', validate: 'full' }],
+  fields: {},
 })
 
 /** Пример записи: то, что показывается после отправки. */
