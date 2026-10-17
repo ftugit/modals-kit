@@ -1,7 +1,7 @@
 /**
  * Порты каркаса авторизации — что приложение обязано дать ядру. Ни один порт
  * не знает про фреймворк; связка с существующими хвостами проекта — в
- * `sveltekit.ts` (каркас, TODO на месте каждой связки).
+ * `gateway.svelte.ts` (каркас, TODO на месте каждой связки).
  *
  * Где что живёт (план: docs/design/auth-seed.md §5):
  *  - challenge/сессии/чёрный список — `#lib/cache` (`Store`, область 'auth'),
@@ -11,7 +11,7 @@
  *    схеме курсорных ключей (`DB_CURSOR_KID`/`DB_CURSOR_OLD_KEYS`);
  *  - подпись nonce — WebCrypto в браузере пользователя, проверка — на сервере.
  */
-import type { AccessTokenClaims, SessionRecord } from './types.js'
+import type { AccessTokenClaims, ProfileView, SessionRecord } from './types.js'
 
 /** Одноразовый challenge на вход (TTL минуты, тратится один раз). */
 export interface ChallengePort {
@@ -35,10 +35,10 @@ export interface BlacklistPort {
   has(jti: string): Promise<boolean>
 }
 
-/** Identity: строка (pubkey, createdAt, tokenVersion) — больше ничего (§4). */
+/** Auth: строка (seed, tokenVersion) — больше ничего (§4). Профиль — отдельно. */
 export interface IdentityStorePort {
-  findByPubkey(pubkey: string): Promise<{ id: string; tokenVersion: number } | undefined>
-  create(pubkey: string): Promise<{ id: string; tokenVersion: number }>
+  findBySeed(seed: string): Promise<{ id: string; tokenVersion: number } | undefined>
+  create(seed: string): Promise<{ id: string; tokenVersion: number }>
   remove(id: string): Promise<void>
   tokenVersion(id: string): Promise<number | undefined>
   bumpTokenVersion(id: string): Promise<number>
@@ -61,9 +61,15 @@ export interface TokenPort {
   verify(token: string, secret: string): Promise<AccessTokenClaims | 'bad-signature' | 'expired'>
 }
 
-/** Проверка подписи challenge публичным ключом пользователя. */
+/**
+ * Подпись и проверка для ядра. Реализация по умолчанию — `keys.ts`
+ * (изоморфный WebCrypto Ed25519), подмена — в тестах. У клиента с JS те же
+ * функции выполняются в браузере: приватный ключ не покидает устройство,
+ * на сервер уходит только подпись — проверка идёт по seed.
+ */
 export interface CryptoPort {
-  verifySignature(args: { message: string; signature: string; pubkey: string }): Promise<boolean>
+  sign(payload: string, secret: string): Promise<string>
+  verify(payload: string, signature: string, seed: string): Promise<boolean>
 }
 
 /**
@@ -91,6 +97,14 @@ export interface NetworkPort {
   count(otherSubnetHash: string): number
 }
 
+/** Профиль (никнейм, адрес аватара) — таблица `demo_profile`, владелец по auth_id. */
+export interface ProfileStorePort {
+  create(authId: string): Promise<void>
+  get(authId: string): Promise<ProfileView | undefined>
+  update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
+  remove(authId: string): Promise<void>
+}
+
 /** Настройки — только из доверенного окружения (прецедент `src/env.ts`). */
 export interface ConfigPort {
   get(name: string): string | undefined
@@ -102,6 +116,7 @@ export interface AuthPorts {
   sessions: SessionStorePort
   blacklist: BlacklistPort
   identities: IdentityStorePort
+  profile: ProfileStorePort
   keys: KeysPort
   tokens: TokenPort
   crypto: CryptoPort

@@ -10,7 +10,7 @@ import { demoFacts, instruction, toFormErrors } from './error.js'
 describe('цепочка: факт API → инструкция → ошибки формы', () => {
   test('API не кладёт путь в факт — инструкция знает, где поле', () => {
     const [e] = instruction({ code: 'auth.identity-unknown' })
-    expect(e.path).toBe('pubkey') // имя поля формы — знание инструкции
+    expect(e.path).toBe('seed') // имя поля формы — знание инструкции
     expect(e.origin).toBe('external')
     expect(e.code).toBe('auth.identity-unknown')
   })
@@ -39,7 +39,7 @@ describe('цепочка: факт API → инструкция → ошибки
     const errors = toFormErrors(demoFacts())
     expect(errors).toHaveLength(3)
     const paths = errors.map((e) => e.path)
-    expect(paths).toEqual(['pubkey', 'signature', undefined])
+    expect(paths).toEqual(['seed', 'signature', undefined])
     expect(errors.every((e) => typeof e.code === 'string' && e.origin === 'external')).toBe(true)
   })
 

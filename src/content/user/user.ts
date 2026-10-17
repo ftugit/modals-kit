@@ -49,17 +49,17 @@ export async function issueChallenge(ports: AuthPorts): Promise<UserResult<Chall
  */
 export async function login(
   ports: AuthPorts,
-  args: { pubkey: string; nonce: string; signature: string },
+  args: { seed: string; nonce: string; signature: string },
 ): Promise<UserResult<Principal>> {
   void ports
   void args
   throw skeleton('login')
 }
 
-/** Регистрация: identity создаётся явно, до входа (гость становится юзером). */
+/** Регистрация: auth + пустой профиль создаются явно, до входа (гость становится юзером). */
 export async function register(
   ports: AuthPorts,
-  args: { pubkey: string },
+  args: { seed: string },
 ): Promise<UserResult<Principal>> {
   void ports
   void args
@@ -113,10 +113,20 @@ export async function listSessions(ports: AuthPorts): Promise<UserResult<Session
 
 /* ── профиль (user) ────────────────────────────────────────────────── */
 
-/** Свой профиль: псевдоним (id/createdAt) без личных данных (приватность §4). */
+/** Свой профиль: никнейм и адрес аватара, других данных нет (приватность §4). */
 export async function profile(ports: AuthPorts): Promise<UserResult<ProfileView>> {
   void ports
   throw skeleton('profile')
+}
+
+/** Сохранить свой профиль: правила полей — `schema.ts` (никнейм, адрес аватара). */
+export async function updateProfile(
+  ports: AuthPorts,
+  args: { nickname?: string; avatarUrl?: string | null },
+): Promise<UserResult<ProfileView>> {
+  void ports
+  void args
+  throw skeleton('updateProfile')
 }
 
 /** Доступ юзера к другим модулям (права решают ключи доступа lib/db §7). */

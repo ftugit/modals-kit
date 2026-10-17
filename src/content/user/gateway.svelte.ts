@@ -28,13 +28,13 @@ export interface AuthEvent {
  *  - `challenge`/`sessions`/`blacklist` → `#lib/cache` `Store`, область 'auth'
  *    (прецедент: 'fields-demo'); для сессий, пишущих в БД, — Postgres-хранилище
  *    из README `lib/cache` §6 в транзакции данных;
- *  - `identities` → ресурс `defineResource` (`demo.identity`: pubkey, createdAt,
- *    tokenVersion; ключи доступа — README `lib/db` §7; создание — все ключи);
+ *  - `identities` → ресурс `defineResource` (`demo.auth`: seed, tokenVersion;
+ *    профиль — `demo.profile`, ключи доступа — README `lib/db` §7);
  *  - `keys` → `src/env.ts` (`defineEnvVars`): `AUTH_SIGNING_SECRET` +
  *    `AUTH_SIGNING_OLD_SECRETS`, ротация по схеме `DB_CURSOR_KID`/`…_OLD_KEYS`;
  *  - `tokens` → WebCrypto HS256 (или JWS-библиотека — решение при реализации);
- *  - `crypto` → проверка подписи nonce публичным ключом (алгоритм — выбор
- *    при реализации: ed25519 не в WebCrypto — возможно, @noble/ed25519);
+ *  - `crypto` → `keys.ts`, УЖЕ РЕАЛЬНО: изоморфный WebCrypto Ed25519;
+ *    генерация связки и подписание у клиента с JS идут тем же файлом;
  *  - `clock`/`network` → серверное время; хеш подсети — по заголовкам запроса;
  *  - `config` → `src/env.ts`.
  */
@@ -53,7 +53,7 @@ export function authPorts(event: AuthEvent): AuthPorts {
  */
 export function auth(event: AuthEvent): {
   verify(): Promise<UserResult<Principal>>
-  login(args: { pubkey: string; nonce: string; signature: string }): Promise<UserResult<Principal>>
+  login(args: { seed: string; nonce: string; signature: string }): Promise<UserResult<Principal>>
   renew(): Promise<UserResult<Principal>>
   logout(): Promise<UserResult<null>>
   logoutEverywhere(): Promise<UserResult<null>>

@@ -13,7 +13,7 @@
 export type AccessTokenClaims = {
   /** JWT ID — ключ сессии и ключ чёрного списка. */
   jti: string
-  /** Идентификатор identity (строка identity = псевдоним, приватность §4 плана). */
+  /** Идентификатор строки auth (seed = псевдоним, приватность §4 плана). */
   sub: string
   /** Версия токенов identity: не совпала — все токены мертвы (статья, «versioning»). */
   ver: number
@@ -41,5 +41,12 @@ export type Challenge = { nonce: string; expiresAt: number }
 export type SessionView = { jti: string; createdAt: number; expiresAt: number; subnet: string | undefined }
 export type KeyView = { kid: string; retired: readonly string[] }
 export type RevocationEntry = { jti: string; until: number }
-/** Профиль: только псевдоним и момент создания — личных данных нет (§4). */
-export type ProfileView = { id: string; createdAt: number }
+/** Профиль: никнейм и адрес аватара — и больше никаких данных (§4). */
+export type ProfileView = {
+  id: string
+  authId: string
+  nickname: string
+  avatarUrl: string | null
+  createdAt: number
+  updatedAt: number
+}

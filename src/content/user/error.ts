@@ -47,8 +47,8 @@ export type AuthInstruction = (fact: AuthFact) => readonly FormError[]
 const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.nonce-unknown': (f) => [fieldError(f, { path: 'signature', retryable: true })],
   'auth.signature': (f) => [fieldError(f, { path: 'signature' })],
-  'auth.identity-unknown': (f) => [fieldError(f, { path: 'pubkey' })],
-  'auth.identity-exists': (f) => [fieldError(f, { path: 'pubkey' })],
+  'auth.identity-unknown': (f) => [fieldError(f, { path: 'seed' })],
+  'auth.identity-exists': (f) => [fieldError(f, { path: 'seed' })],
   'auth.token': () => [generalError('auth.token')],
   'auth.kid-unknown': () => [generalError('auth.kid-unknown', { retryable: true })],
   'auth.expired': () => [generalError('auth.expired')],
