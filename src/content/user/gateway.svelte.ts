@@ -4,13 +4,14 @@
  * связки: тела пустые, помечено, ЧТО подключается. В routes не импортируется
  * никем — каркас оценивается чтением, не прогоном.
  *
- * Ключевое: на каждый запрос верификации хранилищем НЕТ. Principal для
- * `dbHandle` извлекается из access-куки без похода в хранилище (подпись +
- * exp, stateless); бан догоняет юзера в точке продления (`renew` — фаервол).
+ * ОБЩЕГО ВЫЗОВА НА ПРИЛОЖЕНИЕ НЕТ (решение владельца): никаких автопроверок в
+ * hooks на каждый запрос. Каждый компонент обращается к api сам — через фасад
+ * `auth(event)` или функции из `auth.ts`.
  */
+import type { UserConfig } from './config.js'
 import type { UserResult } from './auth.js'
 import type { AuthPorts } from './ports.js'
-import type { Principal, ProfileView } from './types.js'
+import type { ProfileView } from './types.js'
 
 /** Структурный срез SvelteKit-события: куки — этого ядру достаточно. */
 export interface AuthEvent {
@@ -24,48 +25,42 @@ export interface AuthEvent {
 /**
  * Порты из хвостов проекта:
  *
- *  - `renewals` (записи продления, баны, nonce, активность) → `#lib/cache`
- *    `Store`, область 'auth' (прецедент: 'fields-demo'); для записи в базу —
- *    Postgres-хранилище из README `lib/cache` §6;
- *  - `auths`/`profiles` → ресурсы `schema.ts` через `lib/db` (ключи доступа —
- *    README `lib/db` §7); «двойной select» фаервола — в адаптере `auths.get`;
- *  - `keys` → `src/env.ts` (`defineEnvVars`): `AUTH_SIGNING_SECRET` +
- *    `AUTH_SIGNING_OLD_SECRETS`, ротация по схеме `DB_CURSOR_KID`/`…_OLD_KEYS`;
- *  - `tokens` → WebCrypto HS256 (или JWS-библиотека — решение при реализации);
- *  - `crypto` → `keys.ts`, УЖЕ РЕАЛЬНО: `@noble/ed25519`, изоморфно —
- *    генерация связки и подписание у клиента с JS идут тем же файлом;
- *  - `cookies`/`clock` → `event.cookies`; время — серверное.
+ *  - `sessions`/`challenge` → `#lib/cache` `Store` (`localStore`), область
+ *    'user-auth'; когда сессии лягут в БД — ресурс `user_session` (адаптер
+ *    решает, ядро не меняется);
+ *  - `auths`/`profiles` → ресурсы `schema.ts` через `lib/db`;
+ *  - `sealKeys` → `src/env.ts`: `AUTH_SEAL_ID` + `AUTH_SEAL_KEYS` (карта
+ *    id → секрет, ротация как у курсорных);
+ *  - `seal` → iron-webcrypto (изоморфно; AEAD-подмодуль в релизе отсутствует —
+ *    формат CBC+HMAC);
+ *  - `crypto` → `keys.ts`, УЖЕ РЕАЛЬНО: `@noble/ed25519`;
+ *  - `cookies`/`clock` → `event.cookies`; время — серверное;
+ *  - `config` → `createUserConfig(localStore)` из `config.ts`.
  */
-export function authPorts(event: AuthEvent): AuthPorts {
+export function authPorts(event: AuthEvent): AuthPorts & { config: UserConfig } {
   void event
   throw skeleton('authPorts')
 }
 
 /**
- * Principal для `dbHandle` (`hooks.server.ts`) — БЕЗ верификации хранилищем:
- * подпись + exp из access-куки (stateless); гость → `undefined`. Отзыв и
- * блокировка догоняют юзера в точке продления — так решил владелец (ход 251).
- */
-export function principalOf(event: AuthEvent): Promise<Principal | undefined> {
-  void event
-  throw skeleton('principalOf')
-}
-
-/**
  * Фасад одного запроса: голые функции ядра с подставленными портами и куками.
- * Этот объект берут и `+server.ts`, и экшен:
+ * Компонент (роут/форма) вызывает только то, что ему нужно:
  *
- *   const auth = auth(event)
- *   const result = await auth.renew()       // фаервол, по таймеру приложения
+ *   const u = auth(event)
+ *   const r = await u.login({ seed, nonce, signature })
  */
 export function auth(event: AuthEvent): {
-  login(args: { seed: string; nonce: string; signature: string }): Promise<UserResult<Principal>>
-  renew(): Promise<UserResult<Principal>>
+  issueChallenge(): Promise<UserResult<import('./types.js').Challenge>>
+  login(args: { seed: string; nonce: string; signature: string; deviceName?: string }): Promise<UserResult<import('./types.js').Principal>>
+  renew(): Promise<UserResult<import('./types.js').Principal>>
   logout(): Promise<UserResult<null>>
-  logoutEverywhere(): Promise<UserResult<null>>
+  logoutAll(): Promise<UserResult<null>>
+  listSessions(): Promise<UserResult<import('./auth.js').SessionView[]>>
+  revokeSession(jti: string): Promise<UserResult<null>>
   profile(): Promise<UserResult<ProfileView>>
   updateProfile(args: { nickname?: string; avatarUrl?: string | null }): Promise<UserResult<ProfileView>>
-  deleteIdentity(): Promise<UserResult<null>>
+  requestDelete(): Promise<UserResult<null>>
+  cancelDelete(): Promise<UserResult<import('./types.js').Principal>>
 } {
   void event
   throw skeleton('auth')
@@ -81,5 +76,5 @@ export function toHttpStatus(result: UserResult<unknown>): number {
 }
 
 function skeleton(fn: string): Error {
-  return new Error(`каркас gateway: ${fn} не реализован (план: docs/design/auth-seed.md §5)`)
+  return new Error(`каркас gateway: ${fn} не реализован (план: docs/design/auth-seed.md)`)
 }

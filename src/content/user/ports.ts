@@ -4,14 +4,14 @@
  * на месте каждой связки).
  *
  * Где что живёт:
- *  - записи продления, баны, nonce, отметка активности — `#lib/cache`
- *    (`Store`, область 'auth'); активность — НЕ колонка auth, чтобы не
- *    двигать её `updated_at` и не вести личный журнал (§4): TTL-ключ в кэше;
+ *  - записи продления (сессии) и nonce — `#lib/cache` (`Store`, область
+ *    'user-auth') ИЛИ ресурс `user_session` из `schema.ts` — выбор адаптера;
  *  - строки auth/профиль — ресурсы `schema.ts` через `lib/db`;
- *  - ключи подписи сервера и сроки — `src/env.ts` (ротация по схеме
- *    курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`).
+ *  - ключ запечатывания временного токена и nonce-секрет — `src/env.ts`
+ *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
-import type { AccessTokenClaims, Blocked, ProfileView, RenewalClaims, SessionRecord } from './types.js'
+import type { SessionRecord } from './types.js'
+import type { UserConfig } from './config.js'
 
 /** Одноразовый nonce на подпись (TTL минуты, тратится один раз). */
 export interface ChallengePort {
@@ -21,60 +21,68 @@ export interface ChallengePort {
 }
 
 /**
- * Записи токенов продления — единственное хранимое состояние сессий.
- * Блокировка (одноразовость, выход) держит запись до конца срока: повторное
- * предъявление погашенного токена — сигнал кражи, сессия гасится целиком.
+ * Сессии = устройства. Строка создаётся на входе, пересоздаётся при
+ * продлении (старая софт-удаляется — повтор погашенного виден как 'revoked'),
+ * гасится софт-удалением.
  */
-export interface RenewalStorePort {
+export interface SessionStorePort {
   create(record: SessionRecord): Promise<void>
-  /** Погашенная/отозванная запись — `undefined` (бан неотличим от отсутствия). */
+  /** Софт-удалённая строка ЧИТАЕТСЯ (guard отличит 'revoked'); нет — undefined. */
   get(jti: string): Promise<SessionRecord | undefined>
-  /** Погасить с сохранением до конца срока (одноразовость, выход). */
-  block(jti: string, ttlSeconds: number): Promise<void>
-  revokeAllByIdentity(sub: string): Promise<void>
+  listByAuth(authId: string): Promise<SessionRecord[]>
+  /** Отзыв = софт-удаление (deletedAt), не физическое удаление. */
+  softDelete(jti: string, at: number): Promise<void>
+  softDeleteAllByAuth(authId: string, at: number): Promise<void>
+  touch(jti: string, at: number): Promise<void>
 }
 
-/**
- * Таблица auth. «Двойной select» точки продления: строка auth спрашивается
- * ВМЕСТЕ с баном предъявленного jti (хранилище продлений) — два чтения в
- * один момент, отказ = кик. Реализация — на совести адаптера.
- */
+/** Таблица auth — носитель безопасности аккаунта. Личного — ничего. */
 export interface AuthStorePort {
-  findBySeed(seed: string): Promise<{ id: string; tokenVersion: number; deleted: boolean } | undefined>
-  create(seed: string): Promise<{ id: string; tokenVersion: number }>
-  /** Живая строка для фаервола: версия, метка удаления, объект блокировки. */
-  get(id: string): Promise<{ id: string; tokenVersion: number; deletedAt: number | null; blocked: Blocked | null } | undefined>
-  bumpTokenVersion(id: string): Promise<number>
-  /** Заявка на удаление: мягкая метка, вход закрыт, сессии гасятся. */
+  /** Строка целиком (включая софт-удаление и блокировки) — решает api. */
+  findBySeed(seed: string): Promise<AuthRow | undefined>
+  create(seed: string): Promise<AuthRow>
+  get(id: string): Promise<AuthRow | undefined>
+  /** Заявка на удаление: софт-метка; вход ведёт на шаг восстановления. */
   markDeleted(id: string, at: number): Promise<void>
-  /** Исполнитель через n дней: seed и security стираются, строка-надгробие остаётся. */
+  /** Снять заявку (шаг восстановления). */
+  clearDeleted(id: string): Promise<void>
+  /** Исполнитель через срок: seed и security стираются — надгробие остаётся. */
   wipeCredentials(id: string): Promise<void>
 }
 
-/** Профиль (никнейм, адрес аватара) — таблица `demo_profile`, владелец по auth_id. */
+/** Строка auth глазами адаптера. */
+export type AuthRow = {
+  id: string
+  seed: string | null
+  deletedAt: number | null
+  blocked: import('./types.js').Blocked | null
+  /** Соль для хэшей подсетей сессий (на аккаунт). */
+  subnetSalt: string
+}
+
+/** Профиль: создаётся при первом заполнении личных данных; нет — аноним. */
 export interface ProfileStorePort {
-  create(authId: string): Promise<void>
-  get(authId: string): Promise<ProfileView | undefined>
+  create(authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void>
+  get(authId: string): Promise<import('./types.js').ProfileView | undefined>
   update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
-  /** Исполнитель удаления (через n дней после заявки). */
+  /** Исполнитель удаления (конечная смерть аккаунта уносит профиль цепочкой). */
   remove(authId: string): Promise<void>
 }
 
 /**
- * Ключи подписи сервера (гайд, способ 3): текущий пишет, отставшие принимают
- * до конца их срока — та же схема, что у курсорных ключей `lib/db`.
+ * Ключ запечатывания временного токена (секрет — env, ротация как у курсорных):
+ * id ключа печётся в строку, старые ключи читают до конца их срока.
  */
-export interface KeysPort {
-  current(): { kid: string; secret: string }
-  secretOf(kid: string): string | undefined
-  /** Вызывается после успешной ротации: старый ключ уходит в приём, не в запись. */
-  retire(kid: string): Promise<void>
+export interface SealKeysPort {
+  current(): { id: string; secret: string }
+  secretOf(id: string): string | undefined
+  retire(id: string): Promise<void>
 }
 
-/** Подпись и разбор токенов (HS256 через WebCrypto или JWS — выбор реализации). */
-export interface TokenPort {
-  sign(claims: AccessTokenClaims | RenewalClaims, secret: string): Promise<string>
-  verify(token: string, secret: string): Promise<AccessTokenClaims | RenewalClaims | 'bad-signature' | 'expired'>
+/** Запечатывание содержимого временного токена (iron-webcrypto в адаптере). */
+export interface SealPort {
+  seal(payload: import('./types.js').AccessTokenPayload, ttlSeconds: number): Promise<string>
+  unseal(token: string): Promise<import('./types.js').AccessTokenPayload | undefined>
 }
 
 /**
@@ -87,9 +95,9 @@ export interface CryptoPort {
 }
 
 /**
- * Куки — единственный разрешённый носитель токенов (гайд: HttpOnly, Secure;
- * в localStorage не пишем). Access и продление — раздельные куки; имена —
- * константы `auth.ts`. Адаптер подставляет куки и REST-ответа, и POST-экшена.
+ * Куки — носитель у браузера: временный токен при JS живёт в памяти, девайс —
+ * в HttpOnly-куке; без JS временный тоже в куке. Адаптер подставляет куки и
+ * REST-ответа, и POST-экшена.
  */
 export interface CookiePort {
   get(name: string): string | undefined
@@ -102,15 +110,19 @@ export interface ClockPort {
   now(): number
 }
 
+/** Настройки модуля — файл конфиг (`config.ts`) поверх lib/cache. */
+export type ConfigPort = UserConfig
+
 /** Всё, что нужно ядру. Собирает адаптер. */
 export interface AuthPorts {
   challenge: ChallengePort
-  renewals: RenewalStorePort
+  sessions: SessionStorePort
   auths: AuthStorePort
   profiles: ProfileStorePort
-  keys: KeysPort
-  tokens: TokenPort
+  sealKeys: SealKeysPort
+  seal: SealPort
   crypto: CryptoPort
   cookies: CookiePort
   clock: ClockPort
+  config: ConfigPort
 }

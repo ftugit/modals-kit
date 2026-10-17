@@ -5,36 +5,41 @@
  */
 
 /**
- * Временный токен: короткий (15 минут), БЕЗ jti — не хранится и не банится
- * (запрещается у точки продления — `renew`, «фаервол приложения»). Подпись и
- * exp проверяются без обращения к хранилищу.
+ * Содержимое временного токена — запечатанная строка (iron-webcrypto), которую
+ * юзер носит сам. Короткая; сервер НИЧЕГО о ней не хранит.
  */
-export type AccessTokenClaims = {
+export type AccessTokenPayload = {
   /** Чей токен — id строки auth. */
   sub: string
-  /** Версия токенов identity: не совпала — все токены мертвы (гайд, способ 4). */
-  ver: number
-  /** Ключ подписи сервера: ротация (гайд, способ 3). */
-  kid: string
+  /** Девайс-токен (jti строки сессии) — по нему guard узнаёт сессию. */
+  dt: string
+  /** Витрина профиля из последнего продления/сохранения. */
+  prof: { nickname: string | null; avatarUrl: string | null }
   iat: number
   exp: number
 }
 
-/** Токен продления: одноразовый; запись хранится и при использовании блокируется. */
-export type RenewalClaims = {
-  /** Ключ записи в хранилище (и бана на остаток срока — для ловли повтора). */
-  jti: string
-  sub: string
-  iat: number
-  exp: number
-}
+/** Сведения о подсети в истории сессии (полный IP и маска не хранятся). */
+export type SubnetEntry = { hash: string; country: string | null; at: number }
 
-/** Запись токена продления — единственное хранимое состояние сессии. */
+/**
+ * Строка сессии = устройство. Единственное хранимое состояние входов;
+ * «заблокировать устройство» = софт-удаление (deletedAt), отдельных банов нет.
+ */
 export type SessionRecord = {
   jti: string
-  sub: string
+  authId: string
+  deviceName: string | null
+  /** Хэш текущей подсети (с солью аккаунта) — полный IP не храним. */
+  subnetHash: string | null
+  country: string | null
+  /** Прежние подсети/страны — складируются в режиме 'update' конфига. */
+  history: SubnetEntry[]
   createdAt: number
   expiresAt: number
+  /** Софт-удаление = отзыв сессии. */
+  deletedAt: number | null
+  lastSeenAt: number | null
 }
 
 /** Объект блокировки аккаунта (поле `blocked` таблицы auth). */
@@ -45,17 +50,21 @@ export type Blocked = {
   until?: number
 }
 
-/** Доверенный principal — из клеймов access без похода в хранилище. */
+/** Доверенный principal — из содержимого временного токена без похода в БД. */
 export type Principal = { id: string }
 
 /** Ответы API — данные без ошибок; ошибки (код+путь) — `error.ts`. */
 export type Challenge = { nonce: string; expiresAt: number }
-/** Профиль: никнейм и адрес аватара — и больше никаких данных (§4). */
+
+/** Профиль: никнейм и адрес аватара, если юзер их внёс; иначе — аноним. */
 export type ProfileView = {
   id: string
   authId: string
-  nickname: string
+  nickname: string | null
   avatarUrl: string | null
   createdAt: number
   updatedAt: number
 }
+
+/** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */
+export type SessionStatus = 'ok' | 'revoked' | 'expired' | 'unknown'

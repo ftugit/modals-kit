@@ -1,67 +1,64 @@
 /**
- * Модель пользователя — ДВЕ таблицы и поля формы из ОДНОГО объявления
- * (прецедент: `posts.ts`, «правила — только здесь»). Файл читают сервер
- * (будущий gateway модуля) и формы профиля (валидаторы через `formParams`),
- * поэтому он общий, а не в `lib/server`: ни соединения, ни секретов — только
- * поля, права и порядок.
+ * Модель пользователя — три таблицы (пользовательская система — фундамент, не
+ * демо: имена без «demo») и поля формы из ОДНОГО объявления (прецедент:
+ * `posts.ts`). Файл общий: его читают сервер и формы (валидаторы через
+ * `formParams`); ни соединения, ни секретов.
  *
- * Персональные данные (§4 плана) — минимум: профиль держит только никнейм и
- * адрес аватара; таблица авторизации — технические поля. Ни email, ни имени,
- * ни IP. Удаление аккаунта уносит профиль по цепочке (`references.chain`).
+ * Персональные данные — минимум (§4): никнейм и адрес аватара юзер вносит сам;
+ * таблицы auth/session — технические. Права ключами доступа — README lib/db §7;
+ * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
 import { defineResource, f, field, policy, s } from '#lib/db/index.js'
 
 /**
- * seed — публичная половина связки ключей (base64url ed25519: 32 байта →
- * 43 символа). Публичный, но называется просто seed: это и есть «логин» юзера.
- * Генерация связки — `keys.ts` (изоморфно, у клиента с JS — в браузере).
+ * seed — публичная половина связки ключей (base64url ed25519: 32 байта → 43
+ * символа); «логин» юзера. Связку генерирует приложение (`keys.ts`); приватный
+ * (secret) не хранится нигде. Nullable: при конечной смерти аккаунта
+ * исполнитель стирает seed — строка-надгробие остаётся (id, времена).
  */
 const SEED = s.text({ min: 43, max: 44 })
 
-/** Таблица авторизации: технические поля, никакой личной информации. */
+/** Таблица авторизации: носитель безопасности аккаунта. Личного — ничего. */
 export const auth = defineResource({
-  key: 'demo.auth.v1',
-  table: 'public.demo_auth',
+  key: 'user.auth.v1',
+  table: 'public.user_auth',
   primaryKey: 'id',
   fields: {
-    // DEFAULT есть и у колонки, и у createValue — как у `posts.ts`.
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
-    // Nullable: исполнитель удаления стирает seed через n дней (надгробие).
-    // unique с NULL не мешает — таких строк может быть сколько угодно.
     seed: field(SEED, {
       read: () => true, create: () => true, update: [], required: true, nullable: true,
       orderable: true, filters: ['eq'],
-      db: { unique: true }, // один аккаунт на связку ключей
+      db: { unique: true }, // один аккаунт на связку; NULL-ов может быть много
     }),
     /**
-     * Дополнительная защита (2fa, пароль) — резерв: массив создаётся пустым,
-     * писать его из запросов нельзя (`[]` — «никому»); права и форму завести
-     * вместе с первой защитой. Исполнитель удаления стирает вместе с seed.
+     * Резерв дополнительной защиты (2fa, пароль): создаётся пустым, писать из
+     * запросов нельзя (`[]` — «никому»); заведём вместе с первой защитой.
      */
     security: field(s.array(s.json(), { max: 8 }), {
       read: () => true, create: [], update: [],
       db: { default: "'{}'::jsonb[]" },
     }),
     /**
-     * Объект блокировки аккаунта (тип `Blocked`: reason, at, until?).
-     * Пишет блокировщик — роли ещё нет, запись закрыта (`[]`) до её появления;
-     * проверяют login/renew (фаервол) — факты `auth.blocked`.
+     * Блокировки — текущее поле, многофункциональное: условные записи
+     * {scope, until?, reason} (тип `Blocked`); бан авторизации — сфера 'auth',
+     * отдельные действия — своими сферами. Пишет блокировщик (роли ещё нет —
+     * запись закрыта), проверяют login и фаервол в api.
      */
     blocked: f.json({ read: () => true, create: [], update: [], nullable: true }),
-    // «Выйти со всех устройств»: `logoutEverywhere` инкрементирует.
-    token_version: field(s.integer({ min: 0, max: 1_000_000 }), {
-      read: () => true, create: () => true, update: () => true, required: true,
-      db: { default: '0' },
-    }),
+    /**
+     * Соль для хэшей подсетей сессий — на аккаунт: между юзерами связать
+     * записи нельзя, внутри истории одного — сравнение работает. Ставит
+     * сервер при создании, передать нельзя.
+     */
+    subnet_salt: f.text({ read: () => true, createValue: () => crypto.randomUUID().replaceAll('-', '') }),
   },
-  // Soft delete: `deleted_at` — метка заявки на удаление; через n дней
-  // исполнитель чистит seed/security. Активность (last_seen) — НЕ колонка:
-  // она не должна двигать `updated_at` (решение владельца), ей место в
-  // `#lib/cache` с TTL — и меньше личных данных (§4).
+  // `deleted_at` — заявка на удаление; по истечении срока (настройка сервера)
+  // исполнитель стирает seed/security. Метка НЕ закрывает вход: он ведёт на
+  // шаг восстановления (решение владельца, как в ВК).
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
   policy: {
-    // Читает и правит владелец строки; создаёт сервер (вход). Ключи доступа
-    // приходят из сессии (README lib/db §7).
+    // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
+    // что с блокировкой и удалением.
     select: policy.ownerOrRoles('id', ['admin']),
     insert: policy.roles(['server']),
     update: policy.ownerOrRoles('id', ['admin']),
@@ -70,7 +67,11 @@ export const auth = defineResource({
   order: [['created_at', 'desc']],
 })
 
-/** Таблица профиля: персональные данные — ровно названные владельцем два поля. */
+/**
+ * Профиль: создаётся при ПЕРВОМ заполнении личных данных; нет строки — юзер
+ * аноним, показываем значения по умолчанию. Никнейм НЕуникальный: можно любой,
+ * кроме списка запрещённых (`nicknameForbidden` в config.ts — проверит api).
+ */
 const NICKNAME = s.text({ min: 2, max: 32 })
 const AVATAR_URL = s.custom((value) => {
   if (value === null || value === undefined) return // пусто — колонка nullable
@@ -79,39 +80,80 @@ const AVATAR_URL = s.custom((value) => {
 })
 
 export const profile = defineResource({
-  key: 'demo.profile.v1',
-  table: 'public.demo_profile',
+  key: 'user.profile.v1',
+  table: 'public.user_profile',
   primaryKey: 'id',
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
-    /**
-     * Владелец профиля — строка auth (не id этой строки). Одна строка профиля
-     * на аккаунт (`unique`); удаление аккаунта уносит профиль: `chain: true`
-     * (цепочка удаления lib/db) — право на удаление исполняется целиком.
-     */
+    // Владелец профиля — строка auth. Одна строка на аккаунт; конечная смерть
+    // аккаунта уносит профиль (цепочка удаления lib/db).
     auth_id: field(s.uuid(), {
-      read: () => true, create: () => true, update: () => false, required: true,
+      read: () => true, create: () => true, required: true,
       immutable: true, filters: ['eq'],
       db: { unique: true, references: { resource: () => auth, chain: true } },
     }),
     nickname: field(NICKNAME, {
-      read: () => true, create: () => true, update: () => true, required: true,
+      read: () => true, create: () => true, update: () => true, nullable: true,
       normalize: (v) => (typeof v === 'string' ? v.trim() : v),
       orderable: true, filters: ['eq', 'icontains'],
     }),
-    // Адрес аватара — внешняя ссылка (http/https), файлы проекта не хранит.
     avatar_url: field(AVATAR_URL, {
       read: () => true, create: () => true, update: () => true, nullable: true,
     }),
   },
-  // Soft delete: заявка ставит метку; исполнитель через n дней удаляет строку.
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   policy: {
-    // Владелец профиля определяется по auth_id.
     select: policy.ownerOrRoles('auth_id', ['admin']),
-    insert: policy.roles(['server']), // регистрация создаёт пустой профиль
+    insert: policy.roles(['server']),
     update: policy.ownerOrRoles('auth_id', ['admin']),
     delete: policy.ownerOrRoles('auth_id', ['admin']),
+  },
+  order: [['created_at', 'desc']],
+})
+
+/**
+ * Сессии = устройства (строка на устройство; публичный токен продления —
+ * `jti`). Единственное хранимое состояние входов: «заблокировать устройство» =
+ * софт-удаление строки (`deleted_at`), отдельной структуры банов нет.
+ * Активность — здесь, НЕ в auth (не двигает её `updated_at`).
+ */
+export const session = defineResource({
+  key: 'user.session.v1',
+  table: 'public.user_session',
+  primaryKey: 'id',
+  fields: {
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
+    auth_id: field(s.uuid(), {
+      read: () => true, create: () => true, required: true,
+      immutable: true, filters: ['eq'],
+      db: { references: { resource: () => auth, chain: true } },
+    }),
+    // Публичный токен продления (девайс-токен): случайный id, ездит только
+    // в HttpOnly-куке; по нему guard узнаёт сессию (ok/revoked/expired/unknown).
+    jti: field(s.text({ min: 21, max: 64 }), {
+      read: () => true, create: () => true, required: true,
+      immutable: true, filters: ['eq'],
+      db: { unique: true },
+    }),
+    device_name: f.text({ read: () => true, nullable: true }),
+    // Текущая подсеть: ХЭШ с солью аккаунта, полный IP и маска не хранятся.
+    subnet_hash: f.text({ read: () => true, nullable: true }),
+    country: f.text({ read: () => true, nullable: true }),
+    // История прежних подсетей/стран: [{hash, country, at}] — пишет api при
+    // пересоздании сессии (режим 'update'), а не «только текущее».
+    subnet_history: f.json({ read: () => true, nullable: true, db: { default: "'[]'::jsonb" } }),
+    last_seen_at: f.timestamp({ read: () => true, nullable: true }),
+    // Срок жизни сессии — из настроек (config.deviceTtlSec); ставит сервер.
+    expires_at: f.timestamp({ read: () => true, create: () => true, required: true }),
+  },
+  // `deleted_at` = отзыв сессии (выход, отзыв устройства, «выйти со всех»).
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
+  policy: {
+    // Сессиями юзер управляет только через api (сервер): правит и гасит сервер.
+    select: policy.ownerOrRoles('auth_id', ['admin']),
+    insert: policy.roles(['server']),
+    update: policy.roles(['server', 'admin']),
+    delete: policy.roles(['server', 'admin']),
   },
   order: [['created_at', 'desc']],
 })

@@ -26,7 +26,7 @@ export type AuthErrorCode =
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
   | 'auth.version'            // tokenVersion не совпал («выйти со всех»)
   | 'auth.blocked'            // аккаунт заблокирован (объект blocked)
-  | 'auth.delete-pending'     // удаление заявлено, грейс не кончился
+  | 'auth.delete-pending'     // заявка на удаление: вход ведёт на шаг восстановления
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
 
 /** Голый факт из API: доменный код без знания о форме. */
