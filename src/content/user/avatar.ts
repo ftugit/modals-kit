@@ -44,7 +44,7 @@ async function canvasEncode(bitmap: ImageBitmap, quality: number, edge: number):
   canvas.width = edge
   canvas.height = edge
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-  ctx.drawImage(bitmap, 0, 0, edge, edge)
+  drawSquare(bitmap, edge, ctx)
   const source = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob пуст'))), 'image/png'),
   )
@@ -67,7 +67,7 @@ async function mozjpegEncode(bitmap: ImageBitmap, quality: number, edge: number)
   canvas.width = edge
   canvas.height = edge
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-  ctx.drawImage(bitmap, 0, 0, edge, edge)
+  drawSquare(bitmap, edge, ctx)
   const data = ctx.getImageData(0, 0, edge, edge)
   const buffer = (await jpeg.default(data, { quality: Math.round(quality * 100) })) as ArrayBuffer
   return new Blob([buffer], { type: 'image/jpeg' })
