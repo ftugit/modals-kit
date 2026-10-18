@@ -1,0 +1,331 @@
+/**
+ * Связка модуля пользователя с SvelteKit: порты из хвостов проекта, куки,
+ * фасад одного запроса. Только сервер (`#lib/server`, `$app/env/private`).
+ *
+ * ОБЩЕГО ВЫЗОВА НА ПРИЛОЖЕНИЕ НЕТ (решение владельца): никаких автопроверок в
+ * hooks на каждый запрос. Каждый экшен/загрузка зовёт фасад `auth(event)` сам.
+ *
+ * Носитель токенов (модель владельца, ход 251): ОБА токена — HttpOnly-куки,
+ * ставит только сервер по явному POST; временный дополнительно живёт в RAM
+ * (vault), значение приходит из ответа api и из данных страницы.
+ *
+ * Хранилище адаптера — `#lib/server/cache` (память процесса с TTL): честные
+ * сроки challenge/сессий в dev и e2e. Перенос на БД — замена ТРЁХ адаптеров
+ * (`sessions`, `auths`, `profiles`) на ресурсы `schema.ts` (`user_*`), ядро
+ * (`auth.ts`) не меняется — это и есть шов портов.
+ */
+import { AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
+import * as Iron from 'iron-webcrypto'
+import { localStore } from '#lib/server/cache.js'
+import type { Cookies } from '@sveltejs/kit'
+import {
+  createUserConfig,
+  listSessions as coreListSessions,
+  login as coreLogin,
+  logout as coreLogout,
+  logoutAll as coreLogoutAll,
+  profile as coreProfile,
+  renew as coreRenew,
+  requestDelete as coreRequestDelete,
+  revokeSession as coreRevokeSession,
+  issueChallenge as coreIssueChallenge,
+  cancelDelete as coreCancelDelete,
+  updateProfile as coreUpdateProfile,
+  type SessionView,
+  type UserResult,
+} from './index.js'
+import { sign, verify } from './keys.js'
+import type { AuthPorts, AuthRow } from './ports.js'
+import type { ProfileView, SessionRecord } from './types.js'
+import type { Blocked, LoginOutcome } from './types.js'
+
+/** Кука токена продления (девайс-токен, `{jti, version}`). */
+export const RENEWAL_COOKIE = 'auth_sid'
+/** Кука временного токена (access). */
+export const ACCESS_COOKIE = 'auth_tmp'
+
+const COOKIE_BASE = { path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const
+
+/** Структурный срез SvelteKit-события: ядру нужны только куки. */
+export interface AuthEvent {
+  request: Request
+  cookies: Cookies
+}
+
+/* ── ключи запечатывания (env, ротация как у курсорных) ── */
+
+function sealKeysFromEnv(): { id: string; secret: string; old: Record<string, string> } {
+  const secret = AUTH_SEAL_SECRET
+  if (!secret || secret.length < 32)
+    throw new Error('AUTH_SEAL_SECRET не задан или короче 32 байт — запечатывать токены нечем')
+  const id = AUTH_SEAL_ID || 'v1'
+  const old: Record<string, string> = {}
+  for (const pair of (AUTH_SEAL_OLD_KEYS ?? '').split(',')) {
+    const [kid, value] = pair.split(':')
+    if (kid && value && kid !== id) old[kid.trim()] = value.trim()
+  }
+  return { id, secret, old }
+}
+
+/* ── адаптеры на `#lib/server/cache` ── */
+
+/**
+ * Сессии: строка под `jti:<jti>` + указатель на аккаунт `sess-idx:<authId>`
+ * (список jti) — списка в `Store` нет, индекс ведём сами.
+ */
+function sessionsAdapter(store = localStore.scope('user-auth-sessions', { max: 10_000 })) {
+  const key = (jti: string) => `jti:${jti}`
+  const idx = (authId: string) => `sess-idx:${authId}`
+  return {
+    async create(r: SessionRecord): Promise<void> {
+      await store.set(key(r.jti), r, r.expiresAt - Date.now() + 60_000)
+      const list = (await store.get<string[]>(idx(r.authId))) ?? []
+      await store.set(idx(r.authId), [...list, r.jti], 400 * 24 * 60 * 60 * 1000)
+    },
+    async get(jti: string): Promise<SessionRecord | undefined> {
+      return store.get<SessionRecord>(key(jti))
+    },
+    async listByAuth(authId: string): Promise<SessionRecord[]> {
+      const list = (await store.get<string[]>(idx(authId))) ?? []
+      const rows = await Promise.all(list.map((j) => store.get<SessionRecord>(key(j))))
+      return rows.filter((r): r is SessionRecord => r !== undefined)
+    },
+    async save(r: SessionRecord): Promise<void> {
+      await store.set(key(r.jti), r, r.expiresAt - Date.now() + 60_000)
+    },
+    async softDelete(jti: string, at: number): Promise<void> {
+      const r = await store.get<SessionRecord>(key(jti))
+      if (r) await store.set(key(jti), { ...r, deletedAt: at }, 7 * 24 * 60 * 60 * 1000)
+    },
+    async softDeleteAllByAuth(authId: string, at: number): Promise<void> {
+      for (const r of await this.listByAuth(authId)) await this.softDelete(r.jti, at)
+    },
+  }
+}
+
+/**
+ * Аккаунты: строка под `auth:<id>`, указатель `seed:<seed>` → id, реестр
+ * `auth-idx` (список id) — для исполнителя удаления.
+ */
+function authsAdapter(store = localStore.scope('user-auth-accounts', { max: 10_000 })) {
+  return {
+    async findBySeed(seed: string): Promise<AuthRow | undefined> {
+      const id = await store.get<string>(`seed:${seed}`)
+      return id ? store.get<AuthRow>(`auth:${id}`) : undefined
+    },
+    async create(seed: string): Promise<AuthRow> {
+      const row: AuthRow = {
+        id: crypto.randomUUID(),
+        seed,
+        deletedAt: null,
+        blocked: [],
+        subnetSalt: crypto.randomUUID().replaceAll('-', ''),
+      }
+      await store.set(`auth:${row.id}`, row, 400 * 24 * 60 * 60 * 1000)
+      await store.set(`seed:${seed}`, row.id, 400 * 24 * 60 * 60 * 1000)
+      const ids = (await store.get<string[]>('auth-idx')) ?? []
+      await store.set('auth-idx', [...ids, row.id], 400 * 24 * 60 * 60 * 1000)
+      return row
+    },
+    async get(id: string): Promise<AuthRow | undefined> {
+      return store.get<AuthRow>(`auth:${id}`)
+    },
+    async markDeleted(id: string, at: number): Promise<void> {
+      const r = await store.get<AuthRow>(`auth:${id}`)
+      if (r) await store.set(`auth:${id}`, { ...r, deletedAt: at }, 400 * 24 * 60 * 60 * 1000)
+    },
+    async clearDeleted(id: string): Promise<void> {
+      const r = await store.get<AuthRow>(`auth:${id}`)
+      if (r) await store.set(`auth:${id}`, { ...r, deletedAt: null }, 400 * 24 * 60 * 60 * 1000)
+    },
+    async wipeCredentials(id: string): Promise<void> {
+      const r = await store.get<AuthRow>(`auth:${id}`)
+      if (!r) return
+      await store.delete(`seed:${r.seed ?? ''}`)
+      await store.set(`auth:${id}`, { ...r, seed: null, blocked: [] }, 400 * 24 * 60 * 60 * 1000)
+    },
+    async listDeletedBefore(cutoffMs: number): Promise<AuthRow[]> {
+      const ids = (await store.get<string[]>('auth-idx')) ?? []
+      const rows = await Promise.all(ids.map((id) => store.get<AuthRow>(`auth:${id}`)))
+      return rows.filter((r): r is AuthRow => r !== undefined && r.deletedAt !== null && r.deletedAt <= cutoffMs)
+    },
+  }
+}
+
+/** Профиль: `prof:<authId>`. */
+function profilesAdapter(store = localStore.scope('user-auth-profiles', { max: 10_000 })) {
+  const put = async (r: ProfileView) => store.set(`prof:${r.authId}`, r, 400 * 24 * 60 * 60 * 1000)
+  return {
+    async create(authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void> {
+      const now = Date.now()
+      await put({ id: authId, authId, nickname: patch.nickname ?? null, avatarUrl: patch.avatarUrl ?? null, createdAt: now, updatedAt: now })
+    },
+    async get(authId: string): Promise<ProfileView | undefined> {
+      return store.get<ProfileView>(`prof:${authId}`)
+    },
+    async update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
+      const r = await store.get<ProfileView>(`prof:${authId}`)
+      if (!r) return
+      await put({ ...r, ...patch, updatedAt: Date.now() })
+    },
+    async remove(authId: string): Promise<void> {
+      await store.delete(`prof:${authId}`)
+    },
+  }
+}
+
+/** Порты из хвостов проекта; куки передаёт тот, кто знает запрос (фасад). */
+export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
+  const keys = sealKeysFromEnv()
+  return {
+    challenge: (() => {
+      const store = localStore.scope('user-auth-challenge', { max: 10_000 })
+      return {
+        issue: async (nonce, ttl) => {
+          await store.set(`nonce:${nonce}`, true, ttl * 1000)
+        },
+        async consume(nonce) {
+          const k = `nonce:${nonce}`
+          const had = await store.get<boolean>(k)
+          await store.delete(k)
+          return had === true
+        },
+      }
+    })(),
+    sessions: sessionsAdapter(),
+    auths: authsAdapter(),
+    profiles: profilesAdapter(),
+    sealKeys: {
+      current: () => ({ id: keys.id, secret: keys.secret }),
+      secretOf: (id) => (id === keys.id ? keys.secret : keys.old[id]),
+      retire: async () => {},
+    },
+    seal: {
+      async seal(payload, ttlSeconds) {
+        return Iron.seal(payload, { id: keys.id, secret: keys.secret }, { ...Iron.defaults, ttl: ttlSeconds * 1000 })
+      },
+      async unseal(token) {
+        try {
+          const map: Record<string, string> = { default: keys.secret, ...keys.old, [keys.id]: keys.secret }
+          // верхняя граница iron — год (токен продления); access короче и свою exp несёт сам
+          return (await Iron.unseal(token, map, { ...Iron.defaults, ttl: 365 * 24 * 3600 * 1000 })) as never
+        } catch {
+          return undefined
+        }
+      },
+    },
+    crypto: { sign: (payload, secret) => sign(payload, secret), verify: (payload, signature, seed) => verify(payload, signature, seed) },
+    cookies:
+      cookies ?? {
+        get: () => undefined,
+        set: () => {},
+        delete: () => {},
+      },
+    clock: { now: () => Date.now() },
+    config: createUserConfig(localStore.scope('user-config')),
+  }
+}
+
+/** Подсеть из запроса: /24 у IPv4, /48 у IPv6 — полного адреса не знает даже ядро. */
+export function subnetOf(request: Request): string | undefined {
+  const raw = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (!raw) return undefined
+  if (raw.includes('.')) {
+    const parts = raw.split('.')
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0`
+  }
+  const parts = raw.split(':')
+  return `${parts.slice(0, 4).join(':')}::`
+}
+
+const countryOf = (request: Request): string | undefined =>
+  request.headers.get('cf-ipcountry')?.slice(0, 64) ?? undefined
+
+/**
+ * Фасад одного запроса: голые функции ядра с подставленными портами и куками.
+ * Токены из успешных ответов кладутся в куки здесь (сервер, HttpOnly) —
+ * компонент этого не делает никогда.
+ */
+export function auth(event: AuthEvent): {
+  issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
+  login(args: { seed: string; nonce: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  renew(): Promise<UserResult<LoginOutcome>>
+  logout(): Promise<UserResult<null>>
+  logoutAll(): Promise<UserResult<null>>
+  listSessions(): Promise<UserResult<SessionView[]>>
+  revokeSession(jti: string): Promise<UserResult<null>>
+  profile(): Promise<UserResult<ProfileView | null>>
+  updateProfile(args: { nickname?: string; avatarUrl?: string | null }): Promise<UserResult<ProfileView>>
+  requestDelete(): Promise<UserResult<null>>
+  cancelDelete(): Promise<UserResult<{ id: string }>>
+} {
+  const ports = authPorts({
+    get: (name) => event.cookies.get(name),
+    set: (name, value, ttlSeconds) => event.cookies.set(name, value, { ...COOKIE_BASE, maxAge: ttlSeconds }),
+    delete: (name) => event.cookies.delete(name, { path: '/' }),
+  })
+  const access = () => event.cookies.get(ACCESS_COOKIE)
+  const setTokens = (value: LoginOutcome, deviceTtlSec: number, accessTtlSec: number) => {
+    event.cookies.set(ACCESS_COOKIE, value.access, { ...COOKIE_BASE, maxAge: accessTtlSec })
+    if (value.renewal) event.cookies.set(RENEWAL_COOKIE, value.renewal, { ...COOKIE_BASE, maxAge: deviceTtlSec })
+  }
+  const clearCookies = () => {
+    event.cookies.delete(ACCESS_COOKIE, { path: '/' })
+    event.cookies.delete(RENEWAL_COOKIE, { path: '/' })
+  }
+  return {
+    issueChallenge: () => coreIssueChallenge(ports),
+    login: async (args) => {
+      const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
+      if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
+      return r
+    },
+    renew: async () => {
+      const r = await coreRenew(ports, { renewal: event.cookies.get(RENEWAL_COOKIE), subnet: subnetOf(event.request), country: countryOf(event.request) })
+      if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
+      return r
+    },
+    logout: async () => {
+      const r = await coreLogout(ports, access())
+      clearCookies()
+      return r
+    },
+    logoutAll: async () => {
+      const r = await coreLogoutAll(ports, access())
+      clearCookies()
+      return r
+    },
+    listSessions: () => coreListSessions(ports, access()),
+    revokeSession: (jti) => coreRevokeSession(ports, access(), jti),
+    profile: () => coreProfile(ports, access()),
+    updateProfile: (args) => coreUpdateProfile(ports, access(), args),
+    requestDelete: () => coreRequestDelete(ports, access()),
+    cancelDelete: () => coreCancelDelete(ports, access()),
+  }
+}
+
+/** Перевод голого факта в статус HTTP (REST-вызовы и журнал экшенов). */
+export function toHttpStatus(result: UserResult<unknown>): number {
+  if (result.ok) return 200
+  switch (result.fact.code) {
+    case 'auth.nonce-unknown':
+    case 'auth.signature':
+    case 'auth.token':
+    case 'auth.kid-unknown':
+    case 'auth.expired':
+    case 'auth.revoked':
+    case 'auth.session-unknown':
+      return 401
+    case 'auth.blocked':
+      return 403
+    case 'auth.identity-unknown':
+      return 404
+    case 'auth.delete-pending':
+      return 409
+    case 'auth.confirm':
+    case 'profile.nickname-forbidden':
+    case 'profile.avatar-format':
+    case 'profile.avatar-size':
+      return 422
+  }
+}

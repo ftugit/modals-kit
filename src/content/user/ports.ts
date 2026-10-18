@@ -30,10 +30,11 @@ export interface SessionStorePort {
   /** Софт-удалённая строка ЧИТАЕТСЯ (guard отличит 'revoked'); нет — undefined. */
   get(jti: string): Promise<SessionRecord | undefined>
   listByAuth(authId: string): Promise<SessionRecord[]>
+  /** Записать строку целиком: ротация продления (версия, срок, подсеть, активность). */
+  save(record: SessionRecord): Promise<void>
   /** Отзыв = софт-удаление (deletedAt), не физическое удаление. */
   softDelete(jti: string, at: number): Promise<void>
   softDeleteAllByAuth(authId: string, at: number): Promise<void>
-  touch(jti: string, at: number): Promise<void>
 }
 
 /** Таблица auth — носитель безопасности аккаунта. Личного — ничего. */
@@ -48,6 +49,8 @@ export interface AuthStorePort {
   clearDeleted(id: string): Promise<void>
   /** Исполнитель через срок: seed и security стираются — надгробие остаётся. */
   wipeCredentials(id: string): Promise<void>
+  /** Заявки, у которых грейс вышел: — корма исполнителя удаления. */
+  listDeletedBefore(cutoffMs: number): Promise<AuthRow[]>
 }
 
 /** Строка auth глазами адаптера. */
@@ -55,7 +58,8 @@ export type AuthRow = {
   id: string
   seed: string | null
   deletedAt: number | null
-  blocked: import('./types.js').Blocked | null
+  /** Сферы блокировки; `auth` — вход закрыт, остальные — ограничения. */
+  blocked: import('./types.js').Blocked[]
   /** Соль для хэшей подсетей сессий (на аккаунт). */
   subnetSalt: string
 }
@@ -79,10 +83,15 @@ export interface SealKeysPort {
   retire(id: string): Promise<void>
 }
 
-/** Запечатывание содержимого временного токена (iron-webcrypto в адаптере). */
+/** Запечатывание токенов (iron-webcrypto в адаптере): access и продление. */
 export interface SealPort {
-  seal(payload: import('./types.js').AccessTokenPayload, ttlSeconds: number): Promise<string>
-  unseal(token: string): Promise<import('./types.js').AccessTokenPayload | undefined>
+  seal(
+    payload: import('./types.js').AccessTokenPayload | import('./types.js').RenewalPayload,
+    ttlSeconds: number,
+  ): Promise<string>
+  unseal(
+    token: string,
+  ): Promise<import('./types.js').AccessTokenPayload | import('./types.js').RenewalPayload | undefined>
 }
 
 /**

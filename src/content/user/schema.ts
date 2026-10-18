@@ -44,7 +44,7 @@ export const auth = defineResource({
      * отдельные действия — своими сферами. Пишет блокировщик (роли ещё нет —
      * запись закрыта), проверяют login и фаервол в api.
      */
-    blocked: f.json({ read: () => true, create: [], update: [], nullable: true }),
+        blocked: field(s.array(s.json(), { max: 8 }), { read: () => true, create: [], update: [], db: { default: "'{}'::jsonb[]" } }),
     /**
      * Соль для хэшей подсетей сессий — на аккаунт: между юзерами связать
      * записи нельзя, внутри истории одного — сравнение работает. Ставит
@@ -142,6 +142,13 @@ export const session = defineResource({
     // История прежних подсетей/стран: [{hash, country, at}] — пишет api при
     // пересоздании сессии (режим 'update'), а не «только текущее».
     subnet_history: f.json({ read: () => true, nullable: true, db: { default: "'[]'::jsonb" } }),
+        // Версия продления: кукa продления несёт версию строки; совпала — ротация,
+        // меньше — «усыновление» (кто-то продлил раньше). Отзыв — по-прежнему
+        // софт-удаление; tokenVersion аккаунта нет.
+        version: field(s.integer({ min: 0, max: 2_147_483_647 }), {
+          read: () => true, create: () => true, update: () => true,
+          db: { default: '0' },
+        }),
     last_seen_at: f.timestamp({ read: () => true, nullable: true }),
     // Срок жизни сессии — из настроек (config.deviceTtlSec); ставит сервер.
     expires_at: f.timestamp({ read: () => true, create: () => true, required: true }),

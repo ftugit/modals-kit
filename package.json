@@ -61,6 +61,7 @@
     "@vercel/functions": "^3.10.1",
     "clsx": "^2.1.1",
     "esm-env": "^1.2.2",
+    "iron-webcrypto": "^2.0.0",
     "pg": "^8.23.0",
     "tailwind-merge": "^3.7.0"
   },

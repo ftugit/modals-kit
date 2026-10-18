@@ -106,4 +106,18 @@ export const variables = defineEnvVars({
     schema: text,
     description: 'Прежние секреты на время ротации: kid:secret через запятую (kid ≠ DB_CURSOR_KID).',
   },
+
+  // ── Запечатывание токенов пользователя (модуль `src/content/user`) ──
+  AUTH_SEAL_SECRET: {
+    schema: text,
+    description: 'Секрет запечатывания временного токена и токена продления (iron), не короче 32 байт.',
+  },
+  AUTH_SEAL_ID: {
+    schema: text,
+    description: 'Имя действующего секрета (печатается в токен). По умолчанию v1; при смене секрета — новое имя.',
+  },
+  AUTH_SEAL_OLD_KEYS: {
+    schema: text,
+    description: 'Прежние секреты на время ротации: id:secret через запятую (id ≠ AUTH_SEAL_ID).',
+  },
 })

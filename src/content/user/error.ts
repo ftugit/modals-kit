@@ -24,10 +24,12 @@ export type AuthErrorCode =
   | 'auth.expired'            // access истёк
   | 'auth.revoked'            // jti в чёрном списке
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
-  | 'auth.version'            // tokenVersion не совпал («выйти со всех»)
-  | 'auth.blocked'            // аккаунт заблокирован (объект blocked)
+  | 'auth.blocked'            // аккаунт заблокирован (сферы blocked)
   | 'auth.delete-pending'     // заявка на удаление: вход ведёт на шаг восстановления
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
+  | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
+  | 'profile.avatar-format'   // аватар не из белого списка форматов
+  | 'profile.avatar-size'     // аватар тяжелее предела конфига
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -53,10 +55,12 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.expired': () => [generalError('auth.expired')],
   'auth.revoked': () => [generalError('auth.revoked')],
   'auth.session-unknown': () => [generalError('auth.session-unknown')],
-  'auth.version': () => [generalError('auth.version')],
   'auth.blocked': () => [generalError('auth.blocked')],
   'auth.delete-pending': () => [generalError('auth.delete-pending')],
   'auth.confirm': (f) => [fieldError(f)],
+  'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
+  'profile.avatar-format': () => [error({ code: 'profile.avatar-format' }, 'avatar')],
+  'profile.avatar-size': () => [error({ code: 'profile.avatar-size' }, 'avatar')],
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

@@ -30,7 +30,19 @@ export const defaults: ConfigValues = {
   /** Запрещённые никнеймы (служебные имена); остальное — любой, неуникальный. */
   nicknameForbidden: [
     'admin', 'administrator', 'mod', 'moderator', 'support', 'root', 'system',
-  ] as readonly string[],
+  ],
+  /** Срок жизни одноразового nonce для подписи, секунд. */
+  challengeTtlSec: 120,
+  /** Заявка на удаление живёт столько дней, потом исполнитель стирает аккаунт. */
+  deleteGraceDays: 30,
+  /** Сколько держать HoldButton создания аккаунта, секунд. */
+  holdSeconds: 5,
+  /** Аватар: меньшая сторона до этого размера, большая режется по центру до него. */
+  avatarEdge: 200,
+  /** Аватар: предел веса готового JPEG, байт. */
+  avatarMaxBytes: 20_480,
+  /** Аватар: разрешённые форматы base64-поля (белый список серверного валидатора). */
+  avatarFormats: ['jpeg'] as readonly string[],
 }
 
 /**
@@ -42,6 +54,12 @@ export type ConfigValues = {
   deviceTtlSec: number
   sessionRecreate: 'update' | 'strict'
   nicknameForbidden: readonly string[]
+  challengeTtlSec: number
+  deleteGraceDays: number
+  holdSeconds: number
+  avatarEdge: number
+  avatarMaxBytes: number
+  avatarFormats: readonly string[]
 }
 export type ConfigKey = keyof ConfigValues
 /** Область переопределения: 'global' | `user:<id>` | `device:<jti>`. */
@@ -70,8 +88,19 @@ function validate(key: ConfigKey, value: unknown): void {
       throw new Error('config.sessionRecreate: «update» или «strict»')
     return
   }
-  if (typeof sample === 'number' && (typeof value !== 'number' || !Number.isFinite(value)))
-    throw new Error(`config.${key}: число`)
+  if (key === 'avatarFormats') {
+    if (
+      !Array.isArray(value) ||
+      value.length === 0 ||
+      !value.every((v) => typeof v === 'string' && v !== '')
+    )
+      throw new Error('config.avatarFormats: непустой список форматов («jpeg», «png», «webp»)')
+    return
+  }
+  if (typeof sample === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+      throw new Error(`config.${key}: положительное число`)
+  }
 }
 
 function scopeKey(scope: ConfigScope, key: ConfigKey): string {
