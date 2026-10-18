@@ -21,7 +21,7 @@
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
-  import { Button, Input } from '#lib/components/ui/index.js'
+  import { Button, CopyInput, Input } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
@@ -168,10 +168,9 @@
     void goto(data.next ?? '/')
   }
 
-  /* ── seed: генерация клиентом, копирование ── */
+  /* ── seed: генерация клиентом; копирование — примитив CopyInput ── */
   // svelte-ignore state_referenced_locally -- серверный seed приходит один раз с шагом
   let secret = $state(data.registerSeed ?? '')
-  let copied = $state(false)
 
   async function startRegister(): Promise<void> {
     const pair = await generateKeyPair()
@@ -214,12 +213,6 @@
   const linkStep = (fn: () => void) => (e: MouseEvent) => {
     e.preventDefault()
     fn()
-  }
-
-  async function copySecret(): Promise<void> {
-    await navigator.clipboard.writeText(secret)
-    copied = true
-    setTimeout(() => (copied = false), 2000)
   }
 
   /* ── аватар: конвейер с пределами из конфига; результат — скрытое поле ── */
@@ -307,34 +300,20 @@
     {@const seedF = bound.field('seed')!}
     <!-- data-field — ручка тестов и стилей (как у FieldShell) -->
     <div class="space-y-1.5" data-field={seedF.name}>
-      <div class="relative">
-        <Input
-          {...seedF.attrs}
-          value={String(seedF.value ?? '') || secret}
-          readonly={step === 'register'}
-          autocomplete="off"
-          spellcheck="false"
-          onblur={() => seedF.setTouched()}
-          oninput={(e) => seedF.onInput(e.currentTarget.value)}
-          class={step === 'register' ? 'pr-16 font-mono text-xs' : 'font-mono text-xs'}
-        />
-        {#if step === 'register'}
-          <!-- копирование прямо в поле ввода (ТЗ); без JS кнопки нет — текст выделяется -->
-          <button
-            type="button"
-            onclick={copySecret}
-            aria-label={copied ? 'Скопировано' : 'Копировать seed'}
-            title={copied ? 'Скопировано' : 'Копировать'}
-            class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            {#if copied}
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-            {:else}
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
-            {/if}
-          </button>
-        {/if}
-      </div>
+      <!-- поле с копированием своего содержимого (примитив CopyInput); без JS
+           кнопки нет — текст выделяется -->
+      <CopyInput
+        {...seedF.attrs}
+        value={String(seedF.value ?? '') || secret}
+        readonly={step === 'register'}
+        autocomplete="off"
+        spellcheck="false"
+        copyLabel="Копировать seed"
+        copiedLabel="Скопировано"
+        onblur={() => seedF.setTouched()}
+        oninput={(e) => seedF.onInput(e.currentTarget.value)}
+        class="font-mono text-xs"
+      />
       <!-- help и ошибки поля — проводка движка (разметка ТЗ не влезает в FieldShell) -->
       {#if seedF.help}
         <p {...seedF.helpProps()} class="text-xs text-muted-foreground">{seedF.help}</p>

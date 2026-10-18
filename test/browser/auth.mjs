@@ -40,7 +40,11 @@ async function run() {
   try {
     console.log('— с JS: шаги, валидация, выход после успеха —')
     {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+      const ctxJs = await browser.newContext({
+        viewport: { width: 1280, height: 860 },
+        permissions: ['clipboard-read', 'clipboard-write'],
+      })
+      const page = await ctxJs.newPage()
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
       const form = page.locator('#user-auth')
 
@@ -55,8 +59,13 @@ async function run() {
       await page.waitForSelector('input[name=seed][readonly]')
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'seed 43–44')
-      assert.equal(await form.getByRole('button', { name: 'Копировать seed' }).count(), 1, 'иконка копирования')
-      ok('шаг регистрации: seed показан, иконка копирования на месте')
+      const copyBtn = form.getByRole('button', { name: 'Копировать seed' })
+      assert.equal(await copyBtn.count(), 1, 'иконка копирования')
+      await page.evaluate(() => navigator.clipboard.writeText('старое значение'))
+      await copyBtn.click()
+      const inClipboard = await page.evaluate(() => navigator.clipboard.readText())
+      assert.equal(inClipboard, seed, 'в буфере — seed из поля')
+      ok('шаг регистрации: seed показан, иконка копирует значение в буфер')
 
       // 3. Обратно на вход: поле ПУСТОЕ (seed не перетаскивается)
       await form.getByRole('link', { name: 'Авторизация' }).click()
@@ -90,22 +99,27 @@ async function run() {
       await page.waitForTimeout(600)
       assert.equal(await form.locator('input[name=nickname]').count(), 0, 'клик до заполнения не выполняет')
       ok('HoldButton до заполнения: клик не срабатывает')
-      // курсор на кнопке — заливка идёт сама (hover) и выполняет
-      // (после клика курсор уже там — сначала уводим, чтобы pointerenter случился;
-      // под нагрузкой rAF/enter может не дойти — наводим заново)
-      let profileOpen = false
-      for (let i = 0; i < 3 && !profileOpen; i++) {
-        await page.mouse.move(240, 40)
-        await hold.hover()
-        try {
-          await form.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 8000 })
-          profileOpen = true
-        } catch {
-          /* заливка не доехала — попытка заново */
-        }
+      // заливка от курсора измеряется напрямую: scaleX растёт под курсором
+      // и сбрасывается уходом (опция hover); force — форма при busy перехватывает
+      const fillOf = async () => {
+        const style = (await hold.locator('span').first().getAttribute('style')) ?? ''
+        return Number(/scaleX\(([\d.]+)\)/.exec(style)?.[1] ?? '0')
       }
-      assert.ok(profileOpen, 'hover-заливка открыла шаг профиля')
-      ok('HoldButton hover: заливка от курсора, шаг профиля открыт')
+      await hold.hover({ force: true })
+      await page.waitForTimeout(700)
+      const t1 = await fillOf()
+      assert.ok(t1 > 0.05, `заливка от курсора идёт (scaleX=${t1})`)
+      await page.mouse.move(240, 40)
+      await page.waitForTimeout(300)
+      assert.equal(await fillOf(), 0, 'уход курсора сбрасывает заливку')
+      ok(`HoldButton hover: заливка от курсора идёт (scaleX=${t1.toFixed(2)}) и сбрасывается`)
+      // выполнение — удержанием клавиши (тот же perform, что у заливки до конца)
+      await hold.focus()
+      await page.keyboard.down(' ')
+      await page.waitForTimeout(5600)
+      await page.keyboard.up(' ')
+      await form.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
+      ok('HoldButton удержание: шаг профиля открыт')
 
       // 7. Профиль → успех уводит со страницы (finish не молчит)
       await page.fill('input[name=nickname]', 'e2e-ход-258')
@@ -124,7 +138,7 @@ async function run() {
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('вход (JS): корректный seed проходит, страница закрылась переходом')
-      await page.close()
+      await ctxJs.close()
     }
 
     console.log('— без JS: регистрация и вход работают —')
