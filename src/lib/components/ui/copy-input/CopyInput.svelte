@@ -8,6 +8,11 @@
    * у `password/`. Без JS кнопки нет (буферу нужен скрипт) — остаётся обычное
    * выделяемое поле, поэтому `pr-10` и аффикс появляются после оживления.
    *
+   * Состояния иконки (решение владельца, ход 261): скопировано — «выполнено»
+   * (`CheckIcon`), браузер отказал в буфере — «восклицание» (`WarningIcon`);
+   * обе держатся 5 секунд и возвращаются к «копировать», в это время кнопка
+   * не нажимается. Смена — только по фактическому результату записи в буфер.
+   *
    * Атрибуты поля формы (`name`, `id`, `aria-*`, `readonly`) приезжают через
    * rest; явные атрибуты ПОСЛЕ spread перекрывают его (см. `PasswordInput`).
    */
@@ -17,7 +22,9 @@
   import Input from '../input/Input.svelte'
   import InputAffix from '../input/InputAffix.svelte'
   import InputShell from '../input/InputShell.svelte'
+  import WarningIcon from '../warning-icon/WarningIcon.svelte'
   import CopyIcon from './CopyIcon.svelte'
+  import CheckIcon from './CheckIcon.svelte'
 
   interface Props extends Omit<HTMLInputAttributes, 'size'> {
     copyLabel?: string
@@ -35,24 +42,37 @@
     ...rest
   }: Props = $props()
 
+  /** Сколько держать состояние после попытки копирования, мс. */
+  const HOLD_MS = 5000
+
   let mounted = $state(false)
-  let copied = $state(false)
+  let done = $state<'idle' | 'copied' | 'failed'>('idle')
   let timer: ReturnType<typeof setTimeout> | undefined
 
   onMount(() => (mounted = true))
 
-  async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(String(value ?? ''))
-      copied = true
-      clearTimeout(timer)
-      timer = setTimeout(() => (copied = false), 2000)
-    } catch {
-      /* браузер не дал буфер — текст остаётся выделяемым */
-    }
+  /** Читается функцией: после guard TS сужает тип и отказывает в присваивании. */
+  function busy(): boolean {
+    return done !== 'idle'
   }
 
-  const label = $derived(copied ? copiedLabel : copyLabel)
+  async function copy(): Promise<void> {
+    if (busy()) return // в активном состоянии кнопка не нажимается
+    let ok = false
+    try {
+      await navigator.clipboard.writeText(String(value ?? ''))
+      ok = true
+    } catch {
+      ok = false // браузер не дал буфер — текст остаётся выделяемым
+    }
+    done = ok ? 'copied' : 'failed'
+    clearTimeout(timer)
+    timer = setTimeout(() => (done = 'idle'), HOLD_MS)
+  }
+
+  const label = $derived(
+    done === 'copied' ? copiedLabel : done === 'failed' ? 'Не удалось скопировать' : copyLabel,
+  )
 </script>
 
 <InputShell data-copy-input="" class={cls}>
@@ -68,13 +88,19 @@
       <button
         type="button"
         class="inline-flex h-full w-10 cursor-pointer items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50"
-        class:text-foreground={copied}
+        class:text-foreground={done !== 'idle'}
         aria-label={label}
         title={label}
-        {disabled}
+        disabled={disabled || done !== 'idle'}
         onclick={copy}
       >
-        <CopyIcon size={16} />
+        {#if done === 'copied'}
+          <CheckIcon size={16} />
+        {:else if done === 'failed'}
+          <WarningIcon size={16} />
+        {:else}
+          <CopyIcon size={16} />
+        {/if}
       </button>
     </InputAffix>
   {/if}

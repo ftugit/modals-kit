@@ -79,7 +79,11 @@ async function checkAvatar(ports: AuthPorts, value: string): Promise<AuthFact | 
   const names = formats.join('|')
   const pattern = new RegExp(`^data:image/(?:${names});base64,[A-Za-z0-9+/]+={0,2}$`)
   if (!pattern.test(value)) return { code: 'profile.avatar-format' }
-  const bytes = Math.floor((value.length * 3) / 4) - (value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0)
+  // вес считаем от содержимого (после запятой): клиент сжимает БАЙТЫ КАРТИНКИ,
+  // а префикс `data:image/jpeg;base64,` — ~30 Б, из-за них «впритык» сжатое
+  // отбраковывалось (ход 261, репорт владельца «не сохранялось с нескольких раз»)
+  const base64 = value.slice(value.indexOf(',') + 1)
+  const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
   if (bytes > maxBytes) return { code: 'profile.avatar-size', args: { max: maxBytes } }
   return undefined
 }

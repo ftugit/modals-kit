@@ -1,17 +1,16 @@
 <script lang="ts">
   /**
    * Кнопка пользователя в шапке (вариант 1). Хост модалок живёт в ветке
-   * `(app)` НИЖЕ шапки (`(site)` рендерит AppShell раньше `ModalSystem`),
-   * поэтому из шапки модальная механика недоступна — здесь честный фолбэк:
-   * обычные ссылки на страницу `/user/auth` (работают и без JS). Внутри
-   * модального контекста тот же компонент открыл бы `user.auth`/`user.menu`
-   * модалкой (`tryUseModals`).
+   * `(app)` НИЖЕ шапки (`(site)` рендерит AppShell раньше `ModalSystem`), поэтому
+   * из шапки модальная механика недоступна изнутри компонента — ссылка на
+   * модалку (`user.menu`), без JS — на страницу меню `/user/menu` (решение
+   * владельца, ход 261: там выход, тело — тот же `MenuBody`).
    *
-   * При входе вместо кнопки — аватар/инициал; пока профильного экрана нет,
-   * он ведёт на ту же страницу, где есть выход.
+   * Аватар: круглый блок под размер аватара; картинка во всю ширину блока,
+   * высота auto, тоже круглая; пока её нет или она грузится — виден заполнитель
+   * (инициал на приглушённом фоне).
    */
   import { page } from '$app/state'
-  import { useModals } from '#lib/modals/svelte/index.js'
   import { useModalLink } from '#lib/components/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { vault } from '../vault.svelte.js'
@@ -23,9 +22,6 @@
 
   let { server = null }: Props = $props()
 
-  // Контекст хоста обязателен: хост теперь над AppShell (решение «Б»).
-  // В среде без хоста компонент честно падает — как остальные потребители.
-  const m = useModals()
   const asModalLink = useModalLink()
   const notHydrated = useJsOnly()
 
@@ -39,16 +35,17 @@
 </script>
 
 {#if authorized}
-  <!-- иконка → меню-модалка; без JS — страница входа с выходом -->
-  {@const link = asModalLink('user.menu', {}, { href: authHref })}
+  <!-- аватар → меню-модалка; без JS — страница меню с выходом -->
+  {@const link = asModalLink('user.menu', {}, { href: '/user/menu' })}
   <a
     {...link}
+    data-testid="header-user"
     aria-label={nickname ? `Аккаунт: ${nickname}` : 'Аккаунт'}
     title={notHydrated() ? JS_ONLY_REASON : nickname ?? 'Аккаунт'}
-    class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border text-sm font-semibold hover:bg-accent"
+    class="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground hover:bg-accent"
   >
     {#if avatarUrl}
-      <img src={avatarUrl} alt="" class="h-full w-full object-cover" />
+      <img src={avatarUrl} alt="" class="h-auto w-full rounded-full" />
     {:else}
       {initial}
     {/if}

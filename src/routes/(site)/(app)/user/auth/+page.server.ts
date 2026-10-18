@@ -19,7 +19,10 @@ import { localStore } from '#lib/server/cache.js'
 const config = createUserConfig(localStore.scope('user-config'))
 
 export const load: PageServerLoad = async (event) => {
-  const url = new URL(event.request.url)
+  // `event.url`, а не `event.request.url`: только accessor объявляет зависимость
+  // load от поиска — иначе при смене `?step=` по ссылке load не перезапускается,
+  // и шаг на клиенте не переключается (SPA считал бы адрес мёртвым).
+  const url = event.url
   const stepParam = url.searchParams.get('step')
   let registerSeed: string | null = null
   if (stepParam === 'register') {

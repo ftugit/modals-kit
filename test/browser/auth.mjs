@@ -1,8 +1,7 @@
 /**
- * Браузер-тесты пользовательской системы (ход 258 — отчёт владельца о сломанном
- * no-JS и «кривой» проводке формы):
- *   • «Создать аккаунт» — ссылка: с JS локальная подмена шага, без JS переход
- *     на `?step=register` (seed делает сервер) — раньше была мёртвая кнопка;
+ * Браузер-тесты пользовательской системы (ход 261 — решения владельца; база — 258):
+ *   • «Создать аккаунт» — ссылка: шаг живёт в адресе на ОБЕИХ сторонах
+ *     (?step=register, seed всегда делает сервер);
  *   • пустой/мусорный seed — ошибки поля ВИДНЫ (required + pattern движка;
  *     раньше шаг отходил серверу и ошибка тонула в скрытом signature);
  *   • без JS пустая/мусорная отправка блокируется нативно (required/pattern);
@@ -54,22 +53,46 @@ async function run() {
       assert.ok((await create.getAttribute('href')).includes('step=register'), 'адрес шага в href')
       ok('создание аккаунта — ссылка с ?step=register')
 
-      // 2. Клик (JS): локальная подмена — адрес не менялся, шаг регистрационный
+      // 2. Клик (JS): шаг через адрес (навигация), seed генерирует сервер
       await create.click()
-      await page.waitForSelector('input[name=seed][readonly]')
+      await page.waitForURL(/step=register/)
+      await page.waitForFunction(() => {
+        const el = document.querySelector('input[name=seed]')
+        return el && el.value.length >= 43
+      })
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'seed 43–44')
-      const copyBtn = form.getByRole('button', { name: 'Копировать seed' })
+      const copyBtn = form.getByRole('button', { name: 'Копировать', exact: true })
       assert.equal(await copyBtn.count(), 1, 'иконка копирования')
       await page.evaluate(() => navigator.clipboard.writeText('старое значение'))
       await copyBtn.click()
       const inClipboard = await page.evaluate(() => navigator.clipboard.readText())
       assert.equal(inClipboard, seed, 'в буфере — seed из поля')
-      ok('шаг регистрации: seed показан, иконка копирует значение в буфер')
+      ok('шаг регистрации: seed сервера показан, иконка копирует значение в буфер')
 
-      // 3. Обратно на вход: поле ПУСТОЕ (seed не перетаскивается)
+      // 2а. Иконка копирования (решение владельца): за кликом из п.2 — «Скопировано»
+      // и не нажимаемость 5 с, затем возврат к «Копировать» (один клик — одна волна
+      // состояний; кликать снова в окне возврата — гоняться с таймером)
+      // состояние читаем по селектору, а не по роли-имени: у кнопки в состоянии
+      // «Скопировано» другое имя, и локатор по «Копировать» ждал бы её возврата
+      const copyState = page.locator('[data-copy-input] button')
+      await page.waitForFunction(
+        () => document.querySelector('[data-copy-input] button')?.getAttribute('aria-label') === 'Скопировано',
+        { timeout: 5000 },
+      )
+      assert.equal(await copyState.getAttribute('aria-label'), 'Скопировано', 'иконка выполнено')
+      assert.equal(await copyState.isDisabled(), true, 'кнопка не нажимается после успеха')
+      await page.waitForFunction(
+        () => document.querySelector('[data-copy-input] button')?.getAttribute('aria-label') === 'Копировать',
+        { timeout: 8000 },
+      )
+      assert.equal(await copyState.isDisabled(), false, 'кнопка вернулась')
+      ok('иконка копирования: «Скопировано» 5 с, затем возврат')
+
+      // 3. Обратно на вход: поле ПУСТОЕ (seed шага регистрации не перетаскивается)
       await form.getByRole('link', { name: 'Авторизация' }).click()
-      await page.waitForSelector('input[name=seed]:not([readonly])')
+      await page.waitForURL((u) => !u.search.includes('step=register'))
+      await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value === '')
       assert.equal(await page.inputValue('input[name=seed]'), '', 'поле входа пустое')
       ok('возврат на вход: поле чистое')
 
@@ -91,7 +114,8 @@ async function run() {
 
       // 6. Регистрация: кнопка заблокирована до заполнения, заливка — от курсора
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForSelector('input[name=seed][readonly]')
+      await page.waitForURL(/step=register/)
+      await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
       const hold = form.locator('button[type=submit]:has-text("Удерживайте")')
       // обычный клик по заблокированной не отправляет форму
@@ -116,28 +140,74 @@ async function run() {
       // выполнение — удержанием клавиши (тот же perform, что у заливки до конца)
       await hold.focus()
       await page.keyboard.down(' ')
-      await page.waitForTimeout(5600)
+      await page.waitForTimeout(2600)
       await page.keyboard.up(' ')
       await form.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
       ok('HoldButton удержание: шаг профиля открыт')
 
-      // 7. Профиль → успех уводит со страницы (finish не молчит)
+      // 6а. Ошибки поля avatar ВИДНЫ (ход 261: раньше тонули в скрытом поле —
+      // «ничего не происходит»): скрытое поле появляется только с конвейера —
+      // сперва честный файл 1×1, затем подмена значения на data-URL больше лимита
+      const JPEG_1X1 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
+      await page.locator('input[type=file]').setInputFiles({ name: 'a.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(JPEG_1X1, 'base64') })
+      await page.locator('input[name=avatar]').waitFor({ state: 'attached', timeout: 15000 })
+      await page.evaluate(() => {
+        document.querySelector('input[name=avatar]').value = 'data:image/jpeg;base64,' + 'A'.repeat(28_000)
+      })
+      await form.getByRole('button', { name: 'Сохранить' }).click()
+      const avatarError = form.locator('[data-field=avatar] p[role=alert]')
+      await avatarError.waitFor({ state: 'visible', timeout: 5000 })
+      assert.ok((await avatarError.textContent()).length > 3, 'текст ошибки аватара')
+      ok('перегруженный аватар: ошибка сервера видна у формы')
+
+      // 7. Профиль → успех уводит со страницы (finish не молчит). Аватар чистим:
+      // после 6а в скрытом поле — мусор больше лимита (аватар необязателен).
+      // NB, найдено здесь же: валидный data-URL аватара сервер НЕ сохраняет —
+      // схема user_profile.avatar_url ждёт http(s):// (решение владельца).
       await page.fill('input[name=nickname]', 'e2e-ход-258')
+      await page.evaluate(() => {
+        document.querySelector('input[name=avatar]').value = ''
+      })
+      // blur ДО клика: mousedown снял бы фокус с поля — рендер touched пересоздал
+      // бы кнопку между mousedown и mouseup, и click не родился бы
+      await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
       await form.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('регистрация (JS): профиль сохранён, страница закрылась переходом')
 
       // 8. Выход
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+      const nonceBefore = await page.inputValue('input[name=nonce]')
       await form.getByRole('button', { name: 'Выйти из аккаунта' }).click()
-      await page.waitForSelector('input[name=seed]:not([readonly])')
+      await form.getByRole('link', { name: 'Создать аккаунт' }).waitFor({ state: 'visible' })
       ok('выход: снова шаг входа')
 
-      // 9. Вход тем же seed — успех уводит со страницы
+      // 9. Вход тем же seed — успех уводит со страницы. Выход тратит challenge:
+      // виджет сам запрашивает свежий nonce — ждём его перед входом
+      await page.waitForFunction(
+        (old) => { const v = document.querySelector('input[name=nonce]')?.value; return v !== '' && v !== old },
+        nonceBefore,
+        { timeout: 15000 },
+      )
       await page.fill('input[name=seed]', fresh)
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('вход (JS): корректный seed проходит, страница закрылась переходом')
+
+      // 9а. Меню шапки (ход 261, репорт «после входа в шапке ничего нет»):
+      // аватар виден, клик открывает меню с выходом; выход со страницы меню работает
+      await page.goto(BASE + '/', { waitUntil: 'networkidle' })
+      const userBtn = page.locator('[data-testid=header-user]')
+      await userBtn.waitFor({ state: 'visible' })
+      ok('после входа: в шапке аватар (не пустое место)')
+      await userBtn.click()
+      await page.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      ok('клик аватара открывает меню с выходом')
+      await page.keyboard.press('Escape')
+      await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      ok('страница /user/menu: выход уводит на главную')
       await ctxJs.close()
     }
 
@@ -152,7 +222,10 @@ async function run() {
       assert.equal(await form.getByRole('button', { name: 'Создать аккаунт' }).count(), 0, 'мёртвой кнопки нет')
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
       await page.waitForURL(/step=register/)
-      await page.waitForSelector('input[name=seed][readonly]')
+      // readonly у seed больше нет (решение владельца: шаг живёт в адресе, seed
+      // всегда серверный) — проверяем сам факт: поле в HTML со значением сервера
+      await page.waitForSelector('input[name=seed]')
+      assert.ok((await page.inputValue('input[name=seed]')).length >= 43, 'seed сервера в HTML')
       ok('без JS: ссылка ведёт на шаг регистрации (seed ниже, в п.12)')
 
       // 11. Пустая и мусорная отправки блокируются нативно (required/pattern):
@@ -174,7 +247,7 @@ async function run() {
       // серверным seed уходит в отправку; readonly не проверяется нативно)
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
       await page.waitForURL(/step=register/)
-      await page.waitForSelector('input[name=seed][readonly]')
+      await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
       await form.getByRole('button', { name: 'Создать аккаунт' }).click()
@@ -190,6 +263,17 @@ async function run() {
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('step'), { timeout: 15000 })
       ok('без JS: вход корректным seed проходит')
+
+      // 14. Меню без JS: аватар-ссылка ведёт на страницу меню, выход — формой
+      await page.goto(BASE + '/', { waitUntil: 'load' })
+      assert.equal(await page.locator('[data-testid=header-user]').count(), 1, 'аватар в шапке')
+      assert.equal(await page.locator('[data-testid=header-user]').getAttribute('href'), '/user/menu', 'ссылка меню без JS')
+      await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
+      assert.ok((await page.locator('span').filter({ hasText: 'e2e-nojs-258' }).count()) > 0, 'ник на странице меню')
+      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'после выхода — «Авторизация»')
+      ok('без JS: страница меню с выходом работает')
       await page.close()
       await ctx.close()
     }

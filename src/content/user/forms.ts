@@ -54,10 +54,15 @@ export const authForm = defineForm({
     { id: 'restore', label: 'Восстановить аккаунт', validate: 'full', relax: ['required'] },
     { id: 'profile', label: 'Сохранить профиль', validate: 'full', relax: ['required'] },
     { id: 'skip-profile', label: 'Пропустить профиль', validate: 'partial', relax: ['required'] },
-    { id: 'accept', label: 'Принято', validate: 'partial' },
-    { id: 'logout', label: 'Выйти', validate: 'partial' },
-    { id: 'renew', label: 'Продлить', validate: 'partial' },
-    { id: 'challenge', label: 'Свежий nonce', validate: 'partial' },
+    { id: 'accept', label: 'Принято', validate: 'partial', relax: ['required'] },
+    // Сервисные действия (logout/challenge/renew/accept) работают в формах, где
+    // поля входа не рисуются или пусты (меню, фон, ограничения): seed с хода 258
+    // обязан быть непустым (required), и без relax ЛЮБОЙ такой поход падал на
+    // seed.required ещё до execute (замечено ходом 261, тесты 9а/14; у
+    // restore/profile relax стоял изначально).
+    { id: 'logout', label: 'Выйти', validate: 'partial', relax: ['required'] },
+    { id: 'renew', label: 'Продлить', validate: 'partial', relax: ['required'] },
+    { id: 'challenge', label: 'Свежий nonce', validate: 'partial', relax: ['required'] },
   ],
   fields: {
     seed: field.text({

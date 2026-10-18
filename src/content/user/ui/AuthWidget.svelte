@@ -21,11 +21,13 @@
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
-  import { Button, CopyInput, FileInput, Input } from '#lib/components/ui/index.js'
+  import Field from '#lib/components/form/Field.svelte'
+  import CopyField from '#lib/components/form/CopyField.svelte'
+  import { Button, FileInput, Input } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
-  import { generateKeyPair, sign } from '../keys.js'
+  import { sign } from '../keys.js'
   import { hydrateVault } from '../vault.svelte.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { authForm, AUTH_FORM_REV } from '../forms.js'
@@ -106,6 +108,17 @@
   let blocked = $state<StepData['blocked']>(initial.blocked)
   let restrictions = $state<StepData['restrictions']>(initial.restrictions)
 
+  // Шаг и challenge живут в адресе на обеих сторонах (решение владельца, ход 261):
+  // переход по ссылке «Создать аккаунт»/«Авторизация» — навигация, данные страницы
+  // обновляются, виджет следует за ними. Ответ экшена (без навигации) приоритетнее —
+  // данные страницы при нём не меняются.
+  $effect(() => {
+    step = data.step as StepData['step']
+  })
+  $effect(() => {
+    if (data.challenge?.nonce) nonce = data.challenge.nonce
+  })
+
   function stepOf(result?: { data?: unknown }): StepData | undefined {
     const data = result?.data as StepData | undefined
     return data && typeof data === 'object' && 'step' in data ? data : undefined
@@ -168,28 +181,21 @@
     void goto(data.next ?? '/')
   }
 
-  /* ── seed: генерация клиентом; копирование — примитив CopyInput ── */
-  // svelte-ignore state_referenced_locally -- серверный seed приходит один раз с шагом
-  let secret = $state(data.registerSeed ?? '')
-
-  async function startRegister(): Promise<void> {
-    const pair = await generateKeyPair()
-    secret = pair.secret
-    step = 'register'
-  }
-
-  /** На вход: поле чистое — seed шага регистрации сюда перетаскивать не надо. */
-  function switchToEntry(): void {
-    secret = ''
-    step = 'entry'
-  }
-
-  // Значение seed живёт в состоянии ФОРМЫ (его валидирует и отправляет движок);
-  // локальный secret — источник шага регистрации, эффект держит зеркало.
-  // До гидрации (SSR/без JS) состояние пусто — значение в DOM несёт сам secret.
-  const seedSetter = bound.field('seed')
+  /* ── seed: генерирует СЕРВЕР (решение владельца); копирование — подмена поля ── */
+  // Значение живёт в состоянии ФОРМЫ (его валидирует и отправляет движок):
+  // старт — синхронный onInput при связывании (выше), переходы — зеркало ниже.
+  // Зеркало — ТОЛЬКО на смену secret: view забирается один раз вне эффекта, иначе
+  // чтение bound внутри эффекта замкнуло бы его на состояние формы — любой ввод
+  // перетирался бы зеркалом (на входе-шаге — пустотой). Старт — синхронно и без
+  // реактивности: SSR и no-JS рендерят seed из состояния формы (эффекты на сервере
+  // не идут, а подменённое поле берёт значение из `FieldView.value`).
+  const secret = $derived(data.registerSeed ?? '')
+  const seedMirror = bound.field('seed')
+  // svelte-ignore state_referenced_locally -- стартовое значение и должно быть
+  // снято один раз: зеркало ниже держит все последующие смены secret
+  if (secret !== '') untrack(() => seedMirror?.onInput(secret))
   $effect(() => {
-    seedSetter?.onInput(secret)
+    seedMirror?.onInput(secret)
   })
 
   /**
@@ -207,12 +213,6 @@
     if (to === 'register') u.searchParams.set('step', 'register')
     else u.searchParams.delete('step')
     return `${u.pathname}${u.search}`
-  }
-
-  /** Ссылка работает и без JS (переход по адресу), и с JS (локальная подмена). */
-  const linkStep = (fn: () => void) => (e: MouseEvent) => {
-    e.preventDefault()
-    fn()
   }
 
   /* ── аватар: конвейер с пределами из конфига; результат — скрытое поле ── */
@@ -271,57 +271,38 @@
   <Input type="hidden" name="nonce" value={nonce} />
 
   {#if step === 'entry' || step === 'register'}
-    <div class="flex items-baseline justify-between gap-2">
-      <!-- label + ссылка справа: вход ↔ создание (ТЗ) -->
-      <label {...bound.field('seed')?.labelProps()} class="text-sm font-medium">Seed</label>
+    <!-- ссылка шага справа: вход ↔ создание (ТЗ); работает одинаково с JS и без —
+         это адрес (?step=register), данные страницы несёт load -->
+    <div class="flex items-baseline justify-end gap-2">
       {#if step === 'entry'}
         <a
           href={stepHref('register')}
           class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          onclick={linkStep(startRegister)}
         >Создать аккаунт</a>
       {:else}
         <a
           href={stepHref('entry')}
           class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          onclick={linkStep(switchToEntry)}
         >Авторизация</a>
       {/if}
     </div>
 
     {#if step === 'register'}
-      <p class="text-xs text-muted-foreground">
-        {data.registerSeed
-          ? 'Seed создан сервером — сохраните его: он показывается один раз.'
-          : 'Сохраните seed в менеджер секретов: это единственный ключ от аккаунта, он показывается один раз.'}
-      </p>
+      <!-- ТЗ хода 261: генерирует и подписывает СЕРВЕР; seed виден в HTML страницы -->
+      <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+        <p class="font-medium">Seed создал и подписал сервер</p>
+        <p class="text-xs text-muted-foreground">
+          Он уже виден в HTML этой страницы — не открывайте форму в общих и публичных местах:
+          увидевший seed получит доступ к аккаунту. Сохраните его в менеджере секретов:
+          он показывается один раз.
+        </p>
+      </div>
     {/if}
 
-    {@const seedF = bound.field('seed')!}
-    <!-- data-field — ручка тестов и стилей (как у FieldShell) -->
-    <div class="space-y-1.5" data-field={seedF.name}>
-      <!-- поле с копированием своего содержимого (примитив CopyInput); без JS
-           кнопки нет — текст выделяется -->
-      <CopyInput
-        {...seedF.attrs}
-        value={String(seedF.value ?? '') || secret}
-        readonly={step === 'register'}
-        autocomplete="off"
-        spellcheck="false"
-        copyLabel="Копировать seed"
-        copiedLabel="Скопировано"
-        onblur={() => seedF.setTouched()}
-        oninput={(e) => seedF.onInput(e.currentTarget.value)}
-        class="font-mono text-xs"
-      />
-      <!-- help и ошибки поля — проводка движка (разметка ТЗ не влезает в FieldShell) -->
-      {#if seedF.help}
-        <p {...seedF.helpProps()} class="text-xs text-muted-foreground">{seedF.help}</p>
-      {/if}
-      {#if seedF.errors[0]}
-        <p {...seedF.errorProps()} class="text-xs font-medium text-destructive">{seedF.errors[0].message}</p>
-      {/if}
-    </div>
+    <!-- Подмена примитива (решение владельца): на регистрации — CopyField (Input →
+         CopyInput → CopyField), на входе — обычный Input из resolve. Подпись,
+         подсказка и ошибки — FieldShell. -->
+    <Field of={bound.f.seed} instead={step === 'register' ? CopyField : undefined} />
 
     {#if step === 'entry'}
       <Button type="submit" name="intent" value="login" task={formTask(bound.state)}>Авторизация</Button>
@@ -331,23 +312,25 @@
           Выйти из аккаунта
         </Button>
       {/if}
-    {:else if data.registerSeed}
-      <!-- без JS удержание недоступно: обычная кнопка отправки -->
-      <Button type="submit" name="intent" value="login" variant="outline" task={formTask(bound.state)}>Создать аккаунт</Button>
     {:else}
-      <!-- hover: заливка от курсора (решение владельца, ход 258); нажатие тоже работает -->
-      <HoldButton
-        type="submit"
-        name="intent"
-        value="login"
-        variant="outline"
-        seconds={holdSeconds}
-        when="fill"
-        hover
-        task={formTask(bound.state)}
-      >
-        Удерживайте, чтобы создать аккаунт
-      </HoldButton>
+      {#if notHydrated()}
+        <!-- без JS удержание недоступно: обычная кнопка отправки -->
+        <Button type="submit" name="intent" value="login" variant="outline" task={formTask(bound.state)}>Создать аккаунт</Button>
+      {:else}
+        <!-- hover: заливка от курсора (решение владельца, ход 258); нажатие тоже работает -->
+        <HoldButton
+          type="submit"
+          name="intent"
+          value="login"
+          variant="outline"
+          seconds={holdSeconds}
+          when="fill"
+          hover
+          task={formTask(bound.state)}
+        >
+          Удерживайте, чтобы создать аккаунт
+        </HoldButton>
+      {/if}
     {/if}
   {:else if step === 'restore'}
     <div class="flex flex-col gap-3">
@@ -363,6 +346,7 @@
     </div>
   {:else if step === 'profile'}
     {@const nickF = bound.field('nickname')!}
+    {@const avatarF = bound.field('avatar')}
     <div class="flex flex-col gap-3">
       <h2 class="text-base font-semibold">Как вас показывать?</h2>
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
@@ -382,21 +366,28 @@
           <p {...nickF.errorProps()} class="text-xs font-medium text-destructive">{nickF.errors[0].message}</p>
         {/if}
       </div>
-      <label class="flex flex-col gap-1 text-sm">
-        Аватар
-        <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт.
-             Круглый предпросмотр ниже — свой (ТЗ), поэтому preview не включаем. -->
-        <FileInput
-          accept="image/jpeg,image/png,image/webp"
-          onchange={onFileChange}
-          disabled={notHydrated() || avatarBusy}
-          title={notHydrated() ? JS_ONLY_REASON : undefined}
-        />
-      </label>
-      {#if avatarUrl}
-        <Input type="hidden" name="avatar" value={avatarUrl} />
-        <img src={avatarUrl} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
-      {/if}
+      <div class="space-y-1.5" data-field={avatarF?.name ?? 'avatar'}>
+        <label class="flex flex-col gap-1 text-sm">
+          Аватар
+          <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт.
+               Круглый предпросмотр ниже — свой (ТЗ), поэтому preview не включаем. -->
+          <FileInput
+            accept="image/jpeg,image/png,image/webp"
+            onchange={onFileChange}
+            disabled={notHydrated() || avatarBusy}
+            title={notHydrated() ? JS_ONLY_REASON : undefined}
+          />
+        </label>
+        {#if avatarUrl}
+          <Input type="hidden" name="avatar" value={avatarUrl} />
+          <img src={avatarUrl} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
+        {/if}
+        {#if avatarF?.errors[0]}
+          <!-- ошибки сервера по аватару (скрытое поле): раньше гасились молча —
+               владелец видел «ничего не происходит» (ход 261) -->
+          <p {...avatarF.errorProps()} class="text-xs font-medium text-destructive">{avatarF.errors[0].message}</p>
+        {/if}
+      </div>
       <div class="flex items-center justify-between gap-2">
         <!-- «Сохранить» слева, «Отмена» справа (ТЗ); intent едет от нажатой кнопки -->
         <Button type="submit" name="intent" value="profile" task={formTask(bound.state)}>Сохранить</Button>

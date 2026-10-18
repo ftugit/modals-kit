@@ -151,7 +151,7 @@ function makePorts(seedSecret?: string): {
         nicknameForbidden: ['admin', 'root'],
         challengeTtlSec: 120,
         deleteGraceDays: 30,
-        holdSeconds: 5,
+        holdSeconds: 2,
         avatarEdge: 200,
         avatarMaxBytes: 20_480,
         avatarFormats: ['jpeg'],
