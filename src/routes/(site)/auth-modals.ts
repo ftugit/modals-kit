@@ -14,11 +14,9 @@ registerModal({
   component: AuthModalLazy,
   route: '/user/auth',
   size: { width: 420, height: 480 },
-  loader: async () => {
-    // те же данные, что у роута: challenge, пределы конфига, текущий вход
-    const response = await fetch('/user/auth', { headers: { accept: 'application/json' } })
-    return response.json()
-  },
+  // loader НЕ нужен: данные (challenge, пределы, вход) берёт загрузчик самой
+  // страницы — силами ядра через preload маршрута (`loader.ts` §deps.preload);
+  // свой fetch дублировал бы его и падал на HTML (page-роут не отвечает json).
 })
 registerModal({
   name: 'user.menu',

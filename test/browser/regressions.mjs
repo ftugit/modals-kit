@@ -1663,7 +1663,9 @@ try {
     const url = () => page.evaluate(() => location.pathname + location.search + location.hash)
     await page.goto(BASE, { waitUntil: 'networkidle' })
     const start = await url()
-    await page.locator('a[data-modal-link]').first().click()
+    // своя демо-модалка, а не «первая ссылка страницы»: с хода 253 первая —
+    // «Авторизация» в шапке (глобальная user.auth), сценарий про url-модалку ветки
+    await page.locator('[data-modal-link]', { hasText: 'Открыть карточку' }).first().click()
     await page.waitForSelector('[role="dialog"]')
     await page.waitForFunction((u) => location.pathname + location.search + location.hash !== u, start)
     const opened = await url()

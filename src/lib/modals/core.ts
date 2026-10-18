@@ -374,8 +374,12 @@ export function tailOffset(
  * слоем: настоящая модалка уходила в `aria-hidden` + `inert`, а пользователь
  * видел пустую оболочку (ISSUES.md R-02).
  */
-export function visibleChain(chain: Chain): Chain {
-  return chain.filter((e) => e.overrides.headless !== true)
+export function visibleChain(chain: Chain, claim?: (entry: ChainEntry) => boolean): Chain {
+  // `claim` — договор нескольких хостов на одной странице: запись, которую
+  // область этого хоста не разрешает («чужое имя»), рисует тот хост, чьё оно.
+  // Запись остаётся в полной цепочке (закрытие и Назад по-прежнему по ней),
+  // а в виде её нет — ни ошибки «нет такой модалки», ни пустой оболочки.
+  return chain.filter((e) => e.overrides.headless !== true && (claim?.(e) ?? true))
 }
 
 /* ── блокировка ────────────────────────────────────────────────────── */

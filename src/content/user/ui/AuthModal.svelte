@@ -1,22 +1,29 @@
 <script lang="ts">
   /**
-   * Виджет авторизации в модалке (`?modal=user.auth`). Данные для виджета —
-   * loader определения (fetch load-данных роута `/user/auth`); callback —
-   * закрытие именно модалки (решение владельца).
+   * Виджет авторизации в модалке (`?modal=user.auth`). Данные загрузчика
+   * маршрута — через `useLoader()` (контракт `ModalContent`: проп `data` —
+   * это sharedData, а данные записи отдаются хуком; паттерн — `CardModal`).
+   * Скелетон до готовности рисует хост, поэтому на момент рендера данные
+   * уже загружены. Callback — закрытие именно модалки (решение владельца).
    */
-  import { useModals } from '#lib/modals/svelte/index.js'
+  import { useLoader, useModals } from '#lib/modals/svelte/index.js'
   import AuthWidget from './AuthWidget.svelte'
 
-  let { data }: { data: Record<string, unknown> } = $props()
+  type RouteData = {
+    challenge: { nonce: string; expiresAt: number } | null
+    next: string | null
+    step: string
+    registerSeed: string | null
+    limits: { edge: number; maxBytes: number; formats: string[]; holdSeconds: number }
+    user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
+  }
 
   const m = useModals()
+  const ldr = useLoader<RouteData>()
 </script>
 
 <div class="p-5">
-  <AuthWidget
-    data={data as never}
-    form={null}
-    mode="modal"
-    onDone={() => m.modals.close()}
-  />
+  {#if ldr.data}
+    <AuthWidget data={ldr.data} form={null} mode="modal" actionUrl="/user/auth" onDone={() => m.modals.close()} />
+  {/if}
 </div>

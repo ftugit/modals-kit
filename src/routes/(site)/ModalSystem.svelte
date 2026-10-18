@@ -28,9 +28,11 @@
     scope: ModalRegistry
     /** Имена носителей цепочки (`url`, `local`, `memory`); геттер — может меняться. */
     sources: () => readonly string[]
+    /** Чужие имена при нескольких хостах: 'skip' — их рисует хост, чьё имя. */
+    foreignNames?: 'error' | 'skip'
     children: Snippet
   }
-  let { scope, sources, children }: Props = $props()
+  let { scope, sources, foreignNames, children }: Props = $props()
 
   /** Набор источников под выбранные имена. */
   function sourcesFor(names: readonly string[]): Record<string, ChainStorage> {
@@ -80,6 +82,7 @@
   {modals}
   onError={report}
   {scope}
+  {foreignNames}
   closeIcon
   backdropClick="top"
   tailCount={3}

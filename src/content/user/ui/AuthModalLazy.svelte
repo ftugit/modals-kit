@@ -5,9 +5,10 @@
    * а тяжёлое содержимое (виджет, bind+Form, конвейер аватара) приезжает
    * отдельным чанком — layout ветки за него не платит.
    */
-  let { data, ...rest }: { data: Record<string, unknown> } & Record<string, unknown> = $props()
+  // data — данные загрузчика маршрута (тип у/AuthModal); обёртке он не нужен
+  let { data, ...rest }: { data: unknown } & Record<string, unknown> = $props()
 </script>
 
 {#await import('./AuthModal.svelte') then M}
-  <M.default {data} {...rest} />
+  <M.default data={data as never} {...rest} />
 {/await}

@@ -60,11 +60,15 @@
     mode?: 'page' | 'modal'
     /** Callback успеха (JS): закрыть модалку / перейти. Без JS — redirect экшена. */
     onDone?: () => void
+    /** Адрес экшена: на странице — сам адрес; в модалке — роут модалки
+     * (`page.url.pathname` — страница ПОД модалкой, у неё своих экшенов нет). */
+    actionUrl?: string
   }
 
-  let { data, form: actionForm, mode = 'page', onDone }: Props = $props()
+  let { data, form: actionForm, mode = 'page', onDone, actionUrl }: Props = $props()
 
-  const action = page.url.pathname
+  // svelte-ignore state_referenced_locally -- адрес модалки постоянен за её жизнь
+  const action = actionUrl ?? page.url.pathname
   const notHydrated = useJsOnly()
 
   /* ── привязка формы: тот же конфиг форм, что у всего проекта ── */

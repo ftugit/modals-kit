@@ -1,5 +1,6 @@
 // Контексты слоя Svelte: сама система и контейнер вложенных оверлеев.
 import { getContext, setContext } from 'svelte'
+import type { ChainEntry } from '../types'
 import type { Modals } from '../create'
 import type { Loader } from '../loader'
 import type { ModalRegistry } from '../registry'
@@ -149,6 +150,13 @@ export interface ModalsContext {
    * поэтому меню/listbox внутри модалки не считается кликом/фокусом снаружи.
    */
   floating: HostFloatingApi
+  /**
+   * Отбор записей для ВИДА («чужие имена» при нескольких хостах): запись,
+   * которую область хоста не разрешает, рисует тот хост, чьё она. Default —
+   * разрешать всё (прежнее поведение: чужое имя = карточка ошибки). Функция
+   * постоянна для хоста, реактивности не требует.
+   */
+  claimEntry: (entry: ChainEntry) => boolean
 }
 
 /** Публикует живой ModalHost-контекст для потомков текущего компонента. */

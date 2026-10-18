@@ -12,7 +12,7 @@
 
   // Только видимые записи: headless своего DOM не имеет и слоем быть
   // не может — иначе он становится активным и прячет настоящую модалку.
-  const chain = $derived(visibleChain(m.view.chain))
+  const chain = $derived(visibleChain(m.view.chain, m.claimEntry))
 
   const HIDDEN =
     'position:absolute;inset:0;visibility:hidden;pointer-events:none;overflow:hidden'

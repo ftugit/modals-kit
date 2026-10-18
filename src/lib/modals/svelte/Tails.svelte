@@ -31,7 +31,7 @@
   const config = $derived(m.view.hostConfig)
   // Хвосты считаются по видимой цепочке: headless-запись своего хвоста
   // иметь не может, она ничего не рисует (ISSUES.md R-02).
-  const chain = $derived(chainProp ?? visibleChain(m.view.chain))
+  const chain = $derived(chainProp ?? visibleChain(m.view.chain, m.claimEntry))
 
   const indices = $derived(
     direction === 'none' || config.stackAnimation === 'none'

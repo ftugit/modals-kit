@@ -28,12 +28,13 @@
   import type { Modals } from '../create'
   import type { ModalRegistry } from '../registry'
   import { entryLabel } from '../types'
-  import type { HostConfig, MobileAnchor, ResolvedEntry } from '../types'
+  import type { ChainEntry, HostConfig, MobileAnchor, ResolvedEntry } from '../types'
   import {
-    setModalsContext, setOverlayContainer,
+    setModalsContext, setOverlayContainer, tryUseModals,
     type HostFloatingCloseReason, type HostFloatingOptions, type HostFlowOptions,
   } from './context'
   import { createIsNarrow } from './media.svelte'
+  import { DEV } from 'esm-env'
   import { createReactiveStore } from './store.svelte'
   import {
     floatingLayoutClass,
@@ -58,6 +59,14 @@
     /** Область, в которой хост разрешает имена записей. */
     scope: ModalRegistry
     /**
+     * Чужие имена (записи цепочки, которых нет в `scope`) при нескольких
+     * хостах на странице: `'skip'` — их рисует тот хост, чьё имя (эти
+     * записи остаются в полной цепочке — закрытие и Назад не ломаются);
+     * `'error'` (по умолчанию) — хост показывает карточку «нет такой
+     * модалки», как в одиночном режиме.
+     */
+    foreignNames?: 'error' | 'skip'
+    /**
      * Содержимое страницы. Хост оборачивает его, потому что контекст
      * в Svelte течёт ВНИЗ по дереву: триггеры и хуки состояния должны
      * быть потомками, иначе `useModals()` их не найдёт.
@@ -71,7 +80,10 @@
     /** Приёмник системных ошибок модалок (Q1): подключается на жизнь хоста. */
     onError?: (e: import('../types').LibError) => void
   }
-  let { modals, scope, children, skeleton, error, closeIconSlot, onError, ...cfg }: Props = $props()
+  let { modals, scope, children, skeleton, error, closeIconSlot, onError, foreignNames = 'error', ...cfg }: Props = $props()
+
+  /** Хост, в поддереве которого мы смонтированы (иначе — мы верхний). */
+  const parentHost = tryUseModals()
 
   // Q1: приёмник провайдера живёт на жизнь хоста; эффект перечитывает ТЕКУЩЕЕ
   // ядро-объект — смена `modals` переподключает sink, старый снимается.
@@ -225,6 +237,7 @@
     get loader() {
       return liveLoader
     },
+    claimEntry: (entry: ChainEntry) => claim?.(entry) ?? true,
     floating: {
       open: openFloating,
       openFlow: openFlowFloating,
@@ -246,6 +259,16 @@
   const fullChain = $derived(view.chain)
 
   /**
+   * Отбор вида: при `foreignNames: 'skip'` хост не рисует записи, которых
+   * нет в его области — их покажет вложенный хост, чьи они. В DEV чужое
+   * имя в адресе всё равно слышно в консоли: молчащее «ничего не открылось»
+   * сложнее поймать, чем warning.
+   */
+  const claim = $derived(
+    foreignNames === 'skip' ? claimForeign : undefined,
+  )
+
+  /**
    * Видимая часть цепочки: headless-записи исключены.
    *
    * Headless-запись существует ради истории, порядка закрытия и scroll
@@ -254,7 +277,25 @@
    * ни сцену, ни оболочку, ни хвост — иначе поверх списка появлялась бы
    * пустая модалка. Закрытие и Назад работают по полной цепочке.
    */
-  const chain = $derived(visibleChain(fullChain))
+  const chain = $derived(visibleChain(fullChain, claim))
+
+  /**
+   * Отбор записей при вложенных хостах — по ВЛАДЕНИЮ именем. Реестры
+   * наследуют имена родителя (`resolve` поднимается до глобальной), поэтому
+   * «знаю имя» не значит «моё»: унаследованное имя рисует тот хост, в чьей
+   * области оно объявлено ПЕРВЫМ ДЕЛОМ (`own`), — мы его пропускаем. Имя,
+   * которого нет нигде, рисует самый глубокий хост (он владеет страницей):
+   * карточка «нет такой модалки» обязана появиться ровно одна. Верхний хост
+   * с `foreignNames: 'skip'` про неизвестные имена молчит: он не знает,
+   * какие области объявят вложенные ветки ниже.
+   */
+  function claimForeign(entry: ChainEntry): boolean {
+    if (entry.kind !== 'registered') return true
+    if (scope.own(entry.name) !== undefined) return true
+    if (scope.lookup(entry.name) !== undefined) return false
+    if (DEV) console.warn(`[modals] имя «${entry.name}» не объявлено ни в одной области страницы`)
+    return parentHost !== null
+  }
 
   /**
    * Основной диалог обслуживает только видимые модалки. Headless-запись не

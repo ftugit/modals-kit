@@ -9,6 +9,6 @@
   let { children } = $props()
 </script>
 
-<ModalSystem scope={demoScope} sources={() => demoSources.list}>
+<ModalSystem scope={demoScope} sources={() => demoSources.list} foreignNames="skip">
   {@render children()}
 </ModalSystem>

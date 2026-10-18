@@ -1,9 +1,18 @@
 <script lang="ts">
   // Каркас сайта: AppShell (CollapsingHeader, Sidebar, Main scroller) и
-  // базовые слоты шапки и сайдбара. Живёт ВЫШЕ модальных систем веток
-  // `(app)` и `(modals-demo)`: при переходах между страницами шапка и
+  // базовые слоты шапки и сайдбара. При переходах между страницами шапка и
   // сайдбар не пересоздаются (C2). Кнопки шапки страница добавляет сама —
   // `useHeaderSlot` в своём компоненте; уходит страница — уходят и они.
+  //
+  // Модальная система живёт ЗДЕСЬ, над AppShell (решение владельца, ход 253):
+  // кнопки шапки — потомки хоста и открывают модалки (`useModals`). Ветка
+  // `(modals-demo)` вкладывает СВОЙ хост (demoScope) в этот: чужие имена
+  // каждый хост пропускает (`foreignNames: 'skip'`) — страница /modals
+  // показывает и глобальные, и демо-модалки из одной цепочки адреса.
+  import { page } from '$app/state'
+  import './auth-modals'
+  import { globalScope } from '#lib/modals/index.js'
+  import ModalSystem from './ModalSystem.svelte'
   import { AppShell, useHeaderSlot, useSidebarSlot } from '#lib/components/shell/index.js'
   import {
     LogoSlot,
@@ -39,12 +48,22 @@
   useSidebarSlot('top', sidebarTopSnippet)
   useSidebarSlot('middle', sidebarNavSnippet)
   useSidebarSlot('bottom', sidebarBottomSnippet)
+
+  const SOURCES = ['url', 'local'] as const
+
+  // Ветка демо модалок владеет цепочкой своей страницы: там наш хост молчит
+  // о чужих именах (их покажет её хост); на остальных страницах мы одни,
+  // и неизвестное имя — честная карточка ошибки. Решает ПАПКА адреса —
+  // вложенный хост существует только у /modals.
+  const foreignNames = $derived(page.url.pathname.startsWith('/modals') ? ('skip' as const) : ('error' as const))
 </script>
 
-<AppShell prefs={data.shell}>
-  {@render children()}
-  <SiteFooter />
-</AppShell>
+<ModalSystem scope={globalScope} sources={() => SOURCES} {foreignNames}>
+  <AppShell prefs={data.shell}>
+    {@render children()}
+    <SiteFooter />
+  </AppShell>
+</ModalSystem>
 
 {#snippet logoSnippet()}
   <LogoSlot />

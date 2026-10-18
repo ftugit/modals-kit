@@ -28,7 +28,7 @@
 
   // Содержимому отдаём видимую цепочку: headless-записи нет ни на экране,
   // ни в глубине, которую видит пользователь (ISSUES.md R-02).
-  const chain = $derived(visibleChain(m.view.chain))
+  const chain = $derived(visibleChain(m.view.chain, m.claimEntry))
 
   // Показывали ли скелетон: только тогда содержимое стоит «раскрывать».
   let wasPending = $state(false)

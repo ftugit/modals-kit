@@ -11,7 +11,7 @@
    * он ведёт на ту же страницу, где есть выход.
    */
   import { page } from '$app/state'
-  import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import { useModals } from '#lib/modals/svelte/index.js'
   import { useModalLink } from '#lib/components/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { vault } from '../vault.svelte.js'
@@ -23,9 +23,10 @@
 
   let { server = null }: Props = $props()
 
-  const m = tryUseModals()
-  // useModalLink() требует контекст хоста — зовём только когда он есть
-  const asModalLink = m ? useModalLink() : null
+  // Контекст хоста обязателен: хост теперь над AppShell (решение «Б»).
+  // В среде без хоста компонент честно падает — как остальные потребители.
+  const m = useModals()
+  const asModalLink = useModalLink()
   const notHydrated = useJsOnly()
 
   const authorized = $derived(vault.principal !== null || server !== null)
@@ -38,8 +39,10 @@
 </script>
 
 {#if authorized}
+  <!-- иконка → меню-модалка; без JS — страница входа с выходом -->
+  {@const link = asModalLink('user.menu', {}, { href: authHref })}
   <a
-    href={authHref}
+    {...link}
     aria-label={nickname ? `Аккаунт: ${nickname}` : 'Аккаунт'}
     title={notHydrated() ? JS_ONLY_REASON : nickname ?? 'Аккаунт'}
     class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border text-sm font-semibold hover:bg-accent"
@@ -50,14 +53,11 @@
       {initial}
     {/if}
   </a>
-{:else if asModalLink}
-  <!-- внутри модального хоста — модальная ссылка (адресуемая модалка) -->
-  {@const link = asModalLink('user.auth', {}, { href: authHref })}
-  <button {...link} class="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">Авторизация</button>
 {:else}
-  <!-- шапка: host ниже по дереву — фолбэк-ссылка на страницу входа -->
+  <!-- «Авторизация» → модалка входа; без JS — страница входа (href-фолбэк) -->
+  {@const link = asModalLink('user.auth', {}, { href: authHref })}
   <a
-    href={authHref}
+    {...link}
     data-testid="header-auth"
     class="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
   >Авторизация</a>
