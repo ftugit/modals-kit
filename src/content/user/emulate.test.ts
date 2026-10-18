@@ -10,9 +10,10 @@ import { memoryStore } from '#lib/cache/index.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
   activeBlocks, cancelDelete, fullBlock, issueChallenge, listSessions, login, logout,
-  logoutAll, profile, renew, requestDelete, revokeSession, statusOf, subnetHash,
-  sweepDeletions, updateProfile, type UserResult,
+  logoutAll, renew, requestDelete, revokeSession, statusOf, subnetHash,
+  sweepDeletions, type UserResult,
 } from './auth.js'
+import { profile, updateProfile } from './profile.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow } from './ports.js'
 import type { Blocked, ProfileView, SessionRecord } from './types.js'

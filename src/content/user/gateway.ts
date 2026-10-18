@@ -25,17 +25,16 @@ import {
   login as coreLogin,
   logout as coreLogout,
   logoutAll as coreLogoutAll,
-  profile as coreProfile,
   renew as coreRenew,
   requestDelete as coreRequestDelete,
   revokeSession as coreRevokeSession,
   issueChallenge as coreIssueChallenge,
   cancelDelete as coreCancelDelete,
-  updateProfile as coreUpdateProfile,
   type SessionView,
   type UserResult,
 } from './index.js'
 import { sign, verify } from './keys.js'
+import { profile as coreProfile, updateProfile as coreUpdateProfile } from './profile.js'
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow } from './ports.js'
 import type { DataContext } from '#lib/db/index.js'
