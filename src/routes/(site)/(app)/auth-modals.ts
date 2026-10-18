@@ -1,15 +1,17 @@
-// Регистрация модалок пользователя — ОТДЕЛЬНЫМ модулем и ЛЕНИВО: layout ветки
-// импортирует его динамически (только в браузере), иначе виджет авторизации и
-// его форма ехали бы в чанк раскладки и платили бы все страницы ветки.
-// Реестр глобальный; до регистрации ссылка на модалку честно заблокирована
-// (`data-pending` у useModalLink) — окно в момент гидратации.
+// Регистрация модалок пользователя в глобальной области. Импорт модуля —
+// сайд-эффект: ES-модуль исполняется один раз на среду (SSR отдельно, браузер
+// отдельно), поэтому повторного объявления реестр не увидит. Компоненты —
+// ленивые обёртки (`*ModalLazy`): deep-link `?modal=user.auth` разрешается
+// сразу (определение статическое), а тяжёлое содержимое (виджет, bind+Form,
+// конвейер аватара) приезжает отдельным чанком — раскладка ветки за него
+// не платит.
 import { registerModal } from '#lib/modals/index.js'
-import AuthModal from '#content/user/ui/AuthModal.svelte'
-import MenuModal from '#content/user/ui/MenuModal.svelte'
+import AuthModalLazy from '#content/user/ui/AuthModalLazy.svelte'
+import MenuModalLazy from '#content/user/ui/MenuModalLazy.svelte'
 
 registerModal({
   name: 'user.auth',
-  component: AuthModal,
+  component: AuthModalLazy,
   route: '/user/auth',
   size: { width: 420, height: 480 },
   loader: async () => {
@@ -20,6 +22,6 @@ registerModal({
 })
 registerModal({
   name: 'user.menu',
-  component: MenuModal,
+  component: MenuModalLazy,
   size: { width: 280, height: 200 },
 })

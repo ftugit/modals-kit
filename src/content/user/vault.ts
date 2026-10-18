@@ -31,6 +31,8 @@ export function overdue(expiresAtMs: number, nowMs: number): boolean {
  * истекает в T» — вкладка сверяет RAM с зеркалом и перечитывает куку, если
  * разошлись (кто-то продлил, сервер перезаписал куку).
  */
+import { parse } from 'devalue'
+
 export type AccessMirror = {
   /** Рам-копия временного токена (значение из ответа api). */
   access: string
@@ -48,10 +50,34 @@ export type RenewData = AccessMirror & {
 }
 
 /** Достать данные продления из `ActionResult` экшена; нет — `undefined`. */
+
+/**
+ * Ответ form-action SvelteKit: `{type:'success'|'failure', data: devalue}`.
+ * Возвращает `{result}` из него; не-упакованный ответ (свой API-эндпоинт)
+ * проходит насквозь.
+ */
+export function unwrapKitAction(body: unknown): { result?: { ok?: boolean; data?: unknown } } | undefined {
+  if (!body || typeof body !== 'object') return undefined
+  const shaped = body as { type?: string; data?: unknown }
+  if (shaped.type !== 'success' && shaped.type !== 'failure') {
+    // не упаковано (свой API-эндпоинт): { data: { result } }
+    const direct = (shaped as { data?: { result?: { ok?: boolean; data?: unknown } } }).data
+    return direct && typeof direct === 'object' ? direct : undefined
+  }
+  try {
+    // Kit кладёт в data уже сериализованную devalue-строку
+    return parse(shaped.data as string) as { result?: { ok?: boolean; data?: unknown } }
+  } catch {
+    return undefined
+  }
+}
+
 export function parseRenewResponse(body: unknown): RenewData | undefined {
-  const result = (body as { data?: { result?: { ok?: boolean; data?: unknown } } })?.data?.result
-  if (!result || result.ok !== true) return undefined
-  const data = result.data as Partial<RenewData> | undefined
+  // ответ экшена Kit упаковывает по-своему ({type:'success', data: devalue-массив});
+  // распаковка — общая с виджетом (unwrapKitAction)
+  const unwrapped = unwrapKitAction(body)?.result
+  if (!unwrapped || unwrapped.ok !== true) return undefined
+  const data = unwrapped.data as Partial<RenewData> | undefined
   if (
     typeof data?.access !== 'string' ||
     typeof data?.expiresAt !== 'number' ||

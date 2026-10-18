@@ -1,5 +1,6 @@
 /** Чистая логика автопродления: лид, джиттер, парсинг ответа. */
 import { describe, expect, test } from 'vitest'
+import { stringify } from 'devalue'
 import { fireAt, leadFor, overdue, parseRenewResponse } from './vault.js'
 
 describe('автопродление: сроки', () => {
@@ -32,14 +33,15 @@ describe('парсинг ответа продления', () => {
     prof: { nickname: 'Вася', avatarUrl: null },
   }
 
-  test('успешный ActionResult', () => {
-    expect(parseRenewResponse({ type: 'success', data: { result: { ok: true, outcome: 'committed', data } } }))
-      .toEqual(data)
+  test('успешный ActionResult (devalue-упаковка, как шлёт Kit)', () => {
+    const packed = stringify({ result: { ok: true, outcome: 'committed', data } })
+    expect(parseRenewResponse({ type: 'success', data: packed })).toEqual(data)
   })
 
   test('отказ экшена, мусор, пусто — undefined', () => {
-    expect(parseRenewResponse({ type: 'failure', data: { result: { ok: false, outcome: 'unknown' } } })).toBeUndefined()
-    expect(parseRenewResponse({ type: 'success', data: { result: { ok: true, data: { access: 1 } } } })).toBeUndefined()
+    expect(parseRenewResponse({ type: 'failure', data: stringify({ result: { ok: false, outcome: 'unknown' } }) })).toBeUndefined()
+    expect(parseRenewResponse({ type: 'success', data: stringify({ result: { ok: true, data: { access: 1 } } }) })).toBeUndefined()
+    expect(parseRenewResponse({ type: 'success', data: 'не devalue' })).toBeUndefined()
     expect(parseRenewResponse(null)).toBeUndefined()
     expect(parseRenewResponse(undefined)).toBeUndefined()
   })

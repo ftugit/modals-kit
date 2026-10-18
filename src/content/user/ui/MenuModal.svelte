@@ -8,6 +8,7 @@
   import { useModals } from '#lib/modals/svelte/index.js'
   import { Button } from '#lib/components/ui/index.js'
   import { vault } from '../vault.svelte.js'
+  import { unwrapKitAction } from '../vault.js'
 
   let { data }: { data?: { next?: string | null } } = $props()
 
@@ -22,7 +23,9 @@
       const body = new FormData()
       for (const [k, v] of Object.entries(authEnvelope(`user-auth:${crypto.randomUUID()}`))) body.append(k, v)
       body.append('intent', 'logout')
-      await fetch('/user/auth', { method: 'POST', body, headers: { accept: 'application/json' } })
+      const response = await fetch('/user/auth', { method: 'POST', body, headers: { accept: 'application/json' } })
+      const actionBody = (await response.json()) as unknown
+      if (!unwrapKitAction(actionBody)?.result?.ok) throw new Error('logout failed')
       vault.clear()
       m.modals.close()
       void goto(data?.next ?? '/')

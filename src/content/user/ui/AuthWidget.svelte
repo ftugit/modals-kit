@@ -25,6 +25,7 @@
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault } from '../vault.svelte.js'
+  import { unwrapKitAction } from '../vault.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { authForm } from '../forms.js'
 
@@ -89,9 +90,10 @@
       })
       const ct = res.headers.get('content-type') ?? ''
       const body = ct.includes('application/json') ? await res.json().catch(() => null) : null
-      const result = (body as { data?: { result?: unknown } } | null)?.data?.result
-      if (result && typeof result === 'object' && (result as { v?: unknown }).v === 1) {
-        return { kind: 'result', result: result as Result }
+      // Kit упаковывает ответ экшена в devalue-форму; распаковка — общая
+      const result = unwrapKitAction(body)?.result as Result | undefined
+      if (result && typeof result === 'object' && result.v === 1) {
+        return { kind: 'result', result }
       }
       return { kind: 'network', code: 'network.failed', detail: `HTTP ${res.status}` }
     } catch (e) {
@@ -147,8 +149,8 @@
       for (const pair of bound.hidden()) fd.append(pair.name, pair.value)
       fd.append('intent', 'challenge')
       const res = await fetch(action, { method: 'POST', body: fd, headers: { accept: 'application/json' } })
-      const body = (await res.json()) as { data?: { result?: { data?: { nonce?: string } } } }
-      const fresh = body.data?.result?.data?.nonce
+      const body = (await res.json()) as unknown
+      const fresh = (unwrapKitAction(body)?.result?.data as { nonce?: string } | undefined)?.nonce
       if (fresh) nonce = fresh
     } catch {
       /* останется старый — сервер ответит auth.nonce-unknown */

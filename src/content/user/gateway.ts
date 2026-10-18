@@ -262,7 +262,9 @@ export function auth(event: AuthEvent): {
   const ports = authPorts({
     get: (name) => event.cookies.get(name),
     set: (name, value, ttlSeconds) => event.cookies.set(name, value, { ...COOKIE_BASE, maxAge: ttlSeconds }),
-    delete: (name) => event.cookies.delete(name, { path: '/' }),
+    // secure:false явно: без него Kit возьмёт дефолт (Secure вне localhost),
+    // и браузер по http не вернёт куку
+    delete: (name) => event.cookies.delete(name, { ...COOKIE_BASE }),
   })
   const access = () => event.cookies.get(ACCESS_COOKIE)
   const setTokens = (value: LoginOutcome, deviceTtlSec: number, accessTtlSec: number) => {
@@ -270,8 +272,8 @@ export function auth(event: AuthEvent): {
     if (value.renewal) event.cookies.set(RENEWAL_COOKIE, value.renewal, { ...COOKIE_BASE, maxAge: deviceTtlSec })
   }
   const clearCookies = () => {
-    event.cookies.delete(ACCESS_COOKIE, { path: '/' })
-    event.cookies.delete(RENEWAL_COOKIE, { path: '/' })
+    event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
+    event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
   }
   return {
     issueChallenge: () => coreIssueChallenge(ports),

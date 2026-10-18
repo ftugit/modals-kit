@@ -1,14 +1,11 @@
 <script lang="ts">
   // Ветка сайта с глобальной модальной системой: globalScope и базовая пара
   // носителей url+local (deep-link'и работают на всех страницах сайта).
+  // Модалки пользователя регистрирует `./auth-modals` — статический импорт:
+  // deep-link должен разрешаться уже при создании хоста.
+  import './auth-modals'
   import { globalScope } from '#lib/modals/index.js'
   import ModalSystem from '../ModalSystem.svelte'
-
-  // Модалки пользователя (user.auth, user.menu) — ленивой регистрацией
-  // (`./auth-modals`): виджет авторизации не едет в чанк раскладки.
-  $effect(() => {
-    void import('./auth-modals')
-  })
 
   let { children } = $props()
 
