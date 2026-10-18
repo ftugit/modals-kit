@@ -161,8 +161,11 @@ const LIMITS = {
   // (unwrap общий, локальная копия в vault удалена), localPath в lib/address, тексты
   // доменных кодов в форме входа. Весь JS 288.0 → 288.3, immutable 301.7 → 302.1,
   // маршруты +0.2…+2.7 (/modals 180.0 → 182.2 — тянет transport). Лимиты = факт + 0.5.
-  allImmutableGzip: 303.1 * KiB,
-  allJsGzip: 289.3 * KiB,
+  // Ход 258, ремонт авторизации: HoldButton (блокировка до заполнения, hover-заливка,
+  // мобильные запреты выделения, submitter себе) + проводка полей seed/nickname в
+  // виджете + иконки копирования. Весь JS 289.3 → 290.0, immutable 303.1 → 303.8.
+  allImmutableGzip: 304.3 * KiB,
+  allJsGzip: 290.5 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
