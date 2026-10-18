@@ -21,6 +21,7 @@
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button, Input } from '#lib/components/ui/index.js'
+  import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { generateKeyPair, sign } from '../keys.js'
@@ -201,10 +202,10 @@
     try {
       const outcome = await prepareAvatar(picked, data.limits)
       if (outcome.ok) avatarUrl = outcome.dataUrl
-      else avatarError = TEXTS[outcome.code]
+      else avatarError = AVATAR_TEXTS[outcome.code] ?? outcome.code
       if (!outcome.ok) input.value = ''
     } catch {
-      avatarError = TEXTS['profile.avatar-format']
+      avatarError = AVATAR_TEXTS['profile.avatar-format']
       input.value = ''
     } finally {
       avatarBusy = false
@@ -214,18 +215,9 @@
   const when = (ms: number | null | undefined): string =>
     ms ? new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'бессрочно'
 
-  const TEXTS: Record<string, string> = {
-    'auth.nonce-unknown': 'Время на вход истекло — попробуйте ещё раз',
-    'auth.signature': 'Seed или подпись не сошлись — проверьте ввод',
-    'auth.identity-unknown': 'Аккаунта с таким seed больше нет',
-    'auth.token': 'Сессия повреждена — войдите заново',
-    'auth.expired': 'Время сессии вышло — войдите заново',
-    'auth.revoked': 'Сеанс завершён на этом устройстве',
-    'auth.session-unknown': 'Сессия не найдена — войдите заново',
-    'auth.blocked': 'Аккаунт заблокирован',
-    'auth.delete-pending': 'Заявка на удаление ещё активна',
-    'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
-    'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
+  // Только коды КЛИЕНТСКОГО конвейера аватара (они не форма-ошибки); тексты
+  // доменных кодов живёт в `messages` формы — сервер наполняет message сам.
+  const AVATAR_TEXTS: Record<string, string> = {
     'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
     'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
   }
@@ -235,6 +227,8 @@
 </script>
 
 <Form id="user-auth" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
+  <Common errors={bound.common} title="Проверьте форму" />
+
   {#if data.enabled === false}
     <!-- конвенция репо: без env функция выключена с объяснением (как курсор lib/db) -->
     <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">

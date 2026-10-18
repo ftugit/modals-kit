@@ -27,9 +27,26 @@ export function authEnvelope(instance: string): Record<string, string> {
 export const authForm = defineForm({
   id: AUTH_FORM_ID,
   revision: AUTH_FORM_REV,
+  // Тексты доменных кодов — ЗДЕСЬ (сервер наполнит message при сборе отказа):
+  // карта в виджете — велосипед поверх движка (ход 251, аудит).
+  messages: {
+    'auth.disabled': 'Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать',
+    'auth.nonce-unknown': 'Время на вход истекло — попробуйте ещё раз',
+    'auth.signature': 'Seed или подпись не сошлись — проверьте ввод',
+    'auth.identity-unknown': 'Аккаунта с таким seed больше нет',
+    'auth.token': 'Сессия повреждена — войдите заново',
+    'auth.expired': 'Время сессии вышло — войдите заново',
+    'auth.revoked': 'Сеанс завершён на этом устройстве',
+    'auth.session-unknown': 'Сессия не найдена — войдите заново',
+    'auth.blocked': 'Аккаунт заблокирован',
+    'auth.delete-pending': 'Заявка на удаление ещё активна',
+    'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
+    'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
+    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
+    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
+  },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },
-    { id: 'register', label: 'Создать аккаунт', validate: 'full' },
     { id: 'restore', label: 'Восстановить аккаунт', validate: 'full' },
     { id: 'profile', label: 'Сохранить профиль', validate: 'full', relax: ['required'] },
     { id: 'skip-profile', label: 'Пропустить профиль', validate: 'partial', relax: ['required'] },
