@@ -1,7 +1,7 @@
 export { default as Button, buttonVariants, type ButtonVariants } from './button/Button.svelte'
 export { default as WarningIcon } from './warning-icon/WarningIcon.svelte'
-export { default as CopyIcon } from './copy-icon/CopyIcon.svelte'
 export { default as CopyInput } from './copy-input/CopyInput.svelte'
+export { default as CopyIcon } from './copy-input/CopyIcon.svelte'
 export { default as Badge, badgeVariants, type BadgeVariants } from './badge/Badge.svelte'
 export { default as Alert, alertVariants, type AlertProps } from './alert/Alert.svelte'
 export { default as Card, cardVariants, type CardVariants } from './card/Card.svelte'

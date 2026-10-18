@@ -3,7 +3,8 @@
    * Поле с кнопкой копирования своего содержимого (примитив UI): кнопка с
    * иконкой внутри поля кладёт значение в буфер обмена (`navigator.clipboard`).
    * Образец встроенной кнопки — `PasswordInput` (тот же `InputShell` +
-   * `InputAffix`); сама иконка — `CopyIcon`. Без JS кнопки нет (буферу нужен
+   * `InputAffix`); иконка рядом (`CopyIcon.svelte`), как `PasswordStrength`
+   * у `password/`. Без JS кнопки нет (буферу нужен
    * скрипт) — остаётся обычное выделяемое поле; поэтому `pr-10` и аффикс
    * появляются только после оживления.
    *
@@ -15,7 +16,7 @@
   import { cn } from '../../../utils'
   import InputAffix from '../input/InputAffix.svelte'
   import InputShell from '../input/InputShell.svelte'
-  import CopyIcon from '../copy-icon/CopyIcon.svelte'
+  import CopyIcon from './CopyIcon.svelte'
 
   interface Props extends Omit<HTMLInputAttributes, 'size'> {
     copyLabel?: string
