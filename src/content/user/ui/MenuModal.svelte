@@ -8,7 +8,6 @@
   import { useModals } from '#lib/modals/svelte/index.js'
   import { Button } from '#lib/components/ui/index.js'
   import { vault } from '../vault.svelte.js'
-  import { unwrapKitAction } from '../vault.js'
 
   let { data }: { data?: { next?: string | null } } = $props()
 
@@ -18,14 +17,16 @@
   async function logout(): Promise<void> {
     busy = true
     try {
-      // выход — тот же экшен формы, конверт обязателен (слои lib/form)
-      const { authEnvelope } = await import('../forms.js')
+      // выход — тот же экшен формы: конверт обязателен (слои lib/form),
+      // транспорт и распаковка — общие (components/form/transport)
+      const { authEnvelope, authEnvelopeFields } = await import('../forms.js')
+      const { kitActionTransport } = await import('#lib/components/form/transport.js')
+      const envelope = authEnvelope(`user-auth:${crypto.randomUUID()}`)
       const body = new FormData()
-      for (const [k, v] of Object.entries(authEnvelope(`user-auth:${crypto.randomUUID()}`))) body.append(k, v)
+      for (const [k, v] of Object.entries(authEnvelopeFields(envelope))) body.append(k, v)
       body.append('intent', 'logout')
-      const response = await fetch('/user/auth', { method: 'POST', body, headers: { accept: 'application/json' } })
-      const actionBody = (await response.json()) as unknown
-      if (!unwrapKitAction(actionBody)?.result?.ok) throw new Error('logout failed')
+      const out = await kitActionTransport('/user/auth')({ envelope, data: body, accept: ['application/json'], signal: new AbortController().signal })
+      if (out.kind !== 'result' || !out.result.ok) throw new Error('logout failed')
       vault.clear()
       m.modals.close()
       void goto(data?.next ?? '/')

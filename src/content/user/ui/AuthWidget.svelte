@@ -18,6 +18,7 @@
   import { page } from '$app/state'
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button, Input } from '#lib/components/ui/index.js'
@@ -26,9 +27,8 @@
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault } from '../vault.svelte.js'
-  import { unwrapKitAction } from '../vault.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
-  import { authForm } from '../forms.js'
+  import { authForm, AUTH_FORM_REV } from '../forms.js'
 
   type UserPayload = {
     access: string
@@ -77,36 +77,19 @@
   // svelte-ignore state_referenced_locally -- challenge на момент отрисовки
   let nonce = $state(data.challenge?.nonce ?? '')
 
-  /** Транспорт: подписать живой nonce секретом из поля, потом fetch на экшен. */
-  const transport: Transport = async (req) => {
-    try {
-      const typed = String(req.data.get('seed') ?? '')
+  /** Транспорт — общий для нативных экшенов; подпись живого nonce — ДО сети. */
+  const transport: Transport = kitActionTransport(action, {
+    prepare: async (fd) => {
+      const typed = String(fd.get('seed') ?? '')
       if (typed.length >= 43 && typed.length <= 44 && nonce !== '') {
         try {
-          req.data.set('signature', await sign(nonce, typed))
+          fd.set('signature', await sign(nonce, typed))
         } catch {
           /* в поле публичный seed — сервер ответит auth.signature */
         }
       }
-      const res = await fetch(action, {
-        method: 'POST',
-        body: req.data,
-        headers: { accept: 'application/json' },
-        signal: req.signal,
-      })
-      const ct = res.headers.get('content-type') ?? ''
-      const body = ct.includes('application/json') ? await res.json().catch(() => null) : null
-      // Kit упаковывает ответ экшена в devalue-форму; распаковка — общая
-      const result = unwrapKitAction(body)?.result as Result | undefined
-      if (result && typeof result === 'object' && result.v === 1) {
-        return { kind: 'result', result }
-      }
-      return { kind: 'network', code: 'network.failed', detail: `HTTP ${res.status}` }
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError') return { kind: 'abort', reason: 'aborted' }
-      return { kind: 'network', code: 'network.failed', detail: String(e) }
-    }
-  }
+    },
+  })
 
   const bound = bind(forms, authForm, {
     action,
@@ -121,7 +104,7 @@
   let blocked = $state<StepData['blocked']>(initial.blocked)
   let restrictions = $state<StepData['restrictions']>(initial.restrictions)
 
-  function stepOf(result?: Result): StepData | undefined {
+  function stepOf(result?: { data?: unknown }): StepData | undefined {
     const data = result?.data as StepData | undefined
     return data && typeof data === 'object' && 'step' in data ? data : undefined
   }
@@ -152,11 +135,22 @@
   async function refreshChallenge(): Promise<void> {
     try {
       const fd = new FormData()
-      for (const pair of bound.hidden()) fd.append(pair.name, pair.value)
+      const pairs: Record<string, string> = {}
+      for (const pair of bound.hidden()) {
+        fd.append(pair.name, pair.value)
+        pairs[pair.name] = pair.value
+      }
       fd.append('intent', 'challenge')
-      const res = await fetch(action, { method: 'POST', body: fd, headers: { accept: 'application/json' } })
-      const body = (await res.json()) as unknown
-      const fresh = (unwrapKitAction(body)?.result?.data as { nonce?: string } | undefined)?.nonce
+      // envelope — структура для синтетического Result при сбое сети
+      const envelope = {
+        formId: 'user-auth',
+        revision: AUTH_FORM_REV,
+        instance: `user-auth:${crypto.randomUUID()}`,
+        submissionId: crypto.randomUUID(),
+        intent: 'challenge',
+      } as const
+      const out = await transport({ envelope, data: fd, accept: ['application/json'], signal: new AbortController().signal })
+      const fresh = (out.kind === 'result' ? (out.result.data as { nonce?: string } | undefined)?.nonce : undefined)
       if (fresh) nonce = fresh
     } catch {
       /* останется старый — сервер ответит auth.nonce-unknown */

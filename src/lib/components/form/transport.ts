@@ -10,6 +10,7 @@
 // здесь честнее, чем молча проглотить сбой.
 import type { Result, Transport } from '#lib/form/index.js'
 import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
+import { parse } from 'devalue'
 
 /** Что сказать человеку по коду, пока не подоспел текст из тела. */
 const REASON: Record<number, string> = {
@@ -74,6 +75,74 @@ export function jsonTransport(path: string): Transport {
           id: `*:transport.${res.status}:0`, code: `transport.${res.status}`,
           message, origin: 'external',
         }],
+        from: 'fetch',
+      },
+    }
+  }
+}
+
+/* ── транспорт NATИВНЫХ form-экшенов SvelteKit ─────────────────────────── */
+
+/**
+ * Ответ form-экшена SvelteKit (`accept: application/json`): HTTP-обёртка
+ * `{ type: 'success'|'failure', data }`, где `data` — devalue-сериализация
+ * `{ result }`. Распаковка — тем же devalue, что уже в бандле Kit; не-обёртка
+ * (свой API-эндпоинт) проходит насквозь.
+ */
+export function unwrapKitAction(body: unknown): { result?: Result } | undefined {
+  if (!body || typeof body !== 'object') return undefined
+  const shaped = body as { type?: string; data?: unknown }
+  if (shaped.type !== 'success' && shaped.type !== 'failure') {
+    const direct = (shaped as { data?: { result?: Result } }).data
+    return direct && typeof direct === 'object' ? direct : undefined
+  }
+  try {
+    return parse(shaped.data as string) as { result?: Result }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Транспорт отправки на СТРАНИЧНЫЙ экшен SvelteKit (`/path` без `?/имени` —
+ * форма различает намерения по полю intent). Отличия от `jsonTransport`:
+ * ответ — Kit-обёртка (распаковка `unwrapKitAction`); `prepare` — место
+ * ДО сетевого вызова: так модуль пользователя подписывает nonce секретом из
+ * поля, не заводя собственный fetch.
+ */
+export function kitActionTransport(
+  path: string,
+  options: { prepare?: (data: FormData) => void | Promise<void> } = {},
+): Transport {
+  return async (req) => {
+    try {
+      await options.prepare?.(req.data)
+    } catch {
+      /* prepare отвечает за понятный отказ сам: пустое поле подписи сервер
+         разберёт как обычную ошибку входа */
+    }
+    let res: Response
+    try {
+      res = await fetch(path, {
+        method: 'POST',
+        body: req.data,
+        headers: { accept: 'application/json' },
+        signal: req.signal,
+      })
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') return { kind: 'abort', reason: 'aborted' }
+      return { kind: 'network', code: 'network.failed', detail: String(e) }
+    }
+    const ct = res.headers.get('content-type') ?? ''
+    const body = ct.includes('application/json') ? await res.json().catch(() => null) : null
+    const result = unwrapKitAction(body)?.result
+    if (result) return { kind: 'result', result }
+    return {
+      kind: 'result',
+      result: {
+        v: 1, ...(req.envelope), values: {}, ok: false, status: res.status, outcome: 'unknown',
+        errors: [{ id: `*:transport.${res.status}:0`, code: `transport.${res.status}`,
+          message: REASON[res.status] ?? `сервер ответил HTTP ${res.status}`, origin: 'external' }],
         from: 'fetch',
       },
     }

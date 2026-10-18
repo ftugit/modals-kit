@@ -102,19 +102,31 @@ class Vault {
   }
 
   private async postRenew(): Promise<void> {
-    // форма пользователя принимает тело только с конвертом (слои lib/form)
-    const { authEnvelope } = await import('./forms.js')
+    // форма пользователя принимает тело только с конвертом (слои lib/form);
+    // транспорт и распаковка Kit-ответа — общие (components/form/transport)
+    const { authEnvelope, authEnvelopeFields } = await import('./forms.js')
+    const { kitActionTransport } = await import('#lib/components/form/transport.js')
+    const envelope = authEnvelope(`user-auth:${crypto.randomUUID()}`)
     const body = new FormData()
-    for (const [k, v] of Object.entries(authEnvelope(`user-auth:${crypto.randomUUID()}`))) body.append(k, v)
+    for (const [k, v] of Object.entries(authEnvelopeFields(envelope))) body.append(k, v)
     body.append('intent', 'renew')
-    const response = await fetch(this.renewUrl, {
-      method: 'POST',
-      body,
-      headers: { accept: 'application/json' },
+    const out = await kitActionTransport(this.renewUrl)({ envelope, data: body, accept: ['application/json'], signal: new AbortController().signal })
+    if (out.kind !== 'result' || !out.result.ok) return
+    const data = out.result.data as Partial<RenewData> | undefined
+    if (
+      typeof data?.access !== 'string' ||
+      typeof data?.expiresAt !== 'number' ||
+      typeof data?.ttlMs !== 'number' ||
+      typeof data?.sub !== 'string'
+    )
+      return
+    this.hydrate({
+      access: data.access,
+      expiresAt: data.expiresAt,
+      ttlMs: data.ttlMs,
+      sub: data.sub,
+      prof: data.prof ?? { nickname: null, avatarUrl: null },
     })
-    if (!response.ok) return
-    const parsed = parseRenewResponse(await response.json())
-    if (parsed) this.hydrate(parsed)
   }
 }
 

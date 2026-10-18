@@ -1,7 +1,7 @@
 // Описание ЕДИНСТВЕННОЙ формы пользователя: шаги (вход, создание, восстановление,
 // профиль, ограничения) — одна форма, различаются интентом нажатой кнопки.
 // Изоморфное: импортируют и виджет, и серверное действие. Ноль UI, ноль HTTP.
-import { buildEnvelope, defineForm, field, v } from '#lib/form/index.js'
+import { buildEnvelope, defineForm, field, v, type Envelope } from '#lib/form/index.js'
 
 export const AUTH_FORM_ID = 'user-auth'
 export const AUTH_FORM_REV = 1
@@ -10,13 +10,14 @@ export const AUTH_FORM_REV = 1
  * Конверт для программных отправок мимо разметки (vault: продление; меню:
  * выход) — те же имена, что рисует `bind.hidden()` в форме.
  */
-export function authEnvelope(instance: string): Record<string, string> {
-  return buildEnvelope({
-    formId: AUTH_FORM_ID,
-    revision: AUTH_FORM_REV,
-    instance,
-    submissionId: crypto.randomUUID(),
-  })
+export function authEnvelope(instance: string): Envelope {
+  return { formId: AUTH_FORM_ID, revision: AUTH_FORM_REV, instance, submissionId: crypto.randomUUID(), intent: 'submit' }
+}
+
+/** Поля конверта для FormData программной отправки (те же имена, что в разметке). */
+export function authEnvelopeFields(envelope: Envelope): Record<string, string> {
+  const { intent: _intent, ...rest } = envelope
+  return buildEnvelope(rest)
 }
 
 /**
