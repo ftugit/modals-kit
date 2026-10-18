@@ -24,9 +24,11 @@ export const auth = defineResource({
   table: 'public.user_auth',
   primaryKey: 'id',
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     seed: field(SEED, {
-      read: () => true, create: () => true, update: [], required: true, nullable: true,
+      read: () => true, create: () => true,
+      // стирает только исполнитель удаления (сервер); юзерских update нет
+      update: ['server', 'admin'], required: true, nullable: true,
       orderable: true, filters: ['eq'],
       db: { unique: true }, // один аккаунт на связку; NULL-ов может быть много
     }),
@@ -55,7 +57,11 @@ export const auth = defineResource({
   // `deleted_at` — заявка на удаление; по истечении срока (настройка сервера)
   // исполнитель стирает seed/security. Метка НЕ закрывает вход: он ведёт на
   // шаг восстановления (решение владельца, как в ВК).
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
+  timestamps: {
+    createdAt: 'created_at', updatedAt: 'updated_at',
+    // заявку на удаление видят и снимают сервер/админ (шаг восстановления)
+    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin'] },
+  },
   policy: {
     // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
     // что с блокировкой и удалением.
@@ -84,7 +90,7 @@ export const profile = defineResource({
   table: 'public.user_profile',
   primaryKey: 'id',
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     // Владелец профиля — строка auth. Одна строка на аккаунт; конечная смерть
     // аккаунта уносит профиль (цепочка удаления lib/db).
     auth_id: field(s.uuid(), {
@@ -99,6 +105,8 @@ export const profile = defineResource({
     }),
     avatar_url: field(AVATAR_URL, {
       read: () => true, create: () => true, update: () => true, nullable: true,
+      // валидатор свой (`s.custom`) — тип колонки слой сам не выведет
+      db: { type: 'text' },
     }),
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -122,7 +130,7 @@ export const session = defineResource({
   table: 'public.user_session',
   primaryKey: 'id',
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, db: { default: 'gen_random_uuid()' } }),
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     auth_id: field(s.uuid(), {
       read: () => true, create: () => true, required: true,
       immutable: true, filters: ['eq'],
@@ -135,13 +143,14 @@ export const session = defineResource({
       immutable: true, filters: ['eq'],
       db: { unique: true },
     }),
-    device_name: f.text({ read: () => true, nullable: true }),
+    // пишет сервер (адаптер api), юзерских update через ресурс нет
+    device_name: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
     // Текущая подсеть: ХЭШ с солью аккаунта, полный IP и маска не хранятся.
-    subnet_hash: f.text({ read: () => true, nullable: true }),
-    country: f.text({ read: () => true, nullable: true }),
+    subnet_hash: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
+    country: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
     // История прежних подсетей/стран: [{hash, country, at}] — пишет api при
     // пересоздании сессии (режим 'update'), а не «только текущее».
-    subnet_history: f.json({ read: () => true, nullable: true, db: { default: "'[]'::jsonb" } }),
+    subnet_history: f.json({ read: () => true, nullable: true, create: () => true, update: () => true, db: { default: "'[]'::jsonb" } }),
         // Версия продления: кукa продления несёт версию строки; совпала — ротация,
         // меньше — «усыновление» (кто-то продлил раньше). Отзыв — по-прежнему
         // софт-удаление; tokenVersion аккаунта нет.
@@ -149,12 +158,15 @@ export const session = defineResource({
           read: () => true, create: () => true, update: () => true,
           db: { default: '0' },
         }),
-    last_seen_at: f.timestamp({ read: () => true, nullable: true }),
+    last_seen_at: f.timestamp({ read: () => true, nullable: true, create: () => true, update: () => true }),
     // Срок жизни сессии — из настроек (config.deviceTtlSec); ставит сервер.
     expires_at: f.timestamp({ read: () => true, create: () => true, required: true }),
   },
   // `deleted_at` = отзыв сессии (выход, отзыв устройства, «выйти со всех»).
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
+  timestamps: {
+    createdAt: 'created_at', updatedAt: 'updated_at',
+    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin'] },
+  },
   policy: {
     // Сессиями юзер управляет только через api (сервер): правит и гасит сервер.
     select: policy.ownerOrRoles('auth_id', ['admin']),

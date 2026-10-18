@@ -37,14 +37,17 @@ import {
 // и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
-export { posts }
+import { auth, profile, session } from '#content/user/schema.js'
+
+export { posts, auth, profile, session }
 
 /**
  * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил полей модели, индекс
  * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
  */
 const schemaSpec = {
-  resources: [posts],
+  // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`
+  resources: [posts, auth, session, profile],
   sql: [
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
     // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,

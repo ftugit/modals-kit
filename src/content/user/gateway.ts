@@ -17,6 +17,7 @@
 import { AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
 import * as Iron from 'iron-webcrypto'
 import { localStore } from '#lib/server/cache.js'
+import { db } from '#lib/server/db.js'
 import type { Cookies } from '@sveltejs/kit'
 import {
   createUserConfig,
@@ -35,7 +36,9 @@ import {
   type UserResult,
 } from './index.js'
 import { sign, verify } from './keys.js'
+import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow } from './ports.js'
+import type { DataContext } from '#lib/db/index.js'
 import type { ProfileView, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 
@@ -73,109 +76,172 @@ function sealKeysFromEnv(): { enabled: boolean; id: string; secret: string; old:
 /** Вход включён? Секрет запечатывания задан и достаточной длины (константа процесса). */
 export const AUTH_ENABLED = sealKeysFromEnv().enabled
 
-/* ── адаптеры на `#lib/server/cache` ── */
+/* ── адаптеры на ресурсы `lib/db` (таблицы schema.ts; RAM-версии отменены) ── */
 
 /**
- * Сессии: строка под `jti:<jti>` + указатель на аккаунт `sess-idx:<authId>`
- * (список jti) — списка в `Store` нет, индекс ведём сами.
+ * Системный контекст: модуль и есть арбитр (фаервол внутри api), таблицы ему
+ * обслуживают серверные роли из политик схемы. Сигнала запроса здесь нет —
+ * операции короткие и точечные.
  */
-function sessionsAdapter(store = localStore.scope('user-auth-sessions', { max: 10_000 })) {
-  const key = (jti: string) => `jti:${jti}`
-  const idx = (authId: string) => `sess-idx:${authId}`
+const SYSTEM: DataContext = { principal: { roles: ['server', 'admin'] } }
+
+const ms = (v: unknown): number | null => (v ? new Date(String(v)).getTime() : null)
+const iso = (v: number): string => new Date(v).toISOString()
+
+function authRowOf(r: Record<string, unknown>): AuthRow {
+  return {
+    id: String(r.id),
+    seed: (r.seed as string | null) ?? null,
+    deletedAt: ms(r.deleted_at),
+    blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
+    subnetSalt: String(r.subnet_salt ?? ''),
+  }
+}
+
+function sessionRowOf(r: Record<string, unknown>): SessionRecord {
+  return {
+    jti: String(r.jti),
+    authId: String(r.auth_id),
+    deviceName: (r.device_name as string | null) ?? null,
+    subnetHash: (r.subnet_hash as string | null) ?? null,
+    country: (r.country as string | null) ?? null,
+    history: (Array.isArray(r.subnet_history) ? r.subnet_history : []) as SessionRecord['history'],
+    createdAt: ms(r.created_at) ?? Date.now(),
+    expiresAt: ms(r.expires_at) ?? 0,
+    version: Number(r.version ?? 0),
+    deletedAt: ms(r.deleted_at),
+    lastSeenAt: ms(r.last_seen_at),
+  }
+}
+
+function sessionsAdapter() {
+  const api = () => db.resource(sessionRes)
+  const byJti = async (jti: string): Promise<Record<string, unknown> | undefined> => {
+    const rows = await api().select(SYSTEM, { filter: { field: 'jti', op: 'eq', value: jti }, includeDeleted: true })
+    return rows[0] as unknown as Record<string, unknown> | undefined
+  }
   return {
     async create(r: SessionRecord): Promise<void> {
-      await store.set(key(r.jti), r, r.expiresAt - Date.now() + 60_000)
-      const list = (await store.get<string[]>(idx(r.authId))) ?? []
-      await store.set(idx(r.authId), [...list, r.jti], 400 * 24 * 60 * 60 * 1000)
+      await api().insert(SYSTEM, {
+        auth_id: r.authId,
+        jti: r.jti,
+        device_name: r.deviceName,
+        subnet_hash: r.subnetHash,
+        country: r.country,
+        subnet_history: r.history,
+        version: r.version,
+        expires_at: iso(r.expiresAt),
+        ...(r.lastSeenAt ? { last_seen_at: iso(r.lastSeenAt) } : {}),
+      })
     },
     async get(jti: string): Promise<SessionRecord | undefined> {
-      return store.get<SessionRecord>(key(jti))
+      const row = await byJti(jti)
+      return row ? sessionRowOf(row) : undefined
     },
     async listByAuth(authId: string): Promise<SessionRecord[]> {
-      const list = (await store.get<string[]>(idx(authId))) ?? []
-      const rows = await Promise.all(list.map((j) => store.get<SessionRecord>(key(j))))
-      return rows.filter((r): r is SessionRecord => r !== undefined)
+      const rows = await api().select(SYSTEM, { filter: { field: 'auth_id', op: 'eq', value: authId }, includeDeleted: true })
+      return (rows as unknown as Record<string, unknown>[]).map(sessionRowOf)
     },
     async save(r: SessionRecord): Promise<void> {
-      await store.set(key(r.jti), r, r.expiresAt - Date.now() + 60_000)
+      const row = await byJti(r.jti)
+      if (!row) return
+      await api().update(SYSTEM, row.id, {
+        device_name: r.deviceName,
+        subnet_hash: r.subnetHash,
+        country: r.country,
+        subnet_history: r.history,
+        version: r.version,
+        expires_at: iso(r.expiresAt),
+        ...(r.lastSeenAt ? { last_seen_at: iso(r.lastSeenAt) } : {}),
+      })
     },
-    async softDelete(jti: string, at: number): Promise<void> {
-      const r = await store.get<SessionRecord>(key(jti))
-      if (r) await store.set(key(jti), { ...r, deletedAt: at }, 7 * 24 * 60 * 60 * 1000)
+    async softDelete(jti: string, _at: number): Promise<void> {
+      const row = await byJti(jti)
+      if (row) await api().delete(SYSTEM, row.id)
     },
     async softDeleteAllByAuth(authId: string, at: number): Promise<void> {
-      for (const r of await this.listByAuth(authId)) await this.softDelete(r.jti, at)
+      for (const r of await this.listByAuth(authId)) {
+        if (r.deletedAt === null) await this.softDelete(r.jti, at)
+      }
     },
   }
 }
 
-/**
- * Аккаунты: строка под `auth:<id>`, указатель `seed:<seed>` → id, реестр
- * `auth-idx` (список id) — для исполнителя удаления.
- */
-function authsAdapter(store = localStore.scope('user-auth-accounts', { max: 10_000 })) {
+function authsAdapter() {
+  const api = () => db.resource(authRes)
   return {
     async findBySeed(seed: string): Promise<AuthRow | undefined> {
-      const id = await store.get<string>(`seed:${seed}`)
-      return id ? store.get<AuthRow>(`auth:${id}`) : undefined
+      const rows = await api().select(SYSTEM, { filter: { field: 'seed', op: 'eq', value: seed }, includeDeleted: true })
+      const row = rows[0] as unknown as Record<string, unknown> | undefined
+      return row ? authRowOf(row) : undefined
     },
     async create(seed: string): Promise<AuthRow> {
-      const row: AuthRow = {
-        id: crypto.randomUUID(),
-        seed,
-        deletedAt: null,
-        blocked: [],
-        subnetSalt: crypto.randomUUID().replaceAll('-', ''),
-      }
-      await store.set(`auth:${row.id}`, row, 400 * 24 * 60 * 60 * 1000)
-      await store.set(`seed:${seed}`, row.id, 400 * 24 * 60 * 60 * 1000)
-      const ids = (await store.get<string[]>('auth-idx')) ?? []
-      await store.set('auth-idx', [...ids, row.id], 400 * 24 * 60 * 60 * 1000)
-      return row
+      const row = (await api().insert(SYSTEM, { seed })) as unknown as Record<string, unknown>
+      return authRowOf(row)
     },
     async get(id: string): Promise<AuthRow | undefined> {
-      return store.get<AuthRow>(`auth:${id}`)
+      try {
+        const row = await api().get(SYSTEM, id, { includeDeleted: true })
+        return authRowOf(row as unknown as Record<string, unknown>)
+      } catch {
+        return undefined
+      }
     },
-    async markDeleted(id: string, at: number): Promise<void> {
-      const r = await store.get<AuthRow>(`auth:${id}`)
-      if (r) await store.set(`auth:${id}`, { ...r, deletedAt: at }, 400 * 24 * 60 * 60 * 1000)
+    async markDeleted(id: string, _at: number): Promise<void> {
+      await api().delete(SYSTEM, id)
     },
     async clearDeleted(id: string): Promise<void> {
-      const r = await store.get<AuthRow>(`auth:${id}`)
-      if (r) await store.set(`auth:${id}`, { ...r, deletedAt: null }, 400 * 24 * 60 * 60 * 1000)
+      await api().restore(SYSTEM, id)
     },
     async wipeCredentials(id: string): Promise<void> {
-      const r = await store.get<AuthRow>(`auth:${id}`)
-      if (!r) return
-      await store.delete(`seed:${r.seed ?? ''}`)
-      await store.set(`auth:${id}`, { ...r, seed: null, blocked: [] }, 400 * 24 * 60 * 60 * 1000)
+      await api().update(SYSTEM, id, { seed: null })
     },
     async listDeletedBefore(cutoffMs: number): Promise<AuthRow[]> {
-      const ids = (await store.get<string[]>('auth-idx')) ?? []
-      const rows = await Promise.all(ids.map((id) => store.get<AuthRow>(`auth:${id}`)))
-      return rows.filter((r): r is AuthRow => r !== undefined && r.deletedAt !== null && r.deletedAt <= cutoffMs)
+      // таблица аккаунтов мала; выбранных удалённых фильтруем в JS — слоя
+      // фильтров по метке времени удаления нет
+      const rows = (await api().select(SYSTEM, { includeDeleted: true })) as unknown as Record<string, unknown>[]
+      return rows.map(authRowOf).filter((r) => r.deletedAt !== null && r.deletedAt <= cutoffMs)
     },
   }
 }
 
-/** Профиль: `prof:<authId>`. */
-function profilesAdapter(store = localStore.scope('user-auth-profiles', { max: 10_000 })) {
-  const put = async (r: ProfileView) => store.set(`prof:${r.authId}`, r, 400 * 24 * 60 * 60 * 1000)
+function profilesAdapter() {
+  const api = () => db.resource(profileRes)
+  const byAuth = async (authId: string): Promise<Record<string, unknown> | undefined> => {
+    const rows = await api().select(SYSTEM, { filter: { field: 'auth_id', op: 'eq', value: authId } })
+    return rows[0] as unknown as Record<string, unknown> | undefined
+  }
+  const viewOf = (r: Record<string, unknown>): ProfileView => ({
+    id: String(r.id),
+    authId: String(r.auth_id),
+    nickname: (r.nickname as string | null) ?? null,
+    avatarUrl: (r.avatar_url as string | null) ?? null,
+    createdAt: ms(r.created_at) ?? Date.now(),
+    updatedAt: ms(r.updated_at) ?? Date.now(),
+  })
   return {
     async create(authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void> {
-      const now = Date.now()
-      await put({ id: authId, authId, nickname: patch.nickname ?? null, avatarUrl: patch.avatarUrl ?? null, createdAt: now, updatedAt: now })
+      await api().insert(SYSTEM, {
+        auth_id: authId,
+        ...(patch.nickname !== undefined ? { nickname: patch.nickname } : {}),
+        ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
+      })
     },
     async get(authId: string): Promise<ProfileView | undefined> {
-      return store.get<ProfileView>(`prof:${authId}`)
+      const row = await byAuth(authId)
+      return row ? viewOf(row) : undefined
     },
     async update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
-      const r = await store.get<ProfileView>(`prof:${authId}`)
-      if (!r) return
-      await put({ ...r, ...patch, updatedAt: Date.now() })
+      const row = await byAuth(authId)
+      if (!row) return
+      await api().update(SYSTEM, row.id, {
+        ...(patch.nickname !== undefined ? { nickname: patch.nickname } : {}),
+        ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
+      })
     },
     async remove(authId: string): Promise<void> {
-      await store.delete(`prof:${authId}`)
+      const row = await byAuth(authId)
+      if (row) await api().delete(SYSTEM, row.id, { hard: true })
     },
   }
 }
