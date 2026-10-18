@@ -17,14 +17,23 @@
     SidebarUser,
     SidebarFooter,
   } from '#lib/components/sidebar/index.js'
+  import UserMenu from '#content/user/ui/UserMenu.svelte'
+  import { hydrateVault, vault } from '#content/user/vault.svelte.js'
 
   let { children, data } = $props()
+
+  // RAM-копия токена из кук (сервер отдал в данных, сам JS куки не читает).
+  // Только если vault пуст: свежее продление в этой вкладке важнее серверного.
+  $effect(() => {
+    if (!vault.access && data.user) hydrateVault(data.user)
+  })
 
   // Базовые слоты шапки по умолчанию
   useHeaderSlot('top.start', logoSnippet)
   useHeaderSlot('top.center', titleSnippet)
   useHeaderSlot('top.end', navSnippet)
   useHeaderSlot('top.end', themeSnippet)
+  useHeaderSlot('top.end', userSnippet)
 
   // Базовые слоты 3-зонного сайдбара
   useSidebarSlot('top', sidebarTopSnippet)
@@ -51,6 +60,10 @@
 
 {#snippet themeSnippet()}
   <ThemeToggleSlot />
+{/snippet}
+
+{#snippet userSnippet()}
+  <UserMenu server={data.user} />
 {/snippet}
 
 {#snippet sidebarTopSnippet()}

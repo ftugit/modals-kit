@@ -82,7 +82,8 @@ export async function login(
   args: {
     seed: string
     nonce: string
-    signature: string
+    /** Подпись nonce; нет — режим без JS: доказательство = само знание секрета. */
+    signature?: string
     deviceName?: string
     /** Подсеть в представлении адаптера (хэш считается здесь); нет — не пишем. */
     subnet?: string
@@ -92,7 +93,8 @@ export async function login(
   const seed = args.seed.trim()
   if (seed.length < 43 || seed.length > 44) return fail({ code: 'auth.signature', path: 'signature' })
   if (!(await ports.challenge.consume(args.nonce))) return fail({ code: 'auth.nonce-unknown', path: 'signature' })
-  if (!(await ports.crypto.verify(args.nonce, args.signature, seed))) return fail({ code: 'auth.signature', path: 'signature' })
+  if (args.signature !== undefined && !(await ports.crypto.verify(args.nonce, args.signature, seed)))
+    return fail({ code: 'auth.signature', path: 'signature' })
 
   const now = ports.clock.now()
   let row = await ports.auths.findBySeed(seed)

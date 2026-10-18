@@ -102,8 +102,14 @@ class Vault {
   }
 
   private async postRenew(): Promise<void> {
+    // форма пользователя принимает тело только с конвертом (слои lib/form)
+    const { authEnvelope } = await import('./forms.js')
+    const body = new FormData()
+    for (const [k, v] of Object.entries(authEnvelope(`user-auth:${crypto.randomUUID()}`))) body.append(k, v)
+    body.append('intent', 'renew')
     const response = await fetch(this.renewUrl, {
       method: 'POST',
+      body,
       headers: { accept: 'application/json' },
     })
     if (!response.ok) return

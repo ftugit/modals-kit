@@ -248,7 +248,7 @@ const countryOf = (request: Request): string | undefined =>
  */
 export function auth(event: AuthEvent): {
   issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
-  login(args: { seed: string; nonce: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  login(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   renew(): Promise<UserResult<LoginOutcome>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
@@ -301,6 +301,51 @@ export function auth(event: AuthEvent): {
     updateProfile: (args) => coreUpdateProfile(ports, access(), args),
     requestDelete: () => coreRequestDelete(ports, access()),
     cancelDelete: () => coreCancelDelete(ports, access()),
+  }
+}
+
+/**
+ * Пейлоад для vault из данных страницы: сервер читает куки и распечатывает
+ * временный токен — клиент NEVER не читает куки сам (HttpOnly сохраняется).
+ */
+export async function readVault(
+  cookies: { get(name: string): string | undefined },
+): Promise<{
+  access: string
+  expiresAt: number
+  ttlMs: number
+  sub: string
+  prof: { nickname: string | null; avatarUrl: string | null }
+} | null> {
+  const access = cookies.get(ACCESS_COOKIE)
+  if (!access) return null
+  const payload = await authPorts().seal.unseal(access)
+  if (!payload || payload.k !== 'access') return null
+  return {
+    access,
+    expiresAt: payload.exp,
+    ttlMs: Math.max(1000, payload.exp - payload.iat),
+    sub: payload.sub,
+    prof: payload.prof,
+  }
+}
+
+/** Пейлоад для vault из успешного ответа входа/продления (значения токенов). */
+export async function vaultPayloadOf(value: LoginOutcome): Promise<{
+  access: string
+  expiresAt: number
+  ttlMs: number
+  sub: string
+  prof: { nickname: string | null; avatarUrl: string | null }
+}> {
+  const payload = await authPorts().seal.unseal(value.access)
+  if (!payload || payload.k !== 'access') throw new Error('свежий access не распечатался')
+  return {
+    access: value.access,
+    expiresAt: payload.exp,
+    ttlMs: Math.max(1000, payload.exp - payload.iat),
+    sub: payload.sub,
+    prof: payload.prof,
   }
 }
 

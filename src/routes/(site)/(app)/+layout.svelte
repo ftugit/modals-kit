@@ -4,6 +4,12 @@
   import { globalScope } from '#lib/modals/index.js'
   import ModalSystem from '../ModalSystem.svelte'
 
+  // Модалки пользователя (user.auth, user.menu) — ленивой регистрацией
+  // (`./auth-modals`): виджет авторизации не едет в чанк раскладки.
+  $effect(() => {
+    void import('./auth-modals')
+  })
+
   let { children } = $props()
 
   const SOURCES = ['url', 'local'] as const
