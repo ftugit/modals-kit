@@ -141,6 +141,7 @@ function make(cardinality: 'first' | 'all') {
       }),
       docs: field.files({
         label: 'Карточка компании',
+        variant: 'preview',
         help: 'От одного до трёх файлов: картинка или PDF до 512 КБ',
         visibleWhen: { field: 'from_company', equals: true },
         validate: [v.minCount(1), v.maxCount(3), v.accept(['image/*', 'application/pdf']), v.maxSize(512 * 1024)],

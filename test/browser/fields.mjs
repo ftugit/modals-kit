@@ -149,12 +149,16 @@ let k1, k2
   await pg.fill(r(`u_${k1}`), 'https://example.com')
   await pg.fill(r(`u_${k2}`), '42')
   await pg.setInputFiles(r('image'), { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not an image at all') })
+  await pg.waitForSelector('[data-field="image"] [data-file-item]')
+  ok('превью выбранного: карточка с именем и весом',
+    (await pg.locator('[data-field="image"] [data-file-item]').innerText()).includes('fake.png'))
   await pg.click('[data-testid="record-submit"]')
   await pg.waitForFunction(() => document.querySelector('[data-field="image"]')?.textContent?.includes('не подходит'))
   ok('сервер сверяет содержимое файла, а не заявленный тип', (await errorsOf(pg, 'image')).includes('не подходит'))
 
   /* 6. результат */
   await pg.setInputFiles(r('image'), { name: 'dot.png', mimeType: 'image/png', buffer: PNG })
+  ok('превью картинки: миниатюра (objectURL)', (await pg.locator('[data-field="image"] [data-file-item] img').count()) === 1)
   await pg.click('[data-testid="record-submit"]')
   await waitH2(pg, 'Просмотр')
   ok('запись отправлена — шаг «Результат», сброс справа от шагов',

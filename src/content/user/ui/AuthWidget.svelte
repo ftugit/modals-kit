@@ -21,7 +21,7 @@
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
-  import { Button, CopyInput, Input } from '#lib/components/ui/index.js'
+  import { Button, CopyInput, FileInput, Input } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
@@ -384,14 +384,13 @@
       </div>
       <label class="flex flex-col gap-1 text-sm">
         Аватар
-        <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт -->
-        <Input
-          type="file"
+        <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт.
+             Круглый предпросмотр ниже — свой (ТЗ), поэтому preview не включаем. -->
+        <FileInput
           accept="image/jpeg,image/png,image/webp"
           onchange={onFileChange}
           disabled={notHydrated() || avatarBusy}
           title={notHydrated() ? JS_ONLY_REASON : undefined}
-          class="text-sm file:mr-2 file:rounded file:border-0 file:bg-accent file:px-2 file:py-1 file:text-xs"
         />
       </label>
       {#if avatarUrl}
