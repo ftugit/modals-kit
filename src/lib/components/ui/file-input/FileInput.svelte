@@ -6,11 +6,18 @@
    * выбрать файл заново.
    *
    * `preview` — список выбранных файлов под полем (опция; по образцу
-   * `Attachment` из shadcn): картинки — миниатюрой (objectURL, освобождается
-   * при смене выбора), остальные — значком файла; имя и вес; крестик убирает
-   * файл из выбора (одиночное поле — очищает, список — через `DataTransfer`,
-   * без его поддержки — весь выбор). Без JS список не рисуется: остаётся
-   * нативное поле — выбор файла работает и без скриптов.
+   * `Attachment` из shadcn): картинки — миниатюрой, остальные — значком файла;
+   * имя и вес; крестик убирает файл из выбора (одиночное поле — очищает,
+   * список — через `DataTransfer`, без его поддержки — весь выбор). Без JS
+   * список не рисуется: остаётся нативное поле — выбор файла работает и без
+   * скриптов.
+   *
+   * Миниатюра картинки — через compressorjs (решение владельца; зависимость
+   * уже стоит ради аватара, грузится тем же ленивым чанком): пережим до
+   * 80×80 — карточка 40 CSS px с запасом на retina, заодно честит
+   * EXIF-поворот и не держит в памяти полноформатное фото. Сжать не вышло —
+   * objectURL оригинала; и он не отрисовался — значок файла. Адреса
+   * освобождаются при смене выбора и разборке компонента.
    */
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
@@ -42,21 +49,51 @@
   type Entry = { file: File; url?: string }
   let entries = $state<Entry[]>([])
 
+  /** Номер выбора и живость компонента: запоздавший ответ компрессора не рисуем. */
+  let picks = 0
+  let alive = true
+
   function revokeAll(): void {
     for (const e of entries) if (e.url) URL.revokeObjectURL(e.url)
   }
 
+  /** Миниатюра: compressorjs → objectURL сжатого; сжать не вышло → оригинала. */
+  async function thumbnail(gen: number, entry: Entry): Promise<void> {
+    let url: string
+    try {
+      const { default: Compressor } = await import('compressorjs')
+      url = await new Promise<string>((resolve, reject) => {
+        new Compressor(entry.file, {
+          maxWidth: 80,
+          maxHeight: 80,
+          quality: 0.8,
+          success: (blob) => resolve(URL.createObjectURL(blob)),
+          error: reject,
+        })
+      })
+    } catch {
+      url = URL.createObjectURL(entry.file)
+    }
+    if (alive && gen === picks) entry.url = url
+    else URL.revokeObjectURL(url)
+  }
+
   function sync(files: FileList | null): void {
+    picks += 1
     revokeAll()
-    entries = [...(files ?? [])].map((file) => ({
-      file,
-      ...(file.type.startsWith('image/') ? { url: URL.createObjectURL(file) } : {}),
-    }))
+    entries = [...(files ?? [])].map((file) => ({ file }))
+    const gen = picks
+    for (const e of entries) {
+      if (e.file.type.startsWith('image/')) void thumbnail(gen, e)
+    }
   }
 
   onMount(() => {
     mounted = true
-    return () => revokeAll()
+    return () => {
+      alive = false
+      revokeAll()
+    }
   })
 
   const sizeOf = (b: number): string =>
@@ -107,7 +144,18 @@
           class="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground"
         >
           {#if e.url}
-            <img src={e.url} alt="" class="h-full w-full object-cover" />
+            <img
+              src={e.url}
+              alt=""
+              class="h-full w-full object-cover"
+              onerror={() => {
+                // сжатый или оригинал — раз не отрисовался, остаётся значок файла
+                if (e.url) {
+                  URL.revokeObjectURL(e.url)
+                  e.url = undefined
+                }
+              }}
+            />
           {:else}
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
               <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />

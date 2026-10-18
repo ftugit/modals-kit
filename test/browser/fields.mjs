@@ -158,7 +158,9 @@ let k1, k2
 
   /* 6. результат */
   await pg.setInputFiles(r('image'), { name: 'dot.png', mimeType: 'image/png', buffer: PNG })
-  ok('превью картинки: миниатюра (objectURL)', (await pg.locator('[data-field="image"] [data-file-item] img').count()) === 1)
+  // миниатюра теперь компрессором (ленивый чанк) — ждём её появления
+  await pg.waitForSelector('[data-field="image"] [data-file-item] img')
+  ok('превью картинки: миниатюра (compressorjs, откат — objectURL)', (await pg.locator('[data-field="image"] [data-file-item] img').count()) === 1)
   await pg.click('[data-testid="record-submit"]')
   await waitH2(pg, 'Просмотр')
   ok('запись отправлена — шаг «Результат», сброс справа от шагов',
