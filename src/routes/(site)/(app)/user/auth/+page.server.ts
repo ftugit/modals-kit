@@ -6,6 +6,7 @@
 // отвечает данными (транспорт виджета шлёт accept: application/json); без JS
 // успех входа — redirect(303) на адрес следующего шага или на `next`.
 import { fail, redirect } from '@sveltejs/kit'
+import { localPath } from '#lib/address/index.js'
 import type { Actions, PageServerLoad } from './$types'
 import type { RequestEvent } from '@sveltejs/kit'
 import { createFormHandler } from '#lib/form/server.js'
@@ -14,12 +15,6 @@ import { auth, readVault, vaultPayloadOf } from '#content/user/gateway.js'
 import { authForm } from '#content/user/forms.js'
 import { createUserConfig, instruction, seedOf } from '#content/user/index.js'
 import { localStore } from '#lib/server/cache.js'
-
-/** next валидируется: только локальные пути (защита от открытого редиректа). */
-function safeNext(raw: string | null): string | null {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null
-  return raw
-}
 
 const config = createUserConfig(localStore.scope('user-config'))
 
@@ -38,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
   return {
     enabled: u.enabled,
     challenge: challenge?.ok ? challenge.value : null,
-    next: safeNext(url.searchParams.get('next')),
+    next: localPath(url.searchParams.get('next')),
     step: (stepParam ?? 'entry') as 'entry' | 'register' | 'restore' | 'profile' | 'restrictions',
     registerSeed,
     limits: {
@@ -165,7 +160,7 @@ export const actions: Actions = {
     const { result, status } = await handler(event.request, 'action', event)
     if (result.ok) {
       if (!isJs(event.request)) {
-        const next = safeNext(new URL(event.request.url).searchParams.get('next'))
+        const next = localPath(new URL(event.request.url).searchParams.get('next'))
         const step = (result.data as { step?: string } | undefined)?.step
         if (step && step !== 'entry' && step !== 'done') {
           redirect(303, `/user/auth?step=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`)

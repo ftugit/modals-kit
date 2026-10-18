@@ -411,3 +411,14 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
     },
   }
 }
+
+/**
+ * Параметр `next`/`return` из запроса → ЛОКАЛЬНЫЙ путь или null: защита от
+ * открытого редиректа. Схема/автор/`//` не проходят; ведущий слэш обязателен.
+ * Место helper-а — здесь, у слоя адреса: семантика «куда можно вернуть
+ * пользователя» — адресная, не доменная.
+ */
+export function localPath(raw: string | null | undefined): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null
+  return raw
+}
