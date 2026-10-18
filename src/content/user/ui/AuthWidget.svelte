@@ -53,6 +53,7 @@
       limits: AvatarLimits & { holdSeconds: number }
       step: string
       registerSeed?: string | null
+      enabled?: boolean
       user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
     }
     /** Результат экшена (без JS): continuation привязки. */
@@ -234,6 +235,13 @@
 </script>
 
 <Form id="user-auth" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
+  {#if data.enabled === false}
+    <!-- конвенция репо: без env функция выключена с объяснением (как курсор lib/db) -->
+    <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+      Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать.
+      Задайте переменную и перезапустите приложение.
+    </div>
+  {:else}
   {#if avatarError}
     <p role="alert" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{avatarError}</p>
   {/if}
@@ -374,5 +382,6 @@
     </div>
   {:else}
     <p class="text-sm text-muted-foreground">Готово.</p>
+  {/if}
   {/if}
 </Form>

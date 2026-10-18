@@ -9,5 +9,5 @@ export const load: LayoutServerLoad = async ({ cookies }) => ({
   shell: parseShellPrefs(cookies.get(SHELL_COOKIE)) ?? null,
   // Токены — в HttpOnly-куках; сюда — только витрина для UserMenu и RAM vault.
   // Без AUTH_SEAL_SECRET (dev/e2e без секрета) — просто не залогинен, не падаем.
-  user: await readVault(cookies).catch(() => null),
+  user: await readVault(cookies),
 })

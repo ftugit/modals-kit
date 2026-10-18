@@ -33,9 +33,11 @@ export const load: PageServerLoad = async (event) => {
     registerSeed = (await generateKeyPair()).secret
   }
   const u = auth(event)
-  const challenge = await u.issueChallenge()
+  // вход выключен — challenge не выдаётся, форма скрыта (сообщение в виджете)
+  const challenge = u.enabled ? await u.issueChallenge() : null
   return {
-    challenge: challenge.ok ? challenge.value : null,
+    enabled: u.enabled,
+    challenge: challenge?.ok ? challenge.value : null,
     next: safeNext(url.searchParams.get('next')),
     step: (stepParam ?? 'entry') as 'entry' | 'register' | 'restore' | 'profile' | 'restrictions',
     registerSeed,
@@ -61,6 +63,8 @@ export const actions: Actions = {
       order: SECURITY_LAYERS,
       async execute({ values, intent, commit, fail }) {
         const gone = (fact: Parameters<typeof instruction>[0]) => fail(instruction(fact))
+        // вход выключен: экшены честно отказывают (кроме выхода — куки чистить можно)
+        if (!u.enabled && intent !== 'logout') return gone({ code: 'auth.disabled' })
         switch (intent) {
           case 'login': {
             const secret = String(values.seed ?? '').trim()

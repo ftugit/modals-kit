@@ -25,6 +25,7 @@ export type AuthErrorCode =
   | 'auth.revoked'            // jti в чёрном списке
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
   | 'auth.blocked'            // аккаунт заблокирован (сферы blocked)
+  | 'auth.disabled'           // вход выключен на сервере (нет AUTH_SEAL_SECRET)
   | 'auth.delete-pending'     // заявка на удаление: вход ведёт на шаг восстановления
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
@@ -56,6 +57,7 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.revoked': () => [generalError('auth.revoked')],
   'auth.session-unknown': () => [generalError('auth.session-unknown')],
   'auth.blocked': () => [generalError('auth.blocked')],
+  'auth.disabled': () => [generalError('auth.disabled', { retryable: true })],
   'auth.delete-pending': () => [generalError('auth.delete-pending')],
   'auth.confirm': (f) => [fieldError(f)],
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],

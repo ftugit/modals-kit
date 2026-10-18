@@ -54,18 +54,24 @@ export interface AuthEvent {
 
 /* ── ключи запечатывания (env, ротация как у курсорных) ── */
 
-function sealKeysFromEnv(): { id: string; secret: string; old: Record<string, string> } {
+function sealKeysFromEnv(): { enabled: boolean; id: string; secret: string; old: Record<string, string> } {
   const secret = AUTH_SEAL_SECRET
-  if (!secret || secret.length < 32)
-    throw new Error('AUTH_SEAL_SECRET не задан или короче 32 байт — запечатывать токены нечем')
+  // Отсутствие секрета НЕ бросает (конвенция репо: без env функция выключается
+  // с человеческим объяснением — как курсор lib/db без DB_CURSOR_SECRET), а
+  // выключает вход: readVault даёт «не вошёл», страница входа — баннер, экшены
+  // отвечают отказом auth.disabled. Короткий секрет ловит схема env.ts на старте.
+  if (!secret || secret.length < 32) return { enabled: false, id: '', secret: '', old: {} }
   const id = AUTH_SEAL_ID || 'v1'
   const old: Record<string, string> = {}
   for (const pair of (AUTH_SEAL_OLD_KEYS ?? '').split(',')) {
     const [kid, value] = pair.split(':')
     if (kid && value && kid !== id) old[kid.trim()] = value.trim()
   }
-  return { id, secret, old }
+  return { enabled: true, id, secret, old }
 }
+
+/** Вход включён? Секрет запечатывания задан и достаточной длины (константа процесса). */
+export const AUTH_ENABLED = sealKeysFromEnv().enabled
 
 /* ── адаптеры на `#lib/server/cache` ── */
 
@@ -202,9 +208,12 @@ export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
     },
     seal: {
       async seal(payload, ttlSeconds) {
+        if (!keys.enabled) throw new Error('AUTH_SEAL_SECRET не задан — запечатывать токены нечем (вход выключен)')
         return Iron.seal(payload, { id: keys.id, secret: keys.secret }, { ...Iron.defaults, ttl: ttlSeconds * 1000 })
       },
       async unseal(token) {
+        // при выключенном входе распечатывать нечем: «не вошёл», без исключений
+        if (!keys.enabled) return undefined
         try {
           const map: Record<string, string> = { default: keys.secret, ...keys.old, [keys.id]: keys.secret }
           // верхняя граница iron — год (токен продления); access короче и свою exp несёт сам
@@ -247,6 +256,8 @@ const countryOf = (request: Request): string | undefined =>
  * компонент этого не делает никогда.
  */
 export function auth(event: AuthEvent): {
+  /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
+  readonly enabled: boolean
   issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
   login(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   renew(): Promise<UserResult<LoginOutcome>>
@@ -276,6 +287,7 @@ export function auth(event: AuthEvent): {
     event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
   }
   return {
+    enabled: AUTH_ENABLED,
     issueChallenge: () => coreIssueChallenge(ports),
     login: async (args) => {
       const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
@@ -365,6 +377,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
       return 401
     case 'auth.blocked':
       return 403
+    case 'auth.disabled':
+      return 503
     case 'auth.identity-unknown':
       return 404
     case 'auth.delete-pending':
