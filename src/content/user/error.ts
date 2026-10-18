@@ -48,8 +48,10 @@ export type AuthInstruction = (fact: AuthFact) => readonly FormError[]
  * общий случай: путь из факта, подстановки из аргументов.
  */
 const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
-  'auth.nonce-unknown': (f) => [fieldError(f, { path: 'signature', retryable: true })],
-  'auth.signature': (f) => [fieldError(f, { path: 'signature' })],
+  // nonce/подпись — служебные скрытые поля: ошибка в них невидима. «Не сошлись» —
+  // у поля seed (юзер правит его); потраченный nonce — общий баннер над формой.
+  'auth.nonce-unknown': () => [generalError('auth.nonce-unknown', { retryable: true })],
+  'auth.signature': (f) => [fieldError(f, { path: 'seed' })],
   'auth.identity-unknown': (f) => [fieldError(f, { path: 'seed' })],
   'auth.token': () => [generalError('auth.token')],
   'auth.kid-unknown': () => [generalError('auth.kid-unknown', { retryable: true })],

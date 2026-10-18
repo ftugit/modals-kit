@@ -80,7 +80,9 @@
   /** Транспорт — общий для нативных экшенов; подпись живого nonce — ДО сети. */
   const transport: Transport = kitActionTransport(action, {
     prepare: async (fd) => {
-      const typed = String(fd.get('seed') ?? '')
+      // вставка из буфера часто едет с пробелами по краям — подрезаем до формы
+      const typed = String(fd.get('seed') ?? '').trim()
+      fd.set('seed', typed)
       if (typed.length >= 43 && typed.length <= 44 && nonce !== '') {
         try {
           fd.set('signature', await sign(nonce, typed))
@@ -162,7 +164,8 @@
       onDone()
       return
     }
-    if (data.next) void goto(data.next)
+    // страница без next: молчание выглядит как «кнопка не работает» — уходим домой
+    void goto(data.next ?? '/')
   }
 
   /* ── seed: генерация клиентом, копирование ── */
@@ -174,6 +177,43 @@
     const pair = await generateKeyPair()
     secret = pair.secret
     step = 'register'
+  }
+
+  /** На вход: поле чистое — seed шага регистрации сюда перетаскивать не надо. */
+  function switchToEntry(): void {
+    secret = ''
+    step = 'entry'
+  }
+
+  // Значение seed живёт в состоянии ФОРМЫ (его валидирует и отправляет движок);
+  // локальный secret — источник шага регистрации, эффект держит зеркало.
+  // До гидрации (SSR/без JS) состояние пусто — значение в DOM несёт сам secret.
+  const seedSetter = bound.field('seed')
+  $effect(() => {
+    seedSetter?.onInput(secret)
+  })
+
+  /**
+   * Адрес шага для перехода БЕЗ JS (маркер шага — в адресе, его читает load):
+   * на странице — текущий адрес с шагом (next сохраняется); из модалки —
+   * честная страница входа (без JS модалка не удерживается).
+   * С JS клик перехвачен — seed генерирует клиент.
+   */
+  function stepHref(to: 'register' | 'entry'): string {
+    const u = new URL(page.url.href) // копия: page.url у SvelteKit readonly
+    if (mode === 'modal') {
+      u.pathname = action
+      u.search = ''
+    }
+    if (to === 'register') u.searchParams.set('step', 'register')
+    else u.searchParams.delete('step')
+    return `${u.pathname}${u.search}`
+  }
+
+  /** Ссылка работает и без JS (переход по адресу), и с JS (локальная подмена). */
+  const linkStep = (fn: () => void) => (e: MouseEvent) => {
+    e.preventDefault()
+    fn()
   }
 
   async function copySecret(): Promise<void> {
@@ -240,19 +280,19 @@
   {#if step === 'entry' || step === 'register'}
     <div class="flex items-baseline justify-between gap-2">
       <!-- label + ссылка справа: вход ↔ создание (ТЗ) -->
-      <label for="auth-seed" class="text-sm font-medium">Seed</label>
+      <label {...bound.field('seed')?.labelProps()} class="text-sm font-medium">Seed</label>
       {#if step === 'entry'}
-        <button
-          type="button"
+        <a
+          href={stepHref('register')}
           class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          onclick={startRegister}
-        >Создать аккаунт</button>
+          onclick={linkStep(startRegister)}
+        >Создать аккаунт</a>
       {:else}
-        <button
-          type="button"
+        <a
+          href={stepHref('entry')}
           class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          onclick={() => (step = 'entry')}
-        >Авторизация</button>
+          onclick={linkStep(switchToEntry)}
+        >Авторизация</a>
       {/if}
     </div>
 
@@ -264,25 +304,43 @@
       </p>
     {/if}
 
-    <div class="relative">
-      <Input
-        id="auth-seed"
-        name="seed"
-        bind:value={secret}
-        readonly={step === 'register'}
-        autocomplete="off"
-        spellcheck="false"
-        minlength={43}
-        maxlength={44}
-        class="pr-16 font-mono text-xs"
-      />
-      {#if step === 'register'}
-        <!-- копирование прямо в поле ввода (ТЗ); без JS кнопки нет — текст выделяется -->
-        <button
-          type="button"
-          onclick={copySecret}
-          class="absolute top-1/2 right-2 -translate-y-1/2 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        >{copied ? 'Готово' : 'Копия'}</button>
+    {@const seedF = bound.field('seed')!}
+    <!-- data-field — ручка тестов и стилей (как у FieldShell) -->
+    <div class="space-y-1.5" data-field={seedF.name}>
+      <div class="relative">
+        <Input
+          {...seedF.attrs}
+          value={String(seedF.value ?? '') || secret}
+          readonly={step === 'register'}
+          autocomplete="off"
+          spellcheck="false"
+          onblur={() => seedF.setTouched()}
+          oninput={(e) => seedF.onInput(e.currentTarget.value)}
+          class={step === 'register' ? 'pr-16 font-mono text-xs' : 'font-mono text-xs'}
+        />
+        {#if step === 'register'}
+          <!-- копирование прямо в поле ввода (ТЗ); без JS кнопки нет — текст выделяется -->
+          <button
+            type="button"
+            onclick={copySecret}
+            aria-label={copied ? 'Скопировано' : 'Копировать seed'}
+            title={copied ? 'Скопировано' : 'Копировать'}
+            class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            {#if copied}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+            {/if}
+          </button>
+        {/if}
+      </div>
+      <!-- help и ошибки поля — проводка движка (разметка ТЗ не влезает в FieldShell) -->
+      {#if seedF.help}
+        <p {...seedF.helpProps()} class="text-xs text-muted-foreground">{seedF.help}</p>
+      {/if}
+      {#if seedF.errors[0]}
+        <p {...seedF.errorProps()} class="text-xs font-medium text-destructive">{seedF.errors[0].message}</p>
       {/if}
     </div>
 
@@ -296,10 +354,20 @@
       {/if}
     {:else if data.registerSeed}
       <!-- без JS удержание недоступно: обычная кнопка отправки -->
-      <Button type="submit" name="intent" value="login" variant="destructive" task={formTask(bound.state)}>Создать аккаунт</Button>
+      <Button type="submit" name="intent" value="login" variant="outline" task={formTask(bound.state)}>Создать аккаунт</Button>
     {:else}
-      <HoldButton type="submit" name="intent" value="login" seconds={holdSeconds} when="fill" task={formTask(bound.state)}>
-        Создать аккаунт
+      <!-- hover: заливка от курсора (решение владельца, ход 258); нажатие тоже работает -->
+      <HoldButton
+        type="submit"
+        name="intent"
+        value="login"
+        variant="outline"
+        seconds={holdSeconds}
+        when="fill"
+        hover
+        task={formTask(bound.state)}
+      >
+        Удерживайте, чтобы создать аккаунт
       </HoldButton>
     {/if}
   {:else if step === 'restore'}
@@ -315,13 +383,26 @@
       </Button>
     </div>
   {:else if step === 'profile'}
+    {@const nickF = bound.field('nickname')!}
     <div class="flex flex-col gap-3">
       <h2 class="text-base font-semibold">Как вас показывать?</h2>
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
-      <label class="flex flex-col gap-1 text-sm">
-        Никнейм
-        <Input name="nickname" maxlength={32} placeholder="необязательно" autocomplete="nickname" />
-      </label>
+      <div class="space-y-1.5" data-field={nickF.name}>
+        <label {...nickF.labelProps()} class="flex flex-col gap-1 text-sm">
+          Никнейм
+          <Input
+            {...nickF.attrs}
+            value={String(nickF.value ?? '')}
+            placeholder="необязательно"
+            autocomplete="nickname"
+            onblur={() => nickF.setTouched()}
+            oninput={(e) => nickF.onInput(e.currentTarget.value)}
+          />
+        </label>
+        {#if nickF.errors[0]}
+          <p {...nickF.errorProps()} class="text-xs font-medium text-destructive">{nickF.errors[0].message}</p>
+        {/if}
+      </div>
       <label class="flex flex-col gap-1 text-sm">
         Аватар
         <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт -->

@@ -62,9 +62,9 @@ export const actions: Actions = {
         if (!u.enabled && intent !== 'logout') return gone({ code: 'auth.disabled' })
         switch (intent) {
           case 'login': {
-            const secret = String(values.seed ?? '').trim()
-            if (secret.length < 43 || secret.length > 44) return gone({ code: 'auth.signature' })
-            const derived = await seedOf(secret)
+            // длину/вид seed проверила форма (required + pattern): до execute
+            // доходит только значение формата base64url 43–44
+            const derived = await seedOf(String(values.seed ?? '').trim())
             const r = await u.login({
               seed: derived,
               nonce: String(values.nonce ?? ''),

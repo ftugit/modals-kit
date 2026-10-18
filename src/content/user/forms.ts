@@ -4,7 +4,7 @@
 import { buildEnvelope, defineForm, field, v, type Envelope } from '#lib/form/index.js'
 
 export const AUTH_FORM_ID = 'user-auth'
-export const AUTH_FORM_REV = 1
+export const AUTH_FORM_REV = 2
 
 /**
  * Конверт для программных отправок мимо разметки (vault: продление; меню:
@@ -32,6 +32,8 @@ export const authForm = defineForm({
   // карта в виджете — велосипед поверх движка (ход 251, аудит).
   messages: {
     'auth.disabled': 'Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать',
+    // единственный pattern формы — seed; текст свой, не общий словарный
+    'pattern': 'Это не seed: 43–44 знака — латиница, цифры, «-» и «_»',
     'auth.nonce-unknown': 'Время на вход истекло — попробуйте ещё раз',
     'auth.signature': 'Seed или подпись не сошлись — проверьте ввод',
     'auth.identity-unknown': 'Аккаунта с таким seed больше нет',
@@ -48,7 +50,8 @@ export const authForm = defineForm({
   },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },
-    { id: 'restore', label: 'Восстановить аккаунт', validate: 'full' },
+    // restore живёт правами куки: поле seed на шаге не показано — required отдыхает
+    { id: 'restore', label: 'Восстановить аккаунт', validate: 'full', relax: ['required'] },
     { id: 'profile', label: 'Сохранить профиль', validate: 'full', relax: ['required'] },
     { id: 'skip-profile', label: 'Пропустить профиль', validate: 'partial', relax: ['required'] },
     { id: 'accept', label: 'Принято', validate: 'partial' },
@@ -60,7 +63,9 @@ export const authForm = defineForm({
     seed: field.text({
       label: 'Seed',
       help: 'Единственный ключ от аккаунта — храните в менеджере секретов',
-      validate: [v.minLength(43), v.maxLength(44)],
+      // пустое и «набор символов» ловит форма (ход 258): у minLength/maxLength
+      // пустое значение проходило, и шаг отходил серверу — тот молчал в скрытое поле
+      validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_-]{43,44}' })],
     }),
     nonce: field.hidden({ label: 'Nonce' }),
     signature: field.hidden({ label: 'Подпись' }),
