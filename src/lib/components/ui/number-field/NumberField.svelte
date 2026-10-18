@@ -5,6 +5,7 @@
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
+  import Input from '../input/Input.svelte'
   import { AUTO_WIDTH_CLASS } from '../field/field'
 
   interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'size'> {
@@ -31,6 +32,10 @@
 
   let mounted = $state(false)
   let inputEl = $state<HTMLInputElement | null>(null)
+  // элемент даёт примитив `Input` (forwarded ref, как у `Button`)
+  const grab = (el: HTMLInputElement | null): void => {
+    inputEl = el
+  }
 
   onMount(() => {
     mounted = true
@@ -72,17 +77,20 @@
 <!-- С `autoWidth` обёртка по ширине поля: кнопки позиционируются от неё и должны
      остаться внутри рамки, а не уехать к краю строки. -->
 <div class={autoWidth ? 'relative inline-flex w-fit max-w-full items-center' : 'relative flex items-center'} data-number-field="">
-  <!-- Чужие атрибуты — первыми: `type` поля задаёт сам примитив. -->
-  <input
+  <!-- Чужие атрибуты — первыми: `type` поля задаёт сам примитив. Само поле —
+       примитив `Input` (вид/размеры его), как у `HoldButton`; от себя — скрытые
+       спиннеры webkit, место под кнопки и расширенная autoWidth-ширина. -->
+  <Input
     {...rest}
-    bind:this={inputEl}
+    ref={grab}
     type="number"
     {disabled}
     bind:value
     class={cn(
-      'h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+      '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
       mounted && 'pr-16',
-      // Место под кнопки (pr-16) и отступ слева (px-3) — сверх ширины самого числа.
+      // Место под кнопки (pr-16) — сверх ширины самого числа; autoWidth ведём
+      // сами (Input-овский min-w не знает про кнопки), класс — общий из field.ts
       autoWidth && [AUTO_WIDTH_CLASS, mounted ? 'min-w-[calc(var(--field-min-width)+4.75rem)]' : 'min-w-[calc(var(--field-min-width)+1.5rem)]'],
       cls,
     )}

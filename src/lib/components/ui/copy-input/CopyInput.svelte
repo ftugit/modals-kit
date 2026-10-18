@@ -2,18 +2,19 @@
   /**
    * Поле с кнопкой копирования своего содержимого (примитив UI): кнопка с
    * иконкой внутри поля кладёт значение в буфер обмена (`navigator.clipboard`).
-   * Образец встроенной кнопки — `PasswordInput` (тот же `InputShell` +
-   * `InputAffix`); иконка рядом (`CopyIcon.svelte`), как `PasswordStrength`
-   * у `password/`. Без JS кнопки нет (буферу нужен
-   * скрипт) — остаётся обычное выделяемое поле; поэтому `pr-10` и аффикс
-   * появляются только после оживления.
+   * Композиция как у `HoldButton`: внутри — примитив `Input` (вид, размеры и
+   * `aria-invalid` — его, никаких скопированных классов), вокруг — `InputShell`
+   * + `InputAffix`; иконка рядом (`CopyIcon.svelte`), как `PasswordStrength`
+   * у `password/`. Без JS кнопки нет (буферу нужен скрипт) — остаётся обычное
+   * выделяемое поле, поэтому `pr-10` и аффикс появляются после оживления.
    *
-   * Атрибуты поля формы (`name`, `id`, `aria-*`, `readonly`) приезжают
-   * через rest — их раскладка ПЕРВАЯ (см. `PasswordInput`).
+   * Атрибуты поля формы (`name`, `id`, `aria-*`, `readonly`) приезжают через
+   * rest; явные атрибуты ПОСЛЕ spread перекрывают его (см. `PasswordInput`).
    */
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
+  import Input from '../input/Input.svelte'
   import InputAffix from '../input/InputAffix.svelte'
   import InputShell from '../input/InputShell.svelte'
   import CopyIcon from './CopyIcon.svelte'
@@ -55,15 +56,12 @@
 </script>
 
 <InputShell data-copy-input="" class={cls}>
-  <input
+  <Input
     {...rest}
     bind:value
     {disabled}
-    class={cn(
-      'w-full rounded-md border border-input bg-background text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
-      size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-10 px-3 text-sm' : 'h-9 px-3 text-sm',
-      mounted && 'pr-10',
-    )}
+    {size}
+    class={cn(mounted && 'pr-10')}
   />
   {#if mounted}
     <InputAffix side="end" interactive>

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
+  import Input from '../input/Input.svelte'
   import InputAffix from '../input/InputAffix.svelte'
   import InputShell from '../input/InputShell.svelte'
 
@@ -24,6 +25,10 @@
   let mounted = $state(false)
   let visible = $state(false)
   let inputEl = $state<HTMLInputElement | null>(null)
+  // элемент даёт примитив `Input` (forwarded ref, как у `Button`)
+  const grab = (el: HTMLInputElement | null): void => {
+    inputEl = el
+  }
 
   function toggle() {
     if (!inputEl) return
@@ -49,19 +54,17 @@
 </script>
 
 <InputShell data-password-input="" class={cls}>
-  <!-- Чужие атрибуты — ПЕРВЫМИ: поле формы приносит `type="password"` в attrs,
-       и разворот после `type` выключил бы показ пароля. -->
-  <input
+  <!-- Чужие атрибуты — ПЕРВЫМИ: поле формы приносит `type="password"` в attrs;
+       явный type ПОСЛЕ spread его перекрывает (то же на границе компонента).
+       Само поле — примитив `Input` (вид/размеры его), как у `HoldButton`. -->
+  <Input
     {...rest}
-    bind:this={inputEl}
+    ref={grab}
     bind:value
     type={visible ? 'text' : 'password'}
     {disabled}
-    class={cn(
-      'w-full rounded-md border border-input bg-background text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
-      size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-10 px-3 text-sm' : 'h-9 px-3 text-sm',
-      mounted && 'pr-10',
-    )}
+    {size}
+    class={cn(mounted && 'pr-10')}
   />
   {#if mounted}
     <InputAffix side="end" interactive>
