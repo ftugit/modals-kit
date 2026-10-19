@@ -297,6 +297,74 @@ DOM. Сценарии:
 3. Ошибки поля видны там, где поле нарисовано; общие ошибки отправки — у
    общих элементов формы, а не у шага.
 
+## 9а. Форм-режим: шаги управляют валидаторами (`formSteps` + `FormSteps`)
+
+Свободные срезы §9 — для страниц, где шаги листают произвольный контент. Когда
+шаги **ведут анкету** (10 шагов — 10 экранов одной формы), берите форм-режим:
+
+- **форма одна** (`bind` один): значения живут в состоянии привязки, а свёрнутый
+  шаг спрятан `<details>`-ом — его поля **не вырезаны из DOM** и едут в каждом
+  POST;
+- **шаг проверяет своё**: у экшена шага — `subset` из его полей (это уже умеет
+  ядро lib/form: `validateForm` пропускает чужие поля на ОБЕИХ сторонах, кнопка
+  сама получает `formnovalidate`). Финальный экшен без `subset` проверяет всё;
+- **переход — submit, не ссылка**: `<Button type="submit" {...fs.submitOf('extra')}>Далее</Button>`
+  — интенция экшена шага; следующий шаг сервер кладёт в `Result.data.step`
+  (с JS), обёртка экшена — в ответ странице (без JS);
+- **разбор после ошибки**: провал с ошибками на чужих шагах (практически —
+  финальный `save`) раскрывает шаги с ошибками и сворачивает чистые в
+  «Отобразить шаг N» (`<details>`: раскрывается без скрипта, summary скрывается
+  CSS-ом, скрыть — кликом мимо с JS; открытое живёт до отправки). Только общая
+  ошибка — всё свёрнуто, блок `Common` — единственный сигнал. Починили всё —
+  разбор сам отпускает.
+
+```ts
+// описание: экшен шага = ключ шага (или opts.actionOf), финал — без subset
+export const myForm = defineForm({
+  id: 'my-form', revision: 1,
+  actions: [
+    { id: 'contacts', label: 'Далее', validate: 'partial', subset: ['name', 'email'] },
+    { id: 'extra', label: 'Далее', validate: 'partial', subset: ['note'] },
+    { id: 'save', label: 'Сохранить', validate: 'full' },
+  ],
+  fields: { /* … */ },
+})
+```
+
+```svelte
+<script lang="ts">
+  const steps = useSteps({ owner: 'my-form', mode: 'local', steps: STEPS, current: initial })
+  const bound = bind(forms, myForm, { action: '/my-form', transport: kitActionTransport('/my-form') })
+  const fs = formSteps(bound, steps) // паразит: карта поле→шаг из subset'ов, разбор
+</script>
+
+<Form id="my-form" form={bound} hiddenFields={bound.hidden()}>
+  <Common errors={bound.common} title="Форма не сохранена" />
+  <FormSteps host={steps} fs={fs}>
+    {#snippet contacts()}
+      <Field of={bound.f.name} />
+      <Field of={bound.f.email} />
+      <Button type="submit" {...fs.submitOf('contacts')}>Далее</Button>
+    {/snippet}
+    {#snippet extra()}
+      <Field of={bound.f.note} />
+      <Button type="submit" {...fs.submitOf('extra')}>Далее</Button>
+      <Button type="submit" variant="outline" {...fs.submitOf('save')}>Сохранить</Button>
+    {/snippet}
+    {#snippet done()}<p>Готово.</p>{/snippet}
+  </FormSteps>
+</Form>
+```
+
+Экшен на сервере — обычный приём lib/form (`createFormHandler`): провал
+валидации subset-экшена оставляет юзера на его шаге (шаг вернёт обёртка
+экшена), успех шага возвращает `{ data: { step: следующий } }`. Живой пример —
+раздел 4 демо `/steps` (включая разбор: имя `ошибка` ловит только сервер).
+
+**Когда НЕ форм-режим:** шаги из разных форм (`/fields`: сборка набора →
+запись на нём → результат — три отдельные формы, шаги в адресе) и страницы,
+где шаги листают произвольный контент (§9).
+
 ## 10. Бронь ключей глобальна
 
 Реестр ключей адреса (`lib/address/keys`) один на приложение (SPA-сессия и
@@ -324,6 +392,7 @@ DOM. Сценарии:
 
 ## Демо
 
-`/steps` — три режима на произвольном содержимом и все опции;
-`/fields` — срезы формы с переносом полей; `/user/auth` — `hybrid` на странице
-и `local` в модалке.
+`/steps` — адресные режимы (url/local/hybrid) на произвольном содержимом,
+форм-режим с разбором после серверной ошибки и все опции хоста;
+`/fields` — шаги из трёх разных форм с переносом прогресса в адресе;
+`/user/auth` — `hybrid` на странице и `local` в модалке.
