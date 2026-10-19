@@ -10,9 +10,9 @@
     <FormSteps host={steps} fs={fs}>
       {#snippet contacts()}
         <Field of={bound.f.name} />
-        <Button type="submit" {...fs.submitOf('contacts')}>Далее</Button>
       {/snippet}
     </FormSteps>
+    <Button type="submit" {...fs.submit()}>{fs.isLast ? 'Сохранить' : 'Далее'}</Button>
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte'

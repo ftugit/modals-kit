@@ -4,7 +4,9 @@
 // вырезаются из DOM (их прячет CSS `FormSteps`) и едут в каждом POST, а
 // валидаторы шага включает сам lib/form: у экшена шага — `subset` из его
 // полей, у финального экшена подмножества нет (проверяется всё). Переход
-// между шагами — submit с интенцией экшена шага (`submitOf`), не ссылка.
+// между шагами и отправка — ОДНА кнопка под всеми шагами (`fs.submit()`):
+// на проходном шаге её интенция — экшен этого шага (subset-проверка и переход),
+// на последнем — финальный экшен (полная проверка, отправка формы).
 //
 // Режим разбора (провал отправки с ошибками не только на текущем шаге —
 // на практике это финальный `save` или серверная-only ошибка): открытыми
@@ -30,6 +32,17 @@ export interface FormStepsOptions {
    * экшена равен ключу шага. Финальный экшен (без subset) в карте не участвует.
    */
   actionOf?: (step: string) => string | undefined
+  /**
+   * Последний шаг (на нём кнопка под шагами отправляет форму). По умолчанию —
+   * последний шаг списка. Если после него есть неотправляющий шаг (экран
+   * результата), укажите явно.
+   */
+  last?: string
+  /**
+   * Id финального экшена — полной отправки. По умолчанию единственный экшен
+   * описания без `subset`.
+   */
+  final?: string
 }
 
 /** Вид шага в разметке `FormSteps`. */
@@ -47,8 +60,14 @@ export interface FormStepsApi {
   viewOf(step: string): StepView
   /** Шаг поля (по subset'ам экшенов шагов); вложенные пути — по префиксу. */
   stepOfField(path: string): string | undefined
-  /** Props сабмита шага: интенция его экшена (`formnovalidate`, полёт). */
-  submitOf(step: string): IntentProps
+  /**
+   * Единственная кнопка ПОД всеми шагами: на проходном шаге её интенция —
+   * экшен шага (subset-проверка + переход), на последнем — финальная
+   * отправка. Подпись кнопки — `isLast` («Далее» / «Сохранить»).
+   */
+  submit(): IntentProps
+  /** Текущий шаг — последний (кнопка отправляет форму). */
+  readonly isLast: boolean
 }
 
 /** Карта «путь поля → шаг»: subset экшена каждого шага. Первый шаг выигрывает. */
@@ -93,6 +112,13 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   const actionId = (step: string): string => o.actionOf?.(step) ?? step
   const keys = $derived(host.items.map((s) => s.key))
   const map = $derived(fieldStepMap(keys, bound.description.actions, o.actionOf))
+  // последний шаг и финальный экшен: умолчания выводятся из описания
+  const lastKey = $derived(o.last ?? keys[keys.length - 1] ?? '')
+  const finalId = $derived.by(() => {
+    if (o.final) return o.final
+    const full = bound.description.actions.filter((a) => !a.subset?.length)
+    return full.length === 1 ? full[0]!.id : undefined
+  })
 
   const errorSteps = $derived.by(() => {
     const out = new Set<string>()
@@ -123,6 +149,14 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
     get errorSteps() { return errorSteps },
     viewOf,
     stepOfField,
-    submitOf: (step) => bound.intent(actionId(step)),
+    submit: () => {
+      const k = host.currentKey ?? ''
+      // на последнем шаге кнопка — отправка формы (финальный экшен);
+      // финальный не выведен — действует экшен текущего шага
+      return bound.intent(k !== '' && k === lastKey && finalId ? finalId : actionId(k))
+    },
+    get isLast() {
+      return keys.length > 0 && (host.currentKey ?? '') === lastKey
+    },
   }
 }

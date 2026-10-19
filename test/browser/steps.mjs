@@ -103,6 +103,9 @@ async function run() {
     assert.equal(await pane('extra').count(), 1, 'form: шаг «Примечание» в DOM')
     assert.equal(await pane('extra').isHidden(), true, 'form: соседний шаг скрыт (CSS)')
     assert.equal(await form.locator('summary').count(), 0, 'form: до ошибки нет «Отобразить шаг N»')
+    assert.equal(await form.locator('[data-step] button').count(), 0, 'form: кнопок ВНУТРИ шагов нет')
+    assert.equal(await form.getByRole('button', { name: 'Далее' }).isVisible(), true,
+      'form: единственная кнопка — под всеми шагами («Далее»)')
     ok('form: все шаги в DOM, виден только текущий, соседний недоступен')
 
     // шаговый провал: subset ловит пустые поля СВОЕГО шага, шаг не меняется
@@ -163,7 +166,7 @@ async function run() {
     ok('после исправления: разбор отпустил — снова только текущий шаг')
 
     // успех save: серверная норма соблюдена — форма НЕ пропадает, баннер как в /form
-    await pane('extra').getByRole('button', { name: 'Сохранить' }).dispatchEvent('click')
+    await form.getByRole('button', { name: 'Сохранить' }).click()
     await page.waitForTimeout(600)
     assert.equal(await pane('extra').isVisible(), true, 'form: успех save — форма на месте (не пропала)')
     assert.ok((await form.textContent())?.includes('Готово. Исход:'), 'form: баннер успеха как в разделе «Формы»')
@@ -194,11 +197,9 @@ async function run() {
     assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true,
       'no-JS: чистый шаг свёрнут в «Отобразить шаг 2», ошибочный раскрыт')
     ok('no-JS: разбор по скрытому полю')
-    // шаг 1 закреплён разбором (pinned) — уже раскрыт, правим прямо в нём
+    // шаг 1 закреплён разбором (pinned) — уже раскрыт, правим прямо в нём.
+    // после провала save шаг — финальный: кнопка одна и она «Сохранить»
     await npane('contacts').getByLabel('Электропочта').fill('test@test.local')
-    await nojs.getByTestId('demo-form').getByRole('button', { name: 'Далее' }).click()
-    await nojs.waitForLoadState('load')
-    assert.equal(await npane('extra').isVisible(), true, 'no-JS: после исправления разбор отпустил')
     await nojs.getByTestId('demo-form').getByRole('button', { name: 'Сохранить' }).click()
     await nojs.waitForLoadState('load')
     assert.equal(await npane('extra').isVisible(), true, 'no-JS: финал — форма на месте (не пропала)')
