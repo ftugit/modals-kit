@@ -54,10 +54,14 @@ async function run() {
       'панель: после оживления hybrid доступен')
     assert.equal((await panel.locator('option[value="hybrid"]').textContent())?.includes('JavaScript'), false,
       'панель: без подсказок «Нужен JavaScript» в вариантах')
-    await panel.getByRole('combobox').selectOption('local')
-    await page.waitForURL(/demo=local/)
+    // РЕАЛЬНАЯ интеракция (как у юзера): раскрыть список, кликнуть вариант —
+    // не программный selectOption, который не ловит смерть live-канала
+    await panel.getByRole('combobox').first().click()
+    await page.waitForTimeout(300)
+    await page.locator('[role=option]', { hasText: 'Локально' }).first().click()
+    await page.waitForURL(/demo=local/, { timeout: 5000 })
     assert.ok(!new URL(page.url()).searchParams.get('ustep'), 'панель: смена режима — чистый адрес')
-    ok('панель: select применяется сразу, режим в адресе (?demo=local)')
+    ok('панель: реальный выбор из списка применяется сразу (?demo=local)')
 
     // 1. url-режим: deep-link ?ustep=confirm
     await page.goto(BASE + '/steps?ustep=confirm', { waitUntil: 'networkidle' })
@@ -80,7 +84,9 @@ async function run() {
     ok('local: смена без адреса')
 
     // 3. hybrid: локальная смена + адрес своим ключом (?hstep=…)
-    await panel.getByRole('combobox').selectOption('hybrid')
+    await panel.getByRole('combobox').first().click()
+    await page.waitForTimeout(300)
+    await page.locator('[role=option]', { hasText: 'Адрес + локально' }).first().click()
     await page.waitForURL(/demo=hybrid/)
     await steps.getByRole('link', { name: 'Состав' }).click()
     await page.waitForTimeout(400)
@@ -92,7 +98,9 @@ async function run() {
     ok('обновление страницы: hybrid держит шаг')
 
     // 4. form: шаги поверх одной формы (паразит formSteps)
-    await panel.getByRole('combobox').selectOption('form')
+    await panel.getByRole('combobox').first().click()
+    await page.waitForTimeout(300)
+    await page.locator('[role=option]', { hasText: 'Форма' }).first().click()
     await page.waitForURL(/demo=form/)
     const form = page.getByTestId('demo-form')
     const pane = (key) => form.locator(`[data-step="${key}"]`)
