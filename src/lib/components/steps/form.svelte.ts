@@ -112,7 +112,11 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   }
 
   function viewOf(step: string): StepView {
-    if (review) return errorSteps.includes(step) ? 'pinned' : 'collapsed'
+    if (review) {
+      // в разборе текущий шаг остаётся виден: юзер остался на нём после провала
+      if (errorSteps.includes(step)) return 'pinned'
+      return host.currentKey === step ? 'current' : 'collapsed'
+    }
     return host.currentKey === step ? 'current' : 'collapsed'
   }
 

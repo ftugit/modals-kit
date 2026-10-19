@@ -38,3 +38,31 @@ export const fstepForm = defineForm({
     note: field.text({ label: 'Примечание', validate: [v.required()] }),
   },
 })
+
+
+/* ── панель демо (`?demo=`, `?nav`, `?filled`) ────────────────────────── */
+
+/** Режимы демо: подписи и то, что требует оживления (смена шагов — клиентская). */
+export const DEMO_MODES = [
+  { value: 'url', label: 'Адрес (?ustep)', jsOnly: false },
+  { value: 'local', label: 'Локально', jsOnly: true },
+  { value: 'hybrid', label: 'Адрес + локально (?hstep)', jsOnly: true },
+  { value: 'form', label: 'Форма (subset-шаги)', jsOnly: false },
+] as const
+
+export type DemoMode = (typeof DEMO_MODES)[number]['value']
+
+export const demoPanelForm = defineForm({
+  id: 'steps-demo',
+  revision: 1,
+  actions: [{ id: 'apply', label: 'Применить', validate: 'none' }],
+  fields: {
+    demo: field.select({
+      label: 'Режим демо',
+      options: DEMO_MODES.map((m) => ({ value: m.value, label: m.label })),
+      defaultValue: 'url',
+    }),
+    nav: field.checkbox({ label: 'Навигация по шагам сверху', defaultValue: true }),
+    filled: field.checkbox({ label: 'Пройденные шаги — ссылками', defaultValue: true }),
+  },
+})

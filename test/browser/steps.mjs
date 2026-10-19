@@ -43,11 +43,15 @@ async function run() {
     const panel = page.getByTestId('demo-panel')
     const steps = page.getByTestId('demo-steps')
 
-    // панель: режимы — ссылки; смена режима ведёт на ЧИСТЫЙ адрес сценария
-    await panel.getByRole('link', { name: /Локально/ }).click()
+    // панель: select + «Применить»; смена режима ведёт на ЧИСТЫЙ адрес сценария
+    await panel.getByRole('combobox').selectOption('local')
+    await panel.getByRole('button', { name: 'Применить' }).click()
     await page.waitForURL(/demo=local/)
     assert.ok(!new URL(page.url()).searchParams.get('ustep'), 'панель: смена режима — чистый адрес')
-    ok('панель: режимы — ссылки, режим в адресе (?demo=local)')
+    // после оживления jsOnly-варианты разблокированы
+    const opt = panel.locator('option[value="hybrid"]')
+    assert.equal(await opt.isDisabled(), false, 'панель: после оживления hybrid доступен')
+    ok('панель: select + «Применить», режим в адресе (?demo=local)')
 
     // 1. url-режим: deep-link ?ustep=confirm
     await page.goto(BASE + '/steps?ustep=confirm', { waitUntil: 'networkidle' })
@@ -60,7 +64,8 @@ async function run() {
 
     // 2. local: клик по навигации НЕ меняет адрес
     const addressBefore = page.url()
-    await panel.getByRole('link', { name: /Локально/ }).click()
+    await panel.getByRole('combobox').selectOption('local')
+    await panel.getByRole('button', { name: 'Применить' }).click()
     await page.waitForURL(/demo=local/)
     const addressLocal = page.url()
     await steps.getByRole('link', { name: 'Подтверждение' }).click()
@@ -70,7 +75,8 @@ async function run() {
     ok('local: смена без адреса')
 
     // 3. hybrid: локальная смена + адрес своим ключом (?hstep=…)
-    await panel.getByRole('link', { name: /Адрес \+ локально/ }).click()
+    await panel.getByRole('combobox').selectOption('hybrid')
+    await panel.getByRole('button', { name: 'Применить' }).click()
     await page.waitForURL(/demo=hybrid/)
     await steps.getByRole('link', { name: 'Состав' }).click()
     await page.waitForTimeout(400)
@@ -82,16 +88,19 @@ async function run() {
     ok('обновление страницы: hybrid держит шаг')
 
     // 4. form: шаги поверх одной формы (паразит formSteps)
-    await panel.getByRole('link', { name: /Форма/ }).click()
+    await panel.getByRole('combobox').selectOption('form')
+    await panel.getByRole('button', { name: 'Применить' }).click()
     await page.waitForURL(/demo=form/)
     const form = page.getByTestId('demo-form')
     const pane = (key) => form.locator(`[data-step="${key}"]`)
 
-    // поля ВСЕХ шагов в DOM (свёрнутые едут в POST), виден только текущий
+    // поля ВСЕХ шагов в DOM (свёрнутые едут в POST), виден только текущий;
+    // ДО серверной ошибки другой шаг недоступен вовсе: нет кнопок «Отобразить шаг N»
     assert.equal(await pane('contacts').count(), 1, 'form: шаг «Контакты» в DOM')
     assert.equal(await pane('extra').count(), 1, 'form: шаг «Примечание» в DOM')
     assert.equal(await pane('extra').isHidden(), true, 'form: соседний шаг скрыт (CSS)')
-    ok('form: все шаги в DOM, виден только текущий')
+    assert.equal(await form.locator('summary').count(), 0, 'form: до ошибки нет «Отобразить шаг N»')
+    ok('form: все шаги в DOM, виден только текущий, соседний недоступен')
 
     // шаговый провал: subset ловит пустые поля СВОЕГО шага, шаг не меняется
     await form.getByRole('button', { name: 'Далее: примечание' }).click()
@@ -134,22 +143,18 @@ async function run() {
       'разбор: серверная ошибка у email (поля первого шага)')
     assert.equal(await pane('contacts').getByLabel('Электропочта').isVisible(), true,
       'разбор: поле email (было скрыто) видно')
-    const discloseExtra = form.locator('summary[data-step-disclose="extra"]')
-    assert.equal(await discloseExtra.isVisible(), true, 'разбор: чистый шаг свёрнут в «Отобразить шаг 2»')
+    assert.equal(await pane('extra').isVisible(), true, 'разбор: текущий шаг («Примечание») остался виден')
+    const discloseDone = form.locator('summary[data-step-disclose="done"]')
+    assert.equal(await discloseDone.isVisible(), true, 'разбор: чистый шаг «Готово» свёрнут в «Отобразить шаг 3»')
     ok('разбор: серверная ошибка в скрытом поле раскрыла первый шаг')
 
-    // исправили email — разбор отпускает: показываемых ошибок нет, обычный вид
-    // (текущий шаг — «Примечание», шаг 1 снова свёрнут в «Отобразить шаг 1»)
+    // исправили email — разбор отпускает: показываемых ошибок нет, обычный вид:
+    // снова ТОЛЬКО текущий шаг, никаких свёрток (решение владельца)
     await pane('contacts').getByLabel('Электропочта').fill('test@test.local')
     await page.waitForTimeout(400)
-    assert.equal(await form.locator('summary[data-step-disclose="contacts"]').isVisible(), true,
-      'после исправления: разбор отпустил — шаг 1 снова в свёртке')
-    await form.locator('summary[data-step-disclose="contacts"]').click()
-    await page.waitForTimeout(200)
-    await form.getByRole('button', { name: 'Далее: примечание' }).click()
-    await page.waitForTimeout(600)
-    assert.equal(await pane('extra').isVisible(), true, 'после исправления: шаговый переход работает')
-    ok('после исправления: разбор отпустил, переходы работают')
+    assert.equal(await form.locator('summary').count(), 0, 'после исправления: свёрток нет — обычный вид')
+    assert.equal(await pane('extra').isVisible(), true, 'после исправления: виден текущий шаг')
+    ok('после исправления: разбор отпустил — снова только текущий шаг')
 
     // успех save: серверная норма email соблюдена — «Готово»
     // (панель шага пересоздаётся при pinned→current: координатный клик успевает
@@ -172,16 +177,29 @@ async function run() {
     assert.equal(await npane('contacts').count(), 1, 'no-JS: свёрнутый шаг в DOM')
     ok('no-JS: переход шага нативным POST')
 
-    // разбор без JS: чужая email-норма — скрытый шаг раскрыт, чистый свёрнут
+    // no-JS финал через разбор: save с чужой почтой → разбор раскрывает шаг 1 →
+    // исправили на test@test.local → «Далее» → «Сохранить» → «Готово» (тот же
+    // итог, что у JS: финальный текст и шаг «Готово»)
     await npane('extra').getByLabel('Примечание').fill('заметка')
     await nojs.getByTestId('demo-form').getByRole('button', { name: 'Сохранить' }).click()
     await nojs.waitForLoadState('load')
     assert.equal(await npane('contacts').isVisible(), true, 'no-JS: разбор — скрытый шаг с ошибкой email раскрыт')
     assert.ok((await npane('contacts').textContent())?.includes('Сервер принимает только test@test.local'),
       'no-JS: серверная ошибка у email')
-    assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true,
-      'no-JS: чистый шаг свёрнут в «Отобразить шаг 2»')
+    assert.equal(await nojs.locator('summary[data-step-disclose="done"]').isVisible(), true,
+      'no-JS: чистый шаг «Готово» свёрнут, текущий виден')
     ok('no-JS: разбор по скрытому полю')
+    // шаг 1 закреплён разбором (pinned) — уже раскрыт, правим прямо в нём
+    await npane('contacts').getByLabel('Электропочта').fill('test@test.local')
+    await nojs.getByTestId('demo-form').getByRole('button', { name: 'Далее: примечание' }).click()
+    await nojs.waitForLoadState('load')
+    assert.equal(await npane('extra').isVisible(), true, 'no-JS: после исправления разбор отпустил')
+    await nojs.getByTestId('demo-form').getByRole('button', { name: 'Сохранить' }).click()
+    await nojs.waitForLoadState('load')
+    assert.equal(await npane('done').isVisible(), true, 'no-JS: финальный save открыл «Готово»')
+    assert.ok((await nojs.getByTestId('demo-form').textContent())?.includes('Форма сохранена — шаги закончились.'),
+      'no-JS: текст финала тот же, что у JS')
+    ok('no-JS: финал «Готово» равен JS-каналу')
 
     console.log(`✅ steps-browser: ${passed} проверок пройдено`)
   } finally {

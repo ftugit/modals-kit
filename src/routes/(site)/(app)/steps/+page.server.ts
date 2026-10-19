@@ -40,19 +40,31 @@ const handle = createFormHandler({
   },
 })
 
-/** Шаг, где стоит кнопка: намерение конверта (тело нельзя читать дважды — clone). */
+/** Ключ намерения в конверте — из политики формы, не хардкод. */
+const INTENT_KEY = fstepForm.policy.envelopeKeys.intent
+
+/**
+ * Шаг, где стоит кнопка: намерение конверта (тело нельзя читать дважды —
+ * clone). Финальная кнопка «Сохранить» стоит на шаге «Примечание» — провал
+ * возвращает туда, а не на мифический шаг 'save'.
+ */
 const ownStep = async (request: Request): Promise<FstepStep> => {
   const raw = await request.clone().formData().catch(() => null)
-  const intent = String(raw?.get('__form_intent') ?? 'contacts')
+  const intent = String(raw?.get(INTENT_KEY) ?? 'contacts')
+  if (intent === 'save') return 'extra'
   return (Object.keys(FSTEP_NEXT) as FstepStep[]).find((s) => s === intent) ?? 'contacts'
 }
 
 async function act(event: Parameters<Actions['default']>[0]) {
+  const raw = await event.request.clone().formData().catch(() => null)
+  const intent = String(raw?.get(INTENT_KEY) ?? '')
   const own = await ownStep(event.request)
   const { result, status } = await handle(event.request, 'action', event)
-  // успех настоящего сохранения уводит на следующий шаг, провал оставляет на своём
+  // успех настоящего сохранения уводит на следующий шаг (save — на «Готово»),
+  // провал оставляет на своём; ОБА канала обязаны вести шаг одинаково:
+  // с JS его читают из Result.data.step, без JS — из этой обёртки
   return result.ok && result.outcome !== 'not-applied'
-    ? { result, step: FSTEP_NEXT[own] }
+    ? { result, step: own === 'extra' && intent === 'save' ? 'done' : FSTEP_NEXT[own] }
     : fail(status, { result, step: own })
 }
 

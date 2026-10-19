@@ -11,13 +11,14 @@
    * каталога. `nativeList: 'all'`: у панов короткие списки, полный нативный
    * список дешёв и нужен no-JS и тестам (`selectOption`).
    */
-  import { Select } from '#lib/components/ui/index.js'
+  import { Select, type SelectOption } from '#lib/components/ui/index.js'
 
   interface Props {
     name?: string
     value: string
     onChange?: (v: string) => void
-    options: readonly (readonly [string, string])[]
+    /** Пара `[value, label]` или полный вариант (`disabled`/`hint`) — jsOnly и пр. */
+    options: readonly (readonly [string, string] | SelectOption)[]
     disabled?: boolean
     [key: string]: unknown
   }
@@ -30,7 +31,9 @@
   size="sm"
   {value}
   {disabled}
-  options={options.map(([v, label]) => ({ value: v, label }))}
+  options={options.map((o) =>
+    Array.isArray(o) ? { value: o[0], label: o[1] } : (o as SelectOption),
+  )}
   config={{ nativeList: 'all' }}
   onchange={(vs) => {
     const val = vs[0] ?? ''

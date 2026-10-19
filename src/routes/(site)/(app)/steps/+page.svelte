@@ -5,47 +5,63 @@
   // нативная GET-форма: смена режима и опций работает без скрипта. С JS — то
   // же применение живьём (goto replace).
   import { page } from '$app/state'
+  import { goto as goto0 } from '$app/navigation'
   import { untrack } from 'svelte'
   import { Steps, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
-  import { Field } from '#lib/components/settings/index.js'
+  import { Field, Select, Toggle } from '#lib/components/settings/index.js'
   import { asLink } from '#lib/components/links/index.js'
   import { bind } from '#lib/form/svelte/index.js'
+  import { buttonVariants } from '#lib/components/ui/index.js'
   import FieldInput from '#lib/components/form/Field.svelte'
   import Form from '#lib/form/svelte/Form.svelte'
   import Common from '#lib/components/form/Common.svelte'
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
-  import { FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
+  import { DEMO_MODES, demoPanelForm, FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
   import type { Result } from '#lib/form/index.js'
 
   let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
 
   /* ── режим и опции демо: истина в адресе (?demo=…), как у пагинатора ── */
-  const MODES = [
-    ['url', 'Адрес (?ustep) — ссылки, deep-link'],
-    ['local', 'Локально — состояние хоста, адрес не пишется'],
-    ['hybrid', 'Адрес + локально (?hstep) — смена без навигации'],
-    ['form', 'Форма — шаги управляют валидаторами (subset)'],
-  ] as const
-  const mode = $derived(
-    (MODES.some(([v]) => v === page.url.searchParams.get('demo'))
-      ? page.url.searchParams.get('demo')
-      : 'url') as (typeof MODES)[number][0],
-  )
-  const withNav = $derived(page.url.searchParams.get('nav') !== '0')
-  const withFilled = $derived(page.url.searchParams.get('filled') !== '0')
+  const mode = $derived.by(() => {
+    const want = page.url.searchParams.get('demo')
+    return (DEMO_MODES.some((m) => m.value === want) ? want : 'url') as (typeof DEMO_MODES)[number]['value']
+  })
+  // тумблеры без галки едут hidden-парой («false»), с галкой — «false»+«true»:
+  // истина — есть ли «true» среди значений; нет параметра — умолчание «вкл»
+  const toggleOn = (name: string): boolean => {
+    const all = page.url.searchParams.getAll(name)
+    return all.length === 0 ? true : all.includes('true')
+  }
+  const withNav = $derived(toggleOn('nav'))
+  const withFilled = $derived(toggleOn('filled'))
 
-  /** Адрес с новым режимом/опциями. Панель — ссылки (no-JS работает нативно);
-   * чужие ключи (ustep/hstep) не сохраняем — смена режима = чистый сценарий. */
+  /** Адрес с новым режимом/опциями; чужие ключи (ustep/hstep) не сохраняем —
+   * смена режима = чистый сценарий. */
   function demoHref(demo: string, nav: boolean, filled: boolean): string {
     const q = new URLSearchParams()
     if (demo !== 'url') q.set('demo', demo)
-    if (!nav) q.set('nav', '0')
-    if (!filled) q.set('filled', '0')
+    if (!nav) q.set('nav', 'false')
+    if (!filled) q.set('filled', 'false')
     const qs = q.toString()
     return `/steps${qs ? `?${qs}` : ''}`
   }
+
+  /* ── панель демо — ФОРМА lib/form (канон PaginatorSettings): до оживления
+     нативный GET (кнопка «Применить»), после — коммит набора в sink (goto).
+     Варианты local/hybrid — jsOnly: без оживления их не выбрать (disabled). */
+  const panel = bind(forms, demoPanelForm, {
+    url: {
+      action: '/steps',
+      live: false, // применение целиком: «Применить» / нативный GET
+      seed: () => ({ demo: mode, nav: withNav, filled: withFilled }) as Record<string, unknown>,
+      commit: untrack(() => (patch: Record<string, unknown>) => {
+        const d = String(patch['demo'] ?? 'url')
+        void goto0(demoHref(d, patch['nav'] !== false, patch['filled'] !== false))
+      }),
+    },
+  })
 
   const TEXT: Record<string, string> = {
     compose: 'Шаг «Состав»: произвольное содержимое — хост не знает про форму.',
@@ -148,44 +164,68 @@
     </p>
   </header>
 
-  <!-- панель демо: режимы и опции — ссылки (режим и опции живут в адресе),
-       no-JS работает нативно. Канон — панель пагинатора. -->
-  <div
-    data-testid="demo-panel"
-    class="space-y-3 rounded-xl border border-border bg-card p-4 text-sm shadow-sm"
-  >
-    <Field label="Режим демо" hint="Ключ режима — ?demo (своя бронь; ?ustep/?hstep — ключи шагов)">
-      <div class="flex flex-wrap gap-2 pt-1">
-        {#each MODES as [value, label] (value)}
-          <Button
-            {...asLink(demoHref(value, withNav, withFilled))}
-            size="sm"
-            variant={mode === value ? 'default' : 'outline'}
-            aria-pressed={mode === value}
-          >{label}</Button>
-        {/each}
+  <!-- панель демо — ФОРМА (канон панели пагинатора): до оживления нативный
+       GET по «Применить», после — коммит набора в sink; варианты local/hybrid
+       — jsOnly, до оживления выключены с причиной; недоступные на режиме
+       опции выключены с причиной, а не спрятаны. -->
+  <Form form={panel} data-testid="demo-panel" class="demo-panel rounded-xl border border-border bg-card p-4 text-sm shadow-sm">
+    <div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+      <Field label="Режим демо" hint="Ключ режима — ?demo (своя бронь; ?ustep/?hstep — ключи шагов)">
+        <Select
+          name="demo"
+          value={String(panel.values['demo'] ?? 'url')}
+          options={DEMO_MODES.map((m) => ({
+            value: m.value,
+            label: m.label,
+            disabled: m.jsOnly && panel.submitVisible,
+            hint: m.jsOnly ? 'Нужен JavaScript: смена шагов — клиентская' : undefined,
+          }))}
+          disabled={panel.field('demo')?.disabled === true}
+          onchange={() => panel.commit('demo')}
+          {...panel.field('demo')?.attrs}
+        />
+      </Field>
+      <div class="grid content-start gap-2">
+        <Toggle
+          name="nav"
+          label="Навигация по шагам сверху"
+          checked={panel.values['nav'] === true}
+          hiddenPair={panel.submitVisible}
+          disabled={mode === 'form'}
+          hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : undefined}
+          onChange={() => {}}
+          {...panel.field('nav')?.attrs}
+        />
+        <Toggle
+          name="filled"
+          label="Пройденные шаги — ссылками"
+          checked={panel.values['filled'] === true}
+          hiddenPair={panel.submitVisible}
+          disabled={mode === 'form' || mode === 'local'}
+          hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : mode === 'local' ? 'Локальные шаги не адресуются' : undefined}
+          onChange={() => {}}
+          {...panel.field('filled')?.attrs}
+        />
       </div>
-    </Field>
-    {#if mode !== 'form'}
-      <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <a
-          class="underline underline-offset-4 hover:text-foreground"
-          href={demoHref(mode, !withNav, withFilled)}
-        >Навигация сверху: {withNav ? 'скрыть' : 'показать'}</a>
-        <a
-          class="underline underline-offset-4 hover:text-foreground"
-          href={demoHref(mode, withNav, !withFilled)}
-        >Пройденные — ссылками: {withFilled ? 'выкл' : 'вкл'}</a>
-      </div>
-    {:else}
+    </div>
+    <div class="mt-3 flex items-center justify-between gap-3">
       <p class="text-xs text-muted-foreground">
-        Сценарии разбора: имя <code class="rounded bg-muted/70 px-1">ошибка</code> или любая
-        электропочта кроме <code class="rounded bg-muted/70 px-1">test@test.local</code> при
-        финальном «Сохранить» — правила живут только на сервере и указывают на поля ПЕРВОГО
-        (к тому времени скрытого) шага: разбор раскроет его и покажет поле.
+        {#if mode === 'form'}
+          Сценарии разбора: имя <code class="rounded bg-muted/70 px-1">ошибка</code> или любая
+          электропочта кроме <code class="rounded bg-muted/70 px-1">test@test.local</code> при
+          финальном «Сохранить» — правила живут только на сервере и указывают на поля ПЕРВОГО
+          (к тому времени скрытого) шага: разбор раскроет его и покажет поле.
+        {:else if mode === 'local'}
+          Локальный режим: смена шагов — состояние хоста, адрес не пишется (сценарий модалок).
+        {:else if mode === 'hybrid'}
+          Гибрид: смена локально, адрес синхронизируется своим ключом брони (?hstep).
+        {:else}
+          Адресный режим: ссылки меняют ?ustep, deep-link и обновление работают сами.
+        {/if}
       </p>
-    {/if}
-  </div>
+      <button type="submit" class={buttonVariants({ size: 'sm' })}>Применить</button>
+    </div>
+  </Form>
 
   {#if mode !== 'form'}
     <div class="space-y-4" data-testid="demo-steps">
