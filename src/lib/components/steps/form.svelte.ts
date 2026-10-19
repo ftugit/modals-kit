@@ -1,0 +1,139 @@
+// form × step — «паразит»: склейка одной формы (bound) и хоста шагов.
+//
+// Одна форма на все шаги; шаги — нарезка отрисовки. Поля свёрнутых шагов НЕ
+// вырезаются из DOM (их прячет CSS `FormSteps`) и едут в каждом POST, а
+// валидаторы шага включает сам lib/form: у экшена шага — `subset` из его
+// полей, у финального экшена подмножества нет (проверяется всё). Переход
+// между шагами — submit с интенцией экшена шага (`submitOf`), не ссылка.
+//
+// Режим разбора (провал отправки с ошибками не только на текущем шаге —
+// на практике это финальный `save` или серверная-only ошибка): шаги с
+// ошибками закреплены открытыми (`pinned`), чистые свёрнуты с кнопкой
+// «Отобразить шаг N» (`collapsed`), юзер может раскрыть и сам (`open`).
+// Правило без памяти об интенции (Result её не несёт):
+//   провал + есть ошибки на ЧУЖИХ шагах  → разбор;
+//   провал + mapped-ошибок нет вовсе     → разбор (только общие/серверные);
+//   провал + ошибки только текущего шага → обычный вид (они и так видны).
+// Повторная отправка перезаписывает результат: ошибка ушла — шаг схлопнулся.
+import type { FormDescription, FormError, Result } from '#lib/form/index.js'
+import type { BoundForm, IntentProps } from '#lib/form/svelte/index.js'
+import type { StepsHost } from './steps.svelte.js'
+
+export interface FormStepsOptions {
+  /**
+   * Шаг → id экшена, который его проверяет и уводит дальше. По умолчанию id
+   * экшена равен ключу шага. Финальный экшен (без subset) в карте не участвует.
+   */
+  actionOf?: (step: string) => string | undefined
+}
+
+/** Вид шага в разметке `FormSteps`. */
+export type StepView =
+  | 'current'    // обычный режим: текущий шаг хоста
+  | 'pinned'     // разбор: на шаге показанные ошибки, сворачивать нельзя
+  | 'open'       // раскрыт юзером («Отобразить шаг N») — живёт до отправки
+  | 'collapsed'  // свёрт: в DOM есть (значения едут в POST), видимости нет
+
+export interface FormStepsApi {
+  /** Разбор: провал с чужими или только общими ошибками (см. шапку файла). */
+  readonly review: boolean
+  /** Шаги с показанными ошибками (в разборе — закреплены). */
+  readonly errorSteps: readonly string[]
+  /** Вид шага. */
+  viewOf(step: string): StepView
+  /** Шаг поля (по subset'ам экшенов шагов); вложенные пути — по префиксу. */
+  stepOfField(path: string): string | undefined
+  /** Props сабмита шага: интенция его экшена (`formnovalidate`, полёт). */
+  submitOf(step: string): IntentProps
+  /** Раскрыть/свернуть/закрыть всё: руками — только раскрытое юзером. */
+  open(step: string): void
+  close(step: string): void
+  closeAll(): void
+  /** Идентичность результата: `FormSteps` закрывает раскрытое на новой отправке. */
+  resultToken(): unknown
+}
+
+/** Карта «путь поля → шаг»: subset экшена каждого шага. Первый шаг выигрывает. */
+export function fieldStepMap(
+  stepKeys: readonly string[],
+  actions: FormDescription['actions'],
+  actionOf?: (step: string) => string | undefined,
+): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const key of stepKeys) {
+    const id = actionOf?.(key) ?? key
+    const a = actions.find((x) => x.id === id)
+    for (const p of a?.subset ?? []) if (!map.has(p)) map.set(p, key)
+  }
+  return map
+}
+
+/** Режим разбора (правило — в шапке файла). */
+export function isReview(
+  result: Result | undefined,
+  shown: readonly FormError[],
+  map: ReadonlyMap<string, string>,
+  currentKey: string | null,
+): boolean {
+  if (!result || result.ok || result.errors.length === 0) return false
+  const steps = new Set<string>()
+  for (const e of shown) {
+    if (!e.path) continue
+    const hit = map.get(e.path)
+    if (hit) { steps.add(hit); continue }
+    for (const [p, s] of map) if (e.path.startsWith(`${p}.`)) { steps.add(s); break }
+  }
+  if (steps.size === 0) return true
+  return [...steps].some((s) => s !== currentKey)
+}
+
+/**
+ * Паразит форм-режима: `const fs = formSteps(bound, steps)`. Состояние формы и
+ * шагов не трогает — только читает и ведёт список «раскрыто юзером».
+ */
+export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions = {}): FormStepsApi {
+  const actionId = (step: string): string => o.actionOf?.(step) ?? step
+  const keys = $derived(host.items.map((s) => s.key))
+  const map = $derived(fieldStepMap(keys, bound.description.actions, o.actionOf))
+
+  let opened = $state<ReadonlySet<string>>(new Set())
+
+  const errorSteps = $derived.by(() => {
+    const out = new Set<string>()
+    for (const e of bound.state.shown) {
+      if (!e.path) continue
+      const s = stepOfField(e.path)
+      if (s) out.add(s)
+    }
+    return [...out]
+  })
+
+  const review = $derived(isReview(bound.state.result, bound.state.shown, map, host.currentKey))
+
+  function stepOfField(path: string): string | undefined {
+    if (map.has(path)) return map.get(path)
+    for (const [p, s] of map) if (path.startsWith(`${p}.`)) return s
+    return undefined
+  }
+
+  function viewOf(step: string): StepView {
+    if (review) {
+      if (errorSteps.includes(step)) return 'pinned'
+      return opened.has(step) ? 'open' : 'collapsed'
+    }
+    if (host.currentKey === step) return 'current'
+    return opened.has(step) ? 'open' : 'collapsed'
+  }
+
+  return {
+    get review() { return review },
+    get errorSteps() { return errorSteps },
+    viewOf,
+    stepOfField,
+    submitOf: (step) => bound.intent(actionId(step)),
+    open: (step) => { const next = new Set(opened); next.add(step); opened = next },
+    close: (step) => { const next = new Set(opened); next.delete(step); opened = next },
+    closeAll: () => { opened = new Set() },
+    resultToken: () => bound.state.result,
+  }
+}
