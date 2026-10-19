@@ -180,7 +180,7 @@
     {:else}
       <p class="text-xs text-muted-foreground">
         Сценарии разбора: имя <code class="rounded bg-muted/70 px-1">ошибка</code> или любая
-        электропочта кроме <code class="rounded bg-muted/70 px-1">ada@example.com</code> при
+        электропочта кроме <code class="rounded bg-muted/70 px-1">test@test.local</code> при
         финальном «Сохранить» — правила живут только на сервере и указывают на поля ПЕРВОГО
         (к тому времени скрытого) шага: разбор раскроет его и покажет поле.
       </p>

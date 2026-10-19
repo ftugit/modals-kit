@@ -32,7 +32,7 @@ export const fstepForm = defineForm({
     name: field.text({ label: 'Имя', validate: [v.required()] }),
     email: field.text({
       label: 'Электропочта',
-      help: 'Сервер принимает только ada@example.com — правило только на сервере: при финальном сохранении ошибка раскроет этот (к тому времени скрытый) шаг.',
+      help: 'Сервер принимает только test@test.local — правило только на сервере: при финальном сохранении ошибка раскроет этот (к тому времени скрытый) шаг.',
       validate: [v.required(), v.email()],
     }),
     note: field.text({ label: 'Примечание', validate: [v.required()] }),

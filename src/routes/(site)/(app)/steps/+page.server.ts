@@ -24,11 +24,11 @@ const handle = createFormHandler({
         path: 'name',
         origin: 'server' as const,
       })
-    if (intent === 'save' && String(values['email'] ?? '') !== 'ada@example.com')
+    if (intent === 'save' && String(values['email'] ?? '') !== 'test@test.local')
       problems.push({
         id: 'fstep.server-email',
         code: 'fstep.server-email',
-        message: 'Сервер принимает только ada@example.com — поле с шага «Контакты» (демо скрытого шага).',
+        message: 'Сервер принимает только test@test.local — поле с шага «Контакты» (демо скрытого шага).',
         path: 'email',
         origin: 'server' as const,
       })

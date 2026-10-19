@@ -130,7 +130,7 @@ async function run() {
     assert.ok(posts.some((b) => b.includes('name="name"') && b.includes('name="email"') && b.includes('name="note"')),
       'разбор: в POST значения и видимых, и свёрнутых шагов')
     assert.equal(await pane('contacts').isVisible(), true, 'разбор: скрытый шаг с ошибкой email раскрыт')
-    assert.ok((await pane('contacts').textContent())?.includes('Сервер принимает только ada@example.com'),
+    assert.ok((await pane('contacts').textContent())?.includes('Сервер принимает только test@test.local'),
       'разбор: серверная ошибка у email (поля первого шага)')
     assert.equal(await pane('contacts').getByLabel('Электропочта').isVisible(), true,
       'разбор: поле email (было скрыто) видно')
@@ -140,7 +140,7 @@ async function run() {
 
     // исправили email — разбор отпускает: показываемых ошибок нет, обычный вид
     // (текущий шаг — «Примечание», шаг 1 снова свёрнут в «Отобразить шаг 1»)
-    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await pane('contacts').getByLabel('Электропочта').fill('test@test.local')
     await page.waitForTimeout(400)
     assert.equal(await form.locator('summary[data-step-disclose="contacts"]').isVisible(), true,
       'после исправления: разбор отпустил — шаг 1 снова в свёртке')
@@ -177,7 +177,7 @@ async function run() {
     await nojs.getByTestId('demo-form').getByRole('button', { name: 'Сохранить' }).click()
     await nojs.waitForLoadState('load')
     assert.equal(await npane('contacts').isVisible(), true, 'no-JS: разбор — скрытый шаг с ошибкой email раскрыт')
-    assert.ok((await npane('contacts').textContent())?.includes('Сервер принимает только ada@example.com'),
+    assert.ok((await npane('contacts').textContent())?.includes('Сервер принимает только test@test.local'),
       'no-JS: серверная ошибка у email')
     assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true,
       'no-JS: чистый шаг свёрнут в «Отобразить шаг 2»')
