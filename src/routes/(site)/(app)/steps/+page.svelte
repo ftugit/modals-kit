@@ -3,7 +3,8 @@
   // и произвольное содержимое (без lib/form — универсальность). Нарезку ФОРМЫ на
   // шаги (поля между шагами переносятся) смотрите на /fields.
   import { page } from '$app/state'
-  import { Steps, useSteps } from '#lib/components/steps/index.js'
+  import { Steps, StepLink, useSteps } from '#lib/components/steps/index.js'
+  import { Button } from '#lib/components/ui/index.js'
 
   const DEFS = () => [
     { key: 'compose', label: 'Состав', filled: true },
@@ -102,6 +103,16 @@
     </p>
     <div class="flex items-baseline gap-4">
       <Steps host={hybridSteps} label="Шаги демо" />
+      <!-- свой вид: ссылка в облике кнопки (Button сам рисует <a> по href);
+           no-JS разметка остаётся ссылкой -->
+      {#if hybridSteps.currentKey !== 'done'}
+        <StepLink host={hybridSteps} step="done">
+          {#snippet as(attrs)}
+            <Button {...attrs} variant="outline">К «Готово» кнопкой</Button>
+          {/snippet}
+          К «Готово» кнопкой
+        </StepLink>
+      {/if}
     </div>
     <Steps host={hybridSteps} label="" nav={false}>
       {#snippet compose()}<p class="rounded-md border p-3 text-sm">{TEXT.compose}</p>{/snippet}
