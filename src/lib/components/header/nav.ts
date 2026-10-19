@@ -9,6 +9,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/paginator', label: 'Пагинатор' },
   { to: '/form', label: 'Формы' },
   { to: '/fields', label: 'Поля' },
+  { to: '/steps', label: 'Шаги' },
   { to: '/db-demo', label: 'База данных' },
   { to: '/cards/1', label: 'Карточка #1' },
   { to: '/cycle', label: 'Cycle' },
