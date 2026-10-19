@@ -1,9 +1,21 @@
 <script lang="ts">
-  // Демо универсального хода шагов (lib/components/steps): один хост — три режима
-  // и произвольное содержимое (без lib/form — универсальность). Нарезку ФОРМЫ на
-  // шаги (поля между шагами переносятся) смотрите на /fields.
+  // Демо универсального хода шагов (lib/components/steps): один хост — четыре
+  // режима: адресные (url/local/hybrid) и форм-режим (шаги поверх ОДНОЙ формы,
+  // «паразит» formSteps). Нарезку трёх РАЗНЫХ форм смотрите на /fields.
   import { page } from '$app/state'
-  import { Steps, StepLink, useSteps } from '#lib/components/steps/index.js'
+  import { untrack } from 'svelte'
+  import { Steps, StepLink, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
+  import { bind } from '#lib/form/svelte/index.js'
+  import Field from '#lib/components/form/Field.svelte'
+  import Form from '#lib/form/svelte/Form.svelte'
+  import Common from '#lib/components/form/Common.svelte'
+  import { Button } from '#lib/components/ui/index.js'
+  import { forms } from '#lib/components/form/forms.config.js'
+  import { kitActionTransport } from '#lib/components/form/transport.js'
+  import { FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
+  import type { Result } from '#lib/form/index.js'
+
+  let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
 
   const DEFS = () => [
     { key: 'compose', label: 'Состав', filled: true },
@@ -47,6 +59,37 @@
     done: 'Шаг «Готово»: адресные шаги глубоко ссылаемы, локальные — нет.',
   }
   const address = $derived(page.url.pathname + page.url.search)
+
+  // 4. form: шаги поверх ОДНОЙ формы. Смена шага — submit (интенция экшена),
+  //    свёрнутый шаг скрыт CSS-ом и едет в каждом POST, валидаторы шага —
+  //    subset экшена. Ответ экшена несёт шаг (успех — следующий, провал — свой).
+  // шаг: ответ экшена без JS приезжает в проп `form`, с JS — в результат
+  // привязки (Result.data.step). Провал без данных — остаёмся на текущем.
+  const stepOfResult = (r?: Result): FstepStep | null => {
+    const d = r?.data as { step?: FstepStep } | undefined
+    return d && typeof d.step === 'string' ? d.step : null
+  }
+  // начальное значение — ТОЛЬКО первый рендер (SSR no-JS ответ); дальше шагом
+  // ведёт эффект ниже и local-хост, поэтому чтение пропа здесь — намеренное
+  // svelte-ignore state_referenced_locally
+  let fstep = $state<FstepStep>(action?.step ?? 'contacts')
+  $effect(() => {
+    fstep = action?.step ?? stepOfResult(bound.state.result) ?? fstep
+  })
+  const formStepsHost = useSteps({
+    owner: 'steps-demo-form',
+    mode: 'local',
+    steps: () => FSTEP_STEPS.map((s) => ({ ...s, filled: true })),
+    current: () => fstep,
+  })
+  // однонаправленная память шага: local-хост берёт начальное значение из
+  // `current()` и дальше ведёт состояние сам (set), странице остаётся ответ
+  const bound = bind(forms, fstepForm, {
+    action: '/steps',
+    transport: kitActionTransport('/steps'),
+    continuation: untrack(() => action?.result ?? null),
+  })
+  const fs = formSteps(bound, formStepsHost)
 </script>
 
 <svelte:head>
@@ -114,6 +157,44 @@
       {#snippet done()}<p class="rounded-md border p-3 text-sm">{TEXT.done}</p>{/snippet}
     </Steps>
     <p class="font-mono text-xs text-muted-foreground">адрес: {address}</p>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-lg font-semibold">4. Режим form — шаги поверх одной формы</h2>
+    <p class="text-sm text-muted-foreground">
+      Одна форма (`bind` один), шаги — её нарезка. Смена шага — submit с интенцией
+      (`subset` экшена включает валидаторы шага), свёрнутый шаг скрыт CSS-ом, но его
+      поля едут в каждом POST. Сломайте финальное «Сохранить» (имя <code>ошибка</code> —
+      ошибка только на сервере): шаг с ошибкой раскроется, чистые свернутся в
+      «Отобразить шаг N». Адрес не участвует.
+    </p>
+    <Form id="fstep" form={bound} hiddenFields={bound.hidden()}>
+      <!-- общие ошибки видны всегда: в разборе без полевых ошибок шаги свёрнуты,
+           и блок остаётся единственным сигналом -->
+      <Common errors={bound.common} title="Форма не сохранена" />
+      <FormSteps host={formStepsHost} fs={fs}>
+        {#snippet contacts()}
+          <div class="space-y-3">
+            <Field of={bound.f.name} />
+            <Field of={bound.f.email} />
+          </div>
+          <Button type="submit" {...fs.submitOf('contacts')}>Далее: примечание</Button>
+        {/snippet}
+        {#snippet extra()}
+          <div class="space-y-3">
+            <Field of={bound.f.note} />
+          </div>
+          <div class="flex gap-2">
+            <!-- последний шаг с полями: и следующий шаг, и финальная отправка -->
+            <Button type="submit" {...fs.submitOf('extra')}>Далее: готово</Button>
+            <Button type="submit" variant="outline" {...fs.submitOf('save')}>Сохранить</Button>
+          </div>
+        {/snippet}
+        {#snippet done()}
+          <p class="rounded-md border p-3 text-sm">Форма сохранена — шаги закончились.</p>
+        {/snippet}
+      </FormSteps>
+    </Form>
   </section>
 
   <section class="space-y-2">

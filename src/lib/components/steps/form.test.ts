@@ -56,6 +56,11 @@ describe('isReview', () => {
     expect(isReview(result(false, [err()]), [err()], map, 'extra')).toBe(true)
   })
 
+  it('показываемых ошибок не осталось (юзер всё исправил) — разбора нет', () => {
+    // результат провала ещё висит, но ни одной показываемой ошибки — обычный вид
+    expect(isReview(result(false, [err('name')]), [], map, 'extra')).toBe(false)
+  })
+
   it('вложенный путь (`props.s1.max_length`) мапится по префиксу', () => {
     const nested = fieldStepMap(['extra'], [{ id: 'extra', subset: ['props'] }] as unknown as FormDescription['actions'])
     const e = err('props.s1.max_length')

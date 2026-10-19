@@ -60,8 +60,6 @@ async function run() {
     const sec3 = page.locator('section').nth(2)
     await sec3.getByRole('link', { name: 'Состав' }).click()
     await page.waitForTimeout(400)
-    console.log('      [dbg] url после клика:', page.url())
-    console.log('      [dbg] текущий шаг sec3:', (await currentLabel(sec3))?.trim())
     assert.equal((await currentLabel(sec3))?.trim(), 'Состав', 'hybrid: шаг сменился локально')
     assert.ok(new URL(page.url()).searchParams.get('hstep') === 'compose', 'hybrid: адрес получил hstep=compose')
     ok('hybrid: локальная смена + адрес своим ключом')
@@ -74,6 +72,103 @@ async function run() {
     assert.equal((await currentLabel(sec3))?.trim(), 'Состав', 'hybrid: обновление держит шаг')
     assert.equal((await currentLabel(sec1))?.trim(), 'Готово', 'url: обновление держит шаг')
     ok('обновление страницы: шаги восстановлены из адреса')
+
+    // ── 4. form-режим: шаги поверх одной формы (паразит formSteps) ──────────
+    const sec4 = page.locator('section').nth(3)
+    const pane = (key) => sec4.locator(`[data-step="${key}"]`)
+    await page.goto(BASE + '/steps', { waitUntil: 'networkidle' })
+
+    // поля ВСЕХ шагов в DOM (свёрнутые едут в POST), виден только текущий
+    assert.equal(await pane('contacts').count(), 1, 'form: шаг «Контакты» в DOM')
+    assert.equal(await pane('extra').count(), 1, 'form: шаг «Примечание» в DOM')
+    assert.equal(await pane('extra').isHidden(), true, 'form: соседний шаг скрыт (CSS)')
+    ok('form: все шаги в DOM, виден только текущий')
+
+    // шаговый провал: subset ловит пустые поля СВОЕГО шага, шаг не меняется
+    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await page.waitForTimeout(400)
+    assert.equal(await pane('contacts').isVisible(), true, 'form: пустой шаг не пропустило')
+    assert.ok((await pane('contacts').textContent())?.includes('Обязательное'), 'form: ошибка subset у поля')
+    ok('form: «Далее» проверяет только свой шаг')
+
+    // успех шага: интенция уводит на следующий, адрес не тронут
+    const addressBeforeForm = page.url()
+    await pane('contacts').getByLabel('Имя').fill('Ада')
+    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await page.waitForTimeout(500)
+    assert.equal(await pane('extra').isVisible(), true, 'form: успех шага открыл «Примечание»')
+    assert.equal(await pane('contacts').isHidden(), true, 'form: прошлый шаг свёрнут')
+    assert.equal(page.url(), addressBeforeForm, 'form: адрес не участвует')
+    ok('form: «Далее» = submit с интенцией, шаг сменился локально')
+
+    // свёрнутый шаг едет в POST: ловим тела отправок
+    const posts = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/steps')) {
+        const buf = r.postDataBuffer()
+        if (buf) posts.push(buf.toString('utf8'))
+      }
+    })
+    await pane('extra').getByLabel('Примечание').fill('заметка')
+    await sec4.getByRole('button', { name: 'Сохранить' }).click()
+    await page.waitForTimeout(600)
+    assert.ok(posts.some((b) => b.includes('name="name"') && b.includes('name="note"')),
+      'form: в POST значения и видимых, и свёрнутых шагов')
+    assert.equal(await pane('done').isVisible(), true, 'form: успех save — шаг «Готово»')
+    ok('form: свёрнутые поля в POST, финал открыл «Готово»')
+
+    // разбор: серверная-only ошибка (ловит только save на финальной отправке)
+    // закрепляет чужой шаг, чистые свёрнуты
+    await page.goto(BASE + '/steps', { waitUntil: 'networkidle' })
+    await pane('contacts').getByLabel('Имя').fill('ошибка')
+    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await page.waitForTimeout(500)
+    await pane('extra').getByLabel('Примечание').fill('заметка')
+    await sec4.getByRole('button', { name: 'Сохранить' }).click()
+    await page.waitForTimeout(700)
+    assert.equal(await pane('contacts').isVisible(), true, 'разбор: чужой шаг с ошибкой раскрыт')
+    assert.ok((await pane('contacts').textContent())?.includes('Сервер не пропустил'), 'разбор: серверная ошибка у поля')
+    const disclose = sec4.locator('summary[data-step-disclose="extra"]')
+    assert.equal(await disclose.isVisible(), true, 'разбор: чистый шаг свёрнут в «Отобразить шаг N»')
+    assert.equal(await pane('extra').isHidden(), true, 'разбор: чистый шаг скрыт до щелчка')
+    ok('разбор: ошибочный шаг раскрыт, чистый свёрнут')
+
+    // щелчок «Отобразить шаг 2» раскрывает; поля прежних шагов в DOM
+    await disclose.click()
+    await page.waitForTimeout(200)
+    assert.equal(await pane('extra').isVisible(), true, 'разбор: «Отобразить шаг 2» раскрыл шаг')
+    assert.equal(await disclose.isHidden(), true, 'разбор: кнопка скрыта — заменена блоком шага')
+    ok('разбор: раскрытие свёрнутого шага')
+
+    // ── no-JS: тот же форм-режим на нативных POST ──────────────────────────
+    const nojs = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, javaScriptEnabled: false })).newPage()
+    await nojs.goto(BASE + '/steps', { waitUntil: 'load' })
+    const npane = (key) => nojs.locator(`[data-step="${key}"]`)
+    const nsec4 = nojs.locator('section').nth(3)
+    await npane('contacts').getByLabel('Имя').fill('Ада')
+    await npane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await nsec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await nojs.waitForLoadState('load')
+    assert.equal(await npane('extra').isVisible(), true, 'no-JS: успех шага открыл «Примечание» (шаг из ответа экшена)')
+    assert.equal(await npane('contacts').isHidden(), true, 'no-JS: прошлый шаг свёрнут')
+    assert.equal(await npane('contacts').count(), 1, 'no-JS: свёрнутый шаг в DOM (поля едут в POST)')
+    ok('no-JS: переход шага нативным POST, шаг из ответа')
+
+    // разбор без JS: серверная-only ошибка, чужой шаг раскрыт, чистый свёрнут
+    await nojs.goto(BASE + '/steps', { waitUntil: 'load' })
+    await npane('contacts').getByLabel('Имя').fill('ошибка')
+    await npane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await nsec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await nojs.waitForLoadState('load')
+    await npane('extra').getByLabel('Примечание').fill('заметка')
+    await nsec4.getByRole('button', { name: 'Сохранить' }).click()
+    await nojs.waitForLoadState('load')
+    assert.equal(await npane('contacts').isVisible(), true, 'no-JS: разбор — чужой шаг с ошибкой раскрыт')
+    assert.ok((await npane('contacts').textContent())?.includes('Сервер не пропустил'), 'no-JS: серверная ошибка у поля')
+    assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true, 'no-JS: чистый шаг свёрнут в «Отобразить шаг N»')
+    ok('no-JS: разбор после серверной ошибки')
 
     console.log(`✅ steps-browser: ${passed} проверок пройдено`)
   } finally {

@@ -8,13 +8,17 @@
 //
 // Режим разбора (провал отправки с ошибками не только на текущем шаге —
 // на практике это финальный `save` или серверная-only ошибка): шаги с
-// ошибками закреплены открытыми (`pinned`), чистые свёрнуты с кнопкой
-// «Отобразить шаг N» (`collapsed`), юзер может раскрыть и сам (`open`).
-// Правило без памяти об интенции (Result её не несёт):
+// ошибками закреплены открытыми (`pinned`), чистые свёрнуты в «Отобразить
+// шаг N» (`collapsed` — нативный details в FormSteps: раскрытие без JS,
+// открытое живёт до отправки). Правило без памяти об интенции (Result её
+// не несёт):
 //   провал + есть ошибки на ЧУЖИХ шагах  → разбор;
-//   провал + mapped-ошибок нет вовсе     → разбор (только общие/серверные);
+//   провал + показываемых ошибок нет вовсе (только общие/серверные) → разбор:
+//   всё свёрнуто, блок общих — единственный сигнал;
 //   провал + ошибки только текущего шага → обычный вид (они и так видны).
-// Повторная отправка перезаписывает результат: ошибка ушла — шаг схлопнулся.
+// Показываемые ошибки чинятся на месте (recheck): показываемых не осталось —
+// разбора больше нет, форма вернулась в обычный вид. Повторная отправка
+// перезаписывает результат: ошибка ушла — шаг схлопнулся.
 import type { FormDescription, FormError, Result } from '#lib/form/index.js'
 import type { BoundForm, IntentProps } from '#lib/form/svelte/index.js'
 import type { StepsHost } from './steps.svelte.js'
@@ -31,8 +35,7 @@ export interface FormStepsOptions {
 export type StepView =
   | 'current'    // обычный режим: текущий шаг хоста
   | 'pinned'     // разбор: на шаге показанные ошибки, сворачивать нельзя
-  | 'open'       // раскрыт юзером («Отобразить шаг N») — живёт до отправки
-  | 'collapsed'  // свёрт: в DOM есть (значения едут в POST), видимости нет
+  | 'collapsed'  // свёрт: в DOM есть (значения едут в POST), вида нет до щелчка
 
 export interface FormStepsApi {
   /** Разбор: провал с чужими или только общими ошибками (см. шапку файла). */
@@ -45,12 +48,6 @@ export interface FormStepsApi {
   stepOfField(path: string): string | undefined
   /** Props сабмита шага: интенция его экшена (`formnovalidate`, полёт). */
   submitOf(step: string): IntentProps
-  /** Раскрыть/свернуть/закрыть всё: руками — только раскрытое юзером. */
-  open(step: string): void
-  close(step: string): void
-  closeAll(): void
-  /** Идентичность результата: `FormSteps` закрывает раскрытое на новой отправке. */
-  resultToken(): unknown
 }
 
 /** Карта «путь поля → шаг»: subset экшена каждого шага. Первый шаг выигрывает. */
@@ -83,7 +80,7 @@ export function isReview(
     if (hit) { steps.add(hit); continue }
     for (const [p, s] of map) if (e.path.startsWith(`${p}.`)) { steps.add(s); break }
   }
-  if (steps.size === 0) return true
+  if (steps.size === 0) return shown.length > 0
   return [...steps].some((s) => s !== currentKey)
 }
 
@@ -95,8 +92,6 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   const actionId = (step: string): string => o.actionOf?.(step) ?? step
   const keys = $derived(host.items.map((s) => s.key))
   const map = $derived(fieldStepMap(keys, bound.description.actions, o.actionOf))
-
-  let opened = $state<ReadonlySet<string>>(new Set())
 
   const errorSteps = $derived.by(() => {
     const out = new Set<string>()
@@ -117,12 +112,8 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   }
 
   function viewOf(step: string): StepView {
-    if (review) {
-      if (errorSteps.includes(step)) return 'pinned'
-      return opened.has(step) ? 'open' : 'collapsed'
-    }
-    if (host.currentKey === step) return 'current'
-    return opened.has(step) ? 'open' : 'collapsed'
+    if (review) return errorSteps.includes(step) ? 'pinned' : 'collapsed'
+    return host.currentKey === step ? 'current' : 'collapsed'
   }
 
   return {
@@ -131,9 +122,5 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
     viewOf,
     stepOfField,
     submitOf: (step) => bound.intent(actionId(step)),
-    open: (step) => { const next = new Set(opened); next.add(step); opened = next },
-    close: (step) => { const next = new Set(opened); next.delete(step); opened = next },
-    closeAll: () => { opened = new Set() },
-    resultToken: () => bound.state.result,
   }
 }
