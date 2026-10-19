@@ -2,7 +2,8 @@
 // через слои `lib/form` (метод, origin, тело, имена, конверт), бизнес — голые
 // функции `auth.ts`. REST нет, по решению владельца.
 //
-// Шаги: маркер — в адресе страницы (`?step=`), поля живут в DOM. С JS экшен
+// Шаги: маркер — в адресе страницы (`?stage=`, бронь ключей глобальна:
+// `step` занят /fields), поля живут в DOM. С JS экшен
 // отвечает данными (транспорт виджета шлёт accept: application/json); без JS
 // успех входа — redirect(303) на адрес следующего шага или на `next`.
 import { fail, redirect } from '@sveltejs/kit'
@@ -20,10 +21,11 @@ const config = createUserConfig(localStore.scope('user-config'))
 
 export const load: PageServerLoad = async (event) => {
   // `event.url`, а не `event.request.url`: только accessor объявляет зависимость
-  // load от поиска — иначе при смене `?step=` по ссылке load не перезапускается,
+  // load от поиска — иначе при смене `?stage=` по ссылке load не перезапускается,
   // и шаг на клиенте не переключается (SPA считал бы адрес мёртвым).
   const url = event.url
-  const stepParam = url.searchParams.get('step')
+  // ключ `stage` (не `step`): бронь ключей глобальна, `step` занят /fields
+  const stepParam = url.searchParams.get('stage')
   let registerSeed: string | null = null
   if (stepParam === 'register') {
     // без JS seed делает сервер (решение владельца); секрет едет в поле страницы
@@ -166,7 +168,7 @@ export const actions: Actions = {
         const next = localPath(new URL(event.request.url).searchParams.get('next'))
         const step = (result.data as { step?: string } | undefined)?.step
         if (step && step !== 'entry' && step !== 'done') {
-          redirect(303, `/user/auth?step=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`)
+          redirect(303, `/user/auth?stage=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`)
         }
         redirect(303, next ?? '/')
       }

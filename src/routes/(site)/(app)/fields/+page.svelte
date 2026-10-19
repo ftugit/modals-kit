@@ -50,6 +50,7 @@
   const filled = (key: FieldsStep): boolean => (key === 'build' ? !!data.set : !!data.record)
   const steps = useSteps({
     owner: 'fields',
+    mode: 'url',
     steps: () => STEPS.map((s) => ({ ...s, filled: filled(s.key) })),
     current: () => step,
     lockKey: 'fieldsNavLocked',

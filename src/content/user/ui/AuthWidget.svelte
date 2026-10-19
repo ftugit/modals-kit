@@ -18,6 +18,7 @@
   import { page } from '$app/state'
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { useSteps } from '#lib/components/steps/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
@@ -27,7 +28,7 @@
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
-  import { sign } from '../keys.js'
+  import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault } from '../vault.svelte.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { authForm, AUTH_FORM_REV } from '../forms.js'
@@ -102,19 +103,38 @@
     continuation: untrack(() => actionForm?.result ?? null),
   })
 
-  /* ── шаг: серверный начальный → результат экшена → переходы по итогу ── */
-  // Намеренный снимок на момент связывания (как `initialResult` у демо-форм):
+  /* ── шаг: универсальный хост (lib/components/steps), состояние виджета ── */
+  // Решение владельца (ход 261, ревизия): step — состояние ВИДЖЕТА, адрес —
+  // fallback. С JS клик по ссылке переключает шаг локально (на странице хост-
+  // режим hybrid мягко синхронизирует адрес своим ключом брони — без навигации
+  // и load; в модалке — local, адрес не трогается вовсе). Без JS ссылка честно
+  // ведёт на адрес — данные страницы несёт load. Ответ экшена приоритетнее
+  // данных страницы (навигации при нём нет).
   const initial = untrack(() => stepOf(actionForm?.result) ?? ({ step: data.step ?? 'entry' } as StepData))
-  let step = $state<StepData['step']>(initial.step)
   let blocked = $state<StepData['blocked']>(initial.blocked)
   let restrictions = $state<StepData['restrictions']>(initial.restrictions)
+  // svelte-ignore state_referenced_locally -- режим выбирается один раз при
+  // связывании: за жизнь виджета модалкой он не становится
+  // Ключ адреса — `stage` (не `step`): бронь ключей глобальна на приложение,
+  // `step` занят страницей /fields (lib/address/keys; конфликт = ошибка брони).
+  const steps = useSteps({
+    owner: 'auth',
+    mode: mode === 'modal' ? 'local' : 'hybrid',
+    key: 'stage',
+    steps: () => [
+      { key: 'entry', label: 'Авторизация', filled: true },
+      { key: 'register', label: 'Создать аккаунт', filled: true },
+    ],
+    // начальное значение: данные загрузки / deep-link; дальше — set()
+    current: () => (data.step as StepData['step']) ?? 'entry',
+  })
+  const step = $derived((steps.currentKey ?? 'entry') as StepData['step'])
 
-  // Шаг и challenge живут в адресе на обеих сторонах (решение владельца, ход 261):
-  // переход по ссылке «Создать аккаунт»/«Авторизация» — навигация, данные страницы
-  // обновляются, виджет следует за ними. Ответ экшена (без навигации) приоритетнее —
-  // данные страницы при нём не меняются.
+  // сервер → хост: навигация/deep-link принесли новый ?step= (зависимость —
+  // только data; локальные смены хоста адрес данных не меняют — цикла нет)
   $effect(() => {
-    step = data.step as StepData['step']
+    const server = data.step as StepData['step'] | undefined
+    if (server) untrack(() => { if (steps.currentKey !== server) steps.set(server) })
   })
   $effect(() => {
     if (data.challenge?.nonce) nonce = data.challenge.nonce
@@ -137,7 +157,7 @@
       return
     }
     untrack(() => {
-      step = next.step
+      steps.set(next.step ?? 'entry')
       blocked = next.blocked
       restrictions = next.restrictions
       if (next.nonce) nonce = next.nonce
@@ -182,28 +202,22 @@
     void goto(data.next ?? '/')
   }
 
-  /* ── seed: генерирует СЕРВЕР (решение владельца); копирование — подмена поля ── */
+  /* ── seed: с JS генерирует БРАУЗЕР (ключ не покидает устройство); сервер —
+     fallback без JS / обновления / deep-link. Копирование — подмена поля ── */
   // Значение живёт в состоянии ФОРМЫ (его валидирует и отправляет движок):
   // старт — синхронный onInput при связывании, переходы — зеркало (оба приёма
-  // и их грабли — в field-mirror.svelte.ts).
-  const secret = $derived(data.registerSeed ?? '')
+  // и их грабли — в field-mirror.svelte.ts). Локальная смена шага — клик по
+  // ссылке с JS: генерируем здесь же и переключаем шаг хостом; серверный seed
+  // при этом в HTML не попадает (load не запрашивался — смены нет на сервере).
+  let localSeed = $state<string | null>(null)
+  const secret = $derived(localSeed ?? data.registerSeed ?? '')
   mirrorToField(bound, 'seed', () => secret)
 
-  /**
-   * Адрес шага для перехода БЕЗ JS (маркер шага — в адресе, его читает load):
-   * на странице — текущий адрес с шагом (next сохраняется); из модалки —
-   * честная страница входа (без JS модалка не удерживается).
-   * С JS клик перехвачен — seed генерирует клиент.
-   */
-  function stepHref(to: 'register' | 'entry'): string {
-    const u = new URL(page.url.href) // копия: page.url у SvelteKit readonly
-    if (mode === 'modal') {
-      u.pathname = action
-      u.search = ''
-    }
-    if (to === 'register') u.searchParams.set('step', 'register')
-    else u.searchParams.delete('step')
-    return `${u.pathname}${u.search}`
+  /** Локальная смена шага с JS: на регистрации ключ делает браузер. */
+  async function switchStep(to: 'entry' | 'register'): Promise<void> {
+    if (steps.currentKey === to) return
+    localSeed = to === 'register' ? (await generateKeyPair()).secret : null
+    steps.set(to)
   }
 
   /* ── аватар: конвейер с пределами из конфига; результат — скрытое поле ── */
@@ -262,32 +276,43 @@
   <Input type="hidden" name="nonce" value={nonce} />
 
   {#if step === 'entry' || step === 'register'}
-    <!-- ссылка шага справа: вход ↔ создание (ТЗ); работает одинаково с JS и без —
-         это адрес (?step=register), данные страницы несёт load -->
+    <!-- ссылка шага справа: вход ↔ создание (ТЗ). Адрес в href — fallback без JS
+         (честная страница, данные несёт load); с JS клик локален — смену делает
+         хост (в модалке адрес не трогается, на странице синхронизируется мягко) -->
     <div class="flex items-baseline justify-end gap-2">
-      {#if step === 'entry'}
-        <a
-          href={stepHref('register')}
-          class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        >Создать аккаунт</a>
-      {:else}
-        <a
-          href={stepHref('entry')}
-          class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        >Авторизация</a>
-      {/if}
+      {#each steps.items as it (it.key)}
+        {#if !it.current}
+          <a
+            href={it.href}
+            onclick={(e) => { e.preventDefault(); void switchStep(it.key as 'entry' | 'register') }}
+            class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >{it.label}</a>
+        {/if}
+      {/each}
     </div>
 
     {#if step === 'register'}
-      <!-- ТЗ хода 261: генерирует и подписывает СЕРВЕР; seed виден в HTML страницы -->
-      <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
-        <p class="font-medium">Seed создал и подписал сервер</p>
-        <p class="text-xs text-muted-foreground">
-          Он уже виден в HTML этой страницы — не открывайте форму в общих и публичных местах:
-          увидевший seed получит доступ к аккаунту. Сохраните его в менеджере секретов:
-          он показывается один раз.
-        </p>
-      </div>
+      {#if localSeed}
+        <!-- JS-переход: ключ сделал браузер, в HTML страницы он не попадал -->
+        <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+          <p class="font-medium">Seed сгенерирован в этом браузере</p>
+          <p class="text-xs text-muted-foreground">
+            Ключ создан локально и не покидал ваше устройство. Сохраните его в менеджере
+            секретов: он показывается один раз.
+          </p>
+        </div>
+      {:else}
+        <!-- fallback (без JS, обновление, deep-link): генерирует и подписывает СЕРВЕР;
+             seed виден в HTML страницы -->
+        <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+          <p class="font-medium">Seed создал и подписал сервер</p>
+          <p class="text-xs text-muted-foreground">
+            Он уже виден в HTML этой страницы — не открывайте форму в общих и публичных местах:
+            увидевший seed получит доступ к аккаунту. Сохраните его в менеджере секретов:
+            он показывается один раз.
+          </p>
+        </div>
+      {/if}
     {/if}
 
     <!-- Подмена примитива (решение владельца): на регистрации — CopyField (Input →

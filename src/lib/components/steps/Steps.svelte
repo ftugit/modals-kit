@@ -30,6 +30,14 @@
     {#if s.href !== null}
       <a
         href={s.href}
+        onclick={(e) => {
+          // режим url — нативная навигация; local/hybrid — локальная смена
+          // (href остаётся fallback без JS), побочные действия — у потребителя
+          if (host.mode !== 'url') {
+            e.preventDefault()
+            host.set(s.key)
+          }
+        }}
         class="font-medium underline-offset-4 hover:underline {s.locked ? 'pointer-events-none opacity-50' : ''}"
         aria-disabled={s.locked ? 'true' : undefined}
         aria-current={s.current ? 'step' : undefined}

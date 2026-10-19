@@ -1,7 +1,7 @@
 /**
  * Браузер-тесты пользовательской системы (ход 261 — решения владельца; база — 258):
  *   • «Создать аккаунт» — ссылка: шаг живёт в адресе на ОБЕИХ сторонах
- *     (?step=register, seed всегда делает сервер);
+ *     (?stage=register, seed делает сервер при fallback-загрузке);
  *   • пустой/мусорный seed — ошибки поля ВИДНЫ (required + pattern движка;
  *     раньше шаг отходил серверу и ошибка тонула в скрытом signature);
  *   • без JS пустая/мусорная отправка блокируется нативно (required/pattern);
@@ -50,12 +50,28 @@ async function run() {
       // 1. «Создать аккаунт» — ссылка с адресом шага (не мёртвая кнопка)
       const create = form.getByRole('link', { name: 'Создать аккаунт' })
       assert.equal(await create.count(), 1, '«Создать аккаунт» — ссылка')
-      assert.ok((await create.getAttribute('href')).includes('step=register'), 'адрес шага в href')
-      ok('создание аккаунта — ссылка с ?step=register')
+      assert.ok((await create.getAttribute('href')).includes('stage=register'), 'адрес шага в href')
+      ok('создание аккаунта — ссылка с ?stage=register')
+
+      // 1а. В МОДАЛКЕ смена шага — локальная (репорт владельца, ход 261):
+      // адрес не уезжает на роут, модалка жива, seed делает браузер
+      await page.goto(BASE + '/?modal=user.auth', { waitUntil: 'networkidle' })
+      const dlg = page.locator('[role=dialog]')
+      await dlg.waitFor({ state: 'visible' })
+      await dlg.getByRole('link', { name: 'Создать аккаунт' }).click()
+      await page.waitForTimeout(800)
+      assert.ok(page.url().includes('modal=user.auth'), 'модалка: адрес не уехал на роут')
+      assert.equal(await dlg.isVisible(), true, 'модалка: жива после смены шага')
+      const seedModal = await dlg.locator('input[name=seed]').inputValue()
+      assert.ok(seedModal.length >= 43, 'модалка: seed на месте')
+      assert.ok((await dlg.textContent()).includes('в этом браузере'), 'модалка: текст «ключ сделал браузер»')
+      ok('модалка: смена шага локальна, seed браузера, модалка жива')
+      await page.keyboard.press('Escape')
+      await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
 
       // 2. Клик (JS): шаг через адрес (навигация), seed генерирует сервер
       await create.click()
-      await page.waitForURL(/step=register/)
+      await page.waitForURL(/stage=register/)
       await page.waitForFunction(() => {
         const el = document.querySelector('input[name=seed]')
         return el && el.value.length >= 43
@@ -91,7 +107,7 @@ async function run() {
 
       // 3. Обратно на вход: поле ПУСТОЕ (seed шага регистрации не перетаскивается)
       await form.getByRole('link', { name: 'Авторизация' }).click()
-      await page.waitForURL((u) => !u.search.includes('step=register'))
+      await page.waitForURL((u) => !u.search.includes('stage=register'))
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value === '')
       assert.equal(await page.inputValue('input[name=seed]'), '', 'поле входа пустое')
       ok('возврат на вход: поле чистое')
@@ -114,7 +130,7 @@ async function run() {
 
       // 6. Регистрация: кнопка заблокирована до заполнения, заливка — от курсора
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/step=register/)
+      await page.waitForURL(/stage=register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
       const hold = form.locator('button[type=submit]:has-text("Удерживайте")')
@@ -221,7 +237,7 @@ async function run() {
       const form = page.locator('#user-auth')
       assert.equal(await form.getByRole('button', { name: 'Создать аккаунт' }).count(), 0, 'мёртвой кнопки нет')
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/step=register/)
+      await page.waitForURL(/stage=register/)
       // readonly у seed больше нет (решение владельца: шаг живёт в адресе, seed
       // всегда серверный) — проверяем сам факт: поле в HTML со значением сервера
       await page.waitForSelector('input[name=seed]')
@@ -246,22 +262,22 @@ async function run() {
       // 12. Полный цикл без JS: создать → профиль → домой (readonly-поле с
       // серверным seed уходит в отправку; readonly не проверяется нативно)
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/step=register/)
+      await page.waitForURL(/stage=register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
       await form.getByRole('button', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/step=profile/, { timeout: 15000 })
+      await page.waitForURL(/stage=profile/, { timeout: 15000 })
       await page.fill('input[name=nickname]', 'e2e-nojs-258')
       await form.getByRole('button', { name: 'Сохранить' }).click()
-      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('step'), { timeout: 15000 })
+      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
       ok('без JS: регистрация + профиль прошли (редиректы экшена)')
 
       // 13. Вход без JS тем же seed (доказательство = знание секрета)
       await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
       await page.fill('input[name=seed]', seed)
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
-      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('step'), { timeout: 15000 })
+      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
       ok('без JS: вход корректным seed проходит')
 
       // 14. Меню без JS: аватар-ссылка ведёт на страницу меню, выход — формой
