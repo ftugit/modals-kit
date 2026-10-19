@@ -59,6 +59,6 @@
     <Switch value="true" size="sm" bind:checked {disabled} onchange={handleChange} {...rest} />
   {/if}
   <span class={disabled ? 'text-muted-foreground' : ''}
-    >{label}{#if hint}<span class="ml-1 text-muted-foreground/80" data-field-hint id={hintId}>{hint}</span>{/if}</span
+    >{label}{#if hint}<span class="ml-1 font-normal text-muted-foreground" data-field-hint id={hintId}>{hint}</span>{/if}</span
   >
 </label>

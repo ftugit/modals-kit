@@ -232,27 +232,30 @@ async function run(jsEnabled) {
                                          viewport: { width: 1280, height: 3000 } })
   const pg = await ctx.newPage()
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
+  // Панель настроек — универсальная DemoPanel: до оживления её поля выключены
+  // (jsOnly), после — живые. Ждём ФАКТ, а не время.
   if (jsEnabled) {
     await pg.waitForFunction(() => {
-      const settings = [...document.querySelectorAll('[data-js-only-settings]')]
-      return settings.length === 2 && settings.every((node) => node instanceof HTMLFieldSetElement && !node.disabled)
+      const selects = [...document.querySelectorAll('[data-testid="demo-panel"] select')]
+      return selects.length >= 9 && selects.every((node) => !node.disabled)
     }, null, { timeout: 20000 })
   }
   const settingsState = await pg.evaluate(() => {
-    const settings = [...document.querySelectorAll('[data-js-only-settings]')]
-    const form = document.querySelector('form')
+    const panel = document.querySelector('[data-testid="demo-panel"]')
+    const form = document.querySelector('form:has(#signup-email)') ?? document.querySelector('form')
     const email = document.querySelector('#signup-email')
     const submit = form?.querySelector('button[value="submit"]')
     const route = [...document.querySelectorAll('a')].find((el) => el.getAttribute('href') === '/modals')
+    const controls = [...(panel?.querySelectorAll('select, [role="switch"]') ?? [])]
     return {
-      count: settings.length,
-      disabled: settings.map((node) => node instanceof HTMLFieldSetElement && node.disabled),
-      controlsDisabled: settings.map((node) => [...node.querySelectorAll('button,input,select,textarea')]
-        .some((control) => control.matches(':disabled'))),
+      hasPanel: !!panel,
+      count: controls.length,
+      disabled: controls.map((node) => node.matches(':disabled')),
       emailDisabled: !email || email.matches(':disabled'),
       submitDisabled: !submit || submit.matches(':disabled'),
       routeHref: route?.getAttribute('href') ?? null,
-      hint: document.querySelector('[data-js-only-hint]')?.textContent?.trim() ?? null,
+      hint: [...(panel?.querySelectorAll('[data-field-hint]') ?? [])]
+        .map((node) => node.textContent.trim()).filter(Boolean),
     }
   })
   await fill(pg, scenario)
@@ -303,21 +306,24 @@ const nojs = await run(false)
 const js = await run(true)
 
 ok('без скрипта форма работает', nojs.errors.length > 0, nojs.errors.join(' | '))
-ok('без скрипта JS-настройки заблокированы',
-  nojs.settingsState.count === 2
-    && nojs.settingsState.disabled.every(Boolean)
-    && nojs.settingsState.controlsDisabled.every(Boolean), JSON.stringify(nojs.settingsState))
+ok('без скрипта настройки панели заблокированы',
+  nojs.settingsState.hasPanel
+    && nojs.settingsState.count >= 10
+    && nojs.settingsState.disabled.every(Boolean), JSON.stringify(nojs.settingsState))
 ok('без скрипта форма и переход на другую страницу остаются доступны',
   !nojs.settingsState.emailDisabled
     && !nojs.settingsState.submitDisabled
     && nojs.settingsState.routeHref === '/modals', JSON.stringify(nojs.settingsState))
-ok('после гидратации JS-настройки включены',
-  js.settingsState.count === 2
-    && js.settingsState.disabled.every((disabled) => !disabled)
-    && js.settingsState.controlsDisabled.every((disabled) => !disabled), JSON.stringify(js.settingsState))
+ok('после гидратации настройки панели включены',
+  js.settingsState.hasPanel
+    && js.settingsState.count >= 10
+    && js.settingsState.disabled.every((disabled) => !disabled), JSON.stringify(js.settingsState))
 ok('пока страница не ожила, подсказка о неактивных настройках видна',
-  nojs.settingsState.hint === 'Настройки неактивны — доступно после загрузки JavaScript.', String(nojs.settingsState.hint))
-ok('после оживления подсказка о неактивных настройках скрыта', js.settingsState.hint === null, String(js.settingsState.hint))
+  nojs.settingsState.hint.length >= 10
+    && nojs.settingsState.hint.every((text) => text === 'доступно после загрузки JavaScript'),
+  String(nojs.settingsState.hint))
+ok('после оживления подсказка о неактивных настройках скрыта',
+  !js.settingsState.hint.includes('доступно после загрузки JavaScript'), String(js.settingsState.hint))
 ok('без скрипта значения возвращаются', nojs.kept === 'a@b.io')
 ok('пути дают одинаковые ошибки',
   JSON.stringify(nojs.errors) === JSON.stringify(js.errors),

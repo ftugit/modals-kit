@@ -3,8 +3,6 @@
 import { visibleAddress } from '#lib/address/sveltekit.js'
 import { asLink } from '#lib/components/links/index.js'
   import { Button, Fieldset } from '#lib/components/ui/index.js'
-  import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
-  const jsOnly = useJsOnly()
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
   // она меняется прямо здесь, а не в коде.
   import { untrack } from 'svelte'
@@ -21,7 +19,8 @@ import { asLink } from '#lib/components/links/index.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
   import { createConfig } from '#lib/form/svelte/index.js'
-  import { Field as PanelField, Select as PanelSelect, Toggle as PanelToggle } from '#lib/components/settings/index.js'
+  import { DemoPanel, demoDefaults } from '#lib/components/demo/index.js'
+  import { demoPanelSchema } from './demo-schema.ts'
   import Common from '#lib/components/form/Common.svelte'
   import Field from '#lib/components/form/Field.svelte'
 
@@ -37,155 +36,41 @@ import { asLink } from '#lib/components/links/index.js'
 
   type Mode = 'as-is' | 'one-block' | 'drop-code' | 'to-channel'
 
-  /* ── панель настроек — на самом механизме (этап 8) ─────────────────
-     Второго состояния страница не держит: переключатели демо читают зеркало
-     `settings`, а `opts` — геттеры над ним (C3). Имена полей = id, как в
-     фильтрах и пагинаторной панели; контролы — общие виджеты `#lib/components/settings/index.js`
-     (Select/Toggle поверх примитивов), аттрибуты — из `form.field(...)`. */
-  /* Зеркало механизма старует пустым (дефолты описания — только для
-     декода/сида); панель держит тот же список значений единственным
-     источником: `sv()` читает зеркало с фолбэком, разметка — тоже. */
-  const PANEL_DEFAULTS: Record<string, string | boolean> = {
-    mode: 'as-is', invalid_from: 'fact', intercept: 'js', live: 'after-touched',
-    cardinality: 'first', markup: 'default', parallel: 'block',
-    sample: 'поле и код известны', with_type: false, described: false, answer: 'accept',
+  /* ── панель настроек — универсальная DemoPanel (этап 4) ─────────────
+     Поля — данные (`./demo-schema.ts`), форму, «Применить» до оживления и
+     параметры ведёт панель. Страница получает ПАРАМЕТРЫ и живёт на них:
+     `sv()` читает единственное зеркало панели, `opts` — геттеры над ним
+     (C3: эффект-синхронизатор не нужен). Адреса у полей нет — настройки
+     демонстрации не место в ссылке, поэтому `?` страница не трогает. */
+  const PANEL_DEFAULTS = demoDefaults(demoPanelSchema)
+  let panel = $state<Record<string, string | boolean>>({ ...PANEL_DEFAULTS })
+  const sv = (name: string) => panel[name] ?? PANEL_DEFAULTS[name]
+
+  // Последнее принятое от панели — снимок: `onParams` приходит и эффектом
+  // первого рендера, и коммитом каждого поля; реагируем на РАЗЛИЧИЕ.
+  // svelte-ignore state_referenced_locally
+  let lastPanel: Record<string, unknown> = untrack(() => ({ ...PANEL_DEFAULTS }))
+
+  /**
+   * Параметры панели → состояние страницы. Побочные правила демо живут здесь,
+   * а не в панели: «всё в общий» переставляет источник подсветки (пишем в
+   * зеркало, чтобы селектор показывал актуальное значение и уже показанные
+   * ошибки перекрасились), ответ сервера уходит скрытым полем `answer` во ВСЕ
+   * связки — иначе смена «первая/все» или разметки его сбросит.
+   */
+  function onParams(params: Record<string, unknown>): void {
+    const changed: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(params))
+      if (!Object.is(value, lastPanel[key])) changed[key] = value
+    if (Object.keys(changed).length === 0) return
+    if (changed.mode === 'one-block') changed.invalid_from = 'shown'
+    lastPanel = { ...lastPanel, ...changed }
+    panel = { ...panel, ...changed } as Record<string, string | boolean>
+    if ('answer' in changed)
+      for (const b of Object.values(bound)) b.f.answer?.onInput(String(changed.answer))
+    if ('mode' in changed) form.redisplay()
   }
 
-  /* Описание выбранного значения — рядом с подписью поля панели, как у
-     пагинатора (`settings/Field` `hint`): что именно изменится в форме. Тексты —
-     забота страницы, а не библиотеки: в `Option` описания нет. */
-  const HINTS: Record<string, Record<string, string>> = {
-    mode: {
-      'as-is': 'ошибки остаются у своих полей',
-      'one-block': 'обработчик стирает имена полей: все ошибки уходят в общий блок над формой, подсветка переключается «по показу»',
-      'drop-code': 'обработчик выбрасывает ошибку «слишком коротко»: текста нет, но поле знает, что неверно',
-      'to-channel': 'ошибки почты уходят в «Внешний канал» под формой и в самой форме не видны',
-    },
-    invalid_from: {
-      fact: 'поле красное, если ошибка есть, даже когда обработчик убрал её текст',
-      shown: 'поле красное, только если его ошибка показана',
-    },
-    intercept: {
-      js: 'отправка запросом из скрипта, страница не перезагружается',
-      native: 'обычная отправка браузером: страница перезагружается, ошибки приходят в новой разметке',
-    },
-    live: {
-      'after-touched': 'проверка при уходе из поля, а после первого ухода — на каждом вводе',
-      'on-blur': 'проверка только при уходе из поля',
-      'on-input': 'проверка на каждом вводе, даже до первого ухода',
-      'on-submit': 'проверка только при отправке',
-    },
-    cardinality: {
-      first: 'у поля видна одна ошибка — первая по порядку правил',
-      all: 'у поля виден весь список ошибок; это свойство описания, поэтому форма собирается заново, и сервер получает ту же настройку',
-    },
-    markup: {
-      default: 'идентификаторы полей вида signup-email, проверка — по «Режиму живой проверки»',
-      custom: 'свои идентификаторы (fld_signup__email) и проверка на каждом вводе: настройка приложения, библиотека не меняется',
-    },
-    parallel: {
-      block: 'пока отправка идёт, повторное нажатие не уходит',
-      replace: 'новая отправка отменяет идущую',
-      queue: 'новая отправка ждёт конца текущей и уходит сама',
-    },
-    answer: {
-      accept: 'сервер сохраняет и отвечает «готово»',
-      redirect: 'сервер сохраняет и велит перейти на другой адрес: со скриптом переходит страница, без него — ответ 303',
-      queued: 'сервер принимает заявку и отвечает сразу, а запись готова через 5 секунд: страница сама спрашивает, готово ли; без скрипта — ссылка на статус',
-      unknown: 'сервер не подтвердил успех: исход «неизвестно», повтор может задвоить запись; событие уходит в канал системных ошибок',
-    },
-  }
-  const hintOf = (name: string) => HINTS[name]?.[String(sv(name))]
-  const sv = (name: string) => settings.values[name] ?? PANEL_DEFAULTS[name]
-
-  const panelCfg = createConfig({
-    resolve: () => undefined,
-    ui: { fieldId: (_formId, name) => name },
-  })
-  const settings = bind(panelCfg, defineForm({
-    id: 'demo-settings',
-    registry: defaultRegistry,
-    fields: {
-      mode: field.select({
-        label: 'Обработчик ошибок',
-        defaultValue: PANEL_DEFAULTS.mode,
-        options: [
-          { value: 'as-is', label: 'как есть' },
-          { value: 'one-block', label: 'всё в общий' },
-          { value: 'drop-code', label: 'без minLength' },
-          { value: 'to-channel', label: 'почту — в канал' },
-        ],
-      }),
-      invalid_from: field.select({
-        label: 'Откуда берётся подсветка',
-        defaultValue: PANEL_DEFAULTS.invalid_from,
-        options: [
-          { value: 'fact', label: 'по факту' },
-          { value: 'shown', label: 'по показу' },
-        ],
-      }),
-      intercept: field.select({
-        label: 'Перехват отправки',
-        defaultValue: PANEL_DEFAULTS.intercept,
-        options: [
-          { value: 'js', label: 'перехватывать' },
-          { value: 'native', label: 'нативно' },
-        ],
-      }),
-      live: field.select({
-        label: 'Режим живой проверки',
-        defaultValue: PANEL_DEFAULTS.live,
-        options: [
-          { value: 'after-touched', label: 'после касания' },
-          { value: 'on-blur', label: 'при уходе' },
-          { value: 'on-input', label: 'при вводе' },
-          { value: 'on-submit', label: 'при отправке' },
-        ],
-      }),
-      cardinality: field.select({
-        label: 'Сколько ошибок на поле',
-        defaultValue: PANEL_DEFAULTS.cardinality,
-        options: [
-          { value: 'first', label: 'первая' },
-          { value: 'all', label: 'все (пересобирает форму)' },
-        ],
-      }),
-      markup: field.select({
-        label: 'Политика разметки адаптера',
-        defaultValue: PANEL_DEFAULTS.markup,
-        options: [
-          { value: 'default', label: 'умолчания' },
-          { value: 'custom', label: 'свои' },
-        ],
-      }),
-      parallel: field.select({
-        label: 'Параллельные отправки',
-        defaultValue: PANEL_DEFAULTS.parallel,
-        options: [
-          { value: 'block', label: 'блокировать' },
-          { value: 'replace', label: 'заменять' },
-          { value: 'queue', label: 'очередь' },
-        ],
-      }),
-      answer: field.select({
-        label: 'Ответ сервера',
-        defaultValue: PANEL_DEFAULTS.answer,
-        options: [
-          { value: 'accept', label: 'принято' },
-          { value: 'redirect', label: 'переход' },
-          { value: 'queued', label: 'в очереди' },
-          { value: 'unknown', label: 'неизвестно' },
-        ],
-      }),
-      sample: field.select({
-        label: 'Образец чужой службы',
-        defaultValue: PANEL_DEFAULTS.sample,
-        options: Object.keys(PSP_SAMPLES).map((k) => ({ value: k, label: k })),
-      }),
-      with_type: field.checkbox({ label: 'Тип значения rating', defaultValue: PANEL_DEFAULTS.with_type }),
-      described: field.checkbox({ label: 'Правило «шестизначный код» — с описанием', defaultValue: PANEL_DEFAULTS.described }),
-    },
-  }), {})
 
   const mode = $derived(sv('mode') as Mode)
 
@@ -362,19 +247,6 @@ import { asLink } from '#lib/components/links/index.js'
       .map(([k, val]) => (val === true ? k : `${k}="${val}"`))
       .join(' ') || '—'
 
-  /* Смена обработчика — реакция на действие пользователя, а не на состояние
-     (C3): «всё в общий» переставляет источник подсветки (пишем В ЗЕРКАЛО, чтобы
-     селектор показывал актуальное значение) и перекрашивает уже показанные
-     ошибки. Монтирование изменением не считается само собой. */
-  function onPanelChange(name: string, value: string) {
-    settings.field(name)?.onInput(value)
-    // Ответ сервера уходит скрытым полем `answer`: во все связки, чтобы смена
-    // «первая/все» или разметки его не сбросила.
-    if (name === 'answer') for (const b of Object.values(bound)) b.f.answer?.onInput(value)
-    if (name !== 'mode') return
-    if (value === 'one-block') settings.field('invalid_from')?.onInput('shown')
-    form.redisplay()
-  }
 
 </script>
 
@@ -391,39 +263,21 @@ import { asLink } from '#lib/components/links/index.js'
       <Button {...asLink('/modals')} variant="outline" size="sm">Модалки</Button>
     </header>
 
-    <!-- ── настройки ─────────────────────────────────────────────── -->
-    <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Настройки формы" legendVariant="hidden" class="grid gap-4 sm:grid-cols-2">
-        {#each ['mode', 'invalid_from', 'intercept', 'live', 'cardinality', 'markup', 'parallel', 'answer'] as name (name)}
-          {@const v = settings.field(name)!}
-          {@const hint = hintOf(name)}
-          <PanelField label={v.label ?? name} {hint} hintId={`${name}-help`}>
-            <PanelSelect
-              value={String(v.value ?? PANEL_DEFAULTS[name] ?? '')}
-              options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
-              onChange={(x) => onPanelChange(name, x)}
-              {...v.attrs}
-              aria-describedby={hint ? `${name}-help` : undefined}
-            />
-          </PanelField>
-        {/each}
-        <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm sm:col-span-2" aria-live="polite">
-          <b>Сейчас демо настроено так:</b>
-          ошибки
-          {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
-          на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
-          {#if form.facts.length === 0}
-            <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
-          {:else}
-            <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
-          {/if}
-        </div>
-      </Fieldset>
-      <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>
-             не показал бы подсказку, когда JS включён, но ещё не загрузился. -->
-        {#if jsOnly()}<p class="mt-3 text-xs text-muted-foreground" data-js-only-hint>Настройки неактивны — {JS_ONLY_REASON}.</p>{/if}
-    </section>
+    <!-- ── настройки: панель — форма, страница — параметры ────────── -->
+    <DemoPanel schema={demoPanelSchema} values={panel} onParams={onParams} />
 
+    <!-- Итог настройки — текстом: это не контрол, панель его не носит. -->
+    <section class="rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm" aria-live="polite">
+      <b>Сейчас демо настроено так:</b>
+      ошибки
+      {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
+      на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
+      {#if form.facts.length === 0}
+        <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
+      {:else}
+        <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
+      {/if}
+    </section>
     <!-- ── форма ─────────────────────────────────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
       <Form {form} hiddenFields={form.hidden()} class="space-y-4">
@@ -531,21 +385,13 @@ import { asLink } from '#lib/components/links/index.js'
     {/if}
 
     <!-- ── песочница расширения ──────────────────────────────────── -->
-    <Fieldset disabled={jsOnly()} data-js-only-settings="" legend="Настройки расширения" legendVariant="hidden" class="block">
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Расширение на лету — на отдельном реестре</div>
-        <div class="mb-3 grid gap-4 sm:grid-cols-2">
-          {#each ['with_type', 'described'] as name (name)}
-            {@const v = settings.field(name)!}
-            <PanelToggle
-              label={v.label ?? name}
-              checked={v.value === true}
-              onChange={(c) => v.onInput(c)}
-              hiddenPair={false}
-              {...v.attrs}
-            />
-          {/each}
-        </div>
+        <p class="mb-3 text-xs text-muted-foreground">
+          Переключатели — в панели настроек выше: «Тип значения rating» и «Правило
+          «шестизначный код» — с описанием». Таблица ниже показывает, что из этого
+          вышло.
+        </p>
 
         {#if built.ok}
           <table class="w-full text-left text-xs">
@@ -585,19 +431,9 @@ import { asLink } from '#lib/components/links/index.js'
     <!-- ── чужая служба ──────────────────────────────────────────── -->
       <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
         <div class="mb-3 text-sm font-semibold">Чужая служба: нормализация до обработчика</div>
-        <div class="mb-3 max-w-xl">
-          {#each ['sample'] as sname (sname)}
-            {@const v = settings.field(sname)!}
-            <PanelField label={v.label ?? sname}>
-              <PanelSelect
-                value={String(v.value ?? PANEL_DEFAULTS[sname] ?? '')}
-                options={(v.options ?? []).map((o) => [o.value, o.label] as const)}
-                onChange={(x) => v.onInput(x)}
-                {...v.attrs}
-              />
-            </PanelField>
-          {/each}
-        </div>
+        <p class="mb-3 text-xs text-muted-foreground">
+          Образец выбирается в панели настроек выше — «Образец чужой службы».
+        </p>
         <div class="grid gap-3 sm:grid-cols-3">
           <div>
             <div class="mb-1 text-xs font-medium text-muted-foreground">сырой ответ</div>
@@ -619,8 +455,7 @@ import { asLink } from '#lib/components/links/index.js'
           Не нашлось соответствия — ошибка просто общая. Исходные данные службы остаются
           в <code>source</code>, чтобы было чем манипулировать.
         </p>
-        </section>
-    </Fieldset>
+      </section>
 
     <!-- ── отчёт: собирается обходом реестра ─────────────────────── -->
     <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
