@@ -1,12 +1,12 @@
 # Универсальная демо-панель — утверждённый дизайн
 
-**Статус: этап 1 СДЕЛАН (`/steps`, ход 262; `ui`-компонент — по образцу фильтров, ход 263).** Решение владельца: «Давай делать
+**Статус: этапы 1–3 СДЕЛАНЫ** — `/steps` (ход 262), `ui`-компонент (ход 263),
+`/modals` (ход 264) и пагинатор с `/db-demo` (ход 265). Остался этап 4 — панель `/form`. Решение владельца: «Давай делать
 универсальную демо панель… на первом этапе только steps, а так абсолютно все носители
 демо опций». Сделано: `#lib/components/demo` (схема-данные → форма → адрес через
 `lib/address` → параметры наружу), `/steps` переведён, дефект тача закрыт; попутно
 `lib/steps` стал строить ссылки от видимого адреса (иначе мелкие записи терялись).
-Дальше — этапы 2–4: пагинатор/`db-demo`, модалки, формы: панель обязана заменить
-КАЖДУЮ текущую демо-панель.
+Дальше — этап 4: панель `/form`.
 
 ## Требование владельца (дословно, ход 10 и ход 262)
 
@@ -25,8 +25,8 @@
 | Раздел | Панель сейчас | Где истина | Кто пишет |
 |---|---|---|---|
 | `/steps` | руками в `steps/+page.svelte`: `defineForm` + `bind(url)` + `goto` | адрес `?demo/?nav/?filled`, читается `page.url` | сама страница (`demoHref` + полный `goto`) |
-| `/paginator`, `/db-demo` | `PaginatorSettings` → `compileDemoPanelSchema` → `PaginatorSettingsForm` | хранилище пагинатора, адрес — у источника `url` | `setExtra`/`setPageSize`; ключи `page`/`page.*` бронирует адаптер пагинатора |
-| `/modals` | `SettingsPanel.svelte` руками: `bind` без url + эффект-дифф | per-route конфиг модалок | `m.modals.configure(patch)` |
+| `/paginator`, `/db-demo` | `PaginatorSettings` → `paginatorPanel` (`SettingsField[]` → схема `DemoPanel`) | хранилище пагинатора, адрес — у источника `url` | `setExtra`/`setPageSize`; ключи `page`/`page.*` бронирует адаптер пагинатора |
+| `/modals` | `SettingsPanel` → `DemoPanel` + `ui` (`ModalsDemoFields`) | per-route конфиг модалок | `m.modals.configure(patch)` |
 | `/form` | разметка в `form/+page.svelte`: `bind` без url | состояние страницы | `if/else` по значениям (`cardinality`, `ui`, песочница) |
 
 Общее у всех четырёх: схема полей → `bind` → виджеты `#lib/components/settings`;
@@ -188,10 +188,12 @@ URL возвращается к записи слоя. Панель пишет �
 
 ## Вне этапа 1 (записано, чтобы не потерять)
 
-- этап 2 — `PaginatorSettings` на общий компонент: `SettingsField[]` → `DemoField[]`,
-  `compileDemoPanelSchema` уходит, поля `url:false` + адаптер `lib/paginate`;
-  источник (localStorage/память) — единственное не-адресное поле, слот `store`;
-- этап 3 — `SettingsPanel` модалок: `url:false` + адаптер `lib/modals`;
+- этап 2 (СДЕЛАН, ход 265) — `PaginatorSettings` на общий компонент: `SettingsField[]` →
+  `DemoField[]` делает `paginatorPanel`, `compileDemoPanelSchema` и
+  `PaginatorSettingsForm` удалены, поля `url:false`; источник (localStorage/память) —
+  слот `leading` панели; `hidden` несёт `page` и чужие ключи в нативный GET;
+- этап 3 (СДЕЛАН, ход 264) — `SettingsPanel` модалок: схема `demo-schema.ts`,
+  `url:false`, `toParams` → `modals.configure`, своя разметка `ui` (списки + ползунок);
 - этап 4 — панель `/form`: `url:false`, значения в `if/else`;
 - лёгкий контур `bind` (вес: `bind` тянет весь `lib/form`) — отдельная задача, к
   владению адресом отношения не имеет.

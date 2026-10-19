@@ -5,7 +5,7 @@
 export { Field, Select, Toggle } from '#lib/components/settings/index.js'
 export { default as PaginatorSettings } from './PaginatorSettings.svelte'
 export type { SettingsField, PanelEnabledBy } from './types'
-export { compileDemoPanelSchema, type DemoPanelSchema, type DemoPanelInput, GATE_LABEL } from './compile'
+export { paginatorPanel, GATE_LABEL, type PaginatorPanel, type PaginatorPanelInput } from './compile'
 export { default as PageList } from './PageList.svelte'
 export { default as PageColumns } from './PageColumns.svelte'
 export { default as PageDivider } from './PageDivider.svelte'

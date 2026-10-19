@@ -8,6 +8,7 @@
  * варианты (уже с учётом `jsOnly` до оживления). Ничего про адрес UI не знает.
  */
 import type { BoundForm, FieldView } from '#lib/form/svelte/index.js'
+import { JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
 import type { DemoField, DemoOption, DemoPanelSchema, DemoValues } from './types.js'
 
 /** Готовое поле для своей разметки. */
@@ -56,9 +57,11 @@ export function demoFieldUi(schema: DemoPanelSchema, form: BoundForm, name: stri
   if (!v) throw new Error(`[demo] форма «${schema.id}» не знает поля «${name}»`)
   const values = form.values as DemoValues
   const reason = spec.disabledWhen?.(values)
-  const hint = reason ?? spec.hintOf?.(values) ?? spec.hint
-  const disabled =
-    v.disabled === true || reason !== undefined || (spec.jsOnly === true && form.submitVisible)
+  // До оживления jsOnly-поле выключено — и обязано СКАЗАТЬ почему: подсказка
+  // «доступно после загрузки JavaScript» проверяется браузерным набором.
+  const jsOnly = spec.jsOnly === true && form.submitVisible
+  const hint = reason ?? (jsOnly ? JS_ONLY_REASON : undefined) ?? spec.hintOf?.(values) ?? spec.hint
+  const disabled = v.disabled === true || reason !== undefined || jsOnly
   const options =
     spec.type === 'select'
       ? spec.options.map((o) => ({

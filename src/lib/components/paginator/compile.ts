@@ -1,19 +1,30 @@
-// Компилятор демо-панели: `SettingsField[]` → описание формы + всё, чем shell
-// размечает доступность, seed и патч (этап 6, §6.4/§6.5).
-//
-// Принцип тот же, что у компилятора фильтров: панель — ДАННЫЕ, а решение о
-// выключении считает форма (`disabledWhen`, R1). Отличия домена:
-//   • имена полей — канонические ключи адреса (`page.cols`, `gallery.size`);
-//   • `page.size` — обычное поле (select), не специальный пропс: значение его
-//     уходит не в extra, а в `setPageSize` — это решает маппер патча;
-//   • `enabledBy` (данные) инвертируется в правила `disabledWhen` поля:
-//     «доступно при X=a» == «выключено при X=b, X=c, …» по ЗАКРЫТОМУ списку
-//     значений X. Значение поля панели всегда одно из объявленных (дефолты
-//     extra гарантированы), пустое поле — «не выбрано», правило не горит;
-//   • `requires` гасит поле СТАТИЧЕСКИ: возможности источника — серверные
-//     данные, они известны на SSR и не меняются, пока источник не сменили.
+/**
+ * Панель настроек пагинатора на универсальном `DemoPanel` (этап 2).
+ *
+ * `SettingsField[]` (данные пагинатора) → схема универсальной панели:
+ *
+ *   • имена полей — КАНОНИЧЕСКИЕ ключи адреса (`page.cols`, `gallery.size`):
+ *     панель без JS отправляет их нативным GET, а адаптер источника читает
+ *     обратно; переименовать — значит разойтись с no-JS-путём и с тестами;
+ *   • все поля `url: false` — адрес пишет адаптер пагинатора (он владеет
+ *     ключами `page`/`page.*`), панель только отдаёт ПАРАМЕТРЫ;
+ *   • `enabledBy` (данные) → `disabledWhen` поля: «доступно при X=a» ==
+ *     «выключено при прочих значениях X» по ЗАКРЫТОМУ списку вариантов;
+ *   • `requires` (возможности источника, серверные данные) гасит поле
+ *     статически с причиной — она же подсказка.
+ *
+ * Компилятор не строит форму: форму ведёт `DemoPanel`. Здесь — только
+ * данные и мапперы «значения панели → патч хранилища» и обратно.
+ */
 import type { ExtraValue, FeatureGate } from '#lib/paginate/index.js'
-import { defineForm, field, policyWith, type DisableRule, type FieldDraft, type FormDescription } from '#lib/form/index.js'
+import {
+  demoDivider,
+  demoSelect,
+  demoToggle,
+  type DemoFieldSpec,
+  type DemoPanelSchema,
+  type DemoValues,
+} from '#lib/components/demo/index.js'
 import type { SettingsField } from './types'
 
 /** Подписи возможностей для причины «источник не поддерживает …». */
@@ -25,163 +36,190 @@ export const GATE_LABEL: Record<FeatureGate, string> = {
   dictionary: 'словарь опечаток',
 }
 
-export interface DemoPanelInput<V extends Record<string, ExtraValue>> {
+export interface PaginatorPanelInput<V extends Record<string, ExtraValue>> {
   /** Префикс ключей пагинатора в адресе (`page`, `gallery`). */
   pageParam: string
-  /** Списка нет (или пуст) — поля размера в панели нет (как старый `{#if pageSizes}`). */
+  /** Адрес нативной GET-формы без JavaScript. */
+  action: string
+  /** Списка нет (или пуст) — поля размера в панели нет. */
   pageSizes?: readonly number[]
   fields: readonly SettingsField<V>[]
   /** Открытые возможности ИСТОЧНИКА (серверные данные). Без него — все открыты. */
   gates?: Record<FeatureGate, boolean>
-  /** Идентификатор формы в механизме: уникален на страницу, префикс — из имён. */
+  /** Идентификатор формы в механизме: уникален на страницу. */
   id?: string
 }
 
-export interface DemoPanelPatch {
-  extra: Record<string, ExtraValue>
-  pageSize?: number
+/** Что делать со значением поля панели при записи в хранилище. */
+interface Meta {
+  kind: 'select' | 'toggle' | 'size'
+  /** Ключ `extra` (без префикса адреса). */
+  extra: string
+  parse?: (raw: string) => ExtraValue
 }
 
-export interface DemoPanelSchema {
-  definition: FormDescription
-  /** Порядок вывода: группы за divider'ами; items — полные имена полей. */
-  groups: readonly { label: string | undefined; items: readonly string[] }[]
-  /** Подпись поля по его идентичности — для составителя текстов. */
-  label(name: string): string
-  /** Выключено возможностями источника: имя → причина (статика, компилируется). */
-  gated: ReadonlyMap<string, string>
-  /** Поля, требующие JS: гасятся до гидратации (решение shell — оно не данные). */
-  jsOnly: ReadonlySet<string>
-  /** Имя поля размера страницы. */
-  sizeName: string
-  /** Чем рисуется поле: селект / переключатель / размер. */
-  kinds: ReadonlyMap<string, 'select' | 'toggle' | 'size'>
-  /** Зеркало формы → патч хранилища. Отсутствующие ключи не трогаем (§6.4). */
-  toPatch(values: Readonly<Record<string, unknown>>): DemoPanelPatch
-  /**
-   * Значения extra → seed зеркала формы. ДОМЕННЫЕ значения, не строки
-   * разметки: seed механизм кладёт в state как есть (`bind.svelte.ts`).
-   * Неотмеченный toggle — `false`, снятый select — пустая строка.
-   */
-  toSeed(values: Readonly<Record<string, ExtraValue | undefined>>, pageSize: number): Record<string, string | boolean>
+export interface PaginatorPanel {
+  /** Схема универсальной панели — данные, ничего про хранилище. */
+  schema: DemoPanelSchema<DemoValues>
+  /** Значения панели → патч хранилища. Отсутствующие ключи не трогаем. */
+  toPatch(values: Readonly<Record<string, unknown>>): {
+    extra: Record<string, ExtraValue>
+    size?: number
+  }
+  /** Хранилище → значения панели (seed и живое зеркало). */
+  toPanel(values: Readonly<Record<string, unknown>>, pageSize: number): DemoValues
 }
-
-// Имена полей панели — КЛЮЧИ ХРАНИЛИЩА И АДРЕСА (`page.topTrigger`): camelCase
-// задан источником extra и адресом, переалфавитить его — значит разойтись с
-// no-JS GET. Языковой политики пагинатор не имеет, так что шаблон сегментов
-// расширяется здесь, а не в ядре (для фильтров camelCase-сегментов не нашлось).
-const DEMO_PANEL_POLICY = policyWith({ names: { pattern: /^[a-z][a-zA-Z0-9_]{0,31}$/ } })
 
 const raw = (v: unknown): string => (v === undefined || v === null ? '' : String(v))
 
 /** Значение условия/опции в строковой форме адресного ключа. */
 const flag = (v: string | boolean): string => (typeof v === 'boolean' ? (v ? 'true' : 'false') : v)
 
-export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
-  input: DemoPanelInput<V>,
-): DemoPanelSchema {
+export function paginatorPanel<V extends Record<string, ExtraValue>>(
+  input: PaginatorPanelInput<V>,
+): PaginatorPanel {
   const pp = input.pageParam
   const sizeName = `${pp}.size`
-  const drafts: Record<string, FieldDraft<never>> = Object.create(null)
+  const fields: DemoFieldSpec<string>[] = []
   const labels = new Map<string, string>()
-  const groups: { label: string | undefined; items: string[] }[] = [{ label: undefined, items: [] }]
-  const gated = new Map<string, string>()
-  const jsOnly = new Set<string>()
-  /** name → маппинг в патч: kind + ключ extra + маппер значения. */
-  const meta = new Map<string, { extra: string; kind: 'select' | 'toggle' | 'size'; parse?: (raw: string) => ExtraValue }>()
-
-  // Значения select-поля (для инверсии enabledBy) и их подписи.
+  const meta = new Map<string, Meta>()
+  /** Значения select-поля (для инверсии `enabledBy`) и их подписи. */
   const optionValues = new Map<string, { values: readonly string[]; labelOf: (v: string) => string }>()
 
   if (input.pageSizes && input.pageSizes.length > 0) {
-    drafts[sizeName] = field.select({
-      label: 'Размер страницы',
-      options: input.pageSizes.map((n) => ({ value: String(n), label: String(n) })),
-    }) as FieldDraft<never>
+    const values = input.pageSizes.map(String)
     labels.set(sizeName, 'Размер страницы')
-    meta.set(sizeName, { extra: sizeName, kind: 'size' })
-    optionValues.set(
-      sizeName,
-      { values: input.pageSizes.map((n) => String(n)), labelOf: (v) => v },
+    optionValues.set(sizeName, { values, labelOf: (v) => v })
+    meta.set(sizeName, { kind: 'size', extra: sizeName })
+    fields.push(
+      demoSelect({
+        key: sizeName,
+        label: 'Размер страницы',
+        url: false,
+        defaultValue: values[0]!,
+        options: values.map((v) => ({ value: v, label: v })),
+      }),
     )
-    groups[0].items.push(sizeName)
   }
 
   for (const f of input.fields) {
     if (f.type === 'divider') {
-      groups.push({ label: f.label, items: [] })
+      if (f.label) fields.push(demoDivider(f.label))
       continue
     }
     const name = `${pp}.${f.key}`
-    const group = groups[groups.length - 1]
-    group.items.push(name)
     labels.set(name, f.label)
-    if (f.jsOnly) jsOnly.add(name)
+
+    /** Возможности источника — статическое выключение с причиной. */
     const required: readonly FeatureGate[] =
       f.requires === undefined ? [] : Array.isArray(f.requires) ? f.requires : [f.requires]
     const missing = required.filter((gate) => !(input.gates?.[gate] ?? true))
-    if (missing.length > 0)
-      gated.set(name, `источник не поддерживает ${missing.map((gate) => GATE_LABEL[gate]).join(' и ')}`)
-
-    if (f.type === 'toggle') {
-      drafts[name] = field.checkbox({ label: f.label }) as FieldDraft<never>
-      optionValues.set(name, { values: ['true', 'false'], labelOf: (v) => (v === 'true' ? 'включено' : 'выключено') })
-      meta.set(name, { extra: f.key, kind: 'toggle' })
-    } else {
-      drafts[name] = field.select({
-        label: f.label,
-        options: f.options.map(([value, label]) => ({ value, label })),
-      }) as FieldDraft<never>
-      optionValues.set(name, {
-        values: f.options.map(([value]) => value),
-        labelOf: (v) => f.options.find(([value]) => value === v)?.[1] ?? v,
-      })
-      meta.set(name, { extra: f.key, kind: 'select', parse: f.parse })
-    }
+    const gateReason =
+      missing.length > 0
+        ? `источник не поддерживает ${missing.map((gate) => GATE_LABEL[gate]).join(' и ')}`
+        : undefined
 
     // enabledBy → «выключено при каждом другом значении» по закрытому списку.
-    // Виновник в тексте — подпись поля из условия (её знает форма).
-    const disabledWhen: DisableRule[] = []
+    // Текст — о РАЗРЕШЁННОМ значении: helper обязан читаться как объяснение доступа.
+    const links: ((values: DemoValues) => string | undefined)[] = []
     for (const cond of f.enabledBy ?? []) {
       const depName = `${pp}.${cond.field}`
       const dep = optionValues.get(depName)
       if (!dep) continue // связка к полю вне панели — правило не строится, поле свободно
       const allowed = new Set(
-        cond.in !== undefined ? cond.in.map(flag) : cond.equals !== undefined ? [flag(cond.equals)] : [],
+        cond.in !== undefined
+          ? cond.in.map(flag)
+          : cond.equals !== undefined
+            ? [flag(cond.equals)]
+            : [],
       )
-      // Текст — о РАЗРЕШЁННОМ значении (оно в условии), а не о каждом
-      // запрещённом: helper обязан читаться как объяснение доступа.
       const allowedText =
         cond.in !== undefined
           ? cond.in.map((v) => `«${dep.labelOf(flag(v))}»`).join(' или ')
           : cond.equals !== undefined
             ? `«${dep.labelOf(flag(cond.equals))}»`
             : 'условия'
-      for (const value of dep.values) {
-        if (allowed.has(value)) continue
-        disabledWhen.push({
-          when: { field: depName, includes: value },
-          reason: cond.reason ?? `доступно при «${labels.get(depName) ?? cond.field}» = ${allowedText}`,
-        })
-      }
+      const depLabel = labels.get(depName) ?? cond.field
+      links.push((values) => {
+        const v = values[depName]
+        const s = typeof v === 'boolean' ? (v ? 'true' : 'false') : raw(v)
+        if (s === '' || allowed.has(s)) return undefined
+        return cond.reason ?? `доступно при «${depLabel}» = ${allowedText}`
+      })
     }
-    if (disabledWhen.length) drafts[name] = { ...drafts[name], disabledWhen } as FieldDraft<never>
+
+    const disabledWhen =
+      gateReason !== undefined || links.length > 0
+        ? (values: DemoValues): string | undefined => {
+            if (gateReason !== undefined) return gateReason
+            for (const rule of links) {
+              const why = rule(values)
+              if (why !== undefined) return why
+            }
+            return undefined
+          }
+        : undefined
+
+    if (f.type === 'toggle') {
+      optionValues.set(name, {
+        values: ['true', 'false'],
+        labelOf: (v) => (v === 'true' ? 'включено' : 'выключено'),
+      })
+      meta.set(name, { kind: 'toggle', extra: f.key })
+      fields.push(
+        demoToggle({
+          key: name,
+          label: f.label,
+          url: false,
+          defaultValue: false,
+          ...(f.jsOnly === true ? { jsOnly: true } : {}),
+          ...(disabledWhen ? { disabledWhen } : {}),
+        }),
+      )
+    } else {
+      optionValues.set(name, {
+        values: f.options.map(([value]) => value),
+        labelOf: (v) => f.options.find(([value]) => value === v)?.[1] ?? v,
+      })
+      meta.set(name, { kind: 'select', extra: f.key, ...(f.parse ? { parse: f.parse } : {}) })
+      fields.push(
+        demoSelect({
+          key: name,
+          label: f.label,
+          url: false,
+          defaultValue: f.options[0]?.[0] ?? '',
+          options: f.options.map(([value, label]) => ({ value, label })),
+          ...(f.jsOnly === true ? { jsOnly: true } : {}),
+          ...(disabledWhen ? { disabledWhen } : {}),
+        }),
+      )
+    }
   }
 
-  const definition: FormDescription = defineForm({
-    id: input.id ?? `demo-panel:${pp}`,
-    fields: drafts as Record<string, FieldDraft<unknown>>,
-    policy: DEMO_PANEL_POLICY,
-  })
+  /** Хранилище → значения панели. Доменные значения, не строки разметки. */
+  const toPanel = (values: Readonly<Record<string, unknown>>, pageSize: number): DemoValues => {
+    const out: DemoValues = {}
+    for (const [name, m] of meta) {
+      if (m.kind === 'size') {
+        out[name] = String(pageSize)
+        continue
+      }
+      const v = values[m.extra]
+      out[name] = m.kind === 'toggle' ? v === true || v === 'true' : raw(v)
+    }
+    return out
+  }
 
-  const toPatch = (values: Readonly<Record<string, unknown>>): DemoPanelPatch => {
+  const toPatch = (
+    values: Readonly<Record<string, unknown>>,
+  ): { extra: Record<string, ExtraValue>; size?: number } => {
     const extra: Record<string, ExtraValue> = {}
-    let pageSize: number | undefined
+    let size: number | undefined
     for (const [name, m] of meta) {
       if (!(name in values)) continue
       if (m.kind === 'size') {
         const n = Number(raw(values[name]))
-        if (Number.isFinite(n) && n > 0) pageSize = n
+        if (Number.isFinite(n) && n > 0) size = n
         continue
       }
       if (m.kind === 'toggle') {
@@ -192,33 +230,16 @@ export function compileDemoPanelSchema<V extends Record<string, ExtraValue>>(
       if (s === '') continue // значение не выбрано — ключ хранилища не трогаем
       extra[m.extra] = m.parse ? m.parse(s) : s
     }
-    return pageSize === undefined ? { extra } : { extra, pageSize }
+    return size === undefined ? { extra } : { extra, size }
   }
-
-  const toSeed = (values: Readonly<Partial<V>>, pageSize: number): Record<string, string | boolean> => {
-    const seed: Record<string, string | boolean> = {}
-    if (meta.has(sizeName)) seed[sizeName] = String(pageSize)
-    for (const [name, m] of meta) {
-      if (m.kind === 'size') continue
-      const v = values[m.extra as keyof V]
-      if (m.kind === 'toggle') seed[name] = v === true || v === 'true'
-      else seed[name] = v === undefined || v === null ? '' : String(v)
-    }
-    return seed
-  }
-
-  const kinds = new Map<string, 'select' | 'toggle' | 'size'>()
-  for (const [name, m] of meta) kinds.set(name, m.kind)
 
   return {
-    definition,
-    groups,
-    kinds,
-    label: (name) => labels.get(name) ?? name,
-    gated,
-    jsOnly,
-    sizeName,
+    schema: {
+      id: input.id ?? `demo-panel:${pp}`,
+      action: input.action,
+      fields,
+    },
     toPatch,
-    toSeed,
+    toPanel,
   }
 }

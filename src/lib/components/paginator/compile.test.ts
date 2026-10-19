@@ -1,8 +1,9 @@
-// Компилятор демо-панели: форма описания, группы вывода, инверсия связок,
-// маппер патча и seed. Это юнит-слой этапа 6; поведение выключений в DOM —
-// в браузерном наборе (regressions.mjs).
+// Панель пагинатора на универсальном `DemoPanel` (этап 2): имена полей —
+// канонические ключи адреса, гаты и связки → `jsOnly`/`disabledWhen`, а
+// мапперы «значения панели ↔ хранилище» держат типы домена. Поведение
+// выключений в DOM — в браузерном наборе (regressions.mjs, capabilities.mjs).
 import { describe, expect, it } from 'vitest'
-import { compileDemoPanelSchema, GATE_LABEL } from './compile'
+import { paginatorPanel, GATE_LABEL } from './compile'
 import type { SettingsField } from './types'
 
 interface Fix extends Record<string, string | number | boolean> {
@@ -50,113 +51,107 @@ const FIELDS: readonly SettingsField<Fix>[] = [
   { key: 'srch', label: 'Поиск', type: 'toggle', requires: 'nativeSearch' },
 ]
 
-const compile = (over = {}) =>
-  compileDemoPanelSchema<Fix>({
+const build = (over = {}) =>
+  paginatorPanel<Fix>({
     pageParam: 'page',
+    action: '/paginator',
     pageSizes: [10, 20],
     fields: FIELDS,
     ...over,
   })
 
-describe('compileDemoPanelSchema: описание формы', () => {
-  it('fields = size + объявленные, имена — канонические ключи адреса', () => {
-    const { definition } = compile()
-    const byName = Object.fromEntries(definition.fields.map((f) => [f.name, f]))
-    expect(definition.fields.map((f) => f.name)).toEqual([
-      'page.size', 'page.layout', 'page.cols', 'page.mode', 'page.srch',
+const specOf = (panel: ReturnType<typeof build>, key: string) => {
+  const spec = panel.schema.fields.find((f) => f.type !== 'divider' && f.key === key)
+  if (!spec || spec.type === 'divider') throw new Error(`нет поля ${key}`)
+  return spec
+}
+
+describe('paginatorPanel: схема панели', () => {
+  it('имена полей — канонические ключи адреса; размер идёт первым', () => {
+    const panel = build()
+    expect(panel.schema.fields.filter((f) => f.type !== 'divider').map((f) => f.key)).toEqual([
+      'page.size',
+      'page.layout',
+      'page.cols',
+      'page.mode',
+      'page.srch',
     ])
-    const size = byName['page.size'] as { kind: string; options?: { value: string }[] }
-    expect(size.kind).toBe('select')
-    expect(size.options?.map((o) => o.value)).toEqual(['10', '20'])
-    const srch = byName['page.srch'] as { kind: string; input: string }
-    expect(srch.kind).toBe('checkbox')
-    expect(srch.input).toBe('checkbox')
+    // Адрес пишет адаптер пагинатора: у всех полей панели его нет.
+    for (const f of panel.schema.fields)
+      if (f.type !== 'divider') expect(f.url, `${f.key}: url`).toBe(false)
+    expect(panel.schema.action).toBe('/paginator')
   })
-})
 
-describe('compileDemoPanelSchema: groups', () => {
-  it('divider режет порядок; size и headless-поле — в нулевой группе', () => {
-    const { groups } = compile()
-    expect(groups).toEqual([
-      { label: undefined, items: ['page.size', 'page.layout', 'page.cols'] },
-      { label: 'Режим', items: ['page.mode', 'page.srch'] },
-    ])
+  it('без pageSizes поля размера нет', () => {
+    const panel = build({ pageSizes: undefined })
+    expect(panel.schema.fields.some((f) => f.type !== 'divider' && f.key === 'page.size')).toBe(false)
   })
-})
 
-describe('compileDemoPanelSchema: инверсия enabledBy', () => {
-  it('«cols доступно при layout=columns» → правило поля «layout=list гасит cols»', () => {
-    const { definition: form } = compile()
-    expect(form.byName['page.cols']?.disabledWhen).toEqual([
-      { when: { field: 'page.layout', includes: 'list' }, reason: 'доступно при «Раскладка» = «Колонки»' }, // текст о РАЗРЕШЁННОМ значении
-    ])
-    expect(form.byName['page.layout']?.disabledWhen).toBeUndefined()
-  })
-  it('несколько «других» значений → по правилу на каждое; in снимает часть', () => {
-    const fields: readonly SettingsField<Fix>[] = [
-      { key: 'layout', label: 'L', type: 'select', options: [['list', 'L'], ['columns', 'C']] },
-      {
-        key: 'z',
-        label: 'Z',
-        type: 'select',
-        options: [['a', 'A'], ['b', 'B'], ['c', 'C']],
-        enabledBy: [{ field: 'layout', in: ['columns'] }],
-      },
-    ]
-    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(form.byName['p.z']?.disabledWhen?.map((r) => r.when)).toEqual([{ field: 'p.layout', includes: 'list' }]) // 'columns' разрешён — не гасит
-  })
-  it('правило к зависимости-переключателю строится по булевым значениям', () => {
-    const fields: readonly SettingsField<Fix>[] = [
-      { key: 'srch', label: 'Поиск', type: 'toggle' },
-      { key: 'x', label: 'X', type: 'select', options: [['1', '1']], enabledBy: [{ field: 'srch', equals: true }] },
-    ]
-    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(form.byName['p.x']?.disabledWhen?.map((r) => r.when)).toEqual([{ field: 'p.srch', includes: 'false' }])
-  })
-  it('связка к полю вне панели игнорируется (поле свободно)', () => {
-    const fields: readonly SettingsField<Fix>[] = [
-      { key: 'x', label: 'X', type: 'select', options: [['1', '1']], enabledBy: [{ field: 'ghost', equals: 'y' }] },
-    ]
-    const { definition: form } = compileDemoPanelSchema<Fix>({ pageParam: 'p', pageSizes: [10], fields })
-    expect(form.byName['p.x']?.disabledWhen).toBeUndefined()
-  })
-})
-
-describe('compileDemoPanelSchema: gates и jsOnly', () => {
-  it('недостающая возможность — статическое выключение с причиной', () => {
-    const { gated } = compile({ gates: { nativeSearch: false } as never })
-    expect(gated.get('page.srch')).toBe(`источник не поддерживает ${GATE_LABEL.nativeSearch}`)
-    expect(gated.has('page.cols')).toBe(false)
-  })
-  it('без переданных gates всё открыто', () => {
-    expect(compile().gated.size).toBe(0)
-  })
-  it('jsOnly — имена, собранные для shell', () => {
-    expect([...compile().jsOnly]).toEqual(['page.mode'])
-  })
-})
-
-describe('compileDemoPanelSchema: маппер патча и seed', () => {
-  it('select через parse, toggle — boolean, size — отдельно; пустое не трогаем', () => {
-    const { toPatch } = compile()
-    expect(toPatch({ 'page.layout': 'columns', 'page.cols': 'auto', 'page.srch': true, 'page.mode': '' })).toEqual({
-      extra: { layout: 'columns', cols: 'auto', srch: true },
+  it('divider режет порядок, а без подписи не выводится', () => {
+    const panel = build({
+      fields: [...FIELDS.slice(0, 2), { type: 'divider' }, ...FIELDS.slice(3)] as SettingsField<Fix>[],
     })
-    expect(toPatch({ 'page.cols': '3' }).extra.cols).toBe(3)
-    expect(toPatch({ 'page.size': '20' })).toEqual({ extra: {}, pageSize: 20 })
-    expect(toPatch({ 'page.size': 'x' })).toEqual({ extra: {} })
+    expect(panel.schema.fields.some((f) => f.type === 'divider')).toBe(false)
   })
-  it('отсутствующий ключ (disabled-скип) не рождает запись', () => {
-    const { toPatch } = compile()
-    expect(Object.keys(toPatch({ 'page.layout': 'list' }).extra)).toEqual(['layout'])
+})
+
+describe('paginatorPanel: выключения', () => {
+  it('недостающая возможность источника — причина из GATE_LABEL', () => {
+    const panel = build({ gates: { nativeSearch: false } as never })
+    expect(specOf(panel, 'page.srch').disabledWhen?.({ 'page.srch': true })).toBe(
+      `источник не поддерживает ${GATE_LABEL.nativeSearch}`,
+    )
+    // без переданных gates всё открыто
+    expect(specOf(build(), 'page.srch').disabledWhen?.({ 'page.srch': true })).toBeUndefined()
   })
-  it('seed: доменные значения зеркала; toggle — boolean', () => {
-    const { toSeed } = compile()
-    expect(
-      toSeed({ layout: 'list', cols: 3, srch: false, mode: 'accumulate' }, 20),
-    ).toEqual({ 'page.size': '20', 'page.layout': 'list', 'page.cols': '3', 'page.srch': false, 'page.mode': 'accumulate' })
-    expect(toSeed({ srch: true }, 10)['page.srch']).toBe(true)
-    expect(toSeed({}, 10)['page.layout']).toBe('')
+
+  it('enabledBy: разрешённое значение свободно, прочие — причина', () => {
+    const cols = specOf(build(), 'page.cols')
+    expect(cols.disabledWhen?.({ 'page.layout': 'columns' })).toBeUndefined()
+    expect(cols.disabledWhen?.({ 'page.layout': 'list' })).toBe(
+      'доступно при «Раскладка» = «Колонки»',
+    )
+  })
+
+  it('связка к полю вне панели игнорируется (поле свободно)', () => {
+    const fields: SettingsField<Fix>[] = [
+      { key: 'z', label: 'Z', type: 'select', options: [['a', 'A']], enabledBy: [{ field: 'x', equals: 'b' }] },
+    ]
+    const panel = build({ fields, pageSizes: undefined })
+    expect(specOf(panel, 'page.z').disabledWhen?.({ 'page.z': 'a' })).toBeUndefined()
+  })
+
+  it('jsOnly доезжает до схемы флагом (shell сам скажет причину)', () => {
+    expect(specOf(build(), 'page.mode').jsOnly).toBe(true)
+  })
+})
+
+describe('paginatorPanel: мапперы', () => {
+  it('toPatch: parse у select, boolean у тумблера, размер отдельно, пустое не трогаем', () => {
+    const { extra, size } = build().toPatch({
+      'page.size': '20',
+      'page.layout': 'columns',
+      'page.cols': '3',
+      'page.srch': true,
+      'page.mode': '',
+    })
+    expect(size).toBe(20)
+    expect(extra).toEqual({ layout: 'columns', cols: 3, srch: true })
+    expect('mode' in extra).toBe(false)
+  })
+
+  it('toPatch: отсутствующий ключ (выключенное поле) записи не рождает', () => {
+    expect(build().toPatch({ 'page.srch': false }).extra).toEqual({ srch: false })
+  })
+
+  it('toPanel: доменные значения хранилища → значения панели', () => {
+    const values = build().toPanel({ layout: 'list', cols: 2, srch: true }, 20)
+    expect(values).toEqual({
+      'page.size': '20',
+      'page.layout': 'list',
+      'page.cols': '2',
+      'page.srch': true,
+      'page.mode': '',
+    })
   })
 })

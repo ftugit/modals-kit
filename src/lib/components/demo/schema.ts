@@ -6,7 +6,7 @@
  * выводится из схемы. Панель (`DemoPanel.svelte`) — только разметка и связка с
  * адресным писателем.
  */
-import { defineForm, field, type FieldDraft, type FormDescription } from '#lib/form/index.js'
+import { defineForm, field, policyWith, type FieldDraft, type FormDescription } from '#lib/form/index.js'
 import type { DemoSchemaData, DemoField, DemoPanelSchema, DemoValues } from './types.js'
 
 /** Поля схемы без разделителей — в порядке вывода. */
@@ -109,6 +109,13 @@ export function demoScenarioChange<
   return null
 }
 
+/**
+ * Язык имён панели: ключи — КЛЮЧИ АДРЕСА (`page.colW`, `gallery.size`).
+ * У пагинатора сегменты camelCase — их задаёт источник extra; политика форм
+ * по умолчанию такие имена отвергает (язык приложения ≠ язык адреса).
+ */
+const DEMO_PANEL_POLICY = policyWith({ names: { pattern: /^[a-z][a-zA-Z0-9_]{0,31}$/ } })
+
 const formCache = new WeakMap<DemoSchemaData, FormDescription>()
 
 /** Описание формы панели из схемы (одно на схему). */
@@ -134,6 +141,7 @@ export function demoForm(schema: DemoSchemaData): FormDescription {
     revision: 1,
     actions: [{ id: 'apply', label: 'Применить', validate: 'none' }],
     fields,
+    policy: DEMO_PANEL_POLICY,
   })
   formCache.set(schema, desc)
   return desc

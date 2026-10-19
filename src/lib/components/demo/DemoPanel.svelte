@@ -39,6 +39,17 @@
     /** Подвал панели (пояснения страницы). */
     footer?: Snippet
     /**
+     * Скрытые поля нативной GET: ключи, которые панель обязана сохранить,
+     * хотя схеме они не принадлежат (указатель страницы, чужие фильтры).
+     */
+    hidden?: readonly { name: string; value: unknown }[]
+    /**
+     * Ведущий контрол ВНЕ схемы — слот приёмника (хранилище настроек
+     * пагинатора). Получает связывание панели: до оживления он выключен,
+     * как и «Применить».
+     */
+    leading?: Snippet<[BoundForm]>
+    /**
      * Своя разметка полей — компонент приложения (как `form` у фильтров):
      * панель отдаёт ему `field(name)` с готовыми вьюхами и придерживается
      * собственной оболочки (форма, «Применить», подвал). Пример —
@@ -57,6 +68,8 @@
     values: external,
     onParams,
     footer,
+    hidden,
+    leading,
     ui,
     class: className,
     testid = 'demo-panel',
@@ -105,6 +118,12 @@
       action: schema.action,
       seed: () => valuesNow(),
       commit: untrack(() => (patch: Record<string, unknown>) => {
+        // Параметры — СРАЗУ, в том же событии, что и правка поля. Потребитель
+        // пишет приёмник синхронно (пагинатор — в адрес через свой адаптер);
+        // отложенный эффект опаздывал к закрытию списка-слоя и правка
+        // откатывалась шагом истории (`page.src` на узком экране).
+        const next = { ...(form.values as DemoValues), ...patch } as DemoValues
+        onParams?.(schema.toParams ? schema.toParams(next as V) : next)
         if (!ownsAddress) return
         const current = visibleAddress().url
         const before = valuesNow()
@@ -131,11 +150,17 @@
    * одна, внешнее значение.
    */
   // svelte-ignore state_referenced_locally
-  let seenExternal: unknown = untrack(() => external)
+  let seenExternal = untrack(() => JSON.stringify(external ?? null))
   $effect(() => {
     const src = external as Record<string, unknown> | undefined
-    if (!src || src === seenExternal) return
-    seenExternal = src
+    if (!src) return
+    // Смотрим на СОДЕРЖАНИЕ, а не на объект: потребитель пересобирает `values`
+    // на каждое изменение своего состояния, а запись в приёмник бывает
+    // асинхронной — пока она в полёте, источник ещё стар, и зеркало по
+    // идентичности откатывало бы только что выбранное значение (`page.src`).
+    const key = JSON.stringify(src)
+    if (key === seenExternal) return
+    seenExternal = key
     untrack(() => {
       for (const f of demoFields(schema)) {
         if (demoUrlKey(f) !== null) continue
@@ -163,6 +188,7 @@
 
 <Form
   {form}
+  hiddenFields={hidden ?? []}
   data-testid={testid}
   class={className ??
     'demo-panel rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
@@ -180,6 +206,9 @@
          живёт и в колонке страницы, и в боковой колонке галереи. -->
     <div class="@container">
       <div class="grid grid-cols-2 gap-x-4 gap-y-3 @lg:grid-cols-3 @5xl:grid-cols-5">
+        {#if leading}
+          {@render leading(form)}
+        {/if}
         {#each schema.fields as spec, i (i)}
           {#if spec.type === 'divider'}
             <div class="col-span-full mt-1 border-t border-border/60 pt-2 text-xs font-medium text-muted-foreground">
