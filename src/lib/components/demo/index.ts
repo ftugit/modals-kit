@@ -18,6 +18,8 @@ export type {
   DemoValue,
   DemoValues,
 } from './types.js'
+export { demoFieldSpec, demoFieldUi } from './ui.js'
+export type { DemoFieldUi, DemoUiProps } from './ui.js'
 export {
   demoDefaults,
   demoFields,

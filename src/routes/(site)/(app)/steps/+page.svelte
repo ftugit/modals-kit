@@ -17,6 +17,7 @@
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import { demoPanelSchema, FSTEP_STEPS, fstepForm, type DemoMode, type FstepStep } from './fstep-form.ts'
   import { DemoPanel, demoParams } from '#lib/components/demo/index.js'
+  import StepsDemoFields from './StepsDemoFields.svelte'
   import type { Result } from '#lib/form/index.js'
 
   let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
@@ -132,7 +133,11 @@
 
   <!-- панель демо — универсальный DemoPanel: схема в fstep-form.ts, адрес,
        seed и «Применить» ведёт он сам; странице остаются параметры -->
-  <DemoPanel schema={demoPanelSchema} onParams={(p) => (demo = p as typeof initialDemo)}>
+  <DemoPanel
+    schema={demoPanelSchema}
+    ui={StepsDemoFields}
+    onParams={(p) => (demo = p as typeof initialDemo)}
+  >
     {#snippet footer()}
       <p>
         {#if mode === 'form'}

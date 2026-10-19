@@ -1,6 +1,6 @@
 # Универсальная демо-панель — утверждённый дизайн
 
-**Статус: этап 1 СДЕЛАН (`/steps`, ход 262).** Решение владельца: «Давай делать
+**Статус: этап 1 СДЕЛАН (`/steps`, ход 262; `ui`-компонент — по образцу фильтров, ход 263).** Решение владельца: «Давай делать
 универсальную демо панель… на первом этапе только steps, а так абсолютно все носители
 демо опций». Сделано: `#lib/components/demo` (схема-данные → форма → адрес через
 `lib/address` → параметры наружу), `/steps` переведён, дефект тача закрыт; попутно
@@ -85,8 +85,58 @@ interface DemoPanelSchema<V> {
 function defineDemoPanel<V>(schema): DemoPanelSchema<V>
 function demoParams<V>(schema, url: URL | string): V   // SSR/no-JS/F5
 
-// <DemoPanel {schema} onParams={(p) => (params = p)} footer={snippet} ui={snippet}/>
+// <DemoPanel {schema} onParams={(p) => (params = p)} footer={snippet} ui={Component}/>
 ```
+
+### Своя разметка: `ui` — как `form` у фильтров
+
+Панель — оболочка (форма, нативный GET, «Применить», адрес, бронь ключей);
+`ui` — компонент приложения, который рисует ТОЛЬКО поля и расставляет их руками.
+Он получает готовые вьюхи, как компонент фильтров получает `FilterFormProps`:
+
+```ts
+// DemoUiProps
+{
+  form: BoundForm                    // связывание панели (submitVisible и т. п.)
+  schema: DemoPanelSchema            // данные: подписи, варианты, порядок
+  values: Readonly<DemoValues>       // живые значения
+  field(name): {
+    v: FieldView                     // значение, attrs механизма, ошибки, подпись
+    spec: DemoField                  // поле схемы
+    disabled: boolean                // причина схемы или jsOnly до оживления
+    hint: string | undefined         // причина сильнее статических подсказок
+    options: { value; label; disabled }[]   // jsOnly-варианты уже погашены
+  }
+}
+```
+
+```svelte
+<!-- steps/StepsDemoFields.svelte — живой пример -->
+<script lang="ts">
+  import type { DemoUiProps } from '#lib/components/demo/index.js'
+  import { Field, Select, Toggle } from '#lib/components/settings/index.js'
+
+  let { field, form }: DemoUiProps = $props()
+  const mode = $derived(field('demo'))
+</script>
+
+<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+  <div class="md:col-span-2">
+    <Field label={mode.v.label} hint={mode.hint} hintId={`${mode.v.attrs.id}-help`}>
+      <Select {...mode.v.attrs} name={mode.v.name} value={String(mode.v.value ?? '')}
+              disabled={mode.disabled} options={mode.options} />
+    </Field>
+  </div>
+  <!-- тумблеры рядом: hiddenPair={form.submitVisible}, как в каноне -->
+</div>
+```
+
+```svelte
+<DemoPanel schema={demoPanelSchema} ui={StepsDemoFields} onParams={(p) => (demo = p)} />
+```
+
+Правила остаются в данных: `jsOnly`, `disabledWhen`, `hintOf` живут в схеме, а не
+в разметке — свой UI их не повторяет, а читает из `field(name)`.
 
 Канон панели сохраняется: это ФОРМА (`data-testid="demo-panel"`), «Применить» живёт
 только до оживления, jsOnly-варианты до оживления выключены (без подсказок в

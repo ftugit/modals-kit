@@ -11,7 +11,7 @@
    * применение — мелкой записью адреса (не полной навигацией: та гибнет под
    * модальным слоем списка).
    */
-  import type { Snippet } from 'svelte'
+  import type { Component, Snippet } from 'svelte'
   import { untrack } from 'svelte'
   import { Form, bind, createConfig, type BoundForm } from '#lib/form/svelte/index.js'
   import { Field, Select, Toggle } from '#lib/components/settings/index.js'
@@ -19,6 +19,8 @@
   import { claimQuery } from '#lib/address/keys.js'
   import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
   import type { DemoPanelSchema, DemoValues } from './types.js'
+  import type { DemoUiProps } from './ui.js'
+  import { demoFieldUi } from './ui.js'
   import {
     demoFields,
     demoForm,
@@ -36,8 +38,13 @@
     onParams?: (params: Record<string, unknown>) => void
     /** Подвал панели (пояснения страницы). */
     footer?: Snippet
-    /** Своя разметка полей (как компонент формы у фильтров); по умолчанию — канон. */
-    ui?: Snippet<[{ form: BoundForm; schema: DemoPanelSchema<V>; values: DemoValues }]>
+    /**
+     * Своя разметка полей — компонент приложения (как `form` у фильтров):
+     * панель отдаёт ему `field(name)` с готовыми вьюхами и придерживается
+     * собственной оболочки (форма, «Применить», подвал). Пример —
+     * `routes/(site)/(app)/steps/StepsDemoFields.svelte`.
+     */
+    ui?: Component<DemoUiProps>
     class?: string
     testid?: string
     applyLabel?: string
@@ -110,6 +117,9 @@
     },
   })
 
+  // Динамический компонент — с большой буквы (правило Svelte).
+  const Ui = $derived(ui)
+
   // Параметры потребителю: один канал и на первый рендер, и на каждое изменение.
   $effect(() => {
     const values = { ...form.values } as DemoValues
@@ -125,7 +135,12 @@
 >
 
   {#if ui}
-    {@render ui({ form, schema, values: form.values as DemoValues })}
+    <Ui
+      {form}
+      schema={schema as DemoPanelSchema}
+      values={form.values as DemoValues}
+      field={(name) => demoFieldUi(schema as DemoPanelSchema, form, name)}
+    />
   {:else}
     <!-- Столбцы считаются от ширины ПАНЕЛИ (container query), а не окна: панель
          живёт и в колонке страницы, и в боковой колонке галереи. -->
@@ -137,10 +152,8 @@
               {spec.label}
             </div>
           {:else}
-            {@const v = form.field(spec.key)!}
-            {@const reason = spec.disabledWhen?.(form.values as DemoValues)}
-            {@const hint = reason ?? spec.hintOf?.(form.values as DemoValues) ?? spec.hint}
-            {@const disabled = v.disabled === true || reason !== undefined || (spec.jsOnly === true && form.submitVisible)}
+            {@const f = demoFieldUi(schema as DemoPanelSchema, form, spec.key)}
+            {@const v = f.v}
             {#if spec.type === 'toggle'}
               <div>
                 <Toggle
@@ -148,8 +161,8 @@
                   name={v.name}
                   label={v.label ?? spec.label}
                   checked={v.value === true}
-                  {disabled}
-                  hint={hint}
+                  disabled={f.disabled}
+                  hint={f.hint}
                   hintId={`${v.attrs.id}-help`}
                   hiddenPair={form.submitVisible}
                 />
@@ -162,7 +175,7 @@
             {:else}
               <Field
                 label={v.label ?? spec.label}
-                hint={hint}
+                hint={f.hint}
                 hintId={`${v.attrs.id}-help`}
               >
                 {#if spec.type === 'select'}
@@ -170,19 +183,15 @@
                     {...v.attrs}
                     name={v.name}
                     value={v.value === undefined || v.value === null ? '' : String(v.value)}
-                    {disabled}
-                    options={spec.options.map((o) => ({
-                      value: o.value,
-                      label: o.label,
-                      disabled: o.jsOnly === true && form.submitVisible,
-                    }))}
+                    disabled={f.disabled}
+                    options={f.options}
                   />
                 {:else}
                   <Input
                     {...v.attrs}
                     name={v.name}
                     value={v.value === undefined || v.value === null ? '' : String(v.value)}
-                    {disabled}
+                    disabled={f.disabled}
                     oninput={(e) => v.onInput?.(e.currentTarget.value)}
                   />
                 {/if}
