@@ -1,24 +1,21 @@
 <script lang="ts">
-  // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { visibleAddress } from '#lib/address/sveltekit.js'
-import { asLink } from '#lib/components/links/index.js'
-  import { Button, Fieldset } from '#lib/components/ui/index.js'
   // Демонстрация формы. Правило то же, что у модалок: если опция существует,
-  // она меняется прямо здесь, а не в коде.
+  // она меняется прямо здесь, а не в коде (панель — `DemoPanel`, этап 4).
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
-  import { page } from '$app/state'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { asLink } from '#lib/components/links/index.js'
+  import { Button, Fieldset } from '#lib/components/ui/index.js'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
-    createRegistry, defaultRegistry, defineForm, field, isVisible, pollUntilDone, queuedData,
+    createRegistry, defineForm, isVisible, pollUntilDone, queuedData,
     type FormDescription, type PollOutcome,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
   import { checks, forms, formsCustomUi } from '#lib/components/form/forms.config.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
-  import { createConfig } from '#lib/form/svelte/index.js'
   import { DemoPanel, demoDefaults } from '#lib/components/demo/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
   import Common from '#lib/components/form/Common.svelte'
@@ -246,8 +243,6 @@ import { asLink } from '#lib/components/links/index.js'
       .filter(([k]) => !k.startsWith('aria-') && k !== 'name' && k !== 'id')
       .map(([k, val]) => (val === true ? k : `${k}="${val}"`))
       .join(' ') || '—'
-
-
 </script>
 
 <div class="py-10 sm:py-14">

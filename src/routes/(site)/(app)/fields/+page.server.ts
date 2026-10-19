@@ -8,7 +8,7 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit'
 import type { Handled } from '#lib/form/server.js'
 import { clearFieldsDemo, handleBuilder, handleRecord, savedRecord, savedSet } from './handle'
-import { MAX_FIELDS, maxFieldsOf, stepOf, type FieldsStep } from './forms'
+import { demoQuery, maxFieldsOf, stepOf, type FieldsStep } from './forms'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = ({ url }) => {
@@ -23,10 +23,13 @@ export const load: PageServerLoad = ({ url }) => {
   }
 }
 
-/** Опции демо переживают переход шага: иначе предел молча вернулся бы к умолчанию. */
+/**
+ * Опции демо переживают переход шага: иначе предел молча вернулся бы к умолчанию.
+ * Хвост адреса собирает тот же `demoQuery`, что и клиент (одна запись формата).
+ */
 const limitTail = (url: URL): string => {
-  const n = maxFieldsOf(url.searchParams.get('limit'))
-  return n === MAX_FIELDS ? '' : `&limit=${n}`
+  const q = demoQuery(maxFieldsOf(url.searchParams.get('limit')))
+  return q ? `&${q}` : ''
 }
 
 /**

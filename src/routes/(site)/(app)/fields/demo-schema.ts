@@ -30,7 +30,6 @@ export const demoPanelSchema = defineDemoPanel<FieldsDemoValues>({
       options: FIELD_LIMITS.map((n) => ({ value: String(n), label: String(n) })),
       defaultValue: '8',
       url: { omitWhenDefault: true },
-      resetsScenario: false,
     }),
   ],
 })

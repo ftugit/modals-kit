@@ -90,7 +90,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
 
-  // Этап 8: панель настроек — поля механизма на общих виджетах; Segmented нет.
+  // Панель настроек — универсальный DemoPanel: id полей = имена ключей схемы.
   ok('панель — поля form: контролы с id=имени и значением из зеркала',
     await pg.locator('#mode').evaluate((el) => el.tagName === 'SELECT' && el.name === 'mode'
       && el.value === 'as-is')
