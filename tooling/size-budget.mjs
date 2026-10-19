@@ -175,8 +175,8 @@ const LIMITS = {
   // (модалка + роут /user/menu), Field `instead` (CopyField) — всё статически
   // в шапке/чанке форм: JS 291.3 → 292.1, immutable 305.1 → 305.9, маршруты
   // +0.2…+0.4. В пределах «≤ +5», лимиты = факт + 0.5.
-  allImmutableGzip: 312.5 * KiB, // 261 (310.2); form×step: паразит + демо
-  allJsGzip: 298.5 * KiB, // 261 (296.4); form×step
+  allImmutableGzip: 313.0 * KiB, // 261 (310.2); form×step + демо-панель
+  allJsGzip: 299.0 * KiB, // 261 (296.4); form×step + демо-панель
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -216,7 +216,7 @@ const ROUTE_LIMITS = {
   // Ход 237: чистка lib/form — факт 169.9.
   '/fields': 182.3 * KiB, // 261 (181.1); form×step: бочка steps тянет паразита
   // Ход 261 (ревизия): универсальный хост шагов (режимы url/local/hybrid) + демо /steps.
-  '/steps': 181.5 * KiB, // 261: 149.5; form×step: демо формы (+31.2) → 180.7
+  '/steps': 182.5 * KiB, // 261: 149.5; form×step + панель режимов
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

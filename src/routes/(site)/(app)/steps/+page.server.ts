@@ -12,17 +12,27 @@ const handle = createFormHandler({
   description: fstepForm,
   order: SECURITY_LAYERS,
   execute({ intent, values, commit, fail }) {
-    // серверная-only ошибка для демо разбора: имя «ошибка» ловит только сервер
+    // серверная-only проверка: правило, которого нет в описании формы, увидит
+    // только сервер. Обе ошибки — про поля ПЕРВОГО шага: на финальном сохранении
+    // этот шаг уже скрыт, разбор раскрывает его и показывает поле с ошибкой.
+    const problems = []
     if (intent === 'save' && String(values['name'] ?? '').toLowerCase().includes('ошибка'))
-      fail([
-        {
-          id: 'fstep.server-name',
-          code: 'fstep.server-name',
-          message: 'Сервер не пропустил имя «ошибка» — исправьте на шаге «Контакты».',
-          path: 'name',
-          origin: 'server',
-        },
-      ])
+      problems.push({
+        id: 'fstep.server-name',
+        code: 'fstep.server-name',
+        message: 'Сервер не пропустил имя «ошибка» — исправьте на шаге «Контакты».',
+        path: 'name',
+        origin: 'server' as const,
+      })
+    if (intent === 'save' && String(values['email'] ?? '') !== 'ada@example.com')
+      problems.push({
+        id: 'fstep.server-email',
+        code: 'fstep.server-email',
+        message: 'Сервер принимает только ada@example.com — поле с шага «Контакты» (демо скрытого шага).',
+        path: 'email',
+        origin: 'server' as const,
+      })
+    if (problems.length) fail(problems)
     commit()
     // следующий шаг едет в данных результата: с JS его читает страница
     // (Result.data.step), без JS шаг вернёт обёртка экшена

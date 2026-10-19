@@ -1,9 +1,12 @@
 /**
- * Браузерный тест демо шагов (/steps) — ход 261 (ревизия): универсальный хост.
- *   • url: ссылки ведут на адрес, aria-current, deep-link (?step=…);
+ * Браузерный тест демо шагов (/steps): панель режимов-ссылок (?demo=…) и
+ * форм-режим «паразита».
+ *   • панель: режимы и опции — ссылки, режим в адресе (?demo=…, своя бронь);
+ *   • url: ссылки ведут на адрес, aria-current, deep-link (?ustep=…);
  *   • local: смена шага адрес не пишет;
- *   • hybrid: адрес синхронизируется своим ключом (?hstep=…) без навигации,
- *     обновление страницы держит шаг.
+ *   • hybrid: адрес синхронизируется своим ключом (?hstep=…) без навигации;
+ *   • form: subset-шаги, свёрнутые поля в POST, разбор после серверной ошибки
+ *     (в т.ч. по СКРЫТОМУ полю первого шага — email), no-JS.
  * Прогон — только этот файл (затронутый участок), не browser-all.
  */
 import assert from 'node:assert/strict'
@@ -27,7 +30,7 @@ async function waitPreview() {
   throw new Error(`сервер не отвечает: ${BASE}`)
 }
 
-/** Текущий шаг секции: подпись с aria-current="step". */
+/** Текущий шаг области: подпись с aria-current="step". */
 const currentLabel = (scope) => scope.locator('[aria-current=step]').first().textContent()
 
 async function run() {
@@ -36,47 +39,53 @@ async function run() {
   try {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage()
 
-    // 1. url-режим: deep-link ?step=confirm
+    await page.goto(BASE + '/steps', { waitUntil: 'networkidle' })
+    const panel = page.getByTestId('demo-panel')
+    const steps = page.getByTestId('demo-steps')
+
+    // панель: режимы — ссылки; смена режима ведёт на ЧИСТЫЙ адрес сценария
+    await panel.getByRole('link', { name: /Локально/ }).click()
+    await page.waitForURL(/demo=local/)
+    assert.ok(!new URL(page.url()).searchParams.get('ustep'), 'панель: смена режима — чистый адрес')
+    ok('панель: режимы — ссылки, режим в адресе (?demo=local)')
+
+    // 1. url-режим: deep-link ?ustep=confirm
     await page.goto(BASE + '/steps?ustep=confirm', { waitUntil: 'networkidle' })
-    const sec1 = page.locator('section').nth(0)
-    assert.equal((await currentLabel(sec1))?.trim(), 'Подтверждение', 'url: deep-link открыл подтверждение')
-    ok('url: deep-link ?step=confirm')
-    // ссылка на следующий шаг: клик → адрес, aria-current переехал
-    await sec1.getByRole('link', { name: 'Готово' }).click()
+    assert.equal((await currentLabel(steps))?.trim(), 'Подтверждение', 'url: deep-link открыл подтверждение')
+    ok('url: deep-link ?ustep=confirm')
+    await steps.getByRole('link', { name: 'Готово' }).click()
     await page.waitForURL(/ustep=done/)
-    assert.equal((await currentLabel(sec1))?.trim(), 'Готово', 'url: ссылка сменила шаг')
+    assert.equal((await currentLabel(steps))?.trim(), 'Готово', 'url: ссылка сменила шаг')
     ok('url: ссылка ведёт на адрес, шаг сменился')
 
-    // 2. local-режим: клик по навигации НЕ меняет адрес
+    // 2. local: клик по навигации НЕ меняет адрес
     const addressBefore = page.url()
-    const sec2 = page.locator('section').nth(1)
-    await sec2.getByRole('link', { name: 'Подтверждение' }).click()
+    await panel.getByRole('link', { name: /Локально/ }).click()
+    await page.waitForURL(/demo=local/)
+    const addressLocal = page.url()
+    await steps.getByRole('link', { name: 'Подтверждение' }).click()
     await page.waitForTimeout(400)
-    assert.equal((await currentLabel(sec2))?.trim(), 'Подтверждение', 'local: шаг сменился локально')
-    assert.equal(page.url(), addressBefore, 'local: адрес не тронут')
+    assert.equal((await currentLabel(steps))?.trim(), 'Подтверждение', 'local: шаг сменился локально')
+    assert.equal(page.url(), addressLocal, 'local: адрес не тронут')
     ok('local: смена без адреса')
 
-    // 3. hybrid: локальная смена + адрес своим ключом (?hstep=…), без навигации
-    const sec3 = page.locator('section').nth(2)
-    await sec3.getByRole('link', { name: 'Состав' }).click()
+    // 3. hybrid: локальная смена + адрес своим ключом (?hstep=…)
+    await panel.getByRole('link', { name: /Адрес \+ локально/ }).click()
+    await page.waitForURL(/demo=hybrid/)
+    await steps.getByRole('link', { name: 'Состав' }).click()
     await page.waitForTimeout(400)
-    assert.equal((await currentLabel(sec3))?.trim(), 'Состав', 'hybrid: шаг сменился локально')
+    assert.equal((await currentLabel(steps))?.trim(), 'Состав', 'hybrid: шаг сменился локально')
     assert.ok(new URL(page.url()).searchParams.get('hstep') === 'compose', 'hybrid: адрес получил hstep=compose')
     ok('hybrid: локальная смена + адрес своим ключом')
-    // чужие ключи не потеряны (step= от url-демо остался)
-    assert.ok(new URL(page.url()).searchParams.get('ustep') === 'done', 'hybrid: чужие ключи адреса не тронуты')
-    ok('hybrid: чужие ключи сохранены')
-
-    // обновление страницы: hybrid держит шаг, url-демо тоже
     await page.reload({ waitUntil: 'networkidle' })
-    assert.equal((await currentLabel(sec3))?.trim(), 'Состав', 'hybrid: обновление держит шаг')
-    assert.equal((await currentLabel(sec1))?.trim(), 'Готово', 'url: обновление держит шаг')
-    ok('обновление страницы: шаги восстановлены из адреса')
+    assert.equal((await currentLabel(steps))?.trim(), 'Состав', 'hybrid: обновление держит шаг')
+    ok('обновление страницы: hybrid держит шаг')
 
-    // ── 4. form-режим: шаги поверх одной формы (паразит formSteps) ──────────
-    const sec4 = page.locator('section').nth(3)
-    const pane = (key) => sec4.locator(`[data-step="${key}"]`)
-    await page.goto(BASE + '/steps', { waitUntil: 'networkidle' })
+    // 4. form: шаги поверх одной формы (паразит formSteps)
+    await panel.getByRole('link', { name: /Форма/ }).click()
+    await page.waitForURL(/demo=form/)
+    const form = page.getByTestId('demo-form')
+    const pane = (key) => form.locator(`[data-step="${key}"]`)
 
     // поля ВСЕХ шагов в DOM (свёрнутые едут в POST), виден только текущий
     assert.equal(await pane('contacts').count(), 1, 'form: шаг «Контакты» в DOM')
@@ -85,7 +94,7 @@ async function run() {
     ok('form: все шаги в DOM, виден только текущий')
 
     // шаговый провал: subset ловит пустые поля СВОЕГО шага, шаг не меняется
-    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await form.getByRole('button', { name: 'Далее: примечание' }).click()
     await page.waitForTimeout(400)
     assert.equal(await pane('contacts').isVisible(), true, 'form: пустой шаг не пропустило')
     assert.ok((await pane('contacts').textContent())?.includes('Обязательное'), 'form: ошибка subset у поля')
@@ -94,8 +103,9 @@ async function run() {
     // успех шага: интенция уводит на следующий, адрес не тронут
     const addressBeforeForm = page.url()
     await pane('contacts').getByLabel('Имя').fill('Ада')
-    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
-    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    // чужая электропочта: серверная-only норма поймает её на финальном «Сохранить»
+    await pane('contacts').getByLabel('Электропочта').fill('bob@example.com')
+    await form.getByRole('button', { name: 'Далее: примечание' }).click()
     await page.waitForTimeout(500)
     assert.equal(await pane('extra').isVisible(), true, 'form: успех шага открыл «Примечание»')
     assert.equal(await pane('contacts').isHidden(), true, 'form: прошлый шаг свёрнут')
@@ -110,65 +120,68 @@ async function run() {
         if (buf) posts.push(buf.toString('utf8'))
       }
     })
-    await pane('extra').getByLabel('Примечание').fill('заметка')
-    await sec4.getByRole('button', { name: 'Сохранить' }).click()
-    await page.waitForTimeout(600)
-    assert.ok(posts.some((b) => b.includes('name="name"') && b.includes('name="note"')),
-      'form: в POST значения и видимых, и свёрнутых шагов')
-    assert.equal(await pane('done').isVisible(), true, 'form: успех save — шаг «Готово»')
-    ok('form: свёрнутые поля в POST, финал открыл «Готово»')
 
-    // разбор: серверная-only ошибка (ловит только save на финальной отправке)
-    // закрепляет чужой шаг, чистые свёрнуты
-    await page.goto(BASE + '/steps', { waitUntil: 'networkidle' })
-    await pane('contacts').getByLabel('Имя').fill('ошибка')
-    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
-    await sec4.getByRole('button', { name: 'Далее: примечание' }).click()
-    await page.waitForTimeout(500)
+    // РАЗБОР ПО СКРЫТОМУ ПОЛЮ: серверная-only норма email (шаг 1). Шаг «Контакты»
+    // свёрнут, но его значение в POST — сервер ругается на email, разбор
+    // раскрывает первый шаг и показывает ошибку у поля.
     await pane('extra').getByLabel('Примечание').fill('заметка')
-    await sec4.getByRole('button', { name: 'Сохранить' }).click()
+    await form.getByRole('button', { name: 'Сохранить' }).click()
     await page.waitForTimeout(700)
-    assert.equal(await pane('contacts').isVisible(), true, 'разбор: чужой шаг с ошибкой раскрыт')
-    assert.ok((await pane('contacts').textContent())?.includes('Сервер не пропустил'), 'разбор: серверная ошибка у поля')
-    const disclose = sec4.locator('summary[data-step-disclose="extra"]')
-    assert.equal(await disclose.isVisible(), true, 'разбор: чистый шаг свёрнут в «Отобразить шаг N»')
-    assert.equal(await pane('extra').isHidden(), true, 'разбор: чистый шаг скрыт до щелчка')
-    ok('разбор: ошибочный шаг раскрыт, чистый свёрнут')
+    assert.ok(posts.some((b) => b.includes('name="name"') && b.includes('name="email"') && b.includes('name="note"')),
+      'разбор: в POST значения и видимых, и свёрнутых шагов')
+    assert.equal(await pane('contacts').isVisible(), true, 'разбор: скрытый шаг с ошибкой email раскрыт')
+    assert.ok((await pane('contacts').textContent())?.includes('Сервер принимает только ada@example.com'),
+      'разбор: серверная ошибка у email (поля первого шага)')
+    assert.equal(await pane('contacts').getByLabel('Электропочта').isVisible(), true,
+      'разбор: поле email (было скрыто) видно')
+    const discloseExtra = form.locator('summary[data-step-disclose="extra"]')
+    assert.equal(await discloseExtra.isVisible(), true, 'разбор: чистый шаг свёрнут в «Отобразить шаг 2»')
+    ok('разбор: серверная ошибка в скрытом поле раскрыла первый шаг')
 
-    // щелчок «Отобразить шаг 2» раскрывает; поля прежних шагов в DOM
-    await disclose.click()
+    // исправили email — разбор отпускает: показываемых ошибок нет, обычный вид
+    // (текущий шаг — «Примечание», шаг 1 снова свёрнут в «Отобразить шаг 1»)
+    await pane('contacts').getByLabel('Электропочта').fill('ada@example.com')
+    await page.waitForTimeout(400)
+    assert.equal(await form.locator('summary[data-step-disclose="contacts"]').isVisible(), true,
+      'после исправления: разбор отпустил — шаг 1 снова в свёртке')
+    await form.locator('summary[data-step-disclose="contacts"]').click()
     await page.waitForTimeout(200)
-    assert.equal(await pane('extra').isVisible(), true, 'разбор: «Отобразить шаг 2» раскрыл шаг')
-    assert.equal(await disclose.isHidden(), true, 'разбор: кнопка скрыта — заменена блоком шага')
-    ok('разбор: раскрытие свёрнутого шага')
+    await form.getByRole('button', { name: 'Далее: примечание' }).click()
+    await page.waitForTimeout(600)
+    assert.equal(await pane('extra').isVisible(), true, 'после исправления: шаговый переход работает')
+    ok('после исправления: разбор отпустил, переходы работают')
 
-    // ── no-JS: тот же форм-режим на нативных POST ──────────────────────────
+    // успех save: серверная норма email соблюдена — «Готово»
+    // (панель шага пересоздаётся при pinned→current: координатный клик успевает
+    //  прицелиться в старый узел — жмём DOM-клик по живой кнопке)
+    await pane('extra').getByRole('button', { name: 'Сохранить' }).dispatchEvent('click')
+    await page.waitForTimeout(600)
+    assert.equal(await pane('done').isVisible(), true, 'form: успех save — шаг «Готово»')
+    ok('form: финал открыл «Готово»')
+
+    // ── no-JS: панель-ссылки, форм-режим на нативных POST ──────────────────
     const nojs = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, javaScriptEnabled: false })).newPage()
-    await nojs.goto(BASE + '/steps', { waitUntil: 'load' })
     const npane = (key) => nojs.locator(`[data-step="${key}"]`)
-    const nsec4 = nojs.locator('section').nth(3)
+    await nojs.goto(BASE + '/steps?demo=form', { waitUntil: 'load' })
     await npane('contacts').getByLabel('Имя').fill('Ада')
-    await npane('contacts').getByLabel('Электропочта').fill('ada@example.com')
-    await nsec4.getByRole('button', { name: 'Далее: примечание' }).click()
+    await npane('contacts').getByLabel('Электропочта').fill('bob@example.com')
+    await nojs.getByTestId('demo-form').getByRole('button', { name: 'Далее: примечание' }).click()
     await nojs.waitForLoadState('load')
-    assert.equal(await npane('extra').isVisible(), true, 'no-JS: успех шага открыл «Примечание» (шаг из ответа экшена)')
+    assert.equal(await npane('extra').isVisible(), true, 'no-JS: успех шага открыл «Примечание»')
     assert.equal(await npane('contacts').isHidden(), true, 'no-JS: прошлый шаг свёрнут')
-    assert.equal(await npane('contacts').count(), 1, 'no-JS: свёрнутый шаг в DOM (поля едут в POST)')
-    ok('no-JS: переход шага нативным POST, шаг из ответа')
+    assert.equal(await npane('contacts').count(), 1, 'no-JS: свёрнутый шаг в DOM')
+    ok('no-JS: переход шага нативным POST')
 
-    // разбор без JS: серверная-only ошибка, чужой шаг раскрыт, чистый свёрнут
-    await nojs.goto(BASE + '/steps', { waitUntil: 'load' })
-    await npane('contacts').getByLabel('Имя').fill('ошибка')
-    await npane('contacts').getByLabel('Электропочта').fill('ada@example.com')
-    await nsec4.getByRole('button', { name: 'Далее: примечание' }).click()
-    await nojs.waitForLoadState('load')
+    // разбор без JS: чужая email-норма — скрытый шаг раскрыт, чистый свёрнут
     await npane('extra').getByLabel('Примечание').fill('заметка')
-    await nsec4.getByRole('button', { name: 'Сохранить' }).click()
+    await nojs.getByTestId('demo-form').getByRole('button', { name: 'Сохранить' }).click()
     await nojs.waitForLoadState('load')
-    assert.equal(await npane('contacts').isVisible(), true, 'no-JS: разбор — чужой шаг с ошибкой раскрыт')
-    assert.ok((await npane('contacts').textContent())?.includes('Сервер не пропустил'), 'no-JS: серверная ошибка у поля')
-    assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true, 'no-JS: чистый шаг свёрнут в «Отобразить шаг N»')
-    ok('no-JS: разбор после серверной ошибки')
+    assert.equal(await npane('contacts').isVisible(), true, 'no-JS: разбор — скрытый шаг с ошибкой email раскрыт')
+    assert.ok((await npane('contacts').textContent())?.includes('Сервер принимает только ada@example.com'),
+      'no-JS: серверная ошибка у email')
+    assert.equal(await nojs.locator('summary[data-step-disclose="extra"]').isVisible(), true,
+      'no-JS: чистый шаг свёрнут в «Отобразить шаг 2»')
+    ok('no-JS: разбор по скрытому полю')
 
     console.log(`✅ steps-browser: ${passed} проверок пройдено`)
   } finally {
