@@ -86,21 +86,26 @@
     return { ...demoParams(schema, visibleAddress().url), ...externalValues() }
   }
 
-  if (typeof window !== 'undefined') {
-    // svelte-ignore state_referenced_locally
-    const keys = demoFields(schema)
-      .map(demoUrlKey)
-      .filter((k): k is string => k !== null)
-    // svelte-ignore state_referenced_locally
-    if (keys.length > 0) claimQuery(schema.id, ...keys)
-  }
+  // svelte-ignore state_referenced_locally
+  const urlKeys = demoFields(schema)
+    .map(demoUrlKey)
+    .filter((k): k is string => k !== null)
+  /** Панель владеет адресом, только если у неё есть адресные поля. */
+  const ownsAddress = urlKeys.length > 0
+
+  // svelte-ignore state_referenced_locally
+  if (typeof window !== 'undefined' && ownsAddress) claimQuery(schema.id, ...urlKeys)
 
   // svelte-ignore state_referenced_locally
   const form = bind(cfg, desc, {
+    // `url` подключается ВСЕГДА: он же ведёт зеркало формы (форма слушает
+    // `change` и читает DOM). Панель без адресных полей ничего не пишет —
+    // коммит ей нечего делать в адресе.
     url: {
       action: schema.action,
       seed: () => valuesNow(),
       commit: untrack(() => (patch: Record<string, unknown>) => {
+        if (!ownsAddress) return
         const current = visibleAddress().url
         const before = valuesNow()
         const values = { ...before, ...patch }
@@ -115,6 +120,35 @@
         })
       }),
     },
+  })
+
+  /**
+   * Не-адресные поля (`url: false`) — зеркало чужого источника истины:
+   * хранилища пагинатора, конфига хоста модалок. Догоняем форму ТОЛЬКО когда
+   * изменился сам источник: иначе эхо собственной правки (пока приёмник не
+   * применил значение) откатывало бы ввод — на `/modals` это гасило выбор
+   * `default_mobile`. Внутренние чтения — `untrack`: зависимость у эффекта
+   * одна, внешнее значение.
+   */
+  // svelte-ignore state_referenced_locally
+  let seenExternal: unknown = untrack(() => external)
+  $effect(() => {
+    const src = external as Record<string, unknown> | undefined
+    if (!src || src === seenExternal) return
+    seenExternal = src
+    untrack(() => {
+      for (const f of demoFields(schema)) {
+        if (demoUrlKey(f) !== null) continue
+        const want = src[f.key]
+        if (want === undefined) continue
+        const v = form.field(f.key)
+        if (!v) continue
+        const current = v.value
+        const differs =
+          typeof want === 'boolean' ? current !== want : String(current ?? '') !== String(want)
+        if (differs) v.onInput(want)
+      }
+    })
   })
 
   // Динамический компонент — с большой буквы (правило Svelte).
