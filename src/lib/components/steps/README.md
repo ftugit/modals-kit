@@ -104,15 +104,12 @@
 при замке и attachment-перехват клика: `url` — не трогает, `local`/`hybrid` —
 `host.switch()` (он же уважает замок; модификаторы/средняя кнопка — браузеру).
 
-Компонент `StepLink` — для типового случая; свой вид — сниппет `as`:
+Компонент `StepLink` — одна строка для любого вида: проп `element="button"`
+даёт кнопку-ссылку (вид кнопки, элемент `<a>`, `aria-disabled` при замке):
 
 ```svelte
-<StepLink host={steps} step="address">
-  {#snippet as(attrs)}
-    <Button {...attrs} variant="outline">К адресу</Button>
-  {/snippet}
-  К адресу
-</StepLink>
+<StepLink host={steps} step="address">К адресу</StepLink>
+<StepLink host={steps} step="address" element="button" variant="outline">К адресу</StepLink>
 ```
 
 Текущий шаг `StepLink` рисует текстом с `aria-current="step"` — ссылкой он не бывает.
@@ -206,16 +203,48 @@ useSteps({ owner: 'modal-wizard',    mode: 'local', /* адреса нет — k
 
 ## 9. С формой (`lib/form`): шаги как срезы одной формы
 
-Форма одна — `bind` один; шаги показывают **свои поля**, валидация и отправка
-общие (демо — `/fields`, живой пример — `/user/auth`):
+Форма ОДНА — привязка одна; шаги показывают **свои поля**, валидация и
+отправка общие. Полный пример с описанием формы (объявление `myForm` —
+изоморфное: импортируют и страница, и экшен):
+
+```ts
+// $lib/my-form.ts — описание (без UI, без HTTP)
+import { defineForm, field, v } from '#lib/form/index.js'
+
+export const myForm = defineForm({
+  id: 'my-form',
+  revision: 1,
+  actions: [
+    { id: 'save', label: 'Сохранить', validate: 'full' },
+  ],
+  fields: {
+    title: field.text({ label: 'Название', validate: [v.required()] }),
+    // note обязателен К ВВОДУ — но на втором шаге (см. разметку ниже)
+    note: field.text({ label: 'Примечание', validate: [v.required()] }),
+  },
+})
+```
 
 ```svelte
+<!-- +page.svelte -->
 <script lang="ts">
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import { Field } from '#lib/components/form/index.js'
   import { Steps, StepLink, useSteps } from '#lib/components/steps/index.js'
+  import { myForm } from '$lib/my-form.js'
+  import { forms } from '#lib/components/form/forms.config.js'
+  import { kitActionTransport } from '#lib/components/form/transport.js'
 
-  const bound = bind(forms, myForm, { action: '/my-form', transport })
+  let { data, form: actionResult } = $props()
+
+  // привязка ОДНА на всю форму (не на шаг): состояние, значения, проверки — общие
+  const bound = bind(forms, myForm, {
+    action: '/my-form',
+    transport: kitActionTransport('/my-form'),
+    // результат экшена (без JS) — продолжение привязки
+    continuation: actionResult?.result ?? null,
+  })
+
   const steps = useSteps({
     owner: 'my-form',
     steps: () => [
@@ -235,21 +264,38 @@ useSteps({ owner: 'modal-wizard',    mode: 'local', /* адреса нет — k
     <Field of={bound.f.note} />
   {/if}
 
-  <!-- кнопки отправки общие: уходят значения ВСЕХ полей формы -->
-  <Button type="submit" name="intent" value="save">Сохранить</Button>
+  <StepLink host={steps} step="extra" element="button" variant="outline">Дальше</StepLink>
+
+  <!-- общая отправка: сохраняет значения ВСЕХ посещённых полей -->
+  <Button type="submit" name="intent" value="save" task={formTask(bound.state)}>Сохранить</Button>
 </Form>
 ```
 
+**Как форма знает, что `note` «ещё нет в UI»: никакой магии — она этого и не
+должна знать.** Обязательность проверяется на отправке по ЗНАЧЕНИЯМ, а не по
+DOM. Сценарии:
+
+- **Оба шага пройдены → «Сохранить»** — `note` в состоянии формы, `required`
+  проходит.
+- **«Сохранить» с первого шага, `note` не вводили** — форма честно откажет:
+  `note: Обязательное поле`. Поле не нарисовано — ошибка закрепится за полем
+  и всплывёт, когда вы дойдёте до его шага. Если это не то поведение — не
+  делайте поле обязательным; обязательность ввода, растянутого на шаги, —
+  дело порядка шагов.
+- **Перешли на второй шаг, не заполнив первый** — обязательное `title`
+  откажет на отправке так же честно; шаги не «резервируют» обязательность.
+
 Правила срезов:
 
-1. **Перенос поля между шагами** = переставить `<Field of={bound.f.имя} />` в
-   другой шаг. Описания, правила и ошибки поля живут в форме, а не в разметке.
+1. **Перенос поля между шагами** = переставить `<Field of={bound.f.note} />`
+   в другой шаг. Описание, правила и ошибки живут в ОПИСАНИИ формы, не в
+   разметке шага.
 2. **Значение поля, спрятанного на другом шаге, в отправку не попадёт** — его
    нет в DOM. Если значение должно пережить скрытие — храните его в состоянии
-   формы (`onInput` из другого источника, как seed у авторизации) или держите
-   поле скрытым (`Input type="hidden"`).
-3. Ошибки поля видны там, где поле нарисовано; серверные ошибки отправки —
-   у общих элементов формы, а не у шага.
+   формы (запись через `onInput`, как seed у авторизации) или держите поле
+   скрытым (`Input type="hidden"`).
+3. Ошибки поля видны там, где поле нарисовано; общие ошибки отправки — у
+   общих элементов формы, а не у шага.
 
 ## 10. Бронь ключей глобальна
 

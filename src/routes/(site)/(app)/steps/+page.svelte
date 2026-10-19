@@ -4,7 +4,6 @@
   // шаги (поля между шагами переносятся) смотрите на /fields.
   import { page } from '$app/state'
   import { Steps, StepLink, useSteps } from '#lib/components/steps/index.js'
-  import { Button } from '#lib/components/ui/index.js'
 
   const DEFS = () => [
     { key: 'compose', label: 'Состав', filled: true },
@@ -106,12 +105,7 @@
       <!-- свой вид: ссылка в облике кнопки (Button сам рисует <a> по href);
            no-JS разметка остаётся ссылкой -->
       {#if hybridSteps.currentKey !== 'done'}
-        <StepLink host={hybridSteps} step="done">
-          {#snippet as(attrs)}
-            <Button {...attrs} variant="outline">К «Готово» кнопкой</Button>
-          {/snippet}
-          К «Готово» кнопкой
-        </StepLink>
+        <StepLink host={hybridSteps} step="done" element="button" variant="outline">К «Готово» кнопкой</StepLink>
       {/if}
     </div>
     <Steps host={hybridSteps} label="" nav={false}>
