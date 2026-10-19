@@ -7,19 +7,10 @@
  * адресным писателем.
  */
 import { defineForm, field, type FieldDraft, type FormDescription } from '#lib/form/index.js'
-import type {
-  DemoField,
-  DemoFieldSpec,
-  DemoPanelSchema,
-  DemoValues,
-  DemoValue,
-} from './types.js'
-
-/** Схема в самом общем виде: хелперам нужны только поля и адресная политика. */
-export type AnyDemoPanelSchema = DemoPanelSchema<never>
+import type { DemoSchemaData, DemoField, DemoPanelSchema, DemoValues } from './types.js'
 
 /** Поля схемы без разделителей — в порядке вывода. */
-export function demoFields(schema: AnyDemoPanelSchema): readonly DemoField[] {
+export function demoFields(schema: DemoSchemaData): readonly DemoField[] {
   return schema.fields.filter((f): f is DemoField => f.type !== 'divider')
 }
 
@@ -30,7 +21,7 @@ export function demoUrlKey(f: DemoField): string | null {
 }
 
 /** Значения по умолчанию — как их прочтёт пустой адрес. */
-export function demoDefaults(schema: AnyDemoPanelSchema): DemoValues {
+export function demoDefaults(schema: DemoSchemaData): DemoValues {
   const out: DemoValues = {}
   for (const f of demoFields(schema)) out[f.key] = f.defaultValue
   return out
@@ -118,10 +109,10 @@ export function demoScenarioChange<
   return null
 }
 
-const formCache = new WeakMap<AnyDemoPanelSchema, FormDescription>()
+const formCache = new WeakMap<DemoSchemaData, FormDescription>()
 
 /** Описание формы панели из схемы (одно на схему). */
-export function demoForm(schema: AnyDemoPanelSchema): FormDescription {
+export function demoForm(schema: DemoSchemaData): FormDescription {
   const cached = formCache.get(schema)
   if (cached) return cached
   const fields: Record<string, FieldDraft<never>> = Object.create(null)

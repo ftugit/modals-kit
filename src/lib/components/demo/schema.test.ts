@@ -3,7 +3,7 @@
 // наборе test/browser/steps.mjs.
 import { describe, expect, it } from 'vitest'
 import { demoDefaults, demoForm, demoHref, demoParams, demoScenarioChange } from './schema'
-import { defineDemoPanel } from './types'
+import { defineDemoPanel } from './define'
 
 interface Fix extends Record<string, string | boolean> {
   demo: string
@@ -89,7 +89,7 @@ describe('demoHref: запись значений в адрес', () => {
       ...schema,
       fields: schema.fields.map((f) =>
         f.type === 'divider' ? f : f.key === 'nav' ? { ...f, url: false as const } : f,
-      ),
+      ) as typeof schema.fields,
     })
     expect(demoHref(local, { demo: 'url', nav: false, filled: true }, at('/steps'))).toBe('/steps')
   })

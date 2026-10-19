@@ -4,8 +4,17 @@
  * без JS) панель подключает сама через `#lib/address`, наружу отдаёт параметры.
  */
 export { default as DemoPanel } from './DemoPanel.svelte'
-export { defineDemoPanel } from './types.js'
+export {
+  defineDemoPanel,
+  demoDivider,
+  demoPanelDefects,
+  demoSelect,
+  demoText,
+  demoToggle,
+  validateDemoPanel,
+} from './define.js'
 export type {
+  DemoSchemaData,
   DemoDivider,
   DemoField,
   DemoFieldSpec,

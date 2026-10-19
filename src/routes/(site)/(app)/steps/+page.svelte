@@ -3,7 +3,7 @@
   // панель настроек + одна активная область, как у пагинатора). Режим демо
   // живёт в адресе (`?demo=url|local|hybrid|form` — свой ключ брони), панель —
   // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
-  // адреса (не полная навигация). Схема полей — в fstep-form.ts.
+  // адреса (не полная навигация). Схема полей — в demo-schema.ts.
   import { page } from '$app/state'
   import { untrack } from 'svelte'
   import { Steps, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
@@ -15,14 +15,15 @@
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
-  import { demoPanelSchema, FSTEP_STEPS, fstepForm, type DemoMode, type FstepStep } from './fstep-form.ts'
+  import { FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
+  import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#lib/components/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
   import type { Result } from '#lib/form/index.js'
 
   let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
 
-  /* ── режим и опции демо: схему и адрес ведёт DemoPanel (fstep-form.ts),
+  /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
   const initialDemo = demoParams(demoPanelSchema, page.url)
   let demo = $state(initialDemo)
@@ -131,7 +132,7 @@
     </p>
   </header>
 
-  <!-- панель демо — универсальный DemoPanel: схема в fstep-form.ts, адрес,
+  <!-- панель демо — универсальный DemoPanel: схема в demo-schema.ts, адрес,
        seed и «Применить» ведёт он сам; странице остаются параметры -->
   <DemoPanel
     schema={demoPanelSchema}
