@@ -16,7 +16,7 @@
  * `$app/state` (реактивно, на SSR — адрес запроса), навигация идёт через `goto`.
  */
 import { browser } from '$app/env'
-import { goto } from '$app/navigation'
+import { goto, replaceState } from '$app/navigation'
 import { navigating, page } from '$app/state'
 import { createSubscriber } from 'svelte/reactivity'
 import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
@@ -83,6 +83,14 @@ const writer = browser
         if (load)
           // Скролл и фокус принадлежат контейнеру хоста, не странице → `reset: false`.
           return goto(href, { replace, reset: false, state: state as App.PageState })
+        // Правка ТОЛЬКО состояния записи (адрес тот же, замена) — `replaceState`:
+        // она не запускает навигацию и не отменяет чужую (отправку формы с
+        // редиректом). shallow-`goto` в этом окне гасил POST замка шагов
+        // (/fields: «Enter» переставал уводить на «Заполнение», ход 263).
+        const here = new URL(window.location.href)
+        const target = new URL(href, here)
+        if (replace && target.pathname === here.pathname && target.search === here.search)
+          return replaceState(href, state as App.PageState)
         // «Мелкое» добавление записи — это слой (модалка, флаг панели, список
         // селекта): запоминаем, поверх какой записи он открыт.
         const base = !replace ? nav?.currentEntry?.key : undefined

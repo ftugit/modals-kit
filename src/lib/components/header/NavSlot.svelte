@@ -21,13 +21,13 @@
 
 <script lang="ts">
   import { asLink } from '#lib/components/links/index.js'
-  import { page } from '$app/state'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { NAV_ITEMS } from './nav'
 </script>
 
 <nav class="flex items-center gap-1" aria-label="Основная навигация">
   {#each NAV_ITEMS as item}
-    {@const active = page.url.pathname === item.to}
+    {@const active = visibleAddress().url.pathname === item.to}
     <a {...asLink(item.to)}
       class={navPillVariants({ active })}
       aria-current={active ? 'page' : undefined}

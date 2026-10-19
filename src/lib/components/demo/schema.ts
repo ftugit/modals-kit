@@ -27,7 +27,7 @@ export function demoDefaults(schema: DemoSchemaData): DemoValues {
   return out
 }
 
-/** Источник адреса: `URL`, строка или `page.url` SvelteKit (`ReadonlyURLSearchParams`). */
+/** Источник адреса: `URL`, строка или адрес страницы SvelteKit (`ReadonlyURLSearchParams`). */
 export type DemoUrlSource =
   | string
   | URL

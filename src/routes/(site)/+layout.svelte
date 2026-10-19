@@ -9,6 +9,7 @@
   // `(modals-demo)` вкладывает СВОЙ хост (demoScope) в этот: чужие имена
   // каждый хост пропускает (`foreignNames: 'skip'`) — страница /modals
   // показывает и глобальные, и демо-модалки из одной цепочки адреса.
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { page } from '$app/state'
   import './auth-modals'
   import { globalScope } from '#lib/modals/index.js'
@@ -55,7 +56,7 @@
   // о чужих именах (их покажет её хост); на остальных страницах мы одни,
   // и неизвестное имя — честная карточка ошибки. Решает ПАПКА адреса —
   // вложенный хост существует только у /modals.
-  const foreignNames = $derived(page.url.pathname.startsWith('/modals') ? ('skip' as const) : ('error' as const))
+  const foreignNames = $derived(visibleAddress().url.pathname.startsWith('/modals') ? ('skip' as const) : ('error' as const))
 </script>
 
 <ModalSystem scope={globalScope} sources={() => SOURCES} {foreignNames}>

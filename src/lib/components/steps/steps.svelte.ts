@@ -33,10 +33,9 @@
  *    документации, не соблюдаются тем, кто о них не знает.
  */
 import { page } from '$app/state'
-import { pushState } from '$app/navigation'
 import { DEV, BROWSER } from 'esm-env'
 import { claimQuery, nextSearch, readQuery } from '#lib/address/keys.js'
-import { linkTask, visibleAddress } from '#lib/address/sveltekit.js'
+import { linkTask, visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 
 export type StepDef = {
   key: string
@@ -184,16 +183,19 @@ export function useSteps(opts: StepsOptions): StepsHost {
         return
       }
       if (locked()) return
-      // гибрид: адресуемый шаг синхронизирует адрес своим ключом (pushState —
-      // без навигации и load); служебные состояния адреса не получают
+      // гибрид: адресуемый шаг синхронизирует адрес своим ключом. Запись — общим
+      // писателем `#lib/address` (мелкая, без навигации и load), а не своим
+      // `pushState`: своя запись — вторая очередь, которая обгоняет чужие и
+      // теряется под модальным слоем (дефект /steps на таче, ход 262). Служебные
+      // состояния адреса не получают.
       if (mode === 'hybrid' && BROWSER && opts.steps().some((s) => s.key === stepKey)) {
-        pushState(host.href(stepKey), page.state)
+        void writeAddress(() => ({ url: host.href(stepKey) }), { replace: false, load: false })
       }
       local = stepKey
     },
     href(stepKey: string) {
-      // Видимый адрес, не `page.url`: после мелких записей (модалки, панели,
-      // shallow-слои) `page.url` описывает ОТРИСОВАННУЮ страницу, и ссылка,
+      // Видимый адрес, а не адрес последней отрисовки: после мелких записей (модалки,
+      // панели, shallow-слои) адрес отрисовки описывает ПРОШЛОЕ состояние, и ссылка,
       // собранная из него, вернула бы старые ключи и потеряла новые.
       const here = visibleAddress().url
       return here.pathname + nextSearch(opts.owner, here.search, { [key]: stepKey })

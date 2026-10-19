@@ -5,6 +5,7 @@
   // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
   // адреса (не полная навигация). Схема полей — в demo-schema.ts.
   import { page } from '$app/state'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { untrack } from 'svelte'
   import { Steps, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
   import { asLink } from '#lib/components/links/index.js'
@@ -25,7 +26,7 @@
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
-  const initialDemo = demoParams(demoPanelSchema, page.url)
+  const initialDemo = demoParams(demoPanelSchema, visibleAddress().url)
   let demo = $state(initialDemo)
   const mode = $derived(demo.demo as DemoMode)
   const withNav = $derived(demo.nav)
@@ -48,7 +49,7 @@
     mode: 'url',
     key: 'ustep',
     steps: DEFS,
-    current: () => (page.url.searchParams.get('ustep') ?? 'compose'),
+    current: () => (visibleAddress().url.searchParams.get('ustep') ?? 'compose'),
   })
   const localSteps = useSteps({
     owner: 'steps-demo-local',
@@ -62,7 +63,7 @@
     mode: 'hybrid',
     key: 'hstep',
     steps: DEFS,
-    current: () => (page.url.searchParams.get('hstep') ?? 'compose'),
+    current: () => (visibleAddress().url.searchParams.get('hstep') ?? 'compose'),
   })
 
   /* ── режим form: шаги поверх ОДНОЙ формы ──────────────────────────────────
@@ -99,7 +100,8 @@
   })
   const fs = formSteps(bound, formStepsHost)
 
-  const address = $derived(page.url.pathname + page.url.search)
+  // Видимый адрес: показывает и мелкие записи панели (адрес отрисовки отстаёт).
+  const address = $derived(visibleAddress().url.pathname + visibleAddress().url.search)
   /* активный хост адресных режимов; пересоздание не нужно — у каждого свой
      ключ брони, состояние локальных переживёт переключение панели */
   const addressSteps = $derived(mode === 'url' ? urlSteps : mode === 'local' ? localSteps : hybridSteps)

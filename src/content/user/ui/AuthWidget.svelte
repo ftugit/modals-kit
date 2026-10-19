@@ -14,6 +14,7 @@
    * Callback: `onDone` (JS) — закрыть модалку/перейти; без JS его заменяет
    * redirect экшена.
    */
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { untrack } from 'svelte'
@@ -67,14 +68,14 @@
     /** Callback успеха (JS): закрыть модалку / перейти. Без JS — redirect экшена. */
     onDone?: () => void
     /** Адрес экшена: на странице — сам адрес; в модалке — роут модалки
-     * (`page.url.pathname` — страница ПОД модалкой, у неё своих экшенов нет). */
+     * (путь видимого адреса — страница ПОД модалкой, у неё своих экшенов нет). */
     actionUrl?: string
   }
 
   let { data, form: actionForm, mode = 'page', onDone, actionUrl }: Props = $props()
 
   // svelte-ignore state_referenced_locally -- адрес модалки постоянен за её жизнь
-  const action = actionUrl ?? page.url.pathname
+  const action = actionUrl ?? visibleAddress().url.pathname
   const notHydrated = useJsOnly()
 
   /* ── привязка формы: тот же конфиг форм, что у всего проекта ── */

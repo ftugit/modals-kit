@@ -8,8 +8,7 @@
    * форму на `?/reset`, и так же она работает без скрипта.
    */
   import { untrack } from 'svelte'
-  import { replaceState } from '$app/navigation'
-  import { page } from '$app/state'
+  import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
@@ -17,6 +16,15 @@
 
   // без перехвата: сброс — один нативный POST с редиректом на «Сборку»
   const form = bind(forms, untrack(() => resetForm()), { action: '?/reset', intercept: false })
+
+  /** Замок шагов — правка состояния записи общим писателем адреса, не своим
+   *  `replaceState`: вторая запись истории обгоняет очередь модалок и теряет
+   *  их состояние (F41). */
+  const lockSteps = (locked: boolean) =>
+    writeAddress(
+      () => ({ url: visibleAddress().url.href, state: { ...visibleAddress().state, fieldsNavLocked: locked } }),
+      { replace: true, load: false },
+    )
 </script>
 
 <!-- Нативный POST обрывается, если во время него щёлкнуть ссылку: шаги
@@ -26,7 +34,7 @@
   form={form}
   hiddenFields={form.hidden()}
   class="inline-flex"
-  onsubmit={() => void replaceState(page.url.href, { ...page.state, fieldsNavLocked: true })}
+  onsubmit={() => void lockSteps(true)}
 >
   <Button type="submit" variant="link" size="none" data-testid="reset" {...form.intent('reset')}>
     Сбросить

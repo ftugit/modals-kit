@@ -8,6 +8,7 @@
   //
   // Лежит рядом с маршрутами, а не в lib: ему нужен `$app/state`, а lib
   // импортирует `$app/*` только в слоях фреймворка ядер.
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { untrack, type Snippet } from 'svelte'
   import { page } from '$app/state'
   import {
@@ -57,13 +58,13 @@
     tailCount: 3,
     maxHeight: '80vh',
     onError: report,
-    configScope: () => page.url.pathname,
+    configScope: () => visibleAddress().url.pathname,
   })
 
   $effect(() => {
     // Скоуп настроек — данные в сторе (см. комментарий `scopedConfig`):
     // раскладка сообщает путь, геттеры хоста остаются чистыми.
-    modals.setScope(page.url.pathname)
+    modals.setScope(visibleAddress().url.pathname)
   })
 
   // Носители меняет панель демо (`demoSources`): ядро перенастраивается без

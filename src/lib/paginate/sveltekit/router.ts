@@ -9,7 +9,6 @@
  * `.pathname`).
  */
 import { afterNavigate } from '$app/navigation'
-import { page } from '$app/state'
 import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 import type { MinimalRouter } from '../adapter-url'
 
@@ -23,9 +22,11 @@ export function currentSearch(): Record<string, unknown> {
   return Object.fromEntries(visibleAddress().url.searchParams)
 }
 
-/** Путь текущего рендера — для `action` формы без JS (аналог `app.pathname`). */
+/** Путь видимого адреса — для `action` формы без JS (аналог `app.pathname`).
+ *  Через общий слой `#lib/address`, не напрямую: адрес отрисовки отстаёт от
+ *  мелких записей, и `action`, собранный из него, уводил бы на прошлый срез. */
 export function currentPathname(): string {
-  return page.url.pathname
+  return visibleAddress().url.pathname
 }
 
 /**
@@ -34,8 +35,8 @@ export function currentPathname(): string {
  *
  * `#фрагмент` сюда не входит: его дописывает писатель в момент ОТПРАВКИ, из
  * адресной строки (баг F9, решение владельца A). Пагинатор меняет только
- * search, а якорь принадлежит странице; из `page.*` его брать нельзя — клик по
- * ссылке-якорю обновляет только `page.url`.
+ * search, а якорь принадлежит странице; из состояния страницы его брать нельзя —
+ * клик по ссылке-якорю обновляет только адрес.
  */
 function hrefOf(pathname: string, search: Record<string, unknown>): string {
   const params = new URLSearchParams()

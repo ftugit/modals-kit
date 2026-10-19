@@ -186,3 +186,77 @@ test('source: разбор тела маршрутом запрещён, фай�
     'probe до слоёв остаётся легальным: файл знает про createFormHandler',
   );
 });
+
+/* ── адрес: GET читается и пишется только через #lib/address ────────── */
+
+const src = (code, file) => checkSource(RULES, code, file);
+
+test('писатель адреса: нативный history запрещён вне lib/address', () => {
+  const msg = src("history.pushState({}, '', '/x?y=1');", '/app/src/lib/components/panel.svelte');
+  assert.ok(msg);
+  assert.match(msg, /writeAddress/);
+  assert.equal(src("history.replaceState({}, '', '/x');", '/app/src/lib/address/sveltekit.ts'), null);
+});
+
+test('писатель адреса: pushState/replaceState из $app/navigation запрещены', () => {
+  const msg = src("import { pushState } from '$app/navigation';\npushState('/x', {});", '/app/src/lib/components/steps/steps.svelte.ts');
+  assert.ok(msg);
+  assert.match(msg, /writeAddress/);
+  assert.match(msg, /shallow/, 'сообщение объясняет причину (дефект /steps)');
+  assert.equal(
+    src("import { pushState } from '$app/navigation';", '/app/src/lib/address/sveltekit.ts'),
+    null,
+  );
+});
+
+test('писатель адреса: многострочный импорт тоже ловится', () => {
+  const code = "import {\n  goto,\n  replaceState,\n} from '$app/navigation';";
+  assert.ok(src(code, '/app/src/routes/x/+page.svelte'));
+});
+
+test('чтение адреса: page.url в библиотеке запрещён, visibleAddress разрешён', () => {
+  const msg = src("const p = page.url.pathname;", '/app/src/lib/components/sidebar/SidebarNav.svelte');
+  assert.ok(msg);
+  assert.match(msg, /visibleAddress/);
+  assert.equal(src("const p = visibleAddress().url.pathname;", '/app/src/lib/components/sidebar/SidebarNav.svelte'), null);
+  // «реальность фреймворка» ядра движка модалок — разрешена
+  assert.equal(src("const u = page.url;", '/app/src/lib/modals/cores/sveltekit.ts'), null);
+});
+
+test('навигация: goto в библиотеке запрещён, у Link/HoldButton и писателя — нет', () => {
+  const msg = src("import { goto } from '$app/navigation';\ngoto('/x');", '/app/src/lib/components/demo/DemoPanel.svelte');
+  assert.ok(msg);
+  assert.match(msg, /writeAddress|Link/);
+  assert.equal(src("import { goto } from '$app/navigation';", '/app/src/lib/components/links/link.svelte.ts'), null);
+  assert.equal(
+    src("import { goto } from '$app/navigation';", '/app/src/lib/components/ui/button/HoldButton.svelte'),
+    null,
+  );
+  assert.equal(src("import { goto } from '$app/navigation';", '/app/src/lib/address/sveltekit.ts'), null);
+  // приложение (src/routes) ходить по страницам может
+  assert.equal(src("import { goto } from '$app/navigation';\ngoto('/x');", '/app/src/routes/x/+page.svelte'), null);
+});
+
+/* ── скан всего дерева: правила действуют не только на достижимые модули ── */
+
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return walk(p);
+    return /\.(svelte|ts|js|mjs)$/.test(e.name) ? [p] : [];
+  });
+}
+
+test('исходники src: адресные правила соблюдены во ВСЁМ дереве', () => {
+  const root = new URL('../src', import.meta.url).pathname;
+  const bad = [];
+  for (const file of walk(root)) {
+    if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
+    const msg = checkSource(RULES, readFileSync(file, 'utf8'), file);
+    if (msg) bad.push(`${file.replace(root + '/', 'src/')}: ${msg.split('\n')[0]}`);
+  }
+  assert.deepEqual(bad, [], 'нарушения слоя адреса:\n' + bad.join('\n'));
+});

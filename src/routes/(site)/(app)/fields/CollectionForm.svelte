@@ -4,9 +4,9 @@
    * приложения (`SchemaBuilder`), пределы проверяет форма.
    */
   import { untrack } from 'svelte'
-  import { goto, replaceState } from '$app/navigation'
-  import { page } from '$app/state'
-  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { goto } from '$app/navigation'
+import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
+    import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { jsonTransport } from '#lib/components/form/transport.js'
   import { forms } from '#lib/components/form/forms.config.js'
@@ -47,8 +47,14 @@
   // шага свой, «назад/вперёд» чужой замок не снимает и не наследует.
   $effect(() => {
     const pending = form.state.pending
-    if (!!page.state.fieldsNavLocked !== pending)
-      void replaceState(page.url.href, { ...page.state, fieldsNavLocked: pending })
+    const here = visibleAddress()
+    if (!!here.state.fieldsNavLocked !== pending)
+      // Замок — состояние записи истории; пишет общий писатель адреса, не свой
+      // `replaceState` (вторая запись обгоняет очередь и теряет чужие состояния).
+      void writeAddress(
+        () => ({ url: here.url.href, state: { ...here.state, fieldsNavLocked: pending } }),
+        { replace: true, load: false },
+      )
   })
 </script>
 

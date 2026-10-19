@@ -10,6 +10,7 @@
    * высота auto, тоже круглая; пока её нет или она грузится — виден заполнитель
    * (инициал на приглушённом фоне).
    */
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { page } from '$app/state'
   import { useModalLink } from '#lib/components/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
@@ -31,7 +32,9 @@
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
 
   /** адрес страницы входа с возвратом сюда (валидность next — на сервере) */
-  const authHref = $derived(`/user/auth?next=${encodeURIComponent(page.url.pathname + page.url.search)}`)
+  // Адрес — из общего слоя #lib/address, не из адреса отрисовки: после мелких
+  // записей (меню-модалка, панели) тот отстаёт, и `next` увёл бы не туда.
+  const authHref = $derived(`/user/auth?next=${encodeURIComponent(visibleAddress().url.pathname + visibleAddress().url.search)}`)
 </script>
 
 {#if authorized}

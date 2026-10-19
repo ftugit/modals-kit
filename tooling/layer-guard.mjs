@@ -34,6 +34,8 @@ function matchPattern(pattern, value) {
  *   `formProps`) — там, где разметочные правила не действуют.
  * @property {(RegExp | string)[]} [allow]
  * @property {(RegExp | string)[]} [deny]
+ * @property {(RegExp | string)[]} [scope] правило действует ТОЛЬКО в этих файлах
+ *   (для запретов, адресованных библиотеке, а не приложению)
  * @property {RegExp} [require] срабатывает ТОЛЬКО если в тексте нет этого узора:
  *   способ потребовать «пользуйся библиотекой», не запрещая сам приём.
  * @property {string | ((ctx: {source: string, importer: string, rule: Rule}) => string)} message
@@ -52,6 +54,10 @@ function runTextRules(rules, code, id) {
   const src = typeof code === 'string' ? code : String(code ?? '');
   for (const rule of rules) {
     if (!matchPattern(rule.pattern, src)) continue;
+    // scope — только исходники проекта: у зависимостей свой путь с `/src/`
+    // (`node_modules/@sveltejs/kit/src/...`), чужие правила их не касаются.
+    if (rule.scope && (file.includes('/node_modules/') || !rule.scope.some((sc) => matchPattern(sc, file))))
+      continue;
     const allowed = (rule.allow ?? []).some((a) => matchPattern(a, file));
     if (allowed) continue;
     if (rule.require && rule.require.test(src)) continue;
@@ -166,6 +172,18 @@ export function layerGuard(rules) {
 /* ── правила проекта ───────────────────────────────────────────────── */
 
 const MODALS_LIB = /(^|\/)src\/lib\/modals\//;
+/** Единственный владелец записи адреса: писатель, бронь ключей, алгебра GET. */
+const ADDRESS_LIB = /(^|\/)src\/lib\/address\//;
+/** Навигационные примитивы: их работа — переход, а не правка GET-адреса. */
+const NAV_PRIMITIVES = [
+  /(^|\/)src\/lib\/components\/links\//,
+  /(^|\/)src\/lib\/components\/ui\/button\/HoldButton\.svelte$/,
+];
+/** Чтение «реальности фреймворка» — обязанность ядра движка модалок. */
+const MODALS_ENGINE = /(^|\/)src\/lib\/modals\/cores\//;
+/** Правила адреса действуют на ИСХОДНИКИ проекта: node_modules SvelteKit вправе
+ *  упоминать page.url в своих рантайм-файлах и сообщениях. */
+const SRC_ONLY = [/(^|\/)src\//];
 /** Кто имеет право на сырые form-теги и на собственный разбор тела. */
 const FORM_KEEPERS = [
   /(^|\/)src\/lib\/form\//,
@@ -177,7 +195,107 @@ const FORM_KEEPERS = [
 ];
 
 /** @type {Rule[]} */
+
 export const RULES = [
+/* ── адрес: чтение и запись GET — только через #lib/address ──────────
+ *
+ * Зачем жёстко. Дефект /steps (ход 262): панель писала адрес полным `goto`
+ * из-под свежей shallow-записи модального списка; SvelteKit молча отменял
+ * навигацию, и режим «не переключался» — на десктопе работало, на таче нет.
+ * Класс дефекта — не «одна опечатка», а второй писатель адреса: своя очередь
+ * истории, которая обгоняет чужую и теряет чужие ключи/состояние.
+ * Соглашение в документации этот класс не держит — держит отказ сборки.
+ */
+{
+  pattern: /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/,
+  isSourceCheck: true,
+  scope: SRC_ONLY,
+  allow: [ADDRESS_LIB],
+  message: ({ importer }) =>
+    [
+      '[layer-guard] Прямой history.pushState/replaceState запрещён.',
+      `  файл: ${importer || '<точка входа>'}`,
+      '',
+      '  Адрес страницы пишет ТОЛЬКО общий писатель:',
+      '',
+      "      import { writeAddress } from '#lib/address/sveltekit.js';",
+      "      void writeAddress(() => ({ url: '/page?key=value' }), { replace: false, load: false });",
+      '',
+      '  Почему: нативный history SvelteKit не видит и перетирает;',
+      '  своя запись = вторая очередь истории, которая обгоняет записи',
+      '  модалок/пагинатора и теряет их ключи и состояние (F41).',
+    ].join('\n'),
+},
+{
+  pattern: /import\s*\{[\s\S]*?\b(?:pushState|replaceState)\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
+  isSourceCheck: true,
+  scope: SRC_ONLY,
+  allow: [ADDRESS_LIB],
+  message: ({ importer }) =>
+    [
+      '[layer-guard] pushState/replaceState из $app/navigation запрещены.',
+      `  файл: ${importer || '<точка входа>'}`,
+      '',
+      '  Это запись адреса — её делает общий писатель:',
+      '',
+      "      import { writeAddress } from '#lib/address/sveltekit.js';",
+      "      void writeAddress(() => ({ url, state }), { replace: true, load: false });",
+      '',
+      '  Почему: именно полная/своя запись из-под shallow-слоя сломала',
+      '  /steps на таче — SvelteKit отменил навигацию, и режим демо',
+      '  не переключался. Писатель сериализует записи и знает про слои.',
+      "  Свои ключи бронируйте: claimQuery(owner, 'ключ', 'ключ.*').",
+    ].join('\n'),
+},
+{
+  pattern: /\bpage\s*\.\s*url\b/,
+  isSourceCheck: true,
+  scope: SRC_ONLY,
+  // `/spike` — диагностическая страница, её работа — ПОКАЗАТЬ разницу между
+  // адресом отрисовки и видимым адресом.
+  allow: [ADDRESS_LIB, MODALS_ENGINE, /(^|\/)src\/routes\/spike\//],
+  message: ({ importer }) =>
+    [
+      '[layer-guard] Чтение `page.url` запрещено.',
+      `  файл: ${importer || '<точка входа>'}`,
+      '',
+      '  Читайте видимый адрес — с учётом мелких записей и намерения:',
+      '',
+      "      import { visibleAddress } from '#lib/address/sveltekit.js';",
+      '      const here = visibleAddress().url;   // pathname + search',
+      '',
+      '  Почему: после мелкой записи (модалка, панель, шаг) `page.url`',
+      '  описывает ОТРИСОВАННУЮ страницу, а не видимый адрес. Ссылка,',
+      '  собранная из него, возвращает старые ключи и теряет новые —',
+      '  это второй дефект /steps (ход 262). Чужие ключи читать можно:',
+      '  readQuery/visibleAddress отдают весь адрес, бронь касается записи.',
+    ].join('\n'),
+},
+{
+  pattern: /import\s*\{[\s\S]*?\bgoto\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
+  isSourceCheck: true,
+  // Только библиотека: приложение (src/routes) ходить по страницам вправе.
+  scope: [/(^|\/)src\/lib\//],
+  allow: [...NAV_PRIMITIVES, ADDRESS_LIB],
+  message: ({ importer }) =>
+    [
+      '[layer-guard] goto из $app/navigation в библиотеке запрещён.',
+      `  файл: ${importer || '<точка входа>'}`,
+      '',
+      '  Библиотечный компонент не ходит по адресам сам:',
+      '',
+      '    • адрес страницы меняется только через',
+      "      writeAddress(...) из '#lib/address/sveltekit.js';",
+      '    • переход по ссылке — через Link (`asLink`), не через goto;',
+      '    • «после успеха — на другой экран» — решение приложения',
+      '      (src/routes), а не библиотечного компонента.',
+      '',
+      '  Почему: goto с GET-адресом из панели — это ровно дефект /steps',
+      '  (ход 262): навигация гибнет под модальным слоем. Исключения:',
+      '  сам писатель и навигационные примитивы (Link, HoldButton).',
+    ].join('\n'),
+},
+
   {
     pattern: /^@ark-ui\/svelte\/dialog$/,
     allow: [MODALS_LIB],

@@ -1,5 +1,6 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
+import { visibleAddress } from '#lib/address/sveltekit.js'
 import { asLink } from '#lib/components/links/index.js'
   import { Button, Fieldset } from '#lib/components/ui/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
@@ -316,7 +317,7 @@ import { asLink } from '#lib/components/links/index.js'
     followed = r.submissionId
     void goto(r.redirect)
   })
-  const sent = $derived(page.url.searchParams.get('sent') === '1')
+  const sent = $derived(visibleAddress().url.searchParams.get('sent') === '1')
 
   // Очередь: пока исход `queued`, спрашиваем сервер по `pollUrl` (пауза — от него,
   // `pollUntilDone`); итог поднимается в форму как обычный результат. Уход со

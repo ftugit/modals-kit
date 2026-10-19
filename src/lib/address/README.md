@@ -31,6 +31,10 @@ const drawer = shallowFlag('drawer') // drawer.on / drawer.push() — «Наза
 ведёт ссылка от видимого адреса), `linkTask(href)` (адаптер `#lib/task`: идёт ли
 переход именно на этот адрес).
 
+Страницы, компоненты и демо-панели читают `visibleAddress()` и пишут через
+`writeAddress`; прямые `page.url`, `goto` и `history.pushState` в `src/` запрещены
+правилами `tooling/layer-guard.mjs` (сборка и тесты падают на нарушении).
+
 Адаптеры чужих библиотек пишут адрес только отсюда: модалки —
 `#lib/modals/cores/sveltekit.js`, пагинатор — `#lib/paginate/sveltekit/router.js`.
 Свой писатель в любой из них означал бы вторую очередь и возврат F41.
