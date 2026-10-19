@@ -79,11 +79,20 @@ export type StepsOptions = {
   current: () => string | null
   /** Ключ замка полёта в `page.state`; нет — замок не показывается. */
   lockKey?: string
+  /**
+   * Своя локальная смена шага (побочные данные — seed, аналитика): вызывается
+   * ВМЕСТО `set()` при клике по ссылкам хоста (`StepLink`, навигация `Steps`)
+   * в режимах local/hybrid. Сама вызывает `set()` (и делает что-то до/вместо).
+   * В режиме url не вызывается — там смена нативная навигация.
+   */
+  onSwitch?: (stepKey: string) => void | Promise<void>
 }
 
 export type StepsHost = {
   /** Режим состояния (для рендера: отличить адресную ссылку от локальной смены). */
   readonly mode: StepsMode
+  /** Полёт отправки идёт (ссылки видимые, но некликабельные). */
+  readonly locked: boolean
   /**
    * Локальная смена шага (`local`/`hybrid`): состояние внутри хоста, в
    * `hybrid` адрес синхронизируется своим ключом брони без навигации.
@@ -93,6 +102,12 @@ export type StepsHost = {
    * Замок полёта игнорирует смену.
    */
   set(stepKey: string): void
+  /**
+   * Смена шага ССЫЛКОЙ хоста (`StepLink`, навигация `Steps`): уважает замок,
+   * в режимах local/hybrid зовёт `onSwitch` (если задан) или `set()`; в url —
+   * dev-предупреждение (там клик не перехватывается, работает нативный переход).
+   */
+  switch(stepKey: string): Promise<void>
   /** Ключ текущего шага. */
   readonly currentKey: string | null
   /** Адрес шага (чужие ключи адреса не теряются). */
@@ -138,6 +153,21 @@ export function useSteps(opts: StepsOptions): StepsHost {
 
   const host: StepsHost = {
     mode,
+    get locked() {
+      return locked()
+    },
+    async switch(stepKey: string) {
+      if (mode === 'url') {
+        if (!urlModeWarned) {
+          urlModeWarned = true
+          warnOnce('switch() у «' + opts.owner + '» в режиме url не вызывается: клик по ссылкам там — нативная навигация по href; локальная смена нужна — режим local/hybrid')
+        }
+        return
+      }
+      if (locked()) return
+      if (opts.onSwitch) await opts.onSwitch(stepKey)
+      else host.set(stepKey)
+    },
     get currentKey() {
       return mode === 'url' ? opts.current() : (local ?? opts.current())
     },

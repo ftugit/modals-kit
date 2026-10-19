@@ -32,10 +32,10 @@
         href={s.href}
         onclick={(e) => {
           // режим url — нативная навигация; local/hybrid — локальная смена
-          // (href остаётся fallback без JS), побочные действия — у потребителя
+          // (href остаётся fallback без JS), побочные действия — у onSwitch хоста
           if (host.mode !== 'url') {
             e.preventDefault()
-            host.set(s.key)
+            void host.switch(s.key)
           }
         }}
         class="font-medium underline-offset-4 hover:underline {s.locked ? 'pointer-events-none opacity-50' : ''}"

@@ -18,7 +18,7 @@
   import { page } from '$app/state'
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
-  import { useSteps } from '#lib/components/steps/index.js'
+  import { StepLink, useSteps } from '#lib/components/steps/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
@@ -127,6 +127,8 @@
     ],
     // начальное значение: данные загрузки / deep-link; дальше — set()
     current: () => (data.step as StepData['step']) ?? 'entry',
+    // клик по ссылкам шага: seed делает браузер (не покидает устройство)
+    onSwitch: (to) => switchStep(to as 'entry' | 'register'),
   })
   const step = $derived((steps.currentKey ?? 'entry') as StepData['step'])
 
@@ -282,11 +284,9 @@
     <div class="flex items-baseline justify-end gap-2">
       {#each steps.items as it (it.key)}
         {#if !it.current}
-          <a
-            href={it.href}
-            onclick={(e) => { e.preventDefault(); void switchStep(it.key as 'entry' | 'register') }}
-            class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          >{it.label}</a>
+          <StepLink host={steps} step={it.key} class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+            {it.label}
+          </StepLink>
         {/if}
       {/each}
     </div>
