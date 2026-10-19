@@ -4,20 +4,19 @@
 // шагов не вырезаются из DOM и едут в каждом POST.
 import { defineForm, field, v } from '#lib/form/index.js'
 
-/** Шаги демо: ключ = id экшена, который его проверяет и уводит дальше. */
+/** Шаги демо: ключ = id экшена, который его проверяет и уводит дальше.
+ *  Финальный шаг — «Примечание»: его кнопка отправляет форму на сервер. */
 export const FSTEP_STEPS = [
   { key: 'contacts', label: 'Контакты' },
   { key: 'extra', label: 'Примечание' },
-  { key: 'done', label: 'Готово' },
 ] as const
 
 export type FstepStep = (typeof FSTEP_STEPS)[number]['key']
 
-/** Куда ведёт успешный шаг (знают и страница, и экшен). */
+/** Куда ведёт успешный шаг (знают и страница, и экшен); финал сам на себя. */
 export const FSTEP_NEXT: Record<FstepStep, FstepStep> = {
   contacts: 'extra',
-  extra: 'done',
-  done: 'done',
+  extra: 'extra',
 }
 
 export const fstepForm = defineForm({
@@ -42,7 +41,7 @@ export const fstepForm = defineForm({
 
 /* ── панель демо (`?demo=`, `?nav`, `?filled`) ────────────────────────── */
 
-/** Режимы демо: подписи и то, что требует оживления (смена шагов — клиентская). */
+/** Режимы демо; jsOnly-варианты до оживления просто выключены — как в других панелях. */
 export const DEMO_MODES = [
   { value: 'url', label: 'Адрес (?ustep)', jsOnly: false },
   { value: 'local', label: 'Локально', jsOnly: true },

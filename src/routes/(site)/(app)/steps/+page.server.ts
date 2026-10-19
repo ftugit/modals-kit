@@ -34,9 +34,14 @@ const handle = createFormHandler({
       })
     if (problems.length) fail(problems)
     commit()
-    // следующий шаг едет в данных результата: с JS его читает страница
-    // (Result.data.step), без JS шаг вернёт обёртка экшена
-    return { data: { step: FSTEP_NEXT[intent as FstepStep] ?? 'done' } }
+    // шаг едет в данных результата: с JS его читает страница (Result.data.step),
+    // без JS — обёртка экшена. «Сохранить» не ведёт ни на какой новый шаг —
+    // остаёмся на финальном, итог сообщает баннер над формой (data.saved).
+    return {
+      data: intent === 'save'
+        ? { step: 'extra', saved: true }
+        : { step: FSTEP_NEXT[intent as FstepStep] ?? 'contacts' },
+    }
   },
 })
 
@@ -64,7 +69,7 @@ async function act(event: Parameters<Actions['default']>[0]) {
   // провал оставляет на своём; ОБА канала обязаны вести шаг одинаково:
   // с JS его читают из Result.data.step, без JS — из этой обёртки
   return result.ok && result.outcome !== 'not-applied'
-    ? { result, step: own === 'extra' && intent === 'save' ? 'done' : FSTEP_NEXT[own] }
+    ? { result, step: FSTEP_NEXT[own] }
     : fail(status, { result, step: own })
 }
 

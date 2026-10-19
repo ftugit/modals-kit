@@ -54,7 +54,8 @@
   const panel = bind(forms, demoPanelForm, {
     url: {
       action: '/steps',
-      live: false, // применение целиком: «Применить» / нативный GET
+      // живое применение: выбор сразу меняет адрес (до оживления — нативный
+      // GET по кнопке «Применить», которая живёт только до оживления)
       seed: () => ({ demo: mode, nav: withNav, filled: withFilled }) as Record<string, unknown>,
       commit: untrack(() => (patch: Record<string, unknown>) => {
         const d = String(patch['demo'] ?? 'url')
@@ -177,11 +178,10 @@
           options={DEMO_MODES.map((m) => ({
             value: m.value,
             label: m.label,
+            // до оживления вариант просто выключен — «видно по факту», без слов
             disabled: m.jsOnly && panel.submitVisible,
-            hint: m.jsOnly ? 'Нужен JavaScript: смена шагов — клиентская' : undefined,
           }))}
           disabled={panel.field('demo')?.disabled === true}
-          onchange={() => panel.commit('demo')}
           {...panel.field('demo')?.attrs}
         />
       </Field>
@@ -193,7 +193,6 @@
           hiddenPair={panel.submitVisible}
           disabled={mode === 'form'}
           hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : undefined}
-          onChange={() => {}}
           {...panel.field('nav')?.attrs}
         />
         <Toggle
@@ -203,7 +202,6 @@
           hiddenPair={panel.submitVisible}
           disabled={mode === 'form' || mode === 'local'}
           hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : mode === 'local' ? 'Локальные шаги не адресуются' : undefined}
-          onChange={() => {}}
           {...panel.field('filled')?.attrs}
         />
       </div>
@@ -223,7 +221,10 @@
           Адресный режим: ссылки меняют ?ustep, deep-link и обновление работают сами.
         {/if}
       </p>
-      <button type="submit" class={buttonVariants({ size: 'sm' })}>Применить</button>
+      {#if panel.submitVisible}
+        <!-- без скрипта change не отправит форму: до оживления нужна нативная GET-кнопка -->
+        <button type="submit" class={buttonVariants({ size: 'sm' })}>Применить</button>
+      {/if}
     </div>
   </Form>
 
@@ -242,6 +243,12 @@
   {:else}
     <div class="space-y-4" data-testid="demo-form">
       <Form id="fstep" form={bound} hiddenFields={bound.hidden()}>
+        <!-- успех — канон раздела «Формы»: форма не пропадает, баннер над полями -->
+        {#if bound.state.result?.ok && (bound.state.result.data as { saved?: boolean } | undefined)?.saved}
+          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+            Готово. Исход: <b>{bound.state.outcome}</b>
+          </div>
+        {/if}
         <!-- общие ошибки видны всегда: в разборе без полевых ошибок шаги
              свёрнуты, и блок остаётся единственным сигналом -->
         <Common errors={bound.common} title="Форма не сохранена" />
@@ -251,27 +258,22 @@
               <FieldInput of={bound.f.name} />
               <FieldInput of={bound.f.email} />
             </div>
-            <Button type="submit" {...fs.submitOf('contacts')}>Далее: примечание</Button>
+            <Button type="submit" {...fs.submitOf('contacts')}>Далее</Button>
           {/snippet}
+          <!-- финальный шаг: его кнопка отправляет форму на сервер (полная проверка) -->
           {#snippet extra()}
             <div class="space-y-3">
               <FieldInput of={bound.f.note} />
             </div>
-            <div class="flex gap-2">
-              <!-- последний шаг с полями: и следующий шаг, и финальная отправка -->
-              <Button type="submit" {...fs.submitOf('extra')}>Далее: готово</Button>
-              <Button type="submit" variant="outline" {...fs.submitOf('save')}>Сохранить</Button>
-            </div>
-          {/snippet}
-          {#snippet done()}
-            <p class="rounded-md border p-3 text-sm">Форма сохранена — шаги закончились.</p>
+            <Button type="submit" {...fs.submitOf('save')}>Сохранить</Button>
           {/snippet}
         </FormSteps>
       </Form>
       <p class="text-xs text-muted-foreground">
         Шаг ведёт свой экшен (<code class="rounded bg-muted/70 px-1">subset</code>): «Далее» проверяет
-        только его поля; «Сохранить» — всю форму. Провал с чужими ошибками раскрывает шаги с
-        ошибками и сворачивает чистые в «Отобразить шаг N»; почините всё — разбор отпустит.
+        только поля первого шага; «Сохранить» на финальном — всю форму. Провал с чужими ошибками
+        раскрывает шаги с ошибками и сворачивает чистые в «Отобразить шаг N»; почините всё —
+        разбор отпустит.
       </p>
     </div>
   {/if}

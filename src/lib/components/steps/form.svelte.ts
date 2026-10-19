@@ -7,8 +7,9 @@
 // между шагами — submit с интенцией экшена шага (`submitOf`), не ссылка.
 //
 // Режим разбора (провал отправки с ошибками не только на текущем шаге —
-// на практике это финальный `save` или серверная-only ошибка): шаги с
-// ошибками закреплены открытыми (`pinned`), чистые свёрнуты в «Отобразить
+// на практике это финальный `save` или серверная-only ошибка): открытыми
+// остаются ТОЛЬКО шаги с ошибками (решение владельца — «текущий» ничего не
+// значит, пока сервер не вернул ошибку), все прочие свёрнуты в «Отобразить
 // шаг N» (`collapsed` — нативный details в FormSteps: раскрытие без JS,
 // открытое живёт до отправки). Правило без памяти об интенции (Result её
 // не несёт):
@@ -112,11 +113,8 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   }
 
   function viewOf(step: string): StepView {
-    if (review) {
-      // в разборе текущий шаг остаётся виден: юзер остался на нём после провала
-      if (errorSteps.includes(step)) return 'pinned'
-      return host.currentKey === step ? 'current' : 'collapsed'
-    }
+    // разбор: открыты только шаги с ошибками; обычный режим: только текущий
+    if (review) return errorSteps.includes(step) ? 'pinned' : 'collapsed'
     return host.currentKey === step ? 'current' : 'collapsed'
   }
 
