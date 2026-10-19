@@ -175,8 +175,11 @@ const LIMITS = {
   // (модалка + роут /user/menu), Field `instead` (CopyField) — всё статически
   // в шапке/чанке форм: JS 291.3 → 292.1, immutable 305.1 → 305.9, маршруты
   // +0.2…+0.4. В пределах «≤ +5», лимиты = факт + 0.5.
-  allImmutableGzip: 313.6 * KiB, // 261 (310.2); form×step + панель-форма
-  allJsGzip: 299.5 * KiB, // 261 (296.4); form×step + панель-форма
+  // Ход 262: универсальная демо-панель (`#lib/components/demo`) — схема→форма,
+  // адрес через lib/address, параметры наружу. /steps переведён на неё: факт
+  // 315.0 / JS 300.9 / /steps 184.5. В пределах «≤ +5» на ход, лимиты = факт + 0.5.
+  allImmutableGzip: 315.5 * KiB, // 261 (310.2); 262: универсальная демо-панель
+  allJsGzip: 301.4 * KiB, // 261 (296.4); 262: универсальная демо-панель
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
@@ -216,7 +219,8 @@ const ROUTE_LIMITS = {
   // Ход 237: чистка lib/form — факт 169.9.
   '/fields': 182.3 * KiB, // 261 (181.1); form×step: бочка steps тянет паразита
   // Ход 261 (ревизия): универсальный хост шагов (режимы url/local/hybrid) + демо /steps.
-  '/steps': 183.2 * KiB, // 261: 149.5; form×step + панель-форма
+  // Ход 262: /steps на универсальной демо-панели (факт 184.5).
+  '/steps': 185.0 * KiB, // 261: 149.5; 262: DemoPanel вместо ручной панели
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {

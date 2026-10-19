@@ -3,6 +3,7 @@
 // переход между шагами — submit с интенцией экшена, не ссылка. Поля свёрнутых
 // шагов не вырезаются из DOM и едут в каждом POST.
 import { defineForm, field, v } from '#lib/form/index.js'
+import { defineDemoPanel } from '#lib/components/demo/index.js'
 
 /** Шаги демо: ключ = id экшена, который его проверяет и уводит дальше.
  *  Финальный шаг — «Примечание»: его кнопка отправляет форму на сервер. */
@@ -39,7 +40,10 @@ export const fstepForm = defineForm({
 })
 
 
-/* ── панель демо (`?demo=`, `?nav`, `?filled`) ────────────────────────── */
+/* ── панель демо (`?demo=`, `?nav`, `?filled`) — СХЕМА универсальной панели ──
+   Данные, которые раньше жили в `defineForm` страницы: режим — сценарное поле
+   (смена пересобирает адрес), тумблеры — умолчания не пишутся; выключения
+   зависят от режима. Адрес, seed, «Применить» и GET без JS ведёт DemoPanel. */
 
 /** Режимы демо; jsOnly-варианты до оживления просто выключены — как в других панелях. */
 export const DEMO_MODES = [
@@ -51,17 +55,40 @@ export const DEMO_MODES = [
 
 export type DemoMode = (typeof DEMO_MODES)[number]['value']
 
-export const demoPanelForm = defineForm({
+export const demoPanelSchema = defineDemoPanel<{ demo: string; nav: boolean; filled: boolean }>({
   id: 'steps-demo',
-  revision: 1,
-  actions: [{ id: 'apply', label: 'Применить', validate: 'none' }],
-  fields: {
-    demo: field.select({
+  action: '/steps',
+  fields: [
+    {
+      type: 'select',
+      key: 'demo',
       label: 'Режим демо',
-      options: DEMO_MODES.map((m) => ({ value: m.value, label: m.label })),
+      hint: 'Ключ режима — ?demo (своя бронь; ?ustep/?hstep — ключи шагов)',
+      options: DEMO_MODES.map((m) => ({ value: m.value, label: m.label, jsOnly: m.jsOnly })),
       defaultValue: 'url',
-    }),
-    nav: field.checkbox({ label: 'Навигация по шагам сверху', defaultValue: true }),
-    filled: field.checkbox({ label: 'Пройденные шаги — ссылками', defaultValue: true }),
-  },
+      url: { omitWhenDefault: true },
+      resetsScenario: true,
+    },
+    {
+      type: 'toggle',
+      key: 'nav',
+      label: 'Навигация по шагам сверху',
+      defaultValue: true,
+      url: { omitWhenDefault: true },
+      disabledWhen: (v) => (v.demo === 'form' ? 'В форм-режиме шаги не адресуются' : undefined),
+    },
+    {
+      type: 'toggle',
+      key: 'filled',
+      label: 'Пройденные шаги — ссылками',
+      defaultValue: true,
+      url: { omitWhenDefault: true },
+      disabledWhen: (v) =>
+        v.demo === 'form'
+          ? 'В форм-режиме шаги не адресуются'
+          : v.demo === 'local'
+            ? 'Локальные шаги не адресуются'
+            : undefined,
+    },
+  ],
 })

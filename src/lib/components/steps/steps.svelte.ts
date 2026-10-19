@@ -36,7 +36,7 @@ import { page } from '$app/state'
 import { pushState } from '$app/navigation'
 import { DEV, BROWSER } from 'esm-env'
 import { claimQuery, nextSearch, readQuery } from '#lib/address/keys.js'
-import { linkTask } from '#lib/address/sveltekit.js'
+import { linkTask, visibleAddress } from '#lib/address/sveltekit.js'
 
 export type StepDef = {
   key: string
@@ -192,19 +192,24 @@ export function useSteps(opts: StepsOptions): StepsHost {
       local = stepKey
     },
     href(stepKey: string) {
-      return page.url.pathname + nextSearch(opts.owner, page.url.search, { [key]: stepKey })
+      // Видимый адрес, не `page.url`: после мелких записей (модалки, панели,
+      // shallow-слои) `page.url` описывает ОТРИСОВАННУЮ страницу, и ссылка,
+      // собранная из него, вернула бы старые ключи и потеряла новые.
+      const here = visibleAddress().url
+      return here.pathname + nextSearch(opts.owner, here.search, { [key]: stepKey })
     },
     arg(name: string, stepKey?: string) {
       const target = stepKey ?? opts.current()
       if (!target) return undefined
-      return readQuery(page.url.search, `${key}.${target}.${name}`) as string | undefined
+      return readQuery(visibleAddress().url.search, `${key}.${target}.${name}`) as string | undefined
     },
     argHref(patch: Record<string, string | number | null>, stepKey?: string) {
       const target = stepKey ?? opts.current()
       if (!target) throw new Error('argHref: текущий шаг не определён')
       const own: Record<string, string | number | null> = {}
       for (const [name, value] of Object.entries(patch)) own[`${key}.${target}.${name}`] = value
-      return page.url.pathname + nextSearch(opts.owner, page.url.search, own)
+      const here = visibleAddress().url
+      return here.pathname + nextSearch(opts.owner, here.search, own)
     },
     get items() {
       if (DEV) checkDup()

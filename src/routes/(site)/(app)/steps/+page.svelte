@@ -2,67 +2,32 @@
   // Демо хода шагов (lib/components/steps) — в каноне демо-страниц (шапка +
   // панель настроек + одна активная область, как у пагинатора). Режим демо
   // живёт в адресе (`?demo=url|local|hybrid|form` — свой ключ брони), панель —
-  // нативная GET-форма: смена режима и опций работает без скрипта. С JS — то
-  // же применение живьём (goto replace).
+  // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
+  // адреса (не полная навигация). Схема полей — в fstep-form.ts.
   import { page } from '$app/state'
-  import { goto as goto0 } from '$app/navigation'
   import { untrack } from 'svelte'
   import { Steps, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
-  import { Field, Select, Toggle } from '#lib/components/settings/index.js'
   import { asLink } from '#lib/components/links/index.js'
   import { bind } from '#lib/form/svelte/index.js'
-  import { buttonVariants } from '#lib/components/ui/index.js'
   import FieldInput from '#lib/components/form/Field.svelte'
   import Form from '#lib/form/svelte/Form.svelte'
   import Common from '#lib/components/form/Common.svelte'
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
-  import { DEMO_MODES, demoPanelForm, FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
+  import { demoPanelSchema, FSTEP_STEPS, fstepForm, type DemoMode, type FstepStep } from './fstep-form.ts'
+  import { DemoPanel, demoParams } from '#lib/components/demo/index.js'
   import type { Result } from '#lib/form/index.js'
 
   let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
 
-  /* ── режим и опции демо: истина в адресе (?demo=…), как у пагинатора ── */
-  const mode = $derived.by(() => {
-    const want = page.url.searchParams.get('demo')
-    return (DEMO_MODES.some((m) => m.value === want) ? want : 'url') as (typeof DEMO_MODES)[number]['value']
-  })
-  // тумблеры без галки едут hidden-парой («false»), с галкой — «false»+«true»:
-  // истина — есть ли «true» среди значений; нет параметра — умолчание «вкл»
-  const toggleOn = (name: string): boolean => {
-    const all = page.url.searchParams.getAll(name)
-    return all.length === 0 ? true : all.includes('true')
-  }
-  const withNav = $derived(toggleOn('nav'))
-  const withFilled = $derived(toggleOn('filled'))
-
-  /** Адрес с новым режимом/опциями; чужие ключи (ustep/hstep) не сохраняем —
-   * смена режима = чистый сценарий. */
-  function demoHref(demo: string, nav: boolean, filled: boolean): string {
-    const q = new URLSearchParams()
-    if (demo !== 'url') q.set('demo', demo)
-    if (!nav) q.set('nav', 'false')
-    if (!filled) q.set('filled', 'false')
-    const qs = q.toString()
-    return `/steps${qs ? `?${qs}` : ''}`
-  }
-
-  /* ── панель демо — ФОРМА lib/form (канон PaginatorSettings): до оживления
-     нативный GET (кнопка «Применить»), после — коммит набора в sink (goto).
-     Варианты local/hybrid — jsOnly: без оживления их не выбрать (disabled). */
-  const panel = bind(forms, demoPanelForm, {
-    url: {
-      action: '/steps',
-      // живое применение: выбор сразу меняет адрес (до оживления — нативный
-      // GET по кнопке «Применить», которая живёт только до оживления)
-      seed: () => ({ demo: mode, nav: withNav, filled: withFilled }) as Record<string, unknown>,
-      commit: untrack(() => (patch: Record<string, unknown>) => {
-        const d = String(patch['demo'] ?? 'url')
-        void goto0(demoHref(d, patch['nav'] !== false, patch['filled'] !== false))
-      }),
-    },
-  })
+  /* ── режим и опции демо: схему и адрес ведёт DemoPanel (fstep-form.ts),
+     страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
+  const initialDemo = demoParams(demoPanelSchema, page.url)
+  let demo = $state(initialDemo)
+  const mode = $derived(demo.demo as DemoMode)
+  const withNav = $derived(demo.nav)
+  const withFilled = $derived(demo.filled)
 
   const TEXT: Record<string, string> = {
     compose: 'Шаг «Состав»: произвольное содержимое — хост не знает про форму.',
@@ -165,49 +130,11 @@
     </p>
   </header>
 
-  <!-- панель демо — ФОРМА (канон панели пагинатора): до оживления нативный
-       GET по «Применить», после — коммит набора в sink; варианты local/hybrid
-       — jsOnly, до оживления выключены с причиной; недоступные на режиме
-       опции выключены с причиной, а не спрятаны. -->
-  <Form form={panel} data-testid="demo-panel" class="demo-panel rounded-xl border border-border bg-card p-4 text-sm shadow-sm">
-    <div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-      <Field label="Режим демо" hint="Ключ режима — ?demo (своя бронь; ?ustep/?hstep — ключи шагов)">
-        <Select
-          name="demo"
-          value={String(panel.values['demo'] ?? 'url')}
-          options={DEMO_MODES.map((m) => ({
-            value: m.value,
-            label: m.label,
-            // до оживления вариант просто выключен — «видно по факту», без слов
-            disabled: m.jsOnly && panel.submitVisible,
-          }))}
-          disabled={panel.field('demo')?.disabled === true}
-          {...panel.field('demo')?.attrs}
-        />
-      </Field>
-      <div class="grid content-start gap-2">
-        <Toggle
-          name="nav"
-          label="Навигация по шагам сверху"
-          checked={panel.values['nav'] === true}
-          hiddenPair={panel.submitVisible}
-          disabled={mode === 'form'}
-          hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : undefined}
-          {...panel.field('nav')?.attrs}
-        />
-        <Toggle
-          name="filled"
-          label="Пройденные шаги — ссылками"
-          checked={panel.values['filled'] === true}
-          hiddenPair={panel.submitVisible}
-          disabled={mode === 'form' || mode === 'local'}
-          hint={mode === 'form' ? 'В форм-режиме шаги не адресуются' : mode === 'local' ? 'Локальные шаги не адресуются' : undefined}
-          {...panel.field('filled')?.attrs}
-        />
-      </div>
-    </div>
-    <div class="mt-3 flex items-center justify-between gap-3">
-      <p class="text-xs text-muted-foreground">
+  <!-- панель демо — универсальный DemoPanel: схема в fstep-form.ts, адрес,
+       seed и «Применить» ведёт он сам; странице остаются параметры -->
+  <DemoPanel schema={demoPanelSchema} onParams={(p) => (demo = p as typeof initialDemo)}>
+    {#snippet footer()}
+      <p>
         {#if mode === 'form'}
           Сценарии разбора: имя <code class="rounded bg-muted/70 px-1">ошибка</code> или любая
           электропочта кроме <code class="rounded bg-muted/70 px-1">test@test.local</code> при
@@ -221,12 +148,8 @@
           Адресный режим: ссылки меняют ?ustep, deep-link и обновление работают сами.
         {/if}
       </p>
-      {#if panel.submitVisible}
-        <!-- без скрипта change не отправит форму: до оживления нужна нативная GET-кнопка -->
-        <button type="submit" class={buttonVariants({ size: 'sm' })}>Применить</button>
-      {/if}
-    </div>
-  </Form>
+    {/snippet}
+  </DemoPanel>
 
   {#if mode !== 'form'}
     <div class="space-y-4" data-testid="demo-steps">
