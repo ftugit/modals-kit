@@ -13,20 +13,33 @@ import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
   import { Button } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import SchemaBuilder from './SchemaBuilder.svelte'
-  import { collectionForm, type SavedSet } from './forms'
+  import { collectionForm, demoQuery, type SavedSet } from './forms'
 
   let {
     set,
     seed = null,
+    /** Демо-предел набора из адреса: описание формы строится под него (как на сервере). */
+    limit,
     /** Куда идти после сохранения набора — следующий шаг. */
     next = '/fields?step=fill',
-  }: { set: SavedSet | null; seed?: Result | null; next?: string } = $props()
+  }: { set: SavedSet | null; seed?: Result | null; limit: number; next?: string } = $props()
+
+  // Опции демо едут с отправкой: сервер обязан проверить набор ТЕМ ЖЕ пределом,
+  // а нативный экшен (`?/save`) затирает строку запроса — поэтому ключ стоит
+  // рядом с именем экшена (`?limit=4&/save`), а не в адресе страницы.
+  // Предел меняется только полной навигацией — компонент пересоздаётся целиком.
+  // svelte-ignore state_referenced_locally
+  const q = demoQuery(limit)
+  // Тот же предел — в адресе следующего шага: клиентский переход идёт мимо сервера.
+  // `next` — адрес на монтировании, как и сама форма.
+  // svelte-ignore state_referenced_locally
+  const nextHref = q ? `${next}${next.includes('?') ? '&' : '?'}${q}` : next
 
   // Сохранённый набор — начальное значение поля; набранное (и ответ без JS) сильнее.
-  const form = bind(forms, untrack(() => collectionForm(set?.fields)), {
-    action: '?/save',
+  const form = bind(forms, untrack(() => collectionForm(set?.fields, limit)), {
+    action: q ? `?${q}&/save` : '?/save',
     live: 'on-submit',
-    transport: jsonTransport('/fields/save'),
+    transport: jsonTransport(`/fields/save${q ? `?${q}` : ''}`),
     continuation: untrack(() => seed),
   })
 
@@ -40,7 +53,7 @@ import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
     const now = form.state.status
     if (now === last) return
     last = now
-    if (now === 'success' && form.state.outcome !== 'not-applied') void goto(next)
+    if (now === 'success' && form.state.outcome !== 'not-applied') void goto(nextHref)
   })
   // Пока идёт отправка, шаги не кликаются. Замок живёт в состоянии ЗАПИСИ
   // истории (`page.state`, уровень роутера), а не в общем модуле: у каждого

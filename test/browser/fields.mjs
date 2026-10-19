@@ -302,6 +302,50 @@ let k1, k2
     (await rows(pg)).length === 0 && (await pg.locator('h2').first().innerText()) === 'Создание полей'
     && (await navLinks(pg)).length === 0 && pg.url().includes('step=build'),
     `${pg.url().replace('http://127.0.0.1:5173', '')} / ${await navLinks(pg)}`)
+
+  /* 8а. панель без скрипта: шаг страницы переживает применение опции */
+  const panel = pg.locator('[data-testid="demo-panel"]')
+  const hiddenStep = await panel.locator('input[type="hidden"][name="step"]').inputValue().catch(() => '—')
+  ok('без JS: панель несёт чужие ключи адреса скрытыми полями', hiddenStep === 'build', hiddenStep)
+  await panel.locator('select[name="limit"]').selectOption('2')
+  await Promise.all([pg.waitForNavigation(), panel.locator('button[type="submit"]').click()])
+  ok('без JS: опция применена нативной GET, шаг на месте',
+    pg.url().includes('limit=2') && pg.url().includes('step=build'), pg.url())
+  await ctx.close()
+}
+
+/* 9. демо-панель: предел набора — одна опция для обеих сторон */
+{
+  const ctx = await browser.newContext()
+  const pg = await ctx.newPage()
+  await pg.goto(`${BASE}?step=build`, { waitUntil: 'networkidle' })
+  const panel = pg.locator('[data-testid="demo-panel"]')
+  const limit = panel.locator('select[name="limit"]')
+  ok('панель: у конструктора появилась опция — предел набора',
+    (await limit.count()) === 1 && (await limit.inputValue()) === '8')
+  await limit.selectOption('4')
+  await pg.waitForURL(/limit=4/, { timeout: 10000 })
+  ok('панель: предел уходит в адрес (полная навигация), шаг не теряется',
+    pg.url().includes('limit=4') && pg.url().includes('step=build'), pg.url())
+  for (const n of [1, 2, 3]) {
+    await pg.locator('[data-testid="add-field"]').click()
+    await pg.waitForFunction((k) => document.querySelectorAll('[data-set-row]').length === k, n)
+  }
+  const rowsNow = await pg.locator('[data-set-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-set-row')))
+  for (const [i, key] of rowsNow.entries()) await pg.fill(b(`props.${key}.label`), `На пределе ${i + 1}`)
+  await pg.click('[data-testid="save"]')
+  await pg.waitForURL(/step=fill/, { timeout: 10000 })
+  ok('панель: предел переживает переход шага', pg.url().includes('limit=4'), pg.url())
+
+  // предел снижен ниже сохранённого набора — отказ называет и число, и предел
+  await pg.goto(`${BASE}?step=build&limit=4`, { waitUntil: 'networkidle' })
+  await limit.selectOption('2')
+  await pg.waitForURL(/limit=2/, { timeout: 10000 })
+  await pg.click('[data-testid="save"]')
+  await pg.waitForTimeout(600)
+  const text = await pg.locator('[data-field="props"]').innerText()
+  ok('сервер проверяет тем же пределом: набор длиннее — отказ с причиной',
+    text.includes('можно не больше 2'), text.replace(/\s+/g, ' ').slice(0, 120))
   await ctx.close()
 }
 

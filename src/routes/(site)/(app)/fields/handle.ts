@@ -7,7 +7,7 @@ import { createFormHandler, type Handled } from '#lib/form/server.js'
 import { localStore } from '#lib/server/cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import '#lib/components/form/extend.js'
-import { IMAGE_MAX_BYTES, collectionForm, recordForm, type SavedRecord, type SavedSet } from './forms'
+import { IMAGE_MAX_BYTES, collectionForm, maxFieldsOf, recordForm, type SavedRecord, type SavedSet } from './forms'
 
 // Два ключа — набор и запись; срок не нужен: новое значение заменяет старое.
 const store = localStore.scope('fields-demo', { max: 2 })
@@ -19,16 +19,30 @@ export const clearFieldsDemo = (): void => store.clear()
 /* ── набор ────────────────────────────────────────────────────────── */
 
 // Пределы набора проверила форма (на обеих сторонах): `execute` получает приведённый список.
-const builder = createFormHandler<{ count: number }, RequestEvent>({
-  description: collectionForm(),
-  order: SECURITY_LAYERS,
-  execute({ values, commit }) {
-    const fields = values['props'] as readonly FieldSetItem[]
-    store.set<SavedSet>('set', { version: (savedSet()?.version ?? 0) + 1, fields }, Infinity)
-    commit()
-    return { data: { count: fields.length } }
-  },
-})
+//
+// Предел — ДЕМО-ОПЦИЯ из адреса (`?limit=`): описание формы строится под него,
+// иначе страница пускала бы больше, чем принимает сервер. Приёмник собирается
+// на каждый предел один раз: описание детерминировано самим пределом.
+type BuilderHandler = ReturnType<typeof createFormHandler<{ count: number }, RequestEvent>>
+
+const builders = new Map<number, BuilderHandler>()
+const builderFor = (limit: number): BuilderHandler => {
+  let handler = builders.get(limit)
+  if (!handler) {
+    handler = createFormHandler<{ count: number }, RequestEvent>({
+      description: collectionForm(undefined, limit),
+      order: SECURITY_LAYERS,
+      execute({ values, commit }) {
+        const fields = values['props'] as readonly FieldSetItem[]
+        store.set<SavedSet>('set', { version: (savedSet()?.version ?? 0) + 1, fields }, Infinity)
+        commit()
+        return { data: { count: fields.length } }
+      },
+    })
+    builders.set(limit, handler)
+  }
+  return handler
+}
 
 /* ── запись ───────────────────────────────────────────────────────── */
 
@@ -87,6 +101,6 @@ const record = createFormHandler<{ title: string }, RequestEvent>({
 })
 
 export const handleBuilder = (request: Request, from: 'action' | 'fetch', event: RequestEvent): Promise<Handled> =>
-  builder(request, from, event)
+  builderFor(maxFieldsOf(event.url.searchParams.get('limit')))(request, from, event)
 export const handleRecord = (request: Request, from: 'action' | 'fetch', event: RequestEvent): Promise<Handled> =>
   record(request, from, event)

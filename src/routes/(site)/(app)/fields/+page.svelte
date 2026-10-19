@@ -9,6 +9,8 @@
    * режиме правки: она собирается из сохранённого набора и записи, а не с нуля.
    */
   import { Steps, useSteps } from '#lib/components/steps/index.js'
+  import { DemoPanel } from '#lib/components/demo/index.js'
+  import { demoPanelSchema } from './demo-schema.ts'
   import type { Result } from '#lib/form/index.js'
   import CollectionForm from './CollectionForm.svelte'
   import RecordForm from './RecordForm.svelte'
@@ -69,6 +71,10 @@
     </p>
   </header>
 
+  <!-- Демо-панель: опция живёт в адресе (`?limit=`), значение читают обе стороны
+       — страница строит по нему описание формы, сервер — приёмник запроса. -->
+  <DemoPanel schema={demoPanelSchema} />
+
   <!-- шаги сверху слева; на «Результате» справа от них — ссылка сброса -->
   <div class="flex items-baseline gap-4">
     <span><Steps host={steps} label="Шаги" /></span>
@@ -80,8 +86,10 @@
   <!-- логика каждого шага — свой сниппет компонента (без второй навигации) -->
   <Steps host={steps} label="" nav={false}>
     {#snippet build()}
-      {#key data.set?.version ?? 0}
-        <CollectionForm set={data.set} seed={seed('save')} />
+      <!-- Ключ — ещё и предел: описание формы строится один раз на монтировании,
+           а смена опции меняет его состав (max набора). -->
+      {#key `${data.set?.version ?? 0}:${data.limit}`}
+        <CollectionForm set={data.set} seed={seed('save')} limit={data.limit} />
       {/key}
     {/snippet}
     {#snippet fill()}

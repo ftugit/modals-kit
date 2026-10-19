@@ -98,17 +98,20 @@
   )
 
   /**
-   * Патч — только по РАЗЛИЧИЮ с хранилищем: значения панели — его зеркало,
-   * поэтому совпавшее поле не пишется вовсе. Иначе каждое изменение
-   * отправляло бы весь набор, а запись «по умолчанию» (ключ в хранилище
-   * отсутствует) будила бы источник и откатывала соседнюю правку.
+   * Патч — только по РАЗЛИЧИЮ с ПОСЛЕДНИМ ОТПРАВЛЕННЫМ, а не с хранилищем:
+   * запись в него асинхронна, и пока она в полёте, зеркало ещё держит прежнее
+   * значение. Сравнение с хранилищем отправляло бы его назад и гасило только что
+   * сделанный выбор (две быстрые правки подряд: `page.size`, затем раскладка).
    */
+  // svelte-ignore state_referenced_locally
+  let lastSent = untrack(() => ({ ...(panelValues as Record<string, unknown>) }))
+
   function apply(params: Record<string, unknown>): void {
-    const now = panelValues as Record<string, unknown>
     const changed: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(params))
-      if (!Object.is(value, now[key])) changed[key] = value
+      if (!Object.is(value, lastSent[key])) changed[key] = value
     if (Object.keys(changed).length === 0) return
+    lastSent = { ...lastSent, ...changed }
     const { extra, size } = panel.toPatch(changed)
     if (Object.keys(extra).length > 0) void setExtra(extra)
     if (size !== undefined && size !== pagState().pageSize) void setPageSize(size)

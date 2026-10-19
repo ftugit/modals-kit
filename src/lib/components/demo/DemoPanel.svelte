@@ -109,6 +109,25 @@
   // svelte-ignore state_referenced_locally
   if (typeof window !== 'undefined' && ownsAddress) claimQuery(schema.id, ...urlKeys)
 
+  /**
+   * Чужие ключи адреса — в нативную GET-форму скрытыми полями: без JavaScript
+   * отправка панели не имеет права терять шаг страницы, страницу пагинатора
+   * или фильтры. Ключи панели сюда не попадают (их пишет сама форма), имя
+   * экшена (`/save`) — тоже.
+   */
+  // svelte-ignore state_referenced_locally
+  const carried = untrack(() => {
+    // Имена полей панели скрытыми не дублируются: пара «скрытое + контрол» с
+    // одним именем отдавала бы форме ЧУЖОЕ значение (страница пагинатора
+    // передавала так свои ключи, и коммит читал адрес вместо контролов).
+    const own = new Set([...urlKeys, ...demoFields(schema).map((f) => f.key)])
+    const out = new Map<string, { name: string; value: unknown }>()
+    for (const [name, value] of visibleAddress().url.searchParams)
+      if (!own.has(name) && !name.startsWith('/')) out.set(name, { name, value })
+    for (const h of hidden ?? []) if (!own.has(h.name)) out.set(h.name, h)
+    return [...out.values()]
+  })
+
   // svelte-ignore state_referenced_locally
   const form = bind(cfg, desc, {
     // `url` подключается ВСЕГДА: он же ведёт зеркало формы (форма слушает
@@ -186,13 +205,24 @@
   })
 </script>
 
-<Form
-  {form}
-  hiddenFields={hidden ?? []}
-  data-testid={testid}
+<!-- Карточка панели: `leading` живёт В ней, но ВНЕ формы — это не поле панели, и
+     его `change` не должен отправлять набор полей (иначе смена хранилища
+     коммитила бы прежние значения формы в новое хранилище). -->
+<div
   class={className ??
     'demo-panel rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
+  data-testid={testid}
 >
+{#if leading}
+  <div class="mb-3" data-demo-leading>
+    {@render leading(form)}
+  </div>
+{/if}
+
+<!-- Скрытые поля — только для НАТИВНОЙ отправки: после оживления адрес несёт
+     сама форма (поля + коммит), и вторая пара с тем же именем читалась бы
+     декодером раньше контрола. -->
+<Form {form} hiddenFields={form.submitVisible ? carried : []} data-demo-form>
 
   {#if ui}
     <Ui
@@ -206,9 +236,6 @@
          живёт и в колонке страницы, и в боковой колонке галереи. -->
     <div class="@container">
       <div class="grid grid-cols-2 gap-x-4 gap-y-3 @lg:grid-cols-3 @5xl:grid-cols-5">
-        {#if leading}
-          {@render leading(form)}
-        {/if}
         {#each schema.fields as spec, i (i)}
           {#if spec.type === 'divider'}
             <div class="col-span-full mt-1 border-t border-border/60 pt-2 text-xs font-medium text-muted-foreground">
@@ -286,3 +313,4 @@
     </div>
   {/if}
 </Form>
+</div>

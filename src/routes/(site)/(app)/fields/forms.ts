@@ -6,14 +6,31 @@
 // и расширяется полями из кода: название и изображение.
 import { defineForm, field, v, type FieldSetItem, type FormDescription } from '#lib/form/index.js'
 
-/** Сколько полей можно собрать: предел поля-родителя. */
+/** Сколько полей можно собрать: предел поля-родителя (умолчание демо). */
 export const MAX_FIELDS = 8
 
+/**
+ * Варианты демо-опции «Сколько полей можно собрать». Значение живёт в адресе
+ * (`?limit=`), его читают ОБЕ стороны: страница строит по нему описание формы,
+ * сервер — приёмник запроса (иначе браузер и сервер проверяли бы разное).
+ */
+export const FIELD_LIMITS = [2, 4, 8, 12] as const
+
+/** Предел из адреса: неизвестное значение — умолчание, а не отказ. */
+export const maxFieldsOf = (raw: string | null | undefined): number => {
+  const n = Number(raw)
+  return (FIELD_LIMITS as readonly number[]).includes(n) ? n : MAX_FIELDS
+}
+
+/** Хвост адреса с опциями демо: `limit=4` (пусто — умолчание). */
+export const demoQuery = (limit: number): string =>
+  limit === MAX_FIELDS ? '' : `limit=${limit}`
+
 /** Поле набора: виды, правила на выбор и пределы аргументов. Подписи видов выбирает приложение. */
-const props = (saved?: readonly FieldSetItem[]) => field.fields({
+const props = (saved?: readonly FieldSetItem[], max = MAX_FIELDS) => field.fields({
   label: 'Поля записи',
-  help: `До ${MAX_FIELDS} полей. Поле без названия не сохраняется. Значение правила за пределом заменяется при сохранении.`,
-  max: MAX_FIELDS,
+  help: `До ${max} полей. Поле без названия не сохраняется. Значение правила за пределом заменяется при сохранении.`,
+  max,
   rules: {
     required: {},
     integer: {},
@@ -38,11 +55,11 @@ const props = (saved?: readonly FieldSetItem[]) => field.fields({
  * Форма набора. Имена записей не зависят от сохранённого: сервер проверяет той же
  * формой без `saved`, страница показывает сохранённое как начальное значение.
  */
-export const collectionForm = (saved?: readonly FieldSetItem[]): FormDescription => defineForm({
+export const collectionForm = (saved?: readonly FieldSetItem[], max = MAX_FIELDS): FormDescription => defineForm({
   id: 'fields-builder',
   revision: 1,
   actions: [{ id: 'submit', label: 'Сохранить', validate: 'full' }],
-  fields: { props: props(saved) },
+  fields: { props: props(saved, max) },
 })
 
 /** Сохранённый набор: то, что лежит в кэше. */
