@@ -31,6 +31,7 @@
   import { hydrateVault } from '../vault.svelte.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { authForm, AUTH_FORM_REV } from '../forms.js'
+  import { mirrorToField } from '../field-mirror.svelte.js'
 
   type UserPayload = {
     access: string
@@ -183,20 +184,10 @@
 
   /* ── seed: генерирует СЕРВЕР (решение владельца); копирование — подмена поля ── */
   // Значение живёт в состоянии ФОРМЫ (его валидирует и отправляет движок):
-  // старт — синхронный onInput при связывании (выше), переходы — зеркало ниже.
-  // Зеркало — ТОЛЬКО на смену secret: view забирается один раз вне эффекта, иначе
-  // чтение bound внутри эффекта замкнуло бы его на состояние формы — любой ввод
-  // перетирался бы зеркалом (на входе-шаге — пустотой). Старт — синхронно и без
-  // реактивности: SSR и no-JS рендерят seed из состояния формы (эффекты на сервере
-  // не идут, а подменённое поле берёт значение из `FieldView.value`).
+  // старт — синхронный onInput при связывании, переходы — зеркало (оба приёма
+  // и их грабли — в field-mirror.svelte.ts).
   const secret = $derived(data.registerSeed ?? '')
-  const seedMirror = bound.field('seed')
-  // svelte-ignore state_referenced_locally -- стартовое значение и должно быть
-  // снято один раз: зеркало ниже держит все последующие смены secret
-  if (secret !== '') untrack(() => seedMirror?.onInput(secret))
-  $effect(() => {
-    seedMirror?.onInput(secret)
-  })
+  mirrorToField(bound, 'seed', () => secret)
 
   /**
    * Адрес шага для перехода БЕЗ JS (маркер шага — в адресе, его читает load):
