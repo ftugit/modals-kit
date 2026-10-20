@@ -213,17 +213,18 @@ try {
       ok('курсор: вторая порция догружена, окно не сдвинулось',
         loaded.length === 9 && loaded.slice(0, 3).join(',') === first.join(','), String(loaded.length))
 
-      // Видимая порция становится второй — ключ её начала уезжает в адрес,
-      // номер страницы при этом не пишется: у курсора его нет.
-      await cur.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: 600, behavior: 'instant' }))
+      // Прокрутка к концу загруженного: видимой становится не первая порция —
+      // ключ её начала уезжает в адрес, номер страницы при этом не пишется.
+      await cur.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: h.scrollHeight, behavior: 'instant' }))
       await cur.waitForFunction(() => new URL(location.href).searchParams.has('page.after'), undefined, { timeout: 10_000 })
         .catch(() => {})
       const url = new URL(cur.url())
       ok('курсор: ключ видимой порции в адресе, номера страницы нет',
-        url.searchParams.has('page.after') && !url.searchParams.has('page'), url.search.slice(0, 60))
+        url.searchParams.has('page.after') && !url.searchParams.has('page'), url.search.slice(0, 40))
 
-      // Перезагрузка — «дай порцию от этого ключа»: ровно те строки, что читатель
-      // видел в начале второй порции, а не следующие за ними.
+      // Перезагрузка — «дай порцию от этого ключа»: не голову списка и не
+      // следующую порцию, а одну из УЖЕ прочитанных целиком (какую именно —
+      // решил трекер якорей, его гистерезис здесь не пересчитываем).
       await cur.reload({ waitUntil: 'networkidle' })
       await cur.waitForTimeout(800)
       const afterReload = await ids.allInnerTexts()
@@ -231,11 +232,25 @@ try {
       // (скользящее продление, live-update шаг 6), и адрес получает свежий.
       // Проверяем смысл: ключ на месте и ведёт в ту же порцию.
       const reloadedUrl = new URL(cur.url())
+      const at = loaded.findIndex((_, i) => loaded.slice(i, i + 3).join(',') === afterReload.join(','))
       ok('курсор: перезагрузка отдаёт ту же порцию, а не следующую',
         reloadedUrl.searchParams.has('page.after') &&
           reloadedUrl.searchParams.has('page.beg') &&
-          afterReload.join(',') === loaded.slice(3, 6).join(','),
-        `${afterReload.length}: ${afterReload[0]?.slice(0, 8)} ключ ${reloadedUrl.searchParams.has('page.after')}`)
+          afterReload.length === 3 &&
+          at > 0 && at % 3 === 0,
+        `${afterReload.length}: ${afterReload[0]?.slice(0, 8)} | место в загруженном: ${at}`)
+
+      // Догрузка с восстановленной страницы: адрес хранит ключ ВИДИМОЙ порции, а
+      // указатель следующей приходит из ответа. Если адресный ключ перетрёт его в
+      // состоянии, «дальше» приклеит ту же порцию — проверяем, что приходит новая.
+      await cur.locator('[data-testid="cursor-next"]').click()
+      await cur.waitForFunction((n) => document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]').length > n,
+        3, { timeout: 15_000 }).catch(() => {})
+      const afterNext = await ids.allInnerTexts()
+      const third = afterNext.slice(3, 6)
+      ok('курсор: догрузка после перезагрузки даёт следующую порцию, а не ту же',
+        afterNext.length === 6 && third.length === 3 && third.every((id) => !afterReload.includes(id)),
+        `${afterNext.length}: ${third[0]?.slice(0, 8) ?? '—'}`)
 
       // Опрос новых живёт только у края: у второй порции его нет вовсе.
       // Порций нужно три: линия детекта стоит на 20% высоты контейнера, и

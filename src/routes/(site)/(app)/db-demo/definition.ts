@@ -384,6 +384,23 @@ function withPortionKeys<T>(base: PaginatorAdapter<T>): PaginatorAdapter<T> {
     typeof extra?.[DB_LIST_POINTER_KEY] === 'string' ? (extra[DB_LIST_POINTER_KEY] as string) : ''
   return {
     ...base,
+    /**
+     * Адрес и состояние расходятся по `after` НАМЕРЕННО: в адресе это ключ
+     * видимой порции (его пишет `persist`), в состоянии — указатель следующей
+     * догрузки (его даёт ответ). Если отдать адресное значение механизму
+     * внешнего состояния, он перепишет указатель ключом текущей порции — и
+     * «дальше» после перезагрузки приклеит ту же порцию вместо следующей.
+     * Поэтому адресный `after` в состояние не переносится вовсе; страницу и
+     * размер транспорта отдаёт как обычно.
+     */
+    observeExternal(search) {
+      const seen = base.observeExternal?.(search) ?? null
+      if (!seen?.restorable) return seen
+      if (!isCursorOn(seen.restorable.extra)) return seen
+      const extra = { ...seen.restorable.extra }
+      delete extra[DB_LIST_POINTER_KEY]
+      return { ...seen, restorable: { ...seen.restorable, extra } }
+    },
     async loadPage(req) {
       const res = await base.loadPage(req)
       // Ключ начала порции называет ОТВЕТ (`beg`): на первой загрузке его не

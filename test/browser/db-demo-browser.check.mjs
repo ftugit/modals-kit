@@ -430,8 +430,10 @@ try {
     }
   }
   const pageGets = (sink) => (r) => {
-    // Опрос «что появилось» (`since=`) — не перезагрузка; запрос страницы — она.
-    if (r.url().includes('/api/db-posts') && !r.url().includes('since=')) sink.push(r.url())
+    // Опросы — «что появилось» (`since=`) и «что изменилось» (`changed=`, шаг 5
+    // live-update) — не перезагрузка; запрос страницы — она.
+    if (r.url().includes('/api/db-posts') && !r.url().includes('since=') && !r.url().includes('changed='))
+      sink.push(r.url())
   }
 
   await step('удаление: строка уходит из окна, счётчик −1, список не переспрошен', async () => {
