@@ -9,7 +9,8 @@ import type { FormError } from '#lib/form/index.js'
 import { db, posts } from '#lib/server/db.js'
 import { invalidateLiveCache } from '#lib/server/live-cache.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
-import { dbCreate, dbRemove } from './description'
+import { dbCreate, dbRemove, dbRename } from './description'
+import type { DbPost } from './definition'
 import { createPrepare } from './prepare'
 import { SCHEMA_FORM_ID } from './schema'
 import { handleSchemaResolve } from './schema-handle'
@@ -121,6 +122,47 @@ export function handleDbCreate(
     })(request, from))
 }
 
+/**
+ * Правка заголовка: обычный `api.update` слоя — политика `update` (владелец или
+ * роль) и `updated_at` ставятся там же, где у любого другого клиента. Ответ несёт
+ * обновлённую строку: список ставит её в окно на место, а опрос изменённых
+ * увидит ту же правку у соседнего читателя.
+ */
+export function handleDbRename(
+  request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
+): Promise<Handled> {
+  return withDb((db) =>
+    createFormHandler<{ message: string; updated: DbPost | null }>({
+      description: dbRename,
+      order: SECURITY_LAYERS,
+      async execute({ values, commit, fail }) {
+        const id = String(values.id ?? '').trim()
+        const title = String(values.title ?? '')
+        if (!id)
+          return fail([{ id: 'id:no-value:0', code: 'no-value', message: 'скопируйте id из таблицы ниже', path: 'id', origin: 'server' }])
+        try {
+          const row = await db.resource(posts).update(dbCtx, id, { title })
+          commit()
+          invalidateLiveCache()
+          return {
+            data: {
+              message: `переименовано: ${String(row.title ?? '')}`,
+              updated: {
+                id: String(row.id ?? ''),
+                title: String(row.title ?? ''),
+                slug: typeof row.slug === 'string' ? row.slug : null,
+                created_at: String(row.created_at ?? ''),
+                updated_at: row.updated_at == null ? null : String(row.updated_at),
+              } as unknown as DbPost,
+            },
+          }
+        } catch (e) {
+          return fail(failureIssues(e) ?? toFormErrors(e))
+        }
+      },
+    })(request, from))
+}
+
 export function handleDbRemove(
   request: Request, from: 'action' | 'fetch', dbCtx: DataContext,
 ): Promise<Handled> {
@@ -164,6 +206,7 @@ export async function dispatchDbForm(
   // Только строка: `File` в этом поле — чужое тело, и сравнивать его бессмысленно.
   const id = typeof probe?.get('__form_id') === 'string' ? (probe.get('__form_id') as string) : ''
   if (id === dbCreate.id) return handleDbCreate(request, from, dbCtx)
+  if (id === dbRename.id) return handleDbRename(request, from, dbCtx)
   if (id === dbRemove.id) return handleDbRemove(request, from, dbCtx)
   if (id === SCHEMA_FORM_ID) {
     // `null` — решать уже нечего (успел другой экземпляр): тот же итог, что у успеха —

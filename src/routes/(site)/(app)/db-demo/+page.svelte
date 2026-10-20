@@ -30,6 +30,7 @@
   import { createOptimistic, ownRowPlacement } from './optimistic.svelte'
   import CreateForm from './CreateForm.svelte'
   import RemoveForm from './RemoveForm.svelte'
+  import RenameForm from './RenameForm.svelte'
   import SchemaPending from './SchemaPending.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
@@ -81,6 +82,15 @@
    * убираем. Карточки, чья строка удалена, уходят вместе с ней: иначе убранная
    * из окна строка «воскресла» бы подтверждённой карточкой.
    */
+  /**
+   * Правка — тоже на месте: строка из ответа встаёт в окно (её `updated_at` уже
+   * новый, поэтому опрос изменённых её повторно не пришлёт). Место в выдаче не
+   * меняется: поле сортировки — `created_at`, а оно неизменяемо.
+   */
+  function onRenamed(row: DbPost | null): boolean {
+    return row ? list.patchItems<DbPost>({ update: row }) : false
+  }
+
   function onRemoved(ids: readonly string[]): void {
     const state = listState()
     const filtered = Boolean(dbListExtraOf(state.extra as Record<string, unknown>).flt)
@@ -105,8 +115,9 @@
   {#if data.schema || !data.snapshot}
     {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
   {:else}
-    <div class="grid gap-6 md:grid-cols-2">
+    <div class="grid gap-6 md:grid-cols-3">
       <CreateForm seed={seed('create')} onApplied={onCreated} {optimistic} />
+      <RenameForm seed={seed('rename')} onApplied={onRenamed} />
       <RemoveForm seed={seed('remove')} onApplied={onRemoved} />
     </div>
 

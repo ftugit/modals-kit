@@ -48,11 +48,12 @@
     ensureDbListPaginator,
     type DbListExtra,
     type DbPost,
+    type DbPostsChanged,
     type DbPostsFresh,
     type FailureMode,
   } from './definition'
   import { createLive } from './live.svelte'
-  import { freshLabel, freshUrl, mergeFresh } from './fresh'
+  import { changedUrl, freshLabel, freshUrl, mergeChanges, mergeFresh } from './fresh'
   import { isAbsorbed, ownRowPlacement, pendingPlacement, type Optimistic } from './optimistic.svelte'
   import DbPostPendingRow from './DbPostPendingRow.svelte'
   import DbPostRow from './DbPostRow.svelte'
@@ -209,6 +210,47 @@
       if (unseen.length && canPrepend && atTop()) prependWaiting()
     },
   })
+  /**
+   * Изменённые и удалённые (§5.2–5.3): второй опрос, но вопрос другой — не «что
+   * появилось», а «что стало другим в показанном куске». Границы — строки
+   * видимой порции и по одной соседней с каждой стороны; они только сужают
+   * выборку, поэтому их можно считать на клиенте. Живёт не только у края: правка
+   * видимой строки видна и на двадцатой странице.
+   */
+  const current = $derived(new Map((Object.values(listState().pages ?? {}).flat() as DbPost[]).map((r) => [r.id, r])))
+  /** Края окна запросов изменений: `<ISO>|<id>` верхней и нижней строки куска. */
+  const changeBounds = $derived.by(() => {
+    const pages = listState().pages ?? {}
+    const shown = listState().page ?? 1
+    // Курсор копит окно — соседние порции тоже в поле зрения; страницы показывают
+    // ровно одну, и правки за её пределами читателю не нужны (§5.2).
+    const numbers = (cursor ? [shown - 1, shown, shown + 1] : [shown]).filter((n) => n > 0)
+    const rows = numbers.flatMap((n) => pages[n] ?? [])
+    const cut = (row: DbPost | undefined): string | undefined => {
+      if (!row) return undefined
+      const at = typeof row.created_at === 'string' ? row.created_at : String(row.created_at)
+      return at ? `${at}|${row.id}` : undefined
+    }
+    return { top: cut(rows[0]), bottom: cut(rows[rows.length - 1]) }
+  })
+  let changeMark = $state<string | null | undefined>(undefined)
+
+  const changes = createLive({
+    // Отметки ещё не было — `changed=` (пусто) спрашивает её саму у базы.
+    url: () => (extra.live ? changedUrl(extra.flt, changeMark, changeBounds) : null),
+    intervalMs: 3_000,
+    onData: (body) => {
+      const b = body as DbPostsChanged
+      if ('mark' in b && !b.items?.length && !b.removed?.length) {
+        changeMark = b.mark ?? null
+        return
+      }
+      const work = mergeChanges(b.items ?? [], b.removed ?? [], current)
+      for (const row of work.updated) actions.patchItems<DbPost>({ update: row })
+      for (const id of work.removed) actions.patchItems<DbPost>({ remove: id })
+      if (b.mark) changeMark = b.mark
+    },
+  })
   // Зависимость — только «включён ли опрос»: `extra` пересобирается на каждое изменение
   // состояния списка (загрузка, ход загрузки, вставка строк), и эффект на нём сбрасывал
   // бы отметку посреди опроса.
@@ -225,6 +267,20 @@
       })
     }
   })
+  const changesOn = $derived(!!extra.live)
+  $effect(() => {
+    if (changesOn) {
+      changes.start()
+      untrack(() => {
+        changeMark = undefined
+      })
+    } else {
+      changes.stop()
+      untrack(() => {
+        changeMark = undefined
+      })
+    }
+  })
   // Выдача сменилась (фильтр, порядок, режим) — отметка относится к прошлой.
   let viewKey = ''
   $effect(() => {
@@ -232,7 +288,10 @@
     if (viewKey && key !== viewKey && untrack(() => extra.live)) untrack(rebaseline)
     viewKey = key
   })
-  onDestroy(() => live.stop())
+  onDestroy(() => {
+    live.stop()
+    changes.stop()
+  })
 
   /**
    * Панель — данные (`SettingsField[]`), а не разметка: компилятор панели

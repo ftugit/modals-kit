@@ -349,6 +349,18 @@ export interface LiveCapabilities {
   updated: boolean;
   deleted: boolean;
 }
+/**
+ * Вопрос «что изменилось с отметки» (опрос живых списков).
+ *
+ * Не страница и не курсор: ответ не зависит ни от позиции окна, ни от порядка —
+ * его накладывает вызывающий своими границами (`filter`), а слой только сужает.
+ */
+export interface ChangesInput {
+  /** Границы «где смотреть» — обычный фильтр ресурса; клиент задаёт их, только сужая выборку. */
+  filter?: Filter
+  limit?: number
+}
+
 export interface ListInput {
   fields?: readonly string[];
   filter?: Filter;
@@ -398,6 +410,17 @@ export interface ResourceApi<
     ctx: DataContext,
     input?: Pick<ListInput, "filter" | "includeDeleted" | "asof">,
   ): Promise<number>;
+  /**
+   * Изменённые и удалённые с отметки: `{ updated, removed }`.
+   * `updated` — строки, видимые этому контексту (та же политика, что у чтения);
+   * `removed` — ТОЛЬКО идентификаторы мягко удалённых: содержимое удалённой строки
+   * наружу не идёт, но факт удаления — то, без чего клиент не уберёт её из окна.
+   * Нет `timestamps` — отказ `unsupported`.
+   */
+  changes(
+    ctx: DataContext,
+    input: ChangesInput & { since: string },
+  ): Promise<{ updated: ResourceRow<F, R>[]; removed: readonly unknown[] }>
   cursor(
     ctx: DataContext,
     input?: CursorInput,

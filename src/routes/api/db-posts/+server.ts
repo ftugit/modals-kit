@@ -20,7 +20,7 @@
  */
 import { fingerprint, remember, revalidate, stableText } from '#lib/server/live-cache.js'
 import type { RequestHandler } from './$types'
-import { fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
+import { fetchDbPostsChanges, fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
 import { DEMO_PRINCIPAL, watchDb } from '#lib/server/db.js'
 import { taskResponse } from '#lib/server/task-stream.js'
 import { DB_LIST_PAGE_SIZE } from '../../(site)/(app)/db-demo/definition'
@@ -48,6 +48,29 @@ async function handle({ url, request, locals }: Parameters<RequestHandler>[0]): 
   const hit = revalidate(key, request.headers.get('if-none-match'))
   if (hit !== null) return new Response(null, { status: 304, headers: { etag: hit, 'cache-control': 'no-store' } })
   const ctx = locals.dbCtx ?? Object.freeze({ principal: DEMO_PRINCIPAL })
+  // Опрос изменённых/удалённых: свой вопрос и свои ключи (`changed` + границы
+  // `top`/`bottom`), со страницей и указателем не смешивается — как и `since`.
+  if (url.searchParams.has('changed')) {
+    const mixed = ['page', 'after', 'cur', 'size', 'ord', 'since'].filter((k) => url.searchParams.has(k))
+    if (mixed.length) {
+      return Response.json(
+        { error: `Опрос изменённых не смешивается с ключами страницы: ${mixed.join(', ')}.`, code: 'validation', status: 422 },
+        { status: 422, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+    return reply(
+      key,
+      await fetchDbPostsChanges(
+        {
+          since: url.searchParams.get('changed') ?? '',
+          filter: url.searchParams.get('flt') ?? undefined,
+          top: url.searchParams.get('top') ?? undefined,
+          bottom: url.searchParams.get('bottom') ?? undefined,
+        },
+        ctx,
+      ),
+    )
+  }
   if (url.searchParams.has('since')) {
     const since = url.searchParams.get('since') ?? ''
     const mixed = ['page', 'after', 'cur', 'size', 'ord'].filter((k) => url.searchParams.has(k))

@@ -21,11 +21,13 @@ import type { DataContext } from '#lib/db/index.js'
 import type { PageResponse } from '#lib/paginate/index.js'
 import { createPaginatorStore, initServerPaginator } from '#lib/paginate/index.js'
 import {
+  DB_CHANGES_SLACK_MS,
   DB_FRESH_LIMIT,
   DB_LIST_PAGE_SIZE,
   ensureDbListPaginator,
   setDbPostsServerTransport,
   type DbPost,
+  type DbPostsChanged,
   type DbPostsFresh,
   type DbPostsQuery,
 } from '../../routes/(site)/(app)/db-demo/definition'
@@ -197,6 +199,80 @@ export async function fetchDbPostsPage(
   } catch (e) {
     return explain(e)
   }
+}
+
+/**
+ * Опрос изменённых и удалённых (docs/design/live-update.md §5.2–5.3).
+ *
+ * Границы `top`/`bottom` — строки выдачи (`<ISO>|<id>`), а не позиции окна: они
+ * только СУЖАЮТ выборку, политика и права проверяются как при обычном чтении.
+ * Поэтому клиент может прислать границы, но не может ими ничего расширить.
+ * Внутри границ спрашиваем то, что новее отметки: `updated_at > since` (строки
+ * целиком) и `deleted_at > since` (только ключи — содержимое удалённой строки
+ * наружу не идёт). Отметку ответа (`mark`) тоже ставит база: максимум среди
+ * найденных меток, иначе прежняя — часы клиента в этом не участвуют.
+ */
+export async function fetchDbPostsChanges(
+  query: { since: string; filter?: string; top?: string; bottom?: string },
+  ctx: DataContext,
+): Promise<DbPostsChanged | { error: string; code: string; status: number }> {
+  try {
+    if (query.since !== '' && Number.isNaN(Date.parse(query.since))) {
+      return { error: 'Отметка `changed` — не время в формате ISO.', code: 'validation', status: 422 }
+    }
+    const api = db.resource(posts)
+    // Границы — фильтр, а не параметр слоя: `top`/`bottom` в адресе — значения
+    // строк выдачи, и слой обязан увидеть их обычным (deny-safe) разбором.
+    const bounds: unknown[] = []
+    for (const edge of [query.top, query.bottom]) {
+      const at = typeof edge === 'string' ? edge.slice(0, edge.lastIndexOf('|')) : ''
+      if (!at) continue
+      bounds.push({ field: 'created_at', op: edge === query.top ? 'lte' : 'gte', value: at })
+    }
+    let user: unknown = null
+    try {
+      user = query.filter ? JSON.parse(query.filter) : null
+    } catch {
+      // Битый фильтр пусть отвергнет слой своим `validation`, а не мы — 500.
+      user = undefined
+    }
+    if (user === undefined) return { error: 'Фильтр выдачи — не JSON.', code: 'validation', status: 422 }
+    const base: unknown[] = [...(user ? [user] : []), ...bounds]
+    const filter = base.length ? JSON.stringify(base.length === 1 ? base[0] : { and: base }) : undefined
+
+    // Отметку ставит БАЗА и это «сейчас», а не метка последней найденной
+    // строки: с меткой строки окно запаса (клиент спрашивает с `−3 с`) снова
+    // накрывало бы ту же правку, и каждый тик возвращал бы её же — вечный 200
+    // вместо 304. «Сейчас» сдвигается, и правка уходит за границу окна.
+    if (query.since === '') return { items: [], removed: [], mark: await dbNow(ctx) }
+
+    // Запас на границу: транзакция могла записать `updated_at` раньше, чем
+    // зафиксировалась. Спрашиваем «новее, чем отметка − запас», отдаём отметку
+    // СЫРОЙ; повторно пришедшую строку отсеивает клиент (`mergeChanges`).
+    const from = new Date(Date.parse(query.since) - DB_CHANGES_SLACK_MS).toISOString()
+    const result = await api.changes(ctx, {
+      since: from,
+      filter: filter ? (JSON.parse(filter) as never) : undefined,
+      limit: DB_FRESH_LIMIT,
+    })
+    const items = result.updated as DbPost[]
+    const removed = result.removed.map(String)
+    // Отметка двигается, только когда что-то нашлось: иначе ответ остаётся
+    // прежним и условный GET уходит в 304, не читая базу (§5.5).
+    return { items, removed, mark: items.length || removed.length ? await dbNow(ctx) : query.since }
+  } catch (e) {
+    return explain(e)
+  }
+}
+
+/**
+ * «Сейчас» по часам базы: отметка ответа опроса. Часы приложения не участвуют —
+ * иначе правка, записанная сервером БД позже нашего ответа, могла бы оказаться
+ * «в прошлом» и не прийти никогда.
+ */
+async function dbNow(ctx: DataContext): Promise<string | null> {
+  const rows = (await db.query({ text: 'SELECT clock_timestamp() AS now', ...(ctx.signal ? { signal: ctx.signal } : {}) })).rows
+  return isoOf((rows[0] as { now?: unknown } | undefined)?.now)
 }
 
 /** `created_at` как строка ISO: драйвер может отдать `Date`, а в адрес едет текст. */

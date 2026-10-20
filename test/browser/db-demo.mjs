@@ -251,6 +251,85 @@ try {
     await cur.close()
   }
 
+  // 3b. Опрос изменённых и удалённых (live-update, шаг 5): правка и удаление
+  //     ВИДИМОЙ строки доходят до соседнего читателя без перезагрузки, правка
+  //     строки за пределами окна — нет (границы задаёт клиент, они только сужают).
+  {
+    const writerCtx = await browser.newContext()
+    const writer = await writerCtx.newPage()
+    await writer.goto(BASE, { waitUntil: 'networkidle' })
+
+    const readerCtx = await browser.newContext()
+    const reader = await readerCtx.newPage()
+    const changeProblems = []
+    reader.on('pageerror', (e) => changeProblems.push(`pageerror: ${e.message.split('\n')[0]}`))
+    await reader.goto(`${BASE}?page.size=3&page.live=1`, { waitUntil: 'networkidle' })
+    await reader.waitForTimeout(1500)
+
+    const first = reader.locator('[data-testid="rows"] [data-testid="row-id"]').first()
+    const visibleId = (await first.innerText()).trim()
+    const rowText = async (id) =>
+      (await reader.locator(`[data-testid="row-id"][title="${id}"]`).locator('..').innerText().catch(() => ''))
+
+    // Правка ВИДИМОЙ строки: метка приходит опросом изменённых.
+    const edited = `правка ${Date.now()}`
+    await writer.locator('#db_demo_rename-id').fill(visibleId)
+    await writer.locator('#db_demo_rename-title').fill(edited)
+    await Promise.all([
+      writer.waitForResponse((r) => r.url().includes('/db-demo') && r.request().method() === 'POST'),
+      writer.locator('[data-testid="rename"]').click(),
+    ])
+    const editSeen = await reader.waitForFunction(
+      (title) => document.querySelector('[data-testid="rows"]')?.textContent?.includes(title),
+      edited,
+      { timeout: 20_000 },
+    ).then(() => true).catch(() => false)
+    ok('опрос: правка видимой строки пришла без перезагрузки', editSeen, edited)
+
+    // Правка ЗА ПРЕДЕЛАМИ окна (последняя строка выдачи): до читателя не доходит.
+    // Четвёртая строка выдачи — первая из следующей страницы, то есть заведомо
+    // вне окна читателя (у него показаны первые три).
+    const outsideCtx = await browser.newContext()
+    const outside = await outsideCtx.newPage()
+    await outside.goto(`${BASE}?page.size=3&page=2`, { waitUntil: 'networkidle' })
+    const lastId = (await outside.locator('[data-testid="row-id"]').first().innerText().catch(() => '')).trim()
+    await outsideCtx.close()
+    const outsideTitle = `вне окна ${Date.now()}`
+    if (lastId && lastId !== visibleId) {
+      await writer.locator('#db_demo_rename-id').fill(lastId)
+      await writer.locator('#db_demo_rename-title').fill(outsideTitle)
+      await Promise.all([
+        writer.waitForResponse((r) => r.url().includes('/db-demo') && r.request().method() === 'POST'),
+        writer.locator('[data-testid="rename"]').click(),
+      ])
+      await reader.waitForTimeout(7000)
+      const leaked = (await reader.locator('[data-testid="rows"]').innerText()).includes(outsideTitle)
+      const readerFirst = (await reader.locator('[data-testid="rows"] [data-testid="row-id"]').first().innerText()).trim()
+      ok('опрос: правка строки вне окна не приходит и не подменяет видимую',
+        !leaked && readerFirst === visibleId, leaked ? 'пришла' : 'не пришла')
+    }
+
+    // Удаление ВИДИМОЙ строки: она уходит из окна, соседние остаются.
+    const beforeCount = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').count()
+    await writer.locator('#db_demo_remove-ids').fill(visibleId)
+    await Promise.all([
+      writer.waitForResponse((r) => r.url().includes('/db-demo') && r.request().method() === 'POST'),
+      writer.locator('[data-testid="remove"]').click(),
+    ])
+    const gone = await reader.waitForFunction(
+      (id) => !document.querySelector(`[data-testid="row-id"][title="${id}"]`),
+      visibleId,
+      { timeout: 20_000 },
+    ).then(() => true).catch(() => false)
+    const afterCount = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').count()
+    ok('опрос: удалённая строка убрана из окна (а не помечена)',
+      gone && afterCount === beforeCount - 1, `${beforeCount}→${afterCount}`)
+
+    ok('опрос изменённых: без ошибок страницы', changeProblems.length === 0, changeProblems.join(' | '))
+    await readerCtx.close()
+    await writerCtx.close()
+  }
+
   // 3. Срез постраничной выдачи (live-update, шаг 3): новая строка не сдвигает
   //    открытую страницу, а на первой странице о ней говорит пилюля опроса;
   //    клик по пилюле сбрасывает список на новый срез.

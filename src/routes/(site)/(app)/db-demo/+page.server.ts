@@ -16,7 +16,7 @@ import { error, fail, redirect } from '@sveltejs/kit'
 import { toKitError } from '#lib/db/sveltekit/index.js'
 import { loadDbListSnapshot } from '#lib/server/db-list.js'
 import type { Handled } from '#lib/form/server.js'
-import { failureHandled, handleDbCreate, handleDbRemove } from './handle'
+import { failureHandled, handleDbCreate, handleDbRemove, handleDbRename } from './handle'
 import { handleSchemaResolve, schemaScreen } from './schema-handle'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -50,7 +50,7 @@ export const load: PageServerLoad = async (event) => {
  * Экшены выбирают только кодировку ответа — как в `src/routes/(site)/(app)/form`: у демо БД
  * и у демо форм один путь приёма.
  */
-async function act(intent: 'create' | 'remove' | 'schema', promise: Promise<Handled>) {
+async function act(intent: 'create' | 'remove' | 'rename' | 'schema', promise: Promise<Handled>) {
   try {
     const { result, status } = await promise
     // `intent` — чтобы страница подсадила результат ТОЙ форме, которая его
@@ -67,6 +67,7 @@ async function act(intent: 'create' | 'remove' | 'schema', promise: Promise<Hand
 export const actions: Actions = {
   create: (event) => act('create', handleDbCreate(event.request, 'action', event.locals.dbCtx)),
   remove: (event) => act('remove', handleDbRemove(event.request, 'action', event.locals.dbCtx)),
+  rename: (event) => act('rename', handleDbRename(event.request, 'action', event.locals.dbCtx)),
   // Перенос схемы: успех (или «решать уже нечего») — заново на страницу, где теперь список.
   schema: async (event) => {
     const handled = await handleSchemaResolve(event.request, 'action').catch((e) => failureHandled(e))

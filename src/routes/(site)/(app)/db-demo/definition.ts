@@ -73,6 +73,10 @@ export interface DbPost {
   /** Адрес записи: модель заполняет его из заголовка (`fill`); у сида — `null`. */
   slug?: string | null
   created_at: string
+  /** Ставит база (`timestamps`); по нему опрос узнаёт изменённые (§5.2). */
+  updated_at?: string | Date
+  /** Мягкое удаление: по нему опрос узнаёт удалённые (§5.3). */
+  deleted_at?: string | Date | null
 }
 
 /**
@@ -95,6 +99,15 @@ export type FailureMode = 'remove' | 'retry'
 export type DbPostsFresh = { items: DbPost[]; mark?: string | null; markId?: string | null }
 /** Потолок строк в ответе опроса: больше — «50+», пилюля честно говорит «много». */
 export const DB_FRESH_LIMIT = 50
+/** Запас у отметки изменённых: правка, зафиксированная чуть позже своей метки. */
+export const DB_CHANGES_SLACK_MS = 3_000
+
+/**
+ * Ответ опроса изменённых (§5.2–5.3 плана live-update): что поменялось в
+ * показанном куске и что из него удалили. `mark` — отметка ответа: следующий
+ * вопрос задаётся от неё (её ставит база, а не часы клиента).
+ */
+export type DbPostsChanged = { items: DbPost[]; removed: string[]; mark?: string | null }
 
 export type DbPostsQuery = {
   /** Номер страницы (offset). Не используется, когда задан `after`. */

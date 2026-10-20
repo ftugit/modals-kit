@@ -115,6 +115,9 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
         if (!row) fail("not_found");
         return row;
       }),
+    // Сырой экземпляр не спрашивает «что изменилось»: у него нет ни политики, ни
+    // времени, которым можно верить. Отказ, а не пустой ответ.
+    changes: () => unsupported(),
     count: (ctx0, input = {}) =>
       db.guard(async () => {
         const ctx = context(ctx0);

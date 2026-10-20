@@ -42,6 +42,21 @@ export const dbCreate = defineForm({
  * его можно скопировать. Скрытой парой делать нечего — тогда страница
  * заводит собственный путь передачи значения мимо связки.
  */
+/**
+ * Правка заголовка по id. Нужна не только людям: без неё `updated_at` в демо
+ * никто не меняет, и опрос изменённых (docs/design/live-update.md §5.2) нечем
+ * проверить в браузере. Поле `title` — те же правила модели, что у создания.
+ */
+export const dbRename = defineForm({
+  id: 'db_demo_rename',
+  revision: 1,
+  actions: [{ id: 'submit', label: 'переименовать', validate: 'full' }],
+  fields: post.fields({
+    id: field.text({ label: 'id записи', placeholder: 'скопируйте id из таблицы ниже', validate: [v.required()] }),
+    title: field.text({ label: 'новый заголовок', ...post.title }),
+  }),
+})
+
 export const dbRemove = defineForm({
   id: 'db_demo_remove',
   revision: 1,

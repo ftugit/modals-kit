@@ -1429,6 +1429,102 @@ test("cursor: обратное направление — before/prevCursor/atEd
  * новых строк `?page=2` показывает те же записи, `count` не растёт, а страница
  * без среза видит новые.
  */
+test("changes: изменённые — целиком, удалённые — только ключами, границы только сужают", async () => {
+  const { withTestDb } = await import("../testing/index.ts");
+  const migration = `
+    CREATE TABLE change_row (
+      id integer PRIMARY KEY,
+      title text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      deleted_at timestamptz
+    );
+    CREATE TABLE plain_row (id integer PRIMARY KEY, title text NOT NULL);
+  `;
+  await withTestDb(
+    async ({ db }) => {
+      const row = (id: number, title: string, minute: number) => ({
+        text: `INSERT INTO change_row (id, title, created_at, updated_at) VALUES ($1, $2, timestamptz '2026-03-01 00:00:00+00' + make_interval(mins => $3), timestamptz '2026-03-01 00:00:00+00' + make_interval(mins => $3))`,
+        values: [id, title, minute],
+      });
+      for (const [id, title, minute] of [[1, "Первая", 1], [2, "Вторая", 2], [3, "Третья", 3], [4, "Четвёртая", 4]] as const)
+        await db.query(row(id, title, minute));
+      const table = defineResource({
+        key: "test.change.v1",
+        table: "change_row",
+        primaryKey: "id",
+        fields: {
+          id: f.integer({ read: () => true, orderable: true, filters: ["eq"] }),
+          title: f.text({ read: () => true, filters: ["eq"] }),
+        },
+        timestamps: { createdAt: "created_at", updatedAt: "updated_at", deletedAt: "deleted_at" },
+        policy: { select: policy.publicRows(), insert: policy.deny(), update: () => true, delete: () => true },
+        order: [["created_at", "desc"]],
+      });
+      const api = db.resource(table);
+      const ctx = { principal: { roles: [] as string[] } };
+      const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
+      const at = (m: number) => `2026-03-01T00:${String(m).padStart(2, "0")}:00.000Z`;
+
+      // Отметка «до всех изменений»: ничего не изменилось и не удалено.
+      const quiet = await api.changes(ctx, { since: at(0) });
+      assert.deepEqual(quiet.updated.map((x) => x.id), [4, 3, 2, 1], "все строки новее отметки — это и есть изменения");
+      assert.deepEqual(quiet.removed, []);
+
+      // Изменение одной строки после отметки; время ставит база, поэтому правим
+      // саму колонку — проверяется сравнение с отметкой, а не часы теста.
+      await db.query({ text: `UPDATE change_row SET title = 'Вторая (правка)', updated_at = timestamptz '2026-03-01 00:10:00+00' WHERE id = 2` });
+      const changed = await api.changes(ctx, { since: at(5) });
+      assert.deepEqual(changed.updated.map((x) => `${x.id}:${x.title}`), ["2:Вторая (правка)"], "только правка после отметки");
+
+      // Границы — обычный фильтр: сужают выборку, но не расширяют её.
+      const bounded = await api.changes(ctx, {
+        since: at(5),
+        filter: { and: [{ field: "created_at", op: "lte", value: at(2) }, { field: "created_at", op: "gte", value: at(2) }] },
+      });
+      assert.deepEqual(bounded.updated.map((x) => x.id), [2], "в границах второй строки правка видна");
+
+      // Мягкое удаление: наружу идут только ключи, содержимого в ответе нет.
+      await db.query({ text: `UPDATE change_row SET deleted_at = timestamptz '2026-03-01 00:11:00+00' WHERE id = 3` });
+      const withRemoved = await api.changes(ctx, { since: at(10) });
+      assert.deepEqual(withRemoved.removed.map(Number), [3], "удалённая строка пришла ключом");
+      assert.equal(withRemoved.updated.some((x) => x.id === 3), false, "удалённой строки нет среди изменённых");
+      assert.equal(JSON.stringify(withRemoved).includes("Третья"), false, "содержимое удалённой строки наружу не ушло");
+
+      // Границы работают и для удалённых: удалённая вне окна не приходит.
+      const outside = await api.changes(ctx, {
+        since: at(10),
+        filter: { field: "created_at", op: "gte", value: at(4) },
+      });
+      assert.deepEqual(outside.removed, [], "удалённая строка вне границ не приходит");
+
+      // Отметка в будущем и мусор в ней — разные вещи: пустой ответ против отказа.
+      assert.deepEqual((await api.changes(ctx, { since: at(59) })).removed, []);
+      await assert.rejects(
+        () => api.changes(ctx, { since: "мусор" }),
+        (e) => e instanceof DbFailure && e.kind === "validation",
+        "мусор в отметке — отказ, а не пустой ответ",
+      );
+      // Ресурс без timestamps: опрос невозможен — честный отказ, а не пустой ответ.
+      const plain = db.resource(
+        defineResource({
+          key: "test.change.plain.v1",
+          table: "plain_row",
+          primaryKey: "id",
+          fields: { id: f.integer({ read: () => true, orderable: true }), title: f.text({ read: () => true }) },
+          policy: { select: policy.publicRows() },
+          order: [["id", "asc"]],
+        }),
+      );
+      await assert.rejects(
+        () => plain.changes(ctx, { since: at(0) }),
+        (e) => e instanceof DbFailure && e.kind === "unsupported",
+      );
+    },
+    { migrations: [migration] },
+  );
+});
+
 test("asof: срез закрепляет страницы и счётчик, новые строки в него не входят", async () => {
   const { withTestDb } = await import("../testing/index.ts");
   const migration = `

@@ -52,3 +52,53 @@ function plural(n: number): string {
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'новые записи'
   return 'новых записей'
 }
+
+/**
+ * Адрес вопроса «что изменилось в показанном куске» (§5.2–5.3 плана).
+ *
+ * Отметка уходит СЫРОЙ, как её отдал сервер: запас «несколько секунд назад»
+ * (транзакция пишет метку раньше, чем фиксируется) добавляет сервер. Если бы
+ * запас вычитал клиент, ответ «ничего нового» возвращал бы сдвинутую назад
+ * отметку — она ползла бы в прошлое, и одна и та же правка приходила бы снова.
+ */
+export function changedUrl(
+  filter: string | undefined,
+  mark: string | null | undefined,
+  bounds: { top?: string; bottom?: string },
+): string {
+  const q = new URLSearchParams()
+  if (mark === undefined) q.set('changed', '')
+  else if (mark === null) return ''
+  else q.set('changed', mark)
+  if (filter) q.set('flt', filter)
+  if (bounds.top) q.set('top', bounds.top)
+  if (bounds.bottom) q.set('bottom', bounds.bottom)
+  return `/api/db-posts?${q.toString()}`
+}
+
+/**
+ * Что из ответа применить к окну: строки, которых окно ещё не видело в этой
+ * редакции (`updated_at` новее), и ключи удалённых. Возвращает только работу —
+ * как применять, решает список (`patchItems`).
+ */
+export function mergeChanges(
+  items: readonly DbPost[],
+  removed: readonly string[],
+  current: ReadonlyMap<string, DbPost>,
+): { updated: DbPost[]; removed: string[] } {
+  /**
+   * Метка строки в миллисекундах. База отдаёт время с МИКРОсекундами
+   * (`…26.400000Z`), а `Date.parse` в браузере такое расширение не понимает и
+   * вернул бы `NaN` — тогда сравнение «новее» всегда ложно и правка не
+   * применялась бы вовсе. Дробную часть режем так же, как при отправке отметки.
+   */
+  const at = (row: DbPost): number => {
+    const v = row.updated_at
+    return v == null ? 0 : typeof v === 'string' ? Date.parse(v.replace(/(\.\d{3})\d+/, '$1')) : v.getTime()
+  }
+  const updated = items.filter((row) => {
+    const had = current.get(row.id)
+    return had !== undefined && at(row) > at(had)
+  })
+  return { updated, removed: removed.filter((id) => current.has(id)) }
+}

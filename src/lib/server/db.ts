@@ -96,7 +96,15 @@ const DB_START_LABEL = 'Запуск базы'
  * `/api/db-posts`. Разносить его копией по трём местам нельзя — расхождение
  * проявилось бы как «страница показывает другое, чем догрузка».
  */
-export const DEMO_PRINCIPAL = Object.freeze({ roles: ['author'] })
+/**
+ * Кто пишет в демо: входа нет, гость. Роль `author` — право создавать записи
+ * (`policy.roles(['author'])`), роль `editor` — право править чужие
+ * (`policy.ownerOrRoles('author_id', ['editor'])`): без неё у гостя нет id и
+ * правка недоступна никому, а опрос изменённых (`docs/design/live-update.md`
+ * §5.2) нечем показать вживую. Это настройка ДЕМО, не модель прав: появится
+ * вход или фэйк-юзер из панели (`author_id`) — `editor` снимается первым.
+ */
+export const DEMO_PRINCIPAL = Object.freeze({ roles: ['author', 'editor'] })
 
 const LIMITS: Limits = { pageSize: 20, maxPageSize: 100, maxPage: 10000, filterDepth: 8, filterNodes: 100, inValues: 100, inputKeys: 64 }
 

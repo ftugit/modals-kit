@@ -22,10 +22,12 @@ import {
   table,
 } from './query/sql';
 import type {
+  ChangesInput,
   CheckEvent,
   CursorInput,
   DataContext,
   Database,
+  Field,
   Fields,
   Filter,
   HookContext,
@@ -789,6 +791,59 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     if (!errors.length) errors.push(...(await runChecks(r, { ctx, operation, db, values: snapshot(values) })));
     return errors.length ? { issues: errors.map(toIssue) } : { value: values };
   }
+  /**
+   * Что изменилось с отметки (docs/design/live-update.md §5.2–5.4).
+   *
+   * Отметку ставит база, поэтому и сравнивается она с колонкой времени, а не с
+   * часами вызывающего. Изменённые читаются обычным путём — политика `select`,
+   * права полей и мягкое удаление работают как всегда; удалённые — отдельным
+   * запросом ТОЛЬКО за ключами: содержимое удалённой строки не должно уйти
+   * наружу даже тому, кто видит таблицу (право `readDeleted` — отдельное).
+   *
+   * Запас по времени (`> отметка − N секунд`) — забота вызывающего: транзакция
+   * могла записать `updated_at` раньше, чем фиксировалась. Слой её не прячет и
+   * не подкручивает, но и не мешает: границы — обычный фильтр.
+   */
+  async function changes(ctx0: DataContext, input: ChangesInput & { since: string }) {
+    const ctx = context(ctx0);
+    readable(r, ctx);
+    const updatedAt = timestampField(r as unknown as Resource, 'updatedAt');
+    const deletedAt = timestampField(r as unknown as Resource, 'deletedAt');
+    if (!updatedAt && !deletedAt) fail('unsupported');
+    if (!isRecord(input) || Object.keys(input).some((k) => !['since', 'filter', 'limit'].includes(k)))
+      fail('validation');
+    if (typeof input.since !== 'string' || !input.since) fail('validation');
+    const limit = input.limit ?? db.limits.pageSize;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > db.limits.maxPageSize) fail('validation');
+    // Отметка проверяется тем же правилом, что поле времени: мусор в ней — отказ
+    // `validation`, а не пустой ответ «ничего не изменилось».
+    if (updatedAt) await validateField(r.fields[updatedAt], input.since, updatedAt, false);
+    if (deletedAt) await validateField(r.fields[deletedAt], input.since, deletedAt, false);
+
+    let updated: Row[] = [];
+    if (updatedAt) {
+      const since: Filter = { field: updatedAt, op: 'gt', value: input.since };
+      const filter: Filter = input.filter ? { and: [input.filter, since] } : since;
+      updated = (await read(ctx, { filter, order: [[updatedAt, 'desc']], limit })).items;
+    }
+
+    let removed: unknown[] = [];
+    if (deletedAt) {
+      // Предикат тот же, что у чтения, но БЕЗ условия «строка жива»: именно
+      // удалённые и спрашиваются. Право `readDeleted` не участвует — содержимое
+      // не читается, выдаются только ключи.
+      const s = new Sql();
+      const client = await filterSQL(r as unknown as Resource, ctx, input.filter, s, db.limits);
+      const keys = filterKeys(r as unknown as Resource, input.filter);
+      if (keys.size) await checkKeys(db, r as unknown as Resource, 'select', ctx, keys);
+      const policy = await filterSQL(r, ctx, rule(r, 'select', ctx), s, db.limits, true);
+      const text =
+        `SELECT ${projection(r, [r.primaryKey])} FROM ${table(r)} WHERE (${policy}) AND (${client})` +
+        ` AND ${col(r, deletedAt)} > ${s.fieldParam(r.fields[deletedAt], input.since)} LIMIT ${limit}`;
+      removed = (await db.query(withSignal(s.statement(text), ctx))).rows.map((x) => x[r.primaryKey]);
+    }
+    return { updated: updated as Out[], removed };
+  }
   return {
     validator: (ctx, operation) => {
       if (!['insert', 'update', 'check'].includes(operation))
@@ -802,6 +857,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       });
     },
     select: (ctx, input) => db.guard(async () => (await read(ctx, input)).items),
+    changes: (ctx, input) => db.guard(() => changes(ctx, input)),
     cursor: (ctx, input) => db.guard(() => read(ctx, input, true)),
     get: (ctx, id, input = {}) =>
       db.guard(async () => {
