@@ -1,6 +1,6 @@
 import { chromium } from 'playwright'
 
-const BASE = process.env.MODALS_BASE ?? 'http://127.0.0.1:4173/modals'
+const BASE = process.env.MODALS_BASE ?? 'http://127.0.0.1:5173/modals'
 function assert(cond, msg) {
   if (!cond) throw new Error(msg)
 }

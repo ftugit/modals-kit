@@ -3,11 +3,11 @@
 // Штатные наборы проверяли НАЛИЧИЕ узлов; эти проверки смотрят состояние
 // цепочки, фокуса и геометрии ПОСЛЕ действия — именно там жили дефекты.
 //
-// Запуск: node test/browser/regressions.mjs   (нужен preview на :4173)
+// Запуск: node test/browser/regressions.mjs   (нужен preview на :5173)
 import { chromium } from 'playwright'
 import { pageState, waitPageState } from './history-state.mjs'
 
-const PORT = Number(process.env.MODALS_PORT ?? 4173)
+const PORT = Number(process.env.MODALS_PORT ?? 5173)
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}/modals`
 const only = process.argv[2]
 

@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 
-const PORT = Number(process.env.MODALS_PORT ?? 4173)
+const PORT = Number(process.env.MODALS_PORT ?? 5173)
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

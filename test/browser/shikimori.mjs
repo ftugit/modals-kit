@@ -17,12 +17,12 @@
  * Тест сетевой (ходит на shikimori.io) — отдельным файлом, чтобы оффлайн-набор
  * оставался независимым от доступности внешнего сервиса.
  *
- * Запуск: MODALS_PORT=4173 node test/browser/shikimori.mjs
+ * Запуск: MODALS_PORT=5173 node test/browser/shikimori.mjs
  */
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`;
 const U = `${BASE}/paginator`;
 

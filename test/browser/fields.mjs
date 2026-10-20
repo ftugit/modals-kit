@@ -350,5 +350,17 @@ let k1, k2
 }
 
 await browser.close()
+
+// Уборка: набор живёт в кэше сервера и переживает прогон. Без сброса следующий
+// запуск (в том числе `npm run test:browser` следом) начинал бы не с пустого места.
+{
+  const reset = await fetch(`${BASE}?/reset`, {
+    method: 'POST',
+    headers: { origin: new URL(BASE).origin, 'content-type': 'application/x-www-form-urlencoded' },
+    body: '',
+  })
+  if (!reset.ok) console.log(`  ! уборка: сброс набора ответил ${reset.status}`)
+}
+
 console.log(failed ? `\nпровалов: ${failed}` : '\nвсе проверки прошли')
 process.exit(failed ? 1 : 0)

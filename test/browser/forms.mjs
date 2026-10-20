@@ -104,6 +104,20 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
   ok('своё правило без описания атрибута не даёт',
     await pg.locator('#signup-card').getAttribute('pattern') === null)
 
+  // Живой пример `variant: 'auto'` (вопрос №4 плана): ширина по значению, а не
+  // во всю строку — поле-sizing, минимальная ширина в символах и класс `w-auto`.
+  const auto = await pg.locator('#signup-tax_id').evaluate((el) => ({
+    minWidth: el.style.getPropertyValue('--field-min-width'),
+    auto: el.classList.contains('w-auto') && el.classList.contains('field-sizing-content'),
+  }))
+  ok('ширина по значению: у поля есть минимум в символах и класс авто-ширины',
+    auto.minWidth === '8ch' && auto.auto, JSON.stringify(auto))
+  const wideBox = await pg.locator('#signup-email').boundingBox()
+  const autoBox = await pg.locator('#signup-tax_id').boundingBox()
+  ok('ширина по значению: поле уже обычного текстового',
+    !!wideBox && !!autoBox && autoBox.width < wideBox.width,
+    `${autoBox?.width} против ${wideBox?.width}`)
+
   const report = await pg.locator('section:has-text("Ограничения → атрибуты") tbody').innerText()
   ok('причина отказа названа', report.includes('валидатор не описал себя'))
 
@@ -593,6 +607,15 @@ ok('пути дают одинаковые ошибки',
       && await attr('signup-meet_at', 'type') === 'datetime-local' && await attr('signup-letters', 'type') === 'range'
       && await attr('signup-letters', 'max') === '30' && await attr('signup-accent', 'type') === 'color')
   ok('цвет: значение по умолчанию из описания', await pg.inputValue('#signup-accent') === '#2563eb')
+  // умолчание описания — значение формы, а не только атрибут разметки (ход 224/269)
+  ok('умолчание: множественный выбор показывает выбранное',
+    JSON.stringify(await pg.locator('select[name="topics"]').evaluate((el) => [...el.selectedOptions].map((o) => o.value)))
+      === '["tips"]')
+  ok('умолчание: текстовое поле начинается со значения описания',
+    await pg.inputValue('#signup-site') === 'https://example.com')
+  await pg.fill('#signup-site', '')
+  ok('умолчание: стёртое поле остаётся пустым',
+    await pg.inputValue('#signup-site') === '', await pg.locator('#signup-site').getAttribute('value') ?? 'без атрибута')
   ok('период: границы дат в разметке',
     await attr('signup-from_date', 'min') === '2026-01-01' && await attr('signup-to_date', 'max') === '2027-12-31')
 

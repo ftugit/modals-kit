@@ -58,10 +58,13 @@ export const defaultUi: UiPolicy = {
     if (live === 'on-input') return true
     return live === 'after-touched' && state.touched[name] === true
   },
+  // Умолчание подставляет ЗНАЧЕНИЕ формы (см. `bind`), разметка его больше не
+  // дублирует: иначе стёртое поле возвращало умолчание в атрибут `value`, и
+  // очистить поле с умолчанием было нельзя.
   valueAttrs: (f, value) => {
     if (f.kind === 'checkbox') return value ? { checked: true } : {}
     if (value !== undefined && value !== null && value !== '') return { value: String(value) }
-    return f.defaultValue !== undefined ? { value: String(f.defaultValue) } : {}
+    return {}
   },
 }
 

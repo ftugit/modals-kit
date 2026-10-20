@@ -8,12 +8,12 @@
  * ВЕТКА DEV (console.error + throw → vite-overlay) здесь не проверяется:
  * preview — это prod-бандл; поведение dev — следствие `import.meta.env.DEV`.
  *
- * Запуск: MODALS_PORT=4173 node test/browser/errors.mjs
+ * Запуск: MODALS_PORT=5173 node test/browser/errors.mjs
  */
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
 const BASE = `http://127.0.0.1:${PORT}`;
 const U = `${BASE}/paginator`;
 

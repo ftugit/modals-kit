@@ -66,8 +66,12 @@ function make(cardinality: 'first' | 'all') {
         validate: [v.minValue(1), v.maxValue(5), v.step(1)],
       }),
       // СВОЁ ПРАВИЛО с описанием: атрибут выводится.
+      // `variant: 'auto'` — ширина по значению, а не во всю строку: у ИНН
+      // 10–12 цифр, растянутое поле здесь читается хуже. Живой пример варианта:
+      // проверяется браузерным набором (`forms.mjs`, «ширина по значению»).
       tax_id: field.text({
         label: 'ИНН',
+        variant: 'auto',
         help: 'Своё правило с описанием: шаблон уходит в разметку',
         validate: [inn()],
       }),
@@ -93,8 +97,11 @@ function make(cardinality: 'first' | 'all') {
         help: 'Необязательно: шесть цифр из письма',
         validate: [v.maxLength(6), v.pattern({ source: '\\d{6}' })],
       }),
+      // умолчание МНОЖЕСТВЕННОГО выбора: видно в контроле, а не только в разметке
       topics: field.multiselect({
         label: 'Интересы',
+        help: 'Умолчание описания выбрано заранее: «Советы»',
+        defaultValue: ['tips'],
         options: [
           { value: 'news', label: 'Новости' },
           { value: 'tips', label: 'Советы' },
@@ -105,8 +112,11 @@ function make(cardinality: 'first' | 'all') {
       agree: field.checkbox({ label: 'Согласен с условиями', validate: [v.required()] }),
 
       // ── Ещё поля: остальные встроенные представления и правила ──────────
+      // умолчание ТЕКСТОВОГО поля: стереть можно — умолчание живёт значением, а не
+      // атрибутом разметки, и после очистки поле остаётся пустым
       site: field.url({
         label: 'Сайт',
+        defaultValue: 'https://example.com',
         placeholder: 'https://example.com',
         help: 'Адрес целиком, со схемой https://',
         validate: [v.url(), v.maxLength(200)],

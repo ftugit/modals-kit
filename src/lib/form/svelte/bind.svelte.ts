@@ -12,6 +12,7 @@ import { formRenderer } from '../messages-order'
 import { isSettled, normalizeErrors, type FormError, type Result } from '../result'
 import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
 import { FormStore, initialState, type FormState } from '../state'
+import { defaultValueMap } from '../defaults'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
 import { disabledState } from '../validate'
 import type { HtmlAttrs } from '../types'
@@ -143,7 +144,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
   const asyncErrorIds = new Map<string, string>()
 
-  const store = new FormStore(initialState(desc.revision))
+  // Умолчания описания — это ЗНАЧЕНИЯ формы, а не только атрибут разметки:
+  // без этого `Select` не показывал умолчание, а стёртое поле возвращало его
+  // в `value` (ход 224). Сид адреса/сервера ложится поверх.
+  const store = new FormStore(initialState(desc.revision, defaultValueMap(desc)))
   const machine = new SubmitMachine(cfg.config.parallel ?? 'block')
 
   let submissionId = o.submissionId ?? crypto.randomUUID()
@@ -170,7 +174,8 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
 
   // URL-режим: начальное зеркало значений от хоста (из хранилища, не из адреса —
   // адрес сеет сервер в load, хост читает состояние). Валидация молчит: fields
-  // показывают значения, а не претензии.
+  // показывают значения, а не претензии. Сид ложится ПОВЕРХ умолчаний: пустые
+  // ключи хоста умолчание не снимают (иначе адрес без поля обнулял бы его).
   if (o.url?.seed) {
     const seeded = o.url.seed(desc)
     if (seeded) store.set((st) => ({ ...st, values: { ...st.values, ...seeded } }))

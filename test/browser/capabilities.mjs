@@ -19,12 +19,12 @@
  * ничего не ломает, а смена источника его снимает.
  *
  * Запуск:
- *   MODALS_PORT=4173 node test/browser/capabilities.mjs
+ *   MODALS_PORT=5173 node test/browser/capabilities.mjs
  */
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
 const U = process.env.CAPABILITIES_BASE ?? `http://127.0.0.1:${PORT}/paginator`;
 
 /** Ключи пагинатора, глушащие автоподгрузку: считаем ровно одну страницу. */

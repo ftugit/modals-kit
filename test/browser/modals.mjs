@@ -26,7 +26,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? 5173);
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}/modals`;
 const SHOT_DIR = path.resolve(process.env.MODALS_SHOT_DIR ?? 'node_modules/.screens/modals/port');
 

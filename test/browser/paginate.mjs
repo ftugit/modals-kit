@@ -16,12 +16,12 @@
  *     строки «Загрузка страницы N…», когда скелетоны выключены.
  *
  * Запуск:
- *   MODALS_PORT=4173 node test/browser/paginate.mjs
+ *   MODALS_PORT=5173 node test/browser/paginate.mjs
  */
 import { spawn } from 'node:child_process';
 import { chromium, devices } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
 const U = process.env.PAGINATE_BASE ?? `http://127.0.0.1:${PORT}/paginator`;
 
 let serverProc = null;

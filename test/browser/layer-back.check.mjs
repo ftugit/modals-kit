@@ -14,13 +14,13 @@
  *  C. После перезагрузки на записи слоя связка жива (sessionStorage).
  *
  * Движки: Chromium, Firefox, WebKit (BROWSERS=chromium,firefox,webkit).
- * Запуск: LAYER_BACK_BASE=http://127.0.0.1:4173 node test/browser/layer-back.check.mjs
+ * Запуск: LAYER_BACK_BASE=http://127.0.0.1:5173 node test/browser/layer-back.check.mjs
  */
 import { chromium, firefox, webkit } from "playwright";
 
 const BASE =
   process.env.LAYER_BACK_BASE ??
-  `http://127.0.0.1:${process.env.MODALS_PORT ?? 4173}`;
+  `http://127.0.0.1:${process.env.MODALS_PORT ?? 5173}`;
 const ENGINES = { chromium, firefox, webkit };
 const wanted = (process.env.BROWSERS ?? "chromium,firefox,webkit")
   .split(",")

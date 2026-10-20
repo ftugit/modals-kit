@@ -6,7 +6,7 @@
  *   npm run build && npm run preview -- --host 0.0.0.0 &
  *   node test/browser/a11y.mjs
  *
- * База настраивается переменной A11Y_BASE, по умолчанию http://127.0.0.1:4173.
+ * База настраивается переменной A11Y_BASE, по умолчанию http://127.0.0.1:5173.
  */
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
@@ -21,7 +21,7 @@ import { chromium } from 'playwright'
 const require = createRequire(import.meta.url)
 const AXE = require.resolve('axe-core/axe.min.js')
 
-const BASE = (process.env.A11Y_BASE ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
+const BASE = (process.env.A11Y_BASE ?? 'http://127.0.0.1:5173').replace(/\/$/, '')
 
 const wcagTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 let failed = 0

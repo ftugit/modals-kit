@@ -13,12 +13,12 @@
  *  4. Панель фильтров следует источнику: после переключения на БД её нет.
  *
  * Сетевой тест (ходит на rickandmortyapi.com) — отдельным файлом, вне оффлайн-набора.
- * Запуск: MODALS_PORT=4173 node test/browser/rickmorty.mjs
+ * Запуск: MODALS_PORT=5173 node test/browser/rickmorty.mjs
  */
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 4173);
+const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`;
 const U = `${BASE}/paginator`;
 const OPTS = 'page.mode=single&page.topTrigger=off&page.bottomTrigger=off&page.size=5';
