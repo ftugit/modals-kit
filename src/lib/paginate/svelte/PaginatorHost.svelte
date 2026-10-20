@@ -17,6 +17,7 @@
     reportAnchor,
     setExtra,
     setPageSize,
+    safePersist,
   } from '../core'
   import { canLoadMore, externalExtraDiff, pickCurrentPage } from '../pure'
   import { getPaginator, onPaginatorError } from '../registry'
@@ -510,6 +511,18 @@
     return externalObserved?.restorable ?? externalRestorableProp ?? null
   })
 
+  /**
+   * Адрес ← состояние пагинатора в том виде, в каком его пишет адаптер. Нужен
+   * там, где состояние появилось НЕ через действие (гидрация снапшота): у
+   * url-транспорта ключи, которые источник отдал вместе со страницей, обязаны
+   * попасть в адрес — иначе перезагрузка теряет их, а ссылки страниц строятся
+   * от чужого среза. Для адаптеров без адреса — no-op.
+   */
+  function syncAddressWithState(): void {
+    if (!bindsUrl) return
+    safePersist(store, name)
+  }
+
   onMount(() => {
     // Единственное место, где библиотека касается навигации (канон D2): роутер
     // слоя фреймворка уезжает в URL-транспорт адаптера — фичи адрес не знают.
@@ -522,6 +535,12 @@
     // в исходнике (захват опорной точки до вставки слотов).
     const unsubscribe = store.subscribe?.(name, capturePrependRef)
 
+    // Гидрация идёт из снапшота (`store.hydrate` выше), и `initPaginator` для
+    // готового состояния уже ничего не делает: ключи extra, рождённые ИСТОЧНИКОМ
+    // (срез `asof` в ответе load), иначе остались бы в сторе, но не в адресе.
+    // Запись — через владельца адреса; когда в адресе уже всё то же, эхо-guard
+    // оставляет строку нетронутой.
+    syncAddressWithState()
     void initPaginator(store, name)
 
     return () => {

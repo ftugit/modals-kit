@@ -357,6 +357,13 @@ export interface ListInput {
   limit?: number;
   includeDeleted?: boolean;
   include?: readonly string[];
+  /**
+   * Срез выдачи: «не новее этой строки» — `created_at` и первичный ключ в одной
+   * строке (`<ISO>|<id>`). Нужен постраничному режиму: номер страницы — это
+   * смещение, и появившиеся сверху строки сдвигают всю выдачу. С условием среза
+   * `count` и страницы считаются по одному и тому же множеству.
+   */
+  asof?: string;
 }
 export interface CursorInput extends Omit<ListInput, "page"> {
   /** Токен из `nextCursor` прошлой страницы; `null`/нет — первая страница (DB-3). */
@@ -389,7 +396,7 @@ export interface ResourceApi<
   ): Promise<ResourceRow<F, R>>;
   count(
     ctx: DataContext,
-    input?: Pick<ListInput, "filter" | "includeDeleted">,
+    input?: Pick<ListInput, "filter" | "includeDeleted" | "asof">,
   ): Promise<number>;
   cursor(
     ctx: DataContext,

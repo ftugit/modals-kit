@@ -67,6 +67,7 @@ const LIST_KEYS = [
   "page",
   "limit",
   "includeDeleted",
+  "asof",
   "include",
   "after",
 ] as const;
@@ -97,7 +98,8 @@ export function parseListInput(
     const allowed =
       LIST_KEYS.includes(key as (typeof LIST_KEYS)[number]) &&
       (key !== "after" || cursor) &&
-      (key !== "page" || !cursor);
+      (key !== "page" || !cursor) &&
+      (key !== "asof" || !cursor);
     if (!allowed || Object.prototype.hasOwnProperty.call(out, key))
       throw new DbFailure("validation");
     try {

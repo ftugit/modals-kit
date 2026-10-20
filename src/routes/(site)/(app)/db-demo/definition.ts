@@ -54,12 +54,17 @@ export const DB_LIST_MODE_KEY = 'cur'
 export const DB_LIST_POINTER_KEY = 'after'
 
 /**
- * Ключи, которые источник понимает: фильтр, порядок и указатель следующего шага.
- * Список ОДИН — по нему сверяются и спека источника, и обёртка для
- * union-типа демо-пагинатора; разойтись они не вправе (иначе ключ доедет до
- * одного мира и не доедет до другого).
+ * Ключи, которые источник понимает: фильтр, порядок, указатель следующего шага и
+ * срез «на момент» (`asof`). Список ОДИН — по нему сверяются и спека источника, и
+ * обёртка для union-типа демо-пагинатора; разойтись они не вправе (иначе ключ
+ * доедет до одного мира и не доедет до другого).
+ *
+ * `asof` здесь — не «позиция» источника, а вход: среди `positionKeys` пагинатора
+ * он означает «новая выдача начинается с нового края», но до данных он доезжает
+ * тем же путём, что и указатель (иначе страница 2 под срезом молча теряла срез и
+ * сдвигалась под читателем).
  */
-export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_MODE_KEY, DB_LIST_POINTER_KEY] as const
+export const DB_LIST_FILTER_KEYS = ['flt', 'ord', DB_LIST_MODE_KEY, DB_LIST_POINTER_KEY, 'asof'] as const
 
 export interface DbPost {
   id: string
@@ -104,6 +109,8 @@ export type DbPostsQuery = {
    * не получала бы указателя — «дальше» не появилось бы никогда.
    */
   cursor?: boolean
+  /** Срез «на момент» (`<ISO>|<id>`): выдача не новее этой строки. Только страницы. */
+  asof?: string
   signal?: AbortSignal
 }
 
@@ -207,6 +214,10 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // Живой список: влияет только на то, переспрашивает ли страница источник, —
   // поэтому НЕ в `reloadKeys` (само включение не должно ронять окно).
   [DB_LIST_LIVE_KEY]: liveExtraField,
+  // Срез «на момент»: `<ISO>|<id>` самой свежей строки выдачи. Это не условие
+  // пользователя, а закреплённый край выдачи — ядро сбрасывает его вместе с
+  // указателем (`positionKeys`), а ответ сервера ставит заново.
+  asof: extraField('text', (v) => typeof v === 'string' && v.length > 0 && v.length <= 128 && v.includes('|')),
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
@@ -218,6 +229,7 @@ export const DEFAULT_DB_LIST_EXTRA = {
   // увидеть карточку с кнопкой.
   err: 'retry' as FailureMode,
   [DB_LIST_LIVE_KEY]: false,
+  asof: '',
 }
 
 export type DbListExtra = {
@@ -227,6 +239,7 @@ export type DbListExtra = {
   after: string
   err: FailureMode
   live: boolean
+  asof: string
 }
 
 /** Значения панели настроек — из текущего extra (тот же разбор, что и на адресе). */
@@ -257,6 +270,9 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   // при выключенном тумблере не превращает постраничный список в keyset (иначе
   // «номера страниц» и «данные по токену» показывались бы одновременно).
   const after = cursorOn ? input.filters?.[DB_LIST_POINTER_KEY] : undefined
+  // Срез значит что-то только в постраничном режиме: у курсора край закреплён
+  // закладками, и второй механизм «на момент» спорил бы с первым.
+  const asof = cursorOn ? undefined : (input.filters?.asof as string | undefined)
   // Один разбор на оба транспорта: серверный вызов слоя и HTTP идут с теми же
   // ключами, поэтому «страница» и «догрузка» не могут разойтись по-тихому.
   if (serverTransport)
@@ -267,6 +283,7 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
       order,
       after: after || undefined,
       cursor: cursorOn,
+      asof,
       signal: look.signal,
     })
   const q = new URLSearchParams({ size: String(look.pageSize) })
@@ -274,6 +291,7 @@ export async function fetchDbPosts(look: SourceLook, input: SourceInput): Promis
   // здесь и только здесь: токен есть — номера в запросе нет.
   if (after) q.set(DB_LIST_POINTER_KEY, after)
   else q.set('page', String(look.page))
+  if (asof) q.set('asof', asof)
   // Режим едет отдельным ключом: сервер по нему включает keyset и на первом шаге,
   // где токена ещё не существует.
   if (cursorOn) q.set(DB_LIST_MODE_KEY, '1')
@@ -335,7 +353,9 @@ export function ensureDbListPaginator(): string {
       // Смена фильтра, порядка или СПОСОБА навигации — новая выдача: сброс на
       // первую страницу. `after` сюда не входит: это указатель, а не условие.
       reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
-      positionKeys: [DB_LIST_POINTER_KEY],
+      // `asof` снимается вместе с указателем: и то и другое — «где мы стоим в
+      // выдаче», а не её условие; новый срез сервер отдаст ответом.
+      positionKeys: [DB_LIST_POINTER_KEY, 'asof'],
       adapter: createUrlAdapter<DbPost>({
         name: DB_LIST_NAME,
         source: dbPostsCursorSource,

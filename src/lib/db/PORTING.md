@@ -167,7 +167,7 @@ Directus, Supabase-js, `@neondatabase/serverless`), но взято только
 ```sh
 npm run test:db     # == npx vitest run src/lib/db — седьмой файл, аудит документации, в счёт групп не входит
 # ✓ src/lib/db/test/db-structure.test.ts       6 групп  (границы слоя)
-# ✓ src/lib/db/test/db-port-specific.test.ts  39 групп  (новое поведение)
+# ✓ src/lib/db/test/db-port-specific.test.ts  40 групп  (новое поведение)
 # ✓ src/lib/db/test/db-sync.test.ts           33 группы  (схема из моделей, решения конфликтов, цепочка удаления, ключи доступа, ошибки полей)
 # ✓ src/lib/db/test/db-rules.test.ts          33 группы  (метка проверки, JSON Schema → CHECK, checks, validator, маски, fill, store, timestamps, without, protect, raw, delete hard)
 # ✓ src/lib/db/test/db-ported.test.ts          3 it'а: db-lib 16, db-hardening 5, db-followup 9

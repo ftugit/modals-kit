@@ -76,6 +76,10 @@ const EXPLAIN: Record<string, string> = {
   database: 'База не смогла выполнить запрос. Попробуйте ещё раз.',
 }
 
+/** Срез: `created_at` и `id` одной строкой — формат закладки (`<ISO>|<id>`). */
+const asofOf = (row: DbPost | undefined): string | null =>
+  row ? `${isoOf(row.created_at) ?? ''}|${row.id}` : null
+
 async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageResponse<DbPost>> {
   const api = db.resource(posts)
   // Ключи адреса переводятся в те, что разбирает слой: пагинатор говорит
@@ -108,8 +112,24 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
   // total — по ТОМУ ЖЕ фильтру, что и страница: иначе «всего записей» и
   // «подходит под фильтр» — два разных числа под одним заголовком, а
   // пагинатор по такому total построит несуществующие страницы.
-  const filterOnly = { filter: input.filter }
-  const [items, totalItems] = await Promise.all([api.select(ctx, input), api.count(ctx, filterOnly)])
+  // Срез «на момент»: номер страницы — смещение, и любая новая строка сдвигает
+  // всю выдачу. Ключ приходит из адреса; на первой загрузке его нет — тогда
+  // срезом становится самая свежая строка выдачи, и сервер отдаёт его в `extra`
+  // (так он попадает и в адрес, и в ссылки страниц). Фильтр берётся целиком:
+  // выдача сужается тем же условием, что и счётчик.
+  let asof = query.asof ?? null
+  if (!keyset && !asof) {
+    const newest = (await api.select(ctx, {
+      filter: input.filter,
+      order: [['created_at', 'desc'], ['id', 'desc']],
+      limit: 1,
+      fields: ['id', 'created_at'],
+    })) as DbPost[]
+    asof = asofOf(newest[0])
+  }
+  const sliced = asof ? { ...input, asof } : input
+  const filterOnly = { filter: input.filter, ...(asof ? { asof } : {}) }
+  const [items, totalItems] = await Promise.all([api.select(ctx, sliced), api.count(ctx, filterOnly)])
   const size = input.limit ?? DB_LIST_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(totalItems / size))
   return {
@@ -117,6 +137,9 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
     totalItems,
     totalPages,
     hasNext: (input.page ?? 1) < totalPages,
+    // Срез едет ответом, а не рождается на клиенте: без JS его нечем подписать,
+    // и ссылки страниц из SSR обязаны нести тот же ключ.
+    ...(asof ? { extra: { asof } } : {}),
   }
 }
 

@@ -174,6 +174,107 @@ try {
   await nojs.close()
   }
   await curPage.close()
+
+  // 3. Срез постраничной выдачи (live-update, шаг 3): новая строка не сдвигает
+  //    открытую страницу, а на первой странице о ней говорит пилюля опроса;
+  //    клик по пилюле сбрасывает список на новый срез.
+  {
+    // «Другой пользователь»: своя запись своему списку не «новая» (её видно
+    // оптимистичной карточкой), поэтому пишет отдельный контекст.
+    const writerCtx = await browser.newContext()
+    const writer = await writerCtx.newPage()
+    await writer.goto(BASE, { waitUntil: 'domcontentloaded' })
+
+    const readerCtx = await browser.newContext()
+    const reader = await readerCtx.newPage()
+    const sliceProblems = []
+    reader.on('pageerror', (e) => sliceProblems.push(`pageerror: ${e.message.split('\n')[0]}`))
+
+    await reader.goto(`${BASE}?page.size=3`, { waitUntil: 'networkidle' })
+    const firstIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    const asof = new URL(reader.url()).searchParams.get('page.asof')
+    ok('срез: первая загрузка кладёт page.asof в адрес', !!asof && firstIds.length === 3, String(asof))
+
+    // Вторая страница того же среза на снимке «до записи» — чтобы сравнить с ней.
+    const sliceUrl = (pageNo) => `${BASE}?page.size=3&page=${pageNo}&page.asof=${encodeURIComponent(asof ?? '')}`
+    await reader.goto(sliceUrl(2), { waitUntil: 'networkidle' })
+    const secondIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+
+    const title = `срез ${Date.now()}`
+    await writer.locator('#db-create-form input[name="title"]').fill(title)
+    await writer.locator('#db-create-form input[name="agree"]').check()
+    // Экшен уходит с гидрацией (страница живая) — адрес на `/create` не меняется,
+    // поэтому ждём ответ сервера, а не навигацию.
+    await Promise.all([
+      // Куда именно Kit отправит экшен (`?/create` или `/submit`), решает транспорт
+      // формы; важно лишь, что это POST самой страницы.
+      writer.waitForResponse((r) => r.url().includes('/db-demo') && r.request().method() === 'POST', { timeout: 15_000 }),
+      writer.locator('#db-create-form button[type="submit"]').click(),
+    ])
+
+    // Та же вторая страница под ТЕМ ЖЕ срезом: новая запись в неё не вошла и
+    // ничего не сдвинула.
+    await reader.goto(sliceUrl(2), { waitUntil: 'networkidle' })
+    const secondAfter = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    ok('срез: вторая страница под прежним срезом не сдвинулась',
+      secondIds.length === 3 && secondAfter.join(',') === secondIds.join(','), secondAfter.join(','))
+
+    // А свежий заход (свой срез считается на «сейчас») новую запись видит —
+    // значит срез действительно край, а не пустой ключ в адресе.
+    const freshCtx = await browser.newContext()
+    const fresh = await freshCtx.newPage()
+    await fresh.goto(`${BASE}?page.size=3`, { waitUntil: 'networkidle' })
+    const freshFirst = await fresh.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    ok('без среза свежая выдача начинается с новой записи',
+      freshFirst.length === 3 && !firstIds.includes(freshFirst[0]) && freshFirst.join(',') !== firstIds.join(','),
+      freshFirst[0])
+    await freshCtx.close()
+
+    // Пилюля: живой опрос на первой странице и сброс по клику. Отметка опроса —
+    // срез открытой страницы, поэтому «новая» запись создаётся ПОСЛЕ неё (та,
+    // что выше, уже вошла в срез и нового в ней нет — так и задумано).
+    await reader.goto(`${BASE}?page.size=3&page.live=1`, { waitUntil: 'networkidle' })
+    await reader.waitForFunction(
+      () => (document.querySelector('[data-testid="live-state"]')?.textContent ?? '').includes('тиков'),
+      undefined,
+      { timeout: 15_000 },
+    ).catch(() => {})
+    await reader.waitForTimeout(1200)
+    const second = await writerCtx.newPage()
+    await second.goto(BASE, { waitUntil: 'domcontentloaded' })
+    await second.locator('#db-create-form input[name="title"]').fill(`после ${Date.now()}`)
+    await second.locator('#db-create-form input[name="agree"]').check()
+    await Promise.all([
+      second.waitForResponse((r) => r.url().includes('/db-demo') && r.request().method() === 'POST', { timeout: 15_000 }),
+      second.locator('#db-create-form button[type="submit"]').click(),
+    ])
+    await second.close()
+    const pill = reader.locator('[data-testid="live-pill"]')
+    const pillShown = await pill.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false)
+    ok('пилюля: новая запись предложена первой странице', pillShown && (await pill.innerText()).includes('1'),
+      pillShown ? await pill.innerText() : 'нет')
+    const asofBefore = new URL(reader.url()).searchParams.get('page.asof')
+    const beforeIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    if (pillShown) {
+      await pill.click()
+      await reader.waitForFunction(
+        (prev) => {
+          const rows = [...document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]')]
+          return rows.length > 0 && rows[0].textContent.trim() !== prev
+        },
+        beforeIds[0] ?? '',
+        { timeout: 15_000 },
+      ).catch(() => {})
+      const afterIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+      const asofAfter = new URL(reader.url()).searchParams.get('page.asof')
+      ok('клик по пилюле — сброс: новая запись наверху, срез в адресе обновлён',
+        afterIds[0] !== beforeIds[0] && !!asofAfter && asofAfter !== asofBefore,
+        String(asofAfter))
+    }
+    ok('срез: без ошибок страницы', sliceProblems.length === 0, sliceProblems.join(' | '))
+    await readerCtx.close()
+    await writerCtx.close()
+  }
 } finally {
   await browser.close()
 }

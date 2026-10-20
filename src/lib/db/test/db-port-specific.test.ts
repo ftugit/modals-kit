@@ -1420,3 +1420,80 @@ test("cursor: обратное направление — before/prevCursor/atEd
     await instance.close().catch(() => {});
   }
 });
+
+/* ── срез постраничной выдачи (live-update, шаг 3) ─────────────────── */
+
+/**
+ * `asof` — «не новее этой строки»: постраничная выдача закрепляется на момент
+ * первой загрузки. Проверяется ровно то, ради чего ключ заведён: после появления
+ * новых строк `?page=2` показывает те же записи, `count` не растёт, а страница
+ * без среза видит новые.
+ */
+test("asof: срез закрепляет страницы и счётчик, новые строки в него не входят", async () => {
+  const { withTestDb } = await import("../testing/index.ts");
+  const migration = `
+    CREATE TABLE slice_row (
+      id integer PRIMARY KEY,
+      created_at timestamptz NOT NULL,
+      title text NOT NULL
+    );
+    INSERT INTO slice_row (id, created_at, title)
+    SELECT g, timestamptz '2026-02-01 00:00:00+00' + make_interval(mins => g), 'Запись ' || g
+    FROM generate_series(1, 6) g;
+  `;
+  await withTestDb(
+    async ({ db }) => {
+      const table = defineResource({
+        key: "test.slice.v1",
+        table: "slice_row",
+        primaryKey: "id",
+        fields: {
+          id: f.integer({ read: () => true, orderable: true, filters: ["eq"] }),
+          title: f.text({ read: () => true, orderable: true, filters: ["eq"] }),
+        },
+        timestamps: { createdAt: "created_at" },
+        policy: { select: policy.publicRows(), insert: policy.deny(), update: policy.deny(), delete: policy.deny() },
+        order: [["created_at", "desc"], ["id", "asc"]],
+      });
+      const api = db.resource(table);
+      const ctx = { principal: { roles: [] as string[] } };
+      const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
+
+      const all = await api.select(ctx, {});
+      const newest = all[0]!;
+      const asof = `${iso(newest.created_at)}|${newest.id}`;
+      assert.deepEqual(all.map((x) => x.id), [6, 5, 4, 3, 2, 1], "порядок ресурса: свежие сверху");
+
+      const p1 = await api.select(ctx, { asof, limit: 3 });
+      const p2 = await api.select(ctx, { asof, limit: 3, page: 2 });
+      assert.deepEqual(p1.map((x) => x.id), [6, 5, 4]);
+      assert.deepEqual(p2.map((x) => x.id), [3, 2, 1], "вторая страница среза");
+      assert.equal(await api.count(ctx, { asof }), 6);
+
+      // Новая строка сверху: без среза она сдвигает выдачу, со срезом — нет.
+      await db.query({
+        text: `INSERT INTO slice_row (id, created_at, title) VALUES (7, timestamptz '2026-02-01 02:00:00+00', 'Новая')`,
+      });
+      assert.equal((await api.select(ctx, { limit: 3, page: 2 })).map((x) => x.id).join(","), "4,3,2", "без среза страницы сдвинулись");
+      assert.deepEqual((await api.select(ctx, { asof, limit: 3, page: 2 })).map((x) => x.id), [3, 2, 1]);
+      assert.equal(await api.count(ctx, { asof }), 6, "счётчик под срезом не растёт");
+      assert.equal(await api.count(ctx, {}), 7);
+
+      // Срез «по третьей строке»: в выдаче ровно три записи.
+      const third = all.find((x) => x.id === 3)!;
+      const cut = `${iso(third.created_at)}|${third.id}`;
+      assert.deepEqual((await api.select(ctx, { asof: cut, limit: 2 })).map((x) => x.id), [3, 2]);
+      assert.equal(await api.count(ctx, { asof: cut }), 3);
+
+      // Мусор и чужая форма — отказ, а не «молча без среза».
+      for (const bad of ["мусор", "2026-02-01T00:00:00.000Z", "не-время|3", "|3", "2026-02-01T00:00:00.000Z|", "2026-02-01|3"]) {
+        await assert.rejects(
+          () => api.select(ctx, { asof: bad }),
+          (e) => e instanceof DbFailure && e.kind === "validation",
+          `срез «${bad}» обязан отвергаться`,
+        );
+      }
+    },
+    { migrations: [migration] },
+  );
+});

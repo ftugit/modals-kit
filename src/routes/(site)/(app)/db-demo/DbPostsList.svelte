@@ -130,6 +130,16 @@
   const visibleIds = $derived(new Set((Object.values(listState().pages ?? {}).flat() as DbPost[]).map((r) => r.id)))
   /** Вставка в голову уместна: накопление и порядок по `created_at ↓`. */
   const canPrepend = $derived(cursor && ownRowPlacement({ ord: extra.ord }) === 'head')
+  /** Срез из адреса (`<ISO>|<id>`): край выдачи, закреплённый сервером. */
+  const asof = $derived.by(() => {
+    const raw = extra.asof
+    if (!raw) return null
+    const cut = raw.lastIndexOf('|')
+    if (cut <= 0) return null
+    return { at: raw.slice(0, cut), id: raw.slice(cut + 1) }
+  })
+  /** Пилюля новых — только на первой странице: номера страниц сдвинулись бы под ней. */
+  const firstPage = $derived(cursor || (listState().page ?? 1) === 1)
   let mark = $state<string | null | undefined>(undefined)
   let markId: string | null = null
   let waiting = $state<DbPost[]>([])
@@ -137,10 +147,22 @@
   const unseen = $derived(waiting.filter((r) => !visibleIds.has(r.id)))
   const atTop = (): boolean => typeof window !== 'undefined' && window.scrollY <= 100
 
-  /** Отметка заново: после сброса или смены выдачи старая говорит о другом списке. */
+  /**
+   * Отметка заново: после сброса или смены выдачи старая говорит о другом списке.
+   *
+   * В постраничном режиме отметка — СРЕЗ из адреса (`?page.asof`), а не «самая
+   * свежая строка сейчас»: иначе новая запись попадала бы в срез молча и пилюли
+   * не было бы, а страницы сдвигались бы под читателем (§3 плана live-update).
+   * Среза нет (курсорный режим, первая загрузка) — спрашиваем сервер, как раньше.
+   */
   function rebaseline(): void {
-    mark = undefined
-    markId = null
+    if (asof) {
+      mark = asof.at
+      markId = asof.id
+    } else {
+      mark = undefined
+      markId = null
+    }
     waiting = []
     live.poke()
   }
@@ -292,7 +314,7 @@
          а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
     <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
       <span>опрос новых: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
-      {#if unseen.length}
+      {#if unseen.length && (firstPage || cursor)}
         <Button variant="outline" size="xs" data-testid="live-pill" onclick={showWaiting}>{freshLabel(unseen.length)}</Button>
       {/if}
     </p>

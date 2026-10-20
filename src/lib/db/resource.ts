@@ -193,6 +193,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
             'include',
             'after',
             'before',
+            'asof',
           ].includes(k),
       )
     )
@@ -292,6 +293,42 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       keys,
     };
   }
+  /**
+   * Условие среза: «не новее строки `at|id`». Новизна — по `timestamps.createdAt`
+   * и первичному ключу: время больше — строка новее; время равно — новее та, у
+   * которой ключ больше (у демо ключ случайный, поэтому равенство времени — редкость,
+   * а порядок всё равно полный). Ресурс без `createdAt` срез не поддерживает:
+   * «новее» тогда нечем определить.
+   */
+  async function asofPredicate(token: string, s: Sql): Promise<string> {
+    const created = timestampField(r, 'createdAt');
+    if (!created) fail('unsupported');
+    const cut = token.lastIndexOf('|');
+    if (cut <= 0 || cut === token.length - 1) fail('validation');
+    const at = token.slice(0, cut),
+      id = token.slice(cut + 1);
+    // Время НЕ округляем через `Date`: база хранит микросекунды, а `toISOString`
+    // режет до миллисекунд — строка-срез могла бы выпасть из собственного среза.
+    // Поэтому строка идёт в SQL как есть, а проверяется форма ISO.
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(at) || Number.isNaN(Date.parse(at)))
+      fail('validation');
+    // Ключ в адресе — строка; числовой ключ приводим к числу до проверки, иначе
+    // проверка типа отвергла бы собственный ключ ресурса.
+    const pk = r.fields[r.primaryKey];
+    // `kind` у целых не объявлен (только bigint/decimal/date/timestamp/json), поэтому
+    // «похоже на число» — это и есть целый ключ: строка из адреса приводится к числу.
+    const numeric = /^-?\d+$/.test(id) && (pk.kind === undefined || pk.kind === 'scalar');
+    const key = numeric ? Number(id) : id;
+    if (typeof key === 'number' && !Number.isFinite(key)) fail('validation');
+    try {
+      await validateField(pk, key, r.primaryKey, false);
+    } catch {
+      fail('validation');
+    }
+    const cAt = col(r, created),
+      cPk = col(r, r.primaryKey);
+    return `(${cAt} < ${s.fieldParam(r.fields[created], at)} OR (${cAt} = ${s.fieldParam(r.fields[created], at)} AND ${cPk} <= ${s.fieldParam(pk, key)}))`;
+  }
   async function read(ctx0: DataContext, input0: ListInput | CursorInput = {}, cursor = false) {
     const ctx = context(ctx0),
       input = listInput(input0),
@@ -310,13 +347,16 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       (cursor && own(input, 'page')) ||
       (!cursor && own(input, 'after')) ||
       (!cursor && own(input, 'before')) ||
-      (own(input, 'after') && own(input, 'before'))
+      (own(input, 'after') && own(input, 'before')) ||
+      (cursor && own(input, 'asof'))
     )
       fail('validation');
     const policy = rule(r, 'select', ctx);
     let predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted, {
       value: policy,
     });
+    // Срез — постраничный режим: курсор живёт закладками и в срезе не нуждается.
+    if (input.asof !== undefined) predicate += ' AND ' + (await asofPredicate(input.asof, s));
     const scope = {
       resource: r.key,
       principal: ctx.principal,
@@ -782,10 +822,13 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         const ctx = context(ctx0);
         readable(r, ctx);
         listInput(input);
-        if (Object.keys(input).some((k) => !['filter', 'includeDeleted'].includes(k)))
+        if (Object.keys(input).some((k) => !['filter', 'includeDeleted', 'asof'].includes(k)))
           fail('validation');
-        const s = new Sql(),
-          predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted);
+        const s = new Sql();
+        let predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted);
+        // Счётчик — по тому же множеству, что и страницы: иначе «всего записей»
+        // и число страниц считались бы без среза и поехали бы вместе с новыми строками.
+        if (input.asof !== undefined) predicate += ' AND ' + (await asofPredicate(input.asof, s));
         const n = Number(
           (
             await db.query(

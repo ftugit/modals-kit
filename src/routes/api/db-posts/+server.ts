@@ -71,6 +71,9 @@ async function handle({ url, request, locals }: Parameters<RequestHandler>[0]): 
       // Приключённый режим приходит и как `1`, и как `true` (значение ключа
       // состояния), и как `on` (чекбокс нативного GET) — все три означают одно.
       cursor: ['1', 'true', 'on'].includes(url.searchParams.get('cur') ?? ''),
+      // Срез «на момент»: номер страницы смещается новыми строками, поэтому
+      // выдача читается под зафиксированным краем (`?asof=<ISO>|<id>`).
+      asof: url.searchParams.get('asof') ?? undefined,
     },
     ctx,
   )
