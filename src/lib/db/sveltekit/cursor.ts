@@ -16,7 +16,7 @@ const KID = /^[A-Za-z0-9_-]{1,32}$/;
  */
 export function cursorCodecFromEnv(
   env: (key: string) => string | undefined,
-  options: { ttlSeconds?: number } = {},
+  options: { ttlSeconds?: number; maxAgeSeconds?: number } = {},
 ): CursorCodec | undefined {
   const secret = env("DB_CURSOR_SECRET");
   if (!secret) return undefined;
@@ -42,5 +42,15 @@ export function cursorCodecFromEnv(
   const ttlSeconds = options.ttlSeconds ?? Number(env("DB_CURSOR_TTL_SECONDS") ?? 1800);
   if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1)
     throw new Error("Invalid DB_CURSOR_TTL_SECONDS");
-  return createCursorCodec({ keys, activeKey, ttlSeconds });
+  // Максимальный возраст указателя (live-update §7 «б»): просроченный, но
+  // подлинный токен принимается, пока ему не больше этого срока. По умолчанию —
+  // неделя: ссылка на порцию переживает простой и продлевается каждым заходом,
+  // а потолок не даёт ей жить вечно.
+  const maxAgeSeconds =
+    options.maxAgeSeconds ?? Number(env("DB_CURSOR_MAX_AGE_SECONDS") ?? 7 * 24 * 3600);
+  if (!Number.isSafeInteger(maxAgeSeconds) || maxAgeSeconds < ttlSeconds)
+    throw new Error(
+      `DB_CURSOR_MAX_AGE_SECONDS: ожидалось целое не меньше DB_CURSOR_TTL_SECONDS (${ttlSeconds}), получено «${maxAgeSeconds}»`,
+    );
+  return createCursorCodec({ keys, activeKey, ttlSeconds, maxAgeSeconds });
 }

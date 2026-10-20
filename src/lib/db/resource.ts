@@ -453,7 +453,14 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       ctx,
       rows: freeze(items.map((x) => ({ ...x }))),
     });
-    return { items, nextCursor, prevCursor, atEdge };
+    // Ключ начала выданной порции — та же закладка, что пришла в `after`, но
+    // ПЕРЕПОДПИСАННАЯ: у неё свежие `iat`/`exp`. Это и есть скользящее
+    // продление (§7 «б»): адрес хранит ключ видимой порции, и без переподписи
+    // он оставался бы просроченным навсегда, пока человек не догрузит соседнюю
+    // порцию. Читали назад или с головы — начала в этом смысле нет, `null`.
+    const beginCursor =
+      cursor && !back && bookmarkValues ? await db.cursorCodec!.encode(scope, bookmarkValues) : null;
+    return { items, nextCursor, prevCursor, beginCursor, atEdge };
   }
   /**
    * Ключи доступа при записи. Вставка — все ключи обязательны и проходят все; изменение —

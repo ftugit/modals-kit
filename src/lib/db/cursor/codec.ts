@@ -38,20 +38,35 @@ function decode(s: string): Uint8Array<ArrayBuffer> {
   );
   return Uint8Array.from(b, (c) => c.charCodeAt(0));
 }
+/**
+ * Продление указателя (live-update §7 «б»): просроченный, но ПОДЛИННЫЙ токен
+ * принимается в пределах максимального возраста, а следующий ответ выдаёт
+ * свежий. Сам срок жизни (`exp`) при этом остаётся коротким — продлевает не
+ * кодек, а ответ (переподпись закладки, `CursorPage.beginCursor`).
+ *
+ * `maxAgeSeconds` — жёсткий потолок от момента ВЫПУСКА (`iat`): трогай токен
+ * сколько угодно, дальше него он не живёт. Не задан — равен `ttlSeconds`, то
+ * есть поведение прежнее: продления нет, срок жизни = сроку жизни.
+ */
 export function createCursorCodec(config: {
   keys: Readonly<Record<string, string>>;
   activeKey: string;
   ttlSeconds: number;
+  maxAgeSeconds?: number;
   now?: () => number;
 }): CursorCodec {
+  const maxAgeSeconds = config.maxAgeSeconds ?? config.ttlSeconds;
   if (
     !config.keys[config.activeKey] ||
     Object.values(config.keys).some((k) => encoder.encode(k).length < 32) ||
     !Number.isInteger(config.ttlSeconds) ||
-    config.ttlSeconds < 1
+    config.ttlSeconds < 1 ||
+    !Number.isSafeInteger(maxAgeSeconds) ||
+    maxAgeSeconds < config.ttlSeconds
   )
     throw new Error("Invalid cursor key/TTL configuration");
   const now = config.now ?? (() => Date.now());
+  const nowSeconds = () => Math.floor(now() / 1000);
   const key = (secret: string) =>
     crypto.subtle.importKey(
       "raw",
@@ -68,11 +83,16 @@ export function createCursorCodec(config: {
     );
   return {
     async encode(scope, values) {
+      const iat = nowSeconds();
       const body = encoder.encode(
         JSON.stringify({
           v: 1,
           kid: config.activeKey,
-          exp: Math.floor(now() / 1000) + config.ttlSeconds,
+          // `iat` — момент выпуска: от него отсчитывается максимальный возраст.
+          // Старые токены его не несут — для них возраст считается как
+          // `exp - ttl` (см. `decode`).
+          iat,
+          exp: Math.min(iat + config.ttlSeconds, iat + maxAgeSeconds),
           scope: await digest(scope),
           values,
         }),
@@ -99,10 +119,18 @@ export function createCursorCodec(config: {
           typeof p.kid !== "string" ||
           !Object.prototype.hasOwnProperty.call(config.keys, p.kid) ||
           !Number.isSafeInteger(p.exp) ||
-          p.exp <= Math.floor(now() / 1000) ||
-          !Array.isArray(p.values)
+          !Array.isArray(p.values) ||
+          (p.iat !== undefined && (!Number.isSafeInteger(p.iat) || p.iat < 0))
         )
           fail("cursor");
+        // Момент выпуска: у токенов без `iat` его даёт срок жизни — `exp - ttl`.
+        // Небольшая неточность (ttl поменяли между выпуском и чтением) безопасна:
+        // она сдвигает потолок, но подпись и `scope` проверяются как обычно.
+        const iat = p.iat === undefined ? p.exp - config.ttlSeconds : (p.iat as number);
+        const nowSec = nowSeconds();
+        // Просрочен — но пока не старше максимального возраста: принимаем
+        // (§7 «б»). Свежий ответ переподпишет закладку.
+        if (p.exp <= nowSec && iat + maxAgeSeconds <= nowSec) fail("cursor");
         if (
           !(await crypto.subtle.verify(
             "HMAC",

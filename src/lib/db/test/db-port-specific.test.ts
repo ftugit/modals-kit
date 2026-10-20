@@ -1352,8 +1352,22 @@ test("cursor: обратное направление — before/prevCursor/atEd
       assert.equal(p1.items.length, 3);
       assert.equal(p1.atEdge, true, "первая страница — у края свежих");
       assert.ok(p1.prevCursor && p1.nextCursor);
+      // Порцию выдали с головы — ключа начала у неё нет.
+      assert.equal(p1.beginCursor, null, "у первой порции нет ключа начала");
       const p2 = await api.cursor(ctx, { limit: 3, after: p1.nextCursor });
       assert.equal(p2.atEdge, false, "вторая страница не у края");
+      // Ключ начала — та же закладка, но ПЕРЕПОДПИСАННАЯ: в адрес идёт он, и
+      // срок его жизни отсчитывается от этого ответа, а не от выдачи первой
+      // страницы (иначе адрес оставался бы просроченным навсегда).
+      assert.ok(p2.beginCursor, "вторая порция называет своё начало");
+      // Проверка поведением, а не разбором тела токена: ключ начала — валидная
+      // закладка, и чтение с неё отдаёт ту же вторую порцию.
+      const viaBegin = await api.cursor(ctx, { limit: 3, after: p2.beginCursor });
+      assert.deepEqual(
+        viaBegin.items.map((x) => x.id),
+        p2.items.map((x) => x.id),
+        "ключ начала ведёт в ту же порцию",
+      );
       assert.deepEqual(
         p2.items.map((x) => x.id),
         [7, 6, 5],
@@ -1366,6 +1380,8 @@ test("cursor: обратное направление — before/prevCursor/atEd
         p1.items.map((x) => x.id).reverse().reverse(),
       );
       assert.equal(back.atEdge, true, "новее этой порции ничего нет");
+      // Назад «начала порции» в смысле адреса нет: адрес хранит ключ движения вперёд.
+      assert.equal(back.beginCursor, null, "у обратной порции ключа начала нет");
       // Стык страниц: «вперёд» от последней строки обратной страницы — снова вторая
       // страница, без повтора уже показанного и без пропуска.
       const again = await api.cursor(ctx, { limit: 3, after: back.nextCursor });
@@ -1419,6 +1435,62 @@ test("cursor: обратное направление — before/prevCursor/atEd
   } finally {
     await instance.close().catch(() => {});
   }
+});
+
+/* ── время жизни указателя (live-update, шаг 6 / §7 «б») ────────────── */
+
+/**
+ * Скользящее продление: просроченный, но ПОДЛИННЫЙ токен принимается, пока не
+ * старше максимального возраста; свежий выпуск после этого живёт заново.
+ * Часы подменены (`now`) — проверка не ждёт реального времени.
+ */
+test("cursorCodec: срок жизни и пауза между выпуском и потолком, iat в токене", async () => {
+  const { createCursorCodec } = await import("../index");
+  const keys = { test: "test-only-key-012345678901234567890123456789" };
+  let now = 1_000_000_000_000;
+  // ТТЛ 60 с, потолок 600 с: между выпуском и 600-й секундой токен «просрочен,
+  // но годен»; после — нет.
+  const codec = createCursorCodec({ keys, activeKey: "test", ttlSeconds: 60, maxAgeSeconds: 600, now: () => now });
+  const token = await codec.encode({ s: 1 }, ["a", 2]);
+
+  // Свежий — читается.
+  assert.deepEqual(await codec.decode(token, { s: 1 }), ["a", 2]);
+
+  // Прошли срок жизни (exp), но не потолок — по-прежнему читается (§7 «б»).
+  now += 120_000;
+  assert.deepEqual(await codec.decode(token, { s: 1 }), ["a", 2], "просроченный в пределах возраста принимается");
+  // Подпись и scope при этом проверяются как обычно: чужой scope — отказ.
+  await assert.rejects(
+    () => codec.decode(token, { s: 2 }),
+    (e: unknown) => (e as { kind?: string }).kind === "cursor",
+  );
+
+  // Ответ «продлевает»: закладка переподписана и живёт от момента выпуска заново…
+  const renewed = await codec.encode({ s: 1 }, ["a", 2]);
+  now += 500_000; // 620 с от первого выпуска, 500 — от второго
+  assert.deepEqual(await codec.decode(renewed, { s: 1 }), ["a", 2], "продлённый токен живёт своим сроком");
+  // …но потолок считается от выпуска: исходный токен к этому времени умер.
+  await assert.rejects(
+    () => codec.decode(token, { s: 1 }),
+    (e: unknown) => (e as { kind?: string }).kind === "cursor",
+  );
+
+  // Без `maxAgeSeconds` продления нет: срок жизни — и есть потолок (поведение
+  // слоя по умолчанию не меняется от появления поля).
+  let onlyTtl = 1_000_000_000_000;
+  const strict = createCursorCodec({ keys, activeKey: "test", ttlSeconds: 60, now: () => onlyTtl });
+  const shortLived = await strict.encode({ s: 1 }, ["a"]);
+  onlyTtl += 61_000;
+  await assert.rejects(
+    () => strict.decode(shortLived, { s: 1 }),
+    (e: unknown) => (e as { kind?: string }).kind === "cursor",
+  );
+
+  // Плохая конфигурация — отказ запуска, а не тихое «потолок меньше срока».
+  assert.throws(
+    () => createCursorCodec({ keys, activeKey: "test", ttlSeconds: 60, maxAgeSeconds: 30 }),
+    /Invalid cursor key\/TTL configuration/,
+  );
 });
 
 /* ── срез постраничной выдачи (live-update, шаг 3) ─────────────────── */

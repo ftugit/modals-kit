@@ -28,8 +28,8 @@ import { createSchemaAdmin } from './schema-admin'
 import { sharedTask } from './task-stream'
 import type { TaskState } from '#lib/task/index.js'
 import {
-  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET,
-  DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
+  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
+  DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
 
 // Настройки — из `$app/env/private` (перечень и проверки — `src/env.ts`): одна форма
@@ -132,6 +132,10 @@ const cursorCodec = (() => {
     return explainCursorConfig(() =>
       cursorCodecFromEnv((key) => ({ DB_CURSOR_SECRET, DB_CURSOR_KID, DB_CURSOR_OLD_KEYS })[key], {
         ttlSeconds: DB_CURSOR_TTL_SECONDS,
+        // Потолок возраста указателя (live-update §7 «б»). Имя читается здесь, а
+        // не из переданной функции `env`: список известных имён — `src/env.ts`,
+        // и переменная, не попавшая сюда, молча стала бы «по умолчанию».
+        maxAgeSeconds: DB_CURSOR_MAX_AGE_SECONDS,
       }),
     )
   } catch (e) {

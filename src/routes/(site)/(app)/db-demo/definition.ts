@@ -233,9 +233,10 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // указателем (`positionKeys`), а ответ сервера ставит заново.
   asof: extraField('text', (v) => typeof v === 'string' && v.length > 0 && v.length <= 128 && v.includes('|')),
   // Ключ НАЧАЛА выданной порции курсора: ответ сервера, а не ввод пользователя.
-  // Он нужен состоянию, чтобы адрес после перезагрузки нёс тот же ключ, что и
-  // до неё (см. `withPortionKeys`); в сам адрес его пишет оттуда же `after` —
-  // поэтому `beg` снимается при записи и в адресе не появляется никогда.
+  // В адрес его пишет `after` (см. `withPortionKeys`), а `beg` живёт в состоянии:
+  // так перезагрузка знает, какую порцию показывать. Без объявления здесь он не
+  // доехал бы из снапшота SSR. Значения по умолчанию у него НЕТ (см. ниже):
+  // отсутствие ключа в адресе не должно превращаться в «порция с головы».
   beg: extraField('text', (v) => typeof v === 'string' && v.length <= 4096),
 }
 
@@ -249,7 +250,6 @@ export const DEFAULT_DB_LIST_EXTRA = {
   err: 'retry' as FailureMode,
   [DB_LIST_LIVE_KEY]: false,
   asof: '',
-  beg: '',
 }
 
 export type DbListExtra = {
@@ -260,7 +260,6 @@ export type DbListExtra = {
   err: FailureMode
   live: boolean
   asof: string
-  beg: string
 }
 
 /** Значения панели настроек — из текущего extra (тот же разбор, что и на адресе). */
@@ -398,6 +397,7 @@ function withPortionKeys<T>(base: PaginatorAdapter<T>): PaginatorAdapter<T> {
     },
     persist(state) {
       const cursorOn = isCursorOn(state.extra)
+
       // Карта в браузере; снапшот после перезагрузки её ещё не наполнял —
       // тогда ключ видимой порции называет сам ответ (`beg` в состоянии).
       const known = startOf.get(state.page) ?? (typeof state.extra.beg === 'string' && state.extra.beg ? state.extra.beg : undefined)
@@ -407,9 +407,17 @@ function withPortionKeys<T>(base: PaginatorAdapter<T>): PaginatorAdapter<T> {
       const portion = known ?? (cursorOn ? '' : undefined)
       if (portion === undefined) return base.persist(state)
       const extra: Extra = { ...state.extra }
-      delete extra.beg
-      if (portion === '') delete extra[DB_LIST_POINTER_KEY]
-      else extra[DB_LIST_POINTER_KEY] = portion
+      if (portion === '') {
+        delete extra[DB_LIST_POINTER_KEY]
+        delete extra.beg
+      } else {
+        extra[DB_LIST_POINTER_KEY] = portion
+        // `beg` — тот же ключ под своим именем. Без него состояние теряло бы его
+        // первым же чтением адреса (в адресе его нет — значит «порция с головы»),
+        // и `page.after` пропадал бы следом: ссылка после перезагрузки начинала
+        // бы список заново. Пара стоит того, чтобы URL был длиннее.
+        extra.beg = portion
+      }
       // Номер страницы у курсора не значит ничего: читаемая порция названа
       // закладкой, а `?page` рядом с ней — второй ответ на тот же вопрос (и
       // сервер их смешение отвергает). В адрес идёт только ключ порции.
@@ -429,7 +437,12 @@ export function ensureDbListPaginator(): string {
       reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
       // `asof` снимается вместе с указателем: и то и другое — «где мы стоим в
       // выдаче», а не её условие; новый срез сервер отдаст ответом.
-      positionKeys: [DB_LIST_POINTER_KEY, 'asof', 'beg'],
+      //
+      // `beg` сюда НЕ входит намеренно: это ключ, которого нет в адресе (там его
+      // место занимает `after`), и пересборка окна по адресу не должна его терять.
+      // Иначе после перезагрузки первый же ответ, меняющий адрес, снимал бы `beg`
+      // из состояния — и вместе с ним из адреса пропадал `page.after`.
+      positionKeys: [DB_LIST_POINTER_KEY, 'asof'],
       adapter: withPortionKeys(
         createUrlAdapter<DbPost>({
           name: DB_LIST_NAME,

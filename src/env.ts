@@ -98,6 +98,11 @@ export const variables = defineEnvVars({
     schema: positiveInteger,
     description: 'Время жизни токена курсора, секунд. По умолчанию 1800.',
   },
+  DB_CURSOR_MAX_AGE_SECONDS: {
+    schema: positiveInteger,
+    description:
+      'Потолок возраста указателя, секунд: просроченный токен принимается, пока не старше этого срока. По умолчанию 604800 (7 дней); меньше DB_CURSOR_TTL_SECONDS — ошибка запуска.',
+  },
   DB_CURSOR_KID: {
     schema: text,
     description: 'Имя действующего секрета курсора (пишется в токен). По умолчанию v1; при смене секрета — новое имя.',

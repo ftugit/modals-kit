@@ -227,10 +227,15 @@ try {
       await cur.reload({ waitUntil: 'networkidle' })
       await cur.waitForTimeout(800)
       const afterReload = await ids.allInnerTexts()
-      const sameKey = new URL(cur.url()).searchParams.get('page.after') === url.searchParams.get('page.after')
+      // Текст ключа после перезагрузки ДРУГОЙ: ответ переподписывает закладку
+      // (скользящее продление, live-update шаг 6), и адрес получает свежий.
+      // Проверяем смысл: ключ на месте и ведёт в ту же порцию.
+      const reloadedUrl = new URL(cur.url())
       ok('курсор: перезагрузка отдаёт ту же порцию, а не следующую',
-        sameKey && afterReload.join(',') === loaded.slice(3, 6).join(','),
-        `${afterReload.length}: ${afterReload[0]?.slice(0, 8)}`)
+        reloadedUrl.searchParams.has('page.after') &&
+          reloadedUrl.searchParams.has('page.beg') &&
+          afterReload.join(',') === loaded.slice(3, 6).join(','),
+        `${afterReload.length}: ${afterReload[0]?.slice(0, 8)} ключ ${reloadedUrl.searchParams.has('page.after')}`)
 
       // Опрос новых живёт только у края: у второй порции его нет вовсе.
       // Порций нужно три: линия детекта стоит на 20% высоты контейнера, и

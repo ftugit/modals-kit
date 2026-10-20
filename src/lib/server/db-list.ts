@@ -69,7 +69,7 @@ const EXPLAIN: Record<string, string> = {
   unsupported:
     'Курсор выключен: на сервере не задан DB_CURSOR_SECRET — подписывать токены нечем. Постраничный режим и остальные операции работают как раньше.',
   cursor:
-    'Токен страницы недействителен или устарел (время жизни — DB_CURSOR_TTL_SECONDS, по умолчанию 30 минут). Начните с первой страницы.',
+    'Ссылка на эту порцию устарела: указатель продлевается сам при каждом заходе, но не живёт дольше DB_CURSOR_MAX_AGE_SECONDS (по умолчанию 7 дней). Начните с первой страницы.',
   schema_pending:
     'Модели разошлись со схемой базы — нужен перенос. Что изменится и кнопка «Выполнить» — на странице /db-demo.',
   validation: 'Параметры списка не прошли проверку. Начните с первой страницы или сбросьте фильтры.',
@@ -102,6 +102,9 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
   const input = keyset ? parseListInput(params, { cursor: true }) : parseListInput(params)
   if (keyset) {
     const page = await api.cursor(ctx, input)
+    // Ключ начала порции: переподписанный сервером (`beginCursor`), а если
+    // порция с головы — пусто. Пустой в ответ НЕ идёт (см. ниже).
+    const beg = page.beginCursor ?? ''
     return {
       items: page.items as DbPost[],
       hasNext: page.nextCursor !== null,
@@ -113,7 +116,14 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
       // Адрес хранит именно его (§4.2 плана live-update: «ключ видимой порции»),
       // и по нему же страница восстанавливается после перезагрузки; `after`
       // остаётся указателем следующей догрузки. Два разных вопроса — два ключа.
-      extra: { after: page.nextCursor ?? '', beg: query.after ?? '' },
+      // `beg` — только когда он есть: пустой ключ в ответе СНИМАЕТ значение в
+      // состоянии (правило ядра «'' = ключа нет»), а вместе с ним и `page.after`
+      // в адресе. После перезагрузки так терялся бы ключ видимой порции: первая
+      // же страница, прочитанная с головы, приносила бы `beg: ''`.
+      extra: {
+        after: page.nextCursor ?? '',
+        ...(beg ? { beg } : {}),
+      },
     }
   }
   // total — по ТОМУ ЖЕ фильтру, что и страница: иначе «всего записей» и
