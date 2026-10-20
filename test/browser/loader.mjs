@@ -231,7 +231,13 @@ async function run() {
         );
       };
 
-      await page.locator('a[data-link][href^="?page=2"]').first().click();
+      // Ссылка на страницу 2 — по тексту, а не по префиксу `href`: в адресе рядом
+      // с номером живёт ключ выдачи (`page.asof`), и его место в строке запроса
+      // не обещано (`mergeSearch` сохраняет порядок текущего адреса).
+      await page
+        .locator('a[data-link]', { hasText: /^\s*2\s*$/ })
+        .first()
+        .click();
       const span = await seen("SPAN");
       assert.equal(span.text, "2", "спиннер у страницы 2, ставшей текущей");
       assert.equal(span.busy, "true");
@@ -362,7 +368,7 @@ async function run() {
       // Клик без наведения: иначе страницу 2 заранее подгрузит prefetch (без хода) и
       // переход будет мгновенным.
       await page
-        .locator('a[data-link][href^="?page=2"]')
+        .locator('a[data-link]', { hasText: /^\s*2\s*$/ })
         .first()
         .evaluate((a) => a.click());
       let log = await settle();
