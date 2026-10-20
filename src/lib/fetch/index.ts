@@ -3,6 +3,7 @@
 // `AbortSignal.timeout` и `AbortSignal.any` (Node 20+, современные браузеры).
 
 export { createFetch, retryAfter } from './create.js'
+export { backoffDelay } from './backoff.js'
 export type { AppFetch, CreateFetchOptions, FetchClock, FetchInit, FetchWait, HostPolicy, RetryPolicy } from './create.js'
 export { FetchError, isAbortError } from './errors.js'
 export type { FetchErrorCode, FetchErrorOptions } from './errors.js'

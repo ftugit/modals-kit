@@ -192,6 +192,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
             'includeDeleted',
             'include',
             'after',
+            'before',
           ].includes(k),
       )
     )
@@ -307,7 +308,9 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       page < 1 ||
       page > db.limits.maxPage ||
       (cursor && own(input, 'page')) ||
-      (!cursor && own(input, 'after'))
+      (!cursor && own(input, 'after')) ||
+      (!cursor && own(input, 'before')) ||
+      (own(input, 'after') && own(input, 'before'))
     )
       fail('validation');
     const policy = rule(r, 'select', ctx);
@@ -326,9 +329,23 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     };
     if (cursor && !db.cursorCodec) fail('unsupported');
     const after = (input as CursorInput).after;
-    // `null` — первая страница: цикл `after = page.nextCursor` проходит типы (DB-3)
-    if (cursor && after != null) {
-      const values = await db.cursorCodec!.decode(after, scope);
+    const before = (input as CursorInput).before;
+    // Направление чтения: `after` — вперёд по порядку (старее), `before` — назад
+    // (новее). Порядок чтения переворачивается, а `keyset` берёт сравнение из того
+    // же перевёрнутого порядка — поэтому закладка остаётся одной и той же парой
+    // значений, без отдельного формата «назад».
+    const back = cursor && before != null;
+    /** Тот же порядок с обратными направлениями: «новее» = вперёд по этому. */
+    const backward = order.map(([k, d]) => [k, d === 'asc' ? 'desc' : 'asc'] as const);
+    const scanOrder = back ? backward : order;
+    const bookmark = back ? before : after;
+    // `null` — первая страница: цикл `after = page.nextCursor` проходит типы (DB-3).
+    // Закладка разбирается здесь, а в текст попадает ПОСЛЕ связей: так параметры
+    // предиката (и связей) идут подряд с начала, и проба «есть ли новее» может
+    // переиспользовать их, не пересобирая условие заново.
+    let bookmarkValues: readonly unknown[] | null = null;
+    if (cursor && bookmark != null) {
+      const values = await db.cursorCodec!.decode(bookmark, scope);
       if (values.length !== order.length) fail('cursor');
       for (let i = 0; i < values.length; i++)
         try {
@@ -336,32 +353,65 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         } catch {
           fail('cursor');
         }
-      predicate += ' AND ' + keyset(r, order, values, s);
+      bookmarkValues = values;
     }
     const inc = await includes(ctx, input.include, s);
     const selected = [...new Set([...keys, ...(cursor ? order.map(([k]) => k) : [])])];
+    // Параметры, на которые ссылается предикат БЕЗ закладки: `$1…$n`.
+    const predicateParams = s.values.slice();
+    let predicateWithBookmark = predicate;
+    if (bookmarkValues) {
+      predicateWithBookmark = predicate + ' AND ' + keyset(r, scanOrder, bookmarkValues, s);
+    }
+    /**
+     * Есть ли строка новее этой. Тот же предикат в обратном направлении и `LIMIT 1`:
+     * дешевле, чем запоминать «срез» на клиенте, и честнее, чем считать «первая
+     * страница = край» (страница могла догрузиться после появления новых строк).
+     */
+    const newerThan = async (row: Row | undefined): Promise<boolean> => {
+      if (!row) return false;
+      const probe = new Sql();
+      // Переносим параметры предиката как есть, чтобы `$1…$n` в тексте остались
+      // на месте, а параметры `keyset` получили следующие номера.
+      probe.values.push(...predicateParams);
+      const text =
+        `SELECT 1 FROM ${table(r)}${inc.joins} WHERE ${predicate} AND ` +
+        keyset(r, backward, order.map(([k]) => row[k]), probe) + ' LIMIT 1';
+      return (await db.query(withSignal(probe.statement(text), ctx))).rows.length > 0;
+    };
     const statement = withSignal(
       s.statement(
-        `SELECT ${projection(r, selected)}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicate} ORDER BY ${orderSQL(r, order)} LIMIT ${s.param(limit + (cursor ? 1 : 0))}` +
+        `SELECT ${projection(r, selected)}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicateWithBookmark} ORDER BY ${orderSQL(r, scanOrder)} LIMIT ${s.param(limit + (cursor ? 1 : 0))}` +
           (!cursor ? ' OFFSET ' + s.param((page - 1) * limit) : ''),
       ),
       ctx,
     );
     const rows = (await db.query(statement)).rows;
     let nextCursor: string | null = null;
-    if (cursor && rows.length > limit) {
-      rows.pop();
-      nextCursor = await db.cursorCodec!.encode(
-        scope,
-        order.map(([k]) => rows[rows.length - 1][k]),
-      );
+    let prevCursor: string | null = null;
+    let atEdge = true;
+    if (cursor) {
+      // Читали назад — лишняя строка пришла со стороны НОВЫХ (она дальше всех от
+      // закладки), поэтому сначала отрезаем, потом разворачиваем выдачу в обычный
+      // порядок: наружу страница всегда идёт в порядке ресурса.
+      const more = rows.length > limit;
+      if (more) rows.pop();
+      if (back) rows.reverse();
+      const bookmarkOf = (row: Row) => db.cursorCodec!.encode(scope, order.map(([k]) => row[k]));
+      // Закладка первой строки — сторона «новее»: с нею читают назад (`before`).
+      if (rows.length) prevCursor = await bookmarkOf(rows[0]!);
+      // Закладка последней — сторона «старее»: с нею читают вперёд (`after`). Для
+      // чтения назад «дальше» продолжается от последней строки страницы, а не от
+      // закладки запроса: так страницы стыкуются без повторов и пропусков.
+      if (rows.length && (more || back)) nextCursor = await bookmarkOf(rows[rows.length - 1]!);
+      atEdge = back ? !more : after == null ? true : !(await newerThan(rows[0]));
     }
     const items = rows.map((row) => output(row, [...keys, ...inc.keys]));
     await r.hooks?.afterRead?.({
       ctx,
       rows: freeze(items.map((x) => ({ ...x }))),
     });
-    return { items, nextCursor };
+    return { items, nextCursor, prevCursor, atEdge };
   }
   /**
    * Ключи доступа при записи. Вставка — все ключи обязательны и проходят все; изменение —

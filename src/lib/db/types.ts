@@ -361,10 +361,21 @@ export interface ListInput {
 export interface CursorInput extends Omit<ListInput, "page"> {
   /** Токен из `nextCursor` прошлой страницы; `null`/нет — первая страница (DB-3). */
   after?: string | null;
+  /**
+   * Токен из `prevCursor` — «строки НОВЕЕ закладки» (обратное направление).
+   * Взаимоисключающ с `after`: страница читается либо вперёд, либо назад.
+   */
+  before?: string | null;
 }
 export interface CursorPage<T> {
+  /** Строки в порядке ресурса, как бы их ни читали — вперёд или назад. */
   items: T[];
+  /** Закладка последней строки — с нею читают дальше (`after`); `null` — дальше нет. */
   nextCursor: string | null;
+  /** Закладка первой строки — сторона «новее», с нею читают назад (`before`). */
+  prevCursor: string | null;
+  /** Новее этой порции ничего нет: «окно касается края свежих данных». */
+  atEdge: boolean;
 }
 export interface ResourceApi<
   F extends Fields = Fields,

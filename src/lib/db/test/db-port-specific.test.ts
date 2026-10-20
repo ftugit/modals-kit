@@ -1293,3 +1293,130 @@ test(
     }
   },
 );
+
+/* ── курсор в обе стороны (live-update, шаг 2) ────────────────────── */
+
+/**
+ * `before`/`prevCursor`/`atEdge` — обратное направление курсора: «строки новее
+ * закладки». Проверки — ровно те случаи, где ломается наивная реализация:
+ * удалённая строка-закладка (в закладке значения, а не ссылка), одинаковое время
+ * (порядок обязан быть полным), фильтр (обратное чтение не должно его терять).
+ */
+test("cursor: обратное направление — before/prevCursor/atEdge, закладка живёт без строки", async () => {
+  // Свой PGlite, а не `withTestDb`: курсору нужен кодек закладок, а общий стенд
+  // его не ставит (`cursor` без кодека — `unsupported`, это проверено отдельно).
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { pgliteAdapter } = await import("../adapters/pglite");
+  const { applyMigrationText } = await import("../sveltekit/migrate");
+  const { createCursorCodec } = await import("../index");
+  const migration = `
+    CREATE TABLE live_row (
+      id integer PRIMARY KEY,
+      at timestamptz NOT NULL,
+      tag text NOT NULL,
+      deleted_at timestamptz
+    );
+    -- 10 строк: у 3-й и 4-й (по времени) одно и то же время — проверка связки
+    INSERT INTO live_row (id, at, tag)
+    SELECT g, timestamptz '2026-01-01 00:00:00+00' + make_interval(secs => CASE WHEN g BETWEEN 7 AND 8 THEN 7 ELSE g END), CASE WHEN g % 2 = 0 THEN 'even' ELSE 'odd' END
+    FROM generate_series(1, 10) g;
+  `;
+  const instance = new PGlite();
+  const db = createDb({
+    driver: pgliteAdapter(instance),
+    limits: conservativeLimits,
+    cursorCodec: createCursorCodec({ keys: { test: "test-only-key-012345678901234567890123456789" }, activeKey: "test", ttlSeconds: 600 }),
+  });
+  try {
+    await applyMigrationText(db, migration);
+    {
+      const live = defineResource({
+        key: "test.live.v1",
+        table: "live_row",
+        primaryKey: "id",
+        fields: {
+          id: f.integer({ read: () => true, orderable: true, filters: ["eq"] }),
+          at: f.timestamp({ read: () => true, orderable: true, filters: ["eq"] }),
+          tag: f.text({ read: () => true, orderable: true, filters: ["eq", "in"] }),
+          deleted_at: f.timestamp({ read: () => true, nullable: true }),
+        },
+        policy: { select: policy.publicRows(), insert: policy.deny(), update: policy.deny(), delete: () => true },
+        softDelete: { field: "deleted_at", value: () => new Date().toISOString(), readDeleted: ["admin"] },
+        order: [["at", "desc"], ["id", "desc"]],
+      });
+      const api = db.resource(live);
+      const ctx = { principal: { roles: [] as string[] } };
+
+      // Страницы по 3: первая — самые свежие (9, 10 — одно время, id разрешает связку).
+      const p1 = await api.cursor(ctx, { limit: 3 });
+      assert.equal(p1.items.length, 3);
+      assert.equal(p1.atEdge, true, "первая страница — у края свежих");
+      assert.ok(p1.prevCursor && p1.nextCursor);
+      const p2 = await api.cursor(ctx, { limit: 3, after: p1.nextCursor });
+      assert.equal(p2.atEdge, false, "вторая страница не у края");
+      assert.deepEqual(
+        p2.items.map((x) => x.id),
+        [7, 6, 5],
+      );
+
+      // Назад: страница «новее закладки» стыкуется с первой без повторов.
+      const back = await api.cursor(ctx, { limit: 3, before: p2.prevCursor });
+      assert.deepEqual(
+        back.items.map((x) => x.id),
+        p1.items.map((x) => x.id).reverse().reverse(),
+      );
+      assert.equal(back.atEdge, true, "новее этой порции ничего нет");
+      // Стык страниц: «вперёд» от последней строки обратной страницы — снова вторая
+      // страница, без повтора уже показанного и без пропуска.
+      const again = await api.cursor(ctx, { limit: 3, after: back.nextCursor });
+      assert.deepEqual(again.items.map((x) => x.id), p2.items.map((x) => x.id), "страницы стыкуются");
+
+      // Одинаковое время: связка (at, id) не теряет и не повторяет строки.
+      const tied = await api.cursor(ctx, { limit: 2, filter: { field: "at", op: "eq", value: "2026-01-01T00:00:07.000Z" } });
+      assert.deepEqual(
+        tied.items.map((x) => x.id),
+        [8, 7],
+        "строки с одинаковым временем идут по id",
+      );
+      const tiedBack = await api.cursor(ctx, { limit: 2, before: tied.nextCursor, filter: { field: "at", op: "eq", value: "2026-01-01T00:00:07.000Z" } });
+      assert.deepEqual(tiedBack.items.map((x) => x.id), [8, 7], "назад по тем же строкам — те же строки");
+
+      // Удалённая строка-закладка: значение остаётся в закладке, ближайшую находит индекс.
+      const victim = p2.items[0]!.id;
+      await api.delete(ctx, victim);
+      const afterDelete = await api.cursor(ctx, { limit: 3, before: p2.prevCursor });
+      assert.deepEqual(
+        afterDelete.items.map((x) => x.id).filter((id) => id !== victim),
+        p1.items.map((x) => x.id).filter((id) => id !== victim),
+        "удалённая закладка не ломает обратное чтение",
+      );
+
+      // Фильтр переживает обратное чтение: чужие строки не подмешиваются.
+      const evenFilter = { field: "tag", op: "eq", value: "even" } as const;
+      const even = await api.cursor(ctx, { limit: 2, filter: evenFilter });
+      assert.deepEqual(even.items.map((x) => x.id), [10, 8]);
+      // Назад от закладки второй строки — только то, что новее неё и подходит фильтру.
+      const evenBack = await api.cursor(ctx, { limit: 2, before: even.nextCursor, filter: evenFilter });
+      assert.deepEqual(evenBack.items.map((x) => x.id), [10], "фильтр держится и в обратную сторону");
+      assert.equal(evenBack.atEdge, true);
+      // Назад от первой строки — пусто: новее неё ничего (и это не ошибка).
+      const none = await api.cursor(ctx, { limit: 2, before: even.prevCursor, filter: evenFilter });
+      assert.deepEqual(none.items, []);
+      assert.equal(none.atEdge, true);
+      assert.equal(none.nextCursor, null);
+
+      // Обе закладки сразу — отказ: страница читается либо вперёд, либо назад.
+      await assert.rejects(
+        () => api.cursor(ctx, { after: p1.nextCursor, before: p1.prevCursor }),
+        (e) => e instanceof DbFailure && e.kind === "validation",
+      );
+      // `before` у обычного списка — тоже отказ: направление есть только у курсора.
+      await assert.rejects(
+        () => api.select(ctx, { before: p1.prevCursor } as never),
+        (e) => e instanceof DbFailure && e.kind === "validation",
+      );
+    }
+  } finally {
+    await instance.close().catch(() => {});
+  }
+});

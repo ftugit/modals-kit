@@ -1,4 +1,5 @@
 import { FetchError } from './errors.js'
+import { backoffDelay } from './backoff.js'
 
 /** Повторы: сколько попыток, какие паузы, на какие ответы. */
 export interface RetryPolicy {
@@ -304,10 +305,13 @@ export function createFetch(options: CreateFetchOptions = {}): AppFetch {
   }
 }
 
-/** Пауза перед повтором `n`: full jitter в пределах `base · 2^(n-1)`, не выше потолка. */
+/**
+ * Пауза перед повтором `n`: full jitter в пределах `base · 2^(n-1)`, не выше потолка.
+ * Формула одна на проект — `backoffDelay` (см. `backoff.ts`); здесь только выбор
+ * её чисел из политики повтора и часов.
+ */
 function backoff(retry: Required<RetryPolicy>, n: number, clock: FetchClock): number {
-  const ceiling = Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** (n - 1))
-  return Math.round(ceiling * clock.random())
+  return backoffDelay(n, retry.baseDelayMs, retry.maxDelayMs, clock.random)
 }
 
 /** `Retry-After` в мс: секунды или HTTP-дата; `null`, если заголовка нет или он кривой. */

@@ -1,3 +1,5 @@
+import { backoffDelay as backoffFormula } from '#lib/fetch/backoff.js'
+
 /**
  * Живая выдача демо: условный `GET` по адресу, который даёт список.
  *
@@ -34,10 +36,14 @@ export function isHidden(doc?: Document): boolean {
  * Задержка после `errors`-го подряд сбоя. 3 → 6 → 12 → 24 → 48 → 60 с и
  * стоит на потолке: «сервер лежит» не лечится чаще, чем раз в минуту, а
  * flood-ить его во время аварии — способ аварии помочь.
+ *
+ * Формула — общая с транспортом и формой (`backoffDelay` из `#lib/fetch`):
+ * одна копия вместо двух, разница только в числах (здесь шаг — интервал опроса,
+ * потолок — минута, джиттера нет: два опросчика на странице не соревнуются).
  */
 export function backoffDelay(errors: number, intervalMs: number): number {
   if (errors <= 0) return intervalMs
-  return Math.min(60_000, intervalMs * 2 ** Math.min(errors, 5))
+  return backoffFormula(errors + 1, intervalMs, 60_000)
 }
 
 /** `Retry-After` важнее нашей математики: сервер сказал — значит ждём столько. */

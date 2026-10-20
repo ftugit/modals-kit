@@ -240,11 +240,17 @@ export const load: PageServerLoad = async (event) => {
 Кейс разобран и проверен на реальном PostgreSQL 17 — `src/lib/db/probes/shikimori-view.probe.mjs`,
 выводы — `docs/ACL-DESIGN.md` §13.
 
-Курсорная страница: `api.cursor(ctx, input)` → `{ items, nextCursor }`; `nextCursor` —
-подписанный (`DB_CURSOR_SECRET`), версия+`kid`+TTL+scope из `principal` и `resource.key`,
-поэтому курсор не переносим между пользователями и не переживает смену политики.
-Без секрета `cursorCodecFromEnv` возвращает `undefined`, а `api.cursor` — `unsupported`
-(501): пагинатор обязан остаться на `page`.
+Курсорная страница: `api.cursor(ctx, input)` → `{ items, nextCursor, prevCursor, atEdge }`.
+Закладки подписанные (`DB_CURSOR_SECRET`), версия+`kid`+TTL+scope из `principal` и
+`resource.key`, поэтому курсор не переносим между пользователями и не переживает смену
+политики. Без секрета `cursorCodecFromEnv` возвращает `undefined`, а `api.cursor` —
+`unsupported` (501): пагинатор обязан остаться на `page`.
+
+- `items` — всегда в порядке ресурса, как бы ни читали.
+- `nextCursor` — закладка ПОСЛЕДНЕЙ строки: с нею читают дальше (`after`); `null` — дальше нет.
+- `prevCursor` — закладка ПЕРВОЙ строки (сторона «новее»): с нею читают назад (`before`).
+- `atEdge` — «новее этой порции ничего нет»: лента дошла до края свежих данных. Проверяется
+  тем же условием в обратном направлении и `LIMIT 1` (на первой странице без закладки — `true`).
 
 ```ts
 let after: string | null = null // null — первая страница
@@ -254,6 +260,10 @@ do {
   after = page.nextCursor
 } while (after)
 ```
+Назад (подгрузка новых к верху ленты) — `api.cursor(ctx, { limit: 50, before: page.prevCursor })`:
+вернутся строки НОВЕЕ закладки, снова в порядке ресурса. Закладка хранит значения
+`(порядок)`, а не ссылку на строку: удаление строки-закладки обратное чтение не ломает.
+`after` и `before` вместе — ошибка `validation`.
 
 ## 4. Запись в actions
 
@@ -1047,13 +1057,13 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 140 групп в семи файлах (на PGlite выполняются 139: одна группа требует
+Тесты слоя — 141 группа в семи файлах (на PGlite выполняются 140: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
-| `src/lib/db/test/db-port-specific.test.ts` | 38 | поведение, которого в источнике не было (курсоры, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-port-specific.test.ts` | 39 | поведение, которого в источнике не было (курсоры в обе стороны, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync.test.ts` | 33 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`, `delete({ chain })`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), сырые связанные записи и `estimate` у `raw`, ключи доступа (`access`: чтение, вставка, по id, перенос, цепочка, ошибки объявления, ссылка на себя), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
 | `src/lib/db/test/db-rules.test.ts` | 33 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи (и ключ JSON-поля `data.mail`), `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, цепочка ставит время базы); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ hard })` и `canDelete` |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
