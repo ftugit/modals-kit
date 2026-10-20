@@ -138,8 +138,13 @@
     if (cut <= 0) return null
     return { at: raw.slice(0, cut), id: raw.slice(cut + 1) }
   })
-  /** Пилюля новых — только на первой странице: номера страниц сдвинулись бы под ней. */
-  const firstPage = $derived(cursor || (listState().page ?? 1) === 1)
+  /**
+   * Окно касается края свежих данных: список «новые сверху», поэтому край — это
+   * первая загруженная порция (в постраничном режиме — страница 1). Опрос и
+   * пилюля живут только у края (§4.5 плана live-update): читателю, ушедшему в
+   * глубину, новые строки не нужны, и двигать ему выдачу нельзя.
+   */
+  const atEdge = $derived((listState().page ?? 1) === 1)
   let mark = $state<string | null | undefined>(undefined)
   let markId: string | null = null
   let waiting = $state<DbPost[]>([])
@@ -207,7 +212,7 @@
   // Зависимость — только «включён ли опрос»: `extra` пересобирается на каждое изменение
   // состояния списка (загрузка, ход загрузки, вставка строк), и эффект на нём сбрасывал
   // бы отметку посреди опроса.
-  const liveOn = $derived(!!extra.live)
+  const liveOn = $derived(!!extra.live && atEdge)
   $effect(() => {
     if (liveOn) {
       live.start()
@@ -283,7 +288,7 @@
   mode={cursor ? 'accumulate' : 'single'}
   topTrigger="off"
   bottomTrigger={cursor ? 'manual' : 'off'}
-  class="space-y-3"
+  class="max-h-[70vh] space-y-3 overflow-y-auto pr-1"
   ariaLabel="Список записей демо"
 >
   {#snippet toolbar()}
@@ -309,12 +314,12 @@
     </PaginatorSettings>
   {/snippet}
 
-  {#if extra.live}
+  {#if extra.live && atEdge}
     <!-- Состояние опроса видно текстом: «тихий» live-режим неотличим от сломанного,
          а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
     <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
       <span>опрос новых: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
-      {#if unseen.length && (firstPage || cursor)}
+      {#if unseen.length && atEdge}
         <Button variant="outline" size="xs" data-testid="live-pill" onclick={showWaiting}>{freshLabel(unseen.length)}</Button>
       {/if}
     </p>

@@ -80,7 +80,19 @@ try {
   await page.waitForLoadState('networkidle')
   const spa = await page.evaluate(() => window.__dbDemoAlive === 1)
   ok('переход по ссылке шапки — клиентская навигация', spa)
-  const after = (await notice.count()) ? await notice.textContent() : null
+  // Уведомление живёт до первого рендера после навигации. Ждём именно «пусто»:
+  // «нет элемента» и «элемент без текста» — один и тот же ответ.
+  const after = await cur_pollText(page, '[data-testid="notice"]')
+
+  /** Текст элемента после навигации: `null`, если он исчез. */
+  async function cur_pollText(page_, selector) {
+    for (let i = 0; i < 25; i++) {
+      const text = await page_.locator(selector).textContent().catch(() => null)
+      if (!text) return null
+      await page_.waitForTimeout(200)
+    }
+    return (await page_.locator(selector).textContent().catch(() => null)) ?? null
+  }
   ok('после клиентской навигации уведомление снято (form обнулён)', after === null, String(after))
   ok('без ошибок страницы', problems.length === 0, problems.join(' | '))
 
@@ -174,6 +186,70 @@ try {
   await nojs.close()
   }
   await curPage.close()
+
+  // 3a. Курсор: в адресе — ключ ВИДИМОЙ порции (live-update, шаг 4). Догрузка
+  //     вторая порция не делает видимой; ключ появляется, когда читатель до неё
+  //     долистал, а перезагрузка возвращает ровно эту порцию, а не следующую.
+  {
+    const cur = await browser.newPage({ viewport: { width: 900, height: 500 } })
+    const curSliceProblems = []
+    cur.on('pageerror', (e) => curSliceProblems.push(`pageerror: ${e.message.split('\n')[0]}`))
+    await cur.goto(`${BASE}?page.cur=1&page.size=3`, { waitUntil: 'networkidle' })
+    const disabled = await cur.getByText(/Курсор выключен/).count()
+    if (disabled) {
+      console.log('  SKIP курсор: на сервере не задан DB_CURSOR_SECRET')
+    } else {
+      const ids = cur.locator('[data-testid="rows"] [data-testid="row-id"]')
+      const first = await ids.allInnerTexts()
+      ok('курсор: первая порция открывается без ключа в адресе',
+        first.length === 3 && !new URL(cur.url()).searchParams.has('page.after'), cur.url())
+
+      for (let i = 0; i < 2; i++) {
+        await cur.locator('[data-testid="cursor-next"]').click()
+        await cur.waitForFunction((n) => document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]').length > n,
+          first.length + i * 3, { timeout: 15_000 }).catch(() => {})
+      }
+      const loaded = await ids.allInnerTexts()
+      ok('курсор: вторая порция догружена, окно не сдвинулось',
+        loaded.length === 9 && loaded.slice(0, 3).join(',') === first.join(','), String(loaded.length))
+
+      // Видимая порция становится второй — ключ её начала уезжает в адрес,
+      // номер страницы при этом не пишется: у курсора его нет.
+      await cur.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: 600, behavior: 'instant' }))
+      await cur.waitForFunction(() => new URL(location.href).searchParams.has('page.after'), undefined, { timeout: 10_000 })
+        .catch(() => {})
+      const url = new URL(cur.url())
+      ok('курсор: ключ видимой порции в адресе, номера страницы нет',
+        url.searchParams.has('page.after') && !url.searchParams.has('page'), url.search.slice(0, 60))
+
+      // Перезагрузка — «дай порцию от этого ключа»: ровно те строки, что читатель
+      // видел в начале второй порции, а не следующие за ними.
+      await cur.reload({ waitUntil: 'networkidle' })
+      await cur.waitForTimeout(800)
+      const afterReload = await ids.allInnerTexts()
+      const sameKey = new URL(cur.url()).searchParams.get('page.after') === url.searchParams.get('page.after')
+      ok('курсор: перезагрузка отдаёт ту же порцию, а не следующую',
+        sameKey && afterReload.join(',') === loaded.slice(3, 6).join(','),
+        `${afterReload.length}: ${afterReload[0]?.slice(0, 8)}`)
+
+      // Опрос новых живёт только у края: у второй порции его нет вовсе.
+      // Порций нужно три: линия детекта стоит на 20% высоты контейнера, и
+      // контента двух порций не хватает, чтобы вторая перешагнула её.
+      await cur.goto(`${BASE}?page.cur=1&page.size=3&page.live=1`, { waitUntil: 'networkidle' })
+      for (let i = 0; i < 2; i++) {
+        await cur.locator('[data-testid="cursor-next"]').click()
+        await cur.waitForFunction((n) => document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]').length > n,
+          3 + i * 3, { timeout: 15_000 }).catch(() => {})
+      }
+      await cur.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: h.scrollHeight, behavior: 'instant' }))
+      await cur.waitForTimeout(1500)
+      ok('опрос: у края включён, на второй порции выключен',
+        (await cur.locator('[data-testid="live-state"]').count()) === 0,
+        await cur.locator('[data-testid="live-state"]').innerText().catch(() => 'нет'))
+    }
+    ok('курсор: без ошибок страницы', curSliceProblems.length === 0, curSliceProblems.join(' | '))
+    await cur.close()
+  }
 
   // 3. Срез постраничной выдачи (live-update, шаг 3): новая строка не сдвигает
   //    открытую страницу, а на первой странице о ней говорит пилюля опроса;

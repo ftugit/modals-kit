@@ -40,6 +40,7 @@ import {
   type ExtraSearchValidator,
   type ExtraValue,
   type PageResponse,
+  type PaginatorAdapter,
   type SourceDecorator,
   type SourceInput,
   type SourceLook,
@@ -218,6 +219,11 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // пользователя, а закреплённый край выдачи — ядро сбрасывает его вместе с
   // указателем (`positionKeys`), а ответ сервера ставит заново.
   asof: extraField('text', (v) => typeof v === 'string' && v.length > 0 && v.length <= 128 && v.includes('|')),
+  // Ключ НАЧАЛА выданной порции курсора: ответ сервера, а не ввод пользователя.
+  // Он нужен состоянию, чтобы адрес после перезагрузки нёс тот же ключ, что и
+  // до неё (см. `withPortionKeys`); в сам адрес его пишет оттуда же `after` —
+  // поэтому `beg` снимается при записи и в адресе не появляется никогда.
+  beg: extraField('text', (v) => typeof v === 'string' && v.length <= 4096),
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
@@ -230,6 +236,7 @@ export const DEFAULT_DB_LIST_EXTRA = {
   err: 'retry' as FailureMode,
   [DB_LIST_LIVE_KEY]: false,
   asof: '',
+  beg: '',
 }
 
 export type DbListExtra = {
@@ -240,6 +247,7 @@ export type DbListExtra = {
   err: FailureMode
   live: boolean
   asof: string
+  beg: string
 }
 
 /** Значения панели настроек — из текущего extra (тот же разбор, что и на адресе). */
@@ -344,6 +352,59 @@ export function withDbCursor<T>(): SourceDecorator<T> {
  */
 export const dbPostsCursorSource = dbPostsSource.with(withDbCursor<DbPost>())
 
+/**
+ * Закладка НАЧАЛА каждой порции курсора, как её видит читатель.
+ *
+ * В состоянии пагинатора `extra.after` — указатель следующей догрузки (закладка
+ * конца последней загруженной порции). В АДРЕСЕ по канону (§4.2 плана
+ * live-update) лежит другое: закладка начала той порции, которую человек читает.
+ * Перезагрузка тогда просит именно её, а не следующую, и прочитанное не теряется.
+ *
+ * Карта живёт в замыкании адаптера (браузер) и восстанавливается по факту
+ * загрузок: на входе `loadPage` известен ключ, с которым запросили порцию, а
+ * ответ несёт ключ следующей. Ядро о подмене не знает и не должно знать: для
+ * него `after` остаётся указателем, а адрес — чужое хранилище со своим форматом.
+ */
+function withPortionKeys<T>(base: PaginatorAdapter<T>): PaginatorAdapter<T> {
+  /** `page → ключ начала`; `''` — порция с самого начала выдачи. */
+  const startOf = new Map<number, string>()
+  const keyOf = (extra: Extra | undefined): string =>
+    typeof extra?.[DB_LIST_POINTER_KEY] === 'string' ? (extra[DB_LIST_POINTER_KEY] as string) : ''
+  return {
+    ...base,
+    async loadPage(req) {
+      const res = await base.loadPage(req)
+      // Ключ начала порции называет ОТВЕТ (`beg`): на первой загрузке его не
+      // спрашивали, а сервер уже разрешил ключ из адреса в конкретную порцию.
+      const beg = res.extra?.beg
+      startOf.set(req.page, typeof beg === 'string' ? beg : keyOf(req.extra))
+      const next = res.extra?.[DB_LIST_POINTER_KEY]
+      if (typeof next === 'string' && next) startOf.set(req.page + 1, next)
+      else startOf.delete(req.page + 1)
+      return res
+    },
+    persist(state) {
+      const cursorOn = isCursorOn(state.extra)
+      // Карта в браузере; снапшот после перезагрузки её ещё не наполнял —
+      // тогда ключ видимой порции называет сам ответ (`beg` в состоянии).
+      const known = startOf.get(state.page) ?? (typeof state.extra.beg === 'string' && state.extra.beg ? state.extra.beg : undefined)
+      // В курсорном режиме «карты ещё нет» значит «читаем с начала»: указатель
+      // следующей догрузки в адрес не попадает — иначе перезагрузка просила бы
+      // порцию, которую человек ещё не открывал (находка 2 §1).
+      const portion = known ?? (cursorOn ? '' : undefined)
+      if (portion === undefined) return base.persist(state)
+      const extra: Extra = { ...state.extra }
+      delete extra.beg
+      if (portion === '') delete extra[DB_LIST_POINTER_KEY]
+      else extra[DB_LIST_POINTER_KEY] = portion
+      // Номер страницы у курсора не значит ничего: читаемая порция названа
+      // закладкой, а `?page` рядом с ней — второй ответ на тот же вопрос (и
+      // сервер их смешение отвергает). В адрес идёт только ключ порции.
+      return base.persist({ ...state, page: cursorOn ? 1 : state.page, extra })
+    },
+  }
+}
+
 /** Регистрация идемпотентна: при HMR модуль выполняется повторно. */
 export function ensureDbListPaginator(): string {
   if (!hasPaginator(DB_LIST_NAME)) {
@@ -355,18 +416,20 @@ export function ensureDbListPaginator(): string {
       reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
       // `asof` снимается вместе с указателем: и то и другое — «где мы стоим в
       // выдаче», а не её условие; новый срез сервер отдаст ответом.
-      positionKeys: [DB_LIST_POINTER_KEY, 'asof'],
-      adapter: createUrlAdapter<DbPost>({
-        name: DB_LIST_NAME,
-        source: dbPostsCursorSource,
-        pageSize: DB_LIST_PAGE_SIZE,
-        pageSizes: DB_LIST_PAGE_SIZES,
-        // append разрешён всегда: в курсорном режиме список накапливается, а в
-        // постраничном пагинатор сам делает REPLACE.
-        append: true,
-        extraSearch: DB_LIST_EXTRA_SEARCH,
-        extraDefaults: DEFAULT_DB_LIST_EXTRA,
-      }),
+      positionKeys: [DB_LIST_POINTER_KEY, 'asof', 'beg'],
+      adapter: withPortionKeys(
+        createUrlAdapter<DbPost>({
+          name: DB_LIST_NAME,
+          source: dbPostsCursorSource,
+          pageSize: DB_LIST_PAGE_SIZE,
+          pageSizes: DB_LIST_PAGE_SIZES,
+          // append разрешён всегда: в курсорном режиме список накапливается, а в
+          // постраничном пагинатор сам делает REPLACE.
+          append: true,
+          extraSearch: DB_LIST_EXTRA_SEARCH,
+          extraDefaults: DEFAULT_DB_LIST_EXTRA,
+        }),
+      ),
     })
   }
   return DB_LIST_NAME
