@@ -7,6 +7,8 @@
  */
 import { describe, expect, test } from 'vitest'
 import { memoryStore } from '#lib/cache/index.js'
+import { getEncoder } from '#lib/image/index.js'
+import { ensureWasm } from '#lib/image/test-wasm.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
   activeBlocks, cancelDelete, fullBlock, issueChallenge, listSessions, login, logout,
@@ -389,7 +391,19 @@ describe('профиль', () => {
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'я' })).code).toBe('profile.nickname-forbidden')
     expect(fact_(await updateProfile(ports, out.access, { avatarUrl: 'data:text/html;base64,PGI+' })).code).toBe('profile.avatar-format')
     expect(fact_(await updateProfile(ports, out.access, { avatarUrl: `data:image/jpeg;base64,${'A'.repeat(40_000)}` })).code).toBe('profile.avatar-size')
-    const jpeg = `data:image/jpeg;base64,${'A'.repeat(120)}`
+    // валидный base64, но не картинка внутри: сервер проверяет СОДЕРЖИМОЕ (probe)
+    expect(fact_(await updateProfile(ports, out.access, { avatarUrl: `data:image/jpeg;base64,${'A'.repeat(120)}` })).code).toBe('profile.avatar-format')
+    // настоящий JPEG 200×200 (ровно продукт клиентского конвейера) — принимается
+    await ensureWasm()
+    const frameData = new Uint8ClampedArray(200 * 200 * 4)
+    for (let i = 0; i < frameData.length; i += 4) {
+      frameData[i] = 90
+      frameData[i + 1] = 140
+      frameData[i + 2] = 200
+      frameData[i + 3] = 255
+    }
+    const blob = await getEncoder('image/jpeg').encode({ width: 200, height: 200, data: frameData }, { quality: 0.8 })
+    const jpeg = `data:image/jpeg;base64,${Buffer.from(await blob.arrayBuffer()).toString('base64')}`
     ok_(await updateProfile(ports, out.access, { avatarUrl: jpeg }))
     expect(ok_(await profile(ports, out.access))?.avatarUrl).toBe(jpeg)
     // снять аватар

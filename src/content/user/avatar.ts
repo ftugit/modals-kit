@@ -1,20 +1,25 @@
 /**
- * Аватарный конвейер — ТОЛЬКО браузер (canvas, createImageBitmap).
+ * Аватарный конвейер — подготовка в браузере на lib/image
+ * (browser-image-pipeline): файл → квадрат edge×edge → JPEG ≤ maxBytes →
+ * dataURL в скрытое поле формы.
  *
- * Защита от «не картинки»: magic bytes по белому списку (опция конфига) →
- * реальное декодирование `createImageBitmap` (переименованный zip не декодируется;
- * ориентация EXIF — `from-image`) → перекодировка в JPEG (посторонняя начинка
- * структурно не выживает). Дальше — размер: меньшая сторона дотягивается до
- * `edge` (растяжение, если исходник меньше), большая режется по центру до
- * `edge` → квадрат edge×edge → бинарный поиск качества (7 проб, берём
- * наивысшее качество, что влезает в `maxBytes`; приём browser-image-compression
- * и gkzlabs/image-compression). Энкодер: базово compressorjs (нативный canvas,
- * ~12 КиБ gzip); «экзотика» mozjpeg (@jsquash/jpeg, WASM) — ленивый импорт
- * отдельным чанком, грузится только при первом использовании.
+ * Валидация входа — по СОДЕРЖИМОМУ, не по имени/типу файла:
+ * `probeImageHeader` разбирает заголовки (формат, размеры) без декодирования;
+ * формат сверяется с белым списком конфига, дальше lib/image реально
+ * декодирует (переименованный zip не декодируется; EXIF-ориентация —
+ * `from-image`) и ПЕРЕКОДИРУЕТ в JPEG — посторонняя начинка структурно не
+ * выживает. Квадрат — `frame({fit:'cover'})`: меньшая сторона дотянута до
+ * `edge`, большая обрезана по центру (прежняя семантика drawSquare). Вес —
+ * предикат `fit`: наивысшее качество из сетки, чей JPEG влезает в
+ * `maxBytes` (байты картинки — та же мера, что у серверного `checkAvatar`).
  *
  * Пределы (`edge`, `maxBytes`, форматы) — из конфига модуля: их отдаёт load
- * страницы, здесь они аргументы, не константы.
+ * страницы, здесь они аргументы, не константы. Ядро lib/image грузится
+ * лениво (динамический импорт при первом выборе файла) — как раньше
+ * грузились compressorjs/mozjpeg чанками.
  */
+import { probeImageHeader } from '#lib/image/probe.js'
+import type { Decoder } from '#lib/image/index.js'
 
 /** Пределы конвейера (из конфига модуля, прилетают в данных страницы). */
 export type AvatarLimits = {
@@ -23,125 +28,87 @@ export type AvatarLimits = {
   formats: readonly string[]
 }
 
-/** Magic bytes: формат → первые байты файла. */
-const MAGIC: Record<string, readonly number[]> = {
-  jpeg: [0xff, 0xd8, 0xff],
-  png: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
-  webp: [0x52, 0x49, 0x46, 0x46],
+/** Короткие имена форматов конфига → MIME (probe говорит MIME-типами). */
+const MIME_BY_NAME: Record<string, string> = {
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
 }
 
 /** Итог: строка `data:image/jpeg;base64,…` или причина отказа. */
 export type AvatarOutcome =
-  | { ok: true; dataUrl: string; bytes: number; quality: number; encoder: 'canvas' | 'mozjpeg' }
+  | { ok: true; dataUrl: string; bytes: number; quality: number; encoder: 'mozjpeg' }
   | { ok: false; code: 'profile.avatar-format' | 'profile.avatar-size' }
 
-type Encoder = (bitmap: ImageBitmap, quality: number) => Promise<Blob>
-
-/** Canvas-энкодер (компрессор): рендер bitmap → JPEG через compressorjs. */
-async function canvasEncode(bitmap: ImageBitmap, quality: number, edge: number): Promise<Blob> {
-  const { default: Compressor } = await import('compressorjs')
-  const canvas = document.createElement('canvas')
-  canvas.width = edge
-  canvas.height = edge
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-  drawSquare(bitmap, edge, ctx)
-  const source = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob пуст'))), 'image/png'),
-  )
-  return new Promise<Blob>((resolve, reject) => {
-    new Compressor(source, {
-      quality,
-      mimeType: 'image/jpeg',
-      convertSize: 0, // jpeg всегда: конвертация не по порогу размера
-      success: resolve,
-      error: reject,
-    })
-  })
+/** Необязательные шлюзы: отмена и декодер (вне браузера — тесты/сервер). */
+export type PrepareAvatarOptions = {
+  signal?: AbortSignal
+  decoder?: Decoder
 }
 
-/** Mozjpeg-энкодер (WASM, ленивый чанк): тот же кадр, энкодер Squoosh. */
-async function mozjpegEncode(bitmap: ImageBitmap, quality: number, edge: number): Promise<Blob> {
-  const jpeg = await import('@jsquash/jpeg/encode.js')
-  await jpeg.init()
-  const canvas = document.createElement('canvas')
-  canvas.width = edge
-  canvas.height = edge
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-  drawSquare(bitmap, edge, ctx)
-  const data = ctx.getImageData(0, 0, edge, edge)
-  const buffer = (await jpeg.default(data, { quality: Math.round(quality * 100) })) as ArrayBuffer
-  return new Blob([buffer], { type: 'image/jpeg' })
-}
+/** Шапка для probe: SOF/IHDR/VP8 обычно в первых килобайтах; мегабайт — с запасом на EXIF. */
+const PROBE_HEAD_BYTES = 1_048_576
 
-/** Квадрат edge×edge: меньшая сторона дотянута, большая обрезана по центру. */
-export function drawSquare(bitmap: ImageBitmap, edge: number, ctx: CanvasRenderingContext2D): void {
-  const scale = Math.max(edge / bitmap.width, edge / bitmap.height)
-  const w = bitmap.width * scale
-  const h = bitmap.height * scale
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(bitmap, (edge - w) / 2, (edge - h) / 2, w, h)
-}
+/** Потолок декодируемого исходника: защита от «бомб» (64 Мп ≈ 256 МБ RGBA). */
+const MAX_SOURCE_PIXELS = 64_000_000
 
 /**
  * Полный конвейер: файл → dataURL ≤ maxBytes. Отказ — доменный код, понятный
  * инструкции ошибок (`profile.avatar-format`, `profile.avatar-size`).
  */
-export async function prepareAvatar(file: File, limits: AvatarLimits, useMozjpeg = false): Promise<AvatarOutcome> {
-  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer())
-  const allowed = limits.formats.filter((f) => MAGIC[f] !== undefined)
-  const magicOk = allowed.some((f) => {
-    const sig = MAGIC[f]
-    return sig.every((byte, i) => head[i] === byte)
-  })
-  if (!magicOk) return { ok: false, code: 'profile.avatar-format' }
+export async function prepareAvatar(
+  file: File,
+  limits: AvatarLimits,
+  opts: PrepareAvatarOptions = {},
+): Promise<AvatarOutcome> {
+  // 1. Формат и размеры — по содержимому (probe), белый список — из конфига.
+  const head = new Uint8Array(await file.slice(0, PROBE_HEAD_BYTES).arrayBuffer())
+  const facts = probeImageHeader(head)
+  const allowed = new Set(limits.formats.map((f) => MIME_BY_NAME[f]).filter(Boolean))
+  if (!facts || !allowed.has(facts.format)) return { ok: false, code: 'profile.avatar-format' }
+  if (facts.width * facts.height > MAX_SOURCE_PIXELS) return { ok: false, code: 'profile.avatar-size' }
 
-  let bitmap: ImageBitmap
+  // 2. Декод → cover-квадрат → fit по весу готового JPEG.
+  const { image, EnvironmentError, ResourceLimitError } = await import('#lib/image/index.js')
+  let hit
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-  } catch {
+    hit = await image(
+      file,
+      async (p) => {
+        await p.frame({ width: limits.edge, height: limits.edge, fit: 'cover', method: 'lanczos3' })
+        return p.fit(
+          { formats: ['image/jpeg'], quality: [0.3, 0.95] },
+          (c) => c.size <= limits.maxBytes,
+          { deadlineMs: 4_500, onBudgetExhausted: 'return-null' },
+        )
+      },
+      { signal: opts.signal, decoder: opts.decoder, maxPixels: MAX_SOURCE_PIXELS },
+    )
+  } catch (error) {
+    // Отмена и «нет браузера» — не вина файла: пробрасываем как есть.
+    if (error instanceof EnvironmentError) throw error
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof ResourceLimitError) return { ok: false, code: 'profile.avatar-size' }
+    // Декодер/кодек не взяли содержимое — для пользователя это «не картинка».
     return { ok: false, code: 'profile.avatar-format' }
   }
-  try {
-    const encode: Encoder = useMozjpeg
-      ? (b, q) => mozjpegEncode(b, q, limits.edge)
-      : (b, q) => canvasEncode(b, q, limits.edge)
-    // малый кадр может влезть даже на максимальном качестве — пробуем сверху
-    const probe = await encode(bitmap, 0.95)
-    if (probe.size <= limits.maxBytes) {
-      return { ok: true, dataUrl: await toDataUrl(probe), bytes: probe.size, quality: 0.95, encoder: useMozjpeg ? 'mozjpeg' : 'canvas' }
-    }
-    let lo = 0.3
-    let hi = 0.94
-    let best: Blob | undefined
-    for (let i = 0; i < 7; i += 1) {
-      const mid = (lo + hi) / 2
-      const blob = await encode(bitmap, mid)
-      if (blob.size <= limits.maxBytes) {
-        best = blob
-        lo = mid
-      } else {
-        hi = mid
-      }
-    }
-    if (!best) return { ok: false, code: 'profile.avatar-size' }
-    return {
-      ok: true,
-      dataUrl: await toDataUrl(best),
-      bytes: best.size,
-      quality: lo,
-      encoder: useMozjpeg ? 'mozjpeg' : 'canvas',
-    }
-  } finally {
-    bitmap.close()
+  if (!hit) return { ok: false, code: 'profile.avatar-size' }
+  return {
+    ok: true,
+    dataUrl: await toDataUrl(hit.blob),
+    bytes: hit.blob.size,
+    quality: hit.params.quality,
+    encoder: 'mozjpeg',
   }
 }
 
+/** Blob → dataURL без FileReader (btoa чанками; работает и в Node для тестов). */
 async function toDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(new Error('чтение блоба не удалось'))
-    reader.readAsDataURL(blob)
-  })
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return `data:${blob.type};base64,${btoa(binary)}`
 }

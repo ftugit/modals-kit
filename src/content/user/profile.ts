@@ -3,6 +3,7 @@
  * аватара). Отдельно от `auth.ts` — у auth профильных функций нет (чек-лист
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
+import { probeImageHeader } from '#lib/image/probe.js'
 import { fail, guard, ok, type UserResult } from './auth.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts } from './ports.js'
@@ -72,18 +73,37 @@ export async function updateProfile(
   return ok(row as ProfileView)
 }
 
-/** Доменная проверка аватара: белый список форматов и предел веса из конфига. */
+/**
+ * Доменная проверка аватара: белый список форматов, предел веса и СОДЕРЖИМОЕ
+ * из конфига. Порядок дешёвый→честный: вид dataURL → вес по длине base64 →
+ * разбор заголовков (`probeImageHeader`, без декодирования): реальный формат
+ * обязан совпасть с заявленным, картинка — быть квадратом не больше
+ * `avatarEdge` (ровно то, что готовит клиентский конвейер `avatar.ts`).
+ * Заголовков достаточно: вес и размеры уже ограничены, а `<img src=data:…>`
+ * битый поток просто не покажет.
+ */
 async function checkAvatar(ports: AuthPorts, value: string): Promise<AuthFact | undefined> {
   const formats = await ports.config.get('avatarFormats')
   const maxBytes = await ports.config.get('avatarMaxBytes')
+  const edge = await ports.config.get('avatarEdge')
   const names = formats.join('|')
-  const pattern = new RegExp(`^data:image/(?:${names});base64,[A-Za-z0-9+/]+={0,2}$`)
-  if (!pattern.test(value)) return { code: 'profile.avatar-format' }
+  const match = new RegExp(`^data:image/(${names});base64,[A-Za-z0-9+/]+={0,2}$`).exec(value)
+  if (!match) return { code: 'profile.avatar-format' }
   // вес считаем от содержимого (после запятой): клиент сжимает БАЙТЫ КАРТИНКИ,
   // а префикс `data:image/jpeg;base64,` — ~30 Б, из-за них «впритык» сжатое
   // отбраковывалось (ход 261, репорт владельца «не сохранялось с нескольких раз»)
   const base64 = value.slice(value.indexOf(',') + 1)
   const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
   if (bytes > maxBytes) return { code: 'profile.avatar-size', args: { max: maxBytes } }
+  let content: Uint8Array
+  try {
+    content = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  } catch {
+    return { code: 'profile.avatar-format' } // base64 невалидной длины — регулярка её не ловит
+  }
+  const facts = probeImageHeader(content)
+  if (!facts || facts.format !== `image/${match[1]}` || facts.width !== facts.height)
+    return { code: 'profile.avatar-format' }
+  if (facts.width > edge) return { code: 'profile.avatar-size', args: { max: maxBytes } }
   return undefined
 }

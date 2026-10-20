@@ -80,9 +80,20 @@ export const auth = defineResource({
  */
 const NICKNAME = s.text({ min: 2, max: 32 })
 const AVATAR_URL = s.custom((value) => {
-  if (value === null || value === undefined) return // пусто — колонка nullable
-  if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return value
-  return 'profile.avatar_url: ожидается адрес http(s)://…'
+  // контракт s.custom: строка = текст ошибки, успех — не-строка (true)
+  if (value === null || value === undefined) return true // пусто — колонка nullable
+  if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return true
+  // dataURL готовит клиентский конвейер (`avatar.ts` на lib/image); схему
+  // интересует только вид строки — содержимое (реальный формат по заголовкам,
+  // вес, квадрат ≤ edge) проверяет `checkAvatar` в profile.ts ДО записи.
+  // Потолок длины — последний рубеж против мегабайтов в text-колонке.
+  if (
+    typeof value === 'string' &&
+    value.length <= 1_500_000 &&
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+  )
+    return true
+  return 'profile.avatar_url: ожидается адрес http(s)://… или data:image/…;base64'
 })
 
 export const profile = defineResource({
