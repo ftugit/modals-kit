@@ -23,9 +23,10 @@ access зеркалится в RAM-vault браузера, сессии/акка
 | `config.ts` | настройки модуля поверх `#lib/cache`: TTL/поведение — опции приложения; `deleteGraceDays` (дефолт 7) |
 | `error.ts` | доменные факты `auth.*`/`profile.*` + `toHttpStatus` (`auth.disabled` → 503) |
 | `gateway.ts` | адаптеры портов на `db.resource(user_*)` (SYSTEM-контекст: роли `server`/`admin` — арбитр в api); `AUTH_ENABLED`, seal/unseal, фасад `auth(event)` для экшена, `readVault`/`vaultPayloadOf` |
-| `forms.ts` | описание формы входа (шаги одной формы), `authEnvelope`/`AUTH_FORM_ID`/`AUTH_FORM_REV` |
+| `forms.ts` | ДВЕ формы: `authForm` (срезы входа/создания/восстановления, ревизия 5) и `profileForm` (никнейм+аватар, свой обработчик); приём на роуте различает по конверту. `authEnvelope`/`AUTH_FORM_ID`/`PROFILE_FORM_ID` |
 | `vault.ts` / `vault.svelte.ts` | RAM-vault access (куки HttpOnly клиент не читает) + продление через `kitActionTransport` |
-| `ui/AuthWidget.svelte` | виджет входа: пять шагов, подпись nonce, аватарный конвейер; баннер «вход выключен» |
+| `ui/AuthWidget.svelte` | виджет входа: хост шагов (`auth`/`blocked`/`restrictions`/`profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` на шаге `auth` (срезы entry/register/restore); подпись nonce; баннер «вход выключен» |
+| `ui/ProfileForm.svelte` | шаг профиля: своя форма и привязка, аватарный конвейер (dataURL в скрытое поле; перехват поля — этап B+R2); «Отмена» — ссылка, не отправка |
 | `ui/MenuModal.svelte` | меню пользователя (выход, устройства, удаление) |
 | `index.ts` | единый экспорт модуля |
 
