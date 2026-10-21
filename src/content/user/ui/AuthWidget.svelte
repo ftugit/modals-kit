@@ -25,7 +25,7 @@
   import { forms } from '#lib/components/form/forms.config.js'
   import Field from '#lib/components/form/Field.svelte'
   import CopyField from '#lib/components/form/CopyField.svelte'
-  import { Button, FileInput, Input } from '#lib/components/ui/index.js'
+  import { Button, FileInput } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
@@ -103,6 +103,11 @@
     transport,
     continuation: untrack(() => actionForm?.result ?? null),
   })
+
+  // nonce — поле ОПИСАНИЯ (hidden): значение живёт в состоянии формы и
+  // рисуется HiddenField ниже; локальный nonce — источник для подписи в
+  // транспорте, в поле его зеркалит mirrorToField (как seed).
+  mirrorToField(bound, 'nonce', () => nonce)
 
   /* ── шаг: универсальный хост (lib/components/steps), состояние виджета ── */
   // Решение владельца (ход 261, ревизия): step — состояние ВИДЖЕТА, адрес —
@@ -227,6 +232,9 @@
   let avatarUrl = $state<string | null>(null)
   let avatarBusy = $state(false)
   let avatarError = $state<string | null>(null)
+  // результат конвейера — значение поля avatar из описания (hidden):
+  // зеркало кладёт его в состояние формы, HiddenField рисует сам носитель
+  mirrorToField(bound, 'avatar', () => avatarUrl ?? '')
 
   async function onFileChange(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement
@@ -275,8 +283,11 @@
     <p role="alert" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{avatarError}</p>
   {/if}
 
-  <!-- скрытый nonce живёт здесь: форму покидает вместе с конвертом -->
-  <Input type="hidden" name="nonce" value={nonce} />
+  <!-- скрытые поля описания рисует сама lib/form (HiddenField): nonce —
+       значение из состояния (зеркало выше); подпись значения в состоянии
+       не имеет — её при отправке ставит prepare транспорта -->
+  <Field of={bound.f.nonce} />
+  <Field of={bound.f.signature} />
 
   {#if step === 'entry' || step === 'register'}
     <!-- ссылка шага справа: вход ↔ создание (ТЗ). Адрес в href — fallback без JS
@@ -362,47 +373,34 @@
       </Button>
     </div>
   {:else if step === 'profile'}
-    {@const nickF = bound.field('nickname')!}
-    {@const avatarF = bound.field('avatar')}
     <div class="flex flex-col gap-3">
       <h2 class="text-base font-semibold">Как вас показывать?</h2>
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
-      <div class="space-y-1.5" data-field={nickF.name}>
-        <label {...nickF.labelProps()} class="flex flex-col gap-1 text-sm">
-          Никнейм
-          <Input
-            {...nickF.attrs}
-            value={String(nickF.value ?? '')}
-            placeholder="необязательно"
-            autocomplete="nickname"
-            onblur={() => nickF.setTouched()}
-            oninput={(e) => nickF.onInput(e.currentTarget.value)}
-          />
-        </label>
-        {#if nickF.errors[0]}
-          <p {...nickF.errorProps()} class="text-xs font-medium text-destructive">{nickF.errors[0].message}</p>
-        {/if}
-      </div>
-      <div class="space-y-1.5" data-field={avatarF?.name ?? 'avatar'}>
-        <label class="flex flex-col gap-1 text-sm">
-          Аватар
-          <!-- файл только с JS (ТЗ); без JS поле выключено, сервер файла не ждёт.
-               Круглый предпросмотр ниже — свой (ТЗ), поэтому preview не включаем. -->
+      <Field of={bound.f.nickname} />
+      <div class="space-y-1.5" data-field="avatar">
+        <!-- носитель значения — скрытое поле описания, рисует lib/form;
+             результат конвейера зеркалится в него из avatarUrl -->
+        <Field of={bound.f.avatar} />
+        <p class="text-sm">Аватар</p>
+        {#if notHydrated()}
+          <p class="text-xs text-muted-foreground">Файл {JS_ONLY_REASON} — без него сервер аватара не ждёт.</p>
+        {:else}
+          <!-- пикер — НЕ поле формы: имени нет, в FormData не попадает,
+               до оживления в DOM не существует (виртуальная подмена).
+               Круглый предпросмотр ниже — свой (ТЗ), preview пикера не нужен. -->
           <FileInput
             accept="image/jpeg,image/png,image/webp"
             onchange={onFileChange}
-            disabled={notHydrated() || avatarBusy}
-            title={notHydrated() ? JS_ONLY_REASON : undefined}
+            disabled={avatarBusy}
           />
-        </label>
+        {/if}
         {#if avatarUrl}
-          <Input type="hidden" name="avatar" value={avatarUrl} />
           <img src={avatarUrl} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
         {/if}
-        {#if avatarF?.errors[0]}
-          <!-- ошибки сервера по аватару (скрытое поле): раньше гасились молча —
-               владелец видел «ничего не происходит» (ход 261) -->
-          <p {...avatarF.errorProps()} class="text-xs font-medium text-destructive">{avatarF.errors[0].message}</p>
+        {#if bound.f.avatar.errors[0]}
+          <!-- ошибки сервера по аватару (скрытое поле свою ошибку не рисует):
+               раньше гасились молча — владелец видел «ничего не происходит» (ход 261) -->
+          <p role="alert" class="text-xs font-medium text-destructive">{bound.f.avatar.errors[0].message}</p>
         {/if}
       </div>
       <div class="flex items-center justify-between gap-2">

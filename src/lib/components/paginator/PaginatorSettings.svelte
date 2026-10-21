@@ -3,7 +3,8 @@
    * Панель настроек пагинатора — на универсальном `DemoPanel` (этап 2).
    *
    * Здесь осталось ровно то, что знает домен пагинатора: имя экземпляра,
-   * его хранилище (`setExtra`/`setPageSize`), слот выбора хранилища, подвал
+   * его хранилище (`setExtra`/`setPageSize`), выбор хранилища (поле схемы
+   * панели, не ручной контрол: имя и значение даёт bind панели), подвал
    * и слот нативной GET (указатель страницы + чужие ключи). Схема полей,
    * форма, «Применить» до оживления, hidden-пары тумблеров — панели.
    *
@@ -13,12 +14,10 @@
    */
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import type { BoundForm } from '#lib/form/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { featureGates, getPaginator, type Extra, type ExtraValue } from '#lib/paginate/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
-  import { DemoPanel } from '#lib/components/demo/index.js'
-  import { Field, Select } from '#lib/components/settings/index.js'
+  import { DemoPanel, demoSelect } from '#lib/components/demo/index.js'
   import { paginatorPanel } from './compile'
   import type { SettingsField } from './types'
 
@@ -82,8 +81,37 @@
     paginatorPanel<V>({ pageParam, action, pageSizes, fields, gates }),
   )
 
+  /**
+   * Выбор хранилища — первое поле СХЕМЫ панели (не ручной контрол с
+   * собственным name): имя и значение даёт bind панели, до оживления
+   * поле выключено (`jsOnly` — смена хранилища клиентская операция).
+   * В патч пагинатора оно не ходит (`toPatch` идёт по своей meta и ключа
+   * `store` в ней нет): смену из `apply` забирает владелец пропа.
+   */
+  const schema = $derived(
+    storeProp
+      ? {
+          ...panel.schema,
+          fields: [
+            demoSelect({
+              key: 'store',
+              label: storeProp.label ?? 'Хранилище настроек и страницы',
+              url: false,
+              jsOnly: true,
+              defaultValue: storeProp.options[0]?.[0] ?? '',
+              options: storeProp.options.map(([value, label]) => ({ value, label })),
+            }),
+            ...panel.schema.fields,
+          ],
+        }
+      : panel.schema,
+  )
+
   /** Значения панели — зеркало хранилища: панель догоняет его сама (`values`). */
-  const panelValues = $derived(panel.toPanel(currentValues, pagState().pageSize))
+  const panelValues = $derived({
+    ...panel.toPanel(currentValues, pagState().pageSize),
+    ...(storeProp ? { store: storeProp.value } : {}),
+  })
 
   /**
    * Пересоздание формы — только когда меняется ЕЁ состав: источник (гаты),
@@ -91,7 +119,7 @@
    * терять фокус.
    */
   const panelKey = $derived(
-    `${action}|${pageParam}|${Object.entries(gates)
+    `${action}|${pageParam}|${storeProp ? 'store' : '-'}|${Object.entries(gates)
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .map(([gate, open]) => `${gate}${open ? '+' : '-'}`)
       .join(',')}`,
@@ -112,25 +140,17 @@
       if (!Object.is(value, lastSent[key])) changed[key] = value
     if (Object.keys(changed).length === 0) return
     lastSent = { ...lastSent, ...changed }
+    // выбор хранилища — не патч пагинатора: смену забирает владелец пропа
+    // (toPatch ключ store пропустит — в его meta такого поля нет)
+    if ('store' in changed && storeProp) {
+      const next = String(changed['store'])
+      if (next !== '' && next !== storeProp.value) storeProp.onChange(next)
+    }
     const { extra, size } = panel.toPatch(changed)
     if (Object.keys(extra).length > 0) void setExtra(extra)
     if (size !== undefined && size !== pagState().pageSize) void setPageSize(size)
   }
 </script>
-
-{#snippet storeField(form: BoundForm)}
-  {#if storeProp}
-    <Field label={storeProp.label ?? 'Хранилище настроек и страницы'}>
-      <Select
-        name="store"
-        disabled={form.submitVisible}
-        value={storeProp.value}
-        onChange={(v) => storeProp.onChange(v)}
-        options={storeProp.options}
-      />
-    </Field>
-  {/if}
-{/snippet}
 
 {#snippet footerLine()}
   {@render footer?.({ pageSize: pagState().pageSize, page: pagState().page })}
@@ -138,14 +158,13 @@
 
 {#key panelKey}
   <DemoPanel
-    schema={panel.schema}
+    schema={schema}
     values={panelValues}
     onParams={apply}
     hidden={[
       { name: pageParam, value: pagState().page },
       ...foreignParams.map(([fieldName, value]) => ({ name: fieldName, value })),
     ]}
-    leading={storeField}
     footer={footer ? footerLine : undefined}
     class={className ?? 'rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
     {...(applyLabel !== undefined ? { applyLabel } : {})}

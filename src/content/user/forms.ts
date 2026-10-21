@@ -76,6 +76,7 @@ export const authForm = defineForm({
     signature: field.hidden({ label: 'Подпись' }),
     nickname: field.text({
       label: 'Никнейм',
+      placeholder: 'необязательно',
       // длина — как NICKNAME в схеме профиля (2–32): числа продублированы
       // сознательно — formParams(profile) потянул бы схему lib/db в описание,
       // а оно едет в бандл каждой страницы с виджетом (+1 KiB замерено);
