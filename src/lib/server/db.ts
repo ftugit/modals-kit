@@ -38,16 +38,18 @@ import {
 
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
 import { auth, profile, session } from '#content/user/schema.js'
+import { cacheKv } from '#lib/cache/pg.js'
 
-export { posts, auth, profile, session }
+export { posts, auth, profile, session, cacheKv }
 
 /**
  * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил полей модели, индекс
  * под сортировку) и начальные записи — ручной SQL, выполняется один раз.
  */
 const schemaSpec = {
-  // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`
-  resources: [posts, auth, session, profile],
+  // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
+  // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.ts)
+  resources: [posts, auth, session, profile, cacheKv],
   sql: [
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
     // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,
