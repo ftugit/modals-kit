@@ -21,6 +21,7 @@
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { profileForm } from '../forms.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
+  import { hydrateVault, vault, type VaultPayload, type VaultProfile } from '../vault.svelte.js'
 
   interface Props {
     /** Адрес экшена роута авторизации (страница или модалка). */
@@ -29,13 +30,15 @@
     form?: { result?: Result } | null
     /** Пределы конвейера аватара из конфига. */
     limits: AvatarLimits
+    /** Текущий профиль для предзаполнения (редактирование); нет — из vault. */
+    initial?: VaultProfile | null
     /** Куда ведёт «Отмена» без JS: next или домой. */
     doneHref: string
     /** Успех сохранения или пропуск (JS): закрыть/перейти — решает виджет. */
     onDone: () => void
   }
 
-  let { action, form, limits, doneHref, onDone }: Props = $props()
+  let { action, form, limits, initial = null, doneHref, onDone }: Props = $props()
 
   const notHydrated = useJsOnly()
 
@@ -49,12 +52,28 @@
     continuation: untrack(() => form?.result ?? null),
   })
 
+  // предзаполнение редактирования: текущий профиль — из пропса (снимок
+  // токена с сервера) или из vault вкладки. Никнейм сеется зеркалом (SSR —
+  // синхронно); при продолжении отказа зеркало молчит — введённое важнее.
+  // Аватар только показываем: в поле едет лишь заново выбранный, пустое
+  // поле сервер читает как «не трогать»
+  const seedProfile = untrack(() => initial ?? (vault.principal ? vault.profile : null))
+  if (!untrack(() => form?.result)) {
+    mirrorToField(bound, 'nickname', () => seedProfile?.nickname ?? '')
+  }
+  const existingAvatar = seedProfile?.avatarUrl ?? null
+
   // успех сохранения: сервер отвечает шагом done — дальше решает виджет
   let finished = false
   $effect(() => {
     const r = bound.state.result
-    if (!finished && r?.ok && (r.data as { step?: string } | undefined)?.step === 'done') {
+    if (finished || !r?.ok) return
+    const data = r.data as { step?: string; user?: VaultPayload } | undefined
+    if (data?.step === 'done') {
       finished = true
+      // сервер перевыпустил токены: освежаем vault — шапка и меню сразу
+      // показывают новые ник/аватар
+      if (data.user) hydrateVault(data.user)
       onDone()
     }
   })
@@ -122,8 +141,8 @@
           disabled={avatarBusy}
         />
       {/if}
-      {#if avatarUrl}
-        <img src={avatarUrl} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
+      {#if avatarUrl ?? existingAvatar}
+        <img src={avatarUrl ?? existingAvatar} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
       {/if}
       {#if bound.f.avatar.errors[0]}
         <!-- ошибки сервера по аватару (скрытое поле свою ошибку не рисует):

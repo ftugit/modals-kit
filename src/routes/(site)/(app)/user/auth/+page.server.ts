@@ -189,7 +189,15 @@ export const actions: Actions = {
       })
       if (!r.ok) return fail(instruction(r.fact))
       commit()
-      return { data: { step: 'done' } }
+      // ник/аватар запечатаны в access-токене: перевыпуск (renew) освежает
+      // их везде сразу — куки/SSR сами, vault клиента — через `user` в
+      // ответе; без этого UI показывал профиль на момент входа
+      let user: unknown
+      try {
+        const renewed = await u.renew()
+        if (renewed.ok) user = await vaultPayloadOf(renewed.value)
+      } catch { /* профиль уже сохранён; освежит обычное продление */ }
+      return { data: { step: 'done', ...(user ? { user } : {}) } }
     }
 
     // какая форма пришла — говорит конверт; тело читается клоном (обработчик

@@ -326,7 +326,7 @@
     </div>
   </div>
 {:else if hostStep === 'profile'}
-  <ProfileForm action={action} form={actionForm} limits={data.limits} doneHref={doneHref} onDone={finish} />
+  <ProfileForm action={action} form={actionForm} limits={data.limits} initial={data.user?.prof ?? null} doneHref={doneHref} onDone={finish} />
 {:else}
   <Form id="user-auth" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
     <Common errors={bound.common} title="Проверьте форму" />
