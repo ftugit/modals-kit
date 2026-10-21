@@ -195,8 +195,8 @@
 - Блокировка сверки схемы проверена только на PGlite (там транзакции и так по одной) — нужен
   прогон гонки экземпляров на настоящем PostgreSQL (`KIT_TEST_PG_URL`).
 - Бронь отправки форм, которые пишут в базу: `sharedStore` на Postgres в той же транзакции, что
-  и данные (README `lib/cache` §6; контракт `lib/form` ↔ `lib/db`). Само pg-хранилище
-  lib/cache делает этап R4 фото-плана (`docs/design/image-transfer.md`).
+  и данные (README `lib/cache` §7; контракт `lib/form` ↔ `lib/db`). Само pg-хранилище
+  lib/cache сделано (`sharedStore`, `docs/design/cache-pg-store.md`).
 - Демо `posts`: поле `author_id` станет ключом доступа, когда появится вход (у гостя нет id).
 - Опрос новых записей и транспорт формы СВЕДЕНЫ (ход 269): формула паузы одна —
   `backoffDelay(attempt, base, cap, random?)` в `lib/fetch/backoff.ts`; её зовут и повторы

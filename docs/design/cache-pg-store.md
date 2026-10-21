@@ -23,7 +23,7 @@ lib/db (решение владельца); отдельный функцион�
   `AtomicStore` с `MaybePromise`, значения JSON-совместимые,
   `ScopeOptions.max` сетевые хранилища вправе игнорировать
   (комментарий в `types.ts`). `sharedStore` (Postgres) запланирован
-  в README lib/cache §6 и `docs/plan.md` (бронь форм, пишущих в БД),
+  в README lib/cache §7 и `docs/plan.md` (бронь форм, пишущих в БД),
   реализации нет — только `memoryStore`.
 - Импорт ядра в ядро — принятая практика (paginate → form/address);
   lib/db — лист (ничего из lib не импортирует), цикла не будет.
@@ -104,7 +104,7 @@ lib/db (решение владельца); отдельный функцион�
 `src/lib/server/cache.ts` экспортирует `sharedStore = pgStore(db)`
 рядом с `localStore` (фабрика I/O не делает, соединение ленивое).
 Существующие потребители НЕ мигрируют: у каждого своё решение по
-README §5/§6; первый потребитель — заявки R4. На dev-движке PGlite
+README §6/§7; первый потребитель — заявки R4. На dev-движке PGlite
 `sharedStore` честно равен памяти процесса по охвату (БД одна на
 процесс) — семантика та же, охват даёт настоящий Postgres.
 
@@ -125,12 +125,12 @@ Infinity, невалидные ttl, `add` один раз и после срок
 ## Чеклист
 
 - [x] Разведка архитектуры и этот проект (checkpoint).
-- [ ] `src/lib/cache/pg.ts`: модель `cacheKv` + `pgStore` (AtomicStore целиком).
-- [ ] `src/lib/cache/pg.test.ts`: контрактный набор на PGlite — зелёный.
-- [ ] Подключение: `db.ts` (ресурс), `server/cache.ts` (`sharedStore`).
-- [ ] Гейты: check, unit точечно (cache) и полный, guard, build при необходимости.
-- [ ] Документация: README lib/cache, server/cache.ts, docs/plan.md, image-transfer.md.
-- [ ] Локальный коммит(ы), отчёт владельцу с блоком доказательств.
+- [x] `src/lib/cache/pg.ts`: модель `cacheKv` + `pgStore` (AtomicStore целиком) — `db01cfb`.
+- [x] `src/lib/cache/pg.test.ts`: контрактный набор на PGlite — зелёный (13 тестов).
+- [x] Подключение: `db.ts` (ресурс), `server/cache.ts` (`sharedStore`) — `db01cfb`.
+- [x] Гейты: check 0, unit полный, guard 120/0 (цифры — в отчёте владельцу).
+- [x] Документация: README lib/cache (§3 pgStore), server/cache.ts, docs/plan.md, image-transfer.md.
+- [x] Локальный коммит(ы), отчёт владельцу с блоком доказательств.
 
 Не входит: миграция существующих потребителей localStore; бронь в
 транзакции операции у DB-форм (отдельный контракт lib/form ↔ lib/db);
