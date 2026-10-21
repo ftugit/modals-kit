@@ -11,6 +11,8 @@ import {
   type ErrorContext, type FieldSpec, type FormError, type Result,
 } from './index'
 
+import { newSubmission, runSubmit } from './submit'
+
 const render = makeRenderer([ru])
 const field = makeFieldSugar()
 const v = (await import('./validators')).v
@@ -733,5 +735,35 @@ suite('асинхронные проверки: значения как на с�
     expect(browser).toBeNull()
     expect(seen[1]).toEqual(seen[0])
     expect(seen[0]).toMatchObject({ value: 42, agree: true })
+  })
+})
+
+suite('runSubmit: Result.intent', () => {
+  const d = defineForm({
+    id: 'signup',
+    actions: [{ id: 'save', validate: 'full' }],
+    fields: { name: field.text({ validate: [v.required()] }) },
+  })
+  const input = (name: string) => ({
+    description: d, data: body({ name }, envelope('signup', 1, 'save')),
+    instance: 'signup:new', submission: newSubmission(1, 'save'), render, intent: 'save',
+  })
+
+  test('локальный провал полной проверки несёт интент, транспорт не звали', async () => {
+    const r = await runSubmit({ ...input(''), transport: async () => { throw new Error('транспорт звать нельзя') } })
+    expect(r.ok).toBe(false)
+    expect(r.intent).toBe('save')
+  })
+
+  test('сетевой исход несёт интент', async () => {
+    const r = await runSubmit({ ...input('a'), transport: async () => ({ kind: 'network' as const, code: 'network.failed', detail: 'down' }) })
+    expect(r.outcome).toBe('unknown')
+    expect(r.intent).toBe('save')
+  })
+
+  test('транспортный результат без штампа доштамповывается интентом отправки', async () => {
+    const bare = { v: 1, ok: true, outcome: 'committed', errors: [] } as unknown as Result
+    const r = await runSubmit({ ...input('a'), transport: async () => ({ kind: 'result' as const, result: bare }) })
+    expect(r.intent).toBe('save')
   })
 })

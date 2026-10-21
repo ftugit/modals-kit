@@ -600,3 +600,33 @@ suite('очередь: принято, итог позже', () => {
     err.mockRestore()
   })
 })
+
+suite('Result.intent — штамп намерения', () => {
+  const d = defineForm({
+    id: 'probe',
+    actions: [
+      { id: 'next', validate: 'partial', subset: ['name'] },
+      { id: 'save', validate: 'full' },
+    ],
+    fields: { name: field.text({ validate: [v.required()] }) },
+  })
+
+  test('успех и отказ execute несут интент конверта', async () => {
+    const ok = createFormHandler({ description: d, execute: (c) => { c.commit(); return {} } })
+    expect((await ok(post({ ...envelopeOf({}, d), intent: 'next', name: 'a' }))).result.intent).toBe('next')
+    const bad = createFormHandler({ description: d, execute: (c) => c.fail([{ message: 'нет', path: ['name'] }]) })
+    expect((await bad(post({ ...envelopeOf({}, d), intent: 'next', name: 'a' }))).result.intent).toBe('next')
+  })
+
+  test('провал проверки (execute не звали) тоже несёт интент', async () => {
+    const h = createFormHandler({ description: d, execute: (c) => { c.commit(); return {} } })
+    const r = await h(post({ ...envelopeOf({}, d), intent: 'save', name: '' }))
+    expect(r.result.ok).toBe(false)
+    expect(r.result.intent).toBe('save')
+  })
+
+  test('без конверта интента нет — честное отсутствие, не подстановка', async () => {
+    const h = createFormHandler({ description: d, execute: (c) => { c.commit(); return {} } })
+    expect((await h(post({ name: 'a' }))).result.intent).toBeUndefined()
+  })
+})

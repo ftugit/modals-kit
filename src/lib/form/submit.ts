@@ -230,7 +230,7 @@ export async function runSubmit<T>(input: RunSubmitInput<T>): Promise<Result<T>>
   data.set(d.policy.envelopeKeys.intent, intent)
 
   const base = {
-    v: 1 as const, formId: d.id, instance, submissionId: submission.id,
+    v: 1 as const, formId: d.id, instance, submissionId: submission.id, intent,
     revision: d.revision, values: {} as Record<string, unknown>, from: 'fetch' as const,
   }
 
@@ -267,5 +267,5 @@ export async function runSubmit<T>(input: RunSubmitInput<T>): Promise<Result<T>>
     return { ...base, ok: false, status: d.policy.status.unknown, outcome: 'unknown',
              errors: normalizeErrors([err], render, d.policy.limits), values: local.publicValues }
   }
-  return { ...outcome.result, from: 'fetch' }
+  return { ...outcome.result, intent: outcome.result.intent ?? intent, from: 'fetch' }
 }

@@ -605,6 +605,8 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
     /** Сбой вне execute: текст — только в телеметрию и лог сервера, не клиенту. */
     let failure: unknown
     let currentIntent = 'submit'
+    /** Интент по факту разбора конверта — штамп `Result.intent`; до `evaluate` его нет. */
+    let knownIntent: string | undefined
     const status = base.policy.status
 
     const make = (
@@ -612,6 +614,7 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
     ): Result<T> => ({
       v: 1, formId: ctx.description.id, instance: o.instance ?? `${ctx.description.id}:new`,
       submissionId: '00000000-0000-4000-8000-000000000000',
+      ...(knownIntent !== undefined ? { intent: knownIntent } : {}),
       revision: ctx.description.revision, values: {}, errors: [], from, ...part,
     })
 
@@ -665,6 +668,7 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
 
       currentIntent = ev.intent
+      knownIntent = ev.intent
       const submissionId = ev.envelope!.submissionId
       const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
         make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues,

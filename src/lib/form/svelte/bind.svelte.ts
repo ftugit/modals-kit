@@ -747,7 +747,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       const ev = evaluate(data, desc, { render, instance, requireEnvelope: false })
       const blocked: Result = {
         v: 1, formId: desc.id, instance, submissionId: begun.submission.id,
-        revision: desc.revision, ok: false,
+        revision: desc.revision, ok: false, intent: raw,
         status: desc.policy.status.validationFailed, outcome: 'not-applied',
         errors: normalizeErrors([...ev.errors, ...opErrors], render, desc.policy.limits),
         values: ev.publicValues, from: 'fetch',
