@@ -39,10 +39,14 @@
   })
 
   // Базовые слоты шапки по умолчанию
+  // Раскладка шапки (решение владельца): верхний ряд — логотип, заголовок и
+  // справа ТОЛЬКО профиль; пункты меню — в среднем (липком) ряду слева,
+  // переключатель темы — там же справа. Средний ряд виден всегда, верхний
+  // при скролле прячется (CollapsingHeader).
   useHeaderSlot('top.start', logoSnippet)
   useHeaderSlot('top.center', titleSnippet)
-  useHeaderSlot('top.end', navSnippet)
-  useHeaderSlot('top.end', themeSnippet)
+  useHeaderSlot('middle.start', navSnippet)
+  useHeaderSlot('middle.end', themeSnippet)
   useHeaderSlot('top.end', userSnippet)
 
   // Базовые слоты 3-зонного сайдбара
