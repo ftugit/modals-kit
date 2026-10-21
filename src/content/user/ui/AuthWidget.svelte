@@ -1,7 +1,12 @@
 <script lang="ts">
   /**
-   * Виджет авторизации — ОДНА форма (`authForm`), шаги различает интент:
-   * вход/создание → восстановление → профиль → блокировка → ограничения.
+   * Виджет авторизации — хост шагов и куст формы входа на его шаге `auth`:
+   * полный ключ — цепочка (`?stage=auth.restore`): шаги хоста —
+   * `auth`/`blocked`/`restrictions`/`profile`, внутри `auth` форму
+   * (`authForm`) режет `formSteps` на срезы entry/register/restore
+   * (различает интент: вход и создание — один `login`). Профиль — отдельный
+   * компонент со своей формой (`ProfileForm`); блокировка и ограничения —
+   * UI-шаги без формы («Принято» — программная отправка конверта).
    * Отправка — штатный путь `lib/form`: `bind` + `Form` (raw form-теги в
    * роутах запрещены), транспорт — fetch на экшен с accept: application/json;
    * без JS нативный POST — тот же экшен, шаг приезжает в `form.result.data`.
@@ -10,30 +15,31 @@
    * секретом из поля подписывается живой nonce. Секрет генерирует клиент
    * (`keys.ts`); на шаге регистрации без JS — сервер (`registerSeed`).
    *
-   * Переходы шагов: по итогу отправки (`form.state.result.data.step`).
+   * Переходы: срезы ведёт сам formSteps по результату формы; шаги вне куста
+   * и побочные данные (vault, nonce, блокировка) — эффект виджета ниже.
    * Callback: `onDone` (JS) — закрыть модалку/перейти; без JS его заменяет
    * redirect экшена.
    */
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { goto } from '$app/navigation'
-  import { page } from '$app/state'
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
-  import { StepLink, useSteps } from '#lib/components/steps/index.js'
+  import { StepLink, formSteps, suffixOf, useSteps } from '#lib/components/steps/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result, Transport } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import Field from '#lib/components/form/Field.svelte'
   import CopyField from '#lib/components/form/CopyField.svelte'
-  import { Button, FileInput } from '#lib/components/ui/index.js'
+  import { Button } from '#lib/components/ui/index.js'
   import Common from '#lib/components/form/Common.svelte'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
-  import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
+  import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault } from '../vault.svelte.js'
-  import { prepareAvatar, type AvatarLimits } from '../avatar.js'
-  import { authForm, AUTH_FORM_REV } from '../forms.js'
+  import { type AvatarLimits } from '../avatar.js'
+  import { authEnvelope, authEnvelopeFields, authForm, AUTH_FORM_REV } from '../forms.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
+  import ProfileForm from './ProfileForm.svelte'
 
   type UserPayload = {
     access: string
@@ -77,8 +83,9 @@
   // svelte-ignore state_referenced_locally -- адрес модалки постоянен за её жизнь
   const action = actionUrl ?? visibleAddress().url.pathname
   const notHydrated = useJsOnly()
+  const doneHref = $derived(data.next ?? '/')
 
-  /* ── привязка формы: тот же конфиг форм, что у всего проекта ── */
+  /* ── привязка формы входа: тот же конфиг форм, что у всего проекта ── */
   // svelte-ignore state_referenced_locally -- challenge на момент отрисовки
   let nonce = $state(data.challenge?.nonce ?? '')
 
@@ -109,14 +116,14 @@
   // транспорте, в поле его зеркалит mirrorToField (как seed).
   mirrorToField(bound, 'nonce', () => nonce)
 
-  /* ── шаг: универсальный хост (lib/components/steps), состояние виджета ── */
+  /* ── шаги: хост (lib/components/steps) + куст срезов формы на шаге auth ── */
   // Решение владельца (ход 261, ревизия): step — состояние ВИДЖЕТА, адрес —
   // fallback. С JS клик по ссылке переключает шаг локально (на странице хост-
   // режим hybrid мягко синхронизирует адрес своим ключом брони — без навигации
   // и load; в модалке — local, адрес не трогается вовсе). Без JS ссылка честно
   // ведёт на адрес — данные страницы несёт load. Ответ экшена приоритетнее
   // данных страницы (навигации при нём нет).
-  const initial = untrack(() => stepOf(actionForm?.result) ?? ({ step: data.step ?? 'entry' } as StepData))
+  const initial = untrack(() => stepOf(actionForm?.result) ?? ({} as StepData))
   let blocked = $state<StepData['blocked']>(initial.blocked)
   let restrictions = $state<StepData['restrictions']>(initial.restrictions)
   // svelte-ignore state_referenced_locally -- режим выбирается один раз при
@@ -128,21 +135,41 @@
     mode: mode === 'modal' ? 'local' : 'hybrid',
     key: 'stage',
     steps: () => [
-      { key: 'entry', label: 'Авторизация', filled: true },
-      { key: 'register', label: 'Создать аккаунт', filled: true },
+      { key: 'auth', label: 'Авторизация', filled: true },
+      { key: 'blocked', label: 'Блокировка' },
+      { key: 'restrictions', label: 'Ограничения' },
+      { key: 'profile', label: 'Профиль' },
     ],
     // начальное значение: данные загрузки / deep-link; дальше — set()
-    current: () => (data.step as StepData['step']) ?? 'entry',
+    current: () => data.step ?? 'auth.entry',
     // клик по ссылкам шага: seed делает браузер (не покидает устройство)
-    onSwitch: (to) => switchStep(to as 'entry' | 'register'),
+    onSwitch: (to) => switchStep(to),
   })
-  const step = $derived((steps.currentKey ?? 'entry') as StepData['step'])
+  // Куст срезов формы на шаге `auth`: текущий срез ведёт сам formSteps —
+  // по результату формы (Result.intent/data.step) и по полному ключу хоста
+  // (deep-link `?stage=auth.register`, клики по ссылкам срезов). Панели
+  // FormSteps здесь НЕ используются: срезы делят одни поля (seed/nonce), а
+  // кнопки у срезов разные — разметку по `fs.current` рисует сам виджет.
+  const fs = formSteps(bound, {
+    steps: [
+      { key: 'entry', label: 'Авторизация' },
+      { key: 'register', label: 'Создать аккаунт' },
+      { key: 'restore', label: 'Восстановление' },
+    ],
+    at: 'auth',
+    host: steps,
+    // вход и создание — один экшен login (сервер различает по seed): общий
+    // экшен отправленный срез по интенту не называет (stepOfResult)
+    actionOf: (s) => (s === 'restore' ? 'restore' : 'login'),
+  })
+  const hostStep = $derived(steps.currentKey ?? 'auth')
 
-  // сервер → хост: навигация/deep-link принесли новый ?step= (зависимость —
-  // только data; локальные смены хоста адрес данных не меняют — цикла нет)
+  // сервер → хост: навигация/deep-link принесли новый полный ключ ?stage=
+  // (зависимость — только data; локальные смены хоста адрес данных не
+  // меняют — цикла нет)
   $effect(() => {
-    const server = data.step as StepData['step'] | undefined
-    if (server) untrack(() => { if (steps.currentKey !== server) steps.set(server) })
+    const server = data.step
+    if (server) untrack(() => { if (steps.fullKey !== server) steps.set(server) })
   })
   $effect(() => {
     if (data.challenge?.nonce) nonce = data.challenge.nonce
@@ -153,7 +180,8 @@
     return data && typeof data === 'object' && 'step' in data ? data : undefined
   }
 
-  // Итог отправки: шаг из данных результата; успех входа — гидратация vault.
+  // Итог отправки формы входа. Срезы куста ведёт сам formSteps; здесь —
+  // шаги хоста ВНЕ куста, успех входа (гидратация vault) и побочные данные.
   $effect(() => {
     const state = bound.state
     if (!state.result || !isSettledStatus(state.status)) return
@@ -165,7 +193,8 @@
       return
     }
     untrack(() => {
-      steps.set(next.step ?? 'entry')
+      if (next.step === 'blocked' || next.step === 'restrictions' || next.step === 'profile')
+        steps.set(next.step)
       blocked = next.blocked
       restrictions = next.restrictions
       if (next.nonce) nonce = next.nonce
@@ -202,244 +231,199 @@
     }
   }
 
+  /**
+   * «Принято» на шаге ограничений — программная отправка конверта auth
+   * (механизм authEnvelope*, как продление vault): формы на этом шаге нет.
+   * Вход уже случился — подтверждение ничего не меняет, поэтому финиш
+   * наступает при любом исходе отправки.
+   */
+  let acceptBusy = $state(false)
+  async function acceptRestrictions(): Promise<void> {
+    if (acceptBusy) return
+    acceptBusy = true
+    try {
+      const envelope = authEnvelope(`user-auth:${crypto.randomUUID()}`)
+      const fd = new FormData()
+      for (const [k, v] of Object.entries(authEnvelopeFields(envelope))) fd.append(k, v)
+      fd.append('intent', 'accept')
+      await transport({ envelope, data: fd, accept: ['application/json'], signal: new AbortController().signal })
+    } catch {
+      /* сеть упала — вход уже случился, финиш всё равно */
+    }
+    finish()
+  }
+
   function finish(): void {
     if (onDone) {
       onDone()
       return
     }
     // страница без next: молчание выглядит как «кнопка не работает» — уходим домой
-    void goto(data.next ?? '/')
+    void goto(doneHref)
   }
 
   /* ── seed: с JS генерирует БРАУЗЕР (ключ не покидает устройство); сервер —
      fallback без JS / обновления / deep-link. Копирование — подмена поля ── */
   // Значение живёт в состоянии ФОРМЫ (его валидирует и отправляет движок):
   // старт — синхронный onInput при связывании, переходы — зеркало (оба приёма
-  // и их грабли — в field-mirror.svelte.ts). Локальная смена шага — клик по
-  // ссылке с JS: генерируем здесь же и переключаем шаг хостом; серверный seed
-  // при этом в HTML не попадает (load не запрашивался — смены нет на сервере).
+  // и их грабли — в field-mirror.svelte.ts). Локальная смена среза — клик по
+  // ссылке с JS: генерируем здесь же и переключаем полный ключ хостом
+  // (formSteps подхватит срез из остатка); серверный seed при этом в HTML не
+  // попадает (load не запрашивался — смены нет на сервере).
   let localSeed = $state<string | null>(null)
   const secret = $derived(localSeed ?? data.registerSeed ?? '')
   mirrorToField(bound, 'seed', () => secret)
 
-  /** Локальная смена шага с JS: на регистрации ключ делает браузер. */
-  async function switchStep(to: 'entry' | 'register'): Promise<void> {
-    if (steps.currentKey === to) return
-    localSeed = to === 'register' ? (await generateKeyPair()).secret : null
+  /** Клик по ссылке хоста (полный ключ): на срезе регистрации ключ делает браузер. */
+  async function switchStep(to: string): Promise<void> {
+    if (steps.fullKey === to) return
+    const inner = suffixOf(to, 'auth')
+    if (inner === 'register') localSeed = (await generateKeyPair()).secret
+    else if (inner === 'entry') localSeed = null
     steps.set(to)
-  }
-
-  /* ── аватар: конвейер с пределами из конфига; результат — скрытое поле ── */
-  let avatarUrl = $state<string | null>(null)
-  let avatarBusy = $state(false)
-  let avatarError = $state<string | null>(null)
-  // результат конвейера — значение поля avatar из описания (hidden):
-  // зеркало кладёт его в состояние формы, HiddenField рисует сам носитель
-  mirrorToField(bound, 'avatar', () => avatarUrl ?? '')
-
-  async function onFileChange(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement
-    const picked = input.files?.[0]
-    if (!picked) return
-    avatarBusy = true
-    avatarError = null
-    try {
-      const outcome = await prepareAvatar(picked, data.limits)
-      if (outcome.ok) avatarUrl = outcome.dataUrl
-      else avatarError = AVATAR_TEXTS[outcome.code] ?? outcome.code
-      if (!outcome.ok) input.value = ''
-    } catch {
-      avatarError = AVATAR_TEXTS['profile.avatar-format']
-      input.value = ''
-    } finally {
-      avatarBusy = false
-    }
   }
 
   const when = (ms: number | null | undefined): string =>
     ms ? new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'бессрочно'
 
-  // Только коды КЛИЕНТСКОГО конвейера аватара (они не форма-ошибки); тексты
-  // доменных кодов живёт в `messages` формы — сервер наполняет message сам.
-  const AVATAR_TEXTS: Record<string, string> = {
-    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
-  }
-
   // svelte-ignore state_referenced_locally -- пределы конфига неизменны за жизнь виджета
   const holdSeconds = data.limits.holdSeconds
 </script>
 
-<Form id="user-auth" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
-  <Common errors={bound.common} title="Проверьте форму" />
-
-  {#if data.enabled === false}
-    <!-- конвенция репо: без env функция выключена с объяснением (как курсор lib/db) -->
-    <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
-      Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать.
-      Задайте переменную и перезапустите приложение.
-    </div>
-  {:else}
-  {#if avatarError}
-    <p role="alert" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{avatarError}</p>
-  {/if}
-
-  <!-- скрытые поля описания рисует сама lib/form (HiddenField): nonce —
-       значение из состояния (зеркало выше); подпись значения в состоянии
-       не имеет — её при отправке ставит prepare транспорта -->
-  <Field of={bound.f.nonce} />
-  <Field of={bound.f.signature} />
-
-  {#if step === 'entry' || step === 'register'}
-    <!-- ссылка шага справа: вход ↔ создание (ТЗ). Адрес в href — fallback без JS
-         (честная страница, данные несёт load); с JS клик локален — смену делает
-         хост (в модалке адрес не трогается, на странице синхронизируется мягко) -->
-    <div class="flex items-baseline justify-end gap-2">
-      {#each steps.items as it (it.key)}
-        {#if !it.current}
-          <StepLink host={steps} step={it.key} class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
-            {it.label}
-          </StepLink>
-        {/if}
+{#if data.enabled === false}
+  <!-- конвенция репо: без env функция выключена с объяснением (как курсор lib/db) -->
+  <div class="mx-auto w-full max-w-sm rounded-md border border-border bg-muted/40 p-3 text-left text-sm">
+    Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать.
+    Задайте переменную и перезапустите приложение.
+  </div>
+{:else if hostStep === 'blocked'}
+  <div class="mx-auto flex w-full max-w-sm flex-col gap-3 text-left">
+    <h2 class="text-base font-semibold">Аккаунт заблокирован</h2>
+    <p class="text-sm text-muted-foreground">
+      Причина: {blocked?.reason ?? 'не указана'}. До: {when(blocked?.untilMs)}.
+    </p>
+    <p class="text-xs text-muted-foreground">Вход в аккаунт закрыт, пока блокировка действует.</p>
+  </div>
+{:else if hostStep === 'restrictions'}
+  <div class="mx-auto flex w-full max-w-sm flex-col gap-3 text-left">
+    <h2 class="text-base font-semibold">Ограничения аккаунта</h2>
+    <ul class="flex flex-col gap-2 text-sm text-muted-foreground">
+      {#each restrictions ?? [] as r (r.scope + r.reason)}
+        <li>
+          <span class="font-medium text-foreground">{r.scope}</span>: {r.reason}
+          — до {when(r.untilMs)}
+        </li>
       {/each}
-    </div>
-
-    {#if step === 'register'}
-      {#if localSeed}
-        <!-- JS-переход: ключ сделал браузер, в HTML страницы он не попадал -->
-        <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
-          <p class="font-medium">Seed сгенерирован в этом браузере</p>
-          <p class="text-xs text-muted-foreground">
-            Ключ создан локально и не покидал ваше устройство. Сохраните его в менеджере
-            секретов: он показывается один раз.
-          </p>
-        </div>
-      {:else}
-        <!-- fallback (без JS, обновление, deep-link): генерирует и подписывает СЕРВЕР;
-             seed виден в HTML страницы -->
-        <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
-          <p class="font-medium">Seed создал и подписал сервер</p>
-          <p class="text-xs text-muted-foreground">
-            Он уже виден в HTML этой страницы — не открывайте форму в общих и публичных местах:
-            увидевший seed получит доступ к аккаунту. Сохраните его в менеджере секретов:
-            он показывается один раз.
-          </p>
-        </div>
-      {/if}
-    {/if}
-
-    <!-- Подмена примитива (решение владельца): на регистрации — CopyField (Input →
-         CopyInput → CopyField), на входе — обычный Input из resolve. Подпись,
-         подсказка и ошибки — FieldShell. -->
-    <Field of={bound.f.seed} instead={step === 'register' ? CopyField : undefined} />
-
-    {#if step === 'entry'}
-      <Button type="submit" name="intent" value="login" task={formTask(bound.state)}>Авторизация</Button>
-      {#if data.user}
-        <!-- без JS меню-модалки нет: выход здесь (куки снимает экшен) -->
-        <Button type="submit" name="intent" value="logout" variant="ghost" size="sm" task={formTask(bound.state)}>
-          Выйти из аккаунта
-        </Button>
-      {/if}
-    {:else}
+    </ul>
+    <div class="flex justify-end">
+      <!-- «Принято» справа (ТЗ); вход уже случился, подтверждение ничего не
+           меняет: с JS — программный конверт accept, без JS — ссылка дальше -->
       {#if notHydrated()}
-        <!-- без JS удержание недоступно: обычная кнопка отправки -->
-        <Button type="submit" name="intent" value="login" variant="outline" task={formTask(bound.state)}>Создать аккаунт</Button>
+        <Button href={doneHref} variant="outline">Принято</Button>
       {:else}
-        <!-- hover: заливка от курсора (решение владельца, ход 258); нажатие тоже работает -->
-        <HoldButton
-          type="submit"
-          name="intent"
-          value="login"
-          variant="outline"
-          seconds={holdSeconds}
-          when="fill"
-          hover
-          task={formTask(bound.state)}
-        >
-          Удерживайте, чтобы создать аккаунт
-        </HoldButton>
+        <Button type="button" variant="outline" disabled={acceptBusy} onclick={() => void acceptRestrictions()}>Принято</Button>
       {/if}
-    {/if}
-  {:else if step === 'restore'}
-    <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Аккаунт ждёт удаления</h2>
-      <p class="text-sm text-muted-foreground">
-        Вы раньше попросили удалить аккаунт, поэтому вход в него закрыт. Можно вернуть всё как было:
-        заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится сам
-        по истечении срока.
-      </p>
-      <!-- seed — поле шага: значение с шага входа едет в отправку подтверждения
-           (доказательство владения проверяет сервер); показывать его незачем -->
-      <div hidden aria-hidden="true"><Field of={bound.f.seed} /></div>
-      <Button type="submit" name="intent" value="restore" task={formTask(bound.state)}>Восстановить аккаунт</Button>
-      <Button type="submit" name="intent" value="logout" variant="ghost" size="sm" task={formTask(bound.state)}>
-        Не восстанавливать
-      </Button>
     </div>
-  {:else if step === 'profile'}
-    <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Как вас показывать?</h2>
-      <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
-      <Field of={bound.f.nickname} />
-      <div class="space-y-1.5" data-field="avatar">
-        <!-- носитель значения — скрытое поле описания, рисует lib/form;
-             результат конвейера зеркалится в него из avatarUrl -->
-        <Field of={bound.f.avatar} />
-        <p class="text-sm">Аватар</p>
-        {#if notHydrated()}
-          <p class="text-xs text-muted-foreground">Файл {JS_ONLY_REASON} — без него сервер аватара не ждёт.</p>
-        {:else}
-          <!-- пикер — НЕ поле формы: имени нет, в FormData не попадает,
-               до оживления в DOM не существует (виртуальная подмена).
-               Круглый предпросмотр ниже — свой (ТЗ), preview пикера не нужен. -->
-          <FileInput
-            accept="image/jpeg,image/png,image/webp"
-            onchange={onFileChange}
-            disabled={avatarBusy}
-          />
-        {/if}
-        {#if avatarUrl}
-          <img src={avatarUrl} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
-        {/if}
-        {#if bound.f.avatar.errors[0]}
-          <!-- ошибки сервера по аватару (скрытое поле свою ошибку не рисует):
-               раньше гасились молча — владелец видел «ничего не происходит» (ход 261) -->
-          <p role="alert" class="text-xs font-medium text-destructive">{bound.f.avatar.errors[0].message}</p>
-        {/if}
-      </div>
-      <div class="flex items-center justify-between gap-2">
-        <!-- «Сохранить» слева, «Отмена» справа (ТЗ); intent едет от нажатой кнопки -->
-        <Button type="submit" name="intent" value="profile" task={formTask(bound.state)}>Сохранить</Button>
-        <Button type="submit" name="intent" value="skip-profile" variant="ghost" task={formTask(bound.state)}>Отмена</Button>
-      </div>
-    </div>
-  {:else if step === 'blocked'}
-    <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Аккаунт заблокирован</h2>
-      <p class="text-sm text-muted-foreground">
-        Причина: {blocked?.reason ?? 'не указана'}. До: {when(blocked?.untilMs)}.
-      </p>
-      <p class="text-xs text-muted-foreground">Вход в аккаунт закрыт, пока блокировка действует.</p>
-    </div>
-  {:else if step === 'restrictions'}
-    <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Ограничения аккаунта</h2>
-      <ul class="flex flex-col gap-2 text-sm text-muted-foreground">
-        {#each restrictions ?? [] as r (r.scope + r.reason)}
-          <li>
-            <span class="font-medium text-foreground">{r.scope}</span>: {r.reason}
-            — до {when(r.untilMs)}
-          </li>
+  </div>
+{:else if hostStep === 'profile'}
+  <ProfileForm action={action} form={actionForm} limits={data.limits} doneHref={doneHref} onDone={finish} />
+{:else}
+  <Form id="user-auth" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
+    <Common errors={bound.common} title="Проверьте форму" />
+
+    <!-- скрытые поля описания рисует сама lib/form (HiddenField): nonce —
+         значение из состояния (зеркало выше); подпись значения в состоянии
+         не имеет — её при отправке ставит prepare транспорта -->
+    <Field of={bound.f.nonce} />
+    <Field of={bound.f.signature} />
+
+    {#if fs.current === 'entry' || fs.current === 'register'}
+      <!-- ссылка среза справа: вход ↔ создание (ТЗ). Адрес в href — fallback без
+           JS (честная страница ?stage=auth.register, данные несёт load); с JS
+           клик локален — полный ключ меняет хост, срез подхватывает formSteps -->
+      <div class="flex items-baseline justify-end gap-2">
+        {#each fs.steps as s (s.key)}
+          {#if (s.key === 'entry' || s.key === 'register') && fs.current !== s.key}
+            <StepLink host={steps} step={`auth.${s.key}`} class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+              {s.label}
+            </StepLink>
+          {/if}
         {/each}
-      </ul>
-      <div class="flex justify-end">
-        <!-- «Принято» справа (ТЗ); вход уже случился, подтверждение ничего не меняет -->
-        <Button type="submit" name="intent" value="accept" variant="outline" task={formTask(bound.state)}>Принято</Button>
       </div>
-    </div>
-  {:else}
-    <p class="text-sm text-muted-foreground">Готово.</p>
-  {/if}
-  {/if}
-</Form>
+
+      {#if fs.current === 'register'}
+        {#if localSeed}
+          <!-- JS-переход: ключ сделал браузер, в HTML страницы он не попадал -->
+          <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <p class="font-medium">Seed сгенерирован в этом браузере</p>
+            <p class="text-xs text-muted-foreground">
+              Ключ создан локально и не покидал ваше устройство. Сохраните его в менеджере
+              секретов: он показывается один раз.
+            </p>
+          </div>
+        {:else}
+          <!-- fallback (без JS, обновление, deep-link): генерирует и подписывает СЕРВЕР;
+               seed виден в HTML страницы -->
+          <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <p class="font-medium">Seed создал и подписал сервер</p>
+            <p class="text-xs text-muted-foreground">
+              Он уже виден в HTML этой страницы — не открывайте форму в общих и публичных местах:
+              увидевший seed получит доступ к аккаунту. Сохраните его в менеджере секретов:
+              он показывается один раз.
+            </p>
+          </div>
+        {/if}
+      {/if}
+
+      <!-- Подмена примитива (решение владельца): на регистрации — CopyField (Input →
+           CopyInput → CopyField), на входе — обычный Input из resolve. Подпись,
+           подсказка и ошибки — FieldShell. -->
+      <Field of={bound.f.seed} instead={fs.current === 'register' ? CopyField : undefined} />
+
+      {#if fs.current === 'entry'}
+        <Button type="submit" name="intent" value="login" task={formTask(bound.state)}>Авторизация</Button>
+        {#if data.user}
+          <!-- без JS меню-модалки нет: выход здесь (куки снимает экшен) -->
+          <Button type="submit" name="intent" value="logout" variant="ghost" size="sm" task={formTask(bound.state)}>
+            Выйти из аккаунта
+          </Button>
+        {/if}
+      {:else}
+        {#if notHydrated()}
+          <!-- без JS удержание недоступно: обычная кнопка отправки -->
+          <Button type="submit" name="intent" value="login" variant="outline" task={formTask(bound.state)}>Создать аккаунт</Button>
+        {:else}
+          <!-- hover: заливка от курсора (решение владельца, ход 258); нажатие тоже работает -->
+          <HoldButton
+            type="submit"
+            name="intent"
+            value="login"
+            variant="outline"
+            seconds={holdSeconds}
+            when="fill"
+            hover
+            task={formTask(bound.state)}
+          >
+            Удерживайте, чтобы создать аккаунт
+          </HoldButton>
+        {/if}
+      {/if}
+    {:else if fs.current === 'restore'}
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Аккаунт ждёт удаления</h2>
+        <p class="text-sm text-muted-foreground">
+          Вы раньше попросили удалить аккаунт, поэтому вход в него закрыт. Можно вернуть всё как было:
+          заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится сам
+          по истечении срока.
+        </p>
+        <!-- seed — поле среза: значение со среза входа едет в отправку подтверждения
+             (доказательство владения проверяет сервер); показывать его незачем -->
+        <div hidden aria-hidden="true"><Field of={bound.f.seed} /></div>
+        <Button type="submit" name="intent" value="restore" task={formTask(bound.state)}>Восстановить аккаунт</Button>
+        <Button type="submit" name="intent" value="logout" variant="ghost" size="sm" task={formTask(bound.state)}>
+          Не восстанавливать
+        </Button>
+      </div>
+    {/if}
+  </Form>
+{/if}
