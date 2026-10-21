@@ -26,7 +26,8 @@ export type AuthErrorCode =
   | 'auth.session-unknown'    // брони сессии нет (выход, отзыв)
   | 'auth.blocked'            // аккаунт заблокирован (сферы blocked)
   | 'auth.disabled'           // вход выключен на сервере (нет AUTH_SEAL_SECRET)
-  | 'auth.delete-pending'     // заявка на удаление: вход ведёт на шаг восстановления
+  | 'auth.delete-pending'     // заявка на удаление: работа под выданными правами остановлена
+  | 'auth.deleted'            // аккаунт удалён (seed ещё не стёрт): шаг восстановления, сессии нет
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
   | 'profile.avatar-format'   // аватар не из белого списка форматов
@@ -61,6 +62,8 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.blocked': () => [generalError('auth.blocked')],
   'auth.disabled': () => [generalError('auth.disabled', { retryable: true })],
   'auth.delete-pending': () => [generalError('auth.delete-pending')],
+  // роут входа факт перехватывает в шаг восстановления; здесь — баннер для прочих поверхностей
+  'auth.deleted': () => [generalError('auth.deleted')],
   'auth.confirm': (f) => [fieldError(f)],
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
   'profile.avatar-format': () => [error({ code: 'profile.avatar-format' }, 'avatar')],

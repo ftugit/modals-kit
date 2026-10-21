@@ -14,7 +14,7 @@ import { createFormHandler } from '#lib/form/server.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
 import { auth, readVault, vaultPayloadOf } from '#content/user/gateway.js'
 import { authForm } from '#content/user/forms.js'
-import { createUserConfig, instruction, seedOf } from '#content/user/index.js'
+import { createUserConfig, instruction, seedOf, type LoginOutcome } from '#content/user/index.js'
 import { localStore } from '#lib/server/cache.js'
 
 const config = createUserConfig(localStore.scope('user-config'))
@@ -63,6 +63,39 @@ export const actions: Actions = {
       order: SECURITY_LAYERS,
       async execute({ values, intent, commit, fail }) {
         const gone = (fact: Parameters<typeof instruction>[0]) => fail(instruction(fact))
+        // блокировка — не ошибка формы, а состояние: шаг с причиной и сроком
+        const blockedStep = (fact: { args?: Record<string, string | number> }) => {
+          const raw = fact.args?.until
+          commit()
+          return {
+            data: {
+              step: 'blocked',
+              blocked: { reason: String(fact.args?.reason ?? 'не указана'), untilMs: typeof raw === 'number' && raw > 0 ? raw : null },
+            },
+          }
+        }
+        // общий хвост успешного входа/восстановления (сессия уже выдана
+        // фасадом): порядок шагов — ограничения (каждый вход) → профиль → готово
+        const entered = async (value: LoginOutcome) => {
+          const user = await vaultPayloadOf(value)
+          if (value.restrictions.length > 0) {
+            commit()
+            return {
+              data: {
+                step: 'restrictions',
+                user,
+                restrictions: value.restrictions.map((b) => ({ scope: b.scope, reason: b.reason, untilMs: b.until ?? null })),
+              },
+            }
+          }
+          const prof = await u.profile()
+          if (!prof.ok || prof.value === null) {
+            commit()
+            return { data: { step: 'profile', user } }
+          }
+          commit()
+          return { data: { step: 'done', user } }
+        }
         // вход выключен: экшены честно отказывают (кроме выхода — куки чистить можно)
         if (!u.enabled && intent !== 'logout') return gone({ code: 'auth.disabled' })
         switch (intent) {
@@ -76,48 +109,31 @@ export const actions: Actions = {
               signature: values.signature ? String(values.signature) : undefined,
             })
             if (!r.ok) {
-              // блокировка — не ошибка формы, а состояние: шаг с причиной и сроком
-              if (r.fact.code === 'auth.blocked') {
-                const raw = r.fact.args?.until
+              if (r.fact.code === 'auth.blocked') return blockedStep(r.fact)
+              // удалённый аккаунт — тоже состояние, не ошибка: шаг
+              // восстановления; сессии нет и быть не должно (политика)
+              if (r.fact.code === 'auth.deleted') {
                 commit()
-                return {
-                  data: {
-                    step: 'blocked',
-                    blocked: { reason: String(r.fact.args?.reason ?? 'не указана'), untilMs: typeof raw === 'number' && raw > 0 ? raw : null },
-                  },
-                }
+                return { data: { step: 'restore' } }
               }
               return gone(r.fact)
             }
-            const user = await vaultPayloadOf(r.value)
-            // порядок шагов: восстановление → ограничения (каждый вход) → профиль → готово
-            if (r.value.deletePending) {
-              commit()
-              return { data: { step: 'restore', user } }
-            }
-            if (r.value.restrictions.length > 0) {
-              commit()
-              return {
-                data: {
-                  step: 'restrictions',
-                  user,
-                  restrictions: r.value.restrictions.map((b) => ({ scope: b.scope, reason: b.reason, untilMs: b.until ?? null })),
-                },
-              }
-            }
-            const prof = await u.profile()
-            if (!prof.ok || prof.value === null) {
-              commit()
-              return { data: { step: 'profile', user } }
-            }
-            commit()
-            return { data: { step: 'done', user } }
+            return entered(r.value)
           }
           case 'restore': {
-            const r = await u.cancelDelete()
-            if (!r.ok) return gone(r.fact)
-            commit()
-            return { data: { step: 'done' } }
+            // подтверждение восстановления: seed доехал скрытым полем шага;
+            // доказательство проверяет ядро ДО касания удалённой строки
+            const derived = await seedOf(String(values.seed ?? '').trim())
+            const r = await u.restoreDeleted({
+              seed: derived,
+              nonce: String(values.nonce ?? ''),
+              signature: values.signature ? String(values.signature) : undefined,
+            })
+            if (!r.ok) {
+              if (r.fact.code === 'auth.blocked') return blockedStep(r.fact)
+              return gone(r.fact)
+            }
+            return entered(r.value)
           }
           case 'profile': {
             const nickname = String(values.nickname ?? '').trim()
@@ -164,9 +180,11 @@ export const actions: Actions = {
     })
     const { result, status } = await handler(event.request, 'action', event)
     if (result.ok) {
-      if (!isJs(event.request)) {
+      const step = (result.data as { step?: string } | undefined)?.step
+      // шаг восстановления: redirect потерял бы значения формы, а seed нужен
+      // отправке подтверждения — без JS страница перерисовывается продолжением
+      if (!isJs(event.request) && step !== 'restore') {
         const next = localPath(new URL(event.request.url).searchParams.get('next'))
-        const step = (result.data as { step?: string } | undefined)?.step
         if (step && step !== 'entry' && step !== 'done') {
           redirect(303, `/user/auth?stage=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`)
         }

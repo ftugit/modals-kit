@@ -169,7 +169,8 @@
       blocked = next.blocked
       restrictions = next.restrictions
       if (next.nonce) nonce = next.nonce
-      if (next.step === 'entry' || next.step === 'register') void refreshChallenge()
+      // restore: вход потратил nonce, а подтверждение подписывает свежий
+      if (next.step === 'entry' || next.step === 'register' || next.step === 'restore') void refreshChallenge()
     })
   })
 
@@ -364,12 +365,16 @@
     <div class="flex flex-col gap-3">
       <h2 class="text-base font-semibold">Аккаунт ждёт удаления</h2>
       <p class="text-sm text-muted-foreground">
-        Вы раньше попросили удалить аккаунт. Можно вернуть всё как было — заявка будет отменена,
-        и вы останетесь в аккаунте. Если ничего не делать, аккаунт удалится сам по истечении срока.
+        Вы раньше попросили удалить аккаунт, поэтому вход в него закрыт. Можно вернуть всё как было:
+        заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится сам
+        по истечении срока.
       </p>
+      <!-- seed — поле шага: значение с шага входа едет в отправку подтверждения
+           (доказательство владения проверяет сервер); показывать его незачем -->
+      <div hidden aria-hidden="true"><Field of={bound.f.seed} /></div>
       <Button type="submit" name="intent" value="restore" task={formTask(bound.state)}>Восстановить аккаунт</Button>
       <Button type="submit" name="intent" value="logout" variant="ghost" size="sm" task={formTask(bound.state)}>
-        Выйти без восстановления
+        Не восстанавливать
       </Button>
     </div>
   {:else if step === 'profile'}

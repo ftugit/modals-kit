@@ -29,7 +29,7 @@ import {
   requestDelete as coreRequestDelete,
   revokeSession as coreRevokeSession,
   issueChallenge as coreIssueChallenge,
-  cancelDelete as coreCancelDelete,
+  restoreDeleted as coreRestoreDeleted,
   type SessionView,
   type UserResult,
 } from './index.js'
@@ -37,7 +37,7 @@ import { sign, verify } from './keys.js'
 import { profile as coreProfile, updateProfile as coreUpdateProfile } from './profile.js'
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow } from './ports.js'
-import type { DataContext } from '#lib/db/index.js'
+import { normalizeFailure, type DataContext } from '#lib/db/index.js'
 import type { ProfileView, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 
@@ -170,13 +170,29 @@ function authsAdapter() {
   const api = () => db.resource(authRes)
   return {
     async findBySeed(seed: string): Promise<AuthRow | undefined> {
-      const rows = await api().select(SYSTEM, { filter: { field: 'seed', op: 'eq', value: seed }, includeDeleted: true })
+      // без includeDeleted: модель сама добавляет deleted_at IS NULL —
+      // аккаунт с заявкой на удаление обычному поиску не виден
+      const rows = await api().select(SYSTEM, { filter: { field: 'seed', op: 'eq', value: seed } })
       const row = rows[0] as unknown as Record<string, unknown> | undefined
       return row ? authRowOf(row) : undefined
     },
-    async create(seed: string): Promise<AuthRow> {
-      const row = (await api().insert(SYSTEM, { seed })) as unknown as Record<string, unknown>
-      return authRowOf(row)
+    async findDeletedBySeed(seed: string): Promise<AuthRow | undefined> {
+      // единственный includeDeleted по seed: зовётся ТОЛЬКО после
+      // доказательства владения (restoreDeleted в ядре)
+      const rows = await api().select(SYSTEM, { filter: { field: 'seed', op: 'eq', value: seed }, includeDeleted: true })
+      const row = rows[0] as unknown as Record<string, unknown> | undefined
+      const found = row ? authRowOf(row) : undefined
+      return found && found.deletedAt !== null ? found : undefined
+    },
+    async create(seed: string): Promise<AuthRow | null> {
+      try {
+        const row = (await api().insert(SYSTEM, { seed })) as unknown as Record<string, unknown>
+        return authRowOf(row)
+      } catch (e) {
+        // unique по seed покрывает и удалённые строки: конфликт = «занят»
+        if (normalizeFailure(e).kind === 'conflict') return null
+        throw e
+      }
     },
     async get(id: string): Promise<AuthRow | undefined> {
       try {
@@ -325,6 +341,7 @@ export function auth(event: AuthEvent): {
   readonly enabled: boolean
   issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
   login(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  restoreDeleted(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   renew(): Promise<UserResult<LoginOutcome>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
@@ -333,7 +350,6 @@ export function auth(event: AuthEvent): {
   profile(): Promise<UserResult<ProfileView | null>>
   updateProfile(args: { nickname?: string; avatarUrl?: string | null }): Promise<UserResult<ProfileView>>
   requestDelete(): Promise<UserResult<null>>
-  cancelDelete(): Promise<UserResult<{ id: string }>>
 } {
   const ports = authPorts({
     get: (name) => event.cookies.get(name),
@@ -359,6 +375,11 @@ export function auth(event: AuthEvent): {
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },
+    restoreDeleted: async (args) => {
+      const r = await coreRestoreDeleted(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
+      if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
+      return r
+    },
     renew: async () => {
       const r = await coreRenew(ports, { renewal: event.cookies.get(RENEWAL_COOKIE), subnet: subnetOf(event.request), country: countryOf(event.request) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
@@ -379,7 +400,6 @@ export function auth(event: AuthEvent): {
     profile: () => coreProfile(ports, access()),
     updateProfile: (args) => coreUpdateProfile(ports, access(), args),
     requestDelete: () => coreRequestDelete(ports, access()),
-    cancelDelete: () => coreCancelDelete(ports, access()),
   }
 }
 
@@ -448,6 +468,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
       return 404
     case 'auth.delete-pending':
       return 409
+    case 'auth.deleted':
+      return 410
     case 'auth.confirm':
     case 'profile.nickname-forbidden':
     case 'profile.avatar-format':

@@ -37,13 +37,20 @@ export interface SessionStorePort {
 
 /** Таблица auth — носитель безопасности аккаунта. Личного — ничего. */
 export interface AuthStorePort {
-  /** Строка целиком (включая софт-удаление и блокировки) — решает api. */
+  /**
+   * Живая строка по seed — обычный поиск политики: аккаунт с заявкой на
+   * удаление НЕ виден (софт-удаление модели). Видеть удалённую строку —
+   * только `findDeletedBySeed`, и только после доказательства владения.
+   */
   findBySeed(seed: string): Promise<AuthRow | undefined>
-  create(seed: string): Promise<AuthRow>
+  /** Удалённая строка по seed (привилегированный поиск восстановления). */
+  findDeletedBySeed(seed: string): Promise<AuthRow | undefined>
+  /** Создать аккаунт; `null` — seed занят (в т.ч. удалённой строкой: unique). */
+  create(seed: string): Promise<AuthRow | null>
   get(id: string): Promise<AuthRow | undefined>
-  /** Заявка на удаление: софт-метка; вход ведёт на шаг восстановления. */
+  /** Заявка на удаление: софт-метка; вход теперь получает `auth.deleted`. */
   markDeleted(id: string, at: number): Promise<void>
-  /** Снять заявку (шаг восстановления). */
+  /** Снять заявку (восстановление после доказательства владения). */
   clearDeleted(id: string): Promise<void>
   /** Исполнитель через срок: seed и security стираются — надгробие остаётся. */
   wipeCredentials(id: string): Promise<void>

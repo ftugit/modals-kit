@@ -11,8 +11,8 @@ import { getEncoder } from '#lib/image/index.js'
 import { ensureWasm } from '#lib/image/test-wasm.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  activeBlocks, cancelDelete, fullBlock, issueChallenge, listSessions, login, logout,
-  logoutAll, renew, requestDelete, revokeSession, statusOf, subnetHash,
+  activeBlocks, fullBlock, issueChallenge, listSessions, login, logout,
+  logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
   sweepDeletions, type UserResult,
 } from './auth.js'
 import { profile, updateProfile } from './profile.js'
@@ -68,10 +68,16 @@ function makePorts(seedSecret?: string): {
       },
     },
     auths: {
+      // фейк политики модели: обычный поиск удалённых не видит; unique по
+      // seed покрывает и удалённые строки (конфликт = null)
       async findBySeed(seed) {
-        return [...auths.values()].find((r) => r.seed === seed)
+        return [...auths.values()].find((r) => r.seed === seed && r.deletedAt === null)
+      },
+      async findDeletedBySeed(seed) {
+        return [...auths.values()].find((r) => r.seed === seed && r.deletedAt !== null)
       },
       async create(seed) {
+        if ([...auths.values()].some((r) => r.seed === seed)) return null
         const row: AuthRow = {
           id: crypto.randomUUID(),
           seed,
@@ -177,6 +183,14 @@ async function doLogin(ports: AuthPorts, seed: string, sk: string) {
   return login(ports, { seed, nonce: challenge.value.nonce, signature })
 }
 
+/** Подтверждение восстановления: свежий challenge + подпись тем же ключом. */
+async function doRestore(ports: AuthPorts, seed: string, sk: string) {
+  const challenge = await issueChallenge(ports)
+  if (!challenge.ok) throw new Error('challenge не выдался')
+  const signature = await sign(challenge.value.nonce, sk)
+  return restoreDeleted(ports, { seed, nonce: challenge.value.nonce, signature })
+}
+
 const ok_ = <T>(r: UserResult<T>): T => {
   if (!r.ok) throw new Error(`ожидали ok, получили факт: ${r.fact.code}`)
   return r.value
@@ -214,7 +228,6 @@ describe('единый вход', () => {
     const out = ok_(await doLogin(ports, seed, sk))
     expect(out.access).toBeTruthy()
     expect(out.renewal).toBeTruthy()
-    expect(out.deletePending).toBe(false)
     expect(out.restrictions).toEqual([])
     const row = await ports.auths.findBySeed(seed)
     expect(row?.subnetSalt).toHaveLength(32)
@@ -260,15 +273,17 @@ describe('единый вход', () => {
     expect(blocked.args?.reason).toBe('скам')
   })
 
-  test('заявка на удаление: вход отдаёт токены и deletePending', async () => {
-    const { ports, secret } = makePorts()
+  test('заявка на удаление: вход НЕ авторизует — факт auth.deleted, токенов нет', async () => {
+    const { ports, secret, sessions } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const first = ok_(await doLogin(ports, seed, sk))
     const payload = JSON.parse(Buffer.from(first.access, 'base64url').toString()) as { sub: string }
     await ports.auths.markDeleted(payload.sub, Date.now())
-    const second = ok_(await doLogin(ports, seed, sk))
-    expect(second.deletePending).toBe(true)
-    expect(second.access).toBeTruthy()
+    const before = sessions.size
+    const second = fact_(await doLogin(ports, seed, sk))
+    expect(second.code).toBe('auth.deleted')
+    // сессия не создана: удалённый аккаунт входом не авторизуется
+    expect(sessions.size).toBe(before)
   })
 })
 
@@ -413,27 +428,45 @@ describe('профиль', () => {
 })
 
 describe('удаление аккаунта', () => {
-  test('заявка → шаг восстановления отменяет; исполнитель по грейсу стирает', async () => {
+  test('заявка → вход закрыт (auth.deleted); восстановление — по доказательству владения', async () => {
     const { ports, secret, auths } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
     ok_(await updateProfile(ports, out.access, { nickname: 'Вася' }))
     ok_(await requestDelete(ports, out.access))
-    // под правами доступ остановлен (delete-pending), вход отдаёт deletePending
+    // под выданными правами доступ остановлен; свежий вход сессии не даёт
     expect(fact_(await profile(ports, out.access)).code).toBe('auth.delete-pending')
-    const relogin = ok_(await doLogin(ports, seed, sk))
-    expect(relogin.deletePending).toBe(true)
-    const p = ok_(await cancelDelete(ports, relogin.access))
-    expect(p.id).toBeTruthy()
-    expect(ok_(await profile(ports, relogin.access))?.nickname).toBe('Вася')
+    expect(fact_(await doLogin(ports, seed, sk)).code).toBe('auth.deleted')
+    // чужой ключ: подпись не сошлась — удалённая строка не тронута
+    const stranger = await generateKeyPair()
+    expect(fact_(await doRestore(ports, seed, stranger.secret)).code).toBe('auth.signature')
+    expect(fact_(await doLogin(ports, seed, sk)).code).toBe('auth.deleted')
+    // свой ключ: метка снята, сессия выдана тому же аккаунту, профиль цел
+    const restored = ok_(await doRestore(ports, seed, sk))
+    const restoredPayload = JSON.parse(Buffer.from(restored.access, 'base64url').toString()) as { sub: string }
+    expect(restoredPayload.sub).toBe(payload.sub)
+    expect(ok_(await profile(ports, restored.access))?.nickname).toBe('Вася')
     // исполнитель: грейс не вышел — никого; вышел — seed стёрт, профиль удалён
     expect(ok_(await sweepDeletions(ports))).toBe(0)
-    const row = (await ports.auths.get(p.id)) as AuthRow
-    authsPatch(auths, p.id, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
+    const row = (await ports.auths.get(payload.sub)) as AuthRow
+    authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
     expect(ok_(await sweepDeletions(ports))).toBe(1)
     const wiped = (await ports.auths.get(row.id)) as AuthRow
     expect(wiped.seed).toBeNull()
-    expect(await ports.profiles.get(p.id)).toBeUndefined()
+    expect(await ports.profiles.get(payload.sub)).toBeUndefined()
+  })
+
+  test('восстановление после стирания исполнителем — новый аккаунт (seed свободен)', async () => {
+    const { ports, secret, auths } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
+    ok_(await sweepDeletions(ports))
+    const again = ok_(await doRestore(ports, seed, sk))
+    const againPayload = JSON.parse(Buffer.from(again.access, 'base64url').toString()) as { sub: string }
+    expect(againPayload.sub).not.toBe(payload.sub)
   })
 
   test('вход в стёртый (надгробие) — seed не найден, новый аккаунт', async () => {

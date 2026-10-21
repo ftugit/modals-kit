@@ -17,14 +17,16 @@
  *    access без создания нового продления — куча токенов не плодится);
  *  - отзыв = софт-удаление строки сессии; статусы фаервола:
  *    ok / revoked / expired / unknown (`statusOf`);
- *  - заявка на удаление НЕ закрывает вход: `login` с пенингом возвращает
- *    токены и `deletePending: true` — виджет ведёт на шаг восстановления;
- *    `cancelDelete` снимает метку под уже выданными правами;
+ *  - заявка на удаление закрывает вход полностью: обычный поиск удалённую
+ *    строку не видит (политика модели), создать дубль мешает unique — по
+ *    конфликту `login` возвращает факт `auth.deleted` БЕЗ сессии; вернуть
+ *    аккаунт — `restoreDeleted`: то же доказательство владения, затем
+ *    привилегированный поиск удалённой строки и снятие метки;
  *  - сроки и поведение — из конфига модуля (`config.ts`), не константы.
  */
 import type { AuthFact } from './error.js'
 import type { AuthPorts } from './ports.js'
-import type { Blocked, Challenge, LoginOutcome, Principal, ProfileView, SessionRecord, SessionStatus, SubnetEntry, TokenPair } from './types.js'
+import type { Blocked, Challenge, LoginOutcome, ProfileView, SessionRecord, SessionStatus, SubnetEntry, TokenPair } from './types.js'
 
 /** Результат функции API: данные или голый факт (код+путь). */
 export type UserResult<T> =
@@ -72,34 +74,45 @@ export async function issueChallenge(ports: AuthPorts): Promise<UserResult<Chall
   return ok({ nonce, expiresAt })
 }
 
-/**
- * Единый вход: подпись nonce по seed; аккаунта нет — создаём. Блокировка
- * сферой `auth` → `auth.blocked`; заявка на удаление → токены выдаются,
- * `deletePending: true` (шаг восстановления; отмена — `cancelDelete`).
- * Подсеть/страна — от адаптера: полный адрес не принимается никогда.
- */
-export async function login(
-  ports: AuthPorts,
-  args: {
-    seed: string
-    nonce: string
-    /** Подпись nonce; нет — режим без JS: доказательство = само знание секрета. */
-    signature?: string
-    deviceName?: string
-    /** Подсеть в представлении адаптера (хэш считается здесь); нет — не пишем. */
-    subnet?: string
-    country?: string
-  },
-): Promise<UserResult<LoginOutcome>> {
-  const seed = args.seed.trim()
-  if (seed.length < 43 || seed.length > 44) return fail({ code: 'auth.signature', path: 'signature' })
-  if (!(await ports.challenge.consume(args.nonce))) return fail({ code: 'auth.nonce-unknown', path: 'signature' })
-  if (args.signature !== undefined && !(await ports.crypto.verify(args.nonce, args.signature, seed)))
-    return fail({ code: 'auth.signature', path: 'signature' })
+/** Аргументы входа и восстановления — одно и то же доказательство владения. */
+export type EnterArgs = {
+  seed: string
+  nonce: string
+  /** Подпись nonce; нет — режим без JS: доказательство = само знание секрета. */
+  signature?: string
+  deviceName?: string
+  /** Подсеть в представлении адаптера (хэш считается здесь); нет — не пишем. */
+  subnet?: string
+  country?: string
+}
 
+/**
+ * Доказательство владения seed: одноразовый nonce + подпись. Чистая
+ * криптография — строк аккаунтов НЕ касается, поэтому стоит ДО любого
+ * поиска (в т.ч. привилегированного поиска удалённой строки).
+ * Возвращает нормализованный seed или факт отказа.
+ */
+async function proveSeed(ports: AuthPorts, args: EnterArgs): Promise<{ seed: string } | AuthFact> {
+  const seed = args.seed.trim()
+  if (seed.length < 43 || seed.length > 44) return { code: 'auth.signature', path: 'signature' }
+  if (!(await ports.challenge.consume(args.nonce))) return { code: 'auth.nonce-unknown', path: 'signature' }
+  if (args.signature !== undefined && !(await ports.crypto.verify(args.nonce, args.signature, seed)))
+    return { code: 'auth.signature', path: 'signature' }
+  return { seed }
+}
+
+/**
+ * Хвост входа после доказательства: найти живую строку или создать.
+ * Создать не вышло (seed занят, а живой строки нет) — аккаунт удалён:
+ * факт `auth.deleted`, сессии нет. Блокировка сферой `auth` →
+ * `auth.blocked`. Подсеть/страна — от адаптера: полный адрес не
+ * принимается никогда.
+ */
+async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
   const now = ports.clock.now()
   let row = await ports.auths.findBySeed(seed)
-  if (!row) row = await ports.auths.create(seed)
+  if (!row) row = await ports.auths.create(seed) ?? undefined
+  if (!row) return fail({ code: 'auth.deleted' })
 
   const blocked = activeBlocks(row.blocked, now)
   if (fullBlock(row.blocked, now)) {
@@ -112,9 +125,30 @@ export async function login(
   const tokens = await issueTokens(ports, row, record, now, deviceTtlSec)
   return ok({
     ...tokens,
-    deletePending: row.deletedAt !== null,
     restrictions: blocked.filter((b) => b.scope !== 'auth'),
   })
+}
+
+/** Единый вход: подпись nonce по seed; аккаунта нет — создаём. */
+export async function login(ports: AuthPorts, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
+  const proof = await proveSeed(ports, args)
+  if ('code' in proof) return fail(proof)
+  return completeLogin(ports, proof.seed, args)
+}
+
+/**
+ * Восстановление удалённого аккаунта (подтверждение на шаге восстановления):
+ * то же доказательство владения, что у входа, — и только после него
+ * привилегированный поиск удалённой строки и снятие метки; дальше — обычный
+ * хвост входа. Удалённой строки нет (исполнитель уже стёр seed, или аккаунт
+ * жив) — хвост входа сам разберётся: свободный seed создаст новый аккаунт.
+ */
+export async function restoreDeleted(ports: AuthPorts, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
+  const proof = await proveSeed(ports, args)
+  if ('code' in proof) return fail(proof)
+  const deleted = await ports.auths.findDeletedBySeed(proof.seed)
+  if (deleted) await ports.auths.clearDeleted(deleted.id)
+  return completeLogin(ports, proof.seed, args)
 }
 
 /** Новая строка сессии: jti, версия 0, срок из конфига, хэш подсети. */
@@ -182,7 +216,6 @@ async function issueTokens(
 export async function guard(
   ports: AuthPorts,
   accessToken: string | undefined,
-  opts?: { allowPending?: boolean },
 ): Promise<{ sub: string; jti: string; prof: { nickname: string | null; avatarUrl: string | null } } | AuthFact> {
   if (!accessToken) return { code: 'auth.expired' }
   const payload = await ports.seal.unseal(accessToken)
@@ -197,7 +230,7 @@ export async function guard(
   if (!auth || auth.seed === null) return { code: 'auth.identity-unknown' }
   const now = ports.clock.now()
   if (fullBlock(auth.blocked, now)) return { code: 'auth.blocked' }
-  if (auth.deletedAt !== null && !opts?.allowPending) return { code: 'auth.delete-pending' }
+  if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
   return { sub: payload.sub, jti: payload.dt, prof: payload.prof }
 }
 
@@ -279,7 +312,6 @@ export async function renew(
   return ok({
     access,
     ...(renewal ? { renewal } : {}),
-    deletePending: false,
     restrictions: activeBlocks(auth.blocked, now).filter((b) => b.scope !== 'auth'),
   })
 }
@@ -353,24 +385,12 @@ export type SessionView = {
 
 /* ── удаление аккаунта ── */
 
-/** Заявка на удаление: софт-метка; вход теперь ведёт на шаг восстановления. */
+/** Заявка на удаление: софт-метка; вход теперь получает факт `auth.deleted`. */
 export async function requestDelete(ports: AuthPorts, accessToken: string | undefined): Promise<UserResult<null>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
   await ports.auths.markDeleted(g.sub, ports.clock.now())
   return ok(null)
-}
-
-/**
- * Отмена заявки (шаг восстановления): права уже выданы входом, метка снимается
- * под ними — знать id недостаточно, доказательство владения сделал `login`.
- */
-export async function cancelDelete(ports: AuthPorts, accessToken: string | undefined): Promise<UserResult<Principal>> {
-  // allowPending: снятие заявки — ЕДИНСТВЕННАЯ функция, работающая под pending.
-  const g = await guard(ports, accessToken, { allowPending: true })
-  if ('code' in g) return fail(g)
-  await ports.auths.clearDeleted(g.sub)
-  return ok({ id: g.sub })
 }
 
 /**

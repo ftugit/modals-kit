@@ -4,7 +4,7 @@
 import { buildEnvelope, check, defineForm, field, v, type Envelope } from '#lib/form/index.js'
 
 export const AUTH_FORM_ID = 'user-auth'
-export const AUTH_FORM_REV = 3
+export const AUTH_FORM_REV = 4
 
 /**
  * Конверт для программных отправок мимо разметки (vault: продление; меню:
@@ -43,6 +43,7 @@ export const authForm = defineForm({
     'auth.session-unknown': 'Сессия не найдена — войдите заново',
     'auth.blocked': 'Аккаунт заблокирован',
     'auth.delete-pending': 'Заявка на удаление ещё активна',
+    'auth.deleted': 'Аккаунт удалён — его можно восстановить, пока seed не стёрт',
     'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
     'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
     'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
@@ -50,8 +51,9 @@ export const authForm = defineForm({
   },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },
-    // restore живёт правами куки: поле seed на шаге не показано — required отдыхает
-    { id: 'restore', label: 'Восстановить аккаунт', validate: 'full', relax: ['required'] },
+    // restore — доказательство владения seed в обход политики: поле seed
+    // живёт на шаге скрыто (значение с шага входа) и обязано доехать
+    { id: 'restore', label: 'Восстановить аккаунт', validate: 'full' },
     { id: 'profile', label: 'Сохранить профиль', validate: 'full', relax: ['required'] },
     { id: 'skip-profile', label: 'Пропустить профиль', validate: 'partial', relax: ['required'] },
     { id: 'accept', label: 'Принято', validate: 'partial', relax: ['required'] },
