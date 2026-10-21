@@ -14,6 +14,7 @@ export const DEMO_MODES = [
   { value: 'local', label: 'Локально', jsOnly: true },
   { value: 'hybrid', label: 'Адрес + локально (?hstep)', jsOnly: true },
   { value: 'form', label: 'Форма (subset-шаги)', jsOnly: false },
+  { value: 'mixed', label: 'Смешанный хост (?mstep)', jsOnly: false },
 ] as const
 
 export type DemoMode = (typeof DEMO_MODES)[number]['value']

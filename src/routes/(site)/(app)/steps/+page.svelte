@@ -7,7 +7,7 @@
   import { page } from '$app/state'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { untrack } from 'svelte'
-  import { Steps, FormSteps, formSteps, useSteps } from '#lib/components/steps/index.js'
+  import { Steps, FormSteps, formSteps, stepLink, useSteps } from '#lib/components/steps/index.js'
   import { asLink } from '#lib/components/links/index.js'
   import { bind } from '#lib/form/svelte/index.js'
   import FieldInput from '#lib/components/form/Field.svelte'
@@ -66,6 +66,31 @@
     current: () => (visibleAddress().url.searchParams.get('hstep') ?? 'compose'),
   })
 
+  /* ── смешанный хост: обычные шаги + куст той же формы на шаге `form` ──────
+     Один хост hybrid (`?mstep`): `about`/`finish` — обычные шаги-тексты,
+     `form` — куст formSteps (та же форма, свой экземпляр привязки): срез —
+     второй сегмент полного ключа (`form.extra`), адрес пишет только хост.
+     Вторая привязка — свой instance: результат-продолжение поднимет только
+     та форма, что отправлялась. */
+  const mixedSteps = useSteps({
+    owner: 'steps-demo-mixed',
+    mode: 'hybrid',
+    key: 'mstep',
+    steps: () => [
+      { key: 'about', label: 'О чём речь', filled: withFilled },
+      { key: 'form', label: 'Анкета', filled: withFilled },
+      { key: 'finish', label: 'Финиш', filled: withFilled },
+    ],
+    current: () => visibleAddress().url.searchParams.get('mstep') ?? 'about',
+  })
+  const boundMixed = bind(forms, fstepForm, {
+    action: '/steps?demo=mixed',
+    instance: 'fstep:mixed',
+    transport: kitActionTransport('/steps'),
+    continuation: untrack(() => action?.result ?? null),
+  })
+  const fsMixed = formSteps(boundMixed, { steps: FSTEP_STEPS, at: 'form', host: mixedSteps })
+
   /* ── режим form: срезы ОДНОЙ формы (formSteps, хост не нужен) ─────────────
      Смена среза — submit (интенция экшена), валидаторы среза — subset экшена,
      свёрнутый шаг скрыт details-ом, но его поля едут в каждом POST. Шаг ведёт
@@ -90,7 +115,7 @@
   <title>Шаги — modals-kit</title>
   <meta
     name="description"
-    content="Ход шагов: адресные режимы (url/local/hybrid) и форм-режим — шаги управляют валидаторами через subset экшенов, свёрнутый шаг едет в каждом POST."
+    content="Ход шагов: адресные режимы (url/local/hybrid), форм-режим (шаги управляют валидаторами через subset экшенов, свёрнутый шаг едет в каждом POST) и смешанный хост — куст формы среди обычных шагов, адрес цепочкой."
   />
 </svelte:head>
 
@@ -104,12 +129,13 @@
       >← на главную</a>
     </div>
     <p class="text-muted-foreground">
-      Один хост (<code class="rounded bg-muted/70 px-1">useSteps</code>), четыре режима.
+      Один хост (<code class="rounded bg-muted/70 px-1">useSteps</code>), пять режимов.
       Адресные меняют адрес своим ключом брони (<code class="rounded bg-muted/70 px-1">?ustep</code>,
       <code class="rounded bg-muted/70 px-1">?hstep</code>), локальный — модальный сценарий без адреса.
       Форм-режим — шаги поверх одной формы: переход — submit с интенцией, валидаторы шага —
       <code class="rounded bg-muted/70 px-1">subset</code> экшена, свёрнутый шаг скрыт, но его поля
-      едут в каждом POST.
+      едут в каждом POST. Смешанный — один хост: обычные шаги и куст той же формы на шаге
+      «Анкета», адрес — цепочка <code class="rounded bg-muted/70 px-1">?mstep=form.extra</code>.
     </p>
   </header>
 
@@ -131,6 +157,10 @@
           Локальный режим: смена шагов — состояние хоста, адрес не пишется (сценарий модалок).
         {:else if mode === 'hybrid'}
           Гибрид: смена локально, адрес синхронизируется своим ключом брони (?hstep).
+        {:else if mode === 'mixed'}
+          Смешанный хост: обычные шаги («О чём речь», «Финиш») и куст формы на шаге
+          «Анкета». Адрес — цепочка <code class="rounded bg-muted/70 px-1">?mstep=form.extra</code>:
+          первый сегмент — шаг хоста, второй — срез формы; deep-link прямо на срез работает.
         {:else}
           Адресный режим: ссылки меняют ?ustep, deep-link и обновление работают сами.
         {/if}
@@ -138,7 +168,7 @@
     {/snippet}
   </DemoPanel>
 
-  {#if mode !== 'form'}
+  {#if mode === 'url' || mode === 'local' || mode === 'hybrid'}
     <div class="space-y-4" data-testid="demo-steps">
       {#if withNav}
         <Steps host={addressSteps} label="Шаги демо" />
@@ -149,6 +179,58 @@
         {#snippet done()}<p class="rounded-md border p-3 text-sm">{TEXT.done}</p>{/snippet}
       </Steps>
       <p class="font-mono text-xs text-muted-foreground">адрес: {address}</p>
+    </div>
+  {:else if mode === 'mixed'}
+    <div class="space-y-4" data-testid="demo-mixed">
+      <Steps host={mixedSteps} label="Смешанный хост" nav={withNav}>
+        {#snippet about()}
+          <div class="space-y-3 rounded-md border p-3 text-sm">
+            <p>Обычный шаг хоста — просто текст. На шаге «Анкета» живёт куст той же формы
+              (срезы «Контакты» и «Примечание»): полный ключ — цепочка
+              <code class="rounded bg-muted/70 px-1">form.extra</code>, адрес пишет один хост.</p>
+            <p><a {...stepLink(mixedSteps, 'form')} class="font-medium underline underline-offset-4">К анкете →</a></p>
+          </div>
+        {/snippet}
+        {#snippet form()}
+          <Form id="fstep-mixed" form={boundMixed} hiddenFields={boundMixed.hidden()}>
+            {#if boundMixed.state.result?.ok && (boundMixed.state.result.data as { saved?: boolean } | undefined)?.saved}
+              <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+                Готово. Исход: <b>{boundMixed.state.outcome}</b> ·
+                <a {...stepLink(mixedSteps, 'finish')} class="font-medium underline underline-offset-4">шаг «Финиш» →</a>
+                <span class="text-muted-foreground">(переход вне куста — дело страницы, не formSteps)</span>
+              </div>
+            {/if}
+            <Common errors={boundMixed.common} title="Форма не сохранена" />
+            <FormSteps fs={fsMixed}>
+              {#snippet contacts()}
+                <div class="space-y-3">
+                  <FieldInput of={boundMixed.f.name} />
+                  <FieldInput of={boundMixed.f.email} />
+                </div>
+              {/snippet}
+              {#snippet extra()}
+                <div class="space-y-3">
+                  <FieldInput of={boundMixed.f.note} />
+                </div>
+              {/snippet}
+            </FormSteps>
+            <Button type="submit" class="mt-4" {...fsMixed.submit()}>{fsMixed.isLast ? 'Сохранить' : 'Далее'}</Button>
+          </Form>
+        {/snippet}
+        {#snippet finish()}
+          <div class="space-y-3 rounded-md border p-3 text-sm">
+            <p>Финиш — обычный шаг хоста вне куста формы. Сюда ведёт ссылка страницы из
+              баннера успеха: formSteps переключает только свои срезы.</p>
+            <p><a {...stepLink(mixedSteps, 'about')} class="font-medium underline underline-offset-4">← сначала</a></p>
+          </div>
+        {/snippet}
+      </Steps>
+      <p class="font-mono text-xs text-muted-foreground">адрес: {address}</p>
+      <p class="text-xs text-muted-foreground">
+        Куст подключён парой <code class="rounded bg-muted/70 px-1">at: 'form'</code> + хост:
+        срез читается из остатка полного ключа, переходы «Далее» хост пишет полным ключом
+        (<code class="rounded bg-muted/70 px-1">?mstep=form.extra</code>).
+      </p>
     </div>
   {:else}
     <div class="space-y-4" data-testid="demo-form">
@@ -191,7 +273,7 @@
   <p class="text-xs text-muted-foreground">
     Бронь ключей глобальна: <code class="rounded bg-muted/70 px-1">step</code> — /fields,
     <code class="rounded bg-muted/70 px-1">stage</code> — авторизация,
-    <code class="rounded bg-muted/70 px-1">ustep</code>/<code class="rounded bg-muted/70 px-1">lstep</code>/<code class="rounded bg-muted/70 px-1">hstep</code> — это демо,
+    <code class="rounded bg-muted/70 px-1">ustep</code>/<code class="rounded bg-muted/70 px-1">lstep</code>/<code class="rounded bg-muted/70 px-1">hstep</code>/<code class="rounded bg-muted/70 px-1">mstep</code> — это демо,
     <code class="rounded bg-muted/70 px-1">demo</code> — режим панели.
   </p>
 </div>
