@@ -1,10 +1,10 @@
 // Описание ЕДИНСТВЕННОЙ формы пользователя: шаги (вход, создание, восстановление,
 // профиль, ограничения) — одна форма, различаются интентом нажатой кнопки.
 // Изоморфное: импортируют и виджет, и серверное действие. Ноль UI, ноль HTTP.
-import { buildEnvelope, defineForm, field, v, type Envelope } from '#lib/form/index.js'
+import { buildEnvelope, check, defineForm, field, v, type Envelope } from '#lib/form/index.js'
 
 export const AUTH_FORM_ID = 'user-auth'
-export const AUTH_FORM_REV = 2
+export const AUTH_FORM_REV = 3
 
 /**
  * Конверт для программных отправок мимо разметки (vault: продление; меню:
@@ -76,7 +76,14 @@ export const authForm = defineForm({
     signature: field.hidden({ label: 'Подпись' }),
     nickname: field.text({
       label: 'Никнейм',
-      validate: [v.maxLength(32)],
+      // длина — как NICKNAME в схеме профиля (2–32): числа продублированы
+      // сознательно — formParams(profile) потянул бы схему lib/db в описание,
+      // а оно едет в бандл каждой страницы с виджетом (+1 KiB замерено);
+      // равенство правил формы и схемы сторожит checks.test.ts.
+      // Запрещённые имена — проверка формы от снимка конфига (checks.ts).
+      // Доменная проверка в profile.ts остаётся серверным дублем до R3,
+      // когда обработчик получит тот же реестр проверок.
+      validate: [v.minLength(2), v.maxLength(32), check('nickname-forbidden')],
     }),
     avatar: field.hidden({ label: 'Аватар' }),
   },
