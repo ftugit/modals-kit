@@ -11,7 +11,7 @@ import {
   AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS, avatarPhotoSpec, createUserChecks,
 } from './checks.js'
 import { defaults } from './config.js'
-import { authForm } from './forms.js'
+import { profileForm } from './forms.js'
 import { profile } from './schema.js'
 
 const checks = createUserChecks(defaults)
@@ -31,7 +31,7 @@ describe('spec аватара: вход и выход разведены', () =>
   })
 })
 
-describe('никнейм: паритет AsyncRunner и runAsyncChecks на описании authForm', () => {
+describe('никнейм: паритет AsyncRunner и runAsyncChecks на описании profileForm', () => {
   const cases: readonly (readonly [string, string, string | null])[] = [
     ['обычный никнейм', 'Вася', null],
     ['пусто — менять нечего', '', null],
@@ -44,10 +44,10 @@ describe('никнейм: паритет AsyncRunner и runAsyncChecks на оп
     it(`${title}: вердикт один на обеих сторонах`, async () => {
       const data = new FormData()
       data.set('nickname', nickname)
-      const values = valuesForChecks(data, authForm)
-      const server = (await runAsyncChecks(authForm, values, checks))
+      const values = valuesForChecks(data, profileForm)
+      const server = (await runAsyncChecks(profileForm, values, checks))
         .filter((e) => e.path === 'nickname')
-      const client = await new AsyncRunner(checks).run(authForm, 'nickname', values)
+      const client = await new AsyncRunner(checks).run(profileForm, 'nickname', values)
       expect(server.map((e) => e.code)).toEqual(code ? [code] : [])
       expect(client?.code ?? null).toBe(code)
     })
@@ -57,8 +57,8 @@ describe('никнейм: паритет AsyncRunner и runAsyncChecks на оп
     const codesOf = (nickname: string) => {
       const data = new FormData()
       data.set('nickname', nickname)
-      const { values } = decode(data, authForm)
-      return validateForm(authForm, values, {})
+      const { values } = decode(data, profileForm)
+      return validateForm(profileForm, values, {})
         .filter((e) => e.path === 'nickname')
         .map((e) => e.code)
     }
@@ -74,14 +74,14 @@ describe('никнейм: паритет AsyncRunner и runAsyncChecks на оп
     // валидаторов обязаны совпадать на граничных длинах.
     const schemaCodes = (nickname: string) =>
       formParams(profile).nickname.validate
-        .map((ref) => authForm.registry.validators.resolve(ref)(nickname, {} as never))
+        .map((ref) => profileForm.registry.validators.resolve(ref)(nickname, {} as never))
         .filter((x) => x !== null)
         .map((x) => x.code)
     const formCodes = (nickname: string) => {
       const data = new FormData()
       data.set('nickname', nickname)
-      const { values } = decode(data, authForm)
-      return validateForm(authForm, values, {})
+      const { values } = decode(data, profileForm)
+      return validateForm(profileForm, values, {})
         .filter((e) => e.path === 'nickname')
         .map((e) => e.code)
     }

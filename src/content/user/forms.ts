@@ -1,14 +1,19 @@
-// Описание ЕДИНСТВЕННОЙ формы пользователя: шаги (вход, создание, восстановление,
-// профиль, ограничения) — одна форма, различаются интентом нажатой кнопки.
-// Изоморфное: импортируют и виджет, и серверное действие. Ноль UI, ноль HTTP.
+// Описания форм пользователя: ДВЕ формы — авторизация (вход, создание,
+// восстановление — срезы одной формы, различаются интентом; куст `auth.*`
+// на шаге хоста) и профиль (никнейм + аватар; отдельный шаг и свой
+// обработчик — приём на роуте различает формы по конверту `__form_id`).
+// Изоморфные: импортируют виджеты и серверное действие. Ноль UI, ноль HTTP.
 import { buildEnvelope, check, defineForm, field, v, type Envelope } from '#lib/form/index.js'
 
 export const AUTH_FORM_ID = 'user-auth'
-export const AUTH_FORM_REV = 4
+// ревизия 5: поля и экшены профиля уехали в отдельную форму `user-profile`
+export const AUTH_FORM_REV = 5
+export const PROFILE_FORM_ID = 'user-profile'
 
 /**
  * Конверт для программных отправок мимо разметки (vault: продление; меню:
- * выход) — те же имена, что рисует `bind.hidden()` в форме.
+ * выход; шаг ограничений: «Принято») — те же имена, что рисует `bind.hidden()`
+ * в форме.
  */
 export function authEnvelope(instance: string): Envelope {
   return { formId: AUTH_FORM_ID, revision: AUTH_FORM_REV, instance, submissionId: crypto.randomUUID(), intent: 'submit' }
@@ -21,9 +26,9 @@ export function authEnvelopeFields(envelope: Envelope): Record<string, string> {
 }
 
 /**
- * Поля — полный состав всех шагов; шаг показывает свои, остальные скрыты или
- * пусты. Обязательность решает сервер (шагу известен контекст), правила длины —
- * здесь: они верны на любом шаге.
+ * Поля — состав срезов входа/создания/восстановления; срез показывает свои,
+ * остальные скрыты или пусты. Обязательность решает сервер (срезу известен
+ * контекст), правила длины — здесь: они верны на любом срезе.
  */
 export const authForm = defineForm({
   id: AUTH_FORM_ID,
@@ -45,23 +50,17 @@ export const authForm = defineForm({
     'auth.delete-pending': 'Заявка на удаление ещё активна',
     'auth.deleted': 'Аккаунт удалён — его можно восстановить, пока seed не стёрт',
     'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
-    'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
-    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
   },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },
     // restore — доказательство владения seed в обход политики: поле seed
     // живёт на шаге скрыто (значение с шага входа) и обязано доехать
     { id: 'restore', label: 'Восстановить аккаунт', validate: 'full' },
-    { id: 'profile', label: 'Сохранить профиль', validate: 'full', relax: ['required'] },
-    { id: 'skip-profile', label: 'Пропустить профиль', validate: 'partial', relax: ['required'] },
+    // Сервисные действия (accept/logout/renew/challenge) — программные
+    // отправки конверта, где поля входа не рисуются или пусты (ограничения,
+    // меню, фон): seed обязан быть непустым (required), и без relax ЛЮБОЙ
+    // такой поход падал на seed.required ещё до execute (ход 261, тесты 9а/14).
     { id: 'accept', label: 'Принято', validate: 'partial', relax: ['required'] },
-    // Сервисные действия (logout/challenge/renew/accept) работают в формах, где
-    // поля входа не рисуются или пусты (меню, фон, ограничения): seed с хода 258
-    // обязан быть непустым (required), и без relax ЛЮБОЙ такой поход падал на
-    // seed.required ещё до execute (замечено ходом 261, тесты 9а/14; у
-    // restore/profile relax стоял изначально).
     { id: 'logout', label: 'Выйти', validate: 'partial', relax: ['required'] },
     { id: 'renew', label: 'Продлить', validate: 'partial', relax: ['required'] },
     { id: 'challenge', label: 'Свежий nonce', validate: 'partial', relax: ['required'] },
@@ -76,6 +75,24 @@ export const authForm = defineForm({
     }),
     nonce: field.hidden({ label: 'Nonce' }),
     signature: field.hidden({ label: 'Подпись' }),
+  },
+})
+
+/**
+ * Форма профиля — отдельный шаг после входа (сессия уже есть, подпись не
+ * нужна) и отдельный компонент со своей привязкой. «Пропустить» — не
+ * отправка: смена шага/ссылка, экшена пропуска здесь нет.
+ */
+export const profileForm = defineForm({
+  id: PROFILE_FORM_ID,
+  revision: 1,
+  messages: {
+    'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
+    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
+    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
+  },
+  actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
+  fields: {
     nickname: field.text({
       label: 'Никнейм',
       placeholder: 'необязательно',

@@ -10,9 +10,9 @@
 // модуле — скопируй тест к её описанию.
 import { decode, validateForm, type FormDescription } from '#lib/form/index.js'
 import { describe, expect, test } from 'vitest'
-import { authForm } from './forms.js'
+import { authForm, profileForm } from './forms.js'
 
-const FORMS: readonly FormDescription[] = [authForm]
+const FORMS: readonly FormDescription[] = [authForm, profileForm]
 
 describe('контракт форм: не-full экшен проходит пустую отправку', () => {
   for (const desc of FORMS) {
@@ -28,7 +28,7 @@ describe('контракт форм: не-full экшен проходит пу�
           codes,
           `экшен «${action.id}» (validate: '${action.validate}') падает на пустой отправке: ${codes}. ` +
             'Сервисному действию поля не нужны: добавь экшену relax: [\'required\'] ' +
-            '(как у restore/profile) или ограничь проверку subset; иначе ЛЮБОЙ поход ' +
+            '(как у сервисных действий authForm) или ограничь проверку subset; иначе ЛЮБОЙ поход ' +
             'этим интентом отклоняется до execute — молча для пользователя.',
         ).toBe('')
       }
