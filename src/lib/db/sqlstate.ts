@@ -1,7 +1,7 @@
 /** PostgreSQL18 SQLSTATE catalog; source: PostgreSQL 18 docs, Appendix A «PostgreSQL Error Codes». */
 // `@__PURE__`: таблица нужна только разбору ошибок драйвера (сервер). Без пометки вызов
 // `Object.freeze` на верхнем уровне сборщик обязан сохранить — и таблица (~9 КБ) уезжает в
-// браузер вместе с моделью, которую читает форма (`#lib/db/form.js`).
+// браузер вместе с моделью, которую читает форма (`#hooks/db-form.js`).
 export const SQLSTATE: Readonly<Record<string, string>> = /* @__PURE__ */ Object.freeze({
   "00000": "successful_completion",
   "01000": "warning",

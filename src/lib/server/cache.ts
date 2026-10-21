@@ -19,7 +19,7 @@
  * dev-движке PGlite база одна на процесс — охват там честно равен памяти.
  */
 import { memoryStore } from '#lib/cache/index.js'
-import { pgStore } from '#lib/cache/pg.js'
+import { pgStore } from '#hooks/cache-db.js'
 import { db } from './db'
 
 export const localStore = memoryStore()

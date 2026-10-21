@@ -1,10 +1,11 @@
 /**
- * Модель БД → параметры полей формы `#lib/form`. Переходник, как `formParams` у
- * фильтров пагинатора: ядро `lib/db` форму не импортирует и работает само, этот файл
- * нужен только тем, кто использует обе библиотеки.
+ * Модель БД → параметры полей формы `#lib/form`. Переходник между двумя
+ * библиотеками, поэтому живёт здесь, в `src/hooks`, а не в одной из них:
+ * ядро `lib/db` форму не импортирует, ядро `lib/form` базу не импортирует —
+ * соединяет их приложение в этой папке.
  *
  * ```ts
- * import { formParams } from '#lib/db/form.js'
+ * import { formParams } from '#hooks/db-form.js'
  *
  * const post = formParams(posts)
  * export const dbCreate = defineForm({
@@ -30,8 +31,8 @@
  */
 import { DEV } from "esm-env";
 import { v, type FieldDraft, type RulesFrom, type ValidatorRef } from "#lib/form/index.js";
-import { columnMeta } from "./schema";
-import type { Field, Fields, Resource } from "./types";
+import { columnMeta } from "#lib/db/schema.js";
+import type { Field, Fields, Resource } from "#lib/db/index.js";
 
 /** Что модель даёт одному полю формы. `validate` есть всегда — его удобно дополнять. */
 export interface DbFieldParams {

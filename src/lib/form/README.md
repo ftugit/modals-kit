@@ -882,13 +882,13 @@ execute: async (ctx) => {
 ## Правила из чужой схемы, `pick` и `prepare`
 
 **Поле с правилами из чужой схемы.** Генератор параметров (`formParams` схемы фильтров,
-`formParams` модели БД из `#lib/db/form.js`) отдаёт полю `validate`; генератор модели БД, если
+`formParams` модели БД из `#hooks/db-form.js` (переходник приложения в `src/hooks`)) отдаёт полю `validate`; генератор модели БД, если
 перевёл правила схемы целиком, — ещё и `rulesFrom: { schema, rules }`: сам объект схемы и
 выданные из неё валидаторы.
 Руками `rulesFrom` не пишут: он приходит развёрткой.
 
 ```ts
-const post = formParams(posts)                    // #lib/db/form.js
+const post = formParams(posts)                    // #hooks/db-form.js
 title: field.text({ label: 'Заголовок', ...post.title }),
 title: field.text({ label: 'Заголовок', validate: [...post.title.validate, v.email()] }),   // свои — рядом
 ```

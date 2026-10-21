@@ -38,7 +38,7 @@ import {
 
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
 import { auth, profile, session } from '#content/user/schema.js'
-import { cacheKv } from '#lib/cache/pg.js'
+import { cacheKv } from '#hooks/cache-db.js'
 
 export { posts, auth, profile, session, cacheKv }
 

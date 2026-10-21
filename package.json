@@ -5,6 +5,7 @@
   "type": "module",
   "imports": {
     "#content/*": "./src/content/*",
+    "#hooks/*": "./src/hooks/*",
     "#lib/*": "./src/lib/*"
   },
   "engines": {

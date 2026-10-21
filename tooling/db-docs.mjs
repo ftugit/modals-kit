@@ -34,7 +34,6 @@ export const ENTRIES = {
   '#lib/db/sveltekit/index.js': 'sveltekit/index.ts',
   '#lib/db/sveltekit/node.js': 'sveltekit/node.ts',
   '#lib/db/zod.js': 'zod.ts',
-  '#lib/db/form.js': 'form.ts',
   '#lib/db/testing/index.js': 'testing/index.ts',
 }
 

@@ -10,7 +10,7 @@ import { createDb, conservativeLimits, DbFailure, failureIssues } from '#lib/db/
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 import { tableSpec } from '#lib/db/sync/model.js'
-import { formParams } from '#lib/db/form.js'
+import { formParams } from '#hooks/db-form.js'
 import { buildEnvelope, readProof } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
 import { dbCreate } from './description'

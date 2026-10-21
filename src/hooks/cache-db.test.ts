@@ -9,8 +9,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { conservativeLimits, createDb, type Database } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
-import { isAtomic, requireAtomic } from './index'
-import { cacheKv, pgStore, type PgStore } from './pg'
+import { isAtomic, requireAtomic } from '#lib/cache/index.js'
+import { cacheKv, pgStore, type PgStore } from './cache-db'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 30_000)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

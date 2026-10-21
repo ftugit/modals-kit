@@ -463,9 +463,9 @@ const handler = createFormHandler({
 | Правило данных («slug занят», «черновик без даты») | `checks` модели | только БД, всегда, в транзакции записи |
 | Последняя защита | CHECK, индексы PostgreSQL | PostgreSQL |
 
-**Форма из модели: `formParams`.** Переходник `#lib/db/form.js` (ядро `lib/db` форму не
-импортирует; переходник нужен только тем, кто использует обе библиотеки) — как `formParams`
-у фильтров пагинатора:
+**Форма из модели: `formParams`.** Переходник приложения `#hooks/db-form.js` (`src/hooks` —
+где lib соединяются: ядро `lib/db` форму не импортирует, ядро формы базу не импортирует) —
+как `formParams` у фильтров пагинатора:
 
 ```ts
 // модель — общий модуль (форма работает и в браузере): только поля, права и порядок, без соединения
@@ -478,7 +478,7 @@ export const posts = defineResource({
 })
 
 // описание формы
-import { formParams } from '#lib/db/form.js'
+import { formParams } from '#hooks/db-form.js'
 const post = formParams(posts)
 export const dbCreate = defineForm({
   id: 'db_demo_create',
@@ -858,7 +858,6 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
 | `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |
 | `#lib/db/zod.js` | `z` (zod) + `field`/`f`/`defineResource`: позволяет переносить схемы вида `field(z.string().min(1), {...})` без правок; пакет zod не тянет, импорт опциональный |
-| `#lib/db/form.js` | `formParams(resource)` → параметры полей формы из модели (`...post.title`, `post.fields({...})`) + типы `DbFieldParams`, `DbFormParams`; ядро (`index.js`) от `#lib/form` не зависит (§4) |
 
 `withTestDb(fn, options)` — тестовая БД одним вызовом, чтобы приложению не пришлось тащить
 Docker. С `url` (или env `KIT_TEST_PG_URL`) это настоящий PostgreSQL в уникальной схеме
@@ -883,8 +882,8 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 `policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `restore` без своего — как `delete`; другие ключи — именованные правила для ключей доступа), `access` (ключи доступа, §7), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
 `db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`, `canDelete`, `chain`, `restore`,
 `insertMany`, `validator(ctx, 'insert' | 'update' | 'check')` (проверка без записи, §4), `without`, `behavior`, `raw` (ниже).
-`#lib/db/form.js`: `formParams(resource)` — параметры полей формы из модели (§4; переходник
-импортирует `lib/form`, ядро — нет).
+`formParams(resource)` — параметры полей формы из модели (§4) — живёт не в библиотеке, а в
+переходнике приложения `#hooks/db-form.js` (`src/hooks`, где lib соединяются).
 
 `timestamps` — системные поля времени; значение — имя поля (и колонки), поле создаёт
 `defineResource`, объявить его ещё и в `fields` — `validation`:
