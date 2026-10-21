@@ -84,7 +84,7 @@
     current: () => visibleAddress().url.searchParams.get('mstep') ?? 'about',
   })
   const boundMixed = bind(forms, fstepForm, {
-    action: '/steps?demo=mixed',
+    action: '/steps?demo=mixed&mstep=form', // нативный POST приземляется на шаг куста
     instance: 'fstep:mixed',
     transport: kitActionTransport('/steps'),
     continuation: untrack(() => action?.result ?? null),
