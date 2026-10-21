@@ -684,6 +684,10 @@ R7. **Защита границы и расширение на файлы фор
       PaginatorSettings: выбор хранилища — поле схемы (jsOnly).
 - [ ] R2: PhotoField (carrier + staging), File вместо hidden,
       JS/no-JS паритет транспорта, локальное превью UI-примитивом. ← **точный следующий шаг**
+      Объём пересматривается новым чеклистом владельца (2026-10-21):
+      шаги по событиям, форма профиля отдельно, фото — перехватчиком
+      поля; см. `docs/design/steps-events-field-takeover.md` (открытые
+      вопросы Q1–Q4 там же).
 - [ ] R3: серверный preparer, POST аватара файлом, удаление avatar.ts/checkAvatar.
 - [x] Предпосылка R4: pg-хранилище lib/cache (`sharedStore`) —
       `docs/design/cache-pg-store.md`, `db01cfb`.
