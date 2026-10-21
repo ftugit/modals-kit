@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGuard, checkTemplate, checkSource, RULES } from './layer-guard.mjs';
+import { collectSpecifiers } from './core-purity.mjs';
 
 const check = createGuard(RULES);
 
@@ -259,4 +260,62 @@ test('исходники src: адресные правила соблюдены
     if (msg) bad.push(`${file.replace(root + '/', 'src/')}: ${msg.split('\n')[0]}`);
   }
   assert.deepEqual(bad, [], 'нарушения слоя адреса:\n' + bad.join('\n'));
+});
+
+// Раньше по дереву ходили только адресные (source) правила, а теговые и
+// импортные видел лишь граф Vite: файл вне графа (неимпортированный
+// компонент, серверный модуль мимо сборки) уходил от обоих. Теперь все
+// три семейства проверяются на каждом файле src.
+test('исходники src: теговые правила (формы и поля) соблюдены во ВСЁМ дереве', () => {
+  const root = new URL('../src', import.meta.url).pathname;
+  const bad = [];
+  for (const file of walk(root)) {
+    if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
+    if (!/\.(svelte|html)$/.test(file)) continue;
+    const msg = checkTemplate(RULES, readFileSync(file, 'utf8'), file);
+    if (msg) bad.push(`${file.replace(root + '/', 'src/')}: ${msg.split('\n')[0]}`);
+  }
+  assert.deepEqual(bad, [], 'нарушения теговых правил:\n' + bad.join('\n'));
+});
+
+test('исходники src: импортные правила соблюдены во ВСЁМ дереве', () => {
+  const root = new URL('../src', import.meta.url).pathname;
+  const bad = [];
+  for (const file of walk(root)) {
+    if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
+    for (const spec of collectSpecifiers(readFileSync(file, 'utf8'))) {
+      const msg = check(spec, file);
+      if (msg) bad.push(`${file.replace(root + '/', 'src/')} <- ${spec}: ${msg.split('\n')[0]}`);
+    }
+  }
+  assert.deepEqual(bad, [], 'нарушения импортных правил:\n' + bad.join('\n'));
+});
+
+/* ── защита lib/form: написания-обходы и новые правила полей ── */
+
+test('lib/form: компоненты недоступны любым написанием спецификатора', () => {
+  const from = '/app/src/lib/form/svelte/bind.svelte.ts';
+  assert.ok(check('#lib/components/ui/index.js', from), '#lib/... должен блокироваться');
+  assert.ok(check('$lib/components/ui/index.js', from), '$lib/... должен блокироваться');
+  assert.ok(check('../../components/ui/index.js', from), 'относительный должен блокироваться');
+  assert.ok(check('#lib/components/form/Field.svelte', from), 'слой полей целиком должен блокироваться');
+  assert.equal(check('#lib/components/ui/index.js', '/app/src/content/x.ts'), null, 'приложению ui доступен');
+  assert.equal(check('#lib/form/index.js', from), null, 'своя библиотека доступна');
+});
+
+test('сырые теги внутри lib/form — только в Form.svelte', () => {
+  const tag = '<input type="text" name="x" />';
+  assert.ok(checkTemplate(RULES, tag, '/app/src/lib/form/svelte/NewField.svelte'), 'новый файл lib/form с <input> должен блокироваться');
+  assert.equal(checkTemplate(RULES, tag, '/app/src/lib/form/svelte/Form.svelte'), null, 'Form.svelte — единственная точка');
+  assert.ok(checkTemplate(RULES, tag, '/app/src/lib/components/form/TextField.svelte'), 'кит форм собирает поля из ui, не из тегов');
+});
+
+test('скрытые поля и рукописные name= объявляет только lib/form', () => {
+  const hidden = '<Input type="hidden" name="nonce" value={x} />';
+  assert.ok(checkTemplate(RULES, hidden, '/app/src/content/user/ui/AuthWidget.svelte'), 'ручной hidden в виджете должен блокироваться');
+  assert.equal(checkTemplate(RULES, hidden, '/app/src/lib/components/form/HiddenField.svelte'), null, 'HiddenField — владелец скрытых полей');
+  const named = '<Input name="nickname" value={x} />';
+  assert.ok(checkTemplate(RULES, named, '/app/src/routes/+page.svelte'), 'поле с рукописным name= должно блокироваться');
+  const bound = '<Select {...v.attrs} name={v.name} />';
+  assert.equal(checkTemplate(RULES, bound, '/app/src/routes/demo/+page.svelte'), null, 'name={view.name} — headless-привязка, значение в состоянии формы');
 });

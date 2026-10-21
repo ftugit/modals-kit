@@ -26,6 +26,33 @@ function matchPattern(pattern, value) {
 }
 
 /**
+ * Канонический вид спецификатора: `#lib/`, `$lib/` и относительные пути —
+ * к пути от корня проекта (`src/lib/...`). Импортное правило обязано
+ * ловить запрет по СМЫСЛУ пути, а не по написанию: правило, смотревшее
+ * только на `#lib/...`, пропускало тот же импорт через `$lib/` и через
+ * `../components/...` (дыра вскрыта вопросом владельца о защите lib/form,
+ * 2026-10-21). Внешние пакеты и непути канона не имеют — null.
+ * @param {string} source сырой спецификатор, как написан
+ * @param {string} importer нормализованный путь импортёра
+ * @returns {string | null}
+ */
+function canonSpecifier(source, importer) {
+  if (source.startsWith('#lib/')) return 'src/lib/' + source.slice(5);
+  if (source.startsWith('$lib/')) return 'src/lib/' + source.slice(5);
+  if (source.startsWith('./') || source.startsWith('../')) {
+    const dir = importer.split('/').slice(0, -1);
+    for (const part of source.split('/')) {
+      if (part === '..') dir.pop();
+      else if (part !== '.' && part !== '') dir.push(part);
+    }
+    const joined = dir.join('/');
+    const at = joined.indexOf('src/');
+    return at >= 0 ? joined.slice(at) : null;
+  }
+  return null;
+}
+
+/**
  * @typedef {object} Rule
  * @property {RegExp | string} pattern
  * @property {boolean} [isTemplateCheck] правило по разметке (.svelte/.html)
@@ -82,9 +109,13 @@ export function createGuard(rules) {
   return function check(source, importer) {
     const src = norm(source);
     const from = norm(importer);
+    // узор сверяется и с написанием, и с каноном: старые правила писаны
+    // по написанию (`#lib/...`), новые — по канону (`src/lib/...`) и
+    // потому не обходятся сменой алиаса.
+    const canon = canonSpecifier(src, from);
     for (const rule of rules) {
       if (rule.isTemplateCheck) continue;
-      if (!matchPattern(rule.pattern, src)) continue;
+      if (!matchPattern(rule.pattern, src) && !(canon && matchPattern(rule.pattern, canon))) continue;
       // deny сильнее allow: «кому явно нельзя» срабатывает даже для файлов из
       // общего allow-списка потребителей. Так lib/form отсекается от
       // UI-примитивов, оставаясь доступным для всего остального слоя.
@@ -334,7 +365,12 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    // Сырые form-теги живут ТОЛЬКО в библиотеке формы и в примитивах полей.
+    // Сырые form-теги живут ТОЛЬКО в примитивах полей и в единственной
+    // точке lib/form — её <Form> (тег формы + hidden-пары конверта).
+    // Разрешение на всю папку lib/form было дырой: новый компонент с
+    // голым <input> внутри библиотеки формы проходил мимо (вскрыто
+    // 2026-10-21); полей внутри lib/form нет и быть не должно — поля
+    // ей СНАРУЖИ подставляет конфиг приложения (components/form).
     // Потребитель (страница, фича, демо-блок) получает либо <Form> из
     // '#lib/form/svelte/index.js', либо поле из примитивов ('#lib/components/ui/index.js',
     // '#lib/components/settings/index.js') — тогда семантика (hidden-пары, no-JS GET,
@@ -349,7 +385,7 @@ export const RULES = [
     pattern: /<\/?(?:form|input|select|textarea|FORM|INPUT|SELECT|TEXTAREA)(?=[\s/>])/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/form\//,
+      /(^|\/)src\/lib\/form\/svelte\/Form\.svelte$/,
       /(^|\/)src\/lib\/components\/ui\//,
       /(^|\/)src\/lib\/components\/settings\//,
       /(^|\/)src\/lib\/components\/shell\//,
@@ -403,11 +439,81 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    // Наоборот: lib/form — ниже примитивов, примитивы о ней не знают.
-    // Библиотека формы рендерит поля САМА (bind/config/ui-политика);
-    // импорт UI-примитива внутрь провайдера означал бы, что «свой field»
-    // куда-то делся и его подменяют чужой разметкой.
-    pattern: /^#lib\/components\/(ui|settings)\//,
+    // Скрытое поле объявляет САМА lib/form: поле вида hidden в ОПИСАНИИ,
+    // рисует его <Field> (HiddenField), значение живёт в состоянии формы;
+    // конверт — hiddenFields у <Form>. Ручной <Input type="hidden"> в
+    // виджете — значение, о котором форма не знает: не валидируется,
+    // зеркалится в DOM руками, серверные ошибки повисают в воздухе.
+    // Так AuthWidget вёз nonce и аватар до 2026-10-21.
+    pattern: /<[A-Z][\w]*[^>]*\btype="hidden"/,
+    isTemplateCheck: true,
+    allow: [
+      /(^|\/)src\/lib\/components\/form\//,
+      /(^|\/)src\/lib\/components\/ui\//,
+      /(^|\/)src\/lib\/components\/settings\//,
+      /(^|\/)node_modules\//,
+    ],
+    message: ({ importer }) =>
+      [
+        `[layer-guard] Скрытое поле вручную запрещено в этом файле.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Скрытое поле объявляет описание формы, рисует lib/form:',
+        '',
+        "      nonce: field.hidden({ label: 'Nonce' }),          // описание (defineForm)",
+        '      <Field of={bound.f.nonce} />                       // разметка (HiddenField)',
+        '',
+        '  Значение при этом живёт в состоянии формы (onInput/зеркало),',
+        '  валидируется и уезжает одним путём с остальными полями.',
+        '  Конверт формы рисует <Form hiddenFields={bound.hidden()}> —',
+        '  руками скрытые поля не ставятся нигде.',
+      ].join('\n'),
+  },
+  {
+    // Имя поля даёт bind из описания (attrs), а не разметка. Полевой
+    // примитив с рукописным name="..." вне кита форм — поле, попадающее
+    // в FormData мимо описания, валидаторов и состояния: сценарий
+    // «создалось поле, о котором lib/form не знает». Кнопки-интенты не
+    // поля (их name — механизм интента самой lib/form) — правило только
+    // о полевых примитивах ui. name={view.name} сознательно не ловится:
+    // это ручная привязка FieldView (headless-путь, витрина демо) —
+    // значение там всё равно живёт в состоянии формы.
+    pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|Select|NativeSelect|FileInput|SearchInput|SearchField|SearchMorph|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
+    isTemplateCheck: true,
+    allow: [
+      /(^|\/)src\/lib\/components\/form\//,
+      /(^|\/)src\/lib\/components\/ui\//,
+      /(^|\/)src\/lib\/components\/settings\//,
+      /(^|\/)src\/lib\/components\/shell\//,
+      /(^|\/)node_modules\//,
+    ],
+    message: ({ importer }) =>
+      [
+        `[layer-guard] Поле с рукописным name= запрещено в этом файле.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Поле формы объявляется в описании и рисуется через Field —',
+        '  имя, атрибуты проверки и значение даёт bind:',
+        '',
+        '      <Field of={bound.f.nickname} />',
+        '',
+        '  Примитив ui с собственным name= уезжает в FormData мимо',
+        '  описания: форма о таком поле не знает, сервер получает',
+        '  значение, которое никто не валидировал.',
+      ].join('\n'),
+  },
+  {
+    // Наоборот: lib/form — ниже компонентов, компоненты о ней не знают,
+    // а она о них. Библиотека формы рендерит поля САМА через свой
+    // механизм field (bind + конфиг приложения): компоненты полей ей
+    // подставляет СНАРУЖИ конфигурация (components/form), а не импорт.
+    // Прямой импорт любого компонента внутрь — поле, которое библиотека
+    // вызвала в обход собственного field. Узор — по КАНОНУ пути
+    // (`src/lib/components/...`): `#lib/`, `$lib/` и относительные
+    // написания канонизируются до сверки, алиасом не обойти (раньше
+    // узор смотрел только на `#lib/components/(ui|settings)/` — и
+    // относительный путь, и слой components/form проходили мимо).
+    pattern: /^src\/lib\/components\//,
     allow: [/.*/], // всем, кроме тех, кто в deny
     deny: [/(^|\/)src\/lib\/form\//],
     message: ({ source, importer }) =>
@@ -415,11 +521,13 @@ export const RULES = [
         `[layer-guard] «${source}» недоступен внутри lib/form.`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
         '',
-        '  Внутри библиотеки формы примитивы UI запрещены сознательно:',
-        '  провайдер живёт на СОБСТВЕННЫХ полях (field/BoundForm + config.ui),',
-        '  а UI-примитив — потребитель form-контракта, а не его часть.',
-        '  Нужен новый вид поля — добавьте его в lib/form (ui.fieldComponent)',
-        '  и зарегистрируйте в конфигурации страницы.',
+        '  Внутри библиотеки формы компоненты запрещены сознательно:',
+        '  поля ей подставляет конфиг приложения СНАРУЖИ (components/form:',
+        '  resolve по виду ввода), а внутри работает только её собственный',
+        '  механизм field (FieldView/bind). UI-примитив — потребитель',
+        '  form-контракта, а не его часть.',
+        '  Нужен новый вид поля — добавьте тип и компонент в расширение',
+        '  приложения (components/form) и зарегистрируйте в конфиге форм.',
       ].join('\n'),
   },
   {
