@@ -1,7 +1,8 @@
 // Приём демо-формы шагов (/steps, раздел 4). Экшен один на страницу:
-// намерение различает конверт (`__form_intent`). Ответ всегда несёт шаг:
-// успех — куда ехать дальше, провал — где остаться (no-JS: адрес шаг не
-// меняет, маркер может приехать только из ответа).
+// намерение различает конверт. Шаг после ответа ведёт сам formSteps на
+// клиенте: отправленный срез он выводит из Result.intent, следующий при
+// успехе сервер называет в данных результата (data.step) — обёртка вокруг
+// результата шагу не нужна, JS и no-JS идут одним каналом.
 import { fail, type Actions } from '@sveltejs/kit'
 import { createFormHandler } from '#lib/form/server.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
@@ -34,9 +35,10 @@ const handle = createFormHandler({
       })
     if (problems.length) fail(problems)
     commit()
-    // шаг едет в данных результата: с JS его читает страница (Result.data.step),
-    // без JS — обёртка экшена. «Сохранить» не ведёт ни на какой новый шаг —
-    // остаёмся на финальном, итог сообщает баннер над формой (data.saved).
+    // следующий шаг — решение приложения: «Далее» ведёт по FSTEP_NEXT;
+    // «Сохранить» не ведёт ни на какой новый шаг — остаёмся на финальном,
+    // итог сообщает баннер над формой (data.saved). Провал шаг не называет:
+    // formSteps останется на отправленном срезе по Result.intent.
     return {
       data: intent === 'save'
         ? { step: 'extra', saved: true }
@@ -45,32 +47,9 @@ const handle = createFormHandler({
   },
 })
 
-/** Ключ намерения в конверте — из политики формы, не хардкод. */
-const INTENT_KEY = fstepForm.policy.envelopeKeys.intent
-
-/**
- * Шаг, где стоит кнопка: намерение конверта (тело нельзя читать дважды —
- * clone). Финальная кнопка «Сохранить» стоит на шаге «Примечание» — провал
- * возвращает туда, а не на мифический шаг 'save'.
- */
-const ownStep = async (request: Request): Promise<FstepStep> => {
-  const raw = await request.clone().formData().catch(() => null)
-  const intent = String(raw?.get(INTENT_KEY) ?? 'contacts')
-  if (intent === 'save') return 'extra'
-  return (Object.keys(FSTEP_NEXT) as FstepStep[]).find((s) => s === intent) ?? 'contacts'
-}
-
 async function act(event: Parameters<Actions['default']>[0]) {
-  const raw = await event.request.clone().formData().catch(() => null)
-  const intent = String(raw?.get(INTENT_KEY) ?? '')
-  const own = await ownStep(event.request)
   const { result, status } = await handle(event.request, 'action', event)
-  // успех настоящего сохранения уводит на следующий шаг (save — на «Готово»),
-  // провал оставляет на своём; ОБА канала обязаны вести шаг одинаково:
-  // с JS его читают из Result.data.step, без JS — из этой обёртки
-  return result.ok && result.outcome !== 'not-applied'
-    ? { result, step: FSTEP_NEXT[own] }
-    : fail(status, { result, step: own })
+  return result.ok && result.outcome !== 'not-applied' ? { result } : fail(status, { result })
 }
 
 export const actions: Actions = { default: act }

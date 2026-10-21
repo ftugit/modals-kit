@@ -1,20 +1,32 @@
-// form × step — «паразит»: склейка одной формы (bound) и хоста шагов.
+// form × step: срезы ОДНОЙ формы, БЕЗ хоста шагов. formSteps самостоятелен:
+// срезы объявлены его опциями (тип объявления импортируется из обычного
+// steps), текущий срез — его собственное состояние, адрес он не трогает.
+// Подключение к хосту (куст на шаге хоста) — отдельной опцией следующим
+// этапом; условием работы оно не является.
 //
-// Одна форма на все шаги; шаги — нарезка отрисовки. Поля свёрнутых шагов НЕ
-// вырезаются из DOM (их прячет CSS `FormSteps`) и едут в каждом POST, а
-// валидаторы шага включает сам lib/form: у экшена шага — `subset` из его
+// Одна форма на все срезы; срезы — нарезка отрисовки. Поля свёрнутых срезов
+// НЕ вырезаются из DOM (их прячет CSS `FormSteps`) и едут в каждом POST, а
+// валидаторы среза включает сам lib/form: у экшена среза — `subset` из его
 // полей, у финального экшена подмножества нет (проверяется всё). Переход
-// между шагами и отправка — ОДНА кнопка под всеми шагами (`fs.submit()`):
-// на проходном шаге её интенция — экшен этого шага (subset-проверка и переход),
+// между срезами и отправка — ОДНА кнопка под всеми срезами (`fs.submit()`):
+// на проходном срезе её интенция — экшен среза (subset-проверка и переход),
 // на последнем — финальный экшен (полная проверка, отправка формы).
+//
+// Шаг едет ВНУТРИ формы, отдельного поля под него не заводят: отправленный
+// срез назван интентом конверта (техническое поле самого lib/form),
+// результат несёт его обратно (`Result.intent`), и formSteps выводит
+// отправленный срез по subset-карте — одинаково с JS и без (no-JS:
+// результат-продолжение привязки). Следующий срез при успехе называет
+// сервер в `Result.data.step` (решение приложения); ключ не из своих
+// срезов formSteps не трогает.
 //
 // Режим разбора (провал отправки с ошибками не только на текущем шаге —
 // на практике это финальный `save` или серверная-only ошибка): открытыми
 // остаются ТОЛЬКО шаги с ошибками (решение владельца — «текущий» ничего не
 // значит, пока сервер не вернул ошибку), все прочие свёрнуты в «Отобразить
 // шаг N» (`collapsed` — нативный details в FormSteps: раскрытие без JS,
-// открытое живёт до отправки). Правило без памяти об интенции (Result её
-// не несёт):
+// открытое живёт до отправки). Правило смотрит только на ошибки показа и
+// текущий срез:
 //   провал + есть ошибки на ЧУЖИХ шагах  → разбор;
 //   провал + показываемых ошибок нет вовсе (только общие/серверные) → разбор:
 //   всё свёрнуто, блок общих — единственный сигнал;
@@ -24,9 +36,11 @@
 // перезаписывает результат: ошибка ушла — шаг схлопнулся.
 import type { FormDescription, FormError, Result } from '#lib/form/index.js'
 import type { BoundForm, IntentProps } from '#lib/form/svelte/index.js'
-import type { StepsHost } from './steps.svelte.js'
+import type { StepDef } from './steps.svelte.js'
 
 export interface FormStepsOptions {
+  /** Срезы формы: ключи и подписи (объявление — как у обычного steps). */
+  steps: readonly StepDef[]
   /**
    * Шаг → id экшена, который его проверяет и уводит дальше. По умолчанию id
    * экшена равен ключу шага. Финальный экшен (без subset) в карте не участвует.
@@ -43,15 +57,24 @@ export interface FormStepsOptions {
    * описания без `subset`.
    */
   final?: string
+  /**
+   * Начальный шаг, если результат-продолжение привязки его не назвал.
+   * По умолчанию — первый шаг списка.
+   */
+  initial?: string
 }
 
 /** Вид шага в разметке `FormSteps`. */
 export type StepView =
-  | 'current'    // обычный режим: текущий шаг хоста
+  | 'current'    // обычный режим: текущий срез
   | 'pinned'     // разбор: на шаге показанные ошибки, сворачивать нельзя
   | 'collapsed'  // свёрт: в DOM есть (значения едут в POST), вида нет до щелчка
 
 export interface FormStepsApi {
+  /** Срезы в порядке объявления: по ним `FormSteps` рисует панели. */
+  readonly steps: readonly StepDef[]
+  /** Текущий срез. */
+  readonly current: string
   /** Разбор: провал с чужими или только общими ошибками (см. шапку файла). */
   readonly review: boolean
   /** Шаги с показанными ошибками (в разборе — закреплены). */
@@ -105,19 +128,71 @@ export function isReview(
 }
 
 /**
- * Паразит форм-режима: `const fs = formSteps(bound, steps)`. Состояние формы и
- * шагов не трогает — только читает и ведёт список «раскрыто юзером».
+ * Шаг, который называет результат отправки. При успехе следующий шаг
+ * называет сервер в `data.step` (берётся, только если это свой шаг; чужой
+ * ключ — не дело formSteps). Иначе — отправленный шаг: `Result.intent` →
+ * экшен → шаг, чья интенция этот экшен; кнопка финального экшена стоит на
+ * последнем шаге. Ничего не названо — `undefined` (шаг не меняется).
  */
-export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions = {}): FormStepsApi {
+export function stepOfResult(
+  result: Result | undefined,
+  stepKeys: readonly string[],
+  o: {
+    /** Шаг → id экшена (как `FormStepsOptions.actionOf`). */
+    actionOf?: (step: string) => string | undefined
+    /** Id финального экшена; его кнопка стоит на `last`. */
+    final?: string
+    /** Шаг финальной кнопки. */
+    last?: string
+    /** Интент конверта → id экшена (политика описания формы). */
+    parseAction: (intent: string) => string
+  },
+): string | undefined {
+  if (!result) return undefined
+  if (result.ok) {
+    const d = result.data as { step?: unknown } | undefined
+    if (typeof d?.step === 'string' && stepKeys.includes(d.step)) return d.step
+  }
+  if (!result.intent) return undefined
+  const action = o.parseAction(result.intent)
+  const own = stepKeys.find((k) => (o.actionOf?.(k) ?? k) === action)
+  if (own) return own
+  if (o.final !== undefined && action === o.final) return o.last
+  return undefined
+}
+
+/**
+ * Срезы одной формы: `const fs = formSteps(bound, { steps })`. Состояние
+ * формы не трогает — только читает. Текущий срез ведёт сам: начальный — из
+ * результата-продолжения привязки, дальше — по каждому новому результату
+ * (`stepOfResult`).
+ */
+export function formSteps(bound: BoundForm, o: FormStepsOptions): FormStepsApi {
   const actionId = (step: string): string => o.actionOf?.(step) ?? step
-  const keys = $derived(host.items.map((s) => s.key))
-  const map = $derived(fieldStepMap(keys, bound.description.actions, o.actionOf))
+  const keys = o.steps.map((s) => s.key)
+  const map = fieldStepMap(keys, bound.description.actions, o.actionOf)
   // последний шаг и финальный экшен: умолчания выводятся из описания
-  const lastKey = $derived(o.last ?? keys[keys.length - 1] ?? '')
-  const finalId = $derived.by(() => {
+  const lastKey = o.last ?? keys[keys.length - 1] ?? ''
+  const finalId = ((): string | undefined => {
     if (o.final) return o.final
     const full = bound.description.actions.filter((a) => !a.subset?.length)
     return full.length === 1 ? full[0]!.id : undefined
+  })()
+  const named = (r: Result | undefined): string | undefined =>
+    stepOfResult(r, keys, {
+      actionOf: o.actionOf, final: finalId, last: lastKey || undefined,
+      parseAction: (intent) => bound.description.policy.intent.parse(intent).action,
+    })
+
+  let current = $state(named(bound.state.result) ?? o.initial ?? keys[0] ?? '')
+  // каждый НОВЫЙ результат ведёт срез; уже учтённый (продолжение) — нет
+  let seen = bound.state.result
+  $effect(() => {
+    const r = bound.state.result
+    if (r === seen) return
+    seen = r
+    const s = named(r)
+    if (s) current = s
   })
 
   const errorSteps = $derived.by(() => {
@@ -130,7 +205,7 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
     return [...out]
   })
 
-  const review = $derived(isReview(bound.state.result, bound.state.shown, map, host.currentKey))
+  const review = $derived(isReview(bound.state.result, bound.state.shown, map, current))
 
   function stepOfField(path: string): string | undefined {
     if (map.has(path)) return map.get(path)
@@ -141,22 +216,23 @@ export function formSteps(bound: BoundForm, host: StepsHost, o: FormStepsOptions
   function viewOf(step: string): StepView {
     // разбор: открыты только шаги с ошибками; обычный режим: только текущий
     if (review) return errorSteps.includes(step) ? 'pinned' : 'collapsed'
-    return host.currentKey === step ? 'current' : 'collapsed'
+    return current === step ? 'current' : 'collapsed'
   }
 
   return {
+    steps: o.steps,
+    get current() { return current },
     get review() { return review },
     get errorSteps() { return errorSteps },
     viewOf,
     stepOfField,
     submit: () => {
-      const k = host.currentKey ?? ''
       // на последнем шаге кнопка — отправка формы (финальный экшен);
       // финальный не выведен — действует экшен текущего шага
-      return bound.intent(k !== '' && k === lastKey && finalId ? finalId : actionId(k))
+      return bound.intent(current !== '' && current === lastKey && finalId ? finalId : actionId(current))
     },
     get isLast() {
-      return keys.length > 0 && (host.currentKey ?? '') === lastKey
+      return keys.length > 0 && current === lastKey
     },
   }
 }

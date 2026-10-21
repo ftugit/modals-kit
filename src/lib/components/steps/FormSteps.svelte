@@ -1,5 +1,5 @@
 <!--
-  Шаги формы (режим «паразита», `formSteps`): ВСЕ шаги всегда в DOM (поля едут
+  Шаги формы (`formSteps`): ВСЕ шаги всегда в DOM (поля едут
   в каждом POST формы). Обычный режим показывает ТОЛЬКО текущий шаг — соседние
   спрятаны панелью без единой кнопки (решение владельца: пока сервер не вернул
   ошибку, другой шаг недоступен). Режим разбора (серверная ошибка) закрепляет
@@ -7,7 +7,7 @@
   `<details>`: раскрывается без скрипта; summary при раскрытии исчезает — блок
   его заменяет; скрыть можно только кликом мимо, с JS, или новой отправкой.
 
-    <FormSteps host={steps} fs={fs}>
+    <FormSteps fs={fs}>
       {#snippet contacts()}
         <Field of={bound.f.name} />
       {/snippet}
@@ -16,16 +16,14 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import type { StepsHost } from './steps.svelte.js'
   import type { FormStepsApi } from './form.svelte.js'
 
   let {
-    host,
     fs,
     ...snippets
-  }: { host: StepsHost; fs: FormStepsApi } & Record<string, unknown> = $props()
+  }: { fs: FormStepsApi } & Record<string, unknown> = $props()
 
-  const items = $derived(host.items)
+  const items = $derived(fs.steps)
   let root: HTMLDivElement | undefined = $state()
 
   // «Скрыть можно только нажав мимо»: с JS раскрытые details закрываются

@@ -1,7 +1,7 @@
 // Чистые части «паразита» form×step: карта поле→шаг и правило режима разбора.
 import { describe, expect, it } from 'vitest'
 import type { FormDescription, FormError, Result } from '#lib/form/index.js'
-import { fieldStepMap, isReview } from './form.svelte.js'
+import { fieldStepMap, isReview, stepOfResult } from './form.svelte.js'
 
 const actions = [
   { id: 'contacts', subset: ['name', 'email'] },
@@ -66,5 +66,45 @@ describe('isReview', () => {
     const e = err('props.s1.max_length')
     expect(isReview(result(false, [e]), [e], nested, 'save')).toBe(true)
     expect(isReview(result(false, [e]), [e], nested, 'extra')).toBe(false)
+  })
+})
+
+describe('stepOfResult', () => {
+  const parseAction = (intent: string) => intent.split(':')[0]!
+  const res = (part: Record<string, unknown>): Result =>
+    ({ ok: false, errors: [], ...part }) as unknown as Result
+  const keys = ['contacts', 'extra']
+
+  it('нет результата / нет интента — шаг не назван', () => {
+    expect(stepOfResult(undefined, keys, { parseAction })).toBeUndefined()
+    expect(stepOfResult(res({}), keys, { parseAction })).toBeUndefined()
+  })
+
+  it('успех: сервер называет следующий в data.step', () => {
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'extra' } }), keys, { parseAction })).toBe('extra')
+  })
+
+  it('успех: чужой ключ в data.step не берётся — отправленный по интенту', () => {
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'auth.restore' } }), keys, { parseAction })).toBe('contacts')
+  })
+
+  it('провал: отправленный шаг — по Result.intent (аргумент интента не мешает)', () => {
+    expect(stepOfResult(res({ intent: 'extra' }), keys, { parseAction })).toBe('extra')
+    expect(stepOfResult(res({ intent: 'extra:42' }), keys, { parseAction })).toBe('extra')
+  })
+
+  it('actionOf: интент сопоставляется через карту экшенов', () => {
+    const actionOf = (s: string) => (s === 'contacts' ? 'check-contacts' : s)
+    expect(stepOfResult(res({ intent: 'check-contacts' }), keys, { parseAction, actionOf })).toBe('contacts')
+  })
+
+  it('финальный экшен стоит на последнем шаге; неизвестный экшен — безымянно', () => {
+    const o = { parseAction, final: 'save', last: 'extra' }
+    expect(stepOfResult(res({ intent: 'save' }), keys, o)).toBe('extra')
+    expect(stepOfResult(res({ intent: 'whatever' }), keys, o)).toBeUndefined()
+  })
+
+  it('data.step на провале не читается: следующий называет только успех', () => {
+    expect(stepOfResult(res({ ok: false, intent: 'contacts', data: { step: 'extra' } }), keys, { parseAction })).toBe('contacts')
   })
 })

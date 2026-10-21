@@ -16,13 +16,13 @@
   import { Button } from '#lib/components/ui/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
-  import { FSTEP_STEPS, fstepForm, type FstepStep } from './fstep-form.ts'
+  import { FSTEP_STEPS, fstepForm } from './fstep-form.ts'
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#lib/components/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
   import type { Result } from '#lib/form/index.js'
 
-  let { form: action }: { form?: { result?: Result; step?: FstepStep } | null } = $props()
+  let { form: action }: { form?: { result?: Result } | null } = $props()
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
@@ -66,39 +66,18 @@
     current: () => (visibleAddress().url.searchParams.get('hstep') ?? 'compose'),
   })
 
-  /* ── режим form: шаги поверх ОДНОЙ формы ──────────────────────────────────
-     Смена шага — submit (интенция экшена), валидаторы шага — subset экшена,
-     свёрнутый шаг скрыт details-ом, но его поля едут в каждом POST. Ответ
-     экшена несёт шаг: success — следующий (Result.data.step с JS, обёртка
-     экшена без JS), провал — свой. Ключ хоста — `fstep`: бронь глобальна
-     (`step` занят /fields — конфликт = 500, здесь он и вылез однажды). */
-  const stepOfResult = (r?: Result): FstepStep | null => {
-    const d = r?.data as { step?: FstepStep } | undefined
-    return d && typeof d.step === 'string' ? d.step : null
-  }
-  // начальное значение — ТОЛЬКО первый рендер (SSR no-JS ответ); дальше шагом
-  // ведёт эффект ниже и local-хост, поэтому чтение пропа здесь — намеренное
-  // svelte-ignore state_referenced_locally
-  let fstep = $state<FstepStep>(action?.step ?? 'contacts')
-  $effect(() => {
-    const r = bound.state.result
-    fstep = action?.step ?? stepOfResult(r) ?? fstep
-  })
-  const formStepsHost = useSteps({
-    owner: 'steps-demo-form',
-    mode: 'local',
-    key: 'fstep',
-    steps: () => FSTEP_STEPS.map((s) => ({ ...s, filled: true })),
-    current: () => fstep,
-  })
-  // однонаправленная память шага: local-хост берёт начальное значение из
-  // `current()` и дальше ведёт состояние сам (set), странице остаётся ответ
+  /* ── режим form: срезы ОДНОЙ формы (formSteps, хост не нужен) ─────────────
+     Смена среза — submit (интенция экшена), валидаторы среза — subset экшена,
+     свёрнутый шаг скрыт details-ом, но его поля едут в каждом POST. Шаг ведёт
+     сам formSteps по результату привязки: отправленный — по Result.intent,
+     следующий при успехе называет сервер в Result.data.step; no-JS стартует
+     с результата-продолжения (continuation ниже). Страница ничего не качает. */
   const bound = bind(forms, fstepForm, {
     action: '/steps?demo=form',
     transport: kitActionTransport('/steps'),
     continuation: untrack(() => action?.result ?? null),
   })
-  const fs = formSteps(bound, formStepsHost)
+  const fs = formSteps(bound, { steps: FSTEP_STEPS })
 
   // Видимый адрес: показывает и мелкие записи панели (адрес отрисовки отстаёт).
   const address = $derived(visibleAddress().url.pathname + visibleAddress().url.search)
@@ -183,7 +162,7 @@
         <!-- общие ошибки видны всегда: в разборе без полевых ошибок шаги
              свёрнуты, и блок остаётся единственным сигналом -->
         <Common errors={bound.common} title="Форма не сохранена" />
-        <FormSteps host={formStepsHost} fs={fs}>
+        <FormSteps fs={fs}>
           {#snippet contacts()}
             <div class="space-y-3">
               <FieldInput of={bound.f.name} />
@@ -212,7 +191,7 @@
   <p class="text-xs text-muted-foreground">
     Бронь ключей глобальна: <code class="rounded bg-muted/70 px-1">step</code> — /fields,
     <code class="rounded bg-muted/70 px-1">stage</code> — авторизация,
-    <code class="rounded bg-muted/70 px-1">ustep</code>/<code class="rounded bg-muted/70 px-1">lstep</code>/<code class="rounded bg-muted/70 px-1">hstep</code>/<code class="rounded bg-muted/70 px-1">fstep</code> — это демо,
+    <code class="rounded bg-muted/70 px-1">ustep</code>/<code class="rounded bg-muted/70 px-1">lstep</code>/<code class="rounded bg-muted/70 px-1">hstep</code> — это демо,
     <code class="rounded bg-muted/70 px-1">demo</code> — режим панели.
   </p>
 </div>
