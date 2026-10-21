@@ -1,8 +1,9 @@
-// form × step: срезы ОДНОЙ формы, БЕЗ хоста шагов. formSteps самостоятелен:
-// срезы объявлены его опциями (тип объявления импортируется из обычного
-// steps), текущий срез — его собственное состояние, адрес он не трогает.
-// Подключение к хосту (куст на шаге хоста) — отдельной опцией следующим
-// этапом; условием работы оно не является.
+// form × step: срезы ОДНОЙ формы. formSteps самостоятелен: срезы объявлены
+// его опциями (тип объявления импортируется из обычного steps), текущий
+// срез — его собственное состояние, адрес он не трогает — адрес пишет только
+// хост. Опционально подключается к хосту кустом на его шаге (`at` + `host`):
+// тогда срез читается из остатка полного ключа хоста, а переходы formSteps
+// просит у хоста полным ключом; без хоста всё работает так же.
 //
 // Одна форма на все срезы; срезы — нарезка отрисовки. Поля свёрнутых срезов
 // НЕ вырезаются из DOM (их прячет CSS `FormSteps`) и едут в каждом POST, а
@@ -37,6 +38,7 @@
 import type { FormDescription, FormError, Result } from '#lib/form/index.js'
 import type { BoundForm, IntentProps } from '#lib/form/svelte/index.js'
 import type { StepDef } from './steps.svelte.js'
+import { suffixOf } from './keys.js'
 
 export interface FormStepsOptions {
   /** Срезы формы: ключи и подписи (объявление — как у обычного steps). */
@@ -62,6 +64,19 @@ export interface FormStepsOptions {
    * По умолчанию — первый шаг списка.
    */
   initial?: string
+  /**
+   * Подключение кустом к хосту шагов: сегмент шага хоста, на котором живёт
+   * форма; полный ключ среза — `${at}.${срез}`. formSteps читает текущий
+   * срез из остатка полного ключа хоста (deep-link, навигация), а когда
+   * результат называет следующий срез — просит хост переключить полный
+   * ключ (только пока хост внутри этого куста). Работает парой с `host`.
+   */
+  at?: string
+  /**
+   * Хост шагов узко: полный ключ и переключение (`StepsHost` подходит как
+   * есть). Имеет смысл только вместе с `at`; адрес пишет сам хост.
+   */
+  host?: { readonly fullKey: string | null; set(stepKey: string): void }
 }
 
 /** Вид шага в разметке `FormSteps`. */
@@ -129,8 +144,9 @@ export function isReview(
 
 /**
  * Шаг, который называет результат отправки. При успехе следующий шаг
- * называет сервер в `data.step` (берётся, только если это свой шаг; чужой
- * ключ — не дело formSteps). Иначе — отправленный шаг: `Result.intent` →
+ * называет сервер в `data.step` (берётся, только если это свой шаг — своим
+ * ключом или, при `at`, полным ключом куста; чужой ключ — не дело
+ * formSteps). Иначе — отправленный шаг: `Result.intent` →
  * экшен → шаг, чья интенция этот экшен; кнопка финального экшена стоит на
  * последнем шаге. Ничего не названо — `undefined` (шаг не меняется).
  */
@@ -140,6 +156,8 @@ export function stepOfResult(
   o: {
     /** Шаг → id экшена (как `FormStepsOptions.actionOf`). */
     actionOf?: (step: string) => string | undefined
+    /** Сегмент куста на хосте: `data.step` принимается и полным ключом (`auth.restore`). */
+    at?: string
     /** Id финального экшена; его кнопка стоит на `last`. */
     final?: string
     /** Шаг финальной кнопки. */
@@ -151,7 +169,12 @@ export function stepOfResult(
   if (!result) return undefined
   if (result.ok) {
     const d = result.data as { step?: unknown } | undefined
-    if (typeof d?.step === 'string' && stepKeys.includes(d.step)) return d.step
+    if (typeof d?.step === 'string') {
+      if (stepKeys.includes(d.step)) return d.step
+      // куст: сервер мог назвать срез полным ключом цепочки
+      const inner = o.at ? suffixOf(d.step, o.at) : null
+      if (inner && stepKeys.includes(inner)) return inner
+    }
   }
   if (!result.intent) return undefined
   const action = o.parseAction(result.intent)
@@ -164,8 +187,9 @@ export function stepOfResult(
 /**
  * Срезы одной формы: `const fs = formSteps(bound, { steps })`. Состояние
  * формы не трогает — только читает. Текущий срез ведёт сам: начальный — из
- * результата-продолжения привязки, дальше — по каждому новому результату
- * (`stepOfResult`).
+ * результата-продолжения привязки (в кусте — иначе из полного ключа хоста),
+ * дальше — по каждому новому результату (`stepOfResult`) и, в кусте, по
+ * полному ключу хоста.
  */
 export function formSteps(bound: BoundForm, o: FormStepsOptions): FormStepsApi {
   const actionId = (step: string): string => o.actionOf?.(step) ?? step
@@ -178,21 +202,40 @@ export function formSteps(bound: BoundForm, o: FormStepsOptions): FormStepsApi {
     const full = bound.description.actions.filter((a) => !a.subset?.length)
     return full.length === 1 ? full[0]!.id : undefined
   })()
+  // куст на шаге хоста: пара at+host; по отдельности опций нет
+  const bush = o.at && o.host ? { at: o.at, host: o.host } : undefined
+  /** Свой срез из остатка полного ключа хоста; вне куста или чужой остаток — нет. */
+  const fromHost = (): string | undefined => {
+    if (!bush) return undefined
+    const s = suffixOf(bush.host.fullKey, bush.at)
+    return s && keys.includes(s) ? s : undefined
+  }
   const named = (r: Result | undefined): string | undefined =>
     stepOfResult(r, keys, {
-      actionOf: o.actionOf, final: finalId, last: lastKey || undefined,
+      actionOf: o.actionOf, at: bush?.at, final: finalId, last: lastKey || undefined,
       parseAction: (intent) => bound.description.policy.intent.parse(intent).action,
     })
 
-  let current = $state(named(bound.state.result) ?? o.initial ?? keys[0] ?? '')
-  // каждый НОВЫЙ результат ведёт срез; уже учтённый (продолжение) — нет
+  let current = $state(named(bound.state.result) ?? fromHost() ?? o.initial ?? keys[0] ?? '')
+  // каждый НОВЫЙ результат ведёт срез; уже учтённый (продолжение) — нет.
+  // Куст: хост внутри куста — переключить его полным ключом (адрес пишет хост).
   let seen = bound.state.result
   $effect(() => {
     const r = bound.state.result
     if (r === seen) return
     seen = r
     const s = named(r)
-    if (s) current = s
+    if (!s) return
+    current = s
+    if (bush && suffixOf(bush.host.fullKey, bush.at) !== null) {
+      const full = `${bush.at}.${s}`
+      if (bush.host.fullKey !== full) bush.host.set(full)
+    }
+  })
+  // хост ведёт срез снаружи: deep-link, назад/вперёд, смена страницей
+  $effect(() => {
+    const s = fromHost()
+    if (s && s !== current) current = s
   })
 
   const errorSteps = $derived.by(() => {

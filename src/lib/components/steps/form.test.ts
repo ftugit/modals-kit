@@ -107,4 +107,12 @@ describe('stepOfResult', () => {
   it('data.step на провале не читается: следующий называет только успех', () => {
     expect(stepOfResult(res({ ok: false, intent: 'contacts', data: { step: 'extra' } }), keys, { parseAction })).toBe('contacts')
   })
+
+  it('куст (at): data.step полным ключом — свой срез; чужой куст — мимо', () => {
+    const o = { parseAction, at: 'auth' }
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'auth.extra' } }), keys, o)).toBe('extra')
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'extra' } }), keys, o)).toBe('extra') // и короткая запись
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'other.extra' } }), keys, o)).toBe('contacts')
+    expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'auth.deep.er' } }), keys, o)).toBe('contacts')
+  })
 })
