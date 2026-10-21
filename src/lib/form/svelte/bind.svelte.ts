@@ -2,6 +2,7 @@
 //
 // Библиотека не создаёт ни одного элемента: всё ниже — наборы пропсов.
 import { createAttachmentKey } from 'svelte/attachments'
+import type { Component } from 'svelte'
 import { AsyncRunner, asyncRefsOf, valuesForChecks, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
@@ -11,6 +12,7 @@ import { buildEnvelope } from '../envelope'
 import { formRenderer } from '../messages-order'
 import { isSettled, normalizeErrors, type FormError, type Result } from '../result'
 import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
+import { blockingOpErrors, opError, opPin, type OpErrorInput } from '../takeover'
 import { FormStore, initialState, type FormState } from '../state'
 import { defaultValueMap } from '../defaults'
 import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
@@ -25,6 +27,14 @@ import { DEV } from 'esm-env'
  * регистрацию нельзя, потому что забывать нечего.
  */
 const ATTACH = createAttachmentKey()
+
+/**
+ * Внутренний канал «снимок поля → живая ручка»: `viewOf` вешает ручку
+ * перехватчика на каждый `FieldView` неперечисляемым символьным ключом.
+ * Читает только `Field` (кит полей), когда у него объявлен `takeover`;
+ * компоненты полей канал не видят (в спред пропсов он не попадает).
+ */
+export const FIELD_HANDLE: unique symbol = Symbol('form/field-handle')
 
 export interface FormProps {
   method: 'post' | 'get'
@@ -90,6 +100,60 @@ export interface FieldView {
   setTouched(v?: boolean): void
   onInput(raw: unknown): void
 }
+
+/**
+ * Живая ручка поля для перехватчика (`Field takeover`): тот же набор, что
+ * у `FieldView`, но чтение — текущее состояние при каждом доступе, а не
+ * снимок. Писателей ровно два и оба — СВОЙСТВА (функций вида
+ * getValue/setValue/setError нет осознанно: значение и ошибки уже
+ * читаются через `value`/`errors`, значение пишется через `onInput`).
+ * Компоненты полей ручку не получают — писателей у них нет по типу;
+ * исключение — заменяющий компонент самого перехватчика (проп `f`).
+ */
+export interface FieldHandle extends FieldView {
+  /**
+   * Ошибка операции поля (подготовка значения не удалась): `origin:
+   * 'external'`, закреплена за текущим значением носителя (pins) — видна
+   * до смены значения, собственная проверка поля сильнее, блокирует
+   * клиентскую отправку полных действий; сервер её не воспроизводит.
+   * Ставить ПОСЛЕ приведения носителя в итоговое состояние: закреп — за
+   * тем значением, что в DOM сейчас. `undefined` — снять. Чтение —
+   * последнее присвоенное; показ и блокировку решают pins по значению.
+   */
+  error: OpErrorInput | undefined
+  /**
+   * Подготовка значения в полёте: пока задан, отправка ждёт его
+   * завершения и затем перечитывает `FormData` из DOM — носитель за это
+   * время мог измениться (DataTransfer в carrier + `onInput`). Новое
+   * присвоение заменяет прежнее; `undefined` — ожидания нет.
+   */
+  pending: Promise<unknown> | undefined
+}
+
+/** Что callback перехвата может вернуть: замена вида и/или уборка. */
+export interface FieldTakeoverMount {
+  /**
+   * Компонент вместо штатного. Получает живую ручку поля пропом `f` —
+   * тот же объект, что callback: через неё и вид поля (`attrs`/`value`/
+   * `errors`), и писатели операции.
+   */
+  view?: Component<{ f: FieldHandle }>
+  /** Примитив кита, который замещает `view` (тот, что дал бы resolve полю). */
+  base?: unknown
+  /** Уборка при размонтировании поля. */
+  dispose?: () => void
+}
+
+/**
+ * Перехват поля: callback у компонента `Field`, у конкретного поля
+ * (`<Field of={bound.f.x} takeover={(f) => …}>`). Вызывается один раз
+ * после оживления (клиент); до оживления и без JS работает штатный
+ * компонент поля — noJS остаётся честным, сервер перехвата не видит
+ * (описание формы функций не несёт). Возврат может заменить видимый
+ * компонент (`base` сверяет `Field`) и/или дать уборку; без возврата —
+ * чистое поведение.
+ */
+export type FieldTakeover = (f: FieldHandle) => FieldTakeoverMount | void
 
 /** Настройка связывания: перекрывает проектную конфигурацию. */
 export interface BindOptions {
@@ -211,7 +275,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
   }
 
   function applyResult(result: Result, sent?: FormData) {
+    // ошибки операций перехватчиков своими закрепами уже учтены (opPins):
+    // второй закреп той же ошибки из результата дал бы дубль в фактах
     pins = pinErrors(result.errors, (n) => !!desc.byName[n], sent)
+      .filter((p) => ![...opPins.values()].some((o) => o.error.id === p.error.id))
     const ctx: ErrorContext = {
       from: result.from,
       intent: desc.policy.intent.parse(store.getSnapshot().pendingIntent ?? 'submit').action,
@@ -263,14 +330,19 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     syncPins()
   }
 
-  // серверная ошибка поля закреплена за отправленным значением (../pins)
+  // серверная ошибка поля закреплена за отправленным значением (../pins);
+  // ошибки операций перехватчиков живут рядом своими закрепами и переживают
+  // применение результатов (сервер их не воспроизводит и не снимает)
   let pins: Pin[] = []
-  const pinned = (e: FormError) => isPinned(pins, e)
+  const opPins = new Map<string, Pin>()
+  const pinsNow = (): Pin[] => [...pins, ...opPins.values()]
+  const pinned = (e: FormError) => isPinned(pinsNow(), e)
 
   function syncPins() {
-    if (!formEl || !pins.length) return
+    const all = pinsNow()
+    if (!formEl || !all.length) return
     const s = store.getSnapshot()
-    const facts = reconcilePins(pins, s.facts, new FormData(formEl))
+    const facts = reconcilePins(all, s.facts, new FormData(formEl))
     if (!facts) return
     const ctx: ErrorContext = {
       from: s.result?.from ?? 'fetch',
@@ -279,6 +351,76 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     }
     const shown = display(facts, ctx)
     store.set((cur) => ({ ...cur, facts, shown: shown.errors, removed: shown.removed }))
+  }
+
+  /* ── перехваты полей (Field takeover) ── */
+
+  // последнее присвоенное `f.error` по полю: чтение ручки симметрично
+  // записи; показ и блокировку решают opPins по значению носителя
+  const opErrorInputs = new Map<string, OpErrorInput>()
+
+  /** Ошибка операции поля: закреп за текущим значением носителя (pins). */
+  function setFieldError(name: string, err: OpErrorInput | null) {
+    const prev = opPins.get(name)
+    opPins.delete(name)
+    if (prev)
+      store.set((s) => ({
+        ...s,
+        facts: s.facts.filter((e) => e.id !== prev.error.id),
+        shown: s.shown.filter((e) => e.id !== prev.error.id),
+      }))
+    if (!err) { opErrorInputs.delete(name); return }
+    opErrorInputs.set(name, err)
+    const error = opError(name, err, render, desc.policy.limits)
+    if (!error) return
+    opPins.set(name, opPin(name, error, formEl ? new FormData(formEl) : undefined))
+    const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
+    store.set((s) => {
+      const facts = [...s.facts.filter((e) => e.id !== error.id), error]
+      return { ...s, facts, shown: display(facts, ctx).errors }
+    })
+  }
+
+  // подготовка значений в полёте по полям: submit ждёт текущие `f.pending`
+  const pendings = new Map<string, Promise<unknown>>()
+  function setPending(name: string, p: Promise<unknown> | undefined) {
+    if (!p) { pendings.delete(name); return }
+    const tracked = Promise.resolve(p).catch(() => undefined)
+    pendings.set(name, tracked)
+    void tracked.finally(() => { if (pendings.get(name) === tracked) pendings.delete(name) })
+  }
+  async function settlePendings() {
+    // за время ожидания перехватчик мог задать следующее `pending`
+    while (pendings.size) await Promise.allSettled([...pendings.values()])
+  }
+
+  /**
+   * Живая ручка поля: тот же прокси-приём, что у `f` связки — каждое чтение
+   * идёт в свежий `viewOf`, ручка не устаревает. Запись — только свойства
+   * `error`/`pending`; остальное в `FieldView` readonly и по типу. Одна
+   * ручка на поле (кэш): идентичность стабильна для перехватчика.
+   */
+  const handles = new Map<string, FieldHandle>()
+  function handleOf(f: FieldDescriptor): FieldHandle {
+    const cached = handles.get(f.name)
+    if (cached) return cached
+    const handle = new Proxy({}, {
+      get: (_t, k: string | symbol) => {
+        if (k === 'error') return opErrorInputs.get(f.name)
+        if (k === 'pending') return pendings.get(f.name)
+        return (viewOf(f) as unknown as Record<string | symbol, unknown>)[k]
+      },
+      set: (_t, k: string | symbol, v: unknown) => {
+        if (k === 'error') { setFieldError(f.name, (v as OpErrorInput | undefined) ?? null); return true }
+        if (k === 'pending') { setPending(f.name, v as Promise<unknown> | undefined); return true }
+        return false
+      },
+      has: (_t, k: string) => k === 'error' || k === 'pending' || k in viewOf(f),
+      ownKeys: () => [...Object.keys(viewOf(f)), 'error', 'pending'],
+      getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+    }) as unknown as FieldHandle
+    handles.set(f.name, handle)
+    return handle
   }
 
   /**
@@ -482,9 +624,15 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
   function viewOf(f: FieldDescriptor): FieldView {
     const id = cfg.ui.fieldId(desc.id, f.name)
     // у вложенного поля (`field.fields`) ошибки и на подпутях: `props.s1.max_length`
-    const errors = desc.registry.types.get(f.kind).nested
+    const unordered = desc.registry.types.get(f.kind).nested
       ? Object.entries(byField).filter(([p]) => p === f.name || p.startsWith(`${f.name}.`)).flatMap(([, e]) => e)
       : byField[f.name] ?? []
+    // собственная проверка поля сильнее ошибки операции перехватчика:
+    // она — последней в списке поля (показ читает список с начала)
+    const opId = opPins.get(f.name)?.error.id
+    const errors = opId && unordered.length > 1
+      ? [...unordered.filter((e) => e.id !== opId), ...unordered.filter((e) => e.id === opId)]
+      : unordered
     const value = snapshot.values[f.name]
     const helpId = `${id}-help`
     const errorId = `${id}-error`
@@ -511,7 +659,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     if (describedBy) attrs['aria-describedby'] = describedBy
     Object.assign(attrs, cfg.ui.valueAttrs(f, value))
 
-    return {
+    const view: FieldView = {
       name: f.name, input: f.input, kind: f.kind,
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
@@ -543,6 +691,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
         scheduleCheck(f.name)
       },
     }
+    // живая ручка для Field takeover: неперечисляемый символ — в спред
+    // пропсов компонентов полей не попадает, снимок остальным не меняется
+    Object.defineProperty(view, FIELD_HANDLE, { value: handleOf(f) })
+    return view
   }
 
   // продолжение поднимается ДО первой отрисовки: страница отдаётся уже
@@ -573,6 +725,37 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       ...s, status: 'submitting', pending: true, pendingIntent: raw, progress: undefined,
       submitCount: s.submitCount + 1,
     }))
+
+    // ожидание перехватчиков: дождаться готовящихся значений и перечитать
+    // DOM — правда отправки там (носитель мог получить значение только что)
+    if (pendings.size) {
+      await settlePendings()
+      if (formEl) {
+        const fresh = new FormData(formEl)
+        const intentKey = desc.policy.envelopeKeys.intent
+        if (!fresh.has(intentKey) && data.has(intentKey))
+          fresh.set(intentKey, String(data.get(intentKey)))
+        data = fresh
+      }
+    }
+
+    // видимые ошибки операций блокируют отправку локально, как проверка в
+    // runSubmit; серверный evaluate их не знает и не воспроизводит
+    const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(raw).action) ?? desc.actions[0]
+    const opErrors = blockingOpErrors(opPins.values(), data, descriptor)
+    if (opErrors.length) {
+      const ev = evaluate(data, desc, { render, instance, requireEnvelope: false })
+      const blocked: Result = {
+        v: 1, formId: desc.id, instance, submissionId: begun.submission.id,
+        revision: desc.revision, ok: false,
+        status: desc.policy.status.validationFailed, outcome: 'not-applied',
+        errors: normalizeErrors([...ev.errors, ...opErrors], render, desc.policy.limits),
+        values: ev.publicValues, from: 'fetch',
+      }
+      machine.finish(begun.submission)
+      applyResult(blocked, data)
+      return blocked
+    }
 
     const result = await runSubmit({
       description: desc, data, instance, intent: raw,

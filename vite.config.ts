@@ -25,6 +25,10 @@ const unocss = UnoCSS();
 for (const plugin of unocss) delete plugin.transformIndexHtml;
 
 export default defineConfig({
+  // В тестах svelte обязан резолвиться браузерной сборкой: иначе руны
+  // ($effect/$effect.root) — серверные заглушки, и svelte-слой (bind)
+  // тестировать нечем. Приём из документации Svelte по тестированию рун.
+  resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
   // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
   plugins: [layerGuard(RULES), unocss, sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём

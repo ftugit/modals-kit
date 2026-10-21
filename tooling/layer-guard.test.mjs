@@ -156,6 +156,27 @@ test('source: ручной formProps запрещён вне lib/form', () => {
   assert.equal(checkSource(RULES, 'export function formProps() {}', '/app/src/lib/form/svelte/bind.svelte.ts'), null);
 });
 
+test('source: f.error/f.pending — только перехватчик поля (Field takeover)', () => {
+  const widget = '/app/src/content/user/ui/AuthWidget.svelte';
+  const msg = checkSource(RULES, 'const f = bound.f.avatar; f.error = { code: "image.bad" }', widget);
+  assert.ok(msg, 'присваивание из виджета без takeover обнаружено');
+  assert.match(msg, /takeover/, 'сообщение указывает на Field takeover');
+  assert.ok(checkSource(RULES, 'f.pending = convert()', '/app/src/routes/(site)/(app)/x/+page.ts'), 'pending вне перехватчика запрещён');
+  assert.equal(
+    checkSource(RULES, '<Field of={bound.f.avatar} takeover={(f) => { f.error = undefined; f.pending = p }} />', widget),
+    null,
+    'файл с callback у Field разрешён',
+  );
+  assert.equal(
+    checkSource(RULES, "import type { FieldTakeover } from '#lib/form/svelte/index.js'\nexport const t: FieldTakeover = (f) => { f.error = undefined }", '/app/src/content/user/photo.ts'),
+    null,
+    'файл фабрики с типом FieldTakeover разрешён',
+  );
+  assert.equal(checkSource(RULES, 'f.error = { code: "x" }', '/app/src/lib/components/form/PhotoField.svelte'), null, 'кит полей разрешён');
+  assert.equal(checkSource(RULES, 'if (a.error == b) {}', widget), null, 'сравнение — не присваивание');
+  assert.equal(checkSource(RULES, '// по справочникам.\npending = build()', '/app/src/lib/server/x.ts'), null, 'локальная переменная pending — не писатель');
+});
+
 test('source: createElement("form") запрещён', () => {
   assert.ok(checkSource(RULES, 'const el = document.createElement("form")', '/app/src/lib/x.ts'));
   assert.equal(checkSource(RULES, 'document.createElement("div")', '/app/src/lib/x.ts'), null);
