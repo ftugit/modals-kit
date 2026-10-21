@@ -18,7 +18,7 @@ access зеркалится в RAM-vault браузера, сессии/акка
 | `keys.ts` | `@noble/ed25519` (изоморфно, ~3,5 КиБ gzip): `generateKeyPair`, `seedOf`, `sign`, `verify` |
 | `types.ts` | клеймы токена, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked` |
 | `ports.ts` | порты адаптеров: challenge, sessions, auths, profiles, config, seal, куки, время |
-| `auth.ts` | api входа и сессий: `issueChallenge`, `login` (шаги entry/profile/restore), `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, заявка/отмена/исполнитель удаления. Фаервол ВНУТРИ api; `guard` — права по access-токену |
+| `auth.ts` | api входа и сессий: `issueChallenge`, `login` (шаги entry/profile/restore), `restoreDeleted` (восстановление удалённого по доказательству), `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, заявка и исполнитель удаления. Фаервол ВНУТРИ api; `guard` — права по access-токену |
 | `profile.ts` | профильный api: `profile`/`updateProfile` — отдельно от auth (§6: «откуда у auth profile?») |
 | `config.ts` | настройки модуля поверх `#lib/cache`: TTL/поведение — опции приложения; `deleteGraceDays` (дефолт 7) |
 | `error.ts` | доменные факты `auth.*`/`profile.*` + `toHttpStatus` (`auth.disabled` → 503) |
@@ -56,9 +56,15 @@ POST /user/auth (нативный Kit-экшен) ─> execute ─> gateway auth
   (`session.version`): не совпала — «усыновление» свежей.
 - Блэклиста access нет: украденный access умирает на exp (цена признана гайдом);
   отзыв сессии/блокировка — на точке продления (`renew`).
-- Софт-удаление: сессия = отзыв; аккаунт = заявка (вход ведёт на шаг
-  восстановления); окончательно — исполнитель `sweepDeletions` по грейсу:
-  профиль уходит, seed стирается, строка-надгробие остаётся.
+- Софт-удаление: сессия = отзыв; аккаунт = заявка — обычный поиск
+  удалённую строку не видит (политика модели), вход получает факт
+  `auth.deleted` БЕЗ сессии; восстановление — отдельное подтверждение
+  `restoreDeleted`: подпись по seed проверяется ДО привилегированного
+  поиска удалённой строки, затем `restore` модели и обычный вход.
+  Срок не проверяется: восстановимость ≡ seed ещё существует.
+  Окончательно — исполнитель `sweepDeletions` по грейсу: профиль
+  уходит, seed стирается, строка-надгробие остаётся (вызывающего
+  планировщика в приложении пока нет).
 
 ## Кто генерирует seed при регистрации (решение владельца, ревизия хода 261)
 
