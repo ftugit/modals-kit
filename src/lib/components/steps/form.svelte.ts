@@ -178,8 +178,10 @@ export function stepOfResult(
   }
   if (!result.intent) return undefined
   const action = o.parseAction(result.intent)
-  const own = stepKeys.find((k) => (o.actionOf?.(k) ?? k) === action)
-  if (own) return own
+  const own = stepKeys.filter((k) => (o.actionOf?.(k) ?? k) === action)
+  // экшен общий у нескольких срезов (вход и создание — один `login`):
+  // отправленный срез по интенту не различить — шаг не называем
+  if (own.length === 1) return own[0]
   if (o.final !== undefined && action === o.final) return o.last
   return undefined
 }

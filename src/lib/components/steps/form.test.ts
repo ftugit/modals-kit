@@ -108,6 +108,13 @@ describe('stepOfResult', () => {
     expect(stepOfResult(res({ ok: false, intent: 'contacts', data: { step: 'extra' } }), keys, { parseAction })).toBe('contacts')
   })
 
+  it('общий экшен двух срезов: отправленный по интенту не различить — безымянно', () => {
+    // вход и создание делят интент login: провал с любого из двух не должен
+    // уводить на первый срез списка
+    const actionOf = (_s: string) => 'login'
+    expect(stepOfResult(res({ intent: 'login' }), keys, { parseAction, actionOf })).toBeUndefined()
+  })
+
   it('куст (at): data.step полным ключом — свой срез; чужой куст — мимо', () => {
     const o = { parseAction, at: 'auth' }
     expect(stepOfResult(res({ ok: true, intent: 'contacts', data: { step: 'auth.extra' } }), keys, o)).toBe('extra')
