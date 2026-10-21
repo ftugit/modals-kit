@@ -531,7 +531,8 @@ R3. **Серверный preparer и POST аватара.** Серверный �
    (wasm-инициализация Node/Workers, декодер, EXIF, pass-through,
    синхронный бюджет, Blob→dataURL). Handler: тот же checks,
    `limits` под сырьё, идемпотентность (`storeIdempotency` на scope
-   lib/cache — бронь по `submissionId` на время долгой конвертации);
+   `sharedStore` — бронь по `submissionId` общая между инстансами,
+   хранилище готово: `src/hooks/cache-db.ts`);
    execute: авторизация → preparer → сохранение строки одной записью
    профиля (никнейм + аватар атомарно, после успешной конвертации). Удалить `avatar.ts` и `checkAvatar`; контракт
    `updateProfile` сузить до «сохранить готовое» (валидация — форма;
