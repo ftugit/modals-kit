@@ -18,6 +18,13 @@
  *    страницы и deep-link остаются верными (страницы). Служебные состояния,
  *    которых нет в списке шагов (у авторизации — `profile`, `blocked`),
  *    адресом не становятся — только локально.
+ *  • **Цепочка ключей.** Текущее состояние — полный ключ по уровням
+ *    (`auth.restore`): первый сегмент — шаг этого хоста (`currentKey`,
+ *    сниппет и навигация смотрят его), остаток — ключи аддонов на шаге
+ *    (срезы `formSteps`, вложенные шаги), их читают сами аддоны
+ *    (`suffixOf` в `keys.ts`). Хост один на экран и адресует полный ключ
+ *    целиком; Steps в steps напрямую не вкладывается — цепочку внутри
+ *    шага продолжает только аддон на этом шаге.
  *  • **Чужое не теряется.** Адрес шага строится `nextSearch`: правится только
  *    свой ключ, остальные (`?modal=` цепочка, `?page.…` пагинатора) остаются.
  *  • **Аргументы шага** — как у модалок (`modal.1.pack`): своё семейство
@@ -36,6 +43,9 @@ import { page } from '$app/state'
 import { DEV, BROWSER } from 'esm-env'
 import { claimQuery, nextSearch, readQuery } from '#lib/address/keys.js'
 import { linkTask, visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
+import { segmentOf } from './keys.js'
+
+export { segmentOf, suffixOf } from './keys.js'
 
 export type StepDef = {
   key: string
@@ -95,8 +105,9 @@ export type StepsHost = {
   /**
    * Локальная смена шага (`local`/`hybrid`): состояние внутри хоста, в
    * `hybrid` адрес синхронизируется своим ключом брони без навигации.
-   * Ключ из списка шагов (и только он) становится адресуемым; прочие —
-   * служебные состояния владельца, адреса не получают. В режиме `url` —
+   * Адресуем полный ключ, чей ПЕРВЫЙ сегмент — из списка шагов
+   * (`auth.restore` адресуем, если объявлен `auth`); прочие — служебные
+   * состояния владельца, адреса не получают. В режиме `url` —
    * dev-предупреждение: там состоянием ведёт адрес (ссылки), не `set()`.
    * Замок полёта игнорирует смену.
    */
@@ -107,8 +118,14 @@ export type StepsHost = {
    * dev-предупреждение (там клик не перехватывается, работает нативный переход).
    */
   switch(stepKey: string): Promise<void>
-  /** Ключ текущего шага. */
+  /** Ключ текущего шага ЭТОГО хоста — первый сегмент полного ключа. */
   readonly currentKey: string | null
+  /**
+   * Полный ключ цепочки (`auth.restore`): первый сегмент — `currentKey`,
+   * остаток — ключи аддонов на шаге. Хост адресует полный ключ целиком;
+   * аддоны читают свой остаток (`suffixOf`).
+   */
+  readonly fullKey: string | null
   /** Адрес шага (чужие ключи адреса не теряются). */
   href(stepKey: string): string
   /** Аргумент шага — чтение (`step.<ключ>.<имя>`); чужие права не нужны. */
@@ -150,6 +167,8 @@ export function useSteps(opts: StepsOptions): StepsHost {
     }
   }
 
+  const full = (): string | null => (mode === 'url' ? opts.current() : (local ?? opts.current()))
+
   const host: StepsHost = {
     mode,
     get locked() {
@@ -168,7 +187,10 @@ export function useSteps(opts: StepsOptions): StepsHost {
       else host.set(stepKey)
     },
     get currentKey() {
-      return mode === 'url' ? opts.current() : (local ?? opts.current())
+      return segmentOf(full())
+    },
+    get fullKey() {
+      return full()
     },
     set(stepKey: string) {
       if (mode === 'url') {
@@ -183,12 +205,13 @@ export function useSteps(opts: StepsOptions): StepsHost {
         return
       }
       if (locked()) return
-      // гибрид: адресуемый шаг синхронизирует адрес своим ключом. Запись — общим
+      // гибрид: адресуемый шаг синхронизирует адрес своим ключом (полный ключ
+      // цепочки целиком, если его первый сегмент объявлен). Запись — общим
       // писателем `#lib/address` (мелкая, без навигации и load), а не своим
       // `pushState`: своя запись — вторая очередь, которая обгоняет чужие и
       // теряется под модальным слоем (дефект /steps на таче, ход 262). Служебные
       // состояния адреса не получают.
-      if (mode === 'hybrid' && BROWSER && opts.steps().some((s) => s.key === stepKey)) {
+      if (mode === 'hybrid' && BROWSER && opts.steps().some((s) => s.key === segmentOf(stepKey))) {
         void writeAddress(() => ({ url: host.href(stepKey) }), { replace: false, load: false })
       }
       local = stepKey
@@ -201,12 +224,12 @@ export function useSteps(opts: StepsOptions): StepsHost {
       return here.pathname + nextSearch(opts.owner, here.search, { [key]: stepKey })
     },
     arg(name: string, stepKey?: string) {
-      const target = stepKey ?? opts.current()
+      const target = stepKey ?? segmentOf(full())
       if (!target) return undefined
       return readQuery(visibleAddress().url.search, `${key}.${target}.${name}`) as string | undefined
     },
     argHref(patch: Record<string, string | number | null>, stepKey?: string) {
-      const target = stepKey ?? opts.current()
+      const target = stepKey ?? segmentOf(full())
       if (!target) throw new Error('argHref: текущий шаг не определён')
       const own: Record<string, string | number | null> = {}
       for (const [name, value] of Object.entries(patch)) own[`${key}.${target}.${name}`] = value
