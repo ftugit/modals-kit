@@ -73,16 +73,22 @@ ok((await rows()) === 3, '/db-demo: вход по адресу даёт 3 стр
 await p.selectOption('select[name="page.size"]', '5')
 await p.waitForTimeout(1400)
 ok((await rows()) === 5 && net4xx.length === 0, 'смена размера в курсорном режиме: 5 строк, отказов источника нет', `rows=${await rows()} 4xx=${net4xx.length}`)
-// Снимок ДО смены порядка: адрес (в нём указатель текущего окна) и число запросов.
+// Сначала доводим список до состояния, когда в адресе ЕСТЬ ключ порции:
+// догружаем вторую порцию и прокручиваем к ней. С шага 4 автообновления адрес
+// хранит ключ ВИДИМОЙ порции (`page.after`), а не указатель следующей.
+await p.click('[data-testid="cursor-next"]')
+await p.waitForTimeout(1200)
+await p.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: h.scrollHeight, behavior: 'instant' }))
+await p.waitForTimeout(1000)
 const s0 = await ctl()
 const reqBefore = reqs.length
 const tokenBefore = new URL(BASE + '/db-demo' + s0.url).searchParams.get('page.after')
+ok(tokenBefore !== null, 'видимая вторая порция оставила ключ в адресе (precondition)', s0.url.slice(0, 80))
 await p.selectOption('select[name="page.ord"]', 'default')
 await p.waitForTimeout(1600)
-// Что именно обязано быть честным при смене порядка: НЕ пустой адрес (указатель
-// следующего шага — штатная часть адресной строки курсорного режима), а (1) запрос
-// первой страницы нового окна — БЕЗ прежнего токена, иначе источник ответит 400, и
-// (2) новый токен в адресе вместо старого, то есть ссылка ведёт в новое окно.
+// Что именно обязано быть честным при смене порядка: прежний ключ не переезжает
+// в новое окно — ни в адрес, ни в запросы (иначе источник ответит 400), — а
+// новое окно начинается с головы, поэтому ключа видимой порции в адресе нет.
 ok((await rows()) > 0 && net4xx.length === 0, 'смена сортировки: окно пересобрано, 400 нет', `rows=${await rows()} 4xx=${net4xx.join(',')}`)
 const staleReq = reqs
   .slice(reqBefore)
@@ -93,9 +99,8 @@ ok(
   `${reqs.length - reqBefore} запросов, со старым токеном: ${staleReq.length}`,
 )
 s = await ctl()
-const tokenAfter = new URL(BASE + s.url).searchParams.get('page.after')
-ok(tokenAfter !== null && tokenAfter !== tokenBefore, 'в адресе указатель — НОВЫЙ (выдан этим окном), а не пережитый', `${String(tokenBefore).slice(0, 12)}… → ${String(tokenAfter).slice(0, 12)}…`)
-ok((await ptr()) === 'в адресе (?page.after)', 'состояние списка сообщает об указателе как о своём ключе', await ptr())
+const tokenAfter = new URL(BASE + '/db-demo' + s.url).searchParams.get('page.after')
+ok(tokenAfter === null, 'новое окно с головы: ключ прежней порции в адресе не остался', `${String(tokenBefore).slice(0, 12)}… → ${String(tokenAfter).slice(0, 12)}…`)
 await p.uncheck('input[name="page.cur"]')
 await p.waitForTimeout(1400)
 s = await ctl()

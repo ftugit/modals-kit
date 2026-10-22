@@ -1,7 +1,7 @@
 /**
  * Браузер-тесты пользовательской системы (ход 261 — решения владельца; база — 258):
  *   • «Создать аккаунт» — ссылка: шаг живёт в адресе на ОБЕИХ сторонах
- *     (?stage=register, seed делает сервер при fallback-загрузке);
+ *     (?stage=auth.register, seed делает сервер при fallback-загрузке);
  *   • пустой/мусорный seed — ошибки поля ВИДНЫ (required + pattern движка;
  *     раньше шаг отходил серверу и ошибка тонула в скрытом signature);
  *   • без JS пустая/мусорная отправка блокируется нативно (required/pattern);
@@ -50,8 +50,8 @@ async function run() {
       // 1. «Создать аккаунт» — ссылка с адресом шага (не мёртвая кнопка)
       const create = form.getByRole('link', { name: 'Создать аккаунт' })
       assert.equal(await create.count(), 1, '«Создать аккаунт» — ссылка')
-      assert.ok((await create.getAttribute('href')).includes('stage=register'), 'адрес шага в href')
-      ok('создание аккаунта — ссылка с ?stage=register')
+      assert.match(await create.getAttribute('href'), /stage=(auth\.)?register/, 'адрес шага в href')
+      ok('создание аккаунта — ссылка с адресом шага')
 
       // 1а. В МОДАЛКЕ смена шага — локальная (репорт владельца, ход 261):
       // адрес не уезжает на роут, модалка жива, seed делает браузер
@@ -71,7 +71,7 @@ async function run() {
 
       // 2. Клик (JS): шаг через адрес (навигация), seed генерирует сервер
       await create.click()
-      await page.waitForURL(/stage=register/)
+      await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForFunction(() => {
         const el = document.querySelector('input[name=seed]')
         return el && el.value.length >= 43
@@ -107,7 +107,7 @@ async function run() {
 
       // 3. Обратно на вход: поле ПУСТОЕ (seed шага регистрации не перетаскивается)
       await form.getByRole('link', { name: 'Авторизация' }).click()
-      await page.waitForURL((u) => !u.search.includes('stage=register'))
+      await page.waitForURL((u) => !/stage=(auth\.)?register/.test(u.search))
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value === '')
       assert.equal(await page.inputValue('input[name=seed]'), '', 'поле входа пустое')
       ok('возврат на вход: поле чистое')
@@ -130,7 +130,7 @@ async function run() {
 
       // 6. Регистрация: кнопка заблокирована до заполнения, заливка — от курсора
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/stage=register/)
+      await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
       const hold = form.locator('button[type=submit]:has-text("Удерживайте")')
@@ -158,36 +158,38 @@ async function run() {
       await page.keyboard.down(' ')
       await page.waitForTimeout(2600)
       await page.keyboard.up(' ')
-      await form.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
+      // Профиль живёт ОТДЕЛЬНОЙ формой (`#user-profile`): с декомпозиции
+      // AuthWidget ник и аватар — своя форма со своим конвертом.
+      const profile = page.locator('#user-profile')
+      await profile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
       ok('HoldButton удержание: шаг профиля открыт')
 
-      // 6а. Ошибки поля avatar ВИДНЫ (ход 261: раньше тонули в скрытом поле —
-      // «ничего не происходит»): скрытое поле появляется только с конвейера —
-      // сперва честный файл 1×1, затем подмена значения на data-URL больше лимита
+      // 6а. Фото-поле: файл проходит через lib/image и кладёт готовый результат
+      // в скрытый носитель `avatar`; ошибки поля видны у самого поля.
       const JPEG_1X1 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
-      await page.locator('input[type=file]').setInputFiles({ name: 'a.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(JPEG_1X1, 'base64') })
-      await page.locator('input[name=avatar]').waitFor({ state: 'attached', timeout: 15000 })
+      await profile.locator('input[type=file]').setInputFiles({ name: 'a.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(JPEG_1X1, 'base64') })
+      await page.waitForFunction(() => (document.querySelector('#user-profile input[name=avatar]')?.value ?? '').length > 0, undefined, { timeout: 20000 })
+      ok('фото: честный JPEG прошёл подготовку и лёг в носитель')
+      // Подмена носителя на не-картинку: ошибка обязана быть ВИДНА у поля.
       await page.evaluate(() => {
-        document.querySelector('input[name=avatar]').value = 'data:image/jpeg;base64,' + 'A'.repeat(28_000)
+        document.querySelector('#user-profile input[name=avatar]').value = 'data:image/jpeg;base64,' + 'A'.repeat(28_000)
       })
-      await form.getByRole('button', { name: 'Сохранить' }).click()
-      const avatarError = form.locator('[data-field=avatar] p[role=alert]')
-      await avatarError.waitFor({ state: 'visible', timeout: 5000 })
+      await profile.getByRole('button', { name: 'Сохранить' }).click()
+      const avatarError = profile.locator('[data-field=avatar] p[role=alert]')
+      await avatarError.waitFor({ state: 'visible', timeout: 10000 })
       assert.ok((await avatarError.textContent()).length > 3, 'текст ошибки аватара')
-      ok('перегруженный аватар: ошибка сервера видна у формы')
+      ok('перегруженный/битый аватар: ошибка видна у формы')
 
       // 7. Профиль → успех уводит со страницы (finish не молчит). Аватар чистим:
-      // после 6а в скрытом поле — мусор больше лимита (аватар необязателен).
-      // NB, найдено здесь же: валидный data-URL аватара сервер НЕ сохраняет —
-      // схема user_profile.avatar_url ждёт http(s):// (решение владельца).
-      await page.fill('input[name=nickname]', 'e2e-ход-258')
+      // после 6а в носителе — мусор (аватар необязателен).
+      await profile.locator('input[name=nickname]').fill('e2e-ход-258')
       await page.evaluate(() => {
-        document.querySelector('input[name=avatar]').value = ''
+        document.querySelector('#user-profile input[name=avatar]').value = ''
       })
       // blur ДО клика: mousedown снял бы фокус с поля — рендер touched пересоздал
       // бы кнопку между mousedown и mouseup, и click не родился бы
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
-      await form.getByRole('button', { name: 'Сохранить' }).click()
+      await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('регистрация (JS): профиль сохранён, страница закрылась переходом')
 
@@ -237,7 +239,7 @@ async function run() {
       const form = page.locator('#user-auth')
       assert.equal(await form.getByRole('button', { name: 'Создать аккаунт' }).count(), 0, 'мёртвой кнопки нет')
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/stage=register/)
+      await page.waitForURL(/stage=(auth\.)?register/)
       // readonly у seed больше нет (решение владельца: шаг живёт в адресе, seed
       // всегда серверный) — проверяем сам факт: поле в HTML со значением сервера
       await page.waitForSelector('input[name=seed]')
@@ -262,14 +264,16 @@ async function run() {
       // 12. Полный цикл без JS: создать → профиль → домой (readonly-поле с
       // серверным seed уходит в отправку; readonly не проверяется нативно)
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/stage=register/)
+      await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
       await form.getByRole('button', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/stage=profile/, { timeout: 15000 })
-      await page.fill('input[name=nickname]', 'e2e-nojs-258')
-      await form.getByRole('button', { name: 'Сохранить' }).click()
+      await page.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
+      // профиль — отдельная форма со своим конвертом
+      const profile = page.locator('#user-profile')
+      await profile.locator('input[name=nickname]').fill('e2e-nojs-258')
+      await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
       ok('без JS: регистрация + профиль прошли (редиректы экшена)')
 
