@@ -1,3 +1,4 @@
+import { availableParallelism, totalmem } from 'node:os';
 import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
@@ -5,6 +6,13 @@ import UnoCSS from 'unocss/vite';
 import { defineConfig } from 'vitest/config';
 import { trustedOrigins } from './src/lib/server/trusted-origins.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
+
+const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split('.').map(Number);
+if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 17)) {
+  throw new Error(
+    `modals-kit requires Node >= 22.17 (current: ${process.version}). Switch PATH to Node >= 22.17 before running Vite/Vitest.`,
+  );
+}
 
 // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` — точные адреса из того же списка, что у слоя 02
 // форм (`src/lib/server/trusted-origins.ts`); окружение здесь — момент сборки/запуска dev.
@@ -32,7 +40,16 @@ export default defineConfig({
   // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
   plugins: [layerGuard(RULES), unocss, sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
-  test: { include: ['src/**/*.{test,spec}.{js,ts}'] },
+  test: {
+    include: ['src/**/*.{test,spec}.{js,ts}'],
+    // В песочницах с ограниченным пулом исполняемых страниц V8 Liftoff падает по SIGSEGV
+    // внутри WASM-инстансов `@electric-sql/pglite` (`Worker exited unexpectedly`);
+    // компиляция `pglite.wasm` сразу через TurboFan (`--no-liftoff`) убирает падения,
+    // но холодный старт одного `new PGlite()` занимает ~8.5 с (> дефолтных 5000 мс Vitest).
+    execArgv: ['--no-liftoff'],
+    testTimeout: 15_000,
+    ...(totalmem() <= 4 * 1024 ** 3 || availableParallelism() <= 2 ? { maxWorkers: 1 } : {}),
+  },
   preview: {
     host: '0.0.0.0',
     port: 5173,

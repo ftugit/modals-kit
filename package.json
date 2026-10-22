@@ -21,6 +21,7 @@
     "test": "vitest run && node --test tooling/*.test.mjs",
     "test:unit": "vitest run",
     "test:guard": "node --test tooling/*.test.mjs",
+    "test:classes": "node tooling/classes-audit.mjs",
     "test:size": "node tooling/size-budget.mjs",
     "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/steps.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/db-demo.mjs && node test/browser/fields.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
@@ -36,7 +37,7 @@
     "test:browser:shikimori": "node test/browser/shikimori.mjs",
     "test:browser:select-trace": "node test/browser/select-trace.mjs",
     "test:browser:errors": "node test/browser/errors.mjs",
-    "test:db:probes": "node --import tsx src/lib/db/probes/pglite.probe.mts && node --import tsx src/lib/db/probes/order.probe.mts",
+    "test:db:probes": "node --no-liftoff --import tsx src/lib/db/probes/pglite.probe.mts && node --no-liftoff --import tsx src/lib/db/probes/order.probe.mts",
     "test:db": "vitest run src/lib/db"
   },
   "devDependencies": {
