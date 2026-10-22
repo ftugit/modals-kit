@@ -12,7 +12,7 @@
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
-  import { seedForm } from '../forms.js'
+  import { seedForm } from './seed-form/form.js'
   import type { Blocked } from '../types.js'
   import Acl from './Acl.svelte'
 

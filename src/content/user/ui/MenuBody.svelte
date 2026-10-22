@@ -15,7 +15,7 @@
   import { useModalLink } from '#lib/components/links/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
-  import { seedForm } from '../forms.js'
+  import { seedForm } from './seed-form/form.js'
   import { vault } from '../vault.svelte.js'
   import Acl from './Acl.svelte'
 

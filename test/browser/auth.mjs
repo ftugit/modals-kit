@@ -1,15 +1,16 @@
 /**
- * Браузер-тесты пользовательской системы (ход 261 — решения владельца; база — 258):
+ * Браузер-тесты пользовательской системы (ход 261 + рефакторинг Acl / SeedForm / бинарного File аватара):
  *   • «Создать аккаунт» — ссылка: шаг живёт в адресе на ОБЕИХ сторонах
  *     (?stage=auth.register, seed делает сервер при fallback-загрузке);
- *   • пустой/мусорный seed — ошибки поля ВИДНЫ (required + pattern движка;
- *     раньше шаг отходил серверу и ошибка тонула в скрытом signature);
+ *   • пустой/мусорный seed — ошибки поля ВИДНЫ (required + pattern движка);
  *   • без JS пустая/мусорная отправка блокируется нативно (required/pattern);
- *   • после регистрации поле входа пустое (раньше носило seed в себе);
- *   • успех (регистрация и вход) уводит со страницы — раньше finish молчал;
- *   • HoldButton: до заполнения клик ничего не делает (заблокирована),
- *     заливка идёт от наведения курсора (опция hover, решение владельца);
- *   • полный цикл без JS: регистрация (seed сервера) → профиль → вход.
+ *   • после регистрации поле входа пустое;
+ *   • успех (регистрация и вход) уводит со страницы;
+ *   • HoldButton: до заполнения клик ничего не делает, заливка от курсора;
+ *   • фото-поле: бинарный File сжимается через lib/image в `avatar.jpg` + компактный
+ *     `FileAttachment`, мусорный файл отвергается с ошибкой у поля, никаких base64-строк;
+ *   • Acl: авторизованный на `/user/auth` видит `guest_only`, гость на `/user/menu` — `auth_required`;
+ *   • полный цикл без JS: регистрация → 422 в ответе POST → бинарный File аватара (`decodeWithNode`) → вход.
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -22,6 +23,9 @@ const ok = (name) => {
   passed++
   console.log('  ok  ' + name)
 }
+
+const JPEG_1X1 =
+  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
 
 async function waitPreview() {
   for (let i = 0; i < 60; i++) {
@@ -37,7 +41,7 @@ async function run() {
   await waitPreview()
   const browser = await chromium.launch({ headless: true })
   try {
-    console.log('— с JS: шаги, валидация, выход после успеха —')
+    console.log('— с JS: шаги, валидация, бинарный File аватара, Acl и выход —')
     {
       const ctxJs = await browser.newContext({
         viewport: { width: 1280, height: 860 },
@@ -53,8 +57,7 @@ async function run() {
       assert.match(await create.getAttribute('href'), /stage=(auth\.)?register/, 'адрес шага в href')
       ok('создание аккаунта — ссылка с адресом шага')
 
-      // 1а. В МОДАЛКЕ смена шага — локальная (репорт владельца, ход 261):
-      // адрес не уезжает на роут, модалка жива, seed делает браузер
+      // 1а. В МОДАЛКЕ смена шага — локальная: адрес не уезжает на роут, модалка жива, seed делает браузер
       await page.goto(BASE + '/?modal=user.auth', { waitUntil: 'networkidle' })
       const dlg = page.locator('[role=dialog]')
       await dlg.waitFor({ state: 'visible' })
@@ -86,11 +89,7 @@ async function run() {
       assert.equal(inClipboard, seed, 'в буфере — seed из поля')
       ok('шаг регистрации: seed сервера показан, иконка копирует значение в буфер')
 
-      // 2а. Иконка копирования (решение владельца): за кликом из п.2 — «Скопировано»
-      // и не нажимаемость 5 с, затем возврат к «Копировать» (один клик — одна волна
-      // состояний; кликать снова в окне возврата — гоняться с таймером)
-      // состояние читаем по селектору, а не по роли-имени: у кнопки в состоянии
-      // «Скопировано» другое имя, и локатор по «Копировать» ждал бы её возврата
+      // 2а. Иконка копирования: «Скопировано» и ненажимаемость 5 с, затем возврат
       const copyState = page.locator('[data-copy-input] button')
       await page.waitForFunction(
         () => document.querySelector('[data-copy-input] button')?.getAttribute('aria-label') === 'Скопировано',
@@ -105,14 +104,14 @@ async function run() {
       assert.equal(await copyState.isDisabled(), false, 'кнопка вернулась')
       ok('иконка копирования: «Скопировано» 5 с, затем возврат')
 
-      // 3. Обратно на вход: поле ПУСТОЕ (seed шага регистрации не перетаскивается)
+      // 3. Обратно на вход: поле ПУСТОЕ
       await form.getByRole('link', { name: 'Авторизация' }).click()
       await page.waitForURL((u) => !/stage=(auth\.)?register/.test(u.search))
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value === '')
       assert.equal(await page.inputValue('input[name=seed]'), '', 'поле входа пустое')
       ok('возврат на вход: поле чистое')
 
-      // 4. Пустой seed — видимая ошибка обязательности (движок формы)
+      // 4. Пустой seed — видимая ошибка обязательности
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       const seedError = form.locator('[data-field=seed] p[role=alert]')
       await seedError.waitFor({ state: 'visible', timeout: 5000 })
@@ -134,13 +133,10 @@ async function run() {
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
       const hold = form.locator('button[type=submit]:has-text("Удерживайте")')
-      // обычный клик по заблокированной не отправляет форму
       await hold.click({ force: true })
       await page.waitForTimeout(600)
       assert.equal(await form.locator('input[name=nickname]').count(), 0, 'клик до заполнения не выполняет')
       ok('HoldButton до заполнения: клик не срабатывает')
-      // заливка от курсора измеряется напрямую: scaleX растёт под курсором
-      // и сбрасывается уходом (опция hover); force — форма при busy перехватывает
       const fillOf = async () => {
         const style = (await hold.locator('span').first().getAttribute('style')) ?? ''
         return Number(/scaleX\(([\d.]+)\)/.exec(style)?.[1] ?? '0')
@@ -153,67 +149,73 @@ async function run() {
       await page.waitForTimeout(300)
       assert.equal(await fillOf(), 0, 'уход курсора сбрасывает заливку')
       ok(`HoldButton hover: заливка от курсора идёт (scaleX=${t1.toFixed(2)}) и сбрасывается`)
-      // выполнение — удержанием клавиши (тот же perform, что у заливки до конца)
       await hold.focus()
       await page.keyboard.down(' ')
       await page.waitForTimeout(2600)
       await page.keyboard.up(' ')
-      // Профиль живёт ОТДЕЛЬНОЙ формой (`#user-profile`): с декомпозиции
-      // AuthWidget ник и аватар — своя форма со своим конвертом.
       const profile = page.locator('#user-profile')
       await profile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
       ok('HoldButton удержание: шаг профиля открыт')
 
-      // 6а. Фото-поле: файл проходит через lib/image и кладёт готовый результат
-      // в скрытый носитель `avatar`; ошибки поля видны у самого поля.
-      const JPEG_1X1 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
-      await profile.locator('input[type=file]').setInputFiles({ name: 'a.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(JPEG_1X1, 'base64') })
-      await page.waitForFunction(() => (document.querySelector('#user-profile input[name=avatar]')?.value ?? '').length > 0, undefined, { timeout: 20000 })
-      ok('фото: честный JPEG прошёл подготовку и лёг в носитель')
-      // Подмена носителя на не-картинку: ошибка обязана быть ВИДНА у поля.
-      await page.evaluate(() => {
-        document.querySelector('#user-profile input[name=avatar]').value = 'data:image/jpeg;base64,' + 'A'.repeat(28_000)
+      // 6а. Фото-поле: не-картинка даёт ошибку у поля и чистит носитель,
+      //     честный JPEG сжимается в бинарный `avatar.jpg` + компактный `FileAttachment`
+      const fileInput = profile.locator('input[type=file][name=avatar]')
+      await fileInput.setInputFiles({
+        name: 'evil.jpg',
+        mimeType: 'image/jpeg',
+        buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
       })
-      await profile.getByRole('button', { name: 'Сохранить' }).click()
       const avatarError = profile.locator('[data-field=avatar] p[role=alert]')
       await avatarError.waitFor({ state: 'visible', timeout: 10000 })
       assert.ok((await avatarError.textContent()).length > 3, 'текст ошибки аватара')
-      ok('перегруженный/битый аватар: ошибка видна у формы')
+      assert.equal(await fileInput.evaluate((el) => el.files?.length ?? 0), 0, 'битый файл очищен из носителя')
+      ok('битый аватар: ошибка видна у поля и носитель очищен')
 
-      // 7. Профиль → успех уводит со страницы (finish не молчит). Аватар чистим:
-      // после 6а в носителе — мусор (аватар необязателен).
-      await profile.locator('input[name=nickname]').fill('e2e-ход-258')
-      await page.evaluate(() => {
-        document.querySelector('#user-profile input[name=avatar]').value = ''
+      await fileInput.setInputFiles({
+        name: 'a.jpg',
+        mimeType: 'image/jpeg',
+        buffer: Buffer.from(JPEG_1X1, 'base64'),
       })
-      // blur ДО клика: mousedown снял бы фокус с поля — рендер touched пересоздал
-      // бы кнопку между mousedown и mouseup, и click не родился бы
+      await page.waitForFunction(
+        () => document.querySelector('#user-profile input[type=file][name=avatar]')?.files?.[0]?.name === 'avatar.jpg',
+        undefined,
+        { timeout: 20000 },
+      )
+      await profile.locator('[data-field=avatar] [data-slot=attachment] img').waitFor({
+        state: 'visible',
+        timeout: 20000,
+      })
+      ok('фото: честный JPEG сжат через lib/image и лежит бинарным File avatar.jpg в носителе')
+
+      // 7. Профиль → успех сохраняет ник и бинарный аватар, уводит со страницы
+      await profile.locator('input[name=nickname]').fill('e2e-ход-258')
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
       await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
-      ok('регистрация (JS): профиль сохранён, страница закрылась переходом')
+      assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'сохранённый аватар в шапке')
+      ok('регистрация (JS): профиль и бинарный аватар сохранены, переход выполнен')
 
-      // 8. Выход
+      // 8. Acl allow="guest": повторный заход авторизованным на /user/auth показывает guest_only
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
-      const nonceBefore = await page.inputValue('input[name=nonce]')
-      await form.getByRole('button', { name: 'Выйти из аккаунта' }).click()
-      await form.getByRole('link', { name: 'Создать аккаунт' }).waitFor({ state: 'visible' })
-      ok('выход: снова шаг входа')
+      assert.equal(await page.locator('#user-auth').count(), 0, 'форма скрыта для авторизованного')
+      assert.equal(await page.locator('[data-acl-code="guest_only"]').count(), 1, 'экран Acl guest_only')
+      ok('Acl на /user/auth: авторизованному показан экран guest_only')
 
-      // 9. Вход тем же seed — успех уводит со страницы. Выход тратит challenge:
-      // виджет сам запрашивает свежий nonce — ждём его перед входом
-      await page.waitForFunction(
-        (old) => { const v = document.querySelector('input[name=nonce]')?.value; return v !== '' && v !== old },
-        nonceBefore,
-        { timeout: 15000 },
-      )
+      // Выход через меню и возврат на шаг входа
+      await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+      await form.getByRole('link', { name: 'Создать аккаунт' }).waitFor({ state: 'visible' })
+      ok('выход через меню: /user/auth снова открывает шаг входа')
+
+      // 9. Вход тем же seed — успех уводит со страницы
       await page.fill('input[name=seed]', fresh)
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('вход (JS): корректный seed проходит, страница закрылась переходом')
 
-      // 9а. Меню шапки (ход 261, репорт «после входа в шапке ничего нет»):
-      // аватар виден, клик открывает меню с выходом; выход со страницы меню работает
+      // 9а. Меню шапки: аватар виден, клик открывает меню с выходом; выход со страницы меню работает
       await page.goto(BASE + '/', { waitUntil: 'networkidle' })
       const userBtn = page.locator('[data-testid=header-user]')
       await userBtn.waitFor({ state: 'visible' })
@@ -229,10 +231,16 @@ async function run() {
       await ctxJs.close()
     }
 
-    console.log('— без JS: регистрация и вход работают —')
+    console.log('— без JS: Acl, серверные POST-ошибки, decodeWithNode и вход —')
     {
       const ctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 860 } })
       const page = await ctx.newPage()
+
+      // 10а. Гостю на /user/menu без JS рендерится экран Acl auth_required (без 303-редиректа)
+      await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
+      assert.equal(page.url(), BASE + '/user/menu', 'гость остаётся на /user/menu без редиректа')
+      assert.equal(await page.locator('[data-acl-code="auth_required"]').count(), 1, 'Acl auth_required')
+      ok('без JS: гостю на /user/menu рендерится экран Acl auth_required')
 
       // 10. Ссылка шага работает нативно
       await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
@@ -240,14 +248,11 @@ async function run() {
       assert.equal(await form.getByRole('button', { name: 'Создать аккаунт' }).count(), 0, 'мёртвой кнопки нет')
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
       await page.waitForURL(/stage=(auth\.)?register/)
-      // readonly у seed больше нет (решение владельца: шаг живёт в адресе, seed
-      // всегда серверный) — проверяем сам факт: поле в HTML со значением сервера
       await page.waitForSelector('input[name=seed]')
       assert.ok((await page.inputValue('input[name=seed]')).length >= 43, 'seed сервера в HTML')
-      ok('без JS: ссылка ведёт на шаг регистрации (seed ниже, в п.12)')
+      ok('без JS: ссылка ведёт на шаг регистрации')
 
-      // 11. Пустая и мусорная отправки блокируются нативно (required/pattern):
-      // на шаге ВХОДА поле редактируемое — проверяем именно нативный заслон
+      // 11. Пустая и мусорная отправки блокируются нативно (required/pattern)
       await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
       assert.equal(await page.getAttribute('input[name=seed]', 'required'), '', 'required-атрибут')
       assert.ok((await page.getAttribute('input[name=seed]', 'pattern'))?.length > 5, 'pattern-атрибут')
@@ -261,39 +266,45 @@ async function run() {
       assert.equal(page.url(), here, 'мусорная отправка не уехала (pattern)')
       ok('без JS: required/pattern блокируют пустое и мусорное нативно')
 
-      // 12. Полный цикл без JS: создать → профиль → домой (readonly-поле с
-      // серверным seed уходит в отправку; readonly не проверяется нативно)
+      // 12. Полный цикл без JS: создать → 422 в ответе POST → бинарный File аватара (decodeWithNode) → домой
       await form.getByRole('link', { name: 'Создать аккаунт' }).click()
       await page.waitForURL(/stage=(auth\.)?register/)
-      await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
       await form.getByRole('button', { name: 'Создать аккаунт' }).click()
       await page.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
-      // профиль — отдельная форма со своим конвертом
       const profile = page.locator('#user-profile')
+
+      // 12а. Запрещённый ник в no-JS возвращает 422 прямо в ответе POST (без GET)
+      await profile.locator('input[name=nickname]').fill('admin')
+      await profile.getByRole('button', { name: 'Сохранить' }).click()
+      await page.waitForLoadState('load')
+      assert.match(await profile.locator('[data-field=nickname] [role=alert]').textContent(), /нельзя/)
+      ok('без JS: ошибка валидации возвращается прямо в ответе POST без GET')
+
       await profile.locator('input[name=nickname]').fill('e2e-nojs-258')
+      await profile.locator('input[type=file][name=avatar]').setInputFiles({
+        name: 'raw.jpg',
+        mimeType: 'image/jpeg',
+        buffer: Buffer.from(JPEG_1X1, 'base64'),
+      })
       await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
-      ok('без JS: регистрация + профиль прошли (редиректы экшена)')
+      assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'серверный decodeWithNode сохранил аватар')
+      ok('без JS: регистрация + бинарный File аватара (decodeWithNode) прошли')
 
-      // 13. Вход без JS тем же seed (доказательство = знание секрета)
-      await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
-      await page.fill('input[name=seed]', seed)
-      await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
-      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
-      ok('без JS: вход корректным seed проходит')
-
-      // 14. Меню без JS: аватар-ссылка ведёт на страницу меню, выход — формой
-      await page.goto(BASE + '/', { waitUntil: 'load' })
-      assert.equal(await page.locator('[data-testid=header-user]').count(), 1, 'аватар в шапке')
-      assert.equal(await page.locator('[data-testid=header-user]').getAttribute('href'), '/user/menu', 'ссылка меню без JS')
+      // 13. Выход на /user/menu → повторный вход без JS тем же seed → снова выход
       await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
       assert.ok((await page.locator('span').filter({ hasText: 'e2e-nojs-258' }).count()) > 0, 'ник на странице меню')
       await page.getByRole('button', { name: 'Выйти', exact: true }).click()
       await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'после выхода — «Авторизация»')
-      ok('без JS: страница меню с выходом работает')
+
+      await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
+      await page.fill('input[name=seed]', seed)
+      await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
+      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
+      ok('без JS: страница меню с выходом и повторный вход корректным seed работают')
       await page.close()
       await ctx.close()
     }

@@ -104,7 +104,7 @@ class Vault {
   private async postRenew(): Promise<void> {
     // форма пользователя принимает тело только с конвертом (слои lib/form);
     // транспорт и распаковка Kit-ответа — общие (components/form/transport)
-    const { seedEnvelope, seedEnvelopeFields } = await import('./envelope.js')
+    const { seedEnvelope, seedEnvelopeFields } = await import('./ui/seed-form/envelope.js')
     const { kitActionTransport } = await import('#lib/components/form/transport.js')
     const envelope = seedEnvelope(`user-auth:${crypto.randomUUID()}`)
     const body = new FormData()

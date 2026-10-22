@@ -24,13 +24,13 @@ access зеркалится в RAM-vault браузера, сессии/акка
 | `error.ts` | доменные факты `auth.*`/`profile.*` + `toHttpStatus` (`auth.disabled` → 503) |
 | `gateway.ts` | адаптеры портов на `db.resource(user_*)` (SYSTEM-контекст: роли `server`/`admin` — арбитр в api); `AUTH_ENABLED`, seal/unseal, фасад `auth(event)` для экшена, `readVault`/`vaultPayloadOf` |
 | `acl.ts` | правила и 21 экран UI ACL (`resolveAcl`): статусы авторизации/сессии/аккаунта (`guest`/`user`/роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `lib/db` (`FailureKind` + `payload_too_large`) |
-| `forms.ts` | ДВЕ формы: `authForm` (срезы входа/создания/восстановления, ревизия 5) и `profileForm` (никнейм+аватар, встраиваемая форма компонента). `authEnvelope`/`AUTH_FORM_ID`/`PROFILE_FORM_ID` |
-| `server-forms.ts` | регистрация серверных POST-обработчиков `authForm` и `profileForm` в `#hooks/component-form` — компоненты поднимают POST на любом маршруте без дублирования `actions` |
-| `vault.ts` / `vault.svelte.ts` | RAM-vault access (куки HttpOnly клиент не читает) + продление через `kitActionTransport` |
+| `vault.ts` / `vault.svelte.ts` | RAM-vault access (куки HttpOnly клиент не читает) + продление через `kitActionTransport` и лёгкий конверт `ui/seed-form/envelope.ts` |
 | `ui/Acl.svelte` | компонент UI ACL пользователя (`allow`, `status`, `blocked`, `restrictions`, `model`): показывает нужный экран вместо содержимого |
-| `ui/AuthWidget.svelte` | виджет входа: хост шагов (`auth`/`blocked`/`restrictions`/`profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` на шаге `auth` (срезы entry/register/restore); подпись nonce |
-| `ui/ProfileForm.svelte` | встраиваемая форма профиля (`bindComponentForm`): компактное превью `FileAttachment`/`Attachment`, удержание submit через `f.pending`; при редактировании предзаполнена текущим профилем, после сохранения освежает vault |
-| `ui/MenuModal.svelte` | меню пользователя (ник/аватар, «Изменить профиль» → `?stage=profile`, выход) |
+| `ui/seed-form/` | самодостаточный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `Acl allow="guest"`) и проверка владения `confirm` (`authorize = false`, без создания сессии и смены токена, доступна и гостю, и авторизованному пользователю) |
+| `ui/profile-form/` | самодостаточный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment` (`showSize={false}`, `showFilename={false}`), удержанием submit через `f.pending` и серверным декодером `decodeWithNode` (`#lib/image/node.js`) без внешнего `base64` |
+| `ui/BanNotice.svelte` / `ui/RestrictionsNotice.svelte` | самостоятельные компоненты экранов полной блокировки и ограничений аккаунта |
+| `ui/AuthWidget.svelte` | координатор шагов входа (`auth` / `blocked` / `restrictions` / `profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` |
+| `ui/MenuBody.svelte` / `ui/MenuModal.svelte` | меню пользователя под `<Acl allow="user">` (ник/аватар, «Изменить профиль» → `?stage=profile`, выход) |
 | `index.ts` | единый экспорт модуля |
 
 ## Цепочка вызова

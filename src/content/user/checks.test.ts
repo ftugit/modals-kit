@@ -11,7 +11,7 @@ import {
   AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS, avatarPhotoSpec, createUserChecks,
 } from './checks.js'
 import { defaults } from './config.js'
-import { profileForm } from './forms.js'
+import { profileForm } from './ui/profile-form/form.js'
 import { profile } from './schema.js'
 
 const checks = createUserChecks(defaults)

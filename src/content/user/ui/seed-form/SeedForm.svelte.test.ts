@@ -2,7 +2,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SeedForm from './SeedForm.svelte'
-import { SEED_FORM_ID, SEED_FORM_REV } from '../forms.js'
+import { SEED_FORM_ID, SEED_FORM_REV } from './form.js'
 
 const VALID_SEED = 'A'.repeat(43)
 
@@ -12,7 +12,7 @@ async function settle(): Promise<void> {
   await tick()
 }
 
-describe('SeedForm — режимы authorize=true (гость) и authorize=false (подтверждение владения)', () => {
+describe('SeedForm — режимы authorize=true (гость) и authorize=false (проверка без сессии)', () => {
   let origFetch: typeof globalThis.fetch
 
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
     document.body.innerHTML = ''
   })
 
-  it('authorize=true: рендерит форму гостю и закрывает её экраном guest-only авторизованному', async () => {
+  it('authorize=true: рендерит форму гостю и закрывает её экраном guest_only авторизованному', async () => {
     const hostGuest = document.createElement('div')
     document.body.append(hostGuest)
     const guestApp = mount(SeedForm, {
@@ -48,18 +48,7 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
     await unmount(userApp)
   })
 
-  it('authorize=false: закрывает форму гостю (auth-required), а авторизованному шлёт intent="confirm" и зовёт onConfirmed', async () => {
-    const hostGuest = document.createElement('div')
-    document.body.append(hostGuest)
-    const guestApp = mount(SeedForm, {
-      target: hostGuest,
-      props: { authorize: false, authorized: false, enabled: true },
-    })
-    await settle()
-    expect(hostGuest.querySelector('#user-seed-confirm')).toBeNull()
-    expect(hostGuest.querySelector('[data-acl-code="auth_required"]')).not.toBeNull()
-    await unmount(guestApp)
-
+  it('authorize=false: доступна и гостю, и авторизованному, шлёт intent="confirm" без смены токена и зовёт onConfirmed', async () => {
     const sentPayloads: FormData[] = []
     globalThis.fetch = vi.fn(async (_url, init) => {
       sentPayloads.push(init?.body as FormData)
@@ -70,7 +59,7 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
               v: 1,
               formId: SEED_FORM_ID,
               instance: 'seed-confirm-1',
-              submissionId: 'sub-confirm-1',
+              submissionId: `sub-${sentPayloads.length}`,
               revision: SEED_FORM_REV,
               ok: true,
               status: 200,
@@ -85,7 +74,30 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
       )
     })
 
-    const onConfirmed = vi.fn()
+    // 1. Гость проверяет seed без авторизации (например, перед следующим шагом)
+    const onGuestConfirmed = vi.fn()
+    const hostGuest = document.createElement('div')
+    document.body.append(hostGuest)
+    const guestApp = mount(SeedForm, {
+      target: hostGuest,
+      props: {
+        authorize: false,
+        authorized: false,
+        enabled: true,
+        seed: VALID_SEED,
+        onConfirmed: onGuestConfirmed,
+      },
+    })
+    await settle()
+    expect(hostGuest.querySelector('#user-seed-confirm')).not.toBeNull()
+    ;(hostGuest.querySelector('button[type="submit"]') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(sentPayloads.length).toBe(1))
+    expect(sentPayloads[0]!.get('intent')).toBe('confirm')
+    await vi.waitFor(() => expect(onGuestConfirmed).toHaveBeenCalledWith({ sub: 'usr_1' }))
+    await unmount(guestApp)
+
+    // 2. Авторизованный пользователь проверяет seed без смены своего токена
+    const onUserConfirmed = vi.fn()
     const hostUser = document.createElement('div')
     document.body.append(hostUser)
     const userApp = mount(SeedForm, {
@@ -95,25 +107,17 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
         authorized: true,
         enabled: true,
         seed: VALID_SEED,
-        confirmTitle: 'Удаление аккаунта',
-        confirmLabel: 'Подтвердить удаление',
-        onConfirmed,
+        confirmTitle: 'Подтверждение операции',
+        onConfirmed: onUserConfirmed,
       },
     })
     await settle()
-
     expect(hostUser.querySelector('#user-seed-confirm')).not.toBeNull()
-    expect(hostUser.textContent).toContain('Удаление аккаунта')
-
-    const btn = hostUser.querySelector('button[type="submit"]') as HTMLButtonElement
-    expect(btn.value).toBe('confirm')
-    btn.click()
-
-    await vi.waitFor(() => expect(sentPayloads.length).toBe(1))
-    expect(sentPayloads[0]!.get('intent')).toBe('confirm')
-    expect(sentPayloads[0]!.get('seed')).toBe(VALID_SEED)
-    await vi.waitFor(() => expect(onConfirmed).toHaveBeenCalledWith({ sub: 'usr_1' }))
-
+    expect(hostUser.textContent).toContain('Подтверждение операции')
+    ;(hostUser.querySelector('button[type="submit"]') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(sentPayloads.length).toBe(2))
+    expect(sentPayloads[1]!.get('intent')).toBe('confirm')
+    await vi.waitFor(() => expect(onUserConfirmed).toHaveBeenCalledWith({ sub: 'usr_1' }))
     await unmount(userApp)
   })
 })

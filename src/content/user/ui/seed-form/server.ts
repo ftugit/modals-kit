@@ -1,29 +1,9 @@
-// Серверная регистрация форм модуля пользователя (`seedForm` и `profileForm`).
-// Импортируется один раз в `src/hooks.server.ts`: все пользовательские
-// компоненты (`SeedForm`, `AuthWidget`, `ProfileForm`, `MenuBody`,
-// `RestrictionsNotice`, `vault`) работают через единый хук
-// `#hooks/component-form` на любом маршруте без дублирования `actions`.
+// Серверный POST-обработчик компонента `SeedForm` (`#hooks/component-form`).
 import { localPath } from '#lib/address/index.js'
-import { localStore } from '#lib/server/cache.js'
 import { registerComponentForm } from '#hooks/component-form/server.js'
-import { createUserChecks, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from './checks.js'
-import { auth, vaultPayloadOf } from './gateway.js'
-import { seedForm, profileForm } from './forms.js'
-import { createUserConfig, instruction, seedOf, type LoginOutcome } from './index.js'
-import { prepareServerAvatar } from './server-avatar.js'
-
-const userConfig = createUserConfig(localStore.scope('user-config'))
-
-const SHORT_PHOTO_FORMATS = SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, ''))
-
-async function readUserChecksSnapshot() {
-  const [nicknameForbidden, avatarEdge, avatarMaxBytes] = await Promise.all([
-    userConfig.get('nicknameForbidden'),
-    userConfig.get('avatarEdge'),
-    userConfig.get('avatarMaxBytes'),
-  ])
-  return { nicknameForbidden, avatarEdge, avatarMaxBytes }
-}
+import { auth, vaultPayloadOf } from '../../gateway.js'
+import { instruction, seedOf, type LoginOutcome } from '../../index.js'
+import { seedForm } from './form.js'
 
 registerComponentForm({
   description: seedForm,
@@ -102,7 +82,7 @@ registerComponentForm({
       }
       case 'confirm': {
         const derived = await seedOf(String(values.seed ?? '').trim())
-        const r = await u.confirmSeed({
+        const r = await u.verifySeed({
           seed: derived,
           nonce: String(values.nonce ?? ''),
           signature: values.signature ? String(values.signature) : undefined,
@@ -146,64 +126,4 @@ registerComponentForm({
     }
     return next ?? '/'
   },
-})
-
-registerComponentForm({
-  description: profileForm,
-  checks: async () => createUserChecks(await readUserChecksSnapshot()),
-  limits: {
-    maxFileSize: PHOTO_RAW_MAX_BYTES,
-    maxBytes: PHOTO_RAW_MAX_BYTES + 256 * 1024,
-  },
-  execute: async ({ values, intent, commit, fail }, event, raw) => {
-    const u = auth(event)
-    if (!u.enabled) return fail(instruction({ code: 'auth.disabled' }))
-    if (intent !== 'profile') return fail(instruction({ code: 'auth.confirm' }))
-
-    // Защита от подмены бинарного файла строкой (включая старый base64 dataURL):
-    // если в FormData под ключом `avatar` прислали непустую строку вместо File — отказ.
-    const rawAvatarEntry = raw?.get('avatar')
-    if (typeof rawAvatarEntry === 'string' && rawAvatarEntry.trim() !== '') {
-      return fail(instruction({ code: 'profile.avatar-format' }))
-    }
-
-    const nickname = String(values.nickname ?? '').trim()
-    const uploaded = values.avatar instanceof File && values.avatar.size > 0 ? values.avatar : null
-    const removeAvatar = Boolean(values.remove_avatar)
-
-    let avatarPatch: { avatarUrl?: string | null } = {}
-    if (uploaded) {
-      const snapshot = await readUserChecksSnapshot()
-      const prepared = await prepareServerAvatar(uploaded, {
-        edge: snapshot.avatarEdge,
-        maxBytes: snapshot.avatarMaxBytes,
-        formats: SHORT_PHOTO_FORMATS,
-      })
-      if (!prepared.ok) {
-        return fail(instruction({ code: prepared.code }))
-      }
-      avatarPatch = { avatarUrl: prepared.dataUrl }
-    } else if (removeAvatar) {
-      avatarPatch = { avatarUrl: null }
-    }
-
-    const r = await u.updateProfile({
-      ...(nickname ? { nickname } : {}),
-      ...avatarPatch,
-    })
-    if (!r.ok) return fail(instruction(r.fact))
-
-    commit()
-    // Перевыпускаем куки сессии со свежим снимком ника/аватара, чтобы SSR и
-    // клиентский vault сразу видели обновлённый профиль на любой странице.
-    let user: unknown
-    try {
-      const renewed = await u.renew()
-      if (renewed.ok) user = await vaultPayloadOf(renewed.value)
-    } catch {
-      /* профиль уже записан; обновится при штатном продлении */
-    }
-    return { data: { step: 'done', ...(user ? { user } : {}) } }
-  },
-  redirectOnSuccess: (event) => localPath(event.url.searchParams.get('next')) ?? '/',
 })

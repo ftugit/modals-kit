@@ -1,11 +1,9 @@
-// Лёгкий конверт для программных отправок без подтягивания описаний полей и
-// фото-проверок (`forms.ts` → `photo.ts` → `probe.ts`) в фоновый чанк `vault`.
+// Лёгкий конверт для программных отправок без подтягивания описаний полей
+// в фоновый чанк продления `vault`.
 import { buildEnvelope, type Envelope } from '#lib/form/index.js'
 
 export const SEED_FORM_ID = 'user-auth'
-// ревизия 6: универсальная `seedForm` (вход, регистрация, восстановление + confirm)
 export const SEED_FORM_REV = 6
-export const PROFILE_FORM_ID = 'user-profile'
 
 export function seedEnvelope(instance: string): Envelope {
   return {

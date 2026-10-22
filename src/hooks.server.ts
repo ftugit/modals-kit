@@ -8,8 +8,9 @@ import { componentFormsHandle } from '#hooks/component-form/server.js'
 // серверные. Это side-effect импорта на весь процесс: оба демо и API получают
 // транспорт независимо от того, какой роут обрабатывает запрос.
 import '#lib/server/db-list.js'
-// Регистрация серверных POST-обработчиков форм модуля пользователя.
-import '#content/user/server-forms.js'
+// Регистрация серверных POST-обработчиков форм компонентов пользователя.
+import '#content/user/ui/seed-form/server.js'
+import '#content/user/ui/profile-form/server.js'
 import { captureUpstreamFetch } from '#lib/server/fetch.js'
 
 /**

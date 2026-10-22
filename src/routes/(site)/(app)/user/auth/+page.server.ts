@@ -1,6 +1,6 @@
 // Роут авторизации и шагов аккаунта (`auth.*`, `blocked`, `restrictions`, `profile`).
 // Все POST-экшены обрабатываются общим хуком `#hooks/component-form`
-// (`src/content/user/server-forms.ts`); сам роут отвечает только за SSR `load`.
+// (`ui/seed-form/server.ts`, `ui/profile-form/server.ts`); роут отвечает за SSR `load`.
 import { localPath } from '#lib/address/index.js'
 import type { PageServerLoad } from './$types'
 import { SERVER_PHOTO_FORMATS } from '#content/user/checks.js'

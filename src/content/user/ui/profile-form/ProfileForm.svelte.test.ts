@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AvatarLimits, AvatarOutcome } from '../avatar.js'
+import type { AvatarLimits, AvatarOutcome } from './avatar.js'
 
 const prepareAvatarMock = vi.fn<
   (file: File, limits: AvatarLimits, opts?: { signal?: AbortSignal }) => Promise<AvatarOutcome>
 >()
 
-vi.mock('../avatar.js', () => ({
+vi.mock('./avatar.js', () => ({
   prepareAvatar: (file: File, limits: AvatarLimits, opts?: { signal?: AbortSignal }) =>
     prepareAvatarMock(file, limits, opts),
 }))
@@ -16,7 +16,6 @@ import ProfileForm from './ProfileForm.svelte'
 
 const LIMITS: AvatarLimits = { edge: 200, maxBytes: 20_480, formats: ['jpeg', 'png', 'webp'] }
 
-/** Минимальный валидный заголовок JPEG SOF0 заданного размера (для `checkPhotoFile`). */
 function jpegFile(width: number, height: number, name = 'avatar.jpg'): File {
   const u16 = (n: number) => [(n >> 8) & 0xff, n & 0xff]
   const bytes = new Uint8Array([
@@ -140,7 +139,6 @@ describe('ProfileForm — Acl allow="user", компактный FileAttachment 
     })
     await settle()
 
-    // До выбора нового файла показывается компактный Attachment текущего аватара без имени/веса
     const initialCard = host.querySelector('[data-field="avatar"] [data-slot="attachment"]')!
     expect(initialCard.getAttribute('data-layout')).toBe('tile')
     expect(initialCard.getAttribute('data-size')).toBe('sm')
@@ -149,7 +147,6 @@ describe('ProfileForm — Acl allow="user", компактный FileAttachment 
     expect(initialCard.querySelector('[data-slot="attachment-progress"]')).toBeNull()
     expect(initialCard.querySelector('img')?.getAttribute('src')).toBe('https://example.com/old.jpg')
 
-    // Выбираем новый файл — превью переключается на blob, без имени/веса и без прогресс-бара
     const fileInput = host.querySelector('[data-field="avatar"] input[type="file"]') as HTMLInputElement
     assignFile(fileInput, jpegFile(600, 400, 'raw.jpg'))
     await settle()
@@ -160,13 +157,11 @@ describe('ProfileForm — Acl allow="user", компактный FileAttachment 
     expect(cards[0]!.querySelector('[data-slot="attachment-description"]')).toBeNull()
     expect(cards[0]!.querySelector('[data-slot="attachment-progress"]')).toBeNull()
 
-    // Отправляем форму ДО завершения prepareAvatar — запрос удерживается в очереди f.pending
     const submitBtn = host.querySelector('button[type="submit"]') as HTMLButtonElement
     submitBtn.click()
     await settle()
     expect(sentPayloads.length).toBe(0)
 
-    // Завершаем конвертацию — готовый File записывается через DataTransfer и уходит бинарно
     const compressedFile = jpegFile(200, 200, 'avatar.jpg')
     resolveConvert({
       ok: true,

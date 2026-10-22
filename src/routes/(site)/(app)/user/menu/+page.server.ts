@@ -1,14 +1,12 @@
-import { redirect } from '@sveltejs/kit'
+/**
+ * Страница `/user/menu` для пользователей без JS и прямой навигации: рендерит
+ * то же тело `MenuBody`, что и модалка `MenuModal`. Гостевой доступ штатно
+ * закрыт компонентом `<Acl allow="user">` внутри `MenuBody` без серверного
+ * `303`-редиректа.
+ */
 import type { PageServerLoad } from './$types'
 import { readVault } from '#content/user/gateway.js'
 
-// Страница меню пользователя: без входа — на форму входа с возвратом сюда
-// (валидность next проверяет сервер при выходе; это его обычный канал).
-export const load: PageServerLoad = async (event) => {
-  const user = await readVault(event.cookies).catch(() => null)
-  if (!user) {
-    const next = encodeURIComponent(event.url.pathname + event.url.search)
-    redirect(303, `/user/auth?next=${next}`)
-  }
-  return { user }
-}
+export const load: PageServerLoad = async (event) => ({
+  user: await readVault(event.cookies).catch(() => null),
+})

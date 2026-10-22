@@ -1,18 +1,18 @@
 <script lang="ts">
   /**
-   * Универсальная форма доказательства владения `seed` (`seedForm`), нарезанная
-   * на шаги через `formSteps`.
+   * Универсальная форма проверки владения `seed` (`seedForm`), нарезанная на
+   * шаги через `formSteps`.
    *
-   * Параметр `authorize` определяет режим работы компонента:
+   * Параметр `authorize` определяет, открывать ли сессию при успешной проверке:
    *   - `authorize = true` (по умолчанию для `'entry' | 'register' | 'restore'`):
-   *     гостевые срезы входа, создания аккаунта и восстановления после удаления
-   *     под защитой `<Acl allow="guest">`. На сервере открывается сессия.
-   *   - `authorize = false` (срез `'confirm'` для критичных операций):
-   *     подтверждение владения `seed` уже авторизованным пользователем под
-   *     защитой `<Acl allow="user">` (удаление аккаунта, смена второго фактора
-   *     и т.п.). Сервер по интенту `'confirm'` проверяет активную сессию
-   *     (`guard`), одноразовый `nonce` и совпадение `seed` с текущим `sub` —
-   *     БЕЗ перевыпуска сессии и кук.
+   *     гостевые срезы входа, создания аккаунта и восстановления под защитой
+   *     `Acl` (`allow="guest"`). На сервере открывается сессия и ставятся куки.
+   *   - `authorize = false` (срез `'confirm'`):
+   *     проверка знания `seed` БЕЗ открытия сессии и без выдачи/смены кук.
+   *     Доступна как гостю (например, перед отображением следующего шага, где
+   *     уже стоит своя защита `Acl allow="user"`), так и авторизованному
+   *     пользователю (который подтверждает `seed`, сохраняя свой текущий токен
+   *     и выполняя последующие операции строго под своим логином).
    */
   import { untrack } from 'svelte'
   import { Form, formTask, type BoundForm } from '#lib/form/svelte/index.js'
@@ -25,10 +25,10 @@
   import { Button } from '#lib/components/ui/index.js'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
-  import { sign } from '../keys.js'
-  import { seedForm } from '../forms.js'
+  import { sign } from '../../keys.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import Acl from './Acl.svelte'
+  import Acl from '../Acl.svelte'
+  import { seedForm } from './form.js'
 
   export type SeedView = 'entry' | 'register' | 'restore' | 'confirm'
 
@@ -36,10 +36,10 @@
     /** Активный срез формы (`entry` | `register` | `restore` | `confirm`). */
     view?: SeedView
     /**
-     * Открывать ли пользовательскую сессию при успешном доказательстве `seed`:
+     * Открывать ли пользовательскую сессию при успешной проверке `seed`:
      * - `true` — вход / создание / восстановление гостя (`Acl allow="guest"`);
-     * - `false` — повторное подтверждение владения для авторизованного
-     *   пользователя (`Acl allow="user"`, интент `'confirm'`, сессия не меняется).
+     * - `false` — проверка владения `seed` без создания сессии и смены токена
+     *   (доступна и гостю, и авторизованному пользователю; интент `'confirm'`).
      */
     authorize?: boolean
     /** Внешний хост шагов (например, `AuthWidget`); без него создаётся локальный `useSteps`. */
@@ -54,7 +54,7 @@
     localSeed?: string | null
     /** Длительность удержания кнопки создания аккаунта, с. */
     holdSeconds?: number
-    /** Заголовок и пояснение для режима `authorize={false}` (`confirm`). */
+    /** Заголовок, пояснение и подпись кнопки для режима `authorize={false}`. */
     confirmTitle?: string
     confirmDescription?: string
     confirmLabel?: string
@@ -64,7 +64,7 @@
     authorized?: boolean
     /** Адрес возврата на экране отказа `Acl`. */
     doneHref?: string
-    /** Коллбэк успешного подтверждения владения при `authorize={false}`. */
+    /** Коллбэк успешной проверки `seed` при `authorize={false}`. */
     onConfirmed?: (payload: { sub?: string }) => void
   }
 
@@ -77,9 +77,9 @@
     seed = '',
     localSeed = null,
     holdSeconds = 2,
-    confirmTitle = 'Подтвердите владение аккаунтом',
-    confirmDescription = 'Введите ваш seed, чтобы подтвердить операцию. Текущая сессия не изменится.',
-    confirmLabel = 'Подтвердить',
+    confirmTitle = 'Подтвердите владение seed',
+    confirmDescription = 'Введите seed для проверки. Сессия и текущий токен при этом не меняются.',
+    confirmLabel = 'Проверить seed',
     enabled,
     authorized,
     doneHref = '/',
@@ -109,8 +109,6 @@
 
   const activeForm = $derived(externalBound ?? standaloneBound!)
 
-  // Автономный `formSteps`: когда внешний хост не передан, `SeedForm` сама
-  // управляет своими срезами через `useSteps` + `formSteps`.
   const standaloneSteps = untrack(() => host)
     ? null
     : useSteps({
@@ -126,7 +124,7 @@
         { key: 'entry', label: 'Авторизация' },
         { key: 'register', label: 'Создать аккаунт' },
         { key: 'restore', label: 'Восстановление' },
-        { key: 'confirm', label: 'Подтверждение владения' },
+        { key: 'confirm', label: 'Проверка seed' },
       ],
       at: 'seed',
       host: standaloneSteps,
@@ -148,7 +146,6 @@
     })
   })
 
-  // Реакция на успешное подтверждение владения (`authorize={false}`, `intent="confirm"`).
   let lastConfirmedId = ''
   $effect(() => {
     if (shouldAuthorize) return
@@ -162,7 +159,7 @@
   })
 </script>
 
-<Acl allow={shouldAuthorize ? 'guest' : 'user'} {authorized} {enabled} backHref={doneHref}>
+<Acl allow={shouldAuthorize ? 'guest' : undefined} {authorized} {enabled} backHref={doneHref}>
   <Form
     id={shouldAuthorize ? 'user-auth' : 'user-seed-confirm'}
     form={activeForm}

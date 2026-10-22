@@ -105,10 +105,3 @@ export const instruction: AuthInstruction = (fact) =>
  */
 export const toFormErrors = (facts: readonly AuthFact[]): readonly FormError[] =>
   facts.flatMap(instruction)
-
-/** Эмуляция для проверки цепочки (ход 251): факты, как их отдаст API. */
-export const demoFacts = (): readonly AuthFact[] => [
-  { code: 'auth.identity-unknown' },                       // API не знает путей
-  { code: 'auth.signature' },
-  { code: 'auth.blocked' },
-]

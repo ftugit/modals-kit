@@ -11,9 +11,9 @@ import { getEncoder } from '#lib/image/index.js'
 import { ensureWasm } from '#lib/image/test-wasm.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  activeBlocks, confirmSeed, fullBlock, issueChallenge, listSessions, login, logout,
+  activeBlocks, fullBlock, guard, issueChallenge, listSessions, login, logout,
   logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
-  sweepDeletions, type UserResult,
+  sweepDeletions, verifySeed, type UserResult,
 } from './auth.js'
 import { profile, updateProfile } from './profile.js'
 import type { AuthFact } from './error.js'
@@ -482,45 +482,64 @@ describe('удаление аккаунта', () => {
     expect(againPayload.sub).not.toBe(payload.sub)
   })
 
-  test('confirmSeed: проверяет владение своим seed без открытия новой сессии и отвергает чужой seed/гостя', async () => {
+  test('verifySeed (authorize=false): проверяет seed без создания сессии и для гостя, и для юзера, не выдавая доступ к защищённым операциям без токена', async () => {
     const { ports, sessions } = makePorts()
-    const own = await generateKeyPair()
-    const stranger = await generateKeyPair()
-    const out = ok_(await doLogin(ports, own.seed, own.secret))
-    expect(sessions.size).toBe(1)
+    const target = await generateKeyPair()
+    const viewer = await generateKeyPair()
+    const unreg = await generateKeyPair()
 
-    // гость без access-токена
+    // создаём целевой аккаунт и выходим — в БД активных сессий 0
+    const created = ok_(await doLogin(ports, target.seed, target.secret))
+    const targetSub = (JSON.parse(Buffer.from(created.access, 'base64url').toString()) as { sub: string }).sub
+    ok_(await logoutAll(ports, created.access))
+    sessions.clear()
+    expect(sessions.size).toBe(0)
+
+    // 1. Гость проверяет seed без токена: сессия НЕ создаётся (0 записей),
+    //    а последующая защищённая операция без токена строго блокируется guard()
     const cGuest = ok_(await issueChallenge(ports))
-    const resGuest = await confirmSeed(ports, undefined, {
-      seed: own.seed,
-      nonce: cGuest.nonce,
-      signature: await sign(cGuest.nonce, own.secret),
-    })
-    expect(resGuest.ok).toBe(false)
-    if (!resGuest.ok) expect(resGuest.fact.code).toBe('auth.expired')
-
-    // чужой валидно подписанный seed не проходит проверку владельца текущей сессии
-    const cWrong = ok_(await issueChallenge(ports))
-    const resWrong = await confirmSeed(ports, out.access, {
-      seed: stranger.seed,
-      nonce: cWrong.nonce,
-      signature: await sign(cWrong.nonce, stranger.secret),
-    })
-    expect(resWrong.ok).toBe(false)
-    if (!resWrong.ok) expect(resWrong.fact.code).toBe('auth.signature')
-
-    // свой seed подтверждает владение и НЕ создаёт новых строк сессии
-    const cOk = ok_(await issueChallenge(ports))
-    const confirmed = ok_(
-      await confirmSeed(ports, out.access, {
-        seed: own.seed,
-        nonce: cOk.nonce,
-        signature: await sign(cOk.nonce, own.secret),
+    const guestVerified = ok_(
+      await verifySeed(ports, {
+        seed: target.seed,
+        nonce: cGuest.nonce,
+        signature: await sign(cGuest.nonce, target.secret),
       }),
     )
-    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
-    expect(confirmed.sub).toBe(payload.sub)
+    expect(guestVerified.sub).toBe(targetSub)
+    expect(sessions.size).toBe(0)
+    const guestProtected = await requestDelete(ports, undefined)
+    expect(guestProtected.ok).toBe(false)
+    if (!guestProtected.ok) expect(guestProtected.fact.code).toBe('auth.expired')
+
+    // 2. Неизвестный seed отклоняется как auth.identity-unknown
+    const cUnknown = ok_(await issueChallenge(ports))
+    const resUnknown = await verifySeed(ports, {
+      seed: unreg.seed,
+      nonce: cUnknown.nonce,
+      signature: await sign(cUnknown.nonce, unreg.secret),
+    })
+    expect(resUnknown.ok).toBe(false)
+    if (!resUnknown.ok) expect(resUnknown.fact.code).toBe('auth.identity-unknown')
+
+    // 3. Авторизованный пользователь проверяет seed: его сессия и токен НЕ меняются
+    //    (sessions.size остаётся 1), а последующие операции идут строго под его логином
+    const viewerLogin = ok_(await doLogin(ports, viewer.seed, viewer.secret))
+    const viewerSub = (JSON.parse(Buffer.from(viewerLogin.access, 'base64url').toString()) as { sub: string }).sub
     expect(sessions.size).toBe(1)
+
+    const cViewer = ok_(await issueChallenge(ports))
+    const viewerVerified = ok_(
+      await verifySeed(ports, {
+        seed: target.seed,
+        nonce: cViewer.nonce,
+        signature: await sign(cViewer.nonce, target.secret),
+      }),
+    )
+    expect(viewerVerified.sub).toBe(targetSub)
+    expect(sessions.size).toBe(1)
+
+    const stillViewer = await guard(ports, viewerLogin.access)
+    expect('sub' in stillViewer && stillViewer.sub).toBe(viewerSub)
   })
 })
 

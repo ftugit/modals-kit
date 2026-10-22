@@ -18,14 +18,13 @@
   import { forms } from '#lib/components/form/forms.config.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault, vault } from '../vault.svelte.js'
-  import type { AvatarLimits } from '../avatar.js'
-  import { seedForm, SEED_FORM_ID, SEED_FORM_REV } from '../forms.js'
-  import { mirrorToField } from '../field-mirror.svelte.js'
+  import type { AvatarLimits } from './profile-form/index.js'
+  import ProfileForm from './profile-form/ProfileForm.svelte'
+  import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
+  import { mirrorToField } from './field-mirror.svelte.js'
   import Acl from './Acl.svelte'
   import BanNotice from './BanNotice.svelte'
-  import ProfileForm from './ProfileForm.svelte'
   import RestrictionsNotice from './RestrictionsNotice.svelte'
-  import SeedForm, { type SeedView } from './SeedForm.svelte'
 
   type UserPayload = {
     access: string

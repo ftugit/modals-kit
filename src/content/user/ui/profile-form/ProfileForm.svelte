@@ -7,11 +7,11 @@
    *   - гостю никогда не рендерится — `<Acl allow="user">` показывает экран входа;
    *   - без JS `Field` рисует штатный `FileField` с именованным файловым
    *     носителем `avatar`, отправляя исходный файл на серверный конвейер
-   *     `prepareServerAvatar`;
+   *     (`prepareAvatar` + `decodeWithNode`);
    *   - с JS `FieldTakeover` (`base: FileField`) монтирует `AvatarTakeover`
    *     (компактный `FileAttachment` без имени/веса + сжатие `prepareAvatar` +
    *     запись готового `File` через `DataTransfer`). Никаких `base64`-строк
-   *     по сети больше не передаётся.
+   *     по сети не передаётся.
    */
   import { untrack } from 'svelte'
   import { Form, formTask, type FieldTakeover } from '#lib/form/svelte/index.js'
@@ -23,31 +23,23 @@
   import Common from '#lib/components/form/Common.svelte'
   import { Button } from '#lib/components/ui/index.js'
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
-  import { defaults } from '../config.js'
-  import { createUserChecks } from '../checks.js'
-  import type { AvatarLimits } from '../avatar.js'
-  import { profileForm } from '../forms.js'
+  import { defaults } from '../../config.js'
+  import { createUserChecks } from '../../checks.js'
+  import { hydrateVault, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import { hydrateVault, vault, type VaultPayload, type VaultProfile } from '../vault.svelte.js'
-  import Acl from './Acl.svelte'
+  import Acl from '../Acl.svelte'
+  import type { AvatarLimits } from './avatar.js'
+  import { profileForm } from './form.js'
   import AvatarTakeover, { setAvatarTakeoverContext } from './AvatarTakeover.svelte'
 
   interface Props {
-    /** Необязательное явное переопределение адреса экшена (по умолчанию — текущая страница). */
     action?: string
-    /** Необязательный внешний результат (по умолчанию подхватывается из `page.data.formResult`). */
     form?: { result?: Result } | null
-    /** Пределы конвейера аватара и проверок из конфига. */
     limits: AvatarLimits
-    /** Текущий профиль для предзаполнения (редактирование); нет — из `vault`. */
     initial?: VaultProfile | null
-    /** Явный признак авторизации (по умолчанию вычисляется из `vault` / `initial` / `page.data.user`). */
     authorized?: boolean
-    /** Включён ли модуль пользователя на сервере (`AUTH_SEAL_SECRET`). */
     enabled?: boolean
-    /** Куда ведёт «Отмена» без JS: `next` или назад. */
     doneHref?: string
-    /** Успех сохранения или отмена (JS): закрыть модалку / перейти. */
     onDone?: () => void
   }
 
@@ -103,7 +95,6 @@
     view: AvatarTakeover,
   })
 
-  // Успех сохранения: сервер отвечает шагом `done` — освежаем `vault` и вызываем `onDone`.
   let lastHandledSubmission = ''
   $effect(() => {
     const r = bound.state.result

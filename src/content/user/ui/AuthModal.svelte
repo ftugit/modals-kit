@@ -4,6 +4,7 @@
    * маршрута — через `useLoader()`. Callback — закрытие модалки.
    */
   import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import type { AvatarLimits } from './profile-form/index.js'
   import AuthWidget from './AuthWidget.svelte'
 
   type RouteData = {
@@ -12,7 +13,7 @@
     step: string
     registerSeed: string | null
     enabled?: boolean
-    limits: { edge: number; maxBytes: number; formats: string[]; holdSeconds: number }
+    limits: AvatarLimits & { holdSeconds: number }
     user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
   }
 

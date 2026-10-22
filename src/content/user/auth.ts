@@ -152,24 +152,23 @@ export async function restoreDeleted(ports: AuthPorts, args: EnterArgs): Promise
 }
 
 /**
- * Повторное подтверждение владения seed для уже авторизованного аккаунта
- * (критичные операции: удаление аккаунта, смена второго фактора и т.п.):
- * проверяет активную сессию (`guard`), одноразовый `nonce` с подписью и
- * совпадение предъявленного `seed` с текущим аккаунтом — БЕЗ перевыпуска
- * сессии и изменения кук.
+ * Проверка владения seed без открытия сессии (`authorize = false`):
+ * проверяет одноразовый `nonce`, подпись и наличие активного аккаунта по `seed`.
+ *
+ * Строки сессий в `user_session` НЕ создаются (`0` записей), куки/токены НЕ
+ * выдаются и НЕ меняются: гость остаётся без токена (последующие шаги под
+ * `Acl allow="user"` и `guard()` требуют вход), а авторизованный пользователь
+ * сохраняет свой текущий токен и действует строго под своим логином.
  */
-export async function confirmSeed(
+export async function verifySeed(
   ports: AuthPorts,
-  accessToken: string | undefined,
   args: EnterArgs,
 ): Promise<UserResult<{ sub: string }>> {
-  const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
   const proof = await proveSeed(ports, args)
   if ('code' in proof) return fail(proof)
-  const row = await ports.auths.get(g.sub)
-  if (!row || row.seed !== proof.seed) return fail({ code: 'auth.signature', path: 'signature' })
-  return ok({ sub: g.sub })
+  const row = await ports.auths.findBySeed(proof.seed)
+  if (!row) return fail({ code: 'auth.identity-unknown', path: 'seed' })
+  return ok({ sub: row.id })
 }
 
 /** Новая строка сессии: jti, версия 0, срок из конфига, хэш подсети. */

@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { getContext, setContext } from 'svelte'
-  import type { AvatarLimits } from '../avatar.js'
+  import type { AvatarLimits } from './avatar.js'
 
   const AVATAR_TAKEOVER_CTX = Symbol('user/avatar-takeover-ctx')
 
@@ -26,11 +26,11 @@
    *
    * До оживления (и без JS) `Field.svelte` рисует штатный `FileField` с
    * именованным файловым носителем `avatar`, так что нативная отправка без JS
-   * передаёт исходный файл на сервер как есть.
+   * передаёт исходный файл на сервер как есть (`decodeWithNode`).
    *
    * В браузере с JS этот перехватчик берёт живую ручку `f: FieldHandle`:
    *   - компактный `FileAttachment` (`showFilename={false}`, `showSize={false}`)
-   *     сразу показывает tile-превью и запускает `prepareAvatar` (`lib/image`);
+   *     сразу показывает tile-превью и запускает `prepareAvatar` (`#lib/image`);
    *   - пока идёт конвертация, `f.pending = job` удерживает отправку формы;
    *   - готовый JPEG `File` записывается обратно в файловый носитель `avatar`
    *     через `DataTransfer`, после чего `bind.svelte.ts` перечитывает `FormData`
@@ -41,8 +41,8 @@
   import { onDestroy, tick } from 'svelte'
   import type { FieldHandle } from '#lib/form/svelte/index.js'
   import { Attachment, AttachmentAction, FileAttachment } from '#lib/components/ui/index.js'
-  import { SERVER_PHOTO_FORMATS } from '../checks.js'
-  import { prepareAvatar } from '../avatar.js'
+  import { SERVER_PHOTO_FORMATS } from '../../checks.js'
+  import { prepareAvatar } from './avatar.js'
 
   let { f }: { f: FieldHandle } = $props()
 
