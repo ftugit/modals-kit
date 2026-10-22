@@ -20,7 +20,7 @@
     type FieldHandle,
     type FieldTakeover,
   } from '#lib/form/svelte/index.js'
-  import { bindRouteForm } from '#lib/components/form/route-form.svelte.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
   import type { Result } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import Field from '#lib/components/form/Field.svelte'
@@ -51,7 +51,7 @@
 
   const notHydrated = useJsOnly()
 
-  const bound = bindRouteForm(forms, profileForm, {
+  const bound = bindComponentForm(forms, profileForm, {
     action: untrack(() => action),
     continuation: untrack(() => form?.result ?? undefined),
   })

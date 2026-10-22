@@ -23,13 +23,14 @@ access зеркалится в RAM-vault браузера, сессии/акка
 | `config.ts` | настройки модуля поверх `#lib/cache`: TTL/поведение — опции приложения; `deleteGraceDays` (дефолт 7) |
 | `error.ts` | доменные факты `auth.*`/`profile.*` + `toHttpStatus` (`auth.disabled` → 503) |
 | `gateway.ts` | адаптеры портов на `db.resource(user_*)` (SYSTEM-контекст: роли `server`/`admin` — арбитр в api); `AUTH_ENABLED`, seal/unseal, фасад `auth(event)` для экшена, `readVault`/`vaultPayloadOf` |
+| `acl.ts` | правила и 21 экран UI ACL (`resolveAcl`): статусы авторизации/сессии/аккаунта (`guest`/`user`/роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `lib/db` (`FailureKind` + `payload_too_large`) |
 | `forms.ts` | ДВЕ формы: `authForm` (срезы входа/создания/восстановления, ревизия 5) и `profileForm` (никнейм+аватар, встраиваемая форма компонента). `authEnvelope`/`AUTH_FORM_ID`/`PROFILE_FORM_ID` |
-| `server-forms.ts` | регистрация серверного POST-обработчика `profileForm` в `componentFormsHandle` — `<ProfileForm />` поднимает POST на любом маршруте, где смонтирован компонент |
+| `server-forms.ts` | регистрация серверных POST-обработчиков `authForm` и `profileForm` в `#hooks/component-form` — компоненты поднимают POST на любом маршруте без дублирования `actions` |
 | `vault.ts` / `vault.svelte.ts` | RAM-vault access (куки HttpOnly клиент не читает) + продление через `kitActionTransport` |
-| `ui/AuthWidget.svelte` | виджет входа: хост шагов (`auth`/`blocked`/`restrictions`/`profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` на шаге `auth` (срезы entry/register/restore); подпись nonce; баннер «вход выключен» |
-| `ui/ProfileForm.svelte` | встраиваемая форма профиля (`bindRouteForm`): своя форма и привязка к текущей странице, компактное превью `FileAttachment`/`Attachment`, удержание submit через `f.pending`; при редактировании предзаполнена текущим профилем, после сохранения освежает vault |
-| `ui/ProfileModal.svelte` | модалка редактирования профиля (`?modal=user.profile`, fallback без JS — роут `/user/profile`) |
-| `ui/MenuModal.svelte` | меню пользователя (ник/аватар, «Изменить профиль» → `user.profile` / `/user/profile`, выход) |
+| `ui/Acl.svelte` | компонент UI ACL пользователя (`allow`, `status`, `blocked`, `restrictions`, `model`): показывает нужный экран вместо содержимого |
+| `ui/AuthWidget.svelte` | виджет входа: хост шагов (`auth`/`blocked`/`restrictions`/`profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` на шаге `auth` (срезы entry/register/restore); подпись nonce |
+| `ui/ProfileForm.svelte` | встраиваемая форма профиля (`bindComponentForm`): компактное превью `FileAttachment`/`Attachment`, удержание submit через `f.pending`; при редактировании предзаполнена текущим профилем, после сохранения освежает vault |
+| `ui/MenuModal.svelte` | меню пользователя (ник/аватар, «Изменить профиль» → `?stage=profile`, выход) |
 | `index.ts` | единый экспорт модуля |
 
 ## Цепочка вызова

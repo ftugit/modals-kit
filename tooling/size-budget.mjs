@@ -187,12 +187,13 @@ const LIMITS = {
   // не вызван; аватар реально тянет ядро+mozjpeg при первом выборе файла.
   // Построутовые лимиты не тронуты — начальные загрузки не изменились.
   // Лимиты = факт + 0.5.
-  // 2026-10-22: самостоятельный роут `/user/profile`, модалка `user.profile`
-  // (`ProfileModal`/`ProfileModalLazy`) и маршрутная привязка `bindRouteForm`
-  // (+1.6 KiB gzip ленивыми чанками; начальные маршруты не выросли — в пределах
-  // «≤ +5 КБ», лимиты = факт + 0.5).
-  allImmutableGzip: 425.9 * KiB,
-  allJsGzip: 411.8 * KiB,
+  // 2026-10-22: модуль `src/hooks/component-form/` + `content/user/acl.ts` и
+  // `ui/Acl.svelte` (21 экран: статусы авторизации/аккаунта + отказы моделей
+  // `lib/db`), удаление `/user/profile` и `ProfileModal`: начальные маршруты
+  // без изменений (0.0 KiB), ленивый чанк +1.0 KiB gzip (411.8 → 412.8 — в
+  // пределах постоянного правила «≤ +5 КБ, сообщить», лимиты = факт + 0.5).
+  allImmutableGzip: 427.4 * KiB,
+  allJsGzip: 413.3 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
