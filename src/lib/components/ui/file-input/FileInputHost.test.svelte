@@ -4,14 +4,12 @@
 
   interface Props {
     multiple?: boolean
-    preview?: boolean
     unbound?: boolean
-    removeLabel?: string
     attrs?: Omit<HTMLInputAttributes, 'size' | 'type' | 'value' | 'files'>
     onPicked?: (seenInChange: FileList | undefined, fromTarget: FileList | null) => void
   }
 
-  let { multiple = false, preview = false, unbound = false, removeLabel, attrs, onPicked }: Props = $props()
+  let { multiple = false, unbound = false, attrs, onPicked }: Props = $props()
 
   let files = $state<FileList>()
   let el = $state<HTMLInputElement | null>(null)
@@ -56,8 +54,6 @@
   {#if unbound}
     <FileInput
       ref={grab}
-      {preview}
-      {removeLabel}
       {...spreadAttrs}
       onchange={(e) => {
         const picked = Array.from(e.currentTarget.files ?? [])
@@ -71,8 +67,6 @@
       bind:files
       ref={grab}
       {multiple}
-      {preview}
-      {removeLabel}
       {...attrs}
       onchange={(e) => onPicked?.(files, e.currentTarget.files)}
     />

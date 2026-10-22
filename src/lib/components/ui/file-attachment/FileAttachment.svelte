@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte'
+  import { onMount, untrack, type Snippet } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
   import {
@@ -78,6 +78,7 @@
     removeLabel = 'Убрать файл',
     itemProps,
     actions: customActions,
+    onchange,
     wrapperClass,
     listClass,
     class: cls,
@@ -86,9 +87,29 @@
 
   let mounted = $state(false)
   let inputEl = $state<HTMLInputElement | null>(null)
+  let localFiles = $state<FileList | undefined>(untrack(() => files))
+  let prevFiles: FileList | undefined = untrack(() => files)
+  let prevRest = ''
 
   onMount(() => {
     mounted = true
+  })
+
+  $effect(() => {
+    const nextRest = JSON.stringify(rest)
+    const restChanged = prevRest !== '' && nextRest !== prevRest
+    prevRest = nextRest
+
+    if (files !== prevFiles) {
+      if (files !== undefined || !restChanged) {
+        localFiles = files
+        if (inputEl) {
+          if (files) inputEl.files = files
+          else inputEl.value = ''
+        }
+      }
+      prevFiles = files
+    }
   })
 
   function handleRef(el: HTMLInputElement | null): void {
@@ -109,7 +130,7 @@
     return k
   }
 
-  const pickedFiles = $derived(mounted && files ? Array.from(files) : [])
+  const pickedFiles = $derived(mounted && localFiles ? Array.from(localFiles) : [])
   const cardSize = $derived<AttachmentSize>(attachmentSize ?? size ?? 'md')
   const showAnyActions = $derived(Boolean(removable || customActions))
 
@@ -134,7 +155,19 @@
 </script>
 
 <div data-slot="file-attachment" class={rootClass}>
-  <FileInput bind:files ref={handleRef} {size} class={cls} {...rest} />
+  <FileInput
+    ref={handleRef}
+    {size}
+    class={cls}
+    {...rest}
+    onchange={(e) => {
+      const next = e.currentTarget.files ?? undefined
+      localFiles = next
+      files = next
+      onchange?.(e)
+      prevFiles = files
+    }}
+  />
 
   {#if mounted && pickedFiles.length > 0}
     <ul class={ulClass} data-file-list>
@@ -166,8 +199,7 @@
                 stroke-linejoin="round"
                 class="size-4"
               >
-                <path d="M18 6L6 18" />
-                <path d="M6 6l12 12" />
+                <path d="M18 6 6 18M6 6l12 12" />
               </svg>
             </AttachmentAction>
           {/if}

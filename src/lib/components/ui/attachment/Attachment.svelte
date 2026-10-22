@@ -272,129 +272,78 @@
   const mediaVariant = $derived<'icon' | 'image' | 'error'>(
     activeImageSrc ? 'image' : normalized.state === 'error' ? 'error' : 'icon',
   )
+
+  const ICON_PATHS = {
+    error: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 8v4m0 4h.01',
+    image:
+      'M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3M9 7.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3M21 15l-4.5-4.5L6 19',
+    video: 'M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3m4 5 5 3-5 3z',
+    audio:
+      'M9 18V6l10-2v12M6.5 15.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5m10-2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5',
+    archive:
+      'M4 4h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1m1 4v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4',
+    code: 'M8 8 4 12l4 4m8-8 4 4-4 4m-2.5-10-3 12',
+    document: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zm0 0v5h5M9 13h6m-6 4h4',
+    file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zm0 0v5h5',
+  } as const
+
+  const iconPath = $derived(
+    normalized.state === 'error' ? ICON_PATHS.error : ICON_PATHS[normalized.kind],
+  )
 </script>
 
-{#snippet kindIcon(cls: string)}
-  {#if normalized.state === 'error'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 8v4" />
-      <path d="M12 16h.01" />
-    </svg>
-  {:else if normalized.kind === 'image'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <circle cx="9" cy="9" r="1.5" />
-      <path d="M21 15l-4.5-4.5L6 19" />
-    </svg>
-  {:else if normalized.kind === 'video'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <rect x="3" y="4" width="18" height="16" rx="3" />
-      <polygon points="10 9 15 12 10 15 10 9" />
-    </svg>
-  {:else if normalized.kind === 'audio'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <path d="M9 18V6l10-2v12" />
-      <circle cx="6.5" cy="18" r="2.5" />
-      <circle cx="16.5" cy="16" r="2.5" />
-    </svg>
-  {:else if normalized.kind === 'archive'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <rect x="3" y="4" width="18" height="4" rx="1" />
-      <path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
-      <path d="M10 12h4" />
-    </svg>
-  {:else if normalized.kind === 'code'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <polyline points="8 8 4 12 8 16" />
-      <polyline points="16 8 20 12 16 16" />
-      <line x1="13.5" y1="6" x2="10.5" y2="18" />
-    </svg>
-  {:else if normalized.kind === 'document'}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 3 14 8 19 8" />
-      <line x1="9" y1="13" x2="15" y2="13" />
-      <line x1="9" y1="17" x2="13" y2="17" />
-    </svg>
-  {:else}
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={cls}
-    >
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 3 14 8 19 8" />
-    </svg>
-  {/if}
+{#snippet mediaVisual(cls: string)}
+  <span data-slot="attachment-media" data-variant={mediaVariant} class={cls}>
+    {#if mediaSlot}
+      {@render mediaSlot({ item: normalized })}
+    {:else if activeImageSrc}
+      <img
+        src={activeImageSrc}
+        alt={normalized.alt}
+        onerror={handleImageError}
+        class="size-full object-cover"
+      />
+    {:else}
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class={layout === 'tile' ? attachmentTileIconSize[size] : attachmentIconSize[size]}
+      >
+        <path d={iconPath} />
+      </svg>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet metaContent(cls: string, titleCls: string)}
+  <span data-slot="attachment-content" class={cls}>
+    {#if showFilename}
+      <span data-slot="attachment-title" class={titleCls}>{normalized.filename}</span>
+    {:else if selection !== 'none'}
+      <span class="sr-only">{normalized.label}</span>
+    {/if}
+
+    {#if errorText}
+      <span data-slot="attachment-description" class="truncate text-xs font-medium text-destructive">
+        {errorText}
+      </span>
+    {:else if subtitleParts.length > 0}
+      <span
+        data-slot="attachment-description"
+        class="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"
+      >
+        {#if normalized.state === 'uploading' || normalized.state === 'processing'}
+          <Spinner size="xs" aria-label={normalized.stateLabel} class="shrink-0" />
+        {/if}
+        <span class="truncate">{subtitleParts.join(' · ')}</span>
+      </span>
+    {/if}
+  </span>
 {/snippet}
 
 {#snippet selectionControl()}
@@ -445,9 +394,7 @@
         stroke-linejoin="round"
         class="size-4"
       >
-        <path d="M15 3h6v6" />
-        <path d="M10 14L21 3" />
-        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        <path d="M15 3h6v6M10 14 21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       </svg>
     </AttachmentAction>
   {/if}
@@ -459,122 +406,33 @@
 {/snippet}
 
 {#snippet rowBody()}
-  <span
-    data-slot="attachment-media"
-    data-variant={mediaVariant}
-    class={cn(
+  {@render mediaVisual(
+    cn(
       attachmentMediaVariants({ layout: 'row', size, variant: mediaVariant }),
       attachmentRowMediaSize[size],
-    )}
-  >
-    {#if mediaSlot}
-      {@render mediaSlot({ item: normalized })}
-    {:else if activeImageSrc}
-      <img
-        src={activeImageSrc}
-        alt={normalized.alt}
-        onerror={handleImageError}
-        class="size-full object-cover"
-      />
-    {:else}
-      {@render kindIcon(attachmentIconSize[size])}
-    {/if}
-  </span>
-
-  <span data-slot="attachment-content" class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-    {#if showFilename}
-      <span
-        data-slot="attachment-title"
-        class={cn(
-          'truncate font-medium text-card-foreground',
-          size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm',
-        )}
-      >
-        {normalized.filename}
-      </span>
-    {:else if selection !== 'none'}
-      <span class="sr-only">{normalized.label}</span>
-    {/if}
-
-    {#if errorText}
-      <span
-        data-slot="attachment-description"
-        class="truncate text-xs font-medium text-destructive"
-      >
-        {errorText}
-      </span>
-    {:else if subtitleParts.length > 0}
-      <span
-        data-slot="attachment-description"
-        class="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"
-      >
-        {#if normalized.state === 'uploading' || normalized.state === 'processing'}
-          <Spinner size="xs" aria-label={normalized.stateLabel} class="shrink-0" />
-        {/if}
-        <span class="truncate">{subtitleParts.join(' · ')}</span>
-      </span>
-    {/if}
-  </span>
+    ),
+  )}
+  {@render metaContent(
+    'flex min-w-0 flex-1 flex-col gap-0.5 text-left',
+    cn(
+      'truncate font-medium text-card-foreground',
+      size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm',
+    ),
+  )}
 {/snippet}
 
 {#snippet tileBody()}
-  <span
-    data-slot="attachment-media"
-    data-variant={mediaVariant}
-    class={cn(
+  {@render mediaVisual(
+    cn(
       'absolute inset-0 flex items-center justify-center overflow-hidden',
       mediaVariant === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
-    )}
-  >
-    {#if mediaSlot}
-      {@render mediaSlot({ item: normalized })}
-    {:else if activeImageSrc}
-      <img
-        src={activeImageSrc}
-        alt={normalized.alt}
-        onerror={handleImageError}
-        class="size-full object-cover"
-      />
-    {:else}
-      {@render kindIcon(attachmentTileIconSize[size])}
-    {/if}
-  </span>
-
+    ),
+  )}
   {#if hasFooterText}
-    <span
-      data-slot="attachment-content"
-      class="relative z-10 flex w-full min-w-0 flex-col gap-0.5 border-t border-border bg-card px-2.5 py-1.5 text-left"
-    >
-      {#if showFilename}
-        <span
-          data-slot="attachment-title"
-          class="truncate text-xs font-medium text-card-foreground"
-        >
-          {normalized.filename}
-        </span>
-      {:else if selection !== 'none'}
-        <span class="sr-only">{normalized.label}</span>
-      {/if}
-
-      {#if errorText}
-        <span
-          data-slot="attachment-description"
-          class="truncate text-xs font-medium text-destructive"
-        >
-          {errorText}
-        </span>
-      {:else if subtitleParts.length > 0}
-        <span
-          data-slot="attachment-description"
-          class="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground"
-        >
-          {#if normalized.state === 'uploading' || normalized.state === 'processing'}
-            <Spinner size="xs" aria-label={normalized.stateLabel} class="shrink-0" />
-          {/if}
-          <span class="truncate">{subtitleParts.join(' · ')}</span>
-        </span>
-      {/if}
-    </span>
+    {@render metaContent(
+      'relative z-10 flex w-full min-w-0 flex-col gap-0.5 border-t border-border bg-card px-2.5 py-1.5 text-left',
+      'truncate text-xs font-medium text-card-foreground',
+    )}
   {:else if selection !== 'none'}
     <span class="sr-only">{normalized.label}</span>
   {/if}
@@ -597,21 +455,35 @@
     className,
   )}
 >
-  {#if showProgress && progressVariant === 'background'}
+  {#if showProgress}
     <div
       data-slot="attachment-progress"
-      data-variant="background"
+      data-variant={progressVariant}
       role="progressbar"
       aria-label={`${normalized.stateLabel}: ${normalized.label}`}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={normalized.progress ?? undefined}
-      class={cn(
-        'pointer-events-none absolute inset-y-0 left-0 bg-primary/10 transition-[width] duration-200',
-        normalized.progress === null && 'animate-pulse',
-      )}
-      style:width={normalized.progress !== null ? `${normalized.progress}%` : '100%'}
-    ></div>
+      class={progressVariant === 'background'
+        ? cn(
+            'pointer-events-none absolute inset-y-0 left-0 bg-primary/10 transition-[width] duration-200',
+            normalized.progress === null && 'animate-pulse',
+          )
+        : 'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1.5 overflow-hidden bg-primary/10'}
+      style:width={progressVariant === 'background'
+        ? (normalized.progress !== null ? `${normalized.progress}%` : '100%')
+        : undefined}
+    >
+      {#if progressVariant === 'strip'}
+        <div
+          class={cn(
+            'h-full bg-primary transition-[width] duration-200',
+            normalized.progress === null && 'animate-pulse',
+          )}
+          style:width={normalized.progress !== null ? `${normalized.progress}%` : '40%'}
+        ></div>
+      {/if}
+    </div>
   {/if}
 
   {#if layout === 'row'}
@@ -672,27 +544,6 @@
         {@render tileBody()}
       </div>
     {/if}
-  {/if}
-
-  {#if showProgress && progressVariant === 'strip'}
-    <div
-      data-slot="attachment-progress"
-      data-variant="strip"
-      role="progressbar"
-      aria-label={`${normalized.stateLabel}: ${normalized.label}`}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={normalized.progress ?? undefined}
-      class="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1.5 overflow-hidden bg-primary/10"
-    >
-      <div
-        class={cn(
-          'h-full bg-primary transition-[width] duration-200',
-          normalized.progress === null && 'animate-pulse',
-        )}
-        style:width={normalized.progress !== null ? `${normalized.progress}%` : '40%'}
-      ></div>
-    </div>
   {/if}
 </div>
 <!-- UnoCSS variant tokens extracted when Attachment.svelte is loaded:

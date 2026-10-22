@@ -41,6 +41,7 @@ describe('FileAttachment composition: FileInput + Attachment + DataTransfer + ob
       target,
       props: { onChangeFiles: (names) => changeHistory.push(names) },
     })
+    await vi.dynamicImportSettled()
     await tick()
 
     const input = target.querySelector('input[type="file"]') as HTMLInputElement

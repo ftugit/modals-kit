@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import FileInput from './FileInput.svelte'
 
 describe('FileInput SSR', () => {
-  test('renders only native <input type="file"> with form attributes and zero client preview markup', () => {
+  test('renders pure native <input type="file"> with form attributes and zero wrapper markup', () => {
     expect(typeof window).toBe('undefined')
 
     const { body } = render(FileInput, {
@@ -14,7 +14,6 @@ describe('FileInput SSR', () => {
         multiple: true,
         required: true,
         disabled: false,
-        preview: true,
         'aria-invalid': true,
       },
     })
@@ -29,9 +28,7 @@ describe('FileInput SSR', () => {
     expect(body).toContain('aria-invalid="true"')
 
     expect(body).not.toContain('data-file-list')
-    expect(body).not.toContain('data-file-item')
     expect(body).not.toContain('<ul')
     expect(body).not.toContain('<button')
-    expect(body).not.toContain('<img')
   })
 })
