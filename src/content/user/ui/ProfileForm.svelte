@@ -1,26 +1,26 @@
 <script lang="ts">
   /**
-   * Шаг профиля после входа — ОТДЕЛЬНЫЙ компонент со своей формой
-   * (`profileForm`) и своей привязкой: сессия уже есть, подпись не нужна,
-   * приём на роуте различает формы по конверту. «Отмена» (пропуск) — НЕ
-   * отправка: ссылка на `doneHref`, с JS клик перехватывает `onDone`
-   * (закрытие модалки / переход виджета).
+   * Встраиваемая форма редактирования профиля (`profileForm`).
+   *
+   * Привязана через `bindRouteForm`: где бы компонент ни монтировался
+   * (`/user/profile`, модалка `user.profile`, пост-регистрационный шаг
+   * `AuthWidget` или любая другая страница), его нативный `action` и JS-POST
+   * ведут ровно на текущую страницу, а серверный `componentFormsHandle`
+   * обрабатывает запрос и возвращает управление на ту же самую страницу.
    *
    * Аватар: компактный `FileAttachment` (только пикер и превью, без имени/веса
    * и без прогресс-бара) + клиентский конвейер `prepareAvatar` (`lib/image` →
-   * `dataURL` в скрытое поле описания). Пока конвертация идёт, живая ручка
-   * перехвата `f.pending` удерживает отправку формы и перечитывает DOM после
-   * готовности результата; ошибка подготовки закрепляется в `f.error`.
+   * `dataURL` в скрытое поле описания). Пока конвертация идёт, `f.pending`
+   * удерживает отправку формы и перечитывает DOM после готовности результата.
    */
   import { tick, untrack } from 'svelte'
   import {
-    bind,
     Form,
     formTask,
     type FieldHandle,
     type FieldTakeover,
   } from '#lib/form/svelte/index.js'
-  import { kitActionTransport } from '#lib/components/form/transport.js'
+  import { bindRouteForm } from '#lib/components/form/route-form.svelte.js'
   import type { Result } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import Field from '#lib/components/form/Field.svelte'
@@ -33,32 +33,27 @@
   import { hydrateVault, vault, type VaultPayload, type VaultProfile } from '../vault.svelte.js'
 
   interface Props {
-    /** Адрес экшена роута авторизации (страница или модалка). */
-    action: string
-    /** Результат экшена (без JS): continuation привязки. */
+    /** Необязательное явное переопределение адреса экшена (по умолчанию — текущая страница). */
+    action?: string
+    /** Необязательный внешний результат (по умолчанию подхватывается из `page.data.formResult`). */
     form?: { result?: Result } | null
     /** Пределы конвейера аватара из конфига. */
     limits: AvatarLimits
     /** Текущий профиль для предзаполнения (редактирование); нет — из vault. */
     initial?: VaultProfile | null
-    /** Куда ведёт «Отмена» без JS: next или домой. */
-    doneHref: string
-    /** Успех сохранения или пропуск (JS): закрыть/перейти — решает виджет. */
-    onDone: () => void
+    /** Куда ведёт «Отмена» без JS: next или назад. */
+    doneHref?: string
+    /** Успех сохранения или отмена (JS): закрыть модалку / перейти. */
+    onDone?: () => void
   }
 
-  let { action, form, limits, initial = null, doneHref, onDone }: Props = $props()
+  let { action, form, limits, initial = null, doneHref = '/', onDone }: Props = $props()
 
   const notHydrated = useJsOnly()
 
-  // Нативный POST обязан приземлиться на шаг профиля (load по `?stage=`):
-  // адрес действия несёт шаг, иначе отказ без JS перерисует вход и ошибки
-  // профиля никто не увидит. Транспорт (JS) ходит на голый адрес экшена.
-  // svelte-ignore state_referenced_locally -- адрес постоянен за жизнь шага
-  const bound = bind(forms, profileForm, {
-    action: `${action}?stage=profile`,
-    transport: kitActionTransport(action),
-    continuation: untrack(() => form?.result ?? null),
+  const bound = bindRouteForm(forms, profileForm, {
+    action: untrack(() => action),
+    continuation: untrack(() => form?.result ?? undefined),
   })
 
   // предзаполнение редактирования: текущий профиль — из пропса (снимок
@@ -67,23 +62,21 @@
   // Аватар только показываем: в поле едет лишь заново выбранный, пустое
   // поле сервер читает как «не трогать»
   const seedProfile = untrack(() => initial ?? (vault.principal ? vault.profile : null))
-  if (!untrack(() => form?.result)) {
+  if (!bound.state.result) {
     mirrorToField(bound, 'nickname', () => seedProfile?.nickname ?? '')
   }
   const existingAvatar = seedProfile?.avatarUrl ?? null
 
-  // успех сохранения: сервер отвечает шагом done — дальше решает виджет
-  let finished = false
+  // успех сохранения: сервер отвечает шагом done — освежаем vault и вызываем onDone
+  let lastHandledSubmission = ''
   $effect(() => {
     const r = bound.state.result
-    if (finished || !r?.ok) return
+    if (!r?.ok || r.submissionId === lastHandledSubmission) return
     const data = r.data as { step?: string; user?: VaultPayload } | undefined
     if (data?.step === 'done') {
-      finished = true
-      // сервер перевыпустил токены: освежаем vault — шапка и меню сразу
-      // показывают новые ник/аватар
+      lastHandledSubmission = r.submissionId
       if (data.user) hydrateVault(data.user)
-      onDone()
+      onDone?.()
     }
   })
 
@@ -175,7 +168,7 @@
     <Field of={bound.f.nickname} />
     <div class="space-y-1.5" data-field="avatar">
       <!-- носитель значения — скрытое поле описания; takeover подключает
-           живую ручку поля (f.pending задерживает отправку до конца конвертации) -->
+           живую ручка поля (f.pending задерживает отправку до конца конвертации) -->
       <Field of={bound.f.avatar} takeover={avatarTakeover} />
       <p class="text-sm">Аватар</p>
       {#if notHydrated()}
@@ -217,6 +210,7 @@
         href={doneHref}
         variant="ghost"
         onclick={(e: MouseEvent) => {
+          if (!onDone) return
           e.preventDefault()
           onDone()
         }}>Отмена</Button>

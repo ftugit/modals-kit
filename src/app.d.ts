@@ -1,6 +1,7 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 import type { DataContext, Database } from '#lib/db/index.js'
+import type { Result } from '#lib/form/index.js'
 
 declare global {
 	namespace App {
@@ -12,6 +13,7 @@ declare global {
 		interface Locals {
 			db: Database
 			dbCtx: DataContext
+			formResult?: Result | null
 		}
 		// interface Error {}
 		// interface PageData {}

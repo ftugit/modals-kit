@@ -8,6 +8,7 @@
 import { registerModal } from '#lib/modals/index.js'
 import AuthModalLazy from '#content/user/ui/AuthModalLazy.svelte'
 import MenuModalLazy from '#content/user/ui/MenuModalLazy.svelte'
+import ProfileModalLazy from '#content/user/ui/ProfileModalLazy.svelte'
 
 registerModal({
   name: 'user.auth',
@@ -17,6 +18,12 @@ registerModal({
   // loader НЕ нужен: данные (challenge, пределы, вход) берёт загрузчик самой
   // страницы — силами ядра через preload маршрута (`loader.ts` §deps.preload);
   // свой fetch дублировал бы его и падал на HTML (page-роут не отвечает json).
+})
+registerModal({
+  name: 'user.profile',
+  component: ProfileModalLazy,
+  route: '/user/profile',
+  size: { width: 420, height: 420 },
 })
 registerModal({
   name: 'user.menu',

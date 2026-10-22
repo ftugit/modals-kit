@@ -269,12 +269,12 @@ async function run() {
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
       await form.getByRole('button', { name: 'Создать аккаунт' }).click()
-      await page.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
-      // профиль — отдельная форма со своим конвертом
+      await page.waitForURL((u) => u.pathname === '/user/profile', { timeout: 15000 })
+      // профиль — самостоятельный роут /user/profile со своей формой
       const profile = page.locator('#user-profile')
       await profile.locator('input[name=nickname]').fill('e2e-nojs-258')
       await profile.getByRole('button', { name: 'Сохранить' }).click()
-      await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
+      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       ok('без JS: регистрация + профиль прошли (редиректы экшена)')
 
       // 13. Вход без JS тем же seed (доказательство = знание секрета)

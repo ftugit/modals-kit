@@ -2,16 +2,14 @@
   /**
    * Тело меню пользователя — БУКВАЛЬНО ОДИН компонент для модалки `user.menu`
    * и страницы `/user/menu` (решение владельца, ход 261): аватар (круглый
-   * блок-заполнитель, внутри картинка во всю ширину), ник, ссылка
-   * редактирования профиля и выход. Выход —
-   * форма `user-auth` (intent=logout): с JS транспорт lib/form, без JS
-   * нативный POST — куки снимает экшен (redirect на адрес следующего шага).
-   * Обёртки отличаются только callback `onDone` (закрыть модалку / перейти).
+   * блок-заполнитель, внутри картинка во всю ширину), ник, переход к
+   * редактированию профиля (`user.profile` / `/user/profile`) и выход.
    */
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
+  import { useModalLink } from '#lib/components/links/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
   import { authForm } from '../forms.js'
@@ -28,6 +26,8 @@
 
   let { server = null, next = '/', onDone }: Props = $props()
 
+  const asModalLink = useModalLink()
+
   const bound = bind(forms, authForm, {
     action: '/user/auth',
     transport: kitActionTransport('/user/auth'),
@@ -36,6 +36,7 @@
   const nickname = $derived(vault.profile.nickname ?? server?.prof.nickname ?? null)
   const avatarUrl = $derived(vault.profile.avatarUrl ?? server?.prof.avatarUrl ?? null)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
+  const profileLink = $derived(asModalLink('user.profile', {}, { href: '/user/profile' }))
 
   // Итог выхода: сервер отвечает шагом «entry» без пользователя — снимаем
   // зеркало и зовём callback обёртки (без него — переход на `next`).
@@ -67,9 +68,8 @@
     </span>
     <span class="min-w-0 flex-1 truncate text-sm font-medium">{nickname ?? 'Без никнейма'}</span>
   </div>
-  <!-- редактирование профиля — шаг profile страницы входа; ссылка честная
-       (без JS тоже ведёт), в модалке переход по адресу закрывает её сам -->
-  <Button href="/user/auth?stage=profile" variant="outline" class="w-full">Изменить профиль</Button>
+  <!-- редактирование профиля — свой роут `/user/profile` (и модалка `user.profile` с JS) -->
+  <Button {...profileLink} variant="outline" class="w-full">Изменить профиль</Button>
   <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()}>
     <Button
       type="submit"
