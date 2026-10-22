@@ -19,6 +19,10 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const AXE = require.resolve('axe-core/axe.min.js')
 const BASE = process.env.ATTACHMENT_BASE ?? 'http://127.0.0.1:5173/fields'
+const PNG_BUF = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4cfPmfQAJAgN78S683AAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 let failed = 0
 const ok = (name, cond, extra = '') => {
@@ -55,7 +59,7 @@ try {
   await page.reload({ waitUntil: 'networkidle' })
   await page.addScriptTag({ path: AXE })
 
-  // 2) Монтируем тестовый стенд `Attachment` прямо внутри `<main>` через тот же инстанс рантайма Vite.
+  // 2) Монтируем тестовый стенд `Attachment` + `FileAttachment` прямо внутри `<main>` через тот же инстанс рантайма Vite.
   await page.evaluate(async () => {
     const svelte = await import('/node_modules/.vite/deps/svelte.js')
     const mod = await import('/src/lib/components/ui/attachment/AttachmentBrowserFixture.test.svelte')
@@ -65,6 +69,11 @@ try {
     window.__attachmentHost = host
     window.__unmountAttachmentHost = () => svelte.unmount(host)
   })
+  await page.setInputFiles('#fa-browser-files', [
+    { name: 'shot-a.png', mimeType: 'image/png', buffer: PNG_BUF },
+    { name: 'spec.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n') },
+    { name: 'shot-b.png', mimeType: 'image/png', buffer: PNG_BUF },
+  ])
   await page.waitForTimeout(150)
 
   // 1. Валидность DOM-иерархии, layouts, размеров, состояний и категорий
@@ -195,6 +204,58 @@ try {
       JSON.stringify(state.selectedDocs) === JSON.stringify(['att-2']) &&
       JSON.stringify(state.actionLog) === JSON.stringify(['cov-1']) &&
       JSON.stringify(state.openLog) === JSON.stringify(['att-1']),
+  )
+
+  // 5b. FileAttachment: нативный выбор через FileInput, DataTransfer-удаление и сохранение соседнего blob: URL
+  const faBefore = await page.evaluate(async () => {
+    const isAlive = async (url) => {
+      try {
+        return (await fetch(url)).ok
+      } catch {
+        return false
+      }
+    }
+    const form = document.querySelector('[data-testid="browser-file-attachment-form"]')
+    const imgs = [...form.querySelectorAll('[data-file-item] img')].map((el) => el.src)
+    return {
+      count: form.querySelectorAll('[data-file-item]').length,
+      fd: new FormData(form).getAll('picked').map((f) => f.name),
+      imgs,
+      bothAlive: imgs.length === 2 && (await isAlive(imgs[0])) && (await isAlive(imgs[1])),
+    }
+  })
+  await page.locator('[data-testid="browser-file-attachment-form"] button[aria-label="Убрать файл: shot-a.png"]').click()
+  await page.waitForTimeout(80)
+  const faAfter = await page.evaluate(async (prevImgs) => {
+    const isAlive = async (url) => {
+      try {
+        return (await fetch(url)).ok
+      } catch {
+        return false
+      }
+    }
+    const form = document.querySelector('[data-testid="browser-file-attachment-form"]')
+    const imgs = [...form.querySelectorAll('[data-file-item] img')].map((el) => el.src)
+    return {
+      count: form.querySelectorAll('[data-file-item]').length,
+      fd: new FormData(form).getAll('picked').map((f) => f.name),
+      snapNames: window.__attachmentHost.snapshot().faNames,
+      imgs,
+      firstRevoked: !(await isAlive(prevImgs[0])),
+      secondKeptSameUrl: imgs.length === 1 && imgs[0] === prevImgs[1] && (await isAlive(imgs[0])),
+    }
+  }, faBefore.imgs)
+  ok(
+    'FileAttachment: выбор FileList, DataTransfer-удаление файла и точечный отзыв blob: URL',
+    faBefore.count === 3 &&
+      JSON.stringify(faBefore.fd) === JSON.stringify(['shot-a.png', 'spec.pdf', 'shot-b.png']) &&
+      faBefore.bothAlive &&
+      faAfter.count === 2 &&
+      JSON.stringify(faAfter.fd) === JSON.stringify(['spec.pdf', 'shot-b.png']) &&
+      JSON.stringify(faAfter.snapNames) === JSON.stringify(['spec.pdf', 'shot-b.png']) &&
+      faAfter.firstRevoked &&
+      faAfter.secondKeptSameUrl,
+    JSON.stringify({ faBefore, faAfter }),
   )
 
   // 6. Реальный жизненный цикл `blob:` URL в движке Chromium (`BlobURLStore`)

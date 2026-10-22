@@ -2,6 +2,7 @@
   import Attachment from './Attachment.svelte'
   import AttachmentAction from './AttachmentAction.svelte'
   import type { AttachmentItem, AttachmentKind } from './model'
+  import { FileAttachment } from '../file-attachment'
 
   // Real 1x1 solid sky-blue PNG (valid IHDR + IDAT + IEND) for genuine Blink decode
   const PNG_1X1 = Uint8Array.from(
@@ -36,6 +37,7 @@
   let liveFile = $state<File | undefined>(
     new File([PNG_1X1], 'local-shot-1.png', { type: 'image/png' }),
   )
+  let faFiles = $state<FileList | undefined>()
   let selectedCover = $state<string | undefined>('cov-1')
   let selectedDocs = $state<string[]>(['att-1'])
   let openLog = $state<string[]>([])
@@ -51,6 +53,7 @@
     return {
       selectedCover,
       selectedDocs: [...selectedDocs],
+      faNames: Array.from(faFiles ?? [], (f) => f.name),
       openLog: [...openLog],
       actionLog: [...actionLog],
     }
@@ -167,5 +170,15 @@
         </Attachment>
       {/each}
     </div>
+  </form>
+
+  <form data-testid="browser-file-attachment-form" class="flex flex-col gap-2">
+    <label for="fa-browser-files" class="text-sm font-medium text-ink">Файлы вложения</label>
+    <FileAttachment
+      id="fa-browser-files"
+      name="picked"
+      multiple
+      bind:files={faFiles}
+    />
   </form>
 </section>

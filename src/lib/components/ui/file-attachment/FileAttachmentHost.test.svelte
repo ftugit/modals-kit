@@ -1,0 +1,92 @@
+<script lang="ts">
+  import { AttachmentAction, type AttachmentLayout } from '../attachment'
+  import FileAttachment, { type FileAttachmentItemMeta } from './FileAttachment.svelte'
+
+  let {
+    multiple = true,
+    removable = true,
+    layout = 'row',
+    useCustomActions = false,
+    onChangeFiles,
+    onInspect,
+  }: {
+    multiple?: boolean
+    removable?: boolean
+    layout?: AttachmentLayout
+    useCustomActions?: boolean
+    onChangeFiles?: (names: string[]) => void
+    onInspect?: (name: string) => void
+  } = $props()
+
+  let files = $state<FileList | undefined>()
+  let latestRef = $state<HTMLInputElement | null>(null)
+  const refHistory: Array<HTMLInputElement | null> = []
+  let metaMap = $state<Record<string, FileAttachmentItemMeta>>({})
+
+  export function getFiles() {
+    return files
+  }
+  export function clearFiles() {
+    files = undefined
+  }
+  export function setMeta(filename: string, meta: FileAttachmentItemMeta) {
+    metaMap = { ...metaMap, [filename]: meta }
+  }
+  export function getRef() {
+    return latestRef
+  }
+  export function getRefHistory() {
+    return refHistory
+  }
+</script>
+
+<form data-testid="fa-form">
+  {#if useCustomActions}
+    <FileAttachment
+      name="uploads"
+      {multiple}
+      {removable}
+      {layout}
+      bind:files
+      itemProps={(f) => metaMap[f.name]}
+      ref={(el) => {
+        latestRef = el
+        refHistory.push(el)
+      }}
+      onchange={(e) => {
+        onChangeFiles?.(Array.from(e.currentTarget.files ?? [], (f) => f.name))
+      }}
+    >
+      {#snippet actions({ file, remove })}
+        <AttachmentAction
+          aria-label={`Инфо ${file.name}`}
+          onclick={() => onInspect?.(file.name)}
+        >
+          i
+        </AttachmentAction>
+        <AttachmentAction
+          aria-label={`Свой сброс ${file.name}`}
+          onclick={() => remove()}
+        >
+          ×
+        </AttachmentAction>
+      {/snippet}
+    </FileAttachment>
+  {:else}
+    <FileAttachment
+      name="uploads"
+      {multiple}
+      {removable}
+      {layout}
+      bind:files
+      itemProps={(f) => metaMap[f.name]}
+      ref={(el) => {
+        latestRef = el
+        refHistory.push(el)
+      }}
+      onchange={(e) => {
+        onChangeFiles?.(Array.from(e.currentTarget.files ?? [], (f) => f.name))
+      }}
+    />
+  {/if}
+</form>

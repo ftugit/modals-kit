@@ -478,7 +478,7 @@ export const RULES = [
     // о полевых примитивах ui. name={view.name} сознательно не ловится:
     // это ручная привязка FieldView (headless-путь, витрина демо) —
     // значение там всё равно живёт в состоянии формы.
-    pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|Select|NativeSelect|FileInput|SearchInput|SearchField|SearchMorph|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
+    pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|Select|NativeSelect|FileInput|FileAttachment|Attachment|SearchInput|SearchField|SearchMorph|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
     isTemplateCheck: true,
     allow: [
       /(^|\/)src\/lib\/components\/form\//,
