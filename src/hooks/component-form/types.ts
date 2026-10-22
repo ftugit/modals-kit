@@ -23,11 +23,12 @@ export type NoJsSuccessTarget = string | 'inline' | null | undefined
 /** Серверная регистрация POST-обработчика встраиваемой формы компонента. */
 export interface ComponentFormRegistration {
   readonly description: FormDescription
-  readonly checks?: CheckRegistry
+  readonly checks?: CheckRegistry | ((event: RequestEvent) => CheckRegistry | Promise<CheckRegistry>)
   readonly limits?: Partial<Limits>
   readonly execute: (
     ctx: ExecuteContext,
     event: RequestEvent,
+    raw?: FormData,
   ) => ExecuteOutput<unknown> | Promise<ExecuteOutput<unknown>>
   readonly redirectOnSuccess?: (event: RequestEvent, result: Result) => NoJsSuccessTarget
 }

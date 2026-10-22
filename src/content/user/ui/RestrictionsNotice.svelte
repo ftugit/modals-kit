@@ -12,7 +12,7 @@
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
-  import { authForm } from '../forms.js'
+  import { seedForm } from '../forms.js'
   import type { Blocked } from '../types.js'
   import Acl from './Acl.svelte'
 
@@ -31,7 +31,7 @@
 
   let { restrictions = null, authorized, doneHref = '/', onDone }: Props = $props()
 
-  const bound = bindComponentForm(forms, authForm)
+  const bound = bindComponentForm(forms, seedForm)
 
   const normalized = $derived<readonly Blocked[]>(
     (restrictions ?? []).map((r) => ({

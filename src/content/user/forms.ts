@@ -1,45 +1,38 @@
-// Описания форм пользователя: ДВЕ формы — авторизация (вход, создание,
-// восстановление — срезы одной формы, различаются интентом; куст `auth.*`
-// на шаге хоста) и профиль (никнейм + аватар; отдельный шаг и свой
-// обработчик — приём на роуте различает формы по конверту `__form_id`).
-// Изоморфные: импортируют виджеты и серверное действие. Ноль UI, ноль HTTP.
-import { buildEnvelope, check, defineForm, field, v, type Envelope } from '#lib/form/index.js'
+// Описания форм модуля пользователя:
+//   1. `seedForm` — универсальная форма доказательства владения `seed` по срезам
+//      `formSteps` (`entry`, `register`, `restore`, `confirm`) + сервисные
+//      программные интенты (`accept`, `logout`, `renew`, `challenge`).
+//      Флаг авторизации решается строго на сервере по интенту (`login`/`restore`
+//      открывают сессию гостю, `confirm` проверяет владение `seed` текущим
+//      аккаунтом без перевыпуска сессии).
+//   2. `profileForm` — встраиваемая форма профиля (`nickname` + файловое поле
+//      `avatar` типа `photo` + `removeAvatar`). По сети передаётся только
+//      бинарный `File` (`multipart/form-data`), никаких `base64`-строк.
+import { check, defineForm, field, v } from '#lib/form/index.js'
+import { photoImage } from '#lib/components/form/photo.js'
+import { AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from './checks.js'
+import {
+  PROFILE_FORM_ID,
+  SEED_FORM_ID,
+  SEED_FORM_REV,
+  seedEnvelope,
+  seedEnvelopeFields,
+} from './envelope.js'
 
-export const AUTH_FORM_ID = 'user-auth'
-// ревизия 5: поля и экшены профиля уехали в отдельную форму `user-profile`
-export const AUTH_FORM_REV = 5
-export const PROFILE_FORM_ID = 'user-profile'
-
-/**
- * Конверт для программных отправок мимо разметки (vault: продление; меню:
- * выход; шаг ограничений: «Принято») — те же имена, что рисует `bind.hidden()`
- * в форме.
- */
-export function authEnvelope(instance: string): Envelope {
-  return { formId: AUTH_FORM_ID, revision: AUTH_FORM_REV, instance, submissionId: crypto.randomUUID(), intent: 'submit' }
-}
-
-/** Поля конверта для FormData программной отправки (те же имена, что в разметке). */
-export function authEnvelopeFields(envelope: Envelope): Record<string, string> {
-  const { intent: _intent, ...rest } = envelope
-  return buildEnvelope(rest)
-}
+export { PROFILE_FORM_ID, SEED_FORM_ID, SEED_FORM_REV, seedEnvelope, seedEnvelopeFields }
 
 /**
- * Поля — состав срезов входа/создания/восстановления; срез показывает свои,
- * остальные скрыты или пусты. Обязательность решает сервер (срезу известен
- * контекст), правила длины — здесь: они верны на любом срезе.
+ * Универсальная форма доказательства владения `seed`: обслуживает как срезы
+ * гостевой авторизации (`login`, `restore`), так и срез подтверждения владения
+ * уже авторизованным пользователем (`confirm`) для критичных операций.
  */
-export const authForm = defineForm({
-  id: AUTH_FORM_ID,
-  revision: AUTH_FORM_REV,
-  // Тексты доменных кодов — ЗДЕСЬ (сервер наполнит message при сборе отказа):
-  // карта в виджете — велосипед поверх движка (ход 251, аудит).
+export const seedForm = defineForm({
+  id: SEED_FORM_ID,
+  revision: SEED_FORM_REV,
   messages: {
     'auth.disabled': 'Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать',
-    // единственный pattern формы — seed; текст свой, не общий словарный
     'pattern': 'Это не seed: 43–44 знака — латиница, цифры, «-» и «_»',
-    'auth.nonce-unknown': 'Время на вход истекло — попробуйте ещё раз',
+    'auth.nonce-unknown': 'Время подтверждения истекло — попробуйте ещё раз',
     'auth.signature': 'Seed или подпись не сошлись — проверьте ввод',
     'auth.identity-unknown': 'Аккаунта с таким seed больше нет',
     'auth.token': 'Сессия повреждена — войдите заново',
@@ -53,13 +46,11 @@ export const authForm = defineForm({
   },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },
-    // restore — доказательство владения seed в обход политики: поле seed
-    // живёт на шаге скрыто (значение с шага входа) и обязано доехать
     { id: 'restore', label: 'Восстановить аккаунт', validate: 'full' },
-    // Сервисные действия (accept/logout/renew/challenge) — программные
-    // отправки конверта, где поля входа не рисуются или пусты (ограничения,
-    // меню, фон): seed обязан быть непустым (required), и без relax ЛЮБОЙ
-    // такой поход падал на seed.required ещё до execute (ход 261, тесты 9а/14).
+    // Повторное доказательство владения seed авторизованным пользователем
+    // без перевыпуска сессии и кук.
+    { id: 'confirm', label: 'Подтвердить владение', validate: 'full' },
+    // Сервисные действия — программные отправки конверта без видимого поля seed.
     { id: 'accept', label: 'Принято', validate: 'partial', relax: ['required'] },
     { id: 'logout', label: 'Выйти', validate: 'partial', relax: ['required'] },
     { id: 'renew', label: 'Продлить', validate: 'partial', relax: ['required'] },
@@ -69,8 +60,6 @@ export const authForm = defineForm({
     seed: field.text({
       label: 'Seed',
       help: 'Единственный ключ от аккаунта — храните в менеджере секретов',
-      // пустое и «набор символов» ловит форма (ход 258): у minLength/maxLength
-      // пустое значение проходило, и шаг отходил серверу — тот молчал в скрытое поле
       validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_-]{43,44}' })],
     }),
     nonce: field.hidden({ label: 'Nonce' }),
@@ -79,32 +68,38 @@ export const authForm = defineForm({
 })
 
 /**
- * Форма профиля — отдельный шаг после входа (сессия уже есть, подпись не
- * нужна) и отдельный компонент со своей привязкой. «Пропустить» — не
- * отправка: смена шага/ссылка, экшена пропуска здесь нет.
+ * Встраиваемая форма профиля: никнейм + бинарное фото (`File | null`) + флаг
+ * явного удаления текущего аватара. Работает идентично с JS и без JS.
  */
 export const profileForm = defineForm({
   id: PROFILE_FORM_ID,
-  revision: 1,
+  revision: 2,
   messages: {
     'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
     'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
     'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
+    'image.format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
+    'image.dimensions': 'Разрешение картинки слишком велико — возьмите файл поменьше',
   },
   actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
   fields: {
     nickname: field.text({
       label: 'Никнейм',
       placeholder: 'необязательно',
-      // длина — как NICKNAME в схеме профиля (2–32): числа продублированы
-      // сознательно — formParams(profile) потянул бы схему lib/db в описание,
-      // а оно едет в бандл каждой страницы с виджетом (+1 KiB замерено);
-      // равенство правил формы и схемы сторожит checks.test.ts.
-      // Запрещённые имена — проверка формы от снимка конфига (checks.ts).
-      // Доменная проверка в profile.ts остаётся серверным дублем до R3,
-      // когда обработчик получит тот же реестр проверок.
       validate: [v.minLength(2), v.maxLength(32), check('nickname-forbidden')],
     }),
-    avatar: field.hidden({ label: 'Аватар' }),
+    avatar: field.photo({
+      label: 'Аватар',
+      variant: 'preview',
+      validate: [
+        v.accept(SERVER_PHOTO_FORMATS),
+        v.maxSize(PHOTO_RAW_MAX_BYTES),
+        photoImage(AVATAR_PHOTO_ID),
+      ],
+    }),
+    remove_avatar: field.checkbox({
+      label: 'Удалить текущее фото',
+      defaultValue: false,
+    }),
   },
 })

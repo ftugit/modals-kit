@@ -1,16 +1,32 @@
-// Серверная регистрация форм модуля пользователя (`authForm` и `profileForm`).
+// Серверная регистрация форм модуля пользователя (`seedForm` и `profileForm`).
 // Импортируется один раз в `src/hooks.server.ts`: все пользовательские
-// компоненты (`AuthWidget` / `AuthForm`, `ProfileForm`, `MenuBody`, `vault`)
-// работают через единый хук `#hooks/component-form` на любом маршруте без
-// дублирования `actions` по страницам.
+// компоненты (`SeedForm`, `AuthWidget`, `ProfileForm`, `MenuBody`,
+// `RestrictionsNotice`, `vault`) работают через единый хук
+// `#hooks/component-form` на любом маршруте без дублирования `actions`.
 import { localPath } from '#lib/address/index.js'
+import { localStore } from '#lib/server/cache.js'
 import { registerComponentForm } from '#hooks/component-form/server.js'
+import { createUserChecks, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from './checks.js'
 import { auth, vaultPayloadOf } from './gateway.js'
-import { authForm, profileForm } from './forms.js'
-import { instruction, seedOf, type LoginOutcome } from './index.js'
+import { seedForm, profileForm } from './forms.js'
+import { createUserConfig, instruction, seedOf, type LoginOutcome } from './index.js'
+import { prepareServerAvatar } from './server-avatar.js'
+
+const userConfig = createUserConfig(localStore.scope('user-config'))
+
+const SHORT_PHOTO_FORMATS = SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, ''))
+
+async function readUserChecksSnapshot() {
+  const [nicknameForbidden, avatarEdge, avatarMaxBytes] = await Promise.all([
+    userConfig.get('nicknameForbidden'),
+    userConfig.get('avatarEdge'),
+    userConfig.get('avatarMaxBytes'),
+  ])
+  return { nicknameForbidden, avatarEdge, avatarMaxBytes }
+}
 
 registerComponentForm({
-  description: authForm,
+  description: seedForm,
   execute: async ({ values, intent, commit, fail }, event) => {
     const u = auth(event)
     const gone = (fact: Parameters<typeof instruction>[0]) => fail(instruction(fact))
@@ -84,6 +100,17 @@ registerComponentForm({
         }
         return entered(r.value)
       }
+      case 'confirm': {
+        const derived = await seedOf(String(values.seed ?? '').trim())
+        const r = await u.confirmSeed({
+          seed: derived,
+          nonce: String(values.nonce ?? ''),
+          signature: values.signature ? String(values.signature) : undefined,
+        })
+        if (!r.ok) return gone(r.fact)
+        commit()
+        return { data: { step: 'confirmed', confirmed: true, sub: r.value.sub } }
+      }
       case 'accept': {
         commit()
         return { data: { step: 'done' } }
@@ -112,7 +139,7 @@ registerComponentForm({
   },
   redirectOnSuccess: (event, result) => {
     const step = (result.data as { step?: string } | undefined)?.step
-    if (step === 'restore') return 'inline'
+    if (step === 'restore' || step === 'confirmed') return 'inline'
     const next = localPath(event.url.searchParams.get('next'))
     if (step && step !== 'entry' && step !== 'done') {
       return `/user/auth?stage=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`
@@ -123,16 +150,46 @@ registerComponentForm({
 
 registerComponentForm({
   description: profileForm,
-  execute: async ({ values, intent, commit, fail }, event) => {
+  checks: async () => createUserChecks(await readUserChecksSnapshot()),
+  limits: {
+    maxFileSize: PHOTO_RAW_MAX_BYTES,
+    maxBytes: PHOTO_RAW_MAX_BYTES + 256 * 1024,
+  },
+  execute: async ({ values, intent, commit, fail }, event, raw) => {
     const u = auth(event)
     if (!u.enabled) return fail(instruction({ code: 'auth.disabled' }))
     if (intent !== 'profile') return fail(instruction({ code: 'auth.confirm' }))
 
+    // Защита от подмены бинарного файла строкой (включая старый base64 dataURL):
+    // если в FormData под ключом `avatar` прислали непустую строку вместо File — отказ.
+    const rawAvatarEntry = raw?.get('avatar')
+    if (typeof rawAvatarEntry === 'string' && rawAvatarEntry.trim() !== '') {
+      return fail(instruction({ code: 'profile.avatar-format' }))
+    }
+
     const nickname = String(values.nickname ?? '').trim()
-    const avatar = String(values.avatar ?? '')
+    const uploaded = values.avatar instanceof File && values.avatar.size > 0 ? values.avatar : null
+    const removeAvatar = Boolean(values.remove_avatar)
+
+    let avatarPatch: { avatarUrl?: string | null } = {}
+    if (uploaded) {
+      const snapshot = await readUserChecksSnapshot()
+      const prepared = await prepareServerAvatar(uploaded, {
+        edge: snapshot.avatarEdge,
+        maxBytes: snapshot.avatarMaxBytes,
+        formats: SHORT_PHOTO_FORMATS,
+      })
+      if (!prepared.ok) {
+        return fail(instruction({ code: prepared.code }))
+      }
+      avatarPatch = { avatarUrl: prepared.dataUrl }
+    } else if (removeAvatar) {
+      avatarPatch = { avatarUrl: null }
+    }
+
     const r = await u.updateProfile({
       ...(nickname ? { nickname } : {}),
-      ...(avatar ? { avatarUrl: avatar } : {}),
+      ...avatarPatch,
     })
     if (!r.ok) return fail(instruction(r.fact))
 

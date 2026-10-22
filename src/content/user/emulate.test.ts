@@ -11,7 +11,7 @@ import { getEncoder } from '#lib/image/index.js'
 import { ensureWasm } from '#lib/image/test-wasm.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  activeBlocks, fullBlock, issueChallenge, listSessions, login, logout,
+  activeBlocks, confirmSeed, fullBlock, issueChallenge, listSessions, login, logout,
   logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
   sweepDeletions, type UserResult,
 } from './auth.js'
@@ -480,6 +480,47 @@ describe('удаление аккаунта', () => {
     const again = ok_(await doLogin(ports, seed, sk))
     const againPayload = JSON.parse(Buffer.from(again.access, 'base64url').toString()) as { sub: string }
     expect(againPayload.sub).not.toBe(payload.sub)
+  })
+
+  test('confirmSeed: проверяет владение своим seed без открытия новой сессии и отвергает чужой seed/гостя', async () => {
+    const { ports, sessions } = makePorts()
+    const own = await generateKeyPair()
+    const stranger = await generateKeyPair()
+    const out = ok_(await doLogin(ports, own.seed, own.secret))
+    expect(sessions.size).toBe(1)
+
+    // гость без access-токена
+    const cGuest = ok_(await issueChallenge(ports))
+    const resGuest = await confirmSeed(ports, undefined, {
+      seed: own.seed,
+      nonce: cGuest.nonce,
+      signature: await sign(cGuest.nonce, own.secret),
+    })
+    expect(resGuest.ok).toBe(false)
+    if (!resGuest.ok) expect(resGuest.fact.code).toBe('auth.expired')
+
+    // чужой валидно подписанный seed не проходит проверку владельца текущей сессии
+    const cWrong = ok_(await issueChallenge(ports))
+    const resWrong = await confirmSeed(ports, out.access, {
+      seed: stranger.seed,
+      nonce: cWrong.nonce,
+      signature: await sign(cWrong.nonce, stranger.secret),
+    })
+    expect(resWrong.ok).toBe(false)
+    if (!resWrong.ok) expect(resWrong.fact.code).toBe('auth.signature')
+
+    // свой seed подтверждает владение и НЕ создаёт новых строк сессии
+    const cOk = ok_(await issueChallenge(ports))
+    const confirmed = ok_(
+      await confirmSeed(ports, out.access, {
+        seed: own.seed,
+        nonce: cOk.nonce,
+        signature: await sign(cOk.nonce, own.secret),
+      }),
+    )
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    expect(confirmed.sub).toBe(payload.sub)
+    expect(sessions.size).toBe(1)
   })
 })
 

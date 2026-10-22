@@ -62,7 +62,15 @@
     children,
   }: Props = $props()
 
-  const asModalLink = useModalLink()
+  function optionalModalLink(): ReturnType<typeof useModalLink> | null {
+    try {
+      return useModalLink()
+    } catch {
+      return null
+    }
+  }
+
+  const asModalLink = optionalModalLink()
 
   const isAuthorized = $derived(
     authorized !== undefined
@@ -83,9 +91,13 @@
     }),
   )
 
-  const loginLink = $derived(asModalLink('user.auth', {}, { href: '/user/auth' }))
+  const loginLink = $derived(
+    asModalLink ? asModalLink('user.auth', {}, { href: '/user/auth' }) : { href: '/user/auth' },
+  )
   const restoreLink = $derived(
-    asModalLink('user.auth', { stage: 'restore' }, { href: '/user/auth?stage=restore' }),
+    asModalLink
+      ? asModalLink('user.auth', { stage: 'restore' }, { href: '/user/auth?stage=restore' })
+      : { href: '/user/auth?stage=restore' },
   )
 </script>
 

@@ -16,6 +16,18 @@ import ProfileForm from './ProfileForm.svelte'
 
 const LIMITS: AvatarLimits = { edge: 200, maxBytes: 20_480, formats: ['jpeg', 'png', 'webp'] }
 
+/** Минимальный валидный заголовок JPEG SOF0 заданного размера (для `checkPhotoFile`). */
+function jpegFile(width: number, height: number, name = 'avatar.jpg'): File {
+  const u16 = (n: number) => [(n >> 8) & 0xff, n & 0xff]
+  const bytes = new Uint8Array([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x11, 0x08, ...u16(height), ...u16(width), 0x03,
+    0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+    0xff, 0xd9,
+  ])
+  return new File([bytes], name, { type: 'image/jpeg' })
+}
+
 function assignFile(input: HTMLInputElement, file: File): void {
   const dt = new DataTransfer()
   dt.items.add(file)
@@ -29,7 +41,7 @@ async function settle(): Promise<void> {
   await tick()
 }
 
-describe('ProfileForm — компактный Attachment аватара и ожидание конвертации при submit', () => {
+describe('ProfileForm — Acl allow="user", компактный FileAttachment и передача бинарного File', () => {
   const createdUrls: string[] = []
   let origCreate: typeof URL.createObjectURL
   let origRevoke: typeof URL.revokeObjectURL
@@ -57,7 +69,28 @@ describe('ProfileForm — компактный Attachment аватара и ож
     document.body.innerHTML = ''
   })
 
-  it('рендерит только компактное поле и превью без имени файла, веса и прогресс-бара, и удерживает submit до конца конвертации', async () => {
+  it('гостю форма профиля не рендерится — Acl показывает экран входа', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = mount(ProfileForm, {
+      target: host,
+      props: {
+        action: '/user/auth',
+        limits: LIMITS,
+        authorized: false,
+        initial: null,
+        doneHref: '/',
+      },
+    })
+    await settle()
+
+    expect(host.querySelector('#user-profile')).toBeNull()
+    expect(host.querySelector('[data-acl-code="auth_required"]')).not.toBeNull()
+
+    await unmount(app)
+  })
+
+  it('рендерит компактное превью без имени/веса/прогресс-бара, удерживает submit и отправляет бинарный File через DataTransfer', async () => {
     let resolveConvert!: (v: AvatarOutcome) => void
     prepareAvatarMock.mockImplementation(
       () =>
@@ -77,7 +110,7 @@ describe('ProfileForm — компактный Attachment аватара и ож
               formId: 'user-profile',
               instance: 'user-profile:new',
               submissionId: 'sub-1',
-              revision: 1,
+              revision: 2,
               ok: true,
               status: 200,
               outcome: 'committed',
@@ -99,6 +132,7 @@ describe('ProfileForm — компактный Attachment аватара и ож
       props: {
         action: '/user/auth',
         limits: LIMITS,
+        authorized: true,
         initial: { nickname: 'Neo', avatarUrl: 'https://example.com/old.jpg' },
         doneHref: '/',
         onDone,
@@ -117,12 +151,11 @@ describe('ProfileForm — компактный Attachment аватара и ож
 
     // Выбираем новый файл — превью переключается на blob, без имени/веса и без прогресс-бара
     const fileInput = host.querySelector('[data-field="avatar"] input[type="file"]') as HTMLInputElement
-    assignFile(fileInput, new File(['raw-image'], 'photo.png', { type: 'image/png' }))
+    assignFile(fileInput, jpegFile(600, 400, 'raw.jpg'))
     await settle()
 
     const cards = host.querySelectorAll('[data-field="avatar"] [data-slot="attachment"]')
     expect(cards.length).toBe(1)
-    expect(cards[0]!.querySelector('img')?.getAttribute('src')).toBe('blob:avatar-1')
     expect(cards[0]!.querySelector('[data-slot="attachment-title"]')).toBeNull()
     expect(cards[0]!.querySelector('[data-slot="attachment-description"]')).toBeNull()
     expect(cards[0]!.querySelector('[data-slot="attachment-progress"]')).toBeNull()
@@ -133,16 +166,21 @@ describe('ProfileForm — компактный Attachment аватара и ож
     await settle()
     expect(sentPayloads.length).toBe(0)
 
-    // Завершаем конвертацию — форма перечитывает DOM и отправляет свежесконвертированный dataURL
+    // Завершаем конвертацию — готовый File записывается через DataTransfer и уходит бинарно
+    const compressedFile = jpegFile(200, 200, 'avatar.jpg')
     resolveConvert({
       ok: true,
+      file: compressedFile,
       dataUrl: 'data:image/jpeg;base64,FRESH',
-      bytes: 512,
+      bytes: compressedFile.size,
       quality: 0.9,
       encoder: 'mozjpeg',
     })
     await vi.waitFor(() => expect(sentPayloads.length).toBe(1))
-    expect(sentPayloads[0]!.get('avatar')).toBe('data:image/jpeg;base64,FRESH')
+    const sentAvatar = sentPayloads[0]!.get('avatar')
+    expect(sentAvatar).toBeInstanceOf(File)
+    expect((sentAvatar as File).name).toBe('avatar.jpg')
+    expect((sentAvatar as File).type).toBe('image/jpeg')
     expect(onDone).toHaveBeenCalledTimes(1)
 
     await unmount(app)
@@ -160,6 +198,7 @@ describe('ProfileForm — компактный Attachment аватара и ож
       props: {
         action: '/user/auth',
         limits: LIMITS,
+        authorized: true,
         initial: null,
         doneHref: '/',
         onDone: () => {},

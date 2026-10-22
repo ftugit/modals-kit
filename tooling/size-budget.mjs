@@ -192,8 +192,16 @@ const LIMITS = {
   // `lib/db`), удаление `/user/profile` и `ProfileModal`: начальные маршруты
   // без изменений (0.0 KiB), ленивый чанк +1.0 KiB gzip (411.8 → 412.8 — в
   // пределах постоянного правила «≤ +5 КБ, сообщить», лимиты = факт + 0.5).
-  allImmutableGzip: 427.4 * KiB,
-  allJsGzip: 413.3 * KiB,
+  // 2026-10-22: универсальная `SeedForm.svelte` (`authorize=true|false`, срез
+  // `confirm` без перевыпуска сессии) + файловый контур `ProfileForm.svelte`
+  // (`field.photo`, `checks.ts` + `photo.ts` + `AvatarTakeover.svelte` на
+  // `DataTransfer`) с выносом лёгкого `envelope.ts` из `vault`: начальные
+  // загрузки ВСЕХ маршрутов снизились на 0.1 KiB (построутовые лимиты не
+  // тронуты), ленивый чанк `user.auth` +1.6 KiB gzip (весь JS 413.3 → 414.9,
+  // immutable 427.4 → 429.1 — в пределах постоянного правила «≤ +5 КБ,
+  // сообщить», лимиты = факт + 0.5).
+  allImmutableGzip: 429.6 * KiB,
+  allJsGzip: 415.4 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,

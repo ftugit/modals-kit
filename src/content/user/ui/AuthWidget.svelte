@@ -5,7 +5,7 @@
    *
    * Всю разметку и проверку прав несут самостоятельные компоненты на своих
    * шагах:
-   *   - `auth.*` (`entry` | `register` | `restore`) → `AuthForm` (`Acl allow="guest"`);
+   *   - `auth.*` (`entry` | `register` | `restore`) → `SeedForm` (`authorize={true}`, `Acl allow="guest"`);
    *   - `blocked` → `BanNotice` (`Acl allow="guest"`);
    *   - `restrictions` → `RestrictionsNotice` (`Acl allow="user"`);
    *   - `profile` → `ProfileForm` (`Acl allow="user"`).
@@ -19,13 +19,13 @@
   import { generateKeyPair, sign } from '../keys.js'
   import { hydrateVault, vault } from '../vault.svelte.js'
   import type { AvatarLimits } from '../avatar.js'
-  import { authForm, AUTH_FORM_REV } from '../forms.js'
+  import { seedForm, SEED_FORM_ID, SEED_FORM_REV } from '../forms.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl from './Acl.svelte'
-  import AuthForm, { type AuthView } from './AuthForm.svelte'
   import BanNotice from './BanNotice.svelte'
   import ProfileForm from './ProfileForm.svelte'
   import RestrictionsNotice from './RestrictionsNotice.svelte'
+  import SeedForm, { type SeedView } from './SeedForm.svelte'
 
   type UserPayload = {
     access: string
@@ -65,7 +65,7 @@
   // svelte-ignore state_referenced_locally -- начальный challenge из SSR
   let nonce = $state(data.challenge?.nonce ?? '')
 
-  const bound = bindComponentForm(forms, authForm, {
+  const bound = bindComponentForm(forms, seedForm, {
     prepare: async (fd) => {
       const typed = String(fd.get('seed') ?? '').trim()
       fd.set('seed', typed)
@@ -112,7 +112,7 @@
   })
 
   const hostStep = $derived(steps.currentKey ?? 'auth')
-  const authView = $derived<AuthView>(
+  const seedView = $derived<SeedView>(
     fs.current === 'register' || fs.current === 'restore' ? fs.current : 'entry',
   )
 
@@ -162,9 +162,9 @@
       fd.append('intent', 'challenge')
       const out = await challengeTransport({
         envelope: {
-          formId: 'user-auth',
-          revision: AUTH_FORM_REV,
-          instance: `user-auth:${crypto.randomUUID()}`,
+          formId: SEED_FORM_ID,
+          revision: SEED_FORM_REV,
+          instance: `${SEED_FORM_ID}:${crypto.randomUUID()}`,
           submissionId: crypto.randomUUID(),
           intent: 'challenge',
         },
@@ -211,12 +211,15 @@
   <ProfileForm
     limits={data.limits}
     initial={data.user?.prof ?? null}
+    {authorized}
+    enabled={data.enabled}
     {doneHref}
     onDone={finish}
   />
 {:else}
-  <AuthForm
-    view={authView}
+  <SeedForm
+    view={seedView}
+    authorize={true}
     host={steps}
     {bound}
     {localSeed}

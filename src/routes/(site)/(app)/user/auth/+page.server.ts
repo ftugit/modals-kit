@@ -3,11 +3,13 @@
 // (`src/content/user/server-forms.ts`); сам роут отвечает только за SSR `load`.
 import { localPath } from '#lib/address/index.js'
 import type { PageServerLoad } from './$types'
+import { SERVER_PHOTO_FORMATS } from '#content/user/checks.js'
 import { auth, readVault } from '#content/user/gateway.js'
 import { createUserConfig } from '#content/user/index.js'
 import { localStore } from '#lib/server/cache.js'
 
 const config = createUserConfig(localStore.scope('user-config'))
+const INPUT_PHOTO_FORMATS = SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, ''))
 
 /** Плоские значения `?stage=` старых ссылок — в куст `auth.*`. */
 const LEGACY_STEP: Record<string, string> = {
@@ -40,7 +42,8 @@ export const load: PageServerLoad = async (event) => {
     limits: {
       edge: await config.get('avatarEdge'),
       maxBytes: await config.get('avatarMaxBytes'),
-      formats: await config.get('avatarFormats'),
+      formats: INPUT_PHOTO_FORMATS,
+      nicknameForbidden: await config.get('nicknameForbidden'),
       holdSeconds: await config.get('holdSeconds'),
     },
     user,

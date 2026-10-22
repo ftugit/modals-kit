@@ -104,11 +104,11 @@ class Vault {
   private async postRenew(): Promise<void> {
     // форма пользователя принимает тело только с конвертом (слои lib/form);
     // транспорт и распаковка Kit-ответа — общие (components/form/transport)
-    const { authEnvelope, authEnvelopeFields } = await import('./forms.js')
+    const { seedEnvelope, seedEnvelopeFields } = await import('./envelope.js')
     const { kitActionTransport } = await import('#lib/components/form/transport.js')
-    const envelope = authEnvelope(`user-auth:${crypto.randomUUID()}`)
+    const envelope = seedEnvelope(`user-auth:${crypto.randomUUID()}`)
     const body = new FormData()
-    for (const [k, v] of Object.entries(authEnvelopeFields(envelope))) body.append(k, v)
+    for (const [k, v] of Object.entries(seedEnvelopeFields(envelope))) body.append(k, v)
     body.append('intent', 'renew')
     const out = await kitActionTransport(this.renewUrl)({ envelope, data: body, accept: ['application/json'], signal: new AbortController().signal })
     if (out.kind !== 'result' || !out.result.ok) return

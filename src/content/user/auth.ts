@@ -151,6 +151,27 @@ export async function restoreDeleted(ports: AuthPorts, args: EnterArgs): Promise
   return completeLogin(ports, proof.seed, args)
 }
 
+/**
+ * Повторное подтверждение владения seed для уже авторизованного аккаунта
+ * (критичные операции: удаление аккаунта, смена второго фактора и т.п.):
+ * проверяет активную сессию (`guard`), одноразовый `nonce` с подписью и
+ * совпадение предъявленного `seed` с текущим аккаунтом — БЕЗ перевыпуска
+ * сессии и изменения кук.
+ */
+export async function confirmSeed(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  args: EnterArgs,
+): Promise<UserResult<{ sub: string }>> {
+  const g = await guard(ports, accessToken)
+  if ('code' in g) return fail(g)
+  const proof = await proveSeed(ports, args)
+  if ('code' in proof) return fail(proof)
+  const row = await ports.auths.get(g.sub)
+  if (!row || row.seed !== proof.seed) return fail({ code: 'auth.signature', path: 'signature' })
+  return ok({ sub: g.sub })
+}
+
 /** Новая строка сессии: jti, версия 0, срок из конфига, хэш подсети. */
 async function openSession(
   ports: AuthPorts,

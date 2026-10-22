@@ -15,7 +15,7 @@
   import { useModalLink } from '#lib/components/links/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
-  import { authForm } from '../forms.js'
+  import { seedForm } from '../forms.js'
   import { vault } from '../vault.svelte.js'
   import Acl from './Acl.svelte'
 
@@ -32,7 +32,7 @@
 
   const asModalLink = useModalLink()
 
-  const bound = bindComponentForm(forms, authForm)
+  const bound = bindComponentForm(forms, seedForm)
 
   const authorized = $derived(Boolean(vault.principal ?? server))
   const nickname = $derived(vault.profile.nickname ?? server?.prof.nickname ?? null)

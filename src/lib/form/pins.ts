@@ -29,9 +29,12 @@ export interface Pin {
 
 const fromServer = (e: FormError) => e.origin === 'server' || e.origin === 'external'
 
-/** Значение поля как его несёт форма: все записи имени, файл — именем, размером и датой. */
+/** Значение поля как его несёт форма: все записи имени, файл — именем, размером и датой (пустая заглушка браузера `File([], '')` без имени имеет плавающий `Date.now()` и сводится к `''`). */
 export const sampleField = (data: FormData, name: string): string =>
-  data.getAll(name).map((v) => (typeof v === 'string' ? v : `${v.name}:${v.size}:${v.lastModified}`)).join('\u0000')
+  data
+    .getAll(name)
+    .map((v) => (typeof v === 'string' ? v : v.name || v.size ? `${v.name}:${v.size}:${v.lastModified}` : ''))
+    .join('\u0000')
 
 /**
  * Закрепы для ошибок сервера, привязанных к известным полям. Без `sent` (продолжение пути

@@ -30,7 +30,7 @@ export const resolve = (f: { input: string; variant?: string }) => {
     case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
     case 'select': case 'radio': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
-    case 'file': case 'files': return FileField
+    case 'file': case 'files': case 'photo': return FileField
     case 'range': return RangeField
     case 'hidden': return HiddenField          // без подписи и обёртки: поля не видно
     case 'switch': return SwitchField

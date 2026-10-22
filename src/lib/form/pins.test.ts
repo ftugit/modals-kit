@@ -55,4 +55,14 @@ describe('pins: серверная ошибка закреплена за зна
     const d = new FormData(); d.append('t', 'a'); d.append('t', 'b')
     expect(sampleField(d, 't')).toBe('a\u0000b')
   })
+
+  it('пустая заглушка File([], "") стабильна несмотря на разный lastModified у браузерного FormData', () => {
+    const d1 = new FormData(); d1.append('f', new File([], '', { lastModified: 1000 }))
+    const d2 = new FormData(); d2.append('f', new File([], '', { lastModified: 9999 }))
+    const d3 = new FormData(); d3.append('f', new File(['ok'], 'a.jpg', { lastModified: 5000 }))
+    const e = err('f1', { path: 'f' })
+    const pins = pinErrors([e], (n) => n === 'f', d1)
+    expect(reconcilePins(pins, [e], d2)).toBeNull()
+    expect(reconcilePins(pins, [e], d3)).toEqual([])
+  })
 })

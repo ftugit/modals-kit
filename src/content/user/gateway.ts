@@ -20,6 +20,7 @@ import { localStore } from '#lib/server/cache.js'
 import { db } from '#lib/server/db.js'
 import type { Cookies } from '@sveltejs/kit'
 import {
+  confirmSeed as coreConfirmSeed,
   createUserConfig,
   listSessions as coreListSessions,
   login as coreLogin,
@@ -342,6 +343,7 @@ export function auth(event: AuthEvent): {
   issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
   login(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   restoreDeleted(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  confirmSeed(args: { seed: string; nonce: string; signature?: string }): Promise<UserResult<{ sub: string }>>
   renew(): Promise<UserResult<LoginOutcome>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
@@ -380,6 +382,7 @@ export function auth(event: AuthEvent): {
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },
+    confirmSeed: (args) => coreConfirmSeed(ports, access(), args),
     renew: async () => {
       const r = await coreRenew(ports, { renewal: event.cookies.get(RENEWAL_COOKIE), subnet: subnetOf(event.request), country: countryOf(event.request) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
