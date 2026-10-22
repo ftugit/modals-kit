@@ -29,6 +29,7 @@
     "test:browser:forms": "node test/browser/forms.mjs",
     "test:browser:forms-a11y": "node test/browser/forms-a11y.mjs",
     "test:browser:fields": "node test/browser/fields.mjs",
+    "test:browser:attachment": "node test/browser/attachment.mjs",
     "test:browser:paginate": "node test/browser/paginate.mjs",
     "test:browser:db-demo": "node test/browser/db-demo.mjs",
     "test:browser:capabilities": "node test/browser/capabilities.mjs",
