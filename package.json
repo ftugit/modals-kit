@@ -70,7 +70,6 @@
     "@standard-schema/spec": "^1.1.0",
     "@vercel/functions": "^3.10.1",
     "clsx": "^2.1.1",
-    "compressorjs": "^1.4.0",
     "esm-env": "^1.2.2",
     "image-q": "^4.0.0",
     "iron-webcrypto": "^2.0.0",

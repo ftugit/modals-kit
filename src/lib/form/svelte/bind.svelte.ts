@@ -274,7 +274,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     store.set((current) => ({ ...current, shown: shown.errors, removed: shown.removed }))
   }
 
-  function applyResult(result: Result, sent?: FormData) {
+  function applyResult(result: Result, sent?: FormData, notify = true) {
     // ошибки операций перехватчиков своими закрепами уже учтены (opPins):
     // второй закреп той же ошибки из результата дал бы дубль в фактах
     pins = pinErrors(result.errors, (n) => !!desc.byName[n], sent)
@@ -295,7 +295,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       revision: result.revision,
     }))
     // Q1: сообщаем ПОСЛЕ применения — показ не зависит от sink'а; дедуп по submissionId.
-    notified = notifyResultErrors(o.onError ?? cfg.config.onError, result, notified)
+    if (notify) notified = notifyResultErrors(o.onError ?? cfg.config.onError, result, notified)
   }
 
   /**
@@ -753,7 +753,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
         values: ev.publicValues, from: 'fetch',
       }
       machine.finish(begun.submission)
-      applyResult(blocked, data)
+      applyResult(blocked, data, false)
       return blocked
     }
 

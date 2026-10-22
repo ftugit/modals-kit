@@ -52,15 +52,13 @@ const hit = await open(blob)                          // подбор: тот ж
 - `+ @jsquash/png` — JS ~3 КиБ gzip, wasm-ассет ~181 КиБ грузится при первом использовании
   (ассет, не бюджет JS).
 - `@jsquash/jpeg` — уже стоит.
-- `compressorjs` — из package.json уходит (миграция потребителей ниже).
 
 ## Потребители
 
 - `content/user/avatar.ts` — `open(file).frame(edge×edge)` → `fit(..., вся data:-строка ≤ maxBytes)`
   (заодно лечит «впритык»: сервер считает префикс `data:image/jpeg;base64,`). Настройки — конфиг
   (`avatarEdge`, `avatarMaxBytes`, `avatarFormats`); серверный белый список расширяется вместе с форматом.
-- `ui/file-input/FileInput.svelte` (миниатюры превью) — `open(file).frame(80×80)` →
-  `encode('image/jpeg', { quality: 0.8 })` → objectURL; не вышло — objectURL оригинала (как решено, ход 260).
+- Локальное превью выбранных файлов — UI-примитивы `Attachment` + `FileAttachment` (`objectURL` в `<img>` без перекодирования; `FileInput` остаётся чистым нативным `<input type="file">`).
 
 ## Не входит
 

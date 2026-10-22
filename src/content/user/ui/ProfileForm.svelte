@@ -6,17 +6,26 @@
    * отправка: ссылка на `doneHref`, с JS клик перехватывает `onDone`
    * (закрытие модалки / переход виджета).
    *
-   * Аватар — прежний клиентский конвейер (`prepareAvatar` → dataURL в
-   * скрытое поле описания); замена на перехват поля (lib/image) — этап B+R2.
+   * Аватар: компактный `FileAttachment` (только пикер и превью, без имени/веса
+   * и без прогресс-бара) + клиентский конвейер `prepareAvatar` (`lib/image` →
+   * `dataURL` в скрытое поле описания). Пока конвертация идёт, живая ручка
+   * перехвата `f.pending` удерживает отправку формы и перечитывает DOM после
+   * готовности результата; ошибка подготовки закрепляется в `f.error`.
    */
-  import { untrack } from 'svelte'
-  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { tick, untrack } from 'svelte'
+  import {
+    bind,
+    Form,
+    formTask,
+    type FieldHandle,
+    type FieldTakeover,
+  } from '#lib/form/svelte/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import type { Result } from '#lib/form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import Field from '#lib/components/form/Field.svelte'
   import Common from '#lib/components/form/Common.svelte'
-  import { Button, FileInput } from '#lib/components/ui/index.js'
+  import { Attachment, Button, FileAttachment } from '#lib/components/ui/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
   import { prepareAvatar, type AvatarLimits } from '../avatar.js'
   import { profileForm } from '../forms.js'
@@ -78,75 +87,125 @@
     }
   })
 
-  /* ── аватар: конвейер с пределами из конфига; результат — скрытое поле ── */
+  /* ── аватар: конвейер с пределами из конфига + задержка submit через f.pending ── */
+  let avatarFiles = $state<FileList | undefined>(undefined)
   let avatarUrl = $state<string | null>(null)
   let avatarBusy = $state(false)
-  let avatarError = $state<string | null>(null)
+  let avatarHandle: FieldHandle | null = null
+  let activeAbort: AbortController | null = null
+
+  const hasPickedFile = $derived(Boolean(avatarFiles && avatarFiles.length > 0))
+
   // результат конвейера — значение поля avatar из описания (hidden):
   // зеркало кладёт его в состояние формы, HiddenField рисует сам носитель
   mirrorToField(bound, 'avatar', () => avatarUrl ?? '')
 
-  async function onFileChange(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement
-    const picked = input.files?.[0]
-    if (!picked) return
-    avatarBusy = true
-    avatarError = null
-    try {
-      const outcome = await prepareAvatar(picked, limits)
-      if (outcome.ok) avatarUrl = outcome.dataUrl
-      else avatarError = AVATAR_TEXTS[outcome.code] ?? outcome.code
-      if (!outcome.ok) input.value = ''
-    } catch {
-      avatarError = AVATAR_TEXTS['profile.avatar-format']
-      input.value = ''
-    } finally {
-      avatarBusy = false
+  const avatarTakeover: FieldTakeover = (f) => {
+    avatarHandle = f
+    return {
+      dispose: () => {
+        activeAbort?.abort()
+        activeAbort = null
+        avatarHandle = null
+      },
     }
   }
 
-  // Только коды КЛИЕНТСКОГО конвейера аватара (они не форма-ошибки); тексты
-  // доменных кодов живёт в `messages` формы — сервер наполняет message сам.
-  const AVATAR_TEXTS: Record<string, string> = {
-    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
+  function onFileChange(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement
+    const picked = input.files?.[0]
+
+    activeAbort?.abort()
+    activeAbort = null
+
+    if (!picked) {
+      avatarUrl = null
+      avatarBusy = false
+      if (avatarHandle) {
+        avatarHandle.pending = undefined
+        avatarHandle.error = undefined
+      }
+      return
+    }
+
+    const controller = new AbortController()
+    activeAbort = controller
+    avatarBusy = true
+    if (avatarHandle) avatarHandle.error = undefined
+
+    const job = (async () => {
+      try {
+        const outcome = await prepareAvatar(picked, limits, { signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (outcome.ok) {
+          avatarUrl = outcome.dataUrl
+          await tick()
+        } else {
+          avatarUrl = null
+          avatarFiles = undefined
+          input.value = ''
+          await tick()
+          if (avatarHandle) avatarHandle.error = { code: outcome.code }
+        }
+      } catch (err) {
+        if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
+        avatarUrl = null
+        avatarFiles = undefined
+        input.value = ''
+        await tick()
+        if (avatarHandle) avatarHandle.error = { code: 'profile.avatar-format' }
+      } finally {
+        if (activeAbort === controller) {
+          activeAbort = null
+          avatarBusy = false
+        }
+      }
+    })()
+
+    if (avatarHandle) avatarHandle.pending = job
   }
 </script>
 
 <Form id="user-profile" form={bound} hiddenFields={bound.hidden()} class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left">
   <Common errors={bound.common} title="Проверьте форму" />
 
-  {#if avatarError}
-    <p role="alert" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{avatarError}</p>
-  {/if}
-
   <div class="flex flex-col gap-3">
     <h2 class="text-base font-semibold">Как вас показывать?</h2>
     <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
     <Field of={bound.f.nickname} />
     <div class="space-y-1.5" data-field="avatar">
-      <!-- носитель значения — скрытое поле описания, рисует lib/form;
-           результат конвейера зеркалится в него из avatarUrl -->
-      <Field of={bound.f.avatar} />
+      <!-- носитель значения — скрытое поле описания; takeover подключает
+           живую ручку поля (f.pending задерживает отправку до конца конвертации) -->
+      <Field of={bound.f.avatar} takeover={avatarTakeover} />
       <p class="text-sm">Аватар</p>
       {#if notHydrated()}
         <p class="text-xs text-muted-foreground">Файл {JS_ONLY_REASON} — без него сервер аватара не ждёт.</p>
       {:else}
-        <!-- пикер — НЕ поле формы: имени нет, в FormData не попадает,
-             до оживления в DOM не существует (виртуальная подмена).
-             Круглый предпросмотр ниже — свой (ТЗ), preview пикера не нужен. -->
-        <FileInput
+        <FileAttachment
+          bind:files={avatarFiles}
           accept="image/jpeg,image/png,image/webp"
+          size="sm"
+          layout="tile"
+          attachmentSize="sm"
+          media="image"
+          showFilename={false}
+          showSize={false}
           onchange={onFileChange}
           disabled={avatarBusy}
         />
       {/if}
-      {#if avatarUrl ?? existingAvatar}
-        <img src={avatarUrl ?? existingAvatar} alt="Предпросмотр аватара" class="h-16 w-16 rounded-full object-cover" />
+      {#if !hasPickedFile && existingAvatar}
+        <Attachment
+          previewUrl={existingAvatar}
+          alt="Аватар"
+          layout="tile"
+          size="sm"
+          media="image"
+          showFilename={false}
+          showSize={false}
+        />
       {/if}
       {#if bound.f.avatar.errors[0]}
-        <!-- ошибки сервера по аватару (скрытое поле свою ошибку не рисует):
-             раньше гасились молча — владелец видел «ничего не происходит» (ход 261) -->
         <p role="alert" class="text-xs font-medium text-destructive">{bound.f.avatar.errors[0].message}</p>
       {/if}
     </div>

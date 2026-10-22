@@ -3,7 +3,7 @@
   // или массив `File[]` (`files`), а не строка пути: правила `accept`/`maxSize`/
   // `minCount`/`maxCount` проверяют их и в браузере, и на сервере.
   // Превью выбранных файлов включается опцией поля `variant: 'preview'`
-  // и рендерится комбинированным `FileAttachment` (без `compressorjs`).
+  // и рендерится комбинированным `FileAttachment`.
   import { FileAttachment, FileInput } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
