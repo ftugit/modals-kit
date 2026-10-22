@@ -1,98 +1,66 @@
-# `src/content/user` — модуль пользователя (вход по seed, сессии, профиль)
+# `src/content/user` — модуль пользователя (вход по seed, сессии, профиль, ACL)
 
-Статус: **реализован** (ходы 252–257; решения владельца — `docs/design/auth-seed.md`,
-чек-лист §6). Вход по seed-подписи (Ed25519), обе сессии-токена в HttpOnly-куках,
-access зеркалится в RAM-vault браузера, сессии/аккаунты/профили — таблицы `lib/db`.
+Автономный доменный модуль приложения: Ed25519-подпись `seed` по одноразовому `challenge`, оба токена сессии в `HttpOnly`-куках, клиентское зеркало `access` в RAM (`vault`), таблицы аккаунтов/сессий/профилей в `#lib/db`, UI ACL на 21 экран и маршрутно-независимые формы компонентов через `#hooks/component-form`.
 
-## Модуль, не библиотека
+---
 
-Папка в `src/content/` — модуль ПРИЛОЖЕНИЯ (как `posts.ts`): принадлежит домену
-«пользователь», а не переиспользуемому слою. Одна папка держит всё про юзера:
-БД-схему, поля форм, api, ошибки, gateway, клиентский виджет.
+## Модуль приложения, а не библиотека
+
+Папка в `src/content/` принадлежит предметной области «пользователь» (наравне с `posts.ts` и источниками каталогов), а не переиспользуемому слою `src/lib/`. В одном месте собраны ресурсы БД, чистые доменные функции, адаптеры портов, серверный фасад кук и самодостаточные UI-компоненты.
 
 ## Состав
 
-| Файл | Что |
+| Путь | Назначение |
 |---|---|
-| `schema.ts` | ТРИ ресурса `lib/db`: `user_auth` (seed обнуляемый, времена + soft delete, блокировки `blocked`, соль подсетей), `user_profile` (никнейм НЕуникальный, кроме запрещённых, адрес аватара), `user_session` (устройство: jti, имя, хэш подсети + история, активность `last_seen_at`, отзыв = soft delete). Миграции — `schemaSpec` в `lib/server/db.ts`; потребление — `db.resource`. И поля формы профиля — из одного объявления |
-| `keys.ts` | `@noble/ed25519` (изоморфно, ~3,5 КиБ gzip): `generateKeyPair`, `seedOf`, `sign`, `verify` |
-| `types.ts` | клеймы токена, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked` |
-| `ports.ts` | порты адаптеров: challenge, sessions, auths, profiles, config, seal, куки, время |
-| `auth.ts` | api входа и сессий: `issueChallenge`, `login` (шаги entry/profile/restore), `restoreDeleted` (восстановление удалённого по доказательству), `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, заявка и исполнитель удаления. Фаервол ВНУТРИ api; `guard` — права по access-токену |
-| `profile.ts` | профильный api: `profile`/`updateProfile` — отдельно от auth (§6: «откуда у auth profile?») |
-| `config.ts` | настройки модуля поверх `#lib/cache`: TTL/поведение — опции приложения; `deleteGraceDays` (дефолт 7) |
-| `error.ts` | доменные факты `auth.*`/`profile.*` + `toHttpStatus` (`auth.disabled` → 503) |
-| `gateway.ts` | адаптеры портов на `db.resource(user_*)` (SYSTEM-контекст: роли `server`/`admin` — арбитр в api); `AUTH_ENABLED`, seal/unseal, фасад `auth(event)` для экшена, `readVault`/`vaultPayloadOf` |
-| `acl.ts` | правила и 21 экран UI ACL (`resolveAcl`): статусы авторизации/сессии/аккаунта (`guest`/`user`/роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `lib/db` (`FailureKind` + `payload_too_large`) |
-| `vault.ts` / `vault.svelte.ts` | RAM-vault access (куки HttpOnly клиент не читает) + продление через `kitActionTransport` и лёгкий конверт `ui/seed-form/envelope.ts` |
-| `ui/Acl.svelte` | компонент UI ACL пользователя (`allow`, `status`, `blocked`, `restrictions`, `model`): показывает нужный экран вместо содержимого |
-| `ui/seed-form/` | самодостаточный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `Acl allow="guest"`) и проверка владения `confirm` (`authorize = false`, без создания сессии и смены токена, доступна и гостю, и авторизованному пользователю) |
-| `ui/profile-form/` | самодостаточный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment` (`showSize={false}`, `showFilename={false}`), удержанием submit через `f.pending` и серверным декодером `decodeWithNode` (`#lib/image/node.js`) без внешнего `base64` |
-| `ui/BanNotice.svelte` / `ui/RestrictionsNotice.svelte` | самостоятельные компоненты экранов полной блокировки и ограничений аккаунта |
-| `ui/AuthWidget.svelte` | координатор шагов входа (`auth` / `blocked` / `restrictions` / `profile`, адрес — цепочка `?stage=auth.restore`) + куст `formSteps` |
-| `ui/MenuBody.svelte` / `ui/MenuModal.svelte` | меню пользователя под `<Acl allow="user">` (ник/аватар, «Изменить профиль» → `?stage=profile`, выход) |
-| `index.ts` | единый экспорт модуля |
+| `schema.ts` | Три ресурса `#lib/db`: `user_auth` (`seed`, времена + soft delete, блокировки `blocked`, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`), `user_session` (`jti`, имя устройства, хэш подсети + история, `last_seen_at`, отзыв = soft delete). Разворачиваются через `schemaSpec` в `src/lib/server/db.ts`. |
+| `keys.ts` | Изоморфная криптография `@noble/ed25519`: `generateKeyPair`, `seedOf`, `sign`, `verify`. |
+| `types.ts` | Клеймы токенов, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked`. |
+| `ports.ts` | Контракты портов: `challenge`, `sessions`, `auths`, `profiles`, `config`, `seal`, `cookies`, `clock`. |
+| `auth.ts` | Доменный API входа и сессий: `issueChallenge`, `login`, `restoreDeleted`, `verifySeed` (проверка владения `seed` без создания сессии), `guard`, `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, `requestDelete`, `sweepDeletions`. |
+| `profile.ts` | Профильный API отдельно от `auth.ts`: `profile`, `updateProfile`, доменная проверка аватара по заголовку (`probeImageHeader`). |
+| `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#lib/components/form/photo.js`). |
+| `config.ts` | Настройки модуля поверх `#lib/cache` (`accessTtlSec`, `deviceTtlSec`, `challengeTtlSec`, `deleteGraceDays`, `avatarEdge`, `avatarMaxBytes`, `nicknameForbidden`, `holdSeconds`). |
+| `error.ts` | Доменные факты `auth.*` / `profile.*` и перевод в инструкции формы (`instruction`). |
+| `gateway.ts` | Серверная обвязка SvelteKit: адаптеры портов к `db.resource(user_*)`, запечатывание `iron-webcrypto`, фасад `auth(event)`, `readVault`, `vaultPayloadOf`, `toHttpStatus`. |
+| `acl.ts` | Логика и описания 21 экрана `resolveAcl`: статусы субъекта/аккаунта (`guest`, `user`, роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `#lib/db` (`FailureKind` + `payload_too_large`). |
+| `vault.ts` / `vault.svelte.ts` | Клиентское RAM-зеркало `access`-токена и фоновое продление по таймеру через `kitActionTransport` и конверт `ui/seed-form/envelope.ts`. |
+| `ui/Acl.svelte` | Компонент защиты экрана: при срабатывании ограничения отображает карточку причины и штатное действие вместо `children`. |
+| `ui/seed-form/` | Папочный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `<Acl allow="guest">`) и срез `confirm` (`authorize = false` — проверка знания `seed` через `verifySeed` без открытия сессии и без смены кук, доступна и гостю, и залогиненному пользователю). |
+| `ui/profile-form/` | Папочный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment`, удержанием отправки через `f.pending` и серверной обработкой через `decodeWithNode` (`#lib/image/node.js`) без передачи `base64` по сети. |
+| `ui/BanNotice.svelte` / `ui/RestrictionsNotice.svelte` | Экраны полной блокировки (`scope: 'auth'`) и частичных ограничений аккаунта. |
+| `ui/AuthWidget.svelte` | Тонкий координатор шагов потока входа (`auth.*` / `blocked` / `restrictions` / `profile`, адрес — `?stage=auth.restore`) + связка `formSteps`. |
+| `ui/MenuBody.svelte` / `ui/MenuModal.svelte` / `ui/UserMenu.svelte` | Меню пользователя под `<Acl allow="user">` (аватар, никнейм, переход к `?stage=profile`, выход) и кнопка в шапке. |
+| `index.ts` | Публичная точка входа доменного ядра. |
+
+---
 
 ## Цепочка вызова
 
 ```
-POST /user/auth (нативный Kit-экшен) ─> execute ─> gateway auth(event)
-    ─> core api (ports = db.resource) ─> голый факт {code, path?, args?}
+POST <любой маршрут> (__form_id = user-seed | user-profile)
+  ─> componentFormsHandle (src/hooks/component-form/server.ts)
+  ─> execute (ui/seed-form/server.ts | ui/profile-form/server.ts)
+  ─> gateway auth(event) ─> core api (auth.ts / profile.ts) ─> факт { code, path?, args? }
 
-ответ Kit ({type, status, data: devalue}) ─> unwrapKitAction (lib/form/transport)
-любая страница: +layout.server.ts ─> readVault(cookies) ─> проп user в vault
+любая страница (SSR): +layout.server.ts ─> readVault(cookies) ─> data.user ─> vault
 ```
 
-Ядро (`auth.ts`, `profile.ts`) не знает Request/cookies: голые аргументы → голый
-факт; куки и HTTP-перевод — gateway.
+Ядро (`auth.ts`, `profile.ts`) не знает `Request` и `Cookies`: на входе данные и порты, на выходе результат или доменный факт.
 
-## Выключение и env (конвенция хода 256)
+---
 
-`AUTH_SEAL_SECRET` не задан → вход выключен, 500 не бывает: страница `/user/auth`
-показывает баннер «Вход выключен», `readVault` возвращает `null`, execute
-отклоняет все интенты, кроме `logout`, фактом `auth.disabled` (503). Неверное
-значение (секрет < 32 байт) → падение старта с именем переменной.
+## Выключение без секрета
 
-## Токены и отзыв (модель владельца)
+Если `AUTH_SEAL_SECRET` не задан, подсистема входа мягко выключается без `500`: `<Acl enabled={false} />` показывает экран «Вход временно отключён», `readVault` возвращает `null`, а серверные обработчики отвечают `auth.disabled` (`503`) на все действия, кроме `logout`.
 
-- `auth_tmp` (access, 15 мин) + `auth_sid` (продление, год) — HttpOnly-куки;
-  access дублируется в RAM-vault для заголовков. Продление сверяет версию куки
-  (`session.version`): не совпала — «усыновление» свежей.
-- Снимок профиля (ник/аватар) запечатан в access-токен при чеканке:
-  сохранение профиля перевыпускает токены (`renew` в экшене роута) и
-  возвращает свежий снимок в ответе для vault — иначе шапка и меню
-  показывали бы профиль на момент входа до следующего продления.
-- Блэклиста access нет: украденный access умирает на exp (цена признана гайдом);
-  отзыв сессии/блокировка — на точке продления (`renew`).
-- Софт-удаление: сессия = отзыв; аккаунт = заявка — обычный поиск
-  удалённую строку не видит (политика модели), вход получает факт
-  `auth.deleted` БЕЗ сессии; восстановление — отдельное подтверждение
-  `restoreDeleted`: подпись по seed проверяется ДО привилегированного
-  поиска удалённой строки, затем `restore` модели и обычный вход.
-  Срок не проверяется: восстановимость ≡ seed ещё существует.
-  Окончательно — исполнитель `sweepDeletions` по грейсу: профиль
-  уходит, seed стирается, строка-надгробие остаётся (вызывающего
-  планировщика в приложении пока нет).
+---
 
-## Кто генерирует seed при регистрации (решение владельца, ревизия хода 261)
+## Генерация `seed` при создании аккаунта
 
-С JS — **браузер**: клик «Создать аккаунт» перехватывается, `generateKeyPair()`
-делается локально (`keys.ts` изоморфен по плану `auth-seed.md` §1), ключ не
-покидает устройство, серверного запроса на смену шага нет вообще (шаг меняет
-хост шагов локально, адрес — своим ключом брони, load не вызывается).
+- **С JavaScript** — ключ генерируется локально в браузере (`generateKeyPair()` в `AuthWidget.svelte`) при переключении шага без обращения к серверу; приватный материал не попадает в HTML-ответ.
+- **Без JavaScript / по прямой ссылке `?stage=auth.register`** — `registerSeed` создаёт сервер в `load`, и `SeedForm` показывает явное предупреждение, что ключ присутствовал в HTML ответа.
 
-Серверная генерация в load (`registerSeed`) — **fallback** без JS, обновления
-страницы и deep-link: страница пришла с сервера, seed виден в HTML — в этом
-пути виджет показывает блок «Seed создал и подписал сервер» с предупреждением.
-В JS-пути блок другой: «Seed сгенерирован в этом браузере». Различение — по
-тому, есть ли локальный ключ (`localSeed`), а не по устройству пользователя.
+## Приватность и известные ограничения
 
-Общий принцип (см. `lib/components/steps/README.md`): менять компоненты/шаги
-без участия сервера — локальными переменными состояния и `set()` хоста;
-серверные данные (`load`) — только начальное состояние и fallback без JS.
-
-## Приватность
-
-IP не храним: хэш подсети с солью аккаунта + страна; история — только хэши.
-Активность — `user_session.last_seen_at` (не колонка auth). Профиль — ровно
-никнейм и адрес аватара. Ни email, ни имени, ни аналитических кук.
+- Полный IP-адрес не сохраняется никогда: в сессии пишется только `SHA-256` подсети (`/24` для IPv4, `/48` для IPv6) с индивидуальной солью аккаунта и код страны.
+- Исполнитель окончательной зачистки `sweepDeletions` реализован в `auth.ts`, подключение к расписанию приложения и открытые вопросы по выносу байтов аватара из куки `auth_tmp` зафиксированы в [`docs/audit/testing-backlog.md`](../../../docs/audit/testing-backlog.md).

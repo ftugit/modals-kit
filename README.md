@@ -1,134 +1,67 @@
 # modals-kit
 
-Демонстрационное приложение SvelteKit с библиотеками:
+Исходный репозиторий framework-neutral библиотек и эталонного приложения на **Svelte 5 (runes) + SvelteKit 2 + Vite + UnoCSS (Tailwind v4 preset) + PGlite / PostgreSQL**.
 
-- **modals** — модальная система с адресуемыми стопками (API — таблица ниже).
-- **form** — изоморфные формы: описание данными, разметка приложением, один код
-  проверки в браузере и на сервере. Документация и рецепты —
-  [`src/lib/form/README.md`](./src/lib/form/README.md).
-- **paginate** — headless-библиотека пагинации с разделением framework-neutral ядра и
-  адаптера Svelte 5 (списки, колонки, бесконечный скролл, сохранение скролла
-  при prepend, URL/localStorage/cursor хранилища). Документация —
-  [`src/lib/paginate/README.md`](./src/lib/paginate/README.md).
-- **search** — поиск как перехват пагинатора: `defineSearch` подменяет источник и
-  регистрирует его на URL-адаптере, запрос живёт в extra (`?search.q`), fuzzy-ядро
-  изоморфно. Документация — [`src/lib/paginate/search/README.md`](./src/lib/paginate/search/README.md).
-  В демо (`/paginator`) пагинатор и поиск — ОДИН раздел: источник выбирается
-  панелью (локальные товары/фото, живые каталоги Shikimori и Rick and Morty), а тумблеры гасят
-  родной поиск источника и слой paginate/search независимо. Живые источники ходят не к
-  API напрямую, а в свои эндпоинты (`/api/shikimori/*`, `/api/rickmorty/characters`):
-  кэш, троттлинг и User-Agent живут на сервере, без выгрузки каталога в файл.
-  Длинные списки фильтров: с JS поиск по всем значениям (студий 1934), без JS — первые 200
-  самых частых плюс выбранное; схема живёт в памяти вкладки до перезагрузки — подробно в
-  [`src/lib/paginate/filters/README.md`](./src/lib/paginate/filters/README.md).
-  Схему фильтров (`/api/shikimori/filters`) браузер берёт, только если её нет ни в странице,
-  ни в памяти вкладки (источник переключили в панели, пришли переходом внутри сайта или
-  сервер не собрал её при отрисовке). Адрес
-  отвечает лишь страницам этого сайта: `Sec-Fetch-Site: same-origin`, иначе 403 без тела;
-  в dev по http без заголовка пропускает (`sameOriginFetch` в
-  `src/lib/server/trusted-origins.ts`). От парсеров это не защищает: заголовок
-  подделывается одной строкой. Отсекает чужие страницы в браузере и простые скачивания.
-- **filters** — фильтры каталога: схема источника превращается в форму `lib/form`, правила
-  проверки и адрес `?page.filters.*`. Документация — [`src/lib/paginate/filters/README.md`](./src/lib/paginate/filters/README.md).
-- **db** — серверный слой данных: ресурсы, курсорные страницы, синхронизация схемы из
-  моделей, адаптеры Postgres/PGlite/Hyperdrive. Демо — `/db-demo`. Документация —
-  [`src/lib/db/README.md`](./src/lib/db/README.md).
-- **cache** — хранилища «ключ → значение со сроком» с одним контрактом (кэш внешнего API,
-  бронь отправки формы, счётчик). Документация — [`src/lib/cache/README.md`](./src/lib/cache/README.md).
-- **fetch** — `fetch` для чужих сервисов: таймаут, повторы с `Retry-After`, лимит запусков на
-  хост, склейка одинаковых запросов. Документация — [`src/lib/fetch/README.md`](./src/lib/fetch/README.md).
-- **task** — один формат состояния задачи («лоадер») для ссылок, кнопок и индикаторов.
-  Документация — [`src/lib/task/README.md`](./src/lib/task/README.md).
-- **components/links** — ссылки приложения как атрибуты на свою `<a>` или `Button`:
-  `asLink`, `asModalLink`. Документация — [`src/lib/components/links/README.md`](./src/lib/components/links/README.md).
+Все ключевые подсистемы построены по одному правилу: **чистое изоморфное ядро на TypeScript без зависимостей от UI-фреймворка + тонкий адаптер реактивности и роутера + работа как с JavaScript, так и при нативном HTTP без JavaScript (progressive enhancement)**. Переносимость ядер на другой стек проверена живой симуляцией на **React 19 + React Router v7** в [`sim/react-router/`](./sim/react-router/README.md).
 
-## Переменные окружения
+---
 
-Все необязательны: без них сайт работает целиком — база PGlite в памяти, курсорный режим,
-кнопка переноса схемы и вход пользователя выключены. Перечень и проверки — `src/env.ts`, шаблон с пояснениями —
-`.env.example`. Локально — файл `.env` (читается в `npm run dev`) или переменные процесса; на
-Vercel — Settings → Environment Variables.
+## Состав репозитория
 
-| Переменная | Зачем | Без неё |
+### 1. Библиотеки (`src/lib/`)
+
+| Пакет (`#lib/*`) | Назначение | Документация |
 |---|---|---|
-| `DATABASE_URL` | внешний Postgres | PGlite |
-| `HYPERDRIVE_CONNECTION_STRING` | Cloudflare Hyperdrive, перекрывает `DATABASE_URL` | — |
-| `DATABASE_DIR` | каталог PGlite на диске | PGlite в памяти |
-| `DB_POOL_MAX` | соединений в пуле | 1 на Vercel, иначе 4 |
-| `DB_CONNECT_TIMEOUT_MS` | таймаут соединения, мс | 30000 |
-| `DB_CURSOR_SECRET` | подпись курсора `?page.after`, не короче 32 байт | курсорный режим выключен |
-| `DB_CURSOR_TTL_SECONDS` | время жизни курсора, с | 1800 |
-| `DB_CURSOR_KID`, `DB_CURSOR_OLD_KEYS` | смена секрета курсора без поломки ссылок | `v1` |
-| `DB_ADMIN_TOKEN` | кнопка «Выполнить» переноса схемы на `/db-demo`, не короче 32 символов | кнопка выключена |
-| `AUTH_SEAL_SECRET` | запечатывание кук сессий пользователя (iron: шифрование + MAC), не короче 32 байт | вход выключен: `/user/auth` сообщает «Вход выключен», попытки входа отклоняются |
-| `AUTH_SEAL_ID`, `AUTH_SEAL_OLD_KEYS` | смена секрета без разлогина всех | `v1` |
-| `KIT_TRUSTED_ORIGINS` | публичные адреса для проверки origin (CSRF); читается и при сборке | только локальные порты |
-| `PREVIEW_PORTS` | доверенные локальные порты | `5173,5174` |
+| `#lib/modals` | Адресуемая стопка модальных слоёв, переговоры о возможностях среды, области видимости реестра, `svelte/`-хост | [`src/lib/modals/README.md`](./src/lib/modals/README.md) |
+| `#lib/form` | Изоморфные формы без DOM: описание, валидаторы, конверт, слои сервера, `takeover` поля, `queued`-протокол, `svelte/`-связка | [`src/lib/form/README.md`](./src/lib/form/README.md) |
+| `#lib/paginate` | Headless-пагинация (`single` / `accumulate`, URL / localStorage / cursor, якоря скролла, `patchItems`), подпакеты `filters` и `search` | [`src/lib/paginate/README.md`](./src/lib/paginate/README.md), [`filters`](./src/lib/paginate/filters/README.md), [`search`](./src/lib/paginate/search/README.md) |
+| `#lib/db` | Серверный слой данных PostgreSQL / PGlite / Hyperdrive / Proxy: модели, политики, Standard Schema, keyset-курсоры, `defineSchema` sync | [`src/lib/db/README.md`](./src/lib/db/README.md), [`PORTING.md`](./src/lib/db/PORTING.md) |
+| `#lib/address` | Единый писатель URL/history, глобальная бронь query-ключей и чтение видимого адреса поверх shallow-слоёв | [`src/lib/address/README.md`](./src/lib/address/README.md) |
+| `#lib/fetch` | Надёжный `fetch` к внешним API: таймауты, ретраи с `Retry-After`, скользящие лимиты `rps`/`rpm`, склейка запросов, поток хода задачи | [`src/lib/fetch/README.md`](./src/lib/fetch/README.md) |
+| `#lib/cache` | Контракт ключ–значение со сроками жизни, областями (`scope`), `singleflight` и атомарными `add`/`incr` | [`src/lib/cache/README.md`](./src/lib/cache/README.md) |
+| `#lib/image` | Изоморфный конвейер изображений: чтение заголовков без декодирования (`probe`), обрезка/ресайз, подбор качества под бюджет байт, серверный WASM-декодер (`node.ts`) | [`src/lib/image/README.md`](./src/lib/image/README.md) |
+| `#lib/task` | Единый формат состояния ожидания и прогресса (`TaskState`) для ссылок, кнопок и верхней полосы загрузки | [`src/lib/task/README.md`](./src/lib/task/README.md) |
 
-Платформа задаёт сама: `VERCEL`, `E2B_SANDBOX_ID`.
+### 2. Межбиблиотечные связки (`src/hooks/`)
 
-**Работа после ответа.** Начатое после ответа (сборка схемы фильтров Shikimori при переходе
-внутри сайта) идёт через `afterResponse` (`src/lib/server/after-response.ts`): на Vercel —
-`waitUntil` из `@vercel/functions`, на Cloudflare — `platform.context.waitUntil`, иначе промис
-просто выполняется. Вне Vercel `waitUntil` ничего не делает, настраивать ничего не нужно.
+Модули, соединяющие две независимые библиотеки без прямых импортов между их ядрами (подробно — [`src/hooks/README.md`](./src/hooks/README.md)):
+- `src/hooks/cache-db.ts` — хранилище `#lib/cache` поверх таблицы `cache_kv` в `#lib/db` (`pgStore`).
+- `src/hooks/db-form.ts` — вывод правил полей `#lib/form` из модели ресурса `#lib/db` (`formParams`).
+- `src/hooks/component-form/` — маршрутно-независимый приём `POST` встраиваемых форм компонентов через SvelteKit `Handle` (`registerComponentForm`, `componentFormsHandle`, `bindComponentForm`).
 
-## API модалок
+### 3. Прикладные компоненты и домен пользователя
 
-| API | Вид | Описание |
-|---|---|---|
-| `ModalBox`, `ModalSize`, `MobileAnchor` | типы | Описывают размеры модалки и четыре допустимых мобильных якоря. |
-| `ChainOverrides`, `StackMode` | типы | Задают overrides записи и режим изменения существующей стопки при открытии. |
-| `RegisteredEntry`, `TransientEntry`, `ChainEntry`, `Chain` | типы | Представляют сериализуемые, временные и составные записи стопки. |
-| `entryLabel()` | функция | Возвращает имя зарегистрированной записи или id временной записи. |
-| `isRegistered()`, `isTransient()` | функции-предикаты | Сужают тип записи цепочки до зарегистрированной или временной. |
-| `ModalContext`, `ModalDefinition` | типы | Описывают контекст содержимого и определение зарегистрированной модалки. |
-| `RuntimeStatus`, `RuntimeState` | типы | Описывают статус и результат загрузки одной записи. |
-| `OpenAnimation`, `CloseAnimation`, `StackAnimation`, `TailDirection`, `BackdropClick` | типы | Ограничивают варианты анимации, хвостов и обработки клика по фону. |
-| `HostConfig`, `DEFAULT_HOST_CONFIG`, `ResolvedEntry` | типы и константа | Описывают настройки хоста, их исходные значения и итоговые параметры записи. |
-| `RESERVED_KEYS`, `CHAIN_KEY` | константы | Называют query-параметры, занятые сериализацией стопки. |
-| `decodeScalar()`, `encodeScalar()` | функции | Декодируют и кодируют одно scalar-значение query-параметра. |
-| `isFlattenable()` | функция-предикат | Проверяет, можно ли развернуть значение параметра в query-строку. |
-| `decodeSize()`, `encodeSize()` | функции | Декодируют и кодируют размер модалки для адресной записи. |
-| `decodeChain()`, `encodeChain()`, `chainToSearch()` | функции | Преобразуют зарегистрированную часть цепочки между query-строкой и записями. |
-| `resolveEntry()` | функция | Сливает запись с её определением и возвращает параметры, используемые видом. |
-| `tailScaleAt()`, `visibleTails()`, `resolveTailDirection()`, `tailOffset()` | функции | Вычисляют масштаб, набор, направление и сдвиг хвостов стопки. |
-| `visibleChain()` | функция | Убирает из цепочки headless-записи без собственного визуального слоя. |
-| `isChainLocked()`, `hasLockedEntry()` | функции-предикаты | Проверяют, запрещает ли lock закрытие верхней записи или всей стопки. |
-| `runtimeKey()`, `loaderKey()` | функции | Создают устойчивые ключи состояния записи и кэша загрузчика. |
-| `sameEntry()`, `chainEquals()`, `closedSuffix()` | функции | Сравнивают записи и цепочки и определяют закрытый суффикс перехода. |
-| `nextChain()` | функция | Строит следующую цепочку с учётом обычного, `new` или `first` открытия. |
-| `routeHref()` | функция | Строит адрес полноэкранного маршрута модалки по строке или фабрике route. |
-| `mobileAnchorOf()` | функция | Разрешает мобильный якорь из явного override, активной записи и defaultMobile хоста. |
-| `viewportStyle()`, `radiusFor()`, `shellBox()`, `shellStyle()`, `tailStyle()` | функции | Возвращают CSS-геометрию сцены, оболочки и хвостов. |
-| `createModalStore()`, `ModalStore`, `ModalStoreData`, `StoreListener` | фабрика и типы | Создают независимое хранилище состояния модальной системы и описывают его контракт. |
-| `getClientStore()`, `resetClientStore()` | функции | Возвращают или сбрасывают единый browser-store текущего приложения. |
-| `createRegistry()`, `ModalRegistry`, `AnyDefinition`, `ResolveHit` | фабрика и типы | Создают область видимости определений и описывают результаты разрешения имён. |
-| `globalScope`, `registerModal()` | константа и функция | Дают глобальную область и совместимый способ зарегистрировать в ней определение. |
-| `explainMissing()` | функция | Формирует диагностическое сообщение о неразрешённом имени модалки. |
-| `createModals()`, `Modals`, `ModalsOptions` | фабрика и типы | Создают API действий модальной системы поверх переданного ядра. |
-| `ReadContext`, `HrefContext`, `WriteOptions` | типы | Передают ядру серверный адрес и параметры записи в историю. |
-| `CoreCapabilities`, `PreloadResult`, `ModalCore` | типы | Описывают возможности, предзагрузку и минимальный контракт транспорта цепочки. |
-| `canPreload()`, `canLink()` | функции-предикаты | Проверяют способность ядра предзагружать маршрут или формировать адресную ссылку. |
-| `assertTransient()`, `assertTransientOnTop()` | функции | Проверяют поддержку временных записей и инвариант их расположения на вершине стопки. |
-| `memoryCore()` | фабрика | Создаёт неадресуемое ядро для тестов, SSR и встраивания без браузерной истории. |
-| `StorageEnv`, `ChainStorage`, `MinimalStorage` | типы | Описывают окружение и контракт источников зарегистрированной части цепочки. |
-| `urlStorage()`, `localStorageChain()`, `memoryStorage()` | фабрики | Создают источники для URL, localStorage и памяти вкладки. |
-| `parseStoredChain()` | функция | Безопасно читает сохранённую JSON-цепочку, отбрасывая некорректные записи. |
-| `CoreOptions`, `Sources` | типы | Задают lookup и один либо именованный набор источников при сборке ядра. |
-| `buildCore()` | фабрика | Собирает reconfigurable ядро из engine и источника либо набора источников. |
-| `ChainEngine`, `memoryEngine()` | тип и фабрика | Описывают среду URL и истории и создают её память-реализацию. |
-| `ModalHost` | Svelte-компонент | Монтирует контекст, сцену, историю, фокус и визуальную оболочку стопки. |
-| `Layers`, `Tails`, `ModalContent` | Svelte-компоненты | Рендерят слои, хвосты и содержимое одной зарегистрированной модалки. |
-| `useModalLink()` → `asModalLink()` | Svelte-хук (`#lib/components/links`) | Атрибуты для своей `<a>` или `Button`: открывает зарегистрированную модалку, без JS — ссылка на её `route`. |
-| `useChain()`, `useModalDepth()`, `useModalsOpen()`, `useChainLocked()`, `useHostConfig()` | Svelte-хуки | Возвращают живые read-only представления цепочки, её состояния и конфигурации хоста. |
-| `useModal()`, `ModalHandle` | Svelte-хук и тип | Возвращают живой контекст текущего содержимого модалки. |
-| `useModalState()`, `ModalStateHandle` | Svelte-хук и тип | Возвращают resolved-запись и runtime-состояние модалки по имени или индексу. |
-| `useModalData()`, `useSharedData()` | Svelte-хуки | Открывают локальную ячейку данных записи и общую доску данных модалок. |
-| `useLoader()` | Svelte-хук | Возвращает status, data, error и удобные флаги загрузчика текущей модалки. |
-| `createReactiveStore()`, `ReactiveModalStore` | фабрика и тип | Превращают чистый ModalStore в реактивное Svelte-представление. |
-| `createMediaQuery()`, `createIsNarrow()` | фабрики | Создают реактивные состояния media query и проверки заданного breakpoint. |
-| `HostFloatingRect`, `HostFloatingPlacementOptions`, `HostFloatingOptions`, `HostFloatingCloseReason` | типы | Описывают геометрию, размещение, поведение и причины закрытия host-owned floating entry. |
-| `HostFloatingApi` | API | Описывает методы host-owned floating entry. |
-| `ModalsContext`, `setModalsContext()`, `tryUseModals()`, `useModals()` | контекст и функции | Предоставляют, необязательно читают или требуют живой контекст ModalHost. |
-| `OverlayContainer`, `setOverlayContainer()`, `useOverlayContainer()` | контекст и функции | Управляют контейнером портала вложенных оверлеев внутри модального слоя. |
-| `InstanceValue`, `setInstance()`, `useInstance()` | контекст и функции | Передают и читают идентичность записи, содержимое которой сейчас рендерится. |
+- `src/lib/components/` — UI-примитивы на Ark UI + CVA (`ui/`, включая `Attachment` и `FileAttachment`) и прикладные обвязки (`shell`, `header`, `sidebar`, `links`, `loader`, `modals`, `form` + `photo.ts`, `paginator`, `filters`, `steps`, `settings`, `demo`).
+- `src/content/user/` — автономный модуль пользователя и авторизации по Ed25519 `seed`: доменное ядро (`auth.ts`, `profile.ts`, `acl.ts`, `keys.ts`, `gateway.ts`) и UI-компоненты под защитой `<Acl />` (`AuthWidget`, `MenuBody`, папочные модули `ui/seed-form/` и `ui/profile-form/` на бинарном `File`). Документация — [`src/content/user/README.md`](./src/content/user/README.md).
+- `src/routes/` — витрины и интерактивные демо всех подсистем (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/user/auth`, `/user/menu`).
+
+---
+
+## Быстрый старт
+
+Требуется **Node.js >= 22.17** (проверяется при старте `vite.config.ts`). База данных для разработки и тестов поднимается автоматически в памяти через WASM-движок `@electric-sql/pglite` — внешний PostgreSQL не нужен.
+
+```bash
+npm install
+npm run dev          # http://localhost:5173
+```
+
+## Команды проверки
+
+```bash
+npm run check        # svelte-kit sync && svelte-check
+npm test             # vitest (все юнит/интеграционные тесты) + стражи в tooling/
+npm run build        # production-сборка (включая проверку layer-guard)
+npm run test:browser # Playwright E2E-наборы в Chromium против production preview
+```
+
+---
+
+## Документация проекта
+
+- [`AGENTS.md`](./AGENTS.md) — правила репозитория, границы слоёв и соглашения для разработки.
+- [`docs/plan.md`](./docs/plan.md) — сводный план проекта, закрытые вехи и открытые задачи.
+- [`docs/audit/`](./docs/audit/README.md) — аудит кодовой базы, [реестр на тестирование (`testing-backlog.md`)](./docs/audit/testing-backlog.md), оценки и история устранения костылей.
+- [`docs/design/port-plan.md`](./docs/design/port-plan.md) — план переноса на другой фреймворк/роутер.
+- [`docs/design/image-transfer.md`](./docs/design/image-transfer.md) — архитектура бинарного конвейера изображений и оставшиеся этапы (`R4`–`R7`).
+- [`docs/design/client-integrity.md`](./docs/design/client-integrity.md) — защита клиентского контура и настройка `kit.csp`.

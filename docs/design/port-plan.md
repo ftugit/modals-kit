@@ -1,53 +1,47 @@
-# План переноса библиотек на другой фреймворк
+# План переноса на другой фреймворк / роутер
 
-Основание — аудит `docs/audit/framework-agnostic.md` и симуляция под React Router
-(`sim/react-router/`, 15 тестов). Ядра библиотек от Svelte не зависят. Мешают переносу
-логика, оставшаяся в Svelte-файлах, мелкие дыры в публичном API и тексты интерфейса
-внутри библиотек.
+Порядок: **ядра → адаптеры фреймворка → примитивы → фичи → страницы**. Каждый уровень опирается только на предыдущие.
 
-Каждый шаг — отдельный коммит с зелёным гейтом. Поведение в SvelteKit не меняется:
-это проверяют существующие браузерные наборы. Перенос проверяется симуляцией: после шага
-её адаптер должен стать короче или перестать копировать код библиотеки.
+Статус на текущий срез: шаги **2–5** уже доказаны работающей симуляцией на **React 19 + React Router v7** в [`sim/react-router/`](../../sim/react-router/README.md) (те же исходники ядер `src/lib/*`, ноль `svelte` в `node_modules`). Шаги **6–10** описывают перенос прикладной сборки.
 
-## Порядок
+---
 
-| # | Шаг | Тяжесть | Что сделать | Как проверить |
-|---|---|---|---|---|
-| 1 | Стартовая страница пагинатора | **СДЕЛАНО** | `paginate/adapter-url.ts` `getInitial`: порядок `ctx.url ?? getUrl() ?? router.currentSearch() ?? window.location`. Раньше подключённый роутер не спрашивался, и под memory/hash-роутером первая страница была неверна | модульный тест в `paginate.test.ts` (роутер — страница 3, вкладка — 7); обход из `sim/react-router/src/paginate.ts` убран, без правки ядра симуляция падает в 3 тестах |
-| 2 | Публичный API модалок и формы | средне | экспортировать `createLoader` (`modals/index.ts`), `formRenderer` и `pinErrors` (`form/index.ts`): они нужны любому хосту, а сейчас адаптер импортирует внутренние файлы | симуляция импортирует только из `index.ts` |
-| 3 | Таблица имён атрибутов | средне | рядом с проекцией ограничений (`form/builtins.ts`) экспортировать таблицу «имя HTML → имя DOM-свойства» (`maxlength → maxLength` и т. д.). Имена HTML остаются: это контракт разметки и работы без JS | React в симуляции не предупреждает об `Invalid DOM property` |
-| 4 | Один помощник адреса | мелко | экспортировать из ядра пагинатора помощник `hrefOf`/`searchOf` вместо закрытой `searchToParams`: сейчас его копирует каждый роутер-адаптер | `paginate/sveltekit/router.ts` и симуляция используют его |
-| 5 | Перевод «адрес → пагинатор» | средне | около 100 строк логики из `paginate/svelte/PaginatorHost.svelte` (внешняя страница, сброс снимка, `extra`/`pageSize` из адреса) — в `paginate/url-sync.ts` без фреймворка. Прокрутка и разметка остаются в компоненте | браузерный набор `paginate`; адаптер симуляции без копии |
-| 6 | Слияние настроек модалок | мелко | Svelte-слой (`modals/svelte/store.svelte.ts`, `state.svelte.ts`) повторяет `scopedConfig` ядра; селекторы `useModalData`/`useModalState` — в ядро | браузерный набор `modals` |
-| 7 | Помощники адреса для браузера | средне | `address/sveltekit.ts` — модуль-одиночка: «ссылки слоя» через Navigation API, перехват якорей, `popstate → external`. Вынести в `address/browser.ts` (без фреймворка) + фабрика вместо одиночки | наборы `modals`, `shell`; адаптер симуляции на тех же помощниках |
-| 8 | Контроллер формы | крупно | живую проверку, асинхронные проверки, закреплённые ошибки, операции над набором полей и фокус из `form/svelte/bind.svelte.ts` (≈650 строк) — в `form/controller.ts` с `getSnapshot`/`subscribe`. `bind` становится тонкой обёрткой | наборы `forms`, `forms-a11y`, `db-demo`; React-хук симуляции без копии |
-| 9 | Логика хоста модалок | средне | из `modals/svelte/ModalHost.svelte` (≈1200 строк) по одному куску: правила закрытия → фазы анимации → геометрия окна → шторка | набор `modals` после каждого куска |
-| 10 | Документация `subscribe` писателя адреса | документация | `address/core.ts`: писатель сообщает только о своих записях, о чужом переходе — роутер. Описать в README, что адаптер подписывается на оба | — |
+1. **Тексты UI в `src/lib/`** — перед выделением пакетов или сменой языка интерфейса вынести русские строки из ядер и адаптеров в словари/опции по образцу `src/lib/form/messages.ts`. Текущий перечень мест в `src/lib/`:
+   - `src/lib/form/messages.ts`, `src/lib/form/validate.ts` — словарь сообщений валидаторов и склейка списков (`«…» и «…»`); в `svelte/{config.ts,bind.svelte.ts,field-set.svelte.ts}` — диагностика конфигурации/разметки и `'транспорт не настроен'`.
+   - `src/lib/modals/loader.ts` — `'Ошибка загрузки'`, `'Нет такой модалки: «…»'`, `'Маршрут …: …'`, `'Отменено'`.
+   - `src/lib/modals/{core-contract.ts,registry.ts}` и `src/lib/modals/svelte/{ModalHost.svelte,ModalContent.svelte,state.svelte.ts,context.ts}` — диагностические ошибки областей/слоёв, `'Закрыть модалку'`, `'(i из N)'`.
+   - `src/lib/address/keys.ts` — ошибки пересечения и прав реестра ключей адреса; `src/lib/address/sveltekit.ts` — подпись задачи `'Переход'`.
+   - `src/lib/task/index.ts` — форматтер подписи `'шаг i из N'`.
+   - `src/lib/paginate/{core.ts,source.ts,adapter-url.ts}` и `src/lib/paginate/filters/{schema.ts,params.ts}` — dev-предупреждения и ошибки контракта источника/ключей.
 
-Шаги 1–4 малы и независимы. Шаги 5–9 крупные: каждый — отдельный ход по слову владельца.
+2. **`#lib/address` — адаптер роутера** *(доказано в `sim/react-router/src/address.ts`)*.
+   Ядро (`src/lib/address/{core,keys,layer-links}.ts`) чистое. Написать модуль взамен `src/lib/address/sveltekit.ts` + `svelte/watch.svelte.ts`: чтение видимого адреса с подпиской, запись query/state одной очередью, задачи навигации и ссылок (`navigationTask`, `linkTask`).
 
-## Тексты интерфейса в библиотеках
+3. **`#lib/modals` — движок роутера + адаптер компонентного фреймворка** *(доказано в `sim/react-router/src/modals.tsx`)*.
+   Ядро чистое, контракт — `ModalCore` (`core-contract.ts`) + `ChainEngine` (`engine.ts`). Написать `cores/<router>.ts` по образцу `cores/sveltekit.ts` / `cores/fastedge.ts`, плюс реактивный хост и хуки взамен `src/lib/modals/svelte/` (`ModalHost`, `Layers`, `ModalContent`, `Tails`, `useModals`, `useModal`, `useModalState`, `useModalLink`).
 
-Правило: библиотека отдаёт код и данные (`{ code: 'modal.missing', name }`), текст — словарь
-кодов в UI или в приложении, как `form/messages.ts`.
+4. **`#lib/form` — адаптер реактивности и транспорт** *(доказано в `sim/react-router/src/form.tsx`)*.
+   Ядро чистое (`FormStore` совместим с `useSyncExternalStore`, `evaluate`/`runSubmit`/`createFormHandler` общие для клиента и сервера). Написать реактивную связку `bind` + компонент `<Form>` по образцу `src/lib/form/svelte/{bind.svelte.ts,Form.svelte,field-set.svelte.ts,task.ts}` (включая `FieldHandle` для `takeover`) и HTTP-транспорт под экшены целевого фреймворка взамен `src/lib/components/form/transport.ts`.
 
-Уже сделано: подписи полей фильтров («все из», «кроме», «от», «до») и подсказка о
-противоречии режимов убраны из `paginate/filters`. Подписи пишет описание формы
-приложения, противоречие — валидатор формы `noOverlap` с текстом из словаря формы.
+5. **`#lib/paginate` (+ `filters`, `search`) — адаптер и роутер** *(ядро и React-хук доказаны в `sim/react-router/src/paginate.ts`)*.
+   Ядро, `search/` и `filters/` чистые. Написать реактивную обвязку взамен `src/lib/paginate/svelte/` (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, `usePaginator*`, `paginatorTask`, `useSearchCorrection`) и мост к роутеру взамен `src/lib/paginate/sveltekit/router.ts` поверх `#lib/address` из шага 2.
 
-Осталось (порядок):
+6. **Серверные ядра и связки без UI** — `#lib/db` (`index.ts`, `schema.ts`, `sync/`, `adapters/*`, `ops.ts`), `#lib/cache`, `#lib/fetch`, `#lib/image` (включая `#lib/image/node.js`), `#lib/task` и переходники `src/hooks/{cache-db.ts,db-form.ts}` переносятся как есть. Заменяются только обвязки под `RequestEvent` SvelteKit:
+   - `src/lib/db/sveltekit/*` (`dbHandle`, `toKitError`, `parseListInput`, `cursorCodecFromEnv`);
+   - `src/hooks/component-form/{server.ts,client.svelte.ts}` — middleware приёма POST встраиваемых форм компонентов по `__form_id` и клиентский хук `bindComponentForm`.
 
-1. Модалки: `modals/loader.ts` («Ошибка загрузки», «Нет такой модалки», «Отменено»),
-   `ModalContent.svelte`, `ModalHost.svelte` («N из M», «Закрыть модалку»).
-2. Ссылки и хуки: `components/links/link.svelte.ts`, `modal-link.svelte.ts`,
-   `hooks/js-only.svelte.ts`.
-3. Задача и адрес: `task/index.ts` («шаг N из M»), `address/sveltekit.ts` («Переход»),
-   `PaginatorHost.svelte` (имя и тексты ошибки).
-4. Форма: `form/validate.ts` (склейка «a, b и c»), `form/external.ts` («Служба вернула
-   неожиданный ответ»).
+7. **Примитивы UI (`src/lib/components/ui/**`)** — переписать на целевой фреймворк (Ark UI / Zag для React/Solid/Vue + те же CVA/UnoCSS-токены из `unocss.config.ts` и `src/app.css`), в том числе `Attachment` и `FileAttachment`. Сохранить контракт нативных носителей в `<Form>` до гидратации, если требуется работа без JS.
 
-Проверка: `cyr-scan` по `src/lib/{address,modals,paginate,form,task,db}` и хукам — пусто вне
-словарей по умолчанию.
+8. **Прикладные обвязки (`src/lib/components/{links,loader,shell,header,sidebar,modals,form,paginator,filters,steps,settings,demo}/`)**:
+   - `links/` (`asLink`, `asModalLink`) и `loader/` (`LoaderBar`, `trackTask`) — поверх `#lib/address` и `#lib/task`;
+   - `form/` (`Field` с `takeover`/`instead`, `FieldShell`, компоненты видов ввода, `photo.ts`, `extend.ts`);
+   - `steps/` (`useSteps`, `Steps`, `StepLink`, `formSteps`, `FormSteps`);
+   - `paginator/` и `filters/` (`FiltersPanel`, `ActiveFilters`, `bindFilters`);
+   - `shell/`, `header/`, `sidebar/`.
 
-Данные, зависящие от языка, которые стоит сделать подключаемыми: нормализация и
-транслитерация в `paginate/search/fuzzy.ts`, словарь слабых паролей в `form/strength.ts`.
+9. **Контент и модуль пользователя (`src/content/**`)** — перенести без правок доменное ядро `src/content/user/{acl,auth,checks,config,error,keys,ports,profile,schema,types,vault}.ts` и источники каталогов (`items.ts`, `posts.ts`, `shikimori*.ts`, `rickmorty*.ts`). Переписать под целевой фреймворк:
+   - `src/content/user/gateway.ts` (куки и серверный фасад запроса);
+   - `src/content/user/vault.svelte.ts` (реактивное клиентское зеркало `vault`);
+   - UI-слой `src/content/user/ui/` (`Acl`, `AuthWidget`, `MenuBody`, `UserMenu`, `BanNotice`, `RestrictionsNotice`, папочные модули `ui/seed-form/` и `ui/profile-form/`).
+
+10. **Серверная склейка, страницы и стражи** — собрать middleware приложения (аналог `src/hooks.server.ts`), перенести `src/lib/server/*` и маршруты `src/routes/**`, адаптировать сборочные правила `tooling/layer-guard.mjs` и `tooling/core-purity.mjs` под расширения файлов нового фреймворка (`.tsx` / `.vue`).
