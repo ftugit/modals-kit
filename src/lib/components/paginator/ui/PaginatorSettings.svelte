@@ -18,8 +18,8 @@
   import { featureGates, getPaginator, type Extra, type ExtraValue } from '#lib/paginate/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { DemoPanel, demoSelect } from '#lib/components/demo/index.js'
-  import { paginatorPanel } from './compile'
-  import type { SettingsField } from './types'
+  import { paginatorPanel } from '../compile'
+  import type { SettingsField } from '../types'
 
   interface Props<V extends Record<string, ExtraValue>> {
     name?: string

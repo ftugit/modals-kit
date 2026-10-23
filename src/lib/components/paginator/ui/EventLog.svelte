@@ -1,11 +1,11 @@
 <script module lang="ts">
   import { untrack } from 'svelte'
-  export { describeEvent } from './event-log'
+  export { describeEvent } from '../event-log'
 </script>
 
 <script lang="ts">
   import { usePaginatorEvents } from '#lib/paginate/svelte/index.js'
-  import { describeEvent as describe } from './event-log'
+  import { describeEvent as describe } from '../event-log'
 
   interface Props {
     name?: string

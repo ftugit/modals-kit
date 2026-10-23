@@ -1,67 +1,58 @@
 <script lang="ts">
   /**
-   * Конструктор полей — три шага: «Сборка» (набор полей), «Заполнение»
-   * (запись на наборе) и «Результат» (просмотр). На каждом шаге — только его
-   * действие; шаги сверху слева становятся ссылками, когда их уже заполняли.
-   *
-   * Шаг живёт в адресе (`?step=…`), поэтому навигация по шагам и переходы
-   * после сохранения работают и без скрипта. Назад — форма прошлого шага в
-   * режиме правки: она собирается из сохранённого набора и записи, а не с нуля.
+   * Конструктор полей — три шага («Сборка», «Заполнение», «Результат») поверх
+   * переиспользуемого модуля `#lib/components/fields` и `#hooks/component-form`.
    */
-  import { Steps, useSteps } from '#lib/components/steps/index.js'
+  import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
   import { DemoPanel } from '#lib/components/demo/index.js'
+  import { fieldsCardClass, SchemaBuilder, SchemaFields, SchemaValues } from '#lib/components/fields/index.js'
+  import Field from '#lib/components/form/Field.svelte'
+  import { forms } from '#lib/components/form/forms.config.js'
+  import { Steps, useSteps } from '#lib/components/steps/index.js'
+  import { Button } from '#lib/components/ui/index.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
+  import { Form } from '#lib/form/svelte/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
-  import type { Result } from '#lib/form/index.js'
-  import CollectionForm from './CollectionForm.svelte'
-  import RecordForm from './RecordForm.svelte'
-  import RecordView from './RecordView.svelte'
-  import ResetAction from './ResetAction.svelte'
-  import type { FieldsStep } from './forms'
+  import { collectionForm, demoQuery, recordForm, resetForm, type FieldsStep } from './forms.js'
   import type { PageData } from './$types'
 
-  let {
-    data,
-    form: action,
-  }: {
-    data: PageData
-    form?: { result?: Result; intent?: string; step?: FieldsStep } | null
-  } = $props()
+  let { data }: { data: PageData } = $props()
 
-  // шаг из ответа экшена (отказ и намерения вернулись на свой шаг) или из адреса
-  const step = $derived(action?.step ?? data.step)
-
-  // Ответ экшена без JavaScript. Успех не сеется: форма собирается из сохранённого,
-  // с поправками набора, а не из того, что было набрано.
-  const seed = (intent: string) =>
-    action?.intent === intent && action.result && (!action.result.ok || action.result.outcome === 'not-applied')
-      ? action.result : null
-
-  /**
-   * Шаги — компонент над бронью адреса: хост бронирует `step` (чужие ключи
-   * адреса — цепочка модалок, страница пагинатора — не теряются), строит
-   * ссылки, показывает замок полёта. Сам замок пишет форма в состояние ЗАПИСИ
-   * истории (`page.state`): у каждой записи свой, «назад/вперёд» чужой не
-   * снимает. Заполненность шага знает страница — у неё данные.
-   */
-  /** Шаги сверху слева: ссылка — когда шаг заполнен, текст — пока нет. */
   const STEPS: readonly { key: FieldsStep; label: string }[] = [
     { key: 'build', label: 'Сборка' },
     { key: 'fill', label: 'Заполнение' },
     { key: 'result', label: 'Результат' },
   ]
-  const filled = (key: FieldsStep): boolean => (key === 'build' ? !!data.set : !!data.record)
+
+  const filled = (key: FieldsStep): boolean => (key === 'build' ? Boolean(data.set) : Boolean(data.record))
   const steps = useSteps({
     owner: 'fields',
     mode: 'url',
     steps: () => STEPS.map((s) => ({ ...s, filled: filled(s.key) })),
-    current: () => step,
+    current: () => data.step,
     lockKey: 'fieldsNavLocked',
   })
+
+  const stepHref = (target: FieldsStep, limit: number): string => {
+    const q = demoQuery(limit)
+    return `/fields?step=${target}${q ? `&${q}` : ''}`
+  }
+
+  const reset = bindComponentForm(forms, untrack(() => resetForm()), {
+    intercept: false,
+  })
+
+  const lockSteps = () =>
+    writeAddress(
+      () => ({ url: visibleAddress().url.href, state: { ...visibleAddress().state, fieldsNavLocked: true } }),
+      { replace: true, load: false },
+    )
 </script>
 
 <svelte:head>
-  <title>Конструктор полей — modals-kit</title>
-</svelte:head>
+  <title>Конструктор полей — modals-kit</title></svelte:head>
 
 <div class="mx-auto w-full max-w-3xl space-y-6">
   <header class="space-y-2">
@@ -71,37 +62,79 @@
     </p>
   </header>
 
-  <!-- Демо-панель: опция живёт в адресе (`?limit=`), значение читают обе стороны
-       — страница строит по нему описание формы, сервер — приёмник запроса. -->
   <DemoPanel schema={demoPanelSchema} />
 
-  <!-- шаги сверху слева; на «Результате» справа от них — ссылка сброса -->
   <div class="flex items-baseline gap-4">
     <span><Steps host={steps} label="Шаги" /></span>
-    {#if step !== 'build'}
-      <span class="ms-auto"><ResetAction /></span>
+    {#if data.step !== 'build'}
+      <span class="ms-auto">
+        <Form form={reset} hiddenFields={reset.hidden()} class="inline-flex" onsubmit={() => void lockSteps()}>
+          <Button type="submit" variant="link" size="none" data-testid="reset" {...reset.intent('reset')}>
+            Сбросить
+          </Button>
+        </Form>
+      </span>
     {/if}
   </div>
 
-  <!-- логика каждого шага — свой сниппет компонента (без второй навигации) -->
   <Steps host={steps} label="" nav={false}>
     {#snippet build()}
-      <!-- Ключ — ещё и предел: описание формы строится один раз на монтировании,
-           а смена опции меняет его состав (max набора). -->
-      {#key `${data.set?.version ?? 0}:${data.limit}`}
-        <CollectionForm set={data.set} seed={seed('save')} limit={data.limit} />
-      {/key}
+      <section class="space-y-3" aria-labelledby="fields-step-builder">
+        <h2 id="fields-step-builder" class="text-xl font-semibold">Создание полей</h2>
+        {#key `${data.set?.version ?? 0}:${data.limit}`}
+          <SchemaBuilder
+            description={collectionForm(data.set?.fields, data.limit)}
+            lockStateKey="fieldsNavLocked"
+            onSuccess={() => void goto(stepHref('fill', data.limit))}
+          />
+        {/key}
+        {#if data.set}
+          <p class="rounded-lg border border-border p-3 text-sm" data-testid="saved-set">
+            Набор сохранён (версия {data.set.version}), полей: {data.set.fields.length}.
+          </p>
+        {/if}
+      </section>
     {/snippet}
+
     {#snippet fill()}
       {#if data.set}
-        {#key `${data.set.version}:${data.record?.n ?? 0}`}
-          <RecordForm set={data.set} previous={data.record} seed={seed('record')} />
-        {/key}
+        <section class="space-y-3" aria-labelledby="fields-step-record">
+          <div>
+            <h2 id="fields-step-record" class="text-xl font-semibold">Заполнение</h2>
+            <p class="text-sm text-muted-foreground">Хранится одна запись: новая отправка заменяет прежнюю.</p>
+          </div>
+          {#key `${data.set.version}:${data.record?.n ?? 0}`}
+            <SchemaFields
+              description={recordForm(data.set, data.record)}
+              lockStateKey="fieldsNavLocked"
+              onSuccess={() => void goto(stepHref('result', data.limit))}
+            >
+              {#snippet extraFields(form)}
+                <Field of={form.f.title} />
+                {#if data.record?.image}
+                  <figure class="space-y-1">
+                    <img src={data.record.image} alt={data.record.title} class="h-16 rounded-md border border-border" />
+                    <figcaption class="text-xs text-muted-foreground">Текущее изображение</figcaption>
+                  </figure>
+                {/if}
+                <Field of={form.f.image} />
+              {/snippet}
+            </SchemaFields>
+          {/key}
+        </section>
       {/if}
     {/snippet}
+
     {#snippet result()}
       {#if data.record}
-        <RecordView record={data.record} set={data.set} />
+        <section class="space-y-3" aria-labelledby="fields-step-view" data-testid="record-view">
+          <h2 id="fields-step-view" class="text-xl font-semibold">Просмотр</h2>
+          <article class={fieldsCardClass}>
+            <h3 class="text-lg font-medium" data-testid="record-title">{data.record.title}</h3>
+            <img src={data.record.image} alt={data.record.title} class="max-h-64 max-w-full rounded-md border border-border" />
+            <SchemaValues fields={data.set?.fields ?? []} values={data.record.values} />
+          </article>
+        </section>
       {/if}
     {/snippet}
   </Steps>

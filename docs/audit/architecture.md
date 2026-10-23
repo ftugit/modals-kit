@@ -87,15 +87,15 @@
 
 ---
 
-### Этап S4. `#hooks/component-form` v2 + самодостаточные модули `fields/` и `paginator/` — **[СЛЕДУЮЩИЙ ЭТАП]**
+### Этап S4. `#hooks/component-form` v2 + самодостаточные модули `fields/` и `paginator/` — **[ВЫПОЛНЕНО]**
 *(Средний уровень: сборка папочных модулей и перевод `/fields` и `/paginator` до глобального переезда импортов.)*
-- [ ] **S4.1.** Доработать `src/hooks/component-form/` (`description(event)`, `source`, авто-inline `200` при `outcome === 'not-applied'`, `onSuccess` в `bind.svelte.ts`, автосбор `*.form.server.ts` через `import.meta.glob`) — `0` байт в `src/lib/form/`.
-- [ ] **S4.2.** Собрать папочный модуль `fields/` (`SchemaBuilder.svelte` со скрытым submit для `Enter` без JS, `SchemaFields.svelte`, `SchemaValues.svelte`, `variants.ts`, `types.ts`, `index.ts`), перевести на него `/fields` (5 тонких файлов) и удалить `/fields/{save,record}/+server.ts` + обновить `test/browser/fields.mjs:230,244`.
-- [ ] **S4.3.** Собрать папочный модуль `paginator/` (`Paginator.svelte`, перенос `SearchBar.svelte` и `filters/*` в `paginator/ui/`, `variants.ts`, `types.ts`, `index.ts`) и перевести на него `GalleryDemo.svelte` и `CatalogDemo.svelte`.
+- [x] **S4.1.** Доработан `src/hooks/component-form/` (`description(event)`, `source`, авто-inline `200` при `outcome === 'not-applied'`, `lockStateKey` и `onSuccess` в `client.svelte.ts`, автосбор `*.form.server.ts` через `import.meta.glob` без ручных импортов в `hooks.server.ts`, переименованы `seed.form.server.ts` и `profile.form.server.ts`) — `0` байт в `src/lib/form/`.
+- [x] **S4.2.** Собран папочный модуль `src/lib/components/fields/` (`SchemaBuilder.svelte` на `<Fieldset>` со скрытым submit для `Enter` без JS, `SchemaFields.svelte`, `SchemaValues.svelte`, `variants.ts`, `types.ts`, `index.ts`), `/fields` сжат с 13 до 5 тонких файлов (`+page.svelte`, `+page.server.ts` без `actions`, `fields.form.server.ts`, `forms.ts`, `demo-schema.ts`), удалены `/fields/{save,record}/+server.ts` и обновлён `test/browser/fields.mjs`.
+- [x] **S4.3.** Собран консолидированный модуль `src/lib/components/paginator/` (`Paginator.svelte`, `variants.ts`, `types.ts`, `index.ts`, `ui/*` включая `SearchBar.svelte` и обёртку `Spinner.svelte`, `filters/*`), удалена дублирующая папка `src/lib/components/filters/`, на `<Paginator />` переведены `GalleryDemo.svelte` и `CatalogDemo.svelte`.
 
 ---
 
-### Этап S5. Фундаментальный переезд слоёв, `demo-catalog/`, `user/{routes,modals}` и стражей
+### Этап S5. Фундаментальный переезд слоёв, `demo-catalog/`, `user/{routes,modals}` и стражей — **[СЛЕДУЮЩИЙ ЭТАП]**
 *(Главный сквозной этап — выполняется одним атомарным переездом всего дерева.)*
 - [ ] **S5.1.** Добавить `#components/*` и `#server/*` в `package.json`; перенести `src/lib/components/*` + `utils.ts` + `Error*.svelte` → `src/components/*` (`header`+`sidebar` внутрь `shell/`, `nav.ts` → `src/routes/(site)/nav.ts`, `cn` в `DemoPanel.svelte`), связки (`js-only`, `use-drawer`, `links/`, `app-errors`, `graphql`, `task-stream.server.ts`) → `src/hooks/*`, синглтоны → `src/server/*.server.ts` (`trusted-origins.ts` без `$app/*`); удалить `src/lib/{components,hooks,server}/`.
 - [ ] **S5.2.** Собрать все демо-источники и демо-БД в **`src/content/demo-catalog/{items,posts,rickmorty,shikimori}/`** и перевести на `#content/demo-catalog/...` `src/server/db.server.ts`, `src/routes/api/*`, `/db-demo` и `/paginator`.

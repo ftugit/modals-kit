@@ -39,7 +39,7 @@
 ```
 POST <любой маршрут> (__form_id = user-seed | user-profile)
   ─> componentFormsHandle (src/hooks/component-form/server.ts)
-  ─> execute (ui/seed-form/server.ts | ui/profile-form/server.ts)
+  ─> execute (ui/seed-form/seed.form.server.ts | ui/profile-form/profile.form.server.ts)
   ─> gateway auth(event) ─> core api (auth.ts / profile.ts) ─> факт { code, path?, args? }
 
 любая страница (SSR): +layout.server.ts ─> resolveVault(event) ─> data.user + authStamp ─> vault

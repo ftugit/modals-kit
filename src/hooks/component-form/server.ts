@@ -5,27 +5,28 @@
 // которого нет собственного `+page.server.ts` с `actions`.
 //
 // Механика без костылей (никаких flash-кук и записей в кэш):
+//   - все `*.form.server.ts` в проекте подхватываются автоматически через `import.meta.glob`;
 //   - GET / прочие методы и чужие POST без зарегистрированного `__form_id`
 //     проходят напрямую в `resolve(event)` без накладных расходов;
 //   - с JS (`Accept: application/json`) — возвращает `{ data: { result } }` со
 //     статусом обработчика и всеми выставленными в `execute` куками;
-//   - без JS при успехе — штатный `303 See Other` на целевой/текущий адрес (или
-//     прямой рендер при `redirectOnSuccess -> 'inline'` для пошаговых форм);
+//   - без JS при `outcome === 'not-applied'` (черновые мутации мест `+ поле` / `Удалить`)
+//     или `redirectOnSuccess -> 'inline'` — рендерит текущую страницу inline со статусом `200`;
+//   - без JS при применённом успехе — штатный `303 See Other` на целевой/текущий адрес;
 //   - без JS при ошибке — кладёт `event.locals.formResult = result` и рендерит
 //     текущую страницу прямо в ответе на этот же запрос со статусом ошибки.
 import { redirect, type RequestEvent } from '@sveltejs/kit'
 import type { Handle } from '@sveltejs/kit/hooks'
 import { createFormHandler, DEFAULT_LIMITS } from '#lib/form/server.js'
 import { SECURITY_LAYERS } from '#lib/server/form-security.js'
-import type { Result } from '#lib/form/index.js'
+import type { FormDescription, Result } from '#lib/form/index.js'
+import { componentFormRegistry, registerComponentForm } from './registry.js'
 import type { ComponentFormRegistration } from './types.js'
 
-const registry = new Map<string, ComponentFormRegistration>()
+// Автоматическое подключение всех модулей серверных форм без ручных импортов в `hooks.server.ts`.
+import.meta.glob('/src/**/*.form.server.ts', { eager: true })
 
-/** Зарегистрировать серверный POST-обработчик встраиваемой формы компонента. */
-export function registerComponentForm(reg: ComponentFormRegistration): void {
-  registry.set(reg.description.id, reg)
-}
+export { registerComponentForm }
 
 const isJsonRequest = (request: Request): boolean =>
   (request.headers.get('accept') ?? '').includes('application/json')
@@ -35,9 +36,13 @@ const isFormBody = (request: Request): boolean => {
   return ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data')
 }
 
+function resolveDescription(reg: ComponentFormRegistration, event: RequestEvent): FormDescription {
+  return typeof reg.description === 'function' ? reg.description(event) : reg.description
+}
+
 function maxRegisteredBytes(): number {
   let max = DEFAULT_LIMITS.maxBytes
-  for (const reg of registry.values()) {
+  for (const reg of componentFormRegistry().values()) {
     const candidate = reg.limits?.maxBytes
     if (typeof candidate === 'number' && candidate > max) max = candidate
   }
@@ -114,6 +119,7 @@ async function renderInlineWithResult(
 
 /** SvelteKit `Handle` для приёма POST встраиваемых форм на любом маршруте. */
 export const componentFormsHandle: Handle = async ({ event, resolve }) => {
+  const registry = componentFormRegistry()
   if (event.request.method !== 'POST' || registry.size === 0 || !isFormBody(event.request)) {
     return resolve(event)
   }
@@ -124,13 +130,11 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
 
   let matched: ComponentFormRegistration | undefined
   if (raw === 'too-large') {
-    // Если тело превысило потолок всех зарегистрированных форм, отдаём его
-    // первому обработчику реестра, чтобы его штатный `bodyLayer` вернул
-    // канонический Result с кодом `body.too-large` и статусом 413.
     matched = registry.values().next().value
   } else {
     for (const [id, entry] of registry) {
-      if (raw.get(entry.description.policy.envelopeKeys.id) === id) {
+      const desc = resolveDescription(entry, event)
+      if (raw.get(desc.policy.envelopeKeys.id) === id) {
         matched = entry
         break
       }
@@ -139,8 +143,7 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
   if (!matched) return resolve(event)
 
   const reg = matched
-  // Дедупликация по имени куки: повторный `set`/`delete` одной и той же куки в
-  // ходе обработки запроса заменяет заголовок, а не порождает конфликтующие дубли.
+  const description = resolveDescription(reg, event)
   const setCookies = new Map<string, string>()
   const trackedCookies: RequestEvent['cookies'] = {
     ...event.cookies,
@@ -160,8 +163,9 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
   const resolvedChecks = typeof reg.checks === 'function' ? await reg.checks(trackedEvent) : reg.checks
 
   const handler = createFormHandler<unknown, RequestEvent>({
-    description: reg.description,
+    description,
     order: SECURITY_LAYERS,
+    ...(reg.source ? { source: reg.source } : {}),
     ...(resolvedChecks ? { checks: resolvedChecks } : {}),
     ...(reg.limits ? { limits: reg.limits } : {}),
     execute: (ctx) => reg.execute(ctx, trackedEvent, raw instanceof FormData ? raw : undefined),
@@ -175,6 +179,9 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
   }
 
   if (result.ok) {
+    if (result.outcome === 'not-applied') {
+      return renderInlineWithResult(event, resolve, result, 200, setCookies)
+    }
     const target = reg.redirectOnSuccess?.(event, result)
     if (target === 'inline') {
       return renderInlineWithResult(event, resolve, result, 200, setCookies)

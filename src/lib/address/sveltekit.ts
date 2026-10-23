@@ -359,20 +359,16 @@ type DynamicRouteId = {
 
 type StaticKitTarget = Exclude<Path | RouteId, DynamicRouteId>
 
-const stripRouteGroups = (routeOrPath: string): string => {
-  const cleaned = routeOrPath.replace(/\/\([^/]+\)/g, '')
-  return cleaned || '/'
-}
-
 /**
  * Регистрация маршрута SvelteKit с проверкой существования пути и параметров
- * сегментов на этапе компиляции через `$app/types` (`Path`, `RouteId`, `RouteParams`).
- *
- * - Статический путь (`'/user/auth'` или `'/(site)/(app)/user/auth'`) → `StaticRouteDescriptor`
- *   (его `route.href` совместим напрямую с `ModalDefinition.route`).
- * - Параметризованный маршрут (`'/(site)/(app)/cards/[id]'`, `{ dynamic: true }`) →
- *   `ParamRouteDescriptor<RouteParams<Id>, ...>` со сборкой сегментов через `resolve()` из `$app/paths`.
+ * сегментов на этапе компиляции через `$app/types` (`Path`, `RouteId`, `RouteParams`)
+ * и резолвом через штатный `resolve()` из `$app/paths`.
  */
+const resolveKitPath = resolve as unknown as (
+  route: string,
+  params?: Record<string, string>,
+) => string
+
 export function kitRoute<
   Id extends StaticKitTarget,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -395,18 +391,20 @@ export function kitRoute<
 >(
   route: string,
   options?: StaticRouteOptions<SearchInput, SearchOutput> & { readonly dynamic?: boolean },
-): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Record<string, string>, SearchInput, SearchOutput> {
+):
+  | StaticRouteDescriptor<SearchInput, SearchOutput>
+  | ParamRouteDescriptor<Record<string, string>, SearchInput, SearchOutput> {
   if (options?.dynamic) {
-    return registerRoute({
+    return registerRoute<Record<string, string>, SearchInput, SearchOutput>({
       id: options.id ?? route,
       owner: options.owner,
       keys: options.keys,
       search: options.search,
       defaults: options.defaults,
-      buildPath: (params) => resolve(route as never, params as never),
+      buildPath: (params) => resolveKitPath(route, params),
     })
   }
-  const pathname = stripRouteGroups(route)
+  const pathname = resolveKitPath(route)
   return registerRoute(pathname, {
     ...options,
     id: options?.id ?? pathname,

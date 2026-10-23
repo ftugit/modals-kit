@@ -1,17 +1,14 @@
 <script lang="ts">
   import { report } from '#lib/app-errors.svelte.js'
-  import { PaginatorHost, usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {
-    EmptyState,
-    ErrorRow,
-    LiveStatus,
-    LoadingIndicator,
-    PageColumns,
     PageNav,
+    Paginator,
     PaginatorSettings,
     Skeleton,
     type SettingsField,
   } from '#lib/components/paginator/index.js'
+  import type { PaginatorState } from '#lib/paginate/index.js'
   import type { DemoItem } from '../../../../content/items'
   import {
     GALLERY_NAME,
@@ -22,7 +19,6 @@
   } from './definition'
   import { shotHeight } from './item-views'
   import ShotTile from './ShotTile.svelte'
-  import type { PaginatorState } from '#lib/paginate/index.js'
 
   const GALLERY_FIELDS: SettingsField<GalleryExtra>[] = [
     {
@@ -45,6 +41,8 @@
   let { snapshot }: Props = $props()
 
   const name = ensureGalleryPaginator()
+  const pagState = usePaginatorState<DemoItem>(name)
+  const cfg = $derived(galleryExtraOf(pagState().extra))
 </script>
 
 <section class="mt-12" data-testid="gallery-section">
@@ -81,43 +79,31 @@
       {/snippet}
     </PaginatorSettings>
 
-    <PaginatorHost
+    <Paginator
       {name}
-      onError={report}
-      class="h-[360px] scroll-mt-20 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm"
       ariaLabel="Галерея"
       {snapshot}
+      variant="card"
+      class="h-[360px]"
+      layout="columns"
       mode="single"
+      columns={cfg.cols}
+      columnWidth={160}
+      stretch="25%"
       topTrigger="off"
       bottomTrigger="off"
+      sentinel={false}
+      replaceLoading="off"
+      bottomNav={false}
+      onError={report}
+      renderDivider={null}
     >
-      {#snippet children()}
-        {@render GalleryBody({ name })}
+      {#snippet renderItem(item: DemoItem)}
+        <ShotTile {item} prefix="g" />
       {/snippet}
-    </PaginatorHost>
+      {#snippet renderSkeleton(ctx)}
+        <Skeleton height={shotHeight(ctx.index + 1)} />
+      {/snippet}
+    </Paginator>
   </div>
 </section>
-
-{#snippet GalleryBody({ name }: { name: string })}
-  {@const pagState = usePaginatorState<DemoItem>(name)}
-  {@const cfg = galleryExtraOf(pagState().extra)}
-
-  <LoadingIndicator {name} />
-  <EmptyState {name} />
-  <PageColumns
-    {name}
-    columns={cfg.cols}
-    columnWidth={160}
-    stretch="25%"
-    renderDivider={null}
-  >
-    {#snippet renderItem(item: DemoItem)}
-      <ShotTile {item} prefix="g" />
-    {/snippet}
-    {#snippet renderSkeleton(ctx)}
-      <Skeleton height={shotHeight(ctx.index + 1)} />
-    {/snippet}
-  </PageColumns>
-  <LiveStatus {name} />
-  <ErrorRow {name} />
-{/snippet}

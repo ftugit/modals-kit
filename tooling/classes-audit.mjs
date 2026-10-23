@@ -93,7 +93,15 @@ const SCOPE = [
   'src/lib/components/ui/attachment/Attachment.svelte',
   'src/lib/components/ui/attachment/variants.ts',
   'src/lib/components/ui/skeleton/Skeleton.svelte',
-  'src/lib/components/paginator/Skeleton.svelte',
+  'src/lib/components/paginator/Paginator.svelte',
+  'src/lib/components/paginator/variants.ts',
+  'src/lib/components/paginator/ui/Skeleton.svelte',
+  'src/lib/components/paginator/ui/Spinner.svelte',
+  'src/lib/components/paginator/ui/SearchBar.svelte',
+  'src/lib/components/fields/SchemaBuilder.svelte',
+  'src/lib/components/fields/SchemaFields.svelte',
+  'src/lib/components/fields/SchemaValues.svelte',
+  'src/lib/components/fields/variants.ts',
   'src/lib/components/ui/select/Select.svelte',
   'src/lib/components/ui/select/SelectList.svelte',
   'src/lib/components/ui/input/AffixSwap.svelte',
@@ -247,6 +255,8 @@ const NOT_A_CLASS = new Set([
   'sveltekit:history',
   '!checked', // выражение кода внутри class={cn(…)}
   'cn(', // вызов cn из того же class={cn(…)}
+  'on-submit', // опция `live: 'on-submit'` в скрипте SchemaBuilder / SchemaFields
+  'record-submit', // дефолтный `submitTestId` в скрипте SchemaFields
 ])
 
 const wanted = new Set()

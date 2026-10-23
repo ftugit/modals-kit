@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink, useModalLink } from '#lib/components/links/index.js'
-  import { Button, buttonVariants, Fieldset } from '#lib/components/ui/index.js'
+  import { Button, buttonVariants, Fieldset, Spinner } from '#lib/components/ui/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -161,7 +161,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
             class="absolute inset-0 hidden place-items-center rounded-lg bg-background/70 group-data-[state=loading]:grid"
             aria-hidden="true"
           >
-            <span class="size-5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>
+            <Spinner size="md" />
           </span>
         </a>
         <!-- Пока страница не ожила (и без JS) — тот же флаг, что гасит настройки: <noscript>

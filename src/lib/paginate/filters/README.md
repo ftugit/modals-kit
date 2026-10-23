@@ -113,7 +113,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 
 `Field` — тот же, что у остальных форм приложения. Поля, которого у источника нет,
 `filters.f[...]` не даёт, и `Field` ничего не рисует. `bindFilters`
-(`#lib/components/filters/index.js`) — `bind` формы с адресным контуром: набор применяется
+(`#lib/components/paginator/index.js`) — `bind` формы с адресным контуром: набор применяется
 целиком по «Применить», без JS форма уходит обычным GET. Связка гасит контрол только с JS: без
 него выключенное поле браузер не отправил бы и значение из адреса пропало бы молча; причина под
 полем видна и без JS.

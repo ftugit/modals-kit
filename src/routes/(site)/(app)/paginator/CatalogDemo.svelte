@@ -6,26 +6,13 @@
   import { shikimoriFilterForm, shikimoriFilterSource } from '../../../../content/shikimori-filters'
   import { SHIKIMORI_APIS, type ShikimoriApi } from '../../../../content/shikimori'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
-  import {
-    EdgeSentinel,
-    PaginatorHost,
-    usePaginatorState,
-  } from '#lib/paginate/svelte/index.js'
+  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useSearchCorrection, useSearchStats } from '#lib/paginate/svelte/search/index.js'
   import {
-    EmptyState,
-    EndRow,
-    ErrorRow,
-    LiveStatus,
-    EventLog,
-    LoadMoreLink,
-    LoadingIndicator,
-    PageColumns,
-    PageList,
-    PageNav,
+    FiltersPanel,
+    Paginator,
     PaginatorSettings,
-    ReplaceLoadingRow,
-    ResetButton,
+    SearchBar,
     Skeleton,
     type SettingsField,
   } from '#lib/components/paginator/index.js'
@@ -44,7 +31,6 @@
   import type { StreamTask } from '#lib/fetch/index.js'
   import { IDLE_TASK, taskPercent } from '#lib/task/index.js'
   import { trackTask } from '#lib/components/loader/loader.svelte.js'
-  import { FiltersPanel } from '#lib/components/filters/index.js'
   import { rickMortyFilterForm } from '../../../../content/rickmorty-filters'
   import ShikimoriFilters from './ShikimoriFilters.svelte'
   import RickMortyFilters from './RickMortyFilters.svelte'
@@ -53,17 +39,11 @@
   import AnimeTile from './AnimeTile.svelte'
   import CharacterRow from './CharacterRow.svelte'
   import CharacterTile from './CharacterTile.svelte'
-  // Строка записи БД — общий компонент с `/db-demo` (папка роута `/db-demo`),
-// здесь ей передаётся только оформление карточки и опознавательный testid.
-import DbPostRow from '../db-demo/DbPostRow.svelte'
-import { useCursorMode } from '../db-demo/cursor-mode.svelte'
-import ItemRow from './ItemRow.svelte'
-  import SearchBar from './SearchBar.svelte'
+  import DbPostRow from '../db-demo/DbPostRow.svelte'
+  import { useCursorMode } from '../db-demo/cursor-mode.svelte'
+  import ItemRow from './ItemRow.svelte'
   import Button from '#lib/components/ui/button/Button.svelte'
   import ShotTile from './ShotTile.svelte'
-
-  const HOST_CLASS =
-    'h-[520px] scroll-mt-20 overflow-y-auto rounded-xl border border-border/70 bg-background p-3'
 
   const TRIGGER_OPTIONS = [
     ['off', 'Выкл'],
@@ -412,12 +392,16 @@ import ItemRow from './ItemRow.svelte'
   }
 </script>
 
-<PaginatorHost
+<Paginator
   {name}
   onError={report}
-  class={HOST_CLASS}
+  class="h-[520px]"
   ariaLabel="Демо пагинатора"
+  layout={cfg.layout}
   mode={cfg.mode}
+  columns={cfg.cols}
+  columnWidth={cfg.colW}
+  stretch={`${cfg.colFit}%`}
   topTrigger={cfg.topTrigger}
   bottomTrigger={cfg.bottomTrigger}
   topZone={cfg.topZone}
@@ -425,6 +409,11 @@ import ItemRow from './ItemRow.svelte'
   prependBehavior={cfg.prepend}
   hashAnchor={demoHashAnchor(cfg.anchor)}
   snapshot={url?.snapshot ?? null}
+  showIndicator={cfg.ind}
+  replaceLoading={!cfg.skel}
+  eventLog={true}
+  renderDivider={cfg.layout === 'columns' ? null : undefined}
+  renderSkeleton={cfg.skel ? (cfg.layout === 'columns' ? skelColumns : skelList) : undefined}
 >
   {#snippet toolbar()}
     <PaginatorSettings
@@ -458,7 +447,14 @@ import ItemRow from './ItemRow.svelte'
         либо не объявлен источником (`gates`), либо выключен своим тумблером.
         Оба слоя независимы: paginate/search работает и при выключенном родном.
       -->
-      <SearchBar {name} {query} disabled={searchOff} hint={searchOffReason ?? undefined} />
+      <SearchBar
+        {name}
+        {query}
+        disabled={searchOff}
+        hint={searchOffReason ?? undefined}
+        label="Поиск по каталогу"
+        placeholder="Тайтл: «наруто», «naruto», «нарута»"
+      />
       <p class="text-xs text-muted-foreground" data-testid="search-hint">
         {#if gates.nativeSearch}
           Родной поиск ищет сам источник — подстрокой по названию (у живого каталога это
@@ -536,106 +532,57 @@ import ItemRow from './ItemRow.svelte'
     </div>
   {/snippet}
 
-  {#snippet children()}
-    {@render DemoBody({ cfg, name })}
-  {/snippet}
-</PaginatorHost>
-
-{#snippet DemoBody({ cfg, name }: { cfg: DemoExtra; name: string })}
-  <!--
-    Скелетоны объявлены значениями и передаются УСЛОВНО: выключены — `undefined`,
-    и список сам рисует строку «Загрузка страницы N…» (ровно как в исходнике,
-    `renderSkeleton={cfg.skel ? skeleton(cfg.src) : undefined}`).
-  -->
-  {#snippet skelColumns(ctx: { page: number; index: number })}
-    {#if demoShikimoriApi(cfg.src)}
-      <Skeleton height={240} />
-    {:else if cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
-      <Skeleton height={220} />
-    {:else if cfg.src === 'db'}
-      <Skeleton height={44} />
+  {#snippet renderItem(item: CatalogItem)}
+    {#if cfg.layout === 'columns'}
+      {#if isAnimeItem(item)}
+        <AnimeTile {item} />
+      {:else if isRickMortyItem(item)}
+        <CharacterTile {item} />
+      {:else if isDbItem(item)}
+        <DbPostRow
+          {item}
+          testid={catalogTestId(item)}
+          class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
+        />
+      {:else}
+        <ShotTile {item} />
+      {/if}
+    {:else if isAnimeItem(item)}
+      <AnimeRow {item} />
+    {:else if isRickMortyItem(item)}
+      <CharacterRow {item} />
+    {:else if isDbItem(item)}
+      <DbPostRow
+        {item}
+        testid={catalogTestId(item)}
+        class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
+      />
     {:else}
-      <Skeleton height={shotHeight(ctx.index + 1)} />
+      <ItemRow {item} />
     {/if}
   {/snippet}
-  {#snippet skelList(ctx: { page: number; index: number })}
-    {#if demoShikimoriApi(cfg.src) || cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
-      <Skeleton height={52} />
-    {:else if cfg.src === 'db'}
-      <Skeleton height={44} />
-    {:else if cfg.src === 'photos'}
-      <Skeleton height={shotHeight(ctx.index + 1)} />
-    {:else}
-      <Skeleton />
-    {/if}
-  {/snippet}
+</Paginator>
 
-  {#if cfg.ind}
-    <LoadingIndicator {name} />
-  {/if}
-  <EdgeSentinel dir={-1} {name} />
-  <LoadMoreLink dir={-1} {name} />
-
-  <EmptyState {name} />
-
-  {#if cfg.layout === 'columns'}
-    <PageColumns
-      {name}
-      columns={cfg.cols}
-      columnWidth={cfg.colW}
-      stretch={`${cfg.colFit}%`}
-      renderDivider={null}
-      renderSkeleton={cfg.skel ? skelColumns : undefined}
-    >
-      {#snippet renderItem(item: CatalogItem)}
-        {#if isAnimeItem(item)}
-          <AnimeTile {item} />
-        {:else if isRickMortyItem(item)}
-          <CharacterTile {item} />
-        {:else if isDbItem(item)}
-          <DbPostRow
-            {item}
-            testid={catalogTestId(item)}
-            class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
-          />
-        {:else}
-          <ShotTile {item} />
-        {/if}
-      {/snippet}
-    </PageColumns>
+{#snippet skelColumns(ctx: { page: number; index: number })}
+  {#if demoShikimoriApi(cfg.src)}
+    <Skeleton height={240} />
+  {:else if cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
+    <Skeleton height={220} />
+  {:else if cfg.src === 'db'}
+    <Skeleton height={44} />
   {:else}
-    <PageList {name} renderSkeleton={cfg.skel ? skelList : undefined}>
-      <!-- Запись различается по форме (канон): тайтл Shikimori, товар или фото. -->
-      {#snippet renderItem(item: CatalogItem)}
-        {#if isAnimeItem(item)}
-          <AnimeRow {item} />
-        {:else if isRickMortyItem(item)}
-          <CharacterRow {item} />
-        {:else if isDbItem(item)}
-          <DbPostRow
-            {item}
-            testid={catalogTestId(item)}
-            class="flex h-11 items-center gap-3 rounded-lg border border-border bg-card px-3 text-sm shadow-xs"
-          />
-        {:else}
-          <ItemRow {item} />
-        {/if}
-      {/snippet}
-    </PageList>
+    <Skeleton height={shotHeight(ctx.index + 1)} />
   {/if}
+{/snippet}
 
-  <LiveStatus {name} />
-  <ErrorRow {name} />
-  <ReplaceLoadingRow {name} when={!cfg.skel} />
-
-  <LoadMoreLink dir={1} {name} />
-  <EdgeSentinel dir={1} {name} />
-  <EndRow {name} />
-
-  <PageNav {name}>
-    {#snippet children()}
-      <ResetButton {name} />
-    {/snippet}
-  </PageNav>
-  <EventLog {name} />
+{#snippet skelList(ctx: { page: number; index: number })}
+  {#if demoShikimoriApi(cfg.src) || cfg.src === 'rm-rest' || cfg.src === 'rm-graphql'}
+    <Skeleton height={52} />
+  {:else if cfg.src === 'db'}
+    <Skeleton height={44} />
+  {:else if cfg.src === 'photos'}
+    <Skeleton height={shotHeight(ctx.index + 1)} />
+  {:else}
+    <Skeleton />
+  {/if}
 {/snippet}

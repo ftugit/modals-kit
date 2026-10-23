@@ -39,6 +39,54 @@ export function querySchema<Input extends Record<string, unknown>, Output = Inpu
   }
 }
 
+export type SchemaShape = Record<string, StandardSchemaV1<unknown, unknown>>
+
+/**
+ * Покомпонентная сборка `StandardSchemaV1`-схемы объекта из произвольной смеси
+ * `StandardSchemaV1`-полей (`z.enum(...)`, `z.coerce.number()`, `localPathSchema`,
+ * собственные валидаторы) с поключевым откатом битых URL-параметров к дефолту поля.
+ */
+export function objectSchema<Shape extends SchemaShape>(
+  shape: Shape,
+): StandardSchemaV1<
+  { [K in keyof Shape]: StandardSchemaV1.InferInput<Shape[K]> },
+  { [K in keyof Shape]: StandardSchemaV1.InferOutput<Shape[K]> }
+> {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: 'modals-kit/address',
+      validate: (value) => {
+        const record = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+        const out: Record<string, unknown> = {}
+        const issues: StandardSchemaV1.Issue[] = []
+        for (const [key, field] of Object.entries(shape)) {
+          const primary = field['~standard'].validate(record[key])
+          if (primary instanceof Promise) {
+            throw new TypeError(`Async StandardSchemaV1 field "${key}" is not supported in synchronous route.parse()`)
+          }
+          if (!primary.issues) {
+            out[key] = primary.value
+            continue
+          }
+          const fallback = field['~standard'].validate(undefined)
+          if (fallback instanceof Promise) {
+            throw new TypeError(`Async StandardSchemaV1 field "${key}" is not supported in synchronous route.parse()`)
+          }
+          if (!fallback.issues) {
+            out[key] = fallback.value
+          } else {
+            issues.push(...primary.issues)
+          }
+        }
+        return issues.length > 0
+          ? { issues }
+          : { value: out as { [K in keyof Shape]: StandardSchemaV1.InferOutput<Shape[K]> } }
+      },
+    },
+  }
+}
+
 export interface StaticRouteOptions<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,

@@ -3,7 +3,7 @@
   import type { Snippet } from 'svelte'
   import { paginatorTask, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { taskPercent } from '#lib/task/index.js'
-  import { trackTask } from '../loader/loader.svelte.js'
+  import { trackTask } from '../../loader/loader.svelte.js'
   import Spinner from './Spinner.svelte'
 
   interface Props {

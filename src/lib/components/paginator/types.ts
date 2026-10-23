@@ -1,13 +1,17 @@
-// Типы демо-панели настроек пагинатора.
-//
-// Панель — ДАННЫЕ: список `SettingsField` описывает поля, выключения и маппинг
-// в extra. Компилятор (`./compile`) превращает их в `FormDescription` для
-// механизма форм; размечает всё одна оболочка (`PaginatorSettings`).
-//
-// Условие доступности — данные, а не функция (§6.4 следствие 3): `enabledBy`
-// проверяем на сервере, из него же инвертируются правила связок. Функция
-// `enabledWhen(values)` так данные оценить не позволяла.
-import type { ExtraValue, FeatureGate } from '#lib/paginate/index.js'
+// Типы папочного UI-модуля пагинатора (`Paginator`, панель настроек, слоты).
+import type { Snippet } from 'svelte'
+import type {
+  EdgeTrigger,
+  Extra,
+  ExtraValue,
+  FeatureGate,
+  LibError,
+  PaginatorState,
+  PrependBehavior,
+  Stretch,
+  TriggerZone,
+} from '#lib/paginate/index.js'
+import type { PaginatorHostVariants } from './variants.js'
 
 /** Одна связка «поле доступно при значении другого». */
 export interface PanelEnabledBy {
@@ -17,10 +21,7 @@ export interface PanelEnabledBy {
   readonly equals?: string | boolean
   /** Доступно, когда значение поля — из этого списка. */
   readonly in?: readonly (string | boolean)[]
-  /**
-   * Текста нет — составитель строит его из условия («доступно при …»), но
-   * домену бывает что добавить: причина уходит и в helper, и в отказ.
-   */
+  /** Причина для helper/ошибки, если автогенерации из условия недостаточно. */
   readonly reason?: string
 }
 
@@ -33,10 +34,7 @@ export type SettingsField<V extends Record<string, ExtraValue> = Record<string, 
       /** Маппер «значение формы → extra»: селект отдаёт строку, extra — тип. */
       parse?: (raw: string) => ExtraValue
       jsOnly?: boolean
-      /**
-       * Возможность(и) ИСТОЧНИКА, без которых параметр не работает: панель гасит
-       * поле И ПОКАЗЫВАЕТ ПРИЧИНУ, а не «включает и молчит».
-       */
+      /** Возможность(и) источника, без которых параметр гасится с пояснением причины. */
       requires?: FeatureGate | readonly FeatureGate[]
       enabledBy?: readonly PanelEnabledBy[]
     }
@@ -52,3 +50,41 @@ export type SettingsField<V extends Record<string, ExtraValue> = Record<string, 
       type: 'divider'
       label?: string
     }
+
+export interface PaginatorProps<T> {
+  name: string
+  ariaLabel: string
+  snapshot?: PaginatorState<T> | null
+  externalPage?: number | null
+  externalRestorable?: { pageSize?: number; extra: Extra } | null
+  currentSearch?: () => Record<string, unknown> | null
+  layout?: 'list' | 'columns'
+  mode?: 'accumulate' | 'single'
+  columns?: number | 'auto'
+  columnWidth?: number
+  stretch?: Stretch
+  minColumns?: number
+  maxColumns?: number
+  gap?: number
+  topTrigger?: EdgeTrigger
+  bottomTrigger?: EdgeTrigger
+  topZone?: TriggerZone
+  bottomZone?: TriggerZone
+  prependBehavior?: PrependBehavior
+  hashAnchor?: string | null
+  showIndicator?: boolean
+  sentinel?: boolean
+  /** `false` — не рендерить строку замены вообще; `boolean` — передать во `when` у `ReplaceLoadingRow`. */
+  replaceLoading?: boolean | 'off'
+  bottomNav?: boolean
+  eventLog?: boolean
+  variant?: PaginatorHostVariants['variant']
+  class?: string
+  onError?: (err: LibError) => void
+  onColumns?: (n: number) => void
+  toolbar?: Snippet
+  renderItem: Snippet<[T, { page: number; index: number }]>
+  renderSkeleton?: Snippet<[{ page: number; index: number }]>
+  renderPending?: Snippet<[{ page: number }]>
+  renderDivider?: Snippet<[{ page: number; count: number | null }]> | null
+}

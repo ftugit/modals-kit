@@ -8,7 +8,7 @@
 // и повторяет запрос 1 раз без потери введённых пользователем данных.
 import { untrack } from 'svelte'
 import { page } from '$app/state'
-import { visibleAddress } from '#lib/address/sveltekit.js'
+import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 import { bind, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
 import { kitActionTransport } from '#lib/components/form/transport.js'
 import { buildEnvelope, type FormDescription, type Result, type Transport } from '#lib/form/index.js'
@@ -64,10 +64,11 @@ export function bindComponentForm(
   desc: FormDescription,
   options: ComponentFormOptions = {},
 ): BoundForm {
-  const { action, prepare, continuation, session, ...rest } = options
+  const { action, prepare, continuation, session, lockStateKey, onSuccess, ...rest } = options
   const target = untrack(() => action ?? readCurrentHref())
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
   const baseTransport = kitActionTransport(target, prepare ? { prepare } : {})
+  let lastResult: Result | null = initialContinuation
 
   const transport: Transport = async (req) => {
     if (session) {
@@ -78,28 +79,56 @@ export function bindComponentForm(
       const renewed = await session.onAuthExpired()
       if (renewed) {
         const retryEnvelope = { ...req.envelope, submissionId: crypto.randomUUID() }
-        const retryData = req.data instanceof FormData ? cloneFormDataWithEnvelope(req.data, desc, retryEnvelope) : req.data
+        const retryData =
+          req.data instanceof FormData ? cloneFormDataWithEnvelope(req.data, desc, retryEnvelope) : req.data
         const retryOut = await baseTransport({
           ...req,
           envelope: retryEnvelope,
           data: retryData,
         })
         if (retryOut.kind === 'result') {
-          return {
-            kind: 'result',
-            result: { ...retryOut.result, submissionId: req.envelope.submissionId },
-          }
+          const merged = { ...retryOut.result, submissionId: req.envelope.submissionId }
+          lastResult = merged
+          return { kind: 'result', result: merged }
         }
         return retryOut
       }
     }
+    if (out.kind === 'result') lastResult = out.result
     return out
   }
 
-  return bind(cfg, desc, {
+  const form = bind(cfg, desc, {
     ...rest,
     action: target,
     transport,
     continuation: initialContinuation,
   })
+
+  if (lockStateKey) {
+    $effect(() => {
+      const pending = form.state.pending
+      const here = visibleAddress()
+      if (Boolean(here.state[lockStateKey]) !== pending) {
+        void writeAddress(
+          () => ({ url: here.url.href, state: { ...here.state, [lockStateKey]: pending } }),
+          { replace: true, load: false },
+        )
+      }
+    })
+  }
+
+  if (onSuccess) {
+    let seenStatus = untrack(() => form.state.status)
+    $effect(() => {
+      const now = form.state.status
+      if (now === seenStatus) return
+      seenStatus = now
+      if (now === 'success' && form.state.outcome !== 'not-applied' && lastResult) {
+        onSuccess(lastResult)
+      }
+    })
+  }
+
+  return form
 }

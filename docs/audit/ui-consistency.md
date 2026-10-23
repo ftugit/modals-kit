@@ -30,7 +30,7 @@
 | **F5** | `PasswordInput`, `CopyInput`, `PhoneInput`, `SearchInput`, `OtpInput`, `Select`, `FileAttachment` | Единый закон: **`class` — всегда на основной контрол, `wrapperClass` — на внешнюю обёртку** (уже выполнено в `Select` и `FileAttachment`; приведены остальные 5). | **S2** | `[x]` Выполнено |
 | **F6** | `ui/radio-group/{RadioGroup,RadioItem}.svelte`, `ui/range/Range.svelte`, `form/{RadioGroupField,RangeField,RatingField,resolve}` | Нативные прогрессивные примитивы `RadioGroup` и `Range` строго по эталону `shadcn` v4 + подключение в `resolve.ts`. | **S2** | `[x]` Выполнено |
 | **F7** | `ui/search/SearchMorph.svelte`, `ui/index.ts` | Удаление мёртвого `SearchMorph.svelte` и скрытие внутреннего `NativeSelect` из публичного барреля `ui/index.ts` (файл `NativeSelect.svelte` сохранён для `settings/Select.svelte`). | **S1** | `[x]` Выполнено |
-| **F8** | `routes/(site)/(app)/form/+page.svelte`, `modals/+page.svelte`, `fields/` | Приведение групп полей к единому `ui/Fieldset` (`/form` и `/modals` проверены на `<Fieldset>`, `/fields` переезжает в `SchemaFields` на Этапе `S4`). | **S2 / S4** | `[x]` `/form`, `/modals` (`S4`: `/fields`) |
+| **F8** | `routes/(site)/(app)/form/+page.svelte`, `modals/+page.svelte`, `fields/SchemaBuilder.svelte` | Приведение групп полей к единому `ui/Fieldset` (`/form`, `/modals` и новый `SchemaBuilder`). | **S2 / S4** | `[x]` Выполнено |
 | **F9** | `form/resolve.test.ts` | Unit-тест полноты сопоставления всех видов ввода `#lib/form` в `resolve.ts`. | **S2** | `[x]` Выполнено |
 
 ---

@@ -36,7 +36,7 @@
     PageNav,
     PaginatorSettings,
     type SettingsField,
-  } from '#lib/components/paginator/index.js'
+  } from '#lib/components/paginator/ui/index.js'
   // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.

@@ -34,7 +34,6 @@ export {
 export {
   attachmentIconSize,
   attachmentMediaVariants,
-  attachmentRadioClasses,
   attachmentRowMediaSize,
   attachmentRowSpacing,
   attachmentTileIconSize,

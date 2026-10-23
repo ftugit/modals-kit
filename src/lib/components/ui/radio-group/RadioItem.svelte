@@ -28,13 +28,13 @@
     size?: RadioItemVariants['size']
   }
 
-  let { size = 'md', class: cls, checked = $bindable(), ...rest }: Props = $props()
+  let { size = 'md', class: cls, checked, ...rest }: Props = $props()
 </script>
 
 <input
   type="radio"
   data-slot="radio-group-item"
-  bind:checked
+  {checked}
   class={cn(radioItemVariants({ size }), cls)}
   {...rest}
 />

@@ -227,8 +227,10 @@ let k1, k2
   await goStep(pg, 'Сборка')
   await waitH2(pg, 'Создание полей')
   // замедлили сохранение: ответ придёт, когда рука уже потянется к шагам
-  await pg.route('**/fields/save', async (route) => {
-    await new Promise((r) => setTimeout(r, 800))
+  await pg.route('**/fields*', async (route) => {
+    if (route.request().method() === 'POST') {
+      await new Promise((r) => setTimeout(r, 800))
+    }
     await route.continue()
   })
   await pg.click('[data-testid="save"]')
@@ -241,7 +243,7 @@ let k1, k2
   await pg.waitForURL(/fields\?step=fill/)
   ok('после отправки страница открыта на свежих данных — запись сохраняется',
     (await pg.locator(r(`u_${k1}`)).count()) === 1, pg.url())
-  await pg.unroute('**/fields/save')
+  await pg.unroute('**/fields*')
 
   ok('консоль без ошибок', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300))
   await ctx.close()
@@ -374,10 +376,18 @@ await browser.close()
 // Уборка: набор живёт в кэше сервера и переживает прогон. Без сброса следующий
 // запуск (в том числе `npm run test:browser` следом) начинал бы не с пустого места.
 {
-  const reset = await fetch(`${BASE}?/reset`, {
+  const reset = await fetch(BASE, {
     method: 'POST',
-    headers: { origin: new URL(BASE).origin, 'content-type': 'application/x-www-form-urlencoded' },
-    body: '',
+    headers: {
+      origin: new URL(BASE).origin,
+      accept: 'application/json',
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      __form_id: 'fields-reset',
+      __form_rev: '1',
+      __intent: 'reset',
+    }),
   })
   if (!reset.ok) console.log(`  ! уборка: сброс набора ответил ${reset.status}`)
 }

@@ -4,6 +4,7 @@ import { localPath, resetQueryClaims } from './index.js'
 import {
   defineRoute,
   localPathSchema,
+  objectSchema,
   querySchema,
   registerRoute,
   resetRegisteredRoutes,
@@ -15,16 +16,26 @@ describe('#lib/address/routes', () => {
     resetQueryClaims()
   })
 
-  it('parses defaults, validates via StandardSchemaV1 (Zod v4), and falls back safely on malformed query params', () => {
+  it('parses defaults, validates via StandardSchemaV1 (Zod v4 + objectSchema), and falls back safely on malformed query params', () => {
     const catalogRoute = registerRoute('/paginator', {
       keys: ['mode', 'limit', 'next'],
       defaults: { mode: 'grid', limit: 20, next: null },
-      search: z.object({
+      search: objectSchema({
         mode: z.enum(['grid', 'list']).default('grid'),
         limit: z.coerce.number().int().min(1).max(100).default(20),
         next: localPathSchema,
       }),
     })
+
+    const pureZodRoute = defineRoute('/cycle', {
+      keys: ['step'],
+      defaults: { step: 1 },
+      search: z.object({
+        step: z.coerce.number().int().min(1).max(10).default(1),
+      }),
+    })
+    expect(pureZodRoute.parse('?step=3')).toEqual({ step: 3 })
+    expect(pureZodRoute.parse('?step=999')).toEqual({ step: 1 })
 
     expect(catalogRoute.href()).toBe('/paginator')
     expect(catalogRoute.href({ mode: 'grid', limit: 20, next: null })).toBe('/paginator')

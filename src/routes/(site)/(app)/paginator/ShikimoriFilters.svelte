@@ -7,7 +7,7 @@
    */
   import { Form } from '#lib/form/svelte/index.js'
   import Field from '#lib/components/form/Field.svelte'
-  import { bindFilters, FilterActions, type FilterFormProps } from '#lib/components/filters/index.js'
+  import { bindFilters, FilterActions, type FilterFormProps } from '#lib/components/paginator/index.js'
 
   let props: FilterFormProps = $props()
   const filters = bindFilters(() => props)

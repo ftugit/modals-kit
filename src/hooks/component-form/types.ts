@@ -1,7 +1,9 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import type { BindOptions } from '#lib/form/svelte/index.js'
-import type { ExecuteContext, ExecuteOutput, Limits } from '#lib/form/server.js'
+import type { createFormHandler, ExecuteContext, ExecuteOutput, Limits } from '#lib/form/server.js'
 import type { CheckRegistry, FormDescription, Result } from '#lib/form/index.js'
+
+type FormSource = NonNullable<Parameters<typeof createFormHandler>[0]['source']>
 
 /** Явный контракт координации сессии для форм, работающих от имени пользователя. */
 export interface FormSessionGuard {
@@ -19,6 +21,10 @@ export interface ComponentFormOptions extends Omit<BindOptions, 'action' | 'tran
   prepare?: (data: FormData) => void | Promise<void>
   /** Опциональная защита сессии (продление мёртвого токена и 1x-повтор при `auth.expired`). */
   session?: FormSessionGuard
+  /** Ключ блокировки навигации в `page.state` на время отправки формы. */
+  lockStateKey?: string
+  /** Вызывается при применённом успехе (`status === 'success' && outcome !== 'not-applied'`). */
+  onSuccess?: (result: Result) => void
 }
 
 /**
@@ -32,7 +38,11 @@ export type NoJsSuccessTarget = string | 'inline' | null | undefined
 
 /** Серверная регистрация POST-обработчика встраиваемой формы компонента. */
 export interface ComponentFormRegistration {
-  readonly description: FormDescription
+  /** Идентификатор формы (обязателен, только если `description` вычисляется функцией от `event`). */
+  readonly id?: string
+  readonly description: FormDescription | ((event: RequestEvent) => FormDescription)
+  /** Динамический источник описания и ревизии (`defineForm({ from })`). */
+  readonly source?: FormSource
   readonly checks?: CheckRegistry | ((event: RequestEvent) => CheckRegistry | Promise<CheckRegistry>)
   readonly limits?: Partial<Limits>
   readonly execute: (

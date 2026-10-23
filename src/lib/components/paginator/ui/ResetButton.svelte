@@ -3,7 +3,7 @@
   import { buttonVariants } from '#lib/components/ui/index.js'
   import { useLinkTo, usePaginatorActions } from '#lib/paginate/svelte/index.js'
   import { asLink, taskAttrs } from '#lib/components/links/index.js'
-  import { useActionTask } from './action-task.svelte.js'
+  import { useActionTask } from '../action-task.svelte.js'
   import type { Snippet } from 'svelte'
 
   interface Props {
