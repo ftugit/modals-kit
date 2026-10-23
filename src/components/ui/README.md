@@ -1,0 +1,50 @@
+# `src/components/ui` — правила слоя UI-примитивов
+
+Базовые визуальные и интерактивные примитивы кита на **Svelte 5 + Ark UI + CVA (`variants`) + UnoCSS (Tailwind v4 preset)** с полной поддержкой работы как с JavaScript, так и при нативном HTTP без JavaScript.
+
+---
+
+## 1. Единственный источник истины для стилей (`*Variants` и `field.ts`)
+
+1. **Одиночный примитив (`Button`, `Badge`, `Alert`, `Card`, `Checkbox`, `Switch`, `Label`, `Spinner`, `Skeleton`, `Separator`, `Stat`):**
+   - `export const <name>Variants = variants(...)` объявляется в `<script module lang="ts">` самого `.svelte`-файла и реэкспортируется из `src/components/ui/index.ts`.
+2. **Многофайловый примитив (`attachment/`):**
+   - при наличии собственной модели (`model.ts`), подкомпонентов и тестов CVA-варианты выносятся в `variants.ts` внутри папки примитива и реэкспортируются через локальный `index.ts` → `ui/index.ts`.
+3. **Общие базы полей ввода (`ui/field/field.ts`):**
+   - `fieldBase` — общая рамка, отступы, типографика, `focus-visible:*`, `disabled:*` и `aria-invalid:*` всех текстовых и списковых полей (`Input`, `Textarea`, `AutoTextarea`, `SearchInput`, `SelectList`);
+   - `affixButtonClass` — единый стиль внутренних кнопок-аффиксов (`PasswordInput`, `CopyInput`, `SearchField`, `NumberField`);
+   - `controlBase` — общая база дискретных контролов выбора (`Checkbox`, `RadioItem`, выбор карточки в `Attachment`).
+   - Копировать эти цепочки классов вручную в компоненты или обёртки `src/components/form/` запрещено.
+4. **Цвета и скелетоны:**
+   - скелетоны модулей (`paginator`, `modals`) строятся тонкими обёртками поверх `ui/skeleton/Skeleton.svelte`;
+   - статусные шкалы (`PasswordStrength`, `Alert`, `Badge`) используют только CSS-переменные темы (`--destructive`, `--warning`, `--success`), чтобы сохранять контраст и в светлой (`lemonade`), и в тёмной (`night`) темах.
+
+---
+
+## 2. Иконки
+
+- **Общие переиспользуемые иконки (`WarningIcon`, `CloseIcon`):** лежат в собственной подпапке `ui/<name>-icon/<Name>Icon.svelte` и экспортируются через `ui/index.ts`. Инлайнить повторные `<svg>` крестиков или значков предупреждения в полях и карточках запрещено.
+- **Локальные иконки конкретного контрола (`CopyIcon`, `CheckIcon`):** живут рядом со своим составным примитивом (`ui/copy-input/`).
+
+---
+
+## 3. Публичный баррель `#components/ui/index.js` vs глубокий импорт
+
+По умолчанию все потребители (`components/*`, `content/*`, `routes/*`) импортируют примитивы, типы и `*Variants` **только через `#components/ui/index.js`**.
+
+Прямой (глубокий) импорт `#components/ui/<folder>/...` допускается ровно в двух случаях:
+
+1. **Внутренние служебные носители, намеренно скрытые из публичного API:**
+   - `#components/ui/native-select/NativeSelect.svelte` — внутренний `<select>`-носитель кита; `tooling/layer-guard.mjs` блокирует `<NativeSelect>` на страницах и в `content/*`, требуя использовать прогрессивный `<Select />` (или панельный `Select` из `#components/settings/index.js`);
+   - `#components/ui/select/select-trace.js` — диагностический модуль трассировки для тестов.
+2. **Специализированные редкие виджеты, не нужные в общем чанке примитивов на каждом маршруте:**
+   - `#components/ui/button/HoldButton.svelte` — кнопка с удержанием и собственной навигационной/анимационной логикой (`#lib/address`), подключаемая точечно там, где требуется защита от случайного нажатия, чтобы не увеличивать начальный JS-бандл остальных маршрутов (`tooling/size-budget.mjs`).
+
+---
+
+## 4. Контракты пропов, невалидности и автоматических проверок
+
+- **`class` и `wrapperClass`:** проп `class` **всегда** попадает на основной интерактивный контрол (`<input>`, `<textarea>`, триггер `<Select>`, карточку `Attachment`), а внешняя обёртка составного поля (`PasswordInput`, `CopyInput`, `PhoneInput`, `SearchInput`, `OtpInput`, `Range`, `Select`, `FileAttachment`) принимает отдельный `wrapperClass`.
+- **Подсветка невалидности (`aria-invalid` / `data-invalid`):** глобальный вариант `aria-invalid:` включён в `unocss.config.ts` (`aria: { invalid: 'invalid="true"' }`). Составные контролы, скрывающие нативный носитель после гидратации (`Select`, `OtpInput`), обязаны пробрасывать невалидность на видимый триггер и ячейки.
+- **Без рукописных `name=` вне кита:** примитивы принимают атрибуты поля от `#lib/form` (`Field` / `bind`). Прямая установка `name="..."` на UI-примитивах в `content/*` и `routes/*` блокируется на этапе сборки плагином `tooling/layer-guard.mjs`.
+- **Генерация утилит:** все файлы `src/components/ui/**` проверяются скриптом `npm run test:classes` (`tooling/classes-audit.mjs` — `0` маркер-классов, `100%` утилит сгенерированы UnoCSS).

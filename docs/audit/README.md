@@ -1,14 +1,14 @@
 # Аудит кодовой базы
 
-Материалы ревизии архитектуры, костылей, границ слоёв и очереди на тестирование.
+Материалы ревизии архитектуры, костылей, границ слоёв и очереди открытых доработок.
 
 ## Документы раздела
 
-- **[`architecture.md`](./architecture.md)** — мастер-план и пошаговый чек-лист (`A1`–`A5`) модульной архитектуры проекта: очистка `src/lib/` до уровня `node_modules`, папочные UI-модули `src/components/{fields,paginator}/`, изоляция витрин в `src/content/demo-catalog/` и единый реестр маршрутов в `#lib/address`.
-- **[`ui-consistency.md`](./ui-consistency.md)** — аудит принципа «один источник истины» в `components/ui` и `components/form` (`U1`–`U9`, `F1`–`F9`) и самодостаточный пошаговый чек-лист доводки UI-слоя (`UI-1`–`UI-4`).
+- **[`architecture.md`](./architecture.md)** — мастер-план и сквозной чек-лист (`S1` → `S6`, **все 6 этапов выполнены**): 5 верхних слоёв (`#lib/*`, `#hooks/*`, `#components/*`, `#content/*`, `#server/*`), папочные UI-модули `src/components/{fields,paginator}/`, изоляция витрин в `src/content/demo-catalog/`, автономный `src/content/user/{routes,modals}.ts` и единый реестр маршрутов в `#lib/address`.
+- **[`ui-consistency.md`](./ui-consistency.md)** — ревизия принципа «один источник истины» в `src/components/ui` и `src/components/form` (`U1`–`U9`, `F1`–`F9`, **все 18 пунктов закрыты**, правила зафиксированы в [`../../src/components/ui/README.md`](../../src/components/ui/README.md)).
 - **[`auth-session.md`](./auth-session.md)** — аудит жизненного цикла сессии и токенов (**выполнено и повторно верифицировано**: единый `vault` на замыкании без сырых токенов, Lamport-синхронизация вкладок, сериализованный `renew` и исправление всех находок `AS-01` .. `AS-09`).
-- **[`testing-backlog.md`](./testing-backlog.md)** — актуальный реестр найденных по коду багов, дыр безопасности, хвостов старого кода (`TB-01` .. `TB-14`) и контрольный чек-лист проверок (`TB-15`).
-- **[`ratings.md`](./ratings.md)** — сводная оценка подсистем проекта, принятые целевые планки и статус их достижения.
+- **[`testing-backlog.md`](./testing-backlog.md)** — актуальный статус задач `TB-01` .. `TB-15` после рефакторинга `S1`–`S6` и полного прогона тестов: закрытые пункты отделены от открытого бэклога с точными путями файлов.
+- **[`ratings.md`](./ratings.md)** — историческая пофайловая оценка `src/` по критериям K1–K10 (срез до переезда папок `S5`).
 - **[`crutches.md`](./crutches.md)** — подробный разбор исторических костылей (`C1`–`C10`), архитектурных дефектов и решений по их устранению.
 
 ## Связанные проектные документы
@@ -24,11 +24,11 @@
 
 | Страж | Что проверяет |
 |---|---|
-| `tooling/layer-guard.mjs` | Vite-плагин сборки: запрет прямого `history.pushState`/`replaceState`, чтения `page.url`, `goto` внутри `src/lib/`, сырых `<form>`/`<input>`/`<select>`/`<textarea>`, ручных скрытых полей, импорта компонентов внутрь `src/lib/form/`, присваивания `.pending`/`.error` вне `takeover` и ручного `request.formData()` вне слоёв `#lib/form/server.js`. |
+| `tooling/layer-guard.mjs` | Vite-плагин dev/build: направленность 5 верхних слоёв (`#lib` → `#hooks` → `#components` → `#content` → `#server`/`routes`), граница `*.server.ts` (включая SSR-контур Vite 8), чистота `src/server/trusted-origins.ts`, запрет прямого `history.pushState`/`replaceState`, чтения `page.url` и `goto` вне навигационных примитивов, запрет сырых `<form>`/`<input>`/`<select>`/`<textarea>`, `<NativeSelect>` и рукописных `name=` вне кита, `.pending`/`.error` только в `takeover` и разбор тела только через `#lib/form/server.js`. |
 | `tooling/core-purity.mjs` | Отсутствие импортов `svelte`, `@sveltejs/kit` и `$app/*` в чистых ядрах библиотек (`modals`, `form`, `paginate`, `address`, `fetch`, `cache`, `image`, `task`, `db`). |
 | `tooling/load-url-guard.mjs` | Чтение URL в `load`-функциях маршрутов без скрытой потери реактивных зависимостей. |
-| `tooling/source-schema-guard.mjs` | Валидация схем источников каталогов. |
+| `tooling/source-schema-guard.mjs` | Изоляция схем внешних источников каталогов в зоне источника (`src/content/demo-catalog/`). |
 | `tooling/db-docs.mjs` | Соответствие `src/lib/db/{README.md,PORTING.md,docs/*.md}` фактическим экспортам, кодам ошибок, лимитам, env-ключам, миграциям и путям файлов. |
-| `tooling/classes-audit.mjs` | Отсутствие маркерных CSS-классов и утилит UnoCSS без сгенерированных правил. |
-| `tooling/ark-owns.mjs` | Целостность `aria-owns` / порталов Ark UI. |
-| `tooling/form-size.mjs`, `tooling/size-budget.mjs` | Бюджеты размера бандла ядер и адаптеров. |
+| `tooling/classes-audit.mjs` | Отсутствие маркерных CSS-классов и утилит UnoCSS (включая `aria-*:` / `data-*:`) без сгенерированных правил. |
+| `tooling/ark-owns.mjs` | Запрет ручного дублирования focus-trap, scroll-lock и возврата фокуса поверх машин Ark UI / Zag. |
+| `tooling/form-size.mjs`, `tooling/size-budget.mjs` | Бюджеты gzip-веса ядра форм, общего клиентского бандла и начальной загрузки всех маршрутов. |

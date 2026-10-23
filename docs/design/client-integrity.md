@@ -15,15 +15,15 @@
 ## 2. Что уже работает в коде
 
 1. **Проверка `Origin` на всех мутирующих запросах**:
-   - `src/lib/server/trusted-origins.ts` — единый расчёт доверенных origin (`KIT_TRUSTED_ORIGINS`, `PREVIEW_PORTS` и dev/preview-хосты), подключённый одновременно и в `sveltekit({ csrf: { trustedOrigins } })` (`vite.config.ts`), и в серверный `originLayer` библиотеки форм (`src/lib/server/form-security.ts`).
+   - `src/server/trusted-origins.ts` — единый расчёт доверенных origin (`KIT_TRUSTED_ORIGINS`, `PREVIEW_PORTS` и dev/preview-хосты), подключённый одновременно и в `sveltekit({ csrf: { trustedOrigins } })` (`vite.config.ts`), и в серверный `originLayer` библиотеки форм (`src/server/form-security.server.ts`).
 2. **Куки сессии закрыты от чтения скриптом**:
-   - `src/content/user/gateway.ts` хранит оба токена (`auth_sid`, `auth_tmp`) в `HttpOnly; SameSite=Lax`-куках; клиентский `vault` получает только вычисленный сервером срез данных. *(Замечание на доработку флага `Secure` для HTTPS зафиксировано в [`docs/audit/testing-backlog.md`](../audit/testing-backlog.md), `TB-05`.)*
+   - `src/content/user/gateway.server.ts` хранит оба токена (`auth_sid`, `auth_tmp`) в `HttpOnly; SameSite=Lax`-куках; клиентский `vault` получает только вычисленный сервером срез данных. *(Замечание на доработку флага `Secure` для HTTPS зафиксировано в [`docs/audit/testing-backlog.md`](../audit/testing-backlog.md), `TB-05`.)*
 3. **Стилизация без динамических `<style>` в рантайме**:
    - UnoCSS (`unocss.config.ts`, `vite.config.ts`) компилирует все утилиты (включая `src/app.html` через `content.filesystem` и файлы с `/* @unocss-include */`) в статический CSS-бандл на этапе сборки; рантайм-инъекции CSS нет.
 4. **Безопасный рендеринг шаблонов**:
    - В прикладных компонентах не используется `{@html …}` для пользовательских данных; строгие правила разметки и импортов контролирует `tooling/layer-guard.mjs`.
 5. **Изоляция серверных обращений к внешним API**:
-   - Внешние API (Shikimori, Rick & Morty) опрашиваются через серверные прокси-роуты `/api/shikimori/*` и `/api/rickmorty/*` поверх `#lib/fetch` (`src/lib/server/fetch.ts`), так что браузер общается со своим `self` origin.
+   - Внешние API (Shikimori, Rick & Morty) опрашиваются через серверные прокси-роуты `/api/shikimori/*` и `/api/rickmorty/*` поверх `#lib/fetch` (`src/server/fetch.server.ts`), так что браузер общается со своим `self` origin.
 
 ---
 

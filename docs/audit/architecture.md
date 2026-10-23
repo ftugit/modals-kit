@@ -104,8 +104,8 @@
 
 ---
 
-### Этап S6. Полное сквозное тестирование всего объёма (`S1`–`S5`), бюджеты и документация — **[СЛЕДУЮЩИЙ ЭТАП]**
+### Этап S6. Полное сквозное тестирование всего объёма (`S1`–`S5`), бюджеты и документация — **[ВЫПОЛНЕНО]**
 *(Финальная приёмка сразу после фундаментального Этапа `S5`.)*
-- [ ] **S6.1.** Прогнать полный контур статических и unit-проверок: `npm run test:guard`, `npm run test:classes`, `npm run check`, `npx vitest run`, `npm run build && node tooling/size-budget.mjs`.
-- [ ] **S6.2.** Прогнать все браузерные Playwright-сьюты (`auth.mjs`, `modals.mjs`, `shell.mjs`, `forms.mjs`, `forms-a11y.mjs`, `fields.mjs`, `attachment.mjs`, `steps.mjs`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs`) и устранить любые найденные регрессии.
-- [ ] **S6.3.** Записать правила UI-слоя в `src/components/ui/README.md` (**`U8`**), актуализировать `AGENTS.md`, `docs/audit/{README,testing-backlog}.md` и подтянуть потолки `tooling/size-budget.mjs`.
+- [x] **S6.1.** Прогнать полный контур статических и unit-проверок: `npm run test:guard` (`128/128`), `npm run test:classes` (`0` маркеров, все утилиты сгенерированы), `npm run check` (`0 errors, 0 warnings`), `vitest run` (`111/111` файлов, `1355/1355` тестов), `npm run test:db:probes`, `npm run build && npm run test:size` (`бюджеты веса соблюдены`).
+- [x] **S6.2.** Прогнать все 11 браузерных Playwright-сьютов (`auth.mjs`, `modals.mjs`, `shell.mjs`, `forms.mjs`, `forms-a11y.mjs`, `fields.mjs`, `attachment.mjs`, `steps.mjs`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs`), включая исправление SSR-резолвинга `index.html` в `tooling/layer-guard.mjs` под Vite 8 `vite dev` — все 11/11 сьютов зелёные (`0` провалов).
+- [x] **S6.3.** Записать правила UI-слоя в [`../../src/components/ui/README.md`](../../src/components/ui/README.md) (**`U8`**), актуализировать [`../../AGENTS.md`](../../AGENTS.md), [`../../README.md`](../../README.md), [`./README.md`](./README.md), [`./testing-backlog.md`](./testing-backlog.md), [`../plan.md`](../plan.md), [`../design/`](../design/port-plan.md) и потолки `tooling/size-budget.mjs`.

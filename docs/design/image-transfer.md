@@ -20,10 +20,10 @@
 |---|---|---|
 | Изоморфный конвейер и чтение заголовков | `src/lib/image/{index.ts,pipeline.ts,probe.ts,presets.ts}` | Готово |
 | Серверный WASM-декодер для Node / SSR (`ensureNodeImageCodecs`, `decodeWithNode`) | `src/lib/image/node.ts`, `src/lib/image/test-wasm.ts` | Готово |
-| Расширение типа поля `field.photo` и асинхронной проверки `photo:<id>` (`PhotoSpec`, `checkPhotoFile`, `registerPhotoChecks`, `photoImage`) | `src/lib/components/form/photo.ts` | Готово |
-| Перехват поля в форме (`Field` `takeover`, `FieldHandle.pending` / `FieldHandle.error`) и защита в сборке | `src/lib/form/{takeover.ts,svelte/bind.svelte.ts}`, `src/lib/components/form/Field.svelte`, `tooling/layer-guard.mjs` | Готово |
-| Компактная карточка вложения и превью (`Attachment`, `FileAttachment`) | `src/lib/components/ui/attachment/`, `src/lib/components/form/FileField.svelte` | Готово |
-| Профиль пользователя на бинарном `File` (JS сжатие + no-JS raw `File` → серверный `decodeWithNode`) | `src/content/user/ui/profile-form/{form.ts,avatar.ts,AvatarTakeover.svelte,ProfileForm.svelte,server.ts}` | Готово |
+| Расширение типа поля `field.photo` и асинхронной проверки `photo:<id>` (`PhotoSpec`, `checkPhotoFile`, `registerPhotoChecks`, `photoImage`) | `src/components/form/photo.ts` | Готово |
+| Перехват поля в форме (`Field` `takeover`, `FieldHandle.pending` / `FieldHandle.error`) и защита в сборке | `src/lib/form/{takeover.ts,svelte/bind.svelte.ts}`, `src/components/form/Field.svelte`, `tooling/layer-guard.mjs` | Готово |
+| Компактная карточка вложения и превью (`Attachment`, `FileAttachment`) | `src/components/ui/attachment/`, `src/components/form/FileField.svelte` | Готово |
+| Профиль пользователя на бинарном `File` (JS сжатие + no-JS raw `File` → серверный `decodeWithNode`) | `src/content/user/ui/profile-form/{form.ts,avatar.ts,AvatarTakeover.svelte,ProfileForm.svelte,profile.form.server.ts}` | Готово |
 | Протокол отложенного исхода `outcome: 'queued'` (`QueuedData`, `assertQueuedProtocol`, `pollUntilDone`) | `src/lib/form/queued.ts` | Готово (ядро `lib/form`) |
 
 ---
@@ -37,21 +37,21 @@
 - `data: { pollUrl, statusUrl, etaMs? }` (`assertQueuedProtocol` отвергает `queued` без обоих URL, чтобы режим без JS никогда не оказывался в тупике).
 
 **Что остаётся сделать:**
-1. В `src/hooks/component-form/server.ts` и `client.svelte.ts` поддержать `result.outcome === 'queued'`:
+1. В `src/hooks/component-form/server.server.ts` и `client.svelte.ts` поддержать `result.outcome === 'queued'`:
    - с JS — автоматический опрос `pollUntilDone(queuedData(result), ...)` до терминального `Result` с отображением прогресса в `formTask(bound.state)`;
    - без JS — `303 See Other` на `statusUrl` (страница статуса с `<meta http-equiv="refresh">` / кнопкой «Проверить готовность» и возвратом к исходному маршруту по завершении).
-2. Хранить состояние заявки и подготовленный артефакт в `sharedStore.scope('form-jobs')` (`src/lib/server/cache.ts`, таблица `public.cache_kv` в Postgres), а не в памяти процесса — чтобы опрос `pollUrl` / `statusUrl` попадал в ту же запись на любом serverless/Node-инстансе.
+2. Хранить состояние заявки и подготовленный артефакт в `sharedStore.scope('form-jobs')` (`src/server/cache.server.ts`, таблица `public.cache_kv` в Postgres), а не в памяти процесса — чтобы опрос `pollUrl` / `statusUrl` попадал в ту же запись на любом serverless/Node-инстансе.
 
 ### Этап R5 — Миграция демо `/fields` на общий фото-контур
 
-В `src/routes/(site)/(app)/fields/{forms.ts,handle.ts}` остаётся дореформенная обработка изображения:
+В `src/routes/(site)/(app)/fields/{forms.ts,fields.form.server.ts}` остаётся дореформенная обработка изображения:
 - локальная функция `sniff(b: Uint8Array)` проверяет только магические байты PNG/JPEG/WebP/GIF, не проверяя ни геометрию кадра, ни потолок пикселей (`maxPixels` / `maxSide` против декомпрессионных бомб);
 - локальная функция `base64(b: Uint8Array)` вручную сериализует сырой буфер в `data:image/...;base64,...` без перекодирования;
-- поле объявлено как `field.file({ variant: 'preview' })` вместо `field.photo(...)` с `PhotoSpec` из `#lib/components/form/photo.js`.
+- поле объявлено как `field.file({ variant: 'preview' })` вместо `field.photo(...)` с `PhotoSpec` из `#components/form/photo.js`.
 
 **Что нужно сделать:**
 1. Описать спецификацию `FIELDS_IMAGE_SPEC: PhotoSpec` и подключить `registerPhotoChecks` + `photoImage('fields-image')` в `src/routes/(site)/(app)/fields/forms.ts` и `handle.ts`.
-2. Удалить рукописные `sniff()` и `base64()` из `src/routes/(site)/(app)/fields/handle.ts`, переведя серверную подготовку на `#lib/image` (`probeImageHeader` + `decodeWithNode` при нормализации).
+2. Удалить рукописные `sniff()` и `base64()` из `src/routes/(site)/(app)/fields/fields.form.server.ts`, переведя серверную подготовку на `#lib/image` (`probeImageHeader` + `decodeWithNode` при нормализации).
 
 ### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
 
@@ -66,4 +66,4 @@
 
 Чтобы исключить возврат сырого разбора файлов в прикладном коде:
 1. Ввести брендированный тип `PreparedPhoto` / `PreparedFile` на выходе серверного конвейера подготовки, который требуют мутации записи медиа, чтобы сырой непроверенный `File` из `FormData` нельзя было передать в хранилище по ошибке.
-2. Добавить в `tooling/layer-guard.mjs` правило `isSourceCheck`, запрещающее в `src/routes/` и `src/content/` прямое чтение байтов `File` (`file.arrayBuffer()`, ручной `btoa(...)` для `data:image/`) в обход `#lib/image` и `#lib/components/form/photo.js`.
+2. Добавить в `tooling/layer-guard.mjs` правило `isSourceCheck`, запрещающее в `src/routes/` и `src/content/` прямое чтение байтов `File` (`file.arrayBuffer()`, ручной `btoa(...)` для `data:image/`) в обход `#lib/image` и `#components/form/photo.js`.

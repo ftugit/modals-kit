@@ -23,7 +23,7 @@
 | **U5** | `field.ts`, `PasswordInput`, `CopyInput`, `SearchField`, `NumberField` | Единый `affixButtonClass` с клавиатурным `focus-visible:ring-2` и `disabled:*` во всех 4 контролах с внутренними кнопками. | **S1** | `[x]` Выполнено |
 | **U6** | `ui/close-icon/CloseIcon.svelte`, `FileAttachment`, `SelectList` ×2, `SearchField` | Вынесение общего примитива `<CloseIcon />` и замена всех 4 инлайновых крестиков. | **S1** | `[x]` Выполнено |
 | **U7** | `field.ts`, `Checkbox`, `Attachment`, `RadioGroup` | Общий `controlBase` для `Checkbox`, `<RadioItem />` и выбора карточки в `Attachment.svelte` (удаление дублирующего `attachmentRadioClasses`). | **S2** | `[x]` Выполнено |
-| **U8** | `src/components/ui/README.md` | Письменная фиксация правил UI-слоя: где живут `*Variants`, где лежат иконки, когда разрешён глубокий импорт. | **S6** | `[ ]` В очереди |
+| **U8** | `src/components/ui/README.md` | Письменная фиксация правил UI-слоя: где живут `*Variants`, где лежат иконки, когда разрешён глубокий импорт. | **S6** | `[x]` Выполнено |
 | **U9** | `unocss.config.ts`, `tooling/classes-audit.mjs` | Глобальное включение `aria: { invalid: 'invalid="true"' }` в теме UnoCSS + снятие слепой зоны на `aria-*:` и `data-*:` вариантах в `classes-audit.mjs`. | **S1** | `[x]` Выполнено |
 | **F1** | `form/FieldShell.svelte`, `CheckboxField.svelte`, `SwitchField.svelte` | Проп `labelPlacement?: 'top' | 'end'` в `FieldShell` и перевод `CheckboxField` / `SwitchField` на единый `FieldShell`. | **S2** | `[x]` Выполнено |
 | **F3 / F4** | `Select.svelte`, `OtpInput.svelte`, `Checkbox.svelte`, `Switch.svelte` | Проброс `data-invalid` и подсветки `border-destructive` на видимый триггер `Select`, слоты `OtpInput`, `Checkbox` и `Switch`. | **S2** | `[x]` Выполнено |
@@ -78,8 +78,11 @@
 - [x] `ui/password/PasswordStrength.svelte`: цвета уровней `2..4` переведены на `var(--warning)` и `var(--success)` (**`U4`**).
 - [x] Удалён мёртвый `ui/search/SearchMorph.svelte`; из публичного барреля `ui/index.ts` убраны `SearchMorph` и внутренний `NativeSelect`, добавлены `CloseIcon`, `fieldBase`, `affixButtonClass` (**`F7`**).
 
-### Выполнено на Этапе `S2` (все кодовые пункты `ui-consistency.md` закрыты; осталась только дока `U8` на `S6.3`)
+### Выполнено на Этапе `S2`
 - [x] **S2.1 (`F3 / F4` + `Checkbox`/`Switch`):** проброшены `data-invalid` и `border-destructive` / `ring-destructive/20` на видимый триггер `Select.svelte`, слоты `OtpInput.svelte`, `Checkbox.svelte` и `Switch.svelte`.
 - [x] **S2.2 (`U7` + `F6`):** вынесен `controlBase` в `field.ts`; созданы `ui/radio-group/{RadioItem,RadioGroup}.svelte` (с сохранением `ATTACH` `#lib/form` на первой радиокнопке) и `ui/range/Range.svelte` по эталонам `shadcn` v4 выше; ручной `<input type="radio">` в `Attachment.svelte` заменён на `<RadioItem />` (`attachmentRadioClasses` удалён); созданы `form/RadioGroupField.svelte`, переведены на `<Range>` `form/RangeField.svelte` и `form/RatingField.svelte`, обновлён `form/resolve.ts` (`case 'radio': return RadioGroupField`).
 - [x] **S2.3 (`F1` + `F9` + `F8`):** добавлен `labelPlacement?: 'top' | 'end'` в `form/FieldShell.svelte`, `CheckboxField` и `SwitchField` переведены на единый `FieldShell`; написан контрактный тест `form/resolve.test.ts`; проверены статичные группы полей на `/form` и `/modals` (`<Fieldset>`).
 - [x] **S2.4 (`F5` + `U3b`):** унифицированы пропы `class` (на контрол) / `wrapperClass` (на внешнюю обёртку) в `PasswordInput`, `CopyInput`, `PhoneInput`, `SearchInput`, `OtpInput` (обновлён вызов в `paginator/SearchBar.svelte`); `paginator/Skeleton.svelte` и `modals/Skeleton.svelte` переведены в обёртки над `ui/skeleton/Skeleton.svelte` (удалены 4 дублирующиеся константы из `modals/svelte/classes.ts`).
+
+### Выполнено на Этапе `S6` — все 18 пунктов (`U1–U9`, `F1–F9`) полностью закрыты
+- [x] **S6.3 (`U8`):** правила UI-слоя (`*Variants`, `field.ts`, иконки, баррель `#components/ui/index.js` vs глубокий импорт, контракты `class` / `wrapperClass` и `aria-invalid`) зафиксированы в [`../../src/components/ui/README.md`](../../src/components/ui/README.md) и проверены полным набором unit-, a11y- и E2E-тестов.
