@@ -22,10 +22,6 @@ export const maxFieldsOf = (raw: string | null | undefined): number => {
   return (FIELD_LIMITS as readonly number[]).includes(n) ? n : MAX_FIELDS
 }
 
-/** Хвост адреса с опциями демо: `limit=4` (пусто — умолчание). */
-export const demoQuery = (limit: number): string =>
-  limit === MAX_FIELDS ? '' : `limit=${limit}`
-
 /** Поле набора: виды, правила на выбор и пределы аргументов. Подписи видов выбирает приложение. */
 const props = (saved?: readonly FieldSetItem[], max = MAX_FIELDS) => field.fields({
   label: 'Поля записи',

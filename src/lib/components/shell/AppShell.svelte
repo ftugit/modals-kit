@@ -196,9 +196,9 @@
       bind:this={mainRef}
       data-fe-scroll="owner"
       tabindex="-1"
-      class="flex min-w-0 flex-1 flex-col overflow-y-auto outline-none"
+      class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background outline-none"
     >
-      <div class="flex-1 p-4 sm:px-6 sm:py-10">
+      <div class="flex-1 bg-background p-4 sm:px-6 sm:py-10">
         {@render children()}
       </div>
       {#if footer}

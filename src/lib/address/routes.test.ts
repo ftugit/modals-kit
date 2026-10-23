@@ -128,5 +128,6 @@ describe('#lib/address/routes', () => {
     registerRoute('/alpha', { keys: ['shared_filter'] })
     expect(() => registerRoute('/alpha')).toThrow(/уже зарегистрирован/)
     expect(() => registerRoute('/beta', { keys: ['shared_filter'] })).toThrow(/shared_filter/)
+    expect(() => cardRoute.patch('?tab=reviews', { id: '42' }, {}, { drop: ['undeclared'] })).toThrow(/никем не забронирован/)
   })
 })

@@ -3,7 +3,7 @@
   // Поля, удалённые из текущей схемы набора, в вывод не попадают.
   import { cn } from '../../utils'
   import type { SchemaValuesProps } from './types.js'
-  import { fieldsValuesListClass } from './variants.js'
+  import { fieldsLayoutVariants } from './variants.js'
 
   let {
     fields,
@@ -18,7 +18,7 @@
 </script>
 
 {#if shown.length}
-  <dl class={cn(fieldsValuesListClass, cls)}>
+  <dl class={cn(fieldsLayoutVariants({ layout: 'values' }), cls)}>
     {#each shown as [key, value] (key)}
       <dt class="text-muted-foreground">{labelOf(key)}</dt>
       <dd class="break-words">{formatValue(value)}</dd>

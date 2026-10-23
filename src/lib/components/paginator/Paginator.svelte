@@ -1,7 +1,6 @@
 <script lang="ts" generics="T">
   // Единый папочный компонент пагинатора: собирает `PaginatorHost`, сентинелы краёв,
   // `PageList` / `PageColumns`, статусы `aria-live`, обработку ошибок, навигацию и лог событий.
-  import { untrack } from 'svelte'
   import { EdgeSentinel, PaginatorHost } from '#lib/paginate/svelte/index.js'
   import { cn } from '../../utils'
   import type { PaginatorProps } from './types.js'
@@ -20,7 +19,7 @@
   import { paginatorHostVariants } from './variants.js'
 
   let {
-    name: nameProp,
+    name,
     ariaLabel,
     snapshot = null,
     externalPage,
@@ -55,8 +54,6 @@
     renderPending,
     renderDivider,
   }: PaginatorProps<T> = $props()
-
-  const name = untrack(() => nameProp)
 </script>
 
 <PaginatorHost

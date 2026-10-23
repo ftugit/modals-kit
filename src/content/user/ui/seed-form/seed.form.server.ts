@@ -1,6 +1,6 @@
 // Серверный POST-обработчик компонента `SeedForm` (`#hooks/component-form`).
 import { localPath } from '#lib/address/index.js'
-import { registerComponentForm } from '#hooks/component-form/server.js'
+import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { auth, vaultPayloadOf } from '../../gateway.js'
 import { instruction, seedOf, type LoginOutcome } from '../../index.js'
 import { seedForm } from './form.js'

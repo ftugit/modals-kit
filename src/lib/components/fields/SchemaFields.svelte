@@ -10,7 +10,7 @@
   import { forms } from '../form/forms.config.js'
   import { Button } from '../ui/index.js'
   import type { SchemaFieldsProps } from './types.js'
-  import { fieldsCardClass } from './variants.js'
+  import { fieldsSurfaceVariants } from './variants.js'
 
   let {
     description,
@@ -39,7 +39,7 @@
   id={formId ?? description.id}
   {form}
   hiddenFields={form.hidden()}
-  class={cn(fieldsCardClass, cls)}
+  class={cn(fieldsSurfaceVariants({ surface: 'card' }), cls)}
 >
   <Common errors={form.common} title={errorTitle} />
   {#each form.from() as { item, f } (f.name)}

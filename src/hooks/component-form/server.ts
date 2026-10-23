@@ -5,7 +5,8 @@
 // которого нет собственного `+page.server.ts` с `actions`.
 //
 // Механика без костылей (никаких flash-кук и записей в кэш):
-//   - все `*.form.server.ts` в проекте подхватываются автоматически через `import.meta.glob`;
+//   - все `*.form.server.ts` в проекте обнаруживаются лениво при первом POST через
+//     `import.meta.glob` без циклической оценки модулей в `vite dev`;
 //   - GET / прочие методы и чужие POST без зарегистрированного `__form_id`
 //     проходят напрямую в `resolve(event)` без накладных расходов;
 //   - с JS (`Accept: application/json`) — возвращает `{ data: { result } }` со
@@ -23,10 +24,16 @@ import type { FormDescription, Result } from '#lib/form/index.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
 import type { ComponentFormRegistration } from './types.js'
 
-// Автоматическое подключение всех модулей серверных форм без ручных импортов в `hooks.server.ts`.
-import.meta.glob('/src/**/*.form.server.ts', { eager: true })
-
 export { registerComponentForm }
+
+const discoveredFormModules = import.meta.glob('/src/**/*.form.server.ts')
+let loadedPromise: Promise<void> | undefined
+
+function ensureComponentFormsLoaded(): Promise<void> {
+  return (loadedPromise ??= Promise.all(
+    Object.values(discoveredFormModules).map((load) => load()),
+  ).then(() => undefined))
+}
 
 const isJsonRequest = (request: Request): boolean =>
   (request.headers.get('accept') ?? '').includes('application/json')
@@ -119,25 +126,29 @@ async function renderInlineWithResult(
 
 /** SvelteKit `Handle` для приёма POST встраиваемых форм на любом маршруте. */
 export const componentFormsHandle: Handle = async ({ event, resolve }) => {
-  const registry = componentFormRegistry()
-  if (event.request.method !== 'POST' || registry.size === 0 || !isFormBody(event.request)) {
+  if (event.request.method !== 'POST' || !isFormBody(event.request)) {
     return resolve(event)
   }
+
+  await ensureComponentFormsLoaded()
+  const registry = componentFormRegistry()
+  if (registry.size === 0) return resolve(event)
 
   const capBytes = maxRegisteredBytes()
   const raw = await peekFormDataBounded(event.request, capBytes)
   if (raw === null) return resolve(event)
+  if (raw === 'too-large') {
+    return isJsonRequest(event.request)
+      ? Response.json({ message: 'слишком большое тело запроса' }, { status: 413 })
+      : new Response('слишком большое тело запроса', { status: 413 })
+  }
 
   let matched: ComponentFormRegistration | undefined
-  if (raw === 'too-large') {
-    matched = registry.values().next().value
-  } else {
-    for (const [id, entry] of registry) {
-      const desc = resolveDescription(entry, event)
-      if (raw.get(desc.policy.envelopeKeys.id) === id) {
-        matched = entry
-        break
-      }
+  for (const [id, entry] of registry) {
+    const desc = resolveDescription(entry, event)
+    if (raw.get(desc.policy.envelopeKeys.id) === id) {
+      matched = entry
+      break
     }
   }
   if (!matched) return resolve(event)
@@ -168,7 +179,7 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
     ...(reg.source ? { source: reg.source } : {}),
     ...(resolvedChecks ? { checks: resolvedChecks } : {}),
     ...(reg.limits ? { limits: reg.limits } : {}),
-    execute: (ctx) => reg.execute(ctx, trackedEvent, raw instanceof FormData ? raw : undefined),
+    execute: (ctx) => reg.execute(ctx, trackedEvent, raw),
   })
 
   const { result, status } = await handler(event.request, 'action', trackedEvent)

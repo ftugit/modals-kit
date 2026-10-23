@@ -60,7 +60,7 @@
   }
 </script>
 
-<section data-testid="attachment-e2e-root" class="flex w-full max-w-full flex-col gap-6 py-4">
+<section data-testid="attachment-e2e-root" class="flex w-full max-w-full flex-col gap-6 bg-background py-4">
   <div data-testid="live-file-box" class="flex flex-wrap gap-3">
     <Attachment
       file={liveFile}
@@ -173,7 +173,7 @@
   </form>
 
   <form data-testid="browser-file-attachment-form" class="flex flex-col gap-2">
-    <label for="fa-browser-files" class="text-sm font-medium text-ink">Файлы вложения</label>
+    <label for="fa-browser-files" class="text-sm font-medium text-foreground">Файлы вложения</label>
     <FileAttachment
       id="fa-browser-files"
       name="picked"

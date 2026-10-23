@@ -386,10 +386,12 @@ await browser.close()
     body: new URLSearchParams({
       __form_id: 'fields-reset',
       __form_rev: '1',
-      __intent: 'reset',
+      __form_instance: 'fields-reset:new',
+      __form_submission: crypto.randomUUID(),
+      intent: 'reset',
     }),
   })
-  if (!reset.ok) console.log(`  ! уборка: сброс набора ответил ${reset.status}`)
+  ok('уборка: сброс набора очистил кэш сервера', reset.ok, String(reset.status))
 }
 
 console.log(failed ? `\nпровалов: ${failed}` : '\nвсе проверки прошли')

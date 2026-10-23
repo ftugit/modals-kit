@@ -226,36 +226,49 @@ function validateSync<Input, Output>(schema: StandardSchemaV1<Input, Output>, ra
   throw new Error(`Invalid route search parameters: ${first.issues.map((i) => i.message).join('; ')}`)
 }
 
-function serializeCleanQuery(
-  values: Record<string, unknown> | undefined,
-  defaults: Partial<Record<string, unknown>> | undefined,
-): string {
-  if (!values) return ''
-  const params = new URLSearchParams()
-  for (const [key, raw] of Object.entries(values)) {
-    if (raw === undefined || raw === null || raw === '') continue
-    if (defaults && key in defaults && defaults[key] === raw) continue
-    if (Array.isArray(raw)) {
-      for (const item of raw) {
-        if (item !== undefined && item !== null && item !== '') params.append(key, String(item))
-      }
-    } else {
-      params.set(key, String(raw))
-    }
-  }
-  const qs = params.toString()
-  return qs ? `?${qs}` : ''
-}
-
 function normalizePatch(
-  patch: Record<string, QueryPatchValue>,
+  patch: Record<string, unknown> | undefined,
   defaults: Partial<Record<string, unknown>> | undefined,
 ): Record<string, QueryPatchValue> {
+  if (!patch) return {}
   const normalized: Record<string, QueryPatchValue> = {}
   for (const [key, value] of Object.entries(patch)) {
-    normalized[key] = defaults && key in defaults && defaults[key] === value ? undefined : value
+    normalized[key] = (defaults && key in defaults && defaults[key] === value
+      ? undefined
+      : value) as QueryPatchValue
   }
   return normalized
+}
+
+function createRouteCodec<SearchInput extends Record<string, unknown>, SearchOutput>(
+  id: string,
+  opts: StaticRouteOptions<SearchInput, SearchOutput> | undefined,
+) {
+  const owner = opts?.owner ?? id
+  const declaredKeys = opts?.keys ?? []
+  const claimAll = () => {
+    if (declaredKeys.length > 0) claimQuery(owner, ...declaredKeys)
+  }
+  claimAll()
+
+  const parse = (from?: QueryInputSource): SearchOutput => {
+    const raw = toRawRecord(from)
+    return opts?.search ? validateSync(opts.search, raw) : (raw as unknown as SearchOutput)
+  }
+
+  const formatSearch = (
+    from: URL | URLSearchParams | string,
+    changes: Record<string, unknown> | undefined,
+    patchOpts?: { drop?: readonly string[] },
+  ): string => {
+    if (!from && (!changes || Object.keys(changes).length === 0) && !patchOpts?.drop?.length) {
+      return ''
+    }
+    claimAll()
+    return nextSearch(owner, extractSearchString(from), normalizePatch(changes, opts?.defaults), patchOpts)
+  }
+
+  return { id, owner, parse, formatSearch }
 }
 
 export function defineRoute<
@@ -282,79 +295,32 @@ export function defineRoute<
 ): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Params, SearchInput, SearchOutput> {
   if (typeof pathOrOptions === 'string') {
     const pathname = pathOrOptions
-    const id = maybeOptions?.id ?? pathname
-    const owner = maybeOptions?.owner ?? id
-    const declaredKeys = maybeOptions?.keys ?? []
-    if (declaredKeys.length > 0) claimQuery(owner, ...declaredKeys)
-
-    const parse = (from?: QueryInputSource): SearchOutput => {
-      const raw = toRawRecord(from)
-      if (!maybeOptions?.search) return raw as unknown as SearchOutput
-      return validateSync(maybeOptions.search, raw)
+    const core = createRouteCodec(maybeOptions?.id ?? pathname, maybeOptions)
+    const staticDescriptor: StaticRouteDescriptor<SearchInput, SearchOutput> = {
+      id: core.id,
+      owner: core.owner,
+      path: pathname,
+      parse: core.parse,
+      href: (search) => `${pathname}${core.formatSearch('', search as Record<string, unknown> | undefined)}`,
+      patch: (from, changes, opts) =>
+        `${pathname}${core.formatSearch(from, changes as Record<string, unknown>, opts)}`,
     }
-
-    const href = (search?: Partial<SearchInput>): string =>
-      `${pathname}${serializeCleanQuery(search as Record<string, unknown> | undefined, maybeOptions?.defaults)}`
-
-    const patch = (
-      from: URL | URLSearchParams | string,
-      changes: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
-      opts?: { drop?: readonly string[] },
-    ): string => {
-      const keysToEnsure = [
-        ...declaredKeys,
-        ...Object.keys(changes),
-        ...(opts?.drop ?? []),
-      ]
-      if (keysToEnsure.length > 0) claimQuery(owner, ...keysToEnsure)
-      const qs = nextSearch(
-        owner,
-        extractSearchString(from),
-        normalizePatch(changes as Record<string, QueryPatchValue>, maybeOptions?.defaults),
-        opts,
-      )
-      return `${pathname}${qs}`
-    }
-
-    return { id, owner, path: pathname, href, parse, patch }
+    return staticDescriptor
   }
 
-  const { id, buildPath, search: schema, defaults } = pathOrOptions
-  const owner = pathOrOptions.owner ?? id
-  const declaredKeys = pathOrOptions.keys ?? []
-  if (declaredKeys.length > 0) claimQuery(owner, ...declaredKeys)
-
-  const parse = (from?: QueryInputSource): SearchOutput => {
-    const raw = toRawRecord(from)
-    if (!schema) return raw as unknown as SearchOutput
-    return validateSync(schema, raw)
+  const { buildPath } = pathOrOptions
+  const core = createRouteCodec(pathOrOptions.id, pathOrOptions)
+  const paramDescriptor: ParamRouteDescriptor<Params, SearchInput, SearchOutput> = {
+    id: core.id,
+    owner: core.owner,
+    path: buildPath,
+    parse: core.parse,
+    href: (params, search) =>
+      `${buildPath(params)}${core.formatSearch('', search as Record<string, unknown> | undefined)}`,
+    patch: (from, params, changes, opts) =>
+      `${buildPath(params)}${core.formatSearch(from, changes as Record<string, unknown>, opts)}`,
   }
-
-  const href = (params: Params, search?: Partial<SearchInput>): string =>
-    `${buildPath(params)}${serializeCleanQuery(search as Record<string, unknown> | undefined, defaults)}`
-
-  const patch = (
-    from: URL | URLSearchParams | string,
-    params: Params,
-    changes: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
-    opts?: { drop?: readonly string[] },
-  ): string => {
-    const keysToEnsure = [
-      ...declaredKeys,
-      ...Object.keys(changes),
-      ...(opts?.drop ?? []),
-    ]
-    if (keysToEnsure.length > 0) claimQuery(owner, ...keysToEnsure)
-    const qs = nextSearch(
-      owner,
-      extractSearchString(from),
-      normalizePatch(changes as Record<string, QueryPatchValue>, defaults),
-      opts,
-    )
-    return `${buildPath(params)}${qs}`
-  }
-
-  return { id, owner, path: buildPath, href, parse, patch }
+  return paramDescriptor
 }
 
 export function registerRoute<

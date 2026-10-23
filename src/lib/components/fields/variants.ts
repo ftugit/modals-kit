@@ -1,4 +1,30 @@
-export const fieldsCardClass = 'space-y-3 rounded-xl border border-border bg-card p-4'
-export const fieldsRowClass = 'space-y-3 rounded-lg border border-border p-3'
-export const fieldsGridClass = 'grid gap-3 sm:grid-cols-2'
-export const fieldsValuesListClass = 'grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm'
+import { variants, type VariantProps } from '../../utils'
+
+export const fieldsSurfaceVariants = variants(
+  'space-y-3 border border-border',
+  {
+    surface: {
+      card: 'rounded-xl bg-card p-4',
+      row: 'rounded-lg p-3',
+    },
+  },
+  {
+    surface: 'card',
+  },
+)
+
+export const fieldsLayoutVariants = variants(
+  'grid',
+  {
+    layout: {
+      pair: 'gap-3 sm:grid-cols-2',
+      values: 'grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm',
+    },
+  },
+  {
+    layout: 'pair',
+  },
+)
+
+export type FieldsSurfaceVariants = VariantProps<typeof fieldsSurfaceVariants>
+export type FieldsLayoutVariants = VariantProps<typeof fieldsLayoutVariants>

@@ -65,9 +65,9 @@ export function bindComponentForm(
   options: ComponentFormOptions = {},
 ): BoundForm {
   const { action, prepare, continuation, session, lockStateKey, onSuccess, ...rest } = options
-  const target = untrack(() => action ?? readCurrentHref())
+  const resolveTarget = () => action ?? readCurrentHref()
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
-  const baseTransport = kitActionTransport(target, prepare ? { prepare } : {})
+  const baseTransport = kitActionTransport(resolveTarget, prepare ? { prepare } : {})
   let lastResult: Result | null = initialContinuation
 
   const transport: Transport = async (req) => {
@@ -100,18 +100,26 @@ export function bindComponentForm(
 
   const form = bind(cfg, desc, {
     ...rest,
-    action: target,
+    action: resolveTarget,
     transport,
     continuation: initialContinuation,
   })
 
   if (lockStateKey) {
+    let applied = false
     $effect(() => {
       const pending = form.state.pending
-      const here = visibleAddress()
-      if (Boolean(here.state[lockStateKey]) !== pending) {
+      if (pending === applied) return
+      applied = pending
+      void writeAddress(
+        (cur) => ({ url: cur.url.href, state: { ...cur.state, [lockStateKey]: pending } }),
+        { replace: true, load: false },
+      )
+      return () => {
+        if (!applied) return
+        applied = false
         void writeAddress(
-          () => ({ url: here.url.href, state: { ...here.state, [lockStateKey]: pending } }),
+          (cur) => ({ url: cur.url.href, state: { ...cur.state, [lockStateKey]: false } }),
           { replace: true, load: false },
         )
       }

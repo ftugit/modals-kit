@@ -24,16 +24,23 @@
   import { cn } from '../../../utils'
 
   interface Props extends HTMLAttributes<HTMLSpanElement> {
-    size?: SpinnerVariants['size']
+    size?: SpinnerVariants['size'] | number
   }
 
-  let { size = 'md', class: cls, ...rest }: Props = $props()
+  let { size = 'md', style, class: cls, ...rest }: Props = $props()
+
+  const inlineStyle = $derived(
+    typeof size === 'number'
+      ? `width: ${size}px; height: ${size}px;${typeof style === 'string' && style ? ` ${style}` : ''}`
+      : style,
+  )
 </script>
 
 <span
   role="status"
   aria-label="Загрузка"
-  class={cn(spinnerVariants({ size }), cls)}
+  class={cn(spinnerVariants({ size: typeof size === 'number' ? 'sm' : size }), cls)}
+  style={inlineStyle}
   {...rest}
 >
   <span class="sr-only">Загрузка...</span>

@@ -588,7 +588,6 @@
 | `PhoneInput.svelte` | 220 | — | ⏳ |  | $effect×1, window/document×2, untrack×2 |
 | `SearchField.svelte` | 50 | — | ⏳ |  |  |
 | `SearchInput.svelte` | 70 | — | ⏳ |  | addEventListener×1 |
-| `SearchMorph.svelte` | 144 | — | ⏳ |  | window/document×2, rAF×1, addEventListener×1 |
 | `Select.svelte` | 861 | — | ⏳ |  | $effect×5, window/document×15, setTimeout×1, microtask×2, untrack×1, addEventListener×7 |
 | `SelectList.svelte` | 569 | — | ⏳ |  | $effect×3, window/document×1, rAF×1 |
 | `Separator.svelte` | 50 | — | ⏳ |  |  |

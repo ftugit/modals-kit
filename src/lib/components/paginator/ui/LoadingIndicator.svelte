@@ -4,7 +4,7 @@
   import { paginatorTask, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { taskPercent } from '#lib/task/index.js'
   import { trackTask } from '../../loader/loader.svelte.js'
-  import Spinner from './Spinner.svelte'
+  import { Spinner } from '../../ui/index.js'
 
   interface Props {
     name?: string
@@ -36,7 +36,7 @@
       {@render children()}
     {:else}
       <div class="flex items-center gap-2 rounded-full border border-border bg-popover/90 px-3 py-1 text-xs text-popover-foreground shadow-md backdrop-blur-xs">
-        <Spinner size={13} />
+        <Spinner size={13} class="text-muted-foreground" />
         <span>{percent !== null ? `${text} ${percent}%` : text}</span>
       </div>
     {/if}

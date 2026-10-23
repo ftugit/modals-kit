@@ -1,20 +1,24 @@
 // Самодостаточные серверные POST-обработчики конструктора `/fields` через `#hooks/component-form`.
 // Подхватываются автоматически (`import.meta.glob` в `hooks/component-form/server.ts`),
 // работают одинаково с JS и без JS без дублирующих `+server.ts` и ручных `actions`.
-import { registerComponentForm } from '#hooks/component-form/server.js'
+import { registerComponentForm } from '#hooks/component-form/registry.js'
+import { claimQuery, nextSearch } from '#lib/address/keys.js'
 import type { FieldSetItem } from '#lib/form/index.js'
+import { probeImageHeader } from '#lib/image/probe.js'
 import { localStore } from '#lib/server/cache.js'
 import '#lib/components/form/extend.js'
 import {
   IMAGE_MAX_BYTES,
   collectionForm,
-  demoQuery,
   maxFieldsOf,
   recordForm,
   resetForm,
+  type FieldsStep,
   type SavedRecord,
   type SavedSet,
 } from './forms.js'
+
+claimQuery('fields', 'step', 'step.*')
 
 const store = localStore.scope('fields-demo', { max: 2 })
 
@@ -22,19 +26,14 @@ export const savedSet = (): SavedSet | null => store.get<SavedSet>('set') ?? nul
 export const savedRecord = (): SavedRecord | null => store.get<SavedRecord>('record') ?? null
 export const clearFieldsDemo = (): void => store.clear()
 
-const limitTail = (url: URL): string => {
-  const q = demoQuery(maxFieldsOf(url.searchParams.get('limit')))
-  return q ? `&${q}` : ''
-}
+const stepRedirect = (url: URL, step: FieldsStep): string =>
+  `/fields${nextSearch('fields', url.search, { step })}`
 
-function sniffImageMime(b: Uint8Array): string | null {
-  const at = (i: number, ...xs: number[]) => xs.every((x, k) => b[i + k] === x)
-  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png'
-  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg'
-  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif'
-  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp'
-  return null
-}
+const isGif = (b: Uint8Array): boolean =>
+  b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38
+
+const imageMimeOf = (b: Uint8Array): string | null =>
+  probeImageHeader(b)?.format ?? (isGif(b) ? 'image/gif' : null)
 
 function toBase64(b: Uint8Array): string {
   let bin = ''
@@ -43,7 +42,7 @@ function toBase64(b: Uint8Array): string {
 }
 
 registerComponentForm({
-  id: 'fields-builder',
+  id: collectionForm().id,
   description: (event) => collectionForm(undefined, maxFieldsOf(event.url.searchParams.get('limit'))),
   execute({ values, commit }) {
     const fields = values['props'] as readonly FieldSetItem[]
@@ -51,7 +50,7 @@ registerComponentForm({
     commit()
     return { data: { count: fields.length } }
   },
-  redirectOnSuccess: (event) => `/fields?step=fill${limitTail(event.url)}`,
+  redirectOnSuccess: (event) => stepRedirect(event.url, 'fill'),
 })
 
 registerComponentForm({
@@ -67,7 +66,7 @@ registerComponentForm({
     let image = previous?.image ?? ''
     if (file) {
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const type = sniffImageMime(bytes)
+      const type = imageMimeOf(bytes)
       if (!type) {
         return fail([{ message: 'не изображение', code: 'accept', path: ['image'], params: { name: file.name } }])
       }
@@ -89,7 +88,7 @@ registerComponentForm({
     commit()
     return { data: { title: String(values['title']) } }
   },
-  redirectOnSuccess: (event) => `/fields?step=result${limitTail(event.url)}`,
+  redirectOnSuccess: (event) => stepRedirect(event.url, 'result'),
 })
 
 registerComponentForm({
@@ -99,5 +98,5 @@ registerComponentForm({
     commit()
     return { data: { reset: true } }
   },
-  redirectOnSuccess: (event) => `/fields?step=build${limitTail(event.url)}`,
+  redirectOnSuccess: (event) => stepRedirect(event.url, 'build'),
 })

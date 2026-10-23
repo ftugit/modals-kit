@@ -4,7 +4,7 @@
 import { localPath } from '#lib/address/index.js'
 import { decodeWithNode } from '#lib/image/node.js'
 import { localStore } from '#lib/server/cache.js'
-import { registerComponentForm } from '#hooks/component-form/server.js'
+import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { createUserChecks, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
 import { auth, vaultPayloadOf } from '../../gateway.js'
 import { createUserConfig, instruction } from '../../index.js'

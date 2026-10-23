@@ -12,7 +12,7 @@
   import { forms } from '../form/forms.config.js'
   import { Button, Fieldset } from '../ui/index.js'
   import type { SchemaBuilderProps } from './types.js'
-  import { fieldsCardClass, fieldsGridClass, fieldsRowClass } from './variants.js'
+  import { fieldsLayoutVariants, fieldsSurfaceVariants } from './variants.js'
 
   const DEFAULT_RULE_LABELS: Readonly<Record<string, string>> = {
     required: 'Обязательное',
@@ -69,7 +69,7 @@
   id={formId ?? description.id}
   {form}
   hiddenFields={form.hidden()}
-  class={cn(fieldsCardClass, cls)}
+  class={cn(fieldsSurfaceVariants({ surface: 'card' }), cls)}
 >
   <!-- Enter в текстовом поле без JS нажимает ПЕРВУЮ submit-кнопку формы:
        скрытая кнопка гарантирует отправку `submit`, а не `Удалить` первой строки. -->
@@ -82,7 +82,7 @@
     {/each}
 
     {#each set.rows as row, i (row.key)}
-      <div data-set-row={row.key} class={fieldsRowClass}>
+      <div data-set-row={row.key} class={fieldsSurfaceVariants({ surface: 'row' })}>
         <div class="flex items-center justify-between gap-2">
           <span class="text-sm font-medium">Поле {i + 1}</span>
           <Button variant="ghost" size="xs" data-testid="remove-{row.key}" {...set.removeProps(row)}>
@@ -92,13 +92,13 @@
         {#each row.errors as e (e.id)}
           <p class="text-xs font-medium text-destructive" role="alert">{e.message}</p>
         {/each}
-        <div class={fieldsGridClass}>
+        <div class={fieldsLayoutVariants({ layout: 'pair' })}>
           <Field of={row.label} />
           <Field of={row.kind} />
         </div>
         <Field of={row.rules} />
         {#if row.args.length}
-          <div class={fieldsGridClass}>
+          <div class={fieldsLayoutVariants({ layout: 'pair' })}>
             {#each row.args as a (a.name)}<Field of={a} />{/each}
           </div>
         {/if}

@@ -5,9 +5,8 @@
    */
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
-  import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
   import { DemoPanel } from '#lib/components/demo/index.js'
-  import { fieldsCardClass, SchemaBuilder, SchemaFields, SchemaValues } from '#lib/components/fields/index.js'
+  import { fieldsSurfaceVariants, SchemaBuilder, SchemaFields, SchemaValues } from '#lib/components/fields/index.js'
   import Field from '#lib/components/form/Field.svelte'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Steps, useSteps } from '#lib/components/steps/index.js'
@@ -15,7 +14,7 @@
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { Form } from '#lib/form/svelte/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
-  import { collectionForm, demoQuery, recordForm, resetForm, type FieldsStep } from './forms.js'
+  import { collectionForm, recordForm, resetForm, type FieldsStep } from './forms.js'
   import type { PageData } from './$types'
 
   let { data }: { data: PageData } = $props()
@@ -35,20 +34,10 @@
     lockKey: 'fieldsNavLocked',
   })
 
-  const stepHref = (target: FieldsStep, limit: number): string => {
-    const q = demoQuery(limit)
-    return `/fields?step=${target}${q ? `&${q}` : ''}`
-  }
-
   const reset = bindComponentForm(forms, untrack(() => resetForm()), {
-    intercept: false,
+    lockStateKey: 'fieldsNavLocked',
+    onSuccess: () => void goto(steps.href('build')),
   })
-
-  const lockSteps = () =>
-    writeAddress(
-      () => ({ url: visibleAddress().url.href, state: { ...visibleAddress().state, fieldsNavLocked: true } }),
-      { replace: true, load: false },
-    )
 </script>
 
 <svelte:head>
@@ -68,7 +57,7 @@
     <span><Steps host={steps} label="Шаги" /></span>
     {#if data.step !== 'build'}
       <span class="ms-auto">
-        <Form form={reset} hiddenFields={reset.hidden()} class="inline-flex" onsubmit={() => void lockSteps()}>
+        <Form form={reset} hiddenFields={reset.hidden()} class="inline-flex">
           <Button type="submit" variant="link" size="none" data-testid="reset" {...reset.intent('reset')}>
             Сбросить
           </Button>
@@ -85,7 +74,7 @@
           <SchemaBuilder
             description={collectionForm(data.set?.fields, data.limit)}
             lockStateKey="fieldsNavLocked"
-            onSuccess={() => void goto(stepHref('fill', data.limit))}
+            onSuccess={() => void goto(steps.href('fill'))}
           />
         {/key}
         {#if data.set}
@@ -107,7 +96,7 @@
             <SchemaFields
               description={recordForm(data.set, data.record)}
               lockStateKey="fieldsNavLocked"
-              onSuccess={() => void goto(stepHref('result', data.limit))}
+              onSuccess={() => void goto(steps.href('result'))}
             >
               {#snippet extraFields(form)}
                 <Field of={form.f.title} />
@@ -129,7 +118,7 @@
       {#if data.record}
         <section class="space-y-3" aria-labelledby="fields-step-view" data-testid="record-view">
           <h2 id="fields-step-view" class="text-xl font-semibold">Просмотр</h2>
-          <article class={fieldsCardClass}>
+          <article class={fieldsSurfaceVariants({ surface: 'card' })}>
             <h3 class="text-lg font-medium" data-testid="record-title">{data.record.title}</h3>
             <img src={data.record.image} alt={data.record.title} class="max-h-64 max-w-full rounded-md border border-border" />
             <SchemaValues fields={data.set?.fields ?? []} values={data.record.values} />

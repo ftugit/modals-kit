@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
-  import Spinner from './Spinner.svelte'
+  import { Spinner } from '../../ui/index.js'
 
   interface Props {
     name?: string
@@ -28,7 +28,7 @@
       data-testid="replace-loading"
       class="my-2 flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground"
     >
-      <Spinner size={14} />
+      <Spinner size={14} class="text-muted-foreground" />
       <span>Загрузка…</span>
     </div>
   {/if}

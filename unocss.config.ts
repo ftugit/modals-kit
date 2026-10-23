@@ -1,5 +1,6 @@
-import { defineConfig, presetWind4 } from 'unocss';
-import { LINK_INDICATOR_CSS } from './src/lib/components/links/indicator';
+import { readFileSync } from 'node:fs'
+import { defineConfig, presetWind4 } from 'unocss'
+import { LINK_INDICATOR_CSS } from './src/lib/components/links/indicator'
 
 /**
  * UnoCSS 66 / presetWind4 со встроенным reset'ом (Tailwind v4 preflight).
@@ -7,11 +8,23 @@ import { LINK_INDICATOR_CSS } from './src/lib/components/links/indicator';
  * bg-primary text-primary-foreground, text-muted-foreground, border-border, ring-ring…
  * Сами значения (две темы) — CSS-переменные в src/app.css.
  */
-const v = (name: string) => `var(--${name})`;
+const v = (name: string) => `var(--${name})`
 const pair = (name: string) => ({
   DEFAULT: v(name),
   foreground: v(`${name}-foreground`),
-});
+})
+
+// В `vite build` `content.filesystem` сканирует `src/app.html` с диска, а в `vite dev`
+// без `transformIndexHtml` (см. `vite.config.ts`) базовые классы `<html>`/`<body>` подаются
+// из того же `src/app.html` в `safelist`, а `@property --un-bg-opacity` гарантируется сразу
+// в preflight, чтобы `bg-*` утилиты не теряли фон до первой трансформации `bg-*/…`.
+const appHtml = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8')
+const appHtmlClasses = [...appHtml.matchAll(/\bclass="([^"]*)"/g)]
+  .flatMap(([, value]) => value.trim().split(/\s+/))
+  .filter(Boolean)
+
+const UNO_DEV_BG_OPACITY_PROPERTY =
+  '@property --un-bg-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}'
 
 export const UNO_THEME = {
   aria: {
@@ -65,20 +78,31 @@ export const UNO_THEME = {
     display: 'Manrope, ui-sans-serif, system-ui, sans-serif',
     sans: 'Manrope, ui-sans-serif, system-ui, sans-serif',
   },
-};
+}
 
 export default defineConfig({
   // app.html — шаблон SvelteKit, а не модуль Vite: ни сборка, ни transformIndexHtml
   // его не видят (sveltejs/kit#8269), поэтому классы <html>/<body> сканируются с диска.
   // https://unocss.dev/guide/extracting#extracting-from-filesystem
   content: { filesystem: ['src/app.html'] },
+  safelist: appHtmlClasses,
   presets: [
     presetWind4({
       preflights: { reset: true },
     }),
   ],
+  // Незнакомый вендорный псевдоэлемент (`::-moz-*` в Blink/WebKit, `::-webkit-*` в Gecko)
+  // инвалидирует весь список селекторов через запятую, если UnoCSS склеит его с обычной
+  // утилитой (`.appearance-none`, `.bg-background` и т.д.). Уникальное свойство на каждый
+  // вендорный псевдоэлемент запрещает склейку глобально для всего проекта.
+  postprocess: [
+    (util) => {
+      const vendor = util.selector.match(/::-(?:webkit|moz)-[a-z-]+/)?.[0]
+      if (vendor) util.entries.push(['--un-vendor', `"${vendor}"`])
+    },
+  ],
   // Вид состояния ссылок `asLink`/`asModalLink` (спиннер, «!», %): элемент
   // принадлежит потребителю, поэтому правило одно и глобальное.
-  preflights: [{ getCSS: () => LINK_INDICATOR_CSS }],
+  preflights: [{ getCSS: () => `${UNO_DEV_BG_OPACITY_PROPERTY}\n${LINK_INDICATOR_CSS}` }],
   theme: UNO_THEME,
-});
+})

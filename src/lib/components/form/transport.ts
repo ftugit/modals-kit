@@ -111,7 +111,7 @@ export function unwrapKitAction(body: unknown): { result?: Result } | undefined 
  * поля, не заводя собственный fetch.
  */
 export function kitActionTransport(
-  path: string,
+  path: string | (() => string),
   options: { prepare?: (data: FormData) => void | Promise<void> } = {},
 ): Transport {
   return async (req) => {
@@ -121,9 +121,10 @@ export function kitActionTransport(
       /* prepare отвечает за понятный отказ сам: пустое поле подписи сервер
          разберёт как обычную ошибку входа */
     }
+    const targetUrl = typeof path === 'function' ? path() : path
     let res: Response
     try {
-      res = await fetch(path, {
+      res = await fetch(targetUrl, {
         method: 'POST',
         body: req.data,
         headers: { accept: 'application/json' },

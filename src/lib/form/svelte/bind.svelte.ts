@@ -157,8 +157,8 @@ export type FieldTakeover = (f: FieldHandle) => FieldTakeoverMount | void
 
 /** Настройка связывания: перекрывает проектную конфигурацию. */
 export interface BindOptions {
-  /** Адрес нативной отправки. По умолчанию — `actionBase/id`. */
-  action?: string
+  /** Адрес нативной отправки (или геттер живого адреса). По умолчанию — `actionBase/id`. */
+  action?: string | (() => string)
   /** Экземпляр формы: адресует продолжение. Умолчание — `id:new`. */
   instance?: string
   /** Версия спецификации для источника описания. */
@@ -202,7 +202,8 @@ export interface BindOptions {
  */
 export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {}) {
   const instance = o.instance ?? `${desc.id}:new`
-  const action = o.action ?? `${cfg.config.actionBase ?? ''}/${desc.id}`
+  const resolveAction = () =>
+    typeof o.action === 'function' ? o.action() : (o.action ?? `${cfg.config.actionBase ?? ''}/${desc.id}`)
   const render = formRenderer(desc.messages as never, cfg.config.messages,
                               desc.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
@@ -548,7 +549,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     }
     return {
       method: 'post',
-      action,
+      action: resolveAction(),
       enctype: 'multipart/form-data',
       onsubmit: (e: SubmitEvent) => {
         if (!(o.intercept ?? true)) return            // отдаём браузеру нативный путь

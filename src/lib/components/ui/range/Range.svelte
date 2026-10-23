@@ -4,6 +4,9 @@
   // и круглый бегунок `size-4 border-primary bg-background shadow-sm` с кольцом
   // `ring-4 ring-ring/50` при наведении и фокусе. Внутри — настоящий `<input type="range">`,
   // поэтому клавиатура, скринридер, `FormData` и отправка без JS работают нативно.
+  //
+  // Важно: вендорные псевдоэлементы WebKit и Gecko обязаны жить в отдельных CSS-правилах
+  // блока стилей: склейка селекторов разных движков через запятую делает правило невалидным.
   import type { ClassValue, HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
 
@@ -63,11 +66,57 @@
     bind:value
     class={cn(
       'absolute inset-0 h-full w-full cursor-pointer appearance-none bg-transparent outline-none disabled:cursor-not-allowed',
-      '[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent',
-      '[&::-webkit-slider-thumb]:-mt-[5px] [&::-webkit-slider-thumb]:block [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:transition-[color,box-shadow] hover:[&::-webkit-slider-thumb]:ring-4 hover:[&::-webkit-slider-thumb]:ring-ring/50 focus-visible:[&::-webkit-slider-thumb]:ring-4 focus-visible:[&::-webkit-slider-thumb]:ring-ring/50',
-      '[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent',
-      '[&::-moz-range-thumb]:block [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-sm [&::-moz-range-thumb]:transition-[color,box-shadow] hover:[&::-moz-range-thumb]:ring-4 hover:[&::-moz-range-thumb]:ring-ring/50 focus-visible:[&::-moz-range-thumb]:ring-4 focus-visible:[&::-moz-range-thumb]:ring-ring/50',
       cls,
     )}
   />
 </div>
+
+<style>
+  input::-webkit-slider-runnable-track {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: transparent;
+  }
+
+  input::-moz-range-track {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: transparent;
+  }
+
+  input::-webkit-slider-thumb {
+    appearance: none;
+    display: block;
+    margin-top: -5px;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    border: 1px solid var(--primary);
+    background-color: var(--background);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: color 150ms, box-shadow 150ms;
+  }
+
+  input:hover:not(:disabled)::-webkit-slider-thumb,
+  input:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+
+  input::-moz-range-thumb {
+    appearance: none;
+    display: block;
+    box-sizing: border-box;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    border: 1px solid var(--primary);
+    background-color: var(--background);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: color 150ms, box-shadow 150ms;
+  }
+
+  input:hover:not(:disabled)::-moz-range-thumb,
+  input:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+</style>

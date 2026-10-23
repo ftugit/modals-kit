@@ -22,37 +22,12 @@
  *   node tooling/classes-audit.mjs src/app.html # конкретные файлы
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createGenerator } from '@unocss/core'
-import * as wind from '@unocss/preset-wind4'
+import { runnerImport } from 'vite'
 
-const v = (name) => `var(--${name})`
-const pair = (name) => ({ DEFAULT: v(name), foreground: v(`${name}-foreground`) })
-
-const preset = wind.presetWind4 ?? wind.default
-const uno = await createGenerator({
-  presets: [preset({ preflights: { reset: false } })],
-  shortcuts: {},
-  theme: {
-    aria: { invalid: 'invalid="true"' },
-    colors: {
-      background: v('background'), foreground: v('foreground'), border: v('border'), input: v('input'), ring: v('ring'),
-      card: pair('card'), popover: pair('popover'), primary: pair('primary'), secondary: pair('secondary'),
-      muted: pair('muted'), accent: pair('accent'), destructive: pair('destructive'), success: pair('success'),
-      info: pair('info'), warning: pair('warning'),
-      chart: { 1: v('chart-1'), 2: v('chart-2'), 3: v('chart-3'), 4: v('chart-4'), 5: v('chart-5') },
-      sidebar: {
-        DEFAULT: v('sidebar'), foreground: v('sidebar-foreground'), primary: v('sidebar-primary'),
-        'primary-foreground': v('sidebar-primary-foreground'), accent: v('sidebar-accent'),
-        'accent-foreground': v('sidebar-accent-foreground'), border: v('sidebar-border'), ring: v('sidebar-ring'),
-      },
-    },
-    radius: {
-      DEFAULT: 'var(--radius)', sm: 'calc(var(--radius) - 4px)', md: 'calc(var(--radius) - 2px)',
-      lg: 'var(--radius)', xl: 'calc(var(--radius) + 4px)', '2xl': 'calc(var(--radius) + 8px)',
-    },
-    font: { display: 'Manrope, ui-sans-serif, system-ui, sans-serif', sans: 'Manrope, ui-sans-serif, system-ui, sans-serif' },
-  },
-})
+const { module: unoConfig } = await runnerImport(fileURLToPath(new URL('../unocss.config.ts', import.meta.url)))
+const uno = await createGenerator({ ...unoConfig.default, safelist: [] })
 
 /** Обход src: файлы, где вообще бывают классы. */
 function walk(dir = 'src') {
@@ -91,12 +66,12 @@ const SCOPE = [
   'src/lib/components/ui/radio-group/RadioGroup.svelte',
   'src/lib/components/ui/range/Range.svelte',
   'src/lib/components/ui/attachment/Attachment.svelte',
+  'src/lib/components/ui/attachment/AttachmentAction.svelte',
   'src/lib/components/ui/attachment/variants.ts',
   'src/lib/components/ui/skeleton/Skeleton.svelte',
   'src/lib/components/paginator/Paginator.svelte',
   'src/lib/components/paginator/variants.ts',
   'src/lib/components/paginator/ui/Skeleton.svelte',
-  'src/lib/components/paginator/ui/Spinner.svelte',
   'src/lib/components/paginator/ui/SearchBar.svelte',
   'src/lib/components/fields/SchemaBuilder.svelte',
   'src/lib/components/fields/SchemaFields.svelte',
@@ -220,7 +195,11 @@ function tokensOf(file) {
   if (!isMarkup) return tokensFrom(literals(strip(raw)))
   const chunks = classChunks(raw)
   for (const m of raw.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
-    chunks.push(...literals(strip(m[1])))
+    const cleaned = strip(m[1]).replace(
+      /\b(?:live|submitTestId|lockStateKey|formId|id|name|owner|key|mode|storageKey)\s*[:=]\s*(['"`])[^'"`]*\1/g,
+      ' ',
+    )
+    chunks.push(...literals(cleaned))
   }
   return tokensFrom(chunks)
 }
@@ -255,8 +234,6 @@ const NOT_A_CLASS = new Set([
   'sveltekit:history',
   '!checked', // выражение кода внутри class={cn(…)}
   'cn(', // вызов cn из того же class={cn(…)}
-  'on-submit', // опция `live: 'on-submit'` в скрипте SchemaBuilder / SchemaFields
-  'record-submit', // дефолтный `submitTestId` в скрипте SchemaFields
 ])
 
 const wanted = new Set()

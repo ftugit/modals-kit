@@ -45,7 +45,7 @@
   class={cn(
     fieldBase,
     'px-3 py-2 text-sm',
-    'field-sizing-content resize-none min-h-[calc(var(--field-min-lines,1)*1lh_+_1.25rem)] max-h-[calc(var(--field-max-lines,6)*1lh_+_1.25rem)] transition-[color,border-color,box-shadow,height] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms] data-[autosize=js]:overflow-y-hidden',
+    'field-sizing-content resize-none min-h-[calc(var(--field-min-lines,1)*1lh_+_1rem_+_2px)] max-h-[calc(var(--field-max-lines,6)*1lh_+_1rem_+_2px)] transition-[color,border-color,box-shadow,height] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms] data-[autosize=js]:overflow-y-hidden',
     cls,
   )}
   style={`--field-min-lines: ${minLines}; --field-max-lines: ${maxLines}; ${typeof style === 'string' ? style : ''}`}
