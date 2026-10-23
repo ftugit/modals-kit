@@ -53,7 +53,7 @@ try {
   //    затем открываем чистую страницу со сгенерированными утилитами в SSR `<style id="__uno.css">`.
   const warmup = await context.newPage()
   await warmup.goto(BASE, { waitUntil: 'domcontentloaded' })
-  await warmup.evaluate(() => import('/src/lib/components/ui/attachment/AttachmentBrowserFixture.test.svelte'))
+  await warmup.evaluate(() => import('/src/components/ui/attachment/AttachmentBrowserFixture.test.svelte'))
   await warmup.close()
 
   const page = await context.newPage()
@@ -67,7 +67,7 @@ try {
   // 2) Монтируем тестовый стенд `Attachment` + `FileAttachment` прямо внутри `<main>` через тот же инстанс рантайма Vite.
   await page.evaluate(async () => {
     const svelte = await import('/node_modules/.vite/deps/svelte.js')
-    const mod = await import('/src/lib/components/ui/attachment/AttachmentBrowserFixture.test.svelte')
+    const mod = await import('/src/components/ui/attachment/AttachmentBrowserFixture.test.svelte')
     const main = document.querySelector('main')
     main.innerHTML = ''
     const host = svelte.mount(mod.default, { target: main })

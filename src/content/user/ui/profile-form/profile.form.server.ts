@@ -1,13 +1,13 @@
 // Серверный POST-обработчик компонента `ProfileForm` (`#hooks/component-form`).
 // Использует изоморфный `prepareAvatar` с серверным декодером `decodeWithNode`
 // из `#lib/image/node.js` без какого-либо дублирующего `server-avatar.ts`.
-import { localPath } from '#lib/address/index.js'
 import { decodeWithNode } from '#lib/image/node.js'
-import { localStore } from '#lib/server/cache.js'
+import { localStore } from '#server/cache.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { createUserChecks, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
-import { auth, vaultPayloadOf } from '../../gateway.js'
+import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { createUserConfig, instruction } from '../../index.js'
+import { userAuthRoute } from '../../routes.js'
 import { prepareAvatar } from './avatar.js'
 import { profileForm } from './form.js'
 
@@ -83,5 +83,5 @@ registerComponentForm({
     }
     return { data: { step: 'done', ...(user ? { user } : {}) } }
   },
-  redirectOnSuccess: (event) => localPath(event.url.searchParams.get('next')) ?? '/',
+  redirectOnSuccess: (event) => userAuthRoute.parse(event.url).next ?? '/',
 })

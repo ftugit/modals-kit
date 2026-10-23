@@ -14,7 +14,7 @@
   import { untrack } from 'svelte'
   import type { HostConfig } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { DemoPanel } from '#lib/components/demo/index.js'
+  import { DemoPanel } from '#components/demo/index.js'
   import { demoPanelSchema, type ModalsDemoValues } from './demo-schema.ts'
   import ModalsDemoFields from './ModalsDemoFields.svelte'
 

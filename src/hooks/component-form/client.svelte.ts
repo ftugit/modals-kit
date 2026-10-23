@@ -10,7 +10,7 @@ import { untrack } from 'svelte'
 import { page } from '$app/state'
 import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 import { bind, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
-import { kitActionTransport } from '#lib/components/form/transport.js'
+import { kitActionTransport } from './transport.js'
 import { buildEnvelope, type FormDescription, type Result, type Transport } from '#lib/form/index.js'
 import type { ComponentFormOptions, FormSessionGuard } from './types.js'
 

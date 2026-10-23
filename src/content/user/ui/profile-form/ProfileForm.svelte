@@ -1,3 +1,16 @@
+<script lang="ts" module>
+  import { defaults } from '../../config.js'
+  import { SERVER_PHOTO_FORMATS } from '../../checks.js'
+  import type { AvatarLimits } from './avatar.js'
+
+  export const DEFAULT_PROFILE_LIMITS: AvatarLimits = {
+    edge: defaults.avatarEdge,
+    maxBytes: defaults.avatarMaxBytes,
+    formats: SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, '')),
+    nicknameForbidden: defaults.nicknameForbidden,
+  }
+</script>
+
 <script lang="ts">
   /**
    * Встраиваемая форма редактирования профиля (`profileForm`) под защитой
@@ -9,26 +22,24 @@
   import { Form, formTask, type FieldTakeover } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { forms } from '#lib/components/form/forms.config.js'
-  import FileField from '#lib/components/form/FileField.svelte'
-  import Field from '#lib/components/form/Field.svelte'
-  import Common from '#lib/components/form/Common.svelte'
-  import { Button } from '#lib/components/ui/index.js'
-  import { cn } from '#lib/utils.js'
-  import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
-  import { defaults } from '../../config.js'
+  import { forms } from '#components/form/forms.config.js'
+  import FileField from '#components/form/FileField.svelte'
+  import Field from '#components/form/Field.svelte'
+  import Common from '#components/form/Common.svelte'
+  import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
+  import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { createUserChecks } from '../../checks.js'
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
-  import type { AvatarLimits } from './avatar.js'
   import { profileForm } from './form.js'
   import AvatarTakeover, { setAvatarTakeoverContext } from './AvatarTakeover.svelte'
 
   interface Props {
     action?: string
     form?: { result?: Result } | null
-    limits: AvatarLimits
+    limits?: AvatarLimits
     initial?: VaultProfile | null
     authorized?: boolean
     enabled?: boolean
@@ -41,7 +52,7 @@
   let {
     action,
     form,
-    limits,
+    limits = DEFAULT_PROFILE_LIMITS,
     initial = null,
     authorized,
     enabled,

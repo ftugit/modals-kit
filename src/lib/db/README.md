@@ -62,7 +62,7 @@
 запрос. Лень важна: `vite dev` и `vite build` спорят из-за file-lock каталога PGlite.
 
 ```ts
-// src/lib/server/db.ts
+// src/server/db.server.ts
 import { createDb, conservativeLimits, defineResource, f, field, policy, s, type Driver } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
@@ -820,7 +820,7 @@ await schema.sync(driver, { resolve: { [stepKey(report.conflicts[0])]: 'rename' 
 имеют (`choices` → `[]`): их снимает правка данных или модели.
 
 Приложение показывает это экраном на страницах с БД (`src/routes/(site)/(app)/db-demo/SchemaPending.svelte`):
-кнопка «Выполнить» спрашивает `DB_ADMIN_TOKEN` (`src/lib/server/schema-admin.ts` сверяет его
+кнопка «Выполнить» спрашивает `DB_ADMIN_TOKEN` (`src/server/schema-admin.server.ts` сверяет его
 за постоянное время до обращения к БД); без переменной кнопки нет, экран объясняет, что задать.
 
 ### SQL-файлы: `applyMigrationText`

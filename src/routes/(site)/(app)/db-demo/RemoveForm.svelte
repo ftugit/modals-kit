@@ -7,11 +7,11 @@
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { jsonTransport } from '#lib/components/form/transport.js'
-  import { Button } from '#lib/components/ui/index.js'
-  import { forms } from '#lib/components/form/forms.config.js'
-  import Common from '#lib/components/form/Common.svelte'
-  import Field from '#lib/components/form/Field.svelte'
+  import { jsonTransport } from '#components/form/transport.js'
+  import { Button } from '#components/ui/index.js'
+  import { forms } from '#components/form/forms.config.js'
+  import Common from '#components/form/Common.svelte'
+  import Field from '#components/form/Field.svelte'
   import { dbRemove } from './description'
 
   interface Props {

@@ -14,7 +14,7 @@ import { formParams } from '#hooks/db-form.js'
 import { buildEnvelope, readProof } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
 import { dbCreate } from './description'
-import { posts, slugOf } from '../../../../content/posts'
+import { posts, slugOf } from '#content/demo-catalog/posts/posts.js'
 import { createPrepare, stripLinks } from './prepare'
 
 const author = { principal: { roles: ['author'] } }

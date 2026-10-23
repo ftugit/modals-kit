@@ -3,8 +3,8 @@
 // даже типом.
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 import type { PaginatorState } from '#lib/paginate/index.js'
-import type { DemoItem } from '../../../../content/items'
-import type { CatalogItem } from './item-views'
+import type { DemoItem } from '#content/demo-catalog/items/items.js'
+import type { CatalogItem } from '#content/demo-catalog/items/item-views.js'
 
 export interface PaginatorLoaderData {
   /** Имя URL-пагинатора (в хранилище пагинаторов). */

@@ -2,11 +2,11 @@
  * Схема демо-панели `/steps` — ДАННЫЕ и только данные.
  *
  * Файл нарочно без SvelteKit и без `.svelte`: его импортирует скан-тест
- * (`src/lib/components/demo/schemas.test.ts`) вне приложения, поэтому ошибка в
+ * (`src/components/demo/schemas.test.ts`) вне приложения, поэтому ошибка в
  * схеме видна на сборке. Объявлять схемы панелей принято в `demo-schema.ts`
  * рядом со страницей — скан ловит `defineDemoPanel` в других файлах.
  */
-import { defineDemoPanel, demoSelect, demoToggle } from '#lib/components/demo/define.js'
+import { defineDemoPanel, demoSelect, demoToggle } from '#components/demo/define.js'
 
 /** Режимы демо; jsOnly-варианты до оживления просто выключены — как в других панелях. */
 export const DEMO_MODES = [

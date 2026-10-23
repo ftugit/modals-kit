@@ -11,10 +11,10 @@
  * подставляет их в `if/else` — как панель модалок отдаёт свой конфиг.
  *
  * Файл без SvelteKit и без `.svelte`: его импортирует скан-тест
- * (`src/lib/components/demo/schemas.test.ts`) вне приложения.
+ * (`src/components/demo/schemas.test.ts`) вне приложения.
  */
-import { defineDemoPanel, demoDivider, demoSelect, demoToggle } from '#lib/components/demo/define.js'
-import type { DemoValues } from '#lib/components/demo/types.js'
+import { defineDemoPanel, demoDivider, demoSelect, demoToggle } from '#components/demo/define.js'
+import type { DemoValues } from '#components/demo/types.js'
 import { PSP_SAMPLES } from './psp'
 
 /** Значения панели: ключи полей — имена контролов (они же id, как раньше). */

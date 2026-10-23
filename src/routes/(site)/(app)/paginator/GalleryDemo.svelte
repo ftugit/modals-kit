@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { report } from '#lib/app-errors.svelte.js'
+  import { report } from '#hooks/app-errors.svelte.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {
     PageNav,
@@ -7,9 +7,9 @@
     PaginatorSettings,
     Skeleton,
     type SettingsField,
-  } from '#lib/components/paginator/index.js'
+  } from '#components/paginator/index.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
-  import type { DemoItem } from '../../../../content/items'
+  import type { DemoItem } from '#content/demo-catalog/items/items.js'
   import {
     GALLERY_NAME,
     GALLERY_PAGE_SIZES,
@@ -17,8 +17,8 @@
     galleryExtraOf,
     type GalleryExtra,
   } from './definition'
-  import { shotHeight } from './item-views'
-  import ShotTile from './ShotTile.svelte'
+  import { shotHeight } from '#content/demo-catalog/items/item-views.js'
+  import ShotTile from '#content/demo-catalog/items/ui/ShotTile.svelte'
 
   const GALLERY_FIELDS: SettingsField<GalleryExtra>[] = [
     {

@@ -4,7 +4,7 @@
 // Настройки страницы (ключи, умолчания, регистрация пагинаторов) — в
 // `definition.ts`: он берёт отсюда `makeSource` и `gallerySource`.
 import type { StreamTask } from '#lib/fetch/index.js'
-import { getItemsPage } from '../../../../content/items'
+import { getItemsPage } from '#content/demo-catalog/items/items.js'
 import {
   SHIKIMORI_LIMIT_MAX,
   getAnimesPage,
@@ -12,11 +12,11 @@ import {
   getShikimoriTerms,
   type AnimesPage,
   type ShikimoriApi,
-} from '../../../../content/shikimori'
+} from '#content/demo-catalog/shikimori/shikimori.js'
 import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-import { shikimoriFilterKeys, shikimoriFilterSource } from '../../../../content/shikimori-filters'
-import { getCharactersPage, type CharactersPage, type RickMortyApi } from '../../../../content/rickmorty'
-import { RICKMORTY_FILTER_KEYS } from '../../../../content/rickmorty-filters'
+import { shikimoriFilterKeys, shikimoriFilterSource } from '#content/demo-catalog/shikimori/filters.js'
+import { getCharactersPage, type CharactersPage, type RickMortyApi } from '#content/demo-catalog/rickmorty/rickmorty.js'
+import { RICKMORTY_FILTER_KEYS } from '#content/demo-catalog/rickmorty/filters.js'
 import { reportSearchCorrection, withLibSearch, type SearchCorrectionInfo } from '#lib/paginate/search/index.js'
 import {
   composeSources,
@@ -29,8 +29,8 @@ import {
   type SourceLook,
   type SourceRecordSpec,
 } from '#lib/paginate/index.js'
-import { catalogTexts, catalogTitle, type CatalogItem } from './item-views'
-import { DB_LIST_FILTER_KEYS, fetchDbPosts, withDbCursor } from '../db-demo/definition'
+import { catalogTexts, catalogTitle, type CatalogItem } from '#content/demo-catalog/items/item-views.js'
+import { DB_LIST_FILTER_KEYS, fetchDbPosts, withDbCursor } from '#content/demo-catalog/posts/source.js'
 
 /**
  * Запросы схем в полёте (по версии API): параллельные вызовы ждут один ответ и

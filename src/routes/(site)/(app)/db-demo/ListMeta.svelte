@@ -9,7 +9,7 @@
    * цифры остались бы вчерашними.
    */
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
-  import { DB_LIST_ORDER_DEFAULT, dbListExtraOf, type DbPost } from './definition'
+  import { DB_LIST_ORDER_DEFAULT, dbListExtraOf, type DbPost } from '#content/demo-catalog/posts/source.js'
   interface Props {
     /** Показывать первую строку как она пришла из слоя (технический блок). */
     showRaw?: boolean

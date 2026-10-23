@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Button from '#lib/components/ui/button/Button.svelte'
-  import { asLink } from '#lib/components/links/index.js'
+  import Button from '#components/ui/button/Button.svelte'
+  import { asLink } from '#hooks/links/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
   let { data }: import('./$types').PageProps = $props()

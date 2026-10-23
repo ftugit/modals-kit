@@ -12,7 +12,7 @@
  * попадёт в отметку и пилюлей не покажется — список её покажет при следующей
  * загрузке.
  */
-import { DB_FRESH_LIMIT, type DbPost } from './definition'
+import { DB_FRESH_LIMIT, type DbPost } from '#content/demo-catalog/posts/source.js'
 
 /** Отметка пустой выдачи: «новее начала времён» = любая строка. */
 export const FRESH_EPOCH = '1970-01-01T00:00:00.000Z'

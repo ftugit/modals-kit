@@ -10,10 +10,11 @@
   import { untrack } from 'svelte'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
-  import { useModalLink } from '#lib/components/links/index.js'
-  import { forms } from '#lib/components/form/forms.config.js'
-  import { Button } from '#lib/components/ui/index.js'
-  import { cn } from '#lib/utils.js'
+  import { useModalLink } from '#hooks/links/index.js'
+  import { forms } from '#components/form/forms.config.js'
+  import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
+  import { userAuthRoute } from '../routes.js'
   import { seedForm } from './seed-form/form.js'
   import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
@@ -43,7 +44,7 @@
   const avatarUrl = $derived(vault.profile.avatarUrl)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
   const profileLink = $derived(
-    asModalLink('user.auth', { stage: 'profile' }, { href: '/user/auth?stage=profile' }),
+    asModalLink('user.auth', { stage: 'profile' }, { href: userAuthRoute.href({ stage: 'profile' }) }),
   )
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках

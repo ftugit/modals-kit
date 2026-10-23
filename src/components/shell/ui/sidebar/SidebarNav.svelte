@@ -1,0 +1,46 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '#components/utils.js'
+
+  export const sidebarNavItemVariants = variants(
+    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    {
+      active: {
+        true: 'bg-accent text-accent-foreground font-semibold',
+        false: 'text-foreground/80 hover:bg-accent hover:text-accent-foreground',
+      },
+    },
+    {
+      active: false,
+    },
+  )
+
+  export type SidebarNavItemVariants = VariantProps<typeof sidebarNavItemVariants>
+</script>
+
+<script lang="ts">
+  import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { asLink } from '#hooks/links/index.js'
+  import type { NavItem } from '../../types'
+
+  interface Props {
+    items: readonly NavItem[]
+  }
+
+  let { items }: Props = $props()
+</script>
+
+<nav class="flex flex-col gap-1 w-full" aria-label="Боковая навигация">
+  <span class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    Навигация
+  </span>
+  {#each items as item (item.to)}
+    {@const active = visibleAddress().url.pathname === item.to}
+    <a
+      {...asLink(item.to)}
+      class={sidebarNavItemVariants({ active })}
+      aria-current={active ? 'page' : undefined}
+    >
+      <span>{item.label}</span>
+    </a>
+  {/each}
+</nav>

@@ -7,9 +7,9 @@
  * уже на клиенте (на сервере коррекция не выполняется никогда).
  */
 import type { RequestHandler } from './$types'
-import { getTermArtifact, parseShikimoriApi } from '#lib/server/shikimori.js'
-import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
-import { taskResponse } from '#lib/server/task-stream.js'
+import { getTermArtifact, parseShikimoriApi } from '#content/demo-catalog/shikimori/shikimori.server.js'
+import { apiFailure, apiInvalid } from '#server/api-error.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
 
 export const GET: RequestHandler = async ({ request, url }) => {
   // Версия API (`?api=`): словарь читается тем же API, что и каталог версии.

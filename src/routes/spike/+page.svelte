@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button } from '#lib/components/ui/index.js'
+import { Button } from '#components/ui/index.js'
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';

@@ -161,7 +161,7 @@ CockroachDB — а PlanetScale (MySQL) и Upstash (Redis) к Postgres отнош
 Следствие для пакета: никакого кода под Vercel не нужно.
 
 ```ts
-// src/lib/server/db.ts — стандартный путь, никаких env-фич кроме DATABASE_URL
+// src/server/db.server.ts — стандартный путь, никаких env-фич кроме DATABASE_URL
 import { openPgPool } from '#lib/db/sveltekit/node.js'
 export const db = createDb({ driver: pgAdapter(openPgPool(process.env.DATABASE_URL!, { max: 1 })) })
 ```
@@ -222,7 +222,7 @@ IPv4 add-on платный ($4/мес) и **на Free недоступен**. И
 пулера (к 5432) с Vercel Free — нет**, там только shared pooler (он IPv4 на любом плане).
 
 ```ts
-// src/lib/server/db.ts — ни @supabase/supabase-js, ни REST: только pg
+// src/server/db.server.ts — ни @supabase/supabase-js, ни REST: только pg
 import { createDb, conservativeLimits } from '#lib/db/index.js'
 import { openPgPool } from '#lib/db/sveltekit/node.js'
 import { pgAdapter } from '#lib/db/adapters/pg.js'

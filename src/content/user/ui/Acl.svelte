@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { variants, type VariantProps } from '#lib/utils.js'
+  import { variants, type VariantProps } from '#components/utils.js'
 
   export const userSurfaceVariants = variants(
     '',
@@ -26,15 +26,16 @@
    * и отказы моделей БД (`model`).
    */
   import type { Snippet } from 'svelte'
-  import { useModalLink } from '#lib/components/links/index.js'
-  import { Button } from '#lib/components/ui/index.js'
-  import { cn } from '#lib/utils.js'
+  import { useModalLink } from '#hooks/links/index.js'
+  import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
   import {
     resolveAcl,
     type AclAllow,
     type AclModelInput,
   } from '../acl.js'
   import type { AuthErrorCode } from '../error.js'
+  import { userAuthRoute } from '../routes.js'
   import type { Blocked } from '../types.js'
   import { vault } from '../vault.svelte.js'
 
@@ -108,12 +109,14 @@
   )
 
   const loginLink = $derived(
-    asModalLink ? asModalLink('user.auth', {}, { href: '/user/auth' }) : { href: '/user/auth' },
+    asModalLink
+      ? asModalLink('user.auth', {}, { href: userAuthRoute.href() })
+      : { href: userAuthRoute.href() },
   )
   const restoreLink = $derived(
     asModalLink
-      ? asModalLink('user.auth', { stage: 'restore' }, { href: '/user/auth?stage=restore' })
-      : { href: '/user/auth?stage=restore' },
+      ? asModalLink('user.auth', { stage: 'restore' }, { href: userAuthRoute.href({ stage: 'restore' }) })
+      : { href: userAuthRoute.href({ stage: 'restore' }) },
   )
 </script>
 

@@ -20,19 +20,31 @@
 const TEST_RE = /\.test\.(ts|mts|js|mjs)$|(^|\/)tooling\//
 
 /** Зоны, которым позволено знать о внешнем API Shikimori. */
-export const UPSTREAM_ZONES = [/^src\/lib\/server\//, /^src\/routes\/api\//]
+export const UPSTREAM_ZONES = [
+  /^src\/server\//,
+  /^src\/content\/demo-catalog\/shikimori\/[^/]+\.server\.ts$/,
+  /^src\/routes\/api\//,
+]
 
 /** Где объявлен контракт имён фильтров (единственное место, кроме тестов). */
-export const KEY_ZONES = [/^src\/lib\/paginate\/filters\//, /^src\/content\/shikimori-filters\.ts$/]
+export const KEY_ZONES = [
+  /^src\/lib\/paginate\/filters\//,
+  /^src\/content\/demo-catalog\/shikimori\/filters\.ts$/,
+]
 
 /** Зона сборки схемы: значения, связки, кэш `builtAt`. */
-export const SCHEMA_ZONE = /^src\/lib\/server\/shikimori-schema\.ts$/
+export const SCHEMA_ZONE = /^src\/content\/demo-catalog\/shikimori\/schema\.server\.ts$/
 
 /** Зона конвейера «значения → параметры API»: один конвейер, один файл. */
-export const PIPELINE_ZONE = /^src\/lib\/server\/shikimori-filters\.ts$/
+export const PIPELINE_ZONE = /^src\/content\/demo-catalog\/shikimori\/filters\.server\.ts$/
 
 /** Кому можно читать готовую схему `getShikimoriFilterSchema` (сервер целиком). */
-export const SCHEMA_READERS = [/^src\/lib\/server\//, /^src\/routes\/api\//, /^src\/routes\/\(site\)\/\(app\)\/paginator\/\+page\.server\.ts$/]
+export const SCHEMA_READERS = [
+  /^src\/server\//,
+  /^src\/content\/demo-catalog\/shikimori\/[^/]+\.server\.ts$/,
+  /^src\/routes\/api\//,
+  /^src\/routes\/\(site\)\/\(app\)\/paginator\/\+page\.server\.ts$/,
+]
 
 /**
  * Запрещённое в зоне чистых фильтров (`src/lib/paginate/filters`): модуль изоморфный и
@@ -45,6 +57,7 @@ export const FILTERS_LIB_FORBIDDEN_SPECIFIERS = [
   /^\$app\//,
   /^react(-dom)?(\/|$)/,
   /^solid-js(\/|$)/,
+  /^#(?:server|hooks|components|content)\//,
   /^#lib\/server\//,
   /^#lib\/paginate\//,
   /^#lib\/modals\//,

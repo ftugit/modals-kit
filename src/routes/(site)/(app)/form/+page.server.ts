@@ -1,7 +1,7 @@
 // Нативный путь: обычное действие SvelteKit поверх тех же слоёв.
 import { fail, redirect, type Actions } from '@sveltejs/kit'
 import type { PageServerLoad } from './$types'
-import { handleSignup, jobStatus } from './handle'
+import { handleSignup, jobStatus } from './handle.server'
 
 // Адрес статуса заявки из очереди (`statusUrl`, `/form?job=…`): без скрипта
 // человек открывает его сам и видит, готова ли запись.

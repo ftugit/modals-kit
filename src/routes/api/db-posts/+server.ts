@@ -18,12 +18,12 @@
  * пару секунд, и каждый такой тик без нового указателя обязан уйти в 304, не
  * касаясь `SELECT`. Проверка — в пробе (`If-None-Match` → 304 без тела).
  */
-import { fingerprint, remember, revalidate, stableText } from '#lib/server/live-cache.js'
+import { fingerprint, remember, revalidate, stableText } from '#server/live-cache.server.js'
 import type { RequestHandler } from './$types'
-import { fetchDbPostsChanges, fetchDbPostsFresh, fetchDbPostsPage } from '#lib/server/db-list.js'
-import { DEMO_PRINCIPAL, watchDb } from '#lib/server/db.js'
-import { taskResponse } from '#lib/server/task-stream.js'
-import { DB_LIST_PAGE_SIZE } from '../../(site)/(app)/db-demo/definition'
+import { fetchDbPostsChanges, fetchDbPostsFresh, fetchDbPostsPage } from '#content/demo-catalog/posts/list.server.js'
+import { DEMO_PRINCIPAL, watchDb } from '#server/db.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
+import { DB_LIST_PAGE_SIZE } from '#content/demo-catalog/posts/source.js'
 
 /**
  * Значение по умолчанию и нижняя граница — РАЗНЫЕ числа: их совмещение в одном

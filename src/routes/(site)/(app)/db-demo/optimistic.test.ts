@@ -15,7 +15,7 @@ import {
   pendingPlacement,
   type OptimisticCard,
 } from './optimistic.svelte'
-import type { DbPost } from './definition'
+import type { DbPost } from '#content/demo-catalog/posts/source.js'
 
 const row = (over: Partial<DbPost> = {}): DbPost => ({
   id: '11111111-1111-4111-8111-111111111111',

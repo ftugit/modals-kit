@@ -2,7 +2,7 @@
 // (`File | null`) + флаг явного удаления текущего аватара. Работает идентично
 // с JS и без JS без передачи `base64`-строк по сети.
 import { check, defineForm, field, v } from '#lib/form/index.js'
-import { photoImage } from '#lib/components/form/photo.js'
+import { photoImage } from '#components/form/photo.js'
 import { AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
 
 export const PROFILE_FORM_ID = 'user-profile'

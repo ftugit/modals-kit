@@ -9,7 +9,7 @@
 |---|---|---|
 | Ядро библиотеки | говорит **своими** словами; `#lib/task` не импортирует | `PaginatorState.status: 'loading'`, `RuntimeStatus` модалок |
 | Адаптер к фреймворку | переводит слова ядра в `TaskState` | `linkTask(href)` в `#lib/address/sveltekit.js` |
-| UI | читает только `TaskState` | `asLink(href, { task })` (`#lib/components/links`) |
+| UI | читает только `TaskState` | `asLink(href, { task })` (`#components/links`) |
 
 Ядро без адаптера работает как раньше. Формат меняется здесь и в адаптерах, ядра не трогаются.
 
@@ -46,7 +46,7 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 
 ## Показ
 
-`asLink` (`#lib/components/links`) кладёт поведение на обычную `<a href>` или `Button`
+`asLink` (`#components/links`) кладёт поведение на обычную `<a href>` или `Button`
 (без JavaScript это просто ссылка). С JavaScript ссылка сама узнаёт, что переход SvelteKit идёт
 на её адрес (`linkTask`), и через 150 мс пишет `data-state="loading"`; процент, если он есть, —
 в `data-task-percent`; ошибку — `data-state="error"` и причину в `title`. Рисует это одно
@@ -62,12 +62,12 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 | Откуда | Адаптер | Где видно |
 |---|---|---|
 | переход SvelteKit, ссылка | `navigationTask()`, `linkTask(href)` — `#lib/address/sveltekit.js` | ссылка, полоса |
-| модалка | `asModalLink` (`#lib/components/links`) | ссылка-открывашка, полоса |
+| модалка | `asModalLink` (`#components/links`) | ссылка-открывашка, полоса |
 | пагинатор | `paginatorTask(state, page?)` — `#lib/paginate/svelte` | ссылка страницы, «Ещё», «Сброс», поиск, полоса |
 | форма | `formTask(state, intent?)` — `#lib/form/svelte` | `Button task`, полоса |
-| своё | `trackTask(() => task)` — `#lib/components/loader` | полоса |
+| своё | `trackTask(() => task)` — `#components/loader` | полоса |
 
-Полоса сверху — `LoaderBar` (`#lib/components/loader`), один раз в корневом layout.
+Полоса сверху — `LoaderBar` (`#components/loader`), один раз в корневом layout.
 
 ## Ход сервера: строки ответа
 
@@ -84,7 +84,7 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
   ждал; иначе ответ прежний, байт в байт; таймеров нет;
 - клиент: `fetchWithTask(url, { onTask })` / `readTaskStream(res, onTask)` из `#lib/fetch` — ход
   в `onTask`, на выходе тот же `Response` с настоящим кодом;
-- сервер приложения: `taskResponse(request, run, { watch })` — `src/lib/server/task-stream.ts`;
+- сервер приложения: `taskResponse(request, run, { watch })` — `src/hooks/task-stream.server.ts`;
 - ход доходит до показа через ядра своими словами: `PageRequest.report` → `state.progress`
   пагинатора, `TransportRequest.report` → `FormState.progress` формы; адаптеры
   `paginatorTask`/`formTask` отдают его как задачу.

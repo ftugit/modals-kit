@@ -22,7 +22,7 @@ const res = await upstream('https://api.example.com/items?page=2', { signal })
 const items = await readJson<Item[]>(res)          // код проверен, тело разобрано
 ```
 
-В приложении экземпляр один: `src/lib/server/fetch.ts` (`upstream`). Транспорты
+В приложении экземпляр один: `src/server/fetch.server.ts` (`upstream`). Транспорты
 получают его явно (`deps.fetch`, по умолчанию — он). Глобальный `fetch` не
 подменяется: `lib/db` ходит через него к прокси базы, и повтор записи там недопустим.
 
@@ -83,7 +83,7 @@ createFetch({
 очередь. Прерванный в очереди вызов уходит из неё и не задерживает следующих. Хосты
 вне `hosts` идут без очереди.
 
-Очередь — память процесса. Несколько инстансов делят лимит внешнего сервиса между собой приблизительно; общие результаты между инстансами разделяет кэш в PostgreSQL (`sharedStore` в `src/lib/server/cache.ts`).
+Очередь — память процесса. Несколько инстансов делят лимит внешнего сервиса между собой приблизительно; общие результаты между инстансами разделяет кэш в PostgreSQL (`sharedStore` в `src/server/cache.server.ts`).
 
 ## 6. Склейка одинаковых запросов
 
@@ -138,8 +138,8 @@ try {
 ```
 
 В приложении ошибка становится ответом маршрута в одном месте —
-`src/lib/server/api-error.ts` (`apiFailure`): тело `{ error, code }`, формат —
-`src/lib/api-error.ts`. Там же инструкция `lib/form` (`apiErrorInstruction`), чтобы
+`src/server/api-error.server.ts` (`apiFailure`): тело `{ error, code }`, формат —
+`src/hooks/api-error.ts`. Там же инструкция `lib/form` (`apiErrorInstruction`), чтобы
 форма показала отказ маршрута как обычную ошибку.
 
 ## 8. Чтение ответа
@@ -173,7 +173,7 @@ const page = await res.json()
   код ошибки, пришедшей после начала строк, тот же, что без них;
 - обычный ответ с `Content-Length` (без сжатия) читается здесь и сообщает ход байтами;
 - поток оборвался до результата — `fetch.network`, кривая строка — `fetch.parse`;
-- серверная сторона в приложении — `src/lib/server/task-stream.ts` (`taskResponse`).
+- серверная сторона в приложении — `src/hooks/task-stream.server.ts` (`taskResponse`).
 
 Короче то же самое — `fetchWithTask`: с `onTask` просит строки и читает их, без него —
 обычный `fetch`:

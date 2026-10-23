@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { report } from '#lib/app-errors.svelte.js'
+  import { report } from '#hooks/app-errors.svelte.js'
   import { currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { catalogFilterSchemas, type CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-  import { shikimoriFilterForm, shikimoriFilterSource } from '../../../../content/shikimori-filters'
-  import { SHIKIMORI_APIS, type ShikimoriApi } from '../../../../content/shikimori'
+  import { shikimoriFilterForm, shikimoriFilterSource } from '#content/demo-catalog/shikimori/filters.js'
+  import { SHIKIMORI_APIS, type ShikimoriApi } from '#content/demo-catalog/shikimori/shikimori.js'
   import { featureGates, getClientStore, goToPage, type PaginatorState } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useSearchCorrection, useSearchStats } from '#lib/paginate/svelte/search/index.js'
@@ -15,7 +15,7 @@
     SearchBar,
     Skeleton,
     type SettingsField,
-  } from '#lib/components/paginator/index.js'
+  } from '#components/paginator/index.js'
   import {
     DEMO_PAGE_SIZES,
     demoExtraOf,
@@ -30,20 +30,20 @@
   import { loadFilterSchema } from './sources'
   import type { StreamTask } from '#lib/fetch/index.js'
   import { IDLE_TASK, taskPercent } from '#lib/task/index.js'
-  import { trackTask } from '#lib/components/loader/loader.svelte.js'
-  import { rickMortyFilterForm } from '../../../../content/rickmorty-filters'
-  import ShikimoriFilters from './ShikimoriFilters.svelte'
-  import RickMortyFilters from './RickMortyFilters.svelte'
-  import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from './item-views'
-  import AnimeRow from './AnimeRow.svelte'
-  import AnimeTile from './AnimeTile.svelte'
-  import CharacterRow from './CharacterRow.svelte'
-  import CharacterTile from './CharacterTile.svelte'
-  import DbPostRow from '../db-demo/DbPostRow.svelte'
-  import { useCursorMode } from '../db-demo/cursor-mode.svelte'
-  import ItemRow from './ItemRow.svelte'
-  import Button from '#lib/components/ui/button/Button.svelte'
-  import ShotTile from './ShotTile.svelte'
+  import { trackTask } from '#hooks/loader.svelte.js'
+  import { rickMortyFilterForm } from '#content/demo-catalog/rickmorty/filters.js'
+  import ShikimoriFilters from '#content/demo-catalog/shikimori/ui/ShikimoriFilters.svelte'
+  import RickMortyFilters from '#content/demo-catalog/rickmorty/ui/RickMortyFilters.svelte'
+  import { catalogTestId, isAnimeItem, isDbItem, isRickMortyItem, shotHeight, type CatalogItem } from '#content/demo-catalog/items/item-views.js'
+  import AnimeRow from '#content/demo-catalog/shikimori/ui/AnimeRow.svelte'
+  import AnimeTile from '#content/demo-catalog/shikimori/ui/AnimeTile.svelte'
+  import CharacterRow from '#content/demo-catalog/rickmorty/ui/CharacterRow.svelte'
+  import CharacterTile from '#content/demo-catalog/rickmorty/ui/CharacterTile.svelte'
+  import DbPostRow from '#content/demo-catalog/posts/ui/DbPostRow.svelte'
+  import { useCursorMode } from '#content/demo-catalog/posts/cursor-mode.svelte.js'
+  import ItemRow from '#content/demo-catalog/items/ui/ItemRow.svelte'
+  import Button from '#components/ui/button/Button.svelte'
+  import ShotTile from '#content/demo-catalog/items/ui/ShotTile.svelte'
 
   const TRIGGER_OPTIONS = [
     ['off', 'Выкл'],

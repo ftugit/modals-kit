@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig, presetWind4 } from 'unocss'
-import { LINK_INDICATOR_CSS } from './src/lib/components/links/indicator'
+import { LINK_INDICATOR_CSS } from './src/hooks/links/indicator'
 
 /**
  * UnoCSS 66 / presetWind4 со встроенным reset'ом (Tailwind v4 preflight).

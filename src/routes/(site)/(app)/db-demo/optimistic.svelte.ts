@@ -16,7 +16,7 @@
  * так что два одинаковых заголовка — законные две строки. Дедупликация по тексту
  * молча съедала бы вторую вставку.
  */
-import type { DbPost, FailureMode } from './definition'
+import type { DbPost, FailureMode } from '#content/demo-catalog/posts/source.js'
 
 export type OptimisticState = 'pending' | 'failed' | 'settled'
 

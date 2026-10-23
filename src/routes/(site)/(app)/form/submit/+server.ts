@@ -1,6 +1,6 @@
 // Перехваченный путь: тот же приём, другая кодировка ответа.
 import { json, type RequestHandler } from '@sveltejs/kit'
-import { handleSignup, jobStatus } from '../handle'
+import { handleSignup, jobStatus } from '../handle.server'
 
 export const POST: RequestHandler = async (event) => {
   const { result, status } = await handleSignup(event.request, 'fetch', event)

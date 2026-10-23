@@ -1,6 +1,6 @@
 <script lang="ts">
-import { Button } from '#lib/components/ui/index.js'
-  import { Select } from '#lib/components/ui/index.js'
+import { Button } from '#components/ui/index.js'
+  import { Select } from '#components/ui/index.js'
   import FloatingMenu from './FloatingMenu.svelte'
   import { useModals } from '#lib/modals/svelte/index.js'
   const genres = [

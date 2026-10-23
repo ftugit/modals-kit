@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createVault, type RenewPostOutcome, type VaultPayload } from './vault.svelte.js'
 import { bindComponentForm } from '#hooks/component-form/client.svelte.js'
 import { defineForm, field } from '#lib/form/index.js'
-import { forms } from '#lib/components/form/forms.config.js'
+import { forms } from '#components/form/forms.config.js'
 
 const samplePayload = (overrides: Partial<VaultPayload> = {}): VaultPayload => ({
   sub: 'user-1',

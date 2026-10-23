@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types'
-import { afterResponse } from '#lib/server/after-response.js'
-import { getShikimoriFilterSchema } from '#lib/server/shikimori-schema.js'
-import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
-import { fetchCharactersPage } from '#lib/server/rickmorty.js'
+import { afterResponse } from '#server/after-response.server.js'
+import { getShikimoriFilterSchema } from '#content/demo-catalog/shikimori/schema.server.js'
+import { fetchAnimesPage } from '#content/demo-catalog/shikimori/filters.server.js'
+import { fetchCharactersPage } from '#content/demo-catalog/rickmorty/rickmorty.server.js'
 import {
   createPaginatorStore,
   initServerPaginator,
@@ -18,9 +18,9 @@ import {
 } from './definition'
 import { setLiveServerTransport, setRickMortyServerTransport } from './sources'
 import type { DemoSrc } from './definition'
-import type { DemoItem } from '../../../../content/items'
+import type { DemoItem } from '#content/demo-catalog/items/items.js'
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-import type { CatalogItem } from './item-views'
+import type { CatalogItem } from '#content/demo-catalog/items/item-views.js'
 import type { PaginatorLoaderData } from './types'
 
 /**

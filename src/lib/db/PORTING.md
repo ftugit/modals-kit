@@ -273,10 +273,10 @@ done
 
 Обновление **приложения** (`modals-kit`): слой лежит в том же дереве, поэтому апгрейд
 может задеть и его — при переносе новой ревизии сверяют шесть мест: `src/app.d.ts`
-(augmentation), `src/hooks.server.ts` (`dbHandle`), `src/lib/server/db.ts` (composition
-root), `src/lib/server/db-list.ts` + `src/routes/api/db-posts/**` (данные для пагинатора
+(augmentation), `src/hooks.server.ts` (`dbHandle`), `src/server/db.server.ts` (composition
+root), `src/content/demo-catalog/posts/list.server.ts` + `src/routes/api/db-posts/**` (данные для пагинатора
 демо: SSR-транспорт и HTTP-доводка — один конвейер на оба пути) и `src/routes/(site)/(app)/db-demo/**`
-с моделью `src/content/posts.ts` (страница-витрина: формы — отдельные компоненты в папке роута,
+с моделью `src/content/demo-catalog/posts/posts.ts` (страница-витрина: формы — отдельные компоненты в папке роута,
 список — пагинатор; его же берёт `/paginator`). Ниже — чек-лист того, что в приложении обязательно.
 
 ## 9. Интеграция в приложение: чек-лист и грабли
@@ -306,18 +306,18 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 /home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
 '^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/demo/{form,modals}/**`,
 `ui/paginator/fields/*` → `#lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
-`src/app.d.ts`, `src/hooks.server.ts`, `src/lib/server/db.ts`, `src/lib/server/db-list.ts`,
-`src/routes/api/db-posts/**`, `src/routes/(site)/(app)/db-demo/**`, `src/content/posts.ts`. Дальше
+`src/app.d.ts`, `src/hooks.server.ts`, `src/server/db.server.ts`, `src/content/demo-catalog/posts/list.server.ts`,
+`src/routes/api/db-posts/**`, `src/routes/(site)/(app)/db-demo/**`, `src/content/demo-catalog/posts/posts.ts`. Дальше
 `npm install && npx svelte-kit sync && npx svelte-check && npm run build && npm run test:guard`.
 
 Что потребовало правок именно на `5d08da7`:
 
 - **`tooling/layer-guard.mjs` запретил сырые form-теги** (`pattern /<(form|input|select|textarea)([
-  \t\n>])/`, allow-list: `src/lib/form/`, `src/lib/components/ui/`, `src/lib/components/settings/`,
-  `src/lib/components/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
+  \t\n>])/`, allow-list: `src/lib/form/`, `src/components/ui/`, `src/components/settings/`,
+  `src/components/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
   `vite build`; смотрит по исходнику файла целиком, поэтому закомментированный тег в шапке тоже
-  красит сборку. `src/routes/db-demo/+page.svelte` переписан на `Form` из `#lib/form/svelte/index.js` и
-  `Input`/`Button` из `#lib/components/ui/index.js`: `Form` требует `formProps()`, и демо отдаёт
+  красит сборку. `src/routes/(site)/(app)/db-demo/+page.svelte` переписан на `Form` из `#lib/form/svelte/index.js` и
+  `Input`/`Button` из `#components/ui/index.js`: `Form` требует `formProps()`, и демо отдаёт
   `{ method: 'post', action, onsubmit: () => {} }` — submit остаётся нативным SvelteKit-путём
   (демо проверяет слой БД, а не формы кита), скрытые id-пары идут через `hiddenFields`.
 - `package.json` приложения изменился только скриптами (`test:browser:errors`) — зависимости не
@@ -350,7 +350,7 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
   такому хосту только порвёт соединение. Строку подключения не печатать: в зондах пароль
   маскируется (`…:***@host`), так же стоит делать и в логах `getRuntime()`.
 - **Вход в демо обязан быть кликабельным**: ссылка на `/db-demo` - в шапку
-  (`src/lib/components/header/nav.ts`) и на главную (массив `demos` в `src/routes/+page.svelte`).
+  (`src/routes/(site)/nav.ts`) и на главную (массив `demos` в `src/routes/(site)/(app)/+page.svelte`).
   Превью не даёт менять URL, поэтому демо без ссылки из превью непроверяемо; заодно прод-сборка
   (`npm run build` + `npm run preview`) проверяет layer-guard, а `dev` - нет.
 - `db`/ресурсы — только в `#lib/server/**`; импорт оттуда в `.svelte` должен падать на

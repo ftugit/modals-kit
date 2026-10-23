@@ -7,9 +7,9 @@
  * JSON и коды ошибок (502/504 с текстом → ErrorRow пагинатора).
  */
 import type { RequestHandler } from './$types'
-import { fetchCharactersPage, parseCharactersQuery } from '#lib/server/rickmorty.js'
-import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
-import { taskResponse } from '#lib/server/task-stream.js'
+import { fetchCharactersPage, parseCharactersQuery } from '#content/demo-catalog/rickmorty/rickmorty.server.js'
+import { apiFailure, apiInvalid } from '#server/api-error.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseCharactersQuery(url.searchParams)

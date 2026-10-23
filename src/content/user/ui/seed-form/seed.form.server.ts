@@ -1,8 +1,8 @@
 // Серверный POST-обработчик компонента `SeedForm` (`#hooks/component-form`).
-import { localPath } from '#lib/address/index.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
-import { auth, vaultPayloadOf } from '../../gateway.js'
+import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { instruction, seedOf, type LoginOutcome } from '../../index.js'
+import { userAuthRoute } from '../../routes.js'
 import { seedForm } from './form.js'
 
 registerComponentForm({
@@ -120,9 +120,9 @@ registerComponentForm({
   redirectOnSuccess: (event, result) => {
     const step = (result.data as { step?: string } | undefined)?.step
     if (step === 'restore' || step === 'confirmed') return 'inline'
-    const next = localPath(event.url.searchParams.get('next'))
+    const { next } = userAuthRoute.parse(event.url)
     if (step && step !== 'entry' && step !== 'done') {
-      return `/user/auth?stage=${step}${next ? `&next=${encodeURIComponent(next)}` : ''}`
+      return userAuthRoute.href({ stage: step, next })
     }
     return next ?? '/'
   },

@@ -37,7 +37,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 `resyncSearch` при монтировании хоста результатов.
 
 Готовая склейка «поле lib form → стор пагинатора» без разметки — хук
-`usePaginatorSearch` из `#lib/components/paginator/index.js` (форма, задержка,
+`usePaginatorSearch` из `#components/paginator/index.js` (форма, задержка,
 нормализация, «Найти»/«Сбросить» только до оживления, крестик — `clear`).
 Он живёт в `lib/components/paginator`, а не здесь: склеивает lib form, роутер,
 lib paginate и lib search, а библиотека поиска от них не зависит.

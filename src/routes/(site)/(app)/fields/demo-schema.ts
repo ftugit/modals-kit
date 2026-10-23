@@ -7,9 +7,9 @@
  * описание формы, сервер — приёмник запроса.
  *
  * Файл без SvelteKit и без `.svelte`: его импортирует скан-тест
- * (`src/lib/components/demo/schemas.test.ts`) вне приложения.
+ * (`src/components/demo/schemas.test.ts`) вне приложения.
  */
-import { defineDemoPanel, demoSelect } from '#lib/components/demo/define.js'
+import { defineDemoPanel, demoSelect } from '#components/demo/define.js'
 import { FIELD_LIMITS } from './forms'
 
 export type FieldsDemoValues = { limit: string }

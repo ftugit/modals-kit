@@ -4,9 +4,11 @@
   "version": "0.0.1",
   "type": "module",
   "imports": {
+    "#components/*": "./src/components/*",
     "#content/*": "./src/content/*",
     "#hooks/*": "./src/hooks/*",
-    "#lib/*": "./src/lib/*"
+    "#lib/*": "./src/lib/*",
+    "#server/*": "./src/server/*"
   },
   "engines": {
     "node": ">=22.17"

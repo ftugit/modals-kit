@@ -113,7 +113,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 
 `Field` — тот же, что у остальных форм приложения. Поля, которого у источника нет,
 `filters.f[...]` не даёт, и `Field` ничего не рисует. `bindFilters`
-(`#lib/components/paginator/index.js`) — `bind` формы с адресным контуром: набор применяется
+(`#components/paginator/index.js`) — `bind` формы с адресным контуром: набор применяется
 целиком по «Применить», без JS форма уходит обычным GET. Связка гасит контрол только с JS: без
 него выключенное поле браузер не отправил бы и значение из адреса пропало бы молча; причина под
 полем видна и без JS.
@@ -154,7 +154,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 | `CATALOG_FILTER_NOJS_OPTIONS` | 200 — показ без JS | `schema.ts` |
 | `CATALOG_FILTER_OPTIONS_LIMIT` | 5000 — защита от гигантских форм, не размер показа | `schema.ts` |
 | `capCatalogFilterOptions(schema)` | поле длиннее 200 упорядочивает по частоте, при равной — по подписи; поле длиннее 5000 обрезает (аварийно) и пишет `optionsTruncated` | `schema.ts` |
-| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#lib/components/ui/select/Select.svelte` |
+| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#components/ui/select/Select.svelte` |
 
 **Почему первые 200 — нужные.** Порядок задаёт сборщик схемы: частые первыми. Без частот в
 первые 200 попали бы студии по алфавиту, и популярной «Wit Studio» там могло бы не оказаться.
@@ -164,7 +164,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 есть. Если бы выбранной студии из хвоста не было среди опций, выбор пропал бы при следующей
 отправке формы.
 
-**Где это включено.** Поле выбора демо-форм (`#lib/components/form/SelectField.svelte`) — то же
+**Где это включено.** Поле выбора демо-форм (`#components/form/SelectField.svelte`) — то же
 для фильтров и остальных форм:
 
 ```svelte
@@ -237,7 +237,7 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 
 Роут отвечает только страницам этого сайта: `Sec-Fetch-Site: same-origin`, иначе 403 без тела.
 В dev по http запрос без заголовка пропускается (`sameOriginFetch` в
-`src/lib/server/trusted-origins.ts`). От парсеров это не защищает, заголовок подделывается
+`src/server/trusted-origins.ts`). От парсеров это не защищает, заголовок подделывается
 одной строкой. Данные те же, что и в HTML страницы. В Shikimori роут не ходит: схема собирается
 раз в 30 минут, одна сборка на всех.
 
@@ -263,6 +263,6 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 | `view.test.ts` | чипы из описания, нарушения применённого набора, патчи, ссылки через `href` и `null` без них |
 | `src/lib/form/range.test.ts` | `notAbove`/`notBelow`/`noOverlap`: ошибки, пустые стороны, даты, реестр |
 | `schema-memory.test.ts` | память по `source`, замена, выключенная на сервере |
-| `src/lib/components/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
-| `src/lib/server/shikimori-schema.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
+| `src/components/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
+| `src/content/demo-catalog/shikimori/schema.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
 | `test/browser/shikimori.mjs` | 11 полей формы схемы по `data-field`; без JS: 200 студий с пояснением, студия из хвоста по адресу показана выбранной и проходит проверку; с JS: поиск находит последнюю студию; переход внутри сайта — схемы нет в данных, панель из памяти; роут: 403 без заголовка |

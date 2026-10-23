@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { asLink } from '#lib/components/links/index.js'
+  import { asLink } from '#hooks/links/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
   import type { PageProps } from './$types'
-  import { demoFault } from '../../../../content/items'
+  import { demoFault } from '#content/demo-catalog/items/items.js'
   import { PaginatorScope } from '#lib/paginate/svelte/index.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
   import {
@@ -14,7 +14,7 @@
     ensureDemoPaginator,
     type DemoStore,
   } from './definition'
-  import type { CatalogItem } from './item-views'
+  import type { CatalogItem } from '#content/demo-catalog/items/item-views.js'
   import CatalogDemo from './CatalogDemo.svelte'
   import GalleryDemo from './GalleryDemo.svelte'
 

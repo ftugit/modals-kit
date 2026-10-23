@@ -43,7 +43,7 @@ const positiveInteger = optional((value) => {
 })
 
 export const variables = defineEnvVars({
-  // ── Адрес приложения и доверие origin (`src/lib/server/trusted-origins.ts`) ──
+  // ── Адрес приложения и доверие origin (`src/server/trusted-origins.ts`) ──
   KIT_TRUSTED_ORIGINS: {
     schema: text,
     description:
@@ -58,7 +58,7 @@ export const variables = defineEnvVars({
     description: 'Задаёт песочница превью: к PREVIEW_PORTS добавляется https://PORT-ID.e2b.app.',
   },
 
-  // ── Движок данных (`open()` в `src/lib/server/db.ts`) ──
+  // ── Движок данных (`open()` в `src/server/db.server.ts`) ──
   HYPERDRIVE_CONNECTION_STRING: {
     schema: text,
     description: 'Строка Cloudflare Hyperdrive. Перекрывает DATABASE_URL.',

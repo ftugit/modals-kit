@@ -76,7 +76,7 @@ const drawer = shallowFlag('drawer') // drawer.on / drawer.push() — «Наза
 `Steps`. Честная проверка эквивалентности — `keys.test.ts` (сверка с настоящим
 `chainToSearch` и `readPaginatorSearch`).
 
-## Шаги страницы (`#lib/components/steps`)
+## Шаги страницы (`#components/steps`)
 
 Хук `useSteps({ owner, steps, current, lockKey })` над этой бронью: адрес шага
 (`?step=…`) без потери чужих ключей, аргументы шага в своём семействе

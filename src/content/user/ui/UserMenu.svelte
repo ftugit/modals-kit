@@ -8,8 +8,9 @@
    * `vault` прозрачно отдаёт `page.data.user`, в браузере — состояние RAM).
    */
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { useModalLink } from '#lib/components/links/index.js'
-  import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
+  import { useModalLink } from '#hooks/links/index.js'
+  import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
+  import { userAuthRoute, userMenuRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'
 
   const asModalLink = useModalLink()
@@ -20,15 +21,17 @@
   const avatarUrl = $derived(vault.profile.avatarUrl)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
 
-  /** адрес страницы входа с возвратом сюда (валидность next — на сервере) */
+  /** адрес страницы входа с возвратом сюда (валидность next — в `userAuthRoute`) */
   const authHref = $derived(
-    `/user/auth?next=${encodeURIComponent(visibleAddress().url.pathname + visibleAddress().url.search)}`,
+    userAuthRoute.href({
+      next: visibleAddress().url.pathname + visibleAddress().url.search,
+    }),
   )
 </script>
 
 {#if authorized}
   <!-- аватар → меню-модалка; без JS — страница меню с выходом -->
-  {@const link = asModalLink('user.menu', {}, { href: '/user/menu' })}
+  {@const link = asModalLink('user.menu', {}, { href: userMenuRoute.href() })}
   <a
     {...link}
     data-testid="header-user"

@@ -10,23 +10,21 @@
   // каждый хост пропускает (`foreignNames: 'skip'`) — страница /modals
   // показывает и глобальные, и демо-модалки из одной цепочки адреса.
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { page } from '$app/state'
-  import './auth-modals'
+  import '#content/user/modals.js'
   import { globalScope } from '#lib/modals/index.js'
   import ModalSystem from './ModalSystem.svelte'
-  import { AppShell, useHeaderSlot, useSidebarSlot } from '#lib/components/shell/index.js'
+  import { NAV_ITEMS } from './nav'
+  import { AppShell, useHeaderSlot, useSidebarSlot } from '#components/shell/index.js'
   import {
     LogoSlot,
     NavSlot,
     ThemeToggleSlot,
     PageTitleSlot,
     SiteFooter,
-  } from '#lib/components/header/index.js'
-  import {
     SidebarNav,
     SidebarUser,
     SidebarFooter,
-  } from '#lib/components/sidebar/index.js'
+  } from '#components/shell/ui/index.js'
   import UserMenu from '#content/user/ui/UserMenu.svelte'
   import { vault } from '#content/user/vault.svelte.js'
 
@@ -72,7 +70,7 @@
 </ModalSystem>
 
 {#snippet footerSnippet()}
-  <SiteFooter />
+  <SiteFooter items={NAV_ITEMS} />
 {/snippet}
 
 {#snippet logoSnippet()}
@@ -84,7 +82,7 @@
 {/snippet}
 
 {#snippet navSnippet()}
-  <NavSlot />
+  <NavSlot items={NAV_ITEMS} />
 {/snippet}
 
 {#snippet themeSnippet()}
@@ -100,7 +98,7 @@
 {/snippet}
 
 {#snippet sidebarNavSnippet()}
-  <SidebarNav />
+  <SidebarNav items={NAV_ITEMS} />
 {/snippet}
 
 {#snippet sidebarBottomSnippet()}

@@ -1,20 +1,19 @@
 // Роут авторизации и шагов аккаунта (`auth.*`, `blocked`, `restrictions`, `profile`).
 // Все POST-экшены обрабатываются общим хуком `#hooks/component-form`,
 // а снимок сессии `user` централизованно поставляет корневой `+layout.server.ts`.
-import { localPath } from '#lib/address/index.js'
 import type { PageServerLoad } from './$types'
 import { SERVER_PHOTO_FORMATS } from '#content/user/checks.js'
-import { auth } from '#content/user/gateway.js'
+import { auth } from '#content/user/gateway.server.js'
 import { createUserConfig, resolveAuthStep } from '#content/user/index.js'
-import { localStore } from '#lib/server/cache.js'
+import { userAuthRoute } from '#content/user/routes.js'
+import { localStore } from '#server/cache.server.js'
 
 const config = createUserConfig(localStore.scope('user-config'))
 const INPUT_PHOTO_FORMATS = SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, ''))
 
 export const load: PageServerLoad = async (event) => {
-  const url = event.url
-  const next = localPath(url.searchParams.get('next'))
-  const step = resolveAuthStep(url.searchParams.get('stage')) || 'auth.entry'
+  const { stage, next } = userAuthRoute.parse(event.url)
+  const step = resolveAuthStep(stage) || 'auth.entry'
 
   let registerSeed: string | null = null
   if (step === 'auth.register') {

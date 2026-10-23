@@ -12,7 +12,7 @@ import {
   demoStaticFilterSchema,
   ensureDemoPaginator,
 } from './definition'
-import { RICKMORTY_FILTER_SCHEMA } from '../../../../content/rickmorty-filters'
+import { RICKMORTY_FILTER_SCHEMA } from '#content/demo-catalog/rickmorty/filters.js'
 
 /**
  * Пункт «БД» в демо-пагинаторе проверяется здесь, а не только браузером:

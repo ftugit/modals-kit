@@ -13,7 +13,7 @@
    * демо проверяло бы две разные вёрстки, а не «та же строка до ответа».
    */
   import type { Optimistic, OptimisticCard } from './optimistic.svelte'
-  import DbPostRow from './DbPostRow.svelte'
+  import DbPostRow from '#content/demo-catalog/posts/ui/DbPostRow.svelte'
 
   interface Props {
     card: OptimisticCard

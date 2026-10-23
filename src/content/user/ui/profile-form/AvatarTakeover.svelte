@@ -40,7 +40,7 @@
    */
   import { onDestroy, tick } from 'svelte'
   import type { FieldHandle } from '#lib/form/svelte/index.js'
-  import { Attachment, AttachmentAction, FileAttachment } from '#lib/components/ui/index.js'
+  import { Attachment, AttachmentAction, FileAttachment } from '#components/ui/index.js'
   import { SERVER_PHOTO_FORMATS } from '../../checks.js'
   import { prepareAvatar } from './avatar.js'
 

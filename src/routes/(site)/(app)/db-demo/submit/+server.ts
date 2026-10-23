@@ -8,9 +8,9 @@
  * расхождение «клиент проверяет одно, сервер другое» здесь невозможно.
  */
 import type { RequestHandler } from './$types'
-import { dispatchDbForm } from '../handle'
-import { watchDb } from '#lib/server/db.js'
-import { taskResponse } from '#lib/server/task-stream.js'
+import { dispatchDbForm } from '../handle.server'
+import { watchDb } from '#server/db.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
 
 // Ход запуска базы и переноса схемы — строками ответа, если клиент их просил
 // (`task-stream.ts`); иначе ответ прежний.

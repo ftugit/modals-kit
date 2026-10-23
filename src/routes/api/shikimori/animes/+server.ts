@@ -13,11 +13,11 @@
  * когда фильтры в запросе есть: обычная страница каталога её не ждёт.
  */
 import type { RequestHandler } from './$types'
-import { parseAnimesQuery } from '#lib/server/shikimori.js'
-import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
-import { fetchAnimesPage } from '#lib/server/shikimori-filters.js'
-import { watchSchemaBuild } from '#lib/server/shikimori-schema.js'
-import { taskResponse } from '#lib/server/task-stream.js'
+import { parseAnimesQuery } from '#content/demo-catalog/shikimori/shikimori.server.js'
+import { apiFailure, apiInvalid } from '#server/api-error.server.js'
+import { fetchAnimesPage } from '#content/demo-catalog/shikimori/filters.server.js'
+import { watchSchemaBuild } from '#content/demo-catalog/shikimori/schema.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
 
 export const GET: RequestHandler = async ({ url, request }) => {
   const parsed = parseAnimesQuery(url.searchParams)

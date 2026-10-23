@@ -1,8 +1,8 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
-import { asLink, useModalLink } from '#lib/components/links/index.js'
-  import { Button, buttonVariants, Fieldset, Spinner } from '#lib/components/ui/index.js'
-  import { JS_ONLY_REASON, useJsOnly } from '#lib/hooks/js-only.svelte.js'
+import { asLink, useModalLink } from '#hooks/links/index.js'
+  import { Button, buttonVariants, Fieldset, Spinner } from '#components/ui/index.js'
+  import { JS_ONLY_REASON, useJsOnly } from '#hooks/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
   // Порт src/features/modals/ModalsDemo.tsx оригинала: состав триггеров,
@@ -10,7 +10,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
   // страница читает живой контекст, а настройки шлёт через
   // modals.configure() — конфигурация хоста и так живёт в сторе ядра.
   // Отличия от оригинала (не фичи, а среда):
-  //   • LoadLink (быстрый роутер) → `asLink` (`#lib/components/links`):
+  //   • LoadLink (быстрый роутер) → `asLink` (`#components/links`):
   //     спиннер на ссылке, битая ссылка блокируется ядром через таблицу
   //     роутов (осмотр 1.10-2, №30/№31), `navigateOnError: false` держит
   //     ошибку загрузчика на ссылке;
@@ -19,7 +19,7 @@ import { asLink, useModalLink } from '#lib/components/links/index.js'
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { CloseAllButton } from '#lib/components/modals/index.js'
+  import { CloseAllButton } from '#components/modals/index.js'
   import SettingsPanel from './SettingsPanel.svelte'
   import SourcesPanel from './SourcesPanel.svelte'
   import FloatingMenu from '../FloatingMenu.svelte'

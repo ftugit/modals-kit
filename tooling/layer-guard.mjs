@@ -25,20 +25,29 @@ function matchPattern(pattern, value) {
   return pattern instanceof RegExp ? pattern.test(value) : value === pattern;
 }
 
+const SUBPATH_ALIASES = [
+  ['#lib/', 'src/lib/'],
+  ['$lib/', 'src/lib/'],
+  ['#hooks/', 'src/hooks/'],
+  ['#components/', 'src/components/'],
+  ['#content/', 'src/content/'],
+  ['#server/', 'src/server/'],
+];
+
 /**
- * Канонический вид спецификатора: `#lib/`, `$lib/` и относительные пути —
- * к пути от корня проекта (`src/lib/...`). Импортное правило обязано
- * ловить запрет по СМЫСЛУ пути, а не по написанию: правило, смотревшее
- * только на `#lib/...`, пропускало тот же импорт через `$lib/` и через
- * `../components/...` (дыра вскрыта вопросом владельца о защите lib/form,
- * 2026-10-21). Внешние пакеты и непути канона не имеют — null.
+ * Канонический вид спецификатора: все 5 subpath-алиасов (`#lib/*`, `#hooks/*`,
+ * `#components/*`, `#content/*`, `#server/*`), `$lib/*` и относительные пути —
+ * к пути от корня проекта (`src/...`). Импортное правило обязано ловить запрет
+ * по СМЫСЛУ пути, а не по написанию — ни алиасом, ни `../../` не обойти.
+ * Внешние пакеты и виртуальные модули (`$app/*`, `$env/*`) канона `src/...` не имеют — null.
  * @param {string} source сырой спецификатор, как написан
  * @param {string} importer нормализованный путь импортёра
  * @returns {string | null}
  */
-function canonSpecifier(source, importer) {
-  if (source.startsWith('#lib/')) return 'src/lib/' + source.slice(5);
-  if (source.startsWith('$lib/')) return 'src/lib/' + source.slice(5);
+export function canonSpecifier(source, importer) {
+  for (const [prefix, target] of SUBPATH_ALIASES) {
+    if (source.startsWith(prefix)) return target + source.slice(prefix.length);
+  }
   if (source.startsWith('./') || source.startsWith('../')) {
     const dir = importer.split('/').slice(0, -1);
     for (const part of source.split('/')) {
@@ -109,16 +118,10 @@ export function createGuard(rules) {
   return function check(source, importer) {
     const src = norm(source);
     const from = norm(importer);
-    // узор сверяется и с написанием, и с каноном: старые правила писаны
-    // по написанию (`#lib/...`), новые — по канону (`src/lib/...`) и
-    // потому не обходятся сменой алиаса.
     const canon = canonSpecifier(src, from);
     for (const rule of rules) {
-      if (rule.isTemplateCheck) continue;
+      if (rule.isTemplateCheck || rule.isSourceCheck) continue;
       if (!matchPattern(rule.pattern, src) && !(canon && matchPattern(rule.pattern, canon))) continue;
-      // deny сильнее allow: «кому явно нельзя» срабатывает даже для файлов из
-      // общего allow-списка потребителей. Так lib/form отсекается от
-      // UI-примитивов, оставаясь доступным для всего остального слоя.
       if ((rule.deny ?? []).some((d) => matchPattern(d, from))) {
         return typeof rule.message === 'function'
           ? rule.message({ source: src, importer: from, rule })
@@ -172,9 +175,18 @@ export function layerGuard(rules) {
     /**
      * @param {string} source
      * @param {string | undefined} importer
+     * @param {{ ssr?: boolean }} [options]
      */
-    resolveId(source, importer) {
-      const problem = check(source, importer);
+    resolveId(source, importer, options) {
+      // В Vite 8 Environment API вызовы `fetchModule` для входных SSR-модулей
+      // (`hooks.server.ts`, `+layout.server.ts`, `+page.server.ts`, `+server.ts`)
+      // передают синтетический `importer = '<root>/index.html'`. Для SSR-окружения
+      // это точка входа сервера (`undefined`), а в `client`-окружении `index.html`
+      // остаётся клиентским импортёром и блокирует прямой запрос `/src/*.server.ts`.
+      const isSsr = Boolean(options?.ssr || this.environment?.name === 'ssr');
+      const effectiveImporter =
+        isSsr && importer && /(^|[/\\])index\.html$/.test(importer) ? undefined : importer;
+      const problem = check(source, effectiveImporter);
       if (problem) this.error(problem);
       return null;
     },
@@ -188,9 +200,6 @@ export function layerGuard(rules) {
         const msg = checkTemplate(templateRules, code, id);
         if (msg) this.error(msg);
       }
-      // Сырые теги ловятся в разметке, а обход — в скриптах: проверки должны
-      // покрывать и .ts/.js, иначе «формы только через lib/form» остаётся
-      // пунктиром, который обходится одной строкой в модуле.
       if (/\.(?:svelte|ts|js|mjs|cjs)$/.test(file)) {
         const msg = checkSource(sourceRules, code, id);
         if (msg) this.error(msg);
@@ -207,8 +216,8 @@ const MODALS_LIB = /(^|\/)src\/lib\/modals\//;
 const ADDRESS_LIB = /(^|\/)src\/lib\/address\//;
 /** Навигационные примитивы: их работа — переход, а не правка GET-адреса. */
 const NAV_PRIMITIVES = [
-  /(^|\/)src\/lib\/components\/links\//,
-  /(^|\/)src\/lib\/components\/ui\/button\/HoldButton\.svelte$/,
+  /(^|\/)src\/hooks\/links\//,
+  /(^|\/)src\/components\/ui\/button\/HoldButton\.svelte$/,
 ];
 /** Чтение «реальности фреймворка» — обязанность ядра движка модалок. */
 const MODALS_ENGINE = /(^|\/)src\/lib\/modals\/cores\//;
@@ -218,115 +227,185 @@ const SRC_ONLY = [/(^|\/)src\//];
 /** Кто имеет право на сырые form-теги и на собственный разбор тела. */
 const FORM_KEEPERS = [
   /(^|\/)src\/lib\/form\//,
-  /(^|\/)src\/lib\/components\/ui\//,
-  /(^|\/)src\/lib\/components\/settings\//,
-  /(^|\/)src\/lib\/components\/shell\//,
+  /(^|\/)src\/components\/ui\//,
+  /(^|\/)src\/components\/settings\//,
+  /(^|\/)src\/components\/shell\//,
   /(^|\/)node_modules\//,
   /(^|\/)tooling\//,
 ];
+/** Серверные файлы SvelteKit и модулей (`*.server.*`, `+server.*`, `.svelte-kit/*`, SSR entrypoints, тесты и tooling). */
+const SERVER_IMPORTERS = [
+  /^$/,
+  /\.server\.(?:ts|js|mts|mjs)$/,
+  /(^|\/)\+server\.(?:ts|js)$/,
+  /(^|\/)\.svelte-kit\//,
+  /(^|\/)node_modules\//,
+  /\.(?:test|spec)\.(?:ts|js|mts|mjs)$/,
+  /(^|\/)tooling\//,
+  /(^|\/)vite\.config\.ts$/,
+];
+
+/** @param {RegExp} re */
+const NON_TEST = (re) => new RegExp(`${re.source}(?!.*\\.(?:test|spec)\\.(?:ts|js|mts|mjs)$)`);
 
 /** @type {Rule[]} */
-
 export const RULES = [
-/* ── адрес: чтение и запись GET — только через #lib/address ──────────
- *
- * Зачем жёстко. Дефект /steps (ход 262): панель писала адрес полным `goto`
- * из-под свежей shallow-записи модального списка; SvelteKit молча отменял
- * навигацию, и режим «не переключался» — на десктопе работало, на таче нет.
- * Класс дефекта — не «одна опечатка», а второй писатель адреса: своя очередь
- * истории, которая обгоняет чужую и теряет чужие ключи/состояние.
- * Соглашение в документации этот класс не держит — держит отказ сборки.
- */
-{
-  pattern: /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/,
-  isSourceCheck: true,
-  scope: SRC_ONLY,
-  allow: [ADDRESS_LIB],
-  message: ({ importer }) =>
-    [
-      '[layer-guard] Прямой history.pushState/replaceState запрещён.',
-      `  файл: ${importer || '<точка входа>'}`,
-      '',
-      '  Адрес страницы пишет ТОЛЬКО общий писатель:',
-      '',
-      "      import { writeAddress } from '#lib/address/sveltekit.js';",
-      "      void writeAddress(() => ({ url: '/page?key=value' }), { replace: false, load: false });",
-      '',
-      '  Почему: нативный history SvelteKit не видит и перетирает;',
-      '  своя запись = вторая очередь истории, которая обгоняет записи',
-      '  модалок/пагинатора и теряет их ключи и состояние (F41).',
-    ].join('\n'),
-},
-{
-  pattern: /import\s*\{[\s\S]*?\b(?:pushState|replaceState)\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
-  isSourceCheck: true,
-  scope: SRC_ONLY,
-  allow: [ADDRESS_LIB],
-  message: ({ importer }) =>
-    [
-      '[layer-guard] pushState/replaceState из $app/navigation запрещены.',
-      `  файл: ${importer || '<точка входа>'}`,
-      '',
-      '  Это запись адреса — её делает общий писатель:',
-      '',
-      "      import { writeAddress } from '#lib/address/sveltekit.js';",
-      "      void writeAddress(() => ({ url, state }), { replace: true, load: false });",
-      '',
-      '  Почему: именно полная/своя запись из-под shallow-слоя сломала',
-      '  /steps на таче — SvelteKit отменил навигацию, и режим демо',
-      '  не переключался. Писатель сериализует записи и знает про слои.',
-      "  Свои ключи бронируйте: claimQuery(owner, 'ключ', 'ключ.*').",
-    ].join('\n'),
-},
-{
-  pattern: /\bpage\s*\.\s*url\b/,
-  isSourceCheck: true,
-  scope: SRC_ONLY,
-  // `/spike` — диагностическая страница, её работа — ПОКАЗАТЬ разницу между
-  // адресом отрисовки и видимым адресом.
-  allow: [ADDRESS_LIB, MODALS_ENGINE, /(^|\/)src\/routes\/spike\//],
-  message: ({ importer }) =>
-    [
-      '[layer-guard] Чтение `page.url` запрещено.',
-      `  файл: ${importer || '<точка входа>'}`,
-      '',
-      '  Читайте видимый адрес — с учётом мелких записей и намерения:',
-      '',
-      "      import { visibleAddress } from '#lib/address/sveltekit.js';",
-      '      const here = visibleAddress().url;   // pathname + search',
-      '',
-      '  Почему: после мелкой записи (модалка, панель, шаг) `page.url`',
-      '  описывает ОТРИСОВАННУЮ страницу, а не видимый адрес. Ссылка,',
-      '  собранная из него, возвращает старые ключи и теряет новые —',
-      '  это второй дефект /steps (ход 262). Чужие ключи читать можно:',
-      '  readQuery/visibleAddress отдают весь адрес, бронь касается записи.',
-    ].join('\n'),
-},
-{
-  pattern: /import\s*\{[\s\S]*?\bgoto\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
-  isSourceCheck: true,
-  // Только библиотека: приложение (src/routes) ходить по страницам вправе.
-  scope: [/(^|\/)src\/lib\//],
-  allow: [...NAV_PRIMITIVES, ADDRESS_LIB],
-  message: ({ importer }) =>
-    [
-      '[layer-guard] goto из $app/navigation в библиотеке запрещён.',
-      `  файл: ${importer || '<точка входа>'}`,
-      '',
-      '  Библиотечный компонент не ходит по адресам сам:',
-      '',
-      '    • адрес страницы меняется только через',
-      "      writeAddress(...) из '#lib/address/sveltekit.js';",
-      '    • переход по ссылке — через Link (`asLink`), не через goto;',
-      '    • «после успеха — на другой экран» — решение приложения',
-      '      (src/routes), а не библиотечного компонента.',
-      '',
-      '  Почему: goto с GET-адресом из панели — это ровно дефект /steps',
-      '  (ход 262): навигация гибнет под модальным слоем. Исключения:',
-      '  сам писатель и навигационные примитивы (Link, HoldButton).',
-    ].join('\n'),
-},
+  /* ── 1. Строгая направленность 5 верхних слоёв и серверная граница ── */
+  {
+    pattern: /^src\/(?:hooks|components|content|server|routes)\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/lib\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Нарушение иерархии слоёв: пакет нижнего слоя \`src/lib/\` не может импортировать «${source}».`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Слой `#lib/*` полностью независим от хуков приложения, UI-компонентов,',
+        '  доменного контента, серверных синглтонов и маршрутов.',
+      ].join('\n'),
+  },
+  {
+    pattern: /^src\/(?:components|content|routes)\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/hooks\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Нарушение иерархии слоёв: \`src/hooks/\` не может импортировать «${source}».`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Хуки (`#hooks/*`) стоят ниже UI-компонентов (`#components/*`), контента (`#content/*`) и роутов.',
+      ].join('\n'),
+  },
+  {
+    pattern: /^src\/(?:content|server|routes)\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/components\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Нарушение иерархии слоёв: UI-компонент из \`src/components/\` не может импортировать «${source}».`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Компоненты (`#components/*`) получают данные и маршруты через пропы/слоты,',
+        '  а не тянут доменный контент (`#content/*`), серверные синглтоны (`#server/*`) или роуты.',
+      ].join('\n'),
+  },
+  {
+    pattern: /^src\/routes\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/(?:content|server)\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Нарушение иерархии слоёв: модуль ниже \`src/routes/\` не может импортировать маршрут «${source}».`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Вынесите общую схему, модель или UI-представление в `#content/*` или `#components/*`.',
+      ].join('\n'),
+  },
+  {
+    pattern: /^src\/components\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/server\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Серверный слой \`src/server/\` не может импортировать UI-компоненты («${source}»).`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+      ].join('\n'),
+  },
+  {
+    pattern: /\.server(?:\.(?:ts|js|mts|mjs))?$/,
+    allow: SERVER_IMPORTERS,
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Серверный модуль «${source}» импортирован в клиентский/изоморфный файл.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Импортировать `*.server.ts` разрешено только из серверных файлов:',
+        '  `*.server.ts`, `hooks.server.ts`, `+page.server.ts`, `+layout.server.ts`, `+server.ts`.',
+      ].join('\n'),
+  },
+  {
+    pattern: /^\$(?:app|env)\//,
+    allow: [/.*/],
+    deny: [/(^|\/)src\/server\/trusted-origins\.ts$/],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] В \`trusted-origins.ts\` запрещён импорт «${source}».`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  `vite.config.ts` импортирует `src/server/trusted-origins.ts` до инициализации',
+        '  виртуальных модулей SvelteKit — используйте только чистый `process.env`.',
+      ].join('\n'),
+  },
 
+  /* ── 2. Адрес: чтение и запись GET — только через #lib/address ──────── */
+  {
+    pattern: /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/,
+    isSourceCheck: true,
+    scope: SRC_ONLY,
+    allow: [ADDRESS_LIB],
+    message: ({ importer }) =>
+      [
+        '[layer-guard] Прямой history.pushState/replaceState запрещён.',
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Адрес страницы пишет ТОЛЬКО общий писатель:',
+        '',
+        "      import { writeAddress } from '#lib/address/sveltekit.js';",
+        "      void writeAddress(() => ({ url: '/page?key=value' }), { replace: false, load: false });",
+      ].join('\n'),
+  },
+  {
+    pattern: /import\s*\{[\s\S]*?\b(?:pushState|replaceState)\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
+    isSourceCheck: true,
+    scope: SRC_ONLY,
+    allow: [ADDRESS_LIB],
+    message: ({ importer }) =>
+      [
+        '[layer-guard] pushState/replaceState из $app/navigation запрещены.',
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Это запись адреса — её делает общий писатель (shallow-безопасная очередь):',
+        '',
+        "      import { writeAddress } from '#lib/address/sveltekit.js';",
+        "      void writeAddress(() => ({ url, state }), { replace: true, load: false });",
+      ].join('\n'),
+  },
+  {
+    pattern: /\bpage\s*\.\s*url\b/,
+    isSourceCheck: true,
+    scope: SRC_ONLY,
+    allow: [ADDRESS_LIB, MODALS_ENGINE, /(^|\/)src\/routes\/spike\//],
+    message: ({ importer }) =>
+      [
+        '[layer-guard] Чтение `page.url` запрещено.',
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Читайте видимый адрес — с учётом мелких записей и намерения:',
+        '',
+        "      import { visibleAddress } from '#lib/address/sveltekit.js';",
+        '      const here = visibleAddress().url;   // pathname + search',
+      ].join('\n'),
+  },
+  {
+    pattern: /import\s*\{[\s\S]*?\bgoto\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
+    isSourceCheck: true,
+    scope: [/(^|\/)src\/(?:lib|hooks|components)\//],
+    allow: [...NAV_PRIMITIVES, ADDRESS_LIB],
+    message: ({ importer }) =>
+      [
+        '[layer-guard] goto из $app/navigation в библиотеках и UI-компонентах запрещён.',
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  Библиотечный/UI-компонент не ходит по адресам сам:',
+        '',
+        '    • адрес страницы меняется только через',
+        "      writeAddress(...) из '#lib/address/sveltekit.js';",
+        '    • переход по ссылке — через Link (`asLink`), не через goto;',
+        '    • «после успеха — на другой экран» — решение доменного слоя/роута.',
+      ].join('\n'),
+  },
+
+  /* ── 3. Оверлей и модальные окна ────────────────────────────────────── */
   {
     pattern: /^@ark-ui\/svelte\/dialog$/,
     allow: [MODALS_LIB],
@@ -339,11 +418,6 @@ export const RULES = [
         '',
         "      import { openLayer } from '#lib/modals/index.js';",
         '      openLayer({ title: …, content: … });',
-        '',
-        '  Почему: на всю стопку существует ровно один Dialog.',
-        '  Второй диалог — это второй focus-trap, второй scroll-lock',
-        '  и второй aria-hidden поверх первого: фокус начинает',
-        '  перебрасываться, а стопка и кнопка «Назад» ломаются.',
       ].join('\n'),
   },
   {
@@ -358,37 +432,27 @@ export const RULES = [
         '  Все модальные окна открываются ТОЛЬКО через единую хост-систему:',
         '',
         "      import { useModals, openLayer } from '#lib/modals/index.js';",
-        '      openLayer({ title: …, content: … });',
-        '',
-        '  Почему: нативный <dialog> работает мимо стека истории, z-index',
-        '  и системы анимаций хоста. Используйте единую модальную систему.',
       ].join('\n'),
   },
   {
-    // Сырые form-теги живут ТОЛЬКО в примитивах полей и в единственной
-    // точке lib/form — её <Form> (тег формы + hidden-пары конверта).
-    // Разрешение на всю папку lib/form было дырой: новый компонент с
-    // голым <input> внутри библиотеки формы проходил мимо (вскрыто
-    // 2026-10-21); полей внутри lib/form нет и быть не должно — поля
-    // ей СНАРУЖИ подставляет конфиг приложения (components/form).
-    // Потребитель (страница, фича, демо-блок) получает либо <Form> из
-    // '#lib/form/svelte/index.js', либо поле из примитивов ('#lib/components/ui/index.js',
-    // '#lib/components/settings/index.js') — тогда семантика (hidden-пары, no-JS GET,
-    // aria-связи, оживление контролов) не теряется на каждом «удобном»
-    // разметочном дубле. Исключение — оболочка (sidebar-чекбокс работает
-    // без JS и не является полем).
-    //
-    // Узор закрыл дыры, найденные прогон образцов (2026-10-09): самозакрытый
-    // <form/> и <input/>, закрывающий </form> (его раньше не было за что
-    // ловить) и ВЕРХНИЙ регистр — HTML-теги без регистра, а предыдущая
-    // версия сравнивала их чувствительно, в отличие от правила <dialog>.
+    pattern: /^@zag-js\/(focus-trap|remove-scroll|aria-hidden)$/,
+    allow: [/(^|\/)src\/lib\/overlay\//, /(^|\/)node_modules\//],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] «${source}» подключается только в src/lib/overlay.`,
+        `  файл: ${importer || '<точка входа>'}`,
+      ].join('\n'),
+  },
+
+  /* ── 4. Теги форм и обход lib/form ──────────────────────────────────── */
+  {
     pattern: /<\/?(?:form|input|select|textarea|FORM|INPUT|SELECT|TEXTAREA)(?=[\s/>])/,
     isTemplateCheck: true,
     allow: [
       /(^|\/)src\/lib\/form\/svelte\/Form\.svelte$/,
-      /(^|\/)src\/lib\/components\/ui\//,
-      /(^|\/)src\/lib\/components\/settings\//,
-      /(^|\/)src\/lib\/components\/shell\//,
+      /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/components\/settings\//,
+      /(^|\/)src\/components\/shell\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -399,27 +463,17 @@ export const RULES = [
         '  Форма и поля собираются только из компонентов:',
         '',
         "      import { Form } from '#lib/form/svelte/index.js';     // тег <form> + hidden-пары",
-        "      import { Input, Select, Checkbox } from '#lib/components/ui/index.js';",
-        "      import { Field, Select, Toggle } from '#lib/components/settings/index.js'; // панели настроек",
-        '',
-        '  Почему: тег <form> обязан нести formProps() (метод, action, submit-',
-        '  обработчик, novalidate после гидратации), а скрытые пары держат',
-        '  чужие ключи адреса при no-JS GET. Всё это живёт в <Form> и в',
-        '  примитивах полей; скопированная разметка теряет это молча.',
+        "      import { Input, Select, Checkbox } from '#components/ui/index.js';",
+        "      import { Field, Select, Toggle } from '#components/settings/index.js'; // панели настроек",
       ].join('\n'),
   },
   {
-    // Носитель значения — виджет kit-internal: наружу отдаётся только
-    // enhanced `Select`. Страница, взявшая `NativeSelect`, проходит проверку
-    // «нет сырых тегов» (компонент с заглавной!) и молча понижает интерфейс
-    // до стандартного ОС-дропдауна: без поиска, подсветки и host-раскрытия —
-    // и тесты при этом зелёные, болячка 2026-10-10. Понижение запрещено.
     pattern: /<NativeSelect([ \t\n/>])/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/components\/ui\//,
-      /(^|\/)src\/lib\/components\/settings\//,
-      /(^|\/)src\/lib\/components\/shell\//,
+      /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/components\/settings\//,
+      /(^|\/)src\/components\/shell\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -429,28 +483,17 @@ export const RULES = [
         '',
         '  Странице и демке положен расширенный select:',
         '',
-        "      import { Select } from '#lib/components/ui/index.js';              // список — панель, значение — носитель в нём",
-        "      import { Select as PanelSelect } from '#lib/components/settings/index.js'; // панели настроек",
-        '',
-        '  Почему: enhanced <Select> оставляет форму и no-JS на нативном',
-        '  <select>-носителе (с опциями — nativeList), а список рисует',
-        '  панелью. Голый носитель формально компонент, но UI — браузерный',
-        '  dropdown; отличить их «по-человечески» разметка не обязана.',
+        "      import { Select } from '#components/ui/index.js';",
+        "      import { Select as PanelSelect } from '#components/settings/index.js';",
       ].join('\n'),
   },
   {
-    // Скрытое поле объявляет САМА lib/form: поле вида hidden в ОПИСАНИИ,
-    // рисует его <Field> (HiddenField), значение живёт в состоянии формы;
-    // конверт — hiddenFields у <Form>. Ручной <Input type="hidden"> в
-    // виджете — значение, о котором форма не знает: не валидируется,
-    // зеркалится в DOM руками, серверные ошибки повисают в воздухе.
-    // Так AuthWidget вёз nonce и аватар до 2026-10-21.
     pattern: /<[A-Z][\w]*[^>]*\btype="hidden"/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/components\/form\//,
-      /(^|\/)src\/lib\/components\/ui\//,
-      /(^|\/)src\/lib\/components\/settings\//,
+      /(^|\/)src\/components\/form\//,
+      /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/components\/settings\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -460,31 +503,18 @@ export const RULES = [
         '',
         '  Скрытое поле объявляет описание формы, рисует lib/form:',
         '',
-        "      nonce: field.hidden({ label: 'Nonce' }),          // описание (defineForm)",
-        '      <Field of={bound.f.nonce} />                       // разметка (HiddenField)',
-        '',
-        '  Значение при этом живёт в состоянии формы (onInput/зеркало),',
-        '  валидируется и уезжает одним путём с остальными полями.',
-        '  Конверт формы рисует <Form hiddenFields={bound.hidden()}> —',
-        '  руками скрытые поля не ставятся нигде.',
+        "      nonce: field.hidden({ label: 'Nonce' }),",
+        '      <Field of={bound.f.nonce} />',
       ].join('\n'),
   },
   {
-    // Имя поля даёт bind из описания (attrs), а не разметка. Полевой
-    // примитив с рукописным name="..." вне кита форм — поле, попадающее
-    // в FormData мимо описания, валидаторов и состояния: сценарий
-    // «создалось поле, о котором lib/form не знает». Кнопки-интенты не
-    // поля (их name — механизм интента самой lib/form) — правило только
-    // о полевых примитивах ui. name={view.name} сознательно не ловится:
-    // это ручная привязка FieldView (headless-путь, витрина демо) —
-    // значение там всё равно живёт в состоянии формы.
     pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|RadioGroup|RadioItem|Range|Select|NativeSelect|FileInput|FileAttachment|Attachment|SearchInput|SearchField|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/components\/form\//,
-      /(^|\/)src\/lib\/components\/ui\//,
-      /(^|\/)src\/lib\/components\/settings\//,
-      /(^|\/)src\/lib\/components\/shell\//,
+      /(^|\/)src\/components\/form\//,
+      /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/components\/settings\//,
+      /(^|\/)src\/components\/shell\//,
       /(^|\/)node_modules\//,
     ],
     message: ({ importer }) =>
@@ -496,57 +526,9 @@ export const RULES = [
         '  имя, атрибуты проверки и значение даёт bind:',
         '',
         '      <Field of={bound.f.nickname} />',
-        '',
-        '  Примитив ui с собственным name= уезжает в FormData мимо',
-        '  описания: форма о таком поле не знает, сервер получает',
-        '  значение, которое никто не валидировал.',
       ].join('\n'),
   },
   {
-    // Наоборот: lib/form — ниже компонентов, компоненты о ней не знают,
-    // а она о них. Библиотека формы рендерит поля САМА через свой
-    // механизм field (bind + конфиг приложения): компоненты полей ей
-    // подставляет СНАРУЖИ конфигурация (components/form), а не импорт.
-    // Прямой импорт любого компонента внутрь — поле, которое библиотека
-    // вызвала в обход собственного field. Узор — по КАНОНУ пути
-    // (`src/lib/components/...`): `#lib/`, `$lib/` и относительные
-    // написания канонизируются до сверки, алиасом не обойти (раньше
-    // узор смотрел только на `#lib/components/(ui|settings)/` — и
-    // относительный путь, и слой components/form проходили мимо).
-    pattern: /^src\/lib\/components\//,
-    allow: [/.*/], // всем, кроме тех, кто в deny
-    deny: [/(^|\/)src\/lib\/form\//],
-    message: ({ source, importer }) =>
-      [
-        `[layer-guard] «${source}» недоступен внутри lib/form.`,
-        `  файл: ${importer || '<неизвестный импортёр>'}`,
-        '',
-        '  Внутри библиотеки формы компоненты запрещены сознательно:',
-        '  поля ей подставляет конфиг приложения СНАРУЖИ (components/form:',
-        '  resolve по виду ввода), а внутри работает только её собственный',
-        '  механизм field (FieldView/bind). UI-примитив — потребитель',
-        '  form-контракта, а не его часть.',
-        '  Нужен новый вид поля — добавьте тип и компонент в расширение',
-        '  приложения (components/form) и зарегистрируйте в конфиге форм.',
-      ].join('\n'),
-  },
-  {
-    pattern: /^@zag-js\/(focus-trap|remove-scroll|aria-hidden)$/,
-    allow: [/(^|\/)src\/lib\/overlay\//, /(^|\/)node_modules\//],
-    message: ({ source, importer }) =>
-      [
-        `[layer-guard] «${source}» подключается только в src/lib/overlay.`,
-        `  файл: ${importer || '<точка входа>'}`,
-        '',
-        '  Ловушка фокуса, scroll-lock и aria-hidden уже настроены',
-        '  хостом один раз на всю стопку.',
-      ].join('\n'),
-  },
-
-  /* ── обход lib/form запрещён ─────────────────────────────────────────── */
-
-  {
-    // Дыра разметочного правила: тег можно подставить динамикой.
     pattern: /<svelte:element[^>]*\bthis=(?:"|')?(?:\{[^}]*\}|["']?(?:form|input|select|textarea)\b)/,
     isTemplateCheck: true,
     allow: FORM_KEEPERS,
@@ -556,13 +538,9 @@ export const RULES = [
         `  файл: ${importer || '<точка входа>'}`,
         '',
         "      import { Form } from '#lib/form/svelte/index.js';",
-        '',
-        '  Почему: обёртка держит formProps(), скрытые пары и no-JS-семантику.',
       ].join('\n'),
   },
   {
-    // Контракт адаптера: `form` у <Form> — результат bind(). Подделать его
-    // можно, только написав formProps самому, — это и запрещено.
     pattern: /\bformProps\s*[:=(]/,
     isSourceCheck: true,
     allow: FORM_KEEPERS,
@@ -572,13 +550,7 @@ export const RULES = [
         `  файл: ${importer || '<точка входа>'}`,
         '',
         "      import { bind, Form } from '#lib/form/svelte/index.js';",
-        '      const form = bind(forms, описание, { transport })',
-        '',
-        '  Почему: ручной formProps() даёт разметку без связки — без novalidate,',
-        '  без живых проверок и МИМО серверных слоёв (идемпотентность, частота,',
-        '  origin, лимит тела), а ошибки показывает фреймворк, а не приложение.',
-        '  Нужен обычный POST без перехвата — `bind(..., { intercept: false })`:',
-        '  тот же путь, но под контролем библиотеки.',
+        '      Нужен обычный POST без перехвата — `bind(..., { intercept: false })`.',
       ].join('\n'),
   },
   {
@@ -589,22 +561,13 @@ export const RULES = [
       [
         `[layer-guard] createElement('form') обносит форму мимо lib/form.`,
         `  файл: ${importer || '<точка входа>'}`,
-        '',
-        '  Нужен submit вне разметки — возьмите форму из bind() и вызовите её',
-        '  submit(), а не конструируйте узел вручную.',
       ].join('\n'),
   },
   {
-    // Писатели перехвата поля — свойства живой ручки (`f.error`/`f.pending`):
-    // компоненты полей получают FieldView без них по типу, а гард не даёт
-    // присваивать их из чужого места текстом.
-    // точка — вплотную к имени, пробелы без перевода строки: иначе точка
-    // конца предложения в комментарии клеится к локальной `pending =`
     pattern: /\.(?:error|pending)[ \t]*=(?![=>])/,
     isSourceCheck: true,
     scope: SRC_ONLY,
-    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)src\/lib\/components\/form\//],
-    // перехват виден по callback у Field или по типу ручки/фабрики в файле
+    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)src\/components\/form\//],
     require: /\b(?:takeover\s*=|FieldTakeover\b|FieldHandle\b)/,
     message: ({ importer }) =>
       [
@@ -612,17 +575,9 @@ export const RULES = [
         `  файл: ${importer || '<точка входа>'}`,
         '',
         '      <Field of={bound.f.поле} takeover={(f) => { f.error = { code } }} />',
-        '',
-        '  Почему: ошибка операции закреплена за значением поля, блокирует',
-        '  отправку и сервером не воспроизводится; pending удерживает',
-        '  отправку до готовности значения. Присваивание из компонента или',
-        '  логики страницы превратило бы их в костыль мимо валидации',
-        '  описания и проверок формы.',
       ].join('\n'),
   },
   {
-    // Серверный приём собирается слоями: маршрут, читающий тело сам,
-    // проходит мимо метода, origin, лимитов, имён и конверта.
     pattern: /\brequest\s*\.\s*(?:clone\s*\(\s*\)\s*\.\s*)?formData\s*\(|\bawait\s+request\s*\.\s*json\s*\(/,
     isSourceCheck: true,
     allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
@@ -633,25 +588,17 @@ export const RULES = [
         `  файл: ${importer || '<точка входа>'}`,
         '',
         "      import { createFormHandler } from '#lib/form/server.js';",
-        '',
-        '  До bodyLayer стоят метод, origin, предел тела со счётчиком, проверка',
-        '  имён и конверт; свой request.formData() выбрасывает их молча.',
       ].join('\n'),
   },
   {
     pattern: /\bexport const actions\s*[:=]/,
     isSourceCheck: true,
     allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
-    // обёртка над слоями лежит рядом с маршрутом (`./handle`) или импортирует их сама
-    require: /from ['"](?:#lib\/form\/|\.\.?\/handle(?:\.js)?['"])/,
+    require: /from ['"](?:#lib\/form\/|\.\.?\/handle(?:\.server)?(?:\.js)?['"])/,
     message: ({ importer }) =>
       [
         `[layer-guard] form-экшены обязаны идти через '#lib/form/index.js'.`,
         `  файл: ${importer || '<точка входа>'}`,
-        '',
-        "  Экшен = createFormHandler (или обёртка над ним рядом с маршрутом, как 'routes/(site)/(app)/form/handle.ts'):",
-        '  тогда метод, origin, лимиты, имена, конверт и execute живут в одном',
-        '  конвейере, а отказ приходит как Result, а не как страница фреймворка.',
       ].join('\n'),
   },
 ];

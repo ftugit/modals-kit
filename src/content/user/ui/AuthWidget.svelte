@@ -10,14 +10,15 @@
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { formSteps, suffixOf, useSteps } from '#lib/components/steps/index.js'
-  import { kitActionTransport } from '#lib/components/form/transport.js'
+  import { formSteps, suffixOf, useSteps } from '#components/steps/index.js'
+  import { kitActionTransport } from '#components/form/transport.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
-  import { forms } from '#lib/components/form/forms.config.js'
+  import { forms } from '#components/form/forms.config.js'
+  import { defaults } from '../config.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { vault, type VaultPayload } from '../vault.svelte.js'
   import type { AvatarLimits } from './profile-form/index.js'
-  import ProfileForm from './profile-form/ProfileForm.svelte'
+  import ProfileForm, { DEFAULT_PROFILE_LIMITS } from './profile-form/ProfileForm.svelte'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
   import { mirrorToField } from './field-mirror.svelte.js'
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
@@ -32,15 +33,22 @@
     nonce?: string
   }
 
+  type AuthWidgetData = {
+    challenge?: { nonce: string; expiresAt: number } | null
+    next?: string | null
+    limits?: AvatarLimits & { holdSeconds?: number }
+    step?: string
+    registerSeed?: string | null
+    enabled?: boolean
+  }
+
+  const DEFAULT_AUTH_LIMITS: AvatarLimits & { holdSeconds: number } = {
+    ...DEFAULT_PROFILE_LIMITS,
+    holdSeconds: defaults.holdSeconds,
+  }
+
   interface Props {
-    data: {
-      challenge: { nonce: string; expiresAt: number } | null
-      next: string | null
-      limits: AvatarLimits & { holdSeconds: number }
-      step: string
-      registerSeed?: string | null
-      enabled?: boolean
-    }
+    data?: AuthWidgetData
     mode?: 'page' | 'modal'
     variant?: UserSurfaceVariant
     class?: string
@@ -48,13 +56,18 @@
   }
 
   let {
-    data,
+    data = {},
     mode = 'page',
     variant = mode === 'modal' ? 'plain' : 'card',
     class: className,
     onDone,
   }: Props = $props()
 
+  const resolvedLimits = $derived({
+    ...DEFAULT_AUTH_LIMITS,
+    ...data.limits,
+    holdSeconds: data.limits?.holdSeconds ?? defaults.holdSeconds,
+  })
   const doneHref = $derived(data.next ?? '/')
   const authorized = $derived(vault.authorized)
 
@@ -211,7 +224,7 @@
   />
 {:else if hostStep === 'profile'}
   <ProfileForm
-    limits={data.limits}
+    limits={resolvedLimits}
     {authorized}
     enabled={data.enabled}
     {doneHref}
@@ -226,7 +239,7 @@
     host={steps}
     {bound}
     {localSeed}
-    holdSeconds={data.limits.holdSeconds}
+    holdSeconds={resolvedLimits.holdSeconds}
     {authorized}
     enabled={data.enabled}
     {doneHref}

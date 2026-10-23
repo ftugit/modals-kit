@@ -1,7 +1,7 @@
 // Изоморфное описание: его импортируют и страница, и серверное действие.
 // Ноль UI, ноль HTTP, ноль Svelte.
 import { defineForm, field, v } from '#lib/form/index.js'
-import { emailTaken, inn, luhn } from '#lib/components/form/extend.js'
+import { emailTaken, inn, luhn } from '#components/form/extend.js'
 
 /**
  * Кардинальность ошибок — свойство ОПИСАНИЯ: его обязаны видеть обе стороны.

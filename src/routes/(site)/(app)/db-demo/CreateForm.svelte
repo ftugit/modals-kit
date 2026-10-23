@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Форма добавления записи — отдельный компонент, как и остальные формы демо
-   * (`src/lib/components/form/*`): связка `bind` + `Form` + `Common`/`Field`
+   * (`src/components/form/*`): связка `bind` + `Form` + `Common`/`Field`
    * живёт здесь, страница передаёт только результат экшена.
    *
    * Отправка идёт нативным `form`-путём (action `?/create`), потому что слой
@@ -11,13 +11,13 @@
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { jsonTransport } from '#lib/components/form/transport.js'
-  import { Button } from '#lib/components/ui/index.js'
-  import { forms } from '#lib/components/form/forms.config.js'
-  import Common from '#lib/components/form/Common.svelte'
-  import Field from '#lib/components/form/Field.svelte'
+  import { jsonTransport } from '#components/form/transport.js'
+  import { Button } from '#components/ui/index.js'
+  import { forms } from '#components/form/forms.config.js'
+  import Common from '#components/form/Common.svelte'
+  import Field from '#components/form/Field.svelte'
   import { dbCreate } from './description'
-  import type { DbPost } from './definition'
+  import type { DbPost } from '#content/demo-catalog/posts/source.js'
   import type { Optimistic } from './optimistic.svelte'
 
   interface Props {

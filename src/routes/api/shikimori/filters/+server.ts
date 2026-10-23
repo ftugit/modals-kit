@@ -13,11 +13,11 @@
  * страницы сюда не ходит — она берёт схему из модуля напрямую. Отказ — 403 без тела.
  */
 import type { RequestHandler } from './$types'
-import { apiFailure, apiInvalid } from '#lib/server/api-error.js'
-import { getShikimoriFilterSchema, watchSchemaBuild } from '#lib/server/shikimori-schema.js'
-import { taskResponse } from '#lib/server/task-stream.js'
-import { sameOriginFetch } from '#lib/server/trusted-origins.js'
-import { parseShikimoriApi } from '#lib/server/shikimori.js'
+import { apiFailure, apiInvalid } from '#server/api-error.server.js'
+import { getShikimoriFilterSchema, watchSchemaBuild } from '#content/demo-catalog/shikimori/schema.server.js'
+import { taskResponse } from '#hooks/task-stream.server.js'
+import { sameOriginFetch } from '#server/trusted-origins.js'
+import { parseShikimoriApi } from '#content/demo-catalog/shikimori/shikimori.server.js'
 import { DEV } from 'esm-env'
 
 export const GET: RequestHandler = async ({ request, url }) => {

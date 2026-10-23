@@ -2,8 +2,8 @@
 // клиент (B11). Cookie не создаёт зависимости load — на клиентских переходах
 // load не перезапускается; изменения пишет сам ShellState.
 import type { LayoutServerLoad } from './$types'
-import { parseShellPrefs, SHELL_COOKIE } from '#lib/components/shell/prefs.js'
-import { resolveVault } from '#content/user/gateway.js'
+import { parseShellPrefs, SHELL_COOKIE } from '#components/shell/prefs.js'
+import { resolveVault } from '#content/user/gateway.server.js'
 
 let serverAuthSeq = 0
 

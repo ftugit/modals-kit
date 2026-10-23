@@ -140,7 +140,7 @@ function resolveRenewTargetUrl(): string {
 
 async function defaultPostRenew(signal: AbortSignal): Promise<RenewPostOutcome> {
   const { seedEnvelope, seedEnvelopeFields } = await import('./ui/seed-form/envelope.js')
-  const { kitActionTransport } = await import('#lib/components/form/transport.js')
+  const { kitActionTransport } = await import('#components/form/transport.js')
   const envelope = seedEnvelope(`user-auth:${crypto.randomUUID()}`)
   const body = new FormData()
   for (const [k, v] of Object.entries(seedEnvelopeFields(envelope))) body.append(k, v)

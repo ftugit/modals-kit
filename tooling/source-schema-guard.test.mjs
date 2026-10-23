@@ -40,9 +40,9 @@ test('ключ фильтра в компоненте — ошибка', () => {
 })
 
 test('ключ фильтра в объявлении и в серверной зоне — норма', () => {
-  assert.deepEqual(checkSource('src/content/shikimori-filters.ts', `const k = 'filters.kind'`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.ts', `const k = 'filters.kind'`), [])
   assert.deepEqual(checkSource('src/lib/paginate/filters/values.ts', `const p = 'filters.genres.and'`), [])
-  assert.deepEqual(checkSource('src/lib/server/shikimori-filters.ts', `drop: 'filters.score.max'`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.server.ts', `drop: 'filters.score.max'`), [])
 })
 
 test('отключение по месту работает и не расползается на строку', () => {
@@ -54,20 +54,20 @@ test('отключение по месту работает и не распол
 test('выдуманное имя не заменяет параметр API', () => {
   // Правда о том, что «жанры» — это `genre_v2`, живёт на сервере.
   assert.equal(checkSource('src/routes/(site)/(app)/paginator/definition.ts', `const p = 'genre_v2'`).length, 1)
-  assert.deepEqual(checkSource('src/lib/server/shikimori.ts', `const p = 'genre_v2'`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/shikimori.server.ts', `const p = 'genre_v2'`), [])
 })
 
 test('домен внешнего API в клиентской зоне — ошибка, в комментарии — нет', () => {
-  assert.equal(checkSource('src/content/shikimori.ts', `const media = 'https://shikimori.io'`).length, 1)
+  assert.equal(checkSource('src/content/demo-catalog/shikimori/shikimori.ts', `const media = 'https://shikimori.io'`).length, 1)
   assert.deepEqual(
-    checkSource('src/content/shikimori.ts', `// сервер ходит в shikimori.io сам\nconst media = 'ok'`),
+    checkSource('src/content/demo-catalog/shikimori/shikimori.ts', `// сервер ходит в shikimori.io сам\nconst media = 'ok'`),
     [],
   )
 })
 
 test('сборка схемы — только в её зоне', () => {
   assert.equal(checkSource('src/routes/api/shikimori/filters/+server.ts', `buildShikimoriFilterSchema(refs, 'x')`).length, 1)
-  assert.deepEqual(checkSource('src/lib/server/shikimori-schema.ts', `buildShikimoriFilterSchema(refs, 'x')`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/schema.server.ts', `buildShikimoriFilterSchema(refs, 'x')`), [])
 })
 
 test('чтение готовой схемы — только сервером', () => {
@@ -80,11 +80,11 @@ test('чтение готовой схемы — только сервером',
 
 test('конвейер применяется через общий вход, а не вызывается в обход', () => {
   assert.equal(checkSource('src/routes/api/shikimori/animes/+server.ts', `animesFilterQuery(schema, raw)`).length, 1)
-  assert.deepEqual(checkSource('src/lib/server/shikimori-filters.ts', `animesFilterQuery(schema, raw)`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.server.ts', `animesFilterQuery(schema, raw)`), [])
 })
 
 test('тесты и сами инструменты правилам не подчиняются', () => {
-  assert.deepEqual(checkSource('src/lib/server/shikimori.test.ts', `expect('genre_v2').toBe(1)`), [])
+  assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/shikimori.server.test.ts', `expect('genre_v2').toBe(1)`), [])
   assert.deepEqual(checkSource('tooling/source-schema-guard.mjs', `const p = /genre_v2/`), [])
 })
 
@@ -93,7 +93,7 @@ test('тесты и сами инструменты правилам не под
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
     'src/lib/paginate/filters/values.ts',
-    `import { page } from '$app/state'\nimport { fetchAnimes } from '#lib/server/shikimori.js'`,
+    `import { page } from '$app/state'\nimport { fetchAnimes } from '#content/demo-catalog/shikimori/shikimori.server.js'`,
   )
   assert.equal(impure.length, 2)
   assert.equal(impure[0].rule, 'filters-lib-purity')
@@ -145,6 +145,6 @@ test('в проекте нет нарушений границы «схема ж
 test('граница не фиктивна: зоны, которые защищаются, существуют', () => {
   const files = walk('src').map((file) => relative('.', file))
   assert.ok(files.some((f) => f.startsWith('src/lib/paginate/filters/')), 'нет модуля фильтров')
-  assert.ok(files.includes('src/lib/server/shikimori-schema.ts'), 'нет зоны схемы')
-  assert.ok(files.includes('src/content/shikimori-filters.ts'), 'нет общего объявления ключей')
+  assert.ok(files.includes('src/content/demo-catalog/shikimori/schema.server.ts'), 'нет зоны схемы')
+  assert.ok(files.includes('src/content/demo-catalog/shikimori/filters.ts'), 'нет общего объявления ключей')
 })

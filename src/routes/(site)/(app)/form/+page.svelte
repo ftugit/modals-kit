@@ -4,22 +4,22 @@
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { asLink } from '#lib/components/links/index.js'
-  import { Button, Fieldset } from '#lib/components/ui/index.js'
+  import { asLink } from '#hooks/links/index.js'
+  import { Button, Fieldset } from '#components/ui/index.js'
   import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
     createRegistry, defineForm, isVisible, pollUntilDone, queuedData,
     type FormDescription, type PollOutcome,
   } from '#lib/form/index.js'
-  import { code6Described, code6Plain, ratingType } from '#lib/components/form/extend.js'
-  import { checks, forms, formsCustomUi } from '#lib/components/form/forms.config.js'
+  import { code6Described, code6Plain, ratingType } from '#components/form/extend.js'
+  import { checks, forms, formsCustomUi } from '#components/form/forms.config.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
-  import { DemoPanel, demoDefaults } from '#lib/components/demo/index.js'
+  import { DemoPanel, demoDefaults } from '#components/demo/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
-  import Common from '#lib/components/form/Common.svelte'
-  import Field from '#lib/components/form/Field.svelte'
+  import Common from '#components/form/Common.svelte'
+  import Field from '#components/form/Field.svelte'
 
   let { form: actionResult, data }: {
     form?: { result?: Result } | null

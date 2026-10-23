@@ -4,7 +4,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
 import { defineConfig } from 'vitest/config';
-import { trustedOrigins } from './src/lib/server/trusted-origins.ts';
+import { trustedOrigins } from './src/server/trusted-origins.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
 
 const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split('.').map(Number);
@@ -15,7 +15,7 @@ if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 17)) {
 }
 
 // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` — точные адреса из того же списка, что у слоя 02
-// форм (`src/lib/server/trusted-origins.ts`); окружение здесь — момент сборки/запуска dev.
+// форм (`src/server/trusted-origins.ts`); окружение здесь — момент сборки/запуска dev.
 const kit = {
   adapter: adapter(),
   preprocess: vitePreprocess(),
@@ -72,14 +72,14 @@ export default defineConfig({
         './src/routes/spike/+page.svelte',
         './src/routes/(site)/(app)/cards/[id]/+page.svelte',
         './src/app.css',
-        './src/lib/components/shell/index.ts',
-        './src/lib/components/shell/page.svelte.ts',
-        './src/lib/components/shell/shell.svelte.ts',
-        './src/lib/components/shell/AppShell.svelte',
-        './src/lib/components/shell/PageHead.svelte',
-        './src/lib/components/header/index.ts',
-        './src/lib/components/sidebar/index.ts',
-        './src/lib/components/modals/index.ts',
+        './src/components/shell/index.ts',
+        './src/components/shell/page.svelte.ts',
+        './src/components/shell/shell.svelte.ts',
+        './src/components/shell/AppShell.svelte',
+        './src/components/shell/PageHead.svelte',
+        './src/components/shell/ui/header/NavSlot.svelte',
+        './src/components/shell/ui/sidebar/SidebarNav.svelte',
+        './src/components/modals/index.ts',
       ],
       ssrFiles: [
         './src/routes/+layout.svelte',

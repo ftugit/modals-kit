@@ -1,16 +1,16 @@
 <script lang="ts">
   /**
    * Конструктор полей — три шага («Сборка», «Заполнение», «Результат») поверх
-   * переиспользуемого модуля `#lib/components/fields` и `#hooks/component-form`.
+   * переиспользуемого модуля `#components/fields` и `#hooks/component-form`.
    */
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
-  import { DemoPanel } from '#lib/components/demo/index.js'
-  import { fieldsSurfaceVariants, SchemaBuilder, SchemaFields, SchemaValues } from '#lib/components/fields/index.js'
-  import Field from '#lib/components/form/Field.svelte'
-  import { forms } from '#lib/components/form/forms.config.js'
-  import { Steps, useSteps } from '#lib/components/steps/index.js'
-  import { Button } from '#lib/components/ui/index.js'
+  import { DemoPanel } from '#components/demo/index.js'
+  import { fieldsSurfaceVariants, SchemaBuilder, SchemaFields, SchemaValues } from '#components/fields/index.js'
+  import Field from '#components/form/Field.svelte'
+  import { forms } from '#components/form/forms.config.js'
+  import { Steps, useSteps } from '#components/steps/index.js'
+  import { Button } from '#components/ui/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { Form } from '#lib/form/svelte/index.js'
   import { demoPanelSchema } from './demo-schema.ts'

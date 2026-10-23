@@ -7,10 +7,10 @@
  * обратную сторону панель держит сама (`values` + живая сверка).
  *
  * Файл без SvelteKit и без `.svelte`: его импортирует скан-тест
- * (`src/lib/components/demo/schemas.test.ts`) вне приложения, поэтому ошибка
+ * (`src/components/demo/schemas.test.ts`) вне приложения, поэтому ошибка
  * в схеме видна на сборке.
  */
-import { defineDemoPanel, demoSelect, demoText } from '#lib/components/demo/define.js'
+import { defineDemoPanel, demoSelect, demoText } from '#components/demo/define.js'
 
 /** Значения панели: ключи полей — имена контролов (они же имена полей формы). */
 export type ModalsDemoValues = {

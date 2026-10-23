@@ -5,8 +5,8 @@
 // результата шагу не нужна, JS и no-JS идут одним каналом.
 import { fail, type Actions } from '@sveltejs/kit'
 import { createFormHandler } from '#lib/form/server.js'
-import { SECURITY_LAYERS } from '#lib/server/form-security.js'
-import '#lib/components/form/extend.js'
+import { SECURITY_LAYERS } from '#server/form-security.server.js'
+import '#components/form/extend.js'
 import { FSTEP_NEXT, fstepForm, type FstepStep } from './fstep-form.js'
 
 const handle = createFormHandler({

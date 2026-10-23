@@ -4,7 +4,7 @@ export { default as ModalHost } from './ModalHost.svelte'
 export { default as Layers } from './Layers.svelte'
 export { default as Tails } from './Tails.svelte'
 export { default as ModalContent } from './ModalContent.svelte'
-// `asModalLink` (ссылка, открывающая модалку) — UI над модалками и фреймворком: `#lib/components/links/index.js`.
+// `asModalLink` (ссылка, открывающая модалку) — UI над модалками и фреймворком: `#hooks/links/index.js`.
 
 export {
   useChain, useModalDepth, useModalsOpen, useChainLocked, useHostConfig,

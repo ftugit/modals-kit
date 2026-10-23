@@ -3,7 +3,7 @@
   // каркас внутри демо) и сбой самого каркаса `(site)` (его load). Каркаса здесь
   // нет, поэтому ориентир `<main>` ставит граница (B4). Ошибки сайта ловит
   // `(site)/+error.svelte` — внутри каркаса, как и прежде.
-  import ErrorPage from '#lib/components/ErrorPage.svelte'
+  import ErrorPage from '#components/ErrorPage.svelte'
 </script>
 
 <main><ErrorPage /></main>

@@ -40,8 +40,8 @@
 ## 1. Утверждённые решения владельца (все вопросы закрыты)
 
 1. **5 верхних слоёв и subpath-алиасов в `package.json`:**
-   - `#lib/*` → `./src/lib/*` (`address`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `task` — **вместе со своими фреймворковыми адаптерами** `svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`).
-   - `#hooks/*` → `./src/hooks/*` (`app-errors.svelte.ts`, `cache-db.ts`, `db-form.ts`, `graphql.ts`, `js-only.svelte.ts`, `task-stream.server.ts`, `use-drawer.svelte.ts`, `links/`, `component-form/`).
+   - `#lib/*` → `./src/lib/*` (`address`, `assets`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `task` — **вместе со своими фреймворковыми адаптерами** `svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`).
+   - `#hooks/*` → `./src/hooks/*` (`api-error.ts`, `app-errors.svelte.ts`, `cache-db.ts`, `db-form.ts`, `graphql.server.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `task-stream.server.ts`, `use-drawer.svelte.ts`, `links/`, `component-form/`).
    - `#components/*` → `./src/components/*` (`utils.ts`, `ErrorPage.svelte`, `Error500.svelte`, `ui/`, `settings/`, `demo/`, `form/`, `fields/`, `paginator/`, `modals/`, `steps/`, `loader/`, `shell/`).
    - `#content/*` → `./src/content/*`:
      - **`src/content/user/`** — боевой доменный модуль пользователя (`index.ts`, `routes.ts`, `modals.ts`, `*.server.ts`, `ui/*`);
@@ -95,16 +95,16 @@
 
 ---
 
-### Этап S5. Фундаментальный переезд слоёв, `demo-catalog/`, `user/{routes,modals}` и стражей — **[СЛЕДУЮЩИЙ ЭТАП]**
+### Этап S5. Фундаментальный переезд слоёв, `demo-catalog/`, `user/{routes,modals}` и стражей — **[ВЫПОЛНЕНО]**
 *(Главный сквозной этап — выполняется одним атомарным переездом всего дерева.)*
-- [ ] **S5.1.** Добавить `#components/*` и `#server/*` в `package.json`; перенести `src/lib/components/*` + `utils.ts` + `Error*.svelte` → `src/components/*` (`header`+`sidebar` внутрь `shell/`, `nav.ts` → `src/routes/(site)/nav.ts`, `cn` в `DemoPanel.svelte`), связки (`js-only`, `use-drawer`, `links/`, `app-errors`, `graphql`, `task-stream.server.ts`) → `src/hooks/*`, синглтоны → `src/server/*.server.ts` (`trusted-origins.ts` без `$app/*`); удалить `src/lib/{components,hooks,server}/`.
-- [ ] **S5.2.** Собрать все демо-источники и демо-БД в **`src/content/demo-catalog/{items,posts,rickmorty,shikimori}/`** и перевести на `#content/demo-catalog/...` `src/server/db.server.ts`, `src/routes/api/*`, `/db-demo` и `/paginator`.
-- [ ] **S5.3.** Оформить `src/content/user/{routes.ts,modals.ts}`, переименовать серверные файлы `user/` в `*.server.ts`, проставить дефолтные пропы в `ProfileForm`/`AuthWidget` и перевести все ссылки `/user/auth` и `/user/menu` по проекту на `userAuthRoute` / `userMenuRoute`.
-- [ ] **S5.4.** Синхронно обновить `vite.config.ts`, `unocss.config.ts`, `tooling/layer-guard.mjs` (+ `.test.mjs`, все 5 алиасов в `canonSpecifier` + правило `*.server.ts`), `tooling/classes-audit.mjs`, `tooling/source-schema-guard.mjs` (+ `.test.mjs`), 14 путей в markdown-доках `src/lib/db/**` и `test/browser/attachment.mjs`.
+- [x] **S5.1.** Добавить `#components/*` и `#server/*` в `package.json`; перенести `src/lib/components/*` + `utils.ts` + `Error*.svelte` → `src/components/*` (`header`+`sidebar` внутрь `shell/`, `nav.ts` → `src/routes/(site)/nav.ts`, `cn` в `DemoPanel.svelte`), связки (`js-only`, `use-drawer`, `loader`, `links/`, `app-errors`, `graphql.server.ts`, `task-stream.server.ts`) → `src/hooks/*`, синглтоны → `src/server/*.server.ts` (`trusted-origins.ts` без `$app/*`); удалить `src/lib/{components,hooks,server}/`.
+- [x] **S5.2.** Собрать все демо-источники и демо-БД в **`src/content/demo-catalog/{items,posts,rickmorty,shikimori}/`** и перевести на `#content/demo-catalog/...` `src/server/db.server.ts`, `src/routes/api/*`, `/db-demo` и `/paginator`.
+- [x] **S5.3.** Оформить `src/content/user/{routes.ts,modals.ts}`, переименовать серверные файлы `user/` в `*.server.ts`, проставить дефолтные пропы в `ProfileForm`/`AuthWidget` и перевести все ссылки `/user/auth` и `/user/menu` по проекту на `userAuthRoute` / `userMenuRoute`.
+- [x] **S5.4.** Синхронно обновить `vite.config.ts`, `unocss.config.ts`, `tooling/layer-guard.mjs` (+ `.test.mjs`, все 5 алиасов в `canonSpecifier` + правило `*.server.ts`), `tooling/classes-audit.mjs`, `tooling/source-schema-guard.mjs` (+ `.test.mjs`), пути в markdown-доках `src/lib/db/**` и `test/browser/attachment.mjs`.
 
 ---
 
-### Этап S6. Полное сквозное тестирование всего объёма (`S1`–`S5`), бюджеты и документация
+### Этап S6. Полное сквозное тестирование всего объёма (`S1`–`S5`), бюджеты и документация — **[СЛЕДУЮЩИЙ ЭТАП]**
 *(Финальная приёмка сразу после фундаментального Этапа `S5`.)*
 - [ ] **S6.1.** Прогнать полный контур статических и unit-проверок: `npm run test:guard`, `npm run test:classes`, `npm run check`, `npx vitest run`, `npm run build && node tooling/size-budget.mjs`.
 - [ ] **S6.2.** Прогнать все браузерные Playwright-сьюты (`auth.mjs`, `modals.mjs`, `shell.mjs`, `forms.mjs`, `forms-a11y.mjs`, `fields.mjs`, `attachment.mjs`, `steps.mjs`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs`) и устранить любые найденные регрессии.

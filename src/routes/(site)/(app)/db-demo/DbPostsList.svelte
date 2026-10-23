@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Список демо — обычный потребитель `#lib/paginate/index.js`: строки рисует `PageList`,
-   * навигацию и настройки — компоненты `#lib/components/paginator/index.js`. Своего `slice`, своих
+   * навигацию и настройки — компоненты `#components/paginator/index.js`. Своего `slice`, своих
    * ссылок «дальше» и своего чтения адреса здесь нет: адрес принадлежит
    * пагинатору (`?page`, `?page.size`, `?page.ord`, `?page.cur`, `?page.after`).
    *
@@ -36,7 +36,7 @@
     PageNav,
     PaginatorSettings,
     type SettingsField,
-  } from '#lib/components/paginator/ui/index.js'
+  } from '#components/paginator/ui/index.js'
   // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.
@@ -51,15 +51,15 @@
     type DbPostsChanged,
     type DbPostsFresh,
     type FailureMode,
-  } from './definition'
+  } from '#content/demo-catalog/posts/source.js'
   import { createLive } from './live.svelte'
   import { changedUrl, freshLabel, freshUrl, mergeChanges, mergeFresh } from './fresh'
   import { isAbsorbed, ownRowPlacement, pendingPlacement, type Optimistic } from './optimistic.svelte'
   import DbPostPendingRow from './DbPostPendingRow.svelte'
-  import DbPostRow from './DbPostRow.svelte'
-  import Button from '#lib/components/ui/button/Button.svelte'
+  import DbPostRow from '#content/demo-catalog/posts/ui/DbPostRow.svelte'
+  import Button from '#components/ui/button/Button.svelte'
   import ListMeta from './ListMeta.svelte'
-  import { useCursorMode } from './cursor-mode.svelte'
+  import { useCursorMode } from '#content/demo-catalog/posts/cursor-mode.svelte.js'
 
   interface Props {
     /** SSR-снапшот из лоадера: без JavaScript список виден целиком. */

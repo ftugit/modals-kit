@@ -5,7 +5,7 @@
 // Клиент получит снимок из `load`, сервер — из `UserConfig`; функции
 // проверки по обе стороны буквально одни и те же.
 import { CheckRegistry, issue } from '#lib/form/index.js'
-import { registerPhotoChecks, type PhotoSpec } from '#lib/components/form/photo.js'
+import { registerPhotoChecks, type PhotoSpec } from '#components/form/photo.js'
 import type { ConfigValues } from './config.js'
 
 /** id фото-спецификации аватара (имя проверки — `photo:avatar`). */

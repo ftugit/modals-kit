@@ -7,8 +7,8 @@
    * Раскладка нарочно не дефолтная: режим — во всю ширину сверху, тумблеры —
    * рядом под ним. Адрес, seed и «Применить» ведёт сама панель (DemoPanel).
    */
-  import type { DemoUiProps } from '#lib/components/demo/index.js'
-  import { Field, Select, Toggle } from '#lib/components/settings/index.js'
+  import type { DemoUiProps } from '#components/demo/index.js'
+  import { Field, Select, Toggle } from '#components/settings/index.js'
 
   let { field, form }: DemoUiProps = $props()
 

@@ -17,7 +17,7 @@
    * путём без JavaScript: там итог приходит `continuation`'ом.
    */
   import type { PageProps } from './$types'
-  import Alert from '#lib/components/ui/alert/Alert.svelte'
+  import Alert from '#components/ui/alert/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {
@@ -25,7 +25,7 @@
     dbListExtraOf,
     ensureDbListPaginator,
     type DbPost,
-  } from './definition'
+  } from '#content/demo-catalog/posts/source.js'
   import DbPostsList from './DbPostsList.svelte'
   import { createOptimistic, ownRowPlacement } from './optimistic.svelte'
   import CreateForm from './CreateForm.svelte'

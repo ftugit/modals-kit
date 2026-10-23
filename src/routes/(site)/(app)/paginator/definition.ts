@@ -25,15 +25,15 @@
 //
 // Здесь — настройки страницы (ключи, умолчания, регистрация пагинаторов);
 // источники данных и серверные мосты к ним — в `sources.ts`.
-import type { ShikimoriApi } from '../../../../content/shikimori'
+import type { ShikimoriApi } from '#content/demo-catalog/shikimori/shikimori.js'
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-import { SHIKIMORI_FILTER_RELOAD_KEYS, SHIKIMORI_FILTER_SEARCH } from '../../../../content/shikimori-filters'
-import type { RickMortyApi } from '../../../../content/rickmorty'
+import { SHIKIMORI_FILTER_RELOAD_KEYS, SHIKIMORI_FILTER_SEARCH } from '#content/demo-catalog/shikimori/filters.js'
+import type { RickMortyApi } from '#content/demo-catalog/rickmorty/rickmorty.js'
 import {
   RICKMORTY_FILTER_KEYS,
   RICKMORTY_FILTER_SCHEMA,
   RICKMORTY_FILTER_SEARCH,
-} from '../../../../content/rickmorty-filters'
+} from '#content/demo-catalog/rickmorty/filters.js'
 import { searchQueryValidator } from '#lib/paginate/search/index.js'
 import {
   createLocalStorageStorage,
@@ -48,8 +48,8 @@ import {
   type ExtraValue,
   type PrependBehavior,
 } from '#lib/paginate/index.js'
-import type { CatalogItem } from './item-views'
-import { cursorExtraField, cursorPointerField } from '../db-demo/definition'
+import type { CatalogItem } from '#content/demo-catalog/items/item-views.js'
+import { cursorExtraField, cursorPointerField } from '#content/demo-catalog/posts/source.js'
 import { gallerySource, makeSource } from './sources'
 
 export type DemoStore = 'url' | 'local' | 'none'

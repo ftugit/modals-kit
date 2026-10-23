@@ -73,7 +73,7 @@ Headless-библиотека пагинации с разделением frame
   `getInitial` кладёт умолчания под прочитанное из хранилища.
 - **Пагинатор не рисует UI и не пишет текст**: у `PaginatorHost` нет своих надписей — `ariaLabel`
   обязателен, озвучку загрузки и ошибок ставит UI-компонент `<LiveStatus {name} />`.
-- **Готовые UI-компоненты**: `src/lib/components/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
+- **Готовые UI-компоненты**: `src/components/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
 ## Быстрый старт
 
@@ -111,7 +111,7 @@ definePaginator({
 ```svelte
 <script lang="ts">
   import { PaginatorHost } from '#lib/paginate/svelte/index.js'
-  import { PageList, PageNav, LiveStatus, LoadingIndicator, LoadMoreLink } from '#lib/components/paginator/index.js'
+  import { PageList, PageNav, LiveStatus, LoadingIndicator, LoadMoreLink } from '#components/paginator/index.js'
 </script>
 
 <PaginatorHost name="products" ariaLabel="Товары" class="h-[500px] overflow-y-auto">
@@ -158,4 +158,4 @@ definePaginator({
   устаревший запрос не пишет; `paginatorTask` отдаёт его, если он уже в формате задачи —
   так `fetchWithTask(url, { onTask: look.report })` из `#lib/fetch` даёт процент у ссылки страницы);
   `svelte/search/` — хуки поиска (`useSearchCorrection`, `useSearchStats`).
-- `src/lib/components/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).
+- `src/components/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).
