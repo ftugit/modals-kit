@@ -2,183 +2,231 @@
 
 Исследование текущего дерева файлов `modals-kit`, границ переносимых библиотек `src/lib/`, папочных UI-модулей `src/components/`, самодостаточности встраиваемых форм `#hooks/component-form` и единого типизированного реестра маршрутов с GET-параметрами в `#lib/address`.
 
-> **Статус:** поэтапное архитектурное проектирование с владельцем (**Раунд 1 утверждён**, **Раунд 2 готов к согласованию**; файлы в `src/` пока не перемещались).
+> **Статус:** финальный раунд архитектурного согласования (**Раунды 1 и 2 полностью утверждены**, **Раунд 3 и сводный 6-этапный план миграции готовы к финальной отмашке**; код в `src/` пока не изменялся).
 
 ---
 
-## Сводка утверждённых решений владельца (по итогам Раунда 1)
+## Сводка всех утверждённых решений владельца (Раунды 1 + 2)
 
-1. **Никакой папки `src/modules/` — чёткое разделение `src/components/<name>/` и `src/content/<entity>/`:**
-   - **`src/components/<name>/`** — переиспользуемые папочные UI-модули кита без собственной бизнес-модели и таблиц БД: принимают снаружи декларативную **схему**, отдают готовый UI «под ключ», поддерживают кастомизацию стилей снаружи и экспортируют вложенные составные части `ui/`.
-   - **`src/content/<entity>/`** — прикладные сущности сайта (эталон — `src/content/user/`), которые живут одновременно в шапке, модалках и на разных страницах.
-   - **Демо-маршруты:** потребительские роуты хранят локальную схему своего экрана рядом с роутом и вызывают `src/components/*`; чистые лабораторные стенды ядер (`/form`, `/steps`, `/db-demo`, `/modals`) остаются стендами внутри своих папок роутов без искусственного вытягивания кода в `src/components/`.
-2. **Порядок пилотов утверждён:**
-   - **Пилот №1 (эталон малого модуля):** `/fields` → папочный модуль **`src/components/fields/`** + тонкий роут `/fields` на едином `#hooks/component-form`.
-   - **Модуль №2 (главный целевой модуль):** `/paginator` → папочный модуль **`src/components/paginator/`** (поглощающий `filters/`) + перенос демо-схем `items` / `rickmorty` / `shikimori` из общих папок.
-3. **Двухуровневый стандарт кастомизации папочных UI-модулей утверждён:**
-   - **Уровень 1 (готовый сборщик):** `<Name schema={...} variant="..." class="..." classes={{ root: '...', ... }} />` — CVA-варианты через `variants(...)` и проброс всех слотов через `cn(...)`.
-   - **Уровень 2 (составные части):** экспорт подкомпонентов из `ui/` (каждый со своим `variant` и `class` через `cn(...)`) для экранов с нестандартной раскладкой.
-4. **Фреймворковые адаптеры ОСТАЮТСЯ внутри `src/lib/<pkg>/` (решение по вопросу №3 Раунда 1):**
-   - Подпапки `svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts` **не выносятся в `src/hooks/`**, а остаются частью своих библиотек `src/lib/<pkg>/` (как опциональные subpath-входы пакета).
-   - При будущем переносе любой папки `src/lib/<pkg>/` в другой проект библиотека переезжает **целиком вместе со своими адаптерами**; в чистом Node основной вход `./index.ts` не импортирует `svelte` / `@sveltejs/kit` и не требует их установки (гарантируется `tooling/core-purity.mjs`).
-   - В `src/hooks/` остаются **только межбиблиотечные переходники и общепроектные реактивные связки**, не принадлежащие ни одной отдельной библиотеке.
+1. **Никакой папки `src/modules/` — 5 чистых алиасов в `package.json` (`#lib/*`, `#hooks/*`, `#components/*`, `#content/*`, `#server/*`):**
+   - **`src/lib/<pkg>/`** — автономные переносимые библиотеки («свой `node_modules`») **вместе со своими фреймворковыми адаптерами** (`svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`), чтобы при переносе любая папка `src/lib/<pkg>/` копировалась целиком, а чистый вход `./index.ts` в Node не требовал установки фреймворков (`tooling/core-purity.mjs`).
+   - **`src/hooks/`** — единая папка межбиблиотечных переходников и общепроектных реактивных/серверных связок (`cache-db.ts`, `db-form.ts`, `graphql.ts`, `task-stream.server.ts`, `component-form/`, `links/`, `js-only.svelte.ts`, `use-drawer.svelte.ts`, `app-errors.svelte.ts`); дублирующая `src/lib/hooks/` удаляется.
+   - **`src/components/<name>/`** — самодостаточные папочные UI-модули кита без собственной бизнес-модели (`utils.ts`, `ui/`, `settings/`, `demo/`, `form/`, **`fields/`**, **`paginator/`**, `modals/`, `steps/`, `loader/`, `shell/`); дублирующая `src/lib/components/` удаляется.
+   - **`src/content/<entity>/`** — **исключительно реальные прикладные сущности сайта** (`src/content/user/`); никаких демо-данных в `src/content/`.
+   - **`src/server/`** — инстансы и bootstrap конкретного сайта (`db.server.ts`, `cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `trusted-origins.ts`); все серверные файлы вне `$lib/server` строго оканчиваются на `*.server.ts`.
+   - **`src/routes/`** — тонкие маршруты-потребители со своими локальными схемами экранов + лабораторные стенды ядер (`/form`, `/steps`, `/db-demo`, `/modals`).
+2. **Двухуровневый стандарт кастомизации всех папочных модулей в `src/components/<name>/`:**
+   - **Уровень 1 (сборщик «под ключ»):** `<Name ... variant="..." class="..." classes={{ ... }} />` на базе `variants(...)` + `cn(...)`.
+   - **Уровень 2 (составные кирпичи):** экспорт вложенных компонентов из `ui/` (каждый со своим `variant` и `class` через `cn(...)`) для нестандартной геометрии экрана.
+3. **Единый самодостаточный контур форм `#hooks/component-form` (утверждено в Раунде 2):**
+   - поддержка динамического `description(event)` и `source` в `ComponentFormRegistration`;
+   - автоматический inline-рендер (`200`, `locals.formResult`) при `result.outcome === 'not-applied'` (конструкторы `field.fields` работают с JS и без JS на любом маршруте без ручного кода);
+   - колбэк `onSuccess` в `bindComponentForm`;
+   - автоматический сбор всех `*.form.server.ts` из `src/content/**` и `src/routes/**` на этапе сборки через `import.meta.glob(..., { eager: true })` без ручного списка в `src/hooks.server.ts`.
+4. **Пилот №1 (`src/components/fields/` + `/fields`) утверждён:**
+   - `FieldSetBuilder`, `RecordFieldsForm` + `ui/{SchemaBuilder, BuilderRow, SchemaFields, SchemaValues}` в `src/components/fields/`; роут `/fields` сокращается до 5 файлов локальной демо-схемы.
+5. **Размещение демо-БД `posts` (решение по вопросу №4 Раунда 2):**
+   - `posts.ts`, `db-list` и `live-cache` не выносятся в `src/content/`, а уходят прямо в папку стенда **`src/routes/(site)/(app)/db-demo/`** (`posts.ts`, `list.server.ts`, `live-cache.server.ts`);
+   - демо `/paginator` для своего 8-го источника (`db`) **в качестве явного задокументированного исключения между двумя демками** импортирует `../db-demo/*` (закрепляется узким allow-правилом в `tooling/layer-guard.mjs`).
 
 ---
 
-## 1. Фактическая ревизия текущего дерева `src/` и точная карта очистки
+## Раунд 2 (утверждённая база). Пофайловая таблица очистки `src/lib/` и чертёж `src/components/fields/`
 
-Полное построчное чтение `src/**` показало, что сейчас нарушает границы слоёв и куда именно уходит каждый файл после утверждения решений Раунда 1:
+### 2.1. Полная пофайловая раскладка `src/lib/`
 
-### 1.1. Выявленные обратные зависимости в текущем коде (устраняются при переезде)
-1. **`src/lib/server/db-list.ts:27` → `../../routes/(site)/(app)/db-demo/definition`** — серверный файл внутри `src/lib/` напрямую импортирует внутренний файл маршрута `db-demo`!
-2. **`src/lib/server/db.ts:19,43-44`** — импортирует `../../content/posts`, `#content/user/schema.js` и `#hooks/cache-db.js` изнутри `src/lib/`.
-3. **`src/lib/server/cache.ts`** — импортирует `#hooks/cache-db.js` изнутри `src/lib/`.
-4. **`src/routes/(site)/(app)/paginator/CatalogDemo.svelte` и `sources.ts:31`** — напрямую импортируют соседний маршрут `../db-demo/DbPostRow.svelte`, `../db-demo/cursor-mode.svelte` и `../db-demo/definition`.
-5. **Две параллельные папки хуков:** `src/hooks/` и `src/lib/hooks/`.
-6. **Баг слияния классов в `DemoPanel.svelte:229`:** `class={className ?? 'demo-panel rounded-xl ...'}` — передача любого `class="mt-4"` полностью сносит базовые классы карточки вместо `cn(...)`.
-
-### 1.2. Полная пофайловая раскладка `src/lib/` (с учётом сохранения адаптеров в `lib/<pkg>/`)
-
-| Текущий путь в `src/lib/` | Куда переезжает (или остаётся) | Обоснование |
+| Текущий путь в `src/lib/` | Целевое место | Обоснование |
 |---|---|---|
-| `address/`, `cache/`, `db/`, `fetch/`, `form/`, `image/`, `modals/`, `paginate/`, `task/` **(включая их `svelte/`, `sveltekit/`, `cores/`, `node.ts`)** | **Остаются в `src/lib/<pkg>/`** | Самодостаточные переносимые пакеты: ядро `index.ts` без фреймворков + собственные subpath-адаптеры рядом. |
-| `server/schema-admin.ts` | **`src/lib/db/sync/admin.ts`** | В файле `0` импортов `$app/*` и сайта — чистый механизм `lib/db` (описан в `src/lib/db/README.md §6`). |
-| `hooks/js-only.svelte.ts`, `hooks/use-drawer.svelte.ts` | **`src/hooks/`** | Ликвидация второй папки `src/lib/hooks/` — все прикладные хуки живут в едином `src/hooks/`. |
-| `components/links/*` (`0` `.svelte`-файлов) | **`src/hooks/links/`** | Межбиблиотечная связка `#lib/address` × `#lib/modals` × навигационный лоадер без UI-шаблонов. |
-| `app-errors.svelte.ts` | **`src/hooks/app-errors.svelte.ts`** | Единый реактивный приёмник `onError` всех библиотек на уровне приложения. |
-| `server/graphql.ts` | **`src/hooks/graphql.ts`** (чистая фабрика) | Связка `#lib/fetch` × `#lib/cache`; дефолтный инстанс с `upstream`/`localStore` поднимается в `src/server/fetch.server.ts`. |
-| `server/task-stream.ts` | **`src/hooks/task-stream.server.ts`** | Связка `#lib/task` × `#lib/fetch` × `AsyncLocalStorage` (NDJSON-поток прогресса). |
-| `utils.ts` (`cn`, `variants`) | **`src/components/utils.ts`** | Единая утилита CVA-вариантов и `twMerge` для всех папочных модулей `src/components/*` и `src/content/*`. |
-| `components/{ui,settings,demo,form,modals,steps,loader,shell,header,sidebar}/*`, `ErrorPage.svelte`, `Error500.svelte` | **`src/components/*`** (`filters/` входит в `paginator/`, `header/`+`sidebar/` — в `shell/`) | Папка `src/lib/components/` удаляется целиком; меню демо-сайта `nav.ts` уходит из `shell` в `src/routes/(site)/`. |
-| `server/{db,cache,fetch,form-security,after-response}.ts`, `server/trusted-origins.ts`, `server/api-error.ts`, `api-error.ts` | **`src/server/*.server.ts`** (и изоморфный тип ошибки API) | Bootstrap и синглтоны конкретного сайта (`db.server.ts`, `cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`). |
-| `server/{rickmorty,shikimori*}.ts` + `src/content/{items,rickmorty*,shikimori*}.ts` | **В демо-источники `/paginator`** (и `/api/{rickmorty,shikimori}`) | Код исключительно витрины пагинатора — не засоряет ни `src/lib/`, ни `src/server/`, ни `src/content/`. |
-| `server/{db-list,live-cache}.ts` + `src/content/posts.ts` | **В общую демо-сущность `posts`** (см. Вопрос 4 Раунда 2) | Используется одновременно стендом `/db-demo`, источником `db` в `/paginator` и `/api/db-posts`. |
+| `address/`, `cache/`, `db/`, `fetch/`, `form/`, `image/`, `modals/`, `paginate/`, `task/` **(включая их `svelte/`, `sveltekit/`, `cores/`, `node.ts`)** | **Остаются в `src/lib/<pkg>/`** | Переносимые пакеты целиком: чистое ядро `./index.ts` + собственные фреймворковые адаптеры рядом. |
+| `server/schema-admin.ts` | **`src/lib/db/sync/admin.ts`** | `0` импортов `$app/*` и сайта — штатная часть `lib/db` (`README.md §6`). |
+| `hooks/js-only.svelte.ts`, `hooks/use-drawer.svelte.ts` | **`src/hooks/`** | Единая папка прикладных хуков. |
+| `components/links/*` (`0` `.svelte`-файлов) | **`src/hooks/links/`** | Межбиблиотечная связка `#lib/address` × `#lib/modals` × лоадер переходов. |
+| `app-errors.svelte.ts` | **`src/hooks/app-errors.svelte.ts`** | Общепроектный реактивный приёмник `onError` всех библиотек. |
+| `server/graphql.ts` | **`src/hooks/graphql.ts`** | Чистая связка `#lib/fetch` × `#lib/cache`; инстанс создаётся в `src/server/fetch.server.ts`. |
+| `server/task-stream.ts` | **`src/hooks/task-stream.server.ts`** | Связка `#lib/task` × `#lib/fetch` × `AsyncLocalStorage`. |
+| `utils.ts` (`cn`, `variants`) | **`src/components/utils.ts`** | Общая утилита CVA-вариантов и `twMerge` (исправляется и `DemoPanel.svelte:229` на `cn(...)`). |
+| `components/{ui,settings,demo,form,modals,steps,loader,shell,header,sidebar}/*`, `ErrorPage.svelte`, `Error500.svelte` | **`src/components/*`** | `filters/` входит в `paginator/`, `header/`+`sidebar/` — в `shell/`, а `nav.ts` демо-меню уходит в `src/routes/(site)/`. |
+| `server/{db,cache,fetch,form-security,after-response}.ts`, `server/trusted-origins.ts`, `server/api-error.ts`, `api-error.ts` | **`src/server/*`** (`*.server.ts`) | Bootstrap и синглтоны конкретного сайта. |
+| `server/{rickmorty,shikimori*}.ts` + `src/content/{items,rickmorty*,shikimori*}.ts` | **`src/routes/(site)/(app)/paginator/sources/`** | Код исключительно витрины пагинатора (с обновлением зон в `tooling/source-schema-guard.mjs`). |
+| `server/{db-list,live-cache}.ts` + `src/content/posts.ts` | **`src/routes/(site)/(app)/db-demo/`** | Код стенда БД (`posts.ts`, `list.server.ts`, `live-cache.server.ts`); `/paginator` тянется к `../db-demo/*` как явное исключение демо. |
 
-### 1.3. Обязательное правило безопасности компилятора SvelteKit (`*.server.ts`)
-Вне папки `$lib/server/**` встроенный запрет Vite/SvelteKit на попадание серверного кода и секретов в клиентский JS-бандл работает **только для файлов с суффиксом `*.server.ts`**.
-Поэтому фиксируем жёсткий инвариант (плюс автоматическую проверку в `tooling/layer-guard.mjs`):
-- каждый серверный файл в `src/server/`, `src/hooks/`, `src/content/` и `src/routes/` (кроме зарезервированных SvelteKit `+page.server.ts`, `+layout.server.ts`, `+server.ts`, `hooks.server.ts`) **обязан оканчиваться на `.server.ts`** (`gateway.server.ts`, `index.server.ts`, `fields.form.server.ts`, `db.server.ts`).
-
----
-
-## Раунд 2. Детальный чертёж Фундамента (Этап 0) и Пилота №1 (`src/components/fields/` + `/fields`)
-
-Переходим от общей карты к пофайловому инженерному чертежу **Этапа 0 (алиасы и доработка `#hooks/component-form`)** и **Пилота №1 (`/fields` → `src/components/fields/`)**.
+### 2.2. Утверждённый состав `src/components/fields/`
+- `FieldSetBuilder.svelte` — готовая форма конструктора `field.fields(...)` «под ключ» (`variant`, `class`, `classes`, `labels`, `onSuccess`);
+- `RecordFieldsForm.svelte` — готовая форма ввода/правки записи по сохранённому набору (`defineForm({ from })` + сниппеты `beforeFields`/`afterFields`);
+- `ui/{SchemaBuilder, BuilderRow, SchemaFields, SchemaValues}.svelte` — составные блоки для кастомных форм и карточек просмотра;
+- `variants.ts`, `types.ts`, `index.ts`.
 
 ---
 
-### 2.1. Целевая карта импортов `package.json` и однонаправленный граф слоёв
+## Раунд 3. Детальный чертёж Модуля №2 (`src/components/paginator/`), Реестра маршрутов `#lib/address` и Сводный план миграции
 
-В `package.json` оформляются 5 симметричных приватных алиасов Node Subpath Imports (поддерживаются нативно в Node `>=22.17`, Vite, TypeScript и `svelte-check`):
+---
 
-```json
-{
-  "imports": {
-    "#lib/*": "./src/lib/*",
-    "#hooks/*": "./src/hooks/*",
-    "#components/*": "./src/components/*",
-    "#content/*": "./src/content/*",
-    "#server/*": "./src/server/*"
-  }
-}
-```
+### 3.1. Ревизия `/paginator` (642 строки `CatalogDemo` + 124 строки `GalleryDemo`) и чертёж `src/components/paginator/`
 
-Строгий граф зависимостей сверху вниз (`0` циклов, проверяется в `tooling/layer-guard.mjs`):
+#### Что выявило построчное чтение кода `/paginator`
+1. **Забытый в роуте универсальный компонент поиска (`SearchBar.svelte`, 80 строк):**
+   - `src/routes/(site)/(app)/paginator/SearchBar.svelte` не содержит ни одной строчки демо-логики: это чистая GET-форма поиска на `usePaginatorSearch` + `<SearchInput>` с крестиком очистки (JS) и кнопками `Найти`/`Сбросить` (без JS). Хардкодились только константы `LABEL` и `PLACEHOLDER`. Его законное место — **`src/components/paginator/ui/SearchBar.svelte`**.
+2. **Ручная сборка из 13 внутренних деталей в каждом потребителе:**
+   - Сейчас и `CatalogDemo.svelte` (строки `532–642`), и `GalleryDemo.svelte` (строки `92–123`), и `/db-demo` вынуждены вручную импортировать и расставлять в строго фиксированном порядке **13 служебных узлов**:
+     `PaginatorHost` (+ `onError={report}`) → `LoadingIndicator` → `EdgeSentinel(-1)` → `LoadMoreLink(-1)` → `EmptyState` → `PageList | PageColumns` → `LiveStatus` → `ErrorRow` → `ReplaceLoadingRow` → `LoadMoreLink(+1)` → `EdgeSentinel(+1)` → `EndRow` → `PageNav`.
+   - Забыл один сентинел или перепутал порядок — сломал infinite scroll, compensations при `prepend` или показ ошибок.
+3. **Беспризорный `src/lib/components/filters/`:**
+   - `FiltersPanel`, `ActiveFilters`, `FilterActions` и `filter-form.svelte.ts` жестко работают с `extra`-ключами пагинатора (`#lib/paginate/filters`) и являются штатной подсистемой `src/components/paginator/`.
+
+#### Целевое устройство `src/components/paginator/` (`#components/paginator`)
 
 ```text
-routes/*  ──▶  server/*  ──▶  content/*  ──▶  components/*  ──▶  hooks/*  ──▶  lib/*
-```
-*(При этом серверные части `content/*.server.ts` и `hooks/*.server.ts` могут использовать `#server/*` для доступа к `SECURITY_LAYERS` / `localStore` / `db`, либо получать их через порты; `lib/*` не импортирует ничего выше себя никогда.)*
-
----
-
-### 2.2. Точная ревизия всех 13 файлов текущего `/fields` (почему там были ручные костыли)
-
-Построчное чтение `src/routes/(site)/(app)/fields/*` и 387 строк `test/browser/fields.mjs` выявило **ровно 3 причины**, почему автор `/fields` раньше не смог использовать единый механизм форм и написал дублирующие `/fields/save/+server.ts`, `/fields/record/+server.ts` и `actions` в `+page.server.ts`:
-
-1. **Динамическое описание формы от запроса и сохранённых данных (`description(event)` и `source`):**
-   - `fields-builder` строит `collectionForm(undefined, limit)`, где `limit` читается из `event.url.searchParams.get('limit')`.
-   - `fields-record` передаёт в `createFormHandler` динамический `source: { resolve: () => recordForm(savedSet(), savedRecord()), revision: () => savedSet()?.version ?? 1 }`.
-   - В текущем `ComponentFormRegistration` (`src/hooks/component-form/types.ts`) поле `description` принимает только статический объект, а `source` не проброшен вообще!
-2. **Несохраняющие намерения конструктора (`+ поле` / `Удалить`) без JavaScript (`result.outcome === 'not-applied'`):**
-   - Когда JS выключен, кнопки `+ поле` и `Удалить` отправляют нативный `POST`; ядро `#lib/form` добавляет/удаляет строку черновика и возвращает `result.ok === true && result.outcome === 'not-applied'`.
-   - Сейчас `componentFormsHandle` на любой `result.ok` по умолчанию делает `303 See Other`, что стерло бы несохранённый черновик строк!
-   - **Глобальное решение в `#hooks/component-form/index.server.ts`:** если `result.outcome === 'not-applied'`, `componentFormsHandle` **всегда автоматически рендерит ответ inline (`200`, `locals.formResult = result`)** без `303`-редиректа. Тогда `field.fields(...)` работает с JS (`0` POST-запросов) и без JS (с сохранением всех введённых строк) **автоматически на любой странице и в любой модалке вообще без ручного кода!**
-3. **Ручной `$effect` с отслеживанием `form.state.status` и замок навигации в компонентах:**
-   - В `CollectionForm.svelte` и `RecordForm.svelte` продублирован один и тот же `$effect` для перехода на следующий шаг (`if (now === 'success' && form.state.outcome !== 'not-applied') void goto(nextHref)`) и дублирующая запись `fieldsNavLocked` в `writeAddress`.
-   - Добавление штатного колбэка `onSuccess?: (result: Result) => void | Promise<void>` прямо в `bindComponentForm` (вызывается **только** на реальное применение формы, игнорируя `outcome === 'not-applied'`) полностью убирает хрупкие `$effect` на сравнении статусов.
-
-#### Авторегистрация серверных форм `*.form.server.ts` (нулевая связность с `src/hooks.server.ts`)
-Сейчас `src/hooks.server.ts` вручную импортирует каждую форму:
-```ts
-import '#content/user/ui/seed-form/server.js'
-import '#content/user/ui/profile-form/server.js'
-```
-Вместо ручного списка в `src/hooks.server.ts`, внутри `src/hooks/component-form/index.server.ts` ставится одна статическая строка времени сборки Vite:
-```ts
-import.meta.glob(['/src/content/**/*.form.server.ts', '/src/routes/**/*.form.server.ts'], { eager: true })
-```
-- Vite на этапе сборки компилирует её в обычные статические ES-`import` (работает идентично в Node, Vercel, Cloudflare Workers, `vite dev`, `vite preview` и Vitest, `0` чтения ФС в рантайме);
-- суффикс `.form.server.ts` одновременно включает встроенную защиту SvelteKit от случайного импорта на клиент;
-- создание или удаление любого модуля в `src/content/*` или роута в `src/routes/*` **не требует ни одной правки `src/hooks.server.ts`**.
-
----
-
-### 2.3. Архитектура папочного модуля `src/components/fields/` (`#components/fields`)
-
-Модуль закрывает **весь жизненный цикл динамических наборов полей** (`сборка схемы → ввод записи по схеме → отображение значений записи`) и строго следует утверждённому двухуровневому стандарту кастомизации:
-
-```text
-src/components/fields/
-├── index.ts                    # Публичный API: FieldSetBuilder, RecordFieldsForm, ui/*, variants, types
-├── types.ts                    # Типы пропов, слотовых classes и переопределяемых подписей labels
-├── variants.ts                 # CVA-варианты карточек/строк (`card` | `plain`, размеры) через variants() + cn()
-├── FieldSetBuilder.svelte      # Уровень 1 (сборщик «под ключ»): готовая самодостаточная форма конструктора набора полей
-├── RecordFieldsForm.svelte     # Уровень 1 (сборщик «под ключ»): готовая форма ввода/правки записи по сохранённому набору
+src/components/paginator/
+├── index.ts                      # Экспорт Paginator + реэкспорт ui/*, model/*, variants, types
+├── types.ts                      # Пропы Paginator, SettingsField, слоты classes
+├── variants.ts                   # CVA-варианты контейнера хоста, тулбара и карточек (`card` | `plain`) через cn()
+├── Paginator.svelte              # Уровень 1: готовый самодостаточный компонент-сборщик пагинатора «под ключ»
+├── model/
+│   ├── compile.ts                # Компиляция схемы настроек пагинатора (+ compile.test.ts)
+│   ├── search.svelte.ts          # usePaginatorSearch
+│   ├── action-task.svelte.ts     # Индикация задач действий
+│   ├── filter-form.svelte.ts     # Логика формы фильтров каталога
+│   └── event-log.ts              # Лог событий ядра
 └── ui/
-    ├── index.ts
-    ├── SchemaBuilder.svelte    # Уровень 2: встраиваемый редактор поля `field.fields(...)` внутри произвольной <Form>
-    ├── BuilderRow.svelte       # Уровень 2: карточка одного поля в конструкторе (Поле N, Удалить, label/kind, rules, args)
-    ├── SchemaFields.svelte     # Уровень 2: рендер динамических полей `form.from()` внутри произвольной <Form>
-    └── SchemaValues.svelte     # Уровень 2: список «подпись → значение» по `FieldSetItem[]` (скрывает удалённые ключи)
+    ├── index.ts                  # Уровень 2: полный набор кастомизируемых составных частей (все с class через cn)
+    ├── SearchBar.svelte          # Поле поиска с GET-фолбэком без JS (перенесено из роута, пропы label/placeholder/class)
+    ├── FiltersPanel.svelte       # Панель фильтров по CatalogFilterSchema
+    ├── ActiveFilters.svelte      # Чипы активных фильтров
+    ├── FilterActions.svelte      # Действия фильтров
+    ├── PaginatorSettings.svelte  # Панель настроек пагинатора и размера страницы
+    ├── PageList.svelte           # Линейный список страниц с разделителями и скелетонами
+    ├── PageColumns.svelte        # Адаптивные колонки round-robin (auto / 2 / 3 / 4)
+    ├── PageNav.svelte            # Постраничная/стрелочная навигация
+    ├── EmptyState.svelte
+    ├── ErrorRow.svelte
+    ├── EndRow.svelte
+    ├── LiveStatus.svelte
+    ├── LoadingIndicator.svelte
+    ├── LoadMoreLink.svelte
+    ├── ReplaceLoadingRow.svelte
+    ├── ResetButton.svelte
+    ├── PageDivider.svelte
+    ├── PageLink.svelte
+    ├── Skeleton.svelte
+    ├── Spinner.svelte
+    ├── StatusRow.svelte
+    └── EventLog.svelte
 ```
 
-#### Контракты обоих уровней:
-1. **`<FieldSetBuilder />` (готовый сборщик шага «Сборка»):**
-   - Принимает `description` (или уже созданный `form`), имя поля набора (`name = 'props'`), `action`, `onSuccess`, `submitLabel = 'Сохранить'`, `errorTitle`, `labels`, `variant = 'card'`, `class`, `classes?: { root, header, row, rowHeader, fieldsGrid, argsGrid, addButton, footer }` и опциональные сниппеты `before` / `after`.
-   - Сам поднимает `bindComponentForm`, `<Form>`, скрытый submit-первенец для клавиши `Enter` без срабатывания `Удалить`, `<Common>`, `<SchemaBuilder>` и `<Button type="submit" task={formTask(form.state)}>`.
-2. **`<RecordFieldsForm />` (готовый сборщик шага «Заполнение»):**
-   - Принимает `description` (построенный через `defineForm({ from, fields })`), `action`, `onSuccess`, `submitLabel = 'Отправить'`, `errorTitle`, `variant = 'card'`, `class`, `classes?: { root, dynamicList, dynamicItem, footer }` и сниппеты `beforeFields(form)` / `afterFields(form)` для дополнительных статических полей записи (`title`, `image` с превью прошлого фото).
-3. **`ui/{SchemaBuilder, BuilderRow, SchemaFields, SchemaValues}`:**
-   - Доступны напрямую для экранов, где на одной гигантской кастомной `<Form>` живёт сразу несколько секций или особая вёрстка; каждый принимает `variant` и `class` через `cn(...)`.
+#### Как работают оба уровня в реальных экранах:
+- **Обычный экран (и `GalleryDemo.svelte`):** один тег `<Paginator />` со встроенным скролл-хостом, индикатором, сентинелами краёв, пустым состоянием, списком/колонками, live-статусом, строкой ошибок и навигацией:
+  ```svelte
+  <Paginator
+    {name}
+    {snapshot}
+    layout="columns"
+    columns={cfg.cols}
+    columnWidth={160}
+    stretch="25%"
+    mode="single"
+    topTrigger="off"
+    bottomTrigger="off"
+    nav={false}
+    variant="card"
+    class="h-[360px]"
+    {renderItem}
+    {renderSkeleton}
+  />
+  ```
+  При этом внешняя `<PageNav {name} />` в шапке секции и `<PaginatorSettings {name} />` в боковой колонке `GalleryDemo` берутся из `#components/paginator` (`ui/`) — двухуровневый стандарт покрывает **и** `GalleryDemo`, **и** `CatalogDemo` без единого дубля сентинелов!
+- **Папка роута `src/routes/(site)/(app)/paginator/`:**
+  - `sources/items.ts` (+ `items.test.ts`), `sources/rickmorty.ts`, `sources/rickmorty-filters.ts`, `sources/rickmorty.server.ts` (+ `.test.ts`), `sources/shikimori.ts`, `sources/shikimori-filters.ts`, `sources/shikimori.server.ts`, `sources/shikimori-schema.server.ts`, `sources/shikimori-filters.server.ts` (+ `.test.ts`);
+  - карточки и фильтры демо (`AnimeRow`, `AnimeTile`, `CharacterRow`, `CharacterTile`, `ItemRow`, `ShotTile`, `ShikimoriFilters`, `RickMortyFilters`, `item-views.ts`);
+  - `definition.ts`, `CatalogDemo.svelte`, `GalleryDemo.svelte`, `+page.server.ts`, `+page.svelte`.
+  - В `tooling/source-schema-guard.mjs` обновляются 5 констант путей (`UPSTREAM_ZONES`, `KEY_ZONES`, `SCHEMA_ZONE`, `PIPELINE_ZONE`, `SCHEMA_READERS`) с сохранением всех 13 проверок стража.
 
 ---
 
-### 2.4. Что остаётся в папке маршрута `src/routes/(site)/(app)/fields/` (до и после)
+### 3.2. Единый реестр маршрутов в `#lib/address/routes.ts` и нулевая связность с `#lib/modals`
 
-- **Удаляются полностью:**
-  - `src/routes/(site)/(app)/fields/save/+server.ts` (дублирующий JSON-эндпоинт);
-  - `src/routes/(site)/(app)/fields/record/+server.ts` (дублирующий JSON-эндпоинт);
-  - `SchemaBuilder.svelte`, `SchemaFields.svelte`, `CollectionForm.svelte`, `RecordForm.svelte`, `RecordView.svelte` (заменены переиспользуемым модулем `#components/fields`);
-  - весь блок `export const actions` и `act()` из `+page.server.ts`.
-- **Остаются в `src/routes/(site)/(app)/fields/` ровно 5 тонких файлов конкретного демо-стенда:**
-  1. `schema.ts` — локальная схема демо (`FIELD_LIMITS`, `collectionForm`, `recordForm` с `title` + `image`, `resetForm`, `demoPanelSchema`, `stepOf`);
-  2. `fields.form.server.ts` — серверная регистрация `fields-builder`, `fields-record` и `fields-reset` в `registerComponentForm` поверх `localStore.scope('fields-demo')`;
-  3. `ResetAction.svelte` — компактная кнопка-ссылка сброса демо через `bindComponentForm`;
-  4. `+page.server.ts` (~15 строк) — **только `load`**, возвращающий `{ set, record, step, limit }`;
-  5. `+page.svelte` (~95 строк) — чистая декларативная композиция `<DemoPanel>`, `<Steps>`, `<FieldSetBuilder>`, `<RecordFieldsForm>` и `<SchemaValues>` с полным сохранением всех 30+ проверок `test/browser/fields.mjs` (как с JS, так и с `javaScriptEnabled: false`).
+#### Важная находка в коде `#lib/modals/types.ts:199`
+В `#lib/modals` поле `ModalDefinition.route` **уже имеет штатный тип**:
+```ts
+route?: string | ((params: P) => string)
+```
+Это даёт идеальную архитектуру **с нулевой связностью между библиотеками в `src/lib/`**:
+- `#lib/modals` **не импортирует** `#lib/address`;
+- `#lib/address` **не импортирует** `#lib/modals`;
+- дескриптор маршрута из `#lib/address/routes.ts` имеет метод `route.href: (params?: P) => string`, который передаётся напрямую в `registerModal({ route: userAuthRoute.href })`!
+
+#### Контракт `#lib/address/routes.ts` (`0` зависимостей от фреймворков, 100% изоморфный SSR + клиент):
+
+```ts
+// 1. Ядро в src/lib/address/routes.ts:
+// Кодеки GET-параметров с дефолтами, валидацией и защитой от Open Redirect:
+export const queryString = (opts?: { default?: string; maxLength?: number }) => ...
+export const queryNumber = (opts?: { default?: number; min?: number; max?: number; integer?: boolean }) => ...
+export const queryBoolean = (opts?: { default?: boolean }) => ...
+export const queryEnum = <const T extends readonly string[]>(values: T, opts?: { default?: T[number] }) => ...
+export const queryLocalPath = () => ... // встроенный localPath() — режет //evil.com и схемы!
+
+// 2. Объявление маршрутов в прикладном модуле src/content/user/routes.ts:
+export const userAuthRoute = registerRoute({
+  name: 'user.auth',
+  path: '/user/auth',
+  search: {
+    stage: queryEnum(['entry', 'register', 'restore', 'profile', 'blocked', 'restrictions'], { default: 'entry' }),
+    next: queryLocalPath(),
+  },
+})
+
+export const userMenuRoute = registerRoute({
+  name: 'user.menu',
+  path: '/user/menu',
+})
+
+// 3. Связка с модалкой в src/content/user/modals.ts (бывший src/routes/(site)/auth-modals.ts):
+registerModal({
+  name: 'user.auth',
+  component: AuthModalLazy,
+  route: userAuthRoute.href, // <-- чистая функция (params) => string! 0 дублирования href!
+  size: { width: 420, height: 480 },
+})
+```
+
+#### Что даёт `RouteDescriptor` на сервере и клиенте:
+1. **`route.href(params?)`** — полная сборка чистого URL (`path` с подстановкой `:param` + отфильтрованный `?search`, где значения, равные `default`, автоматически опущены, а `next` очищен через `localPath`):
+   - `userAuthRoute.href()` → `'/user/auth'`
+   - `userAuthRoute.href({ stage: 'profile' })` → `'/user/auth?stage=profile'`
+   - `asModalLink('user.auth', { stage: 'profile' })` **автоматически** получает fallback `href="/user/auth?stage=profile"` — ручной третий аргумент `{ href: '/user/auth?stage=profile' }` в `MenuBody.svelte` и `Acl.svelte` уходит навсегда!
+2. **`route.parse(url)`** — типизированный deny-safe разбор `event.url` на сервере и `visibleAddress().url` на клиенте (возвращает уже типизированный `{ stage, next }` с применёнными дефолтами).
+3. **`route.patch(currentUrl, patch)`** — обновляет только ключи схемы маршрута на текущем адресе, **не затирая соседние GET-параметры** (например, `?limit=4` на `/fields` или `?page=2` на странице — уходит ручной `limitTail(event.url)`!).
+4. **Автоматический страж синхронности с файловым роутингом (`tooling/`):**
+   - на этапе `npm run test:guard` все зарегистрированные в реестре пути проверяются через `makeRouteResolves` по реальным файлам `src/routes/**/+page.svelte` — переименовал или удалил папку роута, забыв обновить `routes.ts`, и сборка мгновенно укажет точную строку!
+
+#### Доводка полной самодостаточности `src/content/user/`
+- Перенос `src/routes/(site)/auth-modals.ts` внутрь модуля `src/content/user/modals.ts` + объявление `src/content/user/routes.ts` (больше ни одного хардкодного `'/user/auth'` в 8 файлах!).
+- Переименование серверных файлов модуля в `*.server.ts` (`gateway.server.ts`, `ui/seed-form/seed.form.server.ts`, `ui/profile-form/profile.form.server.ts`).
+- Опциональные дефолты пропов из конфига модуля (`limits = DEFAULT_PROFILE_LIMITS` в `ProfileForm.svelte`, самодостаточные дефолты в `AuthWidget.svelte`), чтобы `<ProfileForm />` и `<AuthWidget />` монтировались в любом месте одной строкой без подготовки `+page.server.ts`.
 
 ---
 
-## Открытые вопросы к владельцу по итогам Раунда 2
+## 4. Сводный поэтапный план реализации (6 атомарных коммитов)
 
-1. **Карта корневых папок и 5 алиасов `package.json` (`#lib/*`, `#hooks/*`, `#components/*`, `#content/*`, `#server/*`):**
-   Согласуем ли пофайловую раскладку из таблицы `1.2` (где адаптеры `svelte/` и `sveltekit/` остаются внутри своих библиотек `src/lib/<pkg>/`, `src/lib/hooks/` и `src/lib/components/` ликвидируются в пользу единых `src/hooks/` и `src/components/`, а синглтоны сайта переезжают в `src/server/*.server.ts`)?
-2. **Авторегистрация `*.form.server.ts` на этапе сборки в `#hooks/component-form`:**
-   Утверждаем ли автоматический подхват всех `*.form.server.ts` из `src/content/**` и `src/routes/**` через статический `import.meta.glob(..., { eager: true })` (плюс авто-inline для `outcome === 'not-applied'`), чтобы встраиваемые формы работали на любом URL без правок `src/hooks.server.ts` и без `+page.server.ts` `actions`?
-3. **Состав Пилота №1 (`src/components/fields/` + тонкий `/fields`):**
-   Устраивает ли предложенный состав `src/components/fields/` (`FieldSetBuilder`, `RecordFieldsForm` + `ui/{SchemaBuilder, BuilderRow, SchemaFields, SchemaValues}`) и сокращение роута `/fields` до 5 файлов локальной демо-схемы?
-4. **Развязка общего демо-ресурса БД `posts` перед Раундом 3 (`/paginator`):**
-   Проверка кода показала, что таблица `demo_post` (`posts.ts` + `db-list.ts` + `live-cache.ts` + `DbPostRow.svelte`) используется одновременно **и** на стенде `/db-demo`, **и** как 8-й вариант источника (`db`) внутри `/paginator` (из-за чего сейчас `lib/server/db-list.ts` импортирует `routes/.../db-demo/definition`, а `paginator` импортирует `../db-demo/*`). Как чище поступить:
-   - **Вариант А:** оформить `src/content/posts/` как аккуратную общую демо-сущность БД (по аналогии с `src/content/user/`: со своей `schema.ts`, `list.server.ts`, `live-cache.server.ts` и `ui/PostRow.svelte`), чтобы и `/db-demo`, и `/paginator` импортировали `#content/posts` сверху вниз без единой обратной или кросс-роутовой связи;
-   - **Вариант Б:** оставить `demo_post` строго внутри стенда `/db-demo` (и `/api/db-posts`), а в `/paginator` оставить только его собственные каталожные источники (`products`, `photos`, `Shikimori`, `Rick & Morty`), чтобы `src/content/` содержал исключительно реальные сущности сайта (`user`)?
+Каждый этап завершается полным набором проверок (`npm run test:guard`, `npm run check`, `npx vitest run`, `npm run build && node tooling/size-budget.mjs`, профильные `test/browser/*.mjs`), отдельным локальным коммитом и отправкой в `origin/img`.
+
+| Этап | Содержание коммита | Главные проверки этапа |
+|---|---|---|
+| **Этап 1. Фундамент слоёв и очистка `src/lib/`** | Добавление `#components/*` и `#server/*` в `package.json`; перенос `src/lib/components/*` → `src/components/*` (`utils.ts`, фикс `cn` в `DemoPanel`, `header`+`sidebar` → `shell/`, `nav.ts` → `routes/(site)/`), `src/lib/hooks/*` + `links/` + `graphql` + `task-stream.server.ts` + `app-errors.svelte.ts` → `src/hooks/*`, `schema-admin` → `src/lib/db/sync/admin.ts`, синглтонов `src/lib/server/*` → `src/server/*.server.ts`; обновление правил и запрет обратных импортов / не-`*.server.ts` в `tooling/layer-guard.mjs`. | `test:guard`, `check`, `vitest`, `build + size-budget`, `shell.mjs`, `modals.mjs` |
+| **Этап 2. `#hooks/component-form` v2 + Пилот №1 `src/components/fields/`** | Доработка `#hooks/component-form` (`description(event)`, `source`, авто-inline при `outcome === 'not-applied'`, `onSuccess`, автосбор `*.form.server.ts` через `import.meta.glob`); создание папочного модуля `src/components/fields/` (`FieldSetBuilder`, `RecordFieldsForm`, `ui/*`); перевод `/fields` на 5 тонких файлов и удаление `/fields/save/+server.ts`, `/fields/record/+server.ts` и `actions`. | `test:guard`, `check`, `vitest`, `build + size-budget`, `fields.mjs`, `attachment.mjs` |
+| **Этап 3. Модуль №2 `src/components/paginator/` + изоляция демо-данных** | Сборка `src/components/paginator/` (`Paginator.svelte` + `ui/SearchBar.svelte` + `ui/FiltersPanel.svelte` + все `ui/*` с `cn`/`variants`); перевод `GalleryDemo` и `CatalogDemo` на `<Paginator />`; перенос `items` / `rickmorty*` / `shikimori*` в `routes/.../paginator/sources/`, а `posts` + `db-list` + `live-cache` — в `routes/.../db-demo/` (с явным allow-исключением `paginator → db-demo` в `layer-guard.mjs` и обновлением `source-schema-guard.mjs`). | `test:guard`, `check`, `vitest`, `build + size-budget`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs` |
+| **Этап 4. Унификация форм стендов ядер** | Перевод форм стендов (`/db-demo`, `/form`, `/steps`) на `*.form.server.ts` и удаление дублирующих `submit/+server.ts` там, где они дублировали конвейер формы. | `test:guard`, `check`, `vitest`, `build + size-budget`, `forms.mjs`, `forms-a11y.mjs`, `steps.mjs`, `db-demo.mjs` |
+| **Этап 5. Реестр маршрутов `#lib/address/routes.ts` + доводка `src/content/user/`** | Реализация `#lib/address/routes.ts` (`href`, `parse`, `patch`, кодеки с `queryLocalPath`) + страж сверки с `src/routes/**/+page.svelte`; оформление `src/content/user/{routes,modals}.ts`, `*.server.ts`, дефолтных `limits` в `ProfileForm`/`AuthWidget` и перевод ссылок проекта на `address`. | `test:guard`, `check`, `vitest`, `build + size-budget`, `auth.mjs`, `modals.mjs` |
+| **Этап 6. Финальная приёмка и документация** | Актуализация `AGENTS.md`, `docs/audit/{architecture,README,testing-backlog}.md`, `README.md` подсистем, подтяжка бюджетов `tooling/size-budget.mjs` и сквозной прогон всех браузерных и unit-тестов. | Полный набор гейтов + все `test/browser/*.mjs` |
+
+---
+
+## Финальные контрольные вопросы Раунда 3 (перед стартом реализации)
+
+1. **Модуль №2 `src/components/paginator/`:**
+   Согласуем состав и двухуровневый контракт `<Paginator />` (встроенные скролл-хост, сентинелы и строки состояний + перенос `SearchBar.svelte` и `filters/*` внутрь `paginator/ui/`, а демо-источников `items` / `rickmorty*` / `shikimori*` — в `routes/(site)/(app)/paginator/sources/`)?
+2. **Реестр маршрутов `#lib/address/routes.ts` × `#lib/modals`:**
+   Утверждаем связку без взаимных импортов между библиотеками через штатный контракт `registerModal({ route: userAuthRoute.href })` + перенос `auth-modals.ts` и `routes.ts` внутрь `src/content/user/`?
+3. **Старт поэтапной реализации (`Этапы 1 → 6`):**
+   Утверждаешь сводный 6-этапный план выше — начинаем реализацию с **Этапа 1** в следующем ходе (с коммитом и отправкой каждого проверенного этапа в `origin/img`)?
