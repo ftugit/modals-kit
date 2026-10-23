@@ -21,6 +21,7 @@ import { db } from '#lib/server/db.js'
 import type { Cookies } from '@sveltejs/kit'
 import {
   createUserConfig,
+  issueFreshAccess as coreIssueFreshAccess,
   listSessions as coreListSessions,
   login as coreLogin,
   logout as coreLogout,
@@ -41,6 +42,7 @@ import type { AuthPorts, AuthRow } from './ports.js'
 import { normalizeFailure, type DataContext } from '#lib/db/index.js'
 import type { ProfileView, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
+import type { VaultSessionMeta } from './vault.js'
 
 /** Кука токена продления (девайс-токен, `{jti, version}`). */
 export const RENEWAL_COOKIE = 'auth_sid'
@@ -333,11 +335,29 @@ const countryOf = (request: Request): string | undefined =>
   request.headers.get('cf-ipcountry')?.slice(0, 64) ?? undefined
 
 /**
- * Фасад одного запроса: голые функции ядра с подставленными портами и куками.
- * Токены из успешных ответов кладутся в куки здесь (сервер, HttpOnly) —
- * компонент этого не делает никогда.
+ * Очередь сериализации ротации по `jti` в пределах процесса: параллельные
+ * запросы с одной и той же сессией выполняются строго по очереди, но каждый
+ * со своими собственными `ports`, `subnet` и `country` (без шаринга чужого
+ * `LoginOutcome` и без двойной перезаписи одной версии в БД).
  */
-const renewInFlight = new Map<string, Promise<UserResult<LoginOutcome>>>()
+const renewLocks = new Map<string, Promise<void>>()
+
+async function withRenewLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = renewLocks.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const current = new Promise<void>((r) => {
+    release = r
+  })
+  const tail = prev.then(() => current)
+  renewLocks.set(key, tail)
+  await prev
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (renewLocks.get(key) === tail) renewLocks.delete(key)
+  }
+}
 
 export function auth(event: AuthEvent): {
   /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
@@ -347,6 +367,7 @@ export function auth(event: AuthEvent): {
   restoreDeleted(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   verifySeed(args: { seed: string; nonce: string; signature?: string }): Promise<UserResult<{ sub: string }>>
   renew(): Promise<UserResult<LoginOutcome>>
+  refreshAccess(): Promise<UserResult<string>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
   listSessions(): Promise<UserResult<SessionView[]>>
@@ -378,24 +399,14 @@ export function auth(event: AuthEvent): {
     const unsealed = rawRenewal ? await ports.seal.unseal(rawRenewal) : null
     const jti = unsealed && unsealed.k === 'renewal' ? unsealed.jti : null
 
-    let shared = jti ? renewInFlight.get(jti) : undefined
-    if (!shared) {
-      const p = coreRenew(ports, {
+    const exec = () =>
+      coreRenew(ports, {
         renewal: rawRenewal,
         subnet: subnetOf(event.request),
         country: countryOf(event.request),
       })
-      if (jti) {
-        shared = p.finally(() => {
-          if (renewInFlight.get(jti) === shared) renewInFlight.delete(jti)
-        })
-        renewInFlight.set(jti, shared)
-      } else {
-        shared = p
-      }
-    }
 
-    const r = await shared
+    const r = jti ? await withRenewLock(jti, exec) : await exec()
     if (r.ok) {
       setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
     }
@@ -430,6 +441,16 @@ export function auth(event: AuthEvent): {
     },
     verifySeed: (args) => coreVerifySeed(ports, args),
     renew: runRenew,
+    refreshAccess: async () => {
+      const r = await coreIssueFreshAccess(ports, await freshAccessOrCurrent())
+      if (r.ok) {
+        event.cookies.set(ACCESS_COOKIE, r.value, {
+          ...COOKIE_BASE,
+          maxAge: await ports.config.get('accessTtlSec'),
+        })
+      }
+      return r
+    },
     logout: async () => {
       const r = await coreLogout(ports, access(), renewal())
       clearCookies()
@@ -445,7 +466,7 @@ export function auth(event: AuthEvent): {
     profile: async () => coreProfile(ports, await freshAccessOrCurrent()),
     updateProfile: async (args) => coreUpdateProfile(ports, await freshAccessOrCurrent(), args),
     requestDelete: async () => {
-      const r = await coreRequestDelete(ports, await freshAccessOrCurrent())
+      const r = await coreRequestDelete(ports, await freshAccessOrCurrent(), renewal())
       if (r.ok) clearCookies()
       return r
     },
@@ -453,46 +474,34 @@ export function auth(event: AuthEvent): {
 }
 
 /**
- * Пейлоад для vault из живой куки `auth_tmp` (быстрый stateless-путь без БД).
- * Просроченный токен (`exp <= nowMs`) возвращается как `null`.
+ * Публичные метаданные для `vault` из живой куки `auth_tmp` (stateless-путь, `0` запросов в БД).
+ * Зашифрованная строка куки наружу НЕ возвращается.
  */
 export async function readVault(
   cookies: { get(name: string): string | undefined },
   nowMs = Date.now(),
-): Promise<{
-  access: string
-  expiresAt: number
-  ttlMs: number
-  sub: string
-  prof: { nickname: string | null; avatarUrl: string | null }
-} | null> {
+): Promise<VaultSessionMeta | null> {
   const access = cookies.get(ACCESS_COOKIE)
   if (!access) return null
   const payload = await authPorts().seal.unseal(access)
   if (!payload || payload.k !== 'access' || payload.exp <= nowMs) return null
   return {
-    access,
+    sub: payload.sub,
+    iat: payload.iat,
     expiresAt: payload.exp,
     ttlMs: Math.max(1000, payload.exp - payload.iat),
-    sub: payload.sub,
     prof: payload.prof,
   }
 }
 
 /**
  * SSR-разрешение сессии для корневого layout новой вкладки:
- * - если короткий `auth_tmp` жив — возвращает снимок мгновенно (`0` запросов в БД);
+ * - если короткий `auth_tmp` жив — возвращает метаданные мгновенно (`0` запросов в БД);
  * - если `auth_tmp` отсутствует или истёк, но присутствует `auth_sid` — бесшовно
  *   выполняет `renew()` прямо во время SSR `load`, выставляя свежие `Set-Cookie`;
  * - если `auth_sid` мёртв/отозван — удаляет мёртвые куки и возвращает `null`.
  */
-export async function resolveVault(event: AuthEvent): Promise<{
-  access: string
-  expiresAt: number
-  ttlMs: number
-  sub: string
-  prof: { nickname: string | null; avatarUrl: string | null }
-} | null> {
+export async function resolveVault(event: AuthEvent): Promise<VaultSessionMeta | null> {
   const live = await readVault(event.cookies)
   if (live) return live
   if (!event.cookies.get(RENEWAL_COOKIE)) return null
@@ -507,21 +516,16 @@ export async function resolveVault(event: AuthEvent): Promise<{
   return null
 }
 
-/** Пейлоад для vault из успешного ответа входа/продления (значения токенов). */
-export async function vaultPayloadOf(value: LoginOutcome): Promise<{
-  access: string
-  expiresAt: number
-  ttlMs: number
-  sub: string
-  prof: { nickname: string | null; avatarUrl: string | null }
-}> {
-  const payload = await authPorts().seal.unseal(value.access)
+/** Публичные метаданные для `vault` из свежевыпущенного `access` (без передачи самого токена). */
+export async function vaultPayloadOf(input: LoginOutcome | string): Promise<VaultSessionMeta> {
+  const rawAccess = typeof input === 'string' ? input : input.access
+  const payload = await authPorts().seal.unseal(rawAccess)
   if (!payload || payload.k !== 'access') throw new Error('свежий access не распечатался')
   return {
-    access: value.access,
+    sub: payload.sub,
+    iat: payload.iat,
     expiresAt: payload.exp,
     ttlMs: Math.max(1000, payload.exp - payload.iat),
-    sub: payload.sub,
     prof: payload.prof,
   }
 }

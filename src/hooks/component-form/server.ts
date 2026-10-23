@@ -92,7 +92,7 @@ async function renderInlineWithResult(
   resolve: Parameters<Handle>[0]['resolve'],
   result: Result,
   status: number,
-  setCookies: readonly string[],
+  setCookies: ReadonlyMap<string, string>,
 ): Promise<Response> {
   const getHeaders = new Headers(event.request.headers)
   getHeaders.delete('content-type')
@@ -104,7 +104,7 @@ async function renderInlineWithResult(
     request: new Request(event.url, { method: 'GET', headers: getHeaders }),
   })
   const headers = new Headers(rendered.headers)
-  for (const cookie of setCookies) headers.append('set-cookie', cookie)
+  for (const cookie of setCookies.values()) headers.append('set-cookie', cookie)
   return new Response(rendered.body, {
     status,
     statusText: rendered.statusText,
@@ -139,7 +139,9 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
   if (!matched) return resolve(event)
 
   const reg = matched
-  const setCookies: string[] = []
+  // Дедупликация по имени куки: повторный `set`/`delete` одной и той же куки в
+  // ходе обработки запроса заменяет заголовок, а не порождает конфликтующие дубли.
+  const setCookies = new Map<string, string>()
   const trackedCookies: RequestEvent['cookies'] = {
     ...event.cookies,
     get: (name, opts) => event.cookies.get(name, opts),
@@ -147,11 +149,11 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
     serialize: (name, value, opts) => event.cookies.serialize(name, value, opts),
     set: (name, value, opts) => {
       event.cookies.set(name, value, opts)
-      setCookies.push(event.cookies.serialize(name, value, opts))
+      setCookies.set(name, event.cookies.serialize(name, value, opts))
     },
     delete: (name, opts) => {
       event.cookies.delete(name, opts)
-      setCookies.push(event.cookies.serialize(name, '', { ...opts, maxAge: 0 }))
+      setCookies.set(name, event.cookies.serialize(name, '', { ...opts, maxAge: 0 }))
     },
   }
   const trackedEvent: RequestEvent = { ...event, cookies: trackedCookies }
@@ -168,7 +170,7 @@ export const componentFormsHandle: Handle = async ({ event, resolve }) => {
   const { result, status } = await handler(event.request, 'action', trackedEvent)
   if (isJsonRequest(event.request)) {
     const headers = new Headers()
-    for (const cookie of setCookies) headers.append('set-cookie', cookie)
+    for (const cookie of setCookies.values()) headers.append('set-cookie', cookie)
     return Response.json({ data: { result } }, { status: result.ok ? 200 : status, headers })
   }
 

@@ -11,7 +11,7 @@ import { getEncoder } from '#lib/image/index.js'
 import { ensureWasm } from '#lib/image/test-wasm.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  activeBlocks, fullBlock, guard, issueChallenge, listSessions, login, logout,
+  activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, listSessions, login, logout,
   logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
   sweepDeletions, verifySeed, type UserResult,
 } from './auth.js'
@@ -447,8 +447,16 @@ describe('удаление аккаунта', () => {
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
     const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    const secondDevice = ok_(await doLogin(ports, seed, sk))
+    expect((await ports.sessions.listByAuth(payload.sub)).filter((s) => s.deletedAt === null).length).toBe(2)
     ok_(await updateProfile(ports, out.access, { nickname: 'Вася' }))
-    ok_(await requestDelete(ports, out.access))
+    // Перевыпуск короткого access после смены профиля не крутит version сессии в БД (AS-07):
+    const refreshedAccess = ok_(await issueFreshAccess(ports, out.access))
+    expect(refreshedAccess).toBeTruthy()
+    expect((await ports.sessions.listByAuth(payload.sub)).every((s) => s.version === 0)).toBe(true)
+    // Заявка на удаление по fallback на renewal при мёртвом access закрывает ВСЕ сессии в БД (AS-04):
+    ok_(await requestDelete(ports, undefined, secondDevice.renewal))
+    expect((await ports.sessions.listByAuth(payload.sub)).filter((s) => s.deletedAt === null)).toEqual([])
     // под выданными правами доступ остановлен; свежий вход сессии не даёт
     expect(fact_(await profile(ports, out.access)).code).toBe('auth.delete-pending')
     expect(fact_(await doLogin(ports, seed, sk)).code).toBe('auth.deleted')

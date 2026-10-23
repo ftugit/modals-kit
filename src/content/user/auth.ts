@@ -242,15 +242,15 @@ export async function guard(
   if (!payload || payload.k !== 'access') return { code: 'auth.token' }
   if (payload.exp <= ports.clock.now()) return { code: 'auth.expired' }
   const record = await ports.sessions.get(payload.dt)
-  const status = statusOf(record, ports.clock.now())
+  const now = ports.clock.now()
+  const status = statusOf(record, now)
   if (status === 'unknown') return { code: 'auth.session-unknown' }
-  if (status === 'revoked') return { code: 'auth.revoked' }
-  if (status === 'expired') return { code: 'auth.expired' }
   const auth = await ports.auths.get(payload.sub)
   if (!auth || auth.seed === null) return { code: 'auth.identity-unknown' }
-  const now = ports.clock.now()
   if (fullBlock(auth.blocked, now)) return { code: 'auth.blocked' }
   if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
+  if (status === 'revoked') return { code: 'auth.revoked' }
+  if (status === 'expired') return { code: 'auth.expired' }
   return { sub: payload.sub, jti: payload.dt, prof: payload.prof }
 }
 
@@ -273,6 +273,19 @@ async function freshAccess(ports: AuthPorts, sub: string, jti: string): Promise<
 }
 
 /**
+ * Перевыпустить короткий `access` с актуальной витриной `prof` из БД под уже
+ * открытой сессией БЕЗ ротации долгоживущего `renewal` (`user_session` не пишется).
+ */
+export async function issueFreshAccess(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+): Promise<UserResult<string>> {
+  const g = await guard(ports, accessToken)
+  if ('code' in g) return fail(g)
+  return ok(await freshAccess(ports, g.sub, g.jti))
+}
+
+/**
  * Продление (фаервол): по токену продления из куки. Версия совпала — ротация
  * (новая версия строки, новый срок, свежий токен продления в ответе); версия
  * меньше — «усыновление»: только свежий access, продление не трогается.
@@ -288,17 +301,17 @@ export async function renew(
   const token = await ports.seal.unseal(args.renewal)
   if (!token || token.k !== 'renewal') return fail({ code: 'auth.token' })
   const record = await ports.sessions.get(token.jti)
-  const status = statusOf(record, ports.clock.now())
+  const now = ports.clock.now()
+  const status = statusOf(record, now)
   if (status === 'unknown') return fail({ code: 'auth.session-unknown' })
-  if (status === 'revoked') return fail({ code: 'auth.revoked' })
-  if (status === 'expired') return fail({ code: 'auth.expired' })
   const session = record as SessionRecord
 
   const auth = await ports.auths.get(session.authId)
   if (!auth || auth.seed === null) return fail({ code: 'auth.identity-unknown' })
-  const now = ports.clock.now()
   if (fullBlock(auth.blocked, now)) return fail({ code: 'auth.blocked' })
   if (auth.deletedAt !== null) return fail({ code: 'auth.delete-pending' })
+  if (status === 'revoked') return fail({ code: 'auth.revoked' })
+  if (status === 'expired') return fail({ code: 'auth.expired' })
 
   const deviceTtlSec = await ports.config.get('deviceTtlSec')
   let renewal: string | undefined
@@ -451,24 +464,48 @@ export type SessionView = {
 
 /* ── удаление аккаунта ── */
 
-/** Заявка на удаление: софт-метка; вход теперь получает факт `auth.deleted`. */
-export async function requestDelete(ports: AuthPorts, accessToken: string | undefined): Promise<UserResult<null>> {
+/**
+ * Заявка на удаление: софт-метка аккаунта + немедленный отзыв всех его сессий в БД.
+ * Поддерживает fallback на живой `renewalToken`, если короткий `access` уже истёк.
+ */
+export async function requestDelete(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  renewalToken?: string | undefined,
+): Promise<UserResult<null>> {
+  const now = ports.clock.now()
   const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  await ports.auths.markDeleted(g.sub, ports.clock.now())
+  let sub: string | null = !('code' in g) ? g.sub : null
+  if (!sub && renewalToken && ('code' in g) && (g.code === 'auth.expired' || g.code === 'auth.token')) {
+    const t = await ports.seal.unseal(renewalToken)
+    if (t && t.k === 'renewal') {
+      const record = await ports.sessions.get(t.jti)
+      if (record && statusOf(record, now) === 'ok') {
+        const auth = await ports.auths.get(record.authId)
+        if (auth && !fullBlock(auth.blocked, now) && auth.deletedAt === null) {
+          sub = record.authId
+        }
+      }
+    }
+  }
+  if (!sub) return fail(g as AuthFact)
+  await ports.auths.markDeleted(sub, now)
+  await ports.sessions.softDeleteAllByAuth(sub, now)
   return ok(null)
 }
 
 /**
  * Исполнитель удаления (зовёт планировщик приложения): грейс из конфига;
- * профиль уходит, seed/security стираются — надгробие остаётся.
+ * сессии отзываются, профиль уходит, seed/security стираются — надгробие остаётся.
  * Возвращает число зачищенных аккаунтов.
  */
 export async function sweepDeletions(ports: AuthPorts): Promise<UserResult<number>> {
   const days = await ports.config.get('deleteGraceDays')
-  const cutoff = ports.clock.now() - days * 24 * 60 * 60 * 1000
+  const now = ports.clock.now()
+  const cutoff = now - days * 24 * 60 * 60 * 1000
   const rows = await ports.auths.listDeletedBefore(cutoff)
   for (const row of rows) {
+    await ports.sessions.softDeleteAllByAuth(row.id, now)
     await ports.profiles.remove(row.id)
     await ports.auths.wipeCredentials(row.id)
   }

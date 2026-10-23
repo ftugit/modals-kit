@@ -369,18 +369,36 @@ async function run() {
       await tabA.locator('#user-auth').getByRole('button', { name: 'Авторизация', exact: true }).click()
       await tabA.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
 
-      // Вкладка B открывает главную — видит текущего пользователя:
+      // Вкладка B открывает главную — видит текущего пользователя, при этом сырой
+      // HttpOnly-токен `auth_tmp` (`Fe26.2**...`) НЕ утекает в SSR HTML страницы (AS-01):
       await tabB.goto(BASE + '/', { waitUntil: 'networkidle' })
       await tabB.locator('[data-testid=header-user]').waitFor({ state: 'visible' })
+      const htmlContent = await tabB.content()
+      assert.equal(htmlContent.includes('Fe26.2'), false, 'сырой токен auth_tmp не сериализован в HTML')
 
       // Имитируем проснувшуюся через сутки вкладку A: auth_tmp удалён браузером по maxAge,
-      // но пользователь открывает форму профиля и меняет ник без перезагрузки:
+      // но пользователь открывает форму профиля и меняет ник без перезагрузки (ровно 1 Set-Cookie на имя, AS-07):
       await tabA.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
       await tabA.getByRole('link', { name: /Изменить профиль/ }).or(tabA.getByRole('button', { name: /Изменить профиль/ })).click()
       await tabA.locator('#user-profile input[name=nickname]').waitFor({ state: 'visible', timeout: 5000 })
       await syncCtx.clearCookies({ name: 'auth_tmp' })
+      const profileResponsePromise = tabA.waitForResponse((res) => res.request().method() === 'POST')
       await tabA.locator('#user-profile input[name=nickname]').fill('sync-tab-hero')
       await tabA.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
+      const profileResponse = await profileResponsePromise
+      const setCookieHeaders = (await profileResponse.headersArray()).filter(
+        (h) => h.name.toLowerCase() === 'set-cookie',
+      )
+      assert.equal(
+        setCookieHeaders.filter((h) => h.value.startsWith('auth_tmp=')).length,
+        1,
+        'ровно 1 Set-Cookie auth_tmp без дублей',
+      )
+      assert.equal(
+        setCookieHeaders.filter((h) => h.value.startsWith('auth_sid=')).length,
+        1,
+        'ровно 1 Set-Cookie auth_sid без двойной ротации',
+      )
       await tabA.waitForSelector('text=sync-tab-hero', { timeout: 10000 })
 
       // Вкладка B БЕЗ перезагрузки мгновенно получила новый ник через BroadcastChannel:

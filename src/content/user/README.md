@@ -21,9 +21,9 @@
 | `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#lib/components/form/photo.js`). |
 | `config.ts` | Настройки модуля поверх `#lib/cache` (`accessTtlSec`, `deviceTtlSec`, `challengeTtlSec`, `deleteGraceDays`, `avatarEdge`, `avatarMaxBytes`, `nicknameForbidden`, `holdSeconds`). |
 | `error.ts` | Доменные факты `auth.*` / `profile.*` и перевод в инструкции формы (`instruction`). |
-| `gateway.ts` | Серверная обвязка SvelteKit: адаптеры портов к `db.resource(user_*)`, запечатывание `iron-webcrypto`, фасад `auth(event)`, `readVault`, `vaultPayloadOf`, `toHttpStatus`. |
+| `gateway.ts` | Серверная обвязка SvelteKit: адаптеры портов к `db.resource(user_*)`, запечатывание `iron-webcrypto`, фасад `auth(event)` (включая сериализованный `renew` по `withRenewLock` и лёгкий `refreshAccess` без ротации сессии), `resolveVault`, `readVault`, `vaultPayloadOf`, `toHttpStatus`. |
 | `acl.ts` | Логика и описания 21 экрана `resolveAcl`: статусы субъекта/аккаунта (`guest`, `user`, роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `#lib/db` (`FailureKind` + `payload_too_large`). |
-| `vault.ts` / `vault.svelte.ts` | Клиентское RAM-зеркало `access`-токена и фоновое продление по таймеру через `kitActionTransport` и конверт `ui/seed-form/envelope.ts`. |
+| `vault.ts` / `vault.svelte.ts` | Единый реактивный стор `vault` на лексическом замыкании (только публичные метаданные `{ sub, iat, expiresAt, ttlMs, prof }`, без сырых токенов), межвкладочная координация `navigator.locks` + `localStorage` + `BroadcastChannel`, пробуждение по `visibilitychange`/`online` и адаптер `userSession` для защищённых форм. |
 | `ui/Acl.svelte` | Компонент защиты экрана: при срабатывании ограничения отображает карточку причины и штатное действие вместо `children`. |
 | `ui/seed-form/` | Папочный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `<Acl allow="guest">`) и срез `confirm` (`authorize = false` — проверка знания `seed` через `verifySeed` без открытия сессии и без смены кук, доступна и гостю, и залогиненному пользователю). |
 | `ui/profile-form/` | Папочный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment`, удержанием отправки через `f.pending` и серверной обработкой через `decodeWithNode` (`#lib/image/node.js`) без передачи `base64` по сети. |
@@ -42,7 +42,7 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
   ─> execute (ui/seed-form/server.ts | ui/profile-form/server.ts)
   ─> gateway auth(event) ─> core api (auth.ts / profile.ts) ─> факт { code, path?, args? }
 
-любая страница (SSR): +layout.server.ts ─> readVault(cookies) ─> data.user ─> vault
+любая страница (SSR): +layout.server.ts ─> resolveVault(event) ─> data.user + authStamp ─> vault
 ```
 
 Ядро (`auth.ts`, `profile.ts`) не знает `Request` и `Cookies`: на входе данные и порты, на выходе результат или доменный факт.
@@ -51,7 +51,7 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 
 ## Выключение без секрета
 
-Если `AUTH_SEAL_SECRET` не задан, подсистема входа мягко выключается без `500`: `<Acl enabled={false} />` показывает экран «Вход временно отключён», `readVault` возвращает `null`, а серверные обработчики отвечают `auth.disabled` (`503`) на все действия, кроме `logout`.
+Если `AUTH_SEAL_SECRET` не задан, подсистема входа мягко выключается без `500`: `<Acl enabled={false} />` показывает экран «Вход временно отключён», `resolveVault` возвращает `null`, а серверные обработчики отвечают `auth.disabled` (`503`) на все действия, кроме `logout`.
 
 ---
 

@@ -1,10 +1,7 @@
-export {
-  bindComponentForm,
-  setFormSessionInterceptor,
-  type FormSessionInterceptor,
-} from './client.svelte.js'
+export { bindComponentForm } from './client.svelte.js'
 export type {
   ComponentFormOptions,
   ComponentFormRegistration,
+  FormSessionGuard,
   NoJsSuccessTarget,
 } from './types.js'

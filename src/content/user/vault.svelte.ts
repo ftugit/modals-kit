@@ -1,42 +1,55 @@
 /**
  * Vault — единый реактивный стор сессии вкладки на лексическом замыкании.
  *
- * Архитектурные инварианты (утверждены в `docs/audit/auth-session.md`):
- * 1. Оба токена живут в `HttpOnly`-куках; долгоживущий `auth_sid` (`renewal`)
- *    никогда не сериализуется в JSON и не попадает в память браузера.
- * 2. Внутри приватного замыкания `createVault()` хранятся только короткоживущие
- *    метаданные сессии (`access`, `expiresAt`, `ttlMs`, `sub`, `prof`, `epoch`).
- *    Снаружи доступны исключительно read-only геттеры (`authorized`, `principal`,
+ * Архитектурные инварианты (`docs/audit/auth-session.md`):
+ * 1. Оба криптографических токена (`auth_sid` и `auth_tmp`) живут строго в `HttpOnly`-куках
+ *    и никогда не сериализуются в HTML страницы, JSON или `BroadcastChannel`.
+ * 2. В приватном лексическом замыкании `createVault()` хранятся исключительно
+ *    публичные метаданные сессии (`sub`, `prof`, `iat`, `expiresAt`, `ttlMs`, `epoch`).
+ *    Снаружи доступны только read-only геттеры (`authorized`, `principal`,
  *    `profile`, `renewing`) и методы жизненного цикла.
- * 3. Бесшовный SSR и гидратация без `readUser`: до первой инициализации вкладки
- *    геттеры прозрачно читают `page.data.user`, а после синхронизации — только
- *    реактивные `$state`-переменные замыкания.
- * 4. Межвкладочная координация: `5%`-й джиттер + `navigator.locks` +
- *    `BroadcastChannel('modals-kit:user')` синхронизируют вход, выход, смену
- *    профиля и продление между всеми открытыми вкладками без лишних кук и без
- *    дублирующих сетевых запросов; счётчик `epoch` и `AbortController` отсекают
- *    запоздавшие ответы старых `renew` после выхода или смены профиля.
- * 5. Пробуждение замороженной вкладки: `visibilitychange` + `online` +
- *    интеграция с `setFormSessionInterceptor` автоматически продлевают мёртвый
- *    временный токен и прозрачно повторяют прерванную операцию.
+ * 3. Бесшовный SSR без `readUser`: до первой инициализации вкладки геттеры читают
+ *    `page.data.user`, а после — реактивные `$state`-переменные замыкания; авторитетный
+ *    штамп серверного вызова `authStamp` исключает как затирание живого RAM старым
+ *    кэшем layout'а при клиентских переходах, так и игнорирование реального ответа
+ *    сервера `null` при отзыве сессии.
+ * 4. Детерминированная межвкладочная координация без тайминговых хаков:
+ *    `5%`-й джиттер + `navigator.locks` + синхронное зеркало `localStorage` +
+ *    `BroadcastChannel('modals-kit:user')` гарантируют ровно `1` сетевой `POST`
+ *    даже при одновременном пробуждении произвольного числа вкладок; счётчик
+ *    поколений `epoch` и `AbortController` отсекают запоздавшие ответы.
+ * 5. Все глобальные слушатели (`visibilitychange`, `online`, `storage`) снимаются
+ *    при `dispose()` и перезагрузке модуля HMR.
  */
 import { page } from '$app/state'
 import { visibleAddress } from '#lib/address/sveltekit.js'
-import { setFormSessionInterceptor } from '#hooks/component-form/session-interceptor.js'
-import { fireAt, leadFor, overdue, type RenewData } from './vault.js'
+import {
+  fireAt,
+  leadFor,
+  overdue,
+  snapshotKeyOf,
+  type RenewData,
+  type VaultProfile,
+  type VaultSessionMeta,
+} from './vault.js'
 
-export type VaultProfile = { readonly nickname: string | null; readonly avatarUrl: string | null }
+export type { VaultProfile, VaultSessionMeta }
 
-/** Снимок сессии из SSR `load` или ответа POST-экшена. */
-export type VaultPayload = RenewData
+/** Снимок метаданных сессии из SSR `load` или ответа POST-экшена. */
+export type VaultPayload = VaultSessionMeta
 
 export interface UserVault {
   readonly authorized: boolean
   readonly principal: string | null
   readonly profile: VaultProfile
   readonly renewing: boolean
-  /** Синхронизировать снимок корневого SSR `load` без затирания живого RAM. */
-  syncServer(payload: VaultPayload | null | undefined): void
+  /**
+   * Синхронизировать снимок корневого SSR `load`:
+   * - `serverStamp` меняется на сервере только при реальном перезапуске `+layout.server.ts`,
+   *   поэтому старый кэш layout'а на клиентских переходах не затирает RAM, а свежий ответ
+   *   сервера (включая `null` после отзыва сессии) применяется безоговорочно.
+   */
+  syncServer(payload: VaultPayload | null | undefined, serverStamp?: number): void
   /** Записать свежий снимок после входа, регистрации, смены профиля или продления. */
   hydrate(payload: VaultPayload): void
   /** Мгновенно очистить RAM во всех открытых вкладках (после выхода / отзыва сессии). */
@@ -45,12 +58,12 @@ export interface UserVault {
   renew(force?: boolean): Promise<boolean>
   /** Дождаться свежего токена, если в RAM он уже истёк (после заморозки таймера). */
   ensureFresh(): Promise<boolean>
-  /** Освободить таймер и `BroadcastChannel` (для тестовых экземпляров). */
+  /** Освободить таймер, `BroadcastChannel` и все DOM/window-слушатели. */
   dispose(): void
 }
 
 export interface CreateVaultOptions {
-  /** Имя канала `BroadcastChannel` для синхронизации вкладок (`null` — отключить). */
+  /** Имя канала `BroadcastChannel` и ключа `localStorage` (`null` — изолированный режим). */
   channelName?: string | null
   /** Имя межвкладочного мьютекса `navigator.locks`. */
   lockName?: string
@@ -80,9 +93,33 @@ const TERMINAL_AUTH_CODES = new Set([
   'auth.kid-unknown',
 ])
 
-type BroadcastMessage =
-  | { readonly type: 'hydrate'; readonly payload: VaultPayload }
-  | { readonly type: 'clear' }
+type SharedEnvelope =
+  | { readonly seq: number; readonly type: 'hydrate'; readonly payload: VaultPayload }
+  | { readonly seq: number; readonly type: 'clear' }
+
+function isValidPayload(data: unknown): data is VaultPayload {
+  if (!data || typeof data !== 'object') return false
+  const d = data as Partial<RenewData>
+  return (
+    typeof d.sub === 'string' &&
+    typeof d.iat === 'number' &&
+    typeof d.expiresAt === 'number' &&
+    typeof d.ttlMs === 'number'
+  )
+}
+
+function normalizePayload(data: RenewData): VaultPayload {
+  return {
+    sub: data.sub,
+    iat: data.iat,
+    expiresAt: data.expiresAt,
+    ttlMs: data.ttlMs,
+    prof: {
+      nickname: data.prof?.nickname ?? null,
+      avatarUrl: data.prof?.avatarUrl ?? null,
+    },
+  }
+}
 
 function defaultReadSsrUser(): VaultPayload | null {
   try {
@@ -127,51 +164,80 @@ async function defaultPostRenew(signal: AbortSignal): Promise<RenewPostOutcome> 
     return { kind: 'transient-error' }
   }
 
-  const data = out.result.data as Partial<RenewData> | undefined
-  if (
-    typeof data?.access !== 'string' ||
-    typeof data?.expiresAt !== 'number' ||
-    typeof data?.ttlMs !== 'number' ||
-    typeof data?.sub !== 'string'
-  ) {
-    return { kind: 'transient-error' }
-  }
-
-  return {
-    kind: 'ok',
-    data: {
-      access: data.access,
-      expiresAt: data.expiresAt,
-      ttlMs: data.ttlMs,
-      sub: data.sub,
-      prof: data.prof ?? EMPTY_PROFILE,
-    },
-  }
+  if (!isValidPayload(out.result.data)) return { kind: 'transient-error' }
+  return { kind: 'ok', data: normalizePayload(out.result.data) }
 }
 
 export function createVault(options: CreateVaultOptions = {}): UserVault {
   const channelName = options.channelName === undefined ? 'modals-kit:user' : options.channelName
+  const storageKey = channelName ? `${channelName}:meta` : null
   const lockName = options.lockName ?? 'modals-kit:user:renew'
   const sendRenew = options.postRenewTransport ?? defaultPostRenew
   const now = options.now ?? (() => Date.now())
   const readSsrUser = options.readSsrUser ?? defaultReadSsrUser
 
-  let access = $state<string | null>(null)
   let principal = $state<string | null>(null)
   let profile = $state<VaultProfile>(EMPTY_PROFILE)
   let renewing = $state(false)
   let synced = $state(false)
 
-  let lastServerAccess: string | null | undefined = undefined
+  let iat = 0
   let expiresAt = 0
   let ttlMs = 0
   let epoch = 0
+  let sharedSeq = 0
+  let lastServerMarker: string | number | undefined = undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let inflightAbort: AbortController | null = null
   let activeRenew: Promise<boolean> | null = null
   let channel: BroadcastChannel | null = null
+  const cleanups: Array<() => void> = []
 
   const isClientReady = (): boolean => typeof window !== 'undefined' && synced
+
+  function readSharedEnvelope(): SharedEnvelope | undefined {
+    if (!storageKey || typeof window === 'undefined') return undefined
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (!raw) return undefined
+      const parsed = JSON.parse(raw) as Partial<SharedEnvelope>
+      if (typeof parsed?.seq !== 'number') return undefined
+      if (parsed.type === 'clear') return { seq: parsed.seq, type: 'clear' }
+      if (parsed.type === 'hydrate' && isValidPayload(parsed.payload)) {
+        return { seq: parsed.seq, type: 'hydrate', payload: normalizePayload(parsed.payload) }
+      }
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  function nextSharedSeq(): number {
+    const stored = readSharedEnvelope()?.seq ?? 0
+    sharedSeq = Math.max(sharedSeq, stored) + 1
+    return sharedSeq
+  }
+
+  function publishShared(envelope: SharedEnvelope): void {
+    if (storageKey && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(envelope))
+      } catch {
+        /* приватный режим / запрет storage — остаётся BroadcastChannel */
+      }
+    }
+    ensureChannel()?.postMessage(envelope)
+  }
+
+  function acceptSharedEnvelope(envelope: SharedEnvelope | undefined): void {
+    if (!envelope || envelope.seq <= sharedSeq) return
+    sharedSeq = envelope.seq
+    if (envelope.type === 'hydrate') {
+      applyHydrate(envelope.payload, false)
+    } else {
+      applyClear(false)
+    }
+  }
 
   function cancelInflight(): void {
     if (inflightAbort) {
@@ -188,7 +254,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   }
 
   function schedule(): void {
-    if (typeof window === 'undefined' || expiresAt === 0) return
+    if (typeof window === 'undefined' || principal === null || expiresAt === 0) return
     clearTimer()
     const delay = Math.max(0, fireAt(expiresAt, ttlMs) - now())
     timer = setTimeout(() => {
@@ -203,12 +269,18 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     if (!channel) {
       channel = new BroadcastChannel(channelName)
       channel.addEventListener('message', (ev: Event) => {
-        const msg = (ev as MessageEvent<BroadcastMessage>).data
-        if (!msg || typeof msg !== 'object') return
-        if (msg.type === 'hydrate' && msg.payload) {
-          applyHydrate(msg.payload, false)
+        const msg = (ev as MessageEvent<SharedEnvelope>).data
+        if (!msg || typeof msg !== 'object' || typeof msg.seq !== 'number') return
+        // Сверяем с актуальным конвертом в storage на случай out-of-order доставки IPC:
+        const latest = readSharedEnvelope()
+        if (latest && latest.seq > msg.seq) {
+          acceptSharedEnvelope(latest)
+          return
+        }
+        if (msg.type === 'hydrate' && isValidPayload(msg.payload)) {
+          acceptSharedEnvelope({ seq: msg.seq, type: 'hydrate', payload: normalizePayload(msg.payload) })
         } else if (msg.type === 'clear') {
-          applyClear(false)
+          acceptSharedEnvelope({ seq: msg.seq, type: 'clear' })
         }
       })
     }
@@ -218,18 +290,18 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   function applyHydrate(payload: VaultPayload, broadcast: boolean): void {
     epoch += 1
     cancelInflight()
-    access = payload.access
     principal = payload.sub
+    iat = payload.iat
+    expiresAt = payload.expiresAt
+    ttlMs = payload.ttlMs
     profile = {
       nickname: payload.prof.nickname ?? null,
       avatarUrl: payload.prof.avatarUrl ?? null,
     }
-    expiresAt = payload.expiresAt
-    ttlMs = payload.ttlMs
     if (typeof window !== 'undefined') synced = true
     schedule()
     if (broadcast) {
-      ensureChannel()?.postMessage({ type: 'hydrate', payload } satisfies BroadcastMessage)
+      publishShared({ seq: nextSharedSeq(), type: 'hydrate', payload })
     }
   }
 
@@ -237,23 +309,37 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     epoch += 1
     cancelInflight()
     clearTimer()
-    access = null
     principal = null
-    profile = EMPTY_PROFILE
+    iat = 0
     expiresAt = 0
     ttlMs = 0
+    profile = EMPTY_PROFILE
     if (typeof window !== 'undefined') synced = true
     if (broadcast) {
-      ensureChannel()?.postMessage({ type: 'clear' } satisfies BroadcastMessage)
+      publishShared({ seq: nextSharedSeq(), type: 'clear' })
     }
   }
 
-  async function executeLockedRenew(force: boolean): Promise<boolean> {
-    // Уступаем один макротик очереди MessagePort, чтобы `BroadcastChannel.postMessage`
-    // от вкладки, только что освободившей Web Lock, успел доставиться до проверки `expiresAt`.
-    await new Promise((r) => setTimeout(r, 0))
-    // Соседняя вкладка уже обновила пару и прислала свежий `expiresAt` через BroadcastChannel:
-    // второй сетевой запрос не нужен.
+  /**
+   * Синхронная сверка с монотонным Lamport-конвертом в `localStorage` под `navigator.locks`
+   * (`0 мс`, без `setTimeout` и без гонок с асинхронной очередью `BroadcastChannel`).
+   */
+  function syncFromSharedStorageUnderLock(): void {
+    acceptSharedEnvelope(readSharedEnvelope())
+  }
+
+  async function executeLockedRenew(force: boolean, epochBeforeLock: number): Promise<boolean> {
+    syncFromSharedStorageUnderLock()
+
+    // Пока вкладка ждала `navigator.locks`, соседняя вкладка уже обновила или закрыла сессию:
+    if (epoch !== epochBeforeLock) {
+      if (principal === null) return false
+      if (!overdue(expiresAt, now())) {
+        schedule()
+        return true
+      }
+    }
+
     if (!force && expiresAt !== 0 && now() < expiresAt - leadFor(ttlMs)) {
       schedule()
       return true
@@ -265,7 +351,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     try {
       const outcome = await sendRenew(ac.signal)
       // Пока запрос летел, пользователь вышел или обновил профиль — старый ответ отбрасываем.
-      if (myEpoch !== epoch) return access !== null
+      if (myEpoch !== epoch) return principal !== null
 
       if (outcome.kind === 'ok') {
         applyHydrate(outcome.data, true)
@@ -284,18 +370,19 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   }
 
   function renew(force = false): Promise<boolean> {
-    if (typeof window === 'undefined' || access === null) return Promise.resolve(false)
+    if (typeof window === 'undefined' || principal === null) return Promise.resolve(false)
     if (activeRenew) return activeRenew
 
     ensureChannel()
+    const epochBeforeLock = epoch
     renewing = true
     const run = (async (): Promise<boolean> => {
       try {
         const nav = navigator as Navigator & { locks?: LockManager }
         if (nav.locks) {
-          return await nav.locks.request(lockName, () => executeLockedRenew(force))
+          return await nav.locks.request(lockName, () => executeLockedRenew(force, epochBeforeLock))
         }
-        return await executeLockedRenew(force)
+        return await executeLockedRenew(force, epochBeforeLock)
       } finally {
         renewing = false
         activeRenew = null
@@ -307,7 +394,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   }
 
   async function ensureFresh(): Promise<boolean> {
-    if (typeof window === 'undefined' || access === null) return false
+    if (typeof window === 'undefined' || principal === null) return false
     if (expiresAt === 0 || !overdue(expiresAt, now())) return true
     return renew(true)
   }
@@ -316,14 +403,16 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     ensureChannel()
     const onWake = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      if (access !== null && expiresAt !== 0 && overdue(expiresAt, now())) {
+      if (principal !== null && expiresAt !== 0 && overdue(expiresAt, now())) {
         void ensureFresh()
       }
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onWake)
+      cleanups.push(() => document.removeEventListener('visibilitychange', onWake))
     }
     window.addEventListener('online', onWake)
+    cleanups.push(() => window.removeEventListener('online', onWake))
   }
 
   return {
@@ -342,25 +431,36 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     get renewing(): boolean {
       return renewing
     },
-    syncServer(payload: VaultPayload | null | undefined): void {
+    syncServer(payload: VaultPayload | null | undefined, serverStamp?: number): void {
       ensureChannel()
-      const nextAccess = payload?.access ?? null
-      if (lastServerAccess === nextAccess) {
+      const marker = serverStamp !== undefined ? serverStamp : snapshotKeyOf(payload)
+      if (lastServerMarker === marker) {
         if (typeof window !== 'undefined') synced = true
         return
       }
-      lastServerAccess = nextAccess
+      lastServerMarker = marker
       if (payload) {
-        if (!access || access !== nextAccess) applyHydrate(payload, false)
+        const normalized = normalizePayload(payload)
+        const currentKey = principal
+          ? snapshotKeyOf({ sub: principal, iat, expiresAt, ttlMs, prof: profile })
+          : 'guest'
+        if (currentKey !== snapshotKeyOf(normalized)) applyHydrate(normalized, false)
         else if (typeof window !== 'undefined') synced = true
       } else {
         applyClear(false)
       }
     },
     hydrate(payload: VaultPayload): void {
-      applyHydrate(payload, true)
+      const normalized = normalizePayload(payload)
+      if (typeof lastServerMarker === 'string') {
+        lastServerMarker = snapshotKeyOf(normalized)
+      }
+      applyHydrate(normalized, true)
     },
     clear(): void {
+      if (typeof lastServerMarker === 'string') {
+        lastServerMarker = 'guest'
+      }
       applyClear(true)
     },
     renew,
@@ -368,6 +468,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     dispose(): void {
       cancelInflight()
       clearTimer()
+      for (const fn of cleanups.splice(0)) fn()
       if (channel) {
         channel.close()
         channel = null
@@ -379,9 +480,14 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
 /** Единственный экземпляр `vault` текущей вкладки. */
 export const vault: UserVault = createVault()
 
-if (typeof window !== 'undefined') {
-  setFormSessionInterceptor({
-    ensureFresh: () => vault.ensureFresh(),
-    onAuthExpired: () => vault.renew(true),
+/** Явный адаптер защиты сессии для форм модуля пользователя (`bindComponentForm(..., { session: userSession })`). */
+export const userSession = {
+  ensureFresh: () => vault.ensureFresh(),
+  onAuthExpired: () => vault.renew(true),
+} as const
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    vault.dispose()
   })
 }

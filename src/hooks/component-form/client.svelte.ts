@@ -4,7 +4,7 @@
 // шаг виджета), его `<form method="post" action={target}>` и JS-транспорт
 // указывают ровно на текущий видимый адрес (`pathname + search`),
 // `continuation` подхватывает `page.data.formResult` при нативном POST,
-// а опциональный перехватчик сессии прозрачно обновляет мёртвый временный токен
+// а явно переданный `session` прозрачно обновляет мёртвый временный токен
 // и повторяет запрос 1 раз без потери введённых пользователем данных.
 import { untrack } from 'svelte'
 import { page } from '$app/state'
@@ -12,15 +12,9 @@ import { visibleAddress } from '#lib/address/sveltekit.js'
 import { bind, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
 import { kitActionTransport } from '#lib/components/form/transport.js'
 import { buildEnvelope, type FormDescription, type Result, type Transport } from '#lib/form/index.js'
-import type { ComponentFormOptions } from './types.js'
+import type { ComponentFormOptions, FormSessionGuard } from './types.js'
 
-import {
-  getFormSessionInterceptor,
-  setFormSessionInterceptor,
-  type FormSessionInterceptor,
-} from './session-interceptor.js'
-
-export { setFormSessionInterceptor, type FormSessionInterceptor }
+export type { FormSessionGuard }
 
 function isAuthExpiredResult(result: Result): boolean {
   if (result.ok) return false
@@ -70,19 +64,18 @@ export function bindComponentForm(
   desc: FormDescription,
   options: ComponentFormOptions = {},
 ): BoundForm {
-  const { action, prepare, continuation, ...rest } = options
+  const { action, prepare, continuation, session, ...rest } = options
   const target = untrack(() => action ?? readCurrentHref())
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
   const baseTransport = kitActionTransport(target, prepare ? { prepare } : {})
 
   const transport: Transport = async (req) => {
-    const guard = getFormSessionInterceptor()
-    if (guard) {
-      await guard.ensureFresh()
+    if (session) {
+      await session.ensureFresh()
     }
     const out = await baseTransport(req)
-    if (guard && out.kind === 'result' && isAuthExpiredResult(out.result)) {
-      const renewed = await guard.onAuthExpired()
+    if (session && out.kind === 'result' && isAuthExpiredResult(out.result)) {
+      const renewed = await session.onAuthExpired()
       if (renewed) {
         const retryEnvelope = { ...req.envelope, submissionId: crypto.randomUUID() }
         const retryData = req.data instanceof FormData ? cloneFormDataWithEnvelope(req.data, desc, retryEnvelope) : req.data

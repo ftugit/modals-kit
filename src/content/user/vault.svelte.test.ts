@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createVault, type RenewPostOutcome, type VaultPayload } from './vault.svelte.js'
-import { bindComponentForm, setFormSessionInterceptor } from '#hooks/component-form/client.svelte.js'
+import { bindComponentForm } from '#hooks/component-form/client.svelte.js'
 import { defineForm, field } from '#lib/form/index.js'
 import { forms } from '#lib/components/form/forms.config.js'
 
 const samplePayload = (overrides: Partial<VaultPayload> = {}): VaultPayload => ({
-  access: 'sealed.access.1',
+  sub: 'user-1',
+  iat: 700_000,
   expiresAt: 1_000_000,
   ttlMs: 300_000,
-  sub: 'user-1',
   prof: { nickname: 'SSR Ник', avatarUrl: null },
   ...overrides,
 })
@@ -36,11 +36,11 @@ function installMockLocks(): () => void {
 
 describe('vault: замыкание, межвкладочная синхронизация и восстановление после сна', () => {
   afterEach(() => {
-    setFormSessionInterceptor(null)
+    window.localStorage.clear()
     vi.restoreAllMocks()
   })
 
-  test('инкапсуляция замыкания и единый API без readUser: SSR до syncServer, RAM после hydrate/clear', () => {
+  test('инкапсуляция замыкания без сырого access, корректный authStamp при гостевом входе и серверном отзыве', () => {
     let ssrSnapshot: VaultPayload | null = samplePayload()
     const v = createVault({
       channelName: null,
@@ -57,24 +57,44 @@ describe('vault: замыкание, межвкладочная синхрони
     expect(v.principal).toBe('user-1')
     expect(v.profile.nickname).toBe('SSR Ник')
 
-    // Первичная синхронизация переносит снимок в RAM.
-    v.syncServer(ssrSnapshot)
+    // Сценарий AS-03: старт гостем (stamp=1) → вход в модалке → клиентская навигация со старым кэшем (stamp=1) → реальный отзыв на сервере (stamp=2, null).
+    ssrSnapshot = null
+    v.syncServer(null, 1)
+    expect(v.authorized).toBe(false)
+
+    v.hydrate(samplePayload({ sub: 'user-2', iat: 800_000, prof: { nickname: 'Живой', avatarUrl: '/a.webp' } }))
     expect(v.authorized).toBe(true)
 
-    // Выход очищает RAM, и повторный проход старого SSR-объекта НЕ воскрешает сессию.
-    v.clear()
-    expect(v.authorized).toBe(false)
-    expect(v.principal).toBeNull()
-    v.syncServer(ssrSnapshot)
-    expect(v.authorized).toBe(false)
-
-    // Вход и смена профиля мгновенно обновляют геттеры даже при ssrSnapshot = null.
-    ssrSnapshot = null
-    v.hydrate(samplePayload({ access: 'ram.2', sub: 'user-2', prof: { nickname: 'Живой', avatarUrl: '/a.webp' } }))
+    // Обычный клиентский переход без перезапуска +layout.server.ts (stamp остался 1): НЕ затирает RAM!
+    v.syncServer(null, 1)
     expect(v.authorized).toBe(true)
     expect(v.principal).toBe('user-2')
-    expect(v.profile).toEqual({ nickname: 'Живой', avatarUrl: '/a.webp' })
+
+    // Реальный перезапуск +layout.server.ts после отзыва сессии (stamp вырос до 2, ответ null): немедленно разлогинивает!
+    v.syncServer(null, 2)
+    expect(v.authorized).toBe(false)
+    expect(v.principal).toBeNull()
+
     v.dispose()
+  })
+
+  test('dispose() полностью снимает слушатели visibilitychange и online без утечек', () => {
+    let calls = 0
+    const v = createVault({
+      channelName: null,
+      now: () => 2_000_000,
+      postRenewTransport: async () => {
+        calls += 1
+        return { kind: 'ok', data: samplePayload({ expiresAt: 2_300_000 }) }
+      },
+    })
+    v.hydrate(samplePayload({ expiresAt: 1_000_000 }))
+    v.dispose()
+
+    calls = 0
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(calls).toBe(0)
   })
 
   test('гонка in-flight renew против logout и смены профиля отсекается счётчиком поколений epoch', async () => {
@@ -93,7 +113,7 @@ describe('vault: замыкание, межвкладочная синхрони
         }),
     })
 
-    v.hydrate(samplePayload({ access: 'old', expiresAt: 1_000_000, ttlMs: 300_000 }))
+    v.hydrate(samplePayload({ iat: 700_000, expiresAt: 1_000_000, ttlMs: 300_000 }))
     const pendingRenew = v.renew(true)
     await started
 
@@ -101,7 +121,7 @@ describe('vault: замыкание, межвкладочная синхрони
     v.clear()
     resolveSlowRenew({
       kind: 'ok',
-      data: samplePayload({ access: 'zombie', expiresAt: 1_300_000, prof: { nickname: 'Зомби', avatarUrl: null } }),
+      data: samplePayload({ iat: 999_000, expiresAt: 1_300_000, prof: { nickname: 'Зомби', avatarUrl: null } }),
     })
 
     await pendingRenew
@@ -110,21 +130,20 @@ describe('vault: замыкание, межвкладочная синхрони
     v.dispose()
   })
 
-  test('navigator.locks + BroadcastChannel синхронизируют продление, профиль и выход между вкладками за 1 сетевой запрос', async () => {
+  test('AS-05: одновременное пробуждение 3 спящих вкладок (ensureFresh, force=true) делает строго 1 сетевой POST без setTimeout-костылей', async () => {
     const restoreLocks = installMockLocks()
     const channel = `test-sync-${crypto.randomUUID()}`
     let networkCalls = 0
-    const currentClock = 995_000
+    const currentClock = 2_000_000
 
     const transport = async (): Promise<RenewPostOutcome> => {
       networkCalls += 1
-      await new Promise((r) => setTimeout(r, 20))
-      // Ждём доставку BroadcastChannel во вторую вкладку до отпускания замка
+      await new Promise((r) => setTimeout(r, 10))
       return {
         kind: 'ok',
         data: samplePayload({
-          access: 'fresh.shared',
-          expiresAt: 1_300_000,
+          iat: currentClock,
+          expiresAt: currentClock + 300_000,
           ttlMs: 300_000,
           prof: { nickname: 'Синхронный Ник', avatarUrl: null },
         }),
@@ -133,31 +152,40 @@ describe('vault: замыкание, межвкладочная синхрони
 
     const tabA = createVault({ channelName: channel, now: () => currentClock, postRenewTransport: transport })
     const tabB = createVault({ channelName: channel, now: () => currentClock, postRenewTransport: transport })
+    const tabC = createVault({ channelName: channel, now: () => currentClock, postRenewTransport: transport })
 
-    const initial = samplePayload({ access: 'init', expiresAt: 1_000_000, ttlMs: 300_000 })
-    tabA.syncServer(initial)
-    tabB.syncServer(initial)
+    const expiredInitial = samplePayload({ iat: 700_000, expiresAt: 1_000_000, ttlMs: 300_000 })
+    tabA.syncServer(expiredInitial, 1)
+    tabB.syncServer(expiredInitial, 1)
+    tabC.syncServer(expiredInitial, 1)
 
-    // Обе вкладки одновременно попали в лид-окно продления:
-    await Promise.all([tabA.renew(false), tabB.renew(false)])
-    await new Promise((r) => setTimeout(r, 15))
+    // Все 3 спящие вкладки проснулись одновременно и вызвали ensureFresh() (force=true):
+    const [okA, okB, okC] = await Promise.all([
+      tabA.ensureFresh(),
+      tabB.ensureFresh(),
+      tabC.ensureFresh(),
+    ])
 
+    expect([okA, okB, okC]).toEqual([true, true, true])
+    expect(networkCalls).toBe(1)
     expect(tabA.profile.nickname).toBe('Синхронный Ник')
     expect(tabB.profile.nickname).toBe('Синхронный Ник')
-    expect(networkCalls).toBe(1)
+    expect(tabC.profile.nickname).toBe('Синхронный Ник')
 
-    // Выход во вкладке B мгновенно разлогинивает вкладку A.
+    // Выход во вкладке B мгновенно разлогинивает все вкладки.
     tabB.clear()
     await new Promise((r) => setTimeout(r, 15))
     expect(tabA.authorized).toBe(false)
     expect(tabB.authorized).toBe(false)
+    expect(tabC.authorized).toBe(false)
 
     tabA.dispose()
     tabB.dispose()
+    tabC.dispose()
     restoreLocks()
   })
 
-  test('замороженный таймер (Пункт 6): ensureFresh + onAuthExpired прозрачно продлевает токен и повторяет запрос', async () => {
+  test('замороженный таймер (Пункт 6): явный session в bindComponentForm продлевает токен и повторяет запрос 1 раз', async () => {
     const clock = 2_000_000
     let renewCalls = 0
 
@@ -168,21 +196,14 @@ describe('vault: замыкание, межвкладочная синхрони
         renewCalls += 1
         return {
           kind: 'ok',
-          data: samplePayload({ access: `renewed.${renewCalls}`, expiresAt: clock + 300_000, ttlMs: 300_000 }),
+          data: samplePayload({ iat: clock + renewCalls, expiresAt: clock + 300_000, ttlMs: 300_000 }),
         }
       },
     })
-    // Гидратируем уже просроченным токеном (имитируем заморозку мобильной вкладки, где setTimeout не сработал).
-    v.syncServer(samplePayload({ access: 'dead.1', expiresAt: 1_000_000, ttlMs: 300_000 }))
-    // Подождём авто-тики, если были, и сбросим счётчик для чистой проверки перехватчика формы:
+    v.syncServer(samplePayload({ iat: 700_000, expiresAt: 1_000_000, ttlMs: 300_000 }), 1)
     await new Promise((r) => setTimeout(r, 10))
-    v.syncServer(samplePayload({ access: 'dead.2', expiresAt: 1_000_000, ttlMs: 300_000 }))
+    v.syncServer(samplePayload({ iat: 700_001, expiresAt: 1_000_000, ttlMs: 300_000 }), 2)
     renewCalls = 0
-
-    setFormSessionInterceptor({
-      ensureFresh: () => v.ensureFresh(),
-      onAuthExpired: () => v.renew(true),
-    })
 
     const probeForm = defineForm({
       id: 'retry-probe',
@@ -243,7 +264,13 @@ describe('vault: замыкание, межвкладочная синхрони
 
     let bound!: ReturnType<typeof bindComponentForm>
     const stop = $effect.root(() => {
-      bound = bindComponentForm(forms, probeForm, { action: '/probe' })
+      bound = bindComponentForm(forms, probeForm, {
+        action: '/probe',
+        session: {
+          ensureFresh: () => v.ensureFresh(),
+          onAuthExpired: () => v.renew(true),
+        },
+      })
     })
 
     const fd = new FormData()

@@ -76,8 +76,8 @@ registerComponentForm({
     commit()
     let user: unknown
     try {
-      const renewed = await u.renew()
-      if (renewed.ok) user = await vaultPayloadOf(renewed.value)
+      const refreshed = await u.refreshAccess()
+      if (refreshed.ok) user = await vaultPayloadOf(refreshed.value)
     } catch {
       /* профиль уже записан; обновится при штатном продлении */
     }

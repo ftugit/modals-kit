@@ -3,12 +3,22 @@ import type { BindOptions } from '#lib/form/svelte/index.js'
 import type { ExecuteContext, ExecuteOutput, Limits } from '#lib/form/server.js'
 import type { CheckRegistry, FormDescription, Result } from '#lib/form/index.js'
 
+/** Явный контракт координации сессии для форм, работающих от имени пользователя. */
+export interface FormSessionGuard {
+  /** Проверить/освежить истёкший временный снимок перед отправкой запроса. */
+  ensureFresh(): Promise<boolean>
+  /** Вызывается при ответе `auth.expired`; при `true` исходный запрос повторяется 1 раз. */
+  onAuthExpired(): Promise<boolean>
+}
+
 /** Клиентские опции привязки встраиваемой формы к текущему маршруту. */
 export interface ComponentFormOptions extends Omit<BindOptions, 'action' | 'transport'> {
   /** Явный адрес экшена (по умолчанию — текущий видимый маршрут `pathname + search`). */
   action?: string
   /** Хук подготовки `FormData` перед отправкой в JS-транспорте. */
   prepare?: (data: FormData) => void | Promise<void>
+  /** Опциональная защита сессии (продление мёртвого токена и 1x-повтор при `auth.expired`). */
+  session?: FormSessionGuard
 }
 
 /**

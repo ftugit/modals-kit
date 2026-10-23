@@ -18,7 +18,7 @@
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
   import { defaults } from '../../config.js'
   import { createUserChecks } from '../../checks.js'
-  import { vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
+  import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import type { AvatarLimits } from './avatar.js'
@@ -67,6 +67,7 @@
     action: untrack(() => action),
     continuation: untrack(() => form?.result ?? undefined),
     checks: userChecks,
+    session: userSession,
   })
 
   if (!bound.state.result) {

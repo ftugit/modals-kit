@@ -18,9 +18,9 @@
 
 Многофайловые хуки оформляются отдельной папкой с чётким разделением клиентской и серверной точек входа:
 
-- `index.ts` — публичный клиентский вход (`bindComponentForm`, типы `ComponentFormOptions`).
-- `client.svelte.ts` — привязывает `<Form>` и `kitActionTransport` к текущему видимому адресу (`visibleAddress().url`) и автоматически подхватывает одноразовый `page.data.formResult` своего `formId` после нативного `POST` без JS.
-- `server.ts` — `registerComponentForm(reg)` и `componentFormsHandle`:
+- `index.ts` — публичный клиентский вход (`bindComponentForm`, типы `ComponentFormOptions`, `FormSessionGuard`).
+- `client.svelte.ts` — привязывает `<Form>` и `kitActionTransport` к текущему видимому адресу (`visibleAddress().url`), подхватывает одноразовый `page.data.formResult` своего `formId` после нативного `POST` без JS и при переданном `session: FormSessionGuard` прозрачно обновляет мёртвый временный снимок и повторяет запрос 1 раз при `auth.expired`.
+- `server.ts` — `registerComponentForm(reg)` и `componentFormsHandle` (с дедупликацией `Set-Cookie` по имени куки):
   - `GET` и чужие `POST` проходят в `resolve(event)` без накладных расходов;
   - с JS (`Accept: application/json`) возвращает `{ data: { result } }` со статусом обработчика и выставленными `Set-Cookie`;
   - без JS при успехе делает `303 See Other` (или рендерит ответ в том же запросе при `'inline'`);
