@@ -1,9 +1,11 @@
 <script lang="ts">
   /**
    * Виджет авторизации в модалке (`?modal=user.auth`). Данные загрузчика
-   * маршрута — через `useLoader()`. Callback — закрытие модалки.
+   * маршрута — через `useLoader()`, целевой шаг (`stage`) — из параметров
+   * записи модалки (`useModal().params.stage`). Callback — закрытие модалки.
    */
-  import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
+  import { resolveAuthStep } from '../index.js'
   import type { AvatarLimits } from './profile-form/index.js'
   import AuthWidget from './AuthWidget.svelte'
 
@@ -18,11 +20,25 @@
   }
 
   const m = useModals()
+  const modal = useModal<{ stage?: string }>()
   const ldr = useLoader<RouteData>()
+
+  const modalData = $derived(
+    ldr.data
+      ? {
+          ...ldr.data,
+          step: resolveAuthStep(modal.params?.stage) ?? ldr.data.step,
+        }
+      : null,
+  )
 </script>
 
-<div class="p-5">
-  {#if ldr.data}
-    <AuthWidget data={ldr.data} mode="modal" onDone={() => m.modals.close()} />
-  {/if}
-</div>
+{#if modalData}
+  <AuthWidget
+    data={modalData}
+    mode="modal"
+    variant="plain"
+    class="p-5"
+    onDone={() => m.modals.close()}
+  />
+{/if}

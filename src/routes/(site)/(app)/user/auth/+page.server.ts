@@ -5,24 +5,16 @@ import { localPath } from '#lib/address/index.js'
 import type { PageServerLoad } from './$types'
 import { SERVER_PHOTO_FORMATS } from '#content/user/checks.js'
 import { auth, readVault } from '#content/user/gateway.js'
-import { createUserConfig } from '#content/user/index.js'
+import { createUserConfig, resolveAuthStep } from '#content/user/index.js'
 import { localStore } from '#lib/server/cache.js'
 
 const config = createUserConfig(localStore.scope('user-config'))
 const INPUT_PHOTO_FORMATS = SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, ''))
 
-/** Плоские значения `?stage=` старых ссылок — в куст `auth.*`. */
-const LEGACY_STEP: Record<string, string> = {
-  entry: 'auth.entry',
-  register: 'auth.register',
-  restore: 'auth.restore',
-}
-
 export const load: PageServerLoad = async (event) => {
   const url = event.url
   const next = localPath(url.searchParams.get('next'))
-  const stepParam = url.searchParams.get('stage')
-  const step = (stepParam && (LEGACY_STEP[stepParam] ?? stepParam)) || 'auth.entry'
+  const step = resolveAuthStep(url.searchParams.get('stage')) || 'auth.entry'
   const user = await readVault(event.cookies).catch(() => null)
 
   let registerSeed: string | null = null

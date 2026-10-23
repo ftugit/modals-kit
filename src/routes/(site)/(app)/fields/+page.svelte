@@ -63,7 +63,7 @@
   <title>Конструктор полей — modals-kit</title>
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl space-y-6 py-8">
+<div class="mx-auto w-full max-w-3xl space-y-6">
   <header class="space-y-2">
     <h1 class="text-3xl font-semibold tracking-tight">Конструктор полей</h1>
     <p class="text-muted-foreground">

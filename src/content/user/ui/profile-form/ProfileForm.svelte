@@ -22,12 +22,13 @@
   import Field from '#lib/components/form/Field.svelte'
   import Common from '#lib/components/form/Common.svelte'
   import { Button } from '#lib/components/ui/index.js'
+  import { cn } from '#lib/utils.js'
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
   import { defaults } from '../../config.js'
   import { createUserChecks } from '../../checks.js'
-  import { hydrateVault, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
+  import { hydrateVault, readUser, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import Acl from '../Acl.svelte'
+  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import type { AvatarLimits } from './avatar.js'
   import { profileForm } from './form.js'
   import AvatarTakeover, { setAvatarTakeoverContext } from './AvatarTakeover.svelte'
@@ -41,6 +42,8 @@
     enabled?: boolean
     doneHref?: string
     onDone?: () => void
+    variant?: UserSurfaceVariant
+    class?: string
   }
 
   let {
@@ -52,13 +55,14 @@
     enabled,
     doneHref = '/',
     onDone,
+    variant = 'plain',
+    class: className,
   }: Props = $props()
 
   const notHydrated = useJsOnly()
 
-  const isAuthorized = $derived(
-    authorized !== undefined ? authorized : Boolean(vault.principal ?? initial),
-  )
+  const activeUser = $derived(readUser(initial ? { prof: initial } : null))
+  const isAuthorized = $derived(authorized !== undefined ? authorized : Boolean(activeUser))
 
   const initialLimits = untrack(() => limits)
   const userChecks = createUserChecks({
@@ -73,12 +77,11 @@
     checks: userChecks,
   })
 
-  const seedProfile = untrack(() => initial ?? (vault.principal ? vault.profile : null))
   if (!bound.state.result) {
-    mirrorToField(bound, 'nickname', () => seedProfile?.nickname ?? '')
+    mirrorToField(bound, 'nickname', () => activeUser?.prof.nickname ?? '')
   }
 
-  const existingAvatar = $derived(initial?.avatarUrl ?? vault.profile.avatarUrl ?? seedProfile?.avatarUrl ?? null)
+  const existingAvatar = $derived(activeUser?.prof.avatarUrl ?? null)
   const removeCurrent = $derived(Boolean(bound.state.values.remove_avatar))
 
   setAvatarTakeoverContext({
@@ -108,12 +111,23 @@
   })
 </script>
 
-<Acl allow="user" authorized={isAuthorized} {enabled} backHref={doneHref}>
+<Acl
+  allow="user"
+  authorized={isAuthorized}
+  {enabled}
+  backHref={doneHref}
+  {variant}
+  class={className}
+>
   <Form
     id="user-profile"
     form={bound}
     hiddenFields={bound.hidden()}
-    class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left"
+    class={cn(
+      'mx-auto flex w-full max-w-sm flex-col gap-4 text-left',
+      userSurfaceVariants({ variant }),
+      className,
+    )}
   >
     <Common errors={bound.common} title="Проверьте форму" />
 
@@ -135,7 +149,7 @@
       {/if}
 
       <div class="flex items-center justify-between gap-2">
-        <Button type="submit" name="intent" value="profile" task={formTask(bound.state)}>
+        <Button type="submit" name="intent" value="profile" task={formTask(bound.state, 'profile')}>
           Сохранить
         </Button>
         <Button

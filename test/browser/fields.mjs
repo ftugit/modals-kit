@@ -117,7 +117,19 @@ let k1, k2
   await pg.waitForSelector(b(`props.${k2}.max_value`))
   await pg.fill(b(`props.${k2}.max_value`), '99999999')
 
+  let addFieldPosts = 0
+  const trackPost = (req) => {
+    if (req.method() === 'POST') addFieldPosts++
+  }
+  pg.on('request', trackPost)
+  const addBtnType = await pg.locator('[data-testid="add-field"]').getAttribute('type')
+  const saveBusyDuringAdd = await pg.locator('[data-testid="save"]').getAttribute('aria-busy')
   await addPlace(pg)
+  const saveBusyAfterAdd = await pg.locator('[data-testid="save"]').getAttribute('aria-busy')
+  pg.off('request', trackPost)
+  ok('с JS «+ поле» работает локально (type="button", 0 POST) и не зажигает спиннер на «Сохранить»',
+    addBtnType === 'button' && addFieldPosts === 0 && saveBusyDuringAdd === null && saveBusyAfterAdd === null,
+    `type=${addBtnType}, posts=${addFieldPosts}`)
   const k3 = (await rows(pg))[2]
   await pg.fill(b(`props.${k3}.label`), 'Лишнее')
   await removePlace(pg, k3)
@@ -156,7 +168,15 @@ let k1, k2
   await pg.waitForFunction(() => document.querySelector('[data-field="image"]')?.textContent?.includes('не подходит'))
   ok('сервер сверяет содержимое файла, а не заявленный тип', (await errorsOf(pg, 'image')).includes('не подходит'))
 
-  /* 6. результат */
+  /* 6. отмена Attachment (×) и отправка результата */
+  await pg.setInputFiles(r('image'), { name: 'dot.png', mimeType: 'image/png', buffer: PNG })
+  await pg.waitForSelector('[data-field="image"] [data-file-item] img')
+  await pg.locator('[data-field="image"] button[aria-label="Убрать файл: dot.png"]').click()
+  await pg.waitForFunction(() => document.querySelectorAll('[data-field="image"] [data-file-item]').length === 0)
+  ok('кнопка × на Attachment убирает и сам файл из input, и карточку превью',
+    (await pg.locator('[data-field="image"] [data-file-item]').count()) === 0
+    && (await pg.locator(r('image')).evaluate((el) => el.files?.length ?? 0)) === 0)
+
   await pg.setInputFiles(r('image'), { name: 'dot.png', mimeType: 'image/png', buffer: PNG })
   // миниатюра через локальный objectURL в FileAttachment / Attachment
   await pg.waitForSelector('[data-field="image"] [data-file-item] img')

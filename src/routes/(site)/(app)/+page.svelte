@@ -53,7 +53,7 @@
   <title>modals-kit — главная</title>
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl py-10 sm:py-12">
+<div class="mx-auto w-full max-w-4xl">
   <div class="max-w-3xl">
     <span
       class="inline-block rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"

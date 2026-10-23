@@ -231,17 +231,26 @@ async function run() {
         );
       };
 
-      // Ссылка на страницу 2 — по тексту, а не по префиксу `href`: в адресе рядом
-      // с номером живёт ключ выдачи (`page.asof`), и его место в строке запроса
-      // не обещано (`mergeSearch` сохраняет порядок текущего адреса).
+      // Ссылка на страницу 2 — в листе страниц спиннер по умолчанию отключён
+      // (не мигает ни при клике, ни при фоновой подгрузке ленты во время скролла).
       await page
         .locator('a[data-link]', { hasText: /^\s*2\s*$/ })
         .first()
         .click();
-      const span = await seen("SPAN");
-      assert.equal(span.text, "2", "спиннер у страницы 2, ставшей текущей");
-      assert.equal(span.busy, "true");
-      ok("страница пагинатора: спиннер у грузящейся страницы, затем снят");
+      await page.waitForFunction(
+        () => new URL(location.href).searchParams.get("page") === "2",
+        null,
+        { timeout: 5000 },
+      );
+      const pageLinkSpins = await page.evaluate(() =>
+        window.__seen.splice(0).filter((s) => s.tag === "SPAN" || s.text === "2"),
+      );
+      assert.equal(
+        pageLinkSpins.length,
+        0,
+        "у номеров страниц в PageNav спиннер отключён",
+      );
+      ok("страница пагинатора: у листа страниц спиннер отключён");
 
       await page.locator("input[type=search]").click();
       await page.keyboard.type("nar", { delay: 30 });
@@ -377,12 +386,13 @@ async function run() {
         bars.includes("Запуск базы — шаг 2 из 4: Проверка схемы"),
         JSON.stringify(bars),
       );
-      const linkPercents = log
-        .filter((s) => s.tag === "SPAN" && s.text === "2")
+      const indicatorPercents = log
+        .filter((s) => s.tag === "DIV" && s.percent !== null)
         .map((s) => Number(s.percent));
       assert.ok(
-        linkPercents.length >= 2 && linkPercents.at(-1) > linkPercents[0],
-        `процент у страницы 2 растёт: ${linkPercents}`,
+        indicatorPercents.length >= 2 &&
+          indicatorPercents.at(-1) > indicatorPercents[0],
+        `процент у родного индикатора пагинатора растёт: ${indicatorPercents}`,
       );
       assert.equal(
         await page.locator("[data-task-percent]").count(),
@@ -390,7 +400,7 @@ async function run() {
         "после ответа процент снят",
       );
       ok(
-        `ход сервера у страницы списка: полоса «${bars[1]}», процент у страницы ${linkPercents.join("→")}`,
+        `ход сервера у списка: полоса «${bars[1]}», процент родного индикатора ${indicatorPercents.join("→")}`,
       );
 
       await page.fill('input[name="title"]', `ход-${Date.now() % 100000}`);

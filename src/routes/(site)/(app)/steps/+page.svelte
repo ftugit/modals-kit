@@ -119,7 +119,7 @@
   />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl space-y-6 py-8">
+<div class="mx-auto w-full max-w-3xl space-y-6">
   <header class="space-y-3">
     <div class="flex items-baseline justify-between gap-4">
       <h1 class="text-3xl font-semibold tracking-tight">Шаги</h1>

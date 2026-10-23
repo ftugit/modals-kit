@@ -102,7 +102,7 @@
 </script>
 
 <!-- Ширина и отступы — как у остальных демо-страниц (/modals, /form). -->
-<div class="mx-auto w-full max-w-4xl space-y-6 py-10 sm:py-14">
+<div class="mx-auto w-full max-w-4xl space-y-6">
   <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
   <!-- Сводка (сколько записей, размер страницы, режим) живёт в `ListMeta` внутри
        хоста: после отправки формы страница не перезагружается, поэтому серверные

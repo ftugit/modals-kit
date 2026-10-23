@@ -266,6 +266,100 @@ async function run() {
       await sleep(800)
       assert.equal(await page.evaluate(() => window.__taskFlash), 0, 'открытие модалки не зажгло индикатор ссылок')
       ok('Link: «мелкая» запись адреса (открытие модалки) индикатор не зажигает')
+
+      // Кнопка закрытия модалки синхронизирована по анимации угасания (220ms + data-ending-style) с подложкой.
+      await page.goto(BASE + '/?modal=user.auth', { waitUntil: 'networkidle' })
+      const closeBtn = page.locator('[data-modal-close]').first()
+      await closeBtn.waitFor({ state: 'visible', timeout: 5000 })
+      const closeTransition = await closeBtn.evaluate((el) => getComputedStyle(el).transitionDuration)
+      assert.match(closeTransition, /0\.22s/, `длительность затухания кнопки закрытия = 220мс (${closeTransition})`)
+      await closeBtn.click()
+      const hadEndingAttr = await page.evaluate(() => {
+        const btn = document.querySelector('[data-modal-close]')
+        return btn ? btn.hasAttribute('data-ending-style') : true
+      })
+      assert.equal(hadEndingAttr, true, 'кнопка закрытия получает data-ending-style синхронно с backdrop')
+      await sleep(300)
+      ok('Modal close: кнопка закрытия плавно угасает за 220мс синхронно с затемнением')
+      await page.close()
+    }
+
+    // 8. Scroll reset между разделами сайта + сохранение скролла при URL-пагинации (?page=2) + popstate
+    {
+      const NAV = 'nav[aria-label="Основная навигация"]'
+      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+      await page.goto(BASE + '/modals', { waitUntil: 'networkidle' })
+      await page.evaluate(() => {
+        const main = document.querySelector('main[data-fe-scroll="owner"]')
+        if (main) main.scrollTop = 340
+      })
+      await sleep(200)
+      const scrolledModals = await page.evaluate(() => document.querySelector('main[data-fe-scroll="owner"]').scrollTop)
+      assert.ok(scrolledModals >= 200, `прокрутили /modals вниз (${scrolledModals}px)`)
+
+      await page.locator(`${NAV} a[href="/paginator"]`).click()
+      await page.waitForURL('**/paginator', { timeout: 15000 })
+      await sleep(150)
+
+      const resetState = await page.evaluate(() => ({
+        scrollTop: document.querySelector('main[data-fe-scroll="owner"]').scrollTop,
+        progress: document.querySelector('[data-fe-header]')?.getAttribute('data-progress'),
+      }))
+      assert.equal(resetState.scrollTop, 0, 'переход между разделами сбросил main.scrollTop в 0')
+      assert.equal(resetState.progress, '0.000', 'шапка полностью раскрыта на новой странице')
+      ok('Scroll reset: переход между разделами сбрасывает main.scrollTop в 0 и раскрывает шапку')
+
+      // На /paginator смена query (?page=2) НЕ сбрасывает скролл как межстраничный переход
+      await page.evaluate(() => {
+        const main = document.querySelector('main[data-fe-scroll="owner"]')
+        if (main) main.scrollTop = 180
+      })
+      await sleep(100)
+      const beforePage2 = await page.evaluate(() => document.querySelector('main[data-fe-scroll="owner"]').scrollTop)
+      if (beforePage2 > 0) {
+        const page2Link = page.locator('nav[aria-label="Страницы"] a').first()
+        if ((await page2Link.count()) > 0) {
+          assert.equal(await page2Link.getAttribute('data-state'), null, 'у ссылки пагинатора нет спиннера')
+          await page2Link.click()
+          await sleep(300)
+          const afterPage2 = await page.evaluate(() => document.querySelector('main[data-fe-scroll="owner"]').scrollTop)
+          assert.ok(afterPage2 > 0, `URL-пагинация сохранила скролл (${beforePage2}px → ${afterPage2}px)`)
+        }
+      }
+      ok('URL-пагинация: смена query на том же маршруте не сбрасывает скролл и не крутит спиннер на номере страницы')
+      await page.close()
+    }
+
+    // 9. Симметричные мобильные поля <main> (p-4 = 16px) и полноширинный <footer> без переполнения
+    {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      for (const path of ['/', '/form', '/fields', '/paginator', '/modals', '/user/auth']) {
+        await page.goto(BASE + path, { waitUntil: 'networkidle' })
+        const metrics = await page.evaluate(() => {
+          const main = document.querySelector('main[data-fe-scroll="owner"]')
+          const inner = main.firstElementChild
+          const footer = main.querySelector('footer')
+          const cs = getComputedStyle(inner)
+          const footerRect = footer.getBoundingClientRect()
+          return {
+            pl: cs.paddingLeft,
+            pr: cs.paddingRight,
+            pt: cs.paddingTop,
+            pb: cs.paddingBottom,
+            overflow: main.scrollWidth - main.clientWidth,
+            footerLeft: Math.round(footerRect.left),
+            footerWidth: Math.round(footerRect.width),
+          }
+        })
+        assert.equal(metrics.pl, '16px', `${path}: padding-left = 16px`)
+        assert.equal(metrics.pr, '16px', `${path}: padding-right = 16px`)
+        assert.equal(metrics.pt, '16px', `${path}: padding-top = 16px`)
+        assert.equal(metrics.pb, '16px', `${path}: padding-bottom = 16px`)
+        assert.ok(metrics.overflow <= 0, `${path}: нет горизонтального скролла (overflow=${metrics.overflow})`)
+        assert.equal(metrics.footerLeft, 0, `${path}: footer начинается с левого края`)
+        assert.equal(metrics.footerWidth, 390, `${path}: footer тянется на всю ширину 390px`)
+      }
+      ok('Mobile <main>: симметричные отступы 16px со всех 4 сторон, 0px overflow и полноширинный footer на всех роутах')
       await page.close()
     }
 

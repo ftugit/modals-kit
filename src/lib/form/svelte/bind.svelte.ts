@@ -615,7 +615,8 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       // (без проверки, без обязательности, часть полей), он заблокировал бы без JS.
       ...(descriptor && (descriptor.validate !== 'full' || descriptor.relax?.length || descriptor.subset)
         ? { formnovalidate: true } : {}),
-      ...(snapshot.pending ? { disabled: true, 'aria-busy': true as const } : {}),
+      ...(snapshot.pending ? { disabled: true } : {}),
+      ...(snapshot.pending && snapshot.pendingIntent === id ? { 'aria-busy': true as const } : {}),
     }
   }
 

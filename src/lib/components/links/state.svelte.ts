@@ -48,11 +48,22 @@ export function defined(attrs: Record<string, unknown>): Record<string, unknown>
   return attrs
 }
 
+/**
+ * Режим отображения локального индикатора (спиннера и процента) на самом элементе:
+ *   - `true` (по умолчанию) — показывать всегда, пока задача элемента `pending`;
+ *   - `'click'` — показывать только если нажатие произошло на этом самом элементе
+ *     (фоновые подгрузки при скролле или переход из другого места спиннер не зажигают);
+ *   - `false` — полностью отключить локальный индикатор загрузки на элементе.
+ */
+export type LinkIndicatorMode = boolean | 'click'
+
 interface ReflectOptions {
   /** Состояние без задачи, но со своим видом (`open` у ссылки на модалку). */
   idleState?: () => string | undefined
   /** Занят ли элемент (повторный клик гасится) — `aria-disabled`. */
   busy?: () => boolean
+  /** Режим локального спиннера на элементе (`true` | `'click'` | `false`). */
+  indicator?: LinkIndicatorMode | (() => LinkIndicatorMode)
 }
 
 /**
@@ -64,11 +75,33 @@ interface ReflectOptions {
 export function reflectTask(el: HTMLElement, read: () => TaskState, options: ReflectOptions = {}): void {
   const task = $derived(read())
   const pending = $derived(task.status === 'pending')
+  const mode = $derived<LinkIndicatorMode>(
+    typeof options.indicator === 'function' ? options.indicator() : (options.indicator ?? true),
+  )
 
-  // Таймер зависит только от «идёт / не идёт»: ход задачи его не перезапускает.
+  let clicked = $state(false)
+  $effect(() => {
+    if (mode !== 'click') {
+      clicked = false
+      return
+    }
+    const onPointerClick = () => {
+      clicked = true
+    }
+    el.addEventListener('click', onPointerClick, true)
+    return () => el.removeEventListener('click', onPointerClick, true)
+  })
+
+  // Таймер зависит от «идёт / не идёт» и разрешён ли показ на этом элементе.
   let shown = $state(false)
   $effect(() => {
     if (!pending) {
+      shown = false
+      clicked = false
+      return
+    }
+    const allowed = mode === true || (mode === 'click' && clicked)
+    if (!allowed) {
       shown = false
       return
     }
@@ -104,15 +137,21 @@ const TASK = createAttachmentKey()
  *
  *     <button {...taskAttrs(() => paginatorTask(state()))} class="…">Сброс</button>
  */
-export function taskAttrs(read: () => TaskState): { 'data-task': ''; [attachment: symbol]: Attachment<HTMLElement> } {
-  return { 'data-task': '', [TASK]: taskAttachment(read) }
+export function taskAttrs(
+  read: () => TaskState,
+  options: { indicator?: LinkIndicatorMode | (() => LinkIndicatorMode) } = {},
+): { 'data-task': ''; [attachment: symbol]: Attachment<HTMLElement> } {
+  return { 'data-task': '', [TASK]: taskAttachment(read, options) }
 }
 
 /** Вложение из `taskAttrs` — для `{@attach}` там, где spread неудобен (`Button`). */
-export function taskAttachment(read: () => TaskState): Attachment<HTMLElement> {
+export function taskAttachment(
+  read: () => TaskState,
+  options: { indicator?: LinkIndicatorMode | (() => LinkIndicatorMode) } = {},
+): Attachment<HTMLElement> {
   return (el) => {
     // Доступность не трогаем: `Button` сам ставит `disabled`, сырой элемент — его компонент.
-    reflectTask(el, read)
+    reflectTask(el, read, { indicator: options.indicator })
     const block = (e: Event) => {
       if (read().status !== 'pending') return
       e.preventDefault()

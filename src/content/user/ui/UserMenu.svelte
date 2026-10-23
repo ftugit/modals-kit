@@ -1,20 +1,16 @@
 <script lang="ts">
   /**
-   * Кнопка пользователя в шапке (вариант 1). Хост модалок живёт в ветке
-   * `(app)` НИЖЕ шапки (`(site)` рендерит AppShell раньше `ModalSystem`), поэтому
-   * из шапки модальная механика недоступна изнутри компонента — ссылка на
-   * модалку (`user.menu`), без JS — на страницу меню `/user/menu` (решение
-   * владельца, ход 261: там выход, тело — тот же `MenuBody`).
+   * Кнопка пользователя в шапке (вариант 1).
+   * С JS открывает модалку (`user.menu` / `user.auth`), без JS ведёт на
+   * страницу `/user/menu` / `/user/auth`.
    *
-   * Аватар: круглый блок под размер аватара; картинка во всю ширину блока,
-   * высота auto, тоже круглая; пока её нет или она грузится — виден заполнитель
-   * (инициал на приглушённом фоне).
+   * В браузере после инициализации читает реактивный RAM `vault` через
+   * `readUser(server)` — вход, смена профиля и выход отражаются мгновенно.
    */
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { page } from '$app/state'
   import { useModalLink } from '#lib/components/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
-  import { vault } from '../vault.svelte.js'
+  import { readUser } from '../vault.svelte.js'
 
   interface Props {
     /** Снимок входа с сервера (SSR): до гидратации vault пуст. */
@@ -26,15 +22,16 @@
   const asModalLink = useModalLink()
   const notHydrated = useJsOnly()
 
-  const authorized = $derived(vault.principal !== null || server !== null)
-  const nickname = $derived(vault.profile.nickname ?? server?.prof.nickname ?? null)
-  const avatarUrl = $derived(vault.profile.avatarUrl ?? server?.prof.avatarUrl ?? null)
+  const currentUser = $derived(readUser(server))
+  const authorized = $derived(currentUser !== null)
+  const nickname = $derived(currentUser?.prof.nickname ?? null)
+  const avatarUrl = $derived(currentUser?.prof.avatarUrl ?? null)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
 
   /** адрес страницы входа с возвратом сюда (валидность next — на сервере) */
-  // Адрес — из общего слоя #lib/address, не из адреса отрисовки: после мелких
-  // записей (меню-модалка, панели) тот отстаёт, и `next` увёл бы не туда.
-  const authHref = $derived(`/user/auth?next=${encodeURIComponent(visibleAddress().url.pathname + visibleAddress().url.search)}`)
+  const authHref = $derived(
+    `/user/auth?next=${encodeURIComponent(visibleAddress().url.pathname + visibleAddress().url.search)}`,
+  )
 </script>
 
 {#if authorized}

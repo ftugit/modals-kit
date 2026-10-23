@@ -11,3 +11,15 @@ export * from './profile.js'
 export { defaults, createUserConfig, type UserConfig } from './config.js'
 export * from './ports.js'
 export { seedOf } from './keys.js'
+
+/** Плоские значения `?stage=` / параметров модалки `user.auth` → канонический шаг `AuthWidget`. */
+const LEGACY_AUTH_STAGE: Record<string, string> = {
+  entry: 'auth.entry',
+  register: 'auth.register',
+  restore: 'auth.restore',
+}
+
+export function resolveAuthStep(stage: unknown): string | undefined {
+  if (typeof stage !== 'string' || !stage) return undefined
+  return LEGACY_AUTH_STAGE[stage] ?? stage
+}

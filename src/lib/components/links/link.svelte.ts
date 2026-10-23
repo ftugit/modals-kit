@@ -14,7 +14,14 @@ import { routeResolves } from '#lib/modals/cores/sveltekit.js'
 import { linkTask, resolveHref, visibleHref } from '#lib/address/sveltekit.js'
 import { preloadOutcome } from '#lib/modals/cores/sveltekit.js'
 import type { TaskState } from '#lib/task/index.js'
-import { blockClicks, defined, isModified, reflectTask, type LinkAttrs } from './state.svelte.js'
+import {
+  blockClicks,
+  defined,
+  isModified,
+  reflectTask,
+  type LinkAttrs,
+  type LinkIndicatorMode,
+} from './state.svelte.js'
 
 export interface LinkOptions {
   /**
@@ -34,6 +41,13 @@ export interface LinkOptions {
   check?: boolean
   /** Состояние от библиотеки, которая ведёт ссылку сама (`#lib/task`); нет — переход SvelteKit. */
   task?: () => TaskState
+  /**
+   * Показывать ли спиннер загрузки на этой ссылке:
+   * `true` (по умолчанию) — всегда при активной задаче;
+   * `'click'` — только если нажали именно по этой ссылке;
+   * `false` — отключить спиннер на этой ссылке.
+   */
+  indicator?: LinkIndicatorMode
 }
 
 /** Последний сегмент пути похож на файл: `/robots.txt`, `/files/report.pdf`. */
@@ -91,12 +105,15 @@ export function asLink(href: string | null | undefined, options: LinkOptions = {
         if (st.status !== 'loading') void loadThenGo(el, st, href, options.replace ?? false)
       }
       el.addEventListener('click', onClick)
-      reflectTask(el, () =>
-        st.status === 'error'
-          ? { status: 'error', message: st.failure }
-          : st.status === 'loading'
-            ? { status: 'pending', scope: 'local', label: 'Загрузка страницы' }
-            : (options.task?.() ?? linkTask(href)),
+      reflectTask(
+        el,
+        () =>
+          st.status === 'error'
+            ? { status: 'error', message: st.failure }
+            : st.status === 'loading'
+              ? { status: 'pending', scope: 'local', label: 'Загрузка страницы' }
+              : (options.task?.() ?? linkTask(href)),
+        { indicator: options.indicator },
       )
       return () => el.removeEventListener('click', onClick)
     },

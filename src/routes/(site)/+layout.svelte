@@ -28,14 +28,15 @@
     SidebarFooter,
   } from '#lib/components/sidebar/index.js'
   import UserMenu from '#content/user/ui/UserMenu.svelte'
-  import { hydrateVault, vault } from '#content/user/vault.svelte.js'
+  import { vault } from '#content/user/vault.svelte.js'
 
   let { children, data } = $props()
 
-  // RAM-копия токена из кук (сервер отдал в данных, сам JS куки не читает).
-  // Только если vault пуст: свежее продление в этой вкладке важнее серверного.
-  $effect(() => {
-    if (!vault.access && data.user) hydrateVault(data.user)
+  // RAM-копия токена из кук: синхронизируем на старте вкладки и только когда
+  // сервер реально отдал новый токен (`data.user?.access` сменился), чтобы
+  // локальный `vault.clear()` при выходе не перетирался старым SSR-объектом.
+  $effect.pre(() => {
+    vault.syncServer(data.user)
   })
 
   // Базовые слоты шапки по умолчанию
@@ -64,11 +65,14 @@
 </script>
 
 <ModalSystem scope={globalScope} sources={() => SOURCES} {foreignNames}>
-  <AppShell prefs={data.shell}>
+  <AppShell prefs={data.shell} footer={footerSnippet}>
     {@render children()}
-    <SiteFooter />
   </AppShell>
 </ModalSystem>
+
+{#snippet footerSnippet()}
+  <SiteFooter />
+{/snippet}
 
 {#snippet logoSnippet()}
   <LogoSlot />

@@ -1,5 +1,6 @@
 <script lang="ts">
   // Каркас приложения: CollapsingHeader (3 ряда) + 3-зонный Sidebar + Main scroller.
+  import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '#lib/utils.js'
   import { BACKDROP_UTILS } from '#lib/modals/svelte/classes.js'
@@ -12,10 +13,12 @@
 
   interface Props {
     children: Snippet
+    /** Нижний колонтитул на всю ширину скролл-контейнера `<main>`. */
+    footer?: Snippet
     /** Сохранённые настройки каркаса (cookie, прочитанная в load). Читаются один раз — при создании. */
     prefs?: Partial<ShellPrefs> | null
   }
-  let { children, prefs }: Props = $props()
+  let { children, footer, prefs }: Props = $props()
 
   // Намеренно — начальное значение: настройки из cookie нужны один раз, при
   // создании состояния; дальше ими владеет ShellState (пишет cookie сам).
@@ -27,6 +30,46 @@
   let mainRef = $state<HTMLElement>()
 
   let isNarrow = $state(false)
+
+  // Позиции прокрутки `<main>` по ключу истории SvelteKit — для Назад/Вперёд
+  // между разделами. Навигации внутри одного `pathname` (`?page=`, `?modal=`,
+  // `?demo=`) не сбрасывают `main.scrollTop`, не конфликтуя с URL-пагинатором.
+  const scrollPositions = new Map<number, number>()
+  const currentHistoryIndex = (): number | null => {
+    const idx = (window.history.state as Record<string, unknown> | null)?.['sveltekit:history']
+    return typeof idx === 'number' ? idx : null
+  }
+
+  beforeNavigate(({ from, to }) => {
+    if (!mainRef || !from || !to || from.url.pathname === to.url.pathname) return
+    const idx = currentHistoryIndex()
+    if (idx !== null) scrollPositions.set(idx, mainRef.scrollTop)
+  })
+
+  afterNavigate(({ from, to, type }) => {
+    if (!mainRef || !to) return
+    const hashId = to.url.hash ? decodeURIComponent(to.url.hash.slice(1)) : ''
+    if (!from || from.url.pathname === to.url.pathname) {
+      if (hashId) {
+        const target = document.getElementById(hashId)
+        if (target && mainRef.contains(target)) target.scrollIntoView()
+      }
+      return
+    }
+    if (type === 'popstate') {
+      const idx = currentHistoryIndex()
+      mainRef.scrollTop = (idx !== null ? scrollPositions.get(idx) : undefined) ?? 0
+      return
+    }
+    if (hashId) {
+      const target = document.getElementById(hashId)
+      if (target && mainRef.contains(target)) {
+        target.scrollIntoView()
+        return
+      }
+    }
+    mainRef.scrollTop = 0
+  })
 
   onMount(() => {
     shell.setMain(mainRef)
@@ -155,7 +198,12 @@
       tabindex="-1"
       class="flex min-w-0 flex-1 flex-col overflow-y-auto outline-none"
     >
-      {@render children()}
+      <div class="flex-1 p-4 sm:px-6 sm:py-10">
+        {@render children()}
+      </div>
+      {#if footer}
+        {@render footer()}
+      {/if}
     </main>
 
     <!--

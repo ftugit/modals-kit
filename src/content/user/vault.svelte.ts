@@ -32,6 +32,10 @@ class Vault {
   /** Продление идёт (кнопки/потребители могут показать честное состояние). */
   renewing = $state(false)
 
+  /** Признак того, что клиентский RAM-слой уже принял начальное состояние вкладки. */
+  synced = $state(false)
+
+  private lastServerAccess: string | null | undefined = undefined
   private expiresAt = 0
   private ttlMs = 0
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -45,6 +49,7 @@ class Vault {
     this.profile = payload.prof
     this.expiresAt = payload.expiresAt
     this.ttlMs = payload.ttlMs
+    if (typeof window !== 'undefined') this.synced = true
     this.schedule()
   }
 
@@ -55,8 +60,29 @@ class Vault {
     this.profile = { nickname: null, avatarUrl: null }
     this.expiresAt = 0
     this.ttlMs = 0
+    if (typeof window !== 'undefined') this.synced = true
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
+  }
+
+  /**
+   * Синхронизация со снимком `load` без затирания живого RAM-состояния:
+   * применяется на первом проходе вкладки и дальше — только если сервер
+   * реально прислал другой токен (`data.user?.access` изменился).
+   */
+  syncServer(payload: VaultPayload | null | undefined): void {
+    const nextAccess = payload?.access ?? null
+    if (this.lastServerAccess === nextAccess) {
+      if (typeof window !== 'undefined') this.synced = true
+      return
+    }
+    this.lastServerAccess = nextAccess
+    if (payload) {
+      if (!this.access || this.access !== nextAccess) this.hydrate(payload)
+      else if (typeof window !== 'undefined') this.synced = true
+    } else {
+      this.clear()
+    }
   }
 
   /** Взвести таймер: точка выстрела — внутри лид-окна (джиттер). */
@@ -136,4 +162,18 @@ export const vault = new Vault()
 /** Прислать в vault значение из ответа api/данных страницы (обёртка для адаптеров). */
 export function hydrateVault(payload: VaultPayload): void {
   vault.hydrate(payload)
+}
+
+export type ServerUserSnapshot = { prof: VaultProfile } | null | undefined
+
+/**
+ * Единое чтение субъекта для UI:
+ *   - на сервере и до первой инициализации вкладки отдаёт серверный снимок `server`
+ *     (SSR и гидратация совпадают 1-в-1, между запросами нет общего состояния);
+ *   - после инициализации вкладки читает исключительно реактивный RAM `vault`
+ *     (вход, смена профиля и выход мгновенно обновляют все компоненты без F5).
+ */
+export function readUser(server?: ServerUserSnapshot): { prof: VaultProfile } | null {
+  if (typeof window === 'undefined' || !vault.synced) return server ?? null
+  return vault.principal !== null ? { prof: vault.profile } : null
 }

@@ -16,7 +16,7 @@
   <Error500 />
 {:else}
   <!-- Не <main>: ориентир даёт место вызова — каркас или корневая граница (B4). -->
-  <div class="grid min-h-dvh place-items-center bg-background px-6 text-foreground">
+  <div class="grid min-h-full place-items-center bg-background px-6 py-12 text-foreground">
     <!-- role="alert" — на содержимом: анонс при клиентском переходе на ошибку -->
     <div class="flex max-w-md flex-col items-center gap-3 text-center" role="alert">
       <span class="text-5xl font-black tracking-tight text-muted-foreground">{page.status}</span>

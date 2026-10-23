@@ -245,7 +245,7 @@
       .join(' ') || '—'
 </script>
 
-<div class="py-10 sm:py-14">
+<div>
   <div class="mx-auto max-w-4xl space-y-5">
     <header class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
       <div class="space-y-2">

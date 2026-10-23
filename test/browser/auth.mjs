@@ -215,19 +215,52 @@ async function run() {
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('вход (JS): корректный seed проходит, страница закрылась переходом')
 
-      // 9а. Меню шапки: аватар виден, клик открывает меню с выходом; выход со страницы меню работает
+      // 9а. Меню шапки: аватар виден, «Изменить профиль» открывает форму профиля (не guest_only),
+      //     смена ника сразу живёт в RAM, а «Выйти» мгновенно обновляет шапку без перезагрузки
       await page.goto(BASE + '/', { waitUntil: 'networkidle' })
       const userBtn = page.locator('[data-testid=header-user]')
       await userBtn.waitFor({ state: 'visible' })
       ok('после входа: в шапке аватар (не пустое место)')
       await userBtn.click()
-      await page.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      const menuDlg = page.locator('[role=dialog]')
+      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
       ok('клик аватара открывает меню с выходом')
-      await page.keyboard.press('Escape')
+
+      // Переход в «Изменить профиль» из модального меню авторизованного пользователя
+      await menuDlg.getByRole('link', { name: 'Изменить профиль' }).click()
+      const modalProfile = menuDlg.locator('#user-profile')
+      await modalProfile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 5000 })
+      assert.equal(await menuDlg.locator('[data-acl-code="guest_only"]').count(), 0, 'нет ложного экрана guest_only')
+      assert.equal(await modalProfile.locator('input[name=nickname]').inputValue(), 'e2e-ход-258', 'живой ник подставлен')
+      ok('«Изменить профиль» в меню шапки открывает форму профиля с живым ником (без guest_only)')
+
+      // Сохраняем новый ник прямо в стековой модалке (2 из 2): она закрывается обратно в user.menu (1 из 1),
+      // где уже мгновенно светится обновлённый ник из RAM без перезагрузки!
+      await modalProfile.locator('input[name=nickname]').fill('e2e-ram-nick')
+      await modalProfile.getByRole('button', { name: 'Сохранить' }).click()
+      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 10000 })
+      assert.ok((await menuDlg.textContent()).includes('e2e-ram-nick'), 'обновлённый ник сразу виден в возвращённом меню RAM')
+
+      // Выходим прямо из модального меню и проверяем мгновенную смену шапки на гостя
+      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await page.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 10000 })
+      assert.equal(await page.locator('[data-testid=header-user]').count(), 0, 'кнопка аватара сразу скрыта без reload')
+      ok('выход из модального меню мгновенно переключает шапку в гостя без перезагрузки страницы')
+
+      // Варианты оформления: plain внутри модалки, card на отдельных страницах /user/auth и /user/menu
       await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
-      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
-      ok('страница /user/menu: выход уводит на главную')
+      assert.equal(
+        await page.locator('[data-acl-code="auth_required"]').getAttribute('data-acl-variant'),
+        'card',
+        'на странице /user/menu экран Acl рендерится с variant="card"',
+      )
+      await page.goto(BASE + '/?modal=user.menu', { waitUntil: 'networkidle' })
+      assert.equal(
+        await page.locator('[role=dialog] [data-acl-code="auth_required"]').getAttribute('data-acl-variant'),
+        'plain',
+        'в модалке ?modal=user.menu экран Acl рендерится с variant="plain"',
+      )
+      ok('Acl и AuthWidget прокидывают variant="card" на страницах и variant="plain" в модалках')
       await ctxJs.close()
     }
 

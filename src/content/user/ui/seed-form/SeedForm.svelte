@@ -24,10 +24,11 @@
   import Common from '#lib/components/form/Common.svelte'
   import { Button } from '#lib/components/ui/index.js'
   import HoldButton from '#lib/components/ui/button/HoldButton.svelte'
+  import { cn } from '#lib/utils.js'
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
   import { sign } from '../../keys.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import Acl from '../Acl.svelte'
+  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { seedForm } from './form.js'
 
   export type SeedView = 'entry' | 'register' | 'restore' | 'confirm'
@@ -64,6 +65,10 @@
     authorized?: boolean
     /** Адрес возврата на экране отказа `Acl`. */
     doneHref?: string
+    /** Вариант поверхности (`'card'` | `'plain'`). */
+    variant?: UserSurfaceVariant
+    /** Классы корневого блока (применяются через `cn` и к `Acl`, и к `Form`). */
+    class?: string
     /** Коллбэк успешной проверки `seed` при `authorize={false}`. */
     onConfirmed?: (payload: { sub?: string }) => void
   }
@@ -83,6 +88,8 @@
     enabled,
     authorized,
     doneHref = '/',
+    variant = 'plain',
+    class: className,
     onConfirmed,
   }: Props = $props()
 
@@ -159,12 +166,23 @@
   })
 </script>
 
-<Acl allow={shouldAuthorize ? 'guest' : undefined} {authorized} {enabled} backHref={doneHref}>
+<Acl
+  allow={shouldAuthorize ? 'guest' : undefined}
+  {authorized}
+  {enabled}
+  backHref={doneHref}
+  {variant}
+  class={className}
+>
   <Form
     id={shouldAuthorize ? 'user-auth' : 'user-seed-confirm'}
     form={activeForm}
     hiddenFields={activeForm.hidden()}
-    class="mx-auto flex w-full max-w-sm flex-col gap-4 text-left"
+    class={cn(
+      'mx-auto flex w-full max-w-sm flex-col gap-4 text-left',
+      userSurfaceVariants({ variant }),
+      className,
+    )}
   >
     <Common errors={activeForm.common} title="Проверьте форму" />
 
@@ -178,7 +196,7 @@
           <p class="text-xs text-muted-foreground">{confirmDescription}</p>
         </div>
         <Field of={activeForm.f.seed} />
-        <Button type="submit" name="intent" value="confirm" task={formTask(activeForm.state)}>
+        <Button type="submit" name="intent" value="confirm" task={formTask(activeForm.state, 'confirm')}>
           {confirmLabel}
         </Button>
       </div>
@@ -230,7 +248,7 @@
       <Field of={activeForm.f.seed} instead={effectiveView === 'register' ? CopyField : undefined} />
 
       {#if effectiveView === 'entry'}
-        <Button type="submit" name="intent" value="login" task={formTask(activeForm.state)}>
+        <Button type="submit" name="intent" value="login" task={formTask(activeForm.state, 'login')}>
           Авторизация
         </Button>
       {:else if notHydrated()}
@@ -239,7 +257,7 @@
           name="intent"
           value="login"
           variant="outline"
-          task={formTask(activeForm.state)}
+          task={formTask(activeForm.state, 'login')}
         >
           Создать аккаунт
         </Button>
@@ -252,7 +270,7 @@
           seconds={holdSeconds}
           when="fill"
           hover
-          task={formTask(activeForm.state)}
+          task={formTask(activeForm.state, 'login')}
         >
           Удерживайте, чтобы создать аккаунт
         </HoldButton>
@@ -266,7 +284,7 @@
           сам по истечении срока.
         </p>
         <div hidden aria-hidden="true"><Field of={activeForm.f.seed} /></div>
-        <Button type="submit" name="intent" value="restore" task={formTask(activeForm.state)}>
+        <Button type="submit" name="intent" value="restore" task={formTask(activeForm.state, 'restore')}>
           Восстановить аккаунт
         </Button>
         <Button
@@ -275,7 +293,7 @@
           value="logout"
           variant="ghost"
           size="sm"
-          task={formTask(activeForm.state)}
+          task={formTask(activeForm.state, 'logout')}
         >
           Не восстанавливать
         </Button>

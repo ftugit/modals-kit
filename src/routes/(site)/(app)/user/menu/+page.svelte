@@ -6,9 +6,7 @@
   let { data }: { data: { user: { prof: { nickname: string | null; avatarUrl: string | null } } | null } } = $props()
 </script>
 
-<div class="mx-auto w-full max-w-sm p-6">
+<div class="mx-auto w-full max-w-sm">
   <h1 class="mb-4 text-base font-semibold">Аккаунт</h1>
-  <div class="rounded-xl border bg-card">
-    <MenuBody server={data.user} />
-  </div>
+  <MenuBody server={data.user} variant="card" />
 </div>

@@ -128,4 +128,61 @@ describe('FileAttachment composition: FileInput + Attachment + DataTransfer + ob
 
     await unmount(host)
   })
+
+  test('removes Attachment when single-file input mutates live FileList in place on value = ""', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:single-photo')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const target = document.createElement('div')
+    document.body.append(target)
+
+    const host = mount(FileAttachmentHost, { target })
+    await tick()
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    const photo = new File(['jpeg'], 'avatar.jpg', { type: 'image/jpeg' })
+
+    // Эмуляция Blink: один и тот же экземпляр FileList мутирует length 1 → 0 при `input.value = ''`.
+    const backing: File[] = [photo]
+    const liveList = {
+      get length() {
+        return backing.length
+      },
+      item(i: number) {
+        return backing[i] ?? null
+      },
+      get 0() {
+        return backing[0]
+      },
+      [Symbol.iterator]() {
+        return backing[Symbol.iterator]()
+      },
+    } as unknown as FileList
+
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      get: () => liveList,
+    })
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => (backing.length ? 'C:\\fakepath\\avatar.jpg' : ''),
+      set: (v: string) => {
+        if (v === '') backing.length = 0
+      },
+    })
+
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1)
+
+    const removeBtn = target.querySelector('button[aria-label="Убрать файл: avatar.jpg"]') as HTMLButtonElement
+    removeBtn.click()
+    await tick()
+
+    expect(Object.is(input.files, liveList)).toBe(true)
+    expect(input.files).toHaveLength(0)
+    expect(target.querySelector('[data-file-list]')).toBeNull()
+
+    await unmount(host)
+  })
 })

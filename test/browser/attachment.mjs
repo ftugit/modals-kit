@@ -45,18 +45,23 @@ async function scanAxe(page, theme) {
 
 const browser = await chromium.launch()
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
-const page = await context.newPage()
 
 const pageErrors = []
-page.on('pageerror', (err) => pageErrors.push(err.message))
 
 try {
-  await page.goto(BASE, { waitUntil: 'networkidle' })
+  // 1) Прогреваем модуль `Attachment` в графе Vite/UnoCSS на временной вкладке,
+  //    затем открываем чистую страницу со сгенерированными утилитами в SSR `<style id="__uno.css">`.
+  const warmup = await context.newPage()
+  await warmup.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await warmup.evaluate(() => import('/src/lib/components/ui/attachment/AttachmentBrowserFixture.test.svelte'))
+  await warmup.close()
 
-  // 1) Прогреваем модуль `Attachment` в графе Vite/UnoCSS, затем перезагружаем страницу,
-  //    чтобы SSR `<style id="__uno.css">` содержал все сгенерированные утилиты компонента.
-  await page.evaluate(() => import('/src/lib/components/ui/attachment/AttachmentBrowserFixture.test.svelte'))
-  await page.reload({ waitUntil: 'networkidle' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  page.on('pageerror', (err) => pageErrors.push(err.message))
+
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-testid="add-field"][type="button"]')
   await page.addScriptTag({ path: AXE })
 
   // 2) Монтируем тестовый стенд `Attachment` + `FileAttachment` прямо внутри `<main>` через тот же инстанс рантайма Vite.
@@ -258,6 +263,25 @@ try {
     JSON.stringify({ faBefore, faAfter }),
   )
 
+  // Дожимаем удаление оставшихся 2 → 1 → 0 файлов (включая одиночный сброс input.value = '' в Blink)
+  await page.locator('[data-testid="browser-file-attachment-form"] button[aria-label="Убрать файл: shot-b.png"]').click()
+  await page.waitForTimeout(60)
+  await page.locator('[data-testid="browser-file-attachment-form"] button[aria-label="Убрать файл: spec.pdf"]').click()
+  await page.waitForTimeout(60)
+  const faEmpty = await page.evaluate(() => {
+    const form = document.querySelector('[data-testid="browser-file-attachment-form"]')
+    return {
+      listExists: form.querySelector('[data-file-list]') !== null,
+      fdCount: new FormData(form).getAll('picked').filter((f) => f instanceof File && f.size > 0).length,
+      snapNames: window.__attachmentHost.snapshot().faNames,
+    }
+  })
+  ok(
+    'FileAttachment: удаление последнего файла полностью убирает список [data-file-list] в Blink',
+    !faEmpty.listExists && faEmpty.fdCount === 0 && faEmpty.snapNames.length === 0,
+    JSON.stringify(faEmpty),
+  )
+
   // 6. Реальный жизненный цикл `blob:` URL в движке Chromium (`BlobURLStore`)
   const blobLifecycle = await page.evaluate(async () => {
     const isAlive = async (url) => {
@@ -322,8 +346,11 @@ try {
   )
 
   ok('ноль необработанных ошибок страницы (pageerror)', pageErrors.length === 0, pageErrors.join('; '))
+} catch (err) {
+  console.error(err)
+  failed++
 } finally {
-  await browser.close()
+  await browser.close().catch(() => {})
 }
 
 if (failed) {
@@ -331,3 +358,4 @@ if (failed) {
   process.exit(1)
 }
 console.log('\nвсе проверки прошли')
+process.exit(0)

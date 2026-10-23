@@ -23,7 +23,14 @@ import { chainToSearch, nextChain, routeHref } from '#lib/modals/index.js'
 import type { ChainOverrides, ChainEntry, RegisteredEntry, StackMode } from '#lib/modals/index.js'
 import { useModals } from '#lib/modals/svelte/index.js'
 import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
-import { blockClicks, defined, isModified, reflectTask, type LinkAttrs } from './state.svelte.js'
+import {
+  blockClicks,
+  defined,
+  isModified,
+  reflectTask,
+  type LinkAttrs,
+  type LinkIndicatorMode,
+} from './state.svelte.js'
 
 export interface ModalLinkOptions extends ChainOverrides {
   /** Готовый адрес для перехода без JS. По умолчанию: `route`, иначе адрес с `?modal=…`. */
@@ -40,6 +47,8 @@ export interface ModalLinkOptions extends ChainOverrides {
   stack?: StackMode
   /** Вызывается после успешного открытия записи. */
   onOpened?: () => void
+  /** Показывать ли спиннер загрузки на этой ссылке (`true` | `'click'` | `false`). */
+  indicator?: LinkIndicatorMode
 }
 
 type ModalLinkStatus = 'idle' | 'loading' | 'open' | 'error'
@@ -84,7 +93,7 @@ export function useModalLink() {
     params: Record<string, unknown> = {},
     options: ModalLinkOptions = {},
   ): LinkAttrs {
-    const { href: hrefOption, stack, onOpened, ...rest } = options
+    const { href: hrefOption, stack, onOpened, indicator, ...rest } = options
     const overrides = defined({ ...rest }) as ChainOverrides
 
     const definition = m.scope.resolve(name)?.definition
@@ -171,7 +180,11 @@ export function useModalLink() {
               : st.status === 'loading'
                 ? { status: 'pending', scope: 'local', label: 'Загрузка модалки' }
                 : { status: 'idle' },
-          { idleState: () => (st.status === 'open' ? 'open' : undefined), busy: () => st.status !== 'idle' },
+          {
+            idleState: () => (st.status === 'open' ? 'open' : undefined),
+            busy: () => st.status !== 'idle',
+            indicator,
+          },
         )
 
         return () => {

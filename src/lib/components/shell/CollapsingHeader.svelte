@@ -182,6 +182,12 @@
       }
 
       if (currentDock === 'top') {
+        if (st <= 0) {
+          lastScroll = 0
+          if (progress > 0) applyProgress(0, false)
+          clearIdle()
+          return
+        }
         if (delta > 0 && progress < 1) return consume(st, delta, 1, 1)
         if (delta < 0 && progress > 0) return consume(st, -delta, -1, -1)
       } else {

@@ -6,7 +6,8 @@
    * редактирования профиля (`stage=profile`) и выход.
    *
    * Защищён `Acl` (`allow="user"`): гостю ни на `/user/menu`, ни по прямой
-   * ссылке `?modal=user.menu` меню пользователя не рендерится.
+   * ссылке `?modal=user.menu` меню пользователя не рендерится; и `variant`,
+   * и `class` через `cn(...)` работают на обоих уровнях (`Acl` и тело меню).
    */
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
@@ -15,9 +16,10 @@
   import { useModalLink } from '#lib/components/links/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { Button } from '#lib/components/ui/index.js'
+  import { cn } from '#lib/utils.js'
   import { seedForm } from './seed-form/form.js'
-  import { vault } from '../vault.svelte.js'
-  import Acl from './Acl.svelte'
+  import { readUser, vault } from '../vault.svelte.js'
+  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
 
   interface Props {
     /** Снимок входа с сервера (SSR): до гидратации vault пуст. */
@@ -26,17 +28,28 @@
     next?: string
     /** Успех выхода (JS): закрыть модалку. Без callback — переход на `next`. */
     onDone?: () => void
+    /** Вариант поверхности (`'card'` | `'plain'`). */
+    variant?: UserSurfaceVariant
+    /** Классы корневого блока (применяются через `cn` и к `Acl`, и к блоку меню). */
+    class?: string
   }
 
-  let { server = null, next = '/', onDone }: Props = $props()
+  let {
+    server = null,
+    next = '/',
+    onDone,
+    variant = 'plain',
+    class: className,
+  }: Props = $props()
 
   const asModalLink = useModalLink()
 
   const bound = bindComponentForm(forms, seedForm)
 
-  const authorized = $derived(Boolean(vault.principal ?? server))
-  const nickname = $derived(vault.profile.nickname ?? server?.prof.nickname ?? null)
-  const avatarUrl = $derived(vault.profile.avatarUrl ?? server?.prof.avatarUrl ?? null)
+  const currentUser = $derived(readUser(server))
+  const authorized = $derived(currentUser !== null)
+  const nickname = $derived(currentUser?.prof.nickname ?? null)
+  const avatarUrl = $derived(currentUser?.prof.avatarUrl ?? null)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
   const profileLink = $derived(
     asModalLink('user.auth', { stage: 'profile' }, { href: '/user/auth?stage=profile' }),
@@ -57,8 +70,14 @@
   })
 </script>
 
-<Acl allow="user" authorized={authorized}>
-  <div class="flex min-w-56 flex-col gap-3 p-5 text-left">
+<Acl allow="user" {authorized} {variant} class={className}>
+  <div
+    class={cn(
+      'mx-auto flex w-full max-w-sm min-w-56 flex-col gap-3 text-left',
+      userSurfaceVariants({ variant }),
+      className,
+    )}
+  >
     <div class="flex items-center gap-3">
       <span
         class="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-lg font-semibold text-muted-foreground"
@@ -79,7 +98,7 @@
         value="logout"
         variant="outline"
         class="w-full"
-        task={formTask(bound.state)}
+        task={formTask(bound.state, 'logout')}
       >
         Выйти
       </Button>

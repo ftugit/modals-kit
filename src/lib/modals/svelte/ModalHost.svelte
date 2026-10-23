@@ -1184,6 +1184,8 @@
                 type="button"
                 class={MODAL_CLOSE_CLASS}
                 data-modal-close=""
+                data-starting-style={starting ? '' : undefined}
+                data-ending-style={ending ? '' : undefined}
                 aria-label="Закрыть модалку"
                 onclick={() => modals.close()}
               >

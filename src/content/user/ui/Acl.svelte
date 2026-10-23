@@ -1,3 +1,21 @@
+<script lang="ts" module>
+  import { variants, type VariantProps } from '#lib/utils.js'
+
+  export const userSurfaceVariants = variants(
+    '',
+    {
+      variant: {
+        card: 'rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm',
+        plain: '',
+      },
+    },
+    { variant: 'card' },
+  )
+
+  export type UserSurfaceVariant = 'card' | 'plain'
+  export type UserSurfaceProps = VariantProps<typeof userSurfaceVariants>
+</script>
+
 <script lang="ts">
   /**
    * UI ACL модуля пользователя.
@@ -8,12 +26,14 @@
    *   - состояния аккаунта / подсистемы входа (`enabled`, `status`, `blocked`, `restrictions`);
    *   - срабатывания модели БД (`model`: `DbFailure` / `KitErrorBody` / `FailureKind`).
    *
-   * Если ограничение сработало — вместо `children` показывает соответствующий экран ACL.
+   * Если ограничение сработало — вместо `children` показывает соответствующий экран ACL,
+   * принимая `variant` и `class` через `cn(...)` наравне с внутренним корневым блоком.
    */
   import type { Snippet } from 'svelte'
   import { page } from '$app/state'
   import { useModalLink } from '#lib/components/links/index.js'
   import { Button } from '#lib/components/ui/index.js'
+  import { cn } from '#lib/utils.js'
   import {
     resolveAcl,
     type AclAllow,
@@ -21,12 +41,12 @@
   } from '../acl.js'
   import type { AuthErrorCode } from '../error.js'
   import type { Blocked } from '../types.js'
-  import { vault } from '../vault.svelte.js'
+  import { readUser, type ServerUserSnapshot } from '../vault.svelte.js'
 
   interface Props {
     /** Кому разрешён просмотр содержимого (`'guest'`, `'user'` или список ролей). */
     allow?: AclAllow
-    /** Явное переопределение флага авторизации (по умолчанию берётся из `vault` / `page.data.user`). */
+    /** Явное переопределение флага авторизации (по умолчанию берётся из `readUser`). */
     authorized?: boolean
     /** Роли текущего пользователя (если проверяются роли в `allow`). */
     roles?: readonly string[]
@@ -42,6 +62,10 @@
     model?: AclModelInput
     /** Адрес возврата по умолчанию (для кнопки «На главную» / «Назад»). */
     backHref?: string
+    /** Вариант поверхности (`'card'` — рамка карточки, `'plain'` — чистый блок без рамки). */
+    variant?: UserSurfaceVariant
+    /** Классы корневого блока (применяются через `cn`). */
+    class?: string
     /** Слот своих кнопок действий на экране ACL (например, подтверждение «Принято»). */
     actions?: Snippet
     /** Защищаемое содержимое. */
@@ -58,6 +82,8 @@
     restrictions = null,
     model = null,
     backHref = '/',
+    variant = 'card',
+    class: className,
     actions,
     children,
   }: Props = $props()
@@ -75,7 +101,7 @@
   const isAuthorized = $derived(
     authorized !== undefined
       ? authorized
-      : Boolean(vault.principal ?? (page.data as { user?: unknown } | undefined)?.user),
+      : Boolean(readUser((page.data as { user?: ServerUserSnapshot } | undefined)?.user)),
   )
 
   const screen = $derived(
@@ -105,17 +131,19 @@
   <section
     data-acl-code={screen.code}
     data-acl-source={screen.source}
-    class="mx-auto flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4 text-left {screen.tone ===
-    'destructive'
-      ? 'border-destructive/40 bg-card'
-      : screen.tone === 'warning'
-        ? 'border-border bg-card'
-        : 'border-border bg-card'}"
+    data-acl-variant={variant}
+    class={cn(
+      'mx-auto flex w-full max-w-sm flex-col gap-3 text-left',
+      userSurfaceVariants({ variant }),
+      variant === 'card' && screen.tone === 'destructive' && 'border-destructive/40',
+      className,
+    )}
   >
     <h2
-      class="text-base font-semibold {screen.tone === 'destructive'
-        ? 'text-destructive'
-        : 'text-foreground'}"
+      class={cn(
+        'text-base font-semibold',
+        screen.tone === 'destructive' ? 'text-destructive' : 'text-foreground',
+      )}
     >
       {screen.title}
     </h2>

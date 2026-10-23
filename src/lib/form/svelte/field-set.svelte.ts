@@ -1,22 +1,15 @@
 // Набор полей от пользователя (`field.fields`) — headless: данные и пропсы, без разметки.
 //
-// Форма это поле сама не рисует. Цикл по местам, кнопку «+ поле», обёртки и классы
-// расставляет приложение; хук даёт места (`rows`) с готовыми видами контролов — их
-// рисует обычный `Field` или свой компонент — и пропсы кнопок.
-//
 //     const set = fieldSet(form, 'props', { labels: { label: 'Название', kind: 'Вид', rules: 'Правила' } })
 //     {#each set.rows as row (row.key)} <Field of={row.label} /> … <button {...set.removeProps(row)}> {/each}
 //     <button {...set.addProps()}>+ поле</button>
 //
-// Кнопки мест — ОБЫЧНАЯ отправка формы с намерением (`fields-add`, `fields-remove`)
-// и с JavaScript, и без него: один механизм. Сервер ничего не сохраняет и возвращает
-// места — с новым или без удалённого; перехват отправки и применение ответа без
-// перезагрузки — у формы (в SvelteKit это усиление формы адаптера, `bind` + транспорт;
-// фреймворк без такого усиления пишет свой адаптер или остаётся на нативном POST).
+// С JS кнопки меняют список мест локально (`type="button"`), без JS — уходят
+// обычной отправкой с намерением (`fields-add`, `fields-remove`).
 import { onMount, untrack } from 'svelte'
 import {
-  fieldSetDraft, fieldSetItems, fieldSetName, fieldSetRules, FIELD_SET_ADD, FIELD_SET_REMOVE,
-  type FieldSetDraft,
+  blankFieldSetItem, fieldSetDraft, fieldSetItems, fieldSetName, fieldSetRules,
+  FIELD_SET_ADD, FIELD_SET_REMOVE, type FieldSetDraft,
 } from '../field-set'
 import type { FieldSetItem } from '../kit'
 import type { FormError } from '../result'
@@ -25,77 +18,46 @@ import type { BoundForm, FieldView, IntentProps } from './bind.svelte'
 
 /** Тексты контролов места — их выбирает приложение. */
 export interface FieldSetTexts {
-  /** Подписи названия, вида и списка правил. */
   readonly labels: { readonly label: string; readonly kind: string; readonly rules: string }
-  /** Подпись правила в списке и у его числа; без неё — имя правила. */
   readonly rule?: (rule: string) => string
-  /** Подсказка в пустом названии. */
   readonly placeholder?: string
 }
 
 /** Одно место: вид поля для каждого контрола и то, что нужно разметке рядом. */
 export interface FieldSetRow {
-  /** Ключ места — сегмент имени, он же имя поля в форме записи (`u_<key>`). */
   readonly key: string
-  /** Выбранный вид из каталога. */
   readonly preset: string
   readonly label: FieldView
   readonly kind: FieldView
   readonly rules: FieldView
-  /** Числа выбранных правил — у правил, для которых в схеме заданы пределы. */
   readonly args: readonly FieldView[]
-  /** Правила вида: всегда есть у поля, снять нельзя. */
   readonly locked: readonly SpecRule[]
-  /** Ошибки места целиком (не отдельного контрола). */
   readonly errors: readonly FormError[]
-  /** Название набрано: место станет полем при отправке. */
   readonly filled: boolean
 }
 
-/**
- * Пропсы кнопки набора — обычная кнопка отправки с намерением (`type: 'submit'`
- * в явном виде: примитив кнопки по умолчанию рисует `type="button"`). И с
- * JavaScript, и без него один путь; усиление формы (отправка без перезагрузки)
- * даёт адаптер.
- */
-export type FieldSetButtonProps = IntentProps & { type: 'submit' }
+export type FieldSetButtonProps =
+  | (IntentProps & { type: 'submit' })
+  | { type: 'button'; onclick: () => void; disabled?: boolean }
 
-/**
- * Места набора полей для разметки приложения.
- * @param form Связанная форма (`bind`).
- * @param name Имя поля `field.fields`.
- * @param o Тексты контролов.
- * @returns `rows`, `errors`, `full`, `addProps()`, `removeProps(row)`.
- * @throws Поле не объявлено через `field.fields`.
- */
 export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
   const of = () => form.f[name] as FieldView
   const kit = untrack(of)?.fieldSet
   if (!kit) throw new Error(`[form] fieldSet: поле '${name}' объявлено не через field.fields`)
   const ruleText = o.rule ?? ((r: string) => r)
-  // После оживления кнопки — `type="button"`: Enter в поле нажимает первую кнопку отправки
-  // формы, и ею не должна оказаться «Удалить» первого места. Без JS они остаются отправкой —
-  // первой кнопкой формы приложение ставит свою (README, «Набор полей от пользователя»).
   let hydrated = $state(false)
   onMount(() => { hydrated = true })
 
   const toRow = (x: FieldSetItem) => fieldSetDraft(kit, x)
-  /** Места, как их держит форма: набранное (ответ отправки) сильнее сохранённого. */
   const readItems = (): readonly FieldSetItem[] => {
     const f = of()
     const list = Array.isArray(f.value) ? f.value : Array.isArray(f.defaultValue) ? f.defaultValue : []
-    return (list as FieldSetItem[])
+    return list as FieldSetItem[]
   }
-  // с чего стартует: набранное (ответ без JS) сильнее сохранённого
   let rows = $state<FieldSetDraft[]>(untrack(() => readItems().map(toRow)))
   const full = () => kit.max !== undefined && rows.length >= kit.max
-
-  /** Значение для состояния формы; при отправке источник истины — разметка. */
   const report = () => of().onInput(fieldSetItems(kit, rows))
 
-  // Места вернул сервер (кнопка «+ поле» или «Удалить» ушла как обычная
-  // отправка) — места перечитываются из значения формы. Локальный ввод не
-  // трогаем: он и так ложится в значение через `report`.
   let wasPending = false
   $effect(() => {
     const pending = form.state.pending
@@ -105,7 +67,6 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
 
   const errorsAt = (path: string) => of().errors.filter((e) => e.path === path)
 
-  /** Вид контрола места: тот же контракт, что у поля формы. */
   function sub(row: FieldSetDraft, part: string, input: string, label: string, value: unknown,
                set: (raw: unknown) => void, extra: Partial<FieldView> = {}): FieldView {
     const f = of()
@@ -137,14 +98,8 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
 
   function view(row: FieldSetDraft): FieldSetRow {
     const r = fieldSetRules(kit!, row)
-    // правило вида показываем ВНУТРИ списка правил выбранным и недосягаемым:
-    // оно и так стоит у поля, отдельной отправки не требует (encode его пропускает)
     const lockedNames = r.locked.map((l) => l.rule)
-    // без скрипта список показывает ВСЕ правила схемы: фильтр по виду включит
-    // оживление, лишнее же отклонит проверка схемы — расхождений с сервером нет
-    const choices = hydrated
-      ? r.choices
-      : kit!.rules.filter((x) => !lockedNames.includes(x))
+    const choices = hydrated ? r.choices : kit!.rules.filter((x) => !lockedNames.includes(x))
     return {
       key: row.key, preset: row.preset, locked: r.locked, filled: !!row.label.trim(),
       errors: errorsAt(`${name}.${row.key}`),
@@ -152,15 +107,11 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
                  o.placeholder ? { placeholder: o.placeholder } : {}),
       kind: sub(row, 'kind', 'select', o.labels.kind, row.preset, (raw) => {
         const next = String(raw ?? '')
-        // сменили вид — выбранные правила обнуляются: они были про прежний вид
         if (next !== row.preset) { row.rules = []; row.args = {} }
         row.preset = next
       }, { options: kindOptions }),
       rules: sub(row, 'rules', 'multiselect', o.labels.rules, [...lockedNames, ...row.rules],
-                 (raw) => {
-                   // правило вида — только в картинке: в выбор и в отправку не попадает
-                   row.rules = (Array.isArray(raw) ? raw : []).map(String).filter((x) => !lockedNames.includes(x))
-                 },
+                 (raw) => { row.rules = (Array.isArray(raw) ? raw : []).map(String).filter((x) => !lockedNames.includes(x)) },
                  {
                    options: [
                      ...r.locked.map((l) => ({ value: l.rule, label: ruleText(l.rule), disabled: true })),
@@ -172,22 +123,33 @@ export function fieldSet(form: BoundForm, name: string, o: FieldSetTexts) {
     }
   }
 
+  function add(): void {
+    if (full()) return
+    rows.push(toRow(blankFieldSetItem(kit!, rows.map((r) => r.key))))
+    report()
+  }
+
+  function remove(key: string): void {
+    const idx = rows.findIndex((r) => r.key === key)
+    if (idx < 0) return
+    rows.splice(idx, 1)
+    report()
+  }
+
+  function btnProps(intent: string, onclick: () => void, blocked = false): FieldSetButtonProps {
+    if (hydrated) return { type: 'button', onclick, ...(blocked || form.state.pending ? { disabled: true } : {}) }
+    const p = { ...form.intent(intent), type: 'submit' as const }
+    return blocked ? { ...p, disabled: true } : p
+  }
+
   return {
-    /** Места в порядке набора. */
     get rows(): FieldSetRow[] { return rows.map(view) },
-    /** Ошибки набора целиком: предел числа полей и т. п. */
     get errors(): readonly FormError[] { return errorsAt(name) },
-    /** Предел числа полей достигнут: «+ поле» ничего не добавит. */
     get full(): boolean { return full() },
-    /** Пропсы кнопки «+ поле»: где её поставить — решает разметка. */
-    addProps(): FieldSetButtonProps {
-      const p = { ...form.intent(`${FIELD_SET_ADD}:${name}`), type: 'submit' as const }
-      return full() ? { ...p, disabled: true } : p
-    },
-    /** Пропсы кнопки «Удалить» у места. */
-    removeProps(row: { key: string }): FieldSetButtonProps {
-      return { ...form.intent(`${FIELD_SET_REMOVE}:${name}.${row.key}`), type: 'submit' as const }
-    },
+    add,
+    remove,
+    addProps: () => btnProps(`${FIELD_SET_ADD}:${name}`, add, full()),
+    removeProps: (row: { key: string }) => btnProps(`${FIELD_SET_REMOVE}:${name}.${row.key}`, () => remove(row.key)),
   }
 }
 

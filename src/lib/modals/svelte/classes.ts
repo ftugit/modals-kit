@@ -48,9 +48,9 @@ export const BACKDROP_UTILS =
  */
 export const MODAL_BACKDROP_CLASS = `${BACKDROP_UTILS} data-[starting-style]:opacity-0 data-[ending-style]:opacity-0`
 
-/** Кнопка закрытия поверх фона. */
+/** Кнопка закрытия поверх фона (гаснет синхронно с MODAL_BACKDROP_CLASS за 220 мс). */
 export const MODAL_CLOSE_CLASS =
-  'fixed top-4 right-4 z-220 flex size-9 items-center justify-center rounded-[calc(var(--radius)-2px)] border border-border bg-popover text-popover-foreground shadow-[0_10px_25px_-12px_color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-[background-color,color] duration-150 ease-[ease] hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2'
+  'fixed top-4 right-4 z-220 flex size-9 items-center justify-center rounded-[calc(var(--radius)-2px)] border border-border bg-popover text-popover-foreground shadow-[0_10px_25px_-12px_color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-[opacity,background-color,color] duration-220 ease-[ease] motion-reduce:duration-[1ms] hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0'
 
 /** Слой поверх фона: раскладку (align/justify/padding) дописывает viewportStyle(). */
 export const MODAL_VIEWPORT_CLASS = 'fixed inset-0 z-210 flex p-0'

@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte'
   import { pageWindow } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import type { LinkIndicatorMode } from '#lib/components/links/index.js'
   import { ButtonGroup, buttonVariants } from '#lib/components/ui/index.js'
   import PageLink from './PageLink.svelte'
 
@@ -17,6 +18,8 @@
   interface Props {
     name?: string
     around?: number
+    /** Режим спиннера на ссылках страниц (`false` по умолчанию, `'click'` или `true`). */
+    indicator?: LinkIndicatorMode
     class?: string
     counter?: boolean | Snippet<[{ page: number; total: number | null }]>
     children?: Snippet
@@ -26,6 +29,7 @@
   let {
     name: nameProp,
     around = 2,
+    indicator = false,
     class: className,
     counter,
     children,
@@ -67,6 +71,7 @@
         {name}
         page={current - 1}
         disabled={!canPrev}
+        {indicator}
         label="Назад"
       >
         ←
@@ -85,7 +90,7 @@
               …
             </span>
           {:else}
-            <PageLink {name} page={entry} current={entry === current}>
+            <PageLink {name} page={entry} current={entry === current} {indicator}>
               {entry}
             </PageLink>
           {/if}
@@ -96,6 +101,7 @@
         {name}
         page={current + 1}
         disabled={!canNext}
+        {indicator}
         label="Вперёд"
       >
         →

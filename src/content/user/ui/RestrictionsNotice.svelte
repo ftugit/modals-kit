@@ -14,7 +14,7 @@
   import { Button } from '#lib/components/ui/index.js'
   import { seedForm } from './seed-form/form.js'
   import type { Blocked } from '../types.js'
-  import Acl from './Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from './Acl.svelte'
 
   interface RestrictionItem {
     readonly scope: string
@@ -27,9 +27,18 @@
     authorized?: boolean
     doneHref?: string
     onDone?: () => void
+    variant?: UserSurfaceVariant
+    class?: string
   }
 
-  let { restrictions = null, authorized, doneHref = '/', onDone }: Props = $props()
+  let {
+    restrictions = null,
+    authorized,
+    doneHref = '/',
+    onDone,
+    variant,
+    class: className,
+  }: Props = $props()
 
   const bound = bindComponentForm(forms, seedForm)
 
@@ -60,10 +69,18 @@
   status="restrictions"
   restrictions={normalized}
   backHref={doneHref}
+  {variant}
+  class={className}
 >
   {#snippet actions()}
     <Form form={bound} hiddenFields={bound.hidden()} class="flex justify-end">
-      <Button type="submit" name="intent" value="accept" variant="outline" task={formTask(bound.state)}>
+      <Button
+        type="submit"
+        name="intent"
+        value="accept"
+        variant="outline"
+        task={formTask(bound.state, 'accept')}
+      >
         Принято
       </Button>
     </Form>

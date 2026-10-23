@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
-  import { asLink, taskAttrs } from '#lib/components/links/index.js'
+  import { asLink, taskAttrs, type LinkIndicatorMode } from '#lib/components/links/index.js'
   import { buttonVariants } from '#lib/components/ui/index.js'
   import { paginatorTask, usePageHref, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
 
@@ -11,6 +11,13 @@
     current?: boolean
     disabled?: boolean
     label?: string
+    /**
+     * Отображение спиннера загрузки на элементе страницы:
+     *   - `false` (по умолчанию) — отключено (скролл и переходы не мигают на номерах);
+     *   - `'click'` — только если нажатие произошло по этому самому элементу;
+     *   - `true` — всегда, пока грузится эта страница.
+     */
+    indicator?: LinkIndicatorMode
     class?: string
     children?: Snippet
   }
@@ -21,6 +28,7 @@
     current = false,
     disabled = false,
     label,
+    indicator = false,
     class: className,
     children,
   }: Props = $props()
@@ -31,21 +39,30 @@
   const hrefGetter = usePageHref(() => page, name)
   const href = $derived(hrefGetter())
   const { goPage, prefetchPage } = usePaginatorActions(name)
-  // Спиннер у страницы, которая грузится (тот же вид, что у ссылок).
   const pagState = usePaginatorState(name)
   const task = () => paginatorTask(pagState(), page)
+
+  // Собственный факт клика сохраняется на экземпляре `PageLink`, потому что
+  // при клике по `<a>` страница сразу становится `current`, и в DOM рендерится `<span>`.
+  let clicked = $state(false)
+  $effect(() => {
+    if (task().status !== 'pending') clicked = false
+  })
+
+  const showIndicator = () => indicator === true || (indicator === 'click' && clicked)
 
   const cls = $derived(
     className ??
       buttonVariants({
         variant: current ? 'default' : 'outline',
         size: 'sm',
-      })
+      }),
   )
 </script>
 
 {#if href !== null && !current && !disabled}
-  <a {...asLink(href, { task })}
+  <a
+    {...asLink(href, { task, indicator: showIndicator() })}
     class={cls}
     aria-label={label}
     aria-current={current ? 'page' : undefined}
@@ -53,6 +70,7 @@
     onfocus={() => prefetchPage(page)}
     onclick={(e) => {
       e.preventDefault()
+      clicked = true
       goPage(page)
     }}
   >
@@ -63,10 +81,8 @@
     {/if}
   </a>
 {:else if href !== null}
-  <!-- Текущая страница, пока грузится, — со спиннером: нажатая ссылка
-       сразу становится текущей, и задача видна здесь. -->
   <span
-    {...taskAttrs(task)}
+    {...taskAttrs(task, { indicator: showIndicator })}
     class={cls}
     aria-label={label}
     aria-current={current ? 'page' : undefined}
@@ -80,11 +96,15 @@
 {:else}
   <button
     type="button"
+    {...(indicator ? taskAttrs(task, { indicator: showIndicator }) : {})}
     class={cls}
     disabled={current || disabled}
     aria-label={label}
     aria-current={current ? 'page' : undefined}
-    onclick={() => goPage(page)}
+    onclick={() => {
+      clicked = true
+      goPage(page)
+    }}
     onmouseenter={() => {
       if (!current && !disabled) prefetchPage(page)
     }}

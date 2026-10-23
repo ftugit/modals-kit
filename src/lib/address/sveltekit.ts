@@ -186,7 +186,9 @@ function onHashLinkClick(event: MouseEvent): void {
     target.scrollIntoView()
     target.focus({ preventScroll: true })
   } else if (id === '' || id === 'top') {
-    window.scrollTo({ top: 0 })
+    const owner = document.querySelector<HTMLElement>('[data-fe-scroll="owner"]')
+    if (owner) owner.scrollTo({ top: 0 })
+    else window.scrollTo({ top: 0 })
   }
 }
 if (writer) window.addEventListener('click', onHashLinkClick, true)

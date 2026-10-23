@@ -87,12 +87,15 @@
 
   let mounted = $state(false)
   let inputEl = $state<HTMLInputElement | null>(null)
-  let localFiles = $state<FileList | undefined>(untrack(() => files))
+  let pickedFiles = $state<File[]>([])
   let prevFiles: FileList | undefined = untrack(() => files)
   let prevRest = ''
 
   onMount(() => {
     mounted = true
+    const initial = files ?? inputEl?.files ?? undefined
+    pickedFiles = initial && initial.length > 0 ? Array.from(initial) : []
+    prevFiles = files
   })
 
   $effect(() => {
@@ -102,7 +105,7 @@
 
     if (files !== prevFiles) {
       if (files !== undefined || !restChanged) {
-        localFiles = files
+        pickedFiles = files && files.length > 0 ? Array.from(files) : []
         if (inputEl) {
           if (files) inputEl.files = files
           else inputEl.value = ''
@@ -130,7 +133,6 @@
     return k
   }
 
-  const pickedFiles = $derived(mounted && localFiles ? Array.from(localFiles) : [])
   const cardSize = $derived<AttachmentSize>(attachmentSize ?? size ?? 'md')
   const showAnyActions = $derived(Boolean(removable || customActions))
 
@@ -161,9 +163,10 @@
     class={cls}
     {...rest}
     onchange={(e) => {
-      const next = e.currentTarget.files ?? undefined
-      localFiles = next
-      files = next
+      const raw = e.currentTarget.files
+      const list = raw && raw.length > 0 ? Array.from(raw) : []
+      pickedFiles = list
+      files = list.length > 0 ? (raw ?? undefined) : undefined
       onchange?.(e)
       prevFiles = files
     }}

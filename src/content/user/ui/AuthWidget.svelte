@@ -4,7 +4,8 @@
    * `restrictions`, `profile`).
    *
    * Всю разметку и проверку прав несут самостоятельные компоненты на своих
-   * шагах:
+   * шагах, а `variant` и `class` прокидываются по цепочке в любой активный
+   * передний блок (`Acl`, `BanNotice`, `RestrictionsNotice`, `ProfileForm`, `SeedForm`):
    *   - `auth.*` (`entry` | `register` | `restore`) → `SeedForm` (`authorize={true}`, `Acl allow="guest"`);
    *   - `blocked` → `BanNotice` (`Acl allow="guest"`);
    *   - `restrictions` → `RestrictionsNotice` (`Acl allow="user"`);
@@ -17,12 +18,12 @@
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { generateKeyPair, sign } from '../keys.js'
-  import { hydrateVault, vault } from '../vault.svelte.js'
+  import { hydrateVault, readUser } from '../vault.svelte.js'
   import type { AvatarLimits } from './profile-form/index.js'
   import ProfileForm from './profile-form/ProfileForm.svelte'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
   import { mirrorToField } from './field-mirror.svelte.js'
-  import Acl from './Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import BanNotice from './BanNotice.svelte'
   import RestrictionsNotice from './RestrictionsNotice.svelte'
 
@@ -53,13 +54,22 @@
       user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
     }
     mode?: 'page' | 'modal'
+    variant?: UserSurfaceVariant
+    class?: string
     onDone?: () => void
   }
 
-  let { data, mode = 'page', onDone }: Props = $props()
+  let {
+    data,
+    mode = 'page',
+    variant = mode === 'modal' ? 'plain' : 'card',
+    class: className,
+    onDone,
+  }: Props = $props()
 
   const doneHref = $derived(data.next ?? '/')
-  const authorized = $derived(Boolean(vault.principal ?? data.user))
+  const currentUser = $derived(readUser(data.user))
+  const authorized = $derived(currentUser !== null)
 
   // svelte-ignore state_referenced_locally -- начальный challenge из SSR
   let nonce = $state(data.challenge?.nonce ?? '')
@@ -201,19 +211,28 @@
 </script>
 
 {#if data.enabled === false}
-  <Acl enabled={false} backHref={doneHref} />
+  <Acl enabled={false} backHref={doneHref} {variant} class={className} />
 {:else if hostStep === 'blocked'}
-  <BanNotice {blocked} {authorized} backHref={doneHref} />
+  <BanNotice {blocked} {authorized} backHref={doneHref} {variant} class={className} />
 {:else if hostStep === 'restrictions'}
-  <RestrictionsNotice {restrictions} {authorized} {doneHref} onDone={finish} />
+  <RestrictionsNotice
+    {restrictions}
+    {authorized}
+    {doneHref}
+    onDone={finish}
+    {variant}
+    class={className}
+  />
 {:else if hostStep === 'profile'}
   <ProfileForm
     limits={data.limits}
-    initial={data.user?.prof ?? null}
+    initial={currentUser?.prof ?? null}
     {authorized}
     enabled={data.enabled}
     {doneHref}
     onDone={finish}
+    {variant}
+    class={className}
   />
 {:else}
   <SeedForm
@@ -226,5 +245,7 @@
     {authorized}
     enabled={data.enabled}
     {doneHref}
+    {variant}
+    class={className}
   />
 {/if}
