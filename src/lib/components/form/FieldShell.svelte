@@ -1,29 +1,52 @@
 <script lang="ts">
-  // Обёртка поля — код приложения: она решает, где подпись, где подсказка
-  // и где текст ошибки. Библиотека даёт идентификаторы, чтобы связи
-  // доступности указывали на существующие узлы.
+  // Обёртка поля — код приложения: она решает, где подпись (`top` или `end`),
+  // где подсказка, серверное примечание и ошибки. Библиотека даёт идентификаторы,
+  // чтобы связи доступности указывали на существующие узлы.
   import { Label } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import type { Snippet } from 'svelte'
 
-  let { f, children }: { f: FieldView; children: Snippet } = $props()
+  interface Props {
+    f: FieldView
+    labelPlacement?: 'top' | 'end'
+    children: Snippet
+  }
+
+  let { f, labelPlacement = 'top', children }: Props = $props()
 </script>
 
 <!-- data-field — ручка тестов и стилей приложения: имя поля формы -->
-<div class="space-y-1.5" class:opacity-100={true} data-field={f.name}>
-  <Label {...f.labelProps()}>
-    {f.label}
-    <!-- подсветка берётся из `has`, а не из наличия текста -->
-    {#if f.has && f.errors.length === 0}
-      <em class="ml-1 text-xs text-destructive not-italic">ошибка без текста</em>
-    {/if}
-  </Label>
-  {@render children()}
+<div class="space-y-1.5" data-field={f.name}>
+  {#if labelPlacement === 'end'}
+    <div class="flex items-center gap-2">
+      {@render children()}
+      <Label {...f.labelProps()}>
+        {f.label}
+        {#if f.has && f.errors.length === 0}
+          <em class="ml-1 text-xs text-destructive not-italic">ошибка без текста</em>
+        {/if}
+      </Label>
+    </div>
+  {:else}
+    <Label {...f.labelProps()}>
+      {f.label}
+      <!-- подсветка берётся из `has`, а не из наличия текста -->
+      {#if f.has && f.errors.length === 0}
+        <em class="ml-1 text-xs text-destructive not-italic">ошибка без текста</em>
+      {/if}
+    </Label>
+    {@render children()}
+  {/if}
   {#if f.help || f.reason}
     <!-- причина выключенного поля занимает helper-слот вместо help;
          data-атрибут — ручка теста, не стиль -->
-    <p {...f.helpProps()} class="text-xs text-muted-foreground"
-       data-field-reason={f.reason ? '' : undefined}>{f.reason ?? f.help}</p>
+    <p
+      {...f.helpProps()}
+      class="text-xs text-muted-foreground"
+      data-field-reason={f.reason ? '' : undefined}
+    >
+      {f.reason ?? f.help}
+    </p>
   {/if}
   {#if f.note}
     <!-- подсказка сервера: значение изменил prepare; id входит в aria-describedby -->

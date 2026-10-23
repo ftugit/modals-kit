@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import Checkbox from '../checkbox/Checkbox.svelte'
   import Label from '../label/Label.svelte'
+  import RadioItem from '../radio-group/RadioItem.svelte'
   import Spinner from '../spinner/Spinner.svelte'
   import { cn } from '../../../utils'
   import AttachmentAction from './AttachmentAction.svelte'
@@ -22,7 +23,6 @@
   import {
     attachmentIconSize,
     attachmentMediaVariants,
-    attachmentRadioClasses,
     attachmentRowMediaSize,
     attachmentRowSpacing,
     attachmentTileIconSize,
@@ -359,8 +359,7 @@
       onchange={handleControlChange}
     />
   {:else if selection === 'single'}
-    <input
-      type="radio"
+    <RadioItem
       id={inputId}
       {name}
       value={normalized.option.value}
@@ -369,7 +368,6 @@
       disabled={isDisabled}
       checked={isControlledSingle ? isSelected : (defaultChecked ? true : undefined)}
       onchange={handleControlChange}
-      class={attachmentRadioClasses}
     />
   {/if}
 {/snippet}

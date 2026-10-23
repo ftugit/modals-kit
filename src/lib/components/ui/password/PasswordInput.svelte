@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { HTMLInputAttributes } from 'svelte/elements'
+  import type { ClassValue, HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
   import { affixButtonClass } from '../field/field'
   import Input from '../input/Input.svelte'
@@ -11,12 +11,15 @@
     showLabel?: string
     hideLabel?: string
     size?: 'sm' | 'md' | 'lg'
+    /** Классы внешней обёртки (`InputShell`). */
+    wrapperClass?: ClassValue | null
   }
 
   let {
     showLabel = 'Показать пароль',
     hideLabel = 'Скрыть пароль',
     class: cls,
+    wrapperClass,
     disabled = false,
     value = $bindable(),
     size,
@@ -54,7 +57,7 @@
   const label = $derived(visible ? hideLabel : showLabel)
 </script>
 
-<InputShell data-password-input="" class={cls}>
+<InputShell data-password-input="" class={wrapperClass}>
   <!-- Чужие атрибуты — ПЕРВЫМИ: поле формы приносит `type="password"` в attrs;
        явный type ПОСЛЕ spread его перекрывает (то же на границе компонента).
        Само поле — примитив `Input` (вид/размеры его), как у `HoldButton`. -->
@@ -65,7 +68,7 @@
     type={visible ? 'text' : 'password'}
     {disabled}
     {size}
-    class={cn(mounted && 'pr-10')}
+    class={cn(mounted && 'pr-10', cls)}
   />
   {#if mounted}
     <InputAffix side="end" interactive>

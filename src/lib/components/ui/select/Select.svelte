@@ -829,8 +829,13 @@
       type="button"
       aria-hidden="true"
       tabindex="-1"
-      class={cn(inputVariants({ size }), 'flex w-full items-center justify-between gap-2', cls)}
+      class={cn(
+        inputVariants({ size }),
+        'flex w-full items-center justify-between gap-2 data-[invalid=true]:border-destructive data-[invalid=true]:ring-2 data-[invalid=true]:ring-destructive/20',
+        cls,
+      )}
       data-select-trigger=""
+      data-invalid={rest['aria-invalid'] === true || rest['aria-invalid'] === 'true' ? 'true' : undefined}
       onpointerdown={closeFromTrigger}
     >
       <span class="flex min-w-0 flex-1 items-center gap-1 text-left">

@@ -1,22 +1,25 @@
 <script lang="ts">
-  // Компонент для СВОЕГО типа значения. Библиотека о нём не знает:
-  // тип зарегистрирован приложением, компонент выбран через resolve.
-  import { Input } from '#lib/components/ui/index.js'
+  // Свой виджет — такой же гражданин, как встроенные: принимает то же
+  // представление поля. Ни одного обращения к движку напрямую.
+  //
+  // Ползунок — `Range` из `ui/`: нативный `<input type="range">` работает и с JS,
+  // и без JS, но визуально рендерится как shadcn Slider (трек + заполнение + кружок).
+  import { Range } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let f: FieldView = $props()
-  const value = $derived(Number(f.value ?? 3))
 </script>
 
 <FieldShell {f}>
   <div class="flex items-center gap-3">
-    <Input
+    <Range
       {...f.attrs}
-      class="flex-1 accent-primary"
-      onchange={(e) => f.onInput(Number(e.currentTarget.value))}
-      oninput={(e) => f.onInput(Number(e.currentTarget.value))}
+      value={String(f.value ?? '')}
+      wrapperClass="flex-1"
+      onchange={(e) => f.onInput(e.currentTarget.value)}
+      oninput={(e) => f.onInput(e.currentTarget.value)}
     />
-    <span class="w-16 text-sm text-muted-foreground">{'★'.repeat(Math.max(0, value))}</span>
+    <output class="w-6 text-center text-sm tabular-nums">{f.value}</output>
   </div>
 </FieldShell>

@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Ползунок (`range`): число без поля ввода, поэтому текущее значение показано
-  // рядом. В форму уходит строка, как у NumberField: разбор — работа типа значения.
-  import { Input } from '#lib/components/ui/index.js'
+  // Ползунок (`range`): число без текстового поля ввода, текущее значение показано
+  // рядом в `<output>`. В форму уходит строка, как у NumberField: разбор — работа типа значения.
+  import { Range } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
@@ -12,10 +12,10 @@
 
 <FieldShell {f}>
   <div class="flex items-center gap-3">
-    <Input
+    <Range
       {...f.attrs}
       value={String(value)}
-      class="flex-1 accent-primary"
+      wrapperClass="flex-1"
       onchange={(e) => f.onInput(e.currentTarget.value)}
       oninput={(e) => f.onInput(e.currentTarget.value)}
     />

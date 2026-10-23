@@ -28,10 +28,10 @@
     defaultCode?: string
     /** Доступное имя списка кодов. */
     codeLabel?: string
-    /** Классы обёртки (раскладка). */
-    class?: ClassValue | null
     /** Классы видимого поля номера. */
-    inputClass?: ClassValue | null
+    class?: ClassValue | null
+    /** Классы внешней обёртки (`InputShell`). */
+    wrapperClass?: ClassValue | null
     /** Новое значение после ввода или смены кода — уже склеенное. */
     onValueChange?: (value: string) => void
   }
@@ -42,7 +42,7 @@
     defaultCode,
     codeLabel = 'Код страны',
     class: cls,
-    inputClass,
+    wrapperClass,
     onValueChange,
     // атрибуты, которые относятся к номеру ЦЕЛИКОМ: у поля без JS — да, у национальной
     // части — нет (имя несёт скрытое поле, шаблон и длины описывают полный номер)
@@ -159,7 +159,7 @@
 </script>
 
 {#if !mounted}
-  <InputShell class={cls} data-phone-input="">
+  <InputShell class={wrapperClass} data-phone-input="">
     <input
       {...rest}
       bind:this={plainEl}
@@ -173,11 +173,11 @@
       type="tel"
       value={value ?? ''}
       {disabled}
-      class={cn(inputVariants(), inputClass)}
+      class={cn(inputVariants(), cls)}
     />
   </InputShell>
 {:else}
-  <InputShell class={cls} data-phone-input="">
+  <InputShell class={wrapperClass} data-phone-input="">
     <!-- Код — первым и в разметке: порядок табуляции совпадает с чтением (код, номер).
          Ширина кода меряется, отступ поля номера следует за ней. -->
     <InputAffix side="start" interactive class="pl-1">
@@ -210,7 +210,7 @@
       placeholder={placeholderFor(country)}
       value={formatNational(national, country)}
       {disabled}
-      class={cn(inputVariants(), 'tabular-nums', inputClass)}
+      class={cn(inputVariants(), 'tabular-nums', cls)}
       style:padding-left={affixWidth ? `calc(${affixWidth}px + 0.25rem)` : `calc(${country.code.length}ch + 2rem)`}
       oninput={onNational}
     />

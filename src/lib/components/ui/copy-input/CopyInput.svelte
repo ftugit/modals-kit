@@ -17,7 +17,7 @@
    * rest; явные атрибуты ПОСЛЕ spread перекрывают его (см. `PasswordInput`).
    */
   import { onMount } from 'svelte'
-  import type { HTMLInputAttributes } from 'svelte/elements'
+  import type { ClassValue, HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
   import { affixButtonClass } from '../field/field'
   import Input from '../input/Input.svelte'
@@ -31,12 +31,15 @@
     copyLabel?: string
     copiedLabel?: string
     size?: 'sm' | 'md' | 'lg'
+    /** Классы внешней обёртки (`InputShell`). */
+    wrapperClass?: ClassValue | null
   }
 
   let {
     copyLabel = 'Копировать',
     copiedLabel = 'Скопировано',
     class: cls,
+    wrapperClass,
     disabled = false,
     value = $bindable(),
     size,
@@ -76,13 +79,13 @@
   )
 </script>
 
-<InputShell data-copy-input="" class={cls}>
+<InputShell data-copy-input="" class={wrapperClass}>
   <Input
     {...rest}
     bind:value
     {disabled}
     {size}
-    class={cn(mounted && 'pr-10')}
+    class={cn(mounted && 'pr-10', cls)}
   />
   {#if mounted}
     <InputAffix side="end" interactive>

@@ -70,16 +70,16 @@
 
 ---
 
-### Этап S2. Полное закрытие `ui-consistency.md`: невалидность составных полей, `FieldShell`, `Skeleton`, `class`/`wrapperClass`, `RadioGroup` + `Range` (`shadcn` v4) — **[СЛЕДУЮЩИЙ ЭТАП]**
+### Этап S2. Полное закрытие `ui-consistency.md`: невалидность составных полей, `FieldShell`, `Skeleton`, `class`/`wrapperClass`, `RadioGroup` + `Range` (`shadcn` v4) — **[ВЫПОЛНЕНО]**
 *(Низкий риск: вся работа локализована внутри UI-примитивов и обёрток `form/`.)*
-- [ ] **S2.1 (`F3 / F4` + `Checkbox`/`Switch`).** Пробросить `data-invalid` и подсветку `border-destructive` на видимый триггер `Select.svelte`, слоты `OtpInput.svelte`, а также добавить `aria-invalid:*` в `Checkbox.svelte` и `Switch.svelte`.
-- [ ] **S2.2 (`U7` + `F6`).** Вынести `controlBase` в `field.ts`; создать примитивы `ui/radio-group/{RadioItem,RadioGroup}.svelte` и `ui/range/Range.svelte` по эталонам `shadcn` v4 из [`ui-consistency.md §2`](./ui-consistency.md); перевести radio-ветку `Attachment.svelte` на `<RadioItem />`; создать `form/RadioGroupField.svelte`, обновить `form/RangeField.svelte` и `form/resolve.ts`.
-- [ ] **S2.3 (`F1` + `F9` + `F8`).** Добавить `labelPlacement?: 'top' | 'end'` в `form/FieldShell.svelte` и перевести `CheckboxField` / `SwitchField` на `FieldShell`; написать unit-тест `form/resolve.test.ts`; привести статичные группы полей на `/form` и `/modals` к `<Fieldset>`.
-- [ ] **S2.4 (`F5` + `U3b`).** Унифицировать закон `class` (на контрол) / `wrapperClass` (на внешнюю обёртку) в `PasswordInput`, `CopyInput`, `PhoneInput`, `SearchInput`, `OtpInput` (обновив вызовы по `src/`); сделать `paginator/Skeleton.svelte` и `modals/Skeleton.svelte` тонкими обёртками над `ui/skeleton/Skeleton.svelte`.
+- [x] **S2.1 (`F3 / F4` + `Checkbox`/`Switch`).** Проброшены `data-invalid` и подсветка `border-destructive` / `ring-destructive/20` на видимый триггер `Select.svelte`, слоты `OtpInput.svelte`, `Checkbox.svelte` и `Switch.svelte`.
+- [x] **S2.2 (`U7` + `F6`).** Вынесен `controlBase` в `field.ts`; созданы примитивы `ui/radio-group/{RadioItem,RadioGroup}.svelte` и `ui/range/Range.svelte` по эталонам `shadcn` v4 из [`ui-consistency.md §2`](./ui-consistency.md); radio-ветка `Attachment.svelte` переведена на `<RadioItem />`; созданы `form/RadioGroupField.svelte`, переведены на `<Range>` `form/RangeField.svelte` и `form/RatingField.svelte`, обновлён `form/resolve.ts`.
+- [x] **S2.3 (`F1` + `F9` + `F8`).** Добавлен `labelPlacement?: 'top' | 'end'` в `form/FieldShell.svelte`, `CheckboxField` / `SwitchField` переведены на `FieldShell`; написан контрактный тест `form/resolve.test.ts`; проверены статичные группы полей на `/form` и `/modals` (`<Fieldset>`).
+- [x] **S2.4 (`F5` + `U3b`).** Унифицирован закон `class` (на контрол) / `wrapperClass` (на внешнюю обёртку) в `PasswordInput`, `CopyInput`, `PhoneInput`, `SearchInput`, `OtpInput` (обновлён вызов в `paginator/SearchBar.svelte`); `paginator/Skeleton.svelte` и `modals/Skeleton.svelte` переведены в тонкие обёртки над `ui/skeleton/Skeleton.svelte`.
 
 ---
 
-### Этап S3. Чистое аддитивное расширение `#lib/address` (`routes.ts` + `sveltekit.ts`)
+### Этап S3. Чистое аддитивное расширение `#lib/address` (`routes.ts` + `sveltekit.ts`) — **[СЛЕДУЮЩИЙ ЭТАП]**
 *(Нулевой риск поломки: чистое добавление нового модуля внутри `src/lib/address/` без затрагивания старого кода.)*
 - [ ] **S3.1.** Реализовать `src/lib/address/routes.ts` (`registerRoute` / `defineRoute` с `href`, `parse`, `patch` поверх `@standard-schema/spec`, `localPath` из `./core.ts` и `nextSearch` из `./keys.ts`) и реэкспортировать из `src/lib/address/index.ts`.
 - [ ] **S3.2.** Добавить `kitRoute` в `src/lib/address/sveltekit.ts` с compile-time проверкой `RouteId` / `RouteParams<Path>` из `$app/types`.

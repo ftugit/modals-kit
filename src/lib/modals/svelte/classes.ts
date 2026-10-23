@@ -133,13 +133,6 @@ export function floatingLayoutClass(anchor: string | undefined): string {
 /* ── состояния: скелетон, ошибка, спиннер ─────────────────────────── */
 
 export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-5'
-export const MODAL_SKELETON_LINE_CLASS =
-  'h-3 rounded-[calc(var(--radius)-4px)] bg-muted animate-pulse animate-[pulse_1.4s_ease-in-out_infinite]!'
-export const MODAL_SKELETON_TITLE_CLASS = 'h-5 w-[55%]'
-export const MODAL_SKELETON_GRID_CLASS =
-  'grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2.5 pt-1'
-export const MODAL_SKELETON_CARD_CLASS =
-  'h-16 rounded-[var(--radius)] bg-muted animate-pulse animate-[pulse_1.4s_ease-in-out_infinite]!'
 export const MODAL_ERROR_CLASS =
   'flex flex-1 flex-col items-center justify-center gap-2.5 p-7 text-center text-destructive'
 export const MODAL_ERROR_TITLE_CLASS = 'text-sm font-semibold'

@@ -1,8 +1,9 @@
 <script lang="ts" module>
   import { variants, type VariantProps } from '../../../utils'
+  import { controlBase } from '../field/field'
 
   export const checkboxVariants = variants(
-    'relative shrink-0 cursor-pointer appearance-none rounded-[4px] border border-input bg-background shadow-xs transition-colors checked:border-primary checked:bg-primary after:absolute after:left-1/2 after:top-1/2 after:hidden after:h-2 after:w-1 after:-translate-x-1/2 after:-translate-y-[60%] after:rotate-45 after:border-b-2 after:border-r-2 after:border-primary-foreground after:content-[""] checked:after:block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50',
+    `${controlBase} rounded-[4px] checked:border-primary checked:bg-primary after:absolute after:left-1/2 after:top-1/2 after:hidden after:h-2 after:w-1 after:-translate-x-1/2 after:-translate-y-[60%] after:rotate-45 after:border-b-2 after:border-r-2 after:border-primary-foreground after:content-[""] checked:after:block`,
     {
       size: {
         sm: 'h-3.5 w-3.5',

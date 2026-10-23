@@ -6,6 +6,7 @@ import { createConfig } from '#lib/form/svelte/index.js'
 import CheckboxField from './CheckboxField.svelte'
 import FileField from './FileField.svelte'
 import HiddenField from './HiddenField.svelte'
+import RadioGroupField from './RadioGroupField.svelte'
 import RangeField from './RangeField.svelte'
 import RatingField from './RatingField.svelte'
 import PhoneField from './PhoneField.svelte'
@@ -28,7 +29,8 @@ export const resolve = (f: { input: string; variant?: string }) => {
     case 'rating': return RatingField          // свой тип — такой же гражданин
     case 'phone': return PhoneField            // и второй: номер одной строкой
     case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
-    case 'select': case 'radio': case 'multiselect': return SelectField
+    case 'radio': return RadioGroupField
+    case 'select': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
     case 'file': case 'files': case 'photo': return FileField
     case 'range': return RangeField

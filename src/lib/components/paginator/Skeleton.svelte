@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Skeleton as UiSkeleton } from '#lib/components/ui/index.js'
+
   interface Props {
     height?: number
     class?: string
@@ -7,8 +9,8 @@
   let { height, class: className }: Props = $props()
 </script>
 
-<div
+<UiSkeleton
   data-testid="skeleton"
   style={height ? `height: ${height}px;` : undefined}
-  class={`animate-pulse rounded-lg bg-muted/70 ${className ?? (height ? '' : 'h-12')}`}
-></div>
+  class={className ?? (height ? '' : 'h-12')}
+/>

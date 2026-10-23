@@ -85,6 +85,15 @@ const SCOPE = [
   'src/lib/components/modals/CloseAllButton.svelte',
   'src/lib/components/modals/ForceClose.svelte',
   'src/lib/components/ui/field/field.ts',
+  'src/lib/components/ui/checkbox/Checkbox.svelte',
+  'src/lib/components/ui/switch/Switch.svelte',
+  'src/lib/components/ui/radio-group/RadioItem.svelte',
+  'src/lib/components/ui/radio-group/RadioGroup.svelte',
+  'src/lib/components/ui/range/Range.svelte',
+  'src/lib/components/ui/attachment/Attachment.svelte',
+  'src/lib/components/ui/attachment/variants.ts',
+  'src/lib/components/ui/skeleton/Skeleton.svelte',
+  'src/lib/components/paginator/Skeleton.svelte',
   'src/lib/components/ui/select/Select.svelte',
   'src/lib/components/ui/select/SelectList.svelte',
   'src/lib/components/ui/input/AffixSwap.svelte',
@@ -268,3 +277,4 @@ if (broken.length) {
 } else {
   console.log('Все утилиты сгенерированы.')
 }
+if (markers.length || broken.length) process.exitCode = 1

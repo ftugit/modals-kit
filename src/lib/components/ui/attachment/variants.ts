@@ -75,6 +75,3 @@ export const attachmentTileIconSize: Record<'sm' | 'md' | 'lg', string> = {
   md: 'size-8',
   lg: 'size-10',
 }
-
-export const attachmentRadioClasses =
-  'h-4 w-4 shrink-0 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50'

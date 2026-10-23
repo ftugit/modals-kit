@@ -2,7 +2,7 @@
   import { variants, type VariantProps } from '../../../utils'
 
   export const switchVariants = variants(
-    'relative inline-block shrink-0 cursor-pointer appearance-none rounded-full border border-input bg-input transition-colors checked:border-primary checked:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:top-1/2 before:-translate-y-1/2 before:rounded-full before:bg-background before:shadow-sm before:transition-transform before:content-[""]',
+    'relative inline-block shrink-0 cursor-pointer appearance-none rounded-full border border-input bg-input transition-colors checked:border-primary checked:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 before:absolute before:top-1/2 before:-translate-y-1/2 before:rounded-full before:bg-background before:shadow-sm before:transition-transform before:content-[""]',
     {
       size: {
         sm: 'h-4 w-7 before:left-0.5 before:h-3 before:w-3 checked:before:translate-x-3',

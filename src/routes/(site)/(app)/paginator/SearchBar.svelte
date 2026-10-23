@@ -51,7 +51,7 @@
   <!-- Крестик очистки появляется после оживления (сброс — работа JS);
        `type="search"` и прятанье родного крестика браузера — в примитиве. -->
   <SearchInput
-      class="min-w-56"
+      wrapperClass="min-w-56"
       {...search.field.attrs}
       data-testid="search-input"
       disabled={search.hydrated && search.disabled}
