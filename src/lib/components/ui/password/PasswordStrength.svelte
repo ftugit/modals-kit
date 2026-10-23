@@ -35,8 +35,8 @@
   <div
     class={cn(
       'mt-1.5 flex items-center gap-2',
-      "data-[score='1']:[--strength-color:var(--destructive)] data-[score='2']:[--strength-color:#d97706]",
-      "data-[score='3']:[--strength-color:#65a30d] data-[score='4']:[--strength-color:#16a34a]",
+      "data-[score='1']:[--strength-color:var(--destructive)] data-[score='2']:[--strength-color:var(--warning)]",
+      "data-[score='3']:[--strength-color:color-mix(in_oklab,var(--warning)_40%,var(--success))] data-[score='4']:[--strength-color:var(--success)]",
     )}
     data-strength=""
     data-score={level}

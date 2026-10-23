@@ -11,6 +11,7 @@
     type AttachmentSize,
     type NormalizedAttachment,
   } from '../attachment'
+  import CloseIcon from '../close-icon/CloseIcon.svelte'
   import FileInput from '../file-input/FileInput.svelte'
 
   export interface FileAttachmentActionContext {
@@ -192,18 +193,7 @@
               disabled={Boolean(rest.disabled)}
               onclick={() => removeAt(index)}
             >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="size-4"
-              >
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
+              <CloseIcon size={16} />
             </AttachmentAction>
           {/if}
         {/snippet}

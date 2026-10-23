@@ -3,6 +3,8 @@
   import type { Snippet } from 'svelte'
   import type { ClassValue } from 'clsx'
   import { cn } from '../../../utils'
+  import CloseIcon from '../close-icon/CloseIcon.svelte'
+  import { affixButtonClass } from '../field/field'
   import InputShell from '../input/InputShell.svelte'
   import InputAffix from '../input/InputAffix.svelte'
 
@@ -31,18 +33,17 @@
       <button
         type="button"
         data-search-clear=""
-        class="inline-flex h-full w-9 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 cursor-pointer"
+        class={cn(affixButtonClass, 'h-full w-9 rounded-r-md')}
         aria-label={clearLabel}
         title={clearLabel}
+        {disabled}
         onpointerdown={(e) => {
           e.preventDefault()
           onClear()
         }}
         onclick={(e) => e.preventDefault()}
       >
-        <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
-          <path d="m4 4 8 8m0-8-8 8" />
-        </svg>
+        <CloseIcon size={16} />
       </button>
     </InputAffix>
   {/if}

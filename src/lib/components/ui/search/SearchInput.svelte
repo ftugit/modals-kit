@@ -4,6 +4,7 @@
   import { cn } from '../../../utils'
   import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
   import { reflectTask } from '../../links/state.svelte.js'
+  import { fieldBase } from '../field/field'
   import SearchField from './SearchField.svelte'
 
   interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'class'> {
@@ -76,7 +77,8 @@
     {disabled}
     {@attach hasTask ? attachTask : undefined}
     class={cn(
-      'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 pr-9 [&::-webkit-search-cancel-button]:appearance-none',
+      fieldBase,
+      'px-3 py-2 pr-9 text-sm [&::-webkit-search-cancel-button]:appearance-none',
       inputClass,
     )}
   />

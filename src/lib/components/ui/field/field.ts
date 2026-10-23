@@ -1,9 +1,12 @@
 /* @unocss-include */
-// Базовые классы полей и их размеры. Перенесено из `input.tsx` оригинала
-// без правок значений: плану запрещено подбирать оформление.
+// Базовые классы полей, их размеры и общая база кнопок-аффиксов.
 import { variants, type VariantProps } from '../../../utils'
 
-const fieldBase = 'w-full rounded-md border border-input bg-background text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20'
+export const fieldBase =
+  'w-full rounded-md border border-input bg-background text-foreground shadow-xs placeholder:text-muted-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20'
+
+export const affixButtonClass =
+  'inline-flex cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50'
 
 export const inputVariants = variants(
   fieldBase,

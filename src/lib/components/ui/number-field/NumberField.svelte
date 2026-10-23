@@ -6,7 +6,7 @@
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
   import Input from '../input/Input.svelte'
-  import { AUTO_WIDTH_CLASS } from '../field/field'
+  import { affixButtonClass, AUTO_WIDTH_CLASS } from '../field/field'
 
   interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'size'> {
     value?: number | string | null
@@ -100,7 +100,7 @@
     <span class="absolute right-1 flex items-center gap-0.5">
       <button
         type="button"
-        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 cursor-pointer"
+        class={cn(affixButtonClass, 'h-7 w-7 rounded-md hover:bg-accent')}
         aria-label={decrementLabel}
         data-number-step="down"
         disabled={disabled || (current !== null && min !== null && current <= min)}
@@ -112,7 +112,7 @@
       </button>
       <button
         type="button"
-        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 cursor-pointer"
+        class={cn(affixButtonClass, 'h-7 w-7 rounded-md hover:bg-accent')}
         aria-label={incrementLabel}
         data-number-step="up"
         disabled={disabled || (current !== null && max !== null && current >= max)}

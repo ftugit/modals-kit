@@ -33,6 +33,7 @@ const uno = await createGenerator({
   presets: [preset({ preflights: { reset: false } })],
   shortcuts: {},
   theme: {
+    aria: { invalid: 'invalid="true"' },
     colors: {
       background: v('background'), foreground: v('foreground'), border: v('border'), input: v('input'), ring: v('ring'),
       card: pair('card'), popover: pair('popover'), primary: pair('primary'), secondary: pair('secondary'),
@@ -83,14 +84,20 @@ const SCOPE = [
   'src/lib/components/modals/ModalError.svelte',
   'src/lib/components/modals/CloseAllButton.svelte',
   'src/lib/components/modals/ForceClose.svelte',
+  'src/lib/components/ui/field/field.ts',
   'src/lib/components/ui/select/Select.svelte',
   'src/lib/components/ui/select/SelectList.svelte',
-  'src/lib/components/ui/search/SearchMorph.svelte',
   'src/lib/components/ui/input/AffixSwap.svelte',
   'src/lib/components/ui/otp-input/OtpInput.svelte',
   'src/lib/components/ui/password/PasswordStrength.svelte',
   'src/lib/components/ui/phone-input/PhoneInput.svelte',
+  'src/lib/components/ui/textarea/Textarea.svelte',
   'src/lib/components/ui/textarea/AutoTextarea.svelte',
+  'src/lib/components/ui/search/SearchInput.svelte',
+  'src/lib/components/ui/search/SearchField.svelte',
+  'src/lib/components/ui/number-field/NumberField.svelte',
+  'src/lib/components/ui/password/PasswordInput.svelte',
+  'src/lib/components/ui/copy-input/CopyInput.svelte',
   'src/routes/(site)/(modals-demo)/FloatingMenu.svelte',
   'src/routes/(site)/(modals-demo)/modals/SourcesPanel.svelte',
   'src/routes/(site)/(modals-demo)/SelectModal.svelte',
@@ -178,7 +185,7 @@ function tokensFrom(chunks) {
       if (/[A-Z.\/=<>;,"'@#]/.test(tok)) continue
       if (!/^[-a-z0-9[\]:%_!()]+$/.test(tok)) continue
       if (/^-?\d/.test(tok)) continue
-      if (/^(--|aria-|data-|bind:|display:|animation)/.test(tok)) continue
+      if (/^(--|(?:aria|data)-[a-z-]+$|\[data-|cn\(|bind:|display:|animation)/.test(tok)) continue
       if (/^[a-z-]+:$/.test(tok)) continue
       if (/^(fade|scale|slide-up|slide-down|slide|blur)$/.test(tok)) continue
       if (tok.startsWith('(') || /\)$/.test(tok)) continue
@@ -225,6 +232,10 @@ const NOT_A_CLASS = new Set([
   'modals-host', // id диалога Ark у хоста
   'modals-host-sheet',
   '[tabindex]', // фрагмент селектора в querySelector хоста
+  '[modals]',
+  'esm-env',
+  'owner-closed',
+  'sveltekit:history',
   '!checked', // выражение кода внутри class={cn(…)}
   'cn(', // вызов cn из того же class={cn(…)}
 ])

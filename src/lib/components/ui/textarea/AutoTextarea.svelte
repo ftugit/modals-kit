@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { HTMLTextareaAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
+  import { fieldBase } from '../field/field'
 
   interface Props extends HTMLTextareaAttributes {
     minLines?: number
@@ -42,11 +43,9 @@
   bind:value
   rows={minLines}
   class={cn(
-    'w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20',
-    // Бывший `.field-autosize`: размер по содержимому, пол и потолок по
-    // числу строк (переменные приходят из style ниже), резервный путь без
-    // `field-sizing` прячет переполнение — как делал @supports-блок.
-    'field-sizing-content resize-none min-h-[calc(var(--field-min-lines,1)*1lh_+_1.25rem)] max-h-[calc(var(--field-max-lines,6)*1lh_+_1.25rem)] transition-[height] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms] data-[autosize=js]:overflow-y-hidden',
+    fieldBase,
+    'px-3 py-2 text-sm',
+    'field-sizing-content resize-none min-h-[calc(var(--field-min-lines,1)*1lh_+_1.25rem)] max-h-[calc(var(--field-max-lines,6)*1lh_+_1.25rem)] transition-[color,border-color,box-shadow,height] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:duration-[1ms] data-[autosize=js]:overflow-y-hidden',
     cls,
   )}
   style={`--field-min-lines: ${minLines}; --field-max-lines: ${maxLines}; ${typeof style === 'string' ? style : ''}`}

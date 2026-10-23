@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { cn } from '../../../utils'
+  import { affixButtonClass } from '../field/field'
   import Input from '../input/Input.svelte'
   import InputAffix from '../input/InputAffix.svelte'
   import InputShell from '../input/InputShell.svelte'
@@ -70,7 +71,7 @@
     <InputAffix side="end" interactive>
       <button
         type="button"
-        class="inline-flex h-full w-10 items-center justify-center rounded-r-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 cursor-pointer text-muted-foreground"
+        class={cn(affixButtonClass, 'h-full w-10 rounded-r-md')}
         aria-label={label}
         aria-pressed={visible}
         title={label}

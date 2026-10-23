@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { cn } from '../../../utils'
+  import CloseIcon from '../close-icon/CloseIcon.svelte'
+  import { fieldBase } from '../field/field'
   import SearchField from '../search/SearchField.svelte'
   import {
     matchesSelectOption,
@@ -394,9 +396,7 @@
         aria-label={`Снять выделение: выбрано ${selected.length}`}
         onclick={clearSelection}
       >
-        <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
-          <path d="m4 4 8 8m0-8-8 8" />
-        </svg>
+        <CloseIcon size={16} />
         <span class="tabular-nums">{selected.length}</span>
       </button>
     {/if}
@@ -422,7 +422,8 @@
         inputmode={searchArmed ? 'text' : 'none'}
         placeholder={config.search === 'off' ? '' : 'Поиск…'}
         class={cn(
-          'h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 sm:text-sm',
+          fieldBase,
+          'h-9 min-w-0 px-3 text-base sm:text-sm [&::-webkit-search-cancel-button]:appearance-none',
           query && 'pr-9',
         )}
       />
@@ -463,9 +464,7 @@
       aria-label="Закрыть"
       onclick={close}
     >
-      <svg aria-hidden="true" viewBox="0 0 16 16" class="h-4 w-4 fill-none stroke-current stroke-2">
-        <path d="m4 4 8 8m0-8-8 8" />
-      </svg>
+      <CloseIcon size={16} />
     </button>
   </div>
 
