@@ -337,6 +337,8 @@ const countryOf = (request: Request): string | undefined =>
  * Токены из успешных ответов кладутся в куки здесь (сервер, HttpOnly) —
  * компонент этого не делает никогда.
  */
+const renewInFlight = new Map<string, Promise<UserResult<LoginOutcome>>>()
+
 export function auth(event: AuthEvent): {
   /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
   readonly enabled: boolean
@@ -361,6 +363,7 @@ export function auth(event: AuthEvent): {
     delete: (name) => event.cookies.delete(name, { ...COOKIE_BASE }),
   })
   const access = () => event.cookies.get(ACCESS_COOKIE)
+  const renewal = () => event.cookies.get(RENEWAL_COOKIE)
   const setTokens = (value: LoginOutcome, deviceTtlSec: number, accessTtlSec: number) => {
     event.cookies.set(ACCESS_COOKIE, value.access, { ...COOKIE_BASE, maxAge: accessTtlSec })
     if (value.renewal) event.cookies.set(RENEWAL_COOKIE, value.renewal, { ...COOKIE_BASE, maxAge: deviceTtlSec })
@@ -369,6 +372,49 @@ export function auth(event: AuthEvent): {
     event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
     event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
   }
+
+  const runRenew = async (): Promise<UserResult<LoginOutcome>> => {
+    const rawRenewal = renewal()
+    const unsealed = rawRenewal ? await ports.seal.unseal(rawRenewal) : null
+    const jti = unsealed && unsealed.k === 'renewal' ? unsealed.jti : null
+
+    let shared = jti ? renewInFlight.get(jti) : undefined
+    if (!shared) {
+      const p = coreRenew(ports, {
+        renewal: rawRenewal,
+        subnet: subnetOf(event.request),
+        country: countryOf(event.request),
+      })
+      if (jti) {
+        shared = p.finally(() => {
+          if (renewInFlight.get(jti) === shared) renewInFlight.delete(jti)
+        })
+        renewInFlight.set(jti, shared)
+      } else {
+        shared = p
+      }
+    }
+
+    const r = await shared
+    if (r.ok) {
+      setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
+    }
+    return r
+  }
+
+  const freshAccessOrCurrent = async (): Promise<string | undefined> => {
+    const current = access()
+    if (current) {
+      const payload = await ports.seal.unseal(current)
+      if (payload && payload.k === 'access' && payload.exp > Date.now()) {
+        return current
+      }
+    }
+    if (!renewal()) return current
+    const renewed = await runRenew()
+    return renewed.ok ? renewed.value.access : current
+  }
+
   return {
     enabled: AUTH_ENABLED,
     issueChallenge: () => coreIssueChallenge(ports),
@@ -383,35 +429,36 @@ export function auth(event: AuthEvent): {
       return r
     },
     verifySeed: (args) => coreVerifySeed(ports, args),
-    renew: async () => {
-      const r = await coreRenew(ports, { renewal: event.cookies.get(RENEWAL_COOKIE), subnet: subnetOf(event.request), country: countryOf(event.request) })
-      if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
-      return r
-    },
+    renew: runRenew,
     logout: async () => {
-      const r = await coreLogout(ports, access())
+      const r = await coreLogout(ports, access(), renewal())
       clearCookies()
       return r
     },
     logoutAll: async () => {
-      const r = await coreLogoutAll(ports, access())
+      const r = await coreLogoutAll(ports, access(), renewal())
       clearCookies()
       return r
     },
-    listSessions: () => coreListSessions(ports, access()),
-    revokeSession: (jti) => coreRevokeSession(ports, access(), jti),
-    profile: () => coreProfile(ports, access()),
-    updateProfile: (args) => coreUpdateProfile(ports, access(), args),
-    requestDelete: () => coreRequestDelete(ports, access()),
+    listSessions: async () => coreListSessions(ports, await freshAccessOrCurrent()),
+    revokeSession: async (jti) => coreRevokeSession(ports, await freshAccessOrCurrent(), jti),
+    profile: async () => coreProfile(ports, await freshAccessOrCurrent()),
+    updateProfile: async (args) => coreUpdateProfile(ports, await freshAccessOrCurrent(), args),
+    requestDelete: async () => {
+      const r = await coreRequestDelete(ports, await freshAccessOrCurrent())
+      if (r.ok) clearCookies()
+      return r
+    },
   }
 }
 
 /**
- * Пейлоад для vault из данных страницы: сервер читает куки и распечатывает
- * временный токен — клиент NEVER не читает куки сам (HttpOnly сохраняется).
+ * Пейлоад для vault из живой куки `auth_tmp` (быстрый stateless-путь без БД).
+ * Просроченный токен (`exp <= nowMs`) возвращается как `null`.
  */
 export async function readVault(
   cookies: { get(name: string): string | undefined },
+  nowMs = Date.now(),
 ): Promise<{
   access: string
   expiresAt: number
@@ -422,7 +469,7 @@ export async function readVault(
   const access = cookies.get(ACCESS_COOKIE)
   if (!access) return null
   const payload = await authPorts().seal.unseal(access)
-  if (!payload || payload.k !== 'access') return null
+  if (!payload || payload.k !== 'access' || payload.exp <= nowMs) return null
   return {
     access,
     expiresAt: payload.exp,
@@ -430,6 +477,34 @@ export async function readVault(
     sub: payload.sub,
     prof: payload.prof,
   }
+}
+
+/**
+ * SSR-разрешение сессии для корневого layout новой вкладки:
+ * - если короткий `auth_tmp` жив — возвращает снимок мгновенно (`0` запросов в БД);
+ * - если `auth_tmp` отсутствует или истёк, но присутствует `auth_sid` — бесшовно
+ *   выполняет `renew()` прямо во время SSR `load`, выставляя свежие `Set-Cookie`;
+ * - если `auth_sid` мёртв/отозван — удаляет мёртвые куки и возвращает `null`.
+ */
+export async function resolveVault(event: AuthEvent): Promise<{
+  access: string
+  expiresAt: number
+  ttlMs: number
+  sub: string
+  prof: { nickname: string | null; avatarUrl: string | null }
+} | null> {
+  const live = await readVault(event.cookies)
+  if (live) return live
+  if (!event.cookies.get(RENEWAL_COOKIE)) return null
+
+  const u = auth(event)
+  if (!u.enabled) return null
+  const renewed = await u.renew()
+  if (renewed.ok) return vaultPayloadOf(renewed.value)
+
+  event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
+  event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
+  return null
 }
 
 /** Пейлоад для vault из успешного ответа входа/продления (значения токенов). */

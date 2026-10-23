@@ -3,15 +3,7 @@
    * Встраиваемая форма редактирования профиля (`profileForm`) под защитой
    * `<Acl allow="user">`.
    *
-   * Работает на любом маршруте и в модалке через `#hooks/component-form`:
-   *   - гостю никогда не рендерится — `<Acl allow="user">` показывает экран входа;
-   *   - без JS `Field` рисует штатный `FileField` с именованным файловым
-   *     носителем `avatar`, отправляя исходный файл на серверный конвейер
-   *     (`prepareAvatar` + `decodeWithNode`);
-   *   - с JS `FieldTakeover` (`base: FileField`) монтирует `AvatarTakeover`
-   *     (компактный `FileAttachment` без имени/веса + сжатие `prepareAvatar` +
-   *     запись готового `File` через `DataTransfer`). Никаких `base64`-строк
-   *     по сети не передаётся.
+   * Читает и обновляет профиль через единый реактивный `vault`.
    */
   import { untrack } from 'svelte'
   import { Form, formTask, type FieldTakeover } from '#lib/form/svelte/index.js'
@@ -26,7 +18,7 @@
   import { useJsOnly } from '#lib/hooks/js-only.svelte.js'
   import { defaults } from '../../config.js'
   import { createUserChecks } from '../../checks.js'
-  import { hydrateVault, readUser, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
+  import { vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import type { AvatarLimits } from './avatar.js'
@@ -61,8 +53,8 @@
 
   const notHydrated = useJsOnly()
 
-  const activeUser = $derived(readUser(initial ? { prof: initial } : null))
-  const isAuthorized = $derived(authorized !== undefined ? authorized : Boolean(activeUser))
+  const isAuthorized = $derived(authorized !== undefined ? authorized : vault.authorized)
+  const activeProfile = $derived(vault.authorized ? vault.profile : (initial ?? vault.profile))
 
   const initialLimits = untrack(() => limits)
   const userChecks = createUserChecks({
@@ -78,10 +70,10 @@
   })
 
   if (!bound.state.result) {
-    mirrorToField(bound, 'nickname', () => activeUser?.prof.nickname ?? '')
+    mirrorToField(bound, 'nickname', () => activeProfile.nickname ?? '')
   }
 
-  const existingAvatar = $derived(activeUser?.prof.avatarUrl ?? null)
+  const existingAvatar = $derived(activeProfile.avatarUrl ?? null)
   const removeCurrent = $derived(Boolean(bound.state.values.remove_avatar))
 
   setAvatarTakeoverContext({
@@ -105,7 +97,7 @@
     const data = r.data as { step?: string; user?: VaultPayload } | undefined
     if (data?.step === 'done') {
       lastHandledSubmission = r.submissionId
-      if (data.user) hydrateVault(data.user)
+      if (data.user) vault.hydrate(data.user)
       onDone?.()
     }
   })

@@ -2,7 +2,8 @@
   /**
    * Виджет авторизации в модалке (`?modal=user.auth`). Данные загрузчика
    * маршрута — через `useLoader()`, целевой шаг (`stage`) — из параметров
-   * записи модалки (`useModal().params.stage`). Callback — закрытие модалки.
+   * записи модалки (`useModal().params.stage`). Состояние пользователя —
+   * напрямую из единого реактивного `vault`.
    */
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import { resolveAuthStep } from '../index.js'
@@ -16,7 +17,6 @@
     registerSeed: string | null
     enabled?: boolean
     limits: AvatarLimits & { holdSeconds: number }
-    user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
   }
 
   const m = useModals()

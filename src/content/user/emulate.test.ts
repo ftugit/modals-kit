@@ -359,6 +359,20 @@ describe('выходы и устройства', () => {
     expect(fact_(await profile(ports, out.access)).code).toBe('auth.revoked')
   })
 
+  test('выход с истёкшим или отсутствующим access по куке renewal всё равно закрывает сессию в БД', async () => {
+    const { ports } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const a = ok_(await doLogin(ports, seed, sk))
+    ok_(await logout(ports, undefined, a.renewal))
+    expect(fact_(await renew(ports, { renewal: a.renewal })).code).toBe('auth.revoked')
+
+    const b = ok_(await doLogin(ports, seed, sk))
+    const c = ok_(await doLogin(ports, seed, sk))
+    ok_(await logoutAll(ports, undefined, b.renewal))
+    expect(fact_(await renew(ports, { renewal: b.renewal })).code).toBe('auth.revoked')
+    expect(fact_(await renew(ports, { renewal: c.renewal })).code).toBe('auth.revoked')
+  })
+
   test('выйти со всех: все сессии софт-удалены', async () => {
     const { ports, secret } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()

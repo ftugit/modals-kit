@@ -338,20 +338,66 @@ export async function renew(
 
 /* ── выходы, устройства ── */
 
-/** Выход: софт-удаление своей сессии. Куки снимает адаптер по явному вызову. */
-export async function logout(ports: AuthPorts, accessToken: string | undefined): Promise<UserResult<null>> {
+/**
+ * Выход: софт-удаление своей сессии.
+ * Работает и тогда, когда короткий `access` уже истёк, а живой `renewal`
+ * (`auth_sid`) ещё лежит в куке браузера — иначе старая сессия осталась бы
+ * активной в БД после клика «Выйти».
+ */
+export async function logout(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  renewalToken?: string | undefined,
+): Promise<UserResult<null>> {
+  const now = ports.clock.now()
   const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  await ports.sessions.softDelete(g.jti, ports.clock.now())
-  return ok(null)
+  if (!('code' in g)) {
+    await ports.sessions.softDelete(g.jti, now)
+    return ok(null)
+  }
+  if (renewalToken) {
+    const t = await ports.seal.unseal(renewalToken)
+    if (t && t.k === 'renewal') {
+      await ports.sessions.softDelete(t.jti, now)
+      return ok(null)
+    }
+  }
+  if (g.code === 'auth.expired' && accessToken) {
+    const expired = await ports.seal.unseal(accessToken)
+    if (expired && expired.k === 'access') {
+      await ports.sessions.softDelete(expired.dt, now)
+      return ok(null)
+    }
+  }
+  return fail(g)
 }
 
-/** Выйти со всех устройств: софт-удаление всех строк сессий аккаунта. */
-export async function logoutAll(ports: AuthPorts, accessToken: string | undefined): Promise<UserResult<null>> {
+/** Выйти со всех устройств: софт-удаление всех строк сессий аккаунта (с fallback на `renewal`). */
+export async function logoutAll(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  renewalToken?: string | undefined,
+): Promise<UserResult<null>> {
+  const now = ports.clock.now()
   const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  await ports.sessions.softDeleteAllByAuth(g.sub, ports.clock.now())
-  return ok(null)
+  if (!('code' in g)) {
+    await ports.sessions.softDeleteAllByAuth(g.sub, now)
+    return ok(null)
+  }
+  if (renewalToken && (g.code === 'auth.expired' || g.code === 'auth.token')) {
+    const t = await ports.seal.unseal(renewalToken)
+    if (t && t.k === 'renewal') {
+      const record = await ports.sessions.get(t.jti)
+      if (record && statusOf(record, now) === 'ok') {
+        const auth = await ports.auths.get(record.authId)
+        if (auth && !fullBlock(auth.blocked, now) && auth.deletedAt === null) {
+          await ports.sessions.softDeleteAllByAuth(record.authId, now)
+          return ok(null)
+        }
+      }
+    }
+  }
+  return fail(g)
 }
 
 /** Список устройств: имя, времена, текущая подсеть (хэш) и история. */

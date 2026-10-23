@@ -4,21 +4,18 @@
    * `restrictions`, `profile`).
    *
    * Всю разметку и проверку прав несут самостоятельные компоненты на своих
-   * шагах, а `variant` и `class` прокидываются по цепочке в любой активный
-   * передний блок (`Acl`, `BanNotice`, `RestrictionsNotice`, `ProfileForm`, `SeedForm`):
-   *   - `auth.*` (`entry` | `register` | `restore`) → `SeedForm` (`authorize={true}`, `Acl allow="guest"`);
-   *   - `blocked` → `BanNotice` (`Acl allow="guest"`);
-   *   - `restrictions` → `RestrictionsNotice` (`Acl allow="user"`);
-   *   - `profile` → `ProfileForm` (`Acl allow="user"`).
+   * шагах, а статус авторизации и профиль читаются и пишутся исключительно
+   * через единый реактивный `vault`.
    */
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { formSteps, suffixOf, useSteps } from '#lib/components/steps/index.js'
   import { kitActionTransport } from '#lib/components/form/transport.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#lib/components/form/forms.config.js'
   import { generateKeyPair, sign } from '../keys.js'
-  import { hydrateVault, readUser } from '../vault.svelte.js'
+  import { vault, type VaultPayload } from '../vault.svelte.js'
   import type { AvatarLimits } from './profile-form/index.js'
   import ProfileForm from './profile-form/ProfileForm.svelte'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
@@ -27,17 +24,9 @@
   import BanNotice from './BanNotice.svelte'
   import RestrictionsNotice from './RestrictionsNotice.svelte'
 
-  type UserPayload = {
-    access: string
-    expiresAt: number
-    ttlMs: number
-    sub: string
-    prof: { nickname: string | null; avatarUrl: string | null }
-  }
-
   type StepData = {
     step?: 'entry' | 'register' | 'restore' | 'profile' | 'blocked' | 'restrictions' | 'done'
-    user?: UserPayload
+    user?: VaultPayload
     blocked?: { reason: string; untilMs: number | null }
     restrictions?: readonly { scope: string; reason: string; untilMs: number | null }[]
     nonce?: string
@@ -51,7 +40,6 @@
       step: string
       registerSeed?: string | null
       enabled?: boolean
-      user?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
     }
     mode?: 'page' | 'modal'
     variant?: UserSurfaceVariant
@@ -68,8 +56,7 @@
   }: Props = $props()
 
   const doneHref = $derived(data.next ?? '/')
-  const currentUser = $derived(readUser(data.user))
-  const authorized = $derived(currentUser !== null)
+  const authorized = $derived(vault.authorized)
 
   // svelte-ignore state_referenced_locally -- начальный challenge из SSR
   let nonce = $state(data.challenge?.nonce ?? '')
@@ -146,7 +133,7 @@
     if (!state.result || (state.status !== 'success' && state.status !== 'error')) return
     const next = stepOf(state.result)
     if (!next) return
-    if (next.user) hydrateVault(next.user)
+    if (next.user) vault.hydrate(next.user)
     if (next.step === 'done') {
       finish()
       return
@@ -162,14 +149,13 @@
     })
   })
 
-  const challengeTransport = kitActionTransport('/user/auth')
-
   async function refreshChallenge(): Promise<void> {
     try {
       const fd = new FormData()
       for (const pair of bound.hidden()) fd.append(pair.name, pair.value)
       fd.append('intent', 'challenge')
-      const out = await challengeTransport({
+      const target = (visibleAddress().url.pathname || '/') + visibleAddress().url.search
+      const out = await kitActionTransport(target)({
         envelope: {
           formId: SEED_FORM_ID,
           revision: SEED_FORM_REV,
@@ -226,7 +212,6 @@
 {:else if hostStep === 'profile'}
   <ProfileForm
     limits={data.limits}
-    initial={currentUser?.prof ?? null}
     {authorized}
     enabled={data.enabled}
     {doneHref}

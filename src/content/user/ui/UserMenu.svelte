@@ -1,31 +1,23 @@
 <script lang="ts">
   /**
-   * Кнопка пользователя в шапке (вариант 1).
+   * Кнопка пользователя в шапке.
    * С JS открывает модалку (`user.menu` / `user.auth`), без JS ведёт на
    * страницу `/user/menu` / `/user/auth`.
    *
-   * В браузере после инициализации читает реактивный RAM `vault` через
-   * `readUser(server)` — вход, смена профиля и выход отражаются мгновенно.
+   * Читает исключительно единый реактивный `vault` (на SSR и до гидратации
+   * `vault` прозрачно отдаёт `page.data.user`, в браузере — состояние RAM).
    */
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#lib/components/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#lib/hooks/js-only.svelte.js'
-  import { readUser } from '../vault.svelte.js'
-
-  interface Props {
-    /** Снимок входа с сервера (SSR): до гидратации vault пуст. */
-    server?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
-  }
-
-  let { server = null }: Props = $props()
+  import { vault } from '../vault.svelte.js'
 
   const asModalLink = useModalLink()
   const notHydrated = useJsOnly()
 
-  const currentUser = $derived(readUser(server))
-  const authorized = $derived(currentUser !== null)
-  const nickname = $derived(currentUser?.prof.nickname ?? null)
-  const avatarUrl = $derived(currentUser?.prof.avatarUrl ?? null)
+  const authorized = $derived(vault.authorized)
+  const nickname = $derived(vault.profile.nickname)
+  const avatarUrl = $derived(vault.profile.avatarUrl)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
 
   /** адрес страницы входа с возвратом сюда (валидность next — на сервере) */

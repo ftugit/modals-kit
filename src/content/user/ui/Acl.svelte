@@ -20,17 +20,12 @@
   /**
    * UI ACL модуля пользователя.
    *
-   * Определяет, можно ли рендерить `children`, исходя из:
-   *   - статуса авторизации субъекта (`allow: 'guest' | 'user' | readonly string[]`,
-   *     автоматически синхронизируется с SSR `page.data.user` и клиентским `vault`);
-   *   - состояния аккаунта / подсистемы входа (`enabled`, `status`, `blocked`, `restrictions`);
-   *   - срабатывания модели БД (`model`: `DbFailure` / `KitErrorBody` / `FailureKind`).
-   *
-   * Если ограничение сработало — вместо `children` показывает соответствующий экран ACL,
-   * принимая `variant` и `class` через `cn(...)` наравне с внутренним корневым блоком.
+   * Определяет, можно ли рендерить `children`, читая единый реактивный `vault`
+   * (или явный булев override `authorized` на стендах/в тестах), а также
+   * состояние подсистемы входа (`enabled`, `status`, `blocked`, `restrictions`)
+   * и отказы моделей БД (`model`).
    */
   import type { Snippet } from 'svelte'
-  import { page } from '$app/state'
   import { useModalLink } from '#lib/components/links/index.js'
   import { Button } from '#lib/components/ui/index.js'
   import { cn } from '#lib/utils.js'
@@ -41,12 +36,12 @@
   } from '../acl.js'
   import type { AuthErrorCode } from '../error.js'
   import type { Blocked } from '../types.js'
-  import { readUser, type ServerUserSnapshot } from '../vault.svelte.js'
+  import { vault } from '../vault.svelte.js'
 
   interface Props {
     /** Кому разрешён просмотр содержимого (`'guest'`, `'user'` или список ролей). */
     allow?: AclAllow
-    /** Явное переопределение флага авторизации (по умолчанию берётся из `readUser`). */
+    /** Явное переопределение флага авторизации (по умолчанию читается `vault.authorized`). */
     authorized?: boolean
     /** Роли текущего пользователя (если проверяются роли в `allow`). */
     roles?: readonly string[]
@@ -97,12 +92,7 @@
   }
 
   const asModalLink = optionalModalLink()
-
-  const isAuthorized = $derived(
-    authorized !== undefined
-      ? authorized
-      : Boolean(readUser((page.data as { user?: ServerUserSnapshot } | undefined)?.user)),
-  )
+  const isAuthorized = $derived(authorized !== undefined ? authorized : vault.authorized)
 
   const screen = $derived(
     resolveAcl({

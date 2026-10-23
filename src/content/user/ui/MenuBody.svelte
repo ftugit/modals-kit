@@ -1,13 +1,10 @@
 <script lang="ts">
   /**
-   * Тело меню пользователя — БУКВАЛЬНО ОДИН компонент для модалки `user.menu`
-   * и страницы `/user/menu` (решение владельца, ход 261): аватар (круглый
-   * блок-заполнитель, внутри картинка во всю ширину), ник, переход к шагу
-   * редактирования профиля (`stage=profile`) и выход.
+   * Тело меню пользователя — один и тот же компонент для модалки `user.menu`
+   * и страницы `/user/menu`: аватар, ник, переход к шагу редактирования
+   * профиля (`stage=profile`) и выход.
    *
-   * Защищён `Acl` (`allow="user"`): гостю ни на `/user/menu`, ни по прямой
-   * ссылке `?modal=user.menu` меню пользователя не рендерится; и `variant`,
-   * и `class` через `cn(...)` работают на обоих уровнях (`Acl` и тело меню).
+   * Читает исключительно единый реактивный `vault`; защищён `<Acl allow="user">`.
    */
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
@@ -18,12 +15,10 @@
   import { Button } from '#lib/components/ui/index.js'
   import { cn } from '#lib/utils.js'
   import { seedForm } from './seed-form/form.js'
-  import { readUser, vault } from '../vault.svelte.js'
+  import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
 
   interface Props {
-    /** Снимок входа с сервера (SSR): до гидратации vault пуст. */
-    server?: { prof: { nickname: string | null; avatarUrl: string | null } } | null
     /** Адрес после выхода без callback (по умолчанию — главная). */
     next?: string
     /** Успех выхода (JS): закрыть модалку. Без callback — переход на `next`. */
@@ -35,7 +30,6 @@
   }
 
   let {
-    server = null,
     next = '/',
     onDone,
     variant = 'plain',
@@ -43,20 +37,17 @@
   }: Props = $props()
 
   const asModalLink = useModalLink()
-
   const bound = bindComponentForm(forms, seedForm)
 
-  const currentUser = $derived(readUser(server))
-  const authorized = $derived(currentUser !== null)
-  const nickname = $derived(currentUser?.prof.nickname ?? null)
-  const avatarUrl = $derived(currentUser?.prof.avatarUrl ?? null)
+  const nickname = $derived(vault.profile.nickname)
+  const avatarUrl = $derived(vault.profile.avatarUrl)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
   const profileLink = $derived(
     asModalLink('user.auth', { stage: 'profile' }, { href: '/user/auth?stage=profile' }),
   )
 
-  // Итог выхода: сервер отвечает шагом «entry» без пользователя — снимаем
-  // зеркало и зовём callback обёртки (без него — переход на `next`).
+  // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках
+  // и зовём callback обёртки (без него — переход на `next`).
   $effect(() => {
     const state = bound.state
     if (!state.result || (state.status !== 'success' && state.status !== 'error')) return
@@ -70,7 +61,7 @@
   })
 </script>
 
-<Acl allow="user" {authorized} {variant} class={className}>
+<Acl allow="user" {variant} class={className}>
   <div
     class={cn(
       'mx-auto flex w-full max-w-sm min-w-56 flex-col gap-3 text-left',
@@ -97,7 +88,6 @@
         name="intent"
         value="logout"
         variant="outline"
-        class="w-full"
         task={formTask(bound.state, 'logout')}
       >
         Выйти

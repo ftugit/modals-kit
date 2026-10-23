@@ -1,10 +1,10 @@
 // Роут авторизации и шагов аккаунта (`auth.*`, `blocked`, `restrictions`, `profile`).
-// Все POST-экшены обрабатываются общим хуком `#hooks/component-form`
-// (`ui/seed-form/server.ts`, `ui/profile-form/server.ts`); роут отвечает за SSR `load`.
+// Все POST-экшены обрабатываются общим хуком `#hooks/component-form`,
+// а снимок сессии `user` централизованно поставляет корневой `+layout.server.ts`.
 import { localPath } from '#lib/address/index.js'
 import type { PageServerLoad } from './$types'
 import { SERVER_PHOTO_FORMATS } from '#content/user/checks.js'
-import { auth, readVault } from '#content/user/gateway.js'
+import { auth } from '#content/user/gateway.js'
 import { createUserConfig, resolveAuthStep } from '#content/user/index.js'
 import { localStore } from '#lib/server/cache.js'
 
@@ -15,7 +15,6 @@ export const load: PageServerLoad = async (event) => {
   const url = event.url
   const next = localPath(url.searchParams.get('next'))
   const step = resolveAuthStep(url.searchParams.get('stage')) || 'auth.entry'
-  const user = await readVault(event.cookies).catch(() => null)
 
   let registerSeed: string | null = null
   if (step === 'auth.register') {
@@ -38,6 +37,5 @@ export const load: PageServerLoad = async (event) => {
       nicknameForbidden: await config.get('nicknameForbidden'),
       holdSeconds: await config.get('holdSeconds'),
     },
-    user,
   }
 }

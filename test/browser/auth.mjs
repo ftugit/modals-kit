@@ -338,8 +338,66 @@ async function run() {
       await form.getByRole('button', { name: 'Авторизация', exact: true }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
       ok('без JS: страница меню с выходом и повторный вход корректным seed работают')
+
+      // 13а. Без JS: истёкший/удалённый auth_tmp при живом auth_sid бесшовно восстанавливается на SSR,
+      // а «Выйти» с мёртвым auth_tmp реально отзывает сессию в БД.
+      await ctx.clearCookies({ name: 'auth_tmp' })
+      await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
+      assert.ok((await page.locator('span').filter({ hasText: 'e2e-nojs-258' }).count()) > 0, 'SSR восстановил сессию по auth_sid')
+      // Снова удаляем auth_tmp прямо перед нажатием «Выйти» и сохраняем копию auth_sid:
+      const savedSid = (await ctx.cookies(BASE)).find((c) => c.name === 'auth_sid')
+      assert.ok(savedSid, 'auth_sid присутствует')
+      await ctx.clearCookies({ name: 'auth_tmp' })
+      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'вышел даже с мёртвым auth_tmp')
+      // Возвращаем старую куку auth_sid вручную — БД обязана отказать (сессия реально отозвана!):
+      await ctx.addCookies([savedSid])
+      await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
+      assert.equal(await page.locator('[data-acl-code="auth_required"]').count(), 1, 'отозванный auth_sid отвергнут БД')
+      ok('без JS: SSR-восстановление по auth_sid и реальный отзыв в БД при мёртвом auth_tmp работают')
+
       await page.close()
       await ctx.close()
+
+      // 14. С JS: межвкладочная синхронизация (BroadcastChannel) и бесшовное восстановление после сна вкладки
+      const syncCtx = await browser.newContext()
+      const tabA = await syncCtx.newPage()
+      const tabB = await syncCtx.newPage()
+      await tabA.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+      await tabA.fill('input[name=seed]', seed)
+      await tabA.locator('#user-auth').getByRole('button', { name: 'Авторизация', exact: true }).click()
+      await tabA.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
+
+      // Вкладка B открывает главную — видит текущего пользователя:
+      await tabB.goto(BASE + '/', { waitUntil: 'networkidle' })
+      await tabB.locator('[data-testid=header-user]').waitFor({ state: 'visible' })
+
+      // Имитируем проснувшуюся через сутки вкладку A: auth_tmp удалён браузером по maxAge,
+      // но пользователь открывает форму профиля и меняет ник без перезагрузки:
+      await tabA.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
+      await tabA.getByRole('link', { name: /Изменить профиль/ }).or(tabA.getByRole('button', { name: /Изменить профиль/ })).click()
+      await tabA.locator('#user-profile input[name=nickname]').waitFor({ state: 'visible', timeout: 5000 })
+      await syncCtx.clearCookies({ name: 'auth_tmp' })
+      await tabA.locator('#user-profile input[name=nickname]').fill('sync-tab-hero')
+      await tabA.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
+      await tabA.waitForSelector('text=sync-tab-hero', { timeout: 10000 })
+
+      // Вкладка B БЕЗ перезагрузки мгновенно получила новый ник через BroadcastChannel:
+      await tabB.waitForFunction(
+        () => document.querySelector('[data-testid=header-user]')?.getAttribute('aria-label') === 'Аккаунт: sync-tab-hero',
+        null,
+        { timeout: 5000 },
+      )
+
+      // Нажимаем «Выйти» во вкладке A — вкладка B БЕЗ перезагрузки переключает шапку на «Авторизация»:
+      await tabA.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await tabB.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 5000 })
+      ok('с JS: спящая вкладка (без auth_tmp) сохраняет форму с 1 клика, а BroadcastChannel синхронизирует ник и выход во 2-ю вкладку')
+
+      await tabA.close()
+      await tabB.close()
+      await syncCtx.close()
     }
   } finally {
     await browser.close()

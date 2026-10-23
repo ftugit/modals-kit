@@ -91,7 +91,7 @@
 {/snippet}
 
 {#snippet userSnippet()}
-  <UserMenu server={data.user} />
+  <UserMenu />
 {/snippet}
 
 {#snippet sidebarTopSnippet()}
