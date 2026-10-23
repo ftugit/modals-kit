@@ -160,10 +160,85 @@
 
 ## 4. Статус реализации решений владельца
 
-> **Статус:** все 5 решений ниже **реализованы в коде и покрыты unit / E2E тестами** (`auth.ts`, `gateway.ts`, `vault.svelte.ts`, `hooks/component-form/client.svelte.ts`, `+layout.server.ts`, `+layout.svelte`, `ui/*`).
+> **Статус: В РАБОТЕ (статус «выполнено» СНЯТ по итогам повторной построчной ревизии коммита `f930886`).**
+> Удаление `readUser` / `hydrateVault` / пропов `server` и базовый каркас `createVault()` работают, однако ручная проверка кода, графа импортов и бандла выявила **8 реальных костылей, гонок и недоработок (`AS-01` .. `AS-08`)**, подробно зафиксированных в Разделе 5 ниже. План не закрывается до полного бескостыльного устранения всех 8 пунктов.
 
-1. **[ВЫПОЛНЕНО] Хранение в JS RAM (Пункт 1):** долгоживущий `auth_sid` остаётся **строго `HttpOnly`-only** (в JS никогда не передаётся), а в приватном замыкании `createVault()` хранятся метаданные короткой сессии (`expiresAt`, `ttlMs`, `sub`, `prof`) и единые read-only геттеры `vault.authorized`, `vault.principal`, `vault.profile`, `vault.renewing` (удалены `readUser`, `hydrateVault`, пропы `server` и дублирующие `readVault` на страницах).
-2. **[ВЫПОЛНЕНО] Честный выход при просроченном `auth_tmp` (Пункт 2):** `logout` и `logoutAll` отзывают сессию в БД как по `auth_tmp`, так и по fallback на `auth_sid` (`RENEWAL_COOKIE`), а `requestDelete` дополнительно чистит куки.
-3. **[ВЫПОЛНЕНО] SSR-восстановление новой вкладки (Пункт 4):** в `+layout.server.ts` через `resolveVault(event)` при отсутствии/истечении `auth_tmp` и наличии живого `auth_sid` выполняется бесшовный серверный `renew()` прямо во время SSR `load` (вкладка сразу рендерится авторизованной с обновлёнными куками).
-4. **[ВЫПОЛНЕНО] Межвкладочная координация (Пункт 5):** реализована связка **5%-й джиттер + `navigator.locks` + `BroadcastChannel('modals-kit:user')`** + серверный `singleflight` по `jti` (`renewInFlight`) + счётчик поколений `epoch` и `AbortController` против гонок `renew ↔ logout` и `renew ↔ profileForm`.
-5. **[ВЫПОЛНЕНО] Бесшовное продолжение при замороженном таймере (Пункт 6):** включены оба уровня — клиентский (`visibilitychange` + `online` + `ensureFresh` / `401 auth.expired → vault.renew() → retry` через `setFormSessionInterceptor`) **и** серверный прозрачный `renew` по `auth_sid` внутри `auth(event)`.
+1. **[ТРЕБУЕТ ДОРАБОТКИ — `AS-01`, `AS-02`, `AS-03`] Хранение в JS RAM и чистота бандла (Пункт 1):**
+   - `readUser`, `hydrateVault`, пропы `server` и дублирующие `readVault` на страницах удалены чисто (`0` вхождений в `src/`).
+   - **Недоработка `AS-01`:** вопреки описанию выше, сырой зашифрованный `HttpOnly`-токен `access: string` (`Fe26.2*...`) всё ещё сериализуется в SSR HTML `page.data.user.access`, в JSON-ответы и в `BroadcastChannel`, хотя на клиенте ни в одном запросе не используется — это обесценивает `HttpOnly` у `auth_tmp`.
+   - **Недоработка `AS-02`:** в `src/content/user/vault.ts:9,55` остался мёртвый `parseRenewResponse` (`0` вызовов в `src/`) со статическим `import { unwrapKitAction } from '#lib/components/form/transport.js'`, который затащил весь транспорт форм (`devalue` + `fetchWithTask`) в корневой `+layout.svelte` на **все** маршруты сайта (`+0.8…+2.2 KiB gzip`) и привёл к необоснованному поднятию лимитов в `tooling/size-budget.mjs`.
+   - **Недоработка `AS-03`:** в `vault.svelte.ts:346-359` (`syncServer`) сломана синхронизация при переходе в `null` после JS-входа (`lastServerAccess === null` от стартового гостевого SSR игнорирует последующий серверный ответ `data.user = null`), а `dispose()` (`368-375`) не снимает `visibilitychange` и `online` с `document` / `window` (утечка слушателей в тестах и при HMR).
+2. **[ЧАСТИЧНО ВЫПОЛНЕНО — `AS-04`] Честный выход и удаление аккаунта (Пункт 2):**
+   - `logout` и `logoutAll` в `auth.ts:363-415` отзывают сессию по fallback на `auth_sid`.
+   - **Недоработка `AS-04`:** вопреки прямому требованию Пункта 2 выше, `requestDelete()` в `auth.ts:455-459` **не вызывает `ports.sessions.softDeleteAllByAuth(g.sub, now)`** — в БД все сессии других устройств остаются с `deleted_at = null` (почистили только куки текущего ответа в `gateway.ts:448`); `sweepDeletions()` также не удаляет/не зачищает строки `user_session`.
+3. **[ЧАСТИЧНО ВЫПОЛНЕНО — `AS-08`] SSR-восстановление новой вкладки (Пункт 4):**
+   - `resolveVault(event)` в `+layout.server.ts` восстанавливает сессию по `auth_sid` во время SSR.
+   - **Недоработка `AS-08`:** документация модуля `src/content/user/README.md` (`24, 45, 54`) не обновлена и по-прежнему описывает старый `readVault(cookies)`.
+4. **[ТРЕБУЕТ ДОРАБОТКИ — `AS-05`, `AS-06`] Межвкладочная и серверная координация (Пункт 5):**
+   - **Костыль `AS-05`:** в `vault.svelte.ts:251-257` стоит хрупкий тайминговый хак `await new Promise((r) => setTimeout(r, 0))` для ожидания `BroadcastChannel` после `navigator.locks`, а при `ensureFresh()` (`renew(true)`, `force = true`) проверка `!force` на строке `254` **пропускает** свежий `expiresAt`, уже полученный от соседней вкладки, и проснувшиеся вкладки всё равно шлют лишние сетевые `POST` по очереди.
+   - **Гонка `AS-06`:** в `gateway.ts:375-399` (`runRenew`) асинхронный `await ports.seal.unseal(rawRenewal)` выполняется **до** проверки `renewInFlight.get(jti)`, а второй параллельный запрос получает промис `coreRenew`, запущенный на чужом `ports` / `subnetOf(event.request)` первого запроса (обходя проверку подсети второго запроса и переиспользуя чужой `LoginOutcome`).
+5. **[ТРЕБУЕТ ДОРАБОТКИ — `AS-07`, `AS-09`] Бесшовное продолжение и транспорт форм (Пункт 6):**
+   - **Баг `AS-07`:** при сохранении `ProfileForm` со спящей вкладки (без `auth_tmp`, с живым `auth_sid`) один HTTP-запрос крутит ротацию `u.renew()` в БД **дважды подряд** (`version + 2`: сначала в `freshAccessOrCurrent`, затем явно в `profile-form/server.ts:79`), а `trackedCookies` в `hooks/component-form/server.ts:139` хранит `setCookies: string[]` массивом вместо `Map<name, header>`, отправляя клиенту **4 дублирующих и противоречащих друг другу заголовка `Set-Cookie`** (`2 × auth_tmp` со старым и новым профилем + `2 × auth_sid` с `v1` и `v2`) в одном HTTP-ответе!
+   - **Костыль `AS-09`:** `src/hooks/component-form/session-interceptor.ts` прячет связь `component-form ↔ vault` в скрытый мутабельный модуль-синглтон с top-level side effect в `vault.svelte.ts:382-387` вместо явной передачи хука сессии через конфигурацию `BoundConfig` (`forms.config.ts`).
+
+---
+
+## 5. Повторная ревизия реализации (`f930886`): реестр костылей и дефектов к устранению
+
+Ниже зафиксированы все дефекты, обнаруженные при построчном аудите всех 24 изменённых файлов и их зависимостей (код пока не тронут — сначала фиксируем чистые архитектурные решения).
+
+### `AS-01`. Утечка зашифрованного `HttpOnly`-токена `access` в SSR HTML и RAM
+- **Где:** `src/content/user/gateway.ts:459-478, 511-525`, `src/content/user/vault.ts:36-49`, `src/content/user/vault.svelte.ts:134-158`.
+- **Проблема:** `resolveVault` и `vaultPayloadOf` возвращают поле `access: string` (полный криптотокен `auth_tmp`), которое SvelteKit сериализует открытым текстом в `<script>` каждого HTML-документа (`page.data.user.access`), а клиент копирует в `BroadcastChannel`. При этом ни один клиентский модуль не шлёт Bearer-токен — авторизация идёт строго по `HttpOnly`-куке `auth_tmp`, чья защита `HttpOnly` полностью обнуляется дублем токена в DOM.
+- **Решение без костылей:** убрать строку `access` из `VaultPayload` / `RenewData`. Передавать в SSR и JSON только безопасные публичные метаданные снимка `{ sub, prof, iat, expiresAt, ttlMs }`, а смену поколения снимка на клиенте определять по паре `(sub, iat, expiresAt)`.
+
+### `AS-02`. Мёртвый импорт `transport.js` в `vault.ts` раздул все маршруты и `size-budget.mjs`
+- **Где:** `src/content/user/vault.ts:9, 55-75`, `src/content/user/vault.test.ts:4, 38-46`, `tooling/size-budget.mjs:238-285`.
+- **Проблема:** `vault.svelte.ts` отложил `import('#lib/components/form/transport.js')` в ленивый `defaultPostRenew`, но оставил статический `import { fireAt, leadFor, overdue } from './vault.js'`. А в `vault.ts` на строке `9` остался статический `import { unwrapKitAction } from '#lib/components/form/transport.js'` ради функции `parseRenewResponse`, у которой **`0` вызовов во всём `src/`**. В итоге весь чанк транспорта форм попал в корневой `+layout.svelte`, раздув все 9 маршрутов на `+0.8…+2.2 KiB gzip`, после чего лимиты в `tooling/size-budget.mjs` были подняты под раздутый вес.
+- **Решение без костылей:** удалить мёртвый `parseRenewResponse` из `vault.ts` (оставив в `vault.ts` чистую математику таймера `0` внешних импортов), пересобрать клиентский бандл и **вернуть назад (опустить) лимиты `ROUTE_LIMITS` и `LIMITS` в `tooling/size-budget.mjs`** до реального чистого веса + `0.5 KiB`.
+
+### `AS-03`. Поломка `syncServer(null)` после клиентского входа и утечка глобальных слушателей
+- **Где:** `src/content/user/vault.svelte.ts:305-316, 346-375`.
+- **Проблемы:**
+  1. Если вкладка стартовала гостем (`data.user = null` → `lastServerAccess = null`), затем пользователь вошёл через модалку без перезагрузки (`vault.hydrate(...)` → `authorized = true`, но `lastServerAccess` остался `null`), а позже сервер при навигации/`invalidateAll` вернул `data.user = null` (сессия отозвана/удалена) — проверка `if (lastServerAccess === nextAccess) return` видит `null === null`, выходит и **оставляет отозванную сессию активной в UI**. Аналогично `hydrate()` и `clear()` не синхронизируют `lastServerAccess`.
+  2. `createVault()` подписывается на `document.addEventListener('visibilitychange', onWake)` и `window.addEventListener('online', onWake)`, но `dispose()` их **не снимает** — в unit-тестах и при HMR слушатели утекают навсегда.
+- **Решение без костылей:**
+  1. Обновлять маркер известного состояния сессии единообразно во всех трёх точках (`applyHydrate`, `applyClear`, `syncServer`), чтобы смена состояния в любом направлении отслеживалась без слепых зон.
+  2. Сохранять `cleanup`-функцию слушателей внутри `createVault()` и вызывать её в `dispose()`, а для глобального синглтона в `import.meta.hot?.dispose` вызывать `vault.dispose()`.
+
+### `AS-04`. `requestDelete()` и `sweepDeletions()` оставляют живые строки сессий в БД
+- **Где:** `src/content/user/auth.ts:455-476`, `src/content/user/gateway.ts:447-451`.
+- **Проблема:** `requestDelete` ставит `deleted_at` только на `user_auth`, не вызывая `ports.sessions.softDeleteAllByAuth(g.sub, now)` и не поддерживая fallback на `renewalToken` при истёкшем `auth_tmp`. Строки `user_session` на всех устройствах остаются с `deleted_at = null`, а `sweepDeletions` также не чистит сессии удалённых аккаунтов.
+- **Решение без костылей:** в `core.requestDelete` (аналогично `logoutAll`) принимать `renewalToken` в качестве fallback, атомарно отзывать все сессии субъекта `await ports.sessions.softDeleteAllByAuth(sub, now)` вместе с `markDeleted(sub, now)`, а в `sweepDeletions` зачищать сессии удаляемых аккаунтов.
+
+### `AS-05`. Костыль `setTimeout(r, 0)` и дублирующие `POST` при пробуждении нескольких вкладок
+- **Где:** `src/content/user/vault.svelte.ts:249-299`.
+- **Проблема:**
+  1. `await new Promise((r) => setTimeout(r, 0))` в начале `executeLockedRenew` надеется, что межпроцессный IPC `BroadcastChannel` обгонит один макротик таймера (который в фоновой вкладке троттлится браузером до `>= 1000 мс`).
+  2. `ensureFresh()` и `onAuthExpired()` вызывают `renew(true)` (`force = true`), а строка `254` проверяет `if (!force && ...)`: когда просыпаются 2 вкладки, вкладка №1 обновляет токен под `navigator.locks` и рассылает свежий `expiresAt` в `BroadcastChannel`, но вкладка №2 из-за `force === true` **игнорирует уже полученный свежий `expiresAt`** и всё равно бьёт вторым `POST` на сервер.
+- **Решение без костылей:**
+  1. Записывать `const epochBeforeLock = epoch` **до** входа в `navigator.locks.request(...)`. Если внутри замка `epoch !== epochBeforeLock` — значит, пока мы ждали замок, другая операция (`BroadcastChannel`, `hydrate` или `clear`) **уже изменила состояние**, и если `access/principal !== null && !overdue(expiresAt, now())`, возвращать `true` мгновенно даже при `force === true`!
+  2. Для гарантированной межвкладочной видимости без `setTimeout(0)` публиковать `BroadcastChannel` **до** выхода из `navigator.locks.request` и дополнительно хранить легковесную метку `expiresAt` в `sessionStorage`/`localStorage` (синхронное чтение из общей памяти origin в `0 мс` внутри `navigator.locks` — со 100% детерминированной видимостью без единой куки и без `setTimeout`!).
+
+### `AS-06`. Гонка и подмена контекста запроса в серверном `renewInFlight`
+- **Где:** `src/content/user/gateway.ts:375-400`.
+- **Проблема:**
+  1. `await ports.seal.unseal(rawRenewal)` выполняется **до** чтения/записи `renewInFlight`: два одновременных SSR-запроса проходят `await unseal(...)` параллельно до того, как первый поставит ключ в `Map`, и оба запускают `coreRenew` в БД.
+  2. Если же второй запрос попал в `renewInFlight.get(jti)`, он получает промис, вычисленный на `ports` и `event.request` (IP-подсеть, страна) **первого запроса**, минуя проверку `sessionRecreate: 'strict'` для второго запроса.
+- **Решение без костылей:** индексировать singleflight-мьютекс как **очередь сериализации (per-key mutex по `rawRenewal` / `jti`), а не шаринг чужого результата**: первый запрос крутит версию `N -> N + 1` в БД, а второй запрос после освобождения мьютекса честно проходит свой `coreRenew` со своими `ports`/`subnet` и штатно отрабатывает ветку «усыновления» (`token.version < session.version`), получая собственный `access` без лишней записи в БД.
+
+### `AS-07`. Двойная ротация сессии и 4 дублирующих `Set-Cookie` в одном ответе `ProfileForm`
+- **Где:** `src/hooks/component-form/server.ts:139-156`, `src/content/user/ui/profile-form/server.ts:70-83`, `src/content/user/gateway.ts:446`.
+- **Проблемы:**
+  1. В `component-form/server.ts` `const setCookies: string[] = []` накапливает заголовки `.push(...)` вместо `Map<string, string>` по имени куки. Любая перезапись одной и той же куки в ходе запроса порождает несколько конфликтующих `Set-Cookie` в HTTP-ответе.
+  2. В `profile-form/server.ts` спящая вкладка сначала вызывает `u.updateProfile(...)` → `freshAccessOrCurrent()` → **`runRenew()` #1** (`version + 1`, `Set-Cookie` со старым профилем), а через 5 строк на строке `79` вызывает **`u.renew()` #2** (`version + 2`, ещё пара `Set-Cookie` с новым профилем). Даже на живой вкладке обычное изменение никнейма без нужды крутит долгоживущую куку `auth_sid` и пишет `user_session` в БД.
+- **Решение без костылей:**
+  1. В `component-form/server.ts` заменить `setCookies: string[]` на `const setCookies = new Map<string, string>()` (`setCookies.set(name, ...)`), гарантируя ровно 1 финальный `Set-Cookie` на имя куки в любом ответе.
+  2. Добавить в фасад `auth(event)` метод `refreshAccess()` (перевыпуск только короткой куки `auth_tmp` со свежим `prof` из БД без ротации `auth_sid` в `user_session`), и вызывать его после `updateProfile` вместо полной ротации `u.renew()`.
+
+### `AS-08` & `AS-09`. Синхронизация `README.md` и явная инъекция перехватчика сессии вместо скрытого глобала
+- **Где:** `src/content/user/README.md:24, 45, 54`, `src/hooks/component-form/session-interceptor.ts`, `src/lib/components/form/forms.config.ts`.
+- **Решение без костылей:**
+  1. Передавать хук сессии (`session?: FormSessionInterceptor`) явно через объект конфигурации форм (`forms` в `forms.config.ts` / `ComponentFormOptions`), убрав скрытый глобальный мутабельный синглтон `session-interceptor.ts` и top-level side effect из `vault.svelte.ts`.
+  2. Актуализировать `src/content/user/README.md` под `resolveVault`, метаданные `vault` без сырого `access`, `refreshAccess` и межвкладочную синхронизацию.
+
