@@ -1,6 +1,6 @@
 <script lang="ts">
   // Радиогруппа (`radio`): явный набор вариантов из `f.options`, работает одинаково
-  // с JS и без JS за счёт нативных `<input type="radio">` внутри `RadioGroup`.
+  // с JS и без JS за счёт нативных радиокнопок внутри `RadioGroup`.
   import { RadioGroup } from '#lib/components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'

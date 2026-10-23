@@ -420,5 +420,11 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
  */
 export function localPath(raw: string | null | undefined): string | null {
   if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null
-  return raw
+  try {
+    const parsed = new URL(raw, 'http://local.invalid')
+    if (parsed.origin !== 'http://local.invalid') return null
+    return raw
+  } catch {
+    return null
+  }
 }

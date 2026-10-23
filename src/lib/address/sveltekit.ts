@@ -17,7 +17,9 @@
  */
 import { browser } from '$app/env'
 import { goto, replaceState } from '$app/navigation'
+import { resolve } from '$app/paths'
 import { navigating, page } from '$app/state'
+import type { Path, RouteId, RouteParams } from '$app/types'
 import { createSubscriber } from 'svelte/reactivity'
 import { IDLE_TASK, type TaskState } from '#lib/task/index.js'
 import { watch } from './svelte/watch.svelte'
@@ -28,6 +30,14 @@ import {
   type AddressSnapshot,
   type AddressWriteOptions,
 } from './core'
+import {
+  registerRoute,
+  type ParamRouteDescriptor,
+  type StaticRouteDescriptor,
+  type StaticRouteOptions,
+} from './routes'
+
+export * from './routes'
 
 /**
  * Видимый адрес — по документации shallow routing SvelteKit 3: `page.url` —
@@ -341,4 +351,64 @@ export function shallowFlag(key: string): { readonly on: boolean; push(): void }
       })
     },
   }
+}
+
+type DynamicRouteId = {
+  [K in RouteId]: keyof RouteParams<K> extends never ? never : K
+}[RouteId]
+
+type StaticKitTarget = Exclude<Path | RouteId, DynamicRouteId>
+
+const stripRouteGroups = (routeOrPath: string): string => {
+  const cleaned = routeOrPath.replace(/\/\([^/]+\)/g, '')
+  return cleaned || '/'
+}
+
+/**
+ * Регистрация маршрута SvelteKit с проверкой существования пути и параметров
+ * сегментов на этапе компиляции через `$app/types` (`Path`, `RouteId`, `RouteParams`).
+ *
+ * - Статический путь (`'/user/auth'` или `'/(site)/(app)/user/auth'`) → `StaticRouteDescriptor`
+ *   (его `route.href` совместим напрямую с `ModalDefinition.route`).
+ * - Параметризованный маршрут (`'/(site)/(app)/cards/[id]'`, `{ dynamic: true }`) →
+ *   `ParamRouteDescriptor<RouteParams<Id>, ...>` со сборкой сегментов через `resolve()` из `$app/paths`.
+ */
+export function kitRoute<
+  Id extends StaticKitTarget,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  route: Id,
+  options?: StaticRouteOptions<SearchInput, SearchOutput>,
+): StaticRouteDescriptor<SearchInput, SearchOutput>
+export function kitRoute<
+  Id extends DynamicRouteId,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  route: Id,
+  options: StaticRouteOptions<SearchInput, SearchOutput> & { readonly dynamic: true },
+): ParamRouteDescriptor<RouteParams<Id>, SearchInput, SearchOutput>
+export function kitRoute<
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  route: string,
+  options?: StaticRouteOptions<SearchInput, SearchOutput> & { readonly dynamic?: boolean },
+): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Record<string, string>, SearchInput, SearchOutput> {
+  if (options?.dynamic) {
+    return registerRoute({
+      id: options.id ?? route,
+      owner: options.owner,
+      keys: options.keys,
+      search: options.search,
+      defaults: options.defaults,
+      buildPath: (params) => resolve(route as never, params as never),
+    })
+  }
+  const pathname = stripRouteGroups(route)
+  return registerRoute(pathname, {
+    ...options,
+    id: options?.id ?? pathname,
+  })
 }

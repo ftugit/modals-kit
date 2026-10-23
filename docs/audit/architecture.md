@@ -79,15 +79,15 @@
 
 ---
 
-### Этап S3. Чистое аддитивное расширение `#lib/address` (`routes.ts` + `sveltekit.ts`) — **[СЛЕДУЮЩИЙ ЭТАП]**
+### Этап S3. Чистое аддитивное расширение `#lib/address` (`routes.ts` + `sveltekit.ts`) — **[ВЫПОЛНЕНО]**
 *(Нулевой риск поломки: чистое добавление нового модуля внутри `src/lib/address/` без затрагивания старого кода.)*
-- [ ] **S3.1.** Реализовать `src/lib/address/routes.ts` (`registerRoute` / `defineRoute` с `href`, `parse`, `patch` поверх `@standard-schema/spec`, `localPath` из `./core.ts` и `nextSearch` из `./keys.ts`) и реэкспортировать из `src/lib/address/index.ts`.
-- [ ] **S3.2.** Добавить `kitRoute` в `src/lib/address/sveltekit.ts` с compile-time проверкой `RouteId` / `RouteParams<Path>` из `$app/types`.
-- [ ] **S3.3.** Написать unit-тесты `src/lib/address/routes.test.ts` (дефолты, валидация, отсечение Open Redirect `//evil.com` и `javascript:`, сохранение чужих query-параметров).
+- [x] **S3.1.** Реализован `src/lib/address/routes.ts` (`registerRoute` / `defineRoute`, `localPathSchema`, `querySchema` с `href`, `parse`, `patch` поверх `@standard-schema/spec`, усиленного `localPath` из `./core.ts` и `claimQuery`/`nextSearch` из `./keys.ts`) и реэкспортирован из `src/lib/address/index.ts`.
+- [x] **S3.2.** Добавлен `kitRoute` в `src/lib/address/sveltekit.ts` с compile-time проверкой `Path` / `RouteId` / `RouteParams<Id>` из `$app/types` и сборкой динамических сегментов через `resolve()` из `$app/paths`.
+- [x] **S3.3.** Написаны unit-тесты `src/lib/address/routes.test.ts` (дефолты, валидация `StandardSchemaV1` / Zod v4, откат на дефолты при битых query, отсечение Open Redirect `//evil.com`, `/\evil.com`, `javascript:`, сохранение чужих query-параметров в `patch()`, защита от дублей в реестре).
 
 ---
 
-### Этап S4. `#hooks/component-form` v2 + самодостаточные модули `fields/` и `paginator/`
+### Этап S4. `#hooks/component-form` v2 + самодостаточные модули `fields/` и `paginator/` — **[СЛЕДУЮЩИЙ ЭТАП]**
 *(Средний уровень: сборка папочных модулей и перевод `/fields` и `/paginator` до глобального переезда импортов.)*
 - [ ] **S4.1.** Доработать `src/hooks/component-form/` (`description(event)`, `source`, авто-inline `200` при `outcome === 'not-applied'`, `onSuccess` в `bind.svelte.ts`, автосбор `*.form.server.ts` через `import.meta.glob`) — `0` байт в `src/lib/form/`.
 - [ ] **S4.2.** Собрать папочный модуль `fields/` (`SchemaBuilder.svelte` со скрытым submit для `Enter` без JS, `SchemaFields.svelte`, `SchemaValues.svelte`, `variants.ts`, `types.ts`, `index.ts`), перевести на него `/fields` (5 тонких файлов) и удалить `/fields/{save,record}/+server.ts` + обновить `test/browser/fields.mjs:230,244`.

@@ -1,0 +1,344 @@
+/**
+ * Типизированные маршруты и реестр адресов поверх `@standard-schema/spec`,
+ * `localPath` (`./core.ts`) и алгебры ключей `claimQuery` / `nextSearch` (`./keys.ts`).
+ *
+ * Ни одного фреймворкового импорта: привязка к `RouteId` / `RouteParams` SvelteKit
+ * живёт тонкой обёрткой `kitRoute` в `./sveltekit.ts`, а связка с модалками идёт
+ * через штатный `registerModal({ route: myRoute.href })` без связности ядер.
+ */
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { localPath } from './core.js'
+import { claimQuery, nextSearch, type QueryClaim, type QueryPatchValue } from './keys.js'
+
+export type RawQueryRecord = Record<string, string | readonly string[] | undefined>
+export type QueryInputSource = URL | URLSearchParams | string | RawQueryRecord | null | undefined
+
+/** Схема безопасного локального пути (`next` / `returnTo`): отсекает `//evil.com`, `/\evil.com`, `javascript:`. */
+export const localPathSchema: StandardSchemaV1<string | null | undefined, string | null> = {
+  '~standard': {
+    version: 1,
+    vendor: 'modals-kit/address',
+    validate: (value) => ({ value: typeof value === 'string' ? localPath(value) : null }),
+  },
+}
+
+/**
+ * Компактная обёртка синхронного нормализатора в `StandardSchemaV1` (0 лишних байт
+ * в начальном бандле там, где тянуть весь рантайм Zod не нужно; с `z.object(...)`
+ * полностью взаимозаменяема).
+ */
+export function querySchema<Input extends Record<string, unknown>, Output = Input>(
+  normalize: (raw: RawQueryRecord) => Output,
+): StandardSchemaV1<Input, Output> {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: 'modals-kit/address',
+      validate: (value) => ({ value: normalize((value ?? {}) as RawQueryRecord) }),
+    },
+  }
+}
+
+export interface StaticRouteOptions<
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+> {
+  /** Уникальный идентификатор в реестре (по умолчанию совпадает с `path`). */
+  readonly id?: string
+  /** Владелец query-ключей в `claimQuery` / `nextSearch` (по умолчанию `id ?? path`). */
+  readonly owner?: string
+  /** Бронируемые ключи строки запроса (`['stage', 'next']`). */
+  readonly keys?: readonly QueryClaim[]
+  /** Standard Schema v1 (`z.object(...)` или `querySchema(...)`) для разбора query. */
+  readonly search?: StandardSchemaV1<SearchInput, SearchOutput>
+  /** Значения по умолчанию: совпадающие с ними не сериализуются в `href` / `patch`. */
+  readonly defaults?: Partial<Record<keyof SearchInput & string, unknown>>
+}
+
+export interface ParamRouteOptions<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+> extends StaticRouteOptions<SearchInput, SearchOutput> {
+  readonly id: string
+  readonly buildPath: (params: Params) => string
+}
+
+export interface StaticRouteDescriptor<
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+> {
+  readonly id: string
+  readonly owner: string
+  readonly path: string
+  /** Собрать ссылку маршрута (совместимо напрямую с `ModalDefinition.route`). */
+  readonly href: (search?: Partial<SearchInput>) => string
+  /** Разобрать и провалидировать query-параметры из `URL`, `URLSearchParams` или строки. */
+  readonly parse: (from?: QueryInputSource) => SearchOutput
+  /** Точечно обновить свои query-ключи, сохранив все чужие параметры нетронутыми. */
+  readonly patch: (
+    from: URL | URLSearchParams | string,
+    patch: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
+    opts?: { drop?: readonly string[] },
+  ) => string
+}
+
+export interface ParamRouteDescriptor<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+> {
+  readonly id: string
+  readonly owner: string
+  /** Собрать путь маршрута по параметрам сегментов. */
+  readonly path: (params: Params) => string
+  /** Собрать полную ссылку маршрута по параметрам пути и query-параметрам. */
+  readonly href: (params: Params, search?: Partial<SearchInput>) => string
+  /** Разобрать и провалидировать query-параметры из `URL`, `URLSearchParams` или строки. */
+  readonly parse: (from?: QueryInputSource) => SearchOutput
+  /** Точечно обновить свои query-ключи на конкретном пути, сохранив чужие параметры. */
+  readonly patch: (
+    from: URL | URLSearchParams | string,
+    params: Params,
+    patch: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
+    opts?: { drop?: readonly string[] },
+  ) => string
+}
+
+export type RouteDescriptor<
+  Params extends Record<string, string> | void = void,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+> = [Params] extends [void]
+  ? StaticRouteDescriptor<SearchInput, SearchOutput>
+  : ParamRouteDescriptor<Extract<Params, Record<string, string>>, SearchInput, SearchOutput>
+
+const routes = new Map<string, StaticRouteDescriptor<never, unknown> | ParamRouteDescriptor<never, never, unknown>>()
+
+/** Сброс реестра маршрутов (для изолированных unit-тестов). */
+export function resetRegisteredRoutes(): void {
+  routes.clear()
+}
+
+function extractSearchString(from: URL | URLSearchParams | string): string {
+  if (from instanceof URL) return from.search
+  if (from instanceof URLSearchParams) {
+    const qs = from.toString()
+    return qs ? `?${qs}` : ''
+  }
+  const qIndex = from.indexOf('?')
+  if (qIndex >= 0) {
+    const raw = from.slice(qIndex)
+    const hashIndex = raw.indexOf('#')
+    return hashIndex >= 0 ? raw.slice(0, hashIndex) : raw
+  }
+  return from.startsWith('/') || from.includes('://') ? '' : from
+}
+
+function toRawRecord(from: QueryInputSource): RawQueryRecord {
+  if (!from) return {}
+  if (!(from instanceof URL) && !(from instanceof URLSearchParams) && typeof from !== 'string') {
+    return from
+  }
+  const params = new URLSearchParams(extractSearchString(from))
+  const out: RawQueryRecord = {}
+  for (const key of new Set(params.keys())) {
+    const all = params.getAll(key)
+    out[key] = all.length <= 1 ? all[0] : all
+  }
+  return out
+}
+
+function validateSync<Input, Output>(schema: StandardSchemaV1<Input, Output>, raw: RawQueryRecord): Output {
+  const run = (candidate: RawQueryRecord) => {
+    const res = schema['~standard'].validate(candidate)
+    if (res instanceof Promise) {
+      throw new TypeError('Async StandardSchemaV1 is not supported in synchronous route.parse()')
+    }
+    return res
+  }
+
+  const first = run(raw)
+  if (!first.issues) return first.value
+
+  // Битые query-параметры в адресной строке не должны ронять SSR 500-й ошибкой:
+  // вычищаем проблемные верхнеуровневые ключи, чтобы сработали `.default(...)` схемы.
+  const cleaned: RawQueryRecord = { ...raw }
+  for (const issue of first.issues) {
+    const head = issue.path?.[0]
+    const key = typeof head === 'object' && head !== null && 'key' in head ? head.key : head
+    if (typeof key === 'string') delete cleaned[key]
+  }
+  const fallback = run(cleaned)
+  if (!fallback.issues) return fallback.value
+
+  const empty = run({})
+  if (!empty.issues) return empty.value
+
+  throw new Error(`Invalid route search parameters: ${first.issues.map((i) => i.message).join('; ')}`)
+}
+
+function serializeCleanQuery(
+  values: Record<string, unknown> | undefined,
+  defaults: Partial<Record<string, unknown>> | undefined,
+): string {
+  if (!values) return ''
+  const params = new URLSearchParams()
+  for (const [key, raw] of Object.entries(values)) {
+    if (raw === undefined || raw === null || raw === '') continue
+    if (defaults && key in defaults && defaults[key] === raw) continue
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item !== undefined && item !== null && item !== '') params.append(key, String(item))
+      }
+    } else {
+      params.set(key, String(raw))
+    }
+  }
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+function normalizePatch(
+  patch: Record<string, QueryPatchValue>,
+  defaults: Partial<Record<string, unknown>> | undefined,
+): Record<string, QueryPatchValue> {
+  const normalized: Record<string, QueryPatchValue> = {}
+  for (const [key, value] of Object.entries(patch)) {
+    normalized[key] = defaults && key in defaults && defaults[key] === value ? undefined : value
+  }
+  return normalized
+}
+
+export function defineRoute<
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  path: string,
+  options?: StaticRouteOptions<SearchInput, SearchOutput>,
+): StaticRouteDescriptor<SearchInput, SearchOutput>
+export function defineRoute<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  options: ParamRouteOptions<Params, SearchInput, SearchOutput>,
+): ParamRouteDescriptor<Params, SearchInput, SearchOutput>
+export function defineRoute<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  pathOrOptions: string | ParamRouteOptions<Params, SearchInput, SearchOutput>,
+  maybeOptions?: StaticRouteOptions<SearchInput, SearchOutput>,
+): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Params, SearchInput, SearchOutput> {
+  if (typeof pathOrOptions === 'string') {
+    const pathname = pathOrOptions
+    const id = maybeOptions?.id ?? pathname
+    const owner = maybeOptions?.owner ?? id
+    const declaredKeys = maybeOptions?.keys ?? []
+    if (declaredKeys.length > 0) claimQuery(owner, ...declaredKeys)
+
+    const parse = (from?: QueryInputSource): SearchOutput => {
+      const raw = toRawRecord(from)
+      if (!maybeOptions?.search) return raw as unknown as SearchOutput
+      return validateSync(maybeOptions.search, raw)
+    }
+
+    const href = (search?: Partial<SearchInput>): string =>
+      `${pathname}${serializeCleanQuery(search as Record<string, unknown> | undefined, maybeOptions?.defaults)}`
+
+    const patch = (
+      from: URL | URLSearchParams | string,
+      changes: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
+      opts?: { drop?: readonly string[] },
+    ): string => {
+      const keysToEnsure = [
+        ...declaredKeys,
+        ...Object.keys(changes),
+        ...(opts?.drop ?? []),
+      ]
+      if (keysToEnsure.length > 0) claimQuery(owner, ...keysToEnsure)
+      const qs = nextSearch(
+        owner,
+        extractSearchString(from),
+        normalizePatch(changes as Record<string, QueryPatchValue>, maybeOptions?.defaults),
+        opts,
+      )
+      return `${pathname}${qs}`
+    }
+
+    return { id, owner, path: pathname, href, parse, patch }
+  }
+
+  const { id, buildPath, search: schema, defaults } = pathOrOptions
+  const owner = pathOrOptions.owner ?? id
+  const declaredKeys = pathOrOptions.keys ?? []
+  if (declaredKeys.length > 0) claimQuery(owner, ...declaredKeys)
+
+  const parse = (from?: QueryInputSource): SearchOutput => {
+    const raw = toRawRecord(from)
+    if (!schema) return raw as unknown as SearchOutput
+    return validateSync(schema, raw)
+  }
+
+  const href = (params: Params, search?: Partial<SearchInput>): string =>
+    `${buildPath(params)}${serializeCleanQuery(search as Record<string, unknown> | undefined, defaults)}`
+
+  const patch = (
+    from: URL | URLSearchParams | string,
+    params: Params,
+    changes: Partial<Record<keyof SearchInput & string, QueryPatchValue>>,
+    opts?: { drop?: readonly string[] },
+  ): string => {
+    const keysToEnsure = [
+      ...declaredKeys,
+      ...Object.keys(changes),
+      ...(opts?.drop ?? []),
+    ]
+    if (keysToEnsure.length > 0) claimQuery(owner, ...keysToEnsure)
+    const qs = nextSearch(
+      owner,
+      extractSearchString(from),
+      normalizePatch(changes as Record<string, QueryPatchValue>, defaults),
+      opts,
+    )
+    return `${buildPath(params)}${qs}`
+  }
+
+  return { id, owner, path: buildPath, href, parse, patch }
+}
+
+export function registerRoute<
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  path: string,
+  options?: StaticRouteOptions<SearchInput, SearchOutput>,
+): StaticRouteDescriptor<SearchInput, SearchOutput>
+export function registerRoute<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  options: ParamRouteOptions<Params, SearchInput, SearchOutput>,
+): ParamRouteDescriptor<Params, SearchInput, SearchOutput>
+export function registerRoute<
+  Params extends Record<string, string>,
+  SearchInput extends Record<string, unknown> = Record<string, never>,
+  SearchOutput = SearchInput,
+>(
+  pathOrOptions: string | ParamRouteOptions<Params, SearchInput, SearchOutput>,
+  maybeOptions?: StaticRouteOptions<SearchInput, SearchOutput>,
+): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Params, SearchInput, SearchOutput> {
+  const id = typeof pathOrOptions === 'string' ? (maybeOptions?.id ?? pathOrOptions) : pathOrOptions.id
+  if (routes.has(id)) {
+    throw new Error(`Маршрут «${id}» уже зарегистрирован в реестре адресов`)
+  }
+  const descriptor =
+    typeof pathOrOptions === 'string'
+      ? defineRoute(pathOrOptions, maybeOptions)
+      : defineRoute(pathOrOptions)
+  routes.set(id, descriptor as never)
+  return descriptor
+}
