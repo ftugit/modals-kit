@@ -45,6 +45,10 @@ it('документация слоя #lib/db актуальна против к
     ['db-structure', (read(`${DB_ROOT}/test/db-structure.test.ts`).match(/^check\(/gm) ?? []).length, false],
     ['db-port-specific', (read(`${DB_ROOT}/test/db-port-specific.test.ts`).match(/^test\(/gm) ?? []).length, false],
     ['db-sync', (read(`${DB_ROOT}/test/db-sync.test.ts`).match(/^test\(/gm) ?? []).length, false],
+    // эти два файла в таблице README не значились, и аудит их не считал: пустой
+    // файл проходил молча (проверено при аудите S7)
+    ['db-sync-admin', (read(`${DB_ROOT}/test/db-sync-admin.test.ts`).match(/^it\(/gm) ?? []).length, false],
+    ['db-sync-decisions', (read(`${DB_ROOT}/test/db-sync-decisions.test.ts`).match(/^it\(/gm) ?? []).length, false],
     ['db-rules', (read(`${DB_ROOT}/test/db-rules.test.ts`).match(/^test\(/gm) ?? []).length, false],
     // у перенесённых проверок часть групп регистрируется только на native PG (A11),
     // поэтому допустим разброс [n-1, n]: документация обязана назвать честное число

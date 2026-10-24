@@ -34,7 +34,7 @@
 · [Схема и миграции](#6-схема-и-миграции)
 · [Публичный API](#7-публичный-api)
 · [Свой код в TypeScript](#8-свой-код-в-typescript)
-· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · что не сделано — [docs/plan.md](../../../docs/plan.md) (общий план проекта)
+· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · ключи доступа — [docs/ACL-DESIGN.md](./docs/ACL-DESIGN.md) · живой хвост списков — [docs/LIVE-APPEND.md](./docs/LIVE-APPEND.md) · пробы на живых движках — [docs/PROBES-ENV.md](./docs/PROBES-ENV.md) · что не сделано — [docs/plan.md](../../../docs/plan.md) (общий план проекта)
 
 ## Установка
 
@@ -1091,13 +1091,15 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 144 группы в семи файлах (на PGlite выполняются 143: одна группа требует
+Тесты слоя — 153 группы в девяти файлах (на PGlite выполняются 152: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
 | `src/lib/db/test/db-port-specific.test.ts` | 42 | поведение, которого в источнике не было (курсоры в обе стороны, срез постраничной выдачи `asof`, опрос изменённых/удалённых `changes`, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
+| `src/lib/db/test/db-sync-admin.test.ts` | 2 | перенос схемы по кнопке: секрет проверяется ДО обращения к БД, причины отказа, `stepKey` |
+| `src/lib/db/test/db-sync-decisions.test.ts` | 7 | решения переноса (`<choice>|<key>`): взаимная обратимость сборки/разбора, отказ вместо мусора в БД, ключ из серверной карты, пары и `Map` из значений формы |
 | `src/lib/db/test/db-sync.test.ts` | 33 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`, `delete({ chain })`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), сырые связанные записи и `estimate` у `raw`, ключи доступа (`access`: чтение, вставка, по id, перенос, цепочка, ошибки объявления, ссылка на себя), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
 | `src/lib/db/test/db-rules.test.ts` | 33 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи (и ключ JSON-поля `data.mail`), `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, цепочка ставит время базы); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ hard })` и `canDelete` |
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `src/lib/db/test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |

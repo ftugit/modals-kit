@@ -56,7 +56,7 @@ const bytes = await image(file, { decoder: decodeWithNode })
 
 - `src/components/form/photo.ts` — тип поля `field.photo` и асинхронная
   проверка `photo:<id>` через `probeImageHeader`.
-- `src/content/user/ui/profile-form/{avatar.ts,AvatarTakeover.svelte,server.ts}` —
+- `src/content/user/ui/profile-form/{avatar.ts,AvatarTakeover.svelte,profile.form.server.ts}` —
   единый конвейер `prepareAvatar` в браузере и на сервере (`decodeWithNode`).
 - `src/content/user/profile.ts` — доменная проверка заголовка и размеров аватара.
 - Оставшиеся этапы конвейера — [`docs/design/image-transfer.md`](../../../docs/design/image-transfer.md).

@@ -21,7 +21,7 @@
 | `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#components/form/photo.js`). |
 | `config.ts` | Настройки модуля поверх `#lib/cache` (`accessTtlSec`, `deviceTtlSec`, `challengeTtlSec`, `deleteGraceDays`, `avatarEdge`, `avatarMaxBytes`, `nicknameForbidden`, `holdSeconds`). |
 | `error.ts` | Доменные факты `auth.*` / `profile.*` и перевод в инструкции формы (`instruction`). |
-| `gateway.ts` | Серверная обвязка SvelteKit: адаптеры портов к `db.resource(user_*)`, запечатывание `iron-webcrypto`, фасад `auth(event)` (включая сериализованный `renew` по `withRenewLock` и лёгкий `refreshAccess` без ротации сессии), `resolveVault`, `readVault`, `vaultPayloadOf`, `toHttpStatus`. |
+| `gateway.server.ts` | Серверная обвязка SvelteKit: адаптеры портов к `db.resource(user_*)`, запечатывание `iron-webcrypto`, фасад `auth(event)` (включая сериализованный `renew` по `withRenewLock` и лёгкий `refreshAccess` без ротации сессии), `resolveVault`, `readVault`, `vaultPayloadOf`, `toHttpStatus`. |
 | `acl.ts` | Логика и описания 21 экрана `resolveAcl`: статусы субъекта/аккаунта (`guest`, `user`, роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `#lib/db` (`FailureKind` + `payload_too_large`). |
 | `vault.ts` / `vault.svelte.ts` | Единый реактивный стор `vault` на лексическом замыкании (только публичные метаданные `{ sub, iat, expiresAt, ttlMs, prof }`, без сырых токенов), межвкладочная координация `navigator.locks` + `localStorage` + `BroadcastChannel`, пробуждение по `visibilitychange`/`online` и адаптер `userSession` для защищённых форм. |
 | `ui/Acl.svelte` | Компонент защиты экрана: при срабатывании ограничения отображает карточку причины и штатное действие вместо `children`. |
@@ -38,7 +38,7 @@
 
 ```
 POST <любой маршрут> (__form_id = user-seed | user-profile)
-  ─> componentFormsHandle (src/hooks/component-form/server.ts)
+  ─> componentFormsHandle (src/hooks/component-form/server.server.ts)
   ─> execute (ui/seed-form/seed.form.server.ts | ui/profile-form/profile.form.server.ts)
   ─> gateway auth(event) ─> core api (auth.ts / profile.ts) ─> факт { code, path?, args? }
 
