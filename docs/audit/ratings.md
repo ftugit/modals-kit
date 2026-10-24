@@ -580,7 +580,7 @@
 | `InputAffix.svelte` | 27 | — | ⏳ |  |  |
 | `InputShell.svelte` | 19 | — | ⏳ |  |  |
 | `Label.svelte` | 40 | — | ⏳ |  |  |
-| `NativeSelect.svelte` | 22 | — | ⏳ |  |  |
+| `NativeSelect.svelte` | 22 | — | ⏳ | **удалён при аудите `S10`** (не использовался: `settings/Select.svelte` давно на enhanced `Select`, правило `<NativeSelect>` убрано из `layer-guard`) |  |
 | `NumberField.svelte` | 87 | — | ⏳ |  |  |
 | `OtpInput.svelte` | 138 | — | ⏳ |  |  |
 | `PasswordInput.svelte` | 90 | — | ⏳ |  | microtask×1, addEventListener×1 |

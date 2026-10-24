@@ -173,7 +173,6 @@ test('<form>/<input> разрешены в lib/form', () => {
 
 test('примитивы полей и виджеты панелей — свои теги законны', () => {
   assert.equal(checkTemplate(RULES, '<input />', '/app/src/components/ui/input/Input.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<select></select>', '/app/src/components/ui/native-select/NativeSelect.svelte'), null);
   assert.equal(checkTemplate(RULES, '<input />', '/app/src/components/settings/Toggle.svelte'), null);
 });
 
@@ -194,22 +193,6 @@ test('импорт примитивов разрешён всем выше ил�
   assert.equal(check('#components/ui/index.js', '/app/src/routes/form/+page.svelte'), null);
   assert.equal(check('#components/ui/index.js', '/app/src/components/form/Field.svelte'), null);
   assert.equal(check('#components/utils.js', '/app/src/content/user/ui/Acl.svelte'), null);
-});
-
-test('template: <NativeSelect> вне кита блокируется с подсказкой enhanced Select', () => {
-  const msg = checkTemplate(RULES, '<div><NativeSelect name="s" /></div>', '/app/src/routes/demo/+page.svelte');
-  assert.match(msg, /только внутри кита/);
-  assert.match(msg, /#components\/ui/);
-});
-
-test('template: <NativeSelect /> самозакрытый тоже блокируется; enhanced <Select /> — нет', () => {
-  assert.notEqual(checkTemplate(RULES, '<NativeSelect />', '/app/src/features/x.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<Select options={opts} />', '/app/src/features/x.svelte'), null);
-});
-
-test('template: кит собирает носитель сам — settings и shell легальны', () => {
-  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/components/settings/Select.svelte'), null);
-  assert.equal(checkTemplate(RULES, '<NativeSelect {name}/>', '/app/src/components/shell/sidebar.svelte'), null);
 });
 
 /* ── обход lib/form ──────────────────────────────────────────────────── */

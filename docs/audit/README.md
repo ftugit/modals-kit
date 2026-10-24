@@ -24,7 +24,7 @@
 
 | Страж | Что проверяет |
 |---|---|
-| `tooling/layer-guard.mjs` | Vite-плагин dev/build: направленность 5 верхних слоёв (`#lib` → `#hooks` → `#components` → `#content` → `#server`/`routes`), граница `*.server.ts` (включая SSR-контур Vite 8), чистота `src/server/trusted-origins.ts`, запрет прямого `history.pushState`/`replaceState`, чтения `page.url` и `goto` вне навигационных примитивов, запрет сырых `<form>`/`<input>`/`<select>`/`<textarea>`, `<NativeSelect>` и рукописных `name=` вне кита, `.pending`/`.error` только в `takeover` и разбор тела только через `#lib/form/server.js`. |
+| `tooling/layer-guard.mjs` | Vite-плагин dev/build: направленность 5 верхних слоёв (`#lib` → `#hooks` → `#components` → `#content` → `#server`/`routes`), граница `*.server.ts` (включая SSR-контур Vite 8), чистота `src/server/trusted-origins.ts`, запрет прямого `history.pushState`/`replaceState`, чтения `page.url` и `goto` вне навигационных примитивов, запрет сырых `<form>`/`<input>`/`<select>`/`<textarea>` и рукописных `name=` вне кита, `.pending`/`.error` только в `takeover` и разбор тела только через `#lib/form/server.js`. |
 | `tooling/core-purity.mjs` | Отсутствие импортов `svelte`, `@sveltejs/kit` и `$app/*` в чистых ядрах библиотек (`modals`, `form`, `paginate`, `address`, `fetch`, `cache`, `image`, `task`, `db`). |
 | `tooling/load-url-guard.mjs` | Чтение URL в `load`-функциях маршрутов без скрытой потери реактивных зависимостей. |
 | `tooling/source-schema-guard.mjs` | Изоляция схем внешних источников каталогов в зоне источника (`src/content/demo-catalog/`). |

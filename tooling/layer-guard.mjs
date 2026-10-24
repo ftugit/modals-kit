@@ -542,26 +542,6 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    pattern: /<NativeSelect([ \t\n/>])/,
-    isTemplateCheck: true,
-    allow: [
-      /(^|\/)src\/components\/ui\//,
-      /(^|\/)src\/components\/settings\//,
-      /(^|\/)src\/components\/shell\//,
-      /(^|\/)node_modules\//,
-    ],
-    message: ({ importer }) =>
-      [
-        `[layer-guard] Стандартный носитель <NativeSelect> доступен только внутри кита.`,
-        `  файл: ${importer || '<точка входа>'}`,
-        '',
-        '  Странице и демке положен расширенный select:',
-        '',
-        "      import { Select } from '#components/ui/index.js';",
-        "      import { Select as PanelSelect } from '#components/settings/index.js';",
-      ].join('\n'),
-  },
-  {
     pattern: /<[A-Z][\w]*[^>]*\btype="hidden"/,
     isTemplateCheck: true,
     allow: [
@@ -582,7 +562,7 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|RadioGroup|RadioItem|Range|Select|NativeSelect|FileInput|FileAttachment|Attachment|SearchInput|SearchField|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
+    pattern: /<(?:Input|Textarea|AutoTextarea|Checkbox|Switch|RadioGroup|RadioItem|Range|Select|FileInput|FileAttachment|Attachment|SearchInput|SearchField|PhoneInput|OtpInput|PasswordInput|CopyInput|NumberField|NumberInput)\b[^>]*\bname\s*=\s*["']/,
     isTemplateCheck: true,
     allow: [
       /(^|\/)src\/components\/form\//,
