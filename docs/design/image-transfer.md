@@ -44,7 +44,7 @@
 
 ### Этап R5 — снят (2026-10-24)
 
-Перевод поля изображения `/fields` на `field.photo(...)` **не нужен**: генератор полей задуман текстовым, файловые виды в него не входили (решение владельца). В демо остаётся `field.file` с `accept`/`maxSize` и честной проверкой заголовка (`probeImageHeader`, `src/routes/(site)/(app)/fields/fields.form.server.ts`); потолок пикселей (`maxPixels`/`maxSide`) действует только в профиле через `field.photo`. Если фото-поле понадобится в пользовательском наборе, это правило `v.image(...)` с инъекцией пробника — карточка `OI-06` в [`../audit/open-issues.md`](../audit/open-issues.md).
+Поле изображения в демо **вне схемы**: генератор (`collectionForm`) производит только текстовые виды, а `image: field.file(...)` объявлено в коде формы записи (`recordForm`) рядом с `title`. Перевод на `field.photo(...)` **не эквивалентен**: `photo` — конвейер перекодирования в JPEG (`output: { format, edge, maxBytes }`), демо же хранит исходные байты и принимает GIF. Остаётся `field.file` с `accept`/`maxSize` и проверкой заголовка (`probeImageHeader`). Если нужен только лимит пикселей — ≈10 строк в `fields.form.server.ts` (`probeImageHeader` уже отдаёт `width`/`height`), карточка `OI-06` в [`../audit/open-issues.md`](../audit/open-issues.md).
 
 ### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
 
