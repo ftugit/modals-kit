@@ -6,7 +6,7 @@
 
 ## Модуль приложения, а не библиотека
 
-Папка в `src/content/` принадлежит предметной области «пользователь» (наравне с `posts.ts` и источниками каталогов), а не переиспользуемому слою `src/lib/`. В одном месте собраны ресурсы БД, чистые доменные функции, адаптеры портов, серверный фасад кук и самодостаточные UI-компоненты.
+Папка в `src/content/` принадлежит предметной области «пользователь» (наравне с `demo-catalog/posts/posts.ts` и источниками каталогов), а не переиспользуемому слою `src/lib/`. В одном месте собраны ресурсы БД, чистые доменные функции, адаптеры портов, серверный фасад кук и самодостаточные UI-компоненты.
 
 ## Состав
 
@@ -25,8 +25,9 @@
 | `acl.ts` | Логика и описания 21 экрана `resolveAcl`: статусы субъекта/аккаунта (`guest`, `user`, роли, `auth_disabled`, бан, ограничения, удаление) и все отказы моделей `#lib/db` (`FailureKind` + `payload_too_large`). |
 | `vault.ts` / `vault.svelte.ts` | Единый реактивный стор `vault` на лексическом замыкании (только публичные метаданные `{ sub, iat, expiresAt, ttlMs, prof }`, без сырых токенов), межвкладочная координация `navigator.locks` + `localStorage` + `BroadcastChannel`, пробуждение по `visibilitychange`/`online` и адаптер `userSession` для защищённых форм. |
 | `ui/Acl.svelte` | Компонент защиты экрана: при срабатывании ограничения отображает карточку причины и штатное действие вместо `children`. |
-| `ui/seed-form/` | Папочный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `<Acl allow="guest">`) и срез `confirm` (`authorize = false` — проверка знания `seed` через `verifySeed` без открытия сессии и без смены кук, доступна и гостю, и залогиненному пользователю). |
-| `ui/profile-form/` | Папочный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment`, удержанием отправки через `f.pending` и серверной обработкой через `decodeWithNode` (`#lib/image/node.js`) без передачи `base64` по сети. |
+| `ui/field-mirror.svelte.ts` | `mirrorToField(bound, имя, value)` — зеркало внешнего значения в поле формы: стартовое пишется синхронно (SSR и no-JS показывают его в HTML), дальше — эффектом; вид поля читается ВНЕ эффекта, иначе любой ввод перетирался бы зеркалом. |
+| `ui/seed-form/` | Папочный модуль формы `seedForm` (`SeedForm.svelte`, `form.ts`, `envelope.ts`, `seed.form.server.ts`, `index.ts`): срезы `entry` / `register` / `restore` (`authorize = true`, `<Acl allow="guest">`) и срез `confirm` (`authorize = false` — проверка знания `seed` через `verifySeed` без открытия сессии и без смены кук, доступна и гостю, и залогиненному пользователю). |
+| `ui/profile-form/` | Папочный модуль формы `profileForm` (`ProfileForm.svelte`, `AvatarTakeover.svelte`, `avatar.ts`, `form.ts`, `profile.form.server.ts`, `index.ts`): никнейм + бинарное поле `field.photo` с компактным `FileAttachment`/`Attachment`, удержанием отправки через `f.pending` и серверной обработкой через `decodeWithNode` (`#lib/image/node.js`) без передачи `base64` по сети. |
 | `ui/BanNotice.svelte` / `ui/RestrictionsNotice.svelte` | Экраны полной блокировки (`scope: 'auth'`) и частичных ограничений аккаунта. |
 | `ui/AuthWidget.svelte` | Тонкий координатор шагов потока входа (`auth.*` / `blocked` / `restrictions` / `profile`, адрес — `?stage=auth.restore`) + связка `formSteps`. |
 | `ui/MenuBody.svelte` / `ui/MenuModal.svelte` / `ui/UserMenu.svelte` | Меню пользователя под `<Acl allow="user">` (аватар, никнейм, переход к `?stage=profile`, выход) и кнопка в шапке. |
