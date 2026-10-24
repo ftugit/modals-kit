@@ -56,10 +56,12 @@ it('документация слоя #lib/db актуальна против к
   const problems = auditDocs({
     readme: read(`${DB_ROOT}/README.md`),
     porting: read(`${DB_ROOT}/PORTING.md`),
-    extraDocs: [
-      ['TRANSPORTS', read(`${DB_ROOT}/docs/TRANSPORTS.md`)],
-      ['ACL-DESIGN', read(`${DB_ROOT}/docs/ACL-DESIGN.md`)],
-    ],
+    // все документы `docs/` слоя, а не заранее перечисленная пара: иначе новый
+    // файл молча выпадал бы из аудита (проверено тестом ниже)
+    extraDocs: readdirSync(`${DB_ROOT}/docs`)
+      .filter((f) => f.endsWith('.md'))
+      .sort()
+      .map((f) => [f.replace(/\.md$/, ''), read(`${DB_ROOT}/docs/${f}`)] as [string, string]),
     sources,
     appFiles,
     limits: conservativeLimits as unknown as Record<string, number>,
@@ -73,6 +75,9 @@ it('документация слоя #lib/db актуальна против к
     expectedStatements: { '001-db-probe.sql': 5 },
     exists: (rel) => existsSync(rel),
   })
+
+  const docFiles = readdirSync(`${DB_ROOT}/docs`).filter((f) => f.endsWith('.md'))
+  assert.ok(docFiles.length >= 4, `docs/ слоя должен проверяться целиком, а видно ${docFiles.length} файлов`)
 
   assert.equal(problems.length, 0, formatProblems(problems))
   // карта entry-поинтов обязана покрывать весь публичный слой: новый экспорт,

@@ -44,7 +44,7 @@ const schema: CatalogFilterSchema = {
 решает приложение — своё описание и свой компонент под каждую схему. Из схемы приходит то, что
 знает только источник: варианты, границы значений, пределы, связки и правила между полями.
 
-**Описание** — функция приложения, одна на браузер и сервер (`src/content/shikimori-filters.ts`):
+**Описание** — функция приложения, одна на браузер и сервер (`src/content/demo-catalog/shikimori/filters.ts`):
 
 ```ts
 export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions) {
@@ -92,7 +92,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 Ошибка любого поля отклоняет набор целиком — и в браузере (до отправки), и на сервере.
 
 **Компонент** — свой у каждой схемы, поля расставлены руками
-(`src/routes/(site)/(app)/paginator/ShikimoriFilters.svelte`):
+(`src/content/demo-catalog/shikimori/ui/ShikimoriFilters.svelte`):
 
 ```svelte
 <script lang="ts">
@@ -264,5 +264,5 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 | `src/lib/form/range.test.ts` | `notAbove`/`notBelow`/`noOverlap`: ошибки, пустые стороны, даты, реестр |
 | `schema-memory.test.ts` | память по `source`, замена, выключенная на сервере |
 | `src/components/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
-| `src/content/demo-catalog/shikimori/schema.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
+| `src/content/demo-catalog/shikimori/schema.server.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
 | `test/browser/shikimori.mjs` | 11 полей формы схемы по `data-field`; без JS: 200 студий с пояснением, студия из хвоста по адресу показана выбранной и проходит проверку; с JS: поиск находит последнюю студию; переход внутри сайта — схемы нет в данных, панель из памяти; роут: 403 без заголовка |

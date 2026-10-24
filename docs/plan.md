@@ -25,7 +25,7 @@
 ### Модуль пользователя (`src/content/user/`)
 - [x] **Доменное ядро и жизненный цикл сессии (`AS-01` .. `AS-09`)**: Ed25519 `seed` + одноразовый `challenge` с автообновлением при отказе, ротация/сериализация `renew` по `jti`, Lamport-синхронизация `vault` между вкладками, SSR-проверка через `guard()` и восстановление по `auth_sid`, отзыв в БД при истёкшей `auth_tmp`, `restoreDeleted`, `verifySeed`, `sweepDeletions`.
 - [x] **Полный UI `Acl`, маршруты и модалки** (`src/content/user/{routes.ts,modals.ts,acl.ts,ui/Acl.svelte}`, `ui/seed-form/`, `ui/profile-form/`).
-- [x] **Полная сквозная верификация (`TB-15`)**: зелёные `test:guard` (`128/128`), `test:classes`, `svelte-check` (`0/0`), `vitest` (`111/111` файлов, `1355/1355` тестов), `test:db:probes`, `vite build`, `test:size` и все `11/11` браузерных Playwright-сьютов.
+- [x] **Полная сквозная верификация (`TB-15`)** *(числа — срез на момент закрытия)*: зелёные `test:guard` (`128/128`), `test:classes`, `svelte-check` (`0/0`), `vitest` (`111/111` файлов, `1355/1355` тестов), `test:db:probes`, `vite build`, `test:size` и все `11/11` браузерных Playwright-сьютов.
 
 ---
 

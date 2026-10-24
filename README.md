@@ -21,18 +21,19 @@
 | `#lib/cache` | Контракт ключ–значение со сроками жизни, областями (`scope`), `singleflight` и атомарными `add`/`incr` | [`src/lib/cache/README.md`](./src/lib/cache/README.md) |
 | `#lib/image` | Изоморфный конвейер изображений: чтение заголовков без декодирования (`probe`), обрезка/ресайз, подбор качества под бюджет байт, серверный WASM-декодер (`node.ts`) | [`src/lib/image/README.md`](./src/lib/image/README.md) |
 | `#lib/task` | Единый формат состояния ожидания и прогресса (`TaskState`) для ссылок, кнопок и верхней полосы загрузки | [`src/lib/task/README.md`](./src/lib/task/README.md) |
+| `#lib/assets` | Пакет-ассеты (не код): единственный вход `favicon.svg`, объявленный в `entrypoints.json`; иконка подключается в `src/routes/+layout.svelte` | — (`entrypoints.json`) |
 
 ### 2. Связки со средой и между библиотеками (`src/hooks/` — `#hooks/*`)
 
 Переходники без визуальной разметки (подробно — [`src/hooks/README.md`](./src/hooks/README.md)):
-- `cache-db.ts` (`#lib/cache` × `#lib/db`), `db-form.ts` (`#lib/db` × `#lib/form`), `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
+- `cache-db.ts` (`#lib/cache` × `#lib/db`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema` (`#lib/db/sync` × `#lib/form`), `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
 - `links/` (`asLink`, `asModalLink`), `loader.svelte.ts`, `js-only.svelte.ts`, `use-drawer.svelte.ts`, `app-errors.svelte.ts`;
 - `component-form/` — маршрутно-независимые формы компонентов через `createComponentFormsHandle` и `bindComponentForm`.
 
 ### 3. UI-примитивы и проектно-независимые компоненты (`src/components/` — `#components/*`)
 
 - `src/components/ui/` — единая система примитивов на Ark UI + CVA (`variants`) + UnoCSS, включая `Attachment`, `FileAttachment`, `RadioGroup` и `Range` (правила слоя — [`src/components/ui/README.md`](./src/components/ui/README.md));
-- `src/components/{shell,modals,form,fields,paginator,steps,settings,demo,loader}/` — прикладные компонентные модули без зашитых маршрутов конкретного сайта.
+- `src/components/{shell,modals,form,fields,paginator,steps,settings,demo,db-schema,loader}/` — прикладные компонентные модули без зашитых маршрутов конкретного сайта.
 
 ### 4. Контент и домены (`src/content/` — `#content/*`)
 
@@ -42,7 +43,7 @@
 ### 5. Серверные синглтоны и маршруты (`src/server/` — `#server/*`, `src/routes/`)
 
 - `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и `trusted-origins.ts`;
-- `src/routes/` — тонкие маршруты витрин и API (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/user/auth`, `/user/menu`, `/cards/[id]`, `/cycle`, `/spike`).
+- `src/routes/` — тонкие маршруты витрин и API (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/schema`, `/user/auth`, `/user/menu`, `/cards/[id]`, `/cycle`, `/spike`).
 
 ---
 

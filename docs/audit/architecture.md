@@ -30,10 +30,10 @@
     ```
 - **5 жёстких технических ограничений репозитория:**
   1. **`0` байт в `src/lib/form/**`** (`tooling/form-size.mjs` держит строгий потолок веса — все расширения `onSuccess`, `not-applied`, `import.meta.glob` кладутся в `src/hooks/component-form/`).
-  2. **`0` правок кода в `src/lib/db/**`**, а все 14 обратных кавычек с путями `` `src/...` `` в `src/lib/db/{README.md,PORTING.md,docs/*.md}` обновляются синхронно с переездом файлов на Этапе **`S5`** (`tooling/db-docs.mjs:341` проверяет `exists()` каждого пути!).
+  2. **`0` правок кода в `src/lib/db/**`** (библиотека портируется как есть), а все упоминания путей `` `src/**` `` в `src/lib/db/{README.md,PORTING.md,docs/*.md}` (их ≈139) обновляются синхронно с переездом файлов. Пути проверяет не сам `tooling/db-docs.mjs`, а его тест: `src/lib/db/test/db-docs.test.ts` инжектит `existsSync` в `auditDocs` (по умолчанию `exists` — слабая проверка `rel in sources`, поэтому «доки прошли» без vitest ничего не значит). Таблицы происхождения в `PORTING.md` — исторический жанр, их пути не переписываются под текущее дерево.
   3. **В `src/content/user/vault.ts` и `vault.svelte.ts`** — только динамический `await import(...)` транспорта формы в `postRenew` (статический импорт ломает бюджет начальной загрузки в `tooling/size-budget.mjs`).
   4. **`trusted-origins.ts`** импортируется напрямую в `vite.config.ts:7` до старта плагинов SvelteKit — в нём **запрещены** `$app/*` и `$env/*`.
-  5. **Стенды ядер `/form/submit/+server.ts` и `/db-demo/submit/+server.ts` не удалять и не переделывать** — они тестируют опрос очереди `pollUntilDone` и NDJSON-стриминг `taskResponse(..., { watch: [watchDb] })`.
+  5. **Приём форм — только через `#hooks/component-form`** (`registerComponentForm` в `<route>/*.form.server.ts`), а не `actions` маршрута и не свои `submit/+server.ts`. Стенды `/form/submit/+server.ts` и `/db-demo/submit/+server.ts` были удалены сознательно (решение владельца `1 = А`, ход 190): опрос очереди `pollUntilDone` и NDJSON-стриминг `taskResponse(..., { watch: [watchDb] })` теперь живут в общем приёмнике и проверяются на нём (`bindComponentForm` + `watch`, браузерно — `test/browser/loader.mjs`, `db-demo.mjs`). Возвращать отдельные эндпоинты нельзя.
 
 ---
 
@@ -41,8 +41,8 @@
 
 1. **5 верхних слоёв и subpath-алиасов в `package.json`:**
    - `#lib/*` → `./src/lib/*` (`address`, `assets`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `task` — **вместе со своими фреймворковыми адаптерами** `svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`).
-   - `#hooks/*` → `./src/hooks/*` (`api-error.ts`, `app-errors.svelte.ts`, `cache-db.ts`, `db-form.ts`, `graphql.server.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `task-stream.server.ts`, `use-drawer.svelte.ts`, `links/`, `component-form/`).
-   - `#components/*` → `./src/components/*` (`utils.ts`, `ErrorPage.svelte`, `Error500.svelte`, `ui/`, `settings/`, `demo/`, `form/`, `fields/`, `paginator/`, `modals/`, `steps/`, `loader/`, `shell/`).
+   - `#hooks/*` → `./src/hooks/*` (`api-error.ts`, `app-errors.svelte.ts`, `cache-db.ts`, `db-form.ts`, `db-schema.ts`, `db-schema.server.ts`, `graphql.server.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `schema-route.ts`, `task-stream.server.ts`, `use-drawer.svelte.ts`, `links/`, `component-form/`).
+   - `#components/*` → `./src/components/*` (`utils.ts`, `ErrorPage.svelte`, `Error500.svelte`, `ui/`, `settings/`, `demo/`, `form/`, `fields/`, `paginator/`, `modals/`, `steps/`, `db-schema/`, `loader/`, `shell/`).
    - `#content/*` → `./src/content/*`:
      - **`src/content/user/`** — боевой доменный модуль пользователя (`index.ts`, `routes.ts`, `modals.ts`, `*.server.ts`, `ui/*`);
      - **`src/content/demo-catalog/`** — изолированная папка **всех** демо-источников витрин вместе с демо-БД (`items/`, `posts/`, `rickmorty/`, `shikimori/`), чтобы не создавать инверсий `#server → routes`, не плодить кросс-импорты между роутами (`0` исключений в `layer-guard.mjs`) и удалять весь учебный контент одной командой `rm -rf src/content/demo-catalog`.
@@ -64,8 +64,8 @@
 ### Этап S1. Изолированные листья `ui/`, глобальный `aria-invalid` в UnoCSS и чистка мёртвого кода — **[ВЫПОЛНЕНО]**
 *(Нулевой риск: затрагиваются только внутренние файлы `ui/`, `TextareaField` и тема `unocss.config.ts`, внешние контракты не меняются.)*
 - [x] **S1.1 (`U9` + `U3a`).** `unocss.config.ts` + `tooling/classes-audit.mjs`: добавлен `aria: { invalid: 'invalid="true"' }` в `UNO_THEME`, удалены 3 мёртвых шортката (`nav-pill`, `nav-pill-active`, `skeleton`), снята слепая зона на `aria-*:` и `data-*:` вариантах в `classes-audit.mjs` (`Маркер-классов: 0`, `Все утилиты сгенерированы`).
-- [x] **S1.2 (`U6`).** Создан `src/lib/components/ui/close-icon/CloseIcon.svelte`, заменены все 4 инлайновых крестика (`SearchField.svelte`, `SelectList.svelte` ×2, `FileAttachment.svelte`).
-- [x] **S1.3 (`U1` + `U5`).** В `src/lib/components/ui/field/field.ts` экспортированы `fieldBase` и `affixButtonClass`; `Textarea`, `AutoTextarea`, `SearchInput`, `SelectList` переведены на `fieldBase`; `PasswordInput`, `CopyInput`, `SearchField`, `NumberField` — на `affixButtonClass`.
+- [x] **S1.2 (`U6`).** Создан `src/components/ui/close-icon/CloseIcon.svelte`, заменены все 4 инлайновых крестика (`SearchField.svelte`, `SelectList.svelte` ×2, `FileAttachment.svelte`).
+- [x] **S1.3 (`U1` + `U5`).** В `src/components/ui/field/field.ts` экспортированы `fieldBase` и `affixButtonClass`; `Textarea`, `AutoTextarea`, `SearchInput`, `SelectList` переведены на `fieldBase`; `PasswordInput`, `CopyInput`, `SearchField`, `NumberField` — на `affixButtonClass`.
 - [x] **S1.4 (`U2/F2` + `U4` + `F7`).** Удалён мёртвый `const cls` в `form/TextareaField.svelte`; цвета `PasswordStrength.svelte` переведены на `--warning` / `--success`; удалён мёртвый `ui/search/SearchMorph.svelte` и убран `NativeSelect` из публичного барреля `ui/index.ts`.
 
 ---
@@ -90,8 +90,8 @@
 ### Этап S4. `#hooks/component-form` v2 + самодостаточные модули `fields/` и `paginator/` — **[ВЫПОЛНЕНО]**
 *(Средний уровень: сборка папочных модулей и перевод `/fields` и `/paginator` до глобального переезда импортов.)*
 - [x] **S4.1.** Доработан `src/hooks/component-form/` (`description(event)`, `source`, авто-inline `200` при `outcome === 'not-applied'`, `lockStateKey` и `onSuccess` в `client.svelte.ts`, автосбор `*.form.server.ts` через `import.meta.glob` без ручных импортов в `hooks.server.ts`, переименованы `seed.form.server.ts` и `profile.form.server.ts`) — `0` байт в `src/lib/form/`.
-- [x] **S4.2.** Собран папочный модуль `src/lib/components/fields/` (`SchemaBuilder.svelte` на `<Fieldset>` со скрытым submit для `Enter` без JS, `SchemaFields.svelte`, `SchemaValues.svelte`, `variants.ts`, `types.ts`, `index.ts`), `/fields` сжат с 13 до 5 тонких файлов (`+page.svelte`, `+page.server.ts` без `actions`, `fields.form.server.ts`, `forms.ts`, `demo-schema.ts`), удалены `/fields/{save,record}/+server.ts` и обновлён `test/browser/fields.mjs`.
-- [x] **S4.3.** Собран консолидированный модуль `src/lib/components/paginator/` (`Paginator.svelte`, `variants.ts`, `types.ts`, `index.ts`, `ui/*` включая `SearchBar.svelte` и обёртку `Spinner.svelte`, `filters/*`), удалена дублирующая папка `src/lib/components/filters/`, на `<Paginator />` переведены `GalleryDemo.svelte` и `CatalogDemo.svelte`.
+- [x] **S4.2.** Собран папочный модуль `src/components/fields/` (`SchemaBuilder.svelte` на `<Fieldset>` со скрытым submit для `Enter` без JS, `SchemaFields.svelte`, `SchemaValues.svelte`, `variants.ts`, `types.ts`, `index.ts`), `/fields` сжат с 13 до 5 тонких файлов (`+page.svelte`, `+page.server.ts` без `actions`, `fields.form.server.ts`, `forms.ts`, `demo-schema.ts`), удалены `/fields/{save,record}/+server.ts` и обновлён `test/browser/fields.mjs`.
+- [x] **S4.3.** Собран консолидированный модуль `src/components/paginator/` (`Paginator.svelte`, `variants.ts`, `types.ts`, `index.ts`, `ui/*` включая `SearchBar.svelte` и обёртку `Spinner.svelte`, `filters/*`), удалена дублирующая папка `src/lib/components/filters/` — после `S5` её содержимое живёт в `src/components/paginator/filters/`, на `<Paginator />` переведены `GalleryDemo.svelte` и `CatalogDemo.svelte`.
 
 ---
 
@@ -106,6 +106,6 @@
 
 ### Этап S6. Полное сквозное тестирование всего объёма (`S1`–`S5`), бюджеты и документация — **[ВЫПОЛНЕНО]**
 *(Финальная приёмка сразу после фундаментального Этапа `S5`.)*
-- [x] **S6.1.** Прогнать полный контур статических и unit-проверок: `npm run test:guard` (`128/128`), `npm run test:classes` (`0` маркеров, все утилиты сгенерированы), `npm run check` (`0 errors, 0 warnings`), `vitest run` (`111/111` файлов, `1355/1355` тестов), `npm run test:db:probes`, `npm run build && npm run test:size` (`бюджеты веса соблюдены`).
+- [x] **S6.1.** *(числа — на момент этапа `S6`; актуальные даёт прогон, а не этот файл)* Прогнать полный контур статических и unit-проверок: `npm run test:guard` (`128/128`), `npm run test:classes` (`0` маркеров, все утилиты сгенерированы), `npm run check` (`0 errors, 0 warnings`), `vitest run` (`111/111` файлов, `1355/1355` тестов), `npm run test:db:probes`, `npm run build && npm run test:size` (`бюджеты веса соблюдены`).
 - [x] **S6.2.** Прогнать все 11 браузерных Playwright-сьютов (`auth.mjs`, `modals.mjs`, `shell.mjs`, `forms.mjs`, `forms-a11y.mjs`, `fields.mjs`, `attachment.mjs`, `steps.mjs`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs`), включая исправление SSR-резолвинга `index.html` в `tooling/layer-guard.mjs` под Vite 8 `vite dev` — все 11/11 сьютов зелёные (`0` провалов).
 - [x] **S6.3.** Записать правила UI-слоя в [`../../src/components/ui/README.md`](../../src/components/ui/README.md) (**`U8`**), актуализировать [`../../AGENTS.md`](../../AGENTS.md), [`../../README.md`](../../README.md), [`./README.md`](./README.md), [`./testing-backlog.md`](./testing-backlog.md), [`../plan.md`](../plan.md), [`../design/`](../design/port-plan.md) и потолки `tooling/size-budget.mjs`.

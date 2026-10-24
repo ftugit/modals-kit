@@ -57,7 +57,7 @@
 
 ## 1. Composition root
 
-Единственный владелец соединения и ресурсов — серверный модуль (`#lib/server`), как в
+Единственный владелец соединения и ресурсов — серверный модуль (`#server`), как в
 официальном SvelteKit FAQ «How do I set up a database?»: синглтон процесса, а не на
 запрос. Лень важна: `vite dev` и `vite build` спорят из-за file-lock каталога PGlite.
 
@@ -139,7 +139,7 @@ async function openDriver(): Promise<Driver> {
 // src/hooks.server.ts
 import { dbHandle } from '#lib/db/sveltekit/index.js'
 import type { Handle } from '@sveltejs/kit/hooks'
-import { db, DEMO_PRINCIPAL } from '#lib/server/db.js'
+import { db, DEMO_PRINCIPAL } from '#server/db.server.js'
 
 // Пользователь — на каждом запросе; БД при этом не поднимается (её откроет первый запрос
 // к ней, см. `lazyDriver`). С авторизацией principal берут из сессии.
@@ -1100,7 +1100,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | `src/lib/db/test/db-port-specific.test.ts` | 42 | поведение, которого в источнике не было (курсоры в обе стороны, срез постраничной выдачи `asof`, опрос изменённых/удалённых `changes`, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync.test.ts` | 33 | схема из моделей (`defineSchema`: каждый вид изменения, ход сверки `onStep`, `kit_schema`, ручной SQL, `schema_pending`, внешние ключи, решения конфликтов), цепочка удаления (`chain`, `delete({ chain })`: права, мягко/навсегда, отказы, дерево, круг, хуки, `without`/`raw`), сырые связанные записи и `estimate` у `raw`, ключи доступа (`access`: чтение, вставка, по id, перенос, цепочка, ошибки объявления, ссылка на себя), ошибки по полям (все сразу, коды, `messages`, уникальный индекс → поле), тип и CHECK из Standard JSON Schema zod — один PGlite на файл |
 | `src/lib/db/test/db-rules.test.ts` | 33 | правила один раз: метка проверки (договорённость с `lib/form`, пропуск и отказ), тип и CHECK из JSON Schema поля, `checks` в транзакции записи (и ключ JSON-поля `data.mail`), `validator` без записи, маски и `policy` по умолчанию, `fill` (заполнение, приоритет переданного, правила результата, защита от хука) и `store` (после правил, с меткой, требование `db.type`); `timestamps` (поля, DEFAULT и индексы под опрос, время базы, мягкое удаление, `readDeleted`, `restore` и его политика, ошибки объявления, пустые значения = выключено, `liveCapabilities`, цепочка ставит время базы); `without` и `behavior` (клон без меток, прав, хуков, `store`; параллельный код, вложенность, транзакция, ошибки путей), `protect` (свои id и даты, автоматика остального), `raw` (запись как есть, чтение без фильтров), `delete({ hard })` и `canDelete` |
-| `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
+| `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `src/lib/db/test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |
 | `src/lib/db/test/db-docs.test.ts` | — | боевой прогон `tooling/db-docs.mjs`: README/PORTING против кода |

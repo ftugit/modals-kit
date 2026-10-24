@@ -32,3 +32,4 @@
 | `tooling/classes-audit.mjs` | Отсутствие маркерных CSS-классов и утилит UnoCSS (включая `aria-*:` / `data-*:`) без сгенерированных правил. |
 | `tooling/ark-owns.mjs` | Запрет ручного дублирования focus-trap, scroll-lock и возврата фокуса поверх машин Ark UI / Zag. |
 | `tooling/form-size.mjs`, `tooling/size-budget.mjs` | Бюджеты gzip-веса ядра форм, общего клиентского бандла и начальной загрузки всех маршрутов. |
+| `tooling/public-api.mjs` | Публичный вход пакетов `src/lib/<pkg>`: снаружи допустимы только спецификаторы из `entrypoints.json`. Запускается командой `node tooling/public-api.mjs` и тестом `tooling/public-api.test.mjs`; **в `vite.config.ts` не подключён** (открыто: см. отчёт аудита `S2`). |

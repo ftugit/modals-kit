@@ -105,7 +105,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 | `parseListInput` deny-safe: неизвестный/повторяющийся ключ, `page` рядом с `after`, битый JSON = `validation`; `?/action`-маркер — исключение | SvelteKit кладёт `?/create` в `event.url` на POST; игнорировать мусор — значит тихо принимать чужие ключи; принимать — значит падать на каждом action | `port-specific`: 2 группы на `parseListInput` (включая маркер) |
 | `toFormFailure`: сообщения Standard Schema доезжают до `fieldErrors` | в источнике они терялись (`fail('validation', key)`), в UI шёл только «Invalid input»; в Kit формат ошибок формы — `{fieldErrors, formErrors}` | `port-specific` + реальный браузер (`role=alert`, `aria-invalid`) |
 | `toKitError` возвращает **данные** `{status, body}`, а не бросает | `error()`/`fail()` живут в `@sveltejs/kit`; импорт оставлен приложению → `./sveltekit` не тянет kit и работает в Workers | `structure.check.mts`: у `./sveltekit` нет `node:`/`pg`/PGlite-импортов; полнота `FAILURE_STATUS` по всем `FailureKind` |
-| `splitSqlStatements` вместо `split(';')` | `;` внутри строк/комментариев/`$tag$` режет оператор пополам | `port-specific` + проверка на `src/lib/db/migrations/001` (5 операторов) |
+| `splitSqlStatements` вместо `split(';')` | `;` внутри строк/комментариев/`$tag$` режет оператор пополам | `port-specific` + проверка на `src/lib/db/migrations/001-db-probe.sql` (5 операторов) |
 | `openNodeDatabase(..., {memory})` + lock-файл каталога | PGlite в одном каталоге из `dev` и `build` даёт «database directory is already open by process N» ([пример](https://github.com/AaronBuxbaum/diveday/issues/2101)) | тестов нет; проверено руками: `resolveDatabaseDir(root,'idb://db')` → `DATABASE_DIR must be a filesystem path, not a storage URI`, обычный путь → абсолютный; в интеграции демо шло `memory: true` |
 | Zero-dep `s.*` + `field(zodSchema)` одновременно | SvelteKit и Superforms валидируются через Standard Schema ([обсуждение](https://github.com/sveltejs/kit/discussions/13336), [zod v4 `~standard`](https://medium.com/@ariawhenujoseph/…superforms…)); жёсткая зависимость от `zod` = лишний деп в `modals-kit`, где его нет | `port-specific`: «`field()` принимает и zod-схему, и свою»; дифференциальный корпус против `zod@4.6.5` |
 | `defineResource` проверяет форму конфигурации (`checkShape`) | переносчик поймал три «молча не работающих» конфигурации на реальном PG: `softDelete` без `value`/`readDeleted` (метка пишется `undefined`, `includeDeleted` = вечный 403), `generated` + write-маска (значение теряется), `validateFinal: true` вместо схемы (500 на записи). Источник проверял только идентификаторы и существование полей | `port-specific`: «defineResource отклоняет конфигурации, которые иначе молча не работают» (7 случаев); на реальном прогоне `src/lib/db/probes/shikimori-view.probe.mjs` тот же путь зелёный |
@@ -244,7 +244,7 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
 
 Ещё одна несостоявшаяся «оптимизация»: `node --test` как раннер — не подходит, потому что
 перенесённые файлы ассертят на верхнем уровне. В приложении их не переписывали под `it()`:
-`test/db-ported.test.ts` — тонкая обёртка: каждый скрипт под ней один `it`, потому что
+`src/lib/db/test/db-ported.test.ts` — тонкая обёртка: каждый скрипт под ней один `it`, потому что
 их тела выполняют всё на верхнем уровне (общий прогон PGlite/PG, общий `try/finally`) и
 переписывать перенесённый код под `it()` смысла нет. Свой runner `test/run.mjs` не нужен.
 

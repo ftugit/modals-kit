@@ -22,7 +22,7 @@
 | `TB-12` | **P2** | `[ ]` Открыто | `src/content/user/ui/profile-form/profile.form.server.ts`, `src/content/user/profile.ts` | Различать очистку поля `nickname` (`''` → `null`) и отсутствие изменения (`undefined`). |
 | `TB-13` | **P2** | `[ ]` Открыто | `src/hooks/component-form/server.server.ts` | Заменить поверхностный spread `{ ...event, request }` в `renderInlineWithResult` на `Object.create(Object.getPrototypeOf(event), ...)` или `Proxy`, сохраняющий геттеры прототипа `RequestEvent`. |
 | `TB-14` | **P2** | `[ ]` Открыто | `src/content/user/{auth.ts,gateway.server.ts}` | Подключить периодический вызов `sweepDeletions(ports)` и актуализировать верхний комментарий `gateway.server.ts`. |
-| `TB-15` | **P3** | `[x]` Закрыто (`S5`–`S6`) | весь репозиторий | Пройден полный контур: `test:guard` (`128/128`), `test:classes` (`0` маркеров), `svelte-check` (`0 errors, 0 warnings`), `vitest` (`111/111` файлов, `1355/1355` тестов), `test:db:probes`, `vite build`, `test:size` и все `11/11` E2E-наборов Playwright (включая `attachment.mjs` на `vite dev` и `shikimori.mjs`). |
+| `TB-15` | **P3** | `[x]` Закрыто (`S5`–`S6`) | весь репозиторий | Пройден полный контур *(числа — срез на момент закрытия; текущие даёт прогон)*: `test:guard` (`128/128`), `test:classes` (`0` маркеров), `svelte-check` (`0 errors, 0 warnings`), `vitest` (`111/111` файлов, `1355/1355` тестов), `test:db:probes`, `vite build`, `test:size` и все `11/11` E2E-наборов Playwright (включая `attachment.mjs` на `vite dev` и `shikimori.mjs`). |
 
 ---
 

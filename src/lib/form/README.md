@@ -310,7 +310,7 @@ const handle = createFormHandler({
 Представление (`input`) — то, как поле выглядит; тип значения (`kind`) — что из него
 декодируется. `field.<представление>(...)` находит тип по представлению. Библиотека
 отдаёт только `attrs`; компонент под представление выбирает приложение в `resolve`
-(в демо — `src/lib/components/form/resolve.ts`, примитивы — `#lib/components/ui`).
+(в демо — `src/components/form/resolve.ts`, примитивы — `#components/ui`).
 
 | Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
 |---|---|---|---|
@@ -495,7 +495,7 @@ signup.registry.registerType({
 видов в `checkFieldDefinition` — мета-валидация сама заметит, если новый тип
 не знает вида, который ему подсунули.
 
-Второй пример в демо — `phone` (`src/lib/components/form/extend.ts`): значение — одна
+Второй пример в демо — `phone` (`src/components/form/extend.ts`): значение — одна
 строка `+79991234567`. `decode` приводит номер, как его пишут люди (`+7 (999) 123-45-67`,
 `00…`), к этой строке и отклоняет номер не той длины (код `type.phone`): у страны из
 списка `PHONE_COUNTRIES` — длина национальной части обычного и мобильного номера (+7 —
@@ -1081,7 +1081,7 @@ $effect(() => { if (form.state.result?.redirect) goto(form.state.result.redirect
 
 ```ts
 import { storeIdempotency } from '#lib/form/server.js'
-import { localStore } from '#lib/server/cache.js'
+import { localStore } from '#server/cache.server.js'
 
 const idempotency = storeIdempotency(localStore.scope('signup:idempotency', { max: 10_000 }))
 ```
@@ -1137,7 +1137,7 @@ Svelte переводит состояние формы в общий форма
 ```svelte
 <script lang="ts">
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
-  import { Button } from '#lib/components/ui/index.js'
+  import { Button } from '#components/ui/index.js'
   const form = bind(forms, signup)
 </script>
 

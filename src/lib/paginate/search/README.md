@@ -52,7 +52,7 @@ lib paginate и lib search, а библиотека поиска от них н�
 </Form>
 ```
 
-Пример страницы — `src/routes/(site)/(app)/paginator/SearchBar.svelte`.
+Пример страницы — `src/components/paginator/ui/SearchBar.svelte`.
 
 ## Подключение (три шага)
 
