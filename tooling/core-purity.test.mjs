@@ -86,7 +86,8 @@ function walk(dir, acc = []) {
 for (const root of CORE_MODULES) {
   test(`ядро ${root} не зависит ни от одного фреймворка`, () => {
     const files = walk(root)
-    assert.ok(files.length > 2, 'нечего проверять — путь изменился?')
+    // Ноль файлов — путь переехал; один файл — законное ядро-барель (`lib/task`).
+    assert.ok(files.length > 0, 'нечего проверять — путь изменился?')
     const problems = []
     for (const file of files) {
       const rel = relative(root, file)

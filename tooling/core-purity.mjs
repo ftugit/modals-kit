@@ -43,13 +43,24 @@ export const FRAMEWORK_ZONES = [
   /^sveltekit(\/|\.ts$|\.test\.ts$)/,
 ]
 
-const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s[^'"\n]*?from\s*['"]([^'"]+)['"]/g
-const BARE_IMPORT_RE = /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g
+/**
+ * Четыре формы, которые реально встречаются в коде:
+ *   • статический `import … from 'x'` / `export … from 'x'` — в том числе
+ *     многострочный список (`import {\n a,\n b,\n} from 'x'` — обычное дело);
+ *   • побочный `import 'x'`;
+ *   • динамический `import('x')` — ленивый вызов фреймворка обходит правило
+ *     не хуже статического.
+ * Раньше ловились только однострочные формы: перенос строки и `import(…)`
+ * проходили мимо, и ядро могло позвать фреймворк незаметно для проверки.
+ */
+const IMPORT_RE = /(?:^|[\s;{}()])(?:import|export)\s+[\s\S]{0,400}?\bfrom\s*['"]([^'"\n]+)['"]/g
+const BARE_IMPORT_RE = /(?:^|[\s;{}()])import\s*['"]([^'"\n]+)['"]/g
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g
 
 /** @param {string} source @returns {string[]} */
 export function collectSpecifiers(source) {
   const out = []
-  for (const re of [IMPORT_RE, BARE_IMPORT_RE]) {
+  for (const re of [IMPORT_RE, BARE_IMPORT_RE, DYNAMIC_IMPORT_RE]) {
     re.lastIndex = 0
     let m
     while ((m = re.exec(source))) out.push(m[1])
@@ -129,4 +140,7 @@ export const CORE_MODULES = [
   'src/lib/paginate', // вместе с search/ и filters/ — части пакета
   'src/lib/cache',
   'src/lib/fetch',
+  'src/lib/db', // переносимый: PGlite, Hyperdrive, схема — без SvelteKit
+  'src/lib/image', // конвейер кадра и state-коллектор — без фреймворка
+  'src/lib/task', // крошечный баррель, но правило одно для всех ядер
 ]

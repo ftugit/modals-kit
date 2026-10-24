@@ -14,7 +14,6 @@
   import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
-  import { userAuthRoute } from '../routes.js'
   import { seedForm } from './seed-form/form.js'
   import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
@@ -44,7 +43,7 @@
   const avatarUrl = $derived(vault.profile.avatarUrl)
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
   const profileLink = $derived(
-    asModalLink('user.auth', { stage: 'profile' }, { href: userAuthRoute.href({ stage: 'profile' }) }),
+    asModalLink('user.auth', { stage: 'profile' }),
   )
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках

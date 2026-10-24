@@ -30,7 +30,7 @@
   // щелчком вне их шага (без скрипта открытое живёт до отправки формы).
   function onOutside(e: PointerEvent) {
     if (!root || !(e.target instanceof Element)) return
-    for (const d of root.querySelectorAll('details.fs-disclose[open]')) {
+    for (const d of root.querySelectorAll('details[open]')) {
       if (!d.contains(e.target)) d.removeAttribute('open')
     }
   }

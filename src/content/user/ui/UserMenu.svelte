@@ -10,7 +10,7 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
-  import { userAuthRoute, userMenuRoute } from '../routes.js'
+  import { userAuthRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'
 
   const asModalLink = useModalLink()
@@ -31,7 +31,7 @@
 
 {#if authorized}
   <!-- аватар → меню-модалка; без JS — страница меню с выходом -->
-  {@const link = asModalLink('user.menu', {}, { href: userMenuRoute.href() })}
+  {@const link = asModalLink('user.menu')}
   <a
     {...link}
     data-testid="header-user"
@@ -46,7 +46,9 @@
     {/if}
   </a>
 {:else}
-  <!-- «Авторизация» → модалка входа; без JS — страница входа (href-фолбэк) -->
+  <!-- «Авторизация» → модалка входа; без JS — страница входа (href-фолбэк).
+       Здесь `href` не избыточен: у маршрута тот же путь, но другой `next` —
+       адрес возврата на текущую страницу, а не умолчание `null`. -->
   {@const link = asModalLink('user.auth', {}, { href: authHref })}
   <a
     {...link}

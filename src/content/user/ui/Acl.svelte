@@ -110,12 +110,12 @@
 
   const loginLink = $derived(
     asModalLink
-      ? asModalLink('user.auth', {}, { href: userAuthRoute.href() })
+      ? asModalLink('user.auth')
       : { href: userAuthRoute.href() },
   )
   const restoreLink = $derived(
     asModalLink
-      ? asModalLink('user.auth', { stage: 'restore' }, { href: userAuthRoute.href({ stage: 'restore' }) })
+      ? asModalLink('user.auth', { stage: 'restore' })
       : { href: userAuthRoute.href({ stage: 'restore' }) },
   )
 </script>

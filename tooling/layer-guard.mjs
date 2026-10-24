@@ -75,6 +75,10 @@ export function canonSpecifier(source, importer) {
  * @property {RegExp} [require] срабатывает ТОЛЬКО если в тексте нет этого узора:
  *   способ потребовать «пользуйся библиотекой», не запрещая сам приём.
  * @property {string | ((ctx: {source: string, importer: string, rule: Rule}) => string)} message
+ * @property {(ctx: {source: string, canon: string | null, importer: string}) => boolean} [violates]
+ *   дополнительное условие НАРУШЕНИЯ: правило срабатывает, только если функция
+ *   вернула true. Нужно там, где запрет зависит от пары «кто → кого», а не от
+ *   одной стороны (два маршрута из разных деревьев).
  */
 
 /**
@@ -122,6 +126,7 @@ export function createGuard(rules) {
     for (const rule of rules) {
       if (rule.isTemplateCheck || rule.isSourceCheck) continue;
       if (!matchPattern(rule.pattern, src) && !(canon && matchPattern(rule.pattern, canon))) continue;
+      if (rule.violates && !rule.violates({ source: src, canon, importer: from })) continue;
       if ((rule.deny ?? []).some((d) => matchPattern(d, from))) {
         return typeof rule.message === 'function'
           ? rule.message({ source: src, importer: from, rule })
@@ -240,13 +245,40 @@ const SERVER_IMPORTERS = [
   /(^|\/)\+server\.(?:ts|js)$/,
   /(^|\/)\.svelte-kit\//,
   /(^|\/)node_modules\//,
-  /\.(?:test|spec)\.(?:ts|js|mts|mjs)$/,
+  /\.(?:test|spec)\.(?:ts|js|mts|mjs|svelte)$/,
   /(^|\/)tooling\//,
   /(^|\/)vite\.config\.ts$/,
 ];
 
 /** @param {RegExp} re */
-const NON_TEST = (re) => new RegExp(`${re.source}(?!.*\\.(?:test|spec)\\.(?:ts|js|mts|mjs)$)`);
+const NON_TEST = (re) =>
+  new RegExp(`${re.source}(?!.*\\.(?:test|spec)\\.(?:ts|js|mts|mjs|svelte)$)`);
+
+/**
+ * Дерево маршрута: путь до первой НЕ-группы после `src/routes/`
+ * (`src/routes/(site)/(app)/db-demo/x.ts` → `src/routes/(site)/(app)/db-demo`).
+ * Группа без имени (`(site)`) — общая папка, из неё законно брать общее.
+ * @param {string | undefined | null} path
+ * @returns {string | null}
+ */
+export function routeTree(path) {
+  const p = norm(path)
+  const at = p.indexOf('src/routes/')
+  if (at < 0) return null
+  const parts = p.slice(at + 'src/routes/'.length).split('/')
+  const kept = []
+  for (const part of parts.slice(0, -1)) {
+    kept.push(part)
+    if (!part.startsWith('(')) break
+  }
+  if (!kept.length) return null
+  return `src/routes/${kept.join('/')}`
+}
+
+/** @param {string} source @param {string | undefined} importer */
+function canonOf(source, importer) {
+  return canonSpecifier(norm(source), norm(importer))
+}
 
 /** @type {Rule[]} */
 export const RULES = [
@@ -310,6 +342,35 @@ export const RULES = [
         `[layer-guard] Серверный слой \`src/server/\` не может импортировать UI-компоненты («${source}»).`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
       ].join('\n'),
+  },
+  {
+    /**
+     * Сосед по `src/routes/` — не библиотека: у каждой страницы своя жизнь и
+     * свои данные. Общий код живёт слоем ниже (`#content/*`, `#components/*`,
+     * `#hooks/*`), а не «взят у соседней страницы». Разрешено только своё
+     * дерево: файл внутри него или общая папка над ним (`(site)/nav.ts`).
+     */
+    pattern: /^src\/routes\//,
+    allow: [],
+    violates: ({ canon, importer }) => {
+      const from = routeTree(importer)
+      const to = canon ? routeTree(canon) : null
+      if (!from || !to) return false
+      return !(from === to || from.startsWith(`${to}/`) || to.startsWith(`${from}/`))
+    },
+    message: ({ source, importer }) => {
+      const from = routeTree(importer)
+      const to = routeTree(canonOf(source, importer))
+      return [
+        `[layer-guard] Маршрут импортирует соседний маршрут («${source}»).`,
+        `  файл: ${importer || '<точка входа>'}`,
+        `  дерево: ${from ?? '?'} → ${to ?? '?'}`,
+        '',
+        '  Страницы не знают друг о друге: общее выносится в `#content/*`,',
+        '  `#components/*` или `#hooks/*` — туда, где это переиспользуемо по смыслу,',
+        '  а не потому, что «так быстрее».',
+      ].join('\n')
+    },
   },
   {
     pattern: /\.server(?:\.(?:ts|js|mts|mjs))?$/,

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { canonSpecifier, createGuard, checkTemplate, checkSource, layerGuard, RULES } from './layer-guard.mjs';
+import { canonSpecifier, createGuard, checkTemplate, checkSource, layerGuard, routeTree, RULES } from './layer-guard.mjs';
 import { collectSpecifiers } from './core-purity.mjs';
 
 const check = createGuard(RULES);
@@ -37,6 +37,40 @@ test('строгая направленность 5 слоёв: запрещае
   // content и server не импортируют routes; server не импортирует components
   assert.ok(check('../../../routes/(site)/(app)/db-demo/handle.server.js', '/app/src/content/demo-catalog/posts/list.server.ts'));
   assert.ok(check('#components/ui/index.js', '/app/src/server/db.server.ts'));
+});
+
+test('тестовый файл .test.svelte — такой же тест, а не нарушение слоёв', () => {
+  const importer = '/app/src/components/form/TakeoverView.test.svelte'
+  assert.equal(check('#content/user/index.js', importer), null, 'тест вправе взять данные примера');
+  assert.ok(
+    check('#content/user/index.js', '/app/src/components/form/TakeoverView.svelte'),
+    'тот же импорт из боевого компонента — нарушение',
+  );
+  // серверный модуль в .test.svelte тоже разрешён: тест вправе читать сервер
+  assert.equal(check('#server/db.server.js', '/app/src/components/form/x.test.svelte'), null);
+  assert.ok(check('#server/db.server.js', '/app/src/components/form/x.svelte'));
+});
+
+test('маршрут не тянет соседний маршрут; своё дерево и общая папка выше — можно', () => {
+  const page = '/app/src/routes/(site)/(app)/db-demo/handle.server.ts'
+  assert.ok(check('../paginator/sources.js', page), 'соседняя страница — нарушение')
+  assert.equal(check('./posts.js', page), null, 'свой каталог — не нарушение')
+  assert.equal(check('../../nav.js', page), null, 'общая папка группы выше — не нарушение')
+  assert.equal(check('#content/demo-catalog/posts/source.js', page), null, 'не маршрут — не наше дело')
+  assert.equal(
+    check('../../../routes/(site)/(app)/fields/demo-schema.js', '/app/src/routes/(site)/(app)/schema/+page.server.ts')
+      ? true
+      : null,
+    true,
+    'другая страница — нарушение',
+  )
+});
+
+test('routeTree: дерево до первой не-группы, группы — общая папка', () => {
+  assert.equal(routeTree('/app/src/routes/(site)/(app)/db-demo/x.ts'), 'src/routes/(site)/(app)/db-demo')
+  assert.equal(routeTree('/app/src/routes/(site)/nav.ts'), 'src/routes/(site)')
+  assert.equal(routeTree('/app/src/routes/(site)/(modals-demo)/sources.svelte'), 'src/routes/(site)/(modals-demo)')
+  assert.equal(routeTree('/app/src/lib/form/index.ts'), null)
 });
 
 test('граница *.server.ts и чистота trusted-origins.ts', () => {
