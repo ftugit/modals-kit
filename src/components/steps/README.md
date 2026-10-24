@@ -254,9 +254,10 @@ export const myForm = defineForm({
 <!-- +page.svelte -->
 <script lang="ts">
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
-  import { Field } from '#components/form/index.js'
+  import Field from '#components/form/Field.svelte'          // барреля у components/form нет
+  import { Button } from '#components/ui/index.js'
   import { Steps, StepLink, useSteps } from '#components/steps/index.js'
-  import { myForm } from '#content/my-form.js'
+  import { myForm } from '#content/my-form.js'               // описание формы вашего проекта
   import { forms } from '#components/form/forms.config.js'
   import { kitActionTransport } from '#hooks/component-form/transport.js'
 

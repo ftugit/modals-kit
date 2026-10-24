@@ -10,6 +10,10 @@
     class: cls,
     style,
     children,
+    // Свой обработчик не теряется: он идёт ПЕРЕД действием кнопки — как у
+    // `ForceClose`. Раньше `onclick` оставался в `rest` и молча затирался
+    // внутренним обработчиком (проп доезжал, но ничего не делал).
+    onclick,
     ...rest
   }: HTMLButtonAttributes & { class?: string; children?: import('svelte').Snippet } = $props()
 
@@ -18,11 +22,16 @@
   const blocked = useChainLocked()
 </script>
 
-<!-- Вид — общий `Button` (вариант `outline`): своего набора стилей у модалок нет. -->
+<!-- Вид — общий `Button` (вариант `outline`): своего набора стилей у модалок нет.
+     `disabled` — вердикт самой кнопки («нечего закрывать»/заблокированная стопка),
+     а не проп: передавать сюда свой `disabled` бессмысленно. -->
 <Button
   variant="outline"
   {...rest}
-  onclick={() => m.modals.closeAll()}
+  onclick={(event) => {
+    onclick?.(event)
+    m.modals.closeAll()
+  }}
   disabled={chain.current.length === 0 || blocked.value}
   title={blocked.value ? 'В стопке есть заблокированная модалка' : undefined}
   class={cls}
