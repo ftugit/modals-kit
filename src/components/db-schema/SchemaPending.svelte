@@ -18,14 +18,19 @@
   import { forms } from '#components/form/forms.config.js'
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
+  import { kitActionTransport } from '#hooks/component-form/transport.js'
   import { schemaForm, type SchemaScreen } from '#hooks/db-schema.js'
 
   let { screen, seed = null }: { screen: SchemaScreen; seed?: Result | null } = $props()
 
   // Экран — снимок отчёта на момент загрузки: новое решение = новая загрузка страницы.
   const snapshot = untrack(() => screen)
+  // Транспорт — тот же адрес, что у нативного `action`: именованный экшен
+  // маршрута (`?/schema`). У проекта транспорта по умолчанию нет намеренно:
+  // адрес отправки принадлежит форме, а не конфигу.
   const form = bind(forms, schemaForm(snapshot), {
     action: '?/schema',
+    transport: kitActionTransport('?/schema'),
     continuation: untrack(() => seed),
   })
   const manual = snapshot.steps.filter((s) => !s.field)

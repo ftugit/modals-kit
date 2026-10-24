@@ -124,11 +124,16 @@ export function kitActionTransport(
     const targetUrl = typeof path === 'function' ? path() : path
     let res: Response
     try {
-      res = await fetch(targetUrl, {
+      // Ход долгой отправки — строками ответа (`#lib/fetch` `readTaskStream`):
+      // канал тот же, что у `jsonTransport`, иначе форма, у которой база
+      // запускается первым запросом, молчала бы о прогрессе.
+      const report = req.report
+      res = await fetchWithTask(targetUrl, {
         method: 'POST',
         body: req.data,
         headers: { accept: 'application/json' },
         signal: req.signal,
+        ...(report ? { onTask: (task: StreamTask) => report(task) } : {}),
       })
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') return { kind: 'abort', reason: 'aborted' }

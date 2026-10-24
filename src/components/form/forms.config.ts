@@ -2,24 +2,19 @@
 // чтобы не повторять ЭТО на каждой форме.
 import { report } from '#hooks/app-errors.svelte.js'
 import { createConfig } from '#lib/form/svelte/index.js'
-import type { Transport } from '#lib/form/index.js'
-import { jsonTransport } from '#hooks/component-form/transport.js'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'
 import { resolve } from './resolve'
 
-/**
- * Транспорт: единственное место, где происходит сетевой вызов.
- * Ответ, не похожий на `Result` (отказ CSRF у фреймворка, HTML ошибки,
- * не-JSON), переводится здесь в ошибку показа — иначе пользователь видит
- * «http.403» вместо причины.
- */
-export const httpTransport: Transport = jsonTransport('/form/submit')
+// Транспорта по умолчанию здесь НЕТ намеренно: адрес отправки — свойство
+// формы, а не проекта. Встраиваемая форма получает его от `bindComponentForm`
+// (текущий адрес + конверт `__form_id`), страничный экшен — от `bind`
+// с явным `kitActionTransport('?/имя')`. Общий транспорт «куда-нибудь» —
+// это скрытая ошибка: забытый адрес выглядит как рабочий.
 
 export const forms = createConfig({
   // Соответствие «представление → компонент приложения». Функция, не таблица.
   resolve,
-  transport: httpTransport,
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',
@@ -36,7 +31,6 @@ export { checks }
  */
 export const formsCustomUi = createConfig({
   resolve,
-  transport: httpTransport,
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',

@@ -18,6 +18,7 @@
 //     текущую страницу прямо в ответе на этот же запрос со статусом ошибки.
 import { redirect, type RequestEvent } from '@sveltejs/kit'
 import type { Handle } from '@sveltejs/kit/hooks'
+import { taskResponse } from '#hooks/task-stream.server.js'
 import { createFormHandler, DEFAULT_LIMITS } from '#lib/form/server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
 import type { FormDescription, Result } from '#lib/form/index.js'
@@ -25,6 +26,11 @@ import { componentFormRegistry, registerComponentForm } from './registry.js'
 import type { ComponentFormRegistration } from './types.js'
 
 export { registerComponentForm }
+
+/** Параметры опроса задачи: адрес формы + `__form_id` называют регистрацию. */
+const TASK_PARAM = '__form_task'
+const FORM_PARAM = '__form_id'
+const NO_STORE = { 'cache-control': 'no-store' } as const
 
 const isJsonRequest = (request: Request): boolean =>
   (request.headers.get('accept') ?? '').includes('application/json')
@@ -130,6 +136,21 @@ export function createComponentFormsHandle(
     ))
 
   return async ({ event, resolve }) => {
+    // Опрос задачи (`queued`): тот же адрес, что у формы, но GET и без тела.
+    // Маршруту для этого больше не нужна собственная точка входа.
+    if (event.request.method === 'GET' && event.url.searchParams.has(TASK_PARAM)) {
+      await ensureLoaded()
+      const taskId = event.url.searchParams.get(TASK_PARAM) ?? ''
+      const formId = event.url.searchParams.get(FORM_PARAM) ?? ''
+      const entry = componentFormRegistry().get(formId)
+      if (!entry?.task || !taskId) {
+        return Response.json({ error: 'task.missing' }, { status: 404, headers: NO_STORE })
+      }
+      const answer = await entry.task.poll(taskId, event)
+      if (answer instanceof Response) return answer
+      return Response.json(answer, { status: answer === undefined ? 404 : 200, headers: NO_STORE })
+    }
+
     if (event.request.method !== 'POST' || !isFormBody(event.request)) {
       return resolve(event)
     }
@@ -183,6 +204,9 @@ export function createComponentFormsHandle(
       ...(reg.source ? { source: reg.source } : {}),
       ...(resolvedChecks ? { checks: resolvedChecks } : {}),
       ...(reg.limits ? { limits: reg.limits } : {}),
+      ...(reg.idempotency ? { idempotency: reg.idempotency } : {}),
+      ...(reg.throttle ? { throttle: reg.throttle } : {}),
+      ...(reg.prepare ? { prepare: reg.prepare } : {}),
       execute: (ctx) => reg.execute(ctx, trackedEvent, raw),
     })
 
@@ -190,7 +214,14 @@ export function createComponentFormsHandle(
     if (isJsonRequest(event.request)) {
       const headers = new Headers()
       for (const cookie of setCookies.values()) headers.append('set-cookie', cookie)
-      return Response.json({ data: { result } }, { status: result.ok ? 200 : status, headers })
+      // Ход долгой операции (запуск базы, перенос схемы) — строками ответа, если
+      // клиент их просил; форма с `watch` больше не нуждается в своём эндпоинте.
+      return taskResponse(
+        event.request,
+        // Код ответа — тот же, что назвал конвейер (у `queued` — 202).
+        async () => Response.json({ data: { result } }, { status: status || 200, headers }),
+        { watch: reg.watch ?? [] },
+      )
     }
 
     if (result.ok) {

@@ -9,7 +9,7 @@
 import { untrack } from 'svelte'
 import { page } from '$app/state'
 import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
-import { bind, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
+import { bind, type BindOptions, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
 import { kitActionTransport } from './transport.js'
 import { buildEnvelope, type FormDescription, type Result, type Transport } from '#lib/form/index.js'
 import type { ComponentFormOptions, FormSessionGuard } from './types.js'
@@ -64,7 +64,11 @@ export function bindComponentForm(
   desc: FormDescription,
   options: ComponentFormOptions = {},
 ): BoundForm {
-  const { action, prepare, continuation, session, lockStateKey, onSuccess, ...rest } = options
+  // Опции читаются ЖИВЫМИ: панель демо отдаёт их геттерами (`get invalidFrom()`),
+  // и деструктуризация `{ ...rest }` превратила бы каждое в снимок на момент
+  // связывания — переключатель перестал бы действовать до перезагрузки.
+  // Поэтому свои ключи перекрываются, а остальные приходят по прототипу.
+  const { action, prepare, continuation, session, lockStateKey, onSuccess } = options
   const resolveTarget = () => action ?? readCurrentHref()
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
   const baseTransport = kitActionTransport(resolveTarget, prepare ? { prepare } : {})
@@ -98,12 +102,15 @@ export function bindComponentForm(
     return out
   }
 
-  const form = bind(cfg, desc, {
-    ...rest,
-    action: resolveTarget,
-    transport,
-    continuation: initialContinuation,
-  })
+  const form = bind(
+    cfg,
+    desc,
+    Object.create(options, {
+      action: { value: resolveTarget, enumerable: true, configurable: true },
+      transport: { value: transport, enumerable: true, configurable: true },
+      continuation: { value: initialContinuation, enumerable: true, configurable: true },
+    }) as BindOptions,
+  )
 
   if (lockStateKey) {
     let applied = false

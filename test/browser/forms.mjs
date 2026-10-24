@@ -24,6 +24,10 @@
  */
 import { chromium } from 'playwright'
 
+/* Приём встраиваемых форм отвечает `{ data: { result } }`; прямой Result — как
+   было у собственного эндпоинта. Оба вида читаются одной функцией. */
+const resultOf = (body) => body?.data?.result ?? body
+
 const BASE = process.env.FORMS_BASE ?? 'http://127.0.0.1:5173/form'
 let failed = 0
 const ok = (name, cond, extra = '') => {
@@ -298,18 +302,18 @@ async function run(jsEnabled) {
   }
   // preview-сервер строже dev: POST без Origin считается межсайтовым и
   // отвергается CSRF-защитой. Браузер Origin шлёт всегда — шлём и мы.
-  const post = (extra = {}) => ctx.request.post(new URL('/form/submit', BASE).href, {
-    headers: { origin: new URL(BASE).origin },
+  const post = (extra = {}) => ctx.request.post(new URL('/form', BASE).href, {
+    headers: { origin: new URL(BASE).origin, accept: 'application/json' },
     multipart: { ...envelope, ...extra },
   })
-  const unexpected = await (await post({ ghost: 'x' })).json()
+  const unexpected = resultOf(await (await post({ ghost: 'x' })).json())
   ok('неизвестное поле отклоняется слоем имён',
     unexpected.errors?.[0]?.code === 'request.unexpected-field')
 
   const good = { email: 'ok@example.com', password: 'longenough1', confirm: 'longenough1',
                  age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on' }
-  const first = await (await post(good)).json()
-  const again = await (await post(good)).json()
+  const first = resultOf(await (await post(good)).json())
+  const again = resultOf(await (await post(good)).json())
   ok('успех фиксируется явно', first.outcome === 'committed', first.outcome)
   ok('повтор возвращает прежний результат, обработчик не зовётся',
     again.outcome === 'committed' && again.submissionId === first.submissionId)
@@ -349,7 +353,7 @@ ok('пути дают одинаковые ошибки',
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 3000 } })
   const pg = await ctx.newPage()
   let posts = 0
-  pg.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/form/submit') posts++ })
+  pg.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/form') posts++ })
   await pg.goto(BASE, { waitUntil: 'networkidle' })
   await readyToSubmit(pg)
   await fill(pg, { ...scenario, 'signup-email': 'not-an-email' })
@@ -541,8 +545,8 @@ ok('пути дают одинаковые ошибки',
   ok('без JS: код — обычное поле с шаблоном',
     await npg.locator('#signup-invite').getAttribute('pattern') === '\\d{6}'
       && await npg.locator('[data-otp-slot]').count() === 0)
-  const post = (extra) => nctx.request.post(new URL('/form/submit', BASE).href, {
-    headers: { origin: new URL(BASE).origin },
+  const post = (extra) => nctx.request.post(new URL('/form', BASE).href, {
+    headers: { origin: new URL(BASE).origin, accept: 'application/json' },
     multipart: {
       __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
       __form_submission: crypto.randomUUID(), intent: 'submit',
@@ -550,18 +554,18 @@ ok('пути дают одинаковые ошибки',
       age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on', ...extra,
     },
   })
-  const good = await (await post({ invite: '123456', topics: 'tips', digest: 'on' })).json()
+  const good = resultOf(await (await post({ invite: '123456', topics: 'tips', digest: 'on' })).json())
   ok('сервер: код, интерес и переключатель принимаются', good.outcome === 'committed', JSON.stringify(good.errors ?? good.outcome))
-  const phone = await (await post({ phone: '+7 (999) 123-45-67' })).json()
+  const phone = resultOf(await (await post({ phone: '+7 (999) 123-45-67' })).json())
   ok('сервер: телефон приводится к одной строке', phone.outcome === 'committed' && phone.values?.phone === '+79991234567',
     JSON.stringify(phone.values?.phone ?? phone.errors))
-  const noCode = await (await post({ phone: '8 999 123-45-67' })).json()
+  const noCode = resultOf(await (await post({ phone: '8 999 123-45-67' })).json())
   ok('сервер: номер без кода страны отклоняется у поля',
     (noCode.errors ?? []).some((e) => e.path === 'phone' && e.code === 'type.phone'), JSON.stringify(noCode.errors))
-  const short = await (await post({ phone: '+7 999 123-45-6' })).json()
+  const short = resultOf(await (await post({ phone: '+7 999 123-45-6' })).json())
   ok('сервер: недобранный номер (+7, девять цифр) отклоняется у поля',
     (short.errors ?? []).some((e) => e.path === 'phone' && e.code === 'type.phone'), JSON.stringify(short.errors))
-  const bad = await (await post({ invite: '12ab56' })).json()
+  const bad = resultOf(await (await post({ invite: '12ab56' })).json())
   ok('сервер: код не из цифр отклоняется правилом шаблона',
     (bad.errors ?? []).some((e) => e.path === 'invite' && e.code === 'pattern'), JSON.stringify(bad.errors))
   await nctx.close()
@@ -719,8 +723,8 @@ ok('пути дают одинаковые ошибки',
       age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
     },
   })
-  const queuedRes = await nctx.request.post(new URL('/form/submit', BASE).href, {
-    headers: { origin: new URL(BASE).origin },
+  const queuedRes = await nctx.request.post(new URL('/form', BASE).href, {
+    headers: { origin: new URL(BASE).origin, accept: 'application/json' },
     multipart: {
       __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
       __form_submission: crypto.randomUUID(), intent: 'submit', answer: 'queued',
@@ -728,9 +732,13 @@ ok('пути дают одинаковые ошибки',
       age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
     },
   })
-  const q = await queuedRes.json()
+  const q = resultOf(await queuedRes.json())
   ok('сервер: «в очереди» — 202, исход queued, адреса опроса и статуса',
-    queuedRes.status() === 202 && q.outcome === 'queued' && /job=/.test(q.data?.pollUrl ?? '') && /job=/.test(q.data?.statusUrl ?? ''),
+    queuedRes.status() === 202 && q.outcome === 'queued'
+      // Опрос задачи — на адресе САМОЙ формы (`__form_id` + `__form_task`):
+      // собственного эндпоинта у неё больше нет.
+      && /__form_task=/.test(q.data?.pollUrl ?? '') && /__form_id=signup/.test(q.data?.pollUrl ?? '')
+      && /job=/.test(q.data?.statusUrl ?? ''),
     JSON.stringify({ status: queuedRes.status(), outcome: q.outcome, data: q.data }))
   const early = await (await nctx.request.get(new URL(q.data.pollUrl, BASE).href)).json()
   await npg.goto(new URL(q.data.statusUrl, BASE).href, { waitUntil: 'domcontentloaded' })

@@ -6,7 +6,7 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { asLink } from '#hooks/links/index.js'
   import { Button, Fieldset } from '#components/ui/index.js'
-  import { bind, Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
+  import { Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
     createRegistry, defineForm, isVisible, pollUntilDone, queuedData,
@@ -14,6 +14,7 @@
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#components/form/extend.js'
   import { checks, forms, formsCustomUi } from '#components/form/forms.config.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
   import { DemoPanel, demoDefaults } from '#components/demo/index.js'
@@ -21,13 +22,7 @@
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
 
-  let { form: actionResult, data }: {
-    form?: { result?: Result } | null
-    data: { job: { done: boolean } | { missing: true } | null }
-  } = $props()
-
-  /** Снимок результата действия на момент связывания — читается намеренно один раз. */
-  const initialResult = untrack(() => actionResult?.result ?? null)
+  let { data }: { data: { job: { done: boolean } | { missing: true } | null } } = $props()
 
   /* ── обработчик ошибок: один, все сценарии внутри ─────────────── */
 
@@ -122,9 +117,8 @@
     get invalidFrom() { return sv('invalid_from') as InvalidFrom },
     onErrors: handler,
     onError: sink,
-    // результат действия передаётся ПРИ СВЯЗЫВАНИИ: без скрипта эффектов нет,
-    // и ошибки обязаны оказаться уже в серверной разметке
-    continuation: initialResult,
+    // Результат нативного POST связка берёт сама: `formResult` приходит в
+    // данных страницы (`locals.formResult` → layout), эффектов для этого не нужно.
     checks,
   }
 
@@ -139,10 +133,10 @@
   // {...opts} сделала бы каждое свойство снимком, и переключатели перестали
   // бы работать на лету.
   const bound = {
-    'default:first': bind(forms, signup, opts),
-    'default:all': bind(forms, signupAll, opts),
-    'custom:first': bind(formsCustomUi, signup, opts),
-    'custom:all': bind(formsCustomUi, signupAll, opts),
+    'default:first': bindComponentForm(forms, signup, opts),
+    'default:all': bindComponentForm(forms, signupAll, opts),
+    'custom:first': bindComponentForm(formsCustomUi, signup, opts),
+    'custom:all': bindComponentForm(formsCustomUi, signupAll, opts),
   }
   const form = $derived(bound[`${ui}:${cardinality}` as keyof typeof bound])
 
@@ -186,8 +180,6 @@
   const normalized = $derived(normalizePsp(raw))
   const afterHandler = $derived(
     handler(normalized, { from: 'fetch', intent: 'submit', outcome: 'not-applied' }))
-
-  $effect(() => { form.lift(actionResult?.result) })
 
   // Переход из ответа сервера (`Result.redirect`) после перехвата: библиотека адрес
   // проверила и отдала, переходит приложение. Без скрипта маршрут ответил 303.
