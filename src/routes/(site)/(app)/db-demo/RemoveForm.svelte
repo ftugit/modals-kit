@@ -5,9 +5,9 @@
    * список, поэтому поле видимое и текстовое (значение можно скопировать).
    */
   import { untrack } from 'svelte'
-  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { jsonTransport } from '#hooks/component-form/transport.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
   import Common from '#components/form/Common.svelte'
@@ -30,10 +30,8 @@
   // транспорт конфига. Свой транспорт здесь нужен один-единственный: `/form/submit`
   // принимает форму демо форм, а не БД-демо. Нативный POST остаётся запасом без JS
   // (action `?/remove`), поэтому `seed`/continuation никуда не деваются.
-  const form = bind(forms, dbRemove, {
-    action: '?/remove',
+  const form = bindComponentForm(forms, dbRemove, {
     live: 'on-submit',
-    transport: jsonTransport('/db-demo/submit'),
     continuation: untrack(() => seed),
   })
 

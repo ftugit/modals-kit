@@ -56,8 +56,14 @@ try {
   const title = `db-demo notice ${Date.now()}`
   await page.locator('#db-create-form input[name="title"]').fill(title)
   await page.locator('#db-create-form input[name="agree"]').check()
+  // Приём — общий приёмник встраиваемых форм: POST идёт на адрес самой
+  // страницы (форму называет конверт `__form_id`), поэтому адресной метки
+  // `?/create` в URL больше нет. Ждём сам POST и полную загрузку ответа.
   await Promise.all([
-    page.waitForURL((u) => u.search.includes('/create'), { timeout: 15_000 }),
+    page.waitForResponse(
+      (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/db-demo',
+      { timeout: 15_000 },
+    ),
     page.locator('#db-create-form [data-testid="create"]').click(),
   ])
   release()
@@ -74,9 +80,13 @@ try {
     window.__dbDemoAlive = 1
   })
   await page.locator('a[href="/db-demo"]').first().click()
-  await page.waitForURL((u) => u.pathname === '/db-demo' && !u.search.includes('/create'), {
-    timeout: 15_000,
-  })
+  // Уходим на другой раздел и возвращаемся: результат принадлежит ОТВЕТУ, а не
+  // странице, поэтому на возврате его уже нет (как и `form` у прежних экшенов).
+  await page.waitForURL((u) => u.pathname === '/db-demo', { timeout: 15_000 })
+  await page.locator('a[href="/fields"]').first().click()
+  await page.waitForURL((u) => u.pathname === '/fields', { timeout: 15_000 })
+  await page.locator('a[href="/db-demo"]').first().click()
+  await page.waitForURL((u) => u.pathname === '/db-demo', { timeout: 15_000 })
   await page.waitForLoadState('networkidle')
   const spa = await page.evaluate(() => window.__dbDemoAlive === 1)
   ok('переход по ссылке шапки — клиентская навигация', spa)

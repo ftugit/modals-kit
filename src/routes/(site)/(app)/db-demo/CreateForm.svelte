@@ -4,14 +4,15 @@
    * (`src/components/form/*`): связка `bind` + `Form` + `Common`/`Field`
    * живёт здесь, страница передаёт только результат экшена.
    *
-   * Отправка идёт нативным `form`-путём (action `?/create`), потому что слой
+   * Отправка — через `bindComponentForm`: адрес — текущая страница, форму
+   * называет конверт `__form_id`, приём — `./db.form.server.ts`. Слой
    * `lib/form` держит origin, лимит тела, имена и валидацию; собственный
    * `fetch` в обход него здесь запрещён сборкой (`npm run test:guard`).
    */
   import { untrack } from 'svelte'
-  import { bind, Form, formTask } from '#lib/form/svelte/index.js'
+  import { Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { jsonTransport } from '#hooks/component-form/transport.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
   import Common from '#components/form/Common.svelte'
@@ -39,14 +40,11 @@
 
   let { seed = null, onApplied, optimistic = null }: Props = $props()
 
-  // Путь отправки — штатный для `lib/form`: `intercept` по умолчанию = fetch через
-  // транспорт конфига. Свой транспорт здесь нужен один-единственный: `/form/submit`
-  // принимает форму демо форм, а не БД-демо. Нативный POST остаётся запасом без JS
-  // (action `?/create`), поэтому `seed`/continuation никуда не деваются.
-  const form = bind(forms, dbCreate, {
-    action: '?/create',
+  // Нативный POST без JS идёт на тот же адрес страницы: приёмник встраиваемых
+  // форм отвечает страницей с результатом (`redirectOnSuccess: 'inline'`),
+  // поэтому `seed`-продолжение остаётся запасом без JavaScript.
+  const form = bindComponentForm(forms, dbCreate, {
     live: 'on-submit',
-    transport: jsonTransport('/db-demo/submit'),
     continuation: untrack(() => seed),
   })
 

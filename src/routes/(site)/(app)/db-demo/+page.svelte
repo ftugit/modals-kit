@@ -9,12 +9,12 @@
    * экшена. Строки приходят SSR-снапшотом, поэтому без JavaScript видны и
    * они, и номера страниц.
    *
-   * С JavaScript отправка идёт через транспорт `lib/form` (fetch на
-   * `/db-demo/submit`), поэтому страница НЕ перезагружается: результат
-   * применяется к форме, а список правится НА МЕСТЕ (`patchItems` пагинатора):
-   * строка из ответа встаёт в окно, счётчики сдвигаются, выдача не
-   * перезагружается. Нативный POST на `?/create`/`?/remove` остаётся
-   * путём без JavaScript: там итог приходит `continuation`'ом.
+   * С JavaScript отправка идёт через `bindComponentForm` (fetch на текущий
+   * адрес, форму называет конверт), поэтому страница НЕ перезагружается:
+   * результат применяется к форме, а список правится НА МЕСТЕ (`patchItems`
+   * пагинатора): строка из ответа встаёт в окно, счётчики сдвигаются, выдача не
+   * перезагружается. Без JavaScript тот же POST отвечает страницей с итогом
+   * (`redirectOnSuccess: 'inline'` → `locals.formResult`).
    */
   import type { PageProps } from './$types'
   import Alert from '#components/ui/alert/Alert.svelte'
@@ -32,20 +32,30 @@
   import RemoveForm from './RemoveForm.svelte'
   import RenameForm from './RenameForm.svelte'
 
-  // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
-  // тип выводит SvelteKit из `actions` (`PageProps['form']`).
-  let { data, form }: PageProps = $props()
+  // Результат нативного POST (`locals.formResult` → layout) + метка «какой форме
+  // он принадлежит»: id формы в конверте и есть эта метка — отдельных `actions` с
+  // `intent` у маршрута больше нет.
+  let { data }: PageProps = $props()
 
-  // `form` — живой пропс: SvelteKit обнуляет его при навигации и меняет после
-  // каждого экшена, поэтому результат выводится, а не копируется при монтировании.
-  const action = $derived(form ?? null)
+  const FORM_OF: Record<string, string> = {
+    db_demo_create: 'create',
+    db_demo_rename: 'rename',
+    db_demo_remove: 'remove',
+  }
+  // Результат одноразовый: он относится к ответу, который привёл на страницу.
+  // `formResult` живёт в данных layout и пережил бы клиентский переход, поэтому
+  // первый же переход гасит его — как гасился `form` у прежних экшенов.
+  // Результат приходит из `load` СТРАНИЦЫ (а не layout): сервер кладёт его только
+  // в ответ на POST, и клиентский переход заново спрашивает load — то есть гасит
+  // результат сам, как это делал пропс `form` у прежних экшенов.
+  const result = $derived((data as { formResult?: Result | null }).formResult ?? null)
+  const which = $derived(result ? (FORM_OF[result.formId] ?? '') : '')
 
-  /** Результат подсаживается ТОЙ форме, чей интент его вернул. */
-  const seed = (which: string): Result | null =>
-    action?.intent === which ? action.result ?? null : null
+  /** Результат подсаживается ТОЙ форме, чья регистрация его вернула. */
+  const seed = (of: string): Result | null => (which === of ? result : null)
 
   const notice = $derived(
-    action?.result?.ok ? String((action.result.data as { message?: string } | undefined)?.message ?? '') : '',
+    result?.ok ? String((result.data as { message?: string } | undefined)?.message ?? '') : '',
   )
 
   // Регистрация нужна до `usePaginatorActions`: тело страницы исполняется раньше
