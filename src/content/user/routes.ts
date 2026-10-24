@@ -9,13 +9,48 @@
 import { localPath } from '#lib/address/index.js'
 import { kitRoute, querySchema } from '#lib/address/sveltekit.js'
 
+/**
+ * Стадии экрана входа, выразимые адресом (`?stage=…`).
+ *
+ * Список закрытый: ключ `stage` — это не «что угодно из строки запроса», а
+ * состояние экрана. Незнакомое значение откатывается к `entry` так же, как это
+ * делал `parse`, но теперь ещё и проверяется типами на стороне вызова.
+ */
+export type AuthStage =
+  | 'entry'
+  | 'register'
+  | 'restore'
+  | 'confirm'
+  | 'profile'
+  | 'blocked'
+  | 'restrictions'
+
+const AUTH_STAGES: ReadonlySet<string> = new Set<AuthStage>([
+  'entry',
+  'register',
+  'restore',
+  'confirm',
+  'profile',
+  'blocked',
+  'restrictions',
+])
+
+/**
+ * Привести значение из адреса или результата экшена к стадии входа.
+ * @param raw строка из `?stage=` либо `result.data.step`.
+ * @returns известная стадия; всё остальное — `entry`.
+ */
+export function parseAuthStage(raw: unknown): AuthStage {
+  return typeof raw === 'string' && AUTH_STAGES.has(raw) ? (raw as AuthStage) : 'entry'
+}
+
 export interface UserAuthSearchInput extends Record<string, unknown> {
-  stage?: string
+  stage?: AuthStage
   next?: string | null
 }
 
 export interface UserAuthSearchOutput {
-  stage: string
+  stage: AuthStage
   next: string | null
 }
 
@@ -24,7 +59,7 @@ export const userAuthRoute = kitRoute('/user/auth', {
   keys: ['stage', 'stage.*', 'next'],
   defaults: { stage: 'entry', next: null },
   search: querySchema<UserAuthSearchInput, UserAuthSearchOutput>((raw) => ({
-    stage: typeof raw.stage === 'string' && raw.stage ? raw.stage : 'entry',
+    stage: parseAuthStage(raw.stage),
     next: localPath(typeof raw.next === 'string' ? raw.next : null),
   })),
 })

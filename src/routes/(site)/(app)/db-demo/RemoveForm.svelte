@@ -7,7 +7,7 @@
   import { untrack } from 'svelte'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
-  import { jsonTransport } from '#components/form/transport.js'
+  import { jsonTransport } from '#hooks/component-form/transport.js'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
   import Common from '#components/form/Common.svelte'

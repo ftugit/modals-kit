@@ -2,7 +2,7 @@
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { instruction, seedOf, type LoginOutcome } from '../../index.js'
-import { userAuthRoute } from '../../routes.js'
+import { parseAuthStage, userAuthRoute } from '../../routes.js'
 import { seedForm } from './form.js'
 
 registerComponentForm({
@@ -122,7 +122,7 @@ registerComponentForm({
     if (step === 'restore' || step === 'confirmed') return 'inline'
     const { next } = userAuthRoute.parse(event.url)
     if (step && step !== 'entry' && step !== 'done') {
-      return userAuthRoute.href({ stage: step, next })
+      return userAuthRoute.href({ stage: parseAuthStage(step), next })
     }
     return next ?? '/'
   },

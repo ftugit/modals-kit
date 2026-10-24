@@ -324,6 +324,19 @@ export const RULES = [
       ].join('\n'),
   },
   {
+    pattern: /^\$lib\//,
+    allow: [/(^|\/)node_modules\//],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Импорт «${source}» через устаревший алиас \`$lib\` запрещён.`,
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  В проекте пять именованных подпутей: `#lib/*`, `#hooks/*`, `#components/*`,',
+        '  `#content/*`, `#server/*`. `$lib` размывает слой: по нему нельзя отличить',
+        '  библиотеку от приложения — используйте `#lib/...` (или другой слой по смыслу).',
+      ].join('\n'),
+  },
+  {
     pattern: /^\$(?:app|env)\//,
     allow: [/.*/],
     deny: [/(^|\/)src\/server\/trusted-origins\.ts$/],

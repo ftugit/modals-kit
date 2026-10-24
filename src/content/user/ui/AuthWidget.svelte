@@ -11,7 +11,7 @@
   import { untrack } from 'svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { formSteps, suffixOf, useSteps } from '#components/steps/index.js'
-  import { kitActionTransport } from '#components/form/transport.js'
+  import { kitActionTransport } from '#hooks/component-form/transport.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#components/form/forms.config.js'
   import { defaults } from '../config.js'

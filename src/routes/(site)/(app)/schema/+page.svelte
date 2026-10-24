@@ -6,7 +6,6 @@
    * рисует любая страница, которой нужен тот же экран); здесь только заголовок,
    * итог и ссылка возврата.
    */
-  import Button from '#components/ui/button/Button.svelte'
   import SchemaPending from '#components/db-schema/SchemaPending.svelte'
   import type { Result } from '#lib/form/index.js'
   import type { PageProps } from './$types'
@@ -18,10 +17,7 @@
 </script>
 
 <div class="mx-auto w-full max-w-3xl space-y-6">
-  <header class="space-y-1">
-    <h1 class="text-2xl font-semibold">Перенос схемы базы</h1>
-    <p class="text-sm text-muted-foreground">Экран открывается, когда изменения схемы нельзя применить сами: они могут потерять данные.</p>
-  </header>
+  <h1 class="text-2xl font-semibold">Перенос схемы базы</h1>
 
   {#if data.justDone}
     <p class="rounded-lg border border-success/40 bg-card px-4 py-3 text-sm" role="status" data-testid="schema-done">
@@ -37,9 +33,11 @@
     </p>
   {/if}
 
+  <!-- Обычные ссылки, а не `Button`: экран нужен и без JS, а кнопка ради двух
+       переходов тянула бы вариантность в чанк маршрута. -->
   {#if data.next}
-    <Button href={data.next} variant="outline">Вернуться на страницу</Button>
+    <a href={data.next} class="text-sm text-primary underline">Вернуться на страницу</a>
   {:else}
-    <Button href="/db-demo" variant="outline">К демо базы данных</Button>
+    <a href="/db-demo" class="text-sm text-primary underline">К демо базы данных</a>
   {/if}
 </div>

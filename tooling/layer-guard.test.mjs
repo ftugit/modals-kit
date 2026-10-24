@@ -329,6 +329,19 @@ test('исходники src: адресные и source-правила собл
   assert.deepEqual(bad, [], 'нарушения source-правил:\n' + bad.join('\n'));
 });
 
+test('src/server: каждый модуль — *.server.ts (кроме явного trusted-origins.ts)', () => {
+  const root = new URL('../src/server', import.meta.url).pathname;
+  const allowed = new Set(['trusted-origins.ts']);
+  const stray = walk(root)
+    .filter((file) => /\.(ts|js|mts|mjs)$/.test(file) && !/\.test\.(ts|js|mts|mjs)$/.test(file))
+    .map((file) => file.replace(root + '/', 'src/server/'))
+    .filter((rel) => !allowed.has(rel.slice('src/server/'.length)) && !/\.server\.(?:ts|js|mts|mjs)$/.test(rel));
+  // Соглашение: серверный слой — это `*.server.ts`. Файл без суффикса клиент
+  // может импортировать, не заметив, что тянет серверный синглтон (соединение с
+  // БД, секреты окружения). Проверка идёт по ВСЕМУ дереву, а не по списку файлов.
+  assert.deepEqual(stray, [], 'файлы без суффикса .server: ' + stray.join(', '));
+});
+
 test('исходники src: теговые правила (формы и поля) соблюдены во ВСЁМ дереве', () => {
   const root = new URL('../src', import.meta.url).pathname;
   const bad = [];

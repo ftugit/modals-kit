@@ -140,7 +140,7 @@ function resolveRenewTargetUrl(): string {
 
 async function defaultPostRenew(signal: AbortSignal): Promise<RenewPostOutcome> {
   const { seedEnvelope, seedEnvelopeFields } = await import('./ui/seed-form/envelope.js')
-  const { kitActionTransport } = await import('#components/form/transport.js')
+  const { kitActionTransport } = await import('#hooks/component-form/transport.js')
   const envelope = seedEnvelope(`user-auth:${crypto.randomUUID()}`)
   const body = new FormData()
   for (const [k, v] of Object.entries(seedEnvelopeFields(envelope))) body.append(k, v)
@@ -413,6 +413,20 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     }
     window.addEventListener('online', onWake)
     cleanups.push(() => window.removeEventListener('online', onWake))
+    // Второй канал координации — `storage`-событие того же ключа, что пишет
+    // `publishShared`. Он нужен там, где `BroadcastChannel` недоступен (старые
+    // Safari, часть webview) и когда вкладку не удаётся разбудить `IPC`; без него
+    // при живом `localStorage` вкладки расходились бы до следующего `visibilitychange`.
+    // Дедупликация — по `seq` конверта (`acceptSharedEnvelope`), поэтому двойная
+    // доставка `storage` + `BroadcastChannel` ничего не ломает.
+    if (storageKey) {
+      const onStorage = (e: StorageEvent) => {
+        if (e.key !== storageKey) return
+        acceptSharedEnvelope(readSharedEnvelope())
+      }
+      window.addEventListener('storage', onStorage)
+      cleanups.push(() => window.removeEventListener('storage', onStorage))
+    }
   }
 
   return {

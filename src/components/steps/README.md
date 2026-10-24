@@ -258,7 +258,7 @@ export const myForm = defineForm({
   import { Steps, StepLink, useSteps } from '#components/steps/index.js'
   import { myForm } from '#content/my-form.js'
   import { forms } from '#components/form/forms.config.js'
-  import { kitActionTransport } from '#components/form/transport.js'
+  import { kitActionTransport } from '#hooks/component-form/transport.js'
 
   let { data, form: actionResult } = $props()
 

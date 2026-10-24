@@ -3,7 +3,7 @@
 import { report } from '#hooks/app-errors.svelte.js'
 import { createConfig } from '#lib/form/svelte/index.js'
 import type { Transport } from '#lib/form/index.js'
-import { jsonTransport } from './transport'
+import { jsonTransport } from '#hooks/component-form/transport.js'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'
 import { resolve } from './resolve'

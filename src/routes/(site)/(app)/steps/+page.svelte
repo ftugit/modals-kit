@@ -15,7 +15,7 @@
   import Common from '#components/form/Common.svelte'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
-  import { kitActionTransport } from '#components/form/transport.js'
+  import { kitActionTransport } from '#hooks/component-form/transport.js'
   import { FSTEP_STEPS, fstepForm } from './fstep-form.ts'
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#components/demo/index.js'

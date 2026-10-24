@@ -34,8 +34,7 @@
 <section class="space-y-4 rounded-xl border border-destructive/40 bg-card p-4" data-testid="schema-pending">
   <h2 class="text-lg font-semibold">Схема базы отстала от моделей</h2>
   <p class="text-sm text-muted-foreground">
-    Часть изменений нельзя применить автоматически: они могут потерять данные. Пока решения нет, страницы с
-    базой не работают.
+    Часть изменений нельзя применить сама: они могут потерять данные. Пока решения нет, страницы с базой не работают.
   </p>
 
   {#if manual.length}
