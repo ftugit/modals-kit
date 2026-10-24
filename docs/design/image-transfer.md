@@ -42,16 +42,9 @@
    - без JS — `303 See Other` на `statusUrl` (страница статуса с `<meta http-equiv="refresh">` / кнопкой «Проверить готовность» и возвратом к исходному маршруту по завершении).
 2. Хранить состояние заявки и подготовленный артефакт в `sharedStore.scope('form-jobs')` (`src/server/cache.server.ts`, таблица `public.cache_kv` в Postgres), а не в памяти процесса — чтобы опрос `pollUrl` / `statusUrl` попадал в ту же запись на любом serverless/Node-инстансе.
 
-### Этап R5 — Миграция демо `/fields` на общий фото-контур
+### Этап R5 — снят (2026-10-24)
 
-В `src/routes/(site)/(app)/fields/{forms.ts,fields.form.server.ts}` остаётся дореформенная обработка изображения:
-- локальная функция `sniff(b: Uint8Array)` проверяет только магические байты PNG/JPEG/WebP/GIF, не проверяя ни геометрию кадра, ни потолок пикселей (`maxPixels` / `maxSide` против декомпрессионных бомб);
-- локальная функция `base64(b: Uint8Array)` вручную сериализует сырой буфер в `data:image/...;base64,...` без перекодирования;
-- поле объявлено как `field.file({ variant: 'preview' })` вместо `field.photo(...)` с `PhotoSpec` из `#components/form/photo.js`.
-
-**Что нужно сделать:**
-1. Описать спецификацию `FIELDS_IMAGE_SPEC: PhotoSpec` и подключить `registerPhotoChecks` + `photoImage('fields-image')` в `src/routes/(site)/(app)/fields/forms.ts` и `handle.ts`.
-2. Удалить рукописные `sniff()` и `base64()` из `src/routes/(site)/(app)/fields/fields.form.server.ts`, переведя серверную подготовку на `#lib/image` (`probeImageHeader` + `decodeWithNode` при нормализации).
+Перевод поля изображения `/fields` на `field.photo(...)` **не нужен**: генератор полей задуман текстовым, файловые виды в него не входили (решение владельца). В демо остаётся `field.file` с `accept`/`maxSize` и честной проверкой заголовка (`probeImageHeader`, `src/routes/(site)/(app)/fields/fields.form.server.ts`); потолок пикселей (`maxPixels`/`maxSide`) действует только в профиле через `field.photo`. Если фото-поле понадобится в пользовательском наборе, это правило `v.image(...)` с инъекцией пробника — карточка `OI-06` в [`../audit/open-issues.md`](../audit/open-issues.md).
 
 ### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
 
