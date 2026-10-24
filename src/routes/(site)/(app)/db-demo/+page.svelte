@@ -54,6 +54,11 @@
   /** Результат подсаживается ТОЙ форме, чья регистрация его вернула. */
   const seed = (of: string): Result | null => (which === of ? result : null)
 
+  // Уведомление — ТОЛЬКО путь без JavaScript: его текст лежит в `data.formResult`, а
+  // его кладёт лишь ответ на нативный POST. С JS строку показывает сам список
+  // (карточка из `onApplied`/`optimistic`), и второго канала «то же словами» не
+  // нужно: `<Alert>` не должен спорить с тем, что уже видно. Отказ при JS — дело
+  // формы (`Common`), а не страницы.
   const notice = $derived(
     result?.ok ? String((result.data as { message?: string } | undefined)?.message ?? '') : '',
   )
