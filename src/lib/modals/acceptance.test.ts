@@ -66,6 +66,27 @@ test('2. encode/decode round-trip: только отличия от регист
   assert.equal(back[0].params.id, 7)
 })
 
+test('2b. тип параметра задаёт умолчание регистратора, а не вид строки', () => {
+  const lookup = (n: string) =>
+    n === 'card'
+      ? def('card', { defaultParams: { code: '0001', flag: false, count: 1, box: { id: 1 } } })
+      : undefined
+  // строка, похожая на число/булево, обязана остаться строкой
+  const s1 = chainToSearch([reg('card', { code: '007', flag: true })], lookup as any)
+  const b1 = decodeChain(s1, lookup as any)
+  assert.equal(b1[0].params.code, '007', 'строка с умолчанием строкового типа не превращается в число')
+  assert.equal(b1[0].params.flag, true, 'булево с умолчанием `false` читается булевым')
+  // число разбирается числом, пустое — пустой строкой
+  const b2 = decodeChain('?modal=card&modal.0.count=007', lookup as any)
+  assert.equal(b2[0].params.count, 7)
+  // вложенный путь берёт умолчание СВОЕГО листа
+  const b3 = decodeChain('?modal=card&modal.0.box.id=007', lookup as any)
+  assert.equal((b3[0].params.box as { id: unknown }).id, 7)
+  // без умолчания вид угадывается — и это задокументировано
+  const b4 = decodeChain('?modal=card&modal.0.raw=007', none as never)
+  assert.equal(b4[0].params.raw, 7, 'без умолчания строка «007» читается числом (см. README)')
+})
+
 test('3. pack: не-флаттные значения уезжают JSON-пакетом', () => {
   const weird = { list: [{ deep: 1 }] }
   const search = chainToSearch([reg('x', { weird })], none)

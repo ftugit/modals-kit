@@ -48,6 +48,39 @@ export function encodeScalar(value: unknown): string {
   return typeof value === 'string' ? value : String(value)
 }
 
+/**
+ * Умолчание регистратора по пути параметра (`a.b`) — источник ТИПА значения.
+ *
+ * Тип в адресе не записан: `modal.0.id=007` одинаково похож на строку и на
+ * число. Единственный, кто знает тип, — `defaultParams` определения модалки.
+ */
+function defaultAt(fallback: unknown, path: readonly string[]): unknown {
+  let node = fallback
+  for (const part of path) {
+    if (!isPlainObject(node)) return undefined
+    node = node[part]
+  }
+  return node
+}
+
+/**
+ * Значение из адреса по типу объявленного умолчания.
+ *
+ * Без объявленного умолчания вид значения угадывается (`decodeScalar`), и строка
+ * `'007'`/`'true'` вернётся числом/булевым — для таких параметров умолчание
+ * обязательно (см. `README.md`, «Тип параметра»).
+ */
+function decodeByDefault(raw: string, fallback: unknown): unknown {
+  if (Array.isArray(fallback)) return decodeByDefault(raw, fallback[0])
+  if (typeof fallback === 'string') return raw
+  if (typeof fallback === 'number') {
+    const n = Number(raw)
+    return raw.trim() !== '' && Number.isFinite(n) ? n : raw
+  }
+  if (typeof fallback === 'boolean') return raw === 'false' ? false : true
+  return decodeScalar(raw)
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return (
     typeof v === 'object' &&
@@ -195,13 +228,13 @@ export function decodeChain(search: string | URLSearchParams, lookup: Lookup): R
 
     // обычный параметр; тип берём из defaultParams регистратора, иначе по виду
     const definition = lookup(entry.name)
-    const fallback = definition?.defaultParams?.[head]
+    // Тип берём у умолчания ПО ЭТОМУ ПУТИ (а не по первому сегменту): у
+    // `{ tab: 'a', box: { id: 1 } }` умолчание `box.id` — число.
+    const fallback = defaultAt(definition?.defaultParams, path)
     const decoded =
       values.length > 1
-        ? values.map(decodeScalar)
-        : typeof fallback === 'string'
-          ? values[0]
-          : decodeScalar(values[0])
+        ? values.map((raw) => decodeByDefault(raw, fallback))
+        : decodeByDefault(values[0], fallback)
     setPath(entry.params, path, decoded)
   }
 
