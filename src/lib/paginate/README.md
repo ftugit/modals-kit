@@ -6,7 +6,8 @@ Headless-библиотека пагинации с разделением frame
 ## Возможности
 
 - **Режимы**: `accumulate` (бесконечная лента / подгрузка по краям) и `single` (классическая постраничная навигация).
-- **Хранилища и транспорт**: URL-состояние (`?page`, `?page.size`, `?page.<key>`), `localStorage`, `memoryStorage` и cursor-адаптер (`createCursorAdapter`).
+- **Хранилища и транспорт**: URL-состояние (`?page`, `?page.size`, `?page.<key>`), `createLocalStorageStorage()`,
+  `createMemoryStorage()` (плюс `createSessionDefaultStorage()` в `storage-default.ts`) и cursor-адаптер (`createCursorAdapter`).
 - **Скролл и якоря**: Детект маркеров страниц через `IntersectionObserver` с гистерезисом, независимые зоны `topZone` / `bottomZone` (`edge`, `20%`, `40%`, `200px`), сохранение положения контента при prepend (`holdAbove` / CSS scroll anchoring).
 - **Раскладки**: Чистая математика колонок (`computeColumns`, `distributeRoundRobin`, `runsOfColumn`, `pageWindow`).
 - **Слой источника — единственный вход данных**: пагинатор принимает только
@@ -138,7 +139,10 @@ definePaginator({
   - `layout.ts` — чистая геометрия и распределение колонок.
   - `anchors.ts` — трекер маркеров страниц и сентинелов на базе IntersectionObserver.
   - `storage.ts` — хранилища memory / localStorage с deny-safe валидацией.
-  - `adapter-url.ts` — URL-адаптер с типизированными `extraField`.
+  - `adapter-url.ts` — URL-адаптер с типизированными `extraField`. Тип объявлен
+    потребителем, и он же решает разбор: `text`/`list` получают СЫРУЮ строку адреса
+    (`page.q=007` остаётся `'007'`), `number`/`boolean` — раскодированное значение
+    (`page.n=9` → `9`). Свои валидаторы получают то, что объявят сами.
   - `adapter-local.ts` — local storage адаптер.
   - `adapter-cursor.ts` — opaque cursor-адаптер.
   - `store.ts` — vanilla Store с поддержкой SSR и гидрации.

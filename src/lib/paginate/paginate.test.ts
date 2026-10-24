@@ -394,6 +394,11 @@ describe('URL adapter & extra search', () => {
     const repeatedToggle = { enabled: extraField('boolean') }
     expect(readPaginatorSearch(new URLSearchParams('page.enabled=false&page.enabled=true'), { extra: repeatedToggle }).extra.enabled).toBe(true)
     expect(readPaginatorSearch(new URLSearchParams('page.n=abc'), { extra: numSpec }).extra.n).toBeUndefined()
+    // текст и список получают СЫРУЮ строку: жадно раскодированное значение
+    // меняло данные ('007' → 7 → '7') и роняло литералы ('null' исчезал)
+    expect(readPaginatorSearch(new URLSearchParams('page.q=007'), { extra: textSpec }).extra.q).toBe('007')
+    expect(readPaginatorSearch(new URLSearchParams('page.q=null'), { extra: textSpec }).extra.q).toBe('null')
+    expect(readPaginatorSearch(new URLSearchParams('page.tags=007'), { extra: listSpec }).extra.tags).toBe('007')
   })
 
   it('canonicalPaginatorSearch: пустые объявленные ключи уходят, значения остаются', () => {

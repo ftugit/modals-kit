@@ -87,16 +87,22 @@ export function extraField(
   type: ExtraFieldType,
   validate?: (value: ExtraValue) => boolean,
 ): ExtraSearchValidator {
-  return (raw) => {
+  const check = (raw: ExtraValue): ExtraValue | undefined => {
     const value = coerceExtraValue(raw, type)
     if (value === undefined) return undefined
     return validate && !validate(value) ? undefined : value
   }
+  // Текстовая строка и список — САМА строка: жадно раскодированное значение
+  // теряет то, что в неё заложил потребитель (`007` → 7 → '7', литерал `null`
+  // исчезал целиком). Валидатор получает сырой текст адреса.
+  return type === 'text' || type === 'list' ? Object.assign(check, { rawText: true as const }) : check
 }
 
 /** Отметка для повторяющихся GET-значений нативного `<select multiple>`. */
 export type ExtraSearchValidator = ((raw: ExtraValue) => ExtraValue | undefined) & {
   readonly repeatedValues?: 'comma'
+  /** Валидатор ждёт СЫРУЮ строку адреса, а не жадно раскодированное значение. */
+  readonly rawText?: true
 }
 
 /**
@@ -182,7 +188,8 @@ export function readPaginatorSearch(
         : all[all.length - 1]
       : null
     if (raw == null) continue
-    const v = validator(decodeExtraValue(raw))
+    // `rawText`-валидаторы (`extraField('text'|'list')`) получают строку как есть.
+    const v = validator(validator.rawText ? raw : decodeExtraValue(raw))
     if (v !== undefined) extra[key] = v
     else warnExtraDropped(base, key, raw, 'значение не прошло валидатор')
   }
