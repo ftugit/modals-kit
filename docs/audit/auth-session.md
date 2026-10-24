@@ -46,7 +46,7 @@
 > | `src/content/user/ui/seed-form/server.ts` | [`seed-form/seed.form.server.ts`](../../src/content/user/ui/seed-form/seed.form.server.ts) |
 > | `src/content/user/ui/profile-form/server.ts` | [`profile-form/profile.form.server.ts`](../../src/content/user/ui/profile-form/profile.form.server.ts) |
 > | `src/hooks/component-form/server.ts` | [`server.server.ts`](../../src/hooks/component-form/server.server.ts) |
-> | `src/lib/components/form/*` (в т.ч. `forms.config.ts`) | `src/components/form/*`; общий `forms.config.ts` не нужен — конфигурация приходит параметром `bindComponentForm` |
+> | `src/lib/components/form/*` (в т.ч. `forms.config.ts`) | `src/components/form/*`; общий `forms.config.ts` **жив** — `src/components/form/forms.config.ts` (`forms`, `formsCustomUi`) |
 > | `src/hooks/component-form/session-interceptor.ts` | **удалён** (защита передаётся явно: `session: userSession`) |
 
 
@@ -236,7 +236,7 @@
   2. Добавить в фасад `auth(event)` метод `refreshAccess()` (перевыпуск только короткой куки `auth_tmp` со свежим `prof` из БД без ротации `auth_sid` в `user_session`), и вызывать его после `updateProfile` вместо полной ротации `u.renew()`.
 
 ### `AS-08` & `AS-09`. Синхронизация `README.md` и явная инъекция перехватчика сессии вместо скрытого глобала
-- **Где (на момент находки; `session-interceptor.ts` и `forms.config.ts` с тех пор удалены — см. сноску в `§2`):** `src/content/user/README.md:24, 45, 54`, `src/hooks/component-form/session-interceptor.ts`, `src/lib/components/form/forms.config.ts`.
+- **Где (на момент находки; `session-interceptor.ts` с тех пор удалён, а `forms.config.ts` переехал в `src/components/form/` — см. сноску в `§2`):** `src/content/user/README.md:24, 45, 54`, `src/hooks/component-form/session-interceptor.ts`, `src/lib/components/form/forms.config.ts`.
 - **Решение без костылей:**
   1. Передавать хук сессии (`session?: FormSessionInterceptor`) явно через объект конфигурации форм (`forms` в `forms.config.ts` / `ComponentFormOptions`), убрав скрытый глобальный мутабельный синглтон `session-interceptor.ts` и top-level side effect из `vault.svelte.ts`.
   2. Актуализировать `src/content/user/README.md` под `resolveVault`, метаданные `vault` без сырого `access`, `refreshAccess` и межвкладочную синхронизацию.

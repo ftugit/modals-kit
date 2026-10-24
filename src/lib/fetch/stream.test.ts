@@ -23,6 +23,18 @@ describe('readTaskStream', () => {
     expect(seen.at(-1)).toEqual({ status: 'pending', scope: 'local', progress: { kind: 'bytes', loaded: body.length, total: body.length } })
   })
 
+  it('последняя строка без завершающего \\n — не обрыв', async () => {
+    const res = new Response(
+      '{"task":{"status":"pending","scope":"global"}}\n{"result":{"status":200,"headers":{"content-type":"application/json"},"body":{"ok":true}}}',
+      { headers: { 'content-type': 'application/x-ndjson' } },
+    )
+    const seen: StreamTask[] = []
+    const back = await readTaskStream(res, (t) => seen.push(t))
+    expect(seen).toHaveLength(1)
+    expect(back.status).toBe(200)
+    expect(await back.json()).toEqual({ ok: true })
+  })
+
   it('строки: ход по порядку, результат — с кодом и заголовками', async () => {
     const seen: StreamTask[] = []
     const back = await readTaskStream(

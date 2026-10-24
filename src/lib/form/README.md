@@ -873,7 +873,7 @@ execute: async (c) => {
 значение приходит уже приведённым. Живой пример — страница `/fields`
 (`routes/(site)/(app)/fields/`): форма набора, форма записи на нём и пример записи;
 набор и запись лежат в `#lib/cache`. Разметка набора — `SchemaBuilder.svelte`, полей
-записи — `SchemaFields.svelte` в той же папке.
+записи — `SchemaFields.svelte` (`src/components/fields/`), маршрут — `src/routes/(site)/(app)/fields/`.
 
 ## Внешние схемы
 
@@ -1043,7 +1043,7 @@ if (q) pollUntilDone(q, (url, signal) => fetch(url, { signal }).then((r) => r.js
   .then((final) => final && form.lift(final))
 ```
 
-Пример — `/form`, «Ответ сервера» → «в очереди» (`handle.ts` `jobStatus`).
+Пример — `/form`, «Ответ сервера» → «в очереди» (`src/routes/(site)/(app)/form/queue.server.ts`, `jobStatus`).
 
 Переход после успеха: `execute` возвращает `{ redirect: '/путь' }`, библиотека
 пропускает только адрес своего сайта (`Result.redirect`). Переходит маршрут или

@@ -75,6 +75,11 @@ suite('описание и ограничения', () => {
       .toThrow(/больше/)
   })
 
+  test('пустой список действий — отказ при объявлении, а не TypeError на POST', () => {
+    expect(() => defineForm({ id: 'no-actions', fields: { a: field.text({}) }, actions: [] }))
+      .toThrow(/actions не может быть пустым/)
+  })
+
   test('имя проверяется посегментно', () => {
     expect(() => defineForm({ id: 'bad', fields: { Aa: field.text({}) } })).toThrow(/сегмент/)
     expect(() => defineForm({ id: 'ok', fields: { 'items.r1.qty': field.number({}) } })).not.toThrow()

@@ -107,6 +107,14 @@ async function readLines(body: ReadableStream<Uint8Array>, onTask: (task: Stream
     }
     if (done) break
   }
+  // Последняя строка могла прийти БЕЗ завершающего `\n` (обрыв по размеру
+  // буфера, чужой сервер NDJSON): это не обрыв потока, а обычная строка.
+  const tail = buffer.trim()
+  if (tail) {
+    const line = parseLine(tail)
+    if (line.task) onTask(line.task)
+    if (line.result) return toResponse(line.result)
+  }
   throw new FetchError('fetch.network', 'ответ оборвался до результата')
 }
 

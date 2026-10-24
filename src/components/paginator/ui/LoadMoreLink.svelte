@@ -32,7 +32,7 @@
 
   let { dir, name, action = 'auto', always = false, label, class: className }: Props = $props()
 
-  // Загрузка слота — задача ссылки: вид и задержка 150 мс — общие (`components/links`).
+  // Загрузка слота — задача ссылки: вид и задержка 150 мс — общие (`hooks/links`).
   const PENDING: TaskState = { status: 'pending', scope: 'local' }
   const taskOf = (p: LoadMoreSlotRender) => () => (p.loading ? PENDING : IDLE_TASK)
 

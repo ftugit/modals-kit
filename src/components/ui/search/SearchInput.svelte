@@ -85,7 +85,7 @@
   />
   {#if hasTask}
     <!-- Показывает правило `input[data-state=loading] ~ [data-task-spinner]`
-         (`components/links/indicator.ts`): задержку 150 мс держит `reflectTask`. -->
+         (`hooks/links/indicator.ts`): задержку 150 мс держит `reflectTask`. -->
     <span data-task-spinner="" aria-hidden="true" class="pointer-events-none absolute inset-y-0 end-9 items-center text-muted-foreground">
       <Spinner size="sm" />
     </span>

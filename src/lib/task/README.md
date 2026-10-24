@@ -9,7 +9,7 @@
 |---|---|---|
 | Ядро библиотеки | говорит **своими** словами; `#lib/task` не импортирует | `PaginatorState.status: 'loading'`, `RuntimeStatus` модалок |
 | Адаптер к фреймворку | переводит слова ядра в `TaskState` | `linkTask(href)` в `#lib/address/sveltekit.js` |
-| UI | читает только `TaskState` | `asLink(href, { task })` (`#components/links`) |
+| UI | читает только `TaskState` | `asLink(href, { task })` (`#hooks/links`) |
 
 Ядро без адаптера работает как раньше. Формат меняется здесь и в адаптерах, ядра не трогаются.
 
@@ -46,7 +46,7 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 
 ## Показ
 
-`asLink` (`#components/links`) кладёт поведение на обычную `<a href>` или `Button`
+`asLink` (`#hooks/links`) кладёт поведение на обычную `<a href>` или `Button`
 (без JavaScript это просто ссылка). С JavaScript ссылка сама узнаёт, что переход SvelteKit идёт
 на её адрес (`linkTask`), и через 150 мс пишет `data-state="loading"`; процент, если он есть, —
 в `data-task-percent`; ошибку — `data-state="error"` и причину в `title`. Рисует это одно
@@ -62,7 +62,7 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 | Откуда | Адаптер | Где видно |
 |---|---|---|
 | переход SvelteKit, ссылка | `navigationTask()`, `linkTask(href)` — `#lib/address/sveltekit.js` | ссылка, полоса |
-| модалка | `asModalLink` (`#components/links`) | ссылка-открывашка, полоса |
+| модалка | `asModalLink` (`#hooks/links`) | ссылка-открывашка, полоса |
 | пагинатор | `paginatorTask(state, page?)` — `#lib/paginate/svelte` | ссылка страницы, «Ещё», «Сброс», поиск, полоса |
 | форма | `formTask(state, intent?)` — `#lib/form/svelte` | `Button task`, полоса |
 | своё | `trackTask(() => task)` — `#components/loader` | полоса |

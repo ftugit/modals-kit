@@ -1,6 +1,6 @@
 /**
  * `stepLink` — сделать элемент ссылкой на шаг (паттерн `asLink` из
- * `components/links`): вид даёт сам элемент.
+ * `hooks/links`): вид даёт сам элемент.
  *
  *   <a {...stepLink(steps, 'register')}>Регистрация</a>
  *   <Button {...stepLink(steps, 'register')} variant="outline">Регистрация</Button>

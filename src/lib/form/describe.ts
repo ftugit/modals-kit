@@ -492,12 +492,19 @@ export function defineForm(def: FormDefinition): FormDescription {
     return list
   }
 
+  // кнопки набора полей — действия без проверки: без JS сервер возвращает места, не сохраняя
+  const actions = fields.some((f) => f.fieldSet)
+    ? [...(def.actions ?? DEFAULT_ACTIONS), ...FIELD_SET_ACTIONS]
+    : (def.actions ?? DEFAULT_ACTIONS)
+  // Пустой список действий — тупик: `evaluate` выбирает действие по намерению и
+  // падал бы с TypeError на первом же POST. Отказ — при объявлении формы.
+  if (!actions.length) throw new Error(`[form] форма '${def.id}': actions не может быть пустым`)
+
   return {
     id: def.id,
     revision: def.revision ?? 1,
     fields, byName,
-    // кнопки набора полей — действия без проверки: без JS сервер возвращает места, не сохраняя
-    actions: fields.some((f) => f.fieldSet) ? [...(def.actions ?? DEFAULT_ACTIONS), ...FIELD_SET_ACTIONS] : def.actions ?? DEFAULT_ACTIONS,
+    actions,
     messages: formMessages(def.messages, fields),
     cardinality: def.cardinality ?? 'first',
     invalidFrom: def.invalidFrom ?? 'fact',

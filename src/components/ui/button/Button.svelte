@@ -101,7 +101,7 @@
 </script>
 
 <!-- `data-slot="button"`: по нему общее правило индикатора ссылок
-     (`components/links/indicator.ts`) убирает свой отступ — у кнопки есть `gap`.
+     (`hooks/links/indicator.ts`) убирает свой отступ — у кнопки есть `gap`.
      `data-task`: то же правило рисует состояние задачи кнопки. -->
 {#if href !== undefined}
   <a
