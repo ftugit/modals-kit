@@ -3,14 +3,14 @@
 import { defineForm, field, v } from '#lib/form/index.js'
 import { emailTaken, inn, luhn } from '#components/form/extend.js'
 
-/**
- * Кардинальность ошибок — свойство ОПИСАНИЯ: его обязаны видеть обе стороны.
- * Настройка на стороне адаптера развела бы пути — сервер о ней не знает.
- */
-/** Ответы, которые умеет изобразить демо-сервер (`handle.ts`). */
+/** Ответы, которые умеет изобразить демо-сервер (`signup.form.server.ts`). */
 export const ANSWERS = ['accept', 'redirect', 'queued', 'unknown'] as const
 export type Answer = (typeof ANSWERS)[number]
 
+/**
+ * `cardinality` — свойство ОПИСАНИЯ: его обязаны видеть обе стороны. Настройка на
+ * стороне адаптера развела бы пути — сервер о ней не знает.
+ */
 function make(cardinality: 'first' | 'all') {
   return defineForm({
     id: 'signup',

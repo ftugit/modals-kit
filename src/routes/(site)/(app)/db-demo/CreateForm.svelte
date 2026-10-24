@@ -22,7 +22,7 @@
   import type { Optimistic } from './optimistic.svelte'
 
   interface Props {
-    /** Ответ экшена `?/create` — continuation нативного пути (без JavaScript). */
+    /** Ответ нативного POST (конверт `__form_id`) — continuation пути без JavaScript. */
     seed?: Result | null
     /**
      * Успешная запись: страница НЕ перезагружается, поэтому список обновляет

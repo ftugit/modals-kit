@@ -248,7 +248,7 @@ function createAnimesSource(api: ShikimoriApi): AdaptedSource<CatalogItem> {
     search: { minLength: 2 },
     scan: { batchSize: SHIKIMORI_LIMIT_MAX },
     totals: false,
-    // Фильтры объявляет САМ источник: ключи выведены из схемы схемы
+    // Фильтры объявляет САМ источник: ключи выведены из схемы фильтров
     // (`content/shikimori-filters`), а значения и связки живут в серверной зоне
     // (`#lib/server/shikimori-schema.js`) и приезжают роутом `/api/shikimori/filters`.
     // Возможность видна панели (`capabilities.filters`) — UI гасит фильтры у
@@ -334,8 +334,8 @@ export function makeSource(
       'animes-graphql': withLibSearch(createAnimesSource('graphql'), { gate: 'ls', name, ...channels }),
       'rm-rest': withLibSearch(createRickMortySource('rest'), { gate: 'ls', name, ...channels }),
       'rm-graphql': withLibSearch(createRickMortySource('graphql'), { gate: 'ls', name, ...channels }),
-      // БД — НЕ второй реализации списка: данные читает тот же `fetchDbPosts`
-      // (SSR — прямаем в слой, браузер — `/api/db-posts`), отличие только в форме
+      // БД — НЕ вторая реализация списка: данные читает тот же `fetchDbPosts`
+      // (SSR — прямо в слой, браузер — `/api/db-posts`), отличие только в форме
       // записи (паспорт `catalogRecord`) и в том, что здесь запись — часть union'а.
       // Lib/search к нему не подключается: сканировать живую выдачу БД демо не
       // договоривались, и панель честно гасит `ls` (нет возможности `fuzzy`).

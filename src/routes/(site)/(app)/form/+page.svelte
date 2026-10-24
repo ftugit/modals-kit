@@ -63,7 +63,6 @@
     if ('mode' in changed) form.redisplay()
   }
 
-
   const mode = $derived(sv('mode') as Mode)
 
   const handler: ErrorHandler = (errors, ctx) => {
@@ -206,11 +205,12 @@
   $effect(() => {
     const q = queued
     if (!q) return
-    const bound = form
+    // Снимок связки на момент отправки: имя `bound` занято картой четырёх связок.
+    const target = form
     const stop = new AbortController()
     pollFailed = false
     pollUntilDone(q, poll, { signal: stop.signal })
-      .then((final) => { if (final) bound.lift(final); else if (!stop.signal.aborted) pollFailed = true })
+      .then((final) => { if (final) target.lift(final); else if (!stop.signal.aborted) pollFailed = true })
       .catch(() => { if (!stop.signal.aborted) pollFailed = true })
     return () => stop.abort()
   })

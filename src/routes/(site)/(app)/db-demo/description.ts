@@ -20,8 +20,9 @@ export const dbCreate = defineForm({
   // поэтому id только в этом алфавите.
   id: 'db_demo_create',
   revision: 2,
-  // Единственное действие = `submit`: нативный путь маршрутизируется именем
-  //  form-экшена (`?/create`), а не интентом, и сервер обязан принять именно его.
+  // Единственное действие = `submit`: у страницы нет SvelteKit-действий — нативный
+  //  POST идёт на её адрес с конвертом `__form_id` (`db_demo_create`), описание
+  //  находит серверный приёмник по реестру, а имя действия внутри формы — `submit`.
   actions: [{ id: 'submit', label: 'Добавить', validate: 'full' }],
   fields: post.fields({
     title: field.text({

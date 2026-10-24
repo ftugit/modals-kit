@@ -15,7 +15,7 @@
   import { dbRemove } from './description'
 
   interface Props {
-    /** Ответ экшена `?/remove` — continuation нативного пути (без JavaScript). */
+    /** Ответ нативного POST (конверт `__form_id`) — continuation пути без JavaScript. */
     seed?: Result | null
     /**
      * Успешная запись: страница НЕ перезагружается, поэтому список обновляет
@@ -27,9 +27,10 @@
   let { seed = null, onApplied }: Props = $props()
 
   // Путь отправки — штатный для `lib/form`: `intercept` по умолчанию = fetch через
-  // транспорт конфига. Свой транспорт здесь нужен один-единственный: `/form/submit`
-  // принимает форму демо форм, а не БД-демо. Нативный POST остаётся запасом без JS
-  // (action `?/remove`), поэтому `seed`/continuation никуда не деваются.
+  // транспорт связки. У `forms.config.ts` транспорта по умолчанию НЕТ (адрес — свойство
+  // формы), поэтому `bindComponentForm` берёт адрес текущей страницы и конверт
+  // `__form_id`; нативный POST тем же адресом остаётся путём без JS, и
+  // `seed`/continuation никуда не деваются.
   const form = bindComponentForm(forms, dbRemove, {
     live: 'on-submit',
     continuation: untrack(() => seed),

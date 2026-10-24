@@ -4,7 +4,6 @@
   // живёт в адресе (`?demo=url|local|hybrid|form` — свой ключ брони), панель —
   // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
   // адреса (не полная навигация). Схема полей — в demo-schema.ts.
-  import { page } from '$app/state'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { Steps, FormSteps, formSteps, stepLink, useSteps } from '#components/steps/index.js'
   import { asLink } from '#hooks/links/index.js'
@@ -18,7 +17,6 @@
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#components/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
-
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */

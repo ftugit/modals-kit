@@ -43,7 +43,6 @@
   />
 </svelte:head>
 
-
 <PaginatorScope
   snapshots={{
     [loaderData.defaultName]: loaderData.snapshot,
