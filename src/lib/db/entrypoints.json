@@ -1,0 +1,14 @@
+{
+  "//": "Входы пакета: ядро; `errors` и `schema` — узкие входы (тип отказа нужен экранам ACL, метаданные колонки — формам: тянуть ради них весь баррель с запросами и ресурсами нельзя); `sync` — отчёт и план; `sveltekit/*` — среда; `adapters/*` — по драйверу.",
+  "entrypoints": [
+    "index.js",
+    "errors.js",
+    "schema.js",
+    "sync/index.js",
+    "sveltekit/index.js",
+    "sveltekit/node.js",
+    "adapters/pglite.js",
+    "adapters/lazy.js",
+    "adapters/hyperdrive.js"
+  ]
+}

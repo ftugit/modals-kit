@@ -1,4 +1,4 @@
-import { backoffDelay as backoffFormula } from '#lib/fetch/backoff.js'
+import { backoffDelay as backoffFormula } from '#lib/fetch/index.js'
 
 /**
  * Живая выдача демо: условный `GET` по адресу, который даёт список.

@@ -68,7 +68,16 @@ try {
   ])
   release()
   await page.unroute('**/*', hold)
-  await page.waitForLoadState('networkidle')
+  // Ждём ГИДРАЦИЮ, а не «тишину в сети»: у страницы живут опросы и задача формы
+  // (`watch`), поэтому `networkidle` на них может не наступить вовсе — ожидание
+  // падало по таймауту, хотя страница уже была готова. Глобал `__sveltekit_<hash>`
+  // ставит стартовый скрипт Kit — это и есть признак «клиент поднялся».
+  await page.waitForFunction(
+    () => Object.keys(window).some((k) => k.startsWith('__sveltekit_')),
+    null,
+    { timeout: 30_000 },
+  )
+  await page.waitForTimeout(300)
 
   const notice = page.locator('[data-testid="notice"]')
   const shown = (await notice.count()) ? await notice.textContent() : null

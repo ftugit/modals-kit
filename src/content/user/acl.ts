@@ -11,7 +11,7 @@
  *      `payload_too_large`).
  */
 import type { DbFailure, FailureKind } from '#lib/db/errors.js'
-import type { KitErrorBody } from '#lib/db/sveltekit/errors.js'
+import type { KitErrorBody } from '#lib/db/sveltekit/index.js'
 import type { AuthErrorCode } from './error.js'
 import type { Blocked } from './types.js'
 
@@ -34,8 +34,15 @@ export type AclScreenCode =
   | 'account_deleted'
   | AclModelCode
 
-/** Подсказка целевого действия на экране ACL. */
-export type AclActionKind = 'login' | 'restore' | 'back' | 'none'
+/**
+ * Подсказка целевого действия на экране ACL.
+ *
+ * `link` — экран сам не умеет выполнить починку, но знает, ГДЕ она живёт
+ * (`href`): так `schema_pending` ведёт на `/schema` вместо «просто назад»,
+ * о которой он и так пишет словами. Без этого вида текст обещает кнопку,
+ * которой в модели действия нет.
+ */
+export type AclActionKind = 'login' | 'restore' | 'back' | 'link' | 'none'
 
 /** Готовое описание экрана ACL для рендера в `Acl.svelte`. */
 export interface AclScreen {
@@ -47,6 +54,8 @@ export interface AclScreen {
   readonly details?: readonly string[]
   readonly untilMs?: number | null
   readonly action: AclActionKind
+  /** Адрес действия: обязателен при `action: 'link'`, иначе не ставится. */
+  readonly href?: string
 }
 
 /** Принимаемый вид ошибки модели: `DbFailure`, ответ `toKitError`, либо сам код. */
@@ -87,10 +96,12 @@ const MODEL_CODES = new Set<string>([
   'payload_too_large',
 ])
 
-const SCREENS: Record<
-  AclScreenCode,
-  Omit<AclScreen, 'code' | 'details' | 'untilMs' | 'action'> & { defaultAction: AclActionKind }
-> = {
+/** Описание экрана без вычисляемых полей; `href` — часть реестра, а не вызова. */
+type AclScreenDefaults = Omit<AclScreen, 'code' | 'details' | 'untilMs' | 'action'> & {
+  defaultAction: AclActionKind
+}
+
+const SCREENS: Record<AclScreenCode, AclScreenDefaults> = {
   auth_disabled: {
     source: 'auth',
     tone: 'neutral',
@@ -208,7 +219,8 @@ const SCREENS: Record<
     tone: 'destructive',
     title: 'Требуется обновление схемы базы',
     description: 'Структура таблиц отстаёт от моделей приложения — раздел закрыт до применения миграции. Отчёт и кнопка переноса — на странице /schema.',
-    defaultAction: 'none',
+    defaultAction: 'link',
+    href: '/schema',
   },
   unsupported: {
     source: 'model',
@@ -247,9 +259,14 @@ function buildScreen(
     details?: readonly string[]
     untilMs?: number | null
     action?: AclActionKind
+    href?: string
   },
 ): AclScreen {
   const base = SCREENS[code]
+  const action = extra?.action ?? base.defaultAction
+  // `href` живёт только у ссылки: адрес у «назад» или «войти» — это уже чужое
+  // действие, и рендер не должен выбирать между двумя кнопками.
+  const href = action === 'link' ? (extra?.href ?? base.href) : undefined
   return {
     code,
     source: base.source,
@@ -258,7 +275,8 @@ function buildScreen(
     description: extra?.description ?? base.description,
     ...(extra?.details?.length ? { details: extra.details } : {}),
     ...(extra?.untilMs !== undefined ? { untilMs: extra.untilMs } : {}),
-    action: extra?.action ?? base.defaultAction,
+    action,
+    ...(href ? { href } : {}),
   }
 }
 

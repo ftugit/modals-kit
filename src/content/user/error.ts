@@ -12,7 +12,7 @@
  * форма): `ctx.fail(toFormErrors(instruction(fact)))` — и форма показит текст
  * у пути. Тексты кодов выбирает владелец: словарь по умолчанию — в UI.
  */
-import type { FormError } from '#lib/form/result.js'
+import type { FormError } from '#lib/form/index.js'
 
 /** Доменные коды модуля пользователя. */
 export type AuthErrorCode =

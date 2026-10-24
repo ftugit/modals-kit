@@ -11,8 +11,8 @@
  * и перенос `carryFields` пагинатора проверены на живых потребителях.
  */
 import { expect, test } from 'vitest'
-import { chainToSearch, decodeChain, CHAIN_KEY } from '#lib/modals/core.js'
-import { readPaginatorSearch } from '#lib/paginate/adapter-url.js'
+import { chainToSearch, decodeChain, CHAIN_KEY } from '#lib/modals/index.js'
+import { readPaginatorSearch } from '#lib/paginate/index.js'
 import { carryQuery, checkKeys, claimQuery, nextSearch, readQuery, resetQueryClaims } from './keys.js'
 
 /** Брони, как объявляют потребители при старте (адаптеры/хуки делают это сами). */

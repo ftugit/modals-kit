@@ -21,7 +21,8 @@
 
 1. **`#lib/*` → `./src/lib/*` (независимые библиотеки + их фреймворковые адаптеры)**:
    - пакеты `address`, `assets`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `task`;
-   - в чистых ядрах запрещены импорты `svelte`, `@sveltejs/kit`, `$app/*`, соседних пакетов и любых верхних слоёв (`tooling/core-purity.mjs` + `tooling/layer-guard.mjs`); адаптеры реактивности и роутера живут внутри своего пакета (`svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`).
+   - в чистых ядрах запрещены импорты `svelte`, `@sveltejs/kit`, `$app/*`, соседних пакетов и любых верхних слоёв (`tooling/core-purity.mjs` + `tooling/layer-guard.mjs`); адаптеры реактивности и роутера живут внутри своего пакета (`svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`);
+   - **публичный вход пакета объявлен**: снаружи `src/lib/<pkg>/` допустимы только спецификаторы из `src/lib/<pkg>/entrypoints.json` (нет манифеста — только `index.js`), остальное — внутреннее устройство. Проверка — `node tooling/public-api.mjs` (+ тест `tooling/public-api.test.mjs`): пакет обязан переноситься в другое приложение, а глубокий импорт привязывает чужой код к его файлам. Тот же закон для `#lib` → `#lib`: пакеты общаются входами, а не потрохами.
 2. **`#hooks/*` → `./src/hooks/*` (межбиблиотечные и фреймворковые связки без UI)**:
    - соединяет две библиотеки или библиотеку и среду (`cache-db.ts`, `db-form.ts`, `api-error.ts`, `app-errors.svelte.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `use-drawer.svelte.ts`, `graphql.server.ts`, `task-stream.server.ts`, папочные `links/` и `component-form/`); см. [`src/hooks/README.md`](./src/hooks/README.md).
 3. **`#components/*` → `./src/components/*` (переиспользуемые UI-примитивы и проектно-независимые виджеты)**:

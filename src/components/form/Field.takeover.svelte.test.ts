@@ -9,8 +9,8 @@ import {
   bind, createConfig,
   type BoundConfig, type FieldComponent, type FieldTakeover, type FieldView,
 } from '#lib/form/svelte/index.js'
-import type { Result } from '#lib/form/result.js'
-import type { Transport } from '#lib/form/submit.js'
+import type { Result } from '#lib/form/index.js'
+import type { Transport } from '#lib/form/index.js'
 import { fieldViews } from './resolve'
 import CopyField from './CopyField.svelte'
 import TakeoverForm from './TakeoverForm.test.svelte'

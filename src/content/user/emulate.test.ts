@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'vitest'
 import { memoryStore } from '#lib/cache/index.js'
 import { getEncoder } from '#lib/image/index.js'
-import { ensureWasm } from '#lib/image/test-wasm.js'
+import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
   activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, listSessions, login, logout,

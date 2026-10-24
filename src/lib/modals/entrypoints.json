@@ -1,0 +1,4 @@
+{
+  "//": "`index.js` — ядро и контракты; `svelte/index.js` — реактивность и разметка; `svelte/classes.js` — ТОЛЬКО строки оболочки (общие с хостом, но без самого хоста: иначе любая страница с задником тянула бы модалки целиком); `cores/sveltekit.js` — среда SvelteKit.",
+  "entrypoints": ["index.js", "svelte/index.js", "svelte/classes.js", "cores/sveltekit.js"]
+}

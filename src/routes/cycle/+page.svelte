@@ -3,7 +3,7 @@ import { Button } from '#components/ui/index.js'
   import { onMount } from 'svelte'
   import { createModals, createRegistry, urlStorage } from '#lib/modals/index.js'
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
-  import { createReactiveStore } from '#lib/modals/svelte/store.svelte.js'
+  import { createReactiveStore } from '#lib/modals/svelte/index.js'
 
   /* ═══════════════════════════════════════════════════════════════
      1. ОБЪЯВЛЕНИЕ. Два места: глобальное и область роута.

@@ -10,9 +10,9 @@
  * `#components/db-schema/SchemaPending.svelte` (описание формы) и страница
  * `/schema` (типы).
  */
-import { choices, decisionValue, KEEP, stepKey } from '#lib/db/sync/decisions.js'
+import { choices, decisionValue, KEEP, stepKey } from '#lib/db/sync/index.js'
 import type { SchemaReport } from '#lib/db/sync/index.js'
-import type { Step } from '#lib/db/sync/plan.js'
+import type { Step } from '#lib/db/sync/index.js'
 import { defineForm, field, v } from '#lib/form/index.js'
 
 /** Один шаг, ждущий решения, — уже в словах для человека. */

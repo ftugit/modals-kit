@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { probeImageHeader } from './probe.js';
 import { getEncoder, type Frame } from './index.js';
-import { ensureWasm } from './test-wasm.js';
+import { ensureNodeImageCodecs as ensureWasm } from './node.js';
 
 
 /** Вставить JPEG-сегмент (маркер + длина + payload) сразу после SOI. */

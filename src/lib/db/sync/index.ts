@@ -35,7 +35,8 @@ import { sha256, tableSpec, type TableSpec } from "./model";
 import { byOrder, planTable, type Step } from "./plan";
 
 export type { Step } from "./plan";
-export { canonicalType } from "./model";
+export { canonicalType, tableSpec } from "./model";
+export type { TableSpec } from "./model";
 
 /** Ручной SQL (триггеры, функции, начальные данные): выполняется один раз на `id`. */
 export interface SqlStep {

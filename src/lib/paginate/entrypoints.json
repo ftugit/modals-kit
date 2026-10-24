@@ -1,0 +1,12 @@
+{
+  "//": "`index.js` — состояние и источники; `filters/index.js` — спека фильтров; `search/index.js` — поиск целиком (реестр, накопление, статистика); `search/fuzzy.js` — ТОЛЬКО нечёткое сравнение текста: селекту нужен алгоритм, а не реестр поиска, иначе реестр попадает в каждую страницу с контролом; `svelte/*` — реактивность и разметка; `sveltekit/router.js` — адрес как источник (нужен SvelteKit).",
+  "entrypoints": [
+    "index.js",
+    "filters/index.js",
+    "search/index.js",
+    "search/fuzzy.js",
+    "svelte/index.js",
+    "svelte/search/index.js",
+    "sveltekit/router.js"
+  ]
+}
