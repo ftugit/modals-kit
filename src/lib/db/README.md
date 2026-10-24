@@ -819,9 +819,35 @@ await schema.sync(driver, { resolve: { [stepKey(report.conflicts[0])]: 'rename' 
 Дубли под уникальностью, `NULL` под `NOT NULL` и обязательная колонка без DEFAULT вариантов не
 имеют (`choices` → `[]`): их снимает правка данных или модели.
 
-Приложение показывает это экраном на страницах с БД (`src/routes/(site)/(app)/db-demo/SchemaPending.svelte`):
-кнопка «Выполнить» спрашивает `DB_ADMIN_TOKEN` (`src/server/schema-admin.server.ts` сверяет его
-за постоянное время до обращения к БД); без переменной кнопки нет, экран объясняет, что задать.
+### Перенос по кнопке: `createSchemaAdmin`
+
+Отчёт и выполнение решений под секретом — библиотечная часть (`#lib/db/sync/index.js`):
+она не знает ни окружения, ни маршрутов, драйвер и секрет подставляет вызывающий.
+
+```ts
+import { createSchemaAdmin } from '#lib/db/sync/index.js'
+
+const admin = createSchemaAdmin({ schema, driver: () => openRaw(), token: env.DB_ADMIN_TOKEN })
+await admin.status()                      // SchemaReport: что ждёт решения
+await admin.resolve(token, decisions)     // секрет сверяется ДО обращения к БД
+```
+
+`resolve` отвечает `disabled` (секрета нет), `token` (не подошёл), `invalid` (нет решений),
+`stale` (шаг уже снят другим экземпляром), `failed` (БД отклонила перенос). Секрет
+сравнивается за постоянное время (дайджесты одной длины), драйвер должен быть СЫРЫМ — мимо
+`gate`: через `gate` при конфликте не проходит ни один запрос.
+
+Решения в форме — тоже библиотечный формат (`decisions.ts`), два законных представления:
+значение `<решение>|<ключ шага>` (имя поля короткое — годится для `lib/form` с его правилами
+имён) и имя `step:<ключ шага>` со значением `apply|rename|replace` (нативная форма без
+`lib/form`). Оба собирает `decisionsFrom`/`decisionsFromForm`; всё, что не является решением,
+отвергается до БД.
+
+Приложение показывает это экраном `/schema` (`src/components/db-schema/SchemaPending.svelte`,
+слова и описание формы — `#hooks/db-schema.ts`): кнопка «Выполнить» спрашивает
+`DB_ADMIN_TOKEN`; без переменной кнопки нет, экран объясняет, что задать. Любая страница с БД
+при `schema_pending` ведёт туда же (`?next=` возвращает назад), а страница ошибок показывает
+ссылку на перенос вместо тупика.
 
 ### SQL-файлы: `applyMigrationText`
 
@@ -853,7 +879,7 @@ keyset-индекс, который обязана порождать `order`).
 | `#lib/db/adapters/hyperdrive.js` | `hyperdriveAdapter` |
 | `#lib/db/adapters/lazy.js` | `lazyDriver` |
 | `#lib/db/adapters/proxy.js` | `proxyAdapter`, `proxyHttpAdapter`, `proxyWsAdapter` (+ типы `ProxyConfig`, `ProxyMode`) |
-| `#lib/db/sync/index.js` | `defineSchema`, `canonicalType`, типы `SchemaSpec`, `SchemaReport`, `SqlStep`, `Step`, `DbSchema` |
+| `#lib/db/sync/index.js` | `defineSchema`, `canonicalType`, `stepKey`, `choices`, `createSchemaAdmin` (+ типы `SchemaAdmin`, `ResolveOutcome`), формат решений `decisionValue`, `parseDecision`, `decisionsFrom`, `decisionsFromForm`, `KEEP` (+ типы `DecisionChoice`, `DecisionsResult`, `ParsedDecision`), типы `SchemaSpec`, `SchemaReport`, `SqlStep`, `Step`, `DbSchema`, `Choice`, `Resolution` |
 | `#lib/db/sveltekit/index.js` | `dbHandle`, `createRequestContext`, `toKitError`, `toFormFailure`, `FAILURE_STATUS`, `parseListInput`, `readJson`, `readBoundedBody`, `BodyTooLarge`, `cursorCodecFromEnv`, `splitSqlStatements`, `applyMigrationText`, типы `LocalsDb`/`MinimalEvent`/`Principal` |
 | `#lib/db/sveltekit/node.js` | `openNodeDatabase`, `openPgPool` (в т.ч. `startupParameters: 'skip'` для pooler), `resolveDatabaseDir` (тут же `node:`/PGlite — в Workers этот entry не импортируют) |
 | `#lib/db/testing/index.js` | `withTestDb`, типы `TestDb`, `TestDbOptions`, `TestDbEncoding` |

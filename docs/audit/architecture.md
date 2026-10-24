@@ -46,7 +46,7 @@
    - `#content/*` → `./src/content/*`:
      - **`src/content/user/`** — боевой доменный модуль пользователя (`index.ts`, `routes.ts`, `modals.ts`, `*.server.ts`, `ui/*`);
      - **`src/content/demo-catalog/`** — изолированная папка **всех** демо-источников витрин вместе с демо-БД (`items/`, `posts/`, `rickmorty/`, `shikimori/`), чтобы не создавать инверсий `#server → routes`, не плодить кросс-импорты между роутами (`0` исключений в `layer-guard.mjs`) и удалять весь учебный контент одной командой `rm -rf src/content/demo-catalog`.
-   - `#server/*` → `./src/server/*` (`db.server.ts`, `schema-admin.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`, `trusted-origins.ts`).
+   - `#server/*` → `./src/server/*` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`, `trusted-origins.ts`).
 2. **Все 4 визуальных решения по `ui-consistency.md` утверждены:**
    - **`U3`:** единый `Skeleton` в `ui/skeleton/Skeleton.svelte` (`animate-pulse rounded-md bg-muted`), `paginator` и `modals` — тонкие обёртки.
    - **`U9 / F3 / F4`:** глобальный `aria: { invalid: 'invalid="true"' }` в `unocss.config.ts` + красная рамка на всех невалидных контролах, включая триггер `Select`, ячейки `OtpInput`, `Checkbox` и `Switch`.

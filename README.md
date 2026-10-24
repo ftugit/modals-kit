@@ -41,7 +41,7 @@
 
 ### 5. Серверные синглтоны и маршруты (`src/server/` — `#server/*`, `src/routes/`)
 
-- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `schema-admin.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и `trusted-origins.ts`;
+- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и `trusted-origins.ts`;
 - `src/routes/` — тонкие маршруты витрин и API (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/user/auth`, `/user/menu`, `/cards/[id]`, `/cycle`, `/spike`).
 
 ---

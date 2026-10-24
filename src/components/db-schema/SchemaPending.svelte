@@ -1,21 +1,24 @@
 <script lang="ts">
   /**
-   * Экран переноса схемы: показывается вместо страницы с базой, пока модели
-   * разошлись со схемой так, что само не применить. Отправка — штатная для
-   * `lib/form`: сначала проверка клиентом, потом fetch на `/db-demo/submit`; без JS —
-   * нативный POST `?/schema`. После успеха страница перечитывает данные (`refreshAll`):
-   * `load` вернёт уже список.
+   * Экран переноса схемы: показывается на `/schema`, пока модели разошлись со
+   * схемой так, что само не применить.
+   *
+   * Отправка — штатная для `lib/form`: нативный POST на `?/schema` (без JS тоже
+   * работает). Ответ маршрута: успех — `303` на исходную страницу (`?next=`),
+   * отказ — `fail` с `Result`, который сюда приходит `continuation`.
+   *
+   * Компонент живёт в `#components/*`, а не в демо-маршруте: экран нужен любой
+   * странице с БД, а не только `/db-demo`. Описание формы и слова — из
+   * `#hooks/db-schema.js` (там библиотеки соединяются), разметка — здесь.
    */
   import { untrack } from 'svelte'
-  import { refreshAll } from '$app/navigation'
-  import { jsonTransport } from '#components/form/transport.js'
   import { bind, Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
-  import { schemaForm, type SchemaScreen } from './schema'
+  import { schemaForm, type SchemaScreen } from '#hooks/db-schema.js'
 
   let { screen, seed = null }: { screen: SchemaScreen; seed?: Result | null } = $props()
 
@@ -23,17 +26,7 @@
   const snapshot = untrack(() => screen)
   const form = bind(forms, schemaForm(snapshot), {
     action: '?/schema',
-    transport: jsonTransport('/db-demo/submit'),
     continuation: untrack(() => seed),
-  })
-  // Успех перехваченной отправки: данные страницы перечитываются, экран уходит сам.
-  // Первый запуск не считается — продолжение без JS уже пришло с перезагрузкой.
-  let last = form.state.status
-  $effect(() => {
-    const now = form.state.status
-    if (now === last) return
-    last = now
-    if (now === 'success') void refreshAll()
   })
   const manual = snapshot.steps.filter((s) => !s.field)
 </script>
@@ -47,7 +40,7 @@
 
   {#if manual.length}
     <ul class="space-y-2 text-sm">
-      {#each manual as step (step.title + step.where)}
+      {#each manual as step (step.key)}
         <li>
           <span class="font-medium">{step.title}</span>
           <span class="text-muted-foreground">({step.where}).</span>
@@ -63,14 +56,14 @@
       переменных окружения и перезапустите приложение — или поправьте модель.
     </p>
     <ul class="space-y-1 text-sm">
-      {#each snapshot.steps.filter((s) => s.field) as step (step.field)}
+      {#each snapshot.steps.filter((s) => s.field) as step (step.key)}
         <li><span class="font-medium">{step.title}</span> <span class="text-muted-foreground">({step.where})</span></li>
       {/each}
     </ul>
   {:else if snapshot.steps.some((s) => s.field)}
     <Form form={form} hiddenFields={form.hidden()} class="space-y-3">
       <Common errors={form.common} title="Перенос не выполнен" />
-      {#each snapshot.steps as step (step.field ?? step.title)}
+      {#each snapshot.steps as step (step.key)}
         {#if step.field}<Field of={form.f[step.field]!} />{/if}
       {/each}
       <Field of={form.f.token!} />

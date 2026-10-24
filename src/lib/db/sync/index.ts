@@ -27,6 +27,7 @@
  * WordPress, сверка идёт по версии, записанной в самой БД.
  */
 import { DbFailure, fail, normalizeFailure } from "../errors";
+import { choices, stepKey, type Choice, type Resolution } from "./decisions";
 import { ident } from "../query/sql";
 import { splitSqlStatements } from "../query/split";
 import type { Driver, Resource, Row } from "../types";
@@ -59,14 +60,11 @@ export interface SchemaReport {
   /** Не блокирует, но ждёт решения. */
   notices: readonly Step[];
 }
-/**
- * Решение по конфликтному шагу: `apply` — выполнить предложенный SQL (у шагов с
- * потерей данных — удалить колонку, сменить тип); `rename`/`replace` — у
- * `rename_or_replace`: переименовать старую колонку или удалить её и добавить новую.
- */
-export type Choice = "apply" | "rename" | "replace";
-/** Решения по шагам: ключ — `stepKey(step)`. */
-export type Resolution = Readonly<Record<string, Choice>>;
+// Решения (`Choice`, `Resolution`) и их формат живут в `./decisions.ts`: этот
+// модуль тянет DDL-код (`./model.ts`, `./plan.ts`), а клиенту, который рисует
+// экран решений, нужны только ключ шага и список допустимых решений.
+export type { Choice, Resolution } from "./decisions";
+export { choices, stepKey } from "./decisions";
 
 /**
  * Ход сверки — для показа ожидания (`onStep`). Этапы: `check` (быстрая проверка),
@@ -81,18 +79,6 @@ export interface SyncStep {
   name?: string;
 }
 
-/** Устойчивый ключ шага: по нему экран решений и сервер говорят об одном шаге. */
-export function stepKey(step: Step): string {
-  return `${step.kind}:${step.table}:${step.column ?? ""}`;
-}
-/** Какие решения возможны у шага. Пусто — само не снять: нужна правка модели или данных. */
-export function choices(step: Step): readonly Choice[] {
-  if (step.level === "auto") return [];
-  if (step.kind === "rename_or_replace") return ["rename", "replace"];
-  // уникальный индекс на данных с повторами упадёт: сначала убрать повторы
-  if (step.kind === "unique_duplicates") return [];
-  return step.sql.length ? ["apply"] : [];
-}
 
 export interface DbSchema {
   /** `resolve` — решения человека по конфликтам и ожидающим шагам (см. `choices`). */
@@ -320,3 +306,14 @@ function decidedSQL(step: Step, choice: Choice): readonly string[] {
     return [`ALTER TABLE ${step.table} DROP COLUMN ${ident(step.from!)}`];
   return step.sql;
 }
+
+// Решения по шагам — отдельный модуль: формат `<choice>|<key>` знает только он
+// (`./decisions.ts`), поэтому и форма приложения, и нативная форма без `lib/form`
+// идут одной дорогой.
+export { KEEP, decisionValue, decisionsFrom, decisionsFromForm, parseDecision } from "./decisions";
+export type { DecisionChoice, DecisionValues, DecisionsResult, ParsedDecision } from "./decisions";
+
+// Админка переноса: отчёт и выполнение решений под секретом. Библиотечная часть
+// (`./admin.ts`) не знает ни окружения, ни маршрутов — их подставляет приложение.
+export { createSchemaAdmin } from "./admin";
+export type { ResolveOutcome, SchemaAdmin } from "./admin";

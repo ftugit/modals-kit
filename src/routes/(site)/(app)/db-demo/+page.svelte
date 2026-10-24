@@ -31,7 +31,6 @@
   import CreateForm from './CreateForm.svelte'
   import RemoveForm from './RemoveForm.svelte'
   import RenameForm from './RenameForm.svelte'
-  import SchemaPending from './SchemaPending.svelte'
 
   // `form` — результат экшена + метка «какой форме он принадлежит» (`intent`, см. +page.server);
   // тип выводит SvelteKit из `actions` (`PageProps['form']`).
@@ -112,15 +111,11 @@
     <Alert variant="success" role="status" data-testid="notice">{notice}</Alert>
   {/if}
 
-  {#if data.schema || !data.snapshot}
-    {#if data.schema}<SchemaPending screen={data.schema} seed={seed('schema')} />{/if}
-  {:else}
-    <div class="grid gap-6 md:grid-cols-3">
-      <CreateForm seed={seed('create')} onApplied={onCreated} {optimistic} />
-      <RenameForm seed={seed('rename')} onApplied={onRenamed} />
-      <RemoveForm seed={seed('remove')} onApplied={onRemoved} />
-    </div>
+  <div class="grid gap-6 md:grid-cols-3">
+    <CreateForm seed={seed('create')} onApplied={onCreated} {optimistic} />
+    <RenameForm seed={seed('rename')} onApplied={onRenamed} />
+    <RemoveForm seed={seed('remove')} onApplied={onRemoved} />
+  </div>
 
-    <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
-  {/if}
+  <DbPostsList snapshot={data.snapshot} showRaw {optimistic} />
 </div>

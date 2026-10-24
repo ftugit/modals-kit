@@ -24,7 +24,7 @@ import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
 import { defineSchema, type SyncStep } from '#lib/db/sync/index.js'
 import { DbFailure } from '#lib/db/index.js'
 import type { Database, Driver, Limits } from '#lib/db/index.js'
-import { createSchemaAdmin } from './schema-admin.server.js'
+import { createSchemaAdmin } from '#lib/db/sync/index.js'
 import { sharedTask } from '#hooks/task-stream.server.js'
 import type { TaskState } from '#lib/task/index.js'
 import {

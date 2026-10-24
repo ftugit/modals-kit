@@ -1,11 +1,11 @@
-// Перенос схемы по кнопке: секрет до обращения к БД, решения из формы, причины отказа.
+// Перенос схемы по кнопке: секрет до обращения к БД и причины отказа.
+// Сами решения (`<choice>|<key>`) проверяются отдельно — `db-sync-decisions.test.ts`.
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, expect, it } from 'vitest'
-import { defineResource, f, field, policy, s } from '#lib/db/index.js'
-import type { Driver, Fields, Resource } from '#lib/db/index.js'
-import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
-import { defineSchema, stepKey } from '#lib/db/sync/index.js'
-import { createSchemaAdmin, decisionsFromForm } from './schema-admin.server.js'
+import { defineResource, f, field, policy, s } from '../index'
+import type { Driver, Fields, Resource } from '../index'
+import { pgliteAdapter } from '../adapters/pglite'
+import { createSchemaAdmin, defineSchema, stepKey } from '../sync/index'
 
 const TOKEN = 'a'.repeat(40)
 const open = { read: () => true } as const
@@ -60,17 +60,6 @@ async function conflicted(): Promise<{
     }),
   }
 }
-
-it('решения из формы: только поля step:* с известным значением', () => {
-  const data = new FormData()
-  data.append('token', 'x')
-  data.append('step:rename_or_replace:"public"."post":label', 'rename')
-  data.append('step:extra_column:"public"."post":legacy', '')
-  data.append('step:change_type:"public"."post":n', 'drop table')
-  expect(decisionsFromForm(data)).toEqual({
-    'rename_or_replace:"public"."post":label': 'rename',
-  })
-})
 
 it('без секрета на сервере и с неверным секретом БД не трогается; с верным — перенос выполнен', async () => {
   const { driver, schema } = await conflicted()

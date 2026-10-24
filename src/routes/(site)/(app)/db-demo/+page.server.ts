@@ -16,34 +16,34 @@ import { error, fail, redirect } from '@sveltejs/kit'
 import { toKitError } from '#lib/db/sveltekit/index.js'
 import { loadDbListSnapshot } from '#content/demo-catalog/posts/list.server.js'
 import type { Handled } from '#lib/form/server.js'
+import { isSchemaPending, schemaHref } from '#hooks/schema-route.js'
+import { schemaScreen } from '#hooks/db-schema.server.js'
 import { failureHandled, handleDbCreate, handleDbRemove, handleDbRename } from './handle.server'
-import { handleSchemaResolve, schemaScreen } from './schema-handle.server'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async (event) => {
-  // Разбор — ВНУТРИ try: отказ слоя (неизвестный ключ, битый JSON фильтра) обязан
-  // пройти через toKitError, а не упасть в Kit как сырой DbFailure.
+  // Расхождение схемы — не ошибка страницы, а экран решений на своём адресе
+  // (`/schema`): он нужен всем страницам с БД, а не только этой. Пока решений
+  // нет, любой запрос к базе отвечает `schema_pending`, поэтому уводим туда же,
+  // откуда пришли (`?next=`), а не показываем «ошибка загрузки».
+  let pending = false
   try {
     // `name` лоадеру не нужен: страница его не выбирает — имя знает компонент
     // списка, а registration обязана жить и в клиентском бандле.
     const { snapshot } = await loadDbListSnapshot(event.url.href)
     // Отказ списка ловит пагинатор (в снимке — `status: 'error'`). Только тогда
-    // спрашиваем схему: исправная страница лишнего запроса не платит, а
-    // `schema_pending` превращается в экран решений вместо строки «ошибка загрузки».
-    if (snapshot.status === 'error') {
-      const schema = await schemaScreen().catch(() => null)
-      if (schema) return { snapshot: null, schema }
-    }
-    return { snapshot, schema: null }
+    // спрашиваем схему: исправная страница лишнего запроса не платит.
+    if (snapshot.status === 'error') pending = Boolean(await schemaScreen().catch(() => null))
+    if (!pending) return { snapshot }
   } catch (e) {
+    // Разбор — ВНУТРИ try: отказ слоя (неизвестный ключ, битый JSON фильтра) обязан
+    // пройти через toKitError, а не упасть в Kit как сырой DbFailure.
     const kit = toKitError(e, import.meta.env.DEV)
-    // Модели разошлись со схемой — не ошибка страницы, а экран решений.
-    if (kit.body.code === 'schema_pending') {
-      const schema = await schemaScreen()
-      if (schema) return { snapshot: null, schema }
-    }
-    throw error(kit.status, kit.body)
+    if (!isSchemaPending(kit.body.code)) throw error(kit.status, kit.body)
+    pending = true
   }
+  // `redirect` — ВНЕ try: он бросает, и `catch` выше принял бы его за сбой.
+  redirect(303, schemaHref(event.url.pathname + event.url.search))
 }
 
 /**
@@ -68,10 +68,4 @@ export const actions: Actions = {
   create: (event) => act('create', handleDbCreate(event.request, 'action', event.locals.dbCtx)),
   remove: (event) => act('remove', handleDbRemove(event.request, 'action', event.locals.dbCtx)),
   rename: (event) => act('rename', handleDbRename(event.request, 'action', event.locals.dbCtx)),
-  // Перенос схемы: успех (или «решать уже нечего») — заново на страницу, где теперь список.
-  schema: async (event) => {
-    const handled = await handleSchemaResolve(event.request, 'action').catch((e) => failureHandled(e))
-    if (!handled || handled.result.ok) redirect(303, event.url.pathname)
-    return act('schema', Promise.resolve(handled))
-  },
 }

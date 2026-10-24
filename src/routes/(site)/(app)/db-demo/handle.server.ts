@@ -12,8 +12,6 @@ import { SECURITY_LAYERS } from '#server/form-security.server.js'
 import { dbCreate, dbRemove, dbRename } from './description'
 import type { DbPost } from '#content/demo-catalog/posts/source.js'
 import { createPrepare } from './prepare'
-import { SCHEMA_FORM_ID } from './schema'
-import { handleSchemaResolve } from './schema-handle.server'
 
 /**
  * Общие тексты видов сбоя для человека: `lib/db` отдаёт свои (английские,
@@ -208,20 +206,6 @@ export async function dispatchDbForm(
   if (id === dbCreate.id) return handleDbCreate(request, from, dbCtx)
   if (id === dbRename.id) return handleDbRename(request, from, dbCtx)
   if (id === dbRemove.id) return handleDbRemove(request, from, dbCtx)
-  if (id === SCHEMA_FORM_ID) {
-    // `null` — решать уже нечего (успел другой экземпляр): тот же итог, что у успеха —
-    // страница перечитает данные и покажет список
-    const handled = await handleSchemaResolve(request, from).catch((e) => failureHandled(e))
-    return handled ?? {
-      status: 200,
-      result: {
-        v: 1, formId: SCHEMA_FORM_ID, instance: `${SCHEMA_FORM_ID}:new`, from,
-        submissionId: '00000000-0000-4000-8000-000000000000', revision: 1,
-        values: {}, ok: true, status: 200, outcome: 'committed', errors: [],
-        data: { message: 'Схема уже в порядке' },
-      },
-    }
-  }
   return {
     status: 400,
     result: {
