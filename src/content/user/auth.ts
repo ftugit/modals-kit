@@ -23,6 +23,15 @@
  *    аккаунт — `restoreDeleted`: то же доказательство владения, затем
  *    привилегированный поиск удалённой строки и снятие метки;
  *  - сроки и поведение — из конфига модуля (`config.ts`), не константы.
+ *
+ * ПАМЯТКА ДЛЯ `lib/storage` (решение владельца 2026-10-24): аватар из куки
+ * вырезается. `data:image/…;base64` не помещается в `auth_tmp`: замер при
+ * потолке `avatarMaxBytes = 20 КБ` — кука 27 699 Б против лимита браузера
+ * `4096 Б`, и `Set-Cookie` молча выбрасывается (ветка `R6` в
+ * `docs/design/image-transfer.md`, `OI-01` в `docs/audit/open-issues.md`).
+ * Пока хранилища нет, витрина профиля собирается в RAM при обновлении
+ * временного токена (`issueTokens`/`freshAccess` ниже читают `profiles.get`);
+ * `avatarUrl` в `prof` не возвращать — ни сюда, ни в новый слой хранения.
  */
 import type { AuthFact } from './error.js'
 import type { AuthPorts } from './ports.js'
