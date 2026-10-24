@@ -102,13 +102,31 @@ export function paginatorPanel<V extends Record<string, ExtraValue>>(
     )
   }
 
+  // Подписи и варианты ВСЕХ полей — ДО сборки связок: `enabledBy` может
+  // ссылаться на поле, объявленное ниже по списку, и связка обязана строиться.
+  // Раньше такой случай не отличался от «поля вне панели» и молчал: подпись
+  // зависела от порядка строк в описании — тихий отказ при перестановке.
+  for (const f of input.fields) {
+    if (f.type === 'divider') continue
+    const name = `${pp}.${f.key}`
+    labels.set(name, f.label)
+    optionValues.set(
+      name,
+      f.type === 'toggle'
+        ? { values: ['true', 'false'], labelOf: (v) => (v === 'true' ? 'включено' : 'выключено') }
+        : {
+            values: f.options.map(([value]) => value),
+            labelOf: (v) => f.options.find(([value]) => value === v)?.[1] ?? v,
+          },
+    )
+  }
+
   for (const f of input.fields) {
     if (f.type === 'divider') {
       if (f.label) fields.push(demoDivider(f.label))
       continue
     }
     const name = `${pp}.${f.key}`
-    labels.set(name, f.label)
 
     /** Возможности источника — статическое выключение с причиной. */
     const required: readonly FeatureGate[] =
@@ -161,10 +179,6 @@ export function paginatorPanel<V extends Record<string, ExtraValue>>(
         : undefined
 
     if (f.type === 'toggle') {
-      optionValues.set(name, {
-        values: ['true', 'false'],
-        labelOf: (v) => (v === 'true' ? 'включено' : 'выключено'),
-      })
       meta.set(name, { kind: 'toggle', extra: f.key })
       fields.push(
         demoToggle({
@@ -177,10 +191,6 @@ export function paginatorPanel<V extends Record<string, ExtraValue>>(
         }),
       )
     } else {
-      optionValues.set(name, {
-        values: f.options.map(([value]) => value),
-        labelOf: (v) => f.options.find(([value]) => value === v)?.[1] ?? v,
-      })
       meta.set(name, { kind: 'select', extra: f.key, ...(f.parse ? { parse: f.parse } : {}) })
       fields.push(
         demoSelect({

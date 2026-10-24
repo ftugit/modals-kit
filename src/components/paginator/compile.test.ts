@@ -113,6 +113,16 @@ describe('paginatorPanel: выключения', () => {
     )
   })
 
+  it('связка к полю, объявленному НИЖЕ, строится (порядок строк не решает)', () => {
+    const fields: SettingsField<Fix>[] = [
+      { key: 'z', label: 'Z', type: 'select', options: [['a', 'A']], enabledBy: [{ field: 'x', equals: 'b' }] },
+      { key: 'x', label: 'X', type: 'select', options: [['a', 'A'], ['b', 'Б']] },
+    ]
+    const panel = build({ fields, pageSizes: undefined })
+    expect(specOf(panel, 'page.z').disabledWhen?.({ 'page.x': 'b' })).toBeUndefined()
+    expect(specOf(panel, 'page.z').disabledWhen?.({ 'page.x': 'a' })).toBe('доступно при «X» = «Б»')
+  })
+
   it('связка к полю вне панели игнорируется (поле свободно)', () => {
     const fields: SettingsField<Fix>[] = [
       { key: 'z', label: 'Z', type: 'select', options: [['a', 'A']], enabledBy: [{ field: 'x', equals: 'b' }] },

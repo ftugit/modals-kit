@@ -13,6 +13,8 @@ export function describeEvent(e: PaginatorEvent): string {
     case 'page-changed':
       return `Смена текущей страницы → ${e.page} (via: ${e.via})`
     default:
-      return (e as any).type
+      // Сюда попадает только вид события, которого приложение ещё не знает
+      // (библиотека новее): показываем имя, чтобы лог не врал «undefined».
+      return (e as { type: string }).type
   }
 }
