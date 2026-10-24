@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadBodies, checkSource } from './load-url-guard.mjs';
+import { readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { loadBodies, checkSource, checkDir } from './load-url-guard.mjs';
 
 test('ловит event.request.url в теле load', () => {
   const src = `export const load: PageServerLoad = async (event) => {
@@ -74,3 +76,29 @@ test('отлов не зависит от положения внутри тел
 }`
   assert.equal(checkSource(src, 'x.ts').length, 1);
 });
+
+/* ── боевой прогон по реальному каталогу ─────────────────────────────── */
+
+// Юнит-часть ниже держала правило честным, но САМ проект не проверялся:
+// живой блок `load-url-guard.mjs` срабатывает по `process.argv[1]`, а в
+// `node --test tooling/` это файл теста — то есть гейт «в проекте нет
+// `event.request.url` в load» не запускался никогда. Ошибка того же класса,
+// что мёртвое правило: проверка есть, а нарушение пройдёт молча.
+test('в проекте нет чтения event.request.url в load', () => {
+  const problems = checkDir(new URL('../src/routes', import.meta.url).pathname)
+  assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+test('гейт не фиктивен: серверные load/layout в проекте существуют', () => {
+  // Если бы `checkDir` обходил пустой каталог, предыдущий тест был бы пустым.
+  const found = []
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name)
+      if (statSync(path).isDirectory()) walk(path)
+      else if (/\.server\.ts$/.test(name) && /^\+(page|layout)/.test(name)) found.push(path)
+    }
+  }
+  walk(new URL('../src/routes', import.meta.url).pathname)
+  assert.ok(found.length > 0, 'не найдено ни одного +*.server.ts')
+})

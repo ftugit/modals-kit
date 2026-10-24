@@ -22,7 +22,10 @@ const BASE =
   process.env.LAYER_BACK_BASE ??
   `http://127.0.0.1:${process.env.MODALS_PORT ?? 5173}`;
 const ENGINES = { chromium, firefox, webkit };
-const wanted = (process.env.BROWSERS ?? "chromium,firefox,webkit")
+// По умолчанию — только Chromium: Firefox/WebKit ставятся отдельно, и проба
+// с тремя движками падала на запуске там, где их нет (ошибка выглядела как
+// провал проверки). Остальные движки — явно: BROWSERS=chromium,firefox,webkit.
+const wanted = (process.env.BROWSERS ?? "chromium")
   .split(",")
   .map((s) => s.trim());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

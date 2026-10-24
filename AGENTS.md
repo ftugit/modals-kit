@@ -10,7 +10,9 @@
 - **WASM / PGlite и `--no-liftoff`**: не убирать `execArgv: ['--no-liftoff']`, `testTimeout: 15_000` и ограничение воркеров (`--pool=forks --maxWorkers=1`) в `vite.config.ts` и скриптах `package.json` — в песочницах с малым пулом исполняемых страниц Liftoff роняет воркеры PGlite по `SIGSEGV`, а холодная компиляция `pglite.wasm` через TurboFan занимает ~8–9 с.
 - **Переменные сборки и превью**: при `vite build` и `vite preview` передавать `AUTH_SEAL_SECRET`, `KIT_TRUSTED_ORIGINS` и `PREVIEW_PORTS` (единый список доверенных origin строится в `src/server/trusted-origins.ts`).
 - **Браузерные тесты**:
-  - основные E2E-наборы (`npm run test:browser` — `shell.mjs`, `auth.mjs`, `modals.mjs`, `forms.mjs`, `forms-a11y.mjs`, `fields.mjs`, `steps.mjs`, `paginate.mjs`, `shikimori.mjs`, `db-demo.mjs`) запускаются против собранного превью (`vite build` → `vite preview --port 5173 --strictPort`);
+  - основные E2E-наборы (`npm run test:browser` — `regressions.mjs`, `modals.mjs`, `shell.mjs`, `steps.mjs`, `forms.mjs`, `forms-a11y.mjs`, `db-demo.mjs`, `fields.mjs`, `paginate.mjs`, `capabilities.mjs`, `errors.mjs`, `a11y.mjs`, `loader.mjs`, `auth.mjs`, `layer-back.check.mjs`, `url-storage.check.mjs`) запускаются против собранного превью (`vite build` → `vite preview --port 5173 --strictPort`);
+  - наборы, которым нужны секреты среды (`AUTH_SEAL_SECRET` для `auth.mjs`, `DB_CURSOR_SECRET` для курсорной части `url-storage.check.mjs` и `db-demo.mjs`), сами печатают `SKIP` с причиной — зелёный прогон без них означает «проверка не выполнялась», а не «всё хорошо»;
+  - живые внешние API — отдельной командой `npm run test:browser:live` (`shikimori.mjs`, `rickmorty.mjs`): они зависят от сети и в основной набор не входят;
   - компонентный браузерный прогон вложения `test/browser/attachment.mjs` динамически импортирует `.svelte`-фикстуру `/src/components/ui/attachment/AttachmentBrowserFixture.test.svelte` и запускается против живого `vite dev` с `ATTACHMENT_BASE="http://127.0.0.1:<port>/fields"`.
 
 ---

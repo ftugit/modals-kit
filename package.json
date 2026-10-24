@@ -26,7 +26,7 @@
     "test:classes": "node tooling/classes-audit.mjs",
     "test:size": "node tooling/size-budget.mjs",
     "test:public-api": "node tooling/public-api.mjs",
-    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/steps.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/db-demo.mjs && node test/browser/fields.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs",
+    "test:browser": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/steps.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/db-demo.mjs && node test/browser/fields.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs && node test/browser/a11y.mjs && node test/browser/loader.mjs && node test/browser/auth.mjs && node test/browser/layer-back.check.mjs && node test/browser/url-storage.check.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
     "test:browser:modals": "node test/browser/modals.mjs",
     "test:browser:shell": "node test/browser/shell.mjs",
@@ -41,7 +41,13 @@
     "test:browser:select-trace": "node test/browser/select-trace.mjs",
     "test:browser:errors": "node test/browser/errors.mjs",
     "test:db:probes": "node --no-liftoff --import tsx src/lib/db/probes/pglite.probe.mts && node --no-liftoff --import tsx src/lib/db/probes/order.probe.mts",
-    "test:db": "vitest run src/lib/db"
+    "test:db": "vitest run src/lib/db",
+    "test:browser:live": "node test/browser/shikimori.mjs && node test/browser/rickmorty.mjs",
+    "test:browser:loader": "node test/browser/loader.mjs",
+    "test:browser:a11y": "node test/browser/a11y.mjs",
+    "test:browser:auth": "node test/browser/auth.mjs",
+    "test:browser:url-storage": "node test/browser/url-storage.check.mjs",
+    "test:browser:layer-back": "node test/browser/layer-back.check.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^8.0.0",

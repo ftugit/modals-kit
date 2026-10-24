@@ -51,6 +51,14 @@ async function run() {
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
       const form = page.locator('#user-auth')
 
+      // Вход выключен без `AUTH_SEAL_SECRET` (ACL-экран `auth_disabled`): проверять
+      // шаги нечего, а провал «0 ссылок» выглядел как поломка формы. Пропуск
+      // называется своим именем и говорит, что задать.
+      if (!(await form.count())) {
+        console.log('  SKIP auth: на сервере не задан AUTH_SEAL_SECRET — /user/auth отдаёт экран «Вход выключен»')
+        return
+      }
+
       // 1. «Создать аккаунт» — ссылка с адресом шага (не мёртвая кнопка)
       const create = form.getByRole('link', { name: 'Создать аккаунт' })
       assert.equal(await create.count(), 1, '«Создать аккаунт» — ссылка')
