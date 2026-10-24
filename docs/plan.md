@@ -40,6 +40,9 @@
 
 ## 3. Открытые задачи развития
 
+> Развёрнутое описание каждого открытого пункта (состояние по коду, замеры, варианты,
+> рекомендация) и таблица спорных решений — [`docs/audit/open-issues.md`](./audit/open-issues.md).
+
 ### Конвейер изображений и файлов ([`docs/design/image-transfer.md`](./design/image-transfer.md))
 - [ ] **Этап R4 — механизм готов, хранение нет**: отложенный исход `outcome: 'queued'` (`pollUrl`/`statusUrl` из `#lib/form/queued.js`) уже проходит через `#hooks/component-form` (опрос — GET на адрес формы с `__form_task`, ответ `202`; демо — `src/routes/(site)/(app)/form/queue.server.ts` на `localStore`). Осталось: держать заявки в `sharedStore` (`cache_kv`), чтобы опрос переживал перезапуск инстанса.
 - [ ] **Этап R5**: полный перевод поля изображения `/fields` (`src/routes/(site)/(app)/fields/{forms.ts,fields.form.server.ts}`) на `field.photo(...)` из `#components/form/photo.js` с проверкой потолка пикселей (`maxPixels` / `maxSide`).
