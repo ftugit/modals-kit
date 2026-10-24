@@ -6,23 +6,19 @@
   // адреса (не полная навигация). Схема полей — в demo-schema.ts.
   import { page } from '$app/state'
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { untrack } from 'svelte'
   import { Steps, FormSteps, formSteps, stepLink, useSteps } from '#components/steps/index.js'
   import { asLink } from '#hooks/links/index.js'
-  import { bind } from '#lib/form/svelte/index.js'
   import FieldInput from '#components/form/Field.svelte'
   import Form from '#lib/form/svelte/Form.svelte'
   import Common from '#components/form/Common.svelte'
   import { Button } from '#components/ui/index.js'
   import { forms } from '#components/form/forms.config.js'
-  import { kitActionTransport } from '#hooks/component-form/transport.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
   import { FSTEP_STEPS, fstepForm } from './fstep-form.ts'
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#components/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
-  import type { Result } from '#lib/form/index.js'
 
-  let { form: action }: { form?: { result?: Result } | null } = $props()
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
@@ -83,11 +79,9 @@
     ],
     current: () => visibleAddress().url.searchParams.get('mstep') ?? 'about',
   })
-  const boundMixed = bind(forms, fstepForm, {
+  const boundMixed = bindComponentForm(forms, fstepForm, {
     action: '/steps?demo=mixed&mstep=form', // нативный POST приземляется на шаг куста
     instance: 'fstep:mixed',
-    transport: kitActionTransport('/steps'),
-    continuation: untrack(() => action?.result ?? null),
   })
   const fsMixed = formSteps(boundMixed, { steps: FSTEP_STEPS, at: 'form', host: mixedSteps })
 
@@ -97,10 +91,8 @@
      сам formSteps по результату привязки: отправленный — по Result.intent,
      следующий при успехе называет сервер в Result.data.step; no-JS стартует
      с результата-продолжения (continuation ниже). Страница ничего не качает. */
-  const bound = bind(forms, fstepForm, {
+  const bound = bindComponentForm(forms, fstepForm, {
     action: '/steps?demo=form',
-    transport: kitActionTransport('/steps'),
-    continuation: untrack(() => action?.result ?? null),
   })
   const fs = formSteps(bound, { steps: FSTEP_STEPS })
 

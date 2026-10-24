@@ -1,17 +1,15 @@
-// Приём демо-формы шагов (/steps, раздел 4). Экшен один на страницу:
-// намерение различает конверт. Шаг после ответа ведёт сам formSteps на
-// клиенте: отправленный срез он выводит из Result.intent, следующий при
-// успехе сервер называет в данных результата (data.step) — обёртка вокруг
-// результата шагу не нужна, JS и no-JS идут одним каналом.
-import { fail, type Actions } from '@sveltejs/kit'
-import { createFormHandler } from '#lib/form/server.js'
-import { SECURITY_LAYERS } from '#server/form-security.server.js'
-import '#components/form/extend.js'
+// Серверный POST-обработчик демо-формы шагов (`#hooks/component-form`).
+//
+// Раньше это был `actions.default` маршрута: страница платила своей серверной
+// точкой входа ради одной формы, а форма шагов — единственная на демо, которой
+// нужен приём «куда бы её ни вставили» (страница, шаг чужого хоста, модалка).
+// Теперь приём — там же, где у остальных встраиваемых форм: конверт называет
+// `__form_id`, обработчик находит регистрацию и отвечает той же кодировкой.
+import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { FSTEP_NEXT, fstepForm, type FstepStep } from './fstep-form.js'
 
-const handle = createFormHandler({
+registerComponentForm({
   description: fstepForm,
-  order: SECURITY_LAYERS,
   execute({ intent, values, commit, fail }) {
     // серверная-only проверка: правило, которого нет в описании формы, увидит
     // только сервер. Обе ошибки — про поля ПЕРВОГО шага: на финальном сохранении
@@ -45,11 +43,8 @@ const handle = createFormHandler({
         : { step: FSTEP_NEXT[intent as FstepStep] ?? 'contacts' },
     }
   },
+  // Успех без JS — страница в том же ответе: шаг и баннер стоят на результате
+  // (и `formSteps`, и `FormSteps` читают его как продолжение). `303` потерял бы
+  // ответ и вернул человека на первый шаг.
+  redirectOnSuccess: () => 'inline',
 })
-
-async function act(event: Parameters<Actions['default']>[0]) {
-  const { result, status } = await handle(event.request, 'action', event)
-  return result.ok && result.outcome !== 'not-applied' ? { result } : fail(status, { result })
-}
-
-export const actions: Actions = { default: act }
