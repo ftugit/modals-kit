@@ -11,6 +11,7 @@ import type {
   Stretch,
   TriggerZone,
 } from '#lib/paginate/index.js'
+import type { LoadMoreSlotRender } from '#lib/paginate/svelte/index.js'
 import type { PaginatorHostVariants } from './variants.js'
 
 /** Одна связка «поле доступно при значении другого». */
@@ -72,7 +73,8 @@ export interface PaginatorProps<T> {
   bottomZone?: TriggerZone
   prependBehavior?: PrependBehavior
   hashAnchor?: string | null
-  showIndicator?: boolean
+  /** `true` — индикатор с дефолтным текстом; строка — со своим. */
+  showIndicator?: boolean | string
   sentinel?: boolean
   /** `false` — не рендерить строку замены вообще; `boolean` — передать во `when` у `ReplaceLoadingRow`. */
   replaceLoading?: boolean | 'off'
@@ -83,6 +85,28 @@ export interface PaginatorProps<T> {
   onError?: (err: LibError) => void
   onColumns?: (n: number) => void
   toolbar?: Snippet
+  /**
+   * Раскладка списка. Оболочка (`PaginatorHost`, статусы, пустое состояние,
+   * подгрузка) — у компонента; потребитель добавляет СВОИ блоки там, где их
+   * место по смыслу. Две пары мест, и разница между ними существенна:
+   *   `header`/`footer` — внутри хоста, но ВНЕ контейнера строк (состояния
+   *   опроса, счётчики, легенды);
+   *   `beforeItems`/`afterItems` — внутри контейнера строк (шапка таблицы,
+   *   оптимистичные строки, которых ещё нет в источнике).
+   */
+  header?: Snippet
+  footer?: Snippet
+  beforeItems?: Snippet
+  afterItems?: Snippet
+  /** Замена текста пустого состояния (рисуется на месте EmptyState). */
+  empty?: Snippet
+  /** Подпись ссылки «показать ещё»; по умолчанию — текст хоста. */
+  loadMoreLabel?: Snippet<[LoadMoreSlotRender]>
+  /** Нижняя навигация потребителя — вместо `PageNav` с кнопкой сброса. */
+  nav?: Snippet
+  /** Класс и атрибуты контейнера со строками (рамка, `data-testid` потребителя). */
+  itemsClass?: string
+  itemsAttrs?: Record<string, string | undefined>
   renderItem: Snippet<[T, { page: number; index: number }]>
   renderSkeleton?: Snippet<[{ page: number; index: number }]>
   renderPending?: Snippet<[{ page: number }]>

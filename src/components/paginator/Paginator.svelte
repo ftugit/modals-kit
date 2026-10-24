@@ -49,41 +49,26 @@
     onError,
     onColumns,
     toolbar,
+    header,
+    footer,
+    beforeItems,
+    afterItems,
+    empty,
+    loadMoreLabel,
+    nav,
+    itemsClass,
+    itemsAttrs,
     renderItem,
     renderSkeleton,
     renderPending,
     renderDivider,
   }: PaginatorProps<T> = $props()
+
+  // Строки и пустое состояние — отдельный сниппет: он рисуется либо голым (как
+  // раньше), либо внутри контейнера потребителя, когда тот заказал свой.
 </script>
 
-<PaginatorHost
-  {name}
-  {ariaLabel}
-  {snapshot}
-  {externalPage}
-  {externalRestorable}
-  {currentSearch}
-  {mode}
-  {topTrigger}
-  {bottomTrigger}
-  {topZone}
-  {bottomZone}
-  {prependBehavior}
-  {hashAnchor}
-  {onError}
-  class={cn(paginatorHostVariants({ variant }), cls)}
-  {toolbar}
->
-  {#if showIndicator}
-    <LoadingIndicator {name} />
-  {/if}
-  {#if sentinel}
-    <EdgeSentinel dir={-1} {name} />
-    <LoadMoreLink dir={-1} {name} />
-  {/if}
-
-  <EmptyState {name} />
-
+{#snippet body()}
   {#if layout === 'columns'}
     <PageColumns
       {name}
@@ -109,6 +94,66 @@
     />
   {/if}
 
+  <!-- Пустое состояние — оболочка компонента: потребитель меняет только текст. -->
+  {#if empty}
+    <EmptyState {name}>{@render empty()}</EmptyState>
+  {:else}
+    <EmptyState {name} />
+  {/if}
+{/snippet}
+
+<PaginatorHost
+  {name}
+  {ariaLabel}
+  {snapshot}
+  {externalPage}
+  {externalRestorable}
+  {currentSearch}
+  {mode}
+  {topTrigger}
+  {bottomTrigger}
+  {topZone}
+  {bottomZone}
+  {prependBehavior}
+  {hashAnchor}
+  {onError}
+  class={cn(paginatorHostVariants({ variant }), cls)}
+  {toolbar}
+>
+  {#if showIndicator}
+    <!-- Строка вместо `true` — свой текст индикатора (дефолт «Загрузка…»). -->
+    <LoadingIndicator {name} text={typeof showIndicator === 'string' ? showIndicator : undefined} />
+  {/if}
+  {#if sentinel}
+    <EdgeSentinel dir={-1} {name} />
+    <LoadMoreLink dir={-1} {name}>
+      {#snippet label(p)}{@render loadMoreLabel?.(p)}{/snippet}
+    </LoadMoreLink>
+  {/if}
+
+  {#if header}
+    {@render header()}
+  {/if}
+
+  {#if beforeItems || afterItems || itemsClass || itemsAttrs}
+    <!--
+      Контейнер строк — собственность потребителя: рамка, разделители, `data-testid`.
+      Обёртка появляется только когда он её заказал, поэтому разметка прочих
+      потребителей (`class` со скроллом на самом хосте) не меняется.
+    -->
+    <div class={cn(itemsClass)} {...itemsAttrs}>
+      {@render beforeItems?.()}
+      {@render body()}
+      {@render afterItems?.()}
+    </div>
+  {:else}
+    {@render body()}
+  {/if}
+
+  {#if footer}
+    {@render footer()}
+  {/if}
+
   <LiveStatus {name} />
   <ErrorRow {name} />
   {#if replaceLoading !== 'off'}
@@ -116,12 +161,16 @@
   {/if}
 
   {#if sentinel}
-    <LoadMoreLink dir={1} {name} />
+    <LoadMoreLink dir={1} {name}>
+      {#snippet label(p)}{@render loadMoreLabel?.(p)}{/snippet}
+    </LoadMoreLink>
     <EdgeSentinel dir={1} {name} />
     <EndRow {name} />
   {/if}
 
-  {#if bottomNav}
+  {#if nav}
+    {@render nav()}
+  {:else if bottomNav}
     <PageNav {name}>
       {#snippet children()}
         <ResetButton {name} />

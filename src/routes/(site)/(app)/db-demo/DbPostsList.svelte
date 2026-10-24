@@ -25,18 +25,8 @@
   import { PaginatorHost, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { onDestroy, untrack } from 'svelte'
   import type { PaginatorState } from '#lib/paginate/index.js'
-  import {
-    EmptyState,
-    EndRow,
-    ErrorRow,
-    LiveStatus,
-    LoadMoreLink,
-    LoadingIndicator,
-    PageList,
-    PageNav,
-    PaginatorSettings,
-    type SettingsField,
-  } from '#components/paginator/ui/index.js'
+  import { PageNav, PaginatorSettings, type SettingsField } from '#components/paginator/ui/index.js'
+  import Paginator from '#components/paginator/Paginator.svelte'
   // ИМПОРТ ЗНАЧЕНИЯ, а не типа: пагинатор обязан быть зарегистрирован в том же
   // бандле, где рендерится хост. Иначе клиент падает на гидрации с
   // «Unknown paginator» (registry.ts), а SSR этого не видит.
@@ -333,22 +323,33 @@
 </script>
 
 <!--
+  Оболочку списка (хост, статусы `aria-live`, пустое состояние, подгрузка,
+  индикатор) собирает `Paginator`; здесь остаётся только то, что принадлежит
+  демо: настройки, состояние опроса, мета, шапка таблицы и её строки. Места для
+  своего — два, и разница по смыслу: `header` — ещё до рамки строк,
+  `beforeItems`/`afterItems` — уже внутри неё (оптимистичные карточки стоят рядом
+  со строками и попадают под те же разделители).
+
   Триггеры края — то, чем «курсор» отличается от «страниц» практически: в
   курсорном режиме внизу живёт ручной «показать ещё» (bottomTrigger="manual"), а
   сверху ничего: обратного указателя у keyset-шага нет, и ссылка «назад» вела бы не
   туда. В постраничном режиме оба триггера выключены, чтобы рядом с `PageNav` не
-  выросла вторая навигация. Без явного `manual`/`always` ссылка не рисуется вовсе
-  (`LoadMoreSlot.svelte: if (!always && trig !== 'manual') return false`) — значит,
-  «ссылки нет» здесь не отказ слоя, а дефолт хоста, и его нужно задать самому.
+  выросла вторая навигация. Сентинел и «конец списка» — тоже только у курсора: у
+  страниц край объявлен самой навигацией.
 -->
-<PaginatorHost
+<Paginator
   {name}
   {snapshot}
+  ariaLabel="Список записей демо"
+  class="max-h-[70vh] space-y-3 overflow-y-auto pr-1"
   mode={cursor ? 'accumulate' : 'single'}
   topTrigger="off"
   bottomTrigger={cursor ? 'manual' : 'off'}
-  class="max-h-[70vh] space-y-3 overflow-y-auto pr-1"
-  ariaLabel="Список записей демо"
+  sentinel={cursor}
+  bottomNav={false}
+  showIndicator="Загружаю страницу…"
+  itemsClass="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+  itemsAttrs={{ 'data-testid': 'rows' }}
 >
   {#snippet toolbar()}
     <PaginatorSettings
@@ -373,23 +374,22 @@
     </PaginatorSettings>
   {/snippet}
 
-  {#if extra.live && atEdge}
-    <!-- Состояние опроса видно текстом: «тихий» live-режим неотличим от сломанного,
-         а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
-    <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
-      <span>опрос новых: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
-      {#if unseen.length && atEdge}
-        <Button variant="outline" size="xs" data-testid="live-pill" onclick={showWaiting}>{freshLabel(unseen.length)}</Button>
-      {/if}
-    </p>
-  {/if}
+  {#snippet header()}
+    {#if extra.live && atEdge}
+      <!-- Состояние опроса видно текстом: «тихий» live-режим неотличим от сломанного,
+           а проверять «пауза на скрытой вкладке» иначе было бы нечем. -->
+      <p class="flex items-center gap-2 text-xs text-muted-foreground" data-testid="live-state">
+        <span>опрос новых: {live.stats().ticks} тиков{#if live.stats().errors}, сбоев {live.stats().errors}{/if}</span>
+        {#if unseen.length && atEdge}
+          <Button variant="outline" size="xs" data-testid="live-pill" onclick={showWaiting}>{freshLabel(unseen.length)}</Button>
+        {/if}
+      </p>
+    {/if}
 
-  <ListMeta {showRaw} />
-  <LoadingIndicator {name} text="Загружаю страницу…" />
-  <LiveStatus {name} />
-  <ErrorRow {name} />
+    <ListMeta {showRaw} />
+  {/snippet}
 
-  <div class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card" data-testid="rows">
+  {#snippet beforeItems()}
     <div class="flex items-baseline gap-3 px-4 py-2 text-xs text-muted-foreground">
       <span class="min-w-0 flex-1">title</span>
       <span>created_at</span>
@@ -400,38 +400,40 @@
         <DbPostPendingRow {card} {optimistic} />
       {/each}
     {/if}
-    <PageList {name}>
-      {#snippet renderItem(item: DbPost)}
-        <!--
-          Компонент общий с демо-пагинатором: `full` здесь включает полный id и метку
-          `row-id`, потому что на этой странице id копируют в форму удаления.
-        -->
-        <DbPostRow {item} full />
-      {/snippet}
-    </PageList>
+  {/snippet}
+
+  {#snippet afterItems()}
     {#if place === 'tail'}
       {#each cards as card (card.tmpId)}
         <DbPostPendingRow {card} {optimistic} />
       {/each}
     {/if}
-    <EmptyState {name}>
-      <p class="px-4 py-6 text-center text-sm text-muted-foreground">записей нет — добавьте первую формой слева</p>
-    </EmptyState>
-  </div>
+  {/snippet}
 
-  {#if cursor}
-    <LoadMoreLink dir={1} {name}>
-      {#snippet label(p)}
-        <!--
-          Подпись говорит про токен: это не «страница N из M», продолжения без
-          указателя не существует, и врать про номера здесь — значит портить
-          проверку «что именно загрузки, а не перезагрузки».
-        -->
-        <span data-testid="cursor-next">↓ дальше по указателю{#if p.href} (ссылка без JS){/if}</span>
-      {/snippet}
-    </LoadMoreLink>
-    <EndRow {name} />
-  {:else}
-    <PageNav {name} counter class="flex items-center gap-2 text-sm" />
-  {/if}
-</PaginatorHost>
+  {#snippet empty()}
+    <p class="px-4 py-6 text-center text-sm text-muted-foreground">записей нет — добавьте первую формой слева</p>
+  {/snippet}
+
+  {#snippet loadMoreLabel(p)}
+    <!--
+      Подпись говорит про токен: это не «страница N из M», продолжения без
+      указателя не существует, и врать про номера здесь — значит портить
+      проверку «что именно загрузки, а не перезагрузки».
+    -->
+    <span data-testid="cursor-next">↓ дальше по указателю{#if p.href} (ссылка без JS){/if}</span>
+  {/snippet}
+
+  {#snippet nav()}
+    {#if !cursor}
+      <PageNav {name} counter class="flex items-center gap-2 text-sm" />
+    {/if}
+  {/snippet}
+
+  {#snippet renderItem(item: DbPost)}
+    <!--
+      Компонент общий с демо-пагинатором: `full` здесь включает полный id и метку
+      `row-id`, потому что на этой странице id копируют в форму удаления.
+    -->
+    <DbPostRow {item} full />
+  {/snippet}
+</Paginator>
