@@ -9,6 +9,7 @@ import type { Extra } from '#lib/paginate/types.js'
 import type { AdaptedSource, ExtraSearchSpec } from '#lib/paginate/index.js'
 import type { LibSearchOptions } from './accumulator'
 
+/** Настройка поиска поверх источника: словарь, порог и каналы отчёта. */
 export type SearchConfig<T> = {
   /** Уникальное имя поиска; оно же — имя пагинатора (R17: deny by default). */
   name: string
@@ -51,6 +52,7 @@ export type SearchConfig<T> = {
   reloadKeys?: readonly string[]
 }
 
+/** Экземпляр поиска: статистика, подпись коррекции и сброс. */
 export type SearchInstance = {
   name: string
   pageParam: string

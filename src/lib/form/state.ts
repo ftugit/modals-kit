@@ -3,6 +3,7 @@
 import type { FormError, Outcome, Result } from './result'
 import type { FieldPath, Revision } from './types'
 
+/** Состояние формы: значения, факты и показ ошибок, ход отправки и результат. */
 export interface FormState {
   readonly revision: Revision
   readonly status: 'idle' | 'validating' | 'submitting' | 'queued' | 'success' | 'error'
@@ -78,6 +79,7 @@ function isStructural(x: unknown): x is object {
   return proto === Object.prototype || proto === null
 }
 
+/** Хранилище состояния формы: единственное место, где меняются значения и ошибки. */
 export class FormStore {
   #state: FormState
   #listeners = new Set<() => void>()

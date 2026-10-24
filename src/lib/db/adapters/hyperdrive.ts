@@ -56,6 +56,7 @@ async function withDeadline<T>(
   }
 }
 
+/** Драйвер Cloudflare Hyperdrive: пул соединений платформы как `pg`-совместимый. */
 export function hyperdriveAdapter(config: HyperdriveConfig): Driver {
   const timeoutMs = config.timeoutMs ?? 15000,
     max = config.maxInFlight ?? 5;

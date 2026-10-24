@@ -7,8 +7,8 @@
 ## 1. Выполненные этапы
 
 ### Пятислойная архитектура, ядра библиотек и инфраструктура (`S1` → `S6`)
-- [x] **Чистые ядра и пятислойная иерархия (`#lib/*` → `#hooks/*` → `#components/*` → `#content/*` → `#server/*` / `routes`)** ([`docs/audit/architecture.md`](./audit/architecture.md)): ноль импортов UI-фреймворка в ядрах, строгая граница `*.server.ts`, изоляция учебных источников в `src/content/demo-catalog/`, типизированный реестр маршрутов `routes.ts` / `kitRoute` в `#lib/address`, автоматический контроль в `tooling/{layer-guard,core-purity,classes-audit,load-url-guard,source-schema-guard,db-docs,ark-owns,form-size,size-budget}.mjs`.
-- [x] **Единый источник истины UI-слоя (`U1`–`U9`, `F1`–`F9`)** ([`docs/audit/ui-consistency.md`](./audit/ui-consistency.md), [`src/components/ui/README.md`](../src/components/ui/README.md)): `fieldBase`, `affixButtonClass`, `controlBase` в `ui/field/field.ts`, `CloseIcon`, `RadioGroup` и `Range` по эталонам `shadcn` v4, единый `FieldShell` (`labelPlacement`), `Skeleton`, закон `class` / `wrapperClass` и глобальный `aria-invalid:`.
+- [x] **Чистые ядра и пятислойная иерархия (`#lib/*` → `#hooks/*` → `#components/*` → `#content/*` → `#server/*` / `routes`)** ([`AGENTS.md`](../AGENTS.md) §1–§2): ноль импортов UI-фреймворка в ядрах, строгая граница `*.server.ts`, изоляция учебных источников в `src/content/demo-catalog/`, типизированный реестр маршрутов `routes.ts` / `kitRoute` в `#lib/address`, автоматический контроль в `tooling/{layer-guard,core-purity,classes-audit,load-url-guard,source-schema-guard,db-docs,ark-owns,form-size,size-budget}.mjs`.
+- [x] **Единый источник истины UI-слоя (`U1`–`U9`, `F1`–`F9`)** ([`src/components/ui/README.md`](../src/components/ui/README.md)): `fieldBase`, `affixButtonClass`, `controlBase` в `ui/field/field.ts`, `CloseIcon`, `RadioGroup` и `Range` по эталонам `shadcn` v4, единый `FieldShell` (`labelPlacement`), `Skeleton`, закон `class` / `wrapperClass` и глобальный `aria-invalid:`.
 - [x] **Симуляция переноса на React 19 + React Router v7** (`sim/react-router/`): доказана переносимость ядер `#lib/address`, `#lib/modals`, `#lib/form`, `#lib/paginate` без правок в `src/lib/`.
 - [x] **Общее хранилище `#lib/cache` в PostgreSQL** (`src/hooks/cache-db.ts`, `src/server/cache.server.ts`): модель `cacheKv`, `pgStore` с часами БД (`clock_timestamp()`), областями и атомарными `add`/`incr`.
 - [x] **Живое обновление списков `/db-demo`** (`src/routes/(site)/(app)/db-demo/{live.svelte.ts,fresh.ts}`, `src/server/live-cache.server.ts`): раздельный опрос новых, изменённых и удалённых записей с `ETag`/`304`, `backoffDelay` и удержанием позиции скролла.
@@ -25,7 +25,7 @@
 ### Модуль пользователя (`src/content/user/`)
 - [x] **Доменное ядро и жизненный цикл сессии (`AS-01` .. `AS-09`)**: Ed25519 `seed` + одноразовый `challenge` с автообновлением при отказе, ротация/сериализация `renew` по `jti`, Lamport-синхронизация `vault` между вкладками, SSR-проверка через `guard()` и восстановление по `auth_sid`, отзыв в БД при истёкшей `auth_tmp`, `restoreDeleted`, `verifySeed`, `sweepDeletions`.
 - [x] **Полный UI `Acl`, маршруты и модалки** (`src/content/user/{routes.ts,modals.ts,acl.ts,ui/Acl.svelte}`, `ui/seed-form/`, `ui/profile-form/`).
-- [x] **Полная сквозная верификация (`TB-15`)** *(числа — срез на момент закрытия)*: зелёные `test:guard` (`128/128`), `test:classes`, `svelte-check` (`0/0`), `vitest` (`111/111` файлов, `1355/1355` тестов), `test:db:probes`, `vite build`, `test:size` и все `11/11` браузерных Playwright-сьютов.
+- [x] **Полная сквозная верификация (`TB-15`)** *(числа — текущий прогон)*: зелёные `test:guard` (`144/144`), `test:public-api` (10 пакетов / 35 входов), `test:classes`, `svelte-check` (`0 errors, 0 warnings`), `vitest` (`114/114` файлов, `1394/1394` теста), `test:db:probes`, `vite build`, `test:size` и браузерные наборы `test/browser/*` (16 сценариев в `test:browser`, включая `attachment` и живые `shikimori`/`rickmorty`).
 
 ---
 
@@ -41,7 +41,7 @@
 ## 3. Открытые задачи развития
 
 ### Конвейер изображений и файлов ([`docs/design/image-transfer.md`](./design/image-transfer.md))
-- [ ] **Этап R4**: поддержка отложенного исхода `outcome: 'queued'` (`pollUrl` + `statusUrl` из `#lib/form/queued.js`) в `#hooks/component-form` и хранение заявок в `sharedStore`.
+- [ ] **Этап R4 — механизм готов, хранение нет**: отложенный исход `outcome: 'queued'` (`pollUrl`/`statusUrl` из `#lib/form/queued.js`) уже проходит через `#hooks/component-form` (опрос — GET на адрес формы с `__form_task`, ответ `202`; демо — `src/routes/(site)/(app)/form/queue.server.ts` на `localStore`). Осталось: держать заявки в `sharedStore` (`cache_kv`), чтобы опрос переживал перезапуск инстанса.
 - [ ] **Этап R5**: полный перевод поля изображения `/fields` (`src/routes/(site)/(app)/fields/{forms.ts,fields.form.server.ts}`) на `field.photo(...)` из `#components/form/photo.js` с проверкой потолка пикселей (`maxPixels` / `maxSide`).
 - [ ] **Этап R7**: брендированный тип `PreparedFile` на границе записи и правило `tooling/layer-guard.mjs` против чтения сырых байтов `File` в маршрутах мимо `#lib/image`.
 
@@ -55,6 +55,11 @@
 ### Безопасность клиента и переносимость
 - [ ] **Включение `kit.csp`** ([`docs/design/client-integrity.md`](./design/client-integrity.md)): добавить `csp` в `vite.config.ts` (хэш/внешний скрипт для ранней темы в `src/app.html`, self-host шрифта `Manrope`, учёт iframe-превью в dev).
 - [ ] **Вынос UI-строк из `src/lib/`** (шаг 1 [`docs/design/port-plan.md`](./design/port-plan.md)): перенести оставшиеся русские строки в словари/опции по образцу `#lib/form/messages.js`.
+
+### Известные ограничения (не баги, но и не сделано)
+- **SEO-поля `PageHead`** (`useHeadSeo` в `src/components/shell/page.svelte.ts`) нигде не вызываются: `description`/OG/canonical не заполняются, а подпись функции обещает реактивность, которой при SSR нет. Маршруты ставят `<title>` своим `<svelte:head>`; механизм остаётся незадействованным до появления реальных метаданных.
+- **Один инстанс процесса:** часть состояния живёт в памяти (`localStore`), поэтому multi-instance деплой требует `sharedStore` — это `TB-04`, `TB-06b` и `TB-13` в реестре.
+- **Безопасность клиентского контура:** `kit.csp` не включён ([`docs/design/client-integrity.md`](./design/client-integrity.md)) — хэш/внешний скрипт ранней темы и self-host шрифта ещё не сделаны.
 
 ### Отложенные треки `#lib/db`
 - [ ] **ACL-схема коллекций и generic REST-слой** — проект и приёмочная матрица зафиксированы в [`src/lib/db/docs/ACL-DESIGN.md`](../src/lib/db/docs/ACL-DESIGN.md) (реализация отложена владельцем).

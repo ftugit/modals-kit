@@ -9,6 +9,7 @@ import { defaultRegistry, type Registry } from './registry'
 import type { InputMode, ValueKind } from './types'
 import type { ValidatorRef } from './validators'
 
+/** Правило в спеке формы: вид ограничения, аргумент и его проверка. */
 export interface SpecRule {
   /** Имя зарегистрированного валидатора. */
   readonly rule: string
@@ -47,6 +48,7 @@ export interface CompileOptions {
   allowCustomPattern?: boolean
 }
 
+/** Итог компиляции спеки: описание формы либо список отказов с путями. */
 export type CompileResult =
   | { ok: true; field: FieldDescriptor }
   | { ok: false; defects: readonly FieldDefect[] }

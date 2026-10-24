@@ -32,6 +32,7 @@ import {
   type LinkIndicatorMode,
 } from './state.svelte.js'
 
+/** Настройка `asModalLink`: адрес ссылки и что делать с текущей стопкой модалок. */
 export interface ModalLinkOptions extends ChainOverrides {
   /** Готовый адрес для перехода без JS. По умолчанию: `route`, иначе адрес с `?modal=…`. */
   href?: string

@@ -28,6 +28,7 @@ export function pageWindow(
 /** Предел разброса ширины колонки: одно число — симметрично (±), либо пара. Px или '%'. */
 export type Stretch = number | string | { shrink: number | string; grow: number | string }
 
+/** Настройка авто-колонок: целевая ширина, допуск и потолок. */
 export type ColumnsAutoOptions = {
   /** Ширина контейнера, px. */
   width: number
@@ -43,6 +44,7 @@ export type ColumnsAutoOptions = {
   max?: number
 }
 
+/** Итог авто-раскладки: число колонок и фактическая ширина. */
 export type ColumnsAutoResult = {
   /** Число колонок. */
   count: number

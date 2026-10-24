@@ -23,6 +23,7 @@ import {
   type LinkIndicatorMode,
 } from './state.svelte.js'
 
+/** Настройка `asLink`: проверка пути, поведение при ошибке и запись истории. */
 export interface LinkOptions {
   /**
    * `false` — при ошибке загрузчика (и при отказе самой предзагрузки: сеть,

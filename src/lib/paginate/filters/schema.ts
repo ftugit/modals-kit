@@ -8,6 +8,7 @@ import { modes, bounds } from './internal'
 /** `and` — все значения, `or` — любое, `not` — исключение (красные чипы). */
 export type CatalogFilterMode = 'and' | 'or' | 'not'
 
+/** Вариант значения фильтра: значение, подпись и признак «только с JS». */
 export type CatalogFilterOption = {
   value: string
   label: string
@@ -19,6 +20,7 @@ export type CatalogFilterOption = {
   disabled?: boolean
 }
 
+/** Поле фильтра в схеме: ключ, подпись, вид контрола и варианты. */
 export type CatalogFilterField = {
   key: string
   label: string
@@ -80,6 +82,7 @@ export type CatalogFilterRule = {
   message?: string
 }
 
+/** Схема фильтров источника: поля, связки, версия и время сборки. */
 export type CatalogFilterSchema = {
   source: string
   version: number
@@ -192,6 +195,7 @@ function validateCatalogFilterRules(
   })
 }
 
+/** Проверяет схему фильтров с сервера и бросает на мусоре. */
 export function validateCatalogFilterSchema(input: unknown): CatalogFilterSchema {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid catalog filter schema')
   const value = input as Partial<CatalogFilterSchema>

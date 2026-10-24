@@ -9,6 +9,7 @@ import { FieldTypeRegistry, type FieldType } from './field-types'
 import { InstructionRegistry, type ErrorInstruction } from './external'
 import { BUILTIN_VALIDATORS, ValidatorRegistry, type Validator } from './validators'
 
+/** Реестр типов значений и представлений: типы, входы (`input`) и правила, доступные описанию. */
 export class Registry {
   readonly types = new FieldTypeRegistry()
   readonly validators = new ValidatorRegistry()
@@ -36,6 +37,7 @@ export class Registry {
   patterns(): readonly string[] { return [...this.#patterns.keys()] }
 }
 
+/** Встроенные шаблоны `pattern` (`email`, `e164`, `digits`…), доступные правилу `v.pattern`. */
 export const BUILTIN_PATTERNS: Readonly<Record<string, string>> = {
   e164: '\\+[1-9]\\d{7,14}',
   slug: '[a-z0-9]+(?:-[a-z0-9]+)*',

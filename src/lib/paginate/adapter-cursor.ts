@@ -11,6 +11,7 @@ import type {
   PaginatorState,
 } from './types'
 
+/** Источник с продолжением по подписанному указателю (keyset). */
 export type CursorSource<T> = {
   id: string
   capabilities: {
@@ -93,6 +94,7 @@ function fingerprint(source: string, pageSize: number, extra: Extra): string {
   return `${source}|${pageSize}|${stable(extra)}`
 }
 
+/** Адаптер курсорного режима: указатель следующего шага вместо номеров страниц. */
 export function createCursorAdapter<T>(options: {
   name: string
   source: CursorSource<T>

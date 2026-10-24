@@ -20,6 +20,7 @@
 import { BROWSER } from 'esm-env'
 import type { CatalogFilterSchema } from './schema'
 
+/** Память схем фильтров во вкладке: `remember`/`recall` по источнику. */
 export interface CatalogFilterSchemaMemory {
   /** Запомнить схему под её `source` (повторная — заменяет прежнюю). */
   remember(schema: CatalogFilterSchema): void

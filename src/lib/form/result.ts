@@ -5,6 +5,7 @@ import type { FieldPath, FormId, InstanceId, Revision, SubmissionId } from './ty
 /** Четыре значения, и ни одного «наверное». */
 export type Outcome = 'not-applied' | 'committed' | 'unknown' | 'queued'
 
+/** Ошибка в языке показа: `path`, `code`, текст и происхождение (`client`, `server`). */
 export interface FormError {
   readonly id: string            // стабильный: `${path|'*'}:${code}:${hash(params)}`
   readonly code: string
@@ -98,9 +99,11 @@ export function stableStringify(x: unknown): string {
     .join(',')}}`
 }
 
+/** Стабильный идентификатор ошибки — по нему показ отличает «та же ошибка» от новой. */
 export const stableId = (e: { path?: string; code: string; params?: unknown }) =>
   `${e.path ?? '*'}:${e.code}:${hash(e.params ?? null)}`
 
+/** Функция подстановки параметров в текст сообщения (словарь приложения). */
 export type RenderMessage = (
   code: string, params?: Record<string, unknown>,
   /** `path` — для ключа «поле:код» в словаре; `template` — свой текст ошибки. */

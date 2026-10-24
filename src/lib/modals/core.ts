@@ -27,6 +27,7 @@ export const RESERVED_KEYS = [
   'pack',
 ] as const
 
+/** Ключ состояния цепочки модалок в записи истории (`?modal`-слой). */
 export const CHAIN_KEY = 'modal'
 
 type Lookup = (name: string) => ModalDefinition<any, any, any> | undefined
@@ -44,6 +45,7 @@ export function decodeScalar(raw: string): unknown {
   return raw
 }
 
+/** Кодирует скаляр цепочки в строку адреса (и обратно в `decodeScalar`). */
 export function encodeScalar(value: unknown): string {
   return typeof value === 'string' ? value : String(value)
 }

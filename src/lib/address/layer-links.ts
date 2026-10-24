@@ -34,6 +34,7 @@ export interface LinksStorage {
   setItem(key: string, value: string): void
 }
 
+/** Связи слоёв адреса: запоминает, что страница держит в `?modal`/`?page`. */
 export interface LayerLinks {
   /** Слой `layer` открыт поверх записи `base`. */
   link(layer: string, base: string): void
@@ -50,6 +51,7 @@ export interface LayerLinks {
   snapshot(): Readonly<Record<string, string>>
 }
 
+/** Ключ `localStorage` для связей слоёв адреса. */
 export const LAYER_LINKS_STORAGE_KEY = 'router:layer-links'
 
 /** Стопка слоёв глубже этого — повреждённые данные (цикл), а не интерфейс. */
@@ -68,6 +70,7 @@ function parse(raw: string | null): Record<string, string> {
   }
 }
 
+/** Создаёт реестр связей слоёв поверх хранилища (по умолчанию — `localStorage`). */
 export function createLayerLinks(storage?: LinksStorage, key = LAYER_LINKS_STORAGE_KEY): LayerLinks {
   // Хранилище может быть недоступно (приватный режим, запрет cookies): тогда
   // связки живут только в памяти вкладки — до перезагрузки.

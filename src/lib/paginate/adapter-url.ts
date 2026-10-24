@@ -37,6 +37,7 @@ export function decodeExtraValue(raw: string): ExtraValue {
   return raw
 }
 
+/** Кодирование значения extra в строку адреса (иначе — потеря при перезагрузке). */
 export function encodeExtraValue(v: ExtraValue): string {
   return v === null ? 'null' : String(v)
 }
@@ -141,6 +142,7 @@ export function warnExtraDropped(base: string, key: string, raw: string, reason:
   )
 }
 
+/** Настройка чтения адреса: префикс ключей, размер страницы и спека extra. */
 export type PaginatorSearchOptions = {
   /** Базовый ключ (default 'page'). */
   pageParam?: string
@@ -274,6 +276,7 @@ export function canonicalSearchRecord(
   return out
 }
 
+/** Разбор адреса в extra пагинатора (`?page`, `?page.size`, `?page.<key>`). */
 export function paginatorSearch(
   opts: PaginatorSearchOptions | readonly PaginatorSearchOptions[] = {},
 ): (params: URLSearchParams) => Record<string, unknown> {
@@ -354,6 +357,7 @@ function searchToParams(search: Record<string, unknown>): URLSearchParams {
   return params
 }
 
+/** Адаптер «всё в адресе»: страница, размер и extra — ключи URL. */
 export function createUrlAdapter<T>(opts: {
   name: string
   source: AdaptedSource<T>

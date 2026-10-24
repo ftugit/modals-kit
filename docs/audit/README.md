@@ -4,12 +4,10 @@
 
 ## Документы раздела
 
-- **[`architecture.md`](./architecture.md)** — мастер-план и сквозной чек-лист (`S1` → `S6`, **все 6 этапов выполнены**): 5 верхних слоёв (`#lib/*`, `#hooks/*`, `#components/*`, `#content/*`, `#server/*`), папочные UI-модули `src/components/{fields,paginator}/`, изоляция витрин в `src/content/demo-catalog/`, автономный `src/content/user/{routes,modals}.ts` и единый реестр маршрутов в `#lib/address`.
-- **[`ui-consistency.md`](./ui-consistency.md)** — ревизия принципа «один источник истины» в `src/components/ui` и `src/components/form` (`U1`–`U9`, `F1`–`F9`, **все 18 пунктов закрыты**, правила зафиксированы в [`../../src/components/ui/README.md`](../../src/components/ui/README.md)).
-- **[`auth-session.md`](./auth-session.md)** — аудит жизненного цикла сессии и токенов (**выполнено и повторно верифицировано**: единый `vault` на замыкании без сырых токенов, Lamport-синхронизация вкладок, сериализованный `renew` и исправление всех находок `AS-01` .. `AS-09`).
-- **[`testing-backlog.md`](./testing-backlog.md)** — актуальный статус задач `TB-01` .. `TB-15` после рефакторинга `S1`–`S6` и полного прогона тестов: закрытые пункты отделены от открытого бэклога с точными путями файлов.
-- **[`ratings.md`](./ratings.md)** — историческая пофайловая оценка `src/` по критериям K1–K10 (срез до переезда папок `S5`).
-- **[`crutches.md`](./crutches.md)** — подробный разбор исторических костылей (`C1`–`C10`), архитектурных дефектов и решений по их устранению.
+- **[`testing-backlog.md`](./testing-backlog.md)** — реестр задач `TB-01` .. `TB-15`: закрытые отделены от открытого бэклога, у каждого пункта точные пути файлов.
+- **[`crutches.md`](./crutches.md)** — разбор исторических костылей (`C1`–`C13`) и багов (`F1`–`F54`) с причинами решений; на него ссылаются комментарии в коде, поэтому документ живёт как журнал «почему так».
+
+Закрытые чек-листы (`architecture.md` — `S1`–`S6`, `ui-consistency.md` — `U1`–`U9`/`F1`–`F9`, `auth-session.md` — `AS-01`–`AS-09`, `ratings.md` — пофайловая оценка) удалены при чистке документации: инварианты, которые они фиксировали, теперь живут там, где их проверяют — в [`AGENTS.md`](../../AGENTS.md), [`src/components/ui/README.md`](../../src/components/ui/README.md), README пакетов `src/lib/*` и стражах `tooling/`.
 
 ## Связанные проектные документы
 
@@ -32,4 +30,4 @@
 | `tooling/classes-audit.mjs` | Отсутствие маркерных CSS-классов и утилит UnoCSS (включая `aria-*:` / `data-*:`) без сгенерированных правил. |
 | `tooling/ark-owns.mjs` | Запрет ручного дублирования focus-trap, scroll-lock и возврата фокуса поверх машин Ark UI / Zag. |
 | `tooling/form-size.mjs`, `tooling/size-budget.mjs` | Бюджеты gzip-веса ядра форм, общего клиентского бандла и начальной загрузки всех маршрутов. |
-| `tooling/public-api.mjs` | Публичный вход пакетов `src/lib/<pkg>`: снаружи допустимы только спецификаторы из `entrypoints.json`. Запускается командой `node tooling/public-api.mjs` и тестом `tooling/public-api.test.mjs`; **в `vite.config.ts` не подключён** (открыто: см. отчёт аудита `S2`). |
+| `tooling/public-api.mjs` | Публичный вход пакетов `src/lib/<pkg>`: снаружи допустимы только спецификаторы из `entrypoints.json`. Прогоняется тестом `tooling/public-api.test.mjs` в составе `test:guard` (`node --test tooling/*.test.mjs`) и вручную — `node tooling/public-api.mjs`; отдельного vite-плагина нет намеренно: проверка статическая, ей не нужен граф сборки. |

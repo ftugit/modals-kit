@@ -4,14 +4,17 @@
 // вернулся ниже линии + `pageHysteresis` → закончилась. Текущая = pickCurrentPage (max прошедших).
 // Гистерезис нужен, потому что рука дрожит: без запаса одна и та же линия пересекается несколько раз.
 // Сентинелы — свои IO на зоны краёв (topZone/bottomZone).
+/** Якорь окна: страница или сентинел направления прокрутки. */
 export type AnchorKind = { type: 'page'; page: number } | { type: 'sentinel'; dir: 1 | -1 }
 
+/** Трекер якорей: запоминает позиции строк и восстанавливает прокрутку. */
 export type AnchorTracker = {
   observe(el: Element, kind: AnchorKind): void
   unobserve(el: Element): void
   destroy(): void
 }
 
+/** Обработчики трекера: захват позиции и её восстановление. */
 export type AnchorTrackerHandlers = {
   /** Вызывается при ИЗМЕНЕНИИ множества страниц, чьи маркеры прошли линию (копия Set). */
   onPassedPages(pages: ReadonlySet<number>): void
@@ -38,6 +41,7 @@ export function zoneRootMargin(zone: TriggerZone | undefined, side: 'top' | 'bot
   return side === 'top' ? `${v} 0px 0px 0px` : `0px 0px ${v} 0px`
 }
 
+/** Настройка трекера: корень прокрутки, допуск и драйвер скролла. */
 export type AnchorTrackerOptions = {
   /** Зона ВЕРХНЕГО сентинела (см. TriggerZone). Default: 'edge'. */
   topZone?: TriggerZone
@@ -49,6 +53,7 @@ export type AnchorTrackerOptions = {
   pageHysteresis?: number
 }
 
+/** Создаёт трекер якорей, привязанный к корню прокрутки. */
 export function createAnchorTracker(
   root: Element | null,
   handlers: AnchorTrackerHandlers,
@@ -187,6 +192,7 @@ export type AnchorRegistry = {
   getElement(key: string): Element | null
 }
 
+/** Реестр трекеров по имени пагинатора — хосту нужен один на список. */
 export function createAnchorRegistry(): AnchorRegistry {
   // Раунд-4: на ключ может быть НЕСКОЛЬКО элементов (блочные якоря колонок: один на
   // колонку для страницы). getElement отдаёт ВЕРХНИЙ по rect.top — начало страницы.

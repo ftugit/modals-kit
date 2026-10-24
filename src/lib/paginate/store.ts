@@ -4,6 +4,7 @@
 import { EMPTY_CAPABILITIES, type SourceCapabilities } from './source'
 import type { Extra, PaginatorState } from './types'
 
+/** Начальное состояние пагинатора: пустое окно, extra из умолчаний адаптера. */
 export function initialState<T>(
   name: string,
   pageSize: number,
@@ -53,6 +54,7 @@ export type Store = {
   subscribe?<T>(name: string, listener: (state: PaginatorState<T>) => void): () => void
 }
 
+/** Хранилище пагинаторов по имени: одно на приложение. */
 export function createPaginatorStore(): Store {
   const cells = new Map<string, Cell>()
   const hydrated = new Set<string>()
@@ -110,6 +112,7 @@ export function createPaginatorStore(): Store {
  */
 let clientStore: Store | null = null
 
+/** Клиентское хранилище пагинаторов — единственный вход для действий страницы. */
 export function getClientStore(): Store {
   if (!clientStore) clientStore = createPaginatorStore()
   return clientStore

@@ -52,6 +52,7 @@
 
 import { checkKeys } from './keys.js'
 
+/** Снимок адреса: путь, поиск и состояние истории, согласованные между собой. */
 export interface AddressSnapshot {
   /** Видимый адрес без `#фрагмента` (фрагмент принадлежит странице). */
   readonly url: Readonly<URL>
@@ -67,6 +68,7 @@ export interface AddressChange {
   readonly state?: Readonly<Record<string, unknown>>
 }
 
+/** Настройка записи в адрес: как писать (push/replace), состояние и якорь. */
 export interface AddressWriteOptions {
   /** Заменить текущую запись (`true`) или добавить новую (`false`). */
   readonly replace: boolean
@@ -79,6 +81,7 @@ export interface AddressWriteOptions {
   readonly owner?: string
 }
 
+/** Готовая запись адреса: URL и состояние — её исполняет адаптер среды. */
 export interface AddressCommit {
   readonly href: string
   readonly state: Record<string, unknown>
@@ -86,6 +89,7 @@ export interface AddressCommit {
   readonly load: boolean
 }
 
+/** Зависимости писателя: чтение текущего адреса и исполнение записи. */
 export interface AddressWriterDeps {
   /** Реальность фреймворка: видимый адрес и состояние текущей записи. */
   read(): AddressSnapshot
@@ -105,6 +109,7 @@ export interface AddressWriterDeps {
 /** Ключ строки запроса принадлежит слою (модалкам), а не странице. */
 export type LayerKeyTest = (key: string) => boolean
 
+/** Писатель адреса: собирает и применяет записи, не зная про среду. */
 export interface AddressWriter {
   /** Намерение, если есть незаписанное, иначе реальность. */
   visible(): AddressSnapshot
@@ -174,6 +179,7 @@ const sameState = (a: unknown, b: unknown): boolean => {
   }
 }
 
+/** Создаёт писателя адреса поверх адаптера среды. */
 export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
   const queue: Step[] = []
   let inflight: WriteStep | null = null

@@ -58,6 +58,7 @@ export type SourceInput = {
   filters: Readonly<Record<string, string>>
 }
 
+/** Данные источника: страница по ключам адреса и отфильтрованному входу. */
 export type SourceData<T> = (look: SourceLook, input: SourceInput) => Promise<PageResponse<T>>
 
 /**

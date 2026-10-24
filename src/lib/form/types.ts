@@ -23,6 +23,7 @@ export interface FieldValues {
   /** Поля, которые собрал пользователь (`field.fields`). */
   fields: readonly FieldSetItem[]
 }
+/** Вид значения поля: известное имя из `FieldValues` или своё, зарегистрированное приложением. */
 export type ValueKind = (keyof FieldValues & string) | (string & {})
 
 /** Представление → как поле выглядит в разметке. Расширяется потребителем. */
@@ -37,14 +38,21 @@ export interface InputModes {
   /** Набор полей от пользователя: места расставляет разметка приложения (`fieldSet`). */
   fields: true
 }
+/** Режим ввода (`inputmode`): известное имя или своё. */
 export type InputMode = (keyof InputModes & string) | (string & {})
 
+/** Путь поля в описании формы — имя поля верхнего уровня. */
 export type FieldPath = string
+/** Идентификатор формы: `[a-z][a-z0-9_-]{0,31}` (иначе конверт отвергается). */
 export type FormId = string
+/** Идентификатор экземпляра формы (`<formId>:<метка>`): им форма отличает свои результаты. */
 export type InstanceId = string
+/** Идентификатор отправки: связывает результат с конкретным нажатием кнопки. */
 export type SubmissionId = string
+/** Ревизия описания: клиент присылает её в конверте, сервер выбирает описание по ней. */
 export type Revision = number
 
+/** Атрибуты разметки, выведенные из ограничений (`required`, `pattern`, `min`…). */
 export type HtmlAttrs = Record<string, unknown>
 
 /**

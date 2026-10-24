@@ -8,6 +8,7 @@ import { getPaginator, type LastAction, type PaginatorInstance } from './registr
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraPatch, ExtraValue, HrefContext, PageResponse, PaginatorState } from './types'
 
+/** Состояние пагинатора по имени из хранилища. */
 export function getState<T>(store: Store, name: string): PaginatorState<T> {
   return store.state<T>(name)()
 }
@@ -232,6 +233,7 @@ function mergeResponseExtra<T>(store: Store, name: string, resp: PageResponse<T>
   safePersist(store, name)
 }
 
+/** Загружает страницу вместо текущей (классическая смена) или ошибку в состояние. */
 export async function fetchReplace<T>(
   store: Store,
   name: string,
@@ -718,6 +720,7 @@ function applyExtraPatch(extra: Extra, patch: ExtraPatch | undefined): Extra {
   return next
 }
 
+/** Сбрасывает пагинатор на первую страницу и перечитывает выдачу. */
 export async function resetPaginator<T>(store: Store, name: string): Promise<void> {
   const instance = getPaginator(name)
   abortReplace(sessionOf(store, name))
@@ -761,6 +764,7 @@ export async function resetPaginator<T>(store: Store, name: string): Promise<voi
  */
 export type ItemPatch<T> = { insert: T; at: 'head' | 'tail' } | { update: T } | { remove: string }
 
+/** Правит окно на месте без перезагрузки: вставка, правка, удаление строк. */
 export function patchItems<T>(store: Store, name: string, op: ItemPatch<T>): boolean {
   const instance = getPaginator(name)
   const state = getState<T>(store, name)

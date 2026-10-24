@@ -53,6 +53,7 @@ export interface PgStore extends AtomicStore {
   scope(name: string, options?: ScopeOptions): PgStore
 }
 
+/** Настройка `pgStore`: как часто запись попутно вычищает просроченные ключи. */
 export interface PgStoreOptions {
   /**
    * Как часто запись заодно вычищает просроченное (DELETE по индексу срока).

@@ -6,6 +6,7 @@
 import { onMount } from 'svelte'
 import { goAddress, shallowFlag, visibleAddress } from '#lib/address/sveltekit.js'
 
+/** Что нужно drawer'у от разметки: сам чекбокс и признак узкого экрана. */
 export interface DrawerOptions {
   input: () => HTMLInputElement | undefined
   isNarrow: () => boolean

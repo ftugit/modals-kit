@@ -5,6 +5,7 @@
 import type { FormError } from './result'
 import { stableId } from './result'
 
+/** Минимальный контракт Standard Schema: `~standard.validate`. */
 export interface StandardSchemaLike<T = unknown> {
   readonly '~standard': {
     validate(value: unknown): StandardResult<T> | Promise<StandardResult<T>>
@@ -25,6 +26,7 @@ export interface IssueLike {
   readonly template?: unknown
 }
 
+/** Ответ Standard Schema: значение или список проблем. */
 export type StandardResult<T> =
   | { readonly value: T; readonly issues?: undefined }
   | { readonly issues: readonly IssueLike[] }

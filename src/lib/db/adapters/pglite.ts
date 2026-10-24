@@ -1,6 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import type { Driver, Row, Statement } from "../types";
 import { result, scope, transactionalCapabilities, beginSQL } from "./shared";
+/** Драйвер PGlite (WASM) поверх переданного экземпляра — для превью и тестов. */
 export function pgliteAdapter(db: PGlite): Driver {
   return {
     capabilities: transactionalCapabilities,

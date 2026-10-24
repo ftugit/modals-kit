@@ -19,6 +19,7 @@ export interface MemoryStore extends AtomicStore {
   readonly size: number
 }
 
+/** Настройка хранилища в памяти: потолок записей и время жизни. */
 export interface MemoryStoreOptions {
   /** Потолок записей корневой области. По умолчанию 1000. */
   max?: number

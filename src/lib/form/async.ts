@@ -20,15 +20,19 @@ export interface CheckContext {
   /** Сигнал отмены: новая проверка того же поля отменяет предыдущую. */
   signal: AbortSignal
 }
+/** Асинхронная проверка поля (например, занят ли адрес): значение → ошибка или `null`. */
 export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | null>
 
+/** Настройка асинхронных проверок: задержка, кэш по значению, таймаут. */
 export interface AsyncPolicy {
   readonly debounceMs: number
   readonly cacheByValue: boolean
   readonly timeoutMs: number
 }
+/** Умолчания асинхронных проверок: 400 мс дебаунса, кэш по значению, таймаут 5 с. */
 export const DEFAULT_ASYNC: AsyncPolicy = { debounceMs: 400, cacheByValue: true, timeoutMs: 5000 }
 
+/** Реестр асинхронных проверок по имени правила — их зовёт клиент и сервер. */
 export class CheckRegistry {
   #byName = new Map<string, AsyncCheck>()
   register(name: string, fn: AsyncCheck): this {

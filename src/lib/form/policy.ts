@@ -6,6 +6,7 @@
 // То, что не влияет на приём (внутренние коды, порядок сортировки ошибок),
 // остаётся в ядре.
 
+/** Правила имён полей и кодировки значений в конверте. */
 export interface NamePolicy {
   /** Каждый СЕГМЕНТ имени обязан совпасть. */
   readonly pattern: RegExp
@@ -44,12 +45,14 @@ export interface StatusPolicy {
   readonly aborted: number
 }
 
+/** Правила намерений: `intent` и `hiddenName` (кнопка «что отправить»). */
 export interface IntentPolicy {
   /** Намерение «действие[:аргумент]» — формат переопределяем. */
   format(action: string, arg?: string): string
   parse(raw: string): { action: string; arg?: string }
 }
 
+/** Полная политика формы: имена, намерения и служебные ключи конверта. */
 export interface FormPolicy {
   readonly names: NamePolicy
   readonly limits: LimitPolicy
@@ -60,6 +63,7 @@ export interface FormPolicy {
   interpolate(template: string, params: Record<string, unknown>): string
 }
 
+/** Политика по умолчанию: имена `name`, префикс `__form_`, никакого переименования намерений. */
 export const defaultPolicy: FormPolicy = {
   names: {
     pattern: /^[a-z][a-z0-9_]{0,31}$/,

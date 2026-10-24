@@ -15,11 +15,13 @@ import type { SearchInterceptStats } from './accumulator'
 const stats = new Map<string, SearchInterceptStats | null>()
 const listeners = new Map<string, Set<(stats: SearchInterceptStats | null) => void>>()
 
+/** Публикует статистику перехвата в общий канал (панель её только читает). */
 export function reportSearchStats(name: string, next: SearchInterceptStats | null): void {
   stats.set(name, next)
   for (const listener of listeners.get(name) ?? []) listener(next)
 }
 
+/** Последняя статистика перехвата по имени пагинатора. */
 export function getSearchStats(name: string): SearchInterceptStats | null {
   return stats.get(name) ?? null
 }

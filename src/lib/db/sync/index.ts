@@ -43,6 +43,7 @@ export interface SqlStep {
   id: string;
   text: string;
 }
+/** Описание схемы БД: модель, колонки и индексы — вход `defineSchema`. */
 export interface SchemaSpec {
   resources: readonly Resource[];
   /** По порядку, после таблиц. Текст под тем же `id` менять нельзя — нужен новый `id`. */
@@ -50,6 +51,7 @@ export interface SchemaSpec {
   /** Где хранить записи синхронизации. По умолчанию `public.kit_schema`. */
   table?: string;
 }
+/** Отчёт сверки схемы: чего не хватает, что лишнее и нужен ли перенос. */
 export interface SchemaReport {
   status: "ok" | "pending";
   /** Что выполнено сейчас (пусто при быстрой проверке). */
@@ -81,6 +83,7 @@ export interface SyncStep {
 }
 
 
+/** Готовая схема: модели, SQL и отчёт сверки. */
 export interface DbSchema {
   /** `resolve` — решения человека по конфликтам и ожидающим шагам (см. `choices`). */
   sync(driver: Driver, options?: { resolve?: Resolution; onStep?: (step: SyncStep) => void }): Promise<SchemaReport>;
@@ -96,6 +99,7 @@ export interface DbSchema {
 
 const OK: SchemaReport = Object.freeze({ status: "ok", applied: [], resolved: [], conflicts: [], notices: [] });
 
+/** Собирает схему из спеки и проверяет её форму на этапе объявления. */
 export function defineSchema(spec: SchemaSpec): DbSchema {
   if (!spec || !Array.isArray(spec.resources) || !spec.resources.length)
     fail("validation", undefined, ["defineSchema: resources — непустой массив ресурсов"]);

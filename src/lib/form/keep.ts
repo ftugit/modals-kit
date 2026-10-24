@@ -7,6 +7,7 @@
 // на каждом сохранении.
 import { DEV } from 'esm-env'
 
+/** Регистрирует значение под ключом и падает, если ключ уже занят: страховка от затирания реестра. */
 export function keep<T>(map: Map<string, T>, key: string, value: T, what: string): void {
   const existing = map.get(key)
   if (existing === value) return

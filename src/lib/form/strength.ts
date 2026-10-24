@@ -11,6 +11,7 @@
 // Оценка — ЭВРИСТИКА и заменяема: `v.strength(level, { score })`. Ядро не
 // притворяется, что знает единственно верную меру стойкости.
 
+/** Уровень стойкости пароля: от `weak` до `strong`. */
 export type StrengthLevel = 'weak' | 'fair' | 'good' | 'strong'
 
 /** Почему оценка просела. Приложение может показать это подсказкой. */
@@ -21,12 +22,14 @@ export type StrengthNote =
   | 'sequence'   // подряд идущие символы: abcdef, 123456
   | 'common'     // известный пароль или словарная основа
 
+/** Оценка пароля: уровень, число и подсказки, чего не хватает. */
 export interface Strength {
   readonly bits: number
   readonly level: StrengthLevel
   readonly notes: readonly StrengthNote[]
 }
 
+/** Порядок уровней стойкости от слабого к сильному — для сравнения `v.strength(min)`. */
 export const LEVEL_ORDER: readonly StrengthLevel[] = ['weak', 'fair', 'good', 'strong']
 
 /** Нижняя граница длины для уровня. Единственное, что выражается в разметке. */

@@ -32,6 +32,7 @@ export interface Limits {
   readonly timeoutMs: number
 }
 
+/** Пределы приёма по умолчанию: байты тела, число полей, размер файла. */
 export const DEFAULT_LIMITS: Limits = {
   maxBytes: 2 * 1024 * 1024, maxKeys: 256, maxFileSize: 8 * 1024 * 1024,
   maxValuesPerKey: 64, timeoutMs: 15_000,
@@ -40,10 +41,13 @@ export const DEFAULT_LIMITS: Limits = {
 /** Различение «дошёл / не дошёл» — основа семантики исхода. */
 export type Reached = 'rejected' | 'validating' | 'executing' | 'committed'
 
+/** Отказ слоя приёма: статус, код и параметры для текста. */
 export interface Rejection { status: number; code: string; params?: Record<string, unknown> }
+/** Отказ слоя приёма одной строкой: `reject(413, "too-large")`. */
 export const reject = (status: number, code: string, params?: Record<string, unknown>): Rejection =>
   ({ status, code, params })
 
+/** Контекст слоя приёма: запрос, описание, значения и уже накопленные отказы. */
 export interface Ctx {
   readonly request: Request
   description: FormDescription
@@ -53,6 +57,7 @@ export interface Ctx {
   warnings: FormError[]
 }
 
+/** Слой приёма: проверка, которая может отказать до обработчика. */
 export type Layer = (ctx: Ctx) => Promise<Rejection | undefined> | Rejection | undefined
 
 /* ── слои ──────────────────────────────────────────────────────────── */
@@ -65,6 +70,7 @@ export type Layer = (ctx: Ctx) => Promise<Rejection | undefined> | Rejection | u
 export const methodLayer = (allowed: readonly string[] = ['POST']): Layer => (ctx) =>
   allowed.includes(ctx.request.method) ? undefined : reject(405, 'method.not-allowed')
 
+/** Настройка проверки origin: разрешённые источники и режим сравнения. */
 export interface OriginOptions {
   readonly allowed: readonly string[]
   /** По умолчанию ВЫКЛЮЧЕН: корпоративные прокси вырезают заголовки. */
@@ -224,6 +230,7 @@ export interface IdempotencyStore {
   release?(key: SubmissionId): Promise<void> | void
 }
 
+/** Срок жизни брони отправки: сутки — в пределах срока результата. */
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 /** Срок брони: дольше выполняться отправке незачем, а умерший процесс не держит ключ вечно. */
 export const IDEMPOTENCY_RESERVE_MS = 5 * 60 * 1000
@@ -330,6 +337,7 @@ export function storeIdempotency(store: IdempotencyKv): IdempotencyStore {
   }
 }
 
+/** Вердикт ограничителя: пропустить или подождать указанное время. */
 export interface ThrottleVerdict { allowed: boolean; retryAfterMs?: number }
 /**
  * Ограничитель частоты. `event` — контекст запроса фреймворка, который маршрут
@@ -497,6 +505,7 @@ export interface ExecuteContext<V = Record<string, unknown>> {
   fail(errors: readonly (FormError | IssueLike)[], outcome?: Outcome): never
 }
 
+/** Отказ обработчика формы в языке библиотеки: результат и статус ответа. */
 export class ExecuteFailure extends Error {
   constructor(readonly errors: readonly FormError[], readonly outcome?: Outcome) {
     super('[form] обработчик вернул ошибки полей')
@@ -556,6 +565,7 @@ export interface ExecuteOutput<T = unknown> {
   queued?: QueuedData
 }
 
+/** Итог обработки запроса: результат формы и HTTP-статус ответа. */
 export interface Handled<T = unknown> { result: Result<T>; status: number }
 
 /** Приём запроса. Возвращает РЕЗУЛЬТАТ, кодировку выбирает маршрут. */

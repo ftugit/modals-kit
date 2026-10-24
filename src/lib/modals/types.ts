@@ -15,7 +15,9 @@ export interface ModalBox {
   /** Предпочтительная высота оболочки. */
   height?: number
 }
+/** Размер окна: из шкалы `ModalBox` или `fullpage`. */
 export type ModalSize = ModalBox | 'fullpage'
+/** Куда прижимается окно на узком экране. */
 export type MobileAnchor = 'top' | 'bottom' | 'left' | 'right'
 
 /* ── запись цепочки ────────────────────────────────────────────────── */
@@ -103,7 +105,9 @@ export interface TransientEntry {
   overrides: ChainOverrides
 }
 
+/** Запись цепочки модалок: зарегистрированная по имени или разовая (transient). */
 export type ChainEntry = RegisteredEntry | TransientEntry
+/** Цепочка модалок: порядок записей в адресе, последняя — открытая. */
 export type Chain = ChainEntry[]
 
 /** Ярлык записи для ключей и сообщений: имя или id. */
@@ -219,9 +223,13 @@ export interface RuntimeState<D = unknown> {
 /* ── настройки хоста ───────────────────────────────────────────────── */
 
 export type OpenAnimation = 'fade' | 'scale' | 'slide-up' | 'none'
+/** Анимация закрытия окна. */
 export type CloseAnimation = 'fade' | 'scale' | 'slide-down' | 'none'
+/** Анимация стопки открытых модалок. */
 export type StackAnimation = 'cards' | 'deck' | 'fan' | 'none'
+/** Направление «хвоста» окна (указателя на источник). */
 export type TailDirection = 'top' | 'bottom' | 'left' | 'right' | 'none'
+/** На что закрывается клик по заднику: верхнее окно, все или никакое. */
 export type BackdropClick = 'top' | 'all' | 'none'
 
 /**
@@ -295,6 +303,7 @@ export interface HostConfig<V = unknown> {
   onBackdrop?: (action: BackdropClick) => void
 }
 
+/** Конфигурация хоста по умолчанию: анимации, размеры, поведение задника. */
 export const DEFAULT_HOST_CONFIG: HostConfig = {
   closeIcon: true,
   backdropClick: 'top',
@@ -356,4 +365,5 @@ export interface LibError {
   readonly ctx?: Record<string, unknown>
 }
 
+/** Приёмник ошибок библиотеки: одно событие в канал приложения. */
 export type ErrorSink = (e: LibError) => void

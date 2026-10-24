@@ -211,6 +211,7 @@ export interface TermCorrection {
   cost: number
 }
 
+/** Настройка подсказок: порог, потолок выдачи и словарь. */
 export interface FuzzySuggestOptions {
   /**
    * Поставщик кандидатов для токена (биграммный индекс и т.п.).
@@ -219,6 +220,7 @@ export interface FuzzySuggestOptions {
   candidates?: (key: string) => Iterable<TermDictionaryEntry>
 }
 
+/** Итог подсказок: записи и применённая коррекция. */
 export interface FuzzySuggestResult {
   tokens: TermCorrection[]
   /** Запрос с подставленными исправлениями. */
@@ -279,11 +281,13 @@ export function suggestCorrections(
 
 // ---------------------------------------------------------------- scoring ---
 
+/** Запись для нечёткого сравнения: ключ и тексты. */
 export type FuzzyRecord = {
   title: string
   aliases?: readonly string[]
 }
 
+/** Итог нечёткого ранжирования записей. */
 export type FuzzyResult<T> = {
   record: T
   score: number

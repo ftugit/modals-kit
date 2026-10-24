@@ -19,6 +19,7 @@ export type TaskProgress =
   /** Индикатор готовности: сколько этапов процесса завершено, а не сколько ждать. */
   | { kind: 'steps'; done: number; total: number; step?: string }
 
+/** Состояние задачи: статус, проценты и подпись шага для индикаторов. */
 export type TaskState =
   | { status: 'idle' }
   | {

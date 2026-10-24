@@ -79,6 +79,7 @@ const asItem = (kit: FieldKit, x: KitField): FieldSetItem => ({
 
 /** Намерения кнопок набора: «+ поле» (`fields-add:имя`) и «Удалить» (`fields-remove:имя.ключ`). */
 export const FIELD_SET_ADD = 'fields-add'
+/** Служебная команда «удалить строку набора полей» в значении поля `fields`. */
 export const FIELD_SET_REMOVE = 'fields-remove'
 
 /**

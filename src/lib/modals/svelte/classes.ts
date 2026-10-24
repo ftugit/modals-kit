@@ -133,9 +133,12 @@ export function floatingLayoutClass(anchor: string | undefined): string {
 /* ── состояния: скелетон, ошибка, спиннер ─────────────────────────── */
 
 export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-5'
+/** Классы блока ошибки модалки (общие у хоста и витрин). */
 export const MODAL_ERROR_CLASS =
   'flex flex-1 flex-col items-center justify-center gap-2.5 p-7 text-center text-destructive'
+/** Классы заголовка ошибки в модалке. */
 export const MODAL_ERROR_TITLE_CLASS = 'text-sm font-semibold'
+/** Классы подсказки под ошибкой в модалке. */
 export const MODAL_ERROR_HINT_CLASS =
   'text-xs text-[color-mix(in_oklab,var(--destructive)_78%,var(--muted-foreground))]'
 
@@ -153,6 +156,7 @@ export const MODAL_OPEN_ANIMATION_CLASSES: Record<OpenAnimation, string> = {
   none: 'data-[starting-style]:transition-none',
 }
 
+/** Классы анимаций закрытия по имени анимации. */
 export const MODAL_CLOSE_ANIMATION_CLASSES: Record<CloseAnimation, string> = {
   scale: 'data-[ending-style]:opacity-0 data-[ending-style]:[transform:scale(0.94)]',
   'slide-down': 'data-[ending-style]:opacity-0 data-[ending-style]:[transform:translateY(28px)]',

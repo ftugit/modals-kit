@@ -12,6 +12,7 @@ import { pgAdapter } from "../adapters/pg";
 import { pgliteAdapter } from "../adapters/pglite";
 import type { Driver } from "../types";
 
+/** Адаптер Node: пул `pg` как драйвер `#lib/db`. */
 export interface NodeDatabase {
   db: PGlite;
   dataDir: string;
@@ -146,6 +147,7 @@ export async function openNodeDatabase(
     },
   };
 }
+/** Настройка пула `pg`: строка подключения, размер пула, таймауты и SSL. */
 export interface PgPoolOptions {
   connectionString: string;
   /**
@@ -183,11 +185,13 @@ export interface PgPoolOptions {
   transactionTimeoutMs?: number;
   maxInFlight?: number;
 }
+/** Рабочее окружение Node: пул и `db` поверх него. */
 export interface PgRuntime {
   driver: Driver;
   pool: Pool;
   close(): Promise<void>;
 }
+/** Открывает пул `pg` с настройками по умолчанию и отдаёт окружение. */
 export function openPgPool(options: PgPoolOptions): PgRuntime {
   const {
     max = 4,

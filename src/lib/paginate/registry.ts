@@ -4,6 +4,7 @@ import { createLocalAdapter } from './adapter-local'
 import { createEmitter, type Emitter } from './events'
 import type { PaginatorAdapter, PaginatorConfig } from './types'
 
+/** Последнее действие пагинатора: что именно привело к текущей странице. */
 export type LastAction =
   { kind: 'goToPage'; page: number } | { kind: 'loadMore'; dir: 1 | -1 } | null
 
@@ -35,6 +36,7 @@ export type PaginatorInstance = {
 
 const instances = new Map<string, PaginatorInstance>()
 
+/** Регистрирует пагинатор под именем (повторная регистрация — ошибка). */
 export function definePaginator<T>(config: PaginatorConfig<T>): void {
   if (instances.has(config.name)) {
     throw new Error(`Paginator "${config.name}" already defined`)
@@ -82,6 +84,7 @@ export function hasPaginator(name: string): boolean {
   return instances.has(name)
 }
 
+/** Пагинатор по имени; неизвестное имя — ошибка, а не пустой результат. */
 export function getPaginator(name: string): PaginatorInstance {
   const instance = instances.get(name)
   if (!instance) throw new Error(`Unknown paginator "${name}"`)

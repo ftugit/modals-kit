@@ -5,6 +5,7 @@ import type { FormDescription } from './describe'
 import { defaultPolicy, type FormPolicy } from './policy'
 import type { FormId, InstanceId, Revision, SubmissionId } from './types'
 
+/** Конверт отправки: служебные ключи, по которым сервер находит форму и экземпляр. */
 export interface Envelope {
   formId: FormId
   revision: Revision
@@ -14,6 +15,7 @@ export interface Envelope {
   specVersion?: number
 }
 
+/** Вердикт разбора конверта: годен либо причина отказа. */
 export type EnvelopeVerdict =
   | { ok: true; envelope: Envelope }
   | { ok: false; code: string; detail: string }

@@ -6,6 +6,7 @@
 import type { FormDescription } from './describe'
 import type { FormId, InstanceId, Revision } from './types'
 
+/** Контекст выбора описания: версия из конверта и сам запрос. */
 export interface DescriptionContext {
   readonly formId: FormId
   readonly instance: InstanceId
@@ -15,6 +16,7 @@ export interface DescriptionContext {
   readonly signal?: AbortSignal
 }
 
+/** Источник описания формы: версия и разрешение описания по конверту. */
 export interface DescriptionSource {
   resolve(ctx: DescriptionContext): Promise<FormDescription>
   revision(ctx: DescriptionContext): Promise<Revision>
@@ -28,6 +30,7 @@ export function fieldSetHash(d: FormDescription): string {
   return (h >>> 0).toString(36)
 }
 
+/** Вердикт устаревания версии: актуально, устарело или неизвестно. */
 export type StaleVerdict =
   | { stale: false }
   | {

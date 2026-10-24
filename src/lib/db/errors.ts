@@ -1,4 +1,5 @@
 import { SQLSTATE } from "./sqlstate";
+/** Вид сбоя слоя БД: транзакция, ограничение, доступ, недоступность и т. п. */
 export type FailureKind =
   | "validation"
   | "forbidden"
@@ -56,6 +57,7 @@ export interface FailureIssue {
   params?: Record<string, unknown>;
   template?: string;
 }
+/** Сбой слоя БД с видом, кодом и подробностями; приложение показывает его по-своему. */
 export class DbFailure extends Error {
   readonly name = "DbFailure";
   constructor(
@@ -84,6 +86,7 @@ export class DbFailure extends Error {
     super(messages[kind]);
   }
 }
+/** Приводит любой сбой к `DbFailure`: чужие ошибки драйвера не утекают наружу. */
 export function normalizeFailure(error: unknown): DbFailure {
   if (error instanceof DbFailure) return error;
   const e =
@@ -119,6 +122,7 @@ export function normalizeFailure(error: unknown): DbFailure {
     error,
   );
 }
+/** Создаёт (или пробрасывает) `DbFailure` нужного вида одной строкой. */
 export function fail(
   kind: FailureKind,
   field?: string,

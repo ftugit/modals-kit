@@ -23,6 +23,7 @@ import { parseCatalogFilterPath, readCatalogFilterValues } from './values'
 import { stripDefaultCatalogFilterValues } from './form'
 import { catalogFilterValueMap, catalogFilterViolations, catalogRuleState, type CatalogFilterViolation } from './rules'
 
+/** Активный фильтр: ключ, подпись и человекочитаемое значение. */
 export type ActiveCatalogFilter = {
   /** Имя поля формы: `filters.genres.not`. */
   path: string

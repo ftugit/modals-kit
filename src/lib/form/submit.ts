@@ -92,6 +92,7 @@ export type TransportOutcome<T = unknown> =
   | { kind: 'network'; code: string; detail?: string }
   | { kind: 'abort'; reason: string }
 
+/** Запрос транспорта: адрес, метод, тело и заголовки отправки. */
 export interface TransportRequest {
   envelope: Envelope
   data: FormData
@@ -103,6 +104,7 @@ export interface TransportRequest {
    */
   report?: (progress: unknown) => void
 }
+/** Транспорт отправки: чем именно уходит запрос (fetch, нативная форма, свой). */
 export type Transport<T = unknown> = (req: TransportRequest) => Promise<TransportOutcome<T>>
 
 /* ── гонки ─────────────────────────────────────────────────────────── */
@@ -124,6 +126,7 @@ export interface SubmissionHandle {
 export const newSubmission = (rev: Revision, intent: string, id?: string): SubmissionHandle =>
   ({ id: id ?? crypto.randomUUID(), intent, rev, startedAt: Date.now(), controller: new AbortController() })
 
+/** Поведение при параллельных отправках: блокировать, заменять или ставить в очередь. */
 export type ParallelPolicy = 'block' | 'replace' | 'queue'
 
 /** Объект отправки вместо счётчиков: сравнение ссылок однозначно. */

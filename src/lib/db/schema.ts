@@ -197,6 +197,7 @@ export const timestampSchema = (): StandardSchemaV1<unknown, string> =>
     return true;
   }, { type: "timestamptz" });
 
+/** Настройка текстовой колонки: длина, NOT NULL и значение по умолчанию. */
 export interface TextOptions {
   min?: number;
   max?: number;
@@ -204,6 +205,7 @@ export interface TextOptions {
   pattern?: RegExp;
   message?: string;
 }
+/** Колонка текста с проверкой формы значения и длины. */
 export const text = (o: TextOptions = {}): StandardSchemaV1<unknown, string> =>
   make("kit-db/text", (v) => {
     if (typeof v !== "string") return failWith("Expected string");
@@ -226,6 +228,7 @@ export const text = (o: TextOptions = {}): StandardSchemaV1<unknown, string> =>
     ...(o.min !== undefined || o.max !== undefined ? { length: { min: o.min, max: o.max } } : {}),
     ...(o.pattern !== undefined ? { partial: true as const } : {}),
   });
+/** Колонка `uuid` с проверкой формы значения. */
 export const uuid = (): StandardSchemaV1<unknown, string> =>
   make(
     "kit-db/uuid",
@@ -235,6 +238,7 @@ export const uuid = (): StandardSchemaV1<unknown, string> =>
       failWith("Invalid UUID"),
     { type: "uuid" },
   );
+/** Целочисленная колонка с необязательными границами. */
 export const integer = (
   o: { min?: number; max?: number } = {},
 ): StandardSchemaV1<unknown, number> =>
@@ -256,6 +260,7 @@ export const decimal = (): StandardSchemaV1<unknown, string> =>
     (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)) ||
     failWith("Expected decimal string"),
   { type: "numeric" });
+/** Логическая колонка. */
 export const boolean = (): StandardSchemaV1<unknown, boolean> =>
   make("kit-db/boolean", (v) => is(v, "boolean") || failWith("Expected boolean"), { type: "boolean" });
 /** Значение, которое можно положить в jsonb: рекурсивно JSON-представимо. */
@@ -302,6 +307,7 @@ export const json = (): StandardSchemaV1<unknown, unknown> =>
     };
     return walk(v);
   }, { type: "jsonb" });
+/** Колонка-массив из элементов заданной схемы. */
 export const array = (
   item: StandardSchemaV1<unknown, unknown>,
   o: { min?: number; max?: number } = {},
@@ -327,6 +333,7 @@ export const array = (
     },
   },
 });
+/** Колонка-перечисление из литерального списка значений. */
 export const enumOf = <const T extends readonly string[]>(
   values: T,
 ): StandardSchemaV1<unknown, T[number]> =>

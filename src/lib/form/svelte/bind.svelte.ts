@@ -36,22 +36,42 @@ const ATTACH = createAttachmentKey()
  */
 export const FIELD_HANDLE: unique symbol = Symbol('form/field-handle')
 
+/** Атрибуты `<form>` от связки: путь отправки, метод и перехват `onsubmit`. */
 export interface FormProps {
+  /** Метод отправки: `post` для мутаций, `get` для форм-фильтров. */
   method: 'post' | 'get'
+  /** Адрес отправки: текущая страница или явный `action` из настроек связки. */
   action: string
+  /** Кодировка тела, когда в форме есть файлы. */
   enctype?: 'multipart/form-data'
+  /** Перехват отправки: без JS остаётся нативный путь (обработчик просто не сработает). */
   onsubmit: (e: SubmitEvent) => void
+  /** Признак «идёт отправка» — для стилей и `aria-busy`. */
   'aria-busy'?: true
   [key: symbol]: unknown
 }
 
-export interface HiddenProps { type: 'hidden'; name: string; value: string; readonly: true }
-
-export interface IntentProps {
+/** Скрытый вход конверта (`__form_id`, версия и экземпляр): рисуется связкой, не описанием. */
+export interface HiddenProps {
+  type: 'hidden'
+  /** Служебное имя ключа конверта. */
   name: string
+  /** Значение ключа для этой отправки. */
   value: string
+  readonly: true
+}
+
+/** Атрибуты кнопки-намерения (`intent`): имя, значение и обход нативной проверки. */
+export interface IntentProps {
+  /** Имя поля намерения (`intent` или своё, по политике формы). */
+  name: string
+  /** Значение намерения — его сервер читает как `intent`. */
+  value: string
+  /** Снять нативную проверку браузера: проверяет только выбранные поля. */
   formnovalidate?: boolean
+  /** Кнопка недоступна (например, идёт другая отправка). */
   disabled?: boolean
+  /** На этой кнопке идёт отправка. */
   'aria-busy'?: true
 }
 

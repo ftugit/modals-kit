@@ -5,6 +5,7 @@
 import type { Result } from './result'
 import type { SubmissionId } from './types'
 
+/** Данные отложенного исхода: адрес опроса и адрес статуса заявки. */
 export interface QueuedData {
   /** Опрос при скрипте. */
   readonly pollUrl: string
@@ -13,14 +14,17 @@ export interface QueuedData {
   readonly etaMs?: number
 }
 
+/** Исход «принято, обрабатывается» — по нему страница начинает опрос. */
 export const isQueued = (r: Result): boolean => r.outcome === 'queued'
 
+/** Данные очереди из результата; `undefined`, если исход не отложенный. */
 export function queuedData(r: Result): QueuedData | undefined {
   if (!isQueued(r)) return undefined
   const d = r.data as QueuedData | undefined
   return d && typeof d.pollUrl === 'string' && typeof d.statusUrl === 'string' ? d : undefined
 }
 
+/** Отложенный исход без адреса опроса: связка не знает, что спрашивать. */
 export class QueuedWithoutProtocolError extends Error {
   constructor(id: SubmissionId) {
     super(`[form] исход queued у отправки ${id} без pollUrl и statusUrl: ` +
@@ -38,6 +42,7 @@ export function assertQueuedProtocol(r: Result): void {
   if (isQueued(r) && !queuedData(r)) throw new QueuedWithoutProtocolError(r.submissionId)
 }
 
+/** Ответ опроса заявки: ещё не готово (с паузой) или готовый результат. */
 export type PollOutcome =
   | { done: true; result: Result }
   | { done: false; retryAfterMs: number }

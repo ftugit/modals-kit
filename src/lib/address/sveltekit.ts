@@ -369,6 +369,7 @@ const resolveKitPath = resolve as unknown as (
   params?: Record<string, string>,
 ) => string
 
+/** Маршрут SvelteKit: разбор `url` и построение `href` с типизированным поиском. */
 export function kitRoute<
   Id extends StaticKitTarget,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -377,6 +378,7 @@ export function kitRoute<
   route: Id,
   options?: StaticRouteOptions<SearchInput, SearchOutput>,
 ): StaticRouteDescriptor<SearchInput, SearchOutput>
+/** Перегрузка: динамический маршрут (`{ dynamic: true }`) — параметры пути берутся из `Id`. */
 export function kitRoute<
   Id extends DynamicRouteId,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -385,6 +387,7 @@ export function kitRoute<
   route: Id,
   options: StaticRouteOptions<SearchInput, SearchOutput> & { readonly dynamic: true },
 ): ParamRouteDescriptor<RouteParams<Id>, SearchInput, SearchOutput>
+/** Реализация: статический или динамический маршрут — по флагу `dynamic`. */
 export function kitRoute<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,

@@ -36,6 +36,7 @@ export interface FieldSetRow {
   readonly filled: boolean
 }
 
+/** Атрибуты кнопки набора полей: отправка с намерением или локальное действие без сети. */
 export type FieldSetButtonProps =
   | (IntentProps & { type: 'submit' })
   | { type: 'button'; onclick: () => void; disabled?: boolean }

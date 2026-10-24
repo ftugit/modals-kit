@@ -6,8 +6,10 @@
 // фильтры, totals) и раздавать их UI. Тип адаптера это фиксирует.
 import type { AdaptedSource, SourceCapabilities, SourceRecordSpec, SourceScope } from './source'
 
+/** Значение или обещание значения — там, где синхронность не обязательна. */
 export type MaybePromise<T> = T | Promise<T>
 
+/** Запрос страницы у источника: номер, размер и сигнал отмены. */
 export type PageRequest = {
   page: number
   pageSize: number
@@ -58,7 +60,9 @@ export type RestorableState = {
   sourceState?: string
 }
 
+/** Значение ключа панели: скаляр, который можно положить в адрес или хранилище. */
 export type ExtraValue = string | number | boolean | null
+/** Словарь ключей панели (`?page.<key>`): то, что пагинатор носит вместе со страницей. */
 export type Extra = Record<string, ExtraValue>
 
 /** Страница в полёте: mode — куда встанут данные; count — число слотов-скелетонов. */
@@ -68,6 +72,7 @@ export type PendingPage = { page: number; mode: 'append' | 'prepend' | 'replace'
 export type PageGroup<T> =
   { page: number; pending: false; items: T[] } | { page: number; pending: true; slots: number }
 
+/** Состояние пагинатора: окно страниц, счётчики, ход загрузки и extra. */
 export type PaginatorState<T> = RestorableState & {
   name: string
   /** Отсортировано по возрастанию. */
@@ -105,6 +110,7 @@ export type PaginatorState<T> = RestorableState & {
   capabilities: SourceCapabilities
 }
 
+/** Начальное состояние адаптера: extra из адреса и признак первого входа. */
 export type AdapterInit<T> = {
   page: number
   pageSize?: number
@@ -147,6 +153,7 @@ export type ExtraPatch = Readonly<Record<string, ExtraValue | undefined>>
 /** Поле формы без JS: имя во внешнем хранилище и значение. */
 export type CarriedField = { name: string; value: string }
 
+/** Адаптер пагинатора: читает адрес, отдаёт и пишет указатель и extra. */
 export type PaginatorAdapter<T> = {
   /**
    * href страницы для рендера ссылок пагинатора (SSR без JS). null — URL-семантики нет.
@@ -225,6 +232,7 @@ export type AdapterExternal = {
   restorable: { pageSize?: number; extra: Extra } | null
 }
 
+/** Хранилище настроек пагинатора: память, `localStorage` или своё. */
 export type PaginatorStorage = {
   read(name: string): MaybePromise<Partial<RestorableState> | null>
   write(name: string, snapshot: PaginatorState<unknown>): MaybePromise<void>
@@ -283,6 +291,7 @@ export type PaginatorConfig<T> =
       onError?: ErrorSink
     }
 
+/** Событие пагинатора для журнала (загрузка, вставка, сброс). */
 export type PaginatorEvent =
   | { type: 'loaded'; page: number; itemCount: number; via: 'init' | 'replace' | 'append' }
   | { type: 'empty-page'; page: number }
@@ -290,12 +299,16 @@ export type PaginatorEvent =
   | { type: 'error'; error: unknown; page: number | null; phase: 'init' | 'replace' | 'append' }
   | { type: 'page-changed'; page: number; via: 'anchor' | 'go' | 'url' | 'init' }
 
+/** Состояние показа списка: не готово, грузится, ошибка, пусто, готово. */
 export type ViewState = 'notReady' | 'loading' | 'error' | 'empty' | 'ready'
 
 /** Команды скролла: ядро их запрашивает, scrollDriver хоста исполняет (SPEC §3.7). */
 export type ScrollIntent = { type: 'top' } | { type: 'page'; page: number; reason?: 'prepend' } // reason:prepend — раунд-5
 
+/** Драйвер прокрутки: получает намерение (к якорю, к краю) и исполняет его. */
 export type ScrollDriver = (intent: ScrollIntent) => void
 
+/** Триггер края: выключен, по направлению, у кромки, «чат», вручную. */
 export type EdgeTrigger = 'off' | 'direction' | 'edge' | 'chat' | 'manual'
+/** Позиция при подгрузке сверху: авто, только нативный якорь, только JS. */
 export type PrependBehavior = 'auto' | 'native' | 'js'

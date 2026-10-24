@@ -5,6 +5,7 @@ import { createSessionDefaultStorage } from './storage-default'
 import { assertAdaptedSource, type AdaptedSource } from './source'
 import type { Extra, PaginatorAdapter, PaginatorStorage } from './types'
 
+/** Адаптер локального режима: состояние живёт в хранилище, адрес не трогается. */
 export function createLocalAdapter<T>(opts: {
   name: string
   source: AdaptedSource<T>

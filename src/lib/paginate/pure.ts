@@ -3,6 +3,7 @@
 // на группы — чтобы список страниц не обновлял неизменившиеся страницы (см. pagesList).
 import type { Extra, ExtraValue, PageGroup, PageResponse, PaginatorState, ViewState } from './types'
 
+/** Производные признаки окна: есть ли следующая страница, сколько показано. */
 export type DerivedMeta = {
   totalItems: number | null
   totalPages: number | null

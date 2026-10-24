@@ -203,6 +203,7 @@ export type PreloadOutcome =
   | { kind: 'redirect'; location: string }
   | { kind: 'error'; status: number | null; message: string }
 
+/** Предзагрузка модуля по адресу: итог «загружено», «уже грузится» или отказ. */
 export async function preloadOutcome(href: string): Promise<PreloadOutcome> {
   let r: Awaited<ReturnType<typeof preloadData>>
   try {

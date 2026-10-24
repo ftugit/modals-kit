@@ -10,7 +10,9 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { localPath } from './core.js'
 import { claimQuery, nextSearch, type QueryClaim, type QueryPatchValue } from './keys.js'
 
+/** Сырой разбор поиска: ключ → значение или список значений. */
 export type RawQueryRecord = Record<string, string | readonly string[] | undefined>
+/** Откуда читать поиск: URL, `URLSearchParams`, строка или уже разобранная запись. */
 export type QueryInputSource = URL | URLSearchParams | string | RawQueryRecord | null | undefined
 
 /** Схема безопасного локального пути (`next` / `returnTo`): отсекает `//evil.com`, `/\evil.com`, `javascript:`. */
@@ -39,6 +41,7 @@ export function querySchema<Input extends Record<string, unknown>, Output = Inpu
   }
 }
 
+/** Форма схемы поиска: ключ → Standard Schema-валидатор значения. */
 export type SchemaShape = Record<string, StandardSchemaV1<unknown, unknown>>
 
 /**
@@ -87,6 +90,7 @@ export function objectSchema<Shape extends SchemaShape>(
   }
 }
 
+/** Опции статического маршрута: путь, схема поиска и метаданные. */
 export interface StaticRouteOptions<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,
@@ -103,6 +107,7 @@ export interface StaticRouteOptions<
   readonly defaults?: Partial<Record<keyof SearchInput & string, unknown>>
 }
 
+/** Опции параметрического маршрута: шаблон пути и схема поиска. */
 export interface ParamRouteOptions<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -112,6 +117,7 @@ export interface ParamRouteOptions<
   readonly buildPath: (params: Params) => string
 }
 
+/** Описание статического маршрута: разбор адреса и построение ссылки. */
 export interface StaticRouteDescriptor<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,
@@ -131,6 +137,7 @@ export interface StaticRouteDescriptor<
   ) => string
 }
 
+/** Описание параметрического маршрута: параметры пути и схема поиска. */
 export interface ParamRouteDescriptor<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -153,6 +160,7 @@ export interface ParamRouteDescriptor<
   ) => string
 }
 
+/** Описание маршрута: общий вид для статических и параметрических. */
 export type RouteDescriptor<
   Params extends Record<string, string> | void = void,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -271,6 +279,7 @@ function createRouteCodec<SearchInput extends Record<string, unknown>, SearchOut
   return { id, owner, parse, formatSearch }
 }
 
+/** Объявляет типизированный маршрут: путь, схема поиска и построитель ссылки. */
 export function defineRoute<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,
@@ -278,6 +287,7 @@ export function defineRoute<
   path: string,
   options?: StaticRouteOptions<SearchInput, SearchOutput>,
 ): StaticRouteDescriptor<SearchInput, SearchOutput>
+/** Перегрузка: параметрический маршрут — путь собирает `buildPath`, поиск тот же. */
 export function defineRoute<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -285,6 +295,7 @@ export function defineRoute<
 >(
   options: ParamRouteOptions<Params, SearchInput, SearchOutput>,
 ): ParamRouteDescriptor<Params, SearchInput, SearchOutput>
+/** Реализация: принимает готовый путь (`string`) либо опции параметрического маршрута. */
 export function defineRoute<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -323,6 +334,7 @@ export function defineRoute<
   return paramDescriptor
 }
 
+/** Регистрирует описание в реестре маршрутов (по имени или пути). */
 export function registerRoute<
   SearchInput extends Record<string, unknown> = Record<string, never>,
   SearchOutput = SearchInput,
@@ -330,6 +342,7 @@ export function registerRoute<
   path: string,
   options?: StaticRouteOptions<SearchInput, SearchOutput>,
 ): StaticRouteDescriptor<SearchInput, SearchOutput>
+/** Перегрузка: параметрический маршрут по опциям (`buildPath` и `id`). */
 export function registerRoute<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -337,6 +350,7 @@ export function registerRoute<
 >(
   options: ParamRouteOptions<Params, SearchInput, SearchOutput>,
 ): ParamRouteDescriptor<Params, SearchInput, SearchOutput>
+/** Реализация: принимает готовый путь (`string`) либо опции параметрического маршрута. */
 export function registerRoute<
   Params extends Record<string, string>,
   SearchInput extends Record<string, unknown> = Record<string, never>,

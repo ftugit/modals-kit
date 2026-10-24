@@ -52,6 +52,7 @@ export interface FilterFieldParams {
 /** Параметры ключа схемы: сам ключ (выбор, текст) и его режимы/границы. */
 export type FilterKeyParams = FilterFieldParams & Readonly<Record<CatalogFilterMode | CatalogFilterBound, FilterFieldParams>>
 
+/** Настройка построения формы фильтров: описание, политика и подписи. */
 export interface CatalogFilterFormOptions {
   /**
    * Адресный слой имён: в браузере имя поля формы — ключ адреса
@@ -66,6 +67,7 @@ export type CatalogFilterDescribe = (
   opts?: CatalogFilterFormOptions,
 ) => import('#lib/form/index.js').FormDescription
 
+/** Разобранный адрес фильтров: значения и ключи, снятые при отказе. */
 export type FilterParams = {
   /** Политика формы фильтров: предел вариантов поднят до предела схемы. */
   readonly policy: FormPolicy
@@ -84,6 +86,7 @@ const warn = (message: string) => {
   if (DEV) console.warn(`[filters] ${message}`)
 }
 
+/** Строит определение формы фильтров из схемы и текущего адреса. */
 export function formParams(input: CatalogFilterSchema, opts: CatalogFilterFormOptions = {}): FilterParams {
   const schema = validateCatalogFilterSchema(input)
   const prefix = opts.prefix ?? ''

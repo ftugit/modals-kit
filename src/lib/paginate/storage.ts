@@ -54,6 +54,7 @@ export function safeParseRestorable(input: unknown): Partial<RestorableState> | 
   return out
 }
 
+/** Хранилище настроек в памяти процесса: сбрасывается при перезагрузке. */
 export function createMemoryStorage(): PaginatorStorage {
   const map = new Map<string, PaginatorState<unknown>>()
   return {
@@ -62,6 +63,7 @@ export function createMemoryStorage(): PaginatorStorage {
   }
 }
 
+/** Минимальный контракт хранилища (`getItem`/`setItem`/`removeItem`). */
 export type MinimalStorage = {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -75,6 +77,7 @@ const defaultPick = (s: PaginatorState<unknown>): Partial<RestorableState> => ({
   sourceState: s.sourceState,
 })
 
+/** Хранилище настроек в `localStorage` браузера (с проверкой доступа). */
 export function createLocalStorageStorage(
   opts: {
     /** Кастомный отбор полей из полного snapshot. Default: page + pageSize + totalItems + extra + sourceState. */

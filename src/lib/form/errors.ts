@@ -8,6 +8,7 @@ import type { FormDescription, InvalidFrom } from './describe'
 import type { FormError, Outcome, Result } from './result'
 import { safeObject } from './types'
 
+/** Контекст обработчика ошибок: путь отправки, намерение и исход. */
 export interface ErrorContext {
   /** Как пришёл результат. Свойство результата, а не момента отрисовки. */
   from: 'action' | 'fetch'
@@ -24,6 +25,7 @@ export type ErrorHandler = (
   errors: readonly FormError[], ctx: ErrorContext,
 ) => readonly FormError[]
 
+/** Итог разбора ошибок: что показывать в полях, в общем блоке и что убрано обработчиком. */
 export interface Shown {
   /** Что показывать: результат обработчика. */
   readonly errors: readonly FormError[]
@@ -45,6 +47,7 @@ export function applyHandler(
   return { errors, removed: Math.max(0, facts.length - errors.length) }
 }
 
+/** Разделение ошибок на полевые и общие по пути. */
 export interface Split {
   /** Нет пути — общая. «Регистрация отключена», «запись не создана». */
   readonly common: readonly FormError[]

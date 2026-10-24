@@ -9,6 +9,7 @@ export type { EntrySource }
 /** Отказ разбора поля `path`; `at` — подпуть внутри вложенного поля. */
 export interface Structural { path: FieldPath; code: string; params?: Record<string, unknown>; at?: string }
 
+/** Разобранное значение поля: что пришло и можно ли это положить в состояние. */
 export interface Decoded {
   values: Record<string, unknown>
   /** Значение не разбирается в тип: переносится даже на непосещённое поле. */
