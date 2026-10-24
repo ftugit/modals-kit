@@ -43,13 +43,17 @@ import { Button } from '#components/ui/index.js'
       .filter(Boolean),
   );
 
-  // Transient-записи — из page.state, в URL их нет
-  const transient = $derived((page.state as any).transient ?? []);
-  const depthMark = $derived((page.state as any).depth ?? null);
+  // Transient-записи — из page.state, в URL их нет. Форму состояния объявляет
+  // сама страница (это её shallow-записи), поэтому сужаем `unknown` до неё,
+  // а не глушим тип через `any`: страница читает только своё.
+  type Transient = { id: string; at: number };
+  const pageState = $derived(page.state as { transient?: Transient[]; depth?: number | null });
+  const transient = $derived(Array.isArray(pageState.transient) ? pageState.transient : []);
+  const depthMark = $derived(pageState.depth ?? null);
 
   // Полная цепочка: transient всегда СВЕРХУ (позиционное кодирование URL
   // не даёт вставить несериализуемую запись в середину)
-  const fullChain = $derived([...urlChain, ...transient.map((t: any) => `${t.id}*`)]);
+  const fullChain = $derived([...urlChain, ...transient.map((t) => `${t.id}*`)]);
 
   function urlFor(chain: string[]): string {
     const u = new URL(location.href);

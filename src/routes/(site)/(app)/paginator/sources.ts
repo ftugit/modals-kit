@@ -3,6 +3,7 @@
 // мосты к ним (SSR строит снапшот без похода в собственный HTTP-эндпоинт).
 // Настройки страницы (ключи, умолчания, регистрация пагинаторов) — в
 // `definition.ts`: он берёт отсюда `makeSource` и `gallerySource`.
+import { DEV } from 'esm-env'
 import type { StreamTask } from '#lib/fetch/index.js'
 import { getItemsPage } from '#content/demo-catalog/items/items.js'
 import {
@@ -147,8 +148,10 @@ async function loadCharactersPage(
   const res = rickMortyTransport
     ? await rickMortyTransport.fetchPage(query)
     : await getCharactersPage({ ...query, signal: look.signal, onTask: look.report })
-  for (const item of res.dropped ?? []) {
-    console.warn(`[rickmorty] фильтр «${item.key}» не применён: ${item.reason}`)
+  if (DEV) {
+    for (const item of res.dropped ?? []) {
+      console.warn(`[rickmorty] фильтр «${item.key}» не применён: ${item.reason}`)
+    }
   }
   return { items: res.items, totalItems: res.totalItems, totalPages: res.totalPages, hasNext: res.hasNext }
 }
@@ -175,8 +178,8 @@ async function loadAnimePage(
   const res = liveTransport
     ? await liveTransport.fetchPage(query)
     : await getAnimesPage({ ...query, signal: look.signal, onTask: look.report })
-  if (res.dropped?.length) {
-    for (const item of res.dropped) {
+  if (DEV) {
+    for (const item of res.dropped ?? []) {
       console.warn(`[shikimori] фильтр «${item.key}» не применён: ${item.reason}`)
     }
   }

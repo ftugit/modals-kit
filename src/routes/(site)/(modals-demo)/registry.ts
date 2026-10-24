@@ -1,4 +1,4 @@
-import { createRegistry, globalScope } from '#lib/modals/index.js'
+import { createRegistry, globalScope, type AnyDefinition } from '#lib/modals/index.js'
 import CardModal from './CardModal.svelte'
 import FullpageModal from './FullpageModal.svelte'
 import LockedModal from './LockedModal.svelte'
@@ -63,7 +63,7 @@ const MODAL_DEFINITIONS = [
     color: 'var(--card)',
     tailColor: 'var(--border)',
   },
-] as any
+] satisfies readonly AnyDefinition[]
 
 /** Область роута: эти модалки существуют на /modals. */
 export const demoScope = createRegistry('/modals', globalScope).define(MODAL_DEFINITIONS)
