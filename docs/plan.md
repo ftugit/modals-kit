@@ -45,7 +45,7 @@
 
 ### Конвейер изображений и файлов ([`docs/design/image-transfer.md`](./design/image-transfer.md))
 - [ ] **Этап R4 — механизм готов, хранение нет**: отложенный исход `outcome: 'queued'` (`pollUrl`/`statusUrl` из `#lib/form/queued.js`) уже проходит через `#hooks/component-form` (опрос — GET на адрес формы с `__form_task`, ответ `202`; демо — `src/routes/(site)/(app)/form/queue.server.ts` на `localStore`). Осталось: держать заявки в `sharedStore` (`cache_kv`), чтобы опрос переживал перезапуск инстанса.
-- [x] **Этап R5 — снят (2026-10-24)**: фото в `/fields` схема не генерирует — оно объявлено отдельным полем `recordForm` (`image: field.file(...)`), рядом с `title`. Переход на `field.photo` не эквивалентен: `photo` перекодирует в JPEG под край и вес, а демо хранит исходные байты и принимает GIF. Если понадобится только лимит пикселей — ≈10 строк в `fields.form.server.ts` на уже имеющихся `width`/`height` из `probeImageHeader` (`OI-06`).
+- [ ] **Этап R5 → поля фото (решение 2026-10-24)**: выход фото-поля задаётся в объявлении (`photo-output`), числа — в строителе формы; `/fields` переводится на фото-поля с загрузкой **до 5 фото**. Разбор и план — `OI-06` и `OI-19` в [`docs/audit/open-issues.md`](./audit/open-issues.md).
 - [ ] **Этап R7**: брендированный тип `PreparedFile` на границе записи и правило `tooling/layer-guard.mjs` против чтения сырых байтов `File` в маршрутах мимо `#lib/image`.
 
 ### Шаги и пользовательский модуль
