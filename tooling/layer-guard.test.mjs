@@ -18,6 +18,29 @@ test('canonSpecifier приводит все 5 subpath-алиасов и отн�
   assert.equal(canonSpecifier('$app/paths', '/app/src/routes/+page.ts'), null);
 });
 
+test('файл целиком в base64: пара arrayBuffer+btoa запрещена вне двух допущенных мест', () => {
+  const route = '/app/src/routes/(site)/(app)/x/x.form.server.ts';
+  const bad = 'const b = new Uint8Array(await file.arrayBuffer())\nreturn btoa(String.fromCharCode(...b))';
+  assert.ok(checkSource(RULES, bad, route));
+  // одно из двух без другого — не «файл в base64»
+  assert.equal(checkSource(RULES, 'const k = btoa(String.fromCharCode(...raw))', route), null);
+  assert.equal(checkSource(RULES, 'const b = await blob.arrayBuffer()', route), null);
+  // заголовок через slice — законно
+  assert.equal(
+    checkSource(RULES, 'await blob.slice(0, 16).arrayBuffer()', '/app/src/lib/image/probe.ts'),
+    null,
+  );
+  // допущенные места не трогаем
+  assert.equal(
+    checkSource(RULES, bad, '/app/src/content/user/ui/profile-form/profile.form.server.ts'),
+    null,
+  );
+  assert.equal(
+    checkSource(RULES, bad, '/app/src/routes/(site)/(app)/fields/fields.form.server.ts'),
+    null,
+  );
+});
+
 test('строгая направленность 5 слоёв: запрещает восходящие импорты', () => {
   // lib не знает ни про один слой выше себя
   assert.ok(check('#hooks/js-only.svelte.js', '/app/src/lib/address/index.ts'));

@@ -129,6 +129,61 @@ describe('FileAttachment composition: FileInput + Attachment + DataTransfer + ob
     await unmount(host)
   })
 
+  test('multiple копит выбор из разных папок: второй заход не затирает первый', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:acc-1')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const target = document.createElement('div')
+    document.body.append(target)
+    const host = mount(FileAttachmentHost, { target, props: { multiple: true } })
+    await tick()
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    expect(input.multiple).toBe(true)
+
+    const first = new File(['a'], 'alpha.pdf', { type: 'application/pdf' })
+    const second = new File(['b'], 'beta.pdf', { type: 'application/pdf' })
+    pickFiles(input, [first])
+    await tick()
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1)
+
+    // второй заход в диалог отдаёт только новую выборку
+    pickFiles(input, [second])
+    await tick()
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(2)
+    expect(Array.from(input.files ?? []).map((f) => f.name)).toEqual(['alpha.pdf', 'beta.pdf'])
+    expect(Array.from(host.getFiles() ?? []).map((f) => f.name)).toEqual(['alpha.pdf', 'beta.pdf'])
+
+    // повторный выбор того же файла ничего не добавляет
+    pickFiles(input, [first])
+    await tick()
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(2)
+
+    await unmount(host)
+  })
+
+  test('strip: одна строка со скроллом, карточки не сжимаются', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:strip-1')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const target = document.createElement('div')
+    document.body.append(target)
+    const host = mount(FileAttachmentHost, { target, props: { layout: 'strip', multiple: true } })
+    await tick()
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    pickFiles(input, [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })])
+    await tick()
+
+    const list = target.querySelector('[data-file-list]') as HTMLElement
+    expect(list.className).toContain('flex-nowrap')
+    expect(list.className).toContain('overflow-x-auto')
+    const item = target.querySelector('[data-file-item]') as HTMLElement
+    expect(item.className).toContain('shrink-0')
+
+    await unmount(host)
+  })
+
   test('removes Attachment when single-file input mutates live FileList in place on value = ""', async () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:single-photo')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})

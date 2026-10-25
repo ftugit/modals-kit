@@ -15,6 +15,12 @@
   import FileInput from '../file-input/FileInput.svelte'
   import type { PhotoConvertSpec } from '../file-input/convert'
 
+  /**
+   * Раскладка списка файлов. `'strip'` — одна строка с горизонтальным
+   * скроллом; карточки в ней не сжимаются и остаются размером плитки.
+   */
+  export type FileAttachmentLayout = AttachmentLayout | 'strip'
+
   export interface FileAttachmentActionContext {
     file: File
     index: number
@@ -45,8 +51,11 @@
     files?: FileList
     /** Forwarded ref нативного `<input type="file">`. */
     ref?: (el: HTMLInputElement | null) => void
-    /** Раскладка карточек `Attachment`: `'row'` (список) или `'tile'` (плитка). */
-    layout?: AttachmentLayout
+    /**
+     * Раскладка карточек: `'row'` — файл на строку, `'strip'` — все в одну
+     * строку со скроллом, `'tile'` — плитка с переносом.
+     */
+    layout?: FileAttachmentLayout
     /** Размер карточек `Attachment` (по умолчанию совпадает с `size` или `'md'`). */
     attachmentSize?: AttachmentSize
     /** Режим медиа в `Attachment`: `'auto' | 'icon' | 'image'`. */
@@ -144,6 +153,36 @@
   const cardSize = $derived<AttachmentSize>(attachmentSize ?? size ?? 'md')
   const showAnyActions = $derived(Boolean(removable || customActions))
 
+  /** Один и тот же файл, выбранный дважды: имя, вес и время правки. */
+  const sameFile = (a: File, b: File): boolean =>
+    a.name === b.name && a.size === b.size && a.lastModified === b.lastModified
+
+  /**
+   * Дополнить выбор новыми файлами (`multiple`): второй заход в диалог не
+   * затирает первый. Возвращает накопленный список без повторов — повторный
+   * выбор того же файла ничего не меняет.
+   */
+  function mergePicked(current: readonly File[], added: readonly File[]): File[] {
+    const out = [...current]
+    for (const file of added) if (!out.some((x) => sameFile(x, file))) out.push(file)
+    return out
+  }
+
+  /**
+   * Признак «change вызвали мы сами»: удаление файла меняет `input.files`, и
+   * склеивать это событие с прежним выбором нельзя — удалённый файл вернулся бы.
+   */
+  let ownMutation = false
+
+  /** Положить накопленный выбор в нативный `input`, чтобы форма унесла всё. */
+  function syncInput(files: File[]): FileList | undefined {
+    if (!inputEl || typeof DataTransfer === 'undefined') return undefined
+    const dt = new DataTransfer()
+    for (const f of files) dt.items.add(f)
+    inputEl.files = dt.files
+    return dt.files
+  }
+
   function removeAt(index: number): void {
     if (!inputEl || rest.disabled) return
     if (inputEl.multiple && pickedFiles.length > 1 && typeof DataTransfer !== 'undefined') {
@@ -155,13 +194,26 @@
     } else {
       inputEl.value = ''
     }
+    ownMutation = true
     inputEl.dispatchEvent(new Event('change', { bubbles: true }))
+    ownMutation = false
   }
 
   const rootClass = $derived(cn('flex flex-col gap-2', wrapperClass))
   const ulClass = $derived(
-    cn(layout === 'tile' ? 'flex flex-wrap gap-2.5' : 'flex flex-col gap-2', listClass),
+    cn(
+      layout === 'strip'
+        ? 'flex flex-nowrap gap-2.5 overflow-x-auto pb-1'
+        : layout === 'tile'
+          ? 'flex flex-wrap gap-2.5'
+          : 'flex flex-col gap-2',
+      listClass,
+    ),
   )
+
+  // В полосе карточки — как плитка: строка не сжимает их до нечитаемого
+  const cardLayout = $derived<AttachmentLayout>(layout === 'row' ? 'row' : 'tile')
+  const cardWrapClass = $derived(layout === 'strip' ? 'shrink-0' : undefined)
 </script>
 
 <div data-slot="file-attachment" class={rootClass}>
@@ -173,9 +225,19 @@
     {...rest}
     onchange={(e) => {
       const raw = e.currentTarget.files
-      const list = raw && raw.length > 0 ? Array.from(raw) : []
+      const added = raw && raw.length > 0 ? Array.from(raw) : []
+      // `multiple` копит выбор из разных папок: диалог браузера отдаёт только
+      // последнюю выборку, поэтому прежнюю склеиваем сами и кладём в input
+      const accumulate = Boolean(inputEl?.multiple) && !ownMutation
+      const list = accumulate ? mergePicked(pickedFiles, added) : added
       pickedFiles = list
-      files = list.length > 0 ? (raw ?? undefined) : undefined
+      if (list.length === 0) {
+        files = undefined
+      } else {
+        // склейка дала больше файлов, чем диалог отдал в этот раз, — кладём в input
+        const kept = accumulate && list.length !== added.length ? syncInput(list) : undefined
+        files = kept ?? raw ?? undefined
+      }
       onchange?.(e)
       prevFiles = files
     }}
@@ -205,10 +267,10 @@
             </AttachmentAction>
           {/if}
         {/snippet}
-        <li data-file-item>
+        <li data-file-item class={cardWrapClass}>
           <Attachment
             {file}
-            {layout}
+            layout={cardLayout}
             size={cardSize}
             {media}
             {showFilename}

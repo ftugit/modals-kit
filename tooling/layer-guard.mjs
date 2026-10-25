@@ -229,6 +229,13 @@ const MODALS_ENGINE = /(^|\/)src\/lib\/modals\/cores\//;
 /** Правила адреса действуют на ИСХОДНИКИ проекта: node_modules SvelteKit вправе
  *  упоминать page.url в своих рантайм-файлах и сообщениях. */
 const SRC_ONLY = [/(^|\/)src\//];
+/** Допущенные места перевода файла в `base64`: до переезда на ссылку (см.
+ *  `docs/pending.md` §1 «URL вместо base64») их ровно два — аватар профиля и
+ *  конструктор `/fields`. Любое третье — повод завести общий владелец байт. */
+const FILE_TO_BASE64_KEEPERS = [
+  /(^|\/)src\/routes\/\(site\)\/\(app\)\/fields\/fields\.form\.server\.ts$/,
+  /(^|\/)src\/content\/user\/ui\/profile-form\/profile\.form\.server\.ts$/,
+];
 /** Кто имеет право на сырые form-теги и на собственный разбор тела. */
 const FORM_KEEPERS = [
   /(^|\/)src\/lib\/form\//,
@@ -592,6 +599,27 @@ export const RULES = [
         `  файл: ${importer || '<точка входа>'}`,
         '',
         "      import { Form } from '#lib/form/svelte/index.js';",
+      ].join('\n'),
+  },
+  {
+    // Файл целиком в base64 — это и чтение всех байт в память, и сборка строки:
+    // ловим пару, чтобы не задевать `btoa` над ключами/курсорами и побайтовые
+    // чтения заголовков (`slice(...).arrayBuffer()`).
+    pattern:
+      /(?=[\s\S]*\bbtoa\s*\()(?=[\s\S]*\.\s*arrayBuffer\s*\(\s*\))|(?=[\s\S]*\bbtoa\s*\()(?=[\s\S]*\bFileReader\b)/,
+    isSourceCheck: true,
+    scope: SRC_ONLY,
+    allow: FILE_TO_BASE64_KEEPERS,
+    message: ({ importer }) =>
+      [
+        '[layer-guard] Новое место перевода файла в base64 запрещено.',
+        `  файл: ${importer || '<точка входа>'}`,
+        '',
+        '  В base64 файл переводят только два места (аватар профиля и /fields),',
+        '  и оба — до перехода на ссылку (`docs/pending.md` §1 «URL вместо base64»).',
+        '',
+        '  Новому коду base64 не нужен: храните файл и отдавайте URL.',
+        '  Заголовок (магические байты) читайте через `blob.slice(0, N)` — см. `probeImageHeader`.',
       ].join('\n'),
   },
   {

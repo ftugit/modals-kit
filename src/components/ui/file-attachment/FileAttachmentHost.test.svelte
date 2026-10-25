@@ -1,18 +1,19 @@
 <script lang="ts">
-  import { AttachmentAction, type AttachmentLayout } from '../attachment'
+  import { AttachmentAction } from '../attachment'
+  import type { FileAttachmentLayout } from './FileAttachment.svelte'
   import FileAttachment, { type FileAttachmentItemMeta } from './FileAttachment.svelte'
 
   let {
     multiple = true,
     removable = true,
-    layout = 'row',
+    layout = 'row' as FileAttachmentLayout,
     useCustomActions = false,
     onChangeFiles,
     onInspect,
   }: {
     multiple?: boolean
     removable?: boolean
-    layout?: AttachmentLayout
+    layout?: FileAttachmentLayout
     useCustomActions?: boolean
     onChangeFiles?: (names: string[]) => void
     onInspect?: (name: string) => void
