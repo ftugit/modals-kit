@@ -432,14 +432,14 @@ function maxRegisteredBytes(): number {
 `FileAttachment` **наследует примитив `file`**, а примитив состоит из двух отдельных элементов: `Label` (`src/components/ui/label/Label.svelte`, принимает `for`) и нативного `<input type="file">` (`src/components/ui/file-input/FileInput.svelte`), связанных `for`/`id`.
 
 - `FileAttachment` рисует **label** (видимая область выбора) и список; сам `<input>` может стоять в другом месте DOM — например, в конце формы.
-- Список, удаление и действия берут input **по id из label** (`label.htmlFor` → узел по id), а не по `ref`.
+- Удаление и прочие действия идут **через состояние поля** (`f.onInput(новый набор)`), а не через узел: `FileInput` видит новое значение и перекладывает его в `el.files`. `id` нужен для связи `label → input`, а не для поиска узла.
 - id приходит от поля: `FieldView.attrs.id` (`bind.svelte.ts:673`) — тот же id, на который уже указывает подпись поля (`labelProps() → { for: id }`, `bind.svelte.ts:695`).
 
 Что это меняет в нынешнем коде:
 
 | Сейчас | Станет |
 |---|---|
-| `FileAttachment` держит `inputEl` и пишет в него: `inputEl.files = dt.files`, `inputEl.value = ''`, затем `dispatchEvent('change')` (`:141-151`) | те же операции над узлом, найденным по `htmlFor`; `ref` остаётся необязательным быстрым путём |
+| `FileAttachment` держит `inputEl` и пишет в него: `inputEl.files = dt.files`, `inputEl.value = ''`, затем `dispatchEvent('change')` (`:141-151`) | список зовёт `f.onInput(новый набор)`; `FileInput` перекладывает набор в `el.files` через `DataTransfer` (в узел нельзя записать массив) и держит `ref` необязательным |
 | `<FileInput>` рендерится **внутри** `FileAttachment` (`:174-190`) | input рендерит тот, кто знает его место; `FileAttachment` получает id и рендерит label |
 | `bind:files` связывает input и список в дереве компонентов | `bind:files` не пересекает DOM: состояние идёт через `FieldView.onInput`/`files` |
 | `change` слушается на собственном `<FileInput>` | `change` слушается на найденном узле |
@@ -456,7 +456,7 @@ function maxRegisteredBytes(): number {
 - `FileField` для `file`/`files`/`photo` больше не рендерит `<input>`: он рисует `FieldShell` (подпись, подсказка, ошибки), область выбора (`label for={id}`) и список `Attachment`.
 - `<FileInput of={f} />` — обёртка слоя `#components/form` над ui-примитивом `#components/ui/file-input/FileInput.svelte`: `{...f.attrs}` без `value` (браузер запрещает писать `value` у `type="file"`, `FileField.svelte:13-17`), `onchange` → `f.input === 'files' ? [...files] : files[0] ?? null` (`FileField.svelte:19-23`), `onblur` → `f.setTouched()`.
 - **Несколько файловых полей** — просто несколько `<FileInput of={…} />`: сборных списков, реестров и флагов нет. `id` выводится из имени поля (`bind.svelte.ts:673`), поэтому коллизий между полями нет.
-- **Забыли вторую половину** — область выбора ищет узел по `document.getElementById(f.attrs.id)` после монтирования; не нашла → видимый маркер «input не подключён» и `console.error` в DEV. Без JS маркер некому показать: там отсутствие input'а ловится тестом, считающим `[name]` по каждому имени.
+- **Забыли вторую половину** — надпись кликается в пустоту и молчит: ни ошибки, ни файла. Ловится тестом (на каждое имя ровно один `[name]`); DEV-проверка «есть ли в документе узел с этим id» — по желанию, списку она не нужна.
 - **no-JS** — input стоит в DOM внутри `<form>`, клик по label открывает выбор, порядок частей = порядок DOM (файлы последними — то, что требует `OI-29`).
 - Имя `FileInput` в `#components/form` совпадает с ui-примитивом `FileInput` — внутри импортов нужен алиас.
 
