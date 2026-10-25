@@ -13,6 +13,8 @@ declare global {
 		interface Locals {
 			db: Database
 			dbCtx: DataContext
+			/** Контекст запроса, проверенный `guard` (`#server/actor.server.js`); промис — мемо на запрос. */
+			actor?: Promise<DataContext>
 			formResult?: Result | null
 		}
 		// interface Error {}
