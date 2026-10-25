@@ -263,4 +263,86 @@ describe('FileAttachment composition: FileInput + Attachment + DataTransfer + ob
 
     await unmount(host)
   })
+
+  test('items в режиме `replace` заменяются выбранным файлом, в форму не попадают', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:items-1')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const items = [
+      {
+        id: 'old-1',
+        filename: 'старый.png',
+        mimeType: 'image/png',
+        previewUrl: 'https://cdn.example/old-1.webp',
+      },
+      { id: 'old-2', filename: 'старый.pdf', mimeType: 'application/pdf' },
+    ]
+    const seen: string[] = []
+    const target = document.createElement('div')
+    document.body.append(target)
+    const host = mount(FileAttachmentHost, {
+      target,
+      props: { items, onRemoveExisting: (id) => seen.push(id) },
+    })
+    await tick()
+
+    // Показанные вложения — те же карточки `Attachment` с превью по URL.
+    const existing = target.querySelectorAll('[data-existing-item]')
+    expect(existing).toHaveLength(2)
+    expect(existing[0]?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://cdn.example/old-1.webp',
+    )
+    // показанные вложения не становятся файлами поля
+    expect(Array.from(host.getFiles() ?? [])).toEqual([])
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    const fresh = new File(['new'], 'новый.png', { type: 'image/png' })
+    pickFiles(input, [fresh])
+    await tick()
+
+    // `replace`: выбранный занял место показанных, в поле — только он.
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(0)
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1)
+    expect(Array.from(host.getFiles() ?? [])).toEqual([fresh])
+    expect(seen).toEqual([])
+
+    await unmount(host)
+  })
+
+  test('items в режиме `append` остаются рядом, их снятие зовёт onremove и не трогает input.files', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:append-1')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const items = [
+      { id: 'old-1', filename: 'старый.png', mimeType: 'image/png', previewUrl: 'https://cdn.example/old-1.webp' },
+      { id: 'old-2', filename: 'старый.pdf', mimeType: 'application/pdf' },
+    ]
+    const target = document.createElement('div')
+    document.body.append(target)
+    const host = mount(FileAttachmentHost, { target, props: { items, mode: 'append' } })
+    await tick()
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    const fresh = new File(['new'], 'новый.png', { type: 'image/png' })
+    pickFiles(input, [fresh])
+    await tick()
+
+    // `append`: показанные не исчезли, выбранный добавился.
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(2)
+    expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1)
+    expect(Array.from(host.getFiles() ?? [])).toEqual([fresh])
+
+    const dropExisting = target.querySelector(
+      'button[aria-label="Убрать файл: старый.pdf"]',
+    ) as HTMLButtonElement
+    dropExisting.click()
+    await tick()
+
+    // Снятие показанного — событие странице; `input.files` не меняется.
+    expect(host.getRemoved()).toEqual(['old-2:1'])
+    expect(Array.from(host.getFiles() ?? [])).toEqual([fresh])
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(2)
+
+    await unmount(host)
+  })
 })

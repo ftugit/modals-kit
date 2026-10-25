@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AttachmentAction } from '../attachment'
+  import { AttachmentAction, type AttachmentItem } from '../attachment'
   import type { PhotoConvertSpec } from '../file-input/convert'
   import type { FileAttachmentLayout } from './FileAttachment.svelte'
   import FileAttachment, { type FileAttachmentItemMeta } from './FileAttachment.svelte'
@@ -12,6 +12,9 @@
     onChangeFiles,
     onInspect,
     photoConvert,
+    items = [],
+    mode,
+    onRemoveExisting,
   }: {
     multiple?: boolean
     removable?: boolean
@@ -20,12 +23,16 @@
     onChangeFiles?: (names: string[]) => void
     onInspect?: (name: string) => void
     photoConvert?: PhotoConvertSpec
+    items?: AttachmentItem[]
+    mode?: 'replace' | 'append'
+    onRemoveExisting?: (id: string) => void
   } = $props()
 
   let files = $state<FileList | undefined>()
   let latestRef = $state<HTMLInputElement | null>(null)
   const refHistory: Array<HTMLInputElement | null> = []
   let metaMap = $state<Record<string, FileAttachmentItemMeta>>({})
+  let removedIds = $state<string[]>([])
 
   export function getFiles() {
     return files
@@ -35,6 +42,9 @@
   }
   export function setMeta(filename: string, meta: FileAttachmentItemMeta) {
     metaMap = { ...metaMap, [filename]: meta }
+  }
+  export function getRemoved() {
+    return removedIds
   }
   export function getRef() {
     return latestRef
@@ -52,6 +62,12 @@
       {removable}
       {layout}
       {photoConvert}
+      {items}
+      {mode}
+      onremove={(item, index) => {
+        removedIds = [...removedIds, `${item.id}:${index}`]
+        onRemoveExisting?.(item.id)
+      }}
       bind:files
       itemProps={(f) => metaMap[f.name]}
       ref={(el) => {
@@ -64,13 +80,13 @@
     >
       {#snippet actions({ file, remove })}
         <AttachmentAction
-          aria-label={`Инфо ${file.name}`}
-          onclick={() => onInspect?.(file.name)}
+          aria-label={`Инфо ${file?.name}`}
+          onclick={() => onInspect?.(file?.name ?? '')}
         >
           i
         </AttachmentAction>
         <AttachmentAction
-          aria-label={`Свой сброс ${file.name}`}
+          aria-label={`Свой сброс ${file?.name}`}
           onclick={() => remove()}
         >
           ×
@@ -84,6 +100,12 @@
       {removable}
       {layout}
       {photoConvert}
+      {items}
+      {mode}
+      onremove={(item, index) => {
+        removedIds = [...removedIds, `${item.id}:${index}`]
+        onRemoveExisting?.(item.id)
+      }}
       bind:files
       itemProps={(f) => metaMap[f.name]}
       ref={(el) => {

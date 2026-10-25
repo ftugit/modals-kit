@@ -52,7 +52,7 @@ describe('профиль: картинка — обычное поле файл�
   })
 })
 
-describe('профиль: текущий аватар и выбранный файл', () => {
+describe('профиль: текущий аватар в превью поля', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     document.body.innerHTML = ''
@@ -82,22 +82,40 @@ describe('профиль: текущий аватар и выбранный фа
     input.dispatchEvent(new Event('change', { bubbles: true }))
   }
 
-  it('сохранённый аватар виден карточкой, пока не выбран новый файл', async () => {
+  it('сохранённый аватар показан карточкой превью, пока не выбран файл', async () => {
     const { target, app } = await mountForm('data:image/jpeg;base64,AAA')
-    expect(target.querySelector('[data-existing-avatar]')).not.toBeNull()
+    const cards = target.querySelectorAll('[data-existing-item]')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]?.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,AAA')
 
     const input = target.querySelector('input[type="file"]') as HTMLInputElement
     await pick(input, new File(['png'], 'photo.png', { type: 'image/png' }))
 
-    // выбранный файл заменил карточку: под полем появилось превью, текущий ушёл
+    // выбранный файл занял место аватара в том же превью — карточка одна
     await vi.waitFor(() => expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1))
-    expect(target.querySelector('[data-existing-avatar]')).toBeNull()
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(0)
     await unmount(app)
   })
 
-  it('без сохранённого аватара карточки нет', async () => {
+  it('без сохранённого аватара превью пустое', async () => {
     const { target, app } = await mountForm(null)
-    expect(target.querySelector('[data-existing-avatar]')).toBeNull()
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(0)
+    await unmount(app)
+  })
+
+  it('кнопка у карточки снимает аватар: карточка уходит, `remove_photo` отмечен', async () => {
+    const { target, app } = await mountForm('data:image/jpeg;base64,AAA')
+    const drop = target.querySelector(
+      'button[aria-label="Убрать файл: Текущий аватар"]',
+    ) as HTMLButtonElement
+    expect(drop).not.toBeNull()
+
+    drop.click()
+    await tick()
+
+    expect(target.querySelectorAll('[data-existing-item]')).toHaveLength(0)
+    const flagged = target.querySelector('input[name="remove_photo"]') as HTMLInputElement
+    expect(flagged.checked).toBe(true)
     await unmount(app)
   })
 })

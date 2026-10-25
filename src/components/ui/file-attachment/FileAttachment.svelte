@@ -5,6 +5,8 @@
   import {
     Attachment,
     AttachmentAction,
+    normalizeAttachment,
+    type AttachmentItem,
     type AttachmentLayout,
     type AttachmentMediaMode,
     type AttachmentProps,
@@ -22,10 +24,11 @@
   export type FileAttachmentLayout = AttachmentLayout | 'strip'
 
   export interface FileAttachmentActionContext {
-    file: File
+    /** `undefined` у показанного вложения: файла в `input.files` нет. */
+    file?: File
     index: number
     item: NormalizedAttachment
-    /** Удаляет файл из нативного `FileList` и отправляет всплывающее событие `change`. */
+    /** Убирает выбранный файл из `FileList` или зовёт `onremove` у показанного. */
     remove: () => void
   }
 
@@ -71,6 +74,19 @@
      * своему `FileInput`, чтобы сжатие оставалось одной возможностью примитива.
      */
     photoConvert?: PhotoConvertSpec
+    /**
+     * Уже загруженные вложения: рисуются теми же карточками `Attachment`, но
+     * без `File`. В значение поля и `FormData` они не попадают.
+     */
+    items?: readonly AttachmentItem[]
+    /**
+     * Что делать с `items`, когда выбран файл: `'replace'` — выбранный их
+     * заменяет (аватар), `'append'` — остаются слева от выбранных (галерея).
+     * @default 'replace'
+     */
+    mode?: 'replace' | 'append'
+    /** Снятие показанного вложения: `input.files` не трогается, решает страница. */
+    onremove?: (item: AttachmentItem, index: number) => void
     /** Проекция состояния/прогресса/ошибки на конкретный выбранный `File`. */
     itemProps?: (file: File, index: number) => FileAttachmentItemMeta | undefined
     /** Дополнительные или заменяющие действия сценария для каждого файла. */
@@ -93,6 +109,9 @@
     removable = true,
     removeLabel = 'Убрать файл',
     photoConvert,
+    items = [],
+    mode = 'replace',
+    onremove,
     itemProps,
     actions: customActions,
     onchange,
@@ -152,6 +171,11 @@
 
   const cardSize = $derived<AttachmentSize>(attachmentSize ?? size ?? 'md')
   const showAnyActions = $derived(Boolean(removable || customActions))
+
+  /** В `replace` выбранный файл занимает место показанных вложений. */
+  const shownItems = $derived(mode === 'append' || pickedFiles.length === 0 ? items : [])
+  const hasList = $derived(shownItems.length > 0 || pickedFiles.length > 0)
+  const showExistingActions = $derived(Boolean(customActions || (removable && onremove)))
 
   /** Один и тот же файл, выбранный дважды: имя, вес и время правки. */
   const sameFile = (a: File, b: File): boolean =>
@@ -243,8 +267,38 @@
     }}
   />
 
-  {#if mounted && pickedFiles.length > 0}
+  {#if mounted && hasList}
     <ul class={ulClass} data-file-list>
+      {#each shownItems as item, index (item.id)}
+        {@const shown = normalizeAttachment({ item })}
+        {#snippet existingActions()}
+          {#if customActions}
+            {@render customActions({ index, item: shown, remove: () => onremove?.(item, index) })}
+          {/if}
+          {#if removable && onremove}
+            <AttachmentAction
+              aria-label={`${removeLabel}: ${shown.filename}`}
+              title={removeLabel}
+              disabled={Boolean(rest.disabled)}
+              onclick={() => onremove?.(item, index)}
+            >
+              <CloseIcon size={16} />
+            </AttachmentAction>
+          {/if}
+        {/snippet}
+        <li data-existing-item class={cardWrapClass}>
+          <Attachment
+            {item}
+            layout={cardLayout}
+            size={cardSize}
+            {media}
+            {showFilename}
+            {showSize}
+            disabled={Boolean(rest.disabled)}
+            actions={showExistingActions ? existingActions : undefined}
+          />
+        </li>
+      {/each}
       {#each pickedFiles as file, index (keyOf(file))}
         {@const extra = itemProps?.(file, index)}
         {#snippet itemActions({ item }: { item: NormalizedAttachment })}

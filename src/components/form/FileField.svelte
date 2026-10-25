@@ -7,15 +7,29 @@
   // `FileAttachment` (выбранное видно) вместо голого `FileInput`. Сжатие —
   // возможность примитива: `photoConvert` уходит в `FileInput` напрямую или
   // через `FileAttachment`. Здесь нет ни своей конвертации, ни перехвата.
-  import { FileAttachment, FileInput, type PhotoConvertSpec } from '#components/ui/index.js'
+  import {
+    FileAttachment,
+    FileInput,
+    type AttachmentItem,
+    type PhotoConvertSpec,
+  } from '#components/ui/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
   let {
     preview = false,
     photoConvert,
+    items,
+    mode,
+    onremove,
     ...f
-  }: FieldView & { preview?: boolean; photoConvert?: PhotoConvertSpec } = $props()
+  }: FieldView & {
+    preview?: boolean
+    photoConvert?: PhotoConvertSpec
+    items?: readonly AttachmentItem[]
+    mode?: 'replace' | 'append'
+    onremove?: (item: AttachmentItem, index: number) => void
+  } = $props()
 
   // `value` у type="file" браузер писать не даёт: атрибут из связки отбрасывается
   const attrs = $derived.by(() => {
@@ -31,7 +45,15 @@
 
 <FieldShell {f}>
   {#if preview}
-    <FileAttachment {...attrs} {photoConvert} onblur={() => f.setTouched()} onchange={handleChange} />
+    <FileAttachment
+      {...attrs}
+      {photoConvert}
+      {items}
+      {mode}
+      {onremove}
+      onblur={() => f.setTouched()}
+      onchange={handleChange}
+    />
   {:else}
     <FileInput {...attrs} {photoConvert} onblur={() => f.setTouched()} onchange={handleChange} />
   {/if}

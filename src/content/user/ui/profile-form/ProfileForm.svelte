@@ -30,7 +30,7 @@
   import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
-  import { Button } from '#components/ui/index.js'
+  import { Button, type AttachmentItem } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { createUserChecks } from '../../checks.js'
@@ -87,11 +87,14 @@
   }
 
   const existingAvatar = $derived(activeProfile.avatarUrl ?? null)
-  // Выбранный файл и флаг удаления — значения полей: карточка «Текущий аватар»
-  // видна, только пока новое фото не выбрано и удаление не отмечено.
-  const pickedPhoto = $derived(bound.f.photo.value)
+  // Снятый аватар — значение поля `remove_photo`: снятое не показываем.
+  // Замена на выбранный файл — режим `replace` самого поля, не форма.
   const removePhoto = $derived(bound.f.remove_photo.value)
-  const showExisting = $derived(Boolean(existingAvatar) && !pickedPhoto && !removePhoto)
+  const avatarItems = $derived<AttachmentItem[]>(
+    existingAvatar && !removePhoto
+      ? [{ id: 'avatar', filename: 'Текущий аватар', kind: 'image', previewUrl: existingAvatar }]
+      : [],
+  )
 
   let lastHandledSubmission = ''
   $effect(() => {
@@ -131,31 +134,13 @@
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
       <Field of={bound.f.nickname} />
 
-      {#if showExisting}
-        <!-- Текущее фото — отдельная карточка: в `input.files` его нет, туда
-             попадает только выбранный файл. Выбрали новый — карточка уходит,
-             выбранное показывает `FileAttachment` под полем. -->
-        <div
-          data-existing-avatar
-          class="flex items-center gap-3 rounded-md border border-border/70 p-2"
-        >
-          <img src={existingAvatar} alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
-          <div class="flex min-w-0 flex-1 flex-col">
-            <span class="truncate text-sm">Текущий аватар</span>
-            <span class="text-xs text-muted-foreground">Выберите новый файл или удалите этот</span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onclick={() => bound.f.remove_photo.onInput(true)}
-          >
-            Удалить
-          </Button>
-        </div>
-      {/if}
-
-      <Field of={bound.f.photo} preview photoConvert={specAvatar} />
+      <Field
+        of={bound.f.photo}
+        preview
+        photoConvert={specAvatar}
+        items={avatarItems}
+        onremove={() => bound.f.remove_photo.onInput(true)}
+      />
 
       {#if existingAvatar && notHydrated()}
         <Field of={bound.f.remove_photo} />

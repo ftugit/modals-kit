@@ -17,14 +17,20 @@
   // связь читается здесь, в месте проверки, named-импортом. Новая подмена —
   // строка реестра + module-экспорт `base` в её файле.
   import CopyField, { base as copyBase } from './CopyField.svelte'
-  import type { PhotoConvertSpec } from '#components/ui/index.js'
+  import type { AttachmentItem, PhotoConvertSpec } from '#components/ui/index.js'
 
   /**
    * Вид файлового поля глазами `Field`: к пропсам `FieldView` добавляются опции
    * вида и сжатия. `resolve` отдаёт компонент по `FieldView`, а эти два пропса
    * принадлежат странице, а не описанию формы, — их объявляет `FileField`.
    */
-  type FileFieldView = FieldView & { preview?: boolean; photoConvert?: PhotoConvertSpec }
+  type FileFieldView = FieldView & {
+    preview?: boolean
+    photoConvert?: PhotoConvertSpec
+    items?: readonly AttachmentItem[]
+    mode?: 'replace' | 'append'
+    onremove?: (item: AttachmentItem, index: number) => void
+  }
 
   // `of` может быть пустым: поля нет у источника (студии у GraphQL) — не рисуем.
   // Набор полей от пользователя (`field.fields`) умолчания не имеет: места, цикл и кнопки
@@ -49,6 +55,9 @@
     takeover,
     preview = false,
     photoConvert,
+    items,
+    mode,
+    onremove,
   }: {
     of: FieldView | undefined
     instead?: ComponentType<FieldView>
@@ -64,6 +73,19 @@
      * предел веса, конечный формат. Действует только у файловых полей.
      */
     photoConvert?: PhotoConvertSpec
+    /**
+     * Уже загруженные вложения рядом с полем (`items` примитива
+     * `FileAttachment`): те же карточки, но без `File` — в форму они не идут.
+     */
+    items?: readonly AttachmentItem[]
+    /**
+     * `'replace'` — выбранный файл заменяет `items` (аватар), `'append'` —
+     * `items` остаются, выбранные добавляются (галерея). По умолчанию
+     * `'replace'`.
+     */
+    mode?: 'replace' | 'append'
+    /** Снятие показанного вложения: файл-поле его не касается, решает страница. */
+    onremove?: (item: AttachmentItem, index: number) => void
   } = $props()
 
   const BASE_OF = new Map<object, unknown>([[CopyField, copyBase]])
@@ -156,7 +178,7 @@
   {#if of.input === 'file'}
     <!-- сужение вида: `resolve` знает только `FieldView`, а опции — у файлового поля -->
     {@const FileField = Component as ComponentType<FileFieldView>}
-    <FileField {...of} {preview} photoConvert={photoConvert} />
+    <FileField {...of} {preview} {photoConvert} {items} {mode} {onremove} />
   {:else}
     <Component {...of} />
   {/if}
