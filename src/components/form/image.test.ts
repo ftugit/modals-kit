@@ -29,8 +29,8 @@ describe('проверка изображений: обещание клиент
   it('назвался картинкой — обязан ею быть: архив под .jpg отвергается', async () => {
     const out = await runImageCheck(asFile(ZIP, 'photo.jpg', 'image/jpeg'), {} as never)
     expect(Array.isArray(out)).toBe(true)
-    expect((out as { code: string }[])[0]!.code).toBe('image.format')
-    expect((out as { params: { name: string } }[])[0]!.params.name).toBe('photo.jpg')
+    expect((out as unknown as { code: string }[])[0]!.code).toBe('image.format')
+    expect((out as unknown as { params: { name: string } }[])[0]!.params.name).toBe('photo.jpg')
   })
 
   it('не картинка по обещанию — не наше дело (тип судит `accept`)', async () => {
@@ -40,7 +40,7 @@ describe('проверка изображений: обещание клиент
 
   it('размеры сверх потолков — `image.dimensions`', async () => {
     const out = await runImageCheck(asFile(pngHeader(20_000, 20_000), 'bomb.png', 'image/png'), {} as never)
-    expect((out as { code: string }[])[0]!.code).toBe('image.dimensions')
+    expect((out as unknown as { code: string }[])[0]!.code).toBe('image.dimensions')
   })
 
   it('СПИСОК: проверяется каждый файл, ошибка — на каждый плохой', async () => {
@@ -50,7 +50,7 @@ describe('проверка изображений: обещание клиент
       asFile(ZIP, 'bad-2.png', 'image/png'),
       asFile(new Uint8Array([1]), 'doc.pdf', 'application/pdf'),
     ]
-    const out = (await runImageCheck(files, {} as never)) as { code: string; params: { name: string } }[]
+    const out = (await runImageCheck(files, {} as never)) as unknown as { code: string; params: { name: string } }[]
     expect(out.map((i) => i.code)).toEqual(['image.format', 'image.format'])
     expect(out.map((i) => i.params.name)).toEqual(['bad-1.jpg', 'bad-2.png'])
   })
