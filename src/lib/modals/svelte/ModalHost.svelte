@@ -359,8 +359,7 @@
    * (`$$renderer.copy()`), и у копии `get_path()` даёт `-1`
    * (sveltejs/svelte#18845, не исправлено в 5.57.2). Хост — предок каждой
    * страницы, поэтому `<title>` любой страницы проигрывал `<title>` раскладки,
-   * стоявшему раньше в дереве: SSR отдавал «dd modals» (баг F7,
-   * docs/audit/crutches.md). `attach` на `Dialog.Content` не годится: Ark
+   * стоявшему раньше в дереве: SSR отдавал «dd modals» (баг F7). `attach` на `Dialog.Content` не годится: Ark
    * сливает пропсы через `mergeProps`, а тот теряет ключи-символы.
    */
   const stageEl = $derived(popupEl?.closest<HTMLElement>('[data-modal-stage]') ?? null)

@@ -127,8 +127,7 @@ export type ExtraSearchSpec = Record<string, ExtraSearchValidator>
  * Dev-режим адресного слоя — `DEV` из `esm-env` (так рекомендует документация
  * Svelte для библиотек): условие экспорта `development`/`production` у сборщика,
  * на чистом Node — `NODE_ENV`. Прежняя проверка «нет `process` → dev» в браузере
- * была истинна всегда, и production-сборка печатала dev-предупреждения (C7,
- * docs/audit/crutches.md).
+ * была истинна всегда, и production-сборка печатала dev-предупреждения .
  */
 export function isDevAddressLayer(): boolean {
   return DEV

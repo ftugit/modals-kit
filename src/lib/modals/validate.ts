@@ -4,7 +4,7 @@
 // Зачем: цвет записи уходит в inline `style` оболочки и хвостов
 // (`background: …`). Без проверки присланная ссылка дописывала любые
 // объявления (`red;position:fixed;inset:0;z-index:…` — модалка поверх всего)
-// и грузила чужие ресурсы через `url(…)` (F28, docs/audit/crutches.md).
+// и грузила чужие ресурсы через `url(…)` .
 import type { ChainOverrides, MobileAnchor, ModalSize } from './types'
 
 /**

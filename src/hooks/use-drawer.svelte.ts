@@ -2,7 +2,7 @@
 // Esc закрывает, клик по фону закрывает, Back закрывает без навигации.
 //
 // «Back закрывает» — флаг в `page.state` (shallow routing SvelteKit) через слой
-// роутера, а не нативный `history.pushState` (баг F6, docs/audit/crutches.md).
+// роутера, а не нативный `history.pushState` (баг F6).
 import { onMount } from 'svelte'
 import { goAddress, shallowFlag, visibleAddress } from '#lib/address/sveltekit.js'
 

@@ -64,4 +64,4 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 ## Приватность и известные ограничения
 
 - Полный IP-адрес не сохраняется никогда: в сессии пишется только `SHA-256` подсети (`/24` для IPv4, `/48` для IPv6) с индивидуальной солью аккаунта и код страны.
-- Исполнитель окончательной зачистки `sweepDeletions` реализован в `auth.ts`; подключение к расписанию — обязанность приложения ([`docs/plan.md`](../../../docs/plan.md) §3). Судьба байтов аватара из куки `auth_tmp` — [`docs/plan.md`](../../../docs/plan.md) §3 и [`docs/audit/open-issues.md`](../../../docs/audit/open-issues.md).
+- Исполнитель окончательной зачистки `sweepDeletions` реализован в `auth.ts`; подключение к расписанию — обязанность приложения ([`docs/pending.md`](../../../docs/pending.md)). Судьба байтов аватара из куки `auth_tmp` — [`docs/pending.md`](../../../docs/pending.md) и [`docs/design/image-transfer.md`](../../../docs/design/image-transfer.md).

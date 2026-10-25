@@ -68,8 +68,8 @@
 
 ## Ссылки
 
-- [`docs/plan.md`](../plan.md) §3 — решения владельца.
-- [`docs/audit/open-issues.md`](../audit/open-issues.md) — `OI-25` (ошибки по файлам
+- [`docs/pending.md`](../pending.md) — что осталось сделать.
+- [`docs/pending.md`](../pending.md) — ошибки по файлам скопом
   скопом), `OI-30` (одно описание аватара для UI и сервера).
-- [`docs/design/port-plan.md`](./port-plan.md) шаг 1 — «тексты UI в `src/lib/`»:
+- [`docs/design/porting.md`](./porting.md) шаг 1 — «тексты UI в `src/lib/`»:
   этот план — его операционная часть.

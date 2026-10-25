@@ -222,7 +222,7 @@ export function demoStaticFilterSchema(src: DemoSrc | undefined): CatalogFilterS
  *
  * Вызывающий передаёт ЖИВОЙ срез адреса — `currentSearch()` слоя роутера, а не
  * адрес страницы: пагинатор пишет адрес «мелкой» записью истории, и адрес
- * отрисовки после неё устаревает (баг F5, docs/audit/crutches.md).
+ * отрисовки после неё устаревает (баг F5).
  */
 export function demoFilterSearch(search: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const out: Record<string, unknown> = {}

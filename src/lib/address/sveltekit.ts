@@ -329,8 +329,7 @@ export function navigationTask(): TaskState {
  * Запись — shallow-`goto` из `$app/navigation` с прежним `page.state` плюс флаг:
  * чужие ключи (цепочка модалок) едут дальше. Нативный `history.pushState` здесь
  * не годится: SvelteKit о такой записи не знает, предупреждает в консоли и
- * копирует свои служебные ключи (`sveltekit:history`) в новую запись (баг F6,
- * docs/audit/crutches.md). Снять флаг — шаг назад по истории, как в документации;
+ * копирует свои служебные ключи (`sveltekit:history`) в новую запись (баг F6). Снять флаг — шаг назад по истории, как в документации;
  * внутри слоя — `goAddress(-1)` по `visibleAddress()`: запись флага может ещё
  * ждать в очереди писателя, и прямой `history.back()` ушёл бы раньше неё:
  * https://svelte.dev/docs/kit/shallow-routing

@@ -25,7 +25,7 @@ export type SearchCorrectionAccessor = (() => SearchCorrectionInfo | null) & {
  * реактивном контексте подписывается на канал на время жизни эффекта, вне его —
  * просто отдаёт текущее значение реестра. Прежняя копия в `$state`, которую
  * `$effect` переписывал из подписки, отставала на такт и требовала вызова
- * строго при инициализации компонента (C8, docs/audit/crutches.md).
+ * строго при инициализации компонента .
  */
 export function useSearchCorrection(name: string): SearchCorrectionAccessor {
   const subscribe = createSubscriber((update) => onSearchCorrection(name, update))

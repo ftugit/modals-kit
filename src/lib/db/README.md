@@ -34,7 +34,7 @@
 · [Схема и миграции](#6-схема-и-миграции)
 · [Публичный API](#7-публичный-api)
 · [Свой код в TypeScript](#8-свой-код-в-typescript)
-· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · ключи доступа — [docs/ACL-DESIGN.md](./docs/ACL-DESIGN.md) · живой хвост списков — [docs/LIVE-APPEND.md](./docs/LIVE-APPEND.md) · пробы на живых движках — [docs/PROBES-ENV.md](./docs/PROBES-ENV.md) · что не сделано — [docs/plan.md](../../../docs/plan.md) (общий план проекта)
+· [Разработка слоя](#9-разработка-слоя) · перенос и расхождения — [PORTING.md](./PORTING.md) · транспорты/serverless — [docs/TRANSPORTS.md](./docs/TRANSPORTS.md) · ключи доступа — [docs/ACL-DESIGN.md](./docs/ACL-DESIGN.md) · живой хвост списков — [docs/LIVE-APPEND.md](./docs/LIVE-APPEND.md) · пробы на живых движках — [docs/PROBES-ENV.md](./docs/PROBES-ENV.md) · что не сделано — [docs/pending.md](../../../docs/pending.md)
 
 ## Установка
 
