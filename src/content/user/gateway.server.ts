@@ -21,6 +21,7 @@ import { db } from '#server/db.server.js'
 import type { Cookies } from '@sveltejs/kit'
 import {
   createUserConfig,
+  fullBlock,
   issueFreshAccess as coreIssueFreshAccess,
   listSessions as coreListSessions,
   login as coreLogin,
@@ -494,6 +495,15 @@ export async function readVault(
   }
 }
 
+/** Аккаунт по БД перестал действовать: полная блокировка или удаление. */
+async function accountDenied(sub: string): Promise<boolean> {
+  const ports = authPorts()
+  const auth = await ports.auths.get(sub)
+  if (!auth || auth.seed === null) return true
+  if (fullBlock(auth.blocked, ports.clock.now())) return true
+  return auth.deletedAt !== null
+}
+
 /**
  * SSR-разрешение сессии для корневого layout новой вкладки:
  * - если короткий `auth_tmp` жив — возвращает метаданные мгновенно (`0` запросов в БД);
@@ -503,7 +513,16 @@ export async function readVault(
  */
 export async function resolveVault(event: AuthEvent): Promise<VaultSessionMeta | null> {
   const live = await readVault(event.cookies)
-  if (live) return live
+  if (live) {
+    // Права — из БД, а не из куки: полная блокировка и удаление снимают вход,
+    // даже пока короткий `auth_tmp` не истёк.
+    if (await accountDenied(live.sub)) {
+      event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
+      event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
+      return null
+    }
+    return live
+  }
   if (!event.cookies.get(RENEWAL_COOKIE)) return null
 
   const u = auth(event)

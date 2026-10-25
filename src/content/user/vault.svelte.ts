@@ -23,6 +23,7 @@
  */
 import { page } from '$app/state'
 import { visibleAddress } from '#lib/address/sveltekit.js'
+import type { AuthErrorCode } from './error.js'
 import {
   fireAt,
   leadFor,
@@ -43,6 +44,13 @@ export interface UserVault {
   readonly principal: string | null
   readonly profile: VaultProfile
   readonly renewing: boolean
+  /**
+   * Код последней потери сессии (`auth.blocked`, `auth.session-unknown`, …)
+   * или `null`, пока сессия жива. Ставится, когда сервер признал её мёртвой.
+   */
+  readonly sessionLost: AuthErrorCode | null
+  /** Подписка на потерю сессии: слушатель получает код причины. Возвращает отписку. */
+  onSessionLost(listener: (code: AuthErrorCode) => void): () => void
   /**
    * Синхронизировать снимок корневого SSR `load`:
    * - `serverStamp` меняется на сервере только при реальном перезапуске `+layout.server.ts`,
@@ -73,11 +81,13 @@ export interface CreateVaultOptions {
   now?: () => number
   /** Чтение SSR-снимка страницы до гидратации. */
   readSsrUser?: () => VaultPayload | null
+  /** Выход по решению сервера: код причины (для экрана ACL или toast). */
+  onSessionLost?: (code: AuthErrorCode) => void
 }
 
 export type RenewPostOutcome =
   | { readonly kind: 'ok'; readonly data: VaultPayload }
-  | { readonly kind: 'revoked' }
+  | { readonly kind: 'revoked'; readonly code: AuthErrorCode }
   | { readonly kind: 'transient-error' }
 
 const EMPTY_PROFILE: VaultProfile = Object.freeze({ nickname: null, avatarUrl: null })
@@ -159,7 +169,7 @@ async function defaultPostRenew(signal: AbortSignal): Promise<RenewPostOutcome> 
       out.result.errors.find((m) => TERMINAL_AUTH_CODES.has(m.code))?.code ??
       ((out.result.data as { code?: string } | undefined)?.code)
     if (failedCode && TERMINAL_AUTH_CODES.has(failedCode)) {
-      return { kind: 'revoked' }
+      return { kind: 'revoked', code: failedCode as AuthErrorCode }
     }
     return { kind: 'transient-error' }
   }
@@ -175,8 +185,10 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   const sendRenew = options.postRenewTransport ?? defaultPostRenew
   const now = options.now ?? (() => Date.now())
   const readSsrUser = options.readSsrUser ?? defaultReadSsrUser
+  const notifyLost = options.onSessionLost
 
   let principal = $state<string | null>(null)
+  let sessionLost = $state<AuthErrorCode | null>(null)
   let profile = $state<VaultProfile>(EMPTY_PROFILE)
   let renewing = $state(false)
   let synced = $state(false)
@@ -192,6 +204,24 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   let activeRenew: Promise<boolean> | null = null
   let channel: BroadcastChannel | null = null
   const cleanups: Array<() => void> = []
+  const lostListeners = new Set<(code: AuthErrorCode) => void>()
+
+  /** Сессия мертва по решению сервера: гасим витрину и говорим об этом наружу. */
+  function announceLost(code: AuthErrorCode): void {
+    sessionLost = code
+    for (const listener of lostListeners) {
+      try {
+        listener(code)
+      } catch {
+        /* подписчик не должен ломать выход */
+      }
+    }
+    try {
+      notifyLost?.(code)
+    } catch {
+      /* и колбэк приложения тоже */
+    }
+  }
 
   const isClientReady = (): boolean => typeof window !== 'undefined' && synced
 
@@ -290,6 +320,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   function applyHydrate(payload: VaultPayload, broadcast: boolean): void {
     epoch += 1
     cancelInflight()
+    sessionLost = null
     principal = payload.sub
     iat = payload.iat
     expiresAt = payload.expiresAt
@@ -359,6 +390,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
       }
       if (outcome.kind === 'revoked') {
         applyClear(true)
+        announceLost(outcome.code)
         return false
       }
       return false
@@ -445,6 +477,15 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     get renewing(): boolean {
       return renewing
     },
+    get sessionLost(): AuthErrorCode | null {
+      return sessionLost
+    },
+    onSessionLost(listener: (code: AuthErrorCode) => void): () => void {
+      lostListeners.add(listener)
+      return () => {
+        lostListeners.delete(listener)
+      }
+    },
     syncServer(payload: VaultPayload | null | undefined, serverStamp?: number): void {
       ensureChannel()
       const marker = serverStamp !== undefined ? serverStamp : snapshotKeyOf(payload)
@@ -498,6 +539,8 @@ export const vault: UserVault = createVault()
 export const userSession = {
   ensureFresh: () => vault.ensureFresh(),
   onAuthExpired: () => vault.renew(true),
+  isTerminal: (code: string) => TERMINAL_AUTH_CODES.has(code),
+  onSessionLost: (listener: (code: AuthErrorCode) => void) => vault.onSessionLost(listener),
 } as const
 
 if (import.meta.hot) {

@@ -86,6 +86,10 @@
     mirrorToField(bound, 'nickname', () => activeProfile.nickname ?? '')
   }
 
+  // Причина выхода по решению сервера: бан, отзыв, удаление. Пока `null` —
+  // сессия жива; код превращается в экран ACL ниже.
+  const sessionLost = $derived(vault.sessionLost)
+
   const existingAvatar = $derived(activeProfile.avatarUrl ?? null)
   // Снятый аватар — значение поля `remove_photo`: снятое не показываем.
   // Замена на выбранный файл — режим `replace` самого поля, не форма.
@@ -115,6 +119,7 @@
   {enabled}
   backHref={doneHref}
   {variant}
+  status={sessionLost}
   class={className}
 >
   <Form
