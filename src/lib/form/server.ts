@@ -30,7 +30,7 @@ export interface Limits {
   readonly timeoutMs: number
 }
 
-/** Пределы приёма по умолчанию: байты тела, число полей, размер файла. */
+/** Пределы приёма по умолчанию: байты тела, число ключей и значений, таймаут. */
 export const DEFAULT_LIMITS: Limits = {
   maxBytes: 2 * 1024 * 1024, maxKeys: 256,
   maxValuesPerKey: 64, timeoutMs: 15_000,
