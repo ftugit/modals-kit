@@ -1,5 +1,6 @@
 // Проверка значений. Один и тот же код исполняется в браузере и на сервере.
 import { withCeiling } from './budget'
+import { formWeight } from './weight'
 import type { ConstraintKind } from './constraints'
 import type { DisableRule, FieldCondition, FieldDescriptor, FieldLink, FormDescription, VisibilityCondition } from './describe'
 import type { Structural } from './decode'
@@ -174,6 +175,24 @@ export function validateForm(
       }
     }
     errors.push(...collected)
+  }
+
+  // вес тела — свойство формы, а не поля: считается по всем записям сразу
+  // (текст в байтах UTF-8, файлы по `size`, границы и заголовки частей).
+  // Ошибка без пути: показывается общим блоком и блокирует отправку.
+  // Когда файл уже не прошёл личный предел, общий вес — следствие, а не причина:
+  // второе сообщение только повторяет первое.
+  const fileRejected = errors.some((e) => e.code === 'maxSize')
+  if (limits.budget !== null && limits.budget !== undefined && !fileRejected) {
+    const weight = formWeight(d, values)
+    if (weight.total > limits.budget)
+      errors.push({
+        id: stableId({ code: 'form.budget', params: { total: weight.total, max: limits.budget } }),
+        code: 'form.budget',
+        message: 'form.budget',
+        params: { max: limits.budget, total: weight.total, files: weight.files, text: weight.text },
+        origin: 'core',
+      })
   }
 
   // проверка уровня формы идёт ПОСЛЕ полевой: межполевое над мусором бессмысленно

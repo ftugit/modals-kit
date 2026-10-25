@@ -50,12 +50,27 @@ describe('v.maxSize и бюджет', () => {
     expect(bad[0]!.params).toMatchObject({ bytes: 7 * MB, name: 'big.jpg' })
   })
 
-  test('сумма по всем файлам: строка одна и от поля-владельца', () => {
+  test('сумма по всем файлам — общая ошибка формы, без пути', () => {
     const d = probe(8 * MB, { docs: field.file({ multiple: true, label: 'Документы', validate: [v.maxSize(10 * MB)] }) })
     const errors = validateForm(d, { photo: file('a.jpg', 4 * MB), docs: [file('b.pdf', 4 * MB, 'application/pdf')] })
-    expect(codes(errors)).toEqual(['file.budget'])
-    expect(errors[0]!.path).toBe('docs')
-    expect(errors[0]!.params).toMatchObject({ name: 'b.pdf' })
+    expect(codes(errors)).toEqual(['form.budget'])
+    expect(errors[0]!.path).toBeUndefined()
+    expect(errors[0]!.params).toMatchObject({ max: 8 * MB })
+    expect(Number(errors[0]!.params!['total'])).toBeGreaterThan(8 * MB)
+  })
+
+  test('текст входит в вес: кириллица считается байтами UTF-8', () => {
+    const d = probe(8 * MB, { note: field.text({ label: 'Заметка' }) })
+    // 4,5 МиБ кириллицы = 4 718 592 байта, плюс файл 4 МиБ — вместе больше бюджета
+    const note = 'ж'.repeat(4.5 * MB / 2)
+    const errors = validateForm(d, { note, photo: file('a.jpg', 4 * MB) })
+    expect(codes(errors)).toEqual(['form.budget'])
+    expect(Number(errors[0]!.params!['text'])).toBe(4.5 * MB)
+  })
+
+  test('без файлов и с коротким текстом ошибки нет', () => {
+    const d = probe(8 * MB, { note: field.text({ label: 'Заметка' }) })
+    expect(codes(validateForm(d, { note: 'привет', photo: file('a.jpg', 7 * MB) }))).toEqual([])
   })
 
   test('без бюджета сумма не проверяется', () => {

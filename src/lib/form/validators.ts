@@ -234,20 +234,6 @@ const EMAIL_STRICT = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}
  * полей и файлов в значении. Возвращает поле-владельца: ошибку показывает
  * только оно.
  */
-const firstOverBudget = (
-  values: Record<string, unknown>,
-  limits: FormLimits,
-): { field: string; name: string } | null => {
-  let sum = 0
-  for (const field of limits.fileFields) {
-    for (const f of filesOf(values[field] as File | readonly File[] | null | undefined)) {
-      sum += f.size
-      if (sum > limits.filesBytes) return { field, name: f.name }
-    }
-  }
-  return null
-}
-
 /** Набор встроенных валидаторов. */
 export const v = {
   required: () => describe<unknown>(
@@ -391,17 +377,11 @@ export const v = {
         // бюджете 7 МБ — обещать то, что всё равно не доедет.
         const budget = ctx.limits?.filesBytes ?? Number.POSITIVE_INFINITY
         const cap = Math.min(max, budget)
-        // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма
+        // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма.
+        // Сумму по форме считает не правило, а вес тела (`weight.ts`): валидатор
+        // видит одно значение и не обязан знать про соседей.
         const big = filesOf(value).find((f) => f.size > cap)
-        if (big) return issue('maxSize', { bytes: cap, name: big.name })
-        // Сумма по всем файловым полям формы: строку отдаёт только поле-владелец
-        // первого файла, вышедшего за бюджет, — иначе перевес дал бы по строке
-        // на каждое файловое поле.
-        if (!ctx.limits) return null
-        const over = firstOverBudget(ctx.values, ctx.limits)
-        return over && over.field === ctx.path
-          ? issue('file.budget', { bytes: ctx.limits.filesBytes, name: over.name })
-          : null
+        return big ? issue('maxSize', { bytes: cap, name: big.name }) : null
       },
       [{ kind: 'maxSize', bytes: max }])
   },
