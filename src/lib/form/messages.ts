@@ -92,6 +92,7 @@ export const ru: MessageDictionary = {
   'body.too-large': 'Запрос слишком большой',
   'body.too-many-keys': 'Запрос содержит слишком много полей',
   'request.too-many': 'Поле передано слишком много раз',
+  'request.timeout': 'Форма не успела обработаться. Попробуйте ещё раз',
   // набор полей от пользователя (`field.fields`)
   'kit.not-list': 'Описание полей не распознано',
   'type.fields': 'Набор полей не распознан',

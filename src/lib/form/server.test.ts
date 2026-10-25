@@ -604,6 +604,60 @@ suite('очередь: принято, итог позже', () => {
   })
 })
 
+suite('крайний срок приёма (Limits.timeoutMs)', () => {
+  const hang = () => new Promise<never>(() => {})
+  const slow = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  test('молчащий обработчик обрывается 408, исход по факту фиксации', async () => {
+    // не подтвердил успех — «неизвестно»: часть операций могла пройти
+    const silent = createFormHandler({
+      description: base, limits: { timeoutMs: 30 },
+      execute: async () => { await hang(); return {} },
+    })
+    const started = Date.now()
+    const r = await silent(post({ ...envelopeOf(), name: 'a' }))
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(r.status).toBe(408)
+    expect(r.result.errors.map((e) => e.code)).toEqual(['request.timeout'])
+    expect(r.result.outcome).toBe('unknown')
+    expect(r.result.errors[0]!.retryable).toBe(false)
+
+    // успел позвать commit() — действие зафиксировано, ответ лишь не доехал
+    const committed = createFormHandler({
+      description: base, limits: { timeoutMs: 30 },
+      execute: async (c) => { c.commit(); await hang(); return {} },
+    })
+    expect((await committed(post({ ...envelopeOf(), name: 'a' }))).result.outcome).toBe('committed')
+  })
+
+  test('висящее чтение тела тоже обрывается: до обработчика дело не дошло', async () => {
+    const h = createFormHandler({
+      description: base, limits: { timeoutMs: 30 },
+      execute: (c) => { c.commit(); return {} },
+    })
+    // тело, которое не отдаёт ни одного байта
+    const body = new ReadableStream<Uint8Array>({ start() {} })
+    const req = new Request('http://x/form', {
+      method: 'POST', body, duplex: 'half',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    } as RequestInit)
+    const r = await h(req)
+    expect(r.status).toBe(408)
+    expect(r.result.outcome).toBe('not-applied')
+    expect(r.result.errors[0]!.retryable).toBe(true)
+  })
+
+  test('уложился в срок — работает как раньше', async () => {
+    const h = createFormHandler({
+      description: base, limits: { timeoutMs: 500 },
+      execute: async (c) => { await slow(1); c.commit(); return { data: { ok: 1 } } },
+    })
+    const r = await h(post({ ...envelopeOf(), name: 'a' }))
+    expect(r.status).toBe(200)
+    expect(r.result.outcome).toBe('committed')
+  })
+})
+
 suite('Result.intent — штамп намерения', () => {
   const d = defineForm({
     id: 'probe',

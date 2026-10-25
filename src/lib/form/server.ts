@@ -26,7 +26,13 @@ export interface Limits {
   readonly maxKeys: number
   /** Предел значений одного ключа. */
   readonly maxValuesPerKey: number
-  /** Общий таймаут приёма. */
+  /**
+   * Крайний срок всего приёма, мс: от первого байта тела до готового `Result`.
+   * Полуживой сервер обязан отказать сам (`408 request.timeout`), а не ждать
+   * таймаута платформы, держа воркер и память. Работа не прерывается — её
+   * результат уже никому не нужен, поэтому исход «неизвестно», если обработчик
+   * успел начать действие.
+   */
   readonly timeoutMs: number
 }
 
@@ -653,188 +659,231 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       } }
     }
 
-    try {
-      if (o.throttle) {
-        const verdict = await o.throttle.check({ request, event })
-        if (!verdict.allowed)
-          return finish(fail(reject(429, 'rate.limited', { retryAfterMs: verdict.retryAfterMs })))
-      }
-
-      for (const layer of layers) {
-        const r = await layer(ctx)
-        if (r) return finish(fail(r))
-      }
-
-      // обычно уже поднято слоем имён; здесь — если order поставил его до тела
-      await resolveSource(ctx)
-
-      // бюджет тела — тот же, по которому режет `bodyLayer`: объявленный формой
-      // меньше потолка окружения, иначе действует потолок (в `limits.maxBytes`)
-      const ev = evaluate(ctx.form!, ctx.description, {
-        render, instance: o.instance, prepare, budget: ctx.limits.maxBytes,
-      })
-      if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
-
-      currentIntent = ev.intent
-      knownIntent = ev.intent
-      const submissionId = ev.envelope!.submissionId
-      const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
-        make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues,
-               ...(ev.notes ? { notes: ev.notes } : {}) })
-
-      // кнопка набора полей без JS: места возвращаются с новым или без удалённого, ничего не выполняется
-      const op = fieldSetOp(ctx.form!, ctx.description, ev.intent)
-      if (op)
-        return finish({ status: status.ok, result: make({
-          ok: true, status: status.ok, outcome: 'not-applied', submissionId, instance: ev.envelope!.instance,
-          values: { ...ev.publicValues, [op.name]: op.items },
-        }) })
-
-      ctx.reached = 'validating'
-      const errors = [...ev.errors]
-
-      // внешняя схема и асинхронные проверки — только если синхронные прошли:
-      // проверять межполевое и чужое поверх мусора бессмысленно
-      if (!errors.length && o.schema) errors.push(...await runSchema(o.schema, ev.values))
-      if (!errors.length && o.checks)
-        errors.push(...await runAsyncChecks(ctx.description, ev.values, o.checks))
-
-      if (errors.length)
-        return finish({
-          status: status.validationFailed,
-          result: withId({
-            ok: false, status: status.validationFailed, outcome: 'not-applied',
-            errors: normalizeErrors(errors, render, ctx.description.policy.limits),
-          }),
-        })
-
-      // повтор той же отправки не выполняется заново; параллельный — тоже (бронь)
-      let reserved = false
-      if (o.idempotency) {
-        const store = o.idempotency
-        const r: Reservation = store.reserve
-          ? await store.reserve(submissionId, IDEMPOTENCY_RESERVE_MS)
-          : await (async () => {
-            const prev = await store.get(submissionId)
-            return prev ? { status: 'done' as const, result: prev } : { status: 'reserved' as const }
-          })()
-        if (r.status === 'done') {
-          ctx.reached = 'committed'
-          return finish({ status: r.result.status, result: r.result as Result<T> })
+    // Приём целиком — одна работа с крайним сроком: висящее чтение тела,
+    // молчащий обработчик и зависшее хранилище обрываются одинаково.
+    const pipeline = async (): Promise<Handled<T>> => {
+      try {
+        if (o.throttle) {
+          const verdict = await o.throttle.check({ request, event })
+          if (!verdict.allowed)
+            return finish(fail(reject(429, 'rate.limited', { retryAfterMs: verdict.retryAfterMs })))
         }
-        if (r.status === 'busy')
-          // «не применено» и тот же submissionId: адаптер не создаёт новый id, и
-          // следующая попытка получит результат первой отправки из хранилища.
+
+        for (const layer of layers) {
+          const r = await layer(ctx)
+          if (r) return finish(fail(r))
+        }
+
+        // обычно уже поднято слоем имён; здесь — если order поставил его до тела
+        await resolveSource(ctx)
+
+        // бюджет тела — тот же, по которому режет `bodyLayer`: объявленный формой
+        // меньше потолка окружения, иначе действует потолок (в `limits.maxBytes`)
+        const ev = evaluate(ctx.form!, ctx.description, {
+          render, instance: o.instance, prepare, budget: ctx.limits.maxBytes,
+        })
+        if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
+
+        currentIntent = ev.intent
+        knownIntent = ev.intent
+        const submissionId = ev.envelope!.submissionId
+        const withId = (part: Partial<Result<T>> & { ok: boolean; status: number; outcome: Outcome }) =>
+          make({ ...part, submissionId, instance: ev.envelope!.instance, values: ev.publicValues,
+                 ...(ev.notes ? { notes: ev.notes } : {}) })
+
+        // кнопка набора полей без JS: места возвращаются с новым или без удалённого, ничего не выполняется
+        const op = fieldSetOp(ctx.form!, ctx.description, ev.intent)
+        if (op)
+          return finish({ status: status.ok, result: make({
+            ok: true, status: status.ok, outcome: 'not-applied', submissionId, instance: ev.envelope!.instance,
+            values: { ...ev.publicValues, [op.name]: op.items },
+          }) })
+
+        ctx.reached = 'validating'
+        const errors = [...ev.errors]
+
+        // внешняя схема и асинхронные проверки — только если синхронные прошли:
+        // проверять межполевое и чужое поверх мусора бессмысленно
+        if (!errors.length && o.schema) errors.push(...await runSchema(o.schema, ev.values))
+        if (!errors.length && o.checks)
+          errors.push(...await runAsyncChecks(ctx.description, ev.values, o.checks))
+
+        if (errors.length)
           return finish({
-            status: 409,
-            result: withId({ ok: false, status: 409, outcome: 'not-applied', errors: normalizeErrors([{
-              id: stableId({ code: 'submission.in-flight' }), code: 'submission.in-flight',
-              message: render('submission.in-flight'), origin: 'server', retryable: true,
+            status: status.validationFailed,
+            result: withId({
+              ok: false, status: status.validationFailed, outcome: 'not-applied',
+              errors: normalizeErrors(errors, render, ctx.description.policy.limits),
+            }),
+          })
+
+        // повтор той же отправки не выполняется заново; параллельный — тоже (бронь)
+        let reserved = false
+        if (o.idempotency) {
+          const store = o.idempotency
+          const r: Reservation = store.reserve
+            ? await store.reserve(submissionId, IDEMPOTENCY_RESERVE_MS)
+            : await (async () => {
+              const prev = await store.get(submissionId)
+              return prev ? { status: 'done' as const, result: prev } : { status: 'reserved' as const }
+            })()
+          if (r.status === 'done') {
+            ctx.reached = 'committed'
+            return finish({ status: r.result.status, result: r.result as Result<T> })
+          }
+          if (r.status === 'busy')
+            // «не применено» и тот же submissionId: адаптер не создаёт новый id, и
+            // следующая попытка получит результат первой отправки из хранилища.
+            return finish({
+              status: 409,
+              result: withId({ ok: false, status: 409, outcome: 'not-applied', errors: normalizeErrors([{
+                id: stableId({ code: 'submission.in-flight' }), code: 'submission.in-flight',
+                message: render('submission.in-flight'), origin: 'server', retryable: true,
+              }], render, ctx.description.policy.limits) }),
+            })
+          reserved = !!store.reserve
+        }
+
+        ctx.reached = 'executing'
+        const proven = provenSchemas(ctx.description, ev.values, ev.intent)
+        const pick = (keys: readonly string[]) => {
+          const out: Record<string, unknown> = {}
+          const fields: Record<string, { schema: object; value: unknown }> = {}
+          for (const k of keys) {
+            if (!ctx.description.byName[k]) throw new Error(`[form] pick: нет поля '${k}' в форме`)
+            if (!(k in ev.values)) continue
+            out[k] = ev.values[k]
+            const schema = proven.get(k)
+            if (schema) fields[k] = { schema, value: ev.values[k] }
+          }
+          return stampProof(out, fields)
+        }
+        let committed = false
+        const afters: Array<() => Promise<void> | void> = []
+        let out: ExecuteOutput<T>
+
+        try {
+          out = await o.execute({
+            values: ev.values, intent: ev.intent, request,
+            pick: pick as ExecuteContext['pick'],
+            commit: () => { committed = true; ctx.reached = 'committed' },
+            after: (fn) => { afters.push(fn) },
+            fail: (list, outcome) => {
+              throw new ExecuteFailure(
+                list.map((x) => ('origin' in x && typeof x.origin === 'string' ? x as FormError : issueError(x as IssueLike, 'server'))),
+                outcome)
+            },
+          })
+        } catch (e) {
+          if (e instanceof ExecuteFailure) {
+            const outcome = e.outcome ?? (committed ? 'committed' : 'not-applied')
+            // Бронь снимается ТОЛЬКО при достоверном «не применено»: исправленная
+            // отправка с тем же id должна пройти. При «неизвестно»/«зафиксировано»
+            // без записи бронь держится до срока — повтор получит отказ, а не второе выполнение.
+            if (reserved && outcome === 'not-applied') await o.idempotency!.release!(submissionId)
+            const code = outcome === 'not-applied' ? status.validationFailed : 500
+            return finish({
+              status: code,
+              result: withId({ ok: false, status: code, outcome,
+                errors: normalizeErrors([...e.errors], render, ctx.description.policy.limits) }),
+            })
+          }
+          // упало ВНУТРИ обработчика: часть операций могла пройти, повтор опасен
+          const outcome: Outcome = committed ? 'committed' : 'unknown'
+          return finish({
+            status: 500,
+            result: withId({ ok: false, status: 500, outcome, errors: normalizeErrors([{
+              id: stableId({ code: 'handler.failed' }), code: 'handler.failed',
+              message: render('handler.failed'), origin: 'server', retryable: false,
             }], render, ctx.description.policy.limits) }),
           })
-        reserved = !!store.reserve
-      }
-
-      ctx.reached = 'executing'
-      const proven = provenSchemas(ctx.description, ev.values, ev.intent)
-      const pick = (keys: readonly string[]) => {
-        const out: Record<string, unknown> = {}
-        const fields: Record<string, { schema: object; value: unknown }> = {}
-        for (const k of keys) {
-          if (!ctx.description.byName[k]) throw new Error(`[form] pick: нет поля '${k}' в форме`)
-          if (!(k in ev.values)) continue
-          out[k] = ev.values[k]
-          const schema = proven.get(k)
-          if (schema) fields[k] = { schema, value: ev.values[k] }
         }
-        return stampProof(out, fields)
-      }
-      let committed = false
-      const afters: Array<() => Promise<void> | void> = []
-      let out: ExecuteOutput<T>
 
-      try {
-        out = await o.execute({
-          values: ev.values, intent: ev.intent, request,
-          pick: pick as ExecuteContext['pick'],
-          commit: () => { committed = true; ctx.reached = 'committed' },
-          after: (fn) => { afters.push(fn) },
-          fail: (list, outcome) => {
-            throw new ExecuteFailure(
-              list.map((x) => ('origin' in x && typeof x.origin === 'string' ? x as FormError : issueError(x as IssueLike, 'server'))),
-              outcome)
-          },
-        })
-      } catch (e) {
-        if (e instanceof ExecuteFailure) {
-          const outcome = e.outcome ?? (committed ? 'committed' : 'not-applied')
-          // Бронь снимается ТОЛЬКО при достоверном «не применено»: исправленная
-          // отправка с тем же id должна пройти. При «неизвестно»/«зафиксировано»
-          // без записи бронь держится до срока — повтор получит отказ, а не второе выполнение.
-          if (reserved && outcome === 'not-applied') await o.idempotency!.release!(submissionId)
-          const code = outcome === 'not-applied' ? status.validationFailed : 500
+        if (!committed)
           return finish({
-            status: code,
-            result: withId({ ok: false, status: code, outcome,
-              errors: normalizeErrors([...e.errors], render, ctx.description.policy.limits) }),
+            status: 500,
+            result: withId({ ok: false, status: 500, outcome: 'unknown', errors: normalizeErrors([{
+              id: stableId({ code: 'success-not-acknowledged' }), code: 'success-not-acknowledged',
+              message: render('success-not-acknowledged'), origin: 'server',
+            }], render, ctx.description.policy.limits) }),
           })
+
+        for (const fn of afters) {
+          // сбой последующего события НЕ отменяет фиксацию
+          try { await fn() }
+          catch {
+            ctx.warnings.push({
+              id: stableId({ code: 'after.failed' }), code: 'after.failed',
+              message: render('after.failed'), origin: 'server',
+            })
+          }
         }
-        // упало ВНУТРИ обработчика: часть операций могла пройти, повтор опасен
-        const outcome: Outcome = committed ? 'committed' : 'unknown'
+
+        // Очередь: принято, итог позже. Без адресов опроса исход — тупик (ошибка разработки).
+        const result = out.queued
+          ? withId({ ok: true, status: status.queued, outcome: 'queued', data: out.queued as T })
+          : withId({
+            ok: true, status: status.ok, outcome: 'committed',
+            data: out.data, redirect: safeRedirect(out.redirect),
+          })
+        assertQueuedProtocol(result)
+        if (o.idempotency) await o.idempotency.put(submissionId, result, IDEMPOTENCY_TTL_MS)
+        return finish({ status: result.status, result })
+      } catch (e) {
+        // Текст исключения (адреса, логины БД, пути) клиенту не отдаётся.
+        failure = e
+        console.error('[form] сбой приёма запроса', e)
+        const outcome: Outcome = ctx.reached === 'committed' ? 'committed'
+          : ctx.reached === 'executing' ? 'unknown' : 'not-applied'
         return finish({
           status: 500,
-          result: withId({ ok: false, status: 500, outcome, errors: normalizeErrors([{
+          result: make({ ok: false, status: 500, outcome, errors: [{
             id: stableId({ code: 'handler.failed' }), code: 'handler.failed',
-            message: render('handler.failed'), origin: 'server', retryable: false,
-          }], render, ctx.description.policy.limits) }),
+            message: render('handler.failed'), origin: 'server',
+          }] }),
         })
       }
+    }
 
-      if (!committed)
-        return finish({
-          status: 500,
-          result: withId({ ok: false, status: 500, outcome: 'unknown', errors: normalizeErrors([{
-            id: stableId({ code: 'success-not-acknowledged' }), code: 'success-not-acknowledged',
-            message: render('success-not-acknowledged'), origin: 'server',
-          }], render, ctx.description.policy.limits) }),
-        })
-
-      for (const fn of afters) {
-        // сбой последующего события НЕ отменяет фиксацию
-        try { await fn() }
-        catch {
-          ctx.warnings.push({
-            id: stableId({ code: 'after.failed' }), code: 'after.failed',
-            message: render('after.failed'), origin: 'server',
-          })
-        }
-      }
-
-      // Очередь: принято, итог позже. Без адресов опроса исход — тупик (ошибка разработки).
-      const result = out.queued
-        ? withId({ ok: true, status: status.queued, outcome: 'queued', data: out.queued as T })
-        : withId({
-          ok: true, status: status.ok, outcome: 'committed',
-          data: out.data, redirect: safeRedirect(out.redirect),
-        })
-      assertQueuedProtocol(result)
-      if (o.idempotency) await o.idempotency.put(submissionId, result, IDEMPOTENCY_TTL_MS)
-      return finish({ status: result.status, result })
-    } catch (e) {
-      // Текст исключения (адреса, логины БД, пути) клиенту не отдаётся.
-      failure = e
-      console.error('[form] сбой приёма запроса', e)
+    return withDeadline(limits.timeoutMs, pipeline, () => {
+      // Тело больше не нужно: отпускаем поток, чтобы он не держал память.
+      void request.body?.cancel().catch(() => undefined)
+      failure = new Error('[form] приём не уложился в timeoutMs')
       const outcome: Outcome = ctx.reached === 'committed' ? 'committed'
         : ctx.reached === 'executing' ? 'unknown' : 'not-applied'
       return finish({
-        status: 500,
-        result: make({ ok: false, status: 500, outcome, errors: [{
-          id: stableId({ code: 'handler.failed' }), code: 'handler.failed',
-          message: render('handler.failed'), origin: 'server',
+        status: 408,
+        result: make({ ok: false, status: 408, outcome, errors: [{
+          id: stableId({ code: 'request.timeout' }), code: 'request.timeout',
+          message: render('request.timeout'), origin: 'server',
+          retryable: outcome === 'not-applied',
         }] }),
       })
-    }
+    })
   }
+}
+
+/**
+ * Крайний срок работы: `onTimeout` собирает ответ, а работа продолжается в фоне
+ * (прервать чужой `execute` нельзя) — её результат уже никому не нужен.
+ * Тело запроса при этом отменяется вызывающим: поток не должен держать память.
+ */
+function withDeadline<T>(
+  ms: number,
+  work: () => Promise<T>,
+  onTimeout: () => T,
+): Promise<T> {
+  if (!(ms > 0)) return work()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(onTimeout()), ms)
+  })
+  const running = work()
+  // Отказ работы после срока не должен всплыть необработанным исключением.
+  running.catch(() => undefined)
+  return Promise.race([running, deadline]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
 }
 
 const REDIRECT_BASE = 'http://redirect.invalid'
