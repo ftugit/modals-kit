@@ -10,17 +10,8 @@ type FormSource = NonNullable<Parameters<typeof createFormHandler>[0]['source']>
 export interface FormSessionGuard {
   /** Проверить/освежить истёкший временный снимок перед отправкой запроса. */
   ensureFresh(): Promise<boolean>
-  /**
-   * Вызывается при отказе сессии; при `true` исходный запрос повторяется 1 раз.
-   * `code` — причина отказа (`auth.expired`, `auth.blocked`, …).
-   */
-  onAuthExpired(code?: string): Promise<boolean>
-  /**
-   * Терминальный ли код: сессия или аккаунт больше не действуют. Такой ответ
-   * не повторяют — он означает выход. Без метода терминальным считается только
-   * `auth.expired`.
-   */
-  isTerminal?(code: string): boolean
+  /** Вызывается при ответе `auth.expired`; при `true` исходный запрос повторяется 1 раз. */
+  onAuthExpired(): Promise<boolean>
 }
 
 /** Клиентские опции привязки встраиваемой формы к текущему маршруту. */

@@ -16,23 +16,11 @@ import type { ComponentFormOptions, FormSessionGuard } from './types.js'
 
 export type { FormSessionGuard }
 
-function failureCodes(result: Result): string[] {
-  if (result.ok) return []
-  const codes = result.errors.map((m) => m.code)
+function isAuthExpiredResult(result: Result): boolean {
+  if (result.ok) return false
+  if (result.errors.some((m) => m.code === 'auth.expired')) return true
   const data = result.data as { code?: unknown } | undefined
-  if (typeof data?.code === 'string') codes.push(data.code)
-  return codes
-}
-
-/**
- * Причина отказа сессии в ответе. Гард сам решает, какие коды терминальны
- * (`isTerminal`); без него терминальным считается только `auth.expired`.
- */
-function authFailureCode(result: Result, session: FormSessionGuard): string | null {
-  for (const code of failureCodes(result)) {
-    if (session.isTerminal ? session.isTerminal(code) : code === 'auth.expired') return code
-  }
-  return null
+  return data?.code === 'auth.expired'
 }
 
 function readCurrentHref(): string {
@@ -91,9 +79,8 @@ export function bindComponentForm(
       await session.ensureFresh()
     }
     const out = await baseTransport(req)
-    const lostCode = session && out.kind === 'result' ? authFailureCode(out.result, session) : null
-    if (session && lostCode) {
-      const renewed = await session.onAuthExpired(lostCode)
+    if (session && out.kind === 'result' && isAuthExpiredResult(out.result)) {
+      const renewed = await session.onAuthExpired()
       if (renewed) {
         const retryEnvelope = { ...req.envelope, submissionId: crypto.randomUUID() }
         const retryData =
