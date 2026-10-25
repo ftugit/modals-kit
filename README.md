@@ -76,7 +76,7 @@ npm run test:browser # Playwright E2E-наборы в Chromium против prod
 - [`src/components/ui/README.md`](./src/components/ui/README.md) — правила слоя UI-примитивов (`*Variants`, `field.ts`, иконки, баррель и глубокие импорты).
 - [`src/hooks/README.md`](./src/hooks/README.md) — каталог межбиблиотечных и фреймворковых связок.
 - [`docs/plan.md`](./docs/plan.md) — сводный план проекта, завершённые вехи и открытые этапы развития.
-- [`docs/audit/`](./docs/audit/README.md) — материалы аудита: [реестр открытых задач (`testing-backlog.md`)](./docs/audit/testing-backlog.md) и [разбор костылей (`crutches.md`)](./docs/audit/crutches.md); закрытые чек-листы `S1`–`S6`, `U1`–`U9` и `AS-01`–`AS-09` удалены — их правила живут в `AGENTS.md`, `src/components/ui/README.md` и стражах `tooling/`.
+- [`docs/audit/`](./docs/audit/README.md) — материалы аудита: [нерешённое и открытые вопросы (`open-issues.md`)](./docs/audit/open-issues.md) и [разбор костылей (`crutches.md`)](./docs/audit/crutches.md); закрытые чек-листы `S1`–`S6`, `U1`–`U9` и `AS-01`–`AS-09` удалены — их правила живут в `AGENTS.md`, `src/components/ui/README.md` и стражах `tooling/`.
 - [`docs/plan.md`](./docs/plan.md) — сводный план: выполненные вехи, открытая очередь и известные ограничения.
 - [`docs/design/port-plan.md`](./docs/design/port-plan.md) — план переноса на другой фреймворк/роутер.
 - [`docs/design/image-transfer.md`](./docs/design/image-transfer.md) — архитектура бинарного конвейера изображений и оставшиеся этапы (`R4`–`R7`).

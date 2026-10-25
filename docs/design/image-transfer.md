@@ -49,7 +49,7 @@
 ### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
 
 Сейчас `updateProfile` сохраняет `data:image/jpeg;base64,...` в колонку `user_profile.avatar_url`, а `freshAccess` (`src/content/user/auth.ts`) запечатывает весь `prof: { nickname, avatarUrl }` прямо в `HttpOnly`-куку `auth_tmp` (`ACCESS_COOKIE`).
-- На реальных фотографиях сжатый JPEG весит `8–32 КБ` (`11–44 КБ` в base64), что превышает браузерный лимит одной куки (`4096 B`, RFC 6265) и порог заголовков HTTP (`16 KiB` → `431 Request Header Fields Too Large`). Подробности и сценарий воспроизведения зафиксированы в [`docs/audit/testing-backlog.md`](../audit/testing-backlog.md) (`TB-01`).
+- На реальных фотографиях сжатый JPEG весит `8–32 КБ` (`11–44 КБ` в base64), что превышает браузерный лимит одной куки (`4096 B`, RFC 6265) и порог заголовков HTTP (`16 KiB` → `431 Request Header Fields Too Large`). Подробности и сценарий воспроизведения — [`docs/plan.md`](../plan.md) §2 (`TB-01`) и [`docs/audit/open-issues.md`](../audit/open-issues.md).
 
 **Что нужно сделать:**
 1. В `auth_tmp` хранить только компактный признак/ревизию аватара (или короткий URL `/api/user/avatar/<id>?v=<rev>`), не сериализуя `data:image/...` в заголовок `Cookie`.
