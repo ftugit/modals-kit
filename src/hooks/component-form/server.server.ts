@@ -45,18 +45,6 @@ function resolveDescription(reg: ComponentFormRegistration, event: RequestEvent)
   return typeof reg.description === 'function' ? reg.description(event) : reg.description
 }
 
-function maxRegisteredBytes(): number {
-  // потолок окружения — верхняя граница для всех регистраций сразу: частный
-  // `limits.maxBytes` может только уменьшить тело, форма — тем более
-  const ceiling = bodyBudget()
-  let max = ceiling
-  for (const reg of componentFormRegistry().values()) {
-    const candidate = envLimits(reg.limits ?? {}).maxBytes
-    if (candidate > max) max = Math.min(candidate, ceiling)
-  }
-  return Math.min(max, ceiling)
-}
-
 /**
  * Ограниченное чтение копии тела для распознавания конверта `__form_id`:
  * поток больше верхнего предела всех зарегистрированных форм никогда не
@@ -163,7 +151,8 @@ export function createComponentFormsHandle(
     const registry = componentFormRegistry()
     if (registry.size === 0) return resolve(event)
 
-    const capBytes = maxRegisteredBytes()
+    // потолок окружения: больше него не пропустит ни платформа, ни `bodyLayer`
+    const capBytes = bodyBudget()
     const raw = await peekFormDataBounded(event.request, capBytes)
     if (raw === null) return resolve(event)
     if (raw === 'too-large') {

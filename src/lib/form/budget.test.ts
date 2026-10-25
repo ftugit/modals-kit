@@ -42,12 +42,13 @@ describe('бюджет формы', () => {
 })
 
 describe('v.maxSize и бюджет', () => {
-  test('личный предел сужается бюджетом файлов', () => {
+  test('личный предел — только объявленное число, бюджет его не сужает', () => {
+    // бюджет 8 МБ, личный предел 10 МБ: валидатор судит ровно десять
     const d = probe(8 * MB)
-    expect(codes(validateForm(d, { photo: file('ok.jpg', 7 * MB) }))).toEqual([])
-    const bad = validateForm(d, { photo: file('big.jpg', 7 * MB + 1) })
+    expect(codes(validateForm(d, { photo: file('ok.jpg', 9 * MB) }))).toEqual(['form.budget'])
+    const bad = validateForm(d, { photo: file('big.jpg', 10 * MB + 1) })
     expect(codes(bad)).toEqual(['maxSize'])
-    expect(bad[0]!.params).toMatchObject({ bytes: 7 * MB, name: 'big.jpg' })
+    expect(bad[0]!.params).toMatchObject({ bytes: 10 * MB, name: 'big.jpg' })
   })
 
   test('сумма по всем файлам — общая ошибка формы, без пути', () => {
@@ -95,16 +96,16 @@ describe('v.maxSize и бюджет', () => {
     const d = probe(100 * MB)
     expect(d.limits).toMatchObject({ budget: 100 * MB, filesBytes: 99 * MB })
 
-    // потолок 8 МБ: объявленные 100 МБ молча игнорируются
-    const errors = validateForm(d, { photo: file('big.jpg', 8 * MB) }, { budget: 8 * MB })
-    expect(codes(errors)).toEqual(['maxSize'])
-    expect(errors[0]!.params).toMatchObject({ bytes: 7 * MB })
+    // потолок 8 МБ: объявленные 100 МБ молча игнорируются, вес держит бюджет
+    const errors = validateForm(d, { photo: file('big.jpg', 9 * MB) }, { budget: 8 * MB })
+    expect(codes(errors)).toEqual(['form.budget'])
+    expect(errors[0]!.params).toMatchObject({ max: 8 * MB })
 
     // потолок без объявленного бюджета сам становится бюджетом формы
     const bare = defineForm({
       id: 'bare', fields: { photo: field.file({ label: 'Аватар', validate: [v.maxSize(10 * MB)] }) },
     })
     expect(codes(validateForm(bare, { photo: file('ok.jpg', 7 * MB) }, { budget: 8 * MB }))).toEqual([])
-    expect(codes(validateForm(bare, { photo: file('big.jpg', 8 * MB) }, { budget: 8 * MB }))).toEqual(['maxSize'])
+    expect(codes(validateForm(bare, { photo: file('big.jpg', 8 * MB) }, { budget: 8 * MB }))).toEqual(['form.budget'])
   })
 })

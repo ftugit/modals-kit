@@ -38,7 +38,6 @@ test('параметры подставляются', () => {
   const r = makeRenderer([ru])
   expect(r('rate.limited', { retryAfterMs: 2500 })).toBe('Слишком много попыток. Повторите через 3 с')
   expect(r('rate.limited', {})).toBe('Слишком много попыток. Повторите позже')
-  expect(r('file.too-large', { name: 'a.pdf' })).toBe('Файл a.pdf слишком большой')
   expect(r('maxSize', { name: 'a.pdf', bytes: 2048 })).toBe('Файл a.pdf больше 2 КБ')
 })
 

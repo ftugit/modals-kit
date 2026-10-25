@@ -24,8 +24,6 @@ export interface Limits {
   readonly maxBytes: number
   /** Предел числа различных ключей. */
   readonly maxKeys: number
-  /** Предел на КАЖДЫЙ файл отдельно. */
-  readonly maxFileSize: number
   /** Предел значений одного ключа. */
   readonly maxValuesPerKey: number
   /** Общий таймаут приёма. */
@@ -34,7 +32,7 @@ export interface Limits {
 
 /** Пределы приёма по умолчанию: байты тела, число полей, размер файла. */
 export const DEFAULT_LIMITS: Limits = {
-  maxBytes: 2 * 1024 * 1024, maxKeys: 256, maxFileSize: 8 * 1024 * 1024,
+  maxBytes: 2 * 1024 * 1024, maxKeys: 256,
   maxValuesPerKey: 64, timeoutMs: 15_000,
 }
 
@@ -115,12 +113,8 @@ export const bodyLayer: Layer = async (ctx) => {
   if (keys.length > ctx.limits.maxKeys) return reject(413, 'body.too-many-keys')
 
   for (const key of keys) {
-    const all = form.getAll(key)
-    if (all.length > ctx.limits.maxValuesPerKey) return reject(413, 'request.too-many', { name: key })
-    // предел на КАЖДЫЙ файл отдельно: суммарного недостаточно
-    for (const value of all)
-      if (typeof value !== 'string' && value.size > ctx.limits.maxFileSize)
-        return reject(413, 'file.too-large', { name: value.name })
+    if (form.getAll(key).length > ctx.limits.maxValuesPerKey)
+      return reject(413, 'request.too-many', { name: key })
   }
   ctx.form = form
   return undefined

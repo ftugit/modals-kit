@@ -409,16 +409,12 @@ export const v = {
   maxSize: (bytes: number) => {
     const max = nonNegative('maxSize', bytes)
     return describe<File | readonly File[] | null>(
-      (value, ctx) => {
-        // Бюджет файлов формы сужает личный предел: обещать «до 10 МБ» при
-        // бюджете 7 МБ — обещать то, что всё равно не доедет.
-        const budget = ctx.limits?.filesBytes ?? Number.POSITIVE_INFINITY
-        const cap = Math.min(max, budget)
-        // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма.
-        // Сумму по форме считает не правило, а вес тела (`weight.ts`): валидатор
-        // видит одно значение и не обязан знать про соседей.
+      (value) => {
+        // Валидатор судит ровно объявленный предел — и только вес одного файла.
+        // Лимит формы живёт отдельно: его считает вес тела (`weight.ts`) и отдаёт
+        // общей ошибкой. Поставить здесь 1 ГБ или не ставить вовсе — законно.
         const file = value as File | null
-        return file && file.size > cap ? issue('maxSize', { bytes: cap, name: file.name }) : null
+        return file && file.size > max ? issue('maxSize', { bytes: max, name: file.name }) : null
       },
       [{ kind: 'maxSize', bytes: max }], { perItem: true })
   },

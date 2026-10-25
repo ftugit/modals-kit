@@ -20,17 +20,17 @@ export function filesBudget(budget: number = bodyBudget()): number {
 }
 
 /**
- * Пределы приёма от окружения: тело — потолок, один файл — бюджет файлов.
- * Частные пределы регистрации (`limits` в `registerComponentForm`) могут только
- * уменьшить оба числа, но не поднять: платформа всё равно откажет раньше.
+ * Пределы приёма от окружения: только тело формы. Предела на отдельный файл
+ * здесь нет и быть не может — его объявляет валидатор в самой форме
+ * (`v.maxSize`), а общий вес держит бюджет. Частный предел регистрации
+ * (`limits` в `registerComponentForm`) может только уменьшить тело, но не
+ * поднять: платформа всё равно откажет раньше.
  */
 export function envLimits(patch: Partial<Limits> = {}): Limits {
   const budget = bodyBudget()
-  const files = filesBudget(budget)
   return {
     ...DEFAULT_LIMITS,
     ...patch,
     maxBytes: Math.min(patch.maxBytes ?? budget, budget),
-    maxFileSize: Math.min(patch.maxFileSize ?? files, files),
   }
 }

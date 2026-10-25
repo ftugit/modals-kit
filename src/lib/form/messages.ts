@@ -103,7 +103,6 @@ export const ru: MessageDictionary = {
   'kit.arg-type': 'Значение правила — число',
   'kit.arg-missing': 'Укажите значение правила',
   'kit.spec': 'Поле описано неверно: проверьте его правила',
-  'file.too-large': (p) => `Файл ${p['name'] ?? ''} слишком большой`.replace('  ', ' '),
   'rate.limited': (p) => {
     const s = Math.ceil(Number(p['retryAfterMs'] ?? 0) / 1000)
     return s > 0 ? `Слишком много попыток. Повторите через ${s} с` : 'Слишком много попыток. Повторите позже'

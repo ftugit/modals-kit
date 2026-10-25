@@ -59,7 +59,6 @@ registerComponentForm({
     resolve: async () => recordForm(savedSet(), savedRecord()),
     revision: async () => savedSet()?.version ?? 1,
   },
-  limits: { maxFileSize: IMAGE_MAX_BYTES },
   async execute({ values, commit, fail }) {
     const previous = savedRecord()
     const file = values['image'] as File | null
