@@ -123,7 +123,7 @@
 
 **Что править.** Один **`SpecAvatar`** — в `src/content/user/spec-avatar.ts`, обычный `.ts` (не `.svelte`: его импортируют серверные `profile.form.server.ts` и `checks.ts`). Внутри: метка, входные форматы (`accept`), предел сырья, формат выхода, `photoConvert(limits) { format, edge, bytes }`, готовое описание поля `field.file({ label, validate })`. Из него строятся и `profileForm.fields.avatar`, и `<Field of={f.avatar} preview photoConvert={SpecAvatar.photoConvert(limits)} />`; значения конфига подставляет загрузка страницы (сейчас уже передаются как `initialLimits`). `SpecAvatar` поглощает `avatarPhotoSpec` (`checks.ts:32-46`), `SHORT_PHOTO_FORMATS` (`profile.form.server.ts:18`), `AvatarLimits`/правила `prepareAvatar` (`avatar.ts`), `field.photo(...)` (`form.ts:29-37`) и `defaults` в `ProfileForm.svelte:7-8`. После этого `AvatarTakeover` и `prepareAvatar` не нужны — их место занимают опции `Field` ([`../plan.md`](../plan.md) §3, `OI-06`).
 
-**Числа.** Четыре размера и три веса, у каждого свой владелец:
+**Числа.** Три размера и четыре веса, у каждого свой владелец:
 
 | Величина | Значение | Чья |
 |---|---|---|
