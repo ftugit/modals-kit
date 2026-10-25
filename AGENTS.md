@@ -56,3 +56,29 @@
   - не менять браузерное умолчание `decodeWithBrowser` в `src/lib/image/decode.ts` (`EnvironmentError` в Node без явного декодера); на сервере передавать `{ decoder: decodeWithNode }` из `#lib/image/node.js`.
 - **Документация `#lib/db`**:
   - при любых изменениях в `src/lib/db/**` или переносах упомянутых файлов держать зелёным живой аудит документации — `vitest run src/lib/db/test/db-docs.test.ts`. Он инжектит `existsSync` в `tooling/db-docs.mjs::auditDocs` и требует существования каждого упомянутого в этих документах пути вида `src|tooling|migrations/…` с расширением файла (пути-каталоги и таблицы происхождения под проверку не попадают). **`node tooling/db-docs.mjs` — не команда**: это модуль без CLI, запуск печатает ничего и не проверяет ничего; тест в `tooling/db-docs.test.mjs` покрывает только чистые функции.
+
+---
+
+## 4. README рядом с кодом
+
+README пакета — часть изменения, а не сопроводительный файл.
+
+**Где они лежат.** `src/lib/*`, `src/components/{loader,steps,ui}`, `src/hooks`, `src/content/user`. Отдельно — документы слоя БД: `src/lib/db/{PORTING.md,docs/*.md}` (под правило README не попадают, но устаревать не должны). Пары «папка → подпапка со своим README»: `src/hooks/` → `src/hooks/links/`, `src/lib/paginate/` → `src/lib/paginate/filters/` и `src/lib/paginate/search/`.
+
+1. **README ищется вверх от файла:** ближайший обязателен. Подпапка без своего README — часть README выше (`src/lib/form/svelte/*` → `src/lib/form/README.md`).
+2. **Область README кончается над папкой со своим README.** Правил `src/lib/paginate/search/fuzzy.ts` — отвечает `src/lib/paginate/search/README.md`; `src/lib/paginate/README.md` — только если поменялся состав папок, публичный вход (`index.ts`) или общие контракты.
+3. **Прочитай README до правки:** он описывает контракт, который ты меняешь.
+4. **Поменял поведение, публичный API, опции, числа бюджетов** (`tooling/form-size.mjs`, `tooling/size-budget.mjs`) **или соглашение** — правь README в том же коммите, на языке файла.
+5. **Контракт не менялся** (багфикс, рефакторинг, тесты, комментарии) — текст не переписывай ради галочки; в тело коммита добавь строку `README <путь>: проверен, правок нет`. Она и есть доказательство, что README не забыт.
+6. **README рядом нет** (`src/routes/`, `src/server/`, `src/content/<модуль>/ui/*`) — ничего не требуется.
+
+**Как проверить, что README отстал** — по содержимому, а не по дате:
+
+```bash
+git log -1 --format=%h -- src/lib/form/README.md
+git log -1 --format=%h -- ':(glob)src/lib/form/**/*.ts' ':(glob)src/lib/form/**/*.svelte' \
+  ':(exclude)**/*.test.ts' ':(exclude)**/*.svelte.test.ts' ':(exclude)**/*.ssr.test.ts' \
+  ':(exclude)src/lib/form/search/**'          # вложенные пары минус их README
+```
+
+Если второй коммит — потомок первого, README отстал. Тесты, комментарии и `*.md` не в счёт: иначе коммит с правкой комментариев ложно объявит документацию свежей.
