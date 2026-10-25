@@ -25,24 +25,46 @@ export interface CheckContext {
  * несколько — когда проверяемое значение это СПИСОК (файлы), и отказать
  * должен каждый плохой элемент, а не первый попавшийся.
  */
-export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | readonly Issue[] | null>
+export type AsyncCheck = {
+  (value: unknown, ctx: CheckContext): Promise<Issue | readonly Issue[] | null>
+  /**
+   * Проверка судит ОДНУ запись списка (файл): движок зовёт её по каждому
+   * элементу `multiple`-поля. Признак — у проверки, а не у ссылки: картинка
+   * всегда одна, поэтому форма не обязана помнить флаг у каждого `check(…)`.
+   */
+  readonly perItem?: boolean
+}
 
 /** Настройка асинхронных проверок: задержка, кэш по значению, таймаут. */
 export interface AsyncPolicy {
   readonly debounceMs: number
   readonly cacheByValue: boolean
   readonly timeoutMs: number
+  /**
+   * Проверка судит ОДНУ запись списка (файл): движок зовёт её по каждому
+   * элементу `multiple`-поля и собирает ошибку на каждый. Без флага проверка
+   * получает значение целиком.
+   */
+  readonly perItem?: boolean
 }
 /** Умолчания асинхронных проверок: 400 мс дебаунса, кэш по значению, таймаут 5 с. */
 export const DEFAULT_ASYNC: AsyncPolicy = { debounceMs: 400, cacheByValue: true, timeoutMs: 5000 }
 
-/** Реестр асинхронных проверок по имени правила — их зовёт клиент и сервер. */
+/**
+ * Реестр асинхронных проверок по имени правила — их зовёт клиент и сервер.
+ *
+ * Признак «проверка судит одну запись списка» живёт здесь, а не в описании поля:
+ * это свойство самой проверки (картинка — всегда один файл), и форма не должна
+ * помнить про флаг у каждой ссылки.
+ */
 export class CheckRegistry {
   #byName = new Map<string, AsyncCheck>()
   register(name: string, fn: AsyncCheck): this {
     this.#byName.set(name, fn)
     return this
   }
+  /** Зовётся ли проверка по каждой записи списка (`multiple`-поле). */
+  perItem = (name: string): boolean => this.#byName.get(name)?.perItem === true
   has = (name: string) => this.#byName.has(name)
   get = (name: string) => this.#byName.get(name)
 }
@@ -55,12 +77,22 @@ export class CheckRegistry {
  * @param policy Дебаунс, кэш по значению, таймаут.
  */
 export function check(name: string, policy: Partial<AsyncPolicy> = {}): MessageValidator<unknown> {
-  const v = describe<unknown>(() => null, [opaque('асинхронная проверка не выражается атрибутом')])
+  const v = describe<unknown>(() => null, [opaque('асинхронная проверка не выражается атрибутом')],
+                              { perItem: policy.perItem === true })
   return Object.assign(v, { asyncCheck: { name, policy: { ...DEFAULT_ASYNC, ...policy } } })
 }
 
 /** `message` — свой текст ошибки проверки: `check(…).message('…')` (F56). */
-export interface AsyncRef { name: string; policy: AsyncPolicy; message?: string }
+export interface AsyncRef {
+  name: string
+  policy: AsyncPolicy
+  message?: string
+  /** Проверка судит одну запись списка — движок зовёт её по каждому элементу. */
+  readonly perItem?: boolean
+}
+
+/** Значение поля по записям: у списка — элементы, у остального — само значение. */
+const itemsOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : [value])
 
 /** Асинхронные проверки поля — их надо прогнать и на сервере, и в браузере. */
 export function asyncRefsOf(d: FormDescription, name: string): AsyncRef[] {
@@ -71,7 +103,7 @@ export function asyncRefsOf(d: FormDescription, name: string): AsyncRef[] {
     let v: Validator<any>
     try { v = d.registry.validators.resolve(ref) } catch { continue }
     const meta = (v as { asyncCheck?: AsyncRef }).asyncCheck
-    if (meta) out.push(meta)
+    if (meta) out.push({ ...meta, perItem: meta.perItem === true || (v as { perItem?: boolean }).perItem === true })
   }
   return out
 }
@@ -107,8 +139,11 @@ export async function runAsyncChecks(
       const fn = checks.get(ref.name)
       if (!fn) continue
       try {
-        const issue = await fn(values[f.name], { path: f.name, values, signal })
-        for (const one of toIssues(issue)) out.push(toError(one, f.name, ref.message))
+        const per = ref.perItem === true || checks.perItem(ref.name)
+        for (const value of per ? itemsOf(values[f.name]) : [values[f.name]]) {
+          const issue = await fn(value, { path: f.name, values, signal })
+          for (const one of toIssues(issue)) out.push(toError(one, f.name, ref.message))
+        }
       } catch {
         // сбой проверки — ошибка на СВОЁМ поле, форма не падает целиком
         out.push(toError({ code: 'check.failed', params: { check: ref.name } }, f.name))
@@ -200,6 +235,7 @@ export class AsyncRunner {
     Promise<readonly FormError[]> {
     const refs = asyncRefsOf(d, path)
     if (!refs.length) return []
+    const perItem = refs.some((r) => r.perItem === true || this.checks.perItem(r.name))
     const key = `${path}:${JSON.stringify(values[path] ?? null)}`
     if (refs.every((r) => r.policy.cacheByValue) && this.#cache.has(key))
       return this.#cache.get(key)!
@@ -213,9 +249,12 @@ export class AsyncRunner {
       for (const ref of refs) {
         const fn = this.checks.get(ref.name)
         if (!fn) continue
-        const issue = await fn(values[path], { path, values, signal: controller.signal })
-        if (controller.signal.aborted) return []
-        const errors = toIssues(issue).map((one) => toError(one, path, ref.message))
+        const errors: FormError[] = []
+        for (const value of perItem ? itemsOf(values[path]) : [values[path]]) {
+          const issue = await fn(value, { path, values, signal: controller.signal })
+          if (controller.signal.aborted) return []
+          errors.push(...toIssues(issue).map((one) => toError(one, path, ref.message)))
+        }
         if (errors.length) {
           this.#remember(key, errors)
           return errors

@@ -43,6 +43,12 @@ export interface Validator<V = unknown> {
    * валидаторов, собранных через `describe` (встроенные, `check`).
    */
   message?(text: string): Validator<V>
+  /**
+   * Правило судит ОДНУ запись списка (файл), а не значение целиком: движок
+   * зовёт его по каждому элементу `multiple`-поля и собирает ошибку на каждый.
+   * Так `v.accept` и `v.maxSize` не обязаны знать, массив им дали или один файл.
+   */
+  readonly perItem?: boolean
 }
 
 /**
@@ -68,6 +74,7 @@ export function withText<V>(v: Validator<V>, text: string): MessageValidator<V> 
     return found ? { ...found, message: text } : found
   }) as MessageValidator<V>
   if (v.describe) out.describe = v.describe
+  if (v.perItem) Object.defineProperty(out, 'perItem', { value: true })
   // асинхронная проверка (`check`) отвечает не из функции, а из реестра проверок
   const meta = (v as { asyncCheck?: object }).asyncCheck
   if (meta) Object.assign(out, { asyncCheck: { ...meta, message: text } })
@@ -77,8 +84,10 @@ export function withText<V>(v: Validator<V>, text: string): MessageValidator<V> 
 
 /** Прикрепляет к валидатору описание ограничений для HTML-проекции. */
 export function describe<V>(fn: (v: V, ctx: FieldContext) => Issue | null,
-                            constraints: readonly Constraint[]): MessageValidator<V> {
+                            constraints: readonly Constraint[],
+                            opts: { perItem?: boolean } = {}): MessageValidator<V> {
   const out = Object.assign(fn, { describe: () => constraints }) as MessageValidator<V>
+  if (opts.perItem) Object.defineProperty(out, 'perItem', { value: true })
   out.message = (text: string) => withText(out, text)
   return out
 }
@@ -208,6 +217,32 @@ const stepBase = (ctx: FieldContext, parsed: { unit: 'number' | 'day' | 'second'
 /** Значение поля `file` (один файл) или `files` (массив) — списком файлов. */
 const filesOf = (value: File | readonly File[] | null | undefined): readonly File[] =>
   value == null ? [] : Array.isArray(value) ? value : [value as File]
+
+/**
+ * Прогнать правило по значению: пофайловое — на каждый элемент списка, обычное —
+ * на значение целиком. Один файл и список из одного файла дают одинаковый ответ.
+ * @param fn Правило.
+ * @param value Значение поля (может быть списком).
+ * @param ctx Контекст поля: путь, значения формы, пределы.
+ * @param perItem Судить каждую запись списка отдельно.
+ */
+export function runPerItem<V>(
+  fn: (v: V, ctx: FieldContext) => Issue | null,
+  value: unknown,
+  ctx: FieldContext,
+  perItem: boolean,
+): Issue[] {
+  if (!perItem || !Array.isArray(value)) {
+    const one = fn(value as V, ctx)
+    return one ? [one] : []
+  }
+  const out: Issue[] = []
+  for (const item of value) {
+    const one = fn(item as V, ctx)
+    if (one) out.push(one)
+  }
+  return out
+}
 
 /**
  * Совпадение файла с токеном `accept` по правилам HTML: `.ext` — суффикс имени
@@ -362,11 +397,13 @@ export const v = {
       throw new Error('[form] accept: ожидается непустой массив MIME-типов или расширений')
     return describe<File | readonly File[] | null>(
       (value) => {
-        // `files` несёт массив: правило действует на КАЖДЫЙ файл, как атрибут `accept`
-        const bad = filesOf(value).find((f) => !types.some((t) => acceptsFile(t, f)))
-        return bad ? issue('accept', { types, name: bad.name }) : null
+        // одно значение — один файл: список разворачивает движок (`runPerItem`)
+        if (value == null) return null
+        return acceptsFile(types[0]!, value as File) || types.slice(1).some((t) => acceptsFile(t, value as File))
+          ? null
+          : issue('accept', { types, name: (value as File).name })
       },
-      [{ kind: 'accept', types }])
+      [{ kind: 'accept', types }], { perItem: true })
   },
 
   maxSize: (bytes: number) => {
@@ -380,10 +417,10 @@ export const v = {
         // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма.
         // Сумму по форме считает не правило, а вес тела (`weight.ts`): валидатор
         // видит одно значение и не обязан знать про соседей.
-        const big = filesOf(value).find((f) => f.size > cap)
-        return big ? issue('maxSize', { bytes: cap, name: big.name }) : null
+        const file = value as File | null
+        return file && file.size > cap ? issue('maxSize', { bytes: cap, name: file.name }) : null
       },
-      [{ kind: 'maxSize', bytes: max }])
+      [{ kind: 'maxSize', bytes: max }], { perItem: true })
   },
 
   /**

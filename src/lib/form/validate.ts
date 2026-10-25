@@ -6,6 +6,7 @@ import type { DisableRule, FieldCondition, FieldDescriptor, FieldLink, FormDescr
 import type { Structural } from './decode'
 import type { FormError } from './result'
 import { stableId } from './result'
+import { runPerItem } from './validators'
 import type { Issue, ValidatorRef } from './validators'
 
 /** Заполнено ли значение: непустая строка/список, число, `true`. */
@@ -168,10 +169,11 @@ export function validateForm(
         if (kinds.some((k) => relax.has(k))) continue
         let fn
         try { fn = d.registry.validators.resolve(ref) } catch { continue }
-        const issue = fn(values[f.name], { path: f.name, values, constraints, limits })
-        if (!issue) continue
-        collected.push(toError(issue, issue.path ?? f.name, f))
-        if (mode === 'first') break
+        // правило «на одну запись» — по каждому файлу списка: одна ошибка на файл
+        const issues = runPerItem(fn, values[f.name], { path: f.name, values, constraints, limits },
+                                  fn.perItem === true)
+        for (const issue of issues) collected.push(toError(issue, issue.path ?? f.name, f))
+        if (issues.length && mode === 'first') break
       }
     }
     errors.push(...collected)

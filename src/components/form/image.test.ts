@@ -27,10 +27,11 @@ const runImageCheck = imageCheck()
 
 describe('проверка изображений: обещание клиента и содержимое', () => {
   it('назвался картинкой — обязан ею быть: архив под .jpg отвергается', async () => {
-    const out = await runImageCheck(asFile(ZIP, 'photo.jpg', 'image/jpeg'), {} as never)
-    expect(Array.isArray(out)).toBe(true)
-    expect((out as unknown as { code: string }[])[0]!.code).toBe('image.format')
-    expect((out as unknown as { params: { name: string } }[])[0]!.params.name).toBe('photo.jpg')
+    const out = (await runImageCheck(asFile(ZIP, 'photo.jpg', 'image/jpeg'), {} as never)) as unknown as {
+      code: string; params: { name: string }
+    }
+    expect(out.code).toBe('image.format')
+    expect(out.params.name).toBe('photo.jpg')
   })
 
   it('не картинка по обещанию — не наше дело (тип судит `accept`)', async () => {
@@ -39,20 +40,17 @@ describe('проверка изображений: обещание клиент
   })
 
   it('размеры сверх потолков — `image.dimensions`', async () => {
-    const out = await runImageCheck(asFile(pngHeader(20_000, 20_000), 'bomb.png', 'image/png'), {} as never)
-    expect((out as unknown as { code: string }[])[0]!.code).toBe('image.dimensions')
+    const out = (await runImageCheck(asFile(pngHeader(20_000, 20_000), 'bomb.png', 'image/png'), {} as never)) as unknown as { code: string }
+    expect(out.code).toBe('image.dimensions')
   })
 
-  it('СПИСОК: проверяется каждый файл, ошибка — на каждый плохой', async () => {
-    const files = [
-      asFile(pngHeader(80, 60), 'ok.png', 'image/png'),
-      asFile(ZIP, 'bad-1.jpg', 'image/jpeg'),
-      asFile(ZIP, 'bad-2.png', 'image/png'),
-      asFile(new Uint8Array([1]), 'doc.pdf', 'application/pdf'),
-    ]
-    const out = (await runImageCheck(files, {} as never)) as unknown as { code: string; params: { name: string } }[]
-    expect(out.map((i) => i.code)).toEqual(['image.format', 'image.format'])
-    expect(out.map((i) => i.params.name)).toEqual(['bad-1.jpg', 'bad-2.png'])
+  it('правило судит ОДИН файл: список разворачивает движок', async () => {
+    const files = [asFile(pngHeader(80, 60), 'ok.png', 'image/png'), asFile(ZIP, 'bad-1.jpg', 'image/jpeg')]
+    // массив правилу не значение: движок зовёт его по каждому файлу
+    expect(await runImageCheck(files, {} as never)).toBeNull()
+    const bad = (await runImageCheck(files[1], {} as never)) as unknown as { code: string; params: { name: string } }
+    expect(bad.code).toBe('image.format')
+    expect(bad.params.name).toBe('bad-1.jpg')
   })
 })
 
@@ -73,11 +71,12 @@ describe('правило в форме: то же на клиенте и на с
     expect(registry.has('image')).toBe(true)
   })
 
-  it('повторяет вердикт на обеих сторонах', async () => {
+  it('движок разворачивает список: строка на каждый плохой файл, обе стороны', async () => {
     const values = { pics: [asFile(ZIP, 'a.jpg', 'image/jpeg'), asFile(ZIP, 'b.png', 'image/png')] }
     const server = await runAsyncChecks(d, values, registry)
     const client = await new AsyncRunner(registry).run(d, 'pics', values)
     expect(server.map((e) => e.code)).toEqual(['image.format', 'image.format'])
     expect(client.map((e) => e.code)).toEqual(['image.format', 'image.format'])
+    expect(server.map((e) => e.params?.['name'])).toEqual(['a.jpg', 'b.png'])
   })
 })
