@@ -14,7 +14,6 @@ const desc = defineForm({
   fields: {
     cover: field.file({
       label: 'Обложка',
-      variant: 'preview',
       validate: [v.required(), v.accept(['image/png']), v.maxSize(1024 * 1024)],
     }),
     docs: field.files({
@@ -23,7 +22,6 @@ const desc = defineForm({
     }),
     gallery: field.files({
       label: 'Галерея',
-      variant: 'preview',
       validate: [v.accept(['image/png', 'application/pdf']), v.maxSize(1024 * 1024)],
     }),
   },

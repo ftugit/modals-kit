@@ -94,7 +94,6 @@ export const recordForm = (set: SavedSet | null, previous?: SavedRecord | null):
     }),
     image: field.file({
       label: 'Изображение',
-      variant: 'preview',
       help: previous
         ? 'PNG, JPEG, WebP или GIF, до 1 МБ; пустое поле — останется прежнее изображение'
         : 'PNG, JPEG, WebP или GIF, до 1 МБ',

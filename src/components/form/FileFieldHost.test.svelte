@@ -6,7 +6,7 @@
 </script>
 
 <Form form={bound} hiddenFields={bound.hidden()}>
-  <Field of={bound.f.cover} />
+  <Field of={bound.f.cover} preview />
   <Field of={bound.f.docs} />
-  <Field of={bound.f.gallery} />
+  <Field of={bound.f.gallery} preview />
 </Form>

@@ -2,8 +2,8 @@
 // (`File | null`) + флаг явного удаления текущего аватара. Работает идентично
 // с JS и без JS без передачи `base64`-строк по сети.
 import { check, defineForm, field, v } from '#lib/form/index.js'
-import { photoImage } from '#components/form/photo.js'
-import { AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
+
+import { PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
 
 export const PROFILE_FORM_ID = 'user-profile'
 
@@ -24,14 +24,12 @@ export const profileForm = defineForm({
       placeholder: 'необязательно',
       validate: [v.minLength(2), v.maxLength(32), check('nickname-forbidden')],
     }),
-    avatar: field.photo({
+    // Аватар — не сущность: обычное поле файла по общим правилам. Вид (`preview`)
+    // и сжатие (`photoConvert={SpecAvatar}`) задаёт разметка страницы; сервер
+    // приводит фото к тем же рамкам, если файл пришёл без JS.
+    avatar: field.file({
       label: 'Аватар',
-      variant: 'preview',
-      validate: [
-        v.accept(SERVER_PHOTO_FORMATS),
-        v.maxSize(PHOTO_RAW_MAX_BYTES),
-        photoImage(AVATAR_PHOTO_ID),
-      ],
+      validate: [v.accept(SERVER_PHOTO_FORMATS), v.maxSize(PHOTO_RAW_MAX_BYTES)],
     }),
     remove_avatar: field.checkbox({
       label: 'Удалить текущее фото',

@@ -17,6 +17,7 @@
   // связь читается здесь, в месте проверки, named-импортом. Новая подмена —
   // строка реестра + module-экспорт `base` в её файле.
   import CopyField, { base as copyBase } from './CopyField.svelte'
+  import type { PhotoConvertSpec } from './photo-convert'
 
   // `of` может быть пустым: поля нет у источника (студии у GraphQL) — не рисуем.
   // Набор полей от пользователя (`field.fields`) умолчания не имеет: места, цикл и кнопки
@@ -39,10 +40,23 @@
     of,
     instead,
     takeover,
+    preview = false,
+    photoConvert,
   }: {
     of: FieldView | undefined
     instead?: ComponentType<FieldView>
     takeover?: FieldTakeover
+    /**
+     * Показать выбранные файлы: без этого файловое поле рисует ui-примитив
+     * `FileInput`, с ним — гибрид `FileAttachment`. Вид принадлежит странице,
+     * а не описанию формы: `#lib/form` о файлах как о картинках не знает.
+     */
+    preview?: boolean
+    /**
+     * Параметры приведения картинок (`SpecAvatar` у аватара): размеры кадра,
+     * предел веса, конечный формат. Действует только у файловых полей.
+     */
+    photoConvert?: PhotoConvertSpec
   } = $props()
 
   const BASE_OF = new Map<object, unknown>([[CopyField, copyBase]])
@@ -129,4 +143,12 @@
   })
 </script>
 
-{#if of && Taken && handle}<Taken f={handle} />{:else if of && Component}<Component {...of} />{/if}
+{#if of && Taken && handle}
+  <Taken f={handle} />
+{:else if of && Component}
+  {#if of.input === 'file' || of.input === 'files'}
+    <Component {...of} {preview} photoConvert={photoConvert} />
+  {:else}
+    <Component {...of} />
+  {/if}
+{/if}

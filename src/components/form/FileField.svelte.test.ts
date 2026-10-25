@@ -23,7 +23,6 @@ const desc = defineForm({
   fields: {
     cover: field.file({
       label: 'Обложка',
-      variant: 'preview',
       validate: [v.accept(['image/png']), v.maxSize(10)],
     }),
     docs: field.files({
@@ -32,7 +31,6 @@ const desc = defineForm({
     }),
     gallery: field.files({
       label: 'Галерея',
-      variant: 'preview',
       validate: [v.accept(['image/png']), v.maxCount(2), v.maxSize(1024 * 1024)],
     }),
   },
@@ -45,13 +43,13 @@ function pickFiles(input: HTMLInputElement, items: File[]): void {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
-describe('FileField: pure FileInput vs FileAttachment (variant: "preview")', () => {
+describe('FileField: голый FileInput и гибрид FileAttachment (опция `preview`)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     document.body.innerHTML = ''
   })
 
-  test('routes variant="preview" through FileAttachment, revalidates on remove, and keeps default fields on FileInput', async () => {
+  test('опция `preview` включает FileAttachment, без неё — FileInput; ошибки живут при поле', async () => {
     let seq = 0
     const created: string[] = []
     const revoked: string[] = []
@@ -81,7 +79,7 @@ describe('FileField: pure FileInput vs FileAttachment (variant: "preview")', () 
     expect(docsField.querySelector('[data-file-list]')).toBeNull()
     expect(root.value.f.docs.value).toEqual([rawDoc])
 
-    // Single `cover` (`variant: 'preview'`) validates maxSize immediately on pick and clears error on remove
+    // Single `cover` (опция `preview`) validates maxSize immediately on pick and clears error on remove
     const coverField = target.querySelector('[data-field="cover"]')!
     expect(coverField.querySelector('[data-slot="file-attachment"]')).not.toBeNull()
     const coverInput = coverField.querySelector('input[type="file"]') as HTMLInputElement
@@ -105,7 +103,7 @@ describe('FileField: pure FileInput vs FileAttachment (variant: "preview")', () 
     expect(coverField.querySelector('[data-file-list]')).toBeNull()
     expect(revoked).toEqual(['blob:ff-1'])
 
-    // Multiple `gallery` (`variant: 'preview'`) narrows File[] via DataTransfer when removing excess file
+    // Multiple `gallery` (опция `preview`) narrows File[] via DataTransfer when removing excess file
     const galleryField = target.querySelector('[data-field="gallery"]')!
     const galleryInput = galleryField.querySelector('input[type="file"]') as HTMLInputElement
     const p1 = new File(['1'], 'one.png', { type: 'image/png' })

@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AsyncRunner, CheckRegistry, decode, defineForm, field, runAsyncChecks, v, validateForm,
+  AsyncRunner, CheckRegistry, check, decode, defineForm, field, runAsyncChecks, v, validateForm,
   valuesForChecks,
 } from '#lib/form/index.js'
-import {
-  checkPhotoFile, photoImage, photoType, registerPhotoChecks, type PhotoSpec,
-} from './photo'
+import { checkPhotoFile, registerPhotoChecks, type PhotoSpec } from './photo'
 
 /* Заголовки-фикстуры: probe смотрит структуру контейнера, декод не нужен. */
 
@@ -61,15 +59,7 @@ const SPEC: PhotoSpec = {
 
 const asFile = (bytes: Uint8Array<ArrayBuffer>, name: string, type: string) => new File([bytes], name, { type })
 
-describe('тип photo (расширение приложения)', () => {
-  it('decode: нет файла и браузерная заглушка — null, настоящий файл — File', () => {
-    const ctx = {} as never
-    const real = asFile(jpegHeader(4, 4), 'a.jpg', 'image/jpeg')
-    expect(photoType.decode([], ctx)).toEqual({ ok: true, value: null })
-    expect(photoType.decode([new File([], '')], ctx)).toEqual({ ok: true, value: null })
-    expect(photoType.decode([real], ctx)).toEqual({ ok: true, value: real })
-  })
-
+describe('содержимое фото (серверная проверка)', () => {
   it('содержимое: серверные форматы по заголовку проходят, имена не важны', async () => {
     expect(await checkPhotoFile(asFile(jpegHeader(64, 40), 'a.bin', ''), SPEC)).toBeNull()
     expect(await checkPhotoFile(asFile(pngHeader(64, 40), 'a.jpg', 'image/jpeg'), SPEC)).toBeNull()
@@ -94,9 +84,14 @@ describe('паритет проверки фото: AsyncRunner (клиент) �
     id: 'photo-parity',
     revision: 1,
     fields: {
-      photo: field.photo({
+      photo: field.file({
         label: 'Фото',
-        validate: [v.accept(SPEC.input.formats), v.maxSize(SPEC.input.maxBytes), photoImage(SPEC.id)],
+        // `cacheByValue: false` обязателен: `File` не ключуется по значению, и кэш
+        // отвечал бы вердиктом предыдущего файла
+        validate: [
+          v.accept(SPEC.input.formats), v.maxSize(SPEC.input.maxBytes),
+          check('photo:test', { cacheByValue: false }),
+        ],
       }),
     },
   })

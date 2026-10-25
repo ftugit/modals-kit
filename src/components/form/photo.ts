@@ -1,16 +1,12 @@
-// ФОТО-ПОЛЕ: расширение библиотеки кодом приложения, как extend.ts, но
-// отдельным модулем. extend.ts импортируют все формы приложения, а фото
-// нужно только владельцам фото-полей — вес в бандле платит владелец поля,
-// а не каждая форма. Ни один файл в src/lib/form при этом не меняется.
+// СОДЕРЖИМОЕ ФОТО: серверная проверка по спецификации, без отдельного поля.
+//
+// Поля `photo` больше нет (решение владельца, 2026-10-25): файл грузится общим
+// полем `file`, вид и сжатие — опции `Field` (`preview`, `photoConvert`). Здесь
+// остаётся то, что относится к СЕРВЕРУ: разбор заголовка пришедшего файла и
+// отказ по формату/размерам, когда файл пришёл без JS и сжатие не выполнилось.
 
-import { check, defaultRegistry, issue } from '#lib/form/index.js'
-import type { CheckRegistry, Constraint, FieldType, Issue } from '#lib/form/index.js'
-
-// Открытые ключи: подсказки среды возвращаются расширением интерфейсов.
-declare module '#lib/form/index.js' {
-  interface FieldValues { photo: File | null }
-  interface InputModes { photo: true }
-}
+import { issue } from '#lib/form/index.js'
+import type { CheckRegistry, Issue } from '#lib/form/index.js'
 
 /* ── фото: тип поля, спецификация, проверка содержимого ────────────── */
 
@@ -53,34 +49,6 @@ export interface PhotoSpec {
   readonly output: PhotoOutputSpec
 }
 
-/**
- * Свой тип: фото одним файлом. Значение и транспорт — как у встроенного
- * `file` (настоящий `File` в `FormData`, заглушка пустого поля — `null`),
- * отдельный вид — ради своего компонента и своей проверки содержимого:
- * обычный `file` внутрь файла не смотрит, фото обязано.
- */
-export const photoType: FieldType<File | null> = {
-  kind: 'photo',
-  inputs: ['photo'],
-  multiple: false,
-  empty: null,
-  decode: (entries) => {
-    const f = entries[0]
-    return { ok: true, value: f && typeof f !== 'string' && f.name ? f : null }
-  },
-  encode: (value, name, out) => { if (value) out.push([name, value]) },
-  constraints: {
-    required: () => ({ required: true }),
-    // подсказка выбора, а не проверка: содержимое смотрит `photo:<id>`
-    accept: (c: Constraint) => ({ accept: (c as { types: readonly string[] }).types.join(',') }),
-    maxSize: () => ({ skip: 'у предела размера нет нативного атрибута' }),
-    opaque: true,
-  },
-  attrs: () => ({ type: 'file' }),
-  degradation: { withoutJs: 'выбор файла', lost: 'подготовка на клиенте, превью' },
-}
-
-defaultRegistry.registerType(photoType)
 
 /** Голова файла для probe: JPEG, у которого SOF дальше среза, не разберётся. */
 export const PHOTO_HEAD_BYTES = 256 * 1024
@@ -119,11 +87,3 @@ export function registerPhotoChecks(registry: CheckRegistry, specs: readonly Pho
   for (const spec of specs)
     registry.register(`photo:${spec.id}`, (value) => checkPhotoFile(value, spec))
 }
-
-/**
- * Валидатор-обёртка проверки фото для описания поля. `cacheByValue: false`
- * обязателен: `File` не ключуется по значению, и кэш отвечал бы вердиктом
- * предыдущего файла.
- */
-export const photoImage = (specId: string) => check(`photo:${specId}`, { cacheByValue: false })
-
