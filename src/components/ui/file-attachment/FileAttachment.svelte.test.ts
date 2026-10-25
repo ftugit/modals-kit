@@ -162,6 +162,29 @@ describe('FileAttachment composition: FileInput + Attachment + DataTransfer + ob
     await unmount(host)
   })
 
+  test('приведение картинки: карточка появляется после выбора (асинхронный onchange)', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:conv')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const target = document.createElement('div')
+    document.body.append(target)
+    const host = mount(FileAttachmentHost, {
+      target,
+      props: {
+        layout: 'tile',
+        photoConvert: { width: 200, height: 200, maxBytes: 20_480, format: 'jpeg' },
+      },
+    })
+    await tick()
+
+    const input = target.querySelector('input[type="file"]') as HTMLInputElement
+    pickFiles(input, [new File(['png'], 'photo.png', { type: 'image/png' })])
+    // приведение асинхронное: ждём эффект, а не только ближайший тик
+    await vi.waitFor(() => expect(target.querySelectorAll('[data-file-item]')).toHaveLength(1))
+
+    await unmount(host)
+  })
+
   test('strip: одна строка со скроллом, карточки не сжимаются', async () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:strip-1')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})

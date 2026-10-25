@@ -1,5 +1,6 @@
 <script lang="ts">
   import { AttachmentAction } from '../attachment'
+  import type { PhotoConvertSpec } from '../file-input/convert'
   import type { FileAttachmentLayout } from './FileAttachment.svelte'
   import FileAttachment, { type FileAttachmentItemMeta } from './FileAttachment.svelte'
 
@@ -10,6 +11,7 @@
     useCustomActions = false,
     onChangeFiles,
     onInspect,
+    photoConvert,
   }: {
     multiple?: boolean
     removable?: boolean
@@ -17,6 +19,7 @@
     useCustomActions?: boolean
     onChangeFiles?: (names: string[]) => void
     onInspect?: (name: string) => void
+    photoConvert?: PhotoConvertSpec
   } = $props()
 
   let files = $state<FileList | undefined>()
@@ -48,6 +51,7 @@
       {multiple}
       {removable}
       {layout}
+      {photoConvert}
       bind:files
       itemProps={(f) => metaMap[f.name]}
       ref={(el) => {
@@ -79,6 +83,7 @@
       {multiple}
       {removable}
       {layout}
+      {photoConvert}
       bind:files
       itemProps={(f) => metaMap[f.name]}
       ref={(el) => {

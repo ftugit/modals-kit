@@ -33,6 +33,20 @@
 
   let { size, files = $bindable(), ref, onchange, photoConvert, class: cls, ...rest }: FileInputProps = $props()
 
+  /**
+   * Событие для обработчика после АСИНХРОННОЙ подготовки файла.
+   *
+   * У настоящего `Event` к этому моменту `currentTarget` уже `null`:
+   * диспетчеризация закончилась, пока шло приведение картинки. Обработчики же
+   * читают `e.currentTarget.files` — без этого узла карточка выбранного файла
+   * не появлялась, а значение поля не обновлялось. Отдаём тот же узел в
+   * стабильном виде: тип — как у настоящего события, данные — живые.
+   */
+  const eventOf = (el: HTMLInputElement): Event & { currentTarget: HTMLInputElement } =>
+    ({ type: 'change', target: el, currentTarget: el }) as unknown as Event & {
+      currentTarget: HTMLInputElement
+    }
+
   let inputEl = $state<HTMLInputElement | null>(null)
   let prevFiles: FileList | undefined
   let prevRest = ''
@@ -85,7 +99,8 @@
       el.files = out.files
       files = el.files
       prevFiles = files
-      onchange?.(e)
+      // `e.currentTarget` после await пуст — отдаём узел сами
+      onchange?.(eventOf(el))
       return
     }
     files = el.files ?? undefined
