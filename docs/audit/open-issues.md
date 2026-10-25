@@ -123,6 +123,20 @@
 
 **Что править.** Один **`SpecAvatar`** — в `src/content/user/spec-avatar.ts`, обычный `.ts` (не `.svelte`: его импортируют серверные `profile.form.server.ts` и `checks.ts`). Внутри: метка, входные форматы (`accept`), предел сырья, формат выхода, `photoConvert(limits) { format, edge, bytes }`, готовое описание поля `field.file({ label, validate })`. Из него строятся и `profileForm.fields.avatar`, и `<Field of={f.avatar} preview photoConvert={SpecAvatar.photoConvert(limits)} />`; значения конфига подставляет загрузка страницы (сейчас уже передаются как `initialLimits`). `SpecAvatar` поглощает `avatarPhotoSpec` (`checks.ts:32-46`), `SHORT_PHOTO_FORMATS` (`profile.form.server.ts:18`), `AvatarLimits`/правила `prepareAvatar` (`avatar.ts`), `field.photo(...)` (`form.ts:29-37`) и `defaults` в `ProfileForm.svelte:7-8`. После этого `AvatarTakeover` и `prepareAvatar` не нужны — их место занимают опции `Field` ([`../plan.md`](../plan.md) §3, `OI-06`).
 
+**Числа.** Четыре размера и три веса, у каждого свой владелец:
+
+| Величина | Значение | Чья |
+|---|---|---|
+| `input.maxSide` | 8192 px | сервера (`checks.ts:24`) |
+| `input.maxPixels` | 12 000 000 | сервера (`checks.ts:23`) |
+| `output.edge` | 200 px, квадрат `edge × edge` | конфига (`config.ts:45`) |
+| `output.maxBytes` | 20 480 Б — вес готового JPEG | конфига (`config.ts:47`) |
+| `input.maxBytes` | `raw − reserve`, не больше | валидатора поля |
+| `raw` тела | 8 МиБ | сервера (`checks.ts:15`) |
+| `limits.maxBytes` | `raw` + 256 КиБ под остальные поля и границы multipart | сервера (`profile.form.server.ts:32`) |
+
+Сегодня `PHOTO_RAW_MAX_BYTES` (8 МиБ) играет три роли сразу — предел одного файла (`v.maxSize`), `limits.maxFileSize` и база `limits.maxBytes`. По `OI-28` предел файла должен быть меньше бюджета тела на явный резерв, а `output.maxBytes` (20 КиБ) — третья величина, к `raw` отношения не имеющая: она про результат конвертации.
+
 **Не трогать.** `avatarFormats` остаётся: это формат **base64-хранения**, а не входа; уйдёт вместе с base64-контуром, когда `lib/storage` начнёт отдавать URL.
 
 ---
