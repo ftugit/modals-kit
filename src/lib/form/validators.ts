@@ -3,6 +3,7 @@
 // Есть `describe` — правило относит себя к виду ограничения, и тип может
 // спроецировать его в разметку. Нет `describe` — правило работает в браузере
 // и на сервере, но атрибута не даёт. Честно, без догадок.
+import type { FormLimits } from './budget'
 import { opaque, type Constraint } from './constraints'
 import { keep } from './keep'
 import {
@@ -27,6 +28,8 @@ export interface FieldContext {
   values: Record<string, unknown>
   /** Ограничения текущего поля: нужны валидаторам, чья семантика зависит от соседних правил. */
   constraints?: readonly Constraint[]
+  /** Бюджет формы. Нет — форма бюджета не объявляла, суммарная проверка выключена. */
+  limits?: FormLimits
 }
 
 /** Функция проверки значения поля с необязательным описанием ограничений. */
@@ -226,6 +229,25 @@ const len = (x: unknown) => (typeof x === 'string' ? x.length : Array.isArray(x)
 const EMAIL_HTML5 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const EMAIL_STRICT = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i
 
+/**
+ * Первый файл формы, выводящий сумму за бюджет файлов, — в порядке объявления
+ * полей и файлов в значении. Возвращает поле-владельца: ошибку показывает
+ * только оно.
+ */
+const firstOverBudget = (
+  values: Record<string, unknown>,
+  limits: FormLimits,
+): { field: string; name: string } | null => {
+  let sum = 0
+  for (const field of limits.fileFields) {
+    for (const f of filesOf(values[field] as File | readonly File[] | null | undefined)) {
+      sum += f.size
+      if (sum > limits.filesBytes) return { field, name: f.name }
+    }
+  }
+  return null
+}
+
 /** Набор встроенных валидаторов. */
 export const v = {
   required: () => describe<unknown>(
@@ -364,10 +386,22 @@ export const v = {
   maxSize: (bytes: number) => {
     const max = nonNegative('maxSize', bytes)
     return describe<File | readonly File[] | null>(
-      (value) => {
+      (value, ctx) => {
+        // Бюджет файлов формы сужает личный предел: обещать «до 10 МБ» при
+        // бюджете 7 МБ — обещать то, что всё равно не доедет.
+        const budget = ctx.limits?.filesBytes ?? Number.POSITIVE_INFINITY
+        const cap = Math.min(max, budget)
         // предел на каждый файл отдельно — как `Limits.maxFileSize` приёма
-        const big = filesOf(value).find((f) => f.size > max)
-        return big ? issue('maxSize', { bytes: max, name: big.name }) : null
+        const big = filesOf(value).find((f) => f.size > cap)
+        if (big) return issue('maxSize', { bytes: cap, name: big.name })
+        // Сумма по всем файловым полям формы: строку отдаёт только поле-владелец
+        // первого файла, вышедшего за бюджет, — иначе перевес дал бы по строке
+        // на каждое файловое поле.
+        if (!ctx.limits) return null
+        const over = firstOverBudget(ctx.values, ctx.limits)
+        return over && over.field === ctx.path
+          ? issue('file.budget', { bytes: ctx.limits.filesBytes, name: over.name })
+          : null
       },
       [{ kind: 'maxSize', bytes: max }])
   },

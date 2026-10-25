@@ -1,4 +1,5 @@
 // Объявление формы. Изоморфно: модуль импортируют и страница, и сервер.
+import { formLimits, type FormLimits } from './budget'
 import { BOUND_PAIRS, boundValue, type Constraint, type ConstraintKind } from './constraints'
 import { applies, projectAttrs, type ProjectedAttrs } from './field-types'
 import { defaultPolicy, nameProblem, type FormPolicy } from './policy'
@@ -286,10 +287,18 @@ export function fieldLinkState(
 
 /* ── мета-валидация ────────────────────────────────────────────────── */
 
+/**
+ * Файловый ли тип: у одиночного файла вход `file`, у списка — `files`.
+ * Спрашивать надо входы, а не `kind`: типов два, правило одно.
+ */
+const isFileInputs = (inputs: readonly string[]): boolean =>
+  inputs.includes('file') || inputs.includes('files')
+
 export function checkFieldDefinition(
   f: FieldDescriptor,
   registry: Registry = defaultRegistry,
   policy: FormPolicy = defaultPolicy,
+  enforceFileLimit = false,
 ): FieldDefect[] {
   const out: FieldDefect[] = []
   const { types, validators } = registry
@@ -316,6 +325,13 @@ export function checkFieldDefinition(
     }
   }
   const constraints = constraintsOf(f.validators, validators)
+
+  // Файловое поле без `maxSize`: личного предела нет, а бюджет формы не с чем
+  // сверить. Пока бюджет не объявлен — предупреждение (суммарная проверка всё
+  // равно выключена), с объявленным бюджетом — ошибка объявления.
+  if (isFileInputs(type.inputs) && !constraints.some((c) => c.kind === 'maxSize'))
+    out.push(defect('spec.limit', f.name, 'у файлового поля нет maxSize: предел файла не объявлен',
+                    enforceFileLimit ? 'error' : 'warn'))
 
   if (constraints.length > limits.constraintsPerField)
     out.push(defect('spec.limit', f.name, `ограничений ${constraints.length}, предел ${limits.constraintsPerField}`))
@@ -394,6 +410,14 @@ export interface FormDefinition {
   registry?: Registry
   /** Политика имён, лимитов, envelope и intent для этой формы. */
   policy?: FormPolicy
+  /**
+   * Бюджет тела формы, байт — единственный источник проверки веса файлов.
+   * Приложение объявляет его один раз и обязано сверить с лимитом развёртывания
+   * (env): больше env — игнорируется, действует `min(объявленный, env)`.
+   * Не объявлен — суммарная проверка файлов выключена, `v.maxSize` работает
+   * только как предел одного файла.
+   */
+  limits?: { budget?: number }
 }
 
 /** Нормализованное и проверенное описание формы, используемое клиентом и сервером. */
@@ -420,6 +444,8 @@ export interface FormDescription {
   readonly registry: Registry
   /** Политика, которой была собрана форма. */
   readonly policy: FormPolicy
+  /** Бюджет тела и бюджет файлов: с ним сверяется `v.maxSize`. */
+  readonly limits: FormLimits
   /** Атрибуты считает ядро: примитив получает готовый набор, а не правила. */
   attrsOf(name: string): ProjectedAttrs
   /** Ограничения поля — для отчёта и диагностики. */
@@ -474,8 +500,17 @@ export function defineForm(def: FormDefinition): FormDescription {
     taken.add(f.name)
   }
 
-  for (const f of fields) defects.push(...checkFieldDefinition(f, registry, policy))
+  for (const f of fields)
+    defects.push(...checkFieldDefinition(f, registry, policy, Boolean(def.limits?.budget)))
   if (defects.some((d) => d.severity === 'error')) throw new FormDefinitionError(defects, def.id)
+
+  // файловые поля — в порядке объявления: по ним стабильно считается сумма веса
+  const fileFields = fields
+    .filter((f) => {
+      try { return isFileInputs(registry.types.get(f.kind).inputs) } catch { return false }
+    })
+    .map((f) => f.name)
+  const limits = formLimits(def.limits?.budget, fileFields)
 
   const byName = safeObject<FieldDescriptor>()
   for (const f of fields) byName[f.name] = f
@@ -508,7 +543,7 @@ export function defineForm(def: FormDefinition): FormDescription {
     messages: formMessages(def.messages, fields),
     cardinality: def.cardinality ?? 'first',
     invalidFrom: def.invalidFrom ?? 'fact',
-    defects, registry, policy,
+    defects, registry, policy, limits,
     constraintsOf: constraintsFor,
     attrsOf(name) {
       const hit = attrCache.get(name)

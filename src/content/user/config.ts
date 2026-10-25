@@ -6,6 +6,8 @@
  * появятся ACL и роли. Файл изоморфный: хранилище подставляет вызвавший.
  */
 
+import { SpecAvatar } from './spec-avatar.js'
+
 /** Контракт хранилища «ключ → значение со сроком» (либ/cache). */
 export type StoreLike = {
   get<T>(key: string): T | undefined | Promise<T | undefined>
@@ -41,10 +43,13 @@ export const defaults: ConfigValues = {
   deleteGraceDays: 7,
   /** Сколько держать HoldButton создания аккаунта, секунд. */
   holdSeconds: 2,
-  /** Аватар: меньшая сторона до этого размера, большая режется по центру до него. */
-  avatarEdge: 200,
-  /** Аватар: предел веса готового JPEG в БД, байт. */
-  avatarMaxBytes: 20_480,
+  /**
+   * Аватар: меньшая сторона до этого размера, большая режется по центру до него.
+   * Умолчание — из единственного описания аватара (`SpecAvatar`).
+   */
+  avatarEdge: SpecAvatar.width,
+  /** Аватар: предел веса готового JPEG в БД, байт (из `SpecAvatar`). */
+  avatarMaxBytes: SpecAvatar.maxBytes,
   /** Аватар: целевые форматы хранения в БД (входные сырые форматы задаёт SERVER_PHOTO_FORMATS). */
   avatarFormats: ['jpeg'] as readonly string[],
 }

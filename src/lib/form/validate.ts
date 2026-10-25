@@ -159,7 +159,7 @@ export function validateForm(
         if (kinds.some((k) => relax.has(k))) continue
         let fn
         try { fn = d.registry.validators.resolve(ref) } catch { continue }
-        const issue = fn(values[f.name], { path: f.name, values, constraints })
+        const issue = fn(values[f.name], { path: f.name, values, constraints, limits: d.limits })
         if (!issue) continue
         collected.push(toError(issue, issue.path ?? f.name, f))
         if (mode === 'first') break

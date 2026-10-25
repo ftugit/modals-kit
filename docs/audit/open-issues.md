@@ -119,6 +119,8 @@
 
 ### `OI-30` — аватар описан в двух местах: UI и сервер (**P2**)
 
+**Сделано 2026-10-25.** `src/content/user/spec-avatar.ts` — `SpecAvatar` (`{ width: 200, height: 200, maxBytes: 20_480, format: 'jpeg' }`, тип `SpecAvatarParams`), без `raw`, валидаторов и функций; умолчания `avatarEdge`/`avatarMaxBytes` в `config.ts:45-52` берутся из спеки (`spec-avatar.test.ts`). Осталось: `photoConvert={SpecAvatar}` у поля профиля, `profile.form.server.ts`, снятие `avatarPhotoSpec`/`SHORT_PHOTO_FORMATS`/`AvatarTakeover`/`prepareAvatar`.
+
 **Что в коде.** Рамки аватара заданы дважды. Сервер: `readUserChecksSnapshot()` читает из конфига `avatarEdge`/`avatarMaxBytes` (`profile.form.server.ts:20-27`), входные форматы — `SHORT_PHOTO_FORMATS` из `SERVER_PHOTO_FORMATS` (`:18`), описание поля — `form.ts:29-37` (`field.photo`, `v.accept`, `v.maxSize`, `photoImage`). Экран: `ProfileForm.svelte:7-8` берёт `defaults.avatarEdge`/`defaults.avatarMaxBytes`, `AvatarTakeover.svelte:126` подставляет `accept={SERVER_PHOTO_FORMATS.join(',')}`, а конвейер `prepareAvatar` (`avatar.ts`) держит вторую копию правил `edge`/`maxBytes`.
 
 **Почему это работа, а не вопрос.** Владелец (2026-10-25): аватар — **не сущность**. Файл грузится по общим валидаторам, в JS приводится к нужному весу конвертером, на сервере — тоже. Описание должно быть одно и читаться обеими сторонами.
@@ -142,6 +144,8 @@
 ---
 
 ### `OI-31` — бюджет тела, формы и файлов (**P1**)
+
+**Сделано 2026-10-25.** `src/lib/form/budget.ts` — `formLimits()` и `FILE_BUDGET_RESERVE` (1 МиБ); `defineForm({ limits: { budget } })` кладёт `limits` в описание; `v.maxSize` сужает личный предел до бюджета файлов и считает сумму по всем файловым полям формы — ошибка `file.budget` одна, от поля-владельца первого файла за бюджетом; файловое поле без `v.maxSize` — предупреждение объявления, а с объявленным бюджетом — ошибка. Тесты: `src/lib/form/budget.test.ts`. Осталось: env → `Limits.maxBytes` → `data-budget` → `bind` → `ctx.limits` в SSR-проходе и транспорте.
 
 **Что в коде.** `v.maxSize` проверяет **каждый файл отдельно**: `filesOf(value).find((f) => f.size > max)` (`validators.ts:364-372`), соседей не суммирует; суммарного правила нет. Пять файлов по 5 МиБ проходят `v.maxSize(30 МиБ)`, а тело режет транспорт: `Limits.maxBytes` → `413 body.too-large` (`server.ts:108,135`).
 

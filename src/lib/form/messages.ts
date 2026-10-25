@@ -38,6 +38,8 @@ export const ru: MessageDictionary = {
   invalid: 'Недопустимое значение',
   accept: (p) => `Файл ${p['name'] ?? ''} не подходит по типу`.replace('  ', ' '),
   maxSize: (p) => `Файл ${p['name'] ?? ''} больше ${Math.ceil(Number(p['bytes']) / 1024)} КБ`.replace('  ', ' '),
+  'file.budget': (p) =>
+    `Файлы вместе больше ${Math.round(Number(p['bytes']) / (1024 * 1024))} МБ: не помещается ${p['name'] ?? ''}`.replace('  ', ' '),
   strength: (p) => {
     const why: Record<string, string> = {
       short: 'слишком короткий',
