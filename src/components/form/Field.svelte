@@ -19,6 +19,13 @@
   import CopyField, { base as copyBase } from './CopyField.svelte'
   import type { PhotoConvertSpec } from './photo-convert'
 
+  /**
+   * Вид файлового поля глазами `Field`: к пропсам `FieldView` добавляются опции
+   * вида и сжатия. `resolve` отдаёт компонент по `FieldView`, а эти два пропса
+   * принадлежат странице, а не описанию формы, — их объявляет `FileField`.
+   */
+  type FileFieldView = FieldView & { preview?: boolean; photoConvert?: PhotoConvertSpec }
+
   // `of` может быть пустым: поля нет у источника (студии у GraphQL) — не рисуем.
   // Набор полей от пользователя (`field.fields`) умолчания не имеет: места, цикл и кнопки
   // расставляет приложение через `fieldSet` (`#lib/form/svelte`) — здесь он не рисуется.
@@ -147,7 +154,9 @@
   <Taken f={handle} />
 {:else if of && Component}
   {#if of.input === 'file' || of.input === 'files'}
-    <Component {...of} {preview} photoConvert={photoConvert} />
+    <!-- сужение вида: `resolve` знает только `FieldView`, а опции — у файлового поля -->
+    {@const FileField = Component as ComponentType<FileFieldView>}
+    <FileField {...of} {preview} photoConvert={photoConvert} />
   {:else}
     <Component {...of} />
   {/if}
