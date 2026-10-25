@@ -32,7 +32,7 @@ export const resolve = (f: { input: string; variant?: string }) => {
     case 'radio': return RadioGroupField
     case 'select': case 'multiselect': return SelectField
     case 'checkbox': return CheckboxField
-    case 'file': case 'files': case 'photo': return FileField
+    case 'file': return FileField
     case 'range': return RangeField
     case 'hidden': return HiddenField          // без подписи и обёртки: поля не видно
     case 'switch': return SwitchField

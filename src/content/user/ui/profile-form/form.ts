@@ -1,9 +1,16 @@
-// Описание встраиваемой формы профиля (`profileForm`): никнейм + бинарное фото
-// (`File | null`) + флаг явного удаления текущего аватара. Работает идентично
+// Описание встраиваемой формы профиля (`profileForm`): никнейм + файл картинки
+// (`File | null`) + флаг явного удаления текущей картинки. Работает идентично
 // с JS и без JS без передачи `base64`-строк по сети.
+//
+// Поле — обычный `file`: никакого отдельного типа и никакой отдельной защиты.
+// Содержимое судит общее правило `image` (`extend.ts`), вид и сжатие включает
+// страница опциями `Field`. Единственное, что задаёт профиль, — приёмлемые
+// типы и предел исходника.
 import { check, defineForm, field, v } from '#lib/form/index.js'
+import { IMAGE_MIME_TYPES } from '#components/form/image.js'
 
-import { PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS } from '../../checks.js'
+/** Предел исходника до приведения: «потолок возможности», а не бюджет формы. */
+export const IMAGE_RAW_MAX_BYTES = 8 * 1024 * 1024
 
 export const PROFILE_FORM_ID = 'user-profile'
 
@@ -29,7 +36,7 @@ export const profileForm = defineForm({
     // приводит фото к тем же рамкам, если файл пришёл без JS.
     avatar: field.file({
       label: 'Аватар',
-      validate: [v.accept(SERVER_PHOTO_FORMATS), v.maxSize(PHOTO_RAW_MAX_BYTES)],
+      validate: [v.accept([...IMAGE_MIME_TYPES]), v.maxSize(IMAGE_RAW_MAX_BYTES), check('image')],
     }),
     remove_avatar: field.checkbox({
       label: 'Удалить текущее фото',

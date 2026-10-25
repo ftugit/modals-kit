@@ -17,7 +17,7 @@
   // связь читается здесь, в месте проверки, named-импортом. Новая подмена —
   // строка реестра + module-экспорт `base` в её файле.
   import CopyField, { base as copyBase } from './CopyField.svelte'
-  import type { PhotoConvertSpec } from './photo-convert'
+  import type { PhotoConvertSpec } from '#components/ui/index.js'
 
   /**
    * Вид файлового поля глазами `Field`: к пропсам `FieldView` добавляются опции
@@ -153,7 +153,7 @@
 {#if of && Taken && handle}
   <Taken f={handle} />
 {:else if of && Component}
-  {#if of.input === 'file' || of.input === 'files'}
+  {#if of.input === 'file'}
     <!-- сужение вида: `resolve` знает только `FieldView`, а опции — у файлового поля -->
     {@const FileField = Component as ComponentType<FileFieldView>}
     <FileField {...of} {preview} photoConvert={photoConvert} />

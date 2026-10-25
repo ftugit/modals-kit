@@ -607,7 +607,7 @@ suite('файловые правила (F14)', () => {
   })
 
   test('files: каждый файл проверяется отдельно, без броска', () => {
-    const d = defineForm({ id: 'many', fields: { docs: field.files({ validate: [v.accept(['.pdf']), v.maxSize(4)] }) } })
+    const d = defineForm({ id: 'many', fields: { docs: field.file({ multiple: true, validate: [v.accept(['.pdf']), v.maxSize(4)] }) } })
     const fd = (...files: File[]) => {
       const b = body({}, envelope('many'))
       for (const f of files) b.append('docs', f)
@@ -669,7 +669,7 @@ suite('асинхронные проверки: вытеснение (F21)', asy
   test('медленный ответ вытесненной проверки не стирает свежую ошибку', async () => {
     const { runner, d } = make()
     const calls: string[] = []
-    const cb = (e: FormError | null) => { calls.push(e ? e.code : 'null') }
+    const cb = (e: readonly FormError[]) => { calls.push(e.length ? e[0]!.code : 'null') }
     runner.schedule(d, 'login', { login: 'slow' }, cb)
     await sleep(20)
     runner.schedule(d, 'login', { login: 'fast' }, cb)
@@ -737,7 +737,7 @@ suite('асинхронные проверки: значения как на с�
     const server = await runAsyncChecks(d, decode(fd, d).values, checks)
     const browser = await new AsyncRunner(checks).run(d, 'age', valuesForChecks(fd, d))
     expect(server).toEqual([])
-    expect(browser).toBeNull()
+    expect(browser).toEqual([])
     expect(seen[1]).toEqual(seen[0])
     expect(seen[0]).toMatchObject({ value: 42, agree: true })
   })

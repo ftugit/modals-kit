@@ -51,7 +51,7 @@ describe('v.maxSize и бюджет', () => {
   })
 
   test('сумма по всем файлам: строка одна и от поля-владельца', () => {
-    const d = probe(8 * MB, { docs: field.files({ label: 'Документы', validate: [v.maxSize(10 * MB)] }) })
+    const d = probe(8 * MB, { docs: field.file({ multiple: true, label: 'Документы', validate: [v.maxSize(10 * MB)] }) })
     const errors = validateForm(d, { avatar: file('a.jpg', 4 * MB), docs: [file('b.pdf', 4 * MB, 'application/pdf')] })
     expect(codes(errors)).toEqual(['file.budget'])
     expect(errors[0]!.path).toBe('docs')
@@ -59,7 +59,7 @@ describe('v.maxSize и бюджет', () => {
   })
 
   test('без бюджета сумма не проверяется', () => {
-    const d = probe(undefined, { docs: field.files({ label: 'Документы', validate: [v.maxSize(20 * MB)] }) })
+    const d = probe(undefined, { docs: field.file({ multiple: true, label: 'Документы', validate: [v.maxSize(20 * MB)] }) })
     expect(codes(validateForm(d, { avatar: file('a.jpg', 9 * MB), docs: [file('b.pdf', 9 * MB)] }))).toEqual([])
   })
 
@@ -69,7 +69,7 @@ describe('v.maxSize и бюджет', () => {
     expect(() => defineForm({ id: 'loose', fields: { pic: field.file({ label: 'Файл' }) } }))
       .toThrow(FormDefinitionError)
     expect(() =>
-      defineForm({ id: 'strict', limits: { budget: 8 * MB }, fields: { pic: field.files({ label: 'Файлы' }) } }),
+      defineForm({ id: 'strict', limits: { budget: 8 * MB }, fields: { pic: field.file({ multiple: true, label: 'Файлы' }) } }),
     ).toThrow(/maxSize/)
   })
 

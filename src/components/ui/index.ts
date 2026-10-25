@@ -14,6 +14,7 @@ export { default as CardFooter } from './card/CardFooter.svelte'
 
 export { default as Input } from './input/Input.svelte'
 export { default as FileInput } from './file-input/FileInput.svelte'
+export type { PhotoConvertSpec, PhotoConvertOutcome } from './file-input/convert'
 export * from './attachment'
 export * from './file-attachment'
 export { default as Textarea } from './textarea/Textarea.svelte'

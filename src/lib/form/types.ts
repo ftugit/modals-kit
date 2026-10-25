@@ -18,8 +18,8 @@ export interface FieldValues {
   datetime: string | null
   select: string | null
   multiselect: readonly string[]
-  file: File | null
-  files: readonly File[]
+  /** Файл или список файлов: список — то же значение при `multiple: true`. */
+  file: File | readonly File[] | null
   /** Поля, которые собрал пользователь (`field.fields`). */
   fields: readonly FieldSetItem[]
 }
@@ -32,7 +32,7 @@ export interface InputModes {
   color: true; hidden: true; textarea: true; number: true; range: true
   date: true; 'datetime-local': true; time: true
   select: true; multiselect: true; radio: true; checkbox: true; switch: true
-  file: true; files: true
+  file: true
   /** Одноразовый код: строка цифр, ячейки рисует компонент приложения. */
   otp: true
   /** Набор полей от пользователя: места расставляет разметка приложения (`fieldSet`). */

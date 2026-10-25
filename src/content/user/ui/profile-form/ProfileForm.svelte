@@ -1,12 +1,13 @@
 <script lang="ts" module>
   import { defaults } from '../../config.js'
-  import { SERVER_PHOTO_FORMATS } from '../../checks.js'
-  import type { AvatarLimits } from './avatar.js'
 
-  export const DEFAULT_PROFILE_LIMITS: AvatarLimits = {
-    edge: defaults.avatarEdge,
-    maxBytes: defaults.avatarMaxBytes,
-    formats: SERVER_PHOTO_FORMATS.map((mime) => mime.replace(/^image\//, '')),
+  /** Настройки экрана профиля: только никнейм. Всё про файл — у поля и примитива. */
+  export interface ProfileLimits {
+    readonly nicknameForbidden: readonly string[]
+  }
+
+  /** Умолчания экрана профиля — из конфига модуля. */
+  export const DEFAULT_PROFILE_LIMITS: ProfileLimits = {
     nicknameForbidden: defaults.nicknameForbidden,
   }
 </script>
@@ -17,29 +18,32 @@
    * `<Acl allow="user">`.
    *
    * Читает и обновляет профиль через единый реактивный `vault`.
+   *
+   * Картинка профиля — обычное поле файла: `preview` включает гибрид (выбранное
+   * видно), `photoConvert` передаёт параметры приведения примитиву. Параметры —
+   * `SpecAvatar` и только он: это набор чисел, а не механизм.
    */
   import { untrack } from 'svelte'
-  import { Form, formTask, type FieldTakeover } from '#lib/form/svelte/index.js'
+  import { Form, formTask } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import type { Result } from '#lib/form/index.js'
   import { forms } from '#components/form/forms.config.js'
-  import FileField from '#components/form/FileField.svelte'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { createUserChecks } from '../../checks.js'
+  import { SpecAvatar } from '../../spec-avatar.js'
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { profileForm } from './form.js'
-  import AvatarTakeover, { setAvatarTakeoverContext } from './AvatarTakeover.svelte'
 
   interface Props {
     action?: string
     form?: { result?: Result } | null
-    limits?: AvatarLimits
+    limits?: ProfileLimits
     initial?: VaultProfile | null
     authorized?: boolean
     enabled?: boolean
@@ -67,11 +71,8 @@
   const isAuthorized = $derived(authorized !== undefined ? authorized : vault.authorized)
   const activeProfile = $derived(vault.authorized ? vault.profile : (initial ?? vault.profile))
 
-  const initialLimits = untrack(() => limits)
   const userChecks = createUserChecks({
-    nicknameForbidden: initialLimits.nicknameForbidden ?? defaults.nicknameForbidden,
-    avatarEdge: initialLimits.edge,
-    avatarMaxBytes: initialLimits.maxBytes,
+    nicknameForbidden: untrack(() => limits.nicknameForbidden) ?? defaults.nicknameForbidden,
   })
 
   const bound = bindComponentForm(forms, profileForm, {
@@ -86,21 +87,6 @@
   }
 
   const existingAvatar = $derived(activeProfile.avatarUrl ?? null)
-  const removeCurrent = $derived(Boolean(bound.state.values.remove_avatar))
-
-  setAvatarTakeoverContext({
-    limits: () => limits,
-    existingAvatar: () => existingAvatar,
-    removeCurrent: () => removeCurrent,
-    onRemoveCurrent: () => {
-      bound.f.remove_avatar.onInput(true)
-    },
-  })
-
-  const avatarTakeover: FieldTakeover = () => ({
-    base: FileField,
-    view: AvatarTakeover,
-  })
 
   let lastHandledSubmission = ''
   $effect(() => {
@@ -140,14 +126,10 @@
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
       <Field of={bound.f.nickname} />
 
-      <Field of={bound.f.avatar} takeover={avatarTakeover} />
+      <Field of={bound.f.avatar} preview photoConvert={SpecAvatar} />
 
-      {#if existingAvatar}
-        {#if notHydrated()}
-          <Field of={bound.f.remove_avatar} />
-        {:else}
-          <div hidden aria-hidden="true"><Field of={bound.f.remove_avatar} /></div>
-        {/if}
+      {#if existingAvatar && notHydrated()}
+        <Field of={bound.f.remove_avatar} />
       {:else}
         <div hidden aria-hidden="true"><Field of={bound.f.remove_avatar} /></div>
       {/if}

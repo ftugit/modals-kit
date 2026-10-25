@@ -7,7 +7,7 @@
    */
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import { resolveAuthStep } from '../index.js'
-  import type { AvatarLimits } from './profile-form/index.js'
+  import type { ProfileLimits } from './profile-form/index.js'
   import AuthWidget from './AuthWidget.svelte'
 
   type RouteData = {
@@ -16,7 +16,7 @@
     step: string
     registerSeed: string | null
     enabled?: boolean
-    limits: AvatarLimits & { holdSeconds: number }
+    limits: ProfileLimits & { holdSeconds: number }
   }
 
   const m = useModals()

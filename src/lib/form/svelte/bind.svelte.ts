@@ -90,6 +90,8 @@ export interface FieldView {
   readonly label?: string
   readonly help?: string
   readonly placeholder?: string
+  /** Поле принимает список значений (несколько файлов под одним именем). */
+  readonly multiple?: boolean
   /** Вариант показа из описания поля: по нему `resolve` выбирает компонент. */
   readonly variant?: string
   readonly options?: readonly { value: string; label: string; disabled?: boolean }[]
@@ -236,7 +238,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
   const render = formRenderer(desc.messages as never, cfg.config.messages,
                               desc.policy.interpolate)
   const runner = o.checks ? new AsyncRunner(o.checks) : undefined
-  const asyncErrorIds = new Map<string, string>()
+  const asyncErrorIds = new Map<string, readonly string[]>()
 
   // Умолчания описания — это ЗНАЧЕНИЯ формы, а не только атрибут разметки:
   // без этого `Select` не показывал умолчание, а стёртое поле возвращало его
@@ -467,14 +469,16 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       store.set((s) => {
         const checking = { ...s.checking }
         delete checking[name]
-        // Асинхронный ответ заменяет только предыдущую async-ошибку.
+        // Асинхронный ответ заменяет только предыдущие async-ошибки.
         // Синхронные ошибки того же поля (email/minLength/…) сохраняются.
-        const previous = asyncErrorIds.get(name)
-        // Текст — тем же словарём, что у синхронных ошибок и у сервера (F57):
+        // Ошибок бывает несколько: проверка судит список файлов, по строке на файл.
+        const previous = asyncErrorIds.get(name) ?? []
+        // Тексты — тем же словарём, что у синхронных ошибок и у сервера (F57):
         // без этого живая проверка показывала код вместо текста.
-        const error = raw && normalizeErrors([raw], render, desc.policy.limits)[0]
-        const facts = s.facts.filter((e) => e.id !== previous && e.id !== error?.id)
-        if (error) { facts.push(error); asyncErrorIds.set(name, error.id) }
+        const errors = raw.length ? normalizeErrors(raw, render, desc.policy.limits) : []
+        const stale = new Set([...previous, ...errors.map((e) => e.id)])
+        const facts = s.facts.filter((e) => !stale.has(e.id))
+        if (errors.length) { facts.push(...errors); asyncErrorIds.set(name, errors.map((e) => e.id)) }
         else asyncErrorIds.delete(name)
         const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
         return { ...s, checking, facts, shown: display(facts, ctx).errors }
@@ -707,6 +711,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       name: f.name, input: f.input, kind: f.kind,
       attrs, skipped: base.skipped,
       label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
+      ...(f.multiple ? { multiple: true } : {}),
       errors, value, has,
       ...(f.defaultValue !== undefined ? { defaultValue: f.defaultValue } : {}),
       ...(f.fieldSet ? { fieldSet: f.fieldSet } : {}),

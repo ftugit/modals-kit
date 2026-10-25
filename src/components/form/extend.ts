@@ -4,6 +4,7 @@
 import { CheckRegistry, check, defaultRegistry, describe, issue, opaque, v } from '#lib/form/index.js'
 import type { Constraint, FieldType } from '#lib/form/index.js'
 import { phoneLengthOk } from '#components/ui/phone-input/phone.ts'
+import { imageCheck } from './image'
 
 // Открытые ключи: подсказки среды возвращаются расширением интерфейсов.
 declare module '#lib/form/index.js' {
@@ -158,5 +159,12 @@ checks.register('email-taken', async (value) => {
 
 /** Валидатор-обёртка: синхронно пропускает, вида ограничения у него нет. */
 export const emailTaken = () => check('email-taken', { debounceMs: 250 })
+
+/**
+ * Содержимое изображений — правило ВСЕГО приложения, а не отдельного поля:
+ * всякий файл, назвавшийся картинкой, обязан ею быть, где бы поле ни стояло.
+ * Взяли из `./image`: там же параметры и проверка одного файла.
+ */
+checks.register('image', imageCheck())
 
 export { v }

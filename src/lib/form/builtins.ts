@@ -193,34 +193,38 @@ const fileConstraints = {
   opaque: true as const,
 }
 
-/** Встроенный тип одного файла. */
-export const fileType: FieldType<File | null> = {
+/**
+ * Встроенный тип файла — ОДИН: одиночный или список по `field.file({ multiple: true })`.
+ *
+ * Отдельного типа `files` нет: множество — это свойство поля, а не второй вид
+ * значения. Отсюда одно правило на разбор, одну отправку и один UI-примитив;
+ * тип значения — `File | readonly File[] | null`.
+ */
+export const fileType: FieldType<File | readonly File[] | null> = {
   kind: 'file', inputs: ['file'], multiple: false, empty: null,
-  // пустой файл браузер отдаёт заглушкой с именем '' — это «поле не трогали»,
-  // а не файл: без этого `required` считал бы его заполненным, а `accept` ругался
-  decode: (e) => { const f = e[0]; return ok(f && typeof f !== 'string' && f.name ? f : null) },
-  encode: (v, n, out) => { if (v) out.push([n, v]) },
-  constraints: fileConstraints,
-  attrs: () => ({ type: 'file' }),
-  degradation: { withoutJs: 'выбор файла', lost: 'перетаскивание, индикатор загрузки' },
-}
-
-/** Встроенный тип списка файлов. */
-export const filesType: FieldType<readonly File[]> = {
-  kind: 'files', inputs: ['files'], multiple: true, empty: [],
-  decode: (e) => ok(e.filter((x): x is File => typeof x !== 'string')),
-  encode: (v, n, out) => { for (const f of v) out.push([n, f]) },
+  decode: (e, ctx) => {
+    // пустой файл браузер отдаёт заглушкой с именем '' — это «поле не трогали»,
+    // а не файл: без этого `required` считал бы его заполненным, а `accept` ругался
+    const real = e.filter((x): x is File => typeof x !== 'string' && Boolean(x.name))
+    if (ctx.field?.multiple) return ok(real)
+    return ok(real[0] ?? null)
+  },
+  encode: (v, n, out) => {
+    if (v === null) return
+    if (Array.isArray(v)) { for (const f of v) out.push([n, f]); return }
+    out.push([n, v as File])
+  },
   constraints: {
     ...fileConstraints,
     maxCount: (c) => (num(c) > 1 ? { multiple: true } : { skip: 'множественность при пределе 1 не нужна' }),
     minCount: () => ({ skip: 'у количества нет нативного атрибута' }),
   },
-  attrs: () => ({ type: 'file', multiple: true }),
-  degradation: { withoutJs: 'выбор нескольких файлов', lost: 'перетаскивание' },
+  attrs: (_input, ctx) => (ctx?.multiple ? { type: 'file', multiple: true } : { type: 'file' }),
+  degradation: { withoutJs: 'выбор файла', lost: 'перетаскивание, индикатор загрузки' },
 }
 
 /** Все встроенные типы значения, регистрируемые createRegistry(). */
 export const BUILTIN_TYPES = [
   textType, numberType, checkboxType, dateType, timeType, datetimeType,
-  selectType, multiselectType, fileType, filesType, fieldSetType,
+  selectType, multiselectType, fileType, fieldSetType,
 ] as const

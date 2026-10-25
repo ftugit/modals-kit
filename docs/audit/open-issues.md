@@ -119,7 +119,7 @@
 
 ### `OI-30` — аватар описан в двух местах: UI и сервер (**P2**)
 
-**Сделано 2026-10-25.** `src/content/user/spec-avatar.ts` — `SpecAvatar` (`{ width: 200, height: 200, maxBytes: 20_480, format: 'jpeg' }`, тип `SpecAvatarParams`), без `raw`, валидаторов и функций; умолчания `avatarEdge`/`avatarMaxBytes` в `config.ts:45-52` берутся из спеки (`spec-avatar.test.ts`). Осталось: `photoConvert={SpecAvatar}` у поля профиля, `profile.form.server.ts`, снятие `avatarPhotoSpec`/`SHORT_PHOTO_FORMATS`/`AvatarTakeover`/`prepareAvatar`.
+**Сделано 2026-10-25.** `SpecAvatar` в `src/content/user/spec-avatar.ts` — единственное упоминание аватара: набор чисел без `raw`, валидаторов и функций; умолчания `avatarEdge`/`avatarMaxBytes` берутся из него. Поле профиля — обычный `field.file` с `v.accept`, `v.maxSize` и общей проверкой `image`; страница включает `preview` и передаёт `photoConvert={SpecAvatar}` примитиву; сервер приводит файл теми же параметрами, если он пришёл без JS. Снято: `avatarPhotoSpec`, `SERVER_PHOTO_FORMATS`, `AvatarTakeover`, `prepareAvatar`, `photoImage`. Осталось: аккуратный `R5`-этап (накопление выбора, компактный ряд, ошибки у карточки — `OI-22`/`OI-25`/`OI-26`).
 
 **Что в коде.** Рамки аватара заданы дважды. Сервер: `readUserChecksSnapshot()` читает из конфига `avatarEdge`/`avatarMaxBytes` (`profile.form.server.ts:20-27`), входные форматы — `SHORT_PHOTO_FORMATS` из `SERVER_PHOTO_FORMATS` (`:18`), описание поля — `form.ts:29-37` (`field.photo`, `v.accept`, `v.maxSize`, `photoImage`). Экран: `ProfileForm.svelte:7-8` берёт `defaults.avatarEdge`/`defaults.avatarMaxBytes`, `AvatarTakeover.svelte:126` подставляет `accept={SERVER_PHOTO_FORMATS.join(',')}`, а конвейер `prepareAvatar` (`avatar.ts`) держит вторую копию правил `edge`/`maxBytes`.
 

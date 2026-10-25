@@ -46,6 +46,8 @@ export interface ProjectContext {
   constraints?: readonly Constraint[]
   /** Уже собранные атрибуты поля. Проекция может учитывать базовые attrs типа. */
   attrs?: HtmlAttrs
+  /** Поле принимает список значений (`field.file({ multiple: true })`). */
+  multiple?: boolean
 }
 
 /** Проекция вида ограничения в атрибуты. */
@@ -70,7 +72,8 @@ export interface FieldType<V = unknown> {
   /** Применимость и проекция в одной записи. */
   readonly constraints: Readonly<Partial<Record<ConstraintKind, Projection>>>
   /** Атрибуты самого представления, не зависящие от правил. */
-  attrs(input: InputMode): HtmlAttrs
+  /** Атрибуты представления; `ctx.multiple` — список файлов вместо одного. */
+  attrs(input: InputMode, ctx?: ProjectContext): HtmlAttrs
   /** Как поле живёт без скрипта: чем заменяется интерактив. */
   readonly degradation: { withoutJs: string; lost?: string }
 }
@@ -115,7 +118,7 @@ export function projectAttrs(
   constraints: readonly Constraint[],
   ctx: ProjectContext,
 ): ProjectedAttrs {
-  const attrs: HtmlAttrs = { ...type.attrs(ctx.input) }
+  const attrs: HtmlAttrs = { ...type.attrs(ctx.input, ctx) }
   const skipped: { kind: ConstraintKind; why: string }[] = []
   const skip = (kind: ConstraintKind, why: string) => skipped.push({ kind, why })
 

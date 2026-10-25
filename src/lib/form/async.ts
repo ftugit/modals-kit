@@ -20,8 +20,12 @@ export interface CheckContext {
   /** Сигнал отмены: новая проверка того же поля отменяет предыдущую. */
   signal: AbortSignal
 }
-/** Асинхронная проверка поля (например, занят ли адрес): значение → ошибка или `null`. */
-export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | null>
+/**
+ * Асинхронная проверка. Возвращает одну ошибку, несколько или ничего:
+ * несколько — когда проверяемое значение это СПИСОК (файлы), и отказать
+ * должен каждый плохой элемент, а не первый попавшийся.
+ */
+export type AsyncCheck = (value: unknown, ctx: CheckContext) => Promise<Issue | readonly Issue[] | null>
 
 /** Настройка асинхронных проверок: задержка, кэш по значению, таймаут. */
 export interface AsyncPolicy {
@@ -72,6 +76,10 @@ export function asyncRefsOf(d: FormDescription, name: string): AsyncRef[] {
   return out
 }
 
+/** Один вердикт проверки → список: несколько ошибок — это список файлов. */
+const toIssues = (x: Issue | readonly Issue[] | null): readonly Issue[] =>
+  x === null || x === undefined ? [] : Array.isArray(x) ? x : [x as Issue]
+
 const toError = (i: Issue, path: string, own?: string): FormError => {
   const template = i.message ?? own
   return {
@@ -100,7 +108,7 @@ export async function runAsyncChecks(
       if (!fn) continue
       try {
         const issue = await fn(values[f.name], { path: f.name, values, signal })
-        if (issue) out.push(toError(issue, f.name, ref.message))
+        for (const one of toIssues(issue)) out.push(toError(one, f.name, ref.message))
       } catch {
         // сбой проверки — ошибка на СВОЁМ поле, форма не падает целиком
         out.push(toError({ code: 'check.failed', params: { check: ref.name } }, f.name))
@@ -136,7 +144,7 @@ export class AsyncRunner {
   #timers = new Map<FieldPath, ReturnType<typeof setTimeout>>()
   #inflight = new Map<FieldPath, AbortController>()
   /** Кэш по значению; самые старые записи вытесняются после `CACHE_MAX`. */
-  #cache = new Map<string, FormError | null>()
+  #cache = new Map<string, readonly FormError[]>()
   /**
    * Поколение поля: растёт на каждом `schedule` и `cancel`. Ответ отдаётся в
    * колбэк, только если поколение не сменилось — иначе вытесненная проверка
@@ -146,7 +154,7 @@ export class AsyncRunner {
 
   constructor(private readonly checks: CheckRegistry) {}
 
-  #remember(key: string, e: FormError | null): void {
+  #remember(key: string, e: readonly FormError[]): void {
     this.#cache.delete(key)
     this.#cache.set(key, e)
     if (this.#cache.size > CACHE_MAX) this.#cache.delete(this.#cache.keys().next().value!)
@@ -169,7 +177,7 @@ export class AsyncRunner {
    */
   schedule(
     d: FormDescription, path: FieldPath, values: Record<string, unknown>,
-    onResult: (e: FormError | null) => void,
+    onResult: (e: readonly FormError[]) => void,
   ): void {
     const refs = asyncRefsOf(d, path)
     if (!refs.length) return
@@ -183,10 +191,15 @@ export class AsyncRunner {
     }, debounce))
   }
 
+  /**
+   * Прогнать проверки поля.
+   * @returns Ошибки поля: пусто — вердикт положительный. Ошибок бывает несколько,
+   *   когда проверка судит список (файлы): по строке на плохой элемент.
+   */
   async run(d: FormDescription, path: FieldPath, values: Record<string, unknown>):
-    Promise<FormError | null> {
+    Promise<readonly FormError[]> {
     const refs = asyncRefsOf(d, path)
-    if (!refs.length) return null
+    if (!refs.length) return []
     const key = `${path}:${JSON.stringify(values[path] ?? null)}`
     if (refs.every((r) => r.policy.cacheByValue) && this.#cache.has(key))
       return this.#cache.get(key)!
@@ -201,18 +214,18 @@ export class AsyncRunner {
         const fn = this.checks.get(ref.name)
         if (!fn) continue
         const issue = await fn(values[path], { path, values, signal: controller.signal })
-        if (controller.signal.aborted) return null
-        if (issue) {
-          const e = toError(issue, path, ref.message)
-          this.#remember(key, e)
-          return e
+        if (controller.signal.aborted) return []
+        const errors = toIssues(issue).map((one) => toError(one, path, ref.message))
+        if (errors.length) {
+          this.#remember(key, errors)
+          return errors
         }
       }
-      this.#remember(key, null)
-      return null
+      this.#remember(key, [])
+      return []
     } catch {
-      if (controller.signal.aborted) return null
-      return toError({ code: 'check.failed' }, path)
+      if (controller.signal.aborted) return []
+      return [toError({ code: 'check.failed' }, path)]
     } finally {
       clearTimeout(timeout)
       if (this.#inflight.get(path) === controller) this.#inflight.delete(path)

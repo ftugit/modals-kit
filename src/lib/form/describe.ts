@@ -105,6 +105,8 @@ export interface FieldDescriptor<V = unknown> {
   readonly reason?: string
   readonly cardinality?: 'first' | 'all'
   readonly invalidFrom?: InvalidFrom
+  /** Поле принимает список значений (несколько файлов). */
+  readonly multiple?: boolean
   /** Каталог видов и пределы набора `field.fields`: по нему разбор приводит значение. */
   readonly fieldSet?: FieldKit
   /** Сохранённое поле, из которого собран дескриптор (`defineForm({ from })`). */
@@ -196,6 +198,11 @@ export interface FieldOptions<V = unknown> {
   cardinality?: 'first' | 'all'
   /** Переопределение источника `aria-invalid` на уровне поля. */
   invalidFrom?: InvalidFrom
+  /**
+   * Поле принимает список значений: у файлов — несколько файлов
+   * (`field.file({ multiple: true })`). Отдельного типа `files` нет.
+   */
+  multiple?: boolean
   /** Тип значения, если одно input-представление обслуживают несколько типов. */
   kind?: ValueKind
 }
@@ -238,6 +245,7 @@ export function makeFieldSugar(registry: Registry = defaultRegistry) {
         reason: o.disabled ? o.reason : undefined,
         cardinality: o.cardinality,
         invalidFrom: o.invalidFrom,
+        multiple: o.multiple,
         ...(fieldSet ? { fieldSet } : {}),
       } as FieldDraft
     },
@@ -288,11 +296,10 @@ export function fieldLinkState(
 /* ── мета-валидация ────────────────────────────────────────────────── */
 
 /**
- * Файловый ли тип: у одиночного файла вход `file`, у списка — `files`.
- * Спрашивать надо входы, а не `kind`: типов два, правило одно.
+ * Файловый ли тип. Спрашивать надо входы, а не `kind`: у типа может быть
+ * несколько представлений, а правило одно.
  */
-const isFileInputs = (inputs: readonly string[]): boolean =>
-  inputs.includes('file') || inputs.includes('files')
+const isFileInputs = (inputs: readonly string[]): boolean => inputs.includes('file')
 
 export function checkFieldDefinition(
   f: FieldDescriptor,
@@ -549,7 +556,8 @@ export function defineForm(def: FormDefinition): FormDescription {
       const f = byName[name]!
       const constraints = constraintsFor(name)
       const projected = projectAttrs(registry.types.get(f.kind), constraints,
-                                     { input: f.input, name, constraints, attrs: {} })
+                                     { input: f.input, name, constraints, attrs: {},
+                                       ...(f.multiple ? { multiple: true } : {}) })
       if (f.placeholder) projected.attrs['placeholder'] = f.placeholder
       attrCache.set(name, projected)
       return projected

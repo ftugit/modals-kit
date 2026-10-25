@@ -1,32 +1,21 @@
 // Паритет проверок пользователя: клиент (AsyncRunner) и сервер
 // (runAsyncChecks) с одним описанием и одним реестром от снимка конфига
-// обязаны давать один вердикт — по никнейму сейчас, по фото с этапа R2,
-// когда поле аватара станет photo.
+// обязаны давать один вердикт — по никнейму и по содержимому картинок.
 import {
   AsyncRunner, decode, runAsyncChecks, validateForm, valuesForChecks,
 } from '#lib/form/index.js'
 import { formParams } from '#hooks/db-form.js'
 import { describe, expect, it } from 'vitest'
-import {
-  AVATAR_PHOTO_ID, PHOTO_RAW_MAX_BYTES, SERVER_PHOTO_FORMATS, avatarPhotoSpec, createUserChecks,
-} from './checks.js'
+import { createUserChecks } from './checks.js'
 import { defaults } from './config.js'
 import { profileForm } from './ui/profile-form/form.js'
 import { profile } from './schema.js'
 
 const checks = createUserChecks(defaults)
 
-describe('spec аватара: вход и выход разведены', () => {
-  it('вход — серверное сырьё трёх форматов до 8 MiB, выход — JPEG из конфига', () => {
-    const spec = avatarPhotoSpec(defaults)
-    expect(spec.id).toBe(AVATAR_PHOTO_ID)
-    expect(spec.input.formats).toEqual([...SERVER_PHOTO_FORMATS])
-    expect(spec.input.maxBytes).toBe(PHOTO_RAW_MAX_BYTES)
-    expect(spec.input.maxPixels).toBeGreaterThan(0)
-    expect(spec.output).toEqual({
-      format: 'image/jpeg', edge: defaults.avatarEdge, maxBytes: defaults.avatarMaxBytes,
-    })
-    expect(checks.has(`photo:${AVATAR_PHOTO_ID}`)).toBe(true)
+describe('реестр проверок: общее правило изображений и никнеймы', () => {
+  it('в реестре лежат `image` и `nickname-forbidden`', () => {
+    expect(checks.has('image')).toBe(true)
     expect(checks.has('nickname-forbidden')).toBe(true)
   })
 })
@@ -49,7 +38,7 @@ describe('никнейм: паритет AsyncRunner и runAsyncChecks на оп
         .filter((e) => e.path === 'nickname')
       const client = await new AsyncRunner(checks).run(profileForm, 'nickname', values)
       expect(server.map((e) => e.code)).toEqual(code ? [code] : [])
-      expect(client?.code ?? null).toBe(code)
+      expect(client.map((e) => e.code)).toEqual(code ? [code] : [])
     })
   }
 

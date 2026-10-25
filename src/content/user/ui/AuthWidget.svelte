@@ -17,7 +17,7 @@
   import { defaults } from '../config.js'
   import { generateKeyPair, sign } from '../keys.js'
   import { vault, type VaultPayload } from '../vault.svelte.js'
-  import type { AvatarLimits } from './profile-form/index.js'
+  import type { ProfileLimits } from './profile-form/index.js'
   import ProfileForm, { DEFAULT_PROFILE_LIMITS } from './profile-form/ProfileForm.svelte'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
   import { mirrorToField } from './field-mirror.svelte.js'
@@ -36,13 +36,13 @@
   type AuthWidgetData = {
     challenge?: { nonce: string; expiresAt: number } | null
     next?: string | null
-    limits?: AvatarLimits & { holdSeconds?: number }
+    limits?: ProfileLimits & { holdSeconds?: number }
     step?: string
     registerSeed?: string | null
     enabled?: boolean
   }
 
-  const DEFAULT_AUTH_LIMITS: AvatarLimits & { holdSeconds: number } = {
+  const DEFAULT_AUTH_LIMITS: ProfileLimits & { holdSeconds: number } = {
     ...DEFAULT_PROFILE_LIMITS,
     holdSeconds: defaults.holdSeconds,
   }

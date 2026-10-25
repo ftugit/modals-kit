@@ -5,12 +5,16 @@
    * `type="file"`), поэтому `value` сюда не принимается: страница, вернувшаяся
    * с ошибкой, просит выбрать файл заново.
    *
-   * Примитив отвечает только за `<input type="file">`, `bind:files` и `ref`.
-   * Отображение выбранных файлов карточкой/плиткой живёт в `Attachment` и
-   * комбинированном `FileAttachment`.
+   * Примитив отвечает за `<input type="file">`, `bind:files`, `ref` и — если
+   * переданы параметры — за приведение выбранных картинок до отправки. Показ
+   * выбранных карточкой/плиткой живёт в `Attachment` и в гибриде `FileAttachment`,
+   * который передаёт эти же параметры своему `FileInput`.
    */
   import type { HTMLInputAttributes } from 'svelte/elements'
   import { inputVariants } from '../field/field'
+  import { convertPhoto, type PhotoConvertSpec } from './convert'
+
+  export type { PhotoConvertSpec }
 
   export interface FileInputProps
     extends Omit<HTMLInputAttributes, 'size' | 'type' | 'value' | 'files'> {
@@ -19,9 +23,15 @@
     files?: FileList
     /** Forwarded ref: узел `<input>` в руки потребителю (фокус, очистка, слушатели формы; см. Input). */
     ref?: (el: HTMLInputElement | null) => void
+    /**
+     * Параметры приведения картинок: размеры кадра, предел веса, конечный формат.
+     * Переданы — каждая выбранная картинка заменяется готовым файлом ДО того, как
+     * значение уйдёт в форму; не картинка — остаётся как есть.
+     */
+    photoConvert?: PhotoConvertSpec
   }
 
-  let { size, files = $bindable(), ref, onchange, class: cls, ...rest }: FileInputProps = $props()
+  let { size, files = $bindable(), ref, onchange, photoConvert, class: cls, ...rest }: FileInputProps = $props()
 
   let inputEl = $state<HTMLInputElement | null>(null)
   let prevFiles: FileList | undefined
@@ -62,8 +72,23 @@
     ],
   })}
   {...rest}
-  onchange={(e) => {
-    files = e.currentTarget.files ?? undefined
+  onchange={async (e) => {
+    const el = e.currentTarget
+    if (photoConvert && el.files?.length) {
+      // картинки приводятся к параметрам, остальное уходит как выбрано
+      const out = new DataTransfer()
+      for (const file of el.files) {
+        if (!file.type.startsWith('image/')) { out.items.add(file); continue }
+        const done = await convertPhoto(file, photoConvert)
+        out.items.add(done.ok ? done.file : file)
+      }
+      el.files = out.files
+      files = el.files
+      prevFiles = files
+      onchange?.(e)
+      return
+    }
+    files = el.files ?? undefined
     onchange?.(e)
     prevFiles = files
   }}

@@ -13,6 +13,7 @@
   } from '../attachment'
   import CloseIcon from '../close-icon/CloseIcon.svelte'
   import FileInput from '../file-input/FileInput.svelte'
+  import type { PhotoConvertSpec } from '../file-input/convert'
 
   export interface FileAttachmentActionContext {
     file: File
@@ -56,6 +57,11 @@
     removable?: boolean
     /** Подпись штатной кнопки уборки файла (`aria-label` и `title`). */
     removeLabel?: string
+    /**
+     * Параметры приведения картинок: гибрид не сжимает сам — он передаёт их
+     * своему `FileInput`, чтобы сжатие оставалось одной возможностью примитива.
+     */
+    photoConvert?: PhotoConvertSpec
     /** Проекция состояния/прогресса/ошибки на конкретный выбранный `File`. */
     itemProps?: (file: File, index: number) => FileAttachmentItemMeta | undefined
     /** Дополнительные или заменяющие действия сценария для каждого файла. */
@@ -77,6 +83,7 @@
     showSize = true,
     removable = true,
     removeLabel = 'Убрать файл',
+    photoConvert,
     itemProps,
     actions: customActions,
     onchange,
@@ -161,6 +168,7 @@
   <FileInput
     ref={handleRef}
     {size}
+    {photoConvert}
     class={cls}
     {...rest}
     onchange={(e) => {
