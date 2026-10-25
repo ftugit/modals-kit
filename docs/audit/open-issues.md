@@ -427,6 +427,26 @@ function maxRegisteredBytes(): number {
 
 **Следствие для `OI-27`.** `maxFileSize` возвращается — но не как настройка приложения, а как **серверный предохранитель** внутри `raw`: один файл не может занять больше, чем `raw` минус запас на текст. Приложение по-прежнему не задаёт `limits`; то, что видит пользователь, — валидаторы веса (`v.maxSize`).
 
+#### Как задаётся порядок частей (проверено по спецификации, 2026-10-25)
+
+Порядок ключей в теле запроса задаётся **только деревом документа**, и никак иначе:
+
+- «Constructing the entry list»: *«Let controls be a list of all the submittable elements whose form owner is form, **in tree order**»* — список контролов обходится в порядке дерева.
+- Multipart: *«The order of parts must be the same as the order of fields in entry list»*, и *«Multiple entries with the same name must be treated as distinct fields»*.
+
+**Что не влияет:** `tabindex` (меняет только последовательность фокуса, а не отправку), CSS (`order`, `flex-direction`, абсолютное позиционирование — визуальный порядок ≠ порядок в дереве), `formaction`/`formmethod` у кнопки, `dirname`.
+
+**Что влияет, кроме места в дереве:** атрибут `form="<id формы>"`. Он делает контрол членом формы, даже если тот лежит **вне** `<form>` — «These elements also have a `form` content attribute … that allow authors to specify an explicit form owner». Порядок при этом остаётся по дереву документа, поэтому контрол после `</form>` = **последняя часть** тела.
+
+**Отсюда простое следствие для `OI-29`:** «слот хвостовых полей» в `Form` не обязателен. Достаточно двух равноценных приёмов, оба без JS:
+
+| Приём | Как выглядит | Что даёт |
+|---|---|---|
+| input последним ребёнком формы | `<Field of={f} />` … `<FileInput of={f} />` в конце `children` | ничего не меняется в разметке страницы, но нужен элемент внутри формы |
+| input **вне** формы с `form` | `<form id="ops">…</form>` … в конце страницы `<FileInput of={f} form="ops" />` | форма остаётся без файловых контролов вообще; хвост можно держать где угодно ниже по документу |
+
+Оба варианта работают и при перехвате: `new FormData(el, submitter)` строит тот же entry list по form owner'у, а не по вложенности. `formdata`-событие (`event.formData.append`) — только JS, для no-JS путей не считается.
+
 #### Примитив `file`: label и input раздельно (решение владельца, 2026-10-25)
 
 `FileAttachment` **наследует примитив `file`**, а примитив состоит из двух отдельных элементов: `Label` (`src/components/ui/label/Label.svelte`, принимает `for`) и нативного `<input type="file">` (`src/components/ui/file-input/FileInput.svelte`), связанных `for`/`id`.
@@ -513,7 +533,7 @@ function maxRegisteredBytes(): number {
 | `label` указывает на input по id | **есть**: `FieldShell` рендерит `Label {...f.labelProps()}`, а `labelProps()` возвращает `{ for: id }` (`bind.svelte.ts:115,695`) |
 | визуально скрыть input, оставив его доступным | **есть** утилита `sr-only`, уже используется (`Fieldset.svelte:31`, `SelectList.svelte:408`, `Spinner.svelte:46`) |
 | держать `Attachment`-список на месте поля | **есть**: список читает состояние поля, а не соседство с input |
-| вынести input в конец формы | **нет**: `FileField` рендерит input внутри `FieldShell` (`FileField.svelte:24-30`); нужен слот «хвостовых полей» на уровне формы |
+| вынести input в конец формы | **нет**: `FileField` рендерит input внутри `FieldShell` (`FileField.svelte:24-30`). Но слот в форме не обязателен: input можно поставить вне `<form>` с атрибутом `form` — см. «Как задаётся порядок частей» |
 | `aria-describedby` | не ломается: id подсказки/ошибки глобальны |
 
 **Обязательные оговорки при реализации:**
