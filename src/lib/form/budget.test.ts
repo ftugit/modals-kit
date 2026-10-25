@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { FILE_BUDGET_RESERVE, formLimits } from './budget.js'
-import { FormDefinitionError, defineForm, field, v, validateForm } from './index.js'
+import { defineForm, field, v, validateForm } from './index.js'
 
 const MB = 1024 * 1024
 
@@ -78,14 +78,17 @@ describe('v.maxSize и бюджет', () => {
     expect(codes(validateForm(d, { photo: file('a.jpg', 9 * MB), docs: [file('b.pdf', 9 * MB)] }))).toEqual([])
   })
 
-  test('защитник сборки: файловое поле без maxSize не собирается', () => {
-    // ошибка объявления, а не предупреждение: без предела файла форма может
-    // уйти больше своего бюджета, и узнать об этом на боевом запросе поздно
-    expect(() => defineForm({ id: 'loose', fields: { pic: field.file({ label: 'Файл' }) } }))
-      .toThrow(FormDefinitionError)
-    expect(() =>
-      defineForm({ id: 'strict', limits: { budget: 8 * MB }, fields: { pic: field.file({ multiple: true, label: 'Файлы' }) } }),
-    ).toThrow(/maxSize/)
+  test('файловое поле без maxSize собирается: предел даёт только бюджет тела', () => {
+    // `v.maxSize` — возможность сузить один файл, а не обязанность объявления.
+    // Нет личного предела — ограничивает вес формы (`form.budget`) и потолок env.
+    const loose = defineForm({ id: 'loose', fields: { pic: field.file({ label: 'Файл' }) } })
+    expect(loose.fields).toHaveLength(1)
+    expect(loose.defects ?? []).toEqual([])
+
+    const capped = probe(8 * MB, { docs: field.file({ multiple: true, label: 'Документы' }) })
+    expect(codes(validateForm(capped, { docs: [file('a.pdf', 3 * MB), file('b.pdf', 3 * MB)] }))).toEqual([])
+    expect(codes(validateForm(capped, { docs: [file('a.pdf', 5 * MB), file('b.pdf', 5 * MB)] })))
+      .toEqual(['form.budget'])
   })
 
   test('потолок окружения урезает объявленный бюджет', () => {

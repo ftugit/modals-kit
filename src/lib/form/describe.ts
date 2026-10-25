@@ -332,12 +332,9 @@ export function checkFieldDefinition(
   }
   const constraints = constraintsOf(f.validators, validators)
 
-  // Защитник сборки: файловое поле без `maxSize` не объявляет, сколько файл
-  // вправе весить, — форму можно отправить больше, чем она умеет принять.
-  // Ошибка объявления, а не предупреждение: чинится в описании формы, не в рантайме.
-  if (isFileInputs(type.inputs) && !constraints.some((c) => c.kind === 'maxSize'))
-    out.push(defect('spec.limit', f.name,
-      'у файлового поля нет maxSize: без предела файла форма может уйти больше своего бюджета'))
+  // Личного предела файла может не быть: тогда ограничивает только бюджет тела
+  // (`form.budget` по весу, потолок — `maxBytes` окружения). `v.maxSize` —
+  // возможность сузить один файл, а не обязанность объявления.
 
   if (constraints.length > limits.constraintsPerField)
     out.push(defect('spec.limit', f.name, `ограничений ${constraints.length}, предел ${limits.constraintsPerField}`))
