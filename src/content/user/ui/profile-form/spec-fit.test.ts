@@ -32,7 +32,7 @@ describe('fitsSpec: конвертация не нужна?', () => {
     expect(await fitsSpec(png(1024, 1024), pngSpec)).toBe(false)
   })
 
-  it('формат спеки не совпал с заявленным — приводить', async () => {
+  it('реальный формат не тот, что в спеке — приводить', async () => {
     expect(await fitsSpec(png(200, 200), specAvatar)).toBe(false)
   })
 

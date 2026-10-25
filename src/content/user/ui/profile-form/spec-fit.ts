@@ -13,10 +13,10 @@ export const SPEC_FIT_HEAD_BYTES = 262_144
 /**
  * Совпадает ли файл со спекой — то есть конвертация не нужна.
  *
- * Проверяет три вещи, все дешёвые: заявленный MIME равен формату спеки, вес не
- * больше `maxBytes`, а реальные ширина и высота (по заголовку, без декодирования)
- * равны `width × height`. Содержимое с заявленным типом обязан подтвердить
- * заголовок — файл, назвавшийся JPEG, но им не являющийся, сюда не пройдёт.
+ * Тип файла здесь не проверяется: «назвался картинкой — обязан ею быть» уже
+ * сделала общая проверка `image` в `#lib/form` до вызова роута. Остаётся то,
+ * чего она не знает, — соответствие параметрам: вес не больше `maxBytes`, а
+ * реальный формат и кадр из заголовка (без декодирования) равны спеке.
  *
  * @param blob Присланный клиентом файл.
  * @param spec Параметры, к которым стремится конвертер и сервер.
@@ -24,7 +24,7 @@ export const SPEC_FIT_HEAD_BYTES = 262_144
  */
 export async function fitsSpec(blob: Blob, spec: SpecAvatar): Promise<boolean> {
   const mime = `image/${spec.format}`
-  if (blob.type !== mime || blob.size > spec.maxBytes) return false
+  if (blob.size > spec.maxBytes) return false
   let head: Uint8Array
   try {
     head = new Uint8Array(await blob.slice(0, SPEC_FIT_HEAD_BYTES).arrayBuffer())
