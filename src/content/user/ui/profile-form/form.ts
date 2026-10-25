@@ -8,6 +8,7 @@
 // совпадения со спекой: сервер картинку НЕ приводит (см. `avatar-spec`).
 import { check, defineForm, field, v } from '#lib/form/index.js'
 import { IMAGE_MIME_TYPES } from '#components/form/image.js'
+import { AUTH_MESSAGES, PROFILE_MESSAGES } from '../../messages.js'
 import { specAvatar } from '../../spec-avatar.js'
 
 /**
@@ -22,14 +23,9 @@ export const PROFILE_FORM_ID = 'user-profile'
 export const profileForm = defineForm({
   id: PROFILE_FORM_ID,
   revision: 4,
-  messages: {
-    'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
-    'profile.photo-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'profile.photo-size': 'Файл больше 20 КБ — картинку нужно уменьшить',
-    'profile.photo-spec': 'Картинка должна быть JPEG 200×200 не тяжелее 20 КБ. Включите скрипты — браузер приведёт её сам',
-    'image.format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'image.dimensions': 'Разрешение картинки слишком велико — возьмите файл поменьше',
-  },
+  // Доменные тексты — общий словарь модуля: отказы сессии (`auth.*`) и профиля
+  // (`profile.*`, `image.*`) звучат одинаково во всех его формах.
+  messages: { ...AUTH_MESSAGES, ...PROFILE_MESSAGES },
   actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
   fields: {
     nickname: field.text({

@@ -6,6 +6,7 @@
 //     и для авторизованного пользователя, сохраняющего свой текущий токен);
 //   - `accept` / `logout` / `renew` / `challenge`: сервисные конверт-действия.
 import { defineForm, field, v } from '#lib/form/index.js'
+import { AUTH_MESSAGES } from '../../messages.js'
 import { SEED_FORM_ID, SEED_FORM_REV } from './envelope.js'
 
 export { SEED_FORM_ID, SEED_FORM_REV }
@@ -13,20 +14,11 @@ export { SEED_FORM_ID, SEED_FORM_REV }
 export const seedForm = defineForm({
   id: SEED_FORM_ID,
   revision: SEED_FORM_REV,
+  // Ответы сессии — общий словарь модуля (`messages.ts`): одна строка на код
+  // для всех его форм. Своё здесь только `pattern` — это про seed.
   messages: {
-    'auth.disabled': 'Вход выключен: на сервере не задан AUTH_SEAL_SECRET — сессии нечем запечатывать',
+    ...AUTH_MESSAGES,
     'pattern': 'Это не seed: 43–44 знака — латиница, цифры, «-» и «_»',
-    'auth.nonce-unknown': 'Время подтверждения истекло — попробуйте ещё раз',
-    'auth.signature': 'Seed или подпись не сошлись — проверьте ввод',
-    'auth.identity-unknown': 'Аккаунта с таким seed больше нет',
-    'auth.token': 'Сессия повреждена — войдите заново',
-    'auth.expired': 'Время сессии вышло — войдите заново',
-    'auth.revoked': 'Сеанс завершён на этом устройстве',
-    'auth.session-unknown': 'Сессия не найдена — войдите заново',
-    'auth.blocked': 'Аккаунт заблокирован',
-    'auth.delete-pending': 'Заявка на удаление ещё активна',
-    'auth.deleted': 'Аккаунт удалён — его можно восстановить, пока seed не стёрт',
-    'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
   },
   actions: [
     { id: 'login', label: 'Войти', validate: 'full' },

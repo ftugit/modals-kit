@@ -16,6 +16,14 @@ function make(cardinality: 'first' | 'all') {
     id: 'signup',
     revision: 1,
     cardinality,
+    // Тексты своих правил приложения (`extend.ts`): у lib про них строк нет,
+    // и без словаря пользователь увидел бы `luhn`, `inn`, `code6`, `type.rating`.
+    messages: {
+      inn: 'ИНН — 10 или 12 цифр',
+      luhn: 'Номер карты не проходит проверку контрольной суммы',
+      code6: 'Код — шесть цифр',
+      'type.rating': 'Поставьте оценку от 1 до 5',
+    },
     actions: [
       { id: 'submit', label: 'Создать аккаунт', validate: 'full' },
       // Действие снимает ВИД ограничения, а не имя правила.
