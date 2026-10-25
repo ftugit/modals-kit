@@ -31,7 +31,8 @@ export type AuthErrorCode =
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
   | 'profile.photo-format'   // файл не картинка или формат не из спеки
-  | 'profile.photo-size'     // картинку не привести к весу/кадру спеки
+  | 'profile.photo-size'     // файл больше предела веса
+  | 'profile.photo-spec'     // файл не совпал со спекой (формат/кадр/вес): сервер не конвертирует
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -68,6 +69,7 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
   'profile.photo-format': () => [error({ code: 'profile.photo-format' }, 'photo')],
   'profile.photo-size': () => [error({ code: 'profile.photo-size' }, 'photo')],
+  'profile.photo-spec': () => [error({ code: 'profile.photo-spec' }, 'photo')],
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

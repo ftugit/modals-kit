@@ -556,6 +556,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'profile.nickname-forbidden':
     case 'profile.photo-format':
     case 'profile.photo-size':
+    case 'profile.photo-spec':
       return 422
   }
 }

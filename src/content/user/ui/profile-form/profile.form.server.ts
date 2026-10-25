@@ -1,11 +1,11 @@
 // Серверный POST-обработчик компонента `ProfileForm` (`#hooks/component-form`).
 //
-// Картинка пришла БЕЗ JS — сервер приводит её к тем же параметрам, что и
-// браузерный примитив (`SpecAvatar`), и только потом пишет в профиль. Конвейер
-// один (`#lib/image`); своего «аватарного» модуля у профиля больше нет.
-import { image } from '#lib/image/index.js'
+// Картинка НЕ конвертируется: прийти должен уже приведённый кадр — его готовит
+// браузерный примитив (`photoConvert={specAvatar}`). Соответствие спеке судит
+// проверка `avatar-spec` в описании формы; здесь она повторяется перед записью,
+// чтобы непроверенный файл не мог попасть в профиль. Приведение «на сервере для
+// тех, кто без JS» — задача очереди, см. `docs/plan-queue.md`.
 import { fitsSpec } from './spec-fit.js'
-import { decodeWithNode } from '#lib/image/node.js'
 import { localStore } from '#server/cache.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { createUserChecks } from '../../checks.js'
@@ -17,11 +17,6 @@ import { profileForm } from './form.js'
 
 const userConfig = createUserConfig(localStore.scope('user-config'))
 
-/** Сколько байт исходника читаем заголовком: дальше решает декодер. */
-const PROBE_HEAD_BYTES = 1_048_576
-/** Потолок исходника до приведения: бомбу режем до декодирования. */
-const MAX_SOURCE_PIXELS = 64_000_000
-
 /** Готовый файл → `data:image/jpeg;base64,…` (текущий способ хранения профиля). */
 async function toDataUrl(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer())
@@ -29,33 +24,6 @@ async function toDataUrl(blob: Blob): Promise<string> {
   for (let i = 0; i < bytes.length; i += 0x8000)
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return `data:${blob.type};base64,${btoa(binary)}`
-}
-
-/**
- * Привести картинку к параметрам (`SpecAvatar`) теми же ступенями, что примитив:
- * кадр `cover` и лучшее качество, влезающее в `maxBytes`.
- *
- * @returns `dataURL` готового JPEG или `null`, если не влезает/не картинка.
- */
-async function prepareImage(file: File): Promise<string | null> {
-  const mime = `image/${specAvatar.format}`
-  try {
-    const hit = await image(
-      file,
-      async (p) => {
-        await p.frame({ width: specAvatar.width, height: specAvatar.height, fit: 'cover', method: 'lanczos3' })
-        return p.fit(
-          { formats: [mime], quality: [0.3, 0.95] },
-          (c) => c.size <= specAvatar.maxBytes,
-          { deadlineMs: 4_500, onBudgetExhausted: 'return-null' },
-        )
-      },
-      { decoder: decodeWithNode, maxPixels: MAX_SOURCE_PIXELS },
-    )
-    return hit ? await toDataUrl(hit.blob) : null
-  } catch {
-    return null
-  }
 }
 
 registerComponentForm({
@@ -80,12 +48,11 @@ registerComponentForm({
 
     let photoPatch: { avatarUrl?: string | null } = {}
     if (uploaded) {
-      // Уже совпал со спекой — конвертация не нужна, сохраняем как есть.
-      const dataUrl = (await fitsSpec(uploaded, specAvatar))
-        ? await toDataUrl(uploaded)
-        : await prepareImage(uploaded)
-      if (!dataUrl) return fail(instruction({ code: 'profile.photo-size' }))
-      photoPatch = { avatarUrl: dataUrl }
+      // Сервер не приводит картинку: сохраняем только то, что уже совпало со
+      // спекой. Проверка повторена здесь, а не только в `avatar-spec`: запись
+      // не должна зависеть от того, что реестр проверок подключён к форме.
+      if (!(await fitsSpec(uploaded, specAvatar))) return fail(instruction({ code: 'profile.photo-spec' }))
+      photoPatch = { avatarUrl: await toDataUrl(uploaded) }
     } else if (removePhoto) {
       photoPatch = { avatarUrl: null }
     }

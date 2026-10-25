@@ -23,7 +23,7 @@
 | Расширение типа поля `field.photo` и асинхронной проверки `photo:<id>` (`PhotoSpec`, `checkPhotoFile`, `registerPhotoChecks`, `photoImage`) | `src/components/form/photo.ts` | Готово |
 | Перехват поля в форме (`Field` `takeover`, `FieldHandle.pending` / `FieldHandle.error`) и защита в сборке | `src/lib/form/{takeover.ts,svelte/bind.svelte.ts}`, `src/components/form/Field.svelte`, `tooling/layer-guard.mjs` | Готово |
 | Компактная карточка вложения и превью (`Attachment`, `FileAttachment`) | `src/components/ui/attachment/`, `src/components/form/FileField.svelte` | Готово |
-| Профиль пользователя на бинарном `File` (JS сжатие + no-JS raw `File` → серверный `decodeWithNode`) | `src/content/user/ui/profile-form/{form.ts,avatar.ts,AvatarTakeover.svelte,ProfileForm.svelte,profile.form.server.ts}` | Готово |
+| Профиль пользователя на бинарном `File` (JS сжатие; без JS файл обязан уже совпадать с `specAvatar`, сервер его не приводит) | `src/content/user/ui/profile-form/{form.ts,avatar.ts,AvatarTakeover.svelte,ProfileForm.svelte,profile.form.server.ts}` | Готово |
 | Протокол отложенного исхода `outcome: 'queued'` (`QueuedData`, `assertQueuedProtocol`, `pollUntilDone`) | `src/lib/form/queued.ts` | Готово (ядро `lib/form`) |
 
 ---
@@ -44,7 +44,7 @@
 
 ### Этап R5 → поля фото (решение 2026-10-24)
 
-Вход — валидаторы (`v.accept`, `v.maxSize`, `v.maxCount`); сжатие — **опция `Field`** (`photoConvert={specAvatar}`: 200 × 200, 20 КиБ, `jpeg`; параметры — `src/content/user/spec-avatar.ts`), в описании формы её нет; при `preview` поле рисуется гибридом `FileAttachment` (`FileInput` + `Attachment`), без неё — ui-примитивом `FileInput`; голый `<input type="file">` не используется. Вид ограничения `photo-output` и `photoOutput()` **не вводятся**; сервер перекодирует только файл, пришедший без JS, — тем же конвейером `#lib/image` . Прежняя формулировка «перевести `/fields` на `field.photo`» заменена: демо переходит на файловое/фото-поле **без** перекодирования и получает загрузку **до 5 файлов** — это опция `multiple` единственного типа `file`; отдельного типа `photos` нет.
+Вход — валидаторы (`v.accept`, `v.maxSize`, `v.maxCount`); сжатие — **опция `Field`** (`photoConvert={specAvatar}`: 200 × 200, 20 КиБ, `jpeg`; параметры — `src/content/user/spec-avatar.ts`), в описании формы её нет; при `preview` поле рисуется гибридом `FileAttachment` (`FileInput` + `Attachment`), без неё — ui-примитивом `FileInput`; голый `<input type="file">` не используется. Вид ограничения `photo-output` и `photoOutput()` **не вводятся**; сервер файл **не приводит**: предел веса (`v.maxSize`, 20 КиБ) и проверка `avatar-spec` (формат, кадр, вес по заголовку) пропускают только готовый кадр, остальное отклоняется. Приведение без JS — задача очереди, см. [`docs/plan-queue.md`](../plan-queue.md). Прежняя формулировка «перевести `/fields` на `field.photo`» заменена: демо переходит на файловое/фото-поле **без** перекодирования и получает загрузку **до 5 файлов** — это опция `multiple` единственного типа `file`; отдельного типа `photos` нет.
 
 ### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
 
