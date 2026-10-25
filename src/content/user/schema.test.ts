@@ -28,7 +28,7 @@ describe('схема пользователя (user_auth / user_profile / user_s
     const v = (x: unknown) => profileFields.avatar_url['~standard'].validate(x)
     expect((await v('https://example.com/a.png')).issues).toBeUndefined()
     // dataURL — продукт клиентского конвейера аватара (раньше схема его
-    // отклоняла и сохранение падало 500; содержимое проверяет checkAvatar)
+    // отклоняла и сохранение падало 500; содержимое проверяет роут по спеке)
     expect((await v('data:image/jpeg;base64,/9j/4AAQ')).issues).toBeUndefined()
     expect((await v('data:image/webp;base64,UklGRg==')).issues).toBeUndefined()
     expect((await v(null)).issues).toBeUndefined()

@@ -19,8 +19,8 @@ export const profileForm = defineForm({
   revision: 3,
   messages: {
     'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
-    'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
-    'profile.avatar-size': 'Картинка не сжимается до нужного веса — возьмите другую',
+    'profile.photo-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
+    'profile.photo-size': 'Картинка не сжимается до нужного веса — возьмите другую',
     'image.format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
     'image.dimensions': 'Разрешение картинки слишком велико — возьмите файл поменьше',
   },

@@ -30,8 +30,8 @@ export type AuthErrorCode =
   | 'auth.deleted'            // аккаунт удалён (seed ещё не стёрт): шаг восстановления, сессии нет
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
-  | 'profile.avatar-format'   // аватар не из белого списка форматов
-  | 'profile.avatar-size'     // аватар тяжелее предела конфига
+  | 'profile.photo-format'   // файл не картинка или формат не из спеки
+  | 'profile.photo-size'     // картинку не привести к весу/кадру спеки
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -66,8 +66,8 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.deleted': () => [generalError('auth.deleted')],
   'auth.confirm': (f) => [fieldError(f)],
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
-  'profile.avatar-format': () => [error({ code: 'profile.avatar-format' }, 'avatar')],
-  'profile.avatar-size': () => [error({ code: 'profile.avatar-size' }, 'avatar')],
+  'profile.photo-format': () => [error({ code: 'profile.photo-format' }, 'photo')],
+  'profile.photo-size': () => [error({ code: 'profile.photo-size' }, 'photo')],
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

@@ -4,6 +4,7 @@
 // браузерный примитив (`SpecAvatar`), и только потом пишет в профиль. Конвейер
 // один (`#lib/image`); своего «аватарного» модуля у профиля больше нет.
 import { image } from '#lib/image/index.js'
+import { fitsSpec } from './spec-fit.js'
 import { decodeWithNode } from '#lib/image/node.js'
 import { localStore } from '#server/cache.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
@@ -70,7 +71,7 @@ registerComponentForm({
     // если в FormData под ключом `photo` прислали непустую строку вместо File — отказ.
     const rawPhotoEntry = raw?.get('photo')
     if (typeof rawPhotoEntry === 'string' && rawPhotoEntry.trim() !== '') {
-      return fail(instruction({ code: 'profile.avatar-format' }))
+      return fail(instruction({ code: 'profile.photo-format' }))
     }
 
     const nickname = String(values.nickname ?? '').trim()
@@ -79,8 +80,11 @@ registerComponentForm({
 
     let photoPatch: { avatarUrl?: string | null } = {}
     if (uploaded) {
-      const dataUrl = await prepareImage(uploaded)
-      if (!dataUrl) return fail(instruction({ code: 'profile.avatar-size' }))
+      // Уже совпал со спекой — конвертация не нужна, сохраняем как есть.
+      const dataUrl = (await fitsSpec(uploaded, specAvatar))
+        ? await toDataUrl(uploaded)
+        : await prepareImage(uploaded)
+      if (!dataUrl) return fail(instruction({ code: 'profile.photo-size' }))
       photoPatch = { avatarUrl: dataUrl }
     } else if (removePhoto) {
       photoPatch = { avatarUrl: null }

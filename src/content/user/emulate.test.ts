@@ -408,18 +408,14 @@ describe('профиль', () => {
     expect(payload.prof.nickname).toBe('Вася')
   })
 
-  test('запрещённый никнейм и плохой аватар — доменные факты', async () => {
+  test('запрещённый никнейм — доменный факт; картинку домен не разбирает', async () => {
     const { ports, secret } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'admin' })).code).toBe('profile.nickname-forbidden')
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'ROOT' })).code).toBe('profile.nickname-forbidden')
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'я' })).code).toBe('profile.nickname-forbidden')
-    expect(fact_(await updateProfile(ports, out.access, { avatarUrl: 'data:text/html;base64,PGI+' })).code).toBe('profile.avatar-format')
-    expect(fact_(await updateProfile(ports, out.access, { avatarUrl: `data:image/jpeg;base64,${'A'.repeat(40_000)}` })).code).toBe('profile.avatar-size')
-    // валидный base64, но не картинка внутри: сервер проверяет СОДЕРЖИМОЕ (probe)
-    expect(fact_(await updateProfile(ports, out.access, { avatarUrl: `data:image/jpeg;base64,${'A'.repeat(120)}` })).code).toBe('profile.avatar-format')
-    // настоящий JPEG 200×200 (ровно продукт клиентского конвейера) — принимается
+    // картинку проверяет и приводит роут по спеке: домен сохраняет готовый dataURL
     await ensureWasm()
     const frameData = new Uint8ClampedArray(200 * 200 * 4)
     for (let i = 0; i < frameData.length; i += 4) {

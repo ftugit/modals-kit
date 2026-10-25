@@ -3,10 +3,7 @@
  * аватара). Отдельно от `auth.ts` — у auth профильных функций нет (чек-лист
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
-import { probeImageHeader } from '#lib/image/probe.js'
-import { specAvatar } from './spec-avatar.js'
 import { fail, guard, ok, type UserResult } from './auth.js'
-import type { AuthFact } from './error.js'
 import type { AuthPorts } from './ports.js'
 import type { ProfileView } from './types.js'
 
@@ -24,9 +21,10 @@ export async function profile(
 
 /**
  * Сохранить профиль. ПЕРВОЕ заполнение создаёт строку. Никнейм проверяется на
- * запрещённые (`config.nicknameForbidden`); формат и вес аватара — по конфигу
- * (белый список base64-форматов, предел байт). Правила длины/вида значений —
- * на записи проверит схема (`lib/db`), здесь — доменные запреты.
+ * запрещённые (`config.nicknameForbidden`). Картинку домен не разбирает: её
+ * проверяет и приводит роут по параметрам спеки (`specAvatar`) ДО вызова, и
+ * сюда приходит готовый `avatarUrl`. Правила длины/вида значений — на записи
+ * проверит схема (`lib/db`), здесь — доменные запреты.
  */
 export async function updateProfile(
   ports: AuthPorts,
@@ -47,16 +45,7 @@ export async function updateProfile(
       return fail({ code: 'profile.nickname-forbidden' })
   }
 
-  let avatarUrl: string | null | undefined
-  if (args.avatarUrl !== undefined) {
-    if (args.avatarUrl === null) {
-      avatarUrl = null
-    } else {
-      const verdict = await checkAvatar(ports, args.avatarUrl)
-      if (verdict) return fail(verdict)
-      avatarUrl = args.avatarUrl
-    }
-  }
+  const avatarUrl: string | null | undefined = args.avatarUrl
 
   const existing = await ports.profiles.get(g.sub)
   if (!existing) {
@@ -72,38 +61,4 @@ export async function updateProfile(
   }
   const row = await ports.profiles.get(g.sub)
   return ok(row as ProfileView)
-}
-
-/**
- * Доменная проверка картинки профиля: формат из спеки, предел веса и
- * СОДЕРЖИМОЕ. Порядок дешёвый→честный: вид dataURL → вес по длине base64 →
- * разбор заголовков (`probeImageHeader`, без декодирования): реальный формат
- * обязан совпасть с заявленным, картинка — быть квадратом не больше
- * `specAvatar.width` (ровно то, что готовит примитив поля).
- * Заголовков достаточно: вес и размеры уже ограничены, а `<img src=data:…>`
- * битый поток просто не покажет.
- */
-async function checkAvatar(ports: AuthPorts, value: string): Promise<AuthFact | undefined> {
-  const maxBytes = specAvatar.maxBytes
-  const edge = specAvatar.width
-  const names = specAvatar.format
-  const match = new RegExp(`^data:image/(${names});base64,[A-Za-z0-9+/]+={0,2}$`).exec(value)
-  if (!match) return { code: 'profile.avatar-format' }
-  // вес считаем от содержимого (после запятой): клиент сжимает БАЙТЫ КАРТИНКИ,
-  // а префикс `data:image/jpeg;base64,` — ~30 Б, из-за них «впритык» сжатое
-  // отбраковывалось (ход 261, репорт владельца «не сохранялось с нескольких раз»)
-  const base64 = value.slice(value.indexOf(',') + 1)
-  const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
-  if (bytes > maxBytes) return { code: 'profile.avatar-size', args: { max: maxBytes } }
-  let content: Uint8Array
-  try {
-    content = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-  } catch {
-    return { code: 'profile.avatar-format' } // base64 невалидной длины — регулярка её не ловит
-  }
-  const facts = probeImageHeader(content)
-  if (!facts || facts.format !== `image/${match[1]}` || facts.width !== facts.height)
-    return { code: 'profile.avatar-format' }
-  if (facts.width > edge) return { code: 'profile.avatar-size', args: { max: maxBytes } }
-  return undefined
 }

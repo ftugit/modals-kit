@@ -554,8 +554,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
       return 410
     case 'auth.confirm':
     case 'profile.nickname-forbidden':
-    case 'profile.avatar-format':
-    case 'profile.avatar-size':
+    case 'profile.photo-format':
+    case 'profile.photo-size':
       return 422
   }
 }
