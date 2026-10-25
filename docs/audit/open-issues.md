@@ -55,7 +55,7 @@
 | `OI-19` | один вид `file` + опция `multiple`; `files` удаляется (breaking); невалидный файл отклоняется сам, форма продолжает | 5 мест в ядре, 4 вызова `field.files(` |
 | `OI-27` (уточнение) | `v.maxSize` не превышает серверный raw: `min(N, raw − reserve)`; тип — по MIME, содержимое не сниффится | `FieldContext` получает лимиты, клиент — серверный raw |
 | `OI-06` | сжатие фото — **опция `Field`**: `photoConvert={{ format, edge, bytes }}` (уточнение 2026-10-25); `photoImage`/`photoOutput` не вводятся, сервер не конвертирует | `photoType` уходит из ядра; отдельного типа `photo` в UI-реестре не нужно; `#lib/image` включается внутри поля по опции |
-| `OI-24` | вид файлового поля — **опция `Field`** (`preview`): в описании формы вида нет, `variant` не используется | `FileField` перестаёт ветвиться по `f.variant`; при `preview` вместо голого `<input type="file">` рисуется гибрид `Attachment` + input |
+| `OI-24` | вид файлового поля — **опция `Field`** (`preview`): в описании формы вида нет, `variant` не используется | `FileField` перестаёт ветвиться по `f.variant`; без опции — ui-примитив `FileInput`, с ней — гибрид `FileAttachment` (`FileInput` + `Attachment`). Голый `<input type="file">` не используется |
 | `OI-27` | raw — настройка **сервера**, проверки (вес, тип, число) — валидаторы; `maxFileSize` и `maxValuesPerKey` удаляются | приложение перестаёт задавать `limits` у регистраций |
 | `OI-28` | динамический бюджет загрузки — UI-опция (только JS), дополнительно к валидатору веса | `fileMax = raw − overhead − payload` |
 | `OI-29` | ~~частичная отправка~~ **снято 2026-10-25**: форма атомарна — «не получена целиком, значит не получена вовсе», отказ `413` на всю форму, части до обрыва не спасаются | сняты: парсер `@remix-run/multipart-parser`, «файл последним», `form`-атрибут вне формы, `sr-only` input в конце, API половин `<Field>`/`<FileInput>`; `formData()` + `metered()` остаются |
@@ -436,12 +436,13 @@ function maxRegisteredBytes(): number {
 ```
 
 - В описании (`defineForm`) только данные: `field.file({ multiple, validate })`. Ни `variant: 'preview'`, ни `'compact' | 'list'`.
-- **`preview`** — булева опция. Внутри `Field`/`FileField` вместо голого примитива `<input type="file">` подключается гибрид: `Attachment` (список карточек) + тот же нативный input. Превью даёт `Attachment` в режиме `media: 'auto'`: картинка — `URL.createObjectURL`, прочее — иконка типа; раскладка и скролл — там же (`OI-22`).
-- Без `preview` поле остаётся простым `<input type="file">` и лишнего не тянет.
+- **Без `preview`** поле рисует ui-примитив `FileInput` (`src/components/ui/file-input/FileInput.svelte`, экспорт из `#components/ui/index.js:16`) — это единственное место во всём UI, где вообще есть `<input type="file">`.
+- **С `preview`** подключается уже существующий гибрид `FileAttachment` (`src/components/ui/file-attachment/FileAttachment.svelte`): тот же `FileInput` + список карточек `Attachment` (`src/components/ui/attachment/`). Превью даёт `Attachment` в режиме `media: 'auto'`: картинка — `URL.createObjectURL`, прочее — иконка типа; удаление идёт через узел input (`el.files` + `change`), раскладка и скролл — `OI-22`.
+- **Голый `<input type="file">` в разметке поля запрещён.** «Примитив» здесь — это `FileInput` без `Attachment`, а не нативный тег: тег живёт только внутри `FileInput.svelte`.
 
 **Почему опция, а не перехват.** `takeover`/`instead` в `Field.svelte` остаются общим механизмом «страница заменила примитив»; для файлового поля это лишний уровень — вид и конвертер известны киту, их место внутри поля, а страница только включает их опцией.
 
-**Сейчас в коде:** `FileField.svelte:24-30` ветвится по `f.variant === 'preview'`. Ветка уходит, вместо неё — проп `preview` у `Field` (по команде на код).
+**Сейчас в коде:** `FileField.svelte:24-30` уже рисует только `FileInput` или `FileAttachment` — голого input нет нигде; ветвление идёт по `f.variant === 'preview'`. Ветка уходит, вместо неё — проп `preview` у `Field` (по команде на код).
 
 ### `OI-25` — ошибки по файлам скопом, а не по одной (**P2**)
 
