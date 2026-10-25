@@ -58,6 +58,14 @@ export const variables = defineEnvVars({
     description: 'Задаёт песочница превью: к PREVIEW_PORTS добавляется https://PORT-ID.e2b.app.',
   },
 
+  // ── Тело форм (`src/server/form-budget.server.ts`) ──
+  FORM_BODY_LIMIT: {
+    schema: positiveInteger,
+    description:
+      'Потолок тела формы, байт: столько пропускает развёртывание (Vercel — до 4.5 МБ, Cloudflare — 100 МБ). ' +
+      'Форма может объявить меньше; больше — молча игнорируется. По умолчанию 2 МиБ (DEFAULT_LIMITS.maxBytes).',
+  },
+
   // ── Движок данных (`open()` в `src/server/db.server.ts`) ──
   HYPERDRIVE_CONNECTION_STRING: {
     schema: text,

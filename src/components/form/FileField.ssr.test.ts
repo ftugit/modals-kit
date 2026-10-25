@@ -15,16 +15,16 @@ const desc = defineForm({
     cover: field.file({
       label: 'Обложка',
       variant: 'preview',
-      validate: [v.required(), v.accept(['image/png'])],
+      validate: [v.required(), v.accept(['image/png']), v.maxSize(1024 * 1024)],
     }),
     docs: field.files({
       label: 'Документы',
-      validate: [v.maxCount(3)],
+      validate: [v.maxCount(3), v.maxSize(1024 * 1024)],
     }),
     gallery: field.files({
       label: 'Галерея',
       variant: 'preview',
-      validate: [v.accept(['image/png', 'application/pdf'])],
+      validate: [v.accept(['image/png', 'application/pdf']), v.maxSize(1024 * 1024)],
     }),
   },
 })

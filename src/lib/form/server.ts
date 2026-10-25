@@ -674,7 +674,11 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
       // обычно уже поднято слоем имён; здесь — если order поставил его до тела
       await resolveSource(ctx)
 
-      const ev = evaluate(ctx.form!, ctx.description, { render, instance: o.instance, prepare })
+      // бюджет тела — тот же, по которому режет `bodyLayer`: объявленный формой
+      // меньше потолка окружения, иначе действует потолок (в `limits.maxBytes`)
+      const ev = evaluate(ctx.form!, ctx.description, {
+        render, instance: o.instance, prepare, budget: ctx.limits.maxBytes,
+      })
       if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
 
       currentIntent = ev.intent

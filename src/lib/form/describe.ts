@@ -298,7 +298,6 @@ export function checkFieldDefinition(
   f: FieldDescriptor,
   registry: Registry = defaultRegistry,
   policy: FormPolicy = defaultPolicy,
-  enforceFileLimit = false,
 ): FieldDefect[] {
   const out: FieldDefect[] = []
   const { types, validators } = registry
@@ -326,12 +325,12 @@ export function checkFieldDefinition(
   }
   const constraints = constraintsOf(f.validators, validators)
 
-  // Файловое поле без `maxSize`: личного предела нет, а бюджет формы не с чем
-  // сверить. Пока бюджет не объявлен — предупреждение (суммарная проверка всё
-  // равно выключена), с объявленным бюджетом — ошибка объявления.
+  // Защитник сборки: файловое поле без `maxSize` не объявляет, сколько файл
+  // вправе весить, — форму можно отправить больше, чем она умеет принять.
+  // Ошибка объявления, а не предупреждение: чинится в описании формы, не в рантайме.
   if (isFileInputs(type.inputs) && !constraints.some((c) => c.kind === 'maxSize'))
-    out.push(defect('spec.limit', f.name, 'у файлового поля нет maxSize: предел файла не объявлен',
-                    enforceFileLimit ? 'error' : 'warn'))
+    out.push(defect('spec.limit', f.name,
+      'у файлового поля нет maxSize: без предела файла форма может уйти больше своего бюджета'))
 
   if (constraints.length > limits.constraintsPerField)
     out.push(defect('spec.limit', f.name, `ограничений ${constraints.length}, предел ${limits.constraintsPerField}`))
@@ -500,8 +499,7 @@ export function defineForm(def: FormDefinition): FormDescription {
     taken.add(f.name)
   }
 
-  for (const f of fields)
-    defects.push(...checkFieldDefinition(f, registry, policy, Boolean(def.limits?.budget)))
+  for (const f of fields) defects.push(...checkFieldDefinition(f, registry, policy))
   if (defects.some((d) => d.severity === 'error')) throw new FormDefinitionError(defects, def.id)
 
   // файловые поля — в порядке объявления: по ним стабильно считается сумма веса

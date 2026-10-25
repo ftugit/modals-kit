@@ -28,12 +28,12 @@ const desc = defineForm({
     }),
     docs: field.files({
       label: 'Документы',
-      validate: [v.maxCount(3)],
+      validate: [v.maxCount(3), v.maxSize(1024 * 1024)],
     }),
     gallery: field.files({
       label: 'Галерея',
       variant: 'preview',
-      validate: [v.accept(['image/png']), v.maxCount(2)],
+      validate: [v.accept(['image/png']), v.maxCount(2), v.maxSize(1024 * 1024)],
     }),
   },
 })

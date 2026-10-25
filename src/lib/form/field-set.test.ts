@@ -195,7 +195,10 @@ suite('defineForm({ from }) — сохранённый набор снова ф�
   test('расширение: сначала набор, потом поля из кода; правила набора действуют', () => {
     const d = defineForm({
       id: 'record', from: saved,
-      fields: { title: field.text({ label: 'Название', validate: [v.required()] }), image: field.file({ label: 'Файл' }) },
+      fields: {
+        title: field.text({ label: 'Название', validate: [v.required()] }),
+        image: field.file({ label: 'Файл', validate: [v.maxSize(1024 * 1024)] }),
+      },
     })
     expect(d.fields.map((f) => [f.name, f.order])).toEqual([['u_s1', 0], ['u_s2', 1], ['title', 2], ['image', 3]])
     const { values, structural } = decode(data([['u_s1', ''], ['u_s2', 'not-mail'], ['title', 'x']]), d)

@@ -44,7 +44,10 @@ suite('переход после успеха (F17)', () => {
 
 suite('файл в ответе', () => {
   test('значение файла назад не отдаётся: ответ остаётся JSON-ом', async () => {
-    const d = defineForm({ id: 'probe', fields: { name: field.text({}), pic: field.file({}) } })
+    const d = defineForm({
+      id: 'probe',
+      fields: { name: field.text({}), pic: field.file({ validate: [v.maxSize(1024)] }) },
+    })
     const h = createFormHandler({ description: d, execute: (c) => c.fail([{ message: 'нет', path: ['name'] }]) })
     const body = new FormData()
     for (const [k, x] of Object.entries(envelopeOf({}, d))) body.set(k, String(x))

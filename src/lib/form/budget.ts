@@ -21,14 +21,51 @@ export interface FormLimits {
 }
 
 /**
+ * Действующий бюджет: `min(объявленный, потолок окружения)`.
+ *
+ * Потолок — то, что реально пропустит транспорт (env развёртывания). Число в
+ * описании больше потолка **молча игнорируется**: уменьшать бюджет форма вправе,
+ * увеличивать — нет. Не объявлено ничего — `undefined` (суммарной проверки нет).
+ */
+export function effectiveBudget(
+  declared: number | undefined,
+  ceiling: number | undefined,
+): number | undefined {
+  if (declared === undefined) return ceiling
+  if (ceiling === undefined) return declared
+  return Math.min(declared, ceiling)
+}
+
+/**
  * Свести бюджет формы.
  *
- * `undefined` — форма бюджета не объявляла: суммарная проверка выключена, предел
- * файла остаётся тем, что объявил валидатор.
+ * @param budget Объявленный формой бюджет тела, байт; `undefined` — не объявлен.
+ * @param fileFields Имена файловых полей в порядке объявления.
+ * @param ceiling Потолок окружения (env развёртывания): объявленное больше него
+ *   молча урезается. `undefined` — потолок неизвестен (браузер, юнит-тесты).
  */
-export function formLimits(budget: number | undefined, fileFields: readonly string[]): FormLimits {
-  if (budget === undefined) return { budget: null, filesBytes: Number.POSITIVE_INFINITY, fileFields }
-  if (!Number.isFinite(budget) || budget <= 0)
-    throw new Error('[form] limits.budget: ожидается положительное число байт')
-  return { budget, filesBytes: Math.max(0, budget - FILE_BUDGET_RESERVE), fileFields }
+export function formLimits(
+  budget: number | undefined,
+  fileFields: readonly string[],
+  ceiling?: number,
+): FormLimits {
+  const effective = effectiveBudget(budget, ceiling)
+  if (effective === undefined) return { budget: null, filesBytes: Number.POSITIVE_INFINITY, fileFields }
+  if (!Number.isFinite(effective) || effective <= 0)
+    throw new Error('[lib/form] бюджет тела: ожидается положительное число байт')
+  return { budget: effective, filesBytes: Math.max(0, effective - FILE_BUDGET_RESERVE), fileFields }
+}
+
+/**
+ * Те же пределы под потолок окружения: суммарная проверка включается, даже если
+ * форма бюджет не объявляла, — потолок и есть бюджет.
+ */
+export function withCeiling(limits: FormLimits, ceiling: number | undefined): FormLimits {
+  if (ceiling === undefined) return limits
+  const budget = effectiveBudget(limits.budget ?? undefined, ceiling)
+  return {
+    budget: budget ?? null,
+    filesBytes: budget === undefined ? Number.POSITIVE_INFINITY : Math.max(0, budget - FILE_BUDGET_RESERVE),
+    fileFields: limits.fileFields,
+  }
 }

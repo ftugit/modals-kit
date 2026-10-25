@@ -15,7 +15,7 @@ import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
 import { blockingOpErrors, opError, opPin, type OpErrorInput } from '../takeover'
 import { FormStore, initialState, type FormState } from '../state'
 import { defaultValueMap } from '../defaults'
-import { evaluate, runSubmit, SubmitMachine, type Transport } from '../submit'
+import { evaluate, runSubmit, SubmitMachine, type EvaluateOptions, type Transport } from '../submit'
 import { disabledState } from '../validate'
 import type { HtmlAttrs } from '../types'
 import type { BoundConfig, LiveMode } from './config'
@@ -48,6 +48,8 @@ export interface FormProps {
   onsubmit: (e: SubmitEvent) => void
   /** Признак «идёт отправка» — для стилей и `aria-busy`. */
   'aria-busy'?: true
+  /** Действующий бюджет тела, байт: живая проверка и сервер судят по одному числу. */
+  'data-budget'?: string
   [key: symbol]: unknown
 }
 
@@ -194,6 +196,13 @@ export interface BindOptions {
   intercept?: boolean
   /** Режим живой проверки. */
   live?: LiveMode
+  /**
+   * Действующий бюджет тела, байт — то, что пропустит транспорт (потолок env
+   * развёртывания). Не задан — берётся объявленный в описании (`limits.budget`),
+   * ограниченный тем же потолком при первом же прогоне правил. Число попадает
+   * в разметку `data-budget`, чтобы живая проверка судила по тому же пределу.
+   */
+  budget?: number
   /** Транспорт: сеть делает движок. */
   transport?: Transport
   /** Обработчик ошибок формы. Перекрывает проектный. */
@@ -336,7 +345,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
 
   function recheck(name: string) {
     if (!formEl) return
-    const ev = evaluate(new FormData(formEl), desc, { render, instance, requireEnvelope: false })
+    const ev = evaluate(new FormData(formEl), desc, evaluateOptions())
     const ctx: ErrorContext = { from: 'fetch', intent: 'submit', outcome: 'not-applied' }
     const shown = display(ev.errors, ctx)
     // закреплённые серверные ошибки решает syncPins по значению, а не уход с поля
@@ -483,7 +492,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
 
   /** Набор объявленных ключей из DOM: проверка `evaluate` + патч без выключенных. */
   function readUrl(form: HTMLFormElement) {
-    const ev = evaluate(new FormData(form), desc, { render, instance, requireEnvelope: false })
+    const ev = evaluate(new FormData(form), desc, evaluateOptions())
     const patch: Record<string, unknown> = {}
     for (const f of desc.fields) {
       // Выключенный контрол в набор не кладём: FormData его не несёт, а отсутствие
@@ -532,6 +541,17 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
       }))
   }
 
+  /** Действующий бюджет тела: явный из связки, иначе объявленный формой. */
+  function budgetNow(): number | undefined {
+    return o.budget ?? desc.limits.budget ?? undefined
+  }
+
+  /** Опции прогона правил на клиенте: тот же бюджет, что увидит сервер. */
+  function evaluateOptions(): EvaluateOptions {
+    const budget = budgetNow()
+    return { render, instance, requireEnvelope: false, ...(budget !== undefined ? { budget } : {}) }
+  }
+
   function formProps(): FormProps {
     const url = o.url
     if (url) {
@@ -565,12 +585,14 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
           }
         },
         ...(snapshot.pending ? { 'aria-busy': true as const } : {}),
+        ...(budgetNow() !== undefined ? { 'data-budget': String(budgetNow()) } : {}),
       }
     }
     return {
       method: 'post',
       action: resolveAction(),
       enctype: 'multipart/form-data',
+      ...(budgetNow() !== undefined ? { 'data-budget': String(budgetNow()) } : {}),
       onsubmit: (e: SubmitEvent) => {
         if (!(o.intercept ?? true)) return            // отдаём браузеру нативный путь
         e.preventDefault()
@@ -766,7 +788,7 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     const descriptor = desc.actions.find((a) => a.id === desc.policy.intent.parse(raw).action) ?? desc.actions[0]
     const opErrors = blockingOpErrors(opPins.values(), data, descriptor)
     if (opErrors.length) {
-      const ev = evaluate(data, desc, { render, instance, requireEnvelope: false })
+      const ev = evaluate(data, desc, evaluateOptions())
       const blocked: Result = {
         v: 1, formId: desc.id, instance, submissionId: begun.submission.id,
         revision: desc.revision, ok: false, intent: raw,

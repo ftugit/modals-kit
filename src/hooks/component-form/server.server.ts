@@ -19,7 +19,8 @@
 import { redirect, type RequestEvent } from '@sveltejs/kit'
 import type { Handle } from '@sveltejs/kit/hooks'
 import { taskResponse } from '#hooks/task-stream.server.js'
-import { createFormHandler, DEFAULT_LIMITS } from '#lib/form/server.js'
+import { createFormHandler } from '#lib/form/server.js'
+import { bodyBudget, envLimits } from '#server/form-budget.server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
 import type { FormDescription, Result } from '#lib/form/index.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
@@ -45,12 +46,15 @@ function resolveDescription(reg: ComponentFormRegistration, event: RequestEvent)
 }
 
 function maxRegisteredBytes(): number {
-  let max = DEFAULT_LIMITS.maxBytes
+  // потолок окружения — верхняя граница для всех регистраций сразу: частный
+  // `limits.maxBytes` может только уменьшить тело, форма — тем более
+  const ceiling = bodyBudget()
+  let max = ceiling
   for (const reg of componentFormRegistry().values()) {
-    const candidate = reg.limits?.maxBytes
-    if (typeof candidate === 'number' && candidate > max) max = candidate
+    const candidate = envLimits(reg.limits ?? {}).maxBytes
+    if (candidate > max) max = Math.min(candidate, ceiling)
   }
-  return max
+  return Math.min(max, ceiling)
 }
 
 /**
@@ -203,7 +207,9 @@ export function createComponentFormsHandle(
       order: SECURITY_LAYERS,
       ...(reg.source ? { source: reg.source } : {}),
       ...(resolvedChecks ? { checks: resolvedChecks } : {}),
-      ...(reg.limits ? { limits: reg.limits } : {}),
+      // пределы — от окружения: тело = потолок, один файл = бюджет файлов;
+      // частные пределы регистрации только уменьшают оба числа
+      limits: envLimits(reg.limits ?? {}),
       ...(reg.idempotency ? { idempotency: reg.idempotency } : {}),
       ...(reg.throttle ? { throttle: reg.throttle } : {}),
       ...(reg.prepare ? { prepare: reg.prepare } : {}),

@@ -1,4 +1,5 @@
 // Проверка значений. Один и тот же код исполняется в браузере и на сервере.
+import { withCeiling } from './budget'
 import type { ConstraintKind } from './constraints'
 import type { DisableRule, FieldCondition, FieldDescriptor, FieldLink, FormDescription, VisibilityCondition } from './describe'
 import type { Structural } from './decode'
@@ -101,6 +102,12 @@ export interface ValidateOptions {
   structural?: readonly Structural[]
   cardinality?: 'first' | 'all'
   formValidator?: (values: Record<string, unknown>) => readonly Issue[]
+  /**
+   * Потолок тела из окружения (env развёртывания), байт. Правила судят по
+   * `min(объявленный бюджет, потолок)`: объявленное больше потолка молча
+   * урезается, а без объявления потолок сам становится бюджетом формы.
+   */
+  budget?: number
 }
 
 const toError = (i: Issue, path: string, f: FieldDescriptor): FormError => ({
@@ -118,6 +125,7 @@ export function validateForm(
   d: FormDescription, values: Record<string, unknown>, opts: ValidateOptions = {},
 ): FormError[] {
   const errors: FormError[] = []
+  const limits = withCeiling(d.limits, opts.budget)
   const visible = visibleFields(d, values)
   const relax = new Set(opts.relax ?? [])
   const subset = opts.subset ? new Set(opts.subset) : null
@@ -159,7 +167,7 @@ export function validateForm(
         if (kinds.some((k) => relax.has(k))) continue
         let fn
         try { fn = d.registry.validators.resolve(ref) } catch { continue }
-        const issue = fn(values[f.name], { path: f.name, values, constraints, limits: d.limits })
+        const issue = fn(values[f.name], { path: f.name, values, constraints, limits })
         if (!issue) continue
         collected.push(toError(issue, issue.path ?? f.name, f))
         if (mode === 'first') break
