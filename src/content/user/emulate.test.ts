@@ -160,9 +160,6 @@ function makePorts(seedSecret?: string): {
         challengeTtlSec: 120,
         deleteGraceDays: 30,
         holdSeconds: 2,
-        avatarEdge: 200,
-        avatarMaxBytes: 20_480,
-        avatarFormats: ['jpeg'],
       } as const
       return {
         defaults,

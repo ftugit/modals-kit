@@ -4,6 +4,7 @@
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
 import { probeImageHeader } from '#lib/image/probe.js'
+import { specAvatar } from './spec-avatar.js'
 import { fail, guard, ok, type UserResult } from './auth.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts } from './ports.js'
@@ -74,19 +75,18 @@ export async function updateProfile(
 }
 
 /**
- * Доменная проверка аватара: белый список форматов, предел веса и СОДЕРЖИМОЕ
- * из конфига. Порядок дешёвый→честный: вид dataURL → вес по длине base64 →
+ * Доменная проверка картинки профиля: формат из спеки, предел веса и
+ * СОДЕРЖИМОЕ. Порядок дешёвый→честный: вид dataURL → вес по длине base64 →
  * разбор заголовков (`probeImageHeader`, без декодирования): реальный формат
  * обязан совпасть с заявленным, картинка — быть квадратом не больше
- * `avatarEdge` (ровно то, что готовит клиентский конвейер `avatar.ts`).
+ * `specAvatar.width` (ровно то, что готовит примитив поля).
  * Заголовков достаточно: вес и размеры уже ограничены, а `<img src=data:…>`
  * битый поток просто не покажет.
  */
 async function checkAvatar(ports: AuthPorts, value: string): Promise<AuthFact | undefined> {
-  const formats = await ports.config.get('avatarFormats')
-  const maxBytes = await ports.config.get('avatarMaxBytes')
-  const edge = await ports.config.get('avatarEdge')
-  const names = formats.join('|')
+  const maxBytes = specAvatar.maxBytes
+  const edge = specAvatar.width
+  const names = specAvatar.format
   const match = new RegExp(`^data:image/(${names});base64,[A-Za-z0-9+/]+={0,2}$`).exec(value)
   if (!match) return { code: 'profile.avatar-format' }
   // вес считаем от содержимого (после запятой): клиент сжимает БАЙТЫ КАРТИНКИ,

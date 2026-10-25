@@ -83,7 +83,7 @@ const AVATAR_URL = s.custom((value) => {
   // контракт s.custom: строка = текст ошибки, успех — не-строка (true)
   if (value === null || value === undefined) return true // пусто — колонка nullable
   if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return true
-  // dataURL готовит клиентский конвейер (`avatar.ts` на lib/image); схему
+  // dataURL готовит примитив поля (`#lib/image`); схему
   // интересует только вид строки — содержимое (реальный формат по заголовкам,
   // вес, квадрат ≤ edge) проверяет `checkAvatar` в profile.ts ДО записи.
   // Потолок длины — последний рубеж против мегабайтов в text-колонке.

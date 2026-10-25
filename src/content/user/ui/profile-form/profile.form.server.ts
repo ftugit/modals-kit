@@ -11,7 +11,7 @@ import { createUserChecks } from '../../checks.js'
 import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { createUserConfig, instruction } from '../../index.js'
 import { userAuthRoute } from '../../routes.js'
-import { SpecAvatar } from '../../spec-avatar.js'
+import { specAvatar } from '../../spec-avatar.js'
 import { profileForm } from './form.js'
 
 const userConfig = createUserConfig(localStore.scope('user-config'))
@@ -37,15 +37,15 @@ async function toDataUrl(blob: Blob): Promise<string> {
  * @returns `dataURL` готового JPEG или `null`, если не влезает/не картинка.
  */
 async function prepareImage(file: File): Promise<string | null> {
-  const mime = `image/${SpecAvatar.format}`
+  const mime = `image/${specAvatar.format}`
   try {
     const hit = await image(
       file,
       async (p) => {
-        await p.frame({ width: SpecAvatar.width, height: SpecAvatar.height, fit: 'cover', method: 'lanczos3' })
+        await p.frame({ width: specAvatar.width, height: specAvatar.height, fit: 'cover', method: 'lanczos3' })
         return p.fit(
           { formats: [mime], quality: [0.3, 0.95] },
-          (c) => c.size <= SpecAvatar.maxBytes,
+          (c) => c.size <= specAvatar.maxBytes,
           { deadlineMs: 4_500, onBudgetExhausted: 'return-null' },
         )
       },
@@ -67,28 +67,28 @@ registerComponentForm({
     if (intent !== 'profile') return fail(instruction({ code: 'auth.confirm' }))
 
     // Защита от подмены бинарного файла строкой (включая старый base64 dataURL):
-    // если в FormData под ключом `avatar` прислали непустую строку вместо File — отказ.
-    const rawAvatarEntry = raw?.get('avatar')
-    if (typeof rawAvatarEntry === 'string' && rawAvatarEntry.trim() !== '') {
+    // если в FormData под ключом `photo` прислали непустую строку вместо File — отказ.
+    const rawPhotoEntry = raw?.get('photo')
+    if (typeof rawPhotoEntry === 'string' && rawPhotoEntry.trim() !== '') {
       return fail(instruction({ code: 'profile.avatar-format' }))
     }
 
     const nickname = String(values.nickname ?? '').trim()
-    const uploaded = values.avatar instanceof File && values.avatar.size > 0 ? values.avatar : null
-    const removeAvatar = Boolean(values.remove_avatar)
+    const uploaded = values.photo instanceof File && values.photo.size > 0 ? values.photo : null
+    const removePhoto = Boolean(values.remove_photo)
 
-    let avatarPatch: { avatarUrl?: string | null } = {}
+    let photoPatch: { avatarUrl?: string | null } = {}
     if (uploaded) {
       const dataUrl = await prepareImage(uploaded)
       if (!dataUrl) return fail(instruction({ code: 'profile.avatar-size' }))
-      avatarPatch = { avatarUrl: dataUrl }
-    } else if (removeAvatar) {
-      avatarPatch = { avatarUrl: null }
+      photoPatch = { avatarUrl: dataUrl }
+    } else if (removePhoto) {
+      photoPatch = { avatarUrl: null }
     }
 
     const r = await u.updateProfile({
       ...(nickname ? { nickname } : {}),
-      ...avatarPatch,
+      ...photoPatch,
     })
     if (!r.ok) return fail(instruction(r.fact))
 

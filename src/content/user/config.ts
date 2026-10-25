@@ -6,8 +6,6 @@
  * появятся ACL и роли. Файл изоморфный: хранилище подставляет вызвавший.
  */
 
-import { SpecAvatar } from './spec-avatar.js'
-
 /** Контракт хранилища «ключ → значение со сроком» (либ/cache). */
 export type StoreLike = {
   get<T>(key: string): T | undefined | Promise<T | undefined>
@@ -43,15 +41,6 @@ export const defaults: ConfigValues = {
   deleteGraceDays: 7,
   /** Сколько держать HoldButton создания аккаунта, секунд. */
   holdSeconds: 2,
-  /**
-   * Аватар: меньшая сторона до этого размера, большая режется по центру до него.
-   * Умолчание — из единственного описания аватара (`SpecAvatar`).
-   */
-  avatarEdge: SpecAvatar.width,
-  /** Аватар: предел веса готового JPEG в БД, байт (из `SpecAvatar`). */
-  avatarMaxBytes: SpecAvatar.maxBytes,
-  /** Аватар: целевые форматы хранения в БД (входные сырые форматы задаёт SERVER_PHOTO_FORMATS). */
-  avatarFormats: ['jpeg'] as readonly string[],
 }
 
 /**
@@ -66,9 +55,6 @@ export type ConfigValues = {
   challengeTtlSec: number
   deleteGraceDays: number
   holdSeconds: number
-  avatarEdge: number
-  avatarMaxBytes: number
-  avatarFormats: readonly string[]
 }
 export type ConfigKey = keyof ConfigValues
 /** Область переопределения: 'global' | `user:<id>` | `device:<jti>`. */
@@ -95,15 +81,6 @@ function validate(key: ConfigKey, value: unknown): void {
   if (key === 'sessionRecreate') {
     if (value !== 'update' && value !== 'strict')
       throw new Error('config.sessionRecreate: «update» или «strict»')
-    return
-  }
-  if (key === 'avatarFormats') {
-    if (
-      !Array.isArray(value) ||
-      value.length === 0 ||
-      !value.every((v) => typeof v === 'string' && v !== '')
-    )
-      throw new Error('config.avatarFormats: непустой список форматов («jpeg», «png», «webp»)')
     return
   }
   if (typeof sample === 'number') {

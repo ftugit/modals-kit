@@ -8,8 +8,8 @@ describe('FileInput SSR', () => {
 
     const { body } = render(FileInput, {
       props: {
-        id: 'avatar-upload',
-        name: 'avatar',
+        id: 'photo-upload',
+        name: 'photo',
         accept: 'image/png,image/webp',
         multiple: true,
         required: true,
@@ -20,8 +20,8 @@ describe('FileInput SSR', () => {
 
     expect(body).toContain('<input')
     expect(body).toContain('type="file"')
-    expect(body).toContain('id="avatar-upload"')
-    expect(body).toContain('name="avatar"')
+    expect(body).toContain('id="photo-upload"')
+    expect(body).toContain('name="photo"')
     expect(body).toContain('accept="image/png,image/webp"')
     expect(body).toContain('multiple')
     expect(body).toContain('required')

@@ -21,7 +21,7 @@
    *
    * Картинка профиля — обычное поле файла: `preview` включает гибрид (выбранное
    * видно), `photoConvert` передаёт параметры приведения примитиву. Параметры —
-   * `SpecAvatar` и только он: это набор чисел, а не механизм.
+   * `specAvatar` и только он: это набор параметров, а не механизм.
    */
   import { untrack } from 'svelte'
   import { Form, formTask } from '#lib/form/svelte/index.js'
@@ -34,7 +34,7 @@
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { createUserChecks } from '../../checks.js'
-  import { SpecAvatar } from '../../spec-avatar.js'
+  import { specAvatar } from '../../spec-avatar.js'
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
@@ -126,12 +126,12 @@
       <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
       <Field of={bound.f.nickname} />
 
-      <Field of={bound.f.avatar} preview photoConvert={SpecAvatar} />
+      <Field of={bound.f.photo} preview photoConvert={specAvatar} />
 
       {#if existingAvatar && notHydrated()}
-        <Field of={bound.f.remove_avatar} />
+        <Field of={bound.f.remove_photo} />
       {:else}
-        <div hidden aria-hidden="true"><Field of={bound.f.remove_avatar} /></div>
+        <div hidden aria-hidden="true"><Field of={bound.f.remove_photo} /></div>
       {/if}
 
       <div class="flex items-center justify-between gap-2">

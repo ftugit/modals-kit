@@ -5,7 +5,7 @@
  * Любой `<FileInput photoConvert={…}>` сжимает выбранное до отправки, гибрид
  * `FileAttachment` передаёт параметры своему `FileInput`, а `Field` только
  * выбирает примитив (`preview` → гибрид). Параметры — обычный объект
- * (`SpecAvatar` у профиля), поэтому поле не привязано к одному экрану.
+ * (`specAvatar` у профиля), поэтому поле не привязано к одному экрану.
  */
 import { probeImageHeader } from '#lib/image/probe.js'
 

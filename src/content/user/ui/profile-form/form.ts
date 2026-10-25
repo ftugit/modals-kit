@@ -16,7 +16,7 @@ export const PROFILE_FORM_ID = 'user-profile'
 
 export const profileForm = defineForm({
   id: PROFILE_FORM_ID,
-  revision: 2,
+  revision: 3,
   messages: {
     'profile.nickname-forbidden': 'Такой никнейм нельзя: 2–32 знака, без служебных имён (admin, root, …)',
     'profile.avatar-format': 'Это не картинка или формат не из разрешённых (jpeg, png, webp)',
@@ -31,14 +31,14 @@ export const profileForm = defineForm({
       placeholder: 'необязательно',
       validate: [v.minLength(2), v.maxLength(32), check('nickname-forbidden')],
     }),
-    // Аватар — не сущность: обычное поле файла по общим правилам. Вид (`preview`)
-    // и сжатие (`photoConvert={SpecAvatar}`) задаёт разметка страницы; сервер
-    // приводит фото к тем же рамкам, если файл пришёл без JS.
-    avatar: field.file({
+    // Картинка профиля — обычное поле файла по общим правилам: ни своего типа,
+    // ни своей проверки. Вид (`preview`) и сжатие (`photoConvert={specAvatar}`)
+    // включает страница; сервер приводит файл теми же параметрами без JS.
+    photo: field.file({
       label: 'Аватар',
       validate: [v.accept([...IMAGE_MIME_TYPES]), v.maxSize(IMAGE_RAW_MAX_BYTES), check('image')],
     }),
-    remove_avatar: field.checkbox({
+    remove_photo: field.checkbox({
       label: 'Удалить текущее фото',
       defaultValue: false,
     }),
