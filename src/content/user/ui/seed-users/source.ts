@@ -1,19 +1,20 @@
 /**
  * Источник и регистрация пагинатора списка seed-юзеров.
  *
- * Один конвейер на все носители (прецедент — список постов `#content/demo-catalog/posts`):
- * первая порция приходит снапшотом из `load` роута `/users` (тот же `load`
- * исполняет модалка через `preloadData`), следующие порции в браузере догружает
- * этот источник через `GET /api/seed-users`. Оба пути на сервере сходятся в
- * одном доменном вызове `auth(event).listSeedUsers(...)` — разной логики выдачи
- * у страницы, модалки и догрузки нет.
+ * Один конвейер на все носители: первая порция приходит снапшотом из `load`
+ * роута `/users` (тот же `load` исполняет модалка через `preloadData`),
+ * следующие порции в браузере догружает этот источник — тоже через
+ * `preloadData` на `/users?users=N`, то есть через тот же `load`. Отдельного
+ * REST-роута у списка нет (решение владельца: одна точка доступа к данным);
+ * на сервере все пути сходятся в одном доменном вызове
+ * `auth(event).listSeedUsers(...)` — разной логики выдачи у страницы,
+ * модалки и догрузки нет.
  *
  * Адрес пагинатора — свой базовый ключ `users` (`?users=2`, `?users.size=…`):
  * подлежащая страница может жить со своим `?page`, а модалка — со своими
  * `?modal.*`, и список не должен спорить с ними о ключах.
  */
-import { responseError } from '#hooks/api-error.js'
-import { fetchWithTask } from '#lib/fetch/index.js'
+import { preloadData } from '$app/navigation'
 import {
   createUrlAdapter,
   definePaginator,
@@ -23,6 +24,7 @@ import {
   type PaginatorState,
 } from '#lib/paginate/index.js'
 import type { AuthErrorCode } from '../../error.js'
+import { AUTH_MESSAGES } from '../../messages.js'
 import type { SeedUserView, SeedUsersPage } from '../../types.js'
 
 export const SEED_USERS_NAME = 'seed-users'
@@ -42,23 +44,40 @@ export interface SeedUsersScreenData {
   enabled: boolean
 }
 
-async function fetchSeedUsersPage(page: number, pageSize: number, signal?: AbortSignal, report?: (p: unknown) => void): Promise<PageResponse<SeedUserView>> {
-  const q = new URLSearchParams({ page: String(page), size: String(pageSize) })
-  const res = await fetchWithTask(`/api/seed-users?${q}`, { signal, onTask: report })
-  // Отказ сервера обязан дойти до пагинатора как ошибка: пустой список он
-  // читает как «данных нет», а это другое состояние (см. ErrorRow).
-  if (!res.ok) throw await responseError(res, 'seed-users')
-  const p = (await res.json()) as SeedUsersPage
-  return pageResponseOf(p)
-}
-
-function pageResponseOf(p: SeedUsersPage): PageResponse<SeedUserView> {
-  const totalPages = Math.max(1, Math.ceil(p.total / p.pageSize))
+/**
+ * Догрузка порции — через тот же `load` роута `/users`, что отдал первую
+ * порцию (одна точка доступа к данным, REST-роута у списка нет).
+ * `preloadData` не принимает `AbortSignal` и не репортит прогресс: устаревшие
+ * ответы пагинатор отсекает сам по `reqId`, а порция невелика.
+ */
+async function fetchSeedUsersPage(page: number, pageSize: number): Promise<PageResponse<SeedUserView>> {
+  const q = new URLSearchParams({
+    [SEED_USERS_PAGE_PARAM]: String(page),
+    [`${SEED_USERS_PAGE_PARAM}.size`]: String(pageSize),
+  })
+  const r = await preloadData(`/users?${q}`)
+  if (r.type !== 'loaded') {
+    // Редирект (например, гостя уводит на вход) или отказ загрузчика:
+    // пагинатору — ошибка с кодом, а не пустой список («данных нет» — другое).
+    const err = new Error('Не удалось загрузить список') as Error & { code: string }
+    err.code = r.type === 'redirect' ? 'auth.expired' : 'load.error'
+    throw err
+  }
+  const data = r.data as SeedUsersScreenData
+  // Отказ домена `load` отдаёт данными (`fact`): для пагинатора это ошибка
+  // с кодом домена — пустой список он прочитал бы как «список пуст».
+  if (data.fact) {
+    const err = new Error(AUTH_MESSAGES[data.fact] ?? 'Не удалось загрузить список') as Error & { code: string }
+    err.code = data.fact
+    throw err
+  }
+  const snap = data.snapshot
+  if (!snap) throw new Error('Не удалось загрузить список')
   return {
-    items: p.items,
-    totalItems: p.total,
-    totalPages,
-    hasNext: p.page < totalPages,
+    items: snap.pages[page] ?? [],
+    totalItems: snap.totalItems ?? undefined,
+    totalPages: snap.totalPages ?? undefined,
+    hasNext: snap.hasNext ?? false,
   }
 }
 
@@ -70,7 +89,7 @@ export const seedUsersSource = defineSource<SeedUserView>({
     texts: (r) => [r.seed ?? '', r.id],
   },
   totals: true,
-  data: (look) => fetchSeedUsersPage(look.page, look.pageSize, look.signal, look.report),
+  data: (look) => fetchSeedUsersPage(look.page, look.pageSize),
 })
 
 /**
