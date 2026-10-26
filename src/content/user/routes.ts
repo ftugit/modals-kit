@@ -65,3 +65,18 @@ export const userAuthRoute = kitRoute('/user/auth', {
 })
 
 export const userMenuRoute = kitRoute('/user/menu')
+
+/**
+ * Профиль аккаунта — путь с параметром сегмента. В `$app/types` у такого
+ * маршрута нет «красивого» имени: идентификатор вместе с группами
+ * (`/(site)/(app)/user/[id]`) — это и есть имя, группы из адреса выбрасывает
+ * сам `resolve()`; `id` задаёт имя в таблице адресов.
+ *
+ * Этим же адресом пользуется модалка `user.profile`
+ * (`route: userProfileRoute.href`), поэтому адрес профиля описан один раз и
+ * страница с модалкой не могут разойтись.
+ */
+export const userProfileRoute = kitRoute('/(site)/(app)/user/[id]', {
+  dynamic: true,
+  id: '/user/[id]',
+})

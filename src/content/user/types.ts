@@ -1,3 +1,5 @@
+import type { AuthErrorCode } from './error.js'
+
 /**
  * Типы модуля пользователя. Ядро (`auth.ts`) не знает ни Request/Response,
  * ни SvelteKit: голые данные на входе, голый факт на выходе — перевод в HTTP
@@ -96,6 +98,27 @@ export type ProfileView = {
   avatarUrl: string | null
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * Данные экрана профиля: ровно то, что отдаёт `load` маршрута `/user/[id]`.
+ * Одна форма на два носителя — страницу и модалку `user.profile`: модалка
+ * получает тот же объект через `preloadData`, поэтому разойтись формы не могут.
+ *
+ * `fact` — отказ (нет входа, истёк, бан) доменным кодом, а не брошенной
+ * ошибкой: брошенный `error(403)` оставил бы модалку в `status: 'error'`, её
+ * компонент не смонтировался бы и экран отказа показать было бы некому.
+ * `profile === null` при `fact === null` — строки нет ИЛИ она не видна.
+ */
+export type ProfileScreenData = {
+  /** id аккаунта из адреса. */
+  uid: string
+  profile: ProfileView | null
+  fact: AuthErrorCode | null
+  /** Вход включён на сервере (иначе форма скрыта). */
+  enabled: boolean
+  /** Ограничения экрана: те же, что у формы (`ProfileLimits`). */
+  limits: { readonly nicknameForbidden: readonly string[] }
 }
 
 /** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */

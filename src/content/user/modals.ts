@@ -7,9 +7,10 @@
 // не платит. Связка с маршрутами идёт через штатный `route: *.href` без
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
-import { userAuthRoute, userMenuRoute } from './routes.js'
+import { userAuthRoute, userMenuRoute, userProfileRoute } from './routes.js'
 import AuthModalLazy from './ui/AuthModalLazy.svelte'
 import MenuModalLazy from './ui/MenuModalLazy.svelte'
+import ProfileModalLazy from './ui/ProfileModalLazy.svelte'
 
 registerModal({
   name: 'user.auth',
@@ -22,4 +23,13 @@ registerModal({
   component: MenuModalLazy,
   route: userMenuRoute.href,
   size: { width: 280, height: 200 },
+})
+// Профиль: `route` с параметром сегмента (`/user/[id]`). Лоадера нет и не
+// должно быть — `fetcher` при отсутствии своего лоадера берёт данные маршрута
+// (`preloadData` по `route`), поэтому страница и модалка грузят один `load`.
+registerModal({
+  name: 'user.profile',
+  component: ProfileModalLazy,
+  route: userProfileRoute.href,
+  size: { width: 480, height: 560 },
 })
