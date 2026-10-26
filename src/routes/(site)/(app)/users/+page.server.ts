@@ -17,8 +17,10 @@ import type { PageServerLoad } from './$types'
 import { auth } from '#content/user/gateway.server.js'
 import type { SeedUsersOrder, SeedUsersState } from '#content/user/index.js'
 import {
+  SEED_USERS_ORDERS,
   SEED_USERS_PAGE_PARAM,
   SEED_USERS_PAGE_SIZE,
+  SEED_USERS_STATES,
   seedUsersSnapshot,
   type SeedUsersScreenData,
 } from '#content/user/ui/seed-users/source.js'
@@ -35,15 +37,8 @@ const dateMs = (raw: string | null): number | null => {
   return Number.isFinite(v) ? v : null
 }
 
-const ORDERS: readonly SeedUsersOrder[] = [
-  'created-desc',
-  'created-asc',
-  'deleted-desc',
-  'deleted-asc',
-  'id-asc',
-  'id-desc',
-]
-const STATES: readonly SeedUsersState[] = ['active', 'all', 'deleted']
+const ORDERS = SEED_USERS_ORDERS
+const STATES = SEED_USERS_STATES
 
 export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> => {
   // Данные приватные: у `load` нет ни одного заголовка по умолчанию.

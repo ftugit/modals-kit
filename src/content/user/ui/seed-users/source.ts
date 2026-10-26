@@ -19,13 +19,15 @@ import {
   createUrlAdapter,
   definePaginator,
   defineSource,
+  extraField,
   hasPaginator,
+  type ExtraSearchSpec,
   type PageResponse,
   type PaginatorState,
 } from '#lib/paginate/index.js'
 import type { AuthErrorCode } from '../../error.js'
 import { AUTH_MESSAGES } from '../../messages.js'
-import type { SeedUserView, SeedUsersPage } from '../../types.js'
+import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from '../../types.js'
 
 export const SEED_USERS_NAME = 'seed-users'
 export const SEED_USERS_PAGE_SIZE = 10
@@ -38,6 +40,39 @@ export const SEED_USERS_PAGE_PARAM = 'users'
  * Даты — ISO-строки полей формы, в `load` превращаются в мс epoch.
  */
 export const SEED_USERS_FILTER_KEYS = ['ord', 'state', 'cfrom', 'cto', 'dfrom', 'dto'] as const
+
+/** Допустимые значения порядка и состояния: валидатор адреса и `load` роута смотрят в один список. */
+export const SEED_USERS_ORDERS: readonly SeedUsersOrder[] = [
+  'created-desc',
+  'created-asc',
+  'deleted-desc',
+  'deleted-asc',
+  'id-asc',
+  'id-desc',
+]
+export const SEED_USERS_STATES: readonly SeedUsersState[] = ['active', 'all', 'deleted']
+
+/**
+ * Ключи `extra`, объявленные адресному слою (`extraSearch` URL-адаптера).
+ *
+ * Без этого объявления адаптер ключи в адрес НЕ пишет и из адреса НЕ
+ * восстанавливает (он вправе держать только объявленное — адрес общий,
+ * в нём живут чужие параметры): поиск и фильтры тогда работают из стора,
+ * но URL-хранилищем не являются. Проверяется здесь только ФОРМА значений;
+ * допустимость — за `load` и доменом (прецедент — `SHIKIMORI_FILTER_SEARCH`).
+ */
+export const SEED_USERS_EXTRA_SEARCH: ExtraSearchSpec = {
+  q: extraField('text', (v) => typeof v === 'string' && v.length <= 120),
+  ord: extraField('text', (v) => SEED_USERS_ORDERS.includes(v as SeedUsersOrder)),
+  state: extraField('text', (v) => SEED_USERS_STATES.includes(v as SeedUsersState)),
+  cfrom: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
+  cto: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
+  dfrom: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
+  dto: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
+}
+
+/** Дефолты `extra`: значения по умолчанию в адрес не пишутся — чистый URL. */
+export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active' } as const
 
 /**
  * Данные экрана списка: ровно то, что отдаёт `load` роута `/users`.
@@ -133,6 +168,11 @@ export function ensureSeedUsersPaginator(): string {
         source: seedUsersSource,
         pageSize: SEED_USERS_PAGE_SIZE,
         pageParam: SEED_USERS_PAGE_PARAM,
+        // Поиск и фильтры — полноправные ключи адреса (утверждённое
+        // URL-хранилище): адаптер пишет их при смене состояния и
+        // восстанавливает из адреса после перезагрузки.
+        extraSearch: SEED_USERS_EXTRA_SEARCH,
+        extraDefaults: SEED_USERS_EXTRA_DEFAULTS,
       }),
     })
   }

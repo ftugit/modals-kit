@@ -3,8 +3,14 @@
  * обязана выглядеть для хоста как уже загруженная страница.
  */
 import { describe, expect, test } from 'vitest'
-import { getPaginator } from '#lib/paginate/index.js'
-import { ensureSeedUsersPaginator, SEED_USERS_NAME, seedUsersSnapshot } from './source.js'
+import { getPaginator, type ExtraSearchSpec } from '#lib/paginate/index.js'
+import {
+  ensureSeedUsersPaginator,
+  SEED_USERS_EXTRA_SEARCH,
+  SEED_USERS_FILTER_KEYS,
+  SEED_USERS_NAME,
+  seedUsersSnapshot,
+} from './source.js'
 import type { SeedUserView } from '../../types.js'
 
 const row = (id: string): SeedUserView => ({
@@ -39,5 +45,25 @@ describe('список seed-юзеров: снапшот и регистраци
     expect(ensureSeedUsersPaginator()).toBe(SEED_USERS_NAME)
     expect(ensureSeedUsersPaginator()).toBe(SEED_USERS_NAME)
     expect(getPaginator(SEED_USERS_NAME).adapter).toBeDefined()
+  })
+
+  // URL-хранилище: без объявления ключей в `extraSearch` адаптер поиск и
+  // фильтры в адрес не пишет и из адреса не восстанавливает.
+  test('адресному слою объявлены поиск и все ключи фильтров', () => {
+    expect(Object.keys(SEED_USERS_EXTRA_SEARCH).sort()).toEqual(['q', ...SEED_USERS_FILTER_KEYS].sort())
+    const adapter = getPaginator(SEED_USERS_NAME).adapter as {
+      searchSpec?: { extra?: ExtraSearchSpec }
+    }
+    expect(adapter.searchSpec?.extra).toBe(SEED_USERS_EXTRA_SEARCH)
+  })
+
+  test('валидаторы адреса: форма пропускает, мусор отбрасывает', () => {
+    expect(SEED_USERS_EXTRA_SEARCH.q!('demo-')).toBe('demo-')
+    expect(SEED_USERS_EXTRA_SEARCH.q!('x'.repeat(121))).toBeUndefined()
+    expect(SEED_USERS_EXTRA_SEARCH.ord!('id-asc')).toBe('id-asc')
+    expect(SEED_USERS_EXTRA_SEARCH.ord!('banana')).toBeUndefined()
+    expect(SEED_USERS_EXTRA_SEARCH.state!('deleted')).toBe('deleted')
+    expect(SEED_USERS_EXTRA_SEARCH.state!('banana')).toBeUndefined()
+    expect(SEED_USERS_EXTRA_SEARCH.cfrom!('2026-10-01T12:00')).toBe('2026-10-01T12:00')
   })
 })
