@@ -9,7 +9,21 @@
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
 import type { DataContext } from '#lib/db/index.js'
-import type { SessionRecord } from './types.js'
+import type { Blocked, SessionRecord } from './types.js'
+
+/**
+ * Строка аккаунта для списка seed-юзеров — то, что адаптер получил из DB под
+ * контекстом вызывающего. Отдельный тип, а не `AuthRow`: списку нужны времена
+ * создания, а фаерволу (`AuthRow`) — соль подсети, которой в списке нет.
+ */
+export type SeedAccountRow = {
+  id: string
+  seed: string | null
+  permissions: string[]
+  blocked: Blocked[]
+  createdAt: number
+  deletedAt: number | null
+}
 import type { UserConfig } from './config.js'
 
 /** Одноразовый nonce на подпись (TTL минуты, тратится один раз). */
@@ -62,6 +76,15 @@ export interface AuthStorePort {
    * пишет только администратор, и модель проверяет это ещё раз маской поля.
    */
   setPermissions(ctx: DataContext, id: string, permissions: readonly string[]): Promise<void>
+  /**
+   * Порция списка аккаунтов для экрана seed-юзеров: строки под контекстом
+   * вызывающего (`account.read`/`admin` — решает политика модели, включая
+   * удалённые строки) и полное число строк на том же срезе.
+   */
+  listPage(
+    ctx: DataContext,
+    args: { page: number; pageSize: number },
+  ): Promise<{ rows: SeedAccountRow[]; total: number }>
 }
 
 /** Строка auth глазами адаптера. */

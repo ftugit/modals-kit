@@ -121,5 +121,28 @@ export type ProfileScreenData = {
   limits: { readonly nicknameForbidden: readonly string[] }
 }
 
+/**
+ * Строка списка seed-юзеров: проекция строки `user_auth`, которую отдала DB
+ * после ACL вызывающего. Технические поля строки (`subnet_salt`, `security`)
+ * сюда не входят: список не должен уносить их в браузер, даже если модель их
+ * читает. `seed === null` — аккаунт-надгробие (исполнитель стёр креды).
+ */
+export type SeedUserView = {
+  id: string
+  seed: string | null
+  permissions: readonly string[]
+  blocked: Blocked[]
+  createdAt: number
+  deletedAt: number | null
+}
+
+/** Одна порция списка seed-юзеров и её место в выдаче. */
+export type SeedUsersPage = {
+  items: SeedUserView[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 /** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */
 export type SessionStatus = 'ok' | 'revoked' | 'expired' | 'unknown'

@@ -48,7 +48,7 @@ npm run build                                                      # перед 
 ## Стадии
 
 - [ ] **S0. Среда и чек-лист.** Node 22 в `/tmp/node22`, `npm ci`, этот файл.
-- [ ] **S1. Домен и модель.** `account.read` в `policy.select` + `readDeleted`
+- [x] **S1. Домен и модель.** `account.read` в `policy.select` + `readDeleted`
       (`schema.ts`); тип строки списка и метод порта `listPage` (`ports.ts`,
       `types.ts`); домен `listSeedUsers` (`accounts.ts`: `guard` → отказ
       `auth.forbidden` без `admin`/`account.read` → страница от principal
@@ -110,8 +110,9 @@ npm run build                                                      # перед 
 
 | стадия | результат |
 |---|---|
-| S0 | в работе: Node v22.17.0 (`/tmp/node22`), `npm ci` ок, чек-лист создан |
+| S0 | Node v22.17.0 (`/tmp/node22`), `npm ci` ок, чек-лист создан; гейт tooling 145/0; коммит `6b7fea2` |
+| S1 | `accounts.ts` (`listSeedUsers`), `listPage` в порте и gateway от principal вызывающего, `account.read` в `policy.select`+`readDeleted`; тесты `accounts.test.ts`+`schema.test.ts`+`admin.test.ts` — 10/10 |
 
 ## Следующий шаг
 
-S1: домен `listSeedUsers` + политика `account.read` + тесты модуля.
+S2: источник пагинатора, роут `/users`, эндпоинт `/api/seed-users`.

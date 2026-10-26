@@ -36,11 +36,12 @@ import {
   type UserResult,
 } from './index.js'
 import { sign, verify } from './keys.js'
+import { listSeedUsers as coreListSeedUsers } from './accounts.js'
 import { profile as coreProfile, updateProfile as coreUpdateProfile } from './profile.js'
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow } from './ports.js'
 import { normalizeFailure, type DataContext } from '#lib/db/index.js'
-import type { ProfileView, SessionRecord } from './types.js'
+import type { ProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -229,6 +230,26 @@ function authsAdapter() {
       const rows = (await api().select(SYSTEM, { includeDeleted: true })) as unknown as Record<string, unknown>[]
       return rows.map(authRowOf).filter((r) => r.deletedAt !== null && r.deletedAt <= cutoffMs)
     },
+    async listPage(ctx: DataContext, { page, pageSize }: { page: number; pageSize: number }) {
+      // Контекст — вызывающий (не SYSTEM): какие строки и поля увидит список,
+      // решает политика модели под его правами. Счётчик — на том же срезе
+      // (`includeDeleted`), иначе «всего» и порции считали бы разные множества.
+      const [rows, total] = await Promise.all([
+        api().select(ctx, { page, limit: pageSize, includeDeleted: true }),
+        api().count(ctx, { includeDeleted: true }),
+      ])
+      return {
+        rows: (rows as unknown as Record<string, unknown>[]).map((r) => ({
+          id: String(r.id),
+          seed: (r.seed as string | null) ?? null,
+          permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
+          blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
+          createdAt: ms(r.created_at) ?? Date.now(),
+          deletedAt: ms(r.deleted_at),
+        })),
+        total,
+      }
+    },
   }
 }
 
@@ -382,6 +403,8 @@ export function auth(event: AuthEvent): {
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
   listSessions(): Promise<UserResult<SessionView[]>>
+  /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
+  listSeedUsers(args?: { page?: number; pageSize?: number }): Promise<UserResult<SeedUsersPage>>
   revokeSession(jti: string): Promise<UserResult<null>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
   profile(subject?: string): Promise<UserResult<ProfileView | null>>
@@ -478,6 +501,7 @@ export function auth(event: AuthEvent): {
       return r
     },
     listSessions: async () => coreListSessions(ports, await freshAccessOrCurrent()),
+    listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
     revokeSession: async (jti) => coreRevokeSession(ports, await freshAccessOrCurrent(), jti),
     profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
     updateProfile: async (args, subject?: string) =>

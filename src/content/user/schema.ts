@@ -71,14 +71,19 @@ export const auth = defineResource({
   // шаг восстановления (решение владельца, как в ВК).
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
-    // заявку на удаление видят и снимают сервер/админ (шаг восстановления)
-    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin'] },
+    // заявку на удаление видят и снимают сервер/админ (шаг восстановления);
+    // `account.read` видит удалённые строки в списке аккаунтов — так объявлено
+    // само право в каталоге (`permissions.ts`: «вместе с удалёнными строками»),
+    // а `includeDeleted` без `readDeleted` модель отклоняет.
+    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin', 'account.read'] },
   },
   policy: {
     // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
     // что с блокировкой и удалением. `server` — сам по себе, без `admin`:
     // серверный код видит строки, но не присваивает прав человека.
-    select: policy.ownerOrRoles('id', ['server', 'admin']),
+    // `account.read` — список аккаунтов (`accounts.ts`): без него владелец
+    // по-прежнему видит только свою строку.
+    select: policy.ownerOrRoles('id', ['server', 'admin', 'account.read']),
     insert: policy.roles(['server']),
     update: policy.ownerOrRoles('id', ['server', 'admin']),
     delete: policy.ownerOrRoles('id', ['server', 'admin']),
