@@ -119,3 +119,37 @@ describe('профиль: текущий аватар в превью поля',
     await unmount(app)
   })
 })
+
+describe('профиль: та же форма для любого пользователя', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  const mountFor = async (props: Record<string, unknown>) => {
+    const target = document.createElement('div')
+    document.body.append(target)
+    const app = mount(ProfileForm, { target, props: { authorized: true, enabled: true, ...props } })
+    await tick()
+    return { target, app }
+  }
+
+  it('`subject` уезжает скрытым полем, а значения — из `initial`, не из своего `vault`', async () => {
+    const { target, app } = await mountFor({
+      subject: 'acc-42',
+      initial: { nickname: 'чужой', avatarUrl: null },
+    })
+    const subject = target.querySelector('input[name="subject"]') as HTMLInputElement
+    expect(subject?.value).toBe('acc-42')
+    const nickname = target.querySelector('input[name="nickname"]') as HTMLInputElement
+    expect(nickname?.value).toBe('чужой')
+    await unmount(app)
+  })
+
+  it('без `subject` поле пустое — правится свой профиль', async () => {
+    const { target, app } = await mountFor({ initial: { nickname: 'свой', avatarUrl: null } })
+    const subject = target.querySelector('input[name="subject"]') as HTMLInputElement
+    expect(subject?.value ?? '').toBe('')
+    await unmount(app)
+  })
+})

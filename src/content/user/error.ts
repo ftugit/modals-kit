@@ -29,6 +29,9 @@ export type AuthErrorCode =
   | 'auth.delete-pending'     // заявка на удаление: работа под выданными правами остановлена
   | 'auth.deleted'            // аккаунт удалён (seed ещё не стёрт): шаг восстановления, сессии нет
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
+  | 'auth.forbidden'          // нет права: действие доступно только администратору
+  | 'permissions.unknown'     // в списке прав незнакомое значение (не из каталога)
+  | 'permissions.self'        // попытка изменить свои права (защита от самоблокировки)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
   | 'profile.photo-format'   // файл не картинка или формат не из спеки
   | 'profile.photo-size'     // файл больше предела веса
@@ -66,6 +69,9 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   // роут входа факт перехватывает в шаг восстановления; здесь — баннер для прочих поверхностей
   'auth.deleted': () => [generalError('auth.deleted')],
   'auth.confirm': (f) => [fieldError(f)],
+  'auth.forbidden': () => [generalError('auth.forbidden')],
+  'permissions.unknown': (f) => [fieldError(f, { path: f.path ?? 'permissions' })],
+  'permissions.self': (f) => [fieldError(f, { path: f.path ?? 'permissions' })],
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
   'profile.photo-format': () => [error({ code: 'profile.photo-format' }, 'photo')],
   'profile.photo-size': () => [error({ code: 'profile.photo-size' }, 'photo')],

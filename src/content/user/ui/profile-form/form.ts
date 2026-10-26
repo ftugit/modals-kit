@@ -8,7 +8,7 @@
 // совпадения со спекой: сервер картинку НЕ приводит (см. `avatar-spec`).
 import { check, defineForm, field, v } from '#lib/form/index.js'
 import { IMAGE_MIME_TYPES } from '#components/form/image.js'
-import { AUTH_MESSAGES, PROFILE_MESSAGES } from '../../messages.js'
+import { AUTH_MESSAGES, PERMISSIONS_MESSAGES, PROFILE_MESSAGES } from '../../messages.js'
 import { specAvatar } from '../../spec-avatar.js'
 
 /**
@@ -22,10 +22,10 @@ export const PROFILE_FORM_ID = 'user-profile'
 
 export const profileForm = defineForm({
   id: PROFILE_FORM_ID,
-  revision: 4,
+  revision: 5,
   // Доменные тексты — общий словарь модуля: отказы сессии (`auth.*`) и профиля
   // (`profile.*`, `image.*`) звучат одинаково во всех его формах.
-  messages: { ...AUTH_MESSAGES, ...PROFILE_MESSAGES },
+  messages: { ...AUTH_MESSAGES, ...PROFILE_MESSAGES, ...PERMISSIONS_MESSAGES },
   actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
   fields: {
     nickname: field.text({
@@ -50,5 +50,11 @@ export const profileForm = defineForm({
       label: 'Удалить текущее фото',
       defaultValue: false,
     }),
+    /**
+     * Чей профиль правим: пусто — свой, иначе id аккаунта. Значение приходит из
+     * разметки (админская поверхность), а не из адреса, поэтому проверяется на
+     * сервере: править чужое разрешает только право `profile.edit`/`admin`.
+     */
+    subject: field.hidden({ label: 'Аккаунт' }),
   },
 })

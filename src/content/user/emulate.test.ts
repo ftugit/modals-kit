@@ -100,6 +100,10 @@ function makePorts(seedSecret?: string): {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, deletedAt: null })
       },
+      async setPermissions(_ctx, id, permissions) {
+        const r = auths.get(id)
+        if (r) auths.set(id, { ...r, permissions: [...permissions] })
+      },
       async wipeCredentials(id) {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, seed: null, blocked: [] })

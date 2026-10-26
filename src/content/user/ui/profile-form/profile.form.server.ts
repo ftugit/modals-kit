@@ -57,10 +57,15 @@ registerComponentForm({
       photoPatch = { avatarUrl: null }
     }
 
-    const r = await u.updateProfile({
-      ...(nickname ? { nickname } : {}),
-      ...photoPatch,
-    })
+    // Чужой профиль (`subject` из скрытого поля): права решает модель, здесь только адрес
+    const subject = String(values.subject ?? '').trim() || undefined
+    const r = await u.updateProfile(
+      {
+        ...(nickname ? { nickname } : {}),
+        ...photoPatch,
+      },
+      subject,
+    )
     if (!r.ok) return fail(instruction(r.fact))
 
     commit()

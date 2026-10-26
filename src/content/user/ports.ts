@@ -57,6 +57,11 @@ export interface AuthStorePort {
   wipeCredentials(id: string): Promise<void>
   /** Заявки, у которых грейс вышел: — корма исполнителя удаления. */
   listDeletedBefore(cutoffMs: number): Promise<AuthRow[]>
+  /**
+   * Записать список прав аккаунта (перезапись целиком). Контекст обязателен:
+   * пишет только администратор, и модель проверяет это ещё раз маской поля.
+   */
+  setPermissions(ctx: DataContext, id: string, permissions: readonly string[]): Promise<void>
 }
 
 /** Строка auth глазами адаптера. */

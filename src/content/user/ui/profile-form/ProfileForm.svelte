@@ -13,6 +13,9 @@
 </script>
 
 <script lang="ts">
+  /** Пустой чужой профиль: строки ещё нет — поля показываем с нулями. */
+  const emptyProfile: VaultProfile = { nickname: null, avatarUrl: null }
+
   /**
    * Встраиваемая форма редактирования профиля (`profileForm`) под защитой
    * `<Acl allow="user">`.
@@ -45,6 +48,12 @@
     form?: { result?: Result } | null
     limits?: ProfileLimits
     initial?: VaultProfile | null
+    /**
+     * Чей профиль: пусто — свой, иначе id аккаунта. Компонент не решает, можно
+     * ли править чужое — это делает сервер (право `profile.edit`/`admin`), и
+     * значения такого профиля приходят в `initial` (свой берётся из `vault`).
+     */
+    subject?: string | null
     authorized?: boolean
     enabled?: boolean
     doneHref?: string
@@ -58,6 +67,7 @@
     form,
     limits = DEFAULT_PROFILE_LIMITS,
     initial = null,
+    subject = null,
     authorized,
     enabled,
     doneHref = '/',
@@ -69,7 +79,14 @@
   const notHydrated = useJsOnly()
 
   const isAuthorized = $derived(authorized !== undefined ? authorized : vault.authorized)
-  const activeProfile = $derived(vault.authorized ? vault.profile : (initial ?? vault.profile))
+  /**
+   * Чужой профиль показываем ровно тем, что дал сервер (`initial`): `vault`
+   * — про себя, и подставлять его значения в чужую форму нельзя.
+   */
+  const foreign = $derived(Boolean(subject))
+  const activeProfile = $derived(
+    foreign ? (initial ?? emptyProfile) : vault.authorized ? vault.profile : (initial ?? vault.profile),
+  )
 
   const userChecks = createUserChecks({
     nicknameForbidden: untrack(() => limits.nicknameForbidden) ?? defaults.nicknameForbidden,
@@ -85,6 +102,8 @@
   if (!bound.state.result) {
     mirrorToField(bound, 'nickname', () => activeProfile.nickname ?? '')
   }
+  // Адрес правимого профиля уезжает скрытым полем: пусто — свой
+  mirrorToField(bound, 'subject', () => subject ?? '')
 
   const existingAvatar = $derived(activeProfile.avatarUrl ?? null)
   // Снятый аватар — значение поля `remove_photo`: снятое не показываем.
@@ -128,6 +147,9 @@
     )}
   >
     <Common errors={bound.common} title="Проверьте форму" />
+
+    <!-- Чей профиль: пусто — свой (заполняется `mirrorToField` выше) -->
+    <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
     <div class="flex flex-col gap-3">
       <h2 class="text-base font-semibold">Как вас показывать?</h2>

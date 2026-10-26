@@ -220,6 +220,9 @@ function authsAdapter() {
     async wipeCredentials(id: string): Promise<void> {
       await api().update(SYSTEM, id, { seed: null })
     },
+    async setPermissions(ctx: DataContext, id: string, permissions: readonly string[]): Promise<void> {
+      await api().update(ctx, id, { permissions: [...permissions] })
+    },
     async listDeletedBefore(cutoffMs: number): Promise<AuthRow[]> {
       // таблица аккаунтов мала; выбранных удалённых фильтруем в JS — слоя
       // фильтров по метке времени удаления нет
@@ -380,8 +383,13 @@ export function auth(event: AuthEvent): {
   logoutAll(): Promise<UserResult<null>>
   listSessions(): Promise<UserResult<SessionView[]>>
   revokeSession(jti: string): Promise<UserResult<null>>
-  profile(): Promise<UserResult<ProfileView | null>>
-  updateProfile(args: { nickname?: string; avatarUrl?: string | null }): Promise<UserResult<ProfileView>>
+  /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
+  profile(subject?: string): Promise<UserResult<ProfileView | null>>
+  /** Сохранить свой профиль; `subject` — чужой (нужно право `profile.edit`/`admin`). */
+  updateProfile(
+    args: { nickname?: string; avatarUrl?: string | null },
+    subject?: string,
+  ): Promise<UserResult<ProfileView>>
   requestDelete(): Promise<UserResult<null>>
 } {
   const ports = authPorts({
@@ -471,8 +479,9 @@ export function auth(event: AuthEvent): {
     },
     listSessions: async () => coreListSessions(ports, await freshAccessOrCurrent()),
     revokeSession: async (jti) => coreRevokeSession(ports, await freshAccessOrCurrent(), jti),
-    profile: async () => coreProfile(ports, await freshAccessOrCurrent()),
-    updateProfile: async (args) => coreUpdateProfile(ports, await freshAccessOrCurrent(), args),
+    profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
+    updateProfile: async (args, subject?: string) =>
+      coreUpdateProfile(ports, await freshAccessOrCurrent(), args, subject),
     requestDelete: async () => {
       const r = await coreRequestDelete(ports, await freshAccessOrCurrent(), renewal())
       if (r.ok) clearCookies()
@@ -551,6 +560,9 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'auth.session-unknown':
       return 401
     case 'auth.blocked':
+    case 'auth.forbidden':
+    case 'permissions.unknown':
+    case 'permissions.self':
       return 403
     case 'auth.disabled':
       return 503

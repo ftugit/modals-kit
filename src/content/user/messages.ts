@@ -21,6 +21,7 @@ export const AUTH_MESSAGES: Record<string, string> = {
   'auth.delete-pending': 'Заявка на удаление ещё активна',
   'auth.deleted': 'Аккаунт удалён — его можно восстановить, пока seed не стёрт',
   'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
+  'auth.forbidden': 'Нужны права администратора',
 }
 
 /** Профиль: никнейм и картинка (`image.*` — общее правило файла-картинки). */
@@ -35,5 +36,15 @@ export const PROFILE_MESSAGES: Record<string, string> = {
   'image.dimensions': 'Разрешение картинки слишком велико — возьмите файл поменьше',
 }
 
+/** Выдача прав: кто и что может выдать (`admin.ts`). */
+export const PERMISSIONS_MESSAGES: Record<string, string> = {
+  'permissions.unknown': 'Такого права нет — возьмите строку из каталога (permissions.ts)',
+  'permissions.self': 'Свои права менять нельзя — попросите другого администратора',
+}
+
 /** Всё доменное сразу: то, что формы модуля кладут в `messages`. */
-export const USER_MESSAGES: Record<string, string> = { ...AUTH_MESSAGES, ...PROFILE_MESSAGES }
+export const USER_MESSAGES: Record<string, string> = {
+  ...AUTH_MESSAGES,
+  ...PROFILE_MESSAGES,
+  ...PERMISSIONS_MESSAGES,
+}

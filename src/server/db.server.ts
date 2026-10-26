@@ -39,6 +39,7 @@ import {
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
 import { auth, profile, session } from '#content/user/schema.js'
 import { cacheKv } from '#hooks/cache-db.js'
+import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
 
 export { posts, auth, profile, session, cacheKv }
 
@@ -219,6 +220,17 @@ async function openDriver(): Promise<Driver> {
           r.conflicts.map((c) => `${c.kind} ${c.table} ${c.column ?? ''}`.trim()).join('; '),
         ),
     })
+    // Первый администратор: без него некому выдавать права (`admin.ts`).
+    // Отдельный `Database` поверх уже сверенного драйвера — `db` ещё открывается,
+    // и обращение к нему отсюда замкнуло бы `lazyDriver` сам на себя.
+    // Отказ не отменяет запуск базы: приложение живёт и без администратора.
+    try {
+      const boot = createDb({ driver: gated, limits: LIMITS })
+      const created = await ensureSeedAdmin(boot)
+      if (created) announceSeedAdmin(created)
+    } catch (e) {
+      console.warn('[user] администратора завести не удалось:', String((e as Error)?.message ?? e).slice(0, 300))
+    }
     return gated
   } catch (e) {
     // Причина 500 в production не видна (SvelteKit её не печатает), а без этой строки

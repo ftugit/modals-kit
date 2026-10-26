@@ -39,7 +39,9 @@ export const auth = defineResource({
      * Роль `admin` в списке не дублируется: правила узнают её отдельным именем.
      */
     permissions: field(s.array(s.text({ min: 1, max: 40 }), { max: 16 }), {
-      read: () => true, create: [], update: ['admin'],
+      // создаёт только серверный код — им заводится первый администратор
+      // (`#server/admin-bootstrap`); дальше пишет администратор (`admin.ts`)
+      read: () => true, create: ['server'], update: ['admin'],
       db: { default: "'{}'::text[]" },
     }),
     /**
