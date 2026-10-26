@@ -5,6 +5,82 @@
 
 ---
 
+## 2026-10-26 · Профиль: один экран на страницу и модалку
+
+Состояние на момент записи: `HEAD 1bf4a13`, правки не начаты.
+
+### Контракт данных
+
+```ts
+type ProfileData = {
+  uid: string
+  profile: ProfileView | null
+  fact: AuthErrorCode | null   // причина отказа, если данных нет
+}
+```
+
+`load` переводит три исхода `auth(event).profile(id)` (`content/user/profile.ts:11-23`)
+в данные — и больше ничего не решает:
+
+| что вернул `profile()` | в данных | что рисует компонент |
+|---|---|---|
+| `fail({ code })` — нет входа / истёк / бан | `fact = code` | `<Acl status={fact}>` |
+| `ok(null)` — строки нет **или она не видна** | `profile = null` | `<Acl model="not_found">` |
+| `ok(view)` | `profile = view` | `<ProfileForm initial={profile}>` |
+
+`ok(null)` и есть «нет прав»: `policy.select` не отдаёт чужую строку, а не сообщает
+«запрещено». Поэтому одна ветка `{:else}` закрывает оба случая.
+
+### Отказ — данные, а не бросок
+
+Если `load` бросит `error(403)`, у модалки станет `rt.status = 'error'`, компонент
+не смонтируется и `Acl` рисовать будет некому. Поэтому `load` ВОЗВРАЩАЕТ факт.
+Следствие: `+error.svelte` и `App.Error` не нужны, HTTP-статус на отказе — 200.
+
+### Один компонент, два носителя
+
+`ProfileScreen` — единственное место, где есть ветвление `fact / profile / пусто`.
+
+```svelte
+<!-- страница -->
+let { data }: PageProps = $props()
+<ProfileScreen {...data} />
+
+<!-- модалка -->
+const ldr = useLoader<ProfileData>()
+{#if ldr.data}<ProfileScreen {...ldr.data} />{/if}
+```
+
+Источник различается, форма данных — нет: это результат одной и той же функции
+`load`. Странице его отдаёт Kit пропом `data`, модалке — `preloadData` через
+`definition.route` (без `loader`).
+
+Пока данные летят, компонент модалки не смонтирован, скелетон рисует ядро
+(`ModalContent`: `hasLoader = loader || route`).
+
+### Что писать
+
+1. `src/routes/(site)/(app)/user/[id]/+page.server.ts` — `load` (~10 строк).
+2. `src/routes/(site)/(app)/user/[id]/+page.svelte` — `<ProfileScreen {...data} />`.
+3. `src/content/user/ui/ProfileScreen.svelte` — три ветки.
+4. `src/content/user/ui/ProfileModalLazy.svelte` — `useLoader` + `ProfileScreen`.
+5. `src/content/user/modals.ts` — `registerModal({ name: 'user.profile', component: ProfileModalLazy, route: '/user/$id', size })` — **без `loader`**.
+
+### Что НЕ нужно
+
+`lib/modals` — 0 правок. `+error.svelte` — нет. `App.Error` — нет.
+`screenOfFailure` — нет. Отдельный экран/карусель прав — нет. REST — нет.
+`requiredGrants` и `perm` в токене к этому решению отношения не имеют: они
+остаются для формы (чтение/правка чужого профиля), а не для показа экрана.
+
+### Поправка к раннему выводу
+
+Утверждение «в модалке `Acl` вызвать некому» верно ТОЛЬКО для случая броска.
+При отказе данными компонент монтируется и шаблон работает так же, как на
+странице.
+
+---
+
 ## 2026-10-26 · Отказ от прав приходит ДАННЫМИ, а не броском
 
 Решение владельца: «я не хочу отдельную карусель с правами; если по роуту нет
