@@ -47,7 +47,7 @@ npm run build                                                      # перед 
 
 ## Стадии
 
-- [ ] **S0. Среда и чек-лист.** Node 22 в `/tmp/node22`, `npm ci`, этот файл.
+- [x] **S0. Среда и чек-лист.** Node 22 в `/tmp/node22`, `npm ci`, этот файл.
 - [x] **S1. Домен и модель.** `account.read` в `policy.select` + `readDeleted`
       (`schema.ts`); тип строки списка и метод порта `listPage` (`ports.ts`,
       `types.ts`); домен `listSeedUsers` (`accounts.ts`: `guard` → отказ
@@ -68,10 +68,10 @@ npm run build                                                      # перед 
       просмотра), `SeedUserRow`, `SeedUsersModal.svelte` (`useLoader`),
       `SeedUsersModalLazy.svelte`, регистрация `user.list` в `modals.ts`,
       `userListRoute` в `routes.ts`.
-- [ ] **S4. Entry на главной.** `SeedUsersEntry.svelte`
+- [x] **S4. Entry на главной.** `SeedUsersEntry.svelte`
       (`{#if vault.authorized}`, `Button {asModalLink('user.list')}`),
       подключение в `routes/(site)/(app)/+page.svelte`.
-- [ ] **S5. Документация и полные гейты.** README `src/content/user/README.md`
+- [x] **S5. Документация и полные гейты.** README `src/content/user/README.md`
       тем же коммитом (правило AGENTS.md §4); полный набор: `check`,
       `vitest src/content/user`, `node --test tooling/*.test.mjs`, `build`;
       браузерная проба против preview (гость: entry нет, `/users` — экран входа;
@@ -111,9 +111,10 @@ npm run build                                                      # перед 
 | стадия | результат |
 |---|---|
 | S0 | Node v22.17.0 (`/tmp/node22`), `npm ci` ок, чек-лист создан; гейт tooling 145/0; коммит `6b7fea2` |
+| S4+S5 | `SeedUsersEntry` на главной, README модуля; полные гейты: svelte-check 0/0, vitest `src/content/user` 117/117, tooling fail 0, `vite build` ок; браузерная проба против preview: гость (entry нет, модалка и роут — экран входа), обычный юзер (entry видна, модалка и роут — «Доступ запрещён», API 403), админ (строки в модалке и на роуте, API-пагинация порциями без пересечений) |
 | S2+S3 | источник `seed-users` (URL-адаптер `?users`), снапшот первой порции из `load`, роут `/users`, `GET /api/seed-users`, `SeedUsersScreen`, модалка `user.list` без `loader`; гейты: svelte-check 0/0, vitest `src/content/user` 117/117 |
 | S1 | `accounts.ts` (`listSeedUsers`), `listPage` в порте и gateway от principal вызывающего, `account.read` в `policy.select`+`readDeleted`; тесты `accounts.test.ts`+`schema.test.ts`+`admin.test.ts` — 10/10 |
 
 ## Следующий шаг
 
-S4: entry-компонент на главной.
+Работа завершена; следующий шаг — за владельцем (просмотр, push).
