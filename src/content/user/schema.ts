@@ -33,6 +33,16 @@ export const auth = defineResource({
       db: { unique: true }, // один аккаунт на связку; NULL-ов может быть много
     }),
     /**
+     * Права аккаунта — строки каталога `permissions.ts` (`profile.read`,
+     * `profile.edit`, …). Лежат рядом с seed: это часть строки безопасности,
+     * а не личных данных. Пусто — обычный пользователь, видит только своё.
+     * Роль `admin` в списке не дублируется: правила узнают её отдельным именем.
+     */
+    permissions: field(s.array(s.text({ min: 1, max: 40 }), { max: 16 }), {
+      read: () => true, create: [], update: ['admin'],
+      db: { default: "'{}'::text[]" },
+    }),
+    /**
      * Резерв дополнительной защиты (2fa, пароль): создаётся пустым, писать из
      * запросов нельзя (`[]` — «никому»); заведём вместе с первой защитой.
      */
@@ -123,10 +133,13 @@ export const profile = defineResource({
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   policy: {
-    select: policy.ownerOrRoles('auth_id', ['admin']),
+    // Владелец — всегда; админ и держатели прав видят все строки.
+    select: policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit']),
+    // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
     insert: policy.roles(['server']),
-    update: policy.ownerOrRoles('auth_id', ['admin']),
-    delete: policy.ownerOrRoles('auth_id', ['admin']),
+    // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.
+    update: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
+    delete: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
   },
   order: [['created_at', 'desc']],
 })

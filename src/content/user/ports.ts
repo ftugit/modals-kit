@@ -65,6 +65,8 @@ export type AuthRow = {
   deletedAt: number | null
   /** Сферы блокировки; `auth` — вход закрыт, остальные — ограничения. */
   blocked: import('./types.js').Blocked[]
+  /** Выданные права (`permissions.ts`): строки каталога, пусто — обычный юзер. */
+  permissions: string[]
   /** Соль для хэшей подсетей сессий (на аккаунт). */
   subnetSalt: string
 }

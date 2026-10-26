@@ -1,6 +1,9 @@
 // Страж каталога прав: право без текста нельзя показать на экране выдачи,
-// право вне группы не попадёт в список, а расхождение `ADMIN_BUNDLE` с
-// каталогом сделает кнопку «выдать всё» неполной.
+// право вне группы не попадёт в список, расхождение `ADMIN_BUNDLE` с
+// каталогом сделает кнопку «выдать всё» неполной, а опечатка в правиле
+// модели (`profile.reed`) оставит правило мёртвым — оно просто никогда не
+// совпадёт ни с одной выданной строкой.
+import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import {
   ADMIN_BUNDLE,
@@ -15,14 +18,26 @@ import {
 
 const all = Object.keys(PERMISSIONS) as Permission[]
 
+/** Строки прав, записанные в правилах модели профиля. */
+function grantedInSchema(): string[] {
+  const source = readFileSync(new URL('./schema.ts', import.meta.url), 'utf8')
+  return [...source.matchAll(/'(account|profile|session)\.[a-z]+'/g)].map((m) => m[0].slice(1, -1))
+}
+
 test('у каждого права есть непустые название и описание', () => {
   const bare = all.filter((p) => !PERMISSIONS[p].title.trim() || !PERMISSIONS[p].description.trim())
   expect(bare).toEqual([])
 })
 
+test('действий ровно три, и в каталоге только два выдаваемых', () => {
+  const verbs = all.map((p) => p.split('.')[1])
+  expect(new Set(verbs)).toEqual(new Set(['read', 'edit']))
+  // `*.create` не выдаётся: строки заводит сервер (`policy.roles(['server'])`)
+  expect(all.filter((p) => p.endsWith('.create'))).toEqual([])
+})
+
 test('ключ права — «область.действие» строчными', () => {
-  const bad = all.filter((p) => !/^[a-z]+(\.[a-z]+)+$/.test(p))
-  expect(bad).toEqual([])
+  expect(all.filter((p) => !/^[a-z]+(\.[a-z]+)+$/.test(p))).toEqual([])
 })
 
 test('каждое право ровно в одной группе', () => {
@@ -43,4 +58,10 @@ test('администратор — отдельное имя, а не прав
   expect(describeGrant('profile.read')).toBe(PERMISSIONS['profile.read'])
   expect(isPermission('profile.nope')).toBe(false)
   expect(describeGrant('profile.nope')).toBeUndefined()
+})
+
+test('правила модели ссылаются только на известные права', () => {
+  const used = grantedInSchema()
+  expect(used.length).toBeGreaterThan(0)
+  expect(used.filter((p) => !isPermission(p)).sort()).toEqual([])
 })

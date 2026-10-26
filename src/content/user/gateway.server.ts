@@ -96,6 +96,7 @@ function authRowOf(r: Record<string, unknown>): AuthRow {
     seed: (r.seed as string | null) ?? null,
     deletedAt: ms(r.deleted_at),
     blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
+    permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
     subnetSalt: String(r.subnet_salt ?? ''),
   }
 }

@@ -83,6 +83,7 @@ function makePorts(seedSecret?: string): {
           seed,
           deletedAt: null,
           blocked: [],
+          permissions: [],
           subnetSalt: crypto.randomUUID().replaceAll('-', ''),
         }
         auths.set(row.id, row)
