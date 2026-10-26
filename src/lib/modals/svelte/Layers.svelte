@@ -3,16 +3,29 @@
   // (сохраняют состояние и прокрутку), но скрыты без `display:none`.
   import { resolveEntry, visibleChain } from '../core'
   import { entryLabel } from '../types'
+  import type { ChainEntry } from '../types'
   import { useModals } from './context'
   import { MODAL_LAYER_CLASS } from './classes'
   import ModalContent from './ModalContent.svelte'
+
+  interface Props {
+    /**
+     * Готовая цепочка слоёв вместо живой из стора. Хост передаёт снапшот
+     * последней цепочки на время exit-фазы: цепочка в сторе уже пуста, а
+     * поддерево слоёв обязано дожить до конца анимации БЕЗ перемонтирования
+     * (иначе содержимое на закрытии мигает — свежий монтаж внутри уезжающей
+     * оболочки; поймано мобильной пробой).
+     */
+    entries?: ChainEntry[]
+  }
+  let { entries }: Props = $props()
 
   // Контекст держим целиком: хост переживает смену ядра, геттеры живые.
   const m = useModals()
 
   // Только видимые записи: headless своего DOM не имеет и слоем быть
   // не может — иначе он становится активным и прячет настоящую модалку.
-  const chain = $derived(visibleChain(m.view.chain, m.claimEntry))
+  const chain = $derived(entries ?? visibleChain(m.view.chain, m.claimEntry))
 
   const HIDDEN =
     'position:absolute;inset:0;visibility:hidden;pointer-events:none;overflow:hidden'

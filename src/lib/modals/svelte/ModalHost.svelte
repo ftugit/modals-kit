@@ -42,7 +42,6 @@
     MODAL_CLOSE_ANIMATION_CLASSES,
     MODAL_CLOSE_CLASS,
     MODAL_FLOATING_CLASS,
-    MODAL_LAYER_CLASS,
     MODAL_OPEN_ANIMATION_CLASSES,
     MODAL_POPUP_CLASS,
     MODAL_STAGE_CLASS,
@@ -322,6 +321,17 @@
   $effect(() => {
     if (active) lastActive = active
   })
+
+  // Снапшот последней видимой цепочки — для той же exit-фазы, но на уровне
+  // ПОДДЕРЕВА слоёв: на закрытии хост держит тот же `<Layers>` на этом
+  // снапшоте, а не монтирует содержимое заново (`ExitContent` прежнего
+  // порта). Перемонтирование давало «мигание» содержимым внутри уезжающей
+  // оболочки — на мобильном sheet-выезде заметно как двойное закрытие.
+  let lastChain = $state<ChainEntry[]>([])
+  $effect(() => {
+    if (chain.length > 0) lastChain = chain
+  })
+  const shownChain = $derived(chain.length > 0 ? chain : lastChain)
 
   const shown = $derived(active ?? lastActive)
   /**
@@ -1206,18 +1216,16 @@
               inert={sheetSurface ? true : undefined}
               style={shown ? css(shellStyle(shown, anchor, config.maxHeight)) : undefined}
             >
-              {#if active}
-                <Layers />
-              {:else if shown}
+              {#if shown}
                 <!--
-                  Содержимое уходящей модалки. Без него оболочка схлопывалась
-                  бы в пустоту до конца exit-фазы: цепочка уже пуста, а слой
-                  ещё виден. Порт `ExitContent` из `stack.tsx` — я его сперва
-                  не перенёс, поймано сверкой экспортов с оригиналом.
+                  Слои живут и на exit-фазе: цепочка в сторе уже пуста,
+                  поэтому `<Layers>` получает снапшот последней цепочки
+                  (`shownChain`) и то же поддерево доигрывает анимацию
+                  закрытия без перемонтирования содержимого. Отдельный
+                  `ExitContent` прежнего порта здесь не нужен и вреден:
+                  свежий монтаж внутри уезжающей оболочки мигал содержимым.
                 -->
-                <div class={MODAL_LAYER_CLASS} data-modal-layer="">
-                  <ModalContent entry={shown} active={false} />
-                </div>
+                <Layers entries={shownChain} />
               {/if}
             </div>
           </Dialog.Content>
