@@ -56,11 +56,15 @@ export const ACCESS_COOKIE = 'auth_tmp'
  * `AUTH_COOKIE_SAMESITE=none` — демо/превью внутри чужого iframe: с `lax`
  * браузер блокирует куки как сторонние и сессия сбрасывается на первой
  * навигации; `none` без `Secure` браузер отвергает, поэтому пара неразлучна.
+ * Но и пары мало: при отключённых сторонних куках (Chrome Tracking Protection)
+ * `SameSite=None` всё равно режется. Поэтому в этом режиме добавляется
+ * `Partitioned` (CHIPS): кука партиционируется по верхнему сайту и живёт
+ * внутри именно этого встраивания, оставаясь недоступной вне его.
  * Ослабление включается только env и только для превью (см. `.env.example`).
  */
 const COOKIE_BASE =
   AUTH_COOKIE_SAMESITE === 'none'
-    ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true } as const)
+    ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true, partitioned: true } as const)
     : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const)
 
 /** Структурный срез SvelteKit-события: ядру нужны только куки. */
