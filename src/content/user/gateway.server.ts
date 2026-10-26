@@ -14,7 +14,7 @@
  * (`sessions`, `auths`, `profiles`) на ресурсы `schema.ts` (`user_*`), ядро
  * (`auth.ts`) не меняется — это и есть шов портов.
  */
-import { AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
+import { AUTH_COOKIE_SAMESITE, AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
 import * as Iron from 'iron-webcrypto'
 import { localStore } from '#server/cache.server.js'
 import { db } from '#server/db.server.js'
@@ -50,7 +50,18 @@ export const RENEWAL_COOKIE = 'auth_sid'
 /** Кука временного токена (access). */
 export const ACCESS_COOKIE = 'auth_tmp'
 
-const COOKIE_BASE = { path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const
+/**
+ * База сессионных кук. Обычный режим — `lax` без `Secure` (явно: без него Kit
+ * взял бы дефолт Secure вне localhost, и браузер по http не вернул бы куку).
+ * `AUTH_COOKIE_SAMESITE=none` — демо/превью внутри чужого iframe: с `lax`
+ * браузер блокирует куки как сторонние и сессия сбрасывается на первой
+ * навигации; `none` без `Secure` браузер отвергает, поэтому пара неразлучна.
+ * Ослабление включается только env и только для превью (см. `.env.example`).
+ */
+const COOKIE_BASE =
+  AUTH_COOKIE_SAMESITE === 'none'
+    ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true } as const)
+    : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const)
 
 /** Структурный срез SvelteKit-события: ядру нужны только куки. */
 export interface AuthEvent {
@@ -418,8 +429,6 @@ export function auth(event: AuthEvent): {
   const ports = authPorts({
     get: (name) => event.cookies.get(name),
     set: (name, value, ttlSeconds) => event.cookies.set(name, value, { ...COOKIE_BASE, maxAge: ttlSeconds }),
-    // secure:false явно: без него Kit возьмёт дефолт (Secure вне localhost),
-    // и браузер по http не вернёт куку
     delete: (name) => event.cookies.delete(name, { ...COOKIE_BASE }),
   })
   const access = () => event.cookies.get(ACCESS_COOKIE)

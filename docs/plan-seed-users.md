@@ -111,10 +111,11 @@ npm run build                                                      # перед 
 | стадия | результат |
 |---|---|
 | S0 | Node v22.17.0 (`/tmp/node22`), `npm ci` ок, чек-лист создан; гейт tooling 145/0; коммит `6b7fea2` |
+| S6 (фикс) | [x] Сброс логина в демо: внутри чужого iframe браузер блокирует `SameSite=Lax` куки (проба: вход виден секунду, `ctx.cookies()==[]`, следующая навигация — гость). Добавлена env `AUTH_COOKIE_SAMESITE` (`none`+`Secure` только для превью; умолчание `lax` не тронуто) в `env.ts`/`.env.example`/`gateway.server.ts`; демо пересобрано, iframe-проба и топ-левел проба зелёны |
 | S4+S5 | `SeedUsersEntry` на главной, README модуля; полные гейты: svelte-check 0/0, vitest `src/content/user` 117/117, tooling fail 0, `vite build` ок; браузерная проба против preview: гость (entry нет, модалка и роут — экран входа), обычный юзер (entry видна, модалка и роут — «Доступ запрещён», API 403), админ (строки в модалке и на роуте, API-пагинация порциями без пересечений) |
 | S2+S3 | источник `seed-users` (URL-адаптер `?users`), снапшот первой порции из `load`, роут `/users`, `GET /api/seed-users`, `SeedUsersScreen`, модалка `user.list` без `loader`; гейты: svelte-check 0/0, vitest `src/content/user` 117/117 |
 | S1 | `accounts.ts` (`listSeedUsers`), `listPage` в порте и gateway от principal вызывающего, `account.read` в `policy.select`+`readDeleted`; тесты `accounts.test.ts`+`schema.test.ts`+`admin.test.ts` — 10/10 |
 
 ## Следующий шаг
 
-Работа завершена; следующий шаг — за владельцем (просмотр, push).
+S6: фикс сброса сессии в превью — env-режим кук `AUTH_COOKIE_SAMESITE=none` для iframe-превью, пересборка, перепроверка пробами.

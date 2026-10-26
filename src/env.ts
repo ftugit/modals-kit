@@ -133,4 +133,11 @@ export const variables = defineEnvVars({
     schema: text,
     description: 'Прежние секреты на время ротации: id:secret через запятую (id ≠ AUTH_SEAL_ID).',
   },
+  AUTH_COOKIE_SAMESITE: {
+    schema: text,
+    description:
+      'SameSite сессионных кук: пусто — lax (обычный сайт, куки не едут в чужие контексты); ' +
+      '`none` — вход должен жить внутри чужого iframe (превью песочницы): куки ставятся с Secure. ' +
+      'Это ослабление защиты (куки в сторонних контекстах) — только для демо/превью, не для продакшена.',
+  },
 })
