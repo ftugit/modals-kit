@@ -29,6 +29,7 @@
   import SeedUserRow from './seed-users/SeedUserRow.svelte'
   import {
     ensureSeedUsersPaginator,
+    SEED_USERS_EXTRA_DEFAULTS,
     SEED_USERS_FILTER_KEYS,
     SEED_USERS_NAME,
   } from './seed-users/source.js'
@@ -54,10 +55,14 @@
   const query = $derived(
     typeof pagState().extra?.q === 'string' ? (pagState().extra.q as string) : '',
   )
+  // Счётчик — только реальные отличия от среза по умолчанию: URL-адаптер
+  // материализует дефолты (`ord=created-desc`, `state=active`) в `extra`,
+  // и без этого сравнения кнопка вечно показывала бы «(2)» на чистом списке.
   const activeFilters = $derived(
     SEED_USERS_FILTER_KEYS.filter((k) => {
       const v = pagState().extra?.[k]
-      return typeof v === 'string' && v !== ''
+      const fallback = (SEED_USERS_EXTRA_DEFAULTS as Record<string, string>)[k]
+      return typeof v === 'string' && v !== '' && v !== fallback
     }).length,
   )
   // «Всего» — из живого состояния пагинатора: снапшот `load` честен только
