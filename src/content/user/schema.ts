@@ -74,11 +74,12 @@ export const auth = defineResource({
   },
   policy: {
     // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
-    // что с блокировкой и удалением.
-    select: policy.ownerOrRoles('id', ['admin']),
+    // что с блокировкой и удалением. `server` — сам по себе, без `admin`:
+    // серверный код видит строки, но не присваивает прав человека.
+    select: policy.ownerOrRoles('id', ['server', 'admin']),
     insert: policy.roles(['server']),
-    update: policy.ownerOrRoles('id', ['admin']),
-    delete: policy.ownerOrRoles('id', ['admin']),
+    update: policy.ownerOrRoles('id', ['server', 'admin']),
+    delete: policy.ownerOrRoles('id', ['server', 'admin']),
   },
   order: [['created_at', 'desc']],
 })
@@ -138,8 +139,10 @@ export const profile = defineResource({
     // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
     insert: policy.roles(['server']),
     // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.
+    // `server` в удалении — только цепочка смерти аккаунта (`profiles.remove`):
+    // своей политикой он чужой профиль не трогает.
     update: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
-    delete: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
+    delete: policy.ownerOrRoles('auth_id', ['server', 'admin', 'profile.edit']),
   },
   order: [['created_at', 'desc']],
 })
@@ -194,7 +197,7 @@ export const session = defineResource({
   },
   policy: {
     // Сессиями юзер управляет только через api (сервер): правит и гасит сервер.
-    select: policy.ownerOrRoles('auth_id', ['admin']),
+    select: policy.ownerOrRoles('auth_id', ['server', 'admin']),
     insert: policy.roles(['server']),
     update: policy.roles(['server', 'admin']),
     delete: policy.roles(['server', 'admin']),

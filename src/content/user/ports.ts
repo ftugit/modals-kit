@@ -8,6 +8,7 @@
  *  - ключ запечатывания временного токена и nonce-секрет — `src/env.ts`
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
+import type { DataContext } from '#lib/db/index.js'
 import type { SessionRecord } from './types.js'
 import type { UserConfig } from './config.js'
 
@@ -72,12 +73,20 @@ export type AuthRow = {
 }
 
 /** Профиль: создаётся при первом заполнении личных данных; нет — аноним. */
+/**
+ * Профиль — таблица прав ЧЕЛОВЕКА, а не сервера: кто читает и правит, решают
+ * `policy` и владение строкой (`ownerOrRoles('auth_id', …)`). Поэтому каждая
+ * операция принимает контекст вызывающего: обычные чтение/правка идут от
+ * владельца (его `id` и выданные права), создание строки — только от сервера
+ * (`policy.insert: roles(['server'])`), удаление при смерти аккаунта — тоже
+ * от сервера, вместе с цепочкой.
+ */
 export interface ProfileStorePort {
-  create(authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void>
-  get(authId: string): Promise<import('./types.js').ProfileView | undefined>
-  update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
+  create(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void>
+  get(ctx: DataContext, authId: string): Promise<import('./types.js').ProfileView | undefined>
+  update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
   /** Исполнитель удаления (конечная смерть аккаунта уносит профиль цепочкой). */
-  remove(authId: string): Promise<void>
+  remove(ctx: DataContext, authId: string): Promise<void>
 }
 
 /**

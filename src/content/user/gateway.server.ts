@@ -85,7 +85,12 @@ export const AUTH_ENABLED = sealKeysFromEnv().enabled
  * обслуживают серверные роли из политик схемы. Сигнала запроса здесь нет —
  * операции короткие и точечные.
  */
-const SYSTEM: DataContext = { principal: { roles: ['server', 'admin'] } }
+/**
+ * Контекст серверного кода адаптеров (`auth`, `session`): только `server`.
+ * `admin` здесь больше нет — сервер не берёт себе прав человека; действия,
+ * которые должны идти от владельца, получают `principalOfRow` (профиль).
+ */
+const SYSTEM: DataContext = { principal: { roles: ['server'] } }
 
 const ms = (v: unknown): number | null => (v ? new Date(String(v)).getTime() : null)
 const iso = (v: number): string => new Date(v).toISOString()
@@ -226,8 +231,10 @@ function authsAdapter() {
 
 function profilesAdapter() {
   const api = () => db.resource(profileRes)
-  const byAuth = async (authId: string): Promise<Record<string, unknown> | undefined> => {
-    const rows = await api().select(SYSTEM, { filter: { field: 'auth_id', op: 'eq', value: authId } })
+  // Контекст приходит от ядра: чтение и правка — владелец, создание и смерть
+  // аккаунта — сервер. Адаптер не выбирает права сам.
+  const byAuth = async (ctx: DataContext, authId: string): Promise<Record<string, unknown> | undefined> => {
+    const rows = await api().select(ctx, { filter: { field: 'auth_id', op: 'eq', value: authId } })
     return rows[0] as unknown as Record<string, unknown> | undefined
   }
   const viewOf = (r: Record<string, unknown>): ProfileView => ({
@@ -239,28 +246,28 @@ function profilesAdapter() {
     updatedAt: ms(r.updated_at) ?? Date.now(),
   })
   return {
-    async create(authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void> {
-      await api().insert(SYSTEM, {
+    async create(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void> {
+      await api().insert(ctx, {
         auth_id: authId,
         ...(patch.nickname !== undefined ? { nickname: patch.nickname } : {}),
         ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
       })
     },
-    async get(authId: string): Promise<ProfileView | undefined> {
-      const row = await byAuth(authId)
+    async get(ctx: DataContext, authId: string): Promise<ProfileView | undefined> {
+      const row = await byAuth(ctx, authId)
       return row ? viewOf(row) : undefined
     },
-    async update(authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
-      const row = await byAuth(authId)
+    async update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
+      const row = await byAuth(ctx, authId)
       if (!row) return
-      await api().update(SYSTEM, row.id, {
+      await api().update(ctx, row.id, {
         ...(patch.nickname !== undefined ? { nickname: patch.nickname } : {}),
         ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
       })
     },
-    async remove(authId: string): Promise<void> {
-      const row = await byAuth(authId)
-      if (row) await api().delete(SYSTEM, row.id, { hard: true })
+    async remove(ctx: DataContext, authId: string): Promise<void> {
+      const row = await byAuth(ctx, authId)
+      if (row) await api().delete(ctx, row.id, { hard: true })
     },
   }
 }

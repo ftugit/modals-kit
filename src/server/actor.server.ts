@@ -24,13 +24,14 @@ import { guard } from '#content/user/auth.js'
 import { ACCESS_COOKIE, authPorts } from '#content/user/gateway.server.js'
 
 /**
- * Личность запроса. `roles: ['user']` — маркер «сессия проверена», не права:
- * реальные роли аккаунта появятся отдельным шагом.
+ * Личность запроса: `id` — проверенный аккаунт, роли — выданные ему права
+ * (`auth.permissions`, каталог `permissions.ts`). Пустой список — вошедший
+ * без прав: он видит своё по владению, чужое — нет.
  */
 async function principalOf(event: RequestEvent): Promise<Principal> {
   // Порты без куки: `guard` их не трогает — он читает токен, сессию и строку auth.
   const g = await guard(authPorts(), event.cookies.get(ACCESS_COOKIE))
-  return 'code' in g ? { roles: [] } : { id: g.sub, roles: ['user'] }
+  return 'code' in g ? { roles: [] } : { id: g.sub, roles: g.perms }
 }
 
 /**

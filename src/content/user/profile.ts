@@ -3,7 +3,7 @@
  * аватара). Отдельно от `auth.ts` — у auth профильных функций нет (чек-лист
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
-import { fail, guard, ok, type UserResult } from './auth.js'
+import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import type { AuthPorts } from './ports.js'
 import type { ProfileView } from './types.js'
 
@@ -14,7 +14,7 @@ export async function profile(
 ): Promise<UserResult<ProfileView | null>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  const row = await ports.profiles.get(g.sub)
+  const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), g.sub)
   if (!row) return ok(null)
   return ok(row)
 }
@@ -47,18 +47,22 @@ export async function updateProfile(
 
   const avatarUrl: string | null | undefined = args.avatarUrl
 
-  const existing = await ports.profiles.get(g.sub)
+  // Чтение и правка — от владельца: правила видят его `id` и права.
+  const owner = principalOfRow({ id: g.sub, permissions: g.perms })
+  const existing = await ports.profiles.get(owner, g.sub)
   if (!existing) {
-    await ports.profiles.create(g.sub, {
+    // Создание строки — не право человека (`insert: roles(['server'])`):
+    // первое заполнение профиля выполняет сервер по поручению владельца.
+    await ports.profiles.create(SERVER, g.sub, {
       ...(nickname !== undefined ? { nickname } : {}),
       ...(avatarUrl !== undefined && avatarUrl !== null ? { avatarUrl } : {}),
     })
   } else {
-    await ports.profiles.update(g.sub, {
+    await ports.profiles.update(owner, g.sub, {
       ...(nickname !== undefined ? { nickname } : {}),
       ...(avatarUrl !== undefined ? { avatarUrl } : {}),
     })
   }
-  const row = await ports.profiles.get(g.sub)
+  const row = await ports.profiles.get(owner, g.sub)
   return ok(row as ProfileView)
 }

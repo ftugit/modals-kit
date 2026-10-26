@@ -11,7 +11,7 @@ import { getEncoder } from '#lib/image/index.js'
 import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, listSessions, login, logout,
+  SERVER, activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, listSessions, login, logout,
   logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
   sweepDeletions, verifySeed, type UserResult,
 } from './auth.js'
@@ -109,19 +109,19 @@ function makePorts(seedSecret?: string): {
       },
     },
     profiles: {
-      async create(authId, patch) {
+      async create(_ctx, authId, patch) {
         const now = Date.now()
         profiles.set(authId, { id: authId, authId, nickname: patch.nickname ?? null, avatarUrl: patch.avatarUrl ?? null, createdAt: now, updatedAt: now })
       },
-      async get(authId) {
+      async get(_ctx, authId) {
         return profiles.get(authId)
       },
-      async update(authId, patch) {
+      async update(_ctx, authId, patch) {
         const r = profiles.get(authId)
         if (!r) return
         profiles.set(authId, { ...r, ...patch, updatedAt: Date.now() })
       },
-      async remove(authId) {
+      async remove(_ctx, authId) {
         profiles.delete(authId)
       },
     },
@@ -470,7 +470,7 @@ describe('удаление аккаунта', () => {
     expect(ok_(await sweepDeletions(ports))).toBe(1)
     const wiped = (await ports.auths.get(row.id)) as AuthRow
     expect(wiped.seed).toBeNull()
-    expect(await ports.profiles.get(payload.sub)).toBeUndefined()
+    expect(await ports.profiles.get(SERVER, payload.sub)).toBeUndefined()
   })
 
   test('восстановление после стирания исполнителем — новый аккаунт (seed свободен)', async () => {

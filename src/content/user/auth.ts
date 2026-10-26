@@ -34,6 +34,7 @@
  * `avatarUrl` в `prof` не возвращать — ни сюда, ни в новый слой хранения.
  */
 import type { AuthFact } from './error.js'
+import type { DataContext } from '#lib/db/index.js'
 import type { AuthPorts } from './ports.js'
 import type { Blocked, Challenge, LoginOutcome, ProfileView, SessionRecord, SessionStatus, SubnetEntry, TokenPair } from './types.js'
 
@@ -41,6 +42,24 @@ import type { Blocked, Challenge, LoginOutcome, ProfileView, SessionRecord, Sess
 export type UserResult<T> =
   | { ok: true; value: T }
   | { ok: false; fact: AuthFact }
+
+/**
+ * Контекст серверного кода: только `server`, без `admin`. Сервер не берёт
+ * себе прав человека — действия, которые должны проходить от его имени,
+ * идут с `principalOfRow`.
+ */
+export const SERVER: DataContext = Object.freeze({
+  principal: Object.freeze({ roles: Object.freeze(['server']) }),
+})
+
+/**
+ * Контекст владельца строки: `id` — сам аккаунт, роли — выданные ему права.
+ * Так правила профиля видят «своё» (`ownerOrRoles('auth_id', …)`) и его права
+ * (`profile.read`/`profile.edit`), а не подменяют его сервером.
+ */
+export function principalOfRow(row: { id: string; permissions: readonly string[] }): DataContext {
+  return { principal: { id: row.id, roles: [...row.permissions] } }
+}
 
 /** Голые результаты api: значение или доменный факт — пользуются и profile.ts. */
 export const ok = <T>(value: T): UserResult<T> => ({ ok: true, value })
@@ -208,13 +227,13 @@ async function openSession(
 /** Свежие токены: access с витриной профиля + токен продления с версией строки. */
 async function issueTokens(
   ports: AuthPorts,
-  row: { id: string },
+  row: { id: string; permissions: readonly string[] },
   record: SessionRecord,
   now: number,
   deviceTtlSec: number,
 ): Promise<TokenPair> {
   const accessTtlSec = await ports.config.get('accessTtlSec')
-  const profile = await ports.profiles.get(row.id)
+  const profile = await ports.profiles.get(principalOfRow(row), row.id)
   const access = await ports.seal.seal(
     {
       k: 'access',
@@ -245,7 +264,13 @@ async function issueTokens(
 export async function guard(
   ports: AuthPorts,
   accessToken: string | undefined,
-): Promise<{ sub: string; jti: string; prof: { nickname: string | null; avatarUrl: string | null } } | AuthFact> {
+): Promise<{
+  sub: string
+  jti: string
+  prof: { nickname: string | null; avatarUrl: string | null }
+  /** Выданные аккаунту права (`permissions.ts`) — роли контекста владельца. */
+  perms: readonly string[]
+} | AuthFact> {
   if (!accessToken) return { code: 'auth.expired' }
   const payload = await ports.seal.unseal(accessToken)
   if (!payload || payload.k !== 'access') return { code: 'auth.token' }
@@ -260,13 +285,14 @@ export async function guard(
   if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
   if (status === 'revoked') return { code: 'auth.revoked' }
   if (status === 'expired') return { code: 'auth.expired' }
-  return { sub: payload.sub, jti: payload.dt, prof: payload.prof }
+  return { sub: payload.sub, jti: payload.dt, prof: payload.prof, perms: auth.permissions }
 }
 
 /** Свежий access под текущей сессией (витрина профиля — из БД, не из старого токена). */
 async function freshAccess(ports: AuthPorts, sub: string, jti: string): Promise<string> {
   const accessTtlSec = await ports.config.get('accessTtlSec')
-  const profile = await ports.profiles.get(sub)
+  // прав здесь не знаем: владелец видит свою строку по `principal.id`
+  const profile = await ports.profiles.get({ principal: { id: sub, roles: [] } }, sub)
   const now = ports.clock.now()
   return ports.seal.seal(
     {
@@ -515,7 +541,7 @@ export async function sweepDeletions(ports: AuthPorts): Promise<UserResult<numbe
   const rows = await ports.auths.listDeletedBefore(cutoff)
   for (const row of rows) {
     await ports.sessions.softDeleteAllByAuth(row.id, now)
-    await ports.profiles.remove(row.id)
+    await ports.profiles.remove(SERVER, row.id)
     await ports.auths.wipeCredentials(row.id)
   }
   return ok(rows.length)
