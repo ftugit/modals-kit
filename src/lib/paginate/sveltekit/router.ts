@@ -8,6 +8,7 @@
  * (`useNavigate`, `useLocation`) + `fastedge/context.ts` (`useAppStore().search` /
  * `.pathname`).
  */
+import { BROWSER } from 'esm-env'
 import { afterNavigate } from '$app/navigation'
 import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 import type { MinimalRouter } from '../adapter-url'
@@ -63,23 +64,35 @@ const searchOf = (url: URL): Record<string, unknown> => Object.fromEntries(url.s
  * Запись адреса (`syncAddress`) до готовности роутера SvelteKit ставится в
  * очередь (F12: адрес `?page.q=` после нативной GET-формы). Навигация до запуска
  * роутера по-прежнему запрещена (`navigation_before_start`); `onMount` хоста
- * выполняется ДО запуска, а `afterNavigate` — после (и при гидрации, и при
- * монтировании компонента позже), поэтому очередь сбрасывается в первом
- * `afterNavigate`. В 3.0.1 без очереди запись проходит лишь потому, что `goto`
- * успевает несколько раз уступить микрозадачу до проверки — это тайминг
- * внутренностей, а не контракт. Срез адреса вычисляется в момент записи.
+ * выполняется ДО запуска, а `afterNavigate` — после, поэтому на старте очередь
+ * сбрасывается в первом `afterNavigate`. Но `afterNavigate` НЕ приходит при
+ * позднем монтировании (контент модалки монтируется, когда навигация открытия
+ * уже завершилась): для этого случая ниже заведён страховочный сброс очереди
+ * по макротаске. В 3.0.1 без очереди
+ * запись проходит лишь потому, что `goto` успевает несколько раз уступить
+ * микрозадачу до проверки — это тайминг внутренностей, а не контракт. Срез
+ * адреса вычисляется в момент записи.
  * https://svelte.dev/docs/kit/$app-navigation#afterNavigate
  */
 export function svelteKitRouter(): MinimalRouter {
   let ready = false
   let queued: Array<() => void> = []
-  afterNavigate(() => {
+  const flush = () => {
     if (ready) return
     ready = true
     const run = queued
     queued = []
     for (const write of run) write()
-  })
+  }
+  afterNavigate(flush)
+  // Страховочный сброс для ПОЗДНЕГО монтажа (контент модалки, ленивый блок):
+  // навигация, в результате которой компонент появился, завершилась ДО его
+  // инициализации, и `afterNavigate` не придёт до следующей навигации —
+  // очередь висела бы в нём навсегда. Макрозадача заведомо позже цепочки
+  // микрозадач, которой SvelteKit завершает старт и навигации (там же
+  // стреляет и `enter`-`afterNavigate`), поэтому на старте страницы этот
+  // сброс проигрывает гонку штатному и запись до запуска роутера не уйдёт.
+  if (BROWSER) setTimeout(flush, 0)
   return {
     navigate(opts) {
       // Переход с загрузкой — тоже через писателя: следующая «мелкая» запись
