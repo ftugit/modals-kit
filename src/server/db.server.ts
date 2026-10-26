@@ -63,6 +63,31 @@ const schemaSpec = {
                FROM generate_series(1, 500) n
                WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
     },
+    // Демо-юзера списка seed-юзеров (этап 0 плана seed-list-stages): 100
+    // аккаунтов, первые 20 — с заявкой на удаление. Как и сид постов выше:
+    // один раз, идемпотентно (маркер — префикс seed `demo-`), даты размазаны
+    // назад, чтобы поиск/фильтры/сортировки этапа 1 было на чём проверять.
+    // Набор временный: удаляется отдельной правкой (скрипт + строки `demo-%`).
+    {
+      id: 'demo-user-seed-100',
+      text: `INSERT INTO public.user_auth (seed, permissions, subnet_salt, created_at, updated_at, deleted_at)
+               SELECT 'demo-' || substr(md5('seed-' || n), 1, 19) || substr(md5('salt-' || n), 1, 19),
+                      '{}',
+                      substr(md5('sub-' || n), 1, 32),
+                      clock_timestamp() - (n * interval '1.3 days'),
+                      clock_timestamp() - (n * interval '1.3 days'),
+                      CASE WHEN n <= 20 THEN clock_timestamp() - (n * interval '1.3 days') + interval '20 days' END
+                 FROM generate_series(1, 100) n
+                WHERE NOT EXISTS (SELECT 1 FROM public.user_auth WHERE seed LIKE 'demo-%')`,
+    },
+    {
+      id: 'demo-profile-seed-100',
+      text: `INSERT INTO public.user_profile (auth_id, nickname, created_at, updated_at)
+               SELECT a.id, 'demo-user-' || lpad(a.rn::text, 3, '0'), a.created_at, a.created_at
+                 FROM (SELECT id, created_at, row_number() OVER (ORDER BY created_at) AS rn
+                         FROM public.user_auth WHERE seed LIKE 'demo-%') a
+                WHERE NOT EXISTS (SELECT 1 FROM public.user_profile p WHERE p.auth_id = a.id)`,
+    },
   ],
 }
 export const schema = defineSchema(schemaSpec)

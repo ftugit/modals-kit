@@ -142,7 +142,15 @@ export type SeedUsersPage = {
   total: number
   page: number
   pageSize: number
+  /** Вызывающему видны удалённые строки (`readDeleted`): UI решает по этому флагу, а не по именам прав. */
+  canSeeDeleted: boolean
 }
+
+/** Состояние удалённости в фильтре списка: действующие / все / только удалённые. */
+export type SeedUsersState = 'active' | 'all' | 'deleted'
+
+/** Порядок списка: поле и направление (`deleted` — по дате удаления, только с `canSeeDeleted`). */
+export type SeedUsersOrder = 'created-desc' | 'created-asc' | 'deleted-desc' | 'deleted-asc' | 'id-asc' | 'id-desc'
 
 /** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */
 export type SessionStatus = 'ok' | 'revoked' | 'expired' | 'unknown'

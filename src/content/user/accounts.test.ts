@@ -28,6 +28,7 @@ function makePorts() {
   const sessions = new Map<string, SessionRecord>()
   const created = new Map<string, number>()
   let lastCtx: unknown = null
+  let lastListArgs: unknown = null
   const seal = {
     async seal(payload: unknown) {
       return Buffer.from(JSON.stringify(payload)).toString('base64url')
@@ -115,8 +116,13 @@ function makePorts() {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, permissions: [...permissions] })
       },
-      async listPage(ctx: unknown, { page, pageSize }: { page: number; pageSize: number }) {
+      async listPage(
+        ctx: unknown,
+        args: { page: number; pageSize: number; filter?: unknown; order?: unknown; includeDeleted?: boolean },
+      ) {
         lastCtx = ctx
+        lastListArgs = args
+        const { page, pageSize } = args
         const rows: SeedAccountRow[] = [...auths.values()]
           .map((r) => ({
             id: r.id,
@@ -156,7 +162,7 @@ function makePorts() {
       return { defaults, get: async (k: keyof typeof defaults) => defaults[k], set: async () => {}, reset: async () => {} }
     })() as unknown as AuthPorts['config'],
   } as unknown as AuthPorts
-  return { ports, auths, ctxOf: () => lastCtx }
+  return { ports, auths, ctxOf: () => lastCtx, listArgsOf: () => lastListArgs }
 }
 
 /** Вошёл новым ключом; `permissions` — сразу выданные права. */
@@ -210,5 +216,50 @@ describe('список seed-юзеров', () => {
     expect(Object.keys(p1.items[0]!).sort()).toEqual(
       ['blocked', 'createdAt', 'deletedAt', 'id', 'permissions', 'seed'].sort(),
     )
+  })
+
+  test('поиск, фильтры и порядок собираются в срез порта одним набором', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+
+    const page = ok_(
+      await listSeedUsers(ports, reader.access, {
+        search: '  AbC ',
+        order: 'deleted-desc',
+        state: 'deleted',
+        createdFrom: 100,
+        createdTo: 200,
+        deletedFrom: 300,
+      }),
+    )
+    expect(page.canSeeDeleted).toBe(true)
+    const args = listArgsOf() as {
+      filter?: unknown
+      order?: unknown
+      includeDeleted?: boolean
+      searchSeed?: string
+    }
+    expect(args.includeDeleted).toBe(true)
+    expect(args.order).toEqual([['deleted_at', 'desc']])
+    // Поиск — отдельным аргументом порта, не DB-фильтром (схема seed — 43–44 знака).
+    expect(args.searchSeed).toBe('AbC')
+    expect(args.filter).toEqual({
+      and: [
+        { field: 'created_at', op: 'gte', value: new Date(100).toISOString() },
+        { field: 'created_at', op: 'lte', value: new Date(200).toISOString() },
+        { field: 'deleted_at', op: 'gte', value: new Date(300).toISOString() },
+      ],
+    })
+  })
+
+  test('по умолчанию — только действующие, порядок модели не навязан поиском', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+
+    ok_(await listSeedUsers(ports, reader.access))
+    const args = listArgsOf() as { filter?: unknown; order?: unknown; includeDeleted?: boolean }
+    expect(args.includeDeleted).toBe(false)
+    expect(args.filter).toBeUndefined()
+    expect(args.order).toEqual([['created_at', 'desc']])
   })
 })

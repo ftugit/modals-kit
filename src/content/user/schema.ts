@@ -29,7 +29,7 @@ export const auth = defineResource({
       read: () => true, create: () => true,
       // стирает только исполнитель удаления (сервер); юзерских update нет
       update: ['server', 'admin'], required: true, nullable: true,
-      orderable: true, filters: ['eq'],
+      orderable: true, filters: ['eq', 'icontains'],
       db: { unique: true }, // один аккаунт на связку; NULL-ов может быть много
     }),
     /**

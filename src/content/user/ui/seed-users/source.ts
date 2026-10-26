@@ -32,6 +32,14 @@ export const SEED_USERS_PAGE_SIZE = 10
 export const SEED_USERS_PAGE_PARAM = 'users'
 
 /**
+ * Ключи фильтров источника (этап 1): порядок, состояние удалённости и
+ * диапазоны дат. Значения — строки адреса (`?users.ord=created-asc` и т.д.),
+ * разбирает их один раз `load` роута; домен валидирует и собирает срез БД.
+ * Даты — ISO-строки полей формы, в `load` превращаются в мс epoch.
+ */
+export const SEED_USERS_FILTER_KEYS = ['ord', 'state', 'cfrom', 'cto', 'dfrom', 'dto'] as const
+
+/**
  * Данные экрана списка: ровно то, что отдаёт `load` роута `/users`.
  * `fact` — отказ домена данными (нет входа, нет права), а не брошенная ошибка:
  * иначе компонент модалки не смонтировался бы и экран отказа показать некому.
@@ -42,6 +50,8 @@ export interface SeedUsersScreenData {
   fact: AuthErrorCode | null
   /** Вход включён на сервере (иначе экран скрыт за `Acl`). */
   enabled: boolean
+  /** Видны ли вызывающему удалённые строки: от этого зависят фильтр состояния и даты удаления. */
+  canSeeDeleted: boolean
 }
 
 /**
@@ -50,11 +60,21 @@ export interface SeedUsersScreenData {
  * `preloadData` не принимает `AbortSignal` и не репортит прогресс: устаревшие
  * ответы пагинатор отсекает сам по `reqId`, а порция невелика.
  */
-async function fetchSeedUsersPage(page: number, pageSize: number): Promise<PageResponse<SeedUserView>> {
+async function fetchSeedUsersPage(
+  page: number,
+  pageSize: number,
+  input?: { q?: string; filters?: Readonly<Record<string, string>> },
+): Promise<PageResponse<SeedUserView>> {
   const q = new URLSearchParams({
     [SEED_USERS_PAGE_PARAM]: String(page),
     [`${SEED_USERS_PAGE_PARAM}.size`]: String(pageSize),
   })
+  // Поиск и фильтры едут теми же ключами адреса, что держит адаптер
+  // (`users.q`, `users.ord`, …): `load` разберёт их в тот же срез, что и SSR.
+  if (input?.q) q.set(`${SEED_USERS_PAGE_PARAM}.q`, input.q)
+  for (const [k, v] of Object.entries(input?.filters ?? {})) {
+    if (v) q.set(`${SEED_USERS_PAGE_PARAM}.${k}`, v)
+  }
   const r = await preloadData(`/users?${q}`)
   if (r.type !== 'loaded') {
     // Редирект (например, гостя уводит на вход) или отказ загрузчика:
@@ -88,8 +108,12 @@ export const seedUsersSource = defineSource<SeedUserView>({
     title: (r) => r.seed ?? r.id,
     texts: (r) => [r.seed ?? '', r.id],
   },
+  // Родной поиск источника: пагинатор отдаёт запрос в `data` (`input.q`),
+  // сужает выдачу сервер (подстрока seed), а не клиент по загруженным порциям.
+  search: { minLength: 2 },
+  filters: SEED_USERS_FILTER_KEYS,
   totals: true,
-  data: (look) => fetchSeedUsersPage(look.page, look.pageSize),
+  data: (look, input) => fetchSeedUsersPage(look.page, look.pageSize, input),
 })
 
 /**
@@ -100,6 +124,10 @@ export function ensureSeedUsersPaginator(): string {
   if (!hasPaginator(SEED_USERS_NAME)) {
     definePaginator({
       name: SEED_USERS_NAME,
+      // Поиск и любой фильтр — новая выдача с первой порции. Без `reloadKeys`
+      // `setExtra` только правил бы состояние: ни перезапроса, ни смены адреса
+      // (прецедент — `reloadKeys` демо-пагинатора и списка постов).
+      reloadKeys: ['q', ...SEED_USERS_FILTER_KEYS],
       adapter: createUrlAdapter({
         name: SEED_USERS_NAME,
         source: seedUsersSource,

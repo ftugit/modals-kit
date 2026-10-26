@@ -12,6 +12,7 @@ import AuthModalLazy from './ui/AuthModalLazy.svelte'
 import MenuModalLazy from './ui/MenuModalLazy.svelte'
 import ProfileModalLazy from './ui/ProfileModalLazy.svelte'
 import SeedUsersModalLazy from './ui/SeedUsersModalLazy.svelte'
+import SeedUsersFiltersModalLazy from './ui/SeedUsersFiltersModalLazy.svelte'
 
 registerModal({
   name: 'user.auth',
@@ -41,4 +42,11 @@ registerModal({
   component: SeedUsersModalLazy,
   route: userListRoute.href,
   size: { width: 640, height: 560 },
+})
+// Фильтры списка: адреса у модалки нет и не нужно (route нет) — открывается
+// только кнопкой над списком, результат пишет в состояние пагинатора.
+registerModal({
+  name: 'user.list.filters',
+  component: SeedUsersFiltersModalLazy,
+  size: { width: 420, height: 560 },
 })

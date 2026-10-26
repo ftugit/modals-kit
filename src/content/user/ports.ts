@@ -8,7 +8,7 @@
  *  - ключ запечатывания временного токена и nonce-секрет — `src/env.ts`
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
-import type { DataContext } from '#lib/db/index.js'
+import type { DataContext, Filter, Order } from '#lib/db/index.js'
 import type { Blocked, SessionRecord } from './types.js'
 
 /**
@@ -83,7 +83,22 @@ export interface AuthStorePort {
    */
   listPage(
     ctx: DataContext,
-    args: { page: number; pageSize: number },
+    args: {
+      page: number
+      pageSize: number
+      /** Серверный фильтр слоя БД (поиск/диапазоны дат собрал домен); счётчик — на том же срезе. */
+      filter?: Filter
+      /** Порядок слоя БД; без него — порядок модели (`created_at desc`). */
+      order?: Order
+      /** Видеть удалённые строки (по умолчанию слоя — нет; решает домен по состоянию фильтра). */
+      includeDeleted?: boolean
+      /**
+       * Подстрока seed (без учёта регистра). Не DB-фильтр: слой валидирует
+       * значения фильтров схемой поля (у seed — 43–44 знака). Адаптер
+       * применяет подстроку к выбранному срезу до нарезки порции.
+       */
+      searchSeed?: string
+    },
   ): Promise<{ rows: SeedAccountRow[]; total: number }>
 }
 

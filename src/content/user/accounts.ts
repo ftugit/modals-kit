@@ -9,11 +9,20 @@
  * без права отдала бы вызывающему только его собственную строку. Чтение идёт от
  * `principalOfRow` вызывающего: «только данные после ACL» — свойство этого
  * вызова, а не надежда на адаптер.
+ *
+ * Поиск, фильтры и порядок — серверные: домен собирает `Filter`/`Order` слоя
+ * БД из проверенных аргументов, порт применяет их к выборке и счётчику одним
+ * срезом. Что доступно вызывающему, решает домен: удалённые строки и всё, что
+ * с ними связано (состояние, даты удаления, сортировка по удалению), — только
+ * с правом чтения удалённых (`admin`/`account.read`, как `readDeleted` схемы);
+ * без него аргументы про удалённых молча отбрасываются, а состояние считается
+ * «только действующие».
  */
+import type { Filter, Order } from '#lib/db/index.js'
 import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts, SeedAccountRow } from './ports.js'
-import type { SeedUserView, SeedUsersPage } from './types.js'
+import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from './types.js'
 
 /** Потолок порции: экран догружает понемногу, выгрузка таблицы целиком не нужна. */
 export const SEED_USERS_MAX_PAGE_SIZE = 50
@@ -27,14 +36,47 @@ const viewOf = (r: SeedAccountRow): SeedUserView => ({
   deletedAt: r.deletedAt,
 })
 
+export interface ListSeedUsersArgs {
+  page?: number
+  pageSize?: number
+  /** Подстрока seed (без учёта регистра); пустая — без поиска. */
+  search?: string
+  /** Порядок; `deleted-*` — только с правом на удалённые. */
+  order?: SeedUsersOrder
+  /** Состояние удалённости; без права на удалённые всегда `active`. */
+  state?: SeedUsersState
+  /** Диапазон создания, мс epoch; `null`/`undefined` — граница не задана. */
+  createdFrom?: number | null
+  createdTo?: number | null
+  /** Диапазон удаления, мс epoch; только с правом на удалённые. */
+  deletedFrom?: number | null
+  deletedTo?: number | null
+}
+
+const ORDER_OF: Record<SeedUsersOrder, Order> = {
+  'created-desc': [['created_at', 'desc']],
+  'created-asc': [['created_at', 'asc']],
+  'deleted-desc': [['deleted_at', 'desc']],
+  'deleted-asc': [['deleted_at', 'asc']],
+  'id-asc': [['id', 'asc']],
+  'id-desc': [['id', 'desc']],
+}
+
+const ms = (v: number | null | undefined): number | null =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.trunc(v) : null
+
+/** Значение timestamp-фильтра для слоя БД — ISO-строка (схема поля числа не принимает). */
+const iso = (v: number): string => new Date(v).toISOString()
+
 /**
- * Порция списка аккаунтов: страница (с 1), размер и полное число строк.
- * Порядок выдачи — порядок модели (`created_at desc`), домен его не навязывает.
+ * Порция списка аккаунтов: страница (с 1), размер и полное число строк
+ * на том же срезе (поиск и фильтры учтены и в строках, и в счётчике).
+ * Порядок по умолчанию — порядок модели (`created_at desc`).
  */
 export async function listSeedUsers(
   ports: AuthPorts,
   accessToken: string | undefined,
-  args: { page?: number; pageSize?: number } = {},
+  args: ListSeedUsersArgs = {},
 ): Promise<UserResult<SeedUsersPage>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
@@ -42,15 +84,58 @@ export async function listSeedUsers(
   if (!g.perms.includes(ADMIN_ROLE) && !g.perms.includes('account.read'))
     return fail({ code: 'auth.forbidden' })
 
+  // Удалённые видны тем же правам, что держат `readDeleted` схемы; UI узнаёт
+  // об этом флагом в выдаче, а не списком прав.
+  const canSeeDeleted = g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')
+
   const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
   const pageSize = Math.min(
     SEED_USERS_MAX_PAGE_SIZE,
     Math.max(1, Math.trunc(args.pageSize ?? 10) || 10),
   )
 
+  const state: SeedUsersState = canSeeDeleted ? (args.state ?? 'active') : 'active'
+  const orderName: SeedUsersOrder =
+    args.order && (canSeeDeleted || !args.order.startsWith('deleted')) ? args.order : 'created-desc'
+
+  const nodes: Filter[] = []
+  const q = (args.search ?? '').trim()
+  // Поиск по seed в DB-фильтр не кладём: слой валидирует значение фильтра
+  // схемой поля, а у `seed` это 43–44 знака — подстрока не пройдёт никогда.
+  // Подстроку применяет адаптер по выбранным строкам (таблица аккаунтов
+  // мала; прецедент — `listDeletedBefore`). `icontains` у поля оставлен
+  // для точных вхождений полной длины, если понадобятся.
+
+  const createdFrom = ms(args.createdFrom)
+  const createdTo = ms(args.createdTo)
+  if (createdFrom !== null) nodes.push({ field: 'created_at', op: 'gte', value: iso(createdFrom) })
+  if (createdTo !== null) nodes.push({ field: 'created_at', op: 'lte', value: iso(createdTo) })
+
+  if (canSeeDeleted && state === 'deleted') {
+    const deletedFrom = ms(args.deletedFrom)
+    const deletedTo = ms(args.deletedTo)
+    // «Только удалённые» — та же объявленная операция `gte` от эпохи:
+    // отдельной ветки в адаптере под состояние нет.
+    nodes.push({ field: 'deleted_at', op: 'gte', value: iso(deletedFrom ?? 0) })
+    if (deletedTo !== null) nodes.push({ field: 'deleted_at', op: 'lte', value: iso(deletedTo) })
+  }
+  // Диапазон удаления действует только в состоянии «только удалённые»:
+  // в «включая удалённые» условие по `deleted_at` выкинуло бы действующие
+  // строки (NULL сравнению не удовлетворяет), а это не то, что выбрал человек.
+
+  const filter: Filter | undefined =
+    nodes.length === 0 ? undefined : nodes.length === 1 ? nodes[0] : { and: nodes }
+
   const { rows, total } = await ports.auths.listPage(
     principalOfRow({ id: g.sub, permissions: g.perms }),
-    { page, pageSize },
+    {
+      page,
+      pageSize,
+      ...(filter ? { filter } : {}),
+      order: ORDER_OF[orderName],
+      includeDeleted: state !== 'active',
+      ...(q ? { searchSeed: q } : {}),
+    },
   )
-  return ok({ items: rows.map(viewOf), total, page, pageSize })
+  return ok({ items: rows.map(viewOf), total, page, pageSize, canSeeDeleted })
 }

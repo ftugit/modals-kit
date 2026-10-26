@@ -36,11 +36,11 @@ import {
   type UserResult,
 } from './index.js'
 import { sign, verify } from './keys.js'
-import { listSeedUsers as coreListSeedUsers } from './accounts.js'
+import { listSeedUsers as coreListSeedUsers, type ListSeedUsersArgs } from './accounts.js'
 import { profile as coreProfile, updateProfile as coreUpdateProfile } from './profile.js'
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
-import type { AuthPorts, AuthRow } from './ports.js'
-import { normalizeFailure, type DataContext } from '#lib/db/index.js'
+import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
+import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
 import type { ProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
@@ -245,23 +245,69 @@ function authsAdapter() {
       const rows = (await api().select(SYSTEM, { includeDeleted: true })) as unknown as Record<string, unknown>[]
       return rows.map(authRowOf).filter((r) => r.deletedAt !== null && r.deletedAt <= cutoffMs)
     },
-    async listPage(ctx: DataContext, { page, pageSize }: { page: number; pageSize: number }) {
+    async listPage(
+      ctx: DataContext,
+      {
+        page,
+        pageSize,
+        filter,
+        order,
+        includeDeleted = false,
+        searchSeed,
+      }: {
+        page: number
+        pageSize: number
+        filter?: Filter
+        order?: Order
+        includeDeleted?: boolean
+        searchSeed?: string
+      },
+    ) {
       // Контекст — вызывающий (не SYSTEM): какие строки и поля увидит список,
       // решает политика модели под его правами. Счётчик — на том же срезе
-      // (`includeDeleted`), иначе «всего» и порции считали бы разные множества.
+      // (тот же фильтр и `includeDeleted`), иначе «всего» и порции считали бы
+      // разные множества.
+      const slice = {
+        ...(filter ? { filter } : {}),
+        includeDeleted,
+      }
+      const mapRow = (r: Record<string, unknown>): SeedAccountRow => ({
+        id: String(r.id),
+        seed: (r.seed as string | null) ?? null,
+        permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
+        blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
+        createdAt: ms(r.created_at) ?? Date.now(),
+        deletedAt: ms(r.deleted_at),
+      })
+      if (searchSeed) {
+        // Подстрока seed: DB-фильтром её не выразить (схема поля — 43–44
+        // знака, слой валидирует значение фильтра полем). Таблица аккаунтов
+        // мала: выбираем срез целиком постранично, режем подстроку здесь,
+        // порцию и total считаем уже по ней (прецедент — `listDeletedBefore`).
+        const needle = searchSeed.toLowerCase()
+        const all: SeedAccountRow[] = []
+        for (let p = 1; ; p++) {
+          const batch = (await api().select(ctx, {
+            page: p,
+            limit: 100,
+            ...(order ? { order } : {}),
+            ...slice,
+          })) as unknown as Record<string, unknown>[]
+          all.push(...batch.map(mapRow))
+          if (batch.length < 100) break
+        }
+        const matched = all.filter((r) => (r.seed ?? '').toLowerCase().includes(needle))
+        return {
+          rows: matched.slice((page - 1) * pageSize, page * pageSize),
+          total: matched.length,
+        }
+      }
       const [rows, total] = await Promise.all([
-        api().select(ctx, { page, limit: pageSize, includeDeleted: true }),
-        api().count(ctx, { includeDeleted: true }),
+        api().select(ctx, { page, limit: pageSize, ...(order ? { order } : {}), ...slice }),
+        api().count(ctx, slice),
       ])
       return {
-        rows: (rows as unknown as Record<string, unknown>[]).map((r) => ({
-          id: String(r.id),
-          seed: (r.seed as string | null) ?? null,
-          permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
-          blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
-          createdAt: ms(r.created_at) ?? Date.now(),
-          deletedAt: ms(r.deleted_at),
-        })),
+        rows: (rows as unknown as Record<string, unknown>[]).map(mapRow),
         total,
       }
     },
@@ -419,7 +465,7 @@ export function auth(event: AuthEvent): {
   logoutAll(): Promise<UserResult<null>>
   listSessions(): Promise<UserResult<SessionView[]>>
   /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
-  listSeedUsers(args?: { page?: number; pageSize?: number }): Promise<UserResult<SeedUsersPage>>
+  listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
   revokeSession(jti: string): Promise<UserResult<null>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
   profile(subject?: string): Promise<UserResult<ProfileView | null>>
