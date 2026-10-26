@@ -21,6 +21,7 @@
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
@@ -41,7 +42,9 @@
     class?: string
   }
 
-  let { snapshot, fact, enabled, canSeeDeleted = false, variant = 'plain', class: className }: Props = $props()
+  // `canSeeDeleted` в данных остаётся для носителей; экрану он больше не
+  // нужен: доступность блока удалённых считает `load` страницы фильтров.
+  let { snapshot, fact, enabled, variant = 'plain', class: className }: Props = $props()
 
   // Регистрация — на стороне экрана, в том же бандле, что и хост пагинатора.
   ensureSeedUsersPaginator()
@@ -60,6 +63,17 @@
   // «Всего» — из живого состояния пагинатора: снапшот `load` честен только
   // на первой порции, дальше срез (поиск/фильтры) меняет totals без SSR.
   const totalItems = $derived(pagState().totalItems ?? snapshot?.totalItems)
+  // No-JS адрес кнопки фильтров: страница `/users/filters`, которой текущий
+  // адрес носителя уходит параметром `from` — форма вернёт GET именно сюда
+  // (список может жить на любой странице и в модалке), а не на фиксированный
+  // роут. Текущие фильтры страница прочитает из того же `from`.
+  const filtersHref = $derived.by(() => {
+    const qs = new URLSearchParams(
+      Object.entries(currentSearch()).map(([k, v]) => [k, String(v)] as [string, string]),
+    )
+    const from = currentPathname() + (qs.size ? `?${qs}` : '')
+    return `/users/filters?from=${encodeURIComponent(from)}`
+  })
 </script>
 
 {#if fact === 'auth.forbidden'}
@@ -83,7 +97,7 @@
         />
       </div>
       <Button
-        {...asModalLink('user.list.filters', { canSeeDeleted })}
+        {...asModalLink('user.list.filters', {}, { href: filtersHref })}
         variant="outline"
         data-testid="seed-users-filters-open"
       >

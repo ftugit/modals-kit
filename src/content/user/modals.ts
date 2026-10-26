@@ -7,7 +7,7 @@
 // не платит. Связка с маршрутами идёт через штатный `route: *.href` без
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
-import { userAuthRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
+import { userAuthRoute, userListFiltersRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
 import AuthModalLazy from './ui/AuthModalLazy.svelte'
 import MenuModalLazy from './ui/MenuModalLazy.svelte'
 import ProfileModalLazy from './ui/ProfileModalLazy.svelte'
@@ -43,10 +43,12 @@ registerModal({
   route: userListRoute.href,
   size: { width: 640, height: 560 },
 })
-// Фильтры списка: адреса у модалки нет и не нужно (route нет) — открывается
-// только кнопкой над списком, результат пишет в состояние пагинатора.
+// Фильтры списка: открывается кнопкой над списком, результат пишет в
+// состояние пагинатора. `route` — страница-fallback `/users/filters` для
+// no-JS (кнопка без JS ведёт туда, форма возвращает GET-ом к списку).
 registerModal({
   name: 'user.list.filters',
   component: SeedUsersFiltersModalLazy,
+  route: userListFiltersRoute.href,
   size: { width: 420, height: 560 },
 })

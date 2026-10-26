@@ -87,3 +87,11 @@ export const userProfileRoute = kitRoute('/(site)/(app)/user/[id]', {
  * описан один раз и страница с модалкой не могут разойтись.
  */
 export const userListRoute = kitRoute('/users')
+
+/**
+ * Фильтры списка seed-юзеров: страница-fallback модалки `user.list.filters`
+ * (канон «модалка + страница», как `user.menu`): с JS кнопка над списком
+ * открывает модалку, без JS ведёт сюда; форма страницы — GET обратно к
+ * списку (адрес носителя несёт параметр `from`, список может жить где угодно).
+ */
+export const userListFiltersRoute = kitRoute('/users/filters')
