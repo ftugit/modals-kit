@@ -56,14 +56,14 @@ npm run build                                                      # перед 
       + `count`); фасад `auth(event).listSeedUsers`. Тесты: `accounts.test.ts`
       (нет входа / нет права / `account.read` / `admin` / пагинация),
       `schema.test.ts` (политика пускает `account.read`).
-- [ ] **S2. Источник, роут, эндпоинт.** `ui/seed-users/source.ts`
+- [x] **S2. Источник, роут, эндпоинт.** `ui/seed-users/source.ts`
       (`defineSource`, `ensureSeedUsersPaginator`, URL-адаптер `users`,
       помощник снапшота первой порции); роут `/users`
       (`routes/(site)/(app)/users/+page.server.ts` — `load` → `SeedUsersScreenData`,
       `private, no-store`; `+page.svelte` — экран); `GET /api/seed-users`
       (тот же доменный вызов, `PageResponse` или отказ кодом).
       Тест помощника снапшота/источника.
-- [ ] **S3. Экран и модалка.** `SeedUsersScreen.svelte` (`fact → Acl`,
+- [x] **S3. Экран и модалка.** `SeedUsersScreen.svelte` (`fact → Acl`,
       `auth.forbidden → Acl model="forbidden"`, иначе `Paginator` + строка
       просмотра), `SeedUserRow`, `SeedUsersModal.svelte` (`useLoader`),
       `SeedUsersModalLazy.svelte`, регистрация `user.list` в `modals.ts`,
@@ -111,8 +111,9 @@ npm run build                                                      # перед 
 | стадия | результат |
 |---|---|
 | S0 | Node v22.17.0 (`/tmp/node22`), `npm ci` ок, чек-лист создан; гейт tooling 145/0; коммит `6b7fea2` |
+| S2+S3 | источник `seed-users` (URL-адаптер `?users`), снапшот первой порции из `load`, роут `/users`, `GET /api/seed-users`, `SeedUsersScreen`, модалка `user.list` без `loader`; гейты: svelte-check 0/0, vitest `src/content/user` 117/117 |
 | S1 | `accounts.ts` (`listSeedUsers`), `listPage` в порте и gateway от principal вызывающего, `account.read` в `policy.select`+`readDeleted`; тесты `accounts.test.ts`+`schema.test.ts`+`admin.test.ts` — 10/10 |
 
 ## Следующий шаг
 
-S2: источник пагинатора, роут `/users`, эндпоинт `/api/seed-users`.
+S4: entry-компонент на главной.

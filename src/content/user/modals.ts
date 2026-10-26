@@ -7,10 +7,11 @@
 // не платит. Связка с маршрутами идёт через штатный `route: *.href` без
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
-import { userAuthRoute, userMenuRoute, userProfileRoute } from './routes.js'
+import { userAuthRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
 import AuthModalLazy from './ui/AuthModalLazy.svelte'
 import MenuModalLazy from './ui/MenuModalLazy.svelte'
 import ProfileModalLazy from './ui/ProfileModalLazy.svelte'
+import SeedUsersModalLazy from './ui/SeedUsersModalLazy.svelte'
 
 registerModal({
   name: 'user.auth',
@@ -32,4 +33,12 @@ registerModal({
   component: ProfileModalLazy,
   route: userProfileRoute.href,
   size: { width: 480, height: 560 },
+})
+// Список seed-юзеров: та же схема — `route` без `loader`, данные приносит
+// `load` маршрута `/users`, экран общий со страницей (`SeedUsersScreen`).
+registerModal({
+  name: 'user.list',
+  component: SeedUsersModalLazy,
+  route: userListRoute.href,
+  size: { width: 640, height: 560 },
 })

@@ -80,3 +80,10 @@ export const userProfileRoute = kitRoute('/(site)/(app)/user/[id]', {
   dynamic: true,
   id: '/user/[id]',
 })
+
+/**
+ * Список seed-юзеров — статический адрес `/users`. Этим же адресом пользуется
+ * модалка `user.list` (`route: userListRoute.href`), поэтому адрес списка
+ * описан один раз и страница с модалкой не могут разойтись.
+ */
+export const userListRoute = kitRoute('/users')

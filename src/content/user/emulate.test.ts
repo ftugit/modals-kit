@@ -111,6 +111,17 @@ function makePorts(seedSecret?: string): {
       async listDeletedBefore(cutoff) {
         return [...auths.values()].filter((r) => r.deletedAt !== null && r.deletedAt <= cutoff)
       },
+      async listPage(_ctx, { page, pageSize }: { page: number; pageSize: number }) {
+        const rows = [...auths.values()].map((r) => ({
+          id: r.id,
+          seed: r.seed,
+          permissions: [...r.permissions],
+          blocked: [...r.blocked],
+          createdAt: 0,
+          deletedAt: r.deletedAt,
+        }))
+        return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length }
+      },
     },
     profiles: {
       async create(_ctx, authId, patch) {
