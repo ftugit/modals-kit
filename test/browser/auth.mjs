@@ -223,34 +223,40 @@ async function run() {
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       ok('вход (JS): корректный seed проходит, страница закрылась переходом')
 
-      // 9а. Меню шапки: аватар виден, «Изменить профиль» открывает форму профиля (не guest_only),
-      //     смена ника сразу живёт в RAM, а «Выйти» мгновенно обновляет шапку без перезагрузки
+      // 9а. Меню шапки на широкой ширине: аватар открывает ВСПЛЫВАШКУ (не модалку,
+      //     адрес не меняется), «Изменить профиль» — модалку профиля поверх,
+      //     смена ника сразу живёт в RAM, а «Выйти» мгновенно обновляет шапку
       await page.goto(BASE + '/', { waitUntil: 'networkidle' })
       const userBtn = page.locator('[data-testid=header-user]')
       await userBtn.waitFor({ state: 'visible' })
       ok('после входа: в шапке аватар (не пустое место)')
       await userBtn.click()
-      const menuDlg = page.locator('[role=dialog]')
-      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
-      ok('клик аватара открывает меню с выходом')
+      const popover = page.locator('[data-user-menu-popover]')
+      await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      assert.ok(!page.url().includes('modal='), 'всплывашка меню не трогает адрес')
+      assert.equal(await page.locator('[data-modal-popup]').count(), 0, 'модалка меню на десктопе не открывается')
+      ok('клик аватара открывает всплывашку меню (без URL и без модалки)')
 
-      // Переход в «Изменить профиль» из модального меню авторизованного пользователя
-      await menuDlg.getByRole('link', { name: 'Изменить профиль' }).click()
-      const modalProfile = menuDlg.locator('#user-profile')
+      // Переход в «Изменить профиль» из всплывашки: она закрывается, профиль — модалка
+      await popover.getByRole('link', { name: 'Изменить профиль' }).click()
+      const modalProfile = page.locator('#user-profile')
       await modalProfile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 5000 })
-      assert.equal(await menuDlg.locator('[data-acl-code="guest_only"]').count(), 0, 'нет ложного экрана guest_only')
+      assert.equal(await popover.count(), 0, 'всплывашка закрылась при открытии профиля')
+      assert.equal(await page.locator('[data-acl-code="guest_only"]').count(), 0, 'нет ложного экрана guest_only')
       assert.equal(await modalProfile.locator('input[name=nickname]').inputValue(), 'e2e-ход-258', 'живой ник подставлен')
-      ok('«Изменить профиль» в меню шапки открывает форму профиля с живым ником (без guest_only)')
+      ok('«Изменить профиль» во всплывашке открывает форму профиля с живым ником (без guest_only)')
 
-      // Сохраняем новый ник прямо в стековой модалке (2 из 2): она закрывается обратно в user.menu (1 из 1),
-      // где уже мгновенно светится обновлённый ник из RAM без перезагрузки!
+      // Сохраняем новый ник в модалке профиля: она закрывается, а заново открытая
+      // всплывашка мгновенно светит обновлённый ник из RAM без перезагрузки!
       await modalProfile.locator('input[name=nickname]').fill('e2e-ram-nick')
       await modalProfile.getByRole('button', { name: 'Сохранить' }).click()
-      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 10000 })
-      assert.ok((await menuDlg.textContent()).includes('e2e-ram-nick'), 'обновлённый ник сразу виден в возвращённом меню RAM')
+      await page.locator('[data-modal-popup]').waitFor({ state: 'detached', timeout: 10000 })
+      await userBtn.click()
+      await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      assert.ok((await popover.textContent()).includes('e2e-ram-nick'), 'обновлённый ник сразу виден во всплывашке RAM')
 
-      // Выходим прямо из модального меню и проверяем мгновенную смену шапки на гостя
-      await menuDlg.getByRole('button', { name: 'Выйти', exact: true }).click()
+      // Выходим прямо из всплывашки и проверяем мгновенную смену шапки на гостя
+      await popover.getByRole('button', { name: 'Выйти', exact: true }).click()
       await page.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 10000 })
       assert.equal(await page.locator('[data-testid=header-user]').count(), 0, 'кнопка аватара сразу скрыта без reload')
       ok('выход из модального меню мгновенно переключает шапку в гостя без перезагрузки страницы')

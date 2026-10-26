@@ -35,7 +35,7 @@
 | `ui/ProfileModal.svelte` / `ui/ProfileModalLazy.svelte` | Профиль в модалке: своего `loader` нет — данные приносит `load` маршрута `/user/[id]` через `preloadData` по `route` модалки; компонент читает их `useLoader()` и отдаёт в `ProfileScreen`. |
 | `ui/BanNotice.svelte` / `ui/RestrictionsNotice.svelte` | Экраны полной блокировки (`scope: 'auth'`) и частичных ограничений аккаунта. |
 | `ui/AuthWidget.svelte` | Тонкий координатор шагов потока входа (`auth.*` / `blocked` / `restrictions` / `profile`, адрес — `?stage=auth.restore`) + связка `formSteps`. |
-| `ui/MenuBody.svelte` / `ui/MenuModal.svelte` / `ui/UserMenu.svelte` | Меню пользователя под `<Acl allow="user">` (аватар, никнейм, переход к `?stage=profile`, выход) и кнопка в шапке. |
+| `ui/MenuBody.svelte` / `ui/MenuModal.svelte` / `ui/UserMenu.svelte` | Меню пользователя под `<Acl allow="user">` (аватар, никнейм, переход к `?stage=profile`, выход) и кнопка в шапке. На узкой ширине аватар открывает меню модалкой `user.menu`; на широкой — всплывашку `host.floating` без URL (без JS — страница `/user/menu`). |
 | `index.ts` | Публичная точка входа доменного ядра. |
 
 ---
