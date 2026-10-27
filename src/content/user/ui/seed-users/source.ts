@@ -31,6 +31,8 @@ import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from
 
 export const SEED_USERS_NAME = 'seed-users'
 export const SEED_USERS_PAGE_SIZE = 10
+/** Допустимые размеры порции из формы фильтров и адреса: целое 10..100. */
+export const SEED_USERS_PAGE_SIZES: readonly number[] = Array.from({ length: 91 }, (_, i) => i + 10)
 export const SEED_USERS_PAGE_PARAM = 'users'
 
 /**
@@ -150,7 +152,8 @@ export const seedUsersSource = defineSource<SeedUserView>({
     texts: (r) => [r.seed ?? '', r.id],
   },
   // Родной поиск источника: пагинатор отдаёт запрос в `data` (`input.q`),
-  // сужает выдачу сервер (подстрока seed), а не клиент по загруженным порциям.
+  // сужает выдачу сервер (подстрока seed/id, при включённом параметре — ещё
+  // никнейма), а не клиент по загруженным порциям.
   search: { minLength: 2 },
   filters: SEED_USERS_FILTER_KEYS,
   totals: true,
@@ -173,6 +176,7 @@ export function ensureSeedUsersPaginator(): string {
         name: SEED_USERS_NAME,
         source: seedUsersSource,
         pageSize: SEED_USERS_PAGE_SIZE,
+        pageSizes: SEED_USERS_PAGE_SIZES,
         pageParam: SEED_USERS_PAGE_PARAM,
         // Поиск и фильтры — полноправные ключи адреса (утверждённое
         // URL-хранилище): адаптер пишет их при смене состояния и

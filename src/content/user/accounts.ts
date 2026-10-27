@@ -25,7 +25,7 @@ import type { AuthPorts, SeedAccountRow } from './ports.js'
 import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from './types.js'
 
 /** Потолок порции: экран догружает понемногу, выгрузка таблицы целиком не нужна. */
-export const SEED_USERS_MAX_PAGE_SIZE = 50
+export const SEED_USERS_MAX_PAGE_SIZE = 100
 
 const viewOf = (r: SeedAccountRow): SeedUserView => ({
   id: r.id,
@@ -39,7 +39,10 @@ const viewOf = (r: SeedAccountRow): SeedUserView => ({
 export interface ListSeedUsersArgs {
   page?: number
   pageSize?: number
-  /** Подстрока seed (без учёта регистра); пустая — без поиска. */
+  /**
+   * Подстрока поиска (без учёта регистра): совпадение по seed или по id,
+   * а при включённом параметре никнейма — ещё и по никнейму. Пустая — без поиска.
+   */
   search?: string
   /** Порядок; `deleted-*` — только с правом на удалённые. */
   order?: SeedUsersOrder
@@ -120,11 +123,12 @@ export async function listSeedUsers(
 
   const nodes: Filter[] = []
   const q = (args.search ?? '').trim()
-  // Поиск по seed в DB-фильтр не кладём: слой валидирует значение фильтра
-  // схемой поля, а у `seed` это 43–44 знака — подстрока не пройдёт никогда.
-  // Подстроку применяет адаптер по выбранным строкам (таблица аккаунтов
-  // мала; прецедент — `listDeletedBefore`). `icontains` у поля оставлен
-  // для точных вхождений полной длины, если понадобятся.
+  // Поиск в DB-фильтр не кладём: слой валидирует значение фильтра схемой
+  // поля, а у `seed` это 43–44 знака — подстрока не пройдёт никогда.
+  // Подстроку (seed, id, при включённом параметре — никнейм) применяет
+  // адаптер по выбранным строкам (таблица аккаунтов мала; прецедент —
+  // `listDeletedBefore`). `icontains` у поля оставлен для точных вхождений
+  // полной длины, если понадобятся.
 
   const createdFrom = ms(args.createdFrom)
   const createdTo = ms(args.createdTo)

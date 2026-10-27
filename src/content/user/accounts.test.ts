@@ -210,6 +210,15 @@ describe('список seed-юзеров', () => {
     )
   })
 
+  test('размер порции: потолок домена — 100', async () => {
+    const { ports, auths } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+
+    expect(ok_(await listSeedUsers(ports, reader.access, { pageSize: 101 })).pageSize).toBe(100)
+    expect(ok_(await listSeedUsers(ports, reader.access, { pageSize: 100 })).pageSize).toBe(100)
+    expect(ok_(await listSeedUsers(ports, reader.access, { pageSize: 37 })).pageSize).toBe(37)
+  })
+
   test('поиск, фильтры и порядок собираются в срез порта одним набором', async () => {
     const { ports, auths, listArgsOf } = makePorts()
     const reader = await joined(ports, auths, ['account.read'])

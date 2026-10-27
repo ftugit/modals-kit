@@ -16,7 +16,7 @@
    * без права на удалённые полей состояния и дат удаления в форме нет.
    */
   import { untrack } from 'svelte'
-  import { defineForm, field } from '#lib/form/index.js'
+  import { defineForm, field, v } from '#lib/form/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import Field from '#components/form/Field.svelte'
   import { Button } from '#components/ui/index.js'
@@ -29,8 +29,10 @@
     cto: string
     dfrom: string
     dto: string
-    /** Параметр никнейма: '1' — включён, '' — выключен. */
-    nick: string
+    /** Параметр никнейма: чекбокс, включён — true. */
+    nick: boolean
+    /** Размер порции списка: целое 10..100. */
+    size: number
   }
 
   interface Props {
@@ -44,8 +46,8 @@
     hiddenFields?: readonly { name: string; value: string }[]
     /** Нативный режим: адрес списка без фильтров (кнопка «Сбросить»). */
     resetHref?: string
-    /** Модальный режим: применение патчем extra (`undefined` — снять ключ). */
-    onApply?: (patch: Record<string, string | undefined>) => void | Promise<void>
+    /** Модальный режим: применение патчем extra (`undefined` — снять ключ) и размером порции. */
+    onApply?: (patch: Record<string, string | undefined>, pageSize: number) => void | Promise<void>
     /** Модальный режим: сброс патчем. */
     onReset?: () => void | Promise<void>
   }
@@ -68,20 +70,24 @@
   const desc = defineForm({
     id: 'seed-users-filters',
     fields: {
-      // Параметр никнейма (этап 2): при правах — переключатель столбца;
-      // опции порядка по никнейму гейтятся им через `Option.when`.
+      // Параметр никнейма (этап 2): при правах — чекбокс столбца; опции
+      // порядка по никнейму гейтятся им через `Option.when` (boolean).
       ...(untrack(() => canSeeNickname)
         ? {
-            'users.nick': field.select({
-              label: 'Столбец никнейма',
-              options: [
-                { value: '', label: 'Не показывать' },
-                { value: '1', label: 'Показывать' },
-              ],
-              defaultValue: init.nick || '',
+            'users.nick': field.checkbox({
+              label: 'Показывать никнейм',
+              defaultValue: init.nick,
             }),
           }
         : {}),
+      // Размер порции — не extra среза, а состояние пагинатора: модальный
+      // путь применит его `setPageSize`, нативный GET унесёт `users.size`
+      // в адрес списка, где его разберут роут и URL-адаптер (10..100).
+      'users.size': field.number({
+        label: 'Элементов на страницу',
+        defaultValue: init.size || 10,
+        validate: [v.required(), v.integer(), v.minValue(10), v.maxValue(100)],
+      }),
       'users.ord': field.select({
         label: 'Порядок',
         options: [
@@ -89,8 +95,8 @@
           { value: 'created-asc', label: 'Сначала старые (по созданию)' },
           ...(untrack(() => canSeeNickname)
             ? [
-                { value: 'nickname-asc', label: 'По никнейму (А→Я)', when: { field: 'users.nick', equals: '1' } },
-                { value: 'nickname-desc', label: 'По никнейму (Я→А)', when: { field: 'users.nick', equals: '1' } },
+                { value: 'nickname-asc', label: 'По никнейму (А→Я)', when: { field: 'users.nick', equals: true } },
+                { value: 'nickname-desc', label: 'По никнейму (Я→А)', when: { field: 'users.nick', equals: true } },
               ]
             : []),
           ...(untrack(() => canSeeDeleted)
@@ -137,21 +143,31 @@
       rangeError = 'Дата «с» позже даты «по» — поправьте диапазон'
       return
     }
+    const sizeRaw = vals['users.size']
+    const pageSize = typeof sizeRaw === 'number' ? sizeRaw : Number(sizeRaw)
+    if (!Number.isInteger(pageSize) || pageSize < 10 || pageSize > 100) {
+      e.preventDefault()
+      rangeError = 'Элементов на страницу — целое число от 10 до 100'
+      return
+    }
     rangeError = ''
     if (!onApply) return // нативный режим: браузер сам отправит GET
     e.preventDefault()
     // Умолчания в адрес не пишем: чистый адрес = срез по умолчанию.
-    void onApply({
-      ord: clean(vals['users.ord']) === 'created-desc' ? undefined : clean(vals['users.ord']) || undefined,
-      state: clean(vals['users.state']) === 'active' ? undefined : clean(vals['users.state']) || undefined,
-      cfrom: cfrom || undefined,
-      cto: cto || undefined,
-      dfrom: dfrom || undefined,
-      dto: dto || undefined,
-      // Выключенный параметр в адрес не пишем; сброс зависимой опции порядка
-      // на умолчание делает сам `Option.when` при изменении переключателя.
-      nick: clean(vals['users.nick']) === '1' ? '1' : undefined,
-    })
+    void onApply(
+      {
+        ord: clean(vals['users.ord']) === 'created-desc' ? undefined : clean(vals['users.ord']) || undefined,
+        state: clean(vals['users.state']) === 'active' ? undefined : clean(vals['users.state']) || undefined,
+        cfrom: cfrom || undefined,
+        cto: cto || undefined,
+        dfrom: dfrom || undefined,
+        dto: dto || undefined,
+        // Выключенный параметр в адрес не пишем; сброс зависимой опции порядка
+        // на умолчание делает сам `Option.when` при изменении чекбокса.
+        nick: vals['users.nick'] === true ? '1' : undefined,
+      },
+      pageSize,
+    )
   }
 </script>
 
@@ -164,21 +180,45 @@
   class="space-y-4"
   data-testid="seed-users-filters-form"
 >
+  <!--
+    Раскладка — сегментами по образцу шапки сайта (`HeaderRowView`): ряд —
+    `flex flex-wrap`, каждый пункт — гибкий сегмент `min-w-0 flex-1` с
+    базовой шириной; влезли — делят ряд пополам, не влезли — второй
+    сегмент сам переезжает на следующий ряд. Не grid: перенос решает
+    фактическая ширина, а не брейкпоинт.
+  -->
+  <div class="flex flex-wrap gap-3">
+    <div class="min-w-0 flex-1 basis-44" data-filter-segment="ord">
+      <Field of={bound.field('users.ord')} />
+    </div>
+    <div class="min-w-0 flex-1 basis-44" data-filter-segment="size">
+      <Field of={bound.field('users.size')} />
+    </div>
+  </div>
   {#if canSeeNickname}
     <Field of={bound.field('users.nick')} />
   {/if}
-  <Field of={bound.field('users.ord')} />
   {#if canSeeDeleted}
     <Field of={bound.field('users.state')} />
   {/if}
-  <div class="grid gap-3 sm:grid-cols-2">
-    <Field of={bound.field('users.cfrom')} />
-    <Field of={bound.field('users.cto')} />
-    {#if canSeeDeleted}
-      <Field of={bound.field('users.dfrom')} />
-      <Field of={bound.field('users.dto')} />
-    {/if}
+  <div class="flex flex-wrap gap-3">
+    <div class="min-w-0 flex-1 basis-44" data-filter-segment="cfrom">
+      <Field of={bound.field('users.cfrom')} />
+    </div>
+    <div class="min-w-0 flex-1 basis-44" data-filter-segment="cto">
+      <Field of={bound.field('users.cto')} />
+    </div>
   </div>
+  {#if canSeeDeleted}
+    <div class="flex flex-wrap gap-3">
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="dfrom">
+        <Field of={bound.field('users.dfrom')} />
+      </div>
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="dto">
+        <Field of={bound.field('users.dto')} />
+      </div>
+    </div>
+  {/if}
   {#if rangeError}
     <p class="text-sm text-destructive" role="alert">{rangeError}</p>
   {/if}

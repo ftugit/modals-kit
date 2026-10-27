@@ -10,7 +10,7 @@
    * (его посчитал домен), а не сам компонент.
    */
   import { untrack } from 'svelte'
-  import { getClientStore, setExtra } from '#lib/paginate/index.js'
+  import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useLoader, useModals } from '#lib/modals/svelte/index.js'
   import { SEED_USERS_NAME } from './seed-users/source.js'
@@ -34,12 +34,17 @@
       cto: s('cto'),
       dfrom: s('dfrom'),
       dto: s('dto'),
-      nick: s('nick'),
+      nick: s('nick') === '1',
+      size: pagState().pageSize,
     }
   })
 
-  async function apply(patch: Record<string, string | undefined>) {
+  async function apply(patch: Record<string, string | undefined>, pageSize: number) {
+    // Порядок важен: сначала новый срез (setExtra перезапрашивает с первой
+    // порции прежним размером), затем размер — иначе промежуточный запрос
+    // ушёл бы со старым срезом и новым размером.
     await setExtra(getClientStore(), SEED_USERS_NAME, patch)
+    await setPageSize(getClientStore(), SEED_USERS_NAME, pageSize)
     m.modals.close()
   }
 
@@ -53,6 +58,7 @@
       dto: undefined,
       nick: undefined,
     })
+    await setPageSize(getClientStore(), SEED_USERS_NAME, 10)
     m.modals.close()
   }
 </script>

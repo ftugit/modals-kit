@@ -20,7 +20,7 @@ export interface SeedUsersFiltersPageData {
   fact: AuthErrorCode | null
   enabled: boolean
   /** Значения формы: свои `users.*` адреса страницы, иначе — из `from`. */
-  values: { ord: string; state: string; cfrom: string; cto: string; dfrom: string; dto: string; nick: string }
+  values: { ord: string; state: string; cfrom: string; cto: string; dfrom: string; dto: string; nick: boolean; size: number }
   /** Куда уходит GET формы (путь носителя списка). */
   action: string
   /** Чужое состояние адреса носителя — скрытыми полями формы. */
@@ -42,6 +42,9 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
   const fromSp = fromUrl.searchParams
 
   const val = (k: string) => sp.get(k) ?? fromSp.get(k) ?? ''
+  // Размер порции — поле формы (10..100), а не чужое состояние: из скрытых
+  // полей он исключён списком FILTER_KEYS выше и в resetHref не попадает.
+  const sizeRaw = Number(val('users.size'))
   const values = {
     ord: val('users.ord') || 'created-desc',
     state: val('users.state') || 'active',
@@ -49,11 +52,13 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
     cto: val('users.cto'),
     dfrom: val('users.dfrom'),
     dto: val('users.dto'),
-    nick: val('users.nick'),
+    // Чекбокс: '1' — адрес модального пути, 'on' — нативная посылка формы.
+    nick: val('users.nick') === '1' || val('users.nick') === 'on',
+    size: Number.isFinite(sizeRaw) ? Math.min(100, Math.max(10, Math.trunc(sizeRaw))) : 10,
   }
   // Порядок по никнейму без включённого параметра недостижим: умолчание
   // (тот же сброс, что `Option.when` на клиенте и coercion домена).
-  if (values.nick !== '1' && values.ord.startsWith('nickname')) values.ord = 'created-desc'
+  if (!values.nick && values.ord.startsWith('nickname')) values.ord = 'created-desc'
 
   // Пронести всё, кроме самих фильтров и указателя порции (новый срез — сначала).
   const hiddenFields: { name: string; value: string }[] = []

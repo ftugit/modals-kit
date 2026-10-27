@@ -308,11 +308,13 @@ function authsAdapter() {
           all.push(...batch.map(mapRow))
           if (batch.length < 100) break
         }
-        // При включённом никнейме поиск совпадает и по нему (тот же проход,
-        // тот же срез — total честен для обоих полей сразу).
+        // Поиск совпадает по seed или по id, а при включённом никнейме —
+        // ещё и по нему (тот же проход, тот же срез — total честен для
+        // всех полей сразу).
         const matched = all.filter(
           (r) =>
             (r.seed ?? '').toLowerCase().includes(needle) ||
+            r.id.toLowerCase().includes(needle) ||
             (withNickname && (r.nickname ?? '').toLowerCase().includes(needle)),
         )
         return {

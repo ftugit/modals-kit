@@ -64,8 +64,9 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> 
     deletedFrom: dateMs(key('dfrom')),
     deletedTo: dateMs(key('dto')),
     // Параметр никнейма (этап 2): действует только с правом на профили —
-    // гейтит домен, роут лишь пропускает адресное значение.
-    nickname: key('nick') === '1',
+    // гейтит домен, роут лишь пропускает адресное значение. '1' пишет
+    // модальный путь пагинатора, 'on' — нативный чекбокс no-JS формы.
+    nickname: key('nick') === '1' || key('nick') === 'on',
   })
 
   return {
