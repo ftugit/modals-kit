@@ -90,6 +90,22 @@ export function disabledState(
 }
 
 /** Возвращает множество видимых полей формы. */
+/**
+ * Сброс значений, чья выбранная опция скрылась условием (`Option.when`):
+ * значение поля заменяется его умолчанием. Не отказ: устаревший или
+ * подделанный адрес — не вина человека, а зависимая опция обязана
+ * сброситься (контракт `Option.when`). Мутирует `values` на месте.
+ */
+export function coerceOptionGates(d: FormDescription, values: Record<string, unknown>): void {
+  for (const f of d.fields) {
+    if (!f.options?.some((o) => o.when)) continue
+    const v = values[f.name]
+    if (typeof v !== 'string' || v === '') continue
+    const chosen = f.options.find((o) => o.value === v)
+    if (chosen?.when && !isVisible(chosen.when, values)) values[f.name] = f.defaultValue ?? ''
+  }
+}
+
 export function visibleFields(d: FormDescription, values: Record<string, unknown>): Set<string> {
   const out = new Set<string>()
   for (const f of d.fields) if (isVisible(f.visibleWhen, values)) out.add(f.name)

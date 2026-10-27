@@ -11,7 +11,21 @@ import { safeObject, type FieldPath, type FormId, type InputMode, type Revision,
 import { constraintsOf, type ValidatorRef } from './validators'
 
 /** Один вариант выбора для select/radio-like поля. */
-export interface Option { value: string; label: string; disabled?: boolean }
+export interface Option {
+  value: string
+  label: string
+  disabled?: boolean
+  /**
+   * Условие доступности варианта от значений формы (тот же `FieldCondition`,
+   * что у `visibleWhen` полей): вариант показывается и может быть значением,
+   * только пока условие выполнено. Семантика сброса — часть контракта:
+   * скрытая условием опция не может оставаться значением поля, значение
+   * сбрасывается на умолчание поля (клиент — сразу при изменении условия,
+   * сервер — coercion в конвейере отправки, не отказ). Так любой фильтр
+   * гейтит свои опции соседним параметром без перерождения формы.
+   */
+  when?: FieldCondition
+}
 
 /**
  * Декларативное условие на значения формы — данные, поэтому сервер считает его

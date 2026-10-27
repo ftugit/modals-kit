@@ -16,7 +16,7 @@ import { blockingOpErrors, opError, opPin, type OpErrorInput } from '../takeover
 import { FormStore, initialState, type FormState } from '../state'
 import { defaultValueMap } from '../defaults'
 import { evaluate, runSubmit, SubmitMachine, type EvaluateOptions, type Transport } from '../submit'
-import { disabledState } from '../validate'
+import { disabledState, isVisible } from '../validate'
 import type { HtmlAttrs } from '../types'
 import type { BoundConfig, LiveMode } from './config'
 import { DEV } from 'esm-env'
@@ -259,6 +259,21 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     if (!o.url) return
     hydrated = true
     return () => { hydrated = false }
+  })
+
+  // Сброс зависимых значений (`Option.when`): выбранная опция скрылась
+  // условием — значение уходит на умолчание поля в том же изменении, которым
+  // условие выключили. Скрытая опция не может оставаться значением.
+  $effect(() => {
+    const values = snapshot.values
+    for (const f of desc.fields) {
+      if (!f.options?.some((op) => op.when)) continue
+      const v = values[f.name]
+      if (typeof v !== 'string' || v === '') continue
+      const chosen = f.options.find((op) => op.value === v)
+      if (chosen?.when && !isVisible(chosen.when, values))
+        store.set((st) => ({ ...st, values: { ...st.values, [f.name]: f.defaultValue ?? '' } }))
+    }
   })
 
   // Размонтирование: отправка в полёте и проверки (таймеры дебаунса, запросы)
@@ -710,7 +725,12 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     const view: FieldView = {
       name: f.name, input: f.input, kind: f.kind,
       attrs, skipped: base.skipped,
-      label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant, options: f.options,
+      label: f.label, help: f.help, placeholder: f.placeholder, variant: f.variant,
+      // Опции с условием (`Option.when`) видны только при выполненном условии
+      // по текущим значениям — как видимость самих полей.
+      options: f.options
+        ?.filter((op) => !op.when || isVisible(op.when, snapshot.values))
+        .map((op) => ({ value: op.value, label: op.label, ...(op.disabled ? { disabled: true } : {}) })),
       ...(f.multiple ? { multiple: true } : {}),
       errors, value, has,
       ...(f.defaultValue !== undefined ? { defaultValue: f.defaultValue } : {}),

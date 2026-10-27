@@ -3,7 +3,7 @@ import { decode, stripSecret, type EntrySource } from './decode'
 import type { FormDescription } from './describe'
 import { buildEnvelope, verifyEnvelope, type Envelope } from './envelope'
 import { normalizeErrors, stableId, type FormError, type RenderMessage, type Result } from './result'
-import { validateForm, type ValidateOptions } from './validate'
+import { coerceOptionGates, validateForm, type ValidateOptions } from './validate'
 import type { Revision } from './types'
 
 /** Настройки evaluate. */
@@ -66,6 +66,9 @@ export function evaluate(form: EntrySource, d: FormDescription, o: EvaluateOptio
   const { action } = d.policy.intent.parse(intent)
   const descriptor = d.actions.find((a) => a.id === action) ?? d.actions[0]!
   const { values, structural } = decode(form, d)
+  // Зависимые опции (`Option.when`): сброс на умолчание до prepare/валидации —
+  // дальше конвейер видит только достижимые значения.
+  coerceOptionGates(d, values)
   const notes = o.prepare?.(values)
 
   const errors = descriptor.validate === 'none' ? [] : validateForm(d, values, {
