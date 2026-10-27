@@ -14,10 +14,13 @@
   // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
   const name = untrack(() => nameProp)
   const pagState = usePaginatorState(name)
+  // «Конец» имеет смысл только после хотя бы одной догрузки: выдача, целиком
+  // уместившаяся в первую порцию (loadedPages — одна страница), строки не
+  // показывает — конца пользователь ещё не «достигал» прокруткой.
   const isEnd = $derived(
     pagState().status === 'idle' &&
       pagState().hasNext === false &&
-      pagState().loadedPages.length > 0
+      pagState().loadedPages.length > 1
   )
 </script>
 
