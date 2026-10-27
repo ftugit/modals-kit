@@ -30,6 +30,13 @@ function optional<T>(check: Check<T>): StandardSchemaV1<string | undefined, T | 
 
 const text = optional((value) => ({ value }))
 
+/** Флаг: `1`/`true`/`yes` (любой регистр) → `true`; всё прочее — ошибка запуска с именем переменной. */
+const flag = optional((value) =>
+  ['1', 'true', 'yes'].includes(value.toLowerCase())
+    ? { value: true }
+    : { message: `ожидался флаг 1/true/yes, получено «${value}»` },
+)
+
 /** Секрет, который подбирают перебором: короче 32 символов — отказ запуска. */
 const secret = optional((value) =>
   value.length >= 32 ? { value } : { message: `нужно не короче 32 символов, задано ${value.length}` },
@@ -78,6 +85,13 @@ export const variables = defineEnvVars({
   DATABASE_DIR: {
     schema: text,
     description: 'Каталог файловых данных PGlite. Без него PGlite работает в памяти.',
+  },
+  DATABASE_RESET: {
+    schema: flag,
+    description:
+      'Очистка базы из DATABASE_URL при первом открытии после старта процесса: схема public сносится целиком ' +
+      'и разворачивается заново из моделей и сидов (для демо на время разработки). Без DATABASE_URL игнорируется. ' +
+      'ВНИМАНИЕ: уничтожает все данные указанной базы.',
   },
   DB_POOL_MAX: {
     schema: positiveInteger,
