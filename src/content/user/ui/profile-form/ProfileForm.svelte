@@ -28,6 +28,8 @@
    */
   import { untrack } from 'svelte'
   import { Form, formTask } from '#lib/form/svelte/index.js'
+  import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import { invalidateProfileReads } from '../../profile-reads.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import type { Result } from '#lib/form/index.js'
   import { forms } from '#components/form/forms.config.js'
@@ -115,6 +117,8 @@
       : [],
   )
 
+  const modalsCtx = tryUseModals()
+
   let lastHandledSubmission = ''
   $effect(() => {
     const r = bound.state.result
@@ -123,6 +127,15 @@
     if (data?.step === 'done') {
       lastHandledSubmission = r.submissionId
       if (data.user) vault.hydrate(data.user)
+      // Запись профиля видна из кешей чтения (модалка профиля, список,
+      // маршрутные load, ячейка пагинатора): сами они о мутации не узнают
+      // и до перезагрузки страницы показывали бы «профиль не создан».
+      const nickname = String(bound.f.nickname.value ?? '').trim()
+      invalidateProfileReads({
+        modals: modalsCtx?.modals ?? null,
+        subjectId: subject ?? vault.principal,
+        nickname: nickname === '' ? undefined : nickname,
+      })
       onDone?.()
     }
   })
