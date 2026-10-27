@@ -1742,6 +1742,69 @@ try {
     await page.close()
   })
 
+  // Ход 152: уход оболочки под лист Select и возврат обязаны быть одной
+  // непрерывной траекторией. `transform-origin` нельзя переключать мгновенно,
+  // пока scale ещё не вернулся к 1: в исходной точке оболочка за один кадр
+  // прыгала на 19 px, из-за чего анимация выглядела как потеря размера/радиуса.
+  await run('R-46 оболочка под листом Select не прыгает при смене transform-origin', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    })
+    await gotoBase(page)
+    await page.locator('text=Select внутри модалки').first().click()
+    await page.locator('[data-modal-stage]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(500)
+
+    const transitionProperty = await page.locator('[data-modal-popup]').evaluate((el) =>
+      getComputedStyle(el).transitionProperty,
+    )
+    assert(transitionProperty.includes('transform-origin'),
+      `transform-origin не участвует в переходе оболочки: ${transitionProperty}`)
+
+    const sampleTransition = async (act) => {
+      await page.evaluate(() => {
+        window.__popupOriginSamples = []
+        const startedAt = performance.now()
+        const tick = () => {
+          const popup = document.querySelector('[data-modal-popup]')
+          const rect = popup?.getBoundingClientRect()
+          window.__popupOriginSamples.push({
+            role: popup?.getAttribute('data-stack-role') ?? null,
+            y: rect ? Math.round(rect.y * 10) / 10 : null,
+          })
+          if (performance.now() - startedAt < 800) requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })
+      await act()
+      await page.waitForTimeout(850)
+      const samples = await page.evaluate(() => window.__popupOriginSamples)
+      let maxJump = 0
+      for (let i = 1; i < samples.length; i += 1) {
+        if (samples[i].y !== null && samples[i - 1].y !== null) {
+          maxJump = Math.max(maxJump, Math.abs(samples[i].y - samples[i - 1].y))
+        }
+      }
+      return maxJump
+    }
+
+    const select = page.locator('[data-modal-popup] select').first()
+    const openJump = await sampleTransition(async () => {
+      await select.tap()
+      await page.waitForSelector('[data-host-floating][data-layout="sheet"]')
+    })
+    assert(openJump <= 8, `оболочка прыгнула на ${openJump.toFixed(1)} px за один кадр ухода под лист`)
+    ok(`уход оболочки под лист непрерывен (максимум ${openJump.toFixed(1)} px/кадр)`)
+
+    const closeJump = await sampleTransition(async () => {
+      await page.keyboard.press('Escape')
+      await page.locator('[data-host-floating]').waitFor({ state: 'detached' })
+    })
+    assert(closeJump <= 8, `оболочка прыгнула на ${closeJump.toFixed(1)} px за один кадр возврата из-под листа`)
+    ok(`возврат оболочки из-под листа непрерывен (максимум ${closeJump.toFixed(1)} px/кадр)`)
+    await page.close()
+  })
+
   console.log(`\n✅ regressions: ${passed} проверок пройдено`)
 } catch (error) {
   console.error('\n❌ ' + error.message)
