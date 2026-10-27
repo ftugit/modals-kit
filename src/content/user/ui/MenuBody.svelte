@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
    * Тело меню пользователя — один и тот же компонент для модалки `user.menu`
-   * и страницы `/user/menu`: аватар, ник, переход к шагу редактирования
+   * и страницы `/user/menu`: аватар, ник, чтение своего профиля (модалка
+   * `user.profile` / роут `/user/<id>`), переход к шагу редактирования
    * профиля (`stage=profile`) и выход.
    *
    * Читает исключительно единый реактивный `vault`; защищён `<Acl allow="user">`.
@@ -15,6 +16,7 @@
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { seedForm } from './seed-form/form.js'
+  import { specProfile } from '../spec-profile.js'
   import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
 
@@ -44,6 +46,10 @@
   const initial = $derived((nickname ?? '?').slice(0, 1).toUpperCase())
   const profileLink = $derived(
     asModalLink('user.auth', { stage: 'profile' }),
+  )
+  // Чтение своего профиля: модалка `user.profile`, без JS — роут `/user/<id>`.
+  const profileViewLink = $derived(
+    vault.principal ? asModalLink('user.profile', { id: vault.principal }) : null,
   )
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках
@@ -79,8 +85,11 @@
           {initial}
         {/if}
       </span>
-      <span class="min-w-0 flex-1 truncate text-sm font-medium">{nickname ?? 'Без никнейма'}</span>
+      <span class="min-w-0 flex-1 truncate text-sm font-medium">{nickname ?? specProfile.nicknameMissing}</span>
     </div>
+    {#if profileViewLink}
+      <Button {...profileViewLink} variant="outline" class="w-full">Профиль</Button>
+    {/if}
     <Button {...profileLink} variant="outline" class="w-full">Изменить профиль</Button>
     <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()}>
       <Button

@@ -41,7 +41,7 @@ import { profile as coreProfile, updateProfile as coreUpdateProfile } from './pr
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { Challenge, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { Challenge, ProfileRead, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -474,7 +474,7 @@ export function auth(event: AuthEvent): {
   listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
   revokeSession(jti: string): Promise<UserResult<null>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
-  profile(subject?: string): Promise<UserResult<ProfileView | null>>
+  profile(subject?: string): Promise<UserResult<ProfileRead>>
   /** Сохранить свой профиль; `subject` — чужой (нужно право `profile.edit`/`admin`). */
   updateProfile(
     args: { nickname?: string; avatarUrl?: string | null },

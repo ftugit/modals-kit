@@ -28,7 +28,8 @@ export const load: PageServerLoad = async (event): Promise<ProfileScreenData> =>
 
   return {
     uid: event.params.id,
-    profile: r.ok ? r.value : null,
+    profile: r.ok ? r.value.profile : null,
+    notCreated: r.ok ? r.value.notCreated : false,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     limits: { nicknameForbidden: await config.get('nicknameForbidden') },

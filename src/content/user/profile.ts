@@ -5,21 +5,36 @@
  */
 import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import type { AuthPorts } from './ports.js'
-import type { ProfileView } from './types.js'
+import type { ProfileRead, ProfileView } from './types.js'
 
-/** Свой профиль: есть строка — её значения; `null` — аноним (нулевые дефолты). */
+/**
+ * Права чтения профиля — тот же список, что политика модели
+ * (`ownerOrRoles('auth_id', …)` в `schema.ts`) и флаг `canSeeNickname`
+ * списка. Домен сверяется с ним, чтобы различить «профиля нет» и «нельзя»:
+ * сама модель этих случаев не различает.
+ */
+const PROFILE_READ_ROLES = ['admin', 'profile.read', 'profile.edit'] as const
+
+/**
+ * Профиль для чтения: есть строка — её значения. Строки нет: владелец и
+ * держатели прав чтения получают `notCreated` (экран-заглушка «профиль не
+ * создан»), остальные — `profile: null` без флага (экран отказа: снаружи
+ * «нет строки» и «не видна» по-прежнему неразличимы).
+ */
 export async function profile(
   ports: AuthPorts,
   accessToken: string | undefined,
   subject?: string,
-): Promise<UserResult<ProfileView | null>> {
+): Promise<UserResult<ProfileRead>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
   // `subject` — чужой профиль: видимость решает модель (`ownerOrRoles`), а не эта функция
   const target = subject?.trim() || g.sub
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
-  if (!row) return ok(null)
-  return ok(row)
+  if (row) return ok({ profile: row, notCreated: false })
+  const canRead =
+    target === g.sub || PROFILE_READ_ROLES.some((role) => g.perms.includes(role))
+  return ok({ profile: null, notCreated: canRead })
 }
 
 /**

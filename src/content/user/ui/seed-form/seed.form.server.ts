@@ -40,7 +40,7 @@ registerComponentForm({
         }
       }
       const prof = await u.profile()
-      if (!prof.ok || prof.value === null) {
+      if (!prof.ok || prof.value.profile === null) {
         commit()
         return { data: { step: 'profile', user } }
       }

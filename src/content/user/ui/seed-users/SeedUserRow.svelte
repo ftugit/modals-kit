@@ -1,6 +1,8 @@
 <script lang="ts">
   /**
-   * Строка списка seed-юзеров — только просмотр: действий у строки нет.
+   * Строка списка seed-юзеров — вся карточка является ссылкой на профиль
+   * (этап 4): с JS открывается модалка `user.profile`, без JS — роут
+   * `/user/<id>`; доступ к чужому профилю решает домен/модель, а не строка.
    * Показывает ровно поля проекции, которую отдала DB после ACL
    * (`SeedUserView`): seed, права, блокировки, времена.
    *
@@ -9,7 +11,9 @@
    * внутри своего блока (`overflow-x-auto`): значение целиком доступно
    * скроллом блока и в `title`.
    */
-  import { TimeAgo } from '#components/ui/index.js'
+  import { Button, TimeAgo } from '#components/ui/index.js'
+  import { useModalLink } from '#hooks/links/index.js'
+  import { specProfile } from '../../spec-profile.js'
   import type { SeedUserView } from '../../types.js'
 
   interface Props {
@@ -18,6 +22,8 @@
 
   let { item }: Props = $props()
 
+  const asModalLink = useModalLink()
+
   const grants = $derived(item.permissions.length ? item.permissions.join(', ') : 'без прав')
   const blocks = $derived(item.blocked.map((b) => b.scope).join(', '))
 
@@ -25,10 +31,19 @@
   const cell = 'min-w-0 flex-1 basis-0 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]'
 </script>
 
-<div
-  class="flex w-full items-baseline gap-3 px-2 py-2"
+<!-- Вся карточка — ссылка на профиль. Именно `Button`, а не голая `<a>`:
+     примитив держит `aria-disabled` живой ссылки реактивно (у голого
+     spread на `<a>` первый клиентский рендер до готовности роутера
+     оставляет застарелый `aria-disabled`). -->
+<Button
+  {...asModalLink('user.profile', { id: item.id })}
+  variant="plain"
+  size="none"
+  class="flex w-full items-baseline justify-start gap-3 rounded-md px-2 py-2 text-left font-normal hover:bg-accent focus-visible:bg-accent"
   data-testid="seed-user-row"
   data-id={item.id}
+  title="Открыть профиль"
+  aria-label="Открыть профиль пользователя"
 >
   {#if item.seed}
     <code class="{cell} text-sm" title={item.seed} data-testid="seed-user-cell">{item.seed}</code>
@@ -37,13 +52,14 @@
   {/if}
   {#if item.nickname !== undefined}
     <!-- Столбец никнейма (этап 2): поле есть в выдаче только при включённом
-         параметре и правах; нет ника/профиля — литеральный NULL. -->
+         параметре и правах; нет ника/профиля — заглушка единой спеки
+         профиля (`specProfile`, этапы 3+4). -->
     <span
       class="{cell} text-xs text-muted-foreground"
       title={item.nickname ?? undefined}
       data-testid="seed-user-nickname"
     >
-      {item.nickname ?? 'NULL'}
+      {item.nickname ?? specProfile.nicknameMissing}
     </span>
   {/if}
   <span class="{cell} text-xs text-muted-foreground" title={grants} data-testid="seed-user-cell">{grants}</span>
@@ -57,4 +73,4 @@
     <TimeAgo value={item.createdAt} />
   </span>
   <code class="{cell} text-xs text-muted-foreground" title={item.id} data-testid="seed-user-cell">{item.id.slice(0, 8)}</code>
-</div>
+</Button>

@@ -351,7 +351,7 @@ describe('фаервол: продление и статусы', () => {
     const r = await profile(ports, expired)
     expect(r.ok === false && r.fact.code === 'auth.expired').toBe(true)
     // живой access работает
-    expect(ok_(await profile(ports, out.access))).toBeNull() // аноним
+    expect(ok_(await profile(ports, out.access)).profile).toBeNull() // аноним
     void seed
     void sk
   })
@@ -410,13 +410,36 @@ describe('профиль', () => {
     const { ports, secret } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
-    expect(ok_(await profile(ports, out.access))).toBeNull()
+    expect(ok_(await profile(ports, out.access)).profile).toBeNull()
     const saved = ok_(await updateProfile(ports, out.access, { nickname: '  Вася  ' }))
     expect(saved.nickname).toBe('Вася')
     // обновили — новый access несёт витрину
     const renewed = ok_(await renew(ports, { renewal: out.renewal as string }))
     const payload = JSON.parse(Buffer.from(renewed.access, 'base64url').toString()) as { prof: { nickname: string | null } }
     expect(payload.prof.nickname).toBe('Вася')
+  })
+
+  test('чтение: «не создан» отличает владелец и права чтения, чужой без прав — нет', async () => {
+    const { ports, secret, auths } = makePorts()
+    const a = await generateKeyPair()
+    const b = await generateKeyPair()
+    const outA = ok_(await doLogin(ports, a.seed, a.secret))
+    const outB = ok_(await doLogin(ports, b.seed, b.secret))
+    const subA = (JSON.parse(Buffer.from(outA.access, 'base64url').toString()) as { sub: string }).sub
+    const subB = (JSON.parse(Buffer.from(outB.access, 'base64url').toString()) as { sub: string }).sub
+    // свой профиль не создан: владелец видит именно отсутствие
+    expect(ok_(await profile(ports, outA.access))).toEqual({ profile: null, notCreated: true })
+    // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({ profile: null, notCreated: false })
+    // держатель profile.read различает: профиля у A нет
+    const rowB = auths.get(subB) as AuthRow
+    auths.set(subB, { ...rowB, permissions: ['profile.read'] })
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({ profile: null, notCreated: true })
+    // созданный профиль читается владельцем как найденный
+    ok_(await updateProfile(ports, outA.access, { nickname: 'Вася' }))
+    const found = ok_(await profile(ports, outA.access))
+    expect(found.notCreated).toBe(false)
+    expect(found.profile?.nickname).toBe('Вася')
   })
 
   test('запрещённый никнейм — доменный факт; картинку домен не разбирает', async () => {
@@ -438,7 +461,7 @@ describe('профиль', () => {
     const blob = await getEncoder('image/jpeg').encode({ width: 200, height: 200, data: frameData }, { quality: 0.8 })
     const jpeg = `data:image/jpeg;base64,${Buffer.from(await blob.arrayBuffer()).toString('base64')}`
     ok_(await updateProfile(ports, out.access, { avatarUrl: jpeg }))
-    expect(ok_(await profile(ports, out.access))?.avatarUrl).toBe(jpeg)
+    expect(ok_(await profile(ports, out.access)).profile?.avatarUrl).toBe(jpeg)
     // снять аватар
     const cleared = ok_(await updateProfile(ports, out.access, { avatarUrl: null }))
     expect(cleared.avatarUrl).toBeNull()
@@ -472,7 +495,7 @@ describe('удаление аккаунта', () => {
     const restored = ok_(await doRestore(ports, seed, sk))
     const restoredPayload = JSON.parse(Buffer.from(restored.access, 'base64url').toString()) as { sub: string }
     expect(restoredPayload.sub).toBe(payload.sub)
-    expect(ok_(await profile(ports, restored.access))?.nickname).toBe('Вася')
+    expect(ok_(await profile(ports, restored.access)).profile?.nickname).toBe('Вася')
     // исполнитель: грейс не вышел — никого; вышел — seed стёрт, профиль удалён
     expect(ok_(await sweepDeletions(ports))).toBe(0)
     const row = (await ports.auths.get(payload.sub)) as AuthRow

@@ -118,6 +118,17 @@ export type ProfileView = {
   updatedAt: number
 }
 
+/** Итог чтения профиля доменом: строка (если видна) и признак «не создан». */
+export type ProfileRead = {
+  profile: ProfileView | null
+  /**
+   * Строки нет, но вызывающий вправе её видеть (владелец или права чтения):
+   * экран покажет заглушку «профиль не создан», а не отказ. Без прав
+   * `profile === null` и `notCreated === false` — снаружи это отказ.
+   */
+  notCreated: boolean
+}
+
 /**
  * Данные экрана профиля: ровно то, что отдаёт `load` маршрута `/user/[id]`.
  * Одна форма на два носителя — страницу и модалку `user.profile`: модалка
@@ -132,6 +143,8 @@ export type ProfileScreenData = {
   /** id аккаунта из адреса. */
   uid: string
   profile: ProfileView | null
+  /** Профиля нет, но смотреть можно: заглушка «не создан» вместо отказа. */
+  notCreated: boolean
   fact: AuthErrorCode | null
   /** Вход включён на сервере (иначе форма скрыта). */
   enabled: boolean
