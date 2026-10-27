@@ -30,9 +30,9 @@ import { AUTH_MESSAGES } from '../../messages.js'
 import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from '../../types.js'
 
 export const SEED_USERS_NAME = 'seed-users'
-export const SEED_USERS_PAGE_SIZE = 10
-/** Допустимые размеры порции из формы фильтров и адреса: целое 10..100. */
-export const SEED_USERS_PAGE_SIZES: readonly number[] = Array.from({ length: 91 }, (_, i) => i + 10)
+export const SEED_USERS_PAGE_SIZE = 30
+/** Допустимые размеры порции из формы фильтров и адреса: целое 30..100. */
+export const SEED_USERS_PAGE_SIZES: readonly number[] = Array.from({ length: 71 }, (_, i) => i + 30)
 export const SEED_USERS_PAGE_PARAM = 'users'
 
 /**

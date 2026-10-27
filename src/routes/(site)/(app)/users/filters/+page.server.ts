@@ -42,7 +42,7 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
   const fromSp = fromUrl.searchParams
 
   const val = (k: string) => sp.get(k) ?? fromSp.get(k) ?? ''
-  // Размер порции — поле формы (10..100), а не чужое состояние: из скрытых
+  // Размер порции — поле формы (30..100), а не чужое состояние: из скрытых
   // полей он исключён списком FILTER_KEYS выше и в resetHref не попадает.
   const sizeRaw = Number(val('users.size'))
   const values = {
@@ -54,7 +54,7 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
     dto: val('users.dto'),
     // Чекбокс: '1' — адрес модального пути, 'on' — нативная посылка формы.
     nick: val('users.nick') === '1' || val('users.nick') === 'on',
-    size: Number.isFinite(sizeRaw) ? Math.min(100, Math.max(10, Math.trunc(sizeRaw))) : 10,
+    size: Number.isFinite(sizeRaw) ? Math.min(100, Math.max(30, Math.trunc(sizeRaw))) : 30,
   }
   // Порядок по никнейму без включённого параметра недостижим: умолчание
   // (тот же сброс, что `Option.when` на клиенте и coercion домена).

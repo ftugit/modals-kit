@@ -31,7 +31,7 @@
     dto: string
     /** Параметр никнейма: чекбокс, включён — true. */
     nick: boolean
-    /** Размер порции списка: целое 10..100. */
+    /** Размер порции списка: целое 30..100. */
     size: number
   }
 
@@ -82,11 +82,11 @@
         : {}),
       // Размер порции — не extra среза, а состояние пагинатора: модальный
       // путь применит его `setPageSize`, нативный GET унесёт `users.size`
-      // в адрес списка, где его разберут роут и URL-адаптер (10..100).
+      // в адрес списка, где его разберут роут и URL-адаптер (30..100).
       'users.size': field.number({
         label: 'Элементов на страницу',
-        defaultValue: init.size || 10,
-        validate: [v.required(), v.integer(), v.minValue(10), v.maxValue(100)],
+        defaultValue: init.size || 30,
+        validate: [v.required(), v.integer(), v.minValue(30), v.maxValue(100)],
       }),
       'users.ord': field.select({
         label: 'Порядок',
@@ -145,9 +145,9 @@
     }
     const sizeRaw = vals['users.size']
     const pageSize = typeof sizeRaw === 'number' ? sizeRaw : Number(sizeRaw)
-    if (!Number.isInteger(pageSize) || pageSize < 10 || pageSize > 100) {
+    if (!Number.isInteger(pageSize) || pageSize < 30 || pageSize > 100) {
       e.preventDefault()
-      rangeError = 'Элементов на страницу — целое число от 10 до 100'
+      rangeError = 'Элементов на страницу — целое число от 30 до 100'
       return
     }
     rangeError = ''

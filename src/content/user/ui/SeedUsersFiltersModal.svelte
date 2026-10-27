@@ -13,7 +13,7 @@
   import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useLoader, useModals } from '#lib/modals/svelte/index.js'
-  import { SEED_USERS_NAME } from './seed-users/source.js'
+  import { SEED_USERS_NAME, SEED_USERS_PAGE_SIZE } from './seed-users/source.js'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
 
   const m = useModals()
@@ -58,7 +58,7 @@
       dto: undefined,
       nick: undefined,
     })
-    await setPageSize(getClientStore(), SEED_USERS_NAME, 10)
+    await setPageSize(getClientStore(), SEED_USERS_NAME, SEED_USERS_PAGE_SIZE)
     m.modals.close()
   }
 </script>

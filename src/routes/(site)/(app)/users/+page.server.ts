@@ -48,7 +48,8 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> 
   const key = (k: string) => sp.get(`${SEED_USERS_PAGE_PARAM}.${k}`)
 
   const page = num(sp.get(SEED_USERS_PAGE_PARAM), 1, 1, 10_000)
-  const pageSize = num(key('size'), SEED_USERS_PAGE_SIZE, 1, 50)
+  // Размер порции из адреса: пользовательский диапазон 30..100.
+  const pageSize = num(key('size'), SEED_USERS_PAGE_SIZE, 30, 100)
   const ord = key('ord')
   const state = key('state')
 

@@ -9,6 +9,8 @@ import {
   SEED_USERS_EXTRA_SEARCH,
   SEED_USERS_FILTER_KEYS,
   SEED_USERS_NAME,
+  SEED_USERS_PAGE_SIZE,
+  SEED_USERS_PAGE_SIZES,
   seedUsersSnapshot,
 } from './source.js'
 import type { SeedUserView } from '../../types.js'
@@ -55,6 +57,14 @@ describe('список seed-юзеров: снапшот и регистраци
       searchSpec?: { extra?: ExtraSearchSpec }
     }
     expect(adapter.searchSpec?.extra).toBe(SEED_USERS_EXTRA_SEARCH)
+  })
+
+  test('размер порции: умолчание и допустимый диапазон — 30..100', () => {
+    expect(SEED_USERS_PAGE_SIZE).toBe(30)
+    expect(SEED_USERS_PAGE_SIZES[0]).toBe(30)
+    expect(SEED_USERS_PAGE_SIZES.at(-1)).toBe(100)
+    expect(SEED_USERS_PAGE_SIZES).not.toContain(29)
+    expect(SEED_USERS_PAGE_SIZES).toContain(30)
   })
 
   test('валидаторы адреса: форма пропускает, мусор отбрасывает', () => {
