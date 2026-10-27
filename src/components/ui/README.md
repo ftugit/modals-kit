@@ -6,7 +6,7 @@
 
 ## 1. Единственный источник истины для стилей (`*Variants` и `field.ts`)
 
-1. **Одиночный примитив (`Button`, `Badge`, `Alert`, `Card`, `Checkbox`, `Switch`, `Label`, `Spinner`, `Skeleton`, `Separator`, `Stat`):**
+1. **Одиночный примитив (`Button`, `Badge`, `Alert`, `Card`, `Checkbox`, `Switch`, `Label`, `Spinner`, `Skeleton`, `Separator`, `Stat`, `TimeAgo`):**
    - `export const <name>Variants = variants(...)` объявляется в `<script module lang="ts">` самого `.svelte`-файла и реэкспортируется из `src/components/ui/index.ts`.
 2. **Многофайловый примитив (`attachment/`):**
    - при наличии собственной модели (`model.ts`), подкомпонентов и тестов CVA-варианты выносятся в `variants.ts` внутри папки примитива и реэкспортируются через локальный `index.ts` → `ui/index.ts`.
@@ -18,6 +18,7 @@
 4. **Цвета и скелетоны:**
    - скелетоны модулей (`paginator`, `modals`) строятся тонкими обёртками поверх `ui/skeleton/Skeleton.svelte`;
    - статусные шкалы (`PasswordStrength`, `Alert`, `Badge`) используют только CSS-переменные темы (`--destructive`, `--warning`, `--success`), чтобы сохранять контраст и в светлой (`lemonade`), и в тёмной (`night`) темах.
+5. **Время (`ui/time/`):** `TimeAgo` показывает относительный формат («N минут/дней назад», предел — месяц, дальше абсолютная дата) поверх чистой функции `formatTimeAgo`; часовой пояс всего сайта — единственная точка доступа `siteTimeZone` / `setSiteTimeZone` (`time-zone.svelte.ts`), значение пока не задаётся — работает системный пояс.
 
 ---
 
