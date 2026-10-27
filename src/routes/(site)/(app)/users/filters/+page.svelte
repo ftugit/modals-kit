@@ -25,6 +25,7 @@
       </p>
       <SeedUsersFiltersForm
         canSeeDeleted={data.canSeeDeleted}
+        canSeeNickname={data.canSeeNickname}
         initial={data.values}
         action={data.action}
         hiddenFields={data.hiddenFields}

@@ -254,6 +254,7 @@ function authsAdapter() {
         order,
         includeDeleted = false,
         searchSeed,
+        withNickname = false,
       }: {
         page: number
         pageSize: number
@@ -261,6 +262,7 @@ function authsAdapter() {
         order?: Order
         includeDeleted?: boolean
         searchSeed?: string
+        withNickname?: boolean
       },
     ) {
       // Контекст — вызывающий (не SYSTEM): какие строки и поля увидит список,
@@ -271,6 +273,9 @@ function authsAdapter() {
         ...(filter ? { filter } : {}),
         includeDeleted,
       }
+      // Никнейм — include по связи модели (профиль по уникальному auth_id):
+      // один запрос, политика профиля применена слоем внутри join.
+      const withProfile = withNickname ? { include: ['profile'] } : {}
       const mapRow = (r: Record<string, unknown>): SeedAccountRow => ({
         id: String(r.id),
         seed: (r.seed as string | null) ?? null,
@@ -278,6 +283,12 @@ function authsAdapter() {
         blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
         createdAt: ms(r.created_at) ?? Date.now(),
         deletedAt: ms(r.deleted_at),
+        ...(withNickname
+          ? {
+              nickname:
+                ((r.profile as { nickname?: unknown } | null)?.nickname as string | null | undefined) ?? null,
+            }
+          : {}),
       })
       if (searchSeed) {
         // Подстрока seed: DB-фильтром её не выразить (схема поля — 43–44
@@ -292,18 +303,25 @@ function authsAdapter() {
             limit: 100,
             ...(order ? { order } : {}),
             ...slice,
+            ...withProfile,
           })) as unknown as Record<string, unknown>[]
           all.push(...batch.map(mapRow))
           if (batch.length < 100) break
         }
-        const matched = all.filter((r) => (r.seed ?? '').toLowerCase().includes(needle))
+        // При включённом никнейме поиск совпадает и по нему (тот же проход,
+        // тот же срез — total честен для обоих полей сразу).
+        const matched = all.filter(
+          (r) =>
+            (r.seed ?? '').toLowerCase().includes(needle) ||
+            (withNickname && (r.nickname ?? '').toLowerCase().includes(needle)),
+        )
         return {
           rows: matched.slice((page - 1) * pageSize, page * pageSize),
           total: matched.length,
         }
       }
       const [rows, total] = await Promise.all([
-        api().select(ctx, { page, limit: pageSize, ...(order ? { order } : {}), ...slice }),
+        api().select(ctx, { page, limit: pageSize, ...(order ? { order } : {}), ...slice, ...withProfile }),
         api().count(ctx, slice),
       ])
       return {

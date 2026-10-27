@@ -51,6 +51,12 @@ export interface ListSeedUsersArgs {
   /** Диапазон удаления, мс epoch; только с правом на удалённые. */
   deletedFrom?: number | null
   deletedTo?: number | null
+  /**
+   * Параметр никнейма из фильтров: столбец, поиск и сортировка по
+   * никнейму. Действует только с правом читать профили (`canSeeNickname`);
+   * без права или при выключенном параметре домен его игнорирует.
+   */
+  nickname?: boolean
 }
 
 const ORDER_OF: Record<SeedUsersOrder, Order> = {
@@ -60,6 +66,10 @@ const ORDER_OF: Record<SeedUsersOrder, Order> = {
   'deleted-asc': [['deleted_at', 'asc']],
   'id-asc': [['id', 'asc']],
   'id-desc': [['id', 'desc']],
+  // Путь по связи модели: слой сам подтянет join профиля и отсортирует по
+  // payload (NULL — последним, конвенция слоя).
+  'nickname-asc': [['profile.nickname', 'asc']],
+  'nickname-desc': [['profile.nickname', 'desc']],
 }
 
 const ms = (v: number | null | undefined): number | null =>
@@ -87,6 +97,12 @@ export async function listSeedUsers(
   // Удалённые видны тем же правам, что держат `readDeleted` схемы; UI узнаёт
   // об этом флагом в выдаче, а не списком прав.
   const canSeeDeleted = g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')
+  // Никнеймы — политика чтения профиля (модель): admin или держатели
+  // profile.read/profile.edit. Параметр из фильтров действует только при
+  // этом праве; UI узнаёт о праве флагом, а не списком прав.
+  const canSeeNickname =
+    g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.read') || g.perms.includes('profile.edit')
+  const withNickname = canSeeNickname && args.nickname === true
 
   const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
   const pageSize = Math.min(
@@ -96,7 +112,11 @@ export async function listSeedUsers(
 
   const state: SeedUsersState = canSeeDeleted ? (args.state ?? 'active') : 'active'
   const orderName: SeedUsersOrder =
-    args.order && (canSeeDeleted || !args.order.startsWith('deleted')) ? args.order : 'created-desc'
+    args.order &&
+    (canSeeDeleted || !args.order.startsWith('deleted')) &&
+    (withNickname || !args.order.startsWith('nickname'))
+      ? args.order
+      : 'created-desc'
 
   const nodes: Filter[] = []
   const q = (args.search ?? '').trim()
@@ -135,7 +155,15 @@ export async function listSeedUsers(
       order: ORDER_OF[orderName],
       includeDeleted: state !== 'active',
       ...(q ? { searchSeed: q } : {}),
+      ...(withNickname ? { withNickname: true } : {}),
     },
   )
-  return ok({ items: rows.map(viewOf), total, page, pageSize, canSeeDeleted })
+  return ok({
+    items: rows.map((r) => (withNickname ? { ...viewOf(r), nickname: r.nickname ?? null } : viewOf(r))),
+    total,
+    page,
+    pageSize,
+    canSeeDeleted,
+    canSeeNickname,
+  })
 }

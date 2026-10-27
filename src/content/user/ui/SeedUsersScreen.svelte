@@ -65,6 +65,9 @@
       return typeof v === 'string' && v !== '' && v !== fallback
     }).length,
   )
+  // Параметр никнейма включён текущим срезом (ключ `nick` адреса) — подпись
+  // поиска обещает и никнейм. Право и сам столбец решает сервер.
+  const nickOn = $derived(pagState().extra?.nick === '1')
   // «Всего» — из живого состояния пагинатора: снапшот `load` честен только
   // на первой порции, дальше срез (поиск/фильтры) меняет totals без SSR.
   const totalItems = $derived(pagState().totalItems ?? snapshot?.totalItems)
@@ -97,8 +100,8 @@
         <SearchBar
           name={SEED_USERS_NAME}
           {query}
-          label="Поиск по seed"
-          placeholder="Подстрока seed…"
+          label={nickOn ? 'Поиск по seed и никнейму' : 'Поиск по seed'}
+          placeholder={nickOn ? 'Подстрока seed или никнейма…' : 'Подстрока seed…'}
         />
       </div>
       <Button

@@ -24,6 +24,8 @@ export type SeedAccountRow = {
   blocked: Blocked[]
   createdAt: number
   deletedAt: number | null
+  /** Никнейм профиля, если адаптер его подтягивал (`withNickname`); `undefined` — не запрашивали. */
+  nickname?: string | null
 }
 import type { UserConfig } from './config.js'
 
@@ -92,6 +94,12 @@ export interface AuthStorePort {
        * применяет подстроку к выбранному срезу до нарезки порции.
        */
       searchSeed?: string
+      /**
+       * Подтянуть профиль каждой строки (include по связи модели) и дать
+       * никнейм в строке; поиск `searchSeed` тогда совпадает и по никнейму.
+       * Решает домен: только при правах на профили и включённом параметре.
+       */
+      withNickname?: boolean
     },
   ): Promise<{ rows: SeedAccountRow[]; total: number }>
 }

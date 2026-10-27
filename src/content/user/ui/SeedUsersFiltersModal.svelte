@@ -19,8 +19,9 @@
   const m = useModals()
   // Доступность блока удалённых посчитал домен в `load` страницы-fallback
   // (`/users/filters`): модалка читает её оттуда же, откуда страница.
-  const ldr = useLoader<{ canSeeDeleted: boolean }>()
+  const ldr = useLoader<{ canSeeDeleted: boolean; canSeeNickname: boolean }>()
   const canSeeDeleted = $derived(ldr.data?.canSeeDeleted === true)
+  const canSeeNickname = $derived(ldr.data?.canSeeNickname === true)
 
   const pagState = usePaginatorState(SEED_USERS_NAME)
   const initial: SeedUsersFilterValues = untrack(() => {
@@ -33,6 +34,7 @@
       cto: s('cto'),
       dfrom: s('dfrom'),
       dto: s('dto'),
+      nick: s('nick'),
     }
   })
 
@@ -49,6 +51,7 @@
       cto: undefined,
       dfrom: undefined,
       dto: undefined,
+      nick: undefined,
     })
     m.modals.close()
   }
@@ -56,5 +59,5 @@
 
 <div class="p-5">
   <h2 class="mb-4 text-base font-semibold">Фильтры списка</h2>
-  <SeedUsersFiltersForm {canSeeDeleted} {initial} onApply={apply} onReset={reset} />
+  <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
 </div>

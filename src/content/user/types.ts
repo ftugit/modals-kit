@@ -152,6 +152,13 @@ export type SeedUserView = {
   blocked: Blocked[]
   createdAt: number
   deletedAt: number | null
+  /**
+   * Никнейм из профиля — только когда параметр никнейма включён и у
+   * вызывающего есть право читать профили: без флага поля в выдаче нет
+   * вовсе (не `null`), чтобы никнеймы не утекали зрителю без прав.
+   * `null` при включённом параметре — ника нет или нет профиля.
+   */
+  nickname?: string | null
 }
 
 /** Одна порция списка seed-юзеров и её место в выдаче. */
@@ -162,13 +169,24 @@ export type SeedUsersPage = {
   pageSize: number
   /** Вызывающему видны удалённые строки (`readDeleted`): UI решает по этому флагу, а не по именам прав. */
   canSeeDeleted: boolean
+  /** Вызывающему доступны никнеймы (политика чтения профиля): параметр никнейма в фильтрах и столбец. */
+  canSeeNickname: boolean
 }
 
 /** Состояние удалённости в фильтре списка: действующие / все / только удалённые. */
 export type SeedUsersState = 'active' | 'all' | 'deleted'
 
 /** Порядок списка: поле и направление (`deleted` — по дате удаления, только с `canSeeDeleted`). */
-export type SeedUsersOrder = 'created-desc' | 'created-asc' | 'deleted-desc' | 'deleted-asc' | 'id-asc' | 'id-desc'
+export type SeedUsersOrder =
+  | 'created-desc'
+  | 'created-asc'
+  | 'deleted-desc'
+  | 'deleted-asc'
+  | 'id-asc'
+  | 'id-desc'
+  /** По никнейму профиля; только при включённом параметре никнейма (иначе домен сбрасывает на `created-desc`). */
+  | 'nickname-asc'
+  | 'nickname-desc'
 
 /** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */
 export type SessionStatus = 'ok' | 'revoked' | 'expired' | 'unknown'

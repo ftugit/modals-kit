@@ -121,6 +121,8 @@ function makePorts() {
             blocked: [...r.blocked],
             createdAt: (created.get(r.id) ?? 0) * 1000,
             deletedAt: r.deletedAt,
+            // Фейк порта: никнейм приходит только с `withNickname` (как include адаптера).
+            ...((args as { withNickname?: boolean }).withNickname ? { nickname: 'demo-nick' } : {}),
           }))
           .sort((a, b) => b.createdAt - a.createdAt)
         return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length }
@@ -251,5 +253,36 @@ describe('список seed-юзеров', () => {
     expect(args.includeDeleted).toBe(false)
     expect(args.filter).toBeUndefined()
     expect(args.order).toEqual([['created_at', 'desc']])
+  })
+
+  test('никнейм: право — политика профиля; без права параметр молча игнорируется', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+
+    // account.read сам чужие профили не открывает: флага нет, порт include не просит,
+    // порядок по никнейму сброшен на умолчание, поля никнейма в выдаче нет.
+    const blind = ok_(await listSeedUsers(ports, reader.access, { nickname: true, order: 'nickname-asc' }))
+    expect(blind.canSeeNickname).toBe(false)
+    expect(blind.items[0]).not.toHaveProperty('nickname')
+    const blindArgs = listArgsOf() as { withNickname?: boolean; order?: unknown }
+    expect(blindArgs.withNickname).toBeUndefined()
+    expect(blindArgs.order).toEqual([['created_at', 'desc']])
+  })
+
+  test('никнейм: при праве и включённом параметре — проекция, include и порядок по связи', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+
+    const page = ok_(await listSeedUsers(ports, admin.access, { nickname: true, order: 'nickname-asc' }))
+    expect(page.canSeeNickname).toBe(true)
+    expect(page.items[0]).toHaveProperty('nickname', 'demo-nick')
+    const args = listArgsOf() as { withNickname?: boolean; order?: unknown }
+    expect(args.withNickname).toBe(true)
+    // Порядок — путь по связи модели; join подтягивает слой.
+    expect(args.order).toEqual([['profile.nickname', 'asc']])
+
+    // Параметр выключен — никнеймов в выдаче нет даже у админа.
+    const off = ok_(await listSeedUsers(ports, admin.access, {}))
+    expect(off.items[0]).not.toHaveProperty('nickname')
   })
 })

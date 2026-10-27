@@ -39,7 +39,7 @@ export const SEED_USERS_PAGE_PARAM = 'users'
  * разбирает их один раз `load` роута; домен валидирует и собирает срез БД.
  * Даты — ISO-строки полей формы, в `load` превращаются в мс epoch.
  */
-export const SEED_USERS_FILTER_KEYS = ['ord', 'state', 'cfrom', 'cto', 'dfrom', 'dto'] as const
+export const SEED_USERS_FILTER_KEYS = ['ord', 'state', 'cfrom', 'cto', 'dfrom', 'dto', 'nick'] as const
 
 /** Допустимые значения порядка и состояния: валидатор адреса и `load` роута смотрят в один список. */
 export const SEED_USERS_ORDERS: readonly SeedUsersOrder[] = [
@@ -49,6 +49,8 @@ export const SEED_USERS_ORDERS: readonly SeedUsersOrder[] = [
   'deleted-asc',
   'id-asc',
   'id-desc',
+  'nickname-asc',
+  'nickname-desc',
 ]
 export const SEED_USERS_STATES: readonly SeedUsersState[] = ['active', 'all', 'deleted']
 
@@ -69,10 +71,12 @@ export const SEED_USERS_EXTRA_SEARCH: ExtraSearchSpec = {
   cto: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
   dfrom: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
   dto: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
+  // Параметр никнейма (этап 2): только '1' — включён; всё прочее — выключен.
+  nick: extraField('text', (v) => v === '1'),
 }
 
 /** Дефолты `extra`: значения по умолчанию в адрес не пишутся — чистый URL. */
-export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active' } as const
+export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active', nick: '' } as const
 
 /**
  * Данные экрана списка: ровно то, что отдаёт `load` роута `/users`.
@@ -87,6 +91,8 @@ export interface SeedUsersScreenData {
   enabled: boolean
   /** Видны ли вызывающему удалённые строки: от этого зависят фильтр состояния и даты удаления. */
   canSeeDeleted: boolean
+  /** Доступны ли вызывающему никнеймы: от этого зависит параметр никнейма в фильтрах. */
+  canSeeNickname: boolean
 }
 
 /**

@@ -24,7 +24,7 @@ const row = (id: string): SeedUserView => ({
 
 describe('список seed-юзеров: снапшот и регистрация', () => {
   test('снапшот: страница загружена, totals и hasNext посчитаны', () => {
-    const snap = seedUsersSnapshot({ items: [row('1'), row('2')], total: 25, page: 2, pageSize: 10, canSeeDeleted: true })
+    const snap = seedUsersSnapshot({ items: [row('1'), row('2')], total: 25, page: 2, pageSize: 10, canSeeDeleted: true, canSeeNickname: false })
     expect(snap.name).toBe(SEED_USERS_NAME)
     expect(snap.loadedPages).toEqual([2])
     expect(snap.pages[2]).toHaveLength(2)
@@ -36,7 +36,7 @@ describe('список seed-юзеров: снапшот и регистраци
   })
 
   test('снапшот пустой выдачи: страниц нет, дальше — некуда', () => {
-    const snap = seedUsersSnapshot({ items: [], total: 0, page: 1, pageSize: 10, canSeeDeleted: false })
+    const snap = seedUsersSnapshot({ items: [], total: 0, page: 1, pageSize: 10, canSeeDeleted: false, canSeeNickname: false })
     expect(snap.totalPages).toBe(1)
     expect(snap.hasNext).toBe(false)
   })

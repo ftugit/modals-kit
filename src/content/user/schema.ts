@@ -8,7 +8,7 @@
  * таблицы auth/session — технические. Права ключами доступа — README lib/db §7;
  * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
-import { defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { defineResource, f, field, policy, s, type Resource } from '#lib/db/index.js'
 
 /**
  * seed — публичная половина связки ключей (base64url ed25519: 32 байта → 43
@@ -18,11 +18,77 @@ import { defineResource, f, field, policy, s } from '#lib/db/index.js'
  */
 const SEED = s.text({ min: 43, max: 44 })
 
+/**
+ * Профиль: создаётся при ПЕРВОМ заполнении личных данных; нет строки — юзер
+ * аноним, показываем значения по умолчанию. Никнейм НЕуникальный: можно любой,
+ * кроме списка запрещённых (`nicknameForbidden` в config.ts — проверит api).
+ */
+const NICKNAME = s.text({ min: 2, max: 32 })
+const AVATAR_URL = s.custom((value) => {
+  // контракт s.custom: строка = текст ошибки, успех — не-строка (true)
+  if (value === null || value === undefined) return true // пусто — колонка nullable
+  if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return true
+  // `avatar_url` — ссылка на картинку, а не сам файл: сегодня это base64
+  // dataURL (его готовит примитив поля или сервер по спеке), с `lib/storage`
+  // сюда же ляжет http(s)-URL. Схему интересует вид строки; содержимое
+  // (формат по заголовкам, вес, кадр по спеке) проверяет роут ДО записи.
+  // Потолок длины — последний рубеж против мегабайтов в text-колонке.
+  if (
+    typeof value === 'string' &&
+    value.length <= 1_500_000 &&
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+  )
+    return true
+  return 'profile.avatar_url: ожидается адрес http(s)://… или data:image/…;base64'
+})
+
+export const profile: Resource = defineResource({
+  key: 'user.profile.v1',
+  table: 'public.user_profile',
+  primaryKey: 'id',
+  fields: {
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
+    // Владелец профиля — строка auth. Одна строка на аккаунт; конечная смерть
+    // аккаунта уносит профиль (цепочка удаления lib/db).
+    auth_id: field(s.uuid(), {
+      read: () => true, create: () => true, required: true,
+      immutable: true, filters: ['eq'],
+      db: { unique: true, references: { resource: () => auth, chain: true } },
+    }),
+    nickname: field(NICKNAME, {
+      read: () => true, create: () => true, update: () => true, nullable: true,
+      normalize: (v) => (typeof v === 'string' ? v.trim() : v),
+      orderable: true, filters: ['eq', 'icontains'],
+    }),
+    avatar_url: field(AVATAR_URL, {
+      read: () => true, create: () => true, update: () => true, nullable: true,
+      // валидатор свой (`s.custom`) — тип колонки слой сам не выведет
+      db: { type: 'text' },
+    }),
+  },
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  policy: {
+    // Владелец — всегда; админ и держатели прав видят все строки.
+    select: policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit']),
+    // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
+    insert: policy.roles(['server']),
+    // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.
+    // `server` в удалении — только цепочка смерти аккаунта (`profiles.remove`):
+    // своей политикой он чужой профиль не трогает.
+    update: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
+    delete: policy.ownerOrRoles('auth_id', ['server', 'admin', 'profile.edit']),
+  },
+  order: [['created_at', 'desc']],
+})
+
 /** Таблица авторизации: носитель безопасности аккаунта. Личного — ничего. */
-export const auth = defineResource({
+export const auth: Resource = defineResource({
   key: 'user.auth.v1',
   table: 'public.user_auth',
   primaryKey: 'id',
+  // Профиль аккаунта: связь для include и сортировки по связанным полям
+  // (слой: foreignField — уникальное поле цели, `auth_id` уникален).
+  relations: { profile: { resource: profile, localField: 'id', foreignField: 'auth_id' } },
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     seed: field(SEED, {
@@ -87,69 +153,6 @@ export const auth = defineResource({
     insert: policy.roles(['server']),
     update: policy.ownerOrRoles('id', ['server', 'admin']),
     delete: policy.ownerOrRoles('id', ['server', 'admin']),
-  },
-  order: [['created_at', 'desc']],
-})
-
-/**
- * Профиль: создаётся при ПЕРВОМ заполнении личных данных; нет строки — юзер
- * аноним, показываем значения по умолчанию. Никнейм НЕуникальный: можно любой,
- * кроме списка запрещённых (`nicknameForbidden` в config.ts — проверит api).
- */
-const NICKNAME = s.text({ min: 2, max: 32 })
-const AVATAR_URL = s.custom((value) => {
-  // контракт s.custom: строка = текст ошибки, успех — не-строка (true)
-  if (value === null || value === undefined) return true // пусто — колонка nullable
-  if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return true
-  // `avatar_url` — ссылка на картинку, а не сам файл: сегодня это base64
-  // dataURL (его готовит примитив поля или сервер по спеке), с `lib/storage`
-  // сюда же ляжет http(s)-URL. Схему интересует вид строки; содержимое
-  // (формат по заголовкам, вес, кадр по спеке) проверяет роут ДО записи.
-  // Потолок длины — последний рубеж против мегабайтов в text-колонке.
-  if (
-    typeof value === 'string' &&
-    value.length <= 1_500_000 &&
-    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
-  )
-    return true
-  return 'profile.avatar_url: ожидается адрес http(s)://… или data:image/…;base64'
-})
-
-export const profile = defineResource({
-  key: 'user.profile.v1',
-  table: 'public.user_profile',
-  primaryKey: 'id',
-  fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
-    // Владелец профиля — строка auth. Одна строка на аккаунт; конечная смерть
-    // аккаунта уносит профиль (цепочка удаления lib/db).
-    auth_id: field(s.uuid(), {
-      read: () => true, create: () => true, required: true,
-      immutable: true, filters: ['eq'],
-      db: { unique: true, references: { resource: () => auth, chain: true } },
-    }),
-    nickname: field(NICKNAME, {
-      read: () => true, create: () => true, update: () => true, nullable: true,
-      normalize: (v) => (typeof v === 'string' ? v.trim() : v),
-      orderable: true, filters: ['eq', 'icontains'],
-    }),
-    avatar_url: field(AVATAR_URL, {
-      read: () => true, create: () => true, update: () => true, nullable: true,
-      // валидатор свой (`s.custom`) — тип колонки слой сам не выведет
-      db: { type: 'text' },
-    }),
-  },
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
-  policy: {
-    // Владелец — всегда; админ и держатели прав видят все строки.
-    select: policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit']),
-    // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
-    insert: policy.roles(['server']),
-    // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.
-    // `server` в удалении — только цепочка смерти аккаунта (`profiles.remove`):
-    // своей политикой он чужой профиль не трогает.
-    update: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
-    delete: policy.ownerOrRoles('auth_id', ['server', 'admin', 'profile.edit']),
   },
   order: [['created_at', 'desc']],
 })

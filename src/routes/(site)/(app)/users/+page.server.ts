@@ -63,6 +63,9 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> 
     createdTo: dateMs(key('cto')),
     deletedFrom: dateMs(key('dfrom')),
     deletedTo: dateMs(key('dto')),
+    // Параметр никнейма (этап 2): действует только с правом на профили —
+    // гейтит домен, роут лишь пропускает адресное значение.
+    nickname: key('nick') === '1',
   })
 
   return {
@@ -70,5 +73,6 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> 
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
+    canSeeNickname: r.ok ? r.value.canSeeNickname : false,
   }
 }

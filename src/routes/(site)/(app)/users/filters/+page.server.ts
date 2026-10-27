@@ -16,10 +16,11 @@ import type { AuthErrorCode } from '#content/user/index.js'
 
 export interface SeedUsersFiltersPageData {
   canSeeDeleted: boolean
+  canSeeNickname: boolean
   fact: AuthErrorCode | null
   enabled: boolean
   /** Значения формы: свои `users.*` адреса страницы, иначе — из `from`. */
-  values: { ord: string; state: string; cfrom: string; cto: string; dfrom: string; dto: string }
+  values: { ord: string; state: string; cfrom: string; cto: string; dfrom: string; dto: string; nick: string }
   /** Куда уходит GET формы (путь носителя списка). */
   action: string
   /** Чужое состояние адреса носителя — скрытыми полями формы. */
@@ -30,7 +31,7 @@ export interface SeedUsersFiltersPageData {
   backHref: string
 }
 
-const FILTER_KEYS = ['users.ord', 'users.state', 'users.cfrom', 'users.cto', 'users.dfrom', 'users.dto']
+const FILTER_KEYS = ['users.ord', 'users.state', 'users.cfrom', 'users.cto', 'users.dfrom', 'users.dto', 'users.nick']
 
 export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageData> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
@@ -48,7 +49,11 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
     cto: val('users.cto'),
     dfrom: val('users.dfrom'),
     dto: val('users.dto'),
+    nick: val('users.nick'),
   }
+  // Порядок по никнейму без включённого параметра недостижим: умолчание
+  // (тот же сброс, что `Option.when` на клиенте и coercion домена).
+  if (values.nick !== '1' && values.ord.startsWith('nickname')) values.ord = 'created-desc'
 
   // Пронести всё, кроме самих фильтров и указателя порции (новый срез — сначала).
   const hiddenFields: { name: string; value: string }[] = []
@@ -64,6 +69,7 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
 
   return {
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
+    canSeeNickname: r.ok ? r.value.canSeeNickname : false,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     values,

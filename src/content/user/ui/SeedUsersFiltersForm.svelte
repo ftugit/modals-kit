@@ -29,10 +29,14 @@
     cto: string
     dfrom: string
     dto: string
+    /** Параметр никнейма: '1' — включён, '' — выключен. */
+    nick: string
   }
 
   interface Props {
     canSeeDeleted: boolean
+    /** Никнеймы доступны вызывающему (право на профили): параметр никнейма в форме. */
+    canSeeNickname?: boolean
     initial: SeedUsersFilterValues
     /** Нативный режим: адрес списка, куда уходит GET. */
     action?: string
@@ -46,7 +50,16 @@
     onReset?: () => void | Promise<void>
   }
 
-  let { canSeeDeleted, initial, action, hiddenFields = [], resetHref, onApply, onReset }: Props = $props()
+  let {
+    canSeeDeleted,
+    canSeeNickname = false,
+    initial,
+    action,
+    hiddenFields = [],
+    resetHref,
+    onApply,
+    onReset,
+  }: Props = $props()
 
   // Значения — только стартовые: форма рождается под текущий срез при каждом
   // открытии, живьём их никто не меняет.
@@ -55,11 +68,31 @@
   const desc = defineForm({
     id: 'seed-users-filters',
     fields: {
+      // Параметр никнейма (этап 2): при правах — переключатель столбца;
+      // опции порядка по никнейму гейтятся им через `Option.when`.
+      ...(untrack(() => canSeeNickname)
+        ? {
+            'users.nick': field.select({
+              label: 'Столбец никнейма',
+              options: [
+                { value: '', label: 'Не показывать' },
+                { value: '1', label: 'Показывать' },
+              ],
+              defaultValue: init.nick || '',
+            }),
+          }
+        : {}),
       'users.ord': field.select({
         label: 'Порядок',
         options: [
           { value: 'created-desc', label: 'Сначала новые (по созданию)' },
           { value: 'created-asc', label: 'Сначала старые (по созданию)' },
+          ...(untrack(() => canSeeNickname)
+            ? [
+                { value: 'nickname-asc', label: 'По никнейму (А→Я)', when: { field: 'users.nick', equals: '1' } },
+                { value: 'nickname-desc', label: 'По никнейму (Я→А)', when: { field: 'users.nick', equals: '1' } },
+              ]
+            : []),
           ...(untrack(() => canSeeDeleted)
             ? [
                 { value: 'deleted-desc', label: 'Недавно удалённые (по удалению)' },
@@ -115,6 +148,9 @@
       cto: cto || undefined,
       dfrom: dfrom || undefined,
       dto: dto || undefined,
+      // Выключенный параметр в адрес не пишем; сброс зависимой опции порядка
+      // на умолчание делает сам `Option.when` при изменении переключателя.
+      nick: clean(vals['users.nick']) === '1' ? '1' : undefined,
     })
   }
 </script>
@@ -128,6 +164,9 @@
   class="space-y-4"
   data-testid="seed-users-filters-form"
 >
+  {#if canSeeNickname}
+    <Field of={bound.field('users.nick')} />
+  {/if}
   <Field of={bound.field('users.ord')} />
   {#if canSeeDeleted}
     <Field of={bound.field('users.state')} />
