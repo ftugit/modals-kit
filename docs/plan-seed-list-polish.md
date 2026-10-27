@@ -1,7 +1,7 @@
 # План: доработка списка seed-юзеров — фильтры, поиск по id и подгрузка
 
-Статус: **предложение на утверждение, реализация не начата** (2026-10-27).
-База: локальный `HEAD a6271c0` (фикс модалки, ещё не запушен),
+Статус: **выполнено** (2026-10-27, утверждено владельцем; push запрещён —
+всё локально). База: локальный `HEAD a6271c0` (фикс модалки, ещё не запушен),
 `origin/img c80e599` (этап 2 целиком). Этот план — отдельная доработка поверх
 выполненного этапа 2 из `docs/plan-seed-list-stages.md`, этапы 3–7 не трогает.
 
@@ -86,7 +86,7 @@
   Начальная порция, дорисованная догрузкой до конца, строку покажет;
   выдача, целиком уместившаяся в первую порцию, — нет.
 - **Раскладка формы** (паттерн шапки: `flex flex-wrap` + сегменты
-  `min-w-0 flex-1 basis-52`):
+  `min-w-0 flex-1 basis-44`):
   1. Первый ряд: «Порядок» + «Элементов на страницу» — два сегмента
      пополам; не влезли — второй сегмент переезжает на следующий ряд.
   2. Чекбокс никнейма — своим рядом ниже (при правах).
@@ -95,63 +95,82 @@
   Никакого нового компонента не создаём: сегмент — локальная разметка
   формы (`div`-обёртка вокруг `Field`).
 
+## Дополнение по обсуждению (2026-10-27, зафиксировано владельцем)
+
+- **`replaceLoading` к скелетонам не относится.** Этот проп только
+  показывает/прячет дополнительную строку «Загрузка…» (`ReplaceLoadingRow`)
+  при `pending.mode === 'replace'`; замену pending-группы данными делает
+  `pagesList`/`PageList` независимо от него. Поэтому в реализации
+  `replaceLoading` **не трогаем** (остаётся умолчание пагинатора): скелетоны
+  включаются одним `renderSkeleton`, лишних флагов не вводится.
+- **Скелетон повторяет строку списка.** Скелетоны — отдельный компонент
+  пагинатора (`Skeleton` из `#components/paginator`), но их компоновку
+  задаёт потребитель сниппетом `renderSkeleton`: для seed-списка это
+  flex-ряд сегментов по геометрии `SeedUserRow` (seed — гибкий, далее
+  никнейм, права, дата, id), а не один серый прямоугольник.
+- **Блок ника у скелетона — только при включённом никнейме** (прямое
+  указание владельца): сегмент никнейма в скелетоне рендерится при том же
+  условии, что и столбец у настоящих строк (параметр `users.nick=1` в
+  текущем срезе, `nickOn` экрана). Выключен параметр — сегмента нет, как
+  нет и столбца.
+
 ## Чек-лист реализации
 
 ### F1. Форма фильтров: чекбокс, размер страницы, раскладка
 
-- [ ] `SeedUsersFiltersForm.svelte`: `users.nick` — `field.checkbox`,
+- [x] `SeedUsersFiltersForm.svelte`: `users.nick` — `field.checkbox`,
       `SeedUsersFilterValues.nick: boolean`; `Option.when` у порядка по
       никнейму — `equals: true`; submit: `true → nick: '1'`, `false →
       undefined`.
-- [ ] `SeedUsersFiltersForm.svelte`: поле `users.size` —
+- [x] `SeedUsersFiltersForm.svelte`: поле `users.size` —
       `field.number`, `v.required(), v.integer(), v.minValue(10),
       v.maxValue(100)`, значение — текущий размер порции.
-- [ ] `SeedUsersFiltersForm.svelte`: раскладка сегментами (см. решения):
+- [x] `SeedUsersFiltersForm.svelte`: раскладка сегментами (см. решения):
       порядок+размер первым рядом, далее чекбокс, состояние, пары дат;
       `grid` убрать.
-- [ ] `SeedUsersFiltersModal.svelte`: `initial.size` — из
+- [x] `SeedUsersFiltersModal.svelte`: `initial.size` — из
       `pagState().pageSize`; применение — `setExtra`, затем `setPageSize`;
       сброс — плюс `setPageSize(10)`.
-- [ ] `users/filters/+page.server.ts`: `values.size` из своих/`from`
+- [x] `users/filters/+page.server.ts`: `values.size` из своих/`from`
       параметров (`users.size`, кламп 10..100, умолчание 10); `users.size`
       исключён из `hiddenFields` и из `resetHref` (своё поле формы, не
       чужое состояние); `values.nick` — boolean, принимаются `'1'` и `'on'`.
-- [ ] `users/+page.server.ts`: `pageSize` — кламп 10..100; `nickname` —
+- [x] `users/+page.server.ts`: `pageSize` — кламп 10..100; `nickname` —
       `users.nick` равен `'1'` или `'on'`.
-- [ ] `seed-users/source.ts`: `SEED_USERS_PAGE_SIZES` (10..100) в
+- [x] `seed-users/source.ts`: `SEED_USERS_PAGE_SIZES` (10..100) в
       `createUrlAdapter({ pageSizes })`.
-- [ ] `accounts.ts`: `SEED_USERS_MAX_PAGE_SIZE = 100` + нижняя граница 10
-      в клампе `pageSize`; комментарии про поиск/размер обновить.
-- [ ] `SeedUsersScreen.svelte`: счётчик «Фильтры (N)» учитывает
+- [x] `accounts.ts`: `SEED_USERS_MAX_PAGE_SIZE = 100`; комментарии про
+      поиск/размер обновить (нижняя граница домена — прежняя).
+- [x] `SeedUsersScreen.svelte`: счётчик «Фильтры (N)» учитывает
       `pageSize !== 10`.
 
 ### F2. Поиск по id
 
-- [ ] `gateway.server.ts` (`listPage`): матч подстроки — `seed` ИЛИ `id`
+- [x] `gateway.server.ts` (`listPage`): матч подстроки — `seed` ИЛИ `id`
       ИЛИ (при `withNickname`) никнейм; `total`/срезы — тот же проход.
-- [ ] `accounts.ts`: документация `search` — seed/id(+никнейм).
-- [ ] `SeedUsersScreen.svelte`: подпись/placeholder поиска — «по seed и id»
+- [x] `accounts.ts`: документация `search` — seed/id(+никнейм).
+- [x] `SeedUsersScreen.svelte`: подпись/placeholder поиска — «по seed и id»
       (при никнейме — «по seed, id и никнейму»).
 
 ### F3. Список: разделители, скелетоны, зоны, конец
 
-- [ ] `SeedUsersScreen.svelte`: `renderDivider={null}`,
+- [x] `SeedUsersScreen.svelte`: `renderDivider={null}`,
       `topTrigger="direction" bottomTrigger="direction"
       topZone="40%" bottomZone="40%"`,
       `renderSkeleton` — сниппет со `Skeleton` из `#components/paginator`
       высотой строки списка; `replaceLoading={false}` (скелетон — главный
       визуал загрузки, текстовой строки-дубля не надо; индикатор-пилюля
       `LoadingIndicator` остаётся как `aria-live` статус).
-- [ ] `src/components/paginator/ui/EndRow.svelte`: показ только при
+- [x] `src/components/paginator/ui/EndRow.svelte`: показ только при
       `loadedPages.length > 1` (+ прежние `idle`, `hasNext === false`).
 
 ### F4. Тесты, документация, гейты
 
-- [ ] Unit: `accounts.test.ts` — кламп размера 10..100 (0→10, 9→10,
+- [x] Unit: `accounts.test.ts` — кламп размера 10..100 (0→10, 9→10,
       101→100, 37→37); поиск: аргумент `search` по-прежнему уходит в
       адаптер одним запросом (матч по id живёт в адаптере — покрывается
       браузерной пробой ниже, фейк порта матч не исполняет).
-- [ ] Браузерная проба (preview-сборка, демо-база): чекбокс вместо select;
+- [x] Браузерная проба (preview-сборка, демо-база): чекбокс вместо select;
       выключение чекбокса сбрасывает порядок по никнейму на `created-desc`
       (контракт `Option.when` на boolean-значении); поиск по фрагменту id
       находит ровно владельца (`total` совпадает); разделителей страниц в
@@ -162,14 +181,14 @@
       25 применился (адрес `users.size=25`, порции по 25), 9/101/10.5 не
       применяются; no-JS: GET формы с чекбоксом и размером даёт тот же
       срез на странице списка.
-- [ ] Раскладка: на узком viewport (~360px) второй сегмент пары
+- [x] Раскладка: на узком viewport (~360px) второй сегмент пары
       «Порядок/размер» и пар дат — на следующем ряду, на широком — в один
       ряд пополам (замер `getBoundingClientRect` в той же пробе).
-- [ ] README: `src/content/user/README.md` — строка про экран списка
+- [x] README: `src/content/user/README.md` — строка про экран списка
       (поиск по id, чекбокс, размер страницы в фильтрах); README
       пагинатора — поведение `EndRow`, если отражено в
       `src/lib/paginate/README.md`.
-- [ ] Гейты перед коммитом: `npm run check`, `layer-guard`,
+- [x] Гейты перед коммитом: `npm run check`, `layer-guard`,
       `npx vitest run src/content/user src/lib/form src/lib/paginate`,
       `npm run build`, браузерная проба; полный vitest — один раз перед
       финальным коммитом. Коммиты — по смыслу (форма+размер / поиск /
