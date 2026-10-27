@@ -137,16 +137,16 @@
           включённом параметре: выключен — у скелетона его нет, как нет
           столбца у настоящих строк.
         -->
-        <div class="flex items-center gap-3 px-2 py-2" data-testid="seed-user-skeleton">
-          <Skeleton class="h-4 min-w-0 flex-1" />
+        <div class="flex w-full items-center gap-3 px-2 py-2" data-testid="seed-user-skeleton">
+          <Skeleton class="h-4 min-w-0 flex-1 basis-0" />
           {#if nickOn}
-            <span class="w-24 shrink-0" data-testid="seed-user-skeleton-nickname">
+            <span class="min-w-0 flex-1 basis-0" data-testid="seed-user-skeleton-nickname">
               <Skeleton class="h-3 w-full" />
             </span>
           {/if}
-          <Skeleton class="h-3 w-28 shrink-0" />
-          <Skeleton class="h-3 w-24 shrink-0" />
-          <Skeleton class="h-3 w-16 shrink-0" />
+          <Skeleton class="h-3 min-w-0 flex-1 basis-0" />
+          <Skeleton class="h-3 min-w-0 flex-1 basis-0" />
+          <Skeleton class="h-3 min-w-0 flex-1 basis-0" />
         </div>
       {/snippet}
     </Paginator>
