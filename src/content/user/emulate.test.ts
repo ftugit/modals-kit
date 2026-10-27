@@ -36,16 +36,6 @@ function makePorts(seedSecret?: string): {
   const secret = seedSecret ?? 's'.repeat(32)
 
   const ports: AuthPorts = {
-    challenge: {
-      async issue(nonce, ttl) {
-        await store.set(`nonce:${nonce}`, true, ttl * 1000)
-      },
-      async consume(nonce) {
-        const had = await store.get<boolean>(`nonce:${nonce}`)
-        await store.delete(`nonce:${nonce}`)
-        return had === true
-      },
-    },
     sessions: {
       async create(r) {
         sessions.set(r.jti, { ...r })
@@ -188,20 +178,20 @@ function makePorts(seedSecret?: string): {
   return { ports, secret, auths, sessions, profiles }
 }
 
-/** Пройти вход целиком: настоящий seed, настоящий nonce, настоящая подпись. */
+/** Пройти вход целиком: настоящий seed, настоящий challenge-токен, настоящая подпись. */
 async function doLogin(ports: AuthPorts, seed: string, sk: string) {
   const challenge = await issueChallenge(ports)
   if (!challenge.ok) throw new Error('challenge не выдался')
-  const signature = await sign(challenge.value.nonce, sk)
-  return login(ports, { seed, nonce: challenge.value.nonce, signature })
+  const signature = await sign(challenge.value.token, sk)
+  return login(ports, { seed, challenge: challenge.value.token, signature })
 }
 
 /** Подтверждение восстановления: свежий challenge + подпись тем же ключом. */
 async function doRestore(ports: AuthPorts, seed: string, sk: string) {
   const challenge = await issueChallenge(ports)
   if (!challenge.ok) throw new Error('challenge не выдался')
-  const signature = await sign(challenge.value.nonce, sk)
-  return restoreDeleted(ports, { seed, nonce: challenge.value.nonce, signature })
+  const signature = await sign(challenge.value.token, sk)
+  return restoreDeleted(ports, { seed, challenge: challenge.value.token, signature })
 }
 
 const ok_ = <T>(r: UserResult<T>): T => {
@@ -258,17 +248,22 @@ describe('единый вход', () => {
     expect(s1.dt).not.toBe(s2.dt)
   })
 
-  test('подпись не сошлась — auth.signature; повторный nonce — auth.nonce-unknown', async () => {
+  test('stateless challenge: плохая подпись токен не сжигает; подделка и чужая привязка — auth.nonce-unknown', async () => {
     const { ports, secret } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const challenge = ok_(await issueChallenge(ports))
-    const bad = fact_(await login(ports, { seed, nonce: challenge.nonce, signature: await sign('другое', sk) }))
+    const bad = fact_(await login(ports, { seed, challenge: challenge.token, signature: await sign('другое', sk) }))
     expect(bad.code).toBe('auth.signature')
-    // ошибка подписи сожгла nonce — следующий вход берёт свежий
-    const fresh = ok_(await issueChallenge(ports))
-    ok_(await login(ports, { seed, nonce: fresh.nonce, signature: await sign(fresh.nonce, sk) }))
-    const again = fact_(await login(ports, { seed, nonce: fresh.nonce, signature: await sign(fresh.nonce, sk) }))
-    expect(again.code).toBe('auth.nonce-unknown')
+    // Токен stateless: та же пара токен+подпись проходит повторно, пока токен
+    // жив (одноразовость внутри срока жизни — сознательно потеряна).
+    ok_(await login(ports, { seed, challenge: challenge.token, signature: await sign(challenge.token, sk) }))
+    // Нераспечатываемый токен (у настоящего seal это и подделка, и просрочка).
+    const forgedFact = fact_(await login(ports, { seed, challenge: 'не-токен', signature: await sign('не-токен', sk) }))
+    expect(forgedFact.code).toBe('auth.nonce-unknown')
+    // Токен, выпущенный для другого поля, входу не подходит.
+    const foreign = await ports.seal.seal({ k: 'challenge', field: 'signature', n: 'x' }, 120)
+    const wrongField = fact_(await login(ports, { seed, challenge: foreign, signature: await sign(foreign, sk) }))
+    expect(wrongField.code).toBe('auth.nonce-unknown')
   })
 
   test('блокировка auth: вход закрыт с причиной и сроком', async () => {
@@ -532,8 +527,8 @@ describe('удаление аккаунта', () => {
     const guestVerified = ok_(
       await verifySeed(ports, {
         seed: target.seed,
-        nonce: cGuest.nonce,
-        signature: await sign(cGuest.nonce, target.secret),
+        challenge: cGuest.token,
+        signature: await sign(cGuest.token, target.secret),
       }),
     )
     expect(guestVerified.sub).toBe(targetSub)
@@ -546,8 +541,8 @@ describe('удаление аккаунта', () => {
     const cUnknown = ok_(await issueChallenge(ports))
     const resUnknown = await verifySeed(ports, {
       seed: unreg.seed,
-      nonce: cUnknown.nonce,
-      signature: await sign(cUnknown.nonce, unreg.secret),
+      challenge: cUnknown.token,
+      signature: await sign(cUnknown.token, unreg.secret),
     })
     expect(resUnknown.ok).toBe(false)
     if (!resUnknown.ok) expect(resUnknown.fact.code).toBe('auth.identity-unknown')
@@ -562,8 +557,8 @@ describe('удаление аккаунта', () => {
     const viewerVerified = ok_(
       await verifySeed(ports, {
         seed: target.seed,
-        nonce: cViewer.nonce,
-        signature: await sign(cViewer.nonce, target.secret),
+        challenge: cViewer.token,
+        signature: await sign(cViewer.token, target.secret),
       }),
     )
     expect(viewerVerified.sub).toBe(targetSub)

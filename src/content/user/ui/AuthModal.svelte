@@ -11,7 +11,7 @@
   import AuthWidget from './AuthWidget.svelte'
 
   type RouteData = {
-    challenge: { nonce: string; expiresAt: number } | null
+    challenge: { token: string; expiresAt: number } | null
     next: string | null
     step: string
     registerSeed: string | null

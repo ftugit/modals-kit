@@ -17,7 +17,7 @@ import type { FormError } from '#lib/form/index.js'
 /** Доменные коды модуля пользователя. */
 export type AuthErrorCode =
   | 'auth.nonce-unknown'      // challenge истёк или уже потрачен
-  | 'auth.signature'          // подпись nonce не сошлась
+  | 'auth.signature'          // подпись challenge-токена не сошлась
   | 'auth.identity-unknown'   // юзера не существует (удалён)
   | 'auth.token'              // токен не читается / подпись чужая
   | 'auth.kid-unknown'        // подписан неизвестным ключом (после ротации)
@@ -53,8 +53,8 @@ export type AuthInstruction = (fact: AuthFact) => readonly FormError[]
  * общий случай: путь из факта, подстановки из аргументов.
  */
 const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
-  // nonce/подпись — служебные скрытые поля: ошибка в них невидима. «Не сошлись» —
-  // у поля seed (юзер правит его); потраченный nonce — общий баннер над формой.
+  // challenge/подпись — служебные скрытые поля: ошибка в них невидима. «Не сошлись» —
+  // у поля seed (юзер правит его); мёртвый challenge-токен — общий баннер над формой.
   'auth.nonce-unknown': () => [generalError('auth.nonce-unknown', { retryable: true })],
   'auth.signature': (f) => [fieldError(f, { path: 'seed' })],
   'auth.identity-unknown': (f) => [fieldError(f, { path: 'seed' })],

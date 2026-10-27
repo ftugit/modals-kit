@@ -31,7 +31,7 @@ export const defaults: ConfigValues = {
   nicknameForbidden: [
     'admin', 'administrator', 'mod', 'moderator', 'support', 'root', 'system',
   ],
-  /** Срок жизни одноразового nonce для подписи, секунд. */
+  /** Срок жизни запечатанного challenge-токена для подписи, секунд. */
   challengeTtlSec: 120,
   /**
    * Заявка на удаление живёт столько дней, потом исполнитель стирает аккаунт.

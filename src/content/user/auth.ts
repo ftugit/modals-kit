@@ -9,8 +9,8 @@
  * приложение НЕТ: каждый компонент обращается к api сам.
  *
  * Модель (решения владельца, ход 251):
- *  - вход единый: seed не найден → аккаунт создаётся; подпись nonce —
- *    доказательство владения seed (`keys.ts`, Ed25519);
+ *  - вход единый: seed не найден → аккаунт создаётся; подпись
+ *    challenge-токена — доказательство владения seed (`keys.ts`, Ed25519);
  *  - access — запечатанная строка, сервер её не хранит; продление — по куке
  *    с токеном продления `{jti, version}`: версия совпала — ротация (вкладка
  *    владелец), версия меньше — «усыновление» (кто-то продлил раньше: свежий
@@ -93,20 +93,28 @@ export function fullBlock(list: Blocked[] | undefined, now: number): Blocked | u
 
 /* ── вход ── */
 
-/** Шаг 1 входа: одноразовый nonce на подпись (срок — из конфига). */
+/**
+ * Шаг 1 входа: запечатанный challenge-токен на подпись (срок — из конфига).
+ * Stateless: сервер ничего не хранит, поэтому выпустить токен может один
+ * инстанс, а принять — любой (на serverless прежнее хранилище nonce в
+ * памяти процесса давало `auth.nonce-unknown` при смене инстанса).
+ * Платой за stateless одноразовость внутри срока жизни потеряна: повтор
+ * того же входа по живому токену безвреден (вход идемпотентен), а подпись
+ * по-прежнему требует секрета seed.
+ */
 export async function issueChallenge(ports: AuthPorts): Promise<UserResult<Challenge>> {
-  const nonce = randomToken()
   const ttl = await ports.config.get('challengeTtlSec')
   const expiresAt = ports.clock.now() + ttl * 1000
-  await ports.challenge.issue(nonce, ttl)
-  return ok({ nonce, expiresAt })
+  const token = await ports.seal.seal({ k: 'challenge', field: 'seed', n: randomToken() }, ttl)
+  return ok({ token, expiresAt })
 }
 
 /** Аргументы входа и восстановления — одно и то же доказательство владения. */
 export type EnterArgs = {
   seed: string
-  nonce: string
-  /** Подпись nonce; нет — режим без JS: доказательство = само знание секрета. */
+  /** Запечатанный challenge-токен из `issueChallenge` (клиент его видит и подписывает). */
+  challenge: string
+  /** Подпись токена; нет — режим без JS: доказательство = само знание секрета. */
   signature?: string
   deviceName?: string
   /** Подсеть в представлении адаптера (хэш считается здесь); нет — не пишем. */
@@ -115,7 +123,7 @@ export type EnterArgs = {
 }
 
 /**
- * Доказательство владения seed: одноразовый nonce + подпись. Чистая
+ * Доказательство владения seed: живой challenge-токен + подпись. Чистая
  * криптография — строк аккаунтов НЕ касается, поэтому стоит ДО любого
  * поиска (в т.ч. привилегированного поиска удалённой строки).
  * Возвращает нормализованный seed или факт отказа.
@@ -123,8 +131,12 @@ export type EnterArgs = {
 async function proveSeed(ports: AuthPorts, args: EnterArgs): Promise<{ seed: string } | AuthFact> {
   const seed = args.seed.trim()
   if (seed.length < 43 || seed.length > 44) return { code: 'auth.signature', path: 'signature' }
-  if (!(await ports.challenge.consume(args.nonce))) return { code: 'auth.nonce-unknown', path: 'signature' }
-  if (args.signature !== undefined && !(await ports.crypto.verify(args.nonce, args.signature, seed)))
+  // Токен распечатался (подпись сервера цела, срок не вышел) и выпущен
+  // именно для поля seed — чужой/просроченный/поддельный сюда не проходит.
+  const payload = await ports.seal.unseal(args.challenge)
+  if (!payload || payload.k !== 'challenge' || payload.field !== 'seed')
+    return { code: 'auth.nonce-unknown', path: 'signature' }
+  if (args.signature !== undefined && !(await ports.crypto.verify(args.challenge, args.signature, seed)))
     return { code: 'auth.signature', path: 'signature' }
   return { seed }
 }
@@ -157,7 +169,7 @@ async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): P
   })
 }
 
-/** Единый вход: подпись nonce по seed; аккаунта нет — создаём. */
+/** Единый вход: подпись challenge-токена по seed; аккаунта нет — создаём. */
 export async function login(ports: AuthPorts, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
   const proof = await proveSeed(ports, args)
   if ('code' in proof) return fail(proof)
@@ -181,7 +193,7 @@ export async function restoreDeleted(ports: AuthPorts, args: EnterArgs): Promise
 
 /**
  * Проверка владения seed без открытия сессии (`authorize = false`):
- * проверяет одноразовый `nonce`, подпись и наличие активного аккаунта по `seed`.
+ * проверяет challenge-токен, подпись и наличие активного аккаунта по `seed`.
  *
  * Строки сессий в `user_session` НЕ создаются (`0` записей), куки/токены НЕ
  * выдаются и НЕ меняются: гость остаётся без токена (последующие шаги под

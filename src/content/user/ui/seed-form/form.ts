@@ -27,7 +27,7 @@ export const seedForm = defineForm({
     { id: 'accept', label: 'Принято', validate: 'partial', relax: ['required'] },
     { id: 'logout', label: 'Выйти', validate: 'partial', relax: ['required'] },
     { id: 'renew', label: 'Продлить', validate: 'partial', relax: ['required'] },
-    { id: 'challenge', label: 'Свежий nonce', validate: 'partial', relax: ['required'] },
+    { id: 'challenge', label: 'Свежий challenge', validate: 'partial', relax: ['required'] },
   ],
   fields: {
     seed: field.text({
@@ -35,7 +35,7 @@ export const seedForm = defineForm({
       help: 'Единственный ключ от аккаунта — храните в менеджере секретов',
       validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_-]{43,44}' })],
     }),
-    nonce: field.hidden({ label: 'Nonce' }),
+    challenge: field.hidden({ label: 'Challenge' }),
     signature: field.hidden({ label: 'Подпись' }),
   },
 })

@@ -42,16 +42,6 @@ function makePorts() {
     },
   }
   const ports = {
-    challenge: {
-      async issue(nonce: string, ttl: number) {
-        await store.set(`nonce:${nonce}`, true, ttl * 1000)
-      },
-      async consume(nonce: string) {
-        const had = await store.get<boolean>(`nonce:${nonce}`)
-        await store.delete(`nonce:${nonce}`)
-        return had === true
-      },
-    },
     sessions: {
       async create(r: SessionRecord) {
         sessions.set(r.jti, { ...r })
@@ -170,8 +160,8 @@ async function joined(ports: AuthPorts, auths: Map<string, AuthRow>, permissions
   const pair = await generateKeyPair()
   const challenge = await issueChallenge(ports)
   if (!challenge.ok) throw new Error('challenge не выдался')
-  const signature = await sign(challenge.value.nonce, pair.secret)
-  const out = ok_(await login(ports, { seed: pair.seed, nonce: challenge.value.nonce, signature }))
+  const signature = await sign(challenge.value.token, pair.secret)
+  const out = ok_(await login(ports, { seed: pair.seed, challenge: challenge.value.token, signature }))
   const sub = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
   const row = auths.get(sub.sub)
   if (row) auths.set(row.id, { ...row, permissions })

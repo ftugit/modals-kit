@@ -30,11 +30,11 @@
     user?: VaultPayload
     blocked?: { reason: string; untilMs: number | null }
     restrictions?: readonly { scope: string; reason: string; untilMs: number | null }[]
-    nonce?: string
+    token?: string
   }
 
   type AuthWidgetData = {
-    challenge?: { nonce: string; expiresAt: number } | null
+    challenge?: { token: string; expiresAt: number } | null
     next?: string | null
     limits?: ProfileLimits & { holdSeconds?: number }
     step?: string
@@ -72,15 +72,15 @@
   const authorized = $derived(vault.authorized)
 
   // svelte-ignore state_referenced_locally -- начальный challenge из SSR
-  let nonce = $state(data.challenge?.nonce ?? '')
+  let challengeToken = $state(data.challenge?.token ?? '')
 
   const bound = bindComponentForm(forms, seedForm, {
     prepare: async (fd) => {
       const typed = String(fd.get('seed') ?? '').trim()
       fd.set('seed', typed)
-      if (typed.length >= 43 && typed.length <= 44 && nonce !== '') {
+      if (typed.length >= 43 && typed.length <= 44 && challengeToken !== '') {
         try {
-          fd.set('signature', await sign(nonce, typed))
+          fd.set('signature', await sign(challengeToken, typed))
         } catch {
           /* в поле публичный seed — сервер ответит auth.signature */
         }
@@ -88,7 +88,7 @@
     },
   })
 
-  mirrorToField(bound, 'nonce', () => nonce)
+  mirrorToField(bound, 'challenge', () => challengeToken)
 
   const initial = untrack(() => stepOf(bound.state.result ?? undefined) ?? ({} as StepData))
   let blocked = $state<StepData['blocked']>(initial.blocked)
@@ -133,7 +133,7 @@
       })
   })
   $effect(() => {
-    if (data.challenge?.nonce) nonce = data.challenge.nonce
+    if (data.challenge?.token) challengeToken = data.challenge.token
   })
 
   function stepOf(result?: { data?: unknown }): StepData | undefined {
@@ -156,7 +156,7 @@
         steps.set(next.step)
       blocked = next.blocked
       restrictions = next.restrictions
-      if (next.nonce) nonce = next.nonce
+      if (next.token) challengeToken = next.token
       if (next.step === 'entry' || next.step === 'register' || next.step === 'restore')
         void refreshChallenge()
     })
@@ -181,10 +181,10 @@
         signal: new AbortController().signal,
       })
       const fresh =
-        out.kind === 'result' ? (out.result.data as { nonce?: string } | undefined)?.nonce : undefined
-      if (fresh) nonce = fresh
+        out.kind === 'result' ? (out.result.data as { token?: string } | undefined)?.token : undefined
+      if (fresh) challengeToken = fresh
     } catch {
-      /* останется прежний nonce — сервер вернёт auth.nonce-unknown */
+      /* останется прежний токен — сервер вернёт auth.nonce-unknown */
     }
   }
 

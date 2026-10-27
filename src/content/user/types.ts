@@ -31,6 +31,24 @@ export type RenewalPayload = {
   version: number
 }
 
+/**
+ * Challenge входа: запечатанный токен вместо серверного nonce. Сервер
+ * ничего не хранит (stateless — работает между инстансами): срок жизни
+ * несёт само запечатывание (iron ttl), `field` привязывает токен к полю,
+ * чья подпись доказывает владение (`seed`), `n` — случайная соль выпуска.
+ * Клиент токен видит — это не секрет: подделать или продлить его без
+ * серверного ключа нельзя, а подписывает его по-прежнему секрет seed,
+ * которого в токене нет.
+ */
+export type ChallengePayload = {
+  /** Дискриминант: challenge входа. */
+  k: 'challenge'
+  /** Поле, к которому привязан токен (`seed`). */
+  field: string
+  /** Случайная соль выпуска. */
+  n: string
+}
+
 /** Сведения о подсети в истории сессии (полный IP и маска не хранятся). */
 export type SubnetEntry = { hash: string; country: string | null; at: number }
 
@@ -74,7 +92,7 @@ export type Blocked = {
 export type Principal = { id: string }
 
 /** Ответы API — данные без ошибок; ошибки (код+путь) — `error.ts`. */
-export type Challenge = { nonce: string; expiresAt: number }
+export type Challenge = { token: string; expiresAt: number }
 
 /** Значения токенов: запечатанные строки; в куки их кладёт адаптер (vault). */
 export type TokenPair = {

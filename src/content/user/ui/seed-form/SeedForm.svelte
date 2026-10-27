@@ -47,8 +47,8 @@
     host?: StepsHost
     /** Внешняя привязка `seedForm` от координатора; без неё создаётся автономная. */
     bound?: BoundForm
-    /** Challenge `nonce` при автономном использовании. */
-    nonce?: string
+    /** Challenge-токен при автономном использовании. */
+    challenge?: string
     /** Начальный `seed` при автономном использовании. */
     seed?: string
     /** Сгенерирован ли `seed` локально в этом браузере (для памятки на `register`). */
@@ -78,7 +78,7 @@
     authorize,
     host,
     bound: externalBound,
-    nonce = '',
+    challenge = '',
     seed = '',
     localSeed = null,
     holdSeconds = 2,
@@ -104,9 +104,9 @@
         prepare: async (fd) => {
           const typed = String(fd.get('seed') ?? '').trim()
           fd.set('seed', typed)
-          if (typed.length >= 43 && typed.length <= 44 && nonce !== '') {
+          if (typed.length >= 43 && typed.length <= 44 && challenge !== '') {
             try {
-              fd.set('signature', await sign(nonce, typed))
+              fd.set('signature', await sign(challenge, typed))
             } catch {
               /* сервер ответит auth.signature */
             }
@@ -141,7 +141,7 @@
         return 'login'
       },
     })
-    mirrorToField(standaloneBound, 'nonce', () => nonce)
+    mirrorToField(standaloneBound, 'challenge', () => challenge)
     mirrorToField(standaloneBound, 'seed', () => localSeed ?? seed)
   }
 
@@ -186,7 +186,7 @@
   >
     <Common errors={activeForm.common} title="Проверьте форму" />
 
-    <Field of={activeForm.f.nonce} />
+    <Field of={activeForm.f.challenge} />
     <Field of={activeForm.f.signature} />
 
     {#if !shouldAuthorize}

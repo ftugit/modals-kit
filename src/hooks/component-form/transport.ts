@@ -107,7 +107,7 @@ export function unwrapKitAction(body: unknown): { result?: Result } | undefined 
  * Транспорт отправки на СТРАНИЧНЫЙ экшен SvelteKit (`/path` без `?/имени` —
  * форма различает намерения по полю intent). Отличия от `jsonTransport`:
  * ответ — Kit-обёртка (распаковка `unwrapKitAction`); `prepare` — место
- * ДО сетевого вызова: так модуль пользователя подписывает nonce секретом из
+ * ДО сетевого вызова: так модуль пользователя подписывает challenge-токен секретом из
  * поля, не заводя собственный fetch.
  */
 export function kitActionTransport(

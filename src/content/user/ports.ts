@@ -4,8 +4,9 @@
  *
  * Где что живёт:
  *  - сессии, auth, профиль — ресурсы `schema.ts` через `db.resource` (ход 257);
- *  - nonce и настройки модуля — `#lib/cache` (`localStore`);
- *  - ключ запечатывания временного токена и nonce-секрет — `src/env.ts`
+ *  - настройки модуля — `#lib/cache` (`localStore`); challenge входа —
+ *    stateless запечатанный токен (`seal`), серверного хранилища у него нет;
+ *  - ключ запечатывания токенов (access/renewal/challenge) — `src/env.ts`
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
 import type { DataContext, Filter, Order } from '#lib/db/index.js'
@@ -25,13 +26,6 @@ export type SeedAccountRow = {
   deletedAt: number | null
 }
 import type { UserConfig } from './config.js'
-
-/** Одноразовый nonce на подпись (TTL минуты, тратится один раз). */
-export interface ChallengePort {
-  issue(nonce: string, ttlSeconds: number): Promise<void>
-  /** `true` — nonce был и потрачен; повторно тот же nonce не проходит. */
-  consume(nonce: string): Promise<boolean>
-}
 
 /**
  * Сессии = устройства. Строка создаётся на входе, пересоздаётся при
@@ -142,15 +136,23 @@ export interface SealKeysPort {
   retire(id: string): Promise<void>
 }
 
-/** Запечатывание токенов (iron-webcrypto в адаптере): access и продление. */
+/** Запечатывание токенов (iron-webcrypto в адаптере): access, продление, challenge. */
 export interface SealPort {
   seal(
-    payload: import('./types.js').AccessTokenPayload | import('./types.js').RenewalPayload,
+    payload:
+      | import('./types.js').AccessTokenPayload
+      | import('./types.js').RenewalPayload
+      | import('./types.js').ChallengePayload,
     ttlSeconds: number,
   ): Promise<string>
   unseal(
     token: string,
-  ): Promise<import('./types.js').AccessTokenPayload | import('./types.js').RenewalPayload | undefined>
+  ): Promise<
+    | import('./types.js').AccessTokenPayload
+    | import('./types.js').RenewalPayload
+    | import('./types.js').ChallengePayload
+    | undefined
+  >
 }
 
 /**
@@ -184,7 +186,6 @@ export type ConfigPort = UserConfig
 
 /** Всё, что нужно ядру. Собирает адаптер. */
 export interface AuthPorts {
-  challenge: ChallengePort
   sessions: SessionStorePort
   auths: AuthStorePort
   profiles: ProfileStorePort

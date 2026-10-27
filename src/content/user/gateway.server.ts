@@ -41,7 +41,7 @@ import { profile as coreProfile, updateProfile as coreUpdateProfile } from './pr
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { ProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { Challenge, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -361,20 +361,6 @@ function profilesAdapter() {
 export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
   const keys = sealKeysFromEnv()
   return {
-    challenge: (() => {
-      const store = localStore.scope('user-auth-challenge', { max: 10_000 })
-      return {
-        issue: async (nonce, ttl) => {
-          await store.set(`nonce:${nonce}`, true, ttl * 1000)
-        },
-        async consume(nonce) {
-          const k = `nonce:${nonce}`
-          const had = await store.get<boolean>(k)
-          await store.delete(k)
-          return had === true
-        },
-      }
-    })(),
     sessions: sessionsAdapter(),
     auths: authsAdapter(),
     profiles: profilesAdapter(),
@@ -455,10 +441,10 @@ async function withRenewLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 export function auth(event: AuthEvent): {
   /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
   readonly enabled: boolean
-  issueChallenge(): Promise<UserResult<{ nonce: string; expiresAt: number }>>
-  login(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
-  restoreDeleted(args: { seed: string; nonce: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
-  verifySeed(args: { seed: string; nonce: string; signature?: string }): Promise<UserResult<{ sub: string }>>
+  issueChallenge(): Promise<UserResult<Challenge>>
+  login(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  restoreDeleted(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  verifySeed(args: { seed: string; challenge: string; signature?: string }): Promise<UserResult<{ sub: string }>>
   renew(): Promise<UserResult<LoginOutcome>>
   refreshAccess(): Promise<UserResult<string>>
   logout(): Promise<UserResult<null>>

@@ -1,6 +1,6 @@
 # `src/content/user` — модуль пользователя (вход по seed, сессии, профиль, ACL)
 
-Автономный доменный модуль приложения: Ed25519-подпись `seed` по одноразовому `challenge`, оба токена сессии в `HttpOnly`-куках, клиентское зеркало `access` в RAM (`vault`), таблицы аккаунтов/сессий/профилей в `#lib/db`, UI ACL на 21 экран и маршрутно-независимые формы компонентов через `#hooks/component-form`.
+Автономный доменный модуль приложения: Ed25519-подпись `seed` по запечатанному challenge-токену (stateless, без серверного хранилища nonce), оба токена сессии в `HttpOnly`-куках, клиентское зеркало `access` в RAM (`vault`), таблицы аккаунтов/сессий/профилей в `#lib/db`, UI ACL на 21 экран и маршрутно-независимые формы компонентов через `#hooks/component-form`.
 
 ---
 
@@ -15,7 +15,7 @@
 | `schema.ts` | Три ресурса `#lib/db`: `user_auth` (`seed`, времена + soft delete, блокировки `blocked`, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`), `user_session` (`jti`, имя устройства, хэш подсети + история, `last_seen_at`, отзыв = soft delete). Разворачиваются через `schemaSpec` в `src/server/db.server.ts`. |
 | `keys.ts` | Изоморфная криптография `@noble/ed25519`: `generateKeyPair`, `seedOf`, `sign`, `verify`. |
 | `types.ts` | Клеймы токенов, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked`. |
-| `ports.ts` | Контракты портов: `challenge`, `sessions`, `auths`, `profiles`, `config`, `seal`, `cookies`, `clock`. |
+| `ports.ts` | Контракты портов: `sessions`, `auths`, `profiles`, `config`, `seal`, `cookies`, `clock`. |
 | `auth.ts` | Доменный API входа и сессий: `issueChallenge`, `login`, `restoreDeleted`, `verifySeed` (проверка владения `seed` без создания сессии), `guard`, `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, `requestDelete`, `sweepDeletions`. |
 | `profile.ts` | Профильный API отдельно от `auth.ts`: `profile`, `updateProfile`, доменная проверка аватара по заголовку (`probeImageHeader`). |
 | `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#components/form/photo.js`). |

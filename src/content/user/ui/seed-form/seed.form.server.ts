@@ -54,7 +54,7 @@ registerComponentForm({
         const derived = await seedOf(String(values.seed ?? '').trim())
         const r = await u.login({
           seed: derived,
-          nonce: String(values.nonce ?? ''),
+          challenge: String(values.challenge ?? ''),
           signature: values.signature ? String(values.signature) : undefined,
         })
         if (!r.ok) {
@@ -71,7 +71,7 @@ registerComponentForm({
         const derived = await seedOf(String(values.seed ?? '').trim())
         const r = await u.restoreDeleted({
           seed: derived,
-          nonce: String(values.nonce ?? ''),
+          challenge: String(values.challenge ?? ''),
           signature: values.signature ? String(values.signature) : undefined,
         })
         if (!r.ok) {
@@ -84,7 +84,7 @@ registerComponentForm({
         const derived = await seedOf(String(values.seed ?? '').trim())
         const r = await u.verifySeed({
           seed: derived,
-          nonce: String(values.nonce ?? ''),
+          challenge: String(values.challenge ?? ''),
           signature: values.signature ? String(values.signature) : undefined,
         })
         if (!r.ok) return gone(r.fact)
