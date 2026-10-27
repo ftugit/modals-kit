@@ -9,7 +9,7 @@
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
-import { userAuthRoute, userListFiltersRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
+import { userAuthRoute, userListFiltersRoute, userMenuRoute } from './routes.js'
 
 registerModal({
   name: 'user.auth',
@@ -23,21 +23,23 @@ registerModal({
   route: userMenuRoute.href,
   size: { width: 280, height: 200 },
 })
-// Профиль: `route` с параметром сегмента (`/user/[id]`). Лоадера нет и не
-// должно быть — `fetcher` при отсутствии своего лоадера берёт данные маршрута
-// (`preloadData` по `route`), поэтому страница и модалка грузят один `load`.
+// Профиль: маршрутной загрузки у модалки НЕТ намеренно. Данные показа
+// профиля запрашивает сам компонент профиля у `load` роута `/user/[id]`
+// при показе; модалка — только носитель с ACL-гейтом. С `route` между
+// носителем и компонентом встал бы снимок загрузчика модалок, и показ
+// через меню и через список мог разойтись со свежим ответом роута.
 registerModal({
   name: 'user.profile',
   component: lazy(() => import('./ui/ProfileModal.svelte')),
-  route: userProfileRoute.href,
   size: { width: 480, height: 560 },
 })
-// Список seed-юзеров: та же схема — `route` без `loader`, данные приносит
-// `load` маршрута `/users`, экран общий со страницей (`SeedUsersScreen`).
+// Список seed-юзеров: та же модель — компонент списка сам запрашивает
+// данные у `load` роута `/users` при показе (страница отдаёт ему свой
+// SSR-снапшот), модалка только ACL-гейт. No-JS адреса у ссылок на список
+// и профиль — явные `href` на страницы `/users` и `/user/<id>`.
 registerModal({
   name: 'user.list',
   component: lazy(() => import('./ui/SeedUsersModal.svelte')),
-  route: userListRoute.href,
   size: { width: 640, height: 560 },
 })
 // Фильтры списка: открывается кнопкой над списком, результат пишет в

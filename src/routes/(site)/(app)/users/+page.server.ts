@@ -1,6 +1,8 @@
 // Список seed-юзеров по адресу (`/users`). Данные и отказ — ОДНА функция
-// `load` для двух носителей: страницы и модалки `user.list` (модалка берёт их
-// через `preloadData` по `route`, своего `loader` у неё нет).
+// `load` для всех носителей: страница отдаёт результат компоненту списка
+// пропсом, остальные носители (модалка, шаг админки) ничего не приносят —
+// компонент при показе сам зовёт `preloadData` этого же роута. Одна точка
+// доступа к данным на все формы показа.
 //
 // Отказ приходит ДАННЫМИ, а не броском (как у профиля `/user/[id]`): брошенный
 // `error(403)` оставил бы модалку в состоянии `status: 'error'`, её компонент
@@ -22,7 +24,7 @@ import {
   SEED_USERS_PAGE_SIZE,
   SEED_USERS_STATES,
   seedUsersSnapshot,
-  type SeedUsersScreenData,
+  type SeedUsersRouteData,
 } from '#content/user/ui/seed-users/source.js'
 
 const num = (raw: string | null, fallback: number, min: number, max: number): number => {
@@ -40,7 +42,7 @@ const dateMs = (raw: string | null): number | null => {
 const ORDERS = SEED_USERS_ORDERS
 const STATES = SEED_USERS_STATES
 
-export const load: PageServerLoad = async (event): Promise<SeedUsersScreenData> => {
+export const load: PageServerLoad = async (event): Promise<SeedUsersRouteData> => {
   // Данные приватные: у `load` нет ни одного заголовка по умолчанию.
   event.setHeaders({ 'cache-control': 'private, no-store' })
 

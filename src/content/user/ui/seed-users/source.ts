@@ -81,12 +81,12 @@ export const SEED_USERS_EXTRA_SEARCH: ExtraSearchSpec = {
 export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active', nick: '' } as const
 
 /**
- * Данные экрана списка: ровно то, что отдаёт `load` роута `/users`.
+ * Данные `load` роута `/users` — единственный источник показа списка.
  * `fact` — отказ домена данными (нет входа, нет права), а не брошенная ошибка:
- * иначе компонент модалки не смонтировался бы и экран отказа показать некому.
+ * иначе носителю нечего было бы показать экраном отказа (`Acl` рисует он).
  * `snapshot === null` при `fact === null` не бывает.
  */
-export interface SeedUsersScreenData {
+export interface SeedUsersRouteData {
   snapshot: PaginatorState<SeedUserView> | null
   fact: AuthErrorCode | null
   /** Вход включён на сервере (иначе экран скрыт за `Acl`). */
@@ -126,7 +126,7 @@ async function fetchSeedUsersPage(
     err.code = r.type === 'redirect' ? 'auth.expired' : 'load.error'
     throw err
   }
-  const data = r.data as SeedUsersScreenData
+  const data = r.data as SeedUsersRouteData
   // Отказ домена `load` отдаёт данными (`fact`): для пагинатора это ошибка
   // с кодом домена — пустой список он прочитал бы как «список пуст».
   if (data.fact) {

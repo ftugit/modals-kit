@@ -6,20 +6,21 @@
 // модалку в состоянии `status: 'error'`, её компонент не смонтировался бы и
 // экран `Acl` показать было бы некому. Поэтому три исхода `profile()`
 // (`fail(fact)` / `ok(null)` / `ok(view)`) переезжают в данные как есть, а
-// какой экран из них следует, решает `ProfileScreen`.
+// Какой отказ показать, решает носитель (страница/модалка — только
+// ACL-гейт); что рисовать из профиля, решает сам компонент профиля.
 //
 // `ok(null)` — это и «строки нет», и «она не видна текущему»: модель не отдаёт
 // чужую строку молча (`policy.select` → `ownerOrRoles('auth_id', …)`), а не
 // сообщает «запрещено». Различить эти два случая снаружи нельзя — и не нужно.
 import type { PageServerLoad } from './$types'
-import type { ProfileScreenData } from '#content/user/index.js'
+import type { ProfileRouteData } from '#content/user/index.js'
 import { auth } from '#content/user/gateway.server.js'
 import { createUserConfig } from '#content/user/index.js'
 import { localStore } from '#server/cache.server.js'
 
 const config = createUserConfig(localStore.scope('user-config'))
 
-export const load: PageServerLoad = async (event): Promise<ProfileScreenData> => {
+export const load: PageServerLoad = async (event): Promise<ProfileRouteData> => {
   // Данные приватные: у `load` нет ни одного заголовка по умолчанию.
   event.setHeaders({ 'cache-control': 'private, no-store' })
 

@@ -1,28 +1,30 @@
 <script lang="ts">
   /**
-   * Экран списка seed-юзеров — единственное место, где данные `load` роута
-   * `/users` превращаются в экран (образец — `ProfileScreen`):
+   * Список seed-юзеров — конечный компонент, а не экран на подаче
+   * носителя: он сам запрашивает данные и сам рисует всё своё
+   * (заголовок, поиск, фильтры, строки, скелетоны, ожидание). Поэтому
+   * он одинаково живёт на странице, в модалке и в шаге админки на
+   * хосте шагов, где маршрутного `load` под него нет.
    *
-   *  - `fact` — отказ сессии/доступа: экран `Acl` (для `auth.forbidden` —
-   *    модельный экран «Доступ запрещён»: права на список проверяет домен, и
-   *    отказ обязан звучать одинаково на странице и в модалке);
-   *  - `snapshot` — первая порция пагинатора: список.
+   * Данные — одна точка: `load` роута `/users`. Страница отдаёт свой
+   * серверный результат пропсом `initial` (SSR/no-JS целы); остальные
+   * носители ничего не приносят — компонент при показе сам зовёт
+   * `preloadData` того же роута, а порции догружает источник тем же
+   * путём. ACL компонент не рисует: отказ (`fact`) сообщает носителю
+   * через `onAcl`, носитель показывает `Acl`.
    *
-   * Носителю (странице или модалке) знать про это нечего: он передаёт данные
-   * и ничего не решает.
-   *
-   * Над списком — поиск и фильтры этапа 1: слева штатный `SearchBar`
-   * пагинатора (источник объявил родной поиск по seed), справа кнопка
-   * модалки фильтров со счётчиком применённых. Состояние обоих живёт в
-   * пагинаторе (`extra`, ключи объявил источник) и в адресе (`?users.*`),
-   * поэтому страница и модалка показывают один срез и после перезагрузки.
+   * Строки — в двух режимах, выбор снаружи: `link` (переход в профиль,
+   * как было) и `select` (управляемый выбор юзера, например между
+   * этапами: выбранный id и обработчик — пропсы, состояние выбора
+   * живёт у вызывающего, не в списке).
    */
+  import { preloadData } from '$app/navigation'
+  import { untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
-  import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
@@ -33,25 +35,65 @@
     SEED_USERS_FILTER_KEYS,
     SEED_USERS_NAME,
     SEED_USERS_PAGE_SIZE,
+    type SeedUsersRouteData,
   } from './seed-users/source.js'
 
   interface Props {
-    snapshot: PaginatorState<SeedUserView> | null
-    fact: AuthErrorCode | null
-    enabled?: boolean
-    canSeeDeleted?: boolean
-    variant?: UserSurfaceVariant
+    /** Данные `load` роута от носителя (страница): своего запроса не будет. */
+    initial?: SeedUsersRouteData | null
+    /** Отказ из собственного запроса: ACL рисует носитель. */
+    onAcl?: (fact: AuthErrorCode) => void
+    /** Режим строк: `link` — в профиль, `select` — выбор юзера наружу. */
+    mode?: 'link' | 'select'
+    /** Выбранный юзер в режиме `select` (состояние — снаружи). */
+    selectedId?: string | null
+    /** Выбор строки в режиме `select`. */
+    onSelect?: (id: string) => void
     class?: string
   }
 
-  // `canSeeDeleted` в данных остаётся для носителей; экрану он больше не
-  // нужен: доступность блока удалённых считает `load` страницы фильтров.
-  let { snapshot, fact, enabled, variant = 'plain', class: className }: Props = $props()
+  let {
+    initial = null,
+    onAcl,
+    mode = 'link',
+    selectedId = null,
+    onSelect,
+    class: className,
+  }: Props = $props()
 
-  // Регистрация — на стороне экрана, в том же бандле, что и хост пагинатора.
+  // Регистрация — на стороне компонента, в том же бандле, что и хост пагинатора.
   ensureSeedUsersPaginator()
 
   const asModalLink = useModalLink()
+
+  let data = $state<SeedUsersRouteData | null>(untrack(() => initial))
+  let asked = false
+
+  $effect(() => {
+    if (initial) {
+      data = initial
+      return
+    }
+    if (data || asked) return
+    asked = true
+    void (async () => {
+      const r = await preloadData('/users')
+      if (r.type !== 'loaded') {
+        // Гостя увели редиректом на вход: носителю — сессионный отказ.
+        onAcl?.('auth.expired')
+        return
+      }
+      const d = r.data as SeedUsersRouteData
+      if (d.fact) {
+        onAcl?.(d.fact)
+        return
+      }
+      data = d
+    })()
+  })
+
+  const snapshot = $derived(data?.snapshot ?? null)
+
   const pagState = usePaginatorState<SeedUserView>(SEED_USERS_NAME)
   const query = $derived(
     typeof pagState().extra?.q === 'string' ? (pagState().extra.q as string) : '',
@@ -87,11 +129,7 @@
   })
 </script>
 
-{#if fact === 'auth.forbidden'}
-  <Acl model="forbidden" backHref="/" {variant} class={className} />
-{:else if fact}
-  <Acl status={fact} backHref="/" {variant} class={className} />
-{:else if snapshot}
+{#if snapshot}
   <PaginatorScope snapshots={{ [SEED_USERS_NAME]: snapshot }}>
   <section class={className}>
     <div class="mb-3 flex items-baseline justify-between gap-3">
@@ -128,7 +166,7 @@
       class="max-h-[420px]"
     >
       {#snippet renderItem(item: SeedUserView)}
-        <SeedUserRow {item} />
+        <SeedUserRow {item} {mode} selected={item.id === selectedId} {onSelect} />
       {/snippet}
       {#snippet renderSkeleton()}
         <!--
@@ -152,4 +190,17 @@
     </Paginator>
   </section>
   </PaginatorScope>
+{:else}
+  <!-- Собственное ожидание компонента: носителю скелет списка не положен. -->
+  <section class={className} data-testid="seed-users-pending" aria-busy="true">
+    <div class="mb-3 flex items-baseline justify-between gap-3">
+      <h2 class="text-base font-semibold">Seed-юзеры</h2>
+      <span class="text-xs text-muted-foreground">всего: —</span>
+    </div>
+    <div class="flex flex-col gap-2">
+      {#each [0, 1, 2] as i (i)}
+        <Skeleton class="h-9 w-full" />
+      {/each}
+    </div>
+  </section>
 {/if}

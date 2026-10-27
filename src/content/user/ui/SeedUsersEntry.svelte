@@ -9,11 +9,13 @@
    * модалке и на странице.
    *
    * Кнопка одна на оба носителя (канон `useModalLink`): с JS — модалка
-   * `user.list` с данными `load` роута, без JS — обычная ссылка на `/users`.
+   * `user.list`, без JS — обычная ссылка на `/users` (адрес явный: у
+   * модалки маршрутной загрузки нет, данные запрашивает сам список).
    */
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { vault } from '../vault.svelte.js'
+  import { userListRoute } from '../routes.js'
 
   const asModalLink = useModalLink()
   const authorized = $derived(vault.authorized)
@@ -29,6 +31,6 @@
       Список аккаунтов по seed. Виден администратору и обладателям права на чтение аккаунтов —
       экран сам скажет, если права нет.
     </p>
-    <Button {...asModalLink('user.list')}>Открыть список</Button>
+    <Button {...asModalLink('user.list', {}, { href: userListRoute.href() })}>Открыть список</Button>
   </section>
 {/if}

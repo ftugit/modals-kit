@@ -17,6 +17,7 @@
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
   import { DemoPanel, demoParams } from '#components/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
+  import UserPickerSteps from '#content/user/ui/UserPickerSteps.svelte'
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */
@@ -259,6 +260,19 @@
       </p>
     </div>
   {/if}
+
+  <!-- Прототип админки: конечные компоненты юзера (список и профиль) живут
+       в шагах без подачи данных носителем — список в режиме выбора. -->
+  <section class="space-y-3">
+    <h2 class="text-base font-semibold">Прототип админки: выбор пользователя</h2>
+    <p class="text-sm text-muted-foreground">
+      Те же компоненты, что на страницах и в модалках, — но в хосте шагов, где
+      маршрутного <code class="rounded bg-muted/70 px-1">load</code> под них нет:
+      список сам запрашивает данные и работает выбором, профиль сам показывает
+      выбранного по одному <code class="rounded bg-muted/70 px-1">id</code>.
+    </p>
+    <UserPickerSteps />
+  </section>
 
   <p class="text-xs text-muted-foreground">
     Бронь ключей глобальна: <code class="rounded bg-muted/70 px-1">step</code> — /fields,

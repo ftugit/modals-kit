@@ -145,7 +145,10 @@ definePaginator({
     (`page.n=9` → `9`). Свои валидаторы получают то, что объявят сами.
   - `adapter-local.ts` — local storage адаптер.
   - `adapter-cursor.ts` — opaque cursor-адаптер.
-  - `store.ts` — vanilla Store с поддержкой SSR и гидрации.
+  - `store.ts` — vanilla Store с поддержкой SSR и гидрации. Гидрация различает
+    перемонтирование и переспрос: тот же объект снапшота живую ячейку не трогает,
+    новый объект (носитель/компонент переспросил источник) заменяет её свежей
+    первой порцией.
   - `registry.ts` — реестр экземпляров пагинаторов по имени.
   - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra`, `setPageSize`, `patchItems` и др.).
 - `src/lib/paginate/search/` — поиск поверх источника (fuzzy-сканирование, словарь

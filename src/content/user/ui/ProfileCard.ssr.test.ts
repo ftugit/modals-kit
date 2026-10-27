@@ -1,7 +1,7 @@
 import { render } from 'svelte/server'
 import { describe, expect, test } from 'vitest'
 import ProfileCard from './ProfileCard.svelte'
-import ProfileScreen from './ProfileScreen.svelte'
+import Profile from './Profile.svelte'
 import { specProfile } from '../spec-profile.js'
 import type { ProfileView } from '../types.js'
 
@@ -39,10 +39,10 @@ describe('ProfileCard', () => {
   })
 })
 
-describe('ProfileScreen: заглушка «не создан»', () => {
+describe('Profile: заглушка «не создан» рисует сам компонент', () => {
   test('notCreated — тексты спеки, а не экран отказа', () => {
-    const { body } = render(ProfileScreen, {
-      props: { uid: base.authId, profile: null, notCreated: true, fact: null },
+    const { body } = render(Profile, {
+      props: { uid: base.authId, initial: { profile: null, notCreated: true } },
     })
     expect(body).toContain('data-testid="profile-not-created"')
     expect(body).toContain(specProfile.notCreatedTitle)

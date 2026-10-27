@@ -46,7 +46,7 @@ export type Store = {
   state<T>(name: string, pageSize?: number): () => PaginatorState<T>
   /** Иммутабельный патч состояния. */
   update<T>(name: string, fn: (prev: PaginatorState<T>) => PaginatorState<T>): void
-  /** Гидрация SSR-снапшотом: применяется ОДИН раз на имя. */
+  /** Гидрация снапшотом: новый объект заменяет ячейку, тот же — нет (см. реализацию). */
   hydrate<T>(name: string, snapshot: PaginatorState<T>): void
   /** Была ли гидрация по этому имени (для инспекции/тестов). */
   isHydrated(name: string): boolean
@@ -58,6 +58,8 @@ export type Store = {
 export function createPaginatorStore(): Store {
   const cells = new Map<string, Cell>()
   const hydrated = new Set<string>()
+  /** Последний принятый снапшот по имени: меряем «носитель переспросил?» объектом. */
+  const hydratedFrom = new Map<string, unknown>()
 
   function cell(name: string, pageSize = 20): Cell {
     let c = cells.get(name)
@@ -85,7 +87,13 @@ export function createPaginatorStore(): Store {
       }
     },
     hydrate<T>(name: string, snapshot: PaginatorState<T>): void {
-      if (hydrated.has(name)) return
+      // Тот же объект — это перемонтирование с тем же снапшотом: живое
+      // состояние пользователя (накопленные страницы, позиция) не трогаем.
+      // Новый объект — носитель реально переспросил данные (компонент при
+      // показе сходил в свой источник): принимаем свежую первую порцию
+      // вместо замороженной первой, иначе переспрос бессмыслен.
+      if (hydratedFrom.get(name) === snapshot) return
+      hydratedFrom.set(name, snapshot)
       hydrated.add(name)
       const c = cell(name, snapshot.pageSize)
       const next = snapshot as PaginatorState<unknown>

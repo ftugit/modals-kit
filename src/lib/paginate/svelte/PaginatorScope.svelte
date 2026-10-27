@@ -12,8 +12,9 @@
 
   let { snapshots, store: customStore, children }: Props = $props()
 
-  // Скоуп создаётся один раз: стор и SSR-снапшоты берутся при монтировании
-  // (повторная гидрация живого стора перетёрла бы состояние пользователя).
+  // Скоуп создаётся один раз: стор и SSR-снапшоты берутся при монтировании.
+  // Принимать ли снапшот, решает стор: тот же объект — перемонтирование
+  // (живое состояние цело), новый — носитель переспросил данные.
   const initial = untrack(() => ({ customStore, snapshots }))
   const store =
     initial.customStore ?? (typeof window === 'undefined' ? createPaginatorStore() : getClientStore())

@@ -14,13 +14,24 @@
   import { Button, TimeAgo } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { specProfile } from '../../spec-profile.js'
+  import { userProfileRoute } from '../../routes.js'
   import type { SeedUserView } from '../../types.js'
 
   interface Props {
     item: SeedUserView
+    /**
+     * Режим строки — решает вызывающий список, не строка: `link` — переход
+     * в профиль; `select` — выбор юзера наружу (состояние выбора живёт
+     * у вызывающего, строка только показывает `selected`).
+     */
+    mode?: 'link' | 'select'
+    /** Выбрана ли строка в режиме `select`. */
+    selected?: boolean
+    /** Выбор строки в режиме `select`. */
+    onSelect?: (id: string) => void
   }
 
-  let { item }: Props = $props()
+  let { item, mode = 'link', selected = false, onSelect }: Props = $props()
 
   const asModalLink = useModalLink()
 
@@ -31,19 +42,26 @@
   const cell = 'min-w-0 flex-1 basis-0 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]'
 </script>
 
-<!-- Вся карточка — ссылка на профиль. Именно `Button`, а не голая `<a>`:
+<!-- Вся карточка — действие строки. Именно `Button`, а не голая `<a>`:
      примитив держит `aria-disabled` живой ссылки реактивно (у голого
      spread на `<a>` первый клиентский рендер до готовности роутера
-     оставляет застарелый `aria-disabled`). -->
+     оставляет застарелый `aria-disabled`). Режим `link` — ссылка на
+     профиль (модалка/роут); режим `select` — кнопка выбора: выбранность
+     показывает снаружи пришедший `selected`, выбор уходит в `onSelect`. -->
 <Button
-  {...asModalLink('user.profile', { id: item.id })}
+  {...(mode === 'link'
+    ? asModalLink('user.profile', { id: item.id }, { href: userProfileRoute.href({ id: item.id }) })
+    : { onclick: () => onSelect?.(item.id), 'aria-pressed': selected })}
   variant="plain"
   size="none"
-  class="flex w-full items-baseline justify-start gap-3 rounded-md px-2 py-2 text-left font-normal hover:bg-accent focus-visible:bg-accent"
+  class={mode === 'select' && selected
+    ? 'flex w-full items-baseline justify-start gap-3 rounded-md bg-accent px-2 py-2 text-left font-normal ring-2 ring-ring focus-visible:bg-accent'
+    : 'flex w-full items-baseline justify-start gap-3 rounded-md px-2 py-2 text-left font-normal hover:bg-accent focus-visible:bg-accent'}
   data-testid="seed-user-row"
   data-id={item.id}
-  title="Открыть профиль"
-  aria-label="Открыть профиль пользователя"
+  data-selected={mode === 'select' ? selected : undefined}
+  title={mode === 'select' ? 'Выбрать пользователя' : 'Открыть профиль'}
+  aria-label={mode === 'select' ? 'Выбрать пользователя' : 'Открыть профиль пользователя'}
 >
   {#if item.seed}
     <code class="{cell} text-sm" title={item.seed} data-testid="seed-user-cell">{item.seed}</code>
