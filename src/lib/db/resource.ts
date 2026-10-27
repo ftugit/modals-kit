@@ -35,6 +35,7 @@ import type {
   ResourceRow,
   ListInput,
   Operation,
+  Order,
   Resource,
   ResourceApi,
   Row,
@@ -266,9 +267,13 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         fail('forbidden');
       const rel = r.relations[name],
         target = rel.resource;
+      // Связь цели — её primaryKey ИЛИ уникальное поле: LATERAL и так с
+      // LIMIT 1, уникальность гарантирует не более одной строки (обратный
+      // ход «родитель включает ребёнка» по уникальному FK, напр. профиль
+      // аккаунта по auth_id).
       if (
         target.table === r.table ||
-        rel.foreignField !== target.primaryKey ||
+        (rel.foreignField !== target.primaryKey && target.fields[rel.foreignField]?.db?.unique !== true) ||
         !own(r.fields, rel.localField) ||
         !allows(r.fields[rel.localField].read, ctx)
       )
@@ -330,6 +335,18 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     const cAt = col(r, created),
       cPk = col(r, r.primaryKey);
     return `(${cAt} < ${s.fieldParam(r.fields[created], at)} OR (${cAt} = ${s.fieldParam(r.fields[created], at)} AND ${cPk} <= ${s.fieldParam(pk, key)}))`;
+  }
+  /** ORDER BY с путями `relation.field`: значение — из payload включённой связи, NULL — последним (конвенция orderSQL). */
+  function orderSqlText(order: Order, incKeys: readonly string[], s: Sql): string {
+    if (!order.some(([k]) => k.includes('.'))) return orderSQL(r, order);
+    return order
+      .map(([k, d]) => {
+        const dot = k.indexOf('.');
+        if (dot === -1) return col(r, k) + ' ' + d.toUpperCase() + ' NULLS LAST';
+        const alias = ident('_db_include_' + incKeys.indexOf(k.slice(0, dot)));
+        return `${alias}.payload->>${s.param(k.slice(dot + 1))} ${d.toUpperCase()} NULLS LAST`;
+      })
+      .join(', ');
   }
   async function read(ctx0: DataContext, input0: ListInput | CursorInput = {}, cursor = false) {
     const ctx = context(ctx0),
@@ -397,7 +414,18 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
         }
       bookmarkValues = values;
     }
-    const inc = await includes(ctx, input.include, s);
+    // Сортировка по связанному полю требует сам join: связи из порядка
+    // подтягиваются в include автоматически. Курсорный режим путь не умеет:
+    // закладка строится по значениям полей базовой записи, payload связи в
+    // неё не положить, — честный unsupported вместо битой закладки.
+    if (cursor && order.some(([k]) => k.includes('.'))) fail('unsupported');
+    const includeNames = [
+      ...new Set([
+        ...(input.include ?? []),
+        ...order.filter(([k]) => k.includes('.')).map(([k]) => k.slice(0, k.indexOf('.'))),
+      ]),
+    ];
+    const inc = await includes(ctx, includeNames, s);
     const selected = [...new Set([...keys, ...(cursor ? order.map(([k]) => k) : [])])];
     // Параметры, на которые ссылается предикат БЕЗ закладки: `$1…$n`.
     const predicateParams = s.values.slice();
@@ -423,7 +451,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     };
     const statement = withSignal(
       s.statement(
-        `SELECT ${projection(r, selected)}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicateWithBookmark} ORDER BY ${orderSQL(r, scanOrder)} LIMIT ${s.param(limit + (cursor ? 1 : 0))}` +
+        `SELECT ${projection(r, selected)}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicateWithBookmark} ORDER BY ${orderSqlText(scanOrder, inc.keys, s)} LIMIT ${s.param(limit + (cursor ? 1 : 0))}` +
           (!cursor ? ' OFFSET ' + s.param((page - 1) * limit) : ''),
       ),
       ctx,

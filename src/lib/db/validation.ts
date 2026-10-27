@@ -438,6 +438,14 @@ function checkShape(r: Resource): void {
         push(`relations.${name}.resource: должен быть Resource (см. defineResource)`);
       else if (!own(target.fields, rel.foreignField))
         push(`relations.${name}.foreignField: нет поля ${rel.foreignField} в связанном ресурсе`);
+      // include строит LATERAL с LIMIT 1: связь обязана давать не более одной
+      // строки цели — primaryKey или уникальное поле (иначе join молча срежет).
+      if (target && typeof target === 'object' && target.fields) {
+        const targetPk = (target as { primaryKey?: unknown }).primaryKey;
+        const targetField = (target.fields as Record<string, { db?: { unique?: boolean } }>)[rel.foreignField];
+        if (typeof targetPk === 'string' && rel.foreignField !== targetPk && targetField?.db?.unique !== true)
+          push(`relations.${name}.foreignField: нужен primaryKey или уникальное поле связанного ресурса`);
+      }
       if (own(r.fields, name)) push(`relations.${name}: имя связи совпадает с полем`);
     }
   if (r.softDelete) {

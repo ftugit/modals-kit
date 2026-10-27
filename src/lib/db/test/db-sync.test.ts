@@ -496,6 +496,75 @@ test("raw: связанные записи — тоже сырые (удалён
     assert.equal((await db.resource(rs.comments).estimate(ctx)).rows, 1, "обычный: удалённые скрыты");
   }));
 
+/* ── связи: include по уникальному полю и сортировка по связанному полю ── */
+
+/** Родитель «автор» и ребёнок «профиль» с уникальным FK на родителя — как аккаунт и профиль юзера. */
+function authorProfile() {
+  const authors: Resource = defineResource({
+    key: "t.fauthor",
+    table: "public.fauthor",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
+      name: f.text({ ...open, create: () => true }),
+    },
+    policy: rules,
+    order: [],
+    relations: undefined,
+  } as Resource);
+  const profiles: Resource = defineResource({
+    key: "t.fprofile",
+    table: "public.fprofile",
+    primaryKey: "id",
+    fields: {
+      id: f.uuid({ ...open, orderable: true, filters: ["eq"], db: { default: "gen_random_uuid()" } }),
+      author_id: f.uuid({
+        ...open,
+        filters: ["eq"],
+        db: { unique: true, references: { resource: () => authors, chain: true } },
+      }),
+      nick: f.text({ ...open, nullable: true, orderable: true, filters: ["eq", "icontains"] }),
+    },
+    policy: rules,
+    order: [],
+  } as Resource);
+  const withRel: Resource = { ...authors, relations: { profile: { resource: profiles, localField: "id", foreignField: "author_id" } } };
+  return { authors: withRel, profiles };
+}
+
+test("связи: родитель включает ребёнка по уникальному полю; сортировка по связанному полю", () =>
+  withPg(async (pg, driver) => {
+    const rs = authorProfile();
+    await defineSchema({ resources: [rs.authors, rs.profiles] }).sync(driver);
+    const db = createDb({ driver, limits: conservativeLimits });
+    await pg.query("INSERT INTO fauthor (name) VALUES ('b'), ('a'), ('c')");
+    const ids = (await pg.query<{ id: string; name: string }>("SELECT id, name FROM fauthor ORDER BY name")).rows;
+    // Профили: у 'a' ника нет строки вовсе, у 'b' — 'zeta', у 'c' — 'alfa'.
+    await pg.query("INSERT INTO fprofile (author_id, nick) VALUES ($1, 'zeta'), ($2, 'alfa')", [ids[1]!.id, ids[2]!.id]);
+
+    const rows = await db.resource(rs.authors).select(ctx, { include: ["profile"] });
+    const byName = new Map(rows.map((x) => [(x as Record<string, unknown>).name as string, (x as Record<string, { nick?: string } | null>).profile]));
+    assert.equal(byName.get("b")?.nick, "zeta", "include по уникальному FK отдал профиль");
+    assert.equal(byName.get("c")?.nick, "alfa");
+    assert.equal(byName.get("a"), null, "нет профиля — payload null, строка родителя на месте");
+
+    const asc = await db.resource(rs.authors).select(ctx, { order: [["profile.nick", "asc"]] });
+    assert.deepEqual(
+      asc.map((x) => (x as Record<string, unknown>).name),
+      ["c", "b", "a"],
+      "сортировка по связанному полю без явного include; NULL — последним",
+    );
+    const desc = await db.resource(rs.authors).select(ctx, { order: [["profile.nick", "desc"]] });
+    assert.deepEqual(
+      desc.map((x) => (x as Record<string, unknown>).name),
+      ["b", "c", "a"],
+      "и в обратную сторону NULL — последним (конвенция NULLS LAST)",
+    );
+
+    const raw = await db.resource(rs.authors).raw((a) => a.select(ctx, { include: ["profile"] } as never));
+    assert.equal(raw.length, 3, "сырой вариант: include по уникальному полю тоже работает");
+  }));
+
 test("цепочка: выключенное у корня (without, raw) переходит на звенья", () =>
   withPg(async (pg, driver) => {
     const rs = family({ commentDelete: { ...rules, delete: () => false } });

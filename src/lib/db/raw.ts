@@ -45,7 +45,15 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
   const sets = (s: Sql, row: Row) => Object.entries(row).map(([k, v]) => `${ident(r.fields[k]!.column ?? k)} = ${s.fieldParam(r.fields[k]!, v)}`);
   const order = (input: unknown): Order => {
     const o = (input ?? r.order) as Order;
-    if (!Array.isArray(o) || o.some((p) => !Array.isArray(p) || !own(r.fields, p[0]) || !["asc", "desc"].includes(p[1])))
+    // Путь `relation.field` — как в обычном ресурсе: связь объявлена, поле у цели есть.
+    const badPath = (k: unknown): boolean => {
+      if (typeof k !== "string") return true;
+      const dot = k.indexOf(".");
+      if (dot === -1) return !own(r.fields, k);
+      const rel = r.relations?.[k.slice(0, dot)];
+      return !rel || !own(rel.resource.fields, k.slice(dot + 1));
+    };
+    if (!Array.isArray(o) || o.some((p) => !Array.isArray(p) || badPath(p[0]) || !["asc", "desc"].includes(p[1])))
       fail("validation");
     return o.some(([k]) => k === r.primaryKey) ? o : [...o, [r.primaryKey, "asc"]];
   };
@@ -61,13 +69,31 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
     if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(page) || page < 1) fail("validation");
     const s = new Sql();
     const predicate = await where(ctx, s, input.filter as Filter | undefined);
-    const inc = includes(input.include, s);
-    return run(ctx, s, `SELECT ${projection(r, keysOf(input.fields))}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicate} ORDER BY ${orderSQL(r, order(input.order))} LIMIT ${s.param(limit)} OFFSET ${s.param((page - 1) * limit)}`);
+    const ord = order(input.order);
+    // Сортировка по связанному полю подтягивает join сама, как в обычном ресурсе.
+    const includeNames = [
+      ...new Set([
+        ...((input.include as readonly string[] | undefined) ?? []),
+        ...ord.filter(([k]) => k.includes(".")).map(([k]) => k.slice(0, k.indexOf("."))),
+      ]),
+    ];
+    const inc = includes(includeNames, s);
+    const orderSql = ord.some(([k]) => k.includes("."))
+      ? ord
+          .map(([k, d]) => {
+            const dot = k.indexOf(".");
+            if (dot === -1) return col(r, k) + " " + d.toUpperCase() + " NULLS LAST";
+            const alias = ident("_db_include_" + includeNames.indexOf(k.slice(0, dot)));
+            return `${alias}.payload->>${s.param(k.slice(dot + 1))} ${d.toUpperCase()} NULLS LAST`;
+          })
+          .join(", ")
+      : orderSQL(r, ord);
+    return run(ctx, s, `SELECT ${projection(r, keysOf(input.fields))}${inc.select} FROM ${table(r)}${inc.joins} WHERE ${predicate} ORDER BY ${orderSql} LIMIT ${s.param(limit)} OFFSET ${s.param((page - 1) * limit)}`);
   }
   /**
    * Связанные записи сырого экземпляра — тоже сырые: все поля, без правил строк, удалённые
-   * тоже. Ограничения те же, что у обычного `include`: связь по первичному ключу цели, не на
-   * свою таблицу, не больше 8.
+   * тоже. Ограничения те же, что у обычного `include`: связь по первичному ключу или
+   * уникальному полю цели, не на свою таблицу, не больше 8.
    */
   function includes(names: unknown, s: Sql) {
     if (names === undefined) return { joins: "", select: "" };
@@ -78,7 +104,8 @@ export function rawApi(db: Database, r: Resource): ResourceApi {
       if (typeof name !== "string" || !r.relations || !own(r.relations, name) || own(r.fields, name)) fail("validation", undefined, [`raw: нет связи ${String(name)}`]);
       const rel = r.relations[name]!;
       const target = rel.resource;
-      if (target.table === r.table || rel.foreignField !== target.primaryKey || !own(r.fields, rel.localField)) fail("unsupported");
+      // Как в обычном ресурсе: primaryKey цели или её уникальное поле (LATERAL с LIMIT 1).
+      if (target.table === r.table || (rel.foreignField !== target.primaryKey && target.fields[rel.foreignField]?.db?.unique !== true) || !own(r.fields, rel.localField)) fail("unsupported");
       const alias = ident("_db_include_" + i);
       const object = `jsonb_build_object(${Object.keys(target.fields).map((k) => `${s.param(k)}::text, ${expr(target, k)}`).join(", ")})`;
       joins.push(

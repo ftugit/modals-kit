@@ -82,15 +82,22 @@ export function orderBy(r: Resource, ctx: DataContext, input?: Order): Order {
   for (const pair of order) {
     if (!Array.isArray(pair) || pair.length !== 2) fail("validation");
     const [k, d] = pair;
-    if (
-      typeof k !== "string" ||
-      !own(r.fields, k) ||
-      !r.fields[k].orderable ||
-      !allows(r.fields[k].read, ctx) ||
-      !["asc", "desc"].includes(d) ||
-      seen.has(k)
-    )
-      fail("forbidden");
+    if (typeof k !== "string" || !["asc", "desc"].includes(d) || seen.has(k)) fail("forbidden");
+    // Путь `relation.field` — сортировка по полю связанной записи: связь и
+    // поле проверяются по объявлениям схемы (связь объявлена, поле цели
+    // orderable и читаемо). Сам join добавит читающий код (include по связи
+    // подтянется автоматически); сортировка — по текстовому представлению
+    // значения (payload->>), для текстовых полей это их естественный порядок.
+    const dot = k.indexOf(".");
+    if (dot === -1) {
+      if (!own(r.fields, k) || !r.fields[k].orderable || !allows(r.fields[k].read, ctx))
+        fail("forbidden");
+    } else {
+      const rel = r.relations?.[k.slice(0, dot)];
+      const tf = rel?.resource.fields[k.slice(dot + 1)];
+      if (!rel || !tf || !tf.orderable || !allows(tf.read, ctx) || k.slice(dot + 1).includes("."))
+        fail("forbidden");
+    }
     seen.add(k);
   }
   const result = [...order];
