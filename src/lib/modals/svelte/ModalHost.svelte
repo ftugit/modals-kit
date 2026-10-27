@@ -25,6 +25,7 @@
     visibleChain,
   } from '../core'
   import { createLoader } from '../loader'
+  import { ensureModalComponent } from './component.svelte'
   import type { Modals } from '../create'
   import type { ModalRegistry } from '../registry'
   import { entryLabel } from '../types'
@@ -115,6 +116,10 @@
         : undefined,
       report: (e) => m.reportError(e),
       hrefOf: (e) => routeHref(e.definition?.route, e.params),
+      // Готовность записи — данные и вид: ленивый чанк ждётся тем же
+      // ожиданием, что данные (иначе между скелетоном и содержимым —
+      // пустой кадр на время импорта).
+      ensureView: (definition) => ensureModalComponent(definition),
     })
 
   // Начальные значения — для SSR и первого кадра. В браузере загрузчик

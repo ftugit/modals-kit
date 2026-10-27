@@ -4,6 +4,7 @@
   import { runtimeKey, visibleChain } from '../core'
   import type { ResolvedEntry } from '../types'
   import { setInstance, useModals } from './context'
+  import { resolvedModalComponent } from './component.svelte'
   import {
     MODAL_CONTENT_CLASS,
     MODAL_ERROR_CLASS,
@@ -38,6 +39,11 @@
 
   const hasLoader = $derived(Boolean(entry.definition?.loader || entry.definition?.route))
   const showSkeleton = $derived(hasLoader && rt.status !== 'ready' && rt.status !== 'error')
+  // Вид записи: ленивый компонент к моменту `ready` уже доехал (загрузчик
+  // ждал его вместе с данными) — здесь только читаем разрешённый.
+  const Component = $derived(
+    entry.definition ? (resolvedModalComponent(entry.definition) as any) : undefined,
+  )
   const transientContent = $derived(entry.definition ? null : m.modals.layerContent(entry.name))
   const transientSnippet = $derived(
     typeof transientContent === 'function' ? (transientContent as Snippet) : null,
@@ -72,8 +78,7 @@
     data-modal-content=""
     data-modal-reveal={wasPending ? '' : undefined}
   >
-    {#if entry.definition?.component}
-      {@const Component = entry.definition.component as any}
+    {#if Component}
       <Component
         name={entry.name}
         index={entry.index}

@@ -25,6 +25,13 @@ export interface LoaderDeps {
    * не возникает.
    */
   preload?: (href: string) => Promise<{ ok: true; data: unknown } | { ok: false; reason: string }>
+  /**
+   * Дождаться вида записи (слой вида: доехавший чанк ленивого компонента).
+   * Готовность — данные И вид: без этого между скелетоном и содержимым
+   * оставался пустой кадр на время импорта. Ядру вид непрозрачен — здесь
+   * только ожидание. Нет хука — готовность по-прежнему только данные.
+   */
+  ensureView?: (definition: AnyDefinition) => Promise<void>
   /** href полноэкранной страницы записи, если он есть. */
   hrefOf?: (entry: ResolvedEntry) => string | null
   /** Максимальное количество записей в кэше данных. По умолчанию 50. */
@@ -51,6 +58,8 @@ export function createLoader(deps: LoaderDeps) {
     /** Сбой уже отправлен в report как load-failed — preload не дублирует. */
     reported: boolean
     done: Promise<unknown>
+    /** Данные после готовности вида: этим ожиданием ставится `ready`. */
+    ready: Promise<unknown>
   }
   const inflight = new Map<string, Job>()
 
@@ -146,24 +155,51 @@ export function createLoader(deps: LoaderDeps) {
   }
 
   /** Существующая загрузка ключа или новая. */
-  function jobFor(ck: string, name: string, load: (signal: AbortSignal) => Promise<unknown>): Job {
+  function jobFor(
+    ck: string,
+    name: string,
+    load: (signal: AbortSignal) => Promise<unknown>,
+    definition?: AnyDefinition,
+  ): Job {
     const existing = inflight.get(ck)
     if (existing) return existing
 
     const controller = new AbortController()
-    const job: Job = { controller, keys: new Set(), preloads: 0, reported: false, done: undefined! }
+    const job: Job = {
+      controller, keys: new Set(), preloads: 0, reported: false,
+      done: undefined!, ready: undefined!,
+    }
     const settle = () => {
       // Удаляем только если это всё ещё наш job: устаревший промис
       // может догонять уже созданный новый и не должен его затирать.
       if (inflight.get(ck) === job) inflight.delete(ck)
     }
-    job.done = load(controller.signal).then(
+    job.done = load(controller.signal)
+    // Данные в кеш — как только пришли, не дожидаясь вида: повторное
+    // открытие после сбоя вида не грузит данные заново.
+    job.done.then(
+      (data) => {
+        if (!controller.signal.aborted) cacheSet(ck, data)
+      },
+      () => {},
+    )
+    // Готовность записи — данные И вид (ленивый чанк): `ready` ставится
+    // только по этому ожиданию, иначе между скелетоном и содержимым
+    // оставался пустой кадр на время импорта компонента.
+    let view: Promise<void> = Promise.resolve()
+    if (deps.ensureView && definition) {
+      try {
+        view = deps.ensureView(definition)
+      } catch (error) {
+        view = Promise.reject(error)
+      }
+    }
+    job.ready = Promise.all([job.done, view]).then(([data]) => data)
+    job.ready.then(
       (data) => {
         settle()
-        if (controller.signal.aborted) return data
-        cacheSet(ck, data)
+        if (controller.signal.aborted) return
         for (const k of job.keys) setRuntime(k, { status: 'ready', data })
-        return data
       },
       (error: unknown) => {
         settle()
@@ -172,13 +208,44 @@ export function createLoader(deps: LoaderDeps) {
           job.reported = true
           deps.report?.({ lib: 'modals', code: 'load-failed', cause: error, ctx: { name } })
         }
-        throw error
       },
     )
     // Без ожидающих (одни записи стопки) отказ не должен стать unhandled rejection.
-    job.done.catch(() => {})
+    job.ready.catch(() => {})
     inflight.set(ck, job)
     return job
+  }
+
+  /**
+   * Только вид, без загрузки данных (кеш данных уже есть или загрузчика
+   * нет): готовность записи откладывается до вида тем же ожиданием.
+   */
+  function viewGate(
+    key: string,
+    name: string,
+    definition: AnyDefinition,
+    data: unknown,
+    hasData: boolean,
+  ): () => void {
+    if (!deps.ensureView) {
+      setRuntime(key, hasData ? { status: 'ready', data } : { status: 'ready' })
+      return () => {}
+    }
+    setRuntime(key, { status: 'loading' })
+    let live = true
+    deps.ensureView(definition).then(
+      () => {
+        if (live) setRuntime(key, hasData ? { status: 'ready', data } : { status: 'ready' })
+      },
+      (error: unknown) => {
+        if (!live) return
+        setRuntime(key, { status: 'error', error: errorMessage(error) })
+        deps.report?.({ lib: 'modals', code: 'load-failed', cause: error, ctx: { name } })
+      },
+    )
+    return () => {
+      live = false
+    }
   }
 
   /** Никто больше не ждёт — отменяем (F33: раньше это проверял только владелец). */
@@ -204,19 +271,24 @@ export function createLoader(deps: LoaderDeps) {
     const definition = lookup(entry.name)
     const load = definition ? fetcher(entry, definition) : null
     if (!load) {
-      setRuntime(key, { status: 'ready' })
-      return () => {}
+      // Данных нет — готовность решает только вид (ленивый чанк).
+      if (!definition) {
+        setRuntime(key, { status: 'ready' })
+        return () => {}
+      }
+      return viewGate(key, entry.name, definition, undefined, false)
     }
 
     const ck = loaderKey(entry.name, entry.params)
     if (cache.has(ck)) {
-      setRuntime(key, { status: 'ready', data: cacheGet(ck) })
-      return () => {}
+      // Данные уже есть, но вид мог ещё не доехать (первое открытие
+      // после предзагрузки одними данными) — ждём и его.
+      return viewGate(key, entry.name, definition!, cacheGet(ck), true)
     }
 
     // Кто-то уже грузит те же name+params (другая запись или предзагрузка) —
     // подписываемся на тот же результат.
-    const job = jobFor(ck, entry.name, load)
+    const job = jobFor(ck, entry.name, load, definition)
     job.keys.add(key)
     setRuntime(key, { status: 'loading' })
 
@@ -249,7 +321,18 @@ export function createLoader(deps: LoaderDeps) {
     const merged = { ...(definition.defaultParams ?? {}), ...params }
     const entry = { name, params: merged } as ResolvedEntry
     const load = fetcher(entry, definition)
-    if (!load) return { ok: true }
+    if (!load) {
+      // Данных нет, но вид может быть ленивым: кнопка греет и его.
+      if (deps.ensureView) {
+        try {
+          await deps.ensureView(definition)
+        } catch (error) {
+          deps.report?.({ lib: 'modals', code: 'preload-failed', cause: error, ctx: { name } })
+          return { ok: false, error: errorMessage(error) }
+        }
+      }
+      return { ok: true }
+    }
 
     const ck = loaderKey(name, merged)
     if (cache.has(ck)) {
@@ -260,12 +343,13 @@ export function createLoader(deps: LoaderDeps) {
     const { signal } = options
     if (signal?.aborted) return { ok: false, error: 'Отменено' }
 
-    const job = jobFor(ck, name, load)
+    const job = jobFor(ck, name, load, definition)
     job.preloads += 1
     let onAbort: (() => void) | undefined
     try {
       await new Promise<unknown>((resolve, reject) => {
-        job.done.then(resolve, reject)
+        // Предзагрузка ждёт и вид: модалка откроется сразу с содержимым.
+        job.ready.then(resolve, reject)
         if (signal) {
           onAbort = () => reject(signal.reason)
           signal.addEventListener('abort', onAbort, { once: true })

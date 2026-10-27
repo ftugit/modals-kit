@@ -19,6 +19,45 @@ test('без загрузчика запись сразу готова', () => {
   assert.equal(l.readRuntime('plain', 0).status, 'ready')
 })
 
+test('ensureView: готовность ждёт вид так же, как данные', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    { name: 'lazy', component: 'X', loader: async () => ({}) } as any,
+  ])
+  let releaseView!: () => void
+  const viewGate = new Promise<void>((r) => (releaseView = r))
+  const l = createLoader({ store, lookup: scope.lookup, ensureView: () => viewGate })
+  l.runLoader(entry('lazy'))
+  await tick()
+  // данные уже пришли, вида ещё нет — запись всё ещё грузится (скелетон)
+  assert.equal(l.readRuntime('lazy', 0).status, 'loading')
+  releaseView()
+  await tick()
+  assert.equal(l.readRuntime('lazy', 0).status, 'ready')
+})
+
+test('ensureView: предзагрузка кнопки ждёт вид и падает вместе с ним', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    { name: 'lazy', component: 'X', loader: async () => ({}) } as any,
+    { name: 'broken', component: 'X', loader: async () => ({}) } as any,
+  ])
+  const l = createLoader({
+    store,
+    lookup: scope.lookup,
+    ensureView: async (definition) => {
+      if (definition.name === 'broken') throw new Error('чанк не доехал')
+    },
+  })
+  const okPreload = await l.preloadModal('lazy', {})
+  assert.equal(okPreload.ok, true)
+  const badPreload = await l.preloadModal('broken', {})
+  assert.equal(badPreload.ok, false)
+  l.runLoader(entry('broken'))
+  await tick()
+  assert.equal(l.readRuntime('broken', 0).status, 'error')
+})
+
 test('незнакомое имя — ошибка с объяснением', () => {
   const store = createModalStore()
   const l = createLoader({ store, lookup: () => undefined })

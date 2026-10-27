@@ -13,6 +13,8 @@ export {
 export type { ModalHandle, ModalStateHandle } from './state.svelte'
 
 export { createReactiveStore } from './store.svelte'
+export { lazy, ensureModalComponent, resolvedModalComponent } from './component.svelte'
+export type { ModalComponentLoader } from './component.svelte'
 export type { ReactiveModalStore } from './store.svelte'
 export { createMediaQuery, createIsNarrow } from './media.svelte'
 export {
