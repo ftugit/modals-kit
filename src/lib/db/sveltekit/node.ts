@@ -221,7 +221,9 @@ export function openPgPool(options: PgPoolOptions): PgRuntime {
     if (!Number.isSafeInteger(value) || (value as number) < min)
       throw new Error(`Invalid pg pool option: ${name} (нужно целое ≥ ${min})`);
   const pool = new Pool({
-    connectionString: options.connectionString,
+    // Оболочку значения env (пробелы, кавычки из панелей хостингов) pg разбирает
+    // молча и криво — до host «base»; срезаем её до парсинга.
+    connectionString: options.connectionString.trim().replace(/^["']+|["']+$/g, ''),
     max,
     connectionTimeoutMillis,
     idleTimeoutMillis,

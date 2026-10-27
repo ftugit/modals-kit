@@ -7,8 +7,9 @@
  * `lazyDriver` при первом запросе к БД. Страницы без БД её не поднимают — какой бы
  * движок ни был задан окружением (Hyperdrive, pg, PGlite): путь один.
  *
- * Движок: внешний Postgres по `DATABASE_URL` (при `DATABASE_RESET=1` он
- * очищается при первом открытии — база после деплоя как новая), иначе PGlite:
+ * Движок: внешний Postgres по `DATABASE_URL` (очистка при деплое — сборкой:
+ * `DATABASE_RESET=1`, `tooling/db-reset.mjs`; в рантайме база не трогается),
+ * иначе PGlite:
  * в памяти для dev/демо (иначе `npm run dev` и `vite build` спорят из-за
  * file-lock одного каталога) либо файловый каталог, если задан DATABASE_DIR. Таблицы описаны моделями (`posts`) и разворачиваются сами при
  * открытии БД (`schema.gate`): на любом движке один путь — в проде достаточно
@@ -29,7 +30,7 @@ import { createSchemaAdmin } from '#lib/db/sync/index.js'
 import { sharedTask } from '#hooks/task-stream.server.js'
 import type { TaskState } from '#lib/task/index.js'
 import {
-  DATABASE_DIR, DATABASE_RESET, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
+  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
   DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
 
@@ -228,18 +229,6 @@ async function openDriver(): Promise<Driver> {
       })
       driver = pool.driver
       close = pool.close
-      if (DATABASE_RESET) {
-        // Очистка именно той базы, что взята из DATABASE_URL: схема сносится
-        // до сверки (`schema.gate` ниже), поэтому модели, сиды и первый
-        // администратор разворачиваются на пустом месте. Каждый процесс с
-        // этим флагом начинает с чистой базы — на время разработки это и
-        // нужно; на боевой базе флаг не ставят.
-        console.warn('[db] DATABASE_RESET: очищаю схему public базы из DATABASE_URL — все данные будут удалены')
-        await driver.query({ text: 'DROP SCHEMA public CASCADE' }).catch(async () => {
-          // Схемы ещё нет (первый деплой на пустую базу) — чистить нечего.
-        })
-        await driver.query({ text: 'CREATE SCHEMA public' })
-      }
     } else {
       const node = await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres', {
         memory: !DATABASE_DIR,

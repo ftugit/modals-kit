@@ -15,7 +15,7 @@
   },
   "scripts": {
     "dev": "node --no-liftoff ./node_modules/vite/bin/vite.js dev",
-    "build": "vite build",
+    "build": "node tooling/db-reset.mjs && vite build",
     "preview": "node --no-liftoff ./node_modules/vite/bin/vite.js preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
