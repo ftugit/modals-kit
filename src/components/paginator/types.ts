@@ -107,6 +107,8 @@ export interface PaginatorProps<T> {
   /** Класс и атрибуты контейнера со строками (рамка, `data-testid` потребителя). */
   itemsClass?: string
   itemsAttrs?: Record<string, string | undefined>
+  /** Класс каждой группы строк (обёртки одного прохода загрузки, как `class` у `Acl`). */
+  itemClass?: string
   renderItem: Snippet<[T, { page: number; index: number }]>
   renderSkeleton?: Snippet<[{ page: number; index: number }]>
   renderPending?: Snippet<[{ page: number }]>

@@ -58,6 +58,7 @@
     nav,
     itemsClass,
     itemsAttrs,
+    itemClass,
     renderItem,
     renderSkeleton,
     renderPending,
@@ -91,6 +92,7 @@
       {renderSkeleton}
       {renderPending}
       {renderItem}
+      {itemClass}
     />
   {/if}
 

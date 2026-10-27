@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
+  import { cn } from '#components/utils.js'
   import { Alert, buttonVariants } from '#components/ui/index.js'
   import { asLink } from '#hooks/links/index.js'
   import { useLinkTo, usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
@@ -15,6 +16,8 @@
 
   interface Props {
     name?: string
+    /** Классы карточки ошибки (через `cn` к базовым у `Alert`). */
+    class?: string
     retryLabel?: string
     restartLabel?: string
     /** Коды `state.errorCode`, при которых вместо повтора — начало с первой страницы. */
@@ -33,6 +36,7 @@
 
   let {
     name: nameProp,
+    class: className,
     retryLabel = 'Повторить',
     restartLabel = 'Начать сначала',
     restartCodes = RESTART_CODES,
@@ -55,7 +59,7 @@
   {#if children}
     {@render children({ error: pagState().error, code, restart, retry, reset, retryHref })}
   {:else}
-    <Alert variant="destructive" data-testid="error-row" data-error-code={code} class="my-2">
+    <Alert variant="destructive" data-testid="error-row" data-error-code={code} class={cn('my-2', className)}>
       <div class="flex items-center justify-between gap-3 justify-self-stretch">
         <span>Ошибка загрузки: {pagState().error ?? 'неизвестная ошибка'}</span>
         {#if restart}

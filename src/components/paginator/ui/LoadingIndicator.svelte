@@ -4,15 +4,18 @@
   import { paginatorTask, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { taskPercent } from '#lib/task/index.js'
   import { trackTask } from '#hooks/loader.svelte.js'
+  import { cn } from '#components/utils.js'
   import { Spinner } from '../../ui/index.js'
 
   interface Props {
     name?: string
     text?: string
+    /** Классы внешнего элемента (через `cn` к базовым, как у `Acl`). */
+    class?: string
     children?: Snippet
   }
 
-  let { name: nameProp, text = 'Загрузка…', children }: Props = $props()
+  let { name: nameProp, text = 'Загрузка…', class: className, children }: Props = $props()
   // Имя пагинатора — идентичность экземпляра: читается один раз при монтировании.
   // Другое имя = другой пагинатор; пересоздаёт компонент родитель (`{#key}`).
   const name = untrack(() => nameProp)
@@ -30,7 +33,7 @@
     aria-live="polite"
     data-testid="loading-indicator"
     data-task-percent={percent !== null ? String(percent) : undefined}
-    class="pointer-events-none sticky top-2 z-10 flex justify-center"
+    class={cn('pointer-events-none sticky top-2 z-10 flex justify-center', className)}
   >
     {#if children}
       {@render children()}

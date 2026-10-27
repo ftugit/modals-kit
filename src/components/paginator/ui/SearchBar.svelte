@@ -3,6 +3,7 @@
   // Логика (форма, задержка, запись в стор, сброс) — хук `usePaginatorSearch`.
   import { Form } from '#lib/form/svelte/index.js'
   import { asLink } from '#hooks/links/index.js'
+  import { cn } from '#components/utils.js'
   import { Button, SearchInput } from '../../ui/index.js'
   import { usePaginatorSearch } from '../search.svelte.js'
 
@@ -21,6 +22,8 @@
     placeholder?: string
     /** Текст кнопки очистки. */
     clearLabel?: string
+    /** Классы корневого элемента формы (через `cn` к базовым, как у `Acl`). */
+    class?: string
   }
 
   let {
@@ -31,6 +34,7 @@
     label = 'Поиск',
     placeholder = 'Поиск…',
     clearLabel = 'Очистить поиск',
+    class: className,
   }: Props = $props()
 
   // svelte-ignore state_referenced_locally
@@ -48,7 +52,7 @@
   hiddenFields={search.hiddenFields}
   role="search"
   data-testid="search-form"
-  class="mb-3 flex flex-wrap items-center gap-2"
+  class={cn('mb-3 flex flex-wrap items-center gap-2', className)}
   onsubmit={search.submit}
 >
   <SearchInput
