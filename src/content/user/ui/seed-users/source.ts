@@ -43,6 +43,14 @@ export const SEED_USERS_PAGE_PARAM = 'users'
  */
 export const SEED_USERS_FILTER_KEYS = ['ord', 'state', 'cfrom', 'cto', 'dfrom', 'dto', 'nick'] as const
 
+/**
+ * Ключ ограничения по списку id (`users.ids=id,id`): не фильтр формы, а
+ * срез источника — шаг подтверждения показывает тем же списком только
+ * выбранных. Живёт в `extra` пагинатора (и в адресе), чтобы догрузка
+ * порций видела тот же срез, что первая порция снапшота.
+ */
+export const SEED_USERS_IDS_KEY = 'ids'
+
 /** Допустимые значения порядка и состояния: валидатор адреса и `load` роута смотрят в один список. */
 export const SEED_USERS_ORDERS: readonly SeedUsersOrder[] = [
   'created-desc',
@@ -75,10 +83,12 @@ export const SEED_USERS_EXTRA_SEARCH: ExtraSearchSpec = {
   dto: extraField('text', (v) => typeof v === 'string' && v.length <= 40),
   // Параметр никнейма (этап 2): только '1' — включён; всё прочее — выключен.
   nick: extraField('text', (v) => v === '1'),
+  // Ограничение по id: список uuid через запятую, разумной длины.
+  ids: extraField('text', (v) => typeof v === 'string' && /^[0-9a-f,-]{1,4000}$/i.test(v)),
 }
 
 /** Дефолты `extra`: значения по умолчанию в адрес не пишутся — чистый URL. */
-export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active', nick: '' } as const
+export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active', nick: '', ids: '' } as const
 
 /**
  * Данные `load` роута `/users` — единственный источник показа списка.
@@ -155,7 +165,7 @@ export const seedUsersSource = defineSource<SeedUserView>({
   // сужает выдачу сервер (подстрока seed/id, при включённом параметре — ещё
   // никнейма), а не клиент по загруженным порциям.
   search: { minLength: 2 },
-  filters: SEED_USERS_FILTER_KEYS,
+  filters: [...SEED_USERS_FILTER_KEYS, SEED_USERS_IDS_KEY],
   totals: true,
   data: (look, input) => fetchSeedUsersPage(look.page, look.pageSize, input),
 })
@@ -171,7 +181,7 @@ export function ensureSeedUsersPaginator(): string {
       // Поиск и любой фильтр — новая выдача с первой порции. Без `reloadKeys`
       // `setExtra` только правил бы состояние: ни перезапроса, ни смены адреса
       // (прецедент — `reloadKeys` демо-пагинатора и списка постов).
-      reloadKeys: ['q', ...SEED_USERS_FILTER_KEYS],
+      reloadKeys: ['q', ...SEED_USERS_FILTER_KEYS, SEED_USERS_IDS_KEY],
       adapter: createUrlAdapter({
         name: SEED_USERS_NAME,
         source: seedUsersSource,
@@ -193,7 +203,7 @@ export function ensureSeedUsersPaginator(): string {
  * Снапшот первой порции для `PaginatorHost`: состояние, которое хост принял бы
  * после загрузки этой страницы, но без сетевого хода — данные уже принёс `load`.
  */
-export function seedUsersSnapshot(p: SeedUsersPage): PaginatorState<SeedUserView> {
+export function seedUsersSnapshot(p: SeedUsersPage, ids?: string): PaginatorState<SeedUserView> {
   const totalPages = Math.max(1, Math.ceil(p.total / p.pageSize))
   return {
     name: SEED_USERS_NAME,
@@ -201,7 +211,9 @@ export function seedUsersSnapshot(p: SeedUsersPage): PaginatorState<SeedUserView
     pageSize: p.pageSize,
     totalItems: p.total,
     totalPages,
-    extra: {},
+    // Срез по id едет в `extra` снапшота: догрузка порций берёт фильтры
+    // из состояния, и без этого следующие порции потеряли бы ограничение.
+    extra: ids ? { [SEED_USERS_IDS_KEY]: ids } : {},
     loadedPages: [p.page],
     pages: { [p.page]: p.items },
     status: 'idle',

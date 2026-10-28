@@ -254,6 +254,7 @@ function authsAdapter() {
         order,
         includeDeleted = false,
         searchSeed,
+        ids,
         withNickname = false,
       }: {
         page: number
@@ -262,6 +263,7 @@ function authsAdapter() {
         order?: Order
         includeDeleted?: boolean
         searchSeed?: string
+        ids?: string[]
         withNickname?: boolean
       },
     ) {
@@ -290,12 +292,15 @@ function authsAdapter() {
             }
           : {}),
       })
-      if (searchSeed) {
-        // Подстрока seed: DB-фильтром её не выразить (схема поля — 43–44
-        // знака, слой валидирует значение фильтра полем). Таблица аккаунтов
-        // мала: выбираем срез целиком постранично, режем подстроку здесь,
-        // порцию и total считаем уже по ней (прецедент — `listDeletedBefore`).
-        const needle = searchSeed.toLowerCase()
+      if (searchSeed || ids?.length) {
+        // Подстрока seed и срез по списку id: DB-фильтром ни то ни другое
+        // не выразить (схема поля seed — 43–44 знака, слой валидирует
+        // значение фильтра полем; поле `id` вне объявленных фильтров
+        // модели). Таблица аккаунтов мала: выбираем срез целиком
+        // постранично, режем здесь, порцию и total считаем уже по нему
+        // (прецедент — `listDeletedBefore`).
+        const needle = (searchSeed ?? '').toLowerCase()
+        const idSet = ids?.length ? new Set(ids) : null
         const all: SeedAccountRow[] = []
         for (let p = 1; ; p++) {
           const batch = (await api().select(ctx, {
@@ -310,12 +315,14 @@ function authsAdapter() {
         }
         // Поиск совпадает по seed или по id, а при включённом никнейме —
         // ещё и по нему (тот же проход, тот же срез — total честен для
-        // всех полей сразу).
+        // всех полей сразу); срез по id — пересечение с тем же проходом.
         const matched = all.filter(
           (r) =>
-            (r.seed ?? '').toLowerCase().includes(needle) ||
-            r.id.toLowerCase().includes(needle) ||
-            (withNickname && (r.nickname ?? '').toLowerCase().includes(needle)),
+            (!idSet || idSet.has(r.id)) &&
+            (!needle ||
+              (r.seed ?? '').toLowerCase().includes(needle) ||
+              r.id.toLowerCase().includes(needle) ||
+              (withNickname && (r.nickname ?? '').toLowerCase().includes(needle))),
         )
         return {
           rows: matched.slice((page - 1) * pageSize, page * pageSize),

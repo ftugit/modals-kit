@@ -70,10 +70,13 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersRouteData> =
     // гейтит домен, роут лишь пропускает адресное значение. '1' пишет
     // модальный путь пагинатора, 'on' — нативный чекбокс no-JS формы.
     nickname: key('nick') === '1' || key('nick') === 'on',
+    // Ограничение по списку id (`users.ids`): шаг подтверждения выбора
+    // показывает тем же списком только выбранных юзеров.
+    ids: (key('ids') ?? '').split(',').filter(Boolean).slice(0, 500),
   })
 
   return {
-    snapshot: r.ok ? seedUsersSnapshot(r.value) : null,
+    snapshot: r.ok ? seedUsersSnapshot(r.value, (key('ids') ?? '').split(',').filter(Boolean).join(',') || undefined) : null,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,

@@ -9,7 +9,7 @@
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
-import { userAuthRoute, userListFiltersRoute, userMenuRoute } from './routes.js'
+import { userAuthRoute, userListFiltersRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
 
 registerModal({
   name: 'user.auth',
@@ -23,23 +23,25 @@ registerModal({
   route: userMenuRoute.href,
   size: { width: 280, height: 200 },
 })
-// Профиль: маршрутной загрузки у модалки НЕТ намеренно. Данные показа
-// профиля запрашивает сам компонент профиля у `load` роута `/user/[id]`
-// при показе; модалка — только носитель с ACL-гейтом. С `route` между
-// носителем и компонентом встал бы снимок загрузчика модалок, и показ
-// через меню и через список мог разойтись со свежим ответом роута.
+// Профиль: пара «модалка + роут» одного компонента. `route` нужен
+// ссылке (`asModalLink` строит из него `href` — без JS карточка ведёт
+// на страницу `/user/<id>` с тем же компонентом); данные показа
+// компонент профиля всё равно запрашивает сам у `load` этого роута
+// при показе — ответ загрузчика при открытии и его ответ совпадают,
+// отдельного снимка в показе нет. Модалка — только носитель с ACL.
 registerModal({
   name: 'user.profile',
   component: lazy(() => import('./ui/ProfileModal.svelte')),
+  route: userProfileRoute.href,
   size: { width: 480, height: 560 },
 })
-// Список seed-юзеров: та же модель — компонент списка сам запрашивает
+// Список seed-юзеров: та же пара — компонент списка сам запрашивает
 // данные у `load` роута `/users` при показе (страница отдаёт ему свой
-// SSR-снапшот), модалка только ACL-гейт. No-JS адреса у ссылок на список
-// и профиль — явные `href` на страницы `/users` и `/user/<id>`.
+// SSR-снапшот), модалка только ACL-гейт; `route` даёт ссылкам `href`.
 registerModal({
   name: 'user.list',
   component: lazy(() => import('./ui/SeedUsersModal.svelte')),
+  route: userListRoute.href,
   size: { width: 640, height: 560 },
 })
 // Фильтры списка: открывается кнопкой над списком, результат пишет в

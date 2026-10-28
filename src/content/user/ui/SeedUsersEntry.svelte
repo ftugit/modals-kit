@@ -15,7 +15,6 @@
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { vault } from '../vault.svelte.js'
-  import { userListRoute } from '../routes.js'
 
   const asModalLink = useModalLink()
   const authorized = $derived(vault.authorized)
@@ -31,6 +30,6 @@
       Список аккаунтов по seed. Виден администратору и обладателям права на чтение аккаунтов —
       экран сам скажет, если права нет.
     </p>
-    <Button {...asModalLink('user.list', {}, { href: userListRoute.href() })}>Открыть список</Button>
+    <Button {...asModalLink('user.list')}>Открыть список</Button>
   </section>
 {/if}

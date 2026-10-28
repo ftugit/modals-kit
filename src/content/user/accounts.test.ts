@@ -210,6 +210,20 @@ describe('список seed-юзеров', () => {
     )
   })
 
+  test('срез по списку id: список уходит в порт; пустой — без среза', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+    const a = await joined(ports, auths)
+
+    // Применение среза — за адаптером порта (как у подстроки поиска):
+    // домен проверяется по тому, что он передал в порт.
+    ok_(await listSeedUsers(ports, reader.access, { ids: [a.id, reader.id] }))
+    expect((listArgsOf() as { ids?: unknown }).ids).toEqual([a.id, reader.id])
+
+    ok_(await listSeedUsers(ports, reader.access, { ids: [] }))
+    expect((listArgsOf() as { ids?: unknown }).ids).toBeUndefined()
+  })
+
   test('размер порции: потолок домена — 100', async () => {
     const { ports, auths } = makePorts()
     const reader = await joined(ports, auths, ['account.read'])

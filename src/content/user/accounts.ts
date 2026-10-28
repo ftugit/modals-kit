@@ -60,6 +60,11 @@ export interface ListSeedUsersArgs {
    * без права или при выключенном параметре домен его игнорирует.
    */
   nickname?: boolean
+  /**
+   * Ограничение выдачи списком id (шаг подтверждения выбора и подобные):
+   * только эти юзеры. Пустой/отсутствующий — без ограничения.
+   */
+  ids?: string[]
 }
 
 const ORDER_OF: Record<SeedUsersOrder, Order> = {
@@ -159,6 +164,9 @@ export async function listSeedUsers(
       order: ORDER_OF[orderName],
       includeDeleted: state !== 'active',
       ...(q ? { searchSeed: q } : {}),
+      // Срез по id — не DB-фильтр (поле вне фильтров модели): применяет
+      // адаптер порта к выбранному срезу, как подстроку поиска.
+      ...(args.ids?.length ? { ids: [...args.ids] } : {}),
       ...(withNickname ? { withNickname: true } : {}),
     },
   )

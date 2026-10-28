@@ -17,7 +17,6 @@
   import { cn } from '#components/utils.js'
   import { seedForm } from './seed-form/form.js'
   import { specProfile } from '../spec-profile.js'
-  import { userProfileRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
 
@@ -48,12 +47,10 @@
   const profileLink = $derived(
     asModalLink('user.auth', { stage: 'profile' }),
   )
-  // Чтение своего профиля: модалка `user.profile`, без JS — роут `/user/<id>`
-  // (у модалки маршрутной загрузки нет, поэтому адрес — явный `href`).
+  // Чтение своего профиля: модалка `user.profile`, без JS — её роут
+  // `/user/<id>` (`href` строит сама механика из регистрации).
   const profileViewLink = $derived(
-    vault.principal
-      ? asModalLink('user.profile', { id: vault.principal }, { href: userProfileRoute.href({ id: vault.principal }) })
-      : null,
+    vault.principal ? asModalLink('user.profile', { id: vault.principal }) : null,
   )
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках

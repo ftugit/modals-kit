@@ -13,27 +13,34 @@
    * путём. ACL компонент не рисует: отказ (`fact`) сообщает носителю
    * через `onAcl`, носитель показывает `Acl`.
    *
-   * Строки — в двух режимах, выбор снаружи: `link` (переход в профиль,
-   * как было) и `select` (управляемый выбор юзера, например между
-   * этапами: выбранный id и обработчик — пропсы, состояние выбора
-   * живёт у вызывающего, не в списке).
+   * Механика нажатия на строку — не часть списка: её задаёт носитель
+   * фабрикой атрибутов `rowAttrs(user)` (по умолчанию — профиль:
+   * модалка `user.profile`, без JS роут `/user/<id>`). Та же фабрика
+   * ставит другую зарегистрированную пару «модалка + роут» или
+   * параметрный выбор между этапами (`asLink` с `?picked=…`) — список
+   * и карточка при этом не меняются; каждая механика стоит на `href`.
+   * Оформление выбора — `isSelected(id)` снаружи. Шаг подтверждения
+   * показывает тех же юзеров срезом адреса `users.ids` (состояние
+   * пагинатора): список переспрашивает источник при его смене.
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
+  import type { LinkAttrs } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
-  import SeedUserRow from './seed-users/SeedUserRow.svelte'
+  import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
     ensureSeedUsersPaginator,
     SEED_USERS_EXTRA_DEFAULTS,
     SEED_USERS_FILTER_KEYS,
     SEED_USERS_NAME,
+    SEED_USERS_PAGE_PARAM,
     SEED_USERS_PAGE_SIZE,
     type SeedUsersRouteData,
   } from './seed-users/source.js'
@@ -43,21 +50,21 @@
     initial?: SeedUsersRouteData | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (fact: AuthErrorCode) => void
-    /** Режим строк: `link` — в профиль, `select` — выбор юзера наружу. */
-    mode?: 'link' | 'select'
-    /** Выбранный юзер в режиме `select` (состояние — снаружи). */
-    selectedId?: string | null
-    /** Выбор строки в режиме `select`. */
-    onSelect?: (id: string) => void
+    /**
+     * Механика строки: атрибуты ссылки на карточку юзера. Задаёт носитель;
+     * по умолчанию — профиль (`user.profile`: модалка, без JS — роут).
+     */
+    rowAttrs?: (user: SeedUserView) => LinkAttrs
+    /** Оформление выбранных строк: смысл выбора — у механики носителя. */
+    isSelected?: (id: string) => boolean
     class?: string
   }
 
   let {
     initial = null,
     onAcl,
-    mode = 'link',
-    selectedId = null,
-    onSelect,
+    rowAttrs,
+    isSelected = (_id: string) => false,
     class: className,
   }: Props = $props()
 
@@ -65,19 +72,36 @@
   ensureSeedUsersPaginator()
 
   const asModalLink = useModalLink()
+  const attrsOf = (user: SeedUserView): LinkAttrs =>
+    rowAttrs?.(user) ?? { ...asModalLink('user.profile', { id: user.id }), title: 'Открыть профиль' }
 
   let data = $state<SeedUsersRouteData | null>(untrack(() => initial))
-  let asked = false
+  // Срез по списку id (`users.ids` адреса — шаг подтверждения выбора):
+  // адресное состояние пагинатора, а не проп: адаптер всё равно ведёт
+  // истину из адреса, и отдельный канал среза с ним бы спорил. Сменился
+  // набор — список переспрашивает источник, стор принимает новый
+  // снапшот (идентичность объекта).
+  const sliceIds = $derived(String(currentSearch()[`${SEED_USERS_PAGE_PARAM}.ids`] ?? ''))
+  let askedFor: string | null = null
 
   $effect(() => {
     if (initial) {
       data = initial
       return
     }
-    if (data || asked) return
-    asked = true
+    const key = sliceIds
+    if (askedFor === key) return
+    askedFor = key
+    // Запрос — на адрес носителя как есть: все ключи `users.*` текущего
+    // адреса (срез, страница, фильтры) `load` разберёт в тот же срез,
+    // что видит адаптер пагинатора.
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(currentSearch())) {
+      if (k === SEED_USERS_PAGE_PARAM || k.startsWith(`${SEED_USERS_PAGE_PARAM}.`)) sp.set(k, String(v))
+    }
+    const target = sp.size ? `/users?${sp.toString()}` : '/users'
     void (async () => {
-      const r = await preloadData('/users')
+      const r = await preloadData(target)
       if (r.type !== 'loaded') {
         // Гостя увели редиректом на вход: носителю — сессионный отказ.
         onAcl?.('auth.expired')
@@ -166,12 +190,22 @@
       class="max-h-[420px]"
     >
       {#snippet renderItem(item: SeedUserView)}
-        <SeedUserRow {item} {mode} selected={item.id === selectedId} {onSelect} />
+        <!-- Механика — атрибуты снаружи на ссылке-обёртке; карточка внутри
+             только рисует юзера и о нажатии не знает. -->
+        <a
+          {...attrsOf(item)}
+          class="block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="seed-user-row"
+          data-id={item.id}
+          data-selected={isSelected(item.id) || undefined}
+        >
+          <SeedUserCard {item} selected={isSelected(item.id)} />
+        </a>
       {/snippet}
       {#snippet renderSkeleton()}
         <!--
           Скелетон повторяет геометрию строки списка, а не один серый блок:
-          те же сегменты, что у SeedUserRow. Блок никнейма — только при
+          те же сегменты, что у SeedUserCard. Блок никнейма — только при
           включённом параметре: выключен — у скелетона его нет, как нет
           столбца у настоящих строк.
         -->

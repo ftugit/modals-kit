@@ -52,7 +52,10 @@ describe('список seed-юзеров: снапшот и регистраци
   // URL-хранилище: без объявления ключей в `extraSearch` адаптер поиск и
   // фильтры в адрес не пишет и из адреса не восстанавливает.
   test('адресному слою объявлены поиск и все ключи фильтров', () => {
-    expect(Object.keys(SEED_USERS_EXTRA_SEARCH).sort()).toEqual(['q', ...SEED_USERS_FILTER_KEYS].sort())
+    // Ключи фильтров формы + `q` поиска + срез по списку id (`ids`).
+    expect(Object.keys(SEED_USERS_EXTRA_SEARCH).sort()).toEqual(
+      ['q', 'ids', ...SEED_USERS_FILTER_KEYS].sort(),
+    )
     const adapter = getPaginator(SEED_USERS_NAME).adapter as {
       searchSpec?: { extra?: ExtraSearchSpec }
     }
