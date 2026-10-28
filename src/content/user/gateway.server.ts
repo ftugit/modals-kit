@@ -244,10 +244,14 @@ function authsAdapter() {
       await api().update(ctx, id, { permissions: [...permissions] })
     },
     async listDeletedBefore(cutoffMs: number): Promise<AuthRow[]> {
-      // таблица аккаунтов мала; выбранных удалённых фильтруем в JS — слоя
-      // фильтров по метке времени удаления нет
-      const rows = (await api().select(SYSTEM, { includeDeleted: true })) as unknown as Record<string, unknown>[]
-      return rows.map(authRowOf).filter((r) => r.deletedAt !== null && r.deletedAt <= cutoffMs)
+      // Срез — фильтром модели по метке удаления: одно `lte` (NULL сравнению
+      // не удовлетворяет и выпадает сам; `isNotNull` у генерируемого поля в
+      // объявленных фильтрах нет). Выборка всех строк и резка в JS убраны.
+      const rows = (await api().select(SYSTEM, {
+        includeDeleted: true,
+        filter: { field: 'deleted_at', op: 'lte', value: new Date(cutoffMs).toISOString() },
+      })) as unknown as Record<string, unknown>[]
+      return rows.map(authRowOf)
     },
     async listPage(
       ctx: DataContext,
@@ -301,8 +305,7 @@ function authsAdapter() {
         // не выразить (схема поля seed — 43–44 знака, слой валидирует
         // значение фильтра полем; поле `id` вне объявленных фильтров
         // модели). Таблица аккаунтов мала: выбираем срез целиком
-        // постранично, режем здесь, порцию и total считаем уже по нему
-        // (прецедент — `listDeletedBefore`).
+        // постранично, режем здесь, порцию и total считаем уже по нему.
         const needle = (searchSeed ?? '').toLowerCase()
         const idSet = ids?.length ? new Set(ids) : null
         const all: SeedAccountRow[] = []

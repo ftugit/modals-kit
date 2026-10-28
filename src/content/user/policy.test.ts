@@ -131,3 +131,21 @@ test('сервер без админа: видит строку auth и унос
     assert.equal((await auths.select(other(), { filter: { field: 'id', op: 'eq', value: row.id } })).length, 0)
   })
 })
+
+test('срез свипа удалений: фильтр модели по deleted_at вместо выборки всех строк', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const gone = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    const alive = (await auths.insert(SERVER, { seed: 'b'.repeat(43) })) as unknown as { id: string }
+    await auths.delete(SERVER, gone.id)
+
+    // Тот же вызов, что `listDeletedBefore` в gateway: одно `lte` по метке
+    // (NULL сравнению не удовлетворяет — действующие выпадают сами).
+    const rows = await auths.select(SERVER, {
+      includeDeleted: true,
+      filter: { field: 'deleted_at', op: 'lte', value: new Date().toISOString() },
+    })
+    assert.deepEqual(rows.map((r) => r.id), [gone.id])
+    void alive
+  })
+})

@@ -1125,6 +1125,7 @@ npm run test:db:probes # пробы на живых движках (см. ниж
 | `src/lib/db/test/ported/db-lib.script.ts` | 16 | перенесённые проверки источника (один `it` на скрипт из `src/lib/db/test/db-ported.test.ts`: PGlite/PG поднимаются раз на файл) |
 | `src/lib/db/test/ported/db-hardening.script.ts` | 5 | устойчивость отказов: отмена, дедлайны, отравленный parent |
 | `src/lib/db/test/ported/db-followup.script.ts` | 9 | дополнения переноса (из 12 групп источника снято 3, причины — `src/lib/db/PORTING.md`) |
+| `src/lib/db/test/db-exists.test.ts` | 10 | узел `exists` в `Filter`: одиночный и `not exists`, несколько через `and`/`or`, вложенный, составной `on`, ссылка модели на себя (`policy: false`), политика цели вкл/выкл, мягко удалённая цель не считается, недоверенный канал (только с политикой цели), лимит глубины, один SQL с уникальными алиасами — один PGlite на файл |
 | `src/lib/db/test/db-docs.test.ts` | — | боевой прогон `tooling/db-docs.mjs`: README/PORTING против кода |
 
 Аудит документации живёт как остальные стражи приложения: правила и разбор — в
