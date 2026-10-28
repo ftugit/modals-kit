@@ -89,8 +89,20 @@ export interface FileUploadProgressEntry {
   readonly recentSegments: readonly WsSegmentLogEntry[]
 }
 
-/** Структура, которую `ws-transport` передаёт в `TransportRequest.report(progress)` (`form.state.progress`). */
+/**
+ * Структура, которую `ws-transport` передаёт в `TransportRequest.report(progress)` (`form.state.progress`).
+ * Одновременно совместима со структурным контрактом `FormPending` из `#lib/form/svelte` (`formTask`),
+ * чтобы `<Button task={formTask(form.state)}>` и `FileAttachment` работали синхронно.
+ */
 export interface FormUploadProgress {
+  readonly status: 'pending'
+  readonly scope: 'local'
+  readonly label?: string
+  readonly progress: {
+    readonly kind: 'bytes'
+    readonly loaded: number
+    readonly total: number
+  }
   readonly kind: 'ws-upload'
   readonly phase: 'validating' | 'uploading' | 'processing' | 'done'
   readonly sentBytes: number

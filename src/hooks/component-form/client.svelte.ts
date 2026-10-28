@@ -11,6 +11,8 @@ import { page } from '$app/state'
 import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
 import { bind, type BindOptions, type BoundConfig, type BoundForm } from '#lib/form/svelte/index.js'
 import { kitActionTransport } from './transport.js'
+import { registerFormUploadFields } from './upload-progress.svelte.js'
+import { hasUploadableFiles, wsFormTransport } from './ws-transport.js'
 import { buildEnvelope, type FormDescription, type Result, type Transport } from '#lib/form/index.js'
 import type { ComponentFormOptions, FormSessionGuard } from './types.js'
 
@@ -71,7 +73,17 @@ export function bindComponentForm(
   const { action, prepare, continuation, session, lockStateKey, onSuccess } = options
   const resolveTarget = () => action ?? readCurrentHref()
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
-  const baseTransport = kitActionTransport(resolveTarget, prepare ? { prepare } : {})
+  const httpTransport = kitActionTransport(resolveTarget)
+  const wsTransport = wsFormTransport(resolveTarget)
+  const baseTransport: Transport = async (req) => {
+    if (prepare && req.data instanceof FormData) {
+      await prepare(req.data)
+    }
+    if (hasUploadableFiles(req.data) && typeof WebSocket === 'function') {
+      return wsTransport(req)
+    }
+    return httpTransport(req)
+  }
   let lastResult: Result | null = initialContinuation
 
   const transport: Transport = async (req) => {
@@ -111,6 +123,8 @@ export function bindComponentForm(
       continuation: { value: initialContinuation, enumerable: true, configurable: true },
     }) as BindOptions,
   )
+
+  $effect(() => registerFormUploadFields(form))
 
   if (lockStateKey) {
     let applied = false

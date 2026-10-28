@@ -17,7 +17,7 @@
   // связь читается здесь, в месте проверки, named-импортом. Новая подмена —
   // строка реестра + module-экспорт `base` в её файле.
   import CopyField, { base as copyBase } from './CopyField.svelte'
-  import type { AttachmentItem, PhotoConvertSpec } from '#components/ui/index.js'
+  import type { AttachmentItem, FileAttachmentItemMeta, PhotoConvertSpec } from '#components/ui/index.js'
 
   /**
    * Вид файлового поля глазами `Field`: к пропсам `FieldView` добавляются опции
@@ -30,6 +30,7 @@
     items?: readonly AttachmentItem[]
     mode?: 'replace' | 'append'
     onremove?: (item: AttachmentItem, index: number) => void
+    itemProps?: (file: File, index: number) => FileAttachmentItemMeta | undefined
   }
 
   // `of` может быть пустым: поля нет у источника (студии у GraphQL) — не рисуем.
@@ -58,6 +59,7 @@
     items,
     mode,
     onremove,
+    itemProps,
   }: {
     of: FieldView | undefined
     instead?: ComponentType<FieldView>
@@ -86,6 +88,8 @@
     mode?: 'replace' | 'append'
     /** Снятие показанного вложения: файл-поле его не касается, решает страница. */
     onremove?: (item: AttachmentItem, index: number) => void
+    /** Явная проекция состояния/прогресса для `FileAttachment` (по умолчанию связывается с `wss://` автоматически). */
+    itemProps?: (file: File, index: number) => FileAttachmentItemMeta | undefined
   } = $props()
 
   const BASE_OF = new Map<object, unknown>([[CopyField, copyBase]])
@@ -178,7 +182,7 @@
   {#if of.input === 'file'}
     <!-- сужение вида: `resolve` знает только `FieldView`, а опции — у файлового поля -->
     {@const FileField = Component as ComponentType<FileFieldView>}
-    <FileField {...of} {preview} {photoConvert} {items} {mode} {onremove} />
+    <FileField {...of} {preview} {photoConvert} {items} {mode} {onremove} {itemProps} />
   {:else}
     <Component {...of} />
   {/if}

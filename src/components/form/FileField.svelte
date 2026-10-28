@@ -11,8 +11,10 @@
     FileAttachment,
     FileInput,
     type AttachmentItem,
+    type FileAttachmentItemMeta,
     type PhotoConvertSpec,
   } from '#components/ui/index.js'
+  import { uploadItemPropsForField } from '#hooks/component-form/index.js'
   import type { FieldView } from '#lib/form/svelte/index.js'
   import FieldShell from './FieldShell.svelte'
 
@@ -22,6 +24,7 @@
     items,
     mode,
     onremove,
+    itemProps,
     ...f
   }: FieldView & {
     preview?: boolean
@@ -29,6 +32,7 @@
     items?: readonly AttachmentItem[]
     mode?: 'replace' | 'append'
     onremove?: (item: AttachmentItem, index: number) => void
+    itemProps?: (file: File, index: number) => FileAttachmentItemMeta | undefined
   } = $props()
 
   // `value` у type="file" браузер писать не даёт: атрибут из связки отбрасывается
@@ -36,6 +40,14 @@
     const { value: _value, ...rest } = f.attrs as Record<string, unknown>
     return rest
   })
+
+  const resolvedItemProps = $derived(
+    itemProps ??
+      uploadItemPropsForField(
+        typeof f.attrs?.id === 'string' ? f.attrs.id : undefined,
+        f.name,
+      ),
+  )
 
   function handleChange(e: Event & { currentTarget: HTMLInputElement }): void {
     const picked = e.currentTarget.files ? [...e.currentTarget.files] : []
@@ -51,6 +63,7 @@
       {items}
       {mode}
       {onremove}
+      itemProps={resolvedItemProps}
       onblur={() => f.setTouched()}
       onchange={handleChange}
     />
