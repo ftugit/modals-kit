@@ -9,12 +9,13 @@ import type { Cookies } from '@sveltejs/kit'
 import { storageVaultSchema } from '#content/storage-vault/schema.js'
 import { readVaultEntries } from '#hooks/cookie-vault/vault.server.js'
 import { createStorage, memoryDriver, type Storage, type StorageServerEntry } from '#lib/storage/index.js'
-import { jsonLedger, localDriver } from '#lib/storage/local.js'
+import { jsonLedger, localDriver, localSpool } from '#lib/storage/local.js'
 
 const MB = 1024 * 1024
 
 export const UPLOAD_ROOT_DIR = join(tmpdir(), 'modals-kit-uploads')
 export const UPLOAD_LEDGER_FILE = join(UPLOAD_ROOT_DIR, '_ledger.json')
+export const UPLOAD_SPOOL_DIR = join(UPLOAD_ROOT_DIR, '.spool')
 
 const sharedLocalDriver = localDriver({
   rootDir: UPLOAD_ROOT_DIR,
@@ -26,6 +27,7 @@ const sharedMemoryDriver = memoryDriver({
 })
 
 export const sharedUploadLedger = jsonLedger({ filePath: UPLOAD_LEDGER_FILE })
+export const sharedUploadSpool = localSpool(UPLOAD_SPOOL_DIR)
 
 function baseServers(): Record<string, StorageServerEntry> {
   return {
@@ -50,6 +52,7 @@ function baseServers(): Record<string, StorageServerEntry> {
 export const appStorage: Storage = createStorage({
   defaultServer: 'local',
   ledger: sharedUploadLedger,
+  spool: sharedUploadSpool,
   servers: baseServers(),
 })
 
@@ -70,12 +73,15 @@ export async function resolveRequestStorage(cookies: Cookies): Promise<Storage> 
         fileBytes: entry.fileMb * MB,
       },
       readOnly: entry.readOnly,
+      allowSplit: entry.allowSplit !== false,
+      ...(entry.encryptionKey ? { key: entry.encryptionKey } : {}),
     }
   }
 
   return createStorage({
     defaultServer: 'local',
     ledger: sharedUploadLedger,
+    spool: sharedUploadSpool,
     servers,
   })
 }

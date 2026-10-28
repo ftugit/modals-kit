@@ -14,7 +14,13 @@ import {
 } from './ledger.js'
 import { basenameOfStoragePath } from './memory.js'
 import { StreamFile } from './stream-file.js'
-import type { DriverPutInput, DriverStoredMeta, StorageDriver } from './types.js'
+import type {
+  DriverPutInput,
+  DriverStoredMeta,
+  StagedSpoolFile,
+  StorageDriver,
+  StorageSpool,
+} from './types.js'
 
 /** Настройки реестра учёта в локальном JSON-файле. */
 export interface JsonLedgerOptions {
@@ -372,7 +378,7 @@ export function jsonLedger(
         const state = await loadState()
         const prefix = opts?.prefix ?? ''
         const sorted = Object.keys(state.files)
-          .filter((k) => k.startsWith(prefix))
+          .filter((k) => !k.startsWith('@replica:') && k.startsWith(prefix))
           .sort()
         const startIdx = opts?.cursor ? Math.max(0, sorted.indexOf(opts.cursor) + 1) : 0
         const limit = opts?.limit ?? sorted.length
@@ -395,3 +401,95 @@ export function jsonLedger(
     },
   })
 }
+
+/**
+ * Дисковый спул временных файлов для `stageToDisk: true`:
+ * потоково сохраняет входящий `ReadableStream` на диск с обратным давлением (`drain`),
+ * возвращает точный `size` и sliceable `StreamFile` (пригодный для нарезки `split` и догрузки),
+ * а `cleanup()` удаляет временный файл по окончании операции.
+ */
+export function localSpool(spoolDir: string): StorageSpool {
+  if (!spoolDir || typeof spoolDir !== 'string') {
+    throw new TypeError('[storage/local] localSpool: укажите spoolDir')
+  }
+  const absDir = resolve(spoolDir)
+
+  return {
+    async stage(
+      stream: ReadableStream<Uint8Array>,
+      signal?: AbortSignal,
+    ): Promise<StagedSpoolFile> {
+      signal?.throwIfAborted()
+      await mkdir(absDir, { recursive: true })
+      const tempPath = join(absDir, `${randomUUID()}.spool`)
+
+      const handle = await open(tempPath, 'wx')
+      const out = handle.createWriteStream()
+      let streamFailure: unknown
+      out.on('error', (err) => {
+        streamFailure = err
+      })
+
+      const reader = stream.getReader()
+      let seen = 0
+      let finished = false
+
+      const onAbort = () => {
+        void reader.cancel(signal?.reason).catch(() => undefined)
+        out.destroy(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new DOMException('Aborted', 'AbortError'),
+        )
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      try {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (streamFailure) throw streamFailure
+          signal?.throwIfAborted()
+          seen += value.byteLength
+          if (!out.write(value)) {
+            await once(out, 'drain')
+          }
+        }
+        out.end()
+        await once(out, 'finish')
+        if (streamFailure) throw streamFailure
+        finished = true
+      } finally {
+        signal?.removeEventListener('abort', onAbort)
+        reader.releaseLock()
+        if (!out.closed) {
+          out.destroy()
+          await once(out, 'close').catch(() => undefined)
+        }
+        if (!finished) {
+          await unlink(tempPath).catch(() => undefined)
+        }
+      }
+
+      const lazy = openLazyFile(tempPath)
+      const file = new StreamFile(
+        {
+          byteLength: seen,
+          stream(start = 0, end = seen) {
+            return lazy.slice(start, end).stream() as ReadableStream<Uint8Array<ArrayBuffer>>
+          },
+        },
+        'staged.spool',
+      )
+
+      return {
+        size: seen,
+        file,
+        async cleanup() {
+          await unlink(tempPath).catch(() => undefined)
+        },
+      }
+    },
+  }
+}
+

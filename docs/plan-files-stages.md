@@ -25,12 +25,14 @@
      печатать в вывод, не логировать и не коммитить; правило о кратких статусах
      только между крупными этапами сохранено в
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
-3. **Точка остановки (`STOPPED AT`):** Реализован этап **S0.5** (0 ключей в `.env` /
-   конфиг-файлах / БД; универсальный зашифрованный куки-сейф `dv_key` + `dv_<scope>_<id>`
-   с кнопкой в `DemoPanel`, модалкой и маршрутом-фолбэком по аналогии с `FiltersPanel`;
-   единые ссылки `s3://...` DSN + декларативные `{ url, limits, readOnly }` + живая
-   самопроверка `storage.probe(server)` и переключение хранилищ в `DemoPanel` на
-   `/upload-demo`); пуш на GitHub **отключён** до явной команды владельца.
+3. **Точка остановки (`STOPPED AT`):** Базовые этапы **`S0` + `S0-S3` + `S0.5`**
+   отправлены в `origin/img` (`e12d465`), и поверх них реализованы и проверены этапы
+   **`S1` + `S2`** (потоковое шифрование `AES-256-GCM` блоками 64 КиБ со сдвигом `Range`,
+   двусторонний `rate` и `concurrency` `reject`/`queue`/`preempt`, `defineStorageStore`/
+   `memoryStore` + `tech`/`meta` с деградацией в `console.error`, телеметрия `state.js`,
+   мультисерверная нарезка `split` с `allowSplit`, дисковый спул `localSpool`/`stageToDisk`
+   и `clone()`). Для следующего шага остаются: адаптер `webdav.ts` (и живой стенд WebDAV),
+   интеграция `ledger` с `#lib/db` и опциональный `storage.upload(request)`.
 
 ---
 
@@ -38,9 +40,9 @@
 
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
-| **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), обязательными `limits: { storageBytes, fileBytes }` и `readOnly`, потоковый `s3Driver` (`aws4fetch`: zero-buffer SigV4 `PUT` + Multipart Upload `>= 5 МиБ` с `AbortMultipartUpload` + `Range GET`), прямой межсервисный перенос `copy`/`move` (`Backblaze B2 ↔ Cloudflare R2 ↔ local`), `report()`, каноничная `DemoPanel` на `/upload-demo` | **Выполнено (локально на `img`, без пуша)** | `4ab27b0`..`76ca3bc` + локальный коммит на `img` |
-| **1a+. Универсальный Куки-сейф в `DemoPanel`, DSN `s3://...` и `storage.probe()` (`S0.5`)** | 0 S3-переменных в `.env`; универсальный `#hooks/cookie-vault` (`dv_key` + `dv_<scope>_<id>`, `AES-256-GCM` с `AAD`) и `<CookieVault>` с раздельными `schema` и `form` (как `FiltersPanel`), кнопка в `DemoPanel` (модалка `storage.vault` с JS + роут `/upload-demo/vault` без JS), `parseS3Url`/`formatS3Url`/`maskS3Url`/`s3Driver(dsn)`, `{ url, limits, readOnly }`, `server: 'auto'`, `storage.probe(server)` | **Выполнено и проверено на живых S3 (локально на `img`, без пуша)** | локальный коммит `S0.5` |
-| **1b. Расширение `#lib/storage` (`S1`–`S3`)** | Опциональные `store`/`tech` с деградацией через `console.error`, потоковое шифрование `AES-256-GCM`, двусторонние `rate` и `concurrency`, нарезка файлов с догрузкой и `stageToDisk`, `clone`, адаптер `webdav` | **Ожидает команды владельца на следующий этап** | — |
+| **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3` + `S0.5`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), `s3Driver` (`aws4fetch`, `s3://` DSN, Multipart Upload `>= 5 МиБ`, `Range GET`), `storage.probe(server)`, универсальный `#hooks/cookie-vault` + `<CookieVault>` и кнопка в `DemoPanel` (модалка + роут, `0` ключей в `.env`/БД) | **Выполнено и отправлено в `origin/img`** | `4ab27b0`..`e12d465` |
+| **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и проверено** | коммит `S1-S2` |
+| **1c. Адаптер `webdav` и расширенные связки (`S3`)** | Серверный адаптер `webdav.ts` (`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`), `src/lib/storage/README.md`, связка `defineStorageLedger` с `#lib/db` | **Ожидает обсуждения / учётных данных WebDAV** | — |
 
 ---
 

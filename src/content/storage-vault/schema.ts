@@ -12,12 +12,16 @@ export interface StorageVaultEntry {
   readonly storageMb: number
   readonly fileMb: number
   readonly readOnly: boolean
+  readonly allowSplit?: boolean
+  readonly encryptionKey?: string
 }
 
 export interface StorageVaultMeta {
   readonly storageMb: number
   readonly fileMb: number
   readonly readOnly: boolean
+  readonly allowSplit: boolean
+  readonly encrypted: boolean
 }
 
 export const storageVaultEntryForm = defineForm({
@@ -35,6 +39,11 @@ export const storageVaultEntryForm = defineForm({
       help: 'Шифруется в отдельной HttpOnly-куке (AES-256-GCM) и никогда не возвращается в HTML.',
       validate: [v.required(), v.maxLength(2048)],
     }),
+    encryption_key: field.password({
+      label: 'Ключ потокового шифрования файлов (необязательно)',
+      placeholder: 'Парольная фраза для прозрачного AES-256-GCM (64 КБ блоки + Range)',
+      validate: [v.maxLength(256)],
+    }),
     storage_mb: field.text({
       label: 'Общий лимит хранилища (МБ)',
       defaultValue: '5120',
@@ -44,6 +53,10 @@ export const storageVaultEntryForm = defineForm({
       label: 'Лимит одного файла (МБ)',
       defaultValue: '512',
       validate: [v.required(), v.maxLength(10)],
+    }),
+    allow_split: field.checkbox({
+      label: 'Разрешить хранение частей больших файлов (allowSplit)',
+      defaultValue: true,
     }),
     read_only: field.checkbox({
       label: 'Только чтение (readOnly — блокировать запись и удаление)',
@@ -91,6 +104,8 @@ export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVa
       })
     }
 
+    const encryptionKey = String(values.encryption_key ?? '').trim()
+
     const storageMb = Number(String(values.storage_mb ?? '').trim())
     if (!Number.isInteger(storageMb) || storageMb < 1 || storageMb > 1_048_576) {
       issues.push({
@@ -127,6 +142,8 @@ export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVa
         storageMb,
         fileMb,
         readOnly: Boolean(values.read_only),
+        allowSplit: values.allow_split !== undefined ? Boolean(values.allow_split) : true,
+        ...(encryptionKey ? { encryptionKey } : {}),
       },
     }
   },
@@ -145,6 +162,8 @@ export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVa
         storageMb: entry.storageMb,
         fileMb: entry.fileMb,
         readOnly: entry.readOnly,
+        allowSplit: entry.allowSplit !== false,
+        encrypted: Boolean(entry.encryptionKey),
       },
     }
   },

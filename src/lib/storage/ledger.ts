@@ -251,7 +251,7 @@ export function memoryLedger(nowFn: () => number = Date.now): AdaptedStorageLedg
     listFiles(options) {
       const prefix = options?.prefix ?? ''
       const sorted = Object.keys(state.files)
-        .filter((k) => k.startsWith(prefix))
+        .filter((k) => !k.startsWith('@replica:') && k.startsWith(prefix))
         .sort()
       const startIdx = options?.cursor ? Math.max(0, sorted.indexOf(options.cursor) + 1) : 0
       const limit = options?.limit ?? sorted.length

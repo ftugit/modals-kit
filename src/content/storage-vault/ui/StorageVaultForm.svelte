@@ -23,12 +23,14 @@
 
   <Field of={vault.f.slot} />
   <Field of={vault.f.url} />
+  <Field of={vault.f.encryption_key} />
 
   <div class="grid gap-3 sm:grid-cols-2">
     <Field of={vault.f.storage_mb} />
     <Field of={vault.f.file_mb} />
   </div>
 
+  <Field of={vault.f.allow_split} />
   <Field of={vault.f.read_only} />
 
   <div class="flex items-center gap-3 pt-1">

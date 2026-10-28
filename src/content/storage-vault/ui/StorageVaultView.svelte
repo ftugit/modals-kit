@@ -26,7 +26,9 @@
     <span>
       лимит: <strong>{item.meta.storageMb} МБ</strong> ·
       файл до: <strong>{item.meta.fileMb} МБ</strong> ·
-      режим: <strong>{item.meta.readOnly ? 'только чтение (readOnly)' : 'чтение и запись'}</strong>
+      split: <strong>{item.meta.allowSplit ? 'да' : 'нет'}</strong> ·
+      шифрование: <strong>{item.meta.encrypted ? 'AES-256-GCM' : 'нет'}</strong> ·
+      режим: <strong>{item.meta.readOnly ? 'только чтение' : 'чтение/запись'}</strong>
     </span>
   {/snippet}
 </CookieVault>

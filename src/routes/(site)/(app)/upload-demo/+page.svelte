@@ -153,6 +153,14 @@
         <div class="flex items-center justify-between font-semibold text-sm">
           <span>{srv.server}</span>
           <div class="flex items-center gap-1">
+            {#if srv.encrypted}
+              <span
+                class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+                data-testid={`server-encrypted-${srv.server}`}
+              >
+                AES-256-GCM
+              </span>
+            {/if}
             {#if srv.readOnly}
               <span class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                 readOnly
