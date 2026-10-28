@@ -41,7 +41,12 @@ const AUTH_STAGES: ReadonlySet<string> = new Set<AuthStage>([
  * @returns известная стадия; всё остальное — `entry`.
  */
 export function parseAuthStage(raw: unknown): AuthStage {
-  return typeof raw === 'string' && AUTH_STAGES.has(raw) ? (raw as AuthStage) : 'entry'
+  if (typeof raw !== 'string') return 'entry'
+  // Адрес шагов несёт ПОЛНЫЙ ключ цепочки (`auth.register` — хост + аддон
+  // formSteps); плоское значение (`register`) — та же стадия короткой
+  // записью. Принимаются обе формы, незнакомая стадия — `entry`.
+  const flat = raw.startsWith('auth.') ? raw.slice('auth.'.length) : raw
+  return AUTH_STAGES.has(flat) ? (flat as AuthStage) : 'entry'
 }
 
 export interface UserAuthSearchInput extends Record<string, unknown> {
