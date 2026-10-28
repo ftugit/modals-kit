@@ -19,6 +19,7 @@
 // Лежит рядом с `asLink`: это UI над модалками и фреймворком, а не часть
 // библиотеки модалок — механику стопки даёт публичный `#lib/modals`.
 import { createAttachmentKey } from 'svelte/attachments'
+import { resolveHref } from '#lib/address/sveltekit.js'
 import { chainToSearch, nextChain, routeHref } from '#lib/modals/index.js'
 import type { ChainOverrides, ChainEntry, RegisteredEntry, StackMode } from '#lib/modals/index.js'
 import { useModals } from '#lib/modals/svelte/index.js'
@@ -101,7 +102,12 @@ export function useModalLink() {
     const routeTarget = routeHref(definition?.route, params)
     // У SvelteKit `resolves` у ядра есть (таблица роутов, решение №30); у
     // ядра без неё проверяется только объявление.
-    const routeBroken = routeTarget !== null && m.modals.core.resolves ? !m.modals.core.resolves(routeTarget) : false
+    // Динамический `route` приходит относительным адресом (`resolve()` кита
+    // строит путь от текущей страницы: `./user/…`): существование проверяется
+    // по нормализованному адресу (как `missingPath` у `asLink`), иначе
+    // серверный рендер признаёт живую ссылку битой и срезает `href`.
+    const routePath = routeTarget ? (resolveHref(routeTarget)?.url.pathname ?? routeTarget) : null
+    const routeBroken = routePath !== null && m.modals.core.resolves ? !m.modals.core.resolves(routePath) : false
 
     if (!definition || routeBroken) {
       return {
