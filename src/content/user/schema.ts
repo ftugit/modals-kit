@@ -1,5 +1,5 @@
 /**
- * Модель пользователя — три таблицы (пользовательская система — фундамент, не
+ * Модель пользователя — четыре таблицы (пользовательская система — фундамент, не
  * демо: имена без «demo») и поля формы из ОДНОГО объявления (прецедент:
  * `posts.ts`). Файл общий: его читают сервер и формы (валидаторы через
  * `formParams`); ни соединения, ни секретов.
@@ -213,6 +213,47 @@ export const session = defineResource({
     delete: policy.roles(['server', 'admin']),
   },
   order: [['created_at', 'desc']],
+})
+
+/**
+ * Конфиг: «ключ — значение — юзер» одной моделью (этап 10 плана
+ * seed-списка). Строка с `auth_id = NULL` — умолчание (глобальный ключ),
+ * её поле `schema` несёт полную схему прав ключа (`editDefault` /
+ * `assign` / `editUser` / `deleteUser` — роли каталога и `owner`); строка
+ * юзера — переопределение, её `schema` — только упрощённая схема
+ * редактирования именно этой строки. Работу ведёт конфиг-API
+ * (`config-api.ts`) от системы; политики ниже — консервативный запасной
+ * уровень для случаев без схемы: напрямую модель пишет только
+ * сервер/админ, новый ключ умолчания заводит роль `insert`.
+ * Уникальность `(auth_id, key)` — два частичных индекса ручным SQL
+ * (`db.server.ts`): обычный unique NULL-дыру глобальных строк не закрывает.
+ */
+export const config: Resource = defineResource({
+  key: 'user.config.v1',
+  table: 'public.user_config',
+  primaryKey: 'id',
+  fields: {
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
+    auth_id: field(s.uuid(), {
+      read: () => true, create: ['server', 'admin'], nullable: true,
+      immutable: true, filters: ['eq', 'isNull', 'isNotNull'],
+      db: { references: { resource: () => auth, chain: true } },
+    }),
+    key: field(s.text({ min: 1, max: 80 }), {
+      read: () => true, create: ['server', 'admin'], required: true,
+      immutable: true, filters: ['eq'], orderable: true,
+    }),
+    value: f.json({ read: () => true, create: ['server', 'admin'], update: ['server', 'admin'], nullable: true }),
+    schema: f.json({ read: () => true, create: ['server', 'admin'], update: ['server', 'admin'], nullable: true }),
+  },
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  policy: {
+    select: policy.ownerOrRoles('auth_id', ['server', 'admin', 'config.read']),
+    insert: policy.roles(['server', 'admin']),
+    update: (ctx) => ctx.principal.roles.includes('server') || ctx.principal.roles.includes('admin'),
+    delete: (ctx) => ctx.principal.roles.includes('server') || ctx.principal.roles.includes('admin'),
+  },
+  order: [['key', 'asc']],
 })
 
 /** Поля формы профиля — правила из схемы (валидаторы выведет `formParams`). */

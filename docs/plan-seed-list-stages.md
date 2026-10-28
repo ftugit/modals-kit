@@ -813,7 +813,17 @@ ownerOrRoles('auth_id', ['server', 'admin', 'profile.edit'])`.
 
 ---
 
-## Этап 10. Конфиг-модель и её API (записано 2026-10-28)
+## Этап 10. Конфиг-модель и её API (записано 2026-10-28; ВЫПОЛНЕНО 2026-10-28)
+
+Исполнение: ресурс `user.config.v1` (`schema.ts`), частичные уникальные
+индексы `SqlStep` в `db.server.ts`, каталог ключей `spec-config.ts`,
+домен `config-api.ts` (`getEffective`/`getUserKey`/`createUserKey`/
+`setUserKey`/`removeUserKey`/`setDefault`/`deleteDefaultKey`), порт
+`settings` + адаптер в gateway, право `config.read` в каталоге.
+Тесты: `config-api.test.ts` (схемы, «умолчание не хранится», кэш,
+`session.ipLock` сквозной на уровне домена), политика модели — в
+`policy.test.ts`. Пересадка `createUserConfig` поверх модели — отдельным
+шагом, как и было записано.
 
 Обобщённая модель настроек «ключ — значение — юзер» с правами,
 хранимыми в самой модели. Заменяет собой будущий переезд

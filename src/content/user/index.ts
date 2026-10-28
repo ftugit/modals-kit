@@ -14,6 +14,8 @@ export * from './permissions.js'
 export { defaults, createUserConfig, type UserConfig } from './config.js'
 export * from './ports.js'
 export { seedOf } from './keys.js'
+export * from './spec-config.js'
+export * from './config-api.js'
 
 /** Плоские значения `?stage=` / параметров модалки `user.auth` → канонический шаг `AuthWidget`. */
 const LEGACY_AUTH_STAGE: Record<string, string> = {

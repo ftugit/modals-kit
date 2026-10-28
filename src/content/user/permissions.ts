@@ -66,6 +66,10 @@ export const PERMISSIONS = {
     title: 'Правка сессий',
     description: 'Завершать сеансы на устройствах любого аккаунта, в том числе «выйти везде».',
   },
+  'config.read': {
+    title: 'Чтение конфига',
+    description: 'Видеть ключи конфига и их значения: умолчания и закреплённые за пользователями.',
+  },
 } as const satisfies Record<string, PermissionInfo>
 
 /** Право — ключ каталога; именно эта строка лежит в `principal.roles`. */
@@ -100,6 +104,7 @@ export const PERMISSION_GROUPS: readonly {
   { title: 'Аккаунты', permissions: ['account.read', 'account.edit'] },
   { title: 'Профили', permissions: ['profile.read', 'profile.edit'] },
   { title: 'Сессии', permissions: ['session.read', 'session.edit'] },
+  { title: 'Конфиг', permissions: ['config.read'] },
 ]
 
 /** Строка из `principal.roles` — известное право? */

@@ -42,10 +42,10 @@ import {
   profile as coreProfile,
   updateProfile as coreUpdateProfile,
 } from './profile.js'
-import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
+import { auth as authRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { Challenge, ProfileRead, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -391,6 +391,72 @@ function profilesAdapter() {
   }
 }
 
+/**
+ * Конфиг-модель: адаптер исполняет от системы (SYSTEM), права по схемам
+ * ключей проверяет конфиг-API в домене — не адаптер. Кэш умолчаний —
+ * область памяти процесса; инвалидацию делает API записью умолчания.
+ */
+function configAdapter() {
+  const api = () => db.resource(configRes)
+  const rowOf = (r: Record<string, unknown>): ConfigKeyRow => ({
+    id: String(r.id),
+    authId: (r.auth_id as string | null) ?? null,
+    key: String(r.key),
+    value: r.value ?? null,
+    schema: (r.schema as ConfigKeySchema | null) ?? null,
+  })
+  const byPair = async (authId: string | null, key: string): Promise<ConfigKeyRow | undefined> => {
+    const rows = (await api().select(SYSTEM, {
+      filter: {
+        and: [
+          { field: 'key', op: 'eq', value: key },
+          authId === null ? { field: 'auth_id', op: 'isNull' } : { field: 'auth_id', op: 'eq', value: authId },
+        ],
+      },
+    })) as unknown as Record<string, unknown>[]
+    return rows[0] ? rowOf(rows[0]) : undefined
+  }
+  return {
+    row: byPair,
+    async defaults(): Promise<ConfigKeyRow[]> {
+      const rows = (await api().select(SYSTEM, {
+        filter: { field: 'auth_id', op: 'isNull' },
+      })) as unknown as Record<string, unknown>[]
+      return rows.map(rowOf)
+    },
+    async anyUserRow(key: string): Promise<boolean> {
+      const rows = await api().select(SYSTEM, {
+        limit: 1,
+        filter: {
+          and: [
+            { field: 'key', op: 'eq', value: key },
+            { field: 'auth_id', op: 'isNotNull' },
+          ],
+        },
+      })
+      return rows.length > 0
+    },
+    async insert(row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
+      await api().insert(SYSTEM, {
+        auth_id: row.authId,
+        key: row.key,
+        ...(row.value !== undefined ? { value: row.value } : {}),
+        ...(row.schema !== undefined ? { schema: row.schema } : {}),
+      })
+    },
+    async update(id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
+      await api().update(SYSTEM, id, {
+        ...(patch.value !== undefined ? { value: patch.value } : {}),
+        ...(patch.schema !== undefined ? { schema: patch.schema } : {}),
+      })
+    },
+    async remove(id: string): Promise<void> {
+      await api().delete(SYSTEM, id, { hard: true })
+    },
+    cache: localStore.scope('user-config-model'),
+  }
+}
+
 /** Порты из хвостов проекта; куки передаёт тот, кто знает запрос (фасад). */
 export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
   const keys = sealKeysFromEnv()
@@ -429,6 +495,7 @@ export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
       },
     clock: { now: () => Date.now() },
     config: createUserConfig(localStore.scope('user-config')),
+    settings: configAdapter(),
   }
 }
 

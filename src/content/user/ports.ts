@@ -10,7 +10,7 @@
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
 import type { DataContext, Filter, Order } from '#lib/db/index.js'
-import type { Blocked, SessionRecord } from './types.js'
+import type { Blocked, ConfigKeyRow, ConfigKeySchema, SessionRecord } from './types.js'
 
 /**
  * Строка аккаунта для списка seed-юзеров — то, что адаптер получил из DB под
@@ -27,7 +27,7 @@ export type SeedAccountRow = {
   /** Никнейм профиля, если адаптер его подтягивал (`withNickname`); `undefined` — не запрашивали. */
   nickname?: string | null
 }
-import type { UserConfig } from './config.js'
+import type { StoreLike, UserConfig } from './config.js'
 
 /**
  * Сессии = устройства. Строка создаётся на входе, пересоздаётся при
@@ -199,6 +199,26 @@ export interface ClockPort {
 /** Настройки модуля — файл конфиг (`config.ts`) поверх lib/cache. */
 export type ConfigPort = UserConfig
 
+/**
+ * Конфиг-модель (`user.config.v1`): строки «ключ — значение — юзер».
+ * Адаптер исполняет от системы — права по схемам ключей проверяет
+ * конфиг-API (`config-api.ts`), не порт. Кэш области — под умолчания:
+ * API держит в нём строки умолчаний и сбрасывает записью.
+ */
+export interface ConfigStorePort {
+  /** Строка по паре: `authId = null` — умолчание. */
+  row(authId: string | null, key: string): Promise<ConfigKeyRow | undefined>
+  /** Все строки умолчаний (глобальные ключи). */
+  defaults(): Promise<ConfigKeyRow[]>
+  /** Есть ли хоть одна юзерская строка с этим ключом. */
+  anyUserRow(key: string): Promise<boolean>
+  insert(row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
+  update(id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
+  remove(id: string): Promise<void>
+  /** Кэш умолчаний (область `#lib/cache` адаптера). */
+  cache: StoreLike
+}
+
 /** Всё, что нужно ядру. Собирает адаптер. */
 export interface AuthPorts {
   sessions: SessionStorePort
@@ -210,4 +230,5 @@ export interface AuthPorts {
   cookies: CookiePort
   clock: ClockPort
   config: ConfigPort
+  settings: ConfigStorePort
 }

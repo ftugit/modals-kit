@@ -127,6 +127,26 @@ function makePorts(): { ports: AuthPorts; auths: Map<string, AuthRow> } {
       } as const
       return { defaults, get: async (k: keyof typeof defaults) => defaults[k], set: async () => {}, reset: async () => {} }
     })() as unknown as AuthPorts['config'],
+    settings: (() => {
+      const rows: import('./types.js').ConfigKeyRow[] = []
+      let seq = 0
+      return {
+        async row(authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async defaults() { return rows.filter((r) => r.authId === null) },
+        async anyUserRow(key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
+        async insert(row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+          rows.push({ id: `cfg-${++seq}`, authId: row.authId, key: row.key, value: row.value ?? null, schema: row.schema ?? null })
+        },
+        async update(id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+          const r = rows.find((x) => x.id === id)
+          if (!r) return
+          if (patch.value !== undefined) r.value = patch.value
+          if (patch.schema !== undefined) r.schema = patch.schema
+        },
+        async remove(id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
+        cache: store.scope('settings-fake'),
+      }
+    })(),
   } as unknown as AuthPorts
   return { ports, auths }
 }

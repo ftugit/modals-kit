@@ -12,13 +12,15 @@
 
 | Путь | Назначение |
 |---|---|
-| `schema.ts` | Три ресурса `#lib/db`: `user_auth` (`seed`, времена + soft delete, блокировки `blocked`, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`), `user_session` (`jti`, имя устройства, хэш подсети + история, `last_seen_at`, отзыв = soft delete). Разворачиваются через `schemaSpec` в `src/server/db.server.ts`. |
+| `schema.ts` | Четыре ресурса `#lib/db`: `user_auth` (`seed`, времена + soft delete, блокировки `blocked`, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`), `user_session` (`jti`, имя устройства, хэш подсети + история, `last_seen_at`, отзыв = soft delete), `user_config` (конфиг-модель: ключ/значение/`auth_id`/`schema`; уникальность пары — частичные индексы ручным SQL в `db.server.ts`). Разворачиваются через `schemaSpec` в `src/server/db.server.ts`. |
 | `keys.ts` | Изоморфная криптография `@noble/ed25519`: `generateKeyPair`, `seedOf`, `sign`, `verify`. |
 | `types.ts` | Клеймы токенов, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked`. |
-| `ports.ts` | Контракты портов: `sessions`, `auths`, `profiles`, `config`, `seal`, `cookies`, `clock`. |
+| `ports.ts` | Контракты портов: `sessions`, `auths`, `profiles`, `config`, `settings` (строки конфиг-модели + кэш умолчаний), `seal`, `cookies`, `clock`. |
 | `auth.ts` | Доменный API входа и сессий: `issueChallenge`, `login`, `restoreDeleted`, `verifySeed` (проверка владения `seed` без создания сессии), `guard`, `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, `requestDelete`, `sweepDeletions`. |
 | `profile.ts` | Профильный API отдельно от `auth.ts`: `profile` (чтение: строка + признак `notCreated` — владелец/права чтения отличают «не создан» от отказа), `updateProfile`, доменная проверка аватара по заголовку (`probeImageHeader`). |
 | `spec-profile.ts` | Тексты-заглушки профиля одним объектом (образец — `spec-avatar.ts`): нет никнейма, не создан, нет аватара. Потребители — `ProfileCard`, экран «не создан», меню, строка seed-списка. |
+| `spec-config.ts` | Каталог ключей конфига, которые читает код (`profile.visibility`, `session.ipLock`): тексты для экранов и бутстрап-умолчания на случай отсутствия строк в БД. Схемы прав здесь не живут — они в самой модели (строка умолчания). |
+| `config-api.ts` | Конфиг-API от системы: эффективное значение (юзер → умолчание → бутстрап), создание/запись/снятие ключа юзера и умолчаний по схемам из модели (`assign`/`editUser`/`deleteUser`/`editDefault`, роль `owner`, админ — всегда); значение = умолчание не хранится (запись удаляет строку); умолчания кэшируются в области порта и сбрасываются записью. |
 | `spec-block.ts` | Каталог сфер блокировок аккаунта (`auth`, `profile.delete`, `account.delete`): состав, тексты для select/экранов, активный запрет по сфере, самая длинная полная блокировка. Единая точка для раздела блокировок (этап 9) и проверок удаления; чтение профиля отдаёт по цели возможности (`canEdit`, `canDeleteProfile`, `canDeleteSeed` — право и нет запрета на цели) и факт полной блокировки (причина/срок — только владельцу, `admin`, `account.read`). |
 | `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#components/form/photo.js`). |
 | `config.ts` | Настройки модуля поверх `#lib/cache` (`accessTtlSec`, `deviceTtlSec`, `challengeTtlSec`, `deleteGraceDays`, `avatarEdge`, `avatarMaxBytes`, `nicknameForbidden`, `holdSeconds`). |

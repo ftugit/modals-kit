@@ -78,9 +78,35 @@ export type SessionRecord = {
   lastSeenAt: number | null
 }
 
+/**
+ * Схема прав ключа конфига (модель `user.config.v1`): роли каталога
+ * `permissions.ts` и специальное `owner` (владелец строки юзера). У строки
+ * умолчания схема полная; у строки юзера осмысленны только `editUser` /
+ * `deleteUser` (упрощённая схема редактирования именно этой строки).
+ */
+export interface ConfigKeySchema {
+  /** Кто меняет значение и схему умолчания. */
+  editDefault?: readonly string[]
+  /** Кто создаёт такой ключ за юзером. */
+  assign?: readonly string[]
+  /** Кто меняет закреплённый за юзером ключ. */
+  editUser?: readonly string[]
+  /** Кто снимает закреплённый ключ. */
+  deleteUser?: readonly string[]
+}
+
+/** Строка конфига портом: `authId = null` — умолчание (глобальный ключ). */
+export interface ConfigKeyRow {
+  id: string
+  authId: string | null
+  key: string
+  /** `null` — значение не задано: действует бутстрап кода потребителя. */
+  value: unknown
+  schema: ConfigKeySchema | null
+}
+
 /** Сфера блокировки аккаунта (элемент `blocked` таблицы auth). */
-export type Blocked = {
-  /** Что закрыто: сферы каталога `spec-block.ts`; `auth` — вход целиком. */
+export type Blocked = {  /** Что закрыто: сферы каталога `spec-block.ts`; `auth` — вход целиком. */
   scope: string
   reason: string
   at: number

@@ -14,7 +14,7 @@ import { afterAll, it } from 'vitest'
 import { conservativeLimits, createDb, type DbFailure } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
-import { auth, profile } from './schema.js'
+import { auth, config, profile } from './schema.js'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
 
@@ -42,8 +42,8 @@ async function withDb(fn: (db: ReturnType<typeof createDb>) => Promise<void>) {
   shared ??= new PGlite()
   await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
   const driver = pgliteAdapter(shared)
-  assert.equal((await defineSchema({ resources: [auth, profile] }).sync(driver)).status, 'ok')
-  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile] }))
+  assert.equal((await defineSchema({ resources: [auth, profile, config] }).sync(driver)).status, 'ok')
+  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile, config] }))
 }
 
 test('создание профиля — только сервер; чтение и правка — владелец', async () => {
@@ -147,5 +147,31 @@ test('срез свипа удалений: фильтр модели по delet
     })
     assert.deepEqual(rows.map((r) => r.id), [gone.id])
     void alive
+  })
+})
+
+test('конфиг-модель: новый ключ умолчания — только insert-роль; чтение — владелец и config.read', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const rows = db.resource(config)
+    const me = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    const asMe = owner(me.id)
+    const asReader = other(['config.read'])
+
+    // клиент ключ умолчания не заводит: insert держат server/admin
+    await assert.rejects(() => rows.insert(asMe, { auth_id: null, key: 'k1', value: 1 }), forbidden)
+
+    await rows.insert(SERVER, { auth_id: null, key: 'k1', value: 'nobody', schema: { assign: ['admin'] } })
+    await rows.insert(SERVER, { auth_id: me.id, key: 'k1', value: 'all' })
+
+    // владелец видит свою строку; глобальная чужим без config.read не видна
+    const mine = await rows.select(asMe)
+    assert.deepEqual(mine.map((r) => r.value), ['all'])
+    const read = await rows.select(asReader)
+    assert.equal(read.length, 2)
+
+    // прямая запись владельца в модель закрыта (работа — конфиг-API от системы)
+    const own = mine[0] as unknown as { id: string }
+    await assert.rejects(() => rows.update(asMe, own.id, { value: 'x' }), forbidden)
   })
 })
