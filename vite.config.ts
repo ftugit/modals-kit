@@ -5,6 +5,7 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
 import { defineConfig } from 'vitest/config';
 import { trustedOrigins } from './src/server/trusted-origins.ts';
+import { sveltekitWsPlugin } from './src/server/vite-ws.server.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
 
 const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split('.').map(Number);
@@ -38,7 +39,7 @@ export default defineConfig({
   // тестировать нечем. Приём из документации Svelte по тестированию рун.
   resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
   // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
-  plugins: [layerGuard(RULES), unocss, sveltekit(kit)],
+  plugins: [layerGuard(RULES), unocss, sveltekitWsPlugin(), sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
   test: {
     include: ['src/**/*.{test,spec}.{js,ts}'],

@@ -243,7 +243,7 @@
   - Гейт: `npx vitest run src/lib/storage`, `node tooling/public-api.mjs`,
     `node --test tooling/public-api.test.mjs`, локальный коммит.
 
-- [ ] **`P2` — Серверный `wss://`-мост и потоковый приёмник форм**
+- [x] **`P2` — Серверный `wss://`-мост и потоковый приёмник форм** (`ws-upgrade.server.ts`, `vite-ws.server.ts`, `ws-protocol.ts`, `ws-session.server.ts`, `/api/form-upload`, `vitest` 3/3 + `svelte-check` 0 errors + `layer-guard` 74/74 green)
   - Реализовать `ws-upgrade.server.ts`, Vite-плагин апгрейда для `dev`/`preview`,
     маршрут `/api/form-upload` и `ws-session.server.ts` поверх штатного
     `createFormHandler` (`wsFilesLayer`, `StreamFile` с кэшем первых `256 КБ`).

@@ -118,14 +118,24 @@ async function renderInlineWithResult(
  * Карту модулей `import.meta.glob('./**\/*.form.server.ts')` передаёт composition root
  * (`src/hooks.server.ts`), поэтому слой `#hooks/*` не имеет ни одного восходящего импорта.
  */
+let sharedModules: Record<string, () => Promise<unknown>> = {}
+let sharedLoadedPromise: Promise<void> | undefined
+
+/** Дождаться ленивой загрузки всех `*.form.server.ts` (общее для HTTP POST и `wss://` форм). */
+export function ensureComponentFormsLoaded(): Promise<void> {
+  return (sharedLoadedPromise ??= Promise.all(
+    Object.values(sharedModules).map((load) => load()),
+  ).then(() => undefined))
+}
+
 export function createComponentFormsHandle(
   modules: Record<string, () => Promise<unknown>> = {},
 ): Handle {
-  let loadedPromise: Promise<void> | undefined
-  const ensureLoaded = (): Promise<void> =>
-    (loadedPromise ??= Promise.all(Object.values(modules).map((load) => load())).then(
-      () => undefined,
-    ))
+  if (Object.keys(modules).length > 0) {
+    sharedModules = modules
+    sharedLoadedPromise = undefined
+  }
+  const ensureLoaded = ensureComponentFormsLoaded
 
   return async ({ event, resolve }) => {
     // Опрос задачи (`queued`): тот же адрес, что у формы, но GET и без тела.
