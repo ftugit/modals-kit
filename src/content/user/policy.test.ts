@@ -19,6 +19,7 @@ import { auth, config, profile } from './schema.js'
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
 
 const SEED = 'a'.repeat(43)
+const SEED_B = 'b'.repeat(43)
 
 /** Серверный контекст адаптеров — как `SYSTEM` в `gateway.server.ts`. */
 const SERVER = { principal: { roles: ['server'] } }
@@ -206,5 +207,35 @@ test('приватность профиля (этап 8): строка видн�
     assert.equal(await seen(stranger), 0)
     // владелец свою строку видит при любом уровне
     assert.equal((await profiles.select(owner(me.id))).length, 1)
+  })
+})
+
+test('поиск списка (FIX-1/FIX-2): фрагменты seed и id находятся DB-фильтром', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const a = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    await auths.insert(SERVER, { seed: SEED_B })
+    const bySeed = await auths.select(SERVER, {
+      filter: {
+        or: [
+          { field: 'seed', op: 'icontains', value: SEED.slice(5, 12) },
+          { field: 'id', op: 'icontains', value: SEED.slice(5, 12) },
+        ],
+      },
+    })
+    assert.equal(bySeed.length, 1)
+    const byId = await auths.select(SERVER, {
+      filter: {
+        or: [
+          { field: 'seed', op: 'icontains', value: a.id.slice(0, 8) },
+          { field: 'id', op: 'icontains', value: a.id.slice(0, 8) },
+        ],
+      },
+    })
+    assert.equal(byId.length, 1)
+    const byIds = await auths.select(SERVER, {
+      filter: { field: 'id', op: 'in', value: [a.id] },
+    })
+    assert.equal(byIds.length, 1)
   })
 })

@@ -130,8 +130,11 @@ type Accumulated<T> = {
   recordsSeen: number
   seen: Set<string>
   byId: Map<string, T>
-  /** Принятые (score > 0), глобально отсортированные: score ↓, порядок источника ↑. */
+  /** Принятые (score > 0); порядок выдачи — score ↓, порядок источника ↑ —
+   * устанавливается лениво перед чтением (`ensureSorted`), не на каждый батч. */
   ranked: { id: string; score: number; ord: number }[]
+  /** `ranked` изменился с последней сортировки. */
+  rankedDirty: boolean
   /** Замороженные страницы: списки id в порядке выдачи. */
   pages: string[][]
   emitted: Set<string>
@@ -177,6 +180,7 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
     seen: new Set(),
     byId: new Map(),
     ranked: [],
+    rankedDirty: false,
     pages: [],
     emitted: new Set(),
     lock: null,
@@ -199,9 +203,17 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
       if (score > 0) {
         acc.byId.set(id, item)
         acc.ranked.push({ id, score, ord: acc.seen.size })
+        acc.rankedDirty = true
       }
     }
+  }
+
+  /** Ленивая сортировка: один проход перед выдачей вместо пересортировки
+   * всего ранка после каждого батча (было O(батчей × N log N)). */
+  function ensureSorted(acc: Accumulated<T>): void {
+    if (!acc.rankedDirty) return
     acc.ranked.sort((a, b) => b.score - a.score || a.ord - b.ord)
+    acc.rankedDirty = false
   }
 
   /** Батч = очередная страница базового источника с подставленным сужением. */
@@ -327,6 +339,7 @@ export function createAccumulatingSource<T>(opts: SearchInterceptorOptions<T>): 
         Object.assign(acc, next, { fallbackTried: true })
         continue
       }
+      ensureSorted(acc)
       const fresh: string[] = []
       for (const entry of acc.ranked) {
         if (acc.emitted.has(entry.id)) continue

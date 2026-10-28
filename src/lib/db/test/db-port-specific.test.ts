@@ -659,6 +659,42 @@ test("icontains/istartsWith: ILIKE там, где LIKE был регистроз
   );
 });
 
+test("icontains: фрагмент не валидируется схемой хранимого значения (аудит FIX-1)", async () => {
+  const driver = stubDriver();
+  const db = createDb({ driver, limits: conservativeLimits });
+  const ctx = { principal: { roles: [] as string[] } };
+  // поле со строгой схемой значения (43–44 знака, как seed): фрагмент короче
+  // минимума обязан проходить — иначе подстроковый поиск по полю невозможен
+  const strict = defineResource({
+    ...posts,
+    key: "test.post.strict.v1",
+    fields: {
+      ...posts.fields,
+      title: {
+        ...posts.fields.title,
+        schema: s.text({ min: 43, max: 44 }),
+        filters: ["eq", "icontains"],
+      },
+    },
+  });
+  await db.resource(strict).select(ctx, { filter: { field: "title", op: "icontains", value: "abc" } });
+  const t = String(driver.seen[driver.seen.length - 1].text);
+  assert.ok(/::text ILIKE/.test(t), t.slice(0, 160));
+  assert.equal(driver.seen[driver.seen.length - 1].values?.[0], "%abc%");
+  // не-строка и сверхдлинный фрагмент отклоняются
+  await assert.rejects(
+    () => db.resource(strict).select(ctx, { filter: { field: "title", op: "icontains", value: 42 } as never }),
+    (e: DbFailure) => e.kind === "validation",
+  );
+  await assert.rejects(
+    () =>
+      db.resource(strict).select(ctx, {
+        filter: { field: "title", op: "icontains", value: "x".repeat(513) },
+      }),
+    (e: DbFailure) => e.kind === "validation",
+  );
+});
+
 test("withTestDb: PGlite в памяти, миграции, таблицы, isolated повторно", async () => {
   const { withTestDb } = await import("../testing/index.ts");
   const migration = `

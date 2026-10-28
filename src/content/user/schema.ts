@@ -111,7 +111,7 @@ export const auth: Resource = defineResource({
   // (слой: foreignField — уникальное поле цели, `auth_id` уникален).
   relations: { profile: { resource: profile, localField: 'id', foreignField: 'auth_id' } },
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq', 'in', 'icontains'], db: { default: 'gen_random_uuid()' } }),
     seed: field(SEED, {
       read: () => true, create: () => true,
       // стирает только исполнитель удаления (сервер); юзерских update нет

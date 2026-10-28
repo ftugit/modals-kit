@@ -145,11 +145,29 @@ export async function listSeedUsers(
     nodes.push(profileState === 'created' ? hasProfile : { not: hasProfile })
   }
   const q = (args.search ?? '').trim()
-  // Поиск в DB-фильтр не кладём: слой валидирует значение фильтра схемой
-  // поля, а у `seed` это 43–44 знака — подстрока не пройдёт никогда.
-  // Подстроку (seed, id, при включённом параметре — никнейм) применяет
-  // адаптер по выбранным строкам (таблица аккаунтов мала). `icontains` у
-  // поля оставлен для точных вхождений полной длины, если понадобятся.
+  // Поиск — DB-фильтр: подстроковые операторы слоя валидируют фрагмент, а
+  // не значение поля (FIX-1 аудита 2026-10-29), поэтому подстрока по seed
+  // (схема 43–44 знака) и по id (uuid приводится к text) законна. Никнейм —
+  // exists по профилю, только при включённом параметре: внутри exists
+  // действует политика профиля.
+  if (q) {
+    const branches: Filter[] = [
+      { field: 'seed', op: 'icontains', value: q },
+      { field: 'id', op: 'icontains', value: q },
+    ]
+    if (withNickname) {
+      branches.push({
+        exists: {
+          from: profileResource,
+          on: [['id', 'auth_id']],
+          where: { field: 'nickname', op: 'icontains', value: q },
+        },
+      })
+    }
+    nodes.push({ or: branches })
+  }
+  // Срез по id — DB-фильтр `in` по первичному ключу (объявлен в фильтрах поля).
+  if (args.ids?.length) nodes.push({ field: 'id', op: 'in', value: [...args.ids] })
 
   const createdFrom = ms(args.createdFrom)
   const createdTo = ms(args.createdTo)
@@ -179,10 +197,6 @@ export async function listSeedUsers(
       ...(filter ? { filter } : {}),
       order: ORDER_OF[orderName],
       includeDeleted: state !== 'active',
-      ...(q ? { searchSeed: q } : {}),
-      // Срез по id — не DB-фильтр (поле вне фильтров модели): применяет
-      // адаптер порта к выбранному срезу, как подстроку поиска.
-      ...(args.ids?.length ? { ids: [...args.ids] } : {}),
       ...(withNickname ? { withNickname: true } : {}),
     },
   )

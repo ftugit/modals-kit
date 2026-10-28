@@ -1,5 +1,5 @@
 import { fail } from "../errors";
-import { allows, own, validateField } from "../validation";
+import { allows, own, validateField, validateFilterFragment } from "../validation";
 import type {
   DataContext,
   Field,
@@ -249,18 +249,20 @@ export async function filterSQL(
         ")"
       );
     }
-    const value = await validateField(f, node.value, field);
     if (op === "contains" || op === "startsWith" || op === "icontains" || op === "istartsWith") {
-      if (typeof value !== "string") fail("validation");
+      // Фрагмент — не значение поля: валидация фрагментом, не схемой поля;
+      // колонка приводится к text, чтобы подстрока работала и по uuid.
+      const value = validateFilterFragment(f, node.value, field);
       const escaped = value.replace(/[\\%_]/g, "\\$&");
       const ci = op === "icontains" || op === "istartsWith";
       return (
-        c +
+        `(${c})::text` +
         (ci ? " ILIKE " : " LIKE ") +
         s.param((op === "contains" || op === "icontains" ? "%" : "") + escaped + "%") +
         " ESCAPE E'\\\\'"
       );
     }
+    const value = await validateField(f, node.value, field);
     if (!own(scalarOps, op)) fail("validation");
     return (
       c +

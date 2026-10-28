@@ -345,7 +345,13 @@ function isPotentiallyActiveMime(contentType: string): boolean {
 let reservationSeq = 0
 function nextReservationId(): string {
   reservationSeq = (reservationSeq + 1) % 1_000_000_000
-  return `resv-${Date.now().toString(36)}-${reservationSeq.toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  // Суффикс — криптографический: id расходится между инстансами процесса,
+  // где счётчик и миллисекунда могут совпасть (Math.random здесь был
+  // предсказуем и короче, чем выглядит).
+  const buf = new Uint8Array(6)
+  crypto.getRandomValues(buf)
+  const suffix = [...buf].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 8)
+  return `resv-${Date.now().toString(36)}-${reservationSeq.toString(36)}-${suffix}`
 }
 
 /**

@@ -236,13 +236,16 @@ describe('список seed-юзеров', () => {
     const reader = await joined(ports, auths, ['account.read'])
     const a = await joined(ports, auths)
 
-    // Применение среза — за адаптером порта (как у подстроки поиска):
-    // домен проверяется по тому, что он передал в порт.
+    // Срез — DB-фильтр `in` по первичному ключу в общем фильтре порта.
     ok_(await listSeedUsers(ports, reader.access, { ids: [a.id, reader.id] }))
-    expect((listArgsOf() as { ids?: unknown }).ids).toEqual([a.id, reader.id])
+    expect((listArgsOf() as { filter?: unknown }).filter).toEqual({
+      field: 'id',
+      op: 'in',
+      value: [a.id, reader.id],
+    })
 
     ok_(await listSeedUsers(ports, reader.access, { ids: [] }))
-    expect((listArgsOf() as { ids?: unknown }).ids).toBeUndefined()
+    expect((listArgsOf() as { filter?: unknown }).filter).toBeUndefined()
   })
 
   test('размер порции: потолок домена — 100', async () => {
@@ -273,14 +276,19 @@ describe('список seed-юзеров', () => {
       filter?: unknown
       order?: unknown
       includeDeleted?: boolean
-      searchSeed?: string
     }
     expect(args.includeDeleted).toBe(true)
     expect(args.order).toEqual([['deleted_at', 'desc']])
-    // Поиск — отдельным аргументом порта, не DB-фильтром (схема seed — 43–44 знака).
-    expect(args.searchSeed).toBe('AbC')
+    // Поиск — DB-фильтр (подстроковые операторы валидируют фрагмент, не
+    // значение поля): seed и id одним `or`, без полной выгрузки среза.
     expect(args.filter).toEqual({
       and: [
+        {
+          or: [
+            { field: 'seed', op: 'icontains', value: 'AbC' },
+            { field: 'id', op: 'icontains', value: 'AbC' },
+          ],
+        },
         { field: 'created_at', op: 'gte', value: new Date(100).toISOString() },
         { field: 'created_at', op: 'lte', value: new Date(200).toISOString() },
         { field: 'deleted_at', op: 'gte', value: new Date(300).toISOString() },

@@ -242,6 +242,24 @@ export async function validateField(
   if (r.errors) failFields(r.errors);
   return r.value;
 }
+
+/** Потолок длины фрагмента подстрокового фильтра: фрагмент — не значение поля. */
+export const FILTER_FRAGMENT_MAX = 512;
+
+/**
+ * Значение подстрокового оператора (`contains`-семейство) — ФРАГМЕНТ, а не
+ * хранимое значение поля: полная схема поля (у `seed` — 43–44 знака) к нему
+ * неприменима, иначе подстроковый поиск по такому полю невозможен в принципе.
+ * Проверяется то, что фрагменту действительно нужно: нормализация поля,
+ * строковый тип и потолок длины (защита от перегрузки — `budget`).
+ */
+export function validateFilterFragment(field: Field, value: unknown, key: string): string {
+  const v = field.normalize ? field.normalize(value) : value;
+  budget(v);
+  if (typeof v !== "string" || v.length > FILTER_FRAGMENT_MAX)
+    failFields([fieldError(field, key, "validation", "Validation failed")]);
+  return v as string;
+}
 export async function draftInput(
   r: Resource,
   ctx: DataContext,
@@ -277,18 +295,25 @@ export async function draftInput(
   // вызывается (заголовок с ошибкой не годится для адреса), а его поле не считается
   // пропущенным — человек увидит ошибку там, где она есть.
   const canFill = !errors.length;
-  if (canFill)
+  if (canFill) {
+    // Снимок для `fill` кэшируется: пересоздаётся только после записи поля
+    // в черновик (поздний `fill` видит значения ранних, как раньше), а не
+    // на каждое поле — было O(полей × размер строки) клонов на операцию.
+    let snap: Readonly<Row> | undefined;
     for (const [k, f] of Object.entries(r.fields)) {
       if (!f.fill || own(draft, k)) continue;
-      const value = await f.fill(freeze(structuredClone(draft)), ctx, op);
+      snap ??= freeze(structuredClone(draft));
+      const value = await f.fill(snap, ctx, op);
       if (value === undefined) continue;
       const one = await checkField(f, value, k, true);
       if (one.errors) errors.push(...one.errors);
       else {
         draft[k] = one.value;
         filled?.add(k);
+        snap = undefined;
       }
     }
+  }
   if (op === "insert")
     for (const [k, f] of Object.entries(r.fields))
       if (f.required && !f.generated && !own(draft, k) && (canFill || !f.fill))

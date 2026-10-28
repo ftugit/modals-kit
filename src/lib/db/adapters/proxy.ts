@@ -316,7 +316,11 @@ function admission(max: number, timeoutMs: number) {
 }
 
 function requestId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  // Фолбэк для среды без randomUUID: 16 криптографических байт, не Math.random.
+  const buf = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(buf)
+  return [...buf].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 async function readFrame(response: Response): Promise<ProxyFrame> {
