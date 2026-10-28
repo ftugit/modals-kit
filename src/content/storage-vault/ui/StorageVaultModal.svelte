@@ -45,7 +45,7 @@
   }
 </script>
 
-<div class="p-5" data-testid="storage-vault-modal">
+<div class="flex min-h-0 flex-auto flex-col p-5" data-testid="storage-vault-modal">
   {#if loadFailed}
     <p class="text-sm text-destructive">Не удалось загрузить состояние куки-сейфа.</p>
   {:else if !snapshot}

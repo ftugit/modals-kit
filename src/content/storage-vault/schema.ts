@@ -6,7 +6,14 @@ import { defineForm, field, v, type IssueLike } from '#lib/form/index.js'
 import { maskS3Url, parseS3Url } from '#lib/storage/s3.js'
 import { isWebdavDsn, maskWebdavUrl, parseWebdavUrl } from '#lib/storage/webdav.js'
 
-const RESERVED_SERVER_NAMES = new Set(['auto', 'local', 'memory'])
+const RESERVED_SERVER_NAMES = new Set([
+  'auto',
+  'local',
+  'memory',
+  'shard_a',
+  'shard_b',
+  'split_demo',
+])
 
 export interface StorageVaultEntry {
   readonly url: string

@@ -10,6 +10,7 @@
   import {
     createUploadBundleForm,
     type StorageReport,
+    type StorageTelemetrySnapshot,
     type UploadedDemoRecord,
   } from './forms.js'
 
@@ -19,7 +20,11 @@
     onProgress,
   }: {
     demo: UploadDemoValues
-    onUploaded: (created: readonly UploadedDemoRecord[], report?: StorageReport) => void
+    onUploaded: (
+      created: readonly UploadedDemoRecord[],
+      report?: StorageReport,
+      telemetry?: StorageTelemetrySnapshot,
+    ) => void
     onProgress: (progress: FormUploadProgress) => void
   } = $props()
 
@@ -34,12 +39,13 @@
             item?: UploadedDemoRecord
             items?: readonly UploadedDemoRecord[]
             storageReport?: StorageReport
+            telemetry?: StorageTelemetrySnapshot
           }
         | undefined
       const created =
         payload?.items ?? (payload?.item ? [payload.item] : [])
       if (created.length > 0) {
-        onUploaded(created, payload?.storageReport)
+        onUploaded(created, payload?.storageReport, payload?.telemetry)
       }
     },
   })
@@ -54,10 +60,16 @@
 
 <Form form={upload} hiddenFields={upload.hidden()} enctype="multipart/form-data" class="space-y-4">
   <Common errors={upload.common} />
-  <Field of={upload.f.title} />
+  <div class="grid gap-4 sm:grid-cols-2">
+    <Field of={upload.f.title} />
+    <Field of={upload.f.custom_path} />
+  </div>
   <Field of={upload.f.notes} />
   <Field of={upload.f.bundle} preview />
-  <Field of={upload.f.verify_integrity} />
+  <div class="grid gap-2 sm:grid-cols-2">
+    <Field of={upload.f.allow_overwrite} />
+    <Field of={upload.f.verify_integrity} />
+  </div>
 
   <div class="flex items-center gap-3">
     <Button type="submit" task={formTask(upload.state)} data-testid="submit-upload">

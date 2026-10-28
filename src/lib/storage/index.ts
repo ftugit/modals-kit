@@ -1030,25 +1030,23 @@ export function createStorage(config: StorageConfig): Storage {
     const rawFile = await slot.driver.lazy(part.path)
     if (!rawFile) return null
 
-    // Оборачиваем чтение сырого потока в лимитеры rate + concurrency + телеметрию сервера
-    const controlledRaw = new StreamFile(
-      {
-        byteLength: rawFile.size,
-        stream(start = 0, end = rawFile.size) {
-          return wrapSlotReadControls(
-            rawFile.slice(start, end).stream(),
-            slot,
-            part.path,
-            overrides,
-          )
-        },
-      },
-      rawFile.name,
-      { type: logicalType, lastModified: logicalLastModified },
-    )
-
     if (!part.encrypted) {
-      return controlledRaw
+      // Оборачиваем чтение сырого потока в лимитеры rate + concurrency + телеметрию сервера
+      return new StreamFile(
+        {
+          byteLength: rawFile.size,
+          stream(start = 0, end = rawFile.size) {
+            return wrapSlotReadControls(
+              rawFile.slice(start, end).stream(),
+              slot,
+              part.path,
+              overrides,
+            )
+          },
+        },
+        rawFile.name,
+        { type: logicalType, lastModified: logicalLastModified },
+      )
     }
 
     const effectiveKey = resolveCallKey(slot.key, overrides?.key)
@@ -1057,12 +1055,29 @@ export function createStorage(config: StorageConfig): Storage {
         `[storage/crypto] часть «${part.path}» на сервере «${slot.name}» зашифрована, но ключ расшифровки не задан`,
       )
     }
-    return createDecryptedStreamFile(controlledRaw, effectiveKey, {
+    const decryptedFile = createDecryptedStreamFile(rawFile, effectiveKey, {
       plainSize: part.plainBytes,
       fileName: basenameOfStoragePath(part.path),
       contentType: logicalType,
       lastModified: logicalLastModified,
     })
+
+    // Лимитеры concurrency / rate и телеметрия держатся на внешнем потоке части (а не на 64 КБ AEAD-кадрах)
+    return new StreamFile(
+      {
+        byteLength: decryptedFile.size,
+        stream(start = 0, end = decryptedFile.size) {
+          return wrapSlotReadControls(
+            decryptedFile.slice(start, end).stream(),
+            slot,
+            part.path,
+            overrides,
+          )
+        },
+      },
+      decryptedFile.name,
+      { type: logicalType, lastModified: logicalLastModified },
+    )
   }
 
   function assembleMultiPartStreamFile(
@@ -1076,6 +1091,16 @@ export function createStorage(config: StorageConfig): Storage {
         .reduce((acc, p) => acc + p.plainBytes, 0)
       return { part, start, end: start + part.plainBytes }
     })
+
+    const primaryServer = record.parts[0]?.server ?? defaultName
+    const outerCallGate =
+      overrides?.concurrency !== undefined
+        ? resolveCallConcurrency(primaryServer, null, overrides.concurrency)
+        : null
+    const partOverrides: StorageCallOverrides | undefined =
+      overrides?.concurrency !== undefined
+        ? { ...overrides, concurrency: overrides.concurrency === null || overrides.concurrency === 0 ? null : undefined }
+        : overrides
 
     return new StreamFile(
       {
@@ -1096,23 +1121,49 @@ export function createStorage(config: StorageConfig): Storage {
           )
           let spanIdx = 0
           let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
+          let outerLeaseReleased = false
+          let outerReleaseFn: (() => void) | null = null
+          let outerSignal: AbortSignal | undefined = overrides?.signal
+
+          const releaseOuter = () => {
+            if (!outerLeaseReleased && outerReleaseFn) {
+              outerLeaseReleased = true
+              outerReleaseFn()
+              outerReleaseFn = null
+            }
+          }
 
           return new ReadableStream<Uint8Array<ArrayBuffer>>({
             async pull(controller) {
               try {
+                if (outerCallGate && !outerReleaseFn && !outerLeaseReleased) {
+                  const lease = await outerCallGate.acquire({
+                    meta: overrides?.meta,
+                    signal: overrides?.signal,
+                  })
+                  outerReleaseFn = () => lease.release()
+                  outerSignal = lease.signal
+                }
+                outerSignal?.throwIfAborted()
+
                 for (;;) {
                   if (!activeReader) {
                     if (spanIdx >= touched.length) {
+                      releaseOuter()
                       controller.close()
                       return
                     }
                     const current = touched[spanIdx]!
                     spanIdx += 1
+                    const effectivePartOverrides =
+                      outerSignal && outerSignal !== partOverrides?.signal
+                        ? { ...partOverrides, signal: outerSignal }
+                        : partOverrides
                     const partFile = await openPartPlainFile(
                       current.part,
                       record.type,
                       record.lastModified,
-                      overrides,
+                      effectivePartOverrides,
                     )
                     if (!partFile) {
                       throw new Error(
@@ -1128,6 +1179,7 @@ export function createStorage(config: StorageConfig): Storage {
                   }
 
                   const { done, value } = await activeReader.read()
+                  outerSignal?.throwIfAborted()
                   if (done) {
                     activeReader.releaseLock()
                     activeReader = null
@@ -1139,6 +1191,7 @@ export function createStorage(config: StorageConfig): Storage {
                   return
                 }
               } catch (err) {
+                releaseOuter()
                 if (activeReader) {
                   await activeReader.cancel(err).catch(() => undefined)
                   activeReader.releaseLock()
@@ -1148,6 +1201,7 @@ export function createStorage(config: StorageConfig): Storage {
               }
             },
             async cancel(reason) {
+              releaseOuter()
               if (activeReader) {
                 await activeReader.cancel(reason).catch(() => undefined)
                 activeReader.releaseLock()
@@ -1189,44 +1243,86 @@ export function createStorage(config: StorageConfig): Storage {
     const planned: PlannedSplitPart[] = []
     const perServerReserved = new Map<string, number>()
 
+    const freeByServer = new Map<string, number>()
     for (const slot of splitPool) {
-      if (remainingPlain <= 0) break
       const u = snap[slot.name] ?? {
         usedBytes: 0,
         reservedBytes: 0,
         filesCount: 0,
         partsCount: 0,
       }
-      const alreadyPlannedHere = perServerReserved.get(slot.name) ?? 0
-      let freeStorage =
-        slot.limits.storageBytes - u.usedBytes - u.reservedBytes - alreadyPlannedHere
-      const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+      freeByServer.set(slot.name, slot.limits.storageBytes - u.usedBytes - u.reservedBytes)
+    }
 
-      // На одном сервере тоже можно разместить несколько частей, если позволяет storageBytes, а упёрлись в fileBytes
-      while (remainingPlain > 0 && freeStorage > 0) {
-        const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
-        const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
-        if (maxPlain <= 0) break
+    if (writeStrategy === 'round-robin' && splitPool.length > 1) {
+      // В режиме round-robin чередуем по 1 части на сервер по кругу (полосатое размещение по шардам)
+      while (remainingPlain > 0) {
+        let progressed = false
+        for (const slot of splitPool) {
+          if (remainingPlain <= 0) break
+          const freeStorage = freeByServer.get(slot.name) ?? 0
+          if (freeStorage <= 0) continue
+          const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+          const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
+          const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
+          if (maxPlain <= 0) continue
 
-        const takePlain = Math.min(remainingPlain, maxPlain)
-        const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
-        const idx = planned.length
-        planned.push({
-          index: idx,
-          slot,
-          partPath: `${params.cleanPath}.part.${idx}`,
-          plainOffset: offset,
-          plainBytes: takePlain,
-          storedBytes: takeStored,
-          encrypted,
-        })
-        offset += takePlain
-        remainingPlain -= takePlain
-        freeStorage -= takeStored
-        perServerReserved.set(
-          slot.name,
-          (perServerReserved.get(slot.name) ?? 0) + takeStored,
-        )
+          const takePlain = Math.min(remainingPlain, maxPlain)
+          const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
+          const idx = planned.length
+          planned.push({
+            index: idx,
+            slot,
+            partPath: `${params.cleanPath}.part.${idx}`,
+            plainOffset: offset,
+            plainBytes: takePlain,
+            storedBytes: takeStored,
+            encrypted,
+          })
+          offset += takePlain
+          remainingPlain -= takePlain
+          freeByServer.set(slot.name, freeStorage - takeStored)
+          perServerReserved.set(
+            slot.name,
+            (perServerReserved.get(slot.name) ?? 0) + takeStored,
+          )
+          progressed = true
+        }
+        if (!progressed) break
+      }
+    } else {
+      for (const slot of splitPool) {
+        if (remainingPlain <= 0) break
+        let freeStorage = freeByServer.get(slot.name) ?? 0
+        const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+
+        // На одном сервере тоже можно разместить несколько частей, если позволяет storageBytes, а упёрлись в fileBytes
+        while (remainingPlain > 0 && freeStorage > 0) {
+          const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
+          const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
+          if (maxPlain <= 0) break
+
+          const takePlain = Math.min(remainingPlain, maxPlain)
+          const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
+          const idx = planned.length
+          planned.push({
+            index: idx,
+            slot,
+            partPath: `${params.cleanPath}.part.${idx}`,
+            plainOffset: offset,
+            plainBytes: takePlain,
+            storedBytes: takeStored,
+            encrypted,
+          })
+          offset += takePlain
+          remainingPlain -= takePlain
+          freeStorage -= takeStored
+          freeByServer.set(slot.name, freeStorage)
+          perServerReserved.set(
+            slot.name,
+            (perServerReserved.get(slot.name) ?? 0) + takeStored,
+          )
+        }
       }
     }
 
