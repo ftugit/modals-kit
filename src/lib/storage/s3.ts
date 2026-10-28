@@ -18,6 +18,9 @@ import type { DriverPutInput, DriverStoredMeta, StorageDriver } from './types.js
 /** Минимальный размер одной части S3 Multipart Upload по стандарту S3/B2/R2 (`5 МиБ`). */
 export const S3_MIN_PART_BYTES = 5 * 1024 * 1024
 
+/** Максимальное число частей одного S3 Multipart Upload по стандарту S3/B2/R2 (`10 000`). */
+export const S3_MAX_PARTS = 10_000
+
 /** Порог перехода с одиночного потокового `PUT` на S3 Multipart Upload по умолчанию (`64 МиБ`). */
 export const DEFAULT_S3_MULTIPART_THRESHOLD_BYTES = 64 * 1024 * 1024
 
@@ -153,10 +156,17 @@ export function maskS3Url(raw: string | URL): string {
   return `${scheme}://***@${endpointUrl.host}/${parsed.bucket}${suffix}`
 }
 
+function encodeRfc3986(seg: string): string {
+  return encodeURIComponent(seg).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
 function encodeS3KeyPath(key: string): string {
   return key
     .split('/')
-    .map((seg) => encodeURIComponent(seg))
+    .map((seg) => encodeRfc3986(seg))
     .join('/')
 }
 
@@ -166,12 +176,26 @@ function xmlEscape(raw: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function decodeXmlEntities(raw: string): string {
+  return raw
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
 function extractXmlTag(xml: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}>([^<]+)</${tag}>`)
+  const re = new RegExp(
+    `<(?:[A-Za-z0-9_.-]+:)?${tag}(?:\\s[^/>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_.-]+:)?${tag}\\s*>`,
+    'i',
+  )
   const m = re.exec(xml)
-  return m ? m[1]!.trim() : null
+  return m ? decodeXmlEntities(m[1]!.trim()) : null
 }
 
 /**
@@ -354,69 +378,78 @@ export function s3Driver(
   async function putMultipartStream(
     cleanPath: string,
     input: DriverPutInput,
+    prefetched?: {
+      readonly firstFullPart: Uint8Array<ArrayBuffer>
+      readonly overflow: Uint8Array
+      readonly reader: ReadableStreamDefaultReader<Uint8Array>
+    },
   ): Promise<DriverStoredMeta> {
     input.signal?.throwIfAborted()
-    const initRes = await signedFetch(objectUrlOf(cleanPath, 'uploads'), {
-      method: 'POST',
-      headers: {
-        'content-type': input.contentType,
-        'x-amz-meta-mtime': String(input.lastModified),
-      },
-      signal: input.signal,
-    })
-    if (!initRes.ok) {
-      const detail = await initRes.text().catch(() => '')
-      throw new Error(
-        `[storage/s3] CreateMultipartUpload failed (${initRes.status}): ${detail.slice(0, 240)}`,
-      )
-    }
-    const initXml = await initRes.text()
-    const uploadId = extractXmlTag(initXml, 'UploadId')
-    if (!uploadId) {
-      throw new Error('[storage/s3] CreateMultipartUpload не вернул UploadId')
-    }
-
-    const completedParts: Array<{ partNumber: number; etag: string }> = []
-    const reader = input.stream.getReader()
-    const partBuf = new Uint8Array(partSize)
-    let buffered = 0
-    let totalSeen = 0
-    let partNumber = 1
+    const reader = prefetched ? prefetched.reader : input.stream.getReader()
+    let uploadId = ''
     let completed = false
 
-    const flushPart = async (slice: Uint8Array<ArrayBuffer>): Promise<void> => {
-      const partQuery = `partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`
-      const partRes = await signedFetch(objectUrlOf(cleanPath, partQuery), {
-        method: 'PUT',
+    try {
+      const initRes = await signedFetch(objectUrlOf(cleanPath, 'uploads'), {
+        method: 'POST',
         headers: {
-          'content-length': String(slice.byteLength),
+          'content-type': input.contentType,
+          'x-amz-meta-mtime': String(input.lastModified),
         },
-        body: slice,
         signal: input.signal,
       })
-      if (!partRes.ok) {
-        const detail = await partRes.text().catch(() => '')
+      if (!initRes.ok) {
+        const detail = await initRes.text().catch(() => '')
         throw new Error(
-          `[storage/s3] UploadPart #${partNumber} failed (${partRes.status}): ${detail.slice(0, 240)}`,
+          `[storage/s3] CreateMultipartUpload failed (${initRes.status}): ${detail.slice(0, 240)}`,
         )
       }
-      const etag = partRes.headers.get('etag')
-      await partRes.body?.cancel().catch(() => undefined)
-      if (!etag) {
-        throw new Error(`[storage/s3] UploadPart #${partNumber} не вернул ETag`)
+      const initXml = await initRes.text()
+      const parsedUploadId = extractXmlTag(initXml, 'UploadId')
+      if (!parsedUploadId) {
+        throw new Error('[storage/s3] CreateMultipartUpload не вернул UploadId')
       }
-      completedParts.push({ partNumber, etag })
-      partNumber += 1
-    }
+      uploadId = parsedUploadId
 
-    try {
-      for (;;) {
-        input.signal?.throwIfAborted()
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.byteLength === 0) continue
+      const completedParts: Array<{ partNumber: number; etag: string }> = []
+      const partBuf = new Uint8Array(partSize)
+      let buffered = 0
+      let totalSeen = 0
+      let partNumber = 1
 
-        totalSeen += value.byteLength
+      const flushPart = async (slice: Uint8Array<ArrayBuffer>): Promise<void> => {
+        if (partNumber > S3_MAX_PARTS) {
+          throw new RangeError(
+            `[storage/s3] превышен лимит числа частей S3 Multipart Upload (${S3_MAX_PARTS}); увеличьте partSizeBytes`,
+          )
+        }
+        const partQuery = `partNumber=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`
+        const partRes = await signedFetch(objectUrlOf(cleanPath, partQuery), {
+          method: 'PUT',
+          headers: {
+            'content-length': String(slice.byteLength),
+          },
+          body: slice,
+          signal: input.signal,
+        })
+        if (!partRes.ok) {
+          const detail = await partRes.text().catch(() => '')
+          throw new Error(
+            `[storage/s3] UploadPart #${partNumber} failed (${partRes.status}): ${detail.slice(0, 240)}`,
+          )
+        }
+        const etag = partRes.headers.get('etag')
+        await partRes.body?.cancel().catch(() => undefined)
+        if (!etag) {
+          throw new Error(`[storage/s3] UploadPart #${partNumber} не вернул ETag`)
+        }
+        completedParts.push({ partNumber, etag })
+        partNumber += 1
+      }
+
+      const ingestChunk = async (chunk: Uint8Array): Promise<void> => {
+        if (chunk.byteLength === 0) return
+        totalSeen += chunk.byteLength
         if (input.size !== undefined && totalSeen > input.size) {
           throw new RangeError(
             `[storage/s3] поток превысил заявленный размер: ${totalSeen} > ${input.size}`,
@@ -424,9 +457,9 @@ export function s3Driver(
         }
 
         let offset = 0
-        while (offset < value.byteLength) {
-          const take = Math.min(partSize - buffered, value.byteLength - offset)
-          partBuf.set(value.subarray(offset, offset + take), buffered)
+        while (offset < chunk.byteLength) {
+          const take = Math.min(partSize - buffered, chunk.byteLength - offset)
+          partBuf.set(chunk.subarray(offset, offset + take), buffered)
           buffered += take
           offset += take
 
@@ -437,6 +470,19 @@ export function s3Driver(
             await flushPart(copy)
           }
         }
+      }
+
+      if (prefetched) {
+        totalSeen += prefetched.firstFullPart.byteLength
+        await flushPart(prefetched.firstFullPart)
+        await ingestChunk(prefetched.overflow)
+      }
+
+      for (;;) {
+        input.signal?.throwIfAborted()
+        const { done, value } = await reader.read()
+        if (done) break
+        await ingestChunk(value)
       }
 
       input.signal?.throwIfAborted()
@@ -476,9 +522,16 @@ export function s3Driver(
         },
       )
       const completeBody = await completeRes.text()
-      if (!completeRes.ok || completeBody.includes('<Error>')) {
+      const hasXmlError = /<(?:[A-Za-z0-9_.-]+:)?Error\b/i.test(completeBody)
+      if (!completeRes.ok || hasXmlError) {
+        const errCode = extractXmlTag(completeBody, 'Code')
+        const errMsg = extractXmlTag(completeBody, 'Message')
+        const detail =
+          errCode || errMsg
+            ? `${errCode ?? 'Error'}: ${errMsg ?? ''}`.trim()
+            : completeBody.slice(0, 240)
         throw new Error(
-          `[storage/s3] CompleteMultipartUpload failed (${completeRes.status}): ${completeBody.slice(0, 240)}`,
+          `[storage/s3] CompleteMultipartUpload failed (${completeRes.status}): ${detail}`,
         )
       }
       completed = true
@@ -489,14 +542,95 @@ export function s3Driver(
         contentType: input.contentType,
         lastModified: input.lastModified,
       }
+    } catch (err) {
+      await reader.cancel(err).catch(() => undefined)
+      throw err
     } finally {
       reader.releaseLock()
-      if (!completed) {
+      if (!completed && uploadId) {
         await signedFetch(
           objectUrlOf(cleanPath, `uploadId=${encodeURIComponent(uploadId)}`),
           { method: 'DELETE' },
         ).catch(() => undefined)
       }
+    }
+  }
+
+  /**
+   * Поток неизвестного заранее размера (`input.size === undefined`, например `storage.upload(request)`):
+   * читаем до первого `partSize` с lookahead на 1 чанк вперёд (паттерн `@remix-run/file-storage-s3` /
+   * `@aws-sdk/lib-storage`). Если весь файл уместился в `<= partSize` (включая `0` Б), отправляем
+   * одиночный `PUT` с точным `Content-Length` вместо 3-запросного Multipart Upload.
+   */
+  async function putUnknownSizeStream(
+    cleanPath: string,
+    input: DriverPutInput,
+  ): Promise<DriverStoredMeta> {
+    const reader = input.stream.getReader()
+    const firstBuf = new Uint8Array(new ArrayBuffer(partSize))
+    let buffered = 0
+    let overflow: Uint8Array | null = null
+
+    try {
+      for (;;) {
+        input.signal?.throwIfAborted()
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value.byteLength === 0) continue
+
+        const space = partSize - buffered
+        if (value.byteLength <= space) {
+          firstBuf.set(value, buffered)
+          buffered += value.byteLength
+          continue
+        }
+
+        if (space > 0) {
+          firstBuf.set(value.subarray(0, space), buffered)
+          buffered = partSize
+          overflow = value.subarray(space)
+        } else {
+          overflow = value
+        }
+        break
+      }
+    } catch (err) {
+      await reader.cancel(err).catch(() => undefined)
+      reader.releaseLock()
+      throw err
+    }
+
+    if (overflow !== null) {
+      return putMultipartStream(cleanPath, input, {
+        firstFullPart: firstBuf,
+        overflow,
+        reader,
+      })
+    }
+
+    reader.releaseLock()
+    const exactBytes =
+      buffered === partSize ? firstBuf : firstBuf.subarray(0, buffered)
+    const res = await signedFetch(objectUrlOf(cleanPath), {
+      method: 'PUT',
+      headers: {
+        'content-type': input.contentType,
+        'content-length': String(exactBytes.byteLength),
+        'x-amz-meta-mtime': String(input.lastModified),
+      },
+      body: exactBytes,
+      signal: input.signal,
+    })
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(`[storage/s3] PUT failed (${res.status}): ${detail.slice(0, 240)}`)
+    }
+    await res.body?.cancel().catch(() => undefined)
+    return {
+      path: cleanPath,
+      size: exactBytes.byteLength,
+      contentType: input.contentType,
+      lastModified: input.lastModified,
     }
   }
 
@@ -507,7 +641,10 @@ export function s3Driver(
     async put(input: DriverPutInput): Promise<DriverStoredMeta> {
       const cleanPath = normalizeStoragePath(input.path)
       input.signal?.throwIfAborted()
-      if (input.size !== undefined && input.size <= multipartThreshold) {
+      if (input.size === undefined) {
+        return putUnknownSizeStream(cleanPath, input)
+      }
+      if (input.size <= multipartThreshold) {
         return putSingleStream(cleanPath, input, input.size)
       }
       return putMultipartStream(cleanPath, input)
@@ -522,7 +659,11 @@ export function s3Driver(
         throw new Error(`[storage/s3] HEAD failed (${res.status}) for «${cleanPath}»`)
       }
 
-      const rawSize = Number(res.headers.get('content-length') ?? '0')
+      const clHeader = res.headers.get('content-length')
+      const rawSize = clHeader !== null ? Number(clHeader) : 0
+      if (clHeader !== null && (!Number.isSafeInteger(rawSize) || rawSize < 0)) {
+        throw new Error(`[storage/s3] некорректный Content-Length в HEAD «${cleanPath}»: ${clHeader}`)
+      }
       const contentType =
         res.headers.get('content-type')?.trim() || 'application/octet-stream'
       const customMtime = Number(res.headers.get('x-amz-meta-mtime') ?? '')
@@ -535,7 +676,7 @@ export function s3Driver(
 
       return {
         path: cleanPath,
-        size: Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : 0,
+        size: rawSize,
         contentType,
         lastModified,
       }
@@ -562,6 +703,8 @@ export function s3Driver(
             }
 
             let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+            let dropPrefix = 0
+            let sliceRemaining = boundedEnd - boundedStart
             const rangeHeader = `bytes=${boundedStart}-${boundedEnd - 1}`
 
             return new ReadableStream<Uint8Array<ArrayBuffer>>({
@@ -571,25 +714,55 @@ export function s3Driver(
                     method: 'GET',
                     headers: { range: rangeHeader },
                   })
-                  if (!res.ok || !res.body) {
+                  if ((res.status !== 206 && res.status !== 200) || !res.body) {
                     const detail = await res.text().catch(() => '')
                     throw new Error(
                       `[storage/s3] GET ${rangeHeader} failed (${res.status}): ${detail.slice(0, 200)}`,
                     )
                   }
+                  // Если прокси/CDN проигнорировал Range и вернул 200 OK со всем телом — вырезаем [boundedStart, boundedEnd)
+                  dropPrefix = res.status === 200 ? boundedStart : 0
+                  sliceRemaining = boundedEnd - boundedStart
                   reader = res.body.getReader()
                 }
 
-                const { done, value } = await reader.read()
-                if (done) {
-                  reader.releaseLock()
-                  reader = null
-                  controller.close()
+                for (;;) {
+                  if (sliceRemaining <= 0) {
+                    await reader.cancel().catch(() => undefined)
+                    reader.releaseLock()
+                    reader = null
+                    controller.close()
+                    return
+                  }
+                  const { done, value } = await reader.read()
+                  if (done) {
+                    reader.releaseLock()
+                    reader = null
+                    controller.close()
+                    return
+                  }
+                  if (value.byteLength === 0) continue
+
+                  let chunk = value
+                  if (dropPrefix > 0) {
+                    if (chunk.byteLength <= dropPrefix) {
+                      dropPrefix -= chunk.byteLength
+                      continue
+                    }
+                    chunk = chunk.subarray(dropPrefix)
+                    dropPrefix = 0
+                  }
+
+                  if (chunk.byteLength > sliceRemaining) {
+                    chunk = chunk.subarray(0, sliceRemaining)
+                  }
+                  sliceRemaining -= chunk.byteLength
+
+                  const copy = new Uint8Array(new ArrayBuffer(chunk.byteLength))
+                  copy.set(chunk)
+                  controller.enqueue(copy)
                   return
                 }
-                const copy = new Uint8Array(new ArrayBuffer(value.byteLength))
-                copy.set(value)
-                controller.enqueue(copy)
               },
               async cancel(reason) {
                 if (reader) {

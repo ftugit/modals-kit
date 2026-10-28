@@ -405,16 +405,50 @@ interface NormalizedInputBody {
   sliceable?: (start: number, end: number) => ReadableStream<Uint8Array>
 }
 
+const BLOB_SLICE_CHUNK_BYTES = 64 * 1024
+
+/**
+ * Читает `Blob` срезами по `64 KiB` вместо нативного `blob.stream()`:
+ * в Node.js `< 24.20.0` (`nodejs/node#63574`, см. `@remix-run/file-storage-s3`)
+ * чанки из `Blob#stream()` удерживаются в памяти до завершения процесса.
+ */
+function streamBlobSlices(
+  blob: Blob,
+  start = 0,
+  end = blob.size,
+): ReadableStream<Uint8Array> {
+  const boundedStart = Math.max(0, Math.min(start, blob.size))
+  const boundedEnd = Math.max(boundedStart, Math.min(end, blob.size))
+  let offset = boundedStart
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (offset >= boundedEnd) {
+        controller.close()
+        return
+      }
+      const nextEnd = Math.min(offset + BLOB_SLICE_CHUNK_BYTES, boundedEnd)
+      const chunk = new Uint8Array(await blob.slice(offset, nextEnd).arrayBuffer())
+      offset = nextEnd
+      if (chunk.byteLength > 0) {
+        controller.enqueue(chunk)
+      }
+      if (offset >= boundedEnd) {
+        controller.close()
+      }
+    },
+  })
+}
+
 function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
   if (body instanceof ReadableStream) {
     return { stream: body }
   }
   if (body instanceof Blob) {
     return {
-      stream: body.stream() as ReadableStream<Uint8Array>,
+      stream: streamBlobSlices(body),
       knownSize: body.size,
       ...(body.type ? { inferredType: body.type } : {}),
-      sliceable: (start, end) => body.slice(start, end).stream() as ReadableStream<Uint8Array>,
+      sliceable: (start, end) => streamBlobSlices(body, start, end),
     }
   }
   const view =
@@ -426,6 +460,11 @@ function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
   if (!view) {
     throw new TypeError('[storage] неподдерживаемый тип body в put()')
   }
+  // Отвязываем собственную копию ArrayBuffer (защита от переиспользования буфера вызывающим кодом
+  // при ретраях и от утечки общего 8-КиБ пула Node Buffer)
+  const snapshot = new Uint8Array(new ArrayBuffer(view.byteLength))
+  snapshot.set(view)
+
   const makeSliceStream = (sub: Uint8Array) =>
     new ReadableStream<Uint8Array>({
       start(controller) {
@@ -434,9 +473,9 @@ function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
       },
     })
   return {
-    knownSize: view.byteLength,
-    stream: makeSliceStream(view),
-    sliceable: (start, end) => makeSliceStream(view.subarray(start, end)),
+    knownSize: snapshot.byteLength,
+    stream: makeSliceStream(snapshot),
+    sliceable: (start, end) => makeSliceStream(snapshot.subarray(start, end)),
   }
 }
 
@@ -453,9 +492,17 @@ function buildPublicUrl(
   return `${cleanBase}/${encodedPath}${suffix}`
 }
 
+function encodeRfc5987ValueChars(str: string): string {
+  return encodeURIComponent(str).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
 function contentDispositionAttachment(filename: string): string {
-  const asciiFallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download'
-  const encoded = encodeURIComponent(filename)
+  const clean = filename.replace(/[\r\n]+/g, ' ').trim() || 'download'
+  const asciiFallback = clean.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download'
+  const encoded = encodeRfc5987ValueChars(clean)
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`
 }
 
@@ -1695,10 +1742,21 @@ export function createStorage(config: StorageConfig): Storage {
       request: Request,
       options?: StorageUploadOptions,
     ): Promise<StorageUploadResult> {
+      let defaultMaxFileSize = 0
+      const useSplitPool = Boolean(options?.split && options?.stageToDisk)
+      for (const s of slots.values()) {
+        if (s.readOnly) continue
+        if (useSplitPool && s.allowSplit) {
+          defaultMaxFileSize += s.limits.storageBytes
+        } else if (s.limits.fileBytes > defaultMaxFileSize) {
+          defaultMaxFileSize = s.limits.fileBytes
+        }
+      }
       return executeStorageUpload(request, options, {
         put: (inp) => this.put(inp),
         lazy: (p, opt) => this.lazy(p, opt),
         del: (p, opt) => this.del(p, opt),
+        ...(defaultMaxFileSize > 0 ? { defaultMaxFileSize } : {}),
         ...(tech?.resolveMeta ? { resolveMeta: tech.resolveMeta } : {}),
       })
     },
@@ -2041,8 +2099,10 @@ export function createStorage(config: StorageConfig): Storage {
           ...(effectiveOptions.etag !== undefined ? { etag: effectiveOptions.etag } : {}),
         })
 
+        const isPayloadResponse = res.status === 200 || res.status === 206
+
         // Проверяем не сработал ли лимит concurrency при открытии потока (для мгновенного ответа 429 до отправки заголовков)
-        if (res.body && (request.method === 'GET' || !request.method)) {
+        if (isPayloadResponse && res.body && (request.method === 'GET' || !request.method)) {
           const slot = await resolveReadSlot(clean, effectiveOptions.server)
           const gate = resolveCallConcurrency(
             slot.name,
@@ -2105,7 +2165,8 @@ export function createStorage(config: StorageConfig): Storage {
         headers.set('content-security-policy', "default-src 'none'; sandbox")
 
         const forceAttachment =
-          Boolean(effectiveOptions.download) || isPotentiallyActiveMime(file.type)
+          isPayloadResponse &&
+          (Boolean(effectiveOptions.download) || isPotentiallyActiveMime(file.type))
         if (forceAttachment) {
           const downloadName =
             typeof effectiveOptions.download === 'string' &&

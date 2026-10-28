@@ -168,8 +168,9 @@ export function pgStorageLedger(
   const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_MS
   let sweptAt = 0
 
-  // Последовательная очередь операций в рамках процесса предотвращает гонки
-  // чтения-записи квот при параллельных `Promise.all([storage.put(...), ...])`.
+  // Последовательная очередь в рамках процесса + транзакционная advisory-блокировка PostgreSQL
+  // (`pg_advisory_xact_lock`, когда драйвер поддерживает транзакции) исключают гонки квот как
+  // внутри одного процесса, так и между несколькими инстансами приложения в `READ COMMITTED`.
   let queue: Promise<unknown> = Promise.resolve()
   function serialize<T>(fn: () => Promise<T>): Promise<T> {
     const next = queue.then(fn, fn)
@@ -180,12 +181,29 @@ export function pgStorageLedger(
     return next
   }
 
-  async function sweepOpportunistic(): Promise<void> {
+  function withScopeLock<T>(
+    fn: (runner: Pick<Database, 'query'>) => Promise<T>,
+  ): Promise<T> {
+    return serialize(async () => {
+      if (db.driver.capabilities.transactions) {
+        return db.transaction(async (tx) => {
+          await tx.query({
+            text: `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+            values: ['modals_kit_storage_ledger', scope],
+          })
+          return fn(tx)
+        })
+      }
+      return fn(db)
+    })
+  }
+
+  async function sweepOpportunistic(runner: Pick<Database, 'query'> = db): Promise<void> {
     const now = Date.now()
     if (now - sweptAt < sweepIntervalMs) return
     sweptAt = now
     try {
-      await db.query({
+      await runner.query({
         text: `DELETE FROM ${RESV_TABLE} WHERE ${R_SCOPE} = $1 AND ${RESV_DEAD}`,
         values: [scope],
       })
@@ -264,7 +282,7 @@ export function pgStorageLedger(
 
   return defineStorageLedger({
     reserve({ id, allocations, ttlMs }) {
-      return serialize(async (): Promise<LedgerReservation | null> => {
+      return withScopeLock(async (runner): Promise<LedgerReservation | null> => {
         if (!(ttlMs > 0) && ttlMs !== Infinity) {
           throw new RangeError(
             `[storage] ttlMs брони должен быть положительным числом мс, получено ${String(ttlMs)}`,
@@ -273,7 +291,7 @@ export function pgStorageLedger(
         const safeTtlMs = Number.isFinite(ttlMs) ? Math.max(1, ttlMs) : 365 * 24 * 60 * 60 * 1000
 
         // Идемпотентный возврат уже активной брони с тем же id
-        const existing = await db.query<{
+        const existing = await runner.query<{
           allocations: readonly ServerAllocation[]
           expires_at: string | Date
         }>({
@@ -291,7 +309,7 @@ export function pgStorageLedger(
         }
 
         // Удаляем истёкшую запись с тем же id (если была) и просроченные брони перед проверкой остатка
-        await db.query({
+        await runner.query({
           text: `DELETE FROM ${RESV_TABLE} WHERE ${R_SCOPE} = $1 AND (${RESV_DEAD} OR ${R_RES_ID} = $2)`,
           values: [scope, id],
         })
@@ -317,7 +335,7 @@ export function pgStorageLedger(
         // Одиночный атомарный оператор: проверяет (used + live_reserved + req <= maxStorageBytes)
         // по ВСЕМ запрошенным серверам сразу на часах базы `clock_timestamp()` и вставляет бронь
         // только при `bool_and(...) = true`.
-        const inserted = await db.query<{ expires_at: string | Date }>({
+        const inserted = await runner.query<{ expires_at: string | Date }>({
           text: `WITH req AS (
                    SELECT
                      a->>'server' AS server,
@@ -389,8 +407,8 @@ export function pgStorageLedger(
     },
 
     commit({ reservationId, file }) {
-      return serialize(async (): Promise<{ readonly replaced?: StoredFileRecord }> => {
-        const result = await db.query<{ prev_record: StoredFileRecord | null }>({
+      return withScopeLock(async (runner): Promise<{ readonly replaced?: StoredFileRecord }> => {
+        const result = await runner.query<{ prev_record: StoredFileRecord | null }>({
           text: `WITH del_resv AS (
                    DELETE FROM ${RESV_TABLE}
                    WHERE ${R_SCOPE} = $1 AND ${R_RES_ID} = $2
@@ -411,15 +429,15 @@ export function pgStorageLedger(
           values: [scope, reservationId, file.path, JSON.stringify(file)],
         })
 
-        await sweepOpportunistic()
+        await sweepOpportunistic(runner)
         const replaced = result.rows[0]?.prev_record ?? undefined
         return replaced ? { replaced } : {}
       })
     },
 
     release(reservationId) {
-      return serialize(async (): Promise<void> => {
-        await db.query({
+      return withScopeLock(async (runner): Promise<void> => {
+        await runner.query({
           text: `DELETE FROM ${RESV_TABLE} WHERE ${R_SCOPE} = $1 AND ${R_RES_ID} = $2`,
           values: [scope, reservationId],
         })
@@ -427,16 +445,16 @@ export function pgStorageLedger(
     },
 
     sweepExpired(now) {
-      return serialize(async (): Promise<number> => {
+      return withScopeLock(async (runner): Promise<number> => {
         const res =
           now === undefined
-            ? await db.query<{ id: string }>({
+            ? await runner.query<{ id: string }>({
                 text: `DELETE FROM ${RESV_TABLE}
                        WHERE ${R_SCOPE} = $1 AND ${RESV_DEAD}
                        RETURNING ${R_ID} AS id`,
                 values: [scope],
               })
-            : await db.query<{ id: string }>({
+            : await runner.query<{ id: string }>({
                 text: `DELETE FROM ${RESV_TABLE}
                        WHERE ${R_SCOPE} = $1
                          AND ${R_EXP} <= to_timestamp($2::double precision / 1000.0)
@@ -459,8 +477,8 @@ export function pgStorageLedger(
     },
 
     deleteFile(path) {
-      return serialize(async (): Promise<StoredFileRecord | null> => {
-        const res = await db.query<{ record: StoredFileRecord }>({
+      return withScopeLock(async (runner): Promise<StoredFileRecord | null> => {
+        const res = await runner.query<{ record: StoredFileRecord }>({
           text: `DELETE FROM ${FILE_TABLE}
                  WHERE ${F_SCOPE} = $1 AND ${F_PATH} = $2
                  RETURNING ${F_REC} AS record`,

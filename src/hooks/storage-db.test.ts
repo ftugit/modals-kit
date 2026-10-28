@@ -121,6 +121,21 @@ describe('pgStorageLedger & cacheStorageStore (#hooks/storage-db)', () => {
       ttlMs: 60_000,
     })
     expect(nextWinner).not.toBeNull()
+
+    // Межинстансная гонка: 4 независимых экземпляра `pgStorageLedger` (без общей in-memory очереди)
+    const independentLedgers = Array.from({ length: 4 }, () =>
+      pgStorageLedger(db, { scope: 'multi-instance-race' }),
+    )
+    const crossResults = await Promise.all(
+      independentLedgers.map((inst, idx) =>
+        inst.reserve({
+          id: `cross-${idx}`,
+          allocations: [{ server: 'shared-s1', bytes: 600, maxStorageBytes: 1_000 }],
+          ttlMs: 60_000,
+        }),
+      ),
+    )
+    expect(crossResults.filter((r) => r !== null)).toHaveLength(1)
   })
 
   test('обеспечивает полный цикл createStorage поверх PostgreSQL: нарезка split, шифрование, перезапись, реплики, кэш statTtlMs и лимит потоков по IP', async () => {

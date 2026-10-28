@@ -41,6 +41,11 @@ interface SidecarMeta {
   readonly lastModified: number
 }
 
+function isFsNotFound(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
 function safeTargetPath(absRoot: string, normalizedPath: string): string {
   const target = resolve(absRoot, ...normalizedPath.split('/'))
   const prefix = absRoot.endsWith(sep) ? absRoot : absRoot + sep
@@ -58,8 +63,9 @@ async function readSidecar(metaPath: string): Promise<SidecarMeta | null> {
       return { contentType: parsed.contentType, lastModified: parsed.lastModified }
     }
     return null
-  } catch {
-    return null
+  } catch (err) {
+    if (isFsNotFound(err) || err instanceof SyntaxError) return null
+    throw err
   }
 }
 
@@ -191,8 +197,9 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
           contentType: sidecar?.contentType || lazy.type || 'application/octet-stream',
           lastModified: sidecar?.lastModified ?? Math.trunc(st.mtimeMs),
         }
-      } catch {
-        return null
+      } catch (err) {
+        if (isFsNotFound(err)) return null
+        throw err
       }
     },
 
@@ -228,10 +235,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       try {
         await unlink(finalPath)
         removed = true
-      } catch {
+      } catch (err) {
+        if (!isFsNotFound(err)) throw err
         removed = false
       }
-      await unlink(metaPath).catch(() => undefined)
+      await unlink(metaPath).catch((err) => {
+        if (!isFsNotFound(err)) throw err
+      })
       return removed
     },
   }
@@ -272,8 +282,11 @@ export function jsonLedger(
             ? { ...parsed.reservations }
             : {},
       }
-    } catch {
-      return { files: {}, reservations: {} }
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code === 'ENOENT') {
+        return { files: {}, reservations: {} }
+      }
+      throw err
     }
   }
 
@@ -455,15 +468,19 @@ export function localSpool(spoolDir: string): StorageSpool {
             await once(out, 'drain')
           }
         }
-        out.end()
-        await once(out, 'finish')
+        await new Promise<void>((res, rej) => {
+          out.end((err?: Error | null) => (err ? rej(err) : res()))
+        })
+        if (!out.closed) {
+          await once(out, 'close')
+        }
         if (streamFailure) throw streamFailure
         finished = true
       } finally {
         signal?.removeEventListener('abort', onAbort)
         reader.releaseLock()
         if (!out.closed) {
-          out.destroy()
+          if (!out.destroyed) out.destroy()
           await once(out, 'close').catch(() => undefined)
         }
         if (!finished) {

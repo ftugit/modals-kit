@@ -248,11 +248,18 @@ export function maskWebdavUrl(raw: string | URL): string {
   return `${scheme}://***@${endpointUrl.host}${suffix}`
 }
 
+function encodeRfc3986(seg: string): string {
+  return encodeURIComponent(seg).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
 function encodeWebdavPath(cleanPath: string): string {
   return cleanPath
     .split('/')
     .filter(Boolean)
-    .map((seg) => encodeURIComponent(seg))
+    .map((seg) => encodeRfc3986(seg))
     .join('/')
 }
 
@@ -261,13 +268,14 @@ function decodeXmlEntities(raw: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
 }
 
 function extractDavTag(xmlBlock: string, localName: string): string | null {
   const re = new RegExp(
-    `<(?:[A-Za-z0-9_.-]+:)?${localName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_.-]+:)?${localName}>`,
+    `<(?:[A-Za-z0-9_.-]+:)?${localName}(?:\\s[^/>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_.-]+:)?${localName}\\s*>`,
     'i',
   )
   const m = re.exec(xmlBlock)
@@ -292,27 +300,25 @@ interface ParsedDavResponseItem {
 function parsePropfindResponses(xml: string): ParsedDavResponseItem[] {
   const items: ParsedDavResponseItem[] = []
   const responseRe =
-    /<(?:[A-Za-z0-9_.-]+:)?response(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?response>/gi
+    /<(?:[A-Za-z0-9_.-]+:)?response(?:\s[^/>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?response\s*>/gi
   let match: RegExpExecArray | null
   while ((match = responseRe.exec(xml)) !== null) {
     const block = match[1]!
     const href = extractDavTag(block, 'href') ?? ''
-    // Учитываем только успешный propstat (200 OK), если сервер вернул несколько секций propstat
+    // Собираем только успешные 2xx секции propstat (никогда не читаем теги из 404/403 propstat!)
     const propstatRe =
-      /<(?:[A-Za-z0-9_.-]+:)?propstat(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?propstat>/gi
-    let propSource = block
-    let okPropstat: string | null = null
+      /<(?:[A-Za-z0-9_.-]+:)?propstat(?:\s[^/>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?propstat\s*>/gi
+    const okPropstats: string[] = []
+    let sawPropstat = false
     let pm: RegExpExecArray | null
     while ((pm = propstatRe.exec(block)) !== null) {
+      sawPropstat = true
       const statusText = extractDavTag(pm[1]!, 'status') ?? ''
-      if (/\b200\b/.test(statusText) || !statusText) {
-        okPropstat = pm[1]!
-        break
+      if (/\b2\d\d\b/.test(statusText) || !statusText) {
+        okPropstats.push(pm[1]!)
       }
     }
-    if (okPropstat !== null) {
-      propSource = okPropstat
-    }
+    const propSource = sawPropstat ? okPropstats.join('\n') : block
 
     const isCollection = hasDavCollectionResourceType(propSource)
     const lenRaw = extractDavTag(propSource, 'getcontentlength')
@@ -378,8 +384,9 @@ export function webdavDriver(
   const fetchFn = options.fetchImpl ?? globalThis.fetch
   const authHeader = `Basic ${encodeUtf8Base64(`${options.username}:${options.password}`)}`
 
-  // Кэш уже созданных/подтверждённых директорий (относительно origin), чтобы не слать повторные MKCOL
+  // Кэш уже созданных/подтверждённых директорий и карта выполняющихся MKCOL (без параллельных гонок 409/423)
   const ensuredCollections = new Set<string>()
+  const inflightCollections = new Map<string, Promise<void>>()
 
   function assertWritable(): void {
     if (readOnly) {
@@ -395,8 +402,50 @@ export function webdavDriver(
   function buildTargetUrl(cleanRelativePath?: string, asCollection = false): string {
     const segs = fullKeySegments(cleanRelativePath)
     if (segs.length === 0) return `${origin}/`
-    const encoded = segs.map((s) => encodeURIComponent(s)).join('/')
+    const encoded = segs.map((s) => encodeRfc3986(s)).join('/')
     return `${origin}/${encoded}${asCollection ? '/' : ''}`
+  }
+
+  async function ensureSingleCollection(accum: string): Promise<void> {
+    if (ensuredCollections.has(accum)) return
+    const existing = inflightCollections.get(accum)
+    if (existing) {
+      await existing
+      return
+    }
+
+    const task = (async () => {
+      const colUrl = `${origin}/${accum}/`
+      const res = await fetchFn(colUrl, {
+        method: 'MKCOL',
+        headers: {
+          authorization: authHeader,
+        },
+      })
+      await res.arrayBuffer().catch(() => undefined)
+
+      // 201 Created / 200 / 204 — создано; 405 Method Not Allowed — коллекция уже существует (Облако Mail.ru / Nginx / Nextcloud)
+      if (
+        res.status === 201 ||
+        res.status === 200 ||
+        res.status === 204 ||
+        res.status === 405
+      ) {
+        ensuredCollections.add(accum)
+        return
+      }
+
+      throw new Error(
+        `[storage/webdav] MKCOL «/${accum}/» завершился со статусом ${res.status}`,
+      )
+    })()
+
+    inflightCollections.set(accum, task)
+    try {
+      await task
+    } finally {
+      inflightCollections.delete(accum)
+    }
   }
 
   async function ensureParentCollections(
@@ -412,33 +461,29 @@ export function webdavDriver(
     let accum = ''
     for (const seg of dirSegments) {
       signal?.throwIfAborted()
-      accum = accum ? `${accum}/${encodeURIComponent(seg)}` : encodeURIComponent(seg)
+      const encSeg = encodeRfc3986(seg)
+      accum = accum ? `${accum}/${encSeg}` : encSeg
       if (ensuredCollections.has(accum)) continue
-
-      const colUrl = `${origin}/${accum}/`
-      const res = await fetchFn(colUrl, {
-        method: 'MKCOL',
-        headers: {
-          authorization: authHeader,
-        },
-        ...(signal ? { signal } : {}),
-      })
-      await res.arrayBuffer().catch(() => undefined)
-
-      // 201 Created / 200 / 204 — создано; 405 Method Not Allowed — коллекция уже существует (Облако Mail.ru / Nginx / Nextcloud)
-      if (
-        res.status === 201 ||
-        res.status === 200 ||
-        res.status === 204 ||
-        res.status === 405
-      ) {
-        ensuredCollections.add(accum)
-        continue
+      if (signal) {
+        await Promise.race([
+          ensureSingleCollection(accum),
+          new Promise<never>((_, reject) => {
+            if (signal.aborted) {
+              reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+              return
+            }
+            const onAbort = () =>
+              reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+            signal.addEventListener('abort', onAbort, { once: true })
+            void ensureSingleCollection(accum).then(
+              () => signal.removeEventListener('abort', onAbort),
+              () => signal.removeEventListener('abort', onAbort),
+            )
+          }),
+        ])
+      } else {
+        await ensureSingleCollection(accum)
       }
-
-      throw new Error(
-        `[storage/webdav] MKCOL «/${accum}/» завершился со статусом ${res.status}`,
-      )
     }
   }
 

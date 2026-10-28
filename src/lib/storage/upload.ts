@@ -64,6 +64,7 @@ export interface StorageUploadRuntimeDeps {
   put(input: StoragePutInput): Promise<StoredObject>
   lazy(path: string, options?: StorageReadOptions): Promise<StreamFile | null>
   del(path: string, options?: { server?: string }): Promise<boolean>
+  readonly defaultMaxFileSize?: number
   resolveMeta?: (request: Request) => StorageRequestMeta | Promise<StorageRequestMeta>
 }
 
@@ -278,12 +279,25 @@ export async function executeStorageUpload(
   const saved: StoredUploadedFile[] = []
   let fileIndex = 0
 
+  const effectiveMaxFileSize = options?.maxFileSize ?? deps.defaultMaxFileSize
+  // Запас для пустых `<input type="file">`: точный лимит `options.maxFiles` проверяется по реально непустым файлам
+  const parserMaxFiles =
+    options?.maxFiles !== undefined ? Math.max(options.maxFiles + 64, 64) : undefined
+  const computedMaxTotalSize =
+    options?.maxTotalSize ??
+    (effectiveMaxFileSize !== undefined
+      ? Math.min(
+          Number.MAX_SAFE_INTEGER,
+          effectiveMaxFileSize * Math.max(options?.maxFiles ?? 20, 1) + 4 * 1024 * 1024,
+        )
+      : undefined)
+
   const parserOptions = {
-    ...(options?.maxFiles !== undefined ? { maxFiles: options.maxFiles } : {}),
-    ...(options?.maxFileSize !== undefined ? { maxFileSize: options.maxFileSize } : {}),
+    ...(parserMaxFiles !== undefined ? { maxFiles: parserMaxFiles } : {}),
+    ...(effectiveMaxFileSize !== undefined ? { maxFileSize: effectiveMaxFileSize } : {}),
     ...(options?.maxParts !== undefined ? { maxParts: options.maxParts } : {}),
     ...(options?.maxHeaderSize !== undefined ? { maxHeaderSize: options.maxHeaderSize } : {}),
-    ...(options?.maxTotalSize !== undefined ? { maxTotalSize: options.maxTotalSize } : {}),
+    ...(computedMaxTotalSize !== undefined ? { maxTotalSize: computedMaxTotalSize } : {}),
   }
 
   try {
@@ -291,7 +305,7 @@ export async function executeStorageUpload(
       options?.signal?.throwIfAborted()
 
       // Пустой `<input type="file">` отправляет `filename=""` (в парсере `'file-upload'`) и 0 байт:
-      // пропускаем пустое поле, но сохраняем безымянный Blob, если в потоке реально есть байты.
+      // пропускаем пустое поле (включая возможные промежуточные 0-байтовые чанки), но сохраняем безымянный Blob, если в потоке есть байты.
       let prefetchedStream: ReadableStream<Uint8Array> | null = null
       const maybeUnnamedInput =
         fileUpload.name === '' ||
@@ -299,12 +313,40 @@ export async function executeStorageUpload(
           (!fileUpload.type || fileUpload.type === 'application/octet-stream'))
       if (maybeUnnamedInput) {
         const probeReader = fileUpload.stream().getReader()
-        const first = await probeReader.read()
-        if (first.done || first.value.byteLength === 0) {
+        let firstChunk: Uint8Array | null = null
+        try {
+          for (;;) {
+            const step = await probeReader.read()
+            if (step.done) break
+            if (step.value.byteLength > 0) {
+              firstChunk = step.value
+              break
+            }
+          }
+        } catch (err) {
+          probeReader.releaseLock()
+          throw err
+        }
+        if (!firstChunk) {
           probeReader.releaseLock()
           return null
         }
-        prefetchedStream = prependChunkToReader(first.value, probeReader)
+        prefetchedStream = prependChunkToReader(firstChunk, probeReader)
+      }
+
+      if (options?.maxFiles !== undefined && fileIndex >= options.maxFiles) {
+        if (prefetchedStream) {
+          await prefetchedStream.cancel().catch(() => undefined)
+        }
+        throw new StorageUploadError(
+          `[storage] превышено максимальное число файлов: максимум ${options.maxFiles}`,
+          {
+            code: 'MAX_FILES_EXCEEDED',
+            status: 422,
+            fieldName: fileUpload.fieldName,
+            fileName: fileUpload.name,
+          },
+        )
       }
 
       const contentType = fileUpload.type || 'application/octet-stream'
@@ -315,6 +357,9 @@ export async function executeStorageUpload(
         options.accept.length > 0 &&
         !matchesUploadAccept(fileUpload.name, contentType, options.accept)
       ) {
+        if (prefetchedStream) {
+          await prefetchedStream.cancel().catch(() => undefined)
+        }
         throw new StorageUploadError(
           `[storage] недопустимый тип файла «${fileUpload.name}» (${contentType}) в поле «${fileUpload.fieldName}»`,
           {

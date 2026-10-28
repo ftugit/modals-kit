@@ -306,7 +306,16 @@ export function createDecryptedStreamFile(
   },
 ): StreamFile {
   const storedBytes = cipherFile.size
-  const plainSize = options?.plainSize ?? decryptedSize(storedBytes)
+  const inferredPlainSize = decryptedSize(storedBytes)
+  if (
+    options?.plainSize !== undefined &&
+    storedBytes !== encryptedSize(options.plainSize)
+  ) {
+    throw new StorageCryptoError(
+      `[storage/crypto] размер зашифрованного объекта (${storedBytes} Б) не совпадает с ожидаемым для ${options.plainSize} Б (${encryptedSize(options.plainSize)} Б)`,
+    )
+  }
+  const plainSize = options?.plainSize ?? inferredPlainSize
   const totalChunks =
     plainSize === 0 ? 1 : Math.ceil(plainSize / CRYPTO_CHUNK_PLAIN_BYTES)
 
