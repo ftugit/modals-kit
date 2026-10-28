@@ -34,6 +34,7 @@ import {
   timingSafeTagEqual,
   type FileIntegrityChain,
 } from './ws-integrity.js'
+import { verifyFirstSegmentSignature } from './ws-magic.js'
 import {
   DEFAULT_WS_CHUNK_BYTES,
   unpackBinarySegment,
@@ -49,8 +50,11 @@ import {
 /** Таймаут приёма потоковой сессии по умолчанию (`5 минут` — под Fluid Compute / длинные загрузки). */
 export const WS_FORM_TIMEOUT_MS = 5 * 60 * 1000
 
-/** Потолок суммарного объёма потоковых файлов по умолчанию (`10 ГиБ`, если сама форма не задала меньше). */
-export const WS_FORM_MAX_BYTES = 10 * 1024 * 1024 * 1024
+/** Безопасный потолок суммарного объёма потоковых файлов формы по умолчанию (`256 МБ`, если сама форма не задала `limits.maxBytes`). */
+export const WS_FORM_MAX_BYTES = 256 * 1024 * 1024
+
+/** Верхний предел числа файловых дескрипторов в Кадре 0 (`init.files`), отсекающий дескрипторный флуд до создания `StreamFile`. */
+export const MAX_WS_FILES_COUNT = DEFAULT_LIMITS.maxValuesPerKey
 
 /** Верхний предел текстового JSON Кадра 0 (`256 КБ`). */
 const MAX_INIT_TEXT_BYTES = 256 * 1024
@@ -127,6 +131,7 @@ function parseInitFrame(rawText: string): WsClientInitMessage | null {
   const obj = parsed as Record<string, unknown>
   if (obj.type !== 'init' || typeof obj.target !== 'string') return null
   if (!Array.isArray(obj.fields) || !Array.isArray(obj.files)) return null
+  if (obj.files.length > MAX_WS_FILES_COUNT) return null
 
   const fields: [string, string][] = []
   for (const pair of obj.fields) {
@@ -141,9 +146,12 @@ function parseInitFrame(rawText: string): WsClientInitMessage | null {
     fields.push([pair[0], pair[1]])
   }
 
+  const seenIds = new Set<string>()
   const files: WsFileDescriptor[] = []
   for (const item of obj.files) {
     if (!isValidDescriptor(item)) return null
+    if (seenIds.has(item.id)) return null
+    seenIds.add(item.id)
     files.push(item)
   }
 
@@ -184,6 +192,8 @@ function createWsLazyContent(
   desc: WsFileDescriptor,
   chunkBytes: number,
   chain: FileIntegrityChain | undefined,
+  enforceMagicSignature: boolean,
+  onFieldUploadError: (err: WsUploadFieldError) => void,
   pullSegment: (
     desc: WsFileDescriptor,
     chain: FileIntegrityChain | undefined,
@@ -263,6 +273,17 @@ function createWsLazyContent(
               length,
               recentSegments,
             )
+
+            // На первом сегменте сверяем реальную сигнатуру (magic bytes) с заявленным типом/расширением
+            if (enforceMagicSignature && offset === 0 && bytes.byteLength > 0) {
+              const sigErr = verifyFirstSegmentSignature(desc.type, desc.name, bytes)
+              if (sigErr) {
+                const err = new WsUploadFieldError(desc.field, 'file.type-mismatch', sigErr)
+                onFieldUploadError(err)
+                controller.error(err)
+                return
+              }
+            }
 
             const isHeadProbe =
               boundedStart === 0 && boundedEnd <= chunkBytes && boundedEnd < desc.size
@@ -557,6 +578,20 @@ export async function handleFormUploadWs(
             const chain = saltKey
               ? await createFileIntegrityChain(saltKey, desc.id, desc.size)
               : undefined
+            const fieldDef = description.byName[desc.field]
+            const hasDedicatedImageCheck = Boolean(
+              checks &&
+                fieldDef?.validators.some((ref) => {
+                  try {
+                    return description.registry.validators
+                      .resolve(ref)
+                      .describe?.()
+                      .some((c) => c.kind === 'custom' && (c as { name?: string }).name === 'image')
+                  } catch {
+                    return false
+                  }
+                }),
+            )
             streamFiles.push({
               field: desc.field,
               file: new StreamFile(
@@ -564,6 +599,8 @@ export async function handleFormUploadWs(
                   desc,
                   chunkBytes,
                   chain,
+                  !hasDedicatedImageCheck,
+                  (err) => fieldUploadErrors.set(err.field, err),
                   pullSegment,
                   abortController.signal,
                 ),
@@ -574,9 +611,14 @@ export async function handleFormUploadWs(
           }
 
           // Слой между `bodyLayer` и `namesLayer`: добавляет ленивые `StreamFile` в `ctx.form`
+          // и сразу проверяет суммарный заявленный вес файлов против `ctx.limits.maxBytes` при 0 прочитанных байт
+          const totalDeclaredBytes = init.files.reduce((acc, f) => acc + f.size, 0)
           let capturedForm: FormData | undefined
           const wsFilesLayer: Layer = (ctx) => {
             if (!ctx.form) return undefined
+            if (totalDeclaredBytes > ctx.limits.maxBytes) {
+              return reject(413, 'body.too-large')
+            }
             for (const entry of streamFiles) {
               ctx.form.append(entry.field, entry.file)
             }

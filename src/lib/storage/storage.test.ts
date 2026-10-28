@@ -161,4 +161,22 @@ describe('localDriver + createStorage', () => {
     expect(await storage.del('demos/large.bin')).toBe(true)
     expect(await storage.head('demos/large.bin')).toBeNull()
   })
+
+  it('защищает раздачу serve(): выставляет nosniff, sandbox CSP и принудительный attachment на HTML/SVG', async () => {
+    const storage = createStorage({ servers: { mem: memoryDriver() } })
+    await storage.put({
+      path: 'unsafe/payload.html',
+      body: new TextEncoder().encode('<!doctype html><script>alert(1)</script>'),
+      contentType: 'text/html',
+    })
+
+    const res = await storage.serve(
+      'unsafe/payload.html',
+      new Request('http://localhost/api/files/unsafe/payload.html'),
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(res.headers.get('content-security-policy')).toContain('sandbox')
+    expect(res.headers.get('content-disposition')).toContain('attachment;')
+  })
 })

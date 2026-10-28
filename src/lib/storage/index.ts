@@ -114,6 +114,26 @@ function toStoredObject(
   }
 }
 
+const ACTIVE_SERVE_MIME_PREFIXES = [
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'text/xml',
+  'application/xml',
+  'text/javascript',
+  'application/javascript',
+  'application/ecmascript',
+  'application/x-msdownload',
+  'application/x-dosexec',
+  'application/x-executable',
+  'application/x-sh',
+] as const
+
+function isPotentiallyActiveMime(contentType: string): boolean {
+  const mime = contentType.split(';')[0]!.trim().toLowerCase()
+  return ACTIVE_SERVE_MIME_PREFIXES.some((p) => mime === p)
+}
+
 function contentDispositionAttachment(filename: string): string {
   const asciiFallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download'
   const encoded = encodeURIComponent(filename)
@@ -204,13 +224,19 @@ export function createStorage(config: StorageConfig): Storage {
         ...(options?.cacheControl !== undefined ? { cacheControl: options.cacheControl } : {}),
         ...(options?.etag !== undefined ? { etag: options.etag } : {}),
       })
-      if (!options?.download) return res
-      const downloadName =
-        typeof options.download === 'string' && options.download.trim()
-          ? options.download.trim()
-          : basenameOfStoragePath(normalizeStoragePath(path))
       const headers = new Headers(res.headers)
-      headers.set('content-disposition', contentDispositionAttachment(downloadName))
+      headers.set('x-content-type-options', 'nosniff')
+      headers.set('cross-origin-resource-policy', 'same-origin')
+      headers.set('content-security-policy', "default-src 'none'; sandbox")
+
+      const forceAttachment = Boolean(options?.download) || isPotentiallyActiveMime(file.type)
+      if (forceAttachment) {
+        const downloadName =
+          typeof options?.download === 'string' && options.download.trim()
+            ? options.download.trim()
+            : basenameOfStoragePath(normalizeStoragePath(path))
+        headers.set('content-disposition', contentDispositionAttachment(downloadName))
+      }
       return new Response(res.body, {
         status: res.status,
         statusText: res.statusText,

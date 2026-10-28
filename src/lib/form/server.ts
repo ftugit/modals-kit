@@ -191,7 +191,7 @@ export const namesLayer: Layer = async (ctx) => {
     const field = d.byName[key]
     if (!field) return reject(400, 'request.unexpected-field', { name: key })
     if (nameProblem(key, d.policy.names)) return reject(400, 'request.unexpected-field', { name: key })
-    const multiple = d.registry.types.get(field.kind).multiple
+    const multiple = d.registry.types.get(field.kind).multiple || Boolean(field.multiple)
     if (!multiple && form.getAll(key).length > 1)
       return reject(400, 'request.duplicate', { name: key })
   }

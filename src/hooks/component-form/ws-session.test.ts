@@ -736,5 +736,120 @@ describe('ws-session + vite-ws + upgradeWs', () => {
     const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
     expect(tmpFiles).toEqual([])
   })
+
+  it('поддерживает multiple: true с v.maxCount(2) по wss:// и блокирует подмену сигнатуры PDF активным HTML', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    const form = defineForm({
+      id: 'ws_multi_and_magic',
+      fields: {
+        docs: field.file({
+          multiple: true,
+          validate: [v.required(), v.maxCount(2), v.accept(['application/pdf', '.pdf'])],
+        }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      async execute({ values, commit }) {
+        const files = values.docs as readonly File[]
+        const saved: string[] = []
+        for (const f of files) {
+          const meta = await storage.put({
+            path: `docs/${f.name}`,
+            body: f.stream(),
+            contentType: f.type,
+            size: f.size,
+          })
+          saved.push(meta.path)
+        }
+        commit()
+        return { data: { saved } }
+      },
+    })
+
+    const makeEnv = () =>
+      buildEnvelope({
+        formId: form.id,
+        revision: form.revision,
+        instance: `${form.id}:main`,
+        submissionId: randomUUID(),
+      })
+
+    // 1) Превышение v.maxCount(2) (3 файла) -> мгновенный 422 на Кадре 0 (0 вытянутых сегментов!)
+    const overCount = await runWsUploadClient(
+      {
+        type: 'init',
+        target: '/demo',
+        fields: [...Object.entries(makeEnv()), [form.policy.envelopeKeys.intent, 'submit']],
+        files: [
+          { id: 'f0', field: 'docs', name: '1.pdf', size: 64, type: 'application/pdf', lastModified: 1 },
+          { id: 'f1', field: 'docs', name: '2.pdf', size: 64, type: 'application/pdf', lastModified: 1 },
+          { id: 'f2', field: 'docs', name: '3.pdf', size: 64, type: 'application/pdf', lastModified: 1 },
+        ],
+      },
+      {},
+    )
+    expect(overCount.pulls).toHaveLength(0)
+    expect(overCount.terminal?.type).toBe('result')
+    if (overCount.terminal?.type === 'result') {
+      expect(overCount.terminal.status).toBe(422)
+      expect(overCount.terminal.result.errors[0]?.code).toBe('maxCount')
+    }
+
+    // 2) Заявлен application/pdf, но внутри первого сегмента шлют HTML/скрипт -> 422 file.type-mismatch на 1-м сегменте
+    const fakePdf = new Uint8Array(600 * 1024)
+    fakePdf.set(new TextEncoder().encode('<!DOCTYPE html><script>evil()</script>'), 0)
+    const spoofed = await runWsUploadClient(
+      {
+        type: 'init',
+        target: '/demo',
+        fields: [...Object.entries(makeEnv()), [form.policy.envelopeKeys.intent, 'submit']],
+        files: [
+          {
+            id: 'f0',
+            field: 'docs',
+            name: 'spoof.pdf',
+            size: fakePdf.byteLength,
+            type: 'application/pdf',
+            lastModified: 1,
+          },
+        ],
+      },
+      { f0: fakePdf },
+    )
+    expect(spoofed.pulls).toHaveLength(1) // Оборвано сразу на первом сегменте!
+    expect(spoofed.terminal?.type).toBe('result')
+    if (spoofed.terminal?.type === 'result') {
+      expect(spoofed.terminal.status).toBe(422)
+      expect(spoofed.terminal.result.errors[0]).toMatchObject({
+        path: 'docs',
+        code: 'file.type-mismatch',
+      })
+    }
+    expect(await storage.head('docs/spoof.pdf')).toBeNull()
+
+    // 3) Два настоящих PDF (%PDF-1.7...) -> оба проходят и сохраняются!
+    const validPdf1 = new TextEncoder().encode('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n')
+    const validPdf2 = new TextEncoder().encode('%PDF-1.4\n2 0 obj\n<<>>\nendobj\n%%EOF\n')
+    const okRun = await runWsUploadClient(
+      {
+        type: 'init',
+        target: '/demo',
+        fields: [...Object.entries(makeEnv()), [form.policy.envelopeKeys.intent, 'submit']],
+        files: [
+          { id: 'f0', field: 'docs', name: 'a.pdf', size: validPdf1.byteLength, type: 'application/pdf', lastModified: 1 },
+          { id: 'f1', field: 'docs', name: 'b.pdf', size: validPdf2.byteLength, type: 'application/pdf', lastModified: 1 },
+        ],
+      },
+      { f0: validPdf1, f1: validPdf2 },
+    )
+    expect(okRun.terminal?.type).toBe('result')
+    if (okRun.terminal?.type === 'result') {
+      expect(okRun.terminal.status).toBe(200)
+      expect(okRun.terminal.result.ok).toBe(true)
+      expect(okRun.terminal.result.data).toEqual({ saved: ['docs/a.pdf', 'docs/b.pdf'] })
+    }
+  })
 })
 

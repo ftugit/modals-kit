@@ -687,3 +687,73 @@ suite('Result.intent — штамп намерения', () => {
     expect((await h(post({ name: 'a' }))).result.intent).toBeUndefined()
   })
 })
+
+suite('namesLayer — множественное файловое поле (field.multiple)', () => {
+  const multiForm = defineForm({
+    id: 'multi_files_guard',
+    fields: {
+      single: field.file({}),
+      docs: field.file({ multiple: true, validate: [v.maxCount(2)] }),
+    },
+  })
+
+  function multipartPost(entries: readonly [string, string | File][]): Request {
+    const fd = new FormData()
+    for (const [k, val] of Object.entries(envelopeOf({}, multiForm))) fd.append(k, val)
+    for (const [k, val] of entries) fd.append(k, val)
+    return new Request('http://x/form', { method: 'POST', body: fd })
+  }
+
+  test('пропускает список файлов при multiple: true и проверяет v.maxCount', async () => {
+    let seenCount = 0
+    const h = createFormHandler({
+      description: multiForm,
+      execute: (c) => {
+        const docs = c.values.docs as readonly File[]
+        seenCount = docs.length
+        c.commit()
+        return { data: { count: docs.length } }
+      },
+    })
+
+    const okRes = await h(
+      multipartPost([
+        ['docs', new File(['a'], 'one.txt', { type: 'text/plain' })],
+        ['docs', new File(['b'], 'two.txt', { type: 'text/plain' })],
+      ]),
+    )
+    expect(okRes.status).toBe(200)
+    expect(okRes.result.ok).toBe(true)
+    expect(seenCount).toBe(2)
+
+    // 3 файла при v.maxCount(2) -> 422 maxCount, execute не вызывается
+    seenCount = 0
+    const overRes = await h(
+      multipartPost([
+        ['docs', new File(['a'], '1.txt', { type: 'text/plain' })],
+        ['docs', new File(['b'], '2.txt', { type: 'text/plain' })],
+        ['docs', new File(['c'], '3.txt', { type: 'text/plain' })],
+      ]),
+    )
+    expect(overRes.status).toBe(422)
+    expect(overRes.result.ok).toBe(false)
+    expect(overRes.result.errors[0]?.code).toBe('maxCount')
+    expect(seenCount).toBe(0)
+  })
+
+  test('отклоняет дубли на одиночном файловом поле (multiple не включён)', async () => {
+    const h = createFormHandler({
+      description: multiForm,
+      execute: (c) => { c.commit(); return {} },
+    })
+    const dupRes = await h(
+      multipartPost([
+        ['single', new File(['a'], 'one.txt', { type: 'text/plain' })],
+        ['single', new File(['b'], 'two.txt', { type: 'text/plain' })],
+      ]),
+    )
+    expect(dupRes.status).toBe(400)
+    expect(dupRes.result.ok).toBe(false)
+    expect(dupRes.result.errors[0]?.code).toBe('request.duplicate')
+  })
+})
