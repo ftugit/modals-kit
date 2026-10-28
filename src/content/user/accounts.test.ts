@@ -309,6 +309,25 @@ describe('список seed-юзеров', () => {
     const off = ok_(await listSeedUsers(ports, admin.access, {}))
     expect(off.items[0]).not.toHaveProperty('nickname')
   })
+
+  test('состояние профиля: узел exists по модели профиля; без права читать профили — молча игнорируется', async () => {
+    const { ports, auths, listArgsOf } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const reader = await joined(ports, auths, ['account.read'])
+
+    ok_(await listSeedUsers(ports, admin.access, { profile: 'created' }))
+    const created = listArgsOf() as { filter?: { exists?: { from?: { key?: string }; on?: unknown } } }
+    expect(created.filter?.exists?.from?.key).toBe('user.profile.v1')
+    expect(created.filter?.exists?.on).toEqual([['id', 'auth_id']])
+
+    ok_(await listSeedUsers(ports, admin.access, { profile: 'missing' }))
+    const missing = listArgsOf() as { filter?: { not?: { exists?: { from?: { key?: string } } } } }
+    expect(missing.filter?.not?.exists?.from?.key).toBe('user.profile.v1')
+
+    // account.read без profile.read чужие профили не читает — аргумент отброшен, фильтра нет.
+    ok_(await listSeedUsers(ports, reader.access, { profile: 'created' }))
+    expect((listArgsOf() as { filter?: unknown }).filter).toBeUndefined()
+  })
 })
 
 describe('чтение профиля: возможности по цели (этапы 5–6)', () => {

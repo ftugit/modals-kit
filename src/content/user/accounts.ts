@@ -20,6 +20,7 @@
  */
 import type { Filter, Order } from '#lib/db/index.js'
 import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { profile as profileResource } from './schema.js'
 import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts, SeedAccountRow } from './ports.js'
 import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from './types.js'
@@ -60,6 +61,15 @@ export interface ListSeedUsersArgs {
    * без права или при выключенном параметре домен его игнорирует.
    */
   nickname?: boolean
+  /**
+   * Состояние профиля: только с созданным профилем (`created`) или только
+   * без строки профиля (`missing`). На уровне модели — узел `exists` по
+   * модели профиля (docs/plan-exists-filter.md), не include и не срез в
+   * памяти. Действует только с правом читать профили (`canSeeNickname`):
+   * политика цели внутри `exists` — политика профиля, и без права на её
+   * строки существование чужих профилей не подсматривается.
+   */
+  profile?: 'created' | 'missing'
   /**
    * Ограничение выдачи списком id (шаг подтверждения выбора и подобные):
    * только эти юзеры. Пустой/отсутствующий — без ограничения.
@@ -111,6 +121,9 @@ export async function listSeedUsers(
   const canSeeNickname =
     g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.read') || g.perms.includes('profile.edit')
   const withNickname = canSeeNickname && args.nickname === true
+  // Состояние профиля — тем же правом, что никнейм: внутри exists действует
+  // политика профиля, без права строки цели вызывающему не видны.
+  const profileState = canSeeNickname ? args.profile : undefined
 
   const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
   const pageSize = Math.min(
@@ -127,6 +140,10 @@ export async function listSeedUsers(
       : 'created-desc'
 
   const nodes: Filter[] = []
+  if (profileState) {
+    const hasProfile: Filter = { exists: { from: profileResource, on: [['id', 'auth_id']] } }
+    nodes.push(profileState === 'created' ? hasProfile : { not: hasProfile })
+  }
   const q = (args.search ?? '').trim()
   // Поиск в DB-фильтр не кладём: слой валидирует значение фильтра схемой
   // поля, а у `seed` это 43–44 знака — подстрока не пройдёт никогда.

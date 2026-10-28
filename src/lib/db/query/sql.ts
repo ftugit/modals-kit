@@ -34,6 +34,8 @@ export function projection(r: Resource, keys: readonly string[]): string {
 }
 export class Sql {
   readonly values: unknown[] = [];
+  /** Счётчик алиасов подзапросов `exists` в пределах одного запроса: несколько и вложенных узлов не сталкиваются. */
+  existsSeq = 0;
   param(v: unknown): string {
     this.values.push(v);
     return "$" + this.values.length;
@@ -140,7 +142,7 @@ export async function filterSQL(
     fail("forbidden");
   }
   let count = 0;
-  async function visit(node: Filter, depth: number): Promise<string> {
+  async function visit(node: Filter, depth: number, res: Resource = r): Promise<string> {
     if (++count > limits.filterNodes || depth > limits.filterDepth)
       fail("validation");
     if (typeof node === "boolean") return node ? "TRUE" : "FALSE";
@@ -159,7 +161,7 @@ export async function filterSQL(
       if (!children.length) return key === "and" ? "TRUE" : "FALSE";
       return (
         "(" +
-        (await Promise.all(children.map((n) => visit(n, depth + 1)))).join(
+        (await Promise.all(children.map((n) => visit(n, depth + 1, res)))).join(
           key === "and" ? " AND " : " OR ",
         ) +
         ")"
@@ -167,7 +169,51 @@ export async function filterSQL(
     }
     if ("not" in node) {
       if (keys.length !== 1) fail("validation");
-      return "(NOT " + (await visit(node.not, depth + 1)) + ")";
+      return "(NOT " + (await visit(node.not, depth + 1, res)) + ")";
+    }
+    if ("exists" in node) {
+      // Серверный узел политик; в недоверенном (клиентском/доменном) фильтре —
+      // только с политикой цели (policy: false запрещён) и полевыми гейтами:
+      // существованием нельзя подсмотреть то, что нельзя прочитать напрямую.
+      if (keys.length !== 1) fail("validation");
+      const ex = (node as { exists: unknown }).exists;
+      if (!ex || typeof ex !== "object" || Array.isArray(ex)) fail("validation");
+      const spec = ex as { from?: unknown; on?: unknown; where?: Filter; policy?: unknown };
+      if (Object.keys(ex).some((k) => !["from", "on", "where", "policy"].includes(k)))
+        fail("validation");
+      const from = spec.from as Resource | undefined;
+      if (
+        !from ||
+        typeof from !== "object" ||
+        typeof from.table !== "string" ||
+        typeof from.primaryKey !== "string" ||
+        !from.fields ||
+        typeof from.fields !== "object" ||
+        !own(from.fields, from.primaryKey)
+      )
+        fail("validation", undefined, ["exists: from — конкретная модель (ресурс)"]);
+      if (spec.policy !== undefined && typeof spec.policy !== "boolean") fail("validation");
+      if (!trusted && spec.policy === false) fail("forbidden");
+      if (!Array.isArray(spec.on) || !spec.on.length || spec.on.length > 8) fail("validation");
+      const alias = { ...from, table: "kit_exists_" + ++s.existsSeq } as Resource;
+      const parts: string[] = [];
+      for (const pair of spec.on) {
+        if (!Array.isArray(pair) || pair.length !== 2) fail("validation");
+        const [local, foreign] = pair as [unknown, unknown];
+        if (typeof local !== "string" || !own(res.fields, local)) fail("forbidden");
+        if (typeof foreign !== "string" || !own(from.fields, foreign)) fail("forbidden");
+        if (!trusted && (!allows(res.fields[local].read, ctx) || !allows(from.fields[foreign].read, ctx)))
+          fail("forbidden");
+        parts.push(col(alias, foreign) + " = " + col(res, local));
+      }
+      if (spec.where !== undefined)
+        parts.push(await visit(spec.where, depth + 1, alias));
+      if (trusted ? spec.policy !== false : true) {
+        const fn = from.policy?.select;
+        parts.push(await filterSQL(alias, ctx, fn ? fn(ctx) : true, s, limits, true));
+      }
+      if (from.softDelete) parts.push(col(alias, from.softDelete.field) + " IS NULL");
+      return `EXISTS (SELECT 1 FROM ${table(from)} AS ${ident(alias.table)} WHERE ${parts.map((x) => `(${x})`).join(" AND ")})`;
     }
     if (
       !("field" in node) ||
@@ -176,11 +222,11 @@ export async function filterSQL(
     )
       fail("validation");
     const { field, op } = node;
-    if (typeof field !== "string" || !own(r.fields, field)) fail("forbidden");
-    const f = r.fields[field];
+    if (typeof field !== "string" || !own(res.fields, field)) fail("forbidden");
+    const f = res.fields[field];
     if (!trusted && (!allows(f.read, ctx) || !f.filters?.includes(op)))
       fail("forbidden");
-    const c = col(r, field);
+    const c = col(res, field);
     if (op === "isNull" || op === "isNotNull")
       return c + (op === "isNull" ? " IS NULL" : " IS NOT NULL");
     if ((op === "eq" || op === "ne") && node.value === null)

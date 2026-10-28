@@ -82,7 +82,19 @@ export type Filter =
   | { field: string; op: Operator; value?: unknown }
   | { and: readonly Filter[] }
   | { or: readonly Filter[] }
-  | { not: Filter };
+  | { not: Filter }
+  | {
+      exists: {
+        /** Конкретная модель (не таблица): таблицу, поля, политику и мягкое удаление берёт слой. */
+        from: Resource;
+        /** Пары равенства [своё поле, поле модели цели], минимум одна. */
+        on: readonly (readonly [string, string])[];
+        /** Условия по полям цели; вложенный `exists` допустим. */
+        where?: Filter;
+        /** По умолчанию true: внутри действует select-политика цели. false — явное исключение. */
+        policy?: boolean;
+      };
+    };
 export type Order = readonly (readonly [string, "asc" | "desc"])[];
 export interface Limits {
   pageSize: number;
