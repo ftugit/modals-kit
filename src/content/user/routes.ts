@@ -75,7 +75,9 @@ export const userMenuRoute = kitRoute('/user/menu')
  * Профиль аккаунта — путь с параметром сегмента. В `$app/types` у такого
  * маршрута нет «красивого» имени: идентификатор вместе с группами
  * (`/(site)/(app)/user/[id]`) — это и есть имя, группы из адреса выбрасывает
- * сам `resolve()`; `id` задаёт имя в таблице адресов.
+ * сам `resolve()`; `id` задаёт имя в таблице адресов. Сегмент ограничен
+ * матчером `[id=uuid]` (`src/params.js`): не-UUID роутер отсекает
+ * настоящим 404 до `load` — и на странице, и в данных модалки.
  *
  * Этим же адресом пользуется регистрация пары `user.profile`
  * (`route` в `modals.ts`): ссылки на профиль строят из него `href`
@@ -83,19 +85,19 @@ export const userMenuRoute = kitRoute('/user/menu')
  * запрашивает у `load` этого же роута сам. Адрес описан один раз —
  * страница и модалка не могут разойтись.
  */
-export const userProfileRoute = kitRoute('/(site)/(app)/user/[id]', {
+export const userProfileRoute = kitRoute('/(site)/(app)/user/[id=uuid]', {
   dynamic: true,
   id: '/user/[id]',
 })
 
 /** Редактирование профиля — адрес пары `user.profile.edit` (модалка/роут). */
-export const userProfileEditRoute = kitRoute('/(site)/(app)/user/[id]/edit', {
+export const userProfileEditRoute = kitRoute('/(site)/(app)/user/[id=uuid]/edit', {
   dynamic: true,
   id: '/user/[id]/edit',
 })
 
 /** Удаление профиля — адрес пары `user.profile.delete` (модалка/роут). */
-export const userProfileDeleteRoute = kitRoute('/(site)/(app)/user/[id]/delete', {
+export const userProfileDeleteRoute = kitRoute('/(site)/(app)/user/[id=uuid]/delete', {
   dynamic: true,
   id: '/user/[id]/delete',
 })
