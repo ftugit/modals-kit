@@ -428,13 +428,34 @@ describe('профиль', () => {
     const subA = (JSON.parse(Buffer.from(outA.access, 'base64url').toString()) as { sub: string }).sub
     const subB = (JSON.parse(Buffer.from(outB.access, 'base64url').toString()) as { sub: string }).sub
     // свой профиль не создан: владелец видит именно отсутствие
-    expect(ok_(await profile(ports, outA.access))).toEqual({ profile: null, notCreated: true })
+    expect(ok_(await profile(ports, outA.access))).toEqual({
+      profile: null,
+      notCreated: true,
+      canEdit: true,
+      canDeleteProfile: true,
+      canDeleteSeed: true,
+      fullBlock: null,
+    })
     // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
-    expect(ok_(await profile(ports, outB.access, subA))).toEqual({ profile: null, notCreated: false })
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({
+      profile: null,
+      notCreated: false,
+      canEdit: false,
+      canDeleteProfile: false,
+      canDeleteSeed: false,
+      fullBlock: null,
+    })
     // держатель profile.read различает: профиля у A нет
     const rowB = auths.get(subB) as AuthRow
     auths.set(subB, { ...rowB, permissions: ['profile.read'] })
-    expect(ok_(await profile(ports, outB.access, subA))).toEqual({ profile: null, notCreated: true })
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({
+      profile: null,
+      notCreated: true,
+      canEdit: false,
+      canDeleteProfile: false,
+      canDeleteSeed: false,
+      fullBlock: null,
+    })
     // созданный профиль читается владельцем как найденный
     ok_(await updateProfile(ports, outA.access, { nickname: 'Вася' }))
     const found = ok_(await profile(ports, outA.access))
