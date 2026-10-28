@@ -1,0 +1,4 @@
+{
+  "//": "`index.js` — автономное ядро хранилища (`createStorage`, `StreamFile`, `memoryDriver`, `serve`); `local.js` — потоковый драйвер локального диска (Node/Bun).",
+  "entrypoints": ["index.js", "local.js"]
+}

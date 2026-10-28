@@ -142,5 +142,6 @@ export const CORE_MODULES = [
   'src/lib/fetch',
   'src/lib/db', // переносимый: PGlite, Hyperdrive, схема — без SvelteKit
   'src/lib/image', // конвейер кадра и state-коллектор — без фреймворка
+  'src/lib/storage', // потоковое хранилище файлов — без фреймворка
   'src/lib/task', // крошечный баррель, но правило одно для всех ядер
 ]

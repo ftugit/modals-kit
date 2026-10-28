@@ -234,7 +234,7 @@
     необходимости явный `ws` / `@types/ws`, сверив с `package-lock.json`).
   - Гейт: `node tooling/public-api.mjs`, `npm run check`.
 
-- [ ] **`P1` — Минимальный `#lib/storage` (`index.ts`, `local.ts`, `StreamFile`)**
+- [x] **`P1` — Минимальный `#lib/storage` (`index.ts`, `local.ts`, `StreamFile`)** (`StreamFile extends File`, `memoryDriver`, `localDriver` через `open(..., 'wx')` + `*.part -> rename` с гарантированной очисткой на `abort`, `serve` с `206 Range` и `HEAD`, `core-purity` + `public-api` + `vitest` 3/3 green)
   - Реализовать `StreamFile extends File`, `memoryDriver`, `localDriver` (потоковая
     запись через `*.part` → `rename`, очистка при ошибке/обрыве потока, `serve` с
     `206 Partial Content` и `HEAD`), объявить входы в `src/lib/storage/entrypoints.json`.
