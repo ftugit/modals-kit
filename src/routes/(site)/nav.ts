@@ -33,6 +33,7 @@ const STATIC_ITEMS = [
   { to: fieldsRoute.href(), label: 'Поля' },
   { to: stepsRoute.href(), label: 'Шаги' },
   { to: '/db-demo', label: 'База данных' },
+  { to: '/upload-demo', label: 'Загрузка файлов' },
   { to: '/cycle', label: 'Cycle' },
   { to: '/spike', label: 'Spike' },
 ] satisfies readonly (NavItem & { readonly to: Path })[]

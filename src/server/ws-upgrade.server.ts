@@ -36,7 +36,13 @@ export interface NodeUpgradeTarget {
   upgraded?: boolean
 }
 
-const nodeUpgradeStorage = new AsyncLocalStorage<NodeUpgradeTarget>()
+const NODE_UPGRADE_ALS_SYMBOL = Symbol.for('modals-kit/node-ws-upgrade-als')
+const globalAlsStore = globalThis as unknown as Record<
+  symbol,
+  AsyncLocalStorage<NodeUpgradeTarget> | undefined
+>
+const nodeUpgradeStorage = (globalAlsStore[NODE_UPGRADE_ALS_SYMBOL] ??=
+  new AsyncLocalStorage<NodeUpgradeTarget>())
 
 /** Выполнить обработку запроса с привязанным сокетом Node `upgrade`. */
 export function runWithNodeUpgrade<T>(target: NodeUpgradeTarget, fn: () => Promise<T>): Promise<T> {

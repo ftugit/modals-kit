@@ -259,7 +259,7 @@
     5. `git diff src/lib/form` пуст.
   - Гейт: `npx vitest run` по новым модулям + `npm run check` + `node tooling/public-api.mjs`, локальный коммит.
 
-- [ ] **`P3` — Клиентский `wss://`-транспорт и живой лоадер в `FileAttachment`**
+- [x] **`P3` — Клиентский `wss://`-транспорт и живой лоадер в `FileAttachment`** (`wsFormTransport`, автовыбор `hasUploadableFiles` в `bindComponentForm`, реактивная проекция сегментов в `FileAttachment` и `formTask`, `vitest` + `svelte-check` 0 errors + `layer-guard` 74/74 green)
   - Реализовать `ws-transport.ts`, подключить автовыбор транспорта в
     `bindComponentForm` и проброс прогресса в `Field.svelte` → `FileField.svelte` →
     `FileAttachment` (`itemProps`).
@@ -268,7 +268,7 @@
     `src/lib/form` не изменён.
   - Гейт: компонентные/юнит-тесты Vitest + `npm run check` + `node tooling/classes-audit.mjs`, локальный коммит.
 
-- [ ] **`P4` — Демо-сценарий, Playwright-проверка в браузере и финальный гейт**
+- [x] **`P4` — Демо-сценарий, Playwright-проверка в браузере и финальный гейт** (`/upload-demo` + `/api/files/[...path]`, сквозной Playwright E2E `6.2 МБ` в `25/25` сегментах по `1` сокету + `Range 206` + `0` бинарных кадров при ошибке Кадра 0 + текстовая форма по HTTP `fetch` + no-JS `multipart/form-data` `POST` `303`, `npm run build` + все гейты green)
   - Собрать живую страницу/форму проверки прототипа (с загрузкой файла `> 5 МБ` по
     `wss://`, видимым прогрессом в `FileAttachment`, сохранением текстовых полей +
     ссылки на файл, скачиванием/`Range` и проверкой нативного `POST` без JS).
