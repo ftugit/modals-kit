@@ -14,6 +14,7 @@ import {
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
+  userProfileDeleteRoute,
   userProfileEditRoute,
   userProfileRoute,
 } from './routes.js'
@@ -49,6 +50,15 @@ registerModal({
   component: lazy(() => import('./ui/ProfileEditModal.svelte')),
   route: userProfileEditRoute.href,
   size: { width: 480, height: 560 },
+})
+// Удаление профиля: та же пара — гейт по флагу `canDeleteProfile` чтения
+// `/user/[id]`, внутри только `ProfileDelete`; без JS — роут
+// `/user/[id]/delete` с тем же гейтом и тем же компонентом.
+registerModal({
+  name: 'user.profile.delete',
+  component: lazy(() => import('./ui/ProfileDeleteModal.svelte')),
+  route: userProfileDeleteRoute.href,
+  size: { width: 480, height: 480 },
 })
 // Список seed-юзеров: та же пара — компонент списка сам запрашивает
 // данные у `load` роута `/users` при показе (страница отдаёт ему свой

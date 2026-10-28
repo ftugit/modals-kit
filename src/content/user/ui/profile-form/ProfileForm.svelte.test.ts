@@ -7,6 +7,15 @@ import { createUserChecks } from '../../checks.js'
 import { specAvatar } from '../../spec-avatar.js'
 import { IMAGE_RAW_MAX_BYTES, profileForm } from './form.js'
 
+// Кнопка удаления — механика модальной ссылки: без ModalHost её заменяет
+// заглушка с тем же видимым итогом (`href` пары удаления).
+vi.mock('#hooks/links/index.js', () => ({
+  useModalLink: () => (name: string, params: { id?: string }) => ({
+    href: name === 'user.profile.delete' ? `/user/${params.id}/delete` : '/',
+    'data-modal-link': '',
+  }),
+}))
+
 describe('профиль: картинка — обычное поле файла', () => {
   it('тип `file`, приёмные типы и предел файла 20 КБ — правила поля', () => {
     const f = profileForm.byName['photo']!
@@ -150,6 +159,25 @@ describe('профиль: та же форма для любого пользо�
     const { target, app } = await mountFor({ initial: { nickname: 'свой', avatarUrl: null } })
     const subject = target.querySelector('input[name="subject"]') as HTMLInputElement
     expect(subject?.value ?? '').toBe('')
+    await unmount(app)
+  })
+})
+
+describe('профиль: кнопка удаления в редактировании (этап 7)', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('без deleteId кнопки нет; с ним — ссылка на пару удаления цели', async () => {
+    const target = document.createElement('div')
+    document.body.append(target)
+    const app = mount(ProfileForm, {
+      target,
+      props: { authorized: true, enabled: true, subject: 'acc-7', deleteId: 'acc-7' },
+    })
+    await tick()
+    const link = target.querySelector('[data-testid="profile-delete-link"]')
+    expect(link?.getAttribute('href')).toBe('/user/acc-7/delete')
     await unmount(app)
   })
 })

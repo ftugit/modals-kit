@@ -183,6 +183,23 @@ export type ProfileRouteData = {
 }
 
 /**
+ * Данные носителей удаления (`/user/[id]/delete` и модалка
+ * `user.profile.delete`): гейт показа — `canDeleteProfile` чтения
+ * профиля; форма при отправке права и запреты перепроверяет.
+ */
+export type ProfileDeleteRouteData = {
+  uid: string
+  enabled: boolean
+  /** Право на профиль цели и нет запрета `profile.delete`: показ удаления. */
+  canDeleteProfile: boolean
+  /** Право на seed цели и нет запрета `account.delete`: чекбокс в форме. */
+  canDeleteSeed: boolean
+  /** Секунд удержания кнопки подтверждения (конфиг модуля). */
+  holdSeconds: number
+  fact: AuthErrorCode | null
+}
+
+/**
  * Строка списка seed-юзеров: проекция строки `user_auth`, которую отдала DB
  * после ACL вызывающего. Технические поля строки (`subnet_salt`, `security`)
  * сюда не входят: список не должен уносить их в браузер, даже если модель их

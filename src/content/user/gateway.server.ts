@@ -37,7 +37,11 @@ import {
 } from './index.js'
 import { sign, verify } from './keys.js'
 import { listSeedUsers as coreListSeedUsers, type ListSeedUsersArgs } from './accounts.js'
-import { profile as coreProfile, updateProfile as coreUpdateProfile } from './profile.js'
+import {
+  deleteProfile as coreDeleteProfile,
+  profile as coreProfile,
+  updateProfile as coreUpdateProfile,
+} from './profile.js'
 import { auth as authRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
@@ -487,6 +491,8 @@ export function auth(event: AuthEvent): {
     args: { nickname?: string; avatarUrl?: string | null },
     subject?: string,
   ): Promise<UserResult<ProfileView>>
+  /** Удалить профиль цели; `withSeed` — и seed-аккаунт (домен перепроверяет права/запреты). */
+  deleteProfile(args: { withSeed?: boolean }, subject?: string): Promise<UserResult<null>>
   requestDelete(): Promise<UserResult<null>>
 } {
   const ports = authPorts({
@@ -578,6 +584,17 @@ export function auth(event: AuthEvent): {
     profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
     updateProfile: async (args, subject?: string) =>
       coreUpdateProfile(ports, await freshAccessOrCurrent(), args, subject),
+    deleteProfile: async (args, subject?: string) => {
+      const token = await freshAccessOrCurrent()
+      const r = await coreDeleteProfile(ports, token, subject, args)
+      // Свой seed помечен на удаление — куки этого браузера мертвы.
+      if (r.ok && args.withSeed) {
+        const payload = token ? await ports.seal.unseal(token) : null
+        const self = payload && 'sub' in payload ? payload.sub : undefined
+        if (self && (subject ?? self) === self) clearCookies()
+      }
+      return r
+    },
     requestDelete: async () => {
       const r = await coreRequestDelete(ports, await freshAccessOrCurrent(), renewal())
       if (r.ok) clearCookies()
@@ -657,6 +674,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
       return 401
     case 'auth.blocked':
     case 'auth.forbidden':
+    case 'profile.delete-blocked':
+    case 'account.delete-blocked':
     case 'permissions.unknown':
     case 'permissions.self':
       return 403

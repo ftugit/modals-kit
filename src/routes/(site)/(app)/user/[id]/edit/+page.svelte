@@ -18,6 +18,7 @@
   {:else}
     <ProfileForm
       subject={data.uid}
+      deleteId={data.canDeleteProfile ? data.uid : null}
       initial={data.profile ? { nickname: data.profile.nickname, avatarUrl: data.profile.avatarUrl } : null}
       limits={data.limits}
       enabled={data.enabled}

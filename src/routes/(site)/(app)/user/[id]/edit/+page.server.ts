@@ -20,6 +20,7 @@ export const load: PageServerLoad = async (event) => {
     uid: event.params.id,
     profile: r.ok ? r.value.profile : null,
     canEdit: r.ok ? r.value.canEdit : false,
+    canDeleteProfile: r.ok ? r.value.canDeleteProfile : false,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     limits: { nicknameForbidden: await config.get('nicknameForbidden') },

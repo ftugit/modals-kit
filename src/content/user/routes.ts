@@ -94,6 +94,12 @@ export const userProfileEditRoute = kitRoute('/(site)/(app)/user/[id]/edit', {
   id: '/user/[id]/edit',
 })
 
+/** Удаление профиля — адрес пары `user.profile.delete` (модалка/роут). */
+export const userProfileDeleteRoute = kitRoute('/(site)/(app)/user/[id]/delete', {
+  dynamic: true,
+  id: '/user/[id]/delete',
+})
+
 /**
  * Список seed-юзеров — статический адрес `/users`. Этим же адресом
  * пользуется регистрация пары `user.list` (`route` в `modals.ts`):

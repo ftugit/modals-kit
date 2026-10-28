@@ -67,6 +67,48 @@ export async function profile(
 }
 
 /**
+ * Удаление профиля цели, по желанию — вместе с seed-аккаунтом. Права те
+ * же, что чтение отдаёт флагами (этап 6), и здесь перепроверяются:
+ * удаление профиля — владелец/`profile.edit`/`admin`, seed —
+ * владелец/`account.edit`/`admin`; активный запрет сферы на цели
+ * (`profile.delete`/`account.delete`) сильнее любого права, включая
+ * владельца. Профиль уходит сразу (политика `delete` модели решает за
+ * вызывающего); seed — заявкой, как собственное удаление: метка и отзыв
+ * сессий, физическую зачистку доделает исполнитель по грейсу.
+ */
+export async function deleteProfile(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  subject: string | undefined,
+  opts: { withSeed?: boolean } = {},
+): Promise<UserResult<null>> {
+  const g = await guard(ports, accessToken)
+  if ('code' in g) return fail(g)
+  const target = subject?.trim() || g.sub
+  const now = ports.clock.now()
+  const authRow = await ports.auths.get(target)
+  if (!authRow) return fail({ code: 'auth.forbidden' })
+  const blocked = authRow.blocked ?? []
+  const isAdmin = g.perms.includes(ADMIN_ROLE)
+  const canProfile = target === g.sub || isAdmin || g.perms.includes('profile.edit')
+  if (!canProfile) return fail({ code: 'auth.forbidden' })
+  if (activeBlock(blocked, 'profile.delete', now))
+    return fail({ code: 'profile.delete-blocked' })
+  if (opts.withSeed) {
+    const canSeed = target === g.sub || isAdmin || g.perms.includes('account.edit')
+    if (!canSeed) return fail({ code: 'auth.forbidden' })
+    if (activeBlock(blocked, 'account.delete', now))
+      return fail({ code: 'account.delete-blocked' })
+  }
+  await ports.profiles.remove(principalOfRow({ id: g.sub, permissions: g.perms }), target)
+  if (opts.withSeed) {
+    await ports.auths.markDeleted(target, now)
+    await ports.sessions.softDeleteAllByAuth(target, now)
+  }
+  return ok(null)
+}
+
+/**
  * Сохранить профиль. ПЕРВОЕ заполнение создаёт строку. Никнейм проверяется на
  * запрещённые (`config.nicknameForbidden`). Картинку домен не разбирает: её
  * проверяет и приводит роут по параметрам спеки (`specAvatar`) ДО вызова, и

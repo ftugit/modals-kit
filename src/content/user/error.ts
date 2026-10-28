@@ -36,6 +36,8 @@ export type AuthErrorCode =
   | 'profile.photo-format'   // файл не картинка или формат не из спеки
   | 'profile.photo-size'     // файл больше предела веса
   | 'profile.photo-spec'     // файл не совпал со спекой (формат/кадр/вес): сервер не конвертирует
+  | 'profile.delete-blocked' // на цели активен запрет удаления профиля (каталог сфер spec-block)
+  | 'account.delete-blocked' // на цели активен запрет удаления seed-аккаунта
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -76,6 +78,8 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'profile.photo-format': () => [error({ code: 'profile.photo-format' }, 'photo')],
   'profile.photo-size': () => [error({ code: 'profile.photo-size' }, 'photo')],
   'profile.photo-spec': () => [error({ code: 'profile.photo-spec' }, 'photo')],
+  'profile.delete-blocked': () => [generalError('profile.delete-blocked')],
+  'account.delete-blocked': () => [generalError('account.delete-blocked')],
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

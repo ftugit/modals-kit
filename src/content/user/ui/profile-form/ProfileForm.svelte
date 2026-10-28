@@ -39,6 +39,7 @@
   import { createUserChecks } from '../../checks.js'
   import { specAvatar } from '../../spec-avatar.js'
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
+  import { useModalLink } from '#hooks/links/index.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { profileForm } from './form.js'
@@ -54,6 +55,12 @@
      * значения такого профиля приходят в `initial` (свой берётся из `vault`).
      */
     subject?: string | null
+    /**
+     * id цели, которую вызывающий вправе удалить: кнопка «Удалить» справа
+     * сверху ведёт на пару `user.profile.delete`. Пусто — кнопки нет (так
+     * же нет её при запрете удаления на цели: флаг считает чтение).
+     */
+    deleteId?: string | null
     authorized?: boolean
     enabled?: boolean
     doneHref?: string
@@ -68,6 +75,7 @@
     limits = DEFAULT_PROFILE_LIMITS,
     initial = null,
     subject = null,
+    deleteId = null,
     authorized,
     enabled,
     doneHref = '/',
@@ -77,6 +85,7 @@
   }: Props = $props()
 
   const notHydrated = useJsOnly()
+  const asModalLink = useModalLink()
 
   const isAuthorized = $derived(authorized !== undefined ? authorized : vault.authorized)
   /**
@@ -154,7 +163,20 @@
     <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
     <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">{foreign ? 'Профиль пользователя' : 'Как вас показывать?'}</h2>
+      <div class="flex items-start justify-between gap-2">
+        <h2 class="text-base font-semibold">{foreign ? 'Профиль пользователя' : 'Как вас показывать?'}</h2>
+        {#if deleteId}
+          <!-- Удаление — отдельная пара по праву (флаг посчитало чтение);
+               сервер при отправке права и запреты перепроверит. -->
+          <a
+            {...asModalLink('user.profile.delete', { id: deleteId })}
+            class="shrink-0 rounded-md px-2 py-1 text-sm text-destructive underline-offset-4 hover:underline"
+            data-testid="profile-delete-link"
+          >
+            Удалить
+          </a>
+        {/if}
+      </div>
       {#if !foreign}
         <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
       {/if}

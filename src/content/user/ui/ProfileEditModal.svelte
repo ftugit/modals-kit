@@ -16,6 +16,7 @@
     uid: string
     profile: ProfileView | null
     canEdit: boolean
+    canDeleteProfile: boolean
     fact: AuthErrorCode | null
     enabled: boolean
     limits: { readonly nicknameForbidden: readonly string[] }
@@ -35,6 +36,7 @@
   <div class="p-5">
     <ProfileForm
       subject={uid}
+      deleteId={ldr.data.canDeleteProfile ? uid : null}
       initial={ldr.data.profile ? { nickname: ldr.data.profile.nickname, avatarUrl: ldr.data.profile.avatarUrl } : null}
       limits={ldr.data.limits}
       enabled={ldr.data.enabled}

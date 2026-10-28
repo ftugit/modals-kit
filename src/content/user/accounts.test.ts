@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest'
 import { memoryStore } from '#lib/cache/index.js'
 import { issueChallenge, login, type UserResult } from './auth.js'
 import { listSeedUsers } from './accounts.js'
-import { profile } from './profile.js'
+import { deleteProfile, profile } from './profile.js'
 import { generateKeyPair, sign } from './keys.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
@@ -365,5 +365,40 @@ describe('чтение профиля: возможности по цели (э�
     const byReader = ok_(await profile(ports, reader.access, target.id))
     expect(byReader.fullBlock).not.toBeNull()
     expect(byReader.fullBlock?.reason).toBeNull()
+  })
+})
+
+describe('удаление профиля и seed по цели (этап 7)', () => {
+  test('чужой без права — запрет; запрет сферы сильнее админа; с seed — метка удаления', async () => {
+    const { ports, auths } = makePorts()
+    const plain = await joined(ports, auths)
+    const admin = await joined(ports, auths, ['admin'])
+    const target = await joined(ports, auths)
+
+    const denied = await deleteProfile(ports, plain.access, target.id, {})
+    expect(denied.ok).toBe(false)
+    if (!denied.ok) expect(denied.fact.code).toBe('auth.forbidden')
+
+    const row = auths.get(target.id)!
+    auths.set(target.id, {
+      ...row,
+      blocked: [{ scope: 'profile.delete', reason: 'нельзя', at: 1 }],
+    })
+    const banned = await deleteProfile(ports, admin.access, target.id, {})
+    expect(banned.ok).toBe(false)
+    if (!banned.ok) expect(banned.fact.code).toBe('profile.delete-blocked')
+
+    auths.set(target.id, { ...row, blocked: [] })
+    const done = await deleteProfile(ports, admin.access, target.id, { withSeed: true })
+    expect(done.ok).toBe(true)
+    expect(auths.get(target.id)?.deletedAt).not.toBeNull()
+  })
+
+  test('владелец удаляет свой профиль без seed: аккаунт жив', async () => {
+    const { ports, auths } = makePorts()
+    const self = await joined(ports, auths)
+    const done = await deleteProfile(ports, self.access, self.id, {})
+    expect(done.ok).toBe(true)
+    expect(auths.get(self.id)?.deletedAt).toBeNull()
   })
 })
