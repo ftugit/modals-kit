@@ -31,14 +31,15 @@ function formatBytesRu(bytes: number): string {
 }
 
 function formatEntryDescription(entry: FileUploadProgressEntry): string {
+  const hmacSuffix = entry.salted ? ' · HMAC' : ''
   if (entry.state === 'processing') {
-    return `Сохранение на сервере · ${entry.totalSegments}/${entry.totalSegments} сегм.`
+    return `Сохранение на сервере · ${entry.totalSegments}/${entry.totalSegments} сегм.${hmacSuffix}`
   }
   if (entry.state === 'done') {
-    return `Загружено · ${formatBytesRu(entry.size)}`
+    return `Загружено · ${formatBytesRu(entry.size)}${hmacSuffix}`
   }
   if (entry.totalSegments > 0) {
-    return `Сегмент ${Math.min(entry.sentSegments + 1, entry.totalSegments)}/${entry.totalSegments} · ${formatBytesRu(entry.receivedBytes)} из ${formatBytesRu(entry.size)}`
+    return `Сегмент ${Math.min(entry.sentSegments + 1, entry.totalSegments)}/${entry.totalSegments} · ${formatBytesRu(entry.receivedBytes)} из ${formatBytesRu(entry.size)}${hmacSuffix}`
   }
   return 'Подготовка…'
 }

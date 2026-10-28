@@ -6,10 +6,11 @@ import { join } from 'node:path'
 import type { RequestEvent } from '@sveltejs/kit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket as NodeWebSocket } from 'ws'
-import { buildEnvelope, defineForm, field, v } from '#lib/form/index.js'
+import { buildEnvelope, CheckRegistry, defineForm, field, v } from '#lib/form/index.js'
 import { formTask } from '#lib/form/svelte/index.js'
 import { createStorage } from '#lib/storage/index.js'
 import { localDriver } from '#lib/storage/local.js'
+import { image, registerImageCheck } from '../../components/form/image.js'
 import { attachNodeWsUpgrade } from '#server/vite-ws.server.js'
 import { upgradeWs } from '#server/ws-upgrade.server.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
@@ -296,4 +297,195 @@ describe('wsFormTransport + live progress', () => {
     const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
     expect(tmpFiles).toEqual([])
   })
+
+  it('включает и выключает солёную проверку HMAC-SHA-256 индивидуально на каждую загрузку (включая imageCheck headCache)', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    const valid1x1Png = Uint8Array.from(
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    )
+
+    const form = defineForm({
+      id: 'ws_per_upload_integrity',
+      fields: {
+        verify_integrity: field.checkbox({ defaultValue: true }),
+        photo: field.file({ validate: [v.required(), v.accept(['image/png']), image()] }),
+      },
+    })
+
+    const checks = new CheckRegistry()
+    registerImageCheck(checks)
+
+    registerComponentForm({
+      description: form,
+      checks,
+      integrity: (_event, rawForm) => rawForm.get('verify_integrity') === 'on',
+      async execute({ values, commit }) {
+        const file = values.photo as File
+        const stored = await storage.put({
+          path: `salted/${file.name}`,
+          body: file.stream(),
+          contentType: file.type,
+          size: file.size,
+        })
+        commit()
+        return { data: { path: stored.path, size: stored.size } }
+      },
+    })
+
+    // PNG ~600 КБ (3 сегмента: сегмент 0 проверяется в imageCheck, кэшируется в headCache и догружается в execute)
+    const bigPng = new Uint8Array(600 * 1024)
+    bigPng.set(valid1x1Png, 0)
+    for (let i = valid1x1Png.byteLength; i < bigPng.byteLength; i++) {
+      bigPng[i] = (i * 29 + 11) & 0xff
+    }
+
+    const transport = wsFormTransport(() => '/upload-demo', {
+      wsUrl: wsEndpoint,
+      WebSocketImpl: NodeWsWithOrigin,
+    })
+
+    const submitOnce = async (salted: boolean, filename: string) => {
+      const submissionId = randomUUID()
+      const instance = `${form.id}:main` as `${string}:${string}`
+      const env = buildEnvelope({
+        formId: form.id,
+        revision: form.revision,
+        instance,
+        submissionId,
+      })
+      const fd = new FormData()
+      for (const [k, val] of Object.entries(env)) fd.set(k, val)
+      fd.set(form.policy.envelopeKeys.intent, 'submit')
+      if (salted) fd.set('verify_integrity', 'on')
+      fd.set('photo', new File([bigPng], filename, { type: 'image/png' }))
+
+      const snapshots: FormUploadProgress[] = []
+      const res = await transport({
+        envelope: {
+          formId: form.id,
+          revision: form.revision,
+          instance,
+          submissionId,
+          intent: 'submit',
+        },
+        data: fd,
+        accept: ['application/json'],
+        signal: new AbortController().signal,
+        report: (p) => snapshots.push(p as FormUploadProgress),
+      })
+      return { res, snapshots }
+    }
+
+    // Загрузка №1: с одноразовой серверной солью и потоковым HMAC-SHA-256
+    const runSalted = await submitOnce(true, 'salted.png')
+    expect(runSalted.res.kind).toBe('result')
+    if (runSalted.res.kind === 'result') {
+      expect(runSalted.res.result.ok).toBe(true)
+    }
+    expect(runSalted.snapshots.at(-1)?.salted).toBe(true)
+    const savedSalted = await storage.lazy('salted/salted.png')
+    expect(Buffer.compare(Buffer.from(await savedSalted!.bytes()), Buffer.from(bigPng))).toBe(0)
+
+    // Загрузка №2 в ту же форму: без соли и без вычисления HMAC
+    const runPlain = await submitOnce(false, 'plain.png')
+    expect(runPlain.res.kind).toBe('result')
+    if (runPlain.res.kind === 'result') {
+      expect(runPlain.res.result.ok).toBe(true)
+    }
+    expect(runPlain.snapshots.at(-1)?.salted).toBe(false)
+    const savedPlain = await storage.lazy('salted/plain.png')
+    expect(Buffer.compare(Buffer.from(await savedPlain!.bytes()), Buffer.from(bigPng))).toBe(0)
+  })
+
+  it('возвращает ошибку 422 на поле и удаляет .part, если файл на устройстве клиента изменился во время загрузки', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    const form = defineForm({
+      id: 'ws_client_file_mutated',
+      fields: {
+        archive: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      integrity: true,
+      async execute({ values, commit }) {
+        const file = values.archive as File
+        await storage.put({
+          path: `mutated/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { ok: true } }
+      },
+    })
+
+    const initialSize = 700 * 1024
+    const file = new File([new Uint8Array(initialSize)], 'live-log.bin', {
+      type: 'application/octet-stream',
+      lastModified: 1_700_000_000_000,
+    })
+    let mutatedSize = initialSize
+    Object.defineProperty(file, 'size', {
+      get: () => mutatedSize,
+    })
+
+    const submissionId = randomUUID()
+    const instance = `${form.id}:main` as `${string}:${string}`
+    const env = buildEnvelope({
+      formId: form.id,
+      revision: form.revision,
+      instance,
+      submissionId,
+    })
+    const fd = new FormData()
+    for (const [k, val] of Object.entries(env)) fd.set(k, val)
+    fd.set(form.policy.envelopeKeys.intent, 'submit')
+    fd.set('archive', file)
+
+    const transport = wsFormTransport(() => '/upload-demo', {
+      wsUrl: wsEndpoint,
+      WebSocketImpl: NodeWsWithOrigin,
+    })
+
+    const outcome = await transport({
+      envelope: {
+        formId: form.id,
+        revision: form.revision,
+        instance,
+        submissionId,
+        intent: 'submit',
+      },
+      data: fd,
+      accept: ['application/json'],
+      signal: new AbortController().signal,
+      report: (progress) => {
+        const p = progress as FormUploadProgress
+        // Как только первый сегмент (256 КБ) ушёл, имитируем дозапись файла на диске пользователя
+        if (p.phase === 'uploading' && p.sentBytes >= 256 * 1024) {
+          mutatedSize = initialSize + 4096
+        }
+      },
+    })
+
+    expect(outcome.kind).toBe('result')
+    if (outcome.kind === 'result') {
+      expect(outcome.result.ok).toBe(false)
+      expect(outcome.result.status).toBe(422)
+      expect(outcome.result.outcome).toBe('not-applied')
+      expect(outcome.result.errors[0]).toMatchObject({
+        path: 'archive',
+        code: 'file.changed',
+      })
+    }
+
+    expect(await storage.head('mutated/live-log.bin')).toBeNull()
+    const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
+    expect(tmpFiles).toEqual([])
+  })
 })
+

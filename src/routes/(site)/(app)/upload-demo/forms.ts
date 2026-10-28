@@ -22,6 +22,10 @@ export const uploadBundleForm = defineForm({
       help: 'С JS передаётся сегментами по 256 КБ по одному wss://-соединению; без JS работает штатный multipart POST.',
       validate: [v.required(), v.maxSize(DEMO_MAX_UPLOAD_BYTES)],
     }),
+    verify_integrity: field.checkbox({
+      label: 'Проверять целостность потока с одноразовой солью (HMAC-SHA-256 на эту загрузку)',
+      defaultValue: true,
+    }),
   },
 })
 
@@ -47,6 +51,7 @@ export interface UploadedDemoRecord {
   readonly size: number
   readonly url: string
   readonly transport: 'ws' | 'http'
+  readonly integrityVerified?: boolean
   readonly createdAt: string
 }
 

@@ -7,6 +7,7 @@ export type {
   WsSegmentLogEntry,
 } from './ws-protocol.js'
 export type {
+  ComponentFormAuthVerdict,
   ComponentFormOptions,
   ComponentFormRegistration,
   FormSessionGuard,

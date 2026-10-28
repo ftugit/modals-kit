@@ -276,3 +276,9 @@
     WebSocket, прогресс-бар в DOM, итоговый сохранённый файл и путь с отключённым JS.
   - Финальный полный прогон перед завершением этапа (`npm run check`, `vitest run`,
     стражи `tooling/`, `npm run build`, браузерный тест) и локальный коммит.
+
+- [x] **`P5` — Ранний ACL на Кадре 0, возврат ошибок веса/мутации в поле и опциональная соль целостности загрузки (`integrity`)** (`authorize.server.ts`, `ws-integrity.ts`, `ws-session.server.ts`, `ws-transport.ts`, `/upload-demo`, `vitest` 16/16 + Playwright E2E + `svelte-check` 0 errors + `npm run build` green)
+  - Добавить в `ComponentFormRegistration` опциональный ранний гейт `authorize(event, form)` (выполняется на Кадре 0 **до** `checks`/`imageCheck` и **до** `execute` при `0` прочитанных файловых байтов как в `wss://`, так и в HTTP `POST`).
+  - Гарантировать возврат ошибок несовпадения размера / изменения локального файла во время отправки (`file.size` / `file.lastModified`) и повреждения потока как штатного `422 Result` (`outcome: 'not-applied'`) прямо на соответствующем файловом поле с удалением `.part`.
+  - Добавить опциональную на отдельную загрузку (`integrity?: boolean | ((event: RequestEvent, form: FormData) => boolean | Promise<boolean>)`) потоковую солёную цепочку `HMAC-SHA-256` (`Web Crypto`, `0` зависимостей, `O(1)` RAM, `0` повторных чтений диска): одноразовая криптографическая `salt` (`32` байта) от сервера на сессию загрузки, двухступенчатый zero-copy шаг `SHA-256(chunk)` → `HMAC(salt, prevTag || meta || chunkHash)` на каждом сегменте `256 КБ` с мгновенной проверкой на сервере до записи чанка в `storage.put`.
+  - Покрыть юнит/интеграционными тестами Vitest (ACL-отказ с `0` сегментов даже при `image()`, подмена байта сегмента при `integrity: true` → `422` на поле файла + `0` `.part`, мутация размера файла на клиенте → `422` на поле файла, штатное прохождение с `integrity: true` и `integrity: false`) и сквозной проверкой в браузере.

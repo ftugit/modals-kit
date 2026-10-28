@@ -23,6 +23,7 @@ import { createFormHandler } from '#lib/form/server.js'
 import { bodyBudget, envLimits } from '#server/form-budget.server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
 import type { FormDescription, Result } from '#lib/form/index.js'
+import { createAuthorizeGuards } from './authorize.server.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
 import type { ComponentFormRegistration } from './types.js'
 
@@ -200,11 +201,13 @@ export function createComponentFormsHandle(
     }
     const trackedEvent: RequestEvent = { ...event, cookies: trackedCookies }
     const resolvedChecks = typeof reg.checks === 'function' ? await reg.checks(trackedEvent) : reg.checks
+    const authGuards = createAuthorizeGuards(reg, trackedEvent, () => raw)
 
     const handler = createFormHandler<unknown, RequestEvent>({
       description,
-      order: SECURITY_LAYERS,
+      order: authGuards.layer ? [...SECURITY_LAYERS, authGuards.layer] : SECURITY_LAYERS,
       ...(reg.source ? { source: reg.source } : {}),
+      ...(authGuards.schema ? { schema: authGuards.schema } : {}),
       ...(resolvedChecks ? { checks: resolvedChecks } : {}),
       // пределы — от окружения: тело = потолок, один файл = бюджет файлов;
       // частные пределы регистрации только уменьшают оба числа

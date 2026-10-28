@@ -1,10 +1,23 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import type { BindOptions } from '#lib/form/svelte/index.js'
-import type { createFormHandler, ExecuteContext, ExecuteOutput, Limits } from '#lib/form/server.js'
+import type {
+  createFormHandler,
+  ExecuteContext,
+  ExecuteOutput,
+  Limits,
+  Rejection,
+} from '#lib/form/server.js'
 import type { CheckRegistry, FormDescription, Result } from '#lib/form/index.js'
 import type { TaskState } from '#lib/task/index.js'
 
 type FormSource = NonNullable<Parameters<typeof createFormHandler>[0]['source']>
+
+/** Вердикт раннего гейта доступа `authorize`: `null`/`undefined` — пустить, иначе отказ до чтения байтов файла. */
+export type ComponentFormAuthVerdict =
+  | null
+  | undefined
+  | Rejection
+  | Parameters<ExecuteContext['fail']>[0]
 
 /** Явный контракт координации сессии для форм, работающих от имени пользователя. */
 export interface FormSessionGuard {
@@ -66,6 +79,19 @@ export interface ComponentFormRegistration {
   readonly idempotency?: NonNullable<Parameters<typeof createFormHandler>[0]['idempotency']>
   /** Ограничитель частоты: ключ по адресу клиента требует `event`. */
   readonly throttle?: NonNullable<Parameters<typeof createFormHandler>[0]['throttle']>
+  /**
+   * Ранний гейт доступа (ACL): выполняется на Кадре 0 ДО асинхронных `checks` (`imageCheck`)
+   * и ДО `execute` (при `0` прочитанных файловых байтов).
+   */
+  readonly authorize?: (
+    event: RequestEvent,
+    form: FormData,
+  ) => ComponentFormAuthVerdict | Promise<ComponentFormAuthVerdict>
+  /**
+   * Включить потоковую солёную проверку целостности (`HMAC-SHA-256` с одноразовой 32-байтной
+   * солью) на отдельную загрузку — статически или функцией от `(event, form)` Кадра 0.
+   */
+  readonly integrity?: boolean | ((event: RequestEvent, form: FormData) => boolean | Promise<boolean>)
   /** Подготовка значений ДО правил формы (очистка, вычисление, метки). */
   readonly prepare?: NonNullable<Parameters<typeof createFormHandler>[0]['prepare']>
   readonly execute: (

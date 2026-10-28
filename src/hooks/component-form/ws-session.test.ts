@@ -7,12 +7,14 @@ import type { RequestEvent } from '@sveltejs/kit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { buildEnvelope, CheckRegistry, defineForm, field, v } from '#lib/form/index.js'
+import { reject } from '#lib/form/server.js'
 import { createStorage } from '#lib/storage/index.js'
 import { localDriver } from '#lib/storage/local.js'
 import { image, registerImageCheck } from '../../components/form/image.js'
 import { attachNodeWsUpgrade } from '#server/vite-ws.server.js'
 import { upgradeWs } from '#server/ws-upgrade.server.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
+import { createFileIntegrityChain, importUploadSaltKey } from './ws-integrity.js'
 import { handleFormUploadWs } from './ws-session.server.js'
 import {
   DEFAULT_WS_CHUNK_BYTES,
@@ -464,4 +466,275 @@ describe('ws-session + vite-ws + upgradeWs', () => {
     expect(stored).not.toBeNull()
     expect(Buffer.compare(Buffer.from(await stored!.bytes()), Buffer.from(payload))).toBe(0)
   })
+
+  it('ранний ACL-гейт authorize режет запрос на Кадре 0 ДО imageCheck (0 прочитанных сегментов файла)', async () => {
+    let executed = false
+    let authMode: 'reject-403' | 'expired-errors' = 'reject-403'
+
+    const form = defineForm({
+      id: 'ws_acl_gate',
+      fields: {
+        avatar: field.file({
+          validate: [v.required(), v.accept(['image/png']), image()],
+        }),
+      },
+    })
+
+    const checks = new CheckRegistry()
+    registerImageCheck(checks)
+
+    registerComponentForm({
+      description: form,
+      checks,
+      authorize() {
+        if (authMode === 'reject-403') {
+          return reject(403, 'auth.forbidden')
+        }
+        return [
+          {
+            id: 'auth.expired',
+            code: 'auth.expired',
+            message: 'Сессия устарела — войдите снова',
+            origin: 'server',
+          },
+        ]
+      },
+      execute({ commit }) {
+        executed = true
+        commit()
+        return { data: { ok: true } }
+      },
+    })
+
+    const makeInit = (): WsClientInitMessage => {
+      const env = buildEnvelope({
+        formId: form.id,
+        revision: form.revision,
+        instance: `${form.id}:main`,
+        submissionId: randomUUID(),
+      })
+      return {
+        type: 'init',
+        target: '/user/edit',
+        fields: [...Object.entries(env), [form.policy.envelopeKeys.intent, 'submit']],
+        files: [
+          {
+            id: 'f0',
+            field: 'avatar',
+            name: 'avatar.png',
+            size: 1024 * 1024,
+            type: 'image/png',
+            lastModified: Date.now(),
+          },
+        ],
+      }
+    }
+
+    // 1) Жёсткий отказ 403 Rejection — ни одного pull даже при наличии imageCheck
+    const res403 = await runWsUploadClient(makeInit(), { f0: new Uint8Array(1024 * 1024) })
+    expect(res403.pulls).toHaveLength(0)
+    expect(executed).toBe(false)
+    expect(res403.terminal?.type).toBe('result')
+    if (res403.terminal?.type === 'result') {
+      expect(res403.terminal.status).toBe(403)
+      expect(res403.terminal.result.ok).toBe(false)
+      expect(res403.terminal.result.errors[0]?.code).toBe('auth.forbidden')
+    }
+
+    // 2) Доменный список ошибок (`instruction` / `auth.expired`) — также 0 pull и сохранение кода `auth.expired`
+    authMode = 'expired-errors'
+    const res422 = await runWsUploadClient(makeInit(), { f0: new Uint8Array(1024 * 1024) })
+    expect(res422.pulls).toHaveLength(0)
+    expect(executed).toBe(false)
+    expect(res422.terminal?.type).toBe('result')
+    if (res422.terminal?.type === 'result') {
+      expect(res422.terminal.status).toBe(422)
+      expect(res422.terminal.result.ok).toBe(false)
+      expect(res422.terminal.result.errors[0]?.code).toBe('auth.expired')
+      expect(res422.terminal.result.errors[0]?.message).toContain('Сессия устарела')
+    }
+  })
+
+  it('ловит искажение байта (bit-flip) при солёной цепочке HMAC-SHA-256 и возвращает 422 на поле с очисткой .part', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    const form = defineForm({
+      id: 'ws_hmac_tamper',
+      fields: {
+        bundle: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      integrity: true,
+      async execute({ values, commit }) {
+        const file = values.bundle as File
+        await storage.put({
+          path: `tamper/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { ok: true } }
+      },
+    })
+
+    const size = 2 * DEFAULT_WS_CHUNK_BYTES + 4096
+    const original = new Uint8Array(size)
+    for (let i = 0; i < size; i++) original[i] = (i * 19 + 3) & 0xff
+
+    const env = buildEnvelope({
+      formId: form.id,
+      revision: form.revision,
+      instance: `${form.id}:main`,
+      submissionId: randomUUID(),
+    })
+    const init: WsClientInitMessage = {
+      type: 'init',
+      target: '/demo',
+      fields: [...Object.entries(env), [form.policy.envelopeKeys.intent, 'submit']],
+      files: [
+        {
+          id: 'f0',
+          field: 'bundle',
+          name: 'corrupted.bin',
+          size,
+          type: 'application/octet-stream',
+          lastModified: Date.now(),
+        },
+      ],
+    }
+
+    const terminal = await new Promise<WsServerMessage | null>((resolve, rejectPromise) => {
+      const ws = new WebSocket(wsBaseUrl, { headers: { origin: 'http://localhost:5173' } })
+      let chainPromise: Promise<Awaited<ReturnType<typeof createFileIntegrityChain>>> | null = null
+      let lastMsg: WsServerMessage | null = null
+
+      ws.on('open', () => ws.send(JSON.stringify(init)))
+      ws.on('message', (raw, isBinary) => {
+        if (isBinary) return
+        const msg = JSON.parse(raw.toString('utf8')) as WsServerMessage
+        if (msg.type === 'pull') {
+          void (async () => {
+            expect(msg.salt).toMatch(/^[0-9a-f]{64}$/)
+            if (!chainPromise) {
+              const key = await importUploadSaltKey(msg.salt!)
+              chainPromise = createFileIntegrityChain(key!, 'f0', size)
+            }
+            const chain = await chainPromise
+            const cleanSlice = original.subarray(msg.offset, msg.offset + msg.length)
+            const validTag = await chain.nextSegmentTag(msg.segmentIndex, msg.offset, cleanSlice)
+
+            // На втором сегменте переворачиваем 1 бит полезных данных при старом теге
+            const wirePayload = new Uint8Array(cleanSlice)
+            if (msg.segmentIndex === 1) {
+              wirePayload[17]! ^= 0x01
+            }
+            ws.send(packBinarySegment(msg.reqId, wirePayload, validTag))
+          })()
+          return
+        }
+        lastMsg = msg
+      })
+      ws.on('close', () => resolve(lastMsg))
+      ws.on('error', (err) => rejectPromise(err))
+    })
+
+    expect(terminal?.type).toBe('result')
+    if (terminal?.type === 'result') {
+      expect(terminal.status).toBe(422)
+      expect(terminal.result.ok).toBe(false)
+      expect(terminal.result.outcome).toBe('not-applied')
+      expect(terminal.result.errors[0]).toMatchObject({
+        path: 'bundle',
+        code: 'file.integrity',
+      })
+    }
+
+    expect(await storage.head('tamper/corrupted.bin')).toBeNull()
+    const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
+    expect(tmpFiles).toEqual([])
+  })
+
+  it('возвращает штатную ошибку 422 на поле при несовпадении размера бинарного сегмента', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    const form = defineForm({
+      id: 'ws_short_segment',
+      fields: {
+        bundle: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      async execute({ values, commit }) {
+        const file = values.bundle as File
+        await storage.put({
+          path: `short/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { ok: true } }
+      },
+    })
+
+    const env = buildEnvelope({
+      formId: form.id,
+      revision: form.revision,
+      instance: `${form.id}:main`,
+      submissionId: randomUUID(),
+    })
+
+    const terminal = await new Promise<WsServerMessage | null>((resolve, rejectPromise) => {
+      const ws = new WebSocket(wsBaseUrl, { headers: { origin: 'http://localhost:5173' } })
+      let lastMsg: WsServerMessage | null = null
+      ws.on('open', () => {
+        ws.send(
+          JSON.stringify({
+            type: 'init',
+            target: '/demo',
+            fields: [...Object.entries(env), [form.policy.envelopeKeys.intent, 'submit']],
+            files: [
+              {
+                id: 'f0',
+                field: 'bundle',
+                name: 'short.bin',
+                size: 8192,
+                type: 'application/octet-stream',
+                lastModified: Date.now(),
+              },
+            ],
+          } satisfies WsClientInitMessage),
+        )
+      })
+      ws.on('message', (raw, isBinary) => {
+        if (isBinary) return
+        const msg = JSON.parse(raw.toString('utf8')) as WsServerMessage
+        if (msg.type === 'pull') {
+          // Шлём 100 байт вместо запрошенных 8192
+          ws.send(packBinarySegment(msg.reqId, new Uint8Array(100)))
+          return
+        }
+        lastMsg = msg
+      })
+      ws.on('close', () => resolve(lastMsg))
+      ws.on('error', (err) => rejectPromise(err))
+    })
+
+    expect(terminal?.type).toBe('result')
+    if (terminal?.type === 'result') {
+      expect(terminal.status).toBe(422)
+      expect(terminal.result.ok).toBe(false)
+      expect(terminal.result.outcome).toBe('not-applied')
+      expect(terminal.result.errors[0]).toMatchObject({
+        path: 'bundle',
+        code: 'file.size-mismatch',
+      })
+    }
+    expect(await storage.head('short/short.bin')).toBeNull()
+    const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
+    expect(tmpFiles).toEqual([])
+  })
 })
+

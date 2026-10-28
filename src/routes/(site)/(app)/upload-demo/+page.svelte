@@ -89,6 +89,7 @@
       <Field of={upload.f.title} />
       <Field of={upload.f.notes} />
       <Field of={upload.f.bundle} preview />
+      <Field of={upload.f.verify_integrity} />
 
       <div class="flex items-center gap-3">
         <Button type="submit" task={formTask(upload.state)} data-testid="submit-upload">
@@ -102,10 +103,14 @@
         class="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1"
         data-testid="ws-progress-log"
         data-phase={lastProgress.phase}
+        data-salted={lastProgress.salted ? 'true' : 'false'}
       >
         <div class="font-medium">
           Статус потока: <span data-testid="ws-phase">{lastProgress.phase}</span> ·
           {lastProgress.percent}% ({formatBytes(lastProgress.sentBytes)} из {formatBytes(lastProgress.totalBytes)})
+          {#if lastProgress.salted}
+            · <span data-testid="ws-hmac-badge">HMAC-SHA-256 (с солью)</span>
+          {/if}
         </div>
         {#each lastProgress.files as fEntry (fEntry.fileId)}
           <div data-testid="ws-file-summary">
@@ -135,6 +140,9 @@
                 <span>{item.filename}</span> ·
                 <span>{formatBytes(item.size)}</span> ·
                 <span>транспорт: <strong data-testid="uploaded-transport">{item.transport}</strong></span>
+                {#if item.integrityVerified}
+                  · <span data-testid="uploaded-integrity">соль + HMAC-SHA-256</span>
+                {/if}
               </div>
               {#if item.notes}
                 <p class="text-xs text-muted-foreground">{item.notes}</p>

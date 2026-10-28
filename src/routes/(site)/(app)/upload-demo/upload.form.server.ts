@@ -22,9 +22,11 @@ function safeSlug(filename: string): string {
 
 registerComponentForm({
   description: uploadBundleForm,
+  integrity: (_event, form) => form.get('verify_integrity') === 'on',
   async execute({ values, commit }) {
     const title = String(values.title ?? '').trim()
     const notes = String(values.notes ?? '').trim()
+    const verifyIntegrity = Boolean(values.verify_integrity)
     const file = values.bundle as File
 
     const id = randomUUID()
@@ -49,6 +51,7 @@ registerComponentForm({
       size: stored.size,
       url: stored.url ?? `/api/files/${stored.path}`,
       transport,
+      integrityVerified: transport === 'ws' && verifyIntegrity,
       createdAt: new Date().toISOString(),
     }
 

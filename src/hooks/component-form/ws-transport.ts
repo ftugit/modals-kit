@@ -1,17 +1,24 @@
 // Клиентский потоковый `wss://`-транспорт форм с файлами.
 //
 // Отправляет Кадр 0 (`init` с текстовыми полями + паспортами файлов без байтов),
-// по командам сервера `pull` вырезает ровно запрошенный срез `file.slice(offset, offset + length)`
-// (пик в памяти — один сегмент `256 КБ`), контролирует `bufferedAmount` сокета,
-// обновляет `req.report(progress)` для `FileAttachment` и `formTask`, и возвращает
-// штатный `Result` формы после серверного `commit()`.
+// по командам сервера `pull` проверяет неизменность файла на диске (`size` / `lastModified`),
+// вырезает ровно запрошенный срез `file.slice(offset, offset + length)` (пик в памяти — `256 КБ`),
+// при наличии одноразовой серверной соли `salt` считает zero-copy шаг цепочки `HMAC-SHA-256`,
+// контролирует `bufferedAmount` сокета, обновляет `req.report(progress)` для `FileAttachment`
+// и `formTask`, и возвращает штатный `Result` формы после серверного `commit()`.
 import type { Result, Transport } from '#lib/form/index.js'
+import {
+  createFileIntegrityChain,
+  importUploadSaltKey,
+  type FileIntegrityChain,
+} from './ws-integrity.js'
 import {
   DEFAULT_WS_CHUNK_BYTES,
   FORM_UPLOAD_WS_PATH,
   packBinarySegment,
   type FileUploadProgressEntry,
   type FormUploadProgress,
+  type WsClientAbortFileMessage,
   type WsClientInitMessage,
   type WsFileDescriptor,
   type WsSegmentLogEntry,
@@ -67,6 +74,7 @@ function waitMs(ms: number): Promise<void> {
 
 function buildSnapshot(
   phase: FormUploadProgress['phase'],
+  salted: boolean,
   entries: readonly FileUploadProgressEntry[],
 ): FormUploadProgress {
   let sentBytes = 0
@@ -101,7 +109,8 @@ function buildSnapshot(
     sentBytes,
     totalBytes,
     percent,
-    files: entries.map((e) => ({ ...e, recentSegments: [...e.recentSegments] })),
+    salted,
+    files: entries.map((e) => ({ ...e, salted, recentSegments: [...e.recentSegments] })),
   }
 }
 
@@ -160,6 +169,7 @@ export function wsFormTransport(
 
     const fields: [string, string][] = []
     const descriptors: WsFileDescriptor[] = []
+    const descriptorsById = new Map<string, WsFileDescriptor>()
     const filesById = new Map<string, File>()
     const progressById = new Map<string, FileUploadProgressEntry>()
 
@@ -177,9 +187,10 @@ export function wsFormTransport(
           name: value.name,
           size: value.size,
           type: value.type || 'application/octet-stream',
-          lastModified: value.lastModified || Date.now(),
+          lastModified: value.lastModified || 0,
         }
         descriptors.push(desc)
+        descriptorsById.set(id, desc)
         filesById.set(id, value)
         progressById.set(id, {
           fileId: id,
@@ -198,8 +209,29 @@ export function wsFormTransport(
       }
     }
 
+    let saltedSession = false
+    let saltKeyPromise: Promise<CryptoKey | null> | null = null
+    const chainsById = new Map<string, Promise<FileIntegrityChain>>()
+
+    const getChainForFile = (
+      saltHex: string,
+      desc: WsFileDescriptor,
+    ): Promise<FileIntegrityChain | null> => {
+      saltedSession = true
+      saltKeyPromise ??= importUploadSaltKey(saltHex)
+      let existing = chainsById.get(desc.id)
+      if (!existing) {
+        existing = saltKeyPromise.then(async (k) => {
+          if (!k) throw new Error('Invalid upload salt from server')
+          return createFileIntegrityChain(k, desc.id, desc.size)
+        })
+        chainsById.set(desc.id, existing)
+      }
+      return existing
+    }
+
     const emitProgress = (phase: FormUploadProgress['phase']): void => {
-      req.report?.(buildSnapshot(phase, [...progressById.values()]))
+      req.report?.(buildSnapshot(phase, saltedSession, [...progressById.values()]))
     }
 
     const endpoint =
@@ -210,6 +242,7 @@ export function wsFormTransport(
     return new Promise((resolve) => {
       let settled = false
       let allBytesSent = false
+      let pullQueue = Promise.resolve()
       const ws = new WsCtor(endpoint)
       ws.binaryType = 'arraybuffer'
 
@@ -250,10 +283,30 @@ export function wsFormTransport(
         }
 
         if (msg.type === 'pull') {
-          void (async () => {
+          pullQueue = pullQueue.then(async () => {
             const file = filesById.get(msg.fileId)
+            const desc = descriptorsById.get(msg.fileId)
             const current = progressById.get(msg.fileId)
-            if (!file || !current || settled) return
+            if (!file || !desc || !current || settled) return
+
+            if (msg.salt) saltedSession = true
+
+            // Проверяем, что файл на диске пользователя не вырос и не уменьшился с момента Кадра 0
+            if (
+              file.size !== desc.size ||
+              (desc.lastModified > 0 && file.lastModified !== desc.lastModified)
+            ) {
+              if (ws.readyState === WS_OPEN) {
+                const abortMsg: WsClientAbortFileMessage = {
+                  type: 'abort-file',
+                  reqId: msg.reqId,
+                  fileId: msg.fileId,
+                  code: 'file.changed',
+                }
+                ws.send(JSON.stringify(abortMsg))
+              }
+              return
+            }
 
             // Фиксируем подтверждённый сервером прогресс предыдущих сегментов
             const ackPct =
@@ -275,12 +328,33 @@ export function wsFormTransport(
               const sliceBuf = await file.slice(msg.offset, msg.offset + msg.length).arrayBuffer()
               if (settled || ws.readyState !== WS_OPEN) return
 
+              // Повторно сверяем длину реально вычитанного среза и метаданные файла
+              if (sliceBuf.byteLength !== msg.length || file.size !== desc.size) {
+                const abortMsg: WsClientAbortFileMessage = {
+                  type: 'abort-file',
+                  reqId: msg.reqId,
+                  fileId: msg.fileId,
+                  code: 'file.changed',
+                }
+                ws.send(JSON.stringify(abortMsg))
+                return
+              }
+
+              const sliceBytes = new Uint8Array(sliceBuf)
+              let hmacTag: Uint8Array | undefined
+              if (msg.salt) {
+                const chain = await getChainForFile(msg.salt, desc)
+                if (chain) {
+                  hmacTag = await chain.nextSegmentTag(msg.segmentIndex, msg.offset, sliceBytes)
+                }
+              }
+
               while (ws.bufferedAmount > highWaterMark && ws.readyState === WS_OPEN && !settled) {
                 await waitMs(10)
               }
               if (settled || ws.readyState !== WS_OPEN) return
 
-              const frame = packBinarySegment(msg.reqId, new Uint8Array(sliceBuf))
+              const frame = packBinarySegment(msg.reqId, sliceBytes, hmacTag)
               ws.send(frame)
 
               const newReceived = msg.offset + msg.length
@@ -302,27 +376,27 @@ export function wsFormTransport(
                 recentSegments: updatedLog,
               })
 
-              const everyDone = [...progressById.values()].every((item) => item.receivedBytes >= item.size)
+              const everyDone = [...progressById.values()].every(
+                (item) => item.receivedBytes >= item.size,
+              )
               if (everyDone) {
                 allBytesSent = true
                 emitProgress('processing')
               } else {
                 emitProgress('uploading')
               }
-            } catch (err) {
-              ws.close(1011, 'File read failed')
-              finish({
-                kind: 'result',
-                result: externalFailureResult(
-                  req.envelope,
-                  500,
-                  'ws.file-read-failed',
-                  `Не удалось прочитать выбранный файл: ${String(err)}`,
-                  'not-applied',
-                ),
-              })
+            } catch {
+              if (ws.readyState === WS_OPEN) {
+                const abortMsg: WsClientAbortFileMessage = {
+                  type: 'abort-file',
+                  reqId: msg.reqId,
+                  fileId: msg.fileId,
+                  code: 'file.unreadable',
+                }
+                ws.send(JSON.stringify(abortMsg))
+              }
             }
-          })()
+          })
           return
         }
 

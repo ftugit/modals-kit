@@ -29,6 +29,7 @@ export interface UploadedDemoRecord {
   readonly size: number
   readonly url: string
   readonly transport: 'ws' | 'http'
+  readonly integrityVerified?: boolean
   readonly createdAt: string
 }
 
