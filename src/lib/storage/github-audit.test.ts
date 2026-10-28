@@ -13,7 +13,7 @@ import {
   StorageUploadError,
 } from './index.js'
 import { jsonLedger, localDriver } from './local.js'
-import { S3_MIN_PART_BYTES, s3Driver } from './s3.js'
+import { parseS3Url, S3_MIN_PART_BYTES, s3Driver } from './s3.js'
 import { StreamFile } from './stream-file.js'
 import { webdavDriver } from './webdav.js'
 
@@ -467,5 +467,218 @@ describe('GitHub Code Search audit regressions (#lib/storage)', () => {
     )
     expect(badRange416.status).toBe(416)
     expect(badRange416.headers.get('content-disposition')).toBeNull()
+  })
+
+  it('S5b (свежие инди-релизы WebDAV): redirect=manual, отклонение HTML 200 OK на PROPFIND, HREF-ESCAPE и числовые XML-сущности', async () => {
+    const redirectsSeen: Array<RequestRedirect | undefined> = []
+    let mode: 'html200' | 'redirect302' | 'listing' = 'html200'
+
+    const mockDavFetch: typeof fetch = async (_input, init) => {
+      redirectsSeen.push(init?.redirect)
+      if (mode === 'redirect302') {
+        return new Response(null, { status: 302, headers: { location: 'https://evil.example/login' } })
+      }
+      if (mode === 'html200') {
+        return new Response('<!doctype html><html><body>SSO Login</body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })
+      }
+      return new Response(
+        `<?xml version="1.0" encoding="utf-8"?>
+        <D:multistatus xmlns:D="DAV:">
+          <D:response>
+            <D:href>/root/sub/</D:href>
+            <D:propstat>
+              <D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>
+              <D:status>HTTP/1.1 200 OK</D:status>
+            </D:propstat>
+          </D:response>
+          <D:response>
+            <D:href>/root/other-tenant/secret.pdf</D:href>
+            <D:propstat>
+              <D:prop><D:resourcetype/><D:getcontentlength>777</D:getcontentlength></D:prop>
+              <D:status>HTTP/1.1 200 OK</D:status>
+            </D:propstat>
+          </D:response>
+          <D:response>
+            <D:href>/root/sub/%2e%2e/escape.pdf</D:href>
+            <D:propstat>
+              <D:prop><D:resourcetype/><D:getcontentlength>888</D:getcontentlength></D:prop>
+              <D:status>HTTP/1.1 200 OK</D:status>
+            </D:propstat>
+          </D:response>
+          <D:response>
+            <D:href>/root/sub/&#1055;ривет%20&#x27;ok&#x27;.txt</D:href>
+            <D:propstat>
+              <D:prop>
+                <D:resourcetype/>
+                <D:getcontentlength>42</D:getcontentlength>
+                <D:getetag>&quot;e&#x2d;1&quot;</D:getetag>
+              </D:prop>
+              <D:status>HTTP/1.1 200 OK</D:status>
+            </D:propstat>
+          </D:response>
+        </D:multistatus>`,
+        { status: 207, headers: { 'content-type': 'application/xml' } },
+      )
+    }
+
+    const dav = webdavDriver({
+      endpoint: 'https://dav.indie.test',
+      username: 'u',
+      password: 'p',
+      basePath: 'root',
+      fetchImpl: mockDavFetch,
+    })
+
+    // HTML 200 OK от SSO/прокси НЕ маскируется под отсутствие файла (null) или пустую папку ([])
+    await expect(dav.head('sub/file.txt')).rejects.toThrow(/multistatus/)
+    await expect(dav.listObjects('sub')).rejects.toThrow(/multistatus/)
+
+    // 302 редирект при redirect: 'manual' не превращает PUT в GET 200
+    mode = 'redirect302'
+    await expect(
+      dav.put({
+        path: 'sub/file.txt',
+        stream: new Blob([new Uint8Array([1, 2])]).stream() as ReadableStream<Uint8Array>,
+        size: 2,
+        contentType: 'text/plain',
+        lastModified: Date.now(),
+      }),
+    ).rejects.toThrow(/302/)
+    expect(redirectsSeen.every((r) => r === 'manual')).toBe(true)
+
+    // HREF-ESCAPE записи вне `/root/sub/` отбрасываются без падения, а десятичные/hex XML-сущности декодируются
+    mode = 'listing'
+    const listed = await dav.listObjects('sub')
+    expect(listed).toHaveLength(1)
+    expect(listed[0]!.path).toBe("sub/Привет 'ok'.txt")
+    expect(listed[0]!.etag).toBe('e-1')
+  })
+
+  it('S5b (свежие инди-релизы S3): нативный внутрисерверный CopyObject без скачивания GET, проверка <Error> в 200 OK и регионы DO/Wasabi/Scaleway/R2-EU', async () => {
+    expect(parseS3Url('s3://k:s@acc.eu.r2.cloudflarestorage.com/b').region).toBe('auto')
+    expect(parseS3Url('s3://k:s@nyc3.digitaloceanspaces.com/b').region).toBe('nyc3')
+    expect(parseS3Url('s3://k:s@s3.eu-central-1.wasabisys.com/b').region).toBe('eu-central-1')
+    expect(parseS3Url('s3://k:s@s3.fr-par.scw.cloud/b').region).toBe('fr-par')
+
+    const objects = new Map<string, { bytes: Uint8Array<ArrayBuffer>; contentType: string }>()
+    let getCount = 0
+    let copySources: string[] = []
+    let failCopyWith200Error = false
+    const redirects: Array<RequestRedirect | undefined> = []
+
+    const mockS3Fetch: typeof fetch = async (input, init) => {
+      const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const method = (init?.method ?? 'GET').toUpperCase()
+      redirects.push(init?.redirect)
+      const u = new URL(urlStr)
+      const headers = new Headers(init?.headers)
+
+      if (method === 'PUT' && headers.has('x-amz-copy-source')) {
+        const srcHeader = headers.get('x-amz-copy-source')!
+        copySources.push(srcHeader)
+        if (failCopyWith200Error) {
+          return new Response(
+            `<?xml version="1.0"?><Error><Code>InternalError</Code><Message>Copy &#x27;failed&#x27;</Message></Error>`,
+            { status: 200, headers: { 'content-type': 'application/xml' } },
+          )
+        }
+        const hit = objects.get(srcHeader)
+        if (!hit) return new Response('NoSuchKey', { status: 404 })
+        const clone = new Uint8Array(new ArrayBuffer(hit.bytes.byteLength))
+        clone.set(hit.bytes)
+        objects.set(u.pathname, { bytes: clone, contentType: hit.contentType })
+        return new Response(`<CopyObjectResult><ETag>"copied"</ETag></CopyObjectResult>`, {
+          status: 200,
+        })
+      }
+
+      if (method === 'PUT') {
+        const buf = new Uint8Array(await new Response(init?.body as BodyInit).arrayBuffer())
+        objects.set(u.pathname, {
+          bytes: buf,
+          contentType: headers.get('content-type') ?? 'application/octet-stream',
+        })
+        return new Response(null, { status: 200, headers: { etag: '"put"' } })
+      }
+
+      if (method === 'HEAD') {
+        const hit = objects.get(u.pathname)
+        if (!hit) return new Response(null, { status: 404 })
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'content-length': String(hit.bytes.byteLength),
+            'content-type': hit.contentType,
+          },
+        })
+      }
+
+      if (method === 'GET') {
+        getCount += 1
+        const hit = objects.get(u.pathname)
+        if (!hit) return new Response(null, { status: 404 })
+        return new Response(hit.bytes, { status: 200 })
+      }
+
+      if (method === 'DELETE') {
+        objects.delete(u.pathname)
+        return new Response(null, { status: 204 })
+      }
+
+      return new Response(null, { status: 405 })
+    }
+
+    const storage = createStorage({
+      servers: {
+        s3: {
+          driver: s3Driver({
+            endpoint: 'https://s3.indie.test',
+            bucket: 'media',
+            basePath: 'p',
+            accessKeyId: 'ak',
+            secretAccessKey: 'sk',
+            fetchImpl: mockS3Fetch,
+          }),
+          key: 'same-enc-key',
+          limits: { storageBytes: 10_000_000, fileBytes: 5_000_000 },
+        },
+      },
+    })
+
+    const raw = deterministicBytes(8192, 19)
+    await storage.put({ path: 'draft/clip (1)!.mp4', body: raw, contentType: 'video/mp4' })
+
+    // Сбой `<Error>` внутри 200 OK на CopyObject обязан выбрасывать ошибку (с декодированием &#x27;)
+    failCopyWith200Error = true
+    await expect(
+      storage.copy({
+        path: 'draft/clip (1)!.mp4',
+        toPath: 'pub/clip.mp4',
+        from: 's3',
+        to: 's3',
+      }),
+    ).rejects.toThrow(/Copy 'failed'/)
+
+    // Успешный move внутри одного S3-бакета копирует серверно через x-amz-copy-source (getCount === 0!)
+    failCopyWith200Error = false
+    copySources = []
+    const moved = await storage.move({
+      path: 'draft/clip (1)!.mp4',
+      toPath: 'pub/clip.mp4',
+      from: 's3',
+      to: 's3',
+    })
+    expect(moved.path).toBe('pub/clip.mp4')
+    expect(getCount).toBe(0)
+    expect(copySources).toEqual(['/media/p/draft/clip%20%281%29%21.mp4'])
+    expect(redirects.every((r) => r === 'manual')).toBe(true)
+
+    // При чтении расшифрованные байты совпадают побайтно (включая кэш HKDF и раздельные key usages)
+    const readBack = await storage.lazy('pub/clip.mp4')
+    expect(new Uint8Array(await readBack!.arrayBuffer())).toEqual(raw)
+    expect(getCount).toBe(1)
   })
 })

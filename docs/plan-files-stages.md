@@ -27,22 +27,22 @@
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
 3. **Точка остановки (`STOPPED AT`):** Этапы **`S0` + `S0-S3` + `S0.5` + `S1` + `S2` + `S3`**
    отправлены в `origin/img` (`e12d465`, `21bb85c`, `3133071`; слияние с параллельной веткой — `e323922`),
-   и поверх них локально завершён этап **`S4`** — потоковый `storage.upload(request, options)` на
-   `@remix-run/form-data-parser/future`, методы `storage.has()` и `storage.list()`, карантин и
-   авто-фейловер серверов `cooldownMs` (запись + чтение реплик + телеметрия `server:cooldown` /
-   `server:recovered`), а также переходник приложения `src/hooks/storage-db.ts` (`pgStorageLedger`
-   поверх `#lib/db` с часами `clock_timestamp()` и `cacheStorageStore` поверх `#lib/cache`).
+   и поверх них локально завершены этап **`S4`** (`a58e598`) и двухпроходный аудит по GitHub Code Search
+   **`S5a` + `S5b`** (первый проход по эталонным пакетам + второй проход по свежим релизам октября 2026
+   менее популярных авторов: `LeLibrary v5.7.1`, `wicaby v0.14.2`, `object-storage`, `lucid-cms`,
+   `sharedworld v0.5.4`).
 
 ---
 
-## Состояние этапов по коммитам (обновлено 2026-10-28)
+## Состояние этапов по коммитам (обновлено 2026-10-29)
 
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
 | **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3` + `S0.5`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), `s3Driver` (`aws4fetch`, `s3://` DSN, Multipart Upload `>= 5 МиБ`, `Range GET`), `storage.probe(server)`, универсальный `#hooks/cookie-vault` + `<CookieVault>` и кнопка в `DemoPanel` (модалка + роут, `0` ключей в `.env`/БД) | **Выполнено и отправлено в `origin/img`** | `4ab27b0`..`e12d465` |
 | **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и отправлено в `origin/img`** | `21bb85c` |
 | **1c. Адаптер `webdav` и документация (`S3`)** | Серверный адаптер `webdav.ts` (`MKCOL`/`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`, DSN `webdav://`), поддержка `webdav://` в куки-сейфе, `src/lib/storage/README.md`, живая проверка на Облаке Mail.ru | **Выполнено и отправлено в `origin/img`** | `3133071` |
-| **1d. Потоковый `upload(request)`, `has`/`list`, `cooldownMs` и связка `#hooks/storage-db` (`S4`)** | Потоковый `storage.upload(request, options)` (`@remix-run/form-data-parser/future`, `accept`, `maxFiles`, `maxFileSize`, атомарный откат), `storage.has()` и `storage.list()`, карантин упавших серверов `cooldownMs` с авто-фейловером записи и чтения реплик, переходник `src/hooks/storage-db.ts` (`pgStorageLedger` на `#lib/db` + `cacheStorageStore` на `#lib/cache`) | **Выполнено и проверено локально** | локальный коммит на `img` |
+| **1d. Потоковый `upload(request)`, `has`/`list`, `cooldownMs` и связка `#hooks/storage-db` (`S4`)** | Потоковый `storage.upload(request, options)` (`@remix-run/form-data-parser/future`, `accept`, `maxFiles`, `maxFileSize`, атомарный откат), `storage.has()` и `storage.list()`, карантин упавших серверов `cooldownMs` с авто-фейловером записи и чтения реплик, переходник `src/hooks/storage-db.ts` (`pgStorageLedger` на `#lib/db` + `cacheStorageStore` на `#lib/cache`) | **Выполнено и проверено локально** | `a58e598` |
+| **1e. Двухпроходный аудит и закалка краевых случаев по GitHub Code Search (`S5a` + `S5b`)** | Lookahead одиночного `PUT` для потоков неизвестной длины `<= 5 MiB`, проверка `<Error>` в `200 OK` `CompleteMultipartUpload` и нативный `CopyObject` (`x-amz-copy-source`), `redirect: 'manual'`, проверка `multistatus` XML и `HREF-ESCAPE` в WebDAV, обход утечки `Blob#stream()` в Node `< 24.20` (`nodejs/node#63574`), снятие скрытого потолка `2 MiB` и пустых `<input type="file">` в `upload()`, честная обработка `ENOENT` в `local.ts`, проверка усечения хвоста `crypto.ts` и межинстансный `pg_advisory_xact_lock` в `pgStorageLedger` | **Выполнено и проверено локально** | `5b76fda` + локальный коммит `S5b` |
 
 ---
 

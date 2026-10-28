@@ -21,6 +21,9 @@ export const S3_MIN_PART_BYTES = 5 * 1024 * 1024
 /** Максимальное число частей одного S3 Multipart Upload по стандарту S3/B2/R2 (`10 000`). */
 export const S3_MAX_PARTS = 10_000
 
+/** Потолок одиночного серверного `CopyObject` (`x-amz-copy-source`) по стандарту S3 (`5 ГиБ`). */
+export const S3_MAX_COPY_OBJECT_BYTES = 5 * 1024 * 1024 * 1024
+
 /** Порог перехода с одиночного потокового `PUT` на S3 Multipart Upload по умолчанию (`64 МиБ`). */
 export const DEFAULT_S3_MULTIPART_THRESHOLD_BYTES = 64 * 1024 * 1024
 
@@ -52,8 +55,13 @@ export type S3DriverInput = string | URL | S3DriverOptions
 function inferS3RegionFromHost(hostname: string): string {
   const host = hostname.toLowerCase()
   if (host.endsWith('.r2.cloudflarestorage.com')) return 'auto'
-  const m = /^s3[.-]([a-z0-9-]+)\.(?:backblazeb2|amazonaws)\.com$/i.exec(host)
+  const m =
+    /^s3[.-]([a-z0-9-]+)\.(?:backblazeb2\.com|amazonaws\.com|wasabisys\.com|scw\.cloud)$/i.exec(
+      host,
+    )
   if (m?.[1]) return m[1].toLowerCase()
+  const doMatch = /^([a-z0-9-]+)\.digitaloceanspaces\.com$/i.exec(host)
+  if (doMatch?.[1]) return doMatch[1].toLowerCase()
   return 'auto'
 }
 
@@ -179,14 +187,33 @@ function xmlEscape(raw: string): string {
     .replace(/'/g, '&apos;')
 }
 
+const NAMED_XML_ENTITIES: Readonly<Record<string, string>> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
 function decodeXmlEntities(raw: string): string {
-  return raw
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
+  return raw.replace(
+    /&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|amp|lt|gt|quot|apos);/g,
+    (entity, token: string) => {
+      if (token.startsWith('#x')) {
+        const cp = Number.parseInt(token.slice(2), 16)
+        return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff
+          ? String.fromCodePoint(cp)
+          : entity
+      }
+      if (token.startsWith('#')) {
+        const cp = Number.parseInt(token.slice(1), 10)
+        return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff
+          ? String.fromCodePoint(cp)
+          : entity
+      }
+      return NAMED_XML_ENTITIES[token] ?? entity
+    },
+  )
 }
 
 function extractXmlTag(xml: string, tag: string): string | null {
@@ -257,6 +284,7 @@ export function s3Driver(
     })
     return runtimeFetch(signed.url, {
       method: signed.method,
+      redirect: 'manual',
       headers: signed.headers,
       body: init.body,
       signal: init.signal,
@@ -788,6 +816,65 @@ export function s3Driver(
         throw new Error(`[storage/s3] DELETE failed (${res.status}) for «${cleanPath}»`)
       }
       return true
+    },
+
+    async copyObject(
+      fromPath: string,
+      toPath: string,
+      copyOptions?: { readonly overwrite?: boolean; readonly signal?: AbortSignal },
+    ): Promise<DriverStoredMeta> {
+      copyOptions?.signal?.throwIfAborted()
+      const cleanFrom = normalizeStoragePath(fromPath)
+      const cleanTo = normalizeStoragePath(toPath)
+
+      const srcMeta = await this.head(cleanFrom)
+      if (!srcMeta) {
+        throw new RangeError(`[storage/s3] исходный объект не найден для копирования: «${cleanFrom}»`)
+      }
+
+      if (srcMeta.size <= S3_MAX_COPY_OBJECT_BYTES) {
+        const copySource = `/${bucketEncoded}/${encodeS3KeyPath(objectKeyOf(cleanFrom))}`
+        const res = await signedFetch(objectUrlOf(cleanTo), {
+          method: 'PUT',
+          headers: {
+            'x-amz-copy-source': copySource,
+            'x-amz-metadata-directive': 'COPY',
+            ...(copyOptions?.overwrite === false ? { 'if-none-match': '*' } : {}),
+          },
+          signal: copyOptions?.signal,
+        })
+        const xml = await res.text()
+        const hasXmlError = /<(?:[A-Za-z0-9_.-]+:)?Error\b/i.test(xml)
+        if (!res.ok || hasXmlError) {
+          const errCode = extractXmlTag(xml, 'Code')
+          const errMsg = extractXmlTag(xml, 'Message')
+          const detail =
+            errCode || errMsg ? `${errCode ?? 'Error'}: ${errMsg ?? ''}`.trim() : xml.slice(0, 240)
+          throw new Error(
+            `[storage/s3] CopyObject «${cleanFrom}» -> «${cleanTo}» failed (${res.status}): ${detail}`,
+          )
+        }
+        const dstMeta = await this.head(cleanTo)
+        if (!dstMeta) {
+          throw new Error(
+            `[storage/s3] после CopyObject объект «${cleanTo}» не обнаружен через HEAD`,
+          )
+        }
+        return dstMeta
+      }
+
+      const srcLazy = await this.lazy(cleanFrom)
+      if (!srcLazy) {
+        throw new RangeError(`[storage/s3] исходный объект исчез во время копирования: «${cleanFrom}»`)
+      }
+      return this.put({
+        path: cleanTo,
+        stream: srcLazy.stream(),
+        size: srcMeta.size,
+        contentType: srcMeta.contentType,
+        lastModified: srcMeta.lastModified,
+        signal: copyOptions?.signal,
+      })
     },
   }
 }
