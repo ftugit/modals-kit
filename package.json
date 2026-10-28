@@ -55,6 +55,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
     "axe-core": "^4.13.0",
     "happy-dom": "^21.0.4",
     "playwright": "^1.63.0",
@@ -76,6 +77,9 @@
     "@jsquash/png": "^3.1.1",
     "@jsquash/webp": "^1.5.0",
     "@noble/ed25519": "^3.2.0",
+    "@remix-run/fs": "^1.0.0",
+    "@remix-run/lazy-file": "^5.0.8",
+    "@remix-run/response": "^1.0.1",
     "@standard-schema/spec": "^1.1.0",
     "@vercel/functions": "^3.10.1",
     "clsx": "^2.1.1",
@@ -83,7 +87,8 @@
     "image-q": "^4.0.0",
     "iron-webcrypto": "^2.0.0",
     "pg": "^8.23.0",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "ws": "^8.22.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

@@ -225,7 +225,7 @@
 Каждый шаг завершается своим набором проверок и отдельным локальным Git-коммитом
 (`<local_git_checkpoints>`).
 
-- [ ] **`P0` — Синхронизация `origin/img`, окружение и зависимости**
+- [x] **`P0` — Синхронизация `origin/img`, окружение и зависимости** (`5ba1576` подтянут через `git rebase origin/img`, оба плана целы по `sha256sum`; установлен Node `v22.23.4`, добавлены `@remix-run/{lazy-file,response,fs}`, `ws`, `@types/ws`; `svelte-check` 0 errors, стражи 129/129 green)
   - Обновить `backup/plans-snapshot`, выполнить `git fetch origin img` и аккуратно
     поднять ветку поверх свежего `origin/img`, убедившись, что оба файла
     `docs/plan-files-stages.md` и `docs/plan-upload-prototype.md` на месте.
