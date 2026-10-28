@@ -175,3 +175,36 @@ test('конфиг-модель: новый ключ умолчания — то
     await assert.rejects(() => rows.update(asMe, own.id, { value: 'x' }), forbidden)
   })
 })
+
+test('приватность профиля (этап 8): строка видна по ключу конфига — гостю all, вошедшему users, nobody — никому', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const profiles = db.resource(profile)
+    const rows = db.resource(config)
+    const me = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    await profiles.insert(SERVER, { auth_id: me.id, nickname: 'Вася' })
+    const guest = { principal: { roles: [] as string[] } }
+    const stranger = other()
+
+    const seen = async (ctx: typeof guest | typeof stranger) =>
+      (await profiles.select(ctx)).length
+
+    // без строки конфига — как раньше: чужим не видна
+    assert.equal(await seen(guest), 0)
+    assert.equal(await seen(stranger), 0)
+
+    await rows.insert(SERVER, { auth_id: me.id, key: 'profile.visibility', value: 'all' })
+    assert.equal(await seen(guest), 1)
+    assert.equal(await seen(stranger), 1)
+
+    await rows.update(SERVER, String((await rows.select(SERVER))[0]!.id), { value: 'users' })
+    assert.equal(await seen(guest), 0)
+    assert.equal(await seen(stranger), 1)
+
+    await rows.update(SERVER, String((await rows.select(SERVER))[0]!.id), { value: 'nobody' })
+    assert.equal(await seen(guest), 0)
+    assert.equal(await seen(stranger), 0)
+    // владелец свою строку видит при любом уровне
+    assert.equal((await profiles.select(owner(me.id))).length, 1)
+  })
+})

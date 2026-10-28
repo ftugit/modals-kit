@@ -146,9 +146,26 @@ export type ProfileView = {
   updatedAt: number
 }
 
+/** Уровень видимости профиля (ключ конфига `profile.visibility`). */
+export type VisibilityLevel = 'all' | 'users' | 'nobody'
+
+/**
+ * Публичная проекция профиля для чужих и гостей: только то, что владелец
+ * разрешил уровнем видимости. `id`/`authId`/`updatedAt` сюда не входят.
+ */
+export type PublicProfileView = {
+  nickname: string | null
+  avatarUrl: string | null
+  createdAt: number
+}
+
 /** Итог чтения профиля доменом: строка (если видна) и признак «не создан». */
 export type ProfileRead = {
   profile: ProfileView | null
+  /** Вызывающий — сам владелец цели (блок приватности показывается только ему). */
+  isOwn: boolean
+  /** Эффективный уровень видимости цели (конфиг: юзер → умолчание → бутстрап). */
+  visibility: VisibilityLevel
   /**
    * Строки нет, но вызывающий вправе её видеть (владелец или права чтения):
    * экран покажет заглушку «профиль не создан», а не отказ. Без прав
@@ -192,6 +209,12 @@ export type ProfileRouteData = {
   /** id аккаунта из адреса. */
   uid: string
   profile: ProfileView | null
+  /** Публичная проекция, если обычное чтение недоступно, а уровень видимости разрешает показ. */
+  publicProfile: PublicProfileView | null
+  /** Вызывающий — владелец цели (для блока приватности в показе). */
+  isOwn: boolean
+  /** Эффективный уровень видимости цели. */
+  visibility: VisibilityLevel
   /** Профиля нет, но смотреть можно: заглушка «не создан» вместо отказа. */
   notCreated: boolean
   /** Вызывающий вправе править этот профиль: кнопка и гейт редактирования. */

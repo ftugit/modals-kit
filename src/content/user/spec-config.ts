@@ -18,6 +18,8 @@ export interface ConfigKeyInfo {
 }
 
 /** Ключи, которые читает код. Ключ вне каталога — только данные (раздел управления, свой потребитель). */
+export const VISIBILITY_KEY = 'profile.visibility'
+
 export const CONFIG_KEYS = {
   'profile.visibility': {
     title: 'Кто видит профиль',

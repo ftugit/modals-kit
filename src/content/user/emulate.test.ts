@@ -450,6 +450,8 @@ describe('профиль', () => {
     // свой профиль не создан: владелец видит именно отсутствие
     expect(ok_(await profile(ports, outA.access))).toEqual({
       profile: null,
+      isOwn: true,
+      visibility: 'nobody',
       notCreated: true,
       canEdit: true,
       canDeleteProfile: true,
@@ -459,6 +461,8 @@ describe('профиль', () => {
     // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
     expect(ok_(await profile(ports, outB.access, subA))).toEqual({
       profile: null,
+      isOwn: false,
+      visibility: 'nobody',
       notCreated: false,
       canEdit: false,
       canDeleteProfile: false,
@@ -470,6 +474,8 @@ describe('профиль', () => {
     auths.set(subB, { ...rowB, permissions: ['profile.read'] })
     expect(ok_(await profile(ports, outB.access, subA))).toEqual({
       profile: null,
+      isOwn: false,
+      visibility: 'nobody',
       notCreated: true,
       canEdit: false,
       canDeleteProfile: false,

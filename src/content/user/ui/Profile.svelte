@@ -21,25 +21,29 @@
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
+  import ProfilePrivacy from './profile-privacy/ProfilePrivacy.svelte'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
-  import type { ProfileRead, ProfileRouteData } from '../types.js'
+  import type { ProfileRead, ProfileRouteData, PublicProfileView } from '../types.js'
 
   interface Props {
     /** id аккаунта, чей профиль показать. */
     uid: string
     /** Данные `load` роута от носителя (страница): запроса не будет. */
     initial?: ProfileRead | null
+    /** Публичная проекция от носителя (страница): показ без полного чтения. */
+    initialPublic?: PublicProfileView | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (what: AuthErrorCode | 'not_found') => void
     class?: string
   }
 
-  let { uid, initial = null, onAcl, class: className }: Props = $props()
+  let { uid, initial = null, initialPublic = null, onAcl, class: className }: Props = $props()
 
   const asModalLink = useModalLink()
 
   let data = $state<ProfileRead | null>(untrack(() => initial))
+  let publicData = $state<PublicProfileView | null>(untrack(() => initialPublic))
   let askedFor = ''
 
   $effect(() => {
@@ -64,12 +68,18 @@
         onAcl?.(d.fact)
         return
       }
+      if (d.publicProfile) {
+        publicData = d.publicProfile
+        return
+      }
       if (!d.profile && !d.notCreated) {
         onAcl?.('not_found')
         return
       }
       data = {
         profile: d.profile,
+        isOwn: d.isOwn,
+        visibility: d.visibility,
         notCreated: d.notCreated,
         canEdit: d.canEdit,
         canDeleteProfile: d.canDeleteProfile,
@@ -113,8 +123,15 @@
     {/if}
   </div>
 {/if}
-{#if data?.profile}
+{#if publicData}
+  <ProfileCard profile={publicData} />
+{:else if data?.profile}
   <ProfileCard profile={data.profile} />
+  {#if data.isOwn}
+    <!-- Приватность — только в своём профиле и только владельцу: на чужом
+         (даже с правом правки) компонента нет. -->
+    <ProfilePrivacy level={data.visibility} class="mt-4" />
+  {/if}
 {:else if data?.notCreated}
   <section
     class={cn('flex w-full flex-col items-center gap-3 py-6 text-center', className)}
@@ -129,6 +146,9 @@
     <p class="max-w-xs text-sm text-muted-foreground">{specProfile.notCreatedText}</p>
     <p class="text-xs text-muted-foreground">{specProfile.nicknameMissing}</p>
   </section>
+  {#if data?.isOwn}
+    <ProfilePrivacy level={data.visibility} class="mt-4" />
+  {/if}
 {:else}
   <!-- Собственное ожидание компонента: носителю скелет профиля не положен. -->
   <div

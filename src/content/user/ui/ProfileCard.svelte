@@ -11,16 +11,18 @@
   import { TimeAgo } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { specProfile } from '../spec-profile.js'
-  import type { ProfileView } from '../types.js'
+  import type { ProfileView, PublicProfileView } from '../types.js'
 
   interface Props {
-    profile: ProfileView
+    /** Полный вид (свои и держатели прав) или публичная проекция (чужие/гости). */
+    profile: ProfileView | PublicProfileView
     /** Классы корневого блока (через `cn` к базовым). */
     class?: string
   }
 
   let { profile, class: className }: Props = $props()
 
+  const full = $derived('authId' in profile ? profile : null)
   const initial = $derived((profile.nickname ?? '?').slice(0, 1).toUpperCase())
 </script>
 
@@ -40,9 +42,11 @@
       <h2 class="truncate text-lg font-semibold" data-testid="profile-nickname">
         {profile.nickname ?? specProfile.nicknameMissing}
       </h2>
-      <p class="text-xs text-muted-foreground">
-        Аккаунт <code title={profile.authId}>{profile.authId.slice(0, 8)}</code>
-      </p>
+      {#if full}
+        <p class="text-xs text-muted-foreground">
+          Аккаунт <code title={full.authId}>{full.authId.slice(0, 8)}</code>
+        </p>
+      {/if}
       {#if !profile.avatarUrl}
         <p class="text-xs text-muted-foreground">{specProfile.avatarMissing}</p>
       {/if}
@@ -58,11 +62,13 @@
     <dd data-testid="profile-field-avatar">{profile.avatarUrl ? 'Загружен' : specProfile.avatarMissing}</dd>
     <dt class="text-muted-foreground">Профиль создан</dt>
     <dd data-testid="profile-field-created"><TimeAgo value={profile.createdAt} /></dd>
-    <dt class="text-muted-foreground">Обновлён</dt>
-    <dd data-testid="profile-field-updated"><TimeAgo value={profile.updatedAt} /></dd>
-    <dt class="text-muted-foreground">ID профиля</dt>
-    <dd class="min-w-0 truncate"><code class="text-xs" title={profile.id}>{profile.id}</code></dd>
-    <dt class="text-muted-foreground">ID аккаунта</dt>
-    <dd class="min-w-0 truncate"><code class="text-xs" title={profile.authId}>{profile.authId}</code></dd>
+    {#if full}
+      <dt class="text-muted-foreground">Обновлён</dt>
+      <dd data-testid="profile-field-updated"><TimeAgo value={full.updatedAt} /></dd>
+      <dt class="text-muted-foreground">ID профиля</dt>
+      <dd class="min-w-0 truncate"><code class="text-xs" title={full.id}>{full.id}</code></dd>
+      <dt class="text-muted-foreground">ID аккаунта</dt>
+      <dd class="min-w-0 truncate"><code class="text-xs" title={full.authId}>{full.authId}</code></dd>
+    {/if}
   </dl>
 </section>

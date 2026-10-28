@@ -8,7 +8,8 @@
  * таблицы auth/session — технические. Права ключами доступа — README lib/db §7;
  * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
-import { defineResource, f, field, policy, s, type Resource } from '#lib/db/index.js'
+import { defineResource, f, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
+import { VISIBILITY_KEY } from './spec-config.js'
 
 /**
  * seed — публичная половина связки ключей (base64url ed25519: 32 байта → 43
@@ -68,8 +69,28 @@ export const profile: Resource = defineResource({
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   policy: {
-    // Владелец — всегда; админ и держатели прав видят все строки.
-    select: policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit']),
+    // Владелец — всегда; админ и держатели прав видят все строки. Плюс
+    // публичная видимость из конфига (этап 8): строка видна любому, если за
+    // её владельцем ключ `profile.visibility` = `all`, и любому вошедшему —
+    // если `users`. Узел `exists` по модели конфига с `policy: false`:
+    // видимость профиля — правило самого профиля, а не чтения конфига.
+    select: (ctx) => {
+      const base = policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit'])(ctx)
+      const visible = (value: string): Filter => ({
+        exists: {
+          from: config,
+          on: [['auth_id', 'auth_id']],
+          where: {
+            and: [
+              { field: 'key', op: 'eq', value: VISIBILITY_KEY },
+              { field: 'value', op: 'eq', value },
+            ],
+          },
+          policy: false,
+        },
+      })
+      return { or: [base, visible('all'), ...(ctx.principal.id ? [visible('users')] : [])] }
+    },
     // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
     insert: policy.roles(['server']),
     // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.

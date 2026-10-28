@@ -4,10 +4,22 @@
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
 import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { getEffective, setUserKey } from './config-api.js'
+import { VISIBILITY_KEY } from './spec-config.js'
 import { ADMIN_ROLE } from './permissions.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
-import type { ProfileRead, ProfileView } from './types.js'
+import type { ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
+
+/** Ключ конфига приватности профиля (этап 8): переопределение за юзером поверх глобального. */
+
+const VISIBILITY_LEVELS: readonly string[] = ['all', 'users', 'nobody']
+
+/** Эффективный уровень цели строкой уровня; чужое значение конфига — как `nobody`. */
+async function visibilityOf(ports: AuthPorts, target: string): Promise<VisibilityLevel> {
+  const v = await getEffective(ports, target, VISIBILITY_KEY)
+  return v === 'all' || v === 'users' ? v : 'nobody'
+}
 
 /**
  * Права чтения профиля — тот же список, что политика модели
@@ -58,12 +70,62 @@ export async function profile(
         until: canKnowReason ? (full.until ?? null) : null,
       }
     : null
-  const caps = { canEdit, canDeleteProfile, canDeleteSeed, fullBlock }
+  const caps = {
+    canEdit,
+    canDeleteProfile,
+    canDeleteSeed,
+    fullBlock,
+    isOwn: target === g.sub,
+    visibility: await visibilityOf(ports, target),
+  }
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
   if (row) return ok({ profile: row, notCreated: false, ...caps })
   const canRead =
     target === g.sub || PROFILE_READ_ROLES.some((role) => g.perms.includes(role))
   return ok({ profile: null, notCreated: canRead, ...caps })
+}
+
+/**
+ * Публичный показ профиля (этап 8): гостю и чужому — только проекция
+ * (`nickname`, `avatarUrl`, `createdAt`), если уровень видимости цели
+ * разрешает. Вошедший определяется токеном; битый/истёкший токен здесь —
+ * гость. Неразличимость сохранена: `nobody`, нет строки и «нельзя» —
+ * один факт `auth.identity-unknown`. Видимость строки на уровне модели
+ * держит `exists`-ветка политики профиля; домен сверяет уровень ещё раз
+ * и режет поля.
+ */
+export async function publicProfile(
+  ports: AuthPorts,
+  viewerToken: string | undefined,
+  subjectId: string,
+): Promise<UserResult<PublicProfileView>> {
+  const level = await visibilityOf(ports, subjectId)
+  if (level === 'nobody') return fail({ code: 'auth.identity-unknown' })
+  const viewer = viewerToken ? await guard(ports, viewerToken) : null
+  const logged = viewer !== null && !('code' in viewer) ? viewer : null
+  if (level === 'users' && !logged) return fail({ code: 'auth.identity-unknown' })
+  const ctx = logged
+    ? principalOfRow({ id: logged.sub, permissions: logged.perms })
+    : { principal: { roles: [] as string[] } }
+  const row = await ports.profiles.get(ctx, subjectId)
+  if (!row) return fail({ code: 'auth.identity-unknown' })
+  return ok({ nickname: row.nickname, avatarUrl: row.avatarUrl, createdAt: row.createdAt })
+}
+
+/**
+ * Сменить видимость СВОЕГО профиля: запись — конфиг-API (`setUserKey`),
+ * значение = умолчание строку не плодит. Уровень не из каталога уровней —
+ * `permissions.unknown` (прецедент «значение не из каталога»).
+ */
+export async function setVisibility(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  level: string,
+): Promise<UserResult<{ stored: boolean }>> {
+  if (!VISIBILITY_LEVELS.includes(level)) return fail({ code: 'permissions.unknown' })
+  const g = await guard(ports, accessToken)
+  if ('code' in g) return fail(g)
+  return setUserKey(ports, accessToken, g.sub, VISIBILITY_KEY, level)
 }
 
 /**

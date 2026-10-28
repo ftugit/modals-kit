@@ -10,6 +10,7 @@ import {
   createUserKey, deleteDefaultKey, getEffective, getUserKey, removeUserKey, setDefault, setUserKey,
 } from './config-api.js'
 import { generateKeyPair, sign } from './keys.js'
+import { publicProfile, setVisibility } from './profile.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import type { ProfileView, SessionRecord } from './types.js'
@@ -27,6 +28,7 @@ function makePorts() {
   const store = memoryStore()
   const auths = new Map<string, AuthRow>()
   const sessions = new Map<string, SessionRecord>()
+  const profileRows = new Map<string, ProfileView>()
   const created = new Map<string, number>()
   let lastCtx: unknown = null
   let lastListArgs: unknown = null
@@ -130,12 +132,26 @@ function makePorts() {
       },
     },
     profiles: {
-      async create() {},
-      async get() {
-        return undefined as ProfileView | undefined
+      async create(_ctx: unknown, authId: string, patch: { nickname?: string; avatarUrl?: string }) {
+        profileRows.set(authId, {
+          id: `prof-${authId}`,
+          authId,
+          nickname: patch.nickname ?? null,
+          avatarUrl: patch.avatarUrl ?? null,
+          createdAt: 1700000000000,
+          updatedAt: 1700000000000,
+        })
       },
-      async update() {},
-      async remove() {},
+      async get(_ctx: unknown, authId: string) {
+        return profileRows.get(authId)
+      },
+      async update(_ctx: unknown, authId: string, patch: { nickname?: string; avatarUrl?: string | null }) {
+        const r = profileRows.get(authId)
+        if (r) profileRows.set(authId, { ...r, ...patch })
+      },
+      async remove(_ctx: unknown, authId: string) {
+        profileRows.delete(authId)
+      },
     },
     sealKeys: { current: () => ({ id: 'k1', secret: 's'.repeat(32) }), secretOf: () => undefined, retire: async () => {} },
     seal,
@@ -286,5 +302,37 @@ describe('конфиг-API: умолчания и схемы', () => {
     expect(fact_(await setDefault(ports, admin.access, 'prefs.lang', { schema: { assign: ['wizard'] } })).code)
       .toBe('permissions.unknown')
     expect(fact_(await setUserKey(ports, admin.access, 'no-such-user', 'prefs.theme', 'x')).code).toBe('auth.identity-unknown')
+  })
+})
+
+describe('приватность профиля (этап 8): публичный показ и смена уровня', () => {
+  test('гость видит all-проекцию без технических полей; users — отказ; вошедший видит users', async () => {
+    const { ports, auths } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const user = await joined(ports, auths)
+    const guest2 = await joined(ports, auths)
+    await ports.profiles.create({ principal: { roles: ['server'] } }, user.id, { nickname: 'Вася' })
+    ok_(await setDefault(ports, admin.access, 'profile.visibility', {
+      value: 'nobody',
+      schema: { editDefault: ['admin'], assign: ['admin', 'owner'], editUser: ['admin', 'owner'], deleteUser: ['admin', 'owner'] },
+    }))
+
+    // nobody (умолчание): никому
+    expect(fact_(await publicProfile(ports, undefined, user.id)).code).toBe('auth.identity-unknown')
+    expect(fact_(await publicProfile(ports, guest2.access, user.id)).code).toBe('auth.identity-unknown')
+
+    ok_(await setVisibility(ports, user.access, 'all'))
+    const pub = ok_(await publicProfile(ports, undefined, user.id))
+    expect(pub).toEqual({ nickname: 'Вася', avatarUrl: null, createdAt: 1700000000000 })
+    expect(Object.keys(pub).sort()).toEqual(['avatarUrl', 'createdAt', 'nickname'])
+
+    ok_(await setVisibility(ports, user.access, 'users'))
+    expect(fact_(await publicProfile(ports, undefined, user.id)).code).toBe('auth.identity-unknown')
+    expect(ok_(await publicProfile(ports, guest2.access, user.id)).nickname).toBe('Вася')
+
+    // уровень не из каталога; чужую видимость менять некому (setter — только свою)
+    expect(fact_(await setVisibility(ports, user.access, 'friends')).code).toBe('permissions.unknown')
+    expect(ok_(await setVisibility(ports, guest2.access, 'nobody'))).toEqual({ stored: false })
+    expect(fact_(await publicProfile(ports, undefined, guest2.id)).code).toBe('auth.identity-unknown')
   })
 })

@@ -26,16 +26,40 @@ export const load: PageServerLoad = async (event): Promise<ProfileRouteData> => 
 
   const u = auth(event)
   const r = await u.profile(event.params.id)
+  if (r.ok) {
+    return {
+      uid: event.params.id,
+      profile: r.value.profile,
+      publicProfile: null,
+      isOwn: r.value.isOwn,
+      visibility: r.value.visibility,
+      notCreated: r.value.notCreated,
+      canEdit: r.value.canEdit,
+      canDeleteProfile: r.value.canDeleteProfile,
+      canDeleteSeed: r.value.canDeleteSeed,
+      fullBlock: r.value.fullBlock,
+      fact: null,
+      enabled: u.enabled,
+      limits: { nicknameForbidden: await config.get('nicknameForbidden') },
+    }
+  }
 
+  // Обычное чтение недоступно (гость, чужой без прав): публичный показ
+  // проекцией, если уровень видимости цели разрешает (этап 8). Не разрешает —
+  // исходный факт: «нет/не видна» снаружи по-прежнему неразличимы.
+  const p = await u.publicProfile(event.params.id)
   return {
     uid: event.params.id,
-    profile: r.ok ? r.value.profile : null,
-    notCreated: r.ok ? r.value.notCreated : false,
-    canEdit: r.ok ? r.value.canEdit : false,
-    canDeleteProfile: r.ok ? r.value.canDeleteProfile : false,
-    canDeleteSeed: r.ok ? r.value.canDeleteSeed : false,
-    fullBlock: r.ok ? r.value.fullBlock : null,
-    fact: r.ok ? null : r.fact.code,
+    profile: null,
+    publicProfile: p.ok ? p.value : null,
+    isOwn: false,
+    visibility: 'nobody',
+    notCreated: false,
+    canEdit: false,
+    canDeleteProfile: false,
+    canDeleteSeed: false,
+    fullBlock: null,
+    fact: p.ok ? null : r.fact.code,
     enabled: u.enabled,
     limits: { nicknameForbidden: await config.get('nicknameForbidden') },
   }

@@ -66,6 +66,27 @@ const schemaSpec = {
       id: 'user-config-uq-user',
       text: 'CREATE UNIQUE INDEX IF NOT EXISTS user_config_uq_user ON public.user_config (auth_id, key) WHERE auth_id IS NOT NULL',
     },
+    // Ключ приватности профиля (этап 8): строка умолчания несёт схему
+    // прав — владелец сам ставит себе уровень (assign/editUser/deleteUser:
+    // owner), умолчание меняет админ. Значение — nobody: текущее поведение
+    // до явного выбора. Идемпотентно (WHERE NOT EXISTS по глобальному ключу).
+    {
+      id: 'user-config-seed-visibility',
+      text: `INSERT INTO public.user_config (auth_id, key, value, schema)
+             SELECT NULL, 'profile.visibility', '"nobody"'::jsonb,
+                    '{"editDefault":["admin"],"assign":["admin","owner"],"editUser":["admin","owner"],"deleteUser":["admin","owner"]}'::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM public.user_config WHERE auth_id IS NULL AND key = 'profile.visibility')`,
+    },
+    // Ключ автовыхода при смене IP (пример прав этапа 10): закрепляет и
+    // меняет только админ, владелец — только чтение (чтение схемой не
+    // закрывается: его даёт getUserKey владельцу и config.read).
+    {
+      id: 'user-config-seed-iplock',
+      text: `INSERT INTO public.user_config (auth_id, key, value, schema)
+             SELECT NULL, 'session.ipLock', 'false'::jsonb,
+                    '{"editDefault":["admin"],"assign":["admin"],"editUser":["admin"],"deleteUser":["admin"]}'::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM public.user_config WHERE auth_id IS NULL AND key = 'session.ipLock')`,
+    },
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
     // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,
     // «Запись 1» — самая старая. Новый id, а не правка старого: изменённый текст под прежним

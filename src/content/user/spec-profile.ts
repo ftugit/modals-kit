@@ -15,6 +15,10 @@ export interface SpecProfile {
   readonly notCreatedText: string
   /** Аватара нет: подпись-заглушка рядом с инициалом. */
   readonly avatarMissing: string
+  /** Заголовок блока приватности в своём профиле. */
+  readonly privacyTitle: string
+  /** Подписи уровней видимости (`all`/`users`/`nobody`) — человеку, одной строкой. */
+  readonly privacyLevels: Readonly<Record<'all' | 'users' | 'nobody', string>>
 }
 
 /** Тексты профиля по умолчанию. */
@@ -23,4 +27,10 @@ export const specProfile: SpecProfile = {
   notCreatedTitle: 'Профиль не создан',
   notCreatedText: 'Пользователь пока не заполнил профиль: никнейм и аватар появятся здесь после первого заполнения.',
   avatarMissing: 'Аватар не загружен',
+  privacyTitle: 'Кто видит ваш профиль',
+  privacyLevels: {
+    all: 'Все, включая гостей',
+    users: 'Только пользователи',
+    nobody: 'Никто, только я и администрация',
+  },
 }

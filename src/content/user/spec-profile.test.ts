@@ -8,10 +8,12 @@ describe('specProfile', () => {
       'nicknameMissing',
       'notCreatedText',
       'notCreatedTitle',
+      'privacyLevels',
+      'privacyTitle',
     ])
     for (const value of Object.values(specProfile)) {
-      expect(typeof value).toBe('string')
-      expect(value.trim().length).toBeGreaterThan(0)
+      if (typeof value === 'string') expect(value.trim().length).toBeGreaterThan(0)
     }
+    expect(Object.keys(specProfile.privacyLevels).sort()).toEqual(['all', 'nobody', 'users'])
   })
 })

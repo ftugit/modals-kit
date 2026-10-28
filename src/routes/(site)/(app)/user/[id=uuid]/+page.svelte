@@ -15,6 +15,8 @@
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}
     <Acl status={data.fact} backHref="/" />
+  {:else if data.publicProfile}
+    <Profile uid={data.uid} initialPublic={data.publicProfile} />
   {:else if !data.profile && !data.notCreated}
     <Acl model="not_found" backHref="/" />
   {:else}
@@ -22,6 +24,8 @@
       uid={data.uid}
       initial={{
         profile: data.profile,
+        isOwn: data.isOwn,
+        visibility: data.visibility,
         notCreated: data.notCreated,
         canEdit: data.canEdit,
         canDeleteProfile: data.canDeleteProfile,

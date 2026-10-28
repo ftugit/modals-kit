@@ -40,12 +40,14 @@ import { listSeedUsers as coreListSeedUsers, type ListSeedUsersArgs } from './ac
 import {
   deleteProfile as coreDeleteProfile,
   profile as coreProfile,
+  publicProfile as corePublicProfile,
+  setVisibility as coreSetVisibility,
   updateProfile as coreUpdateProfile,
 } from './profile.js'
 import { auth as authRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -556,6 +558,10 @@ export function auth(event: AuthEvent): {
   revokeSession(jti: string): Promise<UserResult<null>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
   profile(subject?: string): Promise<UserResult<ProfileRead>>
+  /** Публичный показ чужого профиля проекцией (гость допустим), если уровень видимости разрешает. */
+  publicProfile(subject: string): Promise<UserResult<PublicProfileView>>
+  /** Сменить видимость своего профиля (конфиг-API; значение = умолчание строку не плодит). */
+  setProfileVisibility(level: string): Promise<UserResult<{ stored: boolean }>>
   /** Сохранить свой профиль; `subject` — чужой (нужно право `profile.edit`/`admin`). */
   updateProfile(
     args: { nickname?: string; avatarUrl?: string | null },
@@ -652,6 +658,9 @@ export function auth(event: AuthEvent): {
     listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
     revokeSession: async (jti) => coreRevokeSession(ports, await freshAccessOrCurrent(), jti),
     profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
+    publicProfile: async (subject: string) => corePublicProfile(ports, access(), subject),
+    setProfileVisibility: async (level: string) =>
+      coreSetVisibility(ports, await freshAccessOrCurrent(), level),
     updateProfile: async (args, subject?: string) =>
       coreUpdateProfile(ports, await freshAccessOrCurrent(), args, subject),
     deleteProfile: async (args, subject?: string) => {
