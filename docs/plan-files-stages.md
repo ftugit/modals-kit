@@ -1,9 +1,8 @@
 # План: `lib/storage` — поэтапная разработка
 
-Заказ владельца. Этапы задаются владельцем по мере продвижения: разбираем,
-проверяем и утверждаем **только текущий этап**; ответы и замечания владельца
-сохраняются прямо внутри этапа; код в `src/` пишется только по явной команде
-после согласования решений.
+Заказ владельца. Этапы задаются и утверждаются по мере продвижения: все ответы и
+архитектурные решения сохраняются внутри этапа; код в `src/` пишется **только по
+явной команде владельца** после фиксации спецификации этапа.
 
 ---
 
@@ -26,10 +25,9 @@
      печатать в вывод, не логировать и не коммитить; правило о кратких статусах
      только между крупными этапами сохранено в
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
-3. **Точка остановки (`STOPPED AT`):** Этап 1 — зафиксирована единая система
-   опций конфига и вызовов (`key`, `rate`, `concurrency` со сбросом через `null` /
-   `0`) и варианты борьбы с многопоточными качалками без поломки докачки; ждём
-   выбора владельца и команды на старт кода.
+3. **Точка остановки (`STOPPED AT`):** Этап 1 — полная спецификация `#lib/storage`
+   согласована и записана ниже; **код в `src/` не начат**, ждём команды владельца
+   на старт реализации Этапа 1.
 
 ---
 
@@ -37,156 +35,302 @@
 
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
-| **1. Ядро `#lib/storage` (стриминг, шифрование ключом, лимиты скорости и потоков, перенос, `webdav`)** | Единые опции `key` / `rate` / `concurrency` в конфиге и вызовах, `serveFile` с докачкой и защитой от многопоточности, `copyTo`/`moveTo`, адаптер `webdav` (стенд Облака Mail.ru) | **На утверждении у владельца** | — |
+| **1. Независимая библиотека `#lib/storage`** | Единый мультисерверный сторадж на базе `@remix-run/*`: обязательные лимиты серверов, атомарное резервирование и учёт через адаптируемый `ledger` (в т.ч. JSON-файл из коробки, позже `lib/db` через `hooks`), опциональные `store` и `tech` с деградацией через `console.error`, потоковое шифрование `AES-256-GCM`, двусторонние `rate` и `concurrency`, нарезка файлов с догрузкой и `stageToDisk`, `copy`/`move`/`clone`, `upload`, адаптеры `local` и `webdav` | **Спецификация собрана, ждёт команды «начинай»** | — |
 
 ---
 
-# Этап 1. Стриминг, шифрование ключом, лимиты скорости/потоков, перенос и `webdav`
+# Этап 1. Спецификация независимой библиотеки `#lib/storage`
 
-## 1.1. Решения и правила владельца (хронология)
+## 1.1. Зафиксированные решения владельца
 
-1. **Готовая база стриминга:** `@remix-run/lazy-file` + `@remix-run/response`
-   (никакого SvelteKit внутри пакета — переносится в React 1-в-1). Приём файлов
-   от браузера (`form-data-parser`) и прочие облака (`local`, `r2`) пока не
-   трогаем; проверяем на личном **Облаке Mail.ru по WebDAV**.
-2. **Шифрование — своим секретным ключом:** на конечном сервере облака должен
-   храниться нечитаемый бинарный мусор; шифрование и расшифровка идут на лету в
-   потоке (блоками `AES-256-GCM` по 64 КБ с рабочей перемоткой/докачкой `Range`).
-3. **Двусторонний лимит скорости и переброска между хранилищами:** шейпинг
-   работает в любую сторону (загрузка в WebDAV, отдача клиенту, перекачка между
-   хранилищами `copyTo` / `moveTo` / `transfer`).
-4. **Единое правило конфига и переопределения в функциях (утверждено владельцем):**
-   - В конфиге `createStorage(adapter, config)` задаются базовые **`key`** и
-     **`rate`** (и по тому же принципу **`concurrency`**) — они автоматически
-     применяются ко всем вызовам, если в вызове не указано своё.
-   - В любой конкретной функции (`get`, `lazy`, `put`, `copyTo`, `moveTo`,
-     `serveFile`) можно передать свои `key` / `rate` / `concurrency`:
-     - **не передано (`undefined`)** → действует умолчание из конфига;
-     - **передано `rate: 0`** → лимит скорости для этого вызова **снят**;
-     - **передано `key: null`** → шифрование/дешифровка для этого вызова **сняты**
-       (работа с сырым незашифрованным файлом);
-     - **передано `concurrency: 0`** → лимит числа потоков для этого вызова **снят**.
-
----
-
-## 1.2. Многопоточность при скачивании: как оставить докачку (`Range`), но не дать обойти лимит
-
-### В чём проблема
-Чтобы у пользователя после обрыва интернета работала **докачка** (и работала
-перемотка `<video>`), сервер отдаёт `Accept-Ranges: bytes` (`206 Partial Content`).
-Качалки вроде **IDM / `aria2 -x 16` / FDM** видят этот заголовок и открывают
-**8–32 параллельных `Range`-потока**. Если лимит `1 МиБ/с` стоит наивно на один
-`Response`, 16 потоков выжмут `16 МиБ/с` и заодно откроют 16 параллельных
-соединений к WebDAV.
-
-### Рабочие варианты (и как они сочетаются друг с другом)
-
-| Вариант | Как работает | Докачка / видео | Что с многопоточностью и скоростью |
-|---|---|---|---|
-| **1. Общий пул скорости на субъекта (`scope: userId \| ip`)** | Все открытые потоки одного юзера/IP кормятся из **одного общего `BandwidthLimiter`** (карта активных пулов сама чистится, когда число живых потоков субъекта падает в `0`). | **100% работает** | Открыл хоть 1 поток, хоть 16 — суммарно получит **строго `1 МиБ/с`** (по `64 КБ/с` на поток). Преодолеть лимит скорости многопоточностью физически невозможно. |
-| **2A. Лимит потоков на субъекта + отказ `429` (`onExceed: 'reject'`)** | Считаем живые потоки по ключу субъекта (`scope`, например `maxConcurrent: 1` или `2`). При докачке старый поток уже мёртв → новый проходит. При параллельном 2-м/3-м потоке от IDM сервер сразу отвечает **`429 Too Many Requests`**, не трогая 1-й поток. | **Докачка 100%** (IDM/`aria2` на `429` штатно сбрасываются в 1 поток). *Минус для `<video>`:* при быстрой перемотке старый сокет иногда закрывается с задержкой в доли секунды и новый запрос может словить `429`. | Жёстко режет лишние потоки (не плодит лишние соединения к WebDAV). |
-| **2B. Лимит потоков на субъекта + вытеснение старого (`onExceed: 'preempt'`)** | При превышении `maxConcurrent` (например `1` или `2` на связку `юзер + файл`) новый запрос **принудительно делает `abort()` самому старому потоку** этого юзера и занимает его слот. | **И докачка, и `<video>`-перемотка работают идеально** (даже если старый сокет после обрыва сети ещё висел полуоткрытым — новый запрос его тут же гасит). | IDM пытается открыть поток №2 → у него тут же рвётся поток №1. Держать > N живых потоков невозможно в принципе, и к WebDAV открыто не больше N сокетов. |
-| **3. Семафор потоков на само хранилище (`storage concurrency`)** | Ограничивает суммарное число одновременных обращений всех юзеров к адаптеру (например не более `4–6` параллельных стримов к `webdav.cloud.mail.ru`), ставя лишние в очередь (`queue`) или отклоняя по таймауту. | Прозрачно для клиента | Защищает само облако Mail.ru от бана/`429` при наплыве нескольких пользователей одновременно. |
-
-*(Честная оговорка по платформам: в Node и Bun один процесс видит все запросы
-сразу — in-memory пул по `scope` работает со 100% точностью без внешних баз. На
-Vercel и Cloudflare Workers разные запросы могут попасть в разные изоляты — там
-in-memory пул режет потоки внутри одного изолята, а для глобального счёта между
-изолятами в будущем при желании подставляется внешний стор/Durable Object.)*
-
-### Вывод: это НЕ нужно откладывать на дальний этап
-Механика `BandwidthLimiter` + счётчика потоков `ConcurrencyLimiter` (`reject` /
-`preempt` / `queue`) по ключу `scope` занимает ~80 строк чистого кода без
-зависимостей и **сразу идеально ложится в твои пункты 1 и 2**! Комбинация
-**Вариант 1 (общая скорость на `scope`) + Вариант 2 (`maxConcurrent` с выбором
-`'reject'` или `'preempt'`)** одновременно:
-1. сохраняет докачку после обрыва и перемотку видео;
-2. режет саму многопоточность (не даёт плодить 16 сокетов к WebDAV);
-3. гарантирует, что даже при `maxConcurrent: 2–3` суммарная скорость всех потоков
-   юзера никогда не превысит его `rate`.
+1. **Полная автономность пакета `src/lib/storage`:**
+   - `lib/storage` **не импортирует** ни `svelte` / `@sveltejs/kit`, ни соседние
+     пакеты `#lib/db` и `#lib/cache` (переносится в React / Next.js / Hono / CLI
+     обычным копированием папки).
+   - Стриминг и HTTP опираются на готовые пакеты **`@remix-run/lazy-file`**,
+     **`@remix-run/response`**, **`@remix-run/fs`** и
+     **`@remix-run/form-data-parser`** (MIT, 0 привязки к фреймворкам).
+2. **Учёт места, резервирование и манифесты кусков — через собственный контракт `ledger` (`defineStorageLedger`):**
+   - Само приложение владеет правдой о занятом и зарезервированном месте на
+     каждом сервере, не полагаясь на кривые/отсутствующие `quota`-методы облаков.
+   - Конечным источником данных для `ledger` может быть что угодно: **в самой
+     `lib/storage` сразу даём готовую реализацию на JSON-файле (`jsonLedger`)** и
+     в памяти (`memoryLedger` для тестов), а позже в слое приложения (`src/hooks/`)
+     к тому же `defineStorageLedger` одним файлом подключается `lib/db`.
+3. **Опциональный кэш-стор (`defineStorageStore`) и тех. параметры (`tech` / `meta`) с мягкой деградацией:**
+   - `ip`, `cdnUrl` и другая техническая информация передаются из приложения, а не
+     ищутся библиотекой в заголовках/окружении.
+   - Если `store` или нужное поле `tech`/`meta` не переданы — библиотека штатно
+     работает без них; если же включён параметр, требующий их наличия (например
+     `scope: 'ip'` без `ip`, `cdn: true` без `cdnUrl`, `statTtlMs` без `store`) —
+     **параметр игнорируется, а в `console.error` пишется понятная ошибка**.
+4. **Один `createStorage` со словарём серверов, настройки — у каждого сервера свои:**
+   - `limits: { storageBytes, fileBytes }` — **обязательны** в конфиге каждого
+     сервера.
+   - `allowSplit?: boolean` — опция сервера, позволяющая запретить хранение на
+     нём нарезанных кусков (`false` → только цельные файлы).
+   - `key`, `rate`, `concurrency` задаются в конфиге конкретного сервера: не
+     переданы — этот сервер работает без шифрования, без лимита скорости и без
+     лимита потоков (например капризное облако без шифрования или резервный
+     сервер с `rate: 128 * 1024`, когда «лес горит»).
+   - В конкретном вызове (`get`, `put`, `serve`, `copy`, `move`, `clone`,
+     `upload`) можно переопределить `key` / `rate` / `concurrency` либо принудительно
+     снять настройку сервера через **`key: null`**, **`rate: 0`**,
+     **`concurrency: 0`**.
+5. **Правила нарезки файлов (`split`), резервирования и `stageToDisk`:**
+   - Нарезка включается **только если известен конечный вес файла (`size`) И
+     источник поддерживает догрузку / чтение со смещения** (`File` / `Blob` /
+     `LazyFile` либо включено сохранение на диск до отправки `stageToDisk: true`).
+   - В функции можно явно указать `splitServers: [...]`, иначе берутся серверы из
+     общего пула записи, у которых `allowSplit !== false`.
+   - До отправки первого байта заранее рассчитывается, какие серверы сколько байт
+     примут (с точным учётом оверхеда шифрования `AES-256-GCM` по 64-КБ блокам),
+     и этот объём **атомарно резервируется в `ledger`**.
+   - Для конкретного вызова можно включить **`stageToDisk: true`**: входящий поток
+     сначала сохраняется во временный файл на локальном диске (давая точный `size`
+     и возможность догрузки кусков при сбое), а после отправки на серверы удаляется.
+6. **Стенд для живой проверки:** личное Облако Mail.ru по WebDAV (с предохранителями
+   `readOnly` и `basePath`).
 
 ---
 
-## 1.3. Итоговый единый дизайн опций (пункты 1 и 2 + многопоточность)
+## 1.2. Архитектура пакета и точки входа (`src/lib/storage/entrypoints.json`)
 
-Все три регулятора — **`key`**, **`rate`**, **`concurrency`** — подчиняются
-одному и тому же правилу наследования и сброса:
+```json
+{
+  "//": "`index.js` — ядро `createStorage`, контракты `defineStorageLedger` и `defineStorageStore`, шифрование, лимитеры скорости и потоков, типы и ошибки (0 node:fs, 0 фреймворков); `webdav.js` — сервер WebDAV на чистом fetch; `local.js` — локальный диск сервера (`@remix-run/fs`), `jsonLedger` и дисковый спул `stageToDisk`; `state.js` — необязательный коллектор телеметрии.",
+  "entrypoints": ["index.js", "webdav.js", "local.js", "state.js"]
+}
+```
+*(Почему `jsonLedger` и спул диска лежат в `local.js`: им нужен `node:fs`, поэтому
+основной вход `index.js` и `webdav.js` остаются на 100% чистыми и запускаются даже
+в Cloudflare Workers / браузере / Edge без Node-полифиллов!)*
 
-| Опция | В конфиге `createStorage(adapter, opts)` | В вызове (`get`, `put`, `copyTo`, `serveFile`…) | Как полностью снять лимит в конкретном вызове |
-|---|---|---|---|
-| **`key`** (шифрование в нечитаемый файл `AES-256-GCM`) | Базовый ключ хранилища (`Uint8Array \| string`) | Свой ключ на конкретный файл/вызов; если `undefined` — берётся из конфига | Передать **`key: null`** |
-| **`rate`** (скорость потока в обе стороны, байт/с) | Базовая скорость (`number \| BandwidthLimiter`, либо раздельно `{ read, write }`) | Скорость для этого вызова (а при указании `scope` — общая на все потоки этого `scope`!); если `undefined` — из конфига | Передать **`rate: 0`** |
-| **`concurrency`** (параллельные потоки) | Потолок параллельных потоков к самому адаптеру (напр. `4` или `createConcurrencyLimiter(...)`) | Потолок потоков для этого вызова / клиента (по `scope`, с политикой `'preempt' \| 'reject' \| 'queue'`); если `undefined` — из конфига | Передать **`concurrency: 0`** |
+---
 
-### Как это выглядит в коде
+## 1.3. Финальный контракт API `#lib/storage`
+
+### 1. Контракт учёта и резервирования (`defineStorageLedger`) + `jsonLedger`
 
 ```ts
-import {
-  createStorage,
-  createClientGuard,
-  serveFile,
-} from '#lib/storage/index.js'
-import { webdav } from '#lib/storage/webdav.js'
+/** Одна физическая часть логического файла на конкретном сервере. */
+export interface StoredPart {
+  readonly index: number
+  readonly server: string
+  readonly path: string          // физический путь на этом сервере
+  readonly plainBytes: number    // полезный вес открытых байт в этой части
+  readonly storedBytes: number   // реальный вес на сервере (с заголовком и тегами шифрования)
+  readonly encrypted: boolean
+  readonly etag?: string
+}
 
-// 1. Базовый конфиг хранилища (применяется ко всем методам по умолчанию):
-const cloud = createStorage(
-  webdav({
-    url: 'https://webdav.cloud.mail.ru',
-    username: env.WEBDAV_USER,
-    password: env.WEBDAV_APP_PASSWORD,
-    basePath: '/sandbox',
-  }),
-  {
-    key: env.STORAGE_SECRET_KEY,  // все файлы шифруются в мусор по умолчанию
-    rate: 5 * 1024 * 1024,        // общий лимит 5 МиБ/с на работу с этим облаком
-    concurrency: 4,               // не более 4 параллельных потоков к Mail.ru сразу
-  },
-)
+/** Запись логического файла в реестре (цельного из 1 части или нарезанного на N серверов). */
+export interface StoredFileRecord {
+  readonly path: string          // логический путь файла в приложении
+  readonly name: string
+  readonly size: number          // полный открытый вес файла
+  readonly storedBytes: number   // суммарно занято на серверах
+  readonly type: string
+  readonly lastModified: number
+  readonly createdAt: number
+  readonly parts: readonly StoredPart[]
+}
 
-// 2. Обычные вызовы — ключ, скорость и лимит потоков из конфига подхватываются сами:
-await cloud.put('doc.pdf', stream)                  // зашифрует и зальёт <= 5 МиБ/с
-const f1 = await cloud.get('doc.pdf')               // расшифрует на лету
+/** Заявка на бронь места на одном сервере. */
+export interface ServerAllocation {
+  readonly server: string
+  readonly bytes: number         // сколько физических байт нужно забронировать
+  readonly maxStorageBytes: number // потолок этого сервера из конфига для атомарной проверки
+}
 
-// 3. Переопределение и сброс на конкретном вызове:
-await cloud.put('vip.bin', stream, {
-  key: customKey,   // свой ключ конкретно для этого файла
-  rate: 0,          // 0 -> снять лимит скорости
-  concurrency: 0,   // 0 -> не ограничивать слотом очереди
-})
+export interface LedgerReservation {
+  readonly id: string
+  readonly allocations: readonly ServerAllocation[]
+  readonly expiresAt: number
+}
 
-const raw = await cloud.get('public-readme.txt', {
-  key: null,        // null -> читать как есть, БЕЗ расшифровки
-  rate: 512 * 1024, // урезать конкретно этот поток до 512 КБ/с
-})
+export interface ServerUsageSnapshot {
+  readonly usedBytes: number
+  readonly reservedBytes: number
+  readonly filesCount: number
+  readonly partsCount: number
+}
 
-// 4. Отдача клиенту с докачкой, но без обхода лимита многопоточностью (IDM/aria2):
-//    Один guard в памяти раздаёт лимит ПОКЛЮЧЕВО (на userId или IP):
-const perUser = createClientGuard({
-  rate: 1 * 1024 * 1024, // 1 МиБ/с суммарно на ВСЕ потоки одного юзера!
-  concurrency: 2,        // максимум 2 живых потока от одного юзера
-  onExceed: 'preempt',   // (или 'reject' -> 429): новый поток гасит зависший старый
-})
+export interface StorageLedgerSpec {
+  /** Атомарно проверить остаток (used + reserved + bytes <= maxStorageBytes) и зарезервировать место. */
+  reserve(input: {
+    readonly id: string
+    readonly allocations: readonly ServerAllocation[]
+    readonly ttlMs: number
+  }): LedgerReservation | null | Promise<LedgerReservation | null>
 
-export async function GET({ request, getClientAddress }) {
-  const file = await cloud.get('doc.pdf', { signal: request.signal })
-  if (!file) return new Response('Not Found', { status: 404 })
+  /** Перевести бронь в постоянную запись файла (обновляет usedBytes и снимает reservedBytes; если по path лежал старый файл — возвращает его старые части на удаление). */
+  commit(input: {
+    readonly reservationId: string
+    readonly file: StoredFileRecord
+  }): { readonly replaced?: StoredFileRecord } | Promise<{ readonly replaced?: StoredFileRecord }>
 
-  return serveFile(file, request, {
-    guard: perUser.for(getClientAddress()), // докачка и видео работают, а 16 потоков IDM режутся и не превышают 1 МиБ/с!
-    // и тут тоже работают прямые переопределения: rate: 0 снимет лимит для админа!
-  })
+  /** Отменить бронь и вернуть зарезервированные байты (при сбое или AbortSignal). */
+  release(reservationId: string): void | Promise<void>
+
+  /** Снять протухшие брони (от упавших процессов) и вернуть их список. */
+  sweepExpired?(now?: number): number | Promise<number>
+
+  getFile(path: string): StoredFileRecord | null | Promise<StoredFileRecord | null>
+  deleteFile(path: string): StoredFileRecord | null | Promise<StoredFileRecord | null>
+  listFiles(options?: { prefix?: string; limit?: number; cursor?: string }):
+    | { entries: readonly StoredFileRecord[]; cursor?: string }
+    | Promise<{ entries: readonly StoredFileRecord[]; cursor?: string }>
+
+  /** Снимок занятого и зарезервированного места по серверам для планировщика и отчёта. */
+  usage(servers: readonly string[]): Record<string, ServerUsageSnapshot> | Promise<Record<string, ServerUsageSnapshot>>
+}
+
+export function defineStorageLedger(spec: StorageLedgerSpec): AdaptedStorageLedger
+
+/** В памяти процесса (для юнит-тестов и одноразовых скриптов). */
+export function memoryLedger(): AdaptedStorageLedger
+
+/** В `#lib/storage/local.js`: надёжный учёт в JSON-файле с in-process мьютексом и атомарной записью tmp -> rename! */
+export function jsonLedger(options: { readonly filePath: string }): AdaptedStorageLedger
+```
+
+---
+
+### 2. Опциональный кэш-стор (`defineStorageStore`) и технические параметры (`tech`)
+
+```ts
+export interface StorageStoreSpec {
+  get<T = unknown>(key: string): T | undefined | Promise<T | undefined>
+  set<T = unknown>(key: string, value: T, options?: { ttlMs?: number }): void | Promise<void>
+  delete(key: string): void | Promise<void>
+  add?<T = unknown>(key: string, value: T, options: { ttlMs: number }): boolean | Promise<boolean>
+  incr?(key: string, options: { ttlMs: number; by?: number }): number | Promise<number>
+}
+
+export function defineStorageStore(spec: StorageStoreSpec): AdaptedStorageStore
+
+export interface StorageRequestMeta {
+  readonly ip?: string
+  readonly clientId?: string
+  readonly requestId?: string
+  readonly [extra: string]: unknown
+}
+
+export interface StorageTechConfig {
+  readonly publicOrigin?: string
+  readonly resolveMeta?: (request: Request) => StorageRequestMeta | Promise<StorageRequestMeta>
 }
 ```
 
 ---
 
-## 1.4. Открытый вопрос перед стартом кода Этапа 1
+### 3. Конфиг каждого сервера и сборка `createStorage`
 
-1. Включаем всё перечисленное выше сразу в **Этап 1** (`createStorage` с
-   базовыми и переопределяемыми `key` / `rate` / `concurrency` и сбросом через
-   `null` / `0`, потоковое шифрование `AES-256-GCM`, `createClientGuard` с
-   `'preempt' | 'reject'`, `serveFile`, `copyTo`/`moveTo` и адаптер `webdav`)?
-2. Какой режим при превышении потоков одним клиентом сделать **по умолчанию** в
-   `createClientGuard`: `'preempt'` (новый `Range`-запрос гасит старый — лучше
-   всего для видео и обрывов связи) или `'reject'` (`429 Too Many Requests` —
-   классика для скачивания архивов в браузере/качалках)?
+```ts
+export interface ServerLimits {
+  readonly storageBytes: number  // ОБЯЗАТЕЛЬНО: общий объём хранилища на этом сервере
+  readonly fileBytes: number     // ОБЯЗАТЕЛЬНО: макс. вес одного физического файла на сервере
+}
+
+export interface ServerPolicyConfig {
+  readonly limits: ServerLimits
+  /** Разрешено ли хранить здесь куски нарезанных файлов (по умолчанию true). */
+  readonly allowSplit?: boolean
+  /** Блокировка записи/удаления (для безопасных тестов на живом личном облаке). */
+  readonly readOnly?: boolean
+
+  /** Опционально: не переданы -> без шифрования, без лимита скорости и потоков! */
+  readonly key?: Uint8Array | string | null
+  readonly rate?: number | BandwidthLimiter
+  readonly concurrency?: number | ConcurrencyConfig
+
+  readonly cdnUrl?: string
+  readonly statTtlMs?: number
+}
+
+export interface StorageConfig<TServers extends Record<string, StorageServer>> {
+  readonly servers: TServers
+  readonly ledger: AdaptedStorageLedger
+
+  /** Пул и стратегия выбора серверов на запись (по умолчанию все пишущие серверы в порядке объявления). */
+  readonly default?: keyof TServers & string
+  readonly writePool?: readonly (keyof TServers & string)[]
+  readonly writeStrategy?: 'priority' | 'most-free' | 'round-robin'
+  readonly cooldownMs?: number
+  readonly reservationTtlMs?: number // по умолчанию 1 час
+
+  /** Дисковый спул для вызовов со stageToDisk: true (из `#lib/storage/local.js`, например localSpool('./data/tmp')). */
+  readonly spool?: StorageSpool
+
+  /** Опционально: нет — работаем без них; при включении зависимых опций — игнор + console.error. */
+  readonly store?: AdaptedStorageStore
+  readonly tech?: StorageTechConfig
+  readonly state?: StorageStateListener
+}
+```
+
+---
+
+### 4. Методы экземпляра `Storage`
+
+```ts
+export interface CallOverrides<S extends string = string> {
+  readonly signal?: AbortSignal
+  readonly meta?: StorageRequestMeta
+  /** undefined -> настройка сервера; своё -> переопределить; null / 0 -> снять! */
+  readonly key?: Uint8Array | string | null
+  readonly rate?: number | BandwidthLimiter
+  readonly concurrency?: number | ConcurrencyConfig
+}
+
+export interface PutOptions<S extends string = string> extends CallOverrides<S> {
+  /** Записать строго на конкретный сервер целиком (без ротации). */
+  readonly server?: S
+  /** Разрешить нарезку на части и (опционально) ограничить список серверов под нарезку. */
+  readonly split?: boolean          // по умолчанию true, когда известен size и источник resumable
+  readonly splitServers?: readonly S[]
+  /** Сначала сохранить входящий поток на диск до отправки на серверы (даёт точный size и догрузку). */
+  readonly stageToDisk?: boolean
+
+  readonly size?: number
+  readonly type?: string
+  readonly lastModified?: number
+  readonly overwrite?: boolean
+}
+
+export interface Storage<S extends string = string> {
+  get(path: string, options?: CallOverrides<S> & { server?: S | readonly S[] }): Promise<LazyFile | null>
+  lazy(path: string, meta: Omit<StorageStat, 'key' | 'name'> & { name?: string; server?: S }, options?: CallOverrides<S>): LazyFile
+  has(path: string, options?: CallOverrides<S> & { server?: S }): Promise<boolean>
+  stat(path: string, options?: CallOverrides<S> & { server?: S }): Promise<StoredFileRecord | null>
+
+  put(path: string, body: StorageBody, options?: PutOptions<S>): Promise<StoredFileRecord>
+  upload(request: Request, options: UploadOptions<S>): Promise<UploadResult>
+  remove(path: string, options?: CallOverrides<S> & { server?: S }): Promise<void>
+  list(options?: StorageListOptions & { server?: S }): Promise<StorageListResult>
+
+  serve(target: string | File | StoredFileRecord, request: Request, options?: ServeOptions<S>): Promise<Response>
+
+  copy(path: string, options: CopyOptions<S>): Promise<StoredFileRecord>
+  move(path: string, options: CopyOptions<S>): Promise<StoredFileRecord>
+  clone(options: CloneOptions<S>): Promise<CloneReport<S>>
+
+  /** Сводный отчёт по всем серверам из ledger + статуса здоровья: лимиты, занято, в брони, остаток, файлы и части. */
+  report(): Promise<StorageReport<S>>
+}
+```
+
+---
+
+## 1.4. Внутренний чек-лист реализации Этапа 1 (по команде владельца)
+
+Чтобы код шёл чистыми, проверяемыми коммитами (правило 2 — коммит после каждого
+зелёного гейта):
+
+| Шаг | Содержание | Гейты и тесты |
+|---|---|---|
+| **S0. Среда и зависимости** | Поставить Node.js `>= 22.17` в `/usr/local/bin`, выполнить `npm ci`, установить `@remix-run/lazy-file`, `@remix-run/response`, `@remix-run/fs`, `@remix-run/form-data-parser` | `node -v`, `node tooling/public-api.mjs`, `npm run check` |
+| **S1. Контракты, `ledger` (`memoryLedger` + `jsonLedger`), `store`, лимитеры и потоковое шифрование** | `types.ts`, `errors.ts`, `key.ts`, `ledger.ts`, `store.ts`, `bandwidth.ts`, `concurrency.ts` (`preempt`/`reject`/`queue` + деградация `console.error`), `crypto.ts` (64-КБ `AES-256-GCM` со сдвигом `Range` и точным расчётом `encryptedSize`), `state.ts` | `vitest`: гонки резервирования в `memoryLedger` и `jsonLedger`, шифрование/расшифровка произвольных `Range`-срезов поперёк 64-КБ границ, `rate`/`concurrency` и `console.error` при отсутствии `store`/`ip` |
+| **S2. Мультисерверный движок `createStorage`: планировщик нарезки, ротация, `stageToDisk`, `serve`, `upload`, `copy`/`move`/`clone`, `report`** | Склейка частей с разных серверов в единый `LazyFile`, `serve` на `@remix-run/response` (`200`/`206`/`304`/`416` + UTF-8 `Content-Disposition`), приём от юзера `upload`, дисковый спул `localSpool`, `copy`/`move`/`clone` (с быстрым байт-в-байт путём при одинаковом `key`) | `vitest`: нарезка файла по `fileBytes` и остатку `storageBytes` между несколькими серверами, запрет нарезки при `allowSplit: false` и на не-resumable потоке без `stageToDisk`, откат брони при сбое, `206 Range` поперёк стыка двух серверов, `clone` |
+| **S3. Серверные адаптеры `local` и `webdav` + документация и стражи** | `local.ts` (`@remix-run/fs` + `jsonLedger` + `localSpool`), `webdav.ts` (`PROPFIND`, `HEAD`, `GET` с `Range`, `PUT` со стримом, `DELETE`, `COPY`, `basePath`, `readOnly`), `entrypoints.json` + добавление `src/lib/storage` в `tooling/core-purity.mjs`, подробный `src/lib/storage/README.md` | Контрактные тесты с локальным HTTP WebDAV-сервером + полный прогон `public-api`, `core-purity`, `layer-guard`, `svelte-check`, `vitest`, `vite build` (+ живой тест на Облаке Mail.ru при передаче кредов) |
