@@ -13,7 +13,12 @@ export interface ConcurrencyConfig {
   readonly queueTimeoutMs?: number
 }
 
-export type ConcurrencyInput = number | ConcurrencyConfig | null | undefined
+export type ConcurrencyInput =
+  | number
+  | ConcurrencyConfig
+  | ConcurrencyGate
+  | null
+  | undefined
 
 export class StorageConcurrencyError extends Error {
   readonly code = 'STORAGE_CONCURRENCY_LIMIT'
@@ -57,8 +62,17 @@ export interface ConcurrencyGate {
 
 const DEFAULT_QUEUE_TIMEOUT_MS = 30_000
 
+export function isConcurrencyGate(value: unknown): value is ConcurrencyGate {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ConcurrencyGate).acquire === 'function' &&
+    typeof (value as ConcurrencyGate).activeCount === 'function'
+  )
+}
+
 export function normalizeConcurrencyConfig(
-  input: ConcurrencyInput,
+  input: number | ConcurrencyConfig | null | undefined,
 ): Required<ConcurrencyConfig> | null {
   if (input === undefined || input === null || input === 0) return null
   if (typeof input === 'number') {
@@ -92,8 +106,13 @@ const NOOP_LEASE: ConcurrencyLease = {
 
 export function createConcurrencyGate(
   serverName: string,
-  config: Required<ConcurrencyConfig>,
+  input: number | ConcurrencyConfig,
 ): ConcurrencyGate {
+  const normalized = normalizeConcurrencyConfig(input)
+  if (!normalized) {
+    throw new RangeError(`[storage/concurrency] некорректная конфигурация для «${serverName}»`)
+  }
+  const config: Required<ConcurrencyConfig> = normalized
   let seq = 0
   const buckets = new Map<
     string,
@@ -263,6 +282,16 @@ export function createConcurrencyGate(
   }
 }
 
+export function normalizeServerConcurrency(
+  serverName: string,
+  input: ConcurrencyInput,
+): ConcurrencyGate | null {
+  if (input === undefined || input === null || input === 0) return null
+  if (isConcurrencyGate(input)) return input
+  const cfg = normalizeConcurrencyConfig(input)
+  return cfg ? createConcurrencyGate(serverName, cfg) : null
+}
+
 export function resolveCallConcurrency(
   serverName: string,
   serverGate: ConcurrencyGate | null,
@@ -270,6 +299,7 @@ export function resolveCallConcurrency(
 ): ConcurrencyGate | null {
   if (callConcurrency === undefined) return serverGate
   if (callConcurrency === null || callConcurrency === 0) return null
+  if (isConcurrencyGate(callConcurrency)) return callConcurrency
   const cfg = normalizeConcurrencyConfig(callConcurrency)
   return cfg ? createConcurrencyGate(serverName, cfg) : null
 }

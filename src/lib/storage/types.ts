@@ -1,6 +1,10 @@
 import type { LazyContent } from '@remix-run/lazy-file'
 import type { BandwidthLimiter, RateInput } from './bandwidth.js'
-import type { ConcurrencyConfig, ConcurrencyInput } from './concurrency.js'
+import type {
+  ConcurrencyConfig,
+  ConcurrencyGate,
+  ConcurrencyInput,
+} from './concurrency.js'
 import type { StorageEncryptionKey } from './crypto.js'
 import type { AdaptedStorageLedger, StoredFileRecord } from './ledger.js'
 import type { StorageStateListener } from './state.js'
@@ -15,6 +19,7 @@ export type {
   AdaptedStorageStore,
   BandwidthLimiter,
   ConcurrencyConfig,
+  ConcurrencyGate,
   ConcurrencyInput,
   LazyContent,
   RateInput,
@@ -116,6 +121,8 @@ export interface StoragePutInput extends StorageCallOverrides {
   readonly splitServers?: readonly string[]
   /** Сначала сохранить поток во временный спул на диске (даёт точный `size` и возможность `split` для обычного `ReadableStream`). */
   readonly stageToDisk?: boolean
+  /** Разрешить перезапись существующего файла по тому же `path` (по умолчанию `true`; при `false` бросает `StorageOverwriteError`). */
+  readonly overwrite?: boolean
 }
 
 /** Параметры чтения (`has` / `head` / `lazy` / `get`). */
@@ -354,6 +361,9 @@ export interface StorageProbeResult {
   readonly error?: string
 }
 
+/** Допустимые цели раздачи `storage.serve(target, request, options)` (§1.3.4 плана). */
+export type StorageServeTarget = string | File | StoredFileRecord
+
 /** Публичный экземпляр хранилища. */
 export interface Storage {
   readonly serverNames: readonly string[]
@@ -364,11 +374,15 @@ export interface Storage {
   upload(request: Request, options?: StorageUploadOptions): Promise<StorageUploadResult>
   has(path: string, options?: StorageReadOptions): Promise<boolean>
   head(path: string, options?: StorageReadOptions): Promise<StoredObject | null>
-  stat(path: string): Promise<StoredFileRecord | null>
+  stat(path: string, options?: StorageReadOptions): Promise<StoredFileRecord | null>
   list(options?: StorageListOptions): Promise<StorageListResult>
   get(path: string, options?: StorageReadOptions): Promise<ReadableStream<Uint8Array> | null>
   lazy(path: string, options?: StorageReadOptions): Promise<StreamFile | null>
-  serve(path: string, request: Request, options?: StorageServeOptions): Promise<Response>
+  serve(
+    target: StorageServeTarget,
+    request: Request,
+    options?: StorageServeOptions,
+  ): Promise<Response>
   del(path: string, options?: { server?: string }): Promise<boolean>
   copy(input: StorageTransferInput): Promise<StoredObject>
   move(input: StorageTransferInput): Promise<StoredObject>
