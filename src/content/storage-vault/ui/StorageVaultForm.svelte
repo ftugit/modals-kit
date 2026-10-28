@@ -18,7 +18,7 @@
 </script>
 
 <Form form={vault.form} hiddenFields={vault.hidden()} class="space-y-3" data-testid="storage-vault-entry-form">
-  <h3 class="text-sm font-semibold">Добавить или обновить S3-сервер</h3>
+  <h3 class="text-sm font-semibold">Добавить или обновить сервер (S3 / WebDAV)</h3>
   <Common errors={vault.common} />
 
   <Field of={vault.f.slot} />

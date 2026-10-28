@@ -7,6 +7,7 @@
 
 - `#lib/storage/index.js` — `createStorage`, `defineStorageLedger`, `memoryLedger`, `defineStorageStore`, `memoryStore`, `memoryDriver`, `StreamFile`, `createBandwidthLimiter`, `encryptedSize`, `decryptedSize`, ошибки (`StorageQuotaError`, `StorageReadOnlyError`, `StorageCryptoError`, `StorageConcurrencyError`).
 - `#lib/storage/s3.js` — потоковый драйвер S3 (`s3Driver(dsnOrOptions)`, `parseS3Url`, `formatS3Url`, `maskS3Url`) поверх `aws4fetch` (SigV4 streaming `PUT`, S3 Multipart Upload `>= 5 МиБ` с `AbortMultipartUpload`, `Range GET` `206`).
+- `#lib/storage/webdav.js` — потоковый драйвер WebDAV (`webdavDriver(dsnOrOptions)`, `parseWebdavUrl`, `formatWebdavUrl`, `maskWebdavUrl`) на чистом `fetch` без `node:*` (`MKCOL` с кэшированием коллекций, потоковый `PUT`, `PROPFIND`, `Range GET` `206`, `DELETE`, `COPY`, строгие `basePath` и `readOnly`; проверен на Облаке Mail.ru).
 - `#lib/storage/local.js` — Node/Bun-адаптеры: `localDriver` (`.part` -> `rename` + `@remix-run/fs`), `jsonLedger` и дисковый спул `localSpool` (для `stageToDisk: true`).
 - `#lib/storage/state.js` — необязательный коллектор телеметрии `createStorageState()`.
 

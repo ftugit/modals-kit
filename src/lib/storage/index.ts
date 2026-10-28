@@ -41,6 +41,7 @@ import {
 } from './ledger.js'
 import { basenameOfStoragePath, memoryDriver, type MemoryDriverOptions } from './memory.js'
 import { s3Driver } from './s3.js'
+import { isWebdavDsn, webdavDriver } from './webdav.js'
 import type { StorageStateListener } from './state.js'
 import {
   defineStorageStore,
@@ -203,6 +204,11 @@ function isUrlConfiguredEntry(entry: StorageServerEntry): entry is UrlConfigured
 }
 
 function driverFromUrl(rawUrl: string | URL, publicBaseUrl?: string): StorageDriver {
+  if (isWebdavDsn(rawUrl)) {
+    return webdavDriver(rawUrl, {
+      ...(publicBaseUrl ? { publicBaseUrl } : {}),
+    })
+  }
   const u = rawUrl instanceof URL ? rawUrl : new URL(String(rawUrl).trim())
   const proto = u.protocol.toLowerCase()
   if (proto === 'memory:') {
@@ -216,7 +222,7 @@ function driverFromUrl(rawUrl: string | URL, publicBaseUrl?: string): StorageDri
     })
   }
   throw new TypeError(
-    `[storage] неподдерживаемая схема URL хранилища «${u.protocol}» (ожидалась s3://, s3+http:// или memory://)`,
+    `[storage] неподдерживаемая схема URL хранилища «${u.protocol}» (ожидалась s3://, webdav:// или memory://)`,
   )
 }
 
@@ -265,11 +271,12 @@ function normalizeSlot(
         statTtlMs = entry.statTtlMs
       }
     }
+    const driverReadOnly = Boolean((driver as { readonly readOnly?: boolean }).readOnly)
     return {
       name,
       driver,
       limits: validateServerLimits(name, entry.limits),
-      readOnly: Boolean(entry.readOnly),
+      readOnly: Boolean(entry.readOnly || driverReadOnly),
       allowSplit: entry.allowSplit !== false,
       key: entry.key ?? null,
       rateLimiter: normalizeServerRate(entry.rate),
@@ -282,7 +289,7 @@ function normalizeSlot(
     name,
     driver: entry,
     limits: DEFAULT_UNBOUNDED_LIMITS,
-    readOnly: false,
+    readOnly: Boolean((entry as { readonly readOnly?: boolean }).readOnly),
     allowSplit: true,
     key: null,
     rateLimiter: null,
@@ -1881,6 +1888,102 @@ export function createStorage(config: StorageConfig): Storage {
 
       const srcKey = resolveCallKey(srcSlot.key, undefined)
       const dstKey = resolveCallKey(dstSlot.key, input.key)
+
+      // Нативный серверный `COPY` (например WebDAV `COPY` внутри одного сервера под новый путь)
+      const sameServerNativeCopy =
+        srcSlot.name === dstSlot.name &&
+        srcPath !== dstPath &&
+        typeof dstSlot.driver.copyObject === 'function' &&
+        (!recorded || (recorded.parts.length === 1 && recorded.parts[0]!.server === srcSlot.name)) &&
+        sameEncryptionKey(srcKey, dstKey)
+
+      if (sameServerNativeCopy) {
+        const part = recorded?.parts[0]
+        const headSrc = part ? null : await srcSlot.driver.head(srcPath)
+        const storedBytes = part ? part.storedBytes : (headSrc?.size ?? 0)
+        if (!part && !headSrc) {
+          throw new RangeError(
+            `[storage] исходный файл «${srcPath}» не найден на сервере «${srcSlot.name}»`,
+          )
+        }
+        if (storedBytes > dstSlot.limits.fileBytes) {
+          throw new RangeError(
+            `[storage] размер файла (${storedBytes} Б) превышает лимит файла сервера «${dstSlot.name}» (${dstSlot.limits.fileBytes} Б)`,
+          )
+        }
+        const reservationId = nextReservationId()
+        const reserved = await ledger.reserve({
+          id: reservationId,
+          allocations: [
+            {
+              server: dstSlot.name,
+              bytes: storedBytes,
+              maxStorageBytes: dstSlot.limits.storageBytes,
+            },
+          ],
+          ttlMs: reservationTtlMs,
+        })
+        if (!reserved) {
+          throw new StorageQuotaError(
+            dstSlot.name,
+            `[storage] недостаточно места на сервере «${dstSlot.name}» для копирования «${srcPath}»`,
+          )
+        }
+        try {
+          const meta = await dstSlot.driver.copyObject!(srcPath, dstPath, {
+            overwrite: true,
+            ...(input.signal ? { signal: input.signal } : {}),
+          })
+          const encrypted = part ? part.encrypted : dstKey !== null
+          const plainBytes = part
+            ? part.plainBytes
+            : encrypted
+              ? decryptedSize(meta.size)
+              : meta.size
+          const contentType = recorded?.type ?? meta.contentType
+          const lastModified = recorded?.lastModified ?? meta.lastModified
+          const nextRec: StoredFileRecord = {
+            path: dstPath,
+            name: basenameOfStoragePath(dstPath),
+            size: plainBytes,
+            storedBytes: meta.size,
+            type: contentType,
+            lastModified,
+            createdAt: Date.now(),
+            parts: [
+              {
+                index: 0,
+                server: dstSlot.name,
+                path: dstPath,
+                plainBytes,
+                storedBytes: meta.size,
+                encrypted,
+              },
+            ],
+          }
+          const { replaced } = await ledger.commit({ reservationId, file: nextRec })
+          await invalidateStatCache(dstPath)
+          if (replaced) {
+            for (const oldPart of replaced.parts) {
+              if (oldPart.server !== dstSlot.name || oldPart.path !== dstPath) {
+                const oldS = slots.get(oldPart.server)
+                if (oldS && !oldS.readOnly) {
+                  await oldS.driver.del(oldPart.path).catch(() => undefined)
+                }
+              }
+            }
+          }
+          return toStoredObject(
+            { ...meta, contentType, lastModified },
+            dstSlot,
+            plainBytes,
+            encrypted,
+          )
+        } catch (err) {
+          await ledger.release(reservationId).catch(() => undefined)
+          throw err
+        }
+      }
       const singleEncryptedMatch =
         recorded &&
         recorded.parts.length === 1 &&

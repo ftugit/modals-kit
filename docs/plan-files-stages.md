@@ -25,14 +25,13 @@
      печатать в вывод, не логировать и не коммитить; правило о кратких статусах
      только между крупными этапами сохранено в
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
-3. **Точка остановки (`STOPPED AT`):** Базовые этапы **`S0` + `S0-S3` + `S0.5`**
-   отправлены в `origin/img` (`e12d465`), и поверх них реализованы и проверены этапы
-   **`S1` + `S2`** (потоковое шифрование `AES-256-GCM` блоками 64 КиБ со сдвигом `Range`,
-   двусторонний `rate` и `concurrency` `reject`/`queue`/`preempt`, `defineStorageStore`/
-   `memoryStore` + `tech`/`meta` с деградацией в `console.error`, телеметрия `state.js`,
-   мультисерверная нарезка `split` с `allowSplit`, дисковый спул `localSpool`/`stageToDisk`
-   и `clone()`). Для следующего шага остаются: адаптер `webdav.ts` (и живой стенд WebDAV),
-   интеграция `ledger` с `#lib/db` и опциональный `storage.upload(request)`.
+3. **Точка остановки (`STOPPED AT`):** Этапы **`S0` + `S0-S3` + `S0.5` + `S1` + `S2`**
+   отправлены в `origin/img` (`e12d465`, `21bb85c`), и поверх них локально реализован и
+   проверен этап **`S3`** — потоковый адаптер `src/lib/storage/webdav.ts` (`#lib/storage/webdav.js`,
+   `MKCOL`, потоковый `PUT`, `PROPFIND`, `Range 206`, `DELETE`, `COPY`, строгие `basePath` и
+   `readOnly`, поддержка `webdav://` в `createStorage` и куки-сейфе, контрактные тесты + живой
+   стенд Облака Mail.ru и межсервисный перенос `Mail.ru WebDAV ↔ B2/R2`). Для дальнейших шагов
+   остаются опциональная связка `defineStorageLedger` с `#lib/db` и при необходимости `storage.upload(request)`.
 
 ---
 
@@ -41,8 +40,8 @@
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
 | **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3` + `S0.5`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), `s3Driver` (`aws4fetch`, `s3://` DSN, Multipart Upload `>= 5 МиБ`, `Range GET`), `storage.probe(server)`, универсальный `#hooks/cookie-vault` + `<CookieVault>` и кнопка в `DemoPanel` (модалка + роут, `0` ключей в `.env`/БД) | **Выполнено и отправлено в `origin/img`** | `4ab27b0`..`e12d465` |
-| **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и проверено** | коммит `S1-S2` |
-| **1c. Адаптер `webdav` и расширенные связки (`S3`)** | Серверный адаптер `webdav.ts` (`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`), `src/lib/storage/README.md`, связка `defineStorageLedger` с `#lib/db` | **Ожидает обсуждения / учётных данных WebDAV** | — |
+| **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и отправлено в `origin/img`** | `21bb85c` |
+| **1c. Адаптер `webdav` и документация (`S3`)** | Серверный адаптер `webdav.ts` (`MKCOL`/`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`, DSN `webdav://`), поддержка `webdav://` в куки-сейфе, `src/lib/storage/README.md`, живая проверка на Облаке Mail.ru | **Выполнено и проверено локально** | локальный коммит на `img` |
 
 ---
 

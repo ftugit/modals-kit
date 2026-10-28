@@ -4,6 +4,7 @@ import {
 } from '#hooks/cookie-vault/index.js'
 import { defineForm, field, v, type IssueLike } from '#lib/form/index.js'
 import { maskS3Url, parseS3Url } from '#lib/storage/s3.js'
+import { isWebdavDsn, maskWebdavUrl, parseWebdavUrl } from '#lib/storage/webdav.js'
 
 const RESERVED_SERVER_NAMES = new Set(['auto', 'local', 'memory'])
 
@@ -34,8 +35,9 @@ export const storageVaultEntryForm = defineForm({
       validate: [v.required(), v.maxLength(24)],
     }),
     url: field.password({
-      label: 'Единая ссылка S3 (DSN)',
-      placeholder: 's3://accessKey:secretKey@s3.us-east-005.backblazeb2.com/bucket/prefix',
+      label: 'Единая ссылка хранилища (DSN s3:// или webdav://)',
+      placeholder:
+        's3://key:secret@host/bucket/prefix или webdav://user@mail.ru:pass@webdav.cloud.mail.ru/dir',
       help: 'Шифруется в отдельной HttpOnly-куке (AES-256-GCM) и никогда не возвращается в HTML.',
       validate: [v.required(), v.maxLength(2048)],
     }),
@@ -67,9 +69,9 @@ export const storageVaultEntryForm = defineForm({
 
 export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVaultMeta>({
   scope: 'storage',
-  title: 'Куки-сейф хранилищ S3',
+  title: 'Куки-сейф хранилищ (S3 / WebDAV)',
   description:
-    'Одна кука dv_key хранит мастер-ключ шифрования, а каждый S3-сервер со своим конфигом сохраняется в отдельной зашифрованной HttpOnly-куке вашего браузера.',
+    'Одна кука dv_key хранит мастер-ключ шифрования, а каждый сервер S3 или WebDAV со своим конфигом сохраняется в отдельной зашифрованной HttpOnly-куке вашего браузера.',
   maxEntries: 8,
   entryForm: storageVaultEntryForm,
 
@@ -92,15 +94,19 @@ export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVa
 
     const rawUrl = String(values.url ?? '').trim()
     try {
-      parseS3Url(rawUrl)
+      if (isWebdavDsn(rawUrl)) {
+        parseWebdavUrl(rawUrl)
+      } else {
+        parseS3Url(rawUrl)
+      }
     } catch (err) {
       issues.push({
         code: 'url.invalid',
         path: ['url'],
         message:
           err instanceof Error
-            ? err.message.replace(/^\[storage\/s3\]\s*/, '')
-            : 'Некорректная ссылка s3://key:secret@host/bucket',
+            ? err.message.replace(/^\[storage\/(?:s3|webdav)\]\s*/, '')
+            : 'Некорректная ссылка s3://... или webdav://...',
       })
     }
 
@@ -149,11 +155,11 @@ export const storageVaultSchema = defineCookieVault<StorageVaultEntry, StorageVa
   },
 
   mask(id, entry) {
-    let summary = 's3://***'
+    let summary = isWebdavDsn(entry.url) ? 'webdav://***' : 's3://***'
     try {
-      summary = maskS3Url(entry.url)
+      summary = isWebdavDsn(entry.url) ? maskWebdavUrl(entry.url) : maskS3Url(entry.url)
     } catch {
-      summary = 's3://***'
+      summary = isWebdavDsn(entry.url) ? 'webdav://***' : 's3://***'
     }
     return {
       label: id,

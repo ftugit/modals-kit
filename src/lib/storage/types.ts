@@ -216,7 +216,7 @@ export interface DriverStoredMeta {
   readonly lastModified: number
 }
 
-/** Контракт драйвера одного сервера хранения (`memory`, `local`, `s3`, далее `webdav`). */
+/** Контракт драйвера одного сервера хранения (`memory`, `local`, `s3`, `webdav`). */
 export interface StorageDriver {
   readonly kind: string
   readonly publicBaseUrl?: string
@@ -224,6 +224,12 @@ export interface StorageDriver {
   head(path: string): Promise<DriverStoredMeta | null>
   lazy(path: string): Promise<StreamFile | null>
   del(path: string): Promise<boolean>
+  /** Опциональное нативное копирование объекта внутри одного сервера (например WebDAV `COPY`). */
+  copyObject?(
+    fromPath: string,
+    toPath: string,
+    options?: { readonly overwrite?: boolean; readonly signal?: AbortSignal },
+  ): Promise<DriverStoredMeta>
 }
 
 export type WriteStrategy = 'priority' | 'most-free' | 'round-robin'
