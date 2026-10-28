@@ -127,6 +127,12 @@ export type ProfileRead = {
    * `profile === null` и `notCreated === false` — снаружи это отказ.
    */
   notCreated: boolean
+  /**
+   * Вызывающий вправе править этот профиль (владелец или
+   * `profile.edit`/`admin`): показ рисует кнопку редактирования, а
+   * носители редактирования — свой ACL-гейт.
+   */
+  canEdit: boolean
 }
 
 /**
@@ -146,6 +152,8 @@ export type ProfileRouteData = {
   profile: ProfileView | null
   /** Профиля нет, но смотреть можно: заглушка «не создан» вместо отказа. */
   notCreated: boolean
+  /** Вызывающий вправе править этот профиль: кнопка и гейт редактирования. */
+  canEdit: boolean
   fact: AuthErrorCode | null
   /** Вход включён на сервере (иначе форма скрыта). */
   enabled: boolean

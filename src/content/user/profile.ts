@@ -4,6 +4,7 @@
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
 import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts } from './ports.js'
 import type { ProfileRead, ProfileView } from './types.js'
 
@@ -30,11 +31,15 @@ export async function profile(
   if ('code' in g) return fail(g)
   // `subject` — чужой профиль: видимость решает модель (`ownerOrRoles`), а не эта функция
   const target = subject?.trim() || g.sub
+  // Правка: владелец или `profile.edit`/`admin` (та же пара, что политика
+  // `update` модели). Флаг нужен показу (кнопка) и гейтам редактирования.
+  const canEdit =
+    target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
-  if (row) return ok({ profile: row, notCreated: false })
+  if (row) return ok({ profile: row, notCreated: false, canEdit })
   const canRead =
     target === g.sub || PROFILE_READ_ROLES.some((role) => g.perms.includes(role))
-  return ok({ profile: null, notCreated: canRead })
+  return ok({ profile: null, notCreated: canRead, canEdit })
 }
 
 /**

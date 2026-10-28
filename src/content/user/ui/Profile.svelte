@@ -17,17 +17,19 @@
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
+  import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
-  import type { ProfileRouteData, ProfileView } from '../types.js'
+  import type { ProfileRead, ProfileRouteData } from '../types.js'
 
   interface Props {
     /** id аккаунта, чей профиль показать. */
     uid: string
     /** Данные `load` роута от носителя (страница): запроса не будет. */
-    initial?: { profile: ProfileView | null; notCreated: boolean } | null
+    initial?: ProfileRead | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (what: AuthErrorCode | 'not_found') => void
     class?: string
@@ -35,7 +37,9 @@
 
   let { uid, initial = null, onAcl, class: className }: Props = $props()
 
-  let data = $state<{ profile: ProfileView | null; notCreated: boolean } | null>(untrack(() => initial))
+  const asModalLink = useModalLink()
+
+  let data = $state<ProfileRead | null>(untrack(() => initial))
   let askedFor = ''
 
   $effect(() => {
@@ -64,13 +68,25 @@
         onAcl?.('not_found')
         return
       }
-      data = { profile: d.profile, notCreated: d.notCreated }
+      data = { profile: d.profile, notCreated: d.notCreated, canEdit: d.canEdit }
     })()
   })
 </script>
 
+<div class={cn('relative', className)}>
+  {#if data && data.canEdit}
+    <!-- Правка — справа сверху в обоих состояниях профиля: править можно
+         и пустой (первое заполнение создаёт строку). Видна только с
+         флагом правки чтения; механика — пара редактирования (модалка,
+         без JS — её роут). -->
+    <span class="absolute right-0 top-0 z-10">
+      <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
+        Редактировать
+      </Button>
+    </span>
+  {/if}
 {#if data?.profile}
-  <ProfileCard profile={data.profile} class={className} />
+  <ProfileCard profile={data.profile} />
 {:else if data?.notCreated}
   <section
     class={cn('flex w-full flex-col items-center gap-3 py-6 text-center', className)}
@@ -103,3 +119,4 @@
     <span class="h-3 w-2/3 animate-pulse rounded bg-muted"></span>
   </div>
 {/if}
+</div>

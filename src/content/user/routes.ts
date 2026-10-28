@@ -88,6 +88,12 @@ export const userProfileRoute = kitRoute('/(site)/(app)/user/[id]', {
   id: '/user/[id]',
 })
 
+/** Редактирование профиля — адрес пары `user.profile.edit` (модалка/роут). */
+export const userProfileEditRoute = kitRoute('/(site)/(app)/user/[id]/edit', {
+  dynamic: true,
+  id: '/user/[id]/edit',
+})
+
 /**
  * Список seed-юзеров — статический адрес `/users`. Этим же адресом
  * пользуется регистрация пары `user.list` (`route` в `modals.ts`):

@@ -18,6 +18,6 @@
   {:else if !data.profile && !data.notCreated}
     <Acl model="not_found" backHref="/" />
   {:else}
-    <Profile uid={data.uid} initial={{ profile: data.profile, notCreated: data.notCreated }} />
+    <Profile uid={data.uid} initial={{ profile: data.profile, notCreated: data.notCreated, canEdit: data.canEdit }} />
   {/if}
 </div>

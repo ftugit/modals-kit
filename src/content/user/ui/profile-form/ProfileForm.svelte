@@ -122,7 +122,9 @@
     const data = r.data as { step?: string; user?: VaultPayload } | undefined
     if (data?.step === 'done') {
       lastHandledSubmission = r.submissionId
-      if (data.user) vault.hydrate(data.user)
+      // Чужое сохранение `vault` не трогает: он про самого вошедшего, а
+      // показ чужого профиля перечитает компонент чтения при возврате.
+      if (data.user && !foreign) vault.hydrate(data.user)
       onDone?.()
     }
   })
@@ -152,8 +154,10 @@
     <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
     <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Как вас показывать?</h2>
-      <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
+      <h2 class="text-base font-semibold">{foreign ? 'Профиль пользователя' : 'Как вас показывать?'}</h2>
+      {#if !foreign}
+        <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
+      {/if}
       <Field of={bound.f.nickname} />
 
       <Field

@@ -31,6 +31,7 @@ export const load: PageServerLoad = async (event): Promise<ProfileRouteData> => 
     uid: event.params.id,
     profile: r.ok ? r.value.profile : null,
     notCreated: r.ok ? r.value.notCreated : false,
+    canEdit: r.ok ? r.value.canEdit : false,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     limits: { nicknameForbidden: await config.get('nicknameForbidden') },

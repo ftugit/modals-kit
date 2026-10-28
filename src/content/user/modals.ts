@@ -9,7 +9,14 @@
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
-import { userAuthRoute, userListFiltersRoute, userListRoute, userMenuRoute, userProfileRoute } from './routes.js'
+import {
+  userAuthRoute,
+  userListFiltersRoute,
+  userListRoute,
+  userMenuRoute,
+  userProfileEditRoute,
+  userProfileRoute,
+} from './routes.js'
 
 registerModal({
   name: 'user.auth',
@@ -33,6 +40,14 @@ registerModal({
   name: 'user.profile',
   component: lazy(() => import('./ui/ProfileModal.svelte')),
   route: userProfileRoute.href,
+  size: { width: 480, height: 560 },
+})
+// Редактирование профиля: та же пара на форму `ProfileForm` по id —
+// кнопка в компоненте профиля ведёт сюда (без JS — на роут).
+registerModal({
+  name: 'user.profile.edit',
+  component: lazy(() => import('./ui/ProfileEditModal.svelte')),
+  route: userProfileEditRoute.href,
   size: { width: 480, height: 560 },
 })
 // Список seed-юзеров: та же пара — компонент списка сам запрашивает
