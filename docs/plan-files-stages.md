@@ -25,9 +25,13 @@
      печатать в вывод, не логировать и не коммитить; правило о кратких статусах
      только между крупными этапами сохранено в
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
-3. **Точка остановки (`STOPPED AT`):** Этап 1 — полная спецификация `#lib/storage`
-   согласована и записана ниже; **код в `src/` не начат**, ждём команды владельца
-   на старт реализации Этапа 1.
+3. **Точка остановки (`STOPPED AT`):** Этапы **`S0` + `S0-S3` + `S0.5` + `S1` + `S2`**
+   отправлены в `origin/img` (`e12d465`, `21bb85c`), и поверх них локально реализован и
+   проверен этап **`S3`** — потоковый адаптер `src/lib/storage/webdav.ts` (`#lib/storage/webdav.js`,
+   `MKCOL`, потоковый `PUT`, `PROPFIND`, `Range 206`, `DELETE`, `COPY`, строгие `basePath` и
+   `readOnly`, поддержка `webdav://` в `createStorage` и куки-сейфе, контрактные тесты + живой
+   стенд Облака Mail.ru и межсервисный перенос `Mail.ru WebDAV ↔ B2/R2`). Для дальнейших шагов
+   остаются опциональная связка `defineStorageLedger` с `#lib/db` и при необходимости `storage.upload(request)`.
 
 ---
 
@@ -35,7 +39,9 @@
 
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
-| **1. Независимая библиотека `#lib/storage`** | Единый мультисерверный сторадж на базе `@remix-run/*`: обязательные лимиты серверов, атомарное резервирование и учёт через адаптируемый `ledger` (в т.ч. JSON-файл из коробки, позже `lib/db` через `hooks`), опциональные `store` и `tech` с деградацией через `console.error`, потоковое шифрование `AES-256-GCM`, двусторонние `rate` и `concurrency`, нарезка файлов с догрузкой и `stageToDisk`, `copy`/`move`/`clone`, `upload`, адаптеры `local` и `webdav` | **Спецификация собрана, ждёт команды «начинай»** | — |
+| **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3` + `S0.5`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), `s3Driver` (`aws4fetch`, `s3://` DSN, Multipart Upload `>= 5 МиБ`, `Range GET`), `storage.probe(server)`, универсальный `#hooks/cookie-vault` + `<CookieVault>` и кнопка в `DemoPanel` (модалка + роут, `0` ключей в `.env`/БД) | **Выполнено и отправлено в `origin/img`** | `4ab27b0`..`e12d465` |
+| **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и отправлено в `origin/img`** | `21bb85c` |
+| **1c. Адаптер `webdav` и документация (`S3`)** | Серверный адаптер `webdav.ts` (`MKCOL`/`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`, DSN `webdav://`), поддержка `webdav://` в куки-сейфе, `src/lib/storage/README.md`, живая проверка на Облаке Mail.ru | **Выполнено и проверено локально** | локальный коммит на `img` |
 
 ---
 
@@ -98,8 +104,8 @@
 
 ```json
 {
-  "//": "`index.js` — ядро `createStorage`, контракты `defineStorageLedger` и `defineStorageStore`, шифрование, лимитеры скорости и потоков, типы и ошибки (0 node:fs, 0 фреймворков); `webdav.js` — сервер WebDAV на чистом fetch; `local.js` — локальный диск сервера (`@remix-run/fs`), `jsonLedger` и дисковый спул `stageToDisk`; `state.js` — необязательный коллектор телеметрии.",
-  "entrypoints": ["index.js", "webdav.js", "local.js", "state.js"]
+  "//": "`index.js` — ядро `createStorage`, контракты `defineStorageLedger` и `defineStorageStore`, шифрование, лимитеры скорости и потоков, типы и ошибки (0 node:fs, 0 фреймворков); `s3.js` — потоковый S3-драйвер (`aws4fetch`, SigV4 streaming PUT + Multipart Upload + Range GET для Backblaze B2 / Cloudflare R2 / AWS S3); `webdav.js` — сервер WebDAV на чистом fetch; `local.js` — локальный диск сервера (`@remix-run/fs`), `jsonLedger` и дисковый спул `stageToDisk`; `state.js` — необязательный коллектор телеметрии.",
+  "entrypoints": ["index.js", "s3.js", "webdav.js", "local.js", "state.js"]
 }
 ```
 *(Почему `jsonLedger` и спул диска лежат в `local.js`: им нужен `node:fs`, поэтому
@@ -330,7 +336,8 @@ export interface Storage<S extends string = string> {
 
 | Шаг | Содержание | Гейты и тесты |
 |---|---|---|
-| **S0. Среда и зависимости** | Поставить Node.js `>= 22.17` в `/usr/local/bin`, выполнить `npm ci`, установить `@remix-run/lazy-file`, `@remix-run/response`, `@remix-run/fs`, `@remix-run/form-data-parser` | `node -v`, `node tooling/public-api.mjs`, `npm run check` |
-| **S1. Контракты, `ledger` (`memoryLedger` + `jsonLedger`), `store`, лимитеры и потоковое шифрование** | `types.ts`, `errors.ts`, `key.ts`, `ledger.ts`, `store.ts`, `bandwidth.ts`, `concurrency.ts` (`preempt`/`reject`/`queue` + деградация `console.error`), `crypto.ts` (64-КБ `AES-256-GCM` со сдвигом `Range` и точным расчётом `encryptedSize`), `state.ts` | `vitest`: гонки резервирования в `memoryLedger` и `jsonLedger`, шифрование/расшифровка произвольных `Range`-срезов поперёк 64-КБ границ, `rate`/`concurrency` и `console.error` при отсутствии `store`/`ip` |
+| **S0. Среда и зависимости** | Поставить Node.js `>= 22.17` в `/usr/local/bin`, выполнить `npm ci`, установить `@remix-run/lazy-file`, `@remix-run/response`, `@remix-run/fs`, `@remix-run/form-data-parser`, `aws4fetch` | `node -v`, `node tooling/public-api.mjs`, `npm run check` |
+| **S0-S3 (Базовый этап S3 на 2 хостах)** | Базовый мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), обязательными `limits: { storageBytes, fileBytes }` серверов и атомарной бронью `reserve`/`commit`/`release`; потоковый драйвер `s3.ts` (`aws4fetch`: zero-buffer SigV4 `PUT` + S3 Multipart Upload `>= 5 МиБ` с `AbortMultipartUpload` + `Range GET`); потоковый межсервисный перенос `copy`/`move` (`B2 ↔ R2 ↔ local` без буферизации в RAM); `report()`; перевод `/upload-demo` на каноничную `DemoPanel` (`demo-schema.ts`) | Контрактные и живые тесты на 2 хостах S3 (Backblaze B2 + Cloudflare R2), гонки резервирования `ledger`, скан `schemas.test.ts`, `public-api`, `core-purity`, `layer-guard`, `svelte-check`, `vitest`, `vite build`, Playwright E2E |
+| **S1. Контракты `store`, лимитеры и потоковое шифрование** | `store.ts`, `bandwidth.ts`, `concurrency.ts` (`preempt`/`reject`/`queue` + деградация `console.error`), `crypto.ts` (64-КБ `AES-256-GCM` со сдвигом `Range` и точным расчётом `encryptedSize`), `state.ts` | `vitest`: шифрование/расшифровка произвольных `Range`-срезов поперёк 64-КБ границ, `rate`/`concurrency` и `console.error` при отсутствии `store`/`ip` |
 | **S2. Мультисерверный движок `createStorage`: планировщик нарезки, ротация, `stageToDisk`, `serve`, `upload`, `copy`/`move`/`clone`, `report`** | Склейка частей с разных серверов в единый `LazyFile`, `serve` на `@remix-run/response` (`200`/`206`/`304`/`416` + UTF-8 `Content-Disposition`), приём от юзера `upload`, дисковый спул `localSpool`, `copy`/`move`/`clone` (с быстрым байт-в-байт путём при одинаковом `key`) | `vitest`: нарезка файла по `fileBytes` и остатку `storageBytes` между несколькими серверами, запрет нарезки при `allowSplit: false` и на не-resumable потоке без `stageToDisk`, откат брони при сбое, `206 Range` поперёк стыка двух серверов, `clone` |
 | **S3. Серверные адаптеры `local` и `webdav` + документация и стражи** | `local.ts` (`@remix-run/fs` + `jsonLedger` + `localSpool`), `webdav.ts` (`PROPFIND`, `HEAD`, `GET` с `Range`, `PUT` со стримом, `DELETE`, `COPY`, `basePath`, `readOnly`), `entrypoints.json` + добавление `src/lib/storage` в `tooling/core-purity.mjs`, подробный `src/lib/storage/README.md` | Контрактные тесты с локальным HTTP WebDAV-сервером + полный прогон `public-api`, `core-purity`, `layer-guard`, `svelte-check`, `vitest`, `vite build` (+ живой тест на Облаке Mail.ru при передаче кредов) |

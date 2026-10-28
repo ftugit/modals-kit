@@ -82,6 +82,7 @@
     "@remix-run/response": "^1.0.1",
     "@standard-schema/spec": "^1.1.0",
     "@vercel/functions": "^3.10.1",
+    "aws4fetch": "^1.0.20",
     "clsx": "^2.1.1",
     "esm-env": "^1.2.2",
     "image-q": "^4.0.0",

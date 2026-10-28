@@ -4,6 +4,7 @@
  * без JS) панель подключает сама через `#lib/address`, наружу отдаёт параметры.
  */
 export { default as DemoPanel } from './DemoPanel.svelte'
+export { default as CookieVault } from './CookieVault.svelte'
 export {
   defineDemoPanel,
   demoDivider,
@@ -26,6 +27,7 @@ export type {
   DemoUrlPolicy,
   DemoValue,
   DemoValues,
+  DemoVaultTrigger,
 } from './types.js'
 export { demoFieldSpec, demoFieldUi } from './ui.js'
 export type { DemoFieldUi, DemoUiProps } from './ui.js'

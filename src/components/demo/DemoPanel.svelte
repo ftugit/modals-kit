@@ -19,9 +19,10 @@
   import { cn } from '#components/utils.js'
   import { claimQuery } from '#lib/address/keys.js'
   import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
-  import type { DemoPanelSchema, DemoValues } from './types.js'
+  import type { DemoPanelSchema, DemoValues, DemoVaultTrigger } from './types.js'
   import type { DemoUiProps } from './ui.js'
   import { demoFieldUi } from './ui.js'
+  import DemoVaultButton from './DemoVaultButton.svelte'
   import {
     demoFields,
     demoForm,
@@ -53,6 +54,11 @@
      */
     leading?: Snippet<[BoundForm]>
     /**
+     * Кнопка открытия куки-сейфа в самой демо-панели (с JS открывает модалку,
+     * без JS переходит на страницу-фолбэк с сохранением `?from=...`).
+     */
+    vault?: DemoVaultTrigger
+    /**
      * Своя разметка полей — компонент приложения (как `form` у фильтров):
      * панель отдаёт ему `field(name)` с готовыми вьюхами и придерживается
      * собственной оболочки (форма, «Применить», подвал). Пример —
@@ -73,6 +79,7 @@
     footer,
     hidden,
     leading,
+    vault,
     ui,
     class: className,
     testid = 'demo-panel',
@@ -215,9 +222,16 @@
   class={cn('rounded-xl border border-border bg-card p-4 text-sm shadow-sm', className)}
   data-testid={testid}
 >
-{#if leading}
-  <div class="mb-3" data-demo-leading>
-    {@render leading(form)}
+{#if leading || vault}
+  <div class="mb-3 flex flex-wrap items-center justify-between gap-3" data-demo-leading>
+    <div>
+      {#if leading}
+        {@render leading(form)}
+      {/if}
+    </div>
+    {#if vault}
+      <DemoVaultButton {vault} />
+    {/if}
   </div>
 {/if}
 

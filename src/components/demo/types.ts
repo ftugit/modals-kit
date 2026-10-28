@@ -91,6 +91,20 @@ export type DemoFieldSpec<K extends string = string> = DemoField<K> | DemoDivide
 /** Значения полей панели. */
 export type DemoValues = Record<string, DemoValue>
 
+/** Кнопка открытия универсального куки-сейфа в шапке `DemoPanel` (модалка с JS / роут без JS). */
+export interface DemoVaultTrigger {
+  /** Имя зарегистрированной модалки (`registerModal({ name, route })`). */
+  readonly modal: string
+  /** Адрес страницы-фолбэка (например `/upload-demo/vault`); параметр `?from=...` добавляется автоматически. */
+  readonly href: string
+  /** Подпись кнопки (по умолчанию «Куки-сейф»). */
+  readonly label?: string
+  /** Число сохранённых в сейфе конфигов (показывается бейджем в скобках). */
+  readonly count?: number
+  /** Необязательные параметры открытия модалки. */
+  readonly params?: Readonly<Record<string, string | number>>
+}
+
 /**
  * Схема панели — только данные. `V` — форма параметров, которые панель отдаёт
  * потребителю (`DemoPanel.onParams`, `demoParams`); ключи полей обязаны быть

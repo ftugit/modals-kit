@@ -4,9 +4,29 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/
 import { dirname, join, resolve, sep } from 'node:path'
 import { openLazyFile } from '@remix-run/fs'
 import { normalizeStoragePath } from './index.js'
+import {
+  computeLedgerUsage,
+  defineStorageLedger,
+  sweepExpiredInState,
+  type AdaptedStorageLedger,
+  type LedgerReservation,
+  type LedgerStateData,
+} from './ledger.js'
 import { basenameOfStoragePath } from './memory.js'
 import { StreamFile } from './stream-file.js'
-import type { DriverPutInput, DriverStoredMeta, StorageDriver } from './types.js'
+import type {
+  DriverPutInput,
+  DriverStoredMeta,
+  StagedSpoolFile,
+  StorageDriver,
+  StorageSpool,
+} from './types.js'
+
+/** Настройки реестра учёта в локальном JSON-файле. */
+export interface JsonLedgerOptions {
+  /** Абсолютный или относительный путь к JSON-файлу учёта. */
+  readonly filePath: string
+}
 
 /** Настройки драйвера локальной файловой системы (`Node` / `Bun`). */
 export interface LocalDriverOptions {
@@ -216,3 +236,260 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     },
   }
 }
+
+/**
+ * Надёжный реестр учёта `ledger` в JSON-файле на диске с внутрипроцессным мьютексом
+ * и атомарной перезаписью `<file>.tmp-<uuid>` -> `rename` (без частичной записи при сбое).
+ */
+export function jsonLedger(
+  options: JsonLedgerOptions,
+  nowFn: () => number = Date.now,
+): AdaptedStorageLedger {
+  if (!options?.filePath || typeof options.filePath !== 'string') {
+    throw new TypeError('[storage/local] jsonLedger: укажите filePath')
+  }
+  const absFile = resolve(options.filePath)
+  const dir = dirname(absFile)
+  let tail: Promise<unknown> = Promise.resolve()
+
+  function withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = tail.then(fn, fn)
+    tail = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    return next
+  }
+
+  async function loadState(): Promise<LedgerStateData> {
+    try {
+      const raw = await readFile(absFile, 'utf8')
+      const parsed = JSON.parse(raw) as Partial<LedgerStateData>
+      return {
+        files: parsed.files && typeof parsed.files === 'object' ? { ...parsed.files } : {},
+        reservations:
+          parsed.reservations && typeof parsed.reservations === 'object'
+            ? { ...parsed.reservations }
+            : {},
+      }
+    } catch {
+      return { files: {}, reservations: {} }
+    }
+  }
+
+  async function saveState(state: LedgerStateData): Promise<void> {
+    await mkdir(dir, { recursive: true })
+    const tmpFile = `${absFile}.tmp-${randomUUID()}`
+    await writeFile(tmpFile, JSON.stringify(state, null, 2), 'utf8')
+    await rename(tmpFile, absFile)
+  }
+
+  return defineStorageLedger({
+    reserve({ id, allocations, ttlMs }) {
+      return withLock(async () => {
+        const now = nowFn()
+        const state = await loadState()
+        const swept = sweepExpiredInState(state, now)
+        if (state.reservations[id]) {
+          if (swept > 0) await saveState(state)
+          return state.reservations[id]!
+        }
+
+        const snap = computeLedgerUsage(
+          state,
+          allocations.map((a) => a.server),
+          now,
+        )
+        for (const alloc of allocations) {
+          const cur = snap[alloc.server] ?? {
+            usedBytes: 0,
+            reservedBytes: 0,
+            filesCount: 0,
+            partsCount: 0,
+          }
+          if (cur.usedBytes + cur.reservedBytes + alloc.bytes > alloc.maxStorageBytes) {
+            if (swept > 0) await saveState(state)
+            return null
+          }
+        }
+
+        const created: LedgerReservation = {
+          id,
+          allocations: [...allocations],
+          expiresAt: now + Math.max(1, ttlMs),
+        }
+        state.reservations[id] = created
+        await saveState(state)
+        return created
+      })
+    },
+
+    commit({ reservationId, file }) {
+      return withLock(async () => {
+        const state = await loadState()
+        delete state.reservations[reservationId]
+        const replaced = state.files[file.path]
+        state.files[file.path] = file
+        await saveState(state)
+        return replaced ? { replaced } : {}
+      })
+    },
+
+    release(reservationId) {
+      return withLock(async () => {
+        const state = await loadState()
+        if (state.reservations[reservationId]) {
+          delete state.reservations[reservationId]
+          await saveState(state)
+        }
+      })
+    },
+
+    sweepExpired(now = nowFn()) {
+      return withLock(async () => {
+        const state = await loadState()
+        const removed = sweepExpiredInState(state, now)
+        if (removed > 0) await saveState(state)
+        return removed
+      })
+    },
+
+    getFile(path) {
+      return withLock(async () => {
+        const state = await loadState()
+        return state.files[path] ?? null
+      })
+    },
+
+    deleteFile(path) {
+      return withLock(async () => {
+        const state = await loadState()
+        const prev = state.files[path] ?? null
+        if (prev) {
+          delete state.files[path]
+          await saveState(state)
+        }
+        return prev
+      })
+    },
+
+    listFiles(opts) {
+      return withLock(async () => {
+        const state = await loadState()
+        const prefix = opts?.prefix ?? ''
+        const sorted = Object.keys(state.files)
+          .filter((k) => !k.startsWith('@replica:') && k.startsWith(prefix))
+          .sort()
+        const startIdx = opts?.cursor ? Math.max(0, sorted.indexOf(opts.cursor) + 1) : 0
+        const limit = opts?.limit ?? sorted.length
+        const sliceKeys = sorted.slice(startIdx, startIdx + limit)
+        const entries = sliceKeys.map((k) => state.files[k]!)
+        const nextCursor =
+          startIdx + limit < sorted.length ? sliceKeys[sliceKeys.length - 1] : undefined
+        return { entries, ...(nextCursor ? { cursor: nextCursor } : {}) }
+      })
+    },
+
+    usage(servers) {
+      return withLock(async () => {
+        const now = nowFn()
+        const state = await loadState()
+        const swept = sweepExpiredInState(state, now)
+        if (swept > 0) await saveState(state)
+        return computeLedgerUsage(state, servers, now)
+      })
+    },
+  })
+}
+
+/**
+ * Дисковый спул временных файлов для `stageToDisk: true`:
+ * потоково сохраняет входящий `ReadableStream` на диск с обратным давлением (`drain`),
+ * возвращает точный `size` и sliceable `StreamFile` (пригодный для нарезки `split` и догрузки),
+ * а `cleanup()` удаляет временный файл по окончании операции.
+ */
+export function localSpool(spoolDir: string): StorageSpool {
+  if (!spoolDir || typeof spoolDir !== 'string') {
+    throw new TypeError('[storage/local] localSpool: укажите spoolDir')
+  }
+  const absDir = resolve(spoolDir)
+
+  return {
+    async stage(
+      stream: ReadableStream<Uint8Array>,
+      signal?: AbortSignal,
+    ): Promise<StagedSpoolFile> {
+      signal?.throwIfAborted()
+      await mkdir(absDir, { recursive: true })
+      const tempPath = join(absDir, `${randomUUID()}.spool`)
+
+      const handle = await open(tempPath, 'wx')
+      const out = handle.createWriteStream()
+      let streamFailure: unknown
+      out.on('error', (err) => {
+        streamFailure = err
+      })
+
+      const reader = stream.getReader()
+      let seen = 0
+      let finished = false
+
+      const onAbort = () => {
+        void reader.cancel(signal?.reason).catch(() => undefined)
+        out.destroy(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new DOMException('Aborted', 'AbortError'),
+        )
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      try {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (streamFailure) throw streamFailure
+          signal?.throwIfAborted()
+          seen += value.byteLength
+          if (!out.write(value)) {
+            await once(out, 'drain')
+          }
+        }
+        out.end()
+        await once(out, 'finish')
+        if (streamFailure) throw streamFailure
+        finished = true
+      } finally {
+        signal?.removeEventListener('abort', onAbort)
+        reader.releaseLock()
+        if (!out.closed) {
+          out.destroy()
+          await once(out, 'close').catch(() => undefined)
+        }
+        if (!finished) {
+          await unlink(tempPath).catch(() => undefined)
+        }
+      }
+
+      const lazy = openLazyFile(tempPath)
+      const file = new StreamFile(
+        {
+          byteLength: seen,
+          stream(start = 0, end = seen) {
+            return lazy.slice(start, end).stream() as ReadableStream<Uint8Array<ArrayBuffer>>
+          },
+        },
+        'staged.spool',
+      )
+
+      return {
+        size: seen,
+        file,
+        async cleanup() {
+          await unlink(tempPath).catch(() => undefined)
+        },
+      }
+    },
+  }
+}
+
