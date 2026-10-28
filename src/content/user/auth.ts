@@ -36,6 +36,7 @@
 import type { AuthFact } from './error.js'
 import type { DataContext } from '#lib/db/index.js'
 import type { AuthPorts } from './ports.js'
+import { longestFullBlock } from './spec-block.js'
 import type { Blocked, Challenge, LoginOutcome, ProfileView, SessionRecord, SessionStatus, SubnetEntry, TokenPair } from './types.js'
 
 /** Результат функции API: данные или голый факт (код+путь). */
@@ -86,9 +87,13 @@ export function activeBlocks(list: Blocked[] | undefined, now: number): Blocked[
   return (list ?? []).filter((b) => b.until === undefined || b.until > now)
 }
 
-/** Полная блокировка (вход закрыт) — если есть среди активных. */
+/**
+ * Полная блокировка (вход закрыт): самая длинная из активных — её и
+ * показывает авторизация, когда блокировок несколько (каталог сфер и
+ * выборка — `spec-block.ts`).
+ */
 export function fullBlock(list: Blocked[] | undefined, now: number): Blocked | undefined {
-  return activeBlocks(list, now).find((b) => b.scope === 'auth')
+  return longestFullBlock(list, now)
 }
 
 /* ── вход ── */

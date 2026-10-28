@@ -5,6 +5,7 @@
  */
 import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import { ADMIN_ROLE } from './permissions.js'
+import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
 import type { ProfileRead, ProfileView } from './types.js'
 
@@ -35,11 +36,34 @@ export async function profile(
   // `update` модели). Флаг нужен показу (кнопка) и гейтам редактирования.
   const canEdit =
     target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')
+  // Возможности удаления по цели (этап 6): право И нет активного запрета
+  // из каталога сфер на самой цели — запрет сильнее владельца и админа.
+  const now = ports.clock.now()
+  const authRow = await ports.auths.get(target)
+  const blocked = authRow?.blocked ?? []
+  const canDeleteProfile =
+    (target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')) &&
+    !activeBlock(blocked, 'profile.delete', now)
+  const canDeleteSeed =
+    (target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.edit')) &&
+    !activeBlock(blocked, 'account.delete', now)
+  // Полная блокировка цели — факт для показа в профиле; причину и срок
+  // знают владелец, `admin` и читающие аккаунты, остальные — только факт.
+  const full = longestFullBlock(blocked, now)
+  const canKnowReason =
+    target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')
+  const fullBlock = full
+    ? {
+        reason: canKnowReason ? full.reason : null,
+        until: canKnowReason ? (full.until ?? null) : null,
+      }
+    : null
+  const caps = { canEdit, canDeleteProfile, canDeleteSeed, fullBlock }
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
-  if (row) return ok({ profile: row, notCreated: false, canEdit })
+  if (row) return ok({ profile: row, notCreated: false, ...caps })
   const canRead =
     target === g.sub || PROFILE_READ_ROLES.some((role) => g.perms.includes(role))
-  return ok({ profile: null, notCreated: canRead, canEdit })
+  return ok({ profile: null, notCreated: canRead, ...caps })
 }
 
 /**

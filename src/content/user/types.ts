@@ -80,12 +80,14 @@ export type SessionRecord = {
 
 /** Сфера блокировки аккаунта (элемент `blocked` таблицы auth). */
 export type Blocked = {
-  /** Что закрыто: `auth` — вход целиком; остальное — ограничения (показываем). */
+  /** Что закрыто: сферы каталога `spec-block.ts`; `auth` — вход целиком. */
   scope: string
   reason: string
   at: number
-  /** До какого времени; нет — бессрочно. */
+  /** До какого времени; нет — бессрочно. Истёкшая остаётся историей. */
   until?: number
+  /** id аккаунта, наложившего блокировку (история и аудит). */
+  by?: string
 }
 
 /** Доверенный principal — из содержимого временного токена без похода в БД. */
@@ -133,6 +135,20 @@ export type ProfileRead = {
    * носители редактирования — свой ACL-гейт.
    */
   canEdit: boolean
+  /**
+   * Вызывающий вправе удалить этот профиль: право (`profile.edit`/
+   * владелец) и нет активного запрета `profile.delete` на цели.
+   * Запрет цели сильнее любого права, включая владельца и админа.
+   */
+  canDeleteProfile: boolean
+  /** То же для seed-аккаунта: `account.edit`/владелец и нет запрета `account.delete`. */
+  canDeleteSeed: boolean
+  /**
+   * Активная полная блокировка цели — для показа в профиле. Причина и
+   * срок (`reason`/`until`) заполнены только тем, кому их можно знать
+   * (владелец, `admin`, `account.read`); остальные видят сам факт.
+   */
+  fullBlock: { reason: string | null; until: number | null } | null
 }
 
 /**
@@ -154,6 +170,11 @@ export type ProfileRouteData = {
   notCreated: boolean
   /** Вызывающий вправе править этот профиль: кнопка и гейт редактирования. */
   canEdit: boolean
+  /** Возможности удаления по цели (права + запреты этапа 6): гейты удаления. */
+  canDeleteProfile: boolean
+  canDeleteSeed: boolean
+  /** Активная полная блокировка цели для показа (причина — за правами). */
+  fullBlock: { reason: string | null; until: number | null } | null
   fact: AuthErrorCode | null
   /** Вход включён на сервере (иначе форма скрыта). */
   enabled: boolean

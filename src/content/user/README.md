@@ -19,6 +19,7 @@
 | `auth.ts` | Доменный API входа и сессий: `issueChallenge`, `login`, `restoreDeleted`, `verifySeed` (проверка владения `seed` без создания сессии), `guard`, `renew`, `logout`, `logoutAll`, `listSessions`, `revokeSession`, `requestDelete`, `sweepDeletions`. |
 | `profile.ts` | Профильный API отдельно от `auth.ts`: `profile` (чтение: строка + признак `notCreated` — владелец/права чтения отличают «не создан» от отказа), `updateProfile`, доменная проверка аватара по заголовку (`probeImageHeader`). |
 | `spec-profile.ts` | Тексты-заглушки профиля одним объектом (образец — `spec-avatar.ts`): нет никнейма, не создан, нет аватара. Потребители — `ProfileCard`, экран «не создан», меню, строка seed-списка. |
+| `spec-block.ts` | Каталог сфер блокировок аккаунта (`auth`, `profile.delete`, `account.delete`): состав, тексты для select/экранов, активный запрет по сфере, самая длинная полная блокировка. Единая точка для раздела блокировок (этап 9) и проверок удаления; чтение профиля отдаёт по цели возможности (`canEdit`, `canDeleteProfile`, `canDeleteSeed` — право и нет запрета на цели) и факт полной блокировки (причина/срок — только владельцу, `admin`, `account.read`). |
 | `checks.ts` | Общие проверки полей и спецификация `AVATAR_PHOTO_SPEC` (`#components/form/photo.js`). |
 | `config.ts` | Настройки модуля поверх `#lib/cache` (`accessTtlSec`, `deviceTtlSec`, `challengeTtlSec`, `deleteGraceDays`, `avatarEdge`, `avatarMaxBytes`, `nicknameForbidden`, `holdSeconds`). |
 | `error.ts` | Доменные факты `auth.*` / `profile.*` и перевод в инструкции формы (`instruction`). |

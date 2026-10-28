@@ -7,6 +7,7 @@ import { describe, expect, test } from 'vitest'
 import { memoryStore } from '#lib/cache/index.js'
 import { issueChallenge, login, type UserResult } from './auth.js'
 import { listSeedUsers } from './accounts.js'
+import { profile } from './profile.js'
 import { generateKeyPair, sign } from './keys.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
@@ -307,5 +308,62 @@ describe('список seed-юзеров', () => {
     // Параметр выключен — никнеймов в выдаче нет даже у админа.
     const off = ok_(await listSeedUsers(ports, admin.access, {}))
     expect(off.items[0]).not.toHaveProperty('nickname')
+  })
+})
+
+describe('чтение профиля: возможности по цели (этапы 5–6)', () => {
+  test('права: владелец и profile.edit могут править/удалять чужой профиль; простой — нет', async () => {
+    const { ports, auths } = makePorts()
+    const editor = await joined(ports, auths, ['profile.edit'])
+    const plain = await joined(ports, auths)
+    const target = await joined(ports, auths)
+
+    const byEditor = ok_(await profile(ports, editor.access, target.id))
+    expect(byEditor.canEdit).toBe(true)
+    expect(byEditor.canDeleteProfile).toBe(true)
+    expect(byEditor.canDeleteSeed).toBe(false)
+
+    const byPlain = ok_(await profile(ports, plain.access, target.id))
+    expect(byPlain.canEdit).toBe(false)
+    expect(byPlain.canDeleteProfile).toBe(false)
+
+    const bySelf = ok_(await profile(ports, target.access, target.id))
+    expect(bySelf.canEdit).toBe(true)
+    expect(bySelf.canDeleteProfile).toBe(true)
+    expect(bySelf.canDeleteSeed).toBe(true)
+  })
+
+  test('запрет на цели сильнее права и владельца; причина полной блокировки — за правами', async () => {
+    const { ports, auths } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const reader = await joined(ports, auths, ['profile.read'])
+    const target = await joined(ports, auths)
+    const row = auths.get(target.id)!
+    auths.set(target.id, {
+      ...row,
+      blocked: [
+        { scope: 'profile.delete', reason: 'нельзя', at: 1 },
+        { scope: 'auth', reason: 'полный бан', at: 1, until: Date.now() + 60_000 },
+      ],
+    })
+
+    const byAdmin = ok_(await profile(ports, admin.access, target.id))
+    expect(byAdmin.canDeleteProfile).toBe(false)
+    expect(byAdmin.fullBlock?.reason).toBe('полный бан')
+
+    // Владелец под запретом удаления (без полного бана): флаг погашен и у него.
+    const guarded = await joined(ports, auths)
+    const grow = auths.get(guarded.id)!
+    auths.set(guarded.id, {
+      ...grow,
+      blocked: [{ scope: 'profile.delete', reason: 'нельзя', at: 1 }],
+    })
+    const bySelf = ok_(await profile(ports, guarded.access, guarded.id))
+    expect(bySelf.canDeleteProfile).toBe(false)
+
+    // Читатель профиля без прав чтения аккаунтов: факт есть, причины нет.
+    const byReader = ok_(await profile(ports, reader.access, target.id))
+    expect(byReader.fullBlock).not.toBeNull()
+    expect(byReader.fullBlock?.reason).toBeNull()
   })
 })

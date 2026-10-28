@@ -68,7 +68,14 @@
         onAcl?.('not_found')
         return
       }
-      data = { profile: d.profile, notCreated: d.notCreated, canEdit: d.canEdit }
+      data = {
+        profile: d.profile,
+        notCreated: d.notCreated,
+        canEdit: d.canEdit,
+        canDeleteProfile: d.canDeleteProfile,
+        canDeleteSeed: d.canDeleteSeed,
+        fullBlock: d.fullBlock,
+      }
     })()
   })
 </script>
@@ -85,6 +92,27 @@
       </Button>
     </span>
   {/if}
+{#if data?.fullBlock}
+  <!-- Полная блокировка цели: факт видят все читающие профиль, причину и
+       срок чтение отдаёт только с правами (сервер решает, здесь — показ). -->
+  <div
+    class="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-left text-sm"
+    data-testid="profile-full-block"
+    role="note"
+  >
+    <span class="font-medium text-destructive">Аккаунт заблокирован</span>
+    {#if data.fullBlock.reason}
+      <span class="text-muted-foreground"> — {data.fullBlock.reason}</span>
+    {/if}
+    {#if data.fullBlock.until}
+      <span class="text-muted-foreground">
+        · до <time datetime={new Date(data.fullBlock.until).toISOString()}>
+          {new Date(data.fullBlock.until).toLocaleDateString('ru-RU')}
+        </time>
+      </span>
+    {/if}
+  </div>
+{/if}
 {#if data?.profile}
   <ProfileCard profile={data.profile} />
 {:else if data?.notCreated}
