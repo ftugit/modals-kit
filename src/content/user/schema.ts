@@ -271,8 +271,18 @@ export const config: Resource = defineResource({
   order: [['key', 'asc']],
 })
 
-/** Круг операции блокировки: отдельная роль модератора, правка аккаунта или админ. */
-const BLOCK_ACTORS = ['moderator', 'account.edit', 'admin'] as const
+/**
+ * Круги модели блокировок. Модератор — сквозная роль: вписана во все
+ * списки, отдельных прав ей не выдают. Права — по модели `user.block`:
+ * чтение живых, запись (сильнее роли: только право и админ правят
+ * причину) и чтение удалённых. Окончательное удаление — связка:
+ * политика `delete` (круг записи) плюс грант `readDeleted`, который
+ * слой требует при `hard: true` — по одному права не дают стереть.
+ */
+const BLOCK_READERS = ['moderator', 'block.read', 'block.edit', 'block.readDeleted', 'admin'] as const
+const BLOCK_WRITERS = ['moderator', 'block.edit', 'admin'] as const
+const BLOCK_REASON_EDITORS = ['block.edit', 'admin'] as const
+const BLOCK_DELETED_READERS = ['block.readDeleted', 'admin'] as const
 
 /**
  * Блокировки аккаунта (этап 9): запись = одна строка истории. Исполнение
@@ -287,33 +297,43 @@ export const block: Resource = defineResource({
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     auth_id: field(s.uuid(), {
-      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      read: () => true, create: [...BLOCK_WRITERS], required: true,
       immutable: true, filters: ['eq', 'in'],
       db: { references: { resource: () => auth, chain: true } },
     }),
     scope: field(s.text({ min: 1, max: 40 }), {
-      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      read: () => true, create: [...BLOCK_WRITERS], required: true,
       immutable: true, filters: ['eq'],
     }),
+    // Причина: при создании указывает весь круг записи, после — только
+    // право `block.edit` и админ; модератор правит причину не может.
+    // Не нравится причина — запись удаляется и создаётся новая.
     reason: field(s.text({ min: 1, max: 200 }), {
-      read: () => true, create: [...BLOCK_ACTORS], required: true,
-      immutable: true, filters: ['eq'],
+      read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_REASON_EDITORS], required: true,
+      filters: ['eq'],
     }),
     // Снятие блокировки — единственная правка истории: until = момент снятия.
-    until: f.timestamp({ read: () => true, create: [...BLOCK_ACTORS], update: [...BLOCK_ACTORS], nullable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
+    until: f.timestamp({ read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_WRITERS], nullable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
     // Кто наложил: без FK — история переживает удаление аккаунта наложившего.
     by: field(s.uuid(), {
-      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      read: () => true, create: [...BLOCK_WRITERS], required: true,
       immutable: true, filters: ['eq'],
     }),
   },
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  timestamps: {
+    createdAt: 'created_at', updatedAt: 'updated_at',
+    // Удалённые записи блокировок видят право `block.readDeleted` и админ;
+    // модератор удалённых не читает и окончательно стереть не может.
+    deletedAt: { field: 'deleted_at', readDeleted: ['server', ...BLOCK_DELETED_READERS] },
+  },
   policy: {
-    // Владелец цели и круг операции читают через модель сами (edit в комплекте с чтением).
-    select: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_ACTORS]),
-    insert: policy.roles([...BLOCK_ACTORS]),
-    update: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_ACTORS]),
-    delete: policy.roles(['server', 'admin']),
+    // Владелец цели и круг чтения (запись — в комплекте с чтением).
+    select: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_READERS]),
+    insert: policy.roles([...BLOCK_WRITERS]),
+    update: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_WRITERS]),
+    // Удаление — круг записи; окончательное (`hard`) слой пропустит
+    // только с грантом `readDeleted` сверху — связка двух прав.
+    delete: policy.roles(['server', ...BLOCK_WRITERS]),
   },
   checks: (event) => {
     if (event.operation !== 'insert') return

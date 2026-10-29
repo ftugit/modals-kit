@@ -288,5 +288,29 @@ test('блокировки (этап 9): модель держит круг, н�
     assert.equal((await blocks.select(plain)).length, 0)
     // снятие кругом проходит (update только until)
     await blocks.update(moderator, row.id, { until: new Date(Date.now() + 60_000).toISOString() })
+
+    // Причина: право записи сильнее роли — модератор после создания её
+    // не правит, держатель `block.edit` правит; сферу не правит никто.
+    const editor = owner(crypto.randomUUID(), ['block.edit'])
+    await assert.rejects(() => blocks.update(moderator, row.id, { reason: 'другая' }), forbidden)
+    await blocks.update(editor, row.id, { reason: 'уточнено' })
+    await assert.rejects(
+      () => blocks.update(editor, row.id, { scope: 'profile.delete' }),
+      (e: DbFailure) => e.kind === 'validation' || e.kind === 'forbidden',
+    )
+
+    // Удалённые: модератор мягко удалить может (запись = edit), но
+    // удалённых не видит и окончательно не стирает; связка
+    // readDeleted+edit стирает, одно readDeleted — только смотрит.
+    const auditor = owner(crypto.randomUUID(), ['block.readDeleted'])
+    await assert.rejects(() => blocks.select(moderator, { includeDeleted: true }), forbidden)
+    await blocks.delete(moderator, row.id)
+    assert.equal((await blocks.select(moderator)).length, 0)
+    assert.equal((await blocks.select(auditor, { includeDeleted: true })).length, 1)
+    await assert.rejects(() => blocks.delete(moderator, row.id, { hard: true }), (e: DbFailure) => e.kind === 'forbidden' || e.kind === 'not_found')
+    await assert.rejects(() => blocks.delete(auditor, row.id, { hard: true }), (e: DbFailure) => e.kind === 'forbidden' || e.kind === 'not_found')
+    const cleaner = owner(crypto.randomUUID(), ['block.readDeleted', 'block.edit'])
+    await blocks.delete(cleaner, row.id, { hard: true })
+    assert.equal((await blocks.select(cleaner, { includeDeleted: true })).length, 0)
   })
 })

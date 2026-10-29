@@ -204,11 +204,13 @@ export type ProfileRead = {
    */
   fullBlock: { reason: string | null; until: number | null } | null
   /**
-   * Раздел блокировок (этап 9): записи цели — только кругу операции
-   * (moderator/`account.edit`/`admin`); остальным — пустой список
-   * и `canBlock: false`, компонента раздела в разметке нет.
+   * Раздел блокировок (этап 9): записи цели — только кругу чтения
+   * (moderator/`block.read`/`block.edit`/`admin`); остальным — пустой
+   * список, компонента раздела в разметке нет.
    */
   blocks: BlockView[]
+  /** Вызывающий вправе видеть раздел блокировок. */
+  canReadBlocks: boolean
   /** Вызывающий вправе накладывать и снимать блокировки. */
   canBlock: boolean
 }
@@ -243,6 +245,7 @@ export type ProfileRouteData = {
   canDeleteSeed: boolean
   /** Раздел блокировок (этап 9): записи цели и право операции для компонента. */
   blocks: BlockView[]
+  canReadBlocks: boolean
   canBlock: boolean
   /** Активная полная блокировка цели для показа (причина — за правами). */
   fullBlock: { reason: string | null; until: number | null } | null

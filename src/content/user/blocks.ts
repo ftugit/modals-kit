@@ -11,11 +11,17 @@ import { blockActive, isBlockScope } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
 import type { Blocked, BlockView } from './types.js'
 
-/** Круг операции: отдельная роль модератора, правка аккаунта или админ. */
-export const BLOCK_ACTORS = [MODERATOR_ROLE, 'account.edit', ADMIN_ROLE] as const
+/** Круг записи блокировок: роль модератора, право записи модели или админ. */
+export const BLOCK_WRITERS = [MODERATOR_ROLE, 'block.edit', ADMIN_ROLE] as const
+
+/** Круг чтения живых блокировок (запись — в комплекте с чтением). */
+export const BLOCK_READERS = [MODERATOR_ROLE, 'block.read', 'block.edit', ADMIN_ROLE] as const
 
 export const canBlock = (perms: readonly string[]): boolean =>
-  BLOCK_ACTORS.some((p) => perms.includes(p))
+  BLOCK_WRITERS.some((p) => perms.includes(p))
+
+export const canReadBlocks = (perms: readonly string[]): boolean =>
+  BLOCK_READERS.some((p) => perms.includes(p))
 
 const toBlocked = (r: BlockView): Blocked => ({
   scope: r.scope,
@@ -79,7 +85,7 @@ export async function listBlocks(
 ): Promise<UserResult<{ blocks: BlockView[] }>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  if (!canBlock(g.perms)) return fail({ code: 'auth.forbidden' })
+  if (!canReadBlocks(g.perms)) return fail({ code: 'auth.forbidden' })
   const actor = principalOfRow({ id: g.sub, permissions: g.perms })
   const blocks = await ports.blocks.listByTarget(actor, targetId)
   return ok({ blocks })

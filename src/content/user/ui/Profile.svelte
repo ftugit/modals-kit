@@ -87,6 +87,7 @@
         canDeleteSeed: d.canDeleteSeed,
         fullBlock: d.fullBlock,
         blocks: d.blocks,
+        canReadBlocks: d.canReadBlocks,
         canBlock: d.canBlock,
       }
     })()
@@ -135,8 +136,8 @@
          (даже с правом правки) компонента нет. -->
     <ProfilePrivacy level={data.visibility} class="mt-4" />
   {/if}
-  {#if data.canBlock}
-    <!-- Раздел блокировок — только кругу операции; вне круга компонента
+  {#if data.canReadBlocks}
+    <!-- Раздел блокировок — только кругу чтения; вне круга компонента
          нет в разметке, записи не приходят данными (пустой список). -->
     <ProfileBlocks subject={uid} blocks={data.blocks} canBlock={data.canBlock} class="mt-4" />
   {/if}

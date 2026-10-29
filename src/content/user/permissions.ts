@@ -48,7 +48,7 @@ export const PERMISSIONS = {
   },
   'account.edit': {
     title: 'Правка аккаунтов',
-    description: 'Менять служебные поля любого аккаунта, ставить блокировки, удалять и восстанавливать.',
+    description: 'Менять служебные поля любого аккаунта, удалять и восстанавливать. Блокировки — отдельная модель со своими правами.',
   },
   'profile.read': {
     title: 'Чтение профилей',
@@ -65,6 +65,20 @@ export const PERMISSIONS = {
   'session.edit': {
     title: 'Правка сессий',
     description: 'Завершать сеансы на устройствах любого аккаунта, в том числе «выйти везде».',
+  },
+  'block.read': {
+    title: 'Чтение блокировок',
+    description: 'Видеть живые записи блокировок любого аккаунта: сферу, причину, срок и автора.',
+  },
+  'block.edit': {
+    title: 'Запись блокировок',
+    description:
+      'Накладывать и снимать блокировки, править причину после наложения и мягко удалять записи. Сильнее роли модератора: та причину править не может.',
+  },
+  'block.readDeleted': {
+    title: 'Чтение удалённых блокировок',
+    description:
+      'Видеть мягко удалённые записи блокировок. Окончательно удалить запись можно только связкой с правом записи (block.edit).',
   },
   'config.read': {
     title: 'Чтение конфига',
@@ -117,6 +131,7 @@ export const PERMISSION_GROUPS: readonly {
   { title: 'Аккаунты', permissions: ['account.read', 'account.edit'] },
   { title: 'Профили', permissions: ['profile.read', 'profile.edit'] },
   { title: 'Сессии', permissions: ['session.read', 'session.edit'] },
+  { title: 'Блокировки', permissions: ['block.read', 'block.edit', 'block.readDeleted'] },
   { title: 'Конфиг', permissions: ['config.read'] },
 ]
 

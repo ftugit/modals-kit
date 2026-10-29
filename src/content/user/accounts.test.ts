@@ -486,7 +486,7 @@ describe('блокировки (этап 9): домен поверх фейка 
   test('круг накладывает и снимает; вне круга и на себя — отказы; истёкшая неактивна', async () => {
     const { ports, auths } = makePorts()
     const moderator = await joined(ports, auths, ['moderator'])
-    const editor = await joined(ports, auths, ['account.edit'])
+    const editor = await joined(ports, auths, ['block.edit'])
     const plain = await joined(ports, auths)
     const target = await joined(ports, auths)
 

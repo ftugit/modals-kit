@@ -32,6 +32,7 @@
         canDeleteSeed: data.canDeleteSeed,
         fullBlock: data.fullBlock,
         blocks: data.blocks,
+        canReadBlocks: data.canReadBlocks,
         canBlock: data.canBlock,
       }}
     />

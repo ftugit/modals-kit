@@ -490,6 +490,7 @@ describe('профиль', () => {
       canDeleteSeed: true,
       fullBlock: null,
       blocks: [],
+      canReadBlocks: false,
       canBlock: false,
     })
     // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
@@ -503,6 +504,7 @@ describe('профиль', () => {
       canDeleteSeed: false,
       fullBlock: null,
       blocks: [],
+      canReadBlocks: false,
       canBlock: false,
     })
     // держатель profile.read различает: профиля у A нет
@@ -518,6 +520,7 @@ describe('профиль', () => {
       canDeleteSeed: false,
       fullBlock: null,
       blocks: [],
+      canReadBlocks: false,
       canBlock: false,
     })
     // созданный профиль читается владельцем как найденный

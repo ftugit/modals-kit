@@ -29,15 +29,17 @@ test('у каждого права есть непустые название и
   expect(bare).toEqual([])
 })
 
-test('действий ровно три, и в каталоге только два выдаваемых', () => {
+test('действия каталога: read/edit и readDeleted у модели блокировок', () => {
   const verbs = all.map((p) => p.split('.')[1])
-  expect(new Set(verbs)).toEqual(new Set(['read', 'edit']))
+  // `block.readDeleted` — единственное третье действие: у блокировок своя
+  // модель, и чтение удалённых у неё выдаётся отдельно от живого чтения.
+  expect(new Set(verbs)).toEqual(new Set(['read', 'edit', 'readDeleted']))
   // `*.create` не выдаётся: строки заводит сервер (`policy.roles(['server'])`)
   expect(all.filter((p) => p.endsWith('.create'))).toEqual([])
 })
 
 test('ключ права — «область.действие» строчными', () => {
-  expect(all.filter((p) => !/^[a-z]+(\.[a-z]+)+$/.test(p))).toEqual([])
+  expect(all.filter((p) => !/^[a-z]+(\.[a-z][a-zA-Z]*)+$/.test(p))).toEqual([])
 })
 
 test('каждое право ровно в одной группе', () => {
