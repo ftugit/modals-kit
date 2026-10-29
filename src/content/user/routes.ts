@@ -158,5 +158,21 @@ export const userBlocksEditRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks
   id: '/user/[id]/blocks/[blockId]',
 })
 
+/** Удаление блокировки из глобального списка (`/blocks/[blockId]/delete`). */
+export const blocksDeleteRoute = kitRoute('/(site)/(app)/blocks/[blockId=uuid]/delete', {
+  dynamic: true,
+  id: '/blocks/[blockId]/delete',
+})
+
+/** Удаление блокировки конкретного пользователя (`/user/[id]/blocks/[blockId]/delete`). */
+export const userBlocksDeleteRoute = kitRoute(
+  '/(site)/(app)/user/[id=uuid]/blocks/[blockId=uuid]/delete',
+  {
+    dynamic: true,
+    id: '/user/[id]/blocks/[blockId]/delete',
+  },
+)
+
+
 
 

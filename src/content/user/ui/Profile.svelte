@@ -21,7 +21,6 @@
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
-  import ProfileBlocks from './profile-blocks/ProfileBlocks.svelte'
   import ProfilePrivacy from './profile-privacy/ProfilePrivacy.svelte'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
@@ -137,9 +136,18 @@
     <ProfilePrivacy level={data.visibility} class="mt-4" />
   {/if}
   {#if data.canReadBlocks}
-    <!-- Раздел блокировок — только кругу чтения; вне круга компонента
-         нет в разметке, записи не приходят данными (пустой список). -->
-    <ProfileBlocks subject={uid} blocks={data.blocks} canBlock={data.canBlock} class="mt-4" />
+    <!-- Переход к блокировкам цели — компактной кнопкой на пару `user.blocks`
+         (`/user/[id]/blocks` без JS). Доступен только кругу чтения/аудита. -->
+    <div class="mt-4 flex items-center">
+      <Button
+        {...asModalLink('user.blocks', { id: uid })}
+        variant="outline"
+        size="sm"
+        data-testid="profile-blocks-open"
+      >
+        Блокировки
+      </Button>
+    </div>
   {/if}
 {:else if data?.notCreated}
   <section
@@ -157,6 +165,18 @@
   </section>
   {#if data?.isOwn}
     <ProfilePrivacy level={data.visibility} class="mt-4" />
+  {/if}
+  {#if data?.canReadBlocks}
+    <div class="mt-4 flex items-center justify-center">
+      <Button
+        {...asModalLink('user.blocks', { id: uid })}
+        variant="outline"
+        size="sm"
+        data-testid="profile-blocks-open"
+      >
+        Блокировки
+      </Button>
+    </div>
   {/if}
 {:else}
   <!-- Собственное ожидание компонента: носителю скелет профиля не положен. -->

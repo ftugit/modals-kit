@@ -11,11 +11,13 @@ import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
 import {
   blocksCreateRoute,
+  blocksDeleteRoute,
   blocksEditRoute,
   blocksFiltersRoute,
   blocksListRoute,
   userAuthRoute,
   userBlocksCreateRoute,
+  userBlocksDeleteRoute,
   userBlocksEditRoute,
   userBlocksRoute,
   userListFiltersRoute,
@@ -130,6 +132,17 @@ registerModal({
       : blocksEditRoute.href({ blockId: String(p.blockId) }),
   size: { width: 480, height: 580 },
 })
+// Удаление блокировки (`{ blockId, uid? }`).
+registerModal({
+  name: 'user.blocks.delete',
+  component: lazy(() => import('./ui/BlockDeleteModal.svelte')),
+  route: (p: { blockId: string; uid?: string }) =>
+    p?.uid
+      ? userBlocksDeleteRoute.href({ id: String(p.uid), blockId: String(p.blockId) })
+      : blocksDeleteRoute.href({ blockId: String(p.blockId) }),
+  size: { width: 460, height: 440 },
+})
+
 
 
 

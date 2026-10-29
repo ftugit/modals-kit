@@ -205,10 +205,7 @@ export type BlockDeleteRouteData = {
   contextUid: string | null
   blockId: string
   enabled: boolean
-  block: BlockView | null
-  canDelete: boolean
-  canHardDelete: boolean
-  alreadyDeleted: boolean
+  detail: BlockDetailView | null
   holdSeconds: number
   fact: AuthErrorCode | null
 }
