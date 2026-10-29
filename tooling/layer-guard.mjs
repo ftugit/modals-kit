@@ -603,10 +603,11 @@ export const RULES = [
   },
   {
     // Файл целиком в base64 — это и чтение всех байт в память, и сборка строки:
-    // ловим пару, чтобы не задевать `btoa` над ключами/курсорами и побайтовые
+    // ловим пару в любом порядке линейной альтернативой (без O(n²) lookahead с [\s\S]*
+    // на каждой позиции файла), не задевая `btoa` над ключами/курсорами и побайтовые
     // чтения заголовков (`slice(...).arrayBuffer()`).
     pattern:
-      /(?=[\s\S]*\bbtoa\s*\()(?=[\s\S]*\.\s*arrayBuffer\s*\(\s*\))|(?=[\s\S]*\bbtoa\s*\()(?=[\s\S]*\bFileReader\b)/,
+      /\bbtoa\s*\([\s\S]*?(?:\.\s*arrayBuffer\s*\(\s*\)|\bFileReader\b)|(?:\.\s*arrayBuffer\s*\(\s*\)|\bFileReader\b)[\s\S]*?\bbtoa\s*\(/,
     isSourceCheck: true,
     scope: SRC_ONLY,
     allow: FILE_TO_BASE64_KEEPERS,

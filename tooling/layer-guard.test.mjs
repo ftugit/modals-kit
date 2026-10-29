@@ -21,10 +21,17 @@ test('canonSpecifier приводит все 5 subpath-алиасов и отн�
 test('файл целиком в base64: пара arrayBuffer+btoa запрещена вне двух допущенных мест', () => {
   const route = '/app/src/routes/(site)/(app)/x/x.form.server.ts';
   const bad = 'const b = new Uint8Array(await file.arrayBuffer())\nreturn btoa(String.fromCharCode(...b))';
+  const badReverse = 'const enc = (s) => btoa(s)\nconst b = await file.arrayBuffer()\nreturn enc(b)';
+  const badReader = 'const r = new FileReader()\nr.onload = () => btoa(String(r.result))';
+  const badReaderReverse = 'const enc = (x) => btoa(x)\nconst r = new FileReader()';
   assert.ok(checkSource(RULES, bad, route));
+  assert.ok(checkSource(RULES, badReverse, route));
+  assert.ok(checkSource(RULES, badReader, route));
+  assert.ok(checkSource(RULES, badReaderReverse, route));
   // одно из двух без другого — не «файл в base64»
   assert.equal(checkSource(RULES, 'const k = btoa(String.fromCharCode(...raw))', route), null);
   assert.equal(checkSource(RULES, 'const b = await blob.arrayBuffer()', route), null);
+  assert.equal(checkSource(RULES, 'const r = new FileReader()', route), null);
   // заголовок через slice — законно
   assert.equal(
     checkSource(RULES, 'await blob.slice(0, 16).arrayBuffer()', '/app/src/lib/image/probe.ts'),
@@ -39,6 +46,12 @@ test('файл целиком в base64: пара arrayBuffer+btoa запрещ�
     checkSource(RULES, bad, '/app/src/routes/(site)/(app)/fields/fields.form.server.ts'),
     null,
   );
+  // страж против возврата квадратичного O(n²) регэкспа на больших модулях (~330 KB)
+  const bigClean = 'export const chunk = "0123456789abcdef";\n'.repeat(8500);
+  const t0 = performance.now();
+  assert.equal(checkSource(RULES, bigClean, route), null);
+  const elapsedMs = performance.now() - t0;
+  assert.ok(elapsedMs < 200, `checkSource на модуле 330 KB занял ${elapsedMs.toFixed(1)} ms (ожидалось < 200 ms)`);
 });
 
 test('строгая направленность 5 слоёв: запрещает восходящие импорты', () => {
