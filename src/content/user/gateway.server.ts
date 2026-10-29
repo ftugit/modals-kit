@@ -798,6 +798,7 @@ export async function readVault(
     expiresAt: payload.exp,
     ttlMs: Math.max(1000, payload.exp - payload.iat),
     prof: payload.prof,
+    permissions: payload.perms ? [...payload.perms] : [],
   }
 }
 
@@ -834,6 +835,7 @@ export async function vaultPayloadOf(input: LoginOutcome | string): Promise<Vaul
     expiresAt: payload.exp,
     ttlMs: Math.max(1000, payload.exp - payload.iat),
     prof: payload.prof,
+    permissions: payload.perms ? [...payload.perms] : [],
   }
 }
 

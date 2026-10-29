@@ -20,6 +20,7 @@ export {
   grants,
   checkGrants,
   forOwner,
+  isGrantSpecInput,
   type GrantClause,
   type GrantChain,
   type BoundGrantSpec,

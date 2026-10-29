@@ -11,6 +11,7 @@ const samplePayload = (overrides: Partial<VaultPayload> = {}): VaultPayload => (
   expiresAt: 1_000_000,
   ttlMs: 300_000,
   prof: { nickname: 'SSR Ник', avatarUrl: null },
+  permissions: ['profile.read'],
   ...overrides,
 })
 
@@ -56,14 +57,24 @@ describe('vault: замыкание, межвкладочная синхрони
     expect(v.authorized).toBe(true)
     expect(v.principal).toBe('user-1')
     expect(v.profile.nickname).toBe('SSR Ник')
+    expect(v.permissions).toEqual(['profile.read'])
 
     // Сценарий AS-03: старт гостем (stamp=1) → вход в модалке → клиентская навигация со старым кэшем (stamp=1) → реальный отзыв на сервере (stamp=2, null).
     ssrSnapshot = null
     v.syncServer(null, 1)
     expect(v.authorized).toBe(false)
+    expect(v.permissions).toEqual([])
 
-    v.hydrate(samplePayload({ sub: 'user-2', iat: 800_000, prof: { nickname: 'Живой', avatarUrl: '/a.webp' } }))
+    v.hydrate(
+      samplePayload({
+        sub: 'user-2',
+        iat: 800_000,
+        prof: { nickname: 'Живой', avatarUrl: '/a.webp' },
+        permissions: ['account.read', 'moderator'],
+      }),
+    )
     expect(v.authorized).toBe(true)
+    expect(v.permissions).toEqual(['account.read', 'moderator'])
 
     // Обычный клиентский переход без перезапуска +layout.server.ts (stamp остался 1): НЕ затирает RAM!
     v.syncServer(null, 1)
@@ -74,6 +85,7 @@ describe('vault: замыкание, межвкладочная синхрони
     v.syncServer(null, 2)
     expect(v.authorized).toBe(false)
     expect(v.principal).toBeNull()
+    expect(v.permissions).toEqual([])
 
     v.dispose()
   })

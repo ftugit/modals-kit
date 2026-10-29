@@ -287,6 +287,7 @@ async function issueTokens(
       sub: row.id,
       dt: record.jti,
       prof: { nickname: profile?.nickname ?? null, avatarUrl: profile?.avatarUrl ?? null },
+      perms: [...row.permissions],
       iat: now,
       exp: now + accessTtlSec * 1000,
     },
@@ -335,11 +336,15 @@ export async function guard(
   return { sub: payload.sub, jti: payload.dt, prof: payload.prof, perms: auth.permissions }
 }
 
-/** Свежий access под текущей сессией (витрина профиля — из БД, не из старого токена). */
-async function freshAccess(ports: AuthPorts, sub: string, jti: string): Promise<string> {
+/** Свежий access под текущей сессией (витрина профиля и текущие права аккаунта). */
+async function freshAccess(
+  ports: AuthPorts,
+  sub: string,
+  jti: string,
+  perms: readonly string[],
+): Promise<string> {
   const accessTtlSec = await ports.config.get('accessTtlSec')
-  // прав здесь не знаем: владелец видит свою строку по `principal.id`
-  const profile = await ports.profiles.get({ principal: { id: sub, roles: [] } }, sub)
+  const profile = await ports.profiles.get({ principal: { id: sub, roles: [...perms] } }, sub)
   const now = ports.clock.now()
   return ports.seal.seal(
     {
@@ -347,6 +352,7 @@ async function freshAccess(ports: AuthPorts, sub: string, jti: string): Promise<
       sub,
       dt: jti,
       prof: { nickname: profile?.nickname ?? null, avatarUrl: profile?.avatarUrl ?? null },
+      perms: [...perms],
       iat: now,
       exp: now + accessTtlSec * 1000,
     },
@@ -355,8 +361,8 @@ async function freshAccess(ports: AuthPorts, sub: string, jti: string): Promise<
 }
 
 /**
- * Перевыпустить короткий `access` с актуальной витриной `prof` из БД под уже
- * открытой сессией БЕЗ ротации долгоживущего `renewal` (`user_session` не пишется).
+ * Перевыпустить короткий `access` с актуальной витриной `prof` и правами `perms` из БД
+ * под уже открытой сессией БЕЗ ротации долгоживущего `renewal` (`user_session` не пишется).
  */
 export async function issueFreshAccess(
   ports: AuthPorts,
@@ -364,7 +370,7 @@ export async function issueFreshAccess(
 ): Promise<UserResult<string>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  return ok(await freshAccess(ports, g.sub, g.jti))
+  return ok(await freshAccess(ports, g.sub, g.jti, g.perms))
 }
 
 /**
@@ -423,7 +429,7 @@ export async function renew(
     renewal = await ports.seal.seal({ k: 'renewal', jti: rotated.jti, version: rotated.version }, deviceTtlSec)
   }
   // версия меньше — «усыновление»: кука продления уже свежая, берём только доступ
-  const access = await freshAccess(ports, session.authId, session.jti)
+  const access = await freshAccess(ports, session.authId, session.jti, auth.permissions)
   return ok({
     access,
     ...(renewal ? { renewal } : {}),

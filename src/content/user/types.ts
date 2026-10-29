@@ -19,6 +19,8 @@ export type AccessTokenPayload = {
   dt: string
   /** Витрина профиля из последнего продления/сохранения. */
   prof: { nickname: string | null; avatarUrl: string | null }
+  /** Выданные аккаунту права на момент выпуска короткого токена. */
+  perms?: readonly string[]
   iat: number
   exp: number
 }

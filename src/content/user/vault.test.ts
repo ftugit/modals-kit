@@ -22,19 +22,26 @@ describe('автопродление: сроки и метаданные', () =>
     expect(overdue(100_000, 100_001)).toBe(true)
   })
 
-  test('snapshotKeyOf: метаданные не содержат сырого токена и реагируют на смену профиля/iat', () => {
+  test('snapshotKeyOf: метаданные не содержат сырого токена и реагируют на смену профиля/прав/iat', () => {
     const base: VaultSessionMeta = {
       sub: 'id1',
       iat: 100,
       expiresAt: 3_600_100,
       ttlMs: 3_600_000,
       prof: { nickname: 'Вася', avatarUrl: null },
+      permissions: ['account.read'],
     }
     expect('access' in (base as Record<string, unknown>)).toBe(false)
     expect(snapshotKeyOf(null)).toBe('guest')
     expect(snapshotKeyOf(base)).not.toBe(snapshotKeyOf({ ...base, iat: 200 }))
     expect(snapshotKeyOf(base)).not.toBe(
       snapshotKeyOf({ ...base, prof: { nickname: 'Петя', avatarUrl: null } }),
+    )
+    expect(snapshotKeyOf(base)).not.toBe(
+      snapshotKeyOf({ ...base, permissions: ['account.read', 'moderator'] }),
+    )
+    expect(snapshotKeyOf({ ...base, permissions: ['b', 'a'] })).toBe(
+      snapshotKeyOf({ ...base, permissions: ['a', 'b'] }),
     )
   })
 })

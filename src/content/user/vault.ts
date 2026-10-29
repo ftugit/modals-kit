@@ -26,6 +26,8 @@ export type VaultSessionMeta = {
   readonly ttlMs: number
   /** Публичная витрина профиля. */
   readonly prof: VaultProfile
+  /** Выданные аккаунту права в текущей сессии (`user_auth.permissions`). */
+  readonly permissions: readonly string[]
 }
 
 export type RenewData = VaultSessionMeta
@@ -33,7 +35,8 @@ export type RenewData = VaultSessionMeta
 /** Стабильный ключ сравнения поколений снимка сессии. */
 export function snapshotKeyOf(payload: VaultSessionMeta | null | undefined): string {
   if (!payload) return 'guest'
-  return `${payload.sub}:${payload.iat}:${payload.expiresAt}:${payload.prof.nickname ?? ''}:${payload.prof.avatarUrl ?? ''}`
+  const permsKey = payload.permissions?.length ? [...payload.permissions].sort().join(',') : ''
+  return `${payload.sub}:${payload.iat}:${payload.expiresAt}:${payload.prof.nickname ?? ''}:${payload.prof.avatarUrl ?? ''}:${permsKey}`
 }
 
 /** Лид-окно в миллисекундах: 5% срока жизни, но не меньше 60 с. */

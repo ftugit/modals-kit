@@ -42,6 +42,7 @@ export interface UserVault {
   readonly authorized: boolean
   readonly principal: string | null
   readonly profile: VaultProfile
+  readonly permissions: readonly string[]
   readonly renewing: boolean
   /**
    * Синхронизировать снимок корневого SSR `load`:
@@ -81,6 +82,7 @@ export type RenewPostOutcome =
   | { readonly kind: 'transient-error' }
 
 const EMPTY_PROFILE: VaultProfile = Object.freeze({ nickname: null, avatarUrl: null })
+const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([])
 
 const TERMINAL_AUTH_CODES = new Set([
   'auth.expired',
@@ -109,6 +111,9 @@ function isValidPayload(data: unknown): data is VaultPayload {
 }
 
 function normalizePayload(data: RenewData): VaultPayload {
+  const perms = Array.isArray(data.permissions)
+    ? Object.freeze(data.permissions.filter((p): p is string => typeof p === 'string'))
+    : EMPTY_PERMISSIONS
   return {
     sub: data.sub,
     iat: data.iat,
@@ -118,6 +123,7 @@ function normalizePayload(data: RenewData): VaultPayload {
       nickname: data.prof?.nickname ?? null,
       avatarUrl: data.prof?.avatarUrl ?? null,
     },
+    permissions: perms,
   }
 }
 
@@ -178,6 +184,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
 
   let principal = $state<string | null>(null)
   let profile = $state<VaultProfile>(EMPTY_PROFILE)
+  let permissions = $state<readonly string[]>(EMPTY_PERMISSIONS)
   let renewing = $state(false)
   let synced = $state(false)
 
@@ -298,6 +305,9 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
       nickname: payload.prof.nickname ?? null,
       avatarUrl: payload.prof.avatarUrl ?? null,
     }
+    permissions = Array.isArray(payload.permissions)
+      ? Object.freeze([...payload.permissions])
+      : EMPTY_PERMISSIONS
     if (typeof window !== 'undefined') synced = true
     schedule()
     if (broadcast) {
@@ -314,6 +324,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     expiresAt = 0
     ttlMs = 0
     profile = EMPTY_PROFILE
+    permissions = EMPTY_PERMISSIONS
     if (typeof window !== 'undefined') synced = true
     if (broadcast) {
       publishShared({ seq: nextSharedSeq(), type: 'clear' })
@@ -442,6 +453,10 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
       if (!isClientReady()) return readSsrUser()?.prof ?? EMPTY_PROFILE
       return profile
     },
+    get permissions(): readonly string[] {
+      if (!isClientReady()) return readSsrUser()?.permissions ?? EMPTY_PERMISSIONS
+      return permissions
+    },
     get renewing(): boolean {
       return renewing
     },
@@ -456,7 +471,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
       if (payload) {
         const normalized = normalizePayload(payload)
         const currentKey = principal
-          ? snapshotKeyOf({ sub: principal, iat, expiresAt, ttlMs, prof: profile })
+          ? snapshotKeyOf({ sub: principal, iat, expiresAt, ttlMs, prof: profile, permissions })
           : 'guest'
         if (currentKey !== snapshotKeyOf(normalized)) applyHydrate(normalized, false)
         else if (typeof window !== 'undefined') synced = true
