@@ -123,6 +123,7 @@ const clip = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)
 export function normalizeErrors(
   errors: readonly FormError[], render: RenderMessage,
   limits: LimitPolicy = defaultPolicy.limits,
+  fallback?: RenderMessage,
 ): FormError[] {
   const seen = new Set<string>()
   const out: FormError[] = []
@@ -132,7 +133,11 @@ export function normalizeErrors(
     seen.add(id)
     // словарь не знает кода чужой службы и не обязан: готовый текст не затираем
     const rendered = render(e.code, e.params, { path: e.path, template: e.template })
-    const message = rendered === e.code && e.message && e.message !== e.code ? e.message : rendered
+    const message = rendered !== e.code
+      ? rendered
+      : e.message && e.message !== e.code
+        ? e.message
+        : fallback ? fallback(e.code, e.params, { path: e.path, template: e.template }) : rendered
     out.push({ ...e, id, message: clip(message, limits.messageLength) })
     if (out.length >= limits.errors) break
   }

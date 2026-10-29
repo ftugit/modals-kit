@@ -14,6 +14,7 @@
   import type { Component, Snippet } from 'svelte'
   import { untrack } from 'svelte'
   import { Form, bind, createConfig, type BoundForm } from '#lib/form/svelte/index.js'
+  import { ru } from '#components/form/messages.ru.js'
   import { Field, Select, Toggle } from '#components/settings/index.js'
   import { Input, buttonVariants } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
@@ -92,6 +93,7 @@
   const desc = demoForm(schema)
   const cfg = createConfig({
     resolve: () => undefined,
+    messages: ru,
     ui: { fieldId: (_formId, name) => name },
   })
 

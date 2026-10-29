@@ -461,7 +461,7 @@ suite('ctx.fail принимает issues Standard Schema (ошибки БД б�
   test('код из issue — текст из словаря пакета, ошибка под полем по path', async () => {
     const r = await run([{ message: 'Value already exists', path: ['name'], code: 'unique' }])
     expect(r.ok).toBe(false)
-    expect(r.errors.map((e) => [e.path, e.code, e.message, e.origin])).toEqual([['name', 'unique', 'Это значение уже занято', 'server']])
+    expect(r.errors.map((e) => [e.path, e.code, e.message, e.origin])).toEqual([['name', 'unique', 'This value is already taken', 'server']])
   })
 
   test('свой текст (template) сильнее словарей; параметры подставляются', async () => {
@@ -478,7 +478,7 @@ suite('ctx.fail принимает issues Standard Schema (ошибки БД б�
     ], d)
     const by = r.errors.map((e) => [e.path ?? '*', e.code, e.message])
     expect(by).toContainEqual(['name', 'unique', 'Имя уже занято'])
-    expect(by).toContainEqual(['*', 'unique', 'Это значение уже занято'])
+    expect(by).toContainEqual(['*', 'unique', 'This value is already taken'])
     expect(by).toContainEqual(['name', 'schema', 'что-то своё'])
   })
 

@@ -23,7 +23,7 @@ import {
   validateCatalogFilterValues,
   type CatalogFilterSchema,
 } from './index'
-import { defineForm, field, makeRenderer, ru, evaluate } from '#lib/form/index.js'
+import { defineForm, en, field, makeRenderer, evaluate } from '#lib/form/index.js'
 import { describeAll } from './test-describe'
 
 const schema: CatalogFilterSchema = {
@@ -304,7 +304,7 @@ describe('параметры формы из схемы (formParams)', () => {
       'page.filters.year.min',
       'page.filters.year.max',
     ])
-    const render = makeRenderer([ru])
+    const render = makeRenderer([en])
     const data = new FormData()
     data.set('page.filters.year.min', '2010')
     data.set('page.filters.year.max', '2001')

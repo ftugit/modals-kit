@@ -4,7 +4,7 @@ import {
   checkStale, compileFieldSpec, createRegistry, defineForm,
   fieldLinkState,
   evaluate, fieldSetHash, FormDefinitionError,
-  makeRenderer, normalizeErrors, projectAttrs, ru,
+  makeRenderer, normalizeErrors, projectAttrs, en,
   assertQueuedProtocol, hasError, invalidFromFor,
   applyHandler, split, makeFieldSugar, normalizeService, policyWith, QueuedWithoutProtocolError,
   SubmitMachine,
@@ -13,7 +13,7 @@ import {
 
 import { newSubmission, runSubmit } from './submit'
 
-const render = makeRenderer([ru])
+const render = makeRenderer([en])
 const field = makeFieldSugar()
 const v = (await import('./validators')).v
 const { strengthOf } = await import('./strength')
@@ -299,7 +299,7 @@ suite('разбор и проверка', () => {
   })
 
   test('код ошибки step имеет встроенное сообщение', () => {
-    expect(render('step', { step: 5 })).toBe('Шаг 5')
+    expect(render('step', { step: 5 })).toBe('Step 5')
   })
 })
 

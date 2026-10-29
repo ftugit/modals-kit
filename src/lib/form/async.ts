@@ -63,10 +63,24 @@ export class CheckRegistry {
     this.#byName.set(name, fn)
     return this
   }
+  entries = () => this.#byName.entries()
   /** Зовётся ли проверка по каждой записи списка (`multiple`-поле). */
   perItem = (name: string): boolean => this.#byName.get(name)?.perItem === true
   has = (name: string) => this.#byName.has(name)
   get = (name: string) => this.#byName.get(name)
+}
+
+/** Слить два реестра проверок: правила `override` дополняют и перекрывают `base`. */
+export function mergeChecks(
+  base: CheckRegistry | undefined,
+  override: CheckRegistry | undefined,
+): CheckRegistry | undefined {
+  if (!base) return override
+  if (!override || base === override) return base
+  const out = new CheckRegistry()
+  for (const [k, fn] of base.entries()) out.register(k, fn)
+  for (const [k, fn] of override.entries()) out.register(k, fn)
+  return out
 }
 
 /**

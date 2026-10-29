@@ -1,6 +1,6 @@
 // Изоморфные описания форм демо-страницы `/upload-demo`.
-import { image } from '#components/form/image.js'
-import { defineForm, field, v, type ValidatorRef } from '#lib/form/index.js'
+import { image, registerImageCheck } from '#components/form/image.js'
+import { CheckRegistry, defineForm, FILE_BUDGET_RESERVE, field, v, type ValidatorRef } from '#lib/form/index.js'
 import type {
   StorageCloneReport,
   StorageProbeResult,
@@ -10,6 +10,9 @@ import type { StorageTelemetrySnapshot } from '#lib/storage/state.js'
 import type { UploadDemoValues } from './demo-schema.js'
 
 const MB = 1024 * 1024
+
+const uploadImageChecks = new CheckRegistry()
+registerImageCheck(uploadImageChecks)
 
 export const DEMO_MAX_UPLOAD_BYTES = 200 * MB
 
@@ -32,6 +35,8 @@ export function createUploadBundleForm(panel?: Partial<UploadDemoValues>) {
 
   return defineForm({
     id: 'upload_bundle',
+    budget: (multiple ? maxBytes * 3 : maxBytes) + FILE_BUDGET_RESERVE,
+    checks: uploadImageChecks,
     fields: {
       title: field.text({
         label: 'Название материала',

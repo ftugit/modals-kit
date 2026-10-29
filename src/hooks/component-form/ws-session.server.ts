@@ -16,6 +16,7 @@
 //   немедленно прерывает поток и удаляет `.part` / `AbortMultipartUpload`.
 import type { RequestEvent } from '@sveltejs/kit'
 import type { LazyContent } from '@remix-run/lazy-file'
+import { mergeChecks } from '#lib/form/index.js'
 import {
   bodyLayer,
   createFormHandler,
@@ -24,6 +25,7 @@ import {
   namesLayer,
   reject,
   type Layer,
+  type Limits,
 } from '#lib/form/server.js'
 import { StreamFile } from '#lib/storage/index.js'
 import { originGuard } from '#server/form-security.server.js'
@@ -953,7 +955,8 @@ export async function handleFormUploadWs(
           url: targetUrl,
         }
 
-        const checks = typeof reg.checks === 'function' ? await reg.checks(routeEvent) : reg.checks
+        const rawChecks = typeof reg.checks === 'function' ? await reg.checks(routeEvent) : reg.checks
+        const checks = mergeChecks(description.checks, rawChecks)
 
         const useIntegrity =
           typeof reg.integrity === 'function'
@@ -1008,7 +1011,7 @@ export async function handleFormUploadWs(
         let capturedForm: FormData | undefined
         const wsFilesLayer: Layer = (ctx) => {
           if (!ctx.form) return undefined
-          if (totalDeclaredBytes > ctx.limits.maxBytes) {
+          if (totalDeclaredBytes > ctx.limits.budget) {
             return reject(413, 'body.too-large')
           }
           for (const entry of streamFiles) {
@@ -1032,11 +1035,10 @@ export async function handleFormUploadWs(
         )
 
         const handlerDeadlineMs = maxDurationMs ?? UNBOUNDED_HANDLER_TIMEOUT_MS
-        const effectiveLimits = {
-          ...DEFAULT_LIMITS,
+        const effectiveLimits: Partial<Limits> = {
           ...(reg.limits ?? {}),
-          maxBytes: reg.limits?.maxBytes ?? maxBytes,
-          timeoutMs: Math.max(reg.limits?.timeoutMs ?? 0, handlerDeadlineMs),
+          budget: reg.limits?.budget ?? maxBytes,
+          timeoutMs: Math.max(reg.limits?.timeoutMs ?? description.intake?.timeoutMs ?? 0, handlerDeadlineMs),
         }
 
         const baseLayers: Layer[] = [

@@ -1,8 +1,8 @@
 // Межполевые границы: notAbove / notBelow / noOverlap — тот же путь evaluate, что у сервера.
 import { describe, expect, test } from 'vitest'
-import { defineForm, evaluate, field, makeRenderer, ru, v } from './index'
+import { defineForm, en, evaluate, field, makeRenderer, v } from './index'
 
-const render = makeRenderer([ru])
+const render = makeRenderer([en])
 const check = (d: ReturnType<typeof defineForm>, entries: [string, string][]) => {
   const fd = new FormData()
   for (const [k, val] of entries) fd.append(k, val)
@@ -21,8 +21,8 @@ describe('notAbove / notBelow', () => {
   test('перевёрнутый диапазон — ошибка у обеих границ, с текстом и значением соседа', () => {
     const errors = check(years, [['from', '2010'], ['to', '2001']])
     expect(errors.map((e) => [e.path, e.code])).toEqual([['from', 'notAbove'], ['to', 'notBelow']])
-    expect(errors[0]!.message).toBe('Не больше верхней границы (2001)')
-    expect(errors[1]!.message).toBe('Не меньше нижней границы (2010)')
+    expect(errors[0]!.message).toBe('Must not exceed upper bound (2001)')
+    expect(errors[1]!.message).toBe('Must not be below lower bound (2010)')
   })
 
   test('равные границы и открытый диапазон — не ошибка', () => {
@@ -58,7 +58,7 @@ describe('noOverlap', () => {
     const errors = check(genres, [['all', 'a'], ['all', 'b'], ['none', 'b']])
     expect(errors).toHaveLength(1)
     expect(errors[0]).toMatchObject({ path: 'none', code: 'noOverlap', params: { values: ['b'], count: 1 } })
-    expect(errors[0]!.message).toBe('Это значение выбрано и здесь, и в соседнем поле')
+    expect(errors[0]!.message).toBe('This value overlaps with the related field')
   })
 
   test('без пересечения или с пустой стороной — не ошибка', () => {
@@ -68,6 +68,6 @@ describe('noOverlap', () => {
 
   test('несколько общих значений — текст во множественном числе', () => {
     const errors = check(genres, [['all', 'a'], ['all', 'b'], ['none', 'a'], ['none', 'b']])
-    expect(errors[0]!.message).toBe('Эти значения выбраны и здесь, и в соседнем поле')
+    expect(errors[0]!.message).toBe('These values overlap with the related field')
   })
 })

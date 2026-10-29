@@ -4,9 +4,7 @@
 // и пакетное клонирование `storage.clone`.
 import { randomUUID } from 'node:crypto'
 import { demoParams } from '#components/demo/schema.js'
-import { registerImageCheck } from '#components/form/image.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
-import { CheckRegistry } from '#lib/form/index.js'
 import { reject } from '#lib/form/server.js'
 import {
   normalizeStoragePath,
@@ -59,13 +57,9 @@ function readDesiredServer(url: URL): string {
   return raw || 'local'
 }
 
-const imageChecks = new CheckRegistry()
-registerImageCheck(imageChecks)
-
 registerComponentForm({
   id: 'upload_bundle',
   description: (event) => createUploadBundleForm(readStaticDemoConfig(event.url)),
-  checks: imageChecks,
   authorize(event) {
     const cfg = readStaticDemoConfig(event.url)
     if (cfg.acl === 'deny_403') {

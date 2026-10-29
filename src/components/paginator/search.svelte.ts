@@ -16,6 +16,7 @@
 import { onMount, untrack } from 'svelte'
 import { defineForm, field, v } from '#lib/form/index.js'
 import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
+import { ru } from '#components/form/messages.ru.js'
 import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
 import { getClientStore, getPaginator, linkFor, setExtra } from '#lib/paginate/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
@@ -94,7 +95,7 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
 
   // Настройка одна на поиск: компонент поля пишет страница, транспорт url-режиму
   // не нужен — POST-путь не задействуется.
-  const config = createConfig({ resolve: () => undefined, live: 'on-input' })
+  const config = createConfig({ resolve: () => undefined, messages: ru, live: 'on-input' })
 
   // Объявление не реактивное: имя пагинатора, ключ и предел фиксируются при
   // вызове (страница не переключает их на лету).

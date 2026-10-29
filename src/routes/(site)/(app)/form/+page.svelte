@@ -13,7 +13,7 @@
     type FormDescription, type PollOutcome,
   } from '#lib/form/index.js'
   import { code6Described, code6Plain, ratingType } from '#components/form/extend.js'
-  import { checks, forms, formsCustomUi } from '#components/form/forms.config.js'
+  import { forms, formsCustomUi } from '#components/form/forms.config.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
@@ -118,7 +118,6 @@
     onError: sink,
     // Результат нативного POST связка берёт сама: `formResult` приходит в
     // данных страницы (`locals.formResult` → layout), эффектов для этого не нужно.
-    checks,
   }
 
   const cardinality = $derived(sv('cardinality') as 'first' | 'all')

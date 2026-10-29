@@ -2,9 +2,9 @@
 //
 // Модуль предназначен только для серверного кода. Порядок слоёв менять можно,
 // выбрасывать обязательные — нет.
-import { runAsyncChecks, type CheckRegistry } from './async'
+import { mergeChecks, runAsyncChecks, type CheckRegistry } from './async'
 import { applyHandler, type ErrorContext, type ErrorHandler } from './errors'
-import type { FormDescription } from './describe'
+import type { FormDescription, FormIntakeLimits } from './describe'
 import type { MessageDictionary } from './messages'
 import { formRenderer } from './messages-order'
 import { normalizeErrors, stableId, type FormError, type Outcome, type Result } from './result'
@@ -19,26 +19,14 @@ import { nameProblem } from './policy'
 import type { SubmissionId } from './types'
 
 /** Пределы приёма: защита тела запроса, а не настройка поведения. */
-export interface Limits {
-  /** Предел всего тела — по счётчику потока, а не по заголовку. */
-  readonly maxBytes: number
-  /** Предел числа различных ключей. */
-  readonly maxKeys: number
-  /** Предел значений одного ключа. */
-  readonly maxValuesPerKey: number
-  /**
-   * Крайний срок всего приёма, мс: от первого байта тела до готового `Result`.
-   * Полуживой сервер обязан отказать сам (`408 request.timeout`), а не ждать
-   * таймаута платформы, держа воркер и память. Работа не прерывается — её
-   * результат уже никому не нужен, поэтому исход «неизвестно», если обработчик
-   * успел начать действие.
-   */
-  readonly timeoutMs: number
+export interface Limits extends FormIntakeLimits {
+  /** Бюджет тела формы, байт — по счётчику потока, а не по заголовку. */
+  readonly budget: number
 }
 
-/** Пределы приёма по умолчанию: байты тела, число ключей и значений, таймаут. */
+/** Пределы приёма по умолчанию: бюджет тела, число ключей и значений, таймаут. */
 export const DEFAULT_LIMITS: Limits = {
-  maxBytes: 2 * 1024 * 1024, maxKeys: 256,
+  budget: 2 * 1024 * 1024, maxKeys: 256,
   maxValuesPerKey: 64, timeoutMs: 15_000,
 }
 
@@ -109,7 +97,7 @@ export const bodyLayer: Layer = async (ctx) => {
     return reject(415, 'body.unsupported-type')
 
   const declared = Number(ctx.request.headers.get('content-length') ?? 0)
-  if (declared > ctx.limits.maxBytes) return reject(413, 'body.too-large')
+  if (declared > ctx.limits.budget) return reject(413, 'body.too-large')
 
   let form: FormData
   try { form = await metered(ctx.request, ctx.limits).formData() }
@@ -132,7 +120,7 @@ function metered(request: Request, limits: Limits): Request {
   const stream = request.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       seen += chunk.byteLength
-      if (seen > limits.maxBytes) { controller.error(new Error('body.too-large')); return }
+      if (seen > limits.budget) { controller.error(new Error('body.too-large')); return }
       controller.enqueue(chunk)
     },
   }))
@@ -148,7 +136,7 @@ function metered(request: Request, limits: Limits): Request {
  * `Ctx` и порядок слоёв (`order`) не меняются, а слой имён и обработчик
  * разрешают источник РОВНО ОДИН раз — кто первый.
  */
-const pendingSource = new WeakMap<Ctx, { source: DescriptionSource; instance: string; done: boolean }>()
+const pendingSource = new WeakMap<Ctx, { source: DescriptionSource; instance: string; done: boolean; onResolve: (d: FormDescription) => void }>()
 
 /**
  * Поднять описание из источника по версии из конверта (однократно на запрос).
@@ -164,6 +152,7 @@ async function resolveSource(ctx: Ctx): Promise<void> {
     instance: pending.instance,
     specVersion: typeof specRaw === 'string' ? Number(specRaw) : undefined,
   })
+  pending.onResolve(ctx.description)
 }
 
 /**
@@ -579,7 +568,17 @@ export interface Handled<T = unknown> { result: Result<T>; status: number }
 export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
   const base = o.description
   const render = formRenderer(base.messages as never, o.messages, base.policy.interpolate)
-  const limits: Limits = { ...DEFAULT_LIMITS, ...o.limits }
+  const resolveLimits = (d: FormDescription): Limits => {
+    const ceiling = o.limits?.budget ?? DEFAULT_LIMITS.budget
+    const declared = d.limits.budget ?? undefined
+    return {
+      ...DEFAULT_LIMITS,
+      ...d.intake,
+      ...o.limits,
+      budget: declared !== undefined ? Math.min(declared, ceiling) : ceiling,
+    }
+  }
+  const limits: Limits = resolveLimits(base)
 
   const layers: readonly Layer[] = o.order ?? [
     methodLayer(),
@@ -611,7 +610,14 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
     Promise<Handled<T>> {
     const started = Date.now()
     const ctx: Ctx = { request, description: base, limits, reached: 'rejected', warnings: [] }
-    if (o.source) pendingSource.set(ctx, { source: o.source, instance: o.instance ?? `${base.id}:new`, done: false })
+    if (o.source) {
+      pendingSource.set(ctx, {
+        source: o.source,
+        instance: o.instance ?? `${base.id}:new`,
+        done: false,
+        onResolve: (d) => { ctx.limits = resolveLimits(d) },
+      })
+    }
     /** Сбой вне execute: текст — только в телеметрию и лог сервера, не клиенту. */
     let failure: unknown
     let currentIntent = 'submit'
@@ -677,10 +683,12 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
         // обычно уже поднято слоем имён; здесь — если order поставил его до тела
         await resolveSource(ctx)
 
-        // бюджет тела — тот же, по которому режет `bodyLayer`: объявленный формой
-        // меньше потолка окружения, иначе действует потолок (в `limits.maxBytes`)
+        // бюджет тела — тот же, по которому режет `bodyLayer`: `min(объявленный, потолок)`
+        const activeRender = ctx.description === base
+          ? render
+          : formRenderer(ctx.description.messages as never, o.messages, ctx.description.policy.interpolate)
         const ev = evaluate(ctx.form!, ctx.description, {
-          render, instance: o.instance, prepare, budget: ctx.limits.maxBytes,
+          render: activeRender, instance: o.instance, prepare, budget: ctx.limits.budget,
         })
         if (ev.fatal) return finish(fail(reject(400, ev.fatal.code, ev.fatal.params)))
 
@@ -705,15 +713,16 @@ export function createFormHandler<T, E = unknown>(o: HandlerOptions<T, E>) {
         // внешняя схема и асинхронные проверки — только если синхронные прошли:
         // проверять межполевое и чужое поверх мусора бессмысленно
         if (!errors.length && o.schema) errors.push(...await runSchema(o.schema, ev.values))
-        if (!errors.length && o.checks)
-          errors.push(...await runAsyncChecks(ctx.description, ev.values, o.checks))
+        const checks = mergeChecks(ctx.description.checks, o.checks)
+        if (!errors.length && checks)
+          errors.push(...await runAsyncChecks(ctx.description, ev.values, checks))
 
         if (errors.length)
           return finish({
             status: status.validationFailed,
             result: withId({
               ok: false, status: status.validationFailed, outcome: 'not-applied',
-              errors: normalizeErrors(errors, render, ctx.description.policy.limits),
+              errors: normalizeErrors(errors, activeRender, ctx.description.policy.limits),
             }),
           })
 

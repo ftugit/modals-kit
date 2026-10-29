@@ -28,6 +28,7 @@
  */
 import { bind, createConfig, type FieldView } from '#lib/form/svelte/index.js'
 import type { FormDescription } from '#lib/form/index.js'
+import { ru } from '#components/form/messages.ru.js'
 import { FILTER_KEY_PREFIX } from '#lib/paginate/index.js'
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
 
@@ -60,6 +61,7 @@ export interface FilterFormProps {
  */
 const filterForms = createConfig({
   resolve: () => undefined,
+  messages: ru,
   ui: { fieldId: (_formId, name) => name },
 })
 

@@ -1,4 +1,5 @@
 // Объявление формы. Изоморфно: модуль импортируют и страница, и сервер.
+import type { CheckRegistry } from './async'
 import { formLimits, type FormLimits } from './budget'
 import { BOUND_PAIRS, boundValue, type Constraint, type ConstraintKind } from './constraints'
 import { applies, projectAttrs, type ProjectedAttrs } from './field-types'
@@ -399,6 +400,13 @@ export function checkFieldDefinition(
 
 /* ── объявление формы ──────────────────────────────────────────────── */
 
+/** Изоморфные пределы приёма тела запроса в описании формы. */
+export interface FormIntakeLimits {
+  readonly maxKeys: number
+  readonly maxValuesPerKey: number
+  readonly timeoutMs: number
+}
+
 export interface FormDefinition {
   /** Стабильный id формы: входит в envelope, Result и имена DOM id. */
   id: FormId
@@ -423,18 +431,20 @@ export interface FormDefinition {
   cardinality?: 'first' | 'all'
   /** Источник невалидности по умолчанию: факты или только показанные ошибки. */
   invalidFrom?: InvalidFrom
+  /** Асинхронные проверки формы: общие для клиента и сервера. */
+  checks?: CheckRegistry
   /** Изолированный реестр типов/валидаторов/инструкций для этой формы. */
   registry?: Registry
   /** Политика имён, лимитов, envelope и intent для этой формы. */
   policy?: FormPolicy
   /**
    * Бюджет тела формы, байт — единственный источник проверки веса файлов.
-   * Приложение объявляет его один раз и обязано сверить с лимитом развёртывания
-   * (env): больше env — игнорируется, действует `min(объявленный, env)`.
-   * Не объявлен — суммарная проверка файлов выключена, `v.maxSize` работает
-   * только как предел одного файла.
+   * Приложение объявляет его один раз; больше потолка развёртывания (env)
+   * молча игнорируется (`min(объявленный, env)`).
    */
-  limits?: { budget?: number }
+  budget?: number
+  /** Пределы приёма (`maxKeys`, `maxValuesPerKey`, `timeoutMs`). */
+  limits?: Partial<FormIntakeLimits>
 }
 
 /** Нормализованное и проверенное описание формы, используемое клиентом и сервером. */
@@ -455,13 +465,17 @@ export interface FormDescription {
   readonly cardinality: 'first' | 'all'
   /** Источник невалидности по умолчанию. */
   readonly invalidFrom: InvalidFrom
+  /** Асинхронные проверки, объявленные в форме. */
+  readonly checks?: CheckRegistry
+  /** Изоморфные пределы приёма (`maxKeys`, `maxValuesPerKey`, `timeoutMs`). */
+  readonly intake?: Readonly<Partial<FormIntakeLimits>>
   /** Предупреждения описания; ошибки не допускаются до создания FormDescription. */
   readonly defects: readonly FieldDefect[]
   /** Реестр, которым была собрана форма. */
   readonly registry: Registry
   /** Политика, которой была собрана форма. */
   readonly policy: FormPolicy
-  /** Бюджет тела и бюджет файлов: с ним сверяется `v.maxSize`. */
+  /** Бюджет тела и производный бюджет файлов (`filesBytes`, `fileFields`). */
   readonly limits: FormLimits
   /** Атрибуты считает ядро: примитив получает готовый набор, а не правила. */
   attrsOf(name: string): ProjectedAttrs
@@ -518,6 +532,13 @@ export function defineForm(def: FormDefinition): FormDescription {
   }
 
   for (const f of fields) defects.push(...checkFieldDefinition(f, registry, policy))
+  if (def.budget !== undefined && (!Number.isFinite(def.budget) || def.budget <= 0))
+    defects.push(defect('spec.limit', `${def.id}.budget`, 'бюджет тела: ожидается положительное число байт'))
+  for (const k of ['maxKeys', 'maxValuesPerKey', 'timeoutMs'] as const) {
+    const val = def.limits?.[k]
+    if (val !== undefined && (!Number.isFinite(val) || val <= 0))
+      defects.push(defect('spec.limit', `${def.id}.limits.${k}`, `предел ${k}: ожидается положительное число`))
+  }
   if (defects.some((d) => d.severity === 'error')) throw new FormDefinitionError(defects, def.id)
 
   // файловые поля — в порядке объявления: по ним стабильно считается сумма веса
@@ -526,7 +547,8 @@ export function defineForm(def: FormDefinition): FormDescription {
       try { return isFileInputs(registry.types.get(f.kind).inputs) } catch { return false }
     })
     .map((f) => f.name)
-  const limits = formLimits(def.limits?.budget, fileFields)
+  const limits = formLimits(def.budget, fileFields)
+  const intake = def.limits ? Object.freeze({ ...def.limits }) : undefined
 
   const byName = safeObject<FieldDescriptor>()
   for (const f of fields) byName[f.name] = f
@@ -559,6 +581,8 @@ export function defineForm(def: FormDefinition): FormDescription {
     messages: formMessages(def.messages, fields),
     cardinality: def.cardinality ?? 'first',
     invalidFrom: def.invalidFrom ?? 'fact',
+    ...(def.checks ? { checks: def.checks } : {}),
+    ...(intake ? { intake } : {}),
     defects, registry, policy, limits,
     constraintsOf: constraintsFor,
     attrsOf(name) {

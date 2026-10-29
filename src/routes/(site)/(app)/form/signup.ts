@@ -1,7 +1,7 @@
 // Изоморфное описание: его импортируют и страница, и серверное действие.
 // Ноль UI, ноль HTTP, ноль Svelte.
 import { defineForm, field, v } from '#lib/form/index.js'
-import { emailTaken, inn, luhn } from '#components/form/extend.js'
+import { checks, emailTaken, inn, luhn } from '#components/form/extend.js'
 
 /** Ответы, которые умеет изобразить демо-сервер (`signup.form.server.ts`). */
 export const ANSWERS = ['accept', 'redirect', 'queued', 'unknown'] as const
@@ -16,6 +16,7 @@ function make(cardinality: 'first' | 'all') {
     id: 'signup',
     revision: 1,
     cardinality,
+    checks,
     // Тексты своих правил приложения (`extend.ts`): у lib про них строк нет,
     // и без словаря пользователь увидел бы `luhn`, `inn`, `code6`, `type.rating`.
     messages: {

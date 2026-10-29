@@ -168,8 +168,8 @@ export function createComponentFormsHandle(
     if (raw === null) return resolve(event)
     if (raw === 'too-large') {
       return isJsonRequest(event.request)
-        ? Response.json({ message: 'слишком большое тело запроса' }, { status: 413 })
-        : new Response('слишком большое тело запроса', { status: 413 })
+        ? Response.json({ code: 'body.too-large', message: 'Request body too large' }, { status: 413 })
+        : new Response('Request body too large', { status: 413 })
     }
 
     let matched: ComponentFormRegistration | undefined

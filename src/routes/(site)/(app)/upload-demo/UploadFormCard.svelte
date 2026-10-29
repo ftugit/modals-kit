@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
-  import { checks, forms } from '#components/form/forms.config.js'
+  import { forms } from '#components/form/forms.config.js'
   import { Steps, useSteps } from '#components/steps/index.js'
   import { Attachment, Button } from '#components/ui/index.js'
   import {
@@ -41,7 +41,6 @@
   const formDesc = createUploadBundleForm(initialDemo)
 
   const upload = bindComponentForm(forms, formDesc, {
-    checks,
     onSuccess: (res) => {
       const payload = res.data as
         | {

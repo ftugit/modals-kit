@@ -6,9 +6,9 @@
 import {
   decode,
   disabledState,
+  en,
   makeRenderer,
   normalizeErrors,
-  ru,
   validateForm,
   type EntrySource,
   type FormDescription,
@@ -164,7 +164,7 @@ export function catalogFilterViolations(
   for (const [path, value] of catalogFilterFormData(schema, extra ?? {}).entries()) {
     if (description.byName[prefix + path]) data.append(prefix + path, value)
   }
-  const render = makeRenderer([description.messages, opts.messages ?? {}, ru], description.policy.interpolate)
+  const render = makeRenderer([description.messages, opts.messages ?? {}, en], description.policy.interpolate)
   const { values, structural } = decode(data, description)
   const out: CatalogFilterViolation[] = normalizeErrors(validateForm(description, values, { structural }), render)
     .filter((error) => error.path)

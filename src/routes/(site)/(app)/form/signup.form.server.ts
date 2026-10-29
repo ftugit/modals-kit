@@ -11,7 +11,6 @@ import type { Result } from '#lib/form/index.js'
 import { localStore } from '#server/cache.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import '#components/form/extend.js'
-import { checks } from '#components/form/extend.js'
 import { ANSWERS, resolveDescription, signup, type Answer } from './signup'
 import { countCreated, jobStatus, queueJob, QUEUE_DELAY_MS } from './queue.server.js'
 
@@ -40,7 +39,6 @@ registerComponentForm({
   source: { resolve: async (ctx) => resolveDescription(ctx.specVersion), revision: async () => signup.revision },
   // Слой 02 (origin) ставит сам приёмник (`#hooks/component-form`): форма не
   // может «забыть» защиту — набор слоёв у всех встраиваемых форм один.
-  checks,
   idempotency,
   throttle,
   async execute({ values, intent, commit }, event) {

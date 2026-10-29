@@ -1,10 +1,10 @@
 // Чистая логика ошибки операции перехватчика: факт, закреп, блокировка.
 import { describe as suite, expect, test } from 'vitest'
-import { makeRenderer, ru } from './index'
+import { en, makeRenderer } from './index'
 import { defaultPolicy } from './policy'
 import { blockingOpErrors, opError, opPin } from './takeover'
 
-const render = makeRenderer([ru])
+const render = makeRenderer([en])
 const limits = defaultPolicy.limits
 const fd = (values: Record<string, string>): FormData => {
   const d = new FormData()

@@ -1,5 +1,5 @@
 // Проверка значений. Один и тот же код исполняется в браузере и на сервере.
-import { withCeiling } from './budget'
+import { formLimits } from './budget'
 import { formWeight } from './weight'
 import type { ConstraintKind } from './constraints'
 import type { DisableRule, FieldCondition, FieldDescriptor, FieldLink, FormDescription, VisibilityCondition } from './describe'
@@ -143,7 +143,10 @@ export function validateForm(
   d: FormDescription, values: Record<string, unknown>, opts: ValidateOptions = {},
 ): FormError[] {
   const errors: FormError[] = []
-  const limits = withCeiling(d.limits, opts.budget)
+  const cap = opts.budget !== undefined
+    ? (d.limits.budget !== null ? Math.min(d.limits.budget, opts.budget) : opts.budget)
+    : undefined
+  const limits = cap !== undefined ? formLimits(cap, d.limits.fileFields) : d.limits
   const visible = visibleFields(d, values)
   const relax = new Set(opts.relax ?? [])
   const subset = opts.subset ? new Set(opts.subset) : null

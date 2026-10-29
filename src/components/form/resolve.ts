@@ -43,5 +43,7 @@ export const resolve = (f: { input: string; variant?: string }) => {
   }
 }
 
+import { ru } from './messages.ru'
+
 /** Только выбор компонента: то, что нужно `Field`. */
-export const fieldViews = createConfig({ resolve })
+export const fieldViews = createConfig({ resolve, messages: ru })

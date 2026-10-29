@@ -21,6 +21,7 @@
   } from '#lib/paginate/filters/index.js'
   import type { Component } from 'svelte'
   import type { MessageDictionary } from '#lib/form/index.js'
+  import { ru } from '#components/form/messages.ru.js'
   import type { CatalogFilterDescribe } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
   import type { FilterFormProps } from './filter-form.svelte.js'
@@ -82,7 +83,10 @@
   const hidden = $derived(getPaginator(name).adapter.carryFields?.(search, ['filters.*']) ?? [])
 
   /** Вся картина панели — из схемы, описания и extra: ни одного решения в разметке. */
-  const view = $derived(catalogFilterView(schema, extra, { description, prefix, href, messages }))
+  const view = $derived(catalogFilterView(schema, extra, {
+    description, prefix, href,
+    messages: messages ? { ...ru, ...messages } : ru,
+  }))
 
   /**
    * Форма сеет значения ОДИН раз (её зеркало — черновик пользователя), поэтому

@@ -208,13 +208,14 @@ import { useSyncExternalStore } from 'react'
 import {
   FormStore, initialState, SubmitMachine, runSubmit, evaluate,
   applyHandler, split, hasError, invalidFromFor,
-  AsyncRunner, buildEnvelope, makeRenderer, ru,
+  AsyncRunner, buildEnvelope, en, makeRenderer, mergeChecks,
 } from '#lib/form/index.js'
 
 export function useForm(description, opts) {
   const store = useRef(new FormStore(initialState(description.revision)))
   const machine = useRef(new SubmitMachine(opts.parallel ?? 'block'))
-  const runner = useRef(opts.checks ? new AsyncRunner(opts.checks) : null)
+  const merged = mergeChecks(description.checks, opts.checks)
+  const runner = useRef(merged ? new AsyncRunner(merged) : null)
 
   // снимок для рендера: getSnapshot стабилен по ссылке — иначе цикл
   const state = useSyncExternalStore(
@@ -260,8 +261,7 @@ import { createFormHandler, MemoryIdempotencyStore } from '#lib/form/server.js'
 import { signup } from './signup'
 
 const handle = createFormHandler({
-  description: signup,
-  checks: { /* реестр асинхронных проверок */ },
+  description: signup,                        // checks, budget и limits приходят из defineForm
   idempotency: new MemoryIdempotencyStore(),
   onErrors: (errors, ctx) => errors,          // проходят ОБА пути
   execute: async (ctx) => {
@@ -273,9 +273,11 @@ const handle = createFormHandler({
 })
 ```
 
-Пределы приёма — `Limits` (`server.js`): `maxBytes` — вес тела, `maxKeys` —
+Пределы приёма — `Limits` (`server.js`): `budget` — вес тела, `maxKeys` —
 различных ключей, `maxValuesPerKey` — значений одного ключа, `timeoutMs` — крайний
-срок всего приёма (по умолчанию 15 с). Срок считается от первого байта тела до
+срок всего приёма (по умолчанию 15 с). Изоморфные `maxKeys`, `maxValuesPerKey` и
+`timeoutMs` объявляются один раз в `defineForm({ limits })`, а `budget` — в
+`defineForm({ budget })`. Срок считается от первого байта тела до
 готового `Result`: висящее чтение тела, молчащий обработчик и зависшее хранилище
 обрываются одинаково — `408 request.timeout`. Работа не прерывается (чужой
 `execute` не остановить), поэтому исход честный: `not-applied`, если действие не
@@ -283,7 +285,7 @@ const handle = createFormHandler({
 позвать. Тело запроса при срочном отказе отменяется. Предела на отдельный файл
 здесь нет: его объявляет `v.maxSize` в описании формы, а общий вес держит бюджет
 (см. «Бюджет тела и файлов»). `envLimits`
-приложения ставит `maxBytes` из `FORM_BODY_LIMIT`, частные `limits` регистрации
+приложения ставит `budget` из `FORM_BODY_LIMIT`, частные `limits` регистрации
 его только уменьшают.
 
 `onErrors` получает фактический intent текущей отправки. Сбои задач,
@@ -408,12 +410,12 @@ case 'textarea': return f.variant === 'auto' ? AutoTextareaField : TextareaField
 
 ### Бюджет тела и файлов
 
-У формы **один** лимит — вес тела. `Limits.maxBytes` — потолок развёртывания
+У формы **один** лимит веса — `budget`. `Limits.budget` на сервере — потолок развёртывания
 (env): выше него запрос режет платформа (`413`, часто до нашего кода). Форма
 вправе объявить бюджет меньше, но не больше env; действует он на все формы.
 
 ```ts
-defineForm({ id: 'catalog', limits: { budget: 4 * 1024 * 1024 }, fields: { … } })
+defineForm({ id: 'catalog', budget: 4 * 1024 * 1024, fields: { … } })
 ```
 
 - `budget = min(объявленный, env)` — больше потолка развёртывания объявить нельзя,
@@ -423,7 +425,7 @@ defineForm({ id: 'catalog', limits: { budget: 4 * 1024 * 1024 }, fields: { … }
 - `v.maxSize(n)` — обычный валидатор веса одного файла и с бюджетом формы не
   связан: `n` берётся как объявлено, хоть 1 ГБ, хоть без предела вовсе.
 - Файловое поле без `v.maxSize` — законно: тогда отдельный файл ничем не ограничен,
-  а форму держит бюджет тела (потолок — `maxBytes` окружения).
+  а форму держит бюджет тела (потолок — `budget` окружения).
 - Превышение бюджета — одна **общая** ошибка `form.budget` без пути: библиотеке
   всё равно, кто именно перебрал (файл или текст), она говорит, что лимит превышен.
   С JS её показывает общий блок до отправки, без JS тот же `validateForm` на

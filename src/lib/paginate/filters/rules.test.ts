@@ -8,10 +8,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   disabledState,
+  en,
   makeRenderer,
   normalizeErrors,
-  ru,
   validateForm,
+  type MessageDictionary,
 } from '#lib/form/index.js'
 import {
   catalogFilterValueMap,
@@ -20,6 +21,15 @@ import {
   type CatalogFilterSchema,
 } from './index'
 import { describeAll } from './test-describe'
+
+const ru: MessageDictionary = {
+  ...en,
+  'link.blocked': '«{field}» нельзя использовать вместе с {blockers}: {reason}',
+  noOverlap: (p) =>
+    Number(p['count']) > 1
+      ? 'Эти значения выбраны и здесь, и в соседнем поле'
+      : 'Это значение выбрано и здесь, и в соседнем поле',
+}
 
 const schema: CatalogFilterSchema = {
   source: 'links',
@@ -185,7 +195,7 @@ describe('запрет поиска — то же условие, свой ка�
 
 describe('пояснения панели — ошибки формы над применённым набором', () => {
   const desc = describeAll(schema, { prefix: 'page.' })
-  const violations = (extra: Record<string, unknown>) => catalogFilterViolations(desc, schema, extra, { prefix: 'page.' })
+  const violations = (extra: Record<string, unknown>) => catalogFilterViolations(desc, schema, extra, { prefix: 'page.', messages: ru })
 
   it('«все из» ∩ «кроме» — ошибка у «кроме», текст из словаря формы', () => {
     expect(violations({ 'filters.genres.and': '1,133', 'filters.genres.not': '133' })).toEqual([

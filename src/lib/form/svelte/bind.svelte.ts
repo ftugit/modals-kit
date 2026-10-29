@@ -3,12 +3,13 @@
 // Библиотека не создаёт ни одного элемента: всё ниже — наборы пропсов.
 import { createAttachmentKey } from 'svelte/attachments'
 import type { Component } from 'svelte'
-import { AsyncRunner, asyncRefsOf, valuesForChecks, type CheckRegistry } from '../async'
+import { AsyncRunner, asyncRefsOf, mergeChecks, valuesForChecks, type CheckRegistry } from '../async'
 import type { ConstraintKind } from '../constraints'
 import { fieldLinkState, type FieldDescriptor, type FieldLink, type FormDescription, type InvalidFrom } from '../describe'
 import { applyHandler, hasError, invalidFromFor, notifyResultErrors, split, type ErrorContext, type ErrorSink, type ErrorHandler } from '../errors'
 import type { UrlCommitVia, UrlFormOptions } from '../url'
 import { buildEnvelope } from '../envelope'
+import { makeRenderer } from '../messages'
 import { formRenderer } from '../messages-order'
 import { isSettled, normalizeErrors, type FormError, type Result } from '../result'
 import { isPinned, pinErrors, reconcilePins, type Pin } from '../pins'
@@ -237,7 +238,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     typeof o.action === 'function' ? o.action() : (o.action ?? `${cfg.config.actionBase ?? ''}/${desc.id}`)
   const render = formRenderer(desc.messages as never, cfg.config.messages,
                               desc.policy.interpolate)
-  const runner = o.checks ? new AsyncRunner(o.checks) : undefined
+  const ownRender = makeRenderer([desc.messages as never, cfg.config.messages],
+                                 desc.policy.interpolate)
+  const checks = mergeChecks(desc.checks, o.checks)
+  const runner = checks ? new AsyncRunner(checks) : undefined
   const asyncErrorIds = new Map<string, readonly string[]>()
 
   // Умолчания описания — это ЗНАЧЕНИЯ формы, а не только атрибут разметки:
@@ -321,7 +325,10 @@ export function bind(cfg: BoundConfig, desc: FormDescription, o: BindOptions = {
     store.set((current) => ({ ...current, shown: shown.errors, removed: shown.removed }))
   }
 
-  function applyResult(result: Result, sent?: FormData, notify = true) {
+  function applyResult(raw: Result, sent?: FormData, notify = true) {
+    const result: Result = raw.errors.length
+      ? { ...raw, errors: normalizeErrors(raw.errors, ownRender, desc.policy.limits, render) }
+      : raw
     // ошибки операций перехватчиков своими закрепами уже учтены (opPins):
     // второй закреп той же ошибки из результата дал бы дубль в фактах
     pins = pinErrors(result.errors, (n) => !!desc.byName[n], sent)

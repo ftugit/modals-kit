@@ -1,17 +1,16 @@
 // Потолок тела формы — из окружения развёртывания, а не из описания формы.
 //
-// Форма вправе объявить бюджет МЕНЬШЕ (`defineForm({ limits: { budget } })`):
-// число больше потолка молча игнорируется. Сам потолок живёт в env, потому что
-// его задаёт платформа (Vercel 4.5 МБ, Cloudflare 100 МБ, свой Node —
-// `client_max_body_size`); ядро `#lib/form` env не читает — оно лежит ниже
-// `#hooks`/`#server` и сети не делает.
+// Форма вправе объявить бюджет МЕНЬШЕ (`defineForm({ budget })`):
+// число больше потолка молча игнорируется (`min(объявленный, env)`). Сам потолок
+// живёт в env, потому что его задаёт платформа (Vercel 4.5 МБ, Cloudflare 100 МБ,
+// свой Node — `client_max_body_size`); ядро `#lib/form` env не читает.
 import { FORM_BODY_LIMIT } from '$app/env/private'
 import { FILE_BUDGET_RESERVE } from '#lib/form/index.js'
 import { DEFAULT_LIMITS, type Limits } from '#lib/form/server.js'
 
 /** Потолок тела запроса, байт: env развёртывания, иначе безопасное умолчание. */
 export function bodyBudget(): number {
-  return FORM_BODY_LIMIT ?? DEFAULT_LIMITS.maxBytes
+  return FORM_BODY_LIMIT ?? DEFAULT_LIMITS.budget
 }
 
 /** Бюджет ВСЕХ файлов формы: потолок тела минус резерв на текст. */
@@ -20,17 +19,13 @@ export function filesBudget(budget: number = bodyBudget()): number {
 }
 
 /**
- * Пределы приёма от окружения: только тело формы. Предела на отдельный файл
- * здесь нет и быть не может — его объявляет валидатор в самой форме
- * (`v.maxSize`), а общий вес держит бюджет. Частный предел регистрации
- * (`limits` в `registerComponentForm`) может только уменьшить тело, но не
- * поднять: платформа всё равно откажет раньше.
+ * Пределы приёма от окружения: задаёт потолок `budget` из env, не затирая
+ * изоморфные `limits` (`maxKeys`, `maxValuesPerKey`, `timeoutMs`), объявленные в `defineForm`.
  */
-export function envLimits(patch: Partial<Limits> = {}): Limits {
+export function envLimits(patch: Partial<Limits> = {}): Partial<Limits> & { readonly budget: number } {
   const budget = bodyBudget()
   return {
-    ...DEFAULT_LIMITS,
     ...patch,
-    maxBytes: Math.min(patch.maxBytes ?? budget, budget),
+    budget: Math.min(patch.budget ?? budget, budget),
   }
 }

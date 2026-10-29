@@ -13,6 +13,7 @@
   import { grants } from '#lib/db/index.js'
   import { defineForm, field, v } from '#lib/form/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
+  import { ru } from '#components/form/messages.ru.js'
   import Field from '#components/form/Field.svelte'
   import { Button } from '#components/ui/index.js'
   import { asLink, useModalLink } from '#hooks/links/index.js'
@@ -128,7 +129,7 @@
     },
   })
 
-  const config = createConfig({ resolve: () => undefined })
+  const config = createConfig({ resolve: () => undefined, messages: ru })
   const bound = bind(config, desc)
 
   let pickedUids = $state<string[]>([...init.uids.filter(Boolean)])

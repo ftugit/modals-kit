@@ -78,7 +78,11 @@ describe('связки и ошибки в картине панели', () => {
   })
 
   it('no-JS: заблокированное значение остаётся чипом, ошибка формы объясняет отказ', () => {
-    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' }, { description, prefix: 'page' })
+    const view = catalogFilterView(schema, { 'filters.status': 'anons', 'filters.score.min': '5' }, {
+      description,
+      prefix: 'page',
+      messages: { 'link.blocked': '«{field}» нельзя использовать вместе с {blockers}: {reason}' },
+    })
     expect(view.violations).toEqual([{
       id: 'link.blocked',
       message: '«Оценка» нельзя использовать вместе с «Статус»: у анонсов нет оценки',

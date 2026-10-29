@@ -6,9 +6,9 @@
 // `extend.ts`), запрещённые ники — правило этого модуля.
 import { CheckRegistry, issue } from '#lib/form/index.js'
 import { registerImageCheck } from '#components/form/image.js'
+import { defaults, type ConfigValues } from './config.js'
 import { specAvatar } from './spec-avatar.js'
 import { fitsSpec } from './ui/profile-form/spec-fit.js'
-import type { ConfigValues } from './config.js'
 
 /** Часть конфига, от которой зависят проверки формы пользователя. */
 export type UserChecksSnapshot = Pick<ConfigValues, 'nicknameForbidden'>
@@ -20,7 +20,9 @@ export type UserChecksSnapshot = Pick<ConfigValues, 'nicknameForbidden'>
  * доменный `profile.nickname-forbidden`). Сравнение никнейма повторяет домен:
  * обрезка пробелов, регистр не важен.
  */
-export function createUserChecks(snapshot: UserChecksSnapshot): CheckRegistry {
+export function createUserChecks(
+  snapshot: UserChecksSnapshot = { nicknameForbidden: defaults.nicknameForbidden },
+): CheckRegistry {
   const checks = new CheckRegistry()
   registerImageCheck(checks)
   const forbidden = new Set(snapshot.nicknameForbidden.map((n) => n.trim().toLowerCase()))

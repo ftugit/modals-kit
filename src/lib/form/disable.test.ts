@@ -2,8 +2,8 @@
 // под полем и отказ набора в validateForm — одно объявление на обе стороны.
 import { describe, expect, test } from 'vitest'
 import {
-  defineForm, disabledState, isFilled, makeFieldSugar, makeRenderer, matchesCondition,
-  normalizeErrors, ru, validateForm,
+  defineForm, disabledState, en, isFilled, makeFieldSugar, makeRenderer, matchesCondition,
+  normalizeErrors, validateForm,
   type FormDescription,
 } from './index'
 
@@ -45,9 +45,11 @@ const form = (messages?: Record<string, string>): FormDescription => defineForm(
   },
 })
 
+const ruLink = { ...en, 'link.blocked': '«{field}» нельзя использовать вместе с {blockers}: {reason}' }
+
 describe('живое решение под полем', () => {
   const d = form()
-  const render = makeRenderer([d.messages, ru], d.policy.interpolate)
+  const render = makeRenderer([d.messages, ruLink], d.policy.interpolate)
   const state = (values: Record<string, unknown>) => disabledState(d, d.byName['score']!, values, render)
 
   test('правило не сработало — решения нет', () => {
@@ -66,7 +68,7 @@ describe('живое решение под полем', () => {
   })
   test('шаблон перекрывается словарём формы — с теми же подстановками', () => {
     const own = form({ 'link.blocked': '{field} и {blockers} нельзя использовать в связке' })
-    const r = makeRenderer([own.messages, ru], own.policy.interpolate)
+    const r = makeRenderer([own.messages, ruLink], own.policy.interpolate)
     expect(disabledState(own, own.byName['score']!, { status: 'anons' }, r)?.reason)
       .toBe('Оценка и «Статус» нельзя использовать в связке')
   })
@@ -74,7 +76,7 @@ describe('живое решение под полем', () => {
 
 describe('отказ набора (validateForm) — тот же текст', () => {
   const d = form()
-  const render = makeRenderer([d.messages, ru], d.policy.interpolate)
+  const render = makeRenderer([d.messages, ruLink], d.policy.interpolate)
   const errs = (values: Record<string, unknown>) =>
     normalizeErrors(validateForm(d, values), render).map((e) => [e.path, e.code, e.message])
 
@@ -106,7 +108,7 @@ describe('свой текст правила (`message`)', () => {
       }),
     },
   })
-  const render = makeRenderer([d.messages, ru], d.policy.interpolate)
+  const render = makeRenderer([d.messages, ruLink], d.policy.interpolate)
 
   test('вместо словарного; остальные правила — общим текстом; всё через «; »', () => {
     expect(disabledState(d, d.byName['score']!, { status: 'anons' }, render)?.reason)

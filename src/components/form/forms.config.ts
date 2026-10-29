@@ -4,6 +4,7 @@ import { report } from '#hooks/app-errors.svelte.js'
 import { createConfig } from '#lib/form/svelte/index.js'
 import './extend'                       // регистрация своего типа и правил
 import { checks } from './extend'
+import { ru } from './messages.ru'
 import { resolve } from './resolve'
 
 // Транспорта по умолчанию здесь НЕТ намеренно: адрес отправки — свойство
@@ -15,6 +16,7 @@ import { resolve } from './resolve'
 export const forms = createConfig({
   // Соответствие «представление → компонент приложения». Функция, не таблица.
   resolve,
+  messages: ru,
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',
@@ -22,8 +24,8 @@ export const forms = createConfig({
   onError: report,
 })
 
-/** Асинхронные проверки передаются связке: в браузере — с подавлением. */
-export { checks }
+/** Асинхронные проверки и русский UI-словарь ошибок форм. */
+export { checks, ru }
 
 /**
  * Та же настройка с подменённой политикой разметки: другие идентификаторы
@@ -31,6 +33,7 @@ export { checks }
  */
 export const formsCustomUi = createConfig({
   resolve,
+  messages: ru,
   actionBase: '/form',
   live: 'after-touched',
   parallel: 'block',
