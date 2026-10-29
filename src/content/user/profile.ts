@@ -4,7 +4,7 @@
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
 import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { canBlock, canReadBlocks } from './blocks.js'
+import { canBlock, canReadAnyBlocks, canReadBlocks } from './blocks.js'
 import { getEffective, setUserKey } from './config-api.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 import { ADMIN_ROLE } from './permissions.js'
@@ -80,7 +80,7 @@ export async function profile(
     canDeleteSeed,
     fullBlock,
     blocks: blockViews,
-    canReadBlocks: canReadBlocks(g.perms),
+    canReadBlocks: canReadAnyBlocks(g.perms),
     canBlock: canBlockViewer,
     isOwn: target === g.sub,
     visibility: await visibilityOf(ports, target),

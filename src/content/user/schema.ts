@@ -306,7 +306,7 @@ export const block: Resource = defineResource({
     }),
     scope: field(s.text({ min: 1, max: 40 }), {
       read: () => true, create: [...BLOCK_WRITERS], required: true,
-      immutable: true, filters: ['eq'],
+      immutable: true, orderable: true, filters: ['eq', 'in'],
     }),
     // Причина: при создании указывает весь круг записи, после — только
     // право `block.edit` и админ; модератор правит причину не может.
@@ -316,7 +316,7 @@ export const block: Resource = defineResource({
       filters: ['eq'],
     }),
     // Снятие блокировки — единственная правка истории: until = момент снятия.
-    until: f.timestamp({ read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_WRITERS], nullable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
+    until: f.timestamp({ read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_WRITERS], nullable: true, orderable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
     // Кто наложил: без FK — история переживает удаление аккаунта наложившего.
     by: field(s.uuid(), {
       read: () => true, create: [...BLOCK_WRITERS], required: true,

@@ -125,6 +125,92 @@ export interface BlockView {
   readonly at: number
   readonly until: number | null
   readonly by: string | null
+  /** Метка мягкого удаления записи (заполнена при чтении с `includeDeleted`). */
+  readonly deletedAt?: number | null
+}
+
+/** Состояние записей в фильтре списка блокировок. */
+export type BlocksState = 'all' | 'active' | 'expired' | 'deleted'
+
+/** Порядок сортировки списка блокировок (`deleted-*` — только с `canSeeDeleted`). */
+export type BlocksOrder =
+  | 'created-desc'
+  | 'created-asc'
+  | 'until-asc'
+  | 'until-desc'
+  | 'scope-asc'
+  | 'scope-desc'
+  | 'deleted-desc'
+  | 'deleted-asc'
+
+/** Одна порция пагинированного списка блокировок и флаги возможностей зрителя. */
+export type BlocksPage = {
+  items: BlockView[]
+  total: number
+  page: number
+  pageSize: number
+  /** Фиксированный id пользователя списка (`null` — глобальный список). */
+  uid: string | null
+  /** Зрителю доступны удалённые записи (`block.readDeleted` / `admin`). */
+  canSeeDeleted: boolean
+  /** Зрителю доступны живые записи (`moderator` / `block.read` / `block.edit` / `admin` / владелец). */
+  canSeeLive: boolean
+  /** Доступен выбор пользователей из списка seed-юзеров (`!uid && (account.read || admin)`). */
+  canPickUsers: boolean
+  /** Сферы, которые вызывающий может назначать при создании. */
+  assignableScopes: readonly string[]
+  /** Можно ли показать кнопку «Добавить блокировку». */
+  canCreate: boolean
+}
+
+/** Детальное чтение одной записи блокировки для экрана редактирования / просмотра / удаления. */
+export type BlockDetailView = {
+  block: BlockView
+  /** Доступна ли отправка формы правок (нет у `block.read`, `block.readDeleted` и у удалённых записей). */
+  canSubmit: boolean
+  /** Можно ли править причину (`block.edit` / `admin` на живой записи). */
+  canEditReason: boolean
+  /** Можно ли править срок / снимать (`moderator` / `block.edit` / `admin` на живой записи). */
+  canEditUntil: boolean
+  /** Положена ли кнопка «Удалить» для этой записи. */
+  canDelete: boolean
+  /** Положен ли чекбокс полного удаления (`admin` или связка записи + `block.readDeleted`). */
+  canHardDelete: boolean
+  /** Доступные сферы каталога (для отображения `<select>`). */
+  assignableScopes: readonly string[]
+}
+
+/** Данные носителей создания блокировки (`/blocks/new`, `/user/[id]/blocks/new` и модалки). */
+export type BlockCreateRouteData = {
+  uid: string | null
+  enabled: boolean
+  canCreate: boolean
+  canPickUsers: boolean
+  assignableScopes: readonly string[]
+  fact: AuthErrorCode | null
+}
+
+/** Данные носителей редактирования / просмотра записи блокировки. */
+export type BlockEditRouteData = {
+  /** Контекстный `uid` из маршрута `/user/[id]/blocks/...` (`null` при открытии из глобального `/blocks/...`). */
+  contextUid: string | null
+  blockId: string
+  enabled: boolean
+  detail: BlockDetailView | null
+  fact: AuthErrorCode | null
+}
+
+/** Данные носителей удаления записи блокировки. */
+export type BlockDeleteRouteData = {
+  contextUid: string | null
+  blockId: string
+  enabled: boolean
+  block: BlockView | null
+  canDelete: boolean
+  canHardDelete: boolean
+  alreadyDeleted: boolean
+  holdSeconds: number
+  fact: AuthErrorCode | null
 }
 
 /** Доверенный principal — из содержимого временного токена без похода в БД. */

@@ -46,12 +46,18 @@ import {
 } from './profile.js'
 import {
   addBlock as coreAddBlock,
+  blockCreateMeta as coreBlockCreateMeta,
+  deleteBlock as coreDeleteBlock,
   liftBlock as coreLiftBlock,
+  listBlocksPage as coreListBlocksPage,
+  readBlockDetail as coreReadBlockDetail,
+  saveBlock as coreSaveBlock,
+  type ListBlocksPageArgs,
 } from './blocks.js'
 import { auth as authRes, block as blockRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { BlockDetailView, BlocksPage, BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -431,6 +437,7 @@ function blocksAdapter() {
     at: ms(r.created_at) ?? 0,
     until: ms(r.until),
     by: (r.by as string | null) ?? null,
+    deletedAt: ms(r.deleted_at),
   })
   return {
     async listByTarget(ctx: DataContext, authId: string) {
@@ -446,6 +453,45 @@ function blocksAdapter() {
       })) as unknown as Record<string, unknown>[]
       return rows.map(rowOf)
     },
+    async listPage(
+      ctx: DataContext,
+      {
+        page,
+        pageSize,
+        filter,
+        order,
+        includeDeleted = false,
+      }: {
+        page: number
+        pageSize: number
+        filter?: Filter
+        order?: Order
+        includeDeleted?: boolean
+      },
+    ) {
+      const slice = {
+        ...(filter ? { filter } : {}),
+        includeDeleted,
+      }
+      const [rows, total] = await Promise.all([
+        api().select(ctx, { page, limit: pageSize, ...(order ? { order } : {}), ...slice }),
+        api().count(ctx, slice),
+      ])
+      return {
+        rows: (rows as unknown as Record<string, unknown>[]).map(rowOf),
+        total,
+      }
+    },
+    async getById(ctx: DataContext, id: string, opts?: { includeDeleted?: boolean }) {
+      try {
+        const row = await api().get(ctx, id, opts?.includeDeleted ? { includeDeleted: true } : undefined)
+        return rowOf(row as unknown as Record<string, unknown>)
+      } catch (e) {
+        const kind = normalizeFailure(e).kind
+        if (kind === 'not_found' || kind === 'forbidden' || kind === 'validation') return undefined
+        throw e
+      }
+    },
     async insert(
       ctx: DataContext,
       row: { authId: string; scope: string; reason: string; until?: number | null; by: string },
@@ -458,8 +504,14 @@ function blocksAdapter() {
         by: row.by,
       })
     },
-    async update(ctx: DataContext, id: string, patch: { until: number }) {
-      await api().update(ctx, id, { until: iso(patch.until) })
+    async update(ctx: DataContext, id: string, patch: { until?: number | null; reason?: string }) {
+      await api().update(ctx, id, {
+        ...(patch.until !== undefined ? { until: patch.until === null ? null : iso(patch.until) } : {}),
+        ...(patch.reason !== undefined ? { reason: patch.reason } : {}),
+      })
+    },
+    async remove(ctx: DataContext, id: string, opts?: { hard?: boolean }) {
+      await api().delete(ctx, id, opts?.hard ? { hard: true } : undefined)
     },
   }
 }
@@ -568,10 +620,39 @@ export function auth(event: AuthEvent): {
   publicProfile(subject: string): Promise<UserResult<PublicProfileView>>
   /** Сменить видимость своего профиля (конфиг-API; значение = умолчание строку не плодит). */
   setProfileVisibility(level: string): Promise<UserResult<{ stored: boolean }>>
-  /** Наложить блокировку на цель (круг moderator/account.edit/admin держит модель). */
+  /** Наложить блокировку на цель (круг moderator/block.edit/admin держит модель). */
   addBlock(args: { targetId: string; scope: string; reason: string; forever?: boolean; until?: number | null }): Promise<UserResult<{ id: string }>>
   /** Снять активную блокировку цели правкой её срока. */
   liftBlock(args: { targetId: string; blockId: string }): Promise<UserResult<{ id: string }>>
+  /** Порция списка блокировок (по пользователю `uid` или глобально). */
+  listBlocksPage(args?: ListBlocksPageArgs): Promise<UserResult<BlocksPage>>
+  /** Метаданные создания блокировки (доступные сферы и флаги). */
+  blockCreateMeta(targetId?: string | null): Promise<
+    UserResult<{
+      uid: string | null
+      canCreate: boolean
+      canPickUsers: boolean
+      assignableScopes: readonly string[]
+    }>
+  >
+  /** Детали одной записи блокировки для экрана редактирования / просмотра / удаления. */
+  readBlockDetail(args: { blockId: string; expectedUid?: string | null }): Promise<UserResult<BlockDetailView>>
+  /** Создать или изменить запись блокировки. */
+  saveBlock(args: {
+    blockId?: string | null
+    targetId?: string | null
+    scope?: string
+    reason?: string
+    forever?: boolean
+    until?: number | null
+    liftNow?: boolean
+  }): Promise<UserResult<{ id: string; targetId: string }>>
+  /** Мягко или окончательно удалить запись блокировки. */
+  deleteBlock(args: {
+    blockId: string
+    targetId?: string | null
+    hard?: boolean
+  }): Promise<UserResult<{ id: string; targetId: string; hard: boolean }>>
   /** Сохранить свой профиль; `subject` — чужой (нужно право `profile.edit`/`admin`). */
   updateProfile(
     args: { nickname?: string; avatarUrl?: string | null },
@@ -673,6 +754,11 @@ export function auth(event: AuthEvent): {
       coreSetVisibility(ports, await freshAccessOrCurrent(), level),
     addBlock: async (args) => coreAddBlock(ports, await freshAccessOrCurrent(), args),
     liftBlock: async (args) => coreLiftBlock(ports, await freshAccessOrCurrent(), args),
+    listBlocksPage: async (args) => coreListBlocksPage(ports, await freshAccessOrCurrent(), args),
+    blockCreateMeta: async (targetId) => coreBlockCreateMeta(ports, await freshAccessOrCurrent(), targetId),
+    readBlockDetail: async (args) => coreReadBlockDetail(ports, await freshAccessOrCurrent(), args),
+    saveBlock: async (args) => coreSaveBlock(ports, await freshAccessOrCurrent(), args),
+    deleteBlock: async (args) => coreDeleteBlock(ports, await freshAccessOrCurrent(), args),
     updateProfile: async (args, subject?: string) =>
       coreUpdateProfile(ports, await freshAccessOrCurrent(), args, subject),
     deleteProfile: async (args, subject?: string) => {

@@ -198,8 +198,20 @@ export type ConfigPort = UserConfig
 export interface BlockStorePort {
   listByTarget(ctx: DataContext, authId: string): Promise<BlockView[]>
   listByTargets(ctx: DataContext, authIds: readonly string[]): Promise<BlockView[]>
+  listPage(
+    ctx: DataContext,
+    args: {
+      page: number
+      pageSize: number
+      filter?: Filter
+      order?: Order
+      includeDeleted?: boolean
+    },
+  ): Promise<{ rows: BlockView[]; total: number }>
+  getById(ctx: DataContext, id: string, opts?: { includeDeleted?: boolean }): Promise<BlockView | undefined>
   insert(ctx: DataContext, row: { authId: string; scope: string; reason: string; until?: number | null; by: string }): Promise<void>
-  update(ctx: DataContext, id: string, patch: { until: number }): Promise<void>
+  update(ctx: DataContext, id: string, patch: { until?: number | null; reason?: string }): Promise<void>
+  remove(ctx: DataContext, id: string, opts?: { hard?: boolean }): Promise<void>
 }
 
 export interface ConfigStorePort {

@@ -166,10 +166,36 @@ function makePorts() {
         const r = auths.get(row.authId)
         if (r) r.blocked = [...r.blocked, { scope: row.scope, reason: row.reason, at: Date.now(), ...(row.until != null ? { until: row.until } : {}), by: row.by }]
       },
-      async update(_ctx: unknown, id: string, patch: { until: number }) {
+      async listPage() {
+        return { rows: [], total: 0 }
+      },
+      async getById(_ctx: unknown, id: string) {
         for (const r of auths.values()) {
-          const i = r.blocked.findIndex((b, j) => `blk-${r.id}-${j}` === id)
-          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, until: patch.until } : b))
+          const i = r.blocked.findIndex((_b, j) => `blk-${r.id}-${j}` === id)
+          if (i >= 0) {
+            const b = r.blocked[i]!
+            return { id, authId: r.id, scope: b.scope, reason: b.reason, at: b.at, until: b.until ?? null, by: b.by ?? null, deletedAt: null }
+          }
+        }
+        return undefined
+      },
+      async update(_ctx: unknown, id: string, patch: { until?: number | null; reason?: string }) {
+        for (const r of auths.values()) {
+          const i = r.blocked.findIndex((_b, j) => `blk-${r.id}-${j}` === id)
+          if (i >= 0) {
+            r.blocked = r.blocked.map((b, j) => {
+              if (j !== i) return b
+              const next = { ...b, ...(patch.reason !== undefined ? { reason: patch.reason } : {}) }
+              if (patch.until === null) delete next.until
+              else if (patch.until !== undefined) next.until = patch.until
+              return next
+            })
+          }
+        }
+      },
+      async remove(_ctx: unknown, id: string) {
+        for (const r of auths.values()) {
+          r.blocked = r.blocked.filter((_b, j) => `blk-${r.id}-${j}` !== id)
         }
       },
     },
@@ -291,7 +317,10 @@ describe('список seed-юзеров', () => {
 
   test('поиск, фильтры и порядок собираются в срез порта одним набором', async () => {
     const { ports, auths, listArgsOf } = makePorts()
-    const reader = await joined(ports, auths, ['account.read'])
+    const liveOnlyReader = await joined(ports, auths, ['account.read'])
+    expect(ok_(await listSeedUsers(ports, liveOnlyReader.access, { state: 'deleted' })).canSeeDeleted).toBe(false)
+
+    const reader = await joined(ports, auths, ['account.read', 'account.readDeleted'])
 
     const page = ok_(
       await listSeedUsers(ports, reader.access, {

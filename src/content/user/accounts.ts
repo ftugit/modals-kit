@@ -114,7 +114,7 @@ export async function listSeedUsers(
 
   // Удалённые видны тем же правам, что держат `readDeleted` схемы; UI узнаёт
   // об этом флагом в выдаче, а не списком прав.
-  const canSeeDeleted = g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')
+  const canSeeDeleted = g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.readDeleted')
   // Никнеймы — политика чтения профиля (модель): admin или держатели
   // profile.read/profile.edit. Параметр из фильтров действует только при
   // этом праве; UI узнаёт о праве флагом, а не списком прав.

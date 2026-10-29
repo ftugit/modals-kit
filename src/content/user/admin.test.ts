@@ -139,12 +139,15 @@ function makePorts(): { ports: AuthPorts; auths: Map<string, AuthRow & { blocked
         const r = auths.get(row.authId)
         if (r) r.blocked = [...r.blocked, { scope: row.scope, reason: row.reason, at: Date.now(), ...(row.until != null ? { until: row.until } : {}), by: row.by }]
       },
-      async update(_ctx: unknown, id: string, patch: { until: number }) {
+      async listPage() { return { rows: [], total: 0 } },
+      async getById() { return undefined },
+      async update(_ctx: unknown, id: string, patch: { until?: number | null; reason?: string }) {
         for (const r of auths.values()) {
           const i = r.blocked.findIndex((b, j) => `blk-${r.id}-${j}` === id)
-          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, until: patch.until } : b))
+          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, ...(patch.until != null ? { until: patch.until } : {}) } : b))
         }
       },
+      async remove() {},
     },
     clock: { now: () => Date.now() },
     config: (() => {
