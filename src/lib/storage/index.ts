@@ -2278,6 +2278,7 @@ export function createStorage(config: StorageConfig): Storage {
         let file: StreamFile | null = null
         let fallbackName = 'download'
         let gateForReject: ConcurrencyGate | null = null
+        let resolvedRecord: StoredFileRecord | null = null
 
         if (isFileTarget) {
           const inputFile = target as File
@@ -2336,6 +2337,7 @@ export function createStorage(config: StorageConfig): Storage {
           }
         } else if (isRecordTarget) {
           const rec = target as StoredFileRecord
+          resolvedRecord = rec
           fallbackName = rec.name || basenameOfStoragePath(cleanPath!)
           if (rec.parts.length > 1) {
             file = assembleMultiPartStreamFile(rec, effectiveOptions)
@@ -2356,6 +2358,7 @@ export function createStorage(config: StorageConfig): Storage {
           )
         } else {
           fallbackName = basenameOfStoragePath(cleanPath!)
+          resolvedRecord = await ledger.getFile(cleanPath!)
           file = await this.lazy(cleanPath!, effectiveOptions)
           const slot = await resolveReadSlot(cleanPath!, effectiveOptions.server)
           gateForReject = resolveCallConcurrency(
@@ -2371,12 +2374,37 @@ export function createStorage(config: StorageConfig): Storage {
             headers: { 'cache-control': 'no-store' },
           })
         }
+
+        // По RFC 9110 §13.1.5 браузеры (Chromium, Safari, Firefox) и менеджеры закачек
+        // подставляют `If-Range` для авто-докачки прерванного потока ТОЛЬКО с сильным `ETag`
+        // (без префикса `W/`). Генерируем сильный дескриптор за O(1) памяти без чтения тела.
+        const etagMode = effectiveOptions.etag ?? 'strong'
+        const metadataDigest =
+          etagMode === 'strong'
+            ? async (f: { readonly name: string; readonly size: number; readonly lastModified: number }) => {
+                const partsSig = resolvedRecord
+                  ? resolvedRecord.parts
+                      .map((p) => `${p.server}:${p.storedBytes}:${p.etag ?? ''}`)
+                      .join(',')
+                  : ''
+                const rawDesc = `mks1|${cleanPath ?? f.name}|${f.size}|${Math.trunc(f.lastModified)}|${resolvedRecord?.createdAt ?? 0}|${partsSig}`
+                const hash = await crypto.subtle.digest(
+                  'SHA-256',
+                  new TextEncoder().encode(rawDesc),
+                )
+                return Array.from(new Uint8Array(hash).subarray(0, 16))
+                  .map((b) => b.toString(16).padStart(2, '0'))
+                  .join('')
+              }
+            : undefined
+
         const res = await createFileResponse(file, request, {
           acceptRanges: effectiveOptions.acceptRanges ?? true,
+          etag: etagMode,
+          ...(metadataDigest ? { digest: metadataDigest } : {}),
           ...(effectiveOptions.cacheControl !== undefined
             ? { cacheControl: effectiveOptions.cacheControl }
             : {}),
-          ...(effectiveOptions.etag !== undefined ? { etag: effectiveOptions.etag } : {}),
         })
 
         const isPayloadResponse = res.status === 200 || res.status === 206

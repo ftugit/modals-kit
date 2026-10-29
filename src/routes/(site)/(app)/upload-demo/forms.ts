@@ -111,23 +111,9 @@ export interface QuickNoteRecord {
 
 export type {
   StorageCloneReport,
-  StorageProbeResult,
   StorageReport,
   StorageTelemetrySnapshot,
 }
-
-export const probeServerFormFor = (serverName = 'local') =>
-  defineForm({
-    id: 'upload_probe_server',
-    fields: {
-      server_name: field.hidden({
-        defaultValue: serverName,
-        validate: [v.required(), v.maxLength(32)],
-      }),
-    },
-  })
-
-export const probeServerForm = probeServerFormFor()
 
 export const cloneServerFormFor = (fromServer = 'local', toServer = 'memory') =>
   defineForm({

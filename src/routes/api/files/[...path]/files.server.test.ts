@@ -84,8 +84,42 @@ describe('/api/files/[...path] и resolveRequestStorage — нарезка split
       const seamBytes = new Uint8Array(await rangeRes.arrayBuffer())
       expect(seamBytes).toEqual(payload.subarray(seamStart, seamEnd + 1))
 
-      // 3. Проверка условного GET (If-None-Match -> 304) и inline-отдачи без download=1
+      // 3. Проверка сильного ETag (без W/), If-Range авто-докачки и условного GET (If-None-Match -> 304)
       const etag = headRes.headers.get('etag')!
+      expect(etag.startsWith('W/')).toBe(false)
+      expect(etag.startsWith('"')).toBe(true)
+
+      const resumeReq = new Request(headUrl, {
+        headers: {
+          Range: `bytes=${seamStart}-${seamEnd}`,
+          'If-Range': etag,
+        },
+      })
+      const resumeRes = await GET({
+        params: { path: testPath },
+        request: resumeReq,
+        url: headUrl,
+        cookies,
+      } as any)
+      expect(resumeRes.status).toBe(206)
+      expect(new Uint8Array(await resumeRes.arrayBuffer())).toEqual(
+        payload.subarray(seamStart, seamEnd + 1),
+      )
+
+      const staleResumeRes = await GET({
+        params: { path: testPath },
+        request: new Request(headUrl, {
+          headers: {
+            Range: `bytes=${seamStart}-${seamEnd}`,
+            'If-Range': '"stale-other-version"',
+          },
+        }),
+        url: headUrl,
+        cookies,
+      } as any)
+      expect(staleResumeRes.status).toBe(200)
+      await staleResumeRes.body?.cancel()
+
       const condRes = await GET({
         params: { path: testPath },
         request: new Request(headUrl, { headers: { 'If-None-Match': etag } }),

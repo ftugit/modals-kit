@@ -38,7 +38,6 @@ import {
   copyUploadForm,
   createUploadBundleForm,
   deleteUploadForm,
-  probeServerForm,
   quickNoteForm,
   transferUploadForm,
 } from './forms.js'
@@ -245,26 +244,6 @@ registerComponentForm({
         telemetry,
       },
     }
-  },
-  redirectOnSuccess: (event) => `/upload-demo${event.url.search}`,
-})
-
-registerComponentForm({
-  description: probeServerForm,
-  async execute({ values, fail, commit }, event) {
-    const storage = await resolveRequestStorage(event.cookies)
-    const serverName = String(values.server_name ?? '').trim()
-    if (!storage.serverNames.includes(serverName)) {
-      return fail(
-        [{ message: `Сервер «${serverName}» не подключён` }],
-        'not-applied',
-      )
-    }
-    const probe = await storage.probe(serverName)
-    const storageReport = await storage.report()
-    const telemetry = getDemoStorageTelemetry()
-    commit()
-    return { data: { probe, storageReport, telemetry } }
   },
   redirectOnSuccess: (event) => `/upload-demo${event.url.search}`,
 })

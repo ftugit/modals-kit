@@ -29,7 +29,6 @@
     type StorageTelemetrySnapshot,
     type UploadedDemoRecord,
   } from './forms.js'
-  import ProbeServerButton from './ProbeServerButton.svelte'
   import RemoveUploadButton from './RemoveUploadButton.svelte'
   import TransferUploadButton from './TransferUploadButton.svelte'
   import UploadFormCard from './UploadFormCard.svelte'
@@ -258,21 +257,15 @@
           Лимит: {srv.limits.storageBytes ? formatBytes(srv.limits.storageBytes) : '∞'}
           (файл до {srv.limits.fileBytes ? formatBytes(srv.limits.fileBytes) : '∞'})
         </div>
-        <div class="flex flex-wrap items-start gap-2 pt-1">
-          <ProbeServerButton
-            serverName={srv.server}
-            onProbed={(_probe, nextReport) => {
-              if (nextReport) localReport = nextReport
-            }}
-          />
-          {#if srv.filesCount > 0 && srv.server !== 'memory'}
+        {#if srv.filesCount > 0 && srv.server !== 'memory'}
+          <div class="flex flex-wrap items-start gap-2 pt-1">
             <CloneServerButton
               fromServer={srv.server}
               toServer="memory"
               onCloned={handleCloned}
             />
-          {/if}
-        </div>
+          </div>
+        {/if}
       </div>
     {/each}
   </section>
