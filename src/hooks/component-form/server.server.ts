@@ -2,29 +2,28 @@
 //
 // Связка `#lib/form` × SvelteKit `Handle`: компонент со своей формой может
 // монтироваться на любой странице или в модалке поверх любого маршрута, у
-// которого нет собственного `+page.server.ts` с `actions`.
+// которого нет собственного `+page.server.ts` с `actions` (а если есть — чужие
+// POST без зарегистрированного `__form_id` передаются в `resolve` с целым телом).
 //
-// Механика без костылей (никаких flash-кук и записей в кэш):
-//   - все `*.form.server.ts` в проекте обнаруживаются лениво при первом POST через
-//     `import.meta.glob` без циклической оценки модулей в `vite dev`;
-//   - GET / прочие методы и чужие POST без зарегистрированного `__form_id`
-//     проходят напрямую в `resolve(event)` без накладных расходов;
-//   - с JS (`Accept: application/json`) — возвращает `{ data: { result } }` со
-//     статусом обработчика и всеми выставленными в `execute` куками;
-//   - без JS при `outcome === 'not-applied'` (черновые мутации мест `+ поле` / `Удалить`)
-//     или `redirectOnSuccess -> 'inline'` — рендерит текущую страницу inline со статусом `200`;
-//   - без JS при применённом успехе — штатный `303 See Other` на целевой/текущий адрес;
-//   - без JS при ошибке — кладёт `event.locals.formResult = result` и рендерит
-//     текущую страницу прямо в ответе на этот же запрос со статусом ошибки.
+// Механика без костылей и без двойной буферизации `request.clone()`:
+//   - с JS (`x-form-id`) форма опознаётся до чтения тела и поток напрямую идёт в
+//     `createFormHandler` (`bodyLayer`), если регистрации не нужен предразбор `raw`;
+//   - без `x-form-id` (нативный POST без JS) поток читается один раз без `tee`;
+//     при перевесе свыше `bodyBudget()` сканируются только первые 32 КиБ для
+//     опознания `__form_id`, поток отменяется, а `413` формирует сам конвейер
+//     формы (`{ data: { result } }` для JSON и SSR-страница с `formResult` без JS);
+//   - при `outcome === 'queued'` без JS и без явного `redirectOnSuccess` выполняется
+//     штатный `303 See Other` на `statusUrl`.
 import { redirect, type RequestEvent } from '@sveltejs/kit'
 import type { Handle } from '@sveltejs/kit/hooks'
 import { taskResponse } from '#hooks/task-stream.server.js'
 import { createFormHandler } from '#lib/form/server.js'
+import { queuedData, type FormDescription, type Result } from '#lib/form/index.js'
 import { bodyBudget, envLimits } from '#server/form-budget.server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
-import type { FormDescription, Result } from '#lib/form/index.js'
 import { createAuthorizeGuards } from './authorize.server.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
+import { FORM_ID_HEADER } from './transport.js'
 import type { ComponentFormRegistration } from './types.js'
 
 export { registerComponentForm }
@@ -33,6 +32,8 @@ export { registerComponentForm }
 const TASK_PARAM = '__form_task'
 const FORM_PARAM = '__form_id'
 const NO_STORE = { 'cache-control': 'no-store' } as const
+/** Предел чтения префикса для извлечения `__form_id` при перевесе тела без `x-form-id`. */
+const PREFIX_SCAN_CAP = 32 * 1024
 
 const isJsonRequest = (request: Request): boolean =>
   (request.headers.get('accept') ?? '').includes('application/json')
@@ -46,47 +47,172 @@ function resolveDescription(reg: ComponentFormRegistration, event: RequestEvent)
   return typeof reg.description === 'function' ? reg.description(event) : reg.description
 }
 
-/**
- * Ограниченное чтение копии тела для распознавания конверта `__form_id`:
- * поток больше верхнего предела всех зарегистрированных форм никогда не
- * буферизуется целиком в RAM до `bodyLayer`.
- */
-async function peekFormDataBounded(request: Request, capBytes: number): Promise<FormData | 'too-large' | null> {
-  const declared = Number(request.headers.get('content-length') ?? 0)
-  if (declared > capBytes) return 'too-large'
-  const clone = request.clone()
-  if (!clone.body) return clone.formData().catch(() => null)
+function needsRawFormData(reg: ComponentFormRegistration): boolean {
+  return typeof reg.source === 'function' || Boolean(reg.authorize) || reg.execute.length >= 3
+}
 
-  let seen = 0
-  const chunks: Uint8Array[] = []
-  const reader = clone.body.getReader()
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      seen += value.byteLength
-      if (seen > capBytes) {
-        await reader.cancel().catch(() => undefined)
-        return 'too-large'
-      }
-      chunks.push(value)
-    }
-  } catch {
-    return null
-  }
-  const merged = new Uint8Array(seen)
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function mergeChunks(chunks: readonly Uint8Array[], total: number): Uint8Array<ArrayBuffer> {
+  const merged = new Uint8Array(new ArrayBuffer(total))
   let offset = 0
   for (const c of chunks) {
     merged.set(c, offset)
     offset += c.byteLength
   }
-  return new Request(request.url, {
+  return merged
+}
+
+/**
+ * Извлечь строковое поле конверта (`__form_id`) из первых 32 КиБ тела, когда
+ * запрос без заголовка `x-form-id` превысил `capBytes` и полный разбор отменён.
+ */
+function extractFieldFromPrefix(
+  prefix: Uint8Array,
+  contentType: string,
+  fieldName: string,
+  truncated: boolean,
+): string | null {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(prefix)
+  const ct = contentType.toLowerCase()
+
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    const parts = text.split('&')
+    const completeParts = truncated && parts.length > 1 ? parts.slice(0, -1) : parts
+    for (const part of completeParts) {
+      const eq = part.indexOf('=')
+      if (eq < 0) continue
+      try {
+        const k = decodeURIComponent(part.slice(0, eq).replace(/\+/g, ' '))
+        if (k !== fieldName) continue
+        return decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '))
+      } catch {
+        continue
+      }
+    }
+    return null
+  }
+
+  if (ct.includes('multipart/form-data')) {
+    const re = new RegExp(
+      `name="${escapeRegExp(fieldName)}"[^\\r\\n]*(?:\\r?\\n[^\\r\\n]+)*\\r?\\n\\r?\\n([^\\r\\n]{1,128})\\r?\\n--`,
+      'i',
+    )
+    const m = re.exec(text)
+    return m ? m[1]! : null
+  }
+
+  return null
+}
+
+function matchFromPrefix(
+  registry: ReadonlyMap<string, ComponentFormRegistration>,
+  event: RequestEvent,
+  prefix: Uint8Array,
+  truncated: boolean,
+): ComponentFormRegistration | undefined {
+  const contentType = event.request.headers.get('content-type') ?? ''
+  for (const [id, entry] of registry) {
+    const desc = resolveDescription(entry, event)
+    const candidate = extractFieldFromPrefix(prefix, contentType, desc.policy.envelopeKeys.id, truncated)
+    if (candidate === id) return entry
+  }
+  return undefined
+}
+
+type InspectedBody =
+  | { kind: 'ok'; bytes: Uint8Array<ArrayBuffer>; formData: FormData | null }
+  | { kind: 'too-large'; prefix: Uint8Array<ArrayBuffer>; truncated: boolean }
+  | { kind: 'unreadable' }
+
+/**
+ * Однопроходное чтение тела без `request.clone()`:
+ * - до `capBytes` собирает один буфер, из которого строится и `FormData`, и
+ *   повторный `Request` для `createFormHandler` либо `resolve(event)`;
+ * - свыше `capBytes` сохраняет не более `PREFIX_SCAN_CAP` байт для распознавания
+ *   `__form_id` и немедленно отменяет остаток потока.
+ */
+async function readBoundedOnce(request: Request, capBytes: number): Promise<InspectedBody> {
+  const declared = Number(request.headers.get('content-length') ?? 0)
+  const declaredOversized = Number.isFinite(declared) && declared > capBytes
+
+  if (!request.body) {
+    if (declaredOversized) {
+      return { kind: 'too-large', prefix: new Uint8Array(new ArrayBuffer(0)), truncated: false }
+    }
+    const empty = new Uint8Array(new ArrayBuffer(0))
+    const formData = await new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: empty,
+    })
+      .formData()
+      .catch(() => null)
+    return { kind: 'ok', bytes: empty, formData }
+  }
+
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  const prefixChunks: Uint8Array[] = []
+  let seen = 0
+  let prefixSeen = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      if (prefixSeen < PREFIX_SCAN_CAP) {
+        const take = Math.min(value.byteLength, PREFIX_SCAN_CAP - prefixSeen)
+        prefixChunks.push(take === value.byteLength ? value : value.subarray(0, take))
+        prefixSeen += take
+      }
+
+      seen += value.byteLength
+      if (declaredOversized) {
+        if (prefixSeen >= PREFIX_SCAN_CAP) {
+          await reader.cancel().catch(() => undefined)
+          return { kind: 'too-large', prefix: mergeChunks(prefixChunks, prefixSeen), truncated: true }
+        }
+        continue
+      }
+
+      if (seen > capBytes) {
+        await reader.cancel().catch(() => undefined)
+        return { kind: 'too-large', prefix: mergeChunks(prefixChunks, prefixSeen), truncated: true }
+      }
+      chunks.push(value)
+    }
+  } catch {
+    return { kind: 'unreadable' }
+  }
+
+  if (declaredOversized) {
+    return { kind: 'too-large', prefix: mergeChunks(prefixChunks, prefixSeen), truncated: false }
+  }
+
+  const bytes = mergeChunks(chunks, seen)
+  const formData = await new Request(request.url, {
     method: request.method,
     headers: request.headers,
-    body: merged,
+    body: bytes,
   })
     .formData()
     .catch(() => null)
+  return { kind: 'ok', bytes, formData }
+}
+
+/** Собрать минимальный запрос, который штатно сработает в `bodyLayer` как `413 body.too-large`. */
+function makeOversizedMarkerRequest(original: Request, capBytes: number): Request {
+  const headers = new Headers(original.headers)
+  headers.set('content-length', String(capBytes + 1))
+  return new Request(original.url, {
+    method: original.method,
+    headers,
+    body: new Uint8Array(new ArrayBuffer(0)),
+  })
 }
 
 async function renderInlineWithResult(
@@ -140,7 +266,6 @@ export function createComponentFormsHandle(
 
   return async ({ event, resolve }) => {
     // Опрос задачи (`queued`): тот же адрес, что у формы, но GET и без тела.
-    // Маршруту для этого больше не нужна собственная точка входа.
     if (event.request.method === 'GET' && event.url.searchParams.has(TASK_PARAM)) {
       await ensureLoaded()
       const taskId = event.url.searchParams.get(TASK_PARAM) ?? ''
@@ -162,25 +287,64 @@ export function createComponentFormsHandle(
     const registry = componentFormRegistry()
     if (registry.size === 0) return resolve(event)
 
-    // потолок окружения: больше него не пропустит ни платформа, ни `bodyLayer`
     const capBytes = bodyBudget()
-    const raw = await peekFormDataBounded(event.request, capBytes)
-    if (raw === null) return resolve(event)
-    if (raw === 'too-large') {
-      return isJsonRequest(event.request)
-        ? Response.json({ code: 'body.too-large', message: 'Request body too large' }, { status: 413 })
-        : new Response('Request body too large', { status: 413 })
-    }
+    const headerFormId = event.request.headers.get(FORM_ID_HEADER)?.trim() ?? ''
+    const headerMatched = headerFormId ? registry.get(headerFormId) : undefined
+    const declared = Number(event.request.headers.get('content-length') ?? 0)
+    const declaredOversized = Number.isFinite(declared) && declared > capBytes
 
-    let matched: ComponentFormRegistration | undefined
-    for (const [id, entry] of registry) {
-      const desc = resolveDescription(entry, event)
-      if (raw.get(desc.policy.envelopeKeys.id) === id) {
-        matched = entry
-        break
+    let matched: ComponentFormRegistration | undefined = headerMatched
+    let raw: FormData = new FormData()
+    let handlerRequest: Request = event.request
+    let isOversizedBeforeParse = false
+
+    // Быстрый путь: JS-транспорт прислал `x-form-id`, и форме не нужен предразбор
+    // `raw` до `createFormHandler` (либо `Content-Length` уже превышает потолок) —
+    // передаём поток напрямую в `bodyLayer` без промежуточного буфера.
+    if (matched && (!needsRawFormData(matched) || declaredOversized)) {
+      isOversizedBeforeParse = declaredOversized
+    } else {
+      const inspected = await readBoundedOnce(event.request, capBytes)
+      if (inspected.kind === 'unreadable') {
+        return Response.json({ code: 'body.unreadable', message: 'Unreadable request body' }, { status: 400 })
+      }
+
+      if (inspected.kind === 'too-large') {
+        matched = matched ?? matchFromPrefix(registry, event, inspected.prefix, inspected.truncated)
+        if (!matched) {
+          return isJsonRequest(event.request)
+            ? Response.json({ code: 'body.too-large', message: 'Request body too large' }, { status: 413 })
+            : new Response('Request body too large', { status: 413 })
+        }
+        isOversizedBeforeParse = true
+        handlerRequest = makeOversizedMarkerRequest(event.request, capBytes)
+      } else {
+        const replay = () =>
+          new Request(event.request.url, {
+            method: event.request.method,
+            headers: event.request.headers,
+            body: inspected.bytes,
+          })
+
+        if (!inspected.formData) {
+          return resolve({ ...event, request: replay() })
+        }
+        raw = inspected.formData
+        if (!matched) {
+          for (const [id, entry] of registry) {
+            const desc = resolveDescription(entry, event)
+            if (raw.get(desc.policy.envelopeKeys.id) === id) {
+              matched = entry
+              break
+            }
+          }
+        }
+        if (!matched) {
+          return resolve({ ...event, request: replay() })
+        }
+        handlerRequest = replay()
       }
     }
-    if (!matched) return resolve(event)
 
     const reg = matched
     const description = resolveDescription(reg, event)
@@ -200,8 +364,18 @@ export function createComponentFormsHandle(
       },
     }
     const trackedEvent: RequestEvent = { ...event, cookies: trackedCookies }
-    const resolvedChecks = typeof reg.checks === 'function' ? await reg.checks(trackedEvent) : reg.checks
-    const resolvedSource = typeof reg.source === 'function' ? await reg.source(trackedEvent, raw) : reg.source
+    const resolvedChecks =
+      !isOversizedBeforeParse && typeof reg.checks === 'function'
+        ? await reg.checks(trackedEvent)
+        : typeof reg.checks !== 'function'
+          ? reg.checks
+          : undefined
+    const resolvedSource =
+      !isOversizedBeforeParse && typeof reg.source === 'function'
+        ? await reg.source(trackedEvent, raw)
+        : typeof reg.source === 'object'
+          ? reg.source
+          : undefined
     const authGuards = createAuthorizeGuards(reg, trackedEvent, () => raw)
 
     const handler = createFormHandler<unknown, RequestEvent>({
@@ -210,8 +384,8 @@ export function createComponentFormsHandle(
       ...(resolvedSource ? { source: resolvedSource } : {}),
       ...(authGuards.schema ? { schema: authGuards.schema } : {}),
       ...(resolvedChecks ? { checks: resolvedChecks } : {}),
-      // пределы — от окружения: тело = потолок, один файл = бюджет файлов;
-      // частные пределы регистрации только уменьшают оба числа
+      // пределы — от окружения: потолок `FORM_BODY_LIMIT` ограничивает сверху
+      // как `reg.limits.budget`, так и `defineForm({ budget })`
       limits: envLimits(reg.limits ?? {}),
       ...(reg.idempotency ? { idempotency: reg.idempotency } : {}),
       ...(reg.throttle ? { throttle: reg.throttle } : {}),
@@ -219,15 +393,12 @@ export function createComponentFormsHandle(
       execute: (ctx) => reg.execute(ctx, trackedEvent, raw),
     })
 
-    const { result, status } = await handler(event.request, 'action', trackedEvent)
+    const { result, status } = await handler(handlerRequest, 'action', trackedEvent)
     if (isJsonRequest(event.request)) {
       const headers = new Headers()
       for (const cookie of setCookies.values()) headers.append('set-cookie', cookie)
-      // Ход долгой операции (запуск базы, перенос схемы) — строками ответа, если
-      // клиент их просил; форма с `watch` больше не нуждается в своём эндпоинте.
       return taskResponse(
         event.request,
-        // Код ответа — тот же, что назвал конвейер (у `queued` — 202).
         async () => Response.json({ data: { result } }, { status: status || 200, headers }),
         { watch: reg.watch ?? [] },
       )
@@ -237,7 +408,7 @@ export function createComponentFormsHandle(
       if (result.outcome === 'not-applied') {
         return renderInlineWithResult(event, resolve, result, 200, setCookies)
       }
-      const target = reg.redirectOnSuccess?.(event, result)
+      const target = reg.redirectOnSuccess?.(event, result) ?? queuedData(result)?.statusUrl
       if (target === 'inline') {
         return renderInlineWithResult(event, resolve, result, 200, setCookies)
       }

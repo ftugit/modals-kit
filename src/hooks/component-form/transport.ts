@@ -12,6 +12,9 @@ import type { Result, Transport } from '#lib/form/index.js'
 import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
 import { parse } from 'devalue'
 
+/** Заголовок маршрутизации встраиваемой формы: позволяет серверу узнать `formId` до чтения тела. */
+export const FORM_ID_HEADER = 'x-form-id'
+
 /** Что сказать человеку по коду, пока не подоспел текст из тела. */
 const REASON: Record<number, string> = {
   400: 'запрос собран не по контракту формы',
@@ -36,7 +39,7 @@ export function jsonTransport(path: string): Transport {
       res = await fetchWithTask(path, {
         method: 'POST',
         body: req.data,
-        headers: { accept: 'application/json' },
+        headers: { accept: 'application/json', [FORM_ID_HEADER]: req.envelope.formId },
         signal: req.signal,
         ...(report ? { onTask: (task: StreamTask) => report(task) } : {}),
       })
@@ -131,7 +134,7 @@ export function kitActionTransport(
       res = await fetchWithTask(targetUrl, {
         method: 'POST',
         body: req.data,
-        headers: { accept: 'application/json' },
+        headers: { accept: 'application/json', [FORM_ID_HEADER]: req.envelope.formId },
         signal: req.signal,
         ...(report ? { onTask: (task: StreamTask) => report(task) } : {}),
       })

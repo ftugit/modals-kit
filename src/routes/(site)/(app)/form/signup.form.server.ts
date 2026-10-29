@@ -7,8 +7,9 @@
 // адрес самой формы (`?__form_id=…&__form_task=…`).
 import type { RequestEvent } from '@sveltejs/kit'
 import { createFormHandler, storeIdempotency, windowThrottle } from '#lib/form/server.js'
-import type { Result } from '#lib/form/index.js'
+import { queuedData, type Result } from '#lib/form/index.js'
 import { localStore } from '#server/cache.server.js'
+import { watchDb } from '#server/db.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import '#components/form/extend.js'
 import { ANSWERS, resolveDescription, signup, type Answer } from './signup'
@@ -55,22 +56,23 @@ registerComponentForm({
     // «В очереди»: заявка принята (`commit`), запись — через 5 секунд. Адрес
     // опроса — для скрипта, адрес статуса — ссылка без него.
     if (answer === 'queued') {
-      const job = queueJob({ email: values['email'], count: intent === 'submit' })
+      const job = await queueJob({ email: values['email'], count: intent === 'submit' })
       commit()
       return { queued: { pollUrl: pollHref(event, job), statusUrl: `/form?job=${job}`, etaMs: QUEUE_DELAY_MS } }
     }
     // Считаются только созданные: черновик аккаунта не создаёт.
-    if (intent === 'submit') countCreated()
+    if (intent === 'submit') await countCreated()
     commit()
     // «Переход»: адрес уходит в `Result.redirect`; без JS маршрут отвечает 303,
     // с JS страница переходит сама (`+page.svelte`).
     if (answer === 'redirect') return { data: { email: values['email'] }, redirect: '/form?sent=1' }
     return { data: { email: values['email'] } }
   },
-  // Без JS: «переход» — `303` на названный адрес, всё остальное — страница в том
-  // же ответе с результатом (`locals.formResult` → `page.data.formResult`):
-  // очередь, ошибки и баннер успеха стоят на нём.
-  redirectOnSuccess: (_event, result: Result) => result.redirect ?? 'inline',
+  // Без JS: «переход» и «в очереди» (`statusUrl`) — `303` на названный адрес,
+  // остальное — страница в том же ответе с результатом (`locals.formResult` → `page.data.formResult`).
+  redirectOnSuccess: (_event, result: Result) =>
+    result.redirect ?? queuedData(result)?.statusUrl ?? 'inline',
+  watch: [watchDb],
   // Опрос задачи: `{ done:false, retryAfterMs }` или `{ done:true, result }`.
   task: { poll: (id) => jobStatus(id) },
 })
