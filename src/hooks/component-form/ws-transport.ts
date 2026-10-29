@@ -1,11 +1,16 @@
 // Клиентский потоковый `wss://`-транспорт форм с файлами.
 //
-// Отправляет Кадр 0 (`init` с текстовыми полями + паспортами файлов без байтов),
-// по командам сервера `pull` проверяет неизменность файла на диске (`size` / `lastModified`),
-// вырезает ровно запрошенный срез `file.slice(offset, offset + length)` (пик в памяти — `256 КБ`),
-// при наличии одноразовой серверной соли `salt` считает zero-copy шаг цепочки `HMAC-SHA-256`,
-// контролирует `bufferedAmount` сокета, обновляет `req.report(progress)` для `FileAttachment`
-// и `formTask`, и возвращает штатный `Result` формы после серверного `commit()`.
+// Инварианты:
+// - отправляет Кадр 0 (`init` с текстовыми полями + паспортами файлов без байтов);
+// - по командам сервера `pull` конвейерно вырезает срезы `file.slice(offset, offset + length)`,
+//   проверяя неизменность файла на диске (`size` / `lastModified`), и при наличии одноразовой
+//   серверной соли `salt` считает детерминированный позиционный `HMAC-SHA-256`;
+// - контролирует `bufferedAmount` сокета и считает сглаженную скорость отдачи (`bytesPerSecond`)
+//   за вычетом ещё не ушедшего в сеть `ws.bufferedAmount`;
+// - при кратковременном обрыве мобильной сети автоматически открывает новый сокет и отправляет
+//   `resume` (с бесшовным продолжением при `resume-ok` или чистым перезапуском с байта 0 при `resume-miss`);
+// - каждая новая отправка (после отмены, ошибки или успеха) гарантированно открывает свежее
+//   `wss://`-соединение и получает новый серверный таймер.
 import type { Result, Transport } from '#lib/form/index.js'
 import {
   createFileIntegrityChain,
@@ -23,6 +28,8 @@ import {
   type WsFileDescriptor,
   type WsSegmentLogEntry,
   type WsServerMessage,
+  type WsServerPullMessage,
+  type WsUploadPlatform,
 } from './ws-protocol.js'
 
 /** Минимальный структурный интерфейс WebSocket (совместим с браузерным `WebSocket` и `ws` в тестах). */
@@ -44,10 +51,22 @@ export interface WsFormTransportOptions {
   readonly WebSocketImpl?: ClientWebSocketConstructor
   /** Порог `bufferedAmount` (байт) для ожидания опустошения буфера отправки. */
   readonly highWaterMarkBytes?: number
+  /** Максимум автоматических попыток восстановления сессии при обрыве связи (по умолчанию `4`). */
+  readonly maxAutoResumeAttempts?: number
+  /** Базовая задержка первой попытки переподключения в мс (по умолчанию `350`). */
+  readonly reconnectBaseDelayMs?: number
 }
 
 const WS_OPEN = 1
 const WS_CONNECTING = 0
+const SPEED_WINDOW_MS = 5_000
+const PROGRESS_TICK_MS = 400
+const EMA_TAU_SECONDS = 1.2
+
+interface SpeedSample {
+  readonly ts: number
+  readonly flushedBytes: number
+}
 
 /** Есть ли в `FormData` хотя бы один выбранный непустой `File` (`size > 0` или явное имя). */
 export function hasUploadableFiles(data: unknown): data is FormData {
@@ -68,13 +87,42 @@ function defaultWsUrl(): string {
   return `ws://localhost:5173${FORM_UPLOAD_WS_PATH}`
 }
 
-function waitMs(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function waitAbortableMs(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(true)
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function formatRateLabelRu(bytesPerSecond: number): string {
+  if (bytesPerSecond <= 0) return ''
+  if (bytesPerSecond < 1024 * 1024) {
+    return ` · ${(bytesPerSecond / 1024).toFixed(0)} КБ/с`
+  }
+  return ` · ${(bytesPerSecond / (1024 * 1024)).toFixed(1)} МБ/с`
+}
+
+interface SnapshotMeta {
+  readonly phase: FormUploadProgress['phase']
+  readonly salted: boolean
+  readonly bytesPerSecond: number
+  readonly elapsedMs: number
+  readonly platform: WsUploadPlatform
+  readonly maxDurationMs: number | null
+  readonly chunkBytes: number
+  readonly resumedCount: number
 }
 
 function buildSnapshot(
-  phase: FormUploadProgress['phase'],
-  salted: boolean,
+  meta: SnapshotMeta,
   entries: readonly FileUploadProgressEntry[],
 ): FormUploadProgress {
   let sentBytes = 0
@@ -86,18 +134,20 @@ function buildSnapshot(
   const percent =
     totalBytes > 0
       ? Math.min(100, Math.round((sentBytes / totalBytes) * 100))
-      : phase === 'done' || phase === 'processing'
+      : meta.phase === 'done' || meta.phase === 'processing'
         ? 100
         : 0
 
   const label =
-    phase === 'validating'
+    meta.phase === 'validating'
       ? 'Проверка полей…'
-      : phase === 'processing'
-        ? 'Сохранение файла…'
-        : phase === 'uploading'
-          ? `Загрузка ${percent}%`
-          : undefined
+      : meta.phase === 'reconnecting'
+        ? 'Восстановление связи…'
+        : meta.phase === 'processing'
+          ? 'Сохранение файла…'
+          : meta.phase === 'uploading'
+            ? `Загрузка ${percent}%${formatRateLabelRu(meta.bytesPerSecond)}`
+            : undefined
 
   return {
     status: 'pending',
@@ -105,12 +155,23 @@ function buildSnapshot(
     ...(label ? { label } : {}),
     progress: { kind: 'bytes', loaded: sentBytes, total: totalBytes },
     kind: 'ws-upload',
-    phase,
+    phase: meta.phase,
     sentBytes,
     totalBytes,
     percent,
-    salted,
-    files: entries.map((e) => ({ ...e, salted, recentSegments: [...e.recentSegments] })),
+    bytesPerSecond: meta.bytesPerSecond,
+    elapsedMs: meta.elapsedMs,
+    platform: meta.platform,
+    maxDurationMs: meta.maxDurationMs,
+    chunkBytes: meta.chunkBytes,
+    resumedCount: meta.resumedCount,
+    salted: meta.salted,
+    files: entries.map((e) => ({
+      ...e,
+      bytesPerSecond: meta.bytesPerSecond,
+      salted: meta.salted,
+      recentSegments: [...e.recentSegments],
+    })),
   }
 }
 
@@ -144,13 +205,14 @@ function externalFailureResult(
 }
 
 /**
- * Построить потоковый `Transport` для форм с файлами поверх одного `wss://`-соединения.
+ * Построить потоковый `Transport` для форм с файлами поверх `wss://`.
  */
 export function wsFormTransport(
   resolveTarget: () => string,
   options: WsFormTransportOptions = {},
 ): Transport {
-  const highWaterMark = options.highWaterMarkBytes ?? 2 * DEFAULT_WS_CHUNK_BYTES
+  const maxAutoResumeAttempts = options.maxAutoResumeAttempts ?? 4
+  const reconnectBaseDelayMs = options.reconnectBaseDelayMs ?? 350
 
   return async (req) => {
     if (!(req.data instanceof FormData)) {
@@ -173,14 +235,45 @@ export function wsFormTransport(
     const filesById = new Map<string, File>()
     const progressById = new Map<string, FileUploadProgressEntry>()
 
+    let activeChunkBytes = DEFAULT_WS_CHUNK_BYTES
+    let activePlatform: WsUploadPlatform = 'node'
+    let activeMaxDurationMs: number | null = null
+    let sessionId: string | null = null
+    let resumeToken: string | null = null
+    let resumedCount = 0
+
+    let sessionClockOriginMs = Date.now()
+    let smoothedBps = 0
+    let lastSpeedSampleTs = 0
+    const speedSamples: SpeedSample[] = []
+
+    const resetProgressEntries = (chunkSize: number): void => {
+      activeChunkBytes = chunkSize
+      speedSamples.length = 0
+      smoothedBps = 0
+      lastSpeedSampleTs = 0
+      for (const desc of descriptors) {
+        const totalSegments = desc.size === 0 ? 0 : Math.ceil(desc.size / chunkSize)
+        progressById.set(desc.id, {
+          fileId: desc.id,
+          field: desc.field,
+          name: desc.name,
+          size: desc.size,
+          state: 'uploading',
+          receivedBytes: 0,
+          sentSegments: 0,
+          totalSegments,
+          progress: desc.size === 0 ? 100 : 0,
+          recentSegments: [],
+        })
+      }
+    }
+
     let fileCounter = 0
     for (const [key, value] of req.data.entries()) {
       if (value instanceof File) {
-        // Невыбранный `<input type="file">` в браузере даёт пустой `File("", 0)` — пропускаем
         if (value.name === '' && value.size === 0) continue
         const id = `f${fileCounter++}`
-        const totalSegments =
-          value.size === 0 ? 0 : Math.ceil(value.size / DEFAULT_WS_CHUNK_BYTES)
         const desc: WsFileDescriptor = {
           id,
           field: key,
@@ -192,31 +285,32 @@ export function wsFormTransport(
         descriptors.push(desc)
         descriptorsById.set(id, desc)
         filesById.set(id, value)
-        progressById.set(id, {
-          fileId: id,
-          field: key,
-          name: value.name,
-          size: value.size,
-          state: 'uploading',
-          receivedBytes: 0,
-          sentSegments: 0,
-          totalSegments,
-          progress: value.size === 0 ? 100 : 0,
-          recentSegments: [],
-        })
       } else {
         fields.push([key, value])
       }
     }
+    resetProgressEntries(DEFAULT_WS_CHUNK_BYTES)
 
     let saltedSession = false
+    let currentSaltHex: string | null = null
     let saltKeyPromise: Promise<CryptoKey | null> | null = null
     const chainsById = new Map<string, Promise<FileIntegrityChain>>()
+
+    const resetSaltState = (): void => {
+      saltedSession = false
+      currentSaltHex = null
+      saltKeyPromise = null
+      chainsById.clear()
+    }
 
     const getChainForFile = (
       saltHex: string,
       desc: WsFileDescriptor,
     ): Promise<FileIntegrityChain | null> => {
+      if (currentSaltHex !== saltHex) {
+        resetSaltState()
+        currentSaltHex = saltHex
+      }
       saltedSession = true
       saltKeyPromise ??= importUploadSaltKey(saltHex)
       let existing = chainsById.get(desc.id)
@@ -230,8 +324,64 @@ export function wsFormTransport(
       return existing
     }
 
-    const emitProgress = (phase: FormUploadProgress['phase']): void => {
-      req.report?.(buildSnapshot(phase, saltedSession, [...progressById.values()]))
+    const updateSpeedSample = (ws: ClientWebSocketLike | null): number => {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      let totalQueuedBytes = 0
+      for (const item of progressById.values()) {
+        totalQueuedBytes += item.receivedBytes
+      }
+      const buffered = ws && ws.readyState === WS_OPEN ? Math.max(0, ws.bufferedAmount) : 0
+      const flushedBytes = Math.max(0, totalQueuedBytes - buffered)
+
+      const prevSampleTs = lastSpeedSampleTs
+      lastSpeedSampleTs = now
+      speedSamples.push({ ts: now, flushedBytes })
+      while (speedSamples.length > 2 && now - speedSamples[1]!.ts > SPEED_WINDOW_MS) {
+        speedSamples.shift()
+      }
+      if (speedSamples.length >= 2) {
+        const first = speedSamples[0]!
+        const dtSec = (now - first.ts) / 1000
+        const dBytes = Math.max(0, flushedBytes - first.flushedBytes)
+        if ((dBytes > 0 && dtSec >= 0.002) || dtSec >= 0.25) {
+          const effectiveDtSec = Math.max(dtSec, 0.025)
+          const windowBps = dBytes / effectiveDtSec
+          const dtStepSec = prevSampleTs > 0 ? Math.max(0.01, (now - prevSampleTs) / 1000) : 0
+          const alpha =
+            smoothedBps > 0 && dtStepSec > 0
+              ? Math.min(1, 1 - Math.exp(-dtStepSec / EMA_TAU_SECONDS))
+              : 0.35
+          smoothedBps =
+            smoothedBps > 0 ? smoothedBps * (1 - alpha) + windowBps * alpha : windowBps
+        }
+      }
+      return Math.round(smoothedBps)
+    }
+
+    let activePhase: FormUploadProgress['phase'] = 'validating'
+
+    const emitProgress = (
+      phase: FormUploadProgress['phase'],
+      ws: ClientWebSocketLike | null,
+    ): void => {
+      activePhase = phase
+      const bps = phase === 'uploading' || phase === 'processing' ? updateSpeedSample(ws) : Math.round(smoothedBps)
+      const elapsedMs = Math.max(0, Date.now() - sessionClockOriginMs)
+      req.report?.(
+        buildSnapshot(
+          {
+            phase,
+            salted: saltedSession,
+            bytesPerSecond: bps,
+            elapsedMs,
+            platform: activePlatform,
+            maxDurationMs: activeMaxDurationMs,
+            chunkBytes: activeChunkBytes,
+            resumedCount,
+          },
+          [...progressById.values()],
+        ),
+      )
     }
 
     const endpoint =
@@ -242,213 +392,344 @@ export function wsFormTransport(
     return new Promise((resolve) => {
       let settled = false
       let allBytesSent = false
-      let pullQueue = Promise.resolve()
-      const ws = new WsCtor(endpoint)
-      ws.binaryType = 'arraybuffer'
+      let currentWs: ClientWebSocketLike | null = null
+      let reconnectAttempts = 0
+      let sendGate = Promise.resolve()
+
+      const progressTimer = setInterval(() => {
+        if (settled || !currentWs) return
+        if (activePhase === 'uploading' || activePhase === 'processing') {
+          emitProgress(activePhase, currentWs)
+        }
+      }, PROGRESS_TICK_MS)
+      ;(progressTimer as unknown as { unref?: () => void }).unref?.()
 
       const finish = (out: Awaited<ReturnType<Transport>>): void => {
         if (settled) return
         settled = true
+        clearInterval(progressTimer)
         req.signal?.removeEventListener('abort', onAbort)
         resolve(out)
       }
 
       const onAbort = (): void => {
-        if (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING) {
-          ws.close(1001, 'Aborted')
+        const ws = currentWs
+        currentWs = null
+        if (ws) {
+          try {
+            if (ws.readyState === WS_OPEN) {
+              ws.send(JSON.stringify({ type: 'cancel' }))
+            }
+            if (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING) {
+              ws.close(1001, 'Aborted')
+            }
+          } catch {
+            // Игнорируем ошибку закрытия уже рвущегося сокета.
+          }
         }
         finish({ kind: 'abort', reason: 'aborted' })
       }
       req.signal?.addEventListener('abort', onAbort, { once: true })
 
-      ws.addEventListener('open', () => {
+      const sendInitOnSocket = (ws: ClientWebSocketLike): void => {
+        sessionClockOriginMs = Date.now()
+        allBytesSent = false
+        resetSaltState()
+        resetProgressEntries(activeChunkBytes)
         const initMsg: WsClientInitMessage = {
           type: 'init',
           target: resolveTarget(),
           fields,
           files: descriptors,
         }
-        emitProgress('validating')
+        emitProgress('validating', ws)
         ws.send(JSON.stringify(initMsg))
-      })
+      }
 
-      ws.addEventListener('message', (ev) => {
-        const raw = ev.data
-        if (typeof raw !== 'string') return
-        let msg: WsServerMessage
-        try {
-          msg = JSON.parse(raw) as WsServerMessage
-        } catch {
-          return
-        }
+      const handlePullMessage = async (
+        ws: ClientWebSocketLike,
+        msg: WsServerPullMessage,
+      ): Promise<void> => {
+        const file = filesById.get(msg.fileId)
+        const desc = descriptorsById.get(msg.fileId)
+        const current = progressById.get(msg.fileId)
+        if (!file || !desc || !current || settled || ws !== currentWs) return
 
-        if (msg.type === 'pull') {
-          pullQueue = pullQueue.then(async () => {
-            const file = filesById.get(msg.fileId)
-            const desc = descriptorsById.get(msg.fileId)
-            const current = progressById.get(msg.fileId)
-            if (!file || !desc || !current || settled) return
+        if (msg.salt) saltedSession = true
 
-            if (msg.salt) saltedSession = true
-
-            // Проверяем, что файл на диске пользователя не вырос и не уменьшился с момента Кадра 0
-            if (
-              file.size !== desc.size ||
-              (desc.lastModified > 0 && file.lastModified !== desc.lastModified)
-            ) {
-              if (ws.readyState === WS_OPEN) {
-                const abortMsg: WsClientAbortFileMessage = {
-                  type: 'abort-file',
-                  reqId: msg.reqId,
-                  fileId: msg.fileId,
-                  code: 'file.changed',
-                }
-                ws.send(JSON.stringify(abortMsg))
-              }
-              return
+        if (
+          file.size !== desc.size ||
+          (desc.lastModified > 0 && file.lastModified !== desc.lastModified)
+        ) {
+          if (ws.readyState === WS_OPEN && ws === currentWs) {
+            const abortMsg: WsClientAbortFileMessage = {
+              type: 'abort-file',
+              reqId: msg.reqId,
+              fileId: msg.fileId,
+              code: 'file.changed',
             }
-
-            // Фиксируем подтверждённый сервером прогресс предыдущих сегментов
-            const ackPct =
-              msg.totalFileBytes > 0
-                ? Math.min(99, Math.round((msg.receivedBytes / msg.totalFileBytes) * 100))
-                : 100
-            progressById.set(msg.fileId, {
-              ...current,
-              state: 'uploading',
-              receivedBytes: msg.receivedBytes,
-              sentSegments: msg.sentSegments,
-              totalSegments: msg.totalSegments,
-              progress: ackPct,
-              recentSegments: msg.recentSegments,
-            })
-            emitProgress('uploading')
-
-            try {
-              const sliceBuf = await file.slice(msg.offset, msg.offset + msg.length).arrayBuffer()
-              if (settled || ws.readyState !== WS_OPEN) return
-
-              // Повторно сверяем длину реально вычитанного среза и метаданные файла
-              if (sliceBuf.byteLength !== msg.length || file.size !== desc.size) {
-                const abortMsg: WsClientAbortFileMessage = {
-                  type: 'abort-file',
-                  reqId: msg.reqId,
-                  fileId: msg.fileId,
-                  code: 'file.changed',
-                }
-                ws.send(JSON.stringify(abortMsg))
-                return
-              }
-
-              const sliceBytes = new Uint8Array(sliceBuf)
-              let hmacTag: Uint8Array | undefined
-              if (msg.salt) {
-                const chain = await getChainForFile(msg.salt, desc)
-                if (chain) {
-                  hmacTag = await chain.nextSegmentTag(msg.segmentIndex, msg.offset, sliceBytes)
-                }
-              }
-
-              while (ws.bufferedAmount > highWaterMark && ws.readyState === WS_OPEN && !settled) {
-                await waitMs(10)
-              }
-              if (settled || ws.readyState !== WS_OPEN) return
-
-              const frame = packBinarySegment(msg.reqId, sliceBytes, hmacTag)
-              ws.send(frame)
-
-              const newReceived = msg.offset + msg.length
-              const newSentSegments = msg.sentSegments + 1
-              const updatedLog: WsSegmentLogEntry[] = [
-                ...msg.recentSegments.slice(-7),
-                { segmentIndex: msg.segmentIndex, offset: msg.offset, bytes: msg.length },
-              ]
-              const fileCompleted = newReceived >= file.size
-              progressById.set(msg.fileId, {
-                ...current,
-                state: fileCompleted ? 'processing' : 'uploading',
-                receivedBytes: Math.min(file.size, newReceived),
-                sentSegments: newSentSegments,
-                totalSegments: msg.totalSegments,
-                progress: fileCompleted
-                  ? 100
-                  : Math.min(99, Math.round((newReceived / file.size) * 100)),
-                recentSegments: updatedLog,
-              })
-
-              const everyDone = [...progressById.values()].every(
-                (item) => item.receivedBytes >= item.size,
-              )
-              if (everyDone) {
-                allBytesSent = true
-                emitProgress('processing')
-              } else {
-                emitProgress('uploading')
-              }
-            } catch {
-              if (ws.readyState === WS_OPEN) {
-                const abortMsg: WsClientAbortFileMessage = {
-                  type: 'abort-file',
-                  reqId: msg.reqId,
-                  fileId: msg.fileId,
-                  code: 'file.unreadable',
-                }
-                ws.send(JSON.stringify(abortMsg))
-              }
-            }
-          })
-          return
-        }
-
-        if (msg.type === 'result') {
-          if (msg.result.ok) {
-            for (const [id, entry] of progressById) {
-              progressById.set(id, { ...entry, state: 'done', progress: 100 })
-            }
-            emitProgress('done')
+            ws.send(JSON.stringify(abortMsg))
           }
-          if (ws.readyState === WS_OPEN) ws.close(1000, 'Complete')
-          finish({ kind: 'result', result: msg.result })
           return
         }
 
-        if (msg.type === 'fault') {
-          if (ws.readyState === WS_OPEN) ws.close(1002, 'Server fault')
+        const knownLoaded = Math.max(current.receivedBytes, msg.receivedBytes)
+        const ackPct =
+          msg.totalFileBytes > 0
+            ? Math.min(99, Math.round((knownLoaded / msg.totalFileBytes) * 100))
+            : 100
+        progressById.set(msg.fileId, {
+          ...current,
+          state: 'uploading',
+          receivedBytes: knownLoaded,
+          sentSegments: Math.max(current.sentSegments, msg.sentSegments),
+          totalSegments: msg.totalSegments,
+          progress: ackPct,
+          recentSegments: msg.recentSegments,
+        })
+        emitProgress('uploading', ws)
+
+        try {
+          // Срез файла и вычисление позиционного HMAC выполняются параллельно на всём окне конвейера
+          const sliceBuf = await file.slice(msg.offset, msg.offset + msg.length).arrayBuffer()
+          if (settled || ws !== currentWs || ws.readyState !== WS_OPEN) return
+
+          if (sliceBuf.byteLength !== msg.length || file.size !== desc.size) {
+            const abortMsg: WsClientAbortFileMessage = {
+              type: 'abort-file',
+              reqId: msg.reqId,
+              fileId: msg.fileId,
+              code: 'file.changed',
+            }
+            ws.send(JSON.stringify(abortMsg))
+            return
+          }
+
+          const sliceBytes = new Uint8Array(sliceBuf)
+          let hmacTag: Uint8Array | undefined
+          if (msg.salt) {
+            const chain = await getChainForFile(msg.salt, desc)
+            if (chain) {
+              hmacTag = await chain.nextSegmentTag(msg.segmentIndex, msg.offset, sliceBytes)
+            }
+          }
+          if (settled || ws !== currentWs || ws.readyState !== WS_OPEN) return
+
+          const frame = packBinarySegment(msg.reqId, sliceBytes, hmacTag)
+          const highWaterMark = options.highWaterMarkBytes ?? Math.max(2 * activeChunkBytes, 512 * 1024)
+
+          // Узкие ворота только вокруг самой отправки в сокет + контроля `bufferedAmount`
+          await (sendGate = sendGate.then(async () => {
+            while (
+              ws === currentWs &&
+              ws.readyState === WS_OPEN &&
+              ws.bufferedAmount > highWaterMark &&
+              !settled
+            ) {
+              const ok = await waitAbortableMs(10, req.signal)
+              if (!ok) return
+            }
+            if (settled || ws !== currentWs || ws.readyState !== WS_OPEN) return
+            ws.send(frame)
+
+            const latest = progressById.get(msg.fileId) ?? current
+            const newReceived = Math.max(latest.receivedBytes, msg.offset + msg.length)
+            const newSentSegments = Math.max(latest.sentSegments, msg.segmentIndex + 1)
+            const updatedLog: WsSegmentLogEntry[] = [
+              ...latest.recentSegments.slice(-7),
+              { segmentIndex: msg.segmentIndex, offset: msg.offset, bytes: msg.length },
+            ]
+            const fileCompleted = newReceived >= file.size
+            progressById.set(msg.fileId, {
+              ...latest,
+              state: fileCompleted ? 'processing' : 'uploading',
+              receivedBytes: Math.min(file.size, newReceived),
+              sentSegments: newSentSegments,
+              totalSegments: msg.totalSegments,
+              progress: fileCompleted
+                ? 100
+                : Math.min(99, Math.round((newReceived / file.size) * 100)),
+              recentSegments: updatedLog,
+            })
+
+            const everyDone = [...progressById.values()].every(
+              (item) => item.receivedBytes >= item.size,
+            )
+            if (everyDone) {
+              allBytesSent = true
+              emitProgress('processing', ws)
+            } else {
+              emitProgress('uploading', ws)
+            }
+          }))
+        } catch {
+          if (ws === currentWs && ws.readyState === WS_OPEN) {
+            const abortMsg: WsClientAbortFileMessage = {
+              type: 'abort-file',
+              reqId: msg.reqId,
+              fileId: msg.fileId,
+              code: 'file.unreadable',
+            }
+            ws.send(JSON.stringify(abortMsg))
+          }
+        }
+      }
+
+      const openSocket = (mode: 'init' | 'resume'): void => {
+        if (settled || req.signal?.aborted) return
+        const ws = new WsCtor(endpoint)
+        ws.binaryType = 'arraybuffer'
+        currentWs = ws
+
+        ws.addEventListener('open', () => {
+          if (settled || ws !== currentWs) return
+          if (mode === 'resume' && sessionId && resumeToken) {
+            emitProgress('reconnecting', ws)
+            ws.send(
+              JSON.stringify({
+                type: 'resume',
+                sessionId,
+                resumeToken,
+              }),
+            )
+            return
+          }
+          sendInitOnSocket(ws)
+        })
+
+        ws.addEventListener('message', (ev) => {
+          if (settled || ws !== currentWs) return
+          const raw = ev.data
+          if (typeof raw !== 'string') return
+          let msg: WsServerMessage
+          try {
+            msg = JSON.parse(raw) as WsServerMessage
+          } catch {
+            return
+          }
+
+          if (msg.type === 'ping') {
+            if (ws.readyState === WS_OPEN) {
+              ws.send(JSON.stringify({ type: 'pong', ts: msg.ts }))
+            }
+            return
+          }
+
+          if (msg.type === 'ready') {
+            sessionId = msg.sessionId
+            resumeToken = msg.resumeToken
+            activeChunkBytes = msg.chunkBytes
+            activePlatform = msg.platform
+            activeMaxDurationMs = msg.maxDurationMs
+            sessionClockOriginMs = Date.now()
+            reconnectAttempts = 0
+            for (const [id, entry] of progressById) {
+              const totalSegments = entry.size === 0 ? 0 : Math.ceil(entry.size / activeChunkBytes)
+              progressById.set(id, { ...entry, totalSegments })
+            }
+            emitProgress('validating', ws)
+            return
+          }
+
+          if (msg.type === 'resume-ok') {
+            resumedCount += 1
+            reconnectAttempts = 0
+            sessionClockOriginMs = Date.now() - msg.elapsedMs
+            speedSamples.length = 0
+            emitProgress(allBytesSent ? 'processing' : 'uploading', ws)
+            return
+          }
+
+          if (msg.type === 'resume-miss') {
+            // Холодный инстанс или истёк грейс-период: начинаем чистую загрузку с байта 0 и новым таймером
+            resumedCount += 1
+            reconnectAttempts = 0
+            sessionId = null
+            resumeToken = null
+            sendInitOnSocket(ws)
+            return
+          }
+
+          if (msg.type === 'pull') {
+            void handlePullMessage(ws, msg)
+            return
+          }
+
+          if (msg.type === 'result') {
+            if (msg.result.ok) {
+              for (const [id, entry] of progressById) {
+                progressById.set(id, { ...entry, state: 'done', progress: 100 })
+              }
+              emitProgress('done', ws)
+            }
+            if (ws.readyState === WS_OPEN) ws.close(1000, 'Complete')
+            finish({ kind: 'result', result: msg.result })
+            return
+          }
+
+          if (msg.type === 'fault') {
+            if (ws.readyState === WS_OPEN) ws.close(1002, 'Server fault')
+            finish({
+              kind: 'result',
+              result: externalFailureResult(
+                req.envelope,
+                msg.status,
+                `transport.${msg.status}`,
+                msg.message,
+                allBytesSent ? 'unknown' : 'not-applied',
+              ),
+            })
+          }
+        })
+
+        ws.addEventListener('error', () => {
+          // Итоговое решение (`resume` или возврат ошибки) принимает обработчик `close`
+        })
+
+        ws.addEventListener('close', (ev) => {
+          if (settled || ws !== currentWs) return
+          if (req.signal?.aborted) {
+            finish({ kind: 'abort', reason: 'aborted' })
+            return
+          }
+
+          const code = typeof ev.code === 'number' ? ev.code : 1006
+          const canAutoResume =
+            descriptors.length > 0 &&
+            sessionId !== null &&
+            resumeToken !== null &&
+            code !== 1000 &&
+            code !== 1001 &&
+            code !== 1002 &&
+            code !== 1008 &&
+            reconnectAttempts < maxAutoResumeAttempts
+
+          if (canAutoResume) {
+            reconnectAttempts += 1
+            emitProgress('reconnecting', null)
+            const delay = reconnectBaseDelayMs * Math.pow(2, reconnectAttempts - 1)
+            void waitAbortableMs(delay, req.signal).then((stillActive) => {
+              if (!stillActive || settled) return
+              openSocket('resume')
+            })
+            return
+          }
+
+          const reason = typeof ev.reason === 'string' && ev.reason ? ` (${ev.reason})` : ''
           finish({
             kind: 'result',
             result: externalFailureResult(
               req.envelope,
-              msg.status,
-              `transport.${msg.status}`,
-              msg.message,
+              502,
+              'ws.disconnected',
+              `Соединение загрузки прервалось до ответа сервера${reason}`,
               allBytesSent ? 'unknown' : 'not-applied',
             ),
           })
-        }
-      })
-
-      ws.addEventListener('error', () => {
-        // Итоговое решение вынесет `close`, если `result`/`fault` не успели прийти
-      })
-
-      ws.addEventListener('close', (ev) => {
-        if (settled) return
-        if (req.signal?.aborted) {
-          finish({ kind: 'abort', reason: 'aborted' })
-          return
-        }
-        const reason = typeof ev.reason === 'string' && ev.reason ? ` (${ev.reason})` : ''
-        finish({
-          kind: 'result',
-          result: externalFailureResult(
-            req.envelope,
-            502,
-            'ws.disconnected',
-            `Соединение загрузки прервалось до ответа сервера${reason}`,
-            allBytesSent ? 'unknown' : 'not-applied',
-          ),
         })
-      })
+      }
+
+      openSocket('init')
     })
   }
 }

@@ -19,6 +19,7 @@
 | `#lib/address` | Единый писатель URL/history, глобальная бронь query-ключей, чтение видимого адреса и типизированный реестр маршрутов (`routes.ts`, `kitRoute`) | [`src/lib/address/README.md`](./src/lib/address/README.md) |
 | `#lib/fetch` | Надёжный `fetch` к внешним API: таймауты, ретраи с `Retry-After`, скользящие лимиты `rps`/`rpm`, склейка запросов, поток хода задачи | [`src/lib/fetch/README.md`](./src/lib/fetch/README.md) |
 | `#lib/cache` | Контракт ключ–значение со сроками жизни, областями (`scope`), `singleflight` и атомарными `add`/`incr` | [`src/lib/cache/README.md`](./src/lib/cache/README.md) |
+| `#lib/storage` | Мультисерверное потоковое хранилище без буферизации в ОЗУ: `local` / `S3` / `WebDAV` / `memory`, нарезка `split` со склейкой `Range 206`, потоковое `AES-256-GCM`, лимитеры `rate` и `concurrency`, `upload()` и `serve()` | [`src/lib/storage/README.md`](./src/lib/storage/README.md) |
 | `#lib/image` | Изоморфный конвейер изображений: чтение заголовков без декодирования (`probe`), обрезка/ресайз, подбор качества под бюджет байт, серверный WASM-декодер (`node.ts`) | [`src/lib/image/README.md`](./src/lib/image/README.md) |
 | `#lib/task` | Единый формат состояния ожидания и прогресса (`TaskState`) для ссылок, кнопок и верхней полосы загрузки | [`src/lib/task/README.md`](./src/lib/task/README.md) |
 | `#lib/assets` | Пакет-ассеты (не код): единственный вход `favicon.svg`, объявленный в `entrypoints.json`; иконка подключается в `src/routes/+layout.svelte` | — (`entrypoints.json`) |
@@ -26,9 +27,9 @@
 ### 2. Связки со средой и между библиотеками (`src/hooks/` — `#hooks/*`)
 
 Переходники без визуальной разметки (подробно — [`src/hooks/README.md`](./src/hooks/README.md)):
-- `cache-db.ts` (`#lib/cache` × `#lib/db`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema` (`#lib/db/sync` × `#lib/form`), `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
+- `cache-db.ts` (`#lib/cache` × `#lib/db`), `storage-db.ts` (`#lib/storage` × `#lib/db` × `#lib/cache`), `cookie-vault/` (зашифрованные `HttpOnly`-куки × `#lib/form`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema` (`#lib/db/sync` × `#lib/form`), `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
 - `links/` (`asLink`, `asModalLink`), `loader.svelte.ts`, `js-only.svelte.ts`, `use-drawer.svelte.ts`, `app-errors.svelte.ts`;
-- `component-form/` — маршрутно-независимые формы компонентов через `createComponentFormsHandle` и `bindComponentForm`.
+- `component-form/` — маршрутно-независимые формы компонентов через `createComponentFormsHandle` и `bindComponentForm` (включая потоковый `wss://`-транспорт файлов с ранним ACL Кадра 0 и опциональной солью `HMAC-SHA-256`).
 
 ### 3. UI-примитивы и проектно-независимые компоненты (`src/components/` — `#components/*`)
 
@@ -38,12 +39,13 @@
 ### 4. Контент и домены (`src/content/` — `#content/*`)
 
 - `src/content/user/` — автономный модуль пользователя и авторизации по Ed25519 `seed`: маршруты и модалки (`routes.ts`, `modals.ts`), ядро (`auth.ts`, `profile.ts`, `acl.ts`, `keys.ts`, `vault.ts`), серверный фасад `gateway.server.ts` и UI под защитой `<Acl />` (`AuthWidget`, `MenuBody`, `ui/seed-form/`, `ui/profile-form/`). Документация — [`src/content/user/README.md`](./src/content/user/README.md);
+- `src/content/storage-vault/` — браузерный куки-сейф облачных серверов S3 / WebDAV (модалка `storage.vault` и страница `/upload-demo/vault`, живая самопроверка `probe`, `0` ключей в `.env` и БД);
 - `src/content/demo-catalog/{items,posts,rickmorty,shikimori}/` — изолированные учебные источники витрин, схемы фильтров и карточки строк/плиток.
 
 ### 5. Серверные синглтоны и маршруты (`src/server/` — `#server/*`, `src/routes/`)
 
-- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и `trusted-origins.ts`;
-- `src/routes/` — тонкие маршруты витрин и API (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/schema`, `/user/auth`, `/user/menu`, `/cards/[id]`, `/cycle`, `/spike`).
+- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `storage.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и `trusted-origins.ts`;
+- `src/routes/` — тонкие маршруты витрин и API (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/upload-demo`, `/schema`, `/user/auth`, `/user/menu`, `/cards/[id]`, `/cycle`, `/spike`, `/api/files/[...path]`, `/api/form-upload`).
 
 ---
 

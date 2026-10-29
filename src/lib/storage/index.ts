@@ -9,7 +9,7 @@ import {
 import {
   bindStreamLease,
   createConcurrencyGate,
-  normalizeConcurrencyConfig,
+  normalizeServerConcurrency,
   resolveCallConcurrency,
   StorageConcurrencyError,
   type ConcurrencyConfig,
@@ -53,6 +53,13 @@ import {
   type StorageTechConfig,
 } from './store.js'
 import { StreamFile } from './stream-file.js'
+import {
+  executeStorageUpload,
+  matchesUploadAccept,
+  sanitizeUploadFileName,
+  StorageUploadError,
+  type StorageUploadErrorCode,
+} from './upload.js'
 import type {
   ConfiguredStorageServer,
   DriverPutInput,
@@ -66,6 +73,8 @@ import type {
   StorageCloneReport,
   StorageConfig,
   StorageDriver,
+  StorageListOptions,
+  StorageListResult,
   StorageProbeResult,
   StorageProbeStep,
   StoragePutBody,
@@ -73,27 +82,36 @@ import type {
   StorageReadOptions,
   StorageReport,
   StorageServeOptions,
+  StorageServeTarget,
   StorageServerEntry,
   StorageServerPolicy,
   StorageServerReport,
   StorageSpool,
   StorageTransferInput,
+  StorageUploadFileContext,
+  StorageUploadOptions,
+  StorageUploadResult,
   StoredObject,
+  StoredUploadedFile,
   UrlConfiguredStorageServer,
   WriteStrategy,
 } from './types.js'
 
 export {
   createBandwidthLimiter,
+  createConcurrencyGate,
   decryptedSize,
   defineStorageLedger,
   defineStorageStore,
   encryptedSize,
+  matchesUploadAccept,
   memoryDriver,
   memoryLedger,
   memoryStore,
+  sanitizeUploadFileName,
   StorageConcurrencyError,
   StorageCryptoError,
+  StorageUploadError,
   StreamFile,
 }
 
@@ -102,6 +120,7 @@ export type {
   AdaptedStorageStore,
   BandwidthLimiter,
   ConcurrencyConfig,
+  ConcurrencyGate,
   ConcurrencyInput,
   ConfiguredStorageServer,
   DriverPutInput,
@@ -122,6 +141,8 @@ export type {
   StorageDriver,
   StorageEncryptionKey,
   StorageLedgerSpec,
+  StorageListOptions,
+  StorageListResult,
   StorageProbeResult,
   StorageProbeStep,
   StoragePutBody,
@@ -130,6 +151,7 @@ export type {
   StorageReport,
   StorageRequestMeta,
   StorageServeOptions,
+  StorageServeTarget,
   StorageServerEntry,
   StorageServerPolicy,
   StorageServerReport,
@@ -138,9 +160,14 @@ export type {
   StorageStoreSpec,
   StorageTechConfig,
   StorageTransferInput,
+  StorageUploadErrorCode,
+  StorageUploadFileContext,
+  StorageUploadOptions,
+  StorageUploadResult,
   StoredFileRecord,
   StoredObject,
   StoredPart,
+  StoredUploadedFile,
   UrlConfiguredStorageServer,
   WriteStrategy,
 }
@@ -188,6 +215,17 @@ export class StorageReadOnlyError extends Error {
     super(`[storage] сервер «${server}» открыт только для чтения (readOnly: true)`)
     this.name = 'StorageReadOnlyError'
     this.server = server
+  }
+}
+
+export class StorageOverwriteError extends Error {
+  readonly code = 'storage.already-exists'
+  readonly path: string
+
+  constructor(path: string) {
+    super(`[storage] объект «${path}» уже существует (overwrite: false)`)
+    this.name = 'StorageOverwriteError'
+    this.path = path
   }
 }
 
@@ -259,7 +297,7 @@ function normalizeSlot(
     const driver = isUrlConfiguredEntry(entry)
       ? driverFromUrl(entry.url, entry.publicBaseUrl)
       : entry.driver
-    const concCfg = normalizeConcurrencyConfig(entry.concurrency)
+    const concurrencyGate = normalizeServerConcurrency(name, entry.concurrency)
     let statTtlMs: number | undefined
     if (entry.statTtlMs !== undefined && entry.statTtlMs > 0) {
       if (!hasStore) {
@@ -280,7 +318,7 @@ function normalizeSlot(
       allowSplit: entry.allowSplit !== false,
       key: entry.key ?? null,
       rateLimiter: normalizeServerRate(entry.rate),
-      concurrencyGate: concCfg ? createConcurrencyGate(name, concCfg) : null,
+      concurrencyGate,
       ...(entry.cdnUrl?.trim() ? { cdnUrl: entry.cdnUrl.trim() } : {}),
       ...(statTtlMs !== undefined ? { statTtlMs } : {}),
     }
@@ -388,16 +426,50 @@ interface NormalizedInputBody {
   sliceable?: (start: number, end: number) => ReadableStream<Uint8Array>
 }
 
+const BLOB_SLICE_CHUNK_BYTES = 64 * 1024
+
+/**
+ * Читает `Blob` срезами по `64 KiB` вместо нативного `blob.stream()`:
+ * в Node.js `< 24.20.0` (`nodejs/node#63574`, см. `@remix-run/file-storage-s3`)
+ * чанки из `Blob#stream()` удерживаются в памяти до завершения процесса.
+ */
+function streamBlobSlices(
+  blob: Blob,
+  start = 0,
+  end = blob.size,
+): ReadableStream<Uint8Array> {
+  const boundedStart = Math.max(0, Math.min(start, blob.size))
+  const boundedEnd = Math.max(boundedStart, Math.min(end, blob.size))
+  let offset = boundedStart
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (offset >= boundedEnd) {
+        controller.close()
+        return
+      }
+      const nextEnd = Math.min(offset + BLOB_SLICE_CHUNK_BYTES, boundedEnd)
+      const chunk = new Uint8Array(await blob.slice(offset, nextEnd).arrayBuffer())
+      offset = nextEnd
+      if (chunk.byteLength > 0) {
+        controller.enqueue(chunk)
+      }
+      if (offset >= boundedEnd) {
+        controller.close()
+      }
+    },
+  })
+}
+
 function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
   if (body instanceof ReadableStream) {
     return { stream: body }
   }
   if (body instanceof Blob) {
     return {
-      stream: body.stream() as ReadableStream<Uint8Array>,
+      stream: streamBlobSlices(body),
       knownSize: body.size,
       ...(body.type ? { inferredType: body.type } : {}),
-      sliceable: (start, end) => body.slice(start, end).stream() as ReadableStream<Uint8Array>,
+      sliceable: (start, end) => streamBlobSlices(body, start, end),
     }
   }
   const view =
@@ -409,6 +481,11 @@ function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
   if (!view) {
     throw new TypeError('[storage] неподдерживаемый тип body в put()')
   }
+  // Отвязываем собственную копию ArrayBuffer (защита от переиспользования буфера вызывающим кодом
+  // при ретраях и от утечки общего 8-КиБ пула Node Buffer)
+  const snapshot = new Uint8Array(new ArrayBuffer(view.byteLength))
+  snapshot.set(view)
+
   const makeSliceStream = (sub: Uint8Array) =>
     new ReadableStream<Uint8Array>({
       start(controller) {
@@ -417,9 +494,9 @@ function bodyToNormalized(body: StoragePutBody): NormalizedInputBody {
       },
     })
   return {
-    knownSize: view.byteLength,
-    stream: makeSliceStream(view),
-    sliceable: (start, end) => makeSliceStream(view.subarray(start, end)),
+    knownSize: snapshot.byteLength,
+    stream: makeSliceStream(snapshot),
+    sliceable: (start, end) => makeSliceStream(snapshot.subarray(start, end)),
   }
 }
 
@@ -428,17 +505,31 @@ function buildPublicUrl(
   path: string,
   serverName: string,
   useBarePath: boolean,
+  publicOrigin?: string,
 ): string | undefined {
   if (!baseUrl) return undefined
   const cleanBase = baseUrl.replace(/\/+$/, '')
+  const cleanOrigin = publicOrigin?.trim().replace(/\/+$/, '')
+  const resolvedBase =
+    cleanOrigin && cleanBase.startsWith('/') && !cleanBase.startsWith('//')
+      ? `${cleanOrigin}${cleanBase}`
+      : cleanBase
   const encodedPath = path.split('/').map(encodeURIComponent).join('/')
   const suffix = useBarePath ? '' : `?server=${encodeURIComponent(serverName)}`
-  return `${cleanBase}/${encodedPath}${suffix}`
+  return `${resolvedBase}/${encodedPath}${suffix}`
+}
+
+function encodeRfc5987ValueChars(str: string): string {
+  return encodeURIComponent(str).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
 }
 
 function contentDispositionAttachment(filename: string): string {
-  const asciiFallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download'
-  const encoded = encodeURIComponent(filename)
+  const clean = filename.replace(/[\r\n]+/g, ' ').trim() || 'download'
+  const asciiFallback = clean.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'download'
+  const encoded = encodeRfc5987ValueChars(clean)
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`
 }
 
@@ -526,11 +617,60 @@ export function createStorage(config: StorageConfig): Storage {
   const stateListener = config.state
   const spool = config.spool
   const writeStrategy: WriteStrategy = config.writeStrategy ?? 'priority'
+  const cooldownMs = Math.max(0, config.cooldownMs ?? 0)
+  const cooldowns = new Map<string, number>()
   let roundRobinCursor = 0
 
   const slots = new Map<string, NormalizedServerSlot>()
   for (const name of initialNames) {
     slots.set(name, normalizeSlot(name, config.servers[name]!, Boolean(store)))
+  }
+
+  function isServerHealthy(name: string, now = Date.now()): boolean {
+    const until = cooldowns.get(name)
+    if (until === undefined) return true
+    if (until <= now) {
+      cooldowns.delete(name)
+      stateListener?.({ type: 'server:recovered', server: name })
+      return true
+    }
+    return false
+  }
+
+  function markServerCooldown(name: string, errorMsg: string): void {
+    if (cooldownMs <= 0) return
+    const until = Date.now() + cooldownMs
+    cooldowns.set(name, until)
+    stateListener?.({
+      type: 'server:cooldown',
+      server: name,
+      until,
+      error: errorMsg,
+    })
+  }
+
+  function markServerHealthy(name: string): void {
+    if (cooldowns.delete(name)) {
+      stateListener?.({ type: 'server:recovered', server: name })
+    }
+  }
+
+  function isTransientDriverFailure(err: unknown, signal?: AbortSignal): boolean {
+    if (signal?.aborted) return false
+    if (
+      err instanceof StorageQuotaError ||
+      err instanceof StorageReadOnlyError ||
+      err instanceof StorageOverwriteError ||
+      err instanceof StorageConcurrencyError ||
+      err instanceof StorageCryptoError ||
+      err instanceof StorageUploadError ||
+      err instanceof RangeError ||
+      err instanceof TypeError
+    ) {
+      return false
+    }
+    if (err instanceof Error && err.name === 'AbortError') return false
+    return true
   }
 
   const defaultName =
@@ -568,16 +708,16 @@ export function createStorage(config: StorageConfig): Storage {
     }
   }
 
-  async function orderAutoCandidates(pool: readonly string[]): Promise<readonly string[]> {
-    if (pool.length <= 1 || writeStrategy === 'priority') return pool
+  async function orderGroupByStrategy(group: readonly string[]): Promise<readonly string[]> {
+    if (group.length <= 1 || writeStrategy === 'priority') return group
     if (writeStrategy === 'round-robin') {
-      const start = roundRobinCursor % pool.length
+      const start = roundRobinCursor % group.length
       roundRobinCursor = (roundRobinCursor + 1) % 1_000_000_000
-      return [...pool.slice(start), ...pool.slice(0, start)]
+      return [...group.slice(start), ...group.slice(0, start)]
     }
     // writeStrategy === 'most-free'
-    const snap = await ledger.usage(pool)
-    return [...pool].sort((a, b) => {
+    const snap = await ledger.usage(group)
+    return [...group].sort((a, b) => {
       const freeA =
         getSlot(a).limits.storageBytes -
         (snap[a]?.usedBytes ?? 0) -
@@ -590,17 +730,80 @@ export function createStorage(config: StorageConfig): Storage {
     })
   }
 
+  async function orderAutoCandidates(pool: readonly string[]): Promise<readonly string[]> {
+    if (pool.length === 0) return pool
+    const now = Date.now()
+    const healthy: string[] = []
+    const cooling: string[] = []
+    for (const name of pool) {
+      if (isServerHealthy(name, now)) healthy.push(name)
+      else cooling.push(name)
+    }
+    const orderedHealthy = await orderGroupByStrategy(healthy)
+    if (cooling.length === 0) return orderedHealthy
+    const orderedCooling = await orderGroupByStrategy(cooling)
+    return [...orderedHealthy, ...orderedCooling]
+  }
+
   async function resolveReadSlot(
     cleanPath: string,
-    explicitServer?: string,
+    explicitServer?: string | readonly string[],
   ): Promise<NormalizedServerSlot> {
-    if (explicitServer && explicitServer !== 'auto') return getSlot(explicitServer)
+    if (typeof explicitServer === 'string') {
+      if (explicitServer && explicitServer !== 'auto') return getSlot(explicitServer)
+    } else if (explicitServer) {
+      const first = explicitServer.find((s) => s && s !== 'auto')
+      if (first) return getSlot(first)
+    }
     const rec = await ledger.getFile(cleanPath)
     const recordedServer = rec?.parts[0]?.server
     if (recordedServer && slots.has(recordedServer)) {
       return slots.get(recordedServer)!
     }
     return getSlot(defaultName)
+  }
+
+  async function resolveReadCandidates(
+    cleanPath: string,
+    explicitServer?: string | readonly string[],
+  ): Promise<readonly NormalizedServerSlot[]> {
+    if (typeof explicitServer === 'string') {
+      if (explicitServer && explicitServer !== 'auto') return [getSlot(explicitServer)]
+    } else if (explicitServer) {
+      const explicitList = explicitServer
+        .filter((s) => Boolean(s) && s !== 'auto')
+        .map((s) => getSlot(s))
+      if (explicitList.length > 0) return explicitList
+    }
+
+    const rec = await ledger.getFile(cleanPath)
+    const primaryName =
+      rec?.parts[0]?.server && slots.has(rec.parts[0].server)
+        ? rec.parts[0].server
+        : defaultName
+
+    const candidateNames: string[] = [primaryName]
+    for (const name of slots.keys()) {
+      if (name === primaryName) continue
+      const replica = await ledger.getFile(`@replica:${name}:${cleanPath}`)
+      if (replica) {
+        candidateNames.push(name)
+      }
+    }
+
+    if (candidateNames.length <= 1) {
+      return [getSlot(primaryName)]
+    }
+
+    const now = Date.now()
+    const healthySlots: NormalizedServerSlot[] = []
+    const coolingSlots: NormalizedServerSlot[] = []
+    for (const name of candidateNames) {
+      const slot = getSlot(name)
+      if (isServerHealthy(name, now)) healthySlots.push(slot)
+      else coolingSlots.push(slot)
+    }
+    return [...healthySlots, ...coolingSlots]
   }
 
   function recordToStoredObject(record: StoredFileRecord): StoredObject {
@@ -612,6 +815,7 @@ export function createStorage(config: StorageConfig): Storage {
       record.path,
       primaryServer,
       isMultiPart || primaryServer === defaultName,
+      tech?.publicOrigin,
     )
     return {
       path: record.path,
@@ -637,6 +841,7 @@ export function createStorage(config: StorageConfig): Storage {
       meta.path,
       slot.name,
       slot.name === defaultName,
+      tech?.publicOrigin,
     )
     return {
       path: meta.path,
@@ -673,26 +878,35 @@ export function createStorage(config: StorageConfig): Storage {
     stateListener?.({ type: 'upload:start', server: slot.name, path: partPath })
     try {
       let seenPlain = 0
+      let plainReader: ReadableStreamDefaultReader<Uint8Array> | null = null
       const countedPlain = new ReadableStream<Uint8Array>({
-        start(c) {
-          const r = params.plainStream.getReader()
-          ;(async () => {
-            try {
-              for (;;) {
-                const { done, value } = await r.read()
-                if (done) {
-                  c.close()
-                  break
-                }
-                seenPlain += value.byteLength
-                c.enqueue(value)
-              }
-            } catch (e) {
-              c.error(e)
-            } finally {
-              r.releaseLock()
+        async pull(c) {
+          plainReader ??= params.plainStream.getReader()
+          try {
+            const { done, value } = await plainReader.read()
+            if (done) {
+              plainReader.releaseLock()
+              plainReader = null
+              c.close()
+              return
             }
-          })()
+            seenPlain += value.byteLength
+            c.enqueue(value)
+          } catch (e) {
+            if (plainReader) {
+              plainReader.releaseLock()
+              plainReader = null
+            }
+            c.error(e)
+          }
+        },
+        async cancel(reason) {
+          if (plainReader) {
+            const r = plainReader
+            plainReader = null
+            await r.cancel(reason).catch(() => undefined)
+            r.releaseLock()
+          }
         },
       })
 
@@ -831,25 +1045,23 @@ export function createStorage(config: StorageConfig): Storage {
     const rawFile = await slot.driver.lazy(part.path)
     if (!rawFile) return null
 
-    // Оборачиваем чтение сырого потока в лимитеры rate + concurrency + телеметрию сервера
-    const controlledRaw = new StreamFile(
-      {
-        byteLength: rawFile.size,
-        stream(start = 0, end = rawFile.size) {
-          return wrapSlotReadControls(
-            rawFile.slice(start, end).stream(),
-            slot,
-            part.path,
-            overrides,
-          )
-        },
-      },
-      rawFile.name,
-      { type: logicalType, lastModified: logicalLastModified },
-    )
-
     if (!part.encrypted) {
-      return controlledRaw
+      // Оборачиваем чтение сырого потока в лимитеры rate + concurrency + телеметрию сервера
+      return new StreamFile(
+        {
+          byteLength: rawFile.size,
+          stream(start = 0, end = rawFile.size) {
+            return wrapSlotReadControls(
+              rawFile.slice(start, end).stream(),
+              slot,
+              part.path,
+              overrides,
+            )
+          },
+        },
+        rawFile.name,
+        { type: logicalType, lastModified: logicalLastModified },
+      )
     }
 
     const effectiveKey = resolveCallKey(slot.key, overrides?.key)
@@ -858,12 +1070,29 @@ export function createStorage(config: StorageConfig): Storage {
         `[storage/crypto] часть «${part.path}» на сервере «${slot.name}» зашифрована, но ключ расшифровки не задан`,
       )
     }
-    return createDecryptedStreamFile(controlledRaw, effectiveKey, {
+    const decryptedFile = createDecryptedStreamFile(rawFile, effectiveKey, {
       plainSize: part.plainBytes,
       fileName: basenameOfStoragePath(part.path),
       contentType: logicalType,
       lastModified: logicalLastModified,
     })
+
+    // Лимитеры concurrency / rate и телеметрия держатся на внешнем потоке части (а не на 64 КБ AEAD-кадрах)
+    return new StreamFile(
+      {
+        byteLength: decryptedFile.size,
+        stream(start = 0, end = decryptedFile.size) {
+          return wrapSlotReadControls(
+            decryptedFile.slice(start, end).stream(),
+            slot,
+            part.path,
+            overrides,
+          )
+        },
+      },
+      decryptedFile.name,
+      { type: logicalType, lastModified: logicalLastModified },
+    )
   }
 
   function assembleMultiPartStreamFile(
@@ -877,6 +1106,16 @@ export function createStorage(config: StorageConfig): Storage {
         .reduce((acc, p) => acc + p.plainBytes, 0)
       return { part, start, end: start + part.plainBytes }
     })
+
+    const primaryServer = record.parts[0]?.server ?? defaultName
+    const outerCallGate =
+      overrides?.concurrency !== undefined
+        ? resolveCallConcurrency(primaryServer, null, overrides.concurrency)
+        : null
+    const partOverrides: StorageCallOverrides | undefined =
+      overrides?.concurrency !== undefined
+        ? { ...overrides, concurrency: overrides.concurrency === null || overrides.concurrency === 0 ? null : undefined }
+        : overrides
 
     return new StreamFile(
       {
@@ -897,23 +1136,49 @@ export function createStorage(config: StorageConfig): Storage {
           )
           let spanIdx = 0
           let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null
+          let outerLeaseReleased = false
+          let outerReleaseFn: (() => void) | null = null
+          let outerSignal: AbortSignal | undefined = overrides?.signal
+
+          const releaseOuter = () => {
+            if (!outerLeaseReleased && outerReleaseFn) {
+              outerLeaseReleased = true
+              outerReleaseFn()
+              outerReleaseFn = null
+            }
+          }
 
           return new ReadableStream<Uint8Array<ArrayBuffer>>({
             async pull(controller) {
               try {
+                if (outerCallGate && !outerReleaseFn && !outerLeaseReleased) {
+                  const lease = await outerCallGate.acquire({
+                    meta: overrides?.meta,
+                    signal: overrides?.signal,
+                  })
+                  outerReleaseFn = () => lease.release()
+                  outerSignal = lease.signal
+                }
+                outerSignal?.throwIfAborted()
+
                 for (;;) {
                   if (!activeReader) {
                     if (spanIdx >= touched.length) {
+                      releaseOuter()
                       controller.close()
                       return
                     }
                     const current = touched[spanIdx]!
                     spanIdx += 1
+                    const effectivePartOverrides =
+                      outerSignal && outerSignal !== partOverrides?.signal
+                        ? { ...partOverrides, signal: outerSignal }
+                        : partOverrides
                     const partFile = await openPartPlainFile(
                       current.part,
                       record.type,
                       record.lastModified,
-                      overrides,
+                      effectivePartOverrides,
                     )
                     if (!partFile) {
                       throw new Error(
@@ -929,6 +1194,7 @@ export function createStorage(config: StorageConfig): Storage {
                   }
 
                   const { done, value } = await activeReader.read()
+                  outerSignal?.throwIfAborted()
                   if (done) {
                     activeReader.releaseLock()
                     activeReader = null
@@ -940,6 +1206,7 @@ export function createStorage(config: StorageConfig): Storage {
                   return
                 }
               } catch (err) {
+                releaseOuter()
                 if (activeReader) {
                   await activeReader.cancel(err).catch(() => undefined)
                   activeReader.releaseLock()
@@ -949,6 +1216,7 @@ export function createStorage(config: StorageConfig): Storage {
               }
             },
             async cancel(reason) {
+              releaseOuter()
               if (activeReader) {
                 await activeReader.cancel(reason).catch(() => undefined)
                 activeReader.releaseLock()
@@ -990,44 +1258,86 @@ export function createStorage(config: StorageConfig): Storage {
     const planned: PlannedSplitPart[] = []
     const perServerReserved = new Map<string, number>()
 
+    const freeByServer = new Map<string, number>()
     for (const slot of splitPool) {
-      if (remainingPlain <= 0) break
       const u = snap[slot.name] ?? {
         usedBytes: 0,
         reservedBytes: 0,
         filesCount: 0,
         partsCount: 0,
       }
-      const alreadyPlannedHere = perServerReserved.get(slot.name) ?? 0
-      let freeStorage =
-        slot.limits.storageBytes - u.usedBytes - u.reservedBytes - alreadyPlannedHere
-      const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+      freeByServer.set(slot.name, slot.limits.storageBytes - u.usedBytes - u.reservedBytes)
+    }
 
-      // На одном сервере тоже можно разместить несколько частей, если позволяет storageBytes, а упёрлись в fileBytes
-      while (remainingPlain > 0 && freeStorage > 0) {
-        const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
-        const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
-        if (maxPlain <= 0) break
+    if (writeStrategy === 'round-robin' && splitPool.length > 1) {
+      // В режиме round-robin чередуем по 1 части на сервер по кругу (полосатое размещение по шардам)
+      while (remainingPlain > 0) {
+        let progressed = false
+        for (const slot of splitPool) {
+          if (remainingPlain <= 0) break
+          const freeStorage = freeByServer.get(slot.name) ?? 0
+          if (freeStorage <= 0) continue
+          const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+          const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
+          const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
+          if (maxPlain <= 0) continue
 
-        const takePlain = Math.min(remainingPlain, maxPlain)
-        const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
-        const idx = planned.length
-        planned.push({
-          index: idx,
-          slot,
-          partPath: `${params.cleanPath}.part.${idx}`,
-          plainOffset: offset,
-          plainBytes: takePlain,
-          storedBytes: takeStored,
-          encrypted,
-        })
-        offset += takePlain
-        remainingPlain -= takePlain
-        freeStorage -= takeStored
-        perServerReserved.set(
-          slot.name,
-          (perServerReserved.get(slot.name) ?? 0) + takeStored,
-        )
+          const takePlain = Math.min(remainingPlain, maxPlain)
+          const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
+          const idx = planned.length
+          planned.push({
+            index: idx,
+            slot,
+            partPath: `${params.cleanPath}.part.${idx}`,
+            plainOffset: offset,
+            plainBytes: takePlain,
+            storedBytes: takeStored,
+            encrypted,
+          })
+          offset += takePlain
+          remainingPlain -= takePlain
+          freeByServer.set(slot.name, freeStorage - takeStored)
+          perServerReserved.set(
+            slot.name,
+            (perServerReserved.get(slot.name) ?? 0) + takeStored,
+          )
+          progressed = true
+        }
+        if (!progressed) break
+      }
+    } else {
+      for (const slot of splitPool) {
+        if (remainingPlain <= 0) break
+        let freeStorage = freeByServer.get(slot.name) ?? 0
+        const encrypted = resolveCallKey(slot.key, params.callKey) !== null
+
+        // На одном сервере тоже можно разместить несколько частей, если позволяет storageBytes, а упёрлись в fileBytes
+        while (remainingPlain > 0 && freeStorage > 0) {
+          const storedBudget = Math.min(slot.limits.fileBytes, freeStorage)
+          const maxPlain = maxPlainBytesForStoredBudget(storedBudget, encrypted)
+          if (maxPlain <= 0) break
+
+          const takePlain = Math.min(remainingPlain, maxPlain)
+          const takeStored = encrypted ? encryptedSize(takePlain) : takePlain
+          const idx = planned.length
+          planned.push({
+            index: idx,
+            slot,
+            partPath: `${params.cleanPath}.part.${idx}`,
+            plainOffset: offset,
+            plainBytes: takePlain,
+            storedBytes: takeStored,
+            encrypted,
+          })
+          offset += takePlain
+          remainingPlain -= takePlain
+          freeStorage -= takeStored
+          freeByServer.set(slot.name, freeStorage)
+          perServerReserved.set(
+            slot.name,
+            (perServerReserved.get(slot.name) ?? 0) + takeStored,
+          )
+        }
       }
     }
 
@@ -1246,6 +1556,11 @@ export function createStorage(config: StorageConfig): Storage {
       }
 
       const ok = !probeError && steps.every((s) => s.ok)
+      if (ok) {
+        markServerHealthy(slot.name)
+      } else if (probeError) {
+        markServerCooldown(slot.name, probeError)
+      }
       return {
         server: slot.name,
         kind: slot.driver.kind,
@@ -1259,6 +1574,17 @@ export function createStorage(config: StorageConfig): Storage {
 
     async put(input: StoragePutInput): Promise<StoredObject> {
       const path = normalizeStoragePath(input.path)
+      const isAutoTarget = !input.server || input.server === 'auto'
+      if (input.overwrite === false) {
+        const alreadyExists = await this.has(
+          path,
+          isAutoTarget ? undefined : { server: input.server },
+        )
+        if (alreadyExists) {
+          throw new StorageOverwriteError(path)
+        }
+      }
+
       let normalized = bodyToNormalized(input.body)
       let staged: StagedSpoolFile | null = null
 
@@ -1306,10 +1632,10 @@ export function createStorage(config: StorageConfig): Storage {
           'application/octet-stream'
         const lastModified = input.lastModified ?? Date.now()
 
-        const candidates =
-          input.server && input.server !== 'auto'
-            ? [input.server]
-            : await orderAutoCandidates(currentWritePool())
+        const isAutoServer = !input.server || input.server === 'auto'
+        const candidates = !isAutoServer
+          ? [input.server!]
+          : await orderAutoCandidates(currentWritePool())
 
         if (candidates.length === 0) {
           throw new StorageReadOnlyError(defaultName)
@@ -1321,9 +1647,15 @@ export function createStorage(config: StorageConfig): Storage {
           input.splitServers !== undefined &&
           input.splitServers.length > 0
 
+        const replayableFullStream =
+          normalized.sliceable !== undefined && expectedPlainSize !== undefined
+            ? () => normalized.sliceable!(0, expectedPlainSize)
+            : null
+
         let lastReadOnly: string | null = null
         let lastOverFileLimit: { server: string; max: number; needed: number } | null = null
         let lastQuotaServer: string | null = null
+        let lastDriverError: unknown = null
 
         // 1. Попытка уложить файл целиком на один подходящий сервер (если не запрошен явный splitServers)
         if (!forceExplicitSplit) {
@@ -1368,15 +1700,19 @@ export function createStorage(config: StorageConfig): Storage {
             }
 
             try {
+              const attemptStream = replayableFullStream
+                ? replayableFullStream()
+                : normalized.stream
               const written = await writePhysicalPart({
                 slot,
                 partPath: path,
-                plainStream: normalized.stream,
+                plainStream: attemptStream,
                 ...(expectedPlainSize !== undefined ? { plainSize: expectedPlainSize } : {}),
                 contentType,
                 lastModified,
                 overrides: input,
               })
+              markServerHealthy(slot.name)
 
               const record: StoredFileRecord = {
                 path: written.meta.path,
@@ -1413,6 +1749,16 @@ export function createStorage(config: StorageConfig): Storage {
               return recordToStoredObject(record)
             } catch (err) {
               await ledger.release(reservationId).catch(() => undefined)
+              if (isAutoServer && isTransientDriverFailure(err, input.signal)) {
+                markServerCooldown(
+                  slot.name,
+                  err instanceof Error ? err.message : String(err),
+                )
+                if (replayableFullStream) {
+                  lastDriverError = err
+                  continue
+                }
+              }
               throw err
             }
           }
@@ -1516,6 +1862,9 @@ export function createStorage(config: StorageConfig): Storage {
           }
         }
 
+        if (lastDriverError !== null) {
+          throw lastDriverError
+        }
         if (lastReadOnly && !lastOverFileLimit && !lastQuotaServer) {
           throw new StorageReadOnlyError(lastReadOnly)
         }
@@ -1535,123 +1884,340 @@ export function createStorage(config: StorageConfig): Storage {
       }
     },
 
-    async stat(path: string): Promise<StoredFileRecord | null> {
-      const clean = normalizeStoragePath(path)
-      if (store) {
-        const cached = await store.get<StoredFileRecord>(`stat:${clean}`)
-        if (cached) return cached
-      }
-      const rec = await ledger.getFile(clean)
-      if (rec && store) {
-        const slot = slots.get(rec.parts[0]?.server ?? '')
-        if (slot?.statTtlMs) {
-          await store.set(`stat:${clean}`, rec, { ttlMs: slot.statTtlMs })
+    async upload(
+      request: Request,
+      options?: StorageUploadOptions,
+    ): Promise<StorageUploadResult> {
+      let defaultMaxFileSize = 0
+      const useSplitPool = Boolean(options?.split && options?.stageToDisk)
+      for (const s of slots.values()) {
+        if (s.readOnly) continue
+        if (useSplitPool && s.allowSplit) {
+          defaultMaxFileSize += s.limits.storageBytes
+        } else if (s.limits.fileBytes > defaultMaxFileSize) {
+          defaultMaxFileSize = s.limits.fileBytes
         }
       }
-      return rec
+      return executeStorageUpload(request, options, {
+        put: (inp) => this.put(inp),
+        lazy: (p, opt) => this.lazy(p, opt),
+        del: (p, opt) => this.del(p, opt),
+        ...(defaultMaxFileSize > 0 ? { defaultMaxFileSize } : {}),
+        ...(tech?.resolveMeta ? { resolveMeta: tech.resolveMeta } : {}),
+      })
+    },
+
+    async has(path: string, options?: StorageReadOptions): Promise<boolean> {
+      return (await this.head(path, options)) !== null
+    },
+
+    async stat(
+      path: string,
+      options?: StorageReadOptions,
+    ): Promise<StoredFileRecord | null> {
+      const clean = normalizeStoragePath(path)
+      const explicitServer =
+        typeof options?.server === 'string' && options.server !== 'auto'
+          ? options.server
+          : Array.isArray(options?.server)
+            ? options.server.find((s) => Boolean(s) && s !== 'auto')
+            : undefined
+
+      if (!explicitServer) {
+        if (store) {
+          const cached = await store.get<StoredFileRecord>(`stat:${clean}`)
+          if (cached) return cached
+        }
+        const rec = await ledger.getFile(clean)
+        if (rec && store) {
+          const slot = slots.get(rec.parts[0]?.server ?? '')
+          if (slot?.statTtlMs) {
+            await store.set(`stat:${clean}`, rec, { ttlMs: slot.statTtlMs })
+          }
+        }
+        return rec
+      }
+
+      const slot = getSlot(explicitServer)
+      const rec = await ledger.getFile(clean)
+      if (rec && rec.parts.some((p) => p.server === slot.name)) {
+        return rec
+      }
+      const rep = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+      if (rep) {
+        return { ...rep, path: clean }
+      }
+      const meta = await slot.driver.head(clean)
+      if (!meta) return null
+      const encrypted = resolveCallKey(slot.key, options?.key) !== null
+      const plainBytes = encrypted ? decryptedSize(meta.size) : meta.size
+      return {
+        path: clean,
+        name: basenameOfStoragePath(clean),
+        size: plainBytes,
+        storedBytes: meta.size,
+        type: meta.contentType,
+        lastModified: meta.lastModified,
+        createdAt: meta.lastModified,
+        parts: [
+          {
+            index: 0,
+            server: slot.name,
+            path: clean,
+            plainBytes,
+            storedBytes: meta.size,
+            encrypted,
+          },
+        ],
+      }
+    },
+
+    async list(options?: StorageListOptions): Promise<StorageListResult> {
+      const filterServer =
+        options?.server && options.server !== 'auto' ? options.server : undefined
+      if (filterServer) {
+        getSlot(filterServer)
+      }
+
+      if (!filterServer) {
+        const page = await ledger.listFiles({
+          ...(options?.prefix !== undefined ? { prefix: options.prefix } : {}),
+          ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+          ...(options?.cursor !== undefined ? { cursor: options.cursor } : {}),
+        })
+        return {
+          entries: page.entries.map((r) => recordToStoredObject(r)),
+          records: page.entries,
+          ...(page.cursor !== undefined ? { cursor: page.cursor } : {}),
+        }
+      }
+
+      const wantLimit =
+        options?.limit && options.limit > 0 ? Math.floor(options.limit) : undefined
+      const matchedRecords: StoredFileRecord[] = []
+      let cur = options?.cursor
+      let nextCursor: string | undefined
+
+      for (;;) {
+        const batchSize = wantLimit ? Math.max(wantLimit * 2, 50) : 200
+        const page = await ledger.listFiles({
+          ...(options?.prefix !== undefined ? { prefix: options.prefix } : {}),
+          limit: batchSize,
+          ...(cur !== undefined ? { cursor: cur } : {}),
+        })
+        for (let i = 0; i < page.entries.length; i++) {
+          const rec = page.entries[i]!
+          if (rec.parts.some((p) => p.server === filterServer)) {
+            matchedRecords.push(rec)
+            if (wantLimit !== undefined && matchedRecords.length >= wantLimit) {
+              const hasMoreInBatch = i + 1 < page.entries.length
+              if (hasMoreInBatch || page.cursor !== undefined) {
+                nextCursor = rec.path
+              }
+              return {
+                entries: matchedRecords.map((r) => recordToStoredObject(r)),
+                records: matchedRecords,
+                ...(nextCursor !== undefined ? { cursor: nextCursor } : {}),
+              }
+            }
+          }
+        }
+        if (page.cursor === undefined || page.entries.length === 0) {
+          break
+        }
+        cur = page.cursor
+      }
+
+      return {
+        entries: matchedRecords.map((r) => recordToStoredObject(r)),
+        records: matchedRecords,
+      }
     },
 
     async head(path: string, options?: StorageReadOptions): Promise<StoredObject | null> {
       const clean = normalizeStoragePath(path)
-      if (!options?.server || options.server === 'auto') {
-        const rec = await this.stat(clean)
-        if (rec) {
-          if (rec.parts.length > 1) return recordToStoredObject(rec)
-          const single = rec.parts[0]!
-          const s = slots.get(single.server)
-          if (s) {
-            const exists = await s.driver.head(single.path)
-            return exists ? recordToStoredObject(rec) : null
+      const isAutoRead = !options?.server || options.server === 'auto'
+      const rec = isAutoRead ? await this.stat(clean) : await ledger.getFile(clean)
+      if (isAutoRead && rec && rec.parts.length > 1) {
+        return recordToStoredObject(rec)
+      }
+
+      const readCandidates = await resolveReadCandidates(clean, options?.server)
+      let lastErr: unknown = null
+
+      for (let i = 0; i < readCandidates.length; i++) {
+        const slot = readCandidates[i]!
+        const hasMoreCandidates = i + 1 < readCandidates.length
+
+        try {
+          if (
+            isAutoRead &&
+            rec &&
+            rec.parts.length === 1 &&
+            rec.parts[0]!.server === slot.name
+          ) {
+            const exists = await slot.driver.head(rec.parts[0]!.path)
+            if (exists) {
+              markServerHealthy(slot.name)
+              return recordToStoredObject(rec)
+            }
+            if (hasMoreCandidates) continue
+            return null
           }
+
+          const replicaRec = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+
+          if (store && slot.statTtlMs) {
+            const cacheKey = `head:${slot.name}:${clean}`
+            const cached = await store.get<StoredObject>(cacheKey)
+            if (cached) return cached
+            const meta = await slot.driver.head(clean)
+            if (!meta) {
+              if (hasMoreCandidates) continue
+              return null
+            }
+            markServerHealthy(slot.name)
+            if (replicaRec && replicaRec.parts[0]) {
+              const built = toStoredObject(
+                meta,
+                slot,
+                replicaRec.size,
+                replicaRec.parts[0].encrypted,
+              )
+              await store.set(cacheKey, built, { ttlMs: slot.statTtlMs })
+              return built
+            }
+            const effectiveKey = resolveCallKey(slot.key, options?.key)
+            const plain = effectiveKey !== null ? decryptedSize(meta.size) : meta.size
+            const built = toStoredObject(meta, slot, plain, effectiveKey !== null)
+            await store.set(cacheKey, built, { ttlMs: slot.statTtlMs })
+            return built
+          }
+
+          const meta = await slot.driver.head(clean)
+          if (!meta) {
+            if (hasMoreCandidates) continue
+            return null
+          }
+          markServerHealthy(slot.name)
+          if (replicaRec && replicaRec.parts[0]) {
+            return toStoredObject(meta, slot, replicaRec.size, replicaRec.parts[0].encrypted)
+          }
+          const effectiveKey = resolveCallKey(slot.key, options?.key)
+          const plain = effectiveKey !== null ? decryptedSize(meta.size) : meta.size
+          return toStoredObject(meta, slot, plain, effectiveKey !== null)
+        } catch (err) {
+          if (isTransientDriverFailure(err, options?.signal)) {
+            markServerCooldown(
+              slot.name,
+              err instanceof Error ? err.message : String(err),
+            )
+            if (hasMoreCandidates) {
+              lastErr = err
+              continue
+            }
+          }
+          throw err
         }
       }
 
-      const slot = await resolveReadSlot(clean, options?.server)
-      const replicaRec =
-        options?.server && options.server !== 'auto'
-          ? await ledger.getFile(`@replica:${slot.name}:${clean}`)
-          : null
-
-      if (store && slot.statTtlMs) {
-        const cacheKey = `head:${slot.name}:${clean}`
-        const cached = await store.get<StoredObject>(cacheKey)
-        if (cached) return cached
-        const meta = await slot.driver.head(clean)
-        if (!meta) return null
-        if (replicaRec && replicaRec.parts[0]) {
-          const built = toStoredObject(
-            meta,
-            slot,
-            replicaRec.size,
-            replicaRec.parts[0].encrypted,
-          )
-          await store.set(cacheKey, built, { ttlMs: slot.statTtlMs })
-          return built
-        }
-        const effectiveKey = resolveCallKey(slot.key, options?.key)
-        const plain = effectiveKey !== null ? decryptedSize(meta.size) : meta.size
-        const built = toStoredObject(meta, slot, plain, effectiveKey !== null)
-        await store.set(cacheKey, built, { ttlMs: slot.statTtlMs })
-        return built
-      }
-
-      const meta = await slot.driver.head(clean)
-      if (!meta) return null
-      if (replicaRec && replicaRec.parts[0]) {
-        return toStoredObject(meta, slot, replicaRec.size, replicaRec.parts[0].encrypted)
-      }
-      const effectiveKey = resolveCallKey(slot.key, options?.key)
-      const plain = effectiveKey !== null ? decryptedSize(meta.size) : meta.size
-      return toStoredObject(meta, slot, plain, effectiveKey !== null)
+      if (lastErr !== null) throw lastErr
+      return null
     },
 
     async lazy(path: string, options?: StorageReadOptions): Promise<StreamFile | null> {
       const clean = normalizeStoragePath(path)
       const rec = await ledger.getFile(clean)
+      const isAutoRead = !options?.server || options.server === 'auto'
 
-      if (rec && (!options?.server || options.server === 'auto')) {
-        if (rec.parts.length > 1) {
-          return assembleMultiPartStreamFile(rec, options)
+      if (rec && isAutoRead && rec.parts.length > 1) {
+        return assembleMultiPartStreamFile(rec, options)
+      }
+
+      const readCandidates = await resolveReadCandidates(clean, options?.server)
+      let lastErr: unknown = null
+
+      for (let i = 0; i < readCandidates.length; i++) {
+        const slot = readCandidates[i]!
+        const hasMoreCandidates = i + 1 < readCandidates.length
+
+        try {
+          if (rec && rec.parts.length === 1 && rec.parts[0]!.server === slot.name) {
+            const opened = await openPartPlainFile(
+              rec.parts[0]!,
+              rec.type,
+              rec.lastModified,
+              options,
+            )
+            if (opened) {
+              markServerHealthy(slot.name)
+              return opened
+            }
+            if (hasMoreCandidates) continue
+            return null
+          }
+
+          const replicaRec = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+          if (replicaRec && replicaRec.parts[0]) {
+            const opened = await openPartPlainFile(
+              replicaRec.parts[0],
+              replicaRec.type,
+              replicaRec.lastModified,
+              options,
+            )
+            if (opened) {
+              markServerHealthy(slot.name)
+              return opened
+            }
+            if (hasMoreCandidates) continue
+            return null
+          }
+
+          const raw = await slot.driver.lazy(clean)
+          if (!raw) {
+            if (hasMoreCandidates) continue
+            return null
+          }
+          markServerHealthy(slot.name)
+
+          const controlledRaw = new StreamFile(
+            {
+              byteLength: raw.size,
+              stream(start = 0, end = raw.size) {
+                return wrapSlotReadControls(
+                  raw.slice(start, end).stream(),
+                  slot,
+                  clean,
+                  options,
+                )
+              },
+            },
+            raw.name,
+            { type: raw.type, lastModified: raw.lastModified },
+          )
+
+          const effectiveKey = resolveCallKey(slot.key, options?.key)
+          if (effectiveKey !== null) {
+            return createDecryptedStreamFile(controlledRaw, effectiveKey)
+          }
+          return controlledRaw
+        } catch (err) {
+          if (isTransientDriverFailure(err, options?.signal)) {
+            markServerCooldown(
+              slot.name,
+              err instanceof Error ? err.message : String(err),
+            )
+            if (hasMoreCandidates) {
+              lastErr = err
+              continue
+            }
+          }
+          throw err
         }
-        const single = rec.parts[0]
-        if (single && slots.has(single.server)) {
-          return openPartPlainFile(single, rec.type, rec.lastModified, options)
-        }
       }
 
-      const slot = await resolveReadSlot(clean, options?.server)
-      if (rec && rec.parts.length === 1 && rec.parts[0]!.server === slot.name) {
-        return openPartPlainFile(rec.parts[0]!, rec.type, rec.lastModified, options)
-      }
-      const replicaRec = await ledger.getFile(`@replica:${slot.name}:${clean}`)
-      if (replicaRec && replicaRec.parts[0]) {
-        return openPartPlainFile(
-          replicaRec.parts[0],
-          replicaRec.type,
-          replicaRec.lastModified,
-          options,
-        )
-      }
-
-      const raw = await slot.driver.lazy(clean)
-      if (!raw) return null
-
-      const controlledRaw = new StreamFile(
-        {
-          byteLength: raw.size,
-          stream(start = 0, end = raw.size) {
-            return wrapSlotReadControls(raw.slice(start, end).stream(), slot, clean, options)
-          },
-        },
-        raw.name,
-        { type: raw.type, lastModified: raw.lastModified },
-      )
-
-      const effectiveKey = resolveCallKey(slot.key, options?.key)
-      if (effectiveKey !== null) {
-        return createDecryptedStreamFile(controlledRaw, effectiveKey)
-      }
-      return controlledRaw
+      if (lastErr !== null) throw lastErr
+      return null
     },
 
     async get(
@@ -1663,11 +2229,10 @@ export function createStorage(config: StorageConfig): Storage {
     },
 
     async serve(
-      path: string,
+      target: StorageServeTarget,
       request: Request,
       options?: StorageServeOptions,
     ): Promise<Response> {
-      const clean = normalizeStoragePath(path)
       let meta = options?.meta
       if (!meta && tech?.resolveMeta) {
         meta = await tech.resolveMeta(request)
@@ -1677,9 +2242,25 @@ export function createStorage(config: StorageConfig): Storage {
         ...(meta ? { meta } : {}),
       }
 
-      if (effectiveOptions.cdn) {
-        const rec = await ledger.getFile(clean)
-        const slot = await resolveReadSlot(clean, effectiveOptions.server)
+      const isFileTarget = typeof File !== 'undefined' && target instanceof File
+      const isRecordTarget =
+        !isFileTarget &&
+        typeof target === 'object' &&
+        target !== null &&
+        Array.isArray((target as StoredFileRecord).parts)
+
+      const cleanPath =
+        typeof target === 'string'
+          ? normalizeStoragePath(target)
+          : isRecordTarget
+            ? normalizeStoragePath((target as StoredFileRecord).path)
+            : null
+
+      if (effectiveOptions.cdn && cleanPath !== null) {
+        const rec = isRecordTarget
+          ? (target as StoredFileRecord)
+          : await ledger.getFile(cleanPath)
+        const slot = await resolveReadSlot(cleanPath, effectiveOptions.server)
         const isMultiPart = Boolean(rec && rec.parts.length > 1)
         const isEncrypted =
           Boolean(rec?.parts.some((p) => p.encrypted)) ||
@@ -1692,11 +2273,11 @@ export function createStorage(config: StorageConfig): Storage {
           )
         } else if (isMultiPart || isEncrypted) {
           reportDegradedOption(
-            `cdn: true («${clean}»)`,
+            `cdn: true («${cleanPath}»)`,
             'одночастный незашифрованный объект (зашифрованные и нарезанные файлы отдаются напрямую)',
           )
         } else {
-          const encodedPath = clean.split('/').map(encodeURIComponent).join('/')
+          const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/')
           const targetUrl = `${slot.cdnUrl.replace(/\/+$/, '')}/${encodedPath}`
           return new Response(null, {
             status: 302,
@@ -1709,30 +2290,143 @@ export function createStorage(config: StorageConfig): Storage {
       }
 
       try {
-        const file = await this.lazy(clean, effectiveOptions)
+        let file: StreamFile | null = null
+        let fallbackName = 'download'
+        let gateForReject: ConcurrencyGate | null = null
+        let resolvedRecord: StoredFileRecord | null = null
+
+        if (isFileTarget) {
+          const inputFile = target as File
+          fallbackName = inputFile.name || 'download'
+          const baseLazy =
+            inputFile instanceof StreamFile
+              ? inputFile
+              : new StreamFile(
+                  {
+                    byteLength: inputFile.size,
+                    stream: (s = 0, e = inputFile.size) =>
+                      streamBlobSlices(inputFile, s, e) as ReadableStream<
+                        Uint8Array<ArrayBuffer>
+                      >,
+                  },
+                  fallbackName,
+                  { type: inputFile.type, lastModified: inputFile.lastModified },
+                )
+
+          const adhocLimiter = resolveCallRate(null, effectiveOptions.rate)
+          const adhocGate = resolveCallConcurrency(
+            'serve',
+            null,
+            effectiveOptions.concurrency,
+          )
+          gateForReject = adhocGate
+
+          if (adhocLimiter || adhocGate) {
+            const syntheticSlot: NormalizedServerSlot = {
+              name: 'serve',
+              driver: slots.get(defaultName)!.driver,
+              limits: DEFAULT_UNBOUNDED_LIMITS,
+              readOnly: true,
+              allowSplit: false,
+              key: null,
+              rateLimiter: adhocLimiter,
+              concurrencyGate: adhocGate,
+            }
+            file = new StreamFile(
+              {
+                byteLength: baseLazy.size,
+                stream(s = 0, e = baseLazy.size) {
+                  return wrapSlotReadControls(
+                    baseLazy.slice(s, e).stream(),
+                    syntheticSlot,
+                    fallbackName,
+                    effectiveOptions,
+                  )
+                },
+              },
+              fallbackName,
+              { type: baseLazy.type, lastModified: baseLazy.lastModified },
+            )
+          } else {
+            file = baseLazy
+          }
+        } else if (isRecordTarget) {
+          const rec = target as StoredFileRecord
+          resolvedRecord = rec
+          fallbackName = rec.name || basenameOfStoragePath(cleanPath!)
+          if (rec.parts.length > 1) {
+            file = assembleMultiPartStreamFile(rec, effectiveOptions)
+          } else if (rec.parts.length === 1) {
+            file = await openPartPlainFile(
+              rec.parts[0]!,
+              rec.type,
+              rec.lastModified,
+              effectiveOptions,
+            )
+          }
+          const primaryServer = rec.parts[0]?.server ?? defaultName
+          const slot = slots.get(primaryServer) ?? getSlot(defaultName)
+          gateForReject = resolveCallConcurrency(
+            slot.name,
+            slot.concurrencyGate,
+            effectiveOptions.concurrency,
+          )
+        } else {
+          fallbackName = basenameOfStoragePath(cleanPath!)
+          resolvedRecord = await ledger.getFile(cleanPath!)
+          file = await this.lazy(cleanPath!, effectiveOptions)
+          const slot = await resolveReadSlot(cleanPath!, effectiveOptions.server)
+          gateForReject = resolveCallConcurrency(
+            slot.name,
+            slot.concurrencyGate,
+            effectiveOptions.concurrency,
+          )
+        }
+
         if (!file) {
           return new Response('Not Found', {
             status: 404,
             headers: { 'cache-control': 'no-store' },
           })
         }
+
+        // По RFC 9110 §13.1.5 браузеры (Chromium, Safari, Firefox) и менеджеры закачек
+        // подставляют `If-Range` для авто-докачки прерванного потока ТОЛЬКО с сильным `ETag`
+        // (без префикса `W/`). Генерируем сильный дескриптор за O(1) памяти без чтения тела.
+        const etagMode = effectiveOptions.etag ?? 'strong'
+        const metadataDigest =
+          etagMode === 'strong'
+            ? async (f: { readonly name: string; readonly size: number; readonly lastModified: number }) => {
+                const partsSig = resolvedRecord
+                  ? resolvedRecord.parts
+                      .map((p) => `${p.server}:${p.storedBytes}:${p.etag ?? ''}`)
+                      .join(',')
+                  : ''
+                const rawDesc = `mks1|${cleanPath ?? f.name}|${f.size}|${Math.trunc(f.lastModified)}|${resolvedRecord?.createdAt ?? 0}|${partsSig}`
+                const hash = await crypto.subtle.digest(
+                  'SHA-256',
+                  new TextEncoder().encode(rawDesc),
+                )
+                return Array.from(new Uint8Array(hash).subarray(0, 16))
+                  .map((b) => b.toString(16).padStart(2, '0'))
+                  .join('')
+              }
+            : undefined
+
         const res = await createFileResponse(file, request, {
           acceptRanges: effectiveOptions.acceptRanges ?? true,
+          etag: etagMode,
+          ...(metadataDigest ? { digest: metadataDigest } : {}),
           ...(effectiveOptions.cacheControl !== undefined
             ? { cacheControl: effectiveOptions.cacheControl }
             : {}),
-          ...(effectiveOptions.etag !== undefined ? { etag: effectiveOptions.etag } : {}),
         })
 
+        const isPayloadResponse = res.status === 200 || res.status === 206
+
         // Проверяем не сработал ли лимит concurrency при открытии потока (для мгновенного ответа 429 до отправки заголовков)
-        if (res.body && (request.method === 'GET' || !request.method)) {
-          const slot = await resolveReadSlot(clean, effectiveOptions.server)
-          const gate = resolveCallConcurrency(
-            slot.name,
-            slot.concurrencyGate,
-            effectiveOptions.concurrency,
-          )
-          if (gate && gate.config.mode === 'reject') {
+        if (isPayloadResponse && res.body && (request.method === 'GET' || !request.method)) {
+          if (gateForReject && gateForReject.config.mode === 'reject') {
             // Прогрев первого чанка обнаруживает переполнение пула ДО возврата 200/206 клиенту!
             const reader = res.body.getReader()
             const first = await reader.read()
@@ -1771,7 +2465,7 @@ export function createStorage(config: StorageConfig): Storage {
                 typeof effectiveOptions.download === 'string' &&
                 effectiveOptions.download.trim()
                   ? effectiveOptions.download.trim()
-                  : basenameOfStoragePath(clean)
+                  : fallbackName
               headers.set('content-disposition', contentDispositionAttachment(downloadName))
             }
             return new Response(reassembled, {
@@ -1788,13 +2482,14 @@ export function createStorage(config: StorageConfig): Storage {
         headers.set('content-security-policy', "default-src 'none'; sandbox")
 
         const forceAttachment =
-          Boolean(effectiveOptions.download) || isPotentiallyActiveMime(file.type)
+          isPayloadResponse &&
+          (Boolean(effectiveOptions.download) || isPotentiallyActiveMime(file.type))
         if (forceAttachment) {
           const downloadName =
             typeof effectiveOptions.download === 'string' &&
             effectiveOptions.download.trim()
               ? effectiveOptions.download.trim()
-              : basenameOfStoragePath(clean)
+              : fallbackName
           headers.set('content-disposition', contentDispositionAttachment(downloadName))
         }
         return new Response(res.body, {
@@ -2295,10 +2990,13 @@ export function createStorage(config: StorageConfig): Storage {
     },
 
     async report(): Promise<StorageReport> {
+      const now = Date.now()
       const currentNames = [...slots.keys()]
       const snap = await ledger.usage(currentNames)
       const serverReports: StorageServerReport[] = currentNames.map((name) => {
         const slot = slots.get(name)!
+        const healthy = isServerHealthy(name, now)
+        const cooldownUntil = cooldowns.get(name)
         const u = snap[name] ?? {
           usedBytes: 0,
           reservedBytes: 0,
@@ -2315,6 +3013,8 @@ export function createStorage(config: StorageConfig): Storage {
           readOnly: slot.readOnly,
           encrypted: slot.key !== null,
           allowSplit: slot.allowSplit,
+          healthy,
+          ...(cooldownUntil !== undefined ? { cooldownUntil } : {}),
           limits: slot.limits,
           usedBytes: u.usedBytes,
           reservedBytes: u.reservedBytes,

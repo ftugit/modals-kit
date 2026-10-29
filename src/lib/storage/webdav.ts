@@ -248,26 +248,105 @@ export function maskWebdavUrl(raw: string | URL): string {
   return `${scheme}://***@${endpointUrl.host}${suffix}`
 }
 
+/** Максимальный размер XML-ответа `PROPFIND` (`8 МиБ`), защита от переполнения памяти. */
+const MAX_PROPFIND_XML_BYTES = 8 * 1024 * 1024
+
+const NAMED_XML_ENTITIES: Readonly<Record<string, string>> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+function encodeRfc3986(seg: string): string {
+  return encodeURIComponent(seg).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
 function encodeWebdavPath(cleanPath: string): string {
   return cleanPath
     .split('/')
     .filter(Boolean)
-    .map((seg) => encodeURIComponent(seg))
+    .map((seg) => encodeRfc3986(seg))
     .join('/')
 }
 
 function decodeXmlEntities(raw: string): string {
-  return raw
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
+  return raw.replace(
+    /&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|amp|lt|gt|quot|apos);/g,
+    (entity, token: string) => {
+      if (token.startsWith('#x')) {
+        const cp = Number.parseInt(token.slice(2), 16)
+        return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff
+          ? String.fromCodePoint(cp)
+          : entity
+      }
+      if (token.startsWith('#')) {
+        const cp = Number.parseInt(token.slice(1), 10)
+        return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff
+          ? String.fromCodePoint(cp)
+          : entity
+      }
+      return NAMED_XML_ENTITIES[token] ?? entity
+    },
+  )
+}
+
+function decodeHrefPathname(href: string): string {
+  let rawPath = href.trim()
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawPath)) {
+    try {
+      rawPath = new URL(rawPath).pathname
+    } catch {
+      // оставляем как есть
+    }
+  }
+  rawPath = rawPath.split('?')[0]!.split('#')[0]!
+  if (!rawPath.startsWith('/')) rawPath = `/${rawPath}`
+  const decoded = rawPath
+    .split('/')
+    .map((s) => safeDecodeComponent(s))
+    .join('/')
+    .replace(/\/+/g, '/')
+  return decoded.length > 1 ? decoded.replace(/\/+$/, '') : decoded
+}
+
+async function readBoundedXml(res: Response, maxBytes: number): Promise<string> {
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new RangeError(
+          `[storage/webdav] ответ PROPFIND превысил лимит ${maxBytes} байт`,
+        )
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const merged = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) {
+    merged.set(c, off)
+    off += c.byteLength
+  }
+  return new TextDecoder().decode(merged)
 }
 
 function extractDavTag(xmlBlock: string, localName: string): string | null {
   const re = new RegExp(
-    `<(?:[A-Za-z0-9_.-]+:)?${localName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_.-]+:)?${localName}>`,
+    `<(?:[A-Za-z0-9_.-]+:)?${localName}(?:\\s[^/>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_.-]+:)?${localName}\\s*>`,
     'i',
   )
   const m = re.exec(xmlBlock)
@@ -292,27 +371,25 @@ interface ParsedDavResponseItem {
 function parsePropfindResponses(xml: string): ParsedDavResponseItem[] {
   const items: ParsedDavResponseItem[] = []
   const responseRe =
-    /<(?:[A-Za-z0-9_.-]+:)?response(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?response>/gi
+    /<(?:[A-Za-z0-9_.-]+:)?response(?:\s[^/>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?response\s*>/gi
   let match: RegExpExecArray | null
   while ((match = responseRe.exec(xml)) !== null) {
     const block = match[1]!
     const href = extractDavTag(block, 'href') ?? ''
-    // Учитываем только успешный propstat (200 OK), если сервер вернул несколько секций propstat
+    // Собираем только успешные 2xx секции propstat (никогда не читаем теги из 404/403 propstat!)
     const propstatRe =
-      /<(?:[A-Za-z0-9_.-]+:)?propstat(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?propstat>/gi
-    let propSource = block
-    let okPropstat: string | null = null
+      /<(?:[A-Za-z0-9_.-]+:)?propstat(?:\s[^/>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_.-]+:)?propstat\s*>/gi
+    const okPropstats: string[] = []
+    let sawPropstat = false
     let pm: RegExpExecArray | null
     while ((pm = propstatRe.exec(block)) !== null) {
+      sawPropstat = true
       const statusText = extractDavTag(pm[1]!, 'status') ?? ''
-      if (/\b200\b/.test(statusText) || !statusText) {
-        okPropstat = pm[1]!
-        break
+      if (/\b2\d\d\b/.test(statusText) || !statusText) {
+        okPropstats.push(pm[1]!)
       }
     }
-    if (okPropstat !== null) {
-      propSource = okPropstat
-    }
+    const propSource = sawPropstat ? okPropstats.join('\n') : block
 
     const isCollection = hasDavCollectionResourceType(propSource)
     const lenRaw = extractDavTag(propSource, 'getcontentlength')
@@ -378,8 +455,9 @@ export function webdavDriver(
   const fetchFn = options.fetchImpl ?? globalThis.fetch
   const authHeader = `Basic ${encodeUtf8Base64(`${options.username}:${options.password}`)}`
 
-  // Кэш уже созданных/подтверждённых директорий (относительно origin), чтобы не слать повторные MKCOL
+  // Кэш уже созданных/подтверждённых директорий и карта выполняющихся MKCOL (без параллельных гонок 409/423)
   const ensuredCollections = new Set<string>()
+  const inflightCollections = new Map<string, Promise<void>>()
 
   function assertWritable(): void {
     if (readOnly) {
@@ -395,8 +473,51 @@ export function webdavDriver(
   function buildTargetUrl(cleanRelativePath?: string, asCollection = false): string {
     const segs = fullKeySegments(cleanRelativePath)
     if (segs.length === 0) return `${origin}/`
-    const encoded = segs.map((s) => encodeURIComponent(s)).join('/')
+    const encoded = segs.map((s) => encodeRfc3986(s)).join('/')
     return `${origin}/${encoded}${asCollection ? '/' : ''}`
+  }
+
+  async function ensureSingleCollection(accum: string): Promise<void> {
+    if (ensuredCollections.has(accum)) return
+    const existing = inflightCollections.get(accum)
+    if (existing) {
+      await existing
+      return
+    }
+
+    const task = (async () => {
+      const colUrl = `${origin}/${accum}/`
+      const res = await fetchFn(colUrl, {
+        method: 'MKCOL',
+        redirect: 'manual',
+        headers: {
+          authorization: authHeader,
+        },
+      })
+      await res.arrayBuffer().catch(() => undefined)
+
+      // 201 Created / 200 / 204 — создано; 405 Method Not Allowed — коллекция уже существует (Облако Mail.ru / Nginx / Nextcloud)
+      if (
+        res.status === 201 ||
+        res.status === 200 ||
+        res.status === 204 ||
+        res.status === 405
+      ) {
+        ensuredCollections.add(accum)
+        return
+      }
+
+      throw new Error(
+        `[storage/webdav] MKCOL «/${accum}/» завершился со статусом ${res.status}`,
+      )
+    })()
+
+    inflightCollections.set(accum, task)
+    try {
+      await task
+    } finally {
+      inflightCollections.delete(accum)
+    }
   }
 
   async function ensureParentCollections(
@@ -412,33 +533,29 @@ export function webdavDriver(
     let accum = ''
     for (const seg of dirSegments) {
       signal?.throwIfAborted()
-      accum = accum ? `${accum}/${encodeURIComponent(seg)}` : encodeURIComponent(seg)
+      const encSeg = encodeRfc3986(seg)
+      accum = accum ? `${accum}/${encSeg}` : encSeg
       if (ensuredCollections.has(accum)) continue
-
-      const colUrl = `${origin}/${accum}/`
-      const res = await fetchFn(colUrl, {
-        method: 'MKCOL',
-        headers: {
-          authorization: authHeader,
-        },
-        ...(signal ? { signal } : {}),
-      })
-      await res.arrayBuffer().catch(() => undefined)
-
-      // 201 Created / 200 / 204 — создано; 405 Method Not Allowed — коллекция уже существует (Облако Mail.ru / Nginx / Nextcloud)
-      if (
-        res.status === 201 ||
-        res.status === 200 ||
-        res.status === 204 ||
-        res.status === 405
-      ) {
-        ensuredCollections.add(accum)
-        continue
+      if (signal) {
+        await Promise.race([
+          ensureSingleCollection(accum),
+          new Promise<never>((_, reject) => {
+            if (signal.aborted) {
+              reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+              return
+            }
+            const onAbort = () =>
+              reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+            signal.addEventListener('abort', onAbort, { once: true })
+            void ensureSingleCollection(accum).then(
+              () => signal.removeEventListener('abort', onAbort),
+              () => signal.removeEventListener('abort', onAbort),
+            )
+          }),
+        ])
+      } else {
+        await ensureSingleCollection(accum)
       }
-
-      throw new Error(
-        `[storage/webdav] MKCOL «/${accum}/» завершился со статусом ${res.status}`,
-      )
     }
   }
 
@@ -543,6 +660,7 @@ export function webdavDriver(
 
       const init: RequestInit & { duplex?: 'half' } = {
         method: 'PUT',
+        redirect: 'manual',
         headers,
         body: bodyInit,
         ...(input.size === 0 ? {} : { duplex: 'half' }),
@@ -570,9 +688,11 @@ export function webdavDriver(
     async head(path: string): Promise<DriverStoredMeta | null> {
       const cleanPath = normalizeStoragePath(path)
       const targetUrl = buildTargetUrl(cleanPath)
+      const expectedPath = `/${fullKeySegments(cleanPath).join('/')}`
 
       const propRes = await fetchFn(targetUrl, {
         method: 'PROPFIND',
+        redirect: 'manual',
         headers: {
           authorization: authHeader,
           depth: '0',
@@ -587,17 +707,24 @@ export function webdavDriver(
       }
 
       if (propRes.status === 207 || propRes.status === 200) {
-        const xml = await propRes.text()
+        const xml = await readBoundedXml(propRes, MAX_PROPFIND_XML_BYTES)
+        if (!/<(?:[A-Za-z0-9_.-]+:)?multistatus\b/i.test(xml)) {
+          throw new Error(
+            `[storage/webdav] некорректный ответ PROPFIND «${cleanPath}» (${propRes.status}): отсутствует multistatus XML`,
+          )
+        }
         const items = parsePropfindResponses(xml)
-        const first = items[0]
-        if (!first || first.isCollection) {
+        const matched =
+          items.find((it) => !it.href || decodeHrefPathname(it.href) === expectedPath) ??
+          null
+        if (!matched || matched.isCollection) {
           return null
         }
         return {
           path: cleanPath,
-          size: first.size,
-          contentType: first.contentType,
-          lastModified: first.lastModified || Date.now(),
+          size: matched.size,
+          contentType: matched.contentType,
+          lastModified: matched.lastModified || Date.now(),
         }
       }
 
@@ -607,6 +734,7 @@ export function webdavDriver(
       if (propRes.status === 405 || propRes.status === 501) {
         const headRes = await fetchFn(targetUrl, {
           method: 'HEAD',
+          redirect: 'manual',
           headers: { authorization: authHeader },
         })
         if (headRes.status === 404 || headRes.status === 410) return null
@@ -667,6 +795,7 @@ export function webdavDriver(
                   if (!upstreamReader) {
                     const res = await fetchFn(targetUrl, {
                       method: 'GET',
+                      redirect: 'manual',
                       headers: {
                         authorization: authHeader,
                         range: `bytes=${clampedStart}-${clampedEnd - 1}`,
@@ -751,6 +880,7 @@ export function webdavDriver(
       const targetUrl = buildTargetUrl(cleanPath)
       const res = await fetchFn(targetUrl, {
         method: 'DELETE',
+        redirect: 'manual',
         headers: { authorization: authHeader },
       })
       await res.arrayBuffer().catch(() => undefined)
@@ -781,6 +911,7 @@ export function webdavDriver(
       const dstUrl = buildTargetUrl(cleanTo)
       const res = await fetchFn(srcUrl, {
         method: 'COPY',
+        redirect: 'manual',
         headers: {
           authorization: authHeader,
           destination: dstUrl,
@@ -812,6 +943,7 @@ export function webdavDriver(
       const colUrl = buildTargetUrl(cleanSub, true)
       const res = await fetchFn(colUrl, {
         method: 'PROPFIND',
+        redirect: 'manual',
         headers: {
           authorization: authHeader,
           depth: '1',
@@ -831,30 +963,35 @@ export function webdavDriver(
         )
       }
 
-      const xml = await res.text()
+      const xml = await readBoundedXml(res, MAX_PROPFIND_XML_BYTES)
+      if (!/<(?:[A-Za-z0-9_.-]+:)?multistatus\b/i.test(xml)) {
+        throw new Error(
+          `[storage/webdav] некорректный ответ PROPFIND Depth:1 (${res.status}): отсутствует multistatus XML`,
+        )
+      }
       const parsed = parsePropfindResponses(xml)
       const rootPathPrefix =
         fullRootSegments.length > 0 ? `/${fullRootSegments.join('/')}/` : '/'
+      const scopedSegs = fullKeySegments(cleanSub)
+      const scopedFolderPrefix =
+        scopedSegs.length > 0 ? `/${scopedSegs.join('/')}/` : '/'
 
       const results: WebdavListedObject[] = []
       for (const item of parsed) {
-        if (item.isCollection) continue
-        let decodedHrefPath = item.href
-        try {
-          if (/^https?:\/\//i.test(item.href)) {
-            decodedHrefPath = new URL(item.href).pathname
-          }
-          decodedHrefPath = decodedHrefPath
-            .split('/')
-            .map((s) => safeDecodeComponent(s))
-            .join('/')
-        } catch {
-          // оставляем как есть
+        if (item.isCollection || !item.href) continue
+        const decodedHref = `${decodeHrefPathname(item.href)}`
+        // Защита HREF-ESCAPE: отбрасываем любые href вне запрошенной подпапки и вне basePath
+        if (!decodedHref.startsWith(scopedFolderPrefix) || !decodedHref.startsWith(rootPathPrefix)) {
+          continue
         }
-        if (!decodedHrefPath.startsWith(rootPathPrefix)) continue
-        const rel = decodedHrefPath.slice(rootPathPrefix.length).replace(/\/+$/, '')
+        const rel = decodedHref.slice(rootPathPrefix.length).replace(/\/+$/, '')
         if (!rel) continue
-        const normalizedRel = normalizeStoragePath(rel)
+        let normalizedRel: string
+        try {
+          normalizedRel = normalizeStoragePath(rel)
+        } catch {
+          continue
+        }
         results.push({
           path: normalizedRel,
           size: item.size,

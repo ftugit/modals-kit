@@ -1,8 +1,9 @@
 import { storageVaultSchema } from '#content/storage-vault/schema.js'
 import { readVaultSnapshot } from '#hooks/cookie-vault/vault.server.js'
 import {
+  getDemoStorageTelemetry,
+  listEnrichedUploadedRecords,
   listQuickNotes,
-  listUploadedRecords,
   resolveRequestStorage,
 } from '#server/storage.server.js'
 import type { PageServerLoad } from './$types'
@@ -12,11 +13,16 @@ export const load: PageServerLoad = async ({ cookies }) => {
     readVaultSnapshot(cookies, storageVaultSchema),
     resolveRequestStorage(cookies),
   ])
+  const [items, storageReport] = await Promise.all([
+    listEnrichedUploadedRecords(storage),
+    storage.report(),
+  ])
   return {
-    items: listUploadedRecords(),
+    items,
     notes: listQuickNotes(),
     vaultSnapshot,
     availableServers: storage.serverNames,
-    storageReport: await storage.report(),
+    storageReport,
+    telemetry: getDemoStorageTelemetry(),
   }
 }

@@ -41,9 +41,10 @@ import {
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
 import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
 import { cacheKv } from '#hooks/cache-db.js'
+import { storageFile, storageReservation } from '#hooks/storage-db.js'
 import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
 
-export { posts, auth, profile, session, cacheKv }
+export { posts, auth, profile, session, cacheKv, storageFile, storageReservation }
 
 /**
  * Схема БД демо: таблица из `posts` (типы, NOT NULL, CHECK длины из правил полей модели, индекс
@@ -51,8 +52,9 @@ export { posts, auth, profile, session, cacheKv }
  */
 const schemaSpec = {
   // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
-  // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.ts)
-  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv],
+  // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.ts);
+  // storage_file / storage_reservation — реестр и брони lib/storage (`pgStorageLedger` в hooks/storage-db.ts)
+  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv, storageFile, storageReservation],
   sql: [
     // Конфиг-модель (этап 10): уникальность пары (auth_id, key) обычный
     // unique не даёт — NULL глобальных строк в Postgres не равен NULL,

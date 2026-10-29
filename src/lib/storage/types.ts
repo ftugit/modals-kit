@@ -1,6 +1,10 @@
 import type { LazyContent } from '@remix-run/lazy-file'
 import type { BandwidthLimiter, RateInput } from './bandwidth.js'
-import type { ConcurrencyConfig, ConcurrencyInput } from './concurrency.js'
+import type {
+  ConcurrencyConfig,
+  ConcurrencyGate,
+  ConcurrencyInput,
+} from './concurrency.js'
 import type { StorageEncryptionKey } from './crypto.js'
 import type { AdaptedStorageLedger, StoredFileRecord } from './ledger.js'
 import type { StorageStateListener } from './state.js'
@@ -15,6 +19,7 @@ export type {
   AdaptedStorageStore,
   BandwidthLimiter,
   ConcurrencyConfig,
+  ConcurrencyGate,
   ConcurrencyInput,
   LazyContent,
   RateInput,
@@ -116,11 +121,86 @@ export interface StoragePutInput extends StorageCallOverrides {
   readonly splitServers?: readonly string[]
   /** Сначала сохранить поток во временный спул на диске (даёт точный `size` и возможность `split` для обычного `ReadableStream`). */
   readonly stageToDisk?: boolean
+  /** Разрешить перезапись существующего файла по тому же `path` (по умолчанию `true`; при `false` бросает `StorageOverwriteError`). */
+  readonly overwrite?: boolean
 }
 
-/** Параметры чтения (`head` / `lazy` / `get`). */
+/** Параметры чтения (`has` / `head` / `lazy` / `get`). */
 export interface StorageReadOptions extends StorageCallOverrides {
+  /** Явный сервер или приоритетный список серверов для чтения с авто-фейловером. */
+  readonly server?: string | readonly string[]
+}
+
+/** Параметры выборки логических файлов из реестра `storage.list()`. */
+export interface StorageListOptions {
+  readonly prefix?: string
+  readonly limit?: number
+  readonly cursor?: string
+  /** Оставить только файлы, имеющие хотя бы одну физическую часть на указанном сервере. */
   readonly server?: string
+}
+
+/** Результат выборки логических файлов `storage.list()`. */
+export interface StorageListResult {
+  readonly entries: readonly StoredObject[]
+  readonly records: readonly StoredFileRecord[]
+  readonly cursor?: string
+}
+
+/** Контекст входящего файла в `storage.upload(request, options)`. */
+export interface StorageUploadFileContext {
+  readonly fieldName: string
+  readonly name: string
+  readonly contentType: string
+  readonly lastModified: number
+  readonly index: number
+}
+
+/** Параметры потокового приёма `multipart/form-data` / `urlencoded` запроса (`storage.upload`). */
+export interface StorageUploadOptions extends StorageCallOverrides {
+  /** Целевой сервер (`'auto'` или не указан — выбор по пулу и лимитам). */
+  readonly server?: string
+  /** Разрешить нарезку между серверами (требует `stageToDisk: true` для потокового multipart). */
+  readonly split?: boolean
+  readonly splitServers?: readonly string[]
+  /** Сохранить входящий multipart-поток во временный спул на диске до раскладки по серверам. */
+  readonly stageToDisk?: boolean
+  /** Базовый префикс для автоматически генерируемых путей (по умолчанию `'uploads'`). */
+  readonly prefix?: string
+  /** Пользовательский генератор пути (`null` / `undefined` — пропустить файл без сохранения). */
+  readonly resolvePath?: (
+    file: StorageUploadFileContext,
+  ) => string | null | undefined | Promise<string | null | undefined>
+  /** Допустимые MIME-маски (`'image/*'`, `'application/pdf'`) или расширения (`'.png'`). */
+  readonly accept?: readonly string[]
+  /** Максимальное число файлов в одном запросе. */
+  readonly maxFiles?: number
+  /** Максимальный вес одного файла в байтах. */
+  readonly maxFileSize?: number
+  /** Максимальное число частей multipart-запроса. */
+  readonly maxParts?: number
+  /** Максимальный размер заголовков одной multipart-части в байтах. */
+  readonly maxHeaderSize?: number
+  /** Максимальный суммарный вес multipart-тела в байтах. */
+  readonly maxTotalSize?: number
+  /** Удалять уже записанные файлы запроса при ошибке на последующих частях (по умолчанию `true`). */
+  readonly atomic?: boolean
+}
+
+/** Сохранённый файл из `storage.upload(request, options)`. */
+export interface StoredUploadedFile extends StoredObject {
+  readonly fieldName: string
+  readonly originalName: string
+  /** Ленивый `StreamFile` (`0` байт в ОЗУ) поверх сохранённого объекта. */
+  readonly file: StreamFile | null
+}
+
+/** Итог потокового разбора формы `storage.upload(request, options)`. */
+export interface StorageUploadResult {
+  readonly files: readonly StoredUploadedFile[]
+  readonly fields: Readonly<Record<string, readonly string[]>>
+  /** Стандартная `FormData`, где файловые поля содержат ленивые `StreamFile` (`instanceof File`). */
+  readonly formData: FormData
 }
 
 /** Параметры потокового переноса (`copy` / `move`) между серверами хранения без буферизации в RAM. */
@@ -172,6 +252,8 @@ export interface StorageServerReport {
   readonly readOnly: boolean
   readonly encrypted: boolean
   readonly allowSplit: boolean
+  readonly healthy: boolean
+  readonly cooldownUntil?: number
   readonly limits: ServerLimits
   readonly usedBytes: number
   readonly reservedBytes: number
@@ -187,7 +269,7 @@ export interface StorageReport {
 
 /** Настройки HTTP-раздачи файла (`serve`). */
 export interface StorageServeOptions extends StorageCallOverrides {
-  readonly server?: string
+  readonly server?: string | readonly string[]
   readonly cacheControl?: string
   readonly etag?: false | 'weak' | 'strong'
   /** Включить поддержку `Range` (`206 Partial Content`); по умолчанию `true`. */
@@ -244,6 +326,8 @@ export interface StorageConfig {
   readonly writePool?: readonly string[]
   /** Стратегия выбора сервера при `server: 'auto'` (по умолчанию `'priority'`). */
   readonly writeStrategy?: WriteStrategy
+  /** Карантин (мс) для сервера при сетевом/драйверном сбое автозаписи или чтения (по умолчанию `0`). */
+  readonly cooldownMs?: number
   /** Реестр учёта места и манифестов файлов (по умолчанию `memoryLedger()`). */
   readonly ledger?: AdaptedStorageLedger
   /** Срок жизни брони места на время загрузки (по умолчанию `1 час`). */
@@ -277,6 +361,9 @@ export interface StorageProbeResult {
   readonly error?: string
 }
 
+/** Допустимые цели раздачи `storage.serve(target, request, options)` (§1.3.4 плана). */
+export type StorageServeTarget = string | File | StoredFileRecord
+
 /** Публичный экземпляр хранилища. */
 export interface Storage {
   readonly serverNames: readonly string[]
@@ -284,11 +371,18 @@ export interface Storage {
   removeServer(name: string): Promise<boolean>
   probe(server: string): Promise<StorageProbeResult>
   put(input: StoragePutInput): Promise<StoredObject>
+  upload(request: Request, options?: StorageUploadOptions): Promise<StorageUploadResult>
+  has(path: string, options?: StorageReadOptions): Promise<boolean>
   head(path: string, options?: StorageReadOptions): Promise<StoredObject | null>
-  stat(path: string): Promise<StoredFileRecord | null>
+  stat(path: string, options?: StorageReadOptions): Promise<StoredFileRecord | null>
+  list(options?: StorageListOptions): Promise<StorageListResult>
   get(path: string, options?: StorageReadOptions): Promise<ReadableStream<Uint8Array> | null>
   lazy(path: string, options?: StorageReadOptions): Promise<StreamFile | null>
-  serve(path: string, request: Request, options?: StorageServeOptions): Promise<Response>
+  serve(
+    target: StorageServeTarget,
+    request: Request,
+    options?: StorageServeOptions,
+  ): Promise<Response>
   del(path: string, options?: { server?: string }): Promise<boolean>
   copy(input: StorageTransferInput): Promise<StoredObject>
   move(input: StorageTransferInput): Promise<StoredObject>

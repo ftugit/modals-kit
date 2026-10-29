@@ -25,23 +25,24 @@
      печатать в вывод, не логировать и не коммитить; правило о кратких статусах
      только между крупными этапами сохранено в
      `/home/user/uploads/coding-agent-prompt.md` (`7debb53`).
-3. **Точка остановки (`STOPPED AT`):** Этапы **`S0` + `S0-S3` + `S0.5` + `S1` + `S2`**
-   отправлены в `origin/img` (`e12d465`, `21bb85c`), и поверх них локально реализован и
-   проверен этап **`S3`** — потоковый адаптер `src/lib/storage/webdav.ts` (`#lib/storage/webdav.js`,
-   `MKCOL`, потоковый `PUT`, `PROPFIND`, `Range 206`, `DELETE`, `COPY`, строгие `basePath` и
-   `readOnly`, поддержка `webdav://` в `createStorage` и куки-сейфе, контрактные тесты + живой
-   стенд Облака Mail.ru и межсервисный перенос `Mail.ru WebDAV ↔ B2/R2`). Для дальнейших шагов
-   остаются опциональная связка `defineStorageLedger` с `#lib/db` и при необходимости `storage.upload(request)`.
+3. **Точка остановки (`STOPPED AT`):** Этапы **`S0` + `S0-S3` + `S0.5` + `S1` + `S2` + `S3`**
+   отправлены в `origin/img` (`e12d465`, `21bb85c`, `3133071`; слияние с параллельной веткой — `e323922`),
+   и поверх них локально завершены этап **`S4`** (`a58e598`) и двухпроходный аудит по GitHub Code Search
+   **`S5a` + `S5b`** (первый проход по эталонным пакетам + второй проход по свежим релизам октября 2026
+   менее популярных авторов: `LeLibrary v5.7.1`, `wicaby v0.14.2`, `object-storage`, `lucid-cms`,
+   `sharedworld v0.5.4`).
 
 ---
 
-## Состояние этапов по коммитам (обновлено 2026-10-28)
+## Состояние этапов по коммитам (обновлено 2026-10-29)
 
 | Этап | Содержание | Состояние | Коммиты |
 |---|---|---|---|
 | **1a. Базовый мультисерверный S3-этап `#lib/storage` (`S0` + `S0-S3` + `S0.5`)** | Мультисерверный `createStorage` с `defineStorageLedger` (`memoryLedger` + `jsonLedger`), `s3Driver` (`aws4fetch`, `s3://` DSN, Multipart Upload `>= 5 МиБ`, `Range GET`), `storage.probe(server)`, универсальный `#hooks/cookie-vault` + `<CookieVault>` и кнопка в `DemoPanel` (модалка + роут, `0` ключей в `.env`/БД) | **Выполнено и отправлено в `origin/img`** | `4ab27b0`..`e12d465` |
 | **1b. Шифрование, лимитеры, `store`/`tech`/`state`, нарезка `split`, `stageToDisk` и `clone` (`S1` + `S2`)** | `crypto.ts` (64 КиБ `AES-256-GCM` + $O(1)$ `Range` + `key: null`), `bandwidth.ts` (`rate` + `rate: 0`), `concurrency.ts` (`reject`/`queue`/`preempt` + `429` + `concurrency: 0`), `store.ts` (`defineStorageStore`, `memoryStore`, `tech`/`meta` с деградацией в `console.error`), `state.ts`, планировщик нарезки `split` по `fileBytes`/`storageBytes` с `allowSplit`, `localSpool` (`stageToDisk: true`), `clone()` | **Выполнено и отправлено в `origin/img`** | `21bb85c` |
-| **1c. Адаптер `webdav` и документация (`S3`)** | Серверный адаптер `webdav.ts` (`MKCOL`/`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`, DSN `webdav://`), поддержка `webdav://` в куки-сейфе, `src/lib/storage/README.md`, живая проверка на Облаке Mail.ru | **Выполнено и проверено локально** | локальный коммит на `img` |
+| **1c. Адаптер `webdav` и документация (`S3`)** | Серверный адаптер `webdav.ts` (`MKCOL`/`PROPFIND`/`HEAD`/`Range GET`/стриминговый `PUT`/`DELETE`/`COPY`, `basePath`, `readOnly`, DSN `webdav://`), поддержка `webdav://` в куки-сейфе, `src/lib/storage/README.md`, живая проверка на Облаке Mail.ru | **Выполнено и отправлено в `origin/img`** | `3133071` |
+| **1d. Потоковый `upload(request)`, `has`/`list`, `cooldownMs` и связка `#hooks/storage-db` (`S4`)** | Потоковый `storage.upload(request, options)` (`@remix-run/form-data-parser/future`, `accept`, `maxFiles`, `maxFileSize`, атомарный откат), `storage.has()` и `storage.list()`, карантин упавших серверов `cooldownMs` с авто-фейловером записи и чтения реплик, переходник `src/hooks/storage-db.ts` (`pgStorageLedger` на `#lib/db` + `cacheStorageStore` на `#lib/cache`) | **Выполнено и проверено локально** | `a58e598` |
+| **1e. Двухпроходный аудит и закалка краевых случаев по GitHub Code Search (`S5a` + `S5b`)** | Lookahead одиночного `PUT` для потоков неизвестной длины `<= 5 MiB`, проверка `<Error>` в `200 OK` `CompleteMultipartUpload` и нативный `CopyObject` (`x-amz-copy-source`), `redirect: 'manual'`, проверка `multistatus` XML и `HREF-ESCAPE` в WebDAV, обход утечки `Blob#stream()` в Node `< 24.20` (`nodejs/node#63574`), снятие скрытого потолка `2 MiB` и пустых `<input type="file">` в `upload()`, честная обработка `ENOENT` в `local.ts`, проверка усечения хвоста `crypto.ts` и межинстансный `pg_advisory_xact_lock` в `pgStorageLedger` | **Выполнено и проверено локально** | `5b76fda` + локальный коммит `S5b` |
 
 ---
 
@@ -341,3 +342,4 @@ export interface Storage<S extends string = string> {
 | **S1. Контракты `store`, лимитеры и потоковое шифрование** | `store.ts`, `bandwidth.ts`, `concurrency.ts` (`preempt`/`reject`/`queue` + деградация `console.error`), `crypto.ts` (64-КБ `AES-256-GCM` со сдвигом `Range` и точным расчётом `encryptedSize`), `state.ts` | `vitest`: шифрование/расшифровка произвольных `Range`-срезов поперёк 64-КБ границ, `rate`/`concurrency` и `console.error` при отсутствии `store`/`ip` |
 | **S2. Мультисерверный движок `createStorage`: планировщик нарезки, ротация, `stageToDisk`, `serve`, `upload`, `copy`/`move`/`clone`, `report`** | Склейка частей с разных серверов в единый `LazyFile`, `serve` на `@remix-run/response` (`200`/`206`/`304`/`416` + UTF-8 `Content-Disposition`), приём от юзера `upload`, дисковый спул `localSpool`, `copy`/`move`/`clone` (с быстрым байт-в-байт путём при одинаковом `key`) | `vitest`: нарезка файла по `fileBytes` и остатку `storageBytes` между несколькими серверами, запрет нарезки при `allowSplit: false` и на не-resumable потоке без `stageToDisk`, откат брони при сбое, `206 Range` поперёк стыка двух серверов, `clone` |
 | **S3. Серверные адаптеры `local` и `webdav` + документация и стражи** | `local.ts` (`@remix-run/fs` + `jsonLedger` + `localSpool`), `webdav.ts` (`PROPFIND`, `HEAD`, `GET` с `Range`, `PUT` со стримом, `DELETE`, `COPY`, `basePath`, `readOnly`), `entrypoints.json` + добавление `src/lib/storage` в `tooling/core-purity.mjs`, подробный `src/lib/storage/README.md` | Контрактные тесты с локальным HTTP WebDAV-сервером + полный прогон `public-api`, `core-purity`, `layer-guard`, `svelte-check`, `vitest`, `vite build` (+ живой тест на Облаке Mail.ru при передаче кредов) |
+| **S4–S6. Потоковый `upload()`, `#hooks/storage-db.ts`, аудит безопасности S3/WebDAV, куки-сейф и полный стенд `/upload-demo`** | **Выполнено (Этап 1 закрыт полностью):** `storage.upload()` на `@remix-run/form-data-parser/future`; `pgStorageLedger` (`pg_advisory_xact_lock` + `clock_timestamp()`) и `cacheStorageStore` в `#hooks/storage-db.ts`; `serve(string \| File \| StoredFileRecord)` с `Range 206` поперёк зашифрованных шардов, `put({ overwrite: false })` (`StorageOverwriteError`), `tech.publicOrigin`, `stat(path, { server })`, общий `createConcurrencyGate`; нативный S3 `CopyObject`, `redirect: 'manual'`, защита `HREF-ESCAPE` и `<multistatus` в WebDAV; куки-сейф `storage.vault` с внутренним скроллом модалки; полный стенд `/upload-demo` (`split_demo` `shard_a + shard_b`, `stageToDisk`, `copy`/`move`/`clone`, `probe`, телеметрия `state.js`, инспектор `HEAD` + `Range 206` + `304` + `concurrency 429`) и развёрнутая статья `src/lib/storage/README.md` | Все контрактные, интеграционные и живые проверки (B2 + R2 + Mail.ru WebDAV + Vitest + 7 наборов стражей `tooling/` + `npm run build` + Chromium Playwright E2E) пройдены |

@@ -12,6 +12,26 @@ import { WebSocketServer, type RawData, type WebSocket as NodeWs } from 'ws'
 /** Максимальный размер одного кадра по умолчанию (`512 КБ`: с запасом под сегмент `256 КБ` + заголовок). */
 export const DEFAULT_WS_MAX_PAYLOAD = 512 * 1024
 
+const VERCEL_REQUEST_CONTEXT_SYMBOL = Symbol.for('@vercel/request-context')
+
+/** Автоопределение платформы исполнения WebSocket без чтения `process.env`. */
+export function detectWsUploadPlatform(): 'vercel' | 'cloudflare' | 'node' {
+  const cfGlobal = globalThis as unknown as { WebSocketPair?: unknown }
+  if (typeof cfGlobal.WebSocketPair === 'function') {
+    return 'cloudflare'
+  }
+  const vercelStore = (
+    globalThis as unknown as Record<
+      symbol,
+      { get?: () => { upgradeWebSocket?: unknown } | undefined } | undefined
+    >
+  )[VERCEL_REQUEST_CONTEXT_SYMBOL]
+  if (typeof vercelStore?.get?.()?.upgradeWebSocket === 'function') {
+    return 'vercel'
+  }
+  return 'node'
+}
+
 /** Единый минимальный интерфейс открытого серверного сокета поверх `ws` и Cloudflare `WebSocket`. */
 export interface ServerWsSocket {
   sendText(text: string): void

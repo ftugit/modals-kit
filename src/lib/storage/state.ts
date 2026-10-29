@@ -29,6 +29,16 @@ export type StorageStateEvent =
       readonly path: string
       readonly error: string
     }
+  | {
+      readonly type: 'server:cooldown'
+      readonly server: string
+      readonly until: number
+      readonly error: string
+    }
+  | {
+      readonly type: 'server:recovered'
+      readonly server: string
+    }
 
 export type StorageStateListener = (event: StorageStateEvent) => void
 
@@ -39,6 +49,7 @@ export interface ServerTelemetrySnapshot {
   readonly bytesRead: number
   readonly errorsCount: number
   readonly lastError?: string
+  readonly cooldownUntil?: number
 }
 
 export interface StorageTelemetrySnapshot {
@@ -64,6 +75,7 @@ interface MutableServerStats {
   bytesRead: number
   errorsCount: number
   lastError?: string
+  cooldownUntil?: number
 }
 
 export function createStorageState(): StorageStateCollector {
@@ -106,6 +118,7 @@ export function createStorageState(): StorageStateCollector {
         bytesRead: s.bytesRead,
         errorsCount: s.errorsCount,
         ...(s.lastError !== undefined ? { lastError: s.lastError } : {}),
+        ...(s.cooldownUntil !== undefined ? { cooldownUntil: s.cooldownUntil } : {}),
       }
     }
 
@@ -152,6 +165,13 @@ export function createStorageState(): StorageStateCollector {
           s.activeDownloads = Math.max(0, s.activeDownloads - 1)
           s.errorsCount += 1
           s.lastError = ev.error
+          break
+        case 'server:cooldown':
+          s.cooldownUntil = ev.until
+          s.lastError = ev.error
+          break
+        case 'server:recovered':
+          delete s.cooldownUntil
           break
       }
       notify()

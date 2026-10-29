@@ -57,12 +57,43 @@ function normalizeRawKeyBytes(key: StorageEncryptionKey): Uint8Array<ArrayBuffer
   throw new StorageCryptoError('[storage/crypto] некорректный тип ключа шифрования')
 }
 
+const HKDF_CACHE_LIMIT = 64
+const hkdfStringKeyCache = new Map<string, Promise<CryptoKey>>()
+const hkdfBytesKeyCache = new WeakMap<Uint8Array, Promise<CryptoKey>>()
+
+function getHkdfBaseKey(masterKey: StorageEncryptionKey): Promise<CryptoKey> {
+  if (typeof masterKey === 'string') {
+    const hit = hkdfStringKeyCache.get(masterKey)
+    if (hit) return hit
+    const ikm = normalizeRawKeyBytes(masterKey)
+    const created = crypto.subtle
+      .importKey('raw', ikm, 'HKDF', false, ['deriveKey'])
+      .catch((err) => {
+        hkdfStringKeyCache.delete(masterKey)
+        throw err
+      })
+    if (hkdfStringKeyCache.size >= HKDF_CACHE_LIMIT) {
+      const oldest = hkdfStringKeyCache.keys().next().value
+      if (oldest !== undefined) hkdfStringKeyCache.delete(oldest)
+    }
+    hkdfStringKeyCache.set(masterKey, created)
+    return created
+  }
+
+  const hit = hkdfBytesKeyCache.get(masterKey)
+  if (hit) return hit
+  const ikm = normalizeRawKeyBytes(masterKey)
+  const created = crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey'])
+  hkdfBytesKeyCache.set(masterKey, created)
+  return created
+}
+
 async function deriveObjectAesKey(
   masterKey: StorageEncryptionKey,
   salt: Uint8Array,
+  usage: 'encrypt' | 'decrypt',
 ): Promise<CryptoKey> {
-  const ikm = normalizeRawKeyBytes(masterKey)
-  const baseKey = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveKey'])
+  const baseKey = await getHkdfBaseKey(masterKey)
   return crypto.subtle.deriveKey(
     {
       name: 'HKDF',
@@ -73,7 +104,7 @@ async function deriveObjectAesKey(
     baseKey,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt'],
+    [usage],
   )
 }
 
@@ -217,7 +248,7 @@ export function encryptStream(
         if (!reader) {
           reader = source.getReader()
           const salt = crypto.getRandomValues(new Uint8Array(CRYPTO_SALT_BYTES))
-          aesKey = await deriveObjectAesKey(key, salt)
+          aesKey = await deriveObjectAesKey(key, salt, 'encrypt')
           const header = new Uint8Array(new ArrayBuffer(CRYPTO_HEADER_BYTES))
           header.set(MAGIC_BYTES, 0)
           header.set(salt, MAGIC_BYTES.byteLength)
@@ -306,7 +337,16 @@ export function createDecryptedStreamFile(
   },
 ): StreamFile {
   const storedBytes = cipherFile.size
-  const plainSize = options?.plainSize ?? decryptedSize(storedBytes)
+  const inferredPlainSize = decryptedSize(storedBytes)
+  if (
+    options?.plainSize !== undefined &&
+    storedBytes !== encryptedSize(options.plainSize)
+  ) {
+    throw new StorageCryptoError(
+      `[storage/crypto] размер зашифрованного объекта (${storedBytes} Б) не совпадает с ожидаемым для ${options.plainSize} Б (${encryptedSize(options.plainSize)} Б)`,
+    )
+  }
+  const plainSize = options?.plainSize ?? inferredPlainSize
   const totalChunks =
     plainSize === 0 ? 1 : Math.ceil(plainSize / CRYPTO_CHUNK_PLAIN_BYTES)
 
@@ -318,7 +358,7 @@ export function createDecryptedStreamFile(
         const hdr =
           headerBytes ?? (await readExactRange(cipherFile, 0, CRYPTO_HEADER_BYTES))
         const salt = verifyHeaderAndExtractSalt(hdr)
-        return deriveObjectAesKey(key, salt)
+        return deriveObjectAesKey(key, salt, 'decrypt')
       })()
     }
     return cachedAesKeyPromise

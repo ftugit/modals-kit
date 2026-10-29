@@ -22,19 +22,20 @@
 Импорты между слоями идут строго сверху вниз и проверяются на этапе dev/build плагином `tooling/layer-guard.mjs`:
 
 1. **`#lib/*` → `./src/lib/*` (независимые библиотеки + их фреймворковые адаптеры)**:
-   - пакеты `address`, `assets`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `task`;
+   - пакеты `address`, `assets`, `cache`, `db`, `fetch`, `form`, `image`, `modals`, `paginate`, `storage`, `task`;
    - в чистых ядрах запрещены импорты `svelte`, `@sveltejs/kit`, `$app/*`, соседних пакетов и любых верхних слоёв (`tooling/core-purity.mjs` + `tooling/layer-guard.mjs`); адаптеры реактивности и роутера живут внутри своего пакета (`svelte/`, `sveltekit/`, `cores/sveltekit.ts`, `node.ts`);
    - **публичный вход пакета объявлен**: снаружи `src/lib/<pkg>/` допустимы только спецификаторы из `src/lib/<pkg>/entrypoints.json` (нет манифеста — только `index.js`), остальное — внутреннее устройство. Проверка — `node tooling/public-api.mjs` (+ тест `tooling/public-api.test.mjs`): пакет обязан переноситься в другое приложение, а глубокий импорт привязывает чужой код к его файлам. Тот же закон для `#lib` → `#lib`: пакеты общаются входами, а не потрохами.
 2. **`#hooks/*` → `./src/hooks/*` (межбиблиотечные и фреймворковые связки без UI)**:
-   - соединяет две библиотеки или библиотеку и среду (`cache-db.ts`, `db-form.ts`, `db-schema.ts` + `db-schema.server.ts`, `schema-route.ts`, `api-error.ts`, `app-errors.svelte.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `use-drawer.svelte.ts`, `graphql.server.ts`, `task-stream.server.ts`, папочные `links/` и `component-form/`); см. [`src/hooks/README.md`](./src/hooks/README.md).
+   - соединяет две библиотеки или библиотеку и среду (`cache-db.ts`, `storage-db.ts`, `db-form.ts`, `db-schema.ts` + `db-schema.server.ts`, `schema-route.ts`, `api-error.ts`, `app-errors.svelte.ts`, `js-only.svelte.ts`, `loader.svelte.ts`, `use-drawer.svelte.ts`, `graphql.server.ts`, `task-stream.server.ts`, папочные `links/`, `cookie-vault/` и `component-form/`); см. [`src/hooks/README.md`](./src/hooks/README.md).
 3. **`#components/*` → `./src/components/*` (переиспользуемые UI-примитивы и проектно-независимые виджеты)**:
    - `ui/` (правила слоя — [`src/components/ui/README.md`](./src/components/ui/README.md)), `settings/`, `demo/`, `form/`, `fields/`, `paginator/`, `modals/`, `steps/`, `db-schema/`, `loader/`, `shell/` (`ui/{header,sidebar}/`), `ErrorPage.svelte`, `Error500.svelte`, `utils.ts`;
    - компоненты не импортируют `#content/*`, `#server/*` и `src/routes/*` — доменные маршруты и пункты навигации передаются через пропы и слоты.
 4. **`#content/*` → `./src/content/*` (доменные модули и изолированный демо-каталог)**:
    - `src/content/user/` — автономный модуль пользователя (`routes.ts`, `modals.ts`, `gateway.server.ts`, ядро и `ui/*`);
+   - `src/content/storage-vault/` — пользовательский куки-сейф серверов S3 / WebDAV (`modals.ts`, `schema.ts`, `vault.form.server.ts`, `ui/*`);
    - `src/content/demo-catalog/{items,posts,rickmorty,shikimori}/` — все учебные источники витрин, схемы фильтров и карточки строк/плиток.
 5. **`#server/*` → `./src/server/*` и `src/routes/*` (серверные синглтоны и композиция приложения)**:
-   - все строго серверные модули вне `routes/+*.server.ts` носят суффикс `*.server.ts` (`db.server.ts`, `cache.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и не могут импортироваться в клиентский/изоморфный код;
+   - все строго серверные модули вне `routes/+*.server.ts` носят суффикс `*.server.ts` (`db.server.ts`, `cache.server.ts`, `storage.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `form-security.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и не могут импортироваться в клиентский/изоморфный код;
    - `src/server/trusted-origins.ts` импортируется в `vite.config.ts` до инициализации SvelteKit и не должен тянуть `$app/*` / `$env/*`;
    - `src/hooks.server.ts` выступает точкой композиции (`dbHandle` + `createComponentFormsHandle(import.meta.glob('./**/*.form.server.ts'))`).
 

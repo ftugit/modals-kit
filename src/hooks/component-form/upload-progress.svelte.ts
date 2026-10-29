@@ -1,9 +1,10 @@
-// Реактивная проекция посегментного прогресса `form.state.progress` на карточки `FileAttachment`.
+// Реактивная проекция потокового прогресса `form.state.progress` на карточки `FileAttachment` / `Attachment`.
 //
 // Модуль живёт в `src/hooks/component-form` и не импортирует `src/components/*`:
 // возвращаемая мета-структура структурно совместима с `FileAttachmentItemMeta`.
 import { SvelteMap } from 'svelte/reactivity'
 import type { BoundForm } from '#lib/form/svelte/index.js'
+import { formatUploadBytesRu, formatUploadSpeedRu } from './upload-eta.js'
 import type { FileUploadProgressEntry, FormUploadProgress } from './ws-protocol.js'
 
 export interface UploadAttachmentMeta {
@@ -14,7 +15,7 @@ export interface UploadAttachmentMeta {
 
 const formsByFieldDomId = new SvelteMap<string, BoundForm>()
 
-function isFormUploadProgress(value: unknown): value is FormUploadProgress {
+export function isFormUploadProgress(value: unknown): value is FormUploadProgress {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -23,23 +24,18 @@ function isFormUploadProgress(value: unknown): value is FormUploadProgress {
   )
 }
 
-function formatBytesRu(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`
-}
-
-function formatEntryDescription(entry: FileUploadProgressEntry): string {
+export function formatEntryUploadDescription(entry: FileUploadProgressEntry): string {
   const hmacSuffix = entry.salted ? ' · HMAC' : ''
+  const speed = formatUploadSpeedRu(entry.bytesPerSecond)
+  const speedPart = speed ? ` · ${speed}` : ''
   if (entry.state === 'processing') {
-    return `Сохранение на сервере · ${entry.totalSegments}/${entry.totalSegments} сегм.${hmacSuffix}`
+    return `Сохранение на сервере · ${formatUploadBytesRu(entry.size)}${speedPart}${hmacSuffix}`
   }
   if (entry.state === 'done') {
-    return `Загружено · ${formatBytesRu(entry.size)}${hmacSuffix}`
+    return `Загружено · ${formatUploadBytesRu(entry.size)}${hmacSuffix}`
   }
-  if (entry.totalSegments > 0) {
-    return `Сегмент ${Math.min(entry.sentSegments + 1, entry.totalSegments)}/${entry.totalSegments} · ${formatBytesRu(entry.receivedBytes)} из ${formatBytesRu(entry.size)}${hmacSuffix}`
+  if (entry.size > 0) {
+    return `${formatUploadBytesRu(entry.receivedBytes)} из ${formatUploadBytesRu(entry.size)}${speedPart}${hmacSuffix}`
   }
   return 'Подготовка…'
 }
@@ -92,7 +88,7 @@ export function uploadItemPropsForField(
     return {
       state: matched.state,
       progress: matched.progress,
-      description: formatEntryDescription(matched),
+      description: formatEntryUploadDescription(matched),
     }
   }
 }

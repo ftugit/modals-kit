@@ -326,9 +326,23 @@ export function resetVaultKey<TEntry, TMeta>(
   }
 }
 
-export interface RegisterCookieVaultOptions {
+export type CookieVaultValidationResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false
+      readonly message: string
+      readonly path?: readonly string[]
+    }
+
+export interface RegisterCookieVaultOptions<TEntry = unknown> {
   /** Маршрут редиректа при нативном HTTP POST без JS (по умолчанию сохраняет текущий путь + search). */
   redirectOnSuccess?: (event: RequestEvent) => string
+  /** Серверная проверка конфига ПЕРЕД сохранением куки (например живая проверка доступности хранилища). */
+  validateEntry?: (
+    id: string,
+    entry: TEntry,
+    event: RequestEvent,
+  ) => Promise<CookieVaultValidationResult> | CookieVaultValidationResult
   /** Хук после удаления слота (например очистка служебного кэша). */
   onRemoved?: (id: string, event: RequestEvent) => Promise<void> | void
   /** Хук после сброса ключа сейфа. */
@@ -346,16 +360,32 @@ function defaultRedirect(event: RequestEvent): string {
  */
 export function registerCookieVaultForms<TEntry, TMeta>(
   schema: CookieVaultSchema<TEntry, TMeta>,
-  options?: RegisterCookieVaultOptions,
+  options?: RegisterCookieVaultOptions<TEntry>,
 ): void {
   const redirect = options?.redirectOnSuccess ?? defaultRedirect
 
   registerComponentForm({
     description: schema.entryForm,
+    limits: { timeoutMs: 25_000 },
     async execute({ values, fail, commit }, event) {
       const parsed = schema.parse(values)
       if (!parsed.ok) {
         return fail([...parsed.issues], 'not-applied')
+      }
+      if (options?.validateEntry) {
+        const verdict = await options.validateEntry(parsed.id, parsed.entry, event)
+        if (!verdict.ok) {
+          return fail(
+            [
+              {
+                message: verdict.message,
+                ...(verdict.path ? { path: [...verdict.path] } : {}),
+                origin: 'server',
+              },
+            ],
+            'not-applied',
+          )
+        }
       }
       const saved = await saveVaultEntry(event.cookies, schema, parsed.id, parsed.entry)
       if (!saved.ok) {

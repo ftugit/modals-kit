@@ -11,6 +11,8 @@
 | `api-error.ts` | клиент / SSR × формат ошибок API | Изоморфный разбор и человекочитаемое представление ошибок API без затягивания серверных секретов в клиентский бандл. |
 | `app-errors.svelte.ts` | UI-оболочка × ошибки приложения | Реактивное хранилище глобальных уведомлений об ошибках. |
 | `cache-db.ts` | `#lib/cache` × `#lib/db` | Общее между инстансами KV-хранилище в PostgreSQL (`pgStore`, ресурс `cacheKv` → таблица `public.cache_kv`), часы базы (`clock_timestamp()`), атомарные `add`/`incr` и оппортунистическая вычистка просроченных строк. В приложении экземпляр экспортируется как `sharedStore` из `src/server/cache.server.ts`. |
+| `cookie-vault/` | зашифрованные HttpOnly-куки × `#lib/form` | Универсальный браузерный куки-сейф (`AES-256-GCM` со связкой `AUTH_SEAL_SECRET` и `AAD`) для динамического подключения пользовательских секретов/облаков на лету (`0` env-ключей и `0` записей в общей БД). |
+| `storage-db.ts` | `#lib/storage` × `#lib/db` × `#lib/cache` | Реестр учёта места, броней и манифестов файлов в PostgreSQL (`pgStorageLedger`, ресурсы `storageFile` → `public.storage_file` и `storageReservation` → `public.storage_reservation`, часы базы `clock_timestamp()`) и адаптер `cacheStorageStore` поверх `#lib/cache` (`localStore` / `sharedStore`). |
 | `component-form/` | `#lib/form` × SvelteKit `Handle` / `$app/state` | Маршрутно-независимые формы компонентов: компонент со своей формой (`SeedForm`, `ProfileForm`, `MenuBody`, `/fields`) монтируется на любой странице или в модалке без `actions` в `+page.server.ts`. |
 | `db-form.ts` | `#lib/db` × `#lib/form` | Вывод параметров и валидаторов полей формы из дескриптора ресурса БД (`formParams(resource)`), включая доказательство полноты правил `rulesFrom` для `pick`. |
 | `db-schema.ts` | `#lib/db` (`/sync`) × `#lib/form` | Изоморфный экран переноса схемы: отчёт `SchemaReport` → слова для человека (`StepView`) → описание формы решений (`defineForm`). Читают `#hooks/db-schema.server.ts`, `#components/db-schema/SchemaPending.svelte` и страница `/schema`. |
@@ -36,9 +38,11 @@
   - с JS (`Accept: application/json`) возвращает `{ data: { result } }` со статусом обработчика и выставленными `Set-Cookie`;
   - без JS при успехе делает `303 See Other` (или рендерит ответ в том же запросе при `'inline'` / `outcome === 'not-applied'`);
   - без JS при ошибке рендерит текущую страницу прямо в ответе на этот же `POST` с кодом ошибки (`422` и др.) и `locals.formResult = result`, сохраняя введённые значения.
-- `transport.ts` — клиентский транспорт отправки формы в текущий маршрут; предел тела берёт из `Limits` формы (`maxBytes`), а не из своих констант. Предела на отдельный файл в приёме нет: его объявляет `v.maxSize` в самой форме.
+- `transport.ts`, `ws-client.ts`, `ws-protocol.ts`, `ws-integrity.ts`, `ws-session.server.ts`, `authorize.server.ts` — клиентский и серверный транспорты отправки формы:
+  - формы без файлов уходят штатным HTTP `fetch` (`transport.ts`), предел тела берётся из `Limits` формы (`maxBytes`);
+  - при наличии выбранных файлов `bindComponentForm` автоматически переключается на одноинстансовый потоковый транспорт `wss://` (`/api/form-upload`, сегменты по `256 КиБ`, ранний гейт `authorize` и проверка полей на Кадре 0 до чтения байтов файла, опциональная одноразовая соль + цепочка `HMAC-SHA-256` на сегментах, реактивный прогресс в `FileAttachment` и `formTask`, прозрачный откат на HTTP `multipart/form-data` без JS).
 - Бюджет тела формы приходит из env (`src/env.ts` → `#server/form-budget.server.ts`) и уезжает в разметку атрибутом `data-budget`; объявленный формой бюджет может быть только меньше. Поля файлов без `v.maxSize` при известном бюджете — ошибка сборки формы (`#lib/form`).
-- `types.ts` — контракты регистрации и опций.
+- `types.ts` — контракты регистрации (`authorize`, `integrity`) и опций.
 
 ---
 

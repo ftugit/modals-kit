@@ -35,7 +35,7 @@
 
   <div class="flex items-center gap-3 pt-1">
     <Button type="submit" task={formTask(vault.state)} data-testid="vault-save-submit">
-      Сохранить в куки
+      Проверить и сохранить в куки
     </Button>
   </div>
 </Form>
