@@ -44,7 +44,12 @@ export interface PermissionInfo {
 export const PERMISSIONS = {
   'account.read': {
     title: 'Чтение аккаунтов',
-    description: 'Видеть любой аккаунт: seed, блокировки, заявку на удаление — вместе с удалёнными строками.',
+    description: 'Видеть любой живой аккаунт: seed, блокировки, заявку на удаление. Удалённые строки — отдельное право.',
+  },
+  'account.readDeleted': {
+    title: 'Чтение удалённых аккаунтов',
+    description:
+      'Видеть удалённые аккаунты (заявки на удаление). Живые аккаунты это право не открывает; окончательно удалить аккаунт можно только связкой с редактированием.',
   },
   'account.edit': {
     title: 'Правка аккаунтов',
@@ -128,7 +133,7 @@ export const PERMISSION_GROUPS: readonly {
   readonly title: string
   readonly permissions: readonly Permission[]
 }[] = [
-  { title: 'Аккаунты', permissions: ['account.read', 'account.edit'] },
+  { title: 'Аккаунты', permissions: ['account.read', 'account.edit', 'account.readDeleted'] },
   { title: 'Профили', permissions: ['profile.read', 'profile.edit'] },
   { title: 'Сессии', permissions: ['session.read', 'session.edit'] },
   { title: 'Блокировки', permissions: ['block.read', 'block.edit', 'block.readDeleted'] },

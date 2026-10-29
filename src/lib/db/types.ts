@@ -322,6 +322,8 @@ export type AccessKey =
 export interface Policy {
   [rule: string]: ((ctx: DataContext) => Filter) | undefined;
   select?: (ctx: DataContext) => Filter;
+  /** Чтение с удалёнными (`includeDeleted: true`). Нет — та же, что `select`. */
+  selectDeleted?: (ctx: DataContext) => Filter;
   insert?: (ctx: DataContext) => boolean;
   update?: (ctx: DataContext) => Filter;
   delete?: (ctx: DataContext) => Filter;

@@ -37,14 +37,15 @@ describe('схема пользователя (user_auth / user_profile / user_s
     expect((await v('javascript:alert(1)')).issues).toBeDefined()
   })
 
-  test('account.read: список аккаунтов и удалённые строки видны по праву', () => {
+  test('account.read: список аккаунтов виден по праву; удалённые — отдельное право', () => {
     const reader = { principal: { id: 'someone', roles: ['account.read'] } }
     const plain = { principal: { id: 'someone', roles: [] } }
     // с правом политика пропускает к любым строкам, без права — только к своей
     expect(auth.policy?.select?.(reader as never)).toBe(true)
     expect(auth.policy?.select?.(plain as never)).toEqual({ field: 'id', op: 'eq', value: 'someone' })
     const deleted = auth.softDelete as unknown as { readDeleted?: readonly string[] }
-    expect(deleted.readDeleted).toContain('account.read')
+    expect(deleted.readDeleted).toContain('account.readDeleted')
+    expect(deleted.readDeleted).not.toContain('account.read')
   })
 
   test('у каждой таблицы свой порядок', () => {

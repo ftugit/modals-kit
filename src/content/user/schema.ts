@@ -153,10 +153,10 @@ export const auth: Resource = defineResource({
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
     // заявку на удаление видят и снимают сервер/админ (шаг восстановления);
-    // `account.read` видит удалённые строки в списке аккаунтов — так объявлено
-    // само право в каталоге (`permissions.ts`: «вместе с удалёнными строками»),
-    // а `includeDeleted` без `readDeleted` модель отклоняет.
-    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin', 'account.read'] },
+    // удалённые строки — отдельное право `account.readDeleted` (грант
+    // `readDeleted` плюс политика `selectDeleted` ниже): чтение живых
+    // оно не даёт, а `includeDeleted` без гранта модель отклоняет.
+    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin', 'account.readDeleted'] },
   },
   policy: {
     // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
@@ -165,6 +165,9 @@ export const auth: Resource = defineResource({
     // `account.read` — список аккаунтов (`accounts.ts`): без него владелец
     // по-прежнему видит только свою строку.
     select: policy.ownerOrRoles('id', ['server', 'admin', 'account.read']),
+    // Удалённые аккаунты: только отдельное право (и админ/сервер); владелец
+    // свою удалённую строку видит для шага восстановления.
+    selectDeleted: policy.ownerOrRoles('id', ['server', 'admin', 'account.readDeleted']),
     insert: policy.roles(['server']),
     update: policy.ownerOrRoles('id', ['server', 'admin']),
     delete: policy.ownerOrRoles('id', ['server', 'admin']),
@@ -279,7 +282,7 @@ export const config: Resource = defineResource({
  * политика `delete` (круг записи) плюс грант `readDeleted`, который
  * слой требует при `hard: true` — по одному права не дают стереть.
  */
-const BLOCK_READERS = ['moderator', 'block.read', 'block.edit', 'block.readDeleted', 'admin'] as const
+const BLOCK_READERS = ['moderator', 'block.read', 'block.edit', 'admin'] as const
 const BLOCK_WRITERS = ['moderator', 'block.edit', 'admin'] as const
 const BLOCK_REASON_EDITORS = ['block.edit', 'admin'] as const
 const BLOCK_DELETED_READERS = ['block.readDeleted', 'admin'] as const
@@ -329,6 +332,9 @@ export const block: Resource = defineResource({
   policy: {
     // Владелец цели и круг чтения (запись — в комплекте с чтением).
     select: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_READERS]),
+    // Удалённые записи: круг чтения плюс право удалённых; одно только
+    // право удалённых живых не открывает (политика `select` его не знает).
+    selectDeleted: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_READERS, 'block.readDeleted']),
     insert: policy.roles([...BLOCK_WRITERS]),
     update: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_WRITERS]),
     // Удаление — круг записи; окончательное (`hard`) слой пропустит

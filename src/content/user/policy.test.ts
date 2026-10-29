@@ -299,10 +299,16 @@ test('блокировки (этап 9): модель держит круг, н�
       (e: DbFailure) => e.kind === 'validation' || e.kind === 'forbidden',
     )
 
+    // A4/A3: окончательно стереть ЖИВУЮ запись модератор не может
+    // (слой требует readDeleted на любой hard), а аудитор живых не видит.
+    await assert.rejects(() => blocks.delete(moderator, row.id, { hard: true }), forbidden)
+
     // Удалённые: модератор мягко удалить может (запись = edit), но
     // удалённых не видит и окончательно не стирает; связка
     // readDeleted+edit стирает, одно readDeleted — только смотрит.
     const auditor = owner(crypto.randomUUID(), ['block.readDeleted'])
+    // A3: одно право удалённых живых записей не открывает.
+    assert.equal((await blocks.select(auditor)).length, 0)
     await assert.rejects(() => blocks.select(moderator, { includeDeleted: true }), forbidden)
     await blocks.delete(moderator, row.id)
     assert.equal((await blocks.select(moderator)).length, 0)

@@ -9,9 +9,10 @@ import type { AccessKey, DataContext, Database, Filter, Limits, Resource } from 
  * Правило строк операции. Нет `policy` или правила — без ограничения; `restore` без своего
  * правила — как `delete`.
  */
-export function rule(x: Resource, op: 'select' | 'update' | 'delete' | 'restore', ctx: DataContext): Filter {
+export function rule(x: Resource, op: 'select' | 'selectDeleted' | 'update' | 'delete' | 'restore', ctx: DataContext): Filter {
   const p = x.policy;
-  const fn = op === 'restore' ? (p?.restore ?? p?.delete) : p?.[op];
+  // `selectDeleted` без своего правила — как `select`.
+  const fn = op === 'restore' ? (p?.restore ?? p?.delete) : op === 'selectDeleted' ? (p?.selectDeleted ?? p?.select) : p?.[op];
   return fn ? fn(ctx) : true;
 }
 /** Право вставки: нет правила — можно. */

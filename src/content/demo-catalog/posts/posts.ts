@@ -61,7 +61,8 @@ export const posts = defineResource({
     update: policy.ownerOrRoles('author_id', ['editor']),
     // deny() для delete дал бы не 403, а not_found: строка, скрытая политикой,
     // неотличима от отсутствующей — так не протекает факт существования.
-    delete: policy.roles(['author']),
+    // `editor` дублирует право записи: редактирование включает удаление.
+    delete: policy.roles(['author', 'editor']),
   },
   order: [['created_at', 'desc']],
 })
