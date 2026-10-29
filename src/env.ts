@@ -133,9 +133,9 @@ export const variables = defineEnvVars({
   DATABASE_RESET: {
     schema: flag,
     description:
-      'Очистка базы из DATABASE_URL при СБОРКЕ (tooling/db-reset.mjs в npm run build): схема public сносится ' +
-      'целиком один раз на деплой и разворачивается заново уже рантаймом из моделей и сидов. В рантайме флаг ' +
-      'не читается. ВНИМАНИЕ: уничтожает все данные указанной базы.',
+      'Очистка базы из DATABASE_URL при СБОРКЕ (tooling/db-reset.mjs в конце npm run build): схема public сносится ' +
+      'целиком один раз на деплой, и тут же разворачиваются все модели, сиды и первый администратор с выводом в Build Logs. ' +
+      'В рантайме флаг не читается. ВНИМАНИЕ: уничтожает все данные указанной базы.',
   },
   DB_POOL_MAX: {
     schema: positiveInteger,
