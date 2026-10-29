@@ -98,15 +98,18 @@ const schemaSpec = {
       text: 'CREATE INDEX IF NOT EXISTS user_block_ix_target ON public.user_block (auth_id, created_at DESC)',
     },
     {
-      id: 'user-block-backfill',
+      id: 'user-block-backfill-v2',
       text: `INSERT INTO public.user_block (auth_id, scope, reason, until, "by", created_at, updated_at)
              SELECT a.id, e->>'scope', e->>'reason',
                     CASE WHEN e ? 'until' THEN to_timestamp((e->>'until')::double precision / 1000.0) END,
                     CASE WHEN e->>'by' ~ '^[0-9a-fA-F-]{36}$' THEN (e->>'by')::uuid END,
                     to_timestamp((e->>'at')::double precision / 1000.0),
                     to_timestamp((e->>'at')::double precision / 1000.0)
-             FROM public.user_auth a, unnest(a.blocked) AS e
-             WHERE cardinality(a.blocked) > 0`,
+             FROM public.user_auth a,
+                  jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(to_jsonb(a)->'blocked') = 'array' THEN to_jsonb(a)->'blocked' ELSE '[]'::jsonb END
+                  ) AS e
+             WHERE NOT EXISTS (SELECT 1 FROM public.kit_schema WHERE kind = 'sql' AND name = 'user-block-backfill')`,
     },
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
     // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,

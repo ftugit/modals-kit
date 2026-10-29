@@ -128,7 +128,7 @@
 | Фильтры списка блокировок | `user.blocks.filters` | `/blocks/filters` (`?from=…&uid=…`) | `BlocksFiltersForm.svelte` |
 | Выбор seed-юзеров (для фильтров и создания) | `user.picker` | `/users/pick` (`?from=…&mode=multiple\|single`) | `UserPicker.svelte` (на базе `UserPickerSteps` + `SeedUsersList`) |
 | Добавление блокировки | `user.blocks.create` | `/blocks/new` и `/user/[id=uuid]/blocks/new` | `BlockForm.svelte` (`mode = create`) |
-| Редактирование записи | `user.blocks.edit` | `/blocks/[blockId=uuid]/edit` и `/user/[id=uuid]/blocks/[blockId=uuid]/edit` | `BlockForm.svelte` (`mode = edit`) |
+| Редактирование / просмотр записи | `user.blocks.edit` | `/blocks/[blockId=uuid]` и `/user/[id=uuid]/blocks/[blockId=uuid]` | `BlockForm.svelte` (`mode = edit`) |
 | Удаление записи | `user.blocks.delete` | `/blocks/[blockId=uuid]/delete` и `/user/[id=uuid]/blocks/[blockId=uuid]/delete` | `BlockDelete.svelte` |
 
 ---
@@ -154,3 +154,15 @@
 
 1. **Встраивание в карточку `Profile.svelte`**: внутри профиля (в обеих ветках — `profile` и `notCreated`) рендерится компактная **кнопка «Блокировки»**, открывающая пару `user.blocks` (`/user/[id]/blocks`).
 2. **Клик по строке у зрителя без прав записи (`block.read` / `block.readDeleted` / уже удалённая запись)**: открывается тот же компонент `BlockForm` **в режиме просмотра без возможности отправить** (`canSubmit = false`: все поля заблокированы, кнопки сохранения нет, но в глобальном режиме доступны заблокированное поле `id` пользователя и кнопка открытия профиля; кнопка «Удалить» рендерится отдельно строго по флагу `canDelete`).
+
+---
+
+## 5. Статус выполнения
+
+- [x] `B1` (`bba2357`) — модель `user.block`, доменные операции `listBlocksPage` / `readBlockDetail` / `readBlockCreateContext` / `saveBlock` / `deleteBlock`, `blocksAdapter`, фасад `auth(event)`, фикс `accounts.ts:120` (`'account.readDeleted'`).
+- [x] `B2` (`41426de`) — переиспользуемый `UserPicker.svelte` (`single` / `multiple`), `UserPickerModal.svelte`, `/users/pick`, `user.picker`.
+- [x] `B3` (`5176473`) — `BlocksList.svelte`, `BlocksFiltersForm.svelte`, `BlockCard.svelte`, `/blocks`, `/user/[id=uuid]/blocks`, `/blocks/filters`, `user.blocks`, `user.blocks.filters`.
+- [x] `B4` (`9abf139`) — `BlockForm.svelte` (`create` / `edit` / read-only `canSubmit = false`), маршруты и модалки создания/редактирования, фикс `ProfilePrivacy.svelte` (`hiddenFields={bound.hidden()}`, `session: userSession`).
+- [x] `B5` (`d44de4f`) — `BlockDelete.svelte` (`HoldButton` + условный чекбокс `hard`), кнопка «Блокировки» в обеих ветках `Profile.svelte` (`profile` и `notCreated`), снятие лишнего `listByTarget` в `profile.ts`, удаление устаревшего `ui/profile-blocks/`.
+- [x] `B6` — фиксы синхронизации чистой БД (`user-block-backfill-v2` в `src/server/db.server.ts`), `route` модалки `user.picker` и SSR-снапшота `/users/pick`, расширение PGlite/unit/SSR-тестов и полный браузерный прогон `test/browser/blocks.mjs` (JS + no-JS).
+

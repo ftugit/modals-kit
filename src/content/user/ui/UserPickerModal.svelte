@@ -5,12 +5,14 @@
    * после чего закрывается только верхний слой пикера — вызывающая модалка или
    * страница остаётся открытой с прежним состоянием.
    */
-  import { useModal, useModals } from '#lib/modals/svelte/index.js'
+  import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import UserPicker, { USER_PICKER_CHANNEL_PREFIX } from './UserPicker.svelte'
+  import type { SeedUsersRouteData } from './seed-users/source.js'
   import type { AuthErrorCode } from '../error.js'
 
   const m = useModals()
+  const ldr = useLoader<{ initialUsers?: SeedUsersRouteData }>()
   const modal = useModal<{
     mode?: 'single' | 'multiple'
     channel?: string
@@ -47,6 +49,7 @@
   <UserPicker
     {mode}
     {initialPicked}
+    initialUsers={ldr.data?.initialUsers}
     onConfirm={confirm}
     onCancel={() => m.modals.close()}
     onAcl={(fact) => (acl = fact)}

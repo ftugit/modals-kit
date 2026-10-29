@@ -94,7 +94,14 @@ registerModal({
 registerModal({
   name: 'user.picker',
   component: lazy(() => import('./ui/UserPickerModal.svelte')),
-  route: userPickerRoute.href,
+  route: (p: { mode?: string; channel?: string; picked?: string }) => {
+    const q = new URLSearchParams()
+    if (p?.mode) q.set('mode', String(p.mode))
+    if (p?.channel) q.set('channel', String(p.channel))
+    if (p?.picked) q.set('picked', String(p.picked))
+    const qs = q.toString()
+    return qs ? `${userPickerRoute.href()}?${qs}` : userPickerRoute.href()
+  },
   size: { width: 640, height: 580 },
 })
 // Список блокировок: поддерживает и конкретного пользователя (`{ id }`),

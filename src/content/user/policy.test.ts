@@ -318,5 +318,44 @@ test('блокировки (этап 9): модель держит круг, н�
     const cleaner = owner(crypto.randomUUID(), ['block.readDeleted', 'block.edit'])
     await blocks.delete(cleaner, row.id, { hard: true })
     assert.equal((await blocks.select(cleaner, { includeDeleted: true })).length, 0)
+
+    // Фильтры и сортировка по `scope`, `until` и `deleted_at` (`gte` epoch) для пагинированного списка:
+    const b1 = await blocks.insert(moderator, {
+      auth_id: target.id,
+      scope: 'profile.delete',
+      reason: 'защита профиля',
+      until: new Date(Date.now() + 120_000).toISOString(),
+      by: moderator.principal.id,
+    })
+    const b2 = await blocks.insert(moderator, {
+      auth_id: target.id,
+      scope: 'auth',
+      reason: 'полный запрет',
+      by: moderator.principal.id,
+    })
+    const byScope = await blocks.select(moderator, {
+      filter: { field: 'scope', op: 'in', value: ['auth', 'profile.delete'] },
+      order: [['scope', 'asc']],
+    })
+    assert.deepEqual(
+      byScope.map((r) => r.scope),
+      ['auth', 'profile.delete'],
+    )
+    const byUntil = await blocks.select(moderator, {
+      order: [['until', 'asc']],
+    })
+    assert.equal(byUntil.length, 2)
+
+    await blocks.delete(moderator, b1.id)
+    const onlyDeleted = await blocks.select(cleaner, {
+      includeDeleted: true,
+      filter: { field: 'deleted_at', op: 'gte', value: new Date(0).toISOString() },
+    })
+    assert.deepEqual(
+      onlyDeleted.map((r) => r.id),
+      [b1.id],
+    )
+    await blocks.delete(cleaner, b1.id, { hard: true })
+    await blocks.delete(cleaner, b2.id, { hard: true })
   })
 })

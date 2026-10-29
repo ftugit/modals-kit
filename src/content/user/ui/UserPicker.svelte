@@ -29,13 +29,14 @@
   import { getClientStore, getState, hasPaginator, setExtra } from '#lib/paginate/index.js'
   import Acl from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
-  import { SEED_USERS_NAME } from './seed-users/source.js'
+  import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
 
   interface Props {
     mode?: 'single' | 'multiple'
     initialPicked?: readonly string[]
+    initialUsers?: SeedUsersRouteData
     fromHref?: string
     targetParam?: string
     onConfirm?: (ids: string[]) => void
@@ -47,6 +48,7 @@
   let {
     mode = 'multiple',
     initialPicked = [],
+    initialUsers,
     fromHref = '/',
     targetParam = 'picked',
     onConfirm,
@@ -207,6 +209,7 @@
       {#snippet pick()}
         <div class="flex flex-col gap-3">
           <SeedUsersList
+            initial={initialUsers}
             {rowAttrs}
             isSelected={(id) => pickedSet.has(id)}
             onAcl={handleAcl}
@@ -240,6 +243,7 @@
         <div class="flex flex-col gap-3">
           {#if pickedSet.size}
             <SeedUsersList
+              initial={initialUsers}
               {rowAttrs}
               isSelected={(id) => pickedSet.has(id)}
               onAcl={handleAcl}

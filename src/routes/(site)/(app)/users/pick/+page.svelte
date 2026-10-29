@@ -21,6 +21,7 @@
       <UserPicker
         mode={data.mode}
         initialPicked={data.picked}
+        initialUsers={data.initialUsers}
         fromHref={data.fromHref}
         targetParam={data.targetParam}
       />
