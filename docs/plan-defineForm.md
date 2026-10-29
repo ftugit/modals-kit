@@ -45,12 +45,14 @@
 - [ ] Тесты `describe`/`budget` на новые поля
 - Проверка: `vitest run src/lib/form`, `svelte-check --threshold error`
 
-### 2. Клиент читает настройки из описания
-- [ ] `bind`: `checks` — `o.checks ?? desc.checks` (опция остаётся как перекрытие)
-- [ ] `bind`: `budget` — `o.budget ?? desc.limits.budget` (уже есть, строка 550)
+### 2. Клиент читает настройки из описания + расшифровка серверных кодов ошибок в UI
+- [ ] `bind`: `checks` — слияние `{ ...desc.checks, ...o.checks }` (переданные `checks` дополняют/перекрывают базовые из описания)
+- [ ] `bind`: `budget` — `o.budget ?? desc.limits.budget`
+- [ ] `bind` (`applyResult` в `bind.svelte.ts`): прогонять входящие серверные `result.errors` через `normalizeErrors(result.errors, render, desc.policy.limits)` (работает одинаково для JS `fetch`/`wss://` и SSR `continuation` без JS)
+- [ ] Ядро `#lib/form/messages.ts` перевести на компактный базовый английский словарь `en`, а русский словарь системных кодов вынести в UI-слой `src/components/form/messages.ru.ts` (`forms.config.ts`) — закрывает перерасход бюджета `tooling/form-size.test.mjs` и открывает контракт `EN + code → RU UI` для всех новых форм
 - [ ] `bindComponentForm` не требует `checks` на странице
-- [ ] Тесты `bind`/`seed`-связки
-- Проверка: `vitest run src/lib/form src/components/form`
+- [ ] Тесты `bind`/`seed`-связки и расшифровки серверных кодов через UI-словарь
+- Проверка: `vitest run src/lib/form src/components/form`, `node --test tooling/form-size.test.mjs`
 
 ### 3. Одно имя для лимита веса
 - [ ] `Limits.maxBytes` → `Limits.budget` (приём + `DEFAULT_LIMITS`)
