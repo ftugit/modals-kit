@@ -30,7 +30,8 @@
 
 - `timeoutMs`: **сделано, вне этапов** — реализован (`withDeadline` в `server.ts`, `408 request.timeout`, три теста, бюджет raw 380 000 → 385 000).
 - `maxBytes` vs `budget`: свести к одному имени `budget` — согласовано, делать в этапе 3.
-- `execute`: остаётся вне описания. Форма входа — `form.serve({ execute })` или `register(form, { execute })` — **уточнить у владельца** в этапе 5.
+- `checks` при передаче поверх описания: **слияние словарей** (`{ ...desc.checks, ...overrideChecks }`) — базовые проверки живут один раз в `defineForm`, а динамические (например `nicknameForbidden` из настроек на сервере) добавляются/перекрывают точечно без дублирования статических правил (решение владельца 2026-10-29).
+- `execute` и серверная регистрация: оставляем единую точку входа `registerComponentForm({ description, execute, ... })` (и `createFormHandler({ description, execute, ... })` в библиотеке) без лишних обёрток; `checks` и `limits` из серверных и клиентских файлов убираются везде, где достаточно описания `defineForm` (решение 2026-10-29: минимум дублирования и одна точка доступа).
 
 ## Этапы
 
@@ -81,9 +82,11 @@
 
 ## Открытые вопросы к владельцу
 
-1. ~~`timeoutMs` — реализовать или удалить?~~ закрыто: реализован.
-2. Вход `execute`: `form.serve({ execute })` (метод описания) или `register(form, { execute })` (функция регистрации)?
-3. `throttle`/`idempotency` — остаются в server-файле формы (они тянут `#server`) — подтвердить.
+Все вопросы закрыты (2026-10-29):
+1. `timeoutMs` — реализован.
+2. Вход `execute` — остаётся единый `registerComponentForm({ description, execute, ... })` / `createFormHandler({ description, execute, ... })` без дублирования `checks` и `limits`.
+3. `throttle`/`idempotency`/`authorize` — остаются в серверном файле регистрации формы.
+4. Переданные `checks` в `bind` / на сервере сливаются поверх `description.checks` (`{ ...desc.checks, ...override }`).
 
 ## Журнал
 
