@@ -315,7 +315,7 @@ registerComponentForm({
     try {
       await storage.copy({
         path: current.path,
-        from: current.server,
+        ...((current.partsCount ?? 1) > 1 ? {} : { from: current.server }),
         to: toServer,
       })
       const enriched = await enrichDemoRecord(storage, current)
@@ -354,7 +354,7 @@ registerComponentForm({
     try {
       const moved = await storage.move({
         path: current.path,
-        from: current.server,
+        ...((current.partsCount ?? 1) > 1 ? {} : { from: current.server }),
         to: toServer,
       })
       const nextUrl = moved.url ?? `/api/files/${moved.path}?server=${encodeURIComponent(moved.server)}`

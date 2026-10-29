@@ -26,9 +26,9 @@
 5. **`#lib/paginate` (+ `filters`, `search`) — адаптер и роутер** *(ядро и React-хук доказаны в `sim/react-router/src/paginate.ts`)*.
    Ядро, `search/` и `filters/` чистые. Написать реактивную обвязку взамен `src/lib/paginate/svelte/` (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, `usePaginator*`, `paginatorTask`, `useSearchCorrection`) и мост к роутеру взамен `src/lib/paginate/sveltekit/router.ts` поверх `#lib/address` из шага 2.
 
-6. **Серверные ядра и связки без UI** — `#lib/db` (`index.ts`, `schema.ts`, `sync/`, `adapters/*`, `ops.ts`), `#lib/cache`, `#lib/fetch`, `#lib/image` (включая `#lib/image/node.js`), `#lib/task` и переходники `src/hooks/{cache-db.ts,db-form.ts}` переносятся как есть. Заменяются только обвязки под `RequestEvent` SvelteKit:
+6. **Серверные ядра и связки без UI** — `#lib/db` (`index.ts`, `schema.ts`, `sync/`, `adapters/*`, `ops.ts`), `#lib/cache`, `#lib/storage` (`index.ts`, `s3.ts`, `webdav.ts`, `local.ts`, `state.ts`), `#lib/fetch`, `#lib/image` (включая `#lib/image/node.js`), `#lib/task` и переходники `src/hooks/{cache-db.ts,storage-db.ts,db-form.ts,cookie-vault/*}` переносятся как есть. Заменяются только обвязки под `RequestEvent` SvelteKit:
    - `src/lib/db/sveltekit/*` (`dbHandle`, `toKitError`, `parseListInput`, `cursorCodecFromEnv`);
-   - `src/hooks/component-form/{server.server.ts,client.svelte.ts}` — middleware приёма POST встраиваемых форм компонентов по `__form_id` и клиентский хук `bindComponentForm`.
+   - `src/hooks/component-form/{server.server.ts,ws-session.server.ts,client.svelte.ts}` — middleware приёма POST и `wss://`-загрузки встраиваемых форм компонентов по `__form_id` и клиентский хук `bindComponentForm`.
 
 7. **Примитивы UI (`src/components/ui/**`)** — переписать на целевой фреймворк (Ark UI / Zag для React/Solid/Vue + те же CVA/UnoCSS-токены из `unocss.config.ts` и `src/app.css`), в том числе `Attachment` и `FileAttachment`. Сохранить контракт нативных носителей в `<Form>` до гидратации, если требуется работа без JS.
 
