@@ -10,7 +10,7 @@
  *    (`defineEnvVars`), ротация по схеме курсорных `DB_CURSOR_KID`/`…_OLD_KEYS`.
  */
 import type { DataContext, Filter, Order } from '#lib/db/index.js'
-import type { Blocked, ConfigKeyRow, ConfigKeySchema, SessionRecord } from './types.js'
+import type { Blocked, BlockView, ConfigKeyRow, ConfigKeySchema, SessionRecord } from './types.js'
 
 /**
  * Строка аккаунта для списка seed-юзеров — то, что адаптер получил из DB под
@@ -21,7 +21,6 @@ export type SeedAccountRow = {
   id: string
   seed: string | null
   permissions: string[]
-  blocked: Blocked[]
   createdAt: number
   deletedAt: number | null
   /** Никнейм профиля, если адаптер его подтягивал (`withNickname`); `undefined` — не запрашивали. */
@@ -104,8 +103,6 @@ export type AuthRow = {
   id: string
   seed: string | null
   deletedAt: number | null
-  /** Сферы блокировки; `auth` — вход закрыт, остальные — ограничения. */
-  blocked: import('./types.js').Blocked[]
   /** Выданные права (`permissions.ts`): строки каталога, пусто — обычный юзер. */
   permissions: string[]
   /** Соль для хэшей подсетей сессий (на аккаунт). */
@@ -188,11 +185,23 @@ export interface ClockPort {
 export type ConfigPort = UserConfig
 
 /**
- * Конфиг-модель (`user.config.v1`): строки «ключ — значение — юзер».
+ * Конфиг-модель (`user.config`): строки «ключ — значение — юзер».
  * Адаптер исполняет от системы — права по схемам ключей проверяет
  * конфиг-API (`config-api.ts`), не порт. Кэш области — под умолчания:
  * API держит в нём строки умолчаний и сбрасывает записью.
  */
+/**
+ * Блокировки (`user.block`, этап 9): модель исполняет нативно контекстом
+ * актора — порт только адреса и перевод времён. Системный контекст —
+ * внутреннему чтению (`blocksOf` для входа), как у профилей.
+ */
+export interface BlockStorePort {
+  listByTarget(ctx: DataContext, authId: string): Promise<BlockView[]>
+  listByTargets(ctx: DataContext, authIds: readonly string[]): Promise<BlockView[]>
+  insert(ctx: DataContext, row: { authId: string; scope: string; reason: string; until?: number | null; by: string }): Promise<void>
+  update(ctx: DataContext, id: string, patch: { until: number }): Promise<void>
+}
+
 export interface ConfigStorePort {
   /** Строка по паре: `authId = null` — умолчание. */
   row(authId: string | null, key: string): Promise<ConfigKeyRow | undefined>
@@ -219,4 +228,5 @@ export interface AuthPorts {
   clock: ClockPort
   config: ConfigPort
   settings: ConfigStorePort
+  blocks: BlockStorePort
 }

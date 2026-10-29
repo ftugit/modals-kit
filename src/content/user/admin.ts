@@ -13,7 +13,7 @@
  * некому. Снять их с себя можно только чужими руками.
  */
 import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { ADMIN_ROLE, isPermission } from './permissions.js'
+import { ADMIN_ROLE, MODERATOR_ROLE, isPermission } from './permissions.js'
 import type { AuthPorts } from './ports.js'
 
 /** Что вернулось: чьи права и какими они стали. */
@@ -42,7 +42,7 @@ export async function setPermissions(
   if (targetId === g.sub) return fail({ code: 'permissions.self' })
 
   const list = [...new Set((args.permissions ?? []).map((p) => String(p).trim()))].filter(Boolean)
-  const unknown = list.find((p) => p !== ADMIN_ROLE && !isPermission(p))
+  const unknown = list.find((p) => p !== ADMIN_ROLE && p !== MODERATOR_ROLE && !isPermission(p))
   if (unknown !== undefined) return fail({ code: 'permissions.unknown', args: { value: unknown } })
 
   const target = await ports.auths.get(targetId)

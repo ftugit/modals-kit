@@ -83,6 +83,35 @@ export async function subnetHash(salt: string, subnet: string): Promise<string> 
 }
 
 /** Активные сферы блокировки: срок не вышел. Полная блокировка — сфера `auth`. */
+const toBlocked = (r: import('./types.js').BlockView): Blocked => ({
+  scope: r.scope,
+  reason: r.reason,
+  at: r.at,
+  ...(r.until !== null ? { until: r.until } : {}),
+  ...(r.by ? { by: r.by } : {}),
+})
+
+/** Все записи блокировок цели формой `Blocked` (модель `user.block`, этап 9). */
+export async function blocksOf(ports: AuthPorts, targetId: string): Promise<Blocked[]> {
+  const rows = await ports.blocks.listByTarget(SERVER, targetId)
+  return rows.map(toBlocked)
+}
+
+/** Записи нескольких целей одним батчом (список юзеров — без N+1). */
+export async function blocksOfMany(
+  ports: AuthPorts,
+  targetIds: readonly string[],
+): Promise<Map<string, Blocked[]>> {
+  const rows = await ports.blocks.listByTargets(SERVER, targetIds)
+  const out = new Map<string, Blocked[]>()
+  for (const r of rows) {
+    const list = out.get(r.authId) ?? []
+    list.push(toBlocked(r))
+    out.set(r.authId, list)
+  }
+  return out
+}
+
 export function activeBlocks(list: Blocked[] | undefined, now: number): Blocked[] {
   return (list ?? []).filter((b) => b.until === undefined || b.until > now)
 }
@@ -159,8 +188,9 @@ async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): P
   if (!row) row = await ports.auths.create(seed) ?? undefined
   if (!row) return fail({ code: 'auth.deleted' })
 
-  const blocked = activeBlocks(row.blocked, now)
-  if (fullBlock(row.blocked, now)) {
+  const blockedList = await blocksOf(ports, row.id)
+  const blocked = activeBlocks(blockedList, now)
+  if (fullBlock(blockedList, now)) {
     const b = blocked.find((x) => x.scope === 'auth') as Blocked
     return fail({ code: 'auth.blocked', args: { reason: b.reason, until: b.until ?? 0 } })
   }
@@ -298,7 +328,7 @@ export async function guard(
   if (status === 'unknown') return { code: 'auth.session-unknown' }
   const auth = await ports.auths.get(payload.sub)
   if (!auth || auth.seed === null) return { code: 'auth.identity-unknown' }
-  if (fullBlock(auth.blocked, now)) return { code: 'auth.blocked' }
+  if (fullBlock(await blocksOf(ports, auth.id), now)) return { code: 'auth.blocked' }
   if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
   if (status === 'revoked') return { code: 'auth.revoked' }
   if (status === 'expired') return { code: 'auth.expired' }
@@ -360,7 +390,7 @@ export async function renew(
 
   const auth = await ports.auths.get(session.authId)
   if (!auth || auth.seed === null) return fail({ code: 'auth.identity-unknown' })
-  if (fullBlock(auth.blocked, now)) return fail({ code: 'auth.blocked' })
+  if (fullBlock(await blocksOf(ports, auth.id), now)) return fail({ code: 'auth.blocked' })
   if (auth.deletedAt !== null) return fail({ code: 'auth.delete-pending' })
   if (status === 'revoked') return fail({ code: 'auth.revoked' })
   if (status === 'expired') return fail({ code: 'auth.expired' })
@@ -397,7 +427,7 @@ export async function renew(
   return ok({
     access,
     ...(renewal ? { renewal } : {}),
-    restrictions: activeBlocks(auth.blocked, now).filter((b) => b.scope !== 'auth'),
+    restrictions: activeBlocks(await blocksOf(ports, auth.id), now).filter((b) => b.scope !== 'auth'),
   })
 }
 
@@ -455,7 +485,7 @@ export async function logoutAll(
       const record = await ports.sessions.get(t.jti)
       if (record && statusOf(record, now) === 'ok') {
         const auth = await ports.auths.get(record.authId)
-        if (auth && !fullBlock(auth.blocked, now) && auth.deletedAt === null) {
+        if (auth && !fullBlock(await blocksOf(ports, auth.id), now) && auth.deletedAt === null) {
           await ports.sessions.softDeleteAllByAuth(record.authId, now)
           return ok(null)
         }
@@ -534,7 +564,7 @@ export async function requestDelete(
       const record = await ports.sessions.get(t.jti)
       if (record && statusOf(record, now) === 'ok') {
         const auth = await ports.auths.get(record.authId)
-        if (auth && !fullBlock(auth.blocked, now) && auth.deletedAt === null) {
+        if (auth && !fullBlock(await blocksOf(ports, auth.id), now) && auth.deletedAt === null) {
           sub = record.authId
         }
       }

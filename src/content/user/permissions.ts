@@ -83,6 +83,19 @@ export type Permission = keyof typeof PERMISSIONS
 export const ADMIN_ROLE = 'admin'
 
 /** Как показывать саму роль администратора в том же списке. */
+/**
+ * Роль модератора — отдельное имя, как `admin`, а не право каталога:
+ * глаголы каталога — только `read`/`edit`. Даёт круг блокировок
+ * (наложение, снятие, раздел) и ничего сверх вписанного в правила.
+ */
+export const MODERATOR_ROLE = 'moderator'
+
+export const MODERATOR_INFO: PermissionInfo = {
+  title: 'Модератор',
+  description:
+    'Накладывать и снимать блокировки аккаунтов, видеть раздел блокировок. Действует только там, где вписана в правило, — сама по себе ничего не открывает.',
+}
+
 export const ADMIN_INFO: PermissionInfo = {
   title: 'Администратор',
   description:
@@ -115,5 +128,6 @@ export function isPermission(value: string): value is Permission {
 /** Текст для показа: у администратора свой, у права — из каталога. */
 export function describeGrant(value: string): PermissionInfo | undefined {
   if (value === ADMIN_ROLE) return ADMIN_INFO
+  if (value === MODERATOR_ROLE) return MODERATOR_INFO
   return isPermission(value) ? PERMISSIONS[value] : undefined
 }

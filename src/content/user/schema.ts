@@ -9,6 +9,7 @@
  * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
 import { defineResource, f, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
+import { isBlockScope } from './spec-block.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 
 /**
@@ -140,13 +141,6 @@ export const auth: Resource = defineResource({
       db: { default: "'{}'::jsonb[]" },
     }),
     /**
-     * Блокировки — текущее поле, многофункциональное: условные записи
-     * {scope, until?, reason} (тип `Blocked`); бан авторизации — сфера 'auth',
-     * отдельные действия — своими сферами. Пишет блокировщик (роли ещё нет —
-     * запись закрыта), проверяют login и фаервол в api.
-     */
-        blocked: field(s.array(s.json(), { max: 8 }), { read: () => true, create: [], update: [], db: { default: "'{}'::jsonb[]" } }),
-    /**
      * Соль для хэшей подсетей сессий — на аккаунт: между юзерами связать
      * записи нельзя, внутри истории одного — сравнение работает. Ставит
      * сервер при создании, передать нельзя.
@@ -250,7 +244,7 @@ export const session = defineResource({
  * (`db.server.ts`): обычный unique NULL-дыру глобальных строк не закрывает.
  */
 export const config: Resource = defineResource({
-  key: 'user.config.v1',
+  key: 'user.config',
   table: 'public.user_config',
   primaryKey: 'id',
   fields: {
@@ -275,6 +269,65 @@ export const config: Resource = defineResource({
     delete: (ctx) => ctx.principal.roles.includes('server') || ctx.principal.roles.includes('admin'),
   },
   order: [['key', 'asc']],
+})
+
+/** Круг операции блокировки: отдельная роль модератора, правка аккаунта или админ. */
+const BLOCK_ACTORS = ['moderator', 'account.edit', 'admin'] as const
+
+/**
+ * Блокировки аккаунта (этап 9): запись = одна строка истории. Исполнение
+ * нативно моделью контекстом актора — отдельного API и системной роли
+ * у записи нет: круг держат маски и политики, содержательные правила
+ * (не себе, сфера из каталога, срок в будущем) — `checks` слоя.
+ */
+export const block: Resource = defineResource({
+  key: 'user.block',
+  table: 'public.user_block',
+  primaryKey: 'id',
+  fields: {
+    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
+    auth_id: field(s.uuid(), {
+      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      immutable: true, filters: ['eq', 'in'],
+      db: { references: { resource: () => auth, chain: true } },
+    }),
+    scope: field(s.text({ min: 1, max: 40 }), {
+      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      immutable: true, filters: ['eq'],
+    }),
+    reason: field(s.text({ min: 1, max: 200 }), {
+      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      immutable: true, filters: ['eq'],
+    }),
+    // Снятие блокировки — единственная правка истории: until = момент снятия.
+    until: f.timestamp({ read: () => true, create: [...BLOCK_ACTORS], update: [...BLOCK_ACTORS], nullable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
+    // Кто наложил: без FK — история переживает удаление аккаунта наложившего.
+    by: field(s.uuid(), {
+      read: () => true, create: [...BLOCK_ACTORS], required: true,
+      immutable: true, filters: ['eq'],
+    }),
+  },
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  policy: {
+    // Владелец цели и круг операции читают через модель сами (edit в комплекте с чтением).
+    select: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_ACTORS]),
+    insert: policy.roles([...BLOCK_ACTORS]),
+    update: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_ACTORS]),
+    delete: policy.roles(['server', 'admin']),
+  },
+  checks: (event) => {
+    if (event.operation !== 'insert') return
+    const issues = []
+    const v = event.values
+    if (typeof v.auth_id === 'string' && event.ctx.principal.id && v.auth_id === event.ctx.principal.id)
+      issues.push({ field: 'auth_id', code: 'auth.forbidden', message: 'Нельзя заблокировать самого себя' })
+    if (typeof v.scope === 'string' && !isBlockScope(v.scope))
+      issues.push({ field: 'scope', code: 'permissions.unknown', message: 'Неизвестная сфера блокировки' })
+    if (typeof v.by === 'string' && event.ctx.principal.id && v.by !== event.ctx.principal.id)
+      issues.push({ field: 'by', code: 'auth.forbidden', message: 'Блокировку накладывает сам актор' })
+    return issues
+  },
+  order: [['created_at', 'desc']],
 })
 
 /** Поля формы профиля — правила из схемы (валидаторы выведет `formParams`). */

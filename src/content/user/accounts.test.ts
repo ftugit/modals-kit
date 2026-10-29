@@ -9,9 +9,10 @@ import { issueChallenge, login, type UserResult } from './auth.js'
 import { listSeedUsers } from './accounts.js'
 import { deleteProfile, profile } from './profile.js'
 import { generateKeyPair, sign } from './keys.js'
+import { addBlock, liftBlock, listBlocks } from './blocks.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
-import type { ProfileView, SessionRecord } from './types.js'
+import type { ProfileView, SessionRecord, Blocked } from './types.js'
 
 const ok_ = <T>(r: UserResult<T>): T => {
   if (!r.ok) throw new Error(`ожидали ok, получили факт: ${r.fact.code}`)
@@ -25,7 +26,7 @@ const fact_ = <T>(r: UserResult<T>): AuthFact => {
 /** Минимальные порты: вход и auth со списком. Профиль списку не нужен. */
 function makePorts() {
   const store = memoryStore()
-  const auths = new Map<string, AuthRow>()
+  const auths = new Map<string, AuthRow & { blocked: Blocked[] }>()
   const sessions = new Map<string, SessionRecord>()
   const created = new Map<string, number>()
   let lastCtx: unknown = null
@@ -73,7 +74,7 @@ function makePorts() {
       },
       async create(seed: string) {
         if ([...auths.values()].some((r) => r.seed === seed)) return null
-        const row: AuthRow = {
+        const row = {
           id: crypto.randomUUID(),
           seed,
           deletedAt: null,
@@ -119,7 +120,6 @@ function makePorts() {
             id: r.id,
             seed: r.seed,
             permissions: [...r.permissions],
-            blocked: [...r.blocked],
             createdAt: (created.get(r.id) ?? 0) * 1000,
             deletedAt: r.deletedAt,
             // Фейк порта: никнейм приходит только с `withNickname` (как include адаптера).
@@ -141,6 +141,38 @@ function makePorts() {
     seal,
     crypto: { sign: () => '', verify: async () => true },
     cookies: { get: () => undefined, set: () => {}, delete: () => {} },
+    blocks: {
+      async listByTarget(_ctx: unknown, authId: string) {
+        return (auths.get(authId)?.blocked ?? []).map((b, i) => ({
+          id: `blk-${authId}-${i}`,
+          authId,
+          scope: b.scope,
+          reason: b.reason,
+          at: b.at,
+          until: b.until ?? null,
+          by: b.by ?? null,
+        }))
+      },
+      async listByTargets(_ctx: unknown, ids: readonly string[]) {
+        const out: unknown[] = []
+        for (const id of ids) {
+          for (const [i, b] of (auths.get(id)?.blocked ?? []).entries()) {
+            out.push({ id: `blk-${id}-${i}`, authId: id, scope: b.scope, reason: b.reason, at: b.at, until: b.until ?? null, by: b.by ?? null })
+          }
+        }
+        return out as never[]
+      },
+      async insert(_ctx: unknown, row: { authId: string; scope: string; reason: string; until?: number | null; by: string }) {
+        const r = auths.get(row.authId)
+        if (r) r.blocked = [...r.blocked, { scope: row.scope, reason: row.reason, at: Date.now(), ...(row.until != null ? { until: row.until } : {}), by: row.by }]
+      },
+      async update(_ctx: unknown, id: string, patch: { until: number }) {
+        for (const r of auths.values()) {
+          const i = r.blocked.findIndex((b, j) => `blk-${r.id}-${j}` === id)
+          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, until: patch.until } : b))
+        }
+      },
+    },
     clock: { now: () => Date.now() },
     config: (() => {
       const defaults = {
@@ -179,7 +211,7 @@ function makePorts() {
 }
 
 /** Вошёл новым ключом; `permissions` — сразу выданные права. */
-async function joined(ports: AuthPorts, auths: Map<string, AuthRow>, permissions: string[] = []) {
+async function joined(ports: AuthPorts, auths: Map<string, AuthRow & { blocked: Blocked[] }>, permissions: string[] = []) {
   const pair = await generateKeyPair()
   const challenge = await issueChallenge(ports)
   if (!challenge.ok) throw new Error('challenge не выдался')
@@ -447,5 +479,33 @@ describe('удаление профиля и seed по цели (этап 7)', (
     const done = await deleteProfile(ports, self.access, self.id, {})
     expect(done.ok).toBe(true)
     expect(auths.get(self.id)?.deletedAt).toBeNull()
+  })
+})
+
+describe('блокировки (этап 9): домен поверх фейка порта', () => {
+  test('круг накладывает и снимает; вне круга и на себя — отказы; истёкшая неактивна', async () => {
+    const { ports, auths } = makePorts()
+    const moderator = await joined(ports, auths, ['moderator'])
+    const editor = await joined(ports, auths, ['account.edit'])
+    const plain = await joined(ports, auths)
+    const target = await joined(ports, auths)
+
+    expect(fact_(await addBlock(ports, plain.access, { targetId: target.id, scope: 'auth', reason: 'x' })).code).toBe('auth.forbidden')
+    expect(fact_(await addBlock(ports, moderator.access, { targetId: moderator.id, scope: 'auth', reason: 'x' })).code).toBe('auth.forbidden')
+    expect(fact_(await addBlock(ports, moderator.access, { targetId: target.id, scope: 'site.read', reason: 'x' })).code).toBe('permissions.unknown')
+
+    ok_(await addBlock(ports, moderator.access, { targetId: target.id, scope: 'auth', reason: 'спам', forever: true }))
+    ok_(await addBlock(ports, editor.access, { targetId: target.id, scope: 'profile.delete', reason: 'защита', until: Date.now() + 60_000 }))
+
+    const listed = ok_(await listBlocks(ports, moderator.access, target.id))
+    expect(listed.blocks.map((b) => b.scope).sort()).toEqual(['auth', 'profile.delete'])
+    expect(fact_(await listBlocks(ports, plain.access, target.id)).code).toBe('auth.forbidden')
+
+    const authBlock = listed.blocks.find((b) => b.scope === 'auth')!
+    ok_(await liftBlock(ports, editor.access, { targetId: target.id, blockId: authBlock.id }))
+    const after = ok_(await listBlocks(ports, moderator.access, target.id))
+    expect(after.blocks.find((b) => b.id === authBlock.id)?.until).not.toBeNull()
+    // уже снятая повторно не снимается
+    expect(fact_(await liftBlock(ports, editor.access, { targetId: target.id, blockId: authBlock.id })).code).toBe('auth.forbidden')
   })
 })

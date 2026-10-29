@@ -71,3 +71,34 @@ export function longestFullBlock(list: readonly Blocked[] | undefined, now: numb
   }
   return best
 }
+
+/** Тексты раздела блокировок (этап 9) — единая точка, по образцу остальных спек. */
+export const specBlocks = {
+  title: 'Блокировки',
+  addTitle: 'Наложить блокировку',
+  scopeLabel: 'Что закрываем',
+  reasonLabel: 'Причина',
+  reasonHelp: 'Обязательно: причина видна владельцу и кругу управления.',
+  reasonRequired: 'Укажите причину',
+  foreverLabel: 'Навсегда',
+  untilLabel: 'Действует до',
+  durationLabel: 'Или на срок',
+  durationUnits: [
+    { value: 'minutes', label: 'минут' },
+    { value: 'hours', label: 'часов' },
+    { value: 'days', label: 'дней' },
+    { value: 'weeks', label: 'недель' },
+    { value: 'months', label: 'месяцев' },
+    { value: 'years', label: 'лет' },
+  ],
+  addButton: 'Заблокировать',
+  liftButton: 'Снять',
+  activeTitle: 'Активные',
+  historyTitle: 'История',
+  empty: 'Блокировок нет',
+  noActive: 'Активных блокировок нет',
+  untilText: (until: number) => `до ${new Date(until).toLocaleString('ru-RU')}`,
+  foreverText: 'бессрочно',
+  byText: (by: string) => `наложил ${by}`,
+  expiredText: 'истекла',
+} as const

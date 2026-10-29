@@ -79,7 +79,7 @@ export type SessionRecord = {
 }
 
 /**
- * Схема прав ключа конфига (модель `user.config.v1`): роли каталога
+ * Схема прав ключа конфига (модель `user.config`): роли каталога
  * `permissions.ts` и специальное `owner` (владелец строки юзера). У строки
  * умолчания схема полная; у строки юзера осмысленны только `editUser` /
  * `deleteUser` (упрощённая схема редактирования именно этой строки).
@@ -105,7 +105,7 @@ export interface ConfigKeyRow {
   schema: ConfigKeySchema | null
 }
 
-/** Сфера блокировки аккаунта (элемент `blocked` таблицы auth). */
+/** Сфера блокировки аккаунта (запись модели `user.block`, этап 9). */
 export type Blocked = {  /** Что закрыто: сферы каталога `spec-block.ts`; `auth` — вход целиком. */
   scope: string
   reason: string
@@ -114,6 +114,17 @@ export type Blocked = {  /** Что закрыто: сферы каталога 
   until?: number
   /** id аккаунта, наложившего блокировку (история и аудит). */
   by?: string
+}
+
+/** Строка блокировки глазами домена и показа (этап 9): времена — миллисекунды. */
+export interface BlockView {
+  readonly id: string
+  readonly authId: string
+  readonly scope: string
+  readonly reason: string
+  readonly at: number
+  readonly until: number | null
+  readonly by: string | null
 }
 
 /** Доверенный principal — из содержимого временного токена без похода в БД. */
@@ -192,6 +203,14 @@ export type ProfileRead = {
    * (владелец, `admin`, `account.read`); остальные видят сам факт.
    */
   fullBlock: { reason: string | null; until: number | null } | null
+  /**
+   * Раздел блокировок (этап 9): записи цели — только кругу операции
+   * (moderator/`account.edit`/`admin`); остальным — пустой список
+   * и `canBlock: false`, компонента раздела в разметке нет.
+   */
+  blocks: BlockView[]
+  /** Вызывающий вправе накладывать и снимать блокировки. */
+  canBlock: boolean
 }
 
 /**
@@ -222,6 +241,9 @@ export type ProfileRouteData = {
   /** Возможности удаления по цели (права + запреты этапа 6): гейты удаления. */
   canDeleteProfile: boolean
   canDeleteSeed: boolean
+  /** Раздел блокировок (этап 9): записи цели и право операции для компонента. */
+  blocks: BlockView[]
+  canBlock: boolean
   /** Активная полная блокировка цели для показа (причина — за правами). */
   fullBlock: { reason: string | null; until: number | null } | null
   fact: AuthErrorCode | null

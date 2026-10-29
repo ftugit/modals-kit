@@ -19,7 +19,7 @@
  * «только действующие».
  */
 import type { Filter, Order } from '#lib/db/index.js'
-import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { blocksOfMany, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import { profile as profileResource } from './schema.js'
 import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts, SeedAccountRow } from './ports.js'
@@ -28,11 +28,11 @@ import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from
 /** Потолок порции: экран догружает понемногу, выгрузка таблицы целиком не нужна. */
 export const SEED_USERS_MAX_PAGE_SIZE = 100
 
-const viewOf = (r: SeedAccountRow): SeedUserView => ({
+const viewOf = (r: SeedAccountRow, blocked: readonly import('./types.js').Blocked[]): SeedUserView => ({
   id: r.id,
   seed: r.seed,
   permissions: [...r.permissions],
-  blocked: r.blocked,
+  blocked: [...blocked],
   createdAt: r.createdAt,
   deletedAt: r.deletedAt,
 })
@@ -200,8 +200,14 @@ export async function listSeedUsers(
       ...(withNickname ? { withNickname: true } : {}),
     },
   )
+  // Блокировки страницы — одним батчом модели (этап 9), не полем строки auth.
+  const blocksMap = await blocksOfMany(ports, rows.map((r) => r.id))
   return ok({
-    items: rows.map((r) => (withNickname ? { ...viewOf(r), nickname: r.nickname ?? null } : viewOf(r))),
+    items: rows.map((r) =>
+      withNickname
+        ? { ...viewOf(r, blocksMap.get(r.id) ?? []), nickname: r.nickname ?? null }
+        : viewOf(r, blocksMap.get(r.id) ?? []),
+    ),
     total,
     page,
     pageSize,

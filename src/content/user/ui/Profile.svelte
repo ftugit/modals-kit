@@ -21,6 +21,7 @@
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
+  import ProfileBlocks from './profile-blocks/ProfileBlocks.svelte'
   import ProfilePrivacy from './profile-privacy/ProfilePrivacy.svelte'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
@@ -85,6 +86,8 @@
         canDeleteProfile: d.canDeleteProfile,
         canDeleteSeed: d.canDeleteSeed,
         fullBlock: d.fullBlock,
+        blocks: d.blocks,
+        canBlock: d.canBlock,
       }
     })()
   })
@@ -131,6 +134,11 @@
     <!-- Приватность — только в своём профиле и только владельцу: на чужом
          (даже с правом правки) компонента нет. -->
     <ProfilePrivacy level={data.visibility} class="mt-4" />
+  {/if}
+  {#if data.canBlock}
+    <!-- Раздел блокировок — только кругу операции; вне круга компонента
+         нет в разметке, записи не приходят данными (пустой список). -->
+    <ProfileBlocks subject={uid} blocks={data.blocks} canBlock={data.canBlock} class="mt-4" />
   {/if}
 {:else if data?.notCreated}
   <section

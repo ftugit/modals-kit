@@ -44,10 +44,14 @@ import {
   setVisibility as coreSetVisibility,
   updateProfile as coreUpdateProfile,
 } from './profile.js'
-import { auth as authRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
+import {
+  addBlock as coreAddBlock,
+  liftBlock as coreLiftBlock,
+} from './blocks.js'
+import { auth as authRes, block as blockRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -122,7 +126,6 @@ function authRowOf(r: Record<string, unknown>): AuthRow {
     id: String(r.id),
     seed: (r.seed as string | null) ?? null,
     deletedAt: ms(r.deleted_at),
-    blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
     permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
     subnetSalt: String(r.subnet_salt ?? ''),
   }
@@ -288,8 +291,7 @@ function authsAdapter() {
         id: String(r.id),
         seed: (r.seed as string | null) ?? null,
         permissions: (Array.isArray(r.permissions) ? r.permissions : []).map(String),
-        blocked: (Array.isArray(r.blocked) ? r.blocked : []) as Blocked[],
-        createdAt: ms(r.created_at) ?? Date.now(),
+            createdAt: ms(r.created_at) ?? Date.now(),
         deletedAt: ms(r.deleted_at),
         ...(withNickname
           ? {
@@ -419,6 +421,49 @@ function configAdapter() {
   }
 }
 
+function blocksAdapter() {
+  const api = () => db.resource(blockRes)
+  const rowOf = (r: Record<string, unknown>): BlockView => ({
+    id: String(r.id),
+    authId: String(r.auth_id),
+    scope: String(r.scope),
+    reason: String(r.reason),
+    at: ms(r.created_at) ?? 0,
+    until: ms(r.until),
+    by: (r.by as string | null) ?? null,
+  })
+  return {
+    async listByTarget(ctx: DataContext, authId: string) {
+      const rows = (await api().select(ctx, {
+        filter: { field: 'auth_id', op: 'eq', value: authId },
+      })) as unknown as Record<string, unknown>[]
+      return rows.map(rowOf)
+    },
+    async listByTargets(ctx: DataContext, authIds: readonly string[]) {
+      if (!authIds.length) return []
+      const rows = (await api().select(ctx, {
+        filter: { field: 'auth_id', op: 'in', value: [...authIds] },
+      })) as unknown as Record<string, unknown>[]
+      return rows.map(rowOf)
+    },
+    async insert(
+      ctx: DataContext,
+      row: { authId: string; scope: string; reason: string; until?: number | null; by: string },
+    ) {
+      await api().insert(ctx, {
+        auth_id: row.authId,
+        scope: row.scope,
+        reason: row.reason,
+        ...(row.until != null ? { until: iso(row.until) } : {}),
+        by: row.by,
+      })
+    },
+    async update(ctx: DataContext, id: string, patch: { until: number }) {
+      await api().update(ctx, id, { until: iso(patch.until) })
+    },
+  }
+}
+
 /** Порты из хвостов проекта; куки передаёт тот, кто знает запрос (фасад). */
 export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
   const keys = sealKeysFromEnv()
@@ -458,6 +503,7 @@ export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
     clock: { now: () => Date.now() },
     config: createUserConfig(localStore.scope('user-config')),
     settings: configAdapter(),
+    blocks: blocksAdapter(),
   }
 }
 
@@ -522,6 +568,10 @@ export function auth(event: AuthEvent): {
   publicProfile(subject: string): Promise<UserResult<PublicProfileView>>
   /** Сменить видимость своего профиля (конфиг-API; значение = умолчание строку не плодит). */
   setProfileVisibility(level: string): Promise<UserResult<{ stored: boolean }>>
+  /** Наложить блокировку на цель (круг moderator/account.edit/admin держит модель). */
+  addBlock(args: { targetId: string; scope: string; reason: string; forever?: boolean; until?: number | null }): Promise<UserResult<{ id: string }>>
+  /** Снять активную блокировку цели правкой её срока. */
+  liftBlock(args: { targetId: string; blockId: string }): Promise<UserResult<{ id: string }>>
   /** Сохранить свой профиль; `subject` — чужой (нужно право `profile.edit`/`admin`). */
   updateProfile(
     args: { nickname?: string; avatarUrl?: string | null },
@@ -621,6 +671,8 @@ export function auth(event: AuthEvent): {
     publicProfile: async (subject: string) => corePublicProfile(ports, access(), subject),
     setProfileVisibility: async (level: string) =>
       coreSetVisibility(ports, await freshAccessOrCurrent(), level),
+    addBlock: async (args) => coreAddBlock(ports, await freshAccessOrCurrent(), args),
+    liftBlock: async (args) => coreLiftBlock(ports, await freshAccessOrCurrent(), args),
     updateProfile: async (args, subject?: string) =>
       coreUpdateProfile(ports, await freshAccessOrCurrent(), args, subject),
     deleteProfile: async (args, subject?: string) => {

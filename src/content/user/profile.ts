@@ -3,7 +3,8 @@
  * аватара). Отдельно от `auth.ts` — у auth профильных функций нет (чек-лист
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
-import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { canBlock } from './blocks.js'
 import { getEffective, setUserKey } from './config-api.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 import { ADMIN_ROLE } from './permissions.js'
@@ -51,8 +52,7 @@ export async function profile(
   // Возможности удаления по цели (этап 6): право И нет активного запрета
   // из каталога сфер на самой цели — запрет сильнее владельца и админа.
   const now = ports.clock.now()
-  const authRow = await ports.auths.get(target)
-  const blocked = authRow?.blocked ?? []
+  const blocked = await blocksOf(ports, target)
   const canDeleteProfile =
     (target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')) &&
     !activeBlock(blocked, 'profile.delete', now)
@@ -70,11 +70,17 @@ export async function profile(
         until: canKnowReason ? (full.until ?? null) : null,
       }
     : null
+  // Раздел блокировок: записи — кругу операции; право показа считает
+  // домен, компонент только рисует. Вне круга — пустой список.
+  const canBlockViewer = canBlock(g.perms)
+  const blockViews = canBlockViewer ? await ports.blocks.listByTarget(principalOfRow({ id: g.sub, permissions: g.perms }), target) : []
   const caps = {
     canEdit,
     canDeleteProfile,
     canDeleteSeed,
     fullBlock,
+    blocks: blockViews,
+    canBlock: canBlockViewer,
     isOwn: target === g.sub,
     visibility: await visibilityOf(ports, target),
   }
@@ -150,7 +156,7 @@ export async function deleteProfile(
   const now = ports.clock.now()
   const authRow = await ports.auths.get(target)
   if (!authRow) return fail({ code: 'auth.forbidden' })
-  const blocked = authRow.blocked ?? []
+  const blocked = await blocksOf(ports, target)
   const isAdmin = g.perms.includes(ADMIN_ROLE)
   const canProfile = target === g.sub || isAdmin || g.perms.includes('profile.edit')
   if (!canProfile) return fail({ code: 'auth.forbidden' })

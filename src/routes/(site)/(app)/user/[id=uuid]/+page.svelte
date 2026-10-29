@@ -31,6 +31,8 @@
         canDeleteProfile: data.canDeleteProfile,
         canDeleteSeed: data.canDeleteSeed,
         fullBlock: data.fullBlock,
+        blocks: data.blocks,
+        canBlock: data.canBlock,
       }}
     />
   {/if}

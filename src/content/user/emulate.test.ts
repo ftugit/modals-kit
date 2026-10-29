@@ -25,12 +25,12 @@ import type { Blocked, ProfileView, SessionRecord } from './types.js'
 function makePorts(seedSecret?: string): {
   ports: AuthPorts
   secret: string
-  auths: Map<string, AuthRow>
+  auths: Map<string, AuthRow & { blocked: Blocked[] }>
   sessions: Map<string, SessionRecord>
   profiles: Map<string, ProfileView>
 } {
   const store = memoryStore()
-  const auths = new Map<string, AuthRow>()
+  const auths = new Map<string, AuthRow & { blocked: Blocked[] }>()
   const sessions = new Map<string, SessionRecord>()
   const profiles = new Map<string, ProfileView>()
   const secret = seedSecret ?? 's'.repeat(32)
@@ -68,7 +68,7 @@ function makePorts(seedSecret?: string): {
       },
       async create(seed) {
         if ([...auths.values()].some((r) => r.seed === seed)) return null
-        const row: AuthRow = {
+        const row = {
           id: crypto.randomUUID(),
           seed,
           deletedAt: null,
@@ -155,6 +155,38 @@ function makePorts(seedSecret?: string): {
       },
     },
     cookies: { get: () => undefined, set: () => {}, delete: () => {} },
+    blocks: {
+      async listByTarget(_ctx: unknown, authId: string) {
+        return (auths.get(authId)?.blocked ?? []).map((b, i) => ({
+          id: `blk-${authId}-${i}`,
+          authId,
+          scope: b.scope,
+          reason: b.reason,
+          at: b.at,
+          until: b.until ?? null,
+          by: b.by ?? null,
+        }))
+      },
+      async listByTargets(_ctx: unknown, ids: readonly string[]) {
+        const out: unknown[] = []
+        for (const id of ids) {
+          for (const [i, b] of (auths.get(id)?.blocked ?? []).entries()) {
+            out.push({ id: `blk-${id}-${i}`, authId: id, scope: b.scope, reason: b.reason, at: b.at, until: b.until ?? null, by: b.by ?? null })
+          }
+        }
+        return out as never[]
+      },
+      async insert(_ctx: unknown, row: { authId: string; scope: string; reason: string; until?: number | null; by: string }) {
+        const r = auths.get(row.authId)
+        if (r) r.blocked = [...r.blocked, { scope: row.scope, reason: row.reason, at: Date.now(), ...(row.until != null ? { until: row.until } : {}), by: row.by }]
+      },
+      async update(_ctx: unknown, id: string, patch: { until: number }) {
+        for (const r of auths.values()) {
+          const i = r.blocked.findIndex((b, j) => `blk-${r.id}-${j}` === id)
+          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, until: patch.until } : b))
+        }
+      },
+    },
     clock: { now: () => Date.now() },
     config: (() => {
       // минимальный UserConfig поверх памяти: те же ключи, значения по умолчанию
@@ -457,6 +489,8 @@ describe('профиль', () => {
       canDeleteProfile: true,
       canDeleteSeed: true,
       fullBlock: null,
+      blocks: [],
+      canBlock: false,
     })
     // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
     expect(ok_(await profile(ports, outB.access, subA))).toEqual({
@@ -468,9 +502,11 @@ describe('профиль', () => {
       canDeleteProfile: false,
       canDeleteSeed: false,
       fullBlock: null,
+      blocks: [],
+      canBlock: false,
     })
     // держатель profile.read различает: профиля у A нет
-    const rowB = auths.get(subB) as AuthRow
+    const rowB = auths.get(subB)!
     auths.set(subB, { ...rowB, permissions: ['profile.read'] })
     expect(ok_(await profile(ports, outB.access, subA))).toEqual({
       profile: null,
@@ -481,6 +517,8 @@ describe('профиль', () => {
       canDeleteProfile: false,
       canDeleteSeed: false,
       fullBlock: null,
+      blocks: [],
+      canBlock: false,
     })
     // созданный профиль читается владельцем как найденный
     ok_(await updateProfile(ports, outA.access, { nickname: 'Вася' }))
@@ -640,7 +678,7 @@ describe('удаление аккаунта', () => {
 })
 
 /** Правка строки auth напрямую (адаптер на памяти — для подготовки сценариев). */
-function authsPatch(map: Map<string, AuthRow>, id: string, patch: Partial<AuthRow>): void {
+function authsPatch(map: Map<string, AuthRow & { blocked: Blocked[] }>, id: string, patch: Partial<AuthRow & { blocked: Blocked[] }>): void {
   const row = map.get(id) as AuthRow
-  map.set(id, { ...row, ...patch })
+  map.set(id, { ...row, ...patch } as AuthRow & { blocked: Blocked[] })
 }

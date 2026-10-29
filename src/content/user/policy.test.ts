@@ -14,7 +14,7 @@ import { afterAll, it } from 'vitest'
 import { conservativeLimits, createDb, type DbFailure } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
-import { auth, config, profile } from './schema.js'
+import { auth, block as blockRes, config, profile } from './schema.js'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
 
@@ -43,8 +43,8 @@ async function withDb(fn: (db: ReturnType<typeof createDb>) => Promise<void>) {
   shared ??= new PGlite()
   await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
   const driver = pgliteAdapter(shared)
-  assert.equal((await defineSchema({ resources: [auth, profile, config] }).sync(driver)).status, 'ok')
-  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile, config] }))
+  assert.equal((await defineSchema({ resources: [auth, profile, config, blockRes] }).sync(driver)).status, 'ok')
+  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile, config, blockRes] }))
 }
 
 test('создание профиля — только сервер; чтение и правка — владелец', async () => {
@@ -237,5 +237,56 @@ test('поиск списка (FIX-1/FIX-2): фрагменты seed и id на�
       filter: { field: 'id', op: 'in', value: [a.id] },
     })
     assert.equal(byIds.length, 1)
+  })
+})
+
+test('блокировки (этап 9): модель держит круг, не-себе и каталог; чтение — владелец и круг', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const blocks = db.resource(blockRes)
+    const me = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    const target = (await auths.insert(SERVER, { seed: SEED_B })) as unknown as { id: string }
+    const moderator = owner(crypto.randomUUID(), ['moderator'])
+    const plain = other()
+
+    // круг накладывает
+    const row = (await blocks.insert(moderator, {
+      auth_id: target.id,
+      scope: 'auth',
+      reason: 'спам',
+      by: moderator.principal.id,
+    })) as unknown as { id: string }
+    assert.ok(row.id)
+
+    // вне круга — нельзя ни наложить, ни снять
+    await assert.rejects(
+      () => blocks.insert(plain, { auth_id: target.id, scope: 'auth', reason: 'x', by: plain.principal.id }),
+      forbidden,
+    )
+    await assert.rejects(() => blocks.update(plain, row.id, { until: new Date().toISOString() }), forbidden)
+
+    // не себе — checks слоя, даже с правом
+    await assert.rejects(
+      () =>
+        blocks.insert(moderator, {
+          auth_id: moderator.principal.id,
+          scope: 'auth',
+          reason: 'x',
+          by: moderator.principal.id,
+        }),
+      (e: DbFailure) => e.kind === 'validation',
+    )
+    // сфера не из каталога — checks слоя
+    await assert.rejects(
+      () => blocks.insert(moderator, { auth_id: target.id, scope: 'site.read', reason: 'x', by: moderator.principal.id }),
+      (e: DbFailure) => e.kind === 'validation',
+    )
+
+    // читают: владелец цели и круг; чужой без прав — нет
+    assert.equal((await blocks.select(owner(target.id))).length, 1)
+    assert.equal((await blocks.select(moderator)).length, 1)
+    assert.equal((await blocks.select(plain)).length, 0)
+    // снятие кругом проходит (update только until)
+    await blocks.update(moderator, row.id, { until: new Date(Date.now() + 60_000).toISOString() })
   })
 })

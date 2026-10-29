@@ -39,7 +39,7 @@ import {
 // и `.env`. Пустое значение там уже сведено к `undefined`, числа уже проверены.
 
 // Модель записей — общий модуль (`src/content/posts.ts`): по ней строится и форма.
-import { auth, config as userConfig, profile, session } from '#content/user/schema.js'
+import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
 import { cacheKv } from '#hooks/cache-db.js'
 import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
 
@@ -52,7 +52,7 @@ export { posts, auth, profile, session, cacheKv }
 const schemaSpec = {
   // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
   // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.ts)
-  resources: [posts, auth, session, profile, userConfig, cacheKv],
+  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv],
   sql: [
     // Конфиг-модель (этап 10): уникальность пары (auth_id, key) обычный
     // unique не даёт — NULL глобальных строк в Postgres не равен NULL,
@@ -86,6 +86,25 @@ const schemaSpec = {
              SELECT NULL, 'session.ipLock', 'false'::jsonb,
                     '{"editDefault":["admin"],"assign":["admin"],"editUser":["admin"],"deleteUser":["admin"]}'::jsonb
              WHERE NOT EXISTS (SELECT 1 FROM public.user_config WHERE auth_id IS NULL AND key = 'session.ipLock')`,
+    },
+    // Блокировки (этап 9): индекс чтения цели и перенос истории из
+    // json-массива user_auth.blocked в строки модели. Backfill — один
+    // проход при первом sync с шагом; поле blocked после переноса
+    // снимается из модели отдельным решением sync.
+    {
+      id: 'user-block-ix-target',
+      text: 'CREATE INDEX IF NOT EXISTS user_block_ix_target ON public.user_block (auth_id, created_at DESC)',
+    },
+    {
+      id: 'user-block-backfill',
+      text: `INSERT INTO public.user_block (auth_id, scope, reason, until, "by", created_at, updated_at)
+             SELECT a.id, e->>'scope', e->>'reason',
+                    CASE WHEN e ? 'until' THEN to_timestamp((e->>'until')::double precision / 1000.0) END,
+                    CASE WHEN e->>'by' ~ '^[0-9a-fA-F-]{36}$' THEN (e->>'by')::uuid END,
+                    to_timestamp((e->>'at')::double precision / 1000.0),
+                    to_timestamp((e->>'at')::double precision / 1000.0)
+             FROM public.user_auth a, unnest(a.blocked) AS e
+             WHERE cardinality(a.blocked) > 0`,
     },
     // created_at задан явно: DEFAULT clock_timestamp() в одном INSERT даёт строкам одно и то же
     // время (видно в демо), и сортировка по нему становится произвольной. Шаг — минута,

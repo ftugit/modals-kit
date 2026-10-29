@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from 'vitest'
-import { activeBlock, longestFullBlock } from './spec-block.js'
+import { activeBlock, longestFullBlock, specBlocks } from './spec-block.js'
 import type { Blocked } from './types.js'
 
 const b = (scope: string, until?: number, reason = 'r'): Blocked => ({ scope, reason, at: 0, until })
@@ -21,5 +21,22 @@ describe('spec-block: сферы, сроки, самая длинная полн
     expect(longestFullBlock([...list, b('auth', undefined, 'вечная')], now)?.reason).toBe('вечная')
     // Истёкшие в выборку не попадают, сфера чужая — тоже.
     expect(longestFullBlock([b('auth', 10), b('profile.delete')], now)).toBeUndefined()
+  })
+})
+
+describe('specBlocks: тексты раздела', () => {
+  test('все ключи на месте и строки не пусты', () => {
+    expect(Object.keys(specBlocks).sort()).toEqual([
+      'activeTitle', 'addButton', 'addTitle', 'byText', 'durationLabel', 'durationUnits',
+      'empty', 'expiredText', 'foreverLabel', 'foreverText', 'historyTitle', 'liftButton',
+      'noActive', 'reasonHelp', 'reasonLabel', 'reasonRequired', 'scopeLabel', 'title',
+      'untilLabel', 'untilText',
+    ])
+    for (const value of Object.values(specBlocks)) {
+      if (typeof value === 'string') expect(value.trim().length).toBeGreaterThan(0)
+    }
+    expect(specBlocks.durationUnits.map((u) => u.value)).toEqual([
+      'minutes', 'hours', 'days', 'weeks', 'months', 'years',
+    ])
   })
 })

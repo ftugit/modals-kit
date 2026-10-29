@@ -51,7 +51,7 @@ describe('ProfileCard', () => {
 describe('Profile: заглушка «не создан» рисует сам компонент', () => {
   test('notCreated — тексты спеки, а не экран отказа', () => {
     const { body } = render(Profile, {
-      props: { uid: base.authId, initial: { profile: null, isOwn: false, visibility: 'nobody', notCreated: true, canEdit: false, canDeleteProfile: false, canDeleteSeed: false, fullBlock: null } },
+      props: { uid: base.authId, initial: { profile: null, isOwn: false, visibility: 'nobody', notCreated: true, canEdit: false, canDeleteProfile: false, canDeleteSeed: false, fullBlock: null, blocks: [], canBlock: false } },
     })
     expect(body).toContain('data-testid="profile-not-created"')
     expect(body).toContain(specProfile.notCreatedTitle)
@@ -63,7 +63,7 @@ describe('Profile: заглушка «не создан» рисует сам к
 
   test('canEdit — кнопка справа сверху ведёт на роут редактирования и у заглушки', () => {
     const { body } = render(Profile, {
-      props: { uid: base.authId, initial: { profile: null, isOwn: true, visibility: 'nobody', notCreated: true, canEdit: true, canDeleteProfile: false, canDeleteSeed: false, fullBlock: null } },
+      props: { uid: base.authId, initial: { profile: null, isOwn: true, visibility: 'nobody', notCreated: true, canEdit: true, canDeleteProfile: false, canDeleteSeed: false, fullBlock: null, blocks: [], canBlock: false } },
     })
     expect(body).toContain('Редактировать')
     expect(body).toContain(`href="/user/${base.authId}/edit"`)
