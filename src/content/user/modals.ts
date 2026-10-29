@@ -14,6 +14,7 @@ import {
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
+  userPickerRoute,
   userProfileDeleteRoute,
   userProfileEditRoute,
   userProfileRoute,
@@ -78,3 +79,13 @@ registerModal({
   route: userListFiltersRoute.href,
   size: { width: 420, height: 560 },
 })
+// Выбор одного или нескольких пользователей поверх `SeedUsersList`
+// (используется фильтрами блокировок и глобальным созданием блокировки;
+// без JS — страница `/users/pick` с возвратом по `from`).
+registerModal({
+  name: 'user.picker',
+  component: lazy(() => import('./ui/UserPickerModal.svelte')),
+  route: userPickerRoute.href,
+  size: { width: 640, height: 580 },
+})
+

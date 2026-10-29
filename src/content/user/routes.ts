@@ -118,3 +118,10 @@ export const userListRoute = kitRoute('/users')
  * списку (адрес носителя несёт параметр `from`, список может жить где угодно).
  */
 export const userListFiltersRoute = kitRoute('/users/filters')
+
+/**
+ * Выбор пользователей поверх списка seed-юзеров (`single` / `multiple`):
+ * страница-fallback модалки `user.picker` для no-JS и прямых переходов.
+ */
+export const userPickerRoute = kitRoute('/users/pick')
+
