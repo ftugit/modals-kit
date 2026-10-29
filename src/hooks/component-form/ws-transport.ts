@@ -59,7 +59,9 @@ export interface WsFormTransportOptions {
 
 const WS_OPEN = 1
 const WS_CONNECTING = 0
-const SPEED_WINDOW_MS = 3_500
+const SPEED_WINDOW_MS = 5_000
+const PROGRESS_TICK_MS = 400
+const EMA_TAU_SECONDS = 1.2
 
 interface SpeedSample {
   readonly ts: number
@@ -242,12 +244,14 @@ export function wsFormTransport(
 
     let sessionClockOriginMs = Date.now()
     let smoothedBps = 0
+    let lastSpeedSampleTs = 0
     const speedSamples: SpeedSample[] = []
 
     const resetProgressEntries = (chunkSize: number): void => {
       activeChunkBytes = chunkSize
       speedSamples.length = 0
       smoothedBps = 0
+      lastSpeedSampleTs = 0
       for (const desc of descriptors) {
         const totalSegments = desc.size === 0 ? 0 : Math.ceil(desc.size / chunkSize)
         progressById.set(desc.id, {
@@ -329,26 +333,38 @@ export function wsFormTransport(
       const buffered = ws && ws.readyState === WS_OPEN ? Math.max(0, ws.bufferedAmount) : 0
       const flushedBytes = Math.max(0, totalQueuedBytes - buffered)
 
+      const prevSampleTs = lastSpeedSampleTs
+      lastSpeedSampleTs = now
       speedSamples.push({ ts: now, flushedBytes })
-      while (speedSamples.length > 2 && now - speedSamples[0]!.ts > SPEED_WINDOW_MS) {
+      while (speedSamples.length > 2 && now - speedSamples[1]!.ts > SPEED_WINDOW_MS) {
         speedSamples.shift()
       }
       if (speedSamples.length >= 2) {
         const first = speedSamples[0]!
         const dtSec = (now - first.ts) / 1000
-        const dBytes = flushedBytes - first.flushedBytes
-        if (dtSec >= 0.01 && dBytes > 0) {
-          const instantBps = dBytes / dtSec
-          smoothedBps = smoothedBps > 0 ? smoothedBps * 0.65 + instantBps * 0.35 : instantBps
+        const dBytes = Math.max(0, flushedBytes - first.flushedBytes)
+        if ((dBytes > 0 && dtSec >= 0.002) || dtSec >= 0.25) {
+          const effectiveDtSec = Math.max(dtSec, 0.025)
+          const windowBps = dBytes / effectiveDtSec
+          const dtStepSec = prevSampleTs > 0 ? Math.max(0.01, (now - prevSampleTs) / 1000) : 0
+          const alpha =
+            smoothedBps > 0 && dtStepSec > 0
+              ? Math.min(1, 1 - Math.exp(-dtStepSec / EMA_TAU_SECONDS))
+              : 0.35
+          smoothedBps =
+            smoothedBps > 0 ? smoothedBps * (1 - alpha) + windowBps * alpha : windowBps
         }
       }
       return Math.round(smoothedBps)
     }
 
+    let activePhase: FormUploadProgress['phase'] = 'validating'
+
     const emitProgress = (
       phase: FormUploadProgress['phase'],
       ws: ClientWebSocketLike | null,
     ): void => {
+      activePhase = phase
       const bps = phase === 'uploading' || phase === 'processing' ? updateSpeedSample(ws) : Math.round(smoothedBps)
       const elapsedMs = Math.max(0, Date.now() - sessionClockOriginMs)
       req.report?.(
@@ -380,9 +396,18 @@ export function wsFormTransport(
       let reconnectAttempts = 0
       let sendGate = Promise.resolve()
 
+      const progressTimer = setInterval(() => {
+        if (settled || !currentWs) return
+        if (activePhase === 'uploading' || activePhase === 'processing') {
+          emitProgress(activePhase, currentWs)
+        }
+      }, PROGRESS_TICK_MS)
+      ;(progressTimer as unknown as { unref?: () => void }).unref?.()
+
       const finish = (out: Awaited<ReturnType<Transport>>): void => {
         if (settled) return
         settled = true
+        clearInterval(progressTimer)
         req.signal?.removeEventListener('abort', onAbort)
         resolve(out)
       }

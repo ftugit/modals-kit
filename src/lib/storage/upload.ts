@@ -141,41 +141,53 @@ function enforceStreamMaxBytes(
   fileName: string,
 ): ReadableStream<Uint8Array> {
   let seen = 0
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
   return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const reader = source.getReader()
-      ;(async () => {
-        try {
-          for (;;) {
-            const { done, value } = await reader.read()
-            if (done) {
-              controller.close()
-              break
-            }
-            seen += value.byteLength
-            if (seen > maxFileSize) {
-              await reader.cancel().catch(() => undefined)
-              controller.error(
-                new StorageUploadError(
-                  `[storage] файл «${fileName}» (поле «${fieldName}») превысил лимит maxFileSize (${maxFileSize} Б)`,
-                  {
-                    code: 'MAX_FILE_SIZE_EXCEEDED',
-                    status: 413,
-                    fieldName,
-                    fileName,
-                  },
-                ),
-              )
-              break
-            }
-            controller.enqueue(value)
-          }
-        } catch (err) {
-          controller.error(err)
-        } finally {
+    async pull(controller) {
+      reader ??= source.getReader()
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
           reader.releaseLock()
+          reader = null
+          controller.close()
+          return
         }
-      })()
+        seen += value.byteLength
+        if (seen > maxFileSize) {
+          const active = reader
+          reader = null
+          await active.cancel().catch(() => undefined)
+          active.releaseLock()
+          controller.error(
+            new StorageUploadError(
+              `[storage] файл «${fileName}» (поле «${fieldName}») превысил лимит maxFileSize (${maxFileSize} Б)`,
+              {
+                code: 'MAX_FILE_SIZE_EXCEEDED',
+                status: 413,
+                fieldName,
+                fileName,
+              },
+            ),
+          )
+          return
+        }
+        controller.enqueue(value)
+      } catch (err) {
+        if (reader) {
+          reader.releaseLock()
+          reader = null
+        }
+        controller.error(err)
+      }
+    },
+    async cancel(reason) {
+      if (reader) {
+        const active = reader
+        reader = null
+        await active.cancel(reason).catch(() => undefined)
+        active.releaseLock()
+      }
     },
   })
 }

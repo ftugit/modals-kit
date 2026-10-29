@@ -872,26 +872,35 @@ export function createStorage(config: StorageConfig): Storage {
     stateListener?.({ type: 'upload:start', server: slot.name, path: partPath })
     try {
       let seenPlain = 0
+      let plainReader: ReadableStreamDefaultReader<Uint8Array> | null = null
       const countedPlain = new ReadableStream<Uint8Array>({
-        start(c) {
-          const r = params.plainStream.getReader()
-          ;(async () => {
-            try {
-              for (;;) {
-                const { done, value } = await r.read()
-                if (done) {
-                  c.close()
-                  break
-                }
-                seenPlain += value.byteLength
-                c.enqueue(value)
-              }
-            } catch (e) {
-              c.error(e)
-            } finally {
-              r.releaseLock()
+        async pull(c) {
+          plainReader ??= params.plainStream.getReader()
+          try {
+            const { done, value } = await plainReader.read()
+            if (done) {
+              plainReader.releaseLock()
+              plainReader = null
+              c.close()
+              return
             }
-          })()
+            seenPlain += value.byteLength
+            c.enqueue(value)
+          } catch (e) {
+            if (plainReader) {
+              plainReader.releaseLock()
+              plainReader = null
+            }
+            c.error(e)
+          }
+        },
+        async cancel(reason) {
+          if (plainReader) {
+            const r = plainReader
+            plainReader = null
+            await r.cancel(reason).catch(() => undefined)
+            r.releaseLock()
+          }
         },
       })
 

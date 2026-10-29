@@ -78,6 +78,7 @@
   const steps = useSteps({
     owner: 'upload-demo-card',
     mode: 'local',
+    key: 'upload_step',
     steps: () => [
       { key: 'fill', label: 'Параметры загрузки', filled: true },
       { key: 'uploading', label: 'Активная загрузка', filled: upload.state.pending },

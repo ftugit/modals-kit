@@ -264,7 +264,7 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
 ```
 
 Что делает `storage.serve` автоматически:
-- отвечает на `GET` и `HEAD`, выставляет `Accept-Ranges: bytes`, `ETag`, `Last-Modified`, обрабатывает условные запросы (`If-None-Match` / `If-Modified-Since` → `304 Not Modified`), частичные запросы (`Range: bytes=start-end` → `206 Partial Content` с `Content-Range`) и невалидные диапазоны (`416 Range Not Satisfiable`);
+- отвечает на `GET` и `HEAD`, выставляет `Accept-Ranges: bytes`, по умолчанию генерирует сильный (`strong`) $O(1)$ `ETag` на основе SHA-256 метаданных объекта без вычитывания потока в ОЗУ (`"..."`), `Last-Modified`, обрабатывает условные запросы (`If-None-Match` / `If-Modified-Since` → `304 Not Modified`), частичные запросы и браузерное авто-возобновление докачки (`Range` + `If-Range` → `206 Partial Content` с `Content-Range`, либо `200 OK` при устаревшем `ETag`) и невалидные диапазоны (`416 Range Not Satisfiable`);
 - при нарезанном (`split`) файле прозрачно склеивает поток **прямо поперёк границы частей**, лежащих на разных серверах и зашифрованных разными ключами, читая только затронутые части и только нужные 64-КиБ кадры;
 - выставляет защитные заголовки ответа: `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin` и `Content-Security-Policy: default-src 'none'; sandbox`;
 - для потенциально активных MIME (`text/html`, `image/svg+xml`, `application/javascript`, `text/xml` и др.) **принудительно** включает `Content-Disposition: attachment` даже при `download: false`;
