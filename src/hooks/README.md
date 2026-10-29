@@ -33,18 +33,18 @@
 
 Многофайловые хуки оформляются отдельной папкой с чётким разделением клиентской и серверной точек входа:
 
-- `index.ts` — публичный клиентский вход (`bindComponentForm`, типы `ComponentFormOptions`, `FormSessionGuard`).
+- `index.ts` — публичный клиентский вход (`bindComponentForm`, `cancelComponentFormUpload`, типы `ComponentFormOptions`, `FormSessionGuard`).
 - `client.svelte.ts` — привязывает `<Form>` и `kitActionTransport` к текущему видимому адресу (`visibleAddress().url`), подхватывает одноразовый `page.data.formResult` своего `formId` после нативного `POST` без JS (включая `lockStateKey` и `onSuccess`) и при переданном `session: FormSessionGuard` прозрачно обновляет мёртвый временный снимок и повторяет запрос 1 раз при `auth.expired`.
-- `server.server.ts` — `registerComponentForm(reg)`, `componentFormsHandle` и фабрика `createComponentFormsHandle(modules)` для композиции в `src/hooks.server.ts` (`import.meta.glob('./**/*.form.server.ts', { eager: true })`) с дедупликацией `Set-Cookie` по имени куки:
-  - `GET` и чужие `POST` проходят в `resolve(event)` без накладных расходов;
-  - с JS (`Accept: application/json`) возвращает `{ data: { result } }` со статусом обработчика и выставленными `Set-Cookie`;
-  - без JS при успехе делает `303 See Other` (или рендерит ответ в том же запросе при `'inline'` / `outcome === 'not-applied'`);
-  - без JS при ошибке рендерит текущую страницу прямо в ответе на этот же `POST` с кодом ошибки (`422` и др.) и `locals.formResult = result`, сохраняя введённые значения.
-- `transport.ts`, `ws-client.ts`, `ws-protocol.ts`, `ws-integrity.ts`, `ws-session.server.ts`, `authorize.server.ts` — клиентский и серверный транспорты отправки формы:
-  - формы без файлов уходят штатным HTTP `fetch` (`transport.ts`), предел тела берётся из `Limits` формы (`maxBytes`);
-  - при наличии выбранных файлов `bindComponentForm` автоматически переключается на одноинстансовый потоковый транспорт `wss://` (`/api/form-upload`, сегменты по `256 КиБ`, ранний гейт `authorize` и проверка полей на Кадре 0 до чтения байтов файла, опциональная одноразовая соль + цепочка `HMAC-SHA-256` на сегментах, реактивный прогресс в `FileAttachment` и `formTask`, прозрачный откат на HTTP `multipart/form-data` без JS).
-- Бюджет тела формы приходит из env (`src/env.ts` → `#server/form-budget.server.ts`) и уезжает в разметку атрибутом `data-budget`; объявленный формой бюджет может быть только меньше. Поля файлов без `v.maxSize` при известном бюджете — ошибка сборки формы (`#lib/form`).
-- `types.ts` — контракты регистрации (`authorize`, `integrity`) и опций.
+- `server.server.ts` — `registerComponentForm(reg)`, `componentFormsHandle` и фабрика `createComponentFormsHandle(modules)` для композиции в `src/hooks.server.ts` (`import.meta.glob('./**/*.form.server.ts')`) с дедупликацией `Set-Cookie`:
+  - `GET` (кроме опроса задачи `?__form_task=…&__form_id=…`) и чужие `POST` без зарегистрированного `__form_id` проходят в `resolve(event)` с нетронутым телом (поддерживая обычные SvelteKit `actions`, например `/schema`);
+  - запросы с JS передают заголовок `x-form-id` (`FORM_ID_HEADER`), поэтому сервер распознаёт регистрацию до чтения тела и направляет поток напрямую в конвейер формы (`bodyLayer`) без промежуточного буфера и без `request.clone()`;
+  - нативные HTML `POST` без `x-form-id` читаются в один проход: при превышении `FORM_BODY_LIMIT` сканируются только первые 32 КиБ для извлечения `__form_id`, остаток потока немедленно отменяется, а `createFormHandler` формирует штатный `Result` со статусом `413` (`body.too-large`, `body.too-many-keys`, `request.too-many`) как по JSON, так и на SSR-странице без JS (`locals.formResult`);
+  - без JS при успехе выполняет `303 See Other` (для `outcome === 'queued'` по умолчанию уводит на `statusUrl`, если регистрация не переопределила `redirectOnSuccess`, либо рендерит ответ в том же запросе при `'inline'` / `outcome === 'not-applied'`).
+- `transport.ts`, `ws-transport.ts`, `ws-protocol.ts`, `ws-integrity.ts`, `ws-session.server.ts`, `upload-eta.ts`, `upload-progress.svelte.ts`, `authorize.server.ts` — клиентский и серверный транспорты отправки формы:
+  - формы без файлов уходят штатным HTTP `fetch` (`transport.ts`) с заголовком `x-form-id`;
+  - при наличии выбранных файлов `bindComponentForm` автоматически переключается на потоковый транспорт `wss://` (`/api/form-upload`, скользящее окно сегментов `W=4`, размер сегмента из `WS_UPLOAD_CHUNK_SIZE`, ранний гейт `authorize` и проверка полей на Кадре 0 до чтения байтов файла, `ping`/`pong` keepalive, позиционно-привязанный `HMAC-SHA-256` на сегментах, реактивный прогноз времени и скорости `predictUploadEta`, авто-догрузка с `resumeToken` и прозрачный откат на HTTP `multipart/form-data` без JS).
+- Бюджет тела формы приходит из env (`src/env.ts` → `#server/form-budget.server.ts`, `Limits.budget`) и уезжает в разметку атрибутом `data-budget`; объявленный в `defineForm({ budget })` лимит может быть только меньше потолка окружения. Поля файлов без `v.maxSize` при известном бюджете — ошибка сборки формы (`#lib/form`).
+- `types.ts` — контракты регистрации (`authorize`, `integrity`, `task`, `watch`) и опций.
 
 ---
 

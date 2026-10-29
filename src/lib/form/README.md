@@ -237,6 +237,7 @@ export function useForm(description, opts) {
 | `live` | `'on-submit' \| 'on-blur' \| 'on-input' \| 'after-touched'` | когда поле перепроверяется |
 | `parallel` | `'block' \| 'replace' \| 'queue'` | `block` отклоняет параллельный запуск, `replace` отменяет текущий, `queue` ждёт освобождения слота и затем выполняет отправку |
 | `onErrors` | `ErrorHandler` | обработчик ошибок проекта |
+| `messages` | `MessageDictionary` | словарь системных сообщений приложения (ядро поставляет `en`; русский словарь подключён в UI-слое `src/components/form/messages.ru.ts`, а `bind()` переводит им и клиентские, и серверные коды `Result`) |
 | `invalidFrom` | `'fact' \| 'shown'` | источник подсветки по умолчанию |
 | `ui` | `Partial<UiPolicy>` | идентификаторы, `aria-describedby`, эскалация живой проверки |
 

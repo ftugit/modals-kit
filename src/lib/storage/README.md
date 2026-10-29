@@ -56,7 +56,7 @@
 
 ## 2. Composition root и устройство конфигурации
 
-Как и у `#lib/db` и `#lib/cache`, библиотека не читает `process.env` сама: сборка серверов, реестра квот и лимитеров живёт в одном серверном модуле приложения (например, [`src/server/storage.server.ts`](../../server/storage.server.ts)).
+Как и у `#lib/db` и `#lib/cache`, библиотека не читает `process.env` сама: сборка серверов, реестра квот и лимитеров живёт в серверных модулях композиции приложения — [`src/server/app-storage.server.ts`](../../server/app-storage.server.ts) (боевой пул серверов из таблицы `storage_server` под `STORAGE_ACL` + раздача `/api/storage/[...path]`) и [`src/server/storage.server.ts`](../../server/storage.server.ts) (изолированный куки-сейф демо-стенда `/upload-demo` + раздача `/api/files/[...path]`).
 
 ```ts
 import { createStorage, createConcurrencyGate } from '#lib/storage/index.js'

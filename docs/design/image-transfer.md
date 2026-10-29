@@ -1,64 +1,35 @@
 # Передача и конвейер изображений в формах
 
-Актуальный проектный документ по файловым/фото-полям приложения после запуска бинарного конвейера `ProfileForm` и серверного декодера `#lib/image/node.js`. Исторические черновики со скрытым `dataURL` в `AuthWidget` и ручным разбором `FormData` в роутах удалены.
+Актуальный проектный документ по файловым/фото-полям приложения, бинарному конвейеру `ProfileForm`, хранению аватаров по неизменяемым ссылкам и серверному декодеру `#lib/image/node.js`.
 
 ---
 
 ## 1. Инварианты архитектуры
 
-1. **По сети передаются только бинарные `File` в `multipart/form-data`.** Никаких скрытых полей с `base64` / `data:image/…` между браузером и сервером не существует.
-2. **Единое поле описания на JS и no-JS.** Поле объявлено в `defineForm` одним именем (`avatar: field.photo(...)`). Без JS браузер отправляет исходный `File` из нативного `<input type="file">`; с JS перехватчик поля (`Field` `takeover`) готовит уменьшенный JPEG `File` через `#lib/image` и кладёт его обратно в тот же `<input type="file">` через `DataTransfer`, после чего `bind` читает штатный `FormData` с уменьшенным бинарным файлом.
-3. **Сервер не перекодирует.** Его дело — проверить то же, что описано в форме: вес, медиатип и число файлов (`v.accept` / `v.maxSize` / `v.maxCount`), плюс серверный предел тела (`OI-27`). Сжатие — **опция UI-поля** , конвейер `#lib/image` работает в браузере; серверный декодер `#lib/image/node.js` остаётся для сред, которым декодировать действительно нужно (тесты, эмуляция, будущая серверная обработка), но в пути формы не участвует. Проверка содержимого по сигнатурам — открытый `OI-20`, и он расходится с решением `OI-27` («содержимое не сниффится»); до решения сервер полагается на медиатип.
+1. **По сети, в БД и в куках никогда не ходят `base64`-файлы.** По сети передаются только бинарные `File` в `multipart/form-data` или по потоковому `wss://` (`/api/form-upload`). В колонке `user_profile.avatar_url` и в сессионном снимке хранится только короткая неизменяемая ссылка `/api/storage/avatars/…`. Прямое чтение файлов целиком в `base64` (`arrayBuffer` / `FileReader` + `btoa`) блокируется стражем `tooling/layer-guard.mjs`.
+2. **Единое поле описания на JS и no-JS.** Поле объявлено в `defineForm` одним именем (`avatar: field.photo(...)`). Без JS браузер отправляет исходный `File` из нативного `<input type="file">`; с JS примитив с `photoConvert={specAvatar}` готовит уменьшенный JPEG `200×200` (`<= 20 КиБ`) через `#lib/image` и кладёт его обратно в `<input type="file">` через `DataTransfer`, после чего форма отправляет уменьшенный бинарный файл.
+3. **Сервер проверяет каноническую спецификацию и кладёт файл в боевое хранилище.** `profile.form.server.ts` проверяет готовый кадр по `fitsSpec` (`200×200` JPEG `<= 20 КиБ`), сохраняет его в боевой пул `appStorage` (`src/server/app-storage.server.ts`) по неизменяемому пути с версией, а при замене аватара или удалении профиля немедленно удаляет прежний файл через `storage.remove`.
 4. **Не трогать браузерное умолчание в `src/lib/image/decode.ts`.** Без явного `options.decoder` вызов `image(blob)` вне браузера обязан отвергать промис с `EnvironmentError` (контракт `src/lib/image/pipeline.test.ts`). На сервере декодер передаётся явно: `{ decoder: decodeWithNode }` из `#lib/image/node.js`.
-5. **Ожидание подготовки — штатный механизм поля (`FieldHandle`).** На время сжатия перехватчик взводит `f.pending = job`, при отказе — `f.error = { code }`. Кнопка отправки удерживается самой формой без ad-hoc флагов компонента.
+5. **Ожидание подготовки — штатный механизм поля (`FieldHandle`).** На время сжатия взводится `f.pending = job`, при отказе — `f.error = { code }`. Кнопка отправки удерживается самой формой без ручных флагов компонента.
 
 ---
 
-## 2. Что уже реализовано в коде
+## 2. Что реализовано в коде
 
 | Узел | Файлы | Статус |
 |---|---|---|
 | Изоморфный конвейер и чтение заголовков | `src/lib/image/{index.ts,pipeline.ts,probe.ts,presets.ts}` | Готово |
 | Серверный WASM-декодер для Node / SSR (`ensureNodeImageCodecs`, `decodeWithNode`) | `src/lib/image/node.ts` | Готово |
-| Расширение типа поля `field.photo` и асинхронной проверки `photo:<id>` (`PhotoSpec`, `checkPhotoFile`, `registerPhotoChecks`, `photoImage`) | `src/components/form/photo.ts` | Готово |
+| Расширение типа поля `field.photo` и асинхронной проверки `photo:<id>` (`PhotoSpec`, `checkPhotoFile`, `registerPhotoChecks`) | `src/components/form/photo.ts` | Готово |
 | Перехват поля в форме (`Field` `takeover`, `FieldHandle.pending` / `FieldHandle.error`) и защита в сборке | `src/lib/form/{takeover.ts,svelte/bind.svelte.ts}`, `src/components/form/Field.svelte`, `tooling/layer-guard.mjs` | Готово |
 | Компактная карточка вложения и превью (`Attachment`, `FileAttachment`) | `src/components/ui/attachment/`, `src/components/form/FileField.svelte` | Готово |
-| Профиль пользователя на бинарном `File` (JS сжатие; без JS файл обязан уже совпадать с `specAvatar`, сервер его не приводит) | `src/content/user/ui/profile-form/{form.ts,avatar.ts,AvatarTakeover.svelte,ProfileForm.svelte,profile.form.server.ts}` | Готово |
-| Протокол отложенного исхода `outcome: 'queued'` (`QueuedData`, `assertQueuedProtocol`, `pollUntilDone`) | `src/lib/form/queued.ts` | Готово (ядро `lib/form`) |
+| Боевой пул хранилища в БД + неизменяемые ссылки аватаров `/api/storage/avatars/…` с удалением старого файла | `src/server/app-storage.server.ts`, `src/content/storage-servers/`, `src/content/user/ui/profile-form/profile.form.server.ts` | Готово |
+| Протокол отложенного исхода `outcome: 'queued'` (`pollUntilDone` с JS, `303` на `statusUrl` без JS и очередь в `sharedStore` `cache_kv`) | `src/lib/form/queued.ts`, `src/hooks/component-form/server.server.ts`, `src/routes/(site)/(app)/form/queue.server.ts` | Готово |
 
 ---
 
-## 3. Незакрытые этапы (остаток плана)
+## 3. Отложенный этап
 
-### Этап R4 — Очередь заявок в `sharedStore` и сквозной `outcome: 'queued'` для тяжёлых файлов
+### Серверная фоновая перекодировка несжатых исходников аватаров без JS
 
-Когда серверная обработка файла не укладывается в интерактивный ответ или вынесена в фоновый воркер, ядро `#lib/form/queued.js` уже задаёт контракт `Result`:
-- `outcome: 'queued'`;
-- `data: { pollUrl, statusUrl, etaMs? }` (`assertQueuedProtocol` отвергает `queued` без обоих URL, чтобы режим без JS никогда не оказывался в тупике).
-
-**Что остаётся сделать:**
-1. В `src/hooks/component-form/server.server.ts` и `client.svelte.ts` поддержать `result.outcome === 'queued'`:
-   - с JS — автоматический опрос `pollUntilDone(queuedData(result), ...)` до терминального `Result` с отображением прогресса в `formTask(bound.state)`;
-   - без JS — `303 See Other` на `statusUrl` (страница статуса с `<meta http-equiv="refresh">` / кнопкой «Проверить готовность» и возвратом к исходному маршруту по завершении).
-2. Хранить состояние заявки и подготовленный артефакт в `sharedStore.scope('form-jobs')` (`src/server/cache.server.ts`, таблица `public.cache_kv` в Postgres), а не в памяти процесса — чтобы опрос `pollUrl` / `statusUrl` попадал в ту же запись на любом serverless/Node-инстансе.
-
-### Этап R5 → поля фото (решение 2026-10-24)
-
-Вход — валидаторы (`v.accept`, `v.maxSize`, `v.maxCount`); сжатие — **опция `Field`** (`photoConvert={specAvatar}`: 200 × 200, 20 КиБ, `jpeg`; параметры — `src/content/user/spec-avatar.ts`), в описании формы её нет; при `preview` поле рисуется гибридом `FileAttachment` (`FileInput` + `Attachment`), без неё — ui-примитивом `FileInput`; голый `<input type="file">` не используется. Вид ограничения `photo-output` и `photoOutput()` **не вводятся**; сервер файл **не приводит**: предел веса (`v.maxSize`, 20 КиБ) и проверка `avatar-spec` (формат, кадр, вес по заголовку) пропускают только готовый кадр, остальное отклоняется. Приведение без JS — задача очереди, см. [`docs/plan-queue.md`](../plan-queue.md). Прежняя формулировка «перевести `/fields` на `field.photo`» заменена: демо переходит на файловое/фото-поле **без** перекодирования и получает загрузку **до 5 файлов** — это опция `multiple` единственного типа `file`; отдельного типа `photos` нет.
-
-### Этап R6 — Вынос байтов аватара из запечатанной куки `auth_tmp`
-
-Сейчас `updateProfile` сохраняет `data:image/jpeg;base64,...` в колонку `user_profile.avatar_url`, а `freshAccess` (`src/content/user/auth.ts`) запечатывает весь `prof: { nickname, avatarUrl }` прямо в `HttpOnly`-куку `auth_tmp` (`ACCESS_COOKIE`).
-- На реальных фотографиях сжатый JPEG весит `8–32 КБ` (`11–44 КБ` в base64), что превышает браузерный лимит одной куки (`4096 B`, RFC 6265) и порог заголовков HTTP (`16 KiB` → `431 Request Header Fields Too Large`). Подробности и сценарий воспроизведения — [`docs/pending.md`](../pending.md).
-
-**Что нужно сделать:**
-1. В `auth_tmp` хранить только компактный признак/ревизию аватара (или короткий URL `/api/user/avatar/<id>?v=<rev>`), не сериализуя `data:image/...` в заголовок `Cookie`.
-2. Выдавать бинарные байты аватара отдельным кэшируемым GET-роутом (`immutable` по ревизии) либо внешним объектным хранилищем за портом модуля `user`.
-
-**Решение владельца (2026-10-24):** байты из куки **вырезаются**. До появления слоя хранения (`lib/storage`) витрина профиля собирается в RAM при обновлении временного токена (`issueTokens`/`freshAccess` читают `profiles.get`), `avatarUrl` в `prof` не возвращается. Замер в обоснование: кука без фото — `371 B`, фото 8 КБ — `11 315 B`, потолок конфига `20 КБ` — `27 699 B` при лимите `4096 B` (замер — [`docs/pending.md`](../pending.md)). Памятка для разработки хранилища — в шапке `src/content/user/auth.ts`.
-
-### Этап R7 — Стражи `layer-guard` и тип `PreparedFile` на границе записи
-
-Чтобы исключить возврат сырого разбора файлов в прикладном коде:
-1. Ввести брендированный тип `PreparedPhoto` / `PreparedFile` на выходе серверного конвейера подготовки, который требуют мутации записи медиа, чтобы сырой непроверенный `File` из `FormData` нельзя было передать в хранилище по ошибке.
-2. Добавить в `tooling/layer-guard.mjs` правило `isSourceCheck`, запрещающее в `src/routes/` и `src/content/` прямое чтение байтов `File` (`file.arrayBuffer()`, ручной `btoa(...)` для `data:image/`) в обход `#lib/image` и `#components/form/photo.js`.
+При отключённом JavaScript браузер не запускает клиентский кроп/ресайз `photoConvert={specAvatar}`, поэтому несжатая фотография отклоняется проверкой `fitsSpec`. Вынос серверного ресайза через `#lib/image/node.js` и очередь фоновых задач отложен отдельным этапом (`docs/pending.md`).
