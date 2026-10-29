@@ -52,6 +52,13 @@ export type StepDef = {
   label: string
   /** Шаг уже заполнен — ссылка; иначе текст, перейти на него нельзя. */
   filled?: boolean
+  /**
+   * Адресуемость шага в URL (`true` по умолчанию).
+   * Служебный шаг с `addressable: false` (подтверждение, итоговая квитанция)
+   * отображается в полосе шагов при переходе через `set()`/`switch()`, но не
+   * получает прямого `href`, не пишется в `?step=…` и не открывается по прямой ссылке.
+   */
+  addressable?: boolean
 }
 
 /** Где живёт состояние шага. */
@@ -126,8 +133,10 @@ export type StepsHost = {
    * аддоны читают свой остаток (`suffixOf`).
    */
   readonly fullKey: string | null
-  /** Адрес шага (чужие ключи адреса не теряются). */
+  /** Адрес шага (чужие ключи адреса не теряются; для `addressable: false` ключ шага в поиск не пишется). */
   href(stepKey: string): string
+  /** Разрешён ли шагу собственный URL (`true` для объявленных шагов без `addressable: false`). */
+  isAddressable(stepKey: string): boolean
   /** Аргумент шага — чтение (`step.<ключ>.<имя>`); чужие права не нужны. */
   arg(name: string, stepKey?: string): string | undefined
   /** Аргумент шага — правка своим владельцем. */
@@ -145,12 +154,28 @@ export function useSteps(opts: StepsOptions): StepsHost {
   // локальное состояние режимов local/hybrid; `null` — ещё не меняли, истину
   // отдаёт владелец (начальные данные загрузки / deep-link)
   let local = $state<string | null>(null)
+  // эфемерное состояние для неадресуемого шага (`addressable: false`) в режиме `url`:
+  // живёт до первой смены адресного `opts.current()`
+  let urlEphemeral = $state<{ base: string | null; value: string } | null>(null)
   let urlModeWarned = false
   let dupWarned = false
 
   const locked = () => (opts.lockKey ? page.state[opts.lockKey] === true : false)
   const guard = (e: Event) => {
     if (locked()) e.preventDefault()
+  }
+
+  const findStep = (stepKey: string | null): StepDef | undefined => {
+    const seg = segmentOf(stepKey)
+    return seg ? opts.steps().find((s) => s.key === seg) : undefined
+  }
+
+  const sanitizeColdCurrent = (candidate: string | null): string | null => {
+    const def = findStep(candidate)
+    if (def?.addressable === false) {
+      return opts.steps().find((s) => s.addressable !== false)?.key ?? null
+    }
+    return candidate
   }
 
   /** Служебные предупреждения — один раз на хост. */
@@ -167,15 +192,26 @@ export function useSteps(opts: StepsOptions): StepsHost {
     }
   }
 
-  const full = (): string | null => (mode === 'url' ? opts.current() : (local ?? opts.current()))
+  const full = (): string | null => {
+    if (mode === 'url') {
+      const raw = sanitizeColdCurrent(opts.current())
+      if (urlEphemeral && urlEphemeral.base === raw) return urlEphemeral.value
+      return raw
+    }
+    return local ?? sanitizeColdCurrent(opts.current())
+  }
 
   const host: StepsHost = {
     mode,
     get locked() {
       return locked()
     },
+    isAddressable(stepKey: string) {
+      const def = findStep(stepKey)
+      return def !== undefined && def.addressable !== false
+    },
     async switch(stepKey: string) {
-      if (mode === 'url') {
+      if (mode === 'url' && findStep(stepKey)?.addressable !== false) {
         if (!urlModeWarned) {
           urlModeWarned = true
           warnOnce('switch() у «' + opts.owner + '» в режиме url не вызывается: клик по ссылкам там — нативная навигация по href; локальная смена нужна — режим local/hybrid')
@@ -194,6 +230,11 @@ export function useSteps(opts: StepsOptions): StepsHost {
     },
     set(stepKey: string) {
       if (mode === 'url') {
+        if (findStep(stepKey)?.addressable === false) {
+          if (locked()) return
+          urlEphemeral = { base: sanitizeColdCurrent(opts.current()), value: stepKey }
+          return
+        }
         if (!urlModeWarned) {
           urlModeWarned = true
           warnOnce(
@@ -206,12 +247,11 @@ export function useSteps(opts: StepsOptions): StepsHost {
       }
       if (locked()) return
       // гибрид: адресуемый шаг синхронизирует адрес своим ключом (полный ключ
-      // цепочки целиком, если его первый сегмент объявлен). Запись — общим
-      // писателем `#lib/address` (мелкая, без навигации и load), а не своим
-      // `pushState`: своя запись — вторая очередь, которая обгоняет чужие и
-      // теряется под модальным слоем (дефект /steps на таче, ход 262). Служебные
-      // состояния адреса не получают.
-      if (mode === 'hybrid' && BROWSER && opts.steps().some((s) => s.key === segmentOf(stepKey))) {
+      // цепочки целиком, если его первый сегмент объявлен и не помечен
+      // `addressable: false`). Запись — общим писателем `#lib/address` (мелкая,
+      // без навигации и load), а не своим `pushState`. Служебные состояния и
+      // шаги с `addressable: false` адреса не получают.
+      if (mode === 'hybrid' && BROWSER && host.isAddressable(stepKey)) {
         void writeAddress(() => ({ url: host.href(stepKey) }), { replace: false, load: false })
       }
       local = stepKey
@@ -220,8 +260,10 @@ export function useSteps(opts: StepsOptions): StepsHost {
       // Видимый адрес, а не адрес последней отрисовки: после мелких записей (модалки,
       // панели, shallow-слои) адрес отрисовки описывает ПРОШЛОЕ состояние, и ссылка,
       // собранная из него, вернула бы старые ключи и потеряла новые.
+      // Шаги с `addressable: false` собственный параметр шага в поиск не пишут.
       const here = visibleAddress().url
-      return here.pathname + nextSearch(opts.owner, here.search, { [key]: stepKey })
+      const patchValue = findStep(stepKey)?.addressable === false ? null : stepKey
+      return here.pathname + nextSearch(opts.owner, here.search, { [key]: patchValue })
     },
     arg(name: string, stepKey?: string) {
       const target = stepKey ?? segmentOf(full())
@@ -241,7 +283,7 @@ export function useSteps(opts: StepsOptions): StepsHost {
       const guardProps: Record<string, unknown> = { onclick: guard }
       return opts.steps().map((s) => {
         const current = this.currentKey === s.key
-        const href = s.filled ? this.href(s.key) : null
+        const href = s.filled && s.addressable !== false ? this.href(s.key) : null
         return {
           key: s.key,
           label: s.label,

@@ -39,7 +39,7 @@ export function stepLink(host: StepsHost, step: string): StepLinkAttrs {
     ...(locked ? { 'aria-disabled': 'true' } : {}),
     [STEPS]: (el: HTMLElement) => {
       const onClick = (e: MouseEvent) => {
-        if (host.mode === 'url') return       // смена — нативная навигация по href
+        if (host.mode === 'url' && host.isAddressable(step)) return // смена — нативная навигация по href
         if (locked || e.defaultPrevented || isModified(e)) return
         e.preventDefault()
         void host.switch(step)
