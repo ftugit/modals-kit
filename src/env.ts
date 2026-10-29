@@ -49,6 +49,38 @@ const positiveInteger = optional((value) => {
     : { message: `ожидалось целое число ≥ 1, получено «${value}»` }
 })
 
+const MIN_WS_CHUNK_BYTES = 64 * 1024
+const MAX_WS_CHUNK_BYTES = 16 * 1024 * 1024
+
+/** Размер сегмента `wss://`-загрузки: число байт или суффикс `kb`/`mb` (`64 КБ` .. `16 МБ`). */
+const wsChunkBytes = optional((value) => {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(b|kb|kib|mb|mib)?\s*$/i.exec(value)
+  if (!m) {
+    return {
+      message: `ожидалось число байт или размер с суффиксом kb/mb (например 512kb или 1mb), получено «${value}»`,
+    }
+  }
+  const num = Number(m[1])
+  const unit = (m[2] ?? 'b').toLowerCase()
+  const mult =
+    unit === 'kb' || unit === 'kib'
+      ? 1024
+      : unit === 'mb' || unit === 'mib'
+        ? 1024 * 1024
+        : 1
+  const bytes = Math.round(num * mult)
+  if (
+    !Number.isSafeInteger(bytes) ||
+    bytes < MIN_WS_CHUNK_BYTES ||
+    bytes > MAX_WS_CHUNK_BYTES
+  ) {
+    return {
+      message: `допустимый диапазон сегмента 64kb..16mb (${MIN_WS_CHUNK_BYTES}..${MAX_WS_CHUNK_BYTES} байт), получено «${value}»`,
+    }
+  }
+  return { value: bytes }
+})
+
 export const variables = defineEnvVars({
   // ── Адрес приложения и доверие origin (`src/server/trusted-origins.ts`) ──
   KIT_TRUSTED_ORIGINS: {
@@ -65,12 +97,24 @@ export const variables = defineEnvVars({
     description: 'Задаёт песочница превью: к PREVIEW_PORTS добавляется https://PORT-ID.e2b.app.',
   },
 
-  // ── Тело форм (`src/server/form-budget.server.ts`) ──
+  // ── Тело форм (`src/server/form-budget.server.ts`) и потоковый `wss://`-транспорт ──
   FORM_BODY_LIMIT: {
     schema: positiveInteger,
     description:
       'Потолок тела формы, байт: столько пропускает развёртывание (Vercel — до 4.5 МБ, Cloudflare — 100 МБ). ' +
       'Форма может объявить меньше; больше — молча игнорируется. По умолчанию 2 МиБ (DEFAULT_LIMITS.maxBytes).',
+  },
+  WS_UPLOAD_CHUNK_SIZE: {
+    schema: wsChunkBytes,
+    description:
+      'Размер одного файлового сегмента потоковой `wss://`-загрузки (байты или суффиксы `kb`/`mb`, диапазон `64kb`..`16mb`). ' +
+      'По умолчанию 256 КБ; на Vercel и Cloudflare допустимо поднимать до 1mb–8mb (лимит кадра Cloudflare — 32 МиБ, а maxPayload в ws поднимается автоматически).',
+  },
+  WS_UPLOAD_MAX_DURATION: {
+    schema: positiveInteger,
+    description:
+      'Явный лимит времени жизни одного `wss://`-соединения платформы в секундах для прогноза успеваемости выгрузки ' +
+      '(например 300 на Vercel Hobby или 800 на Vercel Pro). Пусто — автоопределение по платформе (Vercel = 300 с, Node/Cloudflare = без потолка).',
   },
 
   // ── Движок данных (`open()` в `src/server/db.server.ts`) ──

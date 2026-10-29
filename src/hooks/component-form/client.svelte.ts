@@ -18,6 +18,41 @@ import type { ComponentFormOptions, FormSessionGuard } from './types.js'
 
 export type { FormSessionGuard }
 
+/** Активные контроллеры пользовательской отмены отправки по экземпляру `BoundForm`. */
+const activeSubmitControllers = new WeakMap<BoundForm, AbortController>()
+
+/**
+ * Отменить текущую активную отправку/загрузку формы без размонтирования формы и без очистки введённых полей.
+ * Следующая отправка автоматически откроет новое `wss://`-соединение с новым серверным таймером.
+ */
+export function cancelComponentFormUpload(form: BoundForm): boolean {
+  const controller = activeSubmitControllers.get(form)
+  if (!controller || controller.signal.aborted) return false
+  controller.abort('user-cancelled')
+  activeSubmitControllers.delete(form)
+  return true
+}
+
+function createLinkedAbortController(parent?: AbortSignal): {
+  controller: AbortController
+  cleanup: () => void
+} {
+  const controller = new AbortController()
+  if (!parent) {
+    return { controller, cleanup: () => {} }
+  }
+  if (parent.aborted) {
+    controller.abort(parent.reason)
+    return { controller, cleanup: () => {} }
+  }
+  const onParentAbort = () => controller.abort(parent.reason)
+  parent.addEventListener('abort', onParentAbort, { once: true })
+  return {
+    controller,
+    cleanup: () => parent.removeEventListener('abort', onParentAbort),
+  }
+}
+
 function isAuthExpiredResult(result: Result): boolean {
   if (result.ok) return false
   if (result.errors.some((m) => m.code === 'auth.expired')) return true
@@ -75,6 +110,8 @@ export function bindComponentForm(
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
   const httpTransport = kitActionTransport(resolveTarget)
   const wsTransport = wsFormTransport(resolveTarget)
+  let boundFormRef: BoundForm | null = null
+
   const baseTransport: Transport = async (req) => {
     if (prepare && req.data instanceof FormData) {
       await prepare(req.data)
@@ -87,31 +124,49 @@ export function bindComponentForm(
   let lastResult: Result | null = initialContinuation
 
   const transport: Transport = async (req) => {
-    if (session) {
-      await session.ensureFresh()
+    const linked = createLinkedAbortController(req.signal)
+    if (boundFormRef) {
+      activeSubmitControllers.set(boundFormRef, linked.controller)
     }
-    const out = await baseTransport(req)
-    if (session && out.kind === 'result' && isAuthExpiredResult(out.result)) {
-      const renewed = await session.onAuthExpired()
-      if (renewed) {
-        const retryEnvelope = { ...req.envelope, submissionId: crypto.randomUUID() }
-        const retryData =
-          req.data instanceof FormData ? cloneFormDataWithEnvelope(req.data, desc, retryEnvelope) : req.data
-        const retryOut = await baseTransport({
-          ...req,
-          envelope: retryEnvelope,
-          data: retryData,
-        })
-        if (retryOut.kind === 'result') {
-          const merged = { ...retryOut.result, submissionId: req.envelope.submissionId }
-          lastResult = merged
-          return { kind: 'result', result: merged }
+    const cancellableReq = { ...req, signal: linked.controller.signal }
+
+    try {
+      if (session) {
+        await session.ensureFresh()
+      }
+      if (linked.controller.signal.aborted) {
+        return { kind: 'abort', reason: 'aborted' }
+      }
+      const out = await baseTransport(cancellableReq)
+      if (session && out.kind === 'result' && isAuthExpiredResult(out.result)) {
+        const renewed = await session.onAuthExpired()
+        if (renewed && !linked.controller.signal.aborted) {
+          const retryEnvelope = { ...cancellableReq.envelope, submissionId: crypto.randomUUID() }
+          const retryData =
+            cancellableReq.data instanceof FormData
+              ? cloneFormDataWithEnvelope(cancellableReq.data, desc, retryEnvelope)
+              : cancellableReq.data
+          const retryOut = await baseTransport({
+            ...cancellableReq,
+            envelope: retryEnvelope,
+            data: retryData,
+          })
+          if (retryOut.kind === 'result') {
+            const merged = { ...retryOut.result, submissionId: req.envelope.submissionId }
+            lastResult = merged
+            return { kind: 'result', result: merged }
+          }
+          return retryOut
         }
-        return retryOut
+      }
+      if (out.kind === 'result') lastResult = out.result
+      return out
+    } finally {
+      linked.cleanup()
+      if (boundFormRef && activeSubmitControllers.get(boundFormRef) === linked.controller) {
+        activeSubmitControllers.delete(boundFormRef)
       }
     }
-    if (out.kind === 'result') lastResult = out.result
-    return out
   }
 
   const form = bind(
@@ -123,6 +178,7 @@ export function bindComponentForm(
       continuation: { value: initialContinuation, enumerable: true, configurable: true },
     }) as BindOptions,
   )
+  boundFormRef = form
 
   $effect(() => registerFormUploadFields(form))
 

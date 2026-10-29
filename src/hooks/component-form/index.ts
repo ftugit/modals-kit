@@ -1,10 +1,11 @@
-export { bindComponentForm } from './client.svelte.js'
+export { bindComponentForm, cancelComponentFormUpload } from './client.svelte.js'
 export { uploadItemPropsForField, type UploadAttachmentMeta } from './upload-progress.svelte.js'
 export { hasUploadableFiles, wsFormTransport, type WsFormTransportOptions } from './ws-transport.js'
 export type {
   FileUploadProgressEntry,
   FormUploadProgress,
   WsSegmentLogEntry,
+  WsUploadPlatform,
 } from './ws-protocol.js'
 export type {
   ComponentFormAuthVerdict,

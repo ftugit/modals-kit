@@ -1,12 +1,14 @@
-// Изоморфная потоковая цепочка целостности с одноразовой солью (`HMAC-SHA-256` поверх `SHA-256`).
+// Изоморфная потоковая проверка целостности с одноразовой солью (`HMAC-SHA-256` поверх `SHA-256`).
 //
 // Ресурсный профиль («халявная соль» на отдельную загрузку):
 // - `0` внешних зависимостей: работает через аппаратный Web Crypto (`crypto.subtle`)
 //   в браузере, Node 22+, Vercel Functions и Cloudflare Workers;
-// - `O(1)` памяти: хранится только текущее состояние цепочки (`32` байта на файл);
-// - `0` лишних чтений диска и `0` копирований сегмента `256 КБ`: `SHA-256(chunk)`
-//   читает уже вырезанный буфер сегмента на месте, а `HMAC` подписывает компактный
-//   80-байтный дескриптор шага (`prevTag || segmentIndex || offset || length || chunkSha`).
+// - `O(1)` памяти: хранится только неизменяемый 32-байтный корневой тег файла (`rootTag`);
+// - безопасен при конвейерном окне сегментов (`pipelining`) и мобильной авто-дозагрузке:
+//   каждый сегмент подписывается детерминированно от `(rootTag, segmentIndex, offset, length, sha256(chunk))`
+//   в собственном 80-байтном буфере без разделяемого мутабельного состояния, поэтому параллельный
+//   расчёт подписей и повторная отправка неподтверждённого сегмента после обрыва связи не рассинхронизируются,
+//   а любая подмена байта, перестановка сегментов, повтор из чужой загрузки или обрезка хвоста обнаруживаются.
 
 /** Длина тега `HMAC-SHA-256` и одноразовой соли сессии в байтах. */
 export const WS_HMAC_TAG_BYTES = 32
@@ -56,6 +58,16 @@ export function timingSafeTagEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0
 }
 
+/** Константное по времени сравнение двух hex-токенов одинаковой длины (для `resumeToken`). */
+export function timingSafeHexEqual(a: string, b: string): boolean {
+  if (a.length === 0 || a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 /** Импортировать hex-соль загрузки в нативный `CryptoKey` для `HMAC-SHA-256`. */
 export async function importUploadSaltKey(saltHex: string): Promise<CryptoKey | null> {
   const raw = fromHex(saltHex)
@@ -70,7 +82,7 @@ export async function importUploadSaltKey(saltHex: string): Promise<CryptoKey | 
 }
 
 export interface FileIntegrityChain {
-  /** Вычислить следующий 32-байтный тег цепочки и продвинуть внутреннее состояние. */
+  /** Вычислить позиционно-привязанный 32-байтный тег сегмента `(rootTag, segmentIndex, offset, len, sha256)`. */
   nextSegmentTag(
     segmentIndex: number,
     offset: number,
@@ -79,22 +91,16 @@ export interface FileIntegrityChain {
 }
 
 /**
- * Создать потоковую цепочку `HMAC-SHA-256` для одного файла внутри загрузки.
- * Корень цепочки связывает `fileId` и точный заявленный `totalSize`.
+ * Создать потоковый вычислитель `HMAC-SHA-256` для одного файла внутри загрузки.
+ * Корень `rootTag` криптографически связывает одноразовую соль сессии, `fileId` и точный `totalSize`.
  */
 export async function createFileIntegrityChain(
   key: CryptoKey,
   fileId: string,
   totalSize: number,
 ): Promise<FileIntegrityChain> {
-  const seedBytes = new TextEncoder().encode(`ws-upload-v1|${fileId}|${totalSize}`)
-  let stateTag = new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', key, seedBytes))
-
-  // Переиспользуемый 80-байтный буфер шага:
-  // [0..32) prevTag | [32..36) segIdx u32 | [36..44) offset u64 | [44..48) len u32 | [48..80) sha256(chunk)
-  const stepBuf = new ArrayBuffer(80)
-  const stepBytes = new Uint8Array(stepBuf)
-  const stepView = new DataView(stepBuf)
+  const seedBytes = new TextEncoder().encode(`ws-upload-v2|${fileId}|${totalSize}`)
+  const rootTag = new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', key, seedBytes))
 
   return {
     async nextSegmentTag(
@@ -105,15 +111,18 @@ export async function createFileIntegrityChain(
       const chunkSha = new Uint8Array(
         await globalThis.crypto.subtle.digest('SHA-256', asArrayBufferView(chunk)),
       )
-      stepBytes.set(stateTag, 0)
+      // Собственный 80-байтный буфер на вызов (без гонок при параллельном конвейере сегментов):
+      // [0..32) rootTag | [32..36) segIdx u32 | [36..44) offset u64 | [44..48) len u32 | [48..80) sha256(chunk)
+      const stepBuf = new ArrayBuffer(80)
+      const stepBytes = new Uint8Array(stepBuf)
+      const stepView = new DataView(stepBuf)
+      stepBytes.set(rootTag, 0)
       stepView.setUint32(32, segmentIndex >>> 0, false)
       stepView.setBigUint64(36, BigInt(offset), false)
       stepView.setUint32(44, chunk.byteLength >>> 0, false)
       stepBytes.set(chunkSha, 48)
 
-      const next = new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', key, stepBytes))
-      stateTag = next
-      return next
+      return new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', key, stepBuf))
     },
   }
 }

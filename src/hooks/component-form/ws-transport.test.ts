@@ -14,8 +14,12 @@ import { image, registerImageCheck } from '../../components/form/image.js'
 import { attachNodeWsUpgrade } from '#server/vite-ws.server.js'
 import { upgradeWs } from '#server/ws-upgrade.server.js'
 import { componentFormRegistry, registerComponentForm } from './registry.js'
-import { FORM_UPLOAD_WS_PATH, type FormUploadProgress } from './ws-protocol.js'
-import { handleFormUploadWs } from './ws-session.server.js'
+import {
+  computeWsMaxPayloadBytes,
+  FORM_UPLOAD_WS_PATH,
+  type FormUploadProgress,
+} from './ws-protocol.js'
+import { handleFormUploadWs, type WsFormSessionOptions } from './ws-session.server.js'
 import {
   hasUploadableFiles,
   wsFormTransport,
@@ -26,9 +30,11 @@ describe('wsFormTransport + live progress', () => {
   let rootDir = ''
   let httpServer: HttpServer | null = null
   let wsEndpoint = ''
+  let sessionOptions: WsFormSessionOptions = {}
 
   beforeEach(async () => {
     componentFormRegistry().clear()
+    sessionOptions = {}
     rootDir = await mkdtemp(join(tmpdir(), 'modals-ws-client-'))
 
     httpServer = createServer((_req, res) => {
@@ -70,7 +76,11 @@ describe('wsFormTransport + live progress', () => {
           tracing: undefined as never,
         } as unknown as RequestEvent
 
-        void upgradeWs(fakeEvent, (socket) => handleFormUploadWs(socket, fakeEvent)).then(
+        void upgradeWs(
+          fakeEvent,
+          (socket) => handleFormUploadWs(socket, fakeEvent, sessionOptions),
+          { maxPayload: computeWsMaxPayloadBytes(sessionOptions.chunkBytes) },
+        ).then(
           (response) => {
             res.statusCode = response.status
             res.end()
@@ -486,6 +496,340 @@ describe('wsFormTransport + live progress', () => {
     expect(await storage.head('mutated/live-log.bin')).toBeNull()
     const tmpFiles = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
     expect(tmpFiles).toEqual([])
+  })
+
+  it('конвейерно прокачивает сегменты 512 КБ (WS_UPLOAD_CHUNK_SIZE) с AES-256-GCM, солёным HMAC и живым heartbeat без 5-мин отсечки', async () => {
+    sessionOptions = {
+      chunkBytes: 512 * 1024,
+      windowSize: 4,
+      heartbeatMs: 35,
+      idleTimeoutMs: 140,
+      platform: 'vercel',
+      maxDurationMs: 300_000,
+    }
+    const encryptionKey = '5a'.repeat(32)
+    const storage = createStorage({
+      servers: {
+        local: {
+          driver: localDriver({ rootDir }),
+          limits: { storageBytes: 1024 * 1024 * 1024, fileBytes: 50 * 1024 * 1024 },
+          key: encryptionKey,
+          rate: 4 * 1024 * 1024, // для 5.2 МБ хвост после стартового окна занимает ~300 мс (> 2 * idleTimeoutMs)
+        },
+      },
+    })
+
+    const form = defineForm({
+      id: 'ws_pipelined_512k',
+      fields: {
+        bundle: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      integrity: true,
+      async execute({ values, commit }) {
+        const file = values.bundle as File
+        const stored = await storage.put({
+          path: `pipelined/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { path: stored.path, size: stored.size } }
+      },
+    })
+
+    const rawBytes = new Uint8Array(Math.floor(5.2 * 1024 * 1024))
+    for (let i = 0; i < rawBytes.byteLength; i++) {
+      rawBytes[i] = (i * 37 + 19) & 0xff
+    }
+
+    const submissionId = randomUUID()
+    const instance = `${form.id}:main` as `${string}:${string}`
+    const env = buildEnvelope({ formId: form.id, revision: form.revision, instance, submissionId })
+    const fd = new FormData()
+    for (const [k, val] of Object.entries(env)) fd.set(k, val)
+    fd.set(form.policy.envelopeKeys.intent, 'submit')
+    fd.set('bundle', new File([rawBytes], 'video-chunked.bin', { type: 'application/octet-stream' }))
+
+    const snapshots: FormUploadProgress[] = []
+    const transport = wsFormTransport(() => '/upload-demo', {
+      wsUrl: wsEndpoint,
+      WebSocketImpl: NodeWsWithOrigin,
+    })
+
+    const res = await transport({
+      envelope: { formId: form.id, revision: form.revision, instance, submissionId, intent: 'submit' },
+      data: fd,
+      accept: ['application/json'],
+      signal: new AbortController().signal,
+      report: (p) => snapshots.push(p as FormUploadProgress),
+    })
+
+    expect(res.kind).toBe('result')
+    if (res.kind === 'result') {
+      expect(res.result.ok).toBe(true)
+    }
+
+    const readySnap = snapshots.find((s) => s.chunkBytes === 512 * 1024)
+    expect(readySnap).toBeDefined()
+    expect(readySnap?.platform).toBe('vercel')
+    expect(readySnap?.maxDurationMs).toBe(300_000)
+    expect(snapshots.some((s) => s.bytesPerSecond > 0)).toBe(true)
+    expect(snapshots.at(-1)?.files[0]?.totalSegments).toBe(Math.ceil(rawBytes.byteLength / (512 * 1024)))
+
+    const decrypted = await storage.lazy('pipelined/video-chunked.bin', { key: encryptionKey })
+    expect(decrypted).not.toBeNull()
+    expect(Buffer.compare(Buffer.from(await decrypted!.bytes()), Buffer.from(rawBytes))).toBe(0)
+  })
+
+  it('автоматически дозагружает прерванный поток на мобильном обрыве (resume-ok) и перезапускает с 0 при холодном инстансе (resume-miss)', async () => {
+    const encryptionKey = 'a7'.repeat(32)
+    const storage = createStorage({
+      servers: {
+        local: {
+          driver: localDriver({ rootDir }),
+          limits: { storageBytes: 1024 * 1024 * 1024, fileBytes: 50 * 1024 * 1024 },
+          key: encryptionKey,
+        },
+      },
+    })
+
+    const form = defineForm({
+      id: 'ws_mobile_autoresume',
+      fields: {
+        archive: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      integrity: true,
+      async execute({ values, commit }) {
+        const file = values.archive as File
+        const stored = await storage.put({
+          path: `resumed/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { path: stored.path, size: stored.size } }
+      },
+    })
+
+    const payload = new Uint8Array(1.5 * 1024 * 1024) // 6 сегментов по 256 КБ
+    for (let i = 0; i < payload.byteLength; i++) {
+      payload[i] = (i * 53 + 7) & 0xff
+    }
+
+    const runWithSimulatedDrop = async (filename: string, warmInstance: boolean) => {
+      sessionOptions = {
+        chunkBytes: 256 * 1024,
+        windowSize: 2,
+        resumeGraceMs: warmInstance ? 10_000 : 0,
+      }
+      let openedSockets = 0
+      let binaryFramesOnFirstSocket = 0
+
+      class FlakyMobileWs extends NodeWebSocket {
+        readonly socketIndex: number
+        constructor(url: string) {
+          super(url, { headers: { origin: 'http://localhost:5173' } })
+          openedSockets += 1
+          this.socketIndex = openedSockets
+        }
+        override send(data: Parameters<NodeWebSocket['send']>[0]): void {
+          if (this.socketIndex === 1 && data instanceof Uint8Array) {
+            binaryFramesOnFirstSocket += 1
+            if (binaryFramesOnFirstSocket === 2) {
+              // На 2-м бинарном сегменте имитируем мгновенный обрыв радиоканала (код 1006) ДО его доставки
+              this.terminate()
+              return
+            }
+          }
+          super.send(data)
+        }
+      }
+
+      const submissionId = randomUUID()
+      const instance = `${form.id}:main` as `${string}:${string}`
+      const env = buildEnvelope({ formId: form.id, revision: form.revision, instance, submissionId })
+      const fd = new FormData()
+      for (const [k, val] of Object.entries(env)) fd.set(k, val)
+      fd.set(form.policy.envelopeKeys.intent, 'submit')
+      fd.set('archive', new File([payload], filename, { type: 'application/octet-stream' }))
+
+      const snapshots: FormUploadProgress[] = []
+      const transport = wsFormTransport(() => '/upload-demo', {
+        wsUrl: wsEndpoint,
+        WebSocketImpl: FlakyMobileWs as unknown as ClientWebSocketConstructor,
+        reconnectBaseDelayMs: 30,
+      })
+
+      const out = await transport({
+        envelope: { formId: form.id, revision: form.revision, instance, submissionId, intent: 'submit' },
+        data: fd,
+        accept: ['application/json'],
+        signal: new AbortController().signal,
+        report: (p) => snapshots.push(p as FormUploadProgress),
+      })
+
+      return { out, openedSockets, snapshots }
+    }
+
+    // 1) Тёплый инстанс (`resume-ok`): продолжаем без потери уже принятых сегментов
+    const warm = await runWithSimulatedDrop('warm-lte.bin', true)
+    expect(warm.out.kind).toBe('result')
+    if (warm.out.kind === 'result') {
+      expect(warm.out.result.ok).toBe(true)
+    }
+    expect(warm.openedSockets).toBe(2)
+    expect(warm.snapshots.some((s) => s.phase === 'reconnecting')).toBe(true)
+    expect(warm.snapshots.at(-1)?.resumedCount).toBe(1)
+    const savedWarm = await storage.lazy('resumed/warm-lte.bin', { key: encryptionKey })
+    expect(Buffer.compare(Buffer.from(await savedWarm!.bytes()), Buffer.from(payload))).toBe(0)
+
+    // 2) Холодный инстанс (`resume-miss`): сервер не знает sessionId, клиент чисто перезапускает с байта 0
+    const cold = await runWithSimulatedDrop('cold-vercel.bin', false)
+    expect(cold.out.kind).toBe('result')
+    if (cold.out.kind === 'result') {
+      expect(cold.out.result.ok).toBe(true)
+    }
+    expect(cold.openedSockets).toBe(2)
+    expect(cold.snapshots.at(-1)?.resumedCount).toBe(1)
+    const savedCold = await storage.lazy('resumed/cold-vercel.bin', { key: encryptionKey })
+    expect(Buffer.compare(Buffer.from(await savedCold!.bytes()), Buffer.from(payload))).toBe(0)
+  })
+
+  it('гарантирует новое wss://-соединение и новый серверный таймер после отмены, ошибки и успешного завершения', async () => {
+    const storage = createStorage({ servers: { local: localDriver({ rootDir }) } })
+    let failNextOnServer = false
+
+    const form = defineForm({
+      id: 'ws_fresh_connection_lifecycle',
+      fields: {
+        doc: field.file({ validate: [v.required()] }),
+      },
+    })
+
+    registerComponentForm({
+      description: form,
+      integrity: true,
+      async execute({ values, commit, fail }) {
+        if (failNextOnServer) {
+          return fail(
+            [{ id: 'doc:custom', code: 'custom.rejected', message: 'Серверный отказ', path: 'doc', origin: 'server' }],
+            'not-applied',
+          )
+        }
+        const file = values.doc as File
+        const stored = await storage.put({
+          path: `lifecycle/${file.name}`,
+          body: file.stream(),
+          size: file.size,
+        })
+        commit()
+        return { data: { path: stored.path } }
+      },
+    })
+
+    let openedSockets = 0
+    const readySessionIds: string[] = []
+
+    class CountingWs extends NodeWebSocket {
+      constructor(url: string) {
+        super(url, { headers: { origin: 'http://localhost:5173' } })
+        openedSockets += 1
+        this.on('message', (raw, isBinary) => {
+          if (isBinary) return
+          const parsed = JSON.parse(raw.toString('utf8')) as { type?: string; sessionId?: string }
+          if (parsed.type === 'ready' && parsed.sessionId) {
+            readySessionIds.push(parsed.sessionId)
+          }
+        })
+      }
+    }
+
+    const transport = wsFormTransport(() => '/upload-demo', {
+      wsUrl: wsEndpoint,
+      WebSocketImpl: CountingWs as unknown as ClientWebSocketConstructor,
+    })
+
+    const fileBytes = new Uint8Array(900 * 1024)
+    for (let i = 0; i < fileBytes.byteLength; i++) fileBytes[i] = (i * 13) & 0xff
+
+    const buildReq = (filename: string, controller = new AbortController()) => {
+      const submissionId = randomUUID()
+      const instance = `${form.id}:main` as `${string}:${string}`
+      const env = buildEnvelope({ formId: form.id, revision: form.revision, instance, submissionId })
+      const fd = new FormData()
+      for (const [k, val] of Object.entries(env)) fd.set(k, val)
+      fd.set(form.policy.envelopeKeys.intent, 'submit')
+      fd.set('doc', new File([fileBytes], filename, { type: 'application/octet-stream' }))
+      const snapshots: FormUploadProgress[] = []
+      return {
+        controller,
+        snapshots,
+        req: {
+          envelope: { formId: form.id, revision: form.revision, instance, submissionId, intent: 'submit' as const },
+          data: fd,
+          accept: ['application/json'],
+          signal: controller.signal,
+          report: (p: unknown): void => {
+            snapshots.push(p as FormUploadProgress)
+          },
+        },
+      }
+    }
+
+    // 1) Отмена активной загрузки пользователем -> abort + уборка `.part`
+    const cancelAttempt = buildReq('cancelled.bin')
+    cancelAttempt.req.report = (p: unknown) => {
+      const snap = p as FormUploadProgress
+      cancelAttempt.snapshots.push(snap)
+      if (snap.phase === 'uploading' && snap.sentBytes >= 256 * 1024) {
+        cancelAttempt.controller.abort('user-cancelled')
+      }
+    }
+    const resCancel = await transport(cancelAttempt.req)
+    expect(resCancel.kind).toBe('abort')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(await storage.head('lifecycle/cancelled.bin')).toBeNull()
+    const tmpAfterCancel = await readdir(join(rootDir, '.storage-tmp')).catch(() => [] as string[])
+    expect(tmpAfterCancel).toEqual([])
+
+    // 2) Ошибка сервера -> новое соединение + новый таймер
+    failNextOnServer = true
+    const errorAttempt = buildReq('errored.bin')
+    const resError = await transport(errorAttempt.req)
+    expect(resError.kind).toBe('result')
+    if (resError.kind === 'result') {
+      expect(resError.result.ok).toBe(false)
+    }
+
+    // 3) Успешная загрузка после ошибки -> новое соединение + новый таймер
+    failNextOnServer = false
+    const okAttempt1 = buildReq('ok-1.bin')
+    const resOk1 = await transport(okAttempt1.req)
+    expect(resOk1.kind).toBe('result')
+    if (resOk1.kind === 'result') {
+      expect(resOk1.result.ok).toBe(true)
+    }
+    expect(okAttempt1.snapshots[0]?.elapsedMs ?? 0).toBeLessThan(250)
+
+    // 4) Ещё одна успешная загрузка после успеха -> новое соединение + новый таймер
+    const okAttempt2 = buildReq('ok-2.bin')
+    const resOk2 = await transport(okAttempt2.req)
+    expect(resOk2.kind).toBe('result')
+    if (resOk2.kind === 'result') {
+      expect(resOk2.result.ok).toBe(true)
+    }
+    expect(okAttempt2.snapshots[0]?.elapsedMs ?? 0).toBeLessThan(250)
+
+    expect(openedSockets).toBe(4)
+    expect(new Set(readySessionIds).size).toBe(4)
   })
 })
 
