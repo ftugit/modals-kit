@@ -10,7 +10,11 @@
     STORAGE_VAULT_MODAL,
     STORAGE_VAULT_ROUTE,
   } from '#content/storage-vault/modals.js'
-  import { bindComponentForm, type FormUploadProgress } from '#hooks/component-form/index.js'
+  import {
+    bindComponentForm,
+    formatUploadSpeedRu,
+    type FormUploadProgress,
+  } from '#hooks/component-form/index.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import type { PageData } from './$types'
@@ -51,6 +55,9 @@
   let localReport = $state<StorageReport | null>(null)
   let localTelemetry = $state<StorageTelemetrySnapshot | null>(null)
   let lastProgress = $state<FormUploadProgress | null>(null)
+  // Инкрементируется ТОЛЬКО при успешном завершении загрузки (`handleUploaded`),
+  // чтобы форма очищалась только после успеха и никогда при отмене или ошибке.
+  let uploadResetEpoch = $state(0)
 
   // При инвалидации `load` (например после добавления сервера в куки-сейфе) синхронизируем отчёт
   $effect(() => {
@@ -65,7 +72,7 @@
   const storageReport = $derived(localReport ?? data.storageReport)
   const telemetry = $derived(localTelemetry ?? data.telemetry)
   const formShapeKey = $derived(
-    `${demo.server}:${demo.write_strategy}:${demo.stage_to_disk}:${demo.max_mb}:${demo.accept}:${demo.multiple}:${demo.integrity}`,
+    `${demo.max_mb}:${demo.accept}:${demo.multiple}:${demo.integrity}:${uploadResetEpoch}`,
   )
   const panelShapeKey = $derived(data.vaultSnapshot.items.map((x) => x.id).join(','))
 
@@ -88,6 +95,7 @@
     localItems = [...created, ...existing.filter((x) => !createdIds.has(x.id))]
     if (report) localReport = report
     if (nextTelemetry) localTelemetry = nextTelemetry
+    uploadResetEpoch += 1
   }
 
   function handleItemUpdated(
@@ -284,6 +292,7 @@
     {/key}
 
     {#if lastProgress}
+      {@const speedText = formatUploadSpeedRu(lastProgress.bytesPerSecond)}
       <div
         class="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1"
         data-testid="ws-progress-log"
@@ -293,13 +302,16 @@
         <div class="font-medium">
           Статус потока: <span data-testid="ws-phase">{lastProgress.phase}</span> ·
           {lastProgress.percent}% ({formatBytes(lastProgress.sentBytes)} из {formatBytes(lastProgress.totalBytes)})
+          {#if speedText}
+            · <span data-testid="ws-speed">{speedText}</span>
+          {/if}
           {#if lastProgress.salted}
             · <span data-testid="ws-hmac-badge">HMAC-SHA-256 (с солью)</span>
           {/if}
         </div>
         {#each lastProgress.files as fEntry (fEntry.fileId)}
           <div data-testid="ws-file-summary">
-            {fEntry.name}: сегментов {fEntry.sentSegments}/{fEntry.totalSegments}
+            {fEntry.name}: {formatBytes(fEntry.receivedBytes)} из {formatBytes(fEntry.size)}{speedText ? ` · ${speedText}` : ''}
           </div>
         {/each}
       </div>

@@ -158,6 +158,8 @@ registerComponentForm({
           : `demo/${id}-${safeSlug(file.name)}`
         const transport: 'ws' | 'http' = file instanceof StreamFile ? 'ws' : 'http'
         const useStageToDisk = isSplitDemo || Boolean(cfg.stage_to_disk)
+        const uploadRateOverride =
+          cfg.up_rate && cfg.up_rate !== 'default' ? Number(cfg.up_rate) : undefined
 
         const stored = await storage.put({
           path: storagePath,
@@ -167,6 +169,7 @@ registerComponentForm({
           lastModified: file.lastModified,
           overwrite: allowOverwrite,
           stageToDisk: useStageToDisk,
+          ...(uploadRateOverride ? { rate: uploadRateOverride } : {}),
           ...(isSplitDemo
             ? {
                 server: 'auto',

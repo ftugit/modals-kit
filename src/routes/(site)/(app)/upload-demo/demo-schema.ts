@@ -15,6 +15,13 @@ export type UploadWriteStrategy = 'priority' | 'most-free' | 'round-robin'
 export type UploadAcceptMode = 'any' | 'images' | 'pdf_zip'
 export type UploadMaxMb = '200' | '10' | '1'
 export type UploadAclMode = 'allow' | 'deny_403' | 'expired_422'
+export type UploadRateMode = 'default' | '524288' | '131072'
+export type UploadPlatformLimitMode =
+  | 'auto'
+  | 'vercel_300'
+  | 'vercel_800'
+  | 'cloudflare'
+  | 'demo_20'
 export type DownloadServeMode = 'attachment' | 'inline'
 export type DownloadRateMode = 'default' | '262144' | '65536' | '0'
 export type DownloadConcurrencyMode =
@@ -29,6 +36,8 @@ export type UploadDemoValues = {
   write_strategy: UploadWriteStrategy
   stage_to_disk: boolean
   integrity: boolean
+  up_rate: UploadRateMode
+  platform_limit: UploadPlatformLimitMode
   dl_mode: DownloadServeMode
   dl_rate: DownloadRateMode
   dl_concurrency: DownloadConcurrencyMode
@@ -55,6 +64,18 @@ const HINTS: Record<string, Record<string, string>> = {
     priority: 'при auto берётся первый здоровый сервер из пула по порядку объявления',
     'most-free': 'при auto выбирается сервер с наибольшим свободным остатком байт в ledger',
     'round-robin': 'при auto серверы пула чередуются по кругу',
+  },
+  up_rate: {
+    default: 'максимальная пропускная способность канала без искусственного замедления',
+    '524288': 'шейпер приёма 512 КБ/с — удобно наблюдать шаг активной загрузки, скорость и кнопку отмены',
+    '131072': 'шейпер приёма 128 КБ/с — удобно проверить расчёт минут и предупреждение о нехватке скорости под лимит платформы',
+  },
+  platform_limit: {
+    auto: 'автоопределение по рантайму (Vercel = 300 с или WS_UPLOAD_MAX_DURATION, Cloudflare/Node = без отсечки)',
+    vercel_300: 'симуляция Vercel Fluid Compute Hobby / Default (лимит соединения 5 минут = 300 с)',
+    vercel_800: 'симуляция Vercel Pro / Enterprise (maxDuration = 800 с)',
+    cloudflare: 'симуляция Cloudflare Workers (потоковый сокет без 5-минутного потолка при активных байтах)',
+    demo_20: 'стендовый короткий лимит 20 с — наглядно срабатывает предупреждение остановить загрузку или разбить архиватором',
   },
   dl_mode: {
     attachment:
@@ -154,6 +175,32 @@ export function createUploadDemoPanelSchema(
         defaultValue: true,
         url: { omitWhenDefault: true },
         hint: 'одноразовая 32-байтная соль на отдельную загрузку',
+      }),
+      demoSelect({
+        key: 'up_rate',
+        label: 'Шейпер скорости приёма (для теста шага и отмены)',
+        defaultValue: 'default',
+        url: { omitWhenDefault: true },
+        hintOf: hintOf('up_rate'),
+        options: [
+          { value: 'default', label: 'Без ограничения' },
+          { value: '524288', label: '512 КБ/с' },
+          { value: '131072', label: '128 КБ/с' },
+        ],
+      }),
+      demoSelect({
+        key: 'platform_limit',
+        label: 'Лимит времени платформы (прогноз успеваемости)',
+        defaultValue: 'auto',
+        url: { omitWhenDefault: true },
+        hintOf: hintOf('platform_limit'),
+        options: [
+          { value: 'auto', label: 'Авто по рантайму' },
+          { value: 'vercel_300', label: 'Vercel Hobby (300 с = 5 мин)' },
+          { value: 'vercel_800', label: 'Vercel Pro (800 с)' },
+          { value: 'cloudflare', label: 'Cloudflare Workers (без отсечки)' },
+          { value: 'demo_20', label: 'Тестовый лимит 20 с (проверка предупреждения)' },
+        ],
       }),
 
       demoDivider('Скачивание и раздача (storage.serve)'),
