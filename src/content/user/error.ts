@@ -41,6 +41,14 @@ export type AuthErrorCode =
   | 'config.key-unknown'     // ключ конфига не из каталога приложения (CONFIG_KEYS)
   | 'config.value-invalid'   // значение не совпало со спекой ключа конфига
   | 'config.rule-forbidden'  // операция над ключом запрещена правилом schema ключа
+  | 'storage.pool-empty'     // в облачном окружении не настроен ни один сервер боевого хранилища
+  | 'storage.unavailable'    // сбой записи или удаления объекта в боевом хранилище
+  | 'storage.slot-invalid'   // некорректный идентификатор слота сервера хранилища
+  | 'storage.slot-reserved'  // зарезервированное имя слота хранилища
+  | 'storage.url-invalid'    // некорректная DSN-ссылка s3:// или webdav://
+  | 'storage.limits-invalid' // некорректные квоты хранилища / файла или приоритет
+  | 'storage.probe-failed'   // живая проверка подключения к серверу хранилища не прошла
+  | 'storage.not-found'      // запись сервера хранилища не найдена
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -86,6 +94,14 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'config.key-unknown': (f) => (f.path ? [fieldError(f)] : [generalError('config.key-unknown')]),
   'config.value-invalid': (f) => (f.path ? [fieldError(f)] : [generalError('config.value-invalid')]),
   'config.rule-forbidden': (f) => (f.path ? [fieldError(f)] : [generalError('config.rule-forbidden')]),
+  'storage.pool-empty': () => [generalError('storage.pool-empty', { retryable: true })],
+  'storage.unavailable': () => [generalError('storage.unavailable', { retryable: true })],
+  'storage.slot-invalid': (f) => [fieldError(f, { path: f.path ?? 'slot' })],
+  'storage.slot-reserved': (f) => [fieldError(f, { path: f.path ?? 'slot' })],
+  'storage.url-invalid': (f) => [fieldError(f, { path: f.path ?? 'url' })],
+  'storage.limits-invalid': (f) => [fieldError(f, { path: f.path ?? 'file_mb' })],
+  'storage.probe-failed': (f) => [fieldError(f, { path: f.path ?? 'url', retryable: true })],
+  'storage.not-found': () => [generalError('storage.not-found')],
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

@@ -30,18 +30,15 @@ const AVATAR_URL = s.custom((value) => {
   // контракт s.custom: строка = текст ошибки, успех — не-строка (true)
   if (value === null || value === undefined) return true // пусто — колонка nullable
   if (typeof value === 'string' && /^https?:\/\/\S{1,2040}$/i.test(value)) return true
-  // `avatar_url` — ссылка на картинку, а не сам файл: сегодня это base64
-  // dataURL (его готовит примитив поля или сервер по спеке), с `lib/storage`
-  // сюда же ляжет http(s)-URL. Схему интересует вид строки; содержимое
-  // (формат по заголовкам, вес, кадр по спеке) проверяет роут ДО записи.
-  // Потолок длины — последний рубеж против мегабайтов в text-колонке.
+  if (typeof value === 'string' && /^\/(?!\/)\S{1,2040}$/.test(value)) return true
+  // Обратная совместимость со старыми строками dataURL в БД.
   if (
     typeof value === 'string' &&
     value.length <= 1_500_000 &&
     /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
   )
     return true
-  return 'profile.avatar_url: ожидается адрес http(s)://… или data:image/…;base64'
+  return 'profile.avatar_url: ожидается адрес /api/storage/…, http(s)://… или data:image/…;base64'
 })
 
 const PROFILE_ACL = defineAcl({

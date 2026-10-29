@@ -14,10 +14,10 @@ import { defineSchema, type SchemaReport, type SyncStep } from '#lib/db/sync/ind
 import { posts } from '#content/demo-catalog/posts/posts.js'
 import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
 import { cacheKv } from '#hooks/cache-db.js'
-import { storageFile, storageReservation } from '#hooks/storage-db.js'
+import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
 import { announceSeedAdmin, ensureSeedAdmin, type SeedAdmin } from './admin-bootstrap.server.js'
 
-export { posts, auth, profile, session, userConfig, userBlock, cacheKv, storageFile, storageReservation }
+export { posts, auth, profile, session, userConfig, userBlock, cacheKv, storageFile, storageReservation, storageServer }
 
 export const DB_LIMITS: Limits = {
   pageSize: 20,
@@ -33,7 +33,7 @@ export const schemaSpec = {
   // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
   // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.ts);
   // storage_file / storage_reservation — реестр и брони lib/storage (`pgStorageLedger` в hooks/storage-db.ts)
-  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv, storageFile, storageReservation],
+  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv, storageFile, storageReservation, storageServer],
   sql: [
     // Конфиг-модель (этап 10): уникальность пары (auth_id, key) обычный
     // unique не даёт — NULL глобальных строк в Postgres не равен NULL,

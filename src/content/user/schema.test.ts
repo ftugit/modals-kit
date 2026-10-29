@@ -24,14 +24,14 @@ describe('схема пользователя (user_auth / user_profile / user_s
     expect(history.nullable).toBe(true)
   })
 
-  test('avatar_url: http(s) и dataURL картинок проходят, мусор — нет', async () => {
+  test('avatar_url: корневые ссылки хранилища, http(s) и legacy dataURL проходят, мусор — нет', async () => {
     const v = (x: unknown) => profileFields.avatar_url['~standard'].validate(x)
+    expect((await v('/api/storage/avatars/22222222-2222-4222-8222-222222222222/a1b2c3d4.jpg')).issues).toBeUndefined()
     expect((await v('https://example.com/a.png')).issues).toBeUndefined()
-    // dataURL — продукт клиентского конвейера аватара (раньше схема его
-    // отклоняла и сохранение падало 500; содержимое проверяет роут по спеке)
     expect((await v('data:image/jpeg;base64,/9j/4AAQ')).issues).toBeUndefined()
     expect((await v('data:image/webp;base64,UklGRg==')).issues).toBeUndefined()
     expect((await v(null)).issues).toBeUndefined()
+    expect((await v('//evil.example.com/a.jpg')).issues).toBeDefined()
     expect((await v('data:text/html;base64,PGI+')).issues).toBeDefined()
     expect((await v('data:image/svg+xml;base64,PHN2Zz4=')).issues).toBeDefined()
     expect((await v('javascript:alert(1)')).issues).toBeDefined()

@@ -2,6 +2,7 @@
   import Button from '#components/ui/button/Button.svelte'
   import { asLink } from '#hooks/links/index.js'
   import SeedUsersEntry from '#content/user/ui/SeedUsersEntry.svelte'
+  import StorageServersEntry from '#content/storage-servers/ui/StorageServersEntry.svelte'
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.
 
@@ -67,8 +68,9 @@
       загрузчик работает до открытия, Назад/Вперёд закрывают и открывают модалки.
     </p>
   </div>
-  <div class="mt-8">
+  <div class="mt-8 grid gap-4 sm:grid-cols-2">
     <SeedUsersEntry />
+    <StorageServersEntry />
   </div>
   <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {#each demos as d (d.href)}

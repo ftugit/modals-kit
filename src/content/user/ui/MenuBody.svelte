@@ -9,12 +9,15 @@
    */
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { useModalLink } from '#hooks/links/index.js'
+  import { storageServer } from '#hooks/storage-db.js'
   import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
+  import { useGrants } from '../grants.svelte.js'
   import { seedForm } from './seed-form/form.js'
   import { specProfile } from '../spec-profile.js'
   import { vault } from '../vault.svelte.js'
@@ -53,6 +56,8 @@
     vault.principal ? asModalLink('user.profile', { id: vault.principal }) : null,
   )
   const configLink = $derived(asModalLink('user.config.edit'))
+  const storageServersGrant = useGrants(grants(storageServer).select)
+  const storageServersLink = $derived(asModalLink('storage.servers'))
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках
   // и зовём callback обёртки (без него — переход на `next`).
@@ -94,6 +99,11 @@
     {/if}
     <Button {...profileLink} variant="outline" class="w-full">Изменить профиль</Button>
     <Button {...configLink} variant="outline" class="w-full" data-testid="menu-config-open">Настройки</Button>
+    {#if storageServersGrant.current}
+      <Button {...storageServersLink} variant="outline" class="w-full" data-testid="menu-storage-servers-open">
+        Серверы хранилища
+      </Button>
+    {/if}
     <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()}>
       <Button
         type="submit"

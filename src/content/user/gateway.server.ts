@@ -17,10 +17,12 @@
 import { AUTH_COOKIE_SAMESITE, AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
 import * as Iron from 'iron-webcrypto'
 import { localStore } from '#server/cache.server.js'
+import { removeManagedAvatarByUrl } from '#server/app-storage.server.js'
 import { db } from '#server/db.server.js'
 import type { Cookies } from '@sveltejs/kit'
 import {
   createUserConfig,
+  guard as coreGuard,
   issueFreshAccess as coreIssueFreshAccess,
   listSessions as coreListSessions,
   login as coreLogin,
@@ -355,14 +357,23 @@ function profilesAdapter() {
     async update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
       const row = await byAuth(ctx, authId)
       if (!row) return
+      const prevAvatarUrl = (row.avatar_url as string | null) ?? null
       await api().update(ctx, row.id, {
         ...(patch.nickname !== undefined ? { nickname: patch.nickname } : {}),
         ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
       })
+      if (patch.avatarUrl !== undefined && prevAvatarUrl && prevAvatarUrl !== patch.avatarUrl) {
+        await removeManagedAvatarByUrl(prevAvatarUrl)
+      }
     },
     async remove(ctx: DataContext, authId: string): Promise<void> {
       const row = await byAuth(ctx, authId)
-      if (row) await api().delete(ctx, row.id, { hard: true })
+      if (!row) return
+      const prevAvatarUrl = (row.avatar_url as string | null) ?? null
+      await api().delete(ctx, row.id, { hard: true })
+      if (prevAvatarUrl) {
+        await removeManagedAvatarByUrl(prevAvatarUrl)
+      }
     },
   }
 }
@@ -617,6 +628,8 @@ async function withRenewLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 export function auth(event: AuthEvent): {
   /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
   readonly enabled: boolean
+  /** Текущий подтверждённый субъект и его права (с бесшовным продлением `auth_tmp` по `auth_sid`). */
+  actor(): Promise<UserResult<{ id: string; permissions: readonly string[] }>>
   issueChallenge(): Promise<UserResult<Challenge>>
   login(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   restoreDeleted(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
@@ -733,6 +746,11 @@ export function auth(event: AuthEvent): {
 
   return {
     enabled: AUTH_ENABLED,
+    actor: async () => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      return { ok: true, value: { id: g.sub, permissions: g.perms } }
+    },
     issueChallenge: () => coreIssueChallenge(ports),
     login: async (args) => {
       const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
@@ -885,8 +903,11 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'config.rule-forbidden':
       return 403
     case 'auth.disabled':
+    case 'storage.pool-empty':
+    case 'storage.unavailable':
       return 503
     case 'auth.identity-unknown':
+    case 'storage.not-found':
       return 404
     case 'auth.delete-pending':
       return 409
@@ -899,6 +920,11 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'profile.photo-spec':
     case 'config.key-unknown':
     case 'config.value-invalid':
+    case 'storage.slot-invalid':
+    case 'storage.slot-reserved':
+    case 'storage.url-invalid':
+    case 'storage.limits-invalid':
+    case 'storage.probe-failed':
       return 422
   }
 }

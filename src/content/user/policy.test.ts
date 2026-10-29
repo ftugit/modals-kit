@@ -15,7 +15,7 @@ import { conservativeLimits, createDb, validateResourceAcl, type DbFailure } fro
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 import { cacheKv } from '#hooks/cache-db.js'
-import { storageFile, storageReservation } from '#hooks/storage-db.js'
+import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
 import { posts } from '#content/demo-catalog/posts/posts.js'
 import { auth, block as blockRes, config, profile, session } from './schema.js'
 
@@ -371,7 +371,7 @@ test('блокировки (этап 9): модель держит круг, н�
 })
 
 test('ACL-страж проходит по всем моделям репозитория без аномалий, а владелец demo.post может удалять свою запись', async () => {
-  for (const r of [auth, profile, session, config, blockRes, posts, storageFile, storageReservation, cacheKv]) {
+  for (const r of [auth, profile, session, config, blockRes, posts, storageFile, storageReservation, storageServer, cacheKv]) {
     validateResourceAcl(r)
   }
 

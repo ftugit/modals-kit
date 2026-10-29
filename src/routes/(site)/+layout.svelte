@@ -12,6 +12,7 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import '#content/user/modals.js'
   import '#content/storage-vault/modals.js'
+  import '#content/storage-servers/modals.js'
   import { globalScope } from '#lib/modals/index.js'
   import ModalSystem from './ModalSystem.svelte'
   import { NAV_ITEMS } from './nav'

@@ -89,6 +89,14 @@ export const PERMISSIONS = {
     title: 'Чтение конфига',
     description: 'Видеть ключи конфига и их значения: умолчания и закреплённые за пользователями.',
   },
+  'storage.read': {
+    title: 'Чтение серверов хранилища',
+    description: 'Видеть подключённые серверы хранилища файлов, их квоты, приоритеты и режим работы пула.',
+  },
+  'storage.edit': {
+    title: 'Управление серверами хранилища',
+    description: 'Добавлять, проверять, обновлять и удалять серверы боевого хранилища файлов.',
+  },
 } as const satisfies Record<string, PermissionInfo>
 
 /** Право — ключ каталога; именно эта строка лежит в `principal.roles`. */
@@ -138,6 +146,7 @@ export const PERMISSION_GROUPS: readonly {
   { title: 'Сессии', permissions: ['session.read', 'session.edit'] },
   { title: 'Блокировки', permissions: ['block.read', 'block.edit', 'block.readDeleted'] },
   { title: 'Конфиг', permissions: ['config.read'] },
+  { title: 'Хранилище', permissions: ['storage.read', 'storage.edit'] },
 ]
 
 /** Строка из `principal.roles` — известное право? */

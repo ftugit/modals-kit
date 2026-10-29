@@ -51,10 +51,23 @@ export const CONFIG_MESSAGES: Record<string, string> = {
   'config.rule-forbidden': 'У вас нет прав на изменение этого параметра',
 }
 
+/** Боевое хранилище файлов и пул серверов (`STORAGE_ACL`). */
+export const STORAGE_MESSAGES: Record<string, string> = {
+  'storage.pool-empty': 'Хранилище файлов ещё не подключено администратором',
+  'storage.unavailable': 'Не удалось обратиться к хранилищу файлов — попробуйте позже',
+  'storage.slot-invalid': 'Имя слота: строчная латиница, цифры, «_» или «-» (до 24 символов)',
+  'storage.slot-reserved': 'Это имя слота зарезервировано встроенным хранилищем',
+  'storage.url-invalid': 'Укажите корректную ссылку хранилища s3://… или webdav://…',
+  'storage.limits-invalid': 'Укажите целые квоты (1–1 048 576 МБ), где лимит файла не превышает общий объём',
+  'storage.probe-failed': 'Проверка подключения к серверу не прошла: {detail}',
+  'storage.not-found': 'Сервер хранилища не найден',
+}
+
 /** Всё доменное сразу: то, что формы модуля кладут в `messages`. */
 export const USER_MESSAGES: Record<string, string> = {
   ...AUTH_MESSAGES,
   ...PROFILE_MESSAGES,
   ...PERMISSIONS_MESSAGES,
   ...CONFIG_MESSAGES,
+  ...STORAGE_MESSAGES,
 }

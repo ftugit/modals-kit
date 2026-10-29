@@ -40,6 +40,7 @@ async function waitPreview() {
 async function run() {
   await waitPreview()
   const browser = await chromium.launch({ headless: true })
+  let readyAvatar200 = null
   try {
     console.log('— с JS: шаги, валидация, бинарный File аватара, Acl и выход —')
     {
@@ -165,43 +166,51 @@ async function run() {
       await profile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
       ok('HoldButton удержание: шаг профиля открыт')
 
-      // 6а. Фото-поле: не-картинка даёт ошибку у поля и чистит носитель,
-      //     честный JPEG сжимается в бинарный `avatar.jpg` + компактный `FileAttachment`
-      const fileInput = profile.locator('input[type=file][name=avatar]')
+      // 6а. Фото-поле (`photo`): не-картинка даёт ошибку у поля, честный кадр
+      //     сжимается через lib/image и сохраняется в `/api/storage/avatars/...`
+      const fileInput = profile.locator('input[type=file][name=photo]')
       await fileInput.setInputFiles({
         name: 'evil.jpg',
         mimeType: 'image/jpeg',
         buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
       })
-      const avatarError = profile.locator('[data-field=avatar] p[role=alert]')
+      await fileInput.evaluate((el) => el.blur())
+      const avatarError = profile.locator('[data-field=photo] p[role=alert]')
       await avatarError.waitFor({ state: 'visible', timeout: 10000 })
-      assert.ok((await avatarError.textContent()).length > 3, 'текст ошибки аватара')
-      assert.equal(await fileInput.evaluate((el) => el.files?.length ?? 0), 0, 'битый файл очищен из носителя')
-      ok('битый аватар: ошибка видна у поля и носитель очищен')
+      assert.ok((await avatarError.textContent()).length > 3, 'текст ошибки фото')
+      ok('битый аватар: ошибка видна у поля photo')
 
       await fileInput.setInputFiles({
         name: 'a.jpg',
         mimeType: 'image/jpeg',
         buffer: Buffer.from(JPEG_1X1, 'base64'),
       })
-      await page.waitForFunction(
-        () => document.querySelector('#user-profile input[type=file][name=avatar]')?.files?.[0]?.name === 'avatar.jpg',
-        undefined,
-        { timeout: 20000 },
-      )
-      await profile.locator('[data-field=avatar] [data-slot=attachment] img').waitFor({
+      await profile.locator('[data-field=photo] [data-slot=attachment] img').waitFor({
         state: 'visible',
         timeout: 20000,
       })
-      ok('фото: честный JPEG сжат через lib/image и лежит бинарным File avatar.jpg в носителе')
+      const convertedBytes = await fileInput.evaluate(async (el) => {
+        const f = el.files?.[0]
+        if (!f) return null
+        return Array.from(new Uint8Array(await f.arrayBuffer()))
+      })
+      assert.ok(convertedBytes && convertedBytes.length > 100, 'сконвертированный 200x200 JPEG получен')
+      readyAvatar200 = Buffer.from(convertedBytes)
+      ok('фото: честный JPEG сжат через lib/image (200x200) и показан в FileAttachment')
 
-      // 7. Профиль → успех сохраняет ник и бинарный аватар, уводит со страницы
+      // 7. Профиль → успех сохраняет ник и аватар в боевое хранилище (/api/storage/avatars/...)
       await profile.locator('input[name=nickname]').fill('e2e-ход-258')
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
       await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'сохранённый аватар в шапке')
-      ok('регистрация (JS): профиль и бинарный аватар сохранены, переход выполнен')
+      const savedAvatarSrc = await page.locator('[data-testid=header-user] img').getAttribute('src')
+      assert.match(savedAvatarSrc ?? '', /^\/api\/storage\/avatars\//, 'аватар лежит по неизменяемому URL хранилища, а не data:')
+      const avatarRes = await fetch(BASE + savedAvatarSrc)
+      assert.equal(avatarRes.status, 200, 'раздача /api/storage/avatars/... отдаёт 200')
+      assert.match(avatarRes.headers.get('cache-control') ?? '', /immutable/, 'Cache-Control содержит immutable')
+      assert.match(avatarRes.headers.get('etag') ?? '', /^"[^"]+"$/, 'сильный ETag без W/')
+      ok('регистрация (JS): профиль и аватар в /api/storage/avatars/... сохранены, раздача 200 + immutable + strong ETag')
 
       // 8. Acl allow="guest": повторный заход авторизованным на /user/auth показывает guest_only
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
@@ -329,16 +338,31 @@ async function run() {
       assert.match(await profile.locator('[data-field=nickname] [role=alert]').textContent(), /нельзя/)
       ok('без JS: ошибка валидации возвращается прямо в ответе POST без GET')
 
+      // 12б. В no-JS картинка не по спеке (1x1 вместо 200x200) отклоняется fitsSpec,
+      //      а готовый 200x200 JPEG сохраняется в /api/storage/avatars/...
       await profile.locator('input[name=nickname]').fill('e2e-nojs-258')
-      await profile.locator('input[type=file][name=avatar]').setInputFiles({
-        name: 'raw.jpg',
+      await profile.locator('input[type=file][name=photo]').setInputFiles({
+        name: 'raw-1x1.jpg',
         mimeType: 'image/jpeg',
         buffer: Buffer.from(JPEG_1X1, 'base64'),
       })
       await profile.getByRole('button', { name: 'Сохранить' }).click()
+      await page.waitForLoadState('load')
+      assert.ok((await profile.locator('[role=alert]').count()) > 0, 'без JS: 1x1 JPEG отклонён по спеке 200x200')
+      ok('без JS: сырой 1x1 JPEG честно отклонён fitsSpec (сервер не перекодирует)')
+
+      await profile.locator('input[name=nickname]').fill('e2e-nojs-258')
+      await profile.locator('input[type=file][name=photo]').setInputFiles({
+        name: 'ready-200x200.jpg',
+        mimeType: 'image/jpeg',
+        buffer: readyAvatar200,
+      })
+      await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth') && !u.search.includes('stage'), { timeout: 15000 })
-      assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'серверный decodeWithNode сохранил аватар')
-      ok('без JS: регистрация + бинарный File аватара (decodeWithNode) прошли')
+      assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'готовый 200x200 аватар сохранён')
+      const noJsAvatarSrc = await page.locator('[data-testid=header-user] img').getAttribute('src')
+      assert.match(noJsAvatarSrc ?? '', /^\/api\/storage\/avatars\//, 'no-JS аватар лежит в /api/storage/avatars/')
+      ok('без JS: регистрация + готовый 200x200 File аватара в /api/storage/avatars/... прошли')
 
       // 13. Выход на /user/menu → повторный вход без JS тем же seed → снова выход
       await page.goto(BASE + '/user/menu', { waitUntil: 'load' })

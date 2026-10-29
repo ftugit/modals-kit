@@ -41,9 +41,10 @@ import {
   session,
   storageFile,
   storageReservation,
+  storageServer,
 } from './db-spec.server.js'
 
-export { posts, auth, profile, session, cacheKv, storageFile, storageReservation, schema }
+export { posts, auth, profile, session, cacheKv, storageFile, storageReservation, storageServer, schema }
 
 /** Этап сверки схемы — словами для человека (`taskLabel`: «шаг N из M: …»). */
 export function schemaStepName(step: SyncStep): string | undefined {
