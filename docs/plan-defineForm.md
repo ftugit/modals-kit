@@ -19,8 +19,8 @@
 
 ## Точка старта
 
-- `HEAD` = `33739c5`, `origin/img` = `33739c5`, дерево чистое.
-- Тесты сейчас: `src/lib/form` — 246; `src/components/form src/hooks src/server` — 326; tooling — 145; `svelte-check` — 0/0.
+- Обновлено 2026-10-29: выбран владельцем **приоритетом №1** перед остальными открытыми направлениями (`HEAD` = `b5701f4`).
+- За время параллельных работ добавилось больше `*.form.server.ts` (включая `block.form.server.ts`, `block-delete.form.server.ts`, `profile-delete.form.server.ts`, `privacy.form.server.ts`, `vault.form.server.ts`, `upload.form.server.ts`) — этап 5 охватывает **все** зарегистрированные формы приложения.
 
 ## Цель
 
