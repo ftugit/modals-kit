@@ -1,5 +1,5 @@
 import { defineForm, field, v } from '#lib/form/index.js'
-import { AUTH_MESSAGES, PROFILE_MESSAGES } from '../../messages.js'
+import { USER_MESSAGES } from '../../messages.js'
 import { BLOCK_SCOPES, isBlockScope, specBlocks, type BlockScope } from '../../spec-block.js'
 
 export const BLOCK_FORM_ID = 'user-block-form'
@@ -12,7 +12,7 @@ export function createBlockFormDescription(allowedScopes: readonly string[] = AL
   return defineForm({
     id: BLOCK_FORM_ID,
     revision: 1,
-    messages: { ...AUTH_MESSAGES, ...PROFILE_MESSAGES },
+    messages: USER_MESSAGES,
     actions: [
       { id: 'save', label: 'Сохранить', validate: 'full' },
       { id: 'lift', label: specBlocks.liftButton, validate: 'none' },

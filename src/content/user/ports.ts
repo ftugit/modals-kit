@@ -217,6 +217,8 @@ export interface BlockStorePort {
 export interface ConfigStorePort {
   /** Строка по паре: `authId = null` — умолчание. */
   row(authId: string | null, key: string): Promise<ConfigKeyRow | undefined>
+  /** Пакетное чтение всех строк одного пользователя (`authId = null` — умолчания). */
+  rowsByUser?(authId: string | null): Promise<ConfigKeyRow[]>
   /** Все строки умолчаний (глобальные ключи). */
   defaults(): Promise<ConfigKeyRow[]>
   /** Есть ли хоть одна юзерская строка с этим ключом. */

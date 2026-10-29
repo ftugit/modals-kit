@@ -52,6 +52,7 @@
   const profileViewLink = $derived(
     vault.principal ? asModalLink('user.profile', { id: vault.principal }) : null,
   )
+  const configLink = $derived(asModalLink('user.config.edit'))
 
   // Итог выхода: сервер отвечает шагом «entry» — очищаем RAM во всех вкладках
   // и зовём callback обёртки (без него — переход на `next`).
@@ -92,6 +93,7 @@
       <Button {...profileViewLink} variant="outline" class="w-full">Профиль</Button>
     {/if}
     <Button {...profileLink} variant="outline" class="w-full">Изменить профиль</Button>
+    <Button {...configLink} variant="outline" class="w-full" data-testid="menu-config-open">Настройки</Button>
     <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()}>
       <Button
         type="submit"

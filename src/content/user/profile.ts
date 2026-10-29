@@ -5,7 +5,7 @@
  */
 import { checkGrants, forOwner, grants } from '#lib/db/index.js'
 import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { getEffective, setUserKey } from './config-api.js'
+import { canOpenUserConfig, getEffective, setUserKey } from './config-api.js'
 import { auth as authResource, block as blockResource, profile as profileResource } from './schema.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
@@ -85,6 +85,7 @@ export async function profile(
     blocks: [],
     canReadBlocks: scoped.canReadBlocks,
     canBlock: scoped.canBlock,
+    canOpenConfig: await canOpenUserConfig(ports, { id: g.sub, perms: g.perms }, target),
     isOwn: target === g.sub,
     visibility: await visibilityOf(ports, target),
   }

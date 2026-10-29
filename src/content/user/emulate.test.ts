@@ -495,6 +495,7 @@ describe('профиль', () => {
       blocks: [],
       canReadBlocks: false,
       canBlock: false,
+      canOpenConfig: true,
     })
     // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
     expect(ok_(await profile(ports, outB.access, subA))).toEqual({
@@ -509,6 +510,7 @@ describe('профиль', () => {
       blocks: [],
       canReadBlocks: false,
       canBlock: false,
+      canOpenConfig: false,
     })
     // держатель profile.read различает: профиля у A нет
     const rowB = auths.get(subB)!
@@ -525,6 +527,7 @@ describe('профиль', () => {
       blocks: [],
       canReadBlocks: false,
       canBlock: false,
+      canOpenConfig: false,
     })
     // созданный профиль читается владельцем как найденный
     ok_(await updateProfile(ports, outA.access, { nickname: 'Вася' }))

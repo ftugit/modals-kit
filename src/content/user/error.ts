@@ -38,6 +38,9 @@ export type AuthErrorCode =
   | 'profile.photo-spec'     // файл не совпал со спекой (формат/кадр/вес): сервер не конвертирует
   | 'profile.delete-blocked' // на цели активен запрет удаления профиля (каталог сфер spec-block)
   | 'account.delete-blocked' // на цели активен запрет удаления seed-аккаунта
+  | 'config.key-unknown'     // ключ конфига не из каталога приложения (CONFIG_KEYS)
+  | 'config.value-invalid'   // значение не совпало со спекой ключа конфига
+  | 'config.rule-forbidden'  // операция над ключом запрещена правилом schema ключа
 
 /** Голый факт из API: доменный код без знания о форме. */
 export type AuthFact = {
@@ -80,6 +83,9 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'profile.photo-spec': () => [error({ code: 'profile.photo-spec' }, 'photo')],
   'profile.delete-blocked': () => [generalError('profile.delete-blocked')],
   'account.delete-blocked': () => [generalError('account.delete-blocked')],
+  'config.key-unknown': (f) => (f.path ? [fieldError(f)] : [generalError('config.key-unknown')]),
+  'config.value-invalid': (f) => (f.path ? [fieldError(f)] : [generalError('config.value-invalid')]),
+  'config.rule-forbidden': (f) => (f.path ? [fieldError(f)] : [generalError('config.rule-forbidden')]),
 }
 
 /** Ошибка поля: путь обязателен — из факта или из инструкции. */

@@ -173,6 +173,15 @@ export const userBlocksDeleteRoute = kitRoute(
   },
 )
 
+/** Настройки текущего пользователя (`/user/config`). */
+export const userConfigRoute = kitRoute('/user/config')
+
+/** Настройки конкретного пользователя по UUID (`/user/[id]/config`). */
+export const userAccountConfigRoute = kitRoute('/(site)/(app)/user/[id=uuid]/config', {
+  dynamic: true,
+  id: '/user/[id]/config',
+})
+
 
 
 

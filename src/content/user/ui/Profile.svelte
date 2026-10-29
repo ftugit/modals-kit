@@ -22,9 +22,12 @@
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
-  import ProfilePrivacy from './profile-privacy/ProfilePrivacy.svelte'
   import { useGrants } from '../grants.svelte.js'
-  import { block as blockResource, profile as profileResource } from '../schema.js'
+  import {
+    block as blockResource,
+    config as configResource,
+    profile as profileResource,
+  } from '../schema.js'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
   import type { ProfileRead, ProfileRouteData, PublicProfileView } from '../types.js'
@@ -32,6 +35,7 @@
 
   const gProfile = grants(profileResource)
   const gBlock = grants(blockResource)
+  const gConfig = grants(configResource)
 
   interface Props {
     /** id аккаунта, чей профиль показать. */
@@ -50,11 +54,17 @@
   const asModalLink = useModalLink()
   const editProfileGrant = useGrants(gProfile.update, { ownerId: () => uid })
   const readBlocksGrant = useGrants(gBlock.select)
+  const readConfigGrant = useGrants(gConfig.select, { ownerId: () => uid })
 
   let data = $state<ProfileRead | null>(untrack(() => initial))
   const canEdit = $derived(vault.principal !== null ? editProfileGrant.current : Boolean(data?.canEdit))
   const canReadBlocks = $derived(
     vault.principal !== null ? readBlocksGrant.current : Boolean(data?.canReadBlocks),
+  )
+  const canOpenConfig = $derived(
+    Boolean(data?.canOpenConfig) ||
+      Boolean(data?.isOwn) ||
+      (vault.principal !== null ? readConfigGrant.current : false),
   )
   let publicData = $state<PublicProfileView | null>(untrack(() => initialPublic))
   let askedFor = ''
@@ -143,23 +153,28 @@
   <ProfileCard profile={publicData} />
 {:else if data?.profile}
   <ProfileCard profile={data.profile} />
-  {#if data.isOwn}
-    <!-- Приватность — только в своём профиле и только владельцу: на чужом
-         (даже с правом правки) компонента нет. -->
-    <ProfilePrivacy level={data.visibility} class="mt-4" />
-  {/if}
-  {#if canReadBlocks}
-    <!-- Переход к блокировкам цели — компактной кнопкой на пару `user.blocks`
-         (`/user/[id]/blocks` без JS). Доступен только кругу чтения/аудита. -->
-    <div class="mt-4 flex items-center">
-      <Button
-        {...asModalLink('user.blocks', { id: uid })}
-        variant="outline"
-        size="sm"
-        data-testid="profile-blocks-open"
-      >
-        Блокировки
-      </Button>
+  {#if canOpenConfig || canReadBlocks}
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      {#if canOpenConfig}
+        <Button
+          {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+          variant="outline"
+          size="sm"
+          data-testid="profile-config-open"
+        >
+          Настройки
+        </Button>
+      {/if}
+      {#if canReadBlocks}
+        <Button
+          {...asModalLink('user.blocks', { id: uid })}
+          variant="outline"
+          size="sm"
+          data-testid="profile-blocks-open"
+        >
+          Блокировки
+        </Button>
+      {/if}
     </div>
   {/if}
 {:else if data?.notCreated}
@@ -176,19 +191,28 @@
     <p class="max-w-xs text-sm text-muted-foreground">{specProfile.notCreatedText}</p>
     <p class="text-xs text-muted-foreground">{specProfile.nicknameMissing}</p>
   </section>
-  {#if data?.isOwn}
-    <ProfilePrivacy level={data.visibility} class="mt-4" />
-  {/if}
-  {#if canReadBlocks}
-    <div class="mt-4 flex items-center justify-center">
-      <Button
-        {...asModalLink('user.blocks', { id: uid })}
-        variant="outline"
-        size="sm"
-        data-testid="profile-blocks-open"
-      >
-        Блокировки
-      </Button>
+  {#if canOpenConfig || canReadBlocks}
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+      {#if canOpenConfig}
+        <Button
+          {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+          variant="outline"
+          size="sm"
+          data-testid="profile-config-open"
+        >
+          Настройки
+        </Button>
+      {/if}
+      {#if canReadBlocks}
+        <Button
+          {...asModalLink('user.blocks', { id: uid })}
+          variant="outline"
+          size="sm"
+          data-testid="profile-blocks-open"
+        >
+          Блокировки
+        </Button>
+      {/if}
     </div>
   {/if}
 {:else}

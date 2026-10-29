@@ -9,7 +9,7 @@
 import { check, defineForm, FILE_BUDGET_RESERVE, field, v } from '#lib/form/index.js'
 import { IMAGE_MIME_TYPES } from '#components/form/image.js'
 import { createUserChecks } from '../../checks.js'
-import { AUTH_MESSAGES, PERMISSIONS_MESSAGES, PROFILE_MESSAGES } from '../../messages.js'
+import { USER_MESSAGES } from '../../messages.js'
 import { specAvatar } from '../../spec-avatar.js'
 
 /**
@@ -28,7 +28,7 @@ export const profileForm = defineForm({
   checks: createUserChecks(),
   // Доменные тексты — общий словарь модуля: отказы сессии (`auth.*`) и профиля
   // (`profile.*`, `image.*`) звучат одинаково во всех его формах.
-  messages: { ...AUTH_MESSAGES, ...PROFILE_MESSAGES, ...PERMISSIONS_MESSAGES },
+  messages: USER_MESSAGES,
   actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
   fields: {
     nickname: field.text({

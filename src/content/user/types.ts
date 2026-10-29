@@ -299,6 +299,8 @@ export type ProfileRead = {
   canReadBlocks: boolean
   /** Вызывающий вправе накладывать и снимать блокировки. */
   canBlock: boolean
+  /** Вызывающий вправе открыть экран настроек пользователя (`user.config.edit`). */
+  canOpenConfig?: boolean
 }
 
 /**
@@ -333,6 +335,8 @@ export type ProfileRouteData = {
   blocks: BlockView[]
   canReadBlocks: boolean
   canBlock: boolean
+  /** Вызывающий вправе открыть экран настроек пользователя (`user.config.edit`). */
+  canOpenConfig?: boolean
   /** Активная полная блокировка цели для показа (причина — за правами). */
   fullBlock: { reason: string | null; until: number | null } | null
   fact: AuthErrorCode | null
@@ -410,3 +414,44 @@ export type SeedUsersOrder =
 
 /** Статус сессии глазами фаервола (один PK-lookup; эмуляция session-status). */
 export type SessionStatus = 'ok' | 'revoked' | 'expired' | 'unknown'
+
+/** Один видимый параметр каталога `CONFIG_KEYS` для экрана настроек пользователя (`UserConfig`). */
+export type UserConfigItem = {
+  /** Ключ модели `user.config` (`profile.visibility`, `session.ipLock`, ...). */
+  key: string
+  /** Имя поля HTML-формы (`snake_case` по политике `#lib/form`). */
+  fieldName: string
+  /** Ключ группы настроек (`profile`, `security`, ...). */
+  group: 'profile' | 'security'
+  /** Представление поля формы. */
+  kind: 'select' | 'checkbox'
+  title: string
+  description: string
+  /** Эффективное значение параметра у целевого пользователя. */
+  value: unknown
+  /** Эффективное умолчание параметра (строка умолчания БД либо `bootstrap`). */
+  defaultValue: unknown
+  /** Есть ли персональное переопределение в `user.config` (не равно умолчанию). */
+  overridden: boolean
+  /** Вправе ли текущий актор менять значение этого параметра (`assign` / `editUser`). */
+  editable: boolean
+  /** Вправе ли текущий актор сбросить переопределение к умолчанию (`deleteUser`). */
+  deletable: boolean
+}
+
+/** Срез настроек целевого пользователя для `UserConfig`. */
+export type UserConfigSlice = {
+  uid: string
+  isOwn: boolean
+  /** Есть ли хотя бы одно редактируемое поле (кнопка «Сохранить»). */
+  canSave: boolean
+  items: readonly UserConfigItem[]
+}
+
+/** Данные носителей `/user/config`, `/user/[id]/config` и модалки `user.config.edit`. */
+export type UserConfigRouteData = {
+  uid: string | null
+  enabled: boolean
+  slice: UserConfigSlice | null
+  fact: AuthErrorCode | null
+}

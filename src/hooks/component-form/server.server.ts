@@ -201,12 +201,13 @@ export function createComponentFormsHandle(
     }
     const trackedEvent: RequestEvent = { ...event, cookies: trackedCookies }
     const resolvedChecks = typeof reg.checks === 'function' ? await reg.checks(trackedEvent) : reg.checks
+    const resolvedSource = typeof reg.source === 'function' ? await reg.source(trackedEvent, raw) : reg.source
     const authGuards = createAuthorizeGuards(reg, trackedEvent, () => raw)
 
     const handler = createFormHandler<unknown, RequestEvent>({
       description,
       order: authGuards.layer ? [...SECURITY_LAYERS, authGuards.layer] : SECURITY_LAYERS,
-      ...(reg.source ? { source: reg.source } : {}),
+      ...(resolvedSource ? { source: resolvedSource } : {}),
       ...(authGuards.schema ? { schema: authGuards.schema } : {}),
       ...(resolvedChecks ? { checks: resolvedChecks } : {}),
       // пределы — от окружения: тело = потолок, один файл = бюджет файлов;

@@ -15,11 +15,13 @@ import {
   blocksEditRoute,
   blocksFiltersRoute,
   blocksListRoute,
+  userAccountConfigRoute,
   userAuthRoute,
   userBlocksCreateRoute,
   userBlocksDeleteRoute,
   userBlocksEditRoute,
   userBlocksRoute,
+  userConfigRoute,
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
@@ -153,6 +155,15 @@ registerModal({
       ? userBlocksDeleteRoute.href({ id: String(p.uid), blockId: String(p.blockId) })
       : blocksDeleteRoute.href({ blockId: String(p.blockId) }),
   size: { width: 460, height: 440 },
+})
+// Настройки пользователя (`{ id? }`): без `id` — свои настройки (`/user/config`),
+// с `id` — настройки целевого аккаунта (`/user/[id]/config`).
+registerModal({
+  name: 'user.config.edit',
+  component: lazy(() => import('./ui/UserConfigModal.svelte')),
+  route: (p: { id?: string }) =>
+    p?.id ? userAccountConfigRoute.href({ id: String(p.id) }) : userConfigRoute.href(),
+  size: { width: 520, height: 560 },
 })
 
 

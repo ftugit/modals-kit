@@ -40,8 +40,15 @@ export const PROFILE_MESSAGES: Record<string, string> = {
 
 /** Выдача прав: кто и что может выдать (`admin.ts`). */
 export const PERMISSIONS_MESSAGES: Record<string, string> = {
-  'permissions.unknown': 'Такого права нет — возьмите строку из каталога (permissions.ts)',
+  'permissions.unknown': 'Такого права нет — укажите допустимый идентификатор права или роли',
   'permissions.self': 'Свои права менять нельзя — попросите другого администратора',
+}
+
+/** Настройки пользователя (`user.config` / `spec-config.ts`). */
+export const CONFIG_MESSAGES: Record<string, string> = {
+  'config.key-unknown': 'Неизвестный параметр настроек',
+  'config.value-invalid': 'Недопустимое значение параметра настроек',
+  'config.rule-forbidden': 'У вас нет прав на изменение этого параметра',
 }
 
 /** Всё доменное сразу: то, что формы модуля кладут в `messages`. */
@@ -49,4 +56,5 @@ export const USER_MESSAGES: Record<string, string> = {
   ...AUTH_MESSAGES,
   ...PROFILE_MESSAGES,
   ...PERMISSIONS_MESSAGES,
+  ...CONFIG_MESSAGES,
 }

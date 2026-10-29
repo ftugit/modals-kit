@@ -54,6 +54,12 @@ import {
   saveBlock as coreSaveBlock,
   type ListBlocksPageArgs,
 } from './blocks.js'
+import {
+  listUserConfig as coreListUserConfig,
+  saveUserConfig as coreSaveUserConfig,
+  type SaveUserConfigArgs,
+} from './config-api.js'
+import type { UserConfigSlice } from './types.js'
 import { auth as authRes, block as blockRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
@@ -388,6 +394,15 @@ function configAdapter() {
   }
   return {
     row: byPair,
+    async rowsByUser(authId: string | null): Promise<ConfigKeyRow[]> {
+      const rows = (await api().select(SYSTEM, {
+        filter:
+          authId === null
+            ? { field: 'auth_id', op: 'isNull' }
+            : { field: 'auth_id', op: 'eq', value: authId },
+      })) as unknown as Record<string, unknown>[]
+      return rows.map(rowOf)
+    },
     async defaults(): Promise<ConfigKeyRow[]> {
       const rows = (await api().select(SYSTEM, {
         filter: { field: 'auth_id', op: 'isNull' },
@@ -620,6 +635,10 @@ export function auth(event: AuthEvent): {
   publicProfile(subject: string): Promise<UserResult<PublicProfileView>>
   /** Сменить видимость своего профиля (конфиг-API; значение = умолчание строку не плодит). */
   setProfileVisibility(level: string): Promise<UserResult<{ stored: boolean }>>
+  /** Пакетное чтение среза настроек пользователя (`subject` пуст — свой конфиг). */
+  listUserConfig(subject?: string | null): Promise<UserResult<UserConfigSlice>>
+  /** Сохранить изменения настроек пользователя либо сбросить один параметр к умолчанию. */
+  saveUserConfig(args: SaveUserConfigArgs): Promise<UserResult<UserConfigSlice>>
   /** Наложить блокировку на цель (круг moderator/block.edit/admin держит модель). */
   addBlock(args: { targetId: string; scope: string; reason: string; forever?: boolean; until?: number | null }): Promise<UserResult<{ id: string }>>
   /** Снять активную блокировку цели правкой её срока. */
@@ -754,6 +773,10 @@ export function auth(event: AuthEvent): {
     publicProfile: async (subject: string) => corePublicProfile(ports, access(), subject),
     setProfileVisibility: async (level: string) =>
       coreSetVisibility(ports, await freshAccessOrCurrent(), level),
+    listUserConfig: async (subject?: string | null) =>
+      coreListUserConfig(ports, await freshAccessOrCurrent(), subject),
+    saveUserConfig: async (args: SaveUserConfigArgs) =>
+      coreSaveUserConfig(ports, await freshAccessOrCurrent(), args),
     addBlock: async (args) => coreAddBlock(ports, await freshAccessOrCurrent(), args),
     liftBlock: async (args) => coreLiftBlock(ports, await freshAccessOrCurrent(), args),
     listBlocksPage: async (args) => coreListBlocksPage(ports, await freshAccessOrCurrent(), args),
@@ -859,6 +882,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'account.delete-blocked':
     case 'permissions.unknown':
     case 'permissions.self':
+    case 'config.rule-forbidden':
       return 403
     case 'auth.disabled':
       return 503
@@ -873,6 +897,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'profile.photo-format':
     case 'profile.photo-size':
     case 'profile.photo-spec':
+    case 'config.key-unknown':
+    case 'config.value-invalid':
       return 422
   }
 }

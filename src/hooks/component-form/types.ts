@@ -71,8 +71,10 @@ export interface ComponentFormRegistration {
   /** Идентификатор формы (обязателен, только если `description` вычисляется функцией от `event`). */
   readonly id?: string
   readonly description: FormDescription | ((event: RequestEvent) => FormDescription)
-  /** Динамический источник описания и ревизии (`defineForm({ from })`). */
-  readonly source?: FormSource
+  /** Динамический источник описания и ревизии (статически или от `(event, form)`). */
+  readonly source?:
+    | FormSource
+    | ((event: RequestEvent, form: FormData) => FormSource | undefined | Promise<FormSource | undefined>)
   readonly checks?: CheckRegistry | ((event: RequestEvent) => CheckRegistry | Promise<CheckRegistry>)
   readonly limits?: Partial<Limits>
   /** Бронь отправки (повтор с тем же `__form_submission` — тот же ответ). */

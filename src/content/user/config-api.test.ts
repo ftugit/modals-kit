@@ -7,8 +7,17 @@ import { describe, expect, test } from 'vitest'
 import { memoryStore } from '#lib/cache/index.js'
 import { issueChallenge, login, type UserResult } from './auth.js'
 import {
-  createUserKey, deleteDefaultKey, getEffective, getUserKey, removeUserKey, setDefault, setUserKey,
+  createUserKey,
+  deleteDefaultKey,
+  getEffective,
+  getUserKey,
+  listUserConfig,
+  removeUserKey,
+  saveUserConfig,
+  setDefault,
+  setUserKey,
 } from './config-api.js'
+import { createUserConfigDescription } from './ui/user-config/form.js'
 import { generateKeyPair, sign } from './keys.js'
 import { publicProfile, setVisibility } from './profile.js'
 import type { AuthFact } from './error.js'
@@ -209,6 +218,7 @@ function makePorts() {
       let seq = 0
       return {
         async row(authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async rowsByUser(authId: string | null) { return rows.filter((r) => r.authId === authId) },
         async defaults() { return rows.filter((r) => r.authId === null) },
         async anyUserRow(key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
         async insert(row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
@@ -318,10 +328,11 @@ describe('конфиг-API: умолчания и схемы', () => {
     ok_(await removeUserKey(ports, user.access, user.id, 'prefs.lang'))
   })
 
-  test('удаление умолчания при живых юзерских строках запрещено; схема с незнакомой ролью отклоняется', async () => {
+  test('удаление умолчания при живых юзерских строках запрещено; произвольные валидные роли/права работают, мусорные токены отклоняются', async () => {
     const { ports, auths } = makePorts()
     const admin = await joined(ports, auths, ['admin'])
     const user = await joined(ports, auths)
+    const wizard = await joined(ports, auths, ['wizard', 'config.edit'])
     ok_(await setDefault(ports, admin.access, 'prefs.theme', {
       value: 'light',
       schema: { editDefault: ['admin'], assign: ['admin', 'owner'], editUser: ['owner'], deleteUser: ['owner'] },
@@ -333,9 +344,108 @@ describe('конфиг-API: умолчания и схемы', () => {
     ok_(await deleteDefaultKey(ports, admin.access, 'prefs.theme'))
     expect(await getEffective(ports, user.id, 'prefs.theme')).toBeUndefined()
 
-    expect(fact_(await setDefault(ports, admin.access, 'prefs.lang', { schema: { assign: ['wizard'] } })).code)
+    // роли и права технически идентичны: произвольный валидный токен (`wizard`, `config.edit`, `a.b.c`) принимается и исполняется через checkGrants
+    ok_(await setDefault(ports, admin.access, 'prefs.lang', {
+      value: 'ru',
+      schema: { assign: ['wizard'], editUser: ['config.edit'], deleteUser: ['a.b.c'] },
+    }))
+    ok_(await createUserKey(ports, wizard.access, user.id, 'prefs.lang', 'en'))
+    ok_(await setUserKey(ports, wizard.access, user.id, 'prefs.lang', 'de'))
+    expect(fact_(await removeUserKey(ports, wizard.access, user.id, 'prefs.lang')).code).toBe('auth.forbidden')
+
+    // пустые/битые токены и неизвестные правила схемы отклоняются
+    expect(fact_(await setDefault(ports, admin.access, 'prefs.bad', { schema: { assign: [''] } })).code)
       .toBe('permissions.unknown')
+    expect(fact_(await setDefault(ports, admin.access, 'prefs.bad', { schema: { assign: ['bad token!'] } })).code)
+      .toBe('permissions.unknown')
+    expect(
+      fact_(
+        await setDefault(ports, admin.access, 'prefs.bad', {
+          schema: { unknownRule: ['admin'] } as never,
+        }),
+      ).code,
+    ).toBe('permissions.unknown')
     expect(fact_(await setUserKey(ports, admin.access, 'no-such-user', 'prefs.theme', 'x')).code).toBe('auth.identity-unknown')
+  })
+})
+
+describe('UserConfig: срез listUserConfig, сохранение saveUserConfig и защита софт-удалённых', () => {
+  test('владелец видит profile.visibility редактируемым и session.ipLock в read-only; незнакомые ключи БД скрыты; описание формы не включает read-only поля', async () => {
+    const { ports, auths } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const owner = await joined(ports, auths)
+    const reader = await joined(ports, auths, ['config.read'])
+    const stranger = await joined(ports, auths)
+
+    ok_(await setDefault(ports, admin.access, 'profile.visibility', {
+      value: 'nobody',
+      schema: { editDefault: ['admin'], assign: ['admin', 'owner'], editUser: ['admin', 'owner'], deleteUser: ['admin', 'owner'] },
+    }))
+    ok_(await setDefault(ports, admin.access, 'session.ipLock', {
+      value: false,
+      schema: { editDefault: ['admin'], assign: ['admin'], editUser: ['admin'], deleteUser: ['admin'] },
+    }))
+    ok_(await setDefault(ports, admin.access, 'internal.unknownKey', {
+      value: 'secret',
+      schema: { editDefault: ['admin'], assign: ['admin', 'owner'], editUser: ['owner'], deleteUser: ['owner'] },
+    }))
+    ok_(await createUserKey(ports, admin.access, owner.id, 'session.ipLock', true))
+
+    const ownSlice = ok_(await listUserConfig(ports, owner.access))
+    expect(ownSlice.isOwn).toBe(true)
+    expect(ownSlice.canSave).toBe(true)
+    expect(ownSlice.items.map((i) => i.key)).toEqual(['profile.visibility', 'session.ipLock'])
+    const visItem = ownSlice.items.find((i) => i.key === 'profile.visibility')!
+    const ipItem = ownSlice.items.find((i) => i.key === 'session.ipLock')!
+    expect(visItem.editable).toBe(true)
+    expect(ipItem.editable).toBe(false)
+    expect(ipItem.value).toBe(true)
+    expect(ipItem.overridden).toBe(true)
+
+    const desc = createUserConfigDescription(ownSlice.items.filter((i) => i.editable))
+    expect(Object.keys(desc.byName).sort()).toEqual(['profile_visibility', 'subject'])
+
+    // config.read видит оба параметра чужого пользователя в режиме read-only (canSave = false)
+    const readSlice = ok_(await listUserConfig(ports, reader.access, owner.id))
+    expect(readSlice.isOwn).toBe(false)
+    expect(readSlice.canSave).toBe(false)
+    expect(readSlice.items.every((i) => !i.editable)).toBe(true)
+
+    // посторонний без прав получает auth.forbidden
+    expect(fact_(await listUserConfig(ports, stranger.access, owner.id)).code).toBe('auth.forbidden')
+
+    // сохранение и сброс к умолчанию владельцем + запрет изменения read-only ключа
+    const saved = ok_(await saveUserConfig(ports, owner.access, { patch: { 'profile.visibility': 'users' } }))
+    expect(saved.items.find((i) => i.key === 'profile.visibility')?.value).toBe('users')
+    expect(saved.items.find((i) => i.key === 'profile.visibility')?.overridden).toBe(true)
+
+    expect(
+      fact_(await saveUserConfig(ports, owner.access, { patch: { 'session.ipLock': false } })),
+    ).toEqual({ code: 'config.rule-forbidden', path: 'session_ip_lock' })
+    expect(
+      fact_(await saveUserConfig(ports, owner.access, { patch: { 'profile.visibility': 'invalid' } })),
+    ).toEqual({ code: 'config.value-invalid', path: 'profile_visibility' })
+    expect(
+      fact_(await saveUserConfig(ports, owner.access, { patch: { 'unknown.key': 1 } })),
+    ).toEqual({ code: 'config.key-unknown' })
+
+    const afterReset = ok_(await saveUserConfig(ports, owner.access, { resetKey: 'profile.visibility' }))
+    expect(afterReset.items.find((i) => i.key === 'profile.visibility')?.value).toBe('nobody')
+    expect(afterReset.items.find((i) => i.key === 'profile.visibility')?.overridden).toBe(false)
+  })
+
+  test('софт-удалённый чужой аккаунт скрыт (auth.identity-unknown) без права чтения удалённых', async () => {
+    const { ports, auths } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const reader = await joined(ports, auths, ['config.read'])
+    const auditReader = await joined(ports, auths, ['config.read', 'account.read', 'account.readDeleted'])
+    const victim = await joined(ports, auths)
+
+    await ports.auths.markDeleted(victim.id, Date.now())
+
+    expect(fact_(await listUserConfig(ports, reader.access, victim.id)).code).toBe('auth.identity-unknown')
+    expect(ok_(await listUserConfig(ports, auditReader.access, victim.id)).uid).toBe(victim.id)
+    expect(ok_(await listUserConfig(ports, admin.access, victim.id)).uid).toBe(victim.id)
   })
 })
 

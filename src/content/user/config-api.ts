@@ -8,8 +8,10 @@
  *   проходит `editDefault` его схемы;
  * - ключ за юзером создают проходящие `assign` схемы умолчания; меняют и
  *   снимают — по упрощённой схеме самой строки юзера, а без неё — по
- *   `editUser` / `deleteUser` схемы умолчания. Роль в схеме — из каталога
- *   `permissions.ts`, плюс `owner` (владелец строки) и `admin` (всегда);
+ *   `editUser` / `deleteUser` схемы умолчания. Роль и право в `#lib/db`
+ *   технически тождественны: любая валидная строка токена (`owner`,
+ *   `admin`, `moderator`, `config.edit`, `a.b.c`) сверяется через
+ *   `checkGrants`;
  * - значения, совпадающие с эффективным умолчанием, не хранятся:
  *   запись такого значения удаляет строку юзера, а без строки — молча
  *   ничего не сохраняет (успех без записи).
@@ -21,21 +23,36 @@
 import { checkGrants, grants } from '#lib/db/index.js'
 import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import type { AuthFact } from './error.js'
-import { ADMIN_ROLE, PERMISSIONS } from './permissions.js'
+import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts } from './ports.js'
 import { config as configResource } from './schema.js'
-import { bootstrapOf } from './spec-config.js'
-import type { ConfigKeyRow, ConfigKeySchema } from './types.js'
+import {
+  ALL_CONFIG_KEYS,
+  CONFIG_KEYS,
+  bootstrapOf,
+  decodeConfigValue,
+  fieldNameOf,
+  isConfigKey,
+} from './spec-config.js'
+import type {
+  ConfigKeyRow,
+  ConfigKeySchema,
+  UserConfigItem,
+  UserConfigSlice,
+} from './types.js'
 
 const gConfig = grants(configResource)
 const DEFAULTS_CACHE_KEY = 'defaults.v1'
 const SCHEMA_RULES = ['editDefault', 'assign', 'editUser', 'deleteUser'] as const
 
+/** Допустимый строковый идентификатор права/роли в схеме ключа (`owner`, `admin`, `moderator`, `a.b.c`). */
+const GRANT_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
+
 type Actor = { id: string; perms: readonly string[] }
 
 const toPrincipal = (a: Actor) => principalOfRow({ id: a.id, permissions: a.perms }).principal
 
-/** Проходит ли актор по списку ролей правила `ConfigKeySchema` (плюс `owner` целевой строки и `admin`). */
+/** Проходит ли актор по списку ролей/прав правила `ConfigKeySchema` (плюс `owner` целевой строки и `admin`). */
 function ruleAllows(a: Actor, targetUserId: string | null, roles: readonly string[] | undefined): boolean {
   return checkGrants(
     toPrincipal(a),
@@ -44,16 +61,20 @@ function ruleAllows(a: Actor, targetUserId: string | null, roles: readonly strin
   )
 }
 
-/** Схема из присланного: только известные правила и роли каталога (+ `owner`/`admin`). */
+/**
+ * Схема из присланного: известные правила и валидные строковые токены прав/ролей.
+ * В `#lib/db` роль и право технически идентичны, поэтому `validSchema` не
+ * ограничивает токены статическим каталогом `PERMISSIONS`.
+ */
 function validSchema(schema: unknown, simplified: boolean): schema is ConfigKeySchema {
   if (schema === null) return true
   if (typeof schema !== 'object' || Array.isArray(schema)) return false
   const allowed: readonly string[] = simplified ? ['editUser', 'deleteUser'] : SCHEMA_RULES
   for (const [rule, roles] of Object.entries(schema as Record<string, unknown>)) {
     if (!allowed.includes(rule)) return false
-    if (!Array.isArray(roles) || roles.length > 8) return false
+    if (!Array.isArray(roles) || roles.length > 16) return false
     for (const r of roles) {
-      if (typeof r !== 'string' || (r !== 'owner' && r !== ADMIN_ROLE && !Object.hasOwn(PERMISSIONS, r))) return false
+      if (typeof r !== 'string' || !GRANT_TOKEN_RE.test(r)) return false
     }
   }
   return true
@@ -79,10 +100,50 @@ const invalidateDefaults = async (ports: AuthPorts): Promise<void> => {
 const defaultRowOf = async (ports: AuthPorts, key: string): Promise<ConfigKeyRow | undefined> =>
   (await defaultsOf(ports)).find((r) => r.key === key)
 
+function defaultValueFromRow(row: ConfigKeyRow | undefined, key: string): unknown {
+  return row && row.value !== null && row.value !== undefined ? row.value : bootstrapOf(key)
+}
+
 /** Значение умолчания ключа: строка умолчания, а без значения в ней — бутстрап кода. */
 async function defaultValueOf(ports: AuthPorts, key: string): Promise<unknown> {
-  const row = await defaultRowOf(ports, key)
-  return row && row.value !== null && row.value !== undefined ? row.value : bootstrapOf(key)
+  return defaultValueFromRow(await defaultRowOf(ports, key), key)
+}
+
+/** Пакетное чтение всех строк одного пользователя (1 SQL-запрос через `rowsByUser` либо fallback по ключам каталога). */
+async function userRowsOf(ports: AuthPorts, userId: string): Promise<Map<string, ConfigKeyRow>> {
+  if (ports.settings.rowsByUser) {
+    const rows = await ports.settings.rowsByUser(userId)
+    return new Map(rows.map((r) => [r.key, r]))
+  }
+  const pairs = await Promise.all(
+    ALL_CONFIG_KEYS.map(async (k) => [k, await ports.settings.row(userId, k)] as const),
+  )
+  const map = new Map<string, ConfigKeyRow>()
+  for (const [k, row] of pairs) {
+    if (row) map.set(k, row)
+  }
+  return map
+}
+
+/**
+ * Доступность целевого аккаунта для операций с конфигом:
+ * несуществующий ИЛИ софт-удалённый чужой аккаунт без прав чтения удалённых (`admin` или `account.read` + `account.readDeleted`)
+ * неотличимо отдаёт `auth.identity-unknown`.
+ */
+async function checkTargetReachable(
+  ports: AuthPorts,
+  a: Actor,
+  targetUserId: string,
+): Promise<AuthFact | null> {
+  const target = await ports.auths.get(targetUserId)
+  if (!target) return { code: 'auth.identity-unknown' }
+  if (target.deletedAt !== null && a.id !== targetUserId) {
+    const canSeeDeleted =
+      a.perms.includes(ADMIN_ROLE) ||
+      (a.perms.includes('account.read') && a.perms.includes('account.readDeleted'))
+    if (!canSeeDeleted) return { code: 'auth.identity-unknown' }
+  }
+  return null
 }
 
 /**
@@ -106,6 +167,189 @@ async function actorOf(ports: AuthPorts, accessToken: string | undefined): Promi
 }
 
 /**
+ * Вправе ли актор открыть экран настроек цели (`UserConfig`):
+ * `true`, если актор проходит `CONFIG_ACL.read` (`owner`, `config.read`, `admin`)
+ * ИЛИ если хотя бы один ключ каталога открыт ему на редактирование схемой ключа.
+ */
+export async function canOpenUserConfig(
+  ports: AuthPorts,
+  a: Actor,
+  targetUserId: string,
+): Promise<boolean> {
+  if (await checkTargetReachable(ports, a, targetUserId)) return false
+  if (checkGrants(toPrincipal(a), gConfig.select, { ownerId: targetUserId })) return true
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetUserId)])
+  const defMap = new Map(defaults.map((r) => [r.key, r]))
+  for (const key of ALL_CONFIG_KEYS) {
+    const def = defMap.get(key)
+    const own = ownMap.get(key)
+    const roles = own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
+    if (ruleAllows(a, targetUserId, roles)) return true
+  }
+  return false
+}
+
+/**
+ * Пакетное чтение среза `UserConfig` для целевого пользователя (`subject` пуст — свой конфиг).
+ * Незнакомые ключи БД вне `CONFIG_KEYS` игнорируются; доступные только для чтения ключи
+ * приходят с `editable: false` и показываются как `read-only` строки.
+ */
+export async function listUserConfig(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  subject?: string | null,
+): Promise<UserResult<UserConfigSlice>> {
+  const a = await actorOf(ports, accessToken)
+  if ('code' in a) return fail(a)
+  const targetId = subject?.trim() || a.id
+  const unreachable = await checkTargetReachable(ports, a, targetId)
+  if (unreachable) return fail(unreachable)
+
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetId)])
+  const defMap = new Map(defaults.map((r) => [r.key, r]))
+  const canReadAll = checkGrants(toPrincipal(a), gConfig.select, { ownerId: targetId })
+
+  const items: UserConfigItem[] = []
+  for (const key of ALL_CONFIG_KEYS) {
+    const info = CONFIG_KEYS[key]
+    const def = defMap.get(key)
+    const own = ownMap.get(key)
+    const defaultValue = defaultValueFromRow(def, key)
+    const value = own !== undefined ? own.value : defaultValue
+    const editable = ruleAllows(
+      a,
+      targetId,
+      own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign,
+    )
+    const deletable =
+      own !== undefined && ruleAllows(a, targetId, own.schema?.deleteUser ?? def?.schema?.deleteUser)
+
+    if (!canReadAll && !editable) continue
+
+    items.push({
+      key,
+      fieldName: info.fieldName,
+      group: info.group,
+      kind: info.kind,
+      title: info.title,
+      description: info.description,
+      value,
+      defaultValue,
+      overridden: own !== undefined,
+      editable,
+      deletable,
+    })
+  }
+
+  if (items.length === 0 && !canReadAll) {
+    return fail({ code: 'auth.forbidden' })
+  }
+
+  return ok({
+    uid: targetId,
+    isOwn: a.id === targetId,
+    canSave: items.some((i) => i.editable),
+    items,
+  })
+}
+
+export interface SaveUserConfigArgs {
+  targetId?: string | null
+  /** Карта `ConfigKey -> новое значение` для сохранения редактируемых полей. */
+  patch?: Readonly<Record<string, unknown>>
+  /** Сброс одного ключа к эффективному умолчанию (`intent = reset:<key>`). */
+  resetKey?: string | null
+}
+
+/**
+ * Атомарно проверить и сохранить изменения настроек пользователя либо сбросить
+ * один переопределённый ключ к умолчанию; возвращает свежий `UserConfigSlice`.
+ */
+export async function saveUserConfig(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  args: SaveUserConfigArgs,
+): Promise<UserResult<UserConfigSlice>> {
+  const a = await actorOf(ports, accessToken)
+  if ('code' in a) return fail(a)
+  const targetId = args.targetId?.trim() || a.id
+  const unreachable = await checkTargetReachable(ports, a, targetId)
+  if (unreachable) return fail(unreachable)
+
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetId)])
+  const defMap = new Map(defaults.map((r) => [r.key, r]))
+
+  if (args.resetKey) {
+    const key = args.resetKey.trim()
+    if (!isConfigKey(key)) return fail({ code: 'config.key-unknown' })
+    const own = ownMap.get(key)
+    if (!own) return listUserConfig(ports, accessToken, targetId)
+    const def = defMap.get(key)
+    if (!ruleAllows(a, targetId, own.schema?.deleteUser ?? def?.schema?.deleteUser)) {
+      return fail({ code: 'config.rule-forbidden', path: fieldNameOf(key) })
+    }
+    await ports.settings.remove(own.id)
+    return listUserConfig(ports, accessToken, targetId)
+  }
+
+  const entries = Object.entries(args.patch ?? {})
+  if (entries.length === 0) {
+    // Нет ни одного поля в патче — проверяем, есть ли вообще право правки хотя бы одного ключа.
+    const anyEditable = ALL_CONFIG_KEYS.some((key) => {
+      const def = defMap.get(key)
+      const own = ownMap.get(key)
+      return ruleAllows(a, targetId, own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign)
+    })
+    if (!anyEditable) return fail({ code: 'auth.forbidden' })
+    return listUserConfig(ports, accessToken, targetId)
+  }
+
+  const planned: Array<{
+    key: typeof ALL_CONFIG_KEYS[number]
+    own: ConfigKeyRow | undefined
+    defaultValue: unknown
+    nextValue: unknown
+  }> = []
+
+  // Предварительная проверка ВСЕХ присланных ключей до записи в БД.
+  for (const [rawKey, rawVal] of entries) {
+    if (!isConfigKey(rawKey)) {
+      return fail({ code: 'config.key-unknown' })
+    }
+    const def = defMap.get(rawKey)
+    const own = ownMap.get(rawKey)
+    const roles = own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
+    if (!ruleAllows(a, targetId, roles)) {
+      return fail({ code: 'config.rule-forbidden', path: fieldNameOf(rawKey) })
+    }
+    const decoded = decodeConfigValue(rawKey, rawVal)
+    if (!decoded.ok) {
+      return fail({ code: decoded.code, path: fieldNameOf(rawKey) })
+    }
+    planned.push({
+      key: rawKey,
+      own,
+      defaultValue: defaultValueFromRow(def, rawKey),
+      nextValue: decoded.value,
+    })
+  }
+
+  for (const op of planned) {
+    if (sameValue(op.nextValue, op.defaultValue)) {
+      if (op.own) await ports.settings.remove(op.own.id)
+    } else if (op.own) {
+      if (!sameValue(op.nextValue, op.own.value)) {
+        await ports.settings.update(op.own.id, { value: op.nextValue })
+      }
+    } else {
+      await ports.settings.insert({ authId: targetId, key: op.key, value: op.nextValue, schema: null })
+    }
+  }
+
+  return listUserConfig(ports, accessToken, targetId)
+}
+
+/**
  * Прочитать ключ глазами человека: эффективное значение и факт закрепления.
  * Владелец читает своё (пример — `session.ipLock`: закреплено админом,
  * меняется не владельцем), админ и `config.read` — чужое.
@@ -120,6 +364,10 @@ export async function getUserKey(
   if ('code' in a) return fail(a)
   if (!checkGrants(toPrincipal(a), gConfig.select, { ownerId: userId })) {
     return fail({ code: 'auth.forbidden' })
+  }
+  if (a.id !== userId) {
+    const unreachable = await checkTargetReachable(ports, a, userId)
+    if (unreachable) return fail(unreachable)
   }
   const own = await ports.settings.row(userId, key)
   return ok({ key, value: own ? own.value : await defaultValueOf(ports, key), assigned: own !== undefined })
@@ -141,7 +389,8 @@ export async function createUserKey(
   const a = await actorOf(ports, accessToken)
   if ('code' in a) return fail(a)
   if (simplifiedSchema !== undefined && !validSchema(simplifiedSchema, true)) return fail({ code: 'permissions.unknown' })
-  if (!(await ports.auths.get(userId))) return fail({ code: 'auth.identity-unknown' })
+  const unreachable = await checkTargetReachable(ports, a, userId)
+  if (unreachable) return fail(unreachable)
   const existing = await ports.settings.row(userId, key)
   if (existing) return setUserKey(ports, accessToken, userId, key, value)
   const def = await defaultRowOf(ports, key)
@@ -165,7 +414,8 @@ export async function setUserKey(
 ): Promise<UserResult<{ stored: boolean }>> {
   const a = await actorOf(ports, accessToken)
   if ('code' in a) return fail(a)
-  if (!(await ports.auths.get(userId))) return fail({ code: 'auth.identity-unknown' })
+  const unreachable = await checkTargetReachable(ports, a, userId)
+  if (unreachable) return fail(unreachable)
   const existing = await ports.settings.row(userId, key)
   const def = await defaultRowOf(ports, key)
   const roles = existing ? (existing.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
@@ -188,6 +438,8 @@ export async function removeUserKey(
 ): Promise<UserResult<{ stored: boolean }>> {
   const a = await actorOf(ports, accessToken)
   if ('code' in a) return fail(a)
+  const unreachable = await checkTargetReachable(ports, a, userId)
+  if (unreachable) return fail(unreachable)
   const existing = await ports.settings.row(userId, key)
   if (!existing) return ok({ stored: false })
   const def = await defaultRowOf(ports, key)

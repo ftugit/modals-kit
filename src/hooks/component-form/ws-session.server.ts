@@ -1050,10 +1050,15 @@ export async function handleFormUploadWs(
         ]
         const layers = authGuards.layer ? [...baseLayers, authGuards.layer] : baseLayers
 
+        const resolvedSource =
+          typeof reg.source === 'function'
+            ? await reg.source(routeEvent, capturedForm ?? textForm)
+            : reg.source
+
         const handler = createFormHandler({
           description,
           instance: matchedInstance,
-          source: reg.source,
+          ...(resolvedSource ? { source: resolvedSource } : {}),
           ...(authGuards.schema ? { schema: authGuards.schema } : {}),
           checks,
           prepare: reg.prepare,
