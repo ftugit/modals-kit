@@ -3,6 +3,7 @@
  * собранная из её описания, где выбранные опции заменены на `null`. Операции об этом не
  * знают — у них просто другая схема (README §7 «Разовое отключение автоматики»).
  */
+import { SKIP_ACL_GUARD } from "./acl";
 import { fail } from "./errors";
 import { defineResource, isRecord, MODELS, own, timestampField, type ModelOrigin } from "./validation";
 import { liveCapabilities } from "./validation";
@@ -99,7 +100,12 @@ export function withoutPaths(model: Resource, paths: readonly string[]): Resourc
   const issues = paths.map((p) => applies(from.source as unknown as Row, from.origin, p)).filter((x): x is string => !!x);
   if (issues.length) fail("validation", undefined, issues);
   const off = [...new Set([...from.off, ...paths])];
-  const clone = defineResource(nulled(from.source as unknown as Row, off.filter((p) => !(BEHAVIOR_KEYS as readonly string[]).includes(p))) as never) as Resource;
+  const nextSource = nulled(
+    from.source as unknown as Row,
+    off.filter((p) => !(BEHAVIOR_KEYS as readonly string[]).includes(p)),
+  );
+  Object.defineProperty(nextSource, SKIP_ACL_GUARD, { value: true, enumerable: false });
+  const clone = defineResource(nextSource as never) as Resource;
   MODELS.set(clone, { source: from.source, origin: from.origin, off, raw: false });
   return clone;
 }

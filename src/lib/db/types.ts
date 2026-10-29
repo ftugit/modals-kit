@@ -5,6 +5,7 @@
  * быть любой (zod, valibot, своя из `./schema`).
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { AclDefinition } from "./acl";
 export type Row = Record<string, unknown>;
 export interface Statement {
   text: string;
@@ -261,6 +262,11 @@ export interface Resource<
   fields: F;
   mandatoryRead?: readonly string[];
   /**
+   * Декларативное описание прав доступа (`defineAcl`). Взаимоисключающе с низкоуровневым `policy`:
+   * `defineResource` разворачивает его в `policy` и `timestamps.deletedAt.readDeleted` и проверяет стражем ACL.
+   */
+  acl?: AclDefinition;
+  /**
    * Правила строк. Нет `policy` (или `null`) — без ограничения; нет правила операции — то же
    * для неё.
    */
@@ -322,12 +328,15 @@ export type AccessKey =
 export interface Policy {
   [rule: string]: ((ctx: DataContext) => Filter) | undefined;
   select?: (ctx: DataContext) => Filter;
-  /** Чтение с удалёнными (`includeDeleted: true`). Нет — та же, что `select`. */
-  selectDeleted?: (ctx: DataContext) => Filter;
   insert?: (ctx: DataContext) => boolean;
   update?: (ctx: DataContext) => Filter;
   delete?: (ctx: DataContext) => Filter;
-  /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `delete`. */
+  /**
+   * Какие строки можно удалить физически (`delete(..., { hard: true })`) у модели с мягким
+   * удалением (всегда в связке с `softDelete.readDeleted`). Нет — та же, что у `delete`.
+   */
+  hardDelete?: (ctx: DataContext) => Filter;
+  /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `hardDelete` / `delete`. */
   restore?: (ctx: DataContext) => Filter;
 }
 /** Пустое значение (`null`, `''`, нет ключа) — метка выключена. */

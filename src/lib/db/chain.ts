@@ -86,9 +86,12 @@ function linkModel(root: Resource, child: Resource): Resource {
 }
 const isRaw = (m: Resource) => originOf(m).raw;
 
-/** Условие «этот ctx может удалить строку» модели — SQL. */
-async function deletable(db: Database, m: Resource, ctx: DataContext, s: Sql): Promise<string> {
-  return isRaw(m) ? "TRUE" : `(${await filterSQL(m, ctx, rule(m, "delete", ctx), s, db.limits, true)}) AND (${await accessSQL(m, "delete", ctx, s, db.limits)})`;
+/** Условие «этот ctx может удалить строку» модели — SQL (`hardRoot` учитывает `policy.hardDelete` и `readDeleted` корня). */
+async function deletable(db: Database, m: Resource, ctx: DataContext, s: Sql, hardRoot = false): Promise<string> {
+  if (isRaw(m)) return "TRUE";
+  if (hardRoot && m.softDelete && !grants(m.softDelete.readDeleted, ctx)) return "FALSE";
+  const op = hardRoot && m.softDelete ? "hardDelete" : "delete";
+  return `(${await filterSQL(m, ctx, rule(m, op, ctx), s, db.limits, true)}) AND (${await accessSQL(m, "delete", ctx, s, db.limits)})`;
 }
 const liveSQL = (m: Resource) => (m.softDelete && !isRaw(m) ? ` AND ${col(m, m.softDelete.field)} IS NULL` : "");
 
@@ -140,7 +143,7 @@ async function collect(dbx: Database, kit: ChainKit, root: Resource, ctx: DataCo
   const head = (
     await dbx.query(
       s.statement(
-        `SELECT (${await deletable(dbx, root, ctx, s)}) AS ok${marked ? `, ${col(root, root.softDelete!.field)} IS NOT NULL AS gone` : ""} FROM ${table(root)} WHERE ${col(root, root.primaryKey)} = ${s.param(pk)}${withDeleted ? "" : liveSQL(root)}${lock ? " FOR UPDATE" : ""}`,
+        `SELECT (${await deletable(dbx, root, ctx, s, mode === true)}) AS ok${marked ? `, ${col(root, root.softDelete!.field)} IS NOT NULL AS gone` : ""} FROM ${table(root)} WHERE ${col(root, root.primaryKey)} = ${s.param(pk)}${withDeleted ? "" : liveSQL(root)}${lock ? " FOR UPDATE" : ""}`,
       ),
     )
   ).rows[0];

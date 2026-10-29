@@ -213,14 +213,10 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     includeDeleted = false,
     policyOverride?: { value: Filter },
   ): Promise<string> {
-    // Чтение с удалёнными (`includeDeleted`) может идти отдельной
-    // политикой `selectDeleted`: право видеть удалённые не обязано
-    // давать чтение живых (аудит A3). Нет её — та же, что у `select`.
-    const ruleName = op === 'select' && includeDeleted && r.policy?.selectDeleted ? 'selectDeleted' : op;
     const policy = await filterSQL(
       r,
       ctx,
-      policyOverride ? policyOverride.value : rule(r, ruleName as typeof op, ctx),
+      policyOverride ? policyOverride.value : rule(r, op, ctx),
       s,
       db.limits,
       true,
@@ -251,14 +247,17 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       const predicate = await where(ctx, 'delete', s, undefined, true, { value: rule(r, 'restore', ctx) });
       return `(${predicate}) AND ${col(r, r.softDelete!.field)} IS NOT NULL AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
     }
-    // Окончательное удаление — связка прав: политика `delete` плюс грант
-    // `readDeleted`. Без гранта `hard` запрещён вовсе: раньше предикат
-    // целил только живые строки, и живая запись стиралась физически
-    // в обход мягкой стадии (аудит A4, docs/audit-delete-rights-2026-10-29.md).
-    if (op === 'delete' && hard && r.softDelete && !grants(r.softDelete.readDeleted, ctx))
-      fail('forbidden');
-    const withDeleted = hard && !!r.softDelete && grants(r.softDelete.readDeleted, ctx);
-    return `(${await where(ctx, op, s, undefined, withDeleted)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
+    // Окончательное удаление — связка прав: политика `hardDelete` (по умолчанию `delete`)
+    // плюс грант `readDeleted`. Без гранта `hard` запрещён вовсе, а роль с одним лишь
+    // мягким удалением (`softDelete` в `defineAcl`) не сотрёт запись даже с грантом `readDeleted`.
+    if (op === 'delete' && hard && r.softDelete) {
+      if (!grants(r.softDelete.readDeleted, ctx)) fail('forbidden');
+      const predicate = await where(ctx, 'delete', s, undefined, true, {
+        value: rule(r, 'hardDelete', ctx),
+      });
+      return `(${predicate}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
+    }
+    return `(${await where(ctx, op, s, undefined, false)}) AND ${col(r, r.primaryKey)} = ${s.param(v)}`;
   }
   async function includes(ctx: DataContext, names: readonly string[] | undefined, s: Sql) {
     if (names === undefined) return { joins: '', select: '', keys: [] as string[] };
@@ -380,7 +379,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       (cursor && own(input, 'asof'))
     )
       fail('validation');
-    const policy = rule(r, input.includeDeleted ? 'selectDeleted' : 'select', ctx);
+    const policy = rule(r, 'select', ctx);
     let predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted, {
       value: policy,
     });
@@ -669,7 +668,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
       fail('validation');
     // Предикат строится ДО выбора метода: так политика, права на поля фильтра и
     // `readDeleted` проверяются всегда, а не только когда фильтр задан (DB-4).
-    const policy = rule(r, input.includeDeleted ? 'selectDeleted' : 'select', ctx);
+    const policy = rule(r, 'select', ctx);
     const s2 = new Sql();
     const predicate = await where(ctx, 'select', s2, input.filter, input.includeDeleted ?? false, {
       value: policy,
@@ -927,7 +926,7 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
           fail('validation');
         const s = new Sql();
         let predicate = await where(ctx, 'select', s, input.filter, input.includeDeleted, {
-          value: rule(r, input.includeDeleted ? 'selectDeleted' : 'select', ctx),
+          value: rule(r, 'select', ctx),
         });
         // Счётчик — по тому же множеству, что и страницы: иначе «всего записей»
         // и число страниц считались бы без среза и поехали бы вместе с новыми строками.

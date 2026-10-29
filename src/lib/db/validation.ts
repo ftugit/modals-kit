@@ -1,3 +1,4 @@
+import { expandAcl, validateResourceAcl } from "./acl";
 import { s } from "./schema";
 import { fail, failFields, type FieldError } from "./errors";
 import type { StandardSchema } from "./types";
@@ -722,7 +723,8 @@ export function defineResource<
 ): Resource<F & TimestampFields<T>, R> {
   if (!input || !input.key || !isRecord(input.fields))
     fail("validation", undefined, ["key/fields/primaryKey обязательны"]);
-  const r = expandTimestamps(withoutEmpty(input as unknown as Resource)) as unknown as Resource<F & TimestampFields<T>, R>;
+  const aclInfo = expandAcl(input as unknown as Row);
+  const r = expandTimestamps(withoutEmpty(aclInfo.normalized as unknown as Resource)) as unknown as Resource<F & TimestampFields<T>, R>;
   if (!own(r.fields, r.primaryKey))
     fail("validation", undefined, ["key/fields/primaryKey обязательны"]);
   checkShape(r as unknown as Resource);
@@ -759,7 +761,18 @@ export function defineResource<
     ) as F & TimestampFields<T>,
     order: Object.freeze(r.order.map((x) => Object.freeze([...x]) as typeof x)),
   });
-  MODELS.set(done, { source: input as unknown as Resource, origin: done, off: [], raw: false });
+  if (aclInfo.enforceGuard) {
+    validateResourceAcl(done as unknown as Resource, {
+      allowAnomalies: [...aclInfo.allowAnomalies],
+      ownerFieldHint: aclInfo.aclOwnerField,
+    });
+  }
+  MODELS.set(done, {
+    source: aclInfo.normalized as unknown as Resource,
+    origin: done,
+    off: [],
+    raw: false,
+  });
   return done;
 }
 /**

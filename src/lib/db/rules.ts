@@ -6,13 +6,21 @@ import { own, policyBoolean, timestampField, validateField } from "./validation"
 import type { AccessKey, DataContext, Database, Filter, Limits, Resource } from "./types";
 
 /**
- * Правило строк операции. Нет `policy` или правила — без ограничения; `restore` без своего
- * правила — как `delete`.
+ * Правило строк операции. Нет `policy` или правила — без ограничения;
+ * `hardDelete` без своего правила — как `delete`; `restore` без своего правила — как `hardDelete` / `delete`.
  */
-export function rule(x: Resource, op: 'select' | 'selectDeleted' | 'update' | 'delete' | 'restore', ctx: DataContext): Filter {
+export function rule(
+  x: Resource,
+  op: "select" | "update" | "delete" | "hardDelete" | "restore",
+  ctx: DataContext,
+): Filter {
   const p = x.policy;
-  // `selectDeleted` без своего правила — как `select`.
-  const fn = op === 'restore' ? (p?.restore ?? p?.delete) : op === 'selectDeleted' ? (p?.selectDeleted ?? p?.select) : p?.[op];
+  const fn =
+    op === "restore"
+      ? (p?.restore ?? p?.hardDelete ?? p?.delete)
+      : op === "hardDelete"
+        ? (p?.hardDelete ?? p?.delete)
+        : p?.[op];
   return fn ? fn(ctx) : true;
 }
 /** Право вставки: нет правила — можно. */
