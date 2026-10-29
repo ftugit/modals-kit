@@ -125,3 +125,16 @@ export const userListFiltersRoute = kitRoute('/users/filters')
  */
 export const userPickerRoute = kitRoute('/users/pick')
 
+/** Глобальный список всех блокировок (`/blocks`). */
+export const blocksListRoute = kitRoute('/blocks')
+
+/** Список блокировок конкретного пользователя (`/user/[id]/blocks`). */
+export const userBlocksRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks', {
+  dynamic: true,
+  id: '/user/[id]/blocks',
+})
+
+/** Фильтры списка блокировок — страница-fallback модалки `user.blocks.filters`. */
+export const blocksFiltersRoute = kitRoute('/blocks/filters')
+
+

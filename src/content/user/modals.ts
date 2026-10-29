@@ -10,7 +10,10 @@
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
 import {
+  blocksFiltersRoute,
+  blocksListRoute,
   userAuthRoute,
+  userBlocksRoute,
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
@@ -88,4 +91,22 @@ registerModal({
   route: userPickerRoute.href,
   size: { width: 640, height: 580 },
 })
+// Список блокировок: поддерживает и конкретного пользователя (`{ id }`),
+// и глобальный список (`{}`).
+registerModal({
+  name: 'user.blocks',
+  component: lazy(() => import('./ui/BlocksModal.svelte')),
+  route: (p: { id?: string }) =>
+    p?.id ? userBlocksRoute.href({ id: String(p.id) }) : blocksListRoute.href(),
+  size: { width: 680, height: 560 },
+})
+// Фильтры списка блокировок (`{ uid? }` передаёт контекст фиксированного юзера).
+registerModal({
+  name: 'user.blocks.filters',
+  component: lazy(() => import('./ui/BlocksFiltersModal.svelte')),
+  route: (p: { uid?: string }) =>
+    p?.uid ? `${blocksFiltersRoute.href()}?uid=${encodeURIComponent(String(p.uid))}` : blocksFiltersRoute.href(),
+  size: { width: 460, height: 580 },
+})
+
 
