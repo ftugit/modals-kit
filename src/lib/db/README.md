@@ -884,7 +884,7 @@ keyset-индекс, который обязана порождать `order`).
 
 | Экспорт | Что |
 |---|---|
-| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `failFields`, `failureIssues` (+ типы `FieldError`, `FailureIssue`), `defineResource`, `field`, `f`, `s`, `make`, `policy`, `owner`, `link` (ключи доступа, §7), `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
+| `#lib/db/index.js` | `createDb`, `DbFailure`, `normalizeFailure`, `fail`, `failFields`, `failureIssues` (+ типы `FieldError`, `FailureIssue`), `defineResource`, `field`, `f`, `s`, `make`, `policy`, `owner`, `link`, `defineAcl`, `validateResourceAcl`, `collectResourceAclIssues`, `grants`, `forOwner`, `checkGrants`, `isGrantSpecInput` (+ типы `AclInput`, `AclDefinition`, `AclRuleName`, `AclRoles`, `AclCapability`, `AclOwnerCapability`, `ValidateAclOptions`, `GrantActor`, `GrantSpec`, `BoundGrantSpec`, `ModelGrants`, `ModelFieldGrants`, `CheckGrantsOptions`; §7), `createCursorCodec`, `conservativeLimits`, `withRetry` + тип `RetryOptions`, типы (`Database`, `Driver`, `DataContext`, `Capabilities`, `Limits`, `Row`, …) |
 | `#lib/db/schema.js` | zero-dep Standard Schema: `s.text/uuid/integer/bigint/decimal/boolean/date/timestamp/json/array/enum/custom`, `make` (предикат вправе вернуть `CodedIssue` — код и параметры дойдут до формы) |
 | `#lib/db/adapters/pg.js` | `pgAdapter` |
 | `#lib/db/adapters/pglite.js` | `pgliteAdapter` |
@@ -917,7 +917,7 @@ withRetry }`: `sql` — сырой запрос для сидов и прове�
 `generated`, `createValue`, `immutable` при `update` — клиент не пишет при любой маске),
 `generated`, `immutable`, `required`, `nullable`, `normalize`, `createValue`, `fill` и `store` (§4), `filters`,
 `orderable`, `db` (`type`/`default`/`unique`, §6), `messages` (свои тексты ошибок по коду, §4). `Resource`: `key`, `table`, `primaryKey`, `ownerField`, `mandatoryRead`,
-`policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `restore` без своего — как `delete`; другие ключи — именованные правила для ключей доступа), `access` (ключи доступа, §7), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
+`policy` (нет `policy` или `null` — без ограничения; нет правила операции — без ограничения для неё; `hardDelete` без своего — как `delete`; `restore` без своего — как `delete`; другие ключи — именованные правила для ключей доступа), `acl` (`defineAcl`, см. ниже), `access` (ключи доступа, §7), `order`, `hooks`, `checks` (правила данных, §4), `relations`, `constraints`, `validateFinal`, `softDelete`, `timestamps`, `db` (§6).
 `db.resource(r)`: `select`, `get`, `count`, `cursor`, `estimate`, `insert`, `update`, `delete`, `canDelete`, `chain`, `restore`,
 `insertMany`, `validator(ctx, 'insert' | 'update' | 'check')` (проверка без записи, §4), `without`, `behavior`, `raw` (ниже).
 `formParams(resource)` — параметры полей формы из модели (§4) — живёт не в библиотеке, а в
@@ -1006,15 +1006,127 @@ await users.raw((u) => u.insertMany(ctx, rowsFromOldDb)) // свои id, дат�
 
 **Удаление — `delete(ctx, id, { hard, chain })` и `canDelete(ctx, ids)`.** `delete` удаляет
 запись по правилу `delete`: у модели с мягким удалением — ставит метку, `hard: true` — навсегда
-(у модели без мягкого удаления — всегда навсегда). Окончательное удаление — связка: политика
-`delete` плюс грант `readDeleted`; без гранта `hard` запрещён и на живой строке (мягкая стадия
-не обходится), удалённую строку он достаёт тоже только с грантом. Чтение с удалёнными может
-идти отдельной политикой `selectDeleted` (нет — та же, что `select`): право видеть удалённые
-не обязано давать чтение живых. Без `chain` удаляется только эта запись:
+(у модели без мягкого удаления — всегда навсегда). Окончательное удаление у ресурса с мягким
+удалением — конъюнкция `(policy.hardDelete ?? policy.delete)` **И** гранта `softDelete.readDeleted`:
+без гранта `readDeleted` флаг `hard` запрещён и на живой строке (мягкая стадия не обходится),
+а если у модели задан более узкий `policy.hardDelete` (например, подотчётный модератор умеет
+мягко скрывать, но не стирать улики из БД даже при наличии роли `readDeleted`), `hard: true`
+требует именно `policy.hardDelete`. Чтение с удалёнными (`includeDeleted: true`) также всегда
+конъюнктивно: строка должна одновременно пройти основную политику чтения `policy.select` **И**
+грант `softDelete.readDeleted` — сам по себе грант `readDeleted` никогда не открывает чтение
+ни живых, ни удалённых строк. Без `chain` удаляется только эта запись:
 если на неё ссылаются другие — отказ базы (`conflict`, код `referenced`). `chain: true` —
 вместе с цепочкой (ниже) без отдельного вызова `chain()`; ответ — удалённая запись. `canDelete` отвечает
 без удаления: `{ allowed: [ключи, которые этот ctx может удалить], soft }` (только живые строки,
 `soft` — удаление по умолчанию мягкое).
+
+**Декларативная пирамида прав — `defineAcl`, страж `validateResourceAcl` и интроспекция `grants` / `checkGrants`.**
+Вместо ручного дублирования массивов ролей между `policy.*`, `timestamps.deletedAt.readDeleted`,
+масками полей, доменными функциями и UI-компонентами ресурс может объявить единую матрицу прав
+через `defineAcl(...)` и передать её в `defineResource({ ..., acl })`:
+
+```ts
+import { checkGrants, defineAcl, defineResource, f, field, forOwner, grants, s } from '#lib/db/index.js'
+
+const BLOCK_ACL = defineAcl({
+  owner: { field: 'auth_id', can: ['read'] },
+  read: ['block.read', 'account.read', 'admin'],
+  insert: ['moderator', 'block.edit', 'account.edit', 'admin'],
+  update: ['moderator'],                        // умеет править только незащищённые поля (until)
+  softDelete: ['moderator'],                    // умеет мягко удалять, но НЕ hardDelete!
+  edit: ['block.edit', 'account.edit', 'admin', 'server'], // update + softDelete + hardDelete (при deleted)
+  deleted: ['block.readDeleted', 'account.read', 'admin', 'server'],
+})
+
+export const block = defineResource({
+  key: 'user.block.v1',
+  table: 'public.user_block',
+  primaryKey: 'id',
+  acl: BLOCK_ACL,
+  fields: {
+    id: f.uuid({ read: () => true, immutable: true }),
+    auth_id: f.uuid({ read: () => true, create: BLOCK_ACL.roles.insert, immutable: true, required: true }),
+    reason: field(s.text({ min: 1, max: 500 }), {
+      read: () => true,
+      create: BLOCK_ACL.roles.insert,
+      update: BLOCK_ACL.roles.edit,             // защищённое поле: moderator менять reason не может
+      required: true,
+    }),
+    until: f.timestamp({
+      read: () => true,
+      create: BLOCK_ACL.roles.insert,
+      update: BLOCK_ACL.roles.update,           // открыто всему кругу update (включая moderator)
+      nullable: true,
+    }),
+  },
+  timestamps: { createdAt: 'created_at', deletedAt: 'deleted_at' },
+})
+```
+
+Как `defineAcl` строит матрицу (монотонные правила пирамиды):
+
+1. `insert`, `update`, `softDelete` и `edit` **автоматически входят в круг чтения живых строк** (`select`): актор не может создавать, менять или удалять записи вслепую.
+2. `edit` раскрывается одновременно в `update`, `delete` и `hardDelete` (у моделей с `deletedAt` физическое стирание `hard: true` сработает только в паре с ролью из `deleted`, потому что движок требует `(policy.hardDelete ?? policy.delete)` **И** `readDeleted`).
+3. `softDelete` даёт только мягкое удаление (`policy.delete`), не попадая в `policy.hardDelete`: роль из `softDelete` оставляет аудиторский след даже при наличии роли `deleted`.
+4. `deleted` задаёт только `softDelete.readDeleted` и сам по себе в `select` **не входит** — видимость удалённых строк остаётся конъюнкцией `select` **И** `deleted`.
+5. `owner: { field, can }` подключает проверку владельца строки (`ownerOrRoles(field, roles)`) к перечисленным операциям (`'read' | 'update' | 'softDelete' | 'edit'`), а `extend.{select,insert,update,delete,hardDelete,restore}` дописывает поверх скомпилированных политик произвольный `PolicyFn` через `OR` (например, публичную видимость чужого профиля через `exists`).
+6. `ACL.roles` отдаёт готовые замороженные списки ролей (`select`, `insert`, `update`, `delete`, `hardDelete`, `deleted`, `edit`) для масок полей `fields.<f>.{read,create,update}` — ни одного повторённого строкового литерала в схеме.
+
+При вызове `defineResource({ ..., acl })` (или явно через `validateResourceAcl(resource, { allowAnomalies })` для ресурсов с ручным `policy`) запускается **умный страж целостности ACL**, проверяющий 7 именованных аксиом (`AclRuleName`):
+
+| Код аксиомы | Инвариант |
+|---|---|
+| `insert-implies-select` | Каждая роль из `policy.insert` входит в `policy.select` (если чтение не публичное). |
+| `update-implies-select` | Каждая роль из `policy.update` входит в `policy.select` (а владелец в `update` подразумевает владельца в `select`). |
+| `delete-implies-select` | Каждая роль из `policy.delete` входит в `policy.select`. |
+| `hard-delete-implies-delete` | Каждая роль из `policy.hardDelete` входит в `policy.delete`. |
+| `update-has-writable-field` | Каждая роль (и владелец) из `policy.update` имеет хотя бы одно несистемное обновляемое поле (`!immutable`, `!generated`, не PK/owner/timestamp). |
+| `update-without-delete-needs-protected-field` | Роль, входящая в `policy.update`, но **не** входящая в `policy.delete`, обязана упираться хотя бы в одно содержательное защищённое поле (`immutable` или закрытое маской `field.update`), иначе обновление позволяет «стереть» строку занулением в обход запрета удаления. |
+| `soft-delete-requires-deleted-at` | Если `policy.hardDelete` уже `policy.delete` (разведены `softDelete` и `edit`), у ресурса обязан быть настроен `deletedAt` / `softDelete`. |
+
+Если нестандартной модели осознанно нужно отступить от конкретного правила (например, системная роль `'server'` в `insert` без чтения или гостевая вставка сессии), отступление объявляется явно и точечно по коду аксиомы: `allowAnomalies: ['insert-implies-select']` — все остальные 6 аксиом продолжают проверяться.
+
+**Проверка прав в домене и UI без чтения строк — `grants`, `forOwner`, `checkGrants`.**
+`grants(resource)` возвращает мемоизированный в `WeakMap` дескриптор возможностей ресурса (сам `Resource` остаётся замороженным и не получает лишних перечисляемых ключей):
+
+- операции модели: `g.select`, `g.selectDeleted` (`select` **И** `readDeleted`), `g.insert`, `g.update`, `g.delete` (мягкое у моделей с `deletedAt`), `g.hardDelete` (`(hardDelete ?? delete)` **И** `readDeleted`), `g.restore` (`(restore ?? delete)` **И** `readDeleted`), `g.named.<ключ>`;
+- поля: `g.fields.<имя>.{read,create,update}` — учитывают и маску поля, и системную защиту (`immutable`, `generated`, PK, `timestamps`), и соответствующую операцию модели (`select` / `insert` / `update`);
+- связи: `g.relations.<имя>` (`select` родителя **И** `select` цели) и `g.refs.<fkField>` (`select` родителя **И** `select` связанной по `db.references` модели).
+
+Чистая функция `checkGrants(actor, specOrMap, options?)` вычисляет дескрипторы синхронно (`0` запросов в БД, `0` зависимостей от Svelte или HTTP):
+
+```ts
+const gBlock = grants(block)
+const gAuth = grants(auth)
+
+// 1. Одиночное право или массив прав (логическое И):
+const canPick = checkGrants(actor, [gAuth.select, gBlock.insert])
+
+// 2. Карта возможностей разом + контекст владельца целевой записи:
+const caps = checkGrants(
+  actor, // { id, permissions } (из vault) или { id, roles } (из DataContext.principal)
+  {
+    canSeeLive: gBlock.select,
+    canSeeDeleted: gBlock.selectDeleted,
+    canEditReason: gBlock.fields.reason.update,
+    canSoftDelete: gBlock.delete,
+    canHardDelete: gBlock.hardDelete,
+  },
+  { ownerId: targetAuthId },
+)
+
+// 3. Привязка владельца к отдельному правилу внутри общей карты:
+const mixed = checkGrants(actor, {
+  canEditOwnProfile: forOwner(profileOwnerId, grants(profile).update),
+  canReadGlobalBlocks: gBlock.select, // без ownerId!
+})
+```
+
+Правила вычисления `checkGrants`:
+- `actor === null | undefined` трактуется как гость (`id: null`, пустой набор ролей): проходят только `publicRows()` и открытые маски `() => true`.
+- Для правил с владельцем (`policy.ownerOrRoles(field, roles)` и `access: { [field]: owner() }`) при переданном непустом `ownerId` и `actor.id === ownerId` ветка владельца срабатывает наравне с ролями; без `ownerId` проверяются только роли.
+- Для произвольных предикатов `PolicyFn`, зависящих от данных строки или подзапроса `exists`, статическая ветка неизвестна: по умолчанию `onUnknown: 'false'` безопасно отвечает «нет» для неизвестной части (но если правило скомбинировано с ролями через `defineAcl({ ..., extend })`, известные роли и `owner` продолжают срабатывать штатно); режимы `'true'` и `'throw'` выбираются явно через `options.onUnknown`.
+- Реактивная обёртка для Svelte 5 поверх этого ядра живёт в связке `#hooks/db-grants.svelte.js` (`createUseGrants`), а привязка к сессии пользователя — в модуле домена (`useGrants`).
 
 **Цепочка удаления — `chain(ctx, id)`.** Ссылка-принадлежность `references: { resource: () => posts,
 chain: true }` (только на первичный ключ цели) говорит: строка живёт вместе с целью. Из таких
@@ -1126,12 +1238,13 @@ npm run build         # здесь важен и layer-guard: обход #lib/fo
 npm run test:db:probes # пробы на живых движках (см. ниже) — нужен поднятый PG/прокси
 ```
 
-Тесты слоя — 155 групп в девяти файлах (на PGlite выполняются 154: одна группа требует
+Тесты слоя — 161 группа в десяти файлах (на PGlite выполняются 160: одна группа требует
 настоящего PostgreSQL):
 
 | Файл | Группы | О чём |
 |---|---|---|
 | `src/lib/db/test/db-structure.test.ts` | 6 | границы слоя: у `./sveltekit` нет импортов `node:`/`pg`/PGlite, каждый `FailureKind` замаплен, баррель не тянет адаптеры, `src/lib/db/migrations/*.sql` парсятся |
+| `src/lib/db/test/db-acl-grants.test.ts` | 6 | пирамида прав `defineAcl`, конъюнктивный `readDeleted`, разведение `softDelete` и `hardDelete` (включая проверку в реальном PGlite), умный страж `validateResourceAcl` с `allowAnomalies`, мемоизация `grants(resource)` в `WeakMap` и матрица `checkGrants` / `forOwner` |
 | `src/lib/db/test/db-port-specific.test.ts` | 43 | поведение, которого в источнике не было (курсоры в обе стороны, срез постраничной выдачи `asof`, опрос изменённых/удалённых `changes`, внутренний текст БД только в dev, `parseListInput`, отмена и пул, прокси-транспорты, Hyperdrive, замок каталога) |
 | `src/lib/db/test/db-sync-admin.test.ts` | 2 | перенос схемы по кнопке: секрет проверяется ДО обращения к БД, причины отказа, `stepKey` |
 | `src/lib/db/test/db-sync-decisions.test.ts` | 7 | решения переноса (`<choice>|<key>`): взаимная обратимость сборки/разбора, отказ вместо мусора в БД, ключ из серверной карты, пары и `Map` из значений формы |

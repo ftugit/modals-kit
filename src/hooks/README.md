@@ -15,6 +15,7 @@
 | `storage-db.ts` | `#lib/storage` × `#lib/db` × `#lib/cache` | Реестр учёта места, броней и манифестов файлов в PostgreSQL (`pgStorageLedger`, ресурсы `storageFile` → `public.storage_file` и `storageReservation` → `public.storage_reservation`, часы базы `clock_timestamp()`) и адаптер `cacheStorageStore` поверх `#lib/cache` (`localStore` / `sharedStore`). |
 | `component-form/` | `#lib/form` × SvelteKit `Handle` / `$app/state` | Маршрутно-независимые формы компонентов: компонент со своей формой (`SeedForm`, `ProfileForm`, `MenuBody`, `/fields`) монтируется на любой странице или в модалке без `actions` в `+page.server.ts`. |
 | `db-form.ts` | `#lib/db` × `#lib/form` | Вывод параметров и валидаторов полей формы из дескриптора ресурса БД (`formParams(resource)`), включая доказательство полноты правил `rulesFrom` для `pick`. |
+| `db-grants.svelte.ts` | `#lib/db` (`grants`, `checkGrants`) × Svelte 5 `$derived` | Универсальная фабрика реактивного хука `createUseGrants(getDefaultActor)` для синхронной проверки прав модели и полей БД в SSR и браузере (`0` запросов в БД, мгновенный пересчёт при смене сессии или владельца). |
 | `db-schema.ts` | `#lib/db` (`/sync`) × `#lib/form` | Изоморфный экран переноса схемы: отчёт `SchemaReport` → слова для человека (`StepView`) → описание формы решений (`defineForm`). Читают `#hooks/db-schema.server.ts`, `#components/db-schema/SchemaPending.svelte` и страница `/schema`. |
 | `db-schema.server.ts` | `#lib/db` (`/sync`, `createSchemaAdmin`) × `#server/db.server.js` × `#lib/form/server` | Серверная половина `/schema`: сборка отчёта, приём решений под `DB_ADMIN_TOKEN`, инвалидация живого кэша и разбор ошибок формы. |
 | `graphql.server.ts` | `#lib/fetch` × GraphQL | Серверный адаптер запросов к внешним GraphQL-источникам с нормализацией ошибок и очередей. |
@@ -43,6 +44,51 @@
   - при наличии выбранных файлов `bindComponentForm` автоматически переключается на одноинстансовый потоковый транспорт `wss://` (`/api/form-upload`, сегменты по `256 КиБ`, ранний гейт `authorize` и проверка полей на Кадре 0 до чтения байтов файла, опциональная одноразовая соль + цепочка `HMAC-SHA-256` на сегментах, реактивный прогресс в `FileAttachment` и `formTask`, прозрачный откат на HTTP `multipart/form-data` без JS).
 - Бюджет тела формы приходит из env (`src/env.ts` → `#server/form-budget.server.ts`) и уезжает в разметку атрибутом `data-budget`; объявленный формой бюджет может быть только меньше. Поля файлов без `v.maxSize` при известном бюджете — ошибка сборки формы (`#lib/form`).
 - `types.ts` — контракты регистрации (`authorize`, `integrity`) и опций.
+
+---
+
+## Реактивная проверка прав модели — `db-grants.svelte.ts` (`createUseGrants`)
+
+Ядро `#lib/db` остаётся чистым от Svelte (`core-purity`), а слой `src/hooks/` не импортирует предметную область `src/content/` (`layer-guard`). Поэтому реактивная склейка `checkGrants` с рунами Svelte 5 живёт в `src/hooks/db-grants.svelte.ts` как фабрика `createUseGrants(getDefaultActor)`, а конкретный домен (`src/content/user/grants.svelte.ts`) передаёт в неё свой стор сессии:
+
+```ts
+// src/content/user/grants.svelte.ts
+import { createUseGrants } from '#hooks/db-grants.svelte.js'
+import { vault } from './vault.svelte.js'
+
+export const useGrants = createUseGrants(() =>
+  vault.principal ? { id: vault.principal, permissions: vault.permissions } : null,
+)
+```
+
+Хук поддерживает две перегрузки и геттерные опции:
+
+1. **Одиночный грант или массив грантов (`AND`)** — возвращает `{ readonly current: boolean }`:
+   ```ts
+   const canCreate = useGrants(grants(block).insert)
+   const canPick = useGrants([grants(auth).select, grants(block).insert])
+   // в шаблоне: {#if canCreate.current} ... {/if}
+   ```
+2. **Именованная карта возможностей** — возвращает объект с ленивыми реактивными геттерами по каждому ключу:
+   ```ts
+   const caps = useGrants(
+     {
+       canUpdate: grants(block).update,
+       canEditReason: grants(block).fields.reason.update,
+       canSoftDelete: grants(block).delete,
+       canHardDelete: grants(block).hardDelete,
+     },
+     { ownerId: () => detail?.block.authId ?? null },
+   )
+   // в шаблоне: {#if caps.canEditReason} ... {/if}
+   ```
+
+Опции `UseGrantsOptions`:
+- `ownerId?: string | null | (() => string | null | undefined)` — владелец целевой записи (если передана функция, читается внутри `$derived` и пересчитывает права при переключении карточки или маршрута);
+- `actor?: GrantActor | null | (() => GrantActor | null | undefined)` — явная подмена субъекта вместо `getDefaultActor()` (например, для изолированных тестов или предпросмотра от имени другой роли);
+- `onUnknown?: 'false' | 'true' | 'throw'` — политика для произвольных предикатов `PolicyFn`, зависящих от данных строки (по умолчанию `'false'`).
+
+Поскольку и в SSR (`page.data.user`), и после гидратации в браузере `getDefaultActor()` читается синхронно из памяти без сетевых запросов, разметка на сервере и первом клиентском кадре совпадает бит-в-бит, а при смене прав в другой вкладке (`BroadcastChannel`) кнопки и поля перестраиваются мгновенно.
 
 ---
 

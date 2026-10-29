@@ -43,6 +43,7 @@ it('документация слоя #lib/db актуальна против к
 
   const groups: [string, number, boolean?][] = [
     ['db-structure', (read(`${DB_ROOT}/test/db-structure.test.ts`).match(/^check\(/gm) ?? []).length, false],
+    ['db-acl-grants', (read(`${DB_ROOT}/test/db-acl-grants.test.ts`).match(/^\s*(?:it|test)\(/gm) ?? []).length, false],
     ['db-port-specific', (read(`${DB_ROOT}/test/db-port-specific.test.ts`).match(/^test\(/gm) ?? []).length, false],
     ['db-sync', (read(`${DB_ROOT}/test/db-sync.test.ts`).match(/^test\(/gm) ?? []).length, false],
     // эти два файла в таблице README не значились, и аудит их не считал: пустой

@@ -1,6 +1,6 @@
 # План: `defineAcl`, страж ACL, `grants`, `checkGrants` и `useGrants` (2026-10-29)
 
-Статус: **спроектировано, ждёт отмашки на этапы `G1`–`G6`**.
+Статус: **реализовано и проверено на ветке `img` (`G1`: `14abf00`, `G2`: `aa71812`, `G3`: `ab33c0c`, `G4`: `14b0b61`, `G5`: документация в `src/lib/db/README.md`, `src/hooks/README.md`, `src/content/user/README.md`)**.
 
 Документ сводит в одну систему четыре части:
 1. **`defineAcl` и страж инвариантов ACL в `#lib/db`** — чтобы больше не разносить роли вручную по `select / insert / update / delete / hardDelete / readDeleted` и ловить дыры при объявлении модели (`defineResource`).
