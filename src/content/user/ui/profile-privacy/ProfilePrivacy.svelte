@@ -15,6 +15,7 @@
   import { cn } from '#components/utils.js'
   import { specProfile } from '../../spec-profile.js'
   import type { VisibilityLevel } from '../../types.js'
+  import { userSession } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { privacyForm } from './form.js'
 
@@ -26,7 +27,9 @@
 
   let { level, class: className }: Props = $props()
 
-  const bound = bindComponentForm(forms, privacyForm, {})
+  const bound = bindComponentForm(forms, privacyForm, {
+    session: userSession,
+  })
   if (!bound.state.result) {
     mirrorToField(bound, 'level', () => level)
   }
@@ -34,7 +37,7 @@
 
 <section class={cn('flex w-full flex-col gap-3 text-left', className)} data-testid="profile-privacy">
   <h3 class="text-base font-semibold">{specProfile.privacyTitle}</h3>
-  <Form id="user-profile-privacy" form={bound} class="flex flex-col gap-3">
+  <Form id="user-profile-privacy" form={bound} hiddenFields={bound.hidden()} class="flex flex-col gap-3">
     <Common errors={bound.common} title="Проверьте форму" />
     <Field of={bound.f.level} />
     <div>

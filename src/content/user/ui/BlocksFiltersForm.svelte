@@ -66,9 +66,9 @@
   const initScopeSet = new Set<string>(init.scopes.filter(isBlockScope))
 
   const scopeFields: Record<string, ReturnType<typeof field.checkbox>> = {}
-  for (const [scopeKey, scopeLabel] of scopeEntries) {
+  for (const [scopeKey, scopeInfo] of scopeEntries) {
     scopeFields[`blocks.sc.${scopeKey}`] = field.checkbox({
-      label: `${scopeLabel} (${scopeKey})`,
+      label: `${scopeInfo.title} (${scopeKey})`,
       defaultValue: initScopeSet.has(scopeKey),
     })
   }

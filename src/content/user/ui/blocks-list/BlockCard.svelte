@@ -6,7 +6,7 @@
    * О механике нажатия карточка не знает — её навешивает список на внешнюю ссылку.
    */
   import { Badge, TimeAgo } from '#components/ui/index.js'
-  import { BLOCK_SCOPES, isBlockScope } from '../../spec-block.js'
+  import { describeBlockScope } from '../../spec-block.js'
   import type { BlockView } from '../../types.js'
 
   interface Props {
@@ -17,7 +17,7 @@
 
   let { item, showTarget = false }: Props = $props()
 
-  const scopeTitle = $derived(isBlockScope(item.scope) ? BLOCK_SCOPES[item.scope] : item.scope)
+  const scopeInfo = $derived(describeBlockScope(item.scope))
   const isDeleted = $derived(item.deletedAt != null)
   const isActive = $derived(!isDeleted && (item.until === null || item.until > Date.now()))
 
@@ -25,8 +25,12 @@
 </script>
 
 <div class="flex w-full items-baseline gap-3 rounded-md px-2 py-2 text-left hover:bg-accent">
-  <span class="{cell} text-sm font-medium" title={`${scopeTitle} (${item.scope})`} data-testid="block-cell-scope">
-    {scopeTitle}
+  <span
+    class="{cell} text-sm font-medium"
+    title={`${scopeInfo.title} — ${scopeInfo.description} (${item.scope})`}
+    data-testid="block-cell-scope"
+  >
+    {scopeInfo.title}
   </span>
 
   <span class="shrink-0" data-testid="block-cell-status">

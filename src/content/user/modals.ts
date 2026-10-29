@@ -10,9 +10,13 @@
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
 import {
+  blocksCreateRoute,
+  blocksEditRoute,
   blocksFiltersRoute,
   blocksListRoute,
   userAuthRoute,
+  userBlocksCreateRoute,
+  userBlocksEditRoute,
   userBlocksRoute,
   userListFiltersRoute,
   userListRoute,
@@ -108,5 +112,24 @@ registerModal({
     p?.uid ? `${blocksFiltersRoute.href()}?uid=${encodeURIComponent(String(p.uid))}` : blocksFiltersRoute.href(),
   size: { width: 460, height: 580 },
 })
+// Создание блокировки (`{ uid? }`).
+registerModal({
+  name: 'user.blocks.create',
+  component: lazy(() => import('./ui/BlockCreateModal.svelte')),
+  route: (p: { uid?: string }) =>
+    p?.uid ? userBlocksCreateRoute.href({ id: String(p.uid) }) : blocksCreateRoute.href(),
+  size: { width: 480, height: 560 },
+})
+// Редактирование или read-only просмотр блокировки (`{ blockId, uid? }`).
+registerModal({
+  name: 'user.blocks.edit',
+  component: lazy(() => import('./ui/BlockEditModal.svelte')),
+  route: (p: { blockId: string; uid?: string }) =>
+    p?.uid
+      ? userBlocksEditRoute.href({ id: String(p.uid), blockId: String(p.blockId) })
+      : blocksEditRoute.href({ blockId: String(p.blockId) }),
+  size: { width: 480, height: 580 },
+})
+
 
 

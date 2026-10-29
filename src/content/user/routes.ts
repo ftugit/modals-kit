@@ -137,4 +137,26 @@ export const userBlocksRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks', {
 /** Фильтры списка блокировок — страница-fallback модалки `user.blocks.filters`. */
 export const blocksFiltersRoute = kitRoute('/blocks/filters')
 
+/** Создание блокировки из глобального списка (`/blocks/new`). */
+export const blocksCreateRoute = kitRoute('/blocks/new')
+
+/** Создание блокировки конкретного пользователя (`/user/[id]/blocks/new`). */
+export const userBlocksCreateRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks/new', {
+  dynamic: true,
+  id: '/user/[id]/blocks/new',
+})
+
+/** Карточка редактирования / просмотра блокировки из глобального списка (`/blocks/[blockId]`). */
+export const blocksEditRoute = kitRoute('/(site)/(app)/blocks/[blockId=uuid]', {
+  dynamic: true,
+  id: '/blocks/[blockId]',
+})
+
+/** Карточка редактирования / просмотра блокировки пользователя (`/user/[id]/blocks/[blockId]`). */
+export const userBlocksEditRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks/[blockId=uuid]', {
+  dynamic: true,
+  id: '/user/[id]/blocks/[blockId]',
+})
+
+
 
