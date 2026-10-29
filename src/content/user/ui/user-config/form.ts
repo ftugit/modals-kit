@@ -1,9 +1,27 @@
 import { defineForm, field } from '#lib/form/index.js'
 import { USER_MESSAGES } from '../../messages.js'
-import { CONFIG_KEYS, isConfigKey, specConfig } from '../../spec-config.js'
+import { ALL_CONFIG_KEYS, CONFIG_KEYS, isConfigKey, specConfig } from '../../spec-config.js'
 import type { UserConfigItem } from '../../types.js'
 
 export const USER_CONFIG_FORM_ID = 'user-config'
+
+/**
+ * Детерминированная ревизия динамического набора редактируемых полей (`>= 1`):
+ * если администратор меняет права записи на ключ, ревизия меняется и форма
+ * честно ловит устаревание (`form.stale`).
+ */
+export function computeUserConfigRevision(editableItems: readonly UserConfigItem[]): number {
+  const editableKeys = new Set(
+    editableItems.filter((i) => i.editable && isConfigKey(i.key)).map((i) => i.key),
+  )
+  let mask = 0
+  for (let i = 0; i < ALL_CONFIG_KEYS.length; i++) {
+    if (editableKeys.has(ALL_CONFIG_KEYS[i]!)) {
+      mask |= 1 << i
+    }
+  }
+  return 1 + mask
+}
 
 /**
  * Построить динамическое описание формы настроек по списку редактируемых ключей.
@@ -19,7 +37,7 @@ export function createUserConfigDescription(editableItems: readonly UserConfigIt
 
   return defineForm({
     id: USER_CONFIG_FORM_ID,
-    revision: 1,
+    revision: computeUserConfigRevision(editableItems),
     messages: USER_MESSAGES,
     actions: [
       { id: 'save', label: specConfig.saveButton, validate: 'full' },

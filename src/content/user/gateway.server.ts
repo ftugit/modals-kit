@@ -910,6 +910,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'storage.not-found':
       return 404
     case 'auth.delete-pending':
+    case 'storage.slot-taken':
       return 409
     case 'auth.deleted':
       return 410
@@ -923,6 +924,8 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'storage.slot-invalid':
     case 'storage.slot-reserved':
     case 'storage.url-invalid':
+    case 'storage.url-blocked':
+    case 'storage.key-invalid':
     case 'storage.limits-invalid':
     case 'storage.probe-failed':
       return 422

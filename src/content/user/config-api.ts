@@ -316,20 +316,23 @@ export async function saveUserConfig(
     if (!isConfigKey(rawKey)) {
       return fail({ code: 'config.key-unknown' })
     }
-    const def = defMap.get(rawKey)
-    const own = ownMap.get(rawKey)
-    const roles = own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
-    if (!ruleAllows(a, targetId, roles)) {
-      return fail({ code: 'config.rule-forbidden', path: fieldNameOf(rawKey) })
-    }
     const decoded = decodeConfigValue(rawKey, rawVal)
     if (!decoded.ok) {
       return fail({ code: decoded.code, path: fieldNameOf(rawKey) })
     }
+    const def = defMap.get(rawKey)
+    const own = ownMap.get(rawKey)
+    const defaultValue = defaultValueFromRow(def, rawKey)
+    const currentEffective = own ? own.value : defaultValue
+    const roles = own ? (own.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
+    if (!ruleAllows(a, targetId, roles)) {
+      if (sameValue(decoded.value, currentEffective)) continue
+      return fail({ code: 'config.rule-forbidden', path: fieldNameOf(rawKey) })
+    }
     planned.push({
       key: rawKey,
       own,
-      defaultValue: defaultValueFromRow(def, rawKey),
+      defaultValue,
       nextValue: decoded.value,
     })
   }

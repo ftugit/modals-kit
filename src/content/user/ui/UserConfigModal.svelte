@@ -32,7 +32,12 @@
       enabled={ldr.data.enabled}
       doneHref={uid ? `/user/${uid}` : '/'}
       onAcl={(fact) => (acl = fact)}
+      onChange={() => {
+        m.modals.invalidateLoader('user.config.edit')
+        void invalidateAll()
+      }}
       onDone={() => {
+        m.modals.invalidateLoader('user.config.edit')
         void invalidateAll()
         m.modals.close()
       }}

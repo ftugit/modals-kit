@@ -13,7 +13,7 @@
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { storageServer } from '#hooks/storage-db.js'
+  import { storageServer } from '#hooks/storage-schema.js'
   import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'

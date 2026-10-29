@@ -6,7 +6,7 @@
   import { grants } from '#lib/db/index.js'
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { storageServer } from '#hooks/storage-db.js'
+  import { storageServer } from '#hooks/storage-schema.js'
   import { useGrants } from '#content/user/grants.svelte.js'
 
   const gStorageServer = grants(storageServer)

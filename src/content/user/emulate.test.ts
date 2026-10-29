@@ -536,29 +536,64 @@ describe('профиль', () => {
     expect(found.profile?.nickname).toBe('Вася')
   })
 
-  test('запрещённый никнейм — доменный факт; картинку домен не разбирает', async () => {
-    const { ports, secret } = makePorts()
+  test('запрещённый никнейм — доменный факт; аватар сохраняется короткой ссылкой /api/storage/avatars/…', async () => {
+    const { ports } = makePorts()
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
+    const sub = (JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }).sub
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'admin' })).code).toBe('profile.nickname-forbidden')
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'ROOT' })).code).toBe('profile.nickname-forbidden')
     expect(fact_(await updateProfile(ports, out.access, { nickname: 'я' })).code).toBe('profile.nickname-forbidden')
-    // картинку проверяет и приводит роут по спеке: домен сохраняет готовый dataURL
-    await ensureWasm()
-    const frameData = new Uint8ClampedArray(200 * 200 * 4)
-    for (let i = 0; i < frameData.length; i += 4) {
-      frameData[i] = 90
-      frameData[i + 1] = 140
-      frameData[i + 2] = 200
-      frameData[i + 3] = 255
-    }
-    const blob = await getEncoder('image/jpeg').encode({ width: 200, height: 200, data: frameData }, { quality: 0.8 })
-    const jpeg = `data:image/jpeg;base64,${Buffer.from(await blob.arrayBuffer()).toString('base64')}`
-    ok_(await updateProfile(ports, out.access, { avatarUrl: jpeg }))
-    expect(ok_(await profile(ports, out.access)).profile?.avatarUrl).toBe(jpeg)
+    const avatarUrl = `/api/storage/avatars/${sub}/0123456789abcdef-deadbeef.jpg`
+    ok_(await updateProfile(ports, out.access, { avatarUrl }))
+    expect(ok_(await profile(ports, out.access)).profile?.avatarUrl).toBe(avatarUrl)
     // снять аватар
     const cleared = ok_(await updateProfile(ports, out.access, { avatarUrl: null }))
     expect(cleared.avatarUrl).toBeNull()
+  })
+
+  test('IDOR-защита updateProfile: чужой без profile.edit/admin не может создать или перезаписать профиль цели', async () => {
+    const { ports, auths } = makePorts()
+    const victimKeys = await generateKeyPair()
+    const attackerKeys = await generateKeyPair()
+    const editorKeys = await generateKeyPair()
+
+    const victimOut = ok_(await doLogin(ports, victimKeys.seed, victimKeys.secret))
+    const attackerOut = ok_(await doLogin(ports, attackerKeys.seed, attackerKeys.secret))
+    const editorOut = ok_(await doLogin(ports, editorKeys.seed, editorKeys.secret))
+
+    const victimId = (JSON.parse(Buffer.from(victimOut.access, 'base64url').toString()) as { sub: string }).sub
+    const editorId = (JSON.parse(Buffer.from(editorOut.access, 'base64url').toString()) as { sub: string }).sub
+    const editorRow = auths.get(editorId)!
+    auths.set(editorId, { ...editorRow, permissions: ['profile.edit'] })
+    const editorFresh = ok_(await doLogin(ports, editorKeys.seed, editorKeys.secret))
+
+    // 1. У жертвы профиль ещё НЕ создан: атакующий без прав получает auth.forbidden, строка не создаётся
+    expect(
+      fact_(await updateProfile(ports, attackerOut.access, { nickname: 'Взлом' }, victimId)).code,
+    ).toBe('auth.forbidden')
+    expect(ok_(await profile(ports, victimOut.access)).profile).toBeNull()
+
+    // 2. У жертвы профиль создан и закрыт: атакующий по-прежнему получает auth.forbidden
+    ok_(await updateProfile(ports, victimOut.access, { nickname: 'Честный' }))
+    expect(
+      fact_(await updateProfile(ports, attackerOut.access, { nickname: 'Подмена' }, victimId)).code,
+    ).toBe('auth.forbidden')
+    expect(ok_(await profile(ports, victimOut.access)).profile?.nickname).toBe('Честный')
+
+    // 3. Держатель profile.edit законно правит чужой профиль, а несуществующий id даёт auth.identity-unknown
+    ok_(await updateProfile(ports, editorFresh.access, { nickname: 'Модератор' }, victimId))
+    expect(ok_(await profile(ports, victimOut.access)).profile?.nickname).toBe('Модератор')
+    expect(
+      fact_(
+        await updateProfile(
+          ports,
+          editorFresh.access,
+          { nickname: 'Призрак' },
+          '00000000-0000-4000-8000-999999999999',
+        ),
+      ).code,
+    ).toBe('auth.identity-unknown')
   })
 })
 

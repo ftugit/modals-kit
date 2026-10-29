@@ -432,6 +432,27 @@ describe('UserConfig: срез listUserConfig, сохранение saveUserConf
     const afterReset = ok_(await saveUserConfig(ports, owner.access, { resetKey: 'profile.visibility' }))
     expect(afterReset.items.find((i) => i.key === 'profile.visibility')?.value).toBe('nobody')
     expect(afterReset.items.find((i) => i.key === 'profile.visibility')?.overridden).toBe(false)
+
+    // Идемпотентная передача неизменённого read-only ключа (session.ipLock === true) не срывает сохранение profile.visibility,
+    // но попытка переключить read-only ключ в false отклоняется с config.rule-forbidden на session_ip_lock.
+    const savedWithUnchangedReadonly = ok_(
+      await saveUserConfig(ports, owner.access, {
+        patch: { 'profile.visibility': 'users', 'session.ipLock': true },
+      }),
+    )
+    expect(savedWithUnchangedReadonly.items.find((i) => i.key === 'profile.visibility')?.value).toBe('users')
+    expect(
+      fact_(
+        await saveUserConfig(ports, owner.access, {
+          patch: { 'profile.visibility': 'all', 'session.ipLock': false },
+        }),
+      ),
+    ).toEqual({ code: 'config.rule-forbidden', path: 'session_ip_lock' })
+
+    const adminSlice = ok_(await listUserConfig(ports, admin.access, owner.id))
+    expect(createUserConfigDescription(ownSlice.items).revision).not.toBe(
+      createUserConfigDescription(adminSlice.items).revision,
+    )
   })
 
   test('софт-удалённый чужой аккаунт скрыт (auth.identity-unknown) без права чтения удалённых', async () => {

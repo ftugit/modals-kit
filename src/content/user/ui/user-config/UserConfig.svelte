@@ -39,6 +39,7 @@
     enabled?: boolean
     doneHref?: string
     onAcl?: (fact: AuthErrorCode) => void
+    onChange?: (next: UserConfigSlice) => void
     onDone?: () => void
     variant?: UserSurfaceVariant
     class?: string
@@ -53,6 +54,7 @@
     enabled,
     doneHref = '/',
     onAcl,
+    onChange,
     onDone,
     variant = 'plain',
     class: className,
@@ -181,9 +183,11 @@
             onResetSlice={(next) => {
               if (routeData) routeData = { ...routeData, slice: next }
               resetTick += 1
+              onChange?.(next)
             }}
             onSaved={(next) => {
               if (routeData) routeData = { ...routeData, slice: next }
+              onChange?.(next)
               onDone?.()
             }}
             onClose={onDone}

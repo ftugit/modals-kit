@@ -4,7 +4,7 @@
 import { localPath } from '#lib/address/index.js'
 import { checkGrants, grants } from '#lib/db/index.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
-import { storageServer } from '#hooks/storage-db.js'
+import { storageServer } from '#hooks/storage-schema.js'
 import { auth } from '#content/user/gateway.server.js'
 import { instruction } from '#content/user/index.js'
 import { removeStorageServer, saveStorageServer } from '#server/app-storage.server.js'

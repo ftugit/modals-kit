@@ -62,13 +62,21 @@ registerComponentForm({
       photoPatch = { avatarUrl: null }
     }
 
-    const r = await u.updateProfile(
-      {
-        ...(nickname ? { nickname } : {}),
-        ...photoPatch,
-      },
-      subject,
-    )
+    let r: Awaited<ReturnType<typeof u.updateProfile>>
+    try {
+      r = await u.updateProfile(
+        {
+          ...(nickname ? { nickname } : {}),
+          ...photoPatch,
+        },
+        subject,
+      )
+    } catch (err) {
+      if (newlyUploadedUrl) {
+        await removeManagedAvatarByUrl(newlyUploadedUrl)
+      }
+      throw err
+    }
     if (!r.ok) {
       if (newlyUploadedUrl) {
         await removeManagedAvatarByUrl(newlyUploadedUrl)

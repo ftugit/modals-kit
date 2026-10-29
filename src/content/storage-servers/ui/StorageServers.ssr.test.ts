@@ -48,7 +48,7 @@ describe('StorageServersView SSR (STORAGE_ACL)', () => {
     expect(body).not.toContain('data-testid="storage-server-delete-s3_primary"')
   })
 
-  it('редактор (storage.edit, canEdit=true) видит карточки серверов, форму добавления и кнопки управления', () => {
+  it('редактор (storage.edit, canEdit=true) видит карточки серверов, единый тег формы и кнопки управления', () => {
     const { body } = render(StorageServersView, {
       props: {
         authorized: true,
@@ -61,5 +61,6 @@ describe('StorageServersView SSR (STORAGE_ACL)', () => {
     expect(body).toContain('data-testid="storage-server-edit-s3_primary"')
     expect(body).toContain('data-testid="storage-server-delete-s3_primary"')
     expect(body).toContain('Проверить и добавить')
+    expect((body.match(/<form\b/g) ?? []).length).toBe(1)
   })
 })

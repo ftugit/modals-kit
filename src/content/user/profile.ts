@@ -196,9 +196,21 @@ export async function updateProfile(
 ): Promise<UserResult<ProfileView>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  // Чужой профиль правит тот, у кого есть `profile.edit`/`admin`: решает модель,
-  // а не эта функция — для владельца строка своя, для остальных закрыта.
   const target = subject?.trim() || g.sub
+  const owner = principalOfRow({ id: g.sub, permissions: g.perms })
+
+  // Явная проверка права редактирования профиля цели ДО обращения к `SERVER`:
+  // без неё неавторизованный пользователь на ещё не созданном или закрытом
+  // (`visibility = 'nobody'`) профиле попадал бы в ветку `!existing` -> `create(SERVER)`.
+  if (!checkGrants(owner.principal, gProfile.update, { ownerId: target })) {
+    return fail({ code: 'auth.forbidden' })
+  }
+  if (target !== g.sub) {
+    const targetAuth = await ports.auths.get(target)
+    if (!targetAuth || targetAuth.deletedAt !== null) {
+      return fail({ code: 'auth.identity-unknown' })
+    }
+  }
 
   let nickname: string | undefined
   if (args.nickname !== undefined) {
@@ -213,9 +225,9 @@ export async function updateProfile(
 
   const avatarUrl: string | null | undefined = args.avatarUrl
 
-  // Чтение и правка — от владельца: правила видят его `id` и права.
-  const owner = principalOfRow({ id: g.sub, permissions: g.perms })
-  const existing = await ports.profiles.get(owner, target)
+  // Факт существования строки проверяется под `SERVER` ПОСЛЕ подтверждённого
+  // права `gProfile.update`, чтобы закрытый профиль не путался с отсутствующим.
+  const existing = await ports.profiles.get(SERVER, target)
   if (!existing) {
     // Создание строки — не право человека (`insert: roles(['server'])`):
     // профиль заводит сервер — себе по первому заполнению, другому по поручению.
@@ -229,6 +241,6 @@ export async function updateProfile(
       ...(avatarUrl !== undefined ? { avatarUrl } : {}),
     })
   }
-  const row = await ports.profiles.get(owner, target)
+  const row = (await ports.profiles.get(owner, target)) ?? (await ports.profiles.get(SERVER, target))
   return ok(row as ProfileView)
 }

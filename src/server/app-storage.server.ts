@@ -18,9 +18,13 @@ import { AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/pri
 import * as Iron from 'iron-webcrypto'
 import type { StorageServerMeta, StorageServerView, StorageServersSlice } from '#content/storage-servers/types.js'
 import type { StorageVaultEntry } from '#content/storage-vault/schema.js'
-import { probeStorageVaultEntry } from '#content/storage-vault/vault.form.server.js'
+import {
+  probeStorageVaultEntry,
+  validateStorageTargetUrl,
+} from '#content/storage-vault/vault.form.server.js'
 import type { AuthFact } from '#content/user/error.js'
 import type { UserResult } from '#content/user/auth.js'
+import { pgStore } from '#hooks/cache-db.js'
 import { VAULT_SLOT_ID_RE } from '#hooks/cookie-vault/index.js'
 import { cacheStorageStore, pgStorageLedger, storageServer } from '#hooks/storage-db.js'
 import { checkGrants, grants, type Database, type DataContext } from '#lib/db/index.js'
@@ -56,8 +60,12 @@ const RESERVED_SLOTS = new Set([
 ])
 
 const gStorageServer = grants(storageServer)
-const poolCache = localStore.scope('app-storage-pool', { max: 8 })
+const defaultPoolCache = sharedStore.scope('app-storage-pool')
 const sharedAppSpool = localSpool(APP_SPOOL_DIR)
+
+function resolvePoolCache(database?: Database) {
+  return database ? pgStore(database).scope('app-storage-pool') : defaultPoolCache
+}
 
 export interface SealKeysConfig {
   readonly id: string
@@ -192,6 +200,7 @@ interface RawPoolRow {
 }
 
 async function loadRawPoolRows(database: Database, useCache: boolean): Promise<RawPoolRow[]> {
+  const poolCache = resolvePoolCache(database === defaultDb ? undefined : database)
   if (useCache) {
     const cached = await poolCache.get<RawPoolRow[]>(POOL_CACHE_KEY)
     if (cached) return cached
@@ -215,8 +224,8 @@ async function loadRawPoolRows(database: Database, useCache: boolean): Promise<R
   return mapped
 }
 
-export async function invalidateAppStoragePoolCache(): Promise<void> {
-  await poolCache.delete(POOL_CACHE_KEY)
+export async function invalidateAppStoragePoolCache(database?: Database): Promise<void> {
+  await resolvePoolCache(database).delete(POOL_CACHE_KEY)
 }
 
 export interface ResolvedAppStorage {
@@ -311,6 +320,68 @@ export async function resolveAppStorage(deps: AppStorageDeps = {}): Promise<Reso
     storage,
     writable: effectiveWritePool.length > 0,
     activeMode,
+  }
+}
+
+const SAFE_INLINE_IMAGE_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+])
+
+const SERVE_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'x-content-type-options': 'nosniff',
+  'content-security-policy':
+    "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+}
+
+function withStorageSecurityHeaders(res: Response): Response {
+  const headers = new Headers(res.headers)
+  for (const [k, v] of Object.entries(SERVE_SECURITY_HEADERS)) {
+    headers.set(k, v)
+  }
+  const ct = (headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
+  if (ct && !SAFE_INLINE_IMAGE_MIME.has(ct) && res.status >= 200 && res.status < 300) {
+    const disp = headers.get('content-disposition') ?? ''
+    if (!/^attachment\b/i.test(disp)) {
+      headers.set('content-disposition', 'attachment')
+    }
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  })
+}
+
+/**
+ * Безопасная HTTP-раздача объекта из боевого пула (`/api/storage/[...path]`):
+ * - некорректные пути (`..`, `\`, завершающий `/`, `.storage-*`) возвращают `404` вместо `500`;
+ * - все ответы несут `X-Content-Type-Options: nosniff` и изолирующий `Content-Security-Policy: sandbox`;
+ * - активные типы вне белого списка растровых картинок принудительно отдаются как `attachment`.
+ */
+export async function serveAppStoragePath(
+  path: string,
+  request: Request,
+  deps?: AppStorageDeps,
+): Promise<Response> {
+  const resolved = await resolveAppStorage(deps)
+  if (!resolved.storage) {
+    return new Response('Not Found', { status: 404, headers: SERVE_SECURITY_HEADERS })
+  }
+  try {
+    const res = await resolved.storage.serve(path, request, {
+      cacheControl: 'public, max-age=31536000, immutable',
+      etag: 'strong',
+    })
+    return withStorageSecurityHeaders(res)
+  } catch (err) {
+    if (err instanceof RangeError || err instanceof TypeError) {
+      return new Response('Not Found', { status: 404, headers: SERVE_SECURITY_HEADERS })
+    }
+    throw err
   }
 }
 
@@ -464,10 +535,13 @@ export async function saveStorageServer(
   if (!keys.enabled) return fail({ code: 'auth.disabled' })
 
   const database = deps.db ?? defaultDb
+  const cloud = isCloudRuntime(deps.isCloud)
   const api = database.resource(storageServer)
 
   const editId = input.id?.trim() || null
   let existingRow: Record<string, unknown> | undefined
+  let slot: string
+
   if (editId) {
     if (!checkGrants(principal, gStorageServer.update)) {
       return fail({ code: 'auth.forbidden' })
@@ -477,23 +551,25 @@ export async function saveStorageServer(
     })) as unknown as Record<string, unknown>[]
     existingRow = found[0]
     if (!existingRow) return fail({ code: 'storage.not-found' })
+    slot = String(existingRow.slot)
   } else {
-    const rawSlotProbe = String(input.slot ?? '').trim().toLowerCase()
-    const bySlot = rawSlotProbe
-      ? ((await api.select(SYSTEM, {
-          filter: { field: 'slot', op: 'eq', value: rawSlotProbe },
-        })) as unknown as Record<string, unknown>[])[0]
-      : undefined
-    existingRow = bySlot
-    const needed = existingRow ? gStorageServer.update : gStorageServer.insert
-    if (!checkGrants(principal, needed)) {
+    if (!checkGrants(principal, gStorageServer.insert)) {
       return fail({ code: 'auth.forbidden' })
     }
+    slot = String(input.slot ?? '').trim().toLowerCase()
+    if (!VAULT_SLOT_ID_RE.test(slot)) {
+      return fail({ code: 'storage.slot-invalid', path: 'slot' })
+    }
+    if (RESERVED_SLOTS.has(slot)) {
+      return fail({ code: 'storage.slot-reserved', path: 'slot' })
+    }
+    const bySlot = ((await api.select(SYSTEM, {
+      filter: { field: 'slot', op: 'eq', value: slot },
+    })) as unknown as Record<string, unknown>[])[0]
+    if (bySlot) {
+      return fail({ code: 'storage.slot-taken', path: 'slot' })
+    }
   }
-
-  const slot = existingRow
-    ? String(existingRow.slot)
-    : String(input.slot ?? '').trim().toLowerCase()
 
   if (!VAULT_SLOT_ID_RE.test(slot)) {
     return fail({ code: 'storage.slot-invalid', path: 'slot' })
@@ -517,6 +593,11 @@ export async function saveStorageServer(
     return fail({ code: 'storage.url-invalid', path: 'url' })
   }
 
+  const urlSafety = validateStorageTargetUrl(rawUrl, { allowLocalNetwork: !cloud })
+  if (!urlSafety.ok) {
+    return fail({ code: 'storage.url-blocked', path: 'url' })
+  }
+
   const storageMb = Number(input.storageMb)
   const fileMb = Number(input.fileMb)
   const priority = input.priority !== undefined ? Number(input.priority) : 100
@@ -536,6 +617,12 @@ export async function saveStorageServer(
   }
 
   const rawEncKey = String(input.encryptionKey ?? '').trim()
+  if (
+    rawEncKey &&
+    (rawEncKey.length < 8 || rawEncKey.length > 256 || /[\u0000-\u001f\u007f]/.test(rawEncKey))
+  ) {
+    return fail({ code: 'storage.key-invalid', path: 'encryption_key' })
+  }
   const encryptionKey = input.clearEncryptionKey
     ? undefined
     : rawEncKey || prevEntry?.encryptionKey || undefined
@@ -549,11 +636,14 @@ export async function saveStorageServer(
     ...(encryptionKey ? { encryptionKey } : {}),
   }
 
-  const verdict = await probeStorageVaultEntry(slot, entry, deps.fetchImpl)
+  const verdict = await probeStorageVaultEntry(slot, entry, deps.fetchImpl, {
+    allowLocalNetwork: !cloud,
+  })
   if (!verdict.ok) {
+    const targetField = verdict.path?.[0] === 'encryption_key' ? 'encryption_key' : 'url'
     return fail({
       code: 'storage.probe-failed',
-      path: 'url',
+      path: targetField,
       args: { detail: sanitizeProbeDetail(verdict.message) },
     })
   }
@@ -577,7 +667,7 @@ export async function saveStorageServer(
     })
   }
 
-  await invalidateAppStoragePoolCache()
+  await invalidateAppStoragePoolCache(deps.db)
   return listStorageServers(actor, deps)
 }
 
@@ -601,6 +691,6 @@ export async function removeStorageServer(
   if (!existing[0]) return fail({ code: 'storage.not-found' })
 
   await api.delete({ principal }, targetId, { hard: true })
-  await invalidateAppStoragePoolCache()
+  await invalidateAppStoragePoolCache(deps.db)
   return listStorageServers(actor, deps)
 }

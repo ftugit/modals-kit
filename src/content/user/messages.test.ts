@@ -14,7 +14,7 @@ const block = source.slice(
 const codes = [...block.matchAll(/'([a-z][\w.-]+)'/g)].map((m) => m[1]!)
 
 test('тип кодов разобран: страж не проходит на пустом списке', () => {
-  expect(codes.length).toBe(33)
+  expect(codes.length).toBe(36)
 })
 
 test('у каждого доменного кода есть текст', () => {

@@ -37,11 +37,11 @@ test('файл целиком в base64: пара arrayBuffer+btoa запрещ�
     checkSource(RULES, 'await blob.slice(0, 16).arrayBuffer()', '/app/src/lib/image/probe.ts'),
     null,
   );
-  // допущенные места не трогаем
-  assert.equal(
+  // аватары переведены на URL хранилища — base64 в profile.form.server.ts больше не разрешён
+  assert.ok(
     checkSource(RULES, bad, '/app/src/content/user/ui/profile-form/profile.form.server.ts'),
-    null,
   );
+  // допущенное место (/fields) не трогаем
   assert.equal(
     checkSource(RULES, bad, '/app/src/routes/(site)/(app)/fields/fields.form.server.ts'),
     null,

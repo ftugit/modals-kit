@@ -59,7 +59,7 @@ registerComponentForm({
       resolve: async () => desc,
     }
   },
-  execute: async ({ values, intent, commit, fail }, event) => {
+  execute: async ({ values, intent, commit, fail }, event, raw) => {
     const u = auth(event)
     if (!u.enabled) return fail(instruction({ code: 'auth.disabled' }))
 
@@ -82,9 +82,21 @@ registerComponentForm({
     }
 
     if (parsed.action === 'save') {
+      const cachedSlice = raw ? await readCachedSlice(event, raw) : null
+      const editableFieldNames =
+        cachedSlice && cachedSlice.ok
+          ? new Set(cachedSlice.value.items.filter((i) => i.editable).map((i) => i.fieldName))
+          : null
+
       const patch: Record<string, unknown> = {}
       for (const [fieldName, val] of Object.entries(values)) {
         if (fieldName === 'subject') continue
+        // В no-JS отсутствующий read-only чекбокс не должен синтезировать `false`
+        // и срывать сохранение редактируемых полей; но явно присланное в `FormData`
+        // запрещённое поле пропускается в `saveUserConfig` для отказа `config.rule-forbidden`.
+        if (editableFieldNames && !editableFieldNames.has(fieldName) && !raw?.has(fieldName)) {
+          continue
+        }
         const cfgKey = configKeyByFieldName(fieldName)
         if (!cfgKey) return fail(instruction({ code: 'config.key-unknown' }))
         patch[cfgKey] = val

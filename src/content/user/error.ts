@@ -45,7 +45,10 @@ export type AuthErrorCode =
   | 'storage.unavailable'    // сбой записи или удаления объекта в боевом хранилище
   | 'storage.slot-invalid'   // некорректный идентификатор слота сервера хранилища
   | 'storage.slot-reserved'  // зарезервированное имя слота хранилища
+  | 'storage.slot-taken'     // слот с таким именем уже существует в пуле
   | 'storage.url-invalid'    // некорректная DSN-ссылка s3:// или webdav://
+  | 'storage.url-blocked'    // адрес сервера хранилища запрещён политикой безопасности (SSRF / HTTP в облаке)
+  | 'storage.key-invalid'    // некорректный ключ потокового шифрования файлов
   | 'storage.limits-invalid' // некорректные квоты хранилища / файла или приоритет
   | 'storage.probe-failed'   // живая проверка подключения к серверу хранилища не прошла
   | 'storage.not-found'      // запись сервера хранилища не найдена
@@ -98,7 +101,10 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'storage.unavailable': () => [generalError('storage.unavailable', { retryable: true })],
   'storage.slot-invalid': (f) => [fieldError(f, { path: f.path ?? 'slot' })],
   'storage.slot-reserved': (f) => [fieldError(f, { path: f.path ?? 'slot' })],
+  'storage.slot-taken': (f) => [fieldError(f, { path: f.path ?? 'slot' })],
   'storage.url-invalid': (f) => [fieldError(f, { path: f.path ?? 'url' })],
+  'storage.url-blocked': (f) => [fieldError(f, { path: f.path ?? 'url' })],
+  'storage.key-invalid': (f) => [fieldError(f, { path: f.path ?? 'encryption_key' })],
   'storage.limits-invalid': (f) => [fieldError(f, { path: f.path ?? 'file_mb' })],
   'storage.probe-failed': (f) => [fieldError(f, { path: f.path ?? 'url', retryable: true })],
   'storage.not-found': () => [generalError('storage.not-found')],

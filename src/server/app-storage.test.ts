@@ -32,6 +32,7 @@ import {
   resolveAppStorage,
   saveManagedAvatar,
   saveStorageServer,
+  serveAppStoragePath,
   type SealKeysConfig,
 } from './app-storage.server.js'
 
@@ -333,5 +334,127 @@ describe('app-storage.server — боевой пул БД, STORAGE_ACL, шифр
       expect(removed.value.items).toHaveLength(0)
       expect(removed.value.activeMode).toBe('empty')
     }
+  })
+
+  it('защита от SSRF, дубликатов слота, коротких ключей шифрования и 404/CSP на serveAppStoragePath', async () => {
+    const { fetchImpl } = createMockWebdavFetch()
+
+    // 1. Cloud metadata IP блокируется всегда (даже при isCloud: false)
+    const metadataAttempt = await saveStorageServer(
+      viewerEdit,
+      {
+        slot: 'ssrf_meta',
+        url: 'webdav+http://u:p@169.254.169.254/latest/meta-data',
+        storageMb: 512,
+        fileMb: 64,
+      },
+      { db: testDb, sealKeys: KEYS_V1, isCloud: false, fetchImpl },
+    )
+    expect(metadataAttempt).toEqual({
+      ok: false,
+      fact: { code: 'storage.url-blocked', path: 'url' },
+    })
+
+    // 2. В облаке (isCloud: true) блокируются loopback, RFC1918 и нешифрованный +http://
+    for (const blockedUrl of [
+      'webdav://u:p@127.0.0.1/box',
+      'webdav://u:p@10.0.0.5/box',
+      'webdav://u:p@[::1]/box',
+      'webdav://u:p@localhost/box',
+      'webdav+http://u:p@dav.example.test/box',
+    ]) {
+      const res = await saveStorageServer(
+        viewerEdit,
+        { slot: 'ssrf_cloud', url: blockedUrl, storageMb: 512, fileMb: 64 },
+        { db: testDb, sealKeys: KEYS_V1, isCloud: true, fetchImpl },
+      )
+      expect(res).toEqual({
+        ok: false,
+        fact: { code: 'storage.url-blocked', path: 'url' },
+      })
+    }
+
+    // 3. Короткий ключ шифрования привязывает ошибку именно к encryption_key
+    const badKey = await saveStorageServer(
+      viewerEdit,
+      {
+        slot: 'dav_short_key',
+        url: 'webdav://u:topsecret@dav.example.test/box',
+        encryptionKey: 'short',
+        storageMb: 512,
+        fileMb: 64,
+      },
+      { db: testDb, sealKeys: KEYS_V1, isCloud: true, fetchImpl },
+    )
+    expect(badKey).toEqual({
+      ok: false,
+      fact: { code: 'storage.key-invalid', path: 'encryption_key' },
+    })
+
+    // 4. Дубликат слота без явного id отклоняется с storage.slot-taken (без тихой перезаписи)
+    const first = await saveStorageServer(
+      viewerEdit,
+      {
+        slot: 'dav_unique',
+        url: 'webdav://u:topsecret@dav.example.test/box',
+        storageMb: 1024,
+        fileMb: 128,
+      },
+      { db: testDb, sealKeys: KEYS_V1, isCloud: true, fetchImpl },
+    )
+    expect(first.ok).toBe(true)
+    const duplicate = await saveStorageServer(
+      viewerEdit,
+      {
+        slot: 'dav_unique',
+        url: 'webdav://u:other@dav.example.test/box2',
+        storageMb: 512,
+        fileMb: 64,
+      },
+      { db: testDb, sealKeys: KEYS_V1, isCloud: true, fetchImpl },
+    )
+    expect(duplicate).toEqual({
+      ok: false,
+      fact: { code: 'storage.slot-taken', path: 'slot' },
+    })
+    if (first.ok) {
+      await removeStorageServer(viewerEdit, first.value.items[0]!.id, {
+        db: testDb,
+        sealKeys: KEYS_V1,
+        isCloud: true,
+      })
+    }
+
+    // 5. serveAppStoragePath: битые пути отдают 404 (не 500), картинки несут nosniff + CSP, SVG принуждается к attachment
+    for (const badPath of ['', 'avatars/foo/', '.storage-probe', 'a/../b', 'a\\b']) {
+      const badRes = await serveAppStoragePath(
+        badPath,
+        new Request('http://localhost/api/storage/bad'),
+        { db: testDb, sealKeys: KEYS_V1, isCloud: false, devRootDir: devDir },
+      )
+      expect(badRes.status).toBe(404)
+      expect(badRes.headers.get('x-content-type-options')).toBe('nosniff')
+    }
+
+    const resolvedDev = await resolveAppStorage({
+      db: testDb,
+      sealKeys: KEYS_V1,
+      isCloud: false,
+      devRootDir: devDir,
+    })
+    await resolvedDev.storage!.put({
+      path: 'docs/vector.svg',
+      body: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+      contentType: 'image/svg+xml',
+    })
+    const svgRes = await serveAppStoragePath(
+      'docs/vector.svg',
+      new Request('http://localhost/api/storage/docs/vector.svg'),
+      { db: testDb, sealKeys: KEYS_V1, isCloud: false, devRootDir: devDir },
+    )
+    expect(svgRes.status).toBe(200)
+    expect(svgRes.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(svgRes.headers.get('content-security-policy')).toContain('sandbox')
+    expect(svgRes.headers.get('content-disposition')).toMatch(/^attachment\b/i)
   })
 })
