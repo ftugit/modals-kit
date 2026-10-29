@@ -362,10 +362,12 @@ describe('blocks.ts — список, карточка просмотра/пра
     expect(blocks.get(createdId)?.until).toBeNull()
   })
 
-  test('deleteBlock: мягкое удаление доступно кругу записи, полное — только связке записи + block.readDeleted или admin', async () => {
+  test('deleteBlock: мягкое удаление доступно кругу записи, полное — только связке block.edit + block.readDeleted или admin (не moderator)', async () => {
     const { ports, auths, blocks } = makePorts()
     const moderator = await joined(ports, auths, ['moderator'])
-    const auditor = await joined(ports, auths, ['block.readDeleted'])
+    const moderatorWithDeleted = await joined(ports, auths, ['moderator', 'block.readDeleted'])
+    const deletedOnly = await joined(ports, auths, ['block.readDeleted'])
+    const auditor = await joined(ports, auths, ['block.read', 'block.readDeleted'])
     const cleaner = await joined(ports, auths, ['block.edit', 'block.readDeleted'])
     const target = await joined(ports, auths)
 
@@ -379,19 +381,31 @@ describe('blocks.ts — список, карточка просмотра/пра
     )
     const id = [...blocks.keys()][0]!
 
-    // Модератор без block.readDeleted не может запросить hard: true
+    // Модератор (даже с block.readDeleted!) не может запросить hard: true
     expect(fact_(await deleteBlock(ports, moderator.access, { blockId: id, hard: true })).code).toBe('auth.forbidden')
+    expect(fact_(await deleteBlock(ports, moderatorWithDeleted.access, { blockId: id, hard: true })).code).toBe('auth.forbidden')
+
+    // Одно только block.readDeleted без block.read не даёт читать список или карточку
+    expect(fact_(await listBlocksPage(ports, deletedOnly.access)).code).toBe('auth.forbidden')
+    expect(fact_(await readBlockDetail(ports, deletedOnly.access, { blockId: id })).code).toBe('auth.forbidden')
 
     // Мягкое удаление модератором проходит
     const soft = ok_(await deleteBlock(ports, moderator.access, { blockId: id }))
     expect(soft.hard).toBe(false)
     expect(blocks.get(id)?.deletedAt).not.toBeNull()
 
-    // Чистый аудитор (только block.readDeleted) видит удалённую запись read-only без кнопки удаления
+    // Аудитор (block.read + block.readDeleted) видит удалённую запись read-only без кнопки удаления
     const deletedForAuditor = ok_(await readBlockDetail(ports, auditor.access, { blockId: id }))
     expect(deletedForAuditor.canSubmit).toBe(false)
     expect(deletedForAuditor.canDelete).toBe(false)
     expect(fact_(await deleteBlock(ports, auditor.access, { blockId: id, hard: true })).code).toBe('auth.forbidden')
+
+    // Модератор с block.readDeleted тоже видит удалённую запись, но стереть её окончательно не может
+    const deletedForMod = ok_(await readBlockDetail(ports, moderatorWithDeleted.access, { blockId: id }))
+    expect(deletedForMod.canSubmit).toBe(false)
+    expect(deletedForMod.canDelete).toBe(false)
+    expect(deletedForMod.canHardDelete).toBe(false)
+    expect(fact_(await deleteBlock(ports, moderatorWithDeleted.access, { blockId: id })).code).toBe('auth.forbidden')
 
     // Связка block.edit + block.readDeleted видит canDelete = true и стирает запись окончательно
     const deletedForCleaner = ok_(await readBlockDetail(ports, cleaner.access, { blockId: id }))
@@ -402,5 +416,37 @@ describe('blocks.ts — список, карточка просмотра/пра
     const hard = ok_(await deleteBlock(ports, cleaner.access, { blockId: id }))
     expect(hard.hard).toBe(true)
     expect(blocks.has(id)).toBe(false)
+  })
+
+  test('saveBlock (targetIds): пакетное создание блокировки для нескольких пользователей с предпроверкой всех целей', async () => {
+    const { ports, auths, blocks } = makePorts()
+    const moderator = await joined(ports, auths, ['moderator'])
+    const t1 = await joined(ports, auths)
+    const t2 = await joined(ports, auths)
+
+    // Если среди целей сам актор — ни одна запись не создаётся
+    expect(
+      fact_(
+        await saveBlock(ports, moderator.access, {
+          targetIds: [t1.id, moderator.id],
+          scope: 'auth',
+          reason: 'самоблок в пачке',
+          forever: true,
+        }),
+      ).code,
+    ).toBe('auth.forbidden')
+    expect(blocks.size).toBe(0)
+
+    const created = ok_(
+      await saveBlock(ports, moderator.access, {
+        targetIds: [t1.id, t2.id, t1.id],
+        scope: 'auth',
+        reason: 'массовый спам',
+        forever: true,
+      }),
+    )
+    expect(created.count).toBe(2)
+    expect(created.targetIds).toEqual([t1.id, t2.id])
+    expect(blocks.size).toBe(2)
   })
 })

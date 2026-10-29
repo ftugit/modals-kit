@@ -3,14 +3,18 @@
  * аватара). Отдельно от `auth.ts` — у auth профильных функций нет (чек-лист
  * §6: «откуда у auth profile?»); права здесь те же — сессия (`guard`).
  */
+import { checkGrants, forOwner, grants } from '#lib/db/index.js'
 import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { canBlock, canReadAnyBlocks } from './blocks.js'
 import { getEffective, setUserKey } from './config-api.js'
+import { auth as authResource, block as blockResource, profile as profileResource } from './schema.js'
 import { VISIBILITY_KEY } from './spec-config.js'
-import { ADMIN_ROLE } from './permissions.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
 import type { ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
+
+const gProfile = grants(profileResource)
+const gBlock = grants(blockResource)
+const gAuth = grants(authResource)
 
 /** Ключ конфига приватности профиля (этап 8): переопределение за юзером поверх глобального. */
 
@@ -21,14 +25,6 @@ async function visibilityOf(ports: AuthPorts, target: string): Promise<Visibilit
   const v = await getEffective(ports, target, VISIBILITY_KEY)
   return v === 'all' || v === 'users' ? v : 'nobody'
 }
-
-/**
- * Права чтения профиля — тот же список, что политика модели
- * (`ownerOrRoles('auth_id', …)` в `schema.ts`) и флаг `canSeeNickname`
- * списка. Домен сверяется с ним, чтобы различить «профиля нет» и «нельзя»:
- * сама модель этих случаев не различает.
- */
-const PROFILE_READ_ROLES = ['admin', 'profile.read', 'profile.edit'] as const
 
 /**
  * Профиль для чтения: есть строка — её значения. Строки нет: владелец и
@@ -43,27 +39,36 @@ export async function profile(
 ): Promise<UserResult<ProfileRead>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  // `subject` — чужой профиль: видимость решает модель (`ownerOrRoles`), а не эта функция
+  // `subject` — чужой профиль: видимость решает модель (`defineAcl`), а не эта функция
   const target = subject?.trim() || g.sub
-  // Правка: владелец или `profile.edit`/`admin` (та же пара, что политика
-  // `update` модели). Флаг нужен показу (кнопка) и гейтам редактирования.
-  const canEdit =
-    target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')
+  const actor = principalOfRow({ id: g.sub, permissions: g.perms }).principal
+  const scoped = checkGrants(
+    actor,
+    {
+      canReadProfile: forOwner(target, gProfile.select),
+      canEdit: forOwner(target, gProfile.update),
+      canDeleteProfileRole: forOwner(target, gProfile.delete),
+      // `user.auth` пока не переведена на `defineAcl` (решение №3): домен учитывает `account.edit` поверх `gAuth.delete`.
+      canDeleteSeedRole: forOwner(target, gAuth.delete),
+      canKnowReason: forOwner(target, gAuth.select),
+      // Глобальный круг чтения/записи блокировок (без `owner` цели — чтобы раздел в профиле открывался модерации/чтению).
+      canReadBlocks: gBlock.select,
+      canBlock: gBlock.insert,
+    },
+  )
   // Возможности удаления по цели (этап 6): право И нет активного запрета
   // из каталога сфер на самой цели — запрет сильнее владельца и админа.
   const now = ports.clock.now()
   const blocked = await blocksOf(ports, target)
   const canDeleteProfile =
-    (target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.edit')) &&
-    !activeBlock(blocked, 'profile.delete', now)
+    scoped.canDeleteProfileRole && !activeBlock(blocked, 'profile.delete', now)
   const canDeleteSeed =
-    (target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.edit')) &&
+    (scoped.canDeleteSeedRole || g.perms.includes('account.edit')) &&
     !activeBlock(blocked, 'account.delete', now)
   // Полная блокировка цели — факт для показа в профиле; причину и срок
   // знают владелец, `admin` и читающие аккаунты, остальные — только факт.
   const full = longestFullBlock(blocked, now)
-  const canKnowReason =
-    target === g.sub || g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')
+  const canKnowReason = scoped.canKnowReason
   const fullBlock = full
     ? {
         reason: canKnowReason ? full.reason : null,
@@ -72,23 +77,20 @@ export async function profile(
     : null
   // Кнопка «Блокировки» в профиле: пагинированный список подгружается по требованию
   // в `user.blocks` (`/user/[id]/blocks`), без лишнего запроса при каждом чтении профиля.
-  const canBlockViewer = canBlock(g.perms)
   const caps = {
-    canEdit,
+    canEdit: scoped.canEdit,
     canDeleteProfile,
     canDeleteSeed,
     fullBlock,
     blocks: [],
-    canReadBlocks: canReadAnyBlocks(g.perms),
-    canBlock: canBlockViewer,
+    canReadBlocks: scoped.canReadBlocks,
+    canBlock: scoped.canBlock,
     isOwn: target === g.sub,
     visibility: await visibilityOf(ports, target),
   }
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
   if (row) return ok({ profile: row, notCreated: false, ...caps })
-  const canRead =
-    target === g.sub || PROFILE_READ_ROLES.some((role) => g.perms.includes(role))
-  return ok({ profile: null, notCreated: canRead, ...caps })
+  return ok({ profile: null, notCreated: scoped.canReadProfile, ...caps })
 }
 
 /**
@@ -157,13 +159,15 @@ export async function deleteProfile(
   const authRow = await ports.auths.get(target)
   if (!authRow) return fail({ code: 'auth.forbidden' })
   const blocked = await blocksOf(ports, target)
-  const isAdmin = g.perms.includes(ADMIN_ROLE)
-  const canProfile = target === g.sub || isAdmin || g.perms.includes('profile.edit')
-  if (!canProfile) return fail({ code: 'auth.forbidden' })
+  const actor = principalOfRow({ id: g.sub, permissions: g.perms }).principal
+  if (!checkGrants(actor, gProfile.delete, { ownerId: target })) {
+    return fail({ code: 'auth.forbidden' })
+  }
   if (activeBlock(blocked, 'profile.delete', now))
     return fail({ code: 'profile.delete-blocked' })
   if (opts.withSeed) {
-    const canSeed = target === g.sub || isAdmin || g.perms.includes('account.edit')
+    const canSeed =
+      checkGrants(actor, gAuth.delete, { ownerId: target }) || g.perms.includes('account.edit')
     if (!canSeed) return fail({ code: 'auth.forbidden' })
     if (activeBlock(blocked, 'account.delete', now))
       return fail({ code: 'account.delete-blocked' })

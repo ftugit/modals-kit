@@ -18,12 +18,14 @@
  * без него аргументы про удалённых молча отбрасываются, а состояние считается
  * «только действующие».
  */
-import type { Filter, Order } from '#lib/db/index.js'
+import { checkGrants, grants, type Filter, type Order } from '#lib/db/index.js'
 import { blocksOfMany, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { profile as profileResource } from './schema.js'
-import { ADMIN_ROLE } from './permissions.js'
+import { auth as authResource, profile as profileResource } from './schema.js'
 import type { AuthPorts, SeedAccountRow } from './ports.js'
 import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from './types.js'
+
+const gAuth = grants(authResource)
+const gProfile = grants(profileResource)
 
 /** Потолок порции: экран догружает понемногу, выгрузка таблицы целиком не нужна. */
 export const SEED_USERS_MAX_PAGE_SIZE = 100
@@ -109,17 +111,15 @@ export async function listSeedUsers(
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
 
-  if (!g.perms.includes(ADMIN_ROLE) && !g.perms.includes('account.read'))
-    return fail({ code: 'auth.forbidden' })
+  const actor = principalOfRow({ id: g.sub, permissions: g.perms }).principal
+  const caps = checkGrants(actor, {
+    canReadAccounts: gAuth.select,
+    canSeeDeleted: gAuth.selectDeleted,
+    canSeeNickname: gProfile.select,
+  })
+  if (!caps.canReadAccounts) return fail({ code: 'auth.forbidden' })
 
-  // Удалённые видны тем же правам, что держат `readDeleted` схемы; UI узнаёт
-  // об этом флагом в выдаче, а не списком прав.
-  const canSeeDeleted = g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.readDeleted')
-  // Никнеймы — политика чтения профиля (модель): admin или держатели
-  // profile.read/profile.edit. Параметр из фильтров действует только при
-  // этом праве; UI узнаёт о праве флагом, а не списком прав.
-  const canSeeNickname =
-    g.perms.includes(ADMIN_ROLE) || g.perms.includes('profile.read') || g.perms.includes('profile.edit')
+  const { canSeeDeleted, canSeeNickname } = caps
   const withNickname = canSeeNickname && args.nickname === true
   // Состояние профиля — тем же правом, что никнейм: внутри exists действует
   // политика профиля, без права строки цели вызывающему не видны.

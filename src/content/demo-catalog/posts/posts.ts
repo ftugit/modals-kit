@@ -4,7 +4,7 @@
  * валидаторы через `formParams`), поэтому файл общий, а не в `lib/server`: в нём нет ни
  * соединения, ни секретов — только поля, права и порядок.
  */
-import { defineResource, f, field, policy, s } from '#lib/db/index.js'
+import { defineAcl, defineResource, f, field, s } from '#lib/db/index.js'
 
 /** Адрес записи из заголовка: буквы и цифры любого алфавита, остальное — дефис. */
 export function slugOf(title: unknown): string | undefined {
@@ -55,14 +55,11 @@ export const posts = defineResource({
   // `readDeleted` не задан, значит никто). `updated_at`/`deleted_at` нужны опросу
   // изменений (`liveCapabilities`, docs/design/live-update.md §5).
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at', deletedAt: 'deleted_at' },
-  policy: {
-    select: policy.publicRows(),
-    insert: policy.roles(['author']),
-    update: policy.ownerOrRoles('author_id', ['editor']),
-    // deny() для delete дал бы не 403, а not_found: строка, скрытая политикой,
-    // неотличима от отсутствующей — так не протекает факт существования.
-    // `editor` дублирует право записи: редактирование включает удаление.
-    delete: policy.roles(['author', 'editor']),
-  },
+  acl: defineAcl({
+    publicRead: true,
+    owner: { field: 'author_id', can: ['edit'] },
+    insert: ['author'],
+    edit: ['editor'],
+  }),
   order: [['created_at', 'desc']],
 })

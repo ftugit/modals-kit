@@ -37,8 +37,10 @@ export type GrantSpec =
   | readonly GrantSpec[];
 
 export interface GrantActor {
-  readonly id: string | null;
-  readonly permissions: readonly string[];
+  readonly id?: string | null;
+  /** Роли/права субъекта: принимает и `{ id, permissions }` (`vault`), и `{ id, roles }` (`DataContext['principal']`). */
+  readonly permissions?: readonly string[];
+  readonly roles?: readonly string[];
 }
 
 export interface CheckGrantsOptions {
@@ -486,7 +488,7 @@ export function checkGrants(
   options?: CheckGrantsOptions,
 ): boolean | Record<string, boolean> {
   const actorId = actor?.id ?? null;
-  const perms = actor?.permissions ?? [];
+  const perms = actor?.permissions ?? actor?.roles ?? [];
   const ownerId = options?.ownerId ?? null;
   const onUnknown = options?.onUnknown ?? false;
 

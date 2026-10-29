@@ -11,10 +11,13 @@
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, it } from 'vitest'
-import { conservativeLimits, createDb, type DbFailure } from '#lib/db/index.js'
+import { conservativeLimits, createDb, validateResourceAcl, type DbFailure } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
-import { auth, block as blockRes, config, profile } from './schema.js'
+import { cacheKv } from '#hooks/cache-db.js'
+import { storageFile, storageReservation } from '#hooks/storage-db.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
+import { auth, block as blockRes, config, profile, session } from './schema.js'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
 
@@ -303,17 +306,24 @@ test('блокировки (этап 9): модель держит круг, н�
     // (слой требует readDeleted на любой hard), а аудитор живых не видит.
     await assert.rejects(() => blocks.delete(moderator, row.id, { hard: true }), forbidden)
 
-    // Удалённые: модератор мягко удалить может (запись = edit), но
-    // удалённых не видит и окончательно не стирает; связка
-    // readDeleted+edit стирает, одно readDeleted — только смотрит.
-    const auditor = owner(crypto.randomUUID(), ['block.readDeleted'])
-    // A3: одно право удалённых живых записей не открывает.
-    assert.equal((await blocks.select(auditor)).length, 0)
+    // Удалённые:
+    // 1) одно `block.readDeleted` без `block.read` не открывает ни живые, ни удалённые;
+    // 2) `block.read` + `block.readDeleted` читает и живые, и удалённые, но не стирает;
+    // 3) `moderator` + `block.readDeleted` видит удалённые, но физически стереть (`hard: true`)
+    //    НЕ может (подотчётный исполнитель обязан оставлять след в истории);
+    // 4) связка `block.edit` + `block.readDeleted` стирает окончательно.
+    const pureDeleted = owner(crypto.randomUUID(), ['block.readDeleted'])
+    const auditor = owner(crypto.randomUUID(), ['block.read', 'block.readDeleted'])
+    const moderatorWithDeleted = owner(crypto.randomUUID(), ['moderator', 'block.readDeleted'])
+    assert.equal((await blocks.select(pureDeleted)).length, 0)
     await assert.rejects(() => blocks.select(moderator, { includeDeleted: true }), forbidden)
     await blocks.delete(moderator, row.id)
     assert.equal((await blocks.select(moderator)).length, 0)
+    assert.equal((await blocks.select(pureDeleted, { includeDeleted: true })).length, 0)
     assert.equal((await blocks.select(auditor, { includeDeleted: true })).length, 1)
+    assert.equal((await blocks.select(moderatorWithDeleted, { includeDeleted: true })).length, 1)
     await assert.rejects(() => blocks.delete(moderator, row.id, { hard: true }), (e: DbFailure) => e.kind === 'forbidden' || e.kind === 'not_found')
+    await assert.rejects(() => blocks.delete(moderatorWithDeleted, row.id, { hard: true }), (e: DbFailure) => e.kind === 'forbidden' || e.kind === 'not_found')
     await assert.rejects(() => blocks.delete(auditor, row.id, { hard: true }), (e: DbFailure) => e.kind === 'forbidden' || e.kind === 'not_found')
     const cleaner = owner(crypto.randomUUID(), ['block.readDeleted', 'block.edit'])
     await blocks.delete(cleaner, row.id, { hard: true })
@@ -359,3 +369,26 @@ test('блокировки (этап 9): модель держит круг, н�
     await blocks.delete(cleaner, b2.id, { hard: true })
   })
 })
+
+test('ACL-страж проходит по всем моделям репозитория без аномалий, а владелец demo.post может удалять свою запись', async () => {
+  for (const r of [auth, profile, session, config, blockRes, posts, storageFile, storageReservation, cacheKv]) {
+    validateResourceAcl(r)
+  }
+
+  shared ??= new PGlite()
+  await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+  const driver = pgliteAdapter(shared)
+  assert.equal((await defineSchema({ resources: [posts] }).sync(driver)).status, 'ok')
+  const db = createDb({ driver, limits: conservativeLimits, resources: [posts] })
+  const postTable = db.resource(posts)
+
+  const authorCtx = owner(crypto.randomUUID(), ['author'])
+  const created = (await postTable.insert(authorCtx, { title: 'Запись автора' })) as unknown as { id: string }
+
+  // После лишения роли `author` владелец (`author_id`) сохраняет и update, и delete (`can: ['edit']`).
+  const exAuthorOwner = owner(authorCtx.principal.id, [])
+  await postTable.update(exAuthorOwner, created.id, { title: 'Обновлено владельцем' })
+  await postTable.delete(exAuthorOwner, created.id)
+  assert.equal((await postTable.select(exAuthorOwner)).length, 0)
+})
+

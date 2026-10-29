@@ -8,7 +8,7 @@
  * таблицы auth/session — технические. Права ключами доступа — README lib/db §7;
  * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
-import { defineResource, f, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
+import { defineAcl, defineResource, f, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
 import { isBlockScope } from './spec-block.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 
@@ -44,6 +44,35 @@ const AVATAR_URL = s.custom((value) => {
   return 'profile.avatar_url: ожидается адрес http(s)://… или data:image/…;base64'
 })
 
+const PROFILE_ACL = defineAcl({
+  owner: { field: 'auth_id', can: ['read', 'edit'] },
+  read: ['profile.read'],
+  insert: ['server'],
+  edit: ['profile.edit', 'admin', 'server'],
+  // Публичная видимость из конфига (этап 8): строка видна любому, если за её
+  // владельцем ключ `profile.visibility` = `all`, и любому вошедшему — если
+  // `users`. Узел `exists` по модели конфига с `policy: false`: видимость
+  // профиля — правило самого профиля, а не чтения конфига.
+  extend: {
+    select: (base, ctx) => {
+      const visible = (value: string): Filter => ({
+        exists: {
+          from: config,
+          on: [['auth_id', 'auth_id']],
+          where: {
+            and: [
+              { field: 'key', op: 'eq', value: VISIBILITY_KEY },
+              { field: 'value', op: 'eq', value },
+            ],
+          },
+          policy: false,
+        },
+      })
+      return { or: [base, visible('all'), ...(ctx.principal.id ? [visible('users')] : [])] }
+    },
+  },
+})
+
 export const profile: Resource = defineResource({
   key: 'user.profile.v1',
   table: 'public.user_profile',
@@ -69,37 +98,7 @@ export const profile: Resource = defineResource({
     }),
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
-  policy: {
-    // Владелец — всегда; админ и держатели прав видят все строки. Плюс
-    // публичная видимость из конфига (этап 8): строка видна любому, если за
-    // её владельцем ключ `profile.visibility` = `all`, и любому вошедшему —
-    // если `users`. Узел `exists` по модели конфига с `policy: false`:
-    // видимость профиля — правило самого профиля, а не чтения конфига.
-    select: (ctx) => {
-      const base = policy.ownerOrRoles('auth_id', ['admin', 'profile.read', 'profile.edit'])(ctx)
-      const visible = (value: string): Filter => ({
-        exists: {
-          from: config,
-          on: [['auth_id', 'auth_id']],
-          where: {
-            and: [
-              { field: 'key', op: 'eq', value: VISIBILITY_KEY },
-              { field: 'value', op: 'eq', value },
-            ],
-          },
-          policy: false,
-        },
-      })
-      return { or: [base, visible('all'), ...(ctx.principal.id ? [visible('users')] : [])] }
-    },
-    // Строку профиля заводит сервер (первое заполнение), клиент её не создаёт.
-    insert: policy.roles(['server']),
-    // Правка и удаление — одно право: затереть данные и удалить строку — одно последствие.
-    // `server` в удалении — только цепочка смерти аккаунта (`profiles.remove`):
-    // своей политикой он чужой профиль не трогает.
-    update: policy.ownerOrRoles('auth_id', ['admin', 'profile.edit']),
-    delete: policy.ownerOrRoles('auth_id', ['server', 'admin', 'profile.edit']),
-  },
+  acl: PROFILE_ACL,
   order: [['created_at', 'desc']],
 })
 
@@ -153,23 +152,19 @@ export const auth: Resource = defineResource({
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
     // заявку на удаление видят и снимают сервер/админ (шаг восстановления);
-    // удалённые строки — отдельное право `account.readDeleted` (грант
-    // `readDeleted` плюс политика `selectDeleted` ниже): чтение живых
-    // оно не даёт, а `includeDeleted` без гранта модель отклоняет.
+    // удалённые строки — модификатор `account.readDeleted` поверх `policy.select`
+    // (`account.read` + `account.readDeleted`): сам по себе чтение живых или
+    // удалённых строк он не даёт.
     deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin', 'account.readDeleted'] },
   },
   policy: {
-    // Читает и правит владелец; создаёт сервер (вход). Фаервол в api решает,
-    // что с блокировкой и удалением. `server` — сам по себе, без `admin`:
-    // серверный код видит строки, но не присваивает прав человека.
-    // `account.read` — список аккаунтов (`accounts.ts`): без него владелец
-    // по-прежнему видит только свою строку.
+    // Читает и мягко удаляет свою строку владелец; создаёт и зачищает сервер.
+    // `user.auth` и `user.session` управляются доменными функциями и пока не
+    // переведены на `defineAcl` (до проектирования прав гостевой записи auth и
+    // сессионного read/revoke).
     select: policy.ownerOrRoles('id', ['server', 'admin', 'account.read']),
-    // Удалённые аккаунты: только отдельное право (и админ/сервер); владелец
-    // свою удалённую строку видит для шага восстановления.
-    selectDeleted: policy.ownerOrRoles('id', ['server', 'admin', 'account.readDeleted']),
     insert: policy.roles(['server']),
-    update: policy.ownerOrRoles('id', ['server', 'admin']),
+    update: policy.roles(['server', 'admin']),
     delete: policy.ownerOrRoles('id', ['server', 'admin']),
   },
   order: [['created_at', 'desc']],
@@ -246,6 +241,13 @@ export const session = defineResource({
  * Уникальность `(auth_id, key)` — два частичных индекса ручным SQL
  * (`db.server.ts`): обычный unique NULL-дыру глобальных строк не закрывает.
  */
+const CONFIG_ACL = defineAcl({
+  owner: { field: 'auth_id', can: ['read'] },
+  read: ['config.read'],
+  insert: ['admin', 'server'],
+  edit: ['admin', 'server'],
+})
+
 export const config: Resource = defineResource({
   key: 'user.config',
   table: 'public.user_config',
@@ -253,45 +255,48 @@ export const config: Resource = defineResource({
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     auth_id: field(s.uuid(), {
-      read: () => true, create: ['server', 'admin'], nullable: true,
+      read: () => true, create: [...CONFIG_ACL.roles.insert], nullable: true,
       immutable: true, filters: ['eq', 'isNull', 'isNotNull'],
       db: { references: { resource: () => auth, chain: true } },
     }),
     key: field(s.text({ min: 1, max: 80 }), {
-      read: () => true, create: ['server', 'admin'], required: true,
+      read: () => true, create: [...CONFIG_ACL.roles.insert], required: true,
       immutable: true, filters: ['eq'], orderable: true,
     }),
-    value: f.json({ read: () => true, create: ['server', 'admin'], update: ['server', 'admin'], nullable: true }),
-    schema: f.json({ read: () => true, create: ['server', 'admin'], update: ['server', 'admin'], nullable: true }),
+    value: f.json({ read: () => true, create: [...CONFIG_ACL.roles.insert], update: [...CONFIG_ACL.roles.update], nullable: true }),
+    schema: f.json({ read: () => true, create: [...CONFIG_ACL.roles.insert], update: [...CONFIG_ACL.roles.update], nullable: true }),
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
-  policy: {
-    select: policy.ownerOrRoles('auth_id', ['server', 'admin', 'config.read']),
-    insert: policy.roles(['server', 'admin']),
-    update: (ctx) => ctx.principal.roles.includes('server') || ctx.principal.roles.includes('admin'),
-    delete: (ctx) => ctx.principal.roles.includes('server') || ctx.principal.roles.includes('admin'),
-  },
+  acl: CONFIG_ACL,
   order: [['key', 'asc']],
 })
 
 /**
- * Круги модели блокировок. Модератор — сквозная роль: вписана во все
- * списки, отдельных прав ей не выдают. Права — по модели `user.block`:
- * чтение живых, запись (сильнее роли: только право и админ правят
- * причину) и чтение удалённых. Окончательное удаление — связка:
- * политика `delete` (круг записи) плюс грант `readDeleted`, который
- * слой требует при `hard: true` — по одному права не дают стереть.
+ * ACL модели блокировок (`defineAcl`):
+ * - `owner` (`auth_id`): видит свои живые блокировки;
+ * - `block.read`: читает живые блокировки;
+ * - `moderator` (подотчётный исполнитель): создаёт, снимает (`until`) и мягко
+ *   удаляет записи, но НЕ правит `reason` и НЕ стирает записи физически
+ *   (`hard: true`), даже в паре с `block.readDeleted` — в БД всегда остаётся
+ *   след на случай злоупотребления;
+ * - `block.edit` и `admin`: полный цикл правки (включая `reason`), а в связке
+ *   с `block.readDeleted` — восстановление и окончательное удаление (`hard`).
  */
-const BLOCK_READERS = ['moderator', 'block.read', 'block.edit', 'admin'] as const
-const BLOCK_WRITERS = ['moderator', 'block.edit', 'admin'] as const
-const BLOCK_REASON_EDITORS = ['block.edit', 'admin'] as const
-const BLOCK_DELETED_READERS = ['block.readDeleted', 'admin'] as const
+const BLOCK_ACL = defineAcl({
+  owner: { field: 'auth_id', can: ['read'] },
+  read: ['block.read'],
+  insert: ['moderator', 'block.edit', 'admin'],
+  update: ['moderator'],
+  softDelete: ['moderator'],
+  edit: ['block.edit', 'admin', 'server'],
+  deleted: ['block.readDeleted', 'admin', 'server'],
+})
 
 /**
  * Блокировки аккаунта (этап 9): запись = одна строка истории. Исполнение
  * нативно моделью контекстом актора — отдельного API и системной роли
- * у записи нет: круг держат маски и политики, содержательные правила
- * (не себе, сфера из каталога, срок в будущем) — `checks` слоя.
+ * у записи нет: круг держат маски и `acl`, содержательные правила
+ * (не себе, сфера из каталога) — `checks` слоя.
  */
 export const block: Resource = defineResource({
   key: 'user.block',
@@ -300,47 +305,33 @@ export const block: Resource = defineResource({
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     auth_id: field(s.uuid(), {
-      read: () => true, create: [...BLOCK_WRITERS], required: true,
+      read: () => true, create: [...BLOCK_ACL.roles.insert], required: true,
       immutable: true, filters: ['eq', 'in'],
       db: { references: { resource: () => auth, chain: true } },
     }),
     scope: field(s.text({ min: 1, max: 40 }), {
-      read: () => true, create: [...BLOCK_WRITERS], required: true,
+      read: () => true, create: [...BLOCK_ACL.roles.insert], required: true,
       immutable: true, orderable: true, filters: ['eq', 'in'],
     }),
     // Причина: при создании указывает весь круг записи, после — только
-    // право `block.edit` и админ; модератор правит причину не может.
-    // Не нравится причина — запись удаляется и создаётся новая.
+    // `edit` (`block.edit`, `admin`); модератор причину не правит.
     reason: field(s.text({ min: 1, max: 200 }), {
-      read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_REASON_EDITORS], required: true,
+      read: () => true, create: [...BLOCK_ACL.roles.insert], update: [...BLOCK_ACL.roles.edit], required: true,
       filters: ['eq'],
     }),
-    // Снятие блокировки — единственная правка истории: until = момент снятия.
-    until: f.timestamp({ read: () => true, create: [...BLOCK_WRITERS], update: [...BLOCK_WRITERS], nullable: true, orderable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
+    // Снятие блокировки — правка истории: until = момент снятия.
+    until: f.timestamp({ read: () => true, create: [...BLOCK_ACL.roles.insert], update: [...BLOCK_ACL.roles.update], nullable: true, orderable: true, filters: ['eq', 'isNull', 'isNotNull', 'gt', 'lte'] }),
     // Кто наложил: без FK — история переживает удаление аккаунта наложившего.
     by: field(s.uuid(), {
-      read: () => true, create: [...BLOCK_WRITERS], required: true,
+      read: () => true, create: [...BLOCK_ACL.roles.insert], required: true,
       immutable: true, filters: ['eq'],
     }),
   },
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
-    // Удалённые записи блокировок видят право `block.readDeleted` и админ;
-    // модератор удалённых не читает и окончательно стереть не может.
-    deletedAt: { field: 'deleted_at', readDeleted: ['server', ...BLOCK_DELETED_READERS] },
+    deletedAt: 'deleted_at',
   },
-  policy: {
-    // Владелец цели и круг чтения (запись — в комплекте с чтением).
-    select: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_READERS]),
-    // Удалённые записи: круг чтения плюс право удалённых; одно только
-    // право удалённых живых не открывает (политика `select` его не знает).
-    selectDeleted: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_READERS, 'block.readDeleted']),
-    insert: policy.roles([...BLOCK_WRITERS]),
-    update: policy.ownerOrRoles('auth_id', ['server', ...BLOCK_WRITERS]),
-    // Удаление — круг записи; окончательное (`hard`) слой пропустит
-    // только с грантом `readDeleted` сверху — связка двух прав.
-    delete: policy.roles(['server', ...BLOCK_WRITERS]),
-  },
+  acl: BLOCK_ACL,
   checks: (event) => {
     if (event.operation !== 'insert') return
     const issues = []

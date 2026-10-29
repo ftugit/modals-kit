@@ -1,13 +1,13 @@
 /**
  * Блокировки аккаунта (`user.block`): записи — строки модели `user.block`,
- * исполнение нативно контекстом актора (маски, политики и `checks`
- * модели), отдельного API и системной роли у записи нет. Здесь —
- * пагинированный срез с фильтрами, чтение одной записи с расчётом флагов
- * возможностей, создание/правка (`reason`/`until`) и мягкое/полное удаление.
+ * исполнение нативно контекстом актора (маски, `defineAcl` и `checks`
+ * модели), отдельного API и системной роли у записи нет. Все проверки прав
+ * в домене читаются из `grants(block)` и `grants(auth)` через `checkGrants` —
+ * без дублирующих массивов ролей и строковых прав.
  */
-import type { Filter, Order } from '#lib/db/index.js'
+import { checkGrants, grants, type Filter, type Order } from '#lib/db/index.js'
 import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { ADMIN_ROLE, MODERATOR_ROLE } from './permissions.js'
+import { auth as authResource, block as blockResource } from './schema.js'
 import { BLOCK_SCOPES, blockActive, isBlockScope, type BlockScope } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
 import type {
@@ -19,38 +19,29 @@ import type {
   BlockView,
 } from './types.js'
 
-/** Круг записи блокировок: роль модератора, право записи модели или админ. */
-export const BLOCK_WRITERS = [MODERATOR_ROLE, 'block.edit', ADMIN_ROLE] as const
-
-/** Круг чтения живых блокировок (запись — в комплекте с чтением). */
-export const BLOCK_READERS = [MODERATOR_ROLE, 'block.read', 'block.edit', ADMIN_ROLE] as const
-
-/** Круг правки причины после создания записи (сильнее роли модератора). */
-export const BLOCK_REASON_EDITORS = ['block.edit', ADMIN_ROLE] as const
-
-/** Круг чтения мягко удалённых записей блокировок. */
-export const BLOCK_DELETED_READERS = ['block.readDeleted', ADMIN_ROLE] as const
+const gBlock = grants(blockResource)
+const gAuth = grants(authResource)
 
 export const BLOCKS_MAX_PAGE_SIZE = 100
 
+const actorOf = (sub: string, perms: readonly string[]) =>
+  principalOfRow({ id: sub, permissions: perms }).principal
+
 export const canBlock = (perms: readonly string[]): boolean =>
-  BLOCK_WRITERS.some((p) => perms.includes(p))
+  checkGrants({ roles: perms }, gBlock.insert)
 
 export const canReadBlocks = (perms: readonly string[]): boolean =>
-  BLOCK_READERS.some((p) => perms.includes(p))
+  checkGrants({ roles: perms }, gBlock.select)
 
 export const canSeeDeletedBlocks = (perms: readonly string[]): boolean =>
-  BLOCK_DELETED_READERS.some((p) => perms.includes(p))
-
-export const canReadAnyBlocks = (perms: readonly string[]): boolean =>
-  canReadBlocks(perms) || canSeeDeletedBlocks(perms)
+  checkGrants({ roles: perms }, gBlock.selectDeleted)
 
 export const canEditBlockReason = (perms: readonly string[]): boolean =>
-  BLOCK_REASON_EDITORS.some((p) => perms.includes(p))
+  checkGrants({ roles: perms }, gBlock.fields.reason!.update)
 
-/** Окончательное удаление (`hard: true`): связка права записи и `readDeleted` (либо `admin`). */
+/** Окончательное удаление (`hard: true`): `grants(block).hardDelete` (`block.edit` + `block.readDeleted` или `admin`). */
 export const canHardDeleteBlock = (perms: readonly string[]): boolean =>
-  perms.includes(ADMIN_ROLE) || (canBlock(perms) && perms.includes('block.readDeleted'))
+  checkGrants({ roles: perms }, gBlock.hardDelete)
 
 /** Варианты сфер каталога, которые вызывающий может назначать при создании блокировки. */
 export const assignableBlockScopes = (perms: readonly string[]): BlockScope[] =>
@@ -102,19 +93,25 @@ export async function listBlocksPage(
 
   const fixedUid = args.uid?.trim() || null
   const isOwnTarget = fixedUid !== null && fixedUid === g.sub
-  const canSeeLive = canReadBlocks(g.perms) || isOwnTarget
-  const canSeeDeleted = canSeeDeletedBlocks(g.perms)
+  const actor = actorOf(g.sub, g.perms)
+  const caps = checkGrants(
+    actor,
+    {
+      canSeeLive: gBlock.select,
+      canSeeDeleted: gBlock.selectDeleted,
+      canPickUsers: gAuth.select,
+      canSeeDeletedAccounts: gAuth.selectDeleted,
+      canCreate: gBlock.insert,
+    },
+    { ownerId: fixedUid },
+  )
 
-  if (!canSeeLive && !canSeeDeleted) return fail({ code: 'auth.forbidden' })
+  if (!caps.canSeeLive) return fail({ code: 'auth.forbidden' })
 
   if (fixedUid && !isOwnTarget) {
     const target = await ports.auths.get(fixedUid)
     if (!target) return fail({ code: 'auth.identity-unknown' })
-    if (
-      target.deletedAt !== null &&
-      !g.perms.includes(ADMIN_ROLE) &&
-      !g.perms.includes('account.readDeleted')
-    ) {
+    if (target.deletedAt !== null && !caps.canSeeDeletedAccounts) {
       return fail({ code: 'auth.identity-unknown' })
     }
   }
@@ -125,82 +122,72 @@ export async function listBlocksPage(
     Math.max(1, Math.trunc(args.pageSize ?? 30) || 30),
   )
 
-  const state: BlocksState = !canSeeLive
-    ? 'deleted'
-    : args.state === 'deleted'
-      ? canSeeDeleted
-        ? 'deleted'
-        : 'all'
-      : args.state === 'active' || args.state === 'expired' || args.state === 'all'
-        ? args.state
-        : 'all'
+  const rawState: BlocksState = args.state ?? 'all'
+  const state: BlocksState =
+    rawState === 'deleted' && !caps.canSeeDeleted ? 'all' : rawState
 
-  const orderName: BlocksOrder =
-    args.order &&
-    Object.hasOwn(BLOCKS_ORDER_OF, args.order) &&
-    (canSeeDeleted || !args.order.startsWith('deleted'))
-      ? args.order
-      : 'created-desc'
+  const rawOrder: BlocksOrder = args.order ?? 'created-desc'
+  const order: BlocksOrder =
+    !caps.canSeeDeleted && (rawOrder === 'deleted-desc' || rawOrder === 'deleted-asc')
+      ? 'created-desc'
+      : rawOrder
 
-  const nodes: Filter[] = []
-  if (fixedUid) {
-    nodes.push({ field: 'auth_id', op: 'eq', value: fixedUid })
-  } else if (args.uids?.length) {
-    const cleanUids = [...new Set(args.uids.map((id) => id.trim()).filter(Boolean))].slice(0, 500)
-    if (cleanUids.length === 1) nodes.push({ field: 'auth_id', op: 'eq', value: cleanUids[0]! })
-    else if (cleanUids.length > 1) nodes.push({ field: 'auth_id', op: 'in', value: cleanUids })
-  }
-
-  const validScopes = [...new Set((args.scopes ?? []).filter(isBlockScope))]
-  if (validScopes.length === 1) {
-    nodes.push({ field: 'scope', op: 'eq', value: validScopes[0]! })
-  } else if (validScopes.length > 1) {
-    nodes.push({ field: 'scope', op: 'in', value: validScopes })
-  }
-
+  const includeDeleted = caps.canSeeDeleted && state === 'deleted'
   const now = ports.clock.now()
-  if (state === 'active') {
-    nodes.push({
+  const nowIso = iso(now)
+  const and: Filter[] = []
+
+  if (fixedUid) {
+    and.push({ field: 'auth_id', op: 'eq', value: fixedUid })
+  } else {
+    const uids = [...new Set((args.uids ?? []).map((s) => s.trim()).filter(Boolean))]
+    if (uids.length > 0) {
+      and.push({ field: 'auth_id', op: 'in', value: uids })
+    }
+  }
+
+  const scopesFilter = [...new Set((args.scopes ?? []).filter(isBlockScope))]
+  if (scopesFilter.length > 0) {
+    and.push({ field: 'scope', op: 'in', value: scopesFilter })
+  }
+
+  if (state === 'deleted') {
+    and.push({ field: 'deleted_at', op: 'gte', value: iso(0) })
+  } else if (state === 'active') {
+    and.push({
       or: [
         { field: 'until', op: 'isNull' },
-        { field: 'until', op: 'gt', value: iso(now) },
+        { field: 'until', op: 'gt', value: nowIso },
       ],
     })
   } else if (state === 'expired') {
-    nodes.push({
-      and: [
-        { field: 'until', op: 'isNotNull' },
-        { field: 'until', op: 'lte', value: iso(now) },
-      ],
-    })
-  } else if (state === 'deleted') {
-    nodes.push({ field: 'deleted_at', op: 'gte', value: iso(0) })
+    and.push({ field: 'until', op: 'lte', value: nowIso })
   }
 
   const filter: Filter | undefined =
-    nodes.length === 0 ? undefined : nodes.length === 1 ? nodes[0] : { and: nodes }
+    and.length === 0 ? undefined : and.length === 1 ? and[0] : { and }
 
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  const { rows, total } = await ports.blocks.listPage(actor, {
+  const ctx = principalOfRow({ id: g.sub, permissions: g.perms })
+  const res = await ports.blocks.listPage(ctx, {
     page,
     pageSize,
-    ...(filter ? { filter } : {}),
-    order: BLOCKS_ORDER_OF[orderName],
-    includeDeleted: state === 'deleted',
+    includeDeleted,
+    filter,
+    order: BLOCKS_ORDER_OF[order],
   })
 
-  const scopes = fixedUid && isOwnTarget ? [] : assignableBlockScopes(g.perms)
+  const scopes = caps.canCreate ? (Object.keys(BLOCK_SCOPES) as BlockScope[]) : []
   return ok({
-    items: rows,
-    total,
+    items: res.rows,
+    total: res.total,
     page,
     pageSize,
     uid: fixedUid,
-    canSeeDeleted,
-    canSeeLive,
-    canPickUsers: !fixedUid && (g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')),
+    canSeeDeleted: caps.canSeeDeleted,
+    canSeeLive: caps.canSeeLive,
+    canPickUsers: !fixedUid && caps.canPickUsers,
     assignableScopes: scopes,
-    canCreate: scopes.length > 0 && (!fixedUid || !isOwnTarget),
+    canCreate: caps.canCreate && (!fixedUid || !isOwnTarget),
   })
 }
 
@@ -219,27 +206,29 @@ export async function blockCreateMeta(
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
 
+  const actor = actorOf(g.sub, g.perms)
+  const caps = checkGrants(actor, {
+    canCreate: gBlock.insert,
+    canPickUsers: [gAuth.select, gBlock.insert],
+    canSeeDeletedAccounts: gAuth.selectDeleted,
+  })
+  if (!caps.canCreate) return fail({ code: 'auth.forbidden' })
+
   const uid = targetId?.trim() || null
   if (uid) {
     if (uid === g.sub) return fail({ code: 'auth.forbidden' })
     const target = await ports.auths.get(uid)
     if (!target) return fail({ code: 'auth.identity-unknown' })
-    if (
-      target.deletedAt !== null &&
-      !g.perms.includes(ADMIN_ROLE) &&
-      !g.perms.includes('account.readDeleted')
-    ) {
+    if (target.deletedAt !== null && !caps.canSeeDeletedAccounts) {
       return fail({ code: 'auth.identity-unknown' })
     }
   }
 
-  const scopes = assignableBlockScopes(g.perms)
-  if (scopes.length === 0) return fail({ code: 'auth.forbidden' })
-
+  const scopes = Object.keys(BLOCK_SCOPES) as BlockScope[]
   return ok({
     uid,
     canCreate: true,
-    canPickUsers: !uid && (g.perms.includes(ADMIN_ROLE) || g.perms.includes('account.read')),
+    canPickUsers: !uid && caps.canPickUsers,
     assignableScopes: scopes,
   })
 }
@@ -255,34 +244,44 @@ export async function readBlockDetail(
   const blockId = String(args.blockId ?? '').trim()
   if (!blockId) return fail({ code: 'auth.identity-unknown' })
 
-  const canSeeDeleted = canSeeDeletedBlocks(g.perms)
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  const row = await ports.blocks.getById(actor, blockId, { includeDeleted: canSeeDeleted })
+  const actor = actorOf(g.sub, g.perms)
+  const canSeeDeleted = checkGrants(actor, gBlock.selectDeleted)
+  const ctx = principalOfRow({ id: g.sub, permissions: g.perms })
+  const row = await ports.blocks.getById(ctx, blockId, { includeDeleted: canSeeDeleted })
   if (!row) return fail({ code: 'auth.identity-unknown' })
 
   const expectedUid = args.expectedUid?.trim() || null
   if (expectedUid && row.authId !== expectedUid) return fail({ code: 'auth.identity-unknown' })
 
+  const caps = checkGrants(
+    actor,
+    {
+      canReadLive: gBlock.select,
+      canReadDeleted: gBlock.selectDeleted,
+      canUpdate: gBlock.update,
+      canSoftDelete: gBlock.delete,
+      canHardDelete: gBlock.hardDelete,
+      canEditReason: gBlock.fields.reason!.update,
+      canCreate: gBlock.insert,
+    },
+    { ownerId: row.authId },
+  )
+
   const isDeleted = row.deletedAt != null
-  const isOwnTarget = row.authId === g.sub
-  const canReadThis = isDeleted
-    ? canSeeDeleted
-    : canReadBlocks(g.perms) || isOwnTarget
+  const canReadThis = isDeleted ? caps.canReadDeleted : caps.canReadLive
   if (!canReadThis) return fail({ code: 'auth.forbidden' })
 
-  const writer = canBlock(g.perms)
-  const canSubmit = !isDeleted && writer
-  const canHardDelete = canHardDeleteBlock(g.perms)
-  const canDelete = isDeleted ? canHardDelete : writer
+  const canSubmit = !isDeleted && caps.canUpdate
+  const canDelete = isDeleted ? caps.canHardDelete : caps.canSoftDelete
 
   return ok({
     block: row,
     canSubmit,
-    canEditReason: canSubmit && canEditBlockReason(g.perms),
+    canEditReason: canSubmit && caps.canEditReason,
     canEditUntil: canSubmit,
     canDelete,
-    canHardDelete,
-    assignableScopes: assignableBlockScopes(g.perms),
+    canHardDelete: caps.canHardDelete,
+    assignableScopes: caps.canCreate ? (Object.keys(BLOCK_SCOPES) as BlockScope[]) : [],
   })
 }
 
@@ -291,30 +290,15 @@ export async function addBlock(
   accessToken: string | undefined,
   args: { targetId: string; scope: string; reason: string; forever?: boolean; until?: number | null },
 ): Promise<UserResult<{ id: string }>> {
-  const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  const targetId = String(args.targetId ?? '').trim()
-  if (!targetId) return fail({ code: 'auth.identity-unknown' })
-  const target = await ports.auths.get(targetId)
-  if (!target) return fail({ code: 'auth.identity-unknown' })
-  const scopes = assignableBlockScopes(g.perms)
-  if (!scopes.length) return fail({ code: 'auth.forbidden' })
-  const scope = String(args.scope ?? '')
-  if (!isBlockScope(scope)) return fail({ code: 'permissions.unknown', args: { value: scope } })
-  if (!scopes.includes(scope)) return fail({ code: 'auth.forbidden' })
-  if (!String(args.reason ?? '').trim()) return fail({ code: 'auth.forbidden' })
-  if (targetId === g.sub) return fail({ code: 'auth.forbidden' })
-  const until = args.forever ? null : (args.until ?? null)
-  if (until !== null && until <= ports.clock.now()) return fail({ code: 'auth.forbidden' })
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  await ports.blocks.insert(actor, {
-    authId: targetId,
-    scope,
-    reason: String(args.reason ?? '').trim(),
-    until,
-    by: g.sub,
+  const saved = await saveBlock(ports, accessToken, {
+    targetId: args.targetId,
+    scope: args.scope,
+    reason: args.reason,
+    forever: args.forever,
+    until: args.until,
   })
-  return ok({ id: targetId })
+  if (!saved.ok) return saved
+  return ok({ id: saved.value.targetId })
 }
 
 export async function saveBlock(
@@ -323,33 +307,64 @@ export async function saveBlock(
   args: {
     blockId?: string | null
     targetId?: string | null
+    targetIds?: readonly string[]
     scope?: string
     reason?: string
     forever?: boolean
     until?: number | null
     liftNow?: boolean
   },
-): Promise<UserResult<{ id: string; targetId: string }>> {
-  const blockId = String(args.blockId ?? '').trim()
-  if (!blockId) {
-    const targetId = String(args.targetId ?? '').trim()
-    const created = await addBlock(ports, accessToken, {
-      targetId,
-      scope: String(args.scope ?? ''),
-      reason: String(args.reason ?? ''),
-      forever: args.forever,
-      until: args.until,
-    })
-    if (!created.ok) return created
-    return ok({ id: created.value.id, targetId })
-  }
-
+): Promise<UserResult<{ id: string; targetId: string; targetIds?: readonly string[]; count?: number }>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  if (!canBlock(g.perms)) return fail({ code: 'auth.forbidden' })
+  const actor = actorOf(g.sub, g.perms)
+  const ctx = principalOfRow({ id: g.sub, permissions: g.perms })
 
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  const row = await ports.blocks.getById(actor, blockId, { includeDeleted: false })
+  const blockId = String(args.blockId ?? '').trim()
+  if (!blockId) {
+    const rawTargets =
+      args.targetIds !== undefined
+        ? args.targetIds
+        : args.targetId
+          ? [args.targetId]
+          : []
+    const targets = [...new Set(rawTargets.map((s) => String(s ?? '').trim()).filter(Boolean))]
+    if (targets.length === 0) return fail({ code: 'auth.identity-unknown' })
+
+    for (const targetId of targets) {
+      const target = await ports.auths.get(targetId)
+      if (!target) return fail({ code: 'auth.identity-unknown' })
+    }
+
+    if (!checkGrants(actor, gBlock.insert)) return fail({ code: 'auth.forbidden' })
+    const scope = String(args.scope ?? '')
+    if (!isBlockScope(scope)) return fail({ code: 'permissions.unknown', args: { value: scope } })
+    const reason = String(args.reason ?? '').trim()
+    if (!reason) return fail({ code: 'auth.forbidden' })
+    if (targets.includes(g.sub)) return fail({ code: 'auth.forbidden' })
+    const until = args.forever ? null : (args.until ?? null)
+    if (until !== null && until <= ports.clock.now()) return fail({ code: 'auth.forbidden' })
+
+    for (const targetId of targets) {
+      await ports.blocks.insert(ctx, {
+        authId: targetId,
+        scope,
+        reason,
+        until,
+        by: g.sub,
+      })
+    }
+    return ok({
+      id: targets[0]!,
+      targetId: targets[0]!,
+      targetIds: targets,
+      count: targets.length,
+    })
+  }
+
+  if (!checkGrants(actor, gBlock.update)) return fail({ code: 'auth.forbidden' })
+
+  const row = await ports.blocks.getById(ctx, blockId, { includeDeleted: false })
   if (!row || row.deletedAt != null) return fail({ code: 'auth.identity-unknown' })
 
   const expectedTarget = args.targetId?.trim() || null
@@ -366,7 +381,7 @@ export async function saveBlock(
     if (!args.forever && nextUntil === null) return fail({ code: 'auth.confirm' })
     if (nextUntil !== row.until) patch.until = nextUntil
 
-    if (canEditBlockReason(g.perms) && args.reason !== undefined) {
+    if (checkGrants(actor, gBlock.fields.reason!.update) && args.reason !== undefined) {
       const trimmed = String(args.reason).trim()
       if (!trimmed) return fail({ code: 'auth.confirm' })
       if (trimmed !== row.reason) patch.reason = trimmed
@@ -374,7 +389,7 @@ export async function saveBlock(
   }
 
   if (Object.keys(patch).length > 0) {
-    await ports.blocks.update(actor, row.id, patch)
+    await ports.blocks.update(ctx, row.id, patch)
   }
   return ok({ id: row.id, targetId: row.authId })
 }
@@ -386,17 +401,22 @@ export async function deleteBlock(
 ): Promise<UserResult<{ id: string; targetId: string; hard: boolean }>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  if (!canBlock(g.perms)) return fail({ code: 'auth.forbidden' })
+  const actor = actorOf(g.sub, g.perms)
+  const caps = checkGrants(actor, {
+    canSeeDeleted: gBlock.selectDeleted,
+    canSoftDelete: gBlock.delete,
+    canHardDelete: gBlock.hardDelete,
+  })
+  if (!caps.canSoftDelete) return fail({ code: 'auth.forbidden' })
 
   const blockId = String(args.blockId ?? '').trim()
   if (!blockId) return fail({ code: 'auth.identity-unknown' })
 
   const wantHard = Boolean(args.hard)
-  const hasHardRight = canHardDeleteBlock(g.perms)
-  if (wantHard && !hasHardRight) return fail({ code: 'auth.forbidden' })
+  if (wantHard && !caps.canHardDelete) return fail({ code: 'auth.forbidden' })
 
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  const row = await ports.blocks.getById(actor, blockId, { includeDeleted: hasHardRight })
+  const ctx = principalOfRow({ id: g.sub, permissions: g.perms })
+  const row = await ports.blocks.getById(ctx, blockId, { includeDeleted: caps.canSeeDeleted })
   if (!row) return fail({ code: 'auth.identity-unknown' })
 
   const expectedTarget = args.targetId?.trim() || null
@@ -405,10 +425,10 @@ export async function deleteBlock(
   }
 
   const alreadyDeleted = row.deletedAt != null
-  if (alreadyDeleted && !hasHardRight) return fail({ code: 'auth.forbidden' })
+  if (alreadyDeleted && !caps.canHardDelete) return fail({ code: 'auth.forbidden' })
 
   const doHard = wantHard || alreadyDeleted
-  await ports.blocks.remove(actor, row.id, { hard: doHard })
+  await ports.blocks.remove(ctx, row.id, { hard: doHard })
   return ok({ id: row.id, targetId: row.authId, hard: doHard })
 }
 
@@ -432,8 +452,9 @@ export async function listBlocks(
 ): Promise<UserResult<{ blocks: BlockView[] }>> {
   const g = await guard(ports, accessToken)
   if ('code' in g) return fail(g)
-  if (!canReadBlocks(g.perms)) return fail({ code: 'auth.forbidden' })
-  const actor = principalOfRow({ id: g.sub, permissions: g.perms })
-  const blocks = await ports.blocks.listByTarget(actor, targetId)
+  const actor = actorOf(g.sub, g.perms)
+  if (!checkGrants(actor, gBlock.select)) return fail({ code: 'auth.forbidden' })
+  const ctx = principalOfRow({ id: g.sub, permissions: g.perms })
+  const blocks = await ports.blocks.listByTarget(ctx, targetId)
   return ok({ blocks })
 }

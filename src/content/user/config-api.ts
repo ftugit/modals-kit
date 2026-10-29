@@ -18,25 +18,30 @@
  * (`spec-config.ts`). Строки умолчаний API кэширует в области порта и
  * сбрасывает кэш каждой записью умолчания; строки юзеров не кэшируются.
  */
-import { fail, guard, ok, type UserResult } from './auth.js'
+import { checkGrants, grants } from '#lib/db/index.js'
+import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import type { AuthFact } from './error.js'
 import { ADMIN_ROLE, PERMISSIONS } from './permissions.js'
 import type { AuthPorts } from './ports.js'
+import { config as configResource } from './schema.js'
 import { bootstrapOf } from './spec-config.js'
 import type { ConfigKeyRow, ConfigKeySchema } from './types.js'
 
+const gConfig = grants(configResource)
 const DEFAULTS_CACHE_KEY = 'defaults.v1'
 const SCHEMA_RULES = ['editDefault', 'assign', 'editUser', 'deleteUser'] as const
 
 type Actor = { id: string; perms: readonly string[] }
 
-const isAdmin = (a: Actor): boolean => a.perms.includes(ADMIN_ROLE)
+const toPrincipal = (a: Actor) => principalOfRow({ id: a.id, permissions: a.perms }).principal
 
-/** Проходит ли актор по списку ролей правила; `owner` — владелец целевой строки. */
+/** Проходит ли актор по списку ролей правила `ConfigKeySchema` (плюс `owner` целевой строки и `admin`). */
 function ruleAllows(a: Actor, targetUserId: string | null, roles: readonly string[] | undefined): boolean {
-  if (isAdmin(a)) return true
-  if (!roles?.length) return false
-  return roles.some((r) => (r === 'owner' ? targetUserId !== null && a.id === targetUserId : a.perms.includes(r)))
+  return checkGrants(
+    toPrincipal(a),
+    roles?.length ? [...roles, ADMIN_ROLE] : [ADMIN_ROLE],
+    { ownerId: targetUserId },
+  )
 }
 
 /** Схема из присланного: только известные правила и роли каталога (+ `owner`/`admin`). */
@@ -113,7 +118,9 @@ export async function getUserKey(
 ): Promise<UserResult<{ key: string; value: unknown; assigned: boolean }>> {
   const a = await actorOf(ports, accessToken)
   if ('code' in a) return fail(a)
-  if (a.id !== userId && !isAdmin(a) && !a.perms.includes('config.read')) return fail({ code: 'auth.forbidden' })
+  if (!checkGrants(toPrincipal(a), gConfig.select, { ownerId: userId })) {
+    return fail({ code: 'auth.forbidden' })
+  }
   const own = await ports.settings.row(userId, key)
   return ok({ key, value: own ? own.value : await defaultValueOf(ports, key), assigned: own !== undefined })
 }
@@ -212,7 +219,7 @@ export async function setDefault(
       ...(patch.schema !== undefined ? { schema: patch.schema } : {}),
     })
   } else {
-    if (!isAdmin(a)) return fail({ code: 'auth.forbidden' })
+    if (!checkGrants(toPrincipal(a), gConfig.insert)) return fail({ code: 'auth.forbidden' })
     await ports.settings.insert({
       authId: null,
       key,
