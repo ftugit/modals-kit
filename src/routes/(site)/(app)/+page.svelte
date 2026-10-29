@@ -1,10 +1,18 @@
 <script lang="ts">
   import Button from '#components/ui/button/Button.svelte'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { asLink } from '#hooks/links/index.js'
   import SeedUsersEntry from '#content/user/ui/SeedUsersEntry.svelte'
   import StorageServersEntry from '#content/storage-servers/ui/StorageServersEntry.svelte'
   // Порт главной страницы оригинала (src/routes/_app/index.tsx):
   // сетка карточек-ссылок на демо. Состав адаптирован под страницы порта.
+
+  useHeadSeo({
+    title: 'modals-kit — главная',
+    headerTitle: 'Главная',
+    description:
+      'Порт модальной системы SolidHono на Svelte 5 и SvelteKit: цепочка модалок в адресе, пагинатор, формы с валидацией, шаги, потоковая загрузка файлов и слой базы данных.',
+  })
 
   const demos = [
     {
@@ -50,10 +58,6 @@
     },
   ]
 </script>
-
-<svelte:head>
-  <title>modals-kit — главная</title>
-</svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
   <div class="max-w-3xl">

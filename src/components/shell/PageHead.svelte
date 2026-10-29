@@ -1,16 +1,20 @@
 <script lang="ts">
-  // SEO-компонент страницы: генерирует title, description, OG, Twitter Cards, Canonical.
+  // SEO-компонент страницы: генерирует title, description, OG, Twitter Cards, Canonical и robots.
   import { usePage } from './page.svelte'
 
-  let { defaultTitle = 'dd application' }: { defaultTitle?: string } = $props()
+  let { defaultTitle = 'modals-kit' }: { defaultTitle?: string } = $props()
 
   const page = usePage()
 
   const fullTitle = $derived.by(() => {
-    const { title, subTitle, titleSeparator = ' | ' } = page.seo
+    const { title, subTitle, titleSeparator = ' — ' } = page.seo
     if (subTitle && title) return `${subTitle}${titleSeparator}${title}`
-    return subTitle ?? title ?? defaultTitle
+    return subTitle || title || defaultTitle
   })
+
+  const robotsContent = $derived(
+    page.seo.robots ?? (page.seo.noindex ? 'noindex, nofollow' : undefined),
+  )
 </script>
 
 <svelte:head>
@@ -25,6 +29,10 @@
   {#if page.seo.image}
     <meta property="og:image" content={page.seo.image} />
     <meta name="twitter:image" content={page.seo.image} />
+    {#if page.seo.imageAlt}
+      <meta property="og:image:alt" content={page.seo.imageAlt} />
+      <meta name="twitter:image:alt" content={page.seo.imageAlt} />
+    {/if}
   {/if}
   {#if page.seo.url}
     <link rel="canonical" href={page.seo.url} />
@@ -44,5 +52,11 @@
   {/if}
   {#if page.seo.siteName}
     <meta property="og:site_name" content={page.seo.siteName} />
+  {/if}
+  {#if page.seo.locale}
+    <meta property="og:locale" content={page.seo.locale} />
+  {/if}
+  {#if robotsContent}
+    <meta name="robots" content={robotsContent} />
   {/if}
 </svelte:head>

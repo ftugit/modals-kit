@@ -3,14 +3,20 @@
   // показывает компонент профиля с данными того же `load` (второй запрос
   // не нужен). «Профиля нет» и карточку рисует сам компонент — как в
   // модалке, поэтому формы показа разойтись не могут.
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import Profile from '#content/user/ui/Profile.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
+  const nickname = $derived(data.profile?.nickname ?? data.publicProfile?.nickname ?? null)
 
-<svelte:head><title>Профиль</title></svelte:head>
+  useHeadSeo(() => ({
+    subTitle: nickname ? `Профиль ${nickname}` : 'Профиль',
+    description: 'Карточка профиля пользователя.',
+    noindex: Boolean(data.fact || (!data.profile && !data.publicProfile)),
+  }))
+</script>
 
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Button } from '#components/ui/index.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
@@ -140,9 +141,13 @@ import { Button } from '#components/ui/index.js'
   const BTN_ALT = `${BTN_BASE} bg-[#6b4fd6]`
   const PRE =
     'm-0 overflow-x-auto rounded-lg border border-[#252a34] bg-[#0f1115] px-3.5 py-[0.7rem] text-[0.8rem] whitespace-pre-wrap break-all'
-</script>
 
-<svelte:head><title>Спайк: модель истории</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Спайк: модель истории',
+    description:
+      'Песочница совместной работы URL-цепочки ?modal= и transient-состояния в page.state SvelteKit.',
+  })
+</script>
 
 <!--
   Оформление страницы — утилиты, а не прежний блочный стиль: app.css хранит

@@ -2,6 +2,7 @@
 export {
   PageState,
   setPageContext,
+  tryUsePage,
   usePage,
   useHeaderSlot,
   useHeaderSlots,
@@ -16,6 +17,8 @@ export {
   type SidebarZone,
   type SidebarSlotPath,
   type HeadSeo,
+  type HeadSeoOptions,
+  type SeoLayer,
   type HeaderSlots,
   type SidebarSlots,
   type RowSlots,

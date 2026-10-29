@@ -1,14 +1,19 @@
 <script lang="ts">
   // Страница редактирования профиля — только носитель: ACL-гейт по
   // данным `load`, дальше форма по id (как модалка той же пары).
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import ProfileForm from '#content/user/ui/profile-form/ProfileForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Редактирование профиля</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Редактирование профиля',
+    description: 'Изменение имени и аватара профиля пользователя.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}

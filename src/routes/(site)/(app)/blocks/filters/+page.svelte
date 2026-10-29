@@ -1,13 +1,18 @@
 <script lang="ts">
   // Страница фильтров списка блокировок — fallback модалки `user.blocks.filters` для no-JS.
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlocksFiltersForm from '#content/user/ui/BlocksFiltersForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Фильтры блокировок</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Фильтры блокировок',
+    description: 'Настройка фильтров журнала блокировок пользователей.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-xl">
   {#if data.fact === 'auth.forbidden'}

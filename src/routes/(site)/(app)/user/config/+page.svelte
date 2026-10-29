@@ -1,13 +1,18 @@
 <script lang="ts">
   // Страница своих настроек (`/user/config`) — тонкий носитель + ACL-гейт.
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import { UserConfig } from '#content/user/ui/user-config/index.js'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Настройки</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Настройки',
+    description: 'Персональные настройки аккаунта и приватности профиля.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-md">
   {#if data.fact === 'auth.identity-unknown'}

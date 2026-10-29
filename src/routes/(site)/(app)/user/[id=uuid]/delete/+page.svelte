@@ -1,14 +1,19 @@
 <script lang="ts">
   // Страница удаления — только носитель: ACL-гейт по данным `load`,
   // дальше компонент `ProfileDelete` (тот же, что в модалке пары).
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import ProfileDelete from '#content/user/ui/profile-delete/ProfileDelete.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Удаление профиля</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Удаление профиля',
+    description: 'Подтверждение удаления профиля и аккаунта пользователя.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}

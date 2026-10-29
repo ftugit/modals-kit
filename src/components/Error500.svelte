@@ -1,7 +1,17 @@
 <script lang="ts">
   import Button from '#components/ui/button/Button.svelte'
+  import { useHeadSeo } from '#components/shell/page.svelte.js'
   // Экран остановки приложения (Q1). НИ строки из ошибки: причина живёт в консоли
   // разработчика (warn) и в логе сервера, пользователю — только факт сбоя.
+
+  useHeadSeo(
+    {
+      subTitle: 'Приложение недоступно',
+      description: 'Произошла внутренняя ошибка и приложение было остановлено.',
+      noindex: true,
+    },
+    { optional: true },
+  )
 </script>
 
 <!-- Корень — <div>: ориентир main даёт место вызова (layout при фатале — свой

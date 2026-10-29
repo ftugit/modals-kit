@@ -1,14 +1,19 @@
 <script lang="ts">
   // Страница создания блокировки из глобального списка (`/blocks/new`) — носитель `user.blocks.create`.
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Button } from '#components/ui/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlockForm from '#content/user/ui/block-form/BlockForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Наложить блокировку</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Наложить блокировку',
+    description: 'Создание новой блокировки для одного или нескольких пользователей.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-md">
   {#if data.fact === 'auth.forbidden'}

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Button } from '#components/ui/index.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { onMount } from 'svelte'
   import { createModals, createRegistry, urlStorage } from '#lib/modals/index.js'
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
@@ -102,9 +103,13 @@ import { Button } from '#components/ui/index.js'
   const BTN_ALT = `${BTN_BASE} bg-[#6b4fd6]`
   const PRE =
     'm-0 overflow-x-auto rounded-md border border-[#252a34] bg-[#0f1115] px-2.5 py-2 text-[0.78rem] whitespace-pre-wrap break-all'
-</script>
 
-<svelte:head><title>Полный цикл модалки</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Полный цикл модалки',
+    description:
+      'Демонстрация полного цикла жизни модальной записи в адресе и истории браузера без хоста.',
+  })
+</script>
 
 <!--
   Оформление страницы — утилиты, а не прежний блочный стиль: app.css хранит

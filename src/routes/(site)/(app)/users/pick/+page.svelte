@@ -1,15 +1,18 @@
 <script lang="ts">
   // Страница пикера пользователей — носитель пары `user.picker`.
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import UserPicker from '#content/user/ui/UserPicker.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head>
-  <title>{data.mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'}</title>
-</svelte:head>
+  useHeadSeo(() => ({
+    subTitle: data.mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей',
+    description: 'Выбор аккаунтов пользователей из списка.',
+    noindex: true,
+  }))
+</script>
 
 <div class="mx-auto w-full max-w-2xl">
   {#if data.fact === 'auth.forbidden'}

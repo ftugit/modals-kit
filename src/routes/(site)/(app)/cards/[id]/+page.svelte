@@ -1,9 +1,15 @@
 <script lang="ts">
   import Button from '#components/ui/button/Button.svelte'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { asLink } from '#hooks/links/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 
   let { data }: import('./$types').PageProps = $props()
+
+  useHeadSeo(() => ({
+    subTitle: data.title,
+    description: data.body,
+  }))
 </script>
 
 <div class="mx-auto w-full max-w-4xl">

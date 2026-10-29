@@ -5,6 +5,7 @@
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Button } from '#components/ui/index.js'
   import {
     STORAGE_VAULT_MODAL,
@@ -158,11 +159,13 @@
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`
   }
-</script>
 
-<svelte:head>
-  <title>Потоковая загрузка и мультисерверное хранилище — modals-kit</title>
-</svelte:head>
+  useHeadSeo({
+    subTitle: 'Потоковая загрузка и мультисерверное хранилище',
+    description:
+      'Потоковая загрузка файлов по wss:// без буферизации в ОЗУ и мультисерверное хранилище #lib/storage с поддержкой S3, WebDAV, шифрования и Range 206.',
+  })
+</script>
 
 <div class="mx-auto w-full max-w-4xl space-y-6">
   <header class="space-y-2">

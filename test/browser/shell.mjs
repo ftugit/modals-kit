@@ -363,6 +363,74 @@ async function run() {
       await page.close()
     }
 
+    // 10. useHeadSeo + PageHead: SSR <head>, реактивные динамические маршруты и очистка слоёв при навигации
+    {
+      for (const [path, expectedTitle, expectNoindex] of [
+        ['/', 'modals-kit — главная', false],
+        ['/paginator', 'Пагинатор — modals-kit', false],
+        ['/modals', 'Модальная система — modals-kit', false],
+        ['/form', 'Формы — modals-kit', false],
+        ['/cards/1', 'Карточка №1 — modals-kit', false],
+        ['/user/auth', 'Авторизация — modals-kit', true],
+        ['/unknown-seo-probe-404', 'Страница не найдена — modals-kit', true],
+      ]) {
+        const html = await (await fetch(BASE + path)).text()
+        const titles = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((m) => m[1])
+        assert.deepEqual(titles, [expectedTitle], `${path}: SSR <title> = ${JSON.stringify(titles)}`)
+        assert.match(html, /property="og:title"\s+content="[^"]+"/, `${path}: SSR og:title присутствует`)
+        assert.match(html, /property="og:locale"\s+content="ru_RU"/, `${path}: SSR og:locale = ru_RU`)
+        assert.match(html, /name="description"\s+content="[^"]+"/, `${path}: SSR meta description присутствует`)
+        if (expectNoindex) {
+          assert.match(html, /name="robots"\s+content="noindex, nofollow"/, `${path}: SSR robots noindex присутствует`)
+        } else {
+          assert.ok(!/name="robots"\s+content="noindex/.test(html), `${path}: у публичного маршрута нет noindex`)
+        }
+      }
+      ok('SSR PageHead: ровно один <title>, description, og:title, og:locale и точный robots на всех типах маршрутов')
+
+      const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
+      const consoleIssues = []
+      page.on('console', (m) => {
+        if (m.type() === 'error' || m.text().includes('hydration_mismatch')) {
+          consoleIssues.push(`${m.type()}:${m.text()}`)
+        }
+      })
+
+      await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+      assert.equal(await page.title(), 'Авторизация — modals-kit')
+      assert.equal(
+        await page.locator('meta[name="robots"]').getAttribute('content'),
+        'noindex, nofollow',
+        '/user/auth выставил noindex',
+      )
+
+      // Переход с приватной страницы (/user/auth) на публичную (/) обязан снять noindex и сменить description
+      await page.locator('header a[href="/"]').first().click()
+      await page.waitForURL(`${BASE}/`, { timeout: 10000 })
+      await page.waitForFunction(() => document.title === 'modals-kit — главная')
+      assert.equal(await page.locator('meta[name="robots"]').count(), 0, 'noindex очищен после перехода на /')
+      assert.equal(
+        await page.locator('[data-fe-header] [data-slot="top"] span.truncate').textContent(),
+        'Главная',
+        'PageTitleSlot на главной показывает «Главная»',
+      )
+
+      // Реактивное обновление без перемонтирования компонента (/cards/1 → /cards/2 через goto)
+      await page.goto(BASE + '/cards/1', { waitUntil: 'networkidle' })
+      assert.equal(await page.title(), 'Карточка №1 — modals-kit')
+      await page.goto(BASE + '/cards/2', { waitUntil: 'networkidle' })
+      assert.equal(await page.title(), 'Карточка №2 — modals-kit')
+      assert.match(
+        (await page.locator('meta[name="description"]').getAttribute('content')) ?? '',
+        /Содержимое карточки 2/,
+        'description реактивно обновился для /cards/2',
+      )
+      assert.deepEqual(consoleIssues, [], `консоль без ошибок и hydration_mismatch: ${consoleIssues.join(' | ')}`)
+
+      ok('CSR useHeadSeo: очистка метатегов между маршрутами, реактивный динамический title/description и 0 hydration_mismatch')
+      await page.close()
+    }
+
     console.log(`\n✅ shell-browser: ${passed} проверок пройдено`)
   } finally {
     await browser.close()

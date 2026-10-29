@@ -17,6 +17,7 @@
    * (`redirectOnSuccess: 'inline'` → `locals.formResult`).
    */
   import type { PageProps } from './$types'
+  import { useHeadSeo } from '#components/shell/index.js'
   import Alert from '#components/ui/alert/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
@@ -110,6 +111,12 @@
     for (const id of ids) if (!filtered || visible.has(id)) list.patchItems<DbPost>({ remove: id })
     for (const card of optimistic.list()) if (card.row && ids.includes(card.row.id)) optimistic.drop(card.tmpId)
   }
+
+  useHeadSeo({
+    subTitle: 'База данных',
+    description:
+      'Слой #lib/db внутри SvelteKit: миграции, ресурсы с политиками прав, формы, пагинация и курсоры на PGlite и PostgreSQL.',
+  })
 </script>
 
 <!-- Ширина и отступы — как у остальных демо-страниц (/modals, /form). -->

@@ -5,6 +5,7 @@
   // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
   // адреса (не полная навигация). Схема полей — в demo-schema.ts.
   import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Steps, FormSteps, formSteps, stepLink, useSteps } from '#components/steps/index.js'
   import { asLink } from '#hooks/links/index.js'
   import FieldInput from '#components/form/Field.svelte'
@@ -100,15 +101,13 @@
   /* активный хост адресных режимов; пересоздание не нужно — у каждого свой
      ключ брони, состояние локальных переживёт переключение панели */
   const addressSteps = $derived(mode === 'url' ? urlSteps : mode === 'local' ? localSteps : hybridSteps)
-</script>
 
-<svelte:head>
-  <title>Шаги — modals-kit</title>
-  <meta
-    name="description"
-    content="Ход шагов: адресные режимы (url/local/hybrid), форм-режим (шаги управляют валидаторами через subset экшенов, свёрнутый шаг едет в каждом POST) и смешанный хост — куст формы среди обычных шагов, адрес цепочкой."
-  />
-</svelte:head>
+  useHeadSeo({
+    subTitle: 'Шаги',
+    description:
+      'Ход шагов: адресные режимы (url/local/hybrid), форм-режим (шаги управляют валидаторами через subset экшенов, свёрнутый шаг едет в каждом POST) и смешанный хост — куст формы среди обычных шагов, адрес цепочкой.',
+  })
+</script>
 
 <div class="mx-auto w-full max-w-3xl space-y-6">
   <header class="space-y-3">

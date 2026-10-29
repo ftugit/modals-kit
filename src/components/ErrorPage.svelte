@@ -8,6 +8,7 @@
   // 4xx — нейтральный текст. Стек и причина клиенту не показываются никогда.
   import { page } from '$app/state'
   import Error500 from '#components/Error500.svelte'
+  import { useHeadSeo } from '#components/shell/page.svelte.js'
   import { isSchemaPending, schemaHref } from '#hooks/schema-route.js'
 
   const serverError = $derived(page.status >= 500)
@@ -18,6 +19,25 @@
   // Без `?next=`: граница ошибок не читает адрес — после переноса человек
   // вернётся сам, а `/schema` остаётся единственной точкой входа.
   const schemaLink = schemaHref()
+
+  useHeadSeo(
+    () => ({
+      subTitle: schemaPending
+        ? 'Требуется обновление схемы базы'
+        : serverError
+          ? 'Приложение недоступно'
+          : page.status === 404
+            ? 'Страница не найдена'
+            : `Ошибка ${page.status}`,
+      description: schemaPending
+        ? 'База данных ожидает применения миграций схемы.'
+        : serverError
+          ? 'Произошла внутренняя ошибка приложения.'
+          : 'Запрошенная страница не найдена или недоступна.',
+      noindex: true,
+    }),
+    { optional: true },
+  )
 </script>
 
 {#if schemaPending}

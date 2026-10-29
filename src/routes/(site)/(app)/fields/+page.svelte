@@ -9,6 +9,7 @@
   import { fieldsSurfaceVariants, SchemaBuilder, SchemaFields, SchemaValues } from '#components/fields/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Steps, useSteps } from '#components/steps/index.js'
   import { Button } from '#components/ui/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
@@ -38,10 +39,13 @@
     lockStateKey: 'fieldsNavLocked',
     onSuccess: () => void goto(steps.href('build')),
   })
-</script>
 
-<svelte:head>
-  <title>Конструктор полей — modals-kit</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Конструктор полей',
+    description:
+      'Конструктор полей формы field.fields: сборка набора полей с правилами, заполнение записи и просмотр результата.',
+  })
+</script>
 
 <div class="mx-auto w-full max-w-3xl space-y-6">
   <header class="space-y-2">

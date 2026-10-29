@@ -7,6 +7,7 @@
    * итог и ссылка возврата.
    */
   import SchemaPending from '#components/db-schema/SchemaPending.svelte'
+  import { useHeadSeo } from '#components/shell/index.js'
   import type { Result } from '#lib/form/index.js'
   import type { PageProps } from './$types'
 
@@ -14,6 +15,12 @@
 
   // `fail` экшена приходит в `form`: подсаживаем результат в форму один раз.
   const seed = $derived((form as { result?: Result } | null)?.result ?? null)
+
+  useHeadSeo({
+    subTitle: 'Перенос схемы базы',
+    description: 'Подтверждение и применение миграций схемы базы данных.',
+    noindex: true,
+  })
 </script>
 
 <div class="mx-auto w-full max-w-3xl space-y-6">

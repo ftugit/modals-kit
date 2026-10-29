@@ -20,9 +20,16 @@ import { asLink, useModalLink } from '#hooks/links/index.js'
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
   import { CloseAllButton } from '#components/modals/index.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import SettingsPanel from './SettingsPanel.svelte'
   import SourcesPanel from './SourcesPanel.svelte'
   import FloatingMenu from '../FloatingMenu.svelte'
+
+  useHeadSeo({
+    subTitle: 'Модальная система',
+    description:
+      'Цепочка модальных окон в адресе (?modal=), предзагрузка данных до открытия, управление через Назад/Вперёд и полноэкранные карточки.',
+  })
 
   // Живой контекст: геттеры видят смену ядра при смене источников.
   const m = useModals()

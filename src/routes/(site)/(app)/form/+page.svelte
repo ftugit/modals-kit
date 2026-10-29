@@ -18,11 +18,18 @@
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
   import { DemoPanel, demoDefaults } from '#components/demo/index.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
   import Common from '#components/form/Common.svelte'
   import Field from '#components/form/Field.svelte'
 
   let { data }: { data: { job: { done: boolean } | { missing: true } | null } } = $props()
+
+  useHeadSeo({
+    subTitle: 'Формы',
+    description:
+      'Формы со строгой клиентской и серверной валидацией, живыми режимами проверки, идемпотентностью и работой без JavaScript.',
+  })
 
   /* ── обработчик ошибок: один, все сценарии внутри ─────────────── */
 

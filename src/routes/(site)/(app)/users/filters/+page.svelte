@@ -2,14 +2,19 @@
   // Страница фильтров списка: fallback модалки для no-JS. Форма та же, что в
   // модалке (`SeedUsersFiltersForm`), режим нативный: GET на адрес носителя
   // списка (`action` из `from`), его `load` разберёт параметры в тот же срез.
+  import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import SeedUsersFiltersForm from '#content/user/ui/SeedUsersFiltersForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Фильтры списка seed-юзеров</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Фильтры списка seed-юзеров',
+    description: 'Настройка параметров фильтрации списка пользователей.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-xl">
   {#if data.fact === 'auth.forbidden'}

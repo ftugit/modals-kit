@@ -1,5 +1,6 @@
 <script lang="ts">
   import { asLink } from '#hooks/links/index.js'
+  import { useHeadSeo } from '#components/shell/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'
@@ -33,15 +34,13 @@
   const activeSnapshot = $derived.by<PaginatorState<CatalogItem> | null>(() =>
     storeKind === 'url' && activeName === loaderData.defaultName ? loaderData.snapshot : null
   )
-</script>
 
-<svelte:head>
-  <title>Пагинатор — modals-kit</title>
-  <meta
-    name="description"
-    content="Headless-пагинация: указатель и настройки в GET (?page, ?page.size, ?page.<key>), SSR-снапшот из лоадера, накопление страниц со скролл-сентинелами и якорями."
-  />
-</svelte:head>
+  useHeadSeo({
+    subTitle: 'Пагинатор',
+    description:
+      'Headless-пагинация: указатель и настройки в GET (?page, ?page.size, ?page.<key>), SSR-снапшот из лоадера, накопление страниц со скролл-сентинелами и якорями.',
+  })
+</script>
 
 <PaginatorScope
   snapshots={{

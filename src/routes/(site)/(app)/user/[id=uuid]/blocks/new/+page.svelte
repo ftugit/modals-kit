@@ -1,14 +1,19 @@
 <script lang="ts">
   // Страница создания блокировки конкретного пользователя (`/user/[id]/blocks/new`).
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Button } from '#components/ui/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlockForm from '#content/user/ui/block-form/BlockForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Наложить блокировку</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Наложить блокировку',
+    description: 'Наложение новой блокировки на пользователя.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-md">
   {#if data.fact === 'auth.identity-unknown'}

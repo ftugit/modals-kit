@@ -226,6 +226,7 @@ const NOT_A_CLASS = new Set([
   'flow-probe', // имя зарегистрированной модалки
   'modals-host', // id диалога Ark у хоста
   'modals-host-sheet',
+  'modals-kit', // имя приложения в метаданных setPageContext / useHeadSeo
   '[tabindex]', // фрагмент селектора в querySelector хоста
   '[modals]',
   'esm-env',

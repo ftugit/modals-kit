@@ -13,11 +13,17 @@ export const HEADER_SIDES: readonly HeaderSide[] = ['start', 'center', 'end']
 export const SIDEBAR_ZONES: readonly SidebarZone[] = ['top', 'middle', 'bottom']
 
 export interface HeadSeo {
+  /** Базовый (в корневом layout) или полный переопределяющий заголовок страницы (`<title>`). */
   title?: string
+  /** Заголовок раздела/страницы: склеивается с базовым `title` через `titleSeparator` (`"${subTitle}${titleSeparator}${title}"`). */
   subTitle?: string
+  /** Короткий заголовок для слота шапки (`PageTitleSlot`), когда `title` задан в полном формате. */
+  headerTitle?: string
+  /** Разделитель между `subTitle` и `title` (по умолчанию `' — '`). */
   titleSeparator?: string
   description?: string
   image?: string
+  imageAlt?: string
   url?: string
   type?: string
   card?: string
@@ -25,6 +31,21 @@ export interface HeadSeo {
   author?: string
   siteName?: string
   locale?: string
+  /** Явная директива `<meta name="robots" content="...">` (перекрывает `noindex`). */
+  robots?: string
+  /** Закрыть служебный или приватный маршрут от индексации (`noindex, nofollow`). */
+  noindex?: boolean
+}
+
+export interface HeadSeoOptions {
+  enabled?: boolean | (() => boolean)
+  /** Не бросать ошибку, если компонент отрендерен вне `setPageContext()` (например `ErrorPage` / `Error500` в изолированном тесте). */
+  optional?: boolean
+}
+
+export type SeoLayer = {
+  id: number
+  resolve: () => HeadSeo | null | undefined
 }
 
 export type SlotItem = {
@@ -54,9 +75,38 @@ function createEmptySidebarSlots(): SidebarSlots {
   }
 }
 
+function cloneHeaderSlots(src: HeaderSlots): HeaderSlots {
+  return {
+    top: { start: [...src.top.start], center: [...src.top.center], end: [...src.top.end] },
+    middle: { start: [...src.middle.start], center: [...src.middle.center], end: [...src.middle.end] },
+    bottom: { start: [...src.bottom.start], center: [...src.bottom.center], end: [...src.bottom.end] },
+  }
+}
+
+function cloneSidebarSlots(src: SidebarSlots): SidebarSlots {
+  return {
+    top: [...src.top],
+    middle: [...src.middle],
+    bottom: [...src.bottom],
+  }
+}
+
+function applySeoPatch(target: HeadSeo, patch: HeadSeo | null | undefined, resetSubTitleOnFullTitle: boolean): void {
+  if (!patch) return
+  if (resetSubTitleOnFullTitle && patch.title !== undefined && patch.subTitle === undefined) {
+    target.subTitle = undefined
+  }
+  for (const key of Object.keys(patch) as (keyof HeadSeo)[]) {
+    const value = patch[key]
+    if (value !== undefined) {
+      ;(target as Record<string, unknown>)[key] = value
+    }
+  }
+}
+
 export function rowHasSlots(row: RowSlots | undefined): boolean {
   if (!row) return false
-  return (row.start.length > 0 || row.center.length > 0 || row.end.length > 0)
+  return row.start.length > 0 || row.center.length > 0 || row.end.length > 0
 }
 
 export function headerHasSlots(header: HeaderSlots | undefined): boolean {
@@ -70,25 +120,96 @@ export function sidebarHasSlots(sidebar: SidebarSlots | undefined): boolean {
 }
 
 export class PageState {
-  seo = $state<HeadSeo>({})
-  header = $state<HeaderSlots>(createEmptyHeaderSlots())
-  sidebar = $state<SidebarSlots>(createEmptySidebarSlots())
+  // Каноническое состояние слоёв хранится в обычных полях (не `$state`-прокси),
+  // а реактивность сигнализируется записью ревизии/снимка без чтения `$state`.
+  // В Svelte 5 чтение `$state` внутри teardown-функции (`is_destroying_effect`)
+  // возвращает `old_values` начала батча и затирает слой новой страницы,
+  // успевшей зарегистрироваться в том же flush при клиентской навигации.
+  private readonly rawSeoBase: HeadSeo
+  private rawSeoPatch: HeadSeo = {}
+  private rawSeoLayers: SeoLayer[] = []
+  private rawHeader: HeaderSlots = createEmptyHeaderSlots()
+  private rawSidebar: SidebarSlots = createEmptySidebarSlots()
+  private revSeq = 0
+  private seoRev = $state(0)
+
+  /** Сводный срез активных слоёв маршрутов (без базового `initialSeo` корневого layout). */
+  readonly activeSeo = $derived.by<HeadSeo>(() => {
+    void this.seoRev
+    const acc: HeadSeo = {}
+    applySeoPatch(acc, this.rawSeoPatch, true)
+    for (const layer of this.rawSeoLayers) {
+      applySeoPatch(acc, layer.resolve(), true)
+    }
+    return acc
+  })
+
+  /** Итоговые SEO-метаданные: базовые значения корневого layout + активные слои маршрутов. */
+  readonly seo = $derived.by<HeadSeo>(() => {
+    void this.seoRev
+    const acc: HeadSeo = {}
+    applySeoPatch(acc, this.rawSeoBase, false)
+    applySeoPatch(acc, this.rawSeoPatch, true)
+    for (const layer of this.rawSeoLayers) {
+      applySeoPatch(acc, layer.resolve(), true)
+    }
+    return acc
+  })
+
+  header = $state.raw<HeaderSlots>(createEmptyHeaderSlots())
+  sidebar = $state.raw<SidebarSlots>(createEmptySidebarSlots())
 
   private seq = 0
 
   constructor(initialSeo: HeadSeo = {}) {
-    this.seo = initialSeo
+    this.rawSeoBase = { ...initialSeo }
   }
 
+  private bumpSeo(): void {
+    this.seoRev = ++this.revSeq
+  }
+
+  private syncHeader(): void {
+    this.header = cloneHeaderSlots(this.rawHeader)
+  }
+
+  private syncSidebar(): void {
+    this.sidebar = cloneSidebarSlots(this.rawSidebar)
+  }
+
+  /** Императивный патч SEO поверх базового контекста (сохранён для обратной совместимости). */
   setSeo(patch: HeadSeo) {
-    this.seo = { ...this.seo, ...patch }
+    const next: HeadSeo = { ...this.rawSeoPatch }
+    applySeoPatch(next, patch, true)
+    this.rawSeoPatch = next
+    this.bumpSeo()
+  }
+
+  /** Сбросить императивный патч до базового `initialSeo`. */
+  resetSeo() {
+    this.rawSeoPatch = {}
+    this.bumpSeo()
+  }
+
+  /**
+   * Зарегистрировать реактивный слой SEO с функцией отписки при размонтировании.
+   * Вызывается синхронно в `<script>` компонента (работает в SSR и браузере).
+   */
+  registerSeo(resolve: () => HeadSeo | null | undefined): () => void {
+    const id = ++this.seq
+    this.rawSeoLayers = [...this.rawSeoLayers, { id, resolve }]
+    this.bumpSeo()
+    return () => {
+      this.rawSeoLayers = this.rawSeoLayers.filter((x) => x.id !== id)
+      this.bumpSeo()
+    }
   }
 
   registerHeaderSlot(path: HeaderSlotPath, snippet: Snippet, offset?: number): () => void {
     const [row, side] = path.split('.') as [HeaderRow, HeaderSide]
     const id = ++this.seq
     const item: SlotItem = { id, snippet, offset }
-    const current = [...this.header[row][side]]
+    const current = [...this.rawHeader[row][side]]
 
     if (offset !== undefined) {
       const idx = Math.max(0, Math.min(offset, current.length))
@@ -97,10 +218,12 @@ export class PageState {
       current.push(item)
     }
 
-    this.header[row][side] = current
+    this.rawHeader[row][side] = current
+    this.syncHeader()
 
     return () => {
-      this.header[row][side] = this.header[row][side].filter((x) => x.id !== id)
+      this.rawHeader[row][side] = this.rawHeader[row][side].filter((x) => x.id !== id)
+      this.syncHeader()
     }
   }
 
@@ -108,7 +231,7 @@ export class PageState {
     const rawZone = zone.startsWith('sidebar.') ? (zone.replace('sidebar.', '') as SidebarZone) : (zone as SidebarZone)
     const id = ++this.seq
     const item: SlotItem = { id, snippet, offset }
-    const current = [...this.sidebar[rawZone]]
+    const current = [...this.rawSidebar[rawZone]]
 
     if (offset !== undefined) {
       const idx = Math.max(0, Math.min(offset, current.length))
@@ -117,16 +240,23 @@ export class PageState {
       current.push(item)
     }
 
-    this.sidebar[rawZone] = current
+    this.rawSidebar[rawZone] = current
+    this.syncSidebar()
 
     return () => {
-      this.sidebar[rawZone] = this.sidebar[rawZone].filter((x) => x.id !== id)
+      this.rawSidebar[rawZone] = this.rawSidebar[rawZone].filter((x) => x.id !== id)
+      this.syncSidebar()
     }
   }
 
   clearAll() {
-    this.header = createEmptyHeaderSlots()
-    this.sidebar = createEmptySidebarSlots()
+    this.rawSeoPatch = {}
+    this.rawSeoLayers = []
+    this.rawHeader = createEmptyHeaderSlots()
+    this.rawSidebar = createEmptySidebarSlots()
+    this.bumpSeo()
+    this.syncHeader()
+    this.syncSidebar()
   }
 }
 
@@ -138,8 +268,12 @@ export function setPageContext(initialSeo: HeadSeo = {}): PageState {
   return state
 }
 
+export function tryUsePage(): PageState | undefined {
+  return getContext<PageState | undefined>(PAGE_CONTEXT_KEY)
+}
+
 export function usePage(): PageState {
-  const ctx = getContext<PageState>(PAGE_CONTEXT_KEY)
+  const ctx = tryUsePage()
   if (!ctx) {
     throw new Error('usePage() must be used inside root layout with setPageContext()')
   }
@@ -216,10 +350,23 @@ export function useSidebarSlot(
 }
 
 /**
- * Установка SEO-метаданных страницы.
+ * Декларативная установка SEO-метаданных маршрута (SSR-safe + реактивна + авто-очистка при уходе).
+ * Принимает статический объект `HeadSeo` или геттер `() => HeadSeo`, отслеживаемый в `$derived`.
  */
-export function useHeadSeo(seo: HeadSeo | (() => HeadSeo)): void {
-  const page = usePage()
-  const data = typeof seo === 'function' ? seo() : seo
-  page.setSeo(data)
+export function useHeadSeo(
+  seo: HeadSeo | (() => HeadSeo),
+  options: HeadSeoOptions = {},
+): void {
+  const page = options.optional ? tryUsePage() : usePage()
+  if (!page) return
+
+  const unregister = page.registerSeo(() => {
+    const isEnabled = typeof options.enabled === 'function' ? options.enabled() : (options.enabled ?? true)
+    if (!isEnabled) return null
+    return typeof seo === 'function' ? seo() : seo
+  })
+
+  $effect(() => {
+    return () => unregister()
+  })
 }

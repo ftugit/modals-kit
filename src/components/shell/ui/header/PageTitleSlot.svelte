@@ -1,9 +1,11 @@
 <script lang="ts">
-  // Заголовок текущей страницы для шапки.
+  // Заголовок активного маршрута для шапки (`activeSeo` не дублирует имя сайта до монтирования страницы).
   import { usePage } from '#components/shell/page.svelte.js'
 
   const page = usePage()
-  const displayTitle = $derived(page.seo.subTitle ?? page.seo.title ?? '')
+  const displayTitle = $derived(
+    page.activeSeo.headerTitle ?? page.activeSeo.subTitle ?? page.activeSeo.title ?? '',
+  )
 </script>
 
 {#if displayTitle}

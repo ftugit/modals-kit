@@ -1,14 +1,19 @@
 <script lang="ts">
   // Карточка редактирования / просмотра блокировки конкретного пользователя (`/user/[id]/blocks/[blockId]`).
+  import { useHeadSeo } from '#components/shell/index.js'
   import { Button } from '#components/ui/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlockForm from '#content/user/ui/block-form/BlockForm.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-</script>
 
-<svelte:head><title>Блокировка пользователя</title></svelte:head>
+  useHeadSeo({
+    subTitle: 'Блокировка пользователя',
+    description: 'Просмотр и изменение блокировки пользователя.',
+    noindex: true,
+  })
+</script>
 
 <div class="mx-auto w-full max-w-md">
   {#if data.fact === 'auth.identity-unknown'}
