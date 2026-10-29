@@ -4,37 +4,48 @@
    * блокировки (`user.block`).
    *
    *  - В режиме `create` показывает доступные сферы `assignableScopes`, причину,
-   *    срок (`forever` / `until`), а при открытии из глобального списка без `uid` —
-   *    поле целевого `UUID` и кнопку выбора пользователя `user.picker` (`single`).
-   *  - В режиме `edit` соблюдает полевые права модели (`scope` неизменяем;
-   *    `reason` редактируем только кругу `block.edit`/`admin`; `until` — кругу
-   *    записи). Для читателей без прав записи (`block.read`, владелец цели или
-   *    мягко удалённая запись) карточка открывается без возможности отправки
-   *    (`canSubmit = false`).
-   *  - В глобальном режиме `edit` (без переданного `uid`) показывает disabled-поле
-   *    с `id` целевого пользователя (вне `defineForm`, без `name` — в `FormData`
+   *    срок (`forever` / `until`), а при открытии из глобального списка без `uid`
+   *    строит выбор по схеме `1 + 3`: `field.multiselect` (`subjects`), предзаполненный
+   *    из фильтра `uids` за вычетом `vault.principal`, кнопку выбора пользователей
+   *    `user.picker` (`multiple`), закрытую через `useGrants([grants(auth).select, grants(block).insert])`,
+   *    и защиту от случайного массового бана — кнопку с удержанием `HoldButton`, когда
+   *    выбрано больше одного пользователя (`N > 1`).
+   *  - В режиме `edit` реактивно сверяет возможности с `useGrants(grants(block))`
+   *    (`scope` неизменяем; `reason` редактируем только по `grants(block).fields.reason.update`;
+   *    `until` — по `grants(block).update`). Для читателей без прав записи или на
+   *    мягко удалённой записи карточка открывается без возможности отправки (`canSubmit = false`).
+   *  - В глобальном режиме `edit` (без переданного `uid`) показывает заблокированное
+   *    поле с `id` целевого пользователя (вне `defineForm`, без `name` — в `FormData`
    *    не отправляется) и кнопку перехода в профиль `user.profile`.
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
+  import { currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
+  import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { Badge, Button, Input, Label, Skeleton, Textarea, TimeAgo } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
   import type { AuthErrorCode } from '../../error.js'
+  import { useGrants } from '../../grants.svelte.js'
+  import { auth as authResource, block as blockResource } from '../../schema.js'
   import { describeBlockScope, isBlockScope, specBlocks } from '../../spec-block.js'
   import type { BlockCreateRouteData, BlockEditRouteData } from '../../types.js'
-  import { userSession } from '../../vault.svelte.js'
+  import { userSession, vault } from '../../vault.svelte.js'
   import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from '../UserPicker.svelte'
   import { createBlockFormDescription } from './form.js'
+
+  const gBlock = grants(blockResource)
+  const gAuth = grants(authResource)
 
   interface Props {
     mode: 'create' | 'edit'
@@ -42,7 +53,9 @@
     uid?: string | null
     /** Идентификатор записи блокировки (обязателен для `mode === 'edit'`). */
     blockId?: string | null
-    /** Начальное значение `subject` в глобальном `create` (например, из no-JS `/users/pick`). */
+    /** Начальный список выбранных целевых пользователей в глобальном `create` (из фильтра `uids` или `/users/pick`). */
+    initialSubjects?: readonly string[]
+    /** Одиночный начальный `subject` (обратная совместимость с `?subject=…`). */
     initialSubject?: string
     /** Данные `load` страницы создания (SSR/no-JS). */
     initialCreate?: BlockCreateRouteData | null
@@ -61,6 +74,7 @@
     mode,
     uid = null,
     blockId = null,
+    initialSubjects,
     initialSubject = '',
     initialCreate = null,
     initialEdit = null,
@@ -82,6 +96,55 @@
   let editData = $state<BlockEditRouteData | null>(untrack(() => initialEdit))
   let askedKey = ''
   const initialRevSnapshot = untrack(() => ({ c: initialCreate, e: initialEdit }))
+
+  const detail = $derived(editData?.detail ?? null)
+  const editIsDeleted = $derived(detail?.block.deletedAt != null)
+
+  const createCaps = useGrants({
+    canCreate: gBlock.insert,
+    canPickUsers: [gAuth.select, gBlock.insert],
+  })
+
+  const editCaps = useGrants(
+    {
+      canUpdate: gBlock.update,
+      canEditReason: gBlock.fields.reason.update,
+      canSoftDelete: gBlock.delete,
+      canHardDelete: gBlock.hardDelete,
+    },
+    { ownerId: () => detail?.block.authId ?? null },
+  )
+
+  const hasLivePrincipal = $derived(vault.principal !== null)
+
+  function normalizeSubjects(raw: readonly string[], selfId: string | null): string[] {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const item of raw) {
+      for (const part of String(item ?? '').split(',')) {
+        const id = part.trim()
+        if (!id || (selfId && id === selfId) || seen.has(id)) continue
+        seen.add(id)
+        out.push(id)
+      }
+    }
+    return out
+  }
+
+  function resolveSeedSubjects(
+    curSubjects: readonly string[] | undefined,
+    curSubj: string,
+    selfId: string | null,
+  ): string[] {
+    if (curSubjects && curSubjects.length > 0) {
+      return normalizeSubjects(curSubjects, selfId)
+    }
+    if (curSubj.trim()) {
+      return normalizeSubjects([curSubj], selfId)
+    }
+    const fromFilter = String(currentSearch()['blocks.uids'] ?? '')
+    return fromFilter ? normalizeSubjects([fromFilter], selfId) : []
+  }
 
   function toDatetimeLocal(ms: number): string {
     const d = new Date(ms)
@@ -160,28 +223,72 @@
     session: userSession,
   })
 
-  const detail = $derived(editData?.detail ?? null)
   const ready = $derived(mode === 'create' ? createData !== null : detail !== null)
-  const canSubmit = $derived(mode === 'create' ? Boolean(createData?.canCreate) : Boolean(detail?.canSubmit))
+
+  const canPickUsers = $derived(
+    !fixedUid && (hasLivePrincipal ? createCaps.canPickUsers : Boolean(createData?.canPickUsers)),
+  )
+  const canSubmit = $derived(
+    mode === 'create'
+      ? hasLivePrincipal
+        ? createCaps.canCreate && (!fixedUid || fixedUid !== vault.principal)
+        : Boolean(createData?.canCreate)
+      : !editIsDeleted && (hasLivePrincipal ? editCaps.canUpdate : Boolean(detail?.canSubmit)),
+  )
+  const canEditReason = $derived(
+    canSubmit && (hasLivePrincipal ? editCaps.canEditReason : Boolean(detail?.canEditReason)),
+  )
+  const canEditUntil = $derived(
+    canSubmit && (hasLivePrincipal ? editCaps.canUpdate : Boolean(detail?.canEditUntil)),
+  )
+  const canDelete = $derived(
+    hasLivePrincipal
+      ? editIsDeleted
+        ? editCaps.canHardDelete
+        : editCaps.canSoftDelete
+      : Boolean(detail?.canDelete),
+  )
 
   const fBlockId = bound.field('block_id')
   const fSubject = bound.field('subject')
+  const fSubjects = bound.field('subjects')
   const fScope = bound.field('scope')
   const fReason = bound.field('reason')
   const fForever = bound.field('forever')
   const fUntil = bound.field('until')
 
+  let knownSubjectIds = $state<string[]>(
+    untrack(() =>
+      mode === 'create' && !fixedUid
+        ? resolveSeedSubjects(initialSubjects, initialSubject, vault.principal)
+        : [],
+    ),
+  )
+
+  function mergeKnownSubjects(ids: readonly string[]) {
+    const merged = normalizeSubjects([...knownSubjectIds, ...ids], vault.principal)
+    if (merged.length !== knownSubjectIds.length || merged.some((id, i) => id !== knownSubjectIds[i])) {
+      knownSubjectIds = merged
+    }
+  }
+
   function seedFields(
     curMode: 'create' | 'edit',
     curUid: string | null,
+    curSubjects: readonly string[] | undefined,
     curSubj: string,
     cData: BlockCreateRouteData | null,
     eDetail: BlockEditRouteData['detail'],
   ): string {
     if (curMode === 'create') {
-      const k = `create:${curUid ?? ''}:${curSubj}:${cData?.assignableScopes?.[0] ?? ''}`
+      const seededSubjects = curUid ? [] : resolveSeedSubjects(curSubjects, curSubj, vault.principal)
+      const k = `create:${curUid ?? ''}:${seededSubjects.join(',')}:${cData?.assignableScopes?.[0] ?? ''}`
       fBlockId?.onInput('')
-      fSubject?.onInput(curUid ?? curSubj)
+      fSubject?.onInput(curUid ?? '')
+      if (!curUid) {
+        mergeKnownSubjects(seededSubjects)
+        fSubjects?.onInput(seededSubjects)
+      }
       const firstScope = cData?.assignableScopes?.[0]
       if (firstScope && isBlockScope(firstScope)) fScope?.onInput(firstScope)
       fForever?.onInput(true)
@@ -208,6 +315,7 @@
       : seedFields(
           mode,
           fixedUid,
+          initialSubjects,
           initialSubject,
           createData,
           editData?.detail ?? null,
@@ -220,17 +328,22 @@
     const eDetail = detail
     const curMode = mode
     const curUid = fixedUid
+    const curSubjects = initialSubjects
     const curSubj = initialSubject
+    const seededSubjects =
+      curMode === 'create' && !curUid
+        ? resolveSeedSubjects(curSubjects, curSubj, vault.principal)
+        : []
     const nextKey =
       curMode === 'create'
-        ? `create:${curUid ?? ''}:${curSubj}:${cData?.assignableScopes?.[0] ?? ''}`
+        ? `create:${curUid ?? ''}:${seededSubjects.join(',')}:${cData?.assignableScopes?.[0] ?? ''}`
         : eDetail
           ? `edit:${eDetail.block.id}:${eDetail.block.until ?? 'inf'}:${eDetail.block.reason}`
           : ''
     if (!nextKey || seededKey === nextKey) return
     seededKey = nextKey
     untrack(() => {
-      seedFields(curMode, curUid, curSubj, cData, eDetail)
+      seedFields(curMode, curUid, curSubjects, curSubj, cData, eDetail)
     })
   })
 
@@ -238,17 +351,20 @@
     mirrorToField(bound, 'subject', () => fixedUid ?? '')
   }
 
-  // Подписка на выбор одиночного пользователя из модалки `user.picker`
+  // Подписка на множественный выбор пользователей из модалки `user.picker`
   let lastPickerSeq = 0
   $effect(() => {
     if (mode !== 'create' || fixedUid) return
-    const raw = modalsCtx?.view.sharedData[`${USER_PICKER_CHANNEL_PREFIX}block.subject`] as
+    const raw = modalsCtx?.view.sharedData[`${USER_PICKER_CHANNEL_PREFIX}block.subjects`] as
       | UserPickerPayload
       | undefined
     if (!raw || raw.seq <= lastPickerSeq) return
     lastPickerSeq = raw.seq
-    const pickedId = raw.ids[0] ?? ''
-    untrack(() => fSubject?.onInput(pickedId))
+    const pickedIds = normalizeSubjects(raw.ids, vault.principal)
+    untrack(() => {
+      mergeKnownSubjects(pickedIds)
+      fSubjects?.onInput(pickedIds)
+    })
   })
 
   let lastHandledSubmission = ''
@@ -268,14 +384,40 @@
     fUntil?.onInput(toDatetimeLocal(Date.now() + msOffset))
   }
 
-  const currentSubject = $derived(String(bound.f.subject.value ?? '').trim())
+  const selectedSubjects = $derived.by(() => {
+    const val = bound.f.subjects.value
+    const list = Array.isArray(val) ? val.map(String) : []
+    return normalizeSubjects(list, vault.principal)
+  })
+
+  const subjectOptions = $derived.by(() => {
+    const allIds = normalizeSubjects([...knownSubjectIds, ...selectedSubjects], vault.principal)
+    return allIds.map((id) => ({ value: id, label: id }))
+  })
+
+  const subjectsFieldView = $derived.by(() => {
+    const base = bound.f.subjects
+    const clone = { ...base, options: subjectOptions }
+    for (const sym of Object.getOwnPropertySymbols(base)) {
+      ;(clone as Record<symbol, unknown>)[sym] = (base as unknown as Record<symbol, unknown>)[sym]
+    }
+    return clone
+  })
+
+  const targetCount = $derived(fixedUid ? 1 : selectedSubjects.length)
+  const holdSeconds = $derived(createData?.holdSeconds ?? 2)
+
   const pickerHref = $derived.by(() => {
+    const baseUrl = new URL(selfHref, 'http://local')
+    baseUrl.searchParams.delete('subjects')
+    baseUrl.searchParams.delete('subject')
+    const cleanFrom = `${baseUrl.pathname}${baseUrl.search}`
     const q = new URLSearchParams({
-      mode: 'single',
-      param: 'subject',
-      from: selfHref,
+      mode: 'multiple',
+      param: 'subjects',
+      from: cleanFrom,
     })
-    if (currentSubject) q.set('picked', currentSubject)
+    if (selectedSubjects.length > 0) q.set('picked', selectedSubjects.join(','))
     return `/users/pick?${q.toString()}`
   })
 
@@ -284,7 +426,6 @@
   )
 
   const editScopeInfo = $derived(detail ? describeBlockScope(detail.block.scope) : null)
-  const editIsDeleted = $derived(detail?.block.deletedAt != null)
   const editIsActive = $derived(
     Boolean(detail && !editIsDeleted && (detail.block.until === null || detail.block.until > Date.now())),
   )
@@ -316,29 +457,31 @@
 
     <div hidden aria-hidden="true">
       <Field of={bound.f.block_id} />
-      {#if fixedUid}
-        <Field of={bound.f.subject} />
-      {/if}
+      <Field of={bound.f.subject} />
     </div>
 
     <h2 class="text-base font-semibold">{specBlocks.addTitle}</h2>
 
     {#if !fixedUid}
       <div class="flex flex-col gap-2" data-testid="block-create-subject-row">
-        <Field of={bound.f.subject} />
-        {#if createData?.canPickUsers}
+        <Field of={subjectsFieldView} />
+        {#if canPickUsers}
           <div>
             <Button
               {...asModalLink(
                 'user.picker',
-                { mode: 'single', channel: 'block.subject', picked: currentSubject },
+                {
+                  mode: 'multiple',
+                  channel: 'block.subjects',
+                  picked: selectedSubjects.join(','),
+                },
                 { href: pickerHref },
               )}
               variant="outline"
               size="sm"
               data-testid="block-create-pick-user"
             >
-              Выбрать из списка пользователей
+              Выбрать из списка пользователей{#if selectedSubjects.length > 0}&nbsp;({selectedSubjects.length}){/if}
             </Button>
           </div>
         {/if}
@@ -375,15 +518,32 @@
 
     {#if canSubmit}
       <div class="pt-1">
-        <Button
-          type="submit"
-          name="intent"
-          value="save"
-          task={formTask(bound.state, 'save')}
-          data-testid="block-create-submit"
-        >
-          {specBlocks.addButton}
-        </Button>
+        {#if targetCount > 1}
+          <HoldButton
+            type="submit"
+            name="intent"
+            value="save"
+            variant="destructive"
+            seconds={holdSeconds}
+            when="fill"
+            hover
+            task={formTask(bound.state, 'save')}
+            data-testid="block-create-submit"
+            data-mass-hold="true"
+          >
+            Удерживайте, чтобы заблокировать ({targetCount})
+          </HoldButton>
+        {:else}
+          <Button
+            type="submit"
+            name="intent"
+            value="save"
+            task={formTask(bound.state, 'save')}
+            data-testid="block-create-submit"
+          >
+            {specBlocks.addButton}
+          </Button>
+        {/if}
       </div>
     {/if}
   </Form>
@@ -395,7 +555,7 @@
     onsubmit={guardSubmit}
     class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', className)}
     data-testid="block-form-edit"
-    data-readonly={!detail.canSubmit || undefined}
+    data-readonly={!canSubmit || undefined}
   >
     <Common errors={bound.common} title="Проверьте форму" />
 
@@ -403,7 +563,7 @@
       <Field of={bound.f.block_id} />
       <Field of={bound.f.subject} />
       <Field of={bound.f.scope} />
-      {#if !(detail.canSubmit && detail.canEditReason)}
+      {#if !canEditReason}
         <Field of={bound.f.reason} />
       {/if}
     </div>
@@ -411,7 +571,7 @@
     <div class="flex items-start justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
         <h2 class="text-base font-semibold">
-          {detail.canSubmit ? 'Редактирование блокировки' : 'Просмотр блокировки'}
+          {canSubmit ? 'Редактирование блокировки' : 'Просмотр блокировки'}
         </h2>
         {#if editIsDeleted}
           <Badge variant="destructive">удалена</Badge>
@@ -422,7 +582,7 @@
         {/if}
       </div>
 
-      {#if detail.canDelete}
+      {#if canDelete}
         <Button
           {...asModalLink(
             'user.blocks.delete',
@@ -441,7 +601,7 @@
     </div>
 
     {#if !fixedUid}
-      <!-- Глобальный список без `uid`: чисто визуальное disabled-поле с переданным
+      <!-- Глобальный список без `uid`: чисто визуальное заблокированное поле с переданным
            `id` целевого пользователя (без `name` и вне `defineForm`) + кнопка профиля -->
       <div class="flex flex-col gap-1.5" data-testid="block-form-target-user">
         <Label>Пользователь (ID)</Label>
@@ -475,7 +635,7 @@
       />
     </div>
 
-    {#if detail.canSubmit && detail.canEditReason}
+    {#if canEditReason}
       <Field of={bound.f.reason} />
     {:else}
       <div class="flex flex-col gap-1.5">
@@ -490,7 +650,7 @@
       </div>
     {/if}
 
-    {#if detail.canSubmit && detail.canEditUntil}
+    {#if canEditUntil}
       <div class="flex flex-col gap-2">
         <Field of={bound.f.forever} />
         {#if !bound.f.forever.value}
@@ -536,7 +696,7 @@
       {/if}
     </div>
 
-    {#if detail.canSubmit}
+    {#if canSubmit}
       <div class="flex flex-wrap items-center gap-2 pt-1">
         <Button
           type="submit"

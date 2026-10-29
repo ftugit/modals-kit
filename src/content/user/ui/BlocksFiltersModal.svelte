@@ -6,11 +6,18 @@
    * пользователей в форме блокируется.
    */
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
+  import { useGrants } from '../grants.svelte.js'
+  import { auth as authResource, block as blockResource } from '../schema.js'
+  import { vault } from '../vault.svelte.js'
   import { BLOCKS_NAME, BLOCKS_PAGE_SIZE } from './blocks-list/source.js'
   import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
+
+  const gBlock = grants(blockResource)
+  const gAuth = grants(authResource)
 
   const m = useModals()
   const modal = useModal<{ uid?: string }>()
@@ -21,9 +28,23 @@
     canSeeLive: boolean
     canPickUsers: boolean
   }>()
-  const canSeeDeleted = $derived(ldr.data?.canSeeDeleted === true)
-  const canSeeLive = $derived(ldr.data?.canSeeLive !== false)
-  const canPickUsers = $derived(!uid && ldr.data?.canPickUsers === true)
+  const filterCaps = useGrants(
+    {
+      canSeeDeleted: gBlock.selectDeleted,
+      canSeeLive: gBlock.select,
+      canPickUsers: gAuth.select,
+    },
+    { ownerId: () => uid },
+  )
+  const canSeeDeleted = $derived(
+    vault.principal !== null ? filterCaps.canSeeDeleted : ldr.data?.canSeeDeleted === true,
+  )
+  const canSeeLive = $derived(
+    vault.principal !== null ? filterCaps.canSeeLive : ldr.data?.canSeeLive !== false,
+  )
+  const canPickUsers = $derived(
+    !uid && (vault.principal !== null ? filterCaps.canPickUsers : ldr.data?.canPickUsers === true),
+  )
 
   const pagState = usePaginatorState(BLOCKS_NAME)
   const initial: BlocksFilterValues = untrack(() => {

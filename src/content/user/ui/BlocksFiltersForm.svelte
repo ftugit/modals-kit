@@ -10,13 +10,17 @@
    *    ОТКЛЮЧЕНА при переданном `uid` в `BlocksList` (или при отсутствии `canPickUsers`).
    */
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { defineForm, field, v } from '#lib/form/index.js'
   import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
   import Field from '#components/form/Field.svelte'
   import { Button } from '#components/ui/index.js'
   import { asLink, useModalLink } from '#hooks/links/index.js'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import { useGrants } from '../grants.svelte.js'
+  import { auth as authResource } from '../schema.js'
   import { BLOCK_SCOPES, isBlockScope } from '../spec-block.js'
+  import { vault } from '../vault.svelte.js'
   import { mirrorToField } from './field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from './UserPicker.svelte'
 
@@ -141,7 +145,11 @@
     pickedUids = [...raw.ids.filter(Boolean)]
   })
 
-  const pickerDisabled = $derived(Boolean(uid) || !canPickUsers)
+  const pickUsersGrant = useGrants(grants(authResource).select)
+  const effectiveCanPickUsers = $derived(
+    !uid && (vault.principal !== null ? pickUsersGrant.current : canPickUsers),
+  )
+  const pickerDisabled = $derived(Boolean(uid) || !effectiveCanPickUsers)
 
   const pickerHref = $derived.by(() => {
     const q = new URLSearchParams({
@@ -266,7 +274,7 @@
       <p class="text-xs text-muted-foreground" data-testid="blocks-filters-uid-locked-hint">
         Фильтр по пользователям недоступен: список открыт для конкретного пользователя.
       </p>
-    {:else if !canPickUsers}
+    {:else if !effectiveCanPickUsers}
       <p class="text-xs text-muted-foreground">
         Выбор пользователей доступен только при наличии права чтения аккаунтов.
       </p>

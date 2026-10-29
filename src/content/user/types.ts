@@ -189,6 +189,7 @@ export type BlockCreateRouteData = {
   canCreate: boolean
   canPickUsers: boolean
   assignableScopes: readonly string[]
+  holdSeconds?: number
   fact: AuthErrorCode | null
 }
 

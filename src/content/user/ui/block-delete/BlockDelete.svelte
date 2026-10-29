@@ -7,6 +7,7 @@
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
@@ -17,12 +18,16 @@
   import { Button, Skeleton } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { AuthErrorCode } from '../../error.js'
+  import { useGrants } from '../../grants.svelte.js'
+  import { block as blockResource } from '../../schema.js'
   import { describeBlockScope } from '../../spec-block.js'
   import type { BlockDeleteRouteData } from '../../types.js'
-  import { userSession } from '../../vault.svelte.js'
+  import { userSession, vault } from '../../vault.svelte.js'
   import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { blockDeleteForm } from './form.js'
+
+  const gBlock = grants(blockResource)
 
   interface Props {
     blockId: string
@@ -97,7 +102,11 @@
   mirrorToField(bound, 'block_id', () => blockId)
   mirrorToField(bound, 'subject', () => fixedUid ?? routeData?.detail?.block.authId ?? '')
 
+  const hardDeleteGrant = useGrants(gBlock.hardDelete)
   const detail = $derived(routeData?.detail ?? null)
+  const canHardDelete = $derived(
+    vault.principal !== null ? hardDeleteGrant.current : Boolean(detail?.canHardDelete),
+  )
   const holdSeconds = $derived(routeData?.holdSeconds ?? 2)
   const alreadyDeleted = $derived(detail?.block.deletedAt != null)
   const scopeInfo = $derived(detail ? describeBlockScope(detail.block.scope) : null)
@@ -165,7 +174,7 @@
         <p class="text-sm text-muted-foreground">
           По умолчанию запись помечается удалённой и перестаёт действовать, но сохраняется для аудита.
         </p>
-        {#if detail.canHardDelete}
+        {#if canHardDelete}
           <div data-testid="block-delete-hard-option">
             <Field of={bound.f.hard} />
           </div>

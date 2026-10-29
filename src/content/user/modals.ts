@@ -121,12 +121,17 @@ registerModal({
     p?.uid ? `${blocksFiltersRoute.href()}?uid=${encodeURIComponent(String(p.uid))}` : blocksFiltersRoute.href(),
   size: { width: 460, height: 580 },
 })
-// Создание блокировки (`{ uid? }`).
+// Создание блокировки (`{ uid?, uids? }`).
 registerModal({
   name: 'user.blocks.create',
   component: lazy(() => import('./ui/BlockCreateModal.svelte')),
-  route: (p: { uid?: string }) =>
-    p?.uid ? userBlocksCreateRoute.href({ id: String(p.uid) }) : blocksCreateRoute.href(),
+  route: (p: { uid?: string; uids?: string }) => {
+    if (p?.uid) return userBlocksCreateRoute.href({ id: String(p.uid) })
+    const uids = p?.uids ? String(p.uids).trim() : ''
+    return uids
+      ? `${blocksCreateRoute.href()}?uids=${encodeURIComponent(uids)}`
+      : blocksCreateRoute.href()
+  },
   size: { width: 480, height: 560 },
 })
 // Редактирование или read-only просмотр блокировки (`{ blockId, uid? }`).

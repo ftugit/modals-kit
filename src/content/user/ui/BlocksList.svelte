@@ -11,13 +11,17 @@
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { Paginator, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import type { AuthErrorCode } from '../error.js'
+  import { useGrants } from '../grants.svelte.js'
+  import { block as blockResource } from '../schema.js'
   import type { BlockView } from '../types.js'
+  import { vault } from '../vault.svelte.js'
   import BlockCard from './blocks-list/BlockCard.svelte'
   import { getBlocksRevision } from './blocks-list/revision.svelte.js'
   import {
@@ -93,6 +97,23 @@
 
   const snapshot = $derived(data?.snapshot ?? null)
   const pagState = usePaginatorState<BlockView>(BLOCKS_NAME)
+  const createBlockGrant = useGrants(grants(blockResource).insert)
+  const canCreate = $derived(
+    vault.principal !== null
+      ? createBlockGrant.current && (!fixedUid || fixedUid !== vault.principal)
+      : Boolean(data?.canCreate),
+  )
+
+  const filterUids = $derived.by(() => {
+    if (fixedUid) return ''
+    const raw = String(pagState().extra?.uids ?? '')
+    const selfId = vault.principal
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((id) => Boolean(id) && id !== selfId)
+      .join(',')
+  })
 
   const activeFilters = $derived(
     BLOCKS_FILTER_KEYS.filter((k) => {
@@ -136,9 +157,12 @@
         </div>
 
         <div class="flex items-center gap-2">
-          {#if data?.canCreate}
+          {#if canCreate}
             <Button
-              {...asModalLink('user.blocks.create', fixedUid ? { uid: fixedUid } : {})}
+              {...asModalLink(
+                'user.blocks.create',
+                fixedUid ? { uid: fixedUid } : filterUids ? { uids: filterUids } : {},
+              )}
               size="sm"
               data-testid="blocks-add-button"
             >

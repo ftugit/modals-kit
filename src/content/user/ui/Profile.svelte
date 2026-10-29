@@ -17,14 +17,21 @@
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import ProfileCard from './ProfileCard.svelte'
   import ProfilePrivacy from './profile-privacy/ProfilePrivacy.svelte'
+  import { useGrants } from '../grants.svelte.js'
+  import { block as blockResource, profile as profileResource } from '../schema.js'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
   import type { ProfileRead, ProfileRouteData, PublicProfileView } from '../types.js'
+  import { vault } from '../vault.svelte.js'
+
+  const gProfile = grants(profileResource)
+  const gBlock = grants(blockResource)
 
   interface Props {
     /** id аккаунта, чей профиль показать. */
@@ -41,8 +48,14 @@
   let { uid, initial = null, initialPublic = null, onAcl, class: className }: Props = $props()
 
   const asModalLink = useModalLink()
+  const editProfileGrant = useGrants(gProfile.update, { ownerId: () => uid })
+  const readBlocksGrant = useGrants(gBlock.select)
 
   let data = $state<ProfileRead | null>(untrack(() => initial))
+  const canEdit = $derived(vault.principal !== null ? editProfileGrant.current : Boolean(data?.canEdit))
+  const canReadBlocks = $derived(
+    vault.principal !== null ? readBlocksGrant.current : Boolean(data?.canReadBlocks),
+  )
   let publicData = $state<PublicProfileView | null>(untrack(() => initialPublic))
   let askedFor = ''
 
@@ -94,7 +107,7 @@
 </script>
 
 <div class={cn('relative', className)}>
-  {#if data && data.canEdit}
+  {#if data && canEdit}
     <!-- Правка — справа сверху в обоих состояниях профиля: править можно
          и пустой (первое заполнение создаёт строку). Видна только с
          флагом правки чтения; механика — пара редактирования (модалка,
@@ -135,7 +148,7 @@
          (даже с правом правки) компонента нет. -->
     <ProfilePrivacy level={data.visibility} class="mt-4" />
   {/if}
-  {#if data.canReadBlocks}
+  {#if canReadBlocks}
     <!-- Переход к блокировкам цели — компактной кнопкой на пару `user.blocks`
          (`/user/[id]/blocks` без JS). Доступен только кругу чтения/аудита. -->
     <div class="mt-4 flex items-center">
@@ -166,7 +179,7 @@
   {#if data?.isOwn}
     <ProfilePrivacy level={data.visibility} class="mt-4" />
   {/if}
-  {#if data?.canReadBlocks}
+  {#if canReadBlocks}
     <div class="mt-4 flex items-center justify-center">
       <Button
         {...asModalLink('user.blocks', { id: uid })}

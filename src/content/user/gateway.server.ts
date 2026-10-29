@@ -633,6 +633,7 @@ export function auth(event: AuthEvent): {
       canCreate: boolean
       canPickUsers: boolean
       assignableScopes: readonly string[]
+      holdSeconds: number
     }>
   >
   /** Детали одной записи блокировки для экрана редактирования / просмотра / удаления. */
@@ -641,12 +642,13 @@ export function auth(event: AuthEvent): {
   saveBlock(args: {
     blockId?: string | null
     targetId?: string | null
+    targetIds?: readonly string[]
     scope?: string
     reason?: string
     forever?: boolean
     until?: number | null
     liftNow?: boolean
-  }): Promise<UserResult<{ id: string; targetId: string }>>
+  }): Promise<UserResult<{ id: string; targetId: string; targetIds?: readonly string[]; count?: number }>>
   /** Мягко или окончательно удалить запись блокировки. */
   deleteBlock(args: {
     blockId: string

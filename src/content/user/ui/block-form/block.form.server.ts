@@ -19,6 +19,16 @@ registerComponentForm({
 
     const blockId = String(values.block_id ?? '').trim() || null
     const targetId = String(values.subject ?? '').trim() || null
+    const rawSubjects = Array.isArray(values.subjects)
+      ? values.subjects.map((s) => String(s ?? '').trim()).filter(Boolean)
+      : []
+    const targetIds = !blockId
+      ? rawSubjects.length > 0
+        ? rawSubjects
+        : targetId
+          ? [targetId]
+          : []
+      : undefined
     const forever = Boolean(values.forever)
 
     let until: number | null = null
@@ -33,6 +43,7 @@ registerComponentForm({
     const r = await u.saveBlock({
       blockId,
       targetId,
+      targetIds,
       scope: String(values.scope ?? ''),
       reason: String(values.reason ?? ''),
       forever,
@@ -47,6 +58,7 @@ registerComponentForm({
         step: 'done',
         id: r.value.id,
         targetId: r.value.targetId,
+        count: r.value.count ?? 1,
       },
     }
   },

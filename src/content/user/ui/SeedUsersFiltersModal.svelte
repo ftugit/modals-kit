@@ -10,18 +10,28 @@
    * (его посчитал домен), а не сам компонент.
    */
   import { untrack } from 'svelte'
+  import { grants } from '#lib/db/index.js'
   import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
   import { usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import { useGrants } from '../grants.svelte.js'
+  import { auth as authResource, profile as profileResource } from '../schema.js'
+  import { vault } from '../vault.svelte.js'
   import { SEED_USERS_NAME, SEED_USERS_PAGE_SIZE } from './seed-users/source.js'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
 
   const m = useModals()
-  // Доступность блока удалённых посчитал домен в `load` страницы-fallback
-  // (`/users/filters`): модалка читает её оттуда же, откуда страница.
   const ldr = useLoader<{ canSeeDeleted: boolean; canSeeNickname: boolean }>()
-  const canSeeDeleted = $derived(ldr.data?.canSeeDeleted === true)
-  const canSeeNickname = $derived(ldr.data?.canSeeNickname === true)
+  const seedFilterCaps = useGrants({
+    canSeeDeleted: grants(authResource).selectDeleted,
+    canSeeNickname: grants(profileResource).select,
+  })
+  const canSeeDeleted = $derived(
+    vault.principal !== null ? seedFilterCaps.canSeeDeleted : ldr.data?.canSeeDeleted === true,
+  )
+  const canSeeNickname = $derived(
+    vault.principal !== null ? seedFilterCaps.canSeeNickname : ldr.data?.canSeeNickname === true,
+  )
 
   const pagState = usePaginatorState(SEED_USERS_NAME)
   const initial: SeedUsersFilterValues = untrack(() => {

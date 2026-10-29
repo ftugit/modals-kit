@@ -22,6 +22,7 @@
     <BlockForm
       mode="create"
       initialCreate={data}
+      initialSubjects={data.initialSubjects}
       initialSubject={data.initialSubject}
       selfHref={data.selfHref}
       action="/blocks/new?next=/blocks"

@@ -1,16 +1,35 @@
 import type { PageServerLoad } from './$types'
-import { auth } from '#content/user/gateway.server.js'
+import { auth, resolveVault } from '#content/user/gateway.server.js'
 import type { BlockCreateRouteData } from '#content/user/types.js'
 
 export const load: PageServerLoad = async (
   event,
-): Promise<BlockCreateRouteData & { initialSubject: string; selfHref: string }> => {
+): Promise<BlockCreateRouteData & { initialSubjects: string[]; initialSubject: string; selfHref: string }> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
 
   const u = auth(event)
+  const viewer = await resolveVault(event)
+  const viewerId = viewer?.sub ?? null
   const r = await u.blockCreateMeta(null)
-  const initialSubject = (event.url.searchParams.get('subject') ?? '').trim()
-  const qs = event.url.searchParams.toString()
+
+  const sp = event.url.searchParams
+  const rawList = [
+    ...sp.getAll('subjects'),
+    ...sp.getAll('uids'),
+    ...sp.getAll('subject'),
+  ]
+  const seen = new Set<string>()
+  const initialSubjects: string[] = []
+  for (const raw of rawList) {
+    for (const part of raw.split(',')) {
+      const id = part.trim()
+      if (!id || (viewerId && id === viewerId) || seen.has(id)) continue
+      seen.add(id)
+      initialSubjects.push(id)
+    }
+  }
+
+  const qs = sp.toString()
 
   return {
     uid: null,
@@ -18,8 +37,10 @@ export const load: PageServerLoad = async (
     canCreate: r.ok ? r.value.canCreate : false,
     canPickUsers: r.ok ? r.value.canPickUsers : false,
     assignableScopes: r.ok ? r.value.assignableScopes : [],
+    holdSeconds: r.ok ? r.value.holdSeconds : 2,
     fact: r.ok ? null : r.fact.code,
-    initialSubject,
+    initialSubjects,
+    initialSubject: initialSubjects[0] ?? '',
     selfHref: qs ? `${event.url.pathname}?${qs}` : event.url.pathname,
   }
 }

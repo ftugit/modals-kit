@@ -50,6 +50,7 @@ async function run() {
   const rEdited = `Обновлённая причина блокировки ${tag}`
   const rNoJs = `Блокировка без JS ${tag}`
   let targetUserId = ''
+  let secondUserId = ''
   let adminCookies = []
 
   try {
@@ -67,14 +68,20 @@ async function run() {
       assert.ok(adminCookies.some((c) => c.name === 'auth_sid' || c.name === 'auth_tmp'), 'куки сессии получены')
       ok('вход под admin выполнен')
 
-      // 2. Находим UUID демо-пользователя на /users и открываем его профиль в модалке
+      // 2. Находим UUID двух демо-пользователей на /users и открываем профиль первого в модалке
       await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
-      const firstUserLink = page.locator('[data-testid="seed-user-row"]').filter({ hasText: 'demo-' }).first()
+      const demoLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasText: 'demo-' })
+      const firstUserLink = demoLinks.nth(0)
+      const secondUserLink = demoLinks.nth(1)
       await firstUserLink.waitFor({ state: 'visible', timeout: 15000 })
       const userHref = await firstUserLink.getAttribute('href')
       const m = /^\/user\/([0-9a-f-]{36})/i.exec(userHref ?? '')
       assert.ok(m, `ожидался href /user/<uuid>, получено ${userHref}`)
       targetUserId = m[1]
+      const userHref2 = await secondUserLink.getAttribute('href')
+      const m2 = /^\/user\/([0-9a-f-]{36})/i.exec(userHref2 ?? '')
+      assert.ok(m2, `ожидался второй href /user/<uuid>, получено ${userHref2}`)
+      secondUserId = m2[1]
 
       await firstUserLink.click()
       const blocksBtn = page.locator('[data-testid="profile-blocks-open"]').last()
@@ -132,31 +139,47 @@ async function run() {
       assert.match(page.url(), /blocks\.uids=/, 'фильтр blocks.uids записан в адрес')
       ok('BlocksFiltersForm + UserPicker (multiple): фильтр по пользователям применён')
 
-      // Сбросим фильтр для проверки глобального создания
-      await page.goto(BASE + '/blocks', { waitUntil: 'networkidle' })
-
-      // 7. Глобальное создание из /blocks (без uid): пикер single подставляет subject
+      // 7. Глобальное создание (1 + 3): предзаполнение multiselect из фильтра blocks.uids, затем выбор 2 пользователей + HoldButton
       await page.locator('[data-testid="blocks-add-button"]').first().click()
       const globalCreate = page.locator('[data-testid="block-form-create"]').last()
       await globalCreate.waitFor({ state: 'visible', timeout: 10000 })
+      const prefilledValues = await globalCreate
+        .locator('select[name="subjects"] option:checked')
+        .evaluateAll((els) => els.map((el) => el.value))
+      assert.deepEqual(prefilledValues, [targetUserId], 'multiselect subjects предзаполнен из фильтра blocks.uids')
+      assert.equal(await globalCreate.locator('[data-testid="block-create-submit"][data-mass-hold="true"]').count(), 0, 'при N=1 обычная кнопка без HoldButton')
+
       await globalCreate.locator('[data-testid="block-create-pick-user"]').click()
+      const pickerMultiCreate = page.locator('[data-testid="user-picker"]').last()
+      await pickerMultiCreate.waitFor({ state: 'visible', timeout: 10000 })
+      assert.equal((await pickerMultiCreate.locator('[data-testid="user-picker-count"]').textContent())?.trim(), '1', 'пикер открыт уже с 1 предвыбранным пользователем')
+      await pickerMultiCreate.locator('[data-testid="seed-user-row"]').filter({ has: page.locator(`code[title="${secondUserId}"]`) }).click()
+      assert.equal((await pickerMultiCreate.locator('[data-testid="user-picker-count"]').textContent())?.trim(), '2', 'выбрано 2 пользователя')
+      await pickerMultiCreate.locator('[data-testid="user-picker-apply"]').click()
+      await pickerMultiCreate.waitFor({ state: 'hidden', timeout: 10000 })
 
-      const pickerSingle = page.locator('[data-testid="user-picker"]').last()
-      await pickerSingle.waitFor({ state: 'visible', timeout: 10000 })
-      await pickerSingle.locator('[data-testid="seed-user-row"]').filter({ has: page.locator(`code[title="${targetUserId}"]`) }).click()
-      await pickerSingle.locator('[data-testid="user-picker-apply"]').click()
-      await pickerSingle.waitFor({ state: 'hidden', timeout: 10000 })
+      const pickedMultiValues = await globalCreate
+        .locator('select[name="subjects"] option:checked')
+        .evaluateAll((els) => els.map((el) => el.value))
+      assert.deepEqual(pickedMultiValues, [targetUserId, secondUserId], 'multiselect subjects получил оба UUID из multiple-пикера')
+      const massHoldSubmit = globalCreate.locator('[data-testid="block-create-submit"][data-mass-hold="true"]')
+      assert.equal(await massHoldSubmit.count(), 1, 'при N=2 кнопка превратилась в HoldButton')
 
-      assert.equal(await globalCreate.locator('input[name="subject"]').inputValue(), targetUserId, 'subject заполнен из single-пикера')
       await globalCreate.locator('select[name="scope"]').selectOption('auth')
       await globalCreate.locator('textarea[name="reason"]').fill(rGlobal)
-      await globalCreate.locator('[data-testid="block-create-submit"]').click()
+      await massHoldSubmit.focus()
+      await page.keyboard.down(' ')
+      await page.waitForTimeout(2600)
+      await page.keyboard.up(' ')
       await globalCreate.waitFor({ state: 'hidden', timeout: 10000 })
-      await page.locator('[data-testid="block-row"]').filter({ hasText: rGlobal }).waitFor({ state: 'visible', timeout: 10000 })
-      ok('BlockForm (create без uid) + UserPicker (single): запись создана')
 
-      // 8. Клик по строке в глобальном /blocks → проверка disabled target ID без name + кнопки профиля + правка reason
-      await page.locator('[data-testid="block-row"]').filter({ hasText: rGlobal }).click()
+      // Сбросим фильтр пользователей, чтобы увидеть обе созданные записи в глобальном списке
+      await page.goto(BASE + '/blocks', { waitUntil: 'networkidle' })
+      assert.equal(await page.locator('[data-testid="block-row"]').filter({ hasText: rGlobal }).count(), 2, 'обе массовые блокировки созданы')
+      ok('BlockForm (create 1 + 3): предзаполнение из фильтра, multiple-пикер и HoldButton (N=2) работают')
+
+      // 8. Клик по первой строке в глобальном /blocks → проверка disabled target ID без name + кнопки профиля + правка reason
+      await page.locator('[data-testid="block-row"]').filter({ hasText: rGlobal }).first().click()
       const editForm = page.locator('[data-testid="block-form-edit"]').last()
       await editForm.waitFor({ state: 'visible', timeout: 10000 })
 
@@ -165,7 +188,10 @@ async function run() {
       assert.equal(await targetIdInput.getAttribute('name'), null, 'у поля ID цели нет атрибута name')
       assert.equal(await targetIdInput.isDisabled(), true, 'поле ID цели disabled')
       assert.notEqual(await targetIdInput.getAttribute('readonly'), null, 'поле ID цели readonly')
-      assert.equal(await targetIdInput.inputValue(), targetUserId, 'показан именно UUID цели, а не seed')
+      assert.ok(
+        [targetUserId, secondUserId].includes(await targetIdInput.inputValue()),
+        'показан именно UUID цели, а не seed',
+      )
       assert.equal(await editForm.locator('[data-testid="block-open-profile"]').count(), 1, 'кнопка открытия профиля цели видна')
 
       await editForm.locator('textarea[name="reason"]').fill(rEdited)
@@ -232,7 +258,7 @@ async function run() {
       )
       ok('без JS: маршрут /user/[id]/blocks и disabled пикер в /blocks/filters?uid=[id] работают')
 
-      // 2. Глобальное создание /blocks/new → /users/pick (single) → выбор + Применить → возврат с ?subject=<uuid> → POST
+      // 2. Глобальное создание /blocks/new → /users/pick (multiple) → выбор + Применить → возврат с ?subjects=<uuid> → POST
       await page.goto(BASE + '/blocks/new', { waitUntil: 'load' })
       await page.locator('[data-testid="block-create-pick-user"]').click()
       await page.waitForURL((u) => u.pathname === '/users/pick', { timeout: 10000 })
@@ -241,13 +267,16 @@ async function run() {
         timeout: 10000,
       })
       await page.locator('[data-testid="user-picker-apply"]').click()
-      await page.waitForURL((u) => u.pathname === '/blocks/new' && u.searchParams.get('subject') === targetUserId, {
+      await page.waitForURL((u) => u.pathname === '/blocks/new' && u.searchParams.get('subjects') === targetUserId, {
         timeout: 10000,
       })
-      assert.equal(
-        await page.locator('input[name="subject"]').inputValue(),
-        targetUserId,
-        'без JS SSR засеял input[name="subject"] из ?subject=…',
+      const noJsSelectedSubjects = await page
+        .locator('select[name="subjects"] option:checked')
+        .evaluateAll((els) => els.map((el) => el.value))
+      assert.deepEqual(
+        noJsSelectedSubjects,
+        [targetUserId],
+        'без JS SSR засеял select[name="subjects"] из ?subjects=…',
       )
 
       await page.locator('select[name="scope"]').selectOption('auth')
@@ -255,7 +284,7 @@ async function run() {
       await page.locator('[data-testid="block-create-submit"]').click()
       await page.waitForURL((u) => u.pathname === '/blocks', { timeout: 10000 })
       await page.locator('[data-testid="block-row"]').filter({ hasText: rNoJs }).waitFor({ state: 'visible', timeout: 10000 })
-      ok('без JS: /users/pick → /blocks/new?subject=… → POST /blocks создаёт блокировку')
+      ok('без JS: /users/pick → /blocks/new?subjects=… → POST /blocks создаёт блокировку')
 
       // 3. Клик по строке → /blocks/[blockId] → проверка target ID без name и POST «Снять сейчас» (lift)
       await page.locator('[data-testid="block-row"]').filter({ hasText: rNoJs }).click()

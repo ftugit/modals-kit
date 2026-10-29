@@ -201,6 +201,7 @@ export async function blockCreateMeta(
     canCreate: boolean
     canPickUsers: boolean
     assignableScopes: readonly string[]
+    holdSeconds: number
   }>
 > {
   const g = await guard(ports, accessToken)
@@ -225,11 +226,13 @@ export async function blockCreateMeta(
   }
 
   const scopes = Object.keys(BLOCK_SCOPES) as BlockScope[]
+  const holdSeconds = await ports.config.get('holdSeconds')
   return ok({
     uid,
     canCreate: true,
     canPickUsers: !uid && caps.canPickUsers,
     assignableScopes: scopes,
+    holdSeconds,
   })
 }
 

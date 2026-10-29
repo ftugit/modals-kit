@@ -257,3 +257,54 @@ describe('BlockDelete.svelte — условный чекбокс hard', () => {
     expect(withHard.body).toContain('name="hard"')
   })
 })
+
+describe('BlockForm.svelte (create 1 + 3) — multiselect предзаполнения, гейт пикера и HoldButton при N > 1', () => {
+  const TARGET_UID_2 = '55555555-5555-4555-8555-555555555555'
+
+  test('при N = 1 рендерится обычная кнопка отправки и multiselect с выбранным UUID, а при N > 1 — HoldButton (data-mass-hold="true")', () => {
+    const singleTarget = render(BlockForm, {
+      props: {
+        mode: 'create',
+        uid: null,
+        initialSubjects: [TARGET_UID],
+        initialCreate: {
+          uid: null,
+          enabled: true,
+          canCreate: true,
+          canPickUsers: true,
+          assignableScopes: ['auth', 'profile.delete'],
+          holdSeconds: 2,
+          fact: null,
+        },
+      },
+    })
+    expect(singleTarget.body).toContain('name="subjects"')
+    expect(singleTarget.body).toContain(`value="${TARGET_UID}"`)
+    expect(singleTarget.body).toContain('data-testid="block-create-pick-user"')
+    expect(singleTarget.body).toContain('data-testid="block-create-submit"')
+    expect(singleTarget.body).not.toContain('data-mass-hold="true"')
+
+    const multiTarget = render(BlockForm, {
+      props: {
+        mode: 'create',
+        uid: null,
+        initialSubjects: [TARGET_UID, TARGET_UID_2],
+        initialCreate: {
+          uid: null,
+          enabled: true,
+          canCreate: true,
+          canPickUsers: false,
+          assignableScopes: ['auth', 'profile.delete'],
+          holdSeconds: 2,
+          fact: null,
+        },
+      },
+    })
+    expect(multiTarget.body).toContain(`value="${TARGET_UID}"`)
+    expect(multiTarget.body).toContain(`value="${TARGET_UID_2}"`)
+    expect(multiTarget.body).not.toContain('data-testid="block-create-pick-user"')
+    expect(multiTarget.body).toContain('data-mass-hold="true"')
+    expect(multiTarget.body).toContain('(2)')
+  })
+})
+

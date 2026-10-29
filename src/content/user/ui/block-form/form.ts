@@ -19,9 +19,11 @@ export function createBlockFormDescription(allowedScopes: readonly string[] = AL
     ],
     fields: {
       block_id: field.hidden({ defaultValue: '' }),
-      subject: field.text({
-        label: 'Целевой пользователь (UUID)',
-        defaultValue: '',
+      subject: field.hidden({ defaultValue: '' }),
+      subjects: field.multiselect({
+        label: 'Целевые пользователи',
+        placeholder: 'Выберите пользователей',
+        defaultValue: [],
       }),
       scope: field.select({
         label: specBlocks.scopeLabel,

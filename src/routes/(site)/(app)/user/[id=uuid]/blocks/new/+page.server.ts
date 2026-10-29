@@ -15,6 +15,7 @@ export const load: PageServerLoad = async (event): Promise<BlockCreateRouteData>
     canCreate: r.ok ? r.value.canCreate : false,
     canPickUsers: false,
     assignableScopes: r.ok ? r.value.assignableScopes : [],
+    holdSeconds: r.ok ? r.value.holdSeconds : 2,
     fact: r.ok ? null : r.fact.code,
   }
 }
