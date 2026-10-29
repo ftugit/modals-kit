@@ -1,10 +1,12 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
 import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
 import { defineConfig } from 'vitest/config';
-import { trustedOrigins } from './src/server/trusted-origins.ts';
+import { appHtmlScriptHashes, cspDirectives, trustedOrigins } from './src/server/trusted-origins.ts';
 import { sveltekitWsPlugin } from './src/server/vite-ws.server.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
 
@@ -15,13 +17,10 @@ if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 17)) {
   );
 }
 
-// Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` — точные адреса из того же списка, что у слоя 02
-// форм (`src/server/trusted-origins.ts`); окружение здесь — момент сборки/запуска dev.
-const kit = {
-  adapter: adapter(),
-  preprocess: vitePreprocess(),
-  csrf: { trustedOrigins: trustedOrigins((key) => process.env[key]).exact },
-};
+const appHtmlHashes = appHtmlScriptHashes(
+  readFileSync(new URL('./src/app.html', import.meta.url), 'utf8'),
+  (content) => createHash('sha256').update(content, 'utf8').digest('base64'),
+);
 
 // UnoCSS без хука `transformIndexHtml`. SvelteKit не пропускает `src/app.html` через этот
 // хук и никогда не пропускал (sveltejs/kit#8269), а с 3.0 предупреждает о КАЖДОМ плагине,
@@ -33,13 +32,32 @@ const kit = {
 const unocss = UnoCSS();
 for (const plugin of unocss) delete plugin.transformIndexHtml;
 
-export default defineConfig({
-  // В тестах svelte обязан резолвиться браузерной сборкой: иначе руны
-  // ($effect/$effect.root) — серверные заглушки, и svelte-слой (bind)
-  // тестировать нечем. Приём из документации Svelte по тестированию рун.
-  resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
-  // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
-  plugins: [layerGuard(RULES), unocss, sveltekitWsPlugin(), sveltekit(kit)],
+export default defineConfig(({ command, isPreview }) => {
+  const isDev = command === 'serve' && !isPreview;
+  const getEnv = (key: string) => process.env[key];
+  // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` и `csp` собираются
+  // из чистых функций `src/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
+  const kit = {
+    adapter: adapter(),
+    preprocess: vitePreprocess(),
+    csrf: { trustedOrigins: trustedOrigins(getEnv).exact },
+    csp: {
+      mode: 'auto' as const,
+      directives: cspDirectives({
+        get: getEnv,
+        dev: isDev,
+        inlineScriptHashes: appHtmlHashes,
+      }),
+    },
+  };
+
+  return {
+    // В тестах svelte обязан резолвиться браузерной сборкой: иначе руны
+    // ($effect/$effect.root) — серверные заглушки, и svelte-слой (bind)
+    // тестировать нечем. Приём из документации Svelte по тестированию рун.
+    resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
+    // layer-guard идёт ПЕРВЫМ: запрещённый импорт роняет и dev, и build
+    plugins: [layerGuard(RULES), unocss, sveltekitWsPlugin(), sveltekit(kit)],
   // tooling/*.test.mjs живут на node --test (чистый JS, без Vite) — сюда не берём
   test: {
     include: ['src/**/*.{test,spec}.{js,ts}'],
@@ -94,4 +112,5 @@ export default defineConfig({
       ],
     },
   },
+  };
 });

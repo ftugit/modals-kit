@@ -79,7 +79,6 @@ describe('сквозной бюджет тела и лимиты приёма в
         revision: probeForm.revision,
         instance: 'budget_probe:main',
         submissionId: '11111111-1111-4111-8111-111111111111',
-        intent: 'submit',
       },
       probeForm.policy,
     )
@@ -210,7 +209,6 @@ describe('сквозной бюджет тела и лимиты приёма в
         revision: smallBudgetForm.revision,
         instance: 'tiny_budget:main',
         submissionId: '22222222-2222-4222-8222-222222222222',
-        intent: 'submit',
       },
       smallBudgetForm.policy,
     )
@@ -268,7 +266,6 @@ describe('сквозной бюджет тела и лимиты приёма в
         revision: probeForm.revision,
         instance: 'budget_probe:main',
         submissionId: '33333333-3333-4333-8333-333333333333',
-        intent: 'submit',
       },
       probeForm.policy,
     )

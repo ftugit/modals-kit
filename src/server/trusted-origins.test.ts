@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { sameOriginFetch, trustedOrigins } from './trusted-origins'
+import { appHtmlScriptHashes, cspDirectives, sameOriginFetch, trustedOrigins } from './trusted-origins'
 
 const from = (env: Record<string, string>) => trustedOrigins((key) => env[key])
 
@@ -52,5 +54,60 @@ describe('sameOriginFetch — только страницы этого сайт�
     expect(sameOriginFetch(req())).toBe(false)
     expect(sameOriginFetch(req(), true)).toBe(true)
     expect(sameOriginFetch(req('cross-site'), true)).toBe(false)
+  })
+})
+
+describe('cspDirectives и удаление Google Fonts', () => {
+  const sha256Base64 = (s: string) => createHash('sha256').update(s, 'utf8').digest('base64')
+  const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8')
+  const unocssConfig = readFileSync(new URL('../../unocss.config.ts', import.meta.url), 'utf8')
+
+  it('src/app.html и unocss.config.ts не ссылаются на Google Fonts и Manrope', () => {
+    expect(appHtml).not.toContain('fonts.googleapis.com')
+    expect(appHtml).not.toContain('fonts.gstatic.com')
+    expect(appHtml).not.toContain('Manrope')
+    expect(unocssConfig).not.toContain('Manrope')
+  })
+
+  it('appHtmlScriptHashes считает точный sha256 инлайнового скрипта темы в app.html и пропускает внешние src=', () => {
+    const hashes = appHtmlScriptHashes(appHtml, sha256Base64)
+    expect(hashes).toHaveLength(1)
+    expect(hashes[0]).toMatch(/^sha256-[A-Za-z0-9+/=]+$/)
+    expect(appHtmlScriptHashes('<script src="/ext.js"></script>', sha256Base64)).toEqual([])
+  })
+
+  it('чистый прод включает frame-ancestors none, wasm-unsafe-eval и не содержит кавычек внутри токенов SvelteKit', () => {
+    const hashes = appHtmlScriptHashes(appHtml, sha256Base64)
+    const prod = cspDirectives({ get: () => undefined, dev: false, inlineScriptHashes: hashes })
+    expect(prod['default-src']).toEqual(['self'])
+    expect(prod['script-src']).toEqual(['self', 'wasm-unsafe-eval', ...hashes])
+    expect(prod['style-src-elem']).toEqual(['self'])
+    expect(prod['style-src-attr']).toEqual(['unsafe-inline'])
+    expect(prod['font-src']).toEqual(['self', 'data:'])
+    expect(prod['connect-src']).toEqual(['self'])
+    expect(prod['object-src']).toEqual(['none'])
+    expect(prod['frame-ancestors']).toEqual(['none'])
+
+    // SvelteKit сам оборачивает ключевые слова в одинарные кавычки — в массивах их быть не должно
+    for (const values of Object.values(prod)) {
+      for (const token of values) {
+        expect(token.startsWith("'")).toBe(false)
+        expect(token).not.toContain('googleapis')
+        expect(token).not.toContain('gstatic')
+      }
+    }
+  })
+
+  it('в dev и в песочнице превью frame-ancestors опускается, а dev открывает ws:/wss: для HMR', () => {
+    const devPolicy = cspDirectives({ get: () => undefined, dev: true })
+    expect('frame-ancestors' in devPolicy).toBe(false)
+    expect(devPolicy['connect-src']).toEqual(['self', 'ws:', 'wss:'])
+
+    const sandboxPolicy = cspDirectives({
+      get: (k) => (k === 'E2B_SANDBOX_ID' ? 'sbx-1' : undefined),
+      dev: false,
+    })
+    expect('frame-ancestors' in sandboxPolicy).toBe(false)
+    expect(sandboxPolicy['connect-src']).toEqual(['self'])
   })
 })

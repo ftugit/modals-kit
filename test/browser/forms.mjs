@@ -754,6 +754,19 @@ ok('пути дают одинаковые ошибки',
   ok('без JS: «переход» — ответ 303 на /form?sent=1',
     redirect.status() === 303 && redirect.headers()['location'] === '/form?sent=1',
     `${redirect.status()} ${redirect.headers()['location']}`)
+
+  const queuedNoJs = await nctx.request.post(BASE, {
+    headers: { origin: new URL(BASE).origin, accept: 'text/html' }, maxRedirects: 0,
+    multipart: {
+      __form_id: 'signup', __form_rev: '1', __form_instance: 'signup:new',
+      __form_submission: crypto.randomUUID(), intent: 'submit', answer: 'queued',
+      email: 'nojs-queued-303@example.com', password: 'longenough1', confirm: 'longenough1',
+      age: '30', tax_id: '7712345678', card: '4242424242424242', agree: 'on',
+    },
+  })
+  ok('без JS: «в очереди» — ответ 303 на statusUrl (/form?job=…)',
+    queuedNoJs.status() === 303 && /^\/form\?job=/.test(queuedNoJs.headers()['location'] ?? ''),
+    `${queuedNoJs.status()} ${queuedNoJs.headers()['location']}`)
   await nctx.close()
 }
 

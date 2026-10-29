@@ -73,10 +73,8 @@ export const UNO_THEME = {
     '2xl': 'calc(var(--radius) + 8px)',
   },
   font: {
-    // раньше ключ fontFamily wind4 игнорировал, и font-display фактически был Manrope —
-    // сохраняем сложившийся вид; Playfair подключён в index.html, включить можно здесь.
-    display: 'Manrope, ui-sans-serif, system-ui, sans-serif',
-    sans: 'Manrope, ui-sans-serif, system-ui, sans-serif',
+    display: 'ui-sans-serif, system-ui, sans-serif',
+    sans: 'ui-sans-serif, system-ui, sans-serif',
   },
 }
 

@@ -79,6 +79,7 @@
         aria-pressed={visible}
         title={label}
         {disabled}
+        onmousedown={(e) => e.preventDefault()}
         onclick={toggle}
       >
         {#if visible}

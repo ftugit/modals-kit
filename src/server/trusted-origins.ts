@@ -77,3 +77,68 @@ export function sameOriginFetch(request: Request, allowMissing = false): boolean
   const site = request.headers.get('sec-fetch-site')
   return site === 'same-origin' || (site === null && allowMissing)
 }
+
+const INLINE_SCRIPT_RE = /<script\b[^>]*>([\s\S]*?)<\/script>/gi
+
+/**
+ * Вычислить `sha256-...` (без кавычек — их добавляет сам SvelteKit `Csp`) для всех
+ * инлайновых `<script>` в `src/app.html`, не содержащих `src=`.
+ * Хеши работают одинаково и на SSR (рядом с `nonce`), и на пререндере (где `%sveltekit.nonce%` недоступен).
+ */
+export function appHtmlScriptHashes(
+  html: string,
+  sha256Base64: (content: string) => string,
+): `sha256-${string}`[] {
+  const hashes: `sha256-${string}`[] = []
+  for (const match of html.matchAll(INLINE_SCRIPT_RE)) {
+    const openTag = match[0].slice(0, match[0].indexOf('>') + 1)
+    if (/\bsrc\s*=/i.test(openTag)) continue
+    const body = match[1] ?? ''
+    if (!body) continue
+    hashes.push(`sha256-${sha256Base64(body)}`)
+  }
+  return hashes
+}
+
+export type CspOptions = {
+  get: EnvGet
+  dev: boolean
+  inlineScriptHashes?: readonly `sha256-${string}`[]
+}
+
+/**
+ * Строгие директивы `kit.csp` (без внешних шрифтов и чужих скриптов):
+ * - токены передаются БЕЗ кавычек (`'self'`, `sha256-...` оборачивает в `'...'` сам SvelteKit);
+ * - `'wasm-unsafe-eval'` разрешает WebAssembly-кодеки изображений (`#lib/image` / `@jsquash/*`);
+ * - `style-src-elem: ['self']` запирает `<style>` и `<link rel="stylesheet">` в проде
+ *   (в `dev` сам SvelteKit подмешивает `'unsafe-inline'` для HMR), а `style-src-attr`
+ *   допускает реактивные `style:...` атрибуты компонентов;
+ * - `'frame-ancestors': ['none']` включается в чистом проде, но опускается в `dev` и при
+ *   наличии переменных превью песочницы (`E2B_SANDBOX_ID`, `PREVIEW_PORTS`), чтобы живое
+ *   превью открывалось во фрейме без блокировки.
+ */
+export function cspDirectives(opts: CspOptions) {
+  const isPreviewEnv =
+    opts.dev || Boolean(opts.get('E2B_SANDBOX_ID')) || Boolean(opts.get('PREVIEW_PORTS'))
+  const scriptHashes = opts.inlineScriptHashes ?? []
+
+  return {
+    'default-src': ['self' as const],
+    'script-src': ['self' as const, 'wasm-unsafe-eval' as const, ...scriptHashes],
+    'style-src': ['self' as const, 'unsafe-inline' as const],
+    'style-src-elem': ['self' as const],
+    'style-src-attr': ['unsafe-inline' as const],
+    'font-src': ['self' as const, 'data:' as const],
+    'img-src': ['self' as const, 'data:' as const, 'blob:' as const, 'https:' as const],
+    'media-src': ['self' as const, 'blob:' as const],
+    'connect-src': opts.dev
+      ? ['self' as const, 'ws:' as const, 'wss:' as const]
+      : ['self' as const],
+    'worker-src': ['self' as const, 'blob:' as const],
+    'frame-src': ['self' as const],
+    'object-src': ['none' as const],
+    'base-uri': ['self' as const],
+    'form-action': ['self' as const],
+    ...(isPreviewEnv ? {} : { 'frame-ancestors': ['none' as const] }),
+  }
+}
