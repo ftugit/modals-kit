@@ -13,8 +13,8 @@
 
 - **Сессии и нативные права `user_auth` / `user_session` — P3** ([`docs/plan-sessions.md`](./plan-sessions.md)):
   пользовательский интерфейс активных сессий/устройств с отзывом (модалка + маршрут для себя и чужого аккаунта) и перевод человеческих операций `user.auth.v1` / `user.session.v1` с контекста `SYSTEM` на нативные политики `defineAcl` (`grants`, `checkGrants`, `useGrants`).
-- **Боевое хранилище `appStorage` — P3** ([`docs/plan-storage.md`](./plan-storage.md)):
-  вывод фактической занятости и резервов квот (`storage_file` / `storage_reservation`) в `/storage-servers` и боевой UI управления файлами пула `appStorage` под `STORAGE_ACL` (отдельно от демо-стенда `/upload-demo`).
+- **Хранилище и раздел «Облако» — P3** ([`docs/plan-storage.md`](./plan-storage.md)):
+  черновой план на поверхности: дедупликация в `#lib/storage` по соли/отпечатку, параллельная раздача с клонированных серверов, счётчик пропавших файлов с авто-отключением «мёртвых» серверов + софт-удаление серверов + крон-перепроверка удалённых/пропавших файлов, а поверх обезличенного `storage_file` — единая самореферентная модель «Облака» (`name`, `auth_id`, `cloud_id`, `file_id`, `visibility`, `access_uids`, `password`) с иерархией `ACL модели + visibility → access_uids → password`.
 
 ---
 
