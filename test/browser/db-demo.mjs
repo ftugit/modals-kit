@@ -386,13 +386,30 @@ try {
 
     await reader.goto(`${BASE}?page.size=3`, { waitUntil: 'networkidle' })
     const firstIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
-    const asof = new URL(reader.url()).searchParams.get('page.asof')
-    ok('срез: первая загрузка кладёт page.asof в адрес', !!asof && firstIds.length === 3, String(asof))
+    const cleanAsof = new URL(reader.url()).searchParams.get('page.asof')
+    const page2LinkHref = await reader.locator('[data-testid="page-nav"] a', { hasText: '2' }).first().getAttribute('href')
+    ok(
+      'срез: чистая 1-я страница не пишет page.asof в URL и не рисует плашку среза/«страница 1», но ссылка на 2-ю несёт срез',
+      cleanAsof === null &&
+        firstIds.length === 3 &&
+        (await reader.locator('[data-testid="page-slice"]').count()) === 0 &&
+        (await reader.locator('[data-testid="page-divider-1"]').count()) === 0 &&
+        Boolean(page2LinkHref && decodeURIComponent(page2LinkHref).includes('page.asof=')),
+      JSON.stringify({ url: reader.url(), page2LinkHref }),
+    )
 
-    // Вторая страница того же среза на снимке «до записи» — чтобы сравнить с ней.
-    const sliceUrl = (pageNo) => `${BASE}?page.size=3&page=${pageNo}&page.asof=${encodeURIComponent(asof ?? '')}`
-    await reader.goto(sliceUrl(2), { waitUntil: 'networkidle' })
+    // Переход на 2-ю страницу фиксирует срез в состоянии и в URL и включает плашку среза (single-режим).
+    await reader.locator('[data-testid="page-nav"] a', { hasText: '2' }).first().click()
+    await reader.waitForFunction(() => new URL(location.href).searchParams.get('page') === '2', null, { timeout: 15_000 })
+    const asof = new URL(reader.url()).searchParams.get('page.asof')
     const secondIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    const sliceOnPage2 = await reader.locator('[data-testid="page-slice"]').innerText().catch(() => '')
+    ok(
+      'срез: переход на 2-ю страницу кладёт page.asof в адрес и показывает плашку среза',
+      !!asof && secondIds.length === 3 && sliceOnPage2.includes('Отображается срез от') && sliceOnPage2.includes('сбросить?'),
+      JSON.stringify({ asof, sliceOnPage2 }),
+    )
+    const sliceUrl = (pageNo) => `${BASE}?page.size=3&page=${pageNo}&page.asof=${encodeURIComponent(asof ?? '')}`
 
     const title = `срез ${Date.now()}`
     await writer.locator('#db-create-form input[name="title"]').fill(title)
@@ -413,6 +430,39 @@ try {
     ok('срез: вторая страница под прежним срезом не сдвинулась',
       secondIds.length === 3 && secondAfter.join(',') === secondIds.join(','), secondAfter.join(','))
 
+    // Возврат на 1-ю страницу сохраняет активный срез и показывает плашку вместо «страница 1».
+    await reader.locator('[data-testid="page-nav"] a', { hasText: '1' }).first().click()
+    await reader.waitForFunction(() => !new URL(location.href).searchParams.has('page'), null, { timeout: 15_000 })
+    const back1Ids = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    const back1Asof = new URL(reader.url()).searchParams.get('page.asof')
+    ok(
+      'срез: возврат на 1-ю страницу сохраняет page.asof и плашку среза со старым набором строк',
+      back1Asof === asof &&
+        back1Ids.join(',') === firstIds.join(',') &&
+        (await reader.locator('[data-testid="page-slice"]').count()) === 1 &&
+        (await reader.locator('[data-testid="page-divider-1"]').count()) === 0,
+      JSON.stringify({ back1Asof, back1Ids }),
+    )
+
+    // Клик по «сбросить?» в плашке очищает page.asof, прячет плашку и подгружает свежую запись.
+    await reader.locator('[data-testid="page-slice-reset"]').click()
+    await reader.waitForFunction(
+      (prevHead) => {
+        const rows = [...document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]')]
+        return !new URL(location.href).searchParams.has('page.asof') && rows.length > 0 && rows[0].textContent.trim() !== prevHead
+      },
+      firstIds[0] ?? '',
+      { timeout: 15_000 },
+    )
+    const afterResetIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
+    ok(
+      'срез: клик «сбросить?» снимает page.asof, скрывает плашку и показывает новую запись',
+      !new URL(reader.url()).searchParams.has('page.asof') &&
+        (await reader.locator('[data-testid="page-slice"]').count()) === 0 &&
+        !firstIds.includes(afterResetIds[0]),
+      afterResetIds[0],
+    )
+
     // А свежий заход (свой срез считается на «сейчас») новую запись видит —
     // значит срез действительно край, а не пустой ключ в адресе.
     const freshCtx = await browser.newContext()
@@ -425,8 +475,7 @@ try {
     await freshCtx.close()
 
     // Пилюля: живой опрос на первой странице и сброс по клику. Отметка опроса —
-    // срез открытой страницы, поэтому «новая» запись создаётся ПОСЛЕ неё (та,
-    // что выше, уже вошла в срез и нового в ней нет — так и задумано).
+    // край открытой страницы (`asofHead`), поэтому «новая» запись создаётся ПОСЛЕ неё.
     await reader.goto(`${BASE}?page.size=3&page.live=1`, { waitUntil: 'networkidle' })
     await reader.waitForFunction(
       () => (document.querySelector('[data-testid="live-state"]')?.textContent ?? '').includes('тиков'),
@@ -447,7 +496,6 @@ try {
     const pillShown = await pill.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false)
     ok('пилюля: новая запись предложена первой странице', pillShown && (await pill.innerText()).includes('1'),
       pillShown ? await pill.innerText() : 'нет')
-    const asofBefore = new URL(reader.url()).searchParams.get('page.asof')
     const beforeIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
     if (pillShown) {
       await pill.click()
@@ -461,8 +509,8 @@ try {
       ).catch(() => {})
       const afterIds = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
       const asofAfter = new URL(reader.url()).searchParams.get('page.asof')
-      ok('клик по пилюле — сброс: новая запись наверху, срез в адресе обновлён',
-        afterIds[0] !== beforeIds[0] && !!asofAfter && asofAfter !== asofBefore,
+      ok('клик по пилюле — сброс: новая запись наверху, адрес чист без page.asof',
+        afterIds[0] !== beforeIds[0] && asofAfter === null,
         String(asofAfter))
     }
     ok('срез: без ошибок страницы', sliceProblems.length === 0, sliceProblems.join(' | '))

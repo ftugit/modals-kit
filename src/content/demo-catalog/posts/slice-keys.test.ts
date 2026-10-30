@@ -215,4 +215,24 @@ describe('withDbSliceKeys — жизненный цикл среза (asof и к
     expect(sReset.extra.begAt ?? '').toBe('')
     expect(getUrlSearch()).not.toContain(`${pageParam}.after`)
   })
+
+  it('после SSR-гидрации чистой 1-й порции курсора догрузка 2-й не пишет page.after преждевременно, но ставит begAt', async () => {
+    // Серверный адаптер собрал SSR-снапшот
+    const ssr = setupPaginator('cursor_ssr', { 'p_cursor_ssr.cur': '1' })
+    const ssrStore = createPaginatorStore()
+    await initPaginator(ssrStore, ssr.name, { url: ssr.getInitUrl() })
+    const snapshot = ssrStore.state(ssr.name)()
+
+    // В браузере свой экземпляр адаптера (startOf пуст при гидрации из снапшота)
+    const client = setupPaginator('cursor_client', { 'p_cursor_client.cur': '1' })
+    const clientStore = createPaginatorStore()
+    clientStore.hydrate(client.name, { ...snapshot, name: client.name })
+    await initPaginator(clientStore, client.name, { url: client.getInitUrl() })
+
+    await loadMore(clientStore, client.name, 1)
+    const s = clientStore.state(client.name)()
+    expect(s.page).toBe(1)
+    expect(s.extra.begAt).toBe('2026-10-30T12:01:00.000Z')
+    expect(client.getUrlSearch()).not.toContain(`${client.pageParam}.after`)
+  })
 })

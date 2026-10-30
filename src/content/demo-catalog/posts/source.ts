@@ -486,6 +486,19 @@ export function withDbSliceKeys<T, ExtraProps extends object = object>(
       if (req.page === 1 && !reqKey) {
         startOf.clear()
         startAtOf.clear()
+      } else if (req.page > 1 && !startOf.has(1)) {
+        // В браузере после гидрации из SSR-снапшота карта ещё пуста: 1-я порция
+        // была с головы (`''`), если снапшот не нёс своего `beg`.
+        const snapBeg = typeof req.extra?.beg === 'string' ? req.extra.beg : ''
+        startOf.set(1, snapBeg)
+        const snapAt = snapBeg
+          ? typeof req.extra?.begAt === 'string'
+            ? req.extra.begAt
+            : ''
+          : typeof req.extra?.headAt === 'string'
+            ? req.extra.headAt
+            : ''
+        if (snapAt) startAtOf.set(1, snapAt)
       }
       const res = await base.loadPage(req)
       const beg = res.extra?.beg

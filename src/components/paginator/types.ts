@@ -52,6 +52,34 @@ export type SettingsField<V extends Record<string, ExtraValue> = Record<string, 
       label?: string
     }
 
+export type PageSliceFloating = 'top' | 'bottom' | false
+
+export interface PageSliceOptions {
+  /** Принудительное управление видимостью снаружи: `true` обходит `firstPageOnly`, `false` отключает показ. */
+  enable?: boolean
+  /** Показывать только на 1-й странице. */
+  firstPageOnly?: boolean
+  /** Плавающий блок облаком сверху/снизу (допустим только внутри `PaginatorHost` без явного `name`). */
+  floating?: PageSliceFloating
+  /** Постепенно скрывать при скролле по направлению потока (в режиме чата — вверх, в остальных — вниз). */
+  hideOnScroll?: boolean
+  /** Не показывать при отсутствии JavaScript (на SSR / до гидрации). */
+  jsOnly?: boolean
+  /** Дополнительные CSS-классы плашки. */
+  class?: string
+}
+
+export interface PageSliceProps extends PageSliceOptions {
+  /** Идентификатор пагинатора (необязателен внутри `PaginatorHost`). */
+  name?: string
+  /** Номер страницы при рендере внутри `PageDivider` (по умолчанию текущая страница пагинатора). */
+  page?: number
+  /** Рисовать тонкие боковые линии по краям текста (для встраивания в `PageDivider`). */
+  dividerLines?: boolean
+  /** Опорный момент времени (мс) для детерминированного расчёта `TimeAgo` в тестах/SSR. */
+  now?: number
+}
+
 export interface PaginatorProps<T> {
   name: string
   ariaLabel: string
@@ -79,6 +107,8 @@ export interface PaginatorProps<T> {
   /** `false` — не рендерить строку замены вообще; `boolean` — передать во `when` у `ReplaceLoadingRow`. */
   replaceLoading?: boolean | 'off'
   bottomNav?: boolean
+  /** Управление плашкой активного среза (`false` — отключить, объект — опции `PageSlice`). */
+  slice?: boolean | PageSliceOptions
   eventLog?: boolean
   variant?: PaginatorHostVariants['variant']
   class?: string

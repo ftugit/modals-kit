@@ -604,6 +604,7 @@
       return effectiveHashAnchor
     },
     options: () => options,
+    container: () => containerRef,
   })
 </script>
 

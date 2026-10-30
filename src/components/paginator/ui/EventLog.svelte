@@ -33,7 +33,7 @@
 >
   <div class="font-semibold text-foreground/70">События пагинатора (последние {limit}):</div>
   {#if events.length === 0}
-    <div class="italic text-muted-foreground/60">Пока нет событий</div>
+    <div class="italic text-muted-foreground">Пока нет событий</div>
   {:else}
     <ol class="mt-1 flex flex-col gap-0.5">
       {#each events as item (item.n)}

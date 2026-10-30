@@ -176,6 +176,32 @@
     },
     { key: 'skel', label: 'Скелетоны', type: 'toggle', jsOnly: true },
     { key: 'ind', label: 'Плавающий индикатор загрузки', type: 'toggle', jsOnly: true },
+    { type: 'divider', label: 'Плашка среза выдачи (источник БД)' },
+    {
+      key: 'slPos',
+      label: 'Положение плашки среза',
+      type: 'select',
+      enabledBy: [{ field: 'src', equals: 'db' }],
+      options: [
+        ['inline', 'В потоке (вместо «страница 1» / над карточками)'],
+        ['top', 'Плавающий блок сверху'],
+        ['bottom', 'Плавающий блок снизу'],
+        ['off', 'Выкл'],
+      ],
+    },
+    {
+      key: 'slHide',
+      label: 'Скрывать срез при скролле по потоку',
+      type: 'toggle',
+      jsOnly: true,
+      enabledBy: [{ field: 'src', equals: 'db' }],
+    },
+    {
+      key: 'slNoJs',
+      label: 'Скрывать плашку среза без JS',
+      type: 'toggle',
+      enabledBy: [{ field: 'src', equals: 'db' }],
+    },
     { type: 'divider', label: 'Подгрузка по краям (только в режиме накопления)' },
     {
       key: 'topTrigger',
@@ -410,6 +436,15 @@
   hashAnchor={demoHashAnchor(cfg.anchor)}
   snapshot={url?.snapshot ?? null}
   showIndicator={cfg.ind}
+  slice={
+    cfg.slPos === 'off'
+      ? false
+      : {
+          floating: cfg.slPos === 'top' || cfg.slPos === 'bottom' ? cfg.slPos : false,
+          hideOnScroll: cfg.slHide,
+          jsOnly: cfg.slNoJs,
+        }
+  }
   replaceLoading={!cfg.skel}
   eventLog={true}
   renderDivider={cfg.layout === 'columns' ? null : undefined}

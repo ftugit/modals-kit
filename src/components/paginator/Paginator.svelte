@@ -14,6 +14,7 @@
   import PageColumns from './ui/PageColumns.svelte'
   import PageList from './ui/PageList.svelte'
   import PageNav from './ui/PageNav.svelte'
+  import PageSlice from './ui/PageSlice.svelte'
   import ReplaceLoadingRow from './ui/ReplaceLoadingRow.svelte'
   import ResetButton from './ui/ResetButton.svelte'
   import { paginatorHostVariants } from './variants.js'
@@ -43,6 +44,7 @@
     sentinel = true,
     replaceLoading = true,
     bottomNav = true,
+    slice = true,
     eventLog = false,
     variant = 'default',
     class: cls,
@@ -67,10 +69,32 @@
 
   // Строки и пустое состояние — отдельный сниппет: он рисуется либо голым (как
   // раньше), либо внутри контейнера потребителя, когда тот заказал свой.
+  const sliceObj = $derived(typeof slice === 'object' ? slice : undefined)
+  const sliceDisabled = $derived(slice === false || sliceObj?.enable === false)
+  const sliceFloating = $derived(
+    !sliceDisabled && (sliceObj?.floating === 'top' || sliceObj?.floating === 'bottom')
+      ? sliceObj.floating
+      : false,
+  )
+  const listSlice = $derived(
+    sliceDisabled || sliceFloating
+      ? false
+      : {
+          ...sliceObj,
+          enable: sliceObj?.enable ?? (mode === 'single' ? true : undefined),
+        },
+  )
 </script>
 
 {#snippet body()}
   {#if layout === 'columns'}
+    {#if !sliceDisabled && !sliceFloating}
+      <PageSlice
+        firstPageOnly
+        {...sliceObj}
+        enable={sliceObj?.enable ?? true}
+      />
+    {/if}
     <PageColumns
       {name}
       {columns}
@@ -86,8 +110,16 @@
       {renderItem}
     />
   {:else}
+    {#if renderDivider === null && !sliceDisabled && !sliceFloating}
+      <PageSlice
+        firstPageOnly={mode !== 'single'}
+        {...sliceObj}
+        enable={sliceObj?.enable ?? (mode === 'single' ? true : undefined)}
+      />
+    {/if}
     <PageList
       {name}
+      slice={listSlice}
       {renderDivider}
       {renderSkeleton}
       {renderPending}
@@ -126,6 +158,9 @@
     <!-- Строка вместо `true` — свой текст индикатора (дефолт «Загрузка…»). -->
     <LoadingIndicator {name} text={typeof showIndicator === 'string' ? showIndicator : undefined} />
   {/if}
+  {#if sliceFloating === 'top'}
+    <PageSlice firstPageOnly={false} {...sliceObj} floating="top" />
+  {/if}
   {#if sentinel}
     <EdgeSentinel dir={-1} {name} />
     <LoadMoreLink dir={-1} {name}>
@@ -143,7 +178,7 @@
       Обёртка появляется только когда он её заказал, поэтому разметка прочих
       потребителей (`class` со скроллом на самом хосте) не меняется.
     -->
-    <div class={cn(itemsClass)} {...itemsAttrs}>
+    <div class={cn('shrink-0', itemsClass)} {...itemsAttrs}>
       {@render beforeItems?.()}
       {@render body()}
       {@render afterItems?.()}
@@ -168,6 +203,10 @@
     </LoadMoreLink>
     <EdgeSentinel dir={1} {name} />
     <EndRow {name} />
+  {/if}
+
+  {#if sliceFloating === 'bottom'}
+    <PageSlice firstPageOnly={false} {...sliceObj} floating="bottom" />
   {/if}
 
   {#if nav}

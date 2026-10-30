@@ -45,5 +45,5 @@
 </p>
 
 {#if showRaw}
-  <pre class="overflow-auto rounded-lg bg-muted p-3 text-xs" data-testid="raw">{raw}</pre>
+  <pre class="break-all whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs" data-testid="raw">{raw}</pre>
 {/if}

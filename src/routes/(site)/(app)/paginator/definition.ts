@@ -146,6 +146,12 @@ export type DemoExtra = {
   after: string
   /** Срез выдачи источника БД (`<ISO>|<id>`): фиксируется при уходе с 1-й страницы. */
   asof: string
+  /** Положение плашки активного среза (UI-опция витрины для `src === 'db'`). */
+  slPos: DemoSlicePos
+  /** Плавное скрытие плашки среза при скролле по направлению потока. */
+  slHide: boolean
+  /** Не рендерить плашку среза при отсутствии JavaScript. */
+  slNoJs: boolean
   /** Известное число страниц: источник отдаёт totals → номерные кнопки; иначе только стрелки (R12). */
   total: boolean
   /** Скелетоны при загрузке (UI). */
@@ -177,6 +183,8 @@ export type DemoColW = 160 | 220 | 300 | 400
 export type DemoColFit = 0 | 10 | 25 | 50
 
 export type DemoZone = 'edge' | '20%' | '40%' | '200px'
+export type DemoSlicePos = 'inline' | 'top' | 'bottom' | 'off'
+export const DEMO_SLICE_POSITIONS: readonly DemoSlicePos[] = ['inline', 'top', 'bottom', 'off']
 export type DemoAnchor = 'auto' | 'catalog' | 'off'
 export const DEMO_ANCHORS: readonly DemoAnchor[] = ['auto', 'catalog', 'off']
 
@@ -253,6 +261,9 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   cur: false,
   after: '',
   asof: '',
+  slPos: 'inline',
+  slHide: false,
+  slNoJs: false,
   total: true,
   skel: true,
   topTrigger: 'direction',
@@ -321,6 +332,9 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   after: cursorPointerField,
   asof: asofExtraField,
   beg: cursorBeginField,
+  slPos: extraField('text', oneOf(...DEMO_SLICE_POSITIONS)),
+  slHide: bool,
+  slNoJs: bool,
   total: bool,
   skel: bool,
   topTrigger: extraField('text', oneOf('off', 'direction', 'edge', 'chat', 'manual')),

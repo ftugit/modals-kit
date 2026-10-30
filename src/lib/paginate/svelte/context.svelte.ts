@@ -68,6 +68,8 @@ export type PaginatorContextValue = {
   /** Якорь хоста для ссылок; может быть геттером — читать лениво, не кэшировать. */
   hashAnchor?: string | null
   options?: () => ResolvedHostOptions
+  /** Корневой DOM-элемент `PaginatorHost` (на клиенте после монтирования). */
+  container?: () => HTMLElement | undefined
 }
 
 export const PAGINATOR_CTX_KEY = Symbol('paginator-ctx')

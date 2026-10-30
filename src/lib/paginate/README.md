@@ -74,7 +74,7 @@ Headless-библиотека пагинации с разделением frame
   `getInitial` кладёт умолчания под прочитанное из хранилища.
 - **Пагинатор не рисует UI и не пишет текст**: у `PaginatorHost` нет своих надписей — `ariaLabel`
   обязателен, озвучку загрузки и ошибок ставит UI-компонент `<LiveStatus {name} />`.
-- **Готовые UI-компоненты**: `src/components/paginator/` (`PageList`, `PageColumns`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
+- **Готовые UI-компоненты**: `src/components/paginator/` (`PageList`, `PageColumns`, `PageSlice`, `PageDivider`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
 ## Быстрый старт
 
@@ -159,6 +159,7 @@ definePaginator({
   `?page.filters.*`, связки и серверная проверка, картина панели (`#lib/paginate/filters/index.js`).
   Единственная связь с другим пакетом — `lib/form`. Документация — [`filters/README.md`](./filters/README.md).
 - `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`,
+  `getPaginatorContext` с доступом к имени и DOM-контейнеру enclosing-хоста,
   `paginatorTask(state, page?)` — загрузка в формате задачи `#lib/task` для ссылок и глобального лоадера;
   тип повторён структурно, пакет от `#lib/task` не зависит. Ход загрузки источник сообщает через
   `look.report(progress)` (`SourceLook`/`PageRequest`): ядро кладёт его в `state.progress` как есть,

@@ -328,8 +328,8 @@ async function run() {
     const badge = await page.locator('[data-testid="page-size"]').innerText();
     if (badge !== '5') throw new Error(`бейдж размера страницы = ${badge}`);
     const div1 = await page.locator('[data-testid="page-divider-1"]').count();
-    if (div1 !== 1) throw new Error('нет разделителя «страница 1»');
-    console.log('  ok  размер страницы: ?page.size=5 в URL, бейдж и разделители страниц');
+    if (div1 !== 0) throw new Error('разделитель «страница 1» не должен рендериться на 1-й странице');
+    console.log('  ok  размер страницы: ?page.size=5 в URL, бейдж на месте, «страница 1» не рисуется');
 
     await sel('layout').selectOption('columns');
     await sleep(250); // панель перерисовывает строки под новый layout — не кликаем в детачнутый узел
@@ -713,6 +713,131 @@ async function run() {
         throw new Error(`${label}: «Назад» по списку изменил настройки: ${before} → ${p.url()}`);
       await ctx.close();
       console.log(`  ok  ${label}: выбор в списке селекта меняет адрес и список (url), «Назад» только закрывает список`);
+    }
+
+    // ── Срез выдачи (PageSlice) на источнике БД: список/колонки, floating top/bottom, скролл и no-JS ──
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1200, height: 860 } });
+      const sp = await ctx.newPage();
+      await sp.goto(`${U}?page.src=db&page.size=5&page.bottomTrigger=manual`, { waitUntil: 'networkidle' });
+      if (new URL(sp.url()).searchParams.has('page.asof')) {
+        throw new Error(`на чистой 1-й странице src=db не должно быть page.asof: ${sp.url()}`);
+      }
+      if ((await sp.locator('[data-testid="page-slice"]').count()) !== 0) {
+        throw new Error('на чистой 1-й странице src=db плашка среза не должна отображаться');
+      }
+
+      // Догрузка 2-й страницы фиксирует срез и показывает PageSlice на месте «страница 1»
+      await sp.locator('[data-testid="load-next"]').click();
+      await sp.waitForFunction(() => new URL(location.href).searchParams.has('page.asof'), null, { timeout: 15000 });
+      await sp.locator('[data-testid="page-slice"]').waitFor({ state: 'visible', timeout: 10000 });
+      const sliceText = await sp.locator('[data-testid="page-slice"]').innerText();
+      if (!sliceText.includes('Отображается срез от') || !sliceText.includes('сбросить?')) {
+        throw new Error(`неожиданный текст PageSlice: ${sliceText}`);
+      }
+
+      // Переключение в колоночную раскладку карточек сохраняет отображение PageSlice (enable=true)
+      await sp.goto(`${sp.url()}&page.layout=columns`, { waitUntil: 'networkidle' });
+      if ((await sp.locator('[data-testid="page-slice"]').count()) !== 1) {
+        throw new Error('в раскладке columns плашка среза должна отображаться над карточками');
+      }
+
+      // Плавающий блок сверху + скрытие при скролле по направлению потока (обычный режим -> вниз)
+      await sp.goto(
+        `${U}?page=2&page.src=db&page.size=10&page.slPos=top&page.slHide=true&page.bottomTrigger=manual`,
+        { waitUntil: 'networkidle' },
+      );
+      const topSlice = sp.locator('[data-testid="page-slice"]');
+      await topSlice.waitFor({ state: 'visible', timeout: 10000 });
+      if ((await topSlice.getAttribute('data-floating')) !== 'top') {
+        throw new Error(`ожидался data-floating="top", получено ${await topSlice.getAttribute('data-floating')}`);
+      }
+      const host = sp.locator('[data-paginator-host="demo-url"]');
+      await host.evaluate((el) => {
+        el.style.height = '120px';
+        el.scrollTop = 24;
+        el.dispatchEvent(new Event('scroll'));
+      });
+      await sleep(50);
+      const midProgress = Number(await topSlice.getAttribute('data-progress'));
+      if (!(midProgress > 0 && midProgress <= 1)) {
+        throw new Error(`ожидался промежуточный прогресс скрытия > 0 при скролле вниз, получено ${midProgress}`);
+      }
+      await host.evaluate((el) => {
+        el.scrollTop = 0;
+        el.dispatchEvent(new Event('scroll'));
+      });
+      await sleep(50);
+      if (Number(await topSlice.getAttribute('data-progress')) !== 0) {
+        throw new Error('при возврате к началу потока плашка должна полностью раскрыться');
+      }
+
+      // Режим чата: плавающий блок снизу скрывается при скролле ВВЕРХ (по направлению потока чата)
+      await sp.goto(
+        `${U}?page=2&page.src=db&page.size=10&page.slPos=bottom&page.slHide=true&page.topTrigger=chat&page.bottomTrigger=manual`,
+        { waitUntil: 'networkidle' },
+      );
+      const chatSlice = sp.locator('[data-testid="page-slice"]');
+      await chatSlice.waitFor({ state: 'visible', timeout: 10000 });
+      if (
+        (await chatSlice.getAttribute('data-floating')) !== 'bottom' ||
+        (await chatSlice.getAttribute('data-stream')) !== 'chat'
+      ) {
+        throw new Error('ожидались data-floating="bottom" и data-stream="chat"');
+      }
+      await host.evaluate((el) => {
+        el.style.height = '120px';
+        const maxTop = Math.max(60, el.scrollHeight - el.clientHeight);
+        el.scrollTop = Math.floor(maxTop * 0.6);
+        el.dispatchEvent(new Event('scroll'));
+      });
+      await sleep(30);
+      await host.evaluate((el) => {
+        el.scrollTop = Math.max(4, el.scrollTop - 24); // скролл ВВЕРХ (delta < 0) в режиме чата скрывает плашку
+        el.dispatchEvent(new Event('scroll'));
+      });
+      await sleep(50);
+      const chatUpProgress = Number(await chatSlice.getAttribute('data-progress'));
+      if (!(chatUpProgress > 0)) {
+        throw new Error(`в режиме чата скролл вверх должен скрывать плашку, progress=${chatUpProgress}`);
+      }
+
+      // Курсорный режим на /paginator?page.src=db&page.cur=1: плашка появляется со 2-й порции и сбрасывается
+      await sp.goto(`${U}?page.src=db&page.size=5&page.cur=1&page.bottomTrigger=manual`, { waitUntil: 'networkidle' });
+      if ((await sp.locator('[data-testid="page-slice"]').count()) !== 0) {
+        throw new Error('на 1-й порции курсора с головы плашки среза быть не должно');
+      }
+      await sp.locator('[data-testid="load-next"]').click();
+      await sp.locator('[data-testid="page-slice"]').waitFor({ state: 'visible', timeout: 10000 });
+      await sp.locator('[data-testid="page-slice-reset"]').click();
+      await sp.waitForFunction(() => document.querySelectorAll('[data-testid="page-slice"]').length === 0, null, {
+        timeout: 10000,
+      });
+      await ctx.close();
+
+      // Контекст без JavaScript: slNoJs=true скрывает плашку, а по умолчанию ссылка «сбросить?» работает без JS
+      const noJsCtx = await browser.newContext({ javaScriptEnabled: false });
+      const np = await noJsCtx.newPage();
+      await np.goto(`${U}?page=2&page.src=db&page.size=5&page.mode=single&page.slNoJs=true`, {
+        waitUntil: 'domcontentloaded',
+      });
+      if ((await np.locator('[data-testid="page-slice"]').count()) !== 0) {
+        throw new Error('при slNoJs=true и отключённом JS плашка среза не должна рендериться');
+      }
+      await np.goto(`${U}?page=2&page.src=db&page.size=5&page.mode=single`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const noJsReset = np.locator('[data-testid="page-slice-reset"]');
+      if ((await noJsReset.count()) !== 1) {
+        throw new Error('без JS плашка среза по умолчанию должна рендериться со ссылкой сброса');
+      }
+      await noJsReset.click();
+      await np.waitForLoadState('domcontentloaded');
+      if (new URL(np.url()).searchParams.has('page.asof') || new URL(np.url()).searchParams.has('page')) {
+        throw new Error(`без JS ссылка «сбросить?» не очистила URL: ${np.url()}`);
+      }
+      await noJsCtx.close();
+      console.log('  ok  PageSlice (src=db): отложенный срез, list/columns, floating top/bottom, скролл по потоку (и чат), курсор и no-JS');
     }
 
     console.log(

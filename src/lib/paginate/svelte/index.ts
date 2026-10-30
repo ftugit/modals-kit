@@ -9,6 +9,7 @@ export { paginatorTask } from './task'
 
 export {
   DEFAULT_HOST_OPTIONS,
+  getPaginatorContext,
   hashAnchorFor,
   useCtx,
   usePageHref,

@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import { PageAnchor, usePaginatorPages } from '#lib/paginate/svelte/index.js'
+  import type { PageSliceOptions } from '../types.js'
   import PageDivider from './PageDivider.svelte'
   import StatusRow from './StatusRow.svelte'
 
@@ -9,6 +10,7 @@
     name?: string
     class?: string
     itemClass?: string
+    slice?: boolean | PageSliceOptions
     renderItem: Snippet<[T, { page: number; index: number }]>
     renderSkeleton?: Snippet<[{ page: number; index: number }]>
     renderPending?: Snippet<[{ page: number }]>
@@ -19,6 +21,7 @@
     name: nameProp,
     class: className,
     itemClass = 'mb-2',
+    slice = true,
     renderItem,
     renderSkeleton,
     renderPending,
@@ -49,8 +52,10 @@
           })}
         {:else}
           <PageDivider
+            {name}
             page={group.page}
             count={group.pending ? null : group.items.length}
+            {slice}
           />
         {/if}
       {/if}
