@@ -232,12 +232,18 @@ export async function enrichDemoRecord(
   record: UploadedDemoRecord,
 ): Promise<UploadedDemoRecord> {
   const stat = await storage.stat(record.path)
-  const replicas: string[] = []
-  for (const srv of storage.serverNames) {
-    if (srv === record.server) continue
-    if (stat?.parts.some((p) => p.server === srv)) continue
-    const rep = await sharedUploadLedger.getFile(`@replica:${srv}:${record.path}`)
-    if (rep) replicas.push(srv)
+  let replicas: string[] = []
+  if (stat?.replicas !== undefined) {
+    replicas = stat.replicas
+      .filter((r) => r.server !== (stat.parts[0]?.server ?? record.server))
+      .map((r) => r.server)
+  } else {
+    for (const srv of storage.serverNames) {
+      if (srv === record.server) continue
+      if (stat?.parts.some((p) => p.server === srv)) continue
+      const rep = await sharedUploadLedger.getFile(`@replica:${srv}:${record.path}`)
+      if (rep) replicas.push(srv)
+    }
   }
   if (!stat) {
     return {

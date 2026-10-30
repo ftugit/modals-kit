@@ -8,11 +8,13 @@
 Входы             index.js · s3.js · webdav.js · local.js · state.js (entrypoints.json)
 Память            0 целых файлов в ОЗУ: сквозные ReadableStream + ленивые срезы StreamFile
 Драйверы          memoryDriver · localDriver (.part → rename) · s3Driver (aws4fetch) · webdavDriver (fetch)
-Маршрутизация     пул серверов · priority / most-free / round-robin · карантин cooldownMs
+Маршрутизация     пул серверов · priority / most-free / round-robin · карантин cooldownMs + блок suspended
+Дедупликация      опциональный потоковый SHA-256 (hash / expectedHash) + подсчёт ссылок на физические части
+Репликация        серверный replicate при put + copy/clone (0 N+1 в ledger) · чтение primary / round-robin / consistent-hash
 Нарезка (split)   раскладка крупных файлов по нескольким серверам + склейка Range 206 по шву
 Шифрование        потоковый AES-256-GCM кадрами 64 КиБ (HKDF-SHA-256, защита от усечения, O(1) Range)
 Трафик            шейпер скорости rate (Б/с) · семафоры потоков concurrency (reject / queue / preempt)
-Квоты (ledger)    атомарная бронь reserve → commit / release (memoryLedger · jsonLedger · pgStorageLedger)
+Квоты (ledger)    атомарная бронь reserve → commit / release + сверка пропаж reconcile()
 Приём и отдача    multipart-парсер storage.upload() и HTTP-раздача storage.serve() (200/206/304/416 + CSP)
 ```
 
@@ -36,7 +38,7 @@
 
 | Спецификатор | Среда | Экспортируемые примитивы |
 |---|---|---|
-| `#lib/storage/index.js` | любая Web-среда (`0` `node:*`) | `createStorage`, `StreamFile`, `memoryDriver`, `defineStorageLedger`, `memoryLedger`, `defineStorageStore`, `memoryStore`, `createBandwidthLimiter`, `createConcurrencyGate`, `encryptedSize`, `decryptedSize`, `normalizeStoragePath`, `matchesUploadAccept`, `sanitizeUploadFileName`, классы ошибок |
+| `#lib/storage/index.js` | любая Web-среда (`0` `node:*`) | `createStorage`, `StreamFile`, `memoryDriver`, `defineStorageLedger`, `memoryLedger`, `defineStorageStore`, `memoryStore`, `createBandwidthLimiter`, `createConcurrencyGate`, `createSha256Hasher`, `hashStreamSha256`, `encryptedSize`, `decryptedSize`, `normalizeStoragePath`, `matchesUploadAccept`, `sanitizeUploadFileName`, классы ошибок |
 | `#lib/storage/s3.js` | любая Web-среда (`fetch` + Web Crypto) | `s3Driver`, `parseS3Url`, `formatS3Url`, `maskS3Url` |
 | `#lib/storage/webdav.js` | любая Web-среда (`fetch`) | `webdavDriver`, `parseWebdavUrl`, `formatWebdavUrl`, `maskWebdavUrl` |
 | `#lib/storage/local.js` | Node.js / Bun (`node:fs`) | `localDriver`, `jsonLedger`, `localSpool` |
@@ -196,11 +198,15 @@ const stored = await storage.put({
   contentType: 'application/zstd',
   overwrite: false,                     // по умолчанию true; при false → StorageOverwriteError
   stageToDisk: false,                   // при true сначала сохраняет поток в localSpool
+  hash: true,                           // opt-in потоковый SHA-256 и дедупликация только для нужных файлов
+  expectedHash: knownSha256Hex,         // опциональная сверка целостности потока (StorageHashMismatchError)
+  replicate: 2,                         // серверное клонирование (2 = основной + 1 реплика, либо ['r2', 'b2'])
   server: 'auto',                       // конкретное имя сервера или 'auto'
 })
 ```
 
-- **Защита от случайной перезаписи (`overwrite: false`).** Перед выделением брони проверяет наличие файла в `ledger` и на целевом сервере (`driver.head`) и при совпадении бросает `StorageOverwriteError` (`code = 'storage.already-exists'`). При перезаписи существующего пути (`overwrite: true`) старые физические куски с прежних серверов аккуратно удаляются после фиксации новой записи.
+- **Опциональный потоковый `SHA-256` и дедупликация (`hash` / `expectedHash`).** Хеширование включается **строго выборочно** (на конкретном вызове `put`/`upload` или флагом `hash: true` в политике сервера). Если источник поддерживает повторное чтение или передан `expectedHash`, совпадение проверяется по `ledger.findByHash` **до отправки байтов в облако** (`deduplicated: true`, `0` лишнего сетевого трафика). При искажении байтов бросается `StorageHashMismatchError`. При удалении (`del`) и перезаписи физические объекты удаляются только тогда, когда на пару `(server, path)` больше не ссылается ни одна запись реестра (`filterUnreferencedParts`), а `report()` не задваивает `usedBytes`.
+- **Защита от случайной перезаписи (`overwrite: false`).** Перед выделением брони проверяет наличие файла в `ledger` и на целевом сервере (`driver.head`) и при совпадении бросает `StorageOverwriteError` (`code = 'storage.already-exists'`). При перезаписи существующего пути (`overwrite: true`) старые осиротевшие физические куски с прежних серверов аккуратно удаляются после фиксации новой записи.
 - **Автовыбор сервера (`server: 'auto'`) и карантин `cooldownMs`.** Планировщик фильтрует `writePool`, исключая `readOnly`-серверы и серверы, находящиеся в карантине после сетевого/`5xx`-сбоя (`cooldownMs`). Порядок кандидатов определяется `writeStrategy`:
   - `'priority'` — первый здоровый сервер по порядку в `writePool`, куда помещается файл;
   - `'most-free'` — сервер с максимальным свободным остатком (`storageBytes - usedBytes - reservedBytes`);
@@ -336,11 +342,15 @@ const sharedGate = createConcurrencyGate('public-dl', {
 
 ## 9. Межсерверные операции (`copy`, `move`, `clone`) и телеметрия
 
-- **`await storage.copy({ path, from, to, toPath })`** — потоково копирует файл между любыми двумя серверами (`local ↔ S3 ↔ WebDAV ↔ memory`) без буферизации в ОЗУ:
+- **`await storage.copy({ path, from, to, toPath })` и `put({ replicate })`** — серверное клонирование без повторной отправки файла клиентом:
+  - при `put({ replicate: 2 })` или `put({ replicate: ['r2', 'b2'] })` клиент загружает поток один раз, а сервер параллельно разветвляет поток (`ReadableStream.tee()` или независимые срезы) на основной сервер и серверы-реплики с учётом индивидуального `key` каждого сервера;
   - внутри одного сервера с поддержкой `copyObject` (S3 `CopyObject`, WebDAV `COPY`) и неизменном ключе шифрования выполняется мгновенное серверное копирование;
   - между разными серверами одиночный зашифрованный файл с тем же самым `key` переливается байт-в-байт сырым шифротекстом без лишней расшифровки/зашифровки;
-  - если ключи отличаются или исходник был нарезан (`split`), поток прозрачно расшифровывается на чтении и зашифровывается ключом целевого сервера на записи;
-  - если `toPath` не указан (создаётся **реплика** под тем же `path` на другом сервере), запись реплики хранится отдельно от основного маршрута: при падении основного сервера и уходе его в `cooldownMs` чтение (`get` / `lazy` / `serve`) может обслуживаться с живой реплики, а `del(path)` уберёт и оригинал, и его реплики.
+  - реплики хранятся прямо в поле `replicas` записи `StoredFileRecord` (`0` `N+1`-запросов к `ledger` при чтении). Стратегия параллельного чтения задаётся в `createStorage({ readStrategy })` или на конкретном вызове `head`/`lazy`/`get`/`serve`: `'primary'` (по умолчанию), `'round-robin'` или `'consistent-hash'` (с опциональным `affinityKey`, например `postId`, включая балансировку `302`-редиректов `cdn: true` и единый сильный `ETag` между репликами).
+- **Контроль пропавших файлов, `suspended` и сверка `storage.reconcile()`:**
+  - если драйвер возвращает `null` (`404` без сетевого сбоя) для числящейся в `ledger` части или реплики, хранилище помечает `missingAt`, прозрачно переключает чтение на здоровую реплику и увеличивает счётчик пропаж сервера;
+  - при достижении порога `missingThreshold` сервер автоматически переводится в долгосрочную блокировку `suspended` (`reason: 'missing-files'`, хук `onServerSuspended`, ручное управление через `suspendServer` / `resumeServer` / `isServerSuspended`);
+  - периодический вызов `await storage.reconcile({ limit, servers, autoResumeServers: true })` опрашивает проблемные записи через `HEAD`, снимает `missingAt` с возвращённых на место файлов и реактивирует сервер при `missingCount === 0`.
 - **`await storage.move({ path, from, to, toPath })`** — копирует объект на целевой сервер, переключает манифест `ledger` и удаляет физические части со старого сервера.
 - **`await storage.clone({ from, to, prefix, overwrite })`** — пакетно клонирует все файлы выбранного сервера (или префикса) на другой сервер и возвращает отчёт `{ clonedPaths, skippedPaths, transferredBytes }`.
 - **`await storage.report()` и `#lib/storage/state.js`** — `report()` объединяет данные `ledger` (`usedBytes`, `reservedBytes`, `filesCount`, `partsCount`), лимиты и состояние карантина по каждому серверу, а `createStorageState()` собирает живую телеметрию активных потоков (`activeUploads`, `activeDownloads`, `bytesWritten`, `bytesRead`, `errorsCount`, `subscribe()`).
@@ -361,6 +371,8 @@ const sharedGate = createConcurrencyGate('public-dl', {
 | `StorageQuotaError` | `'storage.quota-exceeded'` | Исчерпан `limits.storageBytes` сервера или пула | `413` / `422` / `507` |
 | `StorageReadOnlyError` | `'storage.read-only'` | Попытка записи/удаления на сервере с `readOnly: true` | `403` / `422` |
 | `StorageOverwriteError` | `'storage.already-exists'` | Путь уже занят при `put({ overwrite: false })` | `409` / `422` |
+| `StorageServerSuspendedError` | `'storage.server-suspended'` | Сервер отключён (`suspended`) вручную или после превышения `missingThreshold` | `503` / `422` |
+| `StorageHashMismatchError` | `'STORAGE_HASH_MISMATCH'` | Потоковый `SHA-256` байтов не совпал с переданным `expectedHash` | `422` / `400` |
 | `StorageCryptoError` | `'storage.crypto-failed'` | Неверный ключ `key`, подмена байтов, перестановка чанка или усечение хвоста | `422` / `500` |
 | `StorageConcurrencyError` | `'storage.concurrency-exceeded'` | Исчерпан лимит параллельных потоков (`reject` или таймаут `queue`) | `429` (`serve` ставит сам) |
 | `StorageUploadError` | `'upload.max-files'` / `'upload.max-size'` / `'upload.accept'` / `'upload.malformed'` | Нарушение ограничений `storage.upload(request, options)` | `413` / `415` / `422` |

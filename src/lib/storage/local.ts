@@ -7,6 +7,9 @@ import { normalizeStoragePath } from './index.js'
 import {
   computeLedgerUsage,
   defineStorageLedger,
+  filterUnreferencedPartsInState,
+  findByHashInState,
+  listMissingFilesInState,
   sweepExpiredInState,
   type AdaptedStorageLedger,
   type LedgerReservation,
@@ -410,6 +413,40 @@ export function jsonLedger(
         const swept = sweepExpiredInState(state, now)
         if (swept > 0) await saveState(state)
         return computeLedgerUsage(state, servers, now)
+      })
+    },
+
+    findByHash(hash, size) {
+      return withLock(async () => {
+        const state = await loadState()
+        return findByHashInState(state, hash, size)
+      })
+    },
+
+    filterUnreferencedParts(parts, excludePath) {
+      return withLock(async () => {
+        const state = await loadState()
+        return filterUnreferencedPartsInState(state, parts, excludePath)
+      })
+    },
+
+    patchFile(path, updater) {
+      return withLock(async () => {
+        const state = await loadState()
+        const cur = state.files[path]
+        if (!cur) return null
+        const next = updater(cur)
+        if (!next) return null
+        state.files[path] = next
+        await saveState(state)
+        return next
+      })
+    },
+
+    listMissingFiles(opts) {
+      return withLock(async () => {
+        const state = await loadState()
+        return listMissingFilesInState(state, opts)
       })
     },
   })

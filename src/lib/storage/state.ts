@@ -39,6 +39,27 @@ export type StorageStateEvent =
       readonly type: 'server:recovered'
       readonly server: string
     }
+  | {
+      readonly type: 'file:missing'
+      readonly server: string
+      readonly path: string
+      readonly missingCount: number
+    }
+  | {
+      readonly type: 'file:restored'
+      readonly server: string
+      readonly path: string
+    }
+  | {
+      readonly type: 'server:suspended'
+      readonly server: string
+      readonly reason: 'missing-files' | 'manual'
+      readonly missingCount: number
+    }
+  | {
+      readonly type: 'server:resumed'
+      readonly server: string
+    }
 
 export type StorageStateListener = (event: StorageStateEvent) => void
 
@@ -48,6 +69,9 @@ export interface ServerTelemetrySnapshot {
   readonly bytesWritten: number
   readonly bytesRead: number
   readonly errorsCount: number
+  readonly missingCount: number
+  readonly suspended: boolean
+  readonly suspendedReason?: 'missing-files' | 'manual'
   readonly lastError?: string
   readonly cooldownUntil?: number
 }
@@ -74,6 +98,9 @@ interface MutableServerStats {
   bytesWritten: number
   bytesRead: number
   errorsCount: number
+  missingCount: number
+  suspended: boolean
+  suspendedReason?: 'missing-files' | 'manual'
   lastError?: string
   cooldownUntil?: number
 }
@@ -91,6 +118,8 @@ export function createStorageState(): StorageStateCollector {
         bytesWritten: 0,
         bytesRead: 0,
         errorsCount: 0,
+        missingCount: 0,
+        suspended: false,
       }
       perServer.set(server, s)
     }
@@ -117,6 +146,9 @@ export function createStorageState(): StorageStateCollector {
         bytesWritten: s.bytesWritten,
         bytesRead: s.bytesRead,
         errorsCount: s.errorsCount,
+        missingCount: s.missingCount,
+        suspended: s.suspended,
+        ...(s.suspendedReason !== undefined ? { suspendedReason: s.suspendedReason } : {}),
         ...(s.lastError !== undefined ? { lastError: s.lastError } : {}),
         ...(s.cooldownUntil !== undefined ? { cooldownUntil: s.cooldownUntil } : {}),
       }
@@ -172,6 +204,21 @@ export function createStorageState(): StorageStateCollector {
           break
         case 'server:recovered':
           delete s.cooldownUntil
+          break
+        case 'file:missing':
+          s.missingCount = ev.missingCount
+          break
+        case 'file:restored':
+          s.missingCount = Math.max(0, s.missingCount - 1)
+          break
+        case 'server:suspended':
+          s.suspended = true
+          s.suspendedReason = ev.reason
+          s.missingCount = ev.missingCount
+          break
+        case 'server:resumed':
+          s.suspended = false
+          delete s.suspendedReason
           break
       }
       notify()

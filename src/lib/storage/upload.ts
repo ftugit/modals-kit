@@ -15,7 +15,7 @@ import {
   parseFormData,
 } from '@remix-run/form-data-parser/future'
 import { StorageConcurrencyError } from './concurrency.js'
-import { StorageCryptoError } from './crypto.js'
+import { StorageCryptoError, StorageHashMismatchError } from './crypto.js'
 import type { StorageRequestMeta } from './store.js'
 import type { StreamFile } from './stream-file.js'
 import type {
@@ -196,7 +196,8 @@ function mapUploadException(err: unknown): unknown {
   if (
     err instanceof StorageUploadError ||
     err instanceof StorageConcurrencyError ||
-    err instanceof StorageCryptoError
+    err instanceof StorageCryptoError ||
+    err instanceof StorageHashMismatchError
   ) {
     return err
   }
@@ -204,6 +205,7 @@ function mapUploadException(err: unknown): unknown {
     err instanceof Error &&
     (err.name === 'StorageQuotaError' ||
       err.name === 'StorageReadOnlyError' ||
+      err.name === 'StorageServerSuspendedError' ||
       err.name === 'AbortError')
   ) {
     return err
@@ -421,6 +423,9 @@ export async function executeStorageUpload(
         ...(options?.split !== undefined ? { split: options.split } : {}),
         ...(options?.splitServers !== undefined ? { splitServers: options.splitServers } : {}),
         ...(options?.stageToDisk !== undefined ? { stageToDisk: options.stageToDisk } : {}),
+        ...(options?.hash !== undefined ? { hash: options.hash } : {}),
+        ...(options?.expectedHash !== undefined ? { expectedHash: options.expectedHash } : {}),
+        ...(options?.replicate !== undefined ? { replicate: options.replicate } : {}),
         ...(options?.key !== undefined ? { key: options.key } : {}),
         ...(options?.rate !== undefined ? { rate: options.rate } : {}),
         ...(options?.concurrency !== undefined ? { concurrency: options.concurrency } : {}),

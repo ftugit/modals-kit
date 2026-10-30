@@ -18,6 +18,7 @@ import {
 } from './concurrency.js'
 import {
   createDecryptedStreamFile,
+  createSha256Hasher,
   CRYPTO_CHUNK_PLAIN_BYTES,
   CRYPTO_CHUNK_STORED_BYTES,
   CRYPTO_HEADER_BYTES,
@@ -25,10 +26,15 @@ import {
   decryptedSize,
   encryptedSize,
   encryptStream,
+  hashStreamSha256,
+  normalizeExpectedSha256,
   StorageCryptoError,
+  StorageHashMismatchError,
+  type Sha256Hasher,
   type StorageEncryptionKey,
 } from './crypto.js'
 import {
+  computeRecordHealthStatus,
   defineStorageLedger,
   memoryLedger,
   type AdaptedStorageLedger,
@@ -37,7 +43,9 @@ import {
   type ServerUsageSnapshot,
   type StorageLedgerSpec,
   type StoredFileRecord,
+  type StoredFileStatus,
   type StoredPart,
+  type StoredReplica,
 } from './ledger.js'
 import { basenameOfStoragePath, memoryDriver, type MemoryDriverOptions } from './memory.js'
 import { s3Driver } from './s3.js'
@@ -65,6 +73,7 @@ import type {
   DriverPutInput,
   DriverStoredMeta,
   LazyContent,
+  ReadStrategy,
   ServerLimits,
   StagedSpoolFile,
   Storage,
@@ -80,12 +89,15 @@ import type {
   StoragePutBody,
   StoragePutInput,
   StorageReadOptions,
+  StorageReconcileOptions,
+  StorageReconcileReport,
   StorageReport,
   StorageServeOptions,
   StorageServeTarget,
   StorageServerEntry,
   StorageServerPolicy,
   StorageServerReport,
+  StorageServerSuspendedEvent,
   StorageSpool,
   StorageTransferInput,
   StorageUploadFileContext,
@@ -100,10 +112,12 @@ import type {
 export {
   createBandwidthLimiter,
   createConcurrencyGate,
+  createSha256Hasher,
   decryptedSize,
   defineStorageLedger,
   defineStorageStore,
   encryptedSize,
+  hashStreamSha256,
   matchesUploadAccept,
   memoryDriver,
   memoryLedger,
@@ -111,6 +125,7 @@ export {
   sanitizeUploadFileName,
   StorageConcurrencyError,
   StorageCryptoError,
+  StorageHashMismatchError,
   StorageUploadError,
   StreamFile,
 }
@@ -129,9 +144,11 @@ export type {
   LedgerReservation,
   MemoryDriverOptions,
   RateInput,
+  ReadStrategy,
   ServerAllocation,
   ServerLimits,
   ServerUsageSnapshot,
+  Sha256Hasher,
   StagedSpoolFile,
   Storage,
   StorageCallOverrides,
@@ -148,6 +165,8 @@ export type {
   StoragePutBody,
   StoragePutInput,
   StorageReadOptions,
+  StorageReconcileOptions,
+  StorageReconcileReport,
   StorageReport,
   StorageRequestMeta,
   StorageServeOptions,
@@ -155,6 +174,7 @@ export type {
   StorageServerEntry,
   StorageServerPolicy,
   StorageServerReport,
+  StorageServerSuspendedEvent,
   StorageSpool,
   StorageStateListener,
   StorageStoreSpec,
@@ -165,8 +185,10 @@ export type {
   StorageUploadOptions,
   StorageUploadResult,
   StoredFileRecord,
+  StoredFileStatus,
   StoredObject,
   StoredPart,
+  StoredReplica,
   StoredUploadedFile,
   UrlConfiguredStorageServer,
   WriteStrategy,
@@ -229,6 +251,21 @@ export class StorageOverwriteError extends Error {
   }
 }
 
+export class StorageServerSuspendedError extends Error {
+  readonly code = 'storage.server-suspended'
+  readonly server: string
+  readonly reason: 'missing-files' | 'manual'
+
+  constructor(server: string, reason: 'missing-files' | 'manual') {
+    super(
+      `[storage] сервер «${server}» отключён (${reason === 'missing-files' ? 'превышен порог пропавших файлов' : 'вручную'}) и ждёт реактивации`,
+    )
+    this.name = 'StorageServerSuspendedError'
+    this.server = server
+    this.reason = reason
+  }
+}
+
 function isConfiguredEntry(entry: StorageServerEntry): entry is ConfiguredStorageServer {
   return typeof (entry as ConfiguredStorageServer).driver === 'object' && 'limits' in entry
 }
@@ -273,6 +310,9 @@ interface NormalizedServerSlot {
   readonly key: StorageEncryptionKey | null
   readonly rateLimiter: BandwidthLimiter | null
   readonly concurrencyGate: ConcurrencyGate | null
+  readonly hash: boolean
+  readonly missingThreshold?: number
+  readonly initialSuspended: boolean
   readonly cdnUrl?: string
   readonly statTtlMs?: number
 }
@@ -319,6 +359,11 @@ function normalizeSlot(
       key: entry.key ?? null,
       rateLimiter: normalizeServerRate(entry.rate),
       concurrencyGate,
+      hash: Boolean(entry.hash),
+      ...(entry.missingThreshold !== undefined && entry.missingThreshold > 0
+        ? { missingThreshold: Math.floor(entry.missingThreshold) }
+        : {}),
+      initialSuspended: Boolean(entry.suspended),
       ...(entry.cdnUrl?.trim() ? { cdnUrl: entry.cdnUrl.trim() } : {}),
       ...(statTtlMs !== undefined ? { statTtlMs } : {}),
     }
@@ -332,7 +377,64 @@ function normalizeSlot(
     key: null,
     rateLimiter: null,
     concurrencyGate: null,
+    hash: false,
+    initialSuspended: false,
   }
+}
+
+function fnv1a32(str: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash >>> 0
+}
+
+function fanOutReadableStream(
+  source: ReadableStream<Uint8Array>,
+  count: number,
+): ReadableStream<Uint8Array>[] {
+  if (count <= 1) return [source]
+  const branches: ReadableStream<Uint8Array>[] = []
+  let rest = source
+  for (let i = 0; i < count - 1; i++) {
+    const [left, right] = rest.tee()
+    branches.push(left)
+    rest = right
+  }
+  branches.push(rest)
+  return branches
+}
+
+function upsertStoredReplica(
+  existing: readonly StoredReplica[] | undefined,
+  next: StoredReplica,
+): readonly StoredReplica[] {
+  const list = existing ? existing.filter((r) => r.server !== next.server) : []
+  return [...list, next]
+}
+
+function collectAllPhysicalPartsOfRecord(rec: StoredFileRecord): StoredPart[] {
+  const out: StoredPart[] = [...rec.parts]
+  if (rec.replicas) {
+    for (const rep of rec.replicas) {
+      if (rep.parts && rep.parts.length > 0) {
+        out.push(...rep.parts)
+      } else {
+        out.push({
+          index: 0,
+          server: rep.server,
+          path: rep.path,
+          plainBytes: rec.size,
+          storedBytes: rep.storedBytes,
+          encrypted: rep.encrypted,
+          ...(rep.etag !== undefined ? { etag: rep.etag } : {}),
+        })
+      }
+    }
+  }
+  return out
 }
 
 function resolveCallKey(
@@ -617,16 +719,111 @@ export function createStorage(config: StorageConfig): Storage {
   const stateListener = config.state
   const spool = config.spool
   const writeStrategy: WriteStrategy = config.writeStrategy ?? 'priority'
+  const defaultReadStrategy: ReadStrategy = config.readStrategy ?? 'primary'
   const cooldownMs = Math.max(0, config.cooldownMs ?? 0)
+  const globalMissingThreshold =
+    config.missingThreshold !== undefined && config.missingThreshold > 0
+      ? Math.floor(config.missingThreshold)
+      : undefined
+  const onServerSuspended = config.onServerSuspended
   const cooldowns = new Map<string, number>()
+  const suspendedServers = new Map<
+    string,
+    { reason: 'missing-files' | 'manual'; suspendedAt: number }
+  >()
+  const missingCounts = new Map<string, number>()
   let roundRobinCursor = 0
+  let readRoundRobinCursor = 0
 
   const slots = new Map<string, NormalizedServerSlot>()
   for (const name of initialNames) {
-    slots.set(name, normalizeSlot(name, config.servers[name]!, Boolean(store)))
+    const slot = normalizeSlot(name, config.servers[name]!, Boolean(store))
+    slots.set(name, slot)
+    if (slot.initialSuspended) {
+      suspendedServers.set(name, { reason: 'manual', suspendedAt: Date.now() })
+    }
+  }
+
+  function isSlotSuspended(name: string): boolean {
+    return suspendedServers.has(name)
+  }
+
+  function assertSlotWritable(slot: NormalizedServerSlot, bypassSuspended = false): void {
+    if (slot.readOnly) throw new StorageReadOnlyError(slot.name)
+    if (!bypassSuspended) {
+      const susp = suspendedServers.get(slot.name)
+      if (susp) throw new StorageServerSuspendedError(slot.name, susp.reason)
+    }
+  }
+
+  async function syncServerStateFromStore(name: string): Promise<void> {
+    if (!store) return
+    const [storedSusp, storedCount] = await Promise.all([
+      store
+        .get<{ reason: 'missing-files' | 'manual'; suspendedAt: number }>(
+          `suspended:${name}`,
+        )
+        .catch(() => undefined),
+      store.get<number>(`missing:${name}`).catch(() => undefined),
+    ])
+    if (typeof storedCount === 'number' && Number.isFinite(storedCount)) {
+      missingCounts.set(name, Math.max(0, Math.floor(storedCount)))
+    }
+    if (storedSusp && !suspendedServers.has(name)) {
+      suspendedServers.set(name, storedSusp)
+    }
+  }
+
+  async function applySuspendServer(
+    name: string,
+    reason: 'missing-files' | 'manual',
+    countOverride?: number,
+  ): Promise<void> {
+    getSlot(name)
+    const now = Date.now()
+    const count = countOverride ?? missingCounts.get(name) ?? 0
+    const entry = { reason, suspendedAt: now }
+    suspendedServers.set(name, entry)
+    if (store) {
+      await store.set(`suspended:${name}`, entry).catch(() => undefined)
+    }
+    stateListener?.({
+      type: 'server:suspended',
+      server: name,
+      reason,
+      missingCount: count,
+    })
+    if (onServerSuspended) {
+      await onServerSuspended({
+        server: name,
+        reason,
+        missingCount: count,
+        suspendedAt: now,
+      })
+    }
+  }
+
+  async function applyResumeServer(
+    name: string,
+    resetMissingCount = true,
+  ): Promise<void> {
+    getSlot(name)
+    suspendedServers.delete(name)
+    cooldowns.delete(name)
+    if (resetMissingCount) {
+      missingCounts.set(name, 0)
+    }
+    if (store) {
+      await store.delete(`suspended:${name}`).catch(() => undefined)
+      if (resetMissingCount) {
+        await store.delete(`missing:${name}`).catch(() => undefined)
+      }
+    }
+    stateListener?.({ type: 'server:resumed', server: name })
   }
 
   function isServerHealthy(name: string, now = Date.now()): boolean {
+    if (suspendedServers.has(name)) return false
     const until = cooldowns.get(name)
     if (until === undefined) return true
     if (until <= now) {
@@ -661,8 +858,10 @@ export function createStorage(config: StorageConfig): Storage {
       err instanceof StorageQuotaError ||
       err instanceof StorageReadOnlyError ||
       err instanceof StorageOverwriteError ||
+      err instanceof StorageServerSuspendedError ||
       err instanceof StorageConcurrencyError ||
       err instanceof StorageCryptoError ||
+      err instanceof StorageHashMismatchError ||
       err instanceof StorageUploadError ||
       err instanceof RangeError ||
       err instanceof TypeError
@@ -675,6 +874,7 @@ export function createStorage(config: StorageConfig): Storage {
 
   const defaultName =
     config.defaultServer ??
+    initialNames.find((n) => !slots.get(n)!.readOnly && !suspendedServers.has(n)) ??
     initialNames.find((n) => !slots.get(n)!.readOnly) ??
     initialNames[0]!
   if (!slots.has(defaultName)) {
@@ -685,8 +885,12 @@ export function createStorage(config: StorageConfig): Storage {
     config.writePool && config.writePool.length > 0 ? [...config.writePool] : null
 
   function currentWritePool(): readonly string[] {
-    if (customWritePool) return customWritePool.filter((n) => slots.has(n))
-    return [...slots.keys()].filter((n) => !slots.get(n)!.readOnly)
+    if (customWritePool) {
+      return customWritePool.filter((n) => slots.has(n) && !suspendedServers.has(n))
+    }
+    return [...slots.keys()].filter(
+      (n) => !slots.get(n)!.readOnly && !suspendedServers.has(n),
+    )
   }
 
   const ledger = config.ledger ?? memoryLedger()
@@ -706,6 +910,135 @@ export function createStorage(config: StorageConfig): Storage {
     for (const sName of slots.keys()) {
       await store.delete(`head:${sName}:${cleanPath}`).catch(() => undefined)
     }
+  }
+
+  async function deleteUnreferencedPhysicalParts(
+    candidateParts: readonly StoredPart[],
+    excludePath?: string,
+  ): Promise<boolean> {
+    if (candidateParts.length === 0) return false
+    const orphans = await ledger.filterUnreferencedParts(candidateParts, excludePath)
+    let anyRemoved = false
+    for (const p of orphans) {
+      const s = slots.get(p.server)
+      if (s && !s.readOnly) {
+        const ok = await s.driver.del(p.path).catch(() => false)
+        if (ok) anyRemoved = true
+      }
+    }
+    return anyRemoved
+  }
+
+  /**
+   * Зафиксировать пропажу записанной в `ledger` части/реплики на сервере (`driver` вернул `null` без сетевой ошибки).
+   * Повторное обращение к уже отмеченной `missingAt` части не увеличивает счётчик повторно.
+   */
+  async function reportMissingLocation(
+    rec: StoredFileRecord,
+    serverName: string,
+    physicalPath: string,
+  ): Promise<void> {
+    if (!slots.has(serverName)) return
+    const now = Date.now()
+    let newlyMarked = false
+
+    await ledger.patchFile(rec.path, (cur) => {
+      let changed = false
+      const nextParts = cur.parts.map((p) => {
+        if (p.server === serverName && p.path === physicalPath) {
+          if (p.missingAt === undefined) {
+            newlyMarked = true
+            changed = true
+            return { ...p, missingAt: now }
+          }
+        }
+        return p
+      })
+      const nextReplicas = cur.replicas?.map((r) => {
+        if (r.server === serverName) {
+          if (r.parts && r.parts.length > 0) {
+            let repPartChanged = false
+            const updatedRepParts = r.parts.map((rp) => {
+              if (rp.server === serverName && rp.path === physicalPath && rp.missingAt === undefined) {
+                newlyMarked = true
+                repPartChanged = true
+                return { ...rp, missingAt: now }
+              }
+              return rp
+            })
+            if (repPartChanged) {
+              changed = true
+              return { ...r, missingAt: r.missingAt ?? now, parts: updatedRepParts }
+            }
+          } else if (r.path === physicalPath && r.missingAt === undefined) {
+            newlyMarked = true
+            changed = true
+            return { ...r, missingAt: now }
+          }
+        }
+        return r
+      })
+
+      if (!changed) return null
+      const draft: StoredFileRecord = {
+        ...cur,
+        parts: nextParts,
+        ...(nextReplicas !== undefined ? { replicas: nextReplicas } : {}),
+      }
+      return {
+        ...draft,
+        status: computeRecordHealthStatus(draft),
+      }
+    })
+
+    await invalidateStatCache(rec.path)
+
+    if (!newlyMarked) return
+
+    let count: number
+    if (store) {
+      count = await store
+        .incr(`missing:${serverName}`, { ttlMs: 365 * 24 * 60 * 60 * 1000, by: 1 })
+        .catch(() => (missingCounts.get(serverName) ?? 0) + 1)
+    } else {
+      count = (missingCounts.get(serverName) ?? 0) + 1
+    }
+    missingCounts.set(serverName, count)
+
+    stateListener?.({
+      type: 'file:missing',
+      server: serverName,
+      path: physicalPath,
+      missingCount: count,
+    })
+
+    const slot = getSlot(serverName)
+    const threshold = slot.missingThreshold ?? globalMissingThreshold
+    if (
+      threshold !== undefined &&
+      threshold > 0 &&
+      count >= threshold &&
+      !suspendedServers.has(serverName)
+    ) {
+      await applySuspendServer(serverName, 'missing-files', count)
+    }
+  }
+
+  function orderReadGroup(
+    group: readonly NormalizedServerSlot[],
+    strategy: ReadStrategy,
+    affinityKey: string | undefined,
+    cleanPath: string,
+  ): readonly NormalizedServerSlot[] {
+    if (group.length <= 1 || strategy === 'primary') return group
+    if (strategy === 'round-robin') {
+      const start = readRoundRobinCursor % group.length
+      readRoundRobinCursor = (readRoundRobinCursor + 1) % 1_000_000_000
+      return [...group.slice(start), ...group.slice(0, start)]
+    }
+    const key = affinityKey && affinityKey.length > 0 ? affinityKey : cleanPath
+    const start = fnv1a32(key) % group.length
+    return [...group.slice(start), ...group.slice(0, start)]
   }
 
   async function orderGroupByStrategy(group: readonly string[]): Promise<readonly string[]> {
@@ -732,10 +1065,15 @@ export function createStorage(config: StorageConfig): Storage {
 
   async function orderAutoCandidates(pool: readonly string[]): Promise<readonly string[]> {
     if (pool.length === 0) return pool
+    if (store) {
+      await Promise.all(pool.map((n) => syncServerStateFromStore(n)))
+    }
+    const activePool = pool.filter((n) => !suspendedServers.has(n))
+    if (activePool.length === 0) return []
     const now = Date.now()
     const healthy: string[] = []
     const cooling: string[] = []
-    for (const name of pool) {
+    for (const name of activePool) {
       if (isServerHealthy(name, now)) healthy.push(name)
       else cooling.push(name)
     }
@@ -748,6 +1086,7 @@ export function createStorage(config: StorageConfig): Storage {
   async function resolveReadSlot(
     cleanPath: string,
     explicitServer?: string | readonly string[],
+    preloadedRec?: StoredFileRecord | null,
   ): Promise<NormalizedServerSlot> {
     if (typeof explicitServer === 'string') {
       if (explicitServer && explicitServer !== 'auto') return getSlot(explicitServer)
@@ -755,8 +1094,17 @@ export function createStorage(config: StorageConfig): Storage {
       const first = explicitServer.find((s) => s && s !== 'auto')
       if (first) return getSlot(first)
     }
-    const rec = await ledger.getFile(cleanPath)
+    const rec = preloadedRec !== undefined ? preloadedRec : await ledger.getFile(cleanPath)
     const recordedServer = rec?.parts[0]?.server
+    if (recordedServer && slots.has(recordedServer) && !suspendedServers.has(recordedServer)) {
+      return slots.get(recordedServer)!
+    }
+    const healthyReplica = rec?.replicas?.find(
+      (r) => r.missingAt === undefined && slots.has(r.server) && !suspendedServers.has(r.server),
+    )
+    if (healthyReplica) {
+      return slots.get(healthyReplica.server)!
+    }
     if (recordedServer && slots.has(recordedServer)) {
       return slots.get(recordedServer)!
     }
@@ -766,6 +1114,9 @@ export function createStorage(config: StorageConfig): Storage {
   async function resolveReadCandidates(
     cleanPath: string,
     explicitServer?: string | readonly string[],
+    readStrategyOverride?: ReadStrategy,
+    affinityKey?: string,
+    preloadedRec?: StoredFileRecord | null,
   ): Promise<readonly NormalizedServerSlot[]> {
     if (typeof explicitServer === 'string') {
       if (explicitServer && explicitServer !== 'auto') return [getSlot(explicitServer)]
@@ -776,37 +1127,69 @@ export function createStorage(config: StorageConfig): Storage {
       if (explicitList.length > 0) return explicitList
     }
 
-    const rec = await ledger.getFile(cleanPath)
+    const rec = preloadedRec !== undefined ? preloadedRec : await ledger.getFile(cleanPath)
     const primaryName =
       rec?.parts[0]?.server && slots.has(rec.parts[0].server)
         ? rec.parts[0].server
         : defaultName
 
-    const candidateNames: string[] = [primaryName]
-    for (const name of slots.keys()) {
-      if (name === primaryName) continue
-      const replica = await ledger.getFile(`@replica:${name}:${cleanPath}`)
-      if (replica) {
-        candidateNames.push(name)
+    const candidateNames: string[] = []
+    const primaryMissing = Boolean(rec && rec.parts.some((p) => p.missingAt !== undefined))
+    if (!primaryMissing) {
+      candidateNames.push(primaryName)
+    }
+
+    if (rec && rec.replicas !== undefined) {
+      // Современная запись: 0 дополнительных N+1 запросов к ledger!
+      for (const rep of rec.replicas) {
+        if (rep.missingAt !== undefined) continue
+        if (rep.parts?.some((rp) => rp.missingAt !== undefined)) continue
+        if (slots.has(rep.server) && !candidateNames.includes(rep.server)) {
+          candidateNames.push(rep.server)
+        }
+      }
+    } else {
+      // Обратная совместимость со старыми записями без поля `replicas`
+      for (const name of slots.keys()) {
+        if (name === primaryName) continue
+        const replica = await ledger.getFile(`@replica:${name}:${cleanPath}`)
+        if (replica && !candidateNames.includes(name)) {
+          candidateNames.push(name)
+        }
       }
     }
 
-    if (candidateNames.length <= 1) {
-      return [getSlot(primaryName)]
+    if (store && candidateNames.length > 0) {
+      await Promise.all(candidateNames.map((n) => syncServerStateFromStore(n)))
+    }
+
+    const activeNames = candidateNames.filter((n) => !suspendedServers.has(n))
+    if (activeNames.length === 0) {
+      return []
+    }
+
+    const strategy = readStrategyOverride ?? defaultReadStrategy
+    if (activeNames.length === 1) {
+      return [getSlot(activeNames[0]!)]
     }
 
     const now = Date.now()
     const healthySlots: NormalizedServerSlot[] = []
     const coolingSlots: NormalizedServerSlot[] = []
-    for (const name of candidateNames) {
+    for (const name of activeNames) {
       const slot = getSlot(name)
       if (isServerHealthy(name, now)) healthySlots.push(slot)
       else coolingSlots.push(slot)
     }
-    return [...healthySlots, ...coolingSlots]
+    const orderedHealthy = orderReadGroup(healthySlots, strategy, affinityKey, cleanPath)
+    const orderedCooling = orderReadGroup(coolingSlots, strategy, affinityKey, cleanPath)
+    return [...orderedHealthy, ...orderedCooling]
   }
 
-  function recordToStoredObject(record: StoredFileRecord): StoredObject {
+  function recordToStoredObject(
+    record: StoredFileRecord,
+    extra?: { readonly deduplicated?: boolean },
+  ): StoredObject {
     const primaryServer = record.parts[0]?.server ?? defaultName
     const primarySlot = slots.get(primaryServer)
     const isMultiPart = record.parts.length > 1
@@ -817,6 +1200,7 @@ export function createStorage(config: StorageConfig): Storage {
       isMultiPart || primaryServer === defaultName,
       tech?.publicOrigin,
     )
+    const replicaNames = record.replicas?.map((r) => r.server)
     return {
       path: record.path,
       server: primaryServer,
@@ -826,6 +1210,9 @@ export function createStorage(config: StorageConfig): Storage {
       partsCount: record.parts.length,
       contentType: record.type,
       lastModified: record.lastModified,
+      ...(record.hash !== undefined ? { hash: record.hash } : {}),
+      ...(extra?.deduplicated !== undefined ? { deduplicated: extra.deduplicated } : {}),
+      ...(replicaNames && replicaNames.length > 0 ? { replicas: replicaNames } : {}),
       ...(url !== undefined ? { url } : {}),
     }
   }
@@ -864,8 +1251,24 @@ export function createStorage(config: StorageConfig): Storage {
     contentType: string
     lastModified: number
     overrides: StorageCallOverrides
-  }): Promise<{ meta: DriverStoredMeta; encrypted: boolean; plainBytes: number }> {
-    const { slot, partPath, plainSize, contentType, lastModified, overrides } = params
+    computeHash?: boolean
+    expectedHash?: string
+  }): Promise<{
+    meta: DriverStoredMeta
+    encrypted: boolean
+    plainBytes: number
+    plainHash?: string
+  }> {
+    const {
+      slot,
+      partPath,
+      plainSize,
+      contentType,
+      lastModified,
+      overrides,
+      computeHash,
+      expectedHash,
+    } = params
     const effectiveKey = resolveCallKey(slot.key, overrides.key)
     const limiter = resolveCallRate(slot.rateLimiter, overrides.rate)
     const gate = resolveCallConcurrency(slot.name, slot.concurrencyGate, overrides.concurrency)
@@ -874,6 +1277,9 @@ export function createStorage(config: StorageConfig): Storage {
       ? await gate.acquire({ meta: overrides.meta, signal: overrides.signal })
       : null
     const activeSignal = lease ? lease.signal : overrides.signal
+
+    const hasher =
+      computeHash || expectedHash !== undefined ? createSha256Hasher() : null
 
     stateListener?.({ type: 'upload:start', server: slot.name, path: partPath })
     try {
@@ -891,6 +1297,7 @@ export function createStorage(config: StorageConfig): Storage {
               return
             }
             seenPlain += value.byteLength
+            hasher?.update(value)
             c.enqueue(value)
           } catch (e) {
             if (plainReader) {
@@ -942,6 +1349,12 @@ export function createStorage(config: StorageConfig): Storage {
         )
       }
 
+      const plainHash = hasher ? hasher.digestHex() : undefined
+      if (expectedHash !== undefined && plainHash !== expectedHash) {
+        await slot.driver.del(partPath).catch(() => undefined)
+        throw new StorageHashMismatchError(expectedHash, plainHash ?? '')
+      }
+
       stateListener?.({
         type: 'upload:done',
         server: slot.name,
@@ -953,6 +1366,7 @@ export function createStorage(config: StorageConfig): Storage {
         meta,
         encrypted: effectiveKey !== null,
         plainBytes: plainSize ?? seenPlain,
+        ...(plainHash !== undefined ? { plainHash } : {}),
       }
     } catch (err) {
       stateListener?.({
@@ -1181,6 +1595,11 @@ export function createStorage(config: StorageConfig): Storage {
                       effectivePartOverrides,
                     )
                     if (!partFile) {
+                      await reportMissingLocation(
+                        record,
+                        current.part.server,
+                        current.part.path,
+                      )
                       throw new Error(
                         `[storage] физическая часть #${current.part.index} («${current.part.path}») отсутствует на сервере «${current.part.server}»`,
                       )
@@ -1249,7 +1668,7 @@ export function createStorage(config: StorageConfig): Storage {
   }): Promise<{ parts: readonly PlannedSplitPart[]; reservationId: string } | null> {
     const splitPool = params.candidates
       .map((n) => getSlot(n))
-      .filter((s) => !s.readOnly && s.allowSplit)
+      .filter((s) => !s.readOnly && s.allowSplit && !suspendedServers.has(s.name))
     if (splitPool.length === 0) return null
 
     const snap = await ledger.usage(splitPool.map((s) => s.name))
@@ -1373,7 +1792,11 @@ export function createStorage(config: StorageConfig): Storage {
       if (!cleanName || cleanName === 'auto') {
         throw new RangeError(`[storage] недопустимое имя сервера «${name}»`)
       }
-      slots.set(cleanName, normalizeSlot(cleanName, entry, Boolean(store)))
+      const nextSlot = normalizeSlot(cleanName, entry, Boolean(store))
+      slots.set(cleanName, nextSlot)
+      if (nextSlot.initialSuspended && !suspendedServers.has(cleanName)) {
+        suspendedServers.set(cleanName, { reason: 'manual', suspendedAt: Date.now() })
+      }
     },
 
     async removeServer(name: string): Promise<boolean> {
@@ -1387,7 +1810,173 @@ export function createStorage(config: StorageConfig): Storage {
           `[storage] нельзя удалить сервер «${name}» во время активной загрузки (reservedBytes > 0)`,
         )
       }
+      suspendedServers.delete(name)
+      missingCounts.delete(name)
+      cooldowns.delete(name)
       return slots.delete(name)
+    },
+
+    async suspendServer(
+      serverName: string,
+      reason: 'manual' | 'missing-files' = 'manual',
+    ): Promise<void> {
+      await applySuspendServer(serverName, reason)
+    },
+
+    async resumeServer(
+      serverName: string,
+      options?: { readonly resetMissingCount?: boolean },
+    ): Promise<void> {
+      await applyResumeServer(serverName, options?.resetMissingCount !== false)
+    },
+
+    isServerSuspended(serverName: string): boolean {
+      getSlot(serverName)
+      return isSlotSuspended(serverName)
+    },
+
+    async reconcile(options?: StorageReconcileOptions): Promise<StorageReconcileReport> {
+      const limit =
+        options?.limit !== undefined && options.limit > 0 ? Math.floor(options.limit) : 50
+      const filterSet =
+        options?.servers && options.servers.length > 0 ? new Set(options.servers) : null
+      if (filterSet) {
+        for (const s of filterSet) getSlot(s)
+      }
+
+      const problemRecords = await ledger.listMissingFiles({
+        limit,
+        ...(filterSet ? { servers: [...filterSet] } : {}),
+      })
+
+      const restoredFiles: string[] = []
+      const stillMissingFiles: string[] = []
+      let restoredParts = 0
+
+      for (const rec of problemRecords) {
+        options?.signal?.throwIfAborted()
+        let recRestoredCount = 0
+        const restoredByServer = new Map<string, number>()
+
+        const nextParts: StoredPart[] = []
+        for (const part of rec.parts) {
+          if (
+            part.missingAt === undefined ||
+            (filterSet !== null && !filterSet.has(part.server)) ||
+            !slots.has(part.server)
+          ) {
+            nextParts.push(part)
+            continue
+          }
+          const slot = getSlot(part.server)
+          const meta = await slot.driver.head(part.path).catch(() => null)
+          if (meta && meta.size === part.storedBytes) {
+            const { missingAt: _removed, ...cleanPart } = part
+            nextParts.push(cleanPart)
+            recRestoredCount += 1
+            restoredByServer.set(part.server, (restoredByServer.get(part.server) ?? 0) + 1)
+          } else {
+            nextParts.push(part)
+          }
+        }
+
+        let nextReplicas: StoredReplica[] | undefined
+        if (rec.replicas) {
+          nextReplicas = []
+          for (const rep of rec.replicas) {
+            if (
+              rep.missingAt === undefined ||
+              (filterSet !== null && !filterSet.has(rep.server)) ||
+              !slots.has(rep.server)
+            ) {
+              nextReplicas.push(rep)
+              continue
+            }
+            const slot = getSlot(rep.server)
+            const meta = await slot.driver.head(rep.path).catch(() => null)
+            if (meta && meta.size === rep.storedBytes) {
+              const { missingAt: _removed, ...cleanRep } = rep
+              nextReplicas.push(cleanRep)
+              recRestoredCount += 1
+              restoredByServer.set(rep.server, (restoredByServer.get(rep.server) ?? 0) + 1)
+            } else {
+              nextReplicas.push(rep)
+            }
+          }
+        }
+
+        const checkedAt = Date.now()
+        const updatedDraft: StoredFileRecord = {
+          ...rec,
+          parts: nextParts,
+          ...(nextReplicas !== undefined ? { replicas: nextReplicas } : {}),
+          checkedAt,
+        }
+        const nextStatus = computeRecordHealthStatus(updatedDraft)
+        await ledger.patchFile(rec.path, () => ({
+          ...updatedDraft,
+          status: nextStatus,
+        }))
+        await invalidateStatCache(rec.path)
+
+        if (recRestoredCount > 0) {
+          restoredParts += recRestoredCount
+          for (const [srv, dec] of restoredByServer.entries()) {
+            const prev = missingCounts.get(srv) ?? 0
+            const nextCount = Math.max(0, prev - dec)
+            missingCounts.set(srv, nextCount)
+            if (store) {
+              if (nextCount === 0) {
+                await store.delete(`missing:${srv}`).catch(() => undefined)
+              } else {
+                await store.set(`missing:${srv}`, nextCount).catch(() => undefined)
+              }
+            }
+            stateListener?.({ type: 'file:restored', server: srv, path: rec.path })
+          }
+        }
+
+        if (nextStatus === 'ok') {
+          restoredFiles.push(rec.path)
+        } else {
+          stillMissingFiles.push(rec.path)
+        }
+      }
+
+      const targetServers = filterSet ? [...filterSet] : [...slots.keys()]
+      const remainingMissingByServer: Record<string, number> = {}
+      const resumedServers: string[] = []
+
+      for (const srv of targetServers) {
+        const remaining = await ledger.listMissingFiles({ servers: [srv], limit: 1000 })
+        const actualCount = remaining.length
+        missingCounts.set(srv, actualCount)
+        if (store) {
+          if (actualCount === 0) {
+            await store.delete(`missing:${srv}`).catch(() => undefined)
+          } else {
+            await store.set(`missing:${srv}`, actualCount).catch(() => undefined)
+          }
+        }
+        remainingMissingByServer[srv] = actualCount
+
+        if (options?.autoResumeServers && actualCount === 0) {
+          const susp = suspendedServers.get(srv)
+          if (susp && susp.reason === 'missing-files') {
+            await applyResumeServer(srv, true)
+            resumedServers.push(srv)
+          }
+        }
+      }
+
+      return {
+        checkedFiles: problemRecords.length,
+        restoredFiles,
+        restoredParts,
+        stillMissingFiles,
+        resumedServers,
+        serverMissingCounts: remainingMissingByServer,
+      }
     },
 
     async probe(serverName: string): Promise<StorageProbeResult> {
@@ -1461,19 +2050,20 @@ export function createStorage(config: StorageConfig): Storage {
       let probeError: string | undefined
       try {
         const p0 = performance.now()
-        await this.put({
-          path: probePath,
-          body: new ReadableStream<Uint8Array>({
+        await writePhysicalPart({
+          slot,
+          partPath: probePath,
+          plainStream: new ReadableStream<Uint8Array>({
             start(c) {
               c.enqueue(expected.subarray(0, 48))
               c.enqueue(expected.subarray(48))
               c.close()
             },
           }),
-          size: expected.byteLength,
+          plainSize: expected.byteLength,
           contentType: 'application/octet-stream',
-          server: slot.name,
-          split: false,
+          lastModified: Date.now(),
+          overrides: {},
         })
         steps.push({
           step: 'put',
@@ -1536,7 +2126,7 @@ export function createStorage(config: StorageConfig): Storage {
       } finally {
         const d0 = performance.now()
         try {
-          await this.del(probePath, { server: slot.name })
+          await slot.driver.del(probePath)
           steps.push({
             step: 'delete',
             ok: true,
@@ -1574,7 +2164,18 @@ export function createStorage(config: StorageConfig): Storage {
 
     async put(input: StoragePutInput): Promise<StoredObject> {
       const path = normalizeStoragePath(input.path)
+      const normalizedExpectedHash =
+        input.expectedHash !== undefined
+          ? normalizeExpectedSha256(input.expectedHash)
+          : undefined
+
       const isAutoTarget = !input.server || input.server === 'auto'
+      if (!isAutoTarget) {
+        const explicitSlot = getSlot(input.server!)
+        if (store) await syncServerStateFromStore(explicitSlot.name)
+        assertSlotWritable(explicitSlot)
+      }
+
       if (input.overwrite === false) {
         const alreadyExists = await this.has(
           path,
@@ -1633,12 +2234,200 @@ export function createStorage(config: StorageConfig): Storage {
         const lastModified = input.lastModified ?? Date.now()
 
         const isAutoServer = !input.server || input.server === 'auto'
+        const rawWritePool = currentWritePool()
         const candidates = !isAutoServer
           ? [input.server!]
-          : await orderAutoCandidates(currentWritePool())
+          : await orderAutoCandidates(rawWritePool)
 
         if (candidates.length === 0) {
+          // Если все пишущие серверы заблокированы (suspended), бросаем StorageServerSuspendedError
+          for (const [sName, susp] of suspendedServers.entries()) {
+            const s = slots.get(sName)
+            if (s && !s.readOnly) {
+              throw new StorageServerSuspendedError(sName, susp.reason)
+            }
+          }
           throw new StorageReadOnlyError(defaultName)
+        }
+
+        const resolveReplicaSlots = async (
+          primaryName: string,
+        ): Promise<NormalizedServerSlot[]> => {
+          if (input.replicate === undefined) return []
+          if (typeof input.replicate === 'number') {
+            if (!Number.isFinite(input.replicate) || input.replicate <= 1) return []
+            const wantExtra = Math.floor(input.replicate) - 1
+            const orderedPool = await orderAutoCandidates(currentWritePool())
+            const out: NormalizedServerSlot[] = []
+            for (const sName of orderedPool) {
+              if (sName === primaryName) continue
+              const s = getSlot(sName)
+              if (!s.readOnly && !suspendedServers.has(s.name)) {
+                out.push(s)
+                if (out.length >= wantExtra) break
+              }
+            }
+            return out
+          }
+          const seen = new Set<string>([primaryName])
+          const out: NormalizedServerSlot[] = []
+          for (const rawName of input.replicate) {
+            if (!rawName || rawName === 'auto' || seen.has(rawName)) continue
+            seen.add(rawName)
+            const s = getSlot(rawName)
+            if (store) await syncServerStateFromStore(s.name)
+            assertSlotWritable(s)
+            out.push(s)
+          }
+          return out
+        }
+
+        const verifyExistingPhysicalLive = async (
+          existing: StoredFileRecord,
+        ): Promise<boolean> => {
+          if (
+            !isAutoServer &&
+            !existing.parts.every((p) => p.server === input.server)
+          ) {
+            return false
+          }
+          for (const p of existing.parts) {
+            if (p.missingAt !== undefined) return false
+            const s = slots.get(p.server)
+            if (!s || suspendedServers.has(s.name)) return false
+            const headMeta = await s.driver.head(p.path).catch(() => null)
+            if (!headMeta || headMeta.size !== p.storedBytes) {
+              await reportMissingLocation(existing, p.server, p.path)
+              return false
+            }
+          }
+          return true
+        }
+
+        const commitDeduplicatedRecord = async (
+          existing: StoredFileRecord,
+          verifiedHash: string,
+        ): Promise<StoredObject> => {
+          const cleanParts: StoredPart[] = existing.parts.map((p) => ({
+            index: p.index,
+            server: p.server,
+            path: p.path,
+            plainBytes: p.plainBytes,
+            storedBytes: p.storedBytes,
+            encrypted: p.encrypted,
+            ...(p.etag !== undefined ? { etag: p.etag } : {}),
+          }))
+          const cleanReplicas: StoredReplica[] = (existing.replicas ?? [])
+            .filter((r) => r.missingAt === undefined && slots.has(r.server))
+            .map((r) => ({ ...r }))
+
+          const record: StoredFileRecord = {
+            path,
+            name: basenameOfStoragePath(path),
+            size: existing.size,
+            storedBytes: existing.storedBytes,
+            type: contentType,
+            lastModified,
+            createdAt: Date.now(),
+            hash: verifiedHash,
+            status: 'ok',
+            parts: cleanParts,
+            replicas: cleanReplicas,
+          }
+          const dedupResId = nextReservationId()
+          await ledger.reserve({
+            id: dedupResId,
+            allocations: [],
+            ttlMs: reservationTtlMs,
+          })
+          const { replaced } = await ledger.commit({
+            reservationId: dedupResId,
+            file: record,
+          })
+          await invalidateStatCache(path)
+          if (replaced) {
+            await deleteUnreferencedPhysicalParts(
+              collectAllPhysicalPartsOfRecord(replaced),
+            )
+          }
+
+          // Если при дедупликации запрошены дополнительные реплики, которых ещё нет у файла — доклонируем их
+          const primarySrv = cleanParts[0]?.server ?? defaultName
+          const extraRepSlots = await resolveReplicaSlots(primarySrv)
+          const missingRepSlots = extraRepSlots.filter(
+            (rs) => !cleanReplicas.some((r) => r.server === rs.name),
+          )
+          if (missingRepSlots.length > 0) {
+            for (const rs of missingRepSlots) {
+              await this.copy({
+                path,
+                to: rs.name,
+                ...(input.key !== undefined ? { key: input.key } : {}),
+                ...(input.rate !== undefined ? { rate: input.rate } : {}),
+                ...(input.concurrency !== undefined ? { concurrency: input.concurrency } : {}),
+                ...(input.meta !== undefined ? { meta: input.meta } : {}),
+                ...(input.signal !== undefined ? { signal: input.signal } : {}),
+              })
+            }
+            const refreshed = await ledger.getFile(path)
+            if (refreshed) {
+              return recordToStoredObject(refreshed, { deduplicated: true })
+            }
+          }
+
+          return recordToStoredObject(record, { deduplicated: true })
+        }
+
+        const replayableFullStream =
+          normalized.sliceable !== undefined && expectedPlainSize !== undefined
+            ? () => normalized.sliceable!(0, expectedPlainSize)
+            : null
+
+        const anyCandidateWantsHash =
+          normalizedExpectedHash !== undefined ||
+          input.hash === true ||
+          (input.hash === undefined && candidates.some((c) => getSlot(c).hash))
+
+        let precomputedHash: string | undefined
+
+        // Сценарий Г.1: replayable-источник с включённым hash / expectedHash — считаем SHA-256 до сети!
+        if (anyCandidateWantsHash && replayableFullStream) {
+          precomputedHash = await hashStreamSha256(
+            replayableFullStream(),
+            input.signal,
+          )
+          if (
+            normalizedExpectedHash !== undefined &&
+            precomputedHash !== normalizedExpectedHash
+          ) {
+            throw new StorageHashMismatchError(
+              normalizedExpectedHash,
+              precomputedHash,
+            )
+          }
+          const existing = await ledger.findByHash(precomputedHash, expectedPlainSize)
+          if (existing && (await verifyExistingPhysicalLive(existing))) {
+            return commitDeduplicatedRecord(existing, precomputedHash)
+          }
+        } else if (!replayableFullStream && normalizedExpectedHash !== undefined) {
+          // Сценарий Г.2: однопроходный поток + заранее известный expectedHash — проверяем реестр ДО сети!
+          const existing = await ledger.findByHash(
+            normalizedExpectedHash,
+            expectedPlainSize,
+          )
+          if (existing && (await verifyExistingPhysicalLive(existing))) {
+            const actualHash = await hashStreamSha256(normalized.stream, input.signal)
+            if (actualHash !== normalizedExpectedHash) {
+              throw new StorageHashMismatchError(normalizedExpectedHash, actualHash)
+            }
+            if (
+              expectedPlainSize === undefined &&
+              existing.size !== undefined
+            ) {
+              // Проверяем совпадение размера уже найденной записи при отсутствии input.size
+            }
+            return commitDeduplicatedRecord(existing, actualHash)
+          }
         }
 
         // Проверяем, требуется ли принудительная нарезка (явные splitServers с split: true)
@@ -1646,11 +2435,6 @@ export function createStorage(config: StorageConfig): Storage {
           input.split === true &&
           input.splitServers !== undefined &&
           input.splitServers.length > 0
-
-        const replayableFullStream =
-          normalized.sliceable !== undefined && expectedPlainSize !== undefined
-            ? () => normalized.sliceable!(0, expectedPlainSize)
-            : null
 
         let lastReadOnly: string | null = null
         let lastOverFileLimit: { server: string; max: number; needed: number } | null = null
@@ -1665,6 +2449,14 @@ export function createStorage(config: StorageConfig): Storage {
               lastReadOnly = slot.name
               continue
             }
+            if (suspendedServers.has(slot.name)) {
+              if (!isAutoServer) {
+                const susp = suspendedServers.get(slot.name)!
+                throw new StorageServerSuspendedError(slot.name, susp.reason)
+              }
+              continue
+            }
+
             const effectiveKey = resolveCallKey(slot.key, input.key)
             const neededStored =
               expectedPlainSize !== undefined
@@ -1682,72 +2474,208 @@ export function createStorage(config: StorageConfig): Storage {
               continue
             }
 
+            const replicaSlots = await resolveReplicaSlots(slot.name)
+            const validReplicaSlots: NormalizedServerSlot[] = []
+            const allocations: ServerAllocation[] = [
+              {
+                server: slot.name,
+                bytes: neededStored,
+                maxStorageBytes: slot.limits.storageBytes,
+              },
+            ]
+
+            for (const repSlot of replicaSlots) {
+              const repKey = resolveCallKey(repSlot.key, input.key)
+              const repNeeded =
+                expectedPlainSize !== undefined
+                  ? repKey !== null
+                    ? encryptedSize(expectedPlainSize)
+                    : expectedPlainSize
+                  : 0
+              if (repNeeded > repSlot.limits.fileBytes) {
+                if (Array.isArray(input.replicate)) {
+                  throw new RangeError(
+                    `[storage] размер реплики (${repNeeded} Б) превышает лимит файла сервера «${repSlot.name}» (${repSlot.limits.fileBytes} Б)`,
+                  )
+                }
+                continue
+              }
+              validReplicaSlots.push(repSlot)
+              allocations.push({
+                server: repSlot.name,
+                bytes: repNeeded,
+                maxStorageBytes: repSlot.limits.storageBytes,
+              })
+            }
+
             const reservationId = nextReservationId()
             const reserved = await ledger.reserve({
               id: reservationId,
-              allocations: [
-                {
-                  server: slot.name,
-                  bytes: neededStored,
-                  maxStorageBytes: slot.limits.storageBytes,
-                },
-              ],
+              allocations,
               ttlMs: reservationTtlMs,
             })
             if (!reserved) {
-              lastQuotaServer = slot.name
-              continue
+              // Если авто-реплика не влезла по квоте, но основной сервер вмещает — пробуем без авто-реплики или идём дальше
+              if (
+                validReplicaSlots.length > 0 &&
+                typeof input.replicate === 'number'
+              ) {
+                const primaryOnlyRes = await ledger.reserve({
+                  id: reservationId,
+                  allocations: [allocations[0]!],
+                  ttlMs: reservationTtlMs,
+                })
+                if (primaryOnlyRes) {
+                  validReplicaSlots.length = 0
+                } else {
+                  lastQuotaServer = slot.name
+                  continue
+                }
+              } else {
+                const ExplicitFailSrv =
+                  Array.isArray(input.replicate) && validReplicaSlots.length > 0
+                    ? validReplicaSlots[0]!.name
+                    : slot.name
+                lastQuotaServer = ExplicitFailSrv
+                continue
+              }
             }
 
+            const slotWantsHash =
+              normalizedExpectedHash !== undefined ||
+              (input.hash !== undefined ? input.hash : slot.hash)
+            const needStreamHash = slotWantsHash && precomputedHash === undefined
+
+            const writtenTargets: Array<{ srv: NormalizedServerSlot; path: string }> = []
             try {
-              const attemptStream = replayableFullStream
-                ? replayableFullStream()
-                : normalized.stream
-              const written = await writePhysicalPart({
-                slot,
-                partPath: path,
-                plainStream: attemptStream,
-                ...(expectedPlainSize !== undefined ? { plainSize: expectedPlainSize } : {}),
-                contentType,
-                lastModified,
-                overrides: input,
-              })
-              markServerHealthy(slot.name)
+              const allTargets = [slot, ...validReplicaSlots]
+              const streams: ReadableStream<Uint8Array>[] = replayableFullStream
+                ? allTargets.map(() => replayableFullStream())
+                : fanOutReadableStream(normalized.stream, allTargets.length)
+
+              const results = await Promise.all(
+                allTargets.map(async (targetSlot, idx) => {
+                  const probeRef: StoredPart = {
+                    index: 0,
+                    server: targetSlot.name,
+                    path,
+                    plainBytes: 0,
+                    storedBytes: 0,
+                    encrypted: false,
+                  }
+                  const unref = await ledger.filterUnreferencedParts([probeRef], path)
+                  const targetPartPath =
+                    unref.length > 0
+                      ? path
+                      : `${path}.cow-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+                  const w = await writePhysicalPart({
+                    slot: targetSlot,
+                    partPath: targetPartPath,
+                    plainStream: streams[idx]!,
+                    ...(expectedPlainSize !== undefined
+                      ? { plainSize: expectedPlainSize }
+                      : {}),
+                    contentType,
+                    lastModified,
+                    overrides: input,
+                    ...(idx === 0 && needStreamHash ? { computeHash: true } : {}),
+                    ...(idx === 0 &&
+                    normalizedExpectedHash !== undefined &&
+                    precomputedHash === undefined
+                      ? { expectedHash: normalizedExpectedHash }
+                      : {}),
+                  })
+                  writtenTargets.push({ srv: targetSlot, path: w.meta.path })
+                  markServerHealthy(targetSlot.name)
+                  return { targetSlot, written: w }
+                }),
+              )
+
+              const primaryRes = results[0]!.written
+              const finalHash = precomputedHash ?? primaryRes.plainHash
+
+              // Сценарий Г.3: однопроходный поток с `hash: true` без известного заранее хеша —
+              // если уже есть живой файл с таким же SHA-256 под другим путём, освобождаем свежие дубли!
+              if (
+                finalHash !== undefined &&
+                precomputedHash === undefined &&
+                validReplicaSlots.length === 0
+              ) {
+                const existing = await ledger.findByHash(
+                  finalHash,
+                  primaryRes.plainBytes,
+                )
+                if (
+                  existing &&
+                  existing.path !== path &&
+                  !(
+                    existing.parts.length === 1 &&
+                    existing.parts[0]!.server === slot.name &&
+                    existing.parts[0]!.path === primaryRes.meta.path
+                  ) &&
+                  (await verifyExistingPhysicalLive(existing))
+                ) {
+                  await slot.driver.del(primaryRes.meta.path).catch(() => undefined)
+                  await ledger.release(reservationId).catch(() => undefined)
+                  return commitDeduplicatedRecord(existing, finalHash)
+                }
+              }
+
+              const nowTs = Date.now()
+              const writtenReplicas: StoredReplica[] = results
+                .slice(1)
+                .map(({ targetSlot, written }) => ({
+                  server: targetSlot.name,
+                  path: written.meta.path,
+                  storedBytes: written.meta.size,
+                  encrypted: written.encrypted,
+                  createdAt: nowTs,
+                }))
 
               const record: StoredFileRecord = {
-                path: written.meta.path,
-                name: basenameOfStoragePath(written.meta.path),
-                size: written.plainBytes,
-                storedBytes: written.meta.size,
-                type: written.meta.contentType,
-                lastModified: written.meta.lastModified,
-                createdAt: Date.now(),
+                path,
+                name: basenameOfStoragePath(path),
+                size: primaryRes.plainBytes,
+                storedBytes: primaryRes.meta.size,
+                type: primaryRes.meta.contentType,
+                lastModified: primaryRes.meta.lastModified,
+                createdAt: nowTs,
+                ...(finalHash !== undefined ? { hash: finalHash } : {}),
+                status: 'ok',
                 parts: [
                   {
                     index: 0,
                     server: slot.name,
-                    path: written.meta.path,
-                    plainBytes: written.plainBytes,
-                    storedBytes: written.meta.size,
-                    encrypted: written.encrypted,
+                    path: primaryRes.meta.path,
+                    plainBytes: primaryRes.plainBytes,
+                    storedBytes: primaryRes.meta.size,
+                    encrypted: primaryRes.encrypted,
                   },
                 ],
+                replicas: writtenReplicas,
               }
               const { replaced } = await ledger.commit({ reservationId, file: record })
               await invalidateStatCache(path)
               if (replaced) {
-                for (const oldPart of replaced.parts) {
-                  if (oldPart.server !== slot.name || oldPart.path !== written.meta.path) {
-                    const oldSlot = slots.get(oldPart.server)
-                    if (oldSlot && !oldSlot.readOnly) {
-                      await oldSlot.driver.del(oldPart.path).catch(() => undefined)
-                    }
-                  }
-                }
+                const keptKeys = new Set(
+                  collectAllPhysicalPartsOfRecord(record).map(
+                    (p) => `${p.server}:${p.path}`,
+                  ),
+                )
+                const oldCandidates = collectAllPhysicalPartsOfRecord(replaced).filter(
+                  (p) => !keptKeys.has(`${p.server}:${p.path}`),
+                )
+                await deleteUnreferencedPhysicalParts(oldCandidates)
               }
 
               return recordToStoredObject(record)
             } catch (err) {
+              for (const wt of writtenTargets) {
+                if (!wt.srv.readOnly) {
+                  await wt.srv.driver.del(wt.path).catch(() => undefined)
+                }
+              }
               await ledger.release(reservationId).catch(() => undefined)
               if (isAutoServer && isTransientDriverFailure(err, input.signal)) {
                 markServerCooldown(
@@ -1830,7 +2758,10 @@ export function createStorage(config: StorageConfig): Storage {
                 type: contentType,
                 lastModified,
                 createdAt: Date.now(),
+                ...(precomputedHash !== undefined ? { hash: precomputedHash } : {}),
+                status: 'ok',
                 parts: writtenParts,
+                replicas: [],
               }
               const { replaced } = await ledger.commit({
                 reservationId: splitPlan.reservationId,
@@ -1838,15 +2769,11 @@ export function createStorage(config: StorageConfig): Storage {
               })
               await invalidateStatCache(path)
               if (replaced) {
-                const newKeys = new Set(writtenParts.map((wp) => `${wp.server}:${wp.path}`))
-                for (const oldPart of replaced.parts) {
-                  if (!newKeys.has(`${oldPart.server}:${oldPart.path}`)) {
-                    const oldSlot = slots.get(oldPart.server)
-                    if (oldSlot && !oldSlot.readOnly) {
-                      await oldSlot.driver.del(oldPart.path).catch(() => undefined)
-                    }
-                  }
-                }
+                const keptKeys = new Set(writtenParts.map((wp) => `${wp.server}:${wp.path}`))
+                const oldCandidates = collectAllPhysicalPartsOfRecord(replaced).filter(
+                  (p) => !keptKeys.has(`${p.server}:${p.path}`),
+                )
+                await deleteUnreferencedPhysicalParts(oldCandidates)
               }
               return recordToStoredObject(record)
             } catch (err) {
@@ -1943,9 +2870,32 @@ export function createStorage(config: StorageConfig): Storage {
       if (rec && rec.parts.some((p) => p.server === slot.name)) {
         return rec
       }
-      const rep = await ledger.getFile(`@replica:${slot.name}:${clean}`)
-      if (rep) {
-        return { ...rep, path: clean }
+      const inlineRep = rec?.replicas?.find((r) => r.server === slot.name)
+      if (rec && inlineRep) {
+        return {
+          ...rec,
+          storedBytes: inlineRep.storedBytes,
+          parts: inlineRep.parts ?? [
+            {
+              index: 0,
+              server: inlineRep.server,
+              path: inlineRep.path,
+              plainBytes: rec.size,
+              storedBytes: inlineRep.storedBytes,
+              encrypted: inlineRep.encrypted,
+              ...(inlineRep.etag !== undefined ? { etag: inlineRep.etag } : {}),
+              ...(inlineRep.missingAt !== undefined
+                ? { missingAt: inlineRep.missingAt }
+                : {}),
+            },
+          ],
+        }
+      }
+      if (!rec || rec.replicas === undefined) {
+        const rep = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+        if (rep) {
+          return { ...rep, path: clean }
+        }
       }
       const meta = await slot.driver.head(clean)
       if (!meta) return null
@@ -2007,7 +2957,11 @@ export function createStorage(config: StorageConfig): Storage {
         })
         for (let i = 0; i < page.entries.length; i++) {
           const rec = page.entries[i]!
-          if (rec.parts.some((p) => p.server === filterServer)) {
+          if (
+            rec.parts.some((p) => p.server === filterServer) ||
+            (options?.includeReplicas === true &&
+              Boolean(rec.replicas?.some((r) => r.server === filterServer)))
+          ) {
             matchedRecords.push(rec)
             if (wantLimit !== undefined && matchedRecords.length >= wantLimit) {
               const hasMoreInBatch = i + 1 < page.entries.length
@@ -2038,11 +2992,23 @@ export function createStorage(config: StorageConfig): Storage {
       const clean = normalizeStoragePath(path)
       const isAutoRead = !options?.server || options.server === 'auto'
       const rec = isAutoRead ? await this.stat(clean) : await ledger.getFile(clean)
+
       if (isAutoRead && rec && rec.parts.length > 1) {
-        return recordToStoredObject(rec)
+        const primaryPartsAvailable = rec.parts.every(
+          (p) => p.missingAt === undefined && !suspendedServers.has(p.server),
+        )
+        if (primaryPartsAvailable) {
+          return recordToStoredObject(rec)
+        }
       }
 
-      const readCandidates = await resolveReadCandidates(clean, options?.server)
+      const readCandidates = await resolveReadCandidates(
+        clean,
+        options?.server,
+        options?.readStrategy,
+        options?.affinityKey,
+        rec,
+      )
       let lastErr: unknown = null
 
       for (let i = 0; i < readCandidates.length; i++) {
@@ -2050,22 +3016,45 @@ export function createStorage(config: StorageConfig): Storage {
         const hasMoreCandidates = i + 1 < readCandidates.length
 
         try {
-          if (
-            isAutoRead &&
-            rec &&
-            rec.parts.length === 1 &&
-            rec.parts[0]!.server === slot.name
-          ) {
-            const exists = await slot.driver.head(rec.parts[0]!.path)
+          if (rec && rec.parts.length === 1 && rec.parts[0]!.server === slot.name) {
+            const part = rec.parts[0]!
+            const exists = await slot.driver.head(part.path)
             if (exists) {
               markServerHealthy(slot.name)
               return recordToStoredObject(rec)
             }
+            await reportMissingLocation(rec, slot.name, part.path)
             if (hasMoreCandidates) continue
             return null
           }
 
-          const replicaRec = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+          const inlineRep = rec?.replicas?.find((r) => r.server === slot.name)
+          if (rec && inlineRep) {
+            const meta = await slot.driver.head(inlineRep.path)
+            if (!meta) {
+              await reportMissingLocation(rec, slot.name, inlineRep.path)
+              if (hasMoreCandidates) continue
+              return null
+            }
+            markServerHealthy(slot.name)
+            const builtBase = toStoredObject(meta, slot, rec.size, inlineRep.encrypted)
+            const replicaNames = rec.replicas?.map((r) => r.server)
+            return {
+              ...builtBase,
+              path: rec.path,
+              contentType: rec.type,
+              lastModified: rec.lastModified,
+              ...(rec.hash !== undefined ? { hash: rec.hash } : {}),
+              ...(replicaNames && replicaNames.length > 0
+                ? { replicas: replicaNames }
+                : {}),
+            }
+          }
+
+          const replicaRec =
+            !rec || rec.replicas === undefined
+              ? await ledger.getFile(`@replica:${slot.name}:${clean}`)
+              : null
 
           if (store && slot.statTtlMs) {
             const cacheKey = `head:${slot.name}:${clean}`
@@ -2131,10 +3120,29 @@ export function createStorage(config: StorageConfig): Storage {
       const isAutoRead = !options?.server || options.server === 'auto'
 
       if (rec && isAutoRead && rec.parts.length > 1) {
-        return assembleMultiPartStreamFile(rec, options)
+        const primaryPartsAvailable = rec.parts.every(
+          (p) => p.missingAt === undefined && !suspendedServers.has(p.server),
+        )
+        const hasHealthyReplica = Boolean(
+          rec.replicas?.some(
+            (r) =>
+              r.missingAt === undefined &&
+              slots.has(r.server) &&
+              !suspendedServers.has(r.server),
+          ),
+        )
+        if (primaryPartsAvailable && (!hasHealthyReplica || (options?.readStrategy ?? defaultReadStrategy) === 'primary')) {
+          return assembleMultiPartStreamFile(rec, options)
+        }
       }
 
-      const readCandidates = await resolveReadCandidates(clean, options?.server)
+      const readCandidates = await resolveReadCandidates(
+        clean,
+        options?.server,
+        options?.readStrategy,
+        options?.affinityKey,
+        rec,
+      )
       let lastErr: unknown = null
 
       for (let i = 0; i < readCandidates.length; i++) {
@@ -2142,9 +3150,14 @@ export function createStorage(config: StorageConfig): Storage {
         const hasMoreCandidates = i + 1 < readCandidates.length
 
         try {
+          if (rec && rec.parts.length > 1 && rec.parts[0]!.server === slot.name) {
+            return assembleMultiPartStreamFile(rec, options)
+          }
+
           if (rec && rec.parts.length === 1 && rec.parts[0]!.server === slot.name) {
+            const part = rec.parts[0]!
             const opened = await openPartPlainFile(
-              rec.parts[0]!,
+              part,
               rec.type,
               rec.lastModified,
               options,
@@ -2153,11 +3166,41 @@ export function createStorage(config: StorageConfig): Storage {
               markServerHealthy(slot.name)
               return opened
             }
+            await reportMissingLocation(rec, slot.name, part.path)
             if (hasMoreCandidates) continue
             return null
           }
 
-          const replicaRec = await ledger.getFile(`@replica:${slot.name}:${clean}`)
+          const inlineRep = rec?.replicas?.find((r) => r.server === slot.name)
+          if (rec && inlineRep) {
+            const repPart: StoredPart = {
+              index: 0,
+              server: inlineRep.server,
+              path: inlineRep.path,
+              plainBytes: rec.size,
+              storedBytes: inlineRep.storedBytes,
+              encrypted: inlineRep.encrypted,
+              ...(inlineRep.etag !== undefined ? { etag: inlineRep.etag } : {}),
+            }
+            const opened = await openPartPlainFile(
+              repPart,
+              rec.type,
+              rec.lastModified,
+              options,
+            )
+            if (opened) {
+              markServerHealthy(slot.name)
+              return opened
+            }
+            await reportMissingLocation(rec, slot.name, inlineRep.path)
+            if (hasMoreCandidates) continue
+            return null
+          }
+
+          const replicaRec =
+            !rec || rec.replicas === undefined
+              ? await ledger.getFile(`@replica:${slot.name}:${clean}`)
+              : null
           if (replicaRec && replicaRec.parts[0]) {
             const opened = await openPartPlainFile(
               replicaRec.parts[0],
@@ -2260,11 +3303,26 @@ export function createStorage(config: StorageConfig): Storage {
         const rec = isRecordTarget
           ? (target as StoredFileRecord)
           : await ledger.getFile(cleanPath)
-        const slot = await resolveReadSlot(cleanPath, effectiveOptions.server)
-        const isMultiPart = Boolean(rec && rec.parts.length > 1)
-        const isEncrypted =
-          Boolean(rec?.parts.some((p) => p.encrypted)) ||
-          resolveCallKey(slot.key, effectiveOptions.key) !== null
+        const cdnCandidates = await resolveReadCandidates(
+          cleanPath,
+          effectiveOptions.server,
+          effectiveOptions.readStrategy,
+          effectiveOptions.affinityKey,
+          rec,
+        )
+        const slot =
+          cdnCandidates.find((s) => Boolean(s.cdnUrl)) ??
+          cdnCandidates[0] ??
+          (await resolveReadSlot(cleanPath, effectiveOptions.server, rec))
+
+        const isMultiPart =
+          Boolean(rec && rec.parts.length > 1) &&
+          !rec?.replicas?.some((r) => r.server === slot.name)
+        const repOnSlot = rec?.replicas?.find((r) => r.server === slot.name)
+        const isEncrypted = repOnSlot
+          ? repOnSlot.encrypted
+          : Boolean(rec?.parts.some((p) => p.encrypted)) ||
+            resolveCallKey(slot.key, effectiveOptions.key) !== null
 
         if (!slot.cdnUrl) {
           reportDegradedOption(
@@ -2277,7 +3335,8 @@ export function createStorage(config: StorageConfig): Storage {
             'одночастный незашифрованный объект (зашифрованные и нарезанные файлы отдаются напрямую)',
           )
         } else {
-          const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/')
+          const physicalTarget = repOnSlot ? repOnSlot.path : cleanPath
+          const encodedPath = physicalTarget.split('/').map(encodeURIComponent).join('/')
           const targetUrl = `${slot.cdnUrl.replace(/\/+$/, '')}/${encodedPath}`
           return new Response(null, {
             status: 302,
@@ -2331,6 +3390,8 @@ export function createStorage(config: StorageConfig): Storage {
               key: null,
               rateLimiter: adhocLimiter,
               concurrencyGate: adhocGate,
+              hash: false,
+              initialSuspended: false,
             }
             file = new StreamFile(
               {
@@ -2354,15 +3415,37 @@ export function createStorage(config: StorageConfig): Storage {
           const rec = target as StoredFileRecord
           resolvedRecord = rec
           fallbackName = rec.name || basenameOfStoragePath(cleanPath!)
-          if (rec.parts.length > 1) {
+          const hasReplicas = Boolean(rec.replicas && rec.replicas.length > 0)
+          const nonPrimaryStrategy =
+            (effectiveOptions.readStrategy ?? defaultReadStrategy) !== 'primary'
+
+          if (
+            rec.parts.length > 1 &&
+            rec.parts.every(
+              (p) => p.missingAt === undefined && !suspendedServers.has(p.server),
+            ) &&
+            !(hasReplicas && nonPrimaryStrategy)
+          ) {
             file = assembleMultiPartStreamFile(rec, effectiveOptions)
-          } else if (rec.parts.length === 1) {
+          } else if (
+            rec.parts.length === 1 &&
+            rec.parts[0]!.missingAt === undefined &&
+            !suspendedServers.has(rec.parts[0]!.server) &&
+            !(hasReplicas && nonPrimaryStrategy) &&
+            (!effectiveOptions.server || effectiveOptions.server === 'auto')
+          ) {
             file = await openPartPlainFile(
               rec.parts[0]!,
               rec.type,
               rec.lastModified,
               effectiveOptions,
             )
+            if (!file) {
+              await reportMissingLocation(rec, rec.parts[0]!.server, rec.parts[0]!.path)
+              file = await this.lazy(cleanPath!, effectiveOptions)
+            }
+          } else {
+            file = await this.lazy(cleanPath!, effectiveOptions)
           }
           const primaryServer = rec.parts[0]?.server ?? defaultName
           const slot = slots.get(primaryServer) ?? getSlot(defaultName)
@@ -2375,7 +3458,11 @@ export function createStorage(config: StorageConfig): Storage {
           fallbackName = basenameOfStoragePath(cleanPath!)
           resolvedRecord = await ledger.getFile(cleanPath!)
           file = await this.lazy(cleanPath!, effectiveOptions)
-          const slot = await resolveReadSlot(cleanPath!, effectiveOptions.server)
+          const slot = await resolveReadSlot(
+            cleanPath!,
+            effectiveOptions.server,
+            resolvedRecord,
+          )
           gateForReject = resolveCallConcurrency(
             slot.name,
             slot.concurrencyGate,
@@ -2402,7 +3489,7 @@ export function createStorage(config: StorageConfig): Storage {
                       .map((p) => `${p.server}:${p.storedBytes}:${p.etag ?? ''}`)
                       .join(',')
                   : ''
-                const rawDesc = `mks1|${cleanPath ?? f.name}|${f.size}|${Math.trunc(f.lastModified)}|${resolvedRecord?.createdAt ?? 0}|${partsSig}`
+                const rawDesc = `mks1|${cleanPath ?? f.name}|${f.size}|${Math.trunc(f.lastModified)}|${resolvedRecord?.createdAt ?? 0}|${resolvedRecord?.hash ?? ''}|${partsSig}`
                 const hash = await crypto.subtle.digest(
                   'SHA-256',
                   new TextEncoder().encode(rawDesc),
@@ -2520,38 +3607,92 @@ export function createStorage(config: StorageConfig): Storage {
           const s = slots.get(p.server)
           if (s?.readOnly) throw new StorageReadOnlyError(s.name)
         }
-        let anyRemoved = false
-        for (const p of recorded.parts) {
-          const s = slots.get(p.server)
-          if (s) {
-            const ok = await s.driver.del(p.path)
-            if (ok) anyRemoved = true
-          }
-        }
-        await ledger.deleteFile(clean)
-        for (const serverName of slots.keys()) {
-          const repKey = `@replica:${serverName}:${clean}`
-          const rep = await ledger.getFile(repKey)
-          if (rep) {
-            const s = slots.get(serverName)
-            if (s && !s.readOnly) {
-              await s.driver.del(clean).catch(() => undefined)
+        const candidates = collectAllPhysicalPartsOfRecord(recorded)
+
+        // Собираем устаревшие `@replica:` записи только если их могли создать старые версии
+        if (recorded.replicas === undefined) {
+          for (const serverName of slots.keys()) {
+            const repKey = `@replica:${serverName}:${clean}`
+            const rep = await ledger.getFile(repKey)
+            if (rep) {
+              candidates.push(...rep.parts)
+              await ledger.deleteFile(repKey)
             }
-            await ledger.deleteFile(repKey)
           }
         }
+
+        await ledger.deleteFile(clean)
+        await deleteUnreferencedPhysicalParts(candidates)
         await invalidateStatCache(clean)
-        return anyRemoved
+        return true
       }
 
-      const slot = await resolveReadSlot(clean, options?.server)
+      const slot = await resolveReadSlot(clean, options?.server, recorded)
       if (slot.readOnly) {
         throw new StorageReadOnlyError(slot.name)
       }
-      const removed = await slot.driver.del(clean)
-      if (recorded && recorded.parts.length === 1 && recorded.parts[0]?.server === slot.name) {
-        await ledger.deleteFile(clean)
+
+      if (recorded) {
+        const inlineRep = recorded.replicas?.find((r) => r.server === slot.name)
+        if (inlineRep) {
+          const repPart: StoredPart = {
+            index: 0,
+            server: inlineRep.server,
+            path: inlineRep.path,
+            plainBytes: recorded.size,
+            storedBytes: inlineRep.storedBytes,
+            encrypted: inlineRep.encrypted,
+          }
+          await ledger.patchFile(clean, (cur) => {
+            const nextReps = (cur.replicas ?? []).filter((r) => r.server !== slot.name)
+            const draft: StoredFileRecord = { ...cur, replicas: nextReps }
+            return { ...draft, status: computeRecordHealthStatus(draft) }
+          })
+          await deleteUnreferencedPhysicalParts([repPart])
+          await invalidateStatCache(clean)
+          return true
+        }
+
+        if (recorded.parts.length === 1 && recorded.parts[0]?.server === slot.name) {
+          const oldPart = recorded.parts[0]!
+          const remainingReps = recorded.replicas ?? []
+          if (remainingReps.length > 0) {
+            const [promoted, ...restReps] = remainingReps
+            await ledger.patchFile(clean, (cur) => {
+              const draft: StoredFileRecord = {
+                ...cur,
+                storedBytes: promoted!.storedBytes,
+                parts: [
+                  {
+                    index: 0,
+                    server: promoted!.server,
+                    path: promoted!.path,
+                    plainBytes: cur.size,
+                    storedBytes: promoted!.storedBytes,
+                    encrypted: promoted!.encrypted,
+                    ...(promoted!.etag !== undefined ? { etag: promoted!.etag } : {}),
+                    ...(promoted!.missingAt !== undefined
+                      ? { missingAt: promoted!.missingAt }
+                      : {}),
+                  },
+                ],
+                replicas: restReps,
+              }
+              return { ...draft, status: computeRecordHealthStatus(draft) }
+            })
+            await deleteUnreferencedPhysicalParts([oldPart])
+            await invalidateStatCache(clean)
+            return true
+          }
+
+          await ledger.deleteFile(clean)
+          await deleteUnreferencedPhysicalParts([oldPart])
+          await invalidateStatCache(clean)
+          return true
+        }
       }
+
+      const removed = await slot.driver.del(clean)
       await ledger.deleteFile(`@replica:${slot.name}:${clean}`)
       await invalidateStatCache(clean)
       return removed
@@ -2561,12 +3702,11 @@ export function createStorage(config: StorageConfig): Storage {
       const srcPath = normalizeStoragePath(input.path)
       const dstPath = input.toPath ? normalizeStoragePath(input.toPath) : srcPath
       const dstSlot = getSlot(input.to)
-      if (dstSlot.readOnly) {
-        throw new StorageReadOnlyError(dstSlot.name)
-      }
+      if (store) await syncServerStateFromStore(dstSlot.name)
+      assertSlotWritable(dstSlot)
 
       const recorded = await ledger.getFile(srcPath)
-      const srcSlot = await resolveReadSlot(srcPath, input.from)
+      const srcSlot = await resolveReadSlot(srcPath, input.from, recorded)
 
       if (
         (!recorded || recorded.parts.length === 1) &&
@@ -2578,14 +3718,11 @@ export function createStorage(config: StorageConfig): Storage {
         return headObj
       }
 
-      // Если копия создаётся под тем же относительным путём на другом сервере, храним запись
-      // реплики отдельно от основного маршрута, чтобы не затирать и не удалять исходник!
+      // Если копия создаётся под тем же относительным путём на другом сервере, храним реплику
+      // прямо в `recorded.replicas` без загрязнения пространства имён `@replica:`!
       const isServerReplica =
         dstPath === srcPath &&
         (srcSlot.name !== dstSlot.name || Boolean(recorded && recorded.parts.length > 1))
-      const ledgerRecordPath = isServerReplica
-        ? `@replica:${dstSlot.name}:${dstPath}`
-        : dstPath
 
       const srcKey = resolveCallKey(srcSlot.key, undefined)
       const dstKey = resolveCallKey(dstSlot.key, input.key)
@@ -2651,6 +3788,8 @@ export function createStorage(config: StorageConfig): Storage {
             type: contentType,
             lastModified,
             createdAt: Date.now(),
+            ...(recorded?.hash !== undefined ? { hash: recorded.hash } : {}),
+            status: 'ok',
             parts: [
               {
                 index: 0,
@@ -2661,18 +3800,15 @@ export function createStorage(config: StorageConfig): Storage {
                 encrypted,
               },
             ],
+            replicas: [],
           }
           const { replaced } = await ledger.commit({ reservationId, file: nextRec })
           await invalidateStatCache(dstPath)
           if (replaced) {
-            for (const oldPart of replaced.parts) {
-              if (oldPart.server !== dstSlot.name || oldPart.path !== dstPath) {
-                const oldS = slots.get(oldPart.server)
-                if (oldS && !oldS.readOnly) {
-                  await oldS.driver.del(oldPart.path).catch(() => undefined)
-                }
-              }
-            }
+            const oldCandidates = collectAllPhysicalPartsOfRecord(replaced).filter(
+              (p) => p.server !== dstSlot.name || p.path !== dstPath,
+            )
+            await deleteUnreferencedPhysicalParts(oldCandidates)
           }
           return toStoredObject(
             { ...meta, contentType, lastModified },
@@ -2685,6 +3821,7 @@ export function createStorage(config: StorageConfig): Storage {
           throw err
         }
       }
+
       const singleEncryptedMatch =
         recorded &&
         recorded.parts.length === 1 &&
@@ -2702,20 +3839,27 @@ export function createStorage(config: StorageConfig): Storage {
         }
         const rawCipher = await srcSlot.driver.lazy(part.path)
         if (!rawCipher) {
+          await reportMissingLocation(recorded, srcSlot.name, part.path)
           throw new RangeError(
             `[storage] исходный зашифрованный файл «${srcPath}» не найден на сервере «${srcSlot.name}»`,
           )
         }
+        const alreadyHasReplica = Boolean(
+          isServerReplica &&
+            recorded.replicas?.some((r) => r.server === dstSlot.name && r.path === dstPath),
+        )
         const reservationId = nextReservationId()
         const reserved = await ledger.reserve({
           id: reservationId,
-          allocations: [
-            {
-              server: dstSlot.name,
-              bytes: part.storedBytes,
-              maxStorageBytes: dstSlot.limits.storageBytes,
-            },
-          ],
+          allocations: alreadyHasReplica
+            ? []
+            : [
+                {
+                  server: dstSlot.name,
+                  bytes: part.storedBytes,
+                  maxStorageBytes: dstSlot.limits.storageBytes,
+                },
+              ],
           ttlMs: reservationTtlMs,
         })
         if (!reserved) {
@@ -2733,14 +3877,41 @@ export function createStorage(config: StorageConfig): Storage {
             lastModified: recorded.lastModified,
             ...(input.signal ? { signal: input.signal } : {}),
           })
+          if (isServerReplica) {
+            const newReplica: StoredReplica = {
+              server: dstSlot.name,
+              path: dstPath,
+              storedBytes: meta.size,
+              encrypted: true,
+              createdAt: Date.now(),
+            }
+            const updated = await ledger.patchFile(srcPath, (cur) => {
+              const nextReps = upsertStoredReplica(cur.replicas, newReplica)
+              const draft: StoredFileRecord = { ...cur, replicas: nextReps }
+              return { ...draft, status: computeRecordHealthStatus(draft) }
+            })
+            await ledger.release(reservationId).catch(() => undefined)
+            await invalidateStatCache(dstPath)
+            const built = toStoredObject(meta, dstSlot, recorded.size, true)
+            return {
+              ...built,
+              ...(recorded.hash !== undefined ? { hash: recorded.hash } : {}),
+              ...(updated?.replicas && updated.replicas.length > 0
+                ? { replicas: updated.replicas.map((r) => r.server) }
+                : {}),
+            }
+          }
+
           const nextRec: StoredFileRecord = {
-            path: ledgerRecordPath,
+            path: dstPath,
             name: basenameOfStoragePath(dstPath),
             size: recorded.size,
             storedBytes: meta.size,
             type: recorded.type,
             lastModified: recorded.lastModified,
             createdAt: Date.now(),
+            ...(recorded.hash !== undefined ? { hash: recorded.hash } : {}),
+            status: 'ok',
             parts: [
               {
                 index: 0,
@@ -2751,9 +3922,16 @@ export function createStorage(config: StorageConfig): Storage {
                 encrypted: true,
               },
             ],
+            replicas: [],
           }
-          await ledger.commit({ reservationId, file: nextRec })
+          const { replaced } = await ledger.commit({ reservationId, file: nextRec })
           await invalidateStatCache(dstPath)
+          if (replaced) {
+            const oldCandidates = collectAllPhysicalPartsOfRecord(replaced).filter(
+              (p) => p.server !== dstSlot.name || p.path !== dstPath,
+            )
+            await deleteUnreferencedPhysicalParts(oldCandidates)
+          }
           return toStoredObject(meta, dstSlot, recorded.size, true)
         } catch (err) {
           await ledger.release(reservationId).catch(() => undefined)
@@ -2780,6 +3958,7 @@ export function createStorage(config: StorageConfig): Storage {
           contentType: sourceFile.type || 'application/octet-stream',
           lastModified: sourceFile.lastModified,
           server: dstSlot.name,
+          ...(recorded?.hash !== undefined ? { hash: true } : {}),
           ...(input.key !== undefined ? { key: input.key } : {}),
           ...(input.rate !== undefined ? { rate: input.rate } : {}),
           ...(input.concurrency !== undefined ? { concurrency: input.concurrency } : {}),
@@ -2795,16 +3974,21 @@ export function createStorage(config: StorageConfig): Storage {
           `[storage] размер файла (${neededStored} Б) превышает лимит файла сервера «${dstSlot.name}» (${dstSlot.limits.fileBytes} Б)`,
         )
       }
+      const alreadyHasReplica = Boolean(
+        recorded?.replicas?.some((r) => r.server === dstSlot.name && r.path === dstPath),
+      )
       const reservationId = nextReservationId()
       const reserved = await ledger.reserve({
         id: reservationId,
-        allocations: [
-          {
-            server: dstSlot.name,
-            bytes: neededStored,
-            maxStorageBytes: dstSlot.limits.storageBytes,
-          },
-        ],
+        allocations: alreadyHasReplica
+          ? []
+          : [
+              {
+                server: dstSlot.name,
+                bytes: neededStored,
+                maxStorageBytes: dstSlot.limits.storageBytes,
+              },
+            ],
         ttlMs: reservationTtlMs,
       })
       if (!reserved) {
@@ -2823,14 +4007,46 @@ export function createStorage(config: StorageConfig): Storage {
           lastModified: sourceFile.lastModified,
           overrides: input,
         })
+
+        if (recorded) {
+          const newReplica: StoredReplica = {
+            server: dstSlot.name,
+            path: dstPath,
+            storedBytes: written.meta.size,
+            encrypted: written.encrypted,
+            createdAt: Date.now(),
+          }
+          const updated = await ledger.patchFile(srcPath, (cur) => {
+            const nextReps = upsertStoredReplica(cur.replicas, newReplica)
+            const draft: StoredFileRecord = { ...cur, replicas: nextReps }
+            return { ...draft, status: computeRecordHealthStatus(draft) }
+          })
+          await ledger.release(reservationId).catch(() => undefined)
+          await invalidateStatCache(dstPath)
+          const built = toStoredObject(
+            written.meta,
+            dstSlot,
+            written.plainBytes,
+            written.encrypted,
+          )
+          return {
+            ...built,
+            ...(recorded.hash !== undefined ? { hash: recorded.hash } : {}),
+            ...(updated?.replicas && updated.replicas.length > 0
+              ? { replicas: updated.replicas.map((r) => r.server) }
+              : {}),
+          }
+        }
+
         const repRec: StoredFileRecord = {
-          path: ledgerRecordPath,
+          path: dstPath,
           name: basenameOfStoragePath(dstPath),
           size: written.plainBytes,
           storedBytes: written.meta.size,
           type: written.meta.contentType,
           lastModified: written.meta.lastModified,
           createdAt: Date.now(),
+          status: 'ok',
           parts: [
             {
               index: 0,
@@ -2841,6 +4057,7 @@ export function createStorage(config: StorageConfig): Storage {
               encrypted: written.encrypted,
             },
           ],
+          replicas: [],
         }
         await ledger.commit({ reservationId, file: repRec })
         await invalidateStatCache(dstPath)
@@ -2855,12 +4072,11 @@ export function createStorage(config: StorageConfig): Storage {
       const srcPath = normalizeStoragePath(input.path)
       const dstPath = input.toPath ? normalizeStoragePath(input.toPath) : srcPath
       const dstSlot = getSlot(input.to)
-      if (dstSlot.readOnly) {
-        throw new StorageReadOnlyError(dstSlot.name)
-      }
+      if (store) await syncServerStateFromStore(dstSlot.name)
+      assertSlotWritable(dstSlot)
 
       const recorded = await ledger.getFile(srcPath)
-      const srcSlot = await resolveReadSlot(srcPath, input.from)
+      const srcSlot = await resolveReadSlot(srcPath, input.from, recorded)
       if (recorded && (!input.from || input.from === 'auto')) {
         for (const p of recorded.parts) {
           const s = slots.get(p.server)
@@ -2882,45 +4098,79 @@ export function createStorage(config: StorageConfig): Storage {
 
       const copied = await this.copy(input)
 
-      // Продвигаем запись реплики (если dstPath === srcPath) в основной маршрут ledger и чистим исходник
-      const repKey = `@replica:${dstSlot.name}:${dstPath}`
-      const repRec = await ledger.getFile(repKey)
-      if (repRec) {
-        await ledger.deleteFile(repKey)
-        const promoted: StoredFileRecord = { ...repRec, path: dstPath }
-        const promoResId = nextReservationId()
-        await ledger.reserve({
-          id: promoResId,
-          allocations: [
-            {
-              server: dstSlot.name,
-              bytes: promoted.storedBytes,
-              maxStorageBytes: Number.MAX_SAFE_INTEGER,
-            },
-          ],
-          ttlMs: reservationTtlMs,
+      if (srcPath === dstPath && recorded) {
+        await ledger.patchFile(dstPath, (cur) => {
+          const targetRep = cur.replicas?.find((r) => r.server === dstSlot.name)
+          const remainingReps = (cur.replicas ?? []).filter(
+            (r) => r.server !== dstSlot.name && r.server !== srcSlot.name,
+          )
+          const nextStoredBytes = targetRep
+            ? targetRep.storedBytes
+            : (copied.storedBytes ?? copied.size)
+          const nextEncrypted = targetRep ? targetRep.encrypted : Boolean(copied.encrypted)
+          const draft: StoredFileRecord = {
+            ...cur,
+            storedBytes: nextStoredBytes,
+            parts: [
+              {
+                index: 0,
+                server: dstSlot.name,
+                path: dstPath,
+                plainBytes: cur.size,
+                storedBytes: nextStoredBytes,
+                encrypted: nextEncrypted,
+              },
+            ],
+            replicas: remainingReps,
+          }
+          return { ...draft, status: computeRecordHealthStatus(draft) }
         })
-        await ledger.commit({ reservationId: promoResId, file: promoted })
+      } else {
+        // Обратная совместимость со старыми записями без `recorded`
+        const repKey = `@replica:${dstSlot.name}:${dstPath}`
+        const repRec = await ledger.getFile(repKey)
+        if (repRec) {
+          await ledger.deleteFile(repKey)
+          const promoted: StoredFileRecord = { ...repRec, path: dstPath }
+          const promoResId = nextReservationId()
+          await ledger.reserve({
+            id: promoResId,
+            allocations: [
+              {
+                server: dstSlot.name,
+                bytes: promoted.storedBytes,
+                maxStorageBytes: Number.MAX_SAFE_INTEGER,
+              },
+            ],
+            ttlMs: reservationTtlMs,
+          })
+          await ledger.commit({ reservationId: promoResId, file: promoted })
+        }
       }
 
       if (recorded && (!input.from || input.from === 'auto' || recorded.parts.length > 1)) {
-        for (const p of recorded.parts) {
-          if (p.server !== dstSlot.name || p.path !== dstPath) {
-            const oldS = slots.get(p.server)
-            if (oldS && !oldS.readOnly) {
-              await oldS.driver.del(p.path).catch(() => undefined)
-            }
-          }
-        }
+        const oldParts = recorded.parts.filter(
+          (p) => p.server !== dstSlot.name || p.path !== dstPath,
+        )
         if (srcPath !== dstPath) {
           await ledger.deleteFile(srcPath)
         }
+        await deleteUnreferencedPhysicalParts(oldParts)
       } else if (srcSlot.name !== dstSlot.name || srcPath !== dstPath) {
-        await srcSlot.driver.del(srcPath).catch(() => undefined)
-        await ledger.deleteFile(`@replica:${srcSlot.name}:${srcPath}`)
         if (srcPath !== dstPath) {
           await ledger.deleteFile(srcPath)
         }
+        await ledger.deleteFile(`@replica:${srcSlot.name}:${srcPath}`)
+        await deleteUnreferencedPhysicalParts([
+          {
+            index: 0,
+            server: srcSlot.name,
+            path: srcPath,
+            plainBytes: copied.size,
+            storedBytes: copied.storedBytes ?? copied.size,
+            encrypted: Boolean(copied.encrypted),
+          },
+        ])
       }
 
       await invalidateStatCache(srcPath)
@@ -2931,9 +4181,9 @@ export function createStorage(config: StorageConfig): Storage {
     async clone(input: StorageCloneInput): Promise<StorageCloneReport> {
       const fromSlot = getSlot(input.from)
       const toSlot = getSlot(input.to)
-      if (toSlot.readOnly) {
-        throw new StorageReadOnlyError(toSlot.name)
-      }
+      if (store) await syncServerStateFromStore(toSlot.name)
+      assertSlotWritable(toSlot)
+
       if (fromSlot.name === toSlot.name) {
         return {
           from: fromSlot.name,
@@ -2954,11 +4204,23 @@ export function createStorage(config: StorageConfig): Storage {
       for (const rec of listed.entries) {
         if (rec.path.startsWith('@replica:')) continue
         input.signal?.throwIfAborted()
-        if (!rec.parts.some((p) => p.server === fromSlot.name)) {
+        const onSource =
+          rec.parts.some((p) => p.server === fromSlot.name) ||
+          Boolean(rec.replicas?.some((r) => r.server === fromSlot.name))
+        if (!onSource) {
           continue
         }
 
         if (!input.overwrite) {
+          const alreadyReplicated = Boolean(
+            rec.replicas?.some(
+              (r) => r.server === toSlot.name && r.missingAt === undefined,
+            ),
+          )
+          if (alreadyReplicated) {
+            skippedPaths.push(rec.path)
+            continue
+          }
           const existingOnTarget = await toSlot.driver.head(rec.path)
           if (existingOnTarget) {
             skippedPaths.push(rec.path)
@@ -2992,10 +4254,14 @@ export function createStorage(config: StorageConfig): Storage {
     async report(): Promise<StorageReport> {
       const now = Date.now()
       const currentNames = [...slots.keys()]
+      if (store) {
+        await Promise.all(currentNames.map((n) => syncServerStateFromStore(n)))
+      }
       const snap = await ledger.usage(currentNames)
       const serverReports: StorageServerReport[] = currentNames.map((name) => {
         const slot = slots.get(name)!
         const healthy = isServerHealthy(name, now)
+        const susp = suspendedServers.get(name)
         const cooldownUntil = cooldowns.get(name)
         const u = snap[name] ?? {
           usedBytes: 0,
@@ -3014,6 +4280,9 @@ export function createStorage(config: StorageConfig): Storage {
           encrypted: slot.key !== null,
           allowSplit: slot.allowSplit,
           healthy,
+          suspended: Boolean(susp),
+          ...(susp ? { suspendedReason: susp.reason } : {}),
+          missingCount: missingCounts.get(name) ?? 0,
           ...(cooldownUntil !== undefined ? { cooldownUntil } : {}),
           limits: slot.limits,
           usedBytes: u.usedBytes,

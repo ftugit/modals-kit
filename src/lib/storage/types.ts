@@ -6,7 +6,12 @@ import type {
   ConcurrencyInput,
 } from './concurrency.js'
 import type { StorageEncryptionKey } from './crypto.js'
-import type { AdaptedStorageLedger, StoredFileRecord } from './ledger.js'
+import type {
+  AdaptedStorageLedger,
+  StoredFileRecord,
+  StoredFileStatus,
+  StoredReplica,
+} from './ledger.js'
 import type { StorageStateListener } from './state.js'
 import type {
   AdaptedStorageStore,
@@ -27,6 +32,8 @@ export type {
   StorageRequestMeta,
   StorageStateListener,
   StorageTechConfig,
+  StoredFileStatus,
+  StoredReplica,
 }
 
 /** Источник байтов для записи в хранилище. */
@@ -74,6 +81,12 @@ export interface StorageServerPolicy {
   readonly cdnUrl?: string
   /** TTL кэширования `head`/`stat` в мс (требует переданного `store`, иначе пишет в `console.error`). */
   readonly statTtlMs?: number
+  /** Включить расчёт `SHA-256` и дедупликацию по умолчанию для загрузок на этот сервер (`false` по умолчанию). */
+  readonly hash?: boolean
+  /** Порог уникальных пропавших файлов (`404` при живой записи в `ledger`), после которого сервер переводится в `suspended`. */
+  readonly missingThreshold?: number
+  /** Инициализировать сервер сразу в отключённом (`suspended`) состоянии до ручной реактивации. */
+  readonly suspended?: boolean
 }
 
 /** Конфигурация сервера с явными лимитами и политикой поверх готового драйвера. */
@@ -91,6 +104,11 @@ export type StorageServerEntry =
   | StorageDriver
   | ConfiguredStorageServer
   | UrlConfiguredStorageServer
+
+export type WriteStrategy = 'priority' | 'most-free' | 'round-robin'
+
+/** Стратегия выбора сервера при чтении/раздаче файлов с клонированными репликами. */
+export type ReadStrategy = 'primary' | 'round-robin' | 'consistent-hash'
 
 /** Переопределения политик на конкретный вызов (`null` / `0` принудительно снимают настройку сервера). */
 export interface StorageCallOverrides {
@@ -123,12 +141,28 @@ export interface StoragePutInput extends StorageCallOverrides {
   readonly stageToDisk?: boolean
   /** Разрешить перезапись существующего файла по тому же `path` (по умолчанию `true`; при `false` бросает `StorageOverwriteError`). */
   readonly overwrite?: boolean
+  /**
+   * Включить потоковый расчёт `SHA-256` и дедупликацию для этого файла:
+   * сравниваются только те файлы, у которых хеш был включён (`hash: true` или передан `expectedHash`).
+   */
+  readonly hash?: boolean
+  /** Ожидаемый 64-символьный hex `SHA-256` открытых байтов (проверяется на потоке и позволяет дедуплицировать до выгрузки в облако). */
+  readonly expectedHash?: string
+  /**
+   * Серверное клонирование при записи: число копий (`2` = основной + 1 реплика из пула)
+   * либо явный список имён серверов-реплик. Клиент при этом отправляет поток один раз.
+   */
+  readonly replicate?: number | readonly string[]
 }
 
 /** Параметры чтения (`has` / `head` / `lazy` / `get`). */
 export interface StorageReadOptions extends StorageCallOverrides {
   /** Явный сервер или приоритетный список серверов для чтения с авто-фейловером. */
   readonly server?: string | readonly string[]
+  /** Стратегия распределения чтения между основным сервером и репликами. */
+  readonly readStrategy?: ReadStrategy
+  /** Ключ привязки для `consistent-hash` (например `postId`; по умолчанию используется путь файла). */
+  readonly affinityKey?: string
 }
 
 /** Параметры выборки логических файлов из реестра `storage.list()`. */
@@ -136,8 +170,10 @@ export interface StorageListOptions {
   readonly prefix?: string
   readonly limit?: number
   readonly cursor?: string
-  /** Оставить только файлы, имеющие хотя бы одну физическую часть на указанном сервере. */
+  /** Оставить только файлы, имеющие физическую часть на указанном сервере. */
   readonly server?: string
+  /** При фильтрации по `server` включать также файлы, у которых на этом сервере лежит реплика (`false` по умолчанию). */
+  readonly includeReplicas?: boolean
 }
 
 /** Результат выборки логических файлов `storage.list()`. */
@@ -165,6 +201,12 @@ export interface StorageUploadOptions extends StorageCallOverrides {
   readonly splitServers?: readonly string[]
   /** Сохранить входящий multipart-поток во временный спул на диске до раскладки по серверам. */
   readonly stageToDisk?: boolean
+  /** Включить потоковый `SHA-256` и дедупликацию для принимаемых файлов. */
+  readonly hash?: boolean
+  /** Ожидаемый `SHA-256` (для одиночного файла). */
+  readonly expectedHash?: string
+  /** Серверная репликация при записи (`2` или список серверов-реплик). */
+  readonly replicate?: number | readonly string[]
   /** Базовый префикс для автоматически генерируемых путей (по умолчанию `'uploads'`). */
   readonly prefix?: string
   /** Пользовательский генератор пути (`null` / `undefined` — пропустить файл без сохранения). */
@@ -241,6 +283,12 @@ export interface StoredObject {
   readonly partsCount?: number
   readonly contentType: string
   readonly lastModified: number
+  /** Вычисленный `SHA-256` открытых байтов (если для файла был включён `hash`). */
+  readonly hash?: string
+  /** Была ли пропущена повторная физическая запись за счёт совпадения `hash` с живым файлом. */
+  readonly deduplicated?: boolean
+  /** Список имён серверов, на которых лежат клонированные реплики файла. */
+  readonly replicas?: readonly string[]
   /** Публичный URL объекта, если у драйвера задан `publicBaseUrl`. */
   readonly url?: string
 }
@@ -253,6 +301,9 @@ export interface StorageServerReport {
   readonly encrypted: boolean
   readonly allowSplit: boolean
   readonly healthy: boolean
+  readonly suspended: boolean
+  readonly suspendedReason?: 'missing-files' | 'manual'
+  readonly missingCount: number
   readonly cooldownUntil?: number
   readonly limits: ServerLimits
   readonly usedBytes: number
@@ -270,6 +321,10 @@ export interface StorageReport {
 /** Настройки HTTP-раздачи файла (`serve`). */
 export interface StorageServeOptions extends StorageCallOverrides {
   readonly server?: string | readonly string[]
+  /** Стратегия выбора между основным сервером и репликами. */
+  readonly readStrategy?: ReadStrategy
+  /** Ключ привязки для `consistent-hash` (например `postId`). */
+  readonly affinityKey?: string
   readonly cacheControl?: string
   readonly etag?: false | 'weak' | 'strong'
   /** Включить поддержку `Range` (`206 Partial Content`); по умолчанию `true`. */
@@ -314,7 +369,34 @@ export interface StorageDriver {
   ): Promise<DriverStoredMeta>
 }
 
-export type WriteStrategy = 'priority' | 'most-free' | 'round-robin'
+/** Событие автоматической или ручной блокировки сервера хранения (`suspended`). */
+export interface StorageServerSuspendedEvent {
+  readonly server: string
+  readonly reason: 'missing-files' | 'manual'
+  readonly missingCount: number
+  readonly suspendedAt: number
+}
+
+/** Параметры периодической сверки пропавших файлов `storage.reconcile()`. */
+export interface StorageReconcileOptions {
+  /** Максимальное число проблемных записей за один проход (по умолчанию `50`). */
+  readonly limit?: number
+  /** Ограничить опрос конкретными серверами (включая находящиеся в `suspended`). */
+  readonly servers?: readonly string[]
+  /** Автоматически снимать блокировку `missing-files`, когда у сервера больше не осталось пропавших частей (`missingCount === 0`). */
+  readonly autoResumeServers?: boolean
+  readonly signal?: AbortSignal
+}
+
+/** Отчёт одного прохода сверки `storage.reconcile()`. */
+export interface StorageReconcileReport {
+  readonly checkedFiles: number
+  readonly restoredFiles: readonly string[]
+  readonly restoredParts: number
+  readonly stillMissingFiles: readonly string[]
+  readonly resumedServers: readonly string[]
+  readonly serverMissingCounts: Readonly<Record<string, number>>
+}
 
 /** Конфигурация `createStorage`. */
 export interface StorageConfig {
@@ -326,8 +408,16 @@ export interface StorageConfig {
   readonly writePool?: readonly string[]
   /** Стратегия выбора сервера при `server: 'auto'` (по умолчанию `'priority'`). */
   readonly writeStrategy?: WriteStrategy
+  /** Стратегия параллельного чтения между основным сервером и репликами (по умолчанию `'primary'`). */
+  readonly readStrategy?: ReadStrategy
   /** Карантин (мс) для сервера при сетевом/драйверном сбое автозаписи или чтения (по умолчанию `0`). */
   readonly cooldownMs?: number
+  /** Порог уникальных пропавших файлов (`404` при живой записи в `ledger`), после которого сервер переводится в `suspended` до реактивации. */
+  readonly missingThreshold?: number
+  /** Хук уведомления о переводе сервера в `suspended` (например для сохранения блокировки в БД). */
+  readonly onServerSuspended?: (
+    event: StorageServerSuspendedEvent,
+  ) => void | Promise<void>
   /** Реестр учёта места и манифестов файлов (по умолчанию `memoryLedger()`). */
   readonly ledger?: AdaptedStorageLedger
   /** Срок жизни брони места на время загрузки (по умолчанию `1 час`). */
@@ -369,6 +459,13 @@ export interface Storage {
   readonly serverNames: readonly string[]
   setServer(name: string, entry: StorageServerEntry): void
   removeServer(name: string): Promise<boolean>
+  suspendServer(server: string, reason?: 'manual' | 'missing-files'): Promise<void>
+  resumeServer(
+    server: string,
+    options?: { readonly resetMissingCount?: boolean },
+  ): Promise<void>
+  isServerSuspended(server: string): boolean
+  reconcile(options?: StorageReconcileOptions): Promise<StorageReconcileReport>
   probe(server: string): Promise<StorageProbeResult>
   put(input: StoragePutInput): Promise<StoredObject>
   upload(request: Request, options?: StorageUploadOptions): Promise<StorageUploadResult>

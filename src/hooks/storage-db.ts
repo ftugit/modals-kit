@@ -51,6 +51,13 @@ export const storageFile = defineResource({
       orderable: true,
       filters: ['eq', 'gt', 'startsWith'],
     }),
+    hash: f.text({
+      read: () => true,
+      create: () => true,
+      update: () => true,
+      nullable: true,
+      filters: ['eq'],
+    }),
     record: f.json({ read: () => true, create: () => true, update: () => true, required: true }),
   },
   policy: {
@@ -60,7 +67,13 @@ export const storageFile = defineResource({
     delete: policy.roles(['server']),
   },
   order: [['id', 'asc']],
-  db: { unique: [['scope', 'path']], indexes: [['scope', 'path']] },
+  db: {
+    unique: [['scope', 'path']],
+    indexes: [
+      ['scope', 'path'],
+      ['scope', 'hash'],
+    ],
+  },
 })
 
 /**
@@ -136,6 +149,7 @@ const fileCol = (name: string) =>
   ident((storageFile.fields as Record<string, { column?: string }>)[name]?.column ?? name)
 const F_SCOPE = fileCol('scope')
 const F_PATH = fileCol('path')
+const F_HASH = fileCol('hash')
 const F_REC = fileCol('record')
 
 const RESV_TABLE = storageReservation.table.split('.').map(ident).join('.')
@@ -234,15 +248,44 @@ export function pgStorageLedger(
       files_count: number
       parts_count: number
     }>({
-      text: `SELECT
-               p->>'server' AS server,
-               COALESCE(SUM((p->>'storedBytes')::bigint), 0)::text AS used_bytes,
-               COUNT(DISTINCT f.${F_PATH})::int AS files_count,
+      text: `WITH raw_locs AS (
+               SELECT
+                 f.${F_PATH} AS logical_path,
+                 p->>'server' AS server,
+                 p->>'path' AS phys_path,
+                 COALESCE((p->>'storedBytes')::bigint, 0) AS stored_bytes
+               FROM ${FILE_TABLE} f,
+                    jsonb_array_elements(f.${F_REC}->'parts') AS p
+               WHERE f.${F_SCOPE} = $1
+               UNION ALL
+               SELECT
+                 f.${F_PATH} AS logical_path,
+                 r->>'server' AS server,
+                 r->>'path' AS phys_path,
+                 COALESCE((r->>'storedBytes')::bigint, 0) AS stored_bytes
+               FROM ${FILE_TABLE} f,
+                    jsonb_array_elements(COALESCE(f.${F_REC}->'replicas', '[]'::jsonb)) AS r
+               WHERE f.${F_SCOPE} = $1
+             ),
+             dedup_phys AS (
+               SELECT server, phys_path, MAX(stored_bytes) AS stored_bytes
+               FROM raw_locs
+               GROUP BY server, phys_path
+             ),
+             file_counts AS (
+               SELECT server, COUNT(DISTINCT logical_path)::int AS files_count
+               FROM raw_locs
+               WHERE NOT starts_with(logical_path, '@replica:')
+               GROUP BY server
+             )
+             SELECT
+               dp.server AS server,
+               COALESCE(SUM(dp.stored_bytes), 0)::text AS used_bytes,
+               COALESCE(fc.files_count, 0)::int AS files_count,
                COUNT(*)::int AS parts_count
-             FROM ${FILE_TABLE} f,
-                  jsonb_array_elements(f.${F_REC}->'parts') AS p
-             WHERE f.${F_SCOPE} = $1
-             GROUP BY p->>'server'`,
+             FROM dedup_phys dp
+             LEFT JOIN file_counts fc ON fc.server = dp.server
+             GROUP BY dp.server, fc.files_count`,
       values: [scope],
     })
 
@@ -347,14 +390,34 @@ export function pgStorageLedger(
                    FROM jsonb_array_elements($3::jsonb) AS a
                    GROUP BY a->>'server'
                  ),
-                 used AS (
+                 raw_locs AS (
                    SELECT
                      p->>'server' AS server,
-                     COALESCE(SUM((p->>'storedBytes')::bigint), 0) AS used_bytes
+                     p->>'path' AS phys_path,
+                     COALESCE((p->>'storedBytes')::bigint, 0) AS stored_bytes
                    FROM ${FILE_TABLE} f,
                         jsonb_array_elements(f.${F_REC}->'parts') AS p
                    WHERE f.${F_SCOPE} = $1
-                   GROUP BY p->>'server'
+                   UNION ALL
+                   SELECT
+                     rp->>'server' AS server,
+                     rp->>'path' AS phys_path,
+                     COALESCE((rp->>'storedBytes')::bigint, 0) AS stored_bytes
+                   FROM ${FILE_TABLE} f,
+                        jsonb_array_elements(COALESCE(f.${F_REC}->'replicas', '[]'::jsonb)) AS rp
+                   WHERE f.${F_SCOPE} = $1
+                 ),
+                 dedup_phys AS (
+                   SELECT server, phys_path, MAX(stored_bytes) AS stored_bytes
+                   FROM raw_locs
+                   GROUP BY server, phys_path
+                 ),
+                 used AS (
+                   SELECT
+                     server,
+                     COALESCE(SUM(stored_bytes), 0) AS used_bytes
+                   FROM dedup_phys
+                   GROUP BY server
                  ),
                  resv AS (
                    SELECT
@@ -422,14 +485,15 @@ export function pgStorageLedger(
                    WHERE ${F_SCOPE} = $1 AND ${F_PATH} = $3
                  ),
                  upserted AS (
-                   INSERT INTO ${FILE_TABLE} (${F_SCOPE}, ${F_PATH}, ${F_REC})
-                   VALUES ($1, $3, $4::jsonb)
+                   INSERT INTO ${FILE_TABLE} (${F_SCOPE}, ${F_PATH}, ${F_HASH}, ${F_REC})
+                   VALUES ($1, $3, $5, $4::jsonb)
                    ON CONFLICT (${F_SCOPE}, ${F_PATH}) DO UPDATE
-                     SET ${F_REC} = EXCLUDED.${F_REC}
+                     SET ${F_HASH} = EXCLUDED.${F_HASH},
+                         ${F_REC} = EXCLUDED.${F_REC}
                    RETURNING 1
                  )
                  SELECT (SELECT record FROM prev) AS prev_record FROM upserted`,
-          values: [scope, reservationId, file.path, JSON.stringify(file)],
+          values: [scope, reservationId, file.path, JSON.stringify(file), file.hash ?? null],
         })
 
         await sweepOpportunistic(runner)
@@ -543,6 +607,143 @@ export function pgStorageLedger(
         sweptAt = Date.now()
         return computeUsageRaw(servers)
       })
+    },
+
+    async findByHash(hash, size) {
+      const normalized = hash.trim().toLowerCase()
+      if (!normalized) return null
+      const res = await db.query<{ record: StoredFileRecord }>({
+        text: `SELECT ${F_REC} AS record
+               FROM ${FILE_TABLE}
+               WHERE ${F_SCOPE} = $1
+                 AND ${F_HASH} = $2
+                 AND NOT starts_with(${F_PATH}, '@replica:')
+                 AND ($3::bigint IS NULL OR (${F_REC}->>'size')::bigint = $3)
+               ORDER BY ${F_PATH} ASC`,
+        values: [scope, normalized, size ?? null],
+      })
+      for (const row of res.rows) {
+        const rec = row.record
+        if (rec.status === 'missing') continue
+        if (rec.parts.some((p) => p.missingAt !== undefined)) continue
+        return rec
+      }
+      return null
+    },
+
+    async filterUnreferencedParts(parts, excludePath) {
+      if (parts.length === 0) return []
+      const res = await db.query<{ server: string; phys_path: string }>({
+        text: `WITH candidates AS (
+                 SELECT DISTINCT (c->>'server') AS server, (c->>'path') AS phys_path
+                 FROM jsonb_array_elements($3::jsonb) AS c
+               ),
+               live_locs AS (
+                 SELECT p->>'server' AS server, p->>'path' AS phys_path
+                 FROM ${FILE_TABLE} f,
+                      jsonb_array_elements(f.${F_REC}->'parts') AS p
+                 WHERE f.${F_SCOPE} = $1 AND ($2::text IS NULL OR f.${F_PATH} <> $2)
+                 UNION
+                 SELECT r->>'server' AS server, r->>'path' AS phys_path
+                 FROM ${FILE_TABLE} f,
+                      jsonb_array_elements(COALESCE(f.${F_REC}->'replicas', '[]'::jsonb)) AS r
+                 WHERE f.${F_SCOPE} = $1 AND ($2::text IS NULL OR f.${F_PATH} <> $2)
+               )
+               SELECT c.server, c.phys_path
+               FROM candidates c
+               LEFT JOIN live_locs l ON l.server = c.server AND l.phys_path = c.phys_path
+               WHERE l.server IS NULL`,
+        values: [
+          scope,
+          excludePath ?? null,
+          JSON.stringify(parts.map((p) => ({ server: p.server, path: p.path }))),
+        ],
+      })
+      const unrefKeys = new Set(res.rows.map((r) => `${r.server}\0${r.phys_path}`))
+      const seen = new Set<string>()
+      return parts.filter((p) => {
+        const k = `${p.server}\0${p.path}`
+        if (!unrefKeys.has(k) || seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+    },
+
+    patchFile(path, updater) {
+      return withScopeLock(async (runner): Promise<StoredFileRecord | null> => {
+        const curRes = await runner.query<{ record: StoredFileRecord }>({
+          text: `SELECT ${F_REC} AS record
+                 FROM ${FILE_TABLE}
+                 WHERE ${F_SCOPE} = $1 AND ${F_PATH} = $2`,
+          values: [scope, path],
+        })
+        const cur = curRes.rows[0]?.record
+        if (!cur) return null
+        const next = updater(cur)
+        if (!next) return null
+        await runner.query({
+          text: `UPDATE ${FILE_TABLE}
+                 SET ${F_HASH} = $3,
+                     ${F_REC} = $4::jsonb
+                 WHERE ${F_SCOPE} = $1 AND ${F_PATH} = $2`,
+          values: [scope, path, next.hash ?? null, JSON.stringify(next)],
+        })
+        return next
+      })
+    },
+
+    async listMissingFiles(missingOptions) {
+      const limit =
+        missingOptions?.limit !== undefined && missingOptions.limit > 0
+          ? Math.floor(missingOptions.limit)
+          : 100
+      const filterSet =
+        missingOptions?.servers && missingOptions.servers.length > 0
+          ? new Set(missingOptions.servers)
+          : null
+
+      const res = await db.query<{ record: StoredFileRecord }>({
+        text: `SELECT ${F_REC} AS record
+               FROM ${FILE_TABLE} f
+               WHERE f.${F_SCOPE} = $1
+                 AND NOT starts_with(f.${F_PATH}, '@replica:')
+                 AND (
+                   f.${F_REC}->>'status' IN ('degraded', 'missing')
+                   OR EXISTS (
+                     SELECT 1
+                     FROM jsonb_array_elements(f.${F_REC}->'parts') AS p
+                     WHERE p ? 'missingAt'
+                   )
+                   OR EXISTS (
+                     SELECT 1
+                     FROM jsonb_array_elements(COALESCE(f.${F_REC}->'replicas', '[]'::jsonb)) AS r
+                     WHERE r ? 'missingAt'
+                   )
+                 )
+               ORDER BY f.${F_PATH} ASC`,
+        values: [scope],
+      })
+
+      const out: StoredFileRecord[] = []
+      for (const row of res.rows) {
+        const rec = row.record
+        if (filterSet !== null) {
+          const matchesServer =
+            rec.parts.some((p) => p.missingAt !== undefined && filterSet.has(p.server)) ||
+            Boolean(
+              rec.replicas?.some(
+                (r) =>
+                  (r.missingAt !== undefined ||
+                    Boolean(r.parts?.some((rp) => rp.missingAt !== undefined))) &&
+                  filterSet.has(r.server),
+              ),
+            )
+          if (!matchesServer) continue
+        }
+        out.push(rec)
+        if (out.length >= limit) break
+      }
+      return out
     },
   })
 }

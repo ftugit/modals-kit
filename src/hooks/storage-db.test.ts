@@ -66,6 +66,7 @@ describe('pgStorageLedger & cacheStorageStore (#hooks/storage-db)', () => {
       { name: 'id', type: 'uuid' },
       { name: 'scope', type: 'text' },
       { name: 'path', type: 'text' },
+      { name: 'hash', type: 'text' },
       { name: 'record', type: 'jsonb' },
     ])
 
@@ -221,7 +222,7 @@ describe('pgStorageLedger & cacheStorageStore (#hooks/storage-db)', () => {
     expect(repA.usedBytes).toBe(0)
     expect(repA.partsCount).toBe(0)
 
-    // 3. Копия на node_a создаёт `@replica:node_a:videos/clip.bin`, не засоряя курсорный `list()`
+    // 3. Копия на node_a сохраняет реплику прямо в `record.replicas` без `@replica:*` строк и не засоряет курсорный `list()`
     await storage.copy({
       path: 'videos/clip.bin',
       from: 'node_b',
@@ -280,5 +281,96 @@ describe('pgStorageLedger & cacheStorageStore (#hooks/storage-db)', () => {
 
     releaseSlowStream()
     await inflight
+  })
+
+  test('поддерживает SQL findByHash, ref-counting частей, inline-реплики и reconcile() пропавших файлов в PGlite', async () => {
+    const MB = 1024 * 1024
+    const { db } = await fresh()
+    const ledger = pgStorageLedger(db, { scope: 'gde-pg' })
+    const store = cacheStorageStore(pgStore(db), { scope: 'gde-pg-cache' })
+    const rawA = memoryDriver()
+    const rawB = memoryDriver()
+    const suspendedEvents: string[] = []
+
+    const storage = createStorage({
+      defaultServer: 'node_a',
+      writePool: ['node_a', 'node_b'],
+      missingThreshold: 1,
+      ledger,
+      store,
+      onServerSuspended(ev) {
+        suspendedEvents.push(`${ev.server}:${ev.reason}:${ev.missingCount}`)
+      },
+      servers: {
+        node_a: {
+          driver: rawA,
+          limits: { storageBytes: 4 * MB, fileBytes: 2 * MB },
+        },
+        node_b: {
+          driver: rawB,
+          limits: { storageBytes: 4 * MB, fileBytes: 2 * MB },
+        },
+      },
+    })
+
+    const payload = deterministicBytes(4096, 77)
+
+    // 1. Запись с opt-in hash + серверной репликацией в PGlite
+    const first = await storage.put({
+      path: 'cloud/doc1.bin',
+      body: payload,
+      hash: true,
+      replicate: ['node_b'],
+    })
+    expect(first.hash).toHaveLength(64)
+    expect(first.replicas).toEqual(['node_b'])
+
+    // 2. Повторная загрузка с тем же содержимым находит запись по SQL-индексу (scope, hash) без задвоения usedBytes
+    const second = await storage.put({
+      path: 'cloud/doc2.bin',
+      body: payload,
+      hash: true,
+    })
+    expect(second.deduplicated).toBe(true)
+    expect(second.hash).toBe(first.hash)
+
+    const repBefore = await storage.report()
+    const repNodeA = repBefore.servers.find((s) => s.server === 'node_a')!
+    const repNodeB = repBefore.servers.find((s) => s.server === 'node_b')!
+    expect(repNodeA.usedBytes).toBe(payload.byteLength)
+    expect(repNodeA.filesCount).toBe(2)
+    expect(repNodeA.partsCount).toBe(1)
+    expect(repNodeB.usedBytes).toBe(payload.byteLength)
+
+    // 3. Удаление doc1 не удаляет общий физический файл на node_a, пока жив doc2
+    await storage.del('cloud/doc1.bin')
+    expect(await rawA.head('cloud/doc1.bin')).not.toBeNull()
+
+    // 4. Пропажа физического файла на node_a переводит сервер в suspended и отдаёт данные с реплики node_b
+    await rawA.del('cloud/doc1.bin')
+    const recoveredFromReplica = await storage.lazy('cloud/doc2.bin')
+    expect(recoveredFromReplica).not.toBeNull()
+    expect(new Uint8Array(await recoveredFromReplica!.arrayBuffer())).toEqual(payload)
+    expect(storage.isServerSuspended('node_a')).toBe(true)
+    expect(suspendedEvents).toEqual(['node_a:missing-files:1'])
+
+    // 5. Возврат физического файла и проход storage.reconcile() реактивирует node_a в PostgreSQL
+    await rawA.put({
+      path: 'cloud/doc1.bin',
+      stream: new ReadableStream({
+        start(c) {
+          c.enqueue(payload)
+          c.close()
+        },
+      }),
+      size: payload.byteLength,
+      contentType: 'application/octet-stream',
+      lastModified: Date.now(),
+    })
+
+    const recReport = await storage.reconcile({ autoResumeServers: true })
+    expect(recReport.restoredFiles).toEqual(['cloud/doc2.bin'])
+    expect(recReport.resumedServers).toEqual(['node_a'])
+    expect(storage.isServerSuspended('node_a')).toBe(false)
   })
 })
