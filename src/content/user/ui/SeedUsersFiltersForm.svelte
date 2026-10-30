@@ -178,7 +178,7 @@
   action={action}
   method={action ? 'get' : undefined}
   {hiddenFields}
-  class="space-y-4"
+  class="flex flex-col gap-4"
   data-testid="seed-users-filters-form"
 >
   <!--

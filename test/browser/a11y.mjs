@@ -72,6 +72,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 const context = await browser.newContext({
   viewport: { width: 1280, height: 1800 },
   reducedMotion: 'reduce',
+  bypassCSP: true,
 })
 const page = await context.newPage()
 

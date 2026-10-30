@@ -18,9 +18,10 @@
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Alert, Button, Skeleton } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
   import ProfileCard from './ProfileCard.svelte'
   import { useGrants } from '../grants.svelte.js'
   import {
@@ -46,10 +47,19 @@
     initialPublic?: PublicProfileView | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (what: AuthErrorCode | 'not_found') => void
+    /** Вариант поверхности (`'card'` на странице, `'plain'` внутри модалки). */
+    variant?: UserSurfaceVariant
     class?: string
   }
 
-  let { uid, initial = null, initialPublic = null, onAcl, class: className }: Props = $props()
+  let {
+    uid,
+    initial = null,
+    initialPublic = null,
+    onAcl,
+    variant = 'plain',
+    class: className,
+  }: Props = $props()
 
   const asModalLink = useModalLink()
   const editProfileGrant = useGrants(gProfile.update, { ownerId: () => uid })
@@ -116,121 +126,121 @@
   })
 </script>
 
-<div class={cn('relative', className)}>
-  {#if data && canEdit}
-    <!-- Правка — справа сверху в обоих состояниях профиля: править можно
-         и пустой (первое заполнение создаёт строку). Видна только с
-         флагом правки чтения; механика — пара редактирования (модалка,
-         без JS — её роут). -->
-    <span class="absolute right-0 top-0 z-10">
-      <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
-        Редактировать
-      </Button>
-    </span>
-  {/if}
-{#if data?.fullBlock}
-  <!-- Полная блокировка цели: факт видят все читающие профиль, причину и
-       срок чтение отдаёт только с правами (сервер решает, здесь — показ). -->
-  <div
-    class="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-left text-sm"
-    data-testid="profile-full-block"
-    role="note"
-  >
-    <span class="font-medium text-destructive">Аккаунт заблокирован</span>
-    {#if data.fullBlock.reason}
-      <span class="text-muted-foreground"> — {data.fullBlock.reason}</span>
-    {/if}
-    {#if data.fullBlock.until}
-      <span class="text-muted-foreground">
-        · до <time datetime={new Date(data.fullBlock.until).toISOString()}>
-          {new Date(data.fullBlock.until).toLocaleDateString('ru-RU')}
-        </time>
+<div class={cn(userSurfaceVariants({ variant }), className)}>
+  <div class="relative">
+    {#if data && canEdit}
+      <!-- Правка — справа сверху в обоих состояниях профиля: править можно
+           и пустой (первое заполнение создаёт строку). Видна только с
+           флагом правки чтения; механика — пара редактирования (модалка,
+           без JS — её роут). -->
+      <span class="absolute right-0 top-0 z-10">
+        <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
+          Редактировать
+        </Button>
       </span>
     {/if}
-  </div>
-{/if}
-{#if publicData}
-  <ProfileCard profile={publicData} />
-{:else if data?.profile}
-  <ProfileCard profile={data.profile} />
-  {#if canOpenConfig || canReadBlocks}
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      {#if canOpenConfig}
-        <Button
-          {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
-          variant="outline"
-          size="sm"
-          data-testid="profile-config-open"
-        >
-          Настройки
-        </Button>
+    {#if data?.fullBlock}
+      <!-- Полная блокировка цели: факт видят все читающие профиль, причину и
+           срок чтение отдаёт только с правами (сервер решает, здесь — показ). -->
+      <Alert variant="destructive" role="note" data-testid="profile-full-block" class="mb-4 text-left">
+        <p>
+          <span class="font-semibold text-foreground">Аккаунт заблокирован</span>
+          {#if data.fullBlock.reason}
+            <span class="text-muted-foreground"> — {data.fullBlock.reason}</span>
+          {/if}
+          {#if data.fullBlock.until}
+            <span class="text-muted-foreground">
+              · до <time datetime={new Date(data.fullBlock.until).toISOString()}>
+                {new Date(data.fullBlock.until).toLocaleDateString('ru-RU')}
+              </time>
+            </span>
+          {/if}
+        </p>
+      </Alert>
+    {/if}
+    {#if publicData}
+      <ProfileCard profile={publicData} />
+    {:else if data?.profile}
+      <ProfileCard profile={data.profile} />
+      {#if canOpenConfig || canReadBlocks}
+        <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          {#if canOpenConfig}
+            <Button
+              {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+              variant="outline"
+              size="sm"
+              data-testid="profile-config-open"
+            >
+              Настройки
+            </Button>
+          {/if}
+          {#if canReadBlocks}
+            <Button
+              {...asModalLink('user.blocks', { id: uid })}
+              variant="outline"
+              size="sm"
+              data-testid="profile-blocks-open"
+            >
+              Блокировки
+            </Button>
+          {/if}
+        </div>
       {/if}
-      {#if canReadBlocks}
-        <Button
-          {...asModalLink('user.blocks', { id: uid })}
-          variant="outline"
-          size="sm"
-          data-testid="profile-blocks-open"
-        >
-          Блокировки
-        </Button>
+    {:else if data?.notCreated}
+      <section
+        class="flex w-full flex-col items-center gap-3 py-6 text-center"
+        data-testid="profile-not-created"
+        data-uid={uid}
+      >
+        <span
+          class="flex size-16 items-center justify-center rounded-full border border-border bg-muted text-xl font-semibold text-muted-foreground"
+          aria-hidden="true"
+        >?</span>
+        <h2 class="text-lg font-semibold tracking-tight">{specProfile.notCreatedTitle}</h2>
+        <p class="max-w-xs text-sm text-muted-foreground">{specProfile.notCreatedText}</p>
+        <p class="text-xs text-muted-foreground">{specProfile.nicknameMissing}</p>
+      </section>
+      {#if canOpenConfig || canReadBlocks}
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-border pt-4">
+          {#if canOpenConfig}
+            <Button
+              {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+              variant="outline"
+              size="sm"
+              data-testid="profile-config-open"
+            >
+              Настройки
+            </Button>
+          {/if}
+          {#if canReadBlocks}
+            <Button
+              {...asModalLink('user.blocks', { id: uid })}
+              variant="outline"
+              size="sm"
+              data-testid="profile-blocks-open"
+            >
+              Блокировки
+            </Button>
+          {/if}
+        </div>
       {/if}
-    </div>
-  {/if}
-{:else if data?.notCreated}
-  <section
-    class={cn('flex w-full flex-col items-center gap-3 py-6 text-center', className)}
-    data-testid="profile-not-created"
-    data-uid={uid}
-  >
-    <span
-      class="flex size-20 items-center justify-center rounded-full border border-border bg-muted text-2xl font-semibold text-muted-foreground"
-      aria-hidden="true"
-    >?</span>
-    <h2 class="text-lg font-semibold">{specProfile.notCreatedTitle}</h2>
-    <p class="max-w-xs text-sm text-muted-foreground">{specProfile.notCreatedText}</p>
-    <p class="text-xs text-muted-foreground">{specProfile.nicknameMissing}</p>
-  </section>
-  {#if canOpenConfig || canReadBlocks}
-    <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
-      {#if canOpenConfig}
-        <Button
-          {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
-          variant="outline"
-          size="sm"
-          data-testid="profile-config-open"
-        >
-          Настройки
-        </Button>
-      {/if}
-      {#if canReadBlocks}
-        <Button
-          {...asModalLink('user.blocks', { id: uid })}
-          variant="outline"
-          size="sm"
-          data-testid="profile-blocks-open"
-        >
-          Блокировки
-        </Button>
-      {/if}
-    </div>
-  {/if}
-{:else}
-  <!-- Собственное ожидание компонента: носителю скелет профиля не положен. -->
-  <div
-    class={cn('flex w-full flex-col gap-4', className)}
-    data-testid="profile-pending"
-    aria-busy="true"
-  >
-    <div class="flex items-center gap-4">
-      <span class="size-20 shrink-0 animate-pulse rounded-full bg-muted"></span>
-      <div class="flex min-w-0 flex-1 flex-col gap-2">
-        <span class="h-5 w-32 animate-pulse rounded bg-muted"></span>
-        <span class="h-3 w-20 animate-pulse rounded bg-muted"></span>
+    {:else}
+      <!-- Собственное ожидание компонента: носителю скелет профиля не положен. -->
+      <div
+        class="flex w-full flex-col gap-4"
+        data-testid="profile-pending"
+        aria-busy="true"
+      >
+        <div class="flex items-center gap-4">
+          <Skeleton class="size-20 shrink-0 rounded-full" />
+          <div class="flex min-w-0 flex-1 flex-col gap-2">
+            <Skeleton class="h-5 w-32" />
+            <Skeleton class="h-3 w-20" />
+          </div>
+        </div>
+        <Skeleton class="h-3 w-full" />
+        <Skeleton class="h-3 w-2/3" />
       </div>
-    </div>
-    <span class="h-3 w-full animate-pulse rounded bg-muted"></span>
-    <span class="h-3 w-2/3 animate-pulse rounded bg-muted"></span>
+    {/if}
   </div>
-{/if}
 </div>

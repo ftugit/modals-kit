@@ -34,6 +34,7 @@
       initial={data}
       action={`/user/${data.contextUid}/blocks/${data.blockId}/delete?next=${encodeURIComponent(`/user/${data.contextUid}/blocks`)}`}
       doneHref={`/user/${data.contextUid}/blocks`}
+      variant="card"
     />
   {/if}
 </div>

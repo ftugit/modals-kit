@@ -14,6 +14,7 @@
   import { grants } from '#lib/db/index.js'
   import { Paginator, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
@@ -22,6 +23,7 @@
   import { block as blockResource } from '../schema.js'
   import type { BlockView } from '../types.js'
   import { vault } from '../vault.svelte.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
   import BlockCard from './blocks-list/BlockCard.svelte'
   import { getBlocksRevision } from './blocks-list/revision.svelte.js'
   import {
@@ -41,10 +43,11 @@
     initial?: BlocksRouteData | null
     /** Отказ доступа передаётся носителю для показа `Acl`. */
     onAcl?: (fact: AuthErrorCode) => void
+    variant?: UserSurfaceVariant
     class?: string
   }
 
-  let { uid = null, initial = null, onAcl, class: className }: Props = $props()
+  let { uid = null, initial = null, onAcl, variant = 'plain', class: className }: Props = $props()
 
   ensureBlocksPaginator()
 
@@ -147,10 +150,10 @@
 
 {#if snapshot}
   <PaginatorScope snapshots={{ [BLOCKS_NAME]: snapshot }}>
-    <section class={className} data-testid="blocks-list">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <section class={cn(userSurfaceVariants({ variant }), className)} data-testid="blocks-list">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-baseline gap-2">
-          <h2 class="text-base font-semibold">
+          <h2 class="text-lg font-semibold leading-tight tracking-tight">
             {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
           </h2>
           <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
@@ -218,9 +221,9 @@
     </section>
   </PaginatorScope>
 {:else}
-  <section class={className} aria-busy="true" data-testid="blocks-list-pending">
-    <div class="mb-3 flex items-baseline justify-between gap-3">
-      <h2 class="text-base font-semibold">
+  <section class={cn(userSurfaceVariants({ variant }), className)} aria-busy="true" data-testid="blocks-list-pending">
+    <div class="mb-4 flex items-baseline justify-between gap-3">
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">
         {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
       </h2>
       <span class="text-xs text-muted-foreground">всего: —</span>

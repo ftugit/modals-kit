@@ -109,8 +109,8 @@
   })
 </script>
 
-<div class="mx-auto w-full max-w-3xl space-y-6">
-  <header class="space-y-3">
+<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+  <header class="flex flex-col gap-3">
     <div class="flex items-baseline justify-between gap-4">
       <h1 class="text-3xl font-semibold tracking-tight">Шаги</h1>
       <a
@@ -159,22 +159,22 @@
   </DemoPanel>
 
   {#if mode === 'url' || mode === 'local' || mode === 'hybrid'}
-    <div class="space-y-4" data-testid="demo-steps">
+    <div class="flex flex-col gap-4" data-testid="demo-steps">
       {#if withNav}
         <Steps host={addressSteps} label="Шаги демо" />
       {/if}
       <Steps host={addressSteps} label="" nav={false}>
-        {#snippet compose()}<p class="rounded-md border p-3 text-sm">{TEXT.compose}</p>{/snippet}
-        {#snippet confirm()}<p class="rounded-md border p-3 text-sm">{TEXT.confirm}</p>{/snippet}
-        {#snippet done()}<p class="rounded-md border p-3 text-sm">{TEXT.done}</p>{/snippet}
+        {#snippet compose()}<p class="rounded-lg border border-border bg-card p-4 text-sm shadow-sm">{TEXT.compose}</p>{/snippet}
+        {#snippet confirm()}<p class="rounded-lg border border-border bg-card p-4 text-sm shadow-sm">{TEXT.confirm}</p>{/snippet}
+        {#snippet done()}<p class="rounded-lg border border-border bg-card p-4 text-sm shadow-sm">{TEXT.done}</p>{/snippet}
       </Steps>
       <p class="font-mono text-xs text-muted-foreground">адрес: {address}</p>
     </div>
   {:else if mode === 'mixed'}
-    <div class="space-y-4" data-testid="demo-mixed">
+    <div class="flex flex-col gap-4" data-testid="demo-mixed">
       <Steps host={mixedSteps} label="Смешанный хост" nav={withNav}>
         {#snippet about()}
-          <div class="space-y-3 rounded-md border p-3 text-sm">
+          <div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
             <p>Обычный шаг хоста — просто текст. На шаге «Анкета» живёт куст той же формы
               (срезы «Контакты» и «Примечание»): полный ключ — цепочка
               <code class="rounded bg-muted/70 px-1">form.extra</code>, адрес пишет один хост.</p>
@@ -184,7 +184,7 @@
         {#snippet form()}
           <Form id="fstep-mixed" form={boundMixed} hiddenFields={boundMixed.hidden()}>
             {#if boundMixed.state.result?.ok && (boundMixed.state.result.data as { saved?: boolean } | undefined)?.saved}
-              <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+              <div class="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
                 Готово. Исход: <b>{boundMixed.state.outcome}</b> ·
                 <a {...stepLink(mixedSteps, 'finish')} class="font-medium underline underline-offset-4">шаг «Финиш» →</a>
                 <span class="text-muted-foreground">(переход вне куста — дело страницы, не formSteps)</span>
@@ -193,13 +193,13 @@
             <Common errors={boundMixed.common} title="Форма не сохранена" />
             <FormSteps fs={fsMixed}>
               {#snippet contacts()}
-                <div class="space-y-3">
+                <div class="flex flex-col gap-3">
                   <FieldInput of={boundMixed.f.name} />
                   <FieldInput of={boundMixed.f.email} />
                 </div>
               {/snippet}
               {#snippet extra()}
-                <div class="space-y-3">
+                <div class="flex flex-col gap-3">
                   <FieldInput of={boundMixed.f.note} />
                 </div>
               {/snippet}
@@ -208,7 +208,7 @@
           </Form>
         {/snippet}
         {#snippet finish()}
-          <div class="space-y-3 rounded-md border p-3 text-sm">
+          <div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
             <p>Финиш — обычный шаг хоста вне куста формы. Сюда ведёт ссылка страницы из
               баннера успеха: formSteps переключает только свои срезы.</p>
             <p><a {...stepLink(mixedSteps, 'about')} class="font-medium underline underline-offset-4">← сначала</a></p>
@@ -223,11 +223,11 @@
       </p>
     </div>
   {:else}
-    <div class="space-y-4" data-testid="demo-form">
+    <div class="flex flex-col gap-4" data-testid="demo-form">
       <Form id="fstep" form={bound} hiddenFields={bound.hidden()}>
         <!-- успех — канон раздела «Формы»: форма не пропадает, баннер над полями -->
         {#if bound.state.result?.ok && (bound.state.result.data as { saved?: boolean } | undefined)?.saved}
-          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          <div class="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
             Готово. Исход: <b>{bound.state.outcome}</b>
           </div>
         {/if}
@@ -236,13 +236,13 @@
         <Common errors={bound.common} title="Форма не сохранена" />
         <FormSteps fs={fs}>
           {#snippet contacts()}
-            <div class="space-y-3">
+            <div class="flex flex-col gap-3">
               <FieldInput of={bound.f.name} />
               <FieldInput of={bound.f.email} />
             </div>
           {/snippet}
           {#snippet extra()}
-            <div class="space-y-3">
+            <div class="flex flex-col gap-3">
               <FieldInput of={bound.f.note} />
             </div>
           {/snippet}
@@ -262,7 +262,7 @@
 
   <!-- Прототип админки: конечные компоненты юзера (список и профиль) живут
        в шагах без подачи данных носителем — список в режиме выбора. -->
-  <section class="space-y-3">
+  <section class="flex flex-col gap-3">
     <h2 class="text-base font-semibold">Прототип админки: выбор пользователя</h2>
     <p class="text-sm text-muted-foreground">
       Те же компоненты, что на страницах и в модалках, — но в хосте шагов, где

@@ -11,7 +11,7 @@
   const filters = bindFilters(() => props)
 </script>
 
-<Form form={filters.form} hiddenFields={props.hidden} data-testid="catalog-filter-form" class="space-y-4">
+<Form form={filters.form} hiddenFields={props.hidden} data-testid="catalog-filter-form" class="flex flex-col gap-4">
   <div class="grid gap-3 sm:grid-cols-2">
     <Field of={filters.f.status} />
     <Field of={filters.f.gender} />

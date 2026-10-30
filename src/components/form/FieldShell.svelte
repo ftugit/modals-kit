@@ -16,7 +16,7 @@
 </script>
 
 <!-- data-field — ручка тестов и стилей приложения: имя поля формы -->
-<div class="space-y-1.5" data-field={f.name}>
+<div class="flex flex-col gap-2" data-slot="field" data-invalid={f.has ? '' : undefined} data-field={f.name}>
   {#if labelPlacement === 'end'}
     <div class="flex items-center gap-2">
       {@render children()}

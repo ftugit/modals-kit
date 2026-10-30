@@ -53,14 +53,14 @@ import { Button } from '#components/ui/index.js'
   }
 </script>
 
-<div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe="" data-probe-index={me.index}>
+<div class="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe="" data-probe-index={me.index}>
   <h2>Проверка наследования потока</h2>
-  <p class="text-[0.85rem] text-muted-foreground">
+  <p class="text-sm text-muted-foreground">
     Запись {me.index + 1} из {me.depth}; собственное направление:
     <b>{me.resolved.mobile ?? 'нет'}</b>.
   </p>
 
-  <div class="flex flex-wrap gap-2.5">
+  <div class="flex flex-wrap gap-2">
     <Button variant="outline" data-probe-action="random-modal" onclick={openRandomModal}>
       Открыть с случайным направлением
     </Button>
@@ -76,28 +76,28 @@ import { Button } from '#components/ui/index.js'
   </div>
 
   {#if lastRandom}
-    <p class="text-[0.85rem] text-muted-foreground" data-probe-random={lastRandom}>Последнее случайное направление: {lastRandom}</p>
+    <p class="text-sm text-muted-foreground" data-probe-random={lastRandom}>Последнее случайное направление: {lastRandom}</p>
   {/if}
 </div>
 
 {#snippet plainTransient()}
-  <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="plain">
+  <div class="flex flex-col gap-4 p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe-transient="plain">
     <h2>Модалка без хранилища</h2>
-    <p class="text-[0.85rem] text-muted-foreground">У этой записи нет собственного направления.</p>
+    <p class="text-sm text-muted-foreground">У этой записи нет собственного направления.</p>
     <Button variant="outline"
       data-probe-action="registered-from-transient"
       onclick={openRegisteredFromPlainTransient}
     >
       Открыть обычную модалку без параметров
     </Button>
-    <p class="text-[0.85rem] text-muted-foreground" data-probe-registered-result>{plainTransientResult}</p>
+    <p class="text-sm text-muted-foreground" data-probe-registered-result>{plainTransientResult}</p>
   </div>
 {/snippet}
 
 {#snippet randomTransient()}
-  <div class="flex flex-col gap-3.5 p-5 [&_h2]:m-0 [&_p]:m-0" data-flow-probe-transient="random">
+  <div class="flex flex-col gap-4 p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe-transient="random">
     <h2>Модалка без хранилища со случайным направлением</h2>
-    <p class="text-[0.85rem] text-muted-foreground" data-probe-random={lastRandom ?? undefined}>
+    <p class="text-sm text-muted-foreground" data-probe-random={lastRandom ?? undefined}>
       Собственное направление: {lastRandom ?? 'нет'}.
     </p>
   </div>

@@ -10,7 +10,7 @@
   import { untrack } from 'svelte'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
-  import { Button } from '#components/ui/index.js'
+  import { Badge, Button } from '#components/ui/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import type {
     CookieVaultFormProps,
@@ -74,19 +74,20 @@
   data-testid="cookie-vault"
   data-vault-scope={schema.scope}
 >
-  <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3">
-    <div class="space-y-1">
+  <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+    <div class="flex flex-col gap-1">
       <div class="flex flex-wrap items-center gap-2">
-        <h2 class="text-base font-semibold">{schema.title}</h2>
-        <span
-          class="rounded bg-muted px-2 py-0.5 font-mono text-xs"
+        <h2 class="text-lg font-semibold leading-tight tracking-tight">{schema.title}</h2>
+        <Badge
+          variant={live.hasKey ? 'secondary' : 'outline'}
+          class="font-mono"
           data-testid="vault-key-status"
         >
           {live.hasKey ? 'ключ dv_key активен' : 'ключ не создан'} · {live.items.length}/{live.maxEntries}
-        </span>
+        </Badge>
       </div>
       {#if schema.description}
-        <p class="text-xs text-muted-foreground">{schema.description}</p>
+        <p class="text-sm text-muted-foreground">{schema.description}</p>
       {/if}
     </div>
 
@@ -106,42 +107,38 @@
         </Form>
       {/if}
       {#if backHref}
-        <a
-          {...asLink(backHref)}
-          class="text-xs font-medium underline underline-offset-4 hover:text-primary"
-          data-testid="vault-back-link"
-        >
+        <Button {...asLink(backHref)} variant="ghost" size="sm" data-testid="vault-back-link">
           ← К демо
-        </a>
+        </Button>
       {/if}
     </div>
   </div>
 
   <div
-    class="min-h-0 flex-auto space-y-5 overflow-y-auto overscroll-contain pt-4 pr-1"
+    class="flex min-h-0 flex-auto flex-col gap-5 overflow-y-auto overscroll-contain pt-4 pr-1"
     data-testid="cookie-vault-scroll"
   >
-    <div class="space-y-2">
+    <div class="flex flex-col gap-2">
       <h3 class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Сохранённые конфиги ({live.items.length})
       </h3>
 
       {#if live.items.length === 0}
         <p
-          class="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground"
+          class="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground"
           data-testid="vault-empty"
         >
           В куках браузера пока нет сохранённых конфигов этого раздела.
         </p>
       {:else}
-        <ul class="space-y-2" data-testid="vault-items-list">
+        <ul class="flex flex-col gap-2" data-testid="vault-items-list">
           {#each live.items as item (item.id)}
             <li
-              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3.5"
               data-testid="vault-item"
               data-slot-id={item.id}
             >
-              <div class="min-w-0 space-y-0.5">
+              <div class="flex min-w-0 flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-semibold" data-testid="vault-item-label">{item.label}</span>
                   <code

@@ -44,11 +44,12 @@
 </script>
 
 {#if modalData}
-  <AuthWidget
-    data={modalData}
-    mode="modal"
-    variant="plain"
-    class="p-5"
-    onDone={done}
-  />
+  <div class="my-auto w-full p-6">
+    <AuthWidget
+      data={modalData}
+      mode="modal"
+      variant="plain"
+      onDone={done}
+    />
+  </div>
 {/if}

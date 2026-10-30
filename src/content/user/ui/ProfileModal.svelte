@@ -16,10 +16,12 @@
   let acl = $state<AuthErrorCode | 'not_found' | null>(null)
 </script>
 
-{#if !uid || acl === 'not_found'}
-  <Acl model="not_found" backHref="/" class="p-5" />
-{:else if acl}
-  <Acl status={acl} backHref="/" class="p-5" />
-{:else}
-  <Profile {uid} onAcl={(what) => (acl = what)} class="p-5" />
-{/if}
+<div class="my-auto w-full p-6">
+  {#if !uid || acl === 'not_found'}
+    <Acl model="not_found" backHref="/" variant="plain" />
+  {:else if acl}
+    <Acl status={acl} backHref="/" variant="plain" />
+  {:else}
+    <Profile {uid} variant="plain" onAcl={(what) => (acl = what)} />
+  {/if}
+</div>

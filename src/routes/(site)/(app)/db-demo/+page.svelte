@@ -120,8 +120,8 @@
 </script>
 
 <!-- Ширина и отступы — как у остальных демо-страниц (/modals, /form). -->
-<div class="mx-auto w-full max-w-4xl space-y-6">
-  <h1 class="text-2xl font-semibold">lib/db в SvelteKit</h1>
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
+  <h1 class="text-2xl font-semibold tracking-tight">lib/db в SvelteKit</h1>
   <!-- Сводка (сколько записей, размер страницы, режим) живёт в `ListMeta` внутри
        хоста: после отправки формы страница не перезагружается, поэтому серверные
        цифры на этом месте остались бы вчерашними. -->

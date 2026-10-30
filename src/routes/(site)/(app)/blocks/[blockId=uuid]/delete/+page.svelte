@@ -31,6 +31,7 @@
       initial={data}
       action={`/blocks/${data.blockId}/delete?next=/blocks`}
       doneHref="/blocks"
+      variant="card"
     />
   {/if}
 </div>

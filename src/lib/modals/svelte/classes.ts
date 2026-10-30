@@ -137,15 +137,14 @@ export function floatingLayoutClass(anchor: string | undefined): string {
 
 /* ── состояния: скелетон, ошибка, спиннер ─────────────────────────── */
 
-export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-5'
+export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-6'
 /** Классы блока ошибки модалки (общие у хоста и витрин). */
 export const MODAL_ERROR_CLASS =
-  'flex flex-1 flex-col items-center justify-center gap-2.5 p-7 text-center text-destructive'
+  'my-auto flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'
 /** Классы заголовка ошибки в модалке. */
-export const MODAL_ERROR_TITLE_CLASS = 'text-sm font-semibold'
+export const MODAL_ERROR_TITLE_CLASS = 'text-base font-semibold tracking-tight text-foreground'
 /** Классы подсказки под ошибкой в модалке. */
-export const MODAL_ERROR_HINT_CLASS =
-  'text-xs text-[color-mix(in_oklab,var(--destructive)_78%,var(--muted-foreground))]'
+export const MODAL_ERROR_HINT_CLASS = 'max-w-xs text-sm text-muted-foreground'
 
 /* ── анимации открытия/закрытия ───────────────────────────────────── */
 

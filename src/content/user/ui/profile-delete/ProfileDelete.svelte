@@ -15,6 +15,7 @@
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { userSession } from '../../vault.svelte.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { profileDeleteForm } from './form.js'
 
@@ -30,6 +31,7 @@
     action?: string
     form?: { result?: import('#lib/form/index.js').Result } | null
     onDone?: () => void
+    variant?: UserSurfaceVariant
     class?: string
   }
 
@@ -41,6 +43,7 @@
     action,
     form,
     onDone,
+    variant = 'plain',
     class: className,
   }: Props = $props()
 
@@ -60,8 +63,8 @@
 </script>
 
 {#if done}
-  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)}>
-    <h2 class="text-base font-semibold">Профиль удалён</h2>
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', userSurfaceVariants({ variant }), className)}>
+    <h2 class="text-lg font-semibold leading-tight tracking-tight">Профиль удалён</h2>
     <p class="text-sm text-muted-foreground">
       Профиль больше не показывается. Если был отмечен и seed-аккаунт, он помечен на удаление
       и будет стёрт окончательно по истечении срока.
@@ -75,14 +78,14 @@
     id="user-profile-delete"
     form={bound}
     hiddenFields={bound.hidden()}
-    class={cn('mx-auto flex w-full max-w-sm flex-col gap-4 text-left', className)}
+    class={cn('mx-auto flex w-full max-w-sm flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
   >
     <Common errors={bound.common} title="Не получилось удалить" />
 
     <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
     <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Удаление профиля</h2>
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">Удаление профиля</h2>
       <p class="text-sm text-muted-foreground">
         Профиль удалится сразу и перестанет показываться. Seed-аккаунт при этом останется:
         владелец сможет снова заполнить профиль.

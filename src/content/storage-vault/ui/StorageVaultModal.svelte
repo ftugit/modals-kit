@@ -45,11 +45,11 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-auto flex-col p-5" data-testid="storage-vault-modal">
+<div class="flex min-h-0 flex-auto flex-col p-6" data-testid="storage-vault-modal">
   {#if loadFailed}
     <p class="text-sm text-destructive">Не удалось загрузить состояние куки-сейфа.</p>
   {:else if !snapshot}
-    <div class="space-y-3">
+    <div class="flex flex-col gap-3">
       <Skeleton class="h-5 w-48" />
       <Skeleton class="h-20 w-full" />
       <Skeleton class="h-32 w-full" />

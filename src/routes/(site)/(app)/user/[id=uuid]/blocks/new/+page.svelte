@@ -33,6 +33,7 @@
       uid={data.uid}
       initialCreate={data}
       action={`/user/${data.uid}/blocks/new?next=${encodeURIComponent(`/user/${data.uid}/blocks`)}`}
+      variant="card"
     />
   {/if}
 </div>

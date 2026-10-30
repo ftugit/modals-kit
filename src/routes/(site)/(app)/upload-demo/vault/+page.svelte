@@ -17,8 +17,8 @@
   })
 </script>
 
-<div class="mx-auto max-w-2xl px-6 py-8" data-testid="storage-vault-page">
-  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+<div class="mx-auto w-full max-w-2xl" data-testid="storage-vault-page">
+  <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
     <StorageVaultView snapshot={data.vaultSnapshot} backHref={data.backHref} />
   </div>
 </div>

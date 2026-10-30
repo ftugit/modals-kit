@@ -56,7 +56,7 @@
   })
 </script>
 
-<div class="space-y-1">
+<div class="flex flex-col gap-1">
   <Form {form} hiddenFields={form.hidden()} class="inline-flex">
     <Field of={form.f.from_server} />
     <Field of={form.f.to_server} />

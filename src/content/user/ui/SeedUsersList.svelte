@@ -27,6 +27,7 @@
   import { untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
   import type { LinkAttrs } from '#hooks/links/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
@@ -34,6 +35,7 @@
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
     ensureSeedUsersPaginator,
@@ -57,6 +59,7 @@
     rowAttrs?: (user: SeedUserView) => LinkAttrs
     /** Оформление выбранных строк: смысл выбора — у механики носителя. */
     isSelected?: (id: string) => boolean
+    variant?: UserSurfaceVariant
     class?: string
   }
 
@@ -65,6 +68,7 @@
     onAcl,
     rowAttrs,
     isSelected = (_id: string) => false,
+    variant = 'plain',
     class: className,
   }: Props = $props()
 
@@ -155,9 +159,9 @@
 
 {#if snapshot}
   <PaginatorScope snapshots={{ [SEED_USERS_NAME]: snapshot }}>
-  <section class={className}>
-    <div class="mb-3 flex items-baseline justify-between gap-3">
-      <h2 class="text-base font-semibold">Seed-юзеры</h2>
+  <section class={cn(userSurfaceVariants({ variant }), className)}>
+    <div class="mb-4 flex items-baseline justify-between gap-3">
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
       <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
     </div>
     <div class="mb-3 flex items-start justify-between gap-3">
@@ -226,9 +230,9 @@
   </PaginatorScope>
 {:else}
   <!-- Собственное ожидание компонента: носителю скелет списка не положен. -->
-  <section class={className} data-testid="seed-users-pending" aria-busy="true">
-    <div class="mb-3 flex items-baseline justify-between gap-3">
-      <h2 class="text-base font-semibold">Seed-юзеры</h2>
+  <section class={cn(userSurfaceVariants({ variant }), className)} data-testid="seed-users-pending" aria-busy="true">
+    <div class="mb-4 flex items-baseline justify-between gap-3">
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
       <span class="text-xs text-muted-foreground">всего: —</span>
     </div>
     <div class="flex flex-col gap-2">

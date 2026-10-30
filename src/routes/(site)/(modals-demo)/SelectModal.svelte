@@ -17,7 +17,7 @@ import { Button } from '#components/ui/index.js'
   const m = useModals()
 </script>
 
-<div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
+<div class="flex min-h-0 flex-auto flex-col gap-3.5 overflow-y-auto p-6 text-left [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0 [&_p]:text-sm [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1.5 [&_label]:text-sm [&_label]:font-medium">
   <h2>Select внутри модалки</h2>
   <p>Список лежит в своём контейнере в <code>body</code>, а частью ловушки фокуса
      модалки его объявляет <code>aria-controls</code> на триггере — штатный
@@ -25,7 +25,7 @@ import { Button } from '#components/ui/index.js'
   <label>Жанр<Select options={genres} bind:value={picked} placeholder="Выберите жанр" /></label>
   <label>Несколько<Select options={genres} bind:value={many} multiple placeholder="Любые" /></label>
   <label>Несколько, закрывать после выбора<Select options={genres} bind:value={manyClose} multiple closeOnSelect placeholder="Любые" /></label>
-  <p class="text-[0.8rem]" data-select-modal-picked="">Выбрано: {picked} / [{many.join(', ')}] / [{manyClose.join(', ')}]</p>
+  <p class="text-xs" data-select-modal-picked="">Выбрано: {picked} / [{many.join(', ')}] / [{manyClose.join(', ')}]</p>
 
   <div class="flex flex-wrap items-center gap-3">
     <FloatingMenu
@@ -47,14 +47,14 @@ import { Button } from '#components/ui/index.js'
     >
       Без хранилища поверх
     </Button>
-    <span class="text-[0.8rem]">Из меню: <b>{действие}</b></span>
+    <span class="text-xs">Из меню: <b>{действие}</b></span>
   </div>
   <p>Меню — второй потребитель того же <code>host.floating</code>, что и список:
      Escape, клик мимо и лист на узком экране приходят от хоста.</p>
 </div>
 
 {#snippet storagelessHere()}
-  <div class="flex flex-col gap-3 p-5 text-left [&_h2]:m-0 [&_h2]:text-[1.1rem] [&_p]:m-0 [&_p]:text-[0.85rem] [&_p]:text-muted-foreground [&_label]:flex [&_label]:flex-col [&_label]:gap-1 [&_label]:text-[0.85rem]">
+  <div class="flex flex-col gap-3.5 p-6 text-left [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0 [&_p]:text-sm [&_p]:text-muted-foreground">
     <h2>Модалка без хранилища</h2>
     <p>Открыта поверх модалки со списками. В адресе её нет; «Назад» закрывает именно её.</p>
     <div class="flex flex-wrap items-center gap-3">

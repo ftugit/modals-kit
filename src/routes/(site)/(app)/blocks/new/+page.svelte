@@ -31,6 +31,7 @@
       initialSubject={data.initialSubject}
       selfHref={data.selfHref}
       action="/blocks/new?next=/blocks"
+      variant="card"
     />
   {/if}
 </div>

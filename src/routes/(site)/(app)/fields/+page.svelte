@@ -47,8 +47,8 @@
   })
 </script>
 
-<div class="mx-auto w-full max-w-3xl space-y-6">
-  <header class="space-y-2">
+<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+  <header class="flex flex-col gap-2">
     <h1 class="text-3xl font-semibold tracking-tight">Конструктор полей</h1>
     <p class="text-muted-foreground">
       Соберите набор полей и правил к ним, сохраните — заполните запись на наборе и посмотрите результат.
@@ -72,7 +72,7 @@
 
   <Steps host={steps} label="" nav={false}>
     {#snippet build()}
-      <section class="space-y-3" aria-labelledby="fields-step-builder">
+      <section class="flex flex-col gap-3" aria-labelledby="fields-step-builder">
         <h2 id="fields-step-builder" class="text-xl font-semibold">Создание полей</h2>
         {#key `${data.set?.version ?? 0}:${data.limit}`}
           <SchemaBuilder
@@ -91,7 +91,7 @@
 
     {#snippet fill()}
       {#if data.set}
-        <section class="space-y-3" aria-labelledby="fields-step-record">
+        <section class="flex flex-col gap-3" aria-labelledby="fields-step-record">
           <div>
             <h2 id="fields-step-record" class="text-xl font-semibold">Заполнение</h2>
             <p class="text-sm text-muted-foreground">Хранится одна запись: новая отправка заменяет прежнюю.</p>
@@ -105,7 +105,7 @@
               {#snippet extraFields(form)}
                 <Field of={form.f.title} />
                 {#if data.record?.image}
-                  <figure class="space-y-1">
+                  <figure class="flex flex-col gap-1">
                     <img src={data.record.image} alt={data.record.title} class="h-16 rounded-md border border-border" />
                     <figcaption class="text-xs text-muted-foreground">Текущее изображение</figcaption>
                   </figure>
@@ -120,7 +120,7 @@
 
     {#snippet result()}
       {#if data.record}
-        <section class="space-y-3" aria-labelledby="fields-step-view" data-testid="record-view">
+        <section class="flex flex-col gap-3" aria-labelledby="fields-step-view" data-testid="record-view">
           <h2 id="fields-step-view" class="text-xl font-semibold">Просмотр</h2>
           <article class={fieldsSurfaceVariants({ surface: 'card' })}>
             <h3 class="text-lg font-medium" data-testid="record-title">{data.record.title}</h3>

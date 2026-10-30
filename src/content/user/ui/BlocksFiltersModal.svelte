@@ -83,8 +83,11 @@
   }
 </script>
 
-<div class="p-5">
-  <h2 class="mb-4 text-base font-semibold">Фильтры блокировок</h2>
+<div class="flex flex-col gap-4 p-6">
+  <div class="flex flex-col gap-1">
+    <h2 class="text-lg font-semibold leading-tight tracking-tight">Фильтры блокировок</h2>
+    <p class="text-sm text-muted-foreground">Срез журнала по статусу, сферам и пользователям.</p>
+  </div>
   <BlocksFiltersForm
     {uid}
     {canSeeDeleted}

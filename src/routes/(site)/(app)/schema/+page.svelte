@@ -23,20 +23,20 @@
   })
 </script>
 
-<div class="mx-auto w-full max-w-3xl space-y-6">
-  <h1 class="text-2xl font-semibold">Перенос схемы базы</h1>
+<div class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+  <h1 class="text-2xl font-semibold tracking-tight">Перенос схемы базы</h1>
 
   {#if data.justDone}
-    <p class="rounded-lg border border-success/40 bg-card px-4 py-3 text-sm" role="status" data-testid="schema-done">
-      Перенос выполнен.
+    <p class="rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm" role="status" data-testid="schema-done">
+      <span class="mr-1.5 font-semibold text-success" aria-hidden="true">✓</span>Перенос выполнен.
     </p>
   {/if}
 
   {#if data.screen}
     <SchemaPending screen={data.screen} {seed} />
   {:else}
-    <p class="rounded-lg border border-success/40 bg-card px-4 py-3 text-sm" role="status" data-testid="schema-ok">
-      Схема в порядке — решать нечего.
+    <p class="rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-sm" role="status" data-testid="schema-ok">
+      <span class="mr-1.5 font-semibold text-success" aria-hidden="true">✓</span>Схема в порядке — решать нечего.
     </p>
   {/if}
 

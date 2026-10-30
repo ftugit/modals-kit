@@ -35,7 +35,7 @@
   {#if events.length === 0}
     <div class="italic text-muted-foreground/60">Пока нет событий</div>
   {:else}
-    <ol class="mt-1 space-y-0.5">
+    <ol class="mt-1 flex flex-col gap-0.5">
       {#each events as item (item.n)}
         <li class="flex items-center gap-2">
           <span class="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">

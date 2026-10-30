@@ -27,8 +27,8 @@
   const grants = $derived(item.permissions.length ? item.permissions.join(', ') : 'без прав')
   const blocks = $derived(item.blocked.map((b) => b.scope).join(', '))
 
-  // Блок строки: равная доля ширины + собственный горизонтальный скролл.
-  const cell = 'min-w-0 flex-1 basis-0 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]'
+  // Блок строки: равная доля ширины + аккуратное усечение троеточием (полное значение в title).
+  const cell = 'min-w-0 flex-1 basis-0 truncate'
 </script>
 
 <div

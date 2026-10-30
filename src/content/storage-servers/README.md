@@ -13,7 +13,7 @@
 | `form.ts` | Изоморфные описания форм добавления/обновления сервера (`storageServerSaveForm`: `id`, `name`, `dsn`, `quotaBytes`, `priority`, `readOnly`, `enabled`) и удаления (`storageServerDeleteForm`). |
 | `storage-server.form.server.ts` | Серверная регистрация `registerComponentForm`: проверка прав `grants(storageServer)`, предпроверка доступности хранилища `probeStorageDsn` до записи в БД, шифрование DSN и инвалидация активного пула. |
 | `routes.ts` / `modals.ts` | Пара «модалка `storage.servers` + маршрут `/storage-servers`» с полноценной работой как с JS, так и нативным POST без JS. |
-| `ui/StorageServers.svelte` | Экран списка серверов пула (маскированные DSN без утечки ключей в клиент, статус активности, приоритет, квота, переключатели и форма добавления/удаления с реактивным гейтом `useGrants(grants(storageServer).insert)`). |
+| `ui/StorageServersView.svelte` | Экран списка серверов пула (`variant="card"` на `/storage-servers`, `variant="plain"` внутри модалки; маскированные DSN без утечки ключей в клиент, статус активности, приоритет, квота, переключатели и форма добавления/удаления с реактивным гейтом `useGrants(grants(storageServer).insert)`). |
 | `ui/StorageServersEntry.svelte` / `ui/StorageServersModal.svelte` | Точка входа в меню/настройках и модальный носитель с защитой `<Acl />`. |
 
 ---

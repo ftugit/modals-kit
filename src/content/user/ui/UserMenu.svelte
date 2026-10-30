@@ -13,6 +13,7 @@
    * `vault` прозрачно отдаёт `page.data.user`, в браузере — состояние RAM).
    */
   import { Portal } from '@ark-ui/svelte/portal'
+  import { Button } from '#components/ui/index.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
@@ -178,13 +179,13 @@
     {#if menuOpen && menuNode}
       <Portal container={menuNode}>
         <div
-          class="flex max-h-full flex-col overflow-auto rounded-[calc(var(--radius)+2px)] border border-border bg-card text-card-foreground shadow-[0_20px_45px_-12px_color-mix(in_oklab,var(--foreground)_30%,transparent),0_6px_16px_-8px_color-mix(in_oklab,var(--foreground)_20%,transparent)] outline-none"
+          class="flex max-h-full flex-col overflow-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none"
           data-user-menu-popover=""
           aria-label="Меню аккаунта"
           tabindex="-1"
           {@attach (node) => node.focus({ preventScroll: true })}
         >
-          <MenuBody variant="plain" class="p-3" onDone={() => closeMenu(false)} />
+          <MenuBody variant="plain" onDone={() => closeMenu(false)} />
         </div>
       </Portal>
     {/if}
@@ -194,9 +195,10 @@
        Здесь `href` не избыточен: у маршрута тот же путь, но другой `next` —
        адрес возврата на текущую страницу, а не умолчание `null`. -->
   {@const link = asModalLink('user.auth', {}, { href: authHref })}
-  <a
+  <Button
     {...link}
+    variant="outline"
+    size="sm"
     data-testid="header-auth"
-    class="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-  >Авторизация</a>
+  >Авторизация</Button>
 {/if}

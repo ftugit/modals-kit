@@ -21,7 +21,7 @@
   const isDeleted = $derived(item.deletedAt != null)
   const isActive = $derived(!isDeleted && (item.until === null || item.until > Date.now()))
 
-  const cell = 'min-w-0 flex-1 basis-0 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]'
+  const cell = 'min-w-0 flex-1 basis-0 truncate'
 </script>
 
 <div class="flex w-full items-baseline gap-3 rounded-md px-2 py-2 text-left hover:bg-accent">

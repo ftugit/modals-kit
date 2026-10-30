@@ -54,7 +54,7 @@
   })
 </script>
 
-<Form form={form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
+<Form form={form} hiddenFields={form.hidden()} class="flex flex-col gap-3 rounded-xl border border-border bg-card p-5 shadow-sm">
   <Common errors={form.common} title="Удаление отклонено" />
   <Field of={form.f.ids} />
   <Button variant="outline" type="submit" data-testid="remove" task={formTask(form.state)}>Удалить</Button>

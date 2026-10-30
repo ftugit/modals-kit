@@ -100,14 +100,14 @@
   })
 </script>
 
-<Form form={upload} hiddenFields={upload.hidden()} enctype="multipart/form-data" class="space-y-4">
+<Form form={upload} hiddenFields={upload.hidden()} enctype="multipart/form-data" class="flex flex-col gap-4">
   <!--
     Поля формы остаются смонтированными в DOM на обоих шагах (`hidden` на шаге `uploading`),
     чтобы при нажатии «Отменить загрузку» или серверной ошибке введённые поля и выбранные в
     файловом поле (`Field`) вложения сохранялись на 100% без очистки.
   -->
   <div
-    class={steps.currentKey === 'uploading' ? 'hidden' : 'space-y-4'}
+    class={steps.currentKey === 'uploading' ? 'hidden' : 'flex flex-col gap-4'}
     aria-hidden={steps.currentKey === 'uploading' ? 'true' : undefined}
     data-testid="upload-step-fill"
   >
@@ -134,8 +134,8 @@
     {/snippet}
 
     {#snippet uploading()}
-      <div class="space-y-4" data-testid="upload-step-active">
-        <div class="space-y-2" data-testid="upload-active-attachments">
+      <div class="flex flex-col gap-4" data-testid="upload-step-active">
+        <div class="flex flex-col gap-2" data-testid="upload-active-attachments">
           {#each selectedFiles as file, idx (`${file.name}:${file.size}:${idx}`)}
             {@const entry =
               activeProgress?.files[idx] ??

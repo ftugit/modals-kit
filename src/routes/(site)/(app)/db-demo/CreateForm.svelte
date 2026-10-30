@@ -122,7 +122,7 @@
   })
 </script>
 
-<Form id="db-create-form" form={form} hiddenFields={form.hidden()} class="space-y-3 rounded-xl border border-border bg-card p-4">
+<Form id="db-create-form" form={form} hiddenFields={form.hidden()} class="flex flex-col gap-3 rounded-xl border border-border bg-card p-5 shadow-sm">
   <Common errors={form.common} title="Добавление отклонено" />
   <Field of={form.f.title} />
   <!-- поле только формы: в базу не идёт (сервер отдаёт базе pick(['title'])) -->

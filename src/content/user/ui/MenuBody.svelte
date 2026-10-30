@@ -15,7 +15,7 @@
   import { useModalLink } from '#hooks/links/index.js'
   import { storageServer } from '#hooks/storage-schema.js'
   import { forms } from '#components/form/forms.config.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Separator } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useGrants } from '../grants.svelte.js'
   import { seedForm } from './seed-form/form.js'
@@ -77,14 +77,14 @@
 <Acl allow="user" {variant} class={className}>
   <div
     class={cn(
-      'mx-auto flex w-full max-w-sm min-w-56 flex-col gap-3 text-left',
+      'mx-auto my-auto flex w-full max-w-sm min-w-56 flex-col gap-1.5 text-left',
       userSurfaceVariants({ variant }),
       className,
     )}
   >
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2.5 px-2 py-1.5">
       <span
-        class="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-lg font-semibold text-muted-foreground"
+        class="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground"
       >
         {#if avatarUrl}
           <img src={avatarUrl} alt="" class="h-auto w-full rounded-full" />
@@ -94,22 +94,46 @@
       </span>
       <span class="min-w-0 flex-1 truncate text-sm font-medium">{nickname ?? specProfile.nicknameMissing}</span>
     </div>
-    {#if profileViewLink}
-      <Button {...profileViewLink} variant="outline" class="w-full">Профиль</Button>
-    {/if}
-    <Button {...profileLink} variant="outline" class="w-full">Изменить профиль</Button>
-    <Button {...configLink} variant="outline" class="w-full" data-testid="menu-config-open">Настройки</Button>
-    {#if storageServersGrant.current}
-      <Button {...storageServersLink} variant="outline" class="w-full" data-testid="menu-storage-servers-open">
-        Серверы хранилища
+    <Separator />
+    <div class="flex flex-col gap-0.5">
+      {#if profileViewLink}
+        <Button {...profileViewLink} variant="ghost" size="sm" class="w-full justify-start font-normal">
+          Профиль
+        </Button>
+      {/if}
+      <Button {...profileLink} variant="ghost" size="sm" class="w-full justify-start font-normal">
+        Изменить профиль
       </Button>
-    {/if}
-    <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()}>
+      <Button
+        {...configLink}
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start font-normal"
+        data-testid="menu-config-open"
+      >
+        Настройки
+      </Button>
+      {#if storageServersGrant.current}
+        <Button
+          {...storageServersLink}
+          variant="ghost"
+          size="sm"
+          class="w-full justify-start font-normal"
+          data-testid="menu-storage-servers-open"
+        >
+          Серверы хранилища
+        </Button>
+      {/if}
+    </div>
+    <Separator />
+    <Form id="user-menu-logout" form={bound} hiddenFields={bound.hidden()} class="w-full">
       <Button
         type="submit"
         name="intent"
         value="logout"
-        variant="outline"
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start font-normal"
         task={formTask(bound.state, 'logout')}
       >
         Выйти

@@ -95,14 +95,10 @@ import { Button } from '#components/ui/index.js'
 
   const label = (e: any) => (e.kind === 'registered' ? e.name : e.id)
   const params = (e: any) => (e.kind === 'registered' ? e.params : modals.layerContent(e.id))
-  // Оформление страницы: утилиты вместо прежнего блочного стиля.
-  const CODE = 'rounded-[5px] border border-[#252a34] bg-[#0f1115] px-1 py-0.5 text-[0.82em]'
-  const BTN_BASE =
-    'flex-1 cursor-pointer rounded-lg px-3 py-2 text-[0.88rem] font-medium text-white enabled:hover:brightness-[1.12] disabled:cursor-not-allowed disabled:bg-[#2a2f3a] disabled:text-[#666e7d]'
-  const BTN = `${BTN_BASE} bg-[#2d6cdf]`
-  const BTN_ALT = `${BTN_BASE} bg-[#6b4fd6]`
+  // Оформление страницы — семантические токены shadcn/ui (работают в обеих темах).
+  const CODE = 'rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground'
   const PRE =
-    'm-0 overflow-x-auto rounded-md border border-[#252a34] bg-[#0f1115] px-2.5 py-2 text-[0.78rem] whitespace-pre-wrap break-all'
+    'm-0 overflow-x-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all text-foreground'
 
   useHeadSeo({
     subTitle: 'Полный цикл модалки',
@@ -112,62 +108,63 @@ import { Button } from '#components/ui/index.js'
 </script>
 
 <!--
-  Оформление страницы — утилиты, а не прежний блочный стиль: app.css хранит
-  только токены тем. Тёмная тема спайка набрана цветами прямо в классах.
+  Оформление страницы — семантические токены темы (lemonade / night).
 -->
-<div class="min-h-dvh bg-[#0f1115] font-sans text-[15px] leading-[1.55] text-[#e6e8eb] [&_h1]:mb-1.5 [&_h1]:text-[1.6rem] [&_h2]:mb-3.5 [&_h2]:text-[0.78rem] [&_h2]:font-semibold [&_h2]:tracking-[0.08em] [&_h2]:text-[#8b93a1] [&_h2]:uppercase [&_dt]:text-[0.85rem] [&_dt]:text-[#8b93a1] [&_dd]:m-0">
-  <main class="mx-auto max-w-[70rem] px-5 pt-8 pb-16">
-    <h1>Полный цикл</h1>
-    <p class="mb-7 max-w-[46rem] text-[#9aa3b2]">
-      Объявление → вызов с параметрами → цепочка → адрес → Назад.
-      Хост ещё не написан, поэтому слои ниже нарисованы примитивно —
-      но сама механика настоящая.
-    </p>
+<div class="min-h-dvh bg-background font-sans text-sm leading-relaxed text-foreground">
+  <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 pt-8 pb-16">
+    <header class="flex flex-col gap-2">
+      <h1 class="text-3xl font-semibold tracking-tight">Полный цикл</h1>
+      <p class="max-w-2xl text-sm text-muted-foreground">
+        Объявление → вызов с параметрами → цепочка → адрес → Назад.
+        Хост ещё не написан, поэтому слои ниже нарисованы примитивно —
+        но сама механика настоящая.
+      </p>
+    </header>
 
     <section class="grid grid-cols-1 gap-4 min-[820px]:grid-cols-2">
-      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
-        <h2>Два поддерживаемых вида записи</h2>
+      <div class="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
+        <h2 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Два поддерживаемых вида записи</h2>
 
-        <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
-          <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · глобальный реестр</div>
-          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>createRegistry('app')</code>, видна отовсюду.</p>
-          <Button variant="plain" size="none" class={BTN} onclick={openGlobal} disabled={!ready}>Открыть «auth»</Button>
+        <div class="flex flex-col gap-2 border-l-2 border-l-primary pl-3">
+          <div class="text-sm"><b>1. registered</b> · глобальный реестр</div>
+          <p class="text-xs text-muted-foreground">Объявлена в <code class={CODE}>createRegistry('app')</code>, видна отовсюду.</p>
+          <Button variant="default" size="sm" class="self-start" onclick={openGlobal} disabled={!ready}>Открыть «auth»</Button>
         </div>
 
-        <div class="mb-[1.1rem] border-l-[3px] border-l-[#2d6cdf] py-0.5 pl-3">
-          <div class="mb-1 text-[0.9rem]"><b>1. registered</b> · область роута</div>
-          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Объявлена в <code class={CODE}>app.child('/cycle')</code>. С других роутов не видна.
+        <div class="flex flex-col gap-2 border-l-2 border-l-primary pl-3">
+          <div class="text-sm"><b>1. registered</b> · область роута</div>
+          <p class="text-xs text-muted-foreground">Объявлена в <code class={CODE}>app.child('/cycle')</code>. С других роутов не видна.
              Параметры уезжают в адрес.</p>
-          <Button variant="plain" size="none" class={BTN} onclick={openScoped} disabled={!ready}>Открыть «account» с id</Button>
+          <Button variant="default" size="sm" class="self-start" onclick={openScoped} disabled={!ready}>Открыть «account» с id</Button>
         </div>
 
-        <div class="mb-[1.1rem] border-l-[3px] border-l-[#6b4fd6] py-0.5 pl-3">
-          <div class="mb-1 text-[0.9rem]"><b>3. transient</b> · слой из кода</div>
-          <p class="mb-2 text-[0.84rem] text-[#8b93a1]">Имени в реестре нет, содержимое передаётся на месте,
+        <div class="flex flex-col gap-2 border-l-2 border-l-muted-foreground pl-3">
+          <div class="text-sm"><b>3. transient</b> · слой из кода</div>
+          <p class="text-xs text-muted-foreground">Имени в реестре нет, содержимое передаётся на месте,
              в адрес не попадает.</p>
-          <Button variant="plain" size="none" class={BTN_ALT} onclick={openTransient} disabled={!ready}>Открыть разовый слой</Button>
+          <Button variant="secondary" size="sm" class="self-start" onclick={openTransient} disabled={!ready}>Открыть разовый слой</Button>
         </div>
 
       </div>
 
-      <div class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
-        <h2>Что получилось</h2>
-        <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt>стопка</dt>
-          <dd class="font-semibold text-[#7ee787]">{chain.length ? chain.map(label).join(' → ') : 'пусто'}</dd>
-          <dt>верхняя запись</dt>
+      <div class="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
+        <h2 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Что получилось</h2>
+        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <dt class="text-muted-foreground">стопка</dt>
+          <dd class="font-semibold text-success">{chain.length ? chain.map(label).join(' → ') : 'пусто'}</dd>
+          <dt class="text-muted-foreground">верхняя запись</dt>
           <dd>{top ? top.kind : '—'}</dd>
-          <dt>её данные</dt>
-          <dd><code>{top ? JSON.stringify(params(top)) : '—'}</code></dd>
-          <dt>адрес</dt>
+          <dt class="text-muted-foreground">её данные</dt>
+          <dd><code class="font-mono text-xs">{top ? JSON.stringify(params(top)) : '—'}</code></dd>
+          <dt class="text-muted-foreground">адрес</dt>
           <dd><code class={`${CODE} break-all`}>{href || '—'}</code></dd>
         </dl>
 
-        <div class="flex gap-2">
-          <Button variant="plain" size="none" class={BTN} onclick={close} disabled={!chain.length}>Закрыть верхнюю</Button>
-          <Button variant="plain" size="none" class={BTN} onclick={closeAll} disabled={!chain.length}>Закрыть все</Button>
+        <div class="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onclick={close} disabled={!chain.length}>Закрыть верхнюю</Button>
+          <Button variant="outline" size="sm" onclick={closeAll} disabled={!chain.length}>Закрыть все</Button>
         </div>
-        <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">
+        <p class="text-xs text-muted-foreground">
           Дальше жмите <b>Назад</b> в браузере: каждое открытие — своя запись
           истории, у transient тоже. Затем <b>F5</b>: записи из адреса вернутся,
           разовый слой — нет.
@@ -175,21 +172,21 @@ import { Button } from '#components/ui/index.js'
       </div>
     </section>
 
-    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
-      <h2>Слои (заглушка вместо хоста)</h2>
+    <section class="flex flex-col gap-3 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
+      <h2 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Слои (заглушка вместо хоста)</h2>
       {#if chain.length === 0}
-        <p class="mt-2.5 text-[0.82rem] text-[#7a8292]">Стопка пуста.</p>
+        <p class="text-xs text-muted-foreground">Стопка пуста.</p>
       {:else}
         <div class="flex flex-col gap-2.5">
           {#each chain as entry, i (label(entry))}
             <div
-              class="rounded-lg border border-[#252a34] p-3 opacity-50 data-[active]:border-[#2d6cdf] data-[active]:opacity-100"
+              class="rounded-lg border border-border p-3.5 opacity-60 data-[active]:border-primary data-[active]:bg-muted/20 data-[active]:opacity-100"
               data-active={i === chain.length - 1 ? '' : undefined}
             >
-              <div class="mb-1.5 flex flex-wrap items-center gap-2 text-[0.88rem]">
-                <span class="rounded bg-[#2d6cdf] px-1.5 py-0.5 text-[0.7rem] data-[kind=transient]:bg-[#6b4fd6]" data-kind={entry.kind}>{entry.kind}</span>
+              <div class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+                <span class="rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground data-[kind=transient]:bg-secondary data-[kind=transient]:text-secondary-foreground" data-kind={entry.kind}>{entry.kind}</span>
                 <b>{label(entry)}</b>
-                <span class="ml-auto text-[0.78rem] text-[#7a8292]">глубина {i + 1} из {chain.length}</span>
+                <span class="ml-auto text-xs text-muted-foreground">глубина {i + 1} из {chain.length}</span>
               </div>
               <pre class={PRE}>{JSON.stringify(params(entry), null, 2)}</pre>
             </div>
@@ -198,8 +195,8 @@ import { Button } from '#components/ui/index.js'
       {/if}
     </section>
 
-    <section class="mb-4 rounded-xl border border-[#252a34] bg-[#171a21] px-[1.2rem] py-[1.1rem]">
-      <h2>Журнал</h2>
+    <section class="flex flex-col gap-3 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
+      <h2 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Журнал</h2>
       <pre class={`${PRE} max-h-48 overflow-y-auto`}>{log.join('\n') || '—'}</pre>
     </section>
   </main>

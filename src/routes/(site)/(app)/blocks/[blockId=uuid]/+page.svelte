@@ -31,6 +31,7 @@
       blockId={data.detail?.block.id ?? null}
       initialEdit={data}
       action={`/blocks/${data.detail?.block.id ?? ''}?next=/blocks`}
+      variant="card"
     />
   {/if}
 </div>

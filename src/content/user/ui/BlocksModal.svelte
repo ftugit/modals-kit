@@ -14,12 +14,14 @@
   let acl = $state<AuthErrorCode | null>(null)
 </script>
 
-{#if acl === 'auth.forbidden'}
-  <Acl model="forbidden" backHref="/" class="p-5" />
-{:else if acl === 'auth.identity-unknown'}
-  <Acl model="not_found" backHref="/" class="p-5" />
-{:else if acl}
-  <Acl status={acl} backHref="/" class="p-5" />
-{:else}
-  <BlocksList {uid} onAcl={(fact) => (acl = fact)} class="p-5" />
-{/if}
+<div class="flex min-h-0 flex-auto flex-col p-6">
+  {#if acl === 'auth.forbidden'}
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  {:else if acl === 'auth.identity-unknown'}
+    <Acl model="not_found" backHref="/" variant="plain" />
+  {:else if acl}
+    <Acl status={acl} backHref="/" variant="plain" />
+  {:else}
+    <BlocksList {uid} variant="plain" onAcl={(fact) => (acl = fact)} />
+  {/if}
+</div>

@@ -18,19 +18,20 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-{#if effectiveAcl === 'auth.identity-unknown'}
-  <Acl model="not_found" backHref="/" class="p-5" />
-{:else if effectiveAcl === 'auth.forbidden'}
-  <Acl model="forbidden" backHref="/" class="p-5" />
-{:else if effectiveAcl}
-  <Acl status={effectiveAcl} backHref="/" class="p-5" />
-{:else if ldr.data}
-  <div class="p-5">
+<div class="my-auto w-full p-6">
+  {#if effectiveAcl === 'auth.identity-unknown'}
+    <Acl model="not_found" backHref="/" variant="plain" />
+  {:else if effectiveAcl === 'auth.forbidden'}
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+  {:else if ldr.data}
     <UserConfig
       {uid}
       initial={ldr.data}
       enabled={ldr.data.enabled}
       doneHref={uid ? `/user/${uid}` : '/'}
+      variant="plain"
       onAcl={(fact) => (acl = fact)}
       onChange={() => {
         m.modals.invalidateLoader('user.config.edit')
@@ -42,5 +43,5 @@
         m.modals.close()
       }}
     />
-  </div>
-{/if}
+  {/if}
+</div>

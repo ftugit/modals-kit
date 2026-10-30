@@ -203,7 +203,7 @@
 
 <section class={className} data-testid="user-picker">
   {#if localAcl && !onAcl}
-    <Acl status={localAcl} backHref={fromHref} />
+    <Acl status={localAcl} backHref={fromHref} variant="plain" />
   {:else}
     <Steps {host} label={mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'} nav>
       {#snippet pick()}

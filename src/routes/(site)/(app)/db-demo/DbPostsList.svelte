@@ -341,7 +341,7 @@
   {name}
   {snapshot}
   ariaLabel="Список записей демо"
-  class="max-h-[70vh] space-y-3 overflow-y-auto pr-1"
+  class="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1"
   mode={cursor ? 'accumulate' : 'single'}
   topTrigger="off"
   bottomTrigger={cursor ? 'manual' : 'off'}

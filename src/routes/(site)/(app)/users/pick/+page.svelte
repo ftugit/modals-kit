@@ -20,7 +20,7 @@
   {:else if data.fact}
     <Acl status={data.fact} backHref={data.fromHref} />
   {:else}
-    <div class="rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+    <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
       <UserPicker
         mode={data.mode}
         initialPicked={data.picked}

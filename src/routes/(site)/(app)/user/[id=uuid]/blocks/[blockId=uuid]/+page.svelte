@@ -34,6 +34,7 @@
       blockId={data.blockId}
       initialEdit={data}
       action={`/user/${data.contextUid}/blocks/${data.blockId}?next=${encodeURIComponent(`/user/${data.contextUid}/blocks`)}`}
+      variant="card"
     />
   {/if}
 </div>

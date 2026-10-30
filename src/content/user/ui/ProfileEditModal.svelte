@@ -28,12 +28,12 @@
   const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? '')
 </script>
 
-{#if ldr.data?.fact}
-  <Acl status={ldr.data.fact} backHref="/" class="p-5" />
-{:else if ldr.data && !ldr.data.canEdit}
-  <Acl status="auth.forbidden" backHref="/" class="p-5" />
-{:else if ldr.data && uid}
-  <div class="p-5">
+<div class="my-auto w-full p-6">
+  {#if ldr.data?.fact}
+    <Acl status={ldr.data.fact} backHref="/" variant="plain" />
+  {:else if ldr.data && !ldr.data.canEdit}
+    <Acl status="auth.forbidden" backHref="/" variant="plain" />
+  {:else if ldr.data && uid}
     <ProfileForm
       subject={uid}
       deleteId={ldr.data.canDeleteProfile ? uid : null}
@@ -41,7 +41,8 @@
       limits={ldr.data.limits}
       enabled={ldr.data.enabled}
       doneHref="/"
+      variant="plain"
       onDone={() => m.modals.close()}
     />
-  </div>
-{/if}
+  {/if}
+</div>

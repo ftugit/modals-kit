@@ -74,10 +74,11 @@ async function failedSubmit(pg) {
 }
 
 const browser = await chromium.launch({ args: ['--no-sandbox'] })
+const newPage = (opts) => browser.newPage({ ...opts, bypassCSP: true })
 
 /* ── 1–2. светлая тема: старт и ошибки ────────────────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const pg = await newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
 
@@ -95,7 +96,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 3. night-тема ────────────────────────────────────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const pg = await newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
   // тот же механизм, что у переключателя шапки: data-theme на html
@@ -109,7 +110,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 4. узкий экран ───────────────────────────────────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  const pg = await newPage({ viewport: { width: 390, height: 844 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
   await failedSubmit(pg)
@@ -120,7 +121,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 5. cardinality=all: списки ошибок ────────────────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const pg = await newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
   await pick(pg, 'Сколько ошибок на поле', 'все')
@@ -132,7 +133,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 6. custom-идентификаторы ─────────────────────────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const pg = await newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
   await pick(pg, 'Политика разметки адаптера', 'свои')
@@ -144,7 +145,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 
 /* ── 7. one-block через нативный POST: общий блок ─────────────────── */
 {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const pg = await newPage({ viewport: { width: 1280, height: 900 } })
   await pg.goto(BASE, { waitUntil: 'domcontentloaded' })
   await pg.waitForTimeout(900)
   await pick(pg, 'Перехват отправки', 'нативно')
@@ -209,7 +210,7 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
     html = html.replace(link[0], `<style>${css}</style>`)
   }
 
-  const snapshot = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const snapshot = await newPage({ viewport: { width: 1280, height: 900 } })
   await snapshot.setContent(html, { waitUntil: 'load' })
   ok('снимок содержит серверные ошибки', (await snapshot.locator('p.text-destructive').count()) > 0)
   ok('без скрипта: серверная разметка без нарушений',

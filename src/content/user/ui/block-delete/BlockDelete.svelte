@@ -23,6 +23,7 @@
   import { describeBlockScope } from '../../spec-block.js'
   import type { BlockDeleteRouteData } from '../../types.js'
   import { userSession, vault } from '../../vault.svelte.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { blockDeleteForm } from './form.js'
@@ -38,6 +39,7 @@
     form?: { result?: Result } | null
     onAcl?: (fact: AuthErrorCode) => void
     onDone?: () => void
+    variant?: UserSurfaceVariant
     class?: string
   }
 
@@ -50,6 +52,7 @@
     form,
     onAcl,
     onDone,
+    variant = 'plain',
     class: className,
   }: Props = $props()
 
@@ -129,8 +132,8 @@
 </script>
 
 {#if done}
-  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="block-delete-done">
-    <h2 class="text-base font-semibold">Запись блокировки удалена</h2>
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', userSurfaceVariants({ variant }), className)} data-testid="block-delete-done">
+    <h2 class="text-lg font-semibold leading-tight tracking-tight">Запись блокировки удалена</h2>
     <p class="text-sm text-muted-foreground">
       Изменения применены к истории блокировок аккаунта.
     </p>
@@ -139,7 +142,7 @@
     {/if}
   </div>
 {:else if !detail}
-  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3', className)} aria-busy="true">
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3', userSurfaceVariants({ variant }), className)} aria-busy="true">
     <Skeleton class="h-5 w-44" />
     <Skeleton class="h-14 w-full" />
     <Skeleton class="h-9 w-48" />
@@ -149,7 +152,7 @@
     id="user-block-delete"
     form={bound}
     hiddenFields={bound.hidden()}
-    class={cn('mx-auto flex w-full max-w-sm flex-col gap-4 text-left', className)}
+    class={cn('mx-auto flex w-full max-w-sm flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
     data-testid="block-delete-form"
   >
     <Common errors={bound.common} title="Не получилось удалить блокировку" />
@@ -160,7 +163,7 @@
     </div>
 
     <div class="flex flex-col gap-3">
-      <h2 class="text-base font-semibold">Удаление блокировки</h2>
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">Удаление блокировки</h2>
       <p class="text-sm text-muted-foreground">
         Сфера: <strong class="text-foreground">{scopeInfo?.title ?? detail.block.scope}</strong>
         — {detail.block.reason}

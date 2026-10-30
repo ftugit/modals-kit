@@ -56,9 +56,9 @@ import { asLink, useModalLink } from '#hooks/links/index.js'
 </script>
 
 <div>
-  <div class="mx-auto max-w-4xl space-y-5">
+  <div class="mx-auto flex max-w-4xl flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
-      <div class="space-y-2">
+      <div class="flex flex-col gap-2">
         <h1 class="text-4xl font-semibold tracking-tight">Модальная система</h1>
         <p class="max-w-2xl text-sm text-muted-foreground">
           Цепочка живёт в адресе: <code>?modal=card,card</code>. Назад/Вперёд закрывает и

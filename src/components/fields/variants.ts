@@ -1,11 +1,11 @@
 import { variants, type VariantProps } from '#components/utils.js'
 
 export const fieldsSurfaceVariants = variants(
-  'space-y-3 border border-border',
+  'flex flex-col gap-4 border border-border',
   {
     surface: {
-      card: 'rounded-xl bg-card p-4',
-      row: 'rounded-lg p-3',
+      card: 'rounded-xl bg-card p-6 text-card-foreground shadow-sm',
+      row: 'rounded-lg bg-muted/20 p-4',
     },
   },
   {

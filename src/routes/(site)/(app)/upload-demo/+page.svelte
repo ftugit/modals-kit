@@ -6,7 +6,7 @@
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import { useHeadSeo } from '#components/shell/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Badge, Button } from '#components/ui/index.js'
   import {
     STORAGE_VAULT_MODAL,
     STORAGE_VAULT_ROUTE,
@@ -167,8 +167,8 @@
   })
 </script>
 
-<div class="mx-auto w-full max-w-4xl space-y-6">
-  <header class="space-y-2">
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-6">
+  <header class="flex flex-col gap-2">
     <h1 class="text-3xl font-semibold tracking-tight">
       Потоковая загрузка (<code>wss://</code>) и мультисерверное хранилище (<code>#lib/storage</code>)
     </h1>
@@ -226,36 +226,28 @@
   >
     {#each storageReport.servers as srv (srv.server)}
       <div
-        class="rounded-xl border border-border bg-card p-4 text-xs space-y-1.5"
+        class="flex flex-col gap-1.5 rounded-xl border border-border bg-card p-5 text-xs shadow-sm"
         data-testid={`server-card-${srv.server}`}
       >
-        <div class="flex items-center justify-between font-semibold text-sm">
+        <div class="flex items-center justify-between text-sm font-semibold">
           <span>{srv.server}</span>
           <div class="flex flex-wrap items-center gap-1">
-            <span
-              class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                srv.healthy
-                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-destructive/15 text-destructive'
-              }`}
+            <Badge
+              variant={srv.healthy ? 'secondary' : 'destructive'}
+              size="sm"
               data-testid={`server-health-${srv.server}`}
             >
               {srv.healthy ? 'healthy' : 'cooldown'}
-            </span>
+            </Badge>
             {#if srv.encrypted}
-              <span
-                class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
-                data-testid={`server-encrypted-${srv.server}`}
-              >
+              <Badge variant="outline" size="sm" data-testid={`server-encrypted-${srv.server}`}>
                 AES-256-GCM
-              </span>
+              </Badge>
             {/if}
             {#if srv.readOnly}
-              <span class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                readOnly
-              </span>
+              <Badge variant="outline" size="sm">readOnly</Badge>
             {/if}
-            <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{srv.kind}</span>
+            <Badge variant="secondary" size="sm" class="font-mono">{srv.kind}</Badge>
           </div>
         </div>
         <div class="text-muted-foreground">
@@ -281,8 +273,8 @@
     {/each}
   </section>
 
-  <section class="rounded-xl border border-border bg-card p-6 space-y-4" aria-labelledby="ws-upload-heading">
-    <h2 id="ws-upload-heading" class="text-xl font-semibold">
+  <section class="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm" aria-labelledby="ws-upload-heading">
+    <h2 id="ws-upload-heading" class="text-xl font-semibold tracking-tight">
       Форма с файлом (<code>wss://</code> → <code>{demo.server}</code> + no-JS fallback)
     </h2>
 
@@ -297,7 +289,7 @@
     {#if lastProgress}
       {@const speedText = formatUploadSpeedRu(lastProgress.bytesPerSecond)}
       <div
-        class="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1"
+        class="flex flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3 text-xs"
         data-testid="ws-progress-log"
         data-phase={lastProgress.phase}
         data-salted={lastProgress.salted ? 'true' : 'false'}
@@ -321,9 +313,9 @@
     {/if}
   </section>
 
-  <section class="rounded-xl border border-border bg-card p-6 space-y-4" aria-labelledby="uploaded-list-heading">
+  <section class="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm" aria-labelledby="uploaded-list-heading">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
-      <h2 id="uploaded-list-heading" class="text-xl font-semibold">
+      <h2 id="uploaded-list-heading" class="text-xl font-semibold tracking-tight">
         Загруженные файлы и проверка скачивания ({items.length})
       </h2>
       <span class="text-xs text-muted-foreground">
@@ -336,7 +328,7 @@
     {#if items.length === 0}
       <p class="text-sm text-muted-foreground" data-testid="empty-uploads">Файлов пока нет.</p>
     {:else}
-      <ul class="space-y-3" data-testid="uploaded-list">
+      <ul class="flex flex-col gap-3" data-testid="uploaded-list">
         {#each items as item (item.id)}
           {@const copyTargets = data.availableServers.filter(
             (s) =>
@@ -355,25 +347,19 @@
             data-server={item.server}
             data-parts={item.partsCount ?? 1}
           >
-            <div class="space-y-1 min-w-0 flex-1">
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-medium">{item.title}</span>
                 <code class="rounded bg-muted px-1.5 py-0.5 text-[11px]">{item.path}</code>
                 {#if item.encrypted}
-                  <span
-                    class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
-                    data-testid="uploaded-encrypted"
-                  >
+                  <Badge variant="outline" size="sm" data-testid="uploaded-encrypted">
                     AES-256-GCM
-                  </span>
+                  </Badge>
                 {/if}
                 {#if (item.partsCount ?? 1) > 1}
-                  <span
-                    class="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                    data-testid="uploaded-split-badge"
-                  >
+                  <Badge variant="secondary" size="sm" data-testid="uploaded-split-badge">
                     split: {item.partsCount} ч. ({(item.partServers ?? [item.server]).join(' + ')})
-                  </span>
+                  </Badge>
                 {/if}
               </div>
 
@@ -451,8 +437,8 @@
     {/if}
   </section>
 
-  <section class="rounded-xl border border-border bg-card p-6 space-y-4" aria-labelledby="http-note-heading">
-    <h2 id="http-note-heading" class="text-xl font-semibold">
+  <section class="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm" aria-labelledby="http-note-heading">
+    <h2 id="http-note-heading" class="text-xl font-semibold tracking-tight">
       Контроль: форма без файла (штатный HTTP <code>fetch</code>)
     </h2>
 
@@ -467,7 +453,7 @@
     </Form>
 
     {#if notes.length > 0}
-      <ul class="space-y-1 text-sm" data-testid="notes-list">
+      <ul class="flex flex-col gap-1 text-sm" data-testid="notes-list">
         {#each notes as n (n.id)}
           <li class="rounded border border-border px-3 py-1.5" data-testid="note-item">{n.message}</li>
         {/each}

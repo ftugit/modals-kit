@@ -16,16 +16,17 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-{#if effectiveAcl === 'auth.forbidden'}
-  <Acl model="forbidden" backHref="/" class="p-5" />
-{:else if effectiveAcl}
-  <Acl status={effectiveAcl} backHref="/" class="p-5" />
-{:else if ldr.data}
-  <div class="p-5">
+<div class="my-auto w-full p-6">
+  {#if effectiveAcl === 'auth.forbidden'}
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+  {:else if ldr.data}
     <StorageServersView
       initial={ldr.data}
       enabled={ldr.data.enabled}
       doneHref="/"
+      variant="plain"
       onAcl={(fact) => (acl = fact)}
       onChange={() => {
         m.modals.invalidateLoader('storage.servers')
@@ -37,5 +38,5 @@
         m.modals.close()
       }}
     />
-  </div>
-{/if}
+  {/if}
+</div>

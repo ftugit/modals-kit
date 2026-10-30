@@ -17,10 +17,10 @@
     {
       variant: {
         default: 'border-border bg-card text-card-foreground',
-        info: 'border-info/40 bg-info/10 text-foreground [&>svg]:text-info',
-        success: 'border-success/40 bg-success/10 text-foreground [&>svg]:text-success',
-        warning: 'border-warning/40 bg-warning/10 text-foreground [&>svg]:text-warning',
-        destructive: 'border-destructive/40 bg-destructive/10 text-foreground [&>svg]:text-destructive',
+        info: 'border-info/30 bg-info/5 text-foreground [&>svg]:text-info',
+        success: 'border-success/30 bg-success/5 text-foreground [&>svg]:text-success',
+        warning: 'border-warning/30 bg-warning/5 text-foreground [&>svg]:text-warning',
+        destructive: 'border-destructive/30 bg-destructive/5 text-foreground [&>svg]:text-destructive',
       },
     },
     { variant: 'default' },

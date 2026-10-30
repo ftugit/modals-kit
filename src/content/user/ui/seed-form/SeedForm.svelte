@@ -169,7 +169,7 @@
     form={activeForm}
     hiddenFields={activeForm.hidden()}
     class={cn(
-      'mx-auto flex w-full max-w-sm flex-col gap-4 text-left',
+      'mx-auto my-auto flex w-full max-w-sm flex-col gap-4 text-left',
       userSurfaceVariants({ variant }),
       className,
     )}
@@ -182,8 +182,8 @@
 
     {#if !shouldAuthorize}
       <div class="flex flex-col gap-3">
-        <div class="space-y-1">
-          <h2 class="text-base font-semibold">{confirmTitle}</h2>
+        <div class="flex flex-col gap-1">
+          <h2 class="text-lg font-semibold leading-tight tracking-tight">{confirmTitle}</h2>
           <p class="text-xs text-muted-foreground">{confirmDescription}</p>
         </div>
         <Field of={activeForm.f.seed} />
@@ -192,28 +192,38 @@
         </Button>
       </div>
     {:else if effectiveView === 'entry' || effectiveView === 'register'}
-      {#if host}
-        <div class="flex items-baseline justify-end gap-2">
-          {#if effectiveView !== 'entry'}
-            <StepLink
-              {host}
-              step="auth.entry"
-              class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              Авторизация
-            </StepLink>
-          {/if}
-          {#if effectiveView !== 'register'}
-            <StepLink
-              {host}
-              step="auth.register"
-              class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              Создать аккаунт
-            </StepLink>
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="text-lg font-semibold leading-none tracking-tight text-foreground">
+            {effectiveView === 'register' ? 'Регистрация' : 'Вход в аккаунт'}
+          </h2>
+          {#if host}
+            {#if effectiveView !== 'entry'}
+              <StepLink
+                {host}
+                step="auth.entry"
+                class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Авторизация
+              </StepLink>
+            {/if}
+            {#if effectiveView !== 'register'}
+              <StepLink
+                {host}
+                step="auth.register"
+                class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Создать аккаунт
+              </StepLink>
+            {/if}
           {/if}
         </div>
-      {/if}
+        <p class="text-sm text-muted-foreground">
+          {effectiveView === 'register'
+            ? 'Сохраните новый ключ Seed перед созданием аккаунта.'
+            : 'Введите ваш ключ Seed для входа.'}
+        </p>
+      </div>
 
       {#if effectiveView === 'register'}
         {#if localSeed}

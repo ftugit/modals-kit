@@ -54,19 +54,21 @@
   }
 </script>
 
-{#if !blockId || effectiveAcl === 'auth.identity-unknown'}
-  <Acl model="not_found" backHref="/" class="p-5" />
-{:else if effectiveAcl === 'auth.forbidden'}
-  <Acl model="forbidden" backHref="/" class="p-5" />
-{:else if effectiveAcl}
-  <Acl status={effectiveAcl} backHref="/" class="p-5" />
-{:else}
-  <BlockDelete
-    {blockId}
-    {uid}
-    initial={ldr.data ?? null}
-    onAcl={(fact) => (acl = fact)}
-    onDone={handleDone}
-    class="p-5"
-  />
-{/if}
+<div class="my-auto w-full p-6">
+  {#if !blockId || effectiveAcl === 'auth.identity-unknown'}
+    <Acl model="not_found" backHref="/" variant="plain" />
+  {:else if effectiveAcl === 'auth.forbidden'}
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+  {:else}
+    <BlockDelete
+      {blockId}
+      {uid}
+      initial={ldr.data ?? null}
+      variant="plain"
+      onAcl={(fact) => (acl = fact)}
+      onDone={handleDone}
+    />
+  {/if}
+</div>

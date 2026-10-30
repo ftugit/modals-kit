@@ -161,7 +161,7 @@
     не открывая форму повторно.
   -->
   {#if view.violations.length}
-    <ul class="mt-2 space-y-1" data-testid="filters-validation">
+    <ul class="mt-2 flex flex-col gap-1" data-testid="filters-validation">
       {#each view.violations as violation (violation.id + violation.keys.join(','))}
         <li class="text-xs text-destructive" data-violation-id={violation.id}>{violation.message}</li>
       {/each}

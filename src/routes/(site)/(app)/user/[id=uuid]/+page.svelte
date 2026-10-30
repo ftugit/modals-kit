@@ -22,12 +22,13 @@
   {#if data.fact}
     <Acl status={data.fact} backHref="/" />
   {:else if data.publicProfile}
-    <Profile uid={data.uid} initialPublic={data.publicProfile} />
+    <Profile uid={data.uid} initialPublic={data.publicProfile} variant="card" />
   {:else if !data.profile && !data.notCreated}
     <Acl model="not_found" backHref="/" />
   {:else}
     <Profile
       uid={data.uid}
+      variant="card"
       initial={{
         profile: data.profile,
         isOwn: data.isOwn,

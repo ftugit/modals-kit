@@ -20,6 +20,6 @@
   {:else if data.fact}
     <Acl status={data.fact} backHref="/" />
   {:else}
-    <BlocksList initial={data} />
+    <BlocksList initial={data} variant="card" />
   {/if}
 </div>

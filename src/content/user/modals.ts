@@ -41,7 +41,7 @@ registerModal({
   name: 'user.menu',
   component: lazy(() => import('./ui/MenuModal.svelte')),
   route: userMenuRoute.href,
-  size: { width: 280, height: 200 },
+  size: { width: 320, height: 360 },
 })
 // Профиль: пара «модалка + роут» одного компонента. `route` нужен
 // ссылке (`asModalLink` строит из него `href` — без JS карточка ведёт

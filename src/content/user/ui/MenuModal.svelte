@@ -13,4 +13,6 @@
   const m = useModals()
 </script>
 
-<MenuBody variant="plain" class="p-5" onDone={() => m.modals.close()} />
+<div class="my-auto w-full p-6">
+  <MenuBody variant="plain" onDone={() => m.modals.close()} />
+</div>

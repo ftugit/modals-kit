@@ -39,6 +39,7 @@
   import { describeBlockScope, isBlockScope, specBlocks } from '../../spec-block.js'
   import type { BlockCreateRouteData, BlockEditRouteData } from '../../types.js'
   import { userSession, vault } from '../../vault.svelte.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from '../UserPicker.svelte'
@@ -67,6 +68,7 @@
     form?: { result?: Result } | null
     onAcl?: (fact: AuthErrorCode) => void
     onDone?: () => void
+    variant?: UserSurfaceVariant
     class?: string
   }
 
@@ -83,6 +85,7 @@
     form,
     onAcl,
     onDone,
+    variant = 'plain',
     class: className,
   }: Props = $props()
 
@@ -438,7 +441,7 @@
 </script>
 
 {#if !ready}
-  <div class={cn('mx-auto flex w-full max-w-md flex-col gap-3', className)} aria-busy="true" data-testid="block-form-pending">
+  <div class={cn('mx-auto flex w-full max-w-md flex-col gap-3', userSurfaceVariants({ variant }), className)} aria-busy="true" data-testid="block-form-pending">
     <Skeleton class="h-5 w-44" />
     <Skeleton class="h-9 w-full" />
     <Skeleton class="h-20 w-full" />
@@ -450,7 +453,7 @@
     form={bound}
     hiddenFields={bound.hidden()}
     onsubmit={guardSubmit}
-    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', className)}
+    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
     data-testid="block-form-create"
   >
     <Common errors={bound.common} title="Проверьте форму" />
@@ -553,7 +556,7 @@
     form={bound}
     hiddenFields={bound.hidden()}
     onsubmit={guardSubmit}
-    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', className)}
+    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
     data-testid="block-form-edit"
     data-readonly={!canSubmit || undefined}
   >

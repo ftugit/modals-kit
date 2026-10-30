@@ -183,7 +183,7 @@
   }
 </script>
 
-<div class="w-full space-y-2 border-t border-border/60 pt-2">
+<div class="flex w-full flex-col gap-2 border-t border-border/60 pt-2">
   <div class="flex flex-wrap items-center gap-2">
     <Button
       type="button"
@@ -216,10 +216,10 @@
 
   {#if rangeSummary}
     <div
-      class={`rounded border px-2.5 py-1.5 font-mono text-[11px] space-y-0.5 ${
+      class={`flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] ${
         rangeSummary.ok
-          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-          : 'border-destructive/40 bg-destructive/10 text-destructive'
+          ? 'border-border bg-card text-success'
+          : 'border-border bg-card text-destructive'
       }`}
       data-testid="download-check-result"
       data-check-ok={rangeSummary.ok ? 'true' : 'false'}

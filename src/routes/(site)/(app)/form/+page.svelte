@@ -244,9 +244,9 @@
 </script>
 
 <div>
-  <div class="mx-auto max-w-4xl space-y-5">
+  <div class="mx-auto flex max-w-4xl flex-col gap-5">
     <header class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
-      <div class="space-y-2">
+      <div class="flex flex-col gap-2">
         <h1 class="text-4xl font-semibold tracking-tight">Формы</h1>
         <p class="max-w-2xl text-sm text-muted-foreground">
           Библиотека знает два места: общие ошибки и ошибки полей. Всё остальное решает
@@ -260,25 +260,25 @@
     <DemoPanel schema={demoPanelSchema} values={panel} onParams={onParams} />
 
     <!-- Итог настройки — текстом: это не контрол, панель его не носит. -->
-    <section class="rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm" aria-live="polite">
+    <section class="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm" aria-live="polite">
       <b>Сейчас демо настроено так:</b>
       ошибки
       {mode === 'one-block' ? 'собираются в общем блоке над формой' : mode === 'drop-code' ? 'показываются без minLength' : mode === 'to-channel' ? 'почты скрываются из интерфейса' : 'остаются возле своих полей'},
       на одном поле показывается {cardinality === 'all' ? 'весь список ошибок' : 'только первая ошибка'}.
       {#if form.facts.length === 0}
-        <span class="block pt-1 text-foreground/70">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
+        <span class="block pt-1 text-muted-foreground">Нажмите «Создать аккаунт» с пустыми полями. Чтобы сравнить «первая/все», введите в пароль «123» и отправьте ещё раз.</span>
       {:else}
         <span class="block pt-1">Фактов: {form.facts.length}; показано: {form.shown.length}; общих: {form.common.length}.</span>
       {/if}
     </section>
     <!-- ── форма ─────────────────────────────────────────────────── -->
-    <section class="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm">
-      <Form {form} hiddenFields={form.hidden()} class="space-y-4">
+    <section class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
+      <Form {form} hiddenFields={form.hidden()} class="flex flex-col gap-4">
 
         <Common errors={form.common} title="Проверьте форму" />
 
         {#if sent}
-          <div class="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-sent>
+          <div class="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm" data-sent>
             Сервер велел перейти сюда: <code>/form?sent=1</code>. <a class="underline" href="/form">Открыть форму заново</a>
           </div>
         {/if}
@@ -325,7 +325,7 @@
         <Field of={form.f.agree} />
 
         <!-- ── ещё поля: остальные представления и правила ── -->
-        <Fieldset legend="Ещё поля" class="space-y-4 border-t border-border pt-4" data-more-fields="">
+        <Fieldset legend="Ещё поля" class="flex flex-col gap-4 border-t border-border pt-4" data-more-fields="">
           <div class="grid gap-4 sm:grid-cols-2">
             <Field of={form.f.site} />
             <Field of={form.f.letters} />
@@ -411,7 +411,7 @@
         {:else}
           <!-- без bg-подложки: text-destructive на 5%-тонированном фоне даёт 4.36:1,
                на фоне карты контраст держится в обеих темах -->
-          <pre class="rounded-lg border border-destructive/40 p-2 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
+          <pre class="rounded-lg border border-border p-3 font-mono text-[11px] whitespace-pre-wrap text-destructive">{built.error}</pre>
         {/if}
 
         <p class="mt-2 text-xs text-muted-foreground">

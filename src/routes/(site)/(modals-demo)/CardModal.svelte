@@ -155,7 +155,7 @@ import { Button } from '#components/ui/index.js'
         oninput={(e) => (mine.value = e.currentTarget.value)}
         placeholder="сообщение для соседей"
       />
-      <div class="mt-2 space-y-0.5 text-xs text-muted-foreground">
+      <div class="mt-2 flex flex-col gap-0.5 text-xs text-muted-foreground">
         {#each Object.entries(shared.value) as [key, value] (key)}
           <div>
             <b class="font-mono">{key}</b>: {String(value)}
@@ -207,8 +207,8 @@ import { Button } from '#components/ui/index.js'
 
 <!-- Содержимое transient-модалки, открываемой из карточки. -->
 {#snippet storagelessInCard()}
-  <div class="flex flex-col gap-3 p-5">
-    <h2 class="m-0 text-lg">Модалка без хранилища</h2>
+  <div class="flex flex-col gap-3.5 p-6">
+    <h2 class="m-0 text-lg font-semibold tracking-tight">Модалка без хранилища</h2>
     <p class="m-0 text-sm text-muted-foreground">
       Открыта поверх карточки. Это transient-запись: в адресе её нет, перезагрузку
       она не переживёт, но «Назад» закрывает именно её.

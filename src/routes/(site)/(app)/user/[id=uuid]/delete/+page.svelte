@@ -27,6 +27,7 @@
       holdSeconds={data.holdSeconds}
       action="?/profileDelete&next=/user/{data.uid}"
       doneHref="/user/{data.uid}"
+      variant="card"
     />
   {/if}
 </div>

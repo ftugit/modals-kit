@@ -12,7 +12,9 @@
 </script>
 
 <div class={MODAL_ERROR_CLASS} data-modal-error="" role="alert">
-  <WarningIcon size={24} />
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+    <WarningIcon size={20} />
+  </span>
   <div class={MODAL_ERROR_TITLE_CLASS} data-modal-error-title="">{message}</div>
   {#if hint}<div class={MODAL_ERROR_HINT_CLASS} data-modal-error-hint="">{hint}</div>{/if}
 </div>

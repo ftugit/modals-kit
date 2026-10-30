@@ -3,6 +3,7 @@
   Размещается на шаге активной отправки строго между карточками `(Attachment)` и кнопкой `[Отменить загрузку]`.
 -->
 <script lang="ts">
+  import { Badge } from '#components/ui/index.js'
   import {
     formatUploadBytesRu,
     formatUploadSpeedRu,
@@ -40,8 +41,8 @@
   data-testid="upload-forecast-banner"
   data-forecast-status={forecast.status}
   class={forecast.willExceedLimit
-    ? 'rounded-lg border border-destructive/40 bg-destructive/10 p-3.5 text-xs space-y-1.5'
-    : 'rounded-lg border border-border bg-muted/40 p-3.5 text-xs space-y-1.5'}
+    ? 'flex flex-col gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 text-xs'
+    : 'flex flex-col gap-1.5 rounded-lg border border-border bg-muted/40 p-3.5 text-xs'}
 >
   <div class="flex flex-wrap items-center justify-between gap-2">
     <div class="font-medium text-foreground" data-testid="upload-forecast-eta">
@@ -59,12 +60,9 @@
         </span>
       {/if}
       {#if (progress?.resumedCount ?? 0) > 0}
-        <span
-          class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
-          data-testid="upload-autoresume-badge"
-        >
+        <Badge variant="secondary" size="sm" data-testid="upload-autoresume-badge">
           авто-дозагрузка ×{progress?.resumedCount}
-        </span>
+        </Badge>
       {/if}
     </div>
   </div>
@@ -74,10 +72,10 @@
   </div>
 
   {#if forecast.willExceedLimit && forecast.warningTextRu}
-    <p class="font-medium text-destructive leading-relaxed" data-testid="upload-limit-warning">
+    <p class="font-medium leading-relaxed text-foreground" data-testid="upload-limit-warning">
       {forecast.warningTextRu}
       {#if requiredSpeedLabel}
-        <span class="font-normal"> (нужно не менее {requiredSpeedLabel})</span>
+        <span class="font-normal text-muted-foreground"> (нужно не менее {requiredSpeedLabel})</span>
       {/if}
     </p>
   {/if}

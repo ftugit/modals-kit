@@ -48,8 +48,8 @@
     'data-filter-excluded': chip.excluded || undefined,
     title: `${chip.fieldLabel}: ${chip.label} — нажмите, чтобы снять`,
     class: chip.excluded
-      ? 'inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/20'
-      : 'inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium hover:bg-muted',
+      ? 'inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/15'
+      : 'inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
   })
 </script>
 
