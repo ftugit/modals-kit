@@ -11,6 +11,7 @@
 // `process.env`: так переменные приходят на любом адаптере (Workers — из
 // `platform.env`) и в dev из `.env`. Списки собираются при ПЕРВОЙ проверке, а не
 // при импорте: к запросу SvelteKit окружение уже заполнил.
+import { DEV } from 'esm-env'
 import { E2B_SANDBOX_ID, KIT_TRUSTED_ORIGINS, PREVIEW_PORTS } from '$app/env/private'
 import {
   bodyLayer, methodLayer, namesLayer, originLayer, reject,
@@ -26,29 +27,47 @@ function trusted(): Origins {
   if (origins) return origins
   const { exact, patterns } = trustedOrigins(
     (key) => ({ E2B_SANDBOX_ID, KIT_TRUSTED_ORIGINS, PREVIEW_PORTS })[key],
+    { dev: DEV },
   )
   /** Строгий режим библиотеки: неизвестный origin = отказ, пустые заголовки = отказ. */
   const strict = originLayer({ allowed: exact, strict: true })
   return (origins = { exact, patterns, strict })
 }
 
-/** Ничего не настроено: сравниваем с собственным адресом запроса, как фреймворк. */
-const sameOrigin: Layer = (ctx) => {
-  const own = new URL(ctx.request.url).origin
-  const header = ctx.request.headers.get('origin') ?? ctx.request.headers.get('referer')
-  let got: string | null = null
-  if (header) {
-    try { got = new URL(header).origin } catch { got = header }
+function parseCleanOrigin(headerValue: string | null, allowPath = false): string | null {
+  if (!headerValue) return null
+  const trimmed = headerValue.trim()
+  if (!trimmed || trimmed === 'null') return null
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    if (parsed.username || parsed.password) return null
+    if (!allowPath) {
+      const normalized = trimmed.replace(/\/+$/, '').toLowerCase()
+      if (normalized !== parsed.origin.toLowerCase()) return null
+    }
+    return parsed.origin
+  } catch {
+    return null
   }
-  return got === own ? undefined : reject(403, 'origin.rejected', { own, got })
 }
 
-/** Слой 02 приложения: wildcard-исключения поверх библиотечной проверки. */
+/** Слой 02 приложения: собственный origin запроса всегда разрешён (как в SvelteKit CSRF), плюс список и wildcard-исключения. */
 export const originGuard: Layer = (ctx) => {
+  const own = new URL(ctx.request.url).origin
+  const rawOrigin = ctx.request.headers.get('origin')
+  const rawReferer = ctx.request.headers.get('referer')
+  const gotOrigin = rawOrigin
+    ? parseCleanOrigin(rawOrigin, false)
+    : parseCleanOrigin(rawReferer, true)
+
+  if (gotOrigin === own) return undefined
+
   const { exact, patterns, strict } = trusted()
-  const origin = ctx.request.headers.get('origin')
-  if (origin && patterns.some((re) => re.test(origin))) return undefined
-  return exact.length ? strict(ctx) : sameOrigin(ctx)
+  const strictOrigin = parseCleanOrigin(rawOrigin, false)
+  if (strictOrigin && patterns.some((re) => re.test(strictOrigin))) return undefined
+  if (exact.length > 0) return strict(ctx)
+  return reject(403, 'origin.rejected', { own, got: rawOrigin ?? rawReferer })
 }
 
 /**

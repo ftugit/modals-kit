@@ -8,12 +8,15 @@ import { storageServer } from '#hooks/storage-schema.js'
 import { auth } from '#content/user/gateway.server.js'
 import { instruction } from '#content/user/index.js'
 import { removeStorageServer, saveStorageServer } from '#server/app-storage.server.js'
+import { createIpThrottle } from '#server/client-ip.server.js'
 import { storageServerForm } from './form.js'
 
 const gStorageServer = grants(storageServer)
+const storageServersThrottle = createIpThrottle('storage-servers', 20, 60_000)
 
 registerComponentForm({
   description: storageServerForm,
+  throttle: storageServersThrottle,
   authorize: async (event) => {
     const u = auth(event)
     if (!u.enabled) return instruction({ code: 'auth.disabled' })

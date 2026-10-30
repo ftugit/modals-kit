@@ -15,11 +15,12 @@
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { forms } from '#components/form/forms.config.js'
   import { defaults } from '../config.js'
-  import { generateKeyPair, sign } from '../keys.js'
+  import { generateKeyPair } from '../keys.js'
   import { vault, type VaultPayload } from '../vault.svelte.js'
   import type { ProfileLimits } from './profile-form/index.js'
   import ProfileForm, { DEFAULT_PROFILE_LIMITS } from './profile-form/ProfileForm.svelte'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
+  import { prepareSeedProof } from './seed-form/prepare-proof.js'
   import { mirrorToField } from './field-mirror.svelte.js'
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import BanNotice from './BanNotice.svelte'
@@ -75,17 +76,7 @@
   let challengeToken = $state(data.challenge?.token ?? '')
 
   const bound = bindComponentForm(forms, seedForm, {
-    prepare: async (fd) => {
-      const typed = String(fd.get('seed') ?? '').trim()
-      fd.set('seed', typed)
-      if (typed.length >= 43 && typed.length <= 44 && challengeToken !== '') {
-        try {
-          fd.set('signature', await sign(challengeToken, typed))
-        } catch {
-          /* в поле публичный seed — сервер ответит auth.signature */
-        }
-      }
-    },
+    prepare: (fd) => prepareSeedProof(fd, challengeToken),
   })
 
   mirrorToField(bound, 'challenge', () => challengeToken)

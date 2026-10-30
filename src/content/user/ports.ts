@@ -230,6 +230,11 @@ export interface ConfigStorePort {
   cache: StoreLike
 }
 
+export interface ChallengeNoncePort {
+  /** Атомарно погасить одноразовый идентификатор challenge (`false` — уже погашен). */
+  consume(nonce: string, ttlSeconds: number): Promise<boolean>
+}
+
 /** Всё, что нужно ядру. Собирает адаптер. */
 export interface AuthPorts {
   sessions: SessionStorePort
@@ -243,4 +248,8 @@ export interface AuthPorts {
   config: ConfigPort
   settings: ConfigStorePort
   blocks: BlockStorePort
+  /** Серверный pepper для HMAC-SHA-256 хеша подсети (не хранится в БД). */
+  subnetPepper?: string
+  /** Реестр одноразового погашения использованных `challenge.n`. */
+  nonces?: ChallengeNoncePort
 }

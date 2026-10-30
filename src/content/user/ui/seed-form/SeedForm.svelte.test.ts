@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { generateKeyPair, verify } from '../../keys.js'
 import SeedForm from './SeedForm.svelte'
 import { SEED_FORM_ID, SEED_FORM_REV } from './form.js'
 
@@ -119,5 +120,62 @@ describe('SeedForm — режимы authorize=true (гость) и authorize=fal
     expect(sentPayloads[1]!.get('intent')).toBe('confirm')
     await vi.waitFor(() => expect(onUserConfirmed).toHaveBeenCalledWith({ sub: 'usr_1' }))
     await unmount(userApp)
+  })
+
+  it('S1: при наличии challenge перезаписывает приватный secret публичным ключом до отправки в сеть', async () => {
+    const sentPayloads: FormData[] = []
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      sentPayloads.push(init?.body as FormData)
+      return new Response(
+        JSON.stringify({
+          data: {
+            result: {
+              v: 1,
+              formId: SEED_FORM_ID,
+              instance: 'seed-login-1',
+              submissionId: 'sub-s1',
+              revision: SEED_FORM_REV,
+              ok: true,
+              status: 200,
+              outcome: 'committed',
+              errors: [],
+              values: {},
+              data: { step: 'done' },
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+
+    const kp = await generateKeyPair()
+    const challengeToken = 'sealed-challenge-token-v1'
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = mount(SeedForm, {
+      target: host,
+      props: {
+        view: 'entry',
+        authorize: true,
+        authorized: false,
+        enabled: true,
+        challenge: challengeToken,
+        seed: kp.secret,
+      },
+    })
+    await settle()
+    ;(host.querySelector('button[type="submit"]') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(sentPayloads.length).toBe(1))
+
+    const fd = sentPayloads[0]!
+    // Приватный ключ НИКОГДА не отправляется по сети — в FormData уходит только публичный seed + подпись.
+    expect(fd.get('seed')).toBe(kp.seed)
+    expect(fd.get('seed')).not.toBe(kp.secret)
+    expect(fd.get('public_seed')).toBe(kp.seed)
+    const sig = String(fd.get('signature') ?? '')
+    expect(sig.length).toBeGreaterThan(40)
+    expect(await verify(challengeToken, sig, kp.seed)).toBe(true)
+
+    await unmount(app)
   })
 })

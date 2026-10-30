@@ -84,25 +84,29 @@ export function createCursorCodec(config: {
   return {
     async encode(scope, values) {
       const iat = nowSeconds();
-      const body = encoder.encode(
-        JSON.stringify({
-          v: 1,
-          kid: config.activeKey,
-          // `iat` — момент выпуска: от него отсчитывается максимальный возраст.
-          // Старые токены его не несут — для них возраст считается как
-          // `exp - ttl` (см. `decode`).
-          iat,
-          exp: Math.min(iat + config.ttlSeconds, iat + maxAgeSeconds),
-          scope: await digest(scope),
-          values,
-        }),
+      const kidPart = encode(encoder.encode(config.activeKey));
+      const bodyPart = encode(
+        encoder.encode(
+          JSON.stringify({
+            v: 1,
+            kid: config.activeKey,
+            // `iat` — момент выпуска: от него отсчитывается максимальный возраст.
+            // Старые токены его не несут — для них возраст считается как
+            // `exp - ttl` (см. `decode`).
+            iat,
+            exp: Math.min(iat + config.ttlSeconds, iat + maxAgeSeconds),
+            scope: await digest(scope),
+            values,
+          }),
+        ),
       );
+      const signingInput = encoder.encode(kidPart + "." + bodyPart);
       const mac = await crypto.subtle.sign(
         "HMAC",
         await key(config.keys[config.activeKey]),
-        body,
+        signingInput,
       );
-      const token = encode(body) + "." + encode(new Uint8Array(mac));
+      const token = kidPart + "." + bodyPart + "." + encode(new Uint8Array(mac));
       if (token.length > 8192) fail("cursor");
       return token;
     },
@@ -110,14 +114,31 @@ export function createCursorCodec(config: {
       try {
         if (typeof token !== "string" || token.length > 8192) fail("cursor");
         const parts = token.split(".");
-        if (parts.length !== 2) fail("cursor");
-        const body = decode(parts[0]),
-          mac = decode(parts[1]);
-        const p = JSON.parse(new TextDecoder().decode(body));
+        if (parts.length !== 3 || parts[0].length > 128) fail("cursor");
+        const kid = new TextDecoder("utf-8", { fatal: true }).decode(
+          decode(parts[0]),
+        );
+        if (
+          !kid ||
+          !Object.prototype.hasOwnProperty.call(config.keys, kid)
+        )
+          fail("cursor");
+        const body = decode(parts[1]),
+          mac = decode(parts[2]);
+        const signingInput = encoder.encode(parts[0] + "." + parts[1]);
+        if (
+          !(await crypto.subtle.verify(
+            "HMAC",
+            await key(config.keys[kid]),
+            mac,
+            signingInput,
+          ))
+        )
+          fail("cursor");
+        const p = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
         if (
           p.v !== 1 ||
-          typeof p.kid !== "string" ||
-          !Object.prototype.hasOwnProperty.call(config.keys, p.kid) ||
+          p.kid !== kid ||
           !Number.isSafeInteger(p.exp) ||
           !Array.isArray(p.values) ||
           (p.iat !== undefined && (!Number.isSafeInteger(p.iat) || p.iat < 0))
@@ -131,16 +152,7 @@ export function createCursorCodec(config: {
         // Просрочен — но пока не старше максимального возраста: принимаем
         // (§7 «б»). Свежий ответ переподпишет закладку.
         if (p.exp <= nowSec && iat + maxAgeSeconds <= nowSec) fail("cursor");
-        if (
-          !(await crypto.subtle.verify(
-            "HMAC",
-            await key(config.keys[p.kid]),
-            mac,
-            body,
-          )) ||
-          p.scope !== (await digest(scope))
-        )
-          fail("cursor");
+        if (p.scope !== (await digest(scope))) fail("cursor");
         return p.values;
       } catch {
         return fail("cursor");

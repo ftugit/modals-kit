@@ -141,7 +141,7 @@ export const auth: Resource = defineResource({
      * записи нельзя, внутри истории одного — сравнение работает. Ставит
      * сервер при создании, передать нельзя.
      */
-    subnet_salt: f.text({ read: () => true, createValue: () => crypto.randomUUID().replaceAll('-', '') }),
+    subnet_salt: f.text({ read: ['server'], createValue: () => crypto.randomUUID().replaceAll('-', '') }),
   },
   // `deleted_at` — заявка на удаление; по истечении срока (настройка сервера)
   // исполнитель стирает seed/security. Метка НЕ закрывает вход: он ведёт на
@@ -187,7 +187,7 @@ export const session = defineResource({
     // Публичный токен продления (девайс-токен): случайный id, ездит только
     // в HttpOnly-куке; по нему guard узнаёт сессию (ok/revoked/expired/unknown).
     jti: field(s.text({ min: 21, max: 64 }), {
-      read: () => true, create: () => true, required: true,
+      read: ['server'], create: () => true, required: true,
       immutable: true, filters: ['eq'],
       db: { unique: true },
     }),
@@ -203,7 +203,7 @@ export const session = defineResource({
         // меньше — «усыновление» (кто-то продлил раньше). Отзыв — по-прежнему
         // софт-удаление; tokenVersion аккаунта нет.
         version: field(s.integer({ min: 0, max: 2_147_483_647 }), {
-          read: () => true, create: () => true, update: () => true,
+          read: ['server'], create: () => true, update: () => true,
           db: { default: '0' },
         }),
     last_seen_at: f.timestamp({ read: () => true, nullable: true, create: () => true, update: () => true }),

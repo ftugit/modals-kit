@@ -26,10 +26,10 @@
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
-  import { sign } from '../../keys.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { seedForm } from './form.js'
+  import { prepareSeedProof } from './prepare-proof.js'
 
   export type SeedView = 'entry' | 'register' | 'restore' | 'confirm'
 
@@ -101,17 +101,7 @@
   const standaloneBound = untrack(() => externalBound)
     ? null
     : bindComponentForm(forms, seedForm, {
-        prepare: async (fd) => {
-          const typed = String(fd.get('seed') ?? '').trim()
-          fd.set('seed', typed)
-          if (typed.length >= 43 && typed.length <= 44 && challenge !== '') {
-            try {
-              fd.set('signature', await sign(challenge, typed))
-            } catch {
-              /* сервер ответит auth.signature */
-            }
-          }
-        },
+        prepare: (fd) => prepareSeedProof(fd, challenge),
       })
 
   const activeForm = $derived(externalBound ?? standaloneBound!)
@@ -186,6 +176,7 @@
   >
     <Common errors={activeForm.common} title="Проверьте форму" />
 
+    <Field of={activeForm.f.public_seed} />
     <Field of={activeForm.f.challenge} />
     <Field of={activeForm.f.signature} />
 
@@ -283,7 +274,9 @@
           было: заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится
           сам по истечении срока.
         </p>
-        <div hidden aria-hidden="true"><Field of={activeForm.f.seed} /></div>
+        <div hidden={!notHydrated()} aria-hidden={!notHydrated() ? 'true' : undefined}>
+          <Field of={activeForm.f.seed} />
+        </div>
         <Button type="submit" name="intent" value="restore" task={formTask(activeForm.state, 'restore')}>
           Восстановить аккаунт
         </Button>

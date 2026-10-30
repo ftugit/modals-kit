@@ -42,6 +42,36 @@ const secret = optional((value) =>
   value.length >= 32 ? { value } : { message: `нужно не короче 32 символов, задано ${value.length}` },
 )
 
+const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+/** Идентификатор ключа запечатывания / подписи (`kid` / `id` в iron и курсоре). */
+const keyId = optional((value) =>
+  KEY_ID_RE.test(value)
+    ? { value }
+    : { message: `ожидался идентификатор из латиницы, цифр, «_» или «-» (1..64), получено «${value}»` },
+)
+
+/** Список прежних ключей на время ротации (`id:secret` через запятую, каждый секрет >= 32 символов). */
+const keyRotationList = optional((value) => {
+  for (const rawPair of value.split(',')) {
+    const pair = rawPair.trim()
+    if (!pair) continue
+    const sep = pair.indexOf(':')
+    if (sep <= 0) {
+      return { message: 'ожидался формат id:secret через запятую' }
+    }
+    const id = pair.slice(0, sep).trim()
+    const keyVal = pair.slice(sep + 1).trim()
+    if (!KEY_ID_RE.test(id)) {
+      return { message: `недопустимое имя старого ключа «${id}» (разрешены латиница, цифры, «_», «-»)` }
+    }
+    if (keyVal.length < 32) {
+      return { message: `секрет старого ключа «${id}» короче 32 символов (задано ${keyVal.length})` }
+    }
+  }
+  return { value }
+})
+
 const positiveInteger = optional((value) => {
   const n = Number(value)
   return /^\d+$/.test(value) && Number.isSafeInteger(n) && n >= 1
@@ -157,7 +187,7 @@ export const variables = defineEnvVars({
 
   // ── Указатель следующего шага (`?page.after`) ──
   DB_CURSOR_SECRET: {
-    schema: text,
+    schema: secret,
     description: 'Секрет подписи курсора, не короче 32 байт. Без него курсорный режим выключен.',
   },
   DB_CURSOR_TTL_SECONDS: {
@@ -170,25 +200,25 @@ export const variables = defineEnvVars({
       'Потолок возраста указателя, секунд: просроченный токен принимается, пока не старше этого срока. По умолчанию 604800 (7 дней); меньше DB_CURSOR_TTL_SECONDS — ошибка запуска.',
   },
   DB_CURSOR_KID: {
-    schema: text,
+    schema: keyId,
     description: 'Имя действующего секрета курсора (пишется в токен). По умолчанию v1; при смене секрета — новое имя.',
   },
   DB_CURSOR_OLD_KEYS: {
-    schema: text,
+    schema: keyRotationList,
     description: 'Прежние секреты на время ротации: kid:secret через запятую (kid ≠ DB_CURSOR_KID).',
   },
 
   // ── Запечатывание токенов пользователя (модуль `src/content/user`) ──
   AUTH_SEAL_SECRET: {
-    schema: text,
+    schema: secret,
     description: 'Секрет запечатывания временного токена и токена продления (iron), не короче 32 байт.',
   },
   AUTH_SEAL_ID: {
-    schema: text,
+    schema: keyId,
     description: 'Имя действующего секрета (печатается в токен). По умолчанию v1; при смене секрета — новое имя.',
   },
   AUTH_SEAL_OLD_KEYS: {
-    schema: text,
+    schema: keyRotationList,
     description: 'Прежние секреты на время ротации: id:secret через запятую (id ≠ AUTH_SEAL_ID).',
   },
   AUTH_COOKIE_SAMESITE: {

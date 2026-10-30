@@ -20,10 +20,32 @@ export const init: ServerInit = () => {
   captureUpstreamFetch()
 }
 
+const BASE_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+}
+
+const HSTS_HEADER_VALUE = 'max-age=63072000; includeSubDomains'
+
+export const securityHeadersHandle: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event)
+  for (const [header, value] of Object.entries(BASE_SECURITY_HEADERS)) {
+    if (!response.headers.has(header)) {
+      response.headers.set(header, value)
+    }
+  }
+  if (event.url.protocol === 'https:' && !response.headers.has('strict-transport-security')) {
+    response.headers.set('strict-transport-security', HSTS_HEADER_VALUE)
+  }
+  return response
+}
+
 /**
- * Доверенный контекст БД + маршрутно-независимый приём POST всех `*.form.server.ts`.
+ * Базовые защитные HTTP-заголовки + доверенный контекст БД + маршрутно-независимый приём POST всех `*.form.server.ts`.
  */
 export const handle: Handle = sequence(
+  securityHeadersHandle,
   dbHandle({ db, principal: () => DEMO_PRINCIPAL }),
   createComponentFormsHandle(import.meta.glob('./**/*.form.server.ts')),
 )

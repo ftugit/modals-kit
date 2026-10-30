@@ -16,7 +16,8 @@
  */
 import { AUTH_COOKIE_SAMESITE, AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
 import * as Iron from 'iron-webcrypto'
-import { localStore } from '#server/cache.server.js'
+import { localStore, sharedStore } from '#server/cache.server.js'
+import { subnetOfEvent } from '#server/client-ip.server.js'
 import { removeManagedAvatarByUrl } from '#server/app-storage.server.js'
 import { db } from '#server/db.server.js'
 import type { Cookies } from '@sveltejs/kit'
@@ -86,15 +87,29 @@ export const ACCESS_COOKIE = 'auth_tmp'
  * внутри именно этого встраивания, оставаясь недоступной вне его.
  * Ослабление включается только env и только для превью (см. `.env.example`).
  */
-const COOKIE_BASE =
-  AUTH_COOKIE_SAMESITE === 'none'
-    ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true, partitioned: true } as const)
-    : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const)
+const MAX_SEALED_COOKIE_CHARS = 4096
 
-/** Структурный срез SvelteKit-события: ядру нужны только куки. */
+function isHttpsEvent(event: AuthEvent): boolean {
+  if (event.url) return event.url.protocol === 'https:'
+  try {
+    return new URL(event.request.url).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function cookieBaseOf(isHttps: boolean) {
+  return AUTH_COOKIE_SAMESITE === 'none'
+    ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true, partitioned: true } as const)
+    : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: isHttps } as const)
+}
+
+/** Структурный срез SvelteKit-события: ядру нужны куки, запрос и (при наличии) доверенный сокетный IP. */
 export interface AuthEvent {
   request: Request
   cookies: Cookies
+  url?: URL
+  getClientAddress?: () => string
 }
 
 /* ── ключи запечатывания (env, ротация как у курсорных) ── */
@@ -109,8 +124,11 @@ function sealKeysFromEnv(): { enabled: boolean; id: string; secret: string; old:
   const id = AUTH_SEAL_ID || 'v1'
   const old: Record<string, string> = {}
   for (const pair of (AUTH_SEAL_OLD_KEYS ?? '').split(',')) {
-    const [kid, value] = pair.split(':')
-    if (kid && value && kid !== id) old[kid.trim()] = value.trim()
+    const idx = pair.indexOf(':')
+    if (idx <= 0) continue
+    const kid = pair.slice(0, idx).trim()
+    const value = pair.slice(idx + 1).trim()
+    if (kid && value.length >= 32 && kid !== id) old[kid] = value
   }
   return { enabled: true, id, secret, old }
 }
@@ -542,6 +560,9 @@ function blocksAdapter() {
   }
 }
 
+const challengeNonceStore = sharedStore.scope('auth-challenge-nonce', { max: 50_000 })
+const inflightChallengeNonces = new Set<string>()
+
 /** Порты из хвостов проекта; куки передаёт тот, кто знает запрос (фасад). */
 export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
   const keys = sealKeysFromEnv()
@@ -561,7 +582,7 @@ export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
       },
       async unseal(token) {
         // при выключенном входе распечатывать нечем: «не вошёл», без исключений
-        if (!keys.enabled) return undefined
+        if (!keys.enabled || !token || token.length > MAX_SEALED_COOKIE_CHARS) return undefined
         try {
           const map: Record<string, string> = { default: keys.secret, ...keys.old, [keys.id]: keys.secret }
           // верхняя граница iron — год (токен продления); access короче и свою exp несёт сам
@@ -582,19 +603,28 @@ export function authPorts(cookies?: AuthPorts['cookies']): AuthPorts {
     config: createUserConfig(localStore.scope('user-config')),
     settings: configAdapter(),
     blocks: blocksAdapter(),
+    subnetPepper: keys.enabled ? `modals-kit:subnet-pepper:v1:${keys.secret}` : undefined,
+    nonces: {
+      async consume(nonce, ttlSeconds) {
+        if (!nonce || nonce.length > 128) return false
+        if (inflightChallengeNonces.has(nonce)) return false
+        inflightChallengeNonces.add(nonce)
+        try {
+          const seen = await challengeNonceStore.get<number>(nonce)
+          if (seen !== undefined) return false
+          await challengeNonceStore.set(nonce, 1, Math.max(1, ttlSeconds) * 1000)
+          return true
+        } finally {
+          inflightChallengeNonces.delete(nonce)
+        }
+      },
+    },
   }
 }
 
 /** Подсеть из запроса: /24 у IPv4, /48 у IPv6 — полного адреса не знает даже ядро. */
-export function subnetOf(request: Request): string | undefined {
-  const raw = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-  if (!raw) return undefined
-  if (raw.includes('.')) {
-    const parts = raw.split('.')
-    return `${parts[0]}.${parts[1]}.${parts[2]}.0`
-  }
-  const parts = raw.split(':')
-  return `${parts.slice(0, 4).join(':')}::`
+export function subnetOf(request: Request, event?: AuthEvent): string | undefined {
+  return subnetOfEvent(event, request)
 }
 
 const countryOf = (request: Request): string | undefined =>
@@ -631,9 +661,9 @@ export function auth(event: AuthEvent): {
   /** Текущий подтверждённый субъект и его права (с бесшовным продлением `auth_tmp` по `auth_sid`). */
   actor(): Promise<UserResult<{ id: string; permissions: readonly string[] }>>
   issueChallenge(): Promise<UserResult<Challenge>>
-  login(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
-  restoreDeleted(args: { seed: string; challenge: string; signature?: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
-  verifySeed(args: { seed: string; challenge: string; signature?: string }): Promise<UserResult<{ sub: string }>>
+  login(args: { seed: string; challenge: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  restoreDeleted(args: { seed: string; challenge: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
+  verifySeed(args: { seed: string; challenge: string; signature: string }): Promise<UserResult<{ sub: string }>>
   renew(): Promise<UserResult<LoginOutcome>>
   refreshAccess(): Promise<UserResult<string>>
   logout(): Promise<UserResult<null>>
@@ -696,20 +726,21 @@ export function auth(event: AuthEvent): {
   deleteProfile(args: { withSeed?: boolean }, subject?: string): Promise<UserResult<null>>
   requestDelete(): Promise<UserResult<null>>
 } {
+  const cookieBase = cookieBaseOf(isHttpsEvent(event))
   const ports = authPorts({
     get: (name) => event.cookies.get(name),
-    set: (name, value, ttlSeconds) => event.cookies.set(name, value, { ...COOKIE_BASE, maxAge: ttlSeconds }),
-    delete: (name) => event.cookies.delete(name, { ...COOKIE_BASE }),
+    set: (name, value, ttlSeconds) => event.cookies.set(name, value, { ...cookieBase, maxAge: ttlSeconds }),
+    delete: (name) => event.cookies.delete(name, { ...cookieBase }),
   })
   const access = () => event.cookies.get(ACCESS_COOKIE)
   const renewal = () => event.cookies.get(RENEWAL_COOKIE)
   const setTokens = (value: LoginOutcome, deviceTtlSec: number, accessTtlSec: number) => {
-    event.cookies.set(ACCESS_COOKIE, value.access, { ...COOKIE_BASE, maxAge: accessTtlSec })
-    if (value.renewal) event.cookies.set(RENEWAL_COOKIE, value.renewal, { ...COOKIE_BASE, maxAge: deviceTtlSec })
+    event.cookies.set(ACCESS_COOKIE, value.access, { ...cookieBase, maxAge: accessTtlSec })
+    if (value.renewal) event.cookies.set(RENEWAL_COOKIE, value.renewal, { ...cookieBase, maxAge: deviceTtlSec })
   }
   const clearCookies = () => {
-    event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
-    event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
+    event.cookies.delete(ACCESS_COOKIE, { ...cookieBase })
+    event.cookies.delete(RENEWAL_COOKIE, { ...cookieBase })
   }
 
   const runRenew = async (): Promise<UserResult<LoginOutcome>> => {
@@ -720,7 +751,7 @@ export function auth(event: AuthEvent): {
     const exec = () =>
       coreRenew(ports, {
         renewal: rawRenewal,
-        subnet: subnetOf(event.request),
+        subnet: subnetOf(event.request, event),
         country: countryOf(event.request),
       })
 
@@ -753,12 +784,12 @@ export function auth(event: AuthEvent): {
     },
     issueChallenge: () => coreIssueChallenge(ports),
     login: async (args) => {
-      const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
+      const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event.request) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },
     restoreDeleted: async (args) => {
-      const r = await coreRestoreDeleted(ports, { ...args, subnet: subnetOf(event.request), country: countryOf(event.request) })
+      const r = await coreRestoreDeleted(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event.request) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },
@@ -768,7 +799,7 @@ export function auth(event: AuthEvent): {
       const r = await coreIssueFreshAccess(ports, await freshAccessOrCurrent())
       if (r.ok) {
         event.cookies.set(ACCESS_COOKIE, r.value, {
-          ...COOKIE_BASE,
+          ...cookieBase,
           maxAge: await ports.config.get('accessTtlSec'),
         })
       }
@@ -862,8 +893,9 @@ export async function resolveVault(event: AuthEvent): Promise<VaultSessionMeta |
   const renewed = await u.renew()
   if (renewed.ok) return vaultPayloadOf(renewed.value)
 
-  event.cookies.delete(ACCESS_COOKIE, { ...COOKIE_BASE })
-  event.cookies.delete(RENEWAL_COOKIE, { ...COOKIE_BASE })
+  const cookieBase = cookieBaseOf(isHttpsEvent(event))
+  event.cookies.delete(ACCESS_COOKIE, { ...cookieBase })
+  event.cookies.delete(RENEWAL_COOKIE, { ...cookieBase })
   return null
 }
 

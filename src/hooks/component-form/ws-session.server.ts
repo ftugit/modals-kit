@@ -28,6 +28,7 @@ import {
   type Limits,
 } from '#lib/form/server.js'
 import { StreamFile } from '#lib/storage/index.js'
+import { clientIpOf } from '#server/client-ip.server.js'
 import { originGuard } from '#server/form-security.server.js'
 import type { ServerWsSocket } from '#server/ws-upgrade.server.js'
 import { createAuthorizeGuards } from './authorize.server.js'
@@ -83,6 +84,12 @@ const MAX_INIT_TEXT_BYTES = 256 * 1024
 /** Сколько последних подтверждённых сегментов прикладывать в лог кадра `pull`. */
 const RECENT_SEGMENTS_LIMIT = 8
 
+/** Глобальный потолок одновременно активных/припаркованных `wss://`-сессий выгрузки на инстанс. */
+export const MAX_ACTIVE_WS_SESSIONS_GLOBAL = 128
+
+/** Потолок одновременно активных/припаркованных `wss://`-сессий выгрузки с одного клиентского IP. */
+export const MAX_ACTIVE_WS_SESSIONS_PER_IP = 8
+
 export interface WsFormSessionOptions {
   readonly chunkBytes?: number
   readonly windowSize?: number
@@ -92,6 +99,8 @@ export interface WsFormSessionOptions {
   readonly platform?: WsUploadPlatform
   readonly maxDurationMs?: number | null
   readonly maxBytes?: number
+  readonly maxGlobalSessions?: number
+  readonly maxPerIpSessions?: number
   /** Устаревший синоним `idleTimeoutMs` для совместимости с тестами. */
   readonly timeoutMs?: number
 }
@@ -127,6 +136,7 @@ interface PendingSegmentRequest {
 interface ActiveUploadSession {
   readonly sessionId: string
   readonly resumeToken: string
+  readonly clientIp: string
   readonly startedAt: number
   rebindSocket(newSocket: ServerWsSocket): Promise<void>
 }
@@ -741,9 +751,11 @@ export async function handleFormUploadWs(
     })
   }
 
+  const clientIp = clientIpOf(event, event.request) ?? 'unknown'
   const sessionHandle: ActiveUploadSession = {
     sessionId,
     resumeToken,
+    clientIp,
     get startedAt() {
       return sessionStartedAt
     },
@@ -919,6 +931,33 @@ export async function handleFormUploadWs(
         const { platform, maxDurationMs } = resolvePlatformMetadata(targetUrl, options)
 
         if (init.files.length > 0 && resumeGraceMs > 0) {
+          const now = Date.now()
+          for (const [k, existing] of activeUploadSessions) {
+            if (now - existing.startedAt > UNBOUNDED_HANDLER_TIMEOUT_MS) {
+              activeUploadSessions.delete(k)
+            }
+          }
+          const maxGlobal = options?.maxGlobalSessions ?? MAX_ACTIVE_WS_SESSIONS_GLOBAL
+          const maxPerIp = options?.maxPerIpSessions ?? MAX_ACTIVE_WS_SESSIONS_PER_IP
+          let perIpCount = 0
+          if (clientIp !== 'unknown') {
+            for (const existing of activeUploadSessions.values()) {
+              if (existing.clientIp === clientIp) perIpCount++
+            }
+          }
+          if (
+            activeUploadSessions.size >= maxGlobal ||
+            (clientIp !== 'unknown' && perIpCount >= maxPerIp)
+          ) {
+            safeSendJson(sock, {
+              type: 'fault',
+              status: 429,
+              message: 'Too many concurrent upload sessions',
+            })
+            sock.close(1013, 'Try again later')
+            abortAllPending(new Error('Too many concurrent upload sessions'))
+            return
+          }
           activeUploadSessions.set(sessionId, sessionHandle)
         }
         if (init.files.length > 0) {

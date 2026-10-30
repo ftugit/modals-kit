@@ -47,14 +47,28 @@ function localOrigins(get: EnvGet): string[] {
 
 const escape = (s: string) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
 
+const WILDCARD_ORIGIN_SHAPE_RE = /^https?:\/\/[a-z0-9*.-]+(?::\d{1,5})?$/i
+
+export type TrustedOriginsOptions = {
+  /** Включать ли локальные порты `localhost` / `127.0.0.1` без явных `PREVIEW_PORTS`/`E2B_SANDBOX_ID` (по умолчанию `true` для обратной совместимости в dev/тестах). */
+  dev?: boolean
+}
+
+function normalizeConfiguredOrigin(raw: string): string {
+  return raw.trim().replace(/\/+$/, '')
+}
+
 /** Собирает список из окружения: точные адреса и wildcard-записи раздельно. */
-export function trustedOrigins(get: EnvGet): TrustedOrigins {
-  const all = [...new Set([...list(get('KIT_TRUSTED_ORIGINS')), ...localOrigins(get)])]
+export function trustedOrigins(get: EnvGet, opts?: TrustedOriginsOptions): TrustedOrigins {
+  const includeLocal =
+    (opts?.dev ?? true) || Boolean(get('E2B_SANDBOX_ID')) || Boolean(get('PREVIEW_PORTS'))
+  const configured = list(get('KIT_TRUSTED_ORIGINS')).map(normalizeConfiguredOrigin).filter(Boolean)
+  const all = [...new Set([...configured, ...(includeLocal ? localOrigins(get) : [])])]
   return {
     exact: all.filter((o) => !o.includes('*')),
     patterns: all
-      .filter((o) => o.includes('*'))
-      .map((o) => new RegExp(`^${escape(o).replace(/\*/g, '[^/]+')}$`)),
+      .filter((o) => o.includes('*') && WILDCARD_ORIGIN_SHAPE_RE.test(o))
+      .map((o) => new RegExp(`^${escape(o).replace(/\*/g, '[a-z0-9-]+')}$`, 'i')),
   }
 }
 
@@ -113,13 +127,14 @@ export type CspOptions = {
  * - `style-src-elem: ['self']` запирает `<style>` и `<link rel="stylesheet">` в проде
  *   (в `dev` сам SvelteKit подмешивает `'unsafe-inline'` для HMR), а `style-src-attr`
  *   допускает реактивные `style:...` атрибуты компонентов;
- * - `'frame-ancestors': ['none']` включается в чистом проде, но опускается в `dev` и при
- *   наличии переменных превью песочницы (`E2B_SANDBOX_ID`, `PREVIEW_PORTS`), чтобы живое
- *   превью открывалось во фрейме без блокировки.
+ * - `'frame-ancestors': ['none']` включается в чистом проде, но опускается в `dev`,
+ *   в песочнице превью (`E2B_SANDBOX_ID`) и при явном iframe-режиме кук (`AUTH_COOKIE_SAMESITE=none`).
  */
 export function cspDirectives(opts: CspOptions) {
   const isPreviewEnv =
-    opts.dev || Boolean(opts.get('E2B_SANDBOX_ID')) || Boolean(opts.get('PREVIEW_PORTS'))
+    opts.dev ||
+    Boolean(opts.get('E2B_SANDBOX_ID')) ||
+    opts.get('AUTH_COOKIE_SAMESITE') === 'none'
   const scriptHashes = opts.inlineScriptHashes ?? []
 
   return {

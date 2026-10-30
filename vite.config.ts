@@ -40,7 +40,7 @@ export default defineConfig(({ command, isPreview }) => {
   const kit = {
     adapter: adapter(),
     preprocess: vitePreprocess(),
-    csrf: { trustedOrigins: trustedOrigins(getEnv).exact },
+    csrf: { trustedOrigins: trustedOrigins(getEnv, { dev: isDev }).exact },
     csp: {
       mode: 'auto' as const,
       directives: cspDirectives({

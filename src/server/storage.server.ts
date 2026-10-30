@@ -20,8 +20,12 @@ import {
   type WriteStrategy,
 } from '#lib/storage/index.js'
 import { jsonLedger, localDriver, localSpool } from '#lib/storage/local.js'
+import { s3Driver } from '#lib/storage/s3.js'
 import { createStorageState, type StorageTelemetrySnapshot } from '#lib/storage/state.js'
+import { isWebdavDsn, webdavDriver } from '#lib/storage/webdav.js'
 import { localStore } from './cache.server.js'
+import { clientIpOf, normalizeClientIp, type ClientAddressSource } from './client-ip.server.js'
+import { createSafeStorageFetch, validateStorageTargetUrl } from './safe-storage-fetch.server.js'
 
 const KB = 1024
 const MB = 1024 * KB
@@ -119,12 +123,12 @@ function baseServers(): Record<string, StorageServerEntry> {
   }
 }
 
-function resolveRequestMeta(request: Request) {
+function resolveRequestMeta(request: Request, event?: ClientAddressSource) {
   const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip')?.trim() ||
+    clientIpOf(event, request) ??
+    normalizeClientIp(request.headers.get('x-real-ip')) ??
     '127.0.0.1'
-  const clientId = request.headers.get('x-demo-client')?.trim() || undefined
+  const clientId = request.headers.get('x-demo-client')?.trim().slice(0, 64) || undefined
   return {
     ip,
     ...(clientId ? { clientId } : {}),
@@ -140,12 +144,13 @@ export const appStorage: Storage = createStorage({
   spool: sharedUploadSpool,
   store: sharedUploadStore,
   state: demoStorageState.onEvent,
-  tech: { resolveMeta: resolveRequestMeta },
+  tech: { resolveMeta: (req) => resolveRequestMeta(req) },
   servers: baseServers(),
 })
 
 export interface ResolveRequestStorageOptions {
   readonly writeStrategy?: WriteStrategy
+  readonly event?: ClientAddressSource
 }
 
 /**
@@ -159,11 +164,22 @@ export async function resolveRequestStorage(
   const servers: Record<string, StorageServerEntry> = baseServers()
   const vaultEntries = await readVaultEntries(cookies, storageVaultSchema)
   const writePool: string[] = ['local', 'memory']
+  const safeFetch = createSafeStorageFetch()
 
   for (const [id, { entry }] of vaultEntries) {
+    if (!validateStorageTargetUrl(entry.url).ok) continue
+    const driver = isWebdavDsn(entry.url)
+      ? webdavDriver(entry.url, {
+          readOnly: entry.readOnly,
+          publicBaseUrl: '/api/files',
+          fetchImpl: safeFetch,
+        })
+      : s3Driver(entry.url, {
+          publicBaseUrl: '/api/files',
+          fetchImpl: safeFetch,
+        })
     servers[id] = {
-      url: entry.url,
-      publicBaseUrl: '/api/files',
+      driver,
       statTtlMs: 30_000,
       limits: {
         storageBytes: entry.storageMb * MB,
@@ -187,7 +203,7 @@ export async function resolveRequestStorage(
     spool: sharedUploadSpool,
     store: sharedUploadStore,
     state: demoStorageState.onEvent,
-    tech: { resolveMeta: resolveRequestMeta },
+    tech: { resolveMeta: (req) => resolveRequestMeta(req, options?.event) },
     servers,
   })
 }

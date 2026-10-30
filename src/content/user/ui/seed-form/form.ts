@@ -33,8 +33,10 @@ export const seedForm = defineForm({
     seed: field.text({
       label: 'Seed',
       help: 'Единственный ключ от аккаунта — храните в менеджере секретов',
+      secret: true,
       validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_-]{43,44}' })],
     }),
+    public_seed: field.hidden({ label: 'Публичный ключ' }),
     challenge: field.hidden({ label: 'Challenge' }),
     signature: field.hidden({ label: 'Подпись' }),
   },

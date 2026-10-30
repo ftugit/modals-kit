@@ -75,11 +75,23 @@ export function randomToken(bytes = 32): string {
   return btoa(String.fromCharCode(...raw)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
-/** Хэш подсети с солью аккаунта — полный адрес и маска не хранятся. */
-export async function subnetHash(salt: string, subnet: string): Promise<string> {
-  const data = new TextEncoder().encode(`${salt}:${subnet}`)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+/** Верхний предел одновременно активных сессий одного аккаунта (старейшие вытесняются). */
+export const MAX_ACTIVE_SESSIONS_PER_USER = 50
+
+const textEncoder = new TextEncoder()
+
+/** HMAC-SHA-256 подсети с солью аккаунта и серверным pepper — полный адрес и маска не хранятся и не перебираются по дампу БД. */
+export async function subnetHash(salt: string, subnet: string, pepper?: string): Promise<string> {
+  const rawKey = textEncoder.encode(pepper ? `${pepper}:${salt}` : salt || 'modals-kit-default-salt')
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    rawKey,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const mac = await crypto.subtle.sign('HMAC', cryptoKey, textEncoder.encode(subnet))
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /** Активные сферы блокировки: срок не вышел. Полная блокировка — сфера `auth`. */
@@ -148,8 +160,8 @@ export type EnterArgs = {
   seed: string
   /** Запечатанный challenge-токен из `issueChallenge` (клиент его видит и подписывает). */
   challenge: string
-  /** Подпись токена; нет — режим без JS: доказательство = само знание секрета. */
-  signature?: string
+  /** Обязательная Ed25519-подпись challenge-токена приватным ключом аккаунта. */
+  signature: string
   deviceName?: string
   /** Подсеть в представлении адаптера (хэш считается здесь); нет — не пишем. */
   subnet?: string
@@ -157,22 +169,31 @@ export type EnterArgs = {
 }
 
 /**
- * Доказательство владения seed: живой challenge-токен + подпись. Чистая
- * криптография — строк аккаунтов НЕ касается, поэтому стоит ДО любого
+ * Доказательство владения seed: живой challenge-токен + обязательная подпись Ed25519.
+ * Чистая криптография — строк аккаунтов НЕ касается, поэтому стоит ДО любого
  * поиска (в т.ч. привилегированного поиска удалённой строки).
- * Возвращает нормализованный seed или факт отказа.
+ * Возвращает нормализованный seed и идентификатор challenge или факт отказа.
  */
-async function proveSeed(ports: AuthPorts, args: EnterArgs): Promise<{ seed: string } | AuthFact> {
+async function proveSeed(
+  ports: AuthPorts,
+  args: EnterArgs,
+): Promise<{ seed: string; nonce: string } | AuthFact> {
   const seed = args.seed.trim()
   if (seed.length < 43 || seed.length > 44) return { code: 'auth.signature', path: 'signature' }
   // Токен распечатался (подпись сервера цела, срок не вышел) и выпущен
   // именно для поля seed — чужой/просроченный/поддельный сюда не проходит.
   const payload = await ports.seal.unseal(args.challenge)
-  if (!payload || payload.k !== 'challenge' || payload.field !== 'seed')
+  if (!payload || payload.k !== 'challenge' || payload.field !== 'seed' || !payload.n)
     return { code: 'auth.nonce-unknown', path: 'signature' }
-  if (args.signature !== undefined && !(await ports.crypto.verify(args.challenge, args.signature, seed)))
+  if (!args.signature || !(await ports.crypto.verify(args.challenge, args.signature, seed)))
     return { code: 'auth.signature', path: 'signature' }
-  return { seed }
+  return { seed, nonce: payload.n }
+}
+
+async function consumeChallengeNonce(ports: AuthPorts, nonce: string): Promise<boolean> {
+  if (!ports.nonces) return true
+  const ttlSec = await ports.config.get('challengeTtlSec')
+  return ports.nonces.consume(nonce, ttlSec)
 }
 
 /**
@@ -182,7 +203,12 @@ async function proveSeed(ports: AuthPorts, args: EnterArgs): Promise<{ seed: str
  * `auth.blocked`. Подсеть/страна — от адаптера: полный адрес не
  * принимается никогда.
  */
-async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
+async function completeLogin(
+  ports: AuthPorts,
+  seed: string,
+  nonce: string,
+  args: EnterArgs,
+): Promise<UserResult<LoginOutcome>> {
   const now = ports.clock.now()
   let row = await ports.auths.findBySeed(seed)
   if (!row) row = await ports.auths.create(seed) ?? undefined
@@ -193,6 +219,10 @@ async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): P
   if (fullBlock(blockedList, now)) {
     const b = blocked.find((x) => x.scope === 'auth') as Blocked
     return fail({ code: 'auth.blocked', args: { reason: b.reason, until: b.until ?? 0 } })
+  }
+
+  if (!(await consumeChallengeNonce(ports, nonce))) {
+    return fail({ code: 'auth.nonce-unknown', path: 'signature' })
   }
 
   const deviceTtlSec = await ports.config.get('deviceTtlSec')
@@ -208,7 +238,7 @@ async function completeLogin(ports: AuthPorts, seed: string, args: EnterArgs): P
 export async function login(ports: AuthPorts, args: EnterArgs): Promise<UserResult<LoginOutcome>> {
   const proof = await proveSeed(ports, args)
   if ('code' in proof) return fail(proof)
-  return completeLogin(ports, proof.seed, args)
+  return completeLogin(ports, proof.seed, proof.nonce, args)
 }
 
 /**
@@ -223,7 +253,7 @@ export async function restoreDeleted(ports: AuthPorts, args: EnterArgs): Promise
   if ('code' in proof) return fail(proof)
   const deleted = await ports.auths.findDeletedBySeed(proof.seed)
   if (deleted) await ports.auths.clearDeleted(deleted.id)
-  return completeLogin(ports, proof.seed, args)
+  return completeLogin(ports, proof.seed, proof.nonce, args)
 }
 
 /**
@@ -243,10 +273,13 @@ export async function verifySeed(
   if ('code' in proof) return fail(proof)
   const row = await ports.auths.findBySeed(proof.seed)
   if (!row) return fail({ code: 'auth.identity-unknown', path: 'seed' })
+  if (!(await consumeChallengeNonce(ports, proof.nonce))) {
+    return fail({ code: 'auth.nonce-unknown', path: 'signature' })
+  }
   return ok({ sub: row.id })
 }
 
-/** Новая строка сессии: jti, версия 0, срок из конфига, хэш подсети. */
+/** Новая строка сессии: jti, версия 0, срок из конфига, хэш подсети, лимит активных устройств. */
 async function openSession(
   ports: AuthPorts,
   row: { id: string; subnetSalt: string },
@@ -254,11 +287,23 @@ async function openSession(
   deviceTtlSec: number,
   args: { deviceName?: string; subnet?: string; country?: string },
 ): Promise<SessionRecord> {
+  const existing = await ports.sessions.listByAuth(row.id)
+  const active = existing.filter((s) => s.deletedAt === null && s.expiresAt > now)
+  if (active.length >= MAX_ACTIVE_SESSIONS_PER_USER) {
+    const sortedOldest = [...active].sort(
+      (a, b) => (a.lastSeenAt ?? a.createdAt) - (b.lastSeenAt ?? b.createdAt),
+    )
+    const evictCount = active.length - MAX_ACTIVE_SESSIONS_PER_USER + 1
+    for (let i = 0; i < evictCount; i++) {
+      await ports.sessions.softDelete(sortedOldest[i]!.jti, now)
+    }
+  }
+
   const record: SessionRecord = {
     jti: randomToken(32),
     authId: row.id,
     deviceName: args.deviceName?.slice(0, 64) || null,
-    subnetHash: args.subnet ? await subnetHash(row.subnetSalt, args.subnet) : null,
+    subnetHash: args.subnet ? await subnetHash(row.subnetSalt, args.subnet, ports.subnetPepper) : null,
     country: args.country?.slice(0, 64) || null,
     history: [],
     createdAt: now,
@@ -406,7 +451,9 @@ export async function renew(
   if (token.version === session.version) {
     // владелец продления: ротация сведений по режиму конфига
     const mode = await ports.config.get('sessionRecreate')
-    const nextHash = args.subnet ? await subnetHash(auth.subnetSalt, args.subnet) : session.subnetHash
+    const nextHash = args.subnet
+      ? await subnetHash(auth.subnetSalt, args.subnet, ports.subnetPepper)
+      : session.subnetHash
     const changedSubnet = args.subnet !== undefined && nextHash !== session.subnetHash
     if (mode === 'strict' && changedSubnet && session.subnetHash !== null) {
       return fail({ code: 'auth.blocked', args: { reason: 'subnet-changed', until: 0 } })

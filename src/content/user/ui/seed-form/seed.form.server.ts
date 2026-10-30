@@ -1,12 +1,46 @@
 // Серверный POST-обработчик компонента `SeedForm` (`#hooks/component-form`).
 import { registerComponentForm } from '#hooks/component-form/registry.js'
+import { createIpThrottle } from '#server/client-ip.server.js'
 import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { instruction, seedOf, type LoginOutcome } from '../../index.js'
+import { sign } from '../../keys.js'
 import { parseAuthStage, userAuthRoute } from '../../routes.js'
 import { seedForm } from './form.js'
 
+const seedAuthThrottle = createIpThrottle('auth-seed', 20, 60_000)
+
+async function resolveSeedProof(
+  values: Record<string, unknown>,
+): Promise<{ seed: string; challenge: string; signature: string } | null> {
+  const challenge = String(values.challenge ?? '').trim()
+  if (!challenge) return null
+
+  const publicSeed = String(values.public_seed ?? '').trim()
+  const signature = String(values.signature ?? '').trim()
+
+  // Штатный JS-режим: клиент уже локально вывел `public_seed` и подписал `challenge`
+  // приватным ключом, не передавая приватный `secret` по сети.
+  if (publicSeed && signature) {
+    return { seed: publicSeed, challenge, signature }
+  }
+
+  // Строгий фолбэк для нативного HTML `<form>` без JS: `values.seed` содержит
+  // введённый пользователем приватный `secret`, который никогда не эхится обратно
+  // в разметку (`secret: true`) и конвертируется в одноразовую подпись на границе.
+  const rawSecret = String(values.seed ?? '').trim()
+  if (!rawSecret) return null
+  try {
+    const derivedPublic = await seedOf(rawSecret)
+    const computedSig = signature || (await sign(challenge, rawSecret))
+    return { seed: derivedPublic, challenge, signature: computedSig }
+  } catch {
+    return null
+  }
+}
+
 registerComponentForm({
   description: seedForm,
+  throttle: seedAuthThrottle,
   execute: async ({ values, intent, commit, fail }, event) => {
     const u = auth(event)
     const gone = (fact: Parameters<typeof instruction>[0]) => fail(instruction(fact))
@@ -51,29 +85,29 @@ registerComponentForm({
     if (!u.enabled && intent !== 'logout') return gone({ code: 'auth.disabled' })
     switch (intent) {
       case 'login': {
-        const derived = await seedOf(String(values.seed ?? '').trim())
-        const r = await u.login({
-          seed: derived,
-          challenge: String(values.challenge ?? ''),
-          signature: values.signature ? String(values.signature) : undefined,
-        })
+        const proof = await resolveSeedProof(values)
+        if (!proof) return gone({ code: 'auth.signature' })
+        const r = await u.login(proof)
         if (!r.ok) {
           if (r.fact.code === 'auth.blocked') return blockedStep(r.fact)
           if (r.fact.code === 'auth.deleted') {
+            const fresh = await u.issueChallenge()
             commit()
-            return { data: { step: 'restore' } }
+            return {
+              data: {
+                step: 'restore',
+                ...(fresh.ok ? { token: fresh.value.token } : {}),
+              },
+            }
           }
           return gone(r.fact)
         }
         return entered(r.value)
       }
       case 'restore': {
-        const derived = await seedOf(String(values.seed ?? '').trim())
-        const r = await u.restoreDeleted({
-          seed: derived,
-          challenge: String(values.challenge ?? ''),
-          signature: values.signature ? String(values.signature) : undefined,
-        })
+        const proof = await resolveSeedProof(values)
+        if (!proof) return gone({ code: 'auth.signature' })
+        const r = await u.restoreDeleted(proof)
         if (!r.ok) {
           if (r.fact.code === 'auth.blocked') return blockedStep(r.fact)
           return gone(r.fact)
@@ -81,12 +115,9 @@ registerComponentForm({
         return entered(r.value)
       }
       case 'confirm': {
-        const derived = await seedOf(String(values.seed ?? '').trim())
-        const r = await u.verifySeed({
-          seed: derived,
-          challenge: String(values.challenge ?? ''),
-          signature: values.signature ? String(values.signature) : undefined,
-        })
+        const proof = await resolveSeedProof(values)
+        if (!proof) return gone({ code: 'auth.signature' })
+        const r = await u.verifySeed(proof)
         if (!r.ok) return gone(r.fact)
         commit()
         return { data: { step: 'confirmed', confirmed: true, sub: r.value.sub } }

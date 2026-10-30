@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ url }) => ({
 
 export const actions: Actions = {
   schema: async (event) => {
-    const handled = await handleSchemaResolve(event.request, 'action')
+    const handled = await handleSchemaResolve(event.request, 'action', event)
     const next = nextOf(event.url)
     // Решать уже нечего (другой экземпляр успел) — это не отказ: просто уходим.
     if (!handled) redirect(303, next ?? '/')

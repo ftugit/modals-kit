@@ -31,8 +31,8 @@ interface StoredCipherEnvelope<TEntry> {
   readonly entry: TEntry
 }
 
-const COOKIE_OPTS =
-  AUTH_COOKIE_SAMESITE === 'none'
+function vaultCookieOpts(secureHttps = false) {
+  return AUTH_COOKIE_SAMESITE === 'none'
     ? ({
         path: '/',
         httpOnly: true,
@@ -45,14 +45,16 @@ const COOKIE_OPTS =
         path: '/',
         httpOnly: true,
         sameSite: 'lax',
-        secure: false,
+        secure: secureHttps,
         maxAge: VAULT_MAX_AGE_SECONDS,
       } as const)
+}
 
-const DELETE_OPTS =
-  AUTH_COOKIE_SAMESITE === 'none'
+function vaultDeleteOpts(secureHttps = false) {
+  return AUTH_COOKIE_SAMESITE === 'none'
     ? ({ path: '/', httpOnly: true, sameSite: 'none', secure: true, partitioned: true } as const)
-    : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: false } as const)
+    : ({ path: '/', httpOnly: true, sameSite: 'lax', secure: secureHttps } as const)
+}
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -80,7 +82,7 @@ function fromBase64Url(raw: string): Uint8Array | null {
 
 async function deriveAesKey(rawCookieKey: Uint8Array): Promise<CryptoKey> {
   let keyMaterial: Uint8Array<ArrayBuffer>
-  if (AUTH_SEAL_SECRET && AUTH_SEAL_SECRET.length >= 16) {
+  if (AUTH_SEAL_SECRET && AUTH_SEAL_SECRET.length >= 32) {
     const secretBytes = enc.encode(`:${AUTH_SEAL_SECRET}`)
     const combined = new Uint8Array(rawCookieKey.byteLength + secretBytes.byteLength)
     combined.set(rawCookieKey, 0)
@@ -109,11 +111,11 @@ function readRawMasterKey(cookies: Cookies): Uint8Array | null {
   return bytes && bytes.byteLength === KEY_BYTES ? bytes : null
 }
 
-function ensureMasterKey(cookies: Cookies): Uint8Array {
+function ensureMasterKey(cookies: Cookies, secureHttps = false): Uint8Array {
   const existing = readRawMasterKey(cookies)
   if (existing) return existing
   const fresh = crypto.getRandomValues(new Uint8Array(KEY_BYTES))
-  cookies.set(VAULT_MASTER_KEY_COOKIE, toBase64Url(fresh), COOKIE_OPTS)
+  cookies.set(VAULT_MASTER_KEY_COOKIE, toBase64Url(fresh), vaultCookieOpts(secureHttps))
   return fresh
 }
 
@@ -245,11 +247,17 @@ export async function readVaultSnapshot<TEntry, TMeta>(
 /**
  * Зашифровать и сохранить один слот конфига в `dv_<scope>_<id>` (при необходимости создаёт `dv_key`).
  */
+export interface CookieVaultCookieWriteOptions {
+  /** Запрос пришёл по `https:` — выставить флаг `Secure` даже при `SameSite=Lax`. */
+  readonly secure?: boolean
+}
+
 export async function saveVaultEntry<TEntry, TMeta>(
   cookies: Cookies,
   schema: CookieVaultSchema<TEntry, TMeta>,
   id: string,
   entry: TEntry,
+  cookieOptions?: CookieVaultCookieWriteOptions,
 ): Promise<
   | { readonly ok: true; readonly snapshot: CookieVaultSnapshot<TMeta> }
   | { readonly ok: false; readonly message: string }
@@ -269,7 +277,8 @@ export async function saveVaultEntry<TEntry, TMeta>(
     }
   }
 
-  const rawKey = ensureMasterKey(cookies)
+  const isHttps = Boolean(cookieOptions?.secure)
+  const rawKey = ensureMasterKey(cookies, isHttps)
   const aesKey = await deriveAesKey(rawKey)
   const envelope: StoredCipherEnvelope<TEntry> = {
     v: 1,
@@ -284,7 +293,7 @@ export async function saveVaultEntry<TEntry, TMeta>(
     }
   }
 
-  cookies.set(slotCookieName(schema.scope, id), encoded, COOKIE_OPTS)
+  cookies.set(slotCookieName(schema.scope, id), encoded, vaultCookieOpts(isHttps))
   const overlay = new Map<string, StoredCipherEnvelope<TEntry> | null>([[id, envelope]])
   const snapshot = await readVaultSnapshot(cookies, schema, overlay, true)
   return { ok: true, snapshot }
@@ -297,9 +306,11 @@ export async function removeVaultEntry<TEntry, TMeta>(
   cookies: Cookies,
   schema: CookieVaultSchema<TEntry, TMeta>,
   id: string,
+  cookieOptions?: CookieVaultCookieWriteOptions,
 ): Promise<CookieVaultSnapshot<TMeta>> {
+  const isHttps = Boolean(cookieOptions?.secure)
   if (VAULT_SLOT_ID_RE.test(id)) {
-    cookies.delete(slotCookieName(schema.scope, id), DELETE_OPTS)
+    cookies.delete(slotCookieName(schema.scope, id), vaultDeleteOpts(isHttps))
   }
   const overlay = new Map<string, StoredCipherEnvelope<TEntry> | null>([[id, null]])
   return readVaultSnapshot(cookies, schema, overlay)
@@ -311,11 +322,13 @@ export async function removeVaultEntry<TEntry, TMeta>(
 export function resetVaultKey<TEntry, TMeta>(
   cookies: Cookies,
   schema: CookieVaultSchema<TEntry, TMeta>,
+  cookieOptions?: CookieVaultCookieWriteOptions,
 ): CookieVaultSnapshot<TMeta> {
-  cookies.delete(VAULT_MASTER_KEY_COOKIE, DELETE_OPTS)
+  const delOpts = vaultDeleteOpts(Boolean(cookieOptions?.secure))
+  cookies.delete(VAULT_MASTER_KEY_COOKIE, delOpts)
   for (const c of cookies.getAll()) {
     if (c.name.startsWith(VAULT_COOKIE_PREFIX)) {
-      cookies.delete(c.name, DELETE_OPTS)
+      cookies.delete(c.name, delOpts)
     }
   }
   return {
@@ -337,6 +350,8 @@ export type CookieVaultValidationResult =
 export interface RegisterCookieVaultOptions<TEntry = unknown> {
   /** Маршрут редиректа при нативном HTTP POST без JS (по умолчанию сохраняет текущий путь + search). */
   redirectOnSuccess?: (event: RequestEvent) => string
+  /** Скользящий ограничитель частоты для сохранения/проверки слота (`windowThrottle`). */
+  throttle?: Parameters<typeof registerComponentForm>[0]['throttle']
   /** Серверная проверка конфига ПЕРЕД сохранением куки (например живая проверка доступности хранилища). */
   validateEntry?: (
     id: string,
@@ -363,10 +378,14 @@ export function registerCookieVaultForms<TEntry, TMeta>(
   options?: RegisterCookieVaultOptions<TEntry>,
 ): void {
   const redirect = options?.redirectOnSuccess ?? defaultRedirect
+  const cookieOptsOf = (event: RequestEvent): CookieVaultCookieWriteOptions => ({
+    secure: event.url.protocol === 'https:',
+  })
 
   registerComponentForm({
     description: schema.entryForm,
     limits: { timeoutMs: 25_000 },
+    ...(options?.throttle ? { throttle: options.throttle } : {}),
     async execute({ values, fail, commit }, event) {
       const parsed = schema.parse(values)
       if (!parsed.ok) {
@@ -387,7 +406,7 @@ export function registerCookieVaultForms<TEntry, TMeta>(
           )
         }
       }
-      const saved = await saveVaultEntry(event.cookies, schema, parsed.id, parsed.entry)
+      const saved = await saveVaultEntry(event.cookies, schema, parsed.id, parsed.entry, cookieOptsOf(event))
       if (!saved.ok) {
         return fail([{ message: saved.message, origin: 'server' }], 'not-applied')
       }
@@ -401,7 +420,7 @@ export function registerCookieVaultForms<TEntry, TMeta>(
     description: schema.deleteForm,
     async execute({ values, commit }, event) {
       const id = String(values.slot_id ?? '').trim()
-      const snapshot = await removeVaultEntry(event.cookies, schema, id)
+      const snapshot = await removeVaultEntry(event.cookies, schema, id, cookieOptsOf(event))
       await options?.onRemoved?.(id, event)
       commit()
       return { data: { snapshot, removedId: id } }
@@ -412,7 +431,7 @@ export function registerCookieVaultForms<TEntry, TMeta>(
   registerComponentForm({
     description: schema.resetKeyForm,
     async execute({ commit }, event) {
-      const snapshot = resetVaultKey(event.cookies, schema)
+      const snapshot = resetVaultKey(event.cookies, schema, cookieOptsOf(event))
       await options?.onReset?.(event)
       commit()
       return { data: { snapshot } }

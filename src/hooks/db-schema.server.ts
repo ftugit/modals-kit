@@ -15,6 +15,7 @@ import type { FormError } from '#lib/form/index.js'
 import { createFormHandler, type Handled } from '#lib/form/server.js'
 import { schemaAdmin, schemaStepTask } from '#server/db.server.js'
 import { currentReport } from '#hooks/task-stream.server.js'
+import { createIpThrottle, type ClientAddressSource } from '#server/client-ip.server.js'
 import { invalidateLiveCache } from '#server/live-cache.server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
 import {
@@ -57,15 +58,19 @@ const error = (code: string, message: string, path?: string, at = 0): FormError 
  * @param from кодировка ответа: `action` — Kit-экшен, `fetch` — JSON.
  * @returns `Handled` либо `null`, если решать уже нечего (другой экземпляр успел).
  */
+const schemaResolveThrottle = createIpThrottle('db-schema', 10, 60_000)
+
 export async function handleSchemaResolve(
   request: Request,
   from: 'action' | 'fetch',
+  event?: ClientAddressSource,
 ): Promise<Handled | null> {
   const screen = await schemaScreen()
   if (!screen) return null
-  return createFormHandler<{ message: string }>({
+  return createFormHandler<{ message: string }, ClientAddressSource>({
     description: schemaForm(screen),
     order: SECURITY_LAYERS,
+    throttle: schemaResolveThrottle,
     async execute({ values, commit, fail }) {
       const { decisions, problems } = decisionsFrom(
         values as Record<string, unknown>,
@@ -95,5 +100,5 @@ export async function handleSchemaResolve(
       invalidateLiveCache()
       return { data: { message: 'Перенос выполнен' } }
     },
-  })(request, from)
+  })(request, from, event)
 }

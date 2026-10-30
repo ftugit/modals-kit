@@ -34,12 +34,14 @@ import {
   type StorageServerEntry,
 } from '#lib/storage/index.js'
 import { localDriver, localSpool } from '#lib/storage/local.js'
-import { maskS3Url, parseS3Url } from '#lib/storage/s3.js'
-import { isWebdavDsn, maskWebdavUrl, parseWebdavUrl } from '#lib/storage/webdav.js'
+import { maskS3Url, parseS3Url, s3Driver } from '#lib/storage/s3.js'
+import { isWebdavDsn, maskWebdavUrl, parseWebdavUrl, webdavDriver } from '#lib/storage/webdav.js'
 import { localStore, sharedStore } from './cache.server.js'
 import { db as defaultDb } from './db.server.js'
+import { createSafeStorageFetch } from './safe-storage-fetch.server.js'
 
 const MB = 1024 * 1024
+const MAX_SEALED_CONFIG_CHARS = 16_384
 const POOL_CACHE_KEY = 'pool.v1'
 const POOL_CACHE_TTL_MS = 10_000
 const SYSTEM: DataContext = { principal: { roles: ['server'] } }
@@ -95,7 +97,11 @@ function defaultSealKeys(): SealKeysConfig {
   if (raw) {
     for (const pair of raw.split(',')) {
       const idx = pair.indexOf(':')
-      if (idx > 0) old[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim()
+      if (idx > 0) {
+        const kid = pair.slice(0, idx).trim()
+        const keyVal = pair.slice(idx + 1).trim()
+        if (kid && keyVal.length >= 32) old[kid] = keyVal
+      }
     }
   }
   return { id, secret, old, enabled: secret.length >= 32 }
@@ -129,7 +135,7 @@ async function unsealServerConfig(
   sealed: string,
   keys: SealKeysConfig,
 ): Promise<StorageVaultEntry | null> {
-  if (!keys.enabled) return null
+  if (!keys.enabled || !sealed || sealed.length > MAX_SEALED_CONFIG_CHARS) return null
   try {
     const map: Record<string, string> = {
       default: keys.secret,
@@ -246,13 +252,24 @@ export async function resolveAppStorage(deps: AppStorageDeps = {}): Promise<Reso
   const rows = await loadRawPoolRows(database, useDefaultCache)
   const servers: Record<string, StorageServerEntry> = {}
   const writePool: string[] = []
+  const safeFetch = deps.fetchImpl ?? createSafeStorageFetch({ allowLocalNetwork: !cloud })
 
   for (const row of rows) {
     const entry = await unsealServerConfig(row.sealed_config, keys)
     if (!entry) continue
+    if (!validateStorageTargetUrl(entry.url, { allowLocalNetwork: !cloud }).ok) continue
+    const driver = isWebdavDsn(entry.url)
+      ? webdavDriver(entry.url, {
+          readOnly: entry.readOnly,
+          publicBaseUrl: APP_STORAGE_URL_PREFIX,
+          fetchImpl: safeFetch,
+        })
+      : s3Driver(entry.url, {
+          publicBaseUrl: APP_STORAGE_URL_PREFIX,
+          fetchImpl: safeFetch,
+        })
     servers[row.slot] = {
-      url: entry.url,
-      publicBaseUrl: APP_STORAGE_URL_PREFIX,
+      driver,
       statTtlMs: 30_000,
       limits: {
         storageBytes: entry.storageMb * MB,
