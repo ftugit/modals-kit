@@ -6,7 +6,7 @@
 
 ## 1. Среда и запуск
 
-- **Версия Node.js**: строго **`>= 22.17`** (`vite.config.ts` проверяет версию при старте). В контейнерах, где системный `node` старше, первым в `PATH` должен стоять каталог с Node 22+ (`/opt/node22/bin` или `/usr/local/bin`).
+- **Версия Node.js**: строго **`>= 22.17 < 25`** (Node 22 или 24 LTS: `vite.config.ts` проверяет нижнюю границу при старте, а верхняя граница `<25` в `package.json#engines` не даёт облачным сборщикам вроде Vercel автоматически переключаться на неподдерживаемый в `@sveltejs/adapter-vercel` Node 26+). В контейнерах, где системный `node` старше, первым в `PATH` должен стоять каталог с Node 22/24 (`/opt/node22/bin` или `/usr/local/bin`).
 - **WASM / PGlite и `--no-liftoff`**: не убирать `execArgv: ['--no-liftoff']`, `testTimeout: 15_000` и ограничение воркеров (`maxWorkers: 1` на малых машинах) в `vite.config.ts` и скриптах `package.json` — в песочницах с малым пулом исполняемых страниц Liftoff роняет воркеры PGlite по `SIGSEGV`, а холодная компиляция `pglite.wasm` через TurboFan занимает ~8–9 с.
 - **Переменные сборки и превью**:
   - при `vite build` и `vite preview` с проверкой авторизации/хранилища передавать `AUTH_SEAL_ID` (строго буквенно-цифровой идентификатор без дефисов — требование `iron-webcrypto`, например `k1`), `AUTH_SEAL_SECRET`, `DB_CURSOR_SECRET`, `KIT_TRUSTED_ORIGINS` и `PREVIEW_PORTS`;

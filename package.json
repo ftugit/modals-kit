@@ -11,7 +11,7 @@
     "#server/*": "./src/server/*"
   },
   "engines": {
-    "node": ">=22.17"
+    "node": ">=22.17 <25"
   },
   "scripts": {
     "dev": "node --no-liftoff ./node_modules/vite/bin/vite.js dev",
