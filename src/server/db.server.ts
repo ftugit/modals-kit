@@ -7,44 +7,126 @@
  * `lazyDriver` при первом запросе к БД. Страницы без БД её не поднимают — какой бы
  * движок ни был задан окружением (Hyperdrive, pg, PGlite): путь один.
  *
- * Движок: внешний Postgres по `DATABASE_URL` (очистка `DATABASE_RESET=1`, сверка
- * всех моделей, сиды и первый администратор выполняются уже на этапе сборки в
- * `tooling/db-reset.mjs`, так что база готова и логи видны сразу при деплое;
- * в рантайме `schema.gate` делает только быструю сверку отпечатков), иначе PGlite:
- * в памяти для dev/демо (иначе `npm run dev` и `vite build` спорят из-за
- * file-lock одного каталога) либо файловый каталог, если задан DATABASE_DIR.
- * Что само применить нельзя, ждёт решения, а запросы к БД до тех пор отвечают
- * `schema_pending` (503).
+ * Движок: внешний Postgres по `DATABASE_URL` (очистка при деплое — сборкой:
+ * `DATABASE_RESET=1`, `tooling/db-reset.mjs`; в рантайме база не очищается),
+ * иначе PGlite: в памяти для dev/демо (иначе `npm run dev` и `vite build`
+ * спорят из-за file-lock одного каталога) либо файловый каталог, если задан
+ * `DATABASE_DIR`. Таблицы описаны моделями и разворачиваются сами при первом
+ * открытии БД в рантайме (`schema.gate`), тогда же создаётся и печатается в
+ * Runtime Logs первый seed-администратор. Что само применить нельзя, ждёт
+ * решения, а запросы к БД до тех пор отвечают `schema_pending` (503).
  */
-import { createDb, DbFailure, type Database, type Driver } from '#lib/db/index.js'
+import { createDb, DbFailure, type Database, type Driver, type Limits } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { hyperdriveAdapter } from '#lib/db/adapters/hyperdrive.js'
 import { lazyDriver } from '#lib/db/adapters/lazy.js'
 import { openNodeDatabase, openPgPool } from '#lib/db/sveltekit/node.js'
 import { cursorCodecFromEnv } from '#lib/db/sveltekit/index.js'
-import { createSchemaAdmin, type SyncStep } from '#lib/db/sync/index.js'
+import { createSchemaAdmin, defineSchema, type SchemaReport, type SyncStep } from '#lib/db/sync/index.js'
 import { sharedTask } from '#hooks/task-stream.server.js'
 import type { TaskState } from '#lib/task/index.js'
 import {
   DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
   DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
-import {
-  auth,
-  bootstrapDatabase,
-  cacheKv,
-  DB_LIMITS,
-  posts,
-  profile,
-  schema,
-  schemaSpec,
-  session,
-  storageFile,
-  storageReservation,
-  storageServer,
-} from './db-spec.server.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
+import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
+import { cacheKv } from '#hooks/cache-db.js'
+import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
+import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
 
-export { posts, auth, profile, session, cacheKv, storageFile, storageReservation, storageServer, schema }
+export { posts, auth, profile, session, cacheKv, storageFile, storageReservation, storageServer }
+
+const schemaSpec = {
+  // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
+  // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.server.ts);
+  // storage_file / storage_reservation / storage_server — реестр, брони и пул серверов lib/storage
+  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv, storageFile, storageReservation, storageServer],
+  sql: [
+    // Конфиг-модель (этап 10): уникальность пары (auth_id, key) обычный
+    // unique не даёт — NULL глобальных строк в Postgres не равен NULL,
+    // и вторая строка умолчания с тем же ключом прошла бы. Два частичных
+    // индекса: глобальный ключ один, юзерский — один на юзера.
+    {
+      id: 'user-config-uq-global',
+      text: 'CREATE UNIQUE INDEX IF NOT EXISTS user_config_uq_global ON public.user_config (key) WHERE auth_id IS NULL',
+    },
+    {
+      id: 'user-config-uq-user',
+      text: 'CREATE UNIQUE INDEX IF NOT EXISTS user_config_uq_user ON public.user_config (auth_id, key) WHERE auth_id IS NOT NULL',
+    },
+    // Ключ приватности профиля (этап 8): строка умолчания несёт схему
+    // прав — владелец сам ставит себе уровень (assign/editUser/deleteUser:
+    // owner), умолчание меняет админ. Значение — nobody: текущее поведение
+    // до явного выбора. Идемпотентно (WHERE NOT EXISTS по глобальному ключу).
+    {
+      id: 'user-config-seed-visibility',
+      text: `INSERT INTO public.user_config (auth_id, key, value, schema)
+             SELECT NULL, 'profile.visibility', '"nobody"'::jsonb,
+                    '{"editDefault":["admin"],"assign":["admin","owner"],"editUser":["admin","owner"],"deleteUser":["admin","owner"]}'::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM public.user_config WHERE auth_id IS NULL AND key = 'profile.visibility')`,
+    },
+    // Ключ автовыхода при смене IP (пример прав этапа 10): закрепляет и
+    // меняет только админ, владелец — только чтение (чтение схемой не
+    // закрывается: его даёт getUserKey владельцу и config.read).
+    {
+      id: 'user-config-seed-iplock',
+      text: `INSERT INTO public.user_config (auth_id, key, value, schema)
+             SELECT NULL, 'session.ipLock', 'false'::jsonb,
+                    '{"editDefault":["admin"],"assign":["admin"],"editUser":["admin"],"deleteUser":["admin"]}'::jsonb
+             WHERE NOT EXISTS (SELECT 1 FROM public.user_config WHERE auth_id IS NULL AND key = 'session.ipLock')`,
+    },
+    // Блокировки (этап 9): индекс чтения цели и перенос истории из
+    // json-массива user_auth.blocked в строки модели.
+    {
+      id: 'user-block-ix-target',
+      text: 'CREATE INDEX IF NOT EXISTS user_block_ix_target ON public.user_block (auth_id, created_at DESC)',
+    },
+    {
+      id: 'user-block-backfill-v2',
+      text: `INSERT INTO public.user_block (auth_id, scope, reason, until, "by", created_at, updated_at)
+             SELECT a.id, e->>'scope', e->>'reason',
+                    CASE WHEN e ? 'until' THEN to_timestamp((e->>'until')::double precision / 1000.0) END,
+                    CASE WHEN e->>'by' ~ '^[0-9a-fA-F-]{36}$' THEN (e->>'by')::uuid END,
+                    to_timestamp((e->>'at')::double precision / 1000.0),
+                    to_timestamp((e->>'at')::double precision / 1000.0)
+             FROM public.user_auth a,
+                  jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(to_jsonb(a)->'blocked') = 'array' THEN to_jsonb(a)->'blocked' ELSE '[]'::jsonb END
+                  ) AS e
+             WHERE NOT EXISTS (SELECT 1 FROM public.kit_schema WHERE kind = 'sql' AND name = 'user-block-backfill')`,
+    },
+    {
+      id: 'demo-post-seed-500',
+      text: `INSERT INTO public.demo_post (title, created_at)
+               SELECT 'Запись ' || n, clock_timestamp() - (501 - n) * interval '1 minute'
+               FROM generate_series(1, 500) n
+               WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
+    },
+    {
+      id: 'demo-user-seed-100',
+      text: `INSERT INTO public.user_auth (seed, permissions, subnet_salt, created_at, updated_at, deleted_at)
+               SELECT 'demo-' || substr(md5('seed-' || n), 1, 19) || substr(md5('salt-' || n), 1, 19),
+                      '{}',
+                      substr(md5('sub-' || n), 1, 32),
+                      clock_timestamp() - (n * interval '1.3 days'),
+                      clock_timestamp() - (n * interval '1.3 days'),
+                      CASE WHEN n <= 20 THEN clock_timestamp() - (n * interval '1.3 days') + interval '20 days' END
+                 FROM generate_series(1, 100) n
+                WHERE NOT EXISTS (SELECT 1 FROM public.user_auth WHERE seed LIKE 'demo-%')`,
+    },
+    {
+      id: 'demo-profile-seed-100',
+      text: `INSERT INTO public.user_profile (auth_id, nickname, created_at, updated_at)
+               SELECT a.id, 'demo-user-' || lpad(a.rn::text, 3, '0'), a.created_at, a.created_at
+                 FROM (SELECT id, created_at, row_number() OVER (ORDER BY created_at) AS rn
+                         FROM public.user_auth WHERE seed LIKE 'demo-%') a
+                WHERE NOT EXISTS (SELECT 1 FROM public.user_profile p WHERE p.auth_id = a.id)`,
+    },
+  ],
+}
+
+export const schema = defineSchema(schemaSpec)
 
 /** Этап сверки схемы — словами для человека (`taskLabel`: «шаг N из M: …»). */
 export function schemaStepName(step: SyncStep): string | undefined {
@@ -83,6 +165,16 @@ const DB_START_LABEL = 'Запуск базы'
  */
 export const DEMO_PRINCIPAL = Object.freeze({ roles: ['author', 'editor'] })
 
+const LIMITS: Limits = {
+  pageSize: 20,
+  maxPageSize: 100,
+  maxPage: 10000,
+  filterDepth: 8,
+  filterNodes: 100,
+  inValues: 100,
+  inputKeys: 64,
+}
+
 /** Конфигурация секрета — ошибка запуска, и она обязана называть переменную. */
 function explainCursorConfig(build: () => ReturnType<typeof cursorCodecFromEnv>) {
   try {
@@ -117,7 +209,7 @@ const cursorCodec = (() => {
  * первый запрос (холодный контейнер, таймаут коннекта) не становится 500 до перезапуска.
  */
 const lazy = lazyDriver(openDriver)
-export const db: Database = createDb({ driver: lazy, limits: DB_LIMITS, cursorCodec })
+export const db: Database = createDb({ driver: lazy, limits: LIMITS, cursorCodec })
 
 /** Открытый драйвер мимо `gate` — только для переноса схемы (`schemaAdmin`). */
 let raw: Driver | undefined
@@ -170,9 +262,26 @@ async function openDriver(): Promise<Driver> {
       close = node.close
     }
     raw = close ? { ...driver, close } : driver
-    const { driver: gated } = await bootstrapDatabase(raw, {
+    let reportStatus: SchemaReport['status'] = 'ok'
+    const gated = await schema.gate(raw, {
       onStep: (step) => dbStart.report(schemaStepTask(DB_START_LABEL, step, 1)),
+      onReport: (r) => {
+        reportStatus = r.status
+        const summary = `[db] схема: применено ${r.applied.length}, конфликтов ${r.conflicts.length}, ждут решения ${r.notices.length}`
+        const conflicts = r.conflicts.map((c) => `${c.kind} ${c.table} ${c.column ?? ''}`.trim()).join('; ')
+        if (r.status === 'ok') console.log(conflicts ? `${summary} ${conflicts}` : summary)
+        else console.warn(summary, conflicts)
+      },
     })
+    if (reportStatus === 'ok') {
+      try {
+        const boot = createDb({ driver: gated, limits: LIMITS })
+        const created = await ensureSeedAdmin(boot)
+        if (created) announceSeedAdmin(created)
+      } catch (e) {
+        console.warn('[user] администратора завести не удалось:', String((e as Error)?.message ?? e).slice(0, 300))
+      }
+    }
     return gated
   } catch (e) {
     const err = e as { kind?: string; message?: string; details?: unknown; cause?: { message?: string } | unknown; constructor?: { name?: string } }

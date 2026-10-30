@@ -1,7 +1,7 @@
 /**
- * Первый администратор и предразвёртывание БД (`bootstrapDatabase`):
- * заводится один раз, получает `admin` в правах, не обманывается лимитом
- * страницы `pageSize: 20` поверх 100 демо-аккаунтов и поднимает все модели.
+ * Первый администратор на настоящей БД: заводится один раз при открытии БД
+ * в рантайме, получает `admin` в правах и не обманывается лимитом страницы
+ * `pageSize: 20` поверх 100 демо-аккаунтов.
  */
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
@@ -12,7 +12,6 @@ import { defineSchema } from '#lib/db/sync/index.js'
 import { SERVER } from '#content/user/auth.js'
 import { auth } from '#content/user/schema.js'
 import { ensureSeedAdmin } from './admin-bootstrap.server.js'
-import { bootstrapDatabase, DB_LIMITS } from './db-spec.server.js'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
 
@@ -49,28 +48,29 @@ test('схема появилась — администратор создан,
 })
 
 test('повторный запуск администратора не плодит даже при > pageSize (100 демо-аккаунтов)', async () => {
-  shared ??= new PGlite()
-  await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
-  const rawDriver = pgliteAdapter(shared)
+  await withDb(async (db) => {
+    const created = await ensureSeedAdmin(db)
+    assert.ok(created, 'первый вызов создаёт администратора')
 
-  const first = await bootstrapDatabase(rawDriver)
-  assert.ok(first.createdAdmin, 'на пустой БД администратор создан вместе со всеми моделями и сидами')
+    await db.query({
+      text: `INSERT INTO public.user_auth (seed, permissions, subnet_salt, created_at, updated_at)
+               SELECT 'demo-' || substr(md5('seed-' || n), 1, 19) || substr(md5('salt-' || n), 1, 19),
+                      '{}',
+                      substr(md5('sub-' || n), 1, 32),
+                      clock_timestamp() - (n * interval '1 day'),
+                      clock_timestamp() - (n * interval '1 day')
+                 FROM generate_series(1, 100) n`,
+    })
 
-  const db = createDb({ driver: first.driver, limits: DB_LIMITS })
-  const countRes = await db.query<{ total: number; admins: number }>({
-    text: `SELECT count(*)::int AS total,
-                  count(*) FILTER (WHERE 'admin' = ANY(permissions))::int AS admins
-             FROM public.user_auth`,
+    const second = await ensureSeedAdmin(db)
+    assert.equal(second, null, 'существующий админ среди 101 строки найден — дубль не создан')
+
+    const countRes = await db.query<{ total: number; admins: number }>({
+      text: `SELECT count(*)::int AS total,
+                    count(*) FILTER (WHERE 'admin' = ANY(permissions))::int AS admins
+               FROM public.user_auth`,
+    })
+    assert.equal(countRes.rows[0]!.total, 101, '100 демо-аккаунтов + 1 администратор')
+    assert.equal(countRes.rows[0]!.admins, 1)
   })
-  assert.equal(countRes.rows[0]!.total, 101, '100 демо-аккаунтов + 1 администратор')
-  assert.equal(countRes.rows[0]!.admins, 1)
-
-  // Повторный вызов (имитация холодного старта рантайма после предразвёртывания на этапе сборки)
-  const second = await bootstrapDatabase(rawDriver)
-  assert.equal(second.createdAdmin, null, 'существующий админ среди 101 строки найден — дубль не создан')
-
-  const afterRes = await db.query<{ admins: number }>({
-    text: `SELECT count(*) FILTER (WHERE 'admin' = ANY(permissions))::int AS admins FROM public.user_auth`,
-  })
-  assert.equal(afterRes.rows[0]!.admins, 1)
 })
