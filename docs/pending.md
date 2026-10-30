@@ -12,7 +12,7 @@
 ## 1. В планах (памятки без этапов)
 
 - **Сессии и нативные права `user_auth` / `user_session` — P3** ([`docs/plan-sessions.md`](./plan-sessions.md)):
-  пользовательский интерфейс активных сессий/устройств с отзывом (модалка + маршрут для себя и чужого аккаунта) и перевод человеческих операций `user.auth.v1` / `user.session.v1` с контекста `SYSTEM` на нативные политики `defineAcl` (`grants`, `checkGrants`, `useGrants`).
+  технический план переноса работы с сессиями из системного контекста `SYSTEM` и обёрток `listSessions`/`revokeSession` на самого пользователя (`principalOfRow`) напрямую через модель `user.session.v1` (`defineAcl`, закрытие `jti`/`version` за `['server']`, `grants`/`checkGrants`/`useGrants`, `formParams`) и построения экранов устройств, фильтров, переименования и отзыва поверх готовых `Paginator`, `UserPicker`, `HoldButton` и пар «модалка + маршрут».
 - **Хранилище и раздел «Облако» — P3** ([`docs/plan-storage.md`](./plan-storage.md)):
   технический план: строгая граница `#lib/storage` против хуков, дедупликация по включаемому хешу отдельных файлов, два серверных режима клонирования (`clone` + `replicate`) и параллельная раздача реплик, счётчик пропавших файлов с авто-отключением «мёртвых» серверов + софт-удаление серверов + `storage.reconcile`, а поверх обезличенного `storage_file` — самореферентная модель «Облака» (`name`, `auth_id`, `cloud_id`, `file_id`, `visibility`, `access_uids`, `password`) с иерархией `ACL модели + visibility → access_uids → password`.
 - **Крон-подсистема: ядро приложения и автономный внешний оркестратор — P3** ([`docs/plan-cron-app.md`](./plan-cron-app.md), [`docs/plan-cron-worker.md`](./plan-cron-worker.md)):
