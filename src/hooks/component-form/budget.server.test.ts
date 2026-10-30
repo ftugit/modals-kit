@@ -309,4 +309,170 @@ describe('сквозной бюджет тела и лимиты приёма в
     expect(passRes.status).toBe(200)
     expect(forwardedBody).toBe('secret=my-db-secret')
   })
+
+  it('защита RAM: отменяет поток на 0..1 чанке для анонима (preAuthorize), выключенных демо-форм и протаскивания файла в текстовую форму', async () => {
+    mockEnvBudget = 2 * 1024 * 1024 // даже при 2 МБ FORM_BODY_LIMIT файлы в RAM не буферизуются
+    const avatarForm = defineForm({
+      id: 'user-profile-probe',
+      revision: 1,
+      budget: 36 * 1024,
+      messages: {
+        'auth.token': 'Сначала войдите в аккаунт',
+      },
+      actions: [{ id: 'profile', label: 'Сохранить', validate: 'full' }],
+      fields: {
+        nickname: field.text({ label: 'Никнейм' }),
+        photo: field.file({ label: 'Аватар', validate: [v.maxSize(20 * 1024)] }),
+      },
+    })
+
+    registerComponentForm({
+      description: avatarForm,
+      limits: { budget: 36 * 1024 },
+      preAuthorize(ev) {
+        if (ev.request.headers.get('cookie')?.includes('auth=ok')) return null
+        return [{ id: '', code: 'auth.token', origin: 'external' }]
+      },
+      async execute({ commit }) {
+        commit()
+        return {}
+      },
+    })
+
+    const handle = createComponentFormsHandle()
+    const boundary = '----RamGuardBoundary'
+
+    // 1. JS POST (x-form-id) от анонима: поток отменяется ДО чтения первого чанка (0 байт в RAM)
+    let anonJsPulled = 0
+    let anonJsCancelled = false
+    const anonJsStream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          anonJsPulled++
+          controller.enqueue(new Uint8Array(64 * 1024).fill(90))
+        },
+        cancel() {
+          anonJsCancelled = true
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const anonJsRes = await handle({
+      event: makeEvent(
+        new Request('http://localhost:5173/user/auth', {
+          method: 'POST',
+          headers: {
+            origin: 'http://localhost:5173',
+            accept: 'application/json',
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+            [FORM_ID_HEADER]: avatarForm.id,
+          },
+          body: anonJsStream,
+          // @ts-expect-error duplex required by Node Request with stream body
+          duplex: 'half',
+        }),
+      ),
+      resolve: async () => new Response('unexpected'),
+    })
+    expect(anonJsCancelled).toBe(true)
+    expect(anonJsPulled).toBe(0)
+    expect(anonJsRes.status).toBe(422)
+    const anonJsJson = (await anonJsRes.json()) as { data: { result: Result } }
+    expect(anonJsJson.data.result.errors[0]?.code).toBe('auth.token')
+    expect(anonJsJson.data.result.errors[0]?.message).toBe('Сначала войдите в аккаунт')
+
+    // 2. Выключенная демо-форма (`upload_bundle` не в реестре) без x-form-id с 2 МБ файлом:
+    //    отмена на 1-м чанке (не ждёт 2 МБ FORM_BODY_LIMIT)
+    let unregisteredPulled = 0
+    let unregisteredCancelled = false
+    const unregisteredHead = new TextEncoder().encode(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="__form_id"\r\n\r\nupload_bundle\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="bundle"; filename="ram-bomb.bin"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`,
+    )
+    const unregisteredStream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          unregisteredPulled++
+          if (unregisteredPulled === 1) {
+            controller.enqueue(unregisteredHead)
+            return
+          }
+          controller.enqueue(new Uint8Array(64 * 1024).fill(77))
+        },
+        cancel() {
+          unregisteredCancelled = true
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const unregisteredRes = await handle({
+      event: makeEvent(
+        new Request('http://localhost:5173/', {
+          method: 'POST',
+          headers: {
+            origin: 'http://localhost:5173',
+            accept: 'application/json',
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: unregisteredStream,
+          // @ts-expect-error duplex required by Node Request with stream body
+          duplex: 'half',
+        }),
+      ),
+      resolve: async () => new Response('unexpected-resolve'),
+    })
+    expect(unregisteredCancelled).toBe(true)
+    expect(unregisteredPulled).toBe(1)
+    expect(unregisteredRes.status).toBe(413)
+
+    // 3. Попытка засунуть файл (`filename="smuggle.bin"`) в зарегистрированную текстовую форму (`budget_probe`)
+    let smugglePulled = 0
+    let smuggleCancelled = false
+    const smuggleHead = new TextEncoder().encode(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="__form_id"\r\n\r\n${probeForm.id}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="note"; filename="smuggle.bin"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`,
+    )
+    const smuggleStream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          smugglePulled++
+          if (smugglePulled === 1) {
+            controller.enqueue(smuggleHead)
+            return
+          }
+          controller.enqueue(new Uint8Array(64 * 1024).fill(88))
+        },
+        cancel() {
+          smuggleCancelled = true
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const smuggleRes = await handle({
+      event: makeEvent(
+        new Request('http://localhost:5173/budget-probe', {
+          method: 'POST',
+          headers: {
+            origin: 'http://localhost:5173',
+            accept: 'application/json',
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+            [FORM_ID_HEADER]: probeForm.id,
+          },
+          body: smuggleStream,
+          // @ts-expect-error duplex required by Node Request with stream body
+          duplex: 'half',
+        }),
+      ),
+      resolve: async () => new Response('unexpected'),
+    })
+    expect(smuggleCancelled).toBe(true)
+    expect(smugglePulled).toBe(1)
+    expect(smuggleRes.status).toBe(413)
+  })
 })

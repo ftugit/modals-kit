@@ -500,6 +500,19 @@ export const demoRoutesGuardHandle: Handle = async ({ event, resolve }) => {
 
 ---
 
+#### З. Невозможность включения из клиентского JS и нулевая буферизация файлов в RAM (**реализовано в транспортном контуре**)
+
+1. **Иммунитет к подмене на клиенте**:
+   - `DEMO_MODE` читается только на сервере (`$app/env/private`). Мутация `data.demoMode = true` в браузерном DevTools или ручной вызов `fetch` / `WebSocket` не включает ни один серверный обработчик: при `DEMO_MODE = false` демо-формы (`upload_bundle`, `fields-record`, `signup`) отсутствуют в серверном `componentFormRegistry()`, а `src/server/storage.server.ts` с `memoryDriver` (`memory`, `shard_a`, `shard_b`) вообще не загружается в процесс.
+   - По `wss://` (`/api/form-upload`) клиент не может самовольно прислать бинарные сегменты: сервер принимает только текстовый Кадр `0` (`init`), проверяет регистрацию формы, `formToken` и `preAuthorize`/`authorize`, и при отказе закрывает сокет при `0` прочитанных файловых байтах.
+2. **Жёсткая отсечка буферизации HTTP `POST` в RAM (`src/hooks/component-form/server.server.ts`, `authorize.server.ts`, `profile.form.server.ts`)**:
+   - **Динамический потолок по реестру и по форме**: `readBoundedOnce` больше не буферизует до глобальных `2 МБ` (`FORM_BODY_LIMIT`) вслепую — потолок сужается до `resolveRegistryHttpCap` / `resolveFormHttpBudget` (`<= 64 КиБ` для текстовых форм без `budget`, `<= 32 КиБ` для сквозных экшенов маршрутов и `36 КиБ` для `user-profile` в `PROFILE_HTTP_BUDGET`).
+   - **Потоковая отсечка на первых `32 КиБ` и запрет файловой контрабанды**: во время чтения префикса `readBoundedOnce` на лету опознаёт `__form_id` и проверяет `Content-Disposition ... filename="..."`. Любая попытка прислать непустой файл без зарегистрированной файловой формы, в выключенную демо-форму или в чисто текстовую форму мгновенно прерывает поток (`reader.cancel()`) на первом же чанке без сборки `FormData`/`File` в ОЗУ.
+   - **Нулевой гейт `preAuthorize(event)` до чтения тела**: при `x-form-id` (и сразу после распознавания префикса без `x-form-id`) выполняется `runPreAuthorize` по кукам/заголовкам запроса. Анонимный запрос в `user-profile` отменяется на `0` прочитанных байтах тела (`reader.cancel()`), а проверка прав на чужой `subject` вынесена в `authorize(event, raw)` до `imageCheck`/`avatar-spec` и до обращения к хранилищу.
+   - **Сквозной стрим в боевое хранилище**: боевой `appStorage` (`src/server/app-storage.server.ts`) не имеет `memoryDriver` и пишет входящие потоки напрямую в S3/WebDAV.
+
+---
+
 ### 4.5. Пошаговый порядок внедрения `S8` (без поломки текущих тестов)
 
 1. Ввести `DEMO_MODE` в `src/env.ts` + `.env.example`, создать `src/server/demo-mode.server.ts` и `src/server/demo-routes.ts`, пробросить `demoMode` из `src/routes/(site)/+layout.server.ts`.

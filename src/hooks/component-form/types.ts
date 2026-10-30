@@ -82,8 +82,15 @@ export interface ComponentFormRegistration {
   /** Ограничитель частоты: ключ по адресу клиента требует `event`. */
   readonly throttle?: NonNullable<Parameters<typeof createFormHandler>[0]['throttle']>
   /**
+   * Нулевой гейт доступа по заголовкам/кукам запроса (`event`): выполняется ДО чтения
+   * тела HTTP POST (`0` прочитанных байт в RAM) и на Кадре 0 `wss://`.
+   */
+  readonly preAuthorize?: (
+    event: RequestEvent,
+  ) => ComponentFormAuthVerdict | Promise<ComponentFormAuthVerdict>
+  /**
    * Ранний гейт доступа (ACL): выполняется на Кадре 0 ДО асинхронных `checks` (`imageCheck`)
-   * и ДО `execute` (при `0` прочитанных файловых байтов).
+   * и ДО `execute` (при `0` прочитанных файловых байтов по `wss://` или после текстового конверта).
    */
   readonly authorize?: (
     event: RequestEvent,
