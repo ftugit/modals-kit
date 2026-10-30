@@ -103,14 +103,27 @@ try {
   // «нет элемента» и «элемент без текста» — один и тот же ответ.
   const after = await cur_pollText(page, '[data-testid="notice"]')
 
-  /** Текст элемента после навигации: `null`, если он исчез. */
+  /**
+   * Текст элемента после навигации: `null`, если он исчез.
+   *
+   * `textContent()` у ОТСУТСТВУЮЩЕГО узла не возвращает `null` сразу — он ждёт
+   * появления узла весь свой таймаут (по умолчанию 30 с) и только потом бросает.
+   * В цикле «ждём, пока уведомление исчезнет» это означало: первый же проход
+   * выжигал 30 с и `catch` молча превращал это в `null` — проверка проходила,
+   * но прогон платил полминуты за то, чего нет. Поэтому сначала `count()`
+   * (мгновенный), и только у существующего узла читаем текст, с коротким таймаутом.
+   */
   async function cur_pollText(page_, selector) {
     for (let i = 0; i < 25; i++) {
-      const text = await page_.locator(selector).textContent().catch(() => null)
+      const node = page_.locator(selector)
+      if ((await node.count()) === 0) return null
+      const text = await node.first().textContent({ timeout: 500 }).catch(() => null)
       if (!text) return null
       await page_.waitForTimeout(200)
     }
-    return (await page_.locator(selector).textContent().catch(() => null)) ?? null
+    const tail = page_.locator(selector)
+    if ((await tail.count()) === 0) return null
+    return (await tail.first().textContent({ timeout: 500 }).catch(() => null)) ?? null
   }
   ok('после клиентской навигации уведомление снято (form обнулён)', after === null, String(after))
   ok('без ошибок страницы', problems.length === 0, problems.join(' | '))
@@ -282,9 +295,14 @@ try {
       }
       await cur.locator('[data-paginator-host]').evaluate((h) => h.scrollTo({ top: h.scrollHeight, behavior: 'instant' }))
       await cur.waitForTimeout(1500)
+      // Текст читаем ТОЛЬКО у существующего узла: `innerText()` у отсутствующего
+      // ждёт его появления весь таймаут (30 с) и бросает — `catch` возвращал 'нет',
+      // но каждый прогон платил за это полминуты (см. `cur_pollText`).
+      const liveState = cur.locator('[data-testid="live-state"]')
+      const liveStateCount = await liveState.count()
       ok('опрос: у края включён, на второй порции выключен',
-        (await cur.locator('[data-testid="live-state"]').count()) === 0,
-        await cur.locator('[data-testid="live-state"]').innerText().catch(() => 'нет'))
+        liveStateCount === 0,
+        liveStateCount === 0 ? 'нет' : await liveState.first().innerText({ timeout: 1000 }).catch(() => 'нет'))
     }
     ok('курсор: без ошибок страницы', curSliceProblems.length === 0, curSliceProblems.join(' | '))
     await cur.close()
@@ -433,6 +451,14 @@ try {
     // Возврат на 1-ю страницу сохраняет активный срез и показывает плашку вместо «страница 1».
     await reader.locator('[data-testid="page-nav"] a', { hasText: '1' }).first().click()
     await reader.waitForFunction(() => !new URL(location.href).searchParams.has('page'), null, { timeout: 15_000 })
+    // Адрес меняется раньше, чем приезжает набор строк: у источника демо есть
+    // транспортная задержка, и сразу после смены `page` список ещё пуст.
+    // Ждём именно отрисовку ожидаемого числа строк, иначе проверка ловит гонку
+    // (`back1Ids: []`) и падает через раз — независимо от скорости прогона.
+    await reader
+      .waitForFunction((n) => document.querySelectorAll('[data-testid="rows"] [data-testid="row-id"]').length === n,
+        firstIds.length, { timeout: 15_000 })
+      .catch(() => {})
     const back1Ids = await reader.locator('[data-testid="rows"] [data-testid="row-id"]').allInnerTexts()
     const back1Asof = new URL(reader.url()).searchParams.get('page.asof')
     ok(
