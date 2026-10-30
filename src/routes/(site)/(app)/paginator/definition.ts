@@ -36,6 +36,7 @@ import {
 } from '#content/demo-catalog/rickmorty/filters.js'
 import { searchQueryValidator } from '#lib/paginate/search/index.js'
 import {
+  createLocalAdapter,
   createLocalStorageStorage,
   createUrlAdapter,
   definePaginator,
@@ -49,7 +50,14 @@ import {
   type PrependBehavior,
 } from '#lib/paginate/index.js'
 import type { CatalogItem } from '#content/demo-catalog/items/item-views.js'
-import { cursorExtraField, cursorPointerField } from '#content/demo-catalog/posts/source.js'
+import {
+  asofExtraField,
+  cursorBeginField,
+  cursorExtraField,
+  cursorPointerField,
+  DB_SLICE_POSITION_KEYS,
+  withDbSliceKeys,
+} from '#content/demo-catalog/posts/source.js'
 import { gallerySource, makeSource } from './sources'
 
 export type DemoStore = 'url' | 'local' | 'none'
@@ -136,6 +144,8 @@ export type DemoExtra = {
   cur: boolean
   /** Указатель следующего шага: значение выдаёт сервер, клиент его не строит. */
   after: string
+  /** Срез выдачи источника БД (`<ISO>|<id>`): фиксируется при уходе с 1-й страницы. */
+  asof: string
   /** Известное число страниц: источник отдаёт totals → номерные кнопки; иначе только стрелки (R12). */
   total: boolean
   /** Скелетоны при загрузке (UI). */
@@ -242,6 +252,7 @@ export const DEFAULT_DEMO_EXTRA: DemoExtra = {
   mode: 'accumulate',
   cur: false,
   after: '',
+  asof: '',
   total: true,
   skel: true,
   topTrigger: 'direction',
@@ -269,7 +280,7 @@ export const DEFAULT_DEMO_CONFIG: DemoConfig = {
  * источнику 400, а осевший в адресе он превращает «ссылку на середину» в ссылку
  * на несуществующую середину.
  */
-export const DEMO_POSITION_KEYS = ['after'] as const
+export const DEMO_POSITION_KEYS = DB_SLICE_POSITION_KEYS
 
 /**
  * Ключи extra, влияющие на ДАННЫЕ источника (смена → сброс + стр. 1).
@@ -308,6 +319,8 @@ export const DEMO_EXTRA_SEARCH: ExtraSearchSpec = {
   // (нативный GET-чекбокс приезжает как `on`, токен проверяется по форме).
   cur: cursorExtraField,
   after: cursorPointerField,
+  asof: asofExtraField,
+  beg: cursorBeginField,
   total: bool,
   skel: bool,
   topTrigger: extraField('text', oneOf('off', 'direction', 'edge', 'chat', 'manual')),
@@ -371,31 +384,42 @@ const selectSrc = (extra: Extra | undefined): DemoSrc => demoExtraOf(extra ?? {}
 export function ensureDemoPaginator(store: DemoStore): string {
   const name = demoName(store)
   if (hasPaginator(name)) return name
+  const isDbSrc = (extra: Extra | undefined): boolean => selectSrc(extra) === 'db'
   if (store === 'url') {
     definePaginator<CatalogItem>({
       name,
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
       positionKeys: DEMO_POSITION_KEYS,
-      adapter: createUrlAdapter<CatalogItem>({
-        name,
-        source: makeSource(name, selectSrc),
-        pageSize: DEFAULT_DEMO_CONFIG.pageSize,
-        pageSizes: DEMO_PAGE_SIZES,
-        pageParam: 'page',
-        extraSearch: DEMO_EXTRA_SEARCH,
-        extraDefaults: DEFAULT_DEMO_EXTRA,
-      }),
+      adapter: withDbSliceKeys(
+        createUrlAdapter<CatalogItem>({
+          name,
+          source: makeSource(name, selectSrc),
+          pageSize: DEFAULT_DEMO_CONFIG.pageSize,
+          pageSizes: DEMO_PAGE_SIZES,
+          pageParam: 'page',
+          extraSearch: DEMO_EXTRA_SEARCH,
+          extraDefaults: DEFAULT_DEMO_EXTRA,
+        }),
+        { enabled: isDbSrc },
+      ),
     })
   } else {
     definePaginator<CatalogItem>({
       name,
-      source: makeSource(name, selectSrc),
       pageSize: DEFAULT_DEMO_CONFIG.pageSize,
       reloadKeys: DEMO_RELOAD_KEYS,
       positionKeys: DEMO_POSITION_KEYS,
-      extraDefaults: DEFAULT_DEMO_EXTRA,
-      storage: store === 'local' ? createLocalStorageStorage() : undefined,
+      adapter: withDbSliceKeys(
+        createLocalAdapter<CatalogItem>({
+          name,
+          source: makeSource(name, selectSrc),
+          pageSize: DEFAULT_DEMO_CONFIG.pageSize,
+          extraDefaults: DEFAULT_DEMO_EXTRA,
+          storage: store === 'local' ? createLocalStorageStorage() : undefined,
+        }),
+        { enabled: isDbSrc },
+      ),
     })
   }
   return name

@@ -121,9 +121,10 @@
   const visibleIds = $derived(new Set((Object.values(listState().pages ?? {}).flat() as DbPost[]).map((r) => r.id)))
   /** Вставка в голову уместна: накопление и порядок по `created_at ↓`. */
   const canPrepend = $derived(cursor && ownRowPlacement({ ord: extra.ord }) === 'head')
-  /** Срез из адреса (`<ISO>|<id>`): край выдачи, закреплённый сервером. */
+  /** Срез выдачи (`<ISO>|<id>`): закреплённый `asof` или край чистой первой страницы `asofHead`. */
   const asof = $derived.by(() => {
-    const raw = extra.asof
+    const stateExtra = listState().extra
+    const raw = extra.asof || (typeof stateExtra.asofHead === 'string' ? stateExtra.asofHead : '')
     if (!raw) return null
     const cut = raw.lastIndexOf('|')
     if (cut <= 0) return null
@@ -271,12 +272,18 @@
       })
     }
   })
-  // Выдача сменилась (фильтр, порядок, режим) — отметка относится к прошлой.
+  // Выдача сменилась (фильтр, порядок, режим) или сброшен активный срез — отметка заново.
   let viewKey = ''
+  let prevLockedAsof = ''
   $effect(() => {
     const key = `${extra.flt ?? ''}|${extra.ord}|${cursor}`
-    if (viewKey && key !== viewKey && untrack(() => extra.live)) untrack(rebaseline)
+    const locked = extra.asof
+    const sliceCleared = Boolean(prevLockedAsof && !locked)
+    if (((viewKey && key !== viewKey) || sliceCleared) && untrack(() => extra.live)) {
+      untrack(rebaseline)
+    }
     viewKey = key
+    prevLockedAsof = locked
   })
   onDestroy(() => {
     live.stop()

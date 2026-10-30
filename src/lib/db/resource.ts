@@ -412,8 +412,16 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     // предиката (и связей) идут подряд с начала, и проба «есть ли новее» может
     // переиспользовать их, не пересобирая условие заново.
     let bookmarkValues: readonly unknown[] | null = null;
+    let bookmarkIssuedAt: string | null = null;
     if (cursor && bookmark != null) {
-      const values = await db.cursorCodec!.decode(bookmark, scope);
+      let values: readonly unknown[];
+      if (db.cursorCodec!.decodeMeta) {
+        const meta = await db.cursorCodec!.decodeMeta(bookmark, scope);
+        values = meta.values;
+        bookmarkIssuedAt = meta.issuedAt;
+      } else {
+        values = await db.cursorCodec!.decode(bookmark, scope);
+      }
       if (values.length !== order.length) fail('cursor');
       for (let i = 0; i < values.length; i++)
         try {
@@ -497,7 +505,20 @@ export function resourceApi<F extends Fields, R extends Relations = {}>(
     // порцию. Читали назад или с головы — начала в этом смысле нет, `null`.
     const beginCursor =
       cursor && !back && bookmarkValues ? await db.cursorCodec!.encode(scope, bookmarkValues) : null;
-    return { items, nextCursor, prevCursor, beginCursor, atEdge };
+    let cursorAt: string | null = null;
+    if (cursor && bookmarkValues) {
+      const createdKey = timestampField(r, 'createdAt');
+      const createdIdx = createdKey ? order.findIndex(([k]) => k === createdKey) : -1;
+      const rawCreated = createdIdx >= 0 ? bookmarkValues[createdIdx] : undefined;
+      if (rawCreated instanceof Date && !Number.isNaN(rawCreated.getTime())) {
+        cursorAt = rawCreated.toISOString();
+      } else if (typeof rawCreated === 'string' && !Number.isNaN(Date.parse(rawCreated))) {
+        cursorAt = rawCreated;
+      } else {
+        cursorAt = bookmarkIssuedAt;
+      }
+    }
+    return { items, nextCursor, prevCursor, beginCursor, cursorAt, atEdge };
   }
   /**
    * Ключи доступа при записи. Вставка — все ключи обязательны и проходят все; изменение —

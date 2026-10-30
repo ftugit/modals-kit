@@ -252,7 +252,7 @@ export const load: PageServerLoad = async (event) => {
 Кейс разобран и проверен на реальном PostgreSQL 17 — `src/lib/db/probes/shikimori-view.probe.mjs`,
 выводы — `docs/ACL-DESIGN.md` §13.
 
-Курсорная страница: `api.cursor(ctx, input)` → `{ items, nextCursor, prevCursor, beginCursor, atEdge }`.
+Курсорная страница: `api.cursor(ctx, input)` → `{ items, nextCursor, prevCursor, beginCursor, cursorAt, atEdge }`.
 Закладки подписанные (`DB_CURSOR_SECRET`), версия+`kid`+TTL+scope из `principal` и
 `resource.key`, поэтому курсор не переносим между пользователями и не переживает смену
 политики. Без секрета `cursorCodecFromEnv` возвращает `undefined`, а `api.cursor` —
@@ -266,6 +266,9 @@ export const load: PageServerLoad = async (event) => {
   видимой порции обязан оставаться годным. Поэтому просроченный, но подлинный `after`
   принимается в пределах `DB_CURSOR_MAX_AGE_SECONDS`, а ответ возвращает свежий ключ —
   продление скользящее, но с потолком от момента выпуска.
+- `cursorAt` — ISO-время закладки запроса (`after`/`before`): значение `timestamps.createdAt`
+  из самой закладки (если оно входит в `order`) либо время выпуска токена `iat` (`null`, когда
+  порцию выдали с головы без закладки).
 - `atEdge` — «новее этой порции ничего нет»: лента дошла до края свежих данных. Проверяется
   тем же условием в обратном направлении и `LIMIT 1` (на первой странице без закладки — `true`).
 

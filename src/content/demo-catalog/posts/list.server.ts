@@ -105,8 +105,11 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
     // Ключ начала порции: переподписанный сервером (`beginCursor`), а если
     // порция с головы — пусто. Пустой в ответ НЕ идёт (см. ниже).
     const beg = page.beginCursor ?? ''
+    const rows = page.items as DbPost[]
+    const headAt = after === null ? (isoOf(rows[0]?.created_at) ?? '') : ''
+    const begAt = after !== null ? (page.cursorAt ?? isoOf(rows[0]?.created_at) ?? '') : ''
     return {
-      items: page.items as DbPost[],
+      items: rows,
       hasNext: page.nextCursor !== null,
       // Указатель следующего шага едет в extra состояния (см. `mergeResponseExtra`
       // в ядре пагинатора): только так он попадает и в адрес, и в ссылку, которую
@@ -123,6 +126,8 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
       extra: {
         after: page.nextCursor ?? '',
         ...(beg ? { beg } : {}),
+        ...(begAt ? { begAt } : {}),
+        ...(headAt ? { headAt } : {}),
       },
     }
   }
@@ -130,33 +135,43 @@ async function queryPage(query: DbPostsQuery, ctx: DataContext): Promise<PageRes
   // «подходит под фильтр» — два разных числа под одним заголовком, а
   // пагинатор по такому total построит несуществующие страницы.
   // Срез «на момент»: номер страницы — смещение, и любая новая строка сдвигает
-  // всю выдачу. Ключ приходит из адреса; на первой загрузке его нет — тогда
-  // срезом становится самая свежая строка выдачи, и сервер отдаёт его в `extra`
-  // (так он попадает и в адрес, и в ссылки страниц). Фильтр берётся целиком:
-  // выдача сужается тем же условием, что и счётчик.
-  let asof = query.asof ?? null
-  if (!keyset && !asof) {
+  // всю выдачу. На чистой первой странице (в адресе `asof` нет, `page === 1`)
+  // край отдаётся как кандидат `asofHead`: в адрес он не пишется (обновление
+  // первой страницы видит свежую БД), но ссылки на страницы 2..N и переход со
+  // страницы 1 закрепляют его в `asof`. При возврате на страницу 1 `asof` уже
+  // передан в запросе и остаётся активным до сброса.
+  const lockedAsof = typeof query.asof === 'string' && query.asof !== '' ? query.asof : null
+  let effectiveAsof = lockedAsof
+  if (!keyset && !effectiveAsof) {
     const newest = (await api.select(ctx, {
       filter: input.filter,
       order: [['created_at', 'desc'], ['id', 'desc']],
       limit: 1,
       fields: ['id', 'created_at'],
     })) as DbPost[]
-    asof = asofOf(newest[0])
+    effectiveAsof = asofOf(newest[0])
   }
-  const sliced = asof ? { ...input, asof } : input
-  const filterOnly = { filter: input.filter, ...(asof ? { asof } : {}) }
+  const sliced = effectiveAsof ? { ...input, asof: effectiveAsof } : input
+  const filterOnly = { filter: input.filter, ...(effectiveAsof ? { asof: effectiveAsof } : {}) }
   const [items, totalItems] = await Promise.all([api.select(ctx, sliced), api.count(ctx, filterOnly)])
   const size = input.limit ?? DB_LIST_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(totalItems / size))
+  const isFreshFirstPage = lockedAsof === null && (input.page ?? 1) === 1
   return {
     items: items as DbPost[],
     totalItems,
     totalPages,
     hasNext: (input.page ?? 1) < totalPages,
-    // Срез едет ответом, а не рождается на клиенте: без JS его нечем подписать,
-    // и ссылки страниц из SSR обязаны нести тот же ключ.
-    ...(asof ? { extra: { asof } } : {}),
+    // На чистой первой странице отдаём `asofHead` (кандидат для переходов 2..N
+    // без записи `page.asof` в адрес). На страницах > 1 или при уже активном
+    // срезе возвращаем закреплённый `asof`.
+    ...(effectiveAsof
+      ? {
+          extra: isFreshFirstPage
+            ? { asofHead: effectiveAsof }
+            : { asof: effectiveAsof, asofHead: '' },
+        }
+      : {}),
   }
 }
 

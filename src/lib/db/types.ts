@@ -425,6 +425,12 @@ export interface CursorPage<T> {
    * ключ — продление скользящее, потолок — `DB_CURSOR_MAX_AGE_SECONDS`.
    */
   beginCursor: string | null;
+  /**
+   * Временная метка (ISO) закладки запроса (`after`/`before`): значение `timestamps.createdAt`
+   * из самой закладки (если поле входит в порядок сортировки) либо время выпуска токена (`iat`).
+   * `null` — порция выдана с головы без закладки.
+   */
+  cursorAt: string | null;
   /** Новее этой порции ничего нет: «окно касается края свежих данных». */
   atEdge: boolean;
 }
@@ -557,6 +563,10 @@ export interface ModelBehavior {
 export interface CursorCodec {
   encode(scope: unknown, values: readonly unknown[]): Promise<string>;
   decode(token: string, scope: unknown): Promise<readonly unknown[]>;
+  decodeMeta?(
+    token: string,
+    scope: unknown,
+  ): Promise<{ readonly values: readonly unknown[]; readonly issuedAt: string }>;
 }
 export interface Database {
   readonly driver: Driver;

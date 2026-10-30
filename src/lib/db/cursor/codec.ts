@@ -81,6 +81,60 @@ export function createCursorCodec(config: {
         await crypto.subtle.digest("SHA-256", encoder.encode(canonical(scope))),
       ),
     );
+  async function verify(
+    token: string,
+    scope: unknown,
+  ): Promise<{ readonly values: readonly unknown[]; readonly issuedAt: string }> {
+    try {
+      if (typeof token !== "string" || token.length > 8192) fail("cursor");
+      const parts = token.split(".");
+      if (parts.length !== 3 || parts[0].length > 128) fail("cursor");
+      const kid = new TextDecoder("utf-8", { fatal: true }).decode(
+        decode(parts[0]),
+      );
+      if (
+        !kid ||
+        !Object.prototype.hasOwnProperty.call(config.keys, kid)
+      )
+        fail("cursor");
+      const body = decode(parts[1]),
+        mac = decode(parts[2]);
+      const signingInput = encoder.encode(parts[0] + "." + parts[1]);
+      if (
+        !(await crypto.subtle.verify(
+          "HMAC",
+          await key(config.keys[kid]),
+          mac,
+          signingInput,
+        ))
+      )
+        fail("cursor");
+      const p = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+      if (
+        p.v !== 1 ||
+        p.kid !== kid ||
+        !Number.isSafeInteger(p.exp) ||
+        !Array.isArray(p.values) ||
+        (p.iat !== undefined && (!Number.isSafeInteger(p.iat) || p.iat < 0))
+      )
+        fail("cursor");
+      // Момент выпуска: у токенов без `iat` его даёт срок жизни — `exp - ttl`.
+      // Небольшая неточность (ttl поменяли между выпуском и чтением) безопасна:
+      // она сдвигает потолок, но подпись и `scope` проверяются как обычно.
+      const iat = p.iat === undefined ? p.exp - config.ttlSeconds : (p.iat as number);
+      const nowSec = nowSeconds();
+      // Просрочен — но пока не старше максимального возраста: принимаем
+      // (§7 «б»). Свежий ответ переподпишет закладку.
+      if (p.exp <= nowSec && iat + maxAgeSeconds <= nowSec) fail("cursor");
+      if (p.scope !== (await digest(scope))) fail("cursor");
+      return {
+        values: p.values,
+        issuedAt: new Date(iat * 1000).toISOString(),
+      };
+    } catch {
+      return fail("cursor");
+    }
+  }
   return {
     async encode(scope, values) {
       const iat = nowSeconds();
@@ -111,52 +165,10 @@ export function createCursorCodec(config: {
       return token;
     },
     async decode(token, scope) {
-      try {
-        if (typeof token !== "string" || token.length > 8192) fail("cursor");
-        const parts = token.split(".");
-        if (parts.length !== 3 || parts[0].length > 128) fail("cursor");
-        const kid = new TextDecoder("utf-8", { fatal: true }).decode(
-          decode(parts[0]),
-        );
-        if (
-          !kid ||
-          !Object.prototype.hasOwnProperty.call(config.keys, kid)
-        )
-          fail("cursor");
-        const body = decode(parts[1]),
-          mac = decode(parts[2]);
-        const signingInput = encoder.encode(parts[0] + "." + parts[1]);
-        if (
-          !(await crypto.subtle.verify(
-            "HMAC",
-            await key(config.keys[kid]),
-            mac,
-            signingInput,
-          ))
-        )
-          fail("cursor");
-        const p = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
-        if (
-          p.v !== 1 ||
-          p.kid !== kid ||
-          !Number.isSafeInteger(p.exp) ||
-          !Array.isArray(p.values) ||
-          (p.iat !== undefined && (!Number.isSafeInteger(p.iat) || p.iat < 0))
-        )
-          fail("cursor");
-        // Момент выпуска: у токенов без `iat` его даёт срок жизни — `exp - ttl`.
-        // Небольшая неточность (ttl поменяли между выпуском и чтением) безопасна:
-        // она сдвигает потолок, но подпись и `scope` проверяются как обычно.
-        const iat = p.iat === undefined ? p.exp - config.ttlSeconds : (p.iat as number);
-        const nowSec = nowSeconds();
-        // Просрочен — но пока не старше максимального возраста: принимаем
-        // (§7 «б»). Свежий ответ переподпишет закладку.
-        if (p.exp <= nowSec && iat + maxAgeSeconds <= nowSec) fail("cursor");
-        if (p.scope !== (await digest(scope))) fail("cursor");
-        return p.values;
-      } catch {
-        return fail("cursor");
-      }
+      return (await verify(token, scope)).values;
+    },
+    async decodeMeta(token, scope) {
+      return verify(token, scope);
     },
   };
 }

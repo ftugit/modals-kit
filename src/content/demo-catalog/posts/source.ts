@@ -204,6 +204,29 @@ export const DB_LIST_LIVE_KEY = 'live'
 /** Валидатор указателя следующего шага — тем же словарём пользуется и демо пагинатора. */
 export const cursorPointerField: ExtraSearchValidator = extraField('text', isCursorToken)
 
+/** Валидатор среза `<ISO>|<id>` — общий для `/db-demo` и демо пагинатора (`src=db`). */
+export const asofExtraField: ExtraSearchValidator = extraField(
+  'text',
+  (v) => typeof v === 'string' && v.length > 0 && v.length <= 128 && v.includes('|'),
+)
+
+/** Валидатор ключа начала видимой курсорной порции (`beg`). */
+export const cursorBeginField: ExtraSearchValidator = extraField(
+  'text',
+  (v) => typeof v === 'string' && v.length <= 4096,
+)
+
+/** Внутренние ключи состояния среза (не пишутся в URL). */
+export const DB_SLICE_INTERNAL_KEYS = ['asofHead', 'headAt', 'begAt'] as const
+
+/** Позиционные ключи среза и курсора — сбрасываются при `reset()` и смене условий выдачи. */
+export const DB_SLICE_POSITION_KEYS = [
+  DB_LIST_POINTER_KEY,
+  'asof',
+  'beg',
+  ...DB_SLICE_INTERNAL_KEYS,
+] as const
+
 /** Ключи `?page.<key>`: форма проверяется здесь, допустимость — на сервере (схема слоя). */
 export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // JSON-фильтр слоя: длина ограничена, содержимое разбирает `parseListInput`.
@@ -231,13 +254,13 @@ export const DB_LIST_EXTRA_SEARCH: ExtraSearchSpec = {
   // Срез «на момент»: `<ISO>|<id>` самой свежей строки выдачи. Это не условие
   // пользователя, а закреплённый край выдачи — ядро сбрасывает его вместе с
   // указателем (`positionKeys`), а ответ сервера ставит заново.
-  asof: extraField('text', (v) => typeof v === 'string' && v.length > 0 && v.length <= 128 && v.includes('|')),
+  asof: asofExtraField,
   // Ключ НАЧАЛА выданной порции курсора: ответ сервера, а не ввод пользователя.
-  // В адрес его пишет `after` (см. `withPortionKeys`), а `beg` живёт в состоянии:
+  // В адрес его пишет `after` (см. `withDbSliceKeys`), а `beg` живёт в состоянии:
   // так перезагрузка знает, какую порцию показывать. Без объявления здесь он не
   // доехал бы из снапшота SSR. Значения по умолчанию у него НЕТ (см. ниже):
   // отсутствие ключа в адресе не должно превращаться в «порция с головы».
-  beg: extraField('text', (v) => typeof v === 'string' && v.length <= 4096),
+  beg: cursorBeginField,
 }
 
 /** Дефолты extra: ключ со значением по умолчанию в адрес не пишется (чистый URL). */
@@ -377,70 +400,149 @@ export const dbPostsCursorSource = dbPostsSource.with(withDbCursor<DbPost>())
  * ответ несёт ключ следующей. Ядро о подмене не знает и не должно знать: для
  * него `after` остаётся указателем, а адрес — чужое хранилище со своим форматом.
  */
-function withPortionKeys<T>(base: PaginatorAdapter<T>): PaginatorAdapter<T> {
+/**
+ * Управление отложенным срезом (`asof`) и закладками курсорных порций (`after`/`beg`/`begAt`).
+ *
+ * 1. Постраничный режим (`!isCursorOn`):
+ *    - на чистой первой странице сервер отдаёт `asofHead`, не выставляя `asof` в адрес;
+ *    - ссылки на страницы `2..N` (`hrefFor`) и фактические запросы `page > 1` (`loadPage`)
+ *      подставляют `asofHead` в `asof`, закрепляя срез и в состоянии, и в URL;
+ *    - при возврате на страницу `1` закреплённый `asof` сохраняется до явного `reset()`.
+ * 2. Курсорный режим (`isCursorOn`):
+ *    - ведёт карту начала порций (`startOf`) и временную отметку активного среза (`begAt`);
+ *    - на чистой первой порции с головы (`page === 1`, без `after`) `begAt` пуст;
+ *    - при догрузке следующей порции (`page > 1`) или открытии по токену (`after`) активируется
+ *      метка `begAt`, чтобы плашка среза показывала время отсечки и позволяла сбросить поток.
+ */
+export function withDbSliceKeys<T, ExtraProps extends object = object>(
+  base: PaginatorAdapter<T> & ExtraProps,
+  opts?: { enabled?: (extra: Extra | undefined) => boolean },
+): PaginatorAdapter<T> & ExtraProps {
+  const isEnabled = opts?.enabled ?? (() => true)
   /** `page → ключ начала`; `''` — порция с самого начала выдачи. */
   const startOf = new Map<number, string>()
+  /** `page → ISO-время начала порции`. */
+  const startAtOf = new Map<number, string>()
   const keyOf = (extra: Extra | undefined): string =>
     typeof extra?.[DB_LIST_POINTER_KEY] === 'string' ? (extra[DB_LIST_POINTER_KEY] as string) : ''
+  const stripTransientUrlOnly = (extra: Extra): Extra => {
+    const out = { ...extra }
+    delete out.asofHead
+    delete out.headAt
+    return out
+  }
   return {
     ...base,
+    extraKeys: base.extraKeys
+      ? () => [...new Set([...(base.extraKeys!() ?? []), ...DB_SLICE_INTERNAL_KEYS])]
+      : undefined,
     /**
      * Адрес и состояние расходятся по `after` НАМЕРЕННО: в адресе это ключ
      * видимой порции (его пишет `persist`), в состоянии — указатель следующей
-     * догрузки (его даёт ответ). Если отдать адресное значение механизму
-     * внешнего состояния, он перепишет указатель ключом текущей порции — и
-     * «дальше» после перезагрузки приклеит ту же порцию вместо следующей.
-     * Поэтому адресный `after` в состояние не переносится вовсе; страницу и
-     * размер транспорта отдаёт как обычно.
+     * догрузки (его даёт ответ). Поэтому адресный `after` в состояние не
+     * переносится вовсе; страницу и размер адаптер отдаёт как обычно.
      */
     observeExternal(search) {
       const seen = base.observeExternal?.(search) ?? null
       if (!seen?.restorable) return seen
-      if (!isCursorOn(seen.restorable.extra)) return seen
+      if (!isEnabled(seen.restorable.extra) || !isCursorOn(seen.restorable.extra)) return seen
       const extra = { ...seen.restorable.extra }
       delete extra[DB_LIST_POINTER_KEY]
       return { ...seen, restorable: { ...seen.restorable, extra } }
     },
+    ...(base.hrefFor
+      ? {
+          hrefFor(targetPage, ctx) {
+            const rawExtra = ctx?.extra ?? {}
+            const extra = stripTransientUrlOnly(rawExtra)
+            delete extra.begAt
+            if (isEnabled(rawExtra) && !isCursorOn(rawExtra)) {
+              const patch = ctx?.patch
+              const hasExplicitAsofPatch = Boolean(patch && 'asof' in patch)
+              const currentAsof = typeof extra.asof === 'string' ? extra.asof : ''
+              const head = typeof rawExtra.asofHead === 'string' ? rawExtra.asofHead : ''
+              if (targetPage > 1 && !currentAsof && head && !hasExplicitAsofPatch) {
+                extra.asof = head
+              }
+            }
+            return base.hrefFor!(targetPage, ctx ? { ...ctx, extra } : { extra })
+          },
+        }
+      : {}),
     async loadPage(req) {
+      if (!isEnabled(req.extra)) return base.loadPage(req)
+      if (!isCursorOn(req.extra)) {
+        startOf.clear()
+        startAtOf.clear()
+        let nextReq = req
+        const currentAsof = typeof req.extra?.asof === 'string' ? req.extra.asof : ''
+        const head = typeof req.extra?.asofHead === 'string' ? req.extra.asofHead : ''
+        if (req.page > 1 && !currentAsof && head) {
+          nextReq = { ...req, extra: { ...req.extra, asof: head } }
+        }
+        return base.loadPage(nextReq)
+      }
+      const reqKey = keyOf(req.extra)
+      if (req.page === 1 && !reqKey) {
+        startOf.clear()
+        startAtOf.clear()
+      }
       const res = await base.loadPage(req)
-      // Ключ начала порции называет ОТВЕТ (`beg`): на первой загрузке его не
-      // спрашивали, а сервер уже разрешил ключ из адреса в конкретную порцию.
       const beg = res.extra?.beg
-      startOf.set(req.page, typeof beg === 'string' ? beg : keyOf(req.extra))
+      const resolvedBeg = typeof beg === 'string' ? beg : reqKey
+      startOf.set(req.page, resolvedBeg)
+      const rawBegAt = typeof res.extra?.begAt === 'string' ? res.extra.begAt : ''
+      const rawHeadAt = typeof res.extra?.headAt === 'string' ? res.extra.headAt : ''
+      if (req.page === 1) {
+        const anchorAt = resolvedBeg ? rawBegAt : rawHeadAt
+        if (anchorAt) startAtOf.set(1, anchorAt)
+      } else if (rawBegAt) {
+        startAtOf.set(req.page, rawBegAt)
+      }
       const next = res.extra?.[DB_LIST_POINTER_KEY]
       if (typeof next === 'string' && next) startOf.set(req.page + 1, next)
       else startOf.delete(req.page + 1)
-      return res
+
+      const activeBegAt = req.page > 1 || resolvedBeg !== '' ? (startAtOf.get(1) ?? rawBegAt) : ''
+      return {
+        ...res,
+        extra: {
+          ...(res.extra ?? {}),
+          begAt: activeBegAt,
+        },
+      }
     },
     persist(state) {
+      if (!isEnabled(state.extra)) {
+        const extra = stripTransientUrlOnly(state.extra)
+        delete extra.begAt
+        return base.persist({ ...state, extra })
+      }
       const cursorOn = isCursorOn(state.extra)
-
-      // Карта в браузере; снапшот после перезагрузки её ещё не наполнял —
-      // тогда ключ видимой порции называет сам ответ (`beg` в состоянии).
-      const known = startOf.get(state.page) ?? (typeof state.extra.beg === 'string' && state.extra.beg ? state.extra.beg : undefined)
-      // В курсорном режиме «карты ещё нет» значит «читаем с начала»: указатель
-      // следующей догрузки в адрес не попадает — иначе перезагрузка просила бы
-      // порцию, которую человек ещё не открывал (находка 2 §1).
-      const portion = known ?? (cursorOn ? '' : undefined)
-      if (portion === undefined) return base.persist(state)
-      const extra: Extra = { ...state.extra }
+      if (!cursorOn) {
+        const extra = stripTransientUrlOnly(state.extra)
+        delete extra.begAt
+        const head = typeof state.extra.asofHead === 'string' ? state.extra.asofHead : ''
+        if (state.page > 1 && !extra.asof && head) {
+          extra.asof = head
+        }
+        return base.persist({ ...state, extra })
+      }
+      const known =
+        startOf.get(state.page) ??
+        (typeof state.extra.beg === 'string' && state.extra.beg ? state.extra.beg : undefined)
+      const portion = known ?? ''
+      const extra = stripTransientUrlOnly(state.extra)
       if (portion === '') {
         delete extra[DB_LIST_POINTER_KEY]
         delete extra.beg
       } else {
         extra[DB_LIST_POINTER_KEY] = portion
-        // `beg` — тот же ключ под своим именем. Без него состояние теряло бы его
-        // первым же чтением адреса (в адресе его нет — значит «порция с головы»),
-        // и `page.after` пропадал бы следом: ссылка после перезагрузки начинала
-        // бы список заново. Пара стоит того, чтобы URL был длиннее.
         extra.beg = portion
       }
-      // Номер страницы у курсора не значит ничего: читаемая порция названа
-      // закладкой, а `?page` рядом с ней — второй ответ на тот же вопрос (и
-      // сервер их смешение отвергает). В адрес идёт только ключ порции.
-      return base.persist({ ...state, page: cursorOn ? 1 : state.page, extra })
+      return base.persist({ ...state, page: 1, extra })
     },
-  }
+  } as PaginatorAdapter<T> & ExtraProps
 }
 
 /** Регистрация идемпотентна: при HMR модуль выполняется повторно. */
@@ -452,15 +554,10 @@ export function ensureDbListPaginator(): string {
       // Смена фильтра, порядка или СПОСОБА навигации — новая выдача: сброс на
       // первую страницу. `after` сюда не входит: это указатель, а не условие.
       reloadKeys: ['flt', 'ord', DB_LIST_MODE_KEY],
-      // `asof` снимается вместе с указателем: и то и другое — «где мы стоим в
-      // выдаче», а не её условие; новый срез сервер отдаст ответом.
-      //
-      // `beg` — ключ НАЧАЛА видимой порции: он описывает место в выдаче так же,
-      // как `after`, и снимается вместе с ним при сбросе окна (смена фильтра,
-      // порядка, режима). Иначе после перезагрузки стёртый `after` возвращался
-      // бы из устаревшего `beg` — и новая выдача читалась бы от чужой закладки.
-      positionKeys: [DB_LIST_POINTER_KEY, 'asof', 'beg'],
-      adapter: withPortionKeys(
+      // `asof` и позиционные ключи курсора снимаются вместе с указателем: всё это —
+      // «где мы стоим в выдаче», а не её условие; при сбросе выдача читается заново.
+      positionKeys: DB_SLICE_POSITION_KEYS,
+      adapter: withDbSliceKeys(
         createUrlAdapter<DbPost>({
           name: DB_LIST_NAME,
           source: dbPostsCursorSource,
