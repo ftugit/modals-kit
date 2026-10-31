@@ -4,8 +4,13 @@ import { MAX_BOUNDARY_BYTES, boundaryBytesOf, formWeight, multipartWeight } from
 
 const MB = 1024 * 1024
 
-/** Реальная сериализация той же среды — оракул для формулы. */
-const actual = async (fd: FormData) => (await new Response(fd).arrayBuffer()).byteLength
+/** Реальная сериализация той же среды — оракул для формулы (без опционального завершающего CRLF после `--boundary--` в RFC 7578). */
+const actual = async (fd: FormData) => {
+  const bytes = new Uint8Array(await new Response(fd).arrayBuffer())
+  const hasTrailingCrlf =
+    bytes.length >= 2 && bytes[bytes.length - 2] === 13 && bytes[bytes.length - 1] === 10
+  return hasTrailingCrlf ? bytes.byteLength - 2 : bytes.byteLength
+}
 
 const fdOf = (pairs: Array<[string, string | File]>) => {
   const fd = new FormData()

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
 import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -99,7 +99,7 @@ export default defineConfig(({ command, isPreview }) => {
         './src/components/shell/ui/header/NavSlot.svelte',
         './src/components/shell/ui/sidebar/SidebarNav.svelte',
         './src/components/modals/index.ts',
-      ],
+      ].filter((f) => existsSync(new URL(f, import.meta.url))),
       ssrFiles: [
         './src/routes/+layout.svelte',
         './src/routes/(site)/+layout.svelte',
@@ -109,7 +109,7 @@ export default defineConfig(({ command, isPreview }) => {
         './src/routes/cycle/+page.svelte',
         './src/routes/spike/+page.svelte',
         './src/routes/(site)/(app)/cards/[id]/+page.svelte',
-      ],
+      ].filter((f) => existsSync(new URL(f, import.meta.url))),
     },
   },
   };

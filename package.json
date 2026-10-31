@@ -15,7 +15,8 @@
   },
   "scripts": {
     "dev": "node --no-liftoff ./node_modules/vite/bin/vite.js dev",
-    "build": "vite build && node tooling/db-reset.mjs",
+    "build": "node tooling/mod.mjs sync && vite build && node tooling/db-reset.mjs",
+    "mod": "node tooling/mod.mjs",
     "preview": "node --no-liftoff ./node_modules/vite/bin/vite.js preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -27,7 +28,7 @@
     "test:size": "node tooling/size-budget.mjs",
     "test:public-api": "node tooling/public-api.mjs",
     "test:browser": "node test/browser/run-all.mjs",
-    "test:browser:serial": "node test/browser/regressions.mjs && node test/browser/modals.mjs && node test/browser/shell.mjs && node test/browser/steps.mjs && node test/browser/forms.mjs && node test/browser/forms-a11y.mjs && node test/browser/db-demo.mjs && node test/browser/fields.mjs && node test/browser/paginate.mjs && node test/browser/capabilities.mjs && node test/browser/errors.mjs && node test/browser/a11y.mjs && node test/browser/loader.mjs && node test/browser/auth.mjs && node test/browser/layer-back.check.mjs && node test/browser/url-storage.check.mjs",
+    "test:browser:serial": "KT_PARALLEL=1 node test/browser/run-all.mjs",
     "test:browser:fast": "KT_PARALLEL=4 node test/browser/run-all.mjs",
     "test:browser:regressions": "node test/browser/regressions.mjs",
     "test:browser:modals": "node test/browser/modals.mjs",

@@ -22,11 +22,11 @@ const sources = import.meta.glob('/src/routes/**/*.{ts,svelte}', {
 }) as Record<string, string>
 
 describe('схемы демо-панелей: скан src/routes', () => {
-  it('нашлись (скан не пустой)', () => {
-    expect(Object.keys(schemas).length).toBeGreaterThan(0)
+  it('маршруты для сканирования нашлись (скан не пустой)', () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(0)
   })
 
-  it('каждая схема экспортирует demoPanelSchema и проходит проверку', () => {
+  it('каждая установленная схема экспортирует demoPanelSchema и проходит проверку', () => {
     for (const [file, mod] of Object.entries(schemas)) {
       expect(mod.demoPanelSchema, `${file}: нужен экспорт demoPanelSchema`).toBeTruthy()
       expect(demoPanelDefects(mod.demoPanelSchema), file).toEqual([])

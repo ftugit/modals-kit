@@ -42,24 +42,35 @@
 
 - `src/content/user/` — автономный модуль пользователя и авторизации по Ed25519 `seed`: пирамида прав `defineAcl` и реактивный `useGrants`, вход и сессии (`SeedForm`), профиль с аватарами по неизменяемым ссылкам `/api/storage/avatars/…` (`Profile`, `ProfileForm`, `ProfileDelete`), универсальные пользовательские и системные настройки (`UserConfig`: модалка `user.config` + `/user/config` и `/user/[id]/config`), список аккаунтов и пикер (`SeedUsersList`, `UserPicker`) и система блокировок `user.block` (`BlocksList`, `BlockForm` с одиночной и массовой выдачей, `BlockDelete`). Документация — [`src/content/user/README.md`](./src/content/user/README.md);
 - `src/content/storage-servers/` — администрирование боевого пула серверов хранения в БД (`storage_server` под `STORAGE_ACL`, шифрование ключей `AUTH_SEAL_SECRET`, живая предпроверка `probe` с защитой от SSRF, модалка `storage.servers` и страница `/storage-servers`). Документация — [`src/content/storage-servers/README.md`](./src/content/storage-servers/README.md);
-- `src/content/storage-vault/` — изолированный браузерный куки-сейф облачных серверов S3 / WebDAV для демо-стенда `/upload-demo` (модалка `storage.vault` и `/upload-demo/vault`, `0` записей в общей БД);
-- `src/content/demo-catalog/{items,posts,rickmorty,shikimori}/` — изолированные учебные источники витрин, схемы фильтров и карточки строк/плиток.
+- опциональный модуль `demo` (устанавливается поверх чистого ядра через `npm run mod -- add demo` или переменную окружения `MODULES=demo` при сборке): добавляет `src/content/demo-catalog/` (`items`, `posts`, `rickmorty`, `shikimori` + автоподхватываемые `db.ext.ts`, `init.ext.server.ts`, `nav.ext.ts`), `src/content/storage-vault/` и интерактивные витрины `/modals`, `/paginator`, `/db-demo`, `/upload-demo`, `/form`, `/fields`, `/steps`.
 
 ### 5. Серверные синглтоны и маршруты (`src/server/` — `#server/*`, `src/routes/`)
 
-- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `app-storage.server.ts`, `storage.server.ts`, `form-budget.server.ts`, `form-security.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и чистый модуль `trusted-origins.ts` (единый список `csrf.trustedOrigins` + строгие директивы `kit.csp`);
-- `src/routes/` — тонкие маршруты витрин, пользовательских разделов и API (`/`, `/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/upload-demo`, `/schema`, `/storage-servers`, `/users`, `/users/pick`, `/users/filters`, `/blocks`, `/blocks/new`, `/blocks/filters`, `/blocks/[blockId=uuid]`, `/user/auth`, `/user/menu`, `/user/config`, `/user/[id=uuid]`, `/cards/[id]`, `/cycle`, `/spike`, `/api/storage/[...path]`, `/api/files/[...path]`, `/api/form-upload`).
+- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `app-storage.server.ts`, `storage-probe.server.ts`, `form-budget.server.ts`, `form-security.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и чистый модуль `trusted-origins.ts` (единый список `csrf.trustedOrigins` + строгие директивы `kit.csp`);
+- `src/routes/` — базовые маршруты стартового приложения (`/`, `/schema`, `/storage-servers`, `/users`, `/users/pick`, `/users/filters`, `/blocks`, `/blocks/new`, `/blocks/filters`, `/blocks/[blockId=uuid]`, `/user/auth`, `/user/menu`, `/user/config`, `/user/[id=uuid]`, `/api/storage/[...path]`, `/api/form-upload`). При установке модуля `demo` автоматически подключаются маршруты витрин (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/upload-demo`, `/cards/[id]`, `/cycle`, `/spike`, `/api/db-posts`, `/api/files/[...path]`, `/api/shikimori/*`, `/api/rickmorty/*`).
 
 ---
 
 ## Быстрый старт
 
-Требуется **Node.js >= 22.17 и < 25** (Node 22 или 24 LTS; проверяется при старте `vite.config.ts` и ограничено сверху в `package.json#engines` для совместимости с адаптерами деплоя). База данных для разработки и тестов поднимается автоматически через WASM-движок `@electric-sql/pglite` — внешний PostgreSQL не нужен; схема моделей, демо-сиды и стартовый администратор разворачиваются автоматически при первом обращении к БД в рантайме.
+Требуется **Node.js >= 22.17 и < 25** (Node 22 или 24 LTS; проверяется при старте `vite.config.ts` и ограничено сверху в `package.json#engines` для совместимости с адаптерами деплоя). База данных для разработки и тестов поднимается автоматически через WASM-движок `@electric-sql/pglite` — внешний PostgreSQL не нужен; схема моделей и стартовый администратор разворачиваются автоматически при первом обращении к БД в рантайме.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+npm run dev                   # чистое стартовое приложение: http://localhost:5173
 ```
+
+### Подключение опциональных модулей (`demo`)
+
+Ветка `img` содержит чистое ядро без демо-маршрутов. Интерактивные витрины поставляются отдельным пакетом `demo` (тег `refs/tags/modules`):
+
+```bash
+npm run mod -- list           # посмотреть доступные модули
+npm run mod -- add demo       # установить витрину demo локально (.modules/ в .gitignore)
+npm run mod -- remove demo    # чисто удалить витрину и вернуться к базовому ядру
+```
+
+На Vercel (и в CI) модули подтягиваются автоматически на шаге `npm run build` при заданной переменной окружения `MODULES=demo` (для приватного GitHub-репозитория дополнительно задаётся `MODULES_TOKEN` с правом `Contents: Read`).
 
 ## Команды проверки
 

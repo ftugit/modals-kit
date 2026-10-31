@@ -142,7 +142,7 @@ describe('PageState & useHeadSeo (SSR, реактивность, очистка 
   it('все +page.svelte проекта используют useHeadSeo и не дублируют <svelte:head>', () => {
     const root = join(process.cwd(), 'src/routes')
     const pages = collectRouteFiles(root, '+page.svelte')
-    expect(pages.length).toBeGreaterThanOrEqual(33)
+    expect(pages.length).toBeGreaterThanOrEqual(10)
 
     const missingUseHeadSeo: string[] = []
     const duplicateRawHead: string[] = []
