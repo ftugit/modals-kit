@@ -17,6 +17,18 @@
   const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
   let acl = $state<AuthErrorCode | null>(null)
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
+
+  /**
+   * Сохранение: блокировка живёт в общем списке и в разделе профиля,
+   * поэтому их кеш сбрасывается ДО закрытия — нижняя запись при повторной
+   * активации перезапросится.
+   */
+  function done() {
+    m.modals.invalidateLoader('user.blocks')
+    m.modals.invalidateLoader('user.blocks.edit')
+    m.modals.invalidateLoader('user.profile')
+    m.modals.close()
+  }
 </script>
 
 <div class="my-auto w-full p-6">
@@ -34,7 +46,7 @@
       initialEdit={ldr.data ?? null}
       variant="plain"
       onAcl={(fact) => (acl = fact)}
-      onDone={() => m.modals.close()}
+      onDone={done}
     />
   {/if}
 </div>

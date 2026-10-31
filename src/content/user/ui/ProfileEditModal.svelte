@@ -26,6 +26,18 @@
   const m = useModals()
   const ldr = useLoader<EditRouteData>()
   const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? '')
+
+  /**
+   * Успешное сохранение: поля показывают профиль, его форма и списки,
+   * поэтому их кеш сбрасывается ДО закрытия — когда нижняя запись снова
+   * станет активной, хост перезапустит её загрузчик на свежих данных.
+   */
+  function done() {
+    m.modals.invalidateLoader('user.profile')
+    m.modals.invalidateLoader('user.profile.edit')
+    m.modals.invalidateLoader('user.list')
+    m.modals.close()
+  }
 </script>
 
 <div class="my-auto w-full p-6">
@@ -42,7 +54,7 @@
       enabled={ldr.data.enabled}
       doneHref="/"
       variant="plain"
-      onDone={() => m.modals.close()}
+      onDone={done}
     />
   {/if}
 </div>

@@ -42,6 +42,13 @@
   function handleDone() {
     const chain = m.view.chain
     const prev = chain.length >= 2 ? chain[chain.length - 2] : undefined
+    // Записи удалена: сбрасываем кеш списка, её собственной карточки,
+    // профиля (раздел блокировок) и самой формы удаления — ДО закрытия,
+    // чтобы активированная заново нижняя запись перезапросилась.
+    m.modals.invalidateLoader('user.blocks')
+    m.modals.invalidateLoader('user.blocks.edit')
+    m.modals.invalidateLoader('user.blocks.delete')
+    m.modals.invalidateLoader('user.profile')
     m.modals.close()
     if (
       prev &&

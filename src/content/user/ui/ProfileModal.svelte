@@ -1,18 +1,21 @@
 <script lang="ts">
   /**
    * Профиль в модалке (`?modal=user.profile&id=…`) — только носитель:
-   * максимум ACL-гейт. Данные модалка не приносит и не кеширует: профиль
-   * запрашивает и рисует сам компонент `Profile` (он же живёт на странице
-   * `/user/[id]`), сюда он сообщает только отказ — его рисует носитель
-   * экраном `Acl`, как страница.
+   * максимум ACL-гейт. Данные модалка не запрашивает: их приносит загрузчик
+   * записи (тот же `load` роута `/user/[id]`), отсюда они уходят в компонент
+   * `Profile` пропсом `route` — рисует и проецирует он один, как и на
+   * странице. Отказ компонент сообщает наверх, его рисует носитель экраном
+   * `Acl`, как страница.
    */
-  import { useModal } from '#lib/modals/svelte/index.js'
+  import { useLoader, useModal } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import Profile from './Profile.svelte'
   import type { AuthErrorCode } from '../error.js'
+  import type { ProfileRouteData } from '../types.js'
 
   const modal = useModal<{ id: string }>()
-  const uid = $derived(modal.params?.id ?? '')
+  const ldr = useLoader<ProfileRouteData>()
+  const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? '')
   let acl = $state<AuthErrorCode | 'not_found' | null>(null)
 </script>
 
@@ -22,6 +25,6 @@
   {:else if acl}
     <Acl status={acl} backHref="/" variant="plain" />
   {:else}
-    <Profile {uid} variant="plain" onAcl={(what) => (acl = what)} />
+    <Profile {uid} route={ldr.data} variant="plain" onAcl={(what) => (acl = what)} />
   {/if}
 </div>

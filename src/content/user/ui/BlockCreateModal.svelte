@@ -31,6 +31,17 @@
       ldr.data?.fact ??
       (vault.principal !== null && !canCreateGrant.current ? ('auth.forbidden' as AuthErrorCode) : null),
   )
+
+  /**
+   * Создание: блокировка появляется в общем списке и в разделе профиля,
+   * поэтому их кеш сбрасывается ДО закрытия — нижняя запись при повторной
+   * активации перезапросится.
+   */
+  function done() {
+    m.modals.invalidateLoader('user.blocks')
+    m.modals.invalidateLoader('user.profile')
+    m.modals.close()
+  }
 </script>
 
 <div class="my-auto w-full p-6">
@@ -48,7 +59,7 @@
       initialCreate={ldr.data ?? null}
       variant="plain"
       onAcl={(fact) => (acl = fact)}
-      onDone={() => m.modals.close()}
+      onDone={done}
     />
   {/if}
 </div>

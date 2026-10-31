@@ -10,10 +10,12 @@
    *
    * Откуда данные: страница отдаёт результат своего серверного `load`
    * пропсом `initial` (тот же роут, второй запрос не нужен, SSR/no-JS
-   * целы). Модалка ничего не приносит: компонент при показе сам зовёт
-   * `preloadData` того же роута. Поэтому разойтись «через меню видно,
-   * через список нет» показ профиля не может: везде один компонент,
-   * один запрос, в момент показа.
+   * целы). В модалке данные приносит загрузчик записи — тот же `load`
+   * роута, — и носитель отдаёт их пропсом `route`: компонент только
+   * проецирует. Собственный `preloadData` остался запасным путём на
+   * случай, когда носителю приносить нечего. Поэтому разойтись «через
+   * меню видно, через список нет» показ профиля не может: везде один
+   * компонент, один запрос, в момент показа.
    */
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
@@ -45,6 +47,11 @@
     initial?: ProfileRead | null
     /** Публичная проекция от носителя (страница): показ без полного чтения. */
     initialPublic?: PublicProfileView | null
+    /**
+     * Сырой ответ `load` роута от носителя (модалка: его принёс загрузчик
+     * записи). Проецируется тем же кодом, что и собственный запрос.
+     */
+    route?: ProfileRouteData | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (what: AuthErrorCode | 'not_found') => void
     /** Вариант поверхности (`'card'` на странице, `'plain'` внутри модалки). */
@@ -56,6 +63,7 @@
     uid,
     initial = null,
     initialPublic = null,
+    route = null,
     onAcl,
     variant = 'plain',
     class: className,
@@ -79,9 +87,45 @@
   let publicData = $state<PublicProfileView | null>(untrack(() => initialPublic))
   let askedFor = ''
 
+  /** Проекция ответа `load`: отказ — наверх носителю, публичная — в свой показ. */
+  const project = (d: ProfileRouteData) => {
+    if (d.fact) {
+      onAcl?.(d.fact)
+      return
+    }
+    if (d.publicProfile) {
+      publicData = d.publicProfile
+      return
+    }
+    if (!d.profile && !d.notCreated) {
+      onAcl?.('not_found')
+      return
+    }
+    data = {
+      profile: d.profile,
+      isOwn: d.isOwn,
+      visibility: d.visibility,
+      notCreated: d.notCreated,
+      canEdit: d.canEdit,
+      canDeleteProfile: d.canDeleteProfile,
+      canDeleteSeed: d.canDeleteSeed,
+      fullBlock: d.fullBlock,
+      blocks: d.blocks,
+      canReadBlocks: d.canReadBlocks,
+      canBlock: d.canBlock,
+    }
+  }
+
   $effect(() => {
     if (initial) {
       data = initial
+      return
+    }
+    // Носитель уже принёс ответ (модалка): свой запрос не нужен. Смена
+    // объекта — это перезапрос загрузчика (например после правки), и
+    // проекция повторяется на свежих данных.
+    if (route) {
+      project(route)
       return
     }
     const id = uid
@@ -96,32 +140,7 @@
         onAcl?.('not_found')
         return
       }
-      const d = r.data as ProfileRouteData
-      if (d.fact) {
-        onAcl?.(d.fact)
-        return
-      }
-      if (d.publicProfile) {
-        publicData = d.publicProfile
-        return
-      }
-      if (!d.profile && !d.notCreated) {
-        onAcl?.('not_found')
-        return
-      }
-      data = {
-        profile: d.profile,
-        isOwn: d.isOwn,
-        visibility: d.visibility,
-        notCreated: d.notCreated,
-        canEdit: d.canEdit,
-        canDeleteProfile: d.canDeleteProfile,
-        canDeleteSeed: d.canDeleteSeed,
-        fullBlock: d.fullBlock,
-        blocks: d.blocks,
-        canReadBlocks: d.canReadBlocks,
-        canBlock: d.canBlock,
-      }
+      project(r.data as ProfileRouteData)
     })()
   })
 </script>
