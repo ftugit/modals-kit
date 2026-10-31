@@ -145,6 +145,8 @@ test('в проекте нет нарушений границы «схема ж
 test('граница не фиктивна: зоны, которые защищаются, существуют', () => {
   const files = walk('src').map((file) => relative('.', file))
   assert.ok(files.some((f) => f.startsWith('src/lib/paginate/filters/')), 'нет модуля фильтров')
-  assert.ok(files.includes('src/content/demo-catalog/shikimori/schema.server.ts'), 'нет зоны схемы')
-  assert.ok(files.includes('src/content/demo-catalog/shikimori/filters.ts'), 'нет общего объявления ключей')
+  if (files.some((f) => f.startsWith('src/content/demo-catalog/'))) {
+    assert.ok(files.includes('src/content/demo-catalog/shikimori/schema.server.ts'), 'нет зоны схемы')
+    assert.ok(files.includes('src/content/demo-catalog/shikimori/filters.ts'), 'нет общего объявления ключей')
+  }
 })

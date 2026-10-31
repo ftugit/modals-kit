@@ -24,10 +24,10 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
-/** Основной набор — тот же список и порядок, что был в `npm run test:browser`. */
+/** Основной набор — сьюты фильтруются по реально установленным файлам (ядро + активные модули). */
 const ALL = [
   'regressions', 'modals', 'shell', 'steps', 'forms', 'forms-a11y', 'db-demo', 'fields',
-  'paginate', 'capabilities', 'errors', 'a11y', 'loader', 'auth', 'layer-back.check', 'url-storage.check',
+  'paginate', 'capabilities', 'errors', 'a11y', 'loader', 'auth', 'blocks', 'layer-back.check', 'url-storage.check',
 ];
 
 const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
@@ -36,7 +36,7 @@ const PARALLEL = Math.max(1, Number(process.env.KT_PARALLEL ?? 2));
 const SERVER_SCRIPT = 'node_modules/vite/bin/vite.js';
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
-const suites = only.length ? only : ALL;
+const suites = only.length ? only : ALL.filter((name) => existsSync(`test/browser/${name}.mjs`));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

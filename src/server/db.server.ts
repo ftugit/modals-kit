@@ -29,19 +29,40 @@ import {
   DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
   DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
-import { posts } from '#content/demo-catalog/posts/posts.js'
 import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
 import { cacheKv } from '#hooks/cache-db.js'
+import type { DbModuleExtension } from '#hooks/module-ext.js'
 import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
 import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
 
-export { posts, auth, profile, session, cacheKv, storageFile, storageReservation, storageServer }
+export { auth, profile, session, cacheKv, storageFile, storageReservation, storageServer }
+
+const dbExtensions = import.meta.glob<{ dbExtension?: DbModuleExtension }>(
+  '../content/*/db.ext.ts',
+  { eager: true },
+)
+const sortedDbExts = Object.keys(dbExtensions)
+  .sort()
+  .map((k) => dbExtensions[k]?.dbExtension)
+  .filter((x): x is DbModuleExtension => Boolean(x))
 
 const schemaSpec = {
   // user-ресурсы (модуль user): таблицы и миграции — здесь, потребление — `db.resource`;
   // cache_kv — таблица общего хранилища lib/cache (`sharedStore` в server/cache.server.ts);
-  // storage_file / storage_reservation / storage_server — реестр, брони и пул серверов lib/storage
-  resources: [posts, auth, session, profile, userConfig, userBlock, cacheKv, storageFile, storageReservation, storageServer],
+  // storage_file / storage_reservation / storage_server — реестр, брони и пул серверов lib/storage;
+  // дополнительные модули подхватываются автоматически из `src/content/*/db.ext.ts`.
+  resources: [
+    auth,
+    session,
+    profile,
+    userConfig,
+    userBlock,
+    cacheKv,
+    storageFile,
+    storageReservation,
+    storageServer,
+    ...sortedDbExts.flatMap((ext) => ext.resources ?? []),
+  ],
   sql: [
     // Конфиг-модель (этап 10): уникальность пары (auth_id, key) обычный
     // unique не даёт — NULL глобальных строк в Postgres не равен NULL,
@@ -96,33 +117,7 @@ const schemaSpec = {
                   ) AS e
              WHERE NOT EXISTS (SELECT 1 FROM public.kit_schema WHERE kind = 'sql' AND name = 'user-block-backfill')`,
     },
-    {
-      id: 'demo-post-seed-500',
-      text: `INSERT INTO public.demo_post (title, created_at)
-               SELECT 'Запись ' || n, clock_timestamp() - (501 - n) * interval '1 minute'
-               FROM generate_series(1, 500) n
-               WHERE NOT EXISTS (SELECT 1 FROM public.demo_post)`,
-    },
-    {
-      id: 'demo-user-seed-100',
-      text: `INSERT INTO public.user_auth (seed, permissions, subnet_salt, created_at, updated_at, deleted_at)
-               SELECT 'demo-' || substr(md5('seed-' || n), 1, 19) || substr(md5('salt-' || n), 1, 19),
-                      '{}',
-                      substr(md5('sub-' || n), 1, 32),
-                      clock_timestamp() - (n * interval '1.3 days'),
-                      clock_timestamp() - (n * interval '1.3 days'),
-                      CASE WHEN n <= 20 THEN clock_timestamp() - (n * interval '1.3 days') + interval '20 days' END
-                 FROM generate_series(1, 100) n
-                WHERE NOT EXISTS (SELECT 1 FROM public.user_auth WHERE seed LIKE 'demo-%')`,
-    },
-    {
-      id: 'demo-profile-seed-100',
-      text: `INSERT INTO public.user_profile (auth_id, nickname, created_at, updated_at)
-               SELECT a.id, 'demo-user-' || lpad(a.rn::text, 3, '0'), a.created_at, a.created_at
-                 FROM (SELECT id, created_at, row_number() OVER (ORDER BY created_at) AS rn
-                         FROM public.user_auth WHERE seed LIKE 'demo-%') a
-                WHERE NOT EXISTS (SELECT 1 FROM public.user_profile p WHERE p.auth_id = a.id)`,
-    },
+    ...sortedDbExts.flatMap((ext) => ext.sql ?? []),
   ],
 }
 

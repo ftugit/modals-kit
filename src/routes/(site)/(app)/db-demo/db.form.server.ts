@@ -9,7 +9,8 @@
 // Разбор по конверту безопасен: набор описаний фиксирован здесь, клиент не может
 // прислать своё.
 import type { RequestEvent } from '@sveltejs/kit'
-import { db, posts, watchDb } from '#server/db.server.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
+import { db, watchDb } from '#server/db.server.js'
 import { invalidateLiveCache } from '#server/live-cache.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { dbCreate, dbRemove, dbRename } from './description'

@@ -113,7 +113,7 @@ const targets = args.includes('--all')
   ? walk()
   : args.length
     ? args.filter((a) => a !== '--all')
-    : SCOPE
+    : SCOPE.filter((f) => existsSync(f))
 
 const strip = (src) =>
   src

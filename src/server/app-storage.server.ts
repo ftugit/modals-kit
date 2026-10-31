@@ -17,11 +17,11 @@ import { join, resolve } from 'node:path'
 import { AUTH_SEAL_ID, AUTH_SEAL_OLD_KEYS, AUTH_SEAL_SECRET } from '$app/env/private'
 import * as Iron from 'iron-webcrypto'
 import type { StorageServerMeta, StorageServerView, StorageServersSlice } from '#content/storage-servers/types.js'
-import type { StorageVaultEntry } from '#content/storage-vault/schema.js'
 import {
   probeStorageVaultEntry,
   validateStorageTargetUrl,
-} from '#content/storage-vault/vault.form.server.js'
+  type StorageProbeEntry as StorageVaultEntry,
+} from './storage-probe.server.js'
 import type { AuthFact } from '#content/user/error.js'
 import type { UserResult } from '#content/user/auth.js'
 import { pgStore } from '#hooks/cache-db.js'

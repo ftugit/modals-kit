@@ -7,7 +7,7 @@
  */
 import { error as kitError } from '@sveltejs/kit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FetchError } from '#lib/fetch/index.js'
+import { FetchError, readJson } from '#lib/fetch/index.js'
 import { apiErrorInstruction, readApiError } from '#hooks/api-error.js'
 import { normalizeService } from '#lib/form/index.js'
 import { apiFailure, apiInvalid } from './api-error.server.js'
@@ -15,17 +15,18 @@ import { captureUpstreamFetch, makeUpstream, upstream, UPSTREAM_UA, waitTask } f
 import { readTaskStream, TASK_STREAM_ACCEPT } from '#lib/fetch/index.js'
 import { taskResponse } from '#hooks/task-stream.server.js'
 import { fetchGraphql, resetGraphqlTransport } from '#hooks/graphql.server.js'
-import { fetchShikimoriJson, resetShikimoriTransport } from '#content/demo-catalog/shikimori/shikimori.server.js'
 
 const original = globalThis.fetch
 const ok = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 
+const fetchShikimoriRest = async (path: string, opts?: { fetch?: typeof globalThis.fetch }) =>
+  readJson(await (opts?.fetch ?? upstream)(`https://shikimori.io/api${path}`))
+
 afterEach(async () => {
   globalThis.fetch = original
   captureUpstreamFetch(original)
   await resetGraphqlTransport()
-  await resetShikimoriTransport()
 })
 
 describe('fetch для внешних API', () => {
@@ -41,7 +42,7 @@ describe('fetch для внешних API', () => {
     }) as typeof globalThis.fetch
 
     await fetchGraphql({ url: 'https://example.test/graphql', doc: '{ x }', map: (d) => d })
-    await fetchShikimoriJson('/studios')
+    await fetchShikimoriRest('/studios')
     expect(calls).toHaveLength(2)
     expect(calls.every((c) => c.startsWith('native '))).toBe(true)
   })
@@ -59,7 +60,7 @@ describe('fetch для внешних API', () => {
     const gql = (i: number) =>
       fetchGraphql({ url: 'https://shikimori.io/api/graphql', doc: `{ x${i} }`, map: (d) => d }, { fetch })
     await Promise.all([
-      ...[1, 2, 3].map((i) => fetchShikimoriJson(`/studios?i=${i}`, { fetch })),
+      ...[1, 2, 3].map((i) => fetchShikimoriRest(`/studios?i=${i}`, { fetch })),
       ...[1, 2].map(gql),
     ])
     expect(heads.every((h) => h.get('user-agent') === UPSTREAM_UA)).toBe(true)

@@ -16,7 +16,6 @@ import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 import { cacheKv } from '#hooks/cache-db.js'
 import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
-import { posts } from '#content/demo-catalog/posts/posts.js'
 import { auth, block as blockRes, config, profile, session } from './schema.js'
 
 const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
@@ -370,25 +369,9 @@ test('блокировки (этап 9): модель держит круг, н�
   })
 })
 
-test('ACL-страж проходит по всем моделям репозитория без аномалий, а владелец demo.post может удалять свою запись', async () => {
-  for (const r of [auth, profile, session, config, blockRes, posts, storageFile, storageReservation, storageServer, cacheKv]) {
+test('ACL-страж проходит по всем базовым моделям ядра и пользователей без аномалий', async () => {
+  for (const r of [auth, profile, session, config, blockRes, storageFile, storageReservation, storageServer, cacheKv]) {
     validateResourceAcl(r)
   }
-
-  shared ??= new PGlite()
-  await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
-  const driver = pgliteAdapter(shared)
-  assert.equal((await defineSchema({ resources: [posts] }).sync(driver)).status, 'ok')
-  const db = createDb({ driver, limits: conservativeLimits, resources: [posts] })
-  const postTable = db.resource(posts)
-
-  const authorCtx = owner(crypto.randomUUID(), ['author'])
-  const created = (await postTable.insert(authorCtx, { title: 'Запись автора' })) as unknown as { id: string }
-
-  // После лишения роли `author` владелец (`author_id`) сохраняет и update, и delete (`can: ['edit']`).
-  const exAuthorOwner = owner(authorCtx.principal.id, [])
-  await postTable.update(exAuthorOwner, created.id, { title: 'Обновлено владельцем' })
-  await postTable.delete(exAuthorOwner, created.id)
-  assert.equal((await postTable.select(exAuthorOwner)).length, 0)
 })
 

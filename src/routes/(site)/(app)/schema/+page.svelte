@@ -45,6 +45,6 @@
   {#if data.next}
     <a href={data.next} class="text-sm text-primary underline">Вернуться на страницу</a>
   {:else}
-    <a href="/db-demo" class="text-sm text-primary underline">К демо базы данных</a>
+    <a href="/" class="text-sm text-primary underline">На главную</a>
   {/if}
 </div>

@@ -21,9 +21,26 @@ import {
   session as sessionResource,
 } from '#content/user/schema.js'
 import type { SessionRecord } from '#content/user/types.js'
+import { defineCookieVault } from '#hooks/cookie-vault/index.js'
 import { saveVaultEntry, slotCookieName } from '#hooks/cookie-vault/vault.server.js'
-import { storageVaultSchema } from '#content/storage-vault/schema.js'
+import { defineForm, field } from '#lib/form/index.js'
 import { variables as envVariables } from '../env.js'
+
+const testStorageVaultSchema = defineCookieVault<
+  { url: string; storageMb: number; fileMb: number; readOnly: boolean; allowSplit: boolean },
+  { storageMb: number }
+>({
+  scope: 'storage',
+  title: 'Test Storage Vault',
+  description: 'Test',
+  entryForm: defineForm({ id: 'test_vault_entry', fields: { slot: field.text({ label: 'Slot' }) } }),
+  parse: (v) => ({
+    ok: true,
+    id: String(v.slot ?? 's3_https'),
+    entry: { url: String(v.url ?? ''), storageMb: 512, fileMb: 64, readOnly: false, allowSplit: true },
+  }),
+  mask: (id, e) => ({ label: id, summary: e.url, meta: { storageMb: e.storageMb } }),
+})
 import { securityHeadersHandle } from '../hooks.server.js'
 import { localStore } from './cache.server.js'
 import { clientIpOf, subnetFromIp, subnetOfEvent } from './client-ip.server.js'
@@ -320,7 +337,7 @@ describe('Security Hardening S1–S7 & S9–S12', () => {
 
     const res = await saveVaultEntry(
       cookies as never,
-      storageVaultSchema,
+      testStorageVaultSchema,
       's3_https',
       {
         url: 's3://key:secret@s3.eu-central-1.amazonaws.com/bucket',
@@ -333,7 +350,7 @@ describe('Security Hardening S1–S7 & S9–S12', () => {
     )
     expect(res.ok).toBe(true)
     expect(written.get('dv_key')?.opts.secure).toBe(true)
-    expect(written.get(slotCookieName(storageVaultSchema.scope, 's3_https'))?.opts.secure).toBe(
+    expect(written.get(slotCookieName(testStorageVaultSchema.scope, 's3_https'))?.opts.secure).toBe(
       true,
     )
   })

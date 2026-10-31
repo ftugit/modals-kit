@@ -10,10 +10,10 @@
   // каждый хост пропускает (`foreignNames: 'skip'`) — страница /modals
   // показывает и глобальные, и демо-модалки из одной цепочки адреса.
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import '#content/user/modals.js'
-  import '#content/storage-vault/modals.js'
-  import '#content/storage-servers/modals.js'
   import { globalScope } from '#lib/modals/index.js'
+
+  // Автоподхват глобальных модалок всех установленных модулей (`user`, `storage-servers`, опциональные модули).
+  import.meta.glob('../../content/*/modals.ts', { eager: true })
   import ModalSystem from './ModalSystem.svelte'
   import { NAV_ITEMS } from './nav'
   import { AppShell, useHeaderSlot, useSidebarSlot } from '#components/shell/index.js'

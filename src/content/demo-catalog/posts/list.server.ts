@@ -31,7 +31,8 @@ import {
   type DbPostsFresh,
   type DbPostsQuery,
 } from '#content/demo-catalog/posts/source.js'
-import { DEMO_PRINCIPAL, db, posts } from '#server/db.server.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
+import { DEMO_PRINCIPAL, db } from '#server/db.server.js'
 
 /**
  * Порядок keyset-выборки обязан быть ПОЛНЫМ. Без уникального хвоста строки с

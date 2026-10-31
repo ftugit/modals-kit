@@ -30,7 +30,7 @@ const ok = (name) => {
 async function waitPreview() {
   for (let i = 0; i < 60; i++) {
     try {
-      if ((await fetch(BASE + '/db-demo')).ok) return
+      if ((await fetch(BASE + '/user/auth')).ok) return
     } catch {}
     await sleep(500)
   }
@@ -68,11 +68,25 @@ async function run() {
       assert.ok(adminCookies.some((c) => c.name === 'auth_sid' || c.name === 'auth_tmp'), 'куки сессии получены')
       ok('вход под admin выполнен')
 
-      // 2. Находим UUID двух демо-пользователей на /users и открываем профиль первого в модалке
+      // 2. Находим UUID двух пользователей на /users (если модуль demo не установлен и пользователей < 2, создаём двух гостевых)
       await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
-      const demoLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasText: 'demo-' })
-      const firstUserLink = demoLinks.nth(0)
-      const secondUserLink = demoLinks.nth(1)
+      if ((await page.locator('[data-testid="seed-user-row"]').count()) < 3) {
+        for (let k = 0; k < 2; k++) {
+          const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 860 } })
+          const gp = await guestCtx.newPage()
+          await gp.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+          await gp.locator('#user-auth').getByRole('button', { name: 'Сгенерировать ключ' }).click()
+          await gp.locator('#user-auth').getByRole('button', { name: 'Авторизация', exact: true }).click()
+          await gp.locator('[data-testid="header-user"], #user-profile').first().waitFor({ state: 'visible', timeout: 15000 })
+          await guestCtx.close()
+        }
+        await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
+      }
+      const userLinks = page.locator('[data-testid="seed-user-row"]')
+      const demoFiltered = userLinks.filter({ hasText: 'demo-' })
+      const poolLinks = (await demoFiltered.count()) >= 2 ? demoFiltered : userLinks
+      const firstUserLink = poolLinks.nth(0)
+      const secondUserLink = poolLinks.nth(1)
       await firstUserLink.waitFor({ state: 'visible', timeout: 15000 })
       const userHref = await firstUserLink.getAttribute('href')
       const m = /^\/user\/([0-9a-f-]{36})/i.exec(userHref ?? '')

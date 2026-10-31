@@ -23,6 +23,7 @@
 | `js-only.svelte.ts` | гидратация Svelte 5 | Реактивный флаг оживления клиента после гидратации (` hydrated()`). |
 | `links/` | `#lib/modals` × SvelteKit `<a>` | Перехват переходов по ссылкам (`asLink`) для бесшовного открытия модальных маршрутов поверх текущей страницы с graceful degradation без JS. |
 | `loader.svelte.ts` | `$app/state` navigating × UI | Отложенный индикатор навигации без мелькания на быстрых переходах. |
+| `module-ext.ts` | `#lib/db` × опциональные модули в `src/content/*` | Контракты автоподхватываемых расширений модулей (`db.ext.ts`, `nav.ext.ts`) для бесконфликтной установки модулей поверх чистого ядра. |
 | `schema-route.ts` | `#lib/address` × страница ошибок | Один адрес экрана переноса схемы (`SCHEMA_PATH = '/schema'`, `schemaHref(from)`) без зависимостей — чтобы `ErrorPage.svelte` не тянул в клиент `#lib/db/sync` ради строки адреса. |
 | `task-stream.server.ts` | `#lib/task` × HTTP NDJSON | Серверный ответ `taskResponse(request, run, { watch })` с потоковой отдачей шагов задачи. |
 | `use-drawer.svelte.ts` | `matchMedia` × UI-шторки | Реактивное переключение мобильной шторки / десктопной панели. |

@@ -2,12 +2,9 @@ import { sequence, type Handle, type ServerInit } from '@sveltejs/kit/hooks'
 import { dbHandle } from '#lib/db/sveltekit/index.js'
 import { DEMO_PRINCIPAL, db } from '#server/db.server.js'
 import { createComponentFormsHandle } from '#hooks/component-form/server.server.js'
-// Транспорт источника БД: первая отрисовка списка читается напрямую из слоя, а не
-// через self-fetch. Ставится здесь, а не в лоадере страницы: лоадер `/paginator`
-// — universal, его граф доходит и до браузера, а `#lib/server/*` — модули
-// серверные. Это side-effect импорта на весь процесс: оба демо и API получают
-// транспорт независимо от того, какой роут обрабатывает запрос.
-import '#content/demo-catalog/posts/list.server.js'
+// Серверные точки инициализации установленных модулей (`src/content/*/init.ext.server.ts`):
+// например, регистрация прямых SSR-транспортов пагинаторов без self-fetch.
+import.meta.glob('./content/*/init.ext.server.ts', { eager: true })
 import { captureUpstreamFetch } from '#server/fetch.server.js'
 
 /**

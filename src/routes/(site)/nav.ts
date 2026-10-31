@@ -1,45 +1,29 @@
 import type { Path } from '$app/types'
 import type { NavItem } from '#components/shell/index.js'
-import { kitRoute } from '#lib/address/sveltekit.js'
+import type { ModuleHomeCard, NavModuleExtension } from '#hooks/module-ext.js'
 
-/**
- * Страницы без параметров, которым нужен только адрес. `kitRoute` резолвит
- * маршрут штатным `resolve()` из `$app/paths` и регистрирует его в таблице
- * адресов: опечатка в пути ломает `svelte-check`, а не превращается в мёртвую
- * ссылку в сайдбаре.
- */
-const fieldsRoute = kitRoute('/fields')
-const stepsRoute = kitRoute('/steps')
+const CORE_ITEMS = [{ to: '/', label: 'Главная' }] satisfies readonly (NavItem & {
+  readonly to: Path
+})[]
 
-/**
- * Карточка — параметрический маршрут. В `$app/types` у него нет «красивого»
- * `Path`: массивный идентификатор `/(site)/(app)/cards/[id]` и есть имя
- * маршрута, группы SvelteKit из адреса выбрасывает сам `resolve()`.
- */
-const cardRoute = kitRoute('/(site)/(app)/cards/[id]', { dynamic: true, id: '/cards/[id]' })
+const navModules = import.meta.glob<{ navExtension?: NavModuleExtension }>(
+  '../../content/*/nav.ext.ts',
+  { eager: true },
+)
 
-/**
- * Статические пункты каркаса.
- *
- * `satisfies readonly { to: Path }[]` — не украшение: `Path` из `$app/types`
- * знает все существующие маршруты, поэтому опечатка (`/paginatro`) ломается на
- * `svelte-check`.
- */
-const STATIC_ITEMS = [
-  { to: '/', label: 'Главная' },
-  { to: '/modals', label: 'Модалки' },
-  { to: '/paginator', label: 'Пагинатор' },
-  { to: '/form', label: 'Формы' },
-  { to: fieldsRoute.href(), label: 'Поля' },
-  { to: stepsRoute.href(), label: 'Шаги' },
-  { to: '/db-demo', label: 'База данных' },
-  { to: '/upload-demo', label: 'Загрузка файлов' },
-  { to: '/cycle', label: 'Cycle' },
-  { to: '/spike', label: 'Spike' },
-] satisfies readonly (NavItem & { readonly to: Path })[]
+const sortedExtensions = Object.keys(navModules)
+  .sort()
+  .map((key) => navModules[key]?.navExtension)
+  .filter((ext): ext is NavModuleExtension => Boolean(ext))
+  .sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
 
-/** Пункты навигации каркаса: статические страницы и карточка с параметром. */
+/** Пункты навигации каркаса: базовый маршрут и пункты установленных модулей. */
 export const NAV_ITEMS: readonly NavItem[] = [
-  ...STATIC_ITEMS,
-  { to: cardRoute.href({ id: '1' }), label: 'Карточка #1' },
+  ...CORE_ITEMS,
+  ...sortedExtensions.flatMap((ext) => ext.navItems ?? []),
 ]
+
+/** Карточки разделов установленных модулей для стартовой страницы (`/`). */
+export const HOME_CARDS: readonly ModuleHomeCard[] = sortedExtensions.flatMap(
+  (ext) => ext.homeCards ?? [],
+)
