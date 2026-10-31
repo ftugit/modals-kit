@@ -1,6 +1,6 @@
 # План: универсальный экранный блок `Surface`, единая форма серверов хранилища и устранение перерисовки модалок / сброса пагинатора (2026-10-31)
 
-Статус: **черновик согласован по архитектуре, ожидает отмашки на реализацию** (базовый коммит ветки `img`: `7614c4b`, пакет `demo@1.0.0` в `refs/tags/modules`: `527502b`).
+Статус: **этап 1 согласован (§3.4), этап 3 на согласовании (§3.5), отмашки на реализацию нет** (базовый коммит ветки `img`: `7614c4b`, пакет `demo@1.0.0` в `refs/tags/modules`: `527502b`).
 
 Документ фиксирует запросы владельца, результаты полного аудита кодовой базы, корневые причины найденных проблем, архитектурное решение без костылей и поимённую сводку всех файлов ядра `img` и модуля `demo`, которые предстоит создать или обновить.
 
@@ -153,6 +153,41 @@ export interface SurfaceProps {
    - `ProfileModal.svelte`, `SeedUsersModal.svelte` и `BlocksModal.svelte` получают `const ldr = useLoader<...>()` и передают `initial={ldr.data}` в `Profile`, `SeedUsersList` и `BlocksList`.
    - При мутациях в `ProfileEditModal`, `ProfileDeleteModal`, `BlockCreateModal`, `BlockEditModal`, `BlockDeleteModal` добавляется точечный `m.modals.invalidateLoader(...)` для затронутых записей профиля/блокировок.
    - В `BlocksList.svelte` (при заданном `uid` пользователя) и в `UserPicker.svelte` (в модальном режиме) `<PaginatorScope>` получает собственный `store={localStore}` (`createPaginatorStore()`), чтобы персональные блокировки и пикер пользователей не перезатирали глобальные пагинаторы `/blocks` и `/users`.
+
+### 3.4. Принятые решения по этапу 1 (согласовано владельцем, 2026-10-31)
+
+Этап 1 фиксируется в следующем виде; альтернативы (реестр адресов, `offset`/`enabled`, refcount, `captureScroll`, маркер устаревания) отклонены как избыточные.
+
+1. **Время жизни данных — время жизни записи в стопке.** Данные, DOM и `scrollTop` живут, пока запись находится где угодно в цепочке (включая «Назад» и сворачивание панели). При полном закрытии записи ключ выбрасывается, и повторное открытие запрашивает данные заново. Ключи записей (а не адресов) выбраны потому, что адресные ключи переживают реальное закрытие и ломают требование «открыл заново — запросил заново».
+2. **Ключ записи — существующий `runtimeKey(name, index)`** (`src/lib/modals/core.ts`), фиксируется при монтировании слоя и дальше не пересчитывается. Известное ограничение (вне рамок этапа): `forceClose(name)` в середине цепочки сдвигает индексы.
+3. **Сброс по закрытию — синхронно в `commit`.** Рядом с `fireLifecycle`/`releaseLayers` добавляется `dropForClosed(prev, next)`: для каждой записи, отсутствующей в `next`, вызывается `clearLoaderCache(name, params)` и новый `forgetRuntime(key)`. Немедленный сброс безопасен, потому что `ModalContent` рендерит из `rt`, а не из кэша; защита `releaseLayers` (анимация выхода, «Вперёд») не затрагивается. Покрывает «Назад», закрытие панели, `forceClose`, `closeAll` и синхронизацию с историей. `invalidateLoader` остаётся точечной ревалидацией внутри живой записи.
+4. **Скелетон — только при первой загрузке.** `hasData = rt.data !== undefined`; `showSkeleton = hasLoader && !hasData && rt.status !== 'error'`; ветка ошибки и `wasPending` работают только при `!hasData`; `loading` несёт `prev.data`.
+5. **`initial` из `useLoader().data` + точечный `invalidateLoader`** в `ProfileModal`, `SeedUsersModal`, `BlocksModal` и в мутациях `ProfileEditModal`, `ProfileDeleteModal`, `BlockCreateModal`, `BlockEditModal`, `BlockDeleteModal`.
+6. **Изоляция пагинатора — по хранилищу записи**, без реестра: `createPaginatorStore()` создаётся владельцем (списком) на смонтированном слое, ключ — тот же зафиксированный `runtimeKey`; список регистрирует хранилище и удаляет его при размонтировании, фильтр-модалка получает тот же ключ через `modal.params` и только читает. Очистка `extra.ids` переезжает из `onDestroy` в освобождение хранилища; `scrollTop` остаётся состоянием DOM и в `PaginatorState` не входит.
+7. **`error` без данных** ставится только при авторитетном 403/404, а не при любом сбое.
+8. **Порядок этапов**: этап 1 полностью до этапа 2. Коммиты: `01+02` вместе, `03'` отдельно, пагинатор отдельно, `publicProfile`/`notCreated` (`ProfileRouteData → ProfileRead` проекция) отдельным коммитом.
+9. **Кнопки отправки форм остаются внутри `render`** (вариант 1 из §4): в `controls` поднимаются только навигационные и контекстные действия.
+
+### 3.5. Этап 3: одна общая форма и тонкий куки-сейф (на согласовании)
+
+Требование владельца: одна общая форма на оба сценария; куки-сейф не обрастает собственной абстракцией — только обращение к серверу через компонент формы и сохранение результата в куки и RAM, ровно как работает текущая авторизация пользователя (`AuthWidget` → серверный экшен → запечатанная кука + реактивный RAM-снапшот `vault.svelte.ts`).
+
+Факты, на которых строится решение: набор полей у обоих сценариев совпадает (`slot`, `url`, `encryption_key`, `clear_encryption_key`, `storage_mb`, `file_mb`, `allow_split`, `read_only`), отличие одно — `priority` только в пуле БД; серверный экшен куки-сейфа уже возвращает `snapshot`, а клиент держит его в `$state` и перерисовывает список. Значит общим должен стать не только UI, но и определение формы, а «сейф» — остаться транспортом.
+
+1. **Общее определение формы — `src/hooks/storage-server-form/`** (слой 2, доступен и `#content/*`, и `#hooks/cookie-vault`):
+   - `fields.ts` — `storageServerFields({ withPriority, allowEditExisting })`, единственный источник подписей, подсказок, значений по умолчанию и валидации полей;
+   - `parse.ts` — `parseStorageServerEntry(values)` (определение схемы `s3://` / `webdav://` через `#lib/storage/s3.js` и `#lib/storage/webdav.js`, нормализация слота, диапазоны квот) и `maskStorageServerEntry(entry)`;
+   - `form.ts` — `defineStorageServerForm({ id, withPriority })`: `defineForm` с действиями `save`, `delete` (`validate: 'none'`), `reset-key`;
+   - README пакета обязателен (правило §4 репозитория).
+2. **Один компонент — `src/components/storage-servers/StorageServerForm.svelte`**: `Surface` + `Common` + `Field` по списку полей + кнопка отправки внутри `render` (решение 9 §3.4) + необязательная кнопка удаления из `controls`; пропы `form` (привязанная через `bindComponentForm`), `withPriority`, `submitLabel`, `editId`, `onSaved`. Никаких копий разметки под сценарий.
+3. **Куки-сейф сжимается до транспорта**:
+   - `defineCookieVault` сохраняет только `scope`, `maxEntries`, `form`, `parse`, `mask`; генерация `deleteForm`/`deleteFormFor`/`resetKeyForm` уходит — действия живут в общей форме;
+   - `bind.svelte.ts` удаляется: вызывающий код использует `bindComponentForm` напрямую (как `AuthModal`);
+   - `CookieVault.svelte` остаётся списком (маска слота, удаление, кнопка сброса `dv_key`) и рендерит `StorageServerForm` пропом `form`;
+   - `registerCookieVaultForms` регистрирует **одну** форму с ветвлением по `intent` — как уже сделан `storage-server.form.server.ts`.
+4. **Сервер и RAM не меняются по существу**: `saveVaultEntry` / `removeVaultEntry` / `resetVaultKey` продолжают писать `HttpOnly`-куки, экшен возвращает `snapshot`, клиент кладёт его в `$state` и гидрирует из данных лоадера. Новых клиентских хранилищ у сейфа нет.
+5. **Идентификаторы форм разные** (`storage-server-admin`, `storage-server-vault`), определение — общее: реестр `component-form` падает на дубликате `id`, поэтому один `id` на два экшена не годится.
+6. **`priority` и `clear_encryption_key`** — только в режиме БД (`withPriority`/`allowEditExisting`); в сейфе `slot` перезаписывается по имени.
 
 ---
 
