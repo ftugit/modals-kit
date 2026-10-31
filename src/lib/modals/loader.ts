@@ -407,8 +407,26 @@ export function createLoader(deps: LoaderDeps) {
     }
   }
 
+  /**
+   * Забыть состояние записей вида: ключ записи — `${index}:${name}`.
+   *
+   * Вместе с кешем: иначе закрытая и открытая заново модалка получила бы
+   * `ready` из прошлой жизни и не перезапросила данные.
+   */
+  function forgetRuntime(name: string): void {
+    const keys = Object.keys(store.state.runtime).filter(
+      (key) => key.slice(key.indexOf(':') + 1) === name,
+    )
+    if (keys.length === 0) return
+    // Полная замена, а не merge: merge не умеет удалять ключи.
+    const next = { ...store.state.runtime }
+    for (const key of keys) delete next[key]
+    store.set({ runtime: next })
+  }
+
   function clearLoaderCache(name?: string, params?: Record<string, unknown>): void {
     if (!name) return cache.clear()
+    forgetRuntime(name)
     if (params !== undefined) {
       const target = loaderKey(name, params)
       cache.delete(target)

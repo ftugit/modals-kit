@@ -145,6 +145,18 @@ test('setRuntime: то же состояние не переписывается
   assert.equal(l.readRuntime('c', 0), rt, 'объект состояния остался тем же')
 })
 
+test('clearMemory по имени забывает состояние записей вида', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    { name: 'c', component: 'X', loader: async () => 'данные' } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  l.runLoader(entry('c')); await tick()
+  assert.equal(l.readRuntime('c', 0).status, 'ready')
+  store.clearMemory('c')
+  assert.equal(l.readRuntime('c', 0).status, 'idle', 'состояние снятой записи забыто')
+})
+
 test('дедупликация: две записи с одинаковыми параметрами ждут одну загрузку', async () => {
   let calls = 0
   const store = createModalStore()

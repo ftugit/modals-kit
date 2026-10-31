@@ -225,6 +225,7 @@ export function createModals<V = unknown>(
 
     fireLifecycle(prev, next)
     releaseLayers(prev, next)
+    dropForClosed(prev, next)
   }
 
 
@@ -265,6 +266,30 @@ export function createModals<V = unknown>(
   }
 
   /**
+   * Забыть кеш и состояние записей, выпавших из цепочки.
+   *
+   * 🔴 Почему здесь, а не в `close()`: закрытие — это не только `close`, но и
+   * «Назад», и сокращение цепочки через `back`, и `forceClose`. Жизнь
+   * содержимого привязана к МЕСТУ в цепочке (позиция + имя + параметры): пока
+   * запись в цепочке — в том числе за «Вперёд» или в свёрнутой панели —
+   * данные, DOM и прокрутка живут; после настоящего закрытия повторное
+   * открытие запрашивает данные заново.
+   *
+   * 🔴 Синхронно, в отличие от `releaseLayers`: отложенная очистка пережила бы
+   * быстрое «закрыл и сразу открыл то же самое» и стёрла кеш уже новой
+   * загрузки. Уходящему слою удаление не мешает — `ModalContent` рисует из
+   * `rt`, а не из кеша.
+   */
+  const dropForClosed = (prev: Chain, next: Chain) => {
+    if (prev.length === 0) return
+    const alive = new Set(next.map(chainId))
+    prev.forEach((e, i) => {
+      if (alive.has(chainId(e, i))) return
+      store.clearMemory(entryLabel(e), resolveEntry(e, i, lookup).params)
+    })
+  }
+
+  /**
    * Отсев осиротевших разовых слоёв.
    *
    * Запись истории переживает перезагрузку, а содержимое слоя — нет: оно
@@ -299,25 +324,28 @@ export function createModals<V = unknown>(
     }
   }
 
+  /**
+   * Тождество места в цепочке: позиция + имя + ПАРАМЕТРЫ. Замена `a{id:1}` на
+   * `a{id:2}` на том же месте — это закрытие одной модалки и открытие другой
+   * (F35). Переопределения внешнего вида (цвет, размер) в тождество не входят.
+   */
+  const chainId = (e: Chain[number], i: number) =>
+    `${i}:${isRegistered(e) ? loaderKey(e.name, e.params) : entryLabel(e)}`
+
   /** Кто открылся и кто закрылся между двумя цепочками. */
   const fireLifecycle = (prev: Chain, next: Chain) => {
     const cfg = scopedConfig(store.state)
-    // Позиция + имя + ПАРАМЕТРЫ: замена `a{id:1}` на `a{id:2}` на том же месте —
-    // это закрытие одной модалки и открытие другой (F35). Переопределения
-    // внешнего вида (цвет, размер) в тождество не входят.
-    const id = (e: Chain[number], i: number) =>
-      `${i}:${isRegistered(e) ? loaderKey(e.name, e.params) : entryLabel(e)}`
-    const prevIds = prev.map(id)
-    const nextIds = next.map(id)
+    const prevIds = prev.map(chainId)
+    const nextIds = next.map(chainId)
 
     next.forEach((e, i) => {
-      if (prevIds.includes(id(e, i))) return
+      if (prevIds.includes(chainId(e, i))) return
       const ctx = ctxOf(next, i)
       lookup(entryLabel(e))?.onOpen?.(ctx)
       cfg.onModalOpen?.(ctx)
     })
     prev.forEach((e, i) => {
-      if (nextIds.includes(id(e, i))) return
+      if (nextIds.includes(chainId(e, i))) return
       lookup(entryLabel(e))?.onClose?.(ctxOf(prev, i))
     })
     // хост: только первая в стопке, вложенные не триггерят
@@ -361,6 +389,7 @@ export function createModals<V = unknown>(
     store.set({ chain: next })
     fireLifecycle(prev, next)
     releaseLayers(prev, next)
+    dropForClosed(prev, next)
   }
 
   const api: Modals<V> = {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { buildCore } from './build'
 import { nextChain } from './core'
 import { createModals } from './create'
+import { createLoader } from './loader'
 import { memoryCore } from './cores/memory'
 import { memoryEngine, type ChainEngine } from './engine'
 import { localStorageChain, memoryStorage, urlStorage } from './storages'
@@ -699,4 +700,34 @@ test('несколько подписчиков: одно событие ист�
   e.flush()
   assert.equal(e.browserIndex(), 1, 'лишних шагов нет')
   assert.deepEqual(core.read(), [])
+})
+
+test('закрытая запись забывает загрузку: повторное открытие перезапрашивает', async () => {
+  let calls = 0
+  const defs: Record<string, any> = {
+    a: { name: 'a', component: 'X', loader: async () => { calls++; return 1 } },
+  }
+  const lookup = (n: string) => defs[n]
+  const modals = createModals(buildCore(memoryEngine(), memoryStorage(), { lookup }))
+  const l = createLoader({ store: modals.store, lookup })
+  const run = async () => {
+    const chain = modals.store.state.chain
+    const e = chain[chain.length - 1] as RegisteredEntry
+    l.runLoader({
+      ...e, index: chain.length - 1, size: { width: 480 }, color: '#fff',
+      tailColor: '#eee', lock: false, noForward: false, known: true,
+    })
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  modals.open('a')
+  await run()
+  assert.equal(calls, 1)
+
+  modals.close()
+  assert.equal(l.readRuntime('a', 0).status, 'idle', 'состояние снятой записи забыто')
+
+  modals.open('a')
+  await run()
+  assert.equal(calls, 2, 'после закрытия данные перезапрашиваются')
 })
