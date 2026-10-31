@@ -86,10 +86,11 @@ registerModal({
 // Фильтры списка: открывается кнопкой над списком, результат пишет в
 // состояние пагинатора. `route` — страница-fallback `/users/filters` для
 // no-JS (кнопка без JS ведёт туда, форма возвращает GET-ом к списку).
+// `scope` — область хранилища списка: модалка берёт из неё свой срез.
 registerModal({
   name: 'user.list.filters',
   component: lazy(() => import('./ui/SeedUsersFiltersModal.svelte')),
-  route: userListFiltersRoute.href,
+  route: (p: { scope?: string }) => userListFiltersRoute.href({ scope: p?.scope ?? null }),
   size: { width: 420, height: 560 },
 })
 // Выбор одного или нескольких пользователей поверх `SeedUsersList`
@@ -117,12 +118,13 @@ registerModal({
     p?.id ? userBlocksRoute.href({ id: String(p.id) }) : blocksListRoute.href(),
   size: { width: 680, height: 560 },
 })
-// Фильтры списка блокировок (`{ uid? }` передаёт контекст фиксированного юзера).
+// Фильтры списка блокировок (`{ uid?, scope? }` передаёт контекст
+// фиксированного юзера и область его хранилища).
 registerModal({
   name: 'user.blocks.filters',
   component: lazy(() => import('./ui/BlocksFiltersModal.svelte')),
-  route: (p: { uid?: string }) =>
-    p?.uid ? `${blocksFiltersRoute.href()}?uid=${encodeURIComponent(String(p.uid))}` : blocksFiltersRoute.href(),
+  route: (p: { uid?: string; scope?: string }) =>
+    blocksFiltersRoute.href({ uid: p?.uid ?? null, scope: p?.scope ?? null }),
   size: { width: 460, height: 580 },
 })
 // Создание блокировки (`{ uid?, uids? }`).
