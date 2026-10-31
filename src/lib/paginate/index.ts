@@ -14,3 +14,5 @@ export * from './adapter-cursor'
 export * from './store'
 export * from './registry'
 export * from './core'
+
+export * from './scopes'

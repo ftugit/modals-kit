@@ -6,13 +6,15 @@
    * `initial` — как страница свой серверный результат. Отказ список сообщает
    * наверх, его, как на странице, рисует носитель экраном `Acl`.
    */
-  import { useLoader } from '#lib/modals/svelte/index.js'
+  import { useLoader, useRuntimeKey } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUsersRouteData } from './seed-users/source.js'
 
   const ldr = useLoader<SeedUsersRouteData>()
+  // Область пагинатора этой записи: ключ стабилен, пока запись в стопке.
+  const scope = useRuntimeKey()
   let acl = $state<AuthErrorCode | null>(null)
 </script>
 
@@ -22,6 +24,11 @@
   {:else if acl}
     <Acl status={acl} backHref="/" variant="plain" />
   {:else}
-    <SeedUsersList initial={ldr.data} variant="plain" onAcl={(fact) => (acl = fact)} />
+    <SeedUsersList
+      {scope}
+      initial={ldr.data}
+      variant="plain"
+      onAcl={(fact) => (acl = fact)}
+    />
   {/if}
 </div>

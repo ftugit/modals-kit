@@ -23,14 +23,20 @@
    * показывает тех же юзеров срезом адреса `users.ids` (состояние
    * пагинатора): список переспрашивает источник при его смене.
    */
-  import { preloadData } from '$app/navigation'
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
-  import { useModalLink } from '#hooks/links/index.js'
-  import type { LinkAttrs } from '#hooks/links/index.js'
-  import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { preloadData } from '$app/navigation'
+  import {
+    acquireScopedStore,
+    createPaginatorStore,
+    getClientStore,
+    getState,
+    releaseScopedStore,
+  } from '#lib/paginate/index.js'
+  import { PaginatorScope } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
@@ -50,6 +56,12 @@
   interface Props {
     /** Данные `load` роута от носителя (страница): своего запроса не будет. */
     initial?: SeedUsersRouteData | null
+    /**
+     * Ключ изолированной области пагинатора от носителя. Пока он задан, порции
+     * и скролл этого списка не делятся с другими экранами того же имени
+     * (пикер, вторая модалка). Пусто — общее клиентское хранилище (страница).
+     */
+    scope?: string | null
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (fact: AuthErrorCode) => void
     /**
@@ -65,6 +77,7 @@
 
   let {
     initial = null,
+    scope = null,
     onAcl,
     rowAttrs,
     isSelected = (_id: string) => false,
@@ -122,7 +135,22 @@
 
   const snapshot = $derived(data?.snapshot ?? null)
 
-  const pagState = usePaginatorState<SeedUserView>(SEED_USERS_NAME)
+  // Область пагинатора: с ключом от носителя — своё хранилище, без ключа —
+  // общее клиентское, как на странице. Ключ захватывается на монтировании
+  // (носитель даёт его ровно на время жизни записи) и освобождается при
+  // размонтировании: последняя ссылка удаляет состояние вместе с внутренним
+  // срезом `extra.ids` пикера.
+  const scopeKey = untrack(() => scope)
+  const store = untrack(() =>
+    scopeKey
+      ? acquireScopedStore(scopeKey)
+      : typeof window === 'undefined'
+        ? createPaginatorStore()
+        : getClientStore(),
+  )
+  if (scopeKey) onDestroy(() => releaseScopedStore(scopeKey))
+
+  const pagState = (name: string = SEED_USERS_NAME) => getState<SeedUserView>(store, name)
   const query = $derived(
     typeof pagState().extra?.q === 'string' ? (pagState().extra.q as string) : '',
   )
@@ -158,7 +186,7 @@
 </script>
 
 {#if snapshot}
-  <PaginatorScope snapshots={{ [SEED_USERS_NAME]: snapshot }}>
+  <PaginatorScope {store} snapshots={{ [SEED_USERS_NAME]: snapshot }}>
   <section class={cn(userSurfaceVariants({ variant }), className)}>
     <div class="mb-4 flex items-baseline justify-between gap-3">
       <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
@@ -174,7 +202,7 @@
         />
       </div>
       <Button
-        {...asModalLink('user.list.filters', {}, { href: filtersHref })}
+        {...asModalLink('user.list.filters', scope ? { scope } : {}, { href: filtersHref })}
         variant="outline"
         data-testid="seed-users-filters-open"
       >

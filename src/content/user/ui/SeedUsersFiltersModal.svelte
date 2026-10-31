@@ -11,9 +11,15 @@
    */
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
-  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
-  import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import {
+    findScopedStore,
+    getClientStore,
+    getState,
+    setExtra,
+    setPageSize,
+  } from '#lib/paginate/index.js'
+
+  import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, profile as profileResource } from '../schema.js'
   import { vault } from '../vault.svelte.js'
@@ -21,6 +27,7 @@
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
 
   const m = useModals()
+  const modal = useModal<{ scope?: string }>()
   const ldr = useLoader<{ canSeeDeleted: boolean; canSeeNickname: boolean }>()
   const seedFilterCaps = useGrants({
     canSeeDeleted: grants(authResource).selectDeleted,
@@ -33,7 +40,10 @@
     vault.principal !== null ? seedFilterCaps.canSeeNickname : ldr.data?.canSeeNickname === true,
   )
 
-  const pagState = usePaginatorState(SEED_USERS_NAME)
+  // Стор владельца списка: ключ области приходит в параметрах модалки. Без
+  // ключа (страница, старая ссылка) — общий клиентский, как раньше.
+  const store = findScopedStore(untrack(() => modal.params?.scope ?? null)) ?? getClientStore()
+  const pagState = () => getState(store, SEED_USERS_NAME)
   const initial: SeedUsersFilterValues = untrack(() => {
     const e = (pagState().extra ?? {}) as Record<string, unknown>
     const s = (k: string) => (typeof e[k] === 'string' ? (e[k] as string) : '')
@@ -53,13 +63,13 @@
     // Порядок важен: сначала новый срез (setExtra перезапрашивает с первой
     // порции прежним размером), затем размер — иначе промежуточный запрос
     // ушёл бы со старым срезом и новым размером.
-    await setExtra(getClientStore(), SEED_USERS_NAME, patch)
-    await setPageSize(getClientStore(), SEED_USERS_NAME, pageSize)
+    await setExtra(store, SEED_USERS_NAME, patch)
+    await setPageSize(store, SEED_USERS_NAME, pageSize)
     m.modals.close()
   }
 
   async function reset() {
-    await setExtra(getClientStore(), SEED_USERS_NAME, {
+    await setExtra(store, SEED_USERS_NAME, {
       ord: undefined,
       state: undefined,
       cfrom: undefined,
@@ -68,7 +78,7 @@
       dto: undefined,
       nick: undefined,
     })
-    await setPageSize(getClientStore(), SEED_USERS_NAME, SEED_USERS_PAGE_SIZE)
+    await setPageSize(store, SEED_USERS_NAME, SEED_USERS_PAGE_SIZE)
     m.modals.close()
   }
 </script>

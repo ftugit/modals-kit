@@ -25,8 +25,16 @@
   import { Steps, stepLink, useSteps } from '#components/steps/index.js'
   import { Button } from '#components/ui/index.js'
   import { asLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { useRuntimeKey } from '#lib/modals/svelte/index.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { getClientStore, getState, hasPaginator, setExtra } from '#lib/paginate/index.js'
+  import {
+    acquireScopedStore,
+    getClientStore,
+    getState,
+    hasPaginator,
+    releaseScopedStore,
+    setExtra,
+  } from '#lib/paginate/index.js'
   import Acl from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
@@ -62,6 +70,15 @@
 
   let localAcl = $state<AuthErrorCode | null>(null)
   let localPicked = $state<string[]>([...untrack(() => initialPicked).filter(Boolean)])
+  // Пикер — владелец области пагинатора: и собранные порции, и срез выбора
+  // `ids` живут в изолированном хранилище записи, а не в общем — иначе
+  // соседняя модалка с тем же именем списка делила бы с пикером состояние.
+  // На странице `/users/pick` ключа записи нет — работает общее хранилище.
+  const scope = useRuntimeKey()
+  const store = untrack(() => (scope ? acquireScopedStore(scope) : getClientStore()))
+  onDestroy(() => {
+    if (scope) releaseScopedStore(scope)
+  })
   let localStep = $state<'pick' | 'chosen'>('pick')
 
   const urlPicked = $derived.by(() => {
@@ -75,9 +92,9 @@
 
   function clearPaginatorIdsSlice() {
     if (!hasPaginator(SEED_USERS_NAME)) return
-    const st = getState(getClientStore(), SEED_USERS_NAME)
+    const st = getState(store, SEED_USERS_NAME)
     if (st?.extra?.ids) {
-      void setExtra(getClientStore(), SEED_USERS_NAME, { ids: undefined })
+      void setExtra(store, SEED_USERS_NAME, { ids: undefined })
     }
   }
 
@@ -95,7 +112,7 @@
       localPicked = [...next]
     }
     if (localStep === 'chosen' && hasPaginator(SEED_USERS_NAME)) {
-      void setExtra(getClientStore(), SEED_USERS_NAME, {
+      void setExtra(store, SEED_USERS_NAME, {
         ids: localPicked.length ? localPicked.join(',') : undefined,
       })
     }
@@ -156,7 +173,7 @@
     localStep = next
     host.set(next)
     if (!hasPaginator(SEED_USERS_NAME)) return
-    await setExtra(getClientStore(), SEED_USERS_NAME, {
+    await setExtra(store, SEED_USERS_NAME, {
       ids: next === 'chosen' && localPicked.length ? localPicked.join(',') : undefined,
     })
   }
@@ -209,6 +226,7 @@
       {#snippet pick()}
         <div class="flex flex-col gap-3">
           <SeedUsersList
+            {scope}
             initial={initialUsers}
             {rowAttrs}
             isSelected={(id) => pickedSet.has(id)}
@@ -243,6 +261,7 @@
         <div class="flex flex-col gap-3">
           {#if pickedSet.size}
             <SeedUsersList
+              {scope}
               initial={initialUsers}
               {rowAttrs}
               isSelected={(id) => pickedSet.has(id)}

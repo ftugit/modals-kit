@@ -10,14 +10,21 @@
    * открывают карточку без возможности отправки (`canSubmit = false`).
    */
   import { preloadData } from '$app/navigation'
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
   import { Paginator, Skeleton } from '#components/paginator/index.js'
+  import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
-  import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
-  import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import {
+    acquireScopedStore,
+    createPaginatorStore,
+    getClientStore,
+    getState,
+    releaseScopedStore,
+  } from '#lib/paginate/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
+  import { PaginatorScope } from '#lib/paginate/svelte/index.js'
   import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { block as blockResource } from '../schema.js'
@@ -41,13 +48,26 @@
     uid?: string | null
     /** Данные `load` роута от страницы-носителя (SSR/no-JS). */
     initial?: BlocksRouteData | null
+    /**
+     * Ключ изолированной области пагинатора. Владелец (модалка) задаёт его на
+     * всё время жизни записи: соседние экраны с тем же именем списка не делят
+     * с этим ни порции, ни скролл. Пусто — общее клиентское хранилище (страница).
+     */
+    scope?: string | null
     /** Отказ доступа передаётся носителю для показа `Acl`. */
     onAcl?: (fact: AuthErrorCode) => void
     variant?: UserSurfaceVariant
     class?: string
   }
 
-  let { uid = null, initial = null, onAcl, variant = 'plain', class: className }: Props = $props()
+  let {
+    uid = null,
+    initial = null,
+    scope = null,
+    onAcl,
+    variant = 'plain',
+    class: className,
+  }: Props = $props()
 
   ensureBlocksPaginator()
 
@@ -99,7 +119,23 @@
   })
 
   const snapshot = $derived(data?.snapshot ?? null)
-  const pagState = usePaginatorState<BlockView>(BLOCKS_NAME)
+
+  // Область пагинатора: с ключом от носителя — своё хранилище, без ключа —
+  // общее клиентское, как на странице. Ключ захватывается на монтировании
+  // (носитель даёт его ровно на время жизни записи) и освобождается при
+  // размонтировании: последняя ссылка удаляет состояние вместе с внутренним
+  // срезом `extra.uids`.
+  const scopeKey = untrack(() => scope)
+  const store = untrack(() =>
+    scopeKey
+      ? acquireScopedStore(scopeKey)
+      : typeof window === 'undefined'
+        ? createPaginatorStore()
+        : getClientStore(),
+  )
+  if (scopeKey) onDestroy(() => releaseScopedStore(scopeKey))
+
+  const pagState = (name: string = BLOCKS_NAME) => getState<BlockView>(store, name)
   const createBlockGrant = useGrants(grants(blockResource).insert)
   const canCreate = $derived(
     vault.principal !== null
@@ -149,7 +185,7 @@
 </script>
 
 {#if snapshot}
-  <PaginatorScope snapshots={{ [BLOCKS_NAME]: snapshot }}>
+  <PaginatorScope {store} snapshots={{ [BLOCKS_NAME]: snapshot }}>
     <section class={cn(userSurfaceVariants({ variant }), className)} data-testid="blocks-list">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-baseline gap-2">
@@ -175,7 +211,7 @@
           <Button
             {...asModalLink(
               'user.blocks.filters',
-              fixedUid ? { uid: fixedUid } : {},
+              { ...(fixedUid ? { uid: fixedUid } : {}), ...(scope ? { scope } : {}) },
               { href: filtersHref },
             )}
             variant="outline"

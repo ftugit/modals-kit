@@ -7,8 +7,7 @@
    */
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { getClientStore, setExtra, setPageSize } from '#lib/paginate/index.js'
-  import { usePaginatorState } from '#lib/paginate/svelte/index.js'
+  import { findScopedStore, getClientStore, getState, setExtra, setPageSize } from '#lib/paginate/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, block as blockResource } from '../schema.js'
@@ -20,7 +19,7 @@
   const gAuth = grants(authResource)
 
   const m = useModals()
-  const modal = useModal<{ uid?: string }>()
+  const modal = useModal<{ uid?: string; scope?: string }>()
   const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
 
   const ldr = useLoader<{
@@ -46,7 +45,10 @@
     !uid && (vault.principal !== null ? filterCaps.canPickUsers : ldr.data?.canPickUsers === true),
   )
 
-  const pagState = usePaginatorState(BLOCKS_NAME)
+  // Стор владельца списка: ключ области приходит в параметрах модалки. Без
+  // ключа (страница, старая ссылка) — общий клиентский, как раньше.
+  const store = findScopedStore(untrack(() => modal.params?.scope ?? null)) ?? getClientStore()
+  const pagState = () => getState(store, BLOCKS_NAME)
   const initial: BlocksFilterValues = untrack(() => {
     const e = (pagState().extra ?? {}) as Record<string, unknown>
     const s = (k: string) => (typeof e[k] === 'string' ? (e[k] as string) : '')
@@ -66,19 +68,19 @@
   })
 
   async function apply(patch: Record<string, string | undefined>, pageSize: number) {
-    await setExtra(getClientStore(), BLOCKS_NAME, patch)
-    await setPageSize(getClientStore(), BLOCKS_NAME, pageSize)
+    await setExtra(store, BLOCKS_NAME, patch)
+    await setPageSize(store, BLOCKS_NAME, pageSize)
     m.modals.close()
   }
 
   async function reset() {
-    await setExtra(getClientStore(), BLOCKS_NAME, {
+    await setExtra(store, BLOCKS_NAME, {
       ord: undefined,
       state: undefined,
       scopes: undefined,
       uids: undefined,
     })
-    await setPageSize(getClientStore(), BLOCKS_NAME, BLOCKS_PAGE_SIZE)
+    await setPageSize(store, BLOCKS_NAME, BLOCKS_PAGE_SIZE)
     m.modals.close()
   }
 </script>

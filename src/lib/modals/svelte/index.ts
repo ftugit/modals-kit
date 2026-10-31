@@ -8,7 +8,7 @@ export { default as ModalContent } from './ModalContent.svelte'
 
 export {
   useChain, useModalDepth, useModalsOpen, useChainLocked, useHostConfig,
-  useModal, useModalState, useModalData, useSharedData, useLoader,
+  useModal, useModalState, useModalData, useSharedData, useLoader, useRuntimeKey,
 } from './state.svelte'
 export type { ModalHandle, ModalStateHandle } from './state.svelte'
 
