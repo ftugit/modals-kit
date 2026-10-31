@@ -10,12 +10,17 @@
 // его вставляют в поле «Seed» формы входа. Хранить secret сервер не может и
 // не должен: это ключ владельца.
 //
+// Если задан `ADMIN_SEED` (ключ владельца из окружения), связка не
+// генерируется: из него выводится `seed`, и вход тем же значением работает
+// от запуска к запуску — без выхватывания строки из лога.
+//
 // Повторный запуск ничего не создаёт: в памяти (`DATABASE_DIR` не задан) база
 // пустая, поэтому администратор появится заново при каждом старте, а на
 // постоянной базе — только один раз при первом открытии драйвера в рантайме.
+// Уже заведённого администратора `ADMIN_SEED` не заменяет.
 import type { Database } from '#lib/db/index.js'
 import { SERVER } from '#content/user/auth.js'
-import { generateKeyPair } from '#content/user/keys.js'
+import { generateKeyPair, seedOf } from '#content/user/keys.js'
 import { ADMIN_ROLE } from '#content/user/permissions.js'
 // модель, а не `db.server.ts`: иначе получился бы цикл (db.server его импортирует)
 import { auth } from '#content/user/schema.js'
@@ -38,14 +43,19 @@ export interface SeedAdmin {
  * 100 демо-аккаунтов со случайными UUID постраничная выборка первых 20 строк
  * пропустила бы существующего администратора и плодила бы дубликаты.
  */
-export async function ensureSeedAdmin(db: Database): Promise<SeedAdmin | null> {
+export async function ensureSeedAdmin(
+  db: Database,
+  secret?: string,
+): Promise<SeedAdmin | null> {
   const { rows } = await db.query({
     text: 'SELECT 1 FROM public.user_auth WHERE deleted_at IS NULL AND $1 = ANY(permissions) LIMIT 1',
     values: [ADMIN_ROLE],
   })
   if (rows.length > 0) return null
 
-  const pair = await generateKeyPair()
+  // Ключ из окружения (`ADMIN_SEED`) — чтобы вход не зависел от выхваченной
+  // строки лога: публичный seed выводим из него, в БД по-прежнему только seed.
+  const pair = secret ? { secret, seed: await seedOf(secret) } : await generateKeyPair()
   const auths = db.resource(auth)
   const row = (await auths.insert(SERVER, {
     seed: pair.seed,
@@ -59,14 +69,23 @@ export async function ensureSeedAdmin(db: Database): Promise<SeedAdmin | null> {
  * Печать в консоль сервера или сборки. `secret` — единственный раз и только здесь:
  * в лог приложения он больше не попадает никогда. Без ведущей пустой строки, чтобы
  * в Vercel Build / Runtime Logs заголовок был виден сразу без сворачивания в пустоту.
+ *
+ * `source` — откуда взят ключ: сгенерированный печатаем целиком (иначе он потерян),
+ * заданный через `ADMIN_SEED` только подтверждаем — его и так знает тот, кто задал.
  */
-export function announceSeedAdmin(admin: SeedAdmin): void {
+export function announceSeedAdmin(admin: SeedAdmin, source: 'generated' | 'env'): void {
   console.log(
-    [
-      '[user] администратор создан',
-      `[user]   seed (в базе):        ${admin.seed}`,
-      `[user]   ключ для входа:      ${admin.secret}`,
-      '[user]   вставьте ключ в поле «Seed» на странице входа — он больше не покажется',
-    ].join('\n'),
+    source === 'env'
+      ? [
+          '[user] администратор создан',
+          `[user]   seed (в базе):        ${admin.seed}`,
+          '[user]   ключ взят из ADMIN_SEED — в поле «Seed» вставляется значение этой переменной',
+        ].join('\n')
+      : [
+          '[user] администратор создан',
+          `[user]   seed (в базе):        ${admin.seed}`,
+          `[user]   ключ для входа:      ${admin.secret}`,
+          '[user]   вставьте ключ в поле «Seed» на странице входа — он больше не покажется',
+        ].join('\n'),
   )
 }

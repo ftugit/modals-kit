@@ -26,7 +26,7 @@ import { createSchemaAdmin, defineSchema, type SchemaReport, type SyncStep } fro
 import { sharedTask } from '#hooks/task-stream.server.js'
 import type { TaskState } from '#lib/task/index.js'
 import {
-  DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
+  ADMIN_SEED, DATABASE_DIR, DATABASE_URL, DB_ADMIN_TOKEN, DB_CONNECT_TIMEOUT_MS, DB_CURSOR_KID, DB_CURSOR_MAX_AGE_SECONDS,
   DB_CURSOR_OLD_KEYS, DB_CURSOR_SECRET, DB_CURSOR_TTL_SECONDS, DB_POOL_MAX, HYPERDRIVE_CONNECTION_STRING, VERCEL,
 } from '$app/env/private'
 import { auth, block as userBlock, config as userConfig, profile, session } from '#content/user/schema.js'
@@ -271,8 +271,8 @@ async function openDriver(): Promise<Driver> {
     if (reportStatus === 'ok') {
       try {
         const boot = createDb({ driver: gated, limits: LIMITS })
-        const created = await ensureSeedAdmin(boot)
-        if (created) announceSeedAdmin(created)
+        const created = await ensureSeedAdmin(boot, ADMIN_SEED)
+        if (created) announceSeedAdmin(created, ADMIN_SEED ? 'env' : 'generated')
       } catch (e) {
         console.warn('[user] администратора завести не удалось:', String((e as Error)?.message ?? e).slice(0, 300))
       }

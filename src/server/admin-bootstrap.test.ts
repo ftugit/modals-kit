@@ -1,7 +1,9 @@
 /**
  * Первый администратор на настоящей БД: заводится один раз при открытии БД
  * в рантайме, получает `admin` в правах и не обманывается лимитом страницы
- * `pageSize: 20` поверх 100 демо-аккаунтов.
+ * `pageSize: 20` поверх 100 демо-аккаунтов. Ключ либо генерируется здесь (и тогда
+ * печатается в лог), либо приходит из окружения (`ADMIN_SEED`) — такой только
+ * выводит публичный seed и остаётся тем же от запуска к запуску.
  */
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
@@ -10,6 +12,7 @@ import { conservativeLimits, createDb } from '#lib/db/index.js'
 import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 import { SERVER } from '#content/user/auth.js'
+import { generateKeyPair, seedOf } from '#content/user/keys.js'
 import { auth } from '#content/user/schema.js'
 import { ensureSeedAdmin } from './admin-bootstrap.server.js'
 
@@ -44,6 +47,25 @@ test('схема появилась — администратор создан,
     assert.deepEqual(rows[0]!.permissions, ['admin'])
     assert.equal(rows[0]!.seed, created.seed, 'в БД лежит публичная половина')
     assert.notEqual(rows[0]!.seed, created.secret, 'приватная половина в БД не попадает')
+  })
+})
+
+test('ключ из окружения (ADMIN_SEED): в БД ложится выведенный из него seed', async () => {
+  await withDb(async (db) => {
+    const { secret, seed } = await generateKeyPair()
+    const created = await ensureSeedAdmin(db, secret)
+    assert.ok(created, 'администратор создан')
+    assert.equal(created.secret, secret, 'ключ не перегенерирован, взят из окружения')
+    assert.equal(created.seed, seed, 'seed выведен из заданного ключа')
+    assert.equal(created.seed, await seedOf(secret), 'вывод детерминирован')
+
+    const rows = (await db.resource(auth).select(SERVER, {})) as unknown as {
+      seed: string | null
+      permissions: string[]
+    }[]
+    assert.equal(rows.length, 1)
+    assert.deepEqual(rows[0]!.permissions, ['admin'])
+    assert.equal(rows[0]!.seed, seed, 'в БД лежит только публичная половина')
   })
 })
 
