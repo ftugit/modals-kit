@@ -166,4 +166,5 @@ npm run test:browser # Playwright E2E-наборы в Chromium против prod
 - [`docs/design/client-integrity.md`](./docs/design/client-integrity.md) — защита клиентского контура, отказ от сторонних шрифтов и конфигурация `kit.csp`.
 - [`docs/design/errors.md`](./docs/design/errors.md) — ошибки: контракт «код + текст» и вынос словарей локали в UI-слой.
 - [`docs/design/porting.md`](./docs/design/porting.md) — как ядро переносится на другой фреймворк/роутер.
+- [`docs/optimization-2026-10-31.md`](./docs/optimization-2026-10-31.md) — замеры сборки и тестов: где остался запас (vitest 207.8 → 121.0 s, браузерные сьюты 552 → 213.8 s) и что проверено и отвергнуто.
 - [`docs/review-test-speedup-2026-10-31.md`](./docs/review-test-speedup-2026-10-31.md) — проверка плана ускорения тестов замерами: что подтвердилось, где дешевле (60 s в `db-demo` — выжигание таймаутов).
