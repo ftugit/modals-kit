@@ -52,19 +52,42 @@ async function isUp() {
 
 let serverProc = null;
 let serverRestarts = 0;
+let capturedAdminSecret = '';
 
 async function startServer() {
   if (await isUp()) return false;
   if (!existsSync(SERVER_SCRIPT)) throw new Error(`нет ${SERVER_SCRIPT} — сначала npm ci`);
   console.log(`[run-all] поднимаю preview на ${ORIGIN}…`);
-  serverProc = spawn(process.execPath, [SERVER_SCRIPT, 'preview', '--port', String(PORT), '--host', '0.0.0.0'], {
-    stdio: 'ignore',
-    detached: true,
-    env: { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS ?? '--max-old-space-size=1100' },
+  capturedAdminSecret = '';
+  serverProc = spawn(
+    process.execPath,
+    ['--no-liftoff', SERVER_SCRIPT, 'preview', '--port', String(PORT), '--host', '0.0.0.0'],
+    {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      detached: true,
+      env: {
+        ...process.env,
+        NODE_OPTIONS: process.env.NODE_OPTIONS ?? '--max-old-space-size=1100',
+        AUTH_SEAL_SECRET:
+          process.env.AUTH_SEAL_SECRET || 'test-auth-seal-secret-32-bytes-minimum-ok-01',
+        DB_CURSOR_SECRET:
+          process.env.DB_CURSOR_SECRET || 'test-db-cursor-secret-32-bytes-minimum-ok-01',
+      },
+    },
+  );
+  let logTail = '';
+  serverProc.stdout.on('data', (chunk) => {
+    if (capturedAdminSecret) return;
+    logTail = (logTail + chunk.toString('utf8')).slice(-4096);
+    const m = logTail.match(/ключ для входа:\s+(\S+)/);
+    if (m) capturedAdminSecret = m[1];
   });
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (await isUp()) {
+      // Прогреваем ленивый драйвер БД запросом к `/api/storage/avatars/_warmup`, чтобы `schema.gate` создал стартового администратора до запуска сьютов.
+      await fetch(`${ORIGIN}/api/storage/avatars/_warmup`, { signal: AbortSignal.timeout(30_000) }).catch(() => {});
+      for (let w = 0; w < 20 && !capturedAdminSecret; w++) await sleep(50);
       console.log('[run-all] сервер готов');
       return true;
     }
@@ -88,7 +111,12 @@ function runSuite(name) {
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(process.execPath, [`test/browser/${name}.mjs`], {
-      env: { ...process.env, MODALS_PORT: String(PORT), MODALS_BASE: process.env.MODALS_BASE ?? undefined },
+      env: {
+        ...process.env,
+        MODALS_PORT: String(PORT),
+        MODALS_BASE: process.env.MODALS_BASE ?? undefined,
+        MODALS_ADMIN_SECRET: process.env.MODALS_ADMIN_SECRET || capturedAdminSecret || undefined,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';

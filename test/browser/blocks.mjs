@@ -68,25 +68,26 @@ async function run() {
       assert.ok(adminCookies.some((c) => c.name === 'auth_sid' || c.name === 'auth_tmp'), 'куки сессии получены')
       ok('вход под admin выполнен')
 
-      // 2. Находим UUID двух пользователей на /users (если модуль demo не установлен и пользователей < 2, создаём двух гостевых)
+      // 2. Находим UUID двух целевых пользователей на /users (если не-админов < 2, заводим двух гостевых без JS)
       await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
-      if ((await page.locator('[data-testid="seed-user-row"]').count()) < 3) {
+      let targetLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasNotText: 'admin' })
+      if ((await targetLinks.count()) < 2) {
         for (let k = 0; k < 2; k++) {
-          const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 860 } })
+          const guestCtx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 860 } })
           const gp = await guestCtx.newPage()
-          await gp.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
-          await gp.locator('#user-auth').getByRole('button', { name: 'Сгенерировать ключ' }).click()
-          await gp.locator('#user-auth').getByRole('button', { name: 'Авторизация', exact: true }).click()
-          await gp.locator('[data-testid="header-user"], #user-profile').first().waitFor({ state: 'visible', timeout: 15000 })
+          await gp.goto(BASE + '/user/auth?stage=register', { waitUntil: 'load' })
+          await gp.locator('#user-auth').getByRole('button', { name: 'Создать аккаунт' }).click()
+          await gp.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
+          await gp.fill('input[name=nickname]', `guest-${tag}-${k}`)
+          await gp.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
+          await gp.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
           await guestCtx.close()
         }
-        await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
+        await page.reload({ waitUntil: 'networkidle' })
+        targetLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasNotText: 'admin' })
       }
-      const userLinks = page.locator('[data-testid="seed-user-row"]')
-      const demoFiltered = userLinks.filter({ hasText: 'demo-' })
-      const poolLinks = (await demoFiltered.count()) >= 2 ? demoFiltered : userLinks
-      const firstUserLink = poolLinks.nth(0)
-      const secondUserLink = poolLinks.nth(1)
+      const firstUserLink = targetLinks.nth(0)
+      const secondUserLink = targetLinks.nth(1)
       await firstUserLink.waitFor({ state: 'visible', timeout: 15000 })
       const userHref = await firstUserLink.getAttribute('href')
       const m = /^\/user\/([0-9a-f-]{36})/i.exec(userHref ?? '')
