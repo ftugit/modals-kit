@@ -107,6 +107,44 @@ test('кеш: повторное открытие не грузит заново
   assert.equal(calls, 2, 'другие параметры — другая загрузка')
 })
 
+test('повторная загрузка тех же параметров не снимает готовые данные', async () => {
+  // Живой экран: пока идёт новая загрузка, прежние данные остаются в записи
+  // (скелетон и сброс прокрутки — только когда данных ещё не было).
+  let release!: (v: string) => void
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    {
+      name: 'c',
+      component: 'X',
+      loader: async (params: { id: number }) =>
+        params.id === 1 ? 'первый' : new Promise<string>((r) => (release = r)),
+    } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  l.runLoader(entry('c', { id: 1 })); await tick()
+  assert.equal(l.readRuntime('c', 0).data, 'первый')
+
+  l.runLoader(entry('c', { id: 2 })); await tick()
+  const rt = l.readRuntime('c', 0)
+  assert.equal(rt.status, 'loading', 'новая загрузка идёт')
+  assert.equal(rt.data, 'первый', 'прежние данные не сняты')
+
+  release('второй'); await tick()
+  assert.equal(l.readRuntime('c', 0).data, 'второй')
+})
+
+test('setRuntime: то же состояние не переписывается', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    { name: 'c', component: 'X', loader: async () => 'данные' } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  l.runLoader(entry('c')); await tick()
+  const rt = l.readRuntime('c', 0)
+  l.runLoader(entry('c')); await tick()
+  assert.equal(l.readRuntime('c', 0), rt, 'объект состояния остался тем же')
+})
+
 test('дедупликация: две записи с одинаковыми параметрами ждут одну загрузку', async () => {
   let calls = 0
   const store = createModalStore()

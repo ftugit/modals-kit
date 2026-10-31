@@ -31,14 +31,18 @@
   // ни в глубине, которую видит пользователь (ISSUES.md R-02).
   const chain = $derived(visibleChain(m.view.chain, m.claimEntry))
 
+  // Данные уже пришли: запись показывает содержимое, а не скелетон, — в том
+  // числе когда новый запуск загрузчика перекрывает прежние данные.
+  const hasData = $derived(rt.data !== undefined)
+
   // Показывали ли скелетон: только тогда содержимое стоит «раскрывать».
   let wasPending = $state(false)
   $effect(() => {
-    if (rt.status === 'loading') wasPending = true
+    if (!hasData && rt.status === 'loading') wasPending = true
   })
 
   const hasLoader = $derived(Boolean(entry.definition?.loader || entry.definition?.route))
-  const showSkeleton = $derived(hasLoader && rt.status !== 'ready' && rt.status !== 'error')
+  const showSkeleton = $derived(hasLoader && !hasData && rt.status !== 'error')
   // Вид записи: ленивый компонент к моменту `ready` уже доехал (загрузчик
   // ждал его вместе с данными) — здесь только читаем разрешённый.
   const Component = $derived(
@@ -59,7 +63,7 @@
       <div>Проверьте имя в реестре или ссылку с ?modal=…</div>
     </div>
   {/if}
-{:else if rt.status === 'error'}
+{:else if rt.status === 'error' && !hasData}
   {#if config.renderError}
     {@render (config.renderError as any)(rt.error ?? 'Ошибка загрузки')}
   {:else}

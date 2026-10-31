@@ -35,34 +35,44 @@ function isLazy(component: unknown): component is LazyComponent {
   )
 }
 
-/** Идущие импорты по объекту регистрации: один импорт на модалку. */
-const inflight = new WeakMap<object, Promise<unknown>>()
+/**
+ * Идущие импорты по объекту регистрации: один импорт на модалку.
+ * `settled` — импорт уже доехал: вид на месте, ждать снова нечего.
+ */
+interface PendingView {
+  promise: Promise<void>
+  settled: boolean
+}
+const inflight = new WeakMap<object, PendingView>()
 
 /** Доехавшие компоненты по имени модалки (реактивно: читает `ModalContent`). */
 let resolvedByName = $state<Record<string, unknown>>({})
 
 /**
- * Дождаться вида записи: готовый компонент — сразу, ленивый — его импорт.
+ * Дождаться вида записи. `undefined` — ждать нечего: вид не ленивый или уже
+ * доехал, поэтому вызывающий не показывает скелетон на ровном месте.
  * Сбой импорта не кешируется: следующее открытие попробует ещё раз.
  */
 export function ensureModalComponent(definition: {
   name: string
   component?: unknown
-}): Promise<void> {
+}): Promise<void> | undefined {
   const component = definition?.component
-  if (!isLazy(component)) return Promise.resolve()
-  let pending = inflight.get(component)
-  if (!pending) {
-    pending = component[LAZY]().then((module) => {
-      resolvedByName = { ...resolvedByName, [definition.name]: module.default }
-      return module.default
-    })
-    inflight.set(component, pending)
-    void pending.catch(() => {
-      if (inflight.get(component) === pending) inflight.delete(component)
-    })
-  }
-  return pending.then(() => undefined)
+  if (!isLazy(component)) return undefined
+  if (resolvedByName[definition.name] !== undefined) return undefined
+  const known = inflight.get(component)
+  if (known) return known.settled ? undefined : known.promise
+
+  const pending: PendingView = { settled: false, promise: Promise.resolve() }
+  pending.promise = component[LAZY]().then((module) => {
+    pending.settled = true
+    resolvedByName = { ...resolvedByName, [definition.name]: module.default }
+  })
+  inflight.set(component, pending)
+  void pending.promise.catch(() => {
+    if (inflight.get(component) === pending) inflight.delete(component)
+  })
+  return pending.promise
 }
 
 /**

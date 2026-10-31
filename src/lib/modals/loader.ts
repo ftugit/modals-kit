@@ -30,8 +30,9 @@ export interface LoaderDeps {
    * Готовность — данные И вид: без этого между скелетоном и содержимым
    * оставался пустой кадр на время импорта. Ядру вид непрозрачен — здесь
    * только ожидание. Нет хука — готовность по-прежнему только данные.
+   * `undefined` — вид уже на месте (не ленивый или доехал): ждать нечего.
    */
-  ensureView?: (definition: AnyDefinition) => Promise<void>
+  ensureView?: (definition: AnyDefinition) => Promise<void> | undefined
   /** href полноэкранной страницы записи, если он есть. */
   hrefOf?: (entry: ResolvedEntry) => string | null
   /** Максимальное количество записей в кэше данных. По умолчанию 50. */
@@ -117,7 +118,31 @@ export function createLoader(deps: LoaderDeps) {
     inflight.clear()
   }
 
-  const setRuntime = (key: string, next: RuntimeState) => store.merge('runtime', { [key]: next })
+  /**
+   * Запись уже в этом состоянии — реактивность не будим: повторный запуск
+   * загрузчика на той же записи иначе перерисовывает содержимое тем же
+   * значением (и сбрасывает прокрутку у открытой модалки).
+   */
+  const setRuntime = (key: string, next: RuntimeState) => {
+    const prev = store.state.runtime[key]
+    if (
+      prev &&
+      prev.status === next.status &&
+      prev.data === next.data &&
+      prev.error === next.error
+    ) {
+      return
+    }
+    store.merge('runtime', { [key]: next })
+  }
+
+  /** Начало загрузки: уже полученные данные остаются у записи на экране. */
+  const loadingRuntime = (key: string): RuntimeState => {
+    const prev = store.state.runtime[key]
+    return prev?.data === undefined
+      ? { status: 'loading' }
+      : { status: 'loading', data: prev.data }
+  }
 
   // Текст сбоя загрузчика в интерфейс НЕ попадает (C13): `error.message`
   // потребителя может нести внутренние подробности (адреса, SQL, стек).
@@ -185,8 +210,9 @@ export function createLoader(deps: LoaderDeps) {
     )
     // Готовность записи — данные И вид (ленивый чанк): `ready` ставится
     // только по этому ожиданию, иначе между скелетоном и содержимым
-    // оставался пустой кадр на время импорта компонента.
-    let view: Promise<void> = Promise.resolve()
+    // оставался пустой кадр на время импорта компонента. Доехавший вид
+    // отвечает `undefined` — тогда готовность решают только данные.
+    let view: Promise<void> | undefined
     if (deps.ensureView && definition) {
       try {
         view = deps.ensureView(definition)
@@ -227,15 +253,27 @@ export function createLoader(deps: LoaderDeps) {
     data: unknown,
     hasData: boolean,
   ): () => void {
-    if (!deps.ensureView) {
+    const done = () =>
       setRuntime(key, hasData ? { status: 'ready', data } : { status: 'ready' })
+    // Вид спрашиваем ДО `loading`: уже доехавший чанк отвечает `undefined`,
+    // и скелетон на кадр не появляется.
+    let view: Promise<void> | undefined
+    if (deps.ensureView) {
+      try {
+        view = deps.ensureView(definition)
+      } catch (error) {
+        view = Promise.reject(error)
+      }
+    }
+    if (!view) {
+      done()
       return () => {}
     }
-    setRuntime(key, { status: 'loading' })
+    setRuntime(key, hasData ? { status: 'loading', data } : loadingRuntime(key))
     let live = true
-    deps.ensureView(definition).then(
+    view.then(
       () => {
-        if (live) setRuntime(key, hasData ? { status: 'ready', data } : { status: 'ready' })
+        if (live) done()
       },
       (error: unknown) => {
         if (!live) return
@@ -290,7 +328,7 @@ export function createLoader(deps: LoaderDeps) {
     // подписываемся на тот же результат.
     const job = jobFor(ck, entry.name, load, definition)
     job.keys.add(key)
-    setRuntime(key, { status: 'loading' })
+    setRuntime(key, loadingRuntime(key))
 
     return () => {
       if (!job.keys.delete(key)) return
