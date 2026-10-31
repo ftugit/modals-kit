@@ -1,0 +1,105 @@
+<script lang="ts">
+import { Button } from '#components/ui/index.js'
+  import type { MobileAnchor } from '#lib/modals/index.js'
+  import { useModal, useModals } from '#lib/modals/svelte/index.js'
+
+  const m = useModals()
+  const me = useModal()
+  const ANCHORS: readonly MobileAnchor[] = ['top', 'bottom', 'left', 'right']
+
+  let lastRandom = $state<MobileAnchor | null>(null)
+  let plainTransientResult = $state('не проверено')
+
+  /** Выбирает одно из четырёх явных мобильных направлений для probe-сценария. */
+  function randomAnchor(): MobileAnchor {
+    return ANCHORS[Math.floor(Math.random() * ANCHORS.length)]
+  }
+
+  /** Открывает зарегистрированную probe-модалку с собственным случайным направлением. */
+  function openRandomModal() {
+    const mobile = randomAnchor()
+    lastRandom = mobile
+    m.modals.open('flow-probe', { mobile })
+  }
+
+  /** Открывает зарегистрированную probe-модалку без override, чтобы она унаследовала якорь. */
+  function openInheritedModal() {
+    m.modals.open('flow-probe')
+  }
+
+  /** Открывает transient-слой без mobile override, чтобы проверить наследование активной записи. */
+  function openPlainTransient() {
+    m.modals.openLayer({ content: plainTransient })
+  }
+
+  /** Открывает transient-слой с собственным случайным направлением. */
+  function openRandomTransient() {
+    const mobile = randomAnchor()
+    lastRandom = mobile
+    m.modals.openLayer({ content: randomTransient, mobile })
+  }
+
+  /**
+   * Проверяет попытку положить зарегистрированную модалку над transient без
+   * stack:'new' и сохраняет наблюдаемый результат прямо в transient-слое.
+   */
+  function openRegisteredFromPlainTransient() {
+    try {
+      m.modals.open('flow-probe')
+      plainTransientResult = 'open() завершился без исключения'
+    } catch (error) {
+      plainTransientResult = error instanceof Error ? error.message : String(error)
+    }
+  }
+</script>
+
+<div class="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe="" data-probe-index={me.index}>
+  <h2>Проверка наследования потока</h2>
+  <p class="text-sm text-muted-foreground">
+    Запись {me.index + 1} из {me.depth}; собственное направление:
+    <b>{me.resolved.mobile ?? 'нет'}</b>.
+  </p>
+
+  <div class="flex flex-wrap gap-2">
+    <Button variant="outline" data-probe-action="random-modal" onclick={openRandomModal}>
+      Открыть с случайным направлением
+    </Button>
+    <Button variant="outline" data-probe-action="inherited-modal" onclick={openInheritedModal}>
+      Открыть без направления
+    </Button>
+    <Button variant="outline" data-probe-action="plain-transient" onclick={openPlainTransient}>
+      Без хранилища
+    </Button>
+    <Button variant="outline" data-probe-action="random-transient" onclick={openRandomTransient}>
+      Без хранилища со случайным направлением
+    </Button>
+  </div>
+
+  {#if lastRandom}
+    <p class="text-sm text-muted-foreground" data-probe-random={lastRandom}>Последнее случайное направление: {lastRandom}</p>
+  {/if}
+</div>
+
+{#snippet plainTransient()}
+  <div class="flex flex-col gap-4 p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe-transient="plain">
+    <h2>Модалка без хранилища</h2>
+    <p class="text-sm text-muted-foreground">У этой записи нет собственного направления.</p>
+    <Button variant="outline"
+      data-probe-action="registered-from-transient"
+      onclick={openRegisteredFromPlainTransient}
+    >
+      Открыть обычную модалку без параметров
+    </Button>
+    <p class="text-sm text-muted-foreground" data-probe-registered-result>{plainTransientResult}</p>
+  </div>
+{/snippet}
+
+{#snippet randomTransient()}
+  <div class="flex flex-col gap-4 p-6 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_p]:m-0" data-flow-probe-transient="random">
+    <h2>Модалка без хранилища со случайным направлением</h2>
+    <p class="text-sm text-muted-foreground" data-probe-random={lastRandom ?? undefined}>
+      Собственное направление: {lastRandom ?? 'нет'}.
+    </p>
+  </div>
+{/snippet}
+
