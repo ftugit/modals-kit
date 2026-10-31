@@ -27,7 +27,7 @@
 ### 2. Связки со средой и между библиотеками (`src/hooks/` — `#hooks/*`)
 
 Переходники без визуальной разметки (подробно — [`src/hooks/README.md`](./src/hooks/README.md)):
-- `cache-db.ts` (`#lib/cache` × `#lib/db` → `sharedStore` в `public.cache_kv`), `storage-db.ts` (`#lib/storage` × `#lib/db` × `#lib/cache`), `storage-schema.ts` (`STORAGE_ACL` и модель `storage_server` без серверного рантайма для клиентских проверок прав), `db-grants.svelte.ts` (реактивный хук `createUseGrants` поверх `grants` и `checkGrants`), `cookie-vault/` (зашифрованные `HttpOnly`-куки × `#lib/form`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema`, `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
+- `cache-db.ts` (`#lib/cache` × `#lib/db` → `sharedStore` в `public.cache_kv`), `storage-db.ts` (`#lib/storage` × `#lib/db` × `#lib/cache`), `storage-schema.ts` (`STORAGE_ACL` и модель `storage_server` без серверного рантайма для клиентских проверок прав), `module-ext.ts` (контракты автоподхватываемых расширений опциональных модулей `DbModuleExtension` и `NavModuleExtension`), `db-grants.svelte.ts` (реактивный хук `createUseGrants` поверх `grants` и `checkGrants`), `cookie-vault/` (зашифрованные `HttpOnly`-куки × `#lib/form`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema`, `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
 - `links/` (`asLink`, `asModalLink`), `loader.svelte.ts`, `js-only.svelte.ts`, `use-drawer.svelte.ts`, `app-errors.svelte.ts`;
 - `component-form/` — маршрутно-независимые формы компонентов через `createComponentFormsHandle` и `bindComponentForm`: маршрутизация по `x-form-id`, однопроходный контроль бюджета тела (`FORM_BODY_LIMIT` и `limits.budget`) с полноценным `Result` `413` как в JSON, так и на SSR без JS, штатный `303` на `statusUrl` для `queued`-задач без JS и потоковый конвейерный `wss://`-транспорт файлов с прогнозом времени (`upload-eta.ts`) и целостностью `HMAC-SHA-256`.
 
@@ -60,17 +60,84 @@ npm install
 npm run dev                   # чистое стартовое приложение: http://localhost:5173
 ```
 
-### Подключение опциональных модулей (`demo`)
+### Подключение `demo` и работа с модулями (`tooling/mod.mjs`)
 
-Ветка `img` содержит чистое ядро без демо-маршрутов. Интерактивные витрины поставляются отдельным пакетом `demo` (тег `refs/tags/modules`):
+Ветка `img` содержит чистое стартовое приложение без демо-маршрутов. Дополнительные пакеты (включая интерактивную витрину `demo`) публикуются в тег `refs/tags/modules` (без создания отдельных веток в репозитории) и управляются встроенным zero-dependency менеджером `tooling/mod.mjs` (`npm run mod`).
+
+#### 1. Локальная работа с модулем `demo` и другими пакетами
 
 ```bash
-npm run mod -- list           # посмотреть доступные модули
-npm run mod -- add demo       # установить витрину demo локально (.modules/ в .gitignore)
-npm run mod -- remove demo    # чисто удалить витрину и вернуться к базовому ядру
+npm run mod -- list               # показать доступные модули в источнике и отметить установленные
+npm run mod -- status             # показать локально установленные модули (офлайн, мгновенно)
+npm run mod -- add demo           # скачать и установить модуль demo поверх чистого ядра
+npm run mod -- remove demo        # чисто удалить файлы модуля demo и пустые директории
+npm run mod -- remove demo -f     # принудительно удалить даже при наличии локальных правок
+npm run mod -- sync               # синхронизировать набор модулей по переменной MODULES
 ```
 
-На Vercel (и в CI) модули подтягиваются автоматически на шаге `npm run build` при заданной переменной окружения `MODULES=demo` (для приватного GitHub-репозитория дополнительно задаётся `MODULES_TOKEN` с правом `Contents: Read`).
+Как ведёт себя менеджер локально:
+- список установленных файлов и их `SHA-256`-хэши записываются в `.modules/installed.json` (папка `.modules/` добавлена в `.gitignore`, поэтому рабочее дерево проекта легко вернуть к чистому состоянию командой `npm run mod -- remove demo`);
+- перед установкой проверяются конфликты: если целевой файл уже существует и отличается по содержимому от пакета, установка прервётся до записи на диск (перезапись — только с `--force`);
+- перед удалением проверяется целостность: если файл установленного модуля был изменён локально, `remove` сохранит правки и сообщит список затронутых файлов (принудительный сброс — `--force`);
+- все проверки проекта (`npm run check`, `npm test`, `npm run test:guard`, `npm run build`, `npm run test:browser`) работают в обоих режимах: без модулей проверяется базовое ядро (`auth`, `blocks`), а с установленным `demo` автоматически подключаются все витринные юнит-тесты и браузерные E2E-сьюты (`modals`, `paginator`, `db-demo`, `forms`, `fields`, `steps` и др.).
+
+#### 2. Переменные окружения и автоматическая установка при сборке (Vercel / CI)
+
+Команда `npm run build` запускает `node tooling/mod.mjs sync` перед `vite build`. Переменные читаются с приоритетом `process.env > .env.local > .env`:
+
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `MODULES` | Список модулей через запятую или пробел (`demo`, `demo, extra`). Значения `none` / `""` снимают все установленные модули. Если переменная **не задана вообще**, `sync` ничего не меняет и не обращается к сети | *(не задана — no-op)* |
+| `MODULES_TOKEN` | GitHub Fine-Grained PAT с правом `Contents: Read` для приватного репозитория (передаётся через `Authorization: Bearer` к `api.github.com`). Для публичного репозитория не нужен | *(пусто)* |
+| `MODULES_REPO` | Репозиторий-источник в формате `owner/repo` | `${VERCEL_GIT_REPO_OWNER}/${VERCEL_GIT_REPO_SLUG}`, иначе `git remote origin`, иначе `ftugit/modals-kit` |
+| `MODULES_REF` | Имя Git-тега или ветки с пакетами модулей | `modules` (`refs/tags/modules`) |
+| `MODULES_SOURCE` | Локальная папка, локальный `.tar.gz`-архив или прямой `https://`-URL архива (для офлайн-разработки и отладки собственных модулей до публикации) | *(пусто)* |
+
+Настройка деплоя на **Vercel**:
+- **С витриной `demo`**: в *Project Settings → Environment Variables* задайте `MODULES=demo` для окружений *Production* / *Preview* (с доступностью на этапе *Build*). Если репозиторий переведён в **Private**, добавьте `MODULES_TOKEN` (Fine-Grained PAT только на этот репозиторий с правом `Repository permissions → Contents: Read-only`).
+- **Чистое стартовое приложение без витрин**: оставьте `MODULES` незаданной (или укажите `MODULES=none`) — сборка пройдёт за `0` сетевых запросов к архиву модулей.
+
+#### 3. Точки расширения ядра и создание собственных модулей
+
+Модули подключаются **бесконфликтно** — путём добавления файлов в дерево проекта без редактирования файлов ядра. Ядро автоматически подхватывает установленные модули через контракты `src/hooks/module-ext.ts` и `import.meta.glob`:
+
+| Файл внутри модуля | Что подключает автоматически |
+|---|---|
+| `src/content/<domain>/db.ext.ts` | Экспорт `dbExtension: DbModuleExtension` (`resources`, `sql`) — добавляет модели `#lib/db` и SQL-миграции/индексы в общую схему `src/server/db.server.ts` |
+| `src/content/<domain>/init.ext.server.ts` | Экспорт `initDbExtension(db)` — выполняется один раз при инициализации схемы БД в рантайме (стартовые сиды и справочники модуля) |
+| `src/content/<domain>/nav.ext.ts` | Экспорт `navExtension: NavModuleExtension` (`order`, `navItems`, `homeCards`) — добавляет пункты в шапку/боковое меню и карточки разделов на главную страницу `/` |
+| `src/content/<domain>/modals.ts` | Регистрирует глобальные модальные окна модуля в `globalScope` (автоимпорт в `src/routes/(site)/+layout.svelte`) |
+| `src/**/*.form.server.ts` | Регистрирует серверные обработчики форм по `x-form-id` через `createComponentFormsHandle` в `src/hooks.server.ts` |
+| `src/routes/**` и `test/browser/*.mjs` | Добавляет страницы, раскладки и API-эндпоинты SvelteKit, а также браузерные E2E-сьюты (подхватываются `test/browser/run-all.mjs` по наличию файла) |
+
+Структура пакета в источнике модулей (`refs/tags/modules` или локальном `MODULES_SOURCE`):
+
+```text
+modules/
+  <module-name>/
+    manifest.json          # { "name": "demo", "version": "1.0.0", "description": "..." }
+    files/                 # файлы модуля по их точным путям относительно корня проекта
+      src/content/...
+      src/routes/...
+      test/browser/...
+```
+
+Отладка нового модуля локально и публикация в тег `refs/tags/modules` без создания лишней ветки:
+
+```bash
+# 1. Проверить установку и удаление из локальной папки со структурой modules/<name>/...
+MODULES_SOURCE=/path/to/modules-stage npm run mod -- list
+MODULES_SOURCE=/path/to/modules-stage npm run mod -- add <name>
+
+# 2. Опубликовать обновлённое дерево модулей орфан-коммитом прямо в тег refs/tags/modules
+GIT_DIR_ABS="$(pwd)/.git"
+TREE=$(GIT_DIR="$GIT_DIR_ABS" GIT_WORK_TREE=/path/to/modules-stage GIT_INDEX_FILE=/tmp/mod.idx \
+  sh -c 'rm -f /tmp/mod.idx && git add -A && git write-tree')
+rm -f /tmp/mod.idx
+COMMIT=$(printf 'chore(modules): update modules snapshot\n' | git commit-tree "$TREE")
+git update-ref refs/tags/modules "$COMMIT"
+git push origin refs/tags/modules:refs/tags/modules --force
+```
 
 ## Команды проверки
 
