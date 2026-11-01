@@ -90,7 +90,7 @@ test('падение загрузчика — статус error с общим �
   l.runLoader(entry('bad'))
   await tick()
   assert.equal(l.readRuntime('bad', 0).status, 'error')
-  assert.equal(l.readRuntime('bad', 0).error, 'Ошибка загрузки')
+  assert.equal(l.readRuntime('bad', 0).error, 'Приложение недоступно')
 })
 
 test('кеш: повторное открытие не грузит заново', async () => {
@@ -209,6 +209,44 @@ test('🎯 preload маршрута заменяет собственный load
   assert.deepEqual(l.readRuntime('account', 0).data, { name: 'Аня' })
 })
 
+test('текст сбоя выбирается по статусу: 403/404 — данных нет, прочее — сбой', async () => {
+  // Граница модалки повторяет границу ошибок сайта: авторитетный отказ
+  // сервера звучит как «страница не найдена», всё остальное — как сбой.
+  const withStatus = (status?: number) => {
+    const store = createModalStore()
+    const scope = createRegistry('t').define([
+      { name: 'gone', component: 'X', route: () => '/gone' } as any,
+    ])
+    return createLoader({
+      store, lookup: scope.lookup, hrefOf: () => '/gone',
+      preload: async () => ({ ok: false as const, reason: 'not-found', status }),
+    })
+  }
+
+  for (const status of [403, 404]) {
+    const l = withStatus(status)
+    l.runLoader(entry('gone'))
+    await tick()
+    const rt = l.readRuntime('gone', 0)
+    assert.equal(rt.status, 'error')
+    assert.equal(rt.error, 'Загружаемые данные отсутствуют', `статус ${status}`)
+  }
+
+  for (const status of [500, undefined]) {
+    const l = withStatus(status)
+    l.runLoader(entry('gone'))
+    await tick()
+    assert.equal(l.readRuntime('gone', 0).error, 'Приложение недоступно', `статус ${status}`)
+  }
+
+  // Тот же текст уходит и в предзагрузку кнопки.
+  const l = withStatus(404)
+  assert.deepEqual(await l.preloadModal('gone', {}), {
+    ok: false,
+    error: 'Загружаемые данные отсутствуют',
+  })
+})
+
 test('свой loader важнее маршрута, если задан', async () => {
   const store = createModalStore()
   const scope = createRegistry('t').define([
@@ -251,7 +289,7 @@ test('preloadModal: нет модалки и упавший загрузчик',
   assert.match((miss as any).error, /Нет такой модалки/)
   const fail = await l.preloadModal('bad', {})
   assert.equal(fail.ok, false)
-  assert.equal((fail as any).error, 'Ошибка загрузки')
+  assert.equal((fail as any).error, 'Приложение недоступно')
 })
 
 test('clearMemory сбрасывает кеш загрузчика', async () => {
@@ -446,10 +484,10 @@ test('C13: окно ошибки и preload показывают общий те
   await tick()
   const rt = l.readRuntime('bad', 0)
   assert.equal(rt.status, 'error')
-  assert.equal(rt.error, 'Ошибка загрузки')
+  assert.equal(rt.error, 'Приложение недоступно')
   assert.equal((seen[0].cause as Error).message, secret, 'исходная ошибка доходит до onError')
 
   const pre = await l.preloadModal('bad2', {})
-  assert.deepEqual(pre, { ok: false, error: 'Ошибка загрузки' })
+  assert.deepEqual(pre, { ok: false, error: 'Приложение недоступно' })
   assert.equal((seen.at(-1).cause as Error).message, secret)
 })

@@ -10,6 +10,22 @@ import type { AnyDefinition } from './registry'
 import type { ModalStore } from './store'
 import type { LibError, ResolvedEntry, RuntimeState } from './types'
 
+/**
+ * Сбой предзагрузки маршрута, несущий HTTP-статус.
+ *
+ * Статус нужен только для выбора текста в окне: 403/404 — авторитетный
+ * отказ сервера «по этому адресу данных нет», прочее — сбой приложения.
+ * В интерфейс уходит текст, статус и `message` — в `report` (C13).
+ */
+class RouteLoadFailure extends Error {
+  constructor(
+    readonly status: number | undefined,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 export interface LoaderDeps {
   store: ModalStore
   /**
@@ -24,7 +40,9 @@ export interface LoaderDeps {
    * страницы, и дублирования «страница грузит своё, модалка то же ещё раз»
    * не возникает.
    */
-  preload?: (href: string) => Promise<{ ok: true; data: unknown } | { ok: false; reason: string }>
+  preload?: (
+    href: string,
+  ) => Promise<{ ok: true; data: unknown } | { ok: false; reason: string; status?: number }>
   /**
    * Дождаться вида записи (слой вида: доехавший чанк ленивого компонента).
    * Готовность — данные И вид: без этого между скелетоном и содержимым
@@ -147,8 +165,18 @@ export function createLoader(deps: LoaderDeps) {
   // Текст сбоя загрузчика в интерфейс НЕ попадает (C13): `error.message`
   // потребителя может нести внутренние подробности (адреса, SQL, стек).
   // Исходная ошибка целиком уходит в `report` → `onError` хоста
-  // (`load-failed` / `preload-failed`, `cause`), окну — общий текст.
-  const errorMessage = (_error: unknown): string => 'Ошибка загрузки'
+  // (`load-failed` / `preload-failed`, `cause`), окну — текст по статусу.
+  //
+  // Текст повторяет границу ошибок сайта (`ErrorPage.svelte`), только без
+  // номера: у модалки нет страницы, есть запись стопки, чьи данные не
+  // приехали. 403/404 — авторитетный отказ сервера «по этому адресу данных
+  // нет» (аналог «Страница не найдена»), всё прочее — сбой приложения
+  // (аналог `Error500`). Собственный `definition.loader` и слой вида
+  // `ensureView` статуса HTTP не имеют и попадают во вторую группу.
+  const errorMessage = (error: unknown): string =>
+    error instanceof RouteLoadFailure && (error.status === 403 || error.status === 404)
+      ? 'Загружаемые данные отсутствуют'
+      : 'Приложение недоступно'
 
   const missing = (name: string) => `Нет такой модалки: «${name}»`
 
@@ -172,7 +200,8 @@ export function createLoader(deps: LoaderDeps) {
     if (href && deps.preload) {
       return async () => {
         const r = await deps.preload!(href)
-        if (!r.ok) throw new Error(`Маршрут ${href}: ${r.reason}`)
+        // Статус сохраняем: он решает, какой текст увидит окно.
+        if (!r.ok) throw new RouteLoadFailure(r.status, `Маршрут ${href}: ${r.reason}`)
         return r.data
       }
     }

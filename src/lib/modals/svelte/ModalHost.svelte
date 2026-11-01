@@ -111,7 +111,9 @@
             const r = await m.core.preload!(href)
             return r.ok
               ? { ok: true as const, data: r.data }
-              : { ok: false as const, reason: r.reason }
+              // `status` обязателен: по нему ядро выбирает текст ошибки
+              // (403/404 — данных нет, прочее — сбой приложения).
+              : { ok: false as const, reason: r.reason, status: r.status }
           }
         : undefined,
       report: (e) => m.reportError(e),

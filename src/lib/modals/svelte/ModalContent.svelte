@@ -65,9 +65,9 @@
   {/if}
 {:else if rt.status === 'error' && !hasData}
   {#if config.renderError}
-    {@render (config.renderError as any)(rt.error ?? 'Ошибка загрузки')}
+    {@render (config.renderError as any)(rt.error ?? 'Приложение недоступно')}
   {:else}
-    <div class={MODAL_ERROR_CLASS} data-modal-error="" role="alert">{rt.error ?? 'Ошибка загрузки'}</div>
+    <div class={MODAL_ERROR_CLASS} data-modal-error="" role="alert">{rt.error ?? 'Приложение недоступно'}</div>
   {/if}
 {:else if showSkeleton}
   {#if config.renderSkeleton}

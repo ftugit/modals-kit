@@ -232,7 +232,7 @@ test('14. preloadModal: загрузчик упал → ok:false с общим �
   const l = createLoader({ store: m.store, lookup: scope.lookup })
   const r = await l.preloadModal('bad', {})
   assert.equal(r.ok, false)
-  assert.equal((r as any).error, 'Ошибка загрузки')
+  assert.equal((r as any).error, 'Приложение недоступно')
 })
 
 /* ── 15–17: транспорт и история ────────────────────────────────────── */
