@@ -20,19 +20,19 @@
    *    кнопка «Применить» возвращает GET-переходом на `fromHref` с подстановкой
    *    выбранных `id` в целевой параметр `targetParam`.
    */
-  import { onDestroy, untrack } from 'svelte'
+  import { untrack } from 'svelte'
   import { createAttachmentKey } from 'svelte/attachments'
   import { Steps, stepLink, useSteps } from '#components/steps/index.js'
   import { Button } from '#components/ui/index.js'
+  import { cn } from '#components/utils.js'
   import { asLink, type LinkAttrs } from '#hooks/links/index.js'
-  import { useRuntimeKey } from '#lib/modals/svelte/index.js'
+  import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import {
-    acquireScopedStore,
+    createPaginatorStore,
     getClientStore,
     getState,
     hasPaginator,
-    releaseScopedStore,
     setExtra,
   } from '#lib/paginate/index.js'
   import Acl from './Acl.svelte'
@@ -70,15 +70,16 @@
 
   let localAcl = $state<AuthErrorCode | null>(null)
   let localPicked = $state<string[]>([...untrack(() => initialPicked).filter(Boolean)])
-  // Пикер — владелец области пагинатора: и собранные порции, и срез выбора
-  // `ids` живут в изолированном хранилище записи, а не в общем — иначе
-  // соседняя модалка с тем же именем списка делила бы с пикером состояние.
-  // На странице `/users/pick` ключа записи нет — работает общее хранилище.
-  const scope = useRuntimeKey()
-  const store = untrack(() => (scope ? acquireScopedStore(scope) : getClientStore()))
-  onDestroy(() => {
-    if (scope) releaseScopedStore(scope)
-  })
+
+  // В модалке `user.picker` слот-стор выделяется и очищается привязанно к `modals.chain`
+  // с `url: false`, поэтому ни выбор, ни внутренние фильтры пикера не утекают в URL.
+  const slotScope = useSlotPaginatorScope(
+    SEED_USERS_NAME,
+    untrack(() => (isModalMode ? { url: false } : undefined)),
+  )
+  const store = untrack(
+    () => slotScope.store ?? (typeof window === 'undefined' ? createPaginatorStore() : getClientStore()),
+  )
   let localStep = $state<'pick' | 'chosen'>('pick')
 
   const urlPicked = $derived.by(() => {
@@ -97,10 +98,6 @@
       void setExtra(store, SEED_USERS_NAME, { ids: undefined })
     }
   }
-
-  onDestroy(() => {
-    if (untrack(() => isModalMode)) clearPaginatorIdsSlice()
-  })
 
   function toggleLocal(id: string) {
     if (mode === 'single') {
@@ -164,6 +161,7 @@
     const url = visibleAddress().url
     const sp = new URLSearchParams(url.searchParams.toString())
     sp.set('upicks', step)
+    sp.delete('users')
     if (withSlice && pickedSet.size) sp.set('users.ids', [...pickedSet].join(','))
     else sp.delete('users.ids')
     return `${url.pathname}?${sp.toString()}`
@@ -183,8 +181,8 @@
     mode: untrack(() => isModalMode) ? 'local' : 'url',
     key: 'upicks',
     steps: () => [
-      { key: 'pick', label: mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей' },
-      { key: 'chosen', label: 'Выбранные' },
+      { key: 'pick', label: mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей', filled: true },
+      { key: 'chosen', label: `Выбранные (${pickedSet.size})`, filled: pickedSet.size > 0 },
     ],
     current: () =>
       isModalMode
@@ -197,6 +195,7 @@
     const dest = new URL(fromHref, 'http://local.invalid')
     const joined = [...pickedSet].join(',')
     if (joined) dest.searchParams.set(targetParam, joined)
+    else if (dest.searchParams.has('from')) dest.searchParams.set(targetParam, '')
     else dest.searchParams.delete(targetParam)
     const qs = dest.searchParams.toString()
     return qs ? `${dest.pathname}?${qs}` : dest.pathname
@@ -207,6 +206,7 @@
     const sp = new URLSearchParams(url.searchParams.toString())
     sp.delete('picked')
     sp.delete('users.ids')
+    sp.delete('users')
     sp.set('upicks', 'pick')
     const qs = sp.toString()
     return qs ? `${url.pathname}?${qs}` : url.pathname
@@ -218,33 +218,67 @@
   }
 </script>
 
-<section class={className} data-testid="user-picker">
+<section class={cn('flex min-h-0 flex-col', className)} data-testid="user-picker">
   {#if localAcl && !onAcl}
     <Acl status={localAcl} backHref={fromHref} variant="plain" />
   {:else}
-    <Steps {host} label={mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'} nav>
+    {#if !isModalMode}
+      {@const currentStep = host.currentKey ?? 'pick'}
+      {@const pickLabel = mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'}
+      {@const chosenLabel = `Выбранные (${pickedSet.size})`}
+      <nav
+        aria-label={pickLabel}
+        class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+      >
+        {#if currentStep === 'pick'}
+          <span class="text-muted-foreground" aria-current="step">{pickLabel}</span>
+        {:else}
+          <a
+            {...stepLink(host, 'pick')}
+            href={stepHref('pick', false)}
+            class="font-medium underline-offset-4 hover:underline"
+          >{pickLabel}</a>
+        {/if}
+        <span aria-hidden="true" class="text-muted-foreground">/</span>
+        {#if currentStep === 'chosen'}
+          <span class="text-muted-foreground" aria-current="step">{chosenLabel}</span>
+        {:else if pickedSet.size > 0}
+          <a
+            {...stepLink(host, 'chosen')}
+            href={stepHref('chosen', true)}
+            class="font-medium underline-offset-4 hover:underline"
+          >{chosenLabel}</a>
+        {:else}
+          <span class="text-muted-foreground">{chosenLabel}</span>
+        {/if}
+      </nav>
+    {/if}
+    <Steps {host} label={mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'} nav={isModalMode}>
       {#snippet pick()}
-        <div class="flex flex-col gap-3">
+        <div class="flex min-h-0 flex-1 flex-col gap-3">
           <SeedUsersList
-            {scope}
+            url={!isModalMode}
             initial={initialUsers}
             {rowAttrs}
             isSelected={(id) => pickedSet.has(id)}
             onAcl={handleAcl}
+            class={isModalMode ? 'min-h-0 flex-1' : undefined}
           />
-          <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm">
             <span>
               Выбрано: <strong data-testid="user-picker-count">{pickedSet.size}</strong>
               {#if isModalMode}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  onclick={() => void switchLocalStep('chosen')}
-                >
-                  К выбранным →
-                </Button>
-              {:else}
+                {#if pickedSet.size > 0}
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    onclick={() => void switchLocalStep('chosen')}
+                  >
+                    К выбранным →
+                  </Button>
+                {/if}
+              {:else if pickedSet.size > 0}
                 <a
                   {...stepLink(host, 'chosen')}
                   href={stepHref('chosen', true)}
@@ -258,19 +292,20 @@
         </div>
       {/snippet}
       {#snippet chosen()}
-        <div class="flex flex-col gap-3">
+        <div class="flex min-h-0 flex-1 flex-col gap-3">
           {#if pickedSet.size}
             <SeedUsersList
-              {scope}
+              url={!isModalMode}
               initial={initialUsers}
               {rowAttrs}
               isSelected={(id) => pickedSet.has(id)}
               onAcl={handleAcl}
+              class={isModalMode ? 'min-h-0 flex-1' : undefined}
             />
           {:else}
             <p class="text-sm text-muted-foreground">Пока никто не выбран.</p>
           {/if}
-          <div class="text-sm">
+          <div class="shrink-0 text-sm">
             {#if isModalMode}
               <Button
                 type="button"
@@ -294,7 +329,7 @@
       {/snippet}
     </Steps>
 
-    <div class="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+    <div class="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
       {#if pickedSet.size > 0}
         {#if isModalMode}
           <Button
@@ -325,10 +360,7 @@
           type="button"
           variant="ghost"
           size="sm"
-          onclick={() => {
-            clearPaginatorIdsSlice()
-            onCancel?.()
-          }}
+          onclick={() => onCancel?.()}
           data-testid="user-picker-cancel"
         >
           Отмена
@@ -336,10 +368,7 @@
         <Button
           type="button"
           size="sm"
-          onclick={() => {
-            clearPaginatorIdsSlice()
-            onConfirm?.([...pickedSet])
-          }}
+          onclick={() => onConfirm?.([...pickedSet])}
           data-testid="user-picker-apply"
         >
           Применить

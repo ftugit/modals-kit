@@ -13,7 +13,11 @@
   import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
-  const ldr = useLoader<{ initialUsers?: SeedUsersRouteData }>()
+  const ldr = useLoader<{
+    initialUsers?: SeedUsersRouteData
+    fact?: AuthErrorCode | null
+    enabled?: boolean
+  }>()
   const modal = useModal<{
     mode?: 'single' | 'multiple'
     channel?: string
@@ -30,6 +34,8 @@
   )
 
   let acl = $state<AuthErrorCode | null>(null)
+  const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? ldr.data?.initialUsers?.fact ?? null)
+  const isEnabled = $derived(ldr.data?.enabled ?? ldr.data?.initialUsers?.enabled)
 
   function confirm(ids: string[]) {
     m.modals.store.merge('sharedData', {
@@ -42,16 +48,19 @@
   }
 </script>
 
-<Surface variant="plain" class="w-full p-6">
-  {#if acl === 'auth.forbidden'}
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
+  {#if isEnabled === false}
+    <Acl enabled={false} backHref="/" variant="plain" />
+  {:else if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
-  {:else if acl}
-    <Acl status={acl} backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
   {:else}
     <UserPicker
       {mode}
       {initialPicked}
       initialUsers={ldr.data?.initialUsers}
+      class="min-h-0 flex-1"
       onConfirm={confirm}
       onCancel={() => m.modals.close()}
       onAcl={(fact) => (acl = fact)}

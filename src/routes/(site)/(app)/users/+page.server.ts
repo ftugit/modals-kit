@@ -52,31 +52,56 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersRouteData> =
   const page = num(sp.get(SEED_USERS_PAGE_PARAM), 1, 1, 10_000)
   // Размер порции из адреса: пользовательский диапазон 30..100.
   const pageSize = num(key('size'), SEED_USERS_PAGE_SIZE, 30, 100)
-  const ord = key('ord')
-  const state = key('state')
+  const q = key('q')
+  const ordRaw = key('ord')
+  const stateRaw = key('state')
+  const order = ORDERS.includes(ordRaw as SeedUsersOrder) ? (ordRaw as SeedUsersOrder) : undefined
+  const state = STATES.includes(stateRaw as SeedUsersState) ? (stateRaw as SeedUsersState) : undefined
+  const cfrom = key('cfrom')
+  const cto = key('cto')
+  const dfrom = key('dfrom')
+  const dto = key('dto')
+  const createdFrom = dateMs(cfrom)
+  const createdTo = dateMs(cto)
+  const deletedFrom = dateMs(dfrom)
+  const deletedTo = dateMs(dto)
+  const nickname = key('nick') === '1' || key('nick') === 'on'
+  const idsList = (key('ids') ?? '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 500)
 
   const u = auth(event)
   const r = await u.listSeedUsers({
     page,
     pageSize,
-    search: key('q') ?? undefined,
-    order: ORDERS.includes(ord as SeedUsersOrder) ? (ord as SeedUsersOrder) : undefined,
-    state: STATES.includes(state as SeedUsersState) ? (state as SeedUsersState) : undefined,
-    createdFrom: dateMs(key('cfrom')),
-    createdTo: dateMs(key('cto')),
-    deletedFrom: dateMs(key('dfrom')),
-    deletedTo: dateMs(key('dto')),
+    search: q ?? undefined,
+    order,
+    state,
+    createdFrom,
+    createdTo,
+    deletedFrom,
+    deletedTo,
     // Параметр никнейма (этап 2): действует только с правом на профили —
     // гейтит домен, роут лишь пропускает адресное значение. '1' пишет
     // модальный путь пагинатора, 'on' — нативный чекбокс no-JS формы.
-    nickname: key('nick') === '1' || key('nick') === 'on',
+    nickname,
     // Ограничение по списку id (`users.ids`): шаг подтверждения выбора
     // показывает тем же списком только выбранных юзеров.
-    ids: (key('ids') ?? '').split(',').filter(Boolean).slice(0, 500),
+    ids: idsList,
   })
 
   return {
-    snapshot: r.ok ? seedUsersSnapshot(r.value, (key('ids') ?? '').split(',').filter(Boolean).join(',') || undefined) : null,
+    snapshot: r.ok
+      ? seedUsersSnapshot(r.value, {
+          q: q || null,
+          ord: order ?? null,
+          state: state ?? null,
+          cfrom: createdFrom !== null ? cfrom : null,
+          cto: createdTo !== null ? cto : null,
+          dfrom: deletedFrom !== null && r.value.canSeeDeleted ? dfrom : null,
+          dto: deletedTo !== null && r.value.canSeeDeleted ? dto : null,
+          nick: nickname && r.value.canSeeNickname,
+          ids: idsList.join(',') || null,
+        })
+      : null,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,

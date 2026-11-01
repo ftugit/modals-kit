@@ -6,7 +6,7 @@
    * `initial` — как страница свой серверный результат. Отказ список сообщает
    * наверх, его, как на странице, рисует носитель экраном `Acl`.
    */
-  import { useLoader, useRuntimeKey } from '#lib/modals/svelte/index.js'
+  import { useLoader } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import type { AuthErrorCode } from '../error.js'
@@ -14,21 +14,22 @@
   import { Surface } from '#components/ui/index.js'
 
   const ldr = useLoader<SeedUsersRouteData>()
-  // Область пагинатора этой записи: ключ стабилен, пока запись в стопке.
-  const scope = useRuntimeKey()
   let acl = $state<AuthErrorCode | null>(null)
+  const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<Surface variant="plain" class="w-full p-6">
-  {#if acl === 'auth.forbidden'}
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
+  {#if ldr.data?.enabled === false}
+    <Acl enabled={false} backHref="/" variant="plain" />
+  {:else if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
-  {:else if acl}
-    <Acl status={acl} backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
   {:else}
     <SeedUsersList
-      {scope}
       initial={ldr.data}
       variant="plain"
+      class="min-h-0 flex-1"
       onAcl={(fact) => (acl = fact)}
     />
   {/if}

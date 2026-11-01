@@ -34,4 +34,6 @@ export interface StorageServersRouteData {
   readonly enabled: boolean
   readonly slice: StorageServersSlice | null
   readonly fact: AuthErrorCode | null
+  /** Идентификатор сервера, открытого на редактирование по `?edit=<id>` (SSR / no-JS). */
+  readonly editId?: string | null
 }

@@ -24,7 +24,8 @@
   import type { BlockDeleteRouteData } from '../../types.js'
   import { userSession, vault } from '../../vault.svelte.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
-  import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
+  import { invalidatePaginator } from '#lib/paginate/index.js'
+  import { BLOCKS_NAME } from '../blocks-list/source.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { blockDeleteForm } from './form.js'
 
@@ -125,7 +126,7 @@
     const d = r.data as { step?: string } | undefined
     if (d?.step === 'done') {
       lastHandledSubmission = r.submissionId
-      bumpBlocksRevision()
+      void invalidatePaginator(BLOCKS_NAME)
       onDone?.()
     }
   })

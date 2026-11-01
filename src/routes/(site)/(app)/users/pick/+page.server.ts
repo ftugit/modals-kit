@@ -45,36 +45,128 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
   const mode = sp.get('mode') === 'single' ? 'single' : 'multiple'
   const rawParam = (sp.get('param') ?? 'blocks.uids').trim()
   const targetParam = /^[a-z0-9._-]{1,40}$/i.test(rawParam) ? rawParam : 'blocks.uids'
-  const picked = (sp.get('picked') ?? '')
+  const rawPicked = (sp.get('picked') ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 500)
+  const picked = mode === 'single' ? rawPicked.slice(0, 1) : rawPicked
+  const step = sp.get('upicks') === 'chosen' ? 'chosen' : 'pick'
 
   const key = (k: string) => sp.get(`${SEED_USERS_PAGE_PARAM}.${k}`)
-  const page = num(sp.get(SEED_USERS_PAGE_PARAM), 1, 1, 10_000)
+  const requestedPage = num(sp.get(SEED_USERS_PAGE_PARAM), 1, 1, 10_000)
   const pageSize = num(key('size'), SEED_USERS_PAGE_SIZE, 30, 100)
-  const ord = key('ord')
-  const state = key('state')
-  const ids = (key('ids') ?? '').split(',').filter(Boolean).slice(0, 500)
+  const q = key('q')
+  const ordRaw = key('ord')
+  const stateRaw = key('state')
+  const order = SEED_USERS_ORDERS.includes(ordRaw as SeedUsersOrder)
+    ? (ordRaw as SeedUsersOrder)
+    : undefined
+  const state = SEED_USERS_STATES.includes(stateRaw as SeedUsersState)
+    ? (stateRaw as SeedUsersState)
+    : undefined
+  const cfrom = key('cfrom')
+  const cto = key('cto')
+  const dfrom = key('dfrom')
+  const dto = key('dto')
+  const createdFrom = dateMs(cfrom)
+  const createdTo = dateMs(cto)
+  const deletedFrom = dateMs(dfrom)
+  const deletedTo = dateMs(dto)
+  const nickname = key('nick') === '1' || key('nick') === 'on'
 
   const u = auth(event)
-  const r = await u.listSeedUsers({
-    page,
+
+  // На шаге `chosen` показываются ТОЛЬКО выбранные UUID (`picked`). Если ничего
+  // не выбрано — проверяем право одним лёгким запросом и отдаём пустой срез.
+  if (step === 'chosen' && picked.length === 0) {
+    const probe = await u.listSeedUsers({ page: 1, pageSize: 1 })
+    const initialUsers: SeedUsersRouteData = {
+      snapshot: probe.ok
+        ? seedUsersSnapshot(
+            {
+              items: [],
+              total: 0,
+              page: 1,
+              pageSize,
+              canSeeDeleted: probe.value.canSeeDeleted,
+              canSeeNickname: probe.value.canSeeNickname,
+            },
+            {
+              q: q || null,
+              ord: order ?? null,
+              state: state ?? null,
+              cfrom: createdFrom !== null ? cfrom : null,
+              cto: createdTo !== null ? cto : null,
+              dfrom: deletedFrom !== null && probe.value.canSeeDeleted ? dfrom : null,
+              dto: deletedTo !== null && probe.value.canSeeDeleted ? dto : null,
+              nick: nickname && probe.value.canSeeNickname,
+            },
+          )
+        : null,
+      fact: probe.ok ? null : probe.fact.code,
+      enabled: u.enabled,
+      canSeeDeleted: probe.ok ? probe.value.canSeeDeleted : false,
+      canSeeNickname: probe.ok ? probe.value.canSeeNickname : false,
+    }
+    return {
+      mode,
+      picked,
+      fromHref,
+      targetParam,
+      initialUsers,
+      fact: probe.ok ? null : probe.fact.code,
+      enabled: u.enabled,
+    }
+  }
+
+  const ids = step === 'chosen' ? picked : []
+  let r = await u.listSeedUsers({
+    page: requestedPage,
     pageSize,
-    search: key('q') ?? undefined,
-    order: SEED_USERS_ORDERS.includes(ord as SeedUsersOrder) ? (ord as SeedUsersOrder) : undefined,
-    state: SEED_USERS_STATES.includes(state as SeedUsersState) ? (state as SeedUsersState) : undefined,
-    createdFrom: dateMs(key('cfrom')),
-    createdTo: dateMs(key('cto')),
-    deletedFrom: dateMs(key('dfrom')),
-    deletedTo: dateMs(key('dto')),
-    nickname: key('nick') === '1' || key('nick') === 'on',
+    search: q ?? undefined,
+    order,
+    state,
+    createdFrom,
+    createdTo,
+    deletedFrom,
+    deletedTo,
+    nickname,
     ids,
   })
+  // Если без JS переключились в `chosen` с 2+ страницы общего списка, а выбранных
+  // меньше одной порции — откатываем страницу к последней доступной.
+  if (r.ok && step === 'chosen' && r.value.items.length === 0 && r.value.total > 0 && requestedPage > 1) {
+    const clampedPage = Math.max(1, Math.ceil(r.value.total / pageSize))
+    r = await u.listSeedUsers({
+      page: clampedPage,
+      pageSize,
+      search: q ?? undefined,
+      order,
+      state,
+      createdFrom,
+      createdTo,
+      deletedFrom,
+      deletedTo,
+      nickname,
+      ids,
+    })
+  }
 
   const initialUsers: SeedUsersRouteData = {
-    snapshot: r.ok ? seedUsersSnapshot(r.value, ids.join(',') || undefined) : null,
+    snapshot: r.ok
+      ? seedUsersSnapshot(r.value, {
+          q: q || null,
+          ord: order ?? null,
+          state: state ?? null,
+          cfrom: createdFrom !== null ? cfrom : null,
+          cto: createdTo !== null ? cto : null,
+          dfrom: deletedFrom !== null && r.value.canSeeDeleted ? dfrom : null,
+          dto: deletedTo !== null && r.value.canSeeDeleted ? dto : null,
+          nick: nickname && r.value.canSeeNickname,
+          ids: ids.join(',') || null,
+        })
+      : null,
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
@@ -83,7 +175,7 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
 
   return {
     mode,
-    picked: mode === 'single' ? picked.slice(0, 1) : picked,
+    picked,
     fromHref,
     targetParam,
     initialUsers,

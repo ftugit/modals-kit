@@ -14,17 +14,17 @@
   import { grants } from '#lib/db/index.js'
   import { Paginator, Skeleton } from '#components/paginator/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import {
     acquireScopedStore,
     createPaginatorStore,
     getClientStore,
-    getState,
     releaseScopedStore,
   } from '#lib/paginate/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
-  import { PaginatorScope } from '#lib/paginate/svelte/index.js'
+  import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { block as blockResource } from '../schema.js'
@@ -32,7 +32,6 @@
   import { vault } from '../vault.svelte.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
   import BlockCard from './blocks-list/BlockCard.svelte'
-  import { getBlocksRevision } from './blocks-list/revision.svelte.js'
   import {
     BLOCKS_EXTRA_DEFAULTS,
     BLOCKS_FILTER_KEYS,
@@ -46,14 +45,16 @@
   interface Props {
     /** Фиксированный целевой пользователь; пусто — глобальный список всех блокировок. */
     uid?: string | null
-    /** Данные `load` роута от страницы-носителя (SSR/no-JS). */
+    /** Данные `load` роута от страницы или модалки-носителя (SSR/no-JS/useLoader). */
     initial?: BlocksRouteData | null
     /**
-     * Ключ изолированной области пагинатора. Владелец (модалка) задаёт его на
-     * всё время жизни записи: соседние экраны с тем же именем списка не делят
-     * с этим ни порции, ни скролл. Пусто — общее клиентское хранилище (страница).
+     * Явный ключ изолированной области пагинатора (для немодальных стендов).
+     * Внутри модалки область и URL-префикс (`m<k>.*`) выделяются автоматически
+     * через `useSlotPaginatorScope`.
      */
     scope?: string | null
+    /** Синхронизировать состояние пагинатора с адресной строкой. */
+    url?: boolean
     /** Отказ доступа передаётся носителю для показа `Acl`. */
     onAcl?: (fact: AuthErrorCode) => void
     variant?: UserSurfaceVariant
@@ -64,6 +65,7 @@
     uid = null,
     initial = null,
     scope = null,
+    url: urlProp,
     onAcl,
     variant = 'plain',
     class: className,
@@ -71,40 +73,44 @@
 
   ensureBlocksPaginator()
 
+  const slotScope = useSlotPaginatorScope(
+    BLOCKS_NAME,
+    untrack(() => (urlProp === false ? { url: false } : undefined)),
+  )
+  const effectivePaginatorUrl = $derived(urlProp !== undefined ? urlProp : slotScope.paginatorUrl)
+
   const asModalLink = useModalLink()
   const fixedUid = $derived(uid?.trim() || null)
 
   let data = $state<BlocksRouteData | null>(untrack(() => initial))
   let lastFetchKey = ''
-  const initialRev = untrack(() => getBlocksRevision())
 
   $effect(() => {
-    const rev = getBlocksRevision()
     const targetUid = fixedUid
     const searchSnap = currentSearch()
 
-    // На первом рендере страницы используем SSR `initial`, но при росте `rev`
-    // (создание/правка/удаление блокировки в дочерней модалке) перечитываем срез.
-    if (initial && rev === initialRev) {
+    if (initial) {
       data = initial
+      if (initial.fact) onAcl?.(initial.fact)
       return
     }
 
     const sp = new URLSearchParams()
-    for (const [k, v] of Object.entries(searchSnap)) {
-      if (k === BLOCKS_PAGE_PARAM || k.startsWith(`${BLOCKS_PAGE_PARAM}.`)) {
-        if (!targetUid || k !== `${BLOCKS_PAGE_PARAM}.uids`) sp.set(k, String(v))
+    if (effectivePaginatorUrl !== false) {
+      for (const [k, v] of Object.entries(searchSnap)) {
+        if (k === BLOCKS_PAGE_PARAM || k.startsWith(`${BLOCKS_PAGE_PARAM}.`)) {
+          if (!targetUid || k !== `${BLOCKS_PAGE_PARAM}.uids`) sp.set(k, String(v))
+        }
       }
     }
     const base = targetUid ? `/user/${encodeURIComponent(targetUid)}/blocks` : '/blocks'
     const targetUrl = sp.size ? `${base}?${sp.toString()}` : base
-    const fetchKey = `${rev}::${targetUrl}`
-    if (lastFetchKey === fetchKey) return
-    lastFetchKey = fetchKey
+    if (lastFetchKey === targetUrl) return
+    lastFetchKey = targetUrl
 
     void (async () => {
       const r = await preloadData(targetUrl)
-      if (lastFetchKey !== fetchKey) return
+      if (lastFetchKey !== targetUrl) return
       if (r.type !== 'loaded') {
         onAcl?.('auth.expired')
         return
@@ -120,22 +126,27 @@
 
   const snapshot = $derived(data?.snapshot ?? null)
 
-  // Область пагинатора: с ключом от носителя — своё хранилище, без ключа —
-  // общее клиентское, как на странице. Ключ захватывается на монтировании
-  // (носитель даёт его ровно на время жизни записи) и освобождается при
-  // размонтировании: последняя ссылка удаляет состояние вместе с внутренним
-  // срезом `extra.uids`.
-  const scopeKey = untrack(() => scope)
+  const scopeKey = untrack(() => (slotScope.store ? null : scope))
   const store = untrack(() =>
-    scopeKey
-      ? acquireScopedStore(scopeKey)
-      : typeof window === 'undefined'
-        ? createPaginatorStore()
-        : getClientStore(),
+    slotScope.store
+      ? slotScope.store
+      : scopeKey
+        ? acquireScopedStore(scopeKey)
+        : typeof window === 'undefined'
+          ? createPaginatorStore()
+          : getClientStore(),
   )
   if (scopeKey) onDestroy(() => releaseScopedStore(scopeKey))
 
-  const pagState = (name: string = BLOCKS_NAME) => getState<BlockView>(store, name)
+  const pagState = usePaginatorState<BlockView>(BLOCKS_NAME, store)
+  const hasLivePages = $derived(
+    Object.keys(pagState().pages).length > 0 || pagState().status !== 'idle' || pagState().reqId > 0,
+  )
+  const liveExtra = $derived(hasLivePages ? pagState().extra : (snapshot?.extra ?? pagState().extra))
+  const livePageSize = $derived(
+    hasLivePages ? pagState().pageSize : (snapshot?.pageSize ?? pagState().pageSize),
+  )
+
   const createBlockGrant = useGrants(grants(blockResource).insert)
   const canCreate = $derived(
     vault.principal !== null
@@ -145,7 +156,7 @@
 
   const filterUids = $derived.by(() => {
     if (fixedUid) return ''
-    const raw = String(pagState().extra?.uids ?? '')
+    const raw = String(liveExtra?.uids ?? '')
     const selfId = vault.principal
     return raw
       .split(',')
@@ -157,13 +168,15 @@
   const activeFilters = $derived(
     BLOCKS_FILTER_KEYS.filter((k) => {
       if (fixedUid && k === 'uids') return false
-      const v = pagState().extra?.[k]
+      const v = liveExtra?.[k]
       const fallback = (BLOCKS_EXTRA_DEFAULTS as Record<string, string>)[k]
       return typeof v === 'string' && v !== '' && v !== fallback
-    }).length + (pagState().pageSize !== BLOCKS_PAGE_SIZE ? 1 : 0),
+    }).length + (livePageSize !== BLOCKS_PAGE_SIZE ? 1 : 0),
   )
 
-  const totalItems = $derived(pagState().totalItems ?? snapshot?.totalItems)
+  const totalItems = $derived(
+    hasLivePages ? (pagState().totalItems ?? snapshot?.totalItems) : snapshot?.totalItems,
+  )
 
   const filtersHref = $derived.by(() => {
     const qs = new URLSearchParams(
@@ -186,8 +199,8 @@
 
 {#if snapshot}
   <PaginatorScope {store} snapshots={{ [BLOCKS_NAME]: snapshot }}>
-    <section class={cn(userSurfaceVariants({ variant }), className)} data-testid="blocks-list">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <section class={cn('flex min-h-0 flex-col', userSurfaceVariants({ variant }), className)} data-testid="blocks-list">
+      <div class="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div class="flex items-baseline gap-2">
           <h2 class="text-lg font-semibold leading-tight tracking-tight">
             {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
@@ -211,7 +224,10 @@
           <Button
             {...asModalLink(
               'user.blocks.filters',
-              { ...(fixedUid ? { uid: fixedUid } : {}), ...(scope ? { scope } : {}) },
+              {
+                ...(fixedUid ? { uid: fixedUid } : {}),
+                ...(!fixedUid && filterUids ? { uids: filterUids } : {}),
+              },
               { href: filtersHref },
             )}
             variant="outline"
@@ -227,13 +243,14 @@
         name={BLOCKS_NAME}
         ariaLabel="Список блокировок"
         {snapshot}
+        url={effectivePaginatorUrl}
         mode="accumulate"
         topTrigger="direction"
         bottomTrigger="direction"
         topZone="40%"
         bottomZone="40%"
         renderDivider={null}
-        class="max-h-[420px]"
+        class={variant === 'plain' && slotScope.store !== null ? 'min-h-0 flex-1' : 'max-h-[420px]'}
       >
         {#snippet renderItem(item: BlockView)}
           <a

@@ -2,6 +2,8 @@
   // Страница создания блокировки из глобального списка (`/blocks/new`) — носитель `user.blocks.create`.
   import { useHeadSeo } from '#components/shell/index.js'
   import { Button } from '#components/ui/index.js'
+  import { visibleAddress, writeAddress } from '#lib/address/sveltekit.js'
+  import { blocksCreateRoute } from '#content/user/routes.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlockForm from '#content/user/ui/block-form/BlockForm.svelte'
   import type { PageProps } from './$types'
@@ -13,6 +15,33 @@
     description: 'Создание новой блокировки для одного или нескольких пользователей.',
     noindex: true,
   })
+
+  const activeUidsCsv = $derived.by(() => {
+    const sp = visibleAddress().url.searchParams
+    const raw = sp.get('uids') ?? sp.get('subjects') ?? sp.get('subject')
+    if (raw !== null) return raw.trim()
+    return (data.initialSubjects ?? []).join(',')
+  })
+
+  const actionHref = $derived(
+    activeUidsCsv
+      ? `/blocks/new?uids=${encodeURIComponent(activeUidsCsv)}&next=/blocks`
+      : '/blocks/new?next=/blocks',
+  )
+
+  function syncSubjectsToPageUrl(ids: string[]) {
+    const csv = ids.filter(Boolean).join(',')
+    void writeAddress(
+      (cur) => ({
+        url: blocksCreateRoute.patch(cur.url, {
+          uids: csv || null,
+          subjects: null,
+          subject: null,
+        }),
+      }),
+      { replace: true, load: false, owner: 'blocks.create' },
+    )
+  }
 </script>
 
 <div class="mx-auto w-full max-w-md">
@@ -30,7 +59,8 @@
       initialSubjects={data.initialSubjects}
       initialSubject={data.initialSubject}
       selfHref={data.selfHref}
-      action="/blocks/new?next=/blocks"
+      action={actionHref}
+      onSubjectsChange={syncSubjectsToPageUrl}
       variant="card"
     />
   {/if}

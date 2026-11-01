@@ -199,21 +199,56 @@ export function ensureSeedUsersPaginator(): string {
   return SEED_USERS_NAME
 }
 
+export interface SeedUsersSnapshotExtra {
+  q?: string | null
+  ord?: string | null
+  state?: string | null
+  cfrom?: string | null
+  cto?: string | null
+  dfrom?: string | null
+  dto?: string | null
+  nick?: boolean | string | null
+  ids?: string | null
+}
+
 /**
  * Снапшот первой порции для `PaginatorHost`: состояние, которое хост принял бы
  * после загрузки этой страницы, но без сетевого хода — данные уже принёс `load`.
  */
-export function seedUsersSnapshot(p: SeedUsersPage, ids?: string): PaginatorState<SeedUserView> {
+export function seedUsersSnapshot(
+  p: SeedUsersPage,
+  extraOrIds?: string | SeedUsersSnapshotExtra,
+): PaginatorState<SeedUserView> {
   const totalPages = Math.max(1, Math.ceil(p.total / p.pageSize))
+  const extra: Record<string, string> = {}
+  if (typeof extraOrIds === 'string') {
+    if (extraOrIds) extra[SEED_USERS_IDS_KEY] = extraOrIds
+  } else if (extraOrIds) {
+    if (extraOrIds.q) extra.q = extraOrIds.q
+    if (extraOrIds.ord && extraOrIds.ord !== SEED_USERS_EXTRA_DEFAULTS.ord) {
+      extra.ord = extraOrIds.ord
+    }
+    if (extraOrIds.state && extraOrIds.state !== SEED_USERS_EXTRA_DEFAULTS.state) {
+      extra.state = extraOrIds.state
+    }
+    if (extraOrIds.cfrom) extra.cfrom = extraOrIds.cfrom
+    if (extraOrIds.cto) extra.cto = extraOrIds.cto
+    if (extraOrIds.dfrom) extra.dfrom = extraOrIds.dfrom
+    if (extraOrIds.dto) extra.dto = extraOrIds.dto
+    if (extraOrIds.nick === true || extraOrIds.nick === '1' || extraOrIds.nick === 'on') {
+      extra.nick = '1'
+    }
+    if (extraOrIds.ids) extra[SEED_USERS_IDS_KEY] = extraOrIds.ids
+  }
   return {
     name: SEED_USERS_NAME,
     page: p.page,
     pageSize: p.pageSize,
     totalItems: p.total,
     totalPages,
-    // Срез по id едет в `extra` снапшота: догрузка порций берёт фильтры
-    // из состояния, и без этого следующие порции потеряли бы ограничение.
-    extra: ids ? { [SEED_USERS_IDS_KEY]: ids } : {},
+    // Весь активный срез едет в `extra` снапшота: догрузка порций и гидрация
+    // `PaginatorHost` сверяют `initial.extra` с URL/сессией и не теряют фильтры.
+    extra,
     loadedPages: [p.page],
     pages: { [p.page]: p.items },
     status: 'idle',

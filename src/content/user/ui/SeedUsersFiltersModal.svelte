@@ -11,25 +11,27 @@
    */
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import {
-    findScopedStore,
-    getClientStore,
-    getState,
-    setExtra,
-    setPageSize,
-  } from '#lib/paginate/index.js'
-
-  import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
+  import { getState, setExtra } from '#lib/paginate/index.js'
+  import { useOwnerPaginatorStore } from '#hooks/modal-paginator.svelte.js'
+  import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, profile as profileResource } from '../schema.js'
   import { vault } from '../vault.svelte.js'
+  import Acl from './Acl.svelte'
   import { SEED_USERS_NAME, SEED_USERS_PAGE_SIZE } from './seed-users/source.js'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
   import { Surface } from '#components/ui/index.js'
 
+  interface FiltersLoaderData {
+    canSeeDeleted: boolean
+    canSeeNickname: boolean
+    fact?: AuthErrorCode | null
+    enabled?: boolean
+  }
+
   const m = useModals()
-  const modal = useModal<{ scope?: string }>()
-  const ldr = useLoader<{ canSeeDeleted: boolean; canSeeNickname: boolean }>()
+  const ldr = useLoader<FiltersLoaderData>()
   const seedFilterCaps = useGrants({
     canSeeDeleted: grants(authResource).selectDeleted,
     canSeeNickname: grants(profileResource).select,
@@ -41,9 +43,7 @@
     vault.principal !== null ? seedFilterCaps.canSeeNickname : ldr.data?.canSeeNickname === true,
   )
 
-  // Стор владельца списка: ключ области приходит в параметрах модалки. Без
-  // ключа (страница, старая ссылка) — общий клиентский, как раньше.
-  const store = findScopedStore(untrack(() => modal.params?.scope ?? null)) ?? getClientStore()
+  const store = useOwnerPaginatorStore(SEED_USERS_NAME)
   const pagState = () => getState(store, SEED_USERS_NAME)
   const initial: SeedUsersFilterValues = untrack(() => {
     const e = (pagState().extra ?? {}) as Record<string, unknown>
@@ -61,34 +61,48 @@
   })
 
   async function apply(patch: Record<string, string | undefined>, pageSize: number) {
-    // Порядок важен: сначала новый срез (setExtra перезапрашивает с первой
-    // порции прежним размером), затем размер — иначе промежуточный запрос
-    // ушёл бы со старым срезом и новым размером.
-    await setExtra(store, SEED_USERS_NAME, patch)
-    await setPageSize(store, SEED_USERS_NAME, pageSize)
+    await setExtra(store, SEED_USERS_NAME, patch, { pageSize })
     m.modals.close()
   }
 
   async function reset() {
-    await setExtra(store, SEED_USERS_NAME, {
-      ord: undefined,
-      state: undefined,
-      cfrom: undefined,
-      cto: undefined,
-      dfrom: undefined,
-      dto: undefined,
-      nick: undefined,
-    })
-    await setPageSize(store, SEED_USERS_NAME, SEED_USERS_PAGE_SIZE)
+    await setExtra(
+      store,
+      SEED_USERS_NAME,
+      {
+        ord: undefined,
+        state: undefined,
+        cfrom: undefined,
+        cto: undefined,
+        dfrom: undefined,
+        dto: undefined,
+        nick: undefined,
+      },
+      { pageSize: SEED_USERS_PAGE_SIZE },
+    )
     m.modals.close()
   }
 </script>
 
-<Surface
-  variant="plain"
-  class="w-full p-6"
-  title="Фильтры списка"
-  description="Параметры выборки и сортировки аккаунтов."
->
-  <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
-</Surface>
+{#if ldr.data?.enabled === false}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl enabled={false} backHref="/" variant="plain" />
+  </Surface>
+{:else if ldr.data?.fact === 'auth.forbidden'}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  </Surface>
+{:else if ldr.data?.fact}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl status={ldr.data.fact} backHref="/" variant="plain" />
+  </Surface>
+{:else}
+  <Surface
+    variant="plain"
+    class="w-full p-6"
+    title="Фильтры списка"
+    description="Параметры выборки и сортировки аккаунтов."
+  >
+    <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
+  </Surface>
+{/if}

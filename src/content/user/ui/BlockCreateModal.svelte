@@ -2,6 +2,7 @@
   /**
    * Модалка создания блокировки (`user.blocks.create`): носитель + ACL-гейт.
    */
+  import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
@@ -17,7 +18,7 @@
   const modal = useModal<{ uid?: string; uids?: string }>()
   const ldr = useLoader<BlockCreateRouteData>()
   const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
-  const initialSubjects = $derived(
+  const initialSubjects = untrack(() =>
     modal.params?.uids
       ? String(modal.params.uids)
           .split(',')
@@ -25,6 +26,14 @@
           .filter((s) => Boolean(s) && s !== vault.principal)
       : undefined,
   )
+
+  function syncSubjectsToModalUrl(ids: string[]) {
+    if (uid) return
+    modal.setParams(
+      { uids: ids.filter(Boolean).join(',') || undefined },
+      { reload: false },
+    )
+  }
   const canCreateGrant = useGrants(grants(blockResource).insert)
   let acl = $state<AuthErrorCode | null>(null)
   const effectiveAcl = $derived(
@@ -59,6 +68,7 @@
       {initialSubjects}
       initialCreate={ldr.data ?? null}
       variant="plain"
+      onSubjectsChange={syncSubjectsToModalUrl}
       onAcl={(fact) => (acl = fact)}
       onDone={done}
     />

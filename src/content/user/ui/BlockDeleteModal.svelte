@@ -48,7 +48,6 @@
     // чтобы активированная заново нижняя запись перезапросилась.
     m.modals.invalidateLoader('user.blocks')
     m.modals.invalidateLoader('user.blocks.edit')
-    m.modals.invalidateLoader('user.blocks.delete')
     m.modals.invalidateLoader('user.profile')
     m.modals.close()
     if (

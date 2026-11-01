@@ -5,9 +5,11 @@
    * `canDeleteProfile` чтения), дальше компонент `ProfileDelete` по id.
    * Права и запреты при отправке перепроверяет серверная форма.
    */
+  import { invalidatePaginator } from '#lib/paginate/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import ProfileDelete from './profile-delete/ProfileDelete.svelte'
+  import { SEED_USERS_NAME } from './seed-users/source.js'
   import type { ProfileDeleteRouteData } from '../types.js'
   import { Surface } from '#components/ui/index.js'
 
@@ -22,8 +24,8 @@
    */
   function done() {
     m.modals.invalidateLoader('user.profile')
-    m.modals.invalidateLoader('user.profile.delete')
     m.modals.invalidateLoader('user.list')
+    void invalidatePaginator(SEED_USERS_NAME)
   }
 </script>
 

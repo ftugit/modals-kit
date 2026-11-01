@@ -113,12 +113,10 @@ export const userListRoute = kitRoute('/users')
 
 export interface ListFiltersSearchInput extends Record<string, unknown> {
   from?: string | null
-  scope?: string | null
 }
 
 export interface ListFiltersSearchOutput {
   from: string | null
-  scope: string | null
 }
 
 export interface BlocksFiltersSearchInput extends ListFiltersSearchInput {
@@ -134,17 +132,12 @@ export interface BlocksFiltersSearchOutput extends ListFiltersSearchOutput {
  * (канон «модалка + страница», как `user.menu`): с JS кнопка над списком
  * открывает модалку, без JS ведёт сюда; форма страницы — GET обратно к
  * списку (адрес носителя несёт параметр `from`, список может жить где угодно).
- *
- * Бронь `from` и `scope`: `scope` — область хранилища, в которой живёт список
- * (у модалки `user.list.filters` она приходит параметром из списка), `from` —
- * адрес носителя для no-JS-возврата.
  */
 export const userListFiltersRoute = kitRoute('/users/filters', {
   owner: 'user.filters',
-  keys: ['from', 'scope'],
+  keys: ['from'],
   search: querySchema<ListFiltersSearchInput, ListFiltersSearchOutput>((raw) => ({
     from: localPath(typeof raw.from === 'string' ? raw.from : null),
-    scope: typeof raw.scope === 'string' && raw.scope ? raw.scope : null,
   })),
 })
 
@@ -165,21 +158,41 @@ export const userBlocksRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks', {
 
 /**
  * Фильтры списка блокировок — страница-fallback модалки `user.blocks.filters`.
- * Бронь как у фильтров списка плюс `uid`: у этой модалки список принадлежит
- * пользователю (`scope` — область хранилища, `uid` — чей список).
+ * Бронь как у фильтров списка плюс `uid`: у этой модалки список может
+ * принадлежать конкретному пользователю (`uid` — чей список).
  */
 export const blocksFiltersRoute = kitRoute('/blocks/filters', {
   owner: 'user.filters',
-  keys: ['from', 'scope', 'uid'],
+  keys: ['from', 'uid'],
   search: querySchema<BlocksFiltersSearchInput, BlocksFiltersSearchOutput>((raw) => ({
     from: localPath(typeof raw.from === 'string' ? raw.from : null),
-    scope: typeof raw.scope === 'string' && raw.scope ? raw.scope : null,
     uid: typeof raw.uid === 'string' && raw.uid ? raw.uid : null,
   })),
 })
 
+export interface BlocksCreateSearchInput extends Record<string, unknown> {
+  uids?: string | null
+  subjects?: string | null
+  subject?: string | null
+}
+
+export interface BlocksCreateSearchOutput {
+  uids: string | null
+  subjects: string | null
+  subject: string | null
+}
+
 /** Создание блокировки из глобального списка (`/blocks/new`). */
-export const blocksCreateRoute = kitRoute('/blocks/new')
+export const blocksCreateRoute = kitRoute('/blocks/new', {
+  owner: 'blocks.create',
+  keys: ['uids', 'subjects', 'subject'],
+  defaults: { uids: null, subjects: null, subject: null },
+  search: querySchema<BlocksCreateSearchInput, BlocksCreateSearchOutput>((raw) => ({
+    uids: typeof raw.uids === 'string' && raw.uids ? raw.uids : null,
+    subjects: typeof raw.subjects === 'string' && raw.subjects ? raw.subjects : null,
+    subject: typeof raw.subject === 'string' && raw.subject ? raw.subject : null,
+  })),
+})
 
 /** Создание блокировки конкретного пользователя (`/user/[id]/blocks/new`). */
 export const userBlocksCreateRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks/new', {

@@ -123,6 +123,27 @@
     bound.f.read_only.onInput(srv ? srv.meta.readOnly : false)
   }
 
+  // Синхронный засев на SSR / no-JS при `?edit=<id>` и реактивный отклик на смену `initial.editId`
+  let lastSeededEditId = untrack(() => {
+    const initEditId = initial?.editId ?? null
+    if (initEditId && initial?.slice && !bound.state.result) {
+      const target = initial.slice.items.find((x) => x.id === initEditId) ?? null
+      if (target) loadIntoEditor(target)
+    }
+    return initEditId
+  })
+
+  $effect(() => {
+    const nextEditId = initial?.editId ?? null
+    const items = initial?.slice?.items
+    if (nextEditId === lastSeededEditId) return
+    lastSeededEditId = nextEditId
+    untrack(() => {
+      const target = nextEditId && items ? (items.find((x) => x.id === nextEditId) ?? null) : null
+      loadIntoEditor(target)
+    })
+  })
+
   let lastSubmission = ''
   $effect(() => {
     const r = bound.state.result
@@ -177,15 +198,31 @@
             </div>
             {#if editable}
               <div class="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onclick={() => loadIntoEditor(srv)}
-                  data-testid={`storage-server-edit-${srv.slot}`}
-                >
-                  Изменить
-                </Button>
+                {#if onDone}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onclick={() => loadIntoEditor(srv)}
+                    data-testid={`storage-server-edit-${srv.slot}`}
+                  >
+                    Изменить
+                  </Button>
+                {:else}
+                  <Button
+                    href={`/storage-servers?edit=${encodeURIComponent(srv.id)}`}
+                    variant="outline"
+                    size="sm"
+                    onclick={(e: MouseEvent) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                      e.preventDefault()
+                      loadIntoEditor(srv)
+                    }}
+                    data-testid={`storage-server-edit-${srv.slot}`}
+                  >
+                    Изменить
+                  </Button>
+                {/if}
                 <Button
                   type="submit"
                   name="intent"
@@ -265,14 +302,29 @@
                 {editing ? `Обновить сервер «${editing.slot}»` : 'Подключить сервер (S3 / WebDAV)'}
               </h3>
               {#if editing}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onclick={() => loadIntoEditor(null)}
-                >
-                  Новый слот
-                </Button>
+                {#if onDone}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => loadIntoEditor(null)}
+                  >
+                    Новый слот
+                  </Button>
+                {:else}
+                  <Button
+                    href="/storage-servers"
+                    variant="ghost"
+                    size="sm"
+                    onclick={(e: MouseEvent) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                      e.preventDefault()
+                      loadIntoEditor(null)
+                    }}
+                  >
+                    Новый слот
+                  </Button>
+                {/if}
               {/if}
             </div>
 

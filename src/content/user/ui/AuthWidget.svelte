@@ -10,6 +10,7 @@
   import { goto } from '$app/navigation'
   import { untrack } from 'svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { invalidatePaginator } from '#lib/paginate/index.js'
   import { formSteps, suffixOf, useSteps } from '#components/steps/index.js'
   import { kitActionTransport } from '#hooks/component-form/transport.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
@@ -17,8 +18,10 @@
   import { defaults } from '../config.js'
   import { generateKeyPair } from '../keys.js'
   import { vault, type VaultPayload } from '../vault.svelte.js'
+  import { BLOCKS_NAME } from './blocks-list/source.js'
   import type { ProfileLimits } from './profile-form/index.js'
   import ProfileForm, { DEFAULT_PROFILE_LIMITS } from './profile-form/ProfileForm.svelte'
+  import { SEED_USERS_NAME } from './seed-users/source.js'
   import { SeedForm, seedForm, SEED_FORM_ID, SEED_FORM_REV, type SeedView } from './seed-form/index.js'
   import { prepareSeedProof } from './seed-form/prepare-proof.js'
   import { mirrorToField } from './field-mirror.svelte.js'
@@ -180,6 +183,8 @@
   }
 
   function finish(): void {
+    void invalidatePaginator(SEED_USERS_NAME)
+    void invalidatePaginator(BLOCKS_NAME)
     if (onDone) {
       onDone()
       return

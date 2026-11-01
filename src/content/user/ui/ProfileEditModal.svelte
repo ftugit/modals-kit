@@ -6,9 +6,11 @@
    * форма и модель; успешное сохранение закрывает модалку, показ под
    * ней профиль перечитает сам.
    */
+  import { invalidatePaginator } from '#lib/paginate/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import ProfileForm from './profile-form/ProfileForm.svelte'
+  import { SEED_USERS_NAME } from './seed-users/source.js'
   import type { ProfileView } from '../types.js'
   import type { AuthErrorCode } from '../error.js'
   import { Surface } from '#components/ui/index.js'
@@ -37,6 +39,7 @@
     m.modals.invalidateLoader('user.profile')
     m.modals.invalidateLoader('user.profile.edit')
     m.modals.invalidateLoader('user.list')
+    void invalidatePaginator(SEED_USERS_NAME)
     m.modals.close()
   }
 </script>

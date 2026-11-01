@@ -7,27 +7,34 @@
    */
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { findScopedStore, getClientStore, getState, setExtra, setPageSize } from '#lib/paginate/index.js'
+  import { getState, setExtra } from '#lib/paginate/index.js'
+  import { useOwnerPaginatorStore } from '#hooks/modal-paginator.svelte.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
+  import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, block as blockResource } from '../schema.js'
   import { vault } from '../vault.svelte.js'
+  import Acl from './Acl.svelte'
   import { BLOCKS_NAME, BLOCKS_PAGE_SIZE } from './blocks-list/source.js'
   import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
   import { Surface } from '#components/ui/index.js'
+
+  interface BlocksFiltersLoaderData {
+    canSeeDeleted: boolean
+    canSeeLive: boolean
+    canPickUsers: boolean
+    fact?: AuthErrorCode | null
+    enabled?: boolean
+  }
 
   const gBlock = grants(blockResource)
   const gAuth = grants(authResource)
 
   const m = useModals()
-  const modal = useModal<{ uid?: string; scope?: string }>()
+  const modal = useModal<{ uid?: string; uids?: string }>()
   const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
 
-  const ldr = useLoader<{
-    canSeeDeleted: boolean
-    canSeeLive: boolean
-    canPickUsers: boolean
-  }>()
+  const ldr = useLoader<BlocksFiltersLoaderData>()
   const filterCaps = useGrants(
     {
       canSeeDeleted: gBlock.selectDeleted,
@@ -46,13 +53,17 @@
     !uid && (vault.principal !== null ? filterCaps.canPickUsers : ldr.data?.canPickUsers === true),
   )
 
-  // Стор владельца списка: ключ области приходит в параметрах модалки. Без
-  // ключа (страница, старая ссылка) — общий клиентский, как раньше.
-  const store = findScopedStore(untrack(() => modal.params?.scope ?? null)) ?? getClientStore()
+  const store = useOwnerPaginatorStore(BLOCKS_NAME)
   const pagState = () => getState(store, BLOCKS_NAME)
   const initial: BlocksFilterValues = untrack(() => {
     const e = (pagState().extra ?? {}) as Record<string, unknown>
     const s = (k: string) => (typeof e[k] === 'string' ? (e[k] as string) : '')
+    const rawEntry = m.view.chain[modal.index]
+    const hasExplicitModalUids =
+      rawEntry?.kind === 'registered' &&
+      rawEntry.params !== undefined &&
+      Object.prototype.hasOwnProperty.call(rawEntry.params, 'uids')
+    const uidsCsv = hasExplicitModalUids ? String(modal.params?.uids ?? '') : s('uids')
     return {
       ord: s('ord') || 'created-desc',
       state: s('state') || 'all',
@@ -60,7 +71,7 @@
         .split(',')
         .map((x) => x.trim())
         .filter(Boolean),
-      uids: s('uids')
+      uids: uidsCsv
         .split(',')
         .map((x) => x.trim())
         .filter(Boolean),
@@ -68,37 +79,63 @@
     }
   })
 
+  function syncUidsToModalUrl(nextUids: string[]) {
+    if (uid) return
+    modal.setParams(
+      { uids: nextUids.filter(Boolean).join(',') || undefined },
+      { reload: false },
+    )
+  }
+
   async function apply(patch: Record<string, string | undefined>, pageSize: number) {
-    await setExtra(store, BLOCKS_NAME, patch)
-    await setPageSize(store, BLOCKS_NAME, pageSize)
+    await setExtra(store, BLOCKS_NAME, patch, { pageSize })
     m.modals.close()
   }
 
   async function reset() {
-    await setExtra(store, BLOCKS_NAME, {
-      ord: undefined,
-      state: undefined,
-      scopes: undefined,
-      uids: undefined,
-    })
-    await setPageSize(store, BLOCKS_NAME, BLOCKS_PAGE_SIZE)
+    await setExtra(
+      store,
+      BLOCKS_NAME,
+      {
+        ord: undefined,
+        state: undefined,
+        scopes: undefined,
+        uids: undefined,
+      },
+      { pageSize: BLOCKS_PAGE_SIZE },
+    )
     m.modals.close()
   }
 </script>
 
-<Surface
-  variant="plain"
-  class="w-full p-6"
-  title="Фильтры блокировок"
-  description="Срез журнала по статусу, сферам и пользователям."
->
-  <BlocksFiltersForm
-    {uid}
-    {canSeeDeleted}
-    {canSeeLive}
-    {canPickUsers}
-    {initial}
-    onApply={apply}
-    onReset={reset}
-  />
-</Surface>
+{#if ldr.data?.enabled === false}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl enabled={false} backHref="/" variant="plain" />
+  </Surface>
+{:else if ldr.data?.fact === 'auth.forbidden'}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl model="forbidden" backHref="/" variant="plain" />
+  </Surface>
+{:else if ldr.data?.fact}
+  <Surface variant="plain" class="w-full p-6">
+    <Acl status={ldr.data.fact} backHref="/" variant="plain" />
+  </Surface>
+{:else}
+  <Surface
+    variant="plain"
+    class="w-full p-6"
+    title="Фильтры блокировок"
+    description="Срез журнала по статусу, сферам и пользователям."
+  >
+    <BlocksFiltersForm
+      {uid}
+      {canSeeDeleted}
+      {canSeeLive}
+      {canPickUsers}
+      {initial}
+      onUidsChange={syncUidsToModalUrl}
+      onApply={apply}
+      onReset={reset}
+    />
+  </Surface>
+{/if}

@@ -28,19 +28,18 @@
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import { preloadData } from '$app/navigation'
   import {
     acquireScopedStore,
     createPaginatorStore,
     getClientStore,
-    getState,
     releaseScopedStore,
   } from '#lib/paginate/index.js'
-  import { PaginatorScope } from '#lib/paginate/svelte/index.js'
+  import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
-  import type { PaginatorState } from '#lib/paginate/index.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
@@ -54,14 +53,16 @@
   } from './seed-users/source.js'
 
   interface Props {
-    /** Данные `load` роута от носителя (страница): своего запроса не будет. */
+    /** Данные `load` роута от носителя (страница/модалка): своего запроса не будет. */
     initial?: SeedUsersRouteData | null
     /**
-     * Ключ изолированной области пагинатора от носителя. Пока он задан, порции
-     * и скролл этого списка не делятся с другими экранами того же имени
-     * (пикер, вторая модалка). Пусто — общее клиентское хранилище (страница).
+     * Явный ключ изолированной области пагинатора (для немодальных стендов).
+     * Внутри модалки область и URL-префикс (`m<k>.*`) выделяются автоматически
+     * через `useSlotPaginatorScope`.
      */
     scope?: string | null
+    /** Синхронизировать состояние пагинатора с адресной строкой (`false` для `user.picker`). */
+    url?: boolean
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (fact: AuthErrorCode) => void
     /**
@@ -78,6 +79,7 @@
   let {
     initial = null,
     scope = null,
+    url: urlProp,
     onAcl,
     rowAttrs,
     isSelected = (_id: string) => false,
@@ -88,39 +90,43 @@
   // Регистрация — на стороне компонента, в том же бандле, что и хост пагинатора.
   ensureSeedUsersPaginator()
 
+  const slotScope = useSlotPaginatorScope(
+    SEED_USERS_NAME,
+    untrack(() => (urlProp === false ? { url: false } : undefined)),
+  )
+  const effectivePaginatorUrl = $derived(urlProp !== undefined ? urlProp : slotScope.paginatorUrl)
+
   const asModalLink = useModalLink()
   const attrsOf = (user: SeedUserView): LinkAttrs =>
     rowAttrs?.(user) ?? { ...asModalLink('user.profile', { id: user.id }), title: 'Открыть профиль' }
 
   let data = $state<SeedUsersRouteData | null>(untrack(() => initial))
-  // Срез по списку id (`users.ids` адреса — шаг подтверждения выбора):
-  // адресное состояние пагинатора, а не проп: адаптер всё равно ведёт
-  // истину из адреса, и отдельный канал среза с ним бы спорил. Сменился
-  // набор — список переспрашивает источник, стор принимает новый
-  // снапшот (идентичность объекта).
-  const sliceIds = $derived(String(currentSearch()[`${SEED_USERS_PAGE_PARAM}.ids`] ?? ''))
+  const sliceIds = $derived(
+    effectivePaginatorUrl === false
+      ? ''
+      : String(currentSearch()[`${SEED_USERS_PAGE_PARAM}.ids`] ?? ''),
+  )
   let askedFor: string | null = null
 
   $effect(() => {
     if (initial) {
       data = initial
+      if (initial.fact) onAcl?.(initial.fact)
       return
     }
     const key = sliceIds
     if (askedFor === key) return
     askedFor = key
-    // Запрос — на адрес носителя как есть: все ключи `users.*` текущего
-    // адреса (срез, страница, фильтры) `load` разберёт в тот же срез,
-    // что видит адаптер пагинатора.
     const sp = new URLSearchParams()
-    for (const [k, v] of Object.entries(currentSearch())) {
-      if (k === SEED_USERS_PAGE_PARAM || k.startsWith(`${SEED_USERS_PAGE_PARAM}.`)) sp.set(k, String(v))
+    if (effectivePaginatorUrl !== false) {
+      for (const [k, v] of Object.entries(currentSearch())) {
+        if (k === SEED_USERS_PAGE_PARAM || k.startsWith(`${SEED_USERS_PAGE_PARAM}.`)) sp.set(k, String(v))
+      }
     }
     const target = sp.size ? `/users?${sp.toString()}` : '/users'
     void (async () => {
       const r = await preloadData(target)
       if (r.type !== 'loaded') {
-        // Гостя увели редиректом на вход: носителю — сессионный отказ.
         onAcl?.('auth.expired')
         return
       }
@@ -135,47 +141,41 @@
 
   const snapshot = $derived(data?.snapshot ?? null)
 
-  // Область пагинатора: с ключом от носителя — своё хранилище, без ключа —
-  // общее клиентское, как на странице. Ключ захватывается на монтировании
-  // (носитель даёт его ровно на время жизни записи) и освобождается при
-  // размонтировании: последняя ссылка удаляет состояние вместе с внутренним
-  // срезом `extra.ids` пикера.
-  const scopeKey = untrack(() => scope)
+  // Область пагинатора: в модалке — слотовый `ScopedStore`, с ручным `scope` —
+  // отдельное хранилище, на странице — клиентский стор.
+  const scopeKey = untrack(() => (slotScope.store ? null : scope))
   const store = untrack(() =>
-    scopeKey
-      ? acquireScopedStore(scopeKey)
-      : typeof window === 'undefined'
-        ? createPaginatorStore()
-        : getClientStore(),
+    slotScope.store
+      ? slotScope.store
+      : scopeKey
+        ? acquireScopedStore(scopeKey)
+        : typeof window === 'undefined'
+          ? createPaginatorStore()
+          : getClientStore(),
   )
   if (scopeKey) onDestroy(() => releaseScopedStore(scopeKey))
 
-  const pagState = (name: string = SEED_USERS_NAME) => getState<SeedUserView>(store, name)
-  const query = $derived(
-    typeof pagState().extra?.q === 'string' ? (pagState().extra.q as string) : '',
+  const pagState = usePaginatorState<SeedUserView>(SEED_USERS_NAME, store)
+  const hasLivePages = $derived(
+    Object.keys(pagState().pages).length > 0 || pagState().status !== 'idle' || pagState().reqId > 0,
   )
-  // Счётчик — только реальные отличия от среза по умолчанию: URL-адаптер
-  // материализует дефолты (`ord=created-desc`, `state=active`) в `extra`,
-  // и без этого сравнения кнопка вечно показывала бы «(2)» на чистом списке.
-  // Размер порции живёт не в `extra`, а в состоянии пагинатора — его
-  // отличие от умолчания считается отдельным слагаемым.
+  const liveExtra = $derived(hasLivePages ? pagState().extra : (snapshot?.extra ?? pagState().extra))
+  const livePageSize = $derived(
+    hasLivePages ? pagState().pageSize : (snapshot?.pageSize ?? pagState().pageSize),
+  )
+
+  const query = $derived(
+    typeof liveExtra?.q === 'string' ? (liveExtra.q as string) : '',
+  )
   const activeFilters = $derived(
     SEED_USERS_FILTER_KEYS.filter((k) => {
-      const v = pagState().extra?.[k]
+      const v = liveExtra?.[k]
       const fallback = (SEED_USERS_EXTRA_DEFAULTS as Record<string, string>)[k]
       return typeof v === 'string' && v !== '' && v !== fallback
-    }).length + (pagState().pageSize !== SEED_USERS_PAGE_SIZE ? 1 : 0),
+    }).length + (livePageSize !== SEED_USERS_PAGE_SIZE ? 1 : 0),
   )
-  // Параметр никнейма включён текущим срезом (ключ `nick` адреса) — подпись
-  // поиска обещает и никнейм. Право и сам столбец решает сервер.
-  const nickOn = $derived(pagState().extra?.nick === '1')
-  // «Всего» — из живого состояния пагинатора: снапшот `load` честен только
-  // на первой порции, дальше срез (поиск/фильтры) меняет totals без SSR.
-  const totalItems = $derived(pagState().totalItems ?? snapshot?.totalItems)
-  // No-JS адрес кнопки фильтров: страница `/users/filters`, которой текущий
-  // адрес носителя уходит параметром `from` — форма вернёт GET именно сюда
-  // (список может жить на любой странице и в модалке), а не на фиксированный
-  // роут. Текущие фильтры страница прочитает из того же `from`.
+  const nickOn = $derived(liveExtra?.nick === '1')
+  const totalItems = $derived(hasLivePages ? (pagState().totalItems ?? snapshot?.totalItems) : snapshot?.totalItems)
   const filtersHref = $derived.by(() => {
     const qs = new URLSearchParams(
       Object.entries(currentSearch()).map(([k, v]) => [k, String(v)] as [string, string]),
@@ -187,12 +187,12 @@
 
 {#if snapshot}
   <PaginatorScope {store} snapshots={{ [SEED_USERS_NAME]: snapshot }}>
-  <section class={cn(userSurfaceVariants({ variant }), className)}>
-    <div class="mb-4 flex items-baseline justify-between gap-3">
+  <section class={cn('flex min-h-0 flex-col', userSurfaceVariants({ variant }), className)}>
+    <div class="mb-4 flex shrink-0 items-baseline justify-between gap-3">
       <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
       <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
     </div>
-    <div class="mb-3 flex items-start justify-between gap-3">
+    <div class="mb-3 flex shrink-0 items-start justify-between gap-3">
       <div class="min-w-0 flex-1">
         <SearchBar
           name={SEED_USERS_NAME}
@@ -202,7 +202,7 @@
         />
       </div>
       <Button
-        {...asModalLink('user.list.filters', scope ? { scope } : {}, { href: filtersHref })}
+        {...asModalLink('user.list.filters', {}, { href: filtersHref })}
         variant="outline"
         data-testid="seed-users-filters-open"
       >
@@ -213,13 +213,14 @@
       name={SEED_USERS_NAME}
       ariaLabel="Список seed-юзеров"
       {snapshot}
+      url={effectivePaginatorUrl}
       mode="accumulate"
       topTrigger="direction"
       bottomTrigger="direction"
       topZone="40%"
       bottomZone="40%"
       renderDivider={null}
-      class="max-h-[420px]"
+      class={variant === 'plain' && slotScope.store !== null ? 'min-h-0 flex-1' : 'max-h-[420px]'}
     >
       {#snippet renderItem(item: SeedUserView)}
         <!-- Механика — атрибуты снаружи на ссылке-обёртке; карточка внутри

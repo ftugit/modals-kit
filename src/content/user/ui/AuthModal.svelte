@@ -5,9 +5,12 @@
    * записи модалки (`useModal().params.stage`). Состояние пользователя —
    * напрямую из единого реактивного `vault`.
    */
+  import { invalidatePaginator } from '#lib/paginate/index.js'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import { resolveAuthStep } from '../index.js'
+  import { BLOCKS_NAME } from './blocks-list/source.js'
   import type { ProfileLimits } from './profile-form/index.js'
+  import { SEED_USERS_NAME } from './seed-users/source.js'
   import AuthWidget from './AuthWidget.svelte'
   import { Surface } from '#components/ui/index.js'
 
@@ -37,9 +40,11 @@
     // Вход мог состояться поверх уже открытых модалок с данными маршрута
     // (список seed-юзеров, его фильтры, профиль): их loader-кеш собран до
     // смены сессии и после возврата показывал бы старый отказ и старые
-    // права. Сбрасываем кеш ДО закрытия auth: когда запись снизу снова
-    // станет активной, хост перезапустит её loader по свежей сессии.
-    m.modals.invalidateLoader()
+    // права. Сбрасываем кеш жёстко ДО закрытия auth и инвалидируем живые
+    // пагинаторы списков.
+    m.modals.invalidateLoader(undefined, undefined, { hard: true })
+    void invalidatePaginator(SEED_USERS_NAME)
+    void invalidatePaginator(BLOCKS_NAME)
     m.modals.close()
   }
 </script>

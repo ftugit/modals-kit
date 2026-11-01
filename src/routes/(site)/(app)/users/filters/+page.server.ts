@@ -31,7 +31,16 @@ export interface SeedUsersFiltersPageData {
   backHref: string
 }
 
-const FILTER_KEYS = ['users.ord', 'users.state', 'users.cfrom', 'users.cto', 'users.dfrom', 'users.dto', 'users.nick']
+const FILTER_KEYS = [
+  'users.ord',
+  'users.state',
+  'users.cfrom',
+  'users.cto',
+  'users.dfrom',
+  'users.dto',
+  'users.nick',
+  'users.size',
+]
 
 export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageData> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
@@ -63,7 +72,7 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
   // Пронести всё, кроме самих фильтров и указателя порции (новый срез — сначала).
   const hiddenFields: { name: string; value: string }[] = []
   for (const [k, v] of fromSp.entries()) {
-    if (FILTER_KEYS.includes(k) || k === 'users' || k === 'from') continue
+    if (FILTER_KEYS.includes(k) || k === 'users') continue
     hiddenFields.push({ name: k, value: v })
   }
   const rest = new URLSearchParams(hiddenFields.map((h) => [h.name, h.value] as [string, string]))

@@ -76,7 +76,7 @@ export const load: PageServerLoad = async (event): Promise<BlocksFiltersPageData
 
   const hiddenFields: { name: string; value: string }[] = []
   for (const [k, v] of fromSp.entries()) {
-    if (FILTER_KEYS.has(k) || k === 'blocks' || k === 'from' || k === 'uid') continue
+    if (FILTER_KEYS.has(k) || k === 'blocks') continue
     hiddenFields.push({ name: k, value: v })
   }
   const rest = new URLSearchParams(hiddenFields.map((h) => [h.name, h.value] as [string, string]))

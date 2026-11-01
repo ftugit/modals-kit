@@ -195,6 +195,10 @@
         <div class="w-full pt-1">
           <Button {...restoreLink} class="w-full">Восстановить аккаунт</Button>
         </div>
+      {:else if screen.action === 'link'}
+        <div class="w-full pt-1">
+          <Button href={screen.href ?? backHref} variant="outline" class="w-full">Перейти</Button>
+        </div>
       {:else if screen.action === 'back'}
         <div class="w-full pt-1">
           <Button href={backHref} variant="outline" class="w-full">На главную</Button>

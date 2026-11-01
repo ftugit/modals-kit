@@ -30,13 +30,12 @@
       variant="plain"
       onAcl={(fact) => (acl = fact)}
       onChange={() => {
-        m.modals.invalidateLoader('storage.servers')
         void invalidateAll()
       }}
       onDone={() => {
-        m.modals.invalidateLoader('storage.servers')
         void invalidateAll()
         m.modals.close()
+        m.modals.invalidateLoader('storage.servers')
       }}
     />
   {/if}

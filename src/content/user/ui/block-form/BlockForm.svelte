@@ -31,8 +31,10 @@
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { Badge, Button, Input, Label, Skeleton, Textarea, TimeAgo } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
+  import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import { invalidatePaginator } from '#lib/paginate/index.js'
   import type { AuthErrorCode } from '../../error.js'
   import { useGrants } from '../../grants.svelte.js'
   import { auth as authResource, block as blockResource } from '../../schema.js'
@@ -40,7 +42,7 @@
   import type { BlockCreateRouteData, BlockEditRouteData } from '../../types.js'
   import { userSession, vault } from '../../vault.svelte.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
-  import { bumpBlocksRevision } from '../blocks-list/revision.svelte.js'
+  import { BLOCKS_NAME } from '../blocks-list/source.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from '../UserPicker.svelte'
   import { createBlockFormDescription } from './form.js'
@@ -66,6 +68,7 @@
     selfHref?: string
     action?: string
     form?: { result?: Result } | null
+    onSubjectsChange?: (ids: string[]) => void
     onAcl?: (fact: AuthErrorCode) => void
     onDone?: () => void
     variant?: UserSurfaceVariant
@@ -83,6 +86,7 @@
     selfHref = '/blocks/new',
     action,
     form,
+    onSubjectsChange,
     onAcl,
     onDone,
     variant = 'plain',
@@ -90,6 +94,7 @@
   }: Props = $props()
 
   const asModalLink = useModalLink()
+  const notHydrated = useJsOnly()
   const modalsCtx = tryUseModals()
 
   const fixedUid = $derived(uid?.trim() || null)
@@ -282,6 +287,7 @@
     curSubj: string,
     cData: BlockCreateRouteData | null,
     eDetail: BlockEditRouteData['detail'],
+    preserveDraft = false,
   ): string {
     if (curMode === 'create') {
       const seededSubjects = curUid ? [] : resolveSeedSubjects(curSubjects, curSubj, vault.principal)
@@ -291,11 +297,16 @@
       if (!curUid) {
         mergeKnownSubjects(seededSubjects)
         fSubjects?.onInput(seededSubjects)
+        lastEmittedSubjectsCsv = seededSubjects.join(',')
       }
       const firstScope = cData?.assignableScopes?.[0]
-      if (firstScope && isBlockScope(firstScope)) fScope?.onInput(firstScope)
-      fForever?.onInput(true)
-      fUntil?.onInput(null)
+      if (firstScope && isBlockScope(firstScope) && (!preserveDraft || !fScope?.value)) {
+        fScope?.onInput(firstScope)
+      }
+      if (!preserveDraft) {
+        fForever?.onInput(true)
+        fUntil?.onInput(null)
+      }
       return k
     }
     if (eDetail) {
@@ -310,6 +321,13 @@
     }
     return ''
   }
+
+  let lastEmittedSubjectsCsv = untrack(() =>
+    (mode === 'create' && !fixedUid
+      ? resolveSeedSubjects(initialSubjects, initialSubject, vault.principal)
+      : []
+    ).join(','),
+  )
 
   // Синхронный засев на SSR / первом рендере (для no-JS HTML) + реактивный досев при preloadData
   let seededKey = untrack(() =>
@@ -344,9 +362,10 @@
           ? `edit:${eDetail.block.id}:${eDetail.block.until ?? 'inf'}:${eDetail.block.reason}`
           : ''
     if (!nextKey || seededKey === nextKey) return
+    const hadPreviousSeed = Boolean(seededKey)
     seededKey = nextKey
     untrack(() => {
-      seedFields(curMode, curUid, curSubjects, curSubj, cData, eDetail)
+      seedFields(curMode, curUid, curSubjects, curSubj, cData, eDetail, hadPreviousSeed)
     })
   })
 
@@ -377,7 +396,7 @@
     const d = r.data as { step?: string } | undefined
     if (d?.step === 'done') {
       lastHandledSubmission = r.submissionId
-      bumpBlocksRevision()
+      void invalidatePaginator(BLOCKS_NAME)
       onDone?.()
     }
   })
@@ -391,6 +410,14 @@
     const val = bound.f.subjects.value
     const list = Array.isArray(val) ? val.map(String) : []
     return normalizeSubjects(list, vault.principal)
+  })
+
+  $effect(() => {
+    if (mode !== 'create' || fixedUid) return
+    const csv = selectedSubjects.join(',')
+    if (csv === lastEmittedSubjectsCsv) return
+    lastEmittedSubjectsCsv = csv
+    onSubjectsChange?.(selectedSubjects)
   })
 
   const subjectOptions = $derived.by(() => {
@@ -412,12 +439,13 @@
 
   const pickerHref = $derived.by(() => {
     const baseUrl = new URL(selfHref, 'http://local')
+    baseUrl.searchParams.delete('uids')
     baseUrl.searchParams.delete('subjects')
     baseUrl.searchParams.delete('subject')
     const cleanFrom = `${baseUrl.pathname}${baseUrl.search}`
     const q = new URLSearchParams({
       mode: 'multiple',
-      param: 'subjects',
+      param: 'uids',
       from: cleanFrom,
     })
     if (selectedSubjects.length > 0) q.set('picked', selectedSubjects.join(','))
@@ -499,24 +527,26 @@
 
     <div class="flex flex-col gap-2">
       <Field of={bound.f.forever} />
-      {#if !bound.f.forever.value}
+      {#if notHydrated() || !bound.f.forever.value}
         <Field of={bound.f.until} />
       {/if}
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs text-muted-foreground">Быстрый срок:</span>
-        <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(3_600_000)}>
-          +1 ч
-        </Button>
-        <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(86_400_000)}>
-          +24 ч
-        </Button>
-        <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(7 * 86_400_000)}>
-          +7 дн
-        </Button>
-        <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(30 * 86_400_000)}>
-          +30 дн
-        </Button>
-      </div>
+      {#if !notHydrated()}
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs text-muted-foreground">Быстрый срок:</span>
+          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(3_600_000)}>
+            +1 ч
+          </Button>
+          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(86_400_000)}>
+            +24 ч
+          </Button>
+          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(7 * 86_400_000)}>
+            +7 дн
+          </Button>
+          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(30 * 86_400_000)}>
+            +30 дн
+          </Button>
+        </div>
+      {/if}
     </div>
 
     {#if canSubmit}
@@ -656,24 +686,26 @@
     {#if canEditUntil}
       <div class="flex flex-col gap-2">
         <Field of={bound.f.forever} />
-        {#if !bound.f.forever.value}
+        {#if notHydrated() || !bound.f.forever.value}
           <Field of={bound.f.until} />
         {/if}
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs text-muted-foreground">Быстрый срок:</span>
-          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(3_600_000)}>
-            +1 ч
-          </Button>
-          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(86_400_000)}>
-            +24 ч
-          </Button>
-          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(7 * 86_400_000)}>
-            +7 дн
-          </Button>
-          <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(30 * 86_400_000)}>
-            +30 дн
-          </Button>
-        </div>
+        {#if !notHydrated()}
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs text-muted-foreground">Быстрый срок:</span>
+            <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(3_600_000)}>
+              +1 ч
+            </Button>
+            <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(86_400_000)}>
+              +24 ч
+            </Button>
+            <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(7 * 86_400_000)}>
+              +7 дн
+            </Button>
+            <Button type="button" variant="outline" size="sm" onclick={() => applyDurationPreset(30 * 86_400_000)}>
+              +30 дн
+            </Button>
+          </div>
+        {/if}
       </div>
     {:else}
       <div class="flex flex-col gap-1.5">

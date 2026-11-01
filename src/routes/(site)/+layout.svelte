@@ -56,7 +56,7 @@
   useSidebarSlot('middle', sidebarNavSnippet)
   useSidebarSlot('bottom', sidebarBottomSnippet)
 
-  const SOURCES = ['url', 'local'] as const
+  const SOURCES = ['url', 'local', 'memory'] as const
 
   // Ветка демо модалок владеет цепочкой своей страницы: там наш хост молчит
   // о чужих именах (их покажет её хост); на остальных страницах мы одни,

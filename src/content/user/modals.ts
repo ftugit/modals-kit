@@ -84,21 +84,22 @@ registerModal({
   size: { width: 640, height: 560 },
 })
 // Фильтры списка: открывается кнопкой над списком, результат пишет в
-// состояние пагинатора. `route` — страница-fallback `/users/filters` для
-// no-JS (кнопка без JS ведёт туда, форма возвращает GET-ом к списку).
-// `scope` — область хранилища списка: модалка берёт из неё свой срез.
+// состояние пагинатора слота-владельца. `route` — страница-fallback `/users/filters`
+// для no-JS (кнопка без JS ведёт туда, форма возвращает GET-ом к списку).
 registerModal({
   name: 'user.list.filters',
   component: lazy(() => import('./ui/SeedUsersFiltersModal.svelte')),
-  route: (p: { scope?: string }) => userListFiltersRoute.href({ scope: p?.scope ?? null }),
+  route: () => userListFiltersRoute.href(),
   size: { width: 420, height: 560 },
 })
 // Выбор одного или нескольких пользователей поверх `SeedUsersList`
-// (используется фильтрами блокировок и глобальным созданием блокировки;
-// без JS — страница `/users/pick` с возвратом по `from`).
+// (живёт в памяти без записи в адресную строку; без JS — страница `/users/pick`
+// с возвратом по `from`).
 registerModal({
   name: 'user.picker',
   component: lazy(() => import('./ui/UserPickerModal.svelte')),
+  source: 'memory',
+  defaultParams: { mode: 'multi', picked: '' },
   route: (p: { mode?: string; channel?: string; picked?: string }) => {
     const q = new URLSearchParams()
     if (p?.mode) q.set('mode', String(p.mode))
@@ -118,25 +119,25 @@ registerModal({
     p?.id ? userBlocksRoute.href({ id: String(p.id) }) : blocksListRoute.href(),
   size: { width: 680, height: 560 },
 })
-// Фильтры списка блокировок (`{ uid?, scope? }` передаёт контекст
-// фиксированного юзера и область его хранилища).
+// Фильтры списка блокировок (`{ uid?, uids? }` передаёт контекст
+// фиксированного юзера и подтверждённый выбор субъектов в URL).
 registerModal({
   name: 'user.blocks.filters',
   component: lazy(() => import('./ui/BlocksFiltersModal.svelte')),
-  route: (p: { uid?: string; scope?: string }) =>
-    blocksFiltersRoute.href({ uid: p?.uid ?? null, scope: p?.scope ?? null }),
+  defaultParams: { uids: '' },
+  route: (p: { uid?: string; uids?: string }) =>
+    blocksFiltersRoute.href({ uid: p?.uid ?? null }),
   size: { width: 460, height: 580 },
 })
 // Создание блокировки (`{ uid?, uids? }`).
 registerModal({
   name: 'user.blocks.create',
   component: lazy(() => import('./ui/BlockCreateModal.svelte')),
+  defaultParams: { uids: '' },
   route: (p: { uid?: string; uids?: string }) => {
     if (p?.uid) return userBlocksCreateRoute.href({ id: String(p.uid) })
     const uids = p?.uids ? String(p.uids).trim() : ''
-    return uids
-      ? `${blocksCreateRoute.href()}?uids=${encodeURIComponent(uids)}`
-      : blocksCreateRoute.href()
+    return blocksCreateRoute.href({ uids: uids || null })
   },
   size: { width: 480, height: 560 },
 })
@@ -144,20 +145,26 @@ registerModal({
 registerModal({
   name: 'user.blocks.edit',
   component: lazy(() => import('./ui/BlockEditModal.svelte')),
-  route: (p: { blockId: string; uid?: string }) =>
-    p?.uid
-      ? userBlocksEditRoute.href({ id: String(p.uid), blockId: String(p.blockId) })
-      : blocksEditRoute.href({ blockId: String(p.blockId) }),
+  route: (p: { blockId: string; uid?: string }) => {
+    const blockId = String(p?.blockId ?? '').trim()
+    if (!blockId) throw new Error('[modals] blockId is required')
+    return p?.uid
+      ? userBlocksEditRoute.href({ id: String(p.uid), blockId })
+      : blocksEditRoute.href({ blockId })
+  },
   size: { width: 480, height: 580 },
 })
 // Удаление блокировки (`{ blockId, uid? }`).
 registerModal({
   name: 'user.blocks.delete',
   component: lazy(() => import('./ui/BlockDeleteModal.svelte')),
-  route: (p: { blockId: string; uid?: string }) =>
-    p?.uid
-      ? userBlocksDeleteRoute.href({ id: String(p.uid), blockId: String(p.blockId) })
-      : blocksDeleteRoute.href({ blockId: String(p.blockId) }),
+  route: (p: { blockId: string; uid?: string }) => {
+    const blockId = String(p?.blockId ?? '').trim()
+    if (!blockId) throw new Error('[modals] blockId is required')
+    return p?.uid
+      ? userBlocksDeleteRoute.href({ id: String(p.uid), blockId })
+      : blocksDeleteRoute.href({ blockId })
+  },
   size: { width: 460, height: 440 },
 })
 // Настройки пользователя (`{ id? }`): без `id` — свои настройки (`/user/config`),

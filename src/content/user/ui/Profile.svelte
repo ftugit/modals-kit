@@ -75,14 +75,17 @@
   const readConfigGrant = useGrants(gConfig.select, { ownerId: () => uid })
 
   let data = $state<ProfileRead | null>(untrack(() => initial))
+  const isOwnLive = $derived(
+    vault.principal !== null ? vault.principal === uid : Boolean(data?.isOwn),
+  )
   const canEdit = $derived(vault.principal !== null ? editProfileGrant.current : Boolean(data?.canEdit))
   const canReadBlocks = $derived(
     vault.principal !== null ? readBlocksGrant.current : Boolean(data?.canReadBlocks),
   )
   const canOpenConfig = $derived(
-    Boolean(data?.canOpenConfig) ||
-      Boolean(data?.isOwn) ||
-      (vault.principal !== null ? readConfigGrant.current : false),
+    vault.principal !== null
+      ? isOwnLive || readConfigGrant.current
+      : Boolean(data?.canOpenConfig) || Boolean(data?.isOwn),
   )
   let publicData = $state<PublicProfileView | null>(untrack(() => initialPublic))
   let askedFor = ''
@@ -113,6 +116,7 @@
       blocks: d.blocks,
       canReadBlocks: d.canReadBlocks,
       canBlock: d.canBlock,
+      canOpenConfig: d.canOpenConfig,
     }
   }
 
@@ -185,7 +189,7 @@
         <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
           {#if canOpenConfig}
             <Button
-              {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+              {...asModalLink('user.config.edit', isOwnLive ? {} : { id: uid })}
               variant="outline"
               size="sm"
               data-testid="profile-config-open"
@@ -223,7 +227,7 @@
         <div class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-border pt-4">
           {#if canOpenConfig}
             <Button
-              {...asModalLink('user.config.edit', data.isOwn ? {} : { id: uid })}
+              {...asModalLink('user.config.edit', isOwnLive ? {} : { id: uid })}
               variant="outline"
               size="sm"
               data-testid="profile-config-open"

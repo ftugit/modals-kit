@@ -322,6 +322,10 @@ function resolveStatusCode(status: AuthErrorCode | 'restrictions'): AclScreenCod
     case 'auth.kid-unknown':
     case 'auth.session-unknown':
       return 'session_expired'
+    case 'auth.identity-unknown':
+      return 'not_found'
+    case 'auth.forbidden':
+      return 'role_forbidden'
     default:
       return null
   }
@@ -346,7 +350,7 @@ export function resolveAcl(input: AclInput): AclScreen | null {
     return buildScreen('guest_only')
   }
   if (input.allow === 'user' && !authorized) {
-    if (input.status) {
+    if (input.status && input.status !== 'auth.forbidden') {
       const statusScreen = resolveStatusCode(input.status)
       if (statusScreen) return buildScreen(statusScreen)
     }
@@ -375,6 +379,9 @@ export function resolveAcl(input: AclInput): AclScreen | null {
     })
   }
   if (input.status) {
+    if (input.status === 'auth.forbidden' && !authorized) {
+      return buildScreen('auth_required')
+    }
     const mapped = resolveStatusCode(input.status)
     if (mapped) return buildScreen(mapped)
   }

@@ -142,6 +142,25 @@ describe('resolveAcl: состояния аккаунта', () => {
     }
     expect(resolveAcl({ authorized: true, status: 'auth.deleted' })?.code).toBe('account_deleted')
   })
+
+  it('auth.identity-unknown и auth.forbidden дают честные экраны без молчаливого null', () => {
+    expect(resolveAcl({ authorized: true, status: 'auth.identity-unknown' })).toMatchObject({
+      code: 'not_found',
+      action: 'back',
+    })
+    expect(resolveAcl({ authorized: false, status: 'auth.forbidden' })).toMatchObject({
+      code: 'auth_required',
+      action: 'login',
+    })
+    expect(resolveAcl({ authorized: false, allow: 'user', status: 'auth.forbidden' })).toMatchObject({
+      code: 'auth_required',
+      action: 'login',
+    })
+    expect(resolveAcl({ authorized: true, status: 'auth.forbidden' })).toMatchObject({
+      code: 'role_forbidden',
+      action: 'back',
+    })
+  })
 })
 
 describe('resolveAcl: срабатывание модели', () => {

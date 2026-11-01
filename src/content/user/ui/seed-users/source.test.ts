@@ -79,4 +79,32 @@ describe('список seed-юзеров: снапшот и регистраци
     expect(SEED_USERS_EXTRA_SEARCH.state!('banana')).toBeUndefined()
     expect(SEED_USERS_EXTRA_SEARCH.cfrom!('2026-10-01T12:00')).toBe('2026-10-01T12:00')
   })
+
+  test('снапшот переносит полный активный срез фильтров в extra без записи дефолтов', () => {
+    const snap = seedUsersSnapshot(
+      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: true, canSeeNickname: true },
+      {
+        q: 'alice',
+        ord: 'id-asc',
+        state: 'deleted',
+        cfrom: '2026-01-01T00:00',
+        nick: true,
+        ids: '11111111-1111-4111-8111-111111111111',
+      },
+    )
+    expect(snap.extra).toEqual({
+      q: 'alice',
+      ord: 'id-asc',
+      state: 'deleted',
+      cfrom: '2026-01-01T00:00',
+      nick: '1',
+      ids: '11111111-1111-4111-8111-111111111111',
+    })
+
+    const clean = seedUsersSnapshot(
+      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: false, canSeeNickname: false },
+      { ord: 'created-desc', state: 'active', nick: false },
+    )
+    expect(clean.extra).toEqual({})
+  })
 })

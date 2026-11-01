@@ -45,6 +45,7 @@
     action?: string
     hiddenFields?: readonly { name: string; value: string }[]
     resetHref?: string
+    onUidsChange?: (uids: string[]) => void
     onApply?: (patch: Record<string, string | undefined>, pageSize: number) => void | Promise<void>
     onReset?: () => void | Promise<void>
   }
@@ -59,6 +60,7 @@
     action,
     hiddenFields = [],
     resetHref,
+    onUidsChange,
     onApply,
     onReset,
   }: Props = $props()
@@ -135,6 +137,13 @@
   let pickedUids = $state<string[]>([...init.uids.filter(Boolean)])
   let lastPickerSeq = 0
 
+  // На странице `/blocks/filters` после навигации по `clearUsersHref` или возврата
+  // из `/users/pick` проп `initial.uids` обновляется без перемонтирования компонента.
+  $effect(() => {
+    if (onApply) return
+    pickedUids = [...initial.uids.filter(Boolean)]
+  })
+
   mirrorToField(bound, 'blocks.uids', () => (uid ? '' : pickedUids.join(',')))
 
   $effect(() => {
@@ -143,7 +152,9 @@
       | undefined
     if (!raw || raw.seq <= lastPickerSeq) return
     lastPickerSeq = raw.seq
-    pickedUids = [...raw.ids.filter(Boolean)]
+    const next = [...raw.ids.filter(Boolean)]
+    pickedUids = next
+    onUidsChange?.(next)
   })
 
   const pickUsersGrant = useGrants(grants(authResource).select)
@@ -160,6 +171,13 @@
     })
     if (pickedUids.length) q.set('picked', pickedUids.join(','))
     return `/users/pick?${q.toString()}`
+  })
+
+  const clearUsersHref = $derived.by(() => {
+    const u = new URL(selfHref, 'http://local.invalid')
+    u.searchParams.set('blocks.uids', '')
+    const qs = u.searchParams.toString()
+    return qs ? `${u.pathname}?${qs}` : u.pathname
   })
 
   let formError = $state('')
@@ -208,9 +226,11 @@
   class="flex flex-col gap-4"
   data-testid="blocks-filters-form"
 >
-  <div hidden aria-hidden="true">
-    <Field of={bound.field('blocks.uids')} />
-  </div>
+  {#if onApply || pickedUids.length > 0}
+    <div hidden aria-hidden="true">
+      <Field of={bound.field('blocks.uids')} />
+    </div>
+  {/if}
 
   <div class="flex flex-wrap gap-3">
     <div class="min-w-0 flex-1 basis-44">
@@ -259,15 +279,29 @@
           Выбрать пользователей{#if pickedUids.length}&nbsp;({pickedUids.length}){/if}
         </Button>
         {#if pickedUids.length > 0}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onclick={() => (pickedUids = [])}
-            data-testid="blocks-filters-clear-users"
-          >
-            Сбросить пользователей
-          </Button>
+          {#if onApply}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onclick={() => {
+                pickedUids = []
+                onUidsChange?.([])
+              }}
+              data-testid="blocks-filters-clear-users"
+            >
+              Сбросить пользователей
+            </Button>
+          {:else}
+            <Button
+              {...asLink(clearUsersHref, { replace: true })}
+              variant="ghost"
+              size="sm"
+              data-testid="blocks-filters-clear-users"
+            >
+              Сбросить пользователей
+            </Button>
+          {/if}
         {/if}
       {/if}
     </div>

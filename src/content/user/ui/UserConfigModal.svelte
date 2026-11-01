@@ -14,13 +14,17 @@
   const m = useModals()
   const modal = useModal<{ id?: string }>()
   const ldr = useLoader<UserConfigRouteData>()
-  const uid = $derived(modal.params?.id ? String(modal.params.id) : null)
+  const hasExplicitId = $derived(
+    modal.params !== undefined && Object.prototype.hasOwnProperty.call(modal.params, 'id'),
+  )
+  const uid = $derived(modal.params?.id ? String(modal.params.id).trim() || null : null)
+  const invalidExplicitId = $derived(hasExplicitId && !uid)
   let acl = $state<AuthErrorCode | null>(null)
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
 <Surface variant="plain" class="w-full p-6">
-  {#if effectiveAcl === 'auth.identity-unknown'}
+  {#if invalidExplicitId || effectiveAcl === 'auth.identity-unknown'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
@@ -35,13 +39,14 @@
       variant="plain"
       onAcl={(fact) => (acl = fact)}
       onChange={() => {
-        m.modals.invalidateLoader('user.config.edit')
+        m.modals.invalidateLoader('user.profile')
         void invalidateAll()
       }}
       onDone={() => {
-        m.modals.invalidateLoader('user.config.edit')
+        m.modals.invalidateLoader('user.profile')
         void invalidateAll()
         m.modals.close()
+        m.modals.invalidateLoader('user.config.edit')
       }}
     />
   {/if}

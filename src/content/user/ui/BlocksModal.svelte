@@ -5,7 +5,7 @@
    * без `id` — глобальный список блокировок. Данные приносит загрузчик
    * записи (тот же `load` роута) и отдаёт списку пропсом `initial`.
    */
-  import { useLoader, useModal, useRuntimeKey } from '#lib/modals/svelte/index.js'
+  import { useLoader, useModal } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import BlocksList from './BlocksList.svelte'
   import type { AuthErrorCode } from '../error.js'
@@ -15,24 +15,25 @@
   const modal = useModal<{ id?: string }>()
   const ldr = useLoader<BlocksRouteData>()
   const uid = $derived(modal.params?.id ? String(modal.params.id) : null)
-  // Область пагинатора этой записи: ключ стабилен, пока запись в стопке.
-  const scope = useRuntimeKey()
   let acl = $state<AuthErrorCode | null>(null)
+  const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<Surface variant="plain" class="w-full p-6">
-  {#if acl === 'auth.forbidden'}
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
+  {#if ldr.data?.enabled === false}
+    <Acl enabled={false} backHref="/" variant="plain" />
+  {:else if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
-  {:else if acl === 'auth.identity-unknown'}
+  {:else if effectiveAcl === 'auth.identity-unknown'}
     <Acl model="not_found" backHref="/" variant="plain" />
-  {:else if acl}
-    <Acl status={acl} backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} backHref="/" variant="plain" />
   {:else}
     <BlocksList
       {uid}
-      {scope}
       initial={ldr.data}
       variant="plain"
+      class="min-h-0 flex-1"
       onAcl={(fact) => (acl = fact)}
     />
   {/if}

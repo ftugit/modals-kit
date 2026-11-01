@@ -12,8 +12,9 @@
    * Читает исключительно единый реактивный `vault` (на SSR и до гидратации
    * `vault` прозрачно отдаёт `page.data.user`, в браузере — состояние RAM).
    */
+  import type { Component } from 'svelte'
   import { Portal } from '@ark-ui/svelte/portal'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Skeleton } from '#components/ui/index.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
@@ -22,9 +23,25 @@
     tryUseModals,
     type HostFloatingCloseReason,
   } from '#lib/modals/svelte/index.js'
+  import type { UserSurfaceVariant } from './Acl.svelte'
   import { userAuthRoute, userMenuRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'
-  import MenuBody from './MenuBody.svelte'
+
+  let MenuBodyComp = $state.raw<
+    Component<{ variant?: UserSurfaceVariant; onDone?: () => void }> | null
+  >(null)
+  let menuBodyLoading: Promise<void> | null = null
+
+  function preloadMenuBody(): void {
+    if (MenuBodyComp || menuBodyLoading) return
+    menuBodyLoading = import('./MenuBody.svelte')
+      .then((mod) => {
+        MenuBodyComp = mod.default
+      })
+      .finally(() => {
+        menuBodyLoading = null
+      })
+  }
 
   const asModalLink = useModalLink()
   const notHydrated = useJsOnly()
@@ -81,6 +98,7 @@
 
   function openMenu() {
     if (!host || floatingId !== null) return
+    preloadMenuBody()
     const options = floatingOptions()
     if (!options) return
     menuOpen = true
@@ -167,6 +185,8 @@
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       aria-controls={menuOpen && menuNode?.id ? menuNode.id : undefined}
+      onpointerenter={preloadMenuBody}
+      onfocusin={preloadMenuBody}
       onclick={onTriggerClick}
       class="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground hover:bg-accent"
     >
@@ -185,7 +205,15 @@
           tabindex="-1"
           {@attach (node) => node.focus({ preventScroll: true })}
         >
-          <MenuBody variant="plain" onDone={() => closeMenu(false)} />
+          {#if MenuBodyComp}
+            <MenuBodyComp variant="plain" onDone={() => closeMenu(false)} />
+          {:else}
+            <div class="flex min-w-60 flex-col gap-2 p-3" aria-busy="true">
+              <Skeleton class="h-5 w-32" />
+              <Skeleton class="h-8 w-full" />
+              <Skeleton class="h-8 w-full" />
+            </div>
+          {/if}
         </div>
       </Portal>
     {/if}
