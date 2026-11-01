@@ -1,6 +1,8 @@
 # Передача: этап 1 — живые экраны до закрытия цепочки
 
 Документ для агента без доступа к переписке. Продолжать ровно с «Следующего шага».
+С 2026-11-01 документ ведёт и состояние этапа 2 (`Surface`), поскольку порядок
+работ изменён владельцем: сначала этап 2, затем шаг 07 этапа 1.
 
 ## Задача
 
@@ -214,16 +216,14 @@ node test/browser/auth.mjs   → ✅ auth-browser: 30 проверок прой�
 | Этап | Предмет | Состояние |
 | --- | --- | --- |
 | 1 | модалки и пагинатор | шаги 01-06 сделаны, **шаг 07 открыт** |
-| 2 | `Surface` / `SurfaceBar` в `#components/ui` | **не начат** |
+| 2 | `Surface` / `SurfaceBar` в `#components/ui` | **в работе**: ядро создано, черновик закоммичен (`bb8908b`); носители не переведены, гейты не прогнаны |
 | 3 | `Profile.svelte` и компоненты ядра на `Surface` | не начат |
 | 4 | единая форма серверов хранилища | решения приняты, код не начат |
 
-Проверено по git: `git log --all --diff-filter=A -- 'src/components/ui/surface/*'`
-пуст, `src/components/ui/surface/` отсутствует, экспорта в
-`src/components/ui/index.ts` нет. Этап 2 не начинался ни в одном коммите.
-Теги `stage-02-done` / `stage-03-done` к этому плану не относятся — это
-серия про links от 8 октября, в историю `img` не входит
-(`git merge-base --is-ancestor stage-02-done img` → нет).
+Этап 2 начат 2026-11-01 восстановительным коммитом `bb8908b wip(ui): черновик
+Surface и SurfaceBar перед переводом носителей`. Теги `stage-02-done` /
+`stage-03-done` к этому плану не относятся — это серия про links от 8 октября,
+в историю `img` не входит (`git merge-base --is-ancestor stage-02-done img` → нет).
 
 ### Зонды (временные, в git не входят)
 
@@ -237,13 +237,34 @@ test/browser/zz-probe3.mjs <admin-key>` (нужен живой `vite preview` н
 
 ## Следующий шаг
 
-1. Шаг 07 этапа 1: `error` без данных отдавать только на авторитетных 403/404,
-   спроецировать `publicProfile` / `notCreated`.
-2. Этап 2 — `Surface`/`SurfaceBar` по §3.1 и процедуре §5.2 плана. Без него
-   этап 4 невозможен: `StorageServerForm` строится как
-   `Surface` + `Common` + `Field`.
-3. Этап 3 — перевод `Profile.svelte` и компонентов ядра на `Surface` (§5.3).
-4. Этап 4 — единая форма серверов хранилища (§5.4), решения уже приняты.
+1. **Шаг A (текущий) — этап 2, доделать перевод носителей.** Ядро
+   `src/components/ui/surface/{Surface.svelte,SurfaceBar.svelte,index.ts}`
+   создано и закоммичено черновиком `bb8908b`; в бочку
+   `src/components/ui/index.ts` реэкспорт добавлен. Осталось:
+   - `src/content/user/ui/Acl.svelte` сейчас непоследователен: открывающий тег —
+     `<Surface …>` (со `scroll={false}` и `data-acl-*`), закрывающий — ещё
+     `</section>` (строка 207), импорта `Surface` в скрипте нет. Нужно: добавить
+     `Surface` в импорт из `#components/ui/index.js`, заменить `</section>` на
+     `</Surface>`, убрать неиспользуемый `userSurfaceVariants` из разметки
+     (module-реэкспорт оставить — его потребляют `StorageServersView`,
+     `MenuBody`, `BlockDelete`);
+   - `SurfaceBar.svelte`: отступы по §3.1 — корень `gap-x-2 gap-y-1.5`, зоны
+     `gap-1.5` (сейчас `gap-x-3 gap-y-2` / `gap-2`);
+   - `src/components/ui/surface/index.ts`: добавить `type SurfaceControls`;
+   - `pnpm check` (проверить сужение `controls: Snippet | SurfaceControls` и
+     `leading={controlGroups?.start ?? leading}`).
+2. **Шаг B** — перевести 15 модальных носителей на `Surface` с `min-h-0` и
+   одним владельцем скролла (список: план §6.3, группы `my-auto w-full p-6`,
+   `flex flex-col gap-4 p-6`, `flex min-h-0 flex-auto flex-col p-6`,
+   плюс `StorageServersModal.svelte`). Без этого этап 4 невозможен:
+   `StorageServerForm` строится как `Surface` + `Common` + `Field`.
+3. **Шаг C** — `src/components/ui/README.md`: описать бочку `surface/`, включая
+   `SurfaceControls`; затем полные гейты `pnpm check`, `pnpm test:guard`,
+   `pnpm build` и браузерная приёмка скролла модалок без перерисовки; коммит
+   этапа 2: `feat(ui): Surface и SurfaceBar`.
+4. **Затем** — шаг 07 этапа 1 (`error` в `ModalContent.svelte`: без данных
+   только на авторитетных 403/404, спроецировать `publicProfile` /
+   `notCreated`), этап 3 (§5.3) и этап 4 (§5.4); в конце — пересмотр AGENTS.md §5.
 
 Ни один этап не начинается без прямого указания владельца.
 
