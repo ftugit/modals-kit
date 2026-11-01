@@ -31,7 +31,7 @@
    *    скриптов нельзя.)
    */
   import { goto } from '$app/navigation'
-  import type { Snippet } from 'svelte'
+  import { onMount, type Snippet } from 'svelte'
   import type { HTMLButtonAttributes } from 'svelte/elements'
   import type { TaskState } from '#lib/task/index.js'
   import Button from './Button.svelte'
@@ -85,12 +85,17 @@
   let startedAt = 0
   const durationMs = $derived(Math.max(100, Math.round(seconds * 1000)))
 
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
+
   /** Блокировка ДЕЙСТВИЯ потребителя (не удержания): чужой disabled/aria/task. */
   const locked = $derived(
     Boolean(rest.disabled || rest['aria-disabled']) || task?.status === 'pending',
   )
-  /** До заполнения кнопка заблокирована: вид и семантика — `aria-disabled`. */
-  const blocked = $derived(!filled)
+  /** До заполнения (после гидратации) кнопка заблокирована: без JS остаётся честной нативной кнопкой/ссылкой (N6). */
+  const blocked = $derived(hydrated && !filled)
 
   function start(by: 'pointer' | 'key' | 'hover'): void {
     if (locked || filled || holding) return

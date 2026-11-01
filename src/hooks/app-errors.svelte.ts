@@ -55,12 +55,17 @@ function asError(cause: unknown): Error {
  * Дедуп: первый фатал и рисует экран, последующие игнорируются (защита от цикла).
  */
 export function report(e: AppErrorEnvelope): void {
+  const fatal = isFatalError(e)
   if (import.meta.env.DEV) {
-    console.error(`[${e.lib}:${e.code}]`, e.cause)
-    throw asError(e.cause)
+    if (fatal) {
+      console.error(`[${e.lib}:${e.code}]`, e.cause)
+      throw asError(e.cause)
+    }
+    console.warn(`[${e.lib}:${e.code}]`, e.cause)
+    return
   }
   if (critical) return
-  if (isFatalError(e)) {
+  if (fatal) {
     if (import.meta.env.SSR) throw asError(e.cause)
     critical = e
     return

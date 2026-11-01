@@ -26,6 +26,7 @@
     externalPage,
     externalRestorable,
     currentSearch,
+    url,
     layout = 'list',
     mode = 'accumulate',
     columns = 'auto',
@@ -143,6 +144,7 @@
   {externalPage}
   {externalRestorable}
   {currentSearch}
+  {url}
   {mode}
   {topTrigger}
   {bottomTrigger}

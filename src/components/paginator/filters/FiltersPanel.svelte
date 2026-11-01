@@ -13,7 +13,8 @@
    */
   import { untrack } from 'svelte'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
-  import { getClientStore, getPaginator, linkFor, setExtra } from '#lib/paginate/index.js'
+  import { linkFor, setExtra, transportOf } from '#lib/paginate/index.js'
+  import { useScopeStore } from '#lib/paginate/svelte/index.js'
   import {
     catalogFilterExtraPatch,
     catalogFilterView,
@@ -62,11 +63,14 @@
     class: cls = '',
   }: Props = $props()
 
+  const store = useScopeStore()
+  const adapter = untrack(() => transportOf(store, name))
+
   /**
    * Слой имён полей — у адаптера пагинатора: URL-транспорт кладёт фильтры в
    * `page.filters.kind`, транспорт без адреса — в `filters.kind`. Панель его не выбирает.
    */
-  const prefix = untrack(() => getPaginator(name).adapter.pageParam ?? '')
+  const prefix = adapter.pageParam ?? ''
   /** Описание формы: имена полей — ключи хранилища (`page.filters.kind`). */
   const description = $derived(describe(schema, { prefix: prefix ? `${prefix}.` : '' }))
 
@@ -77,10 +81,10 @@
    */
   const search = $derived(searchProp ?? currentSearch())
   const href = (patch: Record<string, string | number | undefined>): string | null => {
-    const query = linkFor(name, { page: 1, patch }, { search })
+    const query = linkFor(name, { page: 1, patch }, { store, search })
     return query === null ? null : url + query
   }
-  const hidden = $derived(getPaginator(name).adapter.carryFields?.(search, ['filters.*']) ?? [])
+  const hidden = $derived(adapter.carryFields?.(search, ['filters.*']) ?? [])
 
   /** Вся картина панели — из схемы, описания и extra: ни одного решения в разметке. */
   const view = $derived(catalogFilterView(schema, extra, {
@@ -119,18 +123,18 @@
   function apply(next: Record<string, string[]>) {
     const patch = catalogFilterExtraPatch(schema, next)
     ownKey = chipsKey(catalogFilterView(schema, { ...extra, ...patch }, { description, prefix }).chips)
-    void setExtra(getClientStore(), name, patch)
+    void setExtra(store, name, patch)
   }
 
   /** Снятие одного значения (клик по чипу) — тем же каналом состояния. */
   function remove(chip: { patch: Record<string, string | number | undefined> }): boolean {
-    void setExtra(getClientStore(), name, chip.patch)
+    void setExtra(store, name, chip.patch)
     return true
   }
 
   /** «Сбросить» с JS — тот же канал: адрес пишет хранилище, форма пересоздаётся по чипам. */
   function reset() {
-    void setExtra(getClientStore(), name, view.reset.patch)
+    void setExtra(store, name, view.reset.patch)
   }
 </script>
 

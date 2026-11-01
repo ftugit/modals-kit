@@ -18,7 +18,8 @@ import { defineForm, field, v } from '#lib/form/index.js'
 import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
 import { ru } from '#components/form/messages.ru.js'
 import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
-import { getClientStore, getPaginator, linkFor, setExtra } from '#lib/paginate/index.js'
+import { linkFor, setExtra, transportOf } from '#lib/paginate/index.js'
+import { useScopeStore } from '#lib/paginate/svelte/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
 import type { TaskState } from '#lib/task/index.js'
 import { useActionTask } from './action-task.svelte.js'
@@ -88,8 +89,10 @@ export interface PaginatorSearch {
  */
 export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): PaginatorSearch {
   const { maxLength = 120, debounce = 300 } = o
-  const adapter = getPaginator(name).adapter
-  // Имя поля во внешнем хранилище (URL: `page.q`) — решение транспорта.
+  const store = useScopeStore()
+  const adapter = transportOf(store, name)
+  const hasUrl = typeof adapter.observeExternal === 'function'
+  // Имя поля во внешнем хранилище (URL: `page.q` или `m0.page.q`) — решение транспорта сессии.
   const path = adapter.fieldName?.('q') ?? 'q'
   const isDisabled = () => o.disabled?.() ?? false
 
@@ -100,7 +103,7 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
   // Объявление не реактивное: имя пагинатора, ключ и предел фиксируются при
   // вызове (страница не переключает их на лету).
   const desc = defineForm({
-    id: `search-${name}`,
+    id: `search-${name}-${path}`,
     fields: {
       [path]: field.search({ label: o.label, placeholder: o.placeholder, validate: [v.maxLength(maxLength)] }),
     },
@@ -113,7 +116,7 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
   const send = (q: string) => {
     if (q !== String(o.query() ?? '')) action.fire()
     committed = q
-    void setExtra(getClientStore(), name, { q })
+    void setExtra(store, name, { q })
   }
 
   const form = bind(config, desc, {
@@ -141,7 +144,9 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
    * (`local`/`none`), и поле обязано показывать то же, по чему строится выдача.
    * Набранное (`typed`) поверх — чтобы эхо коммита не переставляло курсор.
    */
-  const fromAddress = $derived(String(currentSearch()[path] ?? '').slice(0, maxLength))
+  const fromAddress = $derived(
+    hasUrl ? String(currentSearch()[path] ?? '').slice(0, maxLength) : '',
+  )
   let typed = $state<string | null>(null)
   const value = $derived(typed ?? (hydrated ? String(o.query() ?? '') : fromAddress))
 
@@ -159,14 +164,17 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
   const stopTimer = () => clearTimeout(timer)
 
   /** Свой запрос не переносится (его несёт поле), указатель страницы — тоже: новый запрос — с первой. */
-  const preserved = $derived(adapter.carryFields?.(currentSearch(), ['q']) ?? [])
+  const preserved = $derived(
+    hasUrl ? (adapter.carryFields?.(currentSearch(), ['q']) ?? []) : [],
+  )
 
   /**
    * «Сбросить» без JS — ссылка, а не `type="reset"`: сброс формы вернул бы поле
    * к значению из разметки, т. е. к тому же запросу.
    */
   const resetHref = $derived.by(() => {
-    const href = linkFor(name, { page: 1, patch: { q: undefined } }, { search: currentSearch() })
+    if (!hasUrl) return null
+    const href = linkFor(name, { page: 1, patch: { q: undefined } }, { store, search: currentSearch() })
     return href === null ? null : `${currentPathname()}${href}`
   })
 

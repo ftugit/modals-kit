@@ -29,6 +29,7 @@ import {
   type AddressChange,
   type AddressSnapshot,
   type AddressWriteOptions,
+  type LayerKeyTest,
 } from './core'
 import {
   registerRoute,
@@ -262,7 +263,7 @@ export function goAddress(delta: number): void {
  * адрес страницы, но не эти ключи (ход 100, `address.ts`).
  * @internal
  */
-export function claimLayerKeys(test: (key: string) => boolean): () => void {
+export function claimLayerKeys(test: LayerKeyTest): () => void {
   return writer ? writer.layerKeys(test) : () => {}
 }
 

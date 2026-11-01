@@ -51,12 +51,24 @@ const keyId = optional((value) =>
     : { message: `ожидался идентификатор из латиницы, цифр, «_» или «-» (1..64), получено «${value}»` },
 )
 
-/** Ключ seed-модели: base64url без паддинга, ровно 32 байта (43 символа). */
-const seedKey = optional((value) =>
-  /^[A-Za-z0-9_-]{43}$/.test(value)
-    ? { value }
-    : { message: `ожидался ключ base64url из 43 символов (32 байта), получено «${value}»` },
-)
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+/** Ключ seed-модели: каноничный base64url без паддинга, ровно 32 байта (43 символа, младшие 2 бита 43-го символа = 0). */
+const seedKey = optional((value) => {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    return {
+      message: `ожидался каноничный ключ base64url из 43 символов (32 байта без «=»), задано символов: ${value.length}`,
+    }
+  }
+  const lastIdx = BASE64URL_ALPHABET.indexOf(value[42]!)
+  if (lastIdx < 0 || (lastIdx & 0b11) !== 0) {
+    return {
+      message:
+        'ожидался каноничный ключ base64url из 43 символов (32 байта): ненулевые хвостовые биты в 43-м символе',
+    }
+  }
+  return { value }
+})
 
 /** Список прежних ключей на время ротации (`id:secret` через запятую, каждый секрет >= 32 символов). */
 const keyRotationList = optional((value) => {

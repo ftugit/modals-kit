@@ -56,13 +56,41 @@ export async function ensureSeedAdmin(
   // Ключ из окружения (`ADMIN_SEED`) — чтобы вход не зависел от выхваченной
   // строки лога: публичный seed выводим из него, в БД по-прежнему только seed.
   const pair = secret ? { secret, seed: await seedOf(secret) } : await generateKeyPair()
-  const auths = db.resource(auth)
-  const row = (await auths.insert(SERVER, {
-    seed: pair.seed,
-    permissions: [ADMIN_ROLE],
-  })) as unknown as { id: string }
 
-  return { id: row.id, seed: pair.seed, secret: pair.secret }
+  return db.transaction(async (tx) => {
+    const activeAdmins = await tx.query({
+      text: 'SELECT 1 FROM public.user_auth WHERE deleted_at IS NULL AND $1 = ANY(permissions) LIMIT 1',
+      values: [ADMIN_ROLE],
+    })
+    if (activeAdmins.rows.length > 0) return null
+
+    // Если строка с этим `seed` уже есть в `public.user_auth` (например, обычный
+    // аккаунт без `admin` или мягко удалённый аккаунт с тем же `ADMIN_SEED`),
+    // восстанавливаем её и выдаём роль `admin` без падения по `UNIQUE (seed)`.
+    const existing = await tx.query<{ id: string }>({
+      text: `UPDATE public.user_auth
+                SET deleted_at = NULL,
+                    permissions = CASE
+                      WHEN $2 = ANY(permissions) THEN permissions
+                      ELSE array_append(permissions, $2)
+                    END,
+                    updated_at = clock_timestamp()
+              WHERE seed = $1
+          RETURNING id`,
+      values: [pair.seed, ADMIN_ROLE],
+    })
+    if (existing.rows.length > 0) {
+      return { id: existing.rows[0]!.id, seed: pair.seed, secret: pair.secret }
+    }
+
+    const auths = tx.resource(auth)
+    const row = (await auths.insert(SERVER, {
+      seed: pair.seed,
+      permissions: [ADMIN_ROLE],
+    })) as unknown as { id: string }
+
+    return { id: row.id, seed: pair.seed, secret: pair.secret }
+  })
 }
 
 /**

@@ -8,7 +8,7 @@
 
 | Файл | Назначение |
 |---|---|
-| `Paginator.svelte` | Единый контейнер списка/карточек со слотами `toolbar`, `header`, `beforeItems`, `afterItems`, `footer`, `empty`, `nav` и настройкой плашки среза `slice`. |
+| `Paginator.svelte` | Единый контейнер списка/карточек со слотами `toolbar`, `header`, `beforeItems`, `afterItems`, `footer`, `empty`, `nav`, сессионным режимом `url` и настройкой плашки среза `slice`. |
 | `ui/PageSlice.svelte` | Уведомление об активном срезе выдачи (`Отображается срез от <TimeAgo />, сбросить?`) с прогрессивным улучшением ссылки/кнопки сброса. |
 | `ui/PageDivider.svelte` | Разделитель групп страниц в потоке: на странице `1` не выводит `страница 1`, рендеря вместо неё `PageSlice` (при активном срезе); на страницах `>= 2` выводит `страница N (count)` (и `PageSlice` при принудительном `enable={true}`). |
 | `ui/PageList.svelte` / `ui/PageColumns.svelte` | Отрисовка групп страниц списком или round-robin колонками. |

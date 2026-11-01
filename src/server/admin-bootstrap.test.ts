@@ -96,3 +96,37 @@ test('повторный запуск администратора не плод
     assert.equal(countRes.rows[0]!.admins, 1)
   })
 })
+
+test('идемпотентно повышает существующий обычный или мягко удалённый аккаунт с тем же ADMIN_SEED без ошибки UNIQUE(seed)', async () => {
+  await withDb(async (db) => {
+    const { secret, seed } = await generateKeyPair()
+    const inserted = (await db.resource(auth).insert(SERVER, {
+      seed,
+      permissions: [],
+    })) as unknown as { id: string }
+
+    // 1. Обычный аккаунт с тем же seed получает роль admin вместо UNIQUE-падения
+    const promoted = await ensureSeedAdmin(db, secret)
+    assert.ok(promoted, 'существующий аккаунт повышен до администратора')
+    assert.equal(promoted.id, inserted.id)
+    assert.equal(promoted.seed, seed)
+
+    // 2. Мягко удаляем этого администратора — активных админов снова 0
+    await db.query({
+      text: 'UPDATE public.user_auth SET deleted_at = clock_timestamp() WHERE id = $1',
+      values: [inserted.id],
+    })
+
+    // 3. Повторный ensureSeedAdmin восстанавливает deleted_at = NULL и сохраняет admin
+    const restored = await ensureSeedAdmin(db, secret)
+    assert.ok(restored, 'мягко удалённый аккаунт восстановлен как администратор')
+    assert.equal(restored.id, inserted.id)
+
+    const check = await db.query<{ deleted_at: string | null; permissions: string[] }>({
+      text: 'SELECT deleted_at, permissions FROM public.user_auth WHERE id = $1',
+      values: [inserted.id],
+    })
+    assert.equal(check.rows[0]!.deleted_at, null)
+    assert.deepEqual(check.rows[0]!.permissions, ['admin'])
+  })
+})

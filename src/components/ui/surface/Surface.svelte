@@ -103,17 +103,23 @@
     typeof controls === 'function' ? (controls as Snippet) : undefined,
   )
 
+  const hasLeading = $derived(Boolean(leading || controlGroups?.start))
+  const hasEnd = $derived(Boolean(controlSnippet || controlGroups?.end))
+
   const hasHeader = $derived(
-    Boolean(
-      leading ||
-        controlGroups?.start ||
-        title !== undefined ||
-        description !== undefined ||
-        controlSnippet ||
-        controlGroups?.end,
-    ),
+    Boolean(hasLeading || title !== undefined || description !== undefined || hasEnd),
   )
 </script>
+
+{#snippet mergedLeading()}
+  {#if leading}{@render leading()}{/if}
+  {#if controlGroups?.start}{@render controlGroups.start()}{/if}
+{/snippet}
+
+{#snippet mergedEnd()}
+  {#if controlSnippet}{@render controlSnippet()}{/if}
+  {#if controlGroups?.end}{@render controlGroups.end()}{/if}
+{/snippet}
 
 <section
   {...rest}
@@ -122,17 +128,18 @@
 >
   {#if hasHeader}
     <SurfaceBar
-      leading={controlGroups?.start ?? leading}
+      leading={hasLeading ? mergedLeading : undefined}
+      end={hasEnd ? mergedEnd : undefined}
       class={cn('shrink-0', body && 'border-b border-border pb-4')}
     >
       {#snippet center()}
-        <div class="flex min-w-0 flex-col gap-1">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
           {#if title !== undefined}
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
               {#if titleIsSnippet}
                 {@render (title as Snippet)()}
               {:else}
-                <h2 class="truncate text-lg font-semibold leading-tight tracking-tight">
+                <h2 class="min-w-0 flex-1 truncate text-lg font-semibold leading-tight tracking-tight">
                   {title}
                 </h2>
               {/if}
@@ -140,16 +147,12 @@
           {/if}
           {#if description !== undefined}
             {#if typeof description === 'string'}
-              <p class="text-sm text-muted-foreground">{description}</p>
+              <p class="whitespace-normal break-words text-sm text-muted-foreground">{description}</p>
             {:else}
               {@render (description as Snippet)()}
             {/if}
           {/if}
         </div>
-      {/snippet}
-      {#snippet end()}
-        {#if controlSnippet}{@render controlSnippet()}{/if}
-        {#if controlGroups?.end}{@render controlGroups.end()}{/if}
       {/snippet}
     </SurfaceBar>
   {/if}
@@ -159,7 +162,7 @@
       class={cn(
         'flex min-h-0 flex-col gap-4',
         hasHeader && (scrollBody ? 'pt-4' : 'pt-5'),
-        scrollBody && 'flex-auto overflow-y-auto overscroll-contain',
+        scrollBody && '-mx-1 flex-auto overflow-y-auto overscroll-contain px-1',
       )}
       data-surface-body=""
     >

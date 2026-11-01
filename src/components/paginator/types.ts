@@ -8,6 +8,7 @@ import type {
   LibError,
   PaginatorState,
   PrependBehavior,
+  SessionUrlOptions,
   Stretch,
   TriggerZone,
 } from '#lib/paginate/index.js'
@@ -87,6 +88,8 @@ export interface PaginatorProps<T> {
   externalPage?: number | null
   externalRestorable?: { pageSize?: number; extra: Extra } | null
   currentSearch?: () => Record<string, unknown> | null
+  /** Сессионный режим URL: `false` — память без URL; объект — кастомный `pageParam`/`queryOwner`. */
+  url?: boolean | SessionUrlOptions
   layout?: 'list' | 'columns'
   mode?: 'accumulate' | 'single'
   columns?: number | 'auto'
