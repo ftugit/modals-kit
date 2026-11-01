@@ -9,6 +9,7 @@
   import { resolveAuthStep } from '../index.js'
   import type { ProfileLimits } from './profile-form/index.js'
   import AuthWidget from './AuthWidget.svelte'
+  import { Surface } from '#components/ui/index.js'
 
   type RouteData = {
     challenge: { token: string; expiresAt: number } | null
@@ -44,12 +45,12 @@
 </script>
 
 {#if modalData}
-  <div class="my-auto w-full p-6">
+  <Surface variant="plain" class="w-full p-6">
     <AuthWidget
       data={modalData}
       mode="modal"
       variant="plain"
       onDone={done}
     />
-  </div>
+  </Surface>
 {/if}

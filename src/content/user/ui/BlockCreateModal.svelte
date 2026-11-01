@@ -11,6 +11,7 @@
   import { block as blockResource } from '../schema.js'
   import type { BlockCreateRouteData } from '../types.js'
   import { vault } from '../vault.svelte.js'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const modal = useModal<{ uid?: string; uids?: string }>()
@@ -44,7 +45,7 @@
   }
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
   {:else if effectiveAcl === 'auth.identity-unknown'}
@@ -62,4 +63,4 @@
       onDone={done}
     />
   {/if}
-</div>
+</Surface>

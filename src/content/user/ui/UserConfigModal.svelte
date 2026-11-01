@@ -9,6 +9,7 @@
   import UserConfig from './user-config/UserConfig.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { UserConfigRouteData } from '../types.js'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const modal = useModal<{ id?: string }>()
@@ -18,7 +19,7 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if effectiveAcl === 'auth.identity-unknown'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if effectiveAcl === 'auth.forbidden'}
@@ -44,4 +45,4 @@
       }}
     />
   {/if}
-</div>
+</Surface>

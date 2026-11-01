@@ -9,6 +9,7 @@
   import BlockForm from './block-form/BlockForm.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { BlockEditRouteData } from '../types.js'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const modal = useModal<{ blockId: string; uid?: string }>()
@@ -31,7 +32,7 @@
   }
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if !blockId || effectiveAcl === 'auth.identity-unknown'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if effectiveAcl === 'auth.forbidden'}
@@ -49,4 +50,4 @@
       onDone={done}
     />
   {/if}
-</div>
+</Surface>

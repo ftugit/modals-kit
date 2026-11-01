@@ -11,6 +11,7 @@
   import ProfileForm from './profile-form/ProfileForm.svelte'
   import type { ProfileView } from '../types.js'
   import type { AuthErrorCode } from '../error.js'
+  import { Surface } from '#components/ui/index.js'
 
   type EditRouteData = {
     uid: string
@@ -40,7 +41,7 @@
   }
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if ldr.data?.fact}
     <Acl status={ldr.data.fact} backHref="/" variant="plain" />
   {:else if ldr.data && !ldr.data.canEdit}
@@ -57,4 +58,4 @@
       onDone={done}
     />
   {/if}
-</div>
+</Surface>

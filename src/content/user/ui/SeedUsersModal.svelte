@@ -11,6 +11,7 @@
   import SeedUsersList from './SeedUsersList.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUsersRouteData } from './seed-users/source.js'
+  import { Surface } from '#components/ui/index.js'
 
   const ldr = useLoader<SeedUsersRouteData>()
   // Область пагинатора этой записи: ключ стабилен, пока запись в стопке.
@@ -18,7 +19,7 @@
   let acl = $state<AuthErrorCode | null>(null)
 </script>
 
-<div class="flex min-h-0 flex-auto flex-col p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if acl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
   {:else if acl}
@@ -31,4 +32,4 @@
       onAcl={(fact) => (acl = fact)}
     />
   {/if}
-</div>
+</Surface>

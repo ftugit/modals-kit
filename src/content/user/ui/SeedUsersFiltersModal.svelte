@@ -25,6 +25,7 @@
   import { vault } from '../vault.svelte.js'
   import { SEED_USERS_NAME, SEED_USERS_PAGE_SIZE } from './seed-users/source.js'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const modal = useModal<{ scope?: string }>()
@@ -83,10 +84,11 @@
   }
 </script>
 
-<div class="flex flex-col gap-4 p-6">
-  <div class="flex flex-col gap-1">
-    <h2 class="text-lg font-semibold leading-tight tracking-tight">Фильтры списка</h2>
-    <p class="text-sm text-muted-foreground">Параметры выборки и сортировки аккаунтов.</p>
-  </div>
+<Surface
+  variant="plain"
+  class="w-full p-6"
+  title="Фильтры списка"
+  description="Параметры выборки и сортировки аккаунтов."
+>
   <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
-</div>
+</Surface>

@@ -14,6 +14,7 @@
   import { vault } from '../vault.svelte.js'
   import { BLOCKS_NAME, BLOCKS_PAGE_SIZE } from './blocks-list/source.js'
   import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
+  import { Surface } from '#components/ui/index.js'
 
   const gBlock = grants(blockResource)
   const gAuth = grants(authResource)
@@ -85,11 +86,12 @@
   }
 </script>
 
-<div class="flex flex-col gap-4 p-6">
-  <div class="flex flex-col gap-1">
-    <h2 class="text-lg font-semibold leading-tight tracking-tight">Фильтры блокировок</h2>
-    <p class="text-sm text-muted-foreground">Срез журнала по статусу, сферам и пользователям.</p>
-  </div>
+<Surface
+  variant="plain"
+  class="w-full p-6"
+  title="Фильтры блокировок"
+  description="Срез журнала по статусу, сферам и пользователям."
+>
   <BlocksFiltersForm
     {uid}
     {canSeeDeleted}
@@ -99,4 +101,4 @@
     onApply={apply}
     onReset={reset}
   />
-</div>
+</Surface>

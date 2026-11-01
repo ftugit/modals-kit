@@ -10,6 +10,7 @@
   import UserPicker, { USER_PICKER_CHANNEL_PREFIX } from './UserPicker.svelte'
   import type { SeedUsersRouteData } from './seed-users/source.js'
   import type { AuthErrorCode } from '../error.js'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const ldr = useLoader<{ initialUsers?: SeedUsersRouteData }>()
@@ -41,7 +42,7 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-auto flex-col p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if acl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
   {:else if acl}
@@ -56,4 +57,4 @@
       onAcl={(fact) => (acl = fact)}
     />
   {/if}
-</div>
+</Surface>

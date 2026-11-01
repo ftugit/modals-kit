@@ -15,6 +15,7 @@
   import { block as blockResource } from '../schema.js'
   import type { BlockDeleteRouteData } from '../types.js'
   import { vault } from '../vault.svelte.js'
+  import { Surface } from '#components/ui/index.js'
 
   const gBlock = grants(blockResource)
   const m = useModals()
@@ -61,7 +62,7 @@
   }
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if !blockId || effectiveAcl === 'auth.identity-unknown'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if effectiveAcl === 'auth.forbidden'}
@@ -78,4 +79,4 @@
       onDone={handleDone}
     />
   {/if}
-</div>
+</Surface>

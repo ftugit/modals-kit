@@ -9,6 +9,7 @@
   import Acl from './Acl.svelte'
   import ProfileDelete from './profile-delete/ProfileDelete.svelte'
   import type { ProfileDeleteRouteData } from '../types.js'
+  import { Surface } from '#components/ui/index.js'
 
   const modal = useModal<{ id: string }>()
   const m = useModals()
@@ -26,7 +27,7 @@
   }
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if ldr.data?.fact}
     <Acl status={ldr.data.fact} backHref="/" variant="plain" />
   {:else if ldr.data && !ldr.data.canDeleteProfile}
@@ -42,4 +43,4 @@
       onDone={done}
     />
   {/if}
-</div>
+</Surface>

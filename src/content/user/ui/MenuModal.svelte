@@ -9,10 +9,11 @@
    */
   import { useModals } from '#lib/modals/svelte/index.js'
   import MenuBody from './MenuBody.svelte'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   <MenuBody variant="plain" onDone={() => m.modals.close()} />
-</div>
+</Surface>

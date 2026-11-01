@@ -12,6 +12,7 @@
   import Profile from './Profile.svelte'
   import type { AuthErrorCode } from '../error.js'
   import type { ProfileRouteData } from '../types.js'
+  import { Surface } from '#components/ui/index.js'
 
   const modal = useModal<{ id: string }>()
   const ldr = useLoader<ProfileRouteData>()
@@ -19,7 +20,7 @@
   let acl = $state<AuthErrorCode | 'not_found' | null>(null)
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if !uid || acl === 'not_found'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if acl}
@@ -27,4 +28,4 @@
   {:else}
     <Profile {uid} route={ldr.data} variant="plain" onAcl={(what) => (acl = what)} />
   {/if}
-</div>
+</Surface>

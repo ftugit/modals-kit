@@ -9,6 +9,7 @@
   import Acl from '#content/user/ui/Acl.svelte'
   import type { StorageServersRouteData } from '../types.js'
   import StorageServersView from './StorageServersView.svelte'
+  import { Surface } from '#components/ui/index.js'
 
   const m = useModals()
   const ldr = useLoader<StorageServersRouteData>()
@@ -16,7 +17,7 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<div class="my-auto w-full p-6">
+<Surface variant="plain" class="w-full p-6">
   {#if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
   {:else if effectiveAcl}
@@ -39,4 +40,4 @@
       }}
     />
   {/if}
-</div>
+</Surface>
