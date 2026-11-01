@@ -11,6 +11,12 @@ export { default as CardTitle } from './card/CardTitle.svelte'
 export { default as CardDescription } from './card/CardDescription.svelte'
 export { default as CardContent } from './card/CardContent.svelte'
 export { default as CardFooter } from './card/CardFooter.svelte'
+export {
+  Surface,
+  SurfaceBar,
+  surfaceVariants,
+  type SurfaceVariant,
+} from './surface/index.js'
 
 export { default as Input } from './input/Input.svelte'
 export { default as FileInput } from './file-input/FileInput.svelte'

@@ -1,19 +1,14 @@
 <script lang="ts" module>
-  import { variants, type VariantProps } from '#components/utils.js'
+  import { surfaceVariants, type SurfaceVariant } from '#components/ui/index.js'
 
-  export const userSurfaceVariants = variants(
-    '',
-    {
-      variant: {
-        card: 'rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm',
-        plain: '',
-      },
-    },
-    { variant: 'card' },
-  )
+  // Оформление поверхности не дублируется здесь: единственный источник —
+  // `surfaceVariants` из `#components/ui`. Имена оставлены ради потребителей
+  // (`StorageServersView`, `MenuBody`, `BlockDelete`), которые импортируют их
+  // из этого файла.
+  export const userSurfaceVariants = surfaceVariants
 
-  export type UserSurfaceVariant = 'card' | 'plain'
-  export type UserSurfaceProps = VariantProps<typeof userSurfaceVariants>
+  export type UserSurfaceVariant = SurfaceVariant
+  export type UserSurfaceProps = { variant?: UserSurfaceVariant }
 </script>
 
 <script lang="ts">
