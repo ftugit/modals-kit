@@ -12,8 +12,12 @@
  * ровно столько, сколько жива запись стопки: пока носитель смонтирован,
  * `refs > 0`. Освобождение последней ссылки удаляет ячейки целиком — вместе с
  * внутренним `extra.ids` пикера, отдельная уборка не нужна.
+ *
+ * На SSR (`typeof window === 'undefined'`) модульный `Map` не используется:
+ * каждый вызов возвращает изолированный одноразовый `Store` без пересечения
+ * между параллельными запросами и без утечки памяти процесса.
  */
-import { createPaginatorStore, type Store } from './store'
+import { createPaginatorStore, peekClientStore, type Store } from './store'
 
 interface ScopeEntry {
   store: Store
@@ -24,9 +28,12 @@ const scopes = new Map<string, ScopeEntry>()
 
 /**
  * Хранилище области `key`: существующее или новое.
- * Каждый вызов увеличивает счётчик ссылок — освобождать нужно столько же раз.
+ * Каждый вызов в браузере увеличивает счётчик ссылок — освобождать нужно столько же раз.
  */
 export function acquireScopedStore(key: string): Store {
+  if (typeof window === 'undefined') {
+    return createPaginatorStore()
+  }
   const found = scopes.get(key)
   if (found) {
     found.refs += 1
@@ -39,6 +46,7 @@ export function acquireScopedStore(key: string): Store {
 
 /** Освободить область `key`; последняя ссылка удаляет её состояние. */
 export function releaseScopedStore(key: string): void {
+  if (typeof window === 'undefined') return
   const found = scopes.get(key)
   if (!found) return
   found.refs -= 1
@@ -47,5 +55,21 @@ export function releaseScopedStore(key: string): void {
 
 /** Хранилище области `key`, если владелец ещё жив. Годится для чтения без захвата. */
 export function findScopedStore(key: string | null | undefined): Store | undefined {
+  if (typeof window === 'undefined') return undefined
   return key ? scopes.get(key)?.store : undefined
+}
+
+/** Все живые клиентские сторы (страничный `clientStore` + активные `ScopedStore`). */
+export function listLiveStores(): Store[] {
+  if (typeof window === 'undefined') return []
+  const out = new Set<Store>()
+  const client = peekClientStore()
+  if (client) out.add(client)
+  for (const entry of scopes.values()) out.add(entry.store)
+  return [...out]
+}
+
+/** Только для тестов: сброс реестра областей. */
+export function resetScopedStores(): void {
+  scopes.clear()
 }

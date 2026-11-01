@@ -3,8 +3,9 @@
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
 import { DEV } from 'esm-env'
 import { canLoadMore, deriveMeta, flattenPages } from './pure'
-import type { LibError, ScrollDriver } from './types'
-import { getPaginator, type LastAction, type PaginatorInstance } from './registry'
+import type { LibError, PaginatorAdapter, ScrollDriver } from './types'
+import { getPaginator, hasPaginator, type LastAction, type PaginatorInstance } from './registry'
+import { listLiveStores } from './scopes'
 import { initialState, type Store } from './store'
 import type { AdapterInit, AdapterInitContext, Extra, ExtraPatch, ExtraValue, HrefContext, PageResponse, PaginatorState } from './types'
 
@@ -60,6 +61,7 @@ function progressOf<T>(store: Store, name: string, reqId: number, signal: AbortS
  */
 export function safePersist(store: Store, name: string): void {
   const instance = getPaginator(name)
+  const adapter = transportOf(store, name)
   const report = (error: unknown) => {
     try {
       notifyError(instance, 'persist-failed', error, { via: 'persist' })
@@ -69,7 +71,7 @@ export function safePersist(store: Store, name: string): void {
     }
   }
   try {
-    const result = instance.adapter.persist(getState<unknown>(store, name))
+    const result = adapter.persist(getState<unknown>(store, name))
     if (result instanceof Promise) result.catch(report)
   } catch (error) {
     // синхронный бросок: notify наружу НЕ глушим — серверный фатал обязан дожить
@@ -130,6 +132,8 @@ type Session = {
    * undefined — как объявил адаптер.
    */
   append?: boolean
+  /** Сессионный транспорт этого стора (например, `m0.<param>` или без URL). */
+  transport?: PaginatorAdapter<unknown>
 }
 
 const sessions = new WeakMap<Store, Map<string, Session>>()
@@ -161,9 +165,23 @@ export function setAppendMode(store: Store, name: string, append: boolean | unde
   sessionOf(store, name).append = append
 }
 
+/** Привязать производный транспорт сессии к `(store, name)`. */
+export function setSessionTransport<T = unknown>(
+  store: Store,
+  name: string,
+  transport: PaginatorAdapter<T> | undefined,
+): void {
+  sessionOf(store, name).transport = transport as PaginatorAdapter<unknown> | undefined
+}
+
+/** Активный транспорт пагинатора `name` в `store` (сессионный, иначе базовый из реестра). */
+export function transportOf<T = unknown>(store: Store, name: string): PaginatorAdapter<T> {
+  return (sessionOf(store, name).transport ?? getPaginator(name).adapter) as PaginatorAdapter<T>
+}
+
 /** Копит ли пагинатор страницы в этом сторе: режим хоста, иначе объявление адаптера. */
 export function appendOf(store: Store, name: string): boolean {
-  return sessionOf(store, name).append ?? getPaginator(name).adapter.capabilities.append
+  return sessionOf(store, name).append ?? transportOf(store, name).capabilities.append
 }
 
 /** Отменить активную загрузку пагинатора в этом сторе. */
@@ -199,7 +217,8 @@ function mergeResponseExtra<T>(store: Store, name: string, resp: PageResponse<T>
   const incoming = resp.extra
   if (!incoming) return
   const instance = getPaginator(name)
-  const declared = instance.adapter.extraKeys?.()
+  const adapter = transportOf<T>(store, name)
+  const declared = adapter.extraKeys?.()
   const known = declared ? new Set(declared) : null
   const state = getState<T>(store, name)
   const next: Extra = { ...state.extra }
@@ -228,7 +247,7 @@ function mergeResponseExtra<T>(store: Store, name: string, resp: PageResponse<T>
   patch<T>(store, name, (s) => ({
     ...s,
     extra: next,
-    capabilities: instance.adapter.capabilitiesFor(next),
+    capabilities: adapter.capabilitiesFor(next),
   }))
   safePersist(store, name)
 }
@@ -294,7 +313,7 @@ export async function fetchReplace<T>(
   }))
   let resp: PageResponse<T>
   try {
-    resp = (await instance.adapter.loadPage({
+    resp = (await transportOf<T>(store, name).loadPage({
       page,
       pageSize: getState<T>(store, name).pageSize,
       extra: getState<T>(store, name).extra,
@@ -369,9 +388,10 @@ export async function initPaginator<T>(
     return
   }
   if (status !== 'init') return
+  const adapter = transportOf<T>(store, name)
   let init: AdapterInit<T>
   try {
-    init = (await instance.adapter.getInitial(ctx)) as AdapterInit<T>
+    init = (await adapter.getInitial(ctx)) as AdapterInit<T>
   } catch (error) {
     patch<T>(store, name, (s) => ({ ...s, status: 'error', error: errMessage(error), errorCode: errCode(error) }))
     instance.emitter.emit({ type: 'error', error, page: null, phase: 'init' })
@@ -394,7 +414,7 @@ export async function initPaginator<T>(
       page: init.page,
       pageSize,
       extra,
-      capabilities: instance.adapter.capabilitiesFor(extra),
+      capabilities: adapter.capabilitiesFor(extra),
       sourceState: init.sourceState,
       totalItems: init.totalItems ?? null,
       totalPages: init.totalPages ?? null,
@@ -416,7 +436,7 @@ export async function initPaginator<T>(
     page: init.page,
     pageSize,
     extra,
-    capabilities: instance.adapter.capabilitiesFor(extra),
+    capabilities: adapter.capabilitiesFor(extra),
     sourceState: init.sourceState ?? s.sourceState,
     totalItems: init.totalItems ?? s.totalItems,
     totalPages: init.totalPages ?? s.totalPages,
@@ -489,7 +509,7 @@ export async function loadMore<T>(store: Store, name: string, dir: 1 | -1): Prom
   session.replaceAbort = ac
   let resp: PageResponse<T>
   try {
-    resp = (await instance.adapter.loadPage({
+    resp = (await transportOf<T>(store, name).loadPage({
       page: target,
       pageSize: state.pageSize,
       extra: state.extra,
@@ -648,7 +668,7 @@ export async function initServerPaginator<T>(
  * Тихо загружает страницу в память, если она ещё не загружена и не в полёте.
  */
 export async function prefetchPage<T>(store: Store, name: string, page: number): Promise<void> {
-  const instance = getPaginator(name)
+  getPaginator(name)
   const state = getState<T>(store, name)
   if (state.loadedPages.includes(page) || state.pending?.page === page) return
   const session = sessionOf(store, name)
@@ -661,7 +681,7 @@ export async function prefetchPage<T>(store: Store, name: string, page: number):
   const ac = new AbortController()
   session.prefetchAborts.add(ac)
   try {
-    const resp = (await instance.adapter.loadPage({
+    const resp = (await transportOf<T>(store, name).loadPage({
       page,
       pageSize: state.pageSize,
       extra: state.extra,
@@ -705,8 +725,12 @@ export type LinkTarget = { page: number; patch?: ExtraPatch }
  * знает только адаптер. `null` — у транспорта ссылок нет (local/memory/cursor):
  * UI рисует кнопку.
  */
-export function linkFor(name: string, target: LinkTarget, ctx: HrefContext = {}): string | null {
-  const adapter = getPaginator(name).adapter
+export function linkFor(
+  name: string,
+  target: LinkTarget,
+  ctx: HrefContext & { store?: Store } = {},
+): string | null {
+  const adapter = ctx.store ? transportOf(ctx.store, name) : getPaginator(name).adapter
   return adapter.hrefFor ? adapter.hrefFor(target.page, { ...ctx, patch: target.patch ?? ctx.patch }) : null
 }
 
@@ -722,19 +746,44 @@ function applyExtraPatch(extra: Extra, patch: ExtraPatch | undefined): Extra {
 
 /** Сбрасывает пагинатор на первую страницу и перечитывает выдачу. */
 export async function resetPaginator<T>(store: Store, name: string): Promise<void> {
-  const instance = getPaginator(name)
+  getPaginator(name)
+  const adapter = transportOf<T>(store, name)
   abortReplace(sessionOf(store, name))
   sessionOf(store, name).lastAction = null
   dropPrefetched(sessionOf(store, name))
   patch<T>(store, name, (s) => {
     const extra = applyExtraPatch(s.extra, resetTarget(name).patch)
     return {
-      ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
+      ...initialState<T>(name, s.pageSize, extra, adapter.capabilitiesFor(extra)),
       reqId: s.reqId + 1,
     }
   })
   safePersist(store, name) // storage/URL ← исходный указатель (page 1)
   await initPaginator<T>(store, name) // status 'init' → свежая загрузка страницы 1
+}
+
+/**
+ * Инвалидирует все живые сессии пагинатора `name` (страничный `clientStore` и
+ * активные `ScopedStore`), перечитывая страницу 1 с их собственными `extra` и `pageSize`.
+ * Если пагинатор с именем `name` ещё не зарегистрирован (ленивый бандл не загружен),
+ * вызов безопасно ничего не делает (`C2.1`).
+ */
+export async function invalidatePaginator(name: string): Promise<void> {
+  if (!hasPaginator(name)) return
+  const stores = listLiveStores()
+  await Promise.all(
+    stores
+      .filter((s) => s.has(name) && getState(s, name).status !== 'init')
+      .map(async (s) => {
+        const session = sessionOf(s, name)
+        const prevPage = getState(s, name).page
+        abortReplace(session)
+        dropPrefetched(session)
+        session.lastAction = { kind: 'goToPage', page: 1 }
+        await fetchReplace(s, name, 1, 'replace')
+        if (prevPage !== 1) safePersist(s, name)
+      }),
+  )
 }
 
 /**
@@ -766,9 +815,9 @@ export type ItemPatch<T> = { insert: T; at: 'head' | 'tail' } | { update: T } | 
 
 /** Правит окно на месте без перезагрузки: вставка, правка, удаление строк. */
 export function patchItems<T>(store: Store, name: string, op: ItemPatch<T>): boolean {
-  const instance = getPaginator(name)
+  getPaginator(name)
   const state = getState<T>(store, name)
-  const record = instance.adapter.recordFor?.(state.extra)
+  const record = transportOf<T>(store, name).recordFor?.(state.extra)
   if (!record) {
     throw new Error(`patchItems("${name}"): адаптер не объявил recordFor — записи окна не опознать`)
   }
@@ -843,6 +892,7 @@ export function patchItems<T>(store: Store, name: string, op: ItemPatch<T>): boo
 export async function setPageSize<T>(store: Store, name: string, pageSize: number): Promise<void> {
   if (!Number.isInteger(pageSize) || pageSize < 1) return
   const instance = getPaginator(name)
+  const adapter = transportOf<T>(store, name)
   const state = getState<T>(store, name)
   if (state.pageSize === pageSize) return
   const firstIndex = (state.page - 1) * state.pageSize
@@ -851,7 +901,7 @@ export async function setPageSize<T>(store: Store, name: string, pageSize: numbe
   sessionOf(store, name).lastAction = { kind: 'goToPage', page }
   dropPrefetched(sessionOf(store, name))
   patch<T>(store, name, (s) => ({
-    ...initialState<T>(name, pageSize, s.extra, instance.adapter.capabilitiesFor(s.extra)),
+    ...initialState<T>(name, pageSize, s.extra, adapter.capabilitiesFor(s.extra)),
     page,
     status: 'idle',
     reqId: s.reqId + 1,
@@ -916,11 +966,16 @@ export async function setExtra<T>(
   store: Store,
   name: string,
   patchExtra: Record<string, ExtraValue | undefined>,
-  options: { reload?: boolean } = {},
+  options: { reload?: boolean; pageSize?: number } = {},
 ): Promise<void> {
   const instance = getPaginator(name)
+  const adapter = transportOf<T>(store, name)
   const state = getState<T>(store, name)
-  assertDeclaredExtraKeys(instance, patchExtra)
+  assertDeclaredExtraKeys(instance, adapter, patchExtra)
+  const hasPageSize =
+    options.pageSize !== undefined && Number.isInteger(options.pageSize) && options.pageSize >= 1
+  const nextPageSize = hasPageSize ? options.pageSize! : state.pageSize
+  const sizeChanged = nextPageSize !== state.pageSize
   let changed = false
   let touchesData = false
   for (const [k, v] of Object.entries(patchExtra)) {
@@ -932,7 +987,11 @@ export async function setExtra<T>(
       if (instance.reloadKeys.has(k)) touchesData = true
     }
   }
-  if (!changed) return
+  if (!changed && !sizeChanged) return
+  if (!changed && sizeChanged && !options.reload) {
+    await setPageSize<T>(store, name, nextPageSize)
+    return
+  }
   // Ключ вычищается целиком: `{ ...extra, k: undefined }` оставил бы «ключ есть,
   // значение undefined», и persist со сравнениями ловили бы фантом.
   const mergeExtra = (extra: Extra): Extra => {
@@ -941,16 +1000,16 @@ export async function setExtra<T>(
       if (v === undefined) delete next[k]
       else next[k] = v
     }
-    return dropScopeKeys(extra, next, instance.adapter, patchExtra)
+    return dropScopeKeys(extra, next, adapter as PaginatorInstance['adapter'], patchExtra)
   }
-  if (options.reload ?? touchesData) {
+  if ((options.reload ?? touchesData) || sizeChanged) {
     abortReplace(sessionOf(store, name))
     sessionOf(store, name).lastAction = { kind: 'goToPage', page: 1 }
     dropPrefetched(sessionOf(store, name))
     patch<T>(store, name, (s) => {
       const extra = dropPositionKeys(mergeExtra(s.extra), instance.positionKeys, patchExtra)
       return {
-        ...initialState<T>(name, s.pageSize, extra, instance.adapter.capabilitiesFor(extra)),
+        ...initialState<T>(name, nextPageSize, extra, adapter.capabilitiesFor(extra)),
         status: 'idle',
         reqId: s.reqId + 1,
       }
@@ -962,7 +1021,7 @@ export async function setExtra<T>(
   }
   patch<T>(store, name, (s) => {
     const extra = mergeExtra(s.extra)
-    return { ...s, extra, capabilities: instance.adapter.capabilitiesFor(extra) }
+    return { ...s, extra, capabilities: adapter.capabilitiesFor(extra) }
   })
   safePersist(store, name)
 }
@@ -973,11 +1032,12 @@ export async function setExtra<T>(
  * либо ПОТРЕБИТЕЛЕМ (спецификация адреса / объявленные ключи). Снятие ключа
  * (`undefined`) и пустое значение легальны всегда: это очистка, а не установка.
  */
-function assertDeclaredExtraKeys(
+function assertDeclaredExtraKeys<T>(
   instance: PaginatorInstance,
+  adapter: PaginatorAdapter<T>,
   patch: Record<string, ExtraValue | undefined>,
 ): void {
-  const declared = instance.adapter.extraKeys?.()
+  const declared = adapter.extraKeys?.()
   if (!declared) return // поверхность потребителя не объявлена — судить нечем
   const known = new Set(declared)
   for (const [key, value] of Object.entries(patch)) {

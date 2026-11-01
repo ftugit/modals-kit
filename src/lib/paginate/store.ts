@@ -50,6 +50,8 @@ export type Store = {
   hydrate<T>(name: string, snapshot: PaginatorState<T>): void
   /** Была ли гидрация по этому имени (для инспекции/тестов). */
   isHydrated(name: string): boolean
+  /** Инициализирована ли ячейка пагинатора `name` в этом сторе. */
+  has(name: string): boolean
   /** Подписка на изменение состояния ячейки (для адаптеров реактивности). */
   subscribe?<T>(name: string, listener: (state: PaginatorState<T>) => void): () => void
 }
@@ -103,6 +105,9 @@ export function createPaginatorStore(): Store {
     isHydrated(name: string): boolean {
       return hydrated.has(name)
     },
+    has(name: string): boolean {
+      return cells.has(name)
+    },
     subscribe<T>(name: string, listener: (state: PaginatorState<T>) => void): () => void {
       const c = cell(name)
       const l = listener as (s: PaginatorState<unknown>) => void
@@ -123,6 +128,11 @@ let clientStore: Store | null = null
 /** Клиентское хранилище пагинаторов — единственный вход для действий страницы. */
 export function getClientStore(): Store {
   if (!clientStore) clientStore = createPaginatorStore()
+  return clientStore
+}
+
+/** Текущий клиентский store, если он уже был создан (без ленивой аллокации). */
+export function peekClientStore(): Store | null {
   return clientStore
 }
 

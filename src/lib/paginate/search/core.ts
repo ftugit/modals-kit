@@ -4,7 +4,7 @@
 // Запрос живёт в extra пагинатора ('q' входит в reloadKeys), поэтому смена
 // запроса = штатный setExtra: сброс на страницу 1, отмена in-flight, persist
 // в адрес через URL-адаптер пагинатора.
-import { getClientStore, getState, goToPage, setExtra } from '#lib/paginate/index.js'
+import { getClientStore, getState, goToPage, setExtra, type Store } from '#lib/paginate/index.js'
 import { getSearch } from './registry'
 
 /** Нормализация запроса перед записью в состояние/адрес (та же, что валидатор адреса). */
@@ -19,15 +19,19 @@ export function normalizeSearchQuery(value: string, maxLength = 120): string {
  * Установить запрос (клиент): пагинатор результатов сбрасывается на страницу 1
  * и грузит выдачу с новым `q`; URL-адаптер пишет `?<pageParam>.q` в адрес.
  */
-export async function setSearchQuery(name: string, value: string): Promise<void> {
+export async function setSearchQuery(
+  name: string,
+  value: string,
+  explicitStore?: Store,
+): Promise<void> {
   const search = getSearch(name)
-  const store = getClientStore()
+  const store = explicitStore ?? getClientStore()
   await setExtra(store, search.name, { q: normalizeSearchQuery(value, search.maxQueryLength) })
 }
 
 /** Очистить запрос: выдача пуста, ключ `.q` уходит из адреса (extraDefaults). */
-export async function clearSearchQuery(name: string): Promise<void> {
-  await setSearchQuery(name, '')
+export async function clearSearchQuery(name: string, explicitStore?: Store): Promise<void> {
+  await setSearchQuery(name, '', explicitStore)
 }
 
 /**
@@ -46,10 +50,10 @@ export async function clearSearchQuery(name: string): Promise<void> {
  * не баг. Без JS механизм не работает (и не нужен): остаётся честная
  * серверная выдача источника.
  */
-export async function resyncSearch(name: string): Promise<void> {
+export async function resyncSearch(name: string, explicitStore?: Store): Promise<void> {
   if (typeof window === 'undefined') return
   const search = getSearch(name)
-  const store = getClientStore()
+  const store = explicitStore ?? getClientStore()
   const state = getState(store, search.name)
   const q = typeof state.extra?.q === 'string' ? state.extra.q.trim() : ''
   if (!q) return // без запроса перехвата нет — данные и так от источника

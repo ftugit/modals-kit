@@ -52,6 +52,8 @@ function hrefOf(pathname: string, search: Record<string, unknown>): string {
 
 const searchOf = (url: URL): Record<string, unknown> => Object.fromEntries(url.searchParams)
 
+let appRouterStarted = false
+
 /**
  * Роутер под контракт URL-транспорта пагинатора (`PaginatorAdapter.setRouter`).
  *
@@ -65,36 +67,33 @@ const searchOf = (url: URL): Record<string, unknown> => Object.fromEntries(url.s
  * очередь (F12: адрес `?page.q=` после нативной GET-формы). Навигация до запуска
  * роутера по-прежнему запрещена (`navigation_before_start`); `onMount` хоста
  * выполняется ДО запуска, а `afterNavigate` — после, поэтому на старте очередь
- * сбрасывается в первом `afterNavigate`. Но `afterNavigate` НЕ приходит при
- * позднем монтировании (контент модалки монтируется, когда навигация открытия
- * уже завершилась): для этого случая ниже заведён страховочный сброс очереди
- * по макротаске. В 3.0.1 без очереди
- * запись проходит лишь потому, что `goto` успевает несколько раз уступить
- * микрозадачу до проверки — это тайминг внутренностей, а не контракт. Срез
- * адреса вычисляется в момент записи.
+ * сбрасывается в первом `afterNavigate`. После первого старта приложения
+ * (`appRouterStarted`) поздние монтирования (модалки) готовы сразу, а если
+ * `afterNavigate` ещё не пришёл — действует страховочный таймер с отменой на `dispose()`.
  * https://svelte.dev/docs/kit/$app-navigation#afterNavigate
  */
 export function svelteKitRouter(): MinimalRouter {
-  let ready = false
+  let ready = BROWSER && appRouterStarted
+  let disposed = false
   let queued: Array<() => void> = []
+  let timer: ReturnType<typeof setTimeout> | null = null
   const flush = () => {
-    if (ready) return
+    if (BROWSER) appRouterStarted = true
+    if (disposed || ready) return
     ready = true
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
     const run = queued
     queued = []
     for (const write of run) write()
   }
   afterNavigate(flush)
-  // Страховочный сброс для ПОЗДНЕГО монтажа (контент модалки, ленивый блок):
-  // навигация, в результате которой компонент появился, завершилась ДО его
-  // инициализации, и `afterNavigate` не придёт до следующей навигации —
-  // очередь висела бы в нём навсегда. Макрозадача заведомо позже цепочки
-  // микрозадач, которой SvelteKit завершает старт и навигации (там же
-  // стреляет и `enter`-`afterNavigate`), поэтому на старте страницы этот
-  // сброс проигрывает гонку штатному и запись до запуска роутера не уйдёт.
-  if (BROWSER) setTimeout(flush, 0)
+  if (BROWSER && !ready) timer = setTimeout(flush, 0)
   return {
     navigate(opts) {
+      if (disposed) return
       // Переход с загрузкой — тоже через писателя: следующая «мелкая» запись
       // (модалка) строится от его цели и уходит после него, а состояние текущей
       // записи (цепочка модалок) переносится, а не теряется.
@@ -113,10 +112,12 @@ export function svelteKitRouter(): MinimalRouter {
      * и вернул бы старый адрес на следующем чтении.
      */
     syncAddress(opts) {
+      if (disposed) return
       // Срез — намерение писателя, а не `page.*`: пока чужая запись (модалка) в
       // полёте, `page.*` ещё старый, и её ключи были бы затёрты (F41). Состояние
       // записи не копируется целиком — оно остаётся тем, что видит писатель.
       const write = () => {
+        if (disposed) return
         void writeAddress(
           (cur) => ({ url: hrefOf(cur.url.pathname, opts.search(searchOf(cur.url))) }),
           { replace: true, owner: opts.owner },
@@ -126,5 +127,13 @@ export function svelteKitRouter(): MinimalRouter {
       else queued.push(write)
     },
     currentSearch,
+    dispose() {
+      disposed = true
+      queued = []
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
   }
 }

@@ -12,6 +12,7 @@
     appendOf,
     setAppendMode,
     setScrollDriver,
+    setSessionTransport,
     loadMore,
     onExternalPage,
     reportAnchor,
@@ -21,15 +22,16 @@
   } from '../core'
   import { canLoadMore, externalExtraDiff, pickCurrentPage } from '../pure'
   import { getPaginator, onPaginatorError } from '../registry'
-  import { createPaginatorStore, getClientStore, type Store } from '../store'
   import type {
     EdgeTrigger,
     Extra,
     ExtraValue,
     LibError,
+    PaginatorAdapter,
     PaginatorState,
     PrependBehavior,
     ScrollDriver,
+    SessionUrlOptions,
   } from '../types'
   import {
     DEFAULT_HOST_OPTIONS,
@@ -55,6 +57,8 @@
     externalPage?: number | null
     externalRestorable?: { pageSize?: number; extra: Extra } | null
     currentSearch?: () => Record<string, unknown> | null
+    /** Сессионный режим URL: `false` — память без URL; объект — кастомный `pageParam`/`queryOwner`. */
+    url?: boolean | SessionUrlOptions
     mode?: 'accumulate' | 'single'
     topTrigger?: EdgeTrigger
     bottomTrigger?: EdgeTrigger
@@ -78,6 +82,7 @@
     externalPage: externalPageProp,
     externalRestorable: externalRestorableProp,
     currentSearch: currentSearchProp,
+    url: urlProp,
     mode = DEFAULT_HOST_OPTIONS.mode,
     topTrigger = DEFAULT_HOST_OPTIONS.topTrigger,
     bottomTrigger = DEFAULT_HOST_OPTIONS.bottomTrigger,
@@ -103,6 +108,10 @@
   const init = untrack(() => ({
     name: nameProp,
     snapshot: snapProp,
+    url: urlProp,
+    externalPage: externalPageProp,
+    externalRestorable: externalRestorableProp,
+    currentSearch: currentSearchProp,
   }))
   const name = init.name
 
@@ -115,38 +124,74 @@
   const instance = getPaginator(name)
   const store = useScopeStore()
 
+  const sessionUrlOpts: SessionUrlOptions | undefined =
+    init.url === false
+      ? { url: false }
+      : typeof init.url === 'object' && init.url !== null
+        ? init.url
+        : undefined
+  const baseAdapter = instance.adapter as PaginatorAdapter<any>
+  const adapter = (
+    sessionUrlOpts && baseAdapter.forSession
+      ? baseAdapter.forSession(sessionUrlOpts)
+      : baseAdapter
+  ) as any
+  setSessionTransport(store, name, adapter)
+
   // D15: stale SSR-snapshot check. Снапшот мог приехать из адреса, которого уже нет
-  // (back/forward, «мелкая» навигация): тогда он несовместим с текущим адресом и его
-  // место занимает страница, которую называет адрес. Канон берёт её из пропа
-  // `externalPage` (у роута — валидированный search); в порте её считает тот же
-  // адаптер, что владеет адресом: `observeExternal`/ключ адреса.
-  const initialExternalPage = ((): number | null => {
-    if (externalPageProp != null) return externalPageProp
-    const a = instance.adapter as { setRouter?: unknown } & typeof instance.adapter
-    if (typeof a.setRouter !== 'function') return null
-    const search = currentSearchProp ? currentSearchProp() : frameworkSearch()
+  // (back/forward, «мелкая» навигация, или F5 модалки с собственным `m<k>.*` слоем):
+  // тогда он несовместим с текущим адресом и его место занимает состояние из адреса.
+  const initialObserved = (() => {
+    if (typeof adapter.setRouter !== 'function') return null
+    const search = init.currentSearch ? init.currentSearch() : frameworkSearch()
     if (!search) return null
-    // Что значит адрес, решает транспорт: своего разбора у хоста нет.
-    return a.observeExternal?.(search)?.page ?? null
+    return adapter.observeExternal?.(search) ?? null
   })()
+  const initialExternalPage = init.externalPage ?? initialObserved?.page ?? null
+  const initialExternalRestorable = init.externalRestorable ?? initialObserved?.restorable ?? null
 
   let snap = init.snapshot
-  if (snap && initialExternalPage != null && snap.status === 'idle' && snap.page !== initialExternalPage) {
-    snap = {
-      ...snap,
-      loadedPages: [],
-      pages: {},
-      pending: null,
-      error: null,
-      status: 'init',
-      page: initialExternalPage,
+  if (snap && snap.status === 'idle') {
+    const pageMismatch = initialExternalPage != null && snap.page !== initialExternalPage
+    const sizeMismatch =
+      initialExternalRestorable?.pageSize != null &&
+      snap.pageSize !== initialExternalRestorable.pageSize
+    const extraDiff = initialExternalRestorable?.extra
+      ? externalExtraDiff(
+          initialExternalRestorable.extra,
+          { ...(adapter.extraDefaults ?? {}), ...snap.extra },
+          adapter.extraDefaults,
+          instance.positionKeys,
+        )
+      : {}
+    const extraMismatch = Object.keys(extraDiff).length > 0
+    if (pageMismatch || sizeMismatch || extraMismatch) {
+      const mergedExtra: Extra = {
+        ...(adapter.extraDefaults ?? {}),
+        ...snap.extra,
+      }
+      for (const [k, v] of Object.entries(extraDiff)) {
+        if (v === undefined) delete mergedExtra[k]
+        else mergedExtra[k] = v
+      }
+      snap = {
+        ...snap,
+        loadedPages: [],
+        pages: {},
+        pending: null,
+        error: null,
+        status: 'init',
+        page: initialExternalPage ?? 1,
+        pageSize: initialExternalRestorable?.pageSize ?? snap.pageSize,
+        extra: mergedExtra,
+      }
     }
   }
 
   if (snap) store.hydrate(name, snap)
 
   // Умолчания extra — объявление адаптера (не проп хоста).
-  const initialExtraDefaults = instance.adapter.extraDefaults
+  const initialExtraDefaults = adapter.extraDefaults
   if (initialExtraDefaults) {
     store.update(name, (s) => ({ ...s, extra: { ...initialExtraDefaults, ...s.extra } }))
   }
@@ -163,7 +208,6 @@
 
   let containerRef: HTMLDivElement | undefined = $state()
   const anchors: AnchorRegistry = createAnchorRegistry()
-  const adapter = instance.adapter as any
 
   const options = $derived.by<ResolvedHostOptions>(() => ({
     mode,
@@ -548,7 +592,11 @@
       anchors.setTracker(null)
       setScrollDriver(store, name, null)
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(holdRaf)
-      if (bindsUrl) adapter.setRouter(null)
+      if (router) {
+        router.dispose?.()
+        if (typeof adapter.clearRouter === 'function') adapter.clearRouter(router)
+        else if (bindsUrl) adapter.setRouter(null)
+      }
     }
   })
 
@@ -574,7 +622,7 @@
       firstExternal = false
       if (ext.extra) {
         // Умолчания — у адаптера (адрес их не хранит): «ключа нет» = умолчание.
-        const diff = externalExtraDiff(ext.extra, s.extra, instance.adapter.extraDefaults, keepAbsent)
+        const diff = externalExtraDiff(ext.extra, s.extra, adapter.extraDefaults, keepAbsent)
         if (Object.keys(diff).length > 0) {
           void setExtra(store, name, diff)
         }
@@ -585,8 +633,15 @@
     })
   })
 
+  const defaultHashAnchor =
+    sessionUrlOpts?.url === false
+      ? null
+      : sessionUrlOpts?.pageParam
+        ? `paginator-${sessionUrlOpts.pageParam}`
+        : hashAnchorFor(name)
+
   const effectiveHashAnchor = $derived(
-    hashAnchorProp === undefined ? hashAnchorFor(name) : hashAnchorProp
+    hashAnchorProp === undefined ? defaultHashAnchor : hashAnchorProp
   )
 
   setPaginatorContext({
@@ -597,7 +652,7 @@
     currentSearch: () => resolvedSearch,
     // Ссылки строятся из адреса ПЛЮС то, что источник вернул со страницей: на SSR
     // адрес править нечем, а курсор следующего шага должен жить именно в ссылке.
-    linkExtra: () => getState(store, name).extra,
+    linkExtra: () => currentState.extra,
     // Геттер, а не значение: якорь — живой пропс (id хоста ниже реактивен), и ссылки
     // детей обязаны следовать за ним, а не за значением на момент монтирования.
     get hashAnchor() {

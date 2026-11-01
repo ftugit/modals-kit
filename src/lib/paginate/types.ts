@@ -153,6 +153,16 @@ export type ExtraPatch = Readonly<Record<string, ExtraValue | undefined>>
 /** Поле формы без JS: имя во внешнем хранилище и значение. */
 export type CarriedField = { name: string; value: string }
 
+/** Параметры сессионного транспорта пагинатора (для модалок со своим URL-слоем или без URL). */
+export type SessionUrlOptions = {
+  /** `false` — изолированная сессия в памяти без чтения и записи адресной строки. */
+  url?: boolean
+  /** Переопределённый query-параметр сессии (например, `m0.users`). */
+  pageParam?: string
+  /** Владелец ключей в `#lib/address` (например, `'modals'` для общего владения со стеком модалок). */
+  queryOwner?: string
+}
+
 /** Адаптер пагинатора: читает адрес, отдаёт и пишет указатель и extra. */
 export type PaginatorAdapter<T> = {
   /**
@@ -218,6 +228,8 @@ export type PaginatorAdapter<T> = {
    * ключ extra, `'префикс.*'` или `'*'` — все свои. Без адреса — пусто.
    */
   carryFields?(search: Record<string, unknown> | null | undefined, drop: readonly string[]): CarriedField[]
+  /** Создать производный транспорт для изолированной сессии (модалка с `m<k>.*` или без URL). */
+  forSession?(opts?: SessionUrlOptions): PaginatorAdapter<T>
 }
 
 /** Результат `observeExternal`: как транспорт видит текущее внешнее состояние. */

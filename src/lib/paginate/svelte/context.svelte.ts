@@ -18,6 +18,7 @@ import {
   scrollToPage,
   setExtra,
   setPageSize,
+  transportOf,
   type ItemPatch,
   type LinkTarget,
 } from '../core'
@@ -104,8 +105,22 @@ const noopAnchors: AnchorRegistry = {
   getElement: () => null,
 }
 
-export function useCtx(component: string, name?: string): PaginatorContextValue {
+export function useCtx(
+  component: string,
+  name?: string,
+  explicitStore?: Store,
+): PaginatorContextValue {
   const ctx = getPaginatorContext()
+  if (explicitStore) {
+    const resolvedName = name ?? ctx?.name
+    if (!resolvedName) throw new Error(`${component} must receive name when explicitStore is used`)
+    getPaginator(resolvedName)
+    return {
+      ...(ctx && ctx.name === resolvedName ? ctx : { anchors: noopAnchors, hashAnchor: hashAnchorFor(resolvedName) }),
+      name: resolvedName,
+      store: explicitStore,
+    }
+  }
   if (name && (!ctx || ctx.name !== name)) {
     getPaginator(name) // R17: throw on unknown
     return { name, store: useScopeStore(), anchors: noopAnchors, hashAnchor: hashAnchorFor(name) }
@@ -122,8 +137,8 @@ export type StateAccessor<T> = (() => PaginatorState<T>) & {
  * Реактивное состояние пагинатора на Svelte 5 runes.
  * Работает и как вызов `state().page`, и как геттер `state.current.page`.
  */
-export function usePaginatorState<T>(name?: string): StateAccessor<T> {
-  const ctx = useCtx('usePaginatorState', name)
+export function usePaginatorState<T>(name?: string, explicitStore?: Store): StateAccessor<T> {
+  const ctx = useCtx('usePaginatorState', name, explicitStore)
   const resolvedName = ctx.name
   const store = ctx.store
 
@@ -180,15 +195,15 @@ export type PaginatorActions = {
   scrollToPage(page: number): void
   prefetchPage(page: number): void
   setPageSize(pageSize: number): void
-  setExtra(patch: Extra, options?: { reload?: boolean }): void
+  setExtra(patch: Extra, options?: { reload?: boolean; pageSize?: number }): void
   /** Локальная правка окна без запроса (см. `patchItems` ядра). `true` — окно изменилось. */
   patchItems<T>(op: ItemPatch<T>): boolean
   loadPrev(): void
   requestMore(dir: 1 | -1): void
 }
 
-export function usePaginatorActions(nameArg?: string): PaginatorActions {
-  const { name, store, requestMore } = useCtx('usePaginatorActions', nameArg)
+export function usePaginatorActions(nameArg?: string, explicitStore?: Store): PaginatorActions {
+  const { name, store, requestMore } = useCtx('usePaginatorActions', nameArg, explicitStore)
   const req = (dir: 1 | -1) => (requestMore ? requestMore(dir) : void loadMore(store, name, dir))
   return {
     loadPrev: () => req(-1),
@@ -253,10 +268,15 @@ function linkGetter(
   target: () => LinkTarget,
   withAnchor: () => boolean = () => true,
 ): () => string | null {
-  if (!getPaginator(ctx.name).adapter.hrefFor) return () => null
   return () => {
+    const adapter = transportOf(ctx.store, ctx.name)
+    if (!adapter.hrefFor) return null
     const search = ctx.currentSearch?.() ?? undefined
-    const href = linkFor(ctx.name, target(), { search, extra: ctx.linkExtra?.() ?? null })
+    const href = linkFor(ctx.name, target(), {
+      store: ctx.store,
+      search,
+      extra: ctx.linkExtra?.() ?? null,
+    })
     if (href == null) return null
     // Якорь читается при каждом вычислении: у хоста это реактивный геттер.
     const anchor = withAnchor() ? ctx.hashAnchor : undefined

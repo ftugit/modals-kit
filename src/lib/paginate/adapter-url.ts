@@ -18,6 +18,7 @@ import type {
   HrefContext,
   PaginatorAdapter,
   PaginatorState,
+  SessionUrlOptions,
 } from './types'
 
 /** Строгий целочисленный парсер: любой мусор («2.7», «abc», «../../etc») → 1 (deny-safe). */
@@ -344,6 +345,8 @@ export type MinimalRouter = {
     owner?: string
   }): void
   currentSearch?: () => Record<string, unknown>
+  /** Очистка отложенных таймеров/очереди при размонтировании хоста. */
+  dispose?: () => void
 }
 
 function searchToParams(search: Record<string, unknown>): URLSearchParams {
@@ -363,6 +366,8 @@ export function createUrlAdapter<T>(opts: {
   pageSize?: number
   append?: boolean
   pageParam?: string
+  /** Владелец ключей в `#lib/address` (по умолчанию `'paginate:${pageParam}'`). */
+  queryOwner?: string
   pageSizes?: readonly number[]
   extraSearch?: ExtraSearchSpec
   /** Дефолты extra: ключи со значением === default НЕ пишутся в URL (чистый адрес). */
@@ -371,6 +376,7 @@ export function createUrlAdapter<T>(opts: {
   getUrl?: () => string | undefined
 }): PaginatorAdapter<T> & {
   setRouter(router: MinimalRouter | null): void
+  clearRouter(owner: MinimalRouter): void
   /** Спецификация ключей адреса — хост читает её вместо дублирующих пропсов. */
   searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[]; extraDefaults?: Extra }
 } {
@@ -381,7 +387,7 @@ export function createUrlAdapter<T>(opts: {
   // Ключи адреса бронируются здесь, при создании адаптера: один пагинатор —
   // один базовый ключ и его семейство (`page`, `page.*`). Второй претендент на
   // тот же ключ — исключение ещё на старте (несколько пагинаторов — разные ключи).
-  const queryOwner = `paginate:${pageParam}`
+  const queryOwner = opts.queryOwner ?? `paginate:${pageParam}`
   claimQuery(queryOwner, pageParam, `${pageParam}.*`)
   const searchOpts: PaginatorSearchOptions = {
     pageParam,
@@ -474,7 +480,22 @@ export function createUrlAdapter<T>(opts: {
     return { ...rest, ...own }
   }
 
-  return {
+  const declaredAllExtraKeys = () => [
+    ...extraKeys,
+    ...Object.keys(opts.extraDefaults ?? {}),
+    ...source.extraKeys(),
+  ]
+
+  const self: PaginatorAdapter<T> & {
+    setRouter(router: MinimalRouter | null): void
+    clearRouter(owner: MinimalRouter): void
+    searchSpec: {
+      pageParam: string
+      extra?: ExtraSearchSpec
+      pageSizes?: readonly number[]
+      extraDefaults?: Extra
+    }
+  } = {
     pageParam,
     /**
      * Спецификация ключей адреса — чтобы хосту не передавали её вторым экземпляром.
@@ -577,11 +598,7 @@ export function createUrlAdapter<T>(opts: {
     recordFor: (extra) => source.recordFor(extra),
     // Объявленные ключи: спецификация адреса + дефолты (поверхность потребителя)
     // плюс ключи источника (q и фильтры) — по ним `setExtra` проверяет запись.
-    extraKeys: () => [
-      ...extraKeys,
-      ...Object.keys(opts.extraDefaults ?? {}),
-      ...source.extraKeys(),
-    ],
+    extraKeys: declaredAllExtraKeys,
     scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,
     persist(state: PaginatorState<T>) {
       if (!router) return // сервер / роутер не привязан — URL уже источник истины
@@ -640,7 +657,45 @@ export function createUrlAdapter<T>(opts: {
       const cleaned = canonicalSearchRecord(searchOpts, next.currentSearch?.() ?? lastInitSearch)
       if (cleaned) next.syncAddress({ search: () => cleaned })
     },
+    clearRouter(owner) {
+      if (router === owner) router = null
+    },
+    forSession(sessionOpts?: SessionUrlOptions) {
+      if (!sessionOpts) return self
+      if (sessionOpts.url === false) {
+        return {
+          getInitial: () => ({
+            page: 1,
+            pageSize,
+            extra: { ...(opts.extraDefaults ?? {}) },
+          }),
+          loadPage: (req) =>
+            source.fetchPage(
+              { page: req.page, pageSize: req.pageSize, signal: req.signal, report: req.report },
+              req.extra,
+            ),
+          persist: () => {},
+          capabilities: { append },
+          capabilitiesFor: (extra) => source.capabilitiesFor(extra),
+          recordFor: (extra) => source.recordFor(extra),
+          extraKeys: declaredAllExtraKeys,
+          scopeOf: source.scopeOf ? (extra) => source.scopeOf!(extra) : undefined,
+          extraDefaults: opts.extraDefaults,
+          fieldName: (key) => key,
+          carryFields: () => [],
+        }
+      }
+      const nextParam = sessionOpts.pageParam ?? pageParam
+      const nextOwner = sessionOpts.queryOwner ?? queryOwner
+      if (nextParam === pageParam && nextOwner === queryOwner) return self
+      return createUrlAdapter<T>({
+        ...opts,
+        pageParam: nextParam,
+        queryOwner: nextOwner,
+      })
+    },
   }
+  return self
 }
 
 /**
@@ -669,6 +724,7 @@ export function withUrlTakeover<T>(
     source: AdaptedSource<T>
     pageSize?: number
     pageParam?: string
+    queryOwner?: string
     pageSizes?: readonly number[]
     extraSearch?: ExtraSearchSpec
     extraDefaults?: Extra
@@ -676,6 +732,7 @@ export function withUrlTakeover<T>(
   },
 ): PaginatorAdapter<T> & {
   setRouter(router: MinimalRouter | null): void
+  clearRouter(owner: MinimalRouter): void
   searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[]; extraDefaults?: Extra }
 } {
   const channel = createUrlAdapter<T>({
@@ -683,6 +740,7 @@ export function withUrlTakeover<T>(
     source: url.source,
     pageSize: url.pageSize,
     pageParam: url.pageParam,
+    queryOwner: url.queryOwner,
     pageSizes: url.pageSizes,
     extraSearch: url.extraSearch,
     extraDefaults: url.extraDefaults,
@@ -704,7 +762,11 @@ export function withUrlTakeover<T>(
     return false
   }
 
-  return {
+  const self: PaginatorAdapter<T> & {
+    setRouter(router: MinimalRouter | null): void
+    clearRouter(owner: MinimalRouter): void
+    searchSpec: { pageParam: string; extra?: ExtraSearchSpec; pageSizes?: readonly number[]; extraDefaults?: Extra }
+  } = {
     getInitial(ctx?: { url?: string }) {
       const raw = ctx?.url ?? (typeof window !== 'undefined' ? window.location.search : '')
       const query = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw
@@ -750,5 +812,39 @@ export function withUrlTakeover<T>(
     setRouter(router) {
       channel.setRouter(router)
     },
+    clearRouter(owner) {
+      channel.clearRouter(owner)
+    },
+    forSession(sessionOpts?: SessionUrlOptions) {
+      if (!sessionOpts) return self
+      if (sessionOpts.url === false) {
+        return {
+          getInitial: () => ({
+            page: 1,
+            pageSize: url.pageSize ?? 20,
+            extra: { ...(url.extraDefaults ?? base.extraDefaults ?? {}) },
+          }),
+          loadPage: (req) => base.loadPage(req),
+          persist: () => {},
+          capabilities: base.capabilities,
+          capabilitiesFor: (extra) => base.capabilitiesFor(extra),
+          recordFor: base.recordFor ? (extra) => base.recordFor!(extra) : undefined,
+          extraKeys: self.extraKeys,
+          scopeOf: base.scopeOf ? (extra) => base.scopeOf!(extra) : undefined,
+          extraDefaults: url.extraDefaults ?? base.extraDefaults,
+          fieldName: (key) => key,
+          carryFields: () => [],
+        }
+      }
+      const nextParam = sessionOpts.pageParam ?? baseParam
+      const nextOwner = sessionOpts.queryOwner ?? url.queryOwner
+      if (nextParam === baseParam && nextOwner === url.queryOwner) return self
+      return withUrlTakeover(base, {
+        ...url,
+        pageParam: nextParam,
+        queryOwner: nextOwner,
+      })
+    },
   }
+  return self
 }
