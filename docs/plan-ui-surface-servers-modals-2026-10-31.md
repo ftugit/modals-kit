@@ -216,6 +216,8 @@ export interface SurfaceProps {
 
 Отдельно: `ADMIN_SEED` (`430f27e`) и брони ключей фильтров (`e62af5d`) — вне плана, сделаны по ходу.
 
+**Отступление от порядка (2026-11-01, указание владельца).** Решение 8 §3.4 требовало закрыть этап 1 полностью до этапа 2. Владелец распорядился иначе: сначала этап 2 (`Surface`/`SurfaceBar`), затем шаг 07 этапа 1. Работы не пересекаются по файлам: шаг 07 живёт в `#lib/modals`, этап 2 — в `#components/ui` и носителях, а этап 2 дополнительно разблокирует этапы 3 и 4. Учтённый риск: `ModalContent.svelte` правится в этапе 2 и затем ещё раз в шаге 07, где меняется только ветка `error`.
+
 ### 5.2. Процедура этапа 2 — `Surface`
 
 1. Создать `src/components/ui/surface/Surface.svelte` по §3.1: `surfaceVariants` (`card` / `plain`, CVA через `#components/utils.js`), `title: string | Snippet`, `description`, `controls: Snippet | { start, end }`, `render` / `children`, `scroll`.
