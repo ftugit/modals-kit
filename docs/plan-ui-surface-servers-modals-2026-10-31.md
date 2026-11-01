@@ -210,7 +210,7 @@ export interface SurfaceProps {
 | Этап | Состояние | Коммиты |
 | --- | --- | --- |
 | 1 — модалки и пагинатор | шаги 01-06 сделаны и проверены; **шаг 07 открыт** (`error` без данных только на авторитетных 403/404, проекции `publicProfile` / `notCreated`) | `5bda344`, `06a38ff`, `1bddb6b`, `0bed0ae`, `1a3bf60` |
-| 2 — `Surface`/`SurfaceBar` | **в работе (2026-11-01)**: ядро `src/components/ui/surface/` создано, реэкспорт в бочку `#components/ui` добавлен, черновик `Acl.svelte` начат; восстановительный коммит `bb8908b`; гейты не прогнаны, носители не переведены | `bb8908b` |
+| 2 — `Surface`/`SurfaceBar` | **закрыт (2026-11-01)**: ядро `src/components/ui/surface/` (`Surface`, `SurfaceBar`, `surfaceVariants`, `SurfaceControls`), реэкспорт в бочку `#components/ui`, `Acl.svelte` на `surfaceVariants` с временным реэкспортом; все 15 носителей `*Modal.svelte` на `variant="plain"` + `Surface` (без собственного `overflow-y-auto`, `my-auto` и обрезки по высоте); README `ui/` и `content/user/` обновлены; гейты `check` 0/0, `test:guard` 151/151, `build` ✓; браузерно: `storage.servers` прокручивает тело на 208px без перерисовки, `browser/blocks` 12/12, `browser/auth` 30/30 | `bb8908b`, `19eacf3`, `dd25c34` |
 | 3 — `Profile.svelte` и компоненты ядра на `Surface` | не начат | — |
 | 4 — единая форма серверов хранилища | решения приняты (§3.5), код не начат | — |
 

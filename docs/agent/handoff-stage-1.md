@@ -146,7 +146,13 @@ README трогается в том же коммите, если меняетс
   Гейты: `npm run check` — 0/0, `npm run test:guard` — 151/151,
   `npm run build` — ok. Браузерные наборы шага прогнаны, см. «Шаг 05 закрыт».
 
-Не сделано: шаг 07 этапа 1, этапы 2-4, push и PR.
+- **этап 2 целиком** (коммиты `bb8908b` → `19eacf3` → `dd25c34`): ядро
+  `Surface`/`SurfaceBar` в `src/components/ui/surface/`, реэкспорт в бочку,
+  `Acl.svelte` на `surfaceVariants`, все 15 модальных носителей на
+  `variant="plain"` + `Surface`, README `ui/` §6 и `content/user/`
+  обновлены. Подробный разбор шагов A/B/C — в §«Следующий шаг».
+
+Не сделано: шаг 07 этапа 1, этапы 3-4, push и PR.
 
 ### Брони ключей фильтров (этот коммит)
 
@@ -237,34 +243,59 @@ test/browser/zz-probe3.mjs <admin-key>` (нужен живой `vite preview` н
 
 ## Следующий шаг
 
-1. **Шаг A (текущий) — этап 2, доделать перевод носителей.** Ядро
-   `src/components/ui/surface/{Surface.svelte,SurfaceBar.svelte,index.ts}`
-   создано и закоммичено черновиком `bb8908b`; в бочку
-   `src/components/ui/index.ts` реэкспорт добавлен. Осталось:
-   - `src/content/user/ui/Acl.svelte` сейчас непоследователен: открывающий тег —
-     `<Surface …>` (со `scroll={false}` и `data-acl-*`), закрывающий — ещё
-     `</section>` (строка 207), импорта `Surface` в скрипте нет. Нужно: добавить
-     `Surface` в импорт из `#components/ui/index.js`, заменить `</section>` на
-     `</Surface>`, убрать неиспользуемый `userSurfaceVariants` из разметки
-     (module-реэкспорт оставить — его потребляют `StorageServersView`,
-     `MenuBody`, `BlockDelete`);
-   - `SurfaceBar.svelte`: отступы по §3.1 — корень `gap-x-2 gap-y-1.5`, зоны
-     `gap-1.5` (сейчас `gap-x-3 gap-y-2` / `gap-2`);
-   - `src/components/ui/surface/index.ts`: добавить `type SurfaceControls`;
-   - `pnpm check` (проверить сужение `controls: Snippet | SurfaceControls` и
-     `leading={controlGroups?.start ?? leading}`).
-2. **Шаг B** — перевести 15 модальных носителей на `Surface` с `min-h-0` и
-   одним владельцем скролла (список: план §6.3, группы `my-auto w-full p-6`,
-   `flex flex-col gap-4 p-6`, `flex min-h-0 flex-auto flex-col p-6`,
-   плюс `StorageServersModal.svelte`). Без этого этап 4 невозможен:
-   `StorageServerForm` строится как `Surface` + `Common` + `Field`.
-3. **Шаг C** — `src/components/ui/README.md`: описать бочку `surface/`, включая
-   `SurfaceControls`; затем полные гейты `pnpm check`, `pnpm test:guard`,
-   `pnpm build` и браузерная приёмка скролла модалок без перерисовки; коммит
-   этапа 2: `feat(ui): Surface и SurfaceBar`.
-4. **Затем** — шаг 07 этапа 1 (`error` в `ModalContent.svelte`: без данных
+1. **Шаг A — закрыт** (`19eacf3`). Ядро `src/components/ui/surface/`
+   (`Surface.svelte`, `SurfaceBar.svelte`, `index.ts`) выстроено по §3.1:
+   `surfaceVariants` (`card`/`plain` через CVA), `title`/`description`
+   (строка или снипет), `controls: Snippet | SurfaceControls`, `render`/
+   `children`, `scroll`; тело скроллит само (`min-h-0 flex-auto
+   overflow-y-auto overscroll-contain`), шапка `shrink-0`. `SurfaceBar` —
+   три зоны `leading`/`center`/`end`, у каждой `overflow-x-auto
+   whitespace-nowrap [scrollbar-width:none]`, `flex-wrap` + `ml-auto`.
+   `Acl.svelte` сидит на `surfaceVariants` из `#components/ui`, временный
+   module-реэкспорт `userSurfaceVariants` / `UserSurfaceVariant` /
+   `UserSurfaceProps` оставлен до этапа 3 (его потребляют `StorageServersView`,
+   `MenuBody`, `BlockDelete`, `BlocksList`, `SeedUsersList`, `BlockForm`).
+   `src/components/ui/README.md` §6 описывает бочку `surface/` и `SurfaceControls`.
+2. **Шаг B — закрыт** (`dd25c34`). Все 15 носителей `*Modal.svelte`
+   (`src/content/user/ui/` — 14 штук, плюс
+   `src/content/storage-servers/ui/StorageServersModal.svelte`) переведены на
+   `<Surface variant="plain" class="… p-6">`. Три группы обёрток заменены:
+   - `my-auto w-full p-6` (Auth, BlockCreate, BlockDelete, BlockEdit, Menu,
+     ProfileDelete, ProfileEdit, Profile, UserConfig, StorageServers) —
+     `my-auto` убран, центрирование осталось у самих компонентов (`Acl`,
+     `MenuBody`, `SeedForm` держат `my-auto`);
+   - `flex flex-col gap-4 p-6` с вложенным `h2`+`p` (BlocksFilters,
+     SeedUsersFilters) — заголовок и пояснение ушли в `title`/`description`
+     `Surface`, получили фиксированную шапку с `border-b`;
+   - `flex min-h-0 flex-auto flex-col p-6` (Blocks, SeedUsers, UserPicker) —
+     тот же `Surface`.
+   Владелец скролла в листовых модалках — тело `Surface`; `Paginator` внутри
+   остаётся вложенным виджетом со своим `max-h-[420px]` (не носитель, порог
+   накопительного режима). Ни один носитель не держит больше своего
+   `overflow-y-auto` и не обрезает контент по высоте.
+3. **Шаг C — закрыт.** `src/components/ui/README.md` (§6) и
+   `src/content/user/README.md` (строка про `Acl`) обновлены в коммите
+   носителей. Гейты: `npm run check` → 0 ошибок / 0 предупреждений;
+   `npm run test:guard` → 151/151; `npm run build` → `✓ built`.
+   Браузерная приёмка (`test/browser/zz-probe5.mjs`, превью 5199):
+   `storage.servers` — тело `Surface` 798/590px, прокрутилось на 208px, страница
+   неподвижна, узел `data-modal-content]` не пересоздавался (дефект §2.2 закрыт);
+   `user.list`, `user.blocks`, `user.blocks.filters`, `user.auth`, `user.menu`,
+   `user.profile.edit` (клик из списка) — вариант `plain`, страница не скроллится,
+   контент не размонтируется. Регрессии: `browser/blocks` 12/12,
+   `browser/auth` 30/30.
+4. **Дальше — шаг 07 этапа 1** (`error` в `ModalContent.svelte`: без данных
    только на авторитетных 403/404, спроецировать `publicProfile` /
-   `notCreated`), этап 3 (§5.3) и этап 4 (§5.4); в конце — пересмотр AGENTS.md §5.
+   `notCreated`), затем этап 3 (§5.3) и этап 4 (§5.4); в конце — пересмотр
+   AGENTS.md §5. `ModalContent.svelte` в этапе 2 не правился — правка ждёт
+   шага 07, конфликт двух правок снят.
+
+**Pre-existing, не от этапа 2.** Глубокая ссылка `/user/[id]?modal=user.profile`
+и `/user/[id]/edit?modal=user.profile.edit` на превью отдаёт 500
+(`kit/route_param_missing`). Воспроизводится и на baseline без правок этапа 2
+(проверено пересборкой со stash) — ACL-проекция маршрута не находит `id` в
+параметрах записи модалки. Вне рамок этапа 2; профиль в зонде открывается
+кликом из списка, где всё работает.
 
 Ни один этап не начинается без прямого указания владельца.
 
