@@ -1,6 +1,8 @@
 # План: универсальный экранный блок `Surface`, единая форма серверов хранилища и устранение перерисовки модалок / сброса пагинатора (2026-10-31)
 
-Статус: **начата реализация: этап 1 согласован (§3.4), шаги 01-04 сделаны, этап 3 на согласовании (§3.5)** (базовый коммит ветки `img`: `7614c4b`, пакет `demo@1.0.0` в `refs/tags/modules`: `527502b`).
+Статус: **этап 1: шаги 01-06 сделаны, шаг 07 открыт; этап 2 (`Surface`) не начат; решения этапа 4 согласованы (§3.5)** (базовый коммит ветки `img`: `7614c4b`, пакет `demo@1.0.0` в `refs/tags/modules`: `527502b`).
+
+Нумерация этапов — по §5. Заголовок §3.5 раньше называл общую форму «этапом 3»; это была ошибка нумерации, теперь §3.5 — **этап 4**. Проверено 2026-11-01 по git: `git log --all --diff-filter=A -- 'src/components/ui/surface/*'` пуст, то есть `Surface` ещё не создавался ни в одном коммите.
 
 Документ фиксирует запросы владельца, результаты полного аудита кодовой базы, корневые причины найденных проблем, архитектурное решение без костылей и поимённую сводку всех файлов ядра `img` и модуля `demo`, которые предстоит создать или обновить.
 
@@ -168,7 +170,7 @@ export interface SurfaceProps {
 8. **Порядок этапов**: этап 1 полностью до этапа 2. Коммиты: `01+02` вместе, `03'` отдельно, пагинатор отдельно, `publicProfile`/`notCreated` (`ProfileRouteData → ProfileRead` проекция) отдельным коммитом.
 9. **Кнопки отправки форм остаются внутри `render`** (вариант 1 из §4): в `controls` поднимаются только навигационные и контекстные действия.
 
-### 3.5. Этап 3: одна общая форма и тонкий куки-сейф (на согласовании)
+### 3.5. Этап 4: одна общая форма и тонкий куки-сейф (решения согласованы 2026-11-01)
 
 Требование владельца: одна общая форма на оба сценария; куки-сейф не обрастает собственной абстракцией — только обращение к серверу через компонент формы и сохранение результата в куки и RAM, ровно как работает текущая авторизация пользователя (`AuthWidget` → серверный экшен → запечатанная кука + реактивный RAM-снапшот `vault.svelte.ts`).
 
@@ -191,33 +193,67 @@ export interface SurfaceProps {
 
 ---
 
-## 4. Открытые уточнения перед стартом написания кода
+## 4. Уточнения (закрыты)
 
-1. **Имя универсального компонента в `#components/ui`**: оставляем **`Surface`** (`Surface.svelte`, `surfaceVariants`) или предпочтительнее `Screen` / `Panel`?
-2. **Кнопки отправки форм (`Сохранить` / `Отмена` / `Применить`)**:
-   - **Вариант 1**: в верхний `controls` поднимаем навигационные и контекстные действия (`Редактировать`, `Настройки`, `Блокировки`, `Удалить`, `Новый слот`, `Добавить`, `Фильтры`, `Сбросить ключ и куки`, шаги), а submit-кнопки форм (`Сохранить`, `Проверить и добавить`, `Удерживайте, чтобы...`) оставляем под полями ввода (в `UserPicker` кнопки `Сбросить выбор / Отмена / Применить` поднимаем в `controls.end` на одну линию с шагами `controls.start`).
-   - **Вариант 2**: в формах с верхними действиями (`ProfileForm`, `BlockForm`, `UserConfig`, `StorageServers`) submit-кнопки `Сохранить` / `Отмена` также переносим в верхний ряд `controls`.
+1. **Имя универсального компонента в `#components/ui`** — решено: **`Surface`** (`Surface.svelte`, `surfaceVariants`). Владелец подтвердил имя и потребовал, чтобы лево, центр и право шапки скроллились и переносились на новую строку.
+2. **Кнопки отправки форм** — решено: **вариант 1**. В `controls` поднимаются навигационные и контекстные действия (`Редактировать`, `Настройки`, `Блокировки`, `Фильтры`, сброс ключа куки-сейфа), submit-кнопки форм остаются под полями, внутри `render`. Для `UserPicker` кнопки `Сбросить выбор / Отмена / Применить` идут в `controls.end` на одну линию с шагами `controls.start`.
+3. **Развилки этапа 4** (закрыты 2026-11-01): удаление — по-строчно в списке; `reset-key` — внешней кнопкой через атрибут `form="<id>"`, без `confirm_scope`; `bindCookieVault` и `StorageVaultForm.svelte` удаляются. Подробности и обоснование — §5.4.
 
 ---
 
 ## 5. Поэтапный порядок реализации
 
-1. **Этап 1 — `#lib/modals` и пагинаторы без перерисовки и сброса**:
-   - Синхронный `ensureModalComponent` + `viewGate` + сохранение живого дерева при фоновом ревалидировании в `ModalContent.svelte`.
-   - Передача `useLoader().data` в `ProfileModal`, `SeedUsersModal`, `BlocksModal`, точечный `invalidateLoader` в модалках редактирования/удаления, изолированный `PaginatorScope` в `BlocksList(uid)` и `UserPicker(modal)`.
-   - Юнит-тесты `loader.test.ts` и браузерная проверка отсутствия размонтирования и сохранения `loadedPages` / `scrollTop` при хождении по стопке модалок.
+Порядок жёсткий: 2 опирается на 1, 3 и 4 опираются на 2. Один этап — один локальный коммит, начиная только по прямому указанию владельца.
 
-2. **Этап 2 — UI-примитив `Surface` в `#components/ui` и скролл модальных носителей**:
-   - Создание `src/components/ui/surface/{Surface,SurfaceBar}.svelte` и экспорт из `src/components/ui/index.ts`.
-   - Перевод `Acl.svelte` и всех `*Modal.svelte` носителей на единый скроллируемый контракт без обрезки контента по высоте.
+### 5.1. Статус на 2026-11-01
 
-3. **Этап 3 — Перевод `Profile.svelte` и компонентов ядра на `Surface` (`title` + `controls` + `render`)**:
-   - В `Profile.svelte`: вынос `«Редактировать»` / `«Заполнить профиль»`, `«Настройки»` и `«Блокировки (N)»` в верхний 2-позиционный `controls` и удаление нижнего блока `border-t`.
-   - Перевод `BlocksList`, `SeedUsersList`, `UserPicker`, `ProfileForm`, `BlockForm`, `UserConfig` и `SeedForm` на `Surface`.
+| Этап | Состояние | Коммиты |
+| --- | --- | --- |
+| 1 — модалки и пагинатор | шаги 01-06 сделаны и проверены; **шаг 07 открыт** (`error` без данных только на авторитетных 403/404, проекции `publicProfile` / `notCreated`) | `5bda344`, `06a38ff`, `1bddb6b`, `0bed0ae`, `1a3bf60` |
+| 2 — `Surface`/`SurfaceBar` | **не начат**; каталога `src/components/ui/surface/` нет, экспорта в `src/components/ui/index.ts` нет, в истории git файлов не было | — |
+| 3 — `Profile.svelte` и компоненты ядра на `Surface` | не начат | — |
+| 4 — единая форма серверов хранилища | решения приняты (§3.5), код не начат | — |
 
-4. **Этап 4 — Единый компонент серверов хранилища (БД + куки-сейф) и синхронизация пакета `demo`**:
-   - Вынос общего `StorageServersPanel` / `StorageServerFormFields` со схемой/опциями сценария, перевод `StorageServersView.svelte` (ядро `img`) и `CookieVault.svelte` + `StorageVaultView.svelte` (модуль `demo`).
-   - Проверка на чистом ядре `img` и с установленным `MODULES=demo`, пересборка пакета `demo` в `refs/tags/modules` (локально до явной команды на отправку в GitHub), синхронизация ближайших `README.md`.
+Отдельно: `ADMIN_SEED` (`430f27e`) и брони ключей фильтров (`e62af5d`) — вне плана, сделаны по ходу.
+
+### 5.2. Процедура этапа 2 — `Surface`
+
+1. Создать `src/components/ui/surface/Surface.svelte` по §3.1: `surfaceVariants` (`card` / `plain`, CVA через `#components/utils.js`), `title: string | Snippet`, `description`, `controls: Snippet | { start, end }`, `render` / `children`, `scroll`.
+   Скроллит **тело**, не страница: шапка `shrink-0`, тело `min-h-0 flex-auto overflow-y-auto overscroll-contain`. Отступ `p-6` — только на корне, чтобы модалка не задваивала padding.
+2. Создать `SurfaceBar.svelte` — две группы `start` / `end` с `ml-auto`, `flex flex-wrap`, каждая группа `overflow-x-auto whitespace-nowrap [scrollbar-width:none]`, `border-b border-border` под шапкой. Именно так выполняется требование владельца: лево, центр и право скроллятся независимо и переносятся на новую строку при нехватке места. Когда передан один Snippet, он идёт в `end`.
+3. Добавить `src/components/ui/surface/index.ts` и строку экспорта в `src/components/ui/index.ts`; обновить `src/components/ui/README.md` (новый публичный примитив — контракт меняется).
+4. Перевести `src/content/user/ui/Acl.svelte`: `userSurfaceVariants` сейчас объявлен в module-скрипте `Acl.svelte` и импортируется снаружи (`StorageServersView.svelte`, §3.1). Заменить на `surfaceVariants` из `#components/ui`, оставив временный реэкспорт типа, пока не переведены потребители, иначе `npm run check` покраснеет.
+5. Перевести все 15 носителей `*Modal.svelte` (`src/content/user/ui/`: `Auth`, `BlockCreate`, `BlockDelete`, `BlockEdit`, `Blocks`, `BlocksFilters`, `Menu`, `ProfileDelete`, `ProfileEdit`, `Profile`, `SeedUsers`, `SeedUsersFilters`, `UserConfig`, `UserPicker`; плюс `src/content/storage-servers/ui/StorageServersModal.svelte`) на `variant="plain"` + `Surface`. Проверить, что ни один носитель не держит свой `overflow-y-auto` и не обрезает контент по высоте.
+6. Шлюзы: `npm run check` (0 ошибок), `npm run test:guard` (151/151), `npm run build`, плюс браузерная проверка скролла на `test/browser/modals.mjs` при запущенном превью.
+7. Коммит `feat(ui): Surface и SurfaceBar с независимым скроллом зон заголовка`.
+
+### 5.3. Процедура этапа 3 — перевод ядра на `Surface`
+
+1. `Profile.svelte`: `«Редактировать»` / `«Заполнить профиль»`, `«Настройки»`, `«Блокировки (N)»` уходят вверх в `controls` (`start` / `end`); нижний блок `border-t` удаляется.
+2. Перевести `BlocksList`, `SeedUsersList`, `UserPicker`, `ProfileForm`, `BlockForm`, `UserConfig`, `SeedForm` на `Surface` с `title` / `description` / `controls` / `render`.
+3. Кнопки отправки остаются **внутри** `render`, под полями (§3.4, решение 9); в `controls` — только навигационные и контекстные действия.
+4. Шлюзы те же плюс браузерные `blocks.mjs` и `auth.mjs`; коммит `feat(user): экраны ядра на Surface`.
+
+### 5.4. Процедура этапа 4 — единая форма серверов хранилища
+
+Решения владельца от 2026-11-01 (развилки §3.5 закрыты):
+
+- **Удаление — по-строчно в списке**, а не в `controls`. `StorageServersView.svelte` уже так работает: `value={`delete:${srv.id}`}` внутри общей `<Form>`, и `bind()` держит единственный `formEl` для живых проверок `recheck`/`syncPins`.
+- **`reset-key` — внешней кнопкой через `form="<id>"`**, а не полем внутри формы. `confirm_scope` удаляется: сервер его не читает (`grep` даёт только объявление в `schema.ts` и отрисовку в `CookieVault.svelte`).
+- **`bindCookieVault` и `StorageVaultForm.svelte` удаляются**: у `bindCookieVault` ноль вызывающих (только реэкспорт в `index.ts`), `StorageVaultForm.svelte` живёт лишь в теге `modules` и сводится к общему компоненту.
+
+Обоснование выбора `form="id"` вместо третьего действия внутри тела: `change` из внешнего поля **не всплывает до формы** (проверено в Chromium — событие дошло только до `document`), а `bind.svelte.ts` держит живой коммит и зеркало на слушателе формы. Поэтому внешними допустимы только кнопки и предзаполненные hidden, но не поля ввода. У `reset-key` полей ввода нет, так что приём применим.
+
+Шаги:
+
+1. `src/hooks/storage-server-form/`: `fields.ts` (`storageServerFields({ withPriority, allowEditExisting })`), `parse.ts` (`parseStorageServerEntry`, `maskStorageServerEntry`), `form.ts` (`defineStorageServerForm({ id, withPriority })` с действиями `save`, `delete` (`validate: 'none'`), `reset-key` (`validate: 'none'`)), `index.ts`, обязательный `README.md`.
+2. `src/components/storage-servers/StorageServerForm.svelte`: `Surface` + `Common` + `Field`, submit внутри `render`, пропы `form`, `withPriority`, `submitLabel`, `editId`, `onSaved`, `formId`.
+3. `<Form id={formId}>` — новое: `Form.svelte` уже разворачивает `rest` поверх `formProps`, правок библиотеки не нужно. `formId` уникален на страницу: `storage-server-admin` и `storage-server-vault`.
+4. `StorageServersView.svelte` — тонкий адаптер данных над общим компонентом; по-строчные `delete:<id>` сохраняются.
+5. Куки-сейф до транспорта: `defineCookieVault` оставляет только `scope`, `maxEntries`, `form`, `parse`, `mask`; `bind.svelte.ts` и `resetKeyForm` удаляются; `CookieVault.svelte` остаётся списком и рендерит `StorageServerForm` пропом `form`; `registerCookieVaultForms` регистрирует одну форму с ветвлением по `intent`.
+6. `CookieVault.svelte`: кнопка сброса в шапке — `<Button form={formId} {...bound.intent('reset-key')} task={formTask(bound.state)}>`, без собственного `<Form>` и без `confirm_scope`.
+7. Проверка на чистом ядре и с `MODULES=demo`; пересборка `refs/tags/modules` только локально, без отправки в GitHub.
+8. Коммит `feat(storage): единая форма серверов хранилища для пула и куки-сейфа`.
 
 ---
 
