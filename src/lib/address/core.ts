@@ -106,8 +106,11 @@ export interface AddressWriterDeps {
   here?(): URL
 }
 
-/** Ключ строки запроса принадлежит слою (модалкам), а не странице. */
-export type LayerKeyTest = (key: string) => boolean
+/**
+ * Ключ строки запроса принадлежит закрываемому слою (модалкам), а не странице
+ * или остающимся открытыми слоям назначения `targetUrl`.
+ */
+export type LayerKeyTest = (key: string, targetUrl?: Readonly<URL>) => boolean
 
 /** Писатель адреса: собирает и применяет записи, не зная про среду. */
 export interface AddressWriter {
@@ -197,7 +200,8 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
   let carry: { url: URL; hash: string | null } | null = null
   const layerTests = new Set<LayerKeyTest>()
   const listeners = new Set<() => void>()
-  const isLayerKey = (key: string) => [...layerTests].some((test) => test(key))
+  const isLayerKey = (key: string, targetUrl?: Readonly<URL>) =>
+    [...layerTests].some((test) => test(key, targetUrl))
 
   const emit = () => {
     for (const fn of [...listeners]) fn()
@@ -299,10 +303,10 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
   function carried(from: { url: URL; hash: string }, here: URL, hereHash: string) {
     if (here.pathname !== from.url.pathname) return null
     const params = new URLSearchParams()
-    for (const [k, v] of from.url.searchParams) if (!isLayerKey(k)) params.append(k, v)
-    for (const [k, v] of here.searchParams) if (isLayerKey(k)) params.append(k, v)
+    for (const [k, v] of from.url.searchParams) if (!isLayerKey(k, here)) params.append(k, v)
+    for (const [k, v] of here.searchParams) if (isLayerKey(k, here)) params.append(k, v)
     const pageOf = (p: URLSearchParams) =>
-      [...p].filter(([k]) => !isLayerKey(k)).map(([k, v]) => `${k}=${v}`).sort().join('&')
+      [...p].filter(([k]) => !isLayerKey(k, here)).map(([k, v]) => `${k}=${v}`).sort().join('&')
     const hash = from.hash !== '' && from.hash !== hereHash ? from.hash : null
     if (pageOf(params) === pageOf(here.searchParams) && hash === null) return null
     const qs = params.toString()

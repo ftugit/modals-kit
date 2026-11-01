@@ -8,7 +8,7 @@
 // Тот же приём, что у lib/paginate: единственный файл ядра, знавший о
 // фреймворке, — store; выносим знание наружу.
 import { DEFAULT_HOST_CONFIG } from './types'
-import type { Chain, HostConfig, RuntimeState } from './types'
+import type { Chain, HostConfig, InvalidateLoaderOptions, RuntimeState } from './types'
 
 export interface ModalStoreData {
   /** Проекция транспорта. Писать напрямую нельзя — только через действия. */
@@ -48,7 +48,17 @@ const initial = (): ModalStoreData => ({
 })
 
 export type StoreListener = (state: ModalStoreData) => void
-export type MemoryCleaner = (name?: string, params?: Record<string, unknown>) => void
+export type MemoryCleaner = (
+  name?: string,
+  params?: Record<string, unknown>,
+  options?: InvalidateLoaderOptions & { cacheOnly?: boolean },
+) => void
+export type RekeyHandler = (
+  slotKey: string,
+  name: string,
+  prevParams: Record<string, unknown>,
+  nextParams: Record<string, unknown>,
+) => void
 
 /**
  * Стор модалок. Фабрика, а не класс: в проекте состояние и логика везде
@@ -63,6 +73,7 @@ export function createModalStore() {
   let state: ModalStoreData = initial()
   const listeners = new Set<StoreListener>()
   const cleaners = new Set<MemoryCleaner>()
+  const rekeyHandlers = new Set<RekeyHandler>()
 
   const emit = () => {
     for (const fn of listeners) fn(state)
@@ -114,6 +125,69 @@ export function createModalStore() {
       }
     },
 
+    registerRekeyHandler(fn: RekeyHandler): () => void {
+      rekeyHandlers.add(fn)
+      return () => {
+        rekeyHandlers.delete(fn)
+      }
+    },
+
+    /** Перенести готовые данные слота и кеша под новый ключ параметров без перезапроса. */
+    rekeyRuntime(
+      slotKey: string,
+      name: string,
+      prevParams: Record<string, unknown>,
+      nextParams: Record<string, unknown>,
+    ): void {
+      for (const fn of rekeyHandlers) fn(slotKey, name, prevParams, nextParams)
+    },
+
+    /** Инвалидация кеша и живых слотов загрузчика (по умолчанию SWR, с `{ hard: true }` — сброс данных). */
+    invalidateLoader(
+      name?: string,
+      params?: Record<string, unknown>,
+      options?: InvalidateLoaderOptions,
+    ): void {
+      if (cleaners.size > 0) {
+        for (const fn of cleaners) fn(name, params, options)
+        return
+      }
+      // Резервный путь без подключённого загрузчика (чистые unit-тесты стора).
+      const openKeys = new Map<string, string>()
+      state.chain.forEach((e, i) => {
+        if (e.kind !== 'registered') return
+        if (name && e.name !== name) return
+        openKeys.set(`${i}:${e.name}`, e.name)
+      })
+      const nextRuntime = { ...state.runtime }
+      let changed = false
+      for (const rKey of Object.keys(nextRuntime)) {
+        const entryName = rKey.slice(rKey.indexOf(':') + 1)
+        if (name && entryName !== name) continue
+        if (!openKeys.has(rKey)) {
+          delete nextRuntime[rKey]
+          changed = true
+        }
+      }
+      for (const slotKey of openKeys.keys()) {
+        const prev = nextRuntime[slotKey]
+        const rev = (prev?.rev ?? 0) + 1
+        nextRuntime[slotKey] = options?.hard
+          ? { status: 'loading', data: undefined, error: undefined, ck: prev?.ck, rev }
+          : { ...(prev ?? { status: 'idle' }), data: prev?.data, error: undefined, rev }
+        changed = true
+      }
+      if (changed) {
+        state = { ...state, runtime: nextRuntime }
+        emit()
+      }
+    },
+
+    /** Удалить запись только из кеша загрузчика, не трогая живые открытые слоты. */
+    evictLoaderCache(name: string, params: Record<string, unknown>): void {
+      for (const fn of cleaners) fn(name, params, { cacheOnly: true })
+    },
+
     /** Полный сброс памяти: кеш загрузчика, обмен данными, состояния записей. */
     clearMemory(name?: string, params?: Record<string, unknown>): void {
       for (const fn of cleaners) fn(name, params)
@@ -126,6 +200,7 @@ export function createModalStore() {
     reset(): void {
       state = initial()
       cleaners.clear()
+      rekeyHandlers.clear()
       emit()
     },
   }

@@ -297,7 +297,7 @@ export function encodeChain(chain: RegisteredEntry[], lookup: Lookup): Record<st
   return out
 }
 
-/** Готовая строка запроса (для href ссылок). */
+/** Готовая строка запроса (для href ссылок и адресного хранилища). */
 export function chainToSearch(
   chain: RegisteredEntry[],
   lookup: Lookup,
@@ -305,9 +305,28 @@ export function chainToSearch(
 ): string {
   // Бронь ключей цепочки и сброс прежней цепочки — общая алгебра адреса
   // (`#lib/address/keys`); формат своей цепочки (одно значение через запятую
-  // плюс `modal.N.…`) — местный.
+  // плюс `modal.N.…`) — местный. Слоевые ключи пагинаторов `m<k>.*` делят
+  // того же владельца `'modals'` и атомарно сбрасываются для закрытых или
+  // заменённых слотов в том же коммите.
   claimQuery('modals', CHAIN_KEY, `${CHAIN_KEY}.*`)
-  const params = new URLSearchParams(nextSearch('modals', base ?? '', {}, { drop: [`${CHAIN_KEY}.*`] }))
+  const drop: string[] = [`${CHAIN_KEY}.*`]
+  if (base) {
+    const prevChain = decodeChain(base, lookup)
+    const orphanLayers = new Set<number>()
+    for (const key of base.keys()) {
+      const m = /^m(\d+)(?:\.|$)/.exec(key)
+      if (!m) continue
+      const k = Number(m[1])
+      if (k >= chain.length || prevChain[k]?.name !== chain[k]?.name) {
+        orphanLayers.add(k)
+      }
+    }
+    for (const k of orphanLayers) {
+      claimQuery('modals', `m${k}`, `m${k}.*`)
+      drop.push(`m${k}.*`)
+    }
+  }
+  const params = new URLSearchParams(nextSearch('modals', base ?? '', {}, { drop }))
   for (const [key, values] of Object.entries(encodeChain(chain, lookup))) {
     for (const v of values) params.append(key, v)
   }

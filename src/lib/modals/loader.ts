@@ -8,7 +8,7 @@
 import { loaderKey, runtimeKey } from './core'
 import type { AnyDefinition } from './registry'
 import type { ModalStore } from './store'
-import type { LibError, ResolvedEntry, RuntimeState } from './types'
+import type { InvalidateLoaderOptions, LibError, ResolvedEntry, RuntimeState } from './types'
 
 /**
  * Сбой предзагрузки маршрута, несущий HTTP-статус.
@@ -82,6 +82,14 @@ export function createLoader(deps: LoaderDeps) {
   }
   const inflight = new Map<string, Job>()
 
+  const resolvedParamsOf = (
+    name: string,
+    params?: Record<string, unknown>,
+  ): Record<string, unknown> => ({
+    ...(lookup(name)?.defaultParams ?? {}),
+    ...(params ?? {}),
+  })
+
   /**
    * Ключи кеша записей, которые сейчас в стопке, — по РАЗРЕШЁННЫМ параметрам
    * (с `defaultParams`), как их грузит хост. По сырым параметрам цепочки
@@ -91,8 +99,7 @@ export function createLoader(deps: LoaderDeps) {
     const keys = new Set<string>()
     for (const e of store.state.chain) {
       if (e.kind !== 'registered') continue
-      const defaults = lookup(e.name)?.defaultParams ?? {}
-      keys.add(loaderKey(e.name, { ...defaults, ...(e.params ?? {}) }))
+      keys.add(loaderKey(e.name, resolvedParamsOf(e.name, e.params)))
     }
     return keys
   }
@@ -122,13 +129,17 @@ export function createLoader(deps: LoaderDeps) {
   }
 
   // Кеш сбрасывается вместе с остальной памятью модалок.
-  const offCleaner = store.registerMemoryCleaner((name, params) => {
-    if (!name && !params) {
+  const offCleaner = store.registerMemoryCleaner((name, params, options) => {
+    if (!name && !params && !options) {
       abortAll()
       cache.clear()
       return
     }
-    clearLoaderCache(name, params)
+    clearLoaderCache(name, params, options)
+  })
+
+  const offRekey = store.registerRekeyHandler((slotKey, name, prevParams, nextParams) => {
+    rekeyRuntime(slotKey, name, prevParams, nextParams)
   })
 
   function abortAll() {
@@ -143,23 +154,30 @@ export function createLoader(deps: LoaderDeps) {
    */
   const setRuntime = (key: string, next: RuntimeState) => {
     const prev = store.state.runtime[key]
+    const merged: RuntimeState = {
+      ...next,
+      ck: next.ck ?? prev?.ck,
+      rev: next.rev ?? prev?.rev,
+    }
     if (
       prev &&
-      prev.status === next.status &&
-      prev.data === next.data &&
-      prev.error === next.error
+      prev.status === merged.status &&
+      prev.data === merged.data &&
+      prev.error === merged.error &&
+      prev.ck === merged.ck &&
+      prev.rev === merged.rev
     ) {
       return
     }
-    store.merge('runtime', { [key]: next })
+    store.merge('runtime', { [key]: merged })
   }
 
   /** Начало загрузки: уже полученные данные остаются у записи на экране. */
-  const loadingRuntime = (key: string): RuntimeState => {
+  const loadingRuntime = (key: string, ck?: string): RuntimeState => {
     const prev = store.state.runtime[key]
     return prev?.data === undefined
-      ? { status: 'loading' }
-      : { status: 'loading', data: prev.data }
+      ? { status: 'loading', ck: ck ?? prev?.ck, rev: prev?.rev }
+      : { status: 'loading', data: prev.data, ck: prev.ck ?? ck, rev: prev?.rev }
   }
 
   // Текст сбоя загрузчика в интерфейс НЕ попадает (C13): `error.message`
@@ -196,7 +214,17 @@ export function createLoader(deps: LoaderDeps) {
     if (definition.loader) {
       return (signal) => definition.loader!(entry.params, signal)
     }
-    const href = deps.hrefOf?.(entry)
+    let href: string | null = null
+    try {
+      href = deps.hrefOf?.(entry) ?? null
+    } catch (cause) {
+      return async () => {
+        throw new RouteLoadFailure(
+          404,
+          cause instanceof Error ? cause.message : 'Некорректные параметры маршрута',
+        )
+      }
+    }
     if (href && deps.preload) {
       return async () => {
         const r = await deps.preload!(href)
@@ -250,23 +278,25 @@ export function createLoader(deps: LoaderDeps) {
       }
     }
     job.ready = Promise.all([job.done, view]).then(([data]) => data)
-    job.ready.then(
+    const settled = job.ready.then(
       (data) => {
         settle()
         if (controller.signal.aborted) return
-        for (const k of job.keys) setRuntime(k, { status: 'ready', data })
+        for (const k of job.keys) setRuntime(k, { status: 'ready', data, ck })
       },
       (error: unknown) => {
         settle()
         if (!controller.signal.aborted && job.keys.size > 0) {
-          for (const k of job.keys) setRuntime(k, { status: 'error', error: errorMessage(error) })
+          for (const k of job.keys) setRuntime(k, { status: 'error', error: errorMessage(error), ck })
           job.reported = true
           deps.report?.({ lib: 'modals', code: 'load-failed', cause: error, ctx: { name } })
         }
       },
     )
-    // Без ожидающих (одни записи стопки) отказ не должен стать unhandled rejection.
+    // Без ожидающих (или при отмене до резолва) отказ не должен стать unhandled rejection.
+    job.done.catch(() => {})
     job.ready.catch(() => {})
+    settled.catch(() => {})
     inflight.set(ck, job)
     return job
   }
@@ -281,9 +311,10 @@ export function createLoader(deps: LoaderDeps) {
     definition: AnyDefinition,
     data: unknown,
     hasData: boolean,
+    ck?: string,
   ): () => void {
     const done = () =>
-      setRuntime(key, hasData ? { status: 'ready', data } : { status: 'ready' })
+      setRuntime(key, hasData ? { status: 'ready', data, ck } : { status: 'ready', ck })
     // Вид спрашиваем ДО `loading`: уже доехавший чанк отвечает `undefined`,
     // и скелетон на кадр не появляется.
     let view: Promise<void> | undefined
@@ -298,7 +329,7 @@ export function createLoader(deps: LoaderDeps) {
       done()
       return () => {}
     }
-    setRuntime(key, hasData ? { status: 'loading', data } : loadingRuntime(key))
+    setRuntime(key, hasData ? { status: 'loading', data, ck } : loadingRuntime(key, ck))
     let live = true
     view.then(
       () => {
@@ -306,7 +337,7 @@ export function createLoader(deps: LoaderDeps) {
       },
       (error: unknown) => {
         if (!live) return
-        setRuntime(key, { status: 'error', error: errorMessage(error) })
+        setRuntime(key, { status: 'error', error: errorMessage(error), ck })
         deps.report?.({ lib: 'modals', code: 'load-failed', cause: error, ctx: { name } })
       },
     )
@@ -336,28 +367,30 @@ export function createLoader(deps: LoaderDeps) {
     }
 
     const definition = lookup(entry.name)
-    const load = definition ? fetcher(entry, definition) : null
+    const mergedParams = resolvedParamsOf(entry.name, entry.params)
+    const resolved: ResolvedEntry = { ...entry, params: mergedParams }
+    const ck = loaderKey(entry.name, mergedParams)
+    const load = definition ? fetcher(resolved, definition) : null
     if (!load) {
       // Данных нет — готовность решает только вид (ленивый чанк).
       if (!definition) {
-        setRuntime(key, { status: 'ready' })
+        setRuntime(key, { status: 'ready', ck })
         return () => {}
       }
-      return viewGate(key, entry.name, definition, undefined, false)
+      return viewGate(key, entry.name, definition, undefined, false, ck)
     }
 
-    const ck = loaderKey(entry.name, entry.params)
     if (cache.has(ck)) {
       // Данные уже есть, но вид мог ещё не доехать (первое открытие
       // после предзагрузки одними данными) — ждём и его.
-      return viewGate(key, entry.name, definition!, cacheGet(ck), true)
+      return viewGate(key, entry.name, definition!, cacheGet(ck), true, ck)
     }
 
     // Кто-то уже грузит те же name+params (другая запись или предзагрузка) —
     // подписываемся на тот же результат.
     const job = jobFor(ck, entry.name, load, definition)
     job.keys.add(key)
-    setRuntime(key, loadingRuntime(key))
+    setRuntime(key, loadingRuntime(key, ck))
 
     return () => {
       if (!job.keys.delete(key)) return
@@ -437,32 +470,105 @@ export function createLoader(deps: LoaderDeps) {
   }
 
   /**
-   * Забыть состояние записей вида: ключ записи — `${index}:${name}`.
-   *
-   * Вместе с кешем: иначе закрытая и открытая заново модалка получила бы
-   * `ready` из прошлой жизни и не перезапросила данные.
+   * Переносит готовые данные из `prevParams` под `nextParams` без сетевого запроса
+   * (для `setParams(..., { reload: false })`).
    */
-  function forgetRuntime(name: string): void {
-    const keys = Object.keys(store.state.runtime).filter(
-      (key) => key.slice(key.indexOf(':') + 1) === name,
-    )
-    if (keys.length === 0) return
-    // Полная замена, а не merge: merge не умеет удалять ключи.
-    const next = { ...store.state.runtime }
-    for (const key of keys) delete next[key]
-    store.set({ runtime: next })
+  function rekeyRuntime(
+    slotKey: string,
+    name: string,
+    prevParams: Record<string, unknown>,
+    nextParams: Record<string, unknown>,
+  ): void {
+    const prevCk = loaderKey(name, resolvedParamsOf(name, prevParams))
+    const nextCk = loaderKey(name, resolvedParamsOf(name, nextParams))
+    if (prevCk === nextCk) return
+    const rt = store.state.runtime[slotKey]
+    if (cache.has(prevCk)) {
+      cacheSet(nextCk, cacheGet(prevCk))
+    } else if (rt?.status === 'ready' && rt.data !== undefined) {
+      cacheSet(nextCk, rt.data)
+    }
+    if (rt) {
+      store.merge('runtime', { [slotKey]: { ...rt, ck: nextCk } })
+    }
   }
 
-  function clearLoaderCache(name?: string, params?: Record<string, unknown>): void {
-    if (!name) return cache.clear()
-    forgetRuntime(name)
-    if (params !== undefined) {
-      const target = loaderKey(name, params)
-      cache.delete(target)
-      return
+  /**
+   * Инвалидация кеша загрузчика и живых записей стопки (Вариант В):
+   * - нормализует `params` через `defaultParams` определения;
+   * - удаляет совпавшие ключи из `cache` и отменяет их `inflight`;
+   * - для закрытых/оторванных записей забывает `runtime[key]`;
+   * - для открытых слотов в `store.state.chain` инкрементирует `rev`,
+   *   по умолчанию сохраняя `prev.data` (фоновый SWR без скелетона),
+   *   либо сбрасывая `data: undefined` при `options?.hard === true`.
+   */
+  function clearLoaderCache(
+    name?: string,
+    params?: Record<string, unknown>,
+    options?: InvalidateLoaderOptions & { cacheOnly?: boolean },
+  ): void {
+    const targetCk =
+      name && params !== undefined ? loaderKey(name, resolvedParamsOf(name, params)) : null
+
+    const matchesKey = (ck: string): boolean => {
+      if (!name) return true
+      if (targetCk !== null) return ck === targetCk
+      return ck.startsWith(`${name}|`)
     }
-    for (const key of [...cache.keys()]) {
-      if (key.startsWith(`${name}|`)) cache.delete(key)
+
+    for (const k of [...cache.keys()]) {
+      if (matchesKey(k)) cache.delete(k)
+    }
+
+    for (const [k, job] of [...inflight.entries()]) {
+      if (!matchesKey(k)) continue
+      if (options?.cacheOnly && job.keys.size > 0) continue
+      job.controller.abort()
+      inflight.delete(k)
+    }
+
+    if (options?.cacheOnly) return
+
+    const openMatches = new Map<string, string>()
+    store.state.chain.forEach((e, i) => {
+      if (e.kind !== 'registered') return
+      if (name && e.name !== name) return
+      const ck = loaderKey(e.name, resolvedParamsOf(e.name, e.params))
+      if (!matchesKey(ck)) return
+      openMatches.set(runtimeKey(e.name, i), ck)
+    })
+
+    const nextRuntime = { ...store.state.runtime }
+    let changed = false
+
+    for (const rKey of Object.keys(nextRuntime)) {
+      const entryName = rKey.slice(rKey.indexOf(':') + 1)
+      if (name && entryName !== name) continue
+      if (openMatches.has(rKey)) continue
+      if (targetCk !== null && nextRuntime[rKey]?.ck && nextRuntime[rKey]!.ck !== targetCk) {
+        continue
+      }
+      delete nextRuntime[rKey]
+      changed = true
+    }
+
+    for (const [slotKey, ck] of openMatches) {
+      const prev = nextRuntime[slotKey]
+      const rev = (prev?.rev ?? 0) + 1
+      nextRuntime[slotKey] = options?.hard
+        ? { status: 'loading', data: undefined, error: undefined, ck, rev }
+        : {
+            ...(prev ?? { status: 'idle' }),
+            data: prev?.data,
+            error: undefined,
+            ck: prev?.ck ?? ck,
+            rev,
+          }
+      changed = true
+    }
+
+    if (changed) {
+      store.set({ runtime: nextRuntime })
     }
   }
 
@@ -476,11 +582,12 @@ export function createLoader(deps: LoaderDeps) {
    */
   function dispose(): void {
     offCleaner()
+    offRekey()
     abortAll()
     cache.clear()
   }
 
-  return { runLoader, preloadModal, clearLoaderCache, readRuntime, dispose }
+  return { runLoader, preloadModal, clearLoaderCache, rekeyRuntime, readRuntime, dispose }
 }
 
 export type Loader = ReturnType<typeof createLoader>

@@ -33,6 +33,8 @@ interface StateShape {
   /** Общий порядок стопки. Без него источники склеиваются по объявлению. */
   order?: OrderRef[]
   depth?: number
+  /** Число реальных push-шагов истории, сделанных поверх точки входа вкладки. */
+  steps?: number
 }
 
 export interface CoreOptions {
@@ -137,6 +139,7 @@ export function buildCore(
    * (`onPopState`). Без подписчиков сообщать некому — тогда не откладываем.
    */
   let traversing = false
+  let pendingReplaceAfterBack: Chain | null = null
   let offExternal: (() => void) | undefined
   const deferred: Array<() => void> = []
   const deferWhileTraversing = (op: () => void): boolean => {
@@ -146,7 +149,13 @@ export function buildCore(
   }
   function onExternalChange() {
     traversing = false
-    notify()
+    if (pendingReplaceAfterBack !== null) {
+      const target = pendingReplaceAfterBack
+      pendingReplaceAfterBack = null
+      core.write(target, { replace: true })
+    } else {
+      notify()
+    }
     // Отложенная операция сама может начать обход — тогда остальные ждут его.
     while (!traversing && deferred.length > 0) deferred.shift()!()
   }
@@ -252,6 +261,24 @@ export function buildCore(
     return target.storage.urlFor(mine, env)
   }
 
+  /** Индекс записи среди адресуемых слоёв (совпадает с позицией в `?modal=…`). */
+  const addressableIndexImpl = (chain: Chain, index: number): number | null => {
+    const target = addressable
+    if (!target || index < 0 || index >= chain.length) return null
+    const entry = chain[index]
+    if (!entry || entry.kind !== 'registered') return null
+    const s = entry.source && byName.has(entry.source) ? entry.source : sourceFor(entry.name)
+    if (s !== target.name) return null
+    let pos = 0
+    for (let i = 0; i < index; i += 1) {
+      const e = chain[i]
+      if (!e || e.kind !== 'registered') continue
+      const es = e.source && byName.has(e.source) ? e.source : sourceFor(e.name)
+      if (es === target.name) pos += 1
+    }
+    return pos
+  }
+
   const core: ReconfigurableCore = {
     // Геттеры, а не снимки: после `reconfigure` ядро обязано отвечать
     // по НОВОМУ набору источников, оставаясь тем же объектом.
@@ -303,8 +330,10 @@ export function buildCore(
         if (!storage.addressable) mirror[name] = groups.get(name)!
       }
 
+      const prevSteps = readState().steps ?? 0
       const mine: StateShape = {
         depth: chain.length,
+        steps: opts?.replace ? prevSteps : prevSteps + 1,
         order,
         ...(Object.keys(mirror).length > 0 ? { mirror } : null),
         ...(transient.length > 0
@@ -346,16 +375,27 @@ export function buildCore(
           // потому что на старой записи истории зеркала нет, а носитель
           // ещё хранил прежнее значение.
           everWrote = true
-          const depth = readState().depth ?? 0
-          // Шаг считаем по метке глубины, а не по `steps`: в истории могли
-          // остаться записи слоёв, которых уже нет.
-          const available = Math.max(0, depth - chain.length)
-          if (available > 0) {
+          const st = readState()
+          const depth = st.depth ?? 0
+          const maxSteps = st.steps ?? depth
+          // Шаг считаем по метке глубины, но не дальше реально сделанных push-шагов
+          // (`maxSteps`): при холодном старте по deep-link `/?modal=a` с последующим
+          // открытием `b` и `closeAll()` возвращаемся на точку входа и заменяем её адрес.
+          const wanted = Math.max(0, depth - chain.length)
+          const toGo = Math.min(wanted, maxSteps)
+          if (toGo > 0) {
+            if (wanted > toGo && listeners.size > 0) {
+              pendingReplaceAfterBack = chain
+            }
             // Флаг — ДО вызова: среда может уведомить синхронно (FastEdge, тесты).
             traversing = true
-            engine.go!(-available)
+            engine.go!(-toGo)
+            if (wanted > toGo && listeners.size === 0) {
+              core.write(chain, { replace: true })
+            }
+          } else {
+            core.write(chain, { replace: true })
           }
-          else core.write(chain, { replace: true })
         }
       : undefined,
 
@@ -364,6 +404,7 @@ export function buildCore(
     // возвращающий null: «нечестный href хуже отсутствующего».
     // `reconfigure` добавляет и убирает ключ через syncHrefFor().
     ...(addressable ? { hrefFor: hrefForImpl } : null),
+    addressableIndex: addressableIndexImpl,
 
     // Адрес — у движка; реактивность — его же (SvelteKit: `page.*`).
     location: () => engine.location(),

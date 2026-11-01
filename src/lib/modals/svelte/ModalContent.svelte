@@ -1,7 +1,7 @@
 <script lang="ts">
   // Одна запись стопки. Не размонтируется, пока запись в цепочке.
   import { untrack, type Snippet } from 'svelte'
-  import { runtimeKey, visibleChain } from '../core'
+  import { loaderKey, runtimeKey, visibleChain } from '../core'
   import type { ResolvedEntry } from '../types'
   import { setInstance, useModals } from './context'
   import { resolvedModalComponent } from './component.svelte'
@@ -31,23 +31,37 @@
   // ни в глубине, которую видит пользователь (ISSUES.md R-02).
   const chain = $derived(visibleChain(m.view.chain, m.claimEntry))
 
-  // Данные уже пришли: запись показывает содержимое, а не скелетон, — в том
-  // числе когда новый запуск загрузчика перекрывает прежние данные.
-  const hasData = $derived(rt.data !== undefined)
-
-  // Показывали ли скелетон: только тогда содержимое стоит «раскрывать».
-  let wasPending = $state(false)
-  $effect(() => {
-    if (!hasData && rt.status === 'loading') wasPending = true
-  })
+  // Данные актуальны для текущих параметров записи: сохраняются на экране и при
+  // фоновом SWR тех же параметров, но не протекают при подмене параметров слота.
+  const currentCk = $derived(loaderKey(entry.name, entry.params))
+  const hasCurrentData = $derived(rt.data !== undefined && (!rt.ck || rt.ck === currentCk))
 
   const hasLoader = $derived(Boolean(entry.definition?.loader || entry.definition?.route))
-  const showSkeleton = $derived(hasLoader && !hasData && rt.status !== 'error')
   // Вид записи: ленивый компонент к моменту `ready` уже доехал (загрузчик
   // ждал его вместе с данными) — здесь только читаем разрешённый.
   const Component = $derived(
     entry.definition ? (resolvedModalComponent(entry.definition) as any) : undefined,
   )
+  const compPending = $derived(Boolean(entry.definition?.component && !Component))
+  let contentMounted = $state(false)
+  // Во время CSS exit-анимации последней модалки (`m.view.chain.length === 0`)
+  // уже отрисованный слой доигрывает уход без переключения обратно на скелетон,
+  // хотя `runtime` в сторе уже синхронно очищен.
+  const isExiting = $derived(m.view.chain.length === 0 && contentMounted)
+  const showSkeleton = $derived(
+    !isExiting &&
+      rt.status !== 'error' &&
+      (hasLoader
+        ? !hasCurrentData && (rt.status === 'idle' || rt.status === 'loading')
+        : compPending || rt.status === 'loading'),
+  )
+
+  // Показывали ли скелетон: только тогда содержимое стоит «раскрывать».
+  let wasPending = $state(false)
+  $effect(() => {
+    if (showSkeleton) wasPending = true
+    else if (entry.known && !(rt.status === 'error' && !hasCurrentData)) contentMounted = true
+  })
   const transientContent = $derived(entry.definition ? null : m.modals.layerContent(entry.name))
   const transientSnippet = $derived(
     typeof transientContent === 'function' ? (transientContent as Snippet) : null,
@@ -63,7 +77,7 @@
       <div>Проверьте имя в реестре или ссылку с ?modal=…</div>
     </div>
   {/if}
-{:else if rt.status === 'error' && !hasData}
+{:else if rt.status === 'error' && !hasCurrentData}
   {#if config.renderError}
     {@render (config.renderError as any)(rt.error ?? 'Приложение недоступно')}
   {:else}

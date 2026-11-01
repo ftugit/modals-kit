@@ -20,6 +20,7 @@
     resolveEntry,
     resolveTailDirection,
     routeHref,
+    runtimeKey,
     shellStyle,
     viewportStyle,
     visibleChain,
@@ -254,9 +255,11 @@
   })
 
   // Загрузчик работает ТОЛЬКО для активной записи; модалки в стопке
-  // свой загрузчик не запускают. Очистка — на смену активной.
+  // свой загрузчик не запускают. Очистка — на смену активной или ревизии SWR.
   $effect(() => {
     const a = active
+    const rev = a ? view.runtime[runtimeKey(a.name, a.index)]?.rev : undefined
+    void rev
     if (!a) return
     return loader.runLoader(a)
   })

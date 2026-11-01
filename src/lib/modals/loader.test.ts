@@ -491,3 +491,99 @@ test('C13: окно ошибки и preload показывают общий те
   assert.deepEqual(pre, { ok: false, error: 'Приложение недоступно' })
   assert.equal((seen.at(-1).cause as Error).message, secret)
 })
+
+test('Вариант В: invalidateLoader сохраняет prev.data (SWR) и растит rev, а { hard: true } сбрасывает data', async () => {
+  let step = 0
+  let aborted = false
+  const store = createModalStore()
+  const scope = createRegistry('swr').define([
+    {
+      name: 'profile',
+      component: 'X',
+      defaultParams: { id: '' },
+      loader: async (p: { id: string }, signal: AbortSignal) => {
+        step += 1
+        if (step === 2) {
+          return new Promise((_res, rej) => {
+            signal.addEventListener('abort', () => {
+              aborted = true
+              rej(new Error('aborted'))
+            })
+          })
+        }
+        return { nick: `${p.id}-${step}` }
+      },
+    } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  store.set({ chain: [{ kind: 'registered', name: 'profile', params: { id: 'u1' }, overrides: {} }] })
+
+  l.runLoader(entry('profile', { id: 'u1' }))
+  await tick()
+  assert.deepEqual(l.readRuntime('profile', 0).data, { nick: 'u1-1' })
+
+  // SWR по умолчанию: prev.data удерживается, rev увеличивается, кеш сброшен
+  store.invalidateLoader('profile', { id: 'u1' })
+  const swrRt = l.readRuntime('profile', 0)
+  assert.deepEqual(swrRt.data, { nick: 'u1-1' }, 'SWR сохраняет прежние данные без скелетона')
+  assert.equal(swrRt.rev, 1)
+
+  // Перезапуск загрузчика по новой ревизии запускает inflight #2; повторная инвалидация его отменяет
+  l.runLoader(entry('profile', { id: 'u1' }))
+  store.invalidateLoader('profile', undefined, { hard: true })
+  assert.equal(aborted, true, 'активный inflight отменён')
+  const hardRt = l.readRuntime('profile', 0)
+  assert.equal(hardRt.status, 'loading')
+  assert.equal(hardRt.data, undefined, 'hard-режим сбрасывает data')
+  assert.equal(hardRt.rev, 2)
+})
+
+test('синхронный бросок hrefOf перехватывается как 404 без падения потока', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('hrefThrow').define([
+    { name: 'edit', component: 'X', route: '/blocks/$blockId' } as any,
+  ])
+  const l = createLoader({
+    store,
+    lookup: scope.lookup,
+    hrefOf: (e) => {
+      if (!e.params.blockId) throw new Error('missing blockId')
+      return `/blocks/${e.params.blockId}`
+    },
+    preload: async () => ({ ok: true, data: {} }),
+  })
+  l.runLoader(entry('edit', {}))
+  await tick()
+  const rt = l.readRuntime('edit', 0)
+  assert.equal(rt.status, 'error')
+  assert.equal(rt.error, 'Загружаемые данные отсутствуют')
+})
+
+test('setParams(..., { reload: false }) переносит кеш под новый ключ без повторного запроса', async () => {
+  let calls = 0
+  const store = createModalStore()
+  const scope = createRegistry('rekey').define([
+    {
+      name: 'create',
+      component: 'X',
+      defaultParams: { uids: '' },
+      loader: async () => {
+        calls += 1
+        return { assignable: ['site'] }
+      },
+    } as any,
+  ])
+  const l = createLoader({ store, lookup: scope.lookup })
+  store.set({ chain: [{ kind: 'registered', name: 'create', params: {}, overrides: {} }] })
+
+  l.runLoader(entry('create', { uids: '' }))
+  await tick()
+  assert.equal(calls, 1)
+
+  store.rekeyRuntime('0:create', 'create', { uids: '' }, { uids: 'u1,u2' })
+  l.runLoader(entry('create', { uids: 'u1,u2' }))
+  await tick()
+  assert.equal(calls, 1, 'повторный запрос не отправлялся')
+  assert.deepEqual(l.readRuntime('create', 0).data, { assignable: ['site'] })
+})
+

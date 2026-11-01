@@ -107,6 +107,13 @@ export interface ModalCore {
   hrefFor?(chain: Chain, ctx?: HrefContext): string | null
 
   /**
+   * Позиция записи `chain[index]` среди адресуемых (`url`) записей цепочки
+   * (`0`, `1`, …), либо `null`, если запись хранится в неадресуемом носителе
+   * (`memory`, `local`), является `transient` или у ядра нет адресуемого источника.
+   */
+  addressableIndex?(chain: Chain, index: number): number | null
+
+  /**
    * Видимый адрес среды — от него триггер строит `href` своей ссылки.
    * Реактивен там, где реактивна среда: в SvelteKit это `page.shallow?.url ??
    * адрес страницы`, и чтение внутри `$derived` перестраивает href после любой

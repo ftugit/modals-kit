@@ -250,5 +250,51 @@ describe('createAddressWriter: адрес страницы переживает 
       load: false,
     })
   })
+
+  it('поуровневый LayerKeyTest(key, targetUrl): закрытие 1:* сохраняет m0.* и стирает m1.*, закрытие 0:* стирает m0.*', async () => {
+    const { writer, sent, land } = layerEnv('http://app.test/users?users.q=page')
+    writer.layerKeys((k, targetUrl) => {
+      const m = /^m(\d+)(?:\.|$)/.exec(k)
+      if (!m) return false
+      const openCount = (targetUrl?.searchParams.get('modal') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean).length
+      return Number(m[1]) >= openCount
+    })
+
+    // Открыли 0:user.list, затем 1:user.list.filters, где поменяли m0.users.nick=1 и m1.tmp=x
+    await writer.write(() => ({ url: '/users?users.q=page&modal=user.list', state: { d: 1 } }), { replace: false })
+    await writer.write(
+      () => ({
+        url: '/users?users.q=page&modal=user.list,user.list.filters&m0.users.nick=1&m1.tmp=x',
+        state: { d: 2 },
+      }),
+      { replace: false },
+    )
+
+    // Возврат со 2-й модалки на 1-ю: m0.users.nick=1 переносится, m1.tmp=x стирается
+    writer.go(-1)
+    sent.length = 0
+    land('/users?users.q=page&modal=user.list', { d: 1 })
+    await tick()
+    expect(sent).toEqual([
+      {
+        href: '/users?users.q=page&m0.users.nick=1&modal=user.list',
+        state: { d: 1 },
+        replace: true,
+        load: false,
+      },
+    ])
+
+    // Возврат с 1-й модалки на чистую страницу: m0.users.nick=1 стирается, страничный users.q=page жив
+    writer.go(-1)
+    sent.length = 0
+    land('/users?users.q=page', {})
+    await tick()
+    expect(sent).toEqual([])
+    expect(writer.visible().url.search).toBe('?users.q=page')
+  })
 })
+
 

@@ -6,7 +6,14 @@
 // снапшот не пересобирается, неактивные слои не замораживают значения.
 import { hasLockedEntry, resolveEntry, runtimeKey } from '../core'
 import { entryLabel } from '../types'
-import type { Chain, HostConfig, ModalContext, ResolvedEntry, RuntimeState } from '../types'
+import type {
+  Chain,
+  HostConfig,
+  ModalContext,
+  ResolvedEntry,
+  RuntimeState,
+  SetParamsOptions,
+} from '../types'
 import { useInstance, useModals } from './context'
 
 /* ── ИСТОЧНИК СЧЁТЧИКОВ ─────────────────────────────────────────────
@@ -90,7 +97,13 @@ export function useHostConfig(): { readonly value: HostConfig } {
 /* ── данные этой модалки ───────────────────────────────────────────── */
 
 export type ModalHandle<P extends Record<string, unknown> = Record<string, unknown>> =
-  ModalContext<P> & { readonly active: boolean; readonly resolved: ResolvedEntry }
+  ModalContext<P> & {
+    readonly active: boolean
+    readonly resolved: ResolvedEntry
+    readonly addressable: boolean
+    readonly urlIndex: number | null
+    setParams(patch: Partial<P>, options?: SetParamsOptions): void
+  }
 
 /**
  * Данные этой модалки и её место в стопке.
@@ -135,6 +148,17 @@ export function useModal<
     },
     get resolved() {
       return resolved()
+    },
+    get addressable() {
+      void m.view.chain
+      return m.modals.addressableIndex(instance.index) !== null
+    },
+    get urlIndex() {
+      void m.view.chain
+      return m.modals.addressableIndex(instance.index)
+    },
+    setParams(patch, options) {
+      m.modals.setParams(instance.index, patch as Record<string, unknown>, options)
     },
   }
 }
@@ -238,7 +262,16 @@ export function useLoader<T = unknown>(): {
   const instance = useInstance()
   const m = useModals()
   const key = instance ? runtimeKey(instance.name, instance.index) : 'detached:none'
-  const rt = () => (m.view.runtime[key] ?? { status: 'idle' as const }) as RuntimeState<T>
+  let lastSettled: RuntimeState<T> | null = null
+  const rt = (): RuntimeState<T> => {
+    const live = m.view.runtime[key] as RuntimeState<T> | undefined
+    if (live) {
+      if (live.data !== undefined || live.status === 'ready') lastSettled = live
+      return live
+    }
+    if (m.view.chain.length === 0 && lastSettled) return lastSettled
+    return { status: 'idle' as const }
+  }
 
   return {
     get status() {

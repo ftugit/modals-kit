@@ -196,3 +196,38 @@ test('закрытие стирает запись из её носителя', 
   m.close()
   assert.equal(store._m.has('modals:chain'), false, 'ключ удалён, а не оставлен пустым')
 })
+
+test('addressableIndex на смешанных источниках url + local + memory и очистка m<k>.* в chainToSearch', () => {
+  const scope = createRegistry('t').define([
+    def('list'),
+    def('picker', { source: 'memory' }),
+    def('filters', { defaultParams: { uids: '' } }),
+    def('wizard', { source: 'local' }),
+  ])
+  const engine = hist('/?m0.users.q=bob&modal=list')
+  const m = createModals(buildCore(engine, sources(), { lookup: scope.lookup }))
+  m.attach()
+
+  assert.equal(m.addressableIndex(0), 0, 'первая url-модалка имеет urlIndex 0')
+
+  m.open('picker')
+  assert.equal(m.addressableIndex(0), 0)
+  assert.equal(m.addressableIndex(1), null, 'memory-модалка не адресуема')
+  assert.equal(engine.location().search, '?m0.users.q=bob&modal=list', 'picker не попал в URL')
+
+  m.open('filters')
+  assert.equal(m.addressableIndex(2), 1, 'вторая url-модалка имеет urlIndex 1 даже после memory-слоя')
+  assert.equal(engine.location().search, '?m0.users.q=bob&modal=list%2Cfilters')
+
+  // Обновление черновых параметров на месте (setParams)
+  assert.equal(m.setParams(2, { uids: 'u1,u2' }, { reload: false }), true)
+  assert.equal(
+    engine.location().search,
+    '?m0.users.q=bob&modal=list%2Cfilters&modal.1.uids=u1%2Cu2',
+  )
+
+  // Полное закрытие стопки (closeAll -> replaceState) атомарно стирает и modal, и m0.*
+  m.closeAll()
+  assert.equal(engine.location().search, '', 'm0.users.q атомарно очищен вместе с цепочкой')
+})
+

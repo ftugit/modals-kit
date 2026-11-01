@@ -36,17 +36,22 @@ function isLazy(component: unknown): component is LazyComponent {
 }
 
 /**
- * Идущие импорты по объекту регистрации: один импорт на модалку.
+ * Идущие импорты по объекту регистрации: один импорт на объект `lazy(...)`.
  * `settled` — импорт уже доехал: вид на месте, ждать снова нечего.
  */
 interface PendingView {
   promise: Promise<void>
   settled: boolean
 }
-const inflight = new WeakMap<object, PendingView>()
+const inflight = new WeakMap<LazyComponent, PendingView>()
 
-/** Доехавшие компоненты по имени модалки (реактивно: читает `ModalContent`). */
-let resolvedByName = $state<Record<string, unknown>>({})
+/**
+ * Доехавшие компоненты по самому объекту `lazy(...)` (`WeakMap` — O(1), без
+ * конфликтов одноимённых модалок в разных реестрах и без удержания GC) +
+ * реактивный счётчик версий для пересчёта `ModalContent`.
+ */
+const resolved = new WeakMap<LazyComponent, unknown>()
+let resolvedVersion = $state(0)
 
 /**
  * Дождаться вида записи. `undefined` — ждать нечего: вид не ленивый или уже
@@ -59,14 +64,15 @@ export function ensureModalComponent(definition: {
 }): Promise<void> | undefined {
   const component = definition?.component
   if (!isLazy(component)) return undefined
-  if (resolvedByName[definition.name] !== undefined) return undefined
+  if (resolved.has(component)) return undefined
   const known = inflight.get(component)
   if (known) return known.settled ? undefined : known.promise
 
   const pending: PendingView = { settled: false, promise: Promise.resolve() }
   pending.promise = component[LAZY]().then((module) => {
     pending.settled = true
-    resolvedByName = { ...resolvedByName, [definition.name]: module.default }
+    resolved.set(component, module.default)
+    resolvedVersion += 1
   })
   inflight.set(component, pending)
   void pending.promise.catch(() => {
@@ -78,7 +84,7 @@ export function ensureModalComponent(definition: {
 /**
  * Вид записи для рендера: готовый компонент — он сам, ленивый — доехавший
  * из кеша (к моменту `ready` загрузчик его уже дождался), ещё не доехал —
- * `undefined` (рендерить нечего, как раньше у обёрток `{#await}`).
+ * `undefined` (рендерить нечего, пока виден скелетон).
  */
 export function resolvedModalComponent(definition: {
   name: string
@@ -87,5 +93,6 @@ export function resolvedModalComponent(definition: {
   const component = definition?.component
   if (!component) return undefined
   if (!isLazy(component)) return component
-  return resolvedByName[definition.name]
+  void resolvedVersion
+  return resolved.get(component)
 }

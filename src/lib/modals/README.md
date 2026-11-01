@@ -511,6 +511,12 @@ const myCore: ModalCore = {
 в `core-contract.ts`). Обычно проще не писать ядро, а собрать его `buildCore` из своей
 среды (`ChainEngine`) и готового хранилища.
 
+## Адресный индекс, черновые параметры и SWR-инвалидация
+
+- `modals.addressableIndex(index)` / `useModal().urlIndex` возвращают позицию записи среди адресуемых (`url`) слоёв (`0`, `1`, …) либо `null` для `memory`/`local`/`transient`-записей.
+- `modals.setParams(index, patch, { reload?: boolean })` / `useModal().setParams(patch, opts)` обновляют параметры уже открытой записи на месте (`replace: true`), по умолчанию (`reload: false`) перенося готовые данные кеша и `runtime` под новый ключ параметров без сетевого перезапроса и без перемонтирования формы.
+- `modals.invalidateLoader(name?, params?, { hard?: boolean })` по умолчанию выполняет фоновую ревалидацию (SWR): сбрасывает кеш и активные `inflight`, но сохраняет `prev.data` у открытых слоёв и увеличивает ревизию `rev` без мигания скелетоном. При `{ hard: true }` (например на смене субъекта сессии) данные открытых слоёв сбрасываются сразу со скелетоном.
+
 ## Чего писать НЕ надо: это берёт на себя Ark
 
 Проверено по типам `@zag-js/dialog` → `DialogProps`:

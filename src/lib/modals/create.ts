@@ -11,11 +11,11 @@
 // протекало в слой модалки — четыре ветвления по `storage.addressable`
 // в коде, которому до носителя нет никакого дела. Проводка уехала
 // в `build.ts`, то есть внутрь ядра.
-import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, loaderKey, nextChain, resolveEntry, sameEntry } from './core'
+import { chainEquals, closedSuffix, hasLockedEntry, isChainLocked, loaderKey, nextChain, resolveEntry, runtimeKey, sameEntry } from './core'
 import { createModalStore, type ModalStore, type ModalStoreData } from './store'
 import { DEFAULT_HOST_CONFIG } from './types'
 import type {
-  Chain, ChainOverrides, HostConfig, LibError, ErrorSink, ModalContext, RegisteredEntry, StackMode, TransientEntry,
+  Chain, ChainOverrides, HostConfig, InvalidateLoaderOptions, LibError, ErrorSink, ModalContext, RegisteredEntry, SetParamsOptions, StackMode, TransientEntry,
 } from './types'
 import { entryLabel, isRegistered } from './types'
 import type { AnyDefinition } from './registry'
@@ -90,6 +90,15 @@ export interface Modals<V = unknown> {
   /** Текущая цепочка. */
   readonly chain: Chain
 
+  /** Позиция записи `chain[index]` среди адресуемых (`url`) слоёв, либо `null`. */
+  addressableIndex(index: number): number | null
+
+  /**
+   * Обновить параметры уже открытой зарегистрированной записи на позиции `index`
+   * на месте (`replace: true`), по умолчанию без перезапуска загрузчика.
+   */
+  setParams(index: number, patch: Record<string, unknown>, options?: SetParamsOptions): boolean
+
   /* ── действия ── */
 
   /** Открыть зарегистрированную модалку по имени. */
@@ -113,7 +122,11 @@ export interface Modals<V = unknown> {
   /** Единственный способ закрыть заблокированную. */
   forceClose(name?: string): void
   /** Инвалидировать или очистить кэш асинхронных данных модалок. */
-  invalidateLoader(name?: string, params?: Record<string, unknown>): void
+  invalidateLoader(
+    name?: string,
+    params?: Record<string, unknown>,
+    options?: InvalidateLoaderOptions,
+  ): void
   /**
    * Подключить приёмник ошибок (Q1). Отписка — при размонтировании.
    * Бросок приёмника распространяется вверх: серверный фатал доезжает до 500.
@@ -207,12 +220,6 @@ export function createModals<V = unknown>(
     assertTransientOnTop(next)
 
     // Состояние обновляем ПЕРВЫМ, до записи в ядро.
-    //
-    // `core.write` уведомляет подписчиков, и одним из них является `sync`.
-    // Если стор ещё хранит прежнюю цепочку, `sync` примет наше собственное
-    // изменение за внешнее: применит его повторно и второй раз вызовет
-    // события жизненного цикла. При обновлённом сторе эхо гасится
-    // сравнением `chainEquals` внутри `sync`.
     store.set({ chain: next })
 
     const closed = (options?.replace || isNonTailEdited) ? null : closedSuffix(prev, next)
@@ -283,10 +290,50 @@ export function createModals<V = unknown>(
   const dropForClosed = (prev: Chain, next: Chain) => {
     if (prev.length === 0) return
     const alive = new Set(next.map(chainId))
+    const nextData = { ...store.state.data }
+    const nextShared = { ...store.state.sharedData }
+    const nextRuntime = { ...store.state.runtime }
+    let dataChanged = false
+    let runtimeChanged = false
+
     prev.forEach((e, i) => {
       if (alive.has(chainId(e, i))) return
-      store.clearMemory(entryLabel(e), resolveEntry(e, i, lookup).params)
+      if (isRegistered(e)) {
+        const resolvedParams = resolveEntry(e, i, lookup).params
+        const targetCk = loaderKey(e.name, resolvedParams)
+        const stillPinned = next.some(
+          (ne, ni) =>
+            isRegistered(ne) &&
+            ne.name === e.name &&
+            loaderKey(ne.name, resolveEntry(ne, ni, lookup).params) === targetCk,
+        )
+        if (!stillPinned) {
+          store.evictLoaderCache(e.name, resolvedParams)
+        }
+      }
+      const slotKey = runtimeKey(entryLabel(e), i)
+      if (!next[i] || chainId(next[i], i) !== chainId(e, i)) {
+        if (slotKey in nextData) {
+          delete nextData[slotKey]
+          dataChanged = true
+        }
+        if (slotKey in nextShared) {
+          delete nextShared[slotKey]
+          dataChanged = true
+        }
+        if (slotKey in nextRuntime) {
+          delete nextRuntime[slotKey]
+          runtimeChanged = true
+        }
+      }
     })
+
+    if (dataChanged || runtimeChanged) {
+      store.set({
+        ...(dataChanged ? { data: nextData, sharedData: nextShared } : null),
+        ...(runtimeChanged ? { runtime: nextRuntime } : null),
+      })
+    }
   }
 
   /**
@@ -330,7 +377,7 @@ export function createModals<V = unknown>(
    * (F35). Переопределения внешнего вида (цвет, размер) в тождество не входят.
    */
   const chainId = (e: Chain[number], i: number) =>
-    `${i}:${isRegistered(e) ? loaderKey(e.name, e.params) : entryLabel(e)}`
+    `${i}:${isRegistered(e) ? loaderKey(e.name, resolveEntry(e, i, lookup).params) : entryLabel(e)}`
 
   /** Кто открылся и кто закрылся между двумя цепочками. */
   const fireLifecycle = (prev: Chain, next: Chain) => {
@@ -405,6 +452,43 @@ export function createModals<V = unknown>(
       return store.state.chain
     },
 
+    addressableIndex(index) {
+      return core.addressableIndex?.(store.state.chain, index) ?? null
+    },
+
+    setParams(index, patch, options) {
+      const prev = store.state.chain
+      const current = prev[index]
+      if (!current || !isRegistered(current)) return false
+
+      const nextRaw: Record<string, unknown> = { ...current.params }
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === undefined) delete nextRaw[k]
+        else nextRaw[k] = v
+      }
+
+      const nextEntry: RegisteredEntry = { ...current, params: nextRaw }
+      const prevResolved = resolveEntry(current, index, lookup).params
+      const nextResolved = resolveEntry(nextEntry, index, lookup).params
+      if (
+        loaderKey(current.name, prevResolved) === loaderKey(current.name, nextResolved) &&
+        sameEntry(current, nextEntry)
+      ) {
+        return false
+      }
+
+      const next = prev.map((e, i) => (i === index ? nextEntry : e))
+      if (options?.reload === true) {
+        commit(next, { replace: true })
+        return true
+      }
+
+      store.rekeyRuntime(runtimeKey(current.name, index), current.name, prevResolved, nextResolved)
+      store.set({ chain: next })
+      core.write(next, { replace: true })
+      return true
+    },
+
     configure(patch) {
       const next = Object.fromEntries(
         Object.entries(patch).filter(([, v]) => v !== undefined),
@@ -452,8 +536,14 @@ export function createModals<V = unknown>(
       const prev = store.state.chain
       store.set({ chain: first })
       fireLifecycle(prev, first)
-      const off = core.subscribe?.(sync)
-      return () => off?.()
+      let active = true
+      const off = core.subscribe?.((incoming) => {
+        if (active) sync(incoming)
+      })
+      return () => {
+        active = false
+        off?.()
+      }
     },
 
     open(name, options = {}) {
@@ -566,8 +656,8 @@ export function createModals<V = unknown>(
       commit([])
     },
 
-    invalidateLoader(name, params) {
-      store.clearMemory(name, params)
+    invalidateLoader(name, params, options) {
+      store.invalidateLoader(name, params, options)
     },
 
     onError(sink) {
