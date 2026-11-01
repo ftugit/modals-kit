@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import type { Snippet } from 'svelte'
   import { variants } from '#components/utils.js'
 
   /**
@@ -19,6 +20,15 @@
   )
 
   export type SurfaceVariant = 'card' | 'plain'
+
+  /**
+   * Две группы верхней панели. `start` прижимается влево, `end` — вправо
+   * (`ml-auto`); при нехватке места группы переносятся на новую строку.
+   */
+  export interface SurfaceControls {
+    start?: Snippet
+    end?: Snippet
+  }
 </script>
 
 <script lang="ts">
@@ -38,7 +48,8 @@
    * Отступ `p-6` — только на корне варианта `card`. В `plain` его нет:
    * модалка уже дала свой, второй дал бы двойную рамку отступа.
    */
-  import type { Snippet } from 'svelte'
+  // `Snippet` уже импортирован в module-скрипте: для проверки типов область
+  // видимости общая, второй импорт даёт `Duplicate identifier`.
   import type { HTMLAttributes } from 'svelte/elements'
   import { cn } from '#components/utils.js'
   import SurfaceBar from './SurfaceBar.svelte'
@@ -52,8 +63,8 @@
     description?: string | Snippet
     /** Левая зона шапки: навигация, контекст. */
     leading?: Snippet
-    /** Правая зона шапки: действия экрана. */
-    controls?: Snippet
+    /** Правая зона шапки: действия экрана, либо две группы `{ start, end }`. */
+    controls?: Snippet | SurfaceControls
     /** Тело экрана. `children` — то же самое через стандартный проп. */
     render?: Snippet
     children?: Snippet
@@ -78,10 +89,30 @@
 
   const body = $derived(render ?? children)
   const scrollBody = $derived(scroll ?? variant === 'plain')
-  const hasHeader = $derived(Boolean(leading || title || controls))
 
   // Титул-снипет рисуется в центре ряда, строка — как `h2`.
   const titleIsSnippet = $derived(typeof title !== 'string' && title !== undefined)
+
+  // `controls` — либо один снипет (он уходит вправо), либо две группы.
+  const controlGroups = $derived(
+    controls !== undefined && typeof controls !== 'function'
+      ? (controls as SurfaceControls)
+      : undefined,
+  )
+  const controlSnippet = $derived(
+    typeof controls === 'function' ? (controls as Snippet) : undefined,
+  )
+
+  const hasHeader = $derived(
+    Boolean(
+      leading ||
+        controlGroups?.start ||
+        title !== undefined ||
+        description !== undefined ||
+        controlSnippet ||
+        controlGroups?.end,
+    ),
+  )
 </script>
 
 <section
@@ -91,7 +122,7 @@
 >
   {#if hasHeader}
     <SurfaceBar
-      {leading}
+      leading={controlGroups?.start ?? leading}
       class={cn('shrink-0', body && 'border-b border-border pb-4')}
     >
       {#snippet center()}
@@ -117,7 +148,8 @@
         </div>
       {/snippet}
       {#snippet end()}
-        {#if controls}{@render controls()}{/if}
+        {#if controlSnippet}{@render controlSnippet()}{/if}
+        {#if controlGroups?.end}{@render controlGroups.end()}{/if}
       {/snippet}
     </SurfaceBar>
   {/if}

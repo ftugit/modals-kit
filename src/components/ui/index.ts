@@ -15,6 +15,7 @@ export {
   Surface,
   SurfaceBar,
   surfaceVariants,
+  type SurfaceControls,
   type SurfaceVariant,
 } from './surface/index.js'
 
