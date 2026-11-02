@@ -59,7 +59,9 @@ async function run(label, args, extraEnv = {}) {
   const count = args.filter((a) => !a.startsWith('--')).length;
   console.log(`\n[split] ${label}: ${count} файлов, ${flags.join(' ')}`);
   const t0 = Date.now();
-  const child = spawn('npx', ['vitest', 'run', ...args], {
+  // PGlite/WASM иначе держит оба варианта компиляции и на ограниченном стенде
+  // воркер может быть убит по памяти. Флаг должен получить именно процесс Vitest.
+  const child = spawn(process.execPath, ['--no-liftoff', 'node_modules/vitest/vitest.mjs', 'run', ...args], {
     stdio: 'inherit',
     env: { ...process.env, ...extraEnv },
   });

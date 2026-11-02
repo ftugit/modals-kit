@@ -203,7 +203,18 @@ async function run() {
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
       await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
-      await page.locator('[data-testid=header-user] img').waitFor({ state: 'visible', timeout: 10000 })
+      try {
+        await page.locator('[data-testid=header-user] img').waitFor({ state: 'visible', timeout: 10000 })
+      } catch (error) {
+        const snapshot = async () => page.evaluate(() => {
+          const header = document.querySelector('[data-testid=header-user]')
+          return { url: location.pathname, aria: header?.getAttribute('aria-label'), text: header?.textContent?.trim(), image: Boolean(header?.querySelector('img')), alerts: [...document.querySelectorAll('[role=alert]')].map((e) => e.textContent?.trim()) }
+        })
+        console.error('❌ avatar-before-reload ' + JSON.stringify(await snapshot()))
+        await page.reload({ waitUntil: 'networkidle' }).catch(() => {})
+        console.error('❌ avatar-after-reload ' + JSON.stringify(await snapshot()))
+        throw error
+      }
       assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'сохранённый аватар в шапке')
       const savedAvatarSrc = await page.locator('[data-testid=header-user] img').getAttribute('src')
       assert.match(savedAvatarSrc ?? '', /^\/api\/storage\/avatars\//, 'аватар лежит по неизменяемому URL хранилища, а не data:')

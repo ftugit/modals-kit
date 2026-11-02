@@ -69,26 +69,28 @@ async function run() {
       assert.ok(adminCookies.some((c) => c.name === 'auth_sid' || c.name === 'auth_tmp'), 'куки сессии получены')
       ok('вход под admin выполнен')
 
-      // 2. Находим UUID двух целевых пользователей на /users (если не-админов < 2, заводим двух гостевых без JS)
-      await page.goto(BASE + '/users', { waitUntil: 'networkidle' })
-      let targetLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasNotText: 'admin' })
-      if ((await targetLinks.count()) < 2) {
-        for (let k = 0; k < 2; k++) {
-          const guestCtx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 860 } })
-          const gp = await guestCtx.newPage()
-          await gp.goto(BASE + '/user/auth?stage=register', { waitUntil: 'load' })
-          await gp.locator('#user-auth').getByRole('button', { name: 'Создать аккаунт' }).click()
-          await gp.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
-          await gp.fill('input[name=nickname]', `guest-${tag}-${k}`)
-          await gp.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
-          await gp.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
-          await guestCtx.close()
-        }
-        await page.reload({ waitUntil: 'networkidle' })
-        targetLinks = page.locator('[data-testid="seed-user-row"]').filter({ hasNotText: 'admin' })
+      // 2. Собственные пользователи: параллельные сьюты тоже регистрируют аккаунты,
+      // и блокировать произвольные первые строки общего списка небезопасно.
+      const fixtureIds = []
+      for (let k = 0; k < 2; k++) {
+        const guestCtx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 860 } })
+        const gp = await guestCtx.newPage()
+        await gp.goto(BASE + '/user/auth?stage=register', { waitUntil: 'load' })
+        await gp.locator('#user-auth').getByRole('button', { name: 'Создать аккаунт' }).click()
+        await gp.waitForURL(/stage=(auth\.)?profile/, { timeout: 15000 })
+        await gp.fill('input[name=nickname]', `guest-${tag}-${k}`)
+        await gp.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
+        await gp.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
+        await gp.goto(BASE + '/user/menu', { waitUntil: 'load' })
+        const profileHref = await gp.getByRole('link', { name: 'Профиль', exact: true }).getAttribute('href')
+        const id = /^\/user\/([0-9a-f-]{36})/i.exec(new URL(profileHref ?? '', gp.url()).pathname)?.[1]
+        assert.ok(id, `профиль фикстуры: ${profileHref}`)
+        fixtureIds.push(id)
+        await guestCtx.close()
       }
-      const firstUserLink = targetLinks.nth(0)
-      const secondUserLink = targetLinks.nth(1)
+      await page.goto(`${BASE}/users?users.ids=${fixtureIds.join(',')}`, { waitUntil: 'networkidle' })
+      const firstUserLink = page.locator(`[data-testid="seed-user-row"][data-id="${fixtureIds[0]}"]`)
+      const secondUserLink = page.locator(`[data-testid="seed-user-row"][data-id="${fixtureIds[1]}"]`)
       await firstUserLink.waitFor({ state: 'visible', timeout: 15000 })
       const userHref = await firstUserLink.getAttribute('href')
       const m = /^\/user\/([0-9a-f-]{36})/i.exec(userHref ?? '')
