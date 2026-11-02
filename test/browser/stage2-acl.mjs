@@ -70,6 +70,42 @@ try {
     await r.locator('input[name=nickname]').fill(`acl-${Date.now()}`)
     await r.locator('#user-profile').getByRole('button', { name: 'Сохранить' }).click()
     await r.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
+    await r.goto(`${BASE}/user/menu`)
+    const regularHref = await r.getByRole('link', { name: 'Профиль', exact: true }).getAttribute('href')
+    const regularUid = regularHref?.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0]
+    assert.ok(regularUid, 'regular UUID')
+    // Страница администратора получает canOpenConfig из серверного load.
+    await page.goto(`${BASE}/user/${regularUid}`)
+    assert.equal(await page.locator('[data-testid=profile-card]').count(), 1, 'admin sees regular profile without JS')
+    assert.equal(await page.locator('[data-testid=profile-config-open]').count(), 1, 'admin sees foreign config link without JS')
+    console.log('  ok: no-JS profile propagates foreign config capability')
+
+    // Меняем id в той же записи адресной цепочки (без полной навигации),
+    // как внешний писатель адреса. Отказ старого id не должен «залипать».
+    const jsProfile = await browser.newContext()
+    try {
+      await jsProfile.addCookies(await regular.cookies(BASE))
+      const p = await jsProfile.newPage()
+      await p.goto(`${BASE}/?modal=user.profile&modal.0.id=${missing}`, { waitUntil: 'networkidle' })
+      await p.locator('[role=dialog] [data-acl-code=not_found]').waitFor({ state: 'visible', timeout: 15000 })
+      async function setId(id) {
+        await p.evaluate((uid) => {
+          const url = new URL(window.location.href)
+          url.searchParams.set('modal.0.id', uid)
+          window.history.replaceState(null, '', url)
+          window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
+        }, id)
+      }
+      await setId(regularUid)
+      await p.locator('[role=dialog] [data-testid=profile-card]').waitFor({ state: 'visible', timeout: 15000 })
+      assert.equal(await p.locator('[role=dialog] [data-acl-code=not_found]').count(), 0, 'old ACL cleared for valid profile')
+      await setId(adminUid)
+      await p.locator('[role=dialog] [data-acl-code=not_found]').waitFor({ state: 'visible', timeout: 15000 })
+      assert.equal(await p.locator('[role=dialog] [data-testid=profile-card]').count(), 0, 'previous profile not retained')
+      await setId(regularUid)
+      await p.locator('[role=dialog] [data-testid=profile-card]').waitFor({ state: 'visible', timeout: 15000 })
+      console.log('  ok: replacing profile id in one modal clears stale ACL and profile')
+    } finally { await jsProfile.close() }
     for (const action of ['edit', 'delete']) {
       await r.goto(`${BASE}/user/${adminUid}/${action}`)
       assert.equal(await r.locator('[data-acl-code=role_forbidden]').count(), 1, `foreign ${action}: forbidden`)

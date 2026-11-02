@@ -41,6 +41,7 @@
         blocks: data.blocks,
         canReadBlocks: data.canReadBlocks,
         canBlock: data.canBlock,
+        canOpenConfig: data.canOpenConfig,
       }}
     />
   {/if}

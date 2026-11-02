@@ -93,17 +93,23 @@
   /** Проекция ответа `load`: отказ — наверх носителю, публичная — в свой показ. */
   const project = (d: ProfileRouteData) => {
     if (d.fact) {
+      data = null
+      publicData = null
       onAcl?.(d.fact)
       return
     }
     if (d.publicProfile) {
+      data = null
       publicData = d.publicProfile
       return
     }
     if (!d.profile && !d.notCreated) {
+      data = null
+      publicData = null
       onAcl?.('not_found')
       return
     }
+    publicData = null
     data = {
       profile: d.profile,
       isOwn: d.isOwn,
@@ -121,23 +127,35 @@
   }
 
   $effect(() => {
+    if (initialPublic) {
+      askedFor = ''
+      publicData = initialPublic
+      data = null
+      return
+    }
     if (initial) {
+      askedFor = ''
       data = initial
+      publicData = null
       return
     }
     // Носитель уже принёс ответ (модалка): свой запрос не нужен. Смена
     // объекта — это перезапрос загрузчика (например после правки), и
     // проекция повторяется на свежих данных.
     if (route) {
+      askedFor = ''
       project(route)
       return
     }
     const id = uid
     if (!id || askedFor === id) return
     askedFor = id
+    data = null
+    publicData = null
+    let cancelled = false
     void (async () => {
       const r = await preloadData(`/user/${id}`)
-      if (askedFor !== id) return
+      if (cancelled || askedFor !== id) return
       if (r.type !== 'loaded') {
         // Редирект (гостя увели на вход) или сбой загрузчика: снаружи это
         // неотличимо от «строки нет/не видна» — тот же отказ носителя.
@@ -146,6 +164,7 @@
       }
       project(r.data as ProfileRouteData)
     })()
+    return () => { cancelled = true }
   })
 </script>
 

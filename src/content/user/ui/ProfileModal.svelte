@@ -17,15 +17,32 @@
   const modal = useModal<{ id: string }>()
   const ldr = useLoader<ProfileRouteData>()
   const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? '')
-  let acl = $state<AuthErrorCode | 'not_found' | null>(null)
+  type ProfileAcl = AuthErrorCode | 'not_found'
+  let childAcl = $state<{ uid: string; snapshot: ProfileRouteData | null; value: ProfileAcl } | null>(null)
+  const baseAcl = $derived.by((): ProfileAcl | null => {
+    if (!uid) return 'not_found'
+    const data = ldr.data
+    if (!data) return null
+    if (data.fact) return data.fact
+    return !data.profile && !data.publicProfile && !data.notCreated ? 'not_found' : null
+  })
+  const acl = $derived(
+    baseAcl ?? (childAcl?.uid === uid && childAcl.snapshot === (ldr.data ?? null) ? childAcl.value : null),
+  )
+
+  // Отказ относится к тому ответу и uid, при которых компонент начал работу.
+  // Поздний ответ старой формы не должен блокировать новый слот или SWR.
+  function onAclFor(currentUid: string, snapshot: ProfileRouteData | null | undefined) {
+    return (value: ProfileAcl) => { childAcl = { uid: currentUid, snapshot: snapshot ?? null, value } }
+  }
 </script>
 
 <Surface variant="plain" class="w-full p-6">
   {#if !uid || acl === 'not_found'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if acl}
-    <Acl status={acl} backHref="/" variant="plain" />
+    <Acl status={acl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
-    <Profile {uid} route={ldr.data} variant="plain" onAcl={(what) => (acl = what)} />
+    <Profile {uid} route={ldr.data} variant="plain" onAcl={onAclFor(uid, ldr.data)} />
   {/if}
 </Surface>
