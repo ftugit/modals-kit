@@ -25,8 +25,8 @@
       uid={data.uid}
       canDeleteSeed={data.canDeleteSeed}
       holdSeconds={data.holdSeconds}
-      action="?/profileDelete&next=/user/{data.uid}"
-      doneHref="/user/{data.uid}"
+      action="?/profileDelete"
+      doneHref="/"
       variant="card"
     />
   {/if}

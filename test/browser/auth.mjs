@@ -203,6 +203,7 @@ async function run() {
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
       await profile.getByRole('button', { name: 'Сохранить' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
+      await page.locator('[data-testid=header-user] img').waitFor({ state: 'visible', timeout: 10000 })
       assert.equal(await page.locator('[data-testid=header-user] img').count(), 1, 'сохранённый аватар в шапке')
       const savedAvatarSrc = await page.locator('[data-testid=header-user] img').getAttribute('src')
       assert.match(savedAvatarSrc ?? '', /^\/api\/storage\/avatars\//, 'аватар лежит по неизменяемому URL хранилища, а не data:')
@@ -463,5 +464,7 @@ async function run() {
 
 run().catch((e) => {
   console.error('❌', e)
+  const line = String(e?.stack ?? '').split('\n').find((l) => l.includes('auth.mjs:'))
+  if (line) console.error('❌', line.trim())
   process.exit(1)
 })

@@ -14,7 +14,7 @@
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
-  import { userSession } from '../../vault.svelte.js'
+  import { userSession, vault, type VaultPayload } from '../../vault.svelte.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { profileDeleteForm } from './form.js'
@@ -57,8 +57,19 @@
   const done = $derived(
     (bound.state.result?.data as { step?: string } | undefined)?.step === 'done',
   )
+  let lastHandledSubmission: string | undefined
   $effect(() => {
-    if (done) onDone?.()
+    const result = bound.state.result
+    if (!result?.ok || !done || result.submissionId === lastHandledSubmission) return
+    lastHandledSubmission = result.submissionId
+    const data = result.data as { sessionCleared?: boolean; user?: VaultPayload } | undefined
+    untrack(() => {
+      // Закрыть стопку до смены сессии: жёсткая инвалидация не должна
+      // размонтировать форму, пока она обрабатывает успешный ответ.
+      onDone?.()
+      if (data?.sessionCleared) vault.clear()
+      else if (data?.user) vault.hydrate(data.user)
+    })
   })
 </script>
 

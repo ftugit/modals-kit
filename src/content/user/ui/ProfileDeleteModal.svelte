@@ -26,6 +26,7 @@
     m.modals.invalidateLoader('user.profile')
     m.modals.invalidateLoader('user.list')
     void invalidatePaginator(SEED_USERS_NAME)
+    m.modals.forceCloseAll()
   }
 </script>
 
@@ -39,8 +40,7 @@
       uid={uid}
       canDeleteSeed={ldr.data.canDeleteSeed}
       holdSeconds={ldr.data.holdSeconds}
-      action="./?/profileDelete&next=/user/{uid}"
-      doneHref="/user/{uid}"
+      action="./?/profileDelete"
       variant="plain"
       onDone={done}
     />

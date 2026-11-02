@@ -32,6 +32,15 @@
 
   let { children, data } = $props()
 
+  // Страничный серверный снимок принадлежит предыдущему пользователю до
+  // завершения refreshAll. Нельзя показывать его гостю или другому principal,
+  // даже если перезапрос списка ещё ждёт сеть или закончился ошибкой.
+  // Старый гостевой снимок не содержит приватных данных и не блокирует форму
+  // входа при гостевом → авторизованном переходе.
+  const stalePrincipalPage = $derived(
+    Boolean(data.user?.sub && data.user.sub !== vault.principal),
+  )
+
   // Метаданные сессии из SSR: синхронизируем на старте вкладки и строго при
   // реальном перезапуске серверного `+layout.server.ts` (`data.authStamp`),
   // чтобы кэш layout'а на клиентских переходах не затирал живой RAM, но свежий
@@ -65,9 +74,15 @@
   const foreignNames = $derived(visibleAddress().url.pathname.startsWith('/modals') ? ('skip' as const) : ('error' as const))
 </script>
 
-<ModalSystem scope={globalScope} sources={() => SOURCES} {foreignNames}>
+<ModalSystem scope={globalScope} sources={() => SOURCES} {foreignNames} cacheScope={vault.principal}>
   <AppShell prefs={data.shell} footer={footerSnippet}>
-    {@render children()}
+    {#if stalePrincipalPage}
+      <div class="mx-auto w-full max-w-2xl py-6 text-sm text-muted-foreground" aria-busy="true" role="status">
+        Обновляем данные…
+      </div>
+    {:else}
+      {@render children()}
+    {/if}
   </AppShell>
 </ModalSystem>
 

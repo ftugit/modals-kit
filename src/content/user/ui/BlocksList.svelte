@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  // Изменяется только в клиентских эффектах, никогда в SSR.
+  let lastPrincipal: string | null | undefined = undefined
+</script>
+
 <script lang="ts">
   /**
    * Список блокировок (`user.block`): работает и для конкретного пользователя
@@ -21,6 +26,7 @@
     acquireScopedStore,
     createPaginatorStore,
     getClientStore,
+    invalidatePaginator,
     releaseScopedStore,
   } from '#lib/paginate/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
@@ -72,6 +78,15 @@
   }: Props = $props()
 
   ensureBlocksPaginator()
+
+  $effect(() => {
+    const current = vault.principal
+    if (lastPrincipal === undefined) { lastPrincipal = current; return }
+    if (lastPrincipal !== current) {
+      lastPrincipal = current
+      untrack(() => { void invalidatePaginator(BLOCKS_NAME) })
+    }
+  })
 
   const slotScope = useSlotPaginatorScope(
     BLOCKS_NAME,

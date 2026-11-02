@@ -723,7 +723,7 @@ export function auth(event: AuthEvent): {
     subject?: string,
   ): Promise<UserResult<ProfileView>>
   /** Удалить профиль цели; `withSeed` — и seed-аккаунт (домен перепроверяет права/запреты). */
-  deleteProfile(args: { withSeed?: boolean }, subject?: string): Promise<UserResult<null>>
+  deleteProfile(args: { withSeed?: boolean }, subject?: string): Promise<UserResult<{ selfSeedDeleted: boolean; selfProfileDeleted: boolean }>>
   requestDelete(): Promise<UserResult<null>>
 } {
   const cookieBase = cookieBaseOf(isHttpsEvent(event))
@@ -838,13 +838,13 @@ export function auth(event: AuthEvent): {
     deleteProfile: async (args, subject?: string) => {
       const token = await freshAccessOrCurrent()
       const r = await coreDeleteProfile(ports, token, subject, args)
-      // Свой seed помечен на удаление — куки этого браузера мертвы.
-      if (r.ok && args.withSeed) {
-        const payload = token ? await ports.seal.unseal(token) : null
-        const self = payload && 'sub' in payload ? payload.sub : undefined
-        if (self && (subject ?? self) === self) clearCookies()
-      }
-      return r
+      if (!r.ok) return r
+      const payload = token ? await ports.seal.unseal(token) : null
+      const self = payload && 'sub' in payload ? payload.sub : undefined
+      const isSelf = Boolean(self && (subject ?? self) === self)
+      const selfSeedDeleted = isSelf && Boolean(args.withSeed)
+      if (selfSeedDeleted) clearCookies()
+      return { ok: true, value: { selfSeedDeleted, selfProfileDeleted: isSelf && !args.withSeed } }
     },
     requestDelete: async () => {
       const r = await coreRequestDelete(ports, await freshAccessOrCurrent(), renewal())

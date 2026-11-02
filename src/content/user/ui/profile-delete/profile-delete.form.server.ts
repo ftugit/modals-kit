@@ -2,9 +2,8 @@
 // права и запреты цели перепроверяет домен (`deleteProfile`) в момент
 // отправки — показ кнопки удаление не разрешает.
 import { registerComponentForm } from '#hooks/component-form/registry.js'
-import { auth } from '../../gateway.server.js'
+import { auth, vaultPayloadOf } from '../../gateway.server.js'
 import { instruction } from '../../index.js'
-import { userProfileRoute } from '../../routes.js'
 import { profileDeleteForm } from './form.js'
 
 registerComponentForm({
@@ -16,11 +15,13 @@ registerComponentForm({
     const subject = String(values.subject ?? '').trim() || undefined
     const r = await u.deleteProfile({ withSeed: Boolean(values.with_seed) }, subject)
     if (!r.ok) return fail(instruction(r.fact))
+    let user
+    if (r.value.selfProfileDeleted) {
+      const refreshed = await u.refreshAccess()
+      if (refreshed.ok) user = await vaultPayloadOf(refreshed.value)
+    }
     commit()
-    return { data: { step: 'done' } }
+    return { data: { step: 'done', sessionCleared: r.value.selfSeedDeleted, user } }
   },
-  redirectOnSuccess: (event) => {
-    const parsed = userProfileRoute.parse(event.url)
-    return parsed.next ?? (parsed.id ? `/user/${parsed.id}` : '/')
-  },
+  redirectOnSuccess: () => '/',
 })

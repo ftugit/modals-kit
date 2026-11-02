@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  // Изменяется только в клиентских эффектах, никогда в SSR.
+  let lastPrincipal: string | null | undefined = undefined
+</script>
+
 <script lang="ts">
   /**
    * Список seed-юзеров — конечный компонент, а не экран на подаче
@@ -34,10 +39,12 @@
     acquireScopedStore,
     createPaginatorStore,
     getClientStore,
+    invalidatePaginator,
     releaseScopedStore,
   } from '#lib/paginate/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
+  import { vault } from '../vault.svelte.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
@@ -86,6 +93,15 @@
     variant = 'plain',
     class: className,
   }: Props = $props()
+
+  $effect(() => {
+    const current = vault.principal
+    if (lastPrincipal === undefined) { lastPrincipal = current; return }
+    if (lastPrincipal !== current) {
+      lastPrincipal = current
+      untrack(() => { void invalidatePaginator(SEED_USERS_NAME) })
+    }
+  })
 
   // Регистрация — на стороне компонента, в том же бандле, что и хост пагинатора.
   ensureSeedUsersPaginator()
