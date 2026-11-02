@@ -420,10 +420,13 @@
     onSubjectsChange?.(selectedSubjects)
   })
 
-  const subjectOptions = $derived.by(() => {
-    const allIds = normalizeSubjects([...knownSubjectIds, ...selectedSubjects], vault.principal)
-    return allIds.map((id) => ({ value: id, label: id }))
-  })
+  const subjectOptionsCsv = $derived(
+    normalizeSubjects([...knownSubjectIds, ...selectedSubjects], vault.principal).join(','),
+  )
+
+  const subjectOptions = $derived(
+    subjectOptionsCsv ? subjectOptionsCsv.split(',').map((id) => ({ value: id, label: id })) : [],
+  )
 
   const subjectsFieldView = $derived.by(() => {
     const base = bound.f.subjects

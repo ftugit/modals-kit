@@ -387,6 +387,8 @@ describe('URL adapter & extra search', () => {
     const listSpec = { tags: extraField('list') }
 
     expect(readPaginatorSearch(new URLSearchParams('page.q=9'), { extra: textSpec }).extra.q).toBe('9')
+    expect(readPaginatorSearch(new URLSearchParams('page.q='), { extra: textSpec }).extra).toEqual({})
+    expect(readPaginatorSearch(new URLSearchParams('page.q=old&page.q='), { extra: textSpec }).extra).toEqual({})
     expect(readPaginatorSearch(new URLSearchParams('page.n=9'), { extra: numSpec }).extra.n).toBe(9)
     expect(readPaginatorSearch(new URLSearchParams('page.tags=a, b,,c'), { extra: listSpec }).extra.tags).toBe('a,b,c')
     const repeatedList = { tags: commaListSearch(extraField('list')) }

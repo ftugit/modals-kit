@@ -231,3 +231,138 @@ test('addressableIndex на смешанных источниках url + local 
   assert.equal(engine.location().search, '', 'm0.users.q атомарно очищен вместе с цепочкой')
 })
 
+test('асинхронный go(-1) при close() дочерней memory-модалки не откатывает синхронный setParams родителя', () => {
+  const scope = createRegistry('t').define([
+    def('create', { defaultParams: { uids: '' } }),
+    def('picker', { source: 'memory' }),
+  ])
+  const stack: Array<{ url: string; state: Record<string, unknown> }> = [{ url: '/blocks', state: {} }]
+  let i = 0
+  const pops = new Set<() => void>()
+  const pendingGo: { run?: () => void } = {}
+  const asyncEngine: ChainEngine = {
+    name: 'history',
+    location() {
+      const u = new URL(stack[i].url, 'http://x')
+      return { pathname: u.pathname, search: u.search }
+    },
+    pushState(u, s) {
+      stack.length = i + 1
+      stack.push({ url: u, state: s })
+      i = stack.length - 1
+    },
+    replaceState(u, s) {
+      stack[i] = { url: u, state: s }
+    },
+    state: () => stack[i].state,
+    onPopState(fn) {
+      pops.add(fn)
+      return () => pops.delete(fn)
+    },
+    go(d) {
+      pendingGo.run = () => {
+        i = Math.max(0, Math.min(stack.length - 1, i + d))
+        pops.forEach((f) => f())
+      }
+    },
+  }
+
+  const m = createModals(buildCore(asyncEngine, sources(), { lookup: scope.lookup }))
+  m.attach()
+  m.open('create', { params: { uids: 'u1' } })
+  m.store.merge('runtime', {
+    '0:create': { status: 'ready', data: { assignableScopes: ['auth'] }, ck: 'create|uids="u1"' },
+  })
+  m.open('picker')
+
+  // Пикер пишет выбор и закрывается (запускается отложенный go(-1)), а родитель
+  // синхронно в том же такте обновляет свои параметры через setParams({ reload: false }).
+  m.store.merge('sharedData', { 'picker:subjects': { seq: 1, ids: ['u1', 'u2'] } })
+  m.close()
+  assert.ok(pendingGo.run, 'браузерный go(-1) ещё в полёте')
+  assert.equal(m.setParams(0, { uids: 'u1,u2' }, { reload: false }), true)
+
+  // Приходит отложенный popstate от go(-1): параметры и runtime родителя обязаны уцелеть!
+  pendingGo.run!()
+  assert.equal(m.chain.length, 1)
+  assert.deepEqual((m.chain[0] as RegisteredEntry).params, { uids: 'u1,u2' })
+  assert.equal(
+    asyncEngine.location().search,
+    '?modal=create&modal.0.uids=u1%2Cu2',
+    'отложенный replace записал обновлённые параметры на целевую запись истории',
+  )
+  assert.equal(
+    m.store.state.runtime['0:create']?.status,
+    'ready',
+    'runtime родительского слота не был сброшен промежуточным устаревшим URL',
+  )
+})
+
+
+
+test('setParams нетерминального родителя до back сохраняется при асинхронном popstate', () => {
+  const scope = createRegistry('t').define([
+    def('create', { defaultParams: { uids: '' } }),
+    def('picker', { source: 'memory' }),
+  ])
+  const stack: Array<{ url: string; state: Record<string, unknown> }> = [{ url: '/blocks', state: {} }]
+  let i = 0
+  const pops = new Set<() => void>()
+  const pendingGo: { run?: () => void } = {}
+  const asyncEngine: ChainEngine = {
+    name: 'history',
+    location() {
+      const u = new URL(stack[i].url, 'http://x')
+      return { pathname: u.pathname, search: u.search }
+    },
+    pushState(u, s) {
+      stack.length = i + 1
+      stack.push({ url: u, state: s })
+      i = stack.length - 1
+    },
+    replaceState(u, s) {
+      stack[i] = { url: u, state: s }
+    },
+    state: () => stack[i].state,
+    onPopState(fn) {
+      pops.add(fn)
+      return () => pops.delete(fn)
+    },
+    go(d) {
+      pendingGo.run = () => {
+        i = Math.max(0, Math.min(stack.length - 1, i + d))
+        pops.forEach((f) => f())
+      }
+    },
+  }
+
+  const m = createModals(buildCore(asyncEngine, sources(), { lookup: scope.lookup }))
+  m.attach()
+  m.open('create', { params: { uids: 'u1' } })
+  m.store.merge('runtime', {
+    '0:create': { status: 'ready', data: { assignableScopes: ['auth'] }, ck: 'create|uids="u1"' },
+  })
+  m.open('picker')
+
+  // Пикер пишет выбор и закрывается (запускается отложенный go(-1)), а родитель
+  // синхронно в том же такте обновляет свои параметры через setParams({ reload: false }).
+  m.store.merge('sharedData', { 'picker:subjects': { seq: 1, ids: ['u1', 'u2'] } })
+  assert.equal(m.setParams(0, { uids: 'u1,u2' }, { reload: false }), true)
+  m.close()
+  assert.ok(pendingGo.run, 'браузерный go(-1) ещё в полёте')
+
+  // Приходит отложенный popstate от go(-1): параметры и runtime родителя обязаны уцелеть!
+  pendingGo.run!()
+  assert.equal(m.chain.length, 1)
+  assert.deepEqual((m.chain[0] as RegisteredEntry).params, { uids: 'u1,u2' })
+  assert.equal(
+    asyncEngine.location().search,
+    '?modal=create&modal.0.uids=u1%2Cu2',
+    'отложенный replace записал обновлённые параметры на целевую запись истории',
+  )
+  assert.equal(
+    m.store.state.runtime['0:create']?.status,
+    'ready',
+    'runtime родительского слота не был сброшен промежуточным устаревшим URL',
+  )
+})

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Переключатель темы (lemonade / night).
-  import { Button } from '#components/ui/index.js'
+  import Button from '#components/ui/button/Button.svelte'
   import { onMount } from 'svelte'
 
   type Theme = 'lemonade' | 'night'

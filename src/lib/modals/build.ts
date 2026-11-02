@@ -139,7 +139,7 @@ export function buildCore(
    * (`onPopState`). Без подписчиков сообщать некому — тогда не откладываем.
    */
   let traversing = false
-  let pendingReplaceAfterBack: Chain | null = null
+  let pendingBackTarget: Chain | null = null
   let offExternal: (() => void) | undefined
   const deferred: Array<() => void> = []
   const deferWhileTraversing = (op: () => void): boolean => {
@@ -149,11 +149,20 @@ export function buildCore(
   }
   function onExternalChange() {
     traversing = false
-    if (pendingReplaceAfterBack !== null) {
-      const target = pendingReplaceAfterBack
-      pendingReplaceAfterBack = null
+    const target = pendingBackTarget
+    pendingBackTarget = null
+    if (target !== null && !chainEquals(read(), target)) {
+      // На записи истории назначения цепочка расходится с целевой `chain`
+      // нашего `back` (например, холодный deep-link `wanted > toGo`, либо
+      // родительский слот обновил свои `params` через `setParams`, пока
+      // поверх него была открыта дочерняя модалка): дозаписываем `target`
+      // с `replace: true` ДО `notify()`, не пересоздавая живой слот.
       core.write(target, { replace: true })
-    } else {
+    } else if (deferred.length === 0) {
+      // Если в очереди `deferred` уже ждут `write`/`back` (например, родительская
+      // модалка вызвала `setParams(..., { reload: false })` пока шёл `go(-1)`),
+      // НЕ рассылаем промежуточный устаревший снимок записи истории — иначе `sync`
+      // примет старые параметры за смену записи и сбросит `runtime`/кеш родителя.
       notify()
     }
     // Отложенная операция сама может начать обход — тогда остальные ждут его.
@@ -384,8 +393,8 @@ export function buildCore(
           const wanted = Math.max(0, depth - chain.length)
           const toGo = Math.min(wanted, maxSteps)
           if (toGo > 0) {
-            if (wanted > toGo && listeners.size > 0) {
-              pendingReplaceAfterBack = chain
+            if (listeners.size > 0) {
+              pendingBackTarget = chain
             }
             // Флаг — ДО вызова: среда может уведомить синхронно (FastEdge, тесты).
             traversing = true

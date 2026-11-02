@@ -12,7 +12,7 @@
    * `user.list`, без JS — обычная ссылка на `/users` (адрес явный: у
    * модалки маршрутной загрузки нет, данные запрашивает сам список).
    */
-  import { Button } from '#components/ui/index.js'
+  import Button from '#components/ui/button/Button.svelte'
   import { useModalLink } from '#hooks/links/index.js'
   import { vault } from '../vault.svelte.js'
 

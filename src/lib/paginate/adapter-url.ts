@@ -189,7 +189,9 @@ export function readPaginatorSearch(
         ? all.join(',')
         : all[all.length - 1]
       : null
-    if (raw == null) continue
+    // Нативная GET-форма отправляет пустые поля; канонический адрес считает
+    // их отсутствующими. Иначе SSR-снапшот ошибочно признаётся устаревшим.
+    if (raw == null || raw === '') continue
     // `rawText`-валидаторы (`extraField('text'|'list')`) получают строку как есть.
     const v = validator(validator.rawText ? raw : decodeExtraValue(raw))
     if (v !== undefined) extra[key] = v

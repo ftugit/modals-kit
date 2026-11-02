@@ -219,12 +219,14 @@
     // Пропсы хоста — БАЗА: они для всех страниц общие, а слайсы демки
     // (configure) накладываются поверх в своём скоупе (решение оператора
     // 2026-10-10: демка страницы не влияет на модалки остальных).
-    modals.configureBase({
+    const m = modals
+    const base = {
       ...cfg,
       renderSkeleton: skeleton,
       renderError: error,
       renderCloseIcon: closeIconSlot,
-    } as Partial<HostConfig<Snippet>>)
+    } as Partial<HostConfig<Snippet>>
+    untrack(() => m.configureBase(base))
   })
 
   /* ── контекст ────────────────────────────────────────────────────── */
@@ -252,16 +254,6 @@
       close: closeFloating,
       container: floatingContainer,
     },
-  })
-
-  // Загрузчик работает ТОЛЬКО для активной записи; модалки в стопке
-  // свой загрузчик не запускают. Очистка — на смену активной или ревизии SWR.
-  $effect(() => {
-    const a = active
-    const rev = a ? view.runtime[runtimeKey(a.name, a.index)]?.rev : undefined
-    void rev
-    if (!a) return
-    return loader.runLoader(a)
   })
 
   const config = $derived(view.hostConfig)
@@ -324,6 +316,21 @@
       ? resolveEntry(chain[chain.length - 1], chain.length - 1, liveScope.lookup)
       : null,
   )
+
+  // Загрузчик работает ТОЛЬКО для активной записи; модалки в стопке
+  // свой загрузчик не запускают. Очистка — на смену активной или ревизии SWR.
+  // `activeRev` вынесен в `$derived` (сравнение числа `===`), а `runLoader`
+  // обёрнут в `untrack`, чтобы синхронный `setRuntime(..., 'loading')` не
+  // перезапускал этот же эффект по циклу `idle -> loading -> cleanup -> idle`.
+  const activeRev = $derived(
+    active ? (view.runtime[runtimeKey(active.name, active.index)]?.rev ?? 0) : 0,
+  )
+  $effect(() => {
+    const a = active
+    void activeRev
+    if (!a) return
+    return untrack(() => loader.runLoader(a))
+  })
 
   // Снапшот последней активной записи: показываем её и во время анимации
   // закрытия, иначе оболочка схлопнется в пустоту до конца exit-фазы.

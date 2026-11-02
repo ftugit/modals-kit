@@ -6,7 +6,7 @@
 //
 // Фабрика, а не класс — как весь `lib/` исходного проекта.
 import { getClientStore } from '../store'
-import type { ModalStore, ModalStoreData } from '../store'
+import type { ModalStore } from '../store'
 
 /**
  * Реактивное зеркало стора.
@@ -15,40 +15,61 @@ import type { ModalStore, ModalStoreData } from '../store'
  * Односторонний поток сохраняется: транспорт → ядро → зеркало → разметка.
  */
 export function createReactiveStore(core: ModalStore = getClientStore(), scoped = false) {
-  // $state.raw: ядро отдаёт НОВЫЙ объект на каждое изменение, поэтому
-  // глубокая проксификация не нужна — сравнение по ссылке точнее и дешевле.
-  let snapshot = $state.raw<ModalStoreData>(core.state as ModalStoreData)
+  // Послойные `$state.raw`: обновление `runtime` (idle -> loading -> ready)
+  // не трогает `chain` и `hostConfig` по ссылке и не будит эффекты стопки.
+  let chain = $state.raw(core.state.chain)
+  let hostConfig = $state.raw(core.state.hostConfig)
+  let hostConfigBy = $state.raw(core.state.hostConfigBy)
+  let scopeKey = $state(core.state.scopeKey)
+  let runtime = $state.raw(core.state.runtime)
+  let data = $state.raw(core.state.data)
+  let sharedData = $state.raw(core.state.sharedData)
+  let registryVersion = $state(core.state.registryVersion)
 
   const off = core.subscribe((next) => {
-    snapshot = next
+    // Прямое присваивание компилируется в `set(signal, value)` без `get(signal)`:
+    // Svelte 5 сам проверяет `Object.is(signal.v, value)` и НЕ подписывает
+    // активный `$effect` (например `configureBase` / `setScope`), из которого
+    // синхронно пришёл `core.set(...)`.
+    chain = next.chain
+    hostConfig = next.hostConfig
+    hostConfigBy = next.hostConfigBy
+    scopeKey = next.scopeKey
+    runtime = next.runtime
+    data = next.data
+    sharedData = next.sharedData
+    registryVersion = next.registryVersion
   })
+
+  // Ключ скоупа — данные стора (`scopeKey`), пишет его адаптер через
+  // `setScope`. Производное кэширует слитый объект и остаётся ЧИСТЫМ:
+  // никаких чтений `page` (иначе эффекты хоста подписываются на навигацию
+  // и отрывают ядро посреди popstate — R-03).
+  const mergedHostConfig = $derived(
+    scoped ? { ...hostConfig, ...hostConfigBy[scopeKey] } : hostConfig,
+  )
 
   return {
     /** Ядро — для действий (открыть/закрыть/настроить). */
     core,
 
     get chain() {
-      return snapshot.chain
+      return chain
     },
     get hostConfig() {
-      // Ключ скоупа — данные стора (`scopeKey`), пишет его адаптер через
-      // `setScope`. Здесь геттер ЧИСТЫЙ: подписка — только на снапшот,
-      // никаких чтений `page` (иначе эффекты хоста подписываются на
-      // навигацию и отрывают ядро посреди popstate — R-03).
-      if (!scoped) return snapshot.hostConfig
-      return { ...snapshot.hostConfig, ...snapshot.hostConfigBy[snapshot.scopeKey] }
+      return mergedHostConfig
     },
     get runtime() {
-      return snapshot.runtime
+      return runtime
     },
     get data() {
-      return snapshot.data
+      return data
     },
     get sharedData() {
-      return snapshot.sharedData
+      return sharedData
     },
     get registryVersion() {
-      return snapshot.registryVersion
+      return registryVersion
     },
 
     /** Отписка. Хост зовёт на размонтировании. */

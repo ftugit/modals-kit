@@ -1,7 +1,7 @@
 <!-- Композиция плейсхолдеров загрузки модального окна поверх единого
      примитива `ui/skeleton/Skeleton.svelte`; снаружи размечена `data-modal-skeleton*`. -->
 <script lang="ts">
-  import { Skeleton as UiSkeleton } from '#components/ui/index.js'
+  import UiSkeleton from '#components/ui/skeleton/Skeleton.svelte'
   import { MODAL_SKELETON_CLASS } from '#lib/modals/svelte/classes.js'
 </script>
 

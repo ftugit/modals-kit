@@ -14,7 +14,8 @@
    */
   import type { Component } from 'svelte'
   import { Portal } from '@ark-ui/svelte/portal'
-  import { Button, Skeleton } from '#components/ui/index.js'
+  import Button from '#components/ui/button/Button.svelte'
+  import Skeleton from '#components/ui/skeleton/Skeleton.svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'

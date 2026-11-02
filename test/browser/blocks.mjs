@@ -282,7 +282,7 @@ async function run() {
         timeout: 10000,
       })
       await page.locator('[data-testid="user-picker-apply"]').click()
-      await page.waitForURL((u) => u.pathname === '/blocks/new' && u.searchParams.get('subjects') === targetUserId, {
+      await page.waitForURL((u) => u.pathname === '/blocks/new' && u.searchParams.get('uids') === targetUserId, {
         timeout: 10000,
       })
       const noJsSelectedSubjects = await page
@@ -291,7 +291,7 @@ async function run() {
       assert.deepEqual(
         noJsSelectedSubjects,
         [targetUserId],
-        'без JS SSR засеял select[name="subjects"] из ?subjects=…',
+        'без JS SSR засеял select[name="subjects"] из ?uids=…',
       )
 
       await page.locator('select[name="scope"]').selectOption('auth')

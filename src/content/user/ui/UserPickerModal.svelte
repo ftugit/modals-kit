@@ -5,6 +5,7 @@
    * после чего закрывается только верхний слой пикера — вызывающая модалка или
    * страница остаётся открытой с прежним состоянием.
    */
+  import { tick } from 'svelte'
   import { useLoader, useModal, useModals } from '#lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
   import UserPicker, { USER_PICKER_CHANNEL_PREFIX } from './UserPicker.svelte'
@@ -37,13 +38,18 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? ldr.data?.initialUsers?.fact ?? null)
   const isEnabled = $derived(ldr.data?.enabled ?? ldr.data?.initialUsers?.enabled)
 
-  function confirm(ids: string[]) {
+  async function confirm(ids: string[]) {
     m.modals.store.merge('sharedData', {
       [`${USER_PICKER_CHANNEL_PREFIX}${channel}`]: {
         seq: Date.now(),
         ids,
       },
     })
+    // Прокачиваем реактивных подписчиков `sharedData` ДО `close()`, чтобы
+    // страничные носители (`/blocks/new`) успели поставить `writeAddress` в
+    // очередь писателя адреса перед `go(-1)` (для переноса `carry`), а
+    // модальные носители — обновить `setParams` (переносится `pendingBackTarget`).
+    await tick()
     m.modals.close()
   }
 </script>

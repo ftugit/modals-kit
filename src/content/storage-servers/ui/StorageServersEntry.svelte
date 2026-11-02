@@ -4,7 +4,7 @@
    * рендерится реактивно по `STORAGE_ACL` (`storage.read`, `storage.edit`, `admin`).
    */
   import { grants } from '#lib/db/index.js'
-  import { Button } from '#components/ui/index.js'
+  import Button from '#components/ui/button/Button.svelte'
   import { useModalLink } from '#hooks/links/index.js'
   import { storageServer } from '#hooks/storage-schema.js'
   import { useGrants } from '#content/user/grants.svelte.js'

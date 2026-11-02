@@ -224,12 +224,16 @@ const LIMITS = {
   // Сборка ответственна: HEAD без правок аудита даёт те же 435.8 / 421.6 (проверено
   // `git stash` → `vite build` → `test:size`), правки S3/S4 добавляют +0.1 KiB.
   // По постоянному правилу оператора (≤ +5 КБ, сообщить) лимиты = факт + 0.5.
-  allImmutableGzip: 436.3 * KiB,
-  allJsGzip: 422.2 * KiB,
+  // 2026-11-02: владелец утвердил отдельные лимиты ядра и сборки demo.
+  allImmutableGzip: 446.0 * KiB,
+  allJsGzip: 433.5 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
 }
+
+// Утверждённые владельцем лимиты полной сборки с модулем demo.
+const DEMO_LIMITS = { ...LIMITS, allImmutableGzip: 566.0 * KiB, allJsGzip: 552.2 * KiB }
 
 const ROUTE_LIMITS = {
   // 2026-10-22: Attachment + FileAttachment в общем чанке примитивов ui
@@ -240,7 +244,7 @@ const ROUTE_LIMITS = {
   // Ход 266: панель /form — универсальный DemoPanel (этап 4): факт 189.5.
   // Рост +2.6 — цена общей панели (адрес, схема, «Применить» до оживления);
   // в пределах «≤ +5» на ход, лимит = факт + 0.5.
-  '/form': 200.6 * KiB, // 2026-10-23 S5 (факт 200.1)
+  '/form': 227.2 * KiB, // 2026-11-02: утверждено владельцем; ранее 200.6 KiB. // 2026-10-23 S5 (факт 200.1)
   // ВРЕМЕННО 148.5 → 150 (решение оператора, ход 10, 2026-10-11): /modals тянет
   // весь lib/form через панель настроек (bind статически несёт отправку, async,
   // конверт, редактор). Тексты ошибок F23 (+0.4) и очередь адреса F12 (+0.1)
@@ -255,13 +259,13 @@ const ROUTE_LIMITS = {
   // Ход 266: DemoPanel не дублирует имена своих полей скрытыми `carried`
   // (иначе форма читала старое значение из адреса) и держит `leading` вне формы:
   // факт 188.2. Лимит = факт + 0.5.
-  '/modals': 196.0 * KiB, // 2026-10-23 S5 (факт 195.5)
+  '/modals': 230.5 * KiB, // 2026-11-02: утверждено владельцем; ранее 196.0 KiB. // 2026-10-23 S5 (факт 195.5)
   // Пагинатор с живым источником, paginate/search и панелью фильтров. Ход 16 (решение
   // оператора): 138.6 → 196.5 = факт 191.5 + 5. Прежние «факт 120.3» и 138.6 были
   // замером БЕЗ страницы: узел записан в app.js как `~8` (серверные данные), и
   // разбор выбрасывал его (см. routeDictionary). Рост Kit 3 здесь ≈3.5, как у
   // остальных маршрутов; вес самой страницы — отдельная находка.
-  '/paginator': 232.7 * KiB, // 2026-10-23 S5 (факт 232.2)
+  '/paginator': 269.6 * KiB, // 2026-11-02: утверждено владельцем; ранее 232.7 KiB. // 2026-10-23 S5 (факт 232.2)
   // C16 (решение оператора, ход 34: «прибавь размера»): маршруты без лимита
   // получили «факт + 5» по сборке хода 34 — 175.5 / 124.1 / 118.8 / 125.6.
   // Ход 109: + экран переноса схемы (SchemaPending, форма решений) — факт 180.8;
@@ -273,21 +277,21 @@ const ROUTE_LIMITS = {
   // получает СЫРУЮ строку адреса (без жадного раскодирования), +0.05 KiB в общем
   // чанке пагинатора. Лимит эпохи S5 (231.8 + 0.5) стоял ровно на границе и до этой
   // правки: факт HEAD 232.27. Лимит = факт + 0.5 по постоянному правилу.
-  '/db-demo': 232.9 * KiB, // 2026-10-23 S5 (факт 231.8); 2026-10-24 факт 232.324
+  '/db-demo': 267.8 * KiB, // 2026-11-02: утверждено владельцем; ранее 232.9 KiB. // 2026-10-23 S5 (факт 231.8); 2026-10-24 факт 232.324
   // Ход 269: форма переименования (update) и опрос изменённых — факт 220.8.
-  '/cycle': 145.2 * KiB, // 2026-10-23 S5 (факт 144.7)
-  '/spike': 139.8 * KiB, // 2026-10-23 S5 (факт 139.3)
+  '/cycle': 157.1 * KiB, // 2026-11-02: утверждено владельцем; ранее 145.2 KiB. // 2026-10-23 S5 (факт 144.7)
+  '/spike': 151.0 * KiB, // 2026-11-02: утверждено владельцем; ранее 139.8 KiB. // 2026-10-23 S5 (факт 139.3)
   '/cards/[id]': 153.9 * KiB, // 2026-10-23 S5 (факт 153.4)
   // Ход 224: конструктор полей — факт 169.9. Ход 236: хук `fieldSet` — факт 171.2.
   // Ход 237: чистка lib/form — факт 169.9.
   // Ход 266: у конструктора полей появилась демо-панель (предел набора из
   // адреса) — факт 186.9: цена того, что панель стала общим компонентом.
-  '/fields': 199.1 * KiB, // 2026-10-23 S5 (факт 198.6)
+  '/fields': 224.6 * KiB, // 2026-11-02: утверждено владельцем; ранее 199.1 KiB. // 2026-10-23 S5 (факт 198.6)
   // Ход 261 (ревизия): универсальный хост шагов (режимы url/local/hybrid) + демо /steps.
   // Ход 262: /steps на универсальной демо-панели (факт 184.5).
   // Ход 264: у панели появилось зеркало внешних значений (url:false) — факт
   // 185.8.
-  '/steps': 198.3 * KiB, // 2026-10-23 S5 (факт 197.8)
+  '/steps': 274.5 * KiB, // 2026-11-02: утверждено владельцем; ранее 198.3 KiB. // 2026-10-23 S5 (факт 197.8)
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {
@@ -401,18 +405,39 @@ function routeGzip(route, nodes) {
   return { total, files }
 }
 
-const stats = immutableStats()
-console.log('Бюджеты клиентской сборки gzip')
-failIf('все immutable-ресурсы', stats.total, LIMITS.allImmutableGzip)
-failIf('весь JS', stats.js, LIMITS.allJsGzip)
-failIf('весь CSS', stats.css, LIMITS.allCssGzip)
-failIf(`самый большой JS (${stats.largestJs.file})`, stats.largestJs.gzip, LIMITS.largestJsGzip)
-failIf(`самый большой CSS (${stats.largestCss.file})`, stats.largestCss.gzip, LIMITS.largestCssGzip)
+const OPTIONAL_DEMO_ROUTES = new Set([
+  '/form',
+  '/modals',
+  '/paginator',
+  '/db-demo',
+  '/cycle',
+  '/spike',
+  '/cards/[id]',
+  '/fields',
+  '/steps',
+])
 
 const routes = routeDictionary()
+const installedPath = '.modules/installed.json'
+const installed = existsSync(installedPath) ? JSON.parse(readFileSync(installedPath, 'utf8')) : null
+const hasDemo = Boolean(installed?.modules?.demo) || [...OPTIONAL_DEMO_ROUTES].some((route) => routes[route])
+const activeLimits = hasDemo ? DEMO_LIMITS : LIMITS
+
+const stats = immutableStats()
+console.log(`Бюджеты клиентской сборки gzip (${hasDemo ? 'ядро + demo' : 'чистое ядро'})`)
+failIf('все immutable-ресурсы', stats.total, activeLimits.allImmutableGzip)
+failIf('весь JS', stats.js, activeLimits.allJsGzip)
+failIf('весь CSS', stats.css, activeLimits.allCssGzip)
+failIf(`самый большой JS (${stats.largestJs.file})`, stats.largestJs.gzip, activeLimits.largestJsGzip)
+failIf(`самый большой CSS (${stats.largestCss.file})`, stats.largestCss.gzip, activeLimits.largestCssGzip)
+
 console.log('\nБюджеты начальной загрузки маршрутов')
 for (const [route, limit] of Object.entries(ROUTE_LIMITS)) {
   if (!routes[route]) {
+    if (!hasDemo && OPTIONAL_DEMO_ROUTES.has(route)) {
+      console.log(`  skip ${route}: маршрут опционального модуля demo не установлен`)
+      continue
+    }
     console.log(` FAIL ${route}: маршрут не найден в generated app`)
     failures.push(`${route}: маршрут не найден`)
     continue
