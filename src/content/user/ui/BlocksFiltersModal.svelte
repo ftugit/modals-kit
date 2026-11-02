@@ -108,17 +108,9 @@
   }
 </script>
 
-{#if ldr.data?.enabled === false}
+{#if ldr.data?.enabled === false || ldr.data?.fact}
   <Surface variant="plain" class="w-full p-6">
-    <Acl enabled={false} backHref="/" variant="plain" />
-  </Surface>
-{:else if ldr.data?.fact === 'auth.forbidden'}
-  <Surface variant="plain" class="w-full p-6">
-    <Acl model="forbidden" backHref="/" variant="plain" />
-  </Surface>
-{:else if ldr.data?.fact}
-  <Surface variant="plain" class="w-full p-6">
-    <Acl status={ldr.data.fact} backHref="/" variant="plain" />
+    <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   </Surface>
 {:else}
   <Surface

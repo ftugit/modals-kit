@@ -16,12 +16,10 @@
 </script>
 
 <div class="mx-auto w-full max-w-sm">
-  {#if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref={`/user/${data.contextUid}/blocks`} />
-  {:else if data.fact === 'auth.forbidden' || !data.detail?.canDelete}
-    <Acl model="forbidden" backHref={`/user/${data.contextUid}/blocks`} />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref={`/user/${data.contextUid}/blocks`} />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={data.fact === 'auth.identity-unknown' ? '/' : `/user/${data.contextUid}/blocks`} />
+  {:else if !data.detail?.canDelete}
+    <Acl status="auth.forbidden" enabled={data.enabled} backHref={`/user/${data.contextUid}/blocks`} />
   {:else}
     <div class="mb-3">
       <Button href={`/user/${data.contextUid}/blocks/${data.blockId}`} variant="ghost" size="sm">

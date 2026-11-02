@@ -15,12 +15,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-md">
-  {#if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/" />
-  {:else if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/" />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref="/" />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={'/'} />
   {:else}
     <UserConfig
       initial={data}

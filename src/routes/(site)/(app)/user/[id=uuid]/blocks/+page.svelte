@@ -18,12 +18,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-2xl">
-  {#if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref={`/user/${data.uid}`} />
-  {:else if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/" />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref="/" />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={data.fact === 'auth.forbidden' ? `/user/${data.uid}` : '/'} />
   {:else}
     <div class="mb-3">
       <Button {...asModalLink('user.profile', { id: data.uid ?? '' })} variant="ghost" size="sm">

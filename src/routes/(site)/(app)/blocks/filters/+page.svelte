@@ -15,10 +15,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-xl">
-  {#if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref={data.backHref} />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref={data.backHref} />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={data.backHref} />
   {:else}
     <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
       <h1 class="mb-1.5 text-lg font-semibold leading-tight tracking-tight">Фильтры блокировок</h1>

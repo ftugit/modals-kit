@@ -24,12 +24,10 @@
 </script>
 
 <Surface variant="plain" class="w-full p-6">
-  {#if invalidExplicitId || effectiveAcl === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/" variant="plain" />
-  {:else if effectiveAcl === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/" variant="plain" />
+  {#if invalidExplicitId}
+    <Acl status="auth.identity-unknown" backHref="/" variant="plain" />
   {:else if effectiveAcl}
-    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+    <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
     <UserConfig
       {uid}

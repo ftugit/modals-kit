@@ -19,12 +19,8 @@
 </script>
 
 <Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
-  {#if ldr.data?.enabled === false}
-    <Acl enabled={false} backHref="/" variant="plain" />
-  {:else if effectiveAcl === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/" variant="plain" />
-  {:else if effectiveAcl}
-    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+  {#if ldr.data?.enabled === false || effectiveAcl}
+    <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
     <SeedUsersList
       initial={ldr.data}

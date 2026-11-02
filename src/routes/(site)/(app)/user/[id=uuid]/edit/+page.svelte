@@ -17,9 +17,9 @@
 
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}
-    <Acl status={data.fact} backHref="/" />
+    <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else if !data.canEdit}
-    <Acl status="auth.forbidden" backHref="/" />
+    <Acl status="auth.forbidden" enabled={data.enabled} backHref="/" />
   {:else}
     <ProfileForm
       subject={data.uid}

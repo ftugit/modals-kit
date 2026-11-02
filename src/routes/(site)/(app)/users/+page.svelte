@@ -18,10 +18,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-2xl">
-  {#if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/" />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref="/" />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}
     <SeedUsersList initial={data} variant="card" />
   {/if}

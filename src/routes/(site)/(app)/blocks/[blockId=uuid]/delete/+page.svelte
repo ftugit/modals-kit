@@ -16,12 +16,10 @@
 </script>
 
 <div class="mx-auto w-full max-w-sm">
-  {#if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/blocks" />
-  {:else if data.fact === 'auth.forbidden' || !data.detail?.canDelete}
-    <Acl model="forbidden" backHref="/blocks" />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref="/blocks" />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={'/blocks'} />
+  {:else if !data.detail?.canDelete}
+    <Acl status="auth.forbidden" enabled={data.enabled} backHref={'/blocks'} />
   {:else}
     <div class="mb-3">
       <Button href={`/blocks/${data.blockId}`} variant="ghost" size="sm">← К блокировке</Button>

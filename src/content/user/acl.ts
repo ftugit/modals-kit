@@ -311,6 +311,8 @@ function resolveStatusCode(status: AuthErrorCode | 'restrictions'): AclScreenCod
     case 'auth.blocked':
       return 'account_blocked'
     case 'restrictions':
+    case 'profile.delete-blocked':
+    case 'account.delete-blocked':
       return 'account_restricted'
     case 'auth.deleted':
     case 'auth.delete-pending':
@@ -323,6 +325,7 @@ function resolveStatusCode(status: AuthErrorCode | 'restrictions'): AclScreenCod
     case 'auth.session-unknown':
       return 'session_expired'
     case 'auth.identity-unknown':
+    case 'storage.not-found':
       return 'not_found'
     case 'auth.forbidden':
       return 'role_forbidden'

@@ -55,12 +55,8 @@
 </script>
 
 <Surface variant="plain" class="w-full p-6">
-  {#if effectiveAcl === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/" variant="plain" />
-  {:else if effectiveAcl === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/" variant="plain" />
-  {:else if effectiveAcl}
-    <Acl status={effectiveAcl} backHref="/" variant="plain" />
+  {#if ldr.data?.enabled === false || effectiveAcl}
+    <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
     <BlockForm
       mode="create"

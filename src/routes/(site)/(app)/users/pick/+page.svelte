@@ -15,10 +15,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-2xl">
-  {#if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref={data.fromHref} />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref={data.fromHref} />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={data.fromHref} />
   {:else}
     <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
       <UserPicker

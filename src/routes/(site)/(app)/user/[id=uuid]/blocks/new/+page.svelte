@@ -16,12 +16,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-md">
-  {#if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/" />
-  {:else if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref={`/user/${data.uid}/blocks`} />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref={`/user/${data.uid}/blocks`} />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={data.fact === 'auth.identity-unknown' ? '/' : `/user/${data.uid}/blocks`} />
   {:else}
     <div class="mb-3">
       <Button href={`/user/${data.uid}/blocks`} variant="ghost" size="sm">

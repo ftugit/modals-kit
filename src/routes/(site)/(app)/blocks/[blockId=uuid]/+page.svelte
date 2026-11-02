@@ -16,12 +16,8 @@
 </script>
 
 <div class="mx-auto w-full max-w-md">
-  {#if data.fact === 'auth.identity-unknown'}
-    <Acl model="not_found" backHref="/blocks" />
-  {:else if data.fact === 'auth.forbidden'}
-    <Acl model="forbidden" backHref="/blocks" />
-  {:else if data.fact}
-    <Acl status={data.fact} backHref="/blocks" />
+  {#if data.fact}
+    <Acl status={data.fact} enabled={data.enabled} backHref={'/blocks'} />
   {:else}
     <div class="mb-3">
       <Button href="/blocks" variant="ghost" size="sm">← К списку блокировок</Button>

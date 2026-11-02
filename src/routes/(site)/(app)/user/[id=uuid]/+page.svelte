@@ -20,7 +20,7 @@
 
 <div class="mx-auto w-full max-w-sm">
   {#if data.fact}
-    <Acl status={data.fact} backHref="/" />
+    <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else if data.publicProfile}
     <Profile uid={data.uid} initialPublic={data.publicProfile} variant="card" />
   {:else if !data.profile && !data.notCreated}

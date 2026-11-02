@@ -136,6 +136,12 @@ describe('resolveAcl: состояния аккаунта', () => {
     )
   })
 
+  it('ошибки удаления и отсутствующего хранилища не оставляют ACL пустым', () => {
+    expect(resolveAcl({ authorized: true, status: 'storage.not-found' })?.code).toBe('not_found')
+    expect(resolveAcl({ authorized: true, status: 'profile.delete-blocked' })?.code).toBe('account_restricted')
+    expect(resolveAcl({ authorized: true, status: 'account.delete-blocked' })?.code).toBe('account_restricted')
+  })
+
   it('статусы одной семьи сходятся в один экран', () => {
     for (const status of ['auth.expired', 'auth.token', 'auth.kid-unknown', 'auth.session-unknown'] as const) {
       expect(resolveAcl({ authorized: false, allow: 'user', status })?.code).toBe('session_expired')

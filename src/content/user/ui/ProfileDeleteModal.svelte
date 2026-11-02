@@ -32,9 +32,9 @@
 
 <Surface variant="plain" class="w-full p-6">
   {#if ldr.data?.fact}
-    <Acl status={ldr.data.fact} backHref="/" variant="plain" />
+    <Acl status={ldr.data.fact} enabled={ldr.data.enabled} backHref="/" variant="plain" />
   {:else if ldr.data && !ldr.data.canDeleteProfile}
-    <Acl status="auth.forbidden" backHref="/" variant="plain" />
+    <Acl status="auth.forbidden" enabled={ldr.data.enabled} backHref="/" variant="plain" />
   {:else if ldr.data && uid}
     <ProfileDelete
       uid={uid}
