@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createPaginatorStore, getClientStore, type Store } from '../store'
   import type { PaginatorState } from '../types'
+  import { rehydratePaginator } from '../core'
   import { setScopeStore } from './context.svelte'
   import { untrack, type Snippet } from 'svelte'
 
@@ -13,17 +14,23 @@
   let { snapshots, store: customStore, children }: Props = $props()
 
   // Скоуп создаётся один раз: стор и SSR-снапшоты берутся при монтировании.
-  // Принимать ли снапшот, решает стор: тот же объект — перемонтирование
-  // (живое состояние цело), новый — носитель переспросил данные.
+  // Обновления принимаются лишь если снимок совместим с живым окном.
   const initial = untrack(() => ({ customStore, snapshots }))
   const store =
     initial.customStore ?? (typeof window === 'undefined' ? createPaginatorStore() : getClientStore())
 
   if (initial.snapshots) {
     for (const [name, snap] of Object.entries(initial.snapshots)) {
-      if (snap) store.hydrate(name, snap)
+      if (snap) rehydratePaginator(store, name, snap)
     }
   }
+
+  $effect(() => {
+    if (!snapshots) return
+    for (const [name, snap] of Object.entries(snapshots)) {
+      if (snap) rehydratePaginator(store, name, snap)
+    }
+  })
 
   setScopeStore(store)
 </script>

@@ -8,6 +8,7 @@
   } from '../anchors'
   import {
     getState,
+    rehydratePaginator,
     initPaginator,
     appendOf,
     setAppendMode,
@@ -98,7 +99,7 @@
   }: Props<any> = $props()
 
   /**
-   * Конфигурация экземпляра читается ОДИН раз — при монтировании. Имя, SSR-снапшот,
+   * Основная конфигурация экземпляра читается ОДИН раз — при монтировании. Имя, SSR-снапшот,
    * дефолты extra и ключи адреса нужны только однократной инициализации (гидрация
    * стора, привязка роутера к адаптеру, контекст для детей): живой смены у них нет.
    * Другое имя — другой пагинатор, и пересоздаёт хост родитель (`{#key}`), а не
@@ -188,7 +189,13 @@
     }
   }
 
-  if (snap) store.hydrate(name, snap)
+  if (snap) rehydratePaginator(store, name, snap)
+  let seenSnapshot = init.snapshot
+  $effect(() => {
+    const next = snapProp
+    if (next && next !== seenSnapshot) rehydratePaginator(store, name, next)
+    seenSnapshot = next
+  })
 
   // Умолчания extra — объявление адаптера (не проп хоста).
   const initialExtraDefaults = adapter.extraDefaults

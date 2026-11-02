@@ -23,12 +23,14 @@
   {#if ldr.data?.enabled === false || effectiveAcl}
     <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
+    {#key uid}
     <BlocksList
       {uid}
-      initial={ldr.data}
+      initial={ldr.data?.uid === uid ? ldr.data : null}
       variant="plain"
       class="min-h-0 flex-1"
       onAcl={(fact) => (acl = fact)}
     />
+    {/key}
   {/if}
 </Surface>

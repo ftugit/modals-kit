@@ -26,6 +26,8 @@
     acquireScopedStore,
     createPaginatorStore,
     getClientStore,
+    getState,
+    replacePaginatorSnapshot,
     invalidatePaginator,
     releaseScopedStore,
   } from '#lib/paginate/index.js'
@@ -40,6 +42,7 @@
   import BlockCard from './blocks-list/BlockCard.svelte'
   import {
     BLOCKS_EXTRA_DEFAULTS,
+    BLOCKS_INTERNAL_UID_KEY,
     BLOCKS_FILTER_KEYS,
     BLOCKS_NAME,
     BLOCKS_PAGE_PARAM,
@@ -152,6 +155,18 @@
           : getClientStore(),
   )
   if (scopeKey) onDestroy(() => releaseScopedStore(scopeKey))
+
+  // Ключ компонента меняется при смене цели, но стор слота/страницы живёт
+  // дольше компонента. Это явная смена источника, не обычный SWR: старые
+  // строки и полётные ответы другого uid здесь не могут быть сохранены.
+  function switchSnapshotTarget(next: typeof snapshot) {
+    if (!next || !store.isHydrated(BLOCKS_NAME)) return
+    const previousUid = getState(store, BLOCKS_NAME).extra[BLOCKS_INTERNAL_UID_KEY] ?? null
+    const nextUid = next.extra[BLOCKS_INTERNAL_UID_KEY] ?? null
+    if (previousUid !== nextUid) replacePaginatorSnapshot(store, BLOCKS_NAME, next)
+  }
+  switchSnapshotTarget(untrack(() => snapshot))
+  $effect.pre(() => { switchSnapshotTarget(snapshot) })
 
   const pagState = usePaginatorState<BlockView>(BLOCKS_NAME, store)
   const hasLivePages = $derived(

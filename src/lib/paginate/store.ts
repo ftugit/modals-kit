@@ -50,6 +50,8 @@ export type Store = {
   hydrate<T>(name: string, snapshot: PaginatorState<T>): void
   /** Была ли гидрация по этому имени (для инспекции/тестов). */
   isHydrated(name: string): boolean
+  /** Был ли принят именно этот объект снимка. */
+  isHydratedFrom?(name: string, snapshot: PaginatorState<unknown>): boolean
   /** Инициализирована ли ячейка пагинатора `name` в этом сторе. */
   has(name: string): boolean
   /** Подписка на изменение состояния ячейки (для адаптеров реактивности). */
@@ -104,6 +106,9 @@ export function createPaginatorStore(): Store {
     },
     isHydrated(name: string): boolean {
       return hydrated.has(name)
+    },
+    isHydratedFrom(name: string, snapshot: PaginatorState<unknown>): boolean {
+      return hydratedFrom.get(name) === snapshot
     },
     has(name: string): boolean {
       return cells.has(name)

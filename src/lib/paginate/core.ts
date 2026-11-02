@@ -2,7 +2,7 @@
 // Дословный порт core.ts React-версии: jotai-store → Store из store.ts, логика 1-в-1
 // (reqId-гонки, эхо-guard, pending-скелетоны, события, persist).
 import { DEV } from 'esm-env'
-import { canLoadMore, deriveMeta, flattenPages } from './pure'
+import { canLoadMore, deriveMeta, externalExtraDiff, flattenPages } from './pure'
 import type { LibError, PaginatorAdapter, ScrollDriver } from './types'
 import { getPaginator, hasPaginator, type LastAction, type PaginatorInstance } from './registry'
 import { listLiveStores } from './scopes'
@@ -12,6 +12,45 @@ import type { AdapterInit, AdapterInitContext, Extra, ExtraPatch, ExtraValue, Hr
 /** Состояние пагинатора по имени из хранилища. */
 export function getState<T>(store: Store, name: string): PaginatorState<T> {
   return store.state<T>(name)()
+}
+
+// Для пользовательских Store без опциональной инспекции сохраняем только
+// идентичность снимков, принятых через эти helpers (не удерживая сам Store).
+const acceptedSnapshots = new WeakMap<Store, Map<string, PaginatorState<unknown>>>()
+function rememberSnapshot(store: Store, name: string, snapshot: PaginatorState<unknown>): void {
+  let byName = acceptedSnapshots.get(store)
+  if (!byName) acceptedSnapshots.set(store, (byName = new Map()))
+  byName.set(name, snapshot)
+}
+
+/** Принять новый серверный снимок только для того же живого среза и окна. */
+export function rehydratePaginator<T>(store: Store, name: string, snapshot: PaginatorState<T>): void {
+  if (!hasPaginator(name) || !store.isHydrated(name)) {
+    store.hydrate(name, snapshot)
+    rememberSnapshot(store, name, snapshot)
+    return
+  }
+  const cur = getState<T>(store, name)
+  const defaults = transportOf(store, name).extraDefaults
+  const sameExtra =
+    Object.keys(externalExtraDiff(snapshot.extra, cur.extra, defaults)).length === 0 &&
+    Object.keys(externalExtraDiff(cur.extra, snapshot.extra, defaults)).length === 0
+  if (sameExtra && cur.pageSize === snapshot.pageSize && cur.page === snapshot.page && cur.loadedPages.length <= 1) {
+    const sameSnapshot = store.isHydratedFrom?.(name, snapshot) ?? (acceptedSnapshots.get(store)?.get(name) === snapshot)
+    if (!sameSnapshot) replacePaginatorSnapshot(store, name, snapshot)
+  }
+}
+
+/** Явная смена источника/цели: отменить старые запросы и заменить окно. */
+export function replacePaginatorSnapshot<T>(store: Store, name: string, snapshot: PaginatorState<T>): void {
+  const previousReqId = store.has(name) ? getState(store, name).reqId : 0
+  const session = sessionOf(store, name)
+  abortReplace(session)
+  dropPrefetched(session)
+  session.lastAction = null
+  store.hydrate(name, snapshot)
+  rememberSnapshot(store, name, snapshot)
+  store.update<T>(name, (s) => ({ ...s, reqId: Math.max(previousReqId + 1, s.reqId) }))
 }
 
 function patch<T>(

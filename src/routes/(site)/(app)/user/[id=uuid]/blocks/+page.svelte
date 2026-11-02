@@ -26,6 +26,8 @@
         ← К профилю
       </Button>
     </div>
-    <BlocksList uid={data.uid} initial={data} variant="card" />
+    {#key data.uid}
+      <BlocksList uid={data.uid} initial={data} variant="card" />
+    {/key}
   {/if}
 </div>

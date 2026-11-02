@@ -46,6 +46,7 @@ async function run() {
   const browser = await chromium.launch({ headless: true })
   const tag = Date.now().toString(36)
   const rScoped = `Проверка из модалки профиля ${tag}`
+  const rSecond = `Блокировка второго пользователя ${tag}`
   const rGlobal = `Глобальная блокировка через пикер ${tag}`
   const rEdited = `Обновлённая причина блокировки ${tag}`
   const rNoJs = `Блокировка без JS ${tag}`
@@ -130,6 +131,47 @@ async function run() {
       await createForm.waitFor({ state: 'hidden', timeout: 10000 })
       await scopedList.getByText(rScoped).waitFor({ state: 'visible', timeout: 10000 })
       ok('BlockForm (create с uid): запись создана и список обновился')
+
+      // Создаём отличимую строку второго пользователя для проверки результата,
+      // а не только отсутствия прежней строки в промежуточном состоянии.
+      await page.goto(`${BASE}/user/${secondUserId}/blocks/new`, { waitUntil: 'networkidle' })
+      const secondForm = page.locator('[data-testid="block-form-create"]')
+      await secondForm.waitFor({ state: 'visible', timeout: 10000 })
+      await secondForm.locator('select[name="scope"]').selectOption('auth')
+      await secondForm.locator('textarea[name="reason"]').fill(rSecond)
+      await secondForm.locator('[data-testid="block-create-submit"]').click()
+      await page.waitForURL((u) => !u.pathname.endsWith('/new'), { timeout: 10000 })
+
+      // Персональные списки разных пользователей не должны делить старое окно.
+      await page.goto(`${BASE}/user/${targetUserId}/blocks`, { waitUntil: 'networkidle' })
+      await page.locator('[data-testid="blocks-list"]').getByText(rScoped).waitFor({ state: 'visible', timeout: 10000 })
+      await page.evaluate((uid) => {
+        const a = document.createElement('a')
+        a.href = `/user/${uid}/blocks`
+        a.textContent = 'switch target'
+        a.id = 'test-switch-blocks-target'
+        document.body.append(a)
+        a.click()
+      }, secondUserId)
+      await page.waitForURL((u) => u.pathname === `/user/${secondUserId}/blocks`, { timeout: 10000 })
+      await page.waitForLoadState('networkidle')
+      await page.locator('[data-testid="blocks-list"]').getByText(rSecond).waitFor({ state: 'visible', timeout: 10000 })
+      assert.equal(await page.locator('[data-testid="blocks-list"]').getByText(rScoped).count(), 0, 'строка первого uid не видна второму')
+      ok('клиентская навигация между персональными списками не переносит строки')
+
+      await page.goto(`${BASE}/?modal=user.blocks&modal.0.id=${targetUserId}`, { waitUntil: 'networkidle' })
+      await page.locator('[role=dialog] [data-testid="blocks-list"]').getByText(rScoped).waitFor({ state: 'visible', timeout: 10000 })
+      await page.evaluate((uid) => {
+        const url = new URL(location.href)
+        url.searchParams.set('modal.0.id', uid)
+        history.replaceState(null, '', url)
+        dispatchEvent(new PopStateEvent('popstate', { state: null }))
+      }, secondUserId)
+      await page.waitForLoadState('networkidle')
+      await page.locator('[role=dialog] [data-testid="blocks-list"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.locator('[role=dialog] [data-testid="blocks-list"]').getByText(rSecond).waitFor({ state: 'visible', timeout: 10000 })
+      assert.equal(await page.locator('[role=dialog] [data-testid="blocks-list"]').getByText(rScoped).count(), 0, 'строка первого uid не видна во втором модальном списке')
+      ok('смена uid в модальном слоте не переносит строки')
 
       // 6. Глобальный список /blocks (без uid): пикер пользователей в фильтрах (multiple)
       await page.goto(BASE + '/blocks', { waitUntil: 'networkidle' })
