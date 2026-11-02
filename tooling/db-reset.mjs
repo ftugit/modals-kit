@@ -1,29 +1,27 @@
 /**
- * Очистка базы из `DATABASE_URL` при СБОРКЕ (`npm run build`), не в рантайме.
- *
- * Почему именно сборка: на serverless рантайм-очистка срабатывала бы на
- * каждом холодном инстансе — несколько копий приложения сносили бы схему
- * друг у друга наживую. Сборка же одна на деплой: снесла схему `public`,
- * дальше первое обращение к модели в рантайме разворачивает таблицы, сиды и
- * первого администратора на пустом месте (`schema.gate` в `src/server/db.server.ts`),
- * выводя ключ администратора прямо в Runtime Logs.
- *
- * Включается отдельным env `DATABASE_RESET=1` (1/true/yes). Без флага или
- * без `DATABASE_URL` — тихий пропуск: локальная сборка и CI базу не трогают.
- * Не удалось подключиться при заданном флаге — сборка падает: деплой со
- * старой базой вместо обещанной чистой хуже, чем красный билд.
+ * При DATABASE_RESET=1/true/yes в конце build удаляет все обычные и
+ * секционированные таблицы public из выделенной DATABASE_URL; саму схему и её
+ * права сохраняет. В рантайме schema.gate разворачивает модели и администратора.
+ * Внимание: данные удаляются до переключения трафика на новый деплой.
  */
 import pg from 'pg'
+import { resetPublicTables } from './db-reset-lib.mjs'
 
 const flag = /^(1|true|yes)$/i.test((process.env.DATABASE_RESET ?? '').trim())
 if (!flag) process.exit(0)
 
-// Значение env в панелях иногда вставляют в кавычках или с пробелами —
-// pg такую оболочку разбирает молча и криво (host «base»), срезаем её.
-const url = (process.env.DATABASE_URL ?? '').trim().replace(/^["']+|["']+$/g, '')
+const clean = (value) => (value ?? '').trim().replace(/^["']+|["']+$/g, '')
+const url = clean(process.env.DATABASE_URL)
 if (!url) {
-  console.warn('[db-reset] DATABASE_RESET задан, но DATABASE_URL пуст — очищать нечего, пропускаю')
-  process.exit(0)
+  console.error('[db-reset] DATABASE_RESET включён, но DATABASE_URL пуст; сброс невозможен')
+  process.exit(1)
+}
+// В рантайме Hyperdrive имеет приоритет. Не сообщать об успехе, сбросив
+// другую базу. Разные строки для одного сервера также нужно согласовать явно.
+const hyperdrive = clean(process.env.HYPERDRIVE_CONNECTION_STRING)
+if (hyperdrive && hyperdrive !== url) {
+  console.error('[db-reset] HYPERDRIVE_CONNECTION_STRING перекрывает DATABASE_URL в рантайме; сброс остановлен, чтобы не очистить другую базу')
+  process.exit(1)
 }
 
 const rawTimeout = Number((process.env.DB_CONNECT_TIMEOUT_MS ?? '').trim())
@@ -33,15 +31,16 @@ const connectionTimeoutMillis =
 const client = new pg.Client({ connectionString: url, connectionTimeoutMillis })
 try {
   await client.connect()
-  await client.query('DROP SCHEMA public CASCADE').catch(() => {
-    // Схемы ещё нет (первый деплой на пустую базу) — чистить нечего.
-  })
-  await client.query('CREATE SCHEMA public')
-  const { rows } = await client.query('SELECT current_database() AS db')
-  console.log(`[db-reset] схема public базы «${rows[0].db}» очищена при сборке; приложение развернёт модели и администратора при первом обращении к БД`)
+  const count = await resetPublicTables(client)
+  console.log(`[db-reset] таблицы public очищены при сборке: ${count}; схема и её права сохранены`)
 } catch (e) {
-  console.error('[db-reset] очистить базу из DATABASE_URL не удалось:', String(e?.message ?? e).slice(0, 300))
-  process.exit(1)
+  // Не выводим connection string или детали подключения: они могут содержать секреты.
+  const code = typeof e?.code === 'string' && /^[A-Z][A-Z0-9_]{1,31}$/.test(e.code) ? ` (код ${e.code})` : ''
+  const message = e?.message === 'схема public отсутствует; её должен создать владелец базы или провайдер' ||
+    e?.message === 'в public есть внешние или принадлежащие расширению таблицы; автоматический сброс остановлен'
+    ? `: ${e.message}` : ''
+  console.error(`[db-reset] сброс таблиц public не выполнен${code}${message}. Проверьте подключение, владельцев таблиц и зависимости; при ошибке выполнена попытка отката.`)
+  process.exitCode = 1
 } finally {
   await client.end().catch(() => {})
 }
