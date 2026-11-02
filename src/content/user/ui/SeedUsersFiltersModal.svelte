@@ -95,6 +95,8 @@
     title="Фильтры списка"
     description="Параметры выборки и сортировки аккаунтов."
   >
-    <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
+    {#key `${canSeeDeleted}:${canSeeNickname}`}
+      <SeedUsersFiltersForm {canSeeDeleted} {canSeeNickname} {initial} onApply={apply} onReset={reset} />
+    {/key}
   </Surface>
 {/if}

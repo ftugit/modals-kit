@@ -60,16 +60,22 @@
 
   mirrorToField(bound as never, 'subject', () => (slice.isOwn ? '' : slice.uid))
 
+  // bindComponentForm также поднимает page.data.formResult после нативного
+  // POST, даже когда носитель не передал form явно.
+  const hasFailedContinuation = untrack(() => Boolean(bound.state.result && !bound.state.result.ok))
   for (const initialItem of untrack(() => slice.items)) {
     if (!initialItem.editable) continue
     const key = initialItem.key
-    const fname = initialItem.fieldName
-    if (!bound.state.result) {
-      mirrorToField(bound as never, fname, () => {
-        const cur = slice.items.find((x) => x.key === key)
-        return cur ? cur.value : initialItem.value
-      })
-    }
+    const view = bound.field(initialItem.fieldName)
+    let lastServerVal = initialItem.value
+    if (!hasFailedContinuation) untrack(() => view?.onInput(lastServerVal))
+    $effect(() => {
+      const nextVal = slice.items.find((x) => x.key === key)?.value
+      if (!Object.is(nextVal, lastServerVal)) {
+        lastServerVal = nextVal
+        untrack(() => view?.onInput(nextVal))
+      }
+    })
   }
 
   const visibleGroups = $derived(

@@ -80,6 +80,24 @@ try {
     assert.equal(await page.locator('[data-testid=profile-config-open]').count(), 1, 'admin sees foreign config link without JS')
     console.log('  ok: no-JS profile propagates foreign config capability')
 
+    // POST с неизвестным ключом сброса возвращает страницу с ошибкой; значение
+    // контролов должно оставаться введённым, а не заменяться серверным load.
+    await r.goto(`${BASE}/user/config`)
+    const config = r.locator('#user-config')
+    const visibility = config.locator('select[name=profile_visibility]')
+    const before = await visibility.inputValue()
+    const attempted = before === 'all' ? 'users' : 'all'
+    await visibility.selectOption(attempted)
+    await config.locator('[data-testid=config-save-submit]').evaluate((el) => { el.value = 'reset:unknown' })
+    const [configPost] = await Promise.all([
+      r.waitForResponse((response) => response.request().method() === 'POST'),
+      config.locator('[data-testid=config-save-submit]').click(),
+    ])
+    assert.notEqual(configPost.status(), 303, 'invalid reset rejects POST')
+    const after = await r.locator('#user-config select[name=profile_visibility]').inputValue()
+    assert.equal(after, attempted, 'no-JS continuation retains attempted value')
+    console.log('  ok: failed no-JS config POST retains user input')
+
     // Меняем id в той же записи адресной цепочки (без полной навигации),
     // как внешний писатель адреса. Отказ старого id не должен «залипать».
     const jsProfile = await browser.newContext()

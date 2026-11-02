@@ -119,15 +119,17 @@
     title="Фильтры блокировок"
     description="Срез журнала по статусу, сферам и пользователям."
   >
-    <BlocksFiltersForm
-      {uid}
-      {canSeeDeleted}
-      {canSeeLive}
-      {canPickUsers}
-      {initial}
-      onUidsChange={syncUidsToModalUrl}
-      onApply={apply}
-      onReset={reset}
-    />
+    {#key `${canSeeDeleted}:${canSeeLive}`}
+      <BlocksFiltersForm
+        {uid}
+        {canSeeDeleted}
+        {canSeeLive}
+        {canPickUsers}
+        {initial}
+        onUidsChange={syncUidsToModalUrl}
+        onApply={apply}
+        onReset={reset}
+      />
+    {/key}
   </Surface>
 {/if}

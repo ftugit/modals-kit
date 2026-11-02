@@ -24,17 +24,19 @@
         Применить — вернуться к списку с этим срезом.
         <a class="underline" href={data.backHref}>К списку без изменений</a>
       </p>
-      <BlocksFiltersForm
-        uid={data.uid}
-        canSeeDeleted={data.canSeeDeleted}
-        canSeeLive={data.canSeeLive}
-        canPickUsers={data.canPickUsers}
-        initial={data.values}
-        selfHref={data.selfHref}
-        action={data.action}
-        hiddenFields={data.hiddenFields}
-        resetHref={data.resetHref}
-      />
+      {#key `${data.canSeeDeleted}:${data.canSeeLive}`}
+        <BlocksFiltersForm
+          uid={data.uid}
+          canSeeDeleted={data.canSeeDeleted}
+          canSeeLive={data.canSeeLive}
+          canPickUsers={data.canPickUsers}
+          initial={data.values}
+          selfHref={data.selfHref}
+          action={data.action}
+          hiddenFields={data.hiddenFields}
+          resetHref={data.resetHref}
+        />
+      {/key}
     </div>
   {/if}
 </div>

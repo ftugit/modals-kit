@@ -26,14 +26,16 @@
         Применить — вернуться к списку с этим срезом.
         <a class="underline" href={data.backHref}>К списку без изменений</a>
       </p>
-      <SeedUsersFiltersForm
-        canSeeDeleted={data.canSeeDeleted}
-        canSeeNickname={data.canSeeNickname}
-        initial={data.values}
-        action={data.action}
-        hiddenFields={data.hiddenFields}
-        resetHref={data.resetHref}
-      />
+      {#key `${data.canSeeDeleted}:${data.canSeeNickname}`}
+        <SeedUsersFiltersForm
+          canSeeDeleted={data.canSeeDeleted}
+          canSeeNickname={data.canSeeNickname}
+          initial={data.values}
+          action={data.action}
+          hiddenFields={data.hiddenFields}
+          resetHref={data.resetHref}
+        />
+      {/key}
     </div>
   {/if}
 </div>

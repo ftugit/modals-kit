@@ -60,15 +60,16 @@
   const fixedUid = $derived(uid?.trim() || null)
   let routeData = $state<BlockDeleteRouteData | null>(untrack(() => initial))
   let askedUrl = ''
-  const initialSnap = untrack(() => initial)
 
   $effect(() => {
-    if (initial && initial === initialSnap) {
+    if (initial) {
+      askedUrl = ''
       routeData = initial
       return
     }
     const id = blockId.trim()
     if (!id) {
+      routeData = null
       onAcl?.('auth.identity-unknown')
       return
     }
@@ -77,9 +78,11 @@
       : `/blocks/${encodeURIComponent(id)}/delete`
     if (askedUrl === url) return
     askedUrl = url
+    routeData = null
+    let cancelled = false
     void (async () => {
       const r = await preloadData(url)
-      if (askedUrl !== url) return
+      if (cancelled || askedUrl !== url) return
       if (r.type !== 'loaded') {
         onAcl?.('auth.expired')
         return
@@ -95,6 +98,7 @@
       }
       routeData = d
     })()
+    return () => { cancelled = true }
   })
 
   const bound = bindComponentForm(forms, blockDeleteForm, {

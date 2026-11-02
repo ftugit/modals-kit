@@ -126,8 +126,8 @@
     slice
       ? `${slice.uid}::${resetTick}::${slice.items
           .filter((i) => i.editable)
-          .map((i) => i.fieldName)
-          .join(',')}`
+          .map((i) => `${i.fieldName}:${i.kind}:${i.editable}`)
+          .join('|')}`
       : 'empty',
   )
 </script>
