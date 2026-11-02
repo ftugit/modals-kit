@@ -142,6 +142,8 @@ export interface AddressWriter {
   subscribe(fn: () => void): () => void
   /** Записей нет ни в очереди, ни в полёте. */
   readonly idle: boolean
+  /** Нет записей, обхода истории или ожидающего переноса. */
+  readonly settled: boolean
   /**
    * Свой шаг по истории ждёт отправки или своего `popstate`. Изменение адреса
    * в это окно — применение записи, сделанной ДО шага, а не итог обхода.
@@ -243,8 +245,12 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
       const step = queue.shift()!
       if (step.kind === 'go') {
         settle(step)
-        if (!deps.traverse) continue
+        if (!deps.traverse) {
+          emit()
+          continue
+        }
         traversing = true
+        emit()
         // Очередь до шага пуста и коммитов в полёте нет: `read()` — уже применённый
         // адрес закрываемой записи, со всеми записями страницы, сделанными в ней.
         leaving = step.delta < 0 ? { url: withoutHash(deps.read().url), hash: deps.hash?.() ?? '' } : null
@@ -362,6 +368,7 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
 
     go(delta) {
       queue.push({ kind: 'go', delta, waiters: [] })
+      emit()
       pump()
     },
 
@@ -380,7 +387,10 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
         const here = deps.here ? withoutHash(deps.here()) : withoutHash(deps.read().url)
         carry = carried(from, here, deps.hash?.() ?? '')
       }
-      if (!carry && !hadCarry && queue.length === 0 && (!inflight || orphan === inflight)) return
+      if (!carry && !hadCarry && queue.length === 0 && (!inflight || orphan === inflight)) {
+        if (wasTraversing) emit()
+        return
+      }
       orphan = inflight
       dropQueued()
       if (carry && !deps.here) {
@@ -414,6 +424,10 @@ export function createAddressWriter(deps: AddressWriterDeps): AddressWriter {
 
     get idle() {
       return !inflight && queue.length === 0
+    },
+
+    get settled() {
+      return !inflight && !traversing && !carry && queue.length === 0
     },
 
     get traversing() {

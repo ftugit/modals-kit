@@ -62,7 +62,7 @@ const historyGo = vi.fn()
 }
 const win = (globalThis as unknown as { window: { location: { hash: string } } }).window
 
-const { shallowFlag, linkTask, resolveHref } = await import('./sveltekit')
+const { shallowFlag, linkTask, resolveHref, whenAddressSettled } = await import('./sveltekit')
 const { svelteKitRouter, currentSearch } = await import('#lib/paginate/sveltekit/router.js')
 const { svelteKitEngine } = await import('#lib/modals/cores/sveltekit.js')
 
@@ -95,6 +95,23 @@ beforeEach(async () => {
   page.shallow = null
   page.state = {}
   win.location.hash = ''
+})
+
+describe('whenAddressSettled', () => {
+  it('ожидает оба последовательных коммита', async () => {
+    const modals = svelteKitEngine()
+    modals.pushState('/films?modal=a', { modals: { depth: 1 } })
+    modals.pushState('/films?modal=b', { modals: { depth: 2 } })
+    let settled = false
+    const waiting = whenAddressSettled().then(() => { settled = true })
+    await tick()
+    expect(settled).toBe(false)
+    await land(0)
+    expect(settled).toBe(false)
+    await land(1)
+    await waiting
+    expect(settled).toBe(true)
+  })
 })
 
 describe('F41: два владельца адреса, пока запись в полёте', () => {

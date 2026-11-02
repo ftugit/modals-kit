@@ -208,6 +208,18 @@ if (writer) window.addEventListener('click', onHashLinkClick, true)
 // на собственной записи (до её применения), и на изменении `page.*`.
 const trackIntent = writer ? createSubscriber((update) => writer.subscribe(update)) : () => {}
 
+/** Дождаться завершения записей, обхода истории и переноса адреса слоя. */
+export function whenAddressSettled(): Promise<void> {
+  if (!writer || writer.settled) return Promise.resolve()
+  return new Promise((resolve) => {
+    const off = writer.subscribe(() => {
+      if (!writer.settled) return
+      off()
+      resolve()
+    })
+  })
+}
+
 /**
  * Видимый адрес с учётом записей, которые ещё не применены. Внутренний
  * контракт слоя фреймворка (модалки, пагинатор, флаги), не API приложения.

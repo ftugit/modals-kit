@@ -298,3 +298,54 @@ describe('createAddressWriter: адрес страницы переживает 
 })
 
 
+
+describe('settled: полный покой адреса', () => {
+  it('уведомляет о покое, если среда не поддерживает обход', () => {
+    const { writer } = env()
+    const observed: boolean[] = []
+    writer.subscribe(() => observed.push(writer.settled))
+    writer.go(-1)
+    expect(writer.settled).toBe(true)
+    expect(observed).toEqual([false, true])
+  })
+
+  it('уведомляет о начале и окончании обхода даже без переноса', () => {
+    const real = { url: new URL('http://app.test/films'), state: {} }
+    const writer = createAddressWriter({ read: () => real, commit: async () => {}, traverse: () => {} })
+    const observed: boolean[] = []
+    writer.subscribe(() => observed.push(writer.settled))
+    writer.go(-1)
+    expect(writer.settled).toBe(false)
+    writer.external()
+    expect(writer.settled).toBe(true)
+    expect(observed.at(-1)).toBe(true)
+    expect(observed).toContain(false)
+  })
+
+  it('не сообщает покой до применения переноса и завершения его коммита', async () => {
+    let real: AddressSnapshot = { url: new URL('http://app.test/films?page=2&modal=a'), state: {} }
+    let here = new URL(real.url)
+    let finish: (() => void) | undefined
+    const writer = createAddressWriter({
+      read: () => real,
+      here: () => here,
+      traverse: () => {},
+      commit: () => new Promise<void>((resolve) => { finish = resolve }),
+    })
+    writer.layerKeys((key) => key === 'modal')
+    const states: boolean[] = []
+    writer.subscribe(() => states.push(writer.settled))
+    writer.go(-1)
+    here = new URL('http://app.test/films')
+    writer.external()
+    expect(writer.settled).toBe(false)
+    real = { url: here, state: {} }
+    writer.applied()
+    expect(writer.settled).toBe(false)
+    expect(states).not.toContain(true)
+    finish!()
+    await tick()
+    expect(writer.settled).toBe(true)
+    expect(states.at(-1)).toBe(true)
+  })
+})
