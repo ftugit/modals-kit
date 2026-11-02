@@ -35,3 +35,35 @@ describe('env ADMIN_SEED validation (2.1)', () => {
     }
   })
 })
+
+describe('key identifiers and rotation validation', () => {
+  const validate = (name: 'AUTH_SEAL_ID' | 'DB_CURSOR_KID' | 'AUTH_SEAL_OLD_KEYS' | 'DB_CURSOR_OLD_KEYS' | 'DATABASE_RESET', value: string) =>
+    variables[name].schema!['~standard'].validate(value)
+  const error = (v: unknown) => JSON.stringify(v)
+  it('uses separate 32-character alphabets for iron and cursors', () => {
+    expect(validate('AUTH_SEAL_ID', 'key-with-dash')).toHaveProperty('issues')
+    expect(validate('AUTH_SEAL_ID', 'a'.repeat(32))).toEqual({ value: 'a'.repeat(32) })
+    expect(validate('DB_CURSOR_KID', `key-${'a'.repeat(28)}`)).toEqual({ value: `key-${'a'.repeat(28)}` })
+    expect(validate('DB_CURSOR_KID', 'a'.repeat(33))).toHaveProperty('issues')
+  })
+  it('rejects invalid or repeated rotation identifiers without echoing values', () => {
+    const secret = 'SECRETCANDIDATE'.repeat(3)
+    for (const name of ['AUTH_SEAL_OLD_KEYS', 'DB_CURSOR_OLD_KEYS'] as const) {
+      for (const raw of [`bad id:${secret}`, `key:${secret},key:${secret}`, `id:${'SHORTSECRET'}`]) {
+        const result = validate(name, raw)
+        expect(result).toHaveProperty('issues')
+        expect(error(result)).not.toContain(raw)
+        expect(error(result)).not.toContain(secret)
+        expect(error(result)).not.toContain('SHORTSECRET')
+      }
+    }
+    expect(validate('AUTH_SEAL_OLD_KEYS', `old-key:${secret}`)).toHaveProperty('issues')
+    expect(validate('DB_CURSOR_OLD_KEYS', `old-key:${secret}`)).toEqual({ value: `old-key:${secret}` })
+    for (const name of ['AUTH_SEAL_ID', 'DB_CURSOR_KID', 'DATABASE_RESET'] as const) {
+      const raw = 'SENSITIVE-INVALID-VALUE-WITH-SPACES secret'
+      const result = validate(name, raw)
+      expect(result).toHaveProperty('issues')
+      expect(error(result)).not.toContain(raw)
+    }
+  })
+})

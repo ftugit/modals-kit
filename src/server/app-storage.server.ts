@@ -90,7 +90,7 @@ export interface AppStorageDeps {
 }
 
 function defaultSealKeys(): SealKeysConfig {
-  const id = AUTH_SEAL_ID || 'k1'
+  const id = AUTH_SEAL_ID || 'v1'
   const secret = AUTH_SEAL_SECRET || ''
   const old: Record<string, string> = {}
   const raw = AUTH_SEAL_OLD_KEYS || ''
@@ -100,10 +100,11 @@ function defaultSealKeys(): SealKeysConfig {
       if (idx > 0) {
         const kid = pair.slice(0, idx).trim()
         const keyVal = pair.slice(idx + 1).trim()
-        if (kid && keyVal.length >= 32) old[kid] = keyVal
+        if (kid && kid !== id && keyVal.length >= 32) old[kid] = keyVal
       }
     }
   }
+  if (old.v1 && !old.k1 && id !== 'k1') old.k1 = old.v1
   return { id, secret, old, enabled: secret.length >= 32 }
 }
 
@@ -139,6 +140,7 @@ async function unsealServerConfig(
   try {
     const map: Record<string, string> = {
       default: keys.secret,
+      ...(keys.id === 'v1' && !keys.old.k1 ? { k1: keys.secret } : {}),
       ...keys.old,
       [keys.id]: keys.secret,
     }

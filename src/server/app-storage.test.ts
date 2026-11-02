@@ -4,14 +4,16 @@ import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+const sealEnv = vi.hoisted(() => ({ id: 'k1', secret: '0123456789abcdef0123456789abcdef0123456789abcdef', old: '' }))
+
 vi.mock('$app/env/private', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   return {
     ...actual,
     AUTH_COOKIE_SAMESITE: 'lax',
-    AUTH_SEAL_ID: 'k1',
-    AUTH_SEAL_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef',
-    AUTH_SEAL_OLD_KEYS: '',
+    get AUTH_SEAL_ID() { return sealEnv.id },
+    get AUTH_SEAL_SECRET() { return sealEnv.secret },
+    get AUTH_SEAL_OLD_KEYS() { return sealEnv.old },
   }
 })
 
@@ -333,6 +335,33 @@ describe('app-storage.server — боевой пул БД, STORAGE_ACL, шифр
     if (removed.ok) {
       expect(removed.value.items).toHaveLength(0)
       expect(removed.value.activeMode).toBe('empty')
+    }
+  })
+
+  it('читает старую запись k1 и до ротации, и после ротации v1 → v2', async () => {
+    const { fetchImpl } = createMockWebdavFetch()
+    const original = { ...sealEnv }
+    try {
+      for (const rotated of [false, true]) {
+        const slot = rotated ? 'compat_rotated' : 'compat_default'
+        const saved = await saveStorageServer(viewerEdit, {
+          slot, url: 'webdav://user:secretpass@dav.example.test/box', storageMb: 1024, fileMb: 128,
+        }, { db: testDb, sealKeys: KEYS_V1, isCloud: true, fetchImpl })
+        expect(saved.ok).toBe(true)
+        if (!saved.ok) throw new Error('save failed')
+        const id = saved.value.items.find((item) => item.slot === slot)!.id
+        sealEnv.id = rotated ? 'v2' : ''
+        sealEnv.secret = rotated ? KEYS_V2_ROTATED.secret : KEYS_V1.secret
+        sealEnv.old = rotated ? `v1:${KEYS_V1.secret}` : ''
+        const updated = await saveStorageServer(viewerEdit, {
+          id, slot, url: '', storageMb: 2048, fileMb: 128,
+        }, { db: testDb, isCloud: true, fetchImpl })
+        expect(updated.ok).toBe(true)
+        const removed = await removeStorageServer(viewerEdit, id, { db: testDb, isCloud: true })
+        expect(removed.ok).toBe(true)
+      }
+    } finally {
+      Object.assign(sealEnv, original)
     }
   })
 

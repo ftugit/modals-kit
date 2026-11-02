@@ -34,7 +34,7 @@ const text = optional((value) => ({ value }))
 const flag = optional((value) =>
   ['1', 'true', 'yes'].includes(value.toLowerCase())
     ? { value: true }
-    : { message: `ожидался флаг 1/true/yes, получено «${value}»` },
+    : { message: `ожидался флаг 1/true/yes, задано символов: ${value.length}` },
 )
 
 /** Секрет, который подбирают перебором: короче 32 символов — отказ запуска. */
@@ -42,14 +42,16 @@ const secret = optional((value) =>
   value.length >= 32 ? { value } : { message: `нужно не короче 32 символов, задано ${value.length}` },
 )
 
-const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+const SEAL_KEY_ID_RE = /^[A-Za-z0-9_]{1,32}$/
+const CURSOR_KEY_ID_RE = /^[A-Za-z0-9_-]{1,32}$/
 
-/** Идентификатор ключа запечатывания / подписи (`kid` / `id` в iron и курсоре). */
-const keyId = optional((value) =>
-  KEY_ID_RE.test(value)
+const idSchema = (pattern: RegExp, format: string) => optional((value) =>
+  pattern.test(value)
     ? { value }
-    : { message: `ожидался идентификатор из латиницы, цифр, «_» или «-» (1..64), получено «${value}»` },
+    : { message: `ожидался идентификатор ${format} (1..32), задано символов: ${value.length}` },
 )
+const sealKeyId = idSchema(SEAL_KEY_ID_RE, 'из латиницы, цифр и «_»')
+const cursorKeyId = idSchema(CURSOR_KEY_ID_RE, 'из латиницы, цифр, «_» и «-»')
 
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
@@ -70,26 +72,25 @@ const seedKey = optional((value) => {
   return { value }
 })
 
-/** Список прежних ключей на время ротации (`id:secret` через запятую, каждый секрет >= 32 символов). */
-const keyRotationList = optional((value) => {
+/** Ротация: секрет не короче 32 символов, имена не повторяются. */
+const rotationList = (pattern: RegExp, format: string) => optional((value) => {
+  const seen = new Set<string>()
   for (const rawPair of value.split(',')) {
     const pair = rawPair.trim()
     if (!pair) continue
     const sep = pair.indexOf(':')
-    if (sep <= 0) {
-      return { message: 'ожидался формат id:secret через запятую' }
-    }
+    if (sep <= 0) return { message: 'ожидался формат id:secret через запятую' }
     const id = pair.slice(0, sep).trim()
     const keyVal = pair.slice(sep + 1).trim()
-    if (!KEY_ID_RE.test(id)) {
-      return { message: `недопустимое имя старого ключа «${id}» (разрешены латиница, цифры, «_», «-»)` }
-    }
-    if (keyVal.length < 32) {
-      return { message: `секрет старого ключа «${id}» короче 32 символов (задано ${keyVal.length})` }
-    }
+    if (!pattern.test(id)) return { message: `недопустимое имя ключа: ${format} (1..32), задано символов: ${id.length}` }
+    if (seen.has(id)) return { message: `имя старого ключа повторяется (длина ${id.length})` }
+    seen.add(id)
+    if (keyVal.length < 32) return { message: `секрет старого ключа короче 32 символов (задано ${keyVal.length})` }
   }
   return { value }
 })
+const sealKeyRotationList = rotationList(SEAL_KEY_ID_RE, 'латиница, цифры, «_»')
+const cursorKeyRotationList = rotationList(CURSOR_KEY_ID_RE, 'латиница, цифры, «_», «-»')
 
 const positiveInteger = optional((value) => {
   const n = Number(value)
@@ -219,11 +220,11 @@ export const variables = defineEnvVars({
       'Потолок возраста указателя, секунд: просроченный токен принимается, пока не старше этого срока. По умолчанию 604800 (7 дней); меньше DB_CURSOR_TTL_SECONDS — ошибка запуска.',
   },
   DB_CURSOR_KID: {
-    schema: keyId,
+    schema: cursorKeyId,
     description: 'Имя действующего секрета курсора (пишется в токен). По умолчанию v1; при смене секрета — новое имя.',
   },
   DB_CURSOR_OLD_KEYS: {
-    schema: keyRotationList,
+    schema: cursorKeyRotationList,
     description: 'Прежние секреты на время ротации: kid:secret через запятую (kid ≠ DB_CURSOR_KID).',
   },
 
@@ -233,11 +234,11 @@ export const variables = defineEnvVars({
     description: 'Секрет запечатывания временного токена и токена продления (iron), не короче 32 байт.',
   },
   AUTH_SEAL_ID: {
-    schema: keyId,
+    schema: sealKeyId,
     description: 'Имя действующего секрета (печатается в токен). По умолчанию v1; при смене секрета — новое имя.',
   },
   AUTH_SEAL_OLD_KEYS: {
-    schema: keyRotationList,
+    schema: sealKeyRotationList,
     description: 'Прежние секреты на время ротации: id:secret через запятую (id ≠ AUTH_SEAL_ID).',
   },
   AUTH_COOKIE_SAMESITE: {

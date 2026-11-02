@@ -22,7 +22,7 @@ export function cursorCodecFromEnv(
   if (!secret) return undefined;
   const activeKey = env("DB_CURSOR_KID") || "v1";
   if (!KID.test(activeKey))
-    throw new Error(`DB_CURSOR_KID: ожидалось имя из латиницы, цифр, «_» и «-» (до 32 символов), получено «${activeKey}»`);
+    throw new Error(`DB_CURSOR_KID: ожидалось имя из латиницы, цифр, «_» и «-» (до 32 символов), задано символов: ${activeKey.length}`);
   const keys: Record<string, string> = { [activeKey]: secret };
   for (const part of (env("DB_CURSOR_OLD_KEYS") ?? "").split(",").map((p) => p.trim()).filter(Boolean)) {
     const cut = part.indexOf(":");
@@ -32,11 +32,11 @@ export function cursorCodecFromEnv(
       throw new Error("DB_CURSOR_OLD_KEYS: ожидался формат kid:secret через запятую");
     if (kid === activeKey)
       throw new Error(
-        `DB_CURSOR_OLD_KEYS: имя «${kid}» занято действующим ключом (DB_CURSOR_KID). ` +
+        `DB_CURSOR_OLD_KEYS: имя длиной ${kid.length} занято действующим ключом (DB_CURSOR_KID). ` +
           "При смене секрета дайте новому ключу новое имя в DB_CURSOR_KID, а прежний оставьте под старым",
       );
     if (Object.prototype.hasOwnProperty.call(keys, kid))
-      throw new Error(`DB_CURSOR_OLD_KEYS: имя «${kid}» повторяется`);
+      throw new Error(`DB_CURSOR_OLD_KEYS: имя длиной ${kid.length} повторяется`);
     keys[kid] = value;
   }
   const ttlSeconds = options.ttlSeconds ?? Number(env("DB_CURSOR_TTL_SECONDS") ?? 1800);
