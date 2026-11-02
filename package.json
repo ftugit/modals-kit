@@ -51,10 +51,12 @@
     "test:browser:a11y": "node test/browser/a11y.mjs",
     "test:browser:auth": "node test/browser/auth.mjs",
     "test:browser:url-storage": "node test/browser/url-storage.check.mjs",
-    "test:browser:layer-back": "node test/browser/layer-back.check.mjs"
+    "test:browser:layer-back": "node test/browser/layer-back.check.mjs",
+    "start": "node server.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^8.0.0",
+    "@sveltejs/adapter-node": "^6.0.1",
     "@sveltejs/kit": "^3.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "^26.6.3",

@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
-import adapter from '@sveltejs/adapter-auto';
+import adapterNode from '@sveltejs/adapter-node';
+import adapterAuto from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
@@ -38,7 +39,11 @@ export default defineConfig(({ command, isPreview }) => {
   // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` и `csp` собираются
   // из чистых функций `src/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
   const kit = {
-    adapter: adapter(),
+    // Vercel: adapter-auto -> adapter-vercel; Northflank/любой Node-хостер: adapter-node.
+    adapter: process.env.VERCEL ? adapterAuto() : adapterNode({ precompress: false }),
+    // Northflank/buildpack: публичный origin за краем прокси неизвестен из Host,
+    // поэтому задаём его на этапе сборки (build argument ORIGIN).
+    paths: { origin: process.env.ORIGIN || undefined },
     preprocess: vitePreprocess(),
     csrf: { trustedOrigins: trustedOrigins(getEnv, { dev: isDev }).exact },
     csp: {
