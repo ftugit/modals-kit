@@ -80,6 +80,32 @@ try {
     assert.equal(await page.locator('[data-testid=profile-config-open]').count(), 1, 'admin sees foreign config link without JS')
     console.log('  ok: no-JS profile propagates foreign config capability')
 
+    // Межмаршрутный клиентский переход именно между двумя разными uid:
+    // экземпляр страницы может переиспользоваться SvelteKit.
+    const adminJs = await browser.newContext()
+    try {
+      await adminJs.addCookies(await ctx.cookies(BASE))
+      const p = await adminJs.newPage()
+      await p.goto(`${BASE}/user/${regularUid}`, { waitUntil: 'networkidle' })
+      await p.locator(`[data-testid=profile-card] code[title="${regularUid}"]`).first().waitFor({ state: 'attached', timeout: 15000 })
+      await p.evaluate((uid) => {
+        const link = document.createElement('a')
+        link.href = `/user/${uid}`
+        link.textContent = 'next profile'
+        link.id = 'stage2-next-profile'
+        document.body.appendChild(link)
+        window.__stage2ProfileNavigation = true
+      }, adminUid)
+      await p.locator('#stage2-next-profile').click()
+      await p.waitForURL((url) => url.pathname === `/user/${adminUid}`, { timeout: 15000 })
+      await p.waitForFunction((uid) =>
+        Boolean(document.querySelector(`[data-testid="profile-card"] code[title="${uid}"]`)) ||
+        Boolean(document.querySelector(`[data-testid="profile-not-created"][data-uid="${uid}"]`)), adminUid, { timeout: 15000 })
+      assert.equal(await p.locator(`[data-testid=profile-card] code[title="${regularUid}"]`).count(), 0, 'old profile not retained after client navigation')
+      assert.equal(await p.evaluate(() => window.__stage2ProfileNavigation), true, 'navigation stayed on the client')
+      console.log('  ok: client navigation /user/A → /user/B replaces the profile')
+    } finally { await adminJs.close() }
+
     // POST с неизвестным ключом сброса возвращает страницу с ошибкой; значение
     // контролов должно оставаться введённым, а не заменяться серверным load.
     await r.goto(`${BASE}/user/config`)

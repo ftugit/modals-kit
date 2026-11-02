@@ -44,6 +44,7 @@
     step?: string
     registerSeed?: string | null
     enabled?: boolean
+    restrictions?: StepData['restrictions']
   }
 
   const DEFAULT_AUTH_LIMITS: ProfileLimits & { holdSeconds: number } = {
@@ -57,6 +58,7 @@
     variant?: UserSurfaceVariant
     class?: string
     onDone?: () => void
+    onAuthenticatedStep?: (next: StepData) => void
   }
 
   let {
@@ -65,6 +67,7 @@
     variant = mode === 'modal' ? 'plain' : 'card',
     class: className,
     onDone,
+    onAuthenticatedStep,
   }: Props = $props()
 
   const resolvedLimits = $derived({
@@ -86,7 +89,7 @@
 
   const initial = untrack(() => stepOf(bound.state.result ?? undefined) ?? ({} as StepData))
   let blocked = $state<StepData['blocked']>(initial.blocked)
-  let restrictions = $state<StepData['restrictions']>(initial.restrictions)
+  let restrictions = $state<StepData['restrictions']>(initial.restrictions ?? untrack(() => data.restrictions))
 
   // svelte-ignore state_referenced_locally -- режим фиксирован на время жизни экземпляра
   const steps = useSteps({
@@ -140,10 +143,20 @@
     if (!state.result || (state.status !== 'success' && state.status !== 'error')) return
     const next = stepOf(state.result)
     if (!next) return
-    if (next.user) vault.hydrate(next.user)
     if (next.step === 'done') {
-      finish()
+      // Закрыть носитель прежде, чем смена principal инвалидирует его loader.
+      untrack(() => {
+        finish()
+        if (next.user) vault.hydrate(next.user)
+      })
       return
+    }
+    if (next.user) {
+      // Данные перехода переживают hard-инвалидацию модального носителя.
+      untrack(() => {
+        onAuthenticatedStep?.(next)
+        vault.hydrate(next.user!)
+      })
     }
     untrack(() => {
       if (next.step === 'blocked' || next.step === 'restrictions' || next.step === 'profile')

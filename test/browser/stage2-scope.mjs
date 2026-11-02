@@ -10,10 +10,10 @@ const browser = await chromium.launch({ headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
 const actor = await ctx.newPage()
 const observer = await ctx.newPage()
-async function submitAuth(button) {
+async function submitAuth(button, target = actor) {
   for (let attempt = 0; ; attempt++) {
     const [response] = await Promise.all([
-      actor.waitForResponse((r) => r.request().method() === 'POST'),
+      target.waitForResponse((r) => r.request().method() === 'POST'),
       button.click(),
     ])
     if (response.status() !== 429) {
@@ -24,7 +24,7 @@ async function submitAuth(button) {
     const error = result?.errors?.find((e) => e.code === 'rate.limited')
     if (!error || attempt >= 3) throw new Error('auth action exceeded retry budget')
     const ms = Number(error.params?.retryAfterMs ?? 60_000)
-    await actor.waitForTimeout(Math.ceil(ms / 1000) * 1000 + 1000)
+    await target.waitForTimeout(Math.ceil(ms / 1000) * 1000 + 1000)
   }
 }
 try {
@@ -133,7 +133,53 @@ try {
   await observer.waitForTimeout(1000)
   assert.equal(await observer.locator('[data-testid=blocks-list]:visible').count(), 0, 'blocks stay hidden after refresh')
   console.log('  ok: existing private page follows login/logout across tabs, including delayed and stale refresh')
+
+  // Проверяем не только отдельный маршрут /user/auth: вход в модалке и выход
+  // из MenuModal должны обновить уже открытую страницу и её пагинатор.
+  await observer.goto(`${BASE}/users`, { waitUntil: 'networkidle' })
+  await observer.locator('[data-testid=header-auth]').click()
+  const authModal = observer.locator('[role=dialog] #user-auth')
+  await authModal.locator('input[name=seed]').waitFor({ state: 'visible', timeout: 15000 })
+  await authModal.locator('input[name=seed]').fill(secret)
+  await submitAuth(authModal.getByRole('button', { name: 'Авторизация', exact: true }), observer)
+  const profile = observer.locator('[role=dialog] #user-profile')
+  await observer.waitForFunction(() =>
+    !document.querySelector('[role=dialog]') ||
+    Boolean(document.querySelector('[role=dialog] #user-profile')), null, { timeout: 15000 })
+  if (await profile.isVisible()) {
+    await profile.locator('input[name=nickname]').fill('stage2-admin')
+    await submitAuth(profile.getByRole('button', { name: 'Сохранить', exact: true }), observer)
+  }
+  await observer.locator('[role=dialog]').waitFor({ state: 'hidden', timeout: 15000 })
+  await observer.locator('[data-testid=header-user]').waitFor({ state: 'visible', timeout: 15000 })
+  await observer.locator('[data-testid=seed-user-row]').first().waitFor({ state: 'visible', timeout: 15000 })
+  await observer.goto(`${BASE}/users?modal=user.menu`, { waitUntil: 'networkidle' })
+  const menu = observer.locator('[role=dialog]')
+  await menu.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 15000 })
+  await submitAuth(menu.getByRole('button', { name: 'Выйти', exact: true }), observer)
+  await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
+  await observer.waitForFunction(() => !document.querySelector('[data-testid=seed-user-row]'), null, { timeout: 15000 })
+  assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'logout from MenuModal hides private list')
+  // Повторный вход теперь возвращает step=done, а не обязательный профиль.
+  await observer.locator('[data-testid=header-auth]').click()
+  await authModal.locator('input[name=seed]').waitFor({ state: 'visible', timeout: 15000 })
+  await authModal.locator('input[name=seed]').fill(secret)
+  await submitAuth(authModal.getByRole('button', { name: 'Авторизация', exact: true }), observer)
+  await observer.locator('[role=dialog]').waitFor({ state: 'hidden', timeout: 15000 })
+  await observer.locator('[data-testid=seed-user-row]').first().waitFor({ state: 'visible', timeout: 15000 })
+  await observer.getByRole('link', { name: 'Главная', exact: true }).first().click()
+  await observer.waitForURL((url) => url.pathname === '/', { timeout: 15000 })
+  await observer.locator('[data-testid=header-user]').click()
+  const popover = observer.locator('[data-user-menu-popover]')
+  await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 15000 })
+  await submitAuth(popover.getByRole('button', { name: 'Выйти', exact: true }), observer)
+  await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
+  await observer.goBack({ waitUntil: 'networkidle' })
+  await observer.waitForURL((url) => url.pathname === '/users', { timeout: 15000 })
+  assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'popover logout prevents stale users on Back')
+  console.log('  ok: AuthModal profile and done login, MenuModal and popover logout refresh the users page')
 } catch (error) {
+  console.error('❌ observer:', observer.url(), JSON.stringify((await observer.locator('[role=dialog]').allTextContents().catch(() => [])).map((s) => s.replace(/\s+/g, ' ').slice(0, 100))))
   console.error('❌', String(error))
   console.error('❌', String(error?.stack ?? '').split('\n').find((line) => line.includes('stage2-scope.mjs:')))
   process.exitCode = 1

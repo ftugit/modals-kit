@@ -150,6 +150,9 @@ async function run() {
         const style = (await hold.locator('span').first().getAttribute('style')) ?? ''
         return Number(/scaleX\(([\d.]+)\)/.exec(style)?.[1] ?? '0')
       }
+      // Предыдущий клик оставляет курсор на кнопке: повторный hover без
+      // выхода не порождает pointerenter и не запускает заливку.
+      await page.mouse.move(0, 0)
       await hold.hover({ force: true })
       await page.waitForTimeout(700)
       const t1 = await fillOf()
@@ -169,6 +172,9 @@ async function run() {
       // 6а. Фото-поле (`photo`): не-картинка даёт ошибку у поля, честный кадр
       //     сжимается через lib/image и сохраняется в `/api/storage/avatars/...`
       const fileInput = profile.locator('input[type=file][name=photo]')
+      // setInputFiles не фокусирует input: для проверки валидации по blur
+      // сначала явно фокусируем его, как при реальном выборе файла.
+      await fileInput.focus()
       await fileInput.setInputFiles({
         name: 'evil.jpg',
         mimeType: 'image/jpeg',
