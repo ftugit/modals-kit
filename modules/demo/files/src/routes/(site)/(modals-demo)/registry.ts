@@ -1,14 +1,10 @@
 import { createRegistry, globalScope, type AnyDefinition } from '#lib/modals/index.js'
-import CardModal from './CardModal.svelte'
-import FullpageModal from './FullpageModal.svelte'
-import LockedModal from './LockedModal.svelte'
-import SelectModal from './SelectModal.svelte'
-import FlowProbeModal from './FlowProbeModal.svelte'
+import { lazy } from '#lib/modals/svelte/index.js'
 
 const MODAL_DEFINITIONS = [
   {
     name: 'card',
-    component: CardModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.CardModal }))),
     size: { width: 520, height: 420 },
     color: 'var(--card)',
     tailColor: 'var(--border)',
@@ -28,21 +24,21 @@ const MODAL_DEFINITIONS = [
   },
   {
     name: 'flow-probe',
-    component: FlowProbeModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.FlowProbeModal }))),
     size: { width: 560, height: 320 },
     color: 'var(--card)',
     tailColor: 'var(--border)',
   },
   {
     name: 'fullpage',
-    component: FullpageModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.FullpageModal }))),
     size: 'fullpage',
     color: 'var(--card)',
     tailColor: 'var(--border)',
   },
   {
     name: 'broken-route',
-    component: CardModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.CardModal }))),
     size: { width: 420, height: 260 },
     color: 'var(--card)',
     tailColor: 'var(--border)',
@@ -50,7 +46,7 @@ const MODAL_DEFINITIONS = [
   },
   {
     name: 'locked',
-    component: LockedModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.LockedModal }))),
     size: { width: 420, height: 260 },
     color: 'color-mix(in oklab, var(--warning) 10%, var(--card))',
     tailColor: 'color-mix(in oklab, var(--warning) 24%, var(--border))',
@@ -58,7 +54,7 @@ const MODAL_DEFINITIONS = [
   },
   {
     name: 'select',
-    component: SelectModal,
+    component: lazy(() => import('./LazyModals.js').then((m) => ({ default: m.SelectModal }))),
     size: { width: 560, height: 360 },
     color: 'var(--card)',
     tailColor: 'var(--border)',

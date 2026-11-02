@@ -1,54 +1,36 @@
 <script lang="ts">
-  /**
-   * Модальный носитель куки-сейфа хранилищ (`storage.vault`; страница-фолбэк без JS — `/upload-demo/vault`).
-   * Читает снимок из `load` того же роута через `preloadData`, а при изменениях
-   * вызывает `invalidateAll()`, чтобы список серверов в `DemoPanel` обновился на лету.
-   */
-  import { invalidateAll, preloadData } from '$app/navigation'
-  import { Skeleton } from '#components/paginator/index.js'
+  /** Модальный носитель куки-сейфа; снимок принадлежит загрузчику записи. */
+  import { refreshAll } from '$app/navigation'
+  import { onDestroy } from 'svelte'
+  import { useLoader, useModals } from '#lib/modals/svelte/index.js'
+  import { Skeleton, Surface } from '#components/ui/index.js'
   import type { CookieVaultSnapshot } from '#hooks/cookie-vault/index.js'
-  import { storageVaultSchema, type StorageVaultMeta } from '../schema.js'
+  import type { StorageVaultMeta } from '../schema.js'
   import StorageVaultView from './StorageVaultView.svelte'
 
-  const VAULT_ROUTE = '/upload-demo/vault'
-
-  let snapshot = $state<CookieVaultSnapshot<StorageVaultMeta> | null>(null)
-  let loadFailed = $state(false)
+  const ldr = useLoader<{ vaultSnapshot?: CookieVaultSnapshot<StorageVaultMeta> }>()
+  const m = useModals()
+  let localSnapshot = $state<CookieVaultSnapshot<StorageVaultMeta> | null>(null)
+  let dirty = false
+  const snapshot = $derived(localSnapshot ?? ldr.data?.vaultSnapshot ?? null)
 
   $effect(() => {
-    let cancelled = false
-    void preloadData(VAULT_ROUTE)
-      .then((res) => {
-        if (cancelled) return
-        if (res.type === 'loaded' && res.data?.vaultSnapshot) {
-          snapshot = res.data.vaultSnapshot as CookieVaultSnapshot<StorageVaultMeta>
-        } else {
-          snapshot = {
-            scope: storageVaultSchema.scope,
-            hasKey: false,
-            maxEntries: storageVaultSchema.maxEntries,
-            items: [],
-          }
-        }
-      })
-      .catch(() => {
-        if (!cancelled) loadFailed = true
-      })
-    return () => {
-      cancelled = true
-    }
+    ldr.data
+    localSnapshot = null
   })
 
   function handleChanged(next: CookieVaultSnapshot<StorageVaultMeta>) {
-    snapshot = next
-    void invalidateAll()
+    localSnapshot = next
+    dirty = true
+    void refreshAll()
   }
+  onDestroy(() => {
+    if (dirty) m.modals.invalidateLoader('storage.vault')
+  })
 </script>
 
-<div class="flex min-h-0 flex-auto flex-col p-6" data-testid="storage-vault-modal">
-  {#if loadFailed}
-    <p class="text-sm text-destructive">Не удалось загрузить состояние куки-сейфа.</p>
-  {:else if !snapshot}
+<Surface variant="plain" class="flex min-h-0 flex-auto flex-col p-6" data-testid="storage-vault-modal">
+  {#if !snapshot}
     <div class="flex flex-col gap-3">
       <Skeleton class="h-5 w-48" />
       <Skeleton class="h-20 w-full" />
@@ -57,4 +39,4 @@
   {:else}
     <StorageVaultView {snapshot} onChanged={handleChanged} />
   {/if}
-</div>
+</Surface>

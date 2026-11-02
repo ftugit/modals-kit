@@ -110,7 +110,7 @@
                     <figcaption class="text-xs text-muted-foreground">Текущее изображение</figcaption>
                   </figure>
                 {/if}
-                <Field of={form.f.image} />
+                <Field of={form.f.image} preview />
               {/snippet}
             </SchemaFields>
           {/key}

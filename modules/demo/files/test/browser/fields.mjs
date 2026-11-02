@@ -165,8 +165,8 @@ let k1, k2
   ok('превью выбранного: карточка с именем и весом',
     (await pg.locator('[data-field="image"] [data-file-item]').innerText()).includes('fake.png'))
   await pg.click('[data-testid="record-submit"]')
-  await pg.waitForFunction(() => document.querySelector('[data-field="image"]')?.textContent?.includes('не подходит'))
-  ok('сервер сверяет содержимое файла, а не заявленный тип', (await errorsOf(pg, 'image')).includes('не подходит'))
+  await pg.waitForFunction(() => document.querySelector('[data-field="image"]')?.textContent?.includes('корректным изображением'))
+  ok('проверка сверяет содержимое файла, а не заявленный тип', (await errorsOf(pg, 'image')).includes('корректным изображением'))
 
   /* 6. отмена Attachment (×) и отправка результата */
   await pg.setInputFiles(r('image'), { name: 'dot.png', mimeType: 'image/png', buffer: PNG })
