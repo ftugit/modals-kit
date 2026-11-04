@@ -139,7 +139,10 @@ export async function exclusiveReset(connectionString, connectionTimeoutMillis, 
     for (;;) {
       if (interrupted) throw new Error('сброс прерван')
       const others = await control.query('SELECT pid, backend_type FROM pg_stat_activity WHERE datname=$1 AND pid <> $2', [database, identity.rows[0].pid])
-      if (others.rows.some((row) => row.backend_type !== 'client backend')) throw new Error('целевая БД занята системными процессами; сброс остановлен')
+      // PostgreSQL may redact backend_type for sessions owned by other roles
+      // when the database owner lacks pg_read_all_stats. Unknown is not proof
+      // of a system process or of safety: wait for it to disappear as well.
+      if (others.rows.some((row) => row.backend_type != null && row.backend_type !== 'client backend')) throw new Error('целевая БД занята системными процессами; сброс остановлен')
       if (!others.rows.length) break
       const remainingMs = drainDeadline - performance.now()
       if (remainingMs <= 0) throw new Error('прежние подключения не закрылись вовремя; сброс не начат')

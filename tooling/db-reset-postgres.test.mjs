@@ -426,3 +426,51 @@ test('реальная PostgreSQL: отдельный владелец для re
     await admin.end()
   }
 })
+
+test('реальная PostgreSQL: непрозрачные чужие сеансы не классифицируются как системные, но обязательно должны закрыться', { skip: !url, timeout: 30000 }, async () => {
+  const config = new URL(url)
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
+  const suffix = randomBytes(8).toString('hex'), name = `kit_test_${suffix}`, owner = `kit_owner_${suffix}`, role = `kit_app_${suffix}`
+  const admin = new pg.Client({ connectionString: url }); await admin.connect()
+  let ownerCreated = false, appCreated = false, dbCreated = false, app, observer
+  try {
+    await admin.query(`CREATE ROLE "${owner}" LOGIN PASSWORD 'isolated-test-only'`); ownerCreated = true
+    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'isolated-test-only'`); appCreated = true
+    await admin.query(`CREATE DATABASE "${name}" OWNER "${owner}"`); dbCreated = true
+    config.pathname = `/${name}`
+    const ownerUrl = new URL(config); ownerUrl.username = owner; ownerUrl.password = 'isolated-test-only'
+    const appUrl = new URL(config); appUrl.username = role; appUrl.password = 'isolated-test-only'
+    const setup = new pg.Client({ connectionString: ownerUrl.toString() }); await setup.connect()
+    await setup.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (1); GRANT USAGE ON SCHEMA public TO "${role}"; GRANT SELECT, INSERT ON public.keep TO "${role}"`); await setup.end()
+    app = new pg.Client({ connectionString: appUrl.toString() }); app.on('error', () => {}); await app.connect()
+    await app.query('BEGIN; INSERT INTO public.keep VALUES (2)')
+    const maintenance = new URL(ownerUrl); maintenance.pathname = '/postgres'
+    observer = new pg.Client({ connectionString: maintenance.toString() }); await observer.connect()
+    const hidden = await observer.query('SELECT backend_type FROM pg_stat_activity WHERE pid=$1', [app.processID])
+    assert.equal(hidden.rows.length, 1); assert.equal(hidden.rows[0].backend_type, null, 'чужой backend_type скрыт')
+    await observer.end(); observer = undefined
+    let signal
+    const disabled = new Promise(resolve => { signal = resolve })
+    let finished = false
+    const pending = exclusiveReset(ownerUrl.toString(), 5000, { runtimeUrl: appUrl.toString(), afterDisabled: () => signal() }).finally(() => { finished = true })
+    void pending.catch(() => {})
+    await disabled
+    await new Promise(resolve => setTimeout(resolve, 150))
+    assert.equal(finished, false, 'reset ожидает чужой непрозрачный сеанс')
+    assert.equal((await app.query('SELECT count(*)::int AS n FROM public.keep')).rows[0].n, 2)
+    await app.query('COMMIT'); await app.end(); app = undefined
+    assert.equal((await pending).tables, 1)
+    const verify = new pg.Client({ connectionString: ownerUrl.toString() }); await verify.connect()
+    await verify.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(3); GRANT USAGE ON SCHEMA public TO "${role}"; GRANT SELECT ON public.keep TO "${role}"`); await verify.end()
+    app = new pg.Client({ connectionString: appUrl.toString() }); app.on('error', () => {}); await app.connect()
+    await assert.rejects(exclusiveReset(ownerUrl.toString(), 300, { runtimeUrl: appUrl.toString() }), /прежние подключения не закрылись вовремя/)
+    assert.equal((await app.query('SELECT id FROM public.keep')).rows[0].id, 3)
+    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
+  } finally {
+    await observer?.end().catch(() => {}); await app?.end().catch(() => {})
+    if (dbCreated) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
+    if (appCreated) await admin.query(`DROP ROLE "${role}"`)
+    if (ownerCreated) await admin.query(`DROP ROLE "${owner}"`)
+    await admin.end()
+  }
+})
