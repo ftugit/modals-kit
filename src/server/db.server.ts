@@ -34,6 +34,7 @@ import { cacheKv } from '#hooks/cache-db.js'
 import type { DbModuleExtension } from '#hooks/module-ext.js'
 import { storageFile, storageReservation, storageServer } from '#hooks/storage-db.js'
 import { announceSeedAdmin, ensureSeedAdmin } from './admin-bootstrap.server.js'
+import { attachVercelPoolLifecycle } from './pg-pool-lifecycle.server.js'
 
 export { auth, profile, session, cacheKv, storageFile, storageReservation, storageServer }
 
@@ -247,8 +248,9 @@ async function openDriver(): Promise<Driver> {
         max: DB_POOL_MAX ?? (VERCEL ? 1 : 4),
         connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS ?? 30_000,
       })
-      driver = pool.driver
       close = pool.close
+      attachVercelPoolLifecycle(pool.pool, Boolean(VERCEL))
+      driver = pool.driver
     } else {
       const node = await openNodeDatabase(process.cwd(), DATABASE_DIR ?? 'data/postgres', {
         memory: !DATABASE_DIR,
