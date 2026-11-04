@@ -1,11 +1,10 @@
 /**
- * При DATABASE_RESET=1/true/yes в конце build удаляет все обычные и
- * секционированные таблицы public из выделенной DATABASE_URL; саму схему и её
- * права сохраняет. В рантайме schema.gate разворачивает модели и администратора.
+ * При DATABASE_RESET=1/true/yes в конце build сбрасывает поддерживаемые
+ * объекты public в выделенной DATABASE_URL, сохраняя саму схему и её права.
+ * Требуются права владельца БД, управление подключениями и maintenance database.
  * Внимание: данные удаляются до переключения трафика на новый деплой.
  */
-import pg from 'pg'
-import { resetPublicTables } from './db-reset-lib.mjs'
+import { exclusiveReset } from './db-exclusive-lib.mjs'
 
 const flag = /^(1|true|yes)$/i.test((process.env.DATABASE_RESET ?? '').trim())
 if (!flag) process.exit(0)
@@ -26,21 +25,36 @@ if (hyperdrive && hyperdrive !== url) {
 
 const rawTimeout = Number((process.env.DB_CONNECT_TIMEOUT_MS ?? '').trim())
 const connectionTimeoutMillis =
-  Number.isSafeInteger(rawTimeout) && rawTimeout >= 1 ? rawTimeout : 30_000
+  Number.isSafeInteger(rawTimeout) && rawTimeout >= 1 && rawTimeout <= 2147483647 ? rawTimeout : 30_000
 
-const client = new pg.Client({ connectionString: url, connectionTimeoutMillis })
 try {
-  await client.connect()
-  const count = await resetPublicTables(client)
-  console.log(`[db-reset] таблицы public очищены при сборке: ${count}; схема и её права сохранены`)
+  const count = await exclusiveReset(url, connectionTimeoutMillis)
+  console.log(`[db-reset] public очищена при сборке: таблиц ${count.tables}, представлений ${count.views}, функций/процедур ${count.routines}; схема и её права сохранены`)
 } catch (e) {
-  // Не выводим connection string или детали подключения: они могут содержать секреты.
+  // Сообщения БД и URL могут содержать секреты: допускаем только наши фиксированные тексты.
+  const safe = new Set([
+    'URL базы не позволяет однозначно определить целевую БД',
+    'для сброса нужна отдельная целевая БД, не postgres',
+    'другой сброс базы уже выполняется',
+    'целевая БД не найдена',
+    'подключения к целевой БД отключены; требуется восстановление владельцем',
+    'контрольное подключение не подтверждает тот же сервер и базу',
+    'в целевой БД есть подготовленные транзакции; сброс остановлен',
+    'целевая БД занята системными процессами; сброс остановлен',
+    'запрет новых подключений снят; сброс остановлен',
+    'прежние подключения не закрылись вовремя; сброс не начат',
+    'некорректный таймаут подключения и ожидания освобождения БД',
+    'в public остались неподдерживаемые объекты; полный сброс отменён',
+    'схема public отсутствует; её должен создать владелец базы или провайдер',
+    'в public есть внешние или принадлежащие расширению таблицы; автоматический сброс остановлен',
+    'таблицы public связаны наследованием или секциями с другой схемой; автоматический сброс остановлен',
+    'набор таблиц public изменился во время сброса; автоматический сброс остановлен',
+    'подключения к БД не восстановлены автоматически; срочно обратитесь к владельцу БД',
+    'исход COMMIT неизвестен; проверьте состояние базы до повторного сброса',
+    'сброс зафиксирован, но подключение после восстановления не подтверждено',
+  ])
   const code = typeof e?.code === 'string' && /^[A-Z][A-Z0-9_]{1,31}$/.test(e.code) ? ` (код ${e.code})` : ''
-  const message = e?.message === 'схема public отсутствует; её должен создать владелец базы или провайдер' ||
-    e?.message === 'в public есть внешние или принадлежащие расширению таблицы; автоматический сброс остановлен'
-    ? `: ${e.message}` : ''
-  console.error(`[db-reset] сброс таблиц public не выполнен${code}${message}. Проверьте подключение, владельцев таблиц и зависимости; при ошибке выполнена попытка отката.`)
+  const message = safe.has(e?.message) ? `: ${e.message}` : ''
+  console.error(`[db-reset] операция не подтверждена${code}${message}. Проверьте права и состояние БД; при потере соединения исход COMMIT может быть неизвестен.`)
   process.exitCode = 1
-} finally {
-  await client.end().catch(() => {})
 }

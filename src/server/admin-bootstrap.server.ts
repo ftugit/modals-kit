@@ -58,6 +58,8 @@ export async function ensureSeedAdmin(
   const pair = secret ? { secret, seed: await seedOf(secret) } : await generateKeyPair()
 
   return db.transaction(async (tx) => {
+    // Один администратор при одновременном восстановлении несколькими инстансами.
+    await tx.query({ text: "SELECT pg_advisory_xact_lock(hashtext('modals-kit:bootstrap-admin'))" })
     const activeAdmins = await tx.query({
       text: 'SELECT 1 FROM public.user_auth WHERE deleted_at IS NULL AND $1 = ANY(permissions) LIMIT 1',
       values: [ADMIN_ROLE],

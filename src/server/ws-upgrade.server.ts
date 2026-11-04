@@ -54,6 +54,7 @@ export interface NodeUpgradeTarget {
   readonly socket: Duplex
   readonly head: Buffer
   upgraded?: boolean
+  shutdown?: () => void
 }
 
 const NODE_UPGRADE_ALS_SYMBOL = Symbol.for('modals-kit/node-ws-upgrade-als')
@@ -249,6 +250,7 @@ export async function upgradeNodeTarget(
       wss.handleUpgrade(target.req, target.socket, target.head, (upgraded) => {
         target.socket.removeListener('error', onFail)
         target.upgraded = true
+        target.shutdown = () => upgraded.close(1001, 'Server shutting down')
         resolve(upgraded)
       })
     } catch (err) {

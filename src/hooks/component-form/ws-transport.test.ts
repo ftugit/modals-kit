@@ -17,6 +17,7 @@ import { componentFormRegistry, registerComponentForm } from './registry.js'
 import {
   computeWsMaxPayloadBytes,
   FORM_UPLOAD_WS_PATH,
+  packBinarySegment,
   type FormUploadProgress,
 } from './ws-protocol.js'
 import { handleFormUploadWs, type WsFormSessionOptions } from './ws-session.server.js'
@@ -118,6 +119,392 @@ describe('wsFormTransport + live progress', () => {
       super(url, { headers: { origin: 'http://localhost:5173' } })
     }
   } as unknown as ClientWebSocketConstructor
+
+  it('не продлевает pre-init таймер сообщениями pong', async () => {
+    sessionOptions = { preInitTimeoutMs: 180, ttlMs: 2_000 }
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const pong = setInterval(() => { if (ws.readyState === NodeWebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' })) }, 30)
+    try {
+      const code = await new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+      expect(code).toBe(1008)
+    } finally { clearInterval(pong) }
+  })
+
+  it('не продлевает абсолютный TTL сообщениями pong', async () => {
+    sessionOptions = { preInitTimeoutMs: 2_000, ttlMs: 180 }
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const pong = setInterval(() => { if (ws.readyState === NodeWebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' })) }, 30)
+    try {
+      const code = await new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+      expect(code).toBe(1008)
+    } finally { clearInterval(pong) }
+  })
+
+  it('закрывает соединение после resume-miss и не принимает новый init на нём', async () => {
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    const received: string[] = []
+    ws.on('message', (raw) => { received.push(raw.toString()); ws.send(JSON.stringify({ type: 'init', target: '/', fields: [], files: [] }), () => {}) })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'resume', sessionId: 'not-found', resumeToken: 'not-found' }))
+    expect(await closed).toBe(1000)
+    expect(received.map((value) => JSON.parse(value).type)).toEqual(['resume-miss'])
+  })
+
+  it('закрывает ожидающий файл сокет, даже если приходят pong', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 3_000, dataIdleTimeoutMs: 120, rateBudgetBytesPerSecond: 1_000_000_000 }
+    const form = defineForm({ id: 'ws_stalled_data', fields: { doc: field.file({ validate: [v.required()] }) } })
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      await (values.doc as File).arrayBuffer()
+      commit()
+      return { data: { ok: true } }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let pulled = false
+    ws.on('message', (raw) => { if (JSON.parse(raw.toString()).type === 'pull') pulled = true })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    const pong = setInterval(() => { if (ws.readyState === NodeWebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' })) }, 25)
+    try { expect(await closed).toBe(1008); expect(pulled).toBe(true) } finally { clearInterval(pong) }
+  })
+
+  it('не обвиняет клиента, пока сервер занят и ещё не запросил сегмент', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 3_000, dataIdleTimeoutMs: 80, rateBudgetBytesPerSecond: 1_000_000_000 }
+    const form = defineForm({ id: 'ws_server_busy', fields: { doc: field.file({ validate: [v.required()] }) } })
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      await new Promise((resolve) => setTimeout(resolve, 220))
+      const file = values.doc as File
+      await file.arrayBuffer()
+      commit()
+      return { data: { ok: true } }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let result: { ok?: boolean } | undefined
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'pull') ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length)))
+      if (msg.type === 'result') result = msg.result
+    })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    expect(await closed).toBe(1000)
+    expect(result?.ok).toBe(true)
+  })
+
+  it('отменяет сигнал запроса после TTL даже во время серверного execute и pong', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 300, dataIdleTimeoutMs: 80 }
+    const form = defineForm({ id: 'ws_abort_signal', fields: { doc: field.file({ validate: [v.required()] }) } })
+    let entered = false
+    let aborted = false
+    registerComponentForm({ description: form, async execute(_ctx, requestEvent) {
+      entered = true
+      await new Promise<void>((resolve) => {
+        const signal = requestEvent.request.signal
+        if (signal.aborted) { aborted = true; resolve(); return }
+        signal.addEventListener('abort', () => { aborted = true; resolve() }, { once: true })
+      })
+      return { data: { ok: false } }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    const pong = setInterval(() => { if (ws.readyState === NodeWebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' })) }, 25)
+    try { expect(await closed).toBe(1008); expect(entered).toBe(true); expect(aborted).toBe(true) } finally { clearInterval(pong) }
+  })
+
+  it('ограничивает паузу, принимает уже запрошенные данные и не даёт паузу за них', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 5_000, chunkBytes: 65_536, dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000, pauseMaxMs: 180 }
+    const form = defineForm({ id: 'ws_pause_policy', fields: { doc: field.file({ validate: [v.required()] }) } })
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      const bytes = await (values.doc as File).arrayBuffer()
+      commit()
+      return { data: { size: bytes.byteLength } }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    const queued: Array<{ reqId: number; length: number }> = []
+    const sent = new Set<number>()
+    let pauseRequested = false
+    let pausedAt = 0
+    let duration = 0
+    let denied = 0
+    let checkedPostPauseCredit = false
+    let prematurePull = false
+    let resultOk = false
+    const send = (msg: { reqId: number; length: number }) => {
+      if (!sent.has(msg.reqId)) { sent.add(msg.reqId); ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length))) }
+    }
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'pull') {
+        if (msg.segmentIndex === 0) { send(msg); return }
+        if (!pauseRequested) { pauseRequested = true; ws.send(JSON.stringify({ type: 'pause' })) }
+        if (!pausedAt) { queued.push(msg); return }
+        if (performance.now() - pausedAt < duration - 10) { prematurePull = true; return }
+        if (!checkedPostPauseCredit) { checkedPostPauseCredit = true; ws.send(JSON.stringify({ type: 'pause' })) }
+        send(msg)
+      } else if (msg.type === 'pause-ok') {
+        duration = msg.durationMs
+        pausedAt = performance.now()
+        expect(duration).toBeGreaterThan(0)
+        expect(duration).toBeLessThanOrEqual(180)
+        if (queued[0]) send(queued[0]) // уже находящийся в полёте сегмент
+        ws.send(JSON.stringify({ type: 'pause' }))
+      } else if (msg.type === 'pause-denied') denied++
+      else if (msg.type === 'result') resultOk = msg.result.ok
+    })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 5 * 65_536, type: 'application/octet-stream', lastModified: 1 }] }))
+    expect(await closed).toBe(1000)
+    expect(pausedAt).toBeGreaterThan(0)
+    expect(denied).toBeGreaterThanOrEqual(2)
+    expect(checkedPostPauseCredit).toBe(true)
+    expect(prematurePull).toBe(false)
+    expect(resultOk).toBe(true)
+  })
+
+  it('same-instance resume сохраняет паузу и не выдаёт новые pull до её окончания', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 5_000, chunkBytes: 65_536, windowSize: 1, dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000, pauseMaxMs: 400, resumeGraceMs: 2_000 }
+    const form = defineForm({ id: 'ws_pause_resume', fields: { doc: field.file({ validate: [v.required()] }) } })
+    registerComponentForm({ description: form, async execute({ values, commit }) { await (values.doc as File).arrayBuffer(); commit(); return { data: {} } } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const first = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let second: NodeWebSocket | undefined
+    let sessionId = '', resumeToken = '', pausedAt = 0, duration = 0, premature = false, denied = false, resumed = false, result = false
+    let finished!: () => void
+    const done = new Promise<void>((resolve) => { finished = resolve })
+    first.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'ready') { sessionId = msg.sessionId; resumeToken = msg.resumeToken }
+      if (msg.type === 'pull' && msg.segmentIndex === 0) first.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length)))
+      else if (msg.type === 'pull') first.send(JSON.stringify({ type: 'pause' }))
+      else if (msg.type === 'pause-ok') { pausedAt = performance.now(); duration = msg.durationMs; first.terminate() }
+    })
+    first.on('close', () => {
+      if (!pausedAt) { finished(); return }
+      second = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+      second.on('open', () => second!.send(JSON.stringify({ type: 'resume', sessionId, resumeToken })))
+      second.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString())
+        if (msg.type === 'resume-ok') { resumed = true; second!.send(JSON.stringify({ type: 'pause' })) }
+        else if (msg.type === 'pause-denied') denied = true
+        else if (msg.type === 'pull') { if (performance.now() - pausedAt < duration - 15) premature = true; second!.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length))) }
+        else if (msg.type === 'result') result = msg.result.ok
+      })
+      second.on('close', () => finished())
+      second.on('error', () => finished())
+    })
+    first.on('error', () => finished())
+    await new Promise<void>((resolve, reject) => { first.once('open', () => resolve()); first.once('error', reject) })
+    first.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 3 * 65_536, type: 'application/octet-stream', lastModified: 1 }] }))
+    try {
+      await Promise.race([done, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('resume timeout')), 4_000))])
+      expect(resumed).toBe(true); expect(denied).toBe(true); expect(premature).toBe(false); expect(result).toBe(true)
+    } finally { first.terminate(); second?.terminate() }
+  })
+
+  it('при TTL различает неизвестный исход и уже выполненный commit', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 240, dataIdleTimeoutMs: 80 }
+    for (const commitFirst of [false, true]) {
+      const form = defineForm({ id: `ws_outcome_${commitFirst}`, fields: { doc: field.file({ validate: [v.required()] }) } })
+      registerComponentForm({ description: form, async execute(ctx, requestEvent) {
+        if (commitFirst) ctx.commit()
+        await new Promise<void>((resolve) => requestEvent.request.signal.addEventListener('abort', () => resolve(), { once: true }))
+        return { data: {} }
+      } })
+      const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+      const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+      let outcome = ''
+      ws.on('message', (raw) => { const msg = JSON.parse(raw.toString()); if (msg.type === 'fault') outcome = msg.outcome })
+      await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+      const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+      ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+      expect(await closed).toBe(1008)
+      expect(outcome).toBe(commitFirst ? 'committed' : 'unknown')
+    }
+  })
+
+  it('shadow ETA сообщает прогноз один раз, но не отменяет lazy range; сбой наблюдателя изолирован', async () => {
+    const form = defineForm({ id: 'ws_eta_shadow_range', fields: { doc: field.file({ validate: [v.required()] }) } })
+    let commits = 0
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      const bytes = await (values.doc as File).slice(0, 7 * 65_536).arrayBuffer()
+      expect(bytes.byteLength).toBe(7 * 65_536)
+      commits++; commit(); return { data: {} }
+    } })
+    const run = async (eta: boolean) => {
+      let predictions = 0
+      sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 3_000, chunkBytes: 65_536, windowSize: 1,
+        dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000,
+        ratePolicy: eta ? { warmupMs: 60, warmupBytes: 65_536, windowMs: 60, badWindows: 3 } : false,
+        onRatePolicyPrediction: () => { predictions++; throw new Error('observer failure') } }
+      const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+      const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+      let received = 0, faults = 0, ok = false
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString())
+        if (msg.type === 'pull') setTimeout(() => {
+          if (ws.readyState === NodeWebSocket.OPEN) { received++; ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length))) }
+        }, 80)
+        if (msg.type === 'fault') faults++
+        if (msg.type === 'result') ok = msg.result.ok
+      })
+      await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+      const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+      ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 16 * 1024 * 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+      return { code: await closed, received, faults, ok, predictions }
+    }
+    const shadow = await run(true)
+    expect(shadow).toEqual({ code: 1000, received: 7, faults: 0, ok: true, predictions: 1 })
+    const control = await run(false)
+    expect(control).toEqual({ code: 1000, received: 7, faults: 0, ok: true, predictions: 0 })
+    expect(commits).toBe(2)
+  })
+
+  it('shadow ETA не мешает полной загрузке, ускорившейся после прогноза', async () => {
+    let predictions = 0
+    sessionOptions = { ttlMs: 5_000, chunkBytes: 65_536, windowSize: 1,
+      dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000,
+      ratePolicy: { warmupMs: 60, warmupBytes: 65_536, windowMs: 60, badWindows: 3 },
+      onRatePolicyPrediction: () => { predictions++ } }
+    const form = defineForm({ id: 'ws_eta_shadow_accelerate', fields: { doc: field.file({ validate: [v.required()] }) } })
+    let bytesRead = 0
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      bytesRead = (await (values.doc as File).arrayBuffer()).byteLength
+      commit(); return { data: {} }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let pulls = 0, faults = 0, ok = false
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'pull') {
+        const delay = ++pulls <= 5 ? 80 : 1
+        setTimeout(() => { if (ws.readyState === NodeWebSocket.OPEN) ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length))) }, delay)
+      }
+      if (msg.type === 'fault') faults++
+      if (msg.type === 'result') ok = msg.result.ok
+    })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 16 * 1024 * 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    expect(await closed).toBe(1000)
+    expect(predictions).toBe(1)
+    expect(faults).toBe(0)
+    expect(bytesRead).toBe(16 * 1024 * 1024)
+    expect(ok).toBe(true)
+  })
+
+  it('shadow ETA на последнем нужном сегменте не закрывает сокет до commit', async () => {
+    let predictions = 0
+    sessionOptions = { ttlMs: 3_000, chunkBytes: 65_536, windowSize: 1,
+      dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000,
+      ratePolicy: { warmupMs: 60, warmupBytes: 65_536, windowMs: 60, badWindows: 3 },
+      onRatePolicyPrediction: () => { predictions++ } }
+    const form = defineForm({ id: 'ws_eta_shadow_commit', fields: { doc: field.file({ validate: [v.required()] }) } })
+    let commits = 0
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      await (values.doc as File).slice(0, 4 * 65_536).arrayBuffer()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      commits++; commit(); return { data: {} }
+    } })
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let faults = 0, ok = false
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'pull') setTimeout(() => {
+        if (ws.readyState === NodeWebSocket.OPEN) ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length)))
+      }, 80)
+      if (msg.type === 'fault') faults++
+      if (msg.type === 'result') ok = msg.result.ok
+    })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 16 * 1024 * 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    expect(await closed).toBe(1000)
+    expect(predictions).toBe(1)
+    expect(faults).toBe(0)
+    expect(ok).toBe(true)
+    expect(commits).toBe(1)
+  })
+
+  it.skipIf(process.env.WS_ETA_LONG_TEST !== '1')('shadow ETA default: lazy range с реальными интервалами (опционально ~101 с)', async () => {
+    const form = defineForm({ id: 'ws_eta_shadow_default', fields: { doc: field.file({ validate: [v.required()] }) } })
+    let commits = 0, predictions = 0
+    registerComponentForm({ description: form, async execute({ values, commit }) {
+      const bytes = await (values.doc as File).slice(0, 10 * 65_536).arrayBuffer()
+      expect(bytes.byteLength).toBe(10 * 65_536)
+      commits++; commit(); return { data: {} }
+    } })
+    sessionOptions = { chunkBytes: 65_536, windowSize: 1, onRatePolicyPrediction: () => { predictions++ } }
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance: `${form.id}:main`, submissionId: randomUUID() })
+    const ws = new NodeWebSocket(wsEndpoint, { headers: { origin: 'http://localhost:5173' } })
+    let received = 0, faults = 0, ok = false
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString())
+      if (msg.type === 'pull') setTimeout(() => {
+        if (ws.readyState === NodeWebSocket.OPEN) { received++; ws.send(packBinarySegment(msg.reqId, new Uint8Array(msg.length))) }
+      }, 10_100)
+      if (msg.type === 'fault') faults++
+      if (msg.type === 'result') ok = msg.result.ok
+    })
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const closed = new Promise<number>((resolve, reject) => { ws.once('close', resolve); ws.once('error', reject) })
+    ws.send(JSON.stringify({ type: 'init', target: '/', fields: [...Object.entries(envelope), [form.policy.envelopeKeys.intent, 'submit']], files: [{ id: 'f0', field: 'doc', name: 'file.bin', size: 12 * 1024 * 1024, type: 'application/octet-stream', lastModified: 1 }] }))
+    expect(await closed).toBe(1000)
+    expect(received).toBe(10)
+    expect(predictions).toBe(1)
+    expect(faults).toBe(0)
+    expect(ok).toBe(true)
+    expect(commits).toBe(1)
+  }, 150_000)
+
+  it('передаёт управление паузой через клиентский транспорт и очищает его после отправки', async () => {
+    sessionOptions = { preInitTimeoutMs: 1_000, ttlMs: 5_000, chunkBytes: 65_536, windowSize: 1, dataIdleTimeoutMs: 1_000, rateBudgetBytesPerSecond: 1_000_000_000, pauseMaxMs: 120 }
+    const form = defineForm({ id: 'ws_pause_api', fields: { doc: field.file({ validate: [v.required()] }) } })
+    registerComponentForm({ description: form, async execute({ values, commit }) { await (values.doc as File).arrayBuffer(); commit(); return { data: {} } } })
+    let control: (() => boolean) | null = null
+    let requested = false
+    let accepted = false
+    let cleared = false
+    const SlowWs = class extends NodeWebSocket {
+      constructor(url: string) { super(url, { headers: { origin: 'http://localhost:5173' } }) }
+      override send(data: Parameters<NodeWebSocket['send']>[0], ...rest: unknown[]) {
+        if (typeof data === 'string') return super.send(data)
+        setTimeout(() => { if (this.readyState === NodeWebSocket.OPEN) super.send(data) }, 35)
+      }
+    } as unknown as ClientWebSocketConstructor
+    const submissionId = randomUUID(), instance = `${form.id}:main` as `${string}:${string}`
+    const envelope = buildEnvelope({ formId: form.id, revision: form.revision, instance, submissionId })
+    const fd = new FormData(); for (const [key, value] of Object.entries(envelope)) fd.set(key, value)
+    fd.set(form.policy.envelopeKeys.intent, 'submit'); fd.set('doc', new File([new Uint8Array(1024 * 1024)], 'file.bin'))
+    const transport = wsFormTransport(() => '/', { wsUrl: wsEndpoint, WebSocketImpl: SlowWs,
+      onPauseControl: (value) => { control = value; if (value === null) cleared = true },
+      onPauseResult: (result) => { if (result.accepted) accepted = true },
+    })
+    const outcome = await transport({ envelope: { formId: form.id, revision: form.revision, instance, submissionId, intent: 'submit' }, data: fd, accept: ['application/json'], signal: new AbortController().signal,
+      report: (progress) => {
+        const snap = progress as FormUploadProgress
+        // Second pull confirms that the first chunk was verified by the server.
+        if (!requested && (snap.files[0]?.sentSegments ?? 0) >= 2) {
+          requested = true; expect(control?.()).toBe(true)
+        }
+      },
+    })
+    expect(outcome.kind).toBe('result')
+    if (outcome.kind === 'result') expect(outcome.result.ok).toBe(true)
+    expect(requested).toBe(true); expect(accepted).toBe(true); expect(cleared).toBe(true)
+  })
 
   it('различает формы без файлов (HTTP fetch) и формы с выбранным File (wss://)', () => {
     const textOnly = new FormData()
@@ -576,7 +963,8 @@ describe('wsFormTransport + live progress', () => {
     const readySnap = snapshots.find((s) => s.chunkBytes === 512 * 1024)
     expect(readySnap).toBeDefined()
     expect(readySnap?.platform).toBe('vercel')
-    expect(readySnap?.maxDurationMs).toBe(300_000)
+    expect(readySnap?.maxDurationMs).toBeGreaterThan(280_000)
+    expect(readySnap?.maxDurationMs).toBeLessThanOrEqual(292_000)
     expect(snapshots.some((s) => s.bytesPerSecond > 0)).toBe(true)
     expect(snapshots.at(-1)?.files[0]?.totalSegments).toBe(Math.ceil(rawBytes.byteLength / (512 * 1024)))
 
@@ -585,7 +973,7 @@ describe('wsFormTransport + live progress', () => {
     expect(Buffer.compare(Buffer.from(await decrypted!.bytes()), Buffer.from(rawBytes))).toBe(0)
   })
 
-  it('автоматически дозагружает прерванный поток на мобильном обрыве (resume-ok) и перезапускает с 0 при холодном инстансе (resume-miss)', async () => {
+  it('дозагружает при resume-ok и завершает прежнюю попытку при resume-miss', async () => {
     const encryptionKey = 'a7'.repeat(32)
     const storage = createStorage({
       servers: {
@@ -691,16 +1079,16 @@ describe('wsFormTransport + live progress', () => {
     const savedWarm = await storage.lazy('resumed/warm-lte.bin', { key: encryptionKey })
     expect(Buffer.compare(Buffer.from(await savedWarm!.bytes()), Buffer.from(payload))).toBe(0)
 
-    // 2) Холодный инстанс (`resume-miss`): сервер не знает sessionId, клиент чисто перезапускает с байта 0
+    // 2) При resume-miss клиент не перезапускает отправку незаметно с новым TTL.
     const cold = await runWithSimulatedDrop('cold-vercel.bin', false)
     expect(cold.out.kind).toBe('result')
     if (cold.out.kind === 'result') {
-      expect(cold.out.result.ok).toBe(true)
+      expect(cold.out.result.ok).toBe(false)
+      expect(cold.out.result.outcome).toBe('unknown')
+      expect(cold.out.result.errors.some((e) => e.code === 'ws.resume-miss')).toBe(true)
     }
     expect(cold.openedSockets).toBe(2)
-    expect(cold.snapshots.at(-1)?.resumedCount).toBe(1)
-    const savedCold = await storage.lazy('resumed/cold-vercel.bin', { key: encryptionKey })
-    expect(Buffer.compare(Buffer.from(await savedCold!.bytes()), Buffer.from(payload))).toBe(0)
+    expect(await storage.head('resumed/cold-vercel.bin')).toBeNull()
   })
 
   it('гарантирует новое wss://-соединение и новый серверный таймер после отмены, ошибки и успешного завершения', async () => {

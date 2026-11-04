@@ -8,7 +8,7 @@
 // - контролирует `bufferedAmount` сокета и считает сглаженную скорость отдачи (`bytesPerSecond`)
 //   за вычетом ещё не ушедшего в сеть `ws.bufferedAmount`;
 // - при кратковременном обрыве мобильной сети автоматически открывает новый сокет и отправляет
-//   `resume` (с бесшовным продолжением при `resume-ok` или чистым перезапуском с байта 0 при `resume-miss`);
+//   `resume` (с бесшовным продолжением при `resume-ok` или завершением с неизвестным исходом при `resume-miss`);
 // - каждая новая отправка (после отмены, ошибки или успеха) гарантированно открывает свежее
 //   `wss://`-соединение и получает новый серверный таймер.
 import type { Result, Transport } from '#lib/form/index.js'
@@ -55,6 +55,10 @@ export interface WsFormTransportOptions {
   readonly maxAutoResumeAttempts?: number
   /** Базовая задержка первой попытки переподключения в мс (по умолчанию `350`). */
   readonly reconnectBaseDelayMs?: number
+  /** Управление паузой текущей отправки; null означает, что отправка закончилась. */
+  readonly onPauseControl?: (request: (() => boolean) | null) => void
+  /** Сервер может отклонить паузу; разрешённая длительность не продлевает общий срок. */
+  readonly onPauseResult?: (result: { accepted: boolean; durationMs: number }) => void
 }
 
 const WS_OPEN = 1
@@ -180,7 +184,7 @@ function externalFailureResult(
   status: number,
   code: string,
   message: string,
-  outcome: 'not-applied' | 'unknown',
+  outcome: 'not-applied' | 'unknown' | 'committed',
 ): Result {
   return {
     v: 1,
@@ -409,6 +413,7 @@ export function wsFormTransport(
         settled = true
         clearInterval(progressTimer)
         req.signal?.removeEventListener('abort', onAbort)
+        try { options.onPauseControl?.(null) } catch { /* callback is not transport state */ }
         resolve(out)
       }
 
@@ -430,6 +435,14 @@ export function wsFormTransport(
         finish({ kind: 'abort', reason: 'aborted' })
       }
       req.signal?.addEventListener('abort', onAbort, { once: true })
+
+      try {
+        options.onPauseControl?.(() => {
+          const ws = currentWs
+          if (settled || !sessionId || !ws || ws.readyState !== WS_OPEN) return false
+          try { ws.send(JSON.stringify({ type: 'pause' })); return true } catch { return false }
+        })
+      } catch { /* consumer callbacks must not interrupt upload */ }
 
       const sendInitOnSocket = (ws: ClientWebSocketLike): void => {
         sessionClockOriginMs = Date.now()
@@ -641,12 +654,24 @@ export function wsFormTransport(
           }
 
           if (msg.type === 'resume-miss') {
-            // Холодный инстанс или истёк грейс-период: начинаем чистую загрузку с байта 0 и новым таймером
-            resumedCount += 1
-            reconnectAttempts = 0
-            sessionId = null
-            resumeToken = null
-            sendInitOnSocket(ws)
+            // Нельзя незаметно продлить логический TTL новым init на другом инстансе.
+            // Итог предыдущей попытки может быть неизвестен: не выполняем её снова.
+            if (ws.readyState === WS_OPEN) ws.close(1000, 'Session not available')
+            finish({
+              kind: 'result',
+              result: externalFailureResult(
+                req.envelope,
+                409,
+                'ws.resume-miss',
+                'Соединение не удалось восстановить. Проверьте результат и начните новую отправку.',
+                'unknown',
+              ),
+            })
+            return
+          }
+
+          if (msg.type === 'pause-ok' || msg.type === 'pause-denied') {
+            try { options.onPauseResult?.({ accepted: msg.type === 'pause-ok', durationMs: msg.type === 'pause-ok' ? msg.durationMs : 0 }) } catch { /* callback is optional */ }
             return
           }
 
@@ -676,7 +701,7 @@ export function wsFormTransport(
                 msg.status,
                 `transport.${msg.status}`,
                 msg.message,
-                allBytesSent ? 'unknown' : 'not-applied',
+                msg.outcome ?? (sessionId ? 'unknown' : 'not-applied'),
               ),
             })
           }
@@ -723,7 +748,7 @@ export function wsFormTransport(
               502,
               'ws.disconnected',
               `Соединение загрузки прервалось до ответа сервера${reason}`,
-              allBytesSent ? 'unknown' : 'not-applied',
+              sessionId ? 'unknown' : 'not-applied',
             ),
           })
         })

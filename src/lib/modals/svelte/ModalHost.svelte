@@ -14,7 +14,7 @@
   // полного перехода. CSS оригинала работает без изменений (решение D11).
   import { Dialog, useDialog } from '@ark-ui/svelte/dialog'
   import { Portal } from '@ark-ui/svelte/portal'
-  import { onMount, untrack, type Snippet } from 'svelte'
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte'
   import {
     mobileAnchorOf,
     resolveEntry,
@@ -305,6 +305,30 @@
    * Иначе одинокий Select создавал бы пустую оболочку рядом с собой.
    */
   const open = $derived(chain.length > 0)
+  // Zag's delayed return-focus callback can outlive its Svelte effect on an
+  // abrupt host unmount. Keep a plain DOM snapshot and restore without reading
+  // destroyed reactive state; never steal focus from another live surface.
+  let beforeOpenFocus: HTMLElement | null = null
+  let lastFocusStage: HTMLElement | null = null
+  let focusGeneration = 0
+  let focusOutstanding = false
+  function restoreFocusLater(target: HTMLElement | null, former: HTMLElement | null, generation: number, parentSurface: HTMLElement | null = null) {
+    if (!target || typeof document === 'undefined') return
+    setTimeout(() => {
+      if (generation !== focusGeneration || !target.isConnected) return
+      for (let node: HTMLElement | null = target; node; node = node.parentElement) if (node.inert) return
+      const active = document.activeElement
+      // Upon sheet removal the parent trap may briefly focus its close button.
+      // Do not treat arbitrary controls in that surface as intermediate focus.
+      const parentTrapFocus = !!parentSurface &&
+        (active === parentSurface || (active === closeBtnEl && parentSurface.contains(active)))
+      if (active && active !== document.body && !former?.contains(active) && !parentTrapFocus) return
+      target.focus({ preventScroll: true })
+    }, 0)
+  }
+  onDestroy(() => {
+    if (focusOutstanding) restoreFocusLater(beforeOpenFocus, lastFocusStage, ++focusGeneration)
+  })
 
 
 
@@ -390,6 +414,7 @@
    * сливает пропсы через `mergeProps`, а тот теряет ключи-символы.
    */
   const stageEl = $derived(popupEl?.closest<HTMLElement>('[data-modal-stage]') ?? null)
+  $effect(() => { if (stageEl) lastFocusStage = stageEl })
   let closeBtnEl = $state<HTMLButtonElement>()
 
   /* ── host-owned floating overlays ───────────────────────────── */
@@ -591,6 +616,17 @@
    */
   const floatingDomId = (id: string) => `modals-host-floating-${id}`
   const surfaceId = $derived(sheetSurface ? floatingDomId(sheetSurface.id) : undefined)
+  let previousSheet: HostFloating | undefined
+  let previousSheetNode: HTMLElement | null = null
+  $effect(() => {
+    const current = sheetSurface
+    if (current) previousSheetNode = floatingNodes[current.id] ?? previousSheetNode
+    else if (previousSheet) {
+      restoreFocusLater(lastSheetTrigger, previousSheetNode, focusGeneration, lastFocusStage)
+      previousSheetNode = null
+    }
+    previousSheet = current
+  })
 
 
 
@@ -933,6 +969,10 @@
     const current = untrack(() => phase)
 
     if (isOpen && current === 'closed') {
+      focusOutstanding = true
+      focusGeneration++
+      beforeOpenFocus = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement : null
       if (coldStart) {
         coldStart = false
         // 🔴 Перевод фазы — на СЛЕДУЮЩИЙ такт, не синхронно.
@@ -982,6 +1022,8 @@
         timer = setTimeout(() => {
           if (untrack(() => phase) !== 'ending') return
           phase = 'closed'
+          focusOutstanding = false
+          restoreFocusLater(beforeOpenFocus, lastFocusStage, focusGeneration)
           // Память чистим ТОЛЬКО когда анимация доиграла, иначе уходящая
           // модалка мигнёт скелетоном. Порт `clearMemoryIfNeeded`.
           if (untrack(() => config.clearOnClose) && modals.chain.length === 0) {
@@ -1093,8 +1135,8 @@
     preventScroll: true,
     closeOnEscape: false,
     closeOnInteractOutside: false,
-    // Возврат фокуса делает машина — ручной `preOpenEl` оригинала не нужен (D9).
-    restoreFocus: true,
+    // Возвращаем фокус самостоятельно: callback Zag может жить после destroy.
+    restoreFocus: false,
     persistentElements,
     onEscapeKeyDown: onEscape,
     onInteractOutside: (e: any) => onInteractOutside(e.detail?.originalEvent ?? e),
@@ -1126,7 +1168,7 @@
     ...(surfaceId ? { ids: { content: surfaceId } } : null),
     closeOnEscape: false,
     closeOnInteractOutside: false,
-    restoreFocus: true,
+    restoreFocus: false,
     'aria-label': sheetSurface?.label,
     // Начальный фокус — сам контейнер, а не поле: на сенсорном вводе фокус
     // в поле поднял бы клавиатуру. Если фокус уже внутри листа (поворот во
@@ -1137,12 +1179,6 @@
       const active = typeof document === 'undefined' ? null : document.activeElement
       if (node && active instanceof HTMLElement && node.contains(active)) return active
       return node
-    },
-    // Куда вернуть фокус: триггер запоминается при открытии, потому что
-    // floating снимается раньше деактивации ловушки.
-    finalFocusEl: () => {
-      const el = sheetSurface ? focusableTrigger(sheetSurface.triggers) : lastSheetTrigger
-      return el && el.isConnected ? el : null
     },
     onEscapeKeyDown: onEscape,
     onInteractOutside: (e: any) => onInteractOutside(e.detail?.originalEvent ?? e),

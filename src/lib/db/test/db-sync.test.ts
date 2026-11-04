@@ -103,6 +103,150 @@ test("sync: второй запуск — быстрая проверка, ни�
     assert.equal((await db.resource(post()).select(ctx)).length, 1);
   }));
 
+test("gate: после завершённого reset первая запись восстанавливает схему до выполнения", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let recovered = 0, writes = 0;
+    const wrapped: Driver = { ...driver, query: (st) => {
+      if (st.text.startsWith("INSERT INTO public.post")) writes++;
+      return driver.query(st);
+    } };
+    const gated = await schema.gate(wrapped, { onRecovered: () => { recovered++; } });
+    await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema");
+    await gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" });
+    assert.equal(recovered, 1);
+    assert.equal(writes, 1);
+    assert.deepEqual((await pg.query("SELECT title FROM public.post")).rows.map((r) => (r as { title: string }).title), ["first"]);
+  }));
+
+test("gate: параллельные первые записи ждут одно восстановление и bootstrap", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let recovered = 0, bootstrapDone = false;
+    const wrapped: Driver = { ...driver, query: (st) => {
+      if (st.text.startsWith("INSERT INTO public.post")) assert.equal(bootstrapDone, true);
+      return driver.query(st);
+    } };
+    const gated = await schema.gate(wrapped, { onRecovered: async () => {
+      recovered++; await new Promise((r) => setTimeout(r, 25)); bootstrapDone = true;
+    } });
+    await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema");
+    await Promise.all([
+      gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" }),
+      gated.query({ text: "INSERT INTO public.post(title) VALUES ('second')" }),
+    ]);
+    assert.equal(recovered, 1);
+    assert.deepEqual((await pg.query("SELECT title FROM public.post ORDER BY title")).rows.map((r) => (r as { title: string }).title), ['first', 'second']);
+  }));
+
+test("gate: reset между проверкой и записью не приводит к автоматическому повтору", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let armed = false, writes = 0, recovered = 0;
+    const wrapped: Driver = { ...driver, query: async (st) => {
+      if (st.text.startsWith("INSERT INTO public.post")) {
+        writes++;
+        if (armed) { armed = false; await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema"); }
+      }
+      return driver.query(st);
+    } };
+    const gated = await schema.gate(wrapped, { onRecovered: () => { recovered++; } });
+    armed = true;
+    await assert.rejects(gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" }));
+    assert.equal(writes, 1); assert.equal(recovered, 1);
+    assert.equal((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM public.post")).rows[0].n, 0);
+  }));
+
+test("gate: callback транзакции с внешним эффектом не повторяется после reset", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let armed = false, callbacks = 0, sideEffects = 0, recovered = 0;
+    const wrapped: Driver = { ...driver, transaction: async (fn, opts) => {
+      if (armed) { armed = false; await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema"); }
+      return driver.transaction(fn, opts);
+    } };
+    const gated = await schema.gate(wrapped, { onRecovered: () => { recovered++; } });
+    armed = true;
+    await assert.rejects(gated.transaction(async (tx) => {
+      callbacks++; sideEffects++;
+      await tx.query({ text: "INSERT INTO public.post(title) VALUES ('first')" });
+    }));
+    assert.equal(callbacks, 1); assert.equal(sideEffects, 1); assert.equal(recovered, 1);
+    assert.equal((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM public.post")).rows[0].n, 0);
+  }));
+
+test("gate: новая операция ждёт bootstrap, даже если таблица уже восстановлена", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let started!: () => void, finish!: () => void;
+    const bootstrapStarted = new Promise<void>((resolve) => { started = resolve; });
+    const bootstrapWait = new Promise<void>((resolve) => { finish = resolve; });
+    let finished = false, writes = 0;
+    const wrapped: Driver = { ...driver, query: (st) => {
+      if (st.text.startsWith("INSERT INTO public.post")) { assert.equal(finished, true); writes++; }
+      return driver.query(st);
+    } };
+    const gated = await schema.gate(wrapped, { onRecovered: async () => {
+      started(); await bootstrapWait; finished = true;
+    } });
+    await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema");
+    const first = gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" });
+    try {
+      await bootstrapStarted;
+      assert.equal((await pg.query<{ name: string }>("SELECT to_regclass('public.kit_schema') AS name")).rows[0].name, 'kit_schema');
+      const second = gated.query({ text: "INSERT INTO public.post(title) VALUES ('second')" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(writes, 0);
+      finish();
+      await Promise.all([first, second]);
+      assert.equal(writes, 2);
+    } finally { finish(); await first.catch(() => {}); }
+  }));
+
+test("gate: другие отпечатки без отсутствия metadata не запускают миграцию старой версии", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let recoveries = 0;
+    const gated = await schema.gate(driver, { onRecovered: () => { recoveries++; } });
+    await pg.query("UPDATE public.kit_schema SET hash = 'new-version'");
+    await gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" });
+    assert.equal(recoveries, 0);
+    assert.equal((await pg.query<{ hash: string }>("SELECT hash FROM public.kit_schema WHERE kind='table'")).rows[0].hash, 'new-version');
+  }));
+
+test("gate: ошибка проверки соединения не исполняет бизнес-запрос", () =>
+  withPg(async (_pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let armed = false, writes = 0;
+    const signal = new AbortController().signal;
+    const wrapped: Driver = { ...driver, query: (st) => {
+      if (armed && st.text.startsWith('SELECT 1 FROM "public"."kit_schema"')) {
+        assert.equal(st.signal, signal);
+        throw new Error('connection unavailable');
+      }
+      if (st.text.startsWith("INSERT INTO public.post")) writes++;
+      return driver.query(st);
+    } };
+    const gated = await schema.gate(wrapped);
+    armed = true;
+    await assert.rejects(gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')", signal }), /connection unavailable/);
+    await assert.rejects(gated.transaction(async () => { writes++; }, { signal }), /connection unavailable/);
+    assert.equal(writes, 0);
+  }));
+
+test("gate: сбой bootstrap не делает восстановление успешным и следующая попытка повторяет его", () =>
+  withPg(async (pg, driver) => {
+    const schema = defineSchema({ resources: [post()] });
+    let recovered = 0;
+    const gated = await schema.gate(driver, { onRecovered: () => { if (++recovered === 1) throw new Error('bootstrap failed'); } });
+    await pg.exec("DROP TABLE public.post; DROP TABLE public.kit_schema");
+    await assert.rejects(gated.query({ text: "INSERT INTO public.post(title) VALUES ('first')" }));
+    assert.equal(recovered, 1);
+    await gated.query({ text: "INSERT INTO public.post(title) VALUES ('second')" });
+    assert.equal(recovered, 2);
+    assert.deepEqual((await pg.query("SELECT title FROM public.post")).rows.map((r) => (r as { title: string }).title), ['second']);
+  }));
+
 test("sync: новая необязательная колонка и колонка с DEFAULT добавляются сами, данные целы", () =>
   withPg(async (pg, driver) => {
     await defineSchema({ resources: [post()] }).sync(driver);

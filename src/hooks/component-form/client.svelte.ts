@@ -109,7 +109,7 @@ export function bindComponentForm(
   const resolveTarget = () => action ?? readCurrentHref()
   const initialContinuation = untrack(() => continuation ?? readPageFormResult(desc.id))
   const httpTransport = kitActionTransport(resolveTarget)
-  const wsTransport = wsFormTransport(resolveTarget)
+  const wsTransport = wsFormTransport(resolveTarget, options.wsUpload)
   let boundFormRef: BoundForm | null = null
 
   const baseTransport: Transport = async (req) => {

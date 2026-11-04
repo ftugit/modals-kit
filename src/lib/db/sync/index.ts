@@ -93,7 +93,7 @@ export interface DbSchema {
    */
   gate(
     driver: Driver,
-    options?: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void },
+    options?: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void; onRecovered?: () => void | Promise<void> },
   ): Promise<Driver>;
 }
 
@@ -274,26 +274,72 @@ export function defineSchema(spec: SchemaSpec): DbSchema {
 
   async function gate(
     driver: Driver,
-    options: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void } = {},
+    options: { onReport?: (report: SchemaReport) => void; onStep?: (step: SyncStep) => void; onRecovered?: () => void | Promise<void> } = {},
   ): Promise<Driver> {
     const report = await sync(driver, { onStep: options.onStep });
     if (report !== OK) options.onReport?.(report);
     let pending = report.status === "pending";
-    const pass = async () => {
-      if (!pending) return;
-      if (await upToDate(driver)) pending = false;
-      else throw new DbFailure("schema_pending");
+    let needsRecovery = false;
+    let recovering: Promise<void> | undefined;
+    let recoveryVersion = 0;
+    const recover = () => recovering ??= (async () => {
+      const fresh = await sync(driver, { onStep: options.onStep });
+      if (fresh !== OK) options.onReport?.(fresh);
+      pending = fresh.status === "pending";
+      if (pending) throw new DbFailure("schema_pending");
+      await options.onRecovered?.();
+      needsRecovery = false;
+      recoveryVersion++;
+    })().finally(() => { recovering = undefined; });
+    const metadataExists = async (signal?: AbortSignal) => {
+      try {
+        // Проверяем именно отсутствие таблицы после полного reset, а не совпадение
+        // версий: старый runtime не должен заново мигрировать схему новой версии.
+        await driver.query({ text: `SELECT 1 FROM ${kit} LIMIT 1`, ...(signal ? { signal } : {}) });
+        return true;
+      } catch (error) {
+        if (missingTable(error)) return false;
+        throw error;
+      }
+    };
+    const pass = async (signal?: AbortSignal) => {
+      if (recovering) await recovering;
+      if (needsRecovery) await recover();
+      if (pending) {
+        if (await upToDate(driver)) pending = false;
+        else throw new DbFailure("schema_pending");
+        return;
+      }
+      const version = recoveryVersion;
+      const exists = await metadataExists(signal);
+      // Другой запрос мог начать восстановление, пока выполнялась проверка.
+      // Не пропускаем работу до завершения bootstrap, даже если таблица уже есть.
+      if (recovering) await recovering;
+      if (needsRecovery) await recover();
+      if (!exists && version === recoveryVersion) {
+        needsRecovery = true;
+        await recover();
+      }
+      if (pending) throw new DbFailure("schema_pending");
+    };
+    const repairAfter = async (error: unknown): Promise<never> => {
+      if (missingTable(error)) {
+        needsRecovery = true;
+        try { await recover(); } catch { /* next operation retries recovery */ }
+      }
+      // Never replay business SQL or a transaction with a potentially unknown outcome.
+      throw error;
     };
     return {
       capabilities: driver.capabilities,
       ...(driver.close ? { close: () => driver.close!() } : {}),
       async query(statement) {
-        await pass();
-        return driver.query(statement);
+        await pass(statement.signal);
+        try { return await driver.query(statement); } catch (error) { return repairAfter(error); }
       },
       async transaction(fn, txOptions) {
-        await pass();
-        return driver.transaction(fn, txOptions);
+        await pass(txOptions?.signal);
+        try { return await driver.transaction(fn, txOptions); } catch (error) { return repairAfter(error); }
       },
     };
   }

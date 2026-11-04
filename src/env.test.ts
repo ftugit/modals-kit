@@ -67,3 +67,28 @@ describe('key identifiers and rotation validation', () => {
     }
   })
 })
+
+
+describe('WS lifetime env validation', () => {
+  it('accepts bounded positive timer seconds, and blank values', () => {
+    for (const name of ['WS_UPLOAD_TTL_SECONDS', 'WS_UPLOAD_IDLE_SECONDS'] as const) {
+      const validate = variables[name].schema!['~standard'].validate
+      expect(validate('')).toEqual({ value: undefined })
+      expect(validate('300')).toEqual({ value: 300 })
+      expect(validate('2147483')).toEqual({ value: 2147483 })
+      for (const invalid of ['0', '-1', '1.5', '2147484', 'NaN']) expect(validate(invalid)).toHaveProperty('issues')
+    }
+  })
+  it('allows zero to disable pause', () => {
+    const validate = variables.WS_UPLOAD_PAUSE_MAX_SECONDS.schema!['~standard'].validate
+    expect(validate('0')).toEqual({ value: 0 })
+    expect(validate('60')).toEqual({ value: 60 })
+    expect(validate('-1')).toHaveProperty('issues')
+  })
+  it('requires a positive rate budget', () => {
+    const validate = variables.WS_UPLOAD_RATE_BUDGET_BYTES_PER_SECOND.schema!['~standard'].validate
+    expect(validate('32768')).toEqual({ value: 32768 })
+    expect(validate('0')).toHaveProperty('issues')
+    expect(validate('-10')).toHaveProperty('issues')
+  })
+})

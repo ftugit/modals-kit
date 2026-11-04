@@ -97,12 +97,12 @@ export function subnetFromIp(rawIp: string | null | undefined): string | undefin
  * Извлечь доверенный IP клиента из `RequestEvent`:
  * - при наличии `event.getClientAddress` используется ТОЛЬКО он (клиентский
  *   `X-Forwarded-For` игнорируется, исключая спуфинг заголовка мимо прокси);
- * - фолбэк на `X-Forwarded-For` (со строгой проверкой `isIP`) допускается только
- *   в синтетических тестах, где `getClientAddress` не передан в объект события.
+ * - без адаптерного `getClientAddress` доверенного адреса нет: заголовки
+ *   запроса не становятся доверенными даже в синтетических событиях.
  */
 export function clientIpOf(
   event?: ClientAddressSource | null,
-  fallbackRequest?: Request,
+  _fallbackRequest?: Request,
 ): string | undefined {
   if (event && typeof event.getClientAddress === 'function') {
     try {
@@ -113,10 +113,7 @@ export function clientIpOf(
     }
     return undefined
   }
-  const req = event?.request ?? fallbackRequest
-  if (!req) return undefined
-  const xff = req.headers.get('x-forwarded-for')?.split(',')[0]
-  return normalizeClientIp(xff)
+  return undefined
 }
 
 /** Каноническая подсеть клиента из SvelteKit-события. */

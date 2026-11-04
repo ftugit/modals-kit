@@ -18,9 +18,9 @@ export function createReactiveStore(core: ModalStore = getClientStore(), scoped 
   // Послойные `$state.raw`: обновление `runtime` (idle -> loading -> ready)
   // не трогает `chain` и `hostConfig` по ссылке и не будит эффекты стопки.
   let chain = $state.raw(core.state.chain)
-  let hostConfig = $state.raw(core.state.hostConfig)
-  let hostConfigBy = $state.raw(core.state.hostConfigBy)
-  let scopeKey = $state(core.state.scopeKey)
+  let configBase = core.state.hostConfig
+  let configOverlay: (typeof core.state.hostConfigBy)[string] | undefined = scoped ? core.state.hostConfigBy[core.state.scopeKey] : undefined
+  let mergedHostConfig = $state.raw(scoped ? { ...configBase, ...configOverlay } : configBase)
   let runtime = $state.raw(core.state.runtime)
   let data = $state.raw(core.state.data)
   let sharedData = $state.raw(core.state.sharedData)
@@ -32,22 +32,20 @@ export function createReactiveStore(core: ModalStore = getClientStore(), scoped 
     // активный `$effect` (например `configureBase` / `setScope`), из которого
     // синхронно пришёл `core.set(...)`.
     chain = next.chain
-    hostConfig = next.hostConfig
-    hostConfigBy = next.hostConfigBy
-    scopeKey = next.scopeKey
+    const overlay = scoped ? next.hostConfigBy[next.scopeKey] : undefined
+    if (next.hostConfig !== configBase || overlay !== configOverlay) {
+      configBase = next.hostConfig
+      configOverlay = overlay
+      mergedHostConfig = scoped ? { ...configBase, ...configOverlay } : configBase
+    }
     runtime = next.runtime
     data = next.data
     sharedData = next.sharedData
     registryVersion = next.registryVersion
   })
 
-  // Ключ скоупа — данные стора (`scopeKey`), пишет его адаптер через
-  // `setScope`. Производное кэширует слитый объект и остаётся ЧИСТЫМ:
-  // никаких чтений `page` (иначе эффекты хоста подписываются на навигацию
-  // и отрывают ядро посреди popstate — R-03).
-  const mergedHostConfig = $derived(
-    scoped ? { ...hostConfig, ...hostConfigBy[scopeKey] } : hostConfig,
-  )
+  // Конфигурация обновляется в подписке только при смене базы или активного
+  // слайса; посторонний runtime и слайсы других страниц сохраняют ссылку.
 
   return {
     /** Ядро — для действий (открыть/закрыть/настроить). */

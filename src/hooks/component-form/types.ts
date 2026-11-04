@@ -9,6 +9,7 @@ import type {
 } from '#lib/form/server.js'
 import type { CheckRegistry, FormDescription, Result } from '#lib/form/index.js'
 import type { TaskState } from '#lib/task/index.js'
+import type { WsFormTransportOptions } from './ws-transport.js'
 
 type FormSource = NonNullable<Parameters<typeof createFormHandler>[0]['source']>
 
@@ -37,6 +38,8 @@ export interface ComponentFormOptions extends Omit<BindOptions, 'action' | 'tran
   session?: FormSessionGuard
   /** Ключ блокировки навигации в `page.state` на время отправки формы. */
   lockStateKey?: string
+  /** Необязательное управление запрошенной паузой WS-отправки. */
+  wsUpload?: Pick<WsFormTransportOptions, 'onPauseControl' | 'onPauseResult'>
   /** Вызывается при применённом успехе (`status === 'success' && outcome !== 'not-applied'`). */
   onSuccess?: (result: Result) => void
 }

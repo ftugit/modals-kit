@@ -447,3 +447,11 @@ test('скрытые поля и рукописные name= объявляет �
   const bound = '<Select {...v.attrs} name={v.name} />';
   assert.equal(checkTemplate(RULES, bound, '/app/src/routes/demo/+page.svelte'), null);
 });
+
+test('scope fast-path не освобождает исходники проекта и несокращаемые правила', () => {
+  const source = 'history.pushState({}, "", "/")'
+  assert.equal(checkSource(RULES, source, '/work/node_modules/pkg/src/index.js'), null)
+  assert.ok(checkSource(RULES, source, '/work/src/routes/link-target/index.js'))
+  // Даже в зависимости сохраняются не-scoped правила, например запрет <dialog>.
+  assert.ok(checkTemplate(RULES, '<dialog>unsafe</dialog>', '/work/node_modules/pkg/Component.svelte'))
+})

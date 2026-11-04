@@ -50,7 +50,7 @@ export interface UserVault {
    *   поэтому старый кэш layout'а на клиентских переходах не затирает RAM, а свежий ответ
    *   сервера (включая `null` после отзыва сессии) применяется безоговорочно.
    */
-  syncServer(payload: VaultPayload | null | undefined, serverStamp?: number): void
+  syncServer(payload: VaultPayload | null | undefined, serverStamp?: string | number): void
   /** Записать свежий снимок после входа, регистрации, смены профиля или продления. */
   hydrate(payload: VaultPayload): void
   /** Мгновенно очистить RAM во всех открытых вкладках (после выхода / отзыва сессии). */
@@ -194,6 +194,7 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
   let epoch = 0
   let sharedSeq = 0
   let lastServerMarker: string | number | undefined = undefined
+  let usesSnapshotMarker = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let inflightAbort: AbortController | null = null
   let activeRenew: Promise<boolean> | null = null
@@ -460,14 +461,15 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     get renewing(): boolean {
       return renewing
     },
-    syncServer(payload: VaultPayload | null | undefined, serverStamp?: number): void {
+    syncServer(payload: VaultPayload | null | undefined, serverStamp?: string | number): void {
       ensureChannel()
       const marker = serverStamp !== undefined ? serverStamp : snapshotKeyOf(payload)
-      if (lastServerMarker === marker) {
+      if (lastServerMarker === marker && usesSnapshotMarker === (serverStamp === undefined)) {
         if (typeof window !== 'undefined') synced = true
         return
       }
       lastServerMarker = marker
+      usesSnapshotMarker = serverStamp === undefined
       if (payload) {
         const normalized = normalizePayload(payload)
         const currentKey = principal
@@ -481,13 +483,13 @@ export function createVault(options: CreateVaultOptions = {}): UserVault {
     },
     hydrate(payload: VaultPayload): void {
       const normalized = normalizePayload(payload)
-      if (typeof lastServerMarker === 'string') {
+      if (usesSnapshotMarker) {
         lastServerMarker = snapshotKeyOf(normalized)
       }
       applyHydrate(normalized, true)
     },
     clear(): void {
-      if (typeof lastServerMarker === 'string') {
+      if (usesSnapshotMarker) {
         lastServerMarker = 'guest'
       }
       applyClear(true)

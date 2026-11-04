@@ -93,11 +93,13 @@ function runTextRules(rules, code, id) {
   const file = norm(id);
   const src = typeof code === 'string' ? code : String(code ?? '');
   for (const rule of rules) {
-    if (!matchPattern(rule.pattern, src)) continue;
-    // scope — только исходники проекта: у зависимостей свой путь с `/src/`
-    // (`node_modules/@sveltejs/kit/src/...`), чужие правила их не касаются.
+    // Сначала исключаем области, к которым правило и раньше не применялось:
+    // у зависимости может быть свой /src/. Неразмеченные scope правила всё
+    // ещё проверяются, а реальные пути проекта (в том числе symlink вне
+    // node_modules) не освобождаются от проверок.
     if (rule.scope && (file.includes('/node_modules/') || !rule.scope.some((sc) => matchPattern(sc, file))))
       continue;
+    if (!matchPattern(rule.pattern, src)) continue;
     const allowed = (rule.allow ?? []).some((a) => matchPattern(a, file));
     if (allowed) continue;
     if (rule.require && rule.require.test(src)) continue;

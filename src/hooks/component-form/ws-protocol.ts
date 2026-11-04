@@ -89,6 +89,7 @@ export type WsClientTextMessage =
   | WsClientResumeMessage
   | WsClientPongMessage
   | WsClientCancelMessage
+  | { readonly type: 'pause' }
 
 /** Запись в журнале подтверждённых сервером сегментов. */
 export interface WsSegmentLogEntry {
@@ -105,7 +106,7 @@ export interface WsServerReadyMessage {
   readonly chunkBytes: number
   readonly windowSize: number
   readonly platform: WsUploadPlatform
-  /** Лимит длительности одного `wss://`-вызова на платформе в мс (`null` — без жёсткого потолка). */
+  /** Оставшийся срок на данные при ready; это не настройка платформы. */
   readonly maxDurationMs: number | null
 }
 
@@ -145,7 +146,7 @@ export interface WsServerResumeOkMessage {
   readonly elapsedMs: number
 }
 
-/** Сессия не найдена на этом инстансе (холодный инстанс или истёк грейс-период) — перезапустить с `init`. */
+/** Сессия не найдена на этом инстансе; исход не определён, нужна явная новая отправка. */
 export interface WsServerResumeMissMessage {
   readonly type: 'resume-miss'
 }
@@ -162,6 +163,7 @@ export interface WsServerFaultMessage {
   readonly type: 'fault'
   readonly status: number
   readonly message: string
+  readonly outcome?: 'not-applied' | 'unknown' | 'committed'
 }
 
 export type WsServerMessage =
@@ -172,6 +174,8 @@ export type WsServerMessage =
   | WsServerResumeMissMessage
   | WsServerResultMessage
   | WsServerFaultMessage
+  | { readonly type: 'pause-ok'; readonly durationMs: number }
+  | { readonly type: 'pause-denied' }
 
 /** Прогресс одного файла для реактивного показа в `FileAttachment` / `Attachment`. */
 export interface FileUploadProgressEntry {

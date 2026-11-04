@@ -41,9 +41,9 @@ export default defineConfig(({ command, isPreview }) => {
   const kit = {
     // Vercel: adapter-auto -> adapter-vercel; Northflank/любой Node-хостер: adapter-node.
     adapter: process.env.VERCEL ? adapterAuto() : adapterNode({ precompress: false }),
-    // Northflank/buildpack: публичный origin за краем прокси неизвестен из Host,
-    // поэтому задаём его на этапе сборки (build argument ORIGIN).
-    paths: { origin: process.env.ORIGIN || undefined },
+    // Node: origin задаётся доверенным server.mjs при runtime, не запекается в образ.
+    // Vercel сохраняет прежний контракт сборки.
+    paths: { origin: process.env.VERCEL ? process.env.ORIGIN || undefined : undefined },
     preprocess: vitePreprocess(),
     csrf: { trustedOrigins: trustedOrigins(getEnv, { dev: isDev }).exact },
     csp: {

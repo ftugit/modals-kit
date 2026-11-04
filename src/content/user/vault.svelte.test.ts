@@ -41,6 +41,19 @@ describe('vault: замыкание, межвкладочная синхрони
     vi.restoreAllMocks()
   })
 
+  test('строковый серверный маркер не путается с fallback-маркером снимка', () => {
+    const v = createVault({ channelName: null, now: () => 500_000, readSsrUser: () => null })
+    const first = samplePayload()
+    const updated = samplePayload({ prof: { nickname: 'новый', avatarUrl: null } })
+    v.syncServer(first, 'server-execution-a')
+    v.hydrate(updated)
+    v.syncServer(first, 'server-execution-a')
+    expect(v.profile.nickname).toBe('новый')
+    v.syncServer(null, 'server-execution-b')
+    expect(v.authorized).toBe(false)
+    v.dispose()
+  })
+
   test('инкапсуляция замыкания без сырого access, корректный authStamp при гостевом входе и серверном отзыве', () => {
     let ssrSnapshot: VaultPayload | null = samplePayload()
     const v = createVault({

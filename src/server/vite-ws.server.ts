@@ -47,6 +47,9 @@ export function attachNodeWsUpgrade(
       return
     }
 
+    // Только после отбора нашего маршрута: не мешаем Vite HMR.
+    socket.on('error', () => { if (!socket.destroyed) socket.destroy() })
+
     const dummySocket = new PassThrough() as unknown as Duplex
     dummySocket.resume()
     dummySocket.on('error', () => undefined)
@@ -68,7 +71,7 @@ export function attachNodeWsUpgrade(
     dummyRes.on('finish', () => {
       if (!target.upgraded && !socket.destroyed) {
         const code = dummyRes.statusCode >= 400 ? dummyRes.statusCode : 400
-        rejectRawSocket(socket, code, dummyRes.statusMessage || 'Upgrade Rejected')
+        rejectRawSocket(socket, code, (dummyRes.statusMessage || 'Upgrade Rejected').replace(/[\r\n]+/g, ' '))
       }
       dummySocket.destroy()
     })

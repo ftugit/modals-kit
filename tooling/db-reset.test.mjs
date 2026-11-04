@@ -37,6 +37,19 @@ test('сброс public: таблицы и FK удалены, схема и пр
   }
 })
 
+test('межсхемные секции не уничтожают данные в обоих направлениях', async () => {
+  const db = new PGlite()
+  try {
+    await db.exec('CREATE SCHEMA other; CREATE TABLE public.parent (id int) PARTITION BY RANGE (id); CREATE TABLE other.child PARTITION OF public.parent FOR VALUES FROM (0) TO (100); INSERT INTO public.parent VALUES (1)')
+    await assert.rejects(resetPublicTables(db), /другой схемой/)
+    assert.equal((await db.query('SELECT id FROM other.child')).rows[0].id, 1)
+    await db.exec('DROP TABLE public.parent; CREATE TABLE other.parent (id int) PARTITION BY RANGE (id); CREATE TABLE public.child PARTITION OF other.parent FOR VALUES FROM (0) TO (100); INSERT INTO other.parent VALUES (2)')
+    await assert.rejects(resetPublicTables(db), /другой схемой/)
+    assert.equal((await db.query('SELECT id FROM other.parent')).rows[0].id, 2)
+    assert.equal((await db.query('SELECT id FROM public.child')).rows[0].id, 2)
+  } finally { await db.close() }
+})
+
 test('роль без CREATE на базе сбрасывает принадлежащие ей таблицы, не пересоздавая public', async () => {
   const db = new PGlite()
   try {

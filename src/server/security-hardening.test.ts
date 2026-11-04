@@ -43,7 +43,7 @@ const testStorageVaultSchema = defineCookieVault<
 })
 import { securityHeadersHandle } from '../hooks.server.js'
 import { localStore } from './cache.server.js'
-import { clientIpOf, subnetFromIp, subnetOfEvent } from './client-ip.server.js'
+import { clientIpOf, createIpThrottle, subnetFromIp, subnetOfEvent } from './client-ip.server.js'
 import { originGuard } from './form-security.server.js'
 import { createSafeStorageFetch, isBlockedIpAddress } from './safe-storage-fetch.server.js'
 import { cspDirectives, trustedOrigins } from './trusted-origins.js'
@@ -411,8 +411,20 @@ describe('Security Hardening S1–S7 & S9–S12', () => {
     }
     expect(clientIpOf(event, req)).toBe('198.51.100.42')
     expect(subnetOfEvent(event, req)).toBe('198.51.100.0')
+    // Отсутствие контекста не делает клиентский XFF доверенным.
+    expect(clientIpOf(undefined, req)).toBeUndefined()
+    expect(clientIpOf({ request: req }, req)).toBeUndefined()
+    expect(clientIpOf({ request: req, getClientAddress: () => { throw new Error('no adapter') } }, req)).toBeUndefined()
+    expect(subnetOfEvent({ request: req }, req)).toBeUndefined()
     expect(subnetFromIp('2001:db8:abcd:0012::1')).toBe('2001:db8:abcd::')
     expect(subnetFromIp('not-an-ip"><script>')).toBeUndefined()
+  })
+
+  it('S6: без доверенного event поддельные XFF не открывают новые окна throttle', async () => {
+    const throttle = createIpThrottle(`test-no-event-${crypto.randomUUID()}`, 1, 60_000)
+    const request = (ip: string) => new Request('https://app.example/auth', { headers: { 'x-forwarded-for': ip } })
+    expect((await throttle.check({ request: request('203.0.113.1') })).allowed).toBe(true)
+    expect((await throttle.check({ request: request('203.0.113.2') })).allowed).toBe(false)
   })
 
   it('S9: securityHeadersHandle выставляет защитные заголовки и включает HSTS только на https:', async () => {

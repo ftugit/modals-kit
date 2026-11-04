@@ -163,12 +163,21 @@ export function createModals<V = unknown>(
    * Поймано регрессией R-03. Поэтому скоуп — данные в сторе: адаптер
    * сообщает смену путём через `setScope`, а геттеры ядра чистые.
    */
+  let lastBase: HostConfig | undefined
+  let lastOverride: Partial<HostConfig> | undefined
+  let lastMerged: HostConfig<V> | undefined
   const scopedConfig = (
     state: Readonly<Pick<ModalStoreData, 'hostConfig' | 'hostConfigBy' | 'scopeKey'>>,
-  ) =>
-    configScope
-      ? ({ ...state.hostConfig, ...(state.hostConfigBy[state.scopeKey] ?? {}) } as HostConfig<V>)
-      : (state.hostConfig as HostConfig<V>)
+  ): HostConfig<V> => {
+    if (!configScope) return state.hostConfig as HostConfig<V>
+    const overlay = state.hostConfigBy[state.scopeKey]
+    if (!lastMerged || lastBase !== state.hostConfig || lastOverride !== overlay) {
+      lastBase = state.hostConfig
+      lastOverride = overlay
+      lastMerged = { ...state.hostConfig, ...overlay } as HostConfig<V>
+    }
+    return lastMerged
+  }
   const errorSinks = new Set<ErrorSink>(onError ? [onError] : [])
 
   // Умолчания задаются один раз при создании; запись цепочки может их

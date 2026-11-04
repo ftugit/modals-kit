@@ -27,7 +27,9 @@ const drawer = shallowFlag('drawer') // drawer.on / drawer.push() — «Наза
 ```
 
 Ещё: `addressTraversing()` (идёт свой шаг по истории), `claimLayerKeys(test)` (ключи
-слоя не переносятся на запись под ним), `visibleHref()`, `resolveHref(href)` (куда
+слоя не переносятся на запись под ним; предикат `test(key, targetUrl?)` может учитывать
+адрес назначения слоя), `whenAddressSettled()` (промис завершения очереди записей,
+обхода истории и переноса слоя; на SSR разрешается сразу), `visibleHref()`, `resolveHref(href)` (куда
 ведёт ссылка от видимого адреса), `linkTask(href)` (адаптер `#lib/task`: идёт ли
 переход именно на этот адрес).
 

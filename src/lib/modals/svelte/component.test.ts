@@ -52,6 +52,52 @@ describe('modals/svelte component & ModalContent', () => {
     expect(resolvedModalComponent(def)).toBe(Comp)
   })
 
+  it('конфигурация scoped-зеркала свежая и стабильна при unrelated runtime updates', () => {
+    let currentScope = '/a'
+    const core = memoryCore(memoryStorage())
+    const modals = createModals(core, { configScope: () => currentScope })
+    modals.setScope(currentScope)
+    const view = createReactiveStore(modals.store, true)
+    try {
+      const initial = view.hostConfig
+      const apiInitial = modals.config
+      expect(modals.config).toBe(apiInitial)
+      expect(view.hostConfig).toBe(initial)
+      modals.store.set({ registryVersion: modals.store.state.registryVersion + 1 })
+      expect(view.hostConfig).toBe(initial)
+      expect(modals.config).toBe(apiInitial)
+      modals.configure({ maxHeight: '70vh' })
+      expect(view.hostConfig.maxHeight).toBe('70vh')
+      expect(modals.config.maxHeight).toBe('70vh')
+      expect(modals.config).not.toBe(apiInitial)
+      const updated = view.hostConfig
+      expect(updated).not.toBe(initial)
+      expect(view.hostConfig).toBe(updated)
+      currentScope = '/b'; modals.setScope(currentScope)
+      expect(view.hostConfig.maxHeight).not.toBe('70vh')
+      currentScope = '/a'; modals.setScope(currentScope)
+      expect(view.hostConfig.maxHeight).toBe('70vh')
+      view.destroy()
+      const remount = createReactiveStore(modals.store, true)
+      expect(remount.hostConfig.maxHeight).toBe('70vh')
+      remount.destroy()
+    } finally { view.destroy() }
+  })
+
+  it('unscoped-зеркало сохраняет базовую ссылку и отписывается', () => {
+    const modals = createModals(memoryCore(memoryStorage()))
+    const view = createReactiveStore(modals.store)
+    const before = view.hostConfig
+    modals.store.set({ registryVersion: modals.store.state.registryVersion + 1 })
+    expect(view.hostConfig).toBe(before)
+    modals.configure({ maxHeight: '65vh' })
+    expect(view.hostConfig.maxHeight).toBe('65vh')
+    const last = view.hostConfig
+    view.destroy()
+    modals.configure({ maxHeight: '55vh' })
+    expect(view.hostConfig).toBe(last)
+  })
+
   it('ModalContent показывает скелетон для lazy без loader до прихода чанка и не висит при loader -> undefined', async () => {
     const scope = createRegistry('test')
     let resolveChunk!: (m: { default: unknown }) => void
@@ -152,6 +198,39 @@ describe('modals/svelte component & ModalContent', () => {
       view.destroy()
       target.remove()
     }
+  })
+
+  it('возвращает фокус при размонтировании открытого хоста без derived_inert', async () => {
+    const warn = vi.spyOn(console, 'warn')
+    const trigger = document.createElement('button'); document.body.appendChild(trigger); trigger.focus()
+    const Leaf = (anchor: Comment) => { const el = document.createElement('button'); el.textContent = 'inside'; anchor.before(el); return {} }
+    const scope = createRegistry('unmount-focus').define([{ name: 'test.modal', component: Leaf as any }])
+    const modals = createModals(memoryCore(memoryStorage(), { lookup: scope.lookup }))
+    const target = document.createElement('div'); document.body.appendChild(target)
+    const app = mount(ModalHost as any, { target, props: { modals, scope, children: () => {} } })
+    try {
+      flushSync(); modals.open('test.modal'); flushSync(); await new Promise((r) => setTimeout(r, 30)); flushSync()
+      await unmount(app); await new Promise((r) => setTimeout(r, 60)); flushSync()
+      expect(document.activeElement).toBe(trigger)
+      expect(warn.mock.calls.some((args) => String(args[0]).includes('derived_inert'))).toBe(false)
+    } finally { warn.mockRestore(); trigger.remove(); target.remove() }
+  })
+
+  it('размонтирование закрытого хоста не возвращает устаревший фокус', async () => {
+    const trigger = document.createElement('button'); document.body.appendChild(trigger); trigger.focus()
+    const Leaf = (anchor: Comment) => { const el = document.createElement('button'); anchor.before(el); return {} }
+    const scope = createRegistry('closed-unmount').define([{ name: 'test.modal', component: Leaf as any }])
+    const modals = createModals(memoryCore(memoryStorage(), { lookup: scope.lookup }))
+    const target = document.createElement('div'); document.body.appendChild(target)
+    const app = mount(ModalHost as any, { target, props: { modals, scope, children: () => {} } })
+    try {
+      flushSync(); modals.open('test.modal'); flushSync(); await new Promise((r) => setTimeout(r, 30)); flushSync()
+      modals.forceCloseAll(); flushSync(); await new Promise((r) => setTimeout(r, 100)); flushSync()
+      expect(document.activeElement).toBe(trigger)
+      trigger.blur(); expect(document.activeElement).toBe(document.body)
+      await unmount(app); await new Promise((r) => setTimeout(r, 30))
+      expect(document.activeElement).toBe(document.body)
+    } finally { trigger.remove(); target.remove() }
   })
 
   it('ModalHost монтируется со scoped-стором без циклов эффектов и не перезапрашивает loader при setParams({ reload: false })', async () => {

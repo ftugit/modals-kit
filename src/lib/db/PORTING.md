@@ -4,6 +4,11 @@
 вопроса: что откуда взято, почему именно так, и как перенести изменения дальше
 (upstream SolidHono → пакет; пакет → обновлённый `modals-kit`).
 
+> **Исторический документ:** ревизии, окружение и результаты ниже относятся к моменту
+> переноса (октябрь 2026), а не являются утверждениями о текущих ветках и доступах.
+> Текущий слой находится в `src/lib/db`; перед запуском старых проб проверьте,
+> существуют ли они в вашей копии.
+
 ## 0. Рамка задачи
 
 > адаптируй от solidhono для modal-kit серверную `lib/db`; изучи, как в SvelteKit
@@ -27,8 +32,8 @@ npm-пакет, потребляемый как зависимость**. `apply
 > «как у SOURCE». Репозиторий к тому же приватный (`git ls-remote` запрашивает учётку), так что
 > «подтянуть свежий SolidHono» технически невозможно без токена - и больше не нужно.
 
-Клоды для диффов: `/home/user/repos/solidhono` (`work/f8079b1`),
-`/home/user/repos/modal-kit` (`work/f82734f`, **read-only reference**).
+Исторические копии для диффов: SolidHono (`work/f8079b1`) и modal-kit
+(`work/f82734f`, **read-only reference**); локальные пути зависели от машины автора.
 `origin` в обоих очищен от токена; пушей нет — коммиты только локальные.
 
 ## 1. Карта «файл → файл»
@@ -168,11 +173,11 @@ Directus, Supabase-js, `@neondatabase/serverless`), но взято только
 npm run test:db     # == npx vitest run src/lib/db — седьмой файл, аудит документации, в счёт групп не входит
 # ✓ src/lib/db/test/db-structure.test.ts       6 групп  (границы слоя)
 # ✓ src/lib/db/test/db-port-specific.test.ts  43 групп  (новое поведение)
-# ✓ src/lib/db/test/db-sync.test.ts           34 группы  (схема из моделей, решения конфликтов, цепочка удаления, ключи доступа, ошибки полей)
+# ✓ src/lib/db/test/db-sync.test.ts           37 групп  (схема из моделей, решения конфликтов, цепочка удаления, ключи доступа, ошибки полей)
 # ✓ src/lib/db/test/db-rules.test.ts          33 группы  (метка проверки, JSON Schema → CHECK, checks, validator, маски, fill, store, timestamps, without, protect, raw, delete hard)
 # ✓ src/lib/db/test/db-ported.test.ts          3 it'а: db-lib 16, db-hardening 5, db-followup 9
 # ✓ src/lib/db/test/db-docs.test.ts            1 группа: README/PORTING против кода
-# ИТОГО 142 групп; на PGlite выполняются 141 — одна группа db-followup требует нативного PG
+# ИТОГО 145 групп в историческом срезе; на PGlite выполняются 144 — одна группа db-followup требует нативного PG
 npm run test        # всё приложение: vitest по src + node --test tooling/ (стражи, 88 тестов guard'а)
 npm run check       # svelte-check: 0 ошибок
 # то же против нативного PostgreSQL 17 (портированные наборы идут через pgAdapter):
@@ -207,8 +212,9 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
    → `HTTP_ROUNDTRIP_OK`. Дешевле браузера и не зависит от `~/.cache/ms-playwright`,
    который не переживает пересоздание песочницы; Playwright-прогоны (§5.3) остаются
    обязательными для изменений, касающихся `use:enhance` и гидрации.
-5. Скрипты: `/home/user/integration/browser-check.mjs` (итоговая строка `BROWSER_OK`) и
-   `/home/user/integration/delete-check.mjs` (счётчик по SSR-HTML до/после, `DELETE_OK`) —
+5. Исторические скрипты `browser-check.mjs` (итоговая строка `BROWSER_OK`) и
+   `delete-check.mjs` (счётчик по SSR-HTML до/после, `DELETE_OK`) находились во внешней
+   копии и в текущем дереве не гарантированы;
    второй нужен потому, что в первом шаг «удаление» читает ещё не инвалидированный счётчик.
 6. Песочница: 1.9 GiB RAM. Если параллельно работает `vite dev`/`vite preview` с PGlite,
    прогон `ported/db-followup` ловит SIGKILL (rc=137) — это OOM, а не падение логики:
@@ -253,11 +259,12 @@ DB_HARDENING_PG_URL='postgres://postgres@127.0.0.1:5433/kitdb_follow?host=%2Ftmp
 Обновление **источника** (SolidHono) → слоя в этом дереве:
 
 ```sh
-cd /home/user/repos/solidhono && git fetch origin && git log --oneline f8079b1..origin/shiki-final -- server/lib/db
+# Исторический пример; SOURCE_REPO и APP_REPO указывают на ваши копии.
+cd "$SOURCE_REPO" && git fetch origin && git log --oneline f8079b1..origin/shiki-final -- server/lib/db
 # пофайловый дифф того, что унаследовано:
 for f in types errors sqlstate policy database resource validation query/sql cursor/codec \
          adapters/shared adapters/pg adapters/pglite; do
-  diff -u "server/lib/db/$f.ts" "/home/user/integration/src/lib/db/$f.ts" | less
+  diff -u "server/lib/db/$f.ts" "$APP_REPO/src/lib/db/$f.ts" | less
 done
 ```
 
@@ -281,7 +288,8 @@ root с автоподхватом расширений `db.ext.ts`), `src/conte
 
 ```sh
 # 0) слой уже в дереве (src/lib/db) — нужно только развернуть приложение
-cd /home/user/integration && npm install
+# из корня копии modals-kit
+npm ci
 npx svelte-kit sync && npx svelte-check
 npm run dev -- --host 0.0.0.0 --port 5173 && node browser-check.mjs
 #   ...или на 2 ГБ песочнице: npm run build && npm run preview -- --host 0.0.0.0 --port 5173
@@ -290,8 +298,8 @@ npm run dev -- --host 0.0.0.0 --port 5173 && node browser-check.mjs
 
 ### 9.1 Перенос на свежую ревизию приложения (2026-10-09)
 
-`modals-kit` **публичный**: `git -C /home/user/repos/modal-kit remote add origin
-https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origin b1 main` работают.
+На дату проверки `modals-kit` был **публичным**: анонимный `git fetch origin b1 main`
+работал после настройки origin на `https://github.com/ftugit/modals-kit.git`.
 Я ранее записал «репозиторий приватный» — причина падения `git fetch` была в том, что в клоне
 **не было ни одного remote** (`git remote -v` пуст), а не в правах. Практический вывод жёсткий:
 локальные `origin/*` были устаревшими, и «самый свежий known ref» (`15d4355`) оказался на 20+
@@ -300,8 +308,8 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
 `SolidHono`: `git ls-remote https://github.com/ftugit/SolidHono.git` запрашивает учётные данные —
 тот репозиторий действительно приватный.)
 
-Порядок обновления копии (тот же, что и в 0-м пункте выше): `git archive <ref> | tar -x -C
-/home/user/integration`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
+Исторический порядок обновления отдельной копии (не выполнять в рабочем дереве): `git archive <ref> | tar -x -C
+$INTEGRATION_DIR`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
 '^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#lib/demo/{form,modals}/**`,
 `ui/paginator/fields/*` → `#lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
 `src/app.d.ts`, `src/hooks.server.ts`, `src/server/db.server.ts`, `src/content/user/gateway.server.ts`,
@@ -383,7 +391,7 @@ https://github.com/ftugit/modals-kit.git` и анонимный `git fetch origi
   после чего в адаптере ставится `sqlstate: true` и `expose.constraints` заработает.
 - Отдельного пакета нет: с 09.10.2026 слой живёт в дереве приложения как обычный `lib`
   (решение пользователя). История порта (`9927dd9` + все ветки) сохранена в
-  `/home/user/db-port-history.bundle`; если пакет снова понадобится, `exports`/`fix-esm`
+  `db-port-history.bundle` вне репозитория автора (наличие в других окружениях не проверено); если пакет снова понадобится, `exports`/`fix-esm`
   придётся восстанавливать оттуда.
 - `drizzle`-подобный генератор ресурсов из SQL-каталога — не делался: `defineResource`
   остаётся явным, что и даёт сопоставимость с источником.

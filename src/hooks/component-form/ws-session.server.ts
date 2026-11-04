@@ -9,7 +9,7 @@
 // - конвейер сегментов (`windowSize = 4`): сегмент `0` запрашивается одиночно для проверки магических байт
 //   (`verifyFirstSegmentSignature`) и `headCache`, после чего сегменты `1..N` подтягиваются скользящим окном
 //   и отдаются в `storage.put` строго по порядку без потери потоковой склейки и `AES-256-GCM`;
-// - скользящий таймаут неактивности (`90 с`) и серверный `ping` (`25 с`) заменяют фиксированную 5-минутную отсечку;
+// - срок сессии и ожидание файловых данных ограничены независимо от `ping`/`pong`;
 // - мобильная авто-дозагрузка (`resume`): при аномальном обрыве сети (`code !== 1000 && code !== 1001`)
 //   сессия паркуется на `resumeGraceMs` (`60 с`); при возврате клиента на тот же инстанс сервер перепривязывает
 //   сокет (`resume-ok`) и переотправляет неподтверждённые `pull`, а при явной отмене (`cancel` / `1001`)
@@ -28,6 +28,7 @@ import {
   type Limits,
 } from '#lib/form/server.js'
 import { StreamFile } from '#lib/storage/index.js'
+import { DEFAULT_UPLOAD_TTL_MS, DEFAULT_UPLOAD_IDLE_MS, DEFAULT_UPLOAD_RATE_BUDGET_BYTES_PER_SEC, dataWaitMs, finalizationReserve, uploadDeadline, DEFAULT_UPLOAD_PAUSE_MAX_MS, PAUSE_PROGRESS_BYTES, pauseDurationMs } from './ws-lifetime.server.js'
 import { clientIpOf } from '#server/client-ip.server.js'
 import { originGuard } from '#server/form-security.server.js'
 import type { ServerWsSocket } from '#server/ws-upgrade.server.js'
@@ -43,6 +44,7 @@ import {
   type FileIntegrityChain,
 } from './ws-integrity.js'
 import { verifyFirstSegmentSignature } from './ws-magic.js'
+import { WsRatePolicy, type WsRatePolicyOptions } from './ws-rate-policy.server.js'
 import {
   clampWsChunkBytes,
   DEFAULT_WS_WINDOW_SIZE,
@@ -57,7 +59,7 @@ import {
   type WsUploadPlatform,
 } from './ws-protocol.js'
 
-/** Скользящий таймаут простоя сокета без входящих кадров/байтов по умолчанию (`90 секунд`). */
+/** Устаревшая константа для совместимости; новый дефолт берётся из DEFAULT_UPLOAD_IDLE_MS. */
 export const WS_IDLE_TIMEOUT_MS = 90_000
 
 /** Интервал серверного heartbeat `ping` для удержания прокси/NAT по умолчанию (`25 секунд`). */
@@ -98,6 +100,21 @@ export interface WsFormSessionOptions {
   readonly resumeGraceMs?: number
   readonly platform?: WsUploadPlatform
   readonly maxDurationMs?: number | null
+  /** Непродлеваемый срок от открытия текущей серверной сессии. */
+  readonly ttlMs?: number
+  /** Непродлеваемый срок до корректного init/resume. */
+  readonly preInitTimeoutMs?: number
+  readonly dataIdleTimeoutMs?: number
+  readonly rateBudgetBytesPerSecond?: number
+  readonly pauseMaxMs?: number
+  /** Прогноз только наблюдается и никогда не останавливает передачу.
+   * Настройка и обработчик ниже предназначены для изолированных проверок;
+   * по умолчанию события никуда не записываются и не отправляются. */
+  readonly ratePolicy?: WsRatePolicyOptions | false
+  /** Одно событие на сессию без персональных данных. Ошибки наблюдателя изолированы. */
+  readonly onRatePolicyPrediction?: () => void
+  /** Время входа в маршрут, из того же monotonic clock что и performance.now(). */
+  readonly requestStartedMs?: number
   readonly maxBytes?: number
   readonly maxGlobalSessions?: number
   readonly maxPerIpSessions?: number
@@ -244,7 +261,7 @@ function parseInitFrame(rawText: string): WsClientInitMessage | null {
 
 function parseControlTextFrame(
   rawText: string,
-): WsClientAbortFileMessage | WsClientResumeMessage | { type: 'pong' } | { type: 'cancel' } | null {
+): WsClientAbortFileMessage | WsClientResumeMessage | { type: 'pong' } | { type: 'cancel' } | { type: 'pause' } | null {
   if (rawText.length > 4096) return null
   let parsed: unknown
   try {
@@ -256,6 +273,7 @@ function parseControlTextFrame(
   const obj = parsed as Record<string, unknown>
   if (obj.type === 'pong') return { type: 'pong' }
   if (obj.type === 'cancel') return { type: 'cancel' }
+  if (obj.type === 'pause') return { type: 'pause' }
   if (
     obj.type === 'resume' &&
     typeof obj.sessionId === 'string' &&
@@ -471,10 +489,19 @@ export async function handleFormUploadWs(
 ): Promise<void> {
   const chunkBytes = clampWsChunkBytes(options.chunkBytes)
   const windowSize = Math.max(1, Math.min(16, Math.round(options.windowSize ?? DEFAULT_WS_WINDOW_SIZE)))
-  const idleTimeoutMs = Math.max(1_000, options.idleTimeoutMs ?? options.timeoutMs ?? WS_IDLE_TIMEOUT_MS)
+  const idleTimeoutMs = options.dataIdleTimeoutMs ?? options.idleTimeoutMs ?? options.timeoutMs ?? DEFAULT_UPLOAD_IDLE_MS
+  const rateBudget = options.rateBudgetBytesPerSecond ?? DEFAULT_UPLOAD_RATE_BUDGET_BYTES_PER_SEC
+  const pauseMaxMs = options.pauseMaxMs ?? DEFAULT_UPLOAD_PAUSE_MAX_MS
   const heartbeatMs = Math.max(1_000, options.heartbeatMs ?? WS_HEARTBEAT_MS)
   const resumeGraceMs = Math.max(0, options.resumeGraceMs ?? WS_RESUME_GRACE_MS)
   const maxBytes = options.maxBytes ?? WS_FORM_MAX_BYTES
+  const lifetimeStart = options.requestStartedMs ?? performance.now()
+  const ttlMs = options.ttlMs ?? DEFAULT_UPLOAD_TTL_MS
+  const platformMs = options.maxDurationMs !== undefined
+    ? options.maxDurationMs
+    : options.platform === 'vercel' ? DEFAULT_VERCEL_MAX_DURATION_MS : null
+  let ttlDeadline = uploadDeadline(lifetimeStart, ttlMs, platformMs === null ? null : lifetimeStart + platformMs)
+  let dataDeadline = ttlDeadline - finalizationReserve(ttlMs)
 
   const abortController = new AbortController()
   const pendingPulls = new Map<number, PendingSegmentRequest>()
@@ -486,6 +513,10 @@ export async function handleFormUploadWs(
   let sessionFinished = false
   let cancelledByClient = false
   let sessionSaltHex: string | undefined
+  let executionStarted = false
+  let executionCommitted = false
+  const currentOutcome = (): 'not-applied' | 'unknown' | 'committed' =>
+    executionCommitted ? 'committed' : executionStarted ? 'unknown' : 'not-applied'
 
   const sessionId = generateUploadSaltHex().slice(0, 32)
   const resumeToken = generateUploadSaltHex()
@@ -494,9 +525,30 @@ export async function handleFormUploadWs(
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let graceTimer: ReturnType<typeof setTimeout> | null = null
+  let ttlTimer: ReturnType<typeof setTimeout> | null = null
+  let preInitTimer: ReturnType<typeof setTimeout> | null = null
+  let pauseTimer: ReturnType<typeof setTimeout> | null = null
+  let pauseUntil = 0
+  let pauseCredit = 0
+  const creditedSegments = new Set<string>()
+  const ratePolicy = options.ratePolicy === false ? null : new WsRatePolicy(options.ratePolicy)
+  let ratePredictionReported = false
+  let declaredBytes = 0
+  let verifiedBytes = 0
+  let activeWaitMs = 0
+  let activeWaitStarted: number | null = null
+  let verifyingData = false
+  const setWaiting = (waiting: boolean): void => {
+    const now = performance.now()
+    if (waiting && activeWaitStarted === null) activeWaitStarted = now
+    else if (!waiting && activeWaitStarted !== null) { activeWaitMs += now - activeWaitStarted; activeWaitStarted = null }
+  }
   let resolveRootSession: (() => void) | null = null
 
   const clearTimers = (): void => {
+    if (ttlTimer !== null) { clearTimeout(ttlTimer); ttlTimer = null }
+    if (preInitTimer !== null) { clearTimeout(preInitTimer); preInitTimer = null }
+    if (pauseTimer !== null) { clearTimeout(pauseTimer); pauseTimer = null }
     if (idleTimer !== null) {
       clearTimeout(idleTimer)
       idleTimer = null
@@ -514,10 +566,13 @@ export async function handleFormUploadWs(
   const failPendingField = (pending: PendingSegmentRequest, err: WsUploadFieldError): void => {
     fieldUploadErrors.set(pending.field, err)
     pending.reject(err)
+    // Other files may still have pending pulls after one field fails.
+    queueMicrotask(() => scheduleDataTimeout())
   }
 
   const abortAllPending = (reason: Error): void => {
     sessionFinished = true
+    setWaiting(false)
     activeUploadSessions.delete(sessionId)
     clearTimers()
     if (!abortController.signal.aborted) {
@@ -530,22 +585,100 @@ export async function handleFormUploadWs(
     resolveRootSession?.()
   }
 
-  const touchActivity = (): void => {
-    if (sessionFinished || !activeSocket) return
-    if (idleTimer !== null) clearTimeout(idleTimer)
-    idleTimer = setTimeout(() => {
-      if (sessionFinished) return
+  const expireSession = (reason: string): void => {
+    if (sessionFinished) return
+    const target = activeSocket
+    abortAllPending(new Error(reason))
+    if (target) {
+      safeSendJson(target, { type: 'fault', status: 408, message: 'Превышен срок загрузки', outcome: currentOutcome() })
+      target.close(1008, reason)
+    }
+  }
+  const ensureWithinDeadline = (): boolean => {
+    if (!sessionFinished && performance.now() >= dataDeadline) expireSession('Upload TTL expired')
+    return !sessionFinished
+  }
+
+  const armTtlTimer = (): void => {
+    if (ttlTimer !== null) clearTimeout(ttlTimer)
+    const check = (): void => {
+      const remaining = dataDeadline - performance.now()
+      if (remaining > 0) { ttlTimer = setTimeout(check, Math.min(remaining, 2_147_483_647)); return }
+      expireSession('Upload TTL expired')
+    }
+    ttlTimer = setTimeout(check, Math.min(Math.max(0, dataDeadline - performance.now()), 2_147_483_647))
+  }
+
+  let dataWaitStartedAt: number | null = null
+  let oldestPendingId: number | undefined
+  let oldestPendingSince = 0
+  let oldestMaxWindowBytes = 0
+  // Only outstanding pull requests count as client waiting. A complete WS
+  // message may contain a large chunk, so budget for all pending bytes.
+  const scheduleDataTimeout = (reset = false): void => {
+    if (idleTimer !== null) { clearTimeout(idleTimer); idleTimer = null }
+    const waiting = !sessionFinished && Boolean(activeSocket) && !pauseUntil && !verifyingData && pendingPulls.size > 0
+    setWaiting(waiting)
+    if (verifyingData) return
+    if (sessionFinished || !activeSocket || pauseUntil > 0 || pendingPulls.size === 0) {
+      dataWaitStartedAt = null
+      oldestPendingId = undefined
+      return
+    }
+    const now = performance.now()
+    if (reset || dataWaitStartedAt === null) dataWaitStartedAt = now
+    let pendingBytes = 0
+    for (const pending of pendingPulls.values()) pendingBytes += pending.expectedLength
+    const firstId = pendingPulls.keys().next().value
+    if (firstId !== oldestPendingId) {
+      oldestPendingId = firstId
+      oldestPendingSince = now
+      oldestMaxWindowBytes = pendingBytes
+    } else oldestMaxWindowBytes = Math.max(oldestMaxWindowBytes, pendingBytes)
+    // Traffic for later pulls must not renew the oldest unresolved pull forever.
+    const deadline = Math.min(
+      dataWaitStartedAt + dataWaitMs(idleTimeoutMs, pendingBytes, rateBudget),
+      oldestPendingSince + dataWaitMs(idleTimeoutMs, oldestMaxWindowBytes, rateBudget),
+    )
+    const check = (): void => {
+      const left = deadline - performance.now()
+      if (left > 0) { idleTimer = setTimeout(check, Math.min(left, 2_147_483_647)); return }
+      if (sessionFinished || !activeSocket || pendingPulls.size === 0) return
       const target = activeSocket
-      abortAllPending(new Error('Upload inactivity timeout'))
-      if (target) {
-        safeSendJson(target, {
-          type: 'fault',
-          status: 408,
-          message: 'Превышен интервал ожидания данных загрузки',
-        })
-        target.close(1008, 'Idle timeout')
-      }
-    }, idleTimeoutMs)
+      abortAllPending(new Error('Upload data inactivity timeout'))
+      safeSendJson(target, { type: 'fault', status: 408, message: 'Превышен интервал ожидания данных загрузки', outcome: currentOutcome() })
+      target.close(1008, 'Data timeout')
+    }
+    idleTimer = setTimeout(check, Math.min(Math.max(0, deadline - performance.now()), 2_147_483_647))
+  }
+
+  const finishPause = (): void => {
+    if (!pauseUntil) return
+    if (performance.now() < pauseUntil) {
+      pauseTimer = setTimeout(finishPause, Math.max(0, pauseUntil - performance.now()))
+      return
+    }
+    pauseTimer = null
+    pauseUntil = 0
+    if (!ensureWithinDeadline()) return
+    scheduleDataTimeout(true)
+    if (activeSocket) for (const pending of pendingPulls.values()) safeSendJson(activeSocket, pending.pullMessage)
+  }
+  const requestPause = (sock: ServerWsSocket): void => {
+    if (!initHandled || pauseUntil || pauseMaxMs <= 0 || pauseCredit < PAUSE_PROGRESS_BYTES) {
+      safeSendJson(sock, { type: 'pause-denied' })
+      return
+    }
+    let pendingBytes = 0
+    for (const pending of pendingPulls.values()) pendingBytes += pending.expectedLength
+    const nextBytes = Math.max(chunkBytes, pendingBytes)
+    const durationMs = pauseDurationMs(dataDeadline - performance.now(), pauseMaxMs, dataWaitMs(idleTimeoutMs, nextBytes, rateBudget))
+    if (durationMs <= 0) { safeSendJson(sock, { type: 'pause-denied' }); return }
+    pauseCredit = 0
+    pauseUntil = performance.now() + durationMs
+    scheduleDataTimeout()
+    pauseTimer = setTimeout(finishPause, durationMs)
+    safeSendJson(sock, { type: 'pause-ok', durationMs })
   }
 
   const startHeartbeat = (): void => {
@@ -560,10 +693,9 @@ export async function handleFormUploadWs(
   let binaryQueue = Promise.resolve()
 
   const handleBinaryFrame = (sock: ServerWsSocket, frame: Uint8Array): void => {
-    if (sock !== activeSocket || sessionFinished) return
-    touchActivity()
+    if (sock !== activeSocket || !ensureWithinDeadline()) return
     binaryQueue = binaryQueue.then(async () => {
-      if (sessionFinished) return
+      if (!ensureWithinDeadline()) return
       const headerProbe = unpackBinarySegment(frame, false)
       if (!headerProbe) {
         safeSendJson(sock, { type: 'fault', status: 400, message: 'Malformed binary segment header' })
@@ -582,11 +714,18 @@ export async function handleFormUploadWs(
         abortAllPending(new Error('Unexpected segment reqId'))
         return
       }
-      pendingPulls.delete(headerProbe.reqId)
-
+      // Keep the request in the map until verification finishes: abort/TTL
+      // must still reject its promise if the hash calculation is interrupted.
+      // Integrity checking is server work, not client inactivity.
+      verifyingData = true
+      const verificationStarted = performance.now()
+      scheduleDataTimeout()
+      let valid = false
+      try {
       const expectHmac = Boolean(pending.chain)
       const parsed = unpackBinarySegment(frame, expectHmac)
       if (!parsed) {
+        pendingPulls.delete(headerProbe.reqId)
         failPendingField(
           pending,
           new WsUploadFieldError(
@@ -599,6 +738,7 @@ export async function handleFormUploadWs(
       }
 
       if (parsed.payload.byteLength !== pending.expectedLength) {
+        pendingPulls.delete(headerProbe.reqId)
         failPendingField(
           pending,
           new WsUploadFieldError(
@@ -616,7 +756,9 @@ export async function handleFormUploadWs(
           pending.offset,
           parsed.payload,
         )
+        if (!ensureWithinDeadline() || pendingPulls.get(headerProbe.reqId) !== pending) return
         if (!parsed.hmacTag || !timingSafeTagEqual(parsed.hmacTag, expectedTag)) {
+          pendingPulls.delete(headerProbe.reqId)
           failPendingField(
             pending,
             new WsUploadFieldError(
@@ -629,15 +771,43 @@ export async function handleFormUploadWs(
         }
       }
 
+      if (!ensureWithinDeadline() || pendingPulls.get(headerProbe.reqId) !== pending) return
+      pendingPulls.delete(headerProbe.reqId)
+      const progressKey = `${pending.fileId}:${pending.segmentIndex}`
+      if (!creditedSegments.has(progressKey)) {
+        creditedSegments.add(progressKey)
+        verifiedBytes += parsed.payload.byteLength
+        if (!pauseUntil) pauseCredit += parsed.payload.byteLength
+      }
       const copy = new Uint8Array(new ArrayBuffer(parsed.payload.byteLength))
       copy.set(parsed.payload)
       pending.resolve(copy)
+      valid = true
+      // This is a counterfactual prediction, not proof: the consumer may read
+      // only part of a lazy file and link speed can recover. Never abort here.
+      if (!ratePredictionReported && ratePolicy?.observe(activeWaitMs, verifiedBytes, Math.max(0, declaredBytes - verifiedBytes), dataDeadline - performance.now())) {
+        ratePredictionReported = true
+        const observer = options.onRatePolicyPrediction
+        // Opt-in in-process hook only; no telemetry/logging by default. A faulty
+        // or rejected observer is contained; observers must not block the event loop.
+        if (observer) void Promise.resolve().then(observer).catch(() => {})
+      }
+      } finally {
+        const serverBusyMs = performance.now() - verificationStarted
+        if (dataWaitStartedAt !== null) dataWaitStartedAt += serverBusyMs
+        if (oldestPendingId !== undefined) oldestPendingSince += serverBusyMs
+        verifyingData = false
+        if (!sessionFinished) scheduleDataTimeout(valid)
+      }
+    }).catch((error: unknown) => {
+      if (!sessionFinished) expireSession(error instanceof Error ? error.message : 'Segment verification failed')
     })
   }
 
   const handleSocketDisconnect = (sock: ServerWsSocket, code: number, reason: string): void => {
     if (sock !== activeSocket || sessionFinished) return
     activeSocket = null
+    setWaiting(false)
     if (idleTimer !== null) {
       clearTimeout(idleTimer)
       idleTimer = null
@@ -669,7 +839,7 @@ export async function handleFormUploadWs(
       if (!activeSocket && !sessionFinished) {
         abortAllPending(new Error('Upload resume grace window expired'))
       }
-    }, resumeGraceMs)
+    }, Math.max(0, Math.min(resumeGraceMs, dataDeadline - performance.now())))
   }
 
   const bindActiveSocketListeners = (
@@ -692,14 +862,13 @@ export async function handleFormUploadWs(
 
   const attachControlFrameHandler = (sock: ServerWsSocket): void => {
     sock.onText((rawText) => {
-      if (reboundToExisting) return
+      if (reboundToExisting || !ensureWithinDeadline()) return
       if (sock !== activeSocket && initHandled) return
-      touchActivity()
-
       const ctrl = parseControlTextFrame(rawText)
       if (ctrl?.type === 'pong') {
         return
       }
+      if (ctrl?.type === 'pause') { requestPause(sock); return }
       if (ctrl?.type === 'cancel') {
         cancelledByClient = true
         sock.close(1001, 'Cancelled by client')
@@ -717,9 +886,11 @@ export async function handleFormUploadWs(
           })
           return
         }
-        // Сессия не найдена на этом инстансе (холодный инстанс Vercel или истёк грейс-период):
-        // сообщаем клиенту `resume-miss` и оставляем сокет открытым для нового `init` с байта 0!
+        // На другом инстансе нельзя проверить исход прежней отправки и восстановить её deadline.
+        // Не позволяем продолжить с новым init через этот сокет.
         safeSendJson(sock, { type: 'resume-miss' })
+        sock.close(1000, 'Resume unavailable')
+        abortAllPending(new Error('Upload session unavailable'))
         return
       }
 
@@ -761,7 +932,7 @@ export async function handleFormUploadWs(
     },
     rebindSocket(newSocket: ServerWsSocket): Promise<void> {
       return new Promise<void>((resolveRebound) => {
-        if (sessionFinished) {
+        if (!ensureWithinDeadline()) {
           safeSendJson(newSocket, { type: 'resume-miss' })
           newSocket.close(1000, 'Session already finished')
           resolveRebound()
@@ -790,10 +961,10 @@ export async function handleFormUploadWs(
 
         bindActiveSocketListeners(newSocket, finishRebound)
         newSocket.onText((rawText) => {
-          if (newSocket !== activeSocket || sessionFinished) return
-          touchActivity()
+          if (newSocket !== activeSocket || !ensureWithinDeadline()) return
           const ctrl = parseControlTextFrame(rawText)
           if (ctrl?.type === 'pong') return
+          if (ctrl?.type === 'pause') { requestPause(newSocket); return }
           if (ctrl?.type === 'cancel') {
             cancelledByClient = true
             newSocket.close(1001, 'Cancelled by client')
@@ -817,7 +988,7 @@ export async function handleFormUploadWs(
           }
         })
 
-        touchActivity()
+        scheduleDataTimeout(true)
         startHeartbeat()
 
         safeSendJson(newSocket, {
@@ -828,7 +999,7 @@ export async function handleFormUploadWs(
 
         // Переотправляем все незавершённые `pull`-запросы в строгом порядке возрастания `reqId`
         const orderedPending = [...pendingPulls.values()].sort((a, b) => a.reqId - b.reqId)
-        for (const pending of orderedPending) {
+        if (!pauseUntil) for (const pending of orderedPending) {
           safeSendJson(newSocket, pending.pullMessage)
         }
       })
@@ -882,7 +1053,8 @@ export async function handleFormUploadWs(
         resolve,
         reject: rejectPromise,
       })
-      safeSendJson(activeSocket, pullMessage)
+      scheduleDataTimeout()
+      if (!pauseUntil) safeSendJson(activeSocket, pullMessage)
     })
   }
 
@@ -897,7 +1069,10 @@ export async function handleFormUploadWs(
           return
         }
 
+        declaredBytes = init.files.reduce((total, file) => total + file.size, 0)
+        if (preInitTimer !== null) { clearTimeout(preInitTimer); preInitTimer = null }
         await ensureComponentFormsLoaded()
+        if (!ensureWithinDeadline()) return
         const registry = componentFormRegistry()
 
         const textForm = new FormData()
@@ -929,6 +1104,13 @@ export async function handleFormUploadWs(
 
         const targetUrl = new URL(init.target || '/', event.url)
         const { platform, maxDurationMs } = resolvePlatformMetadata(targetUrl, options)
+        // Demo limits may shorten, but never extend, the true application/platform deadline.
+        if (maxDurationMs !== null) {
+          ttlDeadline = Math.min(ttlDeadline, lifetimeStart + maxDurationMs)
+          dataDeadline = ttlDeadline - finalizationReserve(ttlMs)
+          armTtlTimer()
+          if (!ensureWithinDeadline()) return
+        }
 
         if (init.files.length > 0 && resumeGraceMs > 0) {
           const now = Date.now()
@@ -968,7 +1150,8 @@ export async function handleFormUploadWs(
             chunkBytes,
             windowSize,
             platform,
-            maxDurationMs,
+            // Прогноз клиента должен учитывать фактический остаток TTL, а не только предел платформы.
+            maxDurationMs: Math.max(0, Math.floor(dataDeadline - performance.now())),
           })
         }
 
@@ -985,6 +1168,7 @@ export async function handleFormUploadWs(
         const synthRequest = new Request(targetUrl.href, {
           method: 'POST',
           headers: synthHeaders,
+          signal: abortController.signal,
           body: params.toString(),
         })
 
@@ -995,6 +1179,7 @@ export async function handleFormUploadWs(
         }
 
         const rawChecks = typeof reg.checks === 'function' ? await reg.checks(routeEvent) : reg.checks
+        if (sessionFinished) return
         const checks = mergeChecks(description.checks, rawChecks)
 
         const useIntegrity =
@@ -1002,6 +1187,7 @@ export async function handleFormUploadWs(
             ? await reg.integrity(routeEvent, textForm)
             : Boolean(reg.integrity)
 
+        if (sessionFinished) return
         let saltKey: CryptoKey | null = null
         if (useIntegrity && init.files.length > 0) {
           sessionSaltHex = generateUploadSaltHex()
@@ -1046,6 +1232,7 @@ export async function handleFormUploadWs(
           })
         }
 
+        if (sessionFinished) return
         const totalDeclaredBytes = init.files.reduce((acc, f) => acc + f.size, 0)
         let capturedForm: FormData | undefined
         const wsFilesLayer: Layer = (ctx) => {
@@ -1094,6 +1281,7 @@ export async function handleFormUploadWs(
             ? await reg.source(routeEvent, capturedForm ?? textForm)
             : reg.source
 
+        if (sessionFinished) return
         const handler = createFormHandler({
           description,
           instance: matchedInstance,
@@ -1106,9 +1294,11 @@ export async function handleFormUploadWs(
           limits: effectiveLimits,
           order: layers,
           execute: async (execCtx) => {
-            touchActivity()
+            if (!ensureWithinDeadline()) throw new Error('Upload session expired before execute')
+            executionStarted = true
+            const trackedCtx = { ...execCtx, commit: () => { execCtx.commit(); executionCommitted = true } }
             try {
-              return await reg.execute(execCtx, routeEvent, capturedForm)
+              return await reg.execute(trackedCtx, routeEvent, capturedForm)
             } catch (err) {
               if (err instanceof WsUploadFieldError) {
                 return execCtx.fail(
@@ -1207,7 +1397,10 @@ export async function handleFormUploadWs(
     resolveRootSession = resolveSession
     bindActiveSocketListeners(initialSocket)
     attachControlFrameHandler(initialSocket)
-    touchActivity()
+    // Long values are scheduled in chunks, avoiding Node's 32-bit timer overflow.
+    const preInitMs = options.preInitTimeoutMs ?? DEFAULT_UPLOAD_IDLE_MS
+    armTtlTimer()
+    preInitTimer = setTimeout(() => expireSession('Init timeout'), Math.min(Math.max(0, lifetimeStart + preInitMs - performance.now()), 2_147_483_647))
     startHeartbeat()
   })
 }

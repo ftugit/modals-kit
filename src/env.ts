@@ -99,6 +99,22 @@ const positiveInteger = optional((value) => {
     : { message: `ожидалось целое число ≥ 1, получено «${value}»` }
 })
 
+// Node timers accept delays up to 2^31−1 milliseconds. Reject impractical
+// values instead of silently overflowing or changing the requested policy.
+const wsTimerSeconds = optional((value) => {
+  const n = Number(value)
+  return /^\d+$/.test(value) && Number.isSafeInteger(n) && n >= 1 && n <= 2_147_483
+    ? { value: n }
+    : { message: 'ожидалось целое число секунд от 1 до 2147483' }
+})
+
+const wsPauseSeconds = optional((value) => {
+  const n = Number(value)
+  return /^\d+$/.test(value) && Number.isSafeInteger(n) && n >= 0 && n <= 2_147_483
+    ? { value: n }
+    : { message: 'ожидалось целое число секунд от 0 до 2147483' }
+})
+
 const MIN_WS_CHUNK_BYTES = 64 * 1024
 const MAX_WS_CHUNK_BYTES = 16 * 1024 * 1024
 
@@ -160,6 +176,22 @@ export const variables = defineEnvVars({
       'Размер одного файлового сегмента потоковой `wss://`-загрузки (байты или суффиксы `kb`/`mb`, диапазон `64kb`..`16mb`). ' +
       'По умолчанию 256 КБ; на Vercel и Cloudflare допустимо поднимать до 1mb–8mb (лимит кадра Cloudflare — 32 МиБ, а maxPayload в ws поднимается автоматически).',
   },
+  WS_UPLOAD_TTL_SECONDS: {
+    schema: wsTimerSeconds,
+    description: 'Максимальная длительность одной WS-загрузки с момента открытия, секунды; по умолчанию 300.',
+  },
+  WS_UPLOAD_IDLE_SECONDS: {
+    schema: wsTimerSeconds,
+    description: 'Базовое ожидание init/resume и данных, секунды; по умолчанию 10. Для целого сегмента добавляется время по его размеру.',
+  },
+  WS_UPLOAD_PAUSE_MAX_SECONDS: {
+    schema: wsPauseSeconds,
+    description: 'Максимальная пауза WS-загрузки в секундах; по умолчанию 60, 0 отключает паузы.',
+  },
+  WS_UPLOAD_RATE_BUDGET_BYTES_PER_SECOND: {
+    schema: positiveInteger,
+    description: 'Расчётная скорость для надбавки к ожиданию целого WS-сегмента, байт/с; по умолчанию 32768.',
+  },
   WS_UPLOAD_MAX_DURATION: {
     schema: positiveInteger,
     description:
@@ -183,7 +215,7 @@ export const variables = defineEnvVars({
   DATABASE_RESET: {
     schema: flag,
     description:
-      'Сброс при СБОРКЕ: все обычные таблицы public в выделенной DATABASE_URL удаляются транзакционно, ' +
+      'Сброс при каждой СБОРКЕ: поддерживаемые объекты public и их данные в выделенной DATABASE_URL удаляются транзакционно, ' +
       'сама схема и её права сохраняются. При первом обращении рантайм создаст модели и администратора. ' +
       'ВНИМАНИЕ: данные таблиц уничтожаются до переключения деплоя; Preview и Production должны использовать разные базы.',
   },

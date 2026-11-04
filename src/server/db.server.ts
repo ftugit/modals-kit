@@ -260,6 +260,11 @@ async function openDriver(): Promise<Driver> {
     let reportStatus: SchemaReport['status'] = 'ok'
     const gated = await schema.gate(raw, {
       onStep: (step) => dbStart.report(schemaStepTask(DB_START_LABEL, step, 1)),
+      onRecovered: async () => {
+        const boot = createDb({ driver: raw!, limits: LIMITS })
+        const created = await ensureSeedAdmin(boot, ADMIN_SEED)
+        if (created) announceSeedAdmin(created, ADMIN_SEED ? 'env' : 'generated')
+      },
       onReport: (r) => {
         reportStatus = r.status
         const summary = `[db] схема: применено ${r.applied.length}, конфликтов ${r.conflicts.length}, ждут решения ${r.notices.length}`
