@@ -27,17 +27,23 @@ const rawTimeout = Number((process.env.DB_CONNECT_TIMEOUT_MS ?? '').trim())
 const connectionTimeoutMillis =
   Number.isSafeInteger(rawTimeout) && rawTimeout >= 1 && rawTimeout <= 2147483647 ? rawTimeout : 30_000
 
+// Optional owner credentials only for build reset; never substitute a different
+// database silently. exclusiveReset verifies live server/database identity.
+const resetUrl = clean(process.env.DATABASE_RESET_ADMIN_URL) || url
 try {
-  const count = await exclusiveReset(url, connectionTimeoutMillis)
+  const count = await exclusiveReset(resetUrl, connectionTimeoutMillis, { runtimeUrl: url })
   console.log(`[db-reset] public очищена при сборке: таблиц ${count.tables}, представлений ${count.views}, функций/процедур ${count.routines}; схема и её права сохранены`)
 } catch (e) {
   // Сообщения БД и URL могут содержать секреты: допускаем только наши фиксированные тексты.
   const safe = new Set([
     'URL базы не позволяет однозначно определить целевую БД',
+    'URL приложения не позволяет однозначно определить целевую БД',
+    'подключения приложения и сброса указывают на разные серверы или базы',
     'для сброса нужна отдельная целевая БД, не postgres',
     'другой сброс базы уже выполняется',
     'целевая БД не найдена',
     'подключения к целевой БД отключены; требуется восстановление владельцем',
+    'роль сброса не владеет целевой БД; безопасный сброс невозможен',
     'контрольное подключение не подтверждает тот же сервер и базу',
     'в целевой БД есть подготовленные транзакции; сброс остановлен',
     'целевая БД занята системными процессами; сброс остановлен',

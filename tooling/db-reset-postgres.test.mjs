@@ -251,7 +251,11 @@ test('реальная PostgreSQL: роль без прав владельца �
     await setup.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(42); GRANT USAGE ON SCHEMA public TO "${role}"`)
     await setup.end()
     const restricted = new URL(config); restricted.username = role; restricted.password = 'isolated-test-only'
-    await assert.rejects(exclusiveReset(restricted.toString(), 3000))
+    await assert.rejects(exclusiveReset(restricted.toString(), 3000), /роль сброса не владеет целевой БД/)
+    const child = spawnSync(process.execPath, ['tooling/db-reset.mjs'], { env: { ...process.env, DATABASE_RESET: '1', DATABASE_URL: restricted.toString(), HYPERDRIVE_CONNECTION_STRING: '' }, encoding: 'utf8', timeout: 10000 })
+    assert.equal(child.status, 1)
+    assert.match(child.stderr, /роль сброса не владеет целевой БД/)
+    assert.doesNotMatch(child.stderr, /isolated-test-only/)
     assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
     const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
     assert.equal((await verify.query('SELECT id FROM public.keep')).rows[0].id, 42)
@@ -382,4 +386,43 @@ test('реальная PostgreSQL: преждевременное включен
     const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
     try { assert.equal((await verify.query('SELECT id FROM public.keep')).rows[0].id, 10) } finally { await verify.end() }
   } finally { if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
+})
+
+test('реальная PostgreSQL: отдельный владелец для reset проверяет идентичность runtime БД', { skip: !url, timeout: 30000 }, async () => {
+  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
+  const suffix = randomBytes(8).toString('hex'), appDb = `kit_app_${suffix}`, otherDb = `kit_other_${suffix}`, role = `kit_runtime_${suffix}`
+  const admin = new pg.Client({ connectionString: url }); await admin.connect()
+  let roleCreated = false, appCreated = false, otherCreated = false
+  try {
+    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'isolated-runtime-only'`); roleCreated = true
+    await admin.query(`CREATE DATABASE "${appDb}"`); appCreated = true
+    await admin.query(`CREATE DATABASE "${otherDb}"`); otherCreated = true
+    const appAdmin = new URL(config); appAdmin.pathname = `/${appDb}`
+    const otherAdmin = new URL(config); otherAdmin.pathname = `/${otherDb}`
+    for (const u of [appAdmin, otherAdmin]) {
+      const c = new pg.Client({ connectionString: u.toString() }); await c.connect()
+      await c.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (7)'); await c.end()
+    }
+    const runtime = new URL(appAdmin); runtime.username = role; runtime.password = 'isolated-runtime-only'
+    const run = (resetUrl) => spawnSync(process.execPath, ['tooling/db-reset.mjs'], { env: { ...process.env, DATABASE_RESET: '1', DATABASE_URL: runtime.toString(), DATABASE_RESET_ADMIN_URL: resetUrl.toString(), HYPERDRIVE_CONNECTION_STRING: '' }, encoding: 'utf8', timeout: 10000 })
+    const mismatch = run(otherAdmin)
+    assert.equal(mismatch.status, 1, mismatch.stderr)
+    assert.match(mismatch.stderr, /разные серверы или базы/)
+    assert.doesNotMatch(mismatch.stderr, /isolated-runtime-only/)
+    for (const u of [appAdmin, otherAdmin]) {
+      const c = new pg.Client({ connectionString: u.toString() }); await c.connect()
+      assert.equal((await c.query('SELECT id FROM public.keep')).rows[0].id, 7); await c.end()
+    }
+    const matching = run(appAdmin)
+    assert.equal(matching.status, 0, matching.stderr)
+    const c = new pg.Client({ connectionString: appAdmin.toString() }); await c.connect()
+    assert.equal((await c.query("SELECT to_regclass('public.keep') AS name")).rows[0].name, null); await c.end()
+    const other = new pg.Client({ connectionString: otherAdmin.toString() }); await other.connect()
+    assert.equal((await other.query('SELECT id FROM public.keep')).rows[0].id, 7); await other.end()
+  } finally {
+    if (otherCreated) await admin.query(`DROP DATABASE "${otherDb}" WITH (FORCE)`)
+    if (appCreated) await admin.query(`DROP DATABASE "${appDb}" WITH (FORCE)`)
+    if (roleCreated) await admin.query(`DROP ROLE "${role}"`)
+    await admin.end()
+  }
 })

@@ -73,9 +73,13 @@ export async function exclusiveReset(connectionString, connectionTimeoutMillis, 
     const acquired = await lock.query("SELECT pg_try_advisory_xact_lock(hashtext($1)::bigint) AS ok", [`modals-kit:exclusive-reset:${database}`])
     if (!acquired.rows[0]?.ok) throw new Error('другой сброс базы уже выполняется')
     control = new pg.Client(config(maintenanceUrl.toString())); control.on('error', () => {}); await control.connect()
-    const info = await control.query('SELECT oid::text, datallowconn FROM pg_database WHERE datname=$1', [database])
+    const info = await control.query("SELECT oid::text, datallowconn, pg_has_role(current_user, datdba, 'USAGE') AS can_alter FROM pg_database WHERE datname=$1", [database])
     if (info.rows.length !== 1) throw new Error('целевая БД не найдена')
     if (!info.rows[0].datallowconn) throw new Error('подключения к целевой БД отключены; требуется восстановление владельцем')
+    // Fail before disabling connections (and before arming restoration) if
+    // the current role cannot ALTER DATABASE. Otherwise a denied ALTER and a
+    // denied restoration can be misreported as a disabled database.
+    if (!info.rows[0].can_alter) throw new Error('роль сброса не владеет целевой БД; безопасный сброс невозможен')
     target = new pg.Client(config(targetUrl.toString())); target.on('error', () => {}); await target.connect()
     hooks.onTarget?.(target)
     await target.query('BEGIN'); targetTransaction = true
@@ -83,6 +87,24 @@ export async function exclusiveReset(connectionString, connectionTimeoutMillis, 
     const controlIdentity = await control.query('SELECT inet_server_addr()::text AS address, inet_server_port() AS port')
     if (identity.rows[0]?.name !== database || identity.rows[0]?.oid !== info.rows[0].oid || identity.rows[0]?.address !== controlIdentity.rows[0]?.address || identity.rows[0]?.port !== controlIdentity.rows[0]?.port) {
       throw new Error('контрольное подключение не подтверждает тот же сервер и базу')
+    }
+    // When reset uses separate elevated credentials, prove that application and
+    // reset connections reach the exact same database on the same PostgreSQL
+    // server. Close the probe before disabling admission and waiting for drain.
+    if (hooks.runtimeUrl && hooks.runtimeUrl !== connectionString) {
+      const runtimeUrl = new URL(hooks.runtimeUrl)
+      if (!['postgres:', 'postgresql:'].includes(runtimeUrl.protocol) || !runtimeUrl.hostname || runtimeUrl.searchParams.has('host') || runtimeUrl.searchParams.has('dbname')) {
+        throw new Error('URL приложения не позволяет однозначно определить целевую БД')
+      }
+      probe = new pg.Client(config(runtimeUrl.toString())); probe.on('error', () => {})
+      try {
+        await probe.connect()
+        const runtimeIdentity = await probe.query('SELECT current_database() AS name, (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS oid, inet_server_addr()::text AS address, inet_server_port() AS port')
+        const r = runtimeIdentity.rows[0], a = identity.rows[0]
+        if (!r || r.name !== a.name || r.oid !== a.oid || r.address !== a.address || r.port !== a.port) {
+          throw new Error('подключения приложения и сброса указывают на разные серверы или базы')
+        }
+      } finally { await probe.end().catch(() => {}); probe = undefined }
     }
     if (interrupted) throw new Error('сброс прерван до блокировки подключений')
     watchdog = spawn(process.execPath, [fileURLToPath(new URL('./db-reset-watchdog.mjs', import.meta.url))], {
