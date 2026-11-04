@@ -1,0 +1,249 @@
+# Аудит обратного прокси VDS → Northflank (`2026-11-04`)
+
+Статус: **наблюдения, код не менялся**. Документ для ИИ, который ведёт приложение:
+что нужно учесть при появлении ещё одного прокси перед Northflank и при переносе
+приложения между площадками.
+
+Методика: статический анализ ветки `img` (`server.mjs`, `vite.config.ts`,
+`.env.example`, `src/env.ts`, `src/hooks.server.ts`, `src/server/trusted-origins.ts`,
+`src/server/form-security.server.ts`, `src/server/client-ip.server.ts`,
+`src/server/app-storage.server.ts`, `src/lib/storage/{index,s3,webdav}.ts`,
+`src/routes/api/storage/[...path]/+server.ts`) + живые замеры работающего деплоя
+`https://site--pzlb--c7ggfx29x5k8.code.run/` и локальные прогоны Caddy v2.10.2.
+
+---
+
+## 0. Контекст (важно, иначе замечания читаются неверно)
+
+1. Приложение развёрнуто на Northflank (`*.code.run`) и заблокировано РКН. Доступ
+   организуется через **свой VDS**: A-запись → IP VDS, Caddy на VDS делает
+   `reverse_proxy` на Northflank. Сторонний CDN не используется принципиально —
+   IP сайта не должен прятаться.
+2. **Northflank уже имеет свой CDN/кэш**: ассеты `_app/immutable/*` приходят с
+   `cache-control: public,max-age=31536000,immutable` и `ETag`. Поэтому отдельный
+   кэш (tavern) на VDS для этого домена **не нужен** — `cdn: false`. Двойное
+   кэширование было бы потерей ресурсов.
+3. **Трафик в S3 / WebDAV идёт серверной стороной приложения на Northflank**, а не
+   из браузера и не через VDS. Прямые URL до хранилища (тем более с логином и
+   паролем) намеренно не публикуются; раздача идёт через
+   `/api/storage/[...path]` → `serveAppStoragePath()`. Путь
+   `VDS → домашний сервер → S3` давал бы лишний хоп и потерю скорости, Northflank
+   этот хоп убирает. Потеря до самого S3 сохраняется, но она неустранима при
+   отказе светить прямые URL.
+4. VDS-слой задуман как **«микшер»**: Caddy по конфигу с `rev` может на лету,
+   без пересборки приложения, направлять разные домены/пути на копию приложения
+   на Northflank, на домашний rathole, на S3/WebDAV и другие сервисы. Приложение
+   при этом считается **переносимой копией**, которая может храниться где угодно.
+5. Ранее Node-рантайма не было, приложение делалось под Vercel. Сейчас в
+   `vite.config.ts:43` стоит `process.env.VERCEL ? adapterAuto() : adapterNode(...)`,
+   появились `server.mjs`, `Procfile`, при этом `vercel.json` и `wrangler.jsonc`
+   остались в дереве. Почти все замечания ниже — следствие именно этого перехода:
+   на Vercel origin, CSRF и IP клиента брала на себя платформа, теперь их
+   определяет `server.mjs`.
+
+---
+
+## 1. Сводная матрица
+
+| ID | Уровень | Статус | Узел | Суть |
+|---|---|---|---|---|
+| **P1** | **High** | **К править** | `server.mjs:71-84`, `src/server/client-ip.server.ts` | Дополнительный прокси подменяет IP клиента на IP VDS: все посетители станут одним адресом, сломаются `windowThrottle`, аудит и привязка сессий |
+| **P2** | **Medium** | **К править** | `.env.example:8`, `vite.config.ts:46,48`, `src/server/form-security.server.ts:15` | Добавление домена в доверенный лист требует **пересборки** деплоя, а не только правки runtime-env; формат точный, wildcard отбрасывается |
+| **P3** | **Medium** | **К править** | `vite.config.ts:43`, `server.mjs`, `vercel.json`, `wrangler.jsonc` | Две площадки с разной семантикой прокси-заголовков: правки доверенных заголовков надо проверять на обоих адаптерах |
+| **P4** | **High** | **К проверке** | `server.mjs:105`, `src/routes/api/form-upload/+server.ts` | WS-выгрузка `/api/form-upload` — самый рискованный путь в новой цепочке; нужен end-to-end прогон загрузки, а не только GET |
+| **P5** | **Medium** | **К решению** | `src/hooks.server.ts` (`HSTS_HEADER_VALUE`), ответ Northflank | HSTS `includeSubDomains` на 1–2 года ляжет на домен VDS и закрепит HTTPS для всех поддоменов |
+| **P6** | **Low** | **СНЯТО владельцем** | `src/server/trusted-origins.ts:133-155` | Расширять CSP / ставить CORS **не нужно**: браузер не ходит в S3 напрямую (см. раздел 3) |
+| **P7** | **Low** | **К сведению** | ответ Northflank, `src/server/app-storage.server.ts:390` | HTML не кэшировать: CSP-nonce меняется на каждом запросе, `cache-control` на HTML отсутствует |
+| **P8** | **Info** | **Подтверждено** | HTML главной, `cspDirectives` | Ассеты относительные, `code.run` в HTML не встречается, `'self'` работает на любом домене: переписывать тело и ставить плагины Caddy не надо |
+| **P9** | **Medium** | **К решению** | `vite.config.ts:46` (`paths.origin`) | Build-time `ORIGIN` зашивает публичный адрес в сборку — это единственное препятствие для «копии, которая хранится везде» и для микширования на лету |
+
+---
+
+## 2. Детали
+
+### P1 — коллапс IP клиента (главное)
+
+`server.mjs` включает доверие прокси-заголовкам только при «отпечатке» Northflank
+(`northflankFingerprint()`, ≥6 `NF_*` переменных, `NF_DEPLOYMENT_SHA`,
+`.code.run` в `NF_HOSTS`, `nf-compute-*`). Далее:
+
+```js
+// server.mjs:71-80
+const envoy = headers['x-envoy-external-address'];      // приоритет 1
+if (typeof single === 'string' && isIP(single.trim()) > 0) return single.trim();
+const raw = headers['x-forwarded-for'];                  // приоритет 2
+const last = parts[parts.length - 1];                   // берётся ПОСЛЕДНИЙ
+```
+
+Комментарий в коде прямо фиксирует текущее поведение: Northflank
+**перезаписывает** `X-Envoy-External-Address`, а в `X-Forwarded-For` дописывает
+реальный IP в конец, сохраняя поддельные префиксы. Если перед Northflank
+появляется VDS, «реальным» IP для Northflank станет **IP VDS**. Следствия:
+
+- `windowThrottle` в `src/server/client-ip.server.ts` (вход, `/schema`,
+  хранилища) начнёт считать всех посетителей одним клиентом → ложные 429 /
+  наоборот общий лимит на всех;
+- `subnetHash`, аудит и привязка сессий потеряют реальный адрес.
+
+**Что НЕ помогает:**
+
+- `KIT_TRUST_PROXY_HEADERS=0|off` (`server.mjs:48`) — тогда адресом станет
+  внутренний IP Northflank, что ещё хуже;
+- `ADDRESS_HEADER` / `XFF_DEPTH` — `server.mjs:52-57` намеренно удаляет их из
+  env, чтобы adapter-node не начал доверять заголовкам сам;
+- попытка пробросить `X-Forwarded-For` с VDS: Northflank всё равно допишет свой
+  хоп последним, а код берёт именно последний элемент.
+
+**Проверено локально (Caddy v2.10.2):** Caddy выбрасывает поддельный клиентский
+`X-Forwarded-For: 1.2.3.4, 5.6.7.8` и ставит настоящий адрес; плейсхолдер
+`{http.request.remote.host}` работает (`X-Envoy-External-Address` и
+`X-Forwarded-Host` перезаписываются, а не прокидываются вслепую).
+
+**Рекомендация:** завести отдельный доверенный канал от VDS, например
+`header_up X-Edge-Client-IP {http.request.remote.host}` плюс общий секрет /
+проверка IP-источника, и читать его в `trustedClientIp()` **до** `x-envoy-*`
+и XFF. Трёхстрочная правка, но обязательная до включения прокси.
+
+### P2 — доверенный лист: список есть, но он build-time
+
+Владелец подтвердил, что может добавить любой домен в доверенный лист. Код это
+подтверждает, с двумя оговорками:
+
+- `KIT_TRUSTED_ORIGINS` (`src/server/trusted-origins.ts:62`) кормит и
+  `csrf.trustedOrigins` в `vite.config.ts:48` (**`process.env` на сборке**), и
+  `originGuard` в `src/server/form-security.server.ts:15` (`$app/env/private`,
+  рантайм). `.env.example:8` явно требует задавать переменную **в Build &
+  Development и в Runtime**. Добавление домена = пересборка деплоя на Northflank.
+- Формат: точный `https://site.pzlb.ru`, без пути и слеша на конце. Записи с `*`
+  идут только в `patterns` (слой 02), а SvelteKit сравнивает `exact` точной
+  строкой — wildcard для checking фреймворка не работает.
+- `vite.config.ts:46`: `paths: { origin: process.env.ORIGIN || undefined }` —
+  ещё один build-аргумент, задающий публичный origin за краем прокси.
+
+Практический вывод: для нового домена VDS нужно заранее обновить
+`KIT_TRUSTED_ORIGINS` и `ORIGIN` в настройках сборки Northflank и пересобрать.
+
+### P3 — Vercel и Node-адаптер живут в одном дереве
+
+`vite.config.ts:43` выбирает адаптер по `process.env.VERCEL`; `server.mjs`
+существует только для Node-пути (Northflank), `Procfile` — `web: npm start`.
+На Vercel `X-Forwarded-*`, origin и client IP интерпретирует платформа, а
+`server.mjs` не запускается. Любая правка `trustedClientIp()` /
+`trusted-origins.ts` должна сохранять зелёными `trusted-origins.test.ts`,
+`security-hardening.test.ts` и не ломать Vercel-сборку. `vercel.json` и
+`wrangler.jsonc` в дереве — напоминание, что конфиги площадок легко
+рассинхронизировать.
+
+### P4 — WebSocket-выгрузка
+
+`server.mjs:105` задаёт `WS_PATH = '/api/form-upload'`, рядом
+`AsyncLocalStorage` для upgrade; `.env.example` содержит
+`WS_UPLOAD_CHUNK_SIZE` и `WS_UPLOAD_MAX_DURATION`. В новой цепочке это самый
+рискованный сценарий: два `reverse_proxy`, upgrade, потоковые сегменты.
+Обязателен `flush_interval -1`; отдельный `@upgrade`-матчер на VDS не нужен,
+потому что кэширующий слой (tavern) для этого домена выключен и Caddy сам
+пробрасывает `Upgrade`. **Проверять реальную загрузку файла end-to-end**, а не
+только `GET /`.
+
+### P5 — HSTS
+
+`src/hooks.server.ts` ставит `max-age=63072000; includeSubDomains`, если
+заголовка ещё нет и `event.url.protocol === 'https:'`. С живого origin приходит
+`strict-transport-security: max-age=31536000; includeSubDomains` — его ставит
+Northflank раньше. Через прокси любой из этих заголовков ляжет на домен VDS и
+закрепит HTTPS для **всех поддоменов** на 1–2 года в браузерах посетителей.
+Если это нежелательно — снимать на VDS (`header -Strict-Transport-Security`).
+Решение нужно принять до первого массового захода пользователей: откат HSTS
+браузером невозможен.
+
+### P6 — CSP и CORS: **снято, править не надо**
+
+Первоначальное предположение «браузер пойдёт в S3 напрямую, значит надо
+расширять `connect-src 'self'` и ставить CORS» было неверным. Владелец уточнил:
+путь до S3/WebDAV проходит **внутри серверной части приложения на Northflank**,
+прямые URL хранилища (особенно с credentials) не публикуются, а обратный прокси
+на VDS нужен только чтобы убрать хоп `VDS → домашний сервер → S3` и скрыть IP
+за своим VDS без стороннего CDN.
+
+Поэтому:
+
+- `cspDirectives()` (`src/server/trusted-origins.ts:133-155`) **менять не нужно**;
+  `connect-src: ['self']`, `media-src: ['self','blob:']`,
+  `form-action: ['self']` в проде остаются как есть;
+- `publicBaseUrl` / `publicOrigin` (`src/lib/storage/index.ts:605`,
+  `s3.ts:117`, `webdav.ts:204`, `app-storage.server.ts:266`) — рабочий механизм,
+  но в этой конфигурации прямые ссылки клиенту не отдаются;
+- CORS на бакете для домена VDS не требуется;
+- SSRF-защита (`safe-storage-fetch.server.ts`, `redirect: 'manual'` в
+  `s3.ts` / `webdav.ts`) уже закрыта и к прокси отношения не имеет.
+
+**Этот пункт зафиксирован специально, чтобы ИИ, который будет править
+приложение, не начал «исправлять» CSP и не открыл прямые URL до хранилища.**
+
+### P7 — кэш и nonce
+
+Живые замеры главной страницы:
+
+| | Значение |
+|---|---|
+| HTML | `cache-control` **отсутствует**, `etag`, `vary: Accept-Encoding`, CSP-nonce меняется на каждом запросе (три замера дали три разных значения) |
+| `_app/immutable/entry/start.*.js` | `cache-control: public,max-age=31536000,immutable`, `etag` |
+| `/api/storage/*` | `serveAppStoragePath()` сам ставит `public, max-age=31536000, immutable`, strong `ETag`, `Accept-Ranges`, изолирующий CSP |
+
+Кэшировать HTML на VDS нельзя (заморозится nonce), а кэшировать ассеты нечего —
+это уже делает Northflank. Ещё одно подтверждение `cdn: false`.
+
+### P8 — переносимость HTML (подтверждено)
+
+В HTML главной **0** вхождений `code.run`; ассеты относительные
+(`./_app/immutable/...`); CSP построен на `'self'`, `base-uri 'self'`,
+`frame-ancestors 'none'`. Значит при смене публичного домена `'self'` автоматически
+указывает на новый origin: rewriting тела, подмена `Location`, плагины Caddy и
+правка CSP не требуются. `form-action 'self'` тоже корректен.
+
+### P9 — «копия, которая хранится везде» упирается в `paths.origin`
+
+Микшер на VDS меняет upstream по `rev` без пересборки приложения, но
+`vite.config.ts:46` зашивает `ORIGIN` в **сборку** (`kit.paths.origin`). Пока так,
+смена публичного домена требует пересборки копии, а одна и та же сборка не может
+без оговорок отвечать на нескольких адресах. Если переносимость нужна
+в полной мере: убрать build-time `ORIGIN`, перевести публичный адрес в
+runtime-список (`KIT_TRUSTED_ORIGINS` уже рантаймовый в слое 02) либо держать
+по сборке на площадку. Плюс не генерировать абсолютные URL в разметке —
+сейчас это уже соблюдено (P8).
+
+---
+
+## 3. Что делать ИИ, пишущему приложение
+
+1. **P1, обязательно до включения прокси:** доверенный канал для реального IP от
+   VDS в `trustedClientIp()`; не включать `KIT_TRUST_PROXY_HEADERS=off`, не
+   возвращать `ADDRESS_HEADER`/`XFF_DEPTH`.
+2. **P2:** обновить `KIT_TRUSTED_ORIGINS` (точный `https://…`, без слеша) и
+   `ORIGIN` в **Build и Runtime** Northflank, пересобрать деплой. Wildcard не
+   использовать как замену точной записи.
+3. **P3:** прогнать `trusted-origins.test.ts`, `security-hardening.test.ts`,
+   `client-ip` тесты и сборку под Vercel после правок P1/P2.
+4. **P4:** end-to-end прогон WS-выгрузки `/api/form-upload` через VDS →
+   Northflank, с реальным файлом и сегментами.
+5. **P5:** явно решить судьбу HSTS на новом домене.
+6. **P6: ничего не делать** с CSP, CORS и `publicBaseUrl`. Не публиковать прямые
+   URL хранилища. Это осознанное решение владельца, а не пропущенная дыра.
+7. **P9:** решить, убирать ли build-time `ORIGIN` ради переносимой копии и
+   микширования upstream'ов на лету.
+8. Не добавлять на VDS кэш для этого домена: свой CDN у Northflank уже есть,
+   `cdn: false`.
+
+---
+
+## 4. Границы проверки
+
+- Живые замеры сделаны с хоста, а не с самого VDS: доступность
+  `site--pzlb--c7ggfx29x5k8.code.run` **именно с VDS** ещё надо проверить
+  (РКН может резать и исходящий трафик по SNI/IP). Если с VDS не открывается,
+  никакой Caddyfile не поможет — SNI `*.code.run` виден в handshake.
+- Локальные прогоны Caddy — v2.10.2, а не версия из манифеста VDS; поведение
+  `handle_response`, `flush_interval` и заголовков стоит сверить на выбранной
+  версии.
+- Код приложения не менялся, тесты не запускались. Документ — набор наблюдений
+  и чек-лист, а не отчёт о внедрении.
