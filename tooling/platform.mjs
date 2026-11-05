@@ -14,7 +14,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const root = dirname(fileURLToPath(new URL('..', import.meta.url)))
+// dirname() отбрасывает последний сегмент. У file URL каталога он со слэшем,
+// поэтому «..» от файла нельзя прогонять через dirname: /vercel/path0/ стал бы /vercel.
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /** @typedef {'node' | 'vercel' | 'cloudflare'} PlatformId */
 /** @typedef {'build' | 'dev'} PlatformMode */
