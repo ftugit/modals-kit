@@ -60,6 +60,14 @@ npm install
 npm run dev                   # чистое стартовое приложение: http://localhost:5173
 ```
 
+### Cloudflare Workers
+
+По умолчанию Vite использует `adapter-cloudflare`; `wrangler.jsonc` описывает Worker `modals-kit` и binding статических файлов `ASSETS`. Для Node-хостинга при сборке задайте `KIT_ADAPTER=node`; на Vercel выбирается прежний адаптер.
+
+В настройках Workers Builds для ветки `img` используйте `npm run build:worker` и `npx wrangler deploy`. В репозитории зафиксирован `package-lock.json`, поэтому зависимости нужно устанавливать через npm, не через Bun с frozen lockfile. `build:worker` намеренно не запускает `db-reset.mjs`; не задавайте `DATABASE_RESET` в Cloudflare Builds. Для локальной проверки: `npm ci`, `npm run build:worker`, `npx wrangler dev --local`.
+
+Worker не может использовать Node-файловый PGlite как надёжную постоянную БД. Для страниц с базой нужен совместимый внешний PostgreSQL; текущее приложение поддерживает `HYPERDRIVE_CONNECTION_STRING` или `DATABASE_URL`, но связка с реальным Hyperdrive и полный runtime ещё должны быть проверены. Без БД `/schema` в локальном Workers runtime возвращает 500. Для входа нужен секрет `AUTH_SEAL_SECRET`, для курсорной пагинации — `DB_CURSOR_SECRET`, для постоянного администратора — `ADMIN_SEED`; подробности и форматы в `.env.example`. Не храните секреты в Git или обычных переменных сборки.
+
 ### Подключение `demo` и работа с модулями (`tooling/mod.mjs`)
 
 Ветка `img` содержит чистое стартовое приложение без демо-маршрутов. Дополнительные пакеты (включая интерактивную витрину `demo`) публикуются в тег `refs/tags/modules` (без создания отдельных веток в репозитории) и управляются встроенным zero-dependency менеджером `tooling/mod.mjs` (`npm run mod`).

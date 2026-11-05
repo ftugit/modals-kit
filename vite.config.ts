@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterAuto from '@sveltejs/adapter-auto';
+import adapterCloudflare from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
@@ -39,8 +40,11 @@ export default defineConfig(({ command, isPreview }) => {
   // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` и `csp` собираются
   // из чистых функций `src/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
   const kit = {
-    // Vercel: adapter-auto -> adapter-vercel; Northflank/любой Node-хостер: adapter-node.
-    adapter: process.env.VERCEL ? adapterAuto() : adapterNode({ precompress: false }),
+    // Worker по умолчанию; для Node-хостинга явно установить KIT_ADAPTER=node.
+    // Vercel сохраняет свой адаптер.
+    adapter: process.env.VERCEL ? adapterAuto() : process.env.KIT_ADAPTER === 'node'
+      ? adapterNode({ precompress: false })
+      : adapterCloudflare(),
     // Node: origin задаётся доверенным server.mjs при runtime, не запекается в образ.
     // Vercel сохраняет прежний контракт сборки.
     paths: { origin: process.env.VERCEL ? process.env.ORIGIN || undefined : undefined },
