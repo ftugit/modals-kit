@@ -83,6 +83,7 @@ registerComponentForm({
     const desiredServer = readDesiredServer(event.url)
     const isSplitDemo = desiredServer === 'split_demo'
     const storage = await resolveRequestStorage(event.cookies, {
+      event,
       writeStrategy:
         isSplitDemo && cfg.write_strategy === 'priority'
           ? 'round-robin'
@@ -248,7 +249,7 @@ registerComponentForm({
 registerComponentForm({
   description: cloneServerForm,
   async execute({ values, fail, commit }, event) {
-    const storage = await resolveRequestStorage(event.cookies)
+    const storage = await resolveRequestStorage(event.cookies, { event })
     const fromServer = String(values.from_server ?? '').trim()
     const toServer = String(values.to_server ?? '').trim()
     if (!storage.serverNames.includes(fromServer) || !storage.serverNames.includes(toServer)) {
@@ -278,7 +279,7 @@ registerComponentForm({
 registerComponentForm({
   description: copyUploadForm,
   async execute({ values, fail, commit }, event) {
-    const storage = await resolveRequestStorage(event.cookies)
+    const storage = await resolveRequestStorage(event.cookies, { event })
     const id = String(values.id ?? '')
     const toServer = String(values.to_server ?? '')
     const current = listUploadedRecords().find((x) => x.id === id)
@@ -313,7 +314,7 @@ registerComponentForm({
 registerComponentForm({
   description: transferUploadForm,
   async execute({ values, fail, commit }, event) {
-    const storage = await resolveRequestStorage(event.cookies)
+    const storage = await resolveRequestStorage(event.cookies, { event })
     const id = String(values.id ?? '')
     const toServer = String(values.to_server ?? '')
     const current = listUploadedRecords().find((x) => x.id === id)
@@ -354,7 +355,7 @@ registerComponentForm({
 registerComponentForm({
   description: deleteUploadForm,
   async execute({ values, commit }, event) {
-    const storage = await resolveRequestStorage(event.cookies)
+    const storage = await resolveRequestStorage(event.cookies, { event })
     const id = String(values.id ?? '')
     const removed = removeUploadedRecord(id)
     if (removed) {

@@ -24,7 +24,7 @@ import { s3Driver } from '#lib/storage/s3.js'
 import { createStorageState, type StorageTelemetrySnapshot } from '#lib/storage/state.js'
 import { isWebdavDsn, webdavDriver } from '#lib/storage/webdav.js'
 import { localStore } from './cache.server.js'
-import { clientIpOf, normalizeClientIp, type ClientAddressSource } from './client-ip.server.js'
+import { clientIpOf, type ClientAddressSource } from './client-ip.server.js'
 import { createSafeStorageFetch, validateStorageTargetUrl } from './safe-storage-fetch.server.js'
 
 const KB = 1024
@@ -123,11 +123,10 @@ function baseServers(): Record<string, StorageServerEntry> {
   }
 }
 
-function resolveRequestMeta(request: Request, event?: ClientAddressSource) {
-  const ip =
-    clientIpOf(event, request) ??
-    normalizeClientIp(request.headers.get('x-real-ip')) ??
-    '127.0.0.1'
+export function resolveRequestMeta(request: Request, event?: ClientAddressSource) {
+  // Без RequestEvent адрес неизвестен: не доверяем HTTP-заголовкам. Сохраняем
+  // исторический общий fallback для технических вызовов без event.
+  const ip = clientIpOf(event, request) ?? '127.0.0.1'
   const clientId = request.headers.get('x-demo-client')?.trim().slice(0, 64) || undefined
   return {
     ip,

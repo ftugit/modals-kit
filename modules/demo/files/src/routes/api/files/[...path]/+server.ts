@@ -40,12 +40,14 @@ function parseServeQuery(url: URL): StorageServeOptions {
   }
 }
 
-export const GET: RequestHandler = async ({ params, request, url, cookies }) => {
-  const storage = await resolveRequestStorage(cookies)
+export const GET: RequestHandler = async (event) => {
+  const { params, request, url, cookies } = event
+  const storage = await resolveRequestStorage(cookies, { event })
   return storage.serve(params.path, request, parseServeQuery(url))
 }
 
-export const HEAD: RequestHandler = async ({ params, request, url, cookies }) => {
-  const storage = await resolveRequestStorage(cookies)
+export const HEAD: RequestHandler = async (event) => {
+  const { params, request, url, cookies } = event
+  const storage = await resolveRequestStorage(cookies, { event })
   return storage.serve(params.path, request, parseServeQuery(url))
 }

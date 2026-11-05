@@ -8,10 +8,11 @@ import {
 } from '#server/storage.server.js'
 import type { PageServerLoad } from './$types'
 
-export const load: PageServerLoad = async ({ cookies }) => {
+export const load: PageServerLoad = async (event) => {
+  const { cookies } = event
   const [vaultSnapshot, storage] = await Promise.all([
     readVaultSnapshot(cookies, storageVaultSchema),
-    resolveRequestStorage(cookies),
+    resolveRequestStorage(cookies, { event }),
   ])
   const [items, storageReport] = await Promise.all([
     listEnrichedUploadedRecords(storage),
