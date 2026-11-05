@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { availableParallelism, totalmem } from 'node:os';
-import adapterNode from '@sveltejs/adapter-node';
-import adapterAuto from '@sveltejs/adapter-auto';
-import adapterCloudflare from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
@@ -11,6 +8,7 @@ import { defineConfig } from 'vitest/config';
 import { appHtmlScriptHashes, cspDirectives, trustedOrigins } from './src/server/trusted-origins.ts';
 import { sveltekitWsPlugin } from './src/server/vite-ws.server.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
+import { createAdapter, detectPlatform } from './tooling/platform.mjs';
 
 const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 17)) {
@@ -34,20 +32,21 @@ const appHtmlHashes = appHtmlScriptHashes(
 const unocss = UnoCSS();
 for (const plugin of unocss) delete plugin.transformIndexHtml;
 
-export default defineConfig(({ command, isPreview }) => {
+export default defineConfig(async ({ command, isPreview }) => {
   const isDev = command === 'serve' && !isPreview;
   const getEnv = (key: string) => process.env[key];
+  // Выбор площадки — только tooling/platform.mjs. Здесь адаптер нужен SvelteKit до сборки,
+  // потому что у него есть собственные Vite-плагины.
+  const platform = detectPlatform(process.env, command === 'build' || isPreview ? 'build' : 'dev');
+  if (command === 'build' && !process.env.KIT_PLATFORM_LOGGED) {
+    console.log(`[platform] ${platform.id} (${platform.source}) → ${platform.module}`);
+  }
   // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` и `csp` собираются
   // из чистых функций `src/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
   const kit = {
-    // Worker по умолчанию; для Node-хостинга явно установить KIT_ADAPTER=node.
-    // Vercel сохраняет свой адаптер.
-    adapter: process.env.VERCEL ? adapterAuto() : process.env.KIT_ADAPTER === 'node'
-      ? adapterNode({ precompress: false })
-      : adapterCloudflare(),
-    // Node: origin задаётся доверенным server.mjs при runtime, не запекается в образ.
-    // Vercel сохраняет прежний контракт сборки.
-    paths: { origin: process.env.VERCEL ? process.env.ORIGIN || undefined : undefined },
+    adapter: await createAdapter(platform.id),
+    // Node и Cloudflare: origin задаётся в рантайме. Vercel сохраняет прежний контракт сборки.
+    paths: { origin: platform.bakeOrigin ? process.env.ORIGIN || undefined : undefined },
     preprocess: vitePreprocess(),
     csrf: { trustedOrigins: trustedOrigins(getEnv, { dev: isDev }).exact },
     csp: {

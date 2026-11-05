@@ -60,11 +60,15 @@ npm install
 npm run dev                   # чистое стартовое приложение: http://localhost:5173
 ```
 
-### Cloudflare Workers
+### Сборка
 
-По умолчанию Vite использует `adapter-cloudflare`; `wrangler.jsonc` описывает Worker `modals-kit` и binding статических файлов `ASSETS`. Для Node-хостинга при сборке задайте `KIT_ADAPTER=node`; на Vercel выбирается прежний адаптер.
+`npm run build` вызывает один скрипт `tooling/platform.mjs`. Площадку задаёт только `KIT_ADAPTER=node`, `vercel` или `cloudflare`. `VERCEL`, `WORKERS_CI`, `CF_PAGES` и `NF_GIT_*` не читаются. Без `KIT_ADAPTER` сборка останавливается, а не угадывает хост.
 
-В настройках Workers Builds для ветки `img` используйте `npm run build:worker` и `npx wrangler deploy`. В репозитории зафиксирован `package-lock.json`, поэтому зависимости нужно устанавливать через npm, не через Bun с frozen lockfile. `build:worker` намеренно не запускает `db-reset.mjs`; не задавайте `DATABASE_RESET` в Cloudflare Builds. Для локальной проверки: `npm ci`, `npm run build:worker`, `npx wrangler dev --local`.
+На Vercel задайте `KIT_ADAPTER=vercel`, на Northflank — `KIT_ADAPTER=node`. `npm run build:worker` — тот же скрипт с уже выставленным `KIT_ADAPTER=cloudflare`, чтобы текущая команда Workers Builds не менялась. На Cloudflare `DATABASE_RESET` запрещён и сборка останавливается. На Node и Vercel `db-reset.mjs` по-прежнему ничего не делает без `DATABASE_RESET=1`. После сборки скрипт проверяет, что появился файл именно этой площадки (`build/handler.js`, `.vercel/output/config.json` или `main` из `wrangler.jsonc`).
+
+`wrangler.jsonc` остаётся: его читает `wrangler deploy`, а не Vite. Там имя worker `modals-kit` и binding `ASSETS`. `Procfile` только запускает уже собранный Node-сервер. `vercel.json` только просит Vercel вызвать `npm run build`.
+
+В настройках Workers Builds для ветки `img` используйте `npm run build` или `npm run build:worker`, затем `npx wrangler deploy`. В репозитории зафиксирован `package-lock.json`, поэтому зависимости нужно устанавливать через npm, не через Bun с frozen lockfile. Для локальной проверки worker: `npm ci`, `npm run build:worker`, `npx wrangler dev --local`.
 
 Worker не может использовать Node-файловый PGlite как надёжную постоянную БД. Для страниц с базой нужен совместимый внешний PostgreSQL; текущее приложение поддерживает `HYPERDRIVE_CONNECTION_STRING` или `DATABASE_URL`, но связка с реальным Hyperdrive и полный runtime ещё должны быть проверены. Без БД `/schema` в локальном Workers runtime возвращает 500. Для входа нужен секрет `AUTH_SEAL_SECRET`, для курсорной пагинации — `DB_CURSOR_SECRET`, для постоянного администратора — `ADMIN_SEED`; подробности и форматы в `.env.example`. Не храните секреты в Git или обычных переменных сборки.
 
