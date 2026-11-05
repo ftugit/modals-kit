@@ -16,6 +16,8 @@ declare global {
 			/** Контекст запроса, проверенный `guard` (`#server/actor.server.js`); промис — мемо на запрос. */
 			actor?: Promise<DataContext>
 			formResult?: Result | null
+			/** Проверенные по токену метаданные edge; User-Agent по-прежнему задаётся клиентом. IP — только через getClientAddress(). */
+			edge?: { userAgent?: string; geoRegion?: string }
 		}
 		// interface Error {}
 		// interface PageData {}

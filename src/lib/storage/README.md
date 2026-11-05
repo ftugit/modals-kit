@@ -95,7 +95,8 @@ export const storage = createStorage({
   tech: {
     publicOrigin: 'https://cdn.example.com',
     resolveMeta: (req) => ({
-      ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim(),
+      // Сам Request не доказывает клиентский IP; передавайте его через meta
+      // из RequestEvent, как показано ниже. clientId тоже не является аутентификацией.
       clientId: req.headers.get('x-client-id') ?? undefined,
     }),
   },
@@ -259,12 +260,14 @@ const result = await storage.upload(request, {
 
 ```ts
 // src/routes/api/files/[...path]/+server.ts
-export const GET: RequestHandler = async ({ params, request, url }) => {
+export const GET: RequestHandler = async (event) => {
+  const { params, request, url } = event
   return storage.serve(params.path, request, {
+    meta: { ip: event.getClientAddress() },
     download: url.searchParams.get('download') === '1'
       ? (url.searchParams.get('name') || true)
       : false,
-    cdnRedirect: url.searchParams.get('cdn') === '1',
+    cdn: url.searchParams.get('cdn') === '1',
   })
 }
 ```

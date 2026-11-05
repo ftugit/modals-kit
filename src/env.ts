@@ -148,6 +148,12 @@ const wsChunkBytes = optional((value) => {
 })
 
 export const variables = defineEnvVars({
+  // Секрет внешнего прокси действует только во время выполнения, не при сборке.
+  KIT_EDGE_PROXY_TOKEN: {
+    schema: seedKey,
+    description: 'Случайный секрет доверенного edge-прокси: 32 байта в каноничном base64url без padding. Только runtime.',
+  },
+
   // ── Адрес приложения и доверие origin (`src/server/trusted-origins.ts`) ──
   KIT_TRUSTED_ORIGINS: {
     schema: text,

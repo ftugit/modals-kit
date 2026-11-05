@@ -110,6 +110,7 @@ export interface AuthEvent {
   cookies: Cookies
   url?: URL
   getClientAddress?: () => string
+  locals?: { edge?: { geoRegion?: string } }
 }
 
 /* ── ключи запечатывания (env, ротация как у курсорных) ── */
@@ -627,8 +628,9 @@ export function subnetOf(request: Request, event?: AuthEvent): string | undefine
   return subnetOfEvent(event, request)
 }
 
-const countryOf = (request: Request): string | undefined =>
-  request.headers.get('cf-ipcountry')?.slice(0, 64) ?? undefined
+// Geo берётся только из проверенного ранним хуком контекста; сырой
+// CF-IPCountry может прислать любой клиент при обходе CDN.
+export const countryOf = (event: AuthEvent): string | undefined => event.locals?.edge?.geoRegion
 
 /**
  * Очередь сериализации ротации по `jti` в пределах процесса: параллельные
@@ -752,7 +754,7 @@ export function auth(event: AuthEvent): {
       coreRenew(ports, {
         renewal: rawRenewal,
         subnet: subnetOf(event.request, event),
-        country: countryOf(event.request),
+        country: countryOf(event),
       })
 
     const r = jti ? await withRenewLock(jti, exec) : await exec()
@@ -784,12 +786,12 @@ export function auth(event: AuthEvent): {
     },
     issueChallenge: () => coreIssueChallenge(ports),
     login: async (args) => {
-      const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event.request) })
+      const r = await coreLogin(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },
     restoreDeleted: async (args) => {
-      const r = await coreRestoreDeleted(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event.request) })
+      const r = await coreRestoreDeleted(ports, { ...args, subnet: subnetOf(event.request, event), country: countryOf(event) })
       if (r.ok) setTokens(r.value, await ports.config.get('deviceTtlSec'), await ports.config.get('accessTtlSec'))
       return r
     },

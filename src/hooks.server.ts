@@ -6,6 +6,7 @@ import { createComponentFormsHandle } from '#hooks/component-form/server.server.
 // например, регистрация прямых SSR-транспортов пагинаторов без self-fetch.
 import.meta.glob('./content/*/init.ext.server.ts', { eager: true })
 import { captureUpstreamFetch } from '#server/fetch.server.js'
+import { edgeClientAddressFetch, edgeClientAddressHandle } from '#server/edge-client-address.server.js'
 
 /**
  * Один раз при старте сервера, до любого рендера: настоящий `fetch` для
@@ -42,7 +43,11 @@ export const securityHeadersHandle: Handle = async ({ event, resolve }) => {
  * Базовые защитные HTTP-заголовки + доверенный контекст БД + маршрутно-независимый приём POST всех `*.form.server.ts`.
  */
 export const handle: Handle = sequence(
+  edgeClientAddressHandle,
   securityHeadersHandle,
   dbHandle({ db, principal: () => DEMO_PRINCIPAL }),
   createComponentFormsHandle(import.meta.glob('./**/*.form.server.ts')),
 )
+
+/** Сохраняет проверенную идентичность только для внутренних event.fetch без передачи токена в сеть. */
+export const handleFetch = edgeClientAddressFetch
