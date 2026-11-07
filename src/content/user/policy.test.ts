@@ -45,8 +45,8 @@ async function withDb(fn: (db: ReturnType<typeof createDb>) => Promise<void>) {
   shared ??= new PGlite()
   await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
   const driver = pgliteAdapter(shared)
-  assert.equal((await defineSchema({ resources: [auth, profile, config, blockRes] }).sync(driver)).status, 'ok')
-  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile, config, blockRes] }))
+  assert.equal((await defineSchema({ resources: [auth, profile, session, config, blockRes] }).sync(driver)).status, 'ok')
+  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth, profile, session, config, blockRes] }))
 }
 
 test('создание профиля — только сервер; чтение и правка — владелец', async () => {
@@ -366,6 +366,50 @@ test('блокировки (этап 9): модель держит круг, н�
     )
     await blocks.delete(cleaner, b1.id, { hard: true })
     await blocks.delete(cleaner, b2.id, { hard: true })
+  })
+})
+
+test('сессия: владелец не читает jti и не пишет срок', async () => {
+  await withDb(async (db) => {
+    const auths = db.resource(auth)
+    const sessions = db.resource(session)
+    const account = (await auths.insert(SERVER, { seed: SEED })) as unknown as { id: string }
+    const me = owner(account.id)
+    const until = new Date(Date.now() + 60_000).toISOString()
+    const created = (await sessions.insert(SERVER, {
+      auth_id: account.id,
+      jti: 'device-token-value-21',
+      expires_at: until,
+    })) as unknown as { id: string }
+
+    const rows = (await sessions.select(me)) as unknown as Array<Record<string, unknown>>
+    assert.equal(rows.length, 1)
+    assert.equal('jti' in rows[0], false)
+    assert.equal('version' in rows[0], false)
+    assert.equal(typeof rows[0].expires_at, 'string')
+
+    await assert.rejects(
+      () => sessions.update(me, created.id, { expires_at: new Date(Date.now() + 120_000).toISOString() }),
+      forbidden,
+    )
+    await sessions.update(me, created.id, { device_name: 'телефон' })
+    const renamed = (await sessions.select(me)) as unknown as Array<{ device_name: string | null }>
+    assert.equal(renamed[0]?.device_name, 'телефон')
+
+    const reader = owner(crypto.randomUUID(), ['session.read'])
+    const seen = (await sessions.select(reader)) as unknown as Array<Record<string, unknown>>
+    assert.equal(seen.length, 1)
+    assert.equal('jti' in seen[0], false)
+
+    const onlyDeleted = owner(crypto.randomUUID(), ['session.readDeleted'])
+    assert.equal((await sessions.select(onlyDeleted)).length, 0)
+    assert.equal((await sessions.select(onlyDeleted, { includeDeleted: true })).length, 0)
+    await assert.rejects(() => sessions.select(me, { includeDeleted: true }), forbidden)
+
+    await sessions.delete(me, created.id)
+    assert.equal((await sessions.select(me)).length, 0)
+    const auditor = owner(crypto.randomUUID(), ['session.read', 'session.readDeleted'])
+    assert.equal((await sessions.select(auditor, { includeDeleted: true })).length, 1)
   })
 })
 

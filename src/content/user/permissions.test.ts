@@ -31,8 +31,8 @@ test('у каждого права есть непустые название и
 
 test('действия каталога: read/edit и readDeleted у модели блокировок', () => {
   const verbs = all.map((p) => p.split('.')[1])
-  // `block.readDeleted` — единственное третье действие: у блокировок своя
-  // модель, и чтение удалённых у неё выдаётся отдельно от живого чтения.
+  // `*.readDeleted` — третье действие: у блокировок и сессий своя модель,
+  // и чтение удалённых выдаётся отдельно от живого чтения.
   expect(new Set(verbs)).toEqual(new Set(['read', 'edit', 'readDeleted']))
   // `*.create` не выдаётся: строки заводит сервер (`policy.roles(['server'])`)
   expect(all.filter((p) => p.endsWith('.create'))).toEqual([])

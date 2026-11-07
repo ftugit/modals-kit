@@ -65,11 +65,15 @@ export const PERMISSIONS = {
   },
   'session.read': {
     title: 'Чтение сессий',
-    description: 'Видеть устройства и историю входов любого аккаунта, включая завершённые.',
+    description: 'Видеть живые устройства и историю входов любого аккаунта. Отозванные строки само по себе не открывает.',
   },
   'session.edit': {
     title: 'Правка сессий',
-    description: 'Завершать сеансы на устройствах любого аккаунта, в том числе «выйти везде».',
+    description: 'Переименовывать устройство и завершать сеансы у любого аккаунта, в том числе «выйти везде».',
+  },
+  'session.readDeleted': {
+    title: 'Чтение отозванных сессий',
+    description: 'Дополнение к чтению или правке сессий: открывает отозванные устройства. Само по себе чтения модели не даёт.',
   },
   'block.read': {
     title: 'Чтение блокировок',
@@ -143,7 +147,7 @@ export const PERMISSION_GROUPS: readonly {
 }[] = [
   { title: 'Аккаунты', permissions: ['account.read', 'account.edit', 'account.readDeleted'] },
   { title: 'Профили', permissions: ['profile.read', 'profile.edit'] },
-  { title: 'Сессии', permissions: ['session.read', 'session.edit'] },
+  { title: 'Сессии', permissions: ['session.read', 'session.edit', 'session.readDeleted'] },
   { title: 'Блокировки', permissions: ['block.read', 'block.edit', 'block.readDeleted'] },
   { title: 'Конфиг', permissions: ['config.read'] },
   { title: 'Хранилище', permissions: ['storage.read', 'storage.edit'] },

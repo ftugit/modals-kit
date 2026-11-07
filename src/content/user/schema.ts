@@ -99,6 +99,19 @@ export const profile: Resource = defineResource({
   order: [['created_at', 'desc']],
 })
 
+/**
+ * ACL аккаунта. Круг тот же, что был у ручной политики: владелец читает и
+ * мягко удаляет свою строку, создаёт только `server`, правит `admin`/`server`,
+ * удалённые открывает `account.readDeleted`. Гостевой записи нет.
+ */
+const AUTH_ACL = defineAcl({
+  owner: { field: 'id', can: ['read', 'softDelete'] },
+  read: ['account.read'],
+  insert: ['server'],
+  edit: ['admin', 'server'],
+  deleted: ['account.readDeleted', 'admin', 'server'],
+})
+
 /** Таблица авторизации: носитель безопасности аккаунта. Личного — ничего. */
 export const auth: Resource = defineResource({
   key: 'user.auth.v1',
@@ -146,26 +159,33 @@ export const auth: Resource = defineResource({
   // `deleted_at` — заявка на удаление; по истечении срока (настройка сервера)
   // исполнитель стирает seed/security. Метка НЕ закрывает вход: он ведёт на
   // шаг восстановления (решение владельца, как в ВК).
+  // Удалённые строки — модификатор `account.readDeleted`: сам по себе чтения не даёт.
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
-    // заявку на удаление видят и снимают сервер/админ (шаг восстановления);
-    // удалённые строки — модификатор `account.readDeleted` поверх `policy.select`
-    // (`account.read` + `account.readDeleted`): сам по себе чтение живых или
-    // удалённых строк он не даёт.
-    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin', 'account.readDeleted'] },
+    deletedAt: 'deleted_at',
   },
-  policy: {
-    // Читает и мягко удаляет свою строку владелец; создаёт и зачищает сервер.
-    // `user.auth` и `user.session` управляются доменными функциями и пока не
-    // переведены на `defineAcl` (до проектирования прав гостевой записи auth и
-    // сессионного read/revoke).
-    select: policy.ownerOrRoles('id', ['server', 'admin', 'account.read']),
-    insert: policy.roles(['server']),
-    update: policy.roles(['server', 'admin']),
-    delete: policy.ownerOrRoles('id', ['server', 'admin']),
-  },
+  acl: AUTH_ACL,
   order: [['created_at', 'desc']],
 })
+
+/**
+ * ACL устройства. Владелец читает свои живые строки, меняет только `device_name`
+ * и мягко отзывает. `session.read` видит живые чужие, `session.edit` переименовывает
+ * и мягко отзывает чужие. Отозванные открывает только `session.readDeleted`.
+ * Жёсткое удаление — у `admin` и `server`. Создаёт строку только `server`.
+ */
+const SESSION_ACL = defineAcl({
+  owner: { field: 'auth_id', can: ['read', 'update', 'softDelete'] },
+  read: ['session.read'],
+  insert: ['server'],
+  update: ['session.edit'],
+  softDelete: ['session.edit'],
+  edit: ['admin', 'server'],
+  deleted: ['session.readDeleted', 'admin', 'server'],
+})
+
+/** Поля, которые пишет только сервер: человек с `update` строки их не подделает. */
+const SESSION_SERVER_WRITE = ['server'] as const
 
 /**
  * Сессии = устройства (строка на устройство; публичный токен продления —
@@ -178,50 +198,62 @@ export const session = defineResource({
   table: 'public.user_session',
   primaryKey: 'id',
   fields: {
-    id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
+    id: f.uuid({
+      read: () => true, createValue: () => crypto.randomUUID(), immutable: true,
+      orderable: true, filters: ['eq', 'ne'], db: { default: 'gen_random_uuid()' },
+    }),
     auth_id: field(s.uuid(), {
-      read: () => true, create: () => true, required: true,
-      immutable: true, filters: ['eq'],
+      read: () => true, create: [...SESSION_SERVER_WRITE], required: true,
+      immutable: true, filters: ['eq', 'in'],
       db: { references: { resource: () => auth, chain: true } },
     }),
-    // Публичный токен продления (девайс-токен): случайный id, ездит только
-    // в HttpOnly-куке; по нему guard узнаёт сессию (ok/revoked/expired/unknown).
+    // Публичный токен продления: ездит только в HttpOnly-куке. Человек его не читает.
     jti: field(s.text({ min: 21, max: 64 }), {
-      read: ['server'], create: () => true, required: true,
+      read: [...SESSION_SERVER_WRITE], create: [...SESSION_SERVER_WRITE], required: true,
       immutable: true, filters: ['eq'],
       db: { unique: true },
     }),
-    // пишет сервер (адаптер api), юзерских update через ресурс нет
-    device_name: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
-    // Текущая подсеть: ХЭШ с солью аккаунта, полный IP и маска не хранятся.
-    subnet_hash: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
-    country: f.text({ read: () => true, nullable: true, create: () => true, update: () => true }),
-    // История прежних подсетей/стран: [{hash, country, at}] — пишет api при
-    // пересоздании сессии (режим 'update'), а не «только текущее».
-    subnet_history: f.json({ read: () => true, nullable: true, create: () => true, update: () => true, db: { default: "'[]'::jsonb" } }),
-        // Версия продления: кукa продления несёт версию строки; совпала — ротация,
-        // меньше — «усыновление» (кто-то продлил раньше). Отзыв — по-прежнему
-        // софт-удаление; tokenVersion аккаунта нет.
-        version: field(s.integer({ min: 0, max: 2_147_483_647 }), {
-          read: ['server'], create: () => true, update: () => true,
-          db: { default: '0' },
-        }),
-    last_seen_at: f.timestamp({ read: () => true, nullable: true, create: () => true, update: () => true }),
+    // Единственное поле, которое человек с правом правки строки может менять.
+    device_name: f.text({
+      read: () => true, nullable: true, create: [...SESSION_SERVER_WRITE], update: () => true,
+      filters: ['eq', 'icontains', 'isNull', 'isNotNull'],
+    }),
+    // Текущая подсеть: хэш с солью аккаунта, полный IP и маска не хранятся.
+    subnet_hash: f.text({
+      read: () => true, nullable: true, create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE],
+    }),
+    country: f.text({
+      read: () => true, nullable: true, create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE],
+      filters: ['eq', 'icontains', 'isNull', 'isNotNull'],
+    }),
+    // История прежних подсетей/стран: [{hash, country, at}]. Пишет сервер при продлении.
+    // «Была смена» — уже существующий `ne`, новый оператор не заводится.
+    subnet_history: f.json({
+      read: () => true, nullable: true, create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE],
+      filters: ['ne'],
+      db: { default: "'[]'::jsonb" },
+    }),
+    // Версия продления: кука несёт версию строки. Человеку не видна и не пишется.
+    version: field(s.integer({ min: 0, max: 2_147_483_647 }), {
+      read: [...SESSION_SERVER_WRITE], create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE],
+      db: { default: '0' },
+    }),
+    last_seen_at: f.timestamp({
+      read: () => true, nullable: true, create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE],
+      filters: ['gt', 'gte', 'lt', 'lte'],
+    }),
     // Срок жизни сессии — из настроек (config.deviceTtlSec); ставит сервер.
-    expires_at: f.timestamp({ read: () => true, create: () => true, required: true }),
+    expires_at: f.timestamp({
+      read: () => true, create: [...SESSION_SERVER_WRITE], update: [...SESSION_SERVER_WRITE], required: true,
+      filters: ['gt', 'gte', 'lt', 'lte'],
+    }),
   },
-  // `deleted_at` = отзыв сессии (выход, отзыв устройства, «выйти со всех»).
+  // `deleted_at` = отзыв сессии. Порядок по `created_at` / `deleted_at` даёт timestamps.
   timestamps: {
     createdAt: 'created_at', updatedAt: 'updated_at',
-    deletedAt: { field: 'deleted_at', readDeleted: ['server', 'admin'] },
+    deletedAt: 'deleted_at',
   },
-  policy: {
-    // Сессиями юзер управляет только через api (сервер): правит и гасит сервер.
-    select: policy.ownerOrRoles('auth_id', ['server', 'admin']),
-    insert: policy.roles(['server']),
-    update: policy.roles(['server', 'admin']),
-    delete: policy.roles(['server', 'admin']),
-  },
+  acl: SESSION_ACL,
   order: [['created_at', 'desc']],
 })
 
