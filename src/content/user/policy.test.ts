@@ -161,11 +161,11 @@ test('конфиг-модель: новый ключ умолчания — то
     const asMe = owner(me.id)
     const asReader = other(['config.read'])
 
-    // клиент ключ умолчания не заводит: insert держат server/admin
+    // клиент ключ умолчания не заводит: умолчание пишет server/admin
     await assert.rejects(() => rows.insert(asMe, { auth_id: null, key: 'k1', value: 1 }), forbidden)
 
     await rows.insert(SERVER, { auth_id: null, key: 'k1', value: 'nobody', schema: { assign: ['admin'] } })
-    await rows.insert(SERVER, { auth_id: me.id, key: 'k1', value: 'all' })
+    await rows.insert(asMe, { auth_id: me.id, key: 'k1', value: 'all' })
 
     // владелец видит свою строку; глобальная чужим без config.read не видна
     const mine = await rows.select(asMe)
@@ -173,9 +173,12 @@ test('конфиг-модель: новый ключ умолчания — то
     const read = await rows.select(asReader)
     assert.equal(read.length, 2)
 
-    // прямая запись владельца в модель закрыта (работа — конфиг-API от системы)
+    // свою строку владелец пишет сам; чужую модель не отдаёт на правку
     const own = mine[0] as unknown as { id: string }
-    await assert.rejects(() => rows.update(asMe, own.id, { value: 'x' }), forbidden)
+    await rows.update(asMe, own.id, { value: 'x' })
+    await assert.rejects(() => rows.update(asReader, own.id, { value: 'y' }))
+    const after = await rows.select(asMe)
+    assert.equal((after[0] as { value: unknown }).value, 'x')
   })
 })
 

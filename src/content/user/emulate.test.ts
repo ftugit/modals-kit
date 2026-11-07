@@ -13,8 +13,6 @@ import { defineSchema } from '#lib/db/sync/index.js'
 import { memoryStore } from '#lib/cache/index.js'
 import { getEncoder } from '#lib/image/index.js'
 import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
-import { getEncoder } from '#lib/image/index.js'
-import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
   SERVER, activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, login, logout,
@@ -87,10 +85,13 @@ function makePorts(seedSecret?: string): {
         auths.set(row.id, row)
         return row
       },
-      async get(id) {
-        return auths.get(id)
+      async get(_ctx, id, opts) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
       },
-      async markDeleted(id, at) {
+      async markDeleted(_ctx, id, at) {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, deletedAt: at })
       },
@@ -221,19 +222,19 @@ function makePorts(seedSecret?: string): {
       const rows: import('./types.js').ConfigKeyRow[] = []
       let seq = 0
       return {
-        async row(authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
-        async defaults() { return rows.filter((r) => r.authId === null) },
-        async anyUserRow(key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
-        async insert(row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async row(_ctx: unknown, authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async defaults(_ctx: unknown) { return rows.filter((r) => r.authId === null) },
+        async anyUserRow(_ctx: unknown, key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
+        async insert(_ctx: unknown, row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           rows.push({ id: `cfg-${++seq}`, authId: row.authId, key: row.key, value: row.value ?? null, schema: row.schema ?? null })
         },
-        async update(id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async update(_ctx: unknown, id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           const r = rows.find((x) => x.id === id)
           if (!r) return
           if (patch.value !== undefined) r.value = patch.value
           if (patch.schema !== undefined) r.schema = patch.schema
         },
-        async remove(id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
+        async remove(_ctx: unknown, id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
         cache: store.scope('settings-fake'),
       }
     })(),
@@ -334,10 +335,10 @@ describe('единый вход', () => {
     const { seed, secret: sk } = await generateKeyPair()
     const out = ok_(await doLogin(ports, seed, sk))
     const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
-    await ports.auths.markDeleted(payload.sub, 0) // не блокировка — просто для теста снятия
+    await ports.auths.markDeleted({ principal: { roles: ['server'] } }, payload.sub, 0) // не блокировка — просто для теста снятия
     await ports.auths.clearDeleted(payload.sub)
     // блокируем напрямую через карту адаптера
-    const row = (await ports.auths.get(payload.sub)) as AuthRow
+    const row = (await ports.auths.get({ principal: { roles: ['server'] } }, payload.sub)) as AuthRow
     authsPatch(auths, row.id, { blocked: [{ scope: 'auth', reason: 'скам', at: Date.now(), until: Date.now() + 60_000 }] })
     const blocked = fact_(await doLogin(ports, seed, sk))
     expect(blocked.code).toBe('auth.blocked')
@@ -349,7 +350,7 @@ describe('единый вход', () => {
     const { seed, secret: sk } = await generateKeyPair()
     const first = ok_(await doLogin(ports, seed, sk))
     const payload = JSON.parse(Buffer.from(first.access, 'base64url').toString()) as { sub: string }
-    await ports.auths.markDeleted(payload.sub, Date.now())
+    await ports.auths.markDeleted({ principal: { roles: ['server'] } }, payload.sub, Date.now())
     const before = sessions.size
     const second = fact_(await doLogin(ports, seed, sk))
     expect(second.code).toBe('auth.deleted')
@@ -664,10 +665,10 @@ describe('удаление аккаунта', () => {
     expect(ok_(await profile(ports, restored.access)).profile?.nickname).toBe('Вася')
     // исполнитель: грейс не вышел — никого; вышел — seed стёрт, профиль удалён
     expect(ok_(await sweepDeletions(ports))).toBe(0)
-    const row = (await ports.auths.get(payload.sub)) as AuthRow
+    const row = (await ports.auths.get({ principal: { roles: ['server'] } }, payload.sub)) as AuthRow
     authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
     expect(ok_(await sweepDeletions(ports))).toBe(1)
-    const wiped = (await ports.auths.get(row.id)) as AuthRow
+    const wiped = (await ports.auths.get({ principal: { roles: ['server'] } }, row.id, { includeDeleted: true })) as AuthRow
     expect(wiped.seed).toBeNull()
     expect(await ports.profiles.get(SERVER, payload.sub)).toBeUndefined()
   })

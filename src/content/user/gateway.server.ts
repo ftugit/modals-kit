@@ -270,16 +270,16 @@ function authsAdapter() {
         throw e
       }
     },
-    async get(id: string): Promise<AuthRow | undefined> {
+    async get(ctx: DataContext, id: string, opts?: { includeDeleted?: boolean }): Promise<AuthRow | undefined> {
       try {
-        const row = await api().get(SYSTEM, id, { includeDeleted: true })
+        const row = await api().get(ctx, id, opts?.includeDeleted ? { includeDeleted: true } : undefined)
         return authRowOf(row as unknown as Record<string, unknown>)
       } catch {
         return undefined
       }
     },
-    async markDeleted(id: string, _at: number): Promise<void> {
-      await api().delete(SYSTEM, id)
+    async markDeleted(ctx: DataContext, id: string, _at: number): Promise<void> {
+      await api().delete(ctx, id)
     },
     async clearDeleted(id: string): Promise<void> {
       await api().restore(SYSTEM, id)
@@ -358,8 +358,15 @@ function profilesAdapter() {
   const api = () => db.resource(profileRes)
   // Контекст приходит от ядра: чтение и правка — владелец, создание и смерть
   // аккаунта — сервер. Адаптер не выбирает права сам.
-  const byAuth = async (ctx: DataContext, authId: string): Promise<Record<string, unknown> | undefined> => {
-    const rows = await api().select(ctx, { filter: { field: 'auth_id', op: 'eq', value: authId } })
+  const byAuth = async (
+    ctx: DataContext,
+    authId: string,
+    fields?: readonly string[],
+  ): Promise<Record<string, unknown> | undefined> => {
+    const rows = await api().select(ctx, {
+      filter: { field: 'auth_id', op: 'eq', value: authId },
+      ...(fields ? { fields: [...fields] } : {}),
+    })
     return rows[0] as unknown as Record<string, unknown> | undefined
   }
   const viewOf = (r: Record<string, unknown>): ProfileView => ({
@@ -378,8 +385,8 @@ function profilesAdapter() {
         ...(patch.avatarUrl !== undefined ? { avatar_url: patch.avatarUrl } : {}),
       })
     },
-    async get(ctx: DataContext, authId: string): Promise<ProfileView | undefined> {
-      const row = await byAuth(ctx, authId)
+    async get(ctx: DataContext, authId: string, fields?: readonly string[]): Promise<ProfileView | undefined> {
+      const row = await byAuth(ctx, authId, fields)
       return row ? viewOf(row) : undefined
     },
     async update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
@@ -407,9 +414,8 @@ function profilesAdapter() {
 }
 
 /**
- * Конфиг-модель: адаптер исполняет от системы (SYSTEM), права по схемам
- * ключей проверяет конфиг-API в домене — не адаптер. Кэш умолчаний —
- * область памяти процесса; инвалидацию делает API записью умолчания.
+ * Конфиг-модель: адаптер не выбирает права. Контекст приходит от вызывающего.
+ * Правило ключа проверяет конфиг-API до вызова; модель режет строку.
  */
 function configAdapter() {
   const api = () => db.resource(configRes)
@@ -420,8 +426,8 @@ function configAdapter() {
     value: r.value ?? null,
     schema: (r.schema as ConfigKeySchema | null) ?? null,
   })
-  const byPair = async (authId: string | null, key: string): Promise<ConfigKeyRow | undefined> => {
-    const rows = (await api().select(SYSTEM, {
+  const byPair = async (ctx: DataContext, authId: string | null, key: string): Promise<ConfigKeyRow | undefined> => {
+    const rows = (await api().select(ctx, {
       filter: {
         and: [
           { field: 'key', op: 'eq', value: key },
@@ -433,8 +439,8 @@ function configAdapter() {
   }
   return {
     row: byPair,
-    async rowsByUser(authId: string | null): Promise<ConfigKeyRow[]> {
-      const rows = (await api().select(SYSTEM, {
+    async rowsByUser(ctx: DataContext, authId: string | null): Promise<ConfigKeyRow[]> {
+      const rows = (await api().select(ctx, {
         filter:
           authId === null
             ? { field: 'auth_id', op: 'isNull' }
@@ -442,14 +448,14 @@ function configAdapter() {
       })) as unknown as Record<string, unknown>[]
       return rows.map(rowOf)
     },
-    async defaults(): Promise<ConfigKeyRow[]> {
-      const rows = (await api().select(SYSTEM, {
+    async defaults(ctx: DataContext): Promise<ConfigKeyRow[]> {
+      const rows = (await api().select(ctx, {
         filter: { field: 'auth_id', op: 'isNull' },
       })) as unknown as Record<string, unknown>[]
       return rows.map(rowOf)
     },
-    async anyUserRow(key: string): Promise<boolean> {
-      const rows = await api().select(SYSTEM, {
+    async anyUserRow(ctx: DataContext, key: string): Promise<boolean> {
+      const rows = await api().select(ctx, {
         limit: 1,
         filter: {
           and: [
@@ -460,22 +466,22 @@ function configAdapter() {
       })
       return rows.length > 0
     },
-    async insert(row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
-      await api().insert(SYSTEM, {
+    async insert(ctx: DataContext, row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
+      await api().insert(ctx, {
         auth_id: row.authId,
         key: row.key,
         ...(row.value !== undefined ? { value: row.value } : {}),
-        ...(row.schema !== undefined ? { schema: row.schema } : {}),
+        ...(row.schema != null ? { schema: row.schema } : {}),
       })
     },
-    async update(id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
-      await api().update(SYSTEM, id, {
+    async update(ctx: DataContext, id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void> {
+      await api().update(ctx, id, {
         ...(patch.value !== undefined ? { value: patch.value } : {}),
         ...(patch.schema !== undefined ? { schema: patch.schema } : {}),
       })
     },
-    async remove(id: string): Promise<void> {
-      await api().delete(SYSTEM, id, { hard: true })
+    async remove(ctx: DataContext, id: string): Promise<void> {
+      await api().delete(ctx, id, { hard: true })
     },
     cache: localStore.scope('user-config-model'),
   }

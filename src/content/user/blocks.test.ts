@@ -98,10 +98,13 @@ function makePorts() {
         auths.set(row.id, row)
         return row
       },
-      async get(id: string) {
-        return auths.get(id)
+      async get(_ctx: unknown, id: string, opts?: { includeDeleted?: boolean }) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
       },
-      async markDeleted(id: string) {
+      async markDeleted(_ctx: unknown, id: string) {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, deletedAt: Date.now() })
       },

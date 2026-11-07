@@ -86,10 +86,13 @@ function makePorts() {
         created.set(row.id, created.size + 1)
         return row
       },
-      async get(id: string) {
-        return auths.get(id)
+      async get(_ctx: unknown, id: string, opts?: { includeDeleted?: boolean }) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
       },
-      async markDeleted(id: string) {
+      async markDeleted(_ctx: unknown, id: string) {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, deletedAt: Date.now() })
       },
@@ -216,19 +219,19 @@ function makePorts() {
       const rows: import('./types.js').ConfigKeyRow[] = []
       let seq = 0
       return {
-        async row(authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
-        async defaults() { return rows.filter((r) => r.authId === null) },
-        async anyUserRow(key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
-        async insert(row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async row(_ctx: unknown, authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async defaults(_ctx: unknown) { return rows.filter((r) => r.authId === null) },
+        async anyUserRow(_ctx: unknown, key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
+        async insert(_ctx: unknown, row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           rows.push({ id: `cfg-${++seq}`, authId: row.authId, key: row.key, value: row.value ?? null, schema: row.schema ?? null })
         },
-        async update(id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async update(_ctx: unknown, id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           const r = rows.find((x) => x.id === id)
           if (!r) return
           if (patch.value !== undefined) r.value = patch.value
           if (patch.schema !== undefined) r.schema = patch.schema
         },
-        async remove(id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
+        async remove(_ctx: unknown, id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
         cache: store.scope('settings-fake'),
       }
     })(),

@@ -96,27 +96,21 @@ export async function profile(
 
 /**
  * Публичный показ профиля (этап 8): гостю и чужому — только проекция
- * (`nickname`, `avatarUrl`, `createdAt`), если уровень видимости цели
- * разрешает. Вошедший определяется токеном; битый/истёкший токен здесь —
- * гость. Неразличимость сохранена: `nobody`, нет строки и «нельзя» —
- * один факт `auth.identity-unknown`. Видимость строки на уровне модели
- * держит `exists`-ветка политики профиля; домен сверяет уровень ещё раз
- * и режет поля.
+ * (`nickname`, `avatarUrl`, `createdAt`). Вошедший определяется токеном;
+ * битый/истёкший токен здесь — гость. Строку прячет `PROFILE_ACL.extend`.
+ * Нет строки и «нельзя» — один факт `auth.identity-unknown`.
  */
 export async function publicProfile(
   ports: AuthPorts,
   viewerToken: string | undefined,
   subjectId: string,
 ): Promise<UserResult<PublicProfileView>> {
-  const level = await visibilityOf(ports, subjectId)
-  if (level === 'nobody') return fail({ code: 'auth.identity-unknown' })
   const viewer = viewerToken ? await guard(ports, viewerToken) : null
   const logged = viewer !== null && !('code' in viewer) ? viewer : null
-  if (level === 'users' && !logged) return fail({ code: 'auth.identity-unknown' })
   const ctx = logged
     ? principalOfRow({ id: logged.sub, permissions: logged.perms })
     : { principal: { roles: [] as string[] } }
-  const row = await ports.profiles.get(ctx, subjectId)
+  const row = await ports.profiles.get(ctx, subjectId, ['auth_id', 'nickname', 'avatar_url', 'created_at'])
   if (!row) return fail({ code: 'auth.identity-unknown' })
   return ok({ nickname: row.nickname, avatarUrl: row.avatarUrl, createdAt: row.createdAt })
 }
@@ -157,7 +151,9 @@ export async function deleteProfile(
   if ('code' in g) return fail(g)
   const target = subject?.trim() || g.sub
   const now = ports.clock.now()
-  const authRow = await ports.auths.get(target)
+  // Свою заявку на удаление владелец через модель не видит — этот вопрос открыт.
+  // Пока строка ищется от сервера, как раньше, чтобы повторное удаление не стало «нет аккаунта».
+  const authRow = await ports.auths.get(SERVER, target, { includeDeleted: true })
   if (!authRow) return fail({ code: 'auth.forbidden' })
   const blocked = await blocksOf(ports, target)
   const actor = principalOfRow({ id: g.sub, permissions: g.perms }).principal
@@ -175,7 +171,7 @@ export async function deleteProfile(
   }
   await ports.profiles.remove(principalOfRow({ id: g.sub, permissions: g.perms }), target)
   if (opts.withSeed) {
-    await ports.auths.markDeleted(target, now)
+    await ports.auths.markDeleted(principalOfRow({ id: g.sub, permissions: g.perms }), target, now)
     await ports.sessions.softDeleteAllByAuth(target, now)
   }
   return ok(null)
@@ -206,7 +202,7 @@ export async function updateProfile(
     return fail({ code: 'auth.forbidden' })
   }
   if (target !== g.sub) {
-    const targetAuth = await ports.auths.get(target)
+    const targetAuth = await ports.auths.get(owner, target)
     if (!targetAuth || targetAuth.deletedAt !== null) {
       return fail({ code: 'auth.identity-unknown' })
     }

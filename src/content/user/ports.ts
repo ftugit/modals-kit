@@ -57,9 +57,13 @@ export interface AuthStorePort {
   findDeletedBySeed(seed: string): Promise<AuthRow | undefined>
   /** Создать аккаунт; `null` — seed занят (в т.ч. удалённой строкой: unique). */
   create(seed: string): Promise<AuthRow | null>
-  get(id: string): Promise<AuthRow | undefined>
+  /**
+   * Строка по id от прав вызывающего. Удалённую видно только с `includeDeleted`
+   * и правом `readDeleted`; фаервол передаёт `SERVER` и этот флаг.
+   */
+  get(ctx: DataContext, id: string, opts?: { includeDeleted?: boolean }): Promise<AuthRow | undefined>
   /** Заявка на удаление: софт-метка; вход теперь получает `auth.deleted`. */
-  markDeleted(id: string, at: number): Promise<void>
+  markDeleted(ctx: DataContext, id: string, at: number): Promise<void>
   /** Снять заявку (восстановление после доказательства владения). */
   clearDeleted(id: string): Promise<void>
   /** Исполнитель через срок: seed и security стираются — надгробие остаётся. */
@@ -120,7 +124,7 @@ export type AuthRow = {
  */
 export interface ProfileStorePort {
   create(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void>
-  get(ctx: DataContext, authId: string): Promise<import('./types.js').ProfileView | undefined>
+  get(ctx: DataContext, authId: string, fields?: readonly string[]): Promise<import('./types.js').ProfileView | undefined>
   update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
   /** Исполнитель удаления (конечная смерть аккаунта уносит профиль цепочкой). */
   remove(ctx: DataContext, authId: string): Promise<void>
@@ -186,9 +190,10 @@ export type ConfigPort = UserConfig
 
 /**
  * Конфиг-модель (`user.config`): строки «ключ — значение — юзер».
- * Адаптер исполняет от системы — права по схемам ключей проверяет
- * конфиг-API (`config-api.ts`), не порт. Кэш области — под умолчания:
- * API держит в нём строки умолчаний и сбрасывает записью.
+ * Каждый метод принимает контекст. Экран передаёт человека; `SERVER` —
+ * только чтение строки-умолчания, которую модель этому человеку не отдаёт,
+ * и внутреннее `getEffective` без актора. Правило ключа по-прежнему
+ * проверяет конфиг-API. Кэш области — под умолчания.
  */
 /**
  * Блокировки (`user.block`, этап 9): модель исполняет нативно контекстом
@@ -216,16 +221,16 @@ export interface BlockStorePort {
 
 export interface ConfigStorePort {
   /** Строка по паре: `authId = null` — умолчание. */
-  row(authId: string | null, key: string): Promise<ConfigKeyRow | undefined>
+  row(ctx: DataContext, authId: string | null, key: string): Promise<ConfigKeyRow | undefined>
   /** Пакетное чтение всех строк одного пользователя (`authId = null` — умолчания). */
-  rowsByUser?(authId: string | null): Promise<ConfigKeyRow[]>
+  rowsByUser?(ctx: DataContext, authId: string | null): Promise<ConfigKeyRow[]>
   /** Все строки умолчаний (глобальные ключи). */
-  defaults(): Promise<ConfigKeyRow[]>
+  defaults(ctx: DataContext): Promise<ConfigKeyRow[]>
   /** Есть ли хоть одна юзерская строка с этим ключом. */
-  anyUserRow(key: string): Promise<boolean>
-  insert(row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
-  update(id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
-  remove(id: string): Promise<void>
+  anyUserRow(ctx: DataContext, key: string): Promise<boolean>
+  insert(ctx: DataContext, row: { authId: string | null; key: string; value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
+  update(ctx: DataContext, id: string, patch: { value?: unknown; schema?: ConfigKeySchema | null }): Promise<void>
+  remove(ctx: DataContext, id: string): Promise<void>
   /** Кэш умолчаний (область `#lib/cache` адаптера). */
   cache: StoreLike
 }

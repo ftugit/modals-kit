@@ -582,7 +582,7 @@ export async function saveStorageServer(
     if (RESERVED_SLOTS.has(slot)) {
       return fail({ code: 'storage.slot-reserved', path: 'slot' })
     }
-    const bySlot = ((await api.select(SYSTEM, {
+    const bySlot = ((await api.select({ principal }, {
       filter: { field: 'slot', op: 'eq', value: slot },
     })) as unknown as Record<string, unknown>[])[0]
     if (bySlot) {
@@ -704,8 +704,9 @@ export async function removeStorageServer(
   const targetId = id.trim()
   if (!targetId) return fail({ code: 'storage.not-found' })
 
-  const existing = (await api.select(SYSTEM, {
+  const existing = (await api.select({ principal }, {
     filter: { field: 'id', op: 'eq', value: targetId },
+    fields: ['id', 'slot'],
   })) as unknown as Record<string, unknown>[]
   if (!existing[0]) return fail({ code: 'storage.not-found' })
 

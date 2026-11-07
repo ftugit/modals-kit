@@ -8,7 +8,7 @@
  * таблицы auth/session — технические. Права ключами доступа — README lib/db §7;
  * приходят от компонента, вызвавшего api (общего вызова на приложение нет).
  */
-import { defineAcl, defineResource, f, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
+import { defineAcl, defineResource, f, fail, field, policy, s, type Filter, type Resource } from '#lib/db/index.js'
 import { isBlockScope } from './spec-block.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 
@@ -146,7 +146,7 @@ export const auth: Resource = defineResource({
      * запросов нельзя (`[]` — «никому»); заведём вместе с первой защитой.
      */
     security: field(s.array(s.json(), { max: 8 }), {
-      read: () => true, create: [], update: [],
+      read: ['server'], create: [], update: [],
       db: { default: "'{}'::jsonb[]" },
     }),
     /**
@@ -263,19 +263,18 @@ export const session = defineResource({
  * её поле `schema` несёт полную схему прав ключа (`editDefault` /
  * `assign` / `editUser` / `deleteUser` — роли каталога и `owner`); строка
  * юзера — переопределение, её `schema` — только упрощённая схема
- * редактирования именно этой строки. Работу ведёт конфиг-API
- * (`config-api.ts`) от системы; политики ниже — консервативный запасной
- * уровень для случаев без схемы: напрямую модель пишет только
- * сервер/админ, новый ключ умолчания заводит роль `insert`.
+ * редактирования именно этой строки. Правило ключа проверяет конфиг-API.
+ * Модель режет строку: владелец читает и пишет свою, `config.read` читает,
+ * `admin`/`server` пишут любую, включая умолчание (`auth_id = null`).
+ * `defineAcl` не умеет вставку «только свою строку», поэтому `insert` —
+ * помеченная функция, а `checks` не пускает чужой `auth_id` и схему.
  * Уникальность `(auth_id, key)` — два частичных индекса ручным SQL
  * (`db.server.ts`): обычный unique NULL-дыру глобальных строк не закрывает.
  */
-const CONFIG_ACL = defineAcl({
-  owner: { field: 'auth_id', can: ['read'] },
-  read: ['config.read'],
-  insert: ['admin', 'server'],
-  edit: ['admin', 'server'],
-})
+const CONFIG_WRITERS = ['admin', 'server'] as const
+
+const configPrivileged = (roles: readonly string[]): boolean =>
+  roles.includes('admin') || roles.includes('server')
 
 export const config: Resource = defineResource({
   key: 'user.config',
@@ -284,19 +283,38 @@ export const config: Resource = defineResource({
   fields: {
     id: f.uuid({ read: () => true, createValue: () => crypto.randomUUID(), immutable: true, orderable: true, filters: ['eq'], db: { default: 'gen_random_uuid()' } }),
     auth_id: field(s.uuid(), {
-      read: () => true, create: [...CONFIG_ACL.roles.insert], nullable: true,
+      read: () => true, create: () => true, nullable: true,
       immutable: true, filters: ['eq', 'isNull', 'isNotNull'],
       db: { references: { resource: () => auth, chain: true } },
     }),
     key: field(s.text({ min: 1, max: 80 }), {
-      read: () => true, create: [...CONFIG_ACL.roles.insert], required: true,
+      read: () => true, create: () => true, required: true,
       immutable: true, filters: ['eq'], orderable: true,
     }),
-    value: f.json({ read: () => true, create: [...CONFIG_ACL.roles.insert], update: [...CONFIG_ACL.roles.update], nullable: true }),
-    schema: f.json({ read: () => true, create: [...CONFIG_ACL.roles.insert], update: [...CONFIG_ACL.roles.update], nullable: true }),
+    value: f.json({ read: () => true, create: () => true, update: () => true, nullable: true }),
+    schema: f.json({
+      read: () => true,
+      create: [...CONFIG_WRITERS],
+      update: [...CONFIG_WRITERS],
+      nullable: true,
+    }),
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
-  acl: CONFIG_ACL,
+  policy: {
+    select: policy.ownerOrRoles('auth_id', ['config.read', ...CONFIG_WRITERS]),
+    insert: policy.withGrants([...CONFIG_WRITERS], (ctx) =>
+      configPrivileged(ctx.principal.roles) || Boolean(ctx.principal.id),
+    ),
+    update: policy.ownerOrRoles('auth_id', [...CONFIG_WRITERS]),
+    delete: policy.ownerOrRoles('auth_id', [...CONFIG_WRITERS]),
+  },
+  checks: (event) => {
+    if (event.operation !== 'insert') return
+    if (configPrivileged(event.ctx.principal.roles)) return
+    // Умолчание и чужая строка — отказ модели, не ошибка поля: insert-политика
+    // не видит будущую строку, а `defineAcl` не умеет «вставить только свою».
+    if (event.values.auth_id !== event.ctx.principal.id || event.values.schema != null) fail('forbidden')
+  },
   order: [['key', 'asc']],
 })
 

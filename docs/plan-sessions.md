@@ -1,36 +1,48 @@
-# Сессии пользователя: прямая модель `user.session.v1`, функции и UI-компоненты
+# План: сессии как устройства
 
-Статус: **в планах** (технический план; реализация — по отдельной команде владельца).
+Статус: **этапы 1–2 сделаны** (`851c5d7` права, `458aea2` прямые функции без `jti` снаружи). Этапы 3–4 не начаты. Один этап — один коммит. Площадки и тег `modules` этот план не трогает.
 
----
-
-## 1. Исходное состояние и цель переноса
-
-Сейчас таблица сессий `public.user_session` (`key: 'user.session.v1'` в `src/content/user/schema.ts`) остаётся на низкоуровневом `policy`, где изменение и мягкое удаление разрешены только ролям `['server', 'admin']`, в каталоге прав не задействованы `session.read` / `session.edit`, а секретный токен куки `jti` открыт на чтение (`read: () => true`). Из-за этого:
-
-- чтение своих устройств и отзыв сессии вынуждены идти через отдельные обёртки `listSessions` / `revokeSession` в `src/content/user/auth.ts` и `SessionStorePort` под системным контекстом `SYSTEM` (`roles: ['server']`);
-- адресация устройств снаружи строится по секретному `jti`, а не по штатному первичному ключу модели `id: uuid`;
-- пользовательский интерфейс списка устройств, переименования и отзыва сессий ещё не подключён.
-
-**Цель плана**:
-1. Перенести все пользовательские и административные операции над сессиями из прав системы (`SYSTEM`) и отдельных обёрток `auth.ts` / `ports.ts` **на самого пользователя (`principalOfRow`) напрямую через модель `db.resource(session)`** по образцу `user.block` и `storage_server`.
-2. Построить функции и UI-компоненты сессий **целиком поверх уже реализованных механизмов проекта** (`#lib/db`, `#lib/paginate`, `#lib/modals`, `#lib/address`, `#lib/form`, `#hooks/db-form`, `#hooks/db-grants`, `#components/paginator`, `#components/ui`) без дублирующей обвязки.
+Цель: человек работает со своими и чужими устройствами через модель `user.session.v1`, а не через системный контекст и секрет `jti`. Вход, ротация куки и фаервол токена остаются на сервере.
 
 ---
 
-## 2. Прямая модель `user.session.v1` и пирамида прав (`defineAcl`)
+## Факты кода, на которых план стоит
 
-### 2.1. Каталог прав (`src/content/user/permissions.ts`)
+Проверено по текущему дереву, не по старому тексту этого файла.
 
-Группа «Сессии» приводится к полному единообразию с группами «Аккаунты» и «Блокировки»:
+- Ресурс `session` в `src/content/user/schema.ts` ещё на ручном `policy`. Владелец читает свои строки (`select` по `auth_id`). Менять и гасить строку через модель он не может: `update` и `delete` только у `server` и `admin`.
+- `jti` и `version` уже закрыты на чтение: `read: ['server']`. В браузер их всё равно отдаёт обёртка `listSessions`: `SessionView.jti`.
+- `device_name`, `subnet_hash`, `country`, `subnet_history`, `last_seen_at`, `expires_at` и `version` имеют `update: () => true`. Пока строку может писать только сервер, это безопасно. Как только владелец получит `update`, он сможет подделать подсеть, срок и версию, если маски не сузить.
+- `deleted_at` читают только `server` и `admin`. Права `session.readDeleted` в каталоге нет. Текст `session.read` обещает «включая завершённые» — модель этого не делает.
+- `session.read` и `session.edit` есть в `permissions.ts` и в группе «Сессии», но в `policy` сессии не вписаны.
+- `user.auth.v1` тоже на ручном `policy`. Комментарий в схеме прямо откладывает `defineAcl`, пока не спроектированы гостевая запись и отзыв сессии.
+- `SessionRecord` не хранит `id` строки. `auth(event).actor()` возвращает `{ id, permissions }` без идентификатора сессии.
+- Список и отзыв снаружи: `listSessions` / `revokeSession` в `auth.ts`, фасад `u.listSessions()` / `u.revokeSession(jti)` в `gateway.server.ts`. Оба идут через `SessionStorePort` под `SYSTEM` (`roles: ['server']`). Чужое устройство ищется по `jti`.
+- `SessionStorePort` нужен фаерволу: `create` на входе, `get` / `save` в `guard` и `renew`, `softDelete` по сырой куке, `softDeleteAllByAuth` для `logoutAll` и зачистки. Это не экраны.
+- Экрана устройств нет. В меню и в профиле кнопки «Сессии» нет. `MenuBody` всё ещё на `userSurfaceVariants`; остальные экраны ядра уже на `Surface`. Меню целиком этим планом не переводится.
 
-- `session.read` — видеть живые сессии и устройства любого аккаунта (название, страну, хеш подсети, историю смен подсети, времена активности).
-- `session.edit` — переименовывать устройства и отзывать (мягко удалять) живые сессии любого аккаунта, включая массовое завершение.
-- `session.readDeleted` — конъюнктивное дополнение к чтению модели (`selectDeleted`): открывает мягко удалённые (отозванные) записи сессий для аудита; само по себе без права `select` чтения не даёт.
+Ближайший образец экрана — блокировки: `Surface`, пара «модалка + маршрут», `preloadData` в модалке, `initial` на странице, отправка в теле формы. Образец прав — `BLOCK_ACL`, но у сессии владелец ещё и переименовывает и отзывает, не только читает.
 
-### 2.2. Декларативный ACL ресурса (`src/content/user/schema.ts`)
+---
 
-Ресурс `session` переводится с ручного `policy` на `defineAcl`:
+## Решения
+
+1. Внешний идентификатор устройства — `id` строки (`uuid`). `jti` и `version` не попадают в HTML, адрес, скрытые поля и `SessionView`.
+2. «Это устройство» считается на сервере: `row.id === actor.sessionId`. Сравнение по `jti` в браузере не делается.
+3. Владелец через модель читает свои живые сессии, меняет только `device_name` и мягко отзывает свои строки. Не может создать сессию, увидеть отозванные, стереть след, восстановить отзыв и поменять срок, подсеть, историю или версию.
+4. `session.read` видит живые сессии любого аккаунта. `session.edit` переименовывает и мягко отзывает чужие. `session.readDeleted` только открывает отозванные строки и само по себе чтения не даёт.
+5. `admin` и `server` сохраняют жёсткое удаление и каскад от `user.auth`. Владелец и `session.edit` жёсткого удаления не получают.
+6. `SYSTEM` остаётся только там, где актора-человека нет: создание строки на входе, чтение и ротация по `jti`, гашение по сырой куке, `sweepDeletions`. Отдельный `SessionManagementPort` не заводится.
+7. Экраны — `Surface`. В `controls` только навигация и контекст. Отправка и удержание отзыва остаются под полями. Носитель модалки сам не скроллит.
+8. Каждое действие — пара «модалка + маршрут», с JS и без. Чужой `id` неотличим от несуществующего: один факт `auth.session-unknown`.
+
+---
+
+## Этап 1. Права и маски
+
+Только схема и каталог. Обёртки `listSessions` / `revokeSession` ещё живут: фаервол и тесты входа не переписываются.
+
+`session` переводится на `defineAcl`:
 
 ```ts
 const SESSION_ACL = defineAcl({
@@ -44,150 +56,108 @@ const SESSION_ACL = defineAcl({
 })
 ```
 
-Что гарантирует эта матрица на уровне `#lib/db` (проходит все 7 аксиом `validateResourceAcl` без `allowAnomalies`):
+Маски полей, которые надо сузить в том же коммите, иначе `update` владельца открывает лишнее:
 
-- **Владелец (`owner` по `auth_id`)** напрямую через модель читает свои живые сессии (`select`), переименовывает свои устройства (`update`) и отзывает свои сессии мягким удалением (`delete` → `deleted_at`). При этом владелец **не имеет** `insert` (нельзя создать сессию в обход входа), `deleted` / `hardDelete` (нельзя стереть след отзыва из таблицы, чтобы украденная кука `auth_sid` всегда распознавалась фаерволом как `'revoked'`, а не `'unknown'`) и `restore` (нельзя воскресить отозванную сессию без нового входа).
-- **Держатель `session.read`** читает живые сессии любого пользователя и глобальный журнал `/sessions`.
-- **Держатель `session.edit`** читает живые сессии, переименовывает `device_name` и отзывает (`softDelete`) сессии любого пользователя без права физического стирания и восстановления.
-- **Связка с `session.readDeleted`** открывает просмотр отозванных сессий (`includeDeleted: true`), а `admin` / `server` (`edit` + `deleted`) держат каскадное и окончательное удаление (`hard: true`, `chain: true` от `user.auth`).
-
-Параллельно в `src/content/user/schema.ts` на `defineAcl` выравнивается и `user.auth.v1` с сохранением действующих ролей (`account.read`, `account.edit`, `account.readDeleted`, `admin`, `server`).
-
-### 2.3. Маски полей, фильтры и сортировки модели `session`
-
-| Поле | Чтение (`read`) | Создание (`create`) | Изменение (`update`) | Фильтры и сортировка |
-|---|---|---|---|---|
-| `id` (`uuid`, PK) | `() => true` | `createValue` | `immutable: true` | `filters: ['eq', 'ne', 'in']`, `orderable: true` |
-| `auth_id` (`uuid`, FK → `auth`, `chain: true`) | `() => true` | `['server']` | `immutable: true` | `filters: ['eq', 'in']`, `orderable: true` |
-| `jti` (`text 21..64`, `unique`) | **`['server']`** | `['server']` | `immutable: true` | `filters: ['eq']` (только внутренний фаервол) |
-| `version` (`integer >= 0`) | **`['server']`** | `['server']` | **`['server']`** | нет (только внутренняя ротация `renew`) |
-| `device_name` (`text 1..120`, `nullable`) | `() => true` | `['server']` | **`() => true`** | `filters: ['eq', 'icontains', 'isNull', 'isNotNull']`, `orderable: true` |
-| `subnet_hash` (`text`, `nullable`) | `() => true` | `['server']` | `['server']` | `filters: ['eq', 'isNull', 'isNotNull']` |
-| `country` (`text 2..64`, `nullable`) | `() => true` | `['server']` | `['server']` | `filters: ['eq', 'in', 'icontains', 'isNull', 'isNotNull']`, `orderable: true` |
-| `subnet_history` (`json`, default `'[]'`) | `() => true` | `['server']` | `['server']` | `filters: ['eq', 'ne']` (`ne: []` — была смена подсети) |
-| `last_seen_at` (`timestamp`, `nullable`) | `() => true` | `['server']` | `['server']` | `filters: ['gte', 'lte', 'isNull', 'isNotNull']`, `orderable: true` |
-| `expires_at` (`timestamp`, `required`) | `() => true` | `['server']` | `['server']` | `filters: ['gt', 'lte', 'gte']`, `orderable: true` |
-| `created_at` / `updated_at` / `deleted_at` | авто-поля `timestamps` | авто | авто | `created_at`, `deleted_at` — `orderable` / диапазоны |
-
-Ключевые следствия:
-- **Секретный `jti` и `version` полностью закрыты от чтения человеком** (`read: ['server']`): ни владелец, ни `session.read`, ни `admin` не получают материал токена продления; все внешние ссылки используют безопасный `id: uuid`.
-- **`device_name` — единственное поле с `update: () => true`**: круг допуска задаёт сам `policy.update` модели (`owner`, `session.edit`, `admin`, `server`), а валидаторы формы автоматически выводятся из схемы поля через `formParams(session).device_name` (`#hooks/db-form.ts`).
-- Срок `expires_at`, подсеть и активность защищены маской `update: ['server']`: ни владелец, ни администратор через клиентскую форму не могут искусственно продлить токен или подменить сетевой след.
-
----
-
-## 3. Разделение прямой работы через модель и внутреннего фаервола токенов
-
-### 3.1. Что удаляется и сокращается
-
-- Из `src/content/user/auth.ts` удаляются `listSessions`, `revokeSession` и старый тип `SessionView` (экспонировавший `jti`).
-- Из `src/content/user/gateway.server.ts` удаляются `u.listSessions()` и `u.revokeSession(jti)`.
-- Из `SessionStorePort` (`src/content/user/ports.ts`) удаляется `listByAuth`: системный порт сессий больше не обслуживает экраны и действия пользователя. Промежуточный порт `SessionManagementPort` **не создаётся** — прикладной серверный модуль работает с `db.resource(session)` напрямую (как `app-storage.server.ts`).
-
-### 3.2. Признак текущего устройства (`isCurrent`) без раскрытия `jti`
-
-- В `SessionRecord` (`ports.ts` / `gateway.server.ts`) добавляется первичный ключ строки `id: string`.
-- `guard()` в `auth.ts` уже загружает запись сессии по `payload.dt`; в возвращаемый результат `guard()` и в `u.actor()` (`gateway.server.ts`) добавляется `sessionId: record.id`:
-  `actor = { id: string, sessionId: string, permissions: readonly string[] }`.
-- При формировании карточек сессий флаг `isCurrent` вычисляется на сервере строгим сравнением `row.id === actor.sessionId`, без передачи `jti` в браузер, URL или скрытые поля форм.
-
-### 3.3. Серверные функции прямой работы с моделью (`src/content/user/sessions.server.ts`)
-
-Все функции принимают проверенного `actor` из `u.actor()`, формируют контекст `ctx = principalOfRow(actor)` и вызывают `database.resource(session)` напрямую (принимая необязательный `{ db = defaultDb, now = () => Date.now() }` для быстрых PGlite-тестов по образцу `policy.test.ts` и `app-storage.server.ts`):
-
-1. **`listSessionsPage(actor, args, deps?)`**
-   - Обслуживает три режима одним кодом:
-     - собственные сессии (`mode: 'self'`, `fixedUid = actor.id`);
-     - сессии конкретного пользователя (`mode: 'user'`, `fixedUid = targetUid`; для чужого `uid` проверяет `checkGrants(actor, gSession.select, { ownerId: fixedUid })` и существование аккаунта с учётом `gAuth.selectDeleted`);
-     - глобальный журнал сессий (`mode: 'global'`, `fixedUid = null`; требует `checkGrants(actor, gSession.select)`).
-   - Собирает серверный `Filter` для `#lib/db`:
-     - `auth_id` (`eq` для фиксированного пользователя либо `in` по выбранным `uids` в глобальном списке);
-     - текстовый поиск `q` (`or` по `device_name icontains`, `country icontains`, а в глобальном списке при праве `gProfile.select` — дополнительно `exists` по `profile.nickname`);
-     - `state`: `'active'` (`expires_at > nowIso` на живых строках), `'expired'` (`expires_at <= nowIso` на живых строках), `'all'` (все живые), `'deleted'` (`includeDeleted: true` и `deleted_at >= iso(0)` при наличии `gSession.selectDeleted`);
-     - `country` (`icontains` / `eq`) и `changed === true` (`{ field: 'subnet_history', op: 'ne', value: [] }`).
-   - Выполняет параллельно `[api.select(ctx, { page, limit: pageSize, filter, order, includeDeleted }), api.count(ctx, { filter, includeDeleted })]`, проецирует строки в `SessionItemView` (с вычисленным `status: 'active' | 'expired' | 'revoked'` и `isCurrent: row.id === actor.sessionId`) и возвращает срез вместе с флагами прав `canSeeLive`, `canSeeDeleted`, `canPickUsers`, `canRevokeAny`.
-
-2. **`readSessionDetail(actor, { sessionId, expectedUid? }, deps?)`**
-   - Вызывает `api.get(ctx, sessionId, { includeDeleted: canSeeDeleted })`.
-   - Ошибки `not_found` / `forbidden` (включая попытку обычного пользователя запросить чужой UUID) единообразно маппятся в факт `{ code: 'auth.session-unknown' }` — чужой идентификатор неотличим от несуществующего.
-   - Возвращает `SessionDetailView`: данные сессии (`SessionItemView`), права `canRename`, `canRevoke`, `canHardDelete` (через `checkGrants(actor, grants(session), { ownerId: row.auth_id })`) и `holdSeconds` из конфига модуля.
-
-3. **`renameSessionDevice(actor, { sessionId, deviceName }, deps?)`**
-   - Нормализует пустую строку в `null`, вызывает `api.update(ctx, sessionId, { device_name })` напрямую под контекстом `ctx`.
-
-4. **`revokeSessionById(actor, { sessionId, hard? }, deps?)`**
-   - Вызывает `api.delete(ctx, sessionId, hard ? { hard: true } : undefined)` напрямую под контекстом `ctx`.
-   - Возвращает `{ revokedCurrent: sessionId === actor.sessionId }`: если пользователь отозвал сессию текущего браузера, маршрутный/форменный обработчик вызывает `u.clearCookies()` и возвращает клиентской форме шаг `{ step: 'entry' }`.
-
-5. **`revokeBulkSessions(actor, { uid, scope: 'others' | 'all' }, deps?)`**
-   - Выполняется внутри `database.transaction(async (tx) => ...)`: выбирает живые сессии пользователя `uid` через `tx.resource(session).select(ctx, { filter })` (при `scope === 'others'` добавляет `{ field: 'id', op: 'ne', value: actor.sessionId }`) и отзывает каждую строку вызовом `tx.resource(session).delete(ctx, row.id)`.
-   - Возвращает `{ count, revokedCurrent: scope === 'all' && uid === actor.id }`.
-
-### 3.4. Что остаётся за `logout` / `logoutAll` и системным `SessionStorePort`
-
-- При живом `actor` штатные кнопки выхода (`logout` / `logoutAll`) отзывают сессию через ту же прямую модель под `principalOfRow(actor)`.
-- Системный `SessionStorePort` (`SYSTEM`) сохраняется **только для внутренних операций без актора-человека**:
-  - создание строки на входе и восстановлении (`create`);
-  - чтение и ротация по секретному `jti` внутри `guard` и `renew` (`get`, `save`);
-  - аварийное гашение сессии по сырой куке `auth_sid` (`softDelete`, `softDeleteAllByAuth`), когда короткий `access` уже истёк, а аккаунт заблокирован или ожидает удаления;
-  - фоновая зачистка удалённых аккаунтов `sweepDeletions`.
-
----
-
-## 4. Компоненты, маршруты и модальные пары (поверх готовых механизмов)
-
-Архитектура UI повторяет канон `user.block` и `SeedUsersList`: **конечный компонент сам догружает данные через `preloadData` своего маршрута при открытии в модалке и принимает `initial` при SSR/no-JS на странице, а модалка и `+page.svelte` остаются тонкими носителями с `Acl`**.
-
-### 4.1. Источник пагинатора и ревизия (`src/content/user/ui/sessions-list/`)
-
-- `source.ts`:
-  - `SESSIONS_NAME = 'user-sessions'`, `SESSIONS_PAGE_PARAM = 'sessions'`, `SESSIONS_PAGE_SIZE = 30`, `SESSIONS_PAGE_SIZES = 30..100`;
-  - `SESSIONS_FILTER_KEYS = ['ord', 'state', 'country', 'changed', 'uids']` + внутренний ключ `_uid` (`'_self'` для `/user/sessions`, UUID для `/user/[id]/sessions`, пусто для `/sessions`);
-  - `defineSource<SessionItemView>` + `definePaginator` + `createUrlAdapter` (`#lib/paginate/index.js`).
-- `load.server.ts`:
-  - `loadSessionsRouteData(event, target: 'self' | { uid: string } | 'global')` — выставляет `Cache-Control: private, no-store`, разбирает параметры `sessions.*` и вызывает `listSessionsPage`.
-- `revision.svelte.ts`:
-  - `getSessionsRevision()` / `bumpSessionsRevision()` — реактивное инвалидирование открытого списка после переименования или отзыва в дочерней модалке (аналог `blocks-list/revision.svelte.ts`).
-
-### 4.2. Переиспользуемые компоненты и новые экраны (`src/content/user/ui/`)
-
-| Компонент | Что переиспользует | Назначение |
+| Поле | Чтение | Запись человеком |
 |---|---|---|
-| `SessionsList.svelte` + `sessions-list/SessionCard.svelte` | `PaginatorScope`, `Paginator` (`mode="accumulate"`), `SearchBar`, `Skeleton` (`#components/paginator`), `Button`, `Badge`, `TimeAgo` (`#components/ui`), `useGrants(grants(session))`, `useModalLink` | Универсальный список сессий (свои / целевого аккаунта / глобальный). На строке: название устройства, `Badge` «Это устройство» (`isCurrent`), `Badge` статуса (`Активна` / `Истекла` / `Отозвана`), страна и `8`-символьный префикс `subnetHash`, индикатор смены подсети (`history.length`), `TimeAgo` последней активности. В шапке: `SearchBar`, кнопка «Фильтры (N)» и кнопка массового завершения («Завершить остальные» для себя при наличии других активных устройств либо «Завершить все» для чужого аккаунта). |
-| `SessionsModal.svelte` | `Acl`, `SessionsList` | Модальный носитель пары `user.sessions`. |
-| `SessionsFiltersForm.svelte` + `SessionsFiltersModal.svelte` | `#lib/form` (`defineForm`, `bind`, `Form`), `Field`, `Button`, `UserPicker.svelte` (`user.picker` + `mirrorToField`) | Фильтры списка: порядок сортировки (`last-seen-*`, `created-*`, `expires-*`, при `canSeeDeleted` — `deleted-*`), состояние (`active`, `expired`, `all`, при `canSeeDeleted` — `deleted`), фильтр страны, чекбокс «Только со сменой подсети», размер страницы и выбор пользователей через готовый `user.picker` (только в глобальном режиме `/sessions`). |
-| `session-detail/` (`SessionDetail.svelte`, `form.ts`, `session-detail.form.server.ts`) + `SessionDetailModal.svelte` | `bindComponentForm`, `formParams(session).device_name` (`#hooks/db-form`), `Form`, `Field`, `Common`, `Button`, `Badge`, `TimeAgo`, `Alert`, `Skeleton`, `useGrants` | Карточка сессии: подробные метки времени (`createdAt`, `lastSeenAt`, `expiresAt`, `deletedAt`), текущая подсеть и полная история смен подсетей `history` (`hash`, `country`, `TimeAgo`), форма переименования `device_name` (активна при `canRename`, иначе read-only просмотр) и кнопка «Завершить сессию» → `user.sessions.revoke`. |
-| `session-revoke/` (`SessionRevoke.svelte`, `SessionBulkRevoke.svelte`, `form.ts`, `session-revoke.form.server.ts`) + `SessionRevokeModal.svelte`, `SessionBulkRevokeModal.svelte` | `bindComponentForm`, `Form`, `Field`, `Common`, `HoldButton`, `Alert`, `Button`, `Skeleton`, `useGrants` | Подтверждение отзыва одной сессии или пакета сессий удержанием `HoldButton` (`holdSeconds`). Показывает предупреждение `Alert`, если затрагивается текущее устройство (`isCurrent`), и условный чекбокс `hard` («Удалить запись навсегда») только при `useGrants(gSession.hardDelete)`. При отзыве текущей сессии очищает `vault.clear()` и уводит на `next` / закрывает модалку. |
+| `id` | всем, кто видит строку | нет, первичный ключ |
+| `auth_id` | всем, кто видит строку | нет, неизменяемое |
+| `jti`, `version` | только `server` | только `server` |
+| `device_name` | всем, кто видит строку | да, единственное человеческое поле |
+| `subnet_hash`, `country`, `subnet_history`, `last_seen_at`, `expires_at` | всем, кто видит строку | только `server` |
 
-### 4.3. Типизированные маршруты (`routes.ts`) и регистрация модалок (`modals.ts`)
+Фильтры добавляются только те, что нужны этапам 3–4: `auth_id` (`eq`, `in`), `id` (`eq`, `ne`), `device_name` и `country` (`eq`, `icontains`, пустота), `expires_at` и `last_seen_at` (диапазон), `created_at` / `deleted_at` (порядок). Оператор для «была смена подсети» берётся из уже существующего `ne`, если поле `subnet_history` его принимает. Новый оператор не изобретается.
 
-Каждое действие имеет полноценную пару «модалка + SSR-маршрут» для работы как с JavaScript, так и через нативный `GET`/`POST` без JavaScript:
+В каталог добавляется `session.readDeleted` по образцу `block.readDeleted` и встаёт в группу «Сессии». Текст `session.read` больше не обещает отозванные строки.
 
-- `userSelfSessionsRoute` (`/user/sessions`) ↔ `user.sessions` (`{}`): собственные устройства текущего пользователя;
-- `userSessionsRoute` (`/user/[id=uuid]/sessions`) ↔ `user.sessions` (`{ id }`): сессии целевого пользователя;
-- `sessionsListRoute` (`/sessions`) ↔ `user.sessions` (`{ global: true }` / прямой переход): глобальный журнал сессий для `session.read` / `session.edit` / `admin`;
-- `sessionsFiltersRoute` (`/sessions/filters`) ↔ `user.sessions.filters`: страница-fallback и модалка фильтров;
-- `userSessionDetailRoute` (`/user/[id=uuid]/sessions/[sessionId=uuid]`) и `sessionDetailRoute` (`/sessions/[sessionId=uuid]`) ↔ `user.sessions.detail`;
-- `userSessionRevokeRoute` (`/user/[id=uuid]/sessions/[sessionId=uuid]/revoke`) и `sessionRevokeRoute` (`/sessions/[sessionId=uuid]/revoke`) ↔ `user.sessions.revoke`;
-- `userSelfSessionsRevokeAllRoute` (`/user/sessions/revoke-all`) и `userSessionsRevokeAllRoute` (`/user/[id=uuid]/sessions/revoke-all`) ↔ `user.sessions.revoke-bulk`.
+`user.auth.v1` переводится на `defineAcl` без смены круга: владелец читает и мягко удаляет свою строку, создаёт только `server`, правка — `admin` / `server`, удалённые — `account.readDeleted` / `admin` / `server`. Гостевой записи по-прежнему нет. Если `validateResourceAcl` потребует `allowAnomalies`, перевод останавливается: аномалию не разрешать молча.
 
-### 4.4. Точки входа в существующих компонентах
+Проверка: `validateResourceAcl` для `session` и `auth` без нарушений; владелец не читает `jti` и не пишет `expires_at`; `npm run check`, затронутые тесты схемы и прав, `npm run test:guard`.
 
-1. **`src/content/user/ui/MenuBody.svelte`**:
-   - кнопка «Устройства» (`asModalLink('user.sessions')`) для каждого вошедшего пользователя рядом с «Профиль» и «Настройки»;
-   - кнопка «Все сессии» (`asModalLink('user.sessions', { global: '1' })` / `/sessions`) при `useGrants(grants(session).select).current` (по аналогии с «Серверы хранилища»).
-2. **`src/content/user/ui/Profile.svelte`**:
-   - кнопка «Сессии» (`asModalLink('user.sessions', data.isOwn ? {} : { id: uid })`) рядом с «Настройки» и «Блокировки» в обоих состояниях карточки профиля (заполненной и «профиль не создан»), видимая при `data.isOwn || useGrants(grants(session).select, { ownerId: () => uid }).current`.
+Коммит: `feat(user): права сессий на defineAcl`.
+
+README `src/content/user`: строка схемы обновляется в этом коммите.
 
 ---
 
-## 5. Проверка и покрытие тестами при реализации
+## Этап 2. Прямые функции, без `jti` снаружи
 
-1. **Инварианты схемы и ACL (`schema.test.ts`, `acl.test.ts`, `permissions.test.ts`)**:
-   - `validateResourceAcl(session)` и `validateResourceAcl(auth)` возвращают `0` нарушений;
-   - проверка клауз `grants(session)` через `checkGrants`: владелец видит и мягко удаляет свои строки, меняет только `device_name`, не видит удалённые, не может делать `insert`, `hardDelete`, `restore` и никогда не читает `jti` / `version`.
-2. **Прямое исполнение на PGlite (`policy.test.ts` и `sessions.test.ts`)**:
-   - чтение, фильтрация (`active` / `expired` / `deleted` / `changed` / `country`), переименование `device_name`, одиночный отзыв и пакетный отзыв «остальных» / «всех» устройств напрямую через `db.resource(session)` под контекстом владельца, `session.read`, `session.edit`, `session.read + session.readDeleted` и `admin`;
-   - проверка маскирования `jti` и `version` (`undefined` для всех человеческих ролей, включая `admin`) и неотличимости чужого `sessionId` (`auth.session-unknown`).
-3. **Обновление `emulate.test.ts`**:
-   - замена старых проверок `listSessions` / `revokeSession(jti)` на прямые сценарии модели `session` и проверку `guard` → `sessionId` + отзыва текущей/соседней сессии.
+Серверные функции в `src/content/user/sessions.server.ts`. Контекст — `principalOfRow(actor)`, не `SYSTEM`. Зависимости `{ db, now }` принимаются так же, как в тестах хранилища, чтобы гонять PGlite без кук.
+
+`actor()` дополняется `sessionId`. Для этого `SessionRecord` и адаптер строки получают `id`. `guard` уже загружает запись по `jti` куки; наружу уходит только `id`.
+
+Функции:
+
+- `listSessionsPage` — свои, одного аккаунта или общий журнал. Чужой аккаунт проверяется правом чтения и существованием строки `auth`. Состояния: живые, истёкшие, все живые, отозванные. Отозванные запрашиваются только при `selectDeleted`.
+- `readSessionDetail` — `get` по `id`. Отказ и чужая строка дают `auth.session-unknown`.
+- `renameSessionDevice` — `update` только `device_name`. Пустая строка становится `null`.
+- `revokeSessionById` — мягкое `delete`, либо жёсткое, если у актора есть `hardDelete`. Отзыв текущей сессии возвращает признак, по которому обработчик чистит куки.
+- `revokeBulkSessions` — в одной транзакции, scope `others` или `all`. Текущая строка исключается только в `others`.
+
+`listSessions`, `revokeSession` и `SessionView` с полем `jti` удаляются из `auth.ts` и фасада. `SessionStorePort.listByAuth` остаётся у фаервола, экраны его не зовут.
+
+Живые `logout` и `logoutAll` при известном акторе гасят строки через ту же модель. Гашение по сырой куке, когда короткого токена уже нет, остаётся на `SYSTEM`.
+
+Проверка: PGlite-сценарии владельца, `session.read`, `session.edit`, `session.readDeleted` и `admin`; `jti` отсутствует в человеческой проекции; чужой uuid не отличим от пустого. `emulate.test.ts` переводится со старых обёрток на эти функции. Вход и `renew` не меняют поведение.
+
+Коммит: `feat(user): сессии напрямую через модель`.
+
+README `src/content/user`: строка `auth.ts` больше не обещает `listSessions` / `revokeSession`.
+
+---
+
+## Фильтры списка
+
+Одна форма на свой список и на журнал. Поля не прячутся за `admin`: их видит и владелец своих строк. Журнал без uid — это все сессии, которые актор вправе читать (`journal`, нужно `session.read`). Пустой `authId` в функции сам по себе журналом не является: без флага это свои устройства. Гость на журнале получает отказ `Acl`, не пустой список.
+
+- Состояние: «Только живые» (умолчание, в адрес не пишется), «Истёкшие», «Все не отозванные». «Отозванные» только при `session.readDeleted`.
+- Смена сети: чекбокс «Только со сменой». Выключен — в адрес не пишется. Оператор — уже существующий `ne` на `subnet_history`. Обратного пункта нет.
+- Страна: multiselect стран, которые есть в текущем срезе, плюс «Неизвестно», если есть пустая страна. Выбранные значения соединяются через `or`: `eq` на код и `isNull` для неизвестной. Оператора `in` у поля нет, новый не заводится. Пункты считаются по срезу без самого фильтра страны, иначе выбор одной страны сотрёт остальные. Имена стран в коде нет: в списке пока код `geoRegion`. Подписи с CDN — позже, фильтр от словаря не зависит.
+- Создан: с / по. Поля `created_at` уже принимают `gte` / `lte`.
+- Последняя активность: с / по. Поля `last_seen_at` уже принимают диапазон. Пустая активность в диапазон не попадает.
+- Элементов на страницу: 30–100. Это не причина кнопки, а то же поле, что у seed-списка.
+
+Дата «с» позже «по» — ошибка формы, запрос не уходит. Умолчания в адрес не пишутся.
+
+---
+
+## Этап 3. Свои устройства
+
+Только текущий пользователь. Чужой журнал и жёсткое удаление не делаются.
+
+- Маршрут `/user/sessions` и модалка `user.sessions`.
+- `SessionsList` на `Surface` по контракту [`docs/design/lists.md`](design/lists.md), не по `BlocksList`: название, бейдж «Это устройство», статус «Активна» / «Истекла», страна, короткий префикс хеша подсети, признак смены подсети, время активности. Лента `accumulate`. Нажатие задаёт носитель через `rowAttrs`.
+- В `controls` — «Фильтры», если они есть, и «Завершить остальные», когда есть другие живые устройства. Отправка не поднимается в шапку.
+- Карточка устройства: переименование `device_name` формой компонента. Правила поля берутся из схемы, не копируются вручную.
+- Отзыв одной сессии и отзыв остальных — удержание `HoldButton`. Если задета текущая сессия, после успеха куки чистятся и клиент уходит на вход.
+- Точки входа: «Устройства» в `MenuBody` рядом с профилем; «Сессии» в `controls` профиля для своего аккаунта. `MenuBody` на `Surface` не переводится.
+
+Без JS страница и `POST` работают. Модалка догружает тот же `load`.
+
+Проверка: SSR списка видит одну форму отзыва, не видит `jti`; `npm run check`, `npm run test:guard`. Браузерный `auth.mjs` — если набор есть в дереве.
+
+Коммит: `feat(user): экран своих устройств`.
+
+---
+
+## Этап 4. Чужой аккаунт и журнал
+
+- `/user/[id]/sessions` — сессии выбранного аккаунта. Кнопка в профиле видна владельцу или при `session.read` / `session.edit`.
+- `/sessions` — общий журнал без uid: все сессии, которые актор вправе читать. Та же форма фильтров, что на своём списке. Сверх неё — выбор пользователей через уже готовый `user.picker`. Состояние «отозванные» только при `session.readDeleted`.
+- «Завершить все» для чужого аккаунта — у держателя `session.edit`.
+- Чекбокс «Удалить запись навсегда» рисуется только при `hardDelete`. Владелец его не видит.
+- Детальная карточка показывает времена и историю подсетей. Секретов в ней нет.
+
+Проверка: читатель без `session.readDeleted` не видит отозванные; держатель `session.edit` не делает `hard`; гость на `/sessions` получает отказ `Acl`, а не пустой список. `npm run check`, `npm run test:guard`.
+
+Коммит: `feat(user): журнал сессий`.
+
+---
+
+## Не делать в этом плане
+
+- Планировщик `sweepDeletions`, вторая защита `security`, крон, хранилище и дедупликация.
+- Смена криптографии входа, формата куки и ротации `renew`.
+- Перевод `MenuBody` на `Surface`.
+- Новый порт «управления сессиями» поверх модели.
+- Публикация тега `modules` и выкладка площадок.

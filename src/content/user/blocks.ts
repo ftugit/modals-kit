@@ -109,7 +109,11 @@ export async function listBlocksPage(
   if (!caps.canSeeLive) return fail({ code: 'auth.forbidden' })
 
   if (fixedUid && !isOwnTarget) {
-    const target = await ports.auths.get(fixedUid)
+    const target = await ports.auths.get(
+      principalOfRow({ id: g.sub, permissions: g.perms }),
+      fixedUid,
+      caps.canSeeDeletedAccounts ? { includeDeleted: true } : undefined,
+    )
     if (!target) return fail({ code: 'auth.identity-unknown' })
     if (target.deletedAt !== null && !caps.canSeeDeletedAccounts) {
       return fail({ code: 'auth.identity-unknown' })
@@ -218,7 +222,11 @@ export async function blockCreateMeta(
   const uid = targetId?.trim() || null
   if (uid) {
     if (uid === g.sub) return fail({ code: 'auth.forbidden' })
-    const target = await ports.auths.get(uid)
+    const target = await ports.auths.get(
+      principalOfRow({ id: g.sub, permissions: g.perms }),
+      uid,
+      caps.canSeeDeletedAccounts ? { includeDeleted: true } : undefined,
+    )
     if (!target) return fail({ code: 'auth.identity-unknown' })
     if (target.deletedAt !== null && !caps.canSeeDeletedAccounts) {
       return fail({ code: 'auth.identity-unknown' })
@@ -335,7 +343,7 @@ export async function saveBlock(
     if (targets.length === 0) return fail({ code: 'auth.identity-unknown' })
 
     for (const targetId of targets) {
-      const target = await ports.auths.get(targetId)
+      const target = await ports.auths.get(ctx, targetId)
       if (!target) return fail({ code: 'auth.identity-unknown' })
     }
 

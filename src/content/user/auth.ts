@@ -375,7 +375,7 @@ export async function guard(
   const now = ports.clock.now()
   const status = statusOf(record, now)
   if (status === 'unknown' || !record) return { code: 'auth.session-unknown' }
-  const auth = await ports.auths.get(payload.sub)
+  const auth = await ports.auths.get(SERVER, payload.sub, { includeDeleted: true })
   if (!auth || auth.seed === null) return { code: 'auth.identity-unknown' }
   if (fullBlock(await blocksOf(ports, auth.id), now)) return { code: 'auth.blocked' }
   if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
@@ -442,7 +442,7 @@ export async function renew(
   if (status === 'unknown') return fail({ code: 'auth.session-unknown' })
   const session = record as SessionRecord
 
-  const auth = await ports.auths.get(session.authId)
+  const auth = await ports.auths.get(SERVER, session.authId, { includeDeleted: true })
   if (!auth || auth.seed === null) return fail({ code: 'auth.identity-unknown' })
   if (fullBlock(await blocksOf(ports, auth.id), now)) return fail({ code: 'auth.blocked' })
   if (auth.deletedAt !== null) return fail({ code: 'auth.delete-pending' })
@@ -540,7 +540,7 @@ export async function logoutAll(
     if (t && t.k === 'renewal') {
       const record = await ports.sessions.get(t.jti)
       if (record && statusOf(record, now) === 'ok') {
-        const auth = await ports.auths.get(record.authId)
+        const auth = await ports.auths.get(SERVER, record.authId, { includeDeleted: true })
         if (auth && !fullBlock(await blocksOf(ports, auth.id), now) && auth.deletedAt === null) {
           await ports.sessions.softDeleteAllByAuth(record.authId, now)
           return ok(null)
@@ -570,7 +570,7 @@ export async function requestDelete(
     if (t && t.k === 'renewal') {
       const record = await ports.sessions.get(t.jti)
       if (record && statusOf(record, now) === 'ok') {
-        const auth = await ports.auths.get(record.authId)
+        const auth = await ports.auths.get(SERVER, record.authId, { includeDeleted: true })
         if (auth && !fullBlock(await blocksOf(ports, auth.id), now) && auth.deletedAt === null) {
           sub = record.authId
         }
@@ -578,7 +578,11 @@ export async function requestDelete(
     }
   }
   if (!sub) return fail(g as AuthFact)
-  await ports.auths.markDeleted(sub, now)
+  await ports.auths.markDeleted(
+    principalOfRow({ id: sub, permissions: !('code' in g) ? g.perms : [] }),
+    sub,
+    now,
+  )
   await ports.sessions.softDeleteAllByAuth(sub, now)
   return ok(null)
 }

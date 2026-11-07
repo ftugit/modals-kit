@@ -45,7 +45,7 @@ export async function setPermissions(
   const unknown = list.find((p) => p !== ADMIN_ROLE && p !== MODERATOR_ROLE && !isPermission(p))
   if (unknown !== undefined) return fail({ code: 'permissions.unknown', args: { value: unknown } })
 
-  const target = await ports.auths.get(targetId)
+  const target = await ports.auths.get(principalOfRow({ id: g.sub, permissions: g.perms }), targetId)
   if (!target) return fail({ code: 'auth.identity-unknown' })
 
   // Запись — от имени администратора: маска поля проверяет роль ещё раз.

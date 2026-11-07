@@ -38,6 +38,7 @@ function makePorts() {
   const auths = new Map<string, AuthRow & { blocked: Blocked[] }>()
   const sessions = new Map<string, SessionRecord>()
   const profileRows = new Map<string, ProfileView>()
+  const configRows: import('./types.js').ConfigKeyRow[] = []
   const created = new Map<string, number>()
   let lastCtx: unknown = null
   let lastListArgs: unknown = null
@@ -96,10 +97,13 @@ function makePorts() {
         created.set(row.id, created.size + 1)
         return row
       },
-      async get(id: string) {
-        return auths.get(id)
+      async get(_ctx: unknown, id: string, opts?: { includeDeleted?: boolean }) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
       },
-      async markDeleted(id: string) {
+      async markDeleted(_ctx: unknown, id: string) {
         const r = auths.get(id)
         if (r) auths.set(id, { ...r, deletedAt: Date.now() })
       },
@@ -150,8 +154,19 @@ function makePorts() {
           updatedAt: 1700000000000,
         })
       },
-      async get(_ctx: unknown, authId: string) {
-        return profileRows.get(authId)
+      async get(ctx: { principal?: { id?: string; roles?: readonly string[] } }, authId: string) {
+        const row = profileRows.get(authId)
+        if (!row) return undefined
+        const principal = ctx?.principal
+        if (principal?.id === authId) return row
+        const roles = principal?.roles ?? []
+        if (roles.includes('profile.read') || roles.includes('admin') || roles.includes('server')) return row
+        const own = configRows.find((r) => r.authId === authId && r.key === 'profile.visibility')
+        const def = configRows.find((r) => r.authId === null && r.key === 'profile.visibility')
+        const level = own?.value ?? def?.value ?? 'nobody'
+        if (level === 'all') return row
+        if (level === 'users' && principal?.id) return row
+        return undefined
       },
       async update(_ctx: unknown, authId: string, patch: { nickname?: string; avatarUrl?: string | null }) {
         const r = profileRows.get(authId)
@@ -214,23 +229,23 @@ function makePorts() {
       return { defaults, get: async (k: keyof typeof defaults) => defaults[k], set: async () => {}, reset: async () => {} }
     })() as unknown as AuthPorts['config'],
     settings: (() => {
-      const rows: import('./types.js').ConfigKeyRow[] = []
+      const rows = configRows
       let seq = 0
       return {
-        async row(authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
-        async rowsByUser(authId: string | null) { return rows.filter((r) => r.authId === authId) },
-        async defaults() { return rows.filter((r) => r.authId === null) },
-        async anyUserRow(key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
-        async insert(row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async row(_ctx: unknown, authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async rowsByUser(_ctx: unknown, authId: string | null) { return rows.filter((r) => r.authId === authId) },
+        async defaults(_ctx: unknown) { return rows.filter((r) => r.authId === null) },
+        async anyUserRow(_ctx: unknown, key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
+        async insert(_ctx: unknown, row: { authId: string | null; key: string; value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           rows.push({ id: `cfg-${++seq}`, authId: row.authId, key: row.key, value: row.value ?? null, schema: row.schema ?? null })
         },
-        async update(id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
+        async update(_ctx: unknown, id: string, patch: { value?: unknown; schema?: import('./types.js').ConfigKeySchema | null }) {
           const r = rows.find((x) => x.id === id)
           if (!r) return
           if (patch.value !== undefined) r.value = patch.value
           if (patch.schema !== undefined) r.schema = patch.schema
         },
-        async remove(id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
+        async remove(_ctx: unknown, id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
         cache: store.scope('settings-fake'),
       }
     })(),
@@ -462,7 +477,7 @@ describe('UserConfig: срез listUserConfig, сохранение saveUserConf
     const auditReader = await joined(ports, auths, ['config.read', 'account.read', 'account.readDeleted'])
     const victim = await joined(ports, auths)
 
-    await ports.auths.markDeleted(victim.id, Date.now())
+    await ports.auths.markDeleted({ principal: { roles: ['server'] } }, victim.id, Date.now())
 
     expect(fact_(await listUserConfig(ports, reader.access, victim.id)).code).toBe('auth.identity-unknown')
     expect(ok_(await listUserConfig(ports, auditReader.access, victim.id)).uid).toBe(victim.id)

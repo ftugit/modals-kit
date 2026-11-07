@@ -97,10 +97,13 @@ function makeMemoryAuthPorts(withNonceRegistry = true) {
         auths.set(row.id, row)
         return row
       },
-      async get(id) {
-        return auths.get(id)
+      async get(_ctx, id, opts) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
       },
-      async markDeleted(id, at) {
+      async markDeleted(_ctx, id, at) {
         const cur = auths.get(id)
         if (cur) auths.set(id, { ...cur, deletedAt: at })
       },

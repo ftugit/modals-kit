@@ -1,7 +1,7 @@
 /**
- * Конфиг-API: работа с конфиг-моделью (`user.config`, этап 10 плана
- * seed-списка) от системы. Порт исполняет операции системным контекстом,
- * а права проверяет этот API — по схеме ключа из самой модели:
+ * Конфиг-API: работа с конфиг-моделью (`user.config`). Порт принимает
+ * контекст человека. Строку-умолчание, которую модель ему не отдаёт,
+ * читает `SERVER`. Правило ключа проверяет этот API по схеме из модели:
  *
  * - новый ключ умолчания создаёт только администратор (на уровне модели
  *   то же держит роль `insert`); существующее умолчание меняет тот, кто
@@ -20,8 +20,8 @@
  * (`spec-config.ts`). Строки умолчаний API кэширует в области порта и
  * сбрасывает кэш каждой записью умолчания; строки юзеров не кэшируются.
  */
-import { checkGrants, grants } from '#lib/db/index.js'
-import { fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { checkGrants, grants, type DataContext } from '#lib/db/index.js'
+import { SERVER, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import type { AuthFact } from './error.js'
 import { ADMIN_ROLE } from './permissions.js'
 import type { AuthPorts } from './ports.js'
@@ -51,6 +51,7 @@ const GRANT_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
 type Actor = { id: string; perms: readonly string[] }
 
 const toPrincipal = (a: Actor) => principalOfRow({ id: a.id, permissions: a.perms }).principal
+const actorCtx = (a: Actor) => principalOfRow({ id: a.id, permissions: a.perms })
 
 /** Проходит ли актор по списку ролей/прав правила `ConfigKeySchema` (плюс `owner` целевой строки и `admin`). */
 function ruleAllows(a: Actor, targetUserId: string | null, roles: readonly string[] | undefined): boolean {
@@ -88,7 +89,7 @@ const sameValue = (a: unknown, b: unknown): boolean =>
 async function defaultsOf(ports: AuthPorts): Promise<ConfigKeyRow[]> {
   const cached = await ports.settings.cache.get<ConfigKeyRow[]>(DEFAULTS_CACHE_KEY)
   if (cached) return cached
-  const rows = await ports.settings.defaults()
+  const rows = await ports.settings.defaults(SERVER)
   await ports.settings.cache.set(DEFAULTS_CACHE_KEY, rows, Infinity)
   return rows
 }
@@ -110,13 +111,17 @@ async function defaultValueOf(ports: AuthPorts, key: string): Promise<unknown> {
 }
 
 /** Пакетное чтение всех строк одного пользователя (1 SQL-запрос через `rowsByUser` либо fallback по ключам каталога). */
-async function userRowsOf(ports: AuthPorts, userId: string): Promise<Map<string, ConfigKeyRow>> {
+async function userRowsOf(
+  ports: AuthPorts,
+  ctx: DataContext,
+  userId: string,
+): Promise<Map<string, ConfigKeyRow>> {
   if (ports.settings.rowsByUser) {
-    const rows = await ports.settings.rowsByUser(userId)
+    const rows = await ports.settings.rowsByUser(ctx, userId)
     return new Map(rows.map((r) => [r.key, r]))
   }
   const pairs = await Promise.all(
-    ALL_CONFIG_KEYS.map(async (k) => [k, await ports.settings.row(userId, k)] as const),
+    ALL_CONFIG_KEYS.map(async (k) => [k, await ports.settings.row(ctx, userId, k)] as const),
   )
   const map = new Map<string, ConfigKeyRow>()
   for (const [k, row] of pairs) {
@@ -135,14 +140,14 @@ async function checkTargetReachable(
   a: Actor,
   targetUserId: string,
 ): Promise<AuthFact | null> {
-  const target = await ports.auths.get(targetUserId)
+  const canSeeDeleted =
+    a.perms.includes(ADMIN_ROLE) ||
+    (a.perms.includes('account.read') && a.perms.includes('account.readDeleted'))
+  // Свою заявку на удаление владелец через модель не видит — вопрос открыт, чтение остаётся серверным.
+  const target = a.id === targetUserId
+    ? await ports.auths.get(SERVER, targetUserId, { includeDeleted: true })
+    : await ports.auths.get(actorCtx(a), targetUserId, canSeeDeleted ? { includeDeleted: true } : undefined)
   if (!target) return { code: 'auth.identity-unknown' }
-  if (target.deletedAt !== null && a.id !== targetUserId) {
-    const canSeeDeleted =
-      a.perms.includes(ADMIN_ROLE) ||
-      (a.perms.includes('account.read') && a.perms.includes('account.readDeleted'))
-    if (!canSeeDeleted) return { code: 'auth.identity-unknown' }
-  }
   return null
 }
 
@@ -153,7 +158,7 @@ async function checkTargetReachable(
  */
 export async function getEffective(ports: AuthPorts, userId: string | null, key: string): Promise<unknown> {
   if (userId) {
-    const own = await ports.settings.row(userId, key)
+    const own = await ports.settings.row(SERVER, userId, key)
     if (own) return own.value
   }
   return defaultValueOf(ports, key)
@@ -178,7 +183,7 @@ export async function canOpenUserConfig(
 ): Promise<boolean> {
   if (await checkTargetReachable(ports, a, targetUserId)) return false
   if (checkGrants(toPrincipal(a), gConfig.select, { ownerId: targetUserId })) return true
-  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetUserId)])
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, actorCtx(a), targetUserId)])
   const defMap = new Map(defaults.map((r) => [r.key, r]))
   for (const key of ALL_CONFIG_KEYS) {
     const def = defMap.get(key)
@@ -205,7 +210,8 @@ export async function listUserConfig(
   const unreachable = await checkTargetReachable(ports, a, targetId)
   if (unreachable) return fail(unreachable)
 
-  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetId)])
+  const ctx = actorCtx(a)
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, ctx, targetId)])
   const defMap = new Map(defaults.map((r) => [r.key, r]))
   const canReadAll = checkGrants(toPrincipal(a), gConfig.select, { ownerId: targetId })
 
@@ -276,7 +282,8 @@ export async function saveUserConfig(
   const unreachable = await checkTargetReachable(ports, a, targetId)
   if (unreachable) return fail(unreachable)
 
-  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, targetId)])
+  const ctx = actorCtx(a)
+  const [defaults, ownMap] = await Promise.all([defaultsOf(ports), userRowsOf(ports, ctx, targetId)])
   const defMap = new Map(defaults.map((r) => [r.key, r]))
 
   if (args.resetKey) {
@@ -288,7 +295,7 @@ export async function saveUserConfig(
     if (!ruleAllows(a, targetId, own.schema?.deleteUser ?? def?.schema?.deleteUser)) {
       return fail({ code: 'config.rule-forbidden', path: fieldNameOf(key) })
     }
-    await ports.settings.remove(own.id)
+    await ports.settings.remove(ctx, own.id)
     return listUserConfig(ports, accessToken, targetId)
   }
 
@@ -339,13 +346,13 @@ export async function saveUserConfig(
 
   for (const op of planned) {
     if (sameValue(op.nextValue, op.defaultValue)) {
-      if (op.own) await ports.settings.remove(op.own.id)
+      if (op.own) await ports.settings.remove(ctx, op.own.id)
     } else if (op.own) {
       if (!sameValue(op.nextValue, op.own.value)) {
-        await ports.settings.update(op.own.id, { value: op.nextValue })
+        await ports.settings.update(ctx, op.own.id, { value: op.nextValue })
       }
     } else {
-      await ports.settings.insert({ authId: targetId, key: op.key, value: op.nextValue, schema: null })
+      await ports.settings.insert(ctx, { authId: targetId, key: op.key, value: op.nextValue, schema: null })
     }
   }
 
@@ -372,7 +379,7 @@ export async function getUserKey(
     const unreachable = await checkTargetReachable(ports, a, userId)
     if (unreachable) return fail(unreachable)
   }
-  const own = await ports.settings.row(userId, key)
+  const own = await ports.settings.row(actorCtx(a), userId, key)
   return ok({ key, value: own ? own.value : await defaultValueOf(ports, key), assigned: own !== undefined })
 }
 
@@ -394,12 +401,13 @@ export async function createUserKey(
   if (simplifiedSchema !== undefined && !validSchema(simplifiedSchema, true)) return fail({ code: 'permissions.unknown' })
   const unreachable = await checkTargetReachable(ports, a, userId)
   if (unreachable) return fail(unreachable)
-  const existing = await ports.settings.row(userId, key)
+  const ctx = actorCtx(a)
+  const existing = await ports.settings.row(ctx, userId, key)
   if (existing) return setUserKey(ports, accessToken, userId, key, value)
   const def = await defaultRowOf(ports, key)
   if (!ruleAllows(a, userId, def?.schema?.assign)) return fail({ code: 'auth.forbidden' })
   if (sameValue(value, await defaultValueOf(ports, key))) return ok({ stored: false })
-  await ports.settings.insert({ authId: userId, key, value, schema: simplifiedSchema ?? null })
+  await ports.settings.insert(ctx, { authId: userId, key, value, schema: simplifiedSchema ?? null })
   return ok({ stored: true })
 }
 
@@ -419,16 +427,17 @@ export async function setUserKey(
   if ('code' in a) return fail(a)
   const unreachable = await checkTargetReachable(ports, a, userId)
   if (unreachable) return fail(unreachable)
-  const existing = await ports.settings.row(userId, key)
+  const ctx = actorCtx(a)
+  const existing = await ports.settings.row(ctx, userId, key)
   const def = await defaultRowOf(ports, key)
   const roles = existing ? (existing.schema?.editUser ?? def?.schema?.editUser) : def?.schema?.assign
   if (!ruleAllows(a, userId, roles)) return fail({ code: 'auth.forbidden' })
   if (sameValue(value, await defaultValueOf(ports, key))) {
-    if (existing) await ports.settings.remove(existing.id)
+    if (existing) await ports.settings.remove(ctx, existing.id)
     return ok({ stored: false })
   }
-  if (existing) await ports.settings.update(existing.id, { value })
-  else await ports.settings.insert({ authId: userId, key, value, schema: null })
+  if (existing) await ports.settings.update(ctx, existing.id, { value })
+  else await ports.settings.insert(ctx, { authId: userId, key, value, schema: null })
   return ok({ stored: true })
 }
 
@@ -443,11 +452,12 @@ export async function removeUserKey(
   if ('code' in a) return fail(a)
   const unreachable = await checkTargetReachable(ports, a, userId)
   if (unreachable) return fail(unreachable)
-  const existing = await ports.settings.row(userId, key)
+  const ctx = actorCtx(a)
+  const existing = await ports.settings.row(ctx, userId, key)
   if (!existing) return ok({ stored: false })
   const def = await defaultRowOf(ports, key)
   if (!ruleAllows(a, userId, existing.schema?.deleteUser ?? def?.schema?.deleteUser)) return fail({ code: 'auth.forbidden' })
-  await ports.settings.remove(existing.id)
+  await ports.settings.remove(ctx, existing.id)
   return ok({ stored: false })
 }
 
@@ -466,16 +476,17 @@ export async function setDefault(
   const a = await actorOf(ports, accessToken)
   if ('code' in a) return fail(a)
   if (patch.schema !== undefined && !validSchema(patch.schema, false)) return fail({ code: 'permissions.unknown' })
+  const ctx = actorCtx(a)
   const existing = await defaultRowOf(ports, key)
   if (existing) {
     if (!ruleAllows(a, null, existing.schema?.editDefault)) return fail({ code: 'auth.forbidden' })
-    await ports.settings.update(existing.id, {
+    await ports.settings.update(ctx, existing.id, {
       ...(patch.value !== undefined ? { value: patch.value } : {}),
       ...(patch.schema !== undefined ? { schema: patch.schema } : {}),
     })
   } else {
     if (!checkGrants(toPrincipal(a), gConfig.insert)) return fail({ code: 'auth.forbidden' })
-    await ports.settings.insert({
+    await ports.settings.insert(ctx, {
       authId: null,
       key,
       ...(patch.value !== undefined ? { value: patch.value } : {}),
@@ -497,8 +508,9 @@ export async function deleteDefaultKey(
   const existing = await defaultRowOf(ports, key)
   if (!existing) return ok({ stored: false })
   if (!ruleAllows(a, null, existing.schema?.editDefault)) return fail({ code: 'auth.forbidden' })
-  if (await ports.settings.anyUserRow(key)) return fail({ code: 'auth.forbidden' })
-  await ports.settings.remove(existing.id)
+  const ctx = actorCtx(a)
+  if (await ports.settings.anyUserRow(ctx, key)) return fail({ code: 'auth.forbidden' })
+  await ports.settings.remove(ctx, existing.id)
   await invalidateDefaults(ports)
   return ok({ stored: false })
 }
