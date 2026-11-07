@@ -21,9 +21,9 @@
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
   import {
     tryUseModals,
-    useIsMobile,
     type HostFloatingCloseReason,
   } from '#lib/modals/svelte/index.js'
+  import { useIsMobile } from '#hooks/mobile.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import { userAuthRoute, userMenuRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'

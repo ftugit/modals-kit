@@ -23,6 +23,7 @@
   } from '#lib/modals/index.js'
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'
   import { report } from '#hooks/app-errors.svelte.js'
+  import { useIsMobile } from '#hooks/mobile.svelte.js'
   import { ModalHost } from '#lib/modals/svelte/index.js'
   import { BackdropCloseIcon, ModalError, Skeleton } from '#components/modals/index.js'
 
@@ -37,6 +38,7 @@
     children: Snippet
   }
   let { scope, sources, foreignNames, cacheScope, children }: Props = $props()
+  const narrow = useIsMobile()
 
   /** Набор источников под выбранные имена. */
   function sourcesFor(names: readonly string[]): Record<string, ChainStorage> {
@@ -111,7 +113,7 @@
   backdropClick="top"
   tailCount={3}
   maxHeight="80vh"
-  mobileBreakpoint={768}
+  isNarrow={narrow.matches}
   defaultMobile="bottom"
 >
   {#snippet skeleton()}

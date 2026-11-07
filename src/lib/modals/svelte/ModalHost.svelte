@@ -35,7 +35,7 @@
     setModalsContext, setOverlayContainer, tryUseModals,
     type HostFloatingCloseReason, type HostFloatingOptions, type HostFlowOptions,
   } from './context'
-  import { useIsMobile } from './media.svelte'
+
   import { DEV } from 'esm-env'
   import { createReactiveStore } from './store.svelte'
   import {
@@ -80,8 +80,13 @@
     closeIconSlot?: Snippet
     /** Приёмник системных ошибок модалок (Q1): подключается на жизнь хоста. */
     onError?: (e: import('../types').LibError) => void
+    /**
+     * Окно уже в узком режиме. Хост сам ширину не читает: приложение передаёт
+     * `useIsMobile().matches`. Без флага лист, цепочка потока и хвосты не включаются.
+     */
+    isNarrow: boolean
   }
-  let { modals, scope, children, skeleton, error, closeIconSlot, onError, foreignNames = 'error', ...cfg }: Props = $props()
+  let { modals, scope, children, skeleton, error, closeIconSlot, onError, foreignNames = 'error', isNarrow, ...cfg }: Props = $props()
 
   /** Хост, в поддереве которого мы смонтированы (иначе — мы верхний). */
   const parentHost = tryUseModals()
@@ -333,8 +338,7 @@
 
 
 
-  // Ширина — из CSS `--mobile`, не из `config.mobileBreakpoint`.
-  const narrow = useIsMobile()
+
 
   const active = $derived<ResolvedEntry | null>(
     chain.length > 0
@@ -386,15 +390,15 @@
    * Запись, сказавшая `'off'`, не прижимается и ничего не наследует.
    */
   const anchor = $derived.by<MobileAnchor | undefined>(() => {
-    if (!narrow.matches || !shown) return undefined
+    if (!isNarrow || !shown) return undefined
     if (shown.mobile) return shown.mobile === 'off' ? undefined : shown.mobile
     for (let i = chain.length - 2; i >= 0; i -= 1) {
       const below = resolveEntry(chain[i], i, liveScope.lookup)
       if (below.mobile) return below.mobile === 'off' ? undefined : below.mobile
     }
-    return mobileAnchorOf(shown, narrow.matches, config.defaultMobile)
+    return mobileAnchorOf(shown, isNarrow, config.defaultMobile)
   })
-  const direction = $derived(resolveTailDirection(config.tailDirection, anchor, narrow.matches))
+  const direction = $derived(resolveTailDirection(config.tailDirection, anchor, isNarrow))
   const locked = $derived(shown?.lock ?? false)
   const fullpage = $derived(shown?.size === 'fullpage')
 
@@ -550,7 +554,7 @@
    * собственный `modalOnNarrow`, иначе он читает настройку хоста.
    */
   const isSheet = (floating: HostFloating): boolean =>
-    narrow.matches && (
+    isNarrow && (
       floating.mode === 'flow' || (floating.modalOnNarrow ?? floatingMobileDefault)
     )
 

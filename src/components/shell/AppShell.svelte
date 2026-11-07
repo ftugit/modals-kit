@@ -7,7 +7,7 @@
   import { usePage, sidebarHasSlots } from './page.svelte'
   import { setShellContext } from './shell.svelte'
   import CollapsingHeader from './CollapsingHeader.svelte'
-  import { useIsMobile } from '#lib/modals/svelte/index.js'
+  import { useIsMobile } from '#hooks/mobile.svelte.js'
   import { createDrawer, labelKeyHandler } from '#hooks/use-drawer.svelte.js'
 
   import type { ShellPrefs } from './prefs'

@@ -207,7 +207,7 @@ describe('modals/svelte component & ModalContent', () => {
     const scope = createRegistry('unmount-focus').define([{ name: 'test.modal', component: Leaf as any }])
     const modals = createModals(memoryCore(memoryStorage(), { lookup: scope.lookup }))
     const target = document.createElement('div'); document.body.appendChild(target)
-    const app = mount(ModalHost as any, { target, props: { modals, scope, children: () => {} } })
+    const app = mount(ModalHost as any, { target, props: { modals, scope, isNarrow: false, children: () => {} } })
     try {
       flushSync(); modals.open('test.modal'); flushSync(); await new Promise((r) => setTimeout(r, 30)); flushSync()
       await unmount(app); await new Promise((r) => setTimeout(r, 60)); flushSync()
@@ -222,7 +222,7 @@ describe('modals/svelte component & ModalContent', () => {
     const scope = createRegistry('closed-unmount').define([{ name: 'test.modal', component: Leaf as any }])
     const modals = createModals(memoryCore(memoryStorage(), { lookup: scope.lookup }))
     const target = document.createElement('div'); document.body.appendChild(target)
-    const app = mount(ModalHost as any, { target, props: { modals, scope, children: () => {} } })
+    const app = mount(ModalHost as any, { target, props: { modals, scope, isNarrow: false, children: () => {} } })
     try {
       flushSync(); modals.open('test.modal'); flushSync(); await new Promise((r) => setTimeout(r, 30)); flushSync()
       modals.forceCloseAll(); flushSync(); await new Promise((r) => setTimeout(r, 100)); flushSync()
@@ -269,7 +269,7 @@ describe('modals/svelte component & ModalContent', () => {
         scope,
         closeIcon: true,
         backdropClick: 'top',
-        mobileBreakpoint: 768,
+        isNarrow: false,
         children: () => {},
       },
     })
