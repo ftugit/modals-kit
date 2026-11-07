@@ -92,15 +92,6 @@
     nativeLimit: 0,
   }
 
-  /**
-   * Запасной порог, ниже которого список раскрывается слоем, а не popup-menu.
-   *
-   * Используется ТОЛЬКО когда хоста нет: с хостом порог берётся из его
-   * настроек (`config.mobileBreakpoint`), чтобы источник истины был один.
-   * Раньше здесь было захардкожено 1024 против 768 у хоста — в диапазоне
-   * 768–1023 хост уже считал экран широким, а select ещё узким.
-   */
-  export const SELECT_FALLBACK_BREAKPOINT = 1024
 </script>
 
 <script lang="ts">
@@ -121,7 +112,7 @@
   import { flushSync, onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '#components/utils.js'
   import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
-  import { createMediaQuery } from '#lib/modals/svelte/index.js'
+  import { createMediaQuery, useIsMobile } from '#lib/modals/svelte/index.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
   import { inputVariants } from '../field/field'
   import SelectList from './SelectList.svelte'
@@ -235,10 +226,8 @@
   // раскладка пересчитывается сама (см. D17).
   //
   // Порог — из настроек хоста: один источник истины на всю систему.
-  // Граница `breakpoint - 1`, как у createIsNarrow хоста.
-  const narrow = createMediaQuery(
-    () => `(max-width: ${(host?.modals.config.mobileBreakpoint ?? SELECT_FALLBACK_BREAKPOINT) - 1}px)`,
-  )
+  // Тот же узкий экран, что у оболочки и модалки: запрос из CSS `--mobile`.
+  const narrow = useIsMobile()
   const asLayer = $derived(narrow.matches)
 
   /**
@@ -881,9 +870,8 @@
         {/if}
       {:else}
         <!--
-          Фолбэк без хоста. Узкий экран решается здесь тем же живым
-          media query, что и оформление списка (narrowInline): раньше это
-          делал @media-блок в app.css, и порог был продублирован в CSS.
+          Фолбэк без хоста. Узкий экран — тот же `useIsMobile`, что и у списка
+          (narrowInline). Запрос живёт в CSS `--mobile`, не в этом компоненте.
         -->
         <div
           data-select-positioner=""

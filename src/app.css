@@ -64,6 +64,11 @@ html[data-theme="lemonade"] {
   /* Единственный нецветовой токен. Радиус — часть языка интерфейса.
      В `uno.config.ts` его видят утилиты (`rounded-md` = `calc(var(--radius) - 2px)`). */
   --radius: 0.625rem;
+
+  /* Узкий экран. Строка — медиазапрос для `matchMedia`, её читает `useIsMobile`.
+     Совпадает с Uno `max-lg`: breakpoint `lg` = 64rem, верх узкого —
+     `calc(64rem - 0.1px)`. Число в JS не дублировать. */
+  --mobile: (max-width: calc(64rem - 0.1px));
 }
 
 html[data-theme="night"] {

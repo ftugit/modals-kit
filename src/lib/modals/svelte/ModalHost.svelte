@@ -35,7 +35,7 @@
     setModalsContext, setOverlayContainer, tryUseModals,
     type HostFloatingCloseReason, type HostFloatingOptions, type HostFlowOptions,
   } from './context'
-  import { createIsNarrow } from './media.svelte'
+  import { useIsMobile } from './media.svelte'
   import { DEV } from 'esm-env'
   import { createReactiveStore } from './store.svelte'
   import {
@@ -333,7 +333,8 @@
 
 
 
-  const narrow = createIsNarrow(() => config.mobileBreakpoint)
+  // Ширина — из CSS `--mobile`, не из `config.mobileBreakpoint`.
+  const narrow = useIsMobile()
 
   const active = $derived<ResolvedEntry | null>(
     chain.length > 0

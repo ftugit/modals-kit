@@ -7,6 +7,7 @@
   import { usePage, sidebarHasSlots } from './page.svelte'
   import { setShellContext } from './shell.svelte'
   import CollapsingHeader from './CollapsingHeader.svelte'
+  import { useIsMobile } from '#lib/modals/svelte/index.js'
   import { createDrawer, labelKeyHandler } from '#hooks/use-drawer.svelte.js'
 
   import type { ShellPrefs } from './prefs'
@@ -29,7 +30,8 @@
   let asideRef = $state<HTMLElement>()
   let mainRef = $state<HTMLElement>()
 
-  let isNarrow = $state(false)
+  // Узкий экран — тот же запрос, что у `max-lg` / `lg:hidden`. Число здесь не задаётся.
+  const mobile = useIsMobile()
 
   // Позиции прокрутки `<main>` по ключу истории SvelteKit — для Назад/Вперёд
   // между разделами. Навигации внутри одного `pathname` (`?page=`, `?modal=`,
@@ -73,17 +75,12 @@
 
   onMount(() => {
     shell.setMain(mainRef)
-    const mq = window.matchMedia('(max-width: 1023px)')
-    const update = () => (isNarrow = mq.matches)
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
   })
 
   const hasSidebar = $derived(sidebarHasSlots(page.sidebar))
   const drawer = createDrawer({
     input: () => inputRef,
-    isNarrow: () => isNarrow,
+    isNarrow: () => mobile.matches,
   })
 </script>
 

@@ -274,7 +274,10 @@ export interface HostConfig<V = unknown> {
   closeAnimation: CloseAnimation
   /** Анимация укладки неактивных записей. */
   stackAnimation: StackAnimation
-  /** ширина, ниже которой включается мобильный режим */
+  /**
+   * Больше не задаёт ширину. Узкий экран читает CSS `--mobile` через `useIsMobile`.
+   * Поле оставлено, чтобы старые `configure()` и проп хоста не ломались.
+   */
   mobileBreakpoint: number
   /** потолок высоты центрированной модалки, CSS-строка */
   maxHeight?: string

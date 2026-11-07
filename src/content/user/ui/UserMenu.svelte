@@ -20,8 +20,8 @@
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
   import {
-    createIsNarrow,
     tryUseModals,
+    useIsMobile,
     type HostFloatingCloseReason,
   } from '#lib/modals/svelte/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
@@ -61,10 +61,10 @@
   )
 
   /* ── меню: всплывашка на широкой ширине, модалка на узкой ─────────────── */
-  // Порог — из настроек хоста, как у остальных потребителей (Select):
-  // один источник истины. На сервере `matches=false` — рендерится широкая
-  // ветка; узкий клиент после гидратации сам переключится на модальную.
-  const narrow = createIsNarrow(() => host?.view.hostConfig.mobileBreakpoint ?? 768)
+  // Порог — CSS `--mobile`, как у оболочки и модалки. На сервере
+  // `matches=false`: рендерится широкая ветка; узкий клиент после эффекта
+  // сам переключится на модальную.
+  const narrow = useIsMobile()
   const menuHref = userMenuRoute.href()
 
   let triggerEl = $state<HTMLElement | null>(null)
