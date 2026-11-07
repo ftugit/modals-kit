@@ -2,7 +2,6 @@
   import { CookieVault } from '#components/demo/index.js'
   import type { CookieVaultSnapshot } from '#hooks/cookie-vault/index.js'
   import { storageVaultSchema, type StorageVaultMeta } from '../schema.js'
-  import StorageVaultForm from './StorageVaultForm.svelte'
 
   let {
     snapshot,
@@ -18,7 +17,6 @@
 <CookieVault
   schema={storageVaultSchema}
   {snapshot}
-  form={StorageVaultForm}
   {backHref}
   {onChanged}
 >
