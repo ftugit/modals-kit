@@ -25,19 +25,26 @@ import {
   createUserConfig,
   guard as coreGuard,
   issueFreshAccess as coreIssueFreshAccess,
-  listSessions as coreListSessions,
   login as coreLogin,
   logout as coreLogout,
   logoutAll as coreLogoutAll,
   renew as coreRenew,
   requestDelete as coreRequestDelete,
-  revokeSession as coreRevokeSession,
   issueChallenge as coreIssueChallenge,
   restoreDeleted as coreRestoreDeleted,
   verifySeed as coreVerifySeed,
-  type SessionView,
   type UserResult,
 } from './index.js'
+import {
+  listSessionsPage as coreListSessionsPage,
+  readSessionDetail as coreReadSessionDetail,
+  renameSessionDevice as coreRenameSessionDevice,
+  revokeBulkSessions as coreRevokeBulkSessions,
+  revokeSessionById as coreRevokeSessionById,
+  type ListSessionsPageArgs,
+  type RevokeBulkArgs,
+  type SessionActor,
+} from './sessions.server.js'
 import { sign, verify } from './keys.js'
 import { listSeedUsers as coreListSeedUsers, type ListSeedUsersArgs } from './accounts.js'
 import {
@@ -66,7 +73,7 @@ import type { UserConfigSlice } from './types.js'
 import { auth as authRes, block as blockRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { BlockDetailView, BlocksPage, BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionRecord } from './types.js'
+import type { BlockDetailView, BlocksPage, BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionBulkRevokeResult, SessionDetail, SessionDeviceView, SessionRecord, SessionRevokeResult, SessionsPage } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -166,6 +173,7 @@ function authRowOf(r: Record<string, unknown>): AuthRow {
 
 function sessionRowOf(r: Record<string, unknown>): SessionRecord {
   return {
+    id: String(r.id),
     jti: String(r.jti),
     authId: String(r.auth_id),
     deviceName: (r.device_name as string | null) ?? null,
@@ -189,6 +197,7 @@ function sessionsAdapter() {
   return {
     async create(r: SessionRecord): Promise<void> {
       await api().insert(SYSTEM, {
+        id: r.id,
         auth_id: r.authId,
         jti: r.jti,
         device_name: r.deviceName,
@@ -661,7 +670,7 @@ export function auth(event: AuthEvent): {
   /** Вход включён (секрет запечатывания задан)? Иначе форма скрыта, экшены отказывают. */
   readonly enabled: boolean
   /** Текущий подтверждённый субъект и его права (с бесшовным продлением `auth_tmp` по `auth_sid`). */
-  actor(): Promise<UserResult<{ id: string; permissions: readonly string[] }>>
+  actor(): Promise<UserResult<{ id: string; permissions: readonly string[]; sessionId: string }>>
   issueChallenge(): Promise<UserResult<Challenge>>
   login(args: { seed: string; challenge: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
   restoreDeleted(args: { seed: string; challenge: string; signature: string; deviceName?: string }): Promise<UserResult<LoginOutcome>>
@@ -670,10 +679,13 @@ export function auth(event: AuthEvent): {
   refreshAccess(): Promise<UserResult<string>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
-  listSessions(): Promise<UserResult<SessionView[]>>
+  listSessionsPage(args?: ListSessionsPageArgs): Promise<UserResult<SessionsPage>>
+  readSessionDetail(id: string): Promise<UserResult<SessionDetail>>
+  renameSessionDevice(id: string, deviceName: string | null): Promise<UserResult<SessionDeviceView>>
+  revokeSessionById(id: string, opts?: { hard?: boolean }): Promise<UserResult<SessionRevokeResult>>
+  revokeBulkSessions(args: RevokeBulkArgs): Promise<UserResult<SessionBulkRevokeResult>>
   /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
   listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
-  revokeSession(jti: string): Promise<UserResult<null>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
   profile(subject?: string): Promise<UserResult<ProfileRead>>
   /** Публичный показ чужого профиля проекцией (гость допустим), если уровень видимости разрешает. */
@@ -777,12 +789,19 @@ export function auth(event: AuthEvent): {
     return renewed.ok ? renewed.value.access : current
   }
 
+  const sessionActor = (g: { sub: string; perms: readonly string[]; sessionId: string }): SessionActor => ({
+    id: g.sub,
+    permissions: g.perms,
+    sessionId: g.sessionId,
+  })
+  const sessionDeps = () => ({ db, now: () => ports.clock.now() })
+
   return {
     enabled: AUTH_ENABLED,
     actor: async () => {
       const g = await coreGuard(ports, await freshAccessOrCurrent())
       if ('code' in g) return { ok: false, fact: g }
-      return { ok: true, value: { id: g.sub, permissions: g.perms } }
+      return { ok: true, value: { id: g.sub, permissions: g.perms, sessionId: g.sessionId } }
     },
     issueChallenge: () => coreIssueChallenge(ports),
     login: async (args) => {
@@ -808,18 +827,57 @@ export function auth(event: AuthEvent): {
       return r
     },
     logout: async () => {
+      const g = await coreGuard(ports, access())
+      if (!('code' in g)) {
+        const r = await coreRevokeSessionById(sessionActor(g), g.sessionId, sessionDeps())
+        clearCookies()
+        return r.ok ? { ok: true, value: null } : r
+      }
       const r = await coreLogout(ports, access(), renewal())
       clearCookies()
       return r
     },
     logoutAll: async () => {
+      const g = await coreGuard(ports, access())
+      if (!('code' in g)) {
+        const r = await coreRevokeBulkSessions(sessionActor(g), { scope: 'all' }, sessionDeps())
+        clearCookies()
+        return r.ok ? { ok: true, value: null } : r
+      }
       const r = await coreLogoutAll(ports, access(), renewal())
       clearCookies()
       return r
     },
-    listSessions: async () => coreListSessions(ports, await freshAccessOrCurrent()),
+    listSessionsPage: async (args) => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      return coreListSessionsPage(sessionActor(g), args, sessionDeps())
+    },
+    readSessionDetail: async (id) => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      return coreReadSessionDetail(sessionActor(g), id, sessionDeps())
+    },
+    renameSessionDevice: async (id, deviceName) => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      return coreRenameSessionDevice(sessionActor(g), id, deviceName, sessionDeps())
+    },
+    revokeSessionById: async (id, opts) => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      const r = await coreRevokeSessionById(sessionActor(g), id, sessionDeps(), opts)
+      if (r.ok && r.value.current) clearCookies()
+      return r
+    },
+    revokeBulkSessions: async (args) => {
+      const g = await coreGuard(ports, await freshAccessOrCurrent())
+      if ('code' in g) return { ok: false, fact: g }
+      const r = await coreRevokeBulkSessions(sessionActor(g), args, sessionDeps())
+      if (r.ok && r.value.current) clearCookies()
+      return r
+    },
     listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
-    revokeSession: async (jti) => coreRevokeSession(ports, await freshAccessOrCurrent(), jti),
     profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
     publicProfile: async (subject: string) => corePublicProfile(ports, access(), subject),
     setProfileVisibility: async (level: string) =>

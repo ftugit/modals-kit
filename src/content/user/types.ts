@@ -59,6 +59,8 @@ export type SubnetEntry = { hash: string; country: string | null; at: number }
  * «заблокировать устройство» = софт-удаление (deletedAt), отдельных банов нет.
  */
 export type SessionRecord = {
+  /** Первичный ключ строки. Наружу человеку уходит он, не `jti`. */
+  id: string
   jti: string
   authId: string
   deviceName: string | null
@@ -116,6 +118,65 @@ export type Blocked = {  /** Что закрыто: сферы каталога 
   until?: number
   /** id аккаунта, наложившего блокировку (история и аудит). */
   by?: string
+}
+
+/**
+ * Устройство глазами человека. `jti` и `version` сюда не входят: их читает только сервер.
+ * Времена — миллисекунды.
+ */
+export type SessionDeviceView = {
+  readonly id: string
+  readonly authId: string
+  readonly deviceName: string | null
+  readonly subnetHash: string | null
+  readonly country: string | null
+  readonly history: SubnetEntry[]
+  readonly createdAt: number
+  readonly expiresAt: number
+  readonly lastSeenAt: number | null
+  readonly deletedAt: number | null
+  /** Это сессия текущего запроса (`actor.sessionId`). */
+  readonly current: boolean
+}
+
+/** Состояние списка устройств: живые, истёкшие, все не отозванные, отозванные. */
+export type SessionsState = 'active' | 'expired' | 'all' | 'revoked'
+
+/** Порция списка устройств и флаги зрителя на этот срез. */
+export type SessionsPage = {
+  items: SessionDeviceView[]
+  total: number
+  page: number
+  pageSize: number
+  /** Аккаунт среза; `null` — общий журнал. */
+  authId: string | null
+  journal: boolean
+  state: SessionsState
+  canSeeDeleted: boolean
+  canRename: boolean
+  canRevoke: boolean
+  canHardDelete: boolean
+}
+
+/** Одна строка устройства и права на неё. */
+export type SessionDetail = {
+  session: SessionDeviceView
+  canRename: boolean
+  canRevoke: boolean
+  canHardDelete: boolean
+}
+
+/** Итог отзыва одной строки. `current` — обработчик должен снять куки. */
+export type SessionRevokeResult = {
+  id: string
+  current: boolean
+  hard: boolean
+}
+
+/** Итог пакетного отзыва. `current` — среди погашенных была сессия запроса. */
+export type SessionBulkRevokeResult = {
+  revoked: number
+  current: boolean
 }
 
 /** Строка блокировки глазами домена и показа (этап 9): времена — миллисекунды. */

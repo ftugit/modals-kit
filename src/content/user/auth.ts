@@ -300,6 +300,7 @@ async function openSession(
   }
 
   const record: SessionRecord = {
+    id: crypto.randomUUID(),
     jti: randomToken(32),
     authId: row.id,
     deviceName: args.deviceName?.slice(0, 64) || null,
@@ -360,6 +361,8 @@ export async function guard(
 ): Promise<{
   sub: string
   jti: string
+  /** Строка устройства. Наружу из `actor()` уходит она, не `jti`. */
+  sessionId: string
   prof: { nickname: string | null; avatarUrl: string | null }
   /** Выданные аккаунту права (`permissions.ts`) — роли контекста владельца. */
   perms: readonly string[]
@@ -371,14 +374,14 @@ export async function guard(
   const record = await ports.sessions.get(payload.dt)
   const now = ports.clock.now()
   const status = statusOf(record, now)
-  if (status === 'unknown') return { code: 'auth.session-unknown' }
+  if (status === 'unknown' || !record) return { code: 'auth.session-unknown' }
   const auth = await ports.auths.get(payload.sub)
   if (!auth || auth.seed === null) return { code: 'auth.identity-unknown' }
   if (fullBlock(await blocksOf(ports, auth.id), now)) return { code: 'auth.blocked' }
   if (auth.deletedAt !== null) return { code: 'auth.delete-pending' }
   if (status === 'revoked') return { code: 'auth.revoked' }
   if (status === 'expired') return { code: 'auth.expired' }
-  return { sub: payload.sub, jti: payload.dt, prof: payload.prof, perms: auth.permissions }
+  return { sub: payload.sub, jti: payload.dt, sessionId: record.id, prof: payload.prof, perms: auth.permissions }
 }
 
 /** Свежий access под текущей сессией (витрина профиля и текущие права аккаунта). */
@@ -546,55 +549,6 @@ export async function logoutAll(
     }
   }
   return fail(g)
-}
-
-/** Список устройств: имя, времена, текущая подсеть (хэш) и история. */
-export async function listSessions(
-  ports: AuthPorts,
-  accessToken: string | undefined,
-): Promise<UserResult<SessionView[]>> {
-  const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  const rows = await ports.sessions.listByAuth(g.sub)
-  const items: SessionView[] = rows
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map((r) => ({
-      jti: r.jti,
-      deviceName: r.deviceName,
-      subnetHash: r.subnetHash,
-      country: r.country,
-      history: r.history,
-      createdAt: r.createdAt,
-      expiresAt: r.expiresAt,
-      lastSeenAt: r.lastSeenAt,
-    }))
-  return ok(items)
-}
-
-/** Отозвать устройство по jti (чужой jti неотличим от неизвестного). */
-export async function revokeSession(
-  ports: AuthPorts,
-  accessToken: string | undefined,
-  jti: string,
-): Promise<UserResult<null>> {
-  const g = await guard(ports, accessToken)
-  if ('code' in g) return fail(g)
-  const row = await ports.sessions.get(jti)
-  if (!row || row.authId !== g.sub) return fail({ code: 'auth.session-unknown' })
-  await ports.sessions.softDelete(jti, ports.clock.now())
-  return ok(null)
-}
-
-/** Вид сессии для списка устройств (хэш подсети, не адрес). */
-export type SessionView = {
-  jti: string
-  deviceName: string | null
-  subnetHash: string | null
-  country: string | null
-  history: SubnetEntry[]
-  createdAt: number
-  expiresAt: number
-  lastSeenAt: number | null
 }
 
 /* ── удаление аккаунта ── */

@@ -6,16 +6,24 @@
  * формат железа проверяется в e2e, здесь важен контракт порта.
  */
 import { describe, expect, test } from 'vitest'
+import { PGlite } from '@electric-sql/pglite'
+import { conservativeLimits, createDb } from '#lib/db/index.js'
+import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
+import { defineSchema } from '#lib/db/sync/index.js'
 import { memoryStore } from '#lib/cache/index.js'
+import { getEncoder } from '#lib/image/index.js'
+import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
 import { getEncoder } from '#lib/image/index.js'
 import { ensureNodeImageCodecs as ensureWasm } from '#lib/image/node.js'
 import { generateKeyPair, sign } from './keys.js'
 import {
-  SERVER, activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, listSessions, login, logout,
-  logoutAll, renew, requestDelete, restoreDeleted, revokeSession, statusOf, subnetHash,
+  SERVER, activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, login, logout,
+  logoutAll, renew, requestDelete, restoreDeleted, statusOf, subnetHash,
   sweepDeletions, verifySeed, type UserResult,
 } from './auth.js'
 import { profile, updateProfile } from './profile.js'
+import { auth as authResource, session as sessionResource } from './schema.js'
+import { listSessionsPage, readSessionDetail, revokeSessionById } from './sessions.server.js'
 import type { AuthFact } from './error.js'
 import type { AuthPorts, AuthRow } from './ports.js'
 import type { Blocked, ProfileView, SessionRecord } from './types.js'
@@ -389,7 +397,7 @@ describe('фаервол: продление и статусы', () => {
   test('статусы statusOf: ok/revoked/expired/unknown', () => {
     const now = 10_000
     const base: SessionRecord = {
-      jti: 'j', authId: 'a', deviceName: null, subnetHash: null, country: null,
+      id: 'id', jti: 'j', authId: 'a', deviceName: null, subnetHash: null, country: null,
       history: [], createdAt: 0, expiresAt: 20_000, version: 0, deletedAt: null, lastSeenAt: null,
     }
     expect(statusOf(undefined, now)).toBe('unknown')
@@ -446,18 +454,47 @@ describe('выходы и устройства', () => {
     expect(fact_(await renew(ports, { renewal: b.renewal as string })).code).toBe('auth.revoked')
   })
 
-  test('список устройств и отзыв чужого jti', async () => {
-    const { ports, secret } = makePorts()
-    const { seed, secret: sk } = await generateKeyPair()
-    const a = ok_(await doLogin(ports, seed, sk))
-    const b = ok_(await doLogin(ports, seed, sk))
-    const list = ok_(await listSessions(ports, a.access))
-    expect(list).toHaveLength(2)
-    const bJti = JSON.parse(Buffer.from(b.access, 'base64url').toString()).dt as string
-    ok_(await revokeSession(ports, a.access, bJti))
-    expect(fact_(await renew(ports, { renewal: b.renewal as string })).code).toBe('auth.revoked')
-    expect(fact_(await revokeSession(ports, a.access, 'нет-такого')).code).toBe('auth.session-unknown')
-  })
+  test('список устройств и отзыв по id, без jti', async () => {
+    const pg = new PGlite()
+    try {
+      const driver = pgliteAdapter(pg)
+      const resources = [authResource, sessionResource]
+      expect((await defineSchema({ resources }).sync(driver)).status).toBe('ok')
+      const db = createDb({ driver, limits: conservativeLimits, resources })
+      const now = Date.parse('2026-11-07T12:00:00.000Z')
+      const account = await db.resource(authResource).insert(SERVER, { seed: 'c'.repeat(43) })
+      const secretJti = 'device-token-secret-21'
+      const otherJti = 'other-device-token-021'
+      const current = await db.resource(sessionResource).insert(SERVER, {
+        auth_id: account.id,
+        jti: secretJti,
+        expires_at: new Date(now + 60_000).toISOString(),
+        device_name: 'это',
+      })
+      const other = await db.resource(sessionResource).insert(SERVER, {
+        auth_id: account.id,
+        jti: otherJti,
+        expires_at: new Date(now + 60_000).toISOString(),
+        device_name: 'другое',
+      })
+      const actor = { id: String(account.id), permissions: [] as const, sessionId: String(current.id) }
+      const deps = { db, now }
+      const list = ok_(await listSessionsPage(actor, { authId: actor.id }, deps))
+      expect(list.items).toHaveLength(2)
+      expect(JSON.stringify(list)).not.toContain(secretJti)
+      expect(JSON.stringify(list)).not.toContain(otherJti)
+      expect(list.items.some((item) => item.current && item.id === actor.sessionId)).toBe(true)
+      expect(list.items.every((item) => !('jti' in item) && !('version' in item))).toBe(true)
+      ok_(await revokeSessionById(actor, String(other.id), deps))
+      expect(fact_(await readSessionDetail(actor, String(other.id), deps)).code).toBe('auth.session-unknown')
+      const empty = fact_(await readSessionDetail(actor, '', deps))
+      const foreign = fact_(await readSessionDetail(actor, crypto.randomUUID(), deps))
+      expect(empty.code).toBe('auth.session-unknown')
+      expect(foreign.code).toBe(empty.code)
+    } finally {
+      await pg.close()
+    }
+  }, 60_000)
 })
 
 describe('профиль', () => {
