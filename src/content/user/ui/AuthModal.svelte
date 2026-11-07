@@ -65,8 +65,9 @@
 </script>
 
 {#if modalData}
-  <Surface variant="plain" class="w-full p-6">
+  <Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
     <AuthWidget
+      class="min-h-0 flex-1"
       data={modalData}
       mode="modal"
       variant="plain"

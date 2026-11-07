@@ -20,7 +20,7 @@
   import { Paginator, Skeleton } from '#components/paginator/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import {
     acquireScopedStore,
@@ -38,7 +38,7 @@
   import { block as blockResource } from '../schema.js'
   import type { BlockView } from '../types.js'
   import { vault } from '../vault.svelte.js'
-  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
+  import type { UserSurfaceVariant } from './Acl.svelte'
   import BlockCard from './blocks-list/BlockCard.svelte'
   import {
     BLOCKS_EXTRA_DEFAULTS,
@@ -227,48 +227,52 @@
   })
 </script>
 
+{#snippet blocksTitle()}
+  <h2 class="text-lg font-semibold leading-tight tracking-tight">
+    {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
+  </h2>
+  <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
+{/snippet}
+
+{#snippet blocksControls()}
+  {#if canCreate}
+    <Button
+      {...asModalLink(
+        'user.blocks.create',
+        fixedUid ? { uid: fixedUid } : filterUids ? { uids: filterUids } : {},
+      )}
+      size="sm"
+      data-testid="blocks-add-button"
+    >
+      Добавить
+    </Button>
+  {/if}
+  <Button
+    {...asModalLink(
+      'user.blocks.filters',
+      {
+        ...(fixedUid ? { uid: fixedUid } : {}),
+        ...(!fixedUid && filterUids ? { uids: filterUids } : {}),
+      },
+      { href: filtersHref },
+    )}
+    variant="outline"
+    size="sm"
+    data-testid="blocks-filters-open"
+  >
+    Фильтры{#if activeFilters}&nbsp;({activeFilters}){/if}
+  </Button>
+{/snippet}
+
 {#if snapshot}
   <PaginatorScope {store} snapshots={{ [BLOCKS_NAME]: snapshot }}>
-    <section class={cn('flex min-h-0 flex-col', userSurfaceVariants({ variant }), className)} data-testid="blocks-list">
-      <div class="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div class="flex items-baseline gap-2">
-          <h2 class="text-lg font-semibold leading-tight tracking-tight">
-            {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
-          </h2>
-          <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
-        </div>
-
-        <div class="flex items-center gap-2">
-          {#if canCreate}
-            <Button
-              {...asModalLink(
-                'user.blocks.create',
-                fixedUid ? { uid: fixedUid } : filterUids ? { uids: filterUids } : {},
-              )}
-              size="sm"
-              data-testid="blocks-add-button"
-            >
-              Добавить
-            </Button>
-          {/if}
-          <Button
-            {...asModalLink(
-              'user.blocks.filters',
-              {
-                ...(fixedUid ? { uid: fixedUid } : {}),
-                ...(!fixedUid && filterUids ? { uids: filterUids } : {}),
-              },
-              { href: filtersHref },
-            )}
-            variant="outline"
-            size="sm"
-            data-testid="blocks-filters-open"
-          >
-            Фильтры{#if activeFilters}&nbsp;({activeFilters}){/if}
-          </Button>
-        </div>
-      </div>
-
+    <Surface
+      {variant}
+      class={cn('min-h-0', className)}
+      title={blocksTitle}
+      controls={blocksControls}
+      data-testid="blocks-list"
+    >
       <Paginator
         name={BLOCKS_NAME}
         ariaLabel="Список блокировок"
@@ -301,20 +305,20 @@
           </div>
         {/snippet}
       </Paginator>
-    </section>
+    </Surface>
   </PaginatorScope>
 {:else}
-  <section class={cn(userSurfaceVariants({ variant }), className)} aria-busy="true" data-testid="blocks-list-pending">
-    <div class="mb-4 flex items-baseline justify-between gap-3">
+  <Surface {variant} class={className} aria-busy="true" data-testid="blocks-list-pending">
+    {#snippet title()}
       <h2 class="text-lg font-semibold leading-tight tracking-tight">
         {fixedUid ? 'Блокировки пользователя' : 'Блокировки'}
       </h2>
       <span class="text-xs text-muted-foreground">всего: —</span>
-    </div>
+    {/snippet}
     <div class="flex flex-col gap-2">
       {#each [0, 1, 2] as i (i)}
         <Skeleton class="h-9 w-full" />
       {/each}
     </div>
-  </section>
+  </Surface>
 {/if}

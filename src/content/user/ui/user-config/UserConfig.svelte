@@ -13,8 +13,8 @@
   import { readQuery } from '#lib/address/keys.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { Result } from '#lib/form/index.js'
-  import { useSteps } from '#components/steps/index.js'
-  import { Skeleton } from '#components/ui/index.js'
+  import { Steps, useSteps } from '#components/steps/index.js'
+  import { Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { AuthErrorCode } from '../../error.js'
   import {
@@ -25,7 +25,7 @@
   } from '../../spec-config.js'
   import type { UserConfigRouteData, UserConfigSlice } from '../../types.js'
   import { vault } from '../../vault.svelte.js'
-  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from '../Acl.svelte'
   import UserConfigFields from './UserConfigFields.svelte'
 
   interface Props {
@@ -132,6 +132,18 @@
   )
 </script>
 
+{#snippet configSteps()}
+  <Steps host={steps} label="Разделы настроек" />
+{/snippet}
+
+{#snippet configTarget()}
+  {#if slice && !slice.isOwn}
+    <p class="font-mono text-xs text-muted-foreground" data-testid="user-config-target-uid">
+      {slice.uid}
+    </p>
+  {/if}
+{/snippet}
+
 <Acl
   allow="user"
   authorized={isAuthorized}
@@ -140,12 +152,12 @@
   {variant}
   class={className}
 >
-  <section
-    class={cn(
-      'mx-auto flex w-full max-w-md flex-col gap-4 text-left',
-      userSurfaceVariants({ variant }),
-      className,
-    )}
+  <Surface
+    {variant}
+    class={cn('mx-auto w-full max-w-md', className)}
+    title={slice ? (slice.isOwn ? specConfig.ownTitle : specConfig.foreignTitle) : undefined}
+    description={slice && !slice.isOwn ? configTarget : undefined}
+    controls={showStepsNav ? { start: configSteps } : undefined}
     data-testid="user-config-root"
   >
     {#if !slice}
@@ -155,17 +167,6 @@
         <Skeleton class="h-24 w-full" />
       </div>
     {:else}
-      <header class="flex flex-col gap-1">
-        <h2 class="text-base font-semibold">
-          {slice.isOwn ? specConfig.ownTitle : specConfig.foreignTitle}
-        </h2>
-        {#if !slice.isOwn}
-          <p class="font-mono text-xs text-muted-foreground" data-testid="user-config-target-uid">
-            {slice.uid}
-          </p>
-        {/if}
-      </header>
-
       {#if slice.items.length === 0}
         <div class="rounded-lg border border-border p-4 text-sm text-muted-foreground">
           <p class="font-medium text-foreground">{specConfig.emptyTitle}</p>
@@ -177,6 +178,7 @@
             {slice}
             {steps}
             {showStepsNav}
+            embedSteps={false}
             {action}
             {form}
             {doneHref}
@@ -195,5 +197,5 @@
         {/key}
       {/if}
     {/if}
-  </section>
+  </Surface>
 </Acl>

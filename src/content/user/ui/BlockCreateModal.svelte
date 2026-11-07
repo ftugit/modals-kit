@@ -54,11 +54,12 @@
   }
 </script>
 
-<Surface variant="plain" class="w-full p-6">
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
   {#if ldr.data?.enabled === false || effectiveAcl}
     <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
     <BlockForm
+      class="min-h-0 flex-1"
       mode="create"
       {uid}
       {initialSubjects}

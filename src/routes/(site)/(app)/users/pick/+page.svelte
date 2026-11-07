@@ -18,14 +18,12 @@
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref={data.fromHref} />
   {:else}
-    <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
-      <UserPicker
-        mode={data.mode}
-        initialPicked={data.picked}
-        initialUsers={data.initialUsers}
-        fromHref={data.fromHref}
-        targetParam={data.targetParam}
-      />
-    </div>
+    <UserPicker
+      mode={data.mode}
+      initialPicked={data.picked}
+      initialUsers={data.initialUsers}
+      fromHref={data.fromHref}
+      targetParam={data.targetParam}
+    />
   {/if}
 </div>

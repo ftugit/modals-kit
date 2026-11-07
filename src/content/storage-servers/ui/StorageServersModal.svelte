@@ -17,13 +17,14 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<Surface variant="plain" class="w-full p-6">
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
   {#if effectiveAcl === 'auth.forbidden'}
     <Acl model="forbidden" backHref="/" variant="plain" />
   {:else if effectiveAcl}
     <Acl status={effectiveAcl} backHref="/" variant="plain" />
   {:else if ldr.data}
     <StorageServersView
+      class="min-h-0 flex-1"
       initial={ldr.data}
       enabled={ldr.data.enabled}
       doneHref="/"

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
-  import { Skeleton } from '#components/ui/index.js'
+  import { Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { Result } from '#lib/form/index.js'
   import type { AuthErrorCode } from '../../error.js'
   import type { BlockCreateRouteData, BlockEditRouteData } from '../../types.js'
-  import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
+  import type { UserSurfaceVariant } from '../Acl.svelte'
   import BlockFormBody from './BlockFormBody.svelte'
 
   interface Props {
@@ -101,10 +101,10 @@
     <BlockFormBody {...props} initialCreate={createData} initialEdit={editData} />
   {/key}
 {:else}
-  <div class={cn('mx-auto flex w-full max-w-md flex-col gap-3', userSurfaceVariants({ variant: props.variant ?? 'plain' }), props.class)} aria-busy="true" data-testid="block-form-pending">
+  <Surface variant={props.variant ?? 'plain'} class={cn('mx-auto w-full max-w-md', props.class)} aria-busy="true" data-testid="block-form-pending">
     <Skeleton class="h-5 w-44" />
     <Skeleton class="h-9 w-full" />
     <Skeleton class="h-20 w-full" />
     <Skeleton class="h-9 w-36" />
-  </div>
+  </Surface>
 {/if}

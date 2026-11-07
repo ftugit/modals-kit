@@ -37,12 +37,12 @@
   }
 </script>
 
-<Surface variant="plain" class="w-full p-6">
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
   {#if !uid || acl === 'not_found'}
     <Acl model="not_found" backHref="/" variant="plain" />
   {:else if acl}
     <Acl status={acl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else}
-    <Profile {uid} route={ldr.data} variant="plain" onAcl={onAclFor(uid, ldr.data)} />
+    <Profile class="min-h-0 flex-1" {uid} route={ldr.data} variant="plain" onAcl={onAclFor(uid, ldr.data)} />
   {/if}
 </Surface>

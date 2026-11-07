@@ -28,7 +28,7 @@
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
-  import { Badge, Button, Input, Label, Skeleton, Textarea, TimeAgo } from '#components/ui/index.js'
+  import { Badge, Button, Input, Label, Skeleton, Surface, Textarea, TimeAgo } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { useModalLink } from '#hooks/links/index.js'
@@ -40,7 +40,7 @@
   import { describeBlockScope, isBlockScope, specBlocks } from '../../spec-block.js'
   import type { BlockCreateRouteData, BlockEditRouteData } from '../../types.js'
   import { userSession, vault } from '../../vault.svelte.js'
-  import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
+  import type { UserSurfaceVariant } from '../Acl.svelte'
   import { BLOCKS_NAME } from '../blocks-list/source.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from '../UserPicker.svelte'
@@ -410,20 +410,53 @@
   }
 </script>
 
+{#snippet editTitle()}
+  <h2 class="text-base font-semibold">
+    {canSubmit ? 'Редактирование блокировки' : 'Просмотр блокировки'}
+  </h2>
+  {#if editIsDeleted}
+    <Badge variant="destructive">удалена</Badge>
+  {:else if editIsActive}
+    <Badge variant="destructive">активна</Badge>
+  {:else}
+    <Badge variant="outline">снята</Badge>
+  {/if}
+{/snippet}
+
+{#snippet editControls()}
+  {#if canDelete && detail}
+    <Button
+      {...asModalLink(
+        'user.blocks.delete',
+        fixedUid
+          ? { blockId: detail.block.id, uid: fixedUid }
+          : { blockId: detail.block.id },
+      )}
+      variant="outline"
+      size="sm"
+      class="shrink-0 text-destructive"
+      data-testid="block-delete-open"
+    >
+      Удалить
+    </Button>
+  {/if}
+{/snippet}
+
 {#if !ready}
-  <div class={cn('mx-auto flex w-full max-w-md flex-col gap-3', userSurfaceVariants({ variant }), className)} aria-busy="true" data-testid="block-form-pending">
+  <Surface {variant} class={cn('mx-auto w-full max-w-md', className)} aria-busy="true" data-testid="block-form-pending">
     <Skeleton class="h-5 w-44" />
     <Skeleton class="h-9 w-full" />
     <Skeleton class="h-20 w-full" />
     <Skeleton class="h-9 w-36" />
-  </div>
+  </Surface>
 {:else if mode === 'create'}
+  <Surface {variant} class={cn('mx-auto w-full max-w-md', className)} title={specBlocks.addTitle}>
   <Form
     id="user-block-create"
     form={bound}
     hiddenFields={bound.hidden()}
     onsubmit={guardSubmit}
-    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
+    class="flex flex-col gap-4 text-left"
     data-testid="block-form-create"
   >
     <Common errors={bound.common} title="Проверьте форму" />
@@ -432,8 +465,6 @@
       <Field of={bound.f.block_id} />
       <Field of={bound.f.subject} />
     </div>
-
-    <h2 class="text-base font-semibold">{specBlocks.addTitle}</h2>
 
     {#if !fixedUid}
       <div class="flex flex-col gap-2" data-testid="block-create-subject-row">
@@ -522,13 +553,20 @@
       </div>
     {/if}
   </Form>
+  </Surface>
 {:else if detail}
+  <Surface
+    {variant}
+    class={cn('mx-auto w-full max-w-md', className)}
+    title={editTitle}
+    controls={canDelete ? editControls : undefined}
+  >
   <Form
     id="user-block-edit"
     form={bound}
     hiddenFields={bound.hidden()}
     onsubmit={guardSubmit}
-    class={cn('mx-auto flex w-full max-w-md flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
+    class="flex flex-col gap-4 text-left"
     data-testid="block-form-edit"
     data-readonly={!canSubmit || undefined}
   >
@@ -540,38 +578,6 @@
       <Field of={bound.f.scope} />
       {#if !canEditReason}
         <Field of={bound.f.reason} />
-      {/if}
-    </div>
-
-    <div class="flex items-start justify-between gap-2">
-      <div class="flex flex-wrap items-center gap-2">
-        <h2 class="text-base font-semibold">
-          {canSubmit ? 'Редактирование блокировки' : 'Просмотр блокировки'}
-        </h2>
-        {#if editIsDeleted}
-          <Badge variant="destructive">удалена</Badge>
-        {:else if editIsActive}
-          <Badge variant="destructive">активна</Badge>
-        {:else}
-          <Badge variant="outline">снята</Badge>
-        {/if}
-      </div>
-
-      {#if canDelete}
-        <Button
-          {...asModalLink(
-            'user.blocks.delete',
-            fixedUid
-              ? { blockId: detail.block.id, uid: fixedUid }
-              : { blockId: detail.block.id },
-          )}
-          variant="outline"
-          size="sm"
-          class="shrink-0 text-destructive"
-          data-testid="block-delete-open"
-        >
-          Удалить
-        </Button>
       {/if}
     </div>
 
@@ -699,4 +705,5 @@
       </div>
     {/if}
   </Form>
+  </Surface>
 {/if}

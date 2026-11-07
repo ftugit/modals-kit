@@ -23,13 +23,14 @@
   const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
 </script>
 
-<Surface variant="plain" class="w-full p-6">
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
   {#if invalidExplicitId}
     <Acl status="auth.identity-unknown" backHref="/" variant="plain" />
   {:else if effectiveAcl}
     <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
     <UserConfig
+      class="min-h-0 flex-1"
       {uid}
       initial={ldr.data}
       enabled={ldr.data.enabled}

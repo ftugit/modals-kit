@@ -30,7 +30,7 @@
    */
   import { onDestroy, untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
@@ -47,7 +47,7 @@
   import { vault } from '../vault.svelte.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
-  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
+  import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
     ensureSeedUsersPaginator,
@@ -201,30 +201,31 @@
   })
 </script>
 
+{#snippet seedTitle()}
+  <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
+  <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
+{/snippet}
+
+{#snippet seedControls()}
+  <Button
+    {...asModalLink('user.list.filters', {}, { href: filtersHref })}
+    variant="outline"
+    size="sm"
+    data-testid="seed-users-filters-open"
+  >
+    Фильтры{#if activeFilters}&nbsp;({activeFilters}){/if}
+  </Button>
+{/snippet}
+
 {#if snapshot}
   <PaginatorScope {store} snapshots={{ [SEED_USERS_NAME]: snapshot }}>
-  <section class={cn('flex min-h-0 flex-col', userSurfaceVariants({ variant }), className)}>
-    <div class="mb-4 flex shrink-0 items-baseline justify-between gap-3">
-      <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
-      <span class="text-xs text-muted-foreground">всего: {totalItems ?? '—'}</span>
-    </div>
-    <div class="mb-3 flex shrink-0 items-start justify-between gap-3">
-      <div class="min-w-0 flex-1">
-        <SearchBar
-          name={SEED_USERS_NAME}
-          {query}
-          label={nickOn ? 'Поиск по seed, id и никнейму' : 'Поиск по seed и id'}
-          placeholder={nickOn ? 'Подстрока seed, id или никнейма…' : 'Подстрока seed или id…'}
-        />
-      </div>
-      <Button
-        {...asModalLink('user.list.filters', {}, { href: filtersHref })}
-        variant="outline"
-        data-testid="seed-users-filters-open"
-      >
-        Фильтры{#if activeFilters}&nbsp;({activeFilters}){/if}
-      </Button>
-    </div>
+  <Surface {variant} class={cn('min-h-0', className)} title={seedTitle} controls={seedControls}>
+    <SearchBar
+      name={SEED_USERS_NAME}
+      {query}
+      label={nickOn ? 'Поиск по seed, id и никнейму' : 'Поиск по seed и id'}
+      placeholder={nickOn ? 'Подстрока seed, id или никнейма…' : 'Подстрока seed или id…'}
+    />
     <Paginator
       name={SEED_USERS_NAME}
       ariaLabel="Список seed-юзеров"
@@ -271,19 +272,19 @@
         </div>
       {/snippet}
     </Paginator>
-  </section>
+  </Surface>
   </PaginatorScope>
 {:else}
   <!-- Собственное ожидание компонента: носителю скелет списка не положен. -->
-  <section class={cn(userSurfaceVariants({ variant }), className)} data-testid="seed-users-pending" aria-busy="true">
-    <div class="mb-4 flex items-baseline justify-between gap-3">
+  <Surface {variant} class={className} data-testid="seed-users-pending" aria-busy="true">
+    {#snippet title()}
       <h2 class="text-lg font-semibold leading-tight tracking-tight">Seed-юзеры</h2>
       <span class="text-xs text-muted-foreground">всего: —</span>
-    </div>
+    {/snippet}
     <div class="flex flex-col gap-2">
       {#each [0, 1, 2] as i (i)}
         <Skeleton class="h-9 w-full" />
       {/each}
     </div>
-  </section>
+  </Surface>
 {/if}

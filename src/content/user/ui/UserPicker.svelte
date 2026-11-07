@@ -23,7 +23,7 @@
   import { untrack } from 'svelte'
   import { createAttachmentKey } from 'svelte/attachments'
   import { Steps, stepLink, useSteps } from '#components/steps/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { asLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
@@ -35,7 +35,7 @@
     hasPaginator,
     setExtra,
   } from '#lib/paginate/index.js'
-  import Acl from './Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
   import type { AuthErrorCode } from '../error.js'
@@ -50,6 +50,7 @@
     onConfirm?: (ids: string[]) => void
     onCancel?: () => void
     onAcl?: (fact: AuthErrorCode) => void
+    variant?: UserSurfaceVariant
     class?: string
   }
 
@@ -62,6 +63,7 @@
     onConfirm,
     onCancel,
     onAcl,
+    variant = 'card',
     class: className,
   }: Props = $props()
 
@@ -218,42 +220,109 @@
   }
 </script>
 
-<section class={cn('flex min-h-0 flex-col', className)} data-testid="user-picker">
+{#snippet pickerSteps()}
+  {@const currentStep = host.currentKey ?? 'pick'}
+  {@const pickLabel = mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'}
+  {@const chosenLabel = `Выбранные (${pickedSet.size})`}
+  <nav aria-label={pickLabel} class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+    {#if currentStep === 'pick'}
+      <span class="text-muted-foreground" aria-current="step">{pickLabel}</span>
+    {:else if isModalMode}
+      <Button type="button" variant="link" size="sm" onclick={() => void switchLocalStep('pick')}>
+        {pickLabel}
+      </Button>
+    {:else}
+      <a
+        {...stepLink(host, 'pick')}
+        href={stepHref('pick', false)}
+        class="font-medium underline-offset-4 hover:underline"
+      >{pickLabel}</a>
+    {/if}
+    <span aria-hidden="true" class="text-muted-foreground">/</span>
+    {#if currentStep === 'chosen'}
+      <span class="text-muted-foreground" aria-current="step">{chosenLabel}</span>
+    {:else if pickedSet.size > 0}
+      {#if isModalMode}
+        <Button type="button" variant="link" size="sm" onclick={() => void switchLocalStep('chosen')}>
+          {chosenLabel}
+        </Button>
+      {:else}
+        <a
+          {...stepLink(host, 'chosen')}
+          href={stepHref('chosen', true)}
+          class="font-medium underline-offset-4 hover:underline"
+        >{chosenLabel}</a>
+      {/if}
+    {:else}
+      <span class="text-muted-foreground">{chosenLabel}</span>
+    {/if}
+  </nav>
+{/snippet}
+
+{#snippet pickerActions()}
+  {#if pickedSet.size > 0}
+    {#if isModalMode}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onclick={() => {
+          localPicked = []
+          clearPaginatorIdsSlice()
+        }}
+        data-testid="user-picker-clear"
+      >
+        Сбросить выбор
+      </Button>
+    {:else}
+      <Button
+        {...asLink(clearHref, { replace: true })}
+        variant="outline"
+        size="sm"
+        data-testid="user-picker-clear"
+      >
+        Сбросить выбор
+      </Button>
+    {/if}
+  {/if}
+  {#if isModalMode}
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onclick={() => onCancel?.()}
+      data-testid="user-picker-cancel"
+    >
+      Отмена
+    </Button>
+    <Button
+      type="button"
+      size="sm"
+      onclick={() => onConfirm?.([...pickedSet])}
+      data-testid="user-picker-apply"
+    >
+      Применить
+    </Button>
+  {:else}
+    <Button href={fromHref} variant="ghost" size="sm" data-testid="user-picker-cancel">
+      Отмена
+    </Button>
+    <Button href={applyHref} size="sm" data-testid="user-picker-apply">
+      Применить
+    </Button>
+  {/if}
+{/snippet}
+
+<Surface
+  {variant}
+  class={cn('min-h-0', className)}
+  controls={localAcl && !onAcl ? undefined : { start: pickerSteps, end: pickerActions }}
+  data-testid="user-picker"
+>
   {#if localAcl && !onAcl}
     <Acl status={localAcl} backHref={fromHref} variant="plain" />
   {:else}
-    {#if !isModalMode}
-      {@const currentStep = host.currentKey ?? 'pick'}
-      {@const pickLabel = mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'}
-      {@const chosenLabel = `Выбранные (${pickedSet.size})`}
-      <nav
-        aria-label={pickLabel}
-        class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
-      >
-        {#if currentStep === 'pick'}
-          <span class="text-muted-foreground" aria-current="step">{pickLabel}</span>
-        {:else}
-          <a
-            {...stepLink(host, 'pick')}
-            href={stepHref('pick', false)}
-            class="font-medium underline-offset-4 hover:underline"
-          >{pickLabel}</a>
-        {/if}
-        <span aria-hidden="true" class="text-muted-foreground">/</span>
-        {#if currentStep === 'chosen'}
-          <span class="text-muted-foreground" aria-current="step">{chosenLabel}</span>
-        {:else if pickedSet.size > 0}
-          <a
-            {...stepLink(host, 'chosen')}
-            href={stepHref('chosen', true)}
-            class="font-medium underline-offset-4 hover:underline"
-          >{chosenLabel}</a>
-        {:else}
-          <span class="text-muted-foreground">{chosenLabel}</span>
-        {/if}
-      </nav>
-    {/if}
-    <Steps {host} label={mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'} nav={isModalMode}>
+    <Steps {host} label={mode === 'single' ? 'Выбор пользователя' : 'Выбор пользователей'} nav={false}>
       {#snippet pick()}
         <div class="flex min-h-0 flex-1 flex-col gap-3">
           <SeedUsersList
@@ -328,59 +397,5 @@
         </div>
       {/snippet}
     </Steps>
-
-    <div class="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-      {#if pickedSet.size > 0}
-        {#if isModalMode}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onclick={() => {
-              localPicked = []
-              clearPaginatorIdsSlice()
-            }}
-            data-testid="user-picker-clear"
-          >
-            Сбросить выбор
-          </Button>
-        {:else}
-          <Button
-            {...asLink(clearHref, { replace: true })}
-            variant="outline"
-            size="sm"
-            data-testid="user-picker-clear"
-          >
-            Сбросить выбор
-          </Button>
-        {/if}
-      {/if}
-      {#if isModalMode}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onclick={() => onCancel?.()}
-          data-testid="user-picker-cancel"
-        >
-          Отмена
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onclick={() => onConfirm?.([...pickedSet])}
-          data-testid="user-picker-apply"
-        >
-          Применить
-        </Button>
-      {:else}
-        <Button href={fromHref} variant="ghost" size="sm" data-testid="user-picker-cancel">
-          Отмена
-        </Button>
-        <Button href={applyHref} size="sm" data-testid="user-picker-apply">
-          Применить
-        </Button>
-      {/if}
-    </div>
   {/if}
-</section>
+</Surface>

@@ -62,6 +62,7 @@
       {mode}
       {initialPicked}
       initialUsers={ldr.data?.initialUsers}
+      variant="plain"
       class="min-h-0 flex-1"
       onConfirm={confirm}
       onCancel={() => m.modals.close()}

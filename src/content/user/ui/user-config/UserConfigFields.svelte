@@ -26,6 +26,8 @@
     slice: UserConfigSlice
     steps: StepsHost
     showStepsNav: boolean
+    /** `false` — шаги рисует внешний `Surface.controls`, фильтрация групп остаётся. */
+    embedSteps?: boolean
     action?: string
     form?: { result?: Result } | null
     doneHref?: string
@@ -38,6 +40,7 @@
     slice,
     steps,
     showStepsNav,
+    embedSteps = true,
     action,
     form,
     doneHref = '/',
@@ -130,7 +133,7 @@
 
   <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
-  {#if showStepsNav}
+  {#if showStepsNav && embedSteps}
     <Steps host={steps} label="Разделы настроек" />
   {/if}
 

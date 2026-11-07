@@ -44,13 +44,14 @@
   }
 </script>
 
-<Surface variant="plain" class="w-full p-6">
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
   {#if ldr.data?.fact}
     <Acl status={ldr.data.fact} enabled={ldr.data.enabled} backHref="/" variant="plain" />
   {:else if ldr.data && !ldr.data.canEdit}
     <Acl status="auth.forbidden" enabled={ldr.data.enabled} backHref="/" variant="plain" />
   {:else if ldr.data && uid}
     <ProfileForm
+      class="min-h-0 flex-1"
       subject={uid}
       deleteId={ldr.data.canDeleteProfile ? uid : null}
       initial={ldr.data.profile ? { nickname: ldr.data.profile.nickname, avatarUrl: ldr.data.profile.avatarUrl } : null}

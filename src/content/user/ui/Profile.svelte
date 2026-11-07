@@ -20,10 +20,9 @@
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { Alert, Button, Skeleton } from '#components/ui/index.js'
-  import { cn } from '#components/utils.js'
+  import { Alert, Button, Skeleton, Surface } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
+  import type { UserSurfaceVariant } from './Acl.svelte'
   import ProfileCard from './ProfileCard.svelte'
   import { useGrants } from '../grants.svelte.js'
   import {
@@ -91,6 +90,15 @@
   let askedFor = ''
 
   /** Проекция ответа `load`: отказ — наверх носителю, публичная — в свой показ. */
+  // Кнопки экрана живут в шапке `Surface`, а не в абсолютном углу и не в футере.
+  // «Блокировки (N)» не ставим: чтение профиля сознательно отдаёт `blocks: []`,
+  // список подгружается отдельно. Подпись правки остаётся «Редактировать» и
+  // для пустого профиля — первое заполнение создаёт строку, это же ждёт SSR-тест.
+  const showProfileActions = $derived(
+    Boolean(data && canEdit) ||
+      Boolean((data?.profile || data?.notCreated) && (canOpenConfig || canReadBlocks)),
+  )
+
   const project = (d: ProfileRouteData) => {
     if (d.fact) {
       data = null
@@ -168,23 +176,47 @@
   })
 </script>
 
-<div class={cn(userSurfaceVariants({ variant }), className)}>
-  <div class="relative">
-    {#if data && canEdit}
-      <!-- Правка — справа сверху в обоих состояниях профиля: править можно
-           и пустой (первое заполнение создаёт строку). Видна только с
-           флагом правки чтения; механика — пара редактирования (модалка,
-           без JS — её роут). -->
-      <span class="absolute right-0 top-0 z-10">
-        <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
-          Редактировать
-        </Button>
-      </span>
+{#snippet profileActions()}
+  {#if data && canEdit}
+    <!-- Правка видна только с флагом чтения. Пустой профиль тоже правится:
+         первое заполнение создаёт строку. Механика — пара редактирования. -->
+    <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
+      Редактировать
+    </Button>
+  {/if}
+  {#if data?.profile || data?.notCreated}
+    {#if canOpenConfig}
+      <Button
+        {...asModalLink('user.config.edit', isOwnLive ? {} : { id: uid })}
+        variant="outline"
+        size="sm"
+        data-testid="profile-config-open"
+      >
+        Настройки
+      </Button>
     {/if}
-    {#if data?.fullBlock}
+    {#if canReadBlocks}
+      <Button
+        {...asModalLink('user.blocks', { id: uid })}
+        variant="outline"
+        size="sm"
+        data-testid="profile-blocks-open"
+      >
+        Блокировки
+      </Button>
+    {/if}
+  {/if}
+{/snippet}
+
+<Surface
+  {variant}
+  class={className}
+  controls={showProfileActions ? profileActions : undefined}
+>
+  {#if data?.fullBlock}
       <!-- Полная блокировка цели: факт видят все читающие профиль, причину и
            срок чтение отдаёт только с правами (сервер решает, здесь — показ). -->
-      <Alert variant="destructive" role="note" data-testid="profile-full-block" class="mb-4 text-left">
+      <Alert variant="destructive" role="note" data-testid="profile-full-block" class="text-left">
         <p>
           <span class="font-semibold text-foreground">Аккаунт заблокирован</span>
           {#if data.fullBlock.reason}
@@ -204,30 +236,6 @@
       <ProfileCard profile={publicData} />
     {:else if data?.profile}
       <ProfileCard profile={data.profile} />
-      {#if canOpenConfig || canReadBlocks}
-        <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-          {#if canOpenConfig}
-            <Button
-              {...asModalLink('user.config.edit', isOwnLive ? {} : { id: uid })}
-              variant="outline"
-              size="sm"
-              data-testid="profile-config-open"
-            >
-              Настройки
-            </Button>
-          {/if}
-          {#if canReadBlocks}
-            <Button
-              {...asModalLink('user.blocks', { id: uid })}
-              variant="outline"
-              size="sm"
-              data-testid="profile-blocks-open"
-            >
-              Блокировки
-            </Button>
-          {/if}
-        </div>
-      {/if}
     {:else if data?.notCreated}
       <section
         class="flex w-full flex-col items-center gap-3 py-6 text-center"
@@ -242,30 +250,6 @@
         <p class="max-w-xs text-sm text-muted-foreground">{specProfile.notCreatedText}</p>
         <p class="text-xs text-muted-foreground">{specProfile.nicknameMissing}</p>
       </section>
-      {#if canOpenConfig || canReadBlocks}
-        <div class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-border pt-4">
-          {#if canOpenConfig}
-            <Button
-              {...asModalLink('user.config.edit', isOwnLive ? {} : { id: uid })}
-              variant="outline"
-              size="sm"
-              data-testid="profile-config-open"
-            >
-              Настройки
-            </Button>
-          {/if}
-          {#if canReadBlocks}
-            <Button
-              {...asModalLink('user.blocks', { id: uid })}
-              variant="outline"
-              size="sm"
-              data-testid="profile-blocks-open"
-            >
-              Блокировки
-            </Button>
-          {/if}
-        </div>
-      {/if}
     {:else}
       <!-- Собственное ожидание компонента: носителю скелет профиля не положен. -->
       <div
@@ -284,5 +268,4 @@
         <Skeleton class="h-3 w-2/3" />
       </div>
     {/if}
-  </div>
-</div>
+</Surface>

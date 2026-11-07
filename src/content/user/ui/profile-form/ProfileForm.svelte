@@ -33,7 +33,7 @@
   import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
-  import { Button, type AttachmentItem } from '#components/ui/index.js'
+  import { Button, Surface, type AttachmentItem } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { createUserChecks } from '../../checks.js'
@@ -41,7 +41,7 @@
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from '../Acl.svelte'
   import { profileForm } from './form.js'
 
   interface Props {
@@ -139,6 +139,24 @@
   })
 </script>
 
+{#snippet profileDelete()}
+  {#if deleteId}
+    <!-- Удаление — отдельная пара по праву (флаг посчитало чтение);
+         сервер при отправке права и запреты перепроверит. -->
+    <a
+      {...asModalLink('user.profile.delete', { id: deleteId })}
+      class="shrink-0 rounded-md px-2 py-1 text-sm text-destructive underline-offset-4 hover:underline"
+      data-testid="profile-delete-link"
+    >
+      Удалить
+    </a>
+  {/if}
+{/snippet}
+
+{#snippet profileHint()}
+  <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
+{/snippet}
+
 <Acl
   allow="user"
   authorized={isAuthorized}
@@ -147,15 +165,18 @@
   {variant}
   class={className}
 >
+  <Surface
+    {variant}
+    class={cn('mx-auto w-full max-w-sm', className)}
+    title={foreign ? 'Профиль пользователя' : 'Как вас показывать?'}
+    description={foreign ? undefined : profileHint}
+    controls={deleteId ? profileDelete : undefined}
+  >
   <Form
     id="user-profile"
     form={bound}
     hiddenFields={bound.hidden()}
-    class={cn(
-      'mx-auto flex w-full max-w-sm flex-col gap-4 text-left',
-      userSurfaceVariants({ variant }),
-      className,
-    )}
+    class="flex flex-col gap-4 text-left"
   >
     <Common errors={bound.common} title="Проверьте форму" />
 
@@ -163,23 +184,6 @@
     <div hidden aria-hidden="true"><Field of={bound.f.subject} /></div>
 
     <div class="flex flex-col gap-3">
-      <div class="flex items-start justify-between gap-2">
-        <h2 class="text-base font-semibold">{foreign ? 'Профиль пользователя' : 'Как вас показывать?'}</h2>
-        {#if deleteId}
-          <!-- Удаление — отдельная пара по праву (флаг посчитало чтение);
-               сервер при отправке права и запреты перепроверит. -->
-          <a
-            {...asModalLink('user.profile.delete', { id: deleteId })}
-            class="shrink-0 rounded-md px-2 py-1 text-sm text-destructive underline-offset-4 hover:underline"
-            data-testid="profile-delete-link"
-          >
-            Удалить
-          </a>
-        {/if}
-      </div>
-      {#if !foreign}
-        <p class="text-xs text-muted-foreground">Можно пропустить — всё это можно заполнить и потом.</p>
-      {/if}
       <Field of={bound.f.nickname} />
 
       <Field
@@ -214,4 +218,5 @@
       </div>
     </div>
   </Form>
+  </Surface>
 </Acl>

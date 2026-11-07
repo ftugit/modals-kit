@@ -22,12 +22,12 @@
   import Field from '#components/form/Field.svelte'
   import CopyField from '#components/form/CopyField.svelte'
   import Common from '#components/form/Common.svelte'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Surface } from '#components/ui/index.js'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { cn } from '#components/utils.js'
   import { useJsOnly } from '#hooks/js-only.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
-  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from '../Acl.svelte'
   import { seedForm } from './form.js'
   import { prepareSeedProof } from './prepare-proof.js'
 
@@ -143,6 +143,28 @@
     })
   })
 
+  const seedTitle = $derived(
+    !shouldAuthorize
+      ? confirmTitle
+      : effectiveView === 'register'
+        ? 'Регистрация'
+        : effectiveView === 'restore'
+          ? 'Аккаунт ждёт удаления'
+          : 'Вход в аккаунт',
+  )
+  const seedDescription = $derived(
+    !shouldAuthorize
+      ? confirmDescription
+      : effectiveView === 'register'
+        ? 'Сохраните новый ключ Seed перед созданием аккаунта.'
+        : effectiveView === 'entry'
+          ? 'Введите ваш ключ Seed для входа.'
+          : 'Вы раньше попросили удалить аккаунт, поэтому вход в него закрыт. Можно вернуть всё как было: заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится сам по истечении срока.',
+  )
+  const showSeedSteps = $derived(
+    Boolean(host) && shouldAuthorize && (effectiveView === 'entry' || effectiveView === 'register'),
+  )
+
   let lastConfirmedId = ''
   $effect(() => {
     if (shouldAuthorize) return
@@ -156,6 +178,29 @@
   })
 </script>
 
+{#snippet seedSteps()}
+  {#if host}
+    {#if effectiveView !== 'entry'}
+      <StepLink
+        {host}
+        step="auth.entry"
+        class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+      >
+        Авторизация
+      </StepLink>
+    {/if}
+    {#if effectiveView !== 'register'}
+      <StepLink
+        {host}
+        step="auth.register"
+        class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+      >
+        Создать аккаунт
+      </StepLink>
+    {/if}
+  {/if}
+{/snippet}
+
 <Acl
   allow={shouldAuthorize ? 'guest' : undefined}
   {authorized}
@@ -164,15 +209,18 @@
   {variant}
   class={className}
 >
+  <Surface
+    {variant}
+    class={cn('mx-auto my-auto w-full max-w-sm', className)}
+    title={seedTitle}
+    description={seedDescription}
+    controls={showSeedSteps ? seedSteps : undefined}
+  >
   <Form
     id={shouldAuthorize ? 'user-auth' : 'user-seed-confirm'}
     form={activeForm}
     hiddenFields={activeForm.hidden()}
-    class={cn(
-      'mx-auto my-auto flex w-full max-w-sm flex-col gap-4 text-left',
-      userSurfaceVariants({ variant }),
-      className,
-    )}
+    class="flex flex-col gap-4 text-left"
   >
     <Common errors={activeForm.common} title="Проверьте форму" />
 
@@ -182,49 +230,12 @@
 
     {#if !shouldAuthorize}
       <div class="flex flex-col gap-3">
-        <div class="flex flex-col gap-1">
-          <h2 class="text-lg font-semibold leading-tight tracking-tight">{confirmTitle}</h2>
-          <p class="text-xs text-muted-foreground">{confirmDescription}</p>
-        </div>
         <Field of={activeForm.f.seed} />
         <Button type="submit" name="intent" value="confirm" task={formTask(activeForm.state, 'confirm')}>
           {confirmLabel}
         </Button>
       </div>
     {:else if effectiveView === 'entry' || effectiveView === 'register'}
-      <div class="flex flex-col gap-1.5">
-        <div class="flex items-baseline justify-between gap-3">
-          <h2 class="text-lg font-semibold leading-none tracking-tight text-foreground">
-            {effectiveView === 'register' ? 'Регистрация' : 'Вход в аккаунт'}
-          </h2>
-          {#if host}
-            {#if effectiveView !== 'entry'}
-              <StepLink
-                {host}
-                step="auth.entry"
-                class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-              >
-                Авторизация
-              </StepLink>
-            {/if}
-            {#if effectiveView !== 'register'}
-              <StepLink
-                {host}
-                step="auth.register"
-                class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-              >
-                Создать аккаунт
-              </StepLink>
-            {/if}
-          {/if}
-        </div>
-        <p class="text-sm text-muted-foreground">
-          {effectiveView === 'register'
-            ? 'Сохраните новый ключ Seed перед созданием аккаунта.'
-            : 'Введите ваш ключ Seed для входа.'}
-        </p>
-      </div>
-
       {#if effectiveView === 'register'}
         {#if localSeed}
           <div class="rounded-md border border-border bg-muted/40 p-3 text-sm">
@@ -278,12 +289,6 @@
       {/if}
     {:else}
       <div class="flex flex-col gap-3">
-        <h2 class="text-base font-semibold">Аккаунт ждёт удаления</h2>
-        <p class="text-sm text-muted-foreground">
-          Вы раньше попросили удалить аккаунт, поэтому вход в него закрыт. Можно вернуть всё как
-          было: заявка будет отменена, и вход продолжится. Если ничего не делать, аккаунт удалится
-          сам по истечении срока.
-        </p>
         <div hidden={!notHydrated()} aria-hidden={!notHydrated() ? 'true' : undefined}>
           <Field of={activeForm.f.seed} />
         </div>
@@ -303,4 +308,5 @@
       </div>
     {/if}
   </Form>
+  </Surface>
 </Acl>
