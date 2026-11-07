@@ -24,9 +24,9 @@
    - UnoCSS (`unocss.config.ts`, `vite.config.ts`) компилирует все утилиты (включая `src/app.html` через `content.filesystem`) в статический CSS-бандл на этапе сборки.
 5. **Безопасный рендеринг шаблонов и раздача загруженных файлов**:
    - В прикладных компонентах не используется `{@html …}` для пользовательских данных; строгие правила разметки и импортов контролирует `tooling/layer-guard.mjs`.
-   - Раздача загруженных файлов (`/api/storage/*`, `/api/files/*`) отвечает отдельным изолирующим заголовком `Content-Security-Policy: default-src 'none'; sandbox` и `X-Content-Type-Options: nosniff`.
+   - Раздача загруженных файлов (`/api/storage/*`) отвечает отдельным изолирующим заголовком `Content-Security-Policy: default-src 'none'; sandbox` и `X-Content-Type-Options: nosniff`.
 6. **Изоляция серверных обращений к внешним API**:
-   - Внешние API (Shikimori, Rick & Morty) опрашиваются через серверные прокси-роуты `/api/shikimori/*` и `/api/rickmorty/*` поверх `#lib/fetch` (`src/server/fetch.server.ts`), так что браузер общается со своим `self` origin.
+   - Прокси каталогов Shikimori и Rick & Morty приходят с опциональным модулем `demo`, не с чистым ядром. Они ходят через сервер поверх `#lib/fetch` (`src/server/fetch.server.ts`), так что браузер общается со своим `self` origin.
 
 ---
 

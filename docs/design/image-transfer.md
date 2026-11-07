@@ -24,7 +24,7 @@
 | Перехват поля в форме (`Field` `takeover`, `FieldHandle.pending` / `FieldHandle.error`) и защита в сборке | `src/lib/form/{takeover.ts,svelte/bind.svelte.ts}`, `src/components/form/Field.svelte`, `tooling/layer-guard.mjs` | Готово |
 | Компактная карточка вложения и превью (`Attachment`, `FileAttachment`) | `src/components/ui/attachment/`, `src/components/form/FileField.svelte` | Готово |
 | Боевой пул хранилища в БД + неизменяемые ссылки аватаров `/api/storage/avatars/…` с удалением старого файла | `src/server/app-storage.server.ts`, `src/content/storage-servers/`, `src/content/user/ui/profile-form/profile.form.server.ts` | Готово |
-| Протокол отложенного исхода `outcome: 'queued'` (`pollUntilDone` с JS, `303` на `statusUrl` без JS и очередь в `sharedStore` `cache_kv`) | `src/lib/form/queued.ts`, `src/hooks/component-form/server.server.ts`, `src/routes/(site)/(app)/form/queue.server.ts` | Готово |
+| Протокол отложенного исхода `outcome: 'queued'` (`pollUntilDone` с JS, `303` на `statusUrl` без JS) | `src/lib/form/queued.ts`, `src/hooks/component-form/server.server.ts` | Механизм в библиотеке есть. Демо-маршрута `form/queue.server.ts` и очереди заявок в `sharedStore` нет |
 
 ---
 

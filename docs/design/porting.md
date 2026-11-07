@@ -1,8 +1,8 @@
-# План переноса на другой фреймворк / роутер
+# Перенос на другой фреймворк / роутер
 
-Порядок: **ядра → адаптеры фреймворка → примитивы → фичи → страницы**. Каждый уровень опирается только на предыдущие.
+Это инструкция, не очередь работ. Порядок: **ядра → адаптеры фреймворка → примитивы → фичи → страницы**. Каждый уровень опирается только на предыдущие.
 
-Статус на текущий срез: шаги **2–5** уже доказаны работающей симуляцией на **React 19 + React Router v7** в [`sim/react-router/`](../../sim/react-router/README.md) (те же исходники ядер `src/lib/*`, ноль `svelte` в `node_modules`). Шаги **6–10** описывают перенос прикладной сборки.
+Шаги **2–5** доказаны симуляцией на **React 19 + React Router v7** в [`sim/react-router/`](../../sim/react-router/README.md) (те же исходники ядер `src/lib/*`, ноль `svelte` в `node_modules`). Шаги **6–10** описывают перенос прикладной сборки, когда он понадобится. Вынос русских строк из `src/lib/` (шаг 1) отложен вместе со второй локалью: [`docs/pending.md`](../pending.md).
 
 ---
 
@@ -39,7 +39,7 @@
    - `paginator/` и `filters/` (`FiltersPanel`, `ActiveFilters`, `bindFilters`);
    - `shell/`, `header/`, `sidebar/`.
 
-9. **Контент и модуль пользователя (`src/content/**`)** — перенести без правок доменное ядро `src/content/user/{acl,auth,checks,config,error,keys,ports,profile,schema,types,vault}.ts` и источники каталогов (`items.ts`, `posts.ts`, `shikimori*.ts`, `rickmorty*.ts`). Переписать под целевой фреймворк:
+9. **Контент и модуль пользователя (`src/content/**`)** — перенести без правок доменное ядро `src/content/user/{acl,auth,checks,config,error,keys,ports,profile,schema,types,vault}.ts`. Каталоги `items` / `posts` / `shikimori` / `rickmorty` не лежат в чистом ядре: их приносит опциональный модуль `demo` (`npm run mod -- add demo`). Переписать под целевой фреймворк:
    - `src/content/user/gateway.server.ts` (куки и серверный фасад запроса);
    - `src/content/user/vault.svelte.ts` (реактивное клиентское зеркало `vault`);
    - UI-слой `src/content/user/ui/` (`Acl`, `AuthWidget`, `MenuBody`, `UserMenu`, `BanNotice`, `RestrictionsNotice`, папочные модули `ui/seed-form/` и `ui/profile-form/`).

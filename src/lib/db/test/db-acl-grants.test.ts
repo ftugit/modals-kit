@@ -1,7 +1,7 @@
 /**
  * Тесты `defineAcl`, стража инвариантов ACL (`validateResourceAcl`),
  * извлечения прав `grants(resource)` и чистой проверки `checkGrants` / `forOwner`
- * (docs/plan-acl-grants-2026-10-29.md).
+ * (контракт — `src/lib/db/README.md`).
  */
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
