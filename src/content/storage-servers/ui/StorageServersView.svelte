@@ -13,18 +13,17 @@
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { Form, formTask } from '#lib/form/svelte/index.js'
+  import { formTask } from '#lib/form/svelte/index.js'
   import type { Result } from '#lib/form/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { storageServer } from '#hooks/storage-schema.js'
   import { forms } from '#components/form/forms.config.js'
-  import Common from '#components/form/Common.svelte'
-  import Field from '#components/form/Field.svelte'
-  import { Badge, Button, Skeleton } from '#components/ui/index.js'
+  import StorageServerForm from '#components/storage-servers/StorageServerForm.svelte'
+  import { Badge, Button, Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { AuthErrorCode } from '#content/user/error.js'
   import { useGrants } from '#content/user/grants.svelte.js'
-  import Acl, { userSurfaceVariants, type UserSurfaceVariant } from '#content/user/ui/Acl.svelte'
+  import Acl, { type UserSurfaceVariant } from '#content/user/ui/Acl.svelte'
   import { mirrorToField } from '#content/user/ui/field-mirror.svelte.js'
   import { userSession, vault } from '#content/user/vault.svelte.js'
   import { STORAGE_SERVER_FORM_ID, storageServerForm } from '../form.js'
@@ -70,7 +69,6 @@
 
   let routeData = $state<StorageServersRouteData | null>(untrack(() => initial))
   let editing = $state<StorageServerView | null>(null)
-  let formResetTick = $state(0)
   let fetched = false
 
   $effect(() => {
@@ -110,7 +108,6 @@
 
   function loadIntoEditor(srv: StorageServerView | null) {
     editing = srv
-    formResetTick += 1
     bound.f.server_id.onInput(srv?.id ?? '')
     bound.f.slot.onInput(srv?.slot ?? '')
     bound.f.url.onInput('')
@@ -247,6 +244,23 @@
   </div>
 {/snippet}
 
+{#snippet storageHint()}
+  <p class="text-xs text-muted-foreground">
+    Пул S3 / WebDAV для пользовательских файлов и аватаров (учёт квот — pgStorageLedger, секреты запечатаны AUTH_SEAL_SECRET).
+  </p>
+{/snippet}
+
+{#snippet modeBadge()}
+  {#if slice}
+    <Badge
+      variant={slice.activeMode === 'pool' ? 'default' : slice.activeMode === 'dev_local' ? 'secondary' : 'outline'}
+      data-testid="storage-servers-mode"
+    >
+      {modeBadgeText(slice.activeMode)}
+    </Badge>
+  {/if}
+{/snippet}
+
 <Acl
   allow="user"
   authorized={isAuthorized}
@@ -255,12 +269,12 @@
   {variant}
   class={className}
 >
-  <section
-    class={cn(
-      'mx-auto flex w-full max-w-2xl flex-col gap-5 text-left',
-      userSurfaceVariants({ variant }),
-      className,
-    )}
+  <Surface
+    {variant}
+    class={cn('mx-auto w-full max-w-2xl', className)}
+    title="Серверы хранилища приложения"
+    description={storageHint}
+    controls={slice ? modeBadge : undefined}
     data-testid="storage-servers-root"
   >
     {#if !slice}
@@ -270,108 +284,47 @@
         <Skeleton class="h-36 w-full" />
       </div>
     {:else}
-      <header class="flex flex-wrap items-start justify-between gap-2">
-        <div class="flex flex-col gap-1">
-          <h2 class="text-base font-semibold">Серверы хранилища приложения</h2>
-          <p class="text-xs text-muted-foreground">
-            Пул S3 / WebDAV для пользовательских файлов и аватаров (учёт квот — pgStorageLedger, секреты запечатаны AUTH_SEAL_SECRET).
-          </p>
-        </div>
-        <Badge
-          variant={slice.activeMode === 'pool' ? 'default' : slice.activeMode === 'dev_local' ? 'secondary' : 'outline'}
-          data-testid="storage-servers-mode"
-        >
-          {modeBadgeText(slice.activeMode)}
-        </Badge>
-      </header>
-
       {#if canEdit}
-        <Form
-          id={STORAGE_SERVER_FORM_ID}
+        <StorageServerForm
           form={bound}
-          hiddenFields={bound.hidden()}
-          class="flex flex-col gap-5"
-          data-testid="storage-server-form"
-          data-reset-tick={formResetTick}
+          formId={STORAGE_SERVER_FORM_ID}
+          withPriority
+          editId={editing?.id ?? null}
+          showClearKey={Boolean(editing?.meta.encrypted)}
+          title={editing ? `Обновить сервер «${editing.slot}»` : 'Подключить сервер (S3 / WebDAV)'}
+          submitLabel={editing ? 'Проверить и обновить' : 'Проверить и добавить'}
         >
           {@render serverList(slice, true)}
-
-          <div class="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <div class="flex items-center justify-between gap-2">
-              <h3 class="text-sm font-semibold">
-                {editing ? `Обновить сервер «${editing.slot}»` : 'Подключить сервер (S3 / WebDAV)'}
-              </h3>
-              {#if editing}
-                {#if onDone}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onclick={() => loadIntoEditor(null)}
-                  >
-                    Новый слот
-                  </Button>
-                {:else}
-                  <Button
-                    href="/storage-servers"
-                    variant="ghost"
-                    size="sm"
-                    onclick={(e: MouseEvent) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                      e.preventDefault()
-                      loadIntoEditor(null)
-                    }}
-                  >
-                    Новый слот
-                  </Button>
-                {/if}
-              {/if}
-            </div>
-
-            <Common errors={bound.common} title="Не удалось сохранить сервер" />
-
-            <div hidden aria-hidden="true"><Field of={bound.f.server_id} /></div>
-
-            {#if !editing}
-              <Field of={bound.f.slot} />
-            {/if}
-            <Field of={bound.f.url} />
-            <Field of={bound.f.encryption_key} />
-            {#if editing?.meta.encrypted}
-              <Field of={bound.f.clear_encryption_key} />
-            {/if}
-
-            <div class="grid gap-3 sm:grid-cols-3">
-              <Field of={bound.f.storage_mb} />
-              <Field of={bound.f.file_mb} />
-              <Field of={bound.f.priority} />
-            </div>
-
-            <Field of={bound.f.allow_split} />
-            <Field of={bound.f.read_only} />
-
-            <div class="flex items-center justify-between gap-2 pt-1">
-              <Button
-                type="submit"
-                name="intent"
-                value="save"
-                task={formTask(bound.state, 'save')}
-                data-testid="storage-server-save"
-              >
-                {editing ? 'Проверить и обновить' : 'Проверить и добавить'}
-              </Button>
+          {#snippet controls()}
+            {#if editing}
               {#if onDone}
+                <Button type="button" variant="ghost" size="sm" onclick={() => loadIntoEditor(null)}>
+                  Новый слот
+                </Button>
+              {:else}
                 <Button
-                  type="button"
+                  href="/storage-servers"
                   variant="ghost"
-                  onclick={() => onDone()}
+                  size="sm"
+                  onclick={(e: MouseEvent) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                    e.preventDefault()
+                    loadIntoEditor(null)
+                  }}
                 >
-                  Закрыть
+                  Новый слот
                 </Button>
               {/if}
-            </div>
-          </div>
-        </Form>
+            {/if}
+          {/snippet}
+          {#snippet actions()}
+            {#if onDone}
+              <Button type="button" variant="ghost" onclick={() => onDone()}>
+                Закрыть
+              </Button>
+            {/if}
+          {/snippet}
+        </StorageServerForm>
       {:else}
         {@render serverList(slice, false)}
         {#if onDone}
@@ -383,5 +336,5 @@
         {/if}
       {/if}
     {/if}
-  </section>
+  </Surface>
 </Acl>

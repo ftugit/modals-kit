@@ -369,9 +369,9 @@ function defaultRedirect(event: RequestEvent): string {
 }
 
 /**
- * Зарегистрировать все 3 серверных обработчика форм экземпляра куки-сейфа
- * (`entryForm`, `deleteForm`, `resetKeyForm`) в глобальном `componentFormRegistry`.
- * Благодаря `componentFormsHandle` формы работают идентично и в модалке поверх любой страницы, и на отдельном роуте.
+ * Зарегистрировать форму слота и форму удаления строки.
+ * `reset-key` — действие той же формы слота, не отдельная регистрация:
+ * `saveVaultEntry` / `removeVaultEntry` / `resetVaultKey` по-прежнему пишут куки и отдают `snapshot`.
  */
 export function registerCookieVaultForms<TEntry, TMeta>(
   schema: CookieVaultSchema<TEntry, TMeta>,
@@ -383,10 +383,17 @@ export function registerCookieVaultForms<TEntry, TMeta>(
   })
 
   registerComponentForm({
-    description: schema.entryForm,
+    description: schema.form,
     limits: { timeoutMs: 25_000 },
     ...(options?.throttle ? { throttle: options.throttle } : {}),
-    async execute({ values, fail, commit }, event) {
+    async execute({ values, intent, fail, commit }, event) {
+      const action = schema.form.policy.intent.parse(intent).action
+      if (action === 'reset-key') {
+        const snapshot = resetVaultKey(event.cookies, schema, cookieOptsOf(event))
+        await options?.onReset?.(event)
+        commit()
+        return { data: { snapshot } }
+      }
       const parsed = schema.parse(values)
       if (!parsed.ok) {
         return fail([...parsed.issues], 'not-applied')
@@ -424,17 +431,6 @@ export function registerCookieVaultForms<TEntry, TMeta>(
       await options?.onRemoved?.(id, event)
       commit()
       return { data: { snapshot, removedId: id } }
-    },
-    redirectOnSuccess: redirect,
-  })
-
-  registerComponentForm({
-    description: schema.resetKeyForm,
-    async execute({ commit }, event) {
-      const snapshot = resetVaultKey(event.cookies, schema, cookieOptsOf(event))
-      await options?.onReset?.(event)
-      commit()
-      return { data: { snapshot } }
     },
     redirectOnSuccess: redirect,
   })

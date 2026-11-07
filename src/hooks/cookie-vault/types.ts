@@ -1,4 +1,3 @@
-import type { BoundConfig, BoundForm } from '#lib/form/svelte/index.js'
 import type { FormDescription, IssueLike } from '#lib/form/index.js'
 
 /** Публичная безопасная витрина одной записи куки-сейфа (без секретов — безопасно для SSR и HTML). */
@@ -41,8 +40,8 @@ export interface CookieVaultSpec<
   readonly description?: string
   /** Максимум слотов в этой области (по умолчанию `8`, чтобы не превышать лимит заголовка `Cookie`). */
   readonly maxEntries?: number
-  /** Изоморфное описание формы добавления/обновления слота (`defineForm` экземпляра). */
-  readonly entryForm: FormDescription
+  /** Изоморфное описание формы слота. Для хранилища это `defineStorageServerForm` с id сейфа. */
+  readonly form: FormDescription
   /** Разбор и проверка значений формы на сервере в пару `{ id, entry }`. */
   parse(values: Readonly<Record<string, unknown>>): CookieVaultParsed<TEntry>
   /** Маскирование секретной записи в безопасную публичную карточку без секретов. */
@@ -53,7 +52,7 @@ export interface CookieVaultSpec<
   ): Omit<CookieVaultMaskedItem<TMeta>, 'id' | 'updatedAt'>
 }
 
-/** Готовая схема экземпляра куки-сейфа со служебными описаниями форм удаления и сброса ключа. */
+/** Готовая схема экземпляра куки-сейфа: форма слота и служебная форма удаления строки. */
 export interface CookieVaultSchema<
   TEntry = Record<string, unknown>,
   TMeta = Record<string, unknown>,
@@ -61,26 +60,6 @@ export interface CookieVaultSchema<
   readonly maxEntries: number
   readonly deleteForm: FormDescription
   deleteFormFor(id: string): FormDescription
-  readonly resetKeyForm: FormDescription
 }
 
-/** Пропсы пользовательского UI-компонента формы экземпляра куки-сейфа (по аналогии с `FilterFormProps`). */
-export interface CookieVaultFormProps<TMeta = Record<string, unknown>> {
-  /** Конфиг форм приложения (`forms` из `#components/form/forms.config.js`). */
-  readonly config: BoundConfig
-  /** Схема данного экземпляра куки-сейфа. */
-  readonly schema: CookieVaultSchema<unknown, TMeta>
-  /** Текущий список сохранённых слотов (маскированный). */
-  readonly items: readonly CookieVaultMaskedItem<TMeta>[]
-  /** Коллбэк после успешного сохранения слота на клиенте. */
-  onSaved?(snapshot: CookieVaultSnapshot<TMeta>): void
-}
 
-/** Возвращаемая связка `bindCookieVault(() => props)` для раскладки полей в UI экземпляра. */
-export interface BoundCookieVaultForm {
-  readonly form: BoundForm
-  readonly f: BoundForm['f']
-  readonly common: BoundForm['common']
-  readonly state: BoundForm['state']
-  hidden(): ReturnType<BoundForm['hidden']>
-}

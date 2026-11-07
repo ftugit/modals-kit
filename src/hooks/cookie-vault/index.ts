@@ -3,10 +3,7 @@ export {
   defineCookieVault,
   VAULT_SLOT_ID_RE,
 } from './schema.js'
-export { bindCookieVault } from './bind.svelte.js'
 export type {
-  BoundCookieVaultForm,
-  CookieVaultFormProps,
   CookieVaultMaskedItem,
   CookieVaultParsed,
   CookieVaultSchema,

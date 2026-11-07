@@ -17,22 +17,10 @@ function makeDeleteForm(scope: string, defaultId = ''): FormDescription {
   })
 }
 
-function makeResetKeyForm(scope: string): FormDescription {
-  return defineForm({
-    id: `dv_reset_${scope}`,
-    fields: {
-      confirm_scope: field.hidden({
-        defaultValue: scope,
-        validate: [v.required(), v.maxLength(24)],
-      }),
-    },
-  })
-}
-
 /**
  * Объявить схему экземпляра универсального куки-сейфа.
- * Каждый экземпляр задаёт свою `entryForm` (`defineForm`), правила `parse` и `mask`,
- * а UI-раскладка полей передаётся отдельным компонентом в `<CookieVault form={...} />`.
+ * Экземпляр задаёт `form` (`defineStorageServerForm` или свой `defineForm`), `parse` и `mask`.
+ * Сброс ключа — действие `reset-key` этой же формы, отдельной формы и `confirm_scope` нет.
  */
 export function defineCookieVault<
   TEntry = Record<string, unknown>,
@@ -53,6 +41,5 @@ export function defineCookieVault<
     maxEntries,
     deleteForm: makeDeleteForm(spec.scope),
     deleteFormFor: (id: string) => makeDeleteForm(spec.scope, id),
-    resetKeyForm: makeResetKeyForm(spec.scope),
   }
 }

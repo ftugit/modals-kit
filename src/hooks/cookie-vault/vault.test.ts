@@ -49,7 +49,7 @@ const demoVault = defineCookieVault<DemoSecretConfig, { limitMb: number }>({
   scope: 'test_s3',
   title: 'Тестовый сейф',
   maxEntries: 2,
-  entryForm: defineForm({
+  form: defineForm({
     id: 'test_vault_entry',
     fields: {
       slot: field.text({ validate: [v.required()] }),

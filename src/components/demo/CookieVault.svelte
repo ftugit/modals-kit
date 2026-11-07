@@ -1,32 +1,33 @@
 <script lang="ts" generics="TMeta = Record<string, unknown>">
   /**
    * Универсальная оболочка куки-сейфа демо-стендов (по аналогии с `FiltersPanel`):
-   * схема данных (`schema`) и UI-компонент формы добавления (`form`) задаются
-   * каждым экземпляром отдельно, а оболочка берёт на себя список маскированных
-   * слотов, удаление слота, мгновенный сброс куки-ключа `dv_key` и навигацию
-   * как в модалке, так и на отдельном роуте (без JS).
+   * схема данных (`schema.form`) задаётся экземпляром, оболочка рисует общую
+   * форму сервера, список слотов, удаление и сброс ключа `dv_key` как действие
+   * той же формы — и в модалке, и на отдельном роуте (без JS).
    */
-  import type { Component, Snippet } from 'svelte'
+  import type { Snippet } from 'svelte'
   import { untrack } from 'svelte'
-  import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
+  import StorageServerForm from '#components/storage-servers/StorageServerForm.svelte'
   import { Badge, Button } from '#components/ui/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import type {
-    CookieVaultFormProps,
     CookieVaultMaskedItem,
     CookieVaultSchema,
     CookieVaultSnapshot,
   } from '#hooks/cookie-vault/index.js'
   import { asLink } from '#hooks/links/index.js'
-  import { Form, formTask } from '#lib/form/svelte/index.js'
+  import { formTask } from '#lib/form/svelte/index.js'
   import CookieVaultDeleteButton from './CookieVaultDeleteButton.svelte'
 
   interface Props<M> {
     schema: CookieVaultSchema<unknown, M>
     snapshot: CookieVaultSnapshot<M>
-    /** Пользовательский UI-компонент формы этого экземпляра сейфа (как `form` в `FiltersPanel`). */
-    form: Component<CookieVaultFormProps<M>>
+    /** Подпись отправки слота. Проверка подключения — это сама отправка, отдельной кнопки нет. */
+    submitLabel?: string
+    entryTitle?: string
+    entryTestId?: string
+    submitTestId?: string
     /** Необязательный рендер публичных метаданных слота (лимиты, флаги и т.п.). */
     renderMeta?: Snippet<[CookieVaultMaskedItem<M>]>
     /** Ссылка возврата на демо-страницу (для отдельного роута-фолбэка без JS). */
@@ -39,7 +40,10 @@
   let {
     schema,
     snapshot,
-    form: VaultEntryForm,
+    submitLabel = 'Проверить и сохранить',
+    entryTitle = 'Добавить или обновить сервер (S3 / WebDAV)',
+    entryTestId = 'storage-vault-entry-form',
+    submitTestId = 'vault-save-submit',
     renderMeta,
     backHref,
     onChanged,
@@ -60,11 +64,14 @@
   }
 
   const initialSchema = untrack(() => schema)
-  const resetForm = bindComponentForm(forms, initialSchema.resetKeyForm, {
-    instance: `dv_reset:${initialSchema.scope}`,
+  const bound = bindComponentForm(forms, initialSchema.form, {
+    instance: `dv_entry:${initialSchema.scope}`,
     onSuccess: (res) => {
       const payload = res.data as { snapshot?: CookieVaultSnapshot<TMeta> } | undefined
       if (payload?.snapshot) applyNext(payload.snapshot, true)
+      for (const field of initialSchema.form.fields) {
+        bound.f[field.name]?.onInput(field.defaultValue ?? '')
+      }
     },
   })
 </script>
@@ -93,18 +100,17 @@
 
     <div class="flex flex-wrap items-center gap-2">
       {#if live.hasKey || live.items.length > 0}
-        <Form form={resetForm} hiddenFields={resetForm.hidden()} class="inline-flex">
-          <Field of={resetForm.f.confirm_scope} />
-          <Button
-            type="submit"
-            variant="destructive"
-            size="sm"
-            task={formTask(resetForm.state)}
-            data-testid="vault-reset-key"
-          >
-            Сбросить ключ и куки
-          </Button>
-        </Form>
+        <Button
+          type="submit"
+          form={schema.form.id}
+          {...bound.intent('reset-key')}
+          variant="destructive"
+          size="sm"
+          task={formTask(bound.state, 'reset-key')}
+          data-testid="vault-reset-key"
+        >
+          Сбросить ключ и куки
+        </Button>
       {/if}
       {#if backHref}
         <Button {...asLink(backHref)} variant="ghost" size="sm" data-testid="vault-back-link">
@@ -168,11 +174,13 @@
 
     <div class="border-t border-border/60 pt-4 pb-1">
       {#key formEpoch}
-        <VaultEntryForm
-          config={forms}
-          {schema}
-          items={live.items}
-          onSaved={(next) => applyNext(next, true)}
+        <StorageServerForm
+          form={bound}
+          formId={schema.form.id}
+          {submitLabel}
+          title={entryTitle}
+          formTestId={entryTestId}
+          {submitTestId}
         />
       {/key}
     </div>

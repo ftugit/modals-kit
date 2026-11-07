@@ -33,7 +33,7 @@ const testStorageVaultSchema = defineCookieVault<
   scope: 'storage',
   title: 'Test Storage Vault',
   description: 'Test',
-  entryForm: defineForm({ id: 'test_vault_entry', fields: { slot: field.text({ label: 'Slot' }) } }),
+  form: defineForm({ id: 'test_vault_entry', fields: { slot: field.text({ label: 'Slot' }) } }),
   parse: (v) => ({
     ok: true,
     id: String(v.slot ?? 's3_https'),
