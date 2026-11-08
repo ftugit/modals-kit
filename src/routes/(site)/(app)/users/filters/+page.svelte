@@ -1,7 +1,6 @@
 <script lang="ts">
   // Страница фильтров списка: fallback модалки для no-JS. Форма та же, что в
-  // модалке (`SeedUsersFiltersForm`), режим нативный: GET на адрес носителя
-  // списка (`action` из `from`), его `load` разберёт параметры в тот же срез.
+  // модалке. Без JS она уходит POST, сервер отвечает 303 на адрес списка.
   import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import SeedUsersFiltersForm from '#content/user/ui/SeedUsersFiltersForm.svelte'
@@ -31,8 +30,7 @@
           canSeeDeleted={data.canSeeDeleted}
           canSeeNickname={data.canSeeNickname}
           initial={data.values}
-          action={data.action}
-          hiddenFields={data.hiddenFields}
+          from={data.backHref}
           resetHref={data.resetHref}
         />
       {/key}

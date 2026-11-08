@@ -141,6 +141,10 @@ describe('BlocksFiltersForm.svelte — пикер пользователей', (
     })
     expect(globalUnlocked.body).not.toContain('data-testid="blocks-filters-uid-locked-hint"')
     expect(globalUnlocked.body).toContain('/users/pick?')
+    expect(globalUnlocked.body).toContain('method="post"')
+    expect(globalUnlocked.body).not.toContain('method="get"')
+    expect(globalUnlocked.body).toContain('name="from"')
+    expect(globalUnlocked.body).toContain('name="page_param"')
   })
 })
 

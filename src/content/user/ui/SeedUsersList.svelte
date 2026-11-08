@@ -11,6 +11,7 @@
    */
   import { onDestroy, untrack } from 'svelte'
   import { browser } from '$app/env'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
@@ -94,7 +95,11 @@
           : undefined))
     : undefined
   if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
-  let appliedValues = $state<SeedUsersFilterValues | null>(null)
+  const listFrom = $derived.by(() => {
+    const url = visibleAddress().url
+    return `${url.pathname}${url.search}`
+  })
+  let appliedValues = $state<SeedUsersFilterValues | null>(seedFrom(untrack(() => initial)))
   let appliedKey = $state('')
   const seedCaps = useGrants({
     canSeeDeleted: grants(authResource).selectDeleted,
@@ -106,6 +111,12 @@
   const canSeeNickname = $derived(
     vault.principal !== null ? seedCaps.canSeeNickname : initial?.canSeeNickname === true,
   )
+
+  function seedFrom(data: SeedUsersRouteData | null): SeedUsersFilterValues | null {
+    const snap = data?.snapshot
+    if (!snap) return null
+    return seedValues((snap.extra ?? {}) as Record<string, unknown>, snap.pageSize || SEED_USERS_PAGE_SIZE)
+  }
 
   function seedValues(extra: Record<string, unknown>, pageSize: number): SeedUsersFilterValues {
     const s = (key: string) => (typeof extra[key] === 'string' ? extra[key] : '')
@@ -202,6 +213,7 @@
             {canSeeDeleted}
             {canSeeNickname}
             initial={appliedValues}
+            from={listFrom}
             onApply={applyFilters}
             onReset={resetFilters}
           />

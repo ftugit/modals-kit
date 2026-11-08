@@ -1,28 +1,20 @@
-// Поиск по пагинатору — ЛОГИКА без разметки (решение владельца, ход 117:
-// логика отдельно, разметка — у страницы). Поле и кнопки рисует страница,
-// хук отдаёт им значение, обработчики и флаги.
+// Поиск по пагинатору — логика без разметки.
 //
-// Поле запроса — обычное поле lib/form (предписание `paginate/svelte/search`:
-// «поле запроса — обычное поле lib form, транспорт — GET-форма, а commit —
-// setSearchQuery»). Форма объявлена (`field.search`), транспорт — url-канал
-// `bind`: до оживления нативный GET (жив и без JS), после — коммит в стор
-// пагинатора тем же `setExtra`, а адрес правит транспорт хранилища. Имя поля,
-// перенос остального адреса и ссылку «Сбросить» даёт адаптер пагинатора
-// (`fieldName('q')`, `carryFields`, `linkFor`): формат хранилища хук не знает.
-//
-// Хук — в `lib/components/paginator`, а не в `paginate/search`: он склеивает lib/form,
-// роутер, lib/paginate и paginate/search; положить его в одну из них — привязать
-// независимую библиотеку к трём другим.
+// Поле — обычное поле lib/form (`q`). С JS ввод пишется в стор (`setExtra`),
+// адрес правит транспорт хранилища. Без JS форма уходит POST на текущую
+// страницу; сервер собирает адрес адаптером и отвечает 303. Нативного GET нет:
+// формат адреса знает хранилище, не форма.
 import { onMount, untrack } from 'svelte'
-import { defineForm, field, v } from '#lib/form/index.js'
-import { bind, createConfig, type BoundForm, type FieldView } from '#lib/form/svelte/index.js'
-import { ru } from '#components/form/messages.ru.js'
+import { bindComponentForm } from '#hooks/component-form/index.js'
+import { forms } from '#components/form/forms.config.js'
 import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
 import { linkFor, setExtra, transportOf } from '#lib/paginate/index.js'
 import { useScopeStore } from '#lib/paginate/svelte/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
 import type { TaskState } from '#lib/task/index.js'
+import type { BoundForm, FieldView } from '#lib/form/svelte/index.js'
 import { useActionTask } from './action-task.svelte.js'
+import { PAGINATOR_SEARCH_MAX, paginatorSearchForm } from './search-form.js'
 
 export interface PaginatorSearchOptions {
   /** Подпись поля — текст страницы; своих текстов у хука нет. */
@@ -37,6 +29,10 @@ export interface PaginatorSearchOptions {
    * нему — поле обязано показывать то же. До оживления не используется.
    */
   query: () => string | undefined
+  /** Адрес списка (путь и search), куда без JS вернёт 303. */
+  from: () => string
+  /** Базовый ключ адреса пагинатора (`users`, `blocks`). */
+  pageParam: string
   /** Запрос выключен (источник не умеет искать, опция панели) — JS-путь не применяет ввод. */
   disabled?: () => boolean
   /** Почему выключен: причина видна там же, где пытаются вводить. */
@@ -44,9 +40,9 @@ export interface PaginatorSearchOptions {
 }
 
 export interface PaginatorSearch {
-  /** Форма для `<Form {form}>`: GET до оживления, коммит в стор после. */
+  /** Форма для `<Form {form}>`: POST без JS, коммит в стор после оживления. */
   readonly form: BoundForm
-  /** Вид поля запроса: `attrs` (имя, `type="search"`, `maxlength`), подпись, ошибки. */
+  /** Вид поля запроса: `attrs` (имя `q`, `type="search"`, `maxlength`), подпись, ошибки. */
   readonly field: FieldView
   /** Что показать в поле: набранное, иначе запрос стора (с JS) или адреса (без JS). */
   readonly value: string
@@ -54,18 +50,18 @@ export interface PaginatorSearch {
   readonly reason: string | undefined
   /**
    * Страница ожила. До этого (и без JS) разметка показывает «Найти» и ссылку
-   * «Сбросить»; после — только поле с крестиком (ход 116).
+   * «Сбросить»; после — только поле с крестиком.
    */
   readonly hydrated: boolean
   /** В адресе есть запрос — есть что сбрасывать ссылкой до оживления. */
   readonly hasQuery: boolean
   /** Первая страница без запроса — ссылка «Сбросить» без JS; `null` — у транспорта ссылок нет. */
   readonly resetHref: string | null
-  /** Остальное состояние адреса — скрытыми полями формы: GET-отправка его не сотрёт. */
+  /** Конверт и скрытые поля носителя: POST без JS знает, какой список и куда вернуться. */
   readonly hiddenFields: readonly { name: string; value: string }[]
   /** Обработчик ввода поля: живая проверка сразу, применение — с задержкой. */
   input(event: Event): void
-  /** Обработчик отправки формы: до оживления — нативный GET, после — сразу в стор. */
+  /** Обработчик отправки формы: до оживления — нативный POST, после — сразу в стор. */
   submit(event: SubmitEvent): void
   /** Очистить запрос (крестик поля). */
   clear(): void
@@ -76,83 +72,41 @@ export interface PaginatorSearch {
 /**
  * Поиск по пагинатору `name`. Вызывать при инициализации компонента: хук
  * регистрирует `onMount` и эффект.
- *
- * ```svelte
- * <script>
- *   const search = usePaginatorSearch(name, { label: 'Поиск', query: () => query })
- * </script>
- * <Form form={search.form} hiddenFields={search.hiddenFields} onsubmit={search.submit}>
- *   <SearchInput {...search.field.attrs} value={search.value} oninput={search.input} onClear={search.clear} />
- *   {#if !search.hydrated}<button type="submit">Найти</button>{/if}
- * </Form>
- * ```
  */
 export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): PaginatorSearch {
-  const { maxLength = 120, debounce = 300 } = o
+  const { maxLength = PAGINATOR_SEARCH_MAX, debounce = 300 } = o
   const store = useScopeStore()
   const adapter = transportOf(store, name)
   const hasUrl = typeof adapter.observeExternal === 'function'
-  // Имя поля во внешнем хранилище (URL: `page.q` или `m0.page.q`) — решение транспорта сессии.
-  const path = adapter.fieldName?.('q') ?? 'q'
+  // Имя во внешнем хранилище (URL: `users.q`) — только чтобы показать текущий
+  // запрос и собрать ссылку сброса. Поле формы называется `q`.
+  const addressKey = adapter.fieldName?.('q') ?? 'q'
   const isDisabled = () => o.disabled?.() ?? false
 
-  // Настройка одна на поиск: компонент поля пишет страница, транспорт url-режиму
-  // не нужен — POST-путь не задействуется.
-  const config = createConfig({ resolve: () => undefined, messages: ru, live: 'on-input' })
+  const form = bindComponentForm(forms, paginatorSearchForm)
+  const vf = $derived(form.field('q')!)
 
-  // Объявление не реактивное: имя пагинатора, ключ и предел фиксируются при
-  // вызове (страница не переключает их на лету).
-  const desc = defineForm({
-    id: `search-${name}-${path}`,
-    fields: {
-      [path]: field.search({ label: o.label, placeholder: o.placeholder, validate: [v.maxLength(maxLength)] }),
-    },
-  })
-
-  /** Последний запрос, отправленный ЭТИМ полем: его эхо из стора — не внешняя правка. */
-  let committed: string | null = null
-  // Новый запрос (не тот же самый) перезагружает выдачу — это задача поля.
-  const action = useActionTask(name)
-  const send = (q: string) => {
-    if (q !== String(o.query() ?? '')) action.fire()
-    committed = q
-    void setExtra(store, name, { q })
-  }
-
-  const form = bind(config, desc, {
-    url: {
-      // Нормализация — общая с lib search (та же, что у валидатора адреса).
-      commit: (patch) => {
-        send(normalizeSearchQuery(String(patch[path] ?? ''), maxLength))
-      },
-      // Зеркало bind получает значение из состояния (не из адреса).
-      seed: () => ({ [path]: o.query() ?? '' }),
-    },
-  })
-  const vf = $derived(form.field(path)!)
-
-  // Гашение поля — работа JS: без JavaScript контрол остаётся живым, иначе
-  // браузер не отправит его значение и запрос пропал бы молча.
   let hydrated = $state(false)
   onMount(() => {
     hydrated = true
   })
 
-  /**
-   * До оживления и без JS значение — из адреса (SSR/deep-link: форма рождается
-   * с запросом). С JS — из СТОРА: хранилище может быть не адресным
-   * (`local`/`none`), и поле обязано показывать то же, по чему строится выдача.
-   * Набранное (`typed`) поверх — чтобы эхо коммита не переставляло курсор.
-   */
+  /** Последний запрос, отправленный ЭТИМ полем: его эхо из стора — не внешняя правка. */
+  let committed: string | null = null
+  const action = useActionTask(name)
+  const send = (raw: string) => {
+    const q = normalizeSearchQuery(raw, maxLength)
+    if (q !== String(o.query() ?? '')) action.fire()
+    committed = q
+    void setExtra(store, name, { q })
+  }
+
   const fromAddress = $derived(
-    hasUrl ? String(currentSearch()[path] ?? '').slice(0, maxLength) : '',
+    hasUrl ? String(currentSearch()[addressKey] ?? '').slice(0, maxLength) : '',
   )
   let typed = $state<string | null>(null)
   const value = $derived(typed ?? (hydrated ? String(o.query() ?? '') : fromAddress))
 
-  // Запрос сменился НЕ отправкой этого поля (смена источника снимает `q`, «назад»,
-  // другой виджет) — набранное устарело: поле показывает стор. Эхо своей отправки
-  // набранное не трогает — иначе дописанное за время запроса стёрлось бы.
   $effect.pre(() => {
     const q = String(o.query() ?? '')
     untrack(() => {
@@ -163,20 +117,18 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
   let timer: ReturnType<typeof setTimeout> | undefined
   const stopTimer = () => clearTimeout(timer)
 
-  /** Свой запрос не переносится (его несёт поле), указатель страницы — тоже: новый запрос — с первой. */
-  const preserved = $derived(
-    hasUrl ? (adapter.carryFields?.(currentSearch(), ['q']) ?? []) : [],
-  )
-
-  /**
-   * «Сбросить» без JS — ссылка, а не `type="reset"`: сброс формы вернул бы поле
-   * к значению из разметки, т. е. к тому же запросу.
-   */
   const resetHref = $derived.by(() => {
     if (!hasUrl) return null
     const href = linkFor(name, { page: 1, patch: { q: undefined } }, { store, search: currentSearch() })
     return href === null ? null : `${currentPathname()}${href}`
   })
+
+  const hiddenFields = $derived([
+    ...form.hidden(),
+    { name: 'paginator', value: name },
+    { name: 'page_param', value: o.pageParam },
+    { name: 'from', value: o.from() },
+  ])
 
   return {
     form,
@@ -202,7 +154,7 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
       return resetHref
     },
     get hiddenFields() {
-      return preserved
+      return hiddenFields
     },
     get task() {
       return action.task()
@@ -210,17 +162,16 @@ export function usePaginatorSearch(name: string, o: PaginatorSearchOptions): Pag
     input(event) {
       const raw = (event.currentTarget as HTMLInputElement).value.slice(0, maxLength)
       typed = raw
-      // Зеркало bind и живая проверка — штатным путём поля; в стор — с задержкой.
       vf.onInput(raw)
       stopTimer()
       if (isDisabled()) return
-      timer = setTimeout(() => form.commit(), debounce)
+      timer = setTimeout(() => send(typed ?? ''), debounce)
     },
     submit(event) {
-      if (!hydrated) return // нативный GET до оживления (и без JS)
+      if (!hydrated) return
       event.preventDefault()
       stopTimer()
-      if (!isDisabled()) form.commit()
+      if (!isDisabled()) send(typed ?? value)
     },
     clear() {
       stopTimer()

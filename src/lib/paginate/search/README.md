@@ -31,20 +31,25 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 | `dictionary.ts` | Клиент: разбор артефакта `display\tdf`, биграммный индекс, корректор запроса |
 | `svelte/` | Svelte 5-вход `#lib/paginate/svelte/search/index.js`: хук `useSearchCorrection` (подпись «искали X → показываем Y»). Устроен как `#lib/paginate/svelte/index.js`: ядро о фреймворке не знает, обвязка живёт отдельной точкой входа — поэтому `#lib/paginate/search/index.js` остаётся импортируемым из node-тестов |
 
-Самой формы поиска в библиотеке нет: поле запроса — обычное поле lib form
-(`<Form method="get">` + поле), транспорт — GET-форма, композицию собирает
-приложение. Связь тонкая: `commit` — это `setSearchQuery`, ресинк deep-link'а —
-`resyncSearch` при монтировании хоста результатов.
+Самой формы поиска в библиотеке нет: поле запроса — обычное поле lib form,
+композицию собирает приложение. С JS запись идёт в стор (`setExtra`), адрес
+правит транспорт хранилища. Без JS форма уходит POST, а не GET: адрес среза
+собирает адаптер и отвечает 303. Ресинк deep-link'а — `resyncSearch` при
+монтировании хоста результатов.
 
 Готовая склейка «поле lib form → стор пагинатора» без разметки — хук
-`usePaginatorSearch` из `#components/paginator/index.js` (форма, задержка,
-нормализация, «Найти»/«Сбросить» только до оживления, крестик — `clear`).
-Он живёт в `lib/components/paginator`, а не здесь: склеивает lib form, роутер,
-lib paginate и lib search, а библиотека поиска от них не зависит.
+`usePaginatorSearch` (форма, задержка, нормализация, «Найти»/«Сбросить» только
+до оживления, крестик — `clear`). Он живёт в `src/components/paginator`, а не
+здесь: склеивает lib form, роутер, lib paginate и lib search.
 
 ```svelte
 <script>
-  const search = usePaginatorSearch(name, { path: 'page.q', label: 'Поиск', query: () => query })
+  const search = usePaginatorSearch(name, {
+    label: 'Поиск',
+    pageParam: 'page',
+    from: () => '/list',
+    query: () => query,
+  })
 </script>
 <Form form={search.form} hiddenFields={search.hiddenFields} onsubmit={search.submit}>
   <SearchInput {...search.field.attrs} value={search.value} oninput={search.input} onClear={search.clear} />
@@ -78,10 +83,8 @@ export const load = ({ url }) => /* … */ void url
 ```
 
 ```svelte
-<!-- 3. Страница: обычный хост single + PageNav, ВСЕГДА видимый, форма над ним. -->
-<form method="get" action="/my-page">
-  <input name="search.q" value={q} />
-</form>
+<!-- 3. Страница: хост результатов всегда виден. Форма поиска — POST (хук выше),
+     не GET: ключ `search.q` в адресе пишет адаптер, не поле формы. -->
 
 <!-- Умолчание `q: ''` — у адаптера: createUrlAdapter({ …, extraDefaults: { q: '' } }). -->
 <PaginatorHost name="my-search" ariaLabel="Результаты поиска" snapshot={data.snapshot} mode="single"

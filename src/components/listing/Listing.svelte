@@ -75,10 +75,13 @@
   const narrow = useIsMobile()
   const inSidebar = $derived(filtersUseSidebar(sidebar, narrow.matches) && Boolean(filtersForm) && Boolean(page))
   let warnedNoPage = false
+  let releaseSidebar: (() => void) | undefined
 
-  // registerSidebarSlot ширину не смотрит. Снятие — возврат этой регистрации:
-  // когда useIsMobile станет true, эффект перезапустится и слот уйдёт.
-  $effect(() => {
+  // Слот ставится сразу, не из эффекта: на сервере эффекта нет, а форма
+  // обязана быть в HTML. Снятие — когда useIsMobile станет true.
+  function placeSidebar() {
+    releaseSidebar?.()
+    releaseSidebar = undefined
     const zone = sidebar
     const show = filtersUseSidebar(zone, narrow.matches)
     if (!zone || !show) return
@@ -91,7 +94,18 @@
     }
     const form = filtersForm
     if (!form) return
-    return page.registerSidebarSlot(zone, form)
+    releaseSidebar = page.registerSidebarSlot(zone, form)
+  }
+  placeSidebar()
+  $effect(() => {
+    void sidebar
+    void narrow.matches
+    void filtersForm
+    placeSidebar()
+    return () => {
+      releaseSidebar?.()
+      releaseSidebar = undefined
+    }
   })
 
   $effect(() => {
@@ -116,6 +130,14 @@
   )
   const effectiveUrl = $derived(urlProp !== undefined ? urlProp : slotScope.paginatorUrl)
   const asModalLink = useModalLink()
+  const listFrom = $derived.by(() => {
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(currentSearch())) {
+      if (v != null && v !== '') sp.set(k, String(v))
+    }
+    const qs = sp.toString()
+    return qs ? `${route}?${qs}` : route
+  })
 
   let data = $state<ListingInitial<T> | null>(untrack(() => initial))
   let asked: string | null = null
@@ -265,6 +287,8 @@
       {#if search}
         <SearchBar
           name={paginatorName}
+          pageParam={pageParam}
+          from={listFrom}
           query={typeof extraRecord.q === 'string' ? extraRecord.q : ''}
           label={search.label(extraRecord)}
           placeholder={search.placeholder(extraRecord)}

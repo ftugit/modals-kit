@@ -1,5 +1,5 @@
 // Страница фильтров списка блокировок (`/blocks/filters`) — fallback модалки
-// `user.blocks.filters` для no-JS и источник данных загрузчика самой модалки.
+// `user.blocks.filters` для no-JS. Форма уходит POST, 303 собирает адаптер.
 import type { PageServerLoad } from './$types'
 import { localPath } from '#lib/address/index.js'
 import { auth } from '#content/user/gateway.server.js'
@@ -21,8 +21,6 @@ export interface BlocksFiltersPageData {
     size: number
   }
   selfHref: string
-  action: string
-  hiddenFields: { name: string; value: string }[]
   resetHref: string
   backHref: string
 }
@@ -97,8 +95,6 @@ export const load: PageServerLoad = async (event): Promise<BlocksFiltersPageData
     enabled: u.enabled,
     values,
     selfHref,
-    action: fromUrl.pathname,
-    hiddenFields,
     resetHref,
     backHref: from,
   }

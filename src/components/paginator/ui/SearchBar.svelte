@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Строка поиска пагинатора: поле `SearchInput`, no-JS submit/reset и причина выключения.
-  // Логика (форма, задержка, запись в стор, сброс) — хук `usePaginatorSearch`.
+  // Строка поиска пагинатора. С JS — запись в стор, без JS — POST и 303.
+  // Логика — хук `usePaginatorSearch`.
   import { Form } from '#lib/form/svelte/index.js'
   import { asLink } from '#hooks/links/index.js'
   import { cn } from '#components/utils.js'
@@ -10,6 +10,10 @@
   interface Props {
     /** Имя пагинатора (оно же имя поиска в `lib/paginate/search`). */
     name: string
+    /** Базовый ключ адреса пагинатора. */
+    pageParam: string
+    /** Адрес списка (путь и search) для POST без JS. */
+    from: string
     /** Текущий запрос из состояния пагинатора. */
     query?: string
     /** Запрос выключен опцией панели или возможностями источника. */
@@ -28,6 +32,8 @@
 
   let {
     name,
+    pageParam,
+    from,
     query,
     disabled = false,
     hint,
@@ -42,6 +48,8 @@
     label,
     placeholder,
     query: () => query,
+    pageParam,
+    from: () => from,
     disabled: () => disabled,
     reason: () => hint,
   })

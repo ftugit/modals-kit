@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Страница фильтров списка блокировок — fallback модалки `user.blocks.filters` для no-JS.
+  // Страница фильтров списка блокировок — fallback модалки для no-JS.
+  // Форма уходит POST, сервер отвечает 303 на адрес списка.
   import { useHeadSeo } from '#components/shell/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import BlocksFiltersForm from '#content/user/ui/BlocksFiltersForm.svelte'
@@ -32,8 +33,7 @@
           canPickUsers={data.canPickUsers}
           initial={data.values}
           selfHref={data.selfHref}
-          action={data.action}
-          hiddenFields={data.hiddenFields}
+          from={data.backHref}
           resetHref={data.resetHref}
         />
       {/key}

@@ -1,14 +1,10 @@
 // Страница фильтров списка seed-юзеров — fallback модалки `user.list.filters`
-// для no-JS (канон «модалка + страница», как `/user/menu`): кнопка над списком
-// без JS ведёт сюда, форма уходит нативным GET обратно к списку.
+// для no-JS. Кнопка над списком без JS ведёт сюда. Форма уходит POST на эту
+// же страницу; сервер отвечает 303 на адрес списка, собранный адаптером.
 //
-// Куда возвращаться, страница не знает и не должна: список может жить на
-// странице, в модалке поверх другой страницы или в любом месте сайта.
-// Адрес носителя приходит параметром `from` (его собрала кнопка из живого
-// адреса) и проверяется `localPath`; оттуда же берутся текущие значения
-// фильтров — переход обязан тянуть их с собой. Чужие ключи адреса
-// (поиск `users.q`, `modal=…`, размер порции) форма пронесёт скрытыми
-// полями; указатель порции сбрасывается — новый срез начинается сначала.
+// Адрес носителя приходит параметром `from` и проверяется `localPath`.
+// Оттуда же берутся текущие значения фильтров. Чужие ключи адреса сохраняет
+// адаптер при сборке 303, не скрытые поля GET.
 import type { PageServerLoad } from './$types'
 import { localPath } from '#lib/address/index.js'
 import { auth } from '#content/user/gateway.server.js'
@@ -19,15 +15,11 @@ export interface SeedUsersFiltersPageData {
   canSeeNickname: boolean
   fact: AuthErrorCode | null
   enabled: boolean
-  /** Значения формы: свои `users.*` адреса страницы, иначе — из `from`. */
+  /** Значения формы из адреса списка (`from`) и query этой страницы. */
   values: { ord: string; state: string; cfrom: string; cto: string; dfrom: string; dto: string; nick: boolean; size: number }
-  /** Куда уходит GET формы (путь носителя списка). */
-  action: string
-  /** Чужое состояние адреса носителя — скрытыми полями формы. */
-  hiddenFields: { name: string; value: string }[]
   /** Адрес носителя без фильтров — «Сбросить». */
   resetHref: string
-  /** Адрес носителя как был — «К списку» без изменений. */
+  /** Адрес носителя как был — «К списку» и скрытое `from` формы. */
   backHref: string
 }
 
@@ -87,8 +79,6 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersFiltersPageD
     fact: r.ok ? null : r.fact.code,
     enabled: u.enabled,
     values,
-    action: fromUrl.pathname,
-    hiddenFields,
     resetHref,
     backHref: from,
   }

@@ -7,6 +7,7 @@
    */
   import { onDestroy, untrack } from 'svelte'
   import { browser } from '$app/env'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
@@ -104,7 +105,11 @@
           : undefined))
     : undefined
   if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
-  let appliedValues = $state<BlocksFilterValues | null>(null)
+  const listFrom = $derived.by(() => {
+    const url = visibleAddress().url
+    return `${url.pathname}${url.search}`
+  })
+  let appliedValues = $state<BlocksFilterValues | null>(blocksFrom(untrack(() => initial)))
   let appliedKey = $state('')
   const gBlock = grants(blockResource)
   const gAuth = grants(authResource)
@@ -125,6 +130,12 @@
   const canPickUsers = $derived(
     !fixedUid && (vault.principal !== null ? filterCaps.canPickUsers : initial?.canPickUsers === true),
   )
+
+  function blocksFrom(data: BlocksRouteData | null): BlocksFilterValues | null {
+    const snap = data?.snapshot
+    if (!snap) return null
+    return blockValues((snap.extra ?? {}) as Record<string, unknown>, snap.pageSize || BLOCKS_PAGE_SIZE)
+  }
 
   function blockValues(extra: Record<string, unknown>, pageSize: number): BlocksFilterValues {
     const s = (key: string) => (typeof extra[key] === 'string' ? extra[key] : '')
@@ -224,6 +235,7 @@
             {canSeeLive}
             {canPickUsers}
             initial={appliedValues}
+            from={listFrom}
             onApply={applyFilters}
             onReset={resetFilters}
           />

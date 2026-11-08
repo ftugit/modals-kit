@@ -113,13 +113,29 @@
   />
 
   <!--
-    Рабочая зона: Sidebar + Main scroller.
+    Рабочая зона. Содержимое рисуется раньше панели: страница регистрирует
+    слот sidebar в теле компонента, и без этого форма не попадает в HTML.
+    Визуальный порядок не меняется — у панели `order-first` / `order-last`.
     `max-lg:z-40` делает строку контекстом наложения на узком экране: фон
     drawer'а (z-200) и панель (z-210) считаются внутри него и целиком лежат
-    выше шапки (z-30), но ниже модальной системы (фон 200 / сцена 210 —
-    они в корневом контексте). Без этого фон drawer'а не закрывал шапку.
+    выше шапки (z-30), но ниже модальной системы.
   -->
   <div class="relative flex min-h-0 flex-1 max-lg:z-40">
+    <!-- Основная рабочая область (скроллер) -->
+    <main
+      bind:this={mainRef}
+      data-fe-scroll="owner"
+      tabindex="-1"
+      class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background outline-none"
+    >
+      <div class="flex-1 bg-background p-4 sm:px-6 sm:py-10">
+        {@render children()}
+      </div>
+      {#if footer}
+        {@render footer()}
+      {/if}
+    </main>
+
     <!-- 3-ЗОННЫЙ САЙДБАР: TOP (safe zone), MIDDLE (scrollable), BOTTOM (safe zone) -->
     <aside
       id="fe-sidebar-panel"
@@ -187,21 +203,6 @@
         </div>
       {/if}
     </aside>
-
-    <!-- Основная рабочая область (скроллер) -->
-    <main
-      bind:this={mainRef}
-      data-fe-scroll="owner"
-      tabindex="-1"
-      class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background outline-none"
-    >
-      <div class="flex-1 bg-background p-4 sm:px-6 sm:py-10">
-        {@render children()}
-      </div>
-      {#if footer}
-        {@render footer()}
-      {/if}
-    </main>
 
     <!--
       Мобильная подложка (Backdrop) для Drawer'а.

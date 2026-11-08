@@ -1,49 +1,42 @@
 <script lang="ts">
   /**
-   * Форма фильтров списка блокировок (`user.blocks.filters` и страница-fallback
-   * `/blocks/filters`):
-   *  - порядок сортировки и размер порции (30..100);
-   *  - состояние (`all`, `active`, `expired`, при `canSeeDeleted` — `deleted`;
-   *    у чистого аудитора без `canSeeLive` — только `deleted`);
-   *  - выбор ключей сфер `BLOCK_SCOPES`;
-   *  - кнопка открытия пикера пользователей `user.picker` (`multiple`), которая
-   *    ОТКЛЮЧЕНА при переданном `uid` в `BlocksList` (или при отсутствии `canPickUsers`).
+   * Форма фильтров списка блокировок — одна на sidebar, модалку и
+   * `/blocks/filters`. С JS — `onApply` → `setExtra`. Без JS — POST и 303
+   * на адрес, который собрал адаптер из `from`.
    */
-  import { untrack } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { grants } from '#lib/db/index.js'
-  import { defineForm, field, v } from '#lib/form/index.js'
-  import { bind, createConfig, Form } from '#lib/form/svelte/index.js'
-  import { ru } from '#components/form/messages.ru.js'
+  import { Form } from '#lib/form/svelte/index.js'
+  import { bindComponentForm } from '#hooks/component-form/index.js'
+  import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
+  import Common from '#components/form/Common.svelte'
   import { Button } from '#components/ui/index.js'
   import { asLink, useModalLink } from '#hooks/links/index.js'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import { BLOCK_SCOPES } from '../spec-block.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource } from '../schema.js'
-  import { BLOCK_SCOPES, isBlockScope } from '../spec-block.js'
   import { vault } from '../vault.svelte.js'
   import { mirrorToField } from './field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from './UserPicker.svelte'
+  import {
+    applyBlocksFilters,
+    blocksFiltersForm,
+    scopeFieldName,
+    type BlocksFilterValues as BlocksFilterValuesType,
+  } from './blocks-list/filters-form.js'
 
-  export interface BlocksFilterValues {
-    ord: string
-    state: string
-    scopes: string[]
-    uids: string[]
-    size: number
-  }
+  export type BlocksFilterValues = BlocksFilterValuesType
 
   interface Props {
-    /** Фиксированный пользователь `BlocksList`: если передан, выбор пользователей в фильтре отключён. */
     uid?: string | null
     canSeeDeleted: boolean
     canSeeLive?: boolean
     canPickUsers?: boolean
     initial: BlocksFilterValues
-    /** Текущий адрес экрана фильтров (для возврата из no-JS `/users/pick`). */
     selfHref?: string
-    action?: string
-    hiddenFields?: readonly { name: string; value: string }[]
+    from?: string
     resetHref?: string
     onUidsChange?: (uids: string[]) => void
     onApply?: (patch: Record<string, string | undefined>, pageSize: number) => void | Promise<void>
@@ -57,8 +50,7 @@
     canPickUsers = false,
     initial,
     selfHref = '/blocks/filters',
-    action,
-    hiddenFields = [],
+    from = '',
     resetHref,
     onUidsChange,
     onApply,
@@ -67,84 +59,39 @@
 
   const asModalLink = useModalLink()
   const modalsCtx = tryUseModals()
-
   const init = untrack(() => initial)
   const scopeEntries = Object.entries(BLOCK_SCOPES)
-  const initScopeSet = new Set<string>(init.scopes.filter(isBlockScope))
+  const initScopeSet = new Set<string>(init.scopes)
 
-  const scopeFields: Record<string, ReturnType<typeof field.checkbox>> = {}
-  for (const [scopeKey, scopeInfo] of scopeEntries) {
-    scopeFields[`blocks.sc.${scopeKey}`] = field.checkbox({
-      label: `${scopeInfo.title} (${scopeKey})`,
-      defaultValue: initScopeSet.has(scopeKey),
-    })
+  const bound = bindComponentForm(forms, blocksFiltersForm)
+  const failed = untrack(() => Boolean(bound.state.result && !bound.state.result.ok))
+
+  mirrorToField(bound, 'show_deleted', () => canSeeDeleted)
+  mirrorToField(bound, 'show_live', () => canSeeLive)
+  mirrorToField(bound, 'from', () => from)
+  if (!failed) {
+    mirrorToField(bound, 'ord', () => init.ord)
+    mirrorToField(bound, 'size', () => init.size)
+    mirrorToField(bound, 'state', () => init.state || (!canSeeLive && canSeeDeleted ? 'deleted' : 'all'))
+    if (!untrack(() => uid)) mirrorToField(bound, 'uids', () => init.uids.join(','))
+    for (const [scopeKey] of scopeEntries) {
+      if (initScopeSet.has(scopeKey)) mirrorToField(bound, scopeFieldName(scopeKey), () => true)
+    }
   }
-
-  const defaultState = untrack(() => (!canSeeLive && canSeeDeleted ? 'deleted' : init.state || 'all'))
-
-  const desc = defineForm({
-    id: 'user-blocks-filters',
-    fields: {
-      'blocks.size': field.number({
-        label: 'Элементов на страницу',
-        defaultValue: init.size || 30,
-        validate: [v.required(), v.integer(), v.minValue(30), v.maxValue(100)],
-      }),
-      'blocks.ord': field.select({
-        label: 'Порядок',
-        options: [
-          { value: 'created-desc', label: 'Сначала новые (по созданию)' },
-          { value: 'created-asc', label: 'Сначала старые (по созданию)' },
-          { value: 'until-asc', label: 'По сроку окончания (по возрастанию)' },
-          { value: 'until-desc', label: 'По сроку окончания (по убыванию)' },
-          { value: 'scope-asc', label: 'По сфере (А→Я)' },
-          { value: 'scope-desc', label: 'По сфере (Я→А)' },
-          ...(untrack(() => canSeeDeleted)
-            ? [
-                { value: 'deleted-desc', label: 'Недавно удалённые' },
-                { value: 'deleted-asc', label: 'Давно удалённые' },
-              ]
-            : []),
-        ],
-        defaultValue: init.ord || 'created-desc',
-      }),
-      'blocks.state': field.select({
-        label: 'Состояние',
-        options: [
-          ...(untrack(() => canSeeLive)
-            ? [
-                { value: 'all', label: 'Все живые (активные и снятые)' },
-                { value: 'active', label: 'Только активные' },
-                { value: 'expired', label: 'Только снятые / истёкшие' },
-              ]
-            : []),
-          ...(untrack(() => canSeeDeleted)
-            ? [{ value: 'deleted', label: 'Только мягко удалённые' }]
-            : []),
-        ],
-        defaultValue: defaultState,
-      }),
-      'blocks.uids': field.hidden({
-        defaultValue: init.uids.join(','),
-      }),
-      ...scopeFields,
-    },
-  })
-
-  const config = createConfig({ resolve: () => undefined, messages: ru })
-  const bound = bind(config, desc)
 
   let pickedUids = $state<string[]>([...init.uids.filter(Boolean)])
   let lastPickerSeq = 0
+  let hydrated = $state(false)
+  onMount(() => {
+    hydrated = true
+  })
 
-  // На странице `/blocks/filters` после навигации по `clearUsersHref` или возврата
-  // из `/users/pick` проп `initial.uids` обновляется без перемонтирования компонента.
   $effect(() => {
     if (onApply) return
     pickedUids = [...initial.uids.filter(Boolean)]
   })
 
-  mirrorToField(bound, 'blocks.uids', () => (uid ? '' : pickedUids.join(',')))
+  mirrorToField(bound, 'uids', () => (uid ? '' : pickedUids.join(',')))
 
   $effect(() => {
     const raw = modalsCtx?.view.sharedData[`${USER_PICKER_CHANNEL_PREFIX}blocks.uids`] as
@@ -181,73 +128,59 @@
   })
 
   let formError = $state('')
-  const clean = (val: unknown): string => (typeof val === 'string' ? val.trim() : '')
 
   function submit(e: SubmitEvent) {
-    const vals = bound.values as Record<string, unknown>
-    const sizeRaw = vals['blocks.size']
-    const pageSize = typeof sizeRaw === 'number' ? sizeRaw : Number(sizeRaw)
-    if (!Number.isInteger(pageSize) || pageSize < 30 || pageSize > 100) {
-      e.preventDefault()
-      formError = 'Элементов на страницу — целое число от 30 до 100'
+    if (!hydrated || !onApply) return
+    e.preventDefault()
+    const applied = applyBlocksFilters(bound.values, {
+      canSeeDeleted,
+      canSeeLive,
+      canPickUsers: effectiveCanPickUsers,
+      uid,
+    })
+    if (!applied.ok) {
+      formError = applied.message
       return
     }
     formError = ''
-    if (!onApply) return
-    e.preventDefault()
-
-    const chosenScopes: string[] = []
-    for (const [scopeKey] of scopeEntries) {
-      if (vals[`blocks.sc.${scopeKey}`] === true) chosenScopes.push(scopeKey)
-    }
-
-    const ord = clean(vals['blocks.ord'])
-    const state = clean(vals['blocks.state'])
-    const uidsCsv = uid ? '' : pickedUids.filter(Boolean).join(',')
-
-    void onApply(
-      {
-        ord: ord === 'created-desc' ? undefined : ord || undefined,
-        state: state === 'all' ? undefined : state || undefined,
-        scopes: chosenScopes.length ? chosenScopes.join(',') : undefined,
-        uids: uidsCsv || undefined,
-      },
-      pageSize,
-    )
+    void onApply(applied.patch, applied.pageSize)
   }
 </script>
 
 <Form
   form={bound}
   onsubmit={submit}
-  action={action}
-  method={action ? 'get' : undefined}
-  {hiddenFields}
+  hiddenFields={bound.hidden()}
   class="flex flex-col gap-4"
   data-testid="blocks-filters-form"
 >
-  {#if onApply || pickedUids.length > 0}
-    <div hidden aria-hidden="true">
-      <Field of={bound.field('blocks.uids')} />
-    </div>
-  {/if}
+  <div hidden aria-hidden="true">
+    <Field of={bound.field('paginator')!} />
+    <Field of={bound.field('page_param')!} />
+    <Field of={bound.field('from')!} />
+    <Field of={bound.field('show_deleted')!} />
+    <Field of={bound.field('show_live')!} />
+    <Field of={bound.field('uids')!} />
+  </div>
+
+  <Common errors={bound.common} />
 
   <div class="flex flex-wrap gap-3">
     <div class="min-w-0 flex-1 basis-44">
-      <Field of={bound.field('blocks.ord')} />
+      <Field of={bound.field('ord')!} />
     </div>
     <div class="min-w-0 flex-1 basis-44">
-      <Field of={bound.field('blocks.size')} />
+      <Field of={bound.field('size')!} />
     </div>
   </div>
 
-  <Field of={bound.field('blocks.state')} />
+  <Field of={bound.field('state')!} />
 
   <div class="flex flex-col gap-2">
     <span class="text-sm font-medium">Сферы блокировок</span>
     <div class="flex flex-col gap-1.5">
       {#each scopeEntries as [scopeKey] (scopeKey)}
-        <Field of={bound.field(`blocks.sc.${scopeKey}`)} />
+        <Field of={bound.field(scopeFieldName(scopeKey))!} />
       {/each}
     </div>
   </div>
