@@ -30,9 +30,9 @@
     if (!enabled || !children) return
 
     if (isSidebar && (target.startsWith('sidebar.') || !target.includes('.'))) {
-      return page.registerSidebarSlot(target as SidebarSlotPath, children, offset)
+      return page.registerSidebarSlot(target as SidebarSlotPath, children, { offset })
     }
 
-    return page.registerHeaderSlot(target as HeaderSlotPath, children, offset)
+    return page.registerHeaderSlot(target as HeaderSlotPath, children, { offset })
   })
 </script>

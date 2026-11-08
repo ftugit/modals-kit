@@ -24,6 +24,12 @@ export {
   type SidebarSlots,
   type RowSlots,
   type SlotItem,
+  type MergeEntry,
+  type SlotRegisterOptions,
+  mergeSlot,
+  isMergeSlot,
+  applySlot,
+  entryOf,
 } from './page.svelte'
 
 export {

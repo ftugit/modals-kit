@@ -53,6 +53,10 @@ export type SeoLayer = {
 export type SlotItem = {
   id: number
   snippet: Snippet
+  /**
+   * Правило места при складывании, не разовая вставка.
+   * Нет поля — дописать в конец. Снятие соседа пересчитывает позицию.
+   */
   offset?: number
   /**
    * Каркас оболочки. Слот виден, но зону для `auto` не занимает:
@@ -61,6 +65,73 @@ export type SlotItem = {
   frame?: boolean
   /** Поставлен режимом `auto`, а не явной зоной. */
   auto?: boolean
+}
+
+/** Слот как есть — в конец. Пара — вставка на `offset` уже сложенного списка. */
+export type MergeEntry = SlotItem | readonly [offset: number, item: SlotItem]
+
+const MERGE_MARKER = Symbol('page.merge')
+
+interface MergeMarker {
+  [MERGE_MARKER]: true
+  entries: readonly MergeEntry[]
+}
+
+/**
+ * Помечает регистрацию как слияние, а не замену ячейки.
+ * Сам слот не читает и сниппеты не склеивает: это делает `applySlot`.
+ */
+export function mergeSlot(entries: readonly MergeEntry[]): SlotItem[] {
+  const marker: MergeMarker = { [MERGE_MARKER]: true, entries }
+  return marker as unknown as SlotItem[]
+}
+
+/** Маркер `mergeSlot`, а не готовый массив слотов. */
+export function isMergeSlot(value: SlotItem[] | undefined): value is SlotItem[] & MergeMarker {
+  return (
+    value !== undefined &&
+    !Array.isArray(value) &&
+    typeof value === 'object' &&
+    MERGE_MARKER in value
+  )
+}
+
+/**
+ * Следующий набор к уже лежащему.
+ * Без маркера `next` заменяет `base`. С маркером элементы вставляются по offset
+ * или дописываются в конец. `next === undefined` оставляет `base`.
+ * Одна функция на ячейку шапки и на зону sidebar.
+ */
+export function applySlot(
+  base: readonly SlotItem[] | undefined,
+  next: SlotItem[] | undefined,
+): SlotItem[] | undefined {
+  if (next === undefined) return base as SlotItem[] | undefined
+  if (!isMergeSlot(next)) return next
+
+  const result = [...(base ?? [])]
+  for (const entry of (next as unknown as MergeMarker).entries) {
+    if (isOffsetEntry(entry)) {
+      const [offset, item] = entry
+      const index = Math.min(Math.max(0, offset), result.length)
+      result.splice(index, 0, item)
+    } else {
+      result.push(entry)
+    }
+  }
+  return result
+}
+
+function isOffsetEntry(entry: MergeEntry): entry is readonly [number, SlotItem] {
+  return Array.isArray(entry)
+}
+
+export function entryOf(item: SlotItem): MergeEntry {
+  return item.offset === undefined ? item : [item.offset, item]
+}
+
+function foldMerged(entries: readonly MergeEntry[]): SlotItem[] {
+  return applySlot(undefined, mergeSlot(entries)) ?? []
 }
 
 export type RowSlots = Record<HeaderSide, SlotItem[]>
@@ -81,14 +152,6 @@ function createEmptySidebarSlots(): SidebarSlots {
     top: [],
     middle: [],
     bottom: [],
-  }
-}
-
-function cloneHeaderSlots(src: HeaderSlots): HeaderSlots {
-  return {
-    top: { start: [...src.top.start], center: [...src.top.center], end: [...src.top.end] },
-    middle: { start: [...src.middle.start], center: [...src.middle.center], end: [...src.middle.end] },
-    bottom: { start: [...src.bottom.start], center: [...src.bottom.center], end: [...src.bottom.end] },
   }
 }
 
@@ -137,8 +200,10 @@ export class PageState {
   private readonly rawSeoBase: HeadSeo
   private rawSeoPatch: HeadSeo = {}
   private rawSeoLayers: SeoLayer[] = []
-  private rawHeader: HeaderSlots = createEmptyHeaderSlots()
-  private rawSidebar: SidebarSlots = createEmptySidebarSlots()
+  /** Регистрации ячеек шапки. Порядок — порядок складывания, не готовая вёрстка. */
+  private headerRegs: HeaderReg[] = []
+  /** Явные зоны sidebar. `auto` здесь не лежит. */
+  private sidebarRegs: SidebarReg[] = []
   private revSeq = 0
   private seoRev = $state(0)
 
@@ -179,7 +244,7 @@ export class PageState {
   }
 
   private syncHeader(): void {
-    this.header = cloneHeaderSlots(this.rawHeader)
+    this.header = this.foldHeader()
   }
 
   private syncSidebar(): void {
@@ -190,8 +255,31 @@ export class PageState {
   private autos: SlotItem[] = []
   private autoWarnTimer: ReturnType<typeof setTimeout> | undefined
 
+  private foldHeader(): HeaderSlots {
+    const out = createEmptyHeaderSlots()
+    for (const row of HEADER_ROWS) {
+      for (const side of HEADER_SIDES) {
+        const path = `${row}.${side}` as HeaderSlotPath
+        out[row][side] = foldMerged(
+          this.headerRegs.filter((reg) => reg.path === path).map((reg) => entryOf(reg.item)),
+        )
+      }
+    }
+    return out
+  }
+
+  private foldSidebar(): SidebarSlots {
+    const out = createEmptySidebarSlots()
+    for (const zone of SIDEBAR_ZONES) {
+      out[zone] = foldMerged(
+        this.sidebarRegs.filter((reg) => reg.zone === zone).map((reg) => entryOf(reg.item)),
+      )
+    }
+    return out
+  }
+
   private reflowSidebar(): void {
-    const { slots, warn } = placeSidebarSlots(this.rawSidebar, this.autos)
+    const { slots, warn } = placeSidebarSlots(this.foldSidebar(), this.autos)
     this.sidebar = slots
     this.scheduleAutoWarn(warn)
   }
@@ -241,47 +329,42 @@ export class PageState {
     }
   }
 
-  registerHeaderSlot(path: HeaderSlotPath, snippet: Snippet, offset?: number): () => void {
-    const [row, side] = path.split('.') as [HeaderRow, HeaderSide]
+  /**
+   * Всегда слияние: сниппет дописывается или встаёт на `offset`.
+   * Ячейку целиком эта регистрация не заменяет. Снятие убирает только свой id,
+   * остальные позиции складываются заново.
+   */
+  registerHeaderSlot(
+    path: HeaderSlotPath,
+    snippet: Snippet,
+    options: SlotRegisterOptions = {},
+  ): () => void {
     const id = ++this.seq
-    const item: SlotItem = { id, snippet, offset }
-    const current = [...this.rawHeader[row][side]]
-
-    if (offset !== undefined) {
-      const idx = Math.max(0, Math.min(offset, current.length))
-      current.splice(idx, 0, item)
-    } else {
-      current.push(item)
-    }
-
-    this.rawHeader[row][side] = current
+    const item = slotItem(id, snippet, options)
+    this.headerRegs = [...this.headerRegs, { id, path, item }]
     this.syncHeader()
 
     return () => {
-      this.rawHeader[row][side] = this.rawHeader[row][side].filter((x) => x.id !== id)
+      this.headerRegs = this.headerRegs.filter((reg) => reg.id !== id)
       this.syncHeader()
     }
   }
 
   /**
    * Зона `top` / `middle` / `bottom` или `auto`.
-   * `auto` занимает свободные зоны сверху вниз, но только если хотя бы одна
-   * зона уже занята не-каркасной регистрацией. Иначе блок не рисуется.
+   * Явная зона сливается так же, как ячейка шапки. `auto` ищет свободную зону
+   * и в слияние не входит: своей `applySlot` он пользуется уже внутри выбранной зоны.
    * Каркас (`frame`) виден и в «занятости» не считается.
    */
   registerSidebarSlot(
     zone: SidebarSlotPath,
     snippet: Snippet,
-    offset?: number,
-    options?: { frame?: boolean },
+    options: SlotRegisterOptions = {},
   ): () => void {
     const raw = zone.startsWith('sidebar.') ? zone.slice('sidebar.'.length) : zone
     const id = ++this.seq
     const item: SlotItem = {
-      id,
-      snippet,
-      offset,
-      ...(options?.frame ? { frame: true } : {}),
+      ...slotItem(id, snippet, options),
       ...(raw === 'auto' ? { auto: true } : {}),
     }
 
@@ -295,18 +378,11 @@ export class PageState {
     }
 
     const rawZone = raw as SidebarZone
-    const current = [...this.rawSidebar[rawZone]]
-    if (offset !== undefined) {
-      const idx = Math.max(0, Math.min(offset, current.length))
-      current.splice(idx, 0, item)
-    } else {
-      current.push(item)
-    }
-    this.rawSidebar[rawZone] = current
+    this.sidebarRegs = [...this.sidebarRegs, { id, zone: rawZone, item }]
     this.reflowSidebar()
 
     return () => {
-      this.rawSidebar[rawZone] = this.rawSidebar[rawZone].filter((entry) => entry.id !== id)
+      this.sidebarRegs = this.sidebarRegs.filter((reg) => reg.id !== id)
       this.reflowSidebar()
     }
   }
@@ -314,12 +390,24 @@ export class PageState {
   clearAll() {
     this.rawSeoPatch = {}
     this.rawSeoLayers = []
-    this.rawHeader = createEmptyHeaderSlots()
-    this.rawSidebar = createEmptySidebarSlots()
+    this.headerRegs = []
+    this.sidebarRegs = []
     this.autos = []
     this.bumpSeo()
     this.syncHeader()
     this.syncSidebar()
+  }
+}
+
+type HeaderReg = { id: number; path: HeaderSlotPath; item: SlotItem }
+type SidebarReg = { id: number; zone: SidebarZone; item: SlotItem }
+
+function slotItem(id: number, snippet: Snippet, options: SlotRegisterOptions): SlotItem {
+  return {
+    id,
+    snippet,
+    ...(options.offset !== undefined ? { offset: options.offset } : {}),
+    ...(options.frame ? { frame: true } : {}),
   }
 }
 
@@ -347,13 +435,7 @@ export function placeSidebarSlots(
       dropped = true
       continue
     }
-    const current = slots[zone]
-    if (item.offset !== undefined) {
-      const idx = Math.max(0, Math.min(item.offset, current.length))
-      current.splice(idx, 0, item)
-    } else {
-      current.push(item)
-    }
+    slots[zone] = applySlot(slots[zone], mergeSlot([entryOf(item)])) ?? []
   }
   return { slots, warn: dropped ? AUTO_NO_ROOM : null }
 }
@@ -378,11 +460,15 @@ export function usePage(): PageState {
   return ctx
 }
 
-export interface SlotOptions {
+export interface SlotRegisterOptions {
+  /** Позиция при складывании. Нет — дописать в конец. */
   offset?: number
-  enabled?: boolean | (() => boolean)
   /** Каркас оболочки: виден, но для `auto` зону не занимает. */
   frame?: boolean
+}
+
+export interface SlotOptions extends SlotRegisterOptions {
+  enabled?: boolean | (() => boolean)
 }
 
 /**
@@ -398,7 +484,7 @@ export function useHeaderSlot(
   const isEnabled = typeof options.enabled === 'function' ? options.enabled() : (options.enabled ?? true)
 
   if (isEnabled) {
-    const unregister = page.registerHeaderSlot(path, snippet, options.offset)
+    const unregister = page.registerHeaderSlot(path, snippet, { offset: options.offset })
     $effect(() => {
       return () => unregister()
     })
@@ -419,7 +505,7 @@ export function useHeaderSlots(
     const cleanups: (() => void)[] = []
     for (const [path, snippet] of Object.entries(slots) as [HeaderSlotPath, Snippet][]) {
       if (snippet) {
-        cleanups.push(page.registerHeaderSlot(path, snippet, options.offset))
+        cleanups.push(page.registerHeaderSlot(path, snippet, { offset: options.offset }))
       }
     }
     $effect(() => {
@@ -442,7 +528,10 @@ export function useSidebarSlot(
   const isEnabled = typeof options.enabled === 'function' ? options.enabled() : (options.enabled ?? true)
 
   if (isEnabled) {
-    const unregister = page.registerSidebarSlot(zone, snippet, options.offset, { frame: options.frame })
+    const unregister = page.registerSidebarSlot(zone, snippet, {
+      offset: options.offset,
+      frame: options.frame,
+    })
     $effect(() => {
       return () => unregister()
     })

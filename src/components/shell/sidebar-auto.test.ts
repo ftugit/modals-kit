@@ -42,6 +42,16 @@ describe('placeSidebarSlots', () => {
     expect(placed.warn).toBeNull()
   })
 
+  it('offset auto вставляет в выбранную свободную зону, не дописывает вслепую', () => {
+    const placed = placeSidebarSlots(
+      { top: [item(9, { frame: true })], middle: [item(1)], bottom: [] },
+      [item(2, { offset: 0 })],
+    )
+    expect(placed.slots.top.map((entry) => entry.id)).toEqual([2, 9])
+    expect(placed.slots.middle.map((entry) => entry.id)).toEqual([1])
+    expect(placed.warn).toBeNull()
+  })
+
   it('свободной зоны нет — уже поставленное остаётся, лишний auto молчит в вёрстке', () => {
     const placed = placeSidebarSlots(
       { top: [item(1)], middle: [item(2)], bottom: [item(3)] },
@@ -83,9 +93,9 @@ describe('PageState sidebar auto', () => {
 
   it('каркас не считается занятым, явная зона — считается', () => {
     const state = new PageState()
-    state.registerSidebarSlot('top', snippet, undefined, { frame: true })
-    state.registerSidebarSlot('middle', snippet, undefined, { frame: true })
-    state.registerSidebarSlot('bottom', snippet, undefined, { frame: true })
+    state.registerSidebarSlot('top', snippet, { frame: true })
+    state.registerSidebarSlot('middle', snippet, { frame: true })
+    state.registerSidebarSlot('bottom', snippet, { frame: true })
     state.registerSidebarSlot('auto', snippet)
     expect(state.sidebar.top).toHaveLength(1)
     expect(state.sidebar.middle).toHaveLength(1)
