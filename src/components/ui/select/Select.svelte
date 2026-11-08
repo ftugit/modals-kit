@@ -99,14 +99,12 @@
    * Progressive select: нативный контрол владеет формами и no-JS, а после
    * гидратации список уезжает в host-owned оверлей.
    *
-   * На широком экране это host popup-menu (не запись цепочки, но
-   * persistentElement хоста). На узком тот ЖЕ контейнер становится
-   * headless-записью реального потока: история, хвосты, фон и scroll-lock
-   * приходят от ModalHost, а список не меняет DOM-родителя.
+   * Цикл оверлея — `Floating` (`openFlow`): на широком экране выпадашка,
+   * на узком тот же контейнер становится листом потока. История, хвосты,
+   * фон и scroll-lock приходят от ModalHost, список не меняет DOM-родителя.
    *
    * Сам список вынесен в SelectList.svelte; его состояние остаётся здесь.
    */
-  import { Portal } from '@ark-ui/svelte/portal'
   import type { HTMLSelectAttributes } from 'svelte/elements'
   import { useInteractionModality } from '@ark-ui/svelte/interaction'
   import { flushSync, onMount, untrack, type Snippet } from 'svelte'
@@ -114,8 +112,8 @@
   import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
   import { useIsMobile } from '#hooks/mobile.svelte.js'
   import { createMediaQuery } from '#lib/modals/svelte/index.js'
-  import type { MobileAnchor } from '#lib/modals/index.js'
   import { inputVariants } from '../field/field'
+  import Floating from '../floating/Floating.svelte'
   import SelectList from './SelectList.svelte'
   import { installSelectTrace } from './select-trace'
 
@@ -257,6 +255,7 @@
   const inlineFallbackSheet = $derived(asLayer && host === undefined)
 
   let popupId = $state<string | null>(null)
+  let popupNode = $state<HTMLElement | undefined>(undefined)
   let lastClosedAt = 0
 
   // Модальность ввода — от Ark, вместо ручного трекинга pointerType.
@@ -286,8 +285,6 @@
   const listHeight = $derived(
     config.listSize === 'sm' ? '12rem' : config.listSize === 'lg' ? '24rem' : '18rem',
   )
-  const popupNode = $derived(popupId && host ? host.floating.container(popupId) : undefined)
-
   const optionsByValue = (values: string[]) => {
     const want = new Set(values)
     return all.filter((o) => want.has(o.value))
@@ -380,58 +377,21 @@
       setOpen(false)
   }
 
-  /* ── геометрия host popup-menu ───────────────────────────────────── */
+  /* ── host popup: цикл в Floating, здесь только реакция на закрытие ─ */
 
-  function popupOptions() {
-    const rect = (rootEl ?? nativeEl)?.getBoundingClientRect()
-    if (!rect) return null
+  function selectPlacement() {
     return {
-      rect: {
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height,
-      },
-      triggers: [rootEl, nativeEl],
-      listWidth,
-      minWidth: rect.width,
-      // Режим и направление НЕ передаём: список следует хосту и активной
-      // модалке. Хост сам решит, лист это или выпадашка, и куда прижать.
-      label: placeholder ?? 'Выбор',
-      placement: {
-        gap: 4,
-        minSideSpace: 144,
-        maxOverlayHeight: Math.min(380, window.innerHeight - 16),
-      },
-      onClose: (reason: HostFloatingCloseReason) => closeFromHostFloating(reason),
+      gap: 4,
+      minSideSpace: 144,
+      maxOverlayHeight: Math.min(380, window.innerHeight - 16),
     }
   }
 
-  function openHostPopup() {
-    if (!host || popupId !== null) return
-    const options = popupOptions()
-    if (!options) return
-    // Select — не произвольное меню: на узком экране он обязан войти в
-    // реальный поток модалок и наследовать направление активной записи.
-    // Это фиксировано API хоста (`openFlow`), а не публичной опцией Select.
-    popupId = host.floating.openFlow(options)
-  }
-
-  function closeHostPopup() {
-    if (!host || popupId === null) return
-    const id = popupId
-    popupId = null
-    host.floating.close(id)
-  }
-
-  function closeFromHostFloating(reason: HostFloatingCloseReason) {
-    popupId = null
+  function onFloatingChange(next: boolean, reason?: HostFloatingCloseReason) {
+    if (next) return
     lastClosedAt = Date.now()
-    // Programmatic close is initiated by this component itself (setOpen(false),
-    // unmount, or desktop⇄mobile transfer) and must not flip `open` while the
-    // same SelectList is moving between host.floating and transient layer.
+    // programmatic/transfer — закрыл сам Select (setOpen, размонтирование).
+    // `open` уже тот, какой нужен; повторно гасить нельзя.
     if (reason === 'programmatic' || reason === 'transfer') return
     if (!open) return
     open = false
@@ -470,13 +430,11 @@
       if (Date.now() - lastClosedAt < 250) return
       syncFromNative()
       open = true
-      if (host) openHostPopup()
     } else {
       open = false
-      // Догоняющий `click` того же нажатия не должен открыть список снова:
-      // окно в 250 мс выше (у попапа хоста время ставит и `closeFromHostFloating`).
+      // Догоняющий `click` того же нажатия не должен открыть список снова.
+      // Окно в 250 мс. Закрытие записи хоста делает `Floating`.
       lastClosedAt = Date.now()
-      closeHostPopup()
       nativeEl?.focus({ preventScroll: true })
     }
   }
@@ -650,22 +608,6 @@
     }
   })
 
-  /** Desktop popup двигается за триггером. */
-  $effect(() => {
-    if (!open || !host || popupId === null) return
-    const update = () => {
-      if (popupId === null) return
-      const options = popupOptions()
-      if (options) host.floating.update(popupId, options)
-    }
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  })
-
   /** Local fallback без ModalHost: закрываем меню по Esc и клику снаружи. */
   $effect(() => {
     if (!open || host) return
@@ -684,13 +626,6 @@
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeydown)
-    }
-  })
-
-  /** Если компонент размонтировали открытым, не оставляем слой/попап в хосте. */
-  $effect(() => {
-    return () => {
-      closeHostPopup()
     }
   })
 
@@ -858,8 +793,25 @@
 
     {#if open}
       {#if host}
-        {#if popupNode}
-          <Portal container={popupNode}>
+        <!--
+          Цикл хоста — `Floating` (`openFlow`). Список остаётся здесь:
+          оболочку и фокус ведёт SelectList, не общая рамка меню.
+        -->
+        <Floating
+          {open}
+          anchor={rootEl ?? nativeEl}
+          triggers={[rootEl, nativeEl]}
+          mode="flow"
+          label={placeholder ?? 'Выбор'}
+          {listWidth}
+          placement={selectPlacement}
+          onOpenChange={onFloatingChange}
+          returnFocus={false}
+          frame={false}
+          bind:id={popupId}
+          bind:container={popupNode}
+        >
+          {#snippet render()}
             <div
               data-select-positioner=""
               data-host-menu=""
@@ -867,8 +819,8 @@
             >
               {@render selectBody('host')}
             </div>
-          </Portal>
-        {/if}
+          {/snippet}
+        </Floating>
       {:else}
         <!--
           Фолбэк без хоста. Узкий экран — тот же `useIsMobile`, что и у списка

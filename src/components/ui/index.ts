@@ -50,6 +50,7 @@ export { default as NumberField } from './number-field/NumberField.svelte'
 export { default as Select } from './select/Select.svelte'
 export { default as SelectList } from './select/SelectList.svelte'
 export * from './select/select-model'
+export { default as Floating } from './floating/Floating.svelte'
 
 export { default as Spinner, spinnerVariants, type SpinnerVariants } from './spinner/Spinner.svelte'
 export { default as Skeleton, skeletonVariants, type SkeletonVariants } from './skeleton/Skeleton.svelte'

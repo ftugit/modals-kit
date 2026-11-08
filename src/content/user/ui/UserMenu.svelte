@@ -2,10 +2,10 @@
   /**
    * Кнопка пользователя в шапке.
    *
-   * Меню авторизованного: на широкой ширине — всплывашка у кнопки
-   * (`host.floating`, адрес не меняется: этому меню URL не нужен), на узкой —
-   * модалка `user.menu` (`?modal=user.menu`). Без JS обе ветки ведут на
-   * страницу `/user/menu`: широкая ветка — обычная ссылка, клик перехватывается
+   * Меню авторизованного: на широкой ширине — `Floating` у кнопки
+   * (адрес не меняется: этому меню URL не нужен), на узкой — модалка
+   * `user.menu` (`?modal=user.menu`). Без JS обе ветки ведут на страницу
+   * `/user/menu`: широкая ветка — обычная ссылка, клик перехватывается
    * только после гидратации; узкая — `asModalLink` с тем же фолбэком.
    * Гость: модалка входа (`user.auth`), без JS — страница входа.
    *
@@ -13,16 +13,13 @@
    * `vault` прозрачно отдаёт `page.data.user`, в браузере — состояние RAM).
    */
   import type { Component } from 'svelte'
-  import { Portal } from '@ark-ui/svelte/portal'
   import Button from '#components/ui/button/Button.svelte'
+  import Floating from '#components/ui/floating/Floating.svelte'
   import Skeleton from '#components/ui/skeleton/Skeleton.svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
-  import {
-    tryUseModals,
-    type HostFloatingCloseReason,
-  } from '#lib/modals/svelte/index.js'
+  import { tryUseModals } from '#lib/modals/svelte/index.js'
   import { useIsMobile } from '#hooks/mobile.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import { userAuthRoute, userMenuRoute } from '../routes.js'
@@ -67,93 +64,33 @@
   const narrow = useIsMobile()
   const menuHref = userMenuRoute.href()
 
+  const menuPlacement = { gap: 6, minSideSpace: 120, maxOverlayHeight: 420 }
+
   let triggerEl = $state<HTMLElement | null>(null)
   let menuOpen = $state(false)
-  let floatingId = $state<string | null>(null)
-  let lastClosedAt = 0
-  const menuNode = $derived(floatingId && host ? host.floating.container(floatingId) : undefined)
-
-  function floatingOptions() {
-    const rect = triggerEl?.getBoundingClientRect()
-    if (!rect) return null
-    return {
-      rect: {
-        left: rect.left, top: rect.top, right: rect.right,
-        bottom: rect.bottom, width: rect.width, height: rect.height,
-      },
-      triggers: [triggerEl],
-      listWidth: 'auto' as const,
-      minWidth: 272,
-      maxWidth: 300,
-      label: 'Меню аккаунта',
-      placement: { gap: 6, minSideSpace: 120, maxOverlayHeight: 420 },
-      onClose: (reason: HostFloatingCloseReason) => {
-        floatingId = null
-        lastClosedAt = Date.now()
-        if (reason === 'programmatic' || reason === 'transfer') return
-        menuOpen = false
-        if (reason === 'escape' || reason === 'history') triggerEl?.focus({ preventScroll: true })
-      },
-    }
-  }
-
-  function openMenu() {
-    if (!host || floatingId !== null) return
-    preloadMenuBody()
-    const options = floatingOptions()
-    if (!options) return
-    menuOpen = true
-    floatingId = host.floating.open(options)
-  }
-
-  function closeMenu(returnFocus = true) {
-    menuOpen = false
-    if (host && floatingId !== null) {
-      const id = floatingId
-      floatingId = null
-      host.floating.close(id)
-    }
-    if (returnFocus) triggerEl?.focus({ preventScroll: true })
-  }
+  let closedAt = $state(0)
+  let menuNode = $state<HTMLElement | undefined>(undefined)
 
   function onTriggerClick(e: MouseEvent) {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
     if (!host) return // нет хоста — обычная ссылка на страницу меню
     e.preventDefault()
-    if (Date.now() - lastClosedAt < 250) return
-    if (menuOpen) closeMenu(false)
-    else openMenu()
+    if (Date.now() - closedAt < 250) return
+    if (menuOpen) menuOpen = false
+    else {
+      preloadMenuBody()
+      menuOpen = true
+    }
   }
 
   /** Открылась любая модалка (например, профиль из меню) — всплывашку снимаем. */
   $effect(() => {
-    if (menuOpen && host && host.view.chain.length > 0) closeMenu(false)
-  })
-
-  /** Всплывашка держится у кнопки при прокрутке и смене размеров. */
-  $effect(() => {
-    if (!menuOpen || !host || floatingId === null) return
-    const update = () => {
-      if (floatingId === null) return
-      const options = floatingOptions()
-      if (options) host.floating.update(floatingId, options)
-    }
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
+    if (menuOpen && host && host.view.chain.length > 0) menuOpen = false
   })
 
   /** Окно стало узким — дальше работает модальная ветка, всплывашку снимаем. */
   $effect(() => {
-    if (narrow.matches && menuOpen) closeMenu(false)
-  })
-
-  /** Размонтировали открытой — не оставляем контейнер в хосте. */
-  $effect(() => () => {
-    if (host && floatingId !== null) host.floating.close(floatingId)
+    if (narrow.matches && menuOpen) menuOpen = false
   })
 </script>
 
@@ -197,26 +134,36 @@
         {initial}
       {/if}
     </a>
-    {#if menuOpen && menuNode}
-      <Portal container={menuNode}>
-        <div
-          class="flex max-h-full flex-col overflow-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg outline-none"
-          data-user-menu-popover=""
-          aria-label="Меню аккаунта"
-          tabindex="-1"
-          {@attach (node) => node.focus({ preventScroll: true })}
-        >
-          {#if MenuBodyComp}
-            <MenuBodyComp variant="plain" onDone={() => closeMenu(false)} />
-          {:else}
-            <div class="flex min-w-60 flex-col gap-2 p-3" aria-busy="true">
-              <Skeleton class="h-5 w-32" />
-              <Skeleton class="h-8 w-full" />
-              <Skeleton class="h-8 w-full" />
-            </div>
-          {/if}
-        </div>
-      </Portal>
+    {#if menuOpen}
+      <Floating
+        open={menuOpen}
+        anchor={triggerEl}
+        label="Меню аккаунта"
+        minWidth={272}
+        maxWidth={300}
+        placement={menuPlacement}
+        title="Меню аккаунта"
+        autofocus
+        bind:closedAt
+        bind:container={menuNode}
+        onOpenChange={(next) => {
+          if (!next) menuOpen = false
+        }}
+      >
+        {#snippet render()}
+          <div data-user-menu-popover="">
+            {#if MenuBodyComp}
+              <MenuBodyComp variant="plain" onDone={() => (menuOpen = false)} />
+            {:else}
+              <div class="flex min-w-60 flex-col gap-2 p-3" aria-busy="true">
+                <Skeleton class="h-5 w-32" />
+                <Skeleton class="h-8 w-full" />
+                <Skeleton class="h-8 w-full" />
+              </div>
+            {/if}
+          </div>
+        {/snippet}
+      </Floating>
     {/if}
   {/if}
 {:else}
