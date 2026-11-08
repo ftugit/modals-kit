@@ -25,6 +25,8 @@
   import { ru } from '#components/form/messages.ru.js'
   import type { CatalogFilterDescribe } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
+  import FilterLabels from './FilterLabels.svelte'
+  import { provideFilterBlocks } from './filter-blocks.svelte.js'
   import type { FilterFormProps } from './filter-form.svelte.js'
 
   interface Props {
@@ -71,6 +73,8 @@
    * `page.filters.kind`, транспорт без адреса — в `filters.kind`. Панель его не выбирает.
    */
   const prefix = adapter.pageParam ?? ''
+  // Та же схема и тот же слой, что у формы. Блоки нарезки регистрируются из неё.
+  provideFilterBlocks(() => ({ schema, prefix }))
   /** Описание формы: имена полей — ключи хранилища (`page.filters.kind`). */
   const description = $derived(describe(schema, { prefix: prefix ? `${prefix}.` : '' }))
 
@@ -171,6 +175,9 @@
       {/each}
     </ul>
   {/if}
+
+  <!-- Метки схемы. Нарезанный пункт откроет свой блок; остальные — текст. -->
+  <FilterLabels />
 
   <!-- Раскрытие — нативный <details>: форма-GET работает и без JavaScript. -->
   <details class="mt-3" data-testid="filters-details">
