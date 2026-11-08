@@ -24,8 +24,20 @@ export interface ListingFilters {
   defaults: Readonly<Record<string, string>>
   /** Размер порции по умолчанию. Отличие тоже считается. */
   pageSize: number
+  /**
+   * Имя поля формы для размера порции. Чип счётчика открывает этот блок.
+   * По умолчанию `size` — так поле названо в формах списков.
+   */
+  sizeKey?: string
   /** Ключи, которые в этом срезе счётчик пропускает. */
   ignore?: readonly string[]
+  /**
+   * Подписи чипов. Список берёт их из описания своей формы и передаёт сюда:
+   * оболочка вторую схему не заводит.
+   */
+  labels?: Readonly<Record<string, string>>
+  /** Человекочитаемое значение. Нет — сырое значение extra. */
+  text?: (key: string, value: string) => string
   testId?: string
 }
 

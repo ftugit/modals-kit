@@ -1,6 +1,7 @@
 // Описание фильтров списка seed-юзеров. Одно на sidebar, модалку и
 // `/users/filters`. Имена полей — ключи extra, не адресные: адрес пишет
 // адаптер. Права в описание не входят: их проверяет `execute`.
+import { labelsFromFields, textFromDescriptor } from '#components/listing/captions.js'
 import { defineForm, field, v } from '#lib/form/index.js'
 import type { SeedUsersOrder, SeedUsersState } from '../../types.js'
 import { USER_MESSAGES } from '../../messages.js'
@@ -100,6 +101,14 @@ export const seedUsersFiltersForm = defineForm({
     dto: field['datetime-local']({ label: 'Удалён: по' }),
   },
 })
+
+export function seedFilterLabels(): Record<string, string> {
+  return labelsFromFields(seedUsersFiltersForm.fields)
+}
+
+export function seedFilterText(key: string, value: string): string {
+  return textFromDescriptor(seedUsersFiltersForm.byName[key], value)
+}
 
 export function applySeedFilters(
   values: Record<string, unknown>,

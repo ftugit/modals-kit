@@ -30,6 +30,8 @@
   } from '#lib/paginate/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
+  import { activeFilterItems } from './active-filters.js'
+  import FilterChips from './FilterChips.svelte'
   import { filtersUseSidebar } from './sidebar.js'
   import type { ListingInitial, ListingProps } from './types.js'
 
@@ -217,15 +219,8 @@
   const extraRecord = $derived((liveExtra ?? {}) as Record<string, unknown>)
   const totalItems = $derived(hasLivePages ? (pagState().totalItems ?? snapshot?.totalItems) : snapshot?.totalItems)
 
-  const activeFilters = $derived(
-    filters
-      ? filters.keys.filter((k) => {
-          if (filters.ignore?.includes(k)) return false
-          const v = extraRecord[k]
-          return typeof v === 'string' && v !== '' && v !== filters.defaults[k]
-        }).length + (livePageSize !== filters.pageSize ? 1 : 0)
-      : 0,
-  )
+  const filterItems = $derived(filters ? activeFilterItems(filters, extraRecord, livePageSize) : [])
+  const activeFilters = $derived(filterItems.length)
 
   const filtersHref = $derived.by(() => {
     if (!filters) return ''
@@ -292,6 +287,15 @@
           query={typeof extraRecord.q === 'string' ? extraRecord.q : ''}
           label={search.label(extraRecord)}
           placeholder={search.placeholder(extraRecord)}
+        />
+      {/if}
+      {#if filters && filterItems.length}
+        <FilterChips
+          name={paginatorName}
+          items={filterItems}
+          {store}
+          from={listFrom}
+          defaultPageSize={filters.pageSize}
         />
       {/if}
       <Paginator

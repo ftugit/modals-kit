@@ -11,6 +11,8 @@
   import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
+  import FilterBlock from '#components/paginator/filters/FilterBlock.svelte'
+  import { provideFilterList } from '#components/paginator/filters/filter-registry.svelte.js'
   import { Button } from '#components/ui/index.js'
   import { asLink, useModalLink } from '#hooks/links/index.js'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
@@ -22,10 +24,14 @@
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from './UserPicker.svelte'
   import {
     applyBlocksFilters,
+    BLOCKS_SCOPES_LABEL,
+    BLOCKS_UIDS_LABEL,
+    blocksFilterLabels,
     blocksFiltersForm,
     scopeFieldName,
     type BlocksFilterValues as BlocksFilterValuesType,
   } from './blocks-list/filters-form.js'
+  import { BLOCKS_NAME } from './blocks-list/source.js'
 
   export type BlocksFilterValues = BlocksFilterValuesType
 
@@ -56,6 +62,13 @@
     onApply,
     onReset,
   }: Props = $props()
+
+  // Имя списка, не контекст `Listing`: форма рисуется в sidebar и в модалке.
+  // Сферы — много полей, один ключ extra. Псевдонимы собираются из того же каталога.
+  provideFilterList(BLOCKS_NAME, {
+    labels: blocksFilterLabels(),
+    aliases: Object.fromEntries(Object.keys(BLOCK_SCOPES).map((key) => [scopeFieldName(key), 'scopes'])),
+  })
 
   const asModalLink = useModalLink()
   const modalsCtx = tryUseModals()
@@ -160,34 +173,43 @@
     <Field of={bound.field('from')!} />
     <Field of={bound.field('show_deleted')!} />
     <Field of={bound.field('show_live')!} />
-    <Field of={bound.field('uids')!} />
   </div>
 
   <Common errors={bound.common} />
 
   <div class="flex flex-wrap gap-3">
-    <div class="min-w-0 flex-1 basis-44">
-      <Field of={bound.field('ord')!} />
-    </div>
-    <div class="min-w-0 flex-1 basis-44">
-      <Field of={bound.field('size')!} />
-    </div>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44">
+        <Field of={bound.field('ord')!} />
+      </div>
+    </FilterBlock>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44">
+        <Field of={bound.field('size')!} />
+      </div>
+    </FilterBlock>
   </div>
 
-  <Field of={bound.field('state')!} />
+  <FilterBlock>
+    <Field of={bound.field('state')!} />
+  </FilterBlock>
 
-  <div class="flex flex-col gap-2">
-    <span class="text-sm font-medium">Сферы блокировок</span>
-    <div class="flex flex-col gap-1.5">
-      {#each scopeEntries as [scopeKey] (scopeKey)}
-        <Field of={bound.field(scopeFieldName(scopeKey))!} />
-      {/each}
+  <FilterBlock>
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium">{BLOCKS_SCOPES_LABEL}</span>
+      <div class="flex flex-col gap-1.5">
+        {#each scopeEntries as [scopeKey] (scopeKey)}
+          <Field of={bound.field(scopeFieldName(scopeKey))!} />
+        {/each}
+      </div>
     </div>
-  </div>
+  </FilterBlock>
 
-  <div class="flex flex-col gap-2">
-    <span class="text-sm font-medium">Пользователи</span>
-    <div class="flex flex-wrap items-center gap-2">
+  <FilterBlock>
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium">{BLOCKS_UIDS_LABEL}</span>
+      <Field of={bound.field('uids')!} />
+      <div class="flex flex-wrap items-center gap-2">
       {#if pickerDisabled}
         <Button
           type="button"
@@ -247,7 +269,8 @@
         Выбор пользователей доступен только при наличии права чтения аккаунтов.
       </p>
     {/if}
-  </div>
+    </div>
+  </FilterBlock>
 
   {#if formError}
     <p class="text-sm text-destructive" role="alert">{formError}</p>

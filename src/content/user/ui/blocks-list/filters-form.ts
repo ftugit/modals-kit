@@ -1,5 +1,6 @@
 // Описание фильтров списка блокировок. Одно на sidebar, модалку и
 // `/blocks/filters`. Сферы — фиксированный каталог, не имена из тела POST.
+import { labelsFromFields, textFromDescriptor } from '#components/listing/captions.js'
 import { defineForm, field, v } from '#lib/form/index.js'
 import { BLOCK_SCOPES, isBlockScope } from '../../spec-block.js'
 import type { BlocksOrder, BlocksState } from '../../types.js'
@@ -43,6 +44,12 @@ export type BlocksFilterApply =
   | { ok: false; path: string; code: string; message: string }
 
 export const scopeFieldName = (key: string) => `sc.${key}`
+
+/** Заголовок колонки сфер. Отдельного поля `scopes` в форме нет: сферы пакуются в один ключ extra. */
+export const BLOCKS_SCOPES_LABEL = 'Сферы блокировок'
+
+/** Заголовок выбора пользователей. Поле `uids` скрытое, подпись живёт в описании. */
+export const BLOCKS_UIDS_LABEL = 'Пользователи'
 
 const clean = (value: unknown): string => {
   if (typeof value === 'string') return value.trim()
@@ -96,12 +103,31 @@ export const blocksFiltersForm = defineForm({
       ],
       defaultValue: BLOCKS_EXTRA_DEFAULTS.state,
     }),
-    uids: field.hidden({ defaultValue: '' }),
+    uids: field.hidden({ label: BLOCKS_UIDS_LABEL, defaultValue: '' }),
     ...scopeFields,
   },
 })
 
 const UIDS_RE = /^[0-9a-f,-]{1,4000}$/i
+
+export function blocksFilterLabels(): Record<string, string> {
+  return labelsFromFields(blocksFiltersForm.fields, { scopes: BLOCKS_SCOPES_LABEL })
+}
+
+export function blocksFilterText(key: string, value: string): string {
+  if (key === 'scopes') {
+    return value
+      .split(',')
+      .filter(Boolean)
+      .map((part) => (isBlockScope(part) ? BLOCK_SCOPES[part].title : part))
+      .join(', ')
+  }
+  if (key === 'uids') {
+    const count = value.split(',').filter(Boolean).length
+    return count ? String(count) : value
+  }
+  return textFromDescriptor(blocksFiltersForm.byName[key], value)
+}
 
 export function applyBlocksFilters(
   values: Record<string, unknown>,

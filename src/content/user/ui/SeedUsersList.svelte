@@ -26,6 +26,7 @@
   import { vault } from '../vault.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
+  import { seedFilterLabels, seedFilterText } from './seed-users/filters-form.js'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
     ensureSeedUsersPaginator,
@@ -196,6 +197,8 @@
     keys: SEED_USERS_FILTER_KEYS,
     defaults: SEED_USERS_EXTRA_DEFAULTS,
     pageSize: SEED_USERS_PAGE_SIZE,
+    labels: seedFilterLabels(),
+    text: seedFilterText,
     testId: 'seed-users-filters-open',
   }}
   search={{

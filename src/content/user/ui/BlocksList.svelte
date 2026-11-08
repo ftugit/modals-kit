@@ -23,6 +23,7 @@
   import { vault } from '../vault.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
+  import { blocksFilterLabels, blocksFilterText } from './blocks-list/filters-form.js'
   import BlockCard from './blocks-list/BlockCard.svelte'
   import {
     BLOCKS_EXTRA_DEFAULTS,
@@ -213,6 +214,8 @@
     keys: BLOCKS_FILTER_KEYS,
     defaults: BLOCKS_EXTRA_DEFAULTS,
     pageSize: BLOCKS_PAGE_SIZE,
+    labels: blocksFilterLabels(),
+    text: blocksFilterText,
     ignore: fixedUid ? ['uids'] : undefined,
     testId: 'blocks-filters-open',
     params: (extra) => {

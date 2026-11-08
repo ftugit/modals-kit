@@ -5,8 +5,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import Floating from '#components/ui/floating/Floating.svelte'
-  import { tryUseModals, type HostFloatingCloseReason } from '#lib/modals/svelte/index.js'
+  import { tryUseModals } from '#lib/modals/svelte/index.js'
+  import FilterBlockPopup from './FilterBlockPopup.svelte'
   import { useFilterBlocks } from './filter-blocks.svelte.js'
 
   const ctx = useFilterBlocks()
@@ -19,8 +19,6 @@
   const fields = $derived(ctx?.schema.fields ?? [])
   const openKey = $derived(ctx?.openKey ?? null)
   const openEntry = $derived(openKey && ctx ? ctx.blocks[openKey] : undefined)
-
-  const placement = { gap: 6, minSideSpace: 160, maxOverlayHeight: 480 }
 
   onMount(() => {
     client = true
@@ -50,18 +48,8 @@
     ctx.setOpen(key)
   }
 
-  function onOpenChange(next: boolean, reason?: HostFloatingCloseReason) {
-    if (next || !ctx) return
-    if (reason === 'programmatic' || reason === 'transfer') return
-    close()
-  }
-
-  function adopt(el: HTMLElement) {
-    ctx?.setSlot(el)
-    return () => {
-      ctx?.reclaim()
-      ctx?.setSlot(null)
-    }
+  function onSlot(slot: HTMLElement | null) {
+    ctx?.setSlot(slot)
   }
 </script>
 
@@ -92,23 +80,12 @@
 </div>
 
 {#if client && host && openEntry}
-  <Floating
-    open
+  <FilterBlockPopup
+    entry={openEntry}
     anchor={anchors[openEntry.key]}
-    mode="flow"
-    label={openEntry.label}
-    title={openEntry.label}
-    popup="dialog"
-    minWidth={280}
-    maxWidth={420}
-    placement={placement}
-    class="p-0 text-sm"
-    returnFocus={true}
+    onClose={close}
+    {onSlot}
+    reclaim={() => ctx?.reclaim()}
     bind:container={popupNode}
-    onOpenChange={onOpenChange}
-  >
-    {#snippet render()}
-      <div class="p-3" data-filter-block-popup="" {@attach adopt}></div>
-    {/snippet}
-  </Floating>
+  />
 {/if}

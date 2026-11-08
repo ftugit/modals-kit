@@ -13,14 +13,18 @@
   import { forms } from '#components/form/forms.config.js'
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
+  import FilterBlock from '#components/paginator/filters/FilterBlock.svelte'
+  import { provideFilterList } from '#components/paginator/filters/filter-registry.svelte.js'
   import { Button } from '#components/ui/index.js'
   import { asLink } from '#hooks/links/index.js'
   import { mirrorToField } from './field-mirror.svelte.js'
   import {
     applySeedFilters,
+    seedFilterLabels,
     seedUsersFiltersForm,
     type SeedUsersFilterValues as SeedUsersFilterValuesType,
   } from './seed-users/filters-form.js'
+  import { SEED_USERS_NAME } from './seed-users/source.js'
 
   export type SeedUsersFilterValues = SeedUsersFilterValuesType
 
@@ -45,6 +49,9 @@
     onApply,
     onReset,
   }: Props = $props()
+
+  // Имя списка, не контекст `Listing`: форма рисуется в sidebar и в модалке.
+  provideFilterList(SEED_USERS_NAME, { labels: seedFilterLabels() })
 
   const init = untrack(() => initial)
   const bound = bindComponentForm(forms, seedUsersFiltersForm)
@@ -103,35 +110,51 @@
   </div>
   <Common errors={bound.common} />
   <div class="flex flex-wrap gap-3">
-    <div class="min-w-0 flex-1 basis-44" data-filter-segment="ord">
-      <Field of={bound.field('ord')!} />
-    </div>
-    <div class="min-w-0 flex-1 basis-44" data-filter-segment="size">
-      <Field of={bound.field('size')!} />
-    </div>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="ord">
+        <Field of={bound.field('ord')!} />
+      </div>
+    </FilterBlock>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="size">
+        <Field of={bound.field('size')!} />
+      </div>
+    </FilterBlock>
   </div>
   {#if canSeeNickname}
-    <Field of={bound.field('nick')!} />
+    <FilterBlock>
+      <Field of={bound.field('nick')!} />
+    </FilterBlock>
   {/if}
   {#if canSeeDeleted}
-    <Field of={bound.field('state')!} />
+    <FilterBlock>
+      <Field of={bound.field('state')!} />
+    </FilterBlock>
   {/if}
   <div class="flex flex-wrap gap-3">
-    <div class="min-w-0 flex-1 basis-44" data-filter-segment="cfrom">
-      <Field of={bound.field('cfrom')!} />
-    </div>
-    <div class="min-w-0 flex-1 basis-44" data-filter-segment="cto">
-      <Field of={bound.field('cto')!} />
-    </div>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="cfrom">
+        <Field of={bound.field('cfrom')!} />
+      </div>
+    </FilterBlock>
+    <FilterBlock>
+      <div class="min-w-0 flex-1 basis-44" data-filter-segment="cto">
+        <Field of={bound.field('cto')!} />
+      </div>
+    </FilterBlock>
   </div>
   {#if canSeeDeleted}
     <div class="flex flex-wrap gap-3">
-      <div class="min-w-0 flex-1 basis-44" data-filter-segment="dfrom">
-        <Field of={bound.field('dfrom')!} />
-      </div>
-      <div class="min-w-0 flex-1 basis-44" data-filter-segment="dto">
-        <Field of={bound.field('dto')!} />
-      </div>
+      <FilterBlock>
+        <div class="min-w-0 flex-1 basis-44" data-filter-segment="dfrom">
+          <Field of={bound.field('dfrom')!} />
+        </div>
+      </FilterBlock>
+      <FilterBlock>
+        <div class="min-w-0 flex-1 basis-44" data-filter-segment="dto">
+          <Field of={bound.field('dto')!} />
+        </div>
+      </FilterBlock>
     </div>
   {/if}
   {#if rangeError}

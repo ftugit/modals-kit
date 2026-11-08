@@ -2,21 +2,28 @@
   Нарезка UI фильтра. Оболочка не рисует рамку: `display: contents`, дети
   остаются клетками родительской сетки.
 
-  Подпись не принимается. Имена контролов внутри сверяются с той же схемой,
-  что у формы. Ровно один ключ — метка может забрать этот блок. Иначе блок
-  остаётся в панели и всплывашки у меток нет.
+  Подпись не принимается. Имена контролов внутри сверяются со схемой каталога
+  или с описанием формы списка. Ровно один ключ — метка может забрать этот
+  блок. Иначе блок остаётся на месте и всплывашки у меток нет.
 
   Открытая метка переносит этот же узел. Второй копии полей нет.
 -->
 <script lang="ts">
   import { DEV } from 'esm-env'
   import { untrack, type Snippet } from 'svelte'
-  import { filterBlockCut } from './filter-block.js'
+  import { resolveFilterBlockCut, type FilterBlockCut } from './filter-block.js'
   import { useFilterBlocks } from './filter-blocks.svelte.js'
+  import {
+    claimFilterList,
+    filterLists,
+    releaseFilterList,
+    useFilterListName,
+  } from './filter-registry.svelte.js'
 
   let { children }: { children?: Snippet } = $props()
 
-  const ctx = useFilterBlocks()
+  const panel = useFilterBlocks()
+  const listName = useFilterListName()
 
   let home = $state<HTMLElement | undefined>(undefined)
   let node = $state<HTMLElement | undefined>(undefined)
@@ -24,7 +31,12 @@
   let cutState = $state<'empty' | 'mixed' | 'ready'>('empty')
   let warned = false
 
-  const open = $derived(Boolean(blockKey && ctx?.openKey === blockKey))
+  const open = $derived.by(() => {
+    if (!blockKey) return false
+    if (panel) return panel.openKey === blockKey
+    if (!listName) return false
+    return filterLists[listName]?.openKey === blockKey
+  })
 
   function namesOf(root: HTMLElement): string[] {
     const found: string[] = []
@@ -71,33 +83,66 @@
     }
   }
 
+  function cutOf(root: HTMLElement): FilterBlockCut {
+    if (panel) return resolveFilterBlockCut(namesOf(root), { schema: panel.schema, prefix: panel.prefix })
+    if (!listName) return { key: null, reason: 'empty' }
+    const list = filterLists[listName]
+    if (!list) return { key: null, reason: 'empty' }
+    return resolveFilterBlockCut(namesOf(root), {
+      schema: list.schema,
+      prefix: list.prefix,
+      labels: list.labels,
+      aliases: list.aliases,
+    })
+  }
+
+  function claim(entry: { key: string; label: string; element: HTMLElement; home: HTMLElement }): boolean {
+    if (panel) return panel.claim(entry)
+    if (!listName) return false
+    return claimFilterList(listName, entry)
+  }
+
+  function release(key: string, element: HTMLElement) {
+    if (panel) {
+      panel.release(key, element)
+      return
+    }
+    if (!listName) return
+    releaseFilterList(listName, key, element)
+  }
+
   $effect(() => {
     const root = node
-    const scheme = ctx?.schema
-    const prefix = ctx?.prefix ?? ''
-    if (!root || !ctx || !scheme) return
+    const list = listName ? filterLists[listName] : undefined
+    const schema = panel?.schema ?? list?.schema
+    const labels = list?.labels
+    const aliases = list?.aliases
+    if (!root || (!panel && !list)) return
+    void schema
+    void labels
+    void aliases
     const scan = () => {
-      const cut = filterBlockCut(namesOf(root), scheme, prefix)
+      const cut = cutOf(root)
       untrack(() => {
         if (cut.key === null) {
-          if (blockKey) ctx.release(blockKey, root)
+          if (blockKey) release(blockKey, root)
           blockKey = null
           cutState = cut.reason
           if (DEV && cut.reason === 'mixed' && !warned) {
             warned = true
-            console.warn('[filters] FilterBlock содержит больше одного ключа схемы — метка его не заберёт')
+            console.warn('[filters] FilterBlock содержит больше одного ключа — метка его не заберёт')
           }
           return
         }
         const homeEl = home
         if (!homeEl) return
-        const claimed = ctx.claim({ key: cut.key, label: cut.label, element: root, home: homeEl })
+        const claimed = claim({ key: cut.key, label: cut.label, element: root, home: homeEl })
         if (!claimed) {
           if (DEV && !warned) {
             warned = true
             console.warn(`[filters] ключ «${cut.key}» уже нарезан другим блоком`)
           }
-          if (blockKey) ctx.release(blockKey, root)
+          if (blockKey) release(blockKey, root)
           blockKey = null
           cutState = 'mixed'
           return
@@ -112,7 +157,7 @@
     return () => {
       observer.disconnect()
       untrack(() => {
-        if (blockKey) ctx.release(blockKey, root)
+        if (blockKey) release(blockKey, root)
       })
     }
   })
@@ -120,7 +165,7 @@
   $effect(() => {
     const root = node
     const homeEl = home
-    const slot = ctx?.slot
+    const slot = panel ? panel.slot : listName ? (filterLists[listName]?.slot ?? null) : null
     const mine = open
     if (!root || !homeEl || !mine || !slot) return
     const formId = ensureFormId(root)
