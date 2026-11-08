@@ -22,7 +22,7 @@
 | `db-schema.server.ts` | `#lib/db` (`/sync`, `createSchemaAdmin`) × `#server/db.server.js` × `#lib/form/server` | Серверная половина `/schema`: сборка отчёта, приём решений под `DB_ADMIN_TOKEN`, инвалидация живого кэша и разбор ошибок формы. |
 | `graphql.server.ts` | `#lib/fetch` × GraphQL | Серверный адаптер запросов к внешним GraphQL-источникам с нормализацией ошибок и очередей. |
 | `js-only.svelte.ts` | гидратация Svelte 5 | Реактивный флаг оживления клиента после гидратации (` hydrated()`). |
-| `mobile.svelte.ts` | CSS `--mobile` × `matchMedia` | Узкий экран приложения. Запрос живёт в `src/app.css` и совпадает с Uno `max-lg`. `ready` — запрос уже прочитан; до этого `matches` нельзя считать широким экраном. Модалка флаг не читает: `ModalHost` получает `isNarrow`. |
+| `mobile.svelte.ts` | CSS `--mobile` × `matchMedia` | Узкий экран приложения. Запрос живёт в `src/app.css` и совпадает с Uno `max-lg`. До эффекта `matches` = false. Модалка флаг не читает: `ModalHost` получает `isNarrow`. |
 | `links/` | `#lib/modals` × SvelteKit `<a>` | Перехват переходов по ссылкам (`asLink`) для бесшовного открытия модальных маршрутов поверх текущей страницы с graceful degradation без JS. |
 | `loader.svelte.ts` | `$app/state` navigating × UI | Отложенный индикатор навигации без мелькания на быстрых переходах. |
 | `modal-paginator.svelte.ts` | `#lib/modals` × `#lib/paginate` × `#lib/address` | Привязка `ScopedStore` пагинатора к жизни слота в `modals.chain` (`useSlotPaginatorScope`), поиск стора модалки-владельца для экранов фильтров (`useOwnerPaginatorStore`) и регистрация поуровневых слоевых ключей `m<k>.*` в `claimLayerKeys`. |

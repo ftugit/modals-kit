@@ -73,12 +73,14 @@
   // Реестр слота, не догадка «модалка или страница». Носитель задаёт `sidebar`.
   const page = tryUsePage()
   const narrow = useIsMobile()
-  const inSidebar = $derived(filtersUseSidebar(sidebar, narrow.ready, narrow.matches) && Boolean(filtersForm) && Boolean(page))
+  const inSidebar = $derived(filtersUseSidebar(sidebar, narrow.matches) && Boolean(filtersForm) && Boolean(page))
   let warnedNoPage = false
 
+  // registerSidebarSlot ширину не смотрит. Снятие — возврат этой регистрации:
+  // когда useIsMobile станет true, эффект перезапустится и слот уйдёт.
   $effect(() => {
     const zone = sidebar
-    const show = filtersUseSidebar(zone, narrow.ready, narrow.matches)
+    const show = filtersUseSidebar(zone, narrow.matches)
     if (!zone || !show) return
     if (!page) {
       if (DEV && !warnedNoPage) {

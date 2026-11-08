@@ -23,14 +23,9 @@ function readMobileQuery(): string | null {
   return query
 }
 
-/**
- * `matches` — окно попало в запрос `--mobile`.
- * `ready` — запрос уже прочитан. До этого `matches` ложный false:
- * по нему нельзя прятать no-JS кнопку.
- */
+/** `matches` — окно попало в запрос `--mobile`. До эффекта и без окна `false`: это ПК. */
 export function useIsMobile() {
   let matches = $state(false)
-  let ready = $state(false)
 
   $effect(() => {
     if (!browser || typeof window.matchMedia !== 'function') return
@@ -43,7 +38,6 @@ export function useIsMobile() {
       return
     }
     matches = mql.matches
-    ready = true
     const onChange = () => {
       matches = mql.matches
     }
@@ -54,9 +48,6 @@ export function useIsMobile() {
   return {
     get matches() {
       return matches
-    },
-    get ready() {
-      return ready
     },
   }
 }
