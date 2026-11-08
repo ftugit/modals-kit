@@ -1,11 +1,15 @@
 import type { Snippet } from 'svelte'
 import { describe, expect, it } from 'vitest'
-import { PageState, applySlot, isMergeSlot, mergeSlot, type SlotItem } from './page.svelte'
+import { PageState, applySlot, isMergeSlot, mergeSlot, renderMergeSlot, type SlotItem } from './page.svelte'
 
 const snippet = (() => {}) as Snippet
 
 function item(id: number, extra: Partial<SlotItem> = {}): SlotItem {
   return { id, snippet, ...extra }
+}
+
+function ids(value: SlotItem[] | undefined): number[] {
+  return renderMergeSlot(value).map((entry) => entry.id)
 }
 
 describe('applySlot', () => {
@@ -14,40 +18,55 @@ describe('applySlot', () => {
     expect(applySlot(base, undefined)).toBe(base)
   })
 
-  it('голый массив заменяет ячейку', () => {
+  it('голый массив заменяет ячейку и не является маркером', () => {
     const next = [item(2)]
     expect(applySlot([item(1)], next)).toBe(next)
     expect(isMergeSlot(next)).toBe(false)
+    expect(renderMergeSlot(next)).toBe(next)
   })
 
-  it('маркер дописывает, пара вставляет по offset', () => {
-    const merged = mergeSlot([item(1), [0, item(2)]])
+  it('маркер не превращает offset в индекс', () => {
+    const merged = applySlot([item(9)], mergeSlot([item(1), [0, item(2)]]))
     expect(isMergeSlot(merged)).toBe(true)
-    expect(applySlot([item(9)], merged)?.map((entry) => entry.id)).toEqual([2, 9, 1])
-  })
-
-  it('offset за краем дописывает, отрицательный встаёт в начало', () => {
-    expect(applySlot([item(1)], mergeSlot([[5, item(2)]]))?.map((entry) => entry.id)).toEqual([1, 2])
-    expect(applySlot([item(1)], mergeSlot([[-3, item(2)]]))?.map((entry) => entry.id)).toEqual([2, 1])
+    expect(ids(merged)).toEqual([9, 1, 2])
   })
 })
 
-describe('PageState складывает offset заново', () => {
-  it('шапка: снятие соседа возвращает оставшихся на их offset', () => {
-    const a = (() => {}) as Snippet
-    const b = (() => {}) as Snippet
-    const c = (() => {}) as Snippet
-    const state = new PageState()
-    state.registerHeaderSlot('middle.start', a)
-    const offB = state.registerHeaderSlot('middle.start', b, { offset: 0 })
-    state.registerHeaderSlot('middle.start', c, { offset: 1 })
-    expect(state.header.middle.start.map((entry) => entry.snippet)).toEqual([b, c, a])
-
-    offB()
-    expect(state.header.middle.start.map((entry) => entry.snippet)).toEqual([a, c])
+describe('renderMergeSlot', () => {
+  it('999 последний, если остальные 1, 600 и 888, независимо от порядка', () => {
+    const merged = mergeSlot([
+      [999, item(9)],
+      [888, item(8)],
+      [1, item(1)],
+      [600, item(6)],
+    ])
+    expect(ids(merged)).toEqual([1, 6, 8, 9])
   })
 
-  it('sidebar: та же функция, каркас остаётся каркасом', () => {
+  it('тот же offset перезаписывается, новый дополняет', () => {
+    const first = mergeSlot([
+      [1, item(1)],
+      [999, item(9)],
+    ])
+    const next = applySlot(first, mergeSlot([[1, item(11)], [600, item(6)]]))
+    expect(ids(next)).toEqual([11, 6, 9])
+  })
+})
+
+describe('PageState хранит offset до рендера', () => {
+  it('шапка: поздний маленький offset встаёт перед ранним 999', () => {
+    const profile = (() => {}) as Snippet
+    const early = (() => {}) as Snippet
+    const late = (() => {}) as Snippet
+    const state = new PageState()
+    state.registerHeaderSlot('top.end', profile, { offset: 999 })
+    state.registerHeaderSlot('top.end', early, { offset: 888 })
+    state.registerHeaderSlot('top.end', late, { offset: 1 })
+    expect(isMergeSlot(state.header.top.end)).toBe(true)
+    expect(renderMergeSlot(state.header.top.end).map((entry) => entry.snippet)).toEqual([late, early, profile])
+  })
+
+  it('sidebar: снятие соседа не сдвигает оставшийся offset', () => {
     const frame = (() => {}) as Snippet
     const form = (() => {}) as Snippet
     const extra = (() => {}) as Snippet
@@ -55,11 +74,10 @@ describe('PageState складывает offset заново', () => {
     state.registerSidebarSlot('middle', frame, { frame: true })
     const offForm = state.registerSidebarSlot('middle', form, { offset: 0 })
     state.registerSidebarSlot('middle', extra, { offset: 1 })
-    expect(state.sidebar.middle.map((entry) => entry.snippet)).toEqual([form, extra, frame])
-    expect(state.sidebar.middle[2]?.frame).toBe(true)
+    expect(renderMergeSlot(state.sidebar.middle).map((entry) => entry.snippet)).toEqual([frame, form, extra])
+    expect(renderMergeSlot(state.sidebar.middle)[0]?.frame).toBe(true)
 
     offForm()
-    expect(state.sidebar.middle.map((entry) => entry.snippet)).toEqual([frame, extra])
-    expect(state.sidebar.middle[0]?.frame).toBe(true)
+    expect(renderMergeSlot(state.sidebar.middle).map((entry) => entry.snippet)).toEqual([frame, extra])
   })
 })

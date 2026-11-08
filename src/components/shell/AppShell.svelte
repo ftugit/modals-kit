@@ -4,7 +4,7 @@
   import { onMount, untrack, type Snippet } from 'svelte'
   import { cn } from '#components/utils.js'
   import { BACKDROP_UTILS } from '#lib/modals/svelte/classes.js'
-  import { usePage, sidebarHasSlots } from './page.svelte'
+  import { usePage, renderMergeSlot, sidebarHasSlots } from './page.svelte'
   import { setShellContext } from './shell.svelte'
   import CollapsingHeader from './CollapsingHeader.svelte'
   import { useIsMobile } from '#hooks/mobile.svelte.js'
@@ -78,6 +78,9 @@
   })
 
   const hasSidebar = $derived(sidebarHasSlots(page.sidebar))
+  const sidebarTop = $derived(renderMergeSlot(page.sidebar.top))
+  const sidebarMiddle = $derived(renderMergeSlot(page.sidebar.middle))
+  const sidebarBottom = $derived(renderMergeSlot(page.sidebar.bottom))
   const drawer = createDrawer({
     input: () => inputRef,
     isNarrow: () => mobile.matches,
@@ -101,21 +104,11 @@
     bind:this={inputRef}
   />
 
-  <!-- 3-рядная сворачиваемая шапка -->
-  <CollapsingHeader
-    rows={page.header}
-    dock={shell.dock}
-    scrollContainer={mainRef}
-    snap={shell.snap}
-    onProgress={(p) => shell.setProgress(p)}
-    leading={(row) => (row === 'top' && hasSidebar ? menuButton : undefined)}
-    class={shell.dock === 'top' ? 'order-first' : 'order-last'}
-  />
-
   <!--
-    Рабочая зона. Содержимое рисуется раньше панели: страница регистрирует
-    слот sidebar в теле компонента, и без этого форма не попадает в HTML.
-    Визуальный порядок не меняется — у панели `order-first` / `order-last`.
+    Рабочая зона рисуется раньше шапки и панели: страница регистрирует слоты
+    в теле компонента, и без этого offset не попадает в HTML без JS.
+    Визуальный порядок шапки не меняется — у неё `order-first` / `order-last`.
+    У панели то же.
     `max-lg:z-40` делает строку контекстом наложения на узком экране: фон
     drawer'а (z-200) и панель (z-210) считаются внутри него и целиком лежат
     выше шапки (z-30), но ниже модальной системы.
@@ -179,9 +172,9 @@
       </div>
 
       <!-- ЗОНА 1: TOP (Safe Zone, shrink-0, фикс сверху) -->
-      {#if page.sidebar.top.length > 0}
+      {#if sidebarTop.length > 0}
         <div class="flex flex-col gap-2 shrink-0 border-b border-border/50 p-3" data-sidebar-zone="top">
-          {#each page.sidebar.top as item (item.id)}
+          {#each sidebarTop as item (item.id)}
             {@render item.snippet()}
           {/each}
         </div>
@@ -189,15 +182,15 @@
 
       <!-- ЗОНА 2: MIDDLE (Scrollable Zone, flex-1 min-h-0 overflow-y-auto) -->
       <div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2" data-sidebar-zone="middle">
-        {#each page.sidebar.middle as item (item.id)}
+        {#each sidebarMiddle as item (item.id)}
           {@render item.snippet()}
         {/each}
       </div>
 
       <!-- ЗОНА 3: BOTTOM (Safe Zone, shrink-0, фикс снизу) -->
-      {#if page.sidebar.bottom.length > 0}
+      {#if sidebarBottom.length > 0}
         <div class="flex flex-col gap-2 shrink-0 border-t border-border/50 p-3" data-sidebar-zone="bottom">
-          {#each page.sidebar.bottom as item (item.id)}
+          {#each sidebarBottom as item (item.id)}
             {@render item.snippet()}
           {/each}
         </div>
@@ -229,6 +222,17 @@
       }}
     ></label>
   </div>
+
+  <!-- Шапка после страницы: слоты страницы уже в маркере, renderMergeSlot видит их offset. -->
+  <CollapsingHeader
+    rows={page.header}
+    dock={shell.dock}
+    scrollContainer={mainRef}
+    snap={shell.snap}
+    onProgress={(p) => shell.setProgress(p)}
+    leading={(row) => (row === 'top' && hasSidebar ? menuButton : undefined)}
+    class={shell.dock === 'top' ? 'order-first' : 'order-last'}
+  />
 </div>
 
 {#snippet menuButton()}

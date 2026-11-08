@@ -54,8 +54,8 @@ export type SlotItem = {
   id: number
   snippet: Snippet
   /**
-   * Правило места при складывании, не разовая вставка.
-   * Нет поля — дописать в конец. Снятие соседа пересчитывает позицию.
+   * Число места, не индекс массива. В индекс его переводит только `renderMergeSlot`.
+   * Нет поля — слот без числа, рисуется в порядке регистрации до нумерованных.
    */
   offset?: number
   /**
@@ -67,7 +67,7 @@ export type SlotItem = {
   auto?: boolean
 }
 
-/** Слот как есть — в конец. Пара — вставка на `offset` уже сложенного списка. */
+/** Слот без числа — как есть. Пара хранит offset числом до рендера. */
 export type MergeEntry = SlotItem | readonly [offset: number, item: SlotItem]
 
 const MERGE_MARKER = Symbol('page.merge')
@@ -78,8 +78,8 @@ interface MergeMarker {
 }
 
 /**
- * Помечает регистрацию как слияние, а не замену ячейки.
- * Сам слот не читает и сниппеты не склеивает: это делает `applySlot`.
+ * Помечает набор как слияние, а не замену ячейки.
+ * Offset внутри остаётся числом. В порядок отрисовки его переводит `renderMergeSlot`.
  */
 export function mergeSlot(entries: readonly MergeEntry[]): SlotItem[] {
   const marker: MergeMarker = { [MERGE_MARKER]: true, entries }
@@ -98,28 +98,36 @@ export function isMergeSlot(value: SlotItem[] | undefined): value is SlotItem[] 
 
 /**
  * Следующий набор к уже лежащему.
- * Без маркера `next` заменяет `base`. С маркером элементы вставляются по offset
- * или дописываются в конец. `next === undefined` оставляет `base`.
- * Одна функция на ячейку шапки и на зону sidebar.
+ * Без маркера `next` заменяет `base`. С маркером записи дописываются в маркер,
+ * offset не превращается в индекс. `next === undefined` оставляет `base`.
  */
 export function applySlot(
-  base: readonly SlotItem[] | undefined,
+  base: SlotItem[] | undefined,
   next: SlotItem[] | undefined,
 ): SlotItem[] | undefined {
-  if (next === undefined) return base as SlotItem[] | undefined
+  if (next === undefined) return base
   if (!isMergeSlot(next)) return next
+  return mergeSlot([...entriesOf(base), ...markerEntries(next)])
+}
 
-  const result = [...(base ?? [])]
-  for (const entry of (next as unknown as MergeMarker).entries) {
-    if (isOffsetEntry(entry)) {
-      const [offset, item] = entry
-      const index = Math.min(Math.max(0, offset), result.length)
-      result.splice(index, 0, item)
-    } else {
-      result.push(entry)
-    }
+/**
+ * Порядок для шапки и sidebar. Вызывать перед отрисовкой, не при регистрации.
+ * Без маркера массив возвращается как есть. С маркером: слоты без числа — в порядке
+ * регистрации, нумерованные — по возрастанию offset. Одинаковый offset перезаписывается
+ * последней регистрацией. 999 остаётся после 1, 600 и 888, откуда бы их ни добавили.
+ */
+export function renderMergeSlot(value: SlotItem[] | undefined): SlotItem[] {
+  if (!value) return []
+  if (!isMergeSlot(value)) return value
+
+  const plain: SlotItem[] = []
+  const byOffset = new Map<number, SlotItem>()
+  for (const entry of markerEntries(value)) {
+    if (isOffsetEntry(entry)) byOffset.set(entry[0], entry[1])
+    else plain.push(entry)
   }
-  return result
+  const numbered = [...byOffset.entries()].sort((a, b) => a[0] - b[0]).map(([, item]) => item)
+  return [...plain, ...numbered]
 }
 
 function isOffsetEntry(entry: MergeEntry): entry is readonly [number, SlotItem] {
@@ -130,8 +138,18 @@ export function entryOf(item: SlotItem): MergeEntry {
   return item.offset === undefined ? item : [item.offset, item]
 }
 
-function foldMerged(entries: readonly MergeEntry[]): SlotItem[] {
-  return applySlot(undefined, mergeSlot(entries)) ?? []
+function markerEntries(value: SlotItem[]): readonly MergeEntry[] {
+  return (value as unknown as MergeMarker).entries
+}
+
+function entriesOf(value: SlotItem[] | undefined): MergeEntry[] {
+  if (!value) return []
+  if (isMergeSlot(value)) return [...markerEntries(value)]
+  return value.map(entryOf)
+}
+
+function itemsOf(value: SlotItem[] | undefined): SlotItem[] {
+  return entriesOf(value).map((entry) => (isOffsetEntry(entry) ? entry[1] : entry))
 }
 
 export type RowSlots = Record<HeaderSide, SlotItem[]>
@@ -157,10 +175,15 @@ function createEmptySidebarSlots(): SidebarSlots {
 
 function cloneSidebarSlots(src: SidebarSlots): SidebarSlots {
   return {
-    top: [...src.top],
-    middle: [...src.middle],
-    bottom: [...src.bottom],
+    top: copyZone(src.top),
+    middle: copyZone(src.middle),
+    bottom: copyZone(src.bottom),
   }
+}
+
+function copyZone(zone: SlotItem[]): SlotItem[] {
+  if (isMergeSlot(zone)) return mergeSlot([...markerEntries(zone)])
+  return [...zone]
 }
 
 function applySeoPatch(target: HeadSeo, patch: HeadSeo | null | undefined, resetSubTitleOnFullTitle: boolean): void {
@@ -178,7 +201,11 @@ function applySeoPatch(target: HeadSeo, patch: HeadSeo | null | undefined, reset
 
 export function rowHasSlots(row: RowSlots | undefined): boolean {
   if (!row) return false
-  return row.start.length > 0 || row.center.length > 0 || row.end.length > 0
+  return (
+    renderMergeSlot(row.start).length > 0 ||
+    renderMergeSlot(row.center).length > 0 ||
+    renderMergeSlot(row.end).length > 0
+  )
 }
 
 export function headerHasSlots(header: HeaderSlots | undefined): boolean {
@@ -188,7 +215,7 @@ export function headerHasSlots(header: HeaderSlots | undefined): boolean {
 
 export function sidebarHasSlots(sidebar: SidebarSlots | undefined): boolean {
   if (!sidebar) return false
-  return sidebar.top.length > 0 || sidebar.middle.length > 0 || sidebar.bottom.length > 0
+  return SIDEBAR_ZONES.some((zone) => renderMergeSlot(sidebar[zone]).length > 0)
 }
 
 export class PageState {
@@ -260,7 +287,7 @@ export class PageState {
     for (const row of HEADER_ROWS) {
       for (const side of HEADER_SIDES) {
         const path = `${row}.${side}` as HeaderSlotPath
-        out[row][side] = foldMerged(
+        out[row][side] = mergeSlot(
           this.headerRegs.filter((reg) => reg.path === path).map((reg) => entryOf(reg.item)),
         )
       }
@@ -271,7 +298,7 @@ export class PageState {
   private foldSidebar(): SidebarSlots {
     const out = createEmptySidebarSlots()
     for (const zone of SIDEBAR_ZONES) {
-      out[zone] = foldMerged(
+      out[zone] = mergeSlot(
         this.sidebarRegs.filter((reg) => reg.zone === zone).map((reg) => entryOf(reg.item)),
       )
     }
@@ -425,7 +452,7 @@ export function placeSidebarSlots(
 ): { slots: SidebarSlots; warn: string | null } {
   const slots = cloneSidebarSlots(fixed)
   if (autos.length === 0) return { slots, warn: null }
-  const occupied = SIDEBAR_ZONES.filter((zone) => slots[zone].some((item) => !item.frame))
+  const occupied = SIDEBAR_ZONES.filter((zone) => itemsOf(slots[zone]).some((item) => !item.frame))
   if (occupied.length === 0) return { slots, warn: AUTO_NO_ANCHOR }
   const free = SIDEBAR_ZONES.filter((zone) => !occupied.includes(zone))
   let dropped = false

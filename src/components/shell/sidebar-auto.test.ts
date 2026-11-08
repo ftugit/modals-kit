@@ -1,11 +1,15 @@
 import type { Snippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PageState, placeSidebarSlots, type SlotItem } from './page.svelte'
+import { PageState, placeSidebarSlots, renderMergeSlot, type SlotItem } from './page.svelte'
 
 const snippet = (() => {}) as Snippet
 
 function item(id: number, extra: Partial<SlotItem> = {}): SlotItem {
   return { id, snippet, ...extra }
+}
+
+function ids(zone: SlotItem[]): number[] {
+  return renderMergeSlot(zone).map((entry) => entry.id)
 }
 
 describe('placeSidebarSlots', () => {
@@ -14,7 +18,7 @@ describe('placeSidebarSlots', () => {
       { top: [item(1, { frame: true })], middle: [], bottom: [] },
       [item(2)],
     )
-    expect(placed.slots.top.map((entry) => entry.id)).toEqual([1])
+    expect(ids(placed.slots.top)).toEqual([1])
     expect(placed.slots.middle).toEqual([])
     expect(placed.slots.bottom).toEqual([])
     expect(placed.warn).toBe('[sidebar] auto: нет занятого слота, блок не показан')
@@ -25,9 +29,9 @@ describe('placeSidebarSlots', () => {
       { top: [], middle: [], bottom: [item(1)] },
       [item(2), item(3)],
     )
-    expect(placed.slots.top.map((entry) => entry.id)).toEqual([2])
-    expect(placed.slots.middle.map((entry) => entry.id)).toEqual([3])
-    expect(placed.slots.bottom.map((entry) => entry.id)).toEqual([1])
+    expect(ids(placed.slots.top)).toEqual([2])
+    expect(ids(placed.slots.middle)).toEqual([3])
+    expect(ids(placed.slots.bottom)).toEqual([1])
     expect(placed.warn).toBeNull()
   })
 
@@ -36,19 +40,19 @@ describe('placeSidebarSlots', () => {
       { top: [item(9, { frame: true })], middle: [item(1)], bottom: [] },
       [item(2), item(3)],
     )
-    expect(placed.slots.top.map((entry) => entry.id)).toEqual([9, 2])
-    expect(placed.slots.middle.map((entry) => entry.id)).toEqual([1])
-    expect(placed.slots.bottom.map((entry) => entry.id)).toEqual([3])
+    expect(ids(placed.slots.top)).toEqual([9, 2])
+    expect(ids(placed.slots.middle)).toEqual([1])
+    expect(ids(placed.slots.bottom)).toEqual([3])
     expect(placed.warn).toBeNull()
   })
 
-  it('offset auto вставляет в выбранную свободную зону, не дописывает вслепую', () => {
+  it('offset auto остаётся числом: 0 не перепрыгивает слот без числа', () => {
     const placed = placeSidebarSlots(
       { top: [item(9, { frame: true })], middle: [item(1)], bottom: [] },
       [item(2, { offset: 0 })],
     )
-    expect(placed.slots.top.map((entry) => entry.id)).toEqual([2, 9])
-    expect(placed.slots.middle.map((entry) => entry.id)).toEqual([1])
+    expect(ids(placed.slots.top)).toEqual([9, 2])
+    expect(ids(placed.slots.middle)).toEqual([1])
     expect(placed.warn).toBeNull()
   })
 
@@ -57,7 +61,7 @@ describe('placeSidebarSlots', () => {
       { top: [item(1)], middle: [item(2)], bottom: [item(3)] },
       [item(4)],
     )
-    expect(placed.slots.top.map((entry) => entry.id)).toEqual([1])
+    expect(ids(placed.slots.top)).toEqual([1])
     expect(placed.warn).toBe('[sidebar] auto: свободной зоны нет, блок не показан')
   })
 })
@@ -76,16 +80,18 @@ describe('PageState sidebar auto', () => {
     const state = new PageState()
     const offBottom = state.registerSidebarSlot('bottom', snippet)
     const offAuto = state.registerSidebarSlot('sidebar.auto', snippet)
-    expect(state.sidebar.top).toHaveLength(1)
-    expect(state.sidebar.top[0]?.auto).toBe(true)
-    expect(state.sidebar.bottom[0]?.auto).toBeUndefined()
-    expect(state.sidebar.bottom).toHaveLength(1)
+    const top = renderMergeSlot(state.sidebar.top)
+    const bottom = renderMergeSlot(state.sidebar.bottom)
+    expect(top).toHaveLength(1)
+    expect(top[0]?.auto).toBe(true)
+    expect(bottom[0]?.auto).toBeUndefined()
+    expect(bottom).toHaveLength(1)
     expect(warn).not.toHaveBeenCalled()
 
     offBottom()
-    expect(state.sidebar.top).toHaveLength(0)
-    expect(state.sidebar.middle).toHaveLength(0)
-    expect(state.sidebar.bottom).toHaveLength(0)
+    expect(renderMergeSlot(state.sidebar.top)).toHaveLength(0)
+    expect(renderMergeSlot(state.sidebar.middle)).toHaveLength(0)
+    expect(renderMergeSlot(state.sidebar.bottom)).toHaveLength(0)
     await vi.runAllTimersAsync()
     expect(warn).toHaveBeenCalledWith('[sidebar] auto: нет занятого слота, блок не показан')
     offAuto()
@@ -97,14 +103,14 @@ describe('PageState sidebar auto', () => {
     state.registerSidebarSlot('middle', snippet, { frame: true })
     state.registerSidebarSlot('bottom', snippet, { frame: true })
     state.registerSidebarSlot('auto', snippet)
-    expect(state.sidebar.top).toHaveLength(1)
-    expect(state.sidebar.middle).toHaveLength(1)
-    expect(state.sidebar.bottom).toHaveLength(1)
+    expect(renderMergeSlot(state.sidebar.top)).toHaveLength(1)
+    expect(renderMergeSlot(state.sidebar.middle)).toHaveLength(1)
+    expect(renderMergeSlot(state.sidebar.bottom)).toHaveLength(1)
 
     state.registerSidebarSlot('bottom', snippet)
     state.registerSidebarSlot('auto', snippet)
-    expect(state.sidebar.top).toHaveLength(2)
-    expect(state.sidebar.middle).toHaveLength(2)
-    expect(state.sidebar.bottom).toHaveLength(2)
+    expect(renderMergeSlot(state.sidebar.top)).toHaveLength(2)
+    expect(renderMergeSlot(state.sidebar.middle)).toHaveLength(2)
+    expect(renderMergeSlot(state.sidebar.bottom)).toHaveLength(2)
   })
 })

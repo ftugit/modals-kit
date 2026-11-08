@@ -29,6 +29,7 @@ export {
   mergeSlot,
   isMergeSlot,
   applySlot,
+  renderMergeSlot,
   entryOf,
 } from './page.svelte'
 
