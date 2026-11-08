@@ -35,6 +35,7 @@
     hasPaginator,
     setExtra,
   } from '#lib/paginate/index.js'
+  import type { SidebarPlace } from '#components/shell/index.js'
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
@@ -52,6 +53,11 @@
     onAcl?: (fact: AuthErrorCode) => void
     variant?: UserSurfaceVariant
     class?: string
+    /**
+     * Зона sidebar для списка выбора. Шаг «выбранные» её не получает:
+     * это тот же пагинатор, вторая форма писала бы в тот же набор.
+     */
+    sidebar?: SidebarPlace
   }
 
   let {
@@ -65,6 +71,7 @@
     onAcl,
     variant = 'card',
     class: className,
+    sidebar,
   }: Props = $props()
 
   const PICK_ATTACH = createAttachmentKey()
@@ -327,6 +334,7 @@
         <div class="flex min-h-0 flex-1 flex-col gap-3">
           <SeedUsersList
             url={!isModalMode}
+            {sidebar}
             initial={initialUsers}
             {rowAttrs}
             isSelected={(id) => pickedSet.has(id)}

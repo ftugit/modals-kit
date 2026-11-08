@@ -21,6 +21,6 @@
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}
-    <SeedUsersList initial={data} variant="card" />
+    <SeedUsersList initial={data} variant="card" sidebar="middle" />
   {/if}
 </div>

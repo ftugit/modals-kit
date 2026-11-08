@@ -27,7 +27,7 @@
       </Button>
     </div>
     {#key data.uid}
-      <BlocksList uid={data.uid} initial={data} variant="card" />
+      <BlocksList uid={data.uid} initial={data} variant="card" sidebar="middle" />
     {/key}
   {/if}
 </div>

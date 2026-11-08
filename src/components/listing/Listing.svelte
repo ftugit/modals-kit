@@ -11,9 +11,12 @@
   import { preloadData } from '$app/navigation'
   import { onDestroy, untrack } from 'svelte'
   import { Paginator, SearchBar, Skeleton } from '#components/paginator/index.js'
+  import { DEV } from 'esm-env'
+  import { tryUsePage } from '#components/shell/index.js'
   import { Button, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
+  import { useIsMobile } from '#hooks/mobile.svelte.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import {
     acquireScopedStore,
@@ -27,6 +30,7 @@
   } from '#lib/paginate/index.js'
   import { PaginatorScope, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
+  import { filtersUseSidebar } from './sidebar.js'
   import type { ListingInitial, ListingProps } from './types.js'
 
   const lastActor = new Map<string, string | null | undefined>()
@@ -54,6 +58,8 @@
     listTestId,
     pendingTestId,
     filters,
+    sidebar,
+    filtersForm,
     search,
     identityKey,
     actor,
@@ -64,6 +70,27 @@
 
   // Имя пагинатора не меняется за жизнь экземпляра: регистрация и стор смотрят в него один раз.
   const paginatorName = untrack(() => name)
+  // Реестр слота, не догадка «модалка или страница». Носитель задаёт `sidebar`.
+  const page = tryUsePage()
+  const narrow = useIsMobile()
+  const inSidebar = $derived(filtersUseSidebar(sidebar, narrow.ready, narrow.matches) && Boolean(filtersForm) && Boolean(page))
+  let warnedNoPage = false
+
+  $effect(() => {
+    const zone = sidebar
+    const show = filtersUseSidebar(zone, narrow.ready, narrow.matches)
+    if (!zone || !show) return
+    if (!page) {
+      if (DEV && !warnedNoPage) {
+        warnedNoPage = true
+        console.warn('[listing] sidebar: нет контекста страницы, остаётся кнопка')
+      }
+      return
+    }
+    const form = filtersForm
+    if (!form) return
+    return page.registerSidebarSlot(zone, form)
+  })
 
   $effect(() => {
     const current = actor
@@ -219,7 +246,7 @@
   {#if extraControls && data}
     {@render extraControls({ extra: extraRecord, payload: data })}
   {/if}
-  {#if showFilters}
+  {#if showFilters && !inSidebar}
     {@render filtersButton()}
   {/if}
 {/snippet}

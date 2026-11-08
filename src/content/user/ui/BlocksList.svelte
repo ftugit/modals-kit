@@ -5,17 +5,23 @@
    * «Добавить» открывает создание, если это разрешено. Нажатие на строку
    * открывает карточку записи: правка или чтение решает уже форма.
    */
+  import { onDestroy, untrack } from 'svelte'
+  import { browser } from '$app/env'
+  import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { grants } from '#lib/db/index.js'
-  import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
+    import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
-  import { block as blockResource } from '../schema.js'
+  import { auth as authResource, block as blockResource } from '../schema.js'
   import type { BlockView } from '../types.js'
   import { vault } from '../vault.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
+  import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
   import BlockCard from './blocks-list/BlockCard.svelte'
   import {
     BLOCKS_EXTRA_DEFAULTS,
@@ -41,6 +47,8 @@
     onAcl?: (fact: AuthErrorCode) => void
     variant?: UserSurfaceVariant
     class?: string
+    /** Зона sidebar. Страница передаёт, модалка — нет. */
+    sidebar?: SidebarPlace
   }
 
   let {
@@ -51,6 +59,7 @@
     onAcl,
     variant = 'plain',
     class: className,
+    sidebar,
   }: Props = $props()
 
   ensureBlocksPaginator()
@@ -80,6 +89,84 @@
       .join(',')
   }
 
+  const sidebarZone = untrack(() => sidebar)
+  const filterSlot = sidebarZone
+    ? useSlotPaginatorScope(BLOCKS_NAME, untrack(() => (url === false ? { url: false } : undefined)))
+    : undefined
+  const filterScope = sidebarZone ? untrack(() => scope) : null
+  const ownedScope = Boolean(sidebarZone && filterScope && !filterSlot?.store && browser)
+  const filterStore = sidebarZone
+    ? (filterSlot?.store ??
+      (ownedScope && filterScope
+        ? acquireScopedStore(filterScope)
+        : browser
+          ? getClientStore()
+          : undefined))
+    : undefined
+  if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
+  let appliedValues = $state<BlocksFilterValues | null>(null)
+  let appliedKey = $state('')
+  const gBlock = grants(blockResource)
+  const gAuth = grants(authResource)
+  const filterCaps = useGrants(
+    {
+      canSeeDeleted: gBlock.selectDeleted,
+      canSeeLive: gBlock.select,
+      canPickUsers: gAuth.select,
+    },
+    { ownerId: () => fixedUid },
+  )
+  const canSeeDeleted = $derived(
+    vault.principal !== null ? filterCaps.canSeeDeleted : initial?.canSeeDeleted === true,
+  )
+  const canSeeLive = $derived(
+    vault.principal !== null ? filterCaps.canSeeLive : initial?.canSeeLive !== false,
+  )
+  const canPickUsers = $derived(
+    !fixedUid && (vault.principal !== null ? filterCaps.canPickUsers : initial?.canPickUsers === true),
+  )
+
+  function blockValues(extra: Record<string, unknown>, pageSize: number): BlocksFilterValues {
+    const s = (key: string) => (typeof extra[key] === 'string' ? extra[key] : '')
+    return {
+      ord: s('ord') || 'created-desc',
+      state: s('state') || 'all',
+      scopes: s('scopes').split(',').map((part) => part.trim()).filter(Boolean),
+      uids: s('uids').split(',').map((part) => part.trim()).filter(Boolean),
+      size: pageSize || BLOCKS_PAGE_SIZE,
+    }
+  }
+
+  $effect(() => {
+    if (!filterStore) return
+    const sync = () => {
+      const state = getState<BlockView>(filterStore, BLOCKS_NAME)
+      const extra = (state.extra ?? {}) as Record<string, unknown>
+      const pageSize = state.pageSize || BLOCKS_PAGE_SIZE
+      const values = blockValues(extra, pageSize)
+      appliedValues = values
+      appliedKey = [values.ord, values.state, values.scopes.join(','), values.uids.join(','), String(pageSize)].join('|')
+    }
+    sync()
+    const unsub = filterStore.subscribe?.(BLOCKS_NAME, sync)
+    return () => unsub?.()
+  })
+
+  function applyFilters(patch: Record<string, string | undefined>, pageSize: number) {
+    if (!filterStore) return
+    void setExtra(filterStore, BLOCKS_NAME, patch, { pageSize })
+  }
+
+  function resetFilters() {
+    if (!filterStore) return
+    void setExtra(
+      filterStore,
+      BLOCKS_NAME,
+      { ord: undefined, state: undefined, scopes: undefined, uids: undefined },
+      { pageSize: BLOCKS_PAGE_SIZE },
+    )
+  }
+
   function canCreate(payload: BlocksRouteData): boolean {
     return vault.principal !== null
       ? createBlockGrant.current && (!fixedUid || fixedUid !== vault.principal)
@@ -107,6 +194,7 @@
   pendingTestId="blocks-list-pending"
   identityKey={BLOCKS_INTERNAL_UID_KEY}
   actor={vault.principal}
+  {sidebar}
   filters={{
     modal: 'user.blocks.filters',
     path: '/blocks/filters',
@@ -125,6 +213,24 @@
     },
   }}
 >
+  {#snippet filtersForm()}
+    {#if appliedValues}
+      <div class="flex flex-col gap-3" data-testid="blocks-filters-sidebar">
+        <h2 class="text-sm font-medium">Фильтры</h2>
+        {#key `${appliedKey}:${canSeeDeleted}:${canSeeLive}:${canPickUsers}`}
+          <BlocksFiltersForm
+            uid={fixedUid}
+            {canSeeDeleted}
+            {canSeeLive}
+            {canPickUsers}
+            initial={appliedValues}
+            onApply={applyFilters}
+            onReset={resetFilters}
+          />
+        {/key}
+      </div>
+    {/if}
+  {/snippet}
   {#snippet controls({ extra, payload })}
     {#if canCreate(payload as BlocksRouteData)}
       {@const picked = filterUids(extra)}

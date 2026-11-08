@@ -9,13 +9,22 @@
    * Нажатие задаёт носитель фабрикой `rowAttrs`. По умолчанию — профиль.
    * Выбор красит `isSelected`. Срез `users.ids` переспрашивает первую порцию.
    */
+  import { onDestroy, untrack } from 'svelte'
+  import { browser } from '$app/env'
+  import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
-  import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { grants } from '#lib/db/index.js'
+  import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
+    import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
+  import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import type { AuthErrorCode } from '../error.js'
+  import { useGrants } from '../grants.svelte.js'
+  import { auth as authResource, profile as profileResource } from '../schema.js'
   import type { SeedUserView } from '../types.js'
   import { vault } from '../vault.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
+  import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
   import {
     ensureSeedUsersPaginator,
@@ -45,6 +54,8 @@
     isSelected?: (id: string) => boolean
     variant?: UserSurfaceVariant
     class?: string
+    /** Зона sidebar. Страница передаёт, модалка — нет. */
+    sidebar?: SidebarPlace
   }
 
   let {
@@ -56,6 +67,7 @@
     isSelected,
     variant = 'plain',
     class: className,
+    sidebar,
   }: Props = $props()
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
@@ -66,6 +78,85 @@
     rowAttrs?.(user) ?? { ...asModalLink('user.profile', { id: user.id }), title: 'Открыть профиль' }
 
   const nickOn = (extra: Record<string, unknown>) => extra.nick === '1'
+
+  const sidebarZone = untrack(() => sidebar)
+  const filterSlot = sidebarZone
+    ? useSlotPaginatorScope(SEED_USERS_NAME, untrack(() => (url === false ? { url: false } : undefined)))
+    : undefined
+  const filterScope = sidebarZone ? untrack(() => scope) : null
+  const ownedScope = Boolean(sidebarZone && filterScope && !filterSlot?.store && browser)
+  const filterStore = sidebarZone
+    ? (filterSlot?.store ??
+      (ownedScope && filterScope
+        ? acquireScopedStore(filterScope)
+        : browser
+          ? getClientStore()
+          : undefined))
+    : undefined
+  if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
+  let appliedValues = $state<SeedUsersFilterValues | null>(null)
+  let appliedKey = $state('')
+  const seedCaps = useGrants({
+    canSeeDeleted: grants(authResource).selectDeleted,
+    canSeeNickname: grants(profileResource).select,
+  })
+  const canSeeDeleted = $derived(
+    vault.principal !== null ? seedCaps.canSeeDeleted : initial?.canSeeDeleted === true,
+  )
+  const canSeeNickname = $derived(
+    vault.principal !== null ? seedCaps.canSeeNickname : initial?.canSeeNickname === true,
+  )
+
+  function seedValues(extra: Record<string, unknown>, pageSize: number): SeedUsersFilterValues {
+    const s = (key: string) => (typeof extra[key] === 'string' ? extra[key] : '')
+    return {
+      ord: s('ord') || 'created-desc',
+      state: s('state') || 'active',
+      cfrom: s('cfrom'),
+      cto: s('cto'),
+      dfrom: s('dfrom'),
+      dto: s('dto'),
+      nick: s('nick') === '1',
+      size: pageSize || SEED_USERS_PAGE_SIZE,
+    }
+  }
+
+  $effect(() => {
+    if (!filterStore) return
+    const sync = () => {
+      const state = getState<SeedUserView>(filterStore, SEED_USERS_NAME)
+      const extra = (state.extra ?? {}) as Record<string, unknown>
+      const pageSize = state.pageSize || SEED_USERS_PAGE_SIZE
+      appliedValues = seedValues(extra, pageSize)
+      appliedKey = SEED_USERS_FILTER_KEYS.map((key) => String(extra[key] ?? '')).join('|') + '|' + pageSize
+    }
+    sync()
+    const unsub = filterStore.subscribe?.(SEED_USERS_NAME, sync)
+    return () => unsub?.()
+  })
+
+  function applyFilters(patch: Record<string, string | undefined>, pageSize: number) {
+    if (!filterStore) return
+    void setExtra(filterStore, SEED_USERS_NAME, patch, { pageSize })
+  }
+
+  function resetFilters() {
+    if (!filterStore) return
+    void setExtra(
+      filterStore,
+      SEED_USERS_NAME,
+      {
+        ord: undefined,
+        state: undefined,
+        cfrom: undefined,
+        cto: undefined,
+        dfrom: undefined,
+        dto: undefined,
+        nick: undefined,
+      },
+      { pageSize: SEED_USERS_PAGE_SIZE },
+    )
+  }
 </script>
 
 <Listing
@@ -87,6 +178,7 @@
   rowTestId="seed-user-row"
   pendingTestId="seed-users-pending"
   actor={vault.principal}
+  {sidebar}
   filters={{
     modal: 'user.list.filters',
     path: '/users/filters',
@@ -101,6 +193,22 @@
       nickOn(extra) ? 'Подстрока seed, id или никнейма…' : 'Подстрока seed или id…',
   }}
 >
+  {#snippet filtersForm()}
+    {#if appliedValues}
+      <div class="flex flex-col gap-3" data-testid="seed-users-filters-sidebar">
+        <h2 class="text-sm font-medium">Фильтры</h2>
+        {#key `${appliedKey}:${canSeeDeleted}:${canSeeNickname}`}
+          <SeedUsersFiltersForm
+            {canSeeDeleted}
+            {canSeeNickname}
+            initial={appliedValues}
+            onApply={applyFilters}
+            onReset={resetFilters}
+          />
+        {/key}
+      </div>
+    {/if}
+  {/snippet}
   {#snippet item(user, selected)}
     <SeedUserCard item={user} {selected} />
   {/snippet}

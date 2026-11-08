@@ -1,4 +1,5 @@
 import type { Snippet } from 'svelte'
+import type { SidebarPlace } from '#components/shell/index.js'
 import type { SurfaceVariant } from '#components/ui/index.js'
 import type { LinkAttrs } from '#hooks/links/index.js'
 import type { PaginatorState } from '#lib/paginate/index.js'
@@ -64,6 +65,13 @@ export interface ListingProps<Item extends { id: string }> {
   listTestId?: string
   pendingTestId?: string
   filters?: ListingFilters
+  /**
+   * Зона sidebar для формы фильтров. Страница передаёт, модалка — нет.
+   * `Listing` не угадывает носитель: нет зоны — всегда кнопка.
+   */
+  sidebar?: SidebarPlace
+  /** Форма фильтров этой схемы. Оболочка поля не знает, только регистрирует сниппет. */
+  filtersForm?: Snippet
   search?: {
     label: (extra: Record<string, unknown>) => string
     placeholder: (extra: Record<string, unknown>) => string

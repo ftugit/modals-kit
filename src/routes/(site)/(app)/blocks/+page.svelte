@@ -18,6 +18,6 @@
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}
-    <BlocksList initial={data} variant="card" />
+    <BlocksList initial={data} variant="card" sidebar="middle" />
   {/if}
 </div>
