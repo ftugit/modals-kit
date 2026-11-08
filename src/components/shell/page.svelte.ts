@@ -6,7 +6,9 @@ export type HeaderSide = 'start' | 'center' | 'end'
 export type HeaderSlotPath = `${HeaderRow}.${HeaderSide}`
 
 export type SidebarZone = 'top' | 'middle' | 'bottom'
-export type SidebarSlotPath = `sidebar.${SidebarZone}` | SidebarZone
+/** `auto` — не зона, а просьба занять свободную сверху вниз. */
+export type SidebarPlace = SidebarZone | 'auto'
+export type SidebarSlotPath = `sidebar.${SidebarPlace}` | SidebarPlace
 
 export const HEADER_ROWS: readonly HeaderRow[] = ['top', 'middle', 'bottom']
 export const HEADER_SIDES: readonly HeaderSide[] = ['start', 'center', 'end']
@@ -52,6 +54,13 @@ export type SlotItem = {
   id: number
   snippet: Snippet
   offset?: number
+  /**
+   * Каркас оболочки. Слот виден, но зону для `auto` не занимает:
+   * layout всегда сидит во всех трёх, иначе свободной зоны не было бы.
+   */
+  frame?: boolean
+  /** Поставлен режимом `auto`, а не явной зоной. */
+  auto?: boolean
 }
 
 export type RowSlots = Record<HeaderSide, SlotItem[]>
@@ -174,7 +183,34 @@ export class PageState {
   }
 
   private syncSidebar(): void {
-    this.sidebar = cloneSidebarSlots(this.rawSidebar)
+    this.reflowSidebar()
+  }
+
+  /** `auto` в порядке регистрации. Не лежит в зоне, пока reflow его не поставит. */
+  private autos: SlotItem[] = []
+  private autoWarnTimer: ReturnType<typeof setTimeout> | undefined
+
+  private reflowSidebar(): void {
+    const { slots, warn } = placeSidebarSlots(this.rawSidebar, this.autos)
+    this.sidebar = slots
+    this.scheduleAutoWarn(warn)
+  }
+
+  /**
+   * Жалоба только в браузере: SSR и клиент ставят `auto` одним кодом,
+   * отдельная серверная функция для этого не нужна. Таймер сбрасывается,
+   * если в том же ходе регистрация ещё доехала.
+   */
+  private scheduleAutoWarn(message: string | null): void {
+    if (this.autoWarnTimer !== undefined) {
+      clearTimeout(this.autoWarnTimer)
+      this.autoWarnTimer = undefined
+    }
+    if (!message || typeof window === 'undefined') return
+    this.autoWarnTimer = setTimeout(() => {
+      this.autoWarnTimer = undefined
+      console.warn(message)
+    }, 0)
   }
 
   /** Императивный патч SEO поверх базового контекста (сохранён для обратной совместимости). */
@@ -227,25 +263,51 @@ export class PageState {
     }
   }
 
-  registerSidebarSlot(zone: SidebarZone | SidebarSlotPath, snippet: Snippet, offset?: number): () => void {
-    const rawZone = zone.startsWith('sidebar.') ? (zone.replace('sidebar.', '') as SidebarZone) : (zone as SidebarZone)
+  /**
+   * Зона `top` / `middle` / `bottom` или `auto`.
+   * `auto` занимает свободные зоны сверху вниз, но только если хотя бы одна
+   * зона уже занята не-каркасной регистрацией. Иначе блок не рисуется.
+   * Каркас (`frame`) виден и в «занятости» не считается.
+   */
+  registerSidebarSlot(
+    zone: SidebarSlotPath,
+    snippet: Snippet,
+    offset?: number,
+    options?: { frame?: boolean },
+  ): () => void {
+    const raw = zone.startsWith('sidebar.') ? zone.slice('sidebar.'.length) : zone
     const id = ++this.seq
-    const item: SlotItem = { id, snippet, offset }
-    const current = [...this.rawSidebar[rawZone]]
+    const item: SlotItem = {
+      id,
+      snippet,
+      offset,
+      ...(options?.frame ? { frame: true } : {}),
+      ...(raw === 'auto' ? { auto: true } : {}),
+    }
 
+    if (raw === 'auto') {
+      this.autos = [...this.autos, item]
+      this.reflowSidebar()
+      return () => {
+        this.autos = this.autos.filter((entry) => entry.id !== id)
+        this.reflowSidebar()
+      }
+    }
+
+    const rawZone = raw as SidebarZone
+    const current = [...this.rawSidebar[rawZone]]
     if (offset !== undefined) {
       const idx = Math.max(0, Math.min(offset, current.length))
       current.splice(idx, 0, item)
     } else {
       current.push(item)
     }
-
     this.rawSidebar[rawZone] = current
-    this.syncSidebar()
+    this.reflowSidebar()
 
     return () => {
-      this.rawSidebar[rawZone] = this.rawSidebar[rawZone].filter((x) => x.id !== id)
-      this.syncSidebar()
+      this.rawSidebar[rawZone] = this.rawSidebar[rawZone].filter((entry) => entry.id !== id)
+      this.reflowSidebar()
     }
   }
 
@@ -254,10 +316,46 @@ export class PageState {
     this.rawSeoLayers = []
     this.rawHeader = createEmptyHeaderSlots()
     this.rawSidebar = createEmptySidebarSlots()
+    this.autos = []
     this.bumpSeo()
     this.syncHeader()
     this.syncSidebar()
   }
+}
+
+
+const AUTO_NO_ANCHOR = '[sidebar] auto: нет занятого слота, блок не показан'
+const AUTO_NO_ROOM = '[sidebar] auto: свободной зоны нет, блок не показан'
+
+/**
+ * `auto` заполняет зоны без явной регистрации, сверху вниз.
+ * Каркас (`frame`) зону не занимает. Нет ни одной занятой зоны — `auto` не рисуется.
+ */
+export function placeSidebarSlots(
+  fixed: SidebarSlots,
+  autos: readonly SlotItem[],
+): { slots: SidebarSlots; warn: string | null } {
+  const slots = cloneSidebarSlots(fixed)
+  if (autos.length === 0) return { slots, warn: null }
+  const occupied = SIDEBAR_ZONES.filter((zone) => slots[zone].some((item) => !item.frame))
+  if (occupied.length === 0) return { slots, warn: AUTO_NO_ANCHOR }
+  const free = SIDEBAR_ZONES.filter((zone) => !occupied.includes(zone))
+  let dropped = false
+  for (const item of autos) {
+    const zone = free.shift()
+    if (!zone) {
+      dropped = true
+      continue
+    }
+    const current = slots[zone]
+    if (item.offset !== undefined) {
+      const idx = Math.max(0, Math.min(item.offset, current.length))
+      current.splice(idx, 0, item)
+    } else {
+      current.push(item)
+    }
+  }
+  return { slots, warn: dropped ? AUTO_NO_ROOM : null }
 }
 
 const PAGE_CONTEXT_KEY = Symbol('PAGE_CONTEXT')
@@ -283,6 +381,8 @@ export function usePage(): PageState {
 export interface SlotOptions {
   offset?: number
   enabled?: boolean | (() => boolean)
+  /** Каркас оболочки: виден, но для `auto` зону не занимает. */
+  frame?: boolean
 }
 
 /**
@@ -334,7 +434,7 @@ export function useHeaderSlots(
  * Синхронная регистрация сниппета в сайдбар (3 зоны: top / middle / bottom).
  */
 export function useSidebarSlot(
-  zone: SidebarZone | SidebarSlotPath,
+  zone: SidebarSlotPath,
   snippet: Snippet,
   options: SlotOptions = {},
 ): void {
@@ -342,7 +442,7 @@ export function useSidebarSlot(
   const isEnabled = typeof options.enabled === 'function' ? options.enabled() : (options.enabled ?? true)
 
   if (isEnabled) {
-    const unregister = page.registerSidebarSlot(zone, snippet, options.offset)
+    const unregister = page.registerSidebarSlot(zone, snippet, options.offset, { frame: options.frame })
     $effect(() => {
       return () => unregister()
     })

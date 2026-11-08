@@ -15,6 +15,7 @@ export {
   type HeaderSide,
   type HeaderSlotPath,
   type SidebarZone,
+  type SidebarPlace,
   type SidebarSlotPath,
   type HeadSeo,
   type HeadSeoOptions,

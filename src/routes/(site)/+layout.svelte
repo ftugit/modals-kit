@@ -61,9 +61,10 @@
   useHeaderSlot('top.end', userSnippet)
 
   // Базовые слоты 3-зонного сайдбара
-  useSidebarSlot('top', sidebarTopSnippet)
-  useSidebarSlot('middle', sidebarNavSnippet)
-  useSidebarSlot('bottom', sidebarBottomSnippet)
+  // Каркас. Для auto эти зоны не «заняты»: иначе свободной зоны не остаётся.
+  useSidebarSlot('top', sidebarTopSnippet, { frame: true })
+  useSidebarSlot('middle', sidebarNavSnippet, { frame: true })
+  useSidebarSlot('bottom', sidebarBottomSnippet, { frame: true })
 
   const SOURCES = ['url', 'local', 'memory'] as const
 

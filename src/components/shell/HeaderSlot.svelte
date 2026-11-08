@@ -5,11 +5,10 @@
     usePage,
     type HeaderSlotPath,
     type SidebarSlotPath,
-    type SidebarZone,
   } from './page.svelte'
 
   interface Props {
-    target: HeaderSlotPath | SidebarSlotPath | SidebarZone
+    target: HeaderSlotPath | SidebarSlotPath
     offset?: number
     enabled?: boolean
     children: Snippet
@@ -20,7 +19,8 @@
   const page = usePage()
 
   const isSidebar = $derived(
-    target.startsWith('sidebar.') ||
+    target === 'auto' ||
+      target.startsWith('sidebar.') ||
       target === 'top' ||
       target === 'middle' ||
       target === 'bottom',
@@ -30,7 +30,7 @@
     if (!enabled || !children) return
 
     if (isSidebar && (target.startsWith('sidebar.') || !target.includes('.'))) {
-      return page.registerSidebarSlot(target as SidebarZone, children, offset)
+      return page.registerSidebarSlot(target as SidebarSlotPath, children, offset)
     }
 
     return page.registerHeaderSlot(target as HeaderSlotPath, children, offset)

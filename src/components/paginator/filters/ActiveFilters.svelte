@@ -48,8 +48,8 @@
     'data-filter-excluded': chip.excluded || undefined,
     title: `${chip.fieldLabel}: ${chip.label} — нажмите, чтобы снять`,
     class: chip.excluded
-      ? 'inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/15'
-      : 'inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
+      ? 'inline-flex max-lg:shrink-0 items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/15'
+      : 'inline-flex max-lg:shrink-0 items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
   })
 </script>
 
@@ -61,14 +61,14 @@
 {/snippet}
 
 <div
-  class={`flex flex-wrap items-center gap-1.5 ${cls}`}
+  class={`flex min-w-0 flex-wrap items-center gap-1.5 max-lg:flex-nowrap max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden ${cls}`}
   data-testid="active-filters"
   role="group"
   aria-label={count ? `Активные фильтры: ${count}` : 'Активные фильтры'}
 >
   {#if count}
     <span
-      class="inline-flex items-center rounded-md border border-transparent bg-secondary px-2 py-0.5 text-xs font-medium"
+      class="inline-flex max-lg:shrink-0 items-center rounded-md border border-transparent bg-secondary px-2 py-0.5 text-xs font-medium"
       data-testid="filters-count"
       aria-hidden="true">{count}</span
     >
@@ -82,6 +82,6 @@
       {/if}
     {/each}
   {:else}
-    <span class="text-xs text-muted-foreground" data-testid="active-filters-empty">Фильтры не выбраны</span>
+    <span class="max-lg:shrink-0 text-xs text-muted-foreground" data-testid="active-filters-empty">Фильтры не выбраны</span>
   {/if}
 </div>
