@@ -135,6 +135,18 @@ export type StepsHost = {
   readonly fullKey: string | null
   /** Адрес шага (чужие ключи адреса не теряются; для `addressable: false` ключ шага в поиск не пишется). */
   href(stepKey: string): string
+  /**
+   * Адрес без своего ключа шага. Ссылка «закрыть» и no-JS: чужие параметры
+   * (`?modal=`, `?page.…`) остаются. В режиме `url` закрытие — переход по ней,
+   * не `close()`.
+   */
+  blankHref(): string
+  /**
+   * Закрыть срез в `local`/`hybrid`: текущий ключ пуст, в `hybrid` адрес
+   * снимает свой ключ без навигации. В `url` не ведает состоянием — там
+   * закрытие это ссылка `blankHref()`.
+   */
+  close(): void
   /** Разрешён ли шагу собственный URL (`true` для объявленных шагов без `addressable: false`). */
   isAddressable(stepKey: string): boolean
   /** Аргумент шага — чтение (`step.<ключ>.<имя>`); чужие права не нужны. */
@@ -264,6 +276,28 @@ export function useSteps(opts: StepsOptions): StepsHost {
       const here = visibleAddress().url
       const patchValue = findStep(stepKey)?.addressable === false ? null : stepKey
       return here.pathname + nextSearch(opts.owner, here.search, { [key]: patchValue })
+    },
+    blankHref() {
+      const here = visibleAddress().url
+      return here.pathname + nextSearch(opts.owner, here.search, { [key]: null })
+    },
+    close() {
+      if (locked()) return
+      if (mode === 'url') {
+        if (!urlModeWarned) {
+          urlModeWarned = true
+          warnOnce(
+            `close() у «${opts.owner}» в режиме url не ведает состоянием: закрытие — ссылка blankHref(), ` +
+              'не локальный сброс. Локальное закрытие — режим local или hybrid.',
+          )
+        }
+        return
+      }
+      // Пустая строка — «закрыто», не «ещё не меняли»: `null` снова отдал бы current().
+      if (mode === 'hybrid' && BROWSER) {
+        void writeAddress(() => ({ url: host.blankHref() }), { replace: false, load: false })
+      }
+      local = ''
     },
     arg(name: string, stepKey?: string) {
       const target = stepKey ?? segmentOf(full())

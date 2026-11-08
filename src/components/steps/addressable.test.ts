@@ -100,3 +100,44 @@ describe('useSteps: неадресуемые шаги (addressable: false)', () 
     expect(steps.currentKey).toBe('other')
   })
 })
+
+describe('useSteps: закрытие среза', () => {
+  beforeEach(() => {
+    mockUrl = new URL('http://localhost:5173/steps?pstep_t=extra&tab=1')
+    writtenUrls.length = 0
+  })
+
+  it('blankHref снимает свой ключ и оставляет чужой', () => {
+    const steps = useSteps({
+      owner: 'popup-blank',
+      mode: 'url',
+      key: 'pstep_t',
+      steps: () => [
+        { key: 'contacts', label: 'Контакты', filled: true },
+        { key: 'extra', label: 'Примечание', filled: true },
+      ],
+      current: () => mockUrl.searchParams.get('pstep_t'),
+    })
+    expect(steps.blankHref()).toBe('/steps?tab=1')
+    steps.close()
+    expect(steps.currentKey).toBe('extra')
+  })
+
+  it('close в hybrid гасит текущий ключ и пишет адрес без своего ключа', () => {
+    mockUrl = new URL('http://localhost:5173/steps?pstep_c=extra&tab=1')
+    writtenUrls.length = 0
+    const steps = useSteps({
+      owner: 'popup-close',
+      mode: 'hybrid',
+      key: 'pstep_c',
+      steps: () => [
+        { key: 'contacts', label: 'Контакты', filled: true },
+        { key: 'extra', label: 'Примечание', filled: true },
+      ],
+      current: () => 'extra',
+    })
+    steps.close()
+    expect(steps.currentKey).toBeNull()
+    expect(writtenUrls.at(-1)).toBe('/steps?tab=1')
+  })
+})
