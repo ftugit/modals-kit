@@ -66,21 +66,11 @@
 
   const menuPlacement = { gap: 6, minSideSpace: 120, maxOverlayHeight: 420 }
 
-  let triggerEl = $state<HTMLElement | null>(null)
   let menuOpen = $state(false)
-  let closedAt = $state(0)
-  let menuNode = $state<HTMLElement | undefined>(undefined)
 
-  function onTriggerClick(e: MouseEvent) {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-    if (!host) return // нет хоста — обычная ссылка на страницу меню
-    e.preventDefault()
-    if (Date.now() - closedAt < 250) return
-    if (menuOpen) menuOpen = false
-    else {
-      preloadMenuBody()
-      menuOpen = true
-    }
+  function onMenuChange(next: boolean) {
+    if (next) preloadMenuBody()
+    menuOpen = next
   }
 
   /** Открылась любая модалка (например, профиль из меню) — всплывашку снимаем. */
@@ -114,42 +104,41 @@
   {:else}
     <!-- широкая ширина: аватар → всплывашка у кнопки, адрес не меняется;
          без JS — та же ссылка на страницу меню -->
-    <a
-      href={menuHref}
-      bind:this={triggerEl}
-      data-testid="header-user"
-      aria-label={nickname ? `Аккаунт: ${nickname}` : 'Аккаунт'}
-      title={notHydrated() ? JS_ONLY_REASON : nickname ?? 'Аккаунт'}
-      aria-haspopup="menu"
-      aria-expanded={menuOpen}
-      aria-controls={menuOpen && menuNode?.id ? menuNode.id : undefined}
-      onpointerenter={preloadMenuBody}
-      onfocusin={preloadMenuBody}
-      onclick={onTriggerClick}
-      class="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground hover:bg-accent"
+    <Floating
+      open={menuOpen}
+      label="Меню аккаунта"
+      minWidth={272}
+      maxWidth={300}
+      placement={menuPlacement}
+      title="Меню аккаунта"
+      autofocus
+      onOpenChange={onMenuChange}
     >
-      {#if avatarUrl}
-        <img src={avatarUrl} alt="" class="h-auto w-full rounded-full" />
-      {:else}
-        {initial}
-      {/if}
-    </a>
-    {#if menuOpen}
-      <Floating
-        open={menuOpen}
-        anchor={triggerEl}
-        label="Меню аккаунта"
-        minWidth={272}
-        maxWidth={300}
-        placement={menuPlacement}
-        title="Меню аккаунта"
-        autofocus
-        bind:closedAt
-        bind:container={menuNode}
-        onOpenChange={(next) => {
-          if (!next) menuOpen = false
-        }}
-      >
+      {#snippet trigger(api)}
+        <a
+          href={menuHref}
+          {@attach (node) => {
+            api.ref(node)
+            return () => api.ref(null)
+          }}
+          data-testid="header-user"
+          aria-label={nickname ? `Аккаунт: ${nickname}` : 'Аккаунт'}
+          title={notHydrated() ? JS_ONLY_REASON : nickname ?? 'Аккаунт'}
+          aria-haspopup={api.popup}
+          aria-expanded={api.expanded}
+          aria-controls={api.controls}
+          onpointerenter={preloadMenuBody}
+          onfocusin={preloadMenuBody}
+          onclick={api.toggle}
+          class="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground hover:bg-accent"
+        >
+          {#if avatarUrl}
+            <img src={avatarUrl} alt="" class="h-auto w-full rounded-full" />
+          {:else}
+            {initial}
+          {/if}
+        </a>
+      {/snippet}
         {#snippet render()}
           <div data-user-menu-popover="">
             {#if MenuBodyComp}
@@ -164,7 +153,6 @@
           </div>
         {/snippet}
       </Floating>
-    {/if}
   {/if}
 {:else}
   <!-- «Авторизация» → модалка входа; без JS — страница входа (href-фолбэк).

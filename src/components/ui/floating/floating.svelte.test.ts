@@ -59,7 +59,7 @@ function floatingDouble(): FloatingDouble {
 
 async function mountHarness(
   floating: HostFloatingApi | undefined,
-  props: { mode?: 'popup' | 'flow'; sheetOnNarrow?: boolean; frame?: boolean } = {},
+  props: { mode?: 'popup' | 'flow'; sheetOnNarrow?: boolean; frame?: boolean; withTrigger?: boolean; open?: boolean } = {},
 ) {
   const target = document.createElement('div')
   document.body.appendChild(target)
@@ -110,6 +110,30 @@ describe('Floating', () => {
       const opts = [...host.options.values()][0]
       expect(opts?.modalOnNarrow).toBeUndefined()
       expect(opts?.mobile).toBeUndefined()
+    } finally {
+      await unmount(app)
+    }
+  })
+
+  it('триггер сам открывает меню и не повторяет клик после Escape', async () => {
+    const host = floatingDouble()
+    const app = await mountHarness(host.floating, { withTrigger: true, open: false })
+    try {
+      expect(host.calls).not.toContain('open')
+      const anchor = document.querySelector<HTMLButtonElement>('[data-floating-anchor]')
+      anchor?.click()
+      flushSync()
+      await tick()
+      flushSync()
+      expect(host.calls.filter((call) => call === 'open')).toHaveLength(1)
+      expect(document.querySelector('[data-floating-body]')).not.toBeNull()
+      const opts = [...host.options.values()][0]
+      opts?.onClose?.('escape')
+      flushSync()
+      anchor?.click()
+      flushSync()
+      await tick()
+      expect(host.calls.filter((call) => call === 'open')).toHaveLength(1)
     } finally {
       await unmount(app)
     }

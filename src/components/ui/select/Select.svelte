@@ -215,9 +215,10 @@
   )
 
   /**
-   * Хост, если он смонтирован. На desktop просим host popup-menu, на mobile —
-   * transient layer. Контекста может не быть: тогда desktop падает в локальный
-   * popup под контролом, а mobile остаётся тем же локальным fullscreen CSS.
+   * Хост, если он смонтирован: список уходит в `Floating` (`openFlow`).
+   * Контекста может не быть: тогда desktop падает в локальный popup под
+   * контролом, а mobile остаётся тем же локальным fullscreen CSS. Своей
+   * absolute-панели у `Floating` нет — этот фолбэк только у select.
    */
   const host = tryUseModals()
 

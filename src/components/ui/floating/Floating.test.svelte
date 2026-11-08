@@ -9,12 +9,14 @@
     sheetOnNarrow,
     frame = true,
     open = true,
+    withTrigger = false,
   }: {
     floating?: HostFloatingApi
     mode?: 'popup' | 'flow'
     sheetOnNarrow?: boolean
     frame?: boolean
     open?: boolean
+    withTrigger?: boolean
   } = $props()
 
   const api = untrack(() => floating)
@@ -24,10 +26,12 @@
   let shown = $state(untrack(() => open))
 </script>
 
-<button type="button" bind:this={anchor} data-floating-anchor="">Якорь</button>
+{#if !withTrigger}
+  <button type="button" bind:this={anchor} data-floating-anchor="">Якорь</button>
+{/if}
 <Floating
   open={shown}
-  {anchor}
+  anchor={withTrigger ? undefined : anchor}
   {mode}
   {sheetOnNarrow}
   {frame}
@@ -38,6 +42,13 @@
     shown = next
   }}
 >
+  {#snippet trigger(api)}
+    {#if withTrigger}
+      <button type="button" {@attach (node) => api.ref(node)} data-floating-anchor="" onclick={api.toggle}>
+        Якорь
+      </button>
+    {/if}
+  {/snippet}
   {#snippet render({ close })}
     <p data-floating-body="">Содержимое</p>
     <button type="button" data-floating-request="" onclick={close}>Убрать</button>

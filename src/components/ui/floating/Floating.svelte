@@ -32,6 +32,20 @@
     close: () => void
   }
 
+  /** То, что сниппет `trigger` получает от оболочки: клик, якорь и aria живут здесь. */
+  export interface FloatingTrigger {
+    ref: (el: HTMLElement | null) => void
+    expanded: boolean
+    /** id контейнера хоста. Триггер ставит его в `aria-controls`. */
+    controls: string | undefined
+    popup: 'menu' | 'dialog' | 'listbox'
+    /**
+     * Левый клик без модификаторов. Без хоста не перехватывается — ссылка
+     * уходит как есть. Догоняющий клик после закрытия гасится.
+     */
+    toggle: (event: MouseEvent) => void
+  }
+
   interface Props {
     /** Открыта ли поверхность. Закрытие с хоста приходит в `onOpenChange(false)`. */
     open: boolean
@@ -83,6 +97,13 @@
     id?: string | null
     /** Момент закрытия хостом: догоняющий клик по якорю не открывает снова. */
     closedAt?: number
+    /**
+     * Кнопка или ссылка. Не задана — якорь передаёт вызывающий (`anchor`),
+     * как у select и меток среза: у них свой жест открытия.
+     */
+    trigger?: Snippet<[FloatingTrigger]>
+    /** `aria-haspopup` триггера. У списка select это `listbox`, не меню. */
+    popup?: 'menu' | 'dialog' | 'listbox'
     render: Snippet<[FloatingRender]>
   }
 
@@ -110,12 +131,16 @@
     container = $bindable<HTMLElement | undefined>(undefined),
     id = $bindable<string | null>(null),
     closedAt = $bindable(0),
+    trigger,
+    popup = 'menu',
     render,
   }: Props = $props()
 
   const host = tryUseModals()
 
   let floatingId = $state<string | null>(null)
+  let ownedAnchor = $state<HTMLElement | null>(null)
+  const anchorEl = $derived(anchor ?? ownedAnchor)
 
   const node = $derived.by(() => {
     if (!host || !floatingId) return undefined
@@ -142,8 +167,8 @@
   }
 
   function buildOptions(): HostFloatingOptions | null {
-    if (!anchor) return null
-    const box = anchor.getBoundingClientRect()
+    if (!anchorEl) return null
+    const box = anchorEl.getBoundingClientRect()
     const rect = {
       left: box.left,
       top: box.top,
@@ -155,7 +180,7 @@
     const place = typeof placement === 'function' ? placement() : placement
     const options: HostFloatingOptions = {
       rect,
-      triggers: [anchor, ...(triggers ?? [])],
+      triggers: [anchorEl, ...(triggers ?? [])],
       listWidth,
       minWidth: Math.max(rect.width, minWidth ?? 0),
       maxWidth,
@@ -183,7 +208,7 @@
     closedAt = Date.now()
     if (reason === 'programmatic' || reason === 'transfer') return
     if (returnFocus && (reason === 'escape' || reason === 'history')) {
-      anchor?.focus({ preventScroll: true })
+      anchorEl?.focus({ preventScroll: true })
     }
     onOpenChange?.(false, reason)
   }
@@ -194,9 +219,22 @@
     untrack(closeHost)
   }
 
+  function rememberAnchor(el: HTMLElement | null) {
+    ownedAnchor = el
+  }
+
+  function toggle(event: MouseEvent) {
+    if (event.defaultPrevented) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+    if (!host) return
+    event.preventDefault()
+    if (Date.now() - closedAt < 250) return
+    onOpenChange?.(!open)
+  }
+
   $effect(() => {
     const want = open
-    const el = anchor
+    const el = anchorEl
     const flow = mode
     void label
     void minWidth
@@ -251,6 +289,16 @@
     untrack(closeHost)
   })
 </script>
+
+{#if trigger}
+  {@render trigger({
+    ref: rememberAnchor,
+    expanded: open,
+    controls: open && node?.id ? node.id : undefined,
+    popup,
+    toggle,
+  })}
+{/if}
 
 {#if node}
   <Portal container={node}>
