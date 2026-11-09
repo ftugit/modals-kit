@@ -1,9 +1,16 @@
 import type { SidebarPlace } from '#components/shell/index.js'
 
 /**
- * Опция включена и сейчас ПК (`useIsMobile` = false) — форма в sidebar, без кнопки.
- * Узкий экран и отсутствие зоны — кнопка в `Surface`.
+ * Базовое место формы списка в зоне.
+ * `mergeSlot` ставит 999 после каркаса и после 1, 600, 888.
+ * Тот же offset перезаписывается последней регистрацией.
  */
-export function filtersUseSidebar(zone: SidebarPlace | undefined, narrow: boolean): boolean {
-  return Boolean(zone) && !narrow
+export const FILTER_SIDEBAR_OFFSET = 999
+
+/**
+ * Зона передана — форма регистрируется в sidebar и остаётся там на любой ширине.
+ * Узкий и широкий решает класс, не хук.
+ */
+export function filtersUseSidebar(zone: SidebarPlace | undefined): boolean {
+  return Boolean(zone)
 }

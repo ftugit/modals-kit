@@ -16,7 +16,6 @@
   import { Button, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { useIsMobile } from '#hooks/mobile.svelte.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import {
     acquireScopedStore,
@@ -32,7 +31,7 @@
   import { currentPathname, currentSearch } from '#lib/paginate/sveltekit/router.js'
   import { activeFilterItems } from './active-filters.js'
   import FilterChips from './FilterChips.svelte'
-  import { filtersUseSidebar } from './sidebar.js'
+  import { FILTER_SIDEBAR_OFFSET, filtersUseSidebar } from './sidebar.js'
   import type { ListingInitial, ListingProps } from './types.js'
 
   const lastActor = new Map<string, string | null | undefined>()
@@ -73,20 +72,19 @@
   // Имя пагинатора не меняется за жизнь экземпляра: регистрация и стор смотрят в него один раз.
   const paginatorName = untrack(() => name)
   // Реестр слота, не догадка «модалка или страница». Носитель задаёт `sidebar`.
+  // Ширину решает класс на обёртке и на кнопке, не хук.
   const page = tryUsePage()
-  const narrow = useIsMobile()
-  const inSidebar = $derived(filtersUseSidebar(sidebar, narrow.matches) && Boolean(filtersForm) && Boolean(page))
+  const inSidebar = $derived(filtersUseSidebar(sidebar) && Boolean(filtersForm) && Boolean(page))
   let warnedNoPage = false
   let releaseSidebar: (() => void) | undefined
 
   // Слот ставится сразу, не из эффекта: на сервере эффекта нет, а форма
-  // обязана быть в HTML. Снятие — когда useIsMobile станет true.
+  // обязана быть в HTML. Узкий экран слот не снимает.
   function placeSidebar() {
     releaseSidebar?.()
     releaseSidebar = undefined
     const zone = sidebar
-    const show = filtersUseSidebar(zone, narrow.matches)
-    if (!zone || !show) return
+    if (!filtersUseSidebar(zone)) return
     if (!page) {
       if (DEV && !warnedNoPage) {
         warnedNoPage = true
@@ -94,14 +92,12 @@
       }
       return
     }
-    const form = filtersForm
-    if (!form) return
-    releaseSidebar = page.registerSidebarSlot(zone, form)
+    if (!filtersForm) return
+    releaseSidebar = page.registerSidebarSlot(zone, sidebarFilters, { offset: FILTER_SIDEBAR_OFFSET })
   }
   placeSidebar()
   $effect(() => {
     void sidebar
-    void narrow.matches
     void filtersForm
     placeSidebar()
     return () => {
@@ -242,13 +238,21 @@
   const hasControls = $derived(Boolean(extraControls) || showFilters)
 </script>
 
+{#snippet sidebarFilters()}
+  {#if filtersForm}
+    <div class="max-lg:hidden" data-listing-sidebar-filters="">
+      {@render filtersForm()}
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet filtersButton()}
   {#if filters}
     <Button
       {...asModalLink(filters.modal, filterParams, { href: filtersHref })}
       variant="outline"
       size="sm"
-      class="shrink-0"
+      class={cn('shrink-0', inSidebar && 'lg:hidden')}
       data-testid={filters.testId}
     >
       Фильтры{#if activeFilters}&nbsp;({activeFilters}){/if}
@@ -265,7 +269,7 @@
   {#if extraControls && data}
     {@render extraControls({ extra: extraRecord, payload: data })}
   {/if}
-  {#if showFilters && !inSidebar}
+  {#if showFilters}
     {@render filtersButton()}
   {/if}
 {/snippet}

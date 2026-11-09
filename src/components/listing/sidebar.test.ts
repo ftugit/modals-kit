@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { filtersUseSidebar } from './sidebar'
+import { FILTER_SIDEBAR_OFFSET, filtersUseSidebar } from './sidebar'
 
 describe('filtersUseSidebar', () => {
-  it('без зоны или на узком экране — кнопка', () => {
-    expect(filtersUseSidebar(undefined, false)).toBe(false)
-    expect(filtersUseSidebar('middle', true)).toBe(false)
-    expect(filtersUseSidebar('auto', true)).toBe(false)
+  it('без зоны слота нет', () => {
+    expect(filtersUseSidebar(undefined)).toBe(false)
   })
 
-  it('зона и ПК — sidebar', () => {
-    expect(filtersUseSidebar('middle', false)).toBe(true)
-    expect(filtersUseSidebar('auto', false)).toBe(true)
+  it('зона есть — слот, ширина не аргумент', () => {
+    expect(filtersUseSidebar('middle')).toBe(true)
+    expect(filtersUseSidebar('top')).toBe(true)
+    expect(filtersUseSidebar('bottom')).toBe(true)
+    expect(filtersUseSidebar('auto')).toBe(true)
+  })
+
+  it('базовый offset формы — 999', () => {
+    expect(FILTER_SIDEBAR_OFFSET).toBe(999)
   })
 })
