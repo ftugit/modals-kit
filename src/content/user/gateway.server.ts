@@ -196,7 +196,11 @@ function sessionsAdapter() {
   }
   return {
     async create(r: SessionRecord): Promise<void> {
-      await api().insert(SYSTEM, {
+      // `id` — primaryKey и createValue. Обычный insert такое поле не принимает
+      // (`forbidden` до SQL), а порт обещает записать именно эту запись: uuid
+      // уже выдан в `openSession`. Свой id пишет сервер, автоматика остального
+      // остаётся — README lib/db, `without(['protect'])`.
+      await api().without(['protect'], (m) => m.insert(SYSTEM, {
         id: r.id,
         auth_id: r.authId,
         jti: r.jti,
@@ -207,7 +211,7 @@ function sessionsAdapter() {
         version: r.version,
         expires_at: iso(r.expiresAt),
         ...(r.lastSeenAt ? { last_seen_at: iso(r.lastSeenAt) } : {}),
-      })
+      }))
     },
     async get(jti: string): Promise<SessionRecord | undefined> {
       const row = await byJti(jti)

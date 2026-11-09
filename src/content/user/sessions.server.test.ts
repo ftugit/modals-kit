@@ -182,3 +182,27 @@ test('чужой uuid не отличим от пустого; пакетный 
     expect(other).not.toBe(current)
   })
 })
+
+test('сервер пишет свой id сессии только без protect', async () => {
+  await withDb(async ({ db }) => {
+    const authId = await account(db, 'e'.repeat(43))
+    const id = '00000000-0000-4000-8000-0000000000bb'
+    const row = {
+      id,
+      auth_id: authId,
+      jti: 'server-device-token-021',
+      device_name: null,
+      subnet_hash: null,
+      country: null,
+      subnet_history: [] as unknown[],
+      version: 0,
+      expires_at: new Date(NOW + 60_000).toISOString(),
+      last_seen_at: new Date(NOW).toISOString(),
+    }
+    await expect(db.resource(session).insert(SERVER, row)).rejects.toMatchObject({ kind: 'forbidden' })
+    const inserted = await db.resource(session).without(['protect'], (m) => m.insert(SERVER, row))
+    expect(inserted.id).toBe(id)
+    const found = await db.resource(session).select(SERVER, { filter: { field: 'jti', op: 'eq', value: row.jti } })
+    expect(found.map((item) => item.id)).toEqual([id])
+  })
+})
