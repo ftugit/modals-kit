@@ -1,8 +1,6 @@
 import { render } from 'svelte/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { definePaginator, resetRegistry } from '#lib/paginate/index.js'
-import { defineSource } from '#lib/paginate/source.js'
-import { initialState } from '#lib/paginate/store.js'
+import { definePaginator, defineSource, initialState, resetRegistry } from '#lib/paginate/index.js'
 import ListingSidebarHost from './ListingSidebarHost.test.svelte'
 
 vi.mock('$app/state', () => ({
