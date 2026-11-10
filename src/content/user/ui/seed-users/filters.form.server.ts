@@ -23,6 +23,9 @@ function refuse(path: string, code: keyof typeof SEED_FILTER_MESSAGES): FormErro
   }
 }
 
+// Реестр конфигураций общий для всех форм; init выполняется до любого POST.
+ensureSeedUsersPaginator()
+
 registerComponentForm({
   id: SEED_USERS_FILTERS_FORM_ID,
   description: seedUsersFiltersForm,

@@ -32,6 +32,9 @@ function uidOf(from: string): string | null {
   return match?.[1] ?? null
 }
 
+// Реестр конфигураций общий для всех форм; init выполняется до любого POST.
+ensureBlocksPaginator()
+
 registerComponentForm({
   id: BLOCKS_FILTERS_FORM_ID,
   description: blocksFiltersForm,

@@ -1,6 +1,5 @@
-// POST поиска списка. Хук форм бежит до инициализации страницы, поэтому
-// пагинатор регистрируется здесь, до `linkFor`. Новый список с поиском
-// нужно добавить в `ensure` — иначе без JS адрес не из чего собрать.
+// POST поиска списка. Серверные модули форм регистрируют свои пагинаторы
+// до обработки POST через общий механизм загрузки *.form.server.ts.
 import type { FormError } from '#lib/form/index.js'
 import { getPaginator, hasPaginator, listHref } from '#lib/paginate/index.js'
 import { normalizeSearchQuery } from '#lib/paginate/search/index.js'
@@ -9,13 +8,6 @@ import {
   PAGINATOR_SEARCH_MAX,
   paginatorSearchForm,
 } from '#components/paginator/search-form.js'
-import { ensureBlocksPaginator, BLOCKS_NAME } from './blocks-list/source.js'
-import { ensureSeedUsersPaginator, SEED_USERS_NAME } from './seed-users/source.js'
-
-function ensure(name: string) {
-  if (name === SEED_USERS_NAME) ensureSeedUsersPaginator()
-  else if (name === BLOCKS_NAME) ensureBlocksPaginator()
-}
 
 function refuse(path: string): FormError {
   return {
@@ -31,7 +23,6 @@ registerComponentForm({
   description: paginatorSearchForm,
   execute: ({ values, commit, fail }) => {
     const name = String(values.paginator ?? '')
-    ensure(name)
     if (!hasPaginator(name)) return fail([refuse('paginator')])
     const adapter = getPaginator(name).adapter
     const keys = adapter.extraKeys?.() ?? []
