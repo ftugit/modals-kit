@@ -57,12 +57,13 @@
 
 ```bash
 npm install
-npm run dev                   # чистое стартовое приложение: http://localhost:5173
+KIT_ADAPTER=node npm run dev  # чистое стартовое приложение: http://localhost:5173
+KIT_ADAPTER=node npm run check # проверка типов и Svelte
 ```
 
 ### Сборка
 
-`npm run build` вызывает один скрипт `tooling/platform.mjs`. Площадку задаёт только `KIT_ADAPTER=node`, `vercel` или `cloudflare`. `VERCEL`, `WORKERS_CI`, `CF_PAGES` и `NF_GIT_*` не читаются. Без `KIT_ADAPTER` сборка останавливается, а не угадывает хост.
+`npm run build` вызывает один скрипт `tooling/platform.mjs`. Площадку задаёт только `KIT_ADAPTER=node`, `vercel` или `cloudflare`. `VERCEL`, `WORKERS_CI`, `CF_PAGES` и `NF_GIT_*` не читаются. Без `KIT_ADAPTER` сборка останавливается, а не угадывает хост. Переменная также обязательна для `npm run check` (он запускает `svelte-kit sync`) и `npm run dev`, поскольку они загружают ту же конфигурацию.
 
 На Vercel задайте `KIT_ADAPTER=vercel`, на Northflank — `KIT_ADAPTER=node`. `npm run build:worker` — тот же скрипт с уже выставленным `KIT_ADAPTER=cloudflare`, чтобы текущая команда Workers Builds не менялась. На Cloudflare `DATABASE_RESET` запрещён и сборка останавливается. На Node и Vercel `db-reset.mjs` по-прежнему ничего не делает без `DATABASE_RESET=1`. После сборки скрипт проверяет, что появился файл именно этой площадки (`build/handler.js`, `.vercel/output/config.json` или `main` из `wrangler.jsonc`).
 
