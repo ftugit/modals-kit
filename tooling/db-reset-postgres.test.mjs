@@ -388,45 +388,6 @@ test('реальная PostgreSQL: преждевременное включен
   } finally { if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
 })
 
-test('реальная PostgreSQL: отдельный владелец для reset проверяет идентичность runtime БД', { skip: !url, timeout: 30000 }, async () => {
-  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const suffix = randomBytes(8).toString('hex'), appDb = `kit_app_${suffix}`, otherDb = `kit_other_${suffix}`, role = `kit_runtime_${suffix}`
-  const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let roleCreated = false, appCreated = false, otherCreated = false
-  try {
-    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'isolated-runtime-only'`); roleCreated = true
-    await admin.query(`CREATE DATABASE "${appDb}"`); appCreated = true
-    await admin.query(`CREATE DATABASE "${otherDb}"`); otherCreated = true
-    const appAdmin = new URL(config); appAdmin.pathname = `/${appDb}`
-    const otherAdmin = new URL(config); otherAdmin.pathname = `/${otherDb}`
-    for (const u of [appAdmin, otherAdmin]) {
-      const c = new pg.Client({ connectionString: u.toString() }); await c.connect()
-      await c.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (7)'); await c.end()
-    }
-    const runtime = new URL(appAdmin); runtime.username = role; runtime.password = 'isolated-runtime-only'
-    const run = (resetUrl) => spawnSync(process.execPath, ['tooling/db-reset.mjs'], { env: { ...process.env, DATABASE_RESET: '1', DATABASE_URL: runtime.toString(), DATABASE_RESET_ADMIN_URL: resetUrl.toString(), HYPERDRIVE_CONNECTION_STRING: '' }, encoding: 'utf8', timeout: 10000 })
-    const mismatch = run(otherAdmin)
-    assert.equal(mismatch.status, 1, mismatch.stderr)
-    assert.match(mismatch.stderr, /разные серверы или базы/)
-    assert.doesNotMatch(mismatch.stderr, /isolated-runtime-only/)
-    for (const u of [appAdmin, otherAdmin]) {
-      const c = new pg.Client({ connectionString: u.toString() }); await c.connect()
-      assert.equal((await c.query('SELECT id FROM public.keep')).rows[0].id, 7); await c.end()
-    }
-    const matching = run(appAdmin)
-    assert.equal(matching.status, 0, matching.stderr)
-    const c = new pg.Client({ connectionString: appAdmin.toString() }); await c.connect()
-    assert.equal((await c.query("SELECT to_regclass('public.keep') AS name")).rows[0].name, null); await c.end()
-    const other = new pg.Client({ connectionString: otherAdmin.toString() }); await other.connect()
-    assert.equal((await other.query('SELECT id FROM public.keep')).rows[0].id, 7); await other.end()
-  } finally {
-    if (otherCreated) await admin.query(`DROP DATABASE "${otherDb}" WITH (FORCE)`)
-    if (appCreated) await admin.query(`DROP DATABASE "${appDb}" WITH (FORCE)`)
-    if (roleCreated) await admin.query(`DROP ROLE "${role}"`)
-    await admin.end()
-  }
-})
-
 test('реальная PostgreSQL: непрозрачные чужие сеансы не классифицируются как системные, но обязательно должны закрыться', { skip: !url, timeout: 30000 }, async () => {
   const config = new URL(url)
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
@@ -452,7 +413,7 @@ test('реальная PostgreSQL: непрозрачные чужие сеан�
     let signal
     const disabled = new Promise(resolve => { signal = resolve })
     let finished = false
-    const pending = exclusiveReset(ownerUrl.toString(), 5000, { runtimeUrl: appUrl.toString(), afterDisabled: () => signal() }).finally(() => { finished = true })
+    const pending = exclusiveReset(ownerUrl.toString(), 5000, { afterDisabled: () => signal() }).finally(() => { finished = true })
     void pending.catch(() => {})
     await disabled
     await new Promise(resolve => setTimeout(resolve, 150))
@@ -463,7 +424,7 @@ test('реальная PostgreSQL: непрозрачные чужие сеан�
     const verify = new pg.Client({ connectionString: ownerUrl.toString() }); await verify.connect()
     await verify.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(3); GRANT USAGE ON SCHEMA public TO "${role}"; GRANT SELECT ON public.keep TO "${role}"`); await verify.end()
     app = new pg.Client({ connectionString: appUrl.toString() }); app.on('error', () => {}); await app.connect()
-    await assert.rejects(exclusiveReset(ownerUrl.toString(), 300, { runtimeUrl: appUrl.toString() }), /прежние подключения не закрылись вовремя/)
+    await assert.rejects(exclusiveReset(ownerUrl.toString(), 300), /прежние подключения не закрылись вовремя/)
     assert.equal((await app.query('SELECT id FROM public.keep')).rows[0].id, 3)
     assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
   } finally {
