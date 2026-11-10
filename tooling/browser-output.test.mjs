@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { browserFailureLines } from './browser-output.mjs'
 
-test('сохраняет маркированные ошибки', () => {
-  assert.deepEqual(browserFailureLines('ok first\n  FAIL wrong value\n'), ['FAIL wrong value'])
+test('сохраняет маркированные ошибки и контекст конца вывода', () => {
+  assert.deepEqual(browserFailureLines('FAIL earlier\nok later\n❌ timeout\n', 2), [
+    'FAIL earlier', 'ok later', '❌ timeout',
+  ])
 })
 
 test('если маркеров нет, показывает хвост исключения', () => {
