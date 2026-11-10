@@ -37,7 +37,7 @@
 |---|---|
 | `data-state="loading"`, `aria-busy="true"` | идёт переход на этот адрес или загрузчик модалки — через 150 мс (`TASK_DELAY_MS` из `components/loader`) |
 | `data-task-percent` | у задачи есть честный процент (`task` из `#lib/task`) |
-| `data-state="error"` + `title` | битая ссылка, ошибка загрузчика при `navigateOnError: false`, ошибка загрузчика модалки |
+| `data-state="error"` + `title` | битая ссылка, ошибка загрузчика при `navigateOnError: false`, ошибка загрузчика модалки; повторный клик запускает новую попытку |
 | `data-state="open"`, `aria-disabled` | модалка этой ссылки открыта; повторный клик гасится |
 
 Рисует их **одно правило CSS** (`indicator.ts`, подключено preflight'ом в `unocss.config.ts`):

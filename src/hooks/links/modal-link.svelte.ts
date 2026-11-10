@@ -164,7 +164,7 @@ export function useModalLink() {
         const onClick = (e: MouseEvent) => {
           if (isModified(e)) return
           e.preventDefault()
-          if (st.status === 'idle') void open(el, st)
+          if (st.status === 'idle' || st.status === 'error') void open(el, st)
         }
         el.addEventListener('click', onClick)
 
@@ -187,7 +187,7 @@ export function useModalLink() {
                 : { status: 'idle' },
           {
             idleState: () => (st.status === 'open' ? 'open' : undefined),
-            busy: () => st.status !== 'idle',
+            busy: () => st.status === 'loading' || st.status === 'open',
             indicator,
           },
         )
