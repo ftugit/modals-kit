@@ -41,6 +41,13 @@ describe('SessionsView', () => {
     expect(body).toContain('Страница 1 из 2')
   })
 
+  test('на последней странице доступна ссылка назад без JavaScript', () => {
+    const { body } = render(SessionsView, { props: { page: { ...page, page: 2, total: 31 } } })
+    expect(body).toContain('href="/user/sessions?page=1"')
+    expect(body).toContain('Страница 2 из 2')
+    expect(body).not.toContain('href="/user/sessions?page=3"')
+  })
+
   test('показывает устройство и не печатает полный хеш подсети', () => {
     const { body } = render(SessionsView, { props: { page, variant: 'card' } })
     expect(body).toContain('Сессии')

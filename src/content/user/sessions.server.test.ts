@@ -86,6 +86,24 @@ test('владелец видит свои живые, не видит jti и н
   })
 })
 
+test('страницы возвращают все 31 активную сессию без пересечений', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'f'.repeat(43))
+    const ids: string[] = []
+    for (let i = 0; i < 31; i++) {
+      ids.push(await device(deps.db, me, { jti: `pagination-device-token-${String(i).padStart(3, '0')}` }))
+    }
+    const first = await listSessionsPage(actor(me, [], ids[0]), { page: 1 }, deps)
+    const second = await listSessionsPage(actor(me, [], ids[0]), { page: 2 }, deps)
+    expect(first.ok && second.ok).toBe(true)
+    if (!first.ok || !second.ok) return
+    expect(first.value.total).toBe(31)
+    expect(first.value.items).toHaveLength(30)
+    expect(second.value.items).toHaveLength(1)
+    expect(new Set([...first.value.items, ...second.value.items].map((item) => item.id))).toEqual(new Set(ids))
+  })
+})
+
 test('чтение, правка, отозванные и жёсткое удаление держат круг', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'c'.repeat(43))
