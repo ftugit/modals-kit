@@ -57,7 +57,7 @@ async function run() {
   try {
     console.log('— с JS: модальные цепочки блокировок (профиль → список → фильтры → пикер → форма → удаление) —')
     {
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+      const ctx = await browser.newContext({ viewport: { width: 900, height: 900 } })
       const page = await ctx.newPage()
 
       // 1. Вход под admin (при первом входе без профиля AuthWidget открывает шаг профиля, сессия уже активна)
@@ -262,7 +262,7 @@ async function run() {
       // 9. Удаление через BlockDelete (HoldButton) → фильтр deleted → read-only просмотр без submit
       await page.locator('[data-testid="block-row"]').filter({ hasText: rEdited }).click()
       await editForm.waitFor({ state: 'visible', timeout: 10000 })
-      await editForm.locator('[data-testid="block-delete-open"]').click()
+      await page.locator('[role=dialog] [data-testid="block-delete-open"]').last().click()
 
       const delBox = page.locator('[data-testid="block-delete-form"]').last()
       await delBox.waitFor({ state: 'visible', timeout: 10000 })
@@ -295,7 +295,7 @@ async function run() {
     console.log('— без JS: маршруты, SSR-пикер пользователей и нативные POST-формы —')
     {
       const ctx = await browser.newContext({
-        viewport: { width: 1280, height: 900 },
+        viewport: { width: 900, height: 900 },
         javaScriptEnabled: false,
       })
       await ctx.addCookies(adminCookies)
