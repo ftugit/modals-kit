@@ -4,7 +4,7 @@ import { availableParallelism, totalmem } from 'node:os';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type ViteUserConfig, type TestUserConfig } from 'vitest/config';
 import { appHtmlScriptHashes, cspDirectives, trustedOrigins } from './src/server/trusted-origins.ts';
 import { sveltekitWsPlugin } from './src/server/vite-ws.server.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
@@ -120,5 +120,5 @@ export default defineConfig(async ({ command, isPreview }) => {
       ].filter((f) => existsSync(new URL(f, import.meta.url))),
     },
   },
-  };
+  } satisfies ViteUserConfig & { test: TestUserConfig };
 });

@@ -11,6 +11,6 @@ export const FILTER_SIDEBAR_OFFSET = 999
  * Зона передана — форма регистрируется в sidebar и остаётся там на любой ширине.
  * Узкий и широкий решает класс, не хук.
  */
-export function filtersUseSidebar(zone: SidebarPlace | undefined): boolean {
+export function filtersUseSidebar(zone: SidebarPlace | undefined): zone is SidebarPlace {
   return Boolean(zone)
 }

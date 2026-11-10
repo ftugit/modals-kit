@@ -45,7 +45,7 @@ export const actions: Actions = {
       async execute({ values, commit, fail }) {
         const id = String(values.id ?? '').trim()
         const r = await auth(event).revokeSessionById(id)
-        if (!r.ok) fail([error('auth.revoke', 'Не удалось заблокировать сессию', 'id')])
+        if (!r.ok) return fail([error('auth.revoke', 'Не удалось заблокировать сессию', 'id')])
         commit()
         return { redirect: r.value.current ? '/user/auth' : list }
       },
@@ -59,7 +59,7 @@ export const actions: Actions = {
       throttle,
       async execute({ commit, fail }) {
         const r = await auth(event).revokeBulkSessions({ scope: 'others' })
-        if (!r.ok) fail([error('auth.revoke', 'Не удалось заблокировать остальные сессии')])
+        if (!r.ok) return fail([error('auth.revoke', 'Не удалось заблокировать остальные сессии')])
         commit()
         return { redirect: r.value.current ? '/user/auth' : list }
       },

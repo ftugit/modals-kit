@@ -30,7 +30,7 @@ describe('Listing sidebar CSS', () => {
 
   it('зона есть — форма и кнопка в HTML, узкий прячет форму, широкий прячет кнопку', () => {
     const { body } = render(ListingSidebarHost, {
-      props: { zone: 'middle', snapshot: initialState('probe-list', 20) },
+      props: { zone: 'middle', snapshot: initialState<{ id: string }>('probe-list', 20) },
     })
 
     expect(body).toContain('data-listing-sidebar-filters')
@@ -43,7 +43,7 @@ describe('Listing sidebar CSS', () => {
 
   it('зоны нет — кнопки без класса ширины, слота нет', () => {
     const { body } = render(ListingSidebarHost, {
-      props: { snapshot: initialState('probe-list', 20) },
+      props: { snapshot: initialState<{ id: string }>('probe-list', 20) },
     })
 
     expect(body).not.toContain('data-listing-sidebar-filters')
