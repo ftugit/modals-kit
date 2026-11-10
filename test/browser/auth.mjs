@@ -61,7 +61,7 @@ async function run() {
       }
 
       // 1. «Создать аккаунт» — ссылка с адресом шага (не мёртвая кнопка)
-      const create = form.getByRole('link', { name: 'Создать аккаунт' })
+      const create = page.getByRole('link', { name: 'Создать аккаунт', exact: true })
       assert.equal(await create.count(), 1, '«Создать аккаунт» — ссылка')
       assert.match(await create.getAttribute('href'), /stage=(auth\.)?register/, 'адрес шага в href')
       ok('создание аккаунта — ссылка с адресом шага')
@@ -114,7 +114,7 @@ async function run() {
       ok('иконка копирования: «Скопировано» 5 с, затем возврат')
 
       // 3. Обратно на вход: поле ПУСТОЕ
-      await form.getByRole('link', { name: 'Авторизация' }).click()
+      await page.locator('[data-step-link]').getByText('Авторизация', { exact: true }).click()
       await page.waitForURL((u) => !/stage=(auth\.)?register/.test(u.search))
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value === '')
       assert.equal(await page.inputValue('input[name=seed]'), '', 'поле входа пустое')
@@ -137,7 +137,7 @@ async function run() {
       ok(`мусорный seed: ошибка видна («${(garbage ?? '').trim()}»)`)
 
       // 6. Регистрация: кнопка заблокирована до заполнения, заливка — от курсора
-      await form.getByRole('link', { name: 'Создать аккаунт' }).click()
+      await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).click()
       await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
@@ -241,7 +241,7 @@ async function run() {
       await page.getByRole('button', { name: 'Выйти', exact: true }).click()
       await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
-      await form.getByRole('link', { name: 'Создать аккаунт' }).waitFor({ state: 'visible' })
+      await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).waitFor({ state: 'visible' })
       ok('выход через меню: /user/auth снова открывает шаг входа')
 
       // 9. Вход тем же seed — успех уводит со страницы
@@ -320,7 +320,7 @@ async function run() {
       await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
       const form = page.locator('#user-auth')
       assert.equal(await form.getByRole('button', { name: 'Создать аккаунт' }).count(), 0, 'мёртвой кнопки нет')
-      await form.getByRole('link', { name: 'Создать аккаунт' }).click()
+      await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).click()
       await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForSelector('input[name=seed]')
       assert.ok((await page.inputValue('input[name=seed]')).length >= 43, 'seed сервера в HTML')
@@ -341,7 +341,7 @@ async function run() {
       ok('без JS: required/pattern блокируют пустое и мусорное нативно')
 
       // 12. Полный цикл без JS: создать → 422 в ответе POST → бинарный File аватара (decodeWithNode) → домой
-      await form.getByRole('link', { name: 'Создать аккаунт' }).click()
+      await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).click()
       await page.waitForURL(/stage=(auth\.)?register/)
       const seed = await page.inputValue('input[name=seed]')
       assert.ok(seed.length >= 43 && seed.length <= 44, 'серверный seed 43–44')
