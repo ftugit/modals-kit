@@ -5,6 +5,7 @@ import { defineForm, field, v } from '#lib/form/index.js'
 import { BLOCK_SCOPES, isBlockScope } from '../../spec-block.js'
 import type { BlocksOrder, BlocksState } from '../../types.js'
 import { USER_MESSAGES } from '../../messages.js'
+import { FILTER_ERROR, FILTER_MESSAGES } from '../filter-messages.js'
 import {
   BLOCKS_EXTRA_DEFAULTS,
   BLOCKS_NAME,
@@ -16,12 +17,7 @@ import {
 
 export const BLOCKS_FILTERS_FORM_ID = 'user-blocks-filters'
 
-export const BLOCKS_FILTER_MESSAGES = {
-  'filters.range': 'Дата «с» позже даты «по» — поправьте диапазон',
-  'filters.size': 'Элементов на страницу — целое число от 30 до 100',
-  'filters.value': 'Такое значение фильтр не принимает',
-  'filters.no-address': 'У этого списка нет адреса для применения без JS.',
-} as const
+export const BLOCKS_FILTER_MESSAGES = FILTER_MESSAGES
 
 export interface BlocksFilterValues {
   ord: string
@@ -136,16 +132,16 @@ export function applyBlocksFilters(
   const sizeRaw = values.size
   const pageSize = typeof sizeRaw === 'number' ? sizeRaw : Number(sizeRaw)
   if (!Number.isInteger(pageSize) || pageSize < 30 || pageSize > 100) {
-    return { ok: false, path: 'size', code: 'filters.size', message: BLOCKS_FILTER_MESSAGES['filters.size'] }
+    return { ok: false, path: 'size', code: FILTER_ERROR.size, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.size] }
   }
   let ord = clean(values.ord) || BLOCKS_EXTRA_DEFAULTS.ord
   if (!BLOCKS_ORDERS.includes(ord as BlocksOrder)) {
-    return { ok: false, path: 'ord', code: 'filters.value', message: BLOCKS_FILTER_MESSAGES['filters.value'] }
+    return { ok: false, path: 'ord', code: FILTER_ERROR.value, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.value] }
   }
   if (!caps.canSeeDeleted && ord.startsWith('deleted')) ord = BLOCKS_EXTRA_DEFAULTS.ord
   let state = clean(values.state) || BLOCKS_EXTRA_DEFAULTS.state
   if (!BLOCKS_STATES.includes(state as BlocksState)) {
-    return { ok: false, path: 'state', code: 'filters.value', message: BLOCKS_FILTER_MESSAGES['filters.value'] }
+    return { ok: false, path: 'state', code: FILTER_ERROR.value, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.value] }
   }
   const allowed = new Set<BlocksState>(
     caps.canSeeLive
@@ -160,7 +156,7 @@ export function applyBlocksFilters(
   if (!allowed.has(state as BlocksState)) {
     state = caps.canSeeLive ? BLOCKS_EXTRA_DEFAULTS.state : caps.canSeeDeleted ? 'deleted' : ''
     if (!allowed.has(state as BlocksState)) {
-      return { ok: false, path: 'state', code: 'filters.value', message: BLOCKS_FILTER_MESSAGES['filters.value'] }
+      return { ok: false, path: 'state', code: FILTER_ERROR.value, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.value] }
     }
   }
   const scopes: string[] = []
@@ -169,13 +165,13 @@ export function applyBlocksFilters(
   }
   const scopesCsv = scopes.join(',')
   if (scopesCsv.length > 400) {
-    return { ok: false, path: 'uids', code: 'filters.value', message: BLOCKS_FILTER_MESSAGES['filters.value'] }
+    return { ok: false, path: 'uids', code: FILTER_ERROR.value, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.value] }
   }
   let uids = ''
   if (!caps.uid && caps.canPickUsers) {
     uids = clean(values.uids)
     if (uids && !UIDS_RE.test(uids)) {
-      return { ok: false, path: 'uids', code: 'filters.value', message: BLOCKS_FILTER_MESSAGES['filters.value'] }
+      return { ok: false, path: 'uids', code: FILTER_ERROR.value, message: BLOCKS_FILTER_MESSAGES[FILTER_ERROR.value] }
     }
   }
   return {

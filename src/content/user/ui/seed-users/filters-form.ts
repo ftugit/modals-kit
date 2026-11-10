@@ -5,6 +5,7 @@ import { labelsFromFields, textFromDescriptor } from '#components/listing/captio
 import { defineForm, field, v } from '#lib/form/index.js'
 import type { SeedUsersOrder, SeedUsersState } from '../../types.js'
 import { USER_MESSAGES } from '../../messages.js'
+import { FILTER_ERROR, FILTER_MESSAGES } from '../filter-messages.js'
 import {
   SEED_USERS_NAME,
   SEED_USERS_ORDERS,
@@ -15,12 +16,7 @@ import {
 
 export const SEED_USERS_FILTERS_FORM_ID = 'seed-users-filters'
 
-export const SEED_FILTER_MESSAGES = {
-  'filters.range': 'Дата «с» позже даты «по» — поправьте диапазон',
-  'filters.size': 'Элементов на страницу — целое число от 30 до 100',
-  'filters.value': 'Такое значение фильтр не принимает',
-  'filters.no-address': 'У этого списка нет адреса для применения без JS.',
-} as const
+export const SEED_FILTER_MESSAGES = FILTER_MESSAGES
 
 export interface SeedUsersFilterValues {
   ord: string
@@ -117,21 +113,21 @@ export function applySeedFilters(
   const sizeRaw = values.size
   const pageSize = typeof sizeRaw === 'number' ? sizeRaw : Number(sizeRaw)
   if (!Number.isInteger(pageSize) || pageSize < 30 || pageSize > 100) {
-    return { ok: false, path: 'size', code: 'filters.size', message: SEED_FILTER_MESSAGES['filters.size'] }
+    return { ok: false, path: 'size', code: FILTER_ERROR.size, message: SEED_FILTER_MESSAGES[FILTER_ERROR.size] }
   }
   const cfrom = clean(values.cfrom)
   const cto = clean(values.cto)
   const dfrom = clean(values.dfrom)
   const dto = clean(values.dto)
   if (cfrom && cto && cfrom > cto) {
-    return { ok: false, path: 'cfrom', code: 'filters.range', message: SEED_FILTER_MESSAGES['filters.range'] }
+    return { ok: false, path: 'cfrom', code: FILTER_ERROR.range, message: SEED_FILTER_MESSAGES[FILTER_ERROR.range] }
   }
   if (caps.canSeeDeleted && dfrom && dto && dfrom > dto) {
-    return { ok: false, path: 'dfrom', code: 'filters.range', message: SEED_FILTER_MESSAGES['filters.range'] }
+    return { ok: false, path: 'dfrom', code: FILTER_ERROR.range, message: SEED_FILTER_MESSAGES[FILTER_ERROR.range] }
   }
   let ord = clean(values.ord) || 'created-desc'
   if (!SEED_USERS_ORDERS.includes(ord as SeedUsersOrder)) {
-    return { ok: false, path: 'ord', code: 'filters.value', message: SEED_FILTER_MESSAGES['filters.value'] }
+    return { ok: false, path: 'ord', code: FILTER_ERROR.value, message: SEED_FILTER_MESSAGES[FILTER_ERROR.value] }
   }
   const nickOn = caps.canSeeNickname && values.nick === true
   if ((!caps.canSeeDeleted && ord.startsWith('deleted')) || (!nickOn && ord.startsWith('nickname'))) {
@@ -139,7 +135,7 @@ export function applySeedFilters(
   }
   let state = clean(values.state) || 'active'
   if (!SEED_USERS_STATES.includes(state as SeedUsersState)) {
-    return { ok: false, path: 'state', code: 'filters.value', message: SEED_FILTER_MESSAGES['filters.value'] }
+    return { ok: false, path: 'state', code: FILTER_ERROR.value, message: SEED_FILTER_MESSAGES[FILTER_ERROR.value] }
   }
   if (!caps.canSeeDeleted) state = 'active'
   return {
