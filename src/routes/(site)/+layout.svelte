@@ -49,16 +49,16 @@
     vault.syncServer(data.user, data.authStamp)
   })
 
-  // Базовые слоты шапки по умолчанию
-  // Раскладка шапки (решение владельца): верхний ряд — логотип, заголовок и
-  // справа ТОЛЬКО профиль; пункты меню — в среднем (липком) ряду слева,
-  // переключатель темы — там же справа. Средний ряд виден всегда, верхний
-  // при скролле прячется (CollapsingHeader).
+  // Базовые слоты шапки по умолчанию.
+  // Верхний ряд справа — одна ячейка mergeSlot: тема (888) слева от профиля
+  // (999). Поздний слот с меньшим offset встаёт перед ними и ячейку не
+  // заменяет. Средний ряд — пункты меню, он виден всегда; верхний при
+  // скролле прячется вместе с темой и профилем (CollapsingHeader).
   useHeaderSlot('top.start', logoSnippet)
   useHeaderSlot('top.center', titleSnippet)
   useHeaderSlot('middle.start', navSnippet)
-  useHeaderSlot('middle.end', themeSnippet)
-  useHeaderSlot('top.end', userSnippet)
+  useHeaderSlot('top.end', themeSnippet, { offset: 888 })
+  useHeaderSlot('top.end', userSnippet, { offset: 999 })
 
   // Базовые слоты 3-зонного сайдбара
   // Каркас. Для auto эти зоны не «заняты»: иначе свободной зоны не остаётся.

@@ -101,6 +101,15 @@
           Профиль
         </Button>
       {/if}
+      <Button
+        {...asModalLink('user.sessions')}
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start font-normal"
+        data-testid="menu-sessions-open"
+      >
+        Сессии
+      </Button>
       <Button {...profileLink} variant="ghost" size="sm" class="w-full justify-start font-normal">
         Изменить профиль
       </Button>

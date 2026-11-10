@@ -421,23 +421,27 @@ export function createLoader(deps: LoaderDeps) {
     const merged = { ...(definition.defaultParams ?? {}), ...params }
     const entry = { name, params: merged } as ResolvedEntry
     const load = fetcher(entry, definition)
+    const waitView = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!deps.ensureView) return { ok: true }
+      try {
+        await deps.ensureView(definition)
+        return { ok: true }
+      } catch (error) {
+        deps.report?.({ lib: 'modals', code: 'preload-failed', cause: error, ctx: { name } })
+        return { ok: false, error: errorMessage(error) }
+      }
+    }
+
     if (!load) {
       // Данных нет, но вид может быть ленивым: кнопка греет и его.
-      if (deps.ensureView) {
-        try {
-          await deps.ensureView(definition)
-        } catch (error) {
-          deps.report?.({ lib: 'modals', code: 'preload-failed', cause: error, ctx: { name } })
-          return { ok: false, error: errorMessage(error) }
-        }
-      }
-      return { ok: true }
+      return waitView()
     }
 
     const ck = loaderKey(name, merged)
     if (cache.has(ck)) {
       cacheGet(ck)
-      return { ok: true }
+      // Данные уже в кеше, чанк мог ещё не доехать: иначе клик откроет оболочку раньше вида.
+      return waitView()
     }
 
     const { signal } = options

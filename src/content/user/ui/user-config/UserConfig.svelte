@@ -14,7 +14,8 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { Result } from '#lib/form/index.js'
   import { Steps, useSteps } from '#components/steps/index.js'
-  import { Skeleton, Surface } from '#components/ui/index.js'
+  import { useModalLink } from '#hooks/links/index.js'
+  import { Button, Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { AuthErrorCode } from '../../error.js'
   import {
@@ -122,6 +123,7 @@
   })
 
   const showStepsNav = $derived(nonEmptyGroupKeys.length >= 2)
+  const asModalLink = useModalLink()
   const formKey = $derived(
     slice
       ? `${slice.uid}::${resetTick}::${slice.items
@@ -134,6 +136,17 @@
 
 {#snippet configSteps()}
   <Steps host={steps} label="Разделы настроек" />
+{/snippet}
+
+{#snippet sessionsLink()}
+  <Button
+    {...asModalLink('user.sessions')}
+    variant="outline"
+    size="sm"
+    data-testid="config-sessions-open"
+  >
+    Сессии
+  </Button>
 {/snippet}
 
 {#snippet configTarget()}
@@ -157,7 +170,12 @@
     class={cn('mx-auto w-full max-w-md', className)}
     title={slice ? (slice.isOwn ? specConfig.ownTitle : specConfig.foreignTitle) : undefined}
     description={slice && !slice.isOwn ? configTarget : undefined}
-    controls={showStepsNav ? { start: configSteps } : undefined}
+    controls={slice?.isOwn || showStepsNav
+      ? {
+          ...(showStepsNav ? { start: configSteps } : {}),
+          ...(slice?.isOwn ? { end: sessionsLink } : {}),
+        }
+      : undefined}
     data-testid="user-config-root"
   >
     {#if !slice}

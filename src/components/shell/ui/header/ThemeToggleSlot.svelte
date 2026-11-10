@@ -36,7 +36,7 @@
   }
 </script>
 
-<Button variant="ghost" size="icon-sm" class="ml-1"
+<Button variant="ghost" size="icon-sm"
   onclick={toggle}
   aria-label={theme === 'night' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
   title={theme === 'night' ? 'Светлая тема (lemonade)' : 'Тёмная тема (night)'}

@@ -9,7 +9,12 @@ import type { ProfileView } from '../types.js'
 // ModalHost её заменяет заглушка с тем же видимым итогом (`href` пары).
 vi.mock('#hooks/links/index.js', () => ({
   useModalLink: () => (name: string, params: { id?: string }) => ({
-    href: name === 'user.profile.edit' ? `/user/${params.id}/edit` : '/',
+    href:
+      name === 'user.profile.edit'
+        ? `/user/${params.id}/edit`
+        : name === 'user.sessions'
+          ? '/user/sessions'
+          : '/',
     'data-modal-link': '',
   }),
 }))
@@ -57,8 +62,9 @@ describe('Profile: заглушка «не создан» рисует сам к
     expect(body).toContain(specProfile.notCreatedTitle)
     expect(body).toContain(specProfile.notCreatedText)
     expect(body).not.toContain('data-acl-code')
-    // Без флага правки кнопки редактирования нет.
+    // Без флага правки кнопки редактирования нет. Чужой профиль сессий не показывает.
     expect(body).not.toContain('Редактировать')
+    expect(body).not.toContain('data-testid="profile-sessions-open"')
   })
 
   test('canEdit — кнопка справа сверху ведёт на роут редактирования и у заглушки', () => {
@@ -67,5 +73,7 @@ describe('Profile: заглушка «не создан» рисует сам к
     })
     expect(body).toContain('Редактировать')
     expect(body).toContain(`href="/user/${base.authId}/edit"`)
+    expect(body).toContain('data-testid="profile-sessions-open"')
+    expect(body).toContain('href="/user/sessions"')
   })
 })

@@ -25,6 +25,7 @@ import {
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
+  userSessionsRoute,
   userPickerRoute,
   userProfileDeleteRoute,
   userProfileEditRoute,
@@ -42,6 +43,12 @@ registerModal({
   component: lazy(() => import('./ui/MenuModal.svelte')),
   route: userMenuRoute.href,
   size: { width: 320, height: 360 },
+})
+registerModal({
+  name: 'user.sessions',
+  component: lazy(() => import('./ui/SessionsModal.svelte')),
+  route: userSessionsRoute.href,
+  size: { width: 520, height: 560 },
 })
 // Профиль: пара «модалка + роут» одного компонента. `route` нужен
 // ссылке (`asModalLink` строит из него `href` — без JS карточка ведёт

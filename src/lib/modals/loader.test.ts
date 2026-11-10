@@ -58,6 +58,34 @@ test('ensureView: предзагрузка кнопки ждёт вид и па�
   assert.equal(l.readRuntime('broken', 0).status, 'error')
 })
 
+test('preloadModal: тёплый кеш данных всё равно ждёт вид', async () => {
+  const store = createModalStore()
+  const scope = createRegistry('t').define([
+    { name: 'lazy', component: 'X', loader: async () => ({ ok: 1 }) } as any,
+  ])
+  let releaseView!: () => void
+  const viewGate = new Promise<void>((resolve) => {
+    releaseView = resolve
+  })
+  const l = createLoader({
+    store,
+    lookup: scope.lookup,
+    ensureView: () => viewGate,
+  })
+  const early = l.preloadModal('lazy', {})
+  await tick()
+  let againDone = false
+  const again = l.preloadModal('lazy', {}).then((result) => {
+    againDone = true
+    return result
+  })
+  await tick()
+  assert.equal(againDone, false, 'кеш данных не открывает модалку раньше чанка')
+  releaseView()
+  assert.equal((await early).ok, true)
+  assert.equal((await again).ok, true)
+})
+
 test('незнакомое имя — ошибка с объяснением', () => {
   const store = createModalStore()
   const l = createLoader({ store, lookup: () => undefined })

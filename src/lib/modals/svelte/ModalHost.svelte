@@ -354,7 +354,11 @@
   const activeRev = $derived(
     active ? (view.runtime[runtimeKey(active.name, active.index)]?.rev ?? 0) : 0,
   )
-  $effect(() => {
+  // До отрисовки, не после: иначе первый кадр оболочки видит `idle` и
+  // рисует скелетон, хотя клик уже дождался данных и чанка. Медленный
+  // загрузчик по-прежнему ставит `loading` до кадра — скелетон остаётся
+  // для адреса и долгой загрузки, не для уже готового клика.
+  $effect.pre(() => {
     const a = active
     void activeRev
     if (!a) return

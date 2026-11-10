@@ -15,7 +15,6 @@
   import type { Component } from 'svelte'
   import Button from '#components/ui/button/Button.svelte'
   import Floating from '#components/ui/floating/Floating.svelte'
-  import Skeleton from '#components/ui/skeleton/Skeleton.svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { useJsOnly, JS_ONLY_REASON } from '#hooks/js-only.svelte.js'
@@ -29,16 +28,23 @@
     Component<{ variant?: UserSurfaceVariant; onDone?: () => void }> | null
   >(null)
   let menuBodyLoading: Promise<void> | null = null
+  let menuBusy = $state(false)
 
-  function preloadMenuBody(): void {
-    if (MenuBodyComp || menuBodyLoading) return
-    menuBodyLoading = import('./MenuBody.svelte')
-      .then((mod) => {
-        MenuBodyComp = mod.default
-      })
-      .finally(() => {
-        menuBodyLoading = null
-      })
+  function loadMenuBody(): Promise<void> {
+    if (MenuBodyComp) return Promise.resolve()
+    if (!menuBodyLoading) {
+      menuBodyLoading = import('./MenuBody.svelte')
+        .then((mod) => {
+          MenuBodyComp = mod.default
+        })
+        .catch(() => {
+          // Сбой чанка не держим: следующий hover/клик попробует снова.
+        })
+        .finally(() => {
+          menuBodyLoading = null
+        })
+    }
+    return menuBodyLoading
   }
 
   const asModalLink = useModalLink()
@@ -68,9 +74,23 @@
 
   let menuOpen = $state(false)
 
-  function onMenuChange(next: boolean) {
-    if (next) preloadMenuBody()
-    menuOpen = next
+  async function onMenuChange(next: boolean) {
+    if (!next) {
+      menuOpen = false
+      return
+    }
+    // Всплывашка не открывается, пока тело не доехало: иначе клик показывает скелетон.
+    if (!MenuBodyComp) {
+      menuBusy = true
+      try {
+        await loadMenuBody()
+      } catch {
+        // чанк не доехал — меню не открываем
+      } finally {
+        menuBusy = false
+      }
+    }
+    if (MenuBodyComp) menuOpen = true
   }
 
   /** Открылась любая модалка (например, профиль из меню) — всплывашку снимаем. */
@@ -85,6 +105,13 @@
 </script>
 
 {#if authorized}
+  <div class="flex items-center gap-1">
+    <Button
+      {...asModalLink('user.sessions')}
+      variant="ghost"
+      size="sm"
+      data-testid="header-sessions-open"
+    >Сессии</Button>
   {#if narrow.matches}
     <!-- узкая ширина: аватар → меню-модалка; без JS — страница меню -->
     {@const link = asModalLink('user.menu')}
@@ -124,11 +151,13 @@
           data-testid="header-user"
           aria-label={nickname ? `Аккаунт: ${nickname}` : 'Аккаунт'}
           title={notHydrated() ? JS_ONLY_REASON : nickname ?? 'Аккаунт'}
+          aria-busy={menuBusy ? 'true' : undefined}
+          data-pending={menuBusy ? '' : undefined}
           aria-haspopup={api.popup}
           aria-expanded={api.expanded}
           aria-controls={api.controls}
-          onpointerenter={preloadMenuBody}
-          onfocusin={preloadMenuBody}
+          onpointerenter={loadMenuBody}
+          onfocusin={loadMenuBody}
           onclick={api.toggle}
           class="flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground hover:bg-accent"
         >
@@ -143,17 +172,12 @@
           <div data-user-menu-popover="">
             {#if MenuBodyComp}
               <MenuBodyComp variant="plain" onDone={() => (menuOpen = false)} />
-            {:else}
-              <div class="flex min-w-60 flex-col gap-2 p-3" aria-busy="true">
-                <Skeleton class="h-5 w-32" />
-                <Skeleton class="h-8 w-full" />
-                <Skeleton class="h-8 w-full" />
-              </div>
             {/if}
           </div>
         {/snippet}
       </Floating>
   {/if}
+  </div>
 {:else}
   <!-- «Авторизация» → модалка входа; без JS — страница входа (href-фолбэк).
        Здесь `href` не избыточен: у маршрута тот же путь, но другой `next` —

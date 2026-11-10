@@ -71,6 +71,9 @@ export const userAuthRoute = kitRoute('/user/auth', {
 
 export const userMenuRoute = kitRoute('/user/menu')
 
+/** Свои устройства (`/user/sessions`) — страница-fallback модалки `user.sessions`. */
+export const userSessionsRoute = kitRoute('/user/sessions')
+
 /**
  * Профиль аккаунта — путь с параметром сегмента. В `$app/types` у такого
  * маршрута нет «красивого» имени: идентификатор вместе с группами

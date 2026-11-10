@@ -142,6 +142,14 @@ export type SessionDeviceView = {
 /** Состояние списка устройств: живые, истёкшие, все не отозванные, отозванные. */
 export type SessionsState = 'active' | 'expired' | 'all' | 'revoked'
 
+/** Носители `/user/sessions` и модалки `user.sessions`. */
+export type SessionsRouteData = {
+  enabled: boolean
+  fact: AuthErrorCode | null
+  page: SessionsPage | null
+  notice: 'revoke-failed' | null
+}
+
 /** Порция списка устройств и флаги зрителя на этот срез. */
 export type SessionsPage = {
   items: SessionDeviceView[]

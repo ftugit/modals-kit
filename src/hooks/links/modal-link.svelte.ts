@@ -63,7 +63,6 @@ interface Latest {
   stack: StackMode | undefined
   overrides: ChainOverrides
   wouldOpen: ChainEntry[]
-  hasLoader: boolean
   onOpened: (() => void) | undefined
 }
 
@@ -147,7 +146,6 @@ export function useModalLink() {
       stack,
       overrides,
       wouldOpen,
-      hasLoader: Boolean(definition.loader || definition.route),
       onOpened,
     }
 
@@ -209,20 +207,18 @@ export function useModalLink() {
 
   async function open(el: Element, st: OwnState): Promise<void> {
     let now = latest.get(el)!
-    if (now.hasLoader) {
-      // Загрузчик работает ДО открытия: модалка откроется уже с данными.
-      st.status = 'loading'
-      const owner = new AbortController()
-      loading.set(el, owner)
-      const r = await m.loader.preloadModal(now.name, now.params, { signal: owner.signal })
-      if (owner.signal.aborted) return
-      loading.delete(el)
-      if (!r.ok) {
-        st.status = 'error'
-        return
-      }
-      now = latest.get(el)!
+    // И данные, и ленивый чанк — до открытия. Иначе клик показывает оболочку со скелетоном.
+    st.status = 'loading'
+    const owner = new AbortController()
+    loading.set(el, owner)
+    const r = await m.loader.preloadModal(now.name, now.params, { signal: owner.signal })
+    if (owner.signal.aborted) return
+    loading.delete(el)
+    if (!r.ok) {
+      st.status = 'error'
+      return
     }
+    now = latest.get(el)!
     // «Моя модалка ещё открыта» сбрасывается, когда длина цепочки упала до
     // индекса нашей записи (для 'new' это 0, для 'first' — 1, иначе —
     // прежняя длина стопки). href и клик считаются одной `nextChain` (§6 №9).

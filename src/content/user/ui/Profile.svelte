@@ -95,15 +95,15 @@
   // список подгружается отдельно. Подпись правки остаётся «Редактировать» и
   // для пустого профиля — первое заполнение создаёт строку, это же ждёт SSR-тест.
   const showProfileActions = $derived(
-    Boolean(data && canEdit) ||
+    Boolean(data && (canEdit || isOwnLive)) ||
       Boolean((data?.profile || data?.notCreated) && (canOpenConfig || canReadBlocks)),
   )
 
-  const project = (d: ProfileRouteData) => {
+  const project = (d: ProfileRouteData, notify = true) => {
     if (d.fact) {
       data = null
       publicData = null
-      onAcl?.(d.fact)
+      if (notify) onAcl?.(d.fact)
       return
     }
     if (d.publicProfile) {
@@ -114,7 +114,7 @@
     if (!d.profile && !d.notCreated) {
       data = null
       publicData = null
-      onAcl?.('not_found')
+      if (notify) onAcl?.('not_found')
       return
     }
     publicData = null
@@ -134,7 +134,13 @@
     }
   }
 
-  $effect(() => {
+  // Модалка приносит готовый `route`, не `initial`. Проекция до первого кадра:
+  // иначе клик открывает модалку со скелетоном, хотя данные уже есть.
+  untrack(() => {
+    if (!initial && !initialPublic && route) project(route, false)
+  })
+
+  $effect.pre(() => {
     if (initialPublic) {
       askedFor = ''
       publicData = initialPublic
@@ -182,6 +188,16 @@
          первое заполнение создаёт строку. Механика — пара редактирования. -->
     <Button {...asModalLink('user.profile.edit', { id: uid })} variant="outline" size="sm">
       Редактировать
+    </Button>
+  {/if}
+  {#if isOwnLive}
+    <Button
+      {...asModalLink('user.sessions')}
+      variant="outline"
+      size="sm"
+      data-testid="profile-sessions-open"
+    >
+      Сессии
     </Button>
   {/if}
   {#if data?.profile || data?.notCreated}

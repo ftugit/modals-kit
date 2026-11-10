@@ -31,6 +31,7 @@ vi.mock('#hooks/links/index.js', () => ({
     if (!opts.href) {
       if (name === 'user.profile.edit') href = `/user/${params.id}/edit`
       else if (name === 'user.blocks') href = params.id ? `/user/${params.id}/blocks` : '/blocks'
+      else if (name === 'user.sessions') href = '/user/sessions'
       else if (name === 'user.config.edit') {
         href = params.id ? `/user/${params.id}/config` : '/user/config'
       }
@@ -73,6 +74,8 @@ describe('Profile: кнопка «Настройки» вместо ProfilePriva
     })
     expect(body).toContain('data-testid="profile-config-open"')
     expect(body).toContain('href="/user/config"')
+    expect(body).toContain('data-testid="profile-sessions-open"')
+    expect(body).toContain('href="/user/sessions"')
     expect(body).not.toContain('user-profile-privacy')
   })
 
@@ -118,6 +121,7 @@ describe('Profile: кнопка «Настройки» вместо ProfilePriva
       },
     })
     expect(denied.body).not.toContain('data-testid="profile-config-open"')
+    expect(denied.body).not.toContain('data-testid="profile-sessions-open"')
   })
 })
 
@@ -179,6 +183,8 @@ describe('UserConfig: редактируемые поля и read-only стро�
     expect(body).toContain('Включено')
     expect(body).not.toContain('name="session_ip_lock"')
     expect(body).toContain('data-testid="config-save-submit"')
+    expect(body).toContain('data-testid="config-sessions-open"')
+    expect(body).toContain('href="/user/sessions"')
   })
 
   test('при canSave = false скрывает кнопку «Сохранить», оставляя read-only просмотр', () => {
