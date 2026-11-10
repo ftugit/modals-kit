@@ -181,7 +181,7 @@ async function run() {
 
     console.log('— с JS: матрица сценариев 1–5 (п. 6.3) —')
     {
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+      const ctx = await browser.newContext({ viewport: { width: 900, height: 900 } })
       const page = await ctx.newPage()
       debugPage = page
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
@@ -381,7 +381,7 @@ async function run() {
     {
       const ctx = await browser.newContext({
         javaScriptEnabled: false,
-        viewport: { width: 1280, height: 900 },
+        viewport: { width: 900, height: 900 },
       })
       await ctx.addCookies(adminCookies)
       const page = await ctx.newPage()
@@ -391,15 +391,15 @@ async function run() {
       await page.goto(BASE + '/users', { waitUntil: 'load' })
       await page.locator('[data-testid="seed-users-filters-open"]').click()
       await page.waitForURL((u) => u.pathname === '/users/filters', { timeout: 10000 })
-      await page.locator('input[name="users.size"]').fill('50')
+      await page.locator('input[name="size"]').fill('50')
       await page.getByRole('button', { name: 'Применить' }).click()
       await page.waitForURL((u) => u.pathname === '/users' && u.searchParams.get('users.size') === '50', {
         timeout: 10000,
       })
       await page.locator('[data-testid="seed-users-filters-open"]').click()
       await page.waitForURL((u) => u.pathname === '/users/filters', { timeout: 10000 })
-      assert.equal(await page.locator('input[name="users.size"]').inputValue(), '50', 'users.size=50 сохранён в FILTER_KEYS')
-      await page.locator('input[name="users.size"]').fill('40')
+      assert.equal(await page.locator('input[name="size"]').inputValue(), '50', 'users.size=50 сохранён в FILTER_KEYS')
+      await page.locator('input[name="size"]').fill('40')
       await page.getByRole('link', { name: 'Сбросить' }).click()
       await page.waitForURL((u) => u.pathname === '/users' && !u.searchParams.has('users.size'), {
         timeout: 10000,
@@ -415,7 +415,7 @@ async function run() {
       await page.waitForURL((u) => u.pathname === '/users/pick', { timeout: 10000 })
       await page.locator('[data-testid="seed-users-filters-open"]').click()
       await page.waitForURL((u) => u.pathname === '/users/filters', { timeout: 10000 })
-      await page.locator('select[name="users.ord"]').selectOption('created-desc')
+      await page.locator('select[name="ord"]').selectOption('created-desc')
       await page.getByRole('button', { name: 'Применить' }).click()
       await page.waitForURL(
         (u) => u.pathname === '/users/pick' && u.searchParams.get('from') === '/blocks/new',
