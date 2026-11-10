@@ -2,6 +2,9 @@ import { render } from 'svelte/server'
 import { describe, expect, test } from 'vitest'
 import SessionsView from './SessionsView.svelte'
 import type { SessionsPage } from '../types.js'
+import { vi } from 'vitest'
+
+vi.mock('#hooks/links/index.js', () => ({ asLink: (href: string) => ({ href }) }))
 
 const page: SessionsPage = {
   items: [
@@ -32,6 +35,12 @@ const page: SessionsPage = {
 }
 
 describe('SessionsView', () => {
+  test('ссылка на следующую страницу доступна в SSR', () => {
+    const { body } = render(SessionsView, { props: { page: { ...page, total: 31 } } })
+    expect(body).toContain('href="/user/sessions?page=2"')
+    expect(body).toContain('Страница 1 из 2')
+  })
+
   test('показывает устройство и не печатает полный хеш подсети', () => {
     const { body } = render(SessionsView, { props: { page, variant: 'card' } })
     expect(body).toContain('Сессии')

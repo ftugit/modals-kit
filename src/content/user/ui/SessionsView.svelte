@@ -4,10 +4,12 @@
    * сервер их не отдаёт. Хеш подсети показывается только коротким префиксом.
    * Блокировка — удержание и нативный POST на `/user/sessions`.
    */
+  import { onMount } from 'svelte'
+  import { asLink } from '#hooks/links/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
-  import { Badge, Surface, TimeAgo } from '#components/ui/index.js'
+  import { Badge, Button, Surface, TimeAgo } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { sessionRevokeOthersForm } from '../sessions.form.js'
@@ -24,7 +26,13 @@
 
   let { page, notice = null, variant = 'plain', class: className }: Props = $props()
 
-  const others = $derived(page.items.some((item) => !item.current && item.deletedAt == null))
+  const others = $derived(page.total > (page.items.some((item) => item.current) ? 1 : 0))
+  const totalPages = $derived(Math.max(1, Math.ceil(page.total / page.pageSize)))
+  let now = $state(Date.now())
+  onMount(() => {
+    const timer = setInterval(() => (now = Date.now()), 30_000)
+    return () => clearInterval(timer)
+  })
   const items = $derived(
     [...page.items].sort((a, b) => Number(b.current) - Number(a.current) || b.createdAt - a.createdAt),
   )
@@ -41,7 +49,7 @@
 
   function statusOf(item: SessionDeviceView): string {
     if (item.deletedAt != null) return 'Завершена'
-    if (item.expiresAt > 0 && item.expiresAt <= Date.now()) return 'Истекла'
+    if (item.expiresAt > 0 && item.expiresAt <= now) return 'Истекла'
     return 'Активна'
   }
 </script>
@@ -115,5 +123,16 @@
         </li>
       {/each}
     </ul>
+  {/if}
+  {#if totalPages > 1 || page.page > 1}
+    <nav aria-label="Страницы сессий" class="mt-3 flex items-center gap-3" data-testid="sessions-pagination">
+      {#if page.page > 1}
+        <Button {...asLink(`/user/sessions?page=${page.page - 1}`)} variant="outline" size="sm">Назад</Button>
+      {/if}
+      <span class="text-sm">Страница {page.page} из {totalPages}</span>
+      {#if page.page < totalPages}
+        <Button {...asLink(`/user/sessions?page=${page.page + 1}`)} variant="outline" size="sm">Вперёд</Button>
+      {/if}
+    </nav>
   {/if}
 </Surface>

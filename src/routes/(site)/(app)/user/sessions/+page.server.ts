@@ -29,7 +29,11 @@ export const load: PageServerLoad = async (event): Promise<SessionsRouteData> =>
   if (!u.enabled) {
     return { enabled: false, fact: 'auth.disabled', page: null, notice }
   }
-  const r = await u.listSessionsPage()
+  const requestedPage = Number(event.url.searchParams.get('page') ?? 1)
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= 1_000_000
+    ? requestedPage
+    : 1
+  const r = await u.listSessionsPage({ page })
   if (!r.ok) {
     return { enabled: true, fact: r.fact.code, page: null, notice }
   }
