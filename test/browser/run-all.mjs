@@ -27,6 +27,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { browserFailureLines } from '../../tooling/browser-output.mjs';
 
 /** Основной набор — сьюты фильтруются по реально установленным файлам (ядро + активные модули). */
 const ALL = [
@@ -157,8 +158,7 @@ async function worker() {
     const retry = result.restarted ? ' (после перезапуска сервера)' : '';
     console.log(`${mark} ${result.name.padEnd(20)} ${(result.ms / 1000).toFixed(1).padStart(7)} s${retry}`);
     if (result.code !== 0) {
-      const tail = result.output.split('\n').filter((l) => l.includes('FAIL') || l.includes('❌')).slice(-4);
-      for (const line of tail) console.log('     ' + line.trim().slice(0, 180));
+      for (const line of browserFailureLines(result.output)) console.log('     ' + line);
     }
   }
 }
