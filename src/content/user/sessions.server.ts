@@ -308,6 +308,8 @@ export async function revokeBulkSessions(
   deps: SessionDeps,
 ): Promise<UserResult<SessionBulkRevokeResult>> {
   if (args.scope !== 'others' && args.scope !== 'all') return fail({ code: 'auth.forbidden' })
+  // Без идентификатора нельзя отличить текущую сессию от остальных.
+  if (args.scope === 'others' && !actor.sessionId?.trim()) return fail({ code: 'auth.session-unknown' })
   const requested = args.authId?.trim() || null
   const own = requested === null || requested === actor.id
   const target = own ? actor.id : requested

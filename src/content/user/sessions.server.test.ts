@@ -165,6 +165,11 @@ test('чужой uuid не отличим от пустого; пакетный 
     expect(foreign.ok).toBe(false)
     if (!empty.ok && !foreign.ok) expect(foreign.fact.code).toBe(empty.fact.code)
 
+    const unknown = await revokeBulkSessions(actor(me), { scope: 'others' }, deps)
+    expect(unknown).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
+    const before = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(before.ok && before.value.items).toHaveLength(2)
+
     const kept = await revokeBulkSessions(meActor, { scope: 'others' }, deps)
     expect(kept.ok).toBe(true)
     if (!kept.ok) return
