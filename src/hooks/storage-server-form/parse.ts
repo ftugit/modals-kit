@@ -95,7 +95,7 @@ export function parseStorageServerEntry(
 
   const encryptionKey = String(values.encryption_key ?? '').trim()
   if (encryptionKey && (encryptionKey.length < 8 || encryptionKey.length > 256)) {
-    issues.push(issue('encryption_key', 'Ключ шифрования файлов должен содержать от 8 до 256 печатных символов', 'storage.key-invalid'))
+    issues.push(issue('encryption_key', 'Ключ шифрования файлов должен содержать от 8 до 256 символов', 'storage.key-invalid'))
   }
 
   const storageMb = Number(String(values.storage_mb ?? '').trim())

@@ -92,6 +92,14 @@ describe('storage-server-form', () => {
     if (!shortKey.ok) expect(shortKey.issues.some((issue) => issue.code === 'storage.key-invalid')).toBe(true)
   })
 
+  it('сохраняет допустимый ключ с управляющим символом без изменения контракта', () => {
+    const parsed = parseStorageServerEntry({
+      slot: 's3_main', url: S3, encryption_key: 'abcdefgh\u0001', storage_mb: '8', file_mb: '2',
+    })
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) expect(parsed.entry.encryptionKey).toBe('abcdefgh\u0001')
+  })
+
   it('правка пула оставляет пустой url при server_id и принимает приоритет', () => {
     const edited = parseStorageServerEntry(
       {
