@@ -119,7 +119,15 @@ function runSuite(name) {
       env: {
         ...process.env,
         MODALS_PORT: String(PORT),
-        MODALS_BASE: process.env.MODALS_BASE ?? undefined,
+        // Старые модальные сьюты ожидают адрес страницы, остальные — origin.
+        MODALS_BASE: process.env.MODALS_BASE ?? (name === 'modals' || name === 'regressions' ? `${ORIGIN}/modals` : ORIGIN),
+        FORMS_BASE: process.env.FORMS_BASE ?? `${ORIGIN}/form`,
+        DB_DEMO_BASE: process.env.DB_DEMO_BASE ?? `${ORIGIN}/db-demo`,
+        FIELDS_BASE: process.env.FIELDS_BASE ?? `${ORIGIN}/fields`,
+        A11Y_BASE: process.env.A11Y_BASE ?? ORIGIN,
+        URL_CHECK_BASE: process.env.URL_CHECK_BASE ?? ORIGIN,
+        PAGINATE_BASE: process.env.PAGINATE_BASE ?? `${ORIGIN}/paginator`,
+        LAYER_BACK_BASE: process.env.LAYER_BACK_BASE ?? ORIGIN,
         MODALS_ADMIN_SECRET: process.env.MODALS_ADMIN_SECRET || capturedAdminSecret || undefined,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
