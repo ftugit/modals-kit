@@ -21,9 +21,12 @@ test('у каждого доменного кода есть текст', () => 
   expect(codes.filter((code) => !(code in USER_MESSAGES)).sort()).toEqual([])
 })
 
-test('сообщение ключа описывает ограничение боевого пула, не обещая печатность Unicode', () => {
-  expect(USER_MESSAGES['storage.key-invalid']).toContain('без управляющих символов ASCII')
+test('общий текст ключа описывает длину и не обещает печатность Unicode', () => {
+  // Уточнение про управляющие символы — у формы пула (см. src/content/storage-servers/messages.test.ts):
+  // общий словарь читает и куки-сейф, где такой проверки нет.
+  expect(USER_MESSAGES['storage.key-invalid']).toBe('Ключ шифрования файлов должен содержать от 8 до 256 символов')
   expect(USER_MESSAGES['storage.key-invalid']).not.toContain('печатных')
+  expect(USER_MESSAGES['storage.key-invalid']).not.toContain('ASCII')
 })
 
 test('формы модуля кладут словарь в свои `messages`', () => {

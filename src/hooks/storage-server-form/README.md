@@ -1,6 +1,6 @@
 # `storage-server-form` — одна форма сервера хранилища
 
-Общее определение полей S3 / WebDAV для пула БД и куки-сейфа. Хук не пишет ни в PostgreSQL, ни в куки: пул вызывает `saveStorageServer`, сейф — `saveVaultEntry` / `removeVaultEntry` / `resetVaultKey`. Транспорт остаётся у вызывающего.
+Общее определение полей S3 / WebDAV для пула БД и куки-сейфа. Хук не пишет ни в PostgreSQL, ни в куки: пул вызывает `saveStorageServer`, сейф — `saveVaultEntry` / `removeVaultEntry` / `resetVaultKey`. Транспорт остаётся у вызывающего. Тексты тоже передаёт вызывающий: разбор здесь один и проверяет только длину ключа (8–256), а уточнение про управляющие символы ASCII живёт в `STORAGE_POOL_MESSAGES` (`src/content/storage-servers/form.ts`) — у куки-сейфа такой проверки нет, и общий текст показывать её он не должен.
 
 `priority` и `clear_encryption_key` есть только у пула (`withPriority: true`). В сейфе слот перезаписывается по имени, отдельного `server_id` нет.
 
