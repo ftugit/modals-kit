@@ -1,6 +1,6 @@
 import type { Snippet } from 'svelte'
 import { describe, expect, it } from 'vitest'
-import { PageState, applySlot, isMergeSlot, mergeSlot, renderMergeSlot, type SlotItem } from './page.svelte'
+import { PageState, applySlot, isMergeSlot, mergeSlot, renderMergeSlot, type SlotItem, type SlotValue } from './page.svelte'
 
 const snippet = (() => {}) as Snippet
 
@@ -8,11 +8,29 @@ function item(id: number, extra: Partial<SlotItem> = {}): SlotItem {
   return { id, snippet, ...extra }
 }
 
-function ids(value: SlotItem[] | undefined): number[] {
+function ids(value: SlotValue | undefined): number[] {
   return renderMergeSlot(value).map((entry) => entry.id)
 }
 
+// Проверка публичного TypeScript-контракта, без исполнения.
+if (false) {
+  const marker = mergeSlot([])
+  // @ts-expect-error Маркер не является массивом слотов.
+  const array: SlotItem[] = marker
+  const value: SlotValue = marker
+  if (isMergeSlot(value)) value.entries
+  renderMergeSlot(value).map((entry) => entry.id)
+  void array
+}
+
 describe('applySlot', () => {
+  it('mergeSlot возвращает маркер, а не массив', () => {
+    const marker = mergeSlot([item(1)])
+    expect(Array.isArray(marker)).toBe(false)
+    expect(isMergeSlot(marker)).toBe(true)
+    expect(renderMergeSlot(marker)).toEqual([item(1)])
+  })
+
   it('нет следующего набора — база остаётся', () => {
     const base = [item(1)]
     expect(applySlot(base, undefined)).toBe(base)

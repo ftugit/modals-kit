@@ -25,6 +25,8 @@ export {
   type RowSlots,
   type SlotItem,
   type MergeEntry,
+  type MergeMarker,
+  type SlotValue,
   type SlotRegisterOptions,
   mergeSlot,
   isMergeSlot,

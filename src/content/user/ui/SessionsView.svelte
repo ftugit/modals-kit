@@ -26,7 +26,7 @@
 
   let { page, notice = null, variant = 'plain', class: className }: Props = $props()
 
-  const others = $derived(page.total > (page.items.some((item) => item.current) ? 1 : 0))
+  const others = $derived(page.total > 1 || page.items.some((item) => !item.current))
   const totalPages = $derived(Math.max(1, Math.ceil(page.total / page.pageSize)))
   let now = $state(Date.now())
   onMount(() => {
@@ -85,7 +85,7 @@
   {/if}
 
   {#if page.items.length === 0}
-    <p class="text-sm text-muted-foreground" data-testid="sessions-empty">Активных сессий нет.</p>
+    <p class="text-sm text-muted-foreground" data-testid="sessions-empty">{page.total > 0 ? 'На этой странице сессий нет.' : 'Активных сессий нет.'}</p>
   {:else}
     <ul class="flex flex-col gap-2">
       {#each items as item (item.id)}
@@ -127,7 +127,7 @@
   {#if totalPages > 1 || page.page > 1}
     <nav aria-label="Страницы сессий" class="mt-3 flex items-center gap-3" data-testid="sessions-pagination">
       {#if page.page > 1}
-        <Button {...asLink(`/user/sessions?page=${page.page - 1}`)} variant="outline" size="sm">Назад</Button>
+        <Button {...asLink(`/user/sessions?page=${Math.min(page.page - 1, totalPages)}`)} variant="outline" size="sm">Назад</Button>
       {/if}
       <span class="text-sm">Страница {page.page} из {totalPages}</span>
       {#if page.page < totalPages}

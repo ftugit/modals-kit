@@ -49,6 +49,18 @@ async function run() {
         permissions: ['clipboard-read', 'clipboard-write'],
       })
       const page = await ctxJs.newPage()
+      // Только диагностика статусов форм, без URL-параметров, тел и значений cookie.
+      const formResponses = []
+      page.on('response', (res) => {
+        const req = res.request()
+        const formId = req.headers()['x-form-id']
+        if (req.method() === 'POST' && new URL(res.url()).origin === BASE) {
+          const body = req.postDataBuffer()
+          // Содержимое формы не сохраняется: только наличие известного идентификатора.
+          const profileBody = body?.includes(Buffer.from('user-profile')) ?? false
+          formResponses.push({ formId: formId ?? null, profileBody, status: res.status(), path: new URL(res.url()).pathname })
+        }
+      })
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
       const form = page.locator('#user-auth')
 
@@ -201,14 +213,46 @@ async function run() {
         return Array.from(new Uint8Array(await f.arrayBuffer()))
       })
       assert.ok(convertedBytes && convertedBytes.length > 100, 'сконвертированный 200x200 JPEG получен')
+      const dimensions = await fileInput.evaluate(async (el) => {
+        const bitmap = await createImageBitmap(el.files[0])
+        const result = [bitmap.width, bitmap.height]
+        bitmap.close()
+        return result
+      })
+      assert.deepEqual(dimensions, [200, 200], 'в поле лежит именно готовый кадр 200×200')
       readyAvatar200 = Buffer.from(convertedBytes)
       ok('фото: честный JPEG сжат через lib/image (200x200) и показан в FileAttachment')
 
       // 7. Профиль → успех сохраняет ник и аватар в боевое хранилище (/api/storage/avatars/...)
       await profile.locator('input[name=nickname]').fill('e2e-ход-258')
       await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
+      const profileBeforeSubmit = await profile.evaluate((el) => ({
+        path: location.pathname,
+        method: el.getAttribute('method'),
+        actionPath: new URL(el.getAttribute('action') || location.href, location.href).pathname,
+      }))
+      let syncAttempts = 0
+      const syncRoute = async (route) => {
+        const request = route.request()
+        if (request.method() === 'POST' && request.headers()['x-form-id'] === 'user-profile' &&
+            (request.postData() ?? '').includes('sync-access')) {
+          syncAttempts++
+          if (syncAttempts === 1) {
+            await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' })
+            return
+          }
+        }
+        await route.continue()
+      }
+      await page.route('**/*', syncRoute)
       await profile.getByRole('button', { name: 'Сохранить' }).click()
+      const syncAlert = profile.getByRole('alert').filter({ hasText: 'Профиль сохранён, но обновить сессию не удалось' })
+      await syncAlert.waitFor({ state: 'visible', timeout: 15000 })
+      assert.equal(await profile.getByRole('button', { name: 'Сохранить' }).isDisabled(), true, 'повторно файл не отправляем')
+      await syncAlert.getByRole('button', { name: 'Повторить обновление' }).click()
       await page.waitForURL((u) => !u.pathname.includes('user/auth'), { timeout: 15000 })
+      await page.unroute('**/*', syncRoute)
+      assert.equal(syncAttempts, 2, 'ошибка синхронизации повторяется без загрузки файла')
       try {
         await page.locator('[data-testid=header-user] img').waitFor({ state: 'visible', timeout: 10000 })
       } catch (error) {
@@ -216,6 +260,9 @@ async function run() {
           const header = document.querySelector('[data-testid=header-user]')
           return { url: location.pathname, aria: header?.getAttribute('aria-label'), text: header?.textContent?.trim(), image: Boolean(header?.querySelector('img')), alerts: [...document.querySelectorAll('[role=alert]')].map((e) => e.textContent?.trim()) }
         })
+        console.error('❌ avatar-form-before-submit ' + JSON.stringify(profileBeforeSubmit))
+        console.error('❌ avatar-form-responses ' + JSON.stringify(formResponses))
+        console.error('❌ avatar-cookie-names ' + JSON.stringify((await ctxJs.cookies()).map((cookie) => cookie.name).sort()))
         console.error('❌ avatar-before-reload ' + JSON.stringify(await snapshot()))
         await page.reload({ waitUntil: 'networkidle' }).catch(() => {})
         console.error('❌ avatar-after-reload ' + JSON.stringify(await snapshot()))
@@ -228,7 +275,29 @@ async function run() {
       assert.equal(avatarRes.status, 200, 'раздача /api/storage/avatars/... отдаёт 200')
       assert.match(avatarRes.headers.get('cache-control') ?? '', /immutable/, 'Cache-Control содержит immutable')
       assert.match(avatarRes.headers.get('etag') ?? '', /^"[^"]+"$/, 'сильный ETag без W/')
-      ok('регистрация (JS): профиль и аватар в /api/storage/avatars/... сохранены, раздача 200 + immutable + strong ETag')
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.locator('[data-testid=header-user] img').waitFor({ state: 'visible', timeout: 10000 })
+      assert.equal(await page.locator('[data-testid=header-user] img').getAttribute('src'), savedAvatarSrc, 'аватар сохраняется после полной перезагрузки')
+      ok('регистрация (JS): профиль и аватар сохранены и переживают перезагрузку')
+
+      // Тот же пользователь, но форма с явным subject в /user/<id>/edit.
+      await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
+      const profileHref = await page.getByRole('link', { name: 'Профиль', exact: true }).getAttribute('href')
+      assert.match(profileHref ?? '', /^\/user\/[0-9a-f-]+$/i)
+      await page.goto(BASE + profileHref + '/edit', { waitUntil: 'networkidle' })
+      const ownEdit = page.locator('#user-profile')
+      const editFile = ownEdit.locator('input[type=file][name=photo]')
+      await editFile.setInputFiles({ name: 'again.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(JPEG_1X1, 'base64') })
+      await page.waitForFunction(() => document.querySelector('#user-profile input[type=file]')?.files?.[0]?.name === 'photo.jpg')
+      const synced = page.waitForResponse((res) => res.request().method() === 'POST' &&
+        res.request().headers()['x-form-id'] === 'user-profile' && (res.request().postData() ?? '').includes('sync-access'))
+      await ownEdit.getByRole('button', { name: 'Сохранить' }).click()
+      assert.equal((await synced).status(), 200, 'HTTP-синхронизация собственного subject прошла')
+      await page.reload({ waitUntil: 'networkidle' })
+      const newAvatarSrc = await page.locator('[data-testid=header-user] img').getAttribute('src')
+      assert.match(newAvatarSrc ?? '', /^\/api\/storage\/avatars\//)
+      assert.notEqual(newAvatarSrc, savedAvatarSrc, 'заменённый аватар собственного subject пережил reload')
+      ok('свой профиль по subject: замена аватара переживает reload')
 
       // 8. Acl allow="guest": повторный заход авторизованным на /user/auth показывает guest_only
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })

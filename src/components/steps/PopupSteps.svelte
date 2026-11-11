@@ -32,6 +32,7 @@
   import { cn } from '#components/utils.js'
   import Floating from '#components/ui/floating/Floating.svelte'
   import { isModified } from '#hooks/links/state.svelte.js'
+  import { associatePortalControls } from '#hooks/form-portal.js'
   import {
     tryUseModals,
     type HostFloatingCloseReason,
@@ -113,27 +114,9 @@
     formId = form.id
   }
 
-  /** Контрол вне формы участвует в POST, только если назван её id. */
-  function associate(node: HTMLElement) {
-    const id = formId
-    if (!id) return
-    const apply = () => {
-      for (const el of node.querySelectorAll<HTMLElement>('input, select, textarea, button')) {
-        if (!el.hasAttribute('form')) el.setAttribute('form', id)
-      }
-    }
-    apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(node, { childList: true, subtree: true })
-    const frame = requestAnimationFrame(apply)
-    return () => {
-      cancelAnimationFrame(frame)
-      observer.disconnect()
-    }
-  }
 
   function focusSlice(node: HTMLElement) {
-    const stop = associate(node)
+    const stop = formId ? associatePortalControls(node, formId, { nextFrame: true }) : undefined
     const field = node.querySelector<HTMLElement>('input, select, textarea')
     ;(field ?? node).focus({ preventScroll: true })
     return stop

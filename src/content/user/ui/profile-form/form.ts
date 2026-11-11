@@ -23,13 +23,16 @@ export const PROFILE_FORM_ID = 'user-profile'
 
 export const profileForm = defineForm({
   id: PROFILE_FORM_ID,
-  revision: 5,
+  revision: 6,
   budget: IMAGE_RAW_MAX_BYTES + FILE_BUDGET_RESERVE,
   checks: createUserChecks(),
   // Доменные тексты — общий словарь модуля: отказы сессии (`auth.*`) и профиля
   // (`profile.*`, `image.*`) звучат одинаково во всех его формах.
   messages: USER_MESSAGES,
-  actions: [{ id: 'profile', label: 'Сохранить профиль', validate: 'full' }],
+  actions: [
+    { id: 'profile', label: 'Сохранить профиль', validate: 'full' },
+    { id: 'sync-access', label: 'Обновить сессию', validate: 'partial', relax: ['required'] },
+  ],
   fields: {
     nickname: field.text({
       label: 'Никнейм',

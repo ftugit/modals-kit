@@ -9,6 +9,7 @@
   Открытая метка переносит этот же узел. Второй копии полей нет.
 -->
 <script lang="ts">
+  import { associatePortalControls } from '#hooks/form-portal.js'
   import { DEV } from 'esm-env'
   import { untrack, type Snippet } from 'svelte'
   import { resolveFilterBlockCut, type FilterBlockCut } from './filter-block.js'
@@ -63,25 +64,6 @@
     return form.id
   }
 
-  function associate(root: HTMLElement, formId: string) {
-    const stamped: HTMLElement[] = []
-    const apply = () => {
-      for (const el of root.querySelectorAll<HTMLElement>('input, select, textarea, button')) {
-        if (el.hasAttribute('form')) continue
-        el.setAttribute('form', formId)
-        stamped.push(el)
-      }
-    }
-    apply()
-    const observer = new MutationObserver(apply)
-    observer.observe(root, { childList: true, subtree: true })
-    return () => {
-      observer.disconnect()
-      for (const el of stamped) {
-        if (el.getAttribute('form') === formId) el.removeAttribute('form')
-      }
-    }
-  }
 
   function cutOf(root: HTMLElement): FilterBlockCut {
     if (panel) return resolveFilterBlockCut(namesOf(root), { schema: panel.schema, prefix: panel.prefix })
@@ -170,7 +152,7 @@
     if (!root || !homeEl || !mine || !slot) return
     const formId = ensureFormId(root)
     slot.appendChild(root)
-    const stop = formId ? associate(root, formId) : undefined
+    const stop = formId ? associatePortalControls(root, formId, { cleanup: true }) : undefined
     const field = root.querySelector<HTMLElement>('input, select, textarea')
     field?.focus({ preventScroll: true })
     return () => {

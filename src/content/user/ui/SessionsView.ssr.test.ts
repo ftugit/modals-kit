@@ -48,6 +48,14 @@ describe('SessionsView', () => {
     expect(body).not.toContain('href="/user/sessions?page=3"')
   })
 
+  test('пустая страница за пределами списка не объявляет все сессии отсутствующими', () => {
+    const { body } = render(SessionsView, { props: { page: { ...page, items: [], page: 999, total: 1 } } })
+    expect(body).toContain('На этой странице сессий нет.')
+    expect(body).not.toContain('Активных сессий нет.')
+    expect(body).toContain('href="/user/sessions?page=1"')
+    expect(body).not.toContain('data-testid="sessions-revoke-others"')
+  })
+
   test('показывает устройство и не печатает полный хеш подсети', () => {
     const { body } = render(SessionsView, { props: { page, variant: 'card' } })
     expect(body).toContain('Сессии')

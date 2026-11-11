@@ -72,22 +72,23 @@ export type MergeEntry = SlotItem | readonly [offset: number, item: SlotItem]
 
 const MERGE_MARKER = Symbol('page.merge')
 
-interface MergeMarker {
+export interface MergeMarker {
   [MERGE_MARKER]: true
   entries: readonly MergeEntry[]
 }
+
+export type SlotValue = SlotItem[] | MergeMarker
 
 /**
  * Помечает набор как слияние, а не замену ячейки.
  * Offset внутри остаётся числом. В порядок отрисовки его переводит `renderMergeSlot`.
  */
-export function mergeSlot(entries: readonly MergeEntry[]): SlotItem[] {
-  const marker: MergeMarker = { [MERGE_MARKER]: true, entries }
-  return marker as unknown as SlotItem[]
+export function mergeSlot(entries: readonly MergeEntry[]): MergeMarker {
+  return { [MERGE_MARKER]: true, entries }
 }
 
 /** Маркер `mergeSlot`, а не готовый массив слотов. */
-export function isMergeSlot(value: SlotItem[] | undefined): value is SlotItem[] & MergeMarker {
+export function isMergeSlot(value: SlotValue | undefined): value is MergeMarker {
   return (
     value !== undefined &&
     !Array.isArray(value) &&
@@ -102,9 +103,9 @@ export function isMergeSlot(value: SlotItem[] | undefined): value is SlotItem[] 
  * offset не превращается в индекс. `next === undefined` оставляет `base`.
  */
 export function applySlot(
-  base: SlotItem[] | undefined,
-  next: SlotItem[] | undefined,
-): SlotItem[] | undefined {
+  base: SlotValue | undefined,
+  next: SlotValue | undefined,
+): SlotValue | undefined {
   if (next === undefined) return base
   if (!isMergeSlot(next)) return next
   return mergeSlot([...entriesOf(base), ...markerEntries(next)])
@@ -116,7 +117,7 @@ export function applySlot(
  * регистрации, нумерованные — по возрастанию offset. Одинаковый offset перезаписывается
  * последней регистрацией. 999 остаётся после 1, 600 и 888, откуда бы их ни добавили.
  */
-export function renderMergeSlot(value: SlotItem[] | undefined): SlotItem[] {
+export function renderMergeSlot(value: SlotValue | undefined): SlotItem[] {
   if (!value) return []
   if (!isMergeSlot(value)) return value
 
@@ -138,24 +139,24 @@ export function entryOf(item: SlotItem): MergeEntry {
   return item.offset === undefined ? item : [item.offset, item]
 }
 
-function markerEntries(value: SlotItem[]): readonly MergeEntry[] {
-  return (value as unknown as MergeMarker).entries
+function markerEntries(value: MergeMarker): readonly MergeEntry[] {
+  return value.entries
 }
 
-function entriesOf(value: SlotItem[] | undefined): MergeEntry[] {
+function entriesOf(value: SlotValue | undefined): MergeEntry[] {
   if (!value) return []
   if (isMergeSlot(value)) return [...markerEntries(value)]
   return value.map(entryOf)
 }
 
-function itemsOf(value: SlotItem[] | undefined): SlotItem[] {
+function itemsOf(value: SlotValue | undefined): SlotItem[] {
   return entriesOf(value).map((entry) => (isOffsetEntry(entry) ? entry[1] : entry))
 }
 
-export type RowSlots = Record<HeaderSide, SlotItem[]>
+export type RowSlots = Record<HeaderSide, SlotValue>
 export type HeaderSlots = Record<HeaderRow, RowSlots>
 export type HeaderRows = HeaderSlots
-export type SidebarSlots = Record<SidebarZone, SlotItem[]>
+export type SidebarSlots = Record<SidebarZone, SlotValue>
 
 function createEmptyHeaderSlots(): HeaderSlots {
   return {
@@ -181,7 +182,7 @@ function cloneSidebarSlots(src: SidebarSlots): SidebarSlots {
   }
 }
 
-function copyZone(zone: SlotItem[]): SlotItem[] {
+function copyZone(zone: SlotValue): SlotValue {
   if (isMergeSlot(zone)) return mergeSlot([...markerEntries(zone)])
   return [...zone]
 }

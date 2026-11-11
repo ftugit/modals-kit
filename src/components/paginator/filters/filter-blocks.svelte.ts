@@ -4,15 +4,10 @@
  */
 import { getContext, setContext } from 'svelte'
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
+import { decideBlockClaim, reclaimBlock, type FilterBlockEntry } from './filter-block-store.js'
+export type { FilterBlockEntry } from './filter-block-store.js'
 
 const FILTER_BLOCKS = Symbol('filter-blocks')
-
-export type FilterBlockEntry = {
-  key: string
-  label: string
-  element: HTMLElement
-  home: HTMLElement
-}
 
 export type FilterBlocksContext = {
   schema: CatalogFilterSchema
@@ -59,13 +54,9 @@ export function provideFilterBlocks(read: () => { schema: CatalogFilterSchema; p
       state.slot = slot
     },
     claim(entry) {
-      const current = state.blocks[entry.key]
-      if (current?.element === entry.element) {
-        if (current.label !== entry.label || current.home !== entry.home) state.blocks[entry.key] = entry
-        return true
-      }
-      if (current) return false
-      state.blocks[entry.key] = entry
+      const decision = decideBlockClaim(state.blocks[entry.key], entry, false)
+      if (decision === 'reject') return false
+      if (decision === 'replace') state.blocks[entry.key] = entry
       return true
     },
     release(key, element) {
@@ -74,10 +65,7 @@ export function provideFilterBlocks(read: () => { schema: CatalogFilterSchema; p
       if (state.openKey === key) state.openKey = null
     },
     reclaim() {
-      const key = state.openKey
-      const entry = key ? state.blocks[key] : undefined
-      if (!entry) return
-      if (entry.element.parentElement !== entry.home) entry.home.appendChild(entry.element)
+      reclaimBlock(state.blocks, state.openKey)
     },
   }
 

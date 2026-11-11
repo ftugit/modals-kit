@@ -202,7 +202,8 @@
       onDone()
       return
     }
-    void goto(doneHref)
+    // Сбросить hover-preload: он мог прочитать старую куку до завершения входа/профиля.
+    void goto(doneHref, { invalidateAll: true })
   }
 
   let localSeed = $state<string | null>(null)

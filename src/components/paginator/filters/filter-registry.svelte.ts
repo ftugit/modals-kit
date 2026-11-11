@@ -8,7 +8,7 @@
  */
 import { getContext, setContext } from 'svelte'
 import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
-import type { FilterBlockEntry } from './filter-blocks.svelte.js'
+import { decideBlockClaim, reclaimBlock, type FilterBlockEntry } from './filter-block-store.js'
 
 const FILTER_LIST = Symbol('filter-list')
 
@@ -62,17 +62,10 @@ export function useFilterListName(): string | undefined {
 export function claimFilterList(name: string, entry: FilterBlockEntry): boolean {
   const list = filterLists[name]
   if (!list) return false
-  const current = list.blocks[entry.key]
-  if (current?.element === entry.element) {
-    if (current.label !== entry.label || current.home !== entry.home) {
-      list.blocks = { ...list.blocks, [entry.key]: entry }
-    }
-    return true
-  }
-  // Отсоединённый узел — прошлый экземпляр формы (пересоздание по ключу).
-  // Живой чужой блок не затираем: две метки открывали бы один UI.
-  if (current && current.element.isConnected) return false
-  list.blocks = { ...list.blocks, [entry.key]: entry }
+  // Список переживает пересоздание формы, поэтому отсоединённый блок можно заменить.
+  const decision = decideBlockClaim(list.blocks[entry.key], entry, true)
+  if (decision === 'reject') return false
+  if (decision === 'replace') list.blocks = { ...list.blocks, [entry.key]: entry }
   return true
 }
 
@@ -101,10 +94,7 @@ export function setFilterListSlot(name: string, slot: HTMLElement | null): void 
 export function reclaimFilterList(name: string): void {
   const list = filterLists[name]
   if (!list) return
-  const key = list.openKey
-  const entry = key ? list.blocks[key] : undefined
-  if (!entry) return
-  if (entry.element.parentElement !== entry.home) entry.home.appendChild(entry.element)
+  reclaimBlock(list.blocks, list.openKey)
 }
 
 export function resetFilterList(name: string): void {

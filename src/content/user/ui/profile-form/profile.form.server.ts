@@ -68,6 +68,15 @@ registerComponentForm({
   execute: async ({ values, intent, commit, fail }, event, raw) => {
     const u = auth(event)
     if (!u.enabled) return fail(instruction({ code: 'auth.disabled' }))
+    if (intent === 'sync-access') {
+      // WS-ответ не может установить HttpOnly cookie после обновления профиля.
+      // Отдельный авторизованный HTTP POST обновляет access без ротации сессии.
+      const refreshed = await u.refreshAccess()
+      if (!refreshed.ok) return fail(instruction(refreshed.fact))
+      const user = await vaultPayloadOf(refreshed.value)
+      commit()
+      return { data: { user } }
+    }
     if (intent !== 'profile') return fail(instruction({ code: 'auth.confirm' }))
 
     // Защита от подмены бинарного файла строкой (включая старый base64 dataURL):

@@ -55,7 +55,7 @@ export async function convertPhoto(
   const facts = probeImageHeader(head)
   if (!facts || facts.width * facts.height > MAX_SOURCE_PIXELS) return { ok: false, code: 'photo.format' }
 
-  const { image } = await import('#lib/image/index.js')
+  const { image } = await import('#lib/image/photo.js')
   const mime = MIME_BY_FORMAT[spec.format]
   let hit
   try {

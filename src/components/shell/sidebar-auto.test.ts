@@ -1,6 +1,6 @@
 import type { Snippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PageState, placeSidebarSlots, renderMergeSlot, type SlotItem } from './page.svelte'
+import { PageState, placeSidebarSlots, renderMergeSlot, type SlotItem, type SlotValue } from './page.svelte'
 
 const snippet = (() => {}) as Snippet
 
@@ -8,7 +8,7 @@ function item(id: number, extra: Partial<SlotItem> = {}): SlotItem {
   return { id, snippet, ...extra }
 }
 
-function ids(zone: SlotItem[]): number[] {
+function ids(zone: SlotValue): number[] {
   return renderMergeSlot(zone).map((entry) => entry.id)
 }
 

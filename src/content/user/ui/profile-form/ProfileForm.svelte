@@ -40,9 +40,11 @@
   import { specAvatar } from '../../spec-avatar.js'
   import { userSession, vault, type VaultPayload, type VaultProfile } from '../../vault.svelte.js'
   import { useModalLink } from '#hooks/links/index.js'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import Acl, { type UserSurfaceVariant } from '../Acl.svelte'
   import { profileForm } from './form.js'
+  import { syncProfileAccess } from './sync-access.js'
 
   interface Props {
     action?: string
@@ -125,16 +127,54 @@
   )
 
   let lastHandledSubmission = ''
+  let syncPending = $state(false)
+  let syncFailed = $state(false)
+  let syncController: AbortController | undefined
+  let syncSubject: string | null = null
+
+  $effect(() => () => syncController?.abort())
+
+  async function finishOwnProfile(): Promise<void> {
+    if (syncPending || !syncSubject) return
+    const expected = syncSubject
+    syncPending = true
+    syncFailed = false
+    const controller = new AbortController()
+    syncController = controller
+    try {
+      const url = visibleAddress().url
+      const user = await syncProfileAccess(url.pathname + url.search, expected, controller.signal)
+      if (controller.signal.aborted) return
+      if (!user || vault.principal !== expected) {
+        syncFailed = true
+        return
+      }
+      vault.hydrate(user)
+      onDone?.()
+    } catch {
+      if (!controller.signal.aborted) syncFailed = true
+    } finally {
+      if (syncController === controller) syncController = undefined
+      if (!controller.signal.aborted) syncPending = false
+    }
+  }
+
   $effect(() => {
     const r = bound.state.result
     if (!r?.ok || r.submissionId === lastHandledSubmission) return
     const data = r.data as { step?: string; user?: VaultPayload } | undefined
     if (data?.step === 'done') {
       lastHandledSubmission = r.submissionId
-      // Чужое сохранение `vault` не трогает: он про самого вошедшего, а
-      // показ чужого профиля перечитает компонент чтения при возврате.
-      if (data.user && !foreign) vault.hydrate(data.user)
-      onDone?.()
+      if (foreign && subject !== vault.principal) {
+        onDone?.()
+        return
+      }
+      // Профиль уже сохранён. HTTP-синхронизация нужна до перехода: cookie,
+      // выставленная сервером при WS-загрузке, не доходит через WebSocket.
+      if (data.user) vault.hydrate(data.user)
+      syncSubject = data.user?.sub ?? vault.principal
+      if (syncSubject) void finishOwnProfile()
+      else syncFailed = true
     }
   })
 </script>
@@ -200,8 +240,16 @@
         <div hidden aria-hidden="true"><Field of={bound.f.remove_photo} /></div>
       {/if}
 
+      {#if syncPending}
+        <p role="status" class="text-sm">Профиль сохранён, обновляем сессию…</p>
+      {:else if syncFailed}
+        <div role="alert" class="text-sm">
+          Профиль сохранён, но обновить сессию не удалось.
+          <Button type="button" variant="ghost" onclick={() => void finishOwnProfile()}>Повторить обновление</Button>
+        </div>
+      {/if}
       <div class="flex items-center justify-between gap-2">
-        <Button type="submit" name="intent" value="profile" task={formTask(bound.state, 'profile')}>
+        <Button type="submit" name="intent" value="profile" disabled={syncPending || syncFailed} task={formTask(bound.state, 'profile')}>
           Сохранить
         </Button>
         <Button
