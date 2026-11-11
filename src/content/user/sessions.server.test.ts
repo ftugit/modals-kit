@@ -206,6 +206,21 @@ test('чужой uuid не отличим от пустого; пакетный 
   })
 })
 
+test('all без известной текущей сессии доступен после отказа others', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'c'.repeat(43))
+    await device(deps.db, me, { jti: 'bulk-nosession-token-021', name: 'та' })
+    const noSession = actor(me, [])
+    const denied = await revokeBulkSessions(noSession, { scope: 'others' }, deps)
+    expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
+    const live = await listSessionsPage(noSession, { state: 'all' }, deps)
+    expect(live.ok && live.value.items).toHaveLength(1)
+    const all = await revokeBulkSessions(noSession, { scope: 'all' }, deps)
+    expect(all.ok).toBe(true)
+    if (all.ok) expect(all.value.revoked).toBe(1)
+  })
+})
+
 test('сервер пишет свой id сессии только без protect', async () => {
   await withDb(async ({ db }) => {
     const authId = await account(db, 'e'.repeat(43))

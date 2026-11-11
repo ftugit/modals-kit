@@ -56,6 +56,20 @@ describe('SessionsView', () => {
     expect(body).not.toContain('data-testid="sessions-revoke-others"')
   })
 
+  test('просроченная сессия в SSR помечена как истёкшая, отозванная — как завершённая', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    try {
+      const expired = { ...page.items[0], expiresAt: Date.now() - 1 }
+      const revoked = { ...expired, id: '33333333-3333-4333-8333-333333333333', deletedAt: Date.now() - 1 }
+      const { body } = render(SessionsView, { props: { page: { ...page, items: [expired, revoked], total: 2 } } })
+      expect(body).toContain('Истекла')
+      expect(body).toContain('Завершена')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('показывает устройство и не печатает полный хеш подсети', () => {
     const { body } = render(SessionsView, { props: { page, variant: 'card' } })
     expect(body).toContain('Сессии')
