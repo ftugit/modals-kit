@@ -168,6 +168,14 @@ npm run test:size    # проверка gzip-бюджетов всех чанк�
 npm run test:browser # Playwright E2E-наборы в Chromium против production preview
 ```
 
+`test:browser` **не запускает сборку и не проверяет её актуальность**. Перед
+локальным production preview выполните `KIT_ADAPTER=node npm run build`, затем
+`KIT_ADAPTER=node npm run test:browser`: иначе можно проверить устаревшую сборку.
+Если сервер уже запущен, его origin задаётся через `MODALS_ORIGIN`; runner
+использует этот сервер и не пересобирает его. `MODALS_BASE` — отдельная
+настройка адреса для отдельных сьютов, не выбор сервера для runner.
+Переменная `KT_SKIP_BUILD` в текущем runner не используется.
+
 ---
 
 ## Документация проекта
