@@ -15,7 +15,8 @@ const origin = `http://127.0.0.1:${port}`
 const databaseDir = await mkdtemp(join(tmpdir(), 'paginator-cold-'))
 const seed = randomBytes(32).toString('base64url')
 const env = {
-  ...process.env, KIT_ADAPTER: 'node', DATABASE_URL: '', DATABASE_RESET: '', DATABASE_DIR: databaseDir,
+  ...process.env, KIT_ADAPTER: 'node', DATABASE_URL: '', HYPERDRIVE_CONNECTION_STRING: '',
+  DATABASE_RESET: '', DATABASE_DIR: databaseDir,
   ADMIN_SEED: seed, AUTH_SEAL_SECRET: 'paginator-cold-test-auth-seal-secret-32-bytes',
   DB_CURSOR_SECRET: 'paginator-cold-test-cursor-secret-32-bytes',
 }
