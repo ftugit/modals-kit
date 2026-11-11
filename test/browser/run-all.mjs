@@ -14,7 +14,9 @@
  *      Умолчание оставлено на 2, потому что при 3 `db-demo` упал в 1 из 3 полных прогонов
  *      (на 2 — 0 из 2): сьюты пишут в общую демо-базу превью, и третий поток ловит гонку
  *      по её содержимому. `KT_PARALLEL=3` — осознанный выбор «быстрее и рискованнее»
- *      (`npm run test:browser:fast`).
+ *      (`npm run test:browser:fast`). Сьют regressions запускается отдельно:
+ *      среди прочего он измеряет анимацию покадрово и потенциально чувствителен к конкуренции
+ *      за кадры. Его проверки и пороги не ослабляются; остальные идут параллельно.
  *   3. Печатает таблицу «сьют → время → код возврата» и итог; код возврата процесса —
  *      ненулевой, если упал хотя бы один сьют.
  *   4. Если сервер умер посреди прогона (OOM), перезапускает его и повторяет текущий сьют
@@ -28,6 +30,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { browserFailureLines } from '../../tooling/browser-output.mjs';
+import { runBrowserSchedule } from '../../tooling/browser-schedule.mjs';
 
 /** Основной набор — сьюты фильтруются по реально установленным файлам (ядро + активные модули). */
 const ALL = [
@@ -140,34 +143,27 @@ function runSuite(name) {
 }
 
 const results = [];
-let next = 0;
 
-async function worker() {
-  for (;;) {
-    const index = next++;
-    if (index >= suites.length) return;
-    const name = suites[index];
+async function runOne(name, index) {
+  let result = await runSuite(name);
 
-    let result = await runSuite(name);
+  // Сервер мог умереть (OOM) — это не падение проверки. Поднимаем и повторяем ОДИН раз,
+  // отмечая факт в отчёте.
+  if (result.code !== 0 && !(await isUp())) {
+    serverRestarts += 1;
+    console.warn(`[run-all] ${name}: сервер не отвечает, перезапускаю (перезапуск №${serverRestarts})`);
+    stopServer();
+    await startServer();
+    result = await runSuite(name);
+    result.restarted = true;
+  }
 
-    // Сервер мог умереть (OOM) — это не падение проверки. Поднимаем и повторяем ОДИН раз,
-    // отмечая факт в отчёте.
-    if (result.code !== 0 && !(await isUp())) {
-      serverRestarts += 1;
-      console.warn(`[run-all] ${name}: сервер не отвечает, перезапускаю (перезапуск №${serverRestarts})`);
-      stopServer();
-      await startServer();
-      result = await runSuite(name);
-      result.restarted = true;
-    }
-
-    results[index] = result;
-    const mark = result.code === 0 ? 'ok  ' : 'FAIL';
-    const retry = result.restarted ? ' (после перезапуска сервера)' : '';
-    console.log(`${mark} ${result.name.padEnd(20)} ${(result.ms / 1000).toFixed(1).padStart(7)} s${retry}`);
-    if (result.code !== 0) {
-      for (const line of browserFailureLines(result.output)) console.log('     ' + line);
-    }
+  results[index] = result;
+  const mark = result.code === 0 ? 'ok  ' : 'FAIL';
+  const retry = result.restarted ? ' (после перезапуска сервера)' : '';
+  console.log(`${mark} ${result.name.padEnd(20)} ${(result.ms / 1000).toFixed(1).padStart(7)} s${retry}`);
+  if (result.code !== 0) {
+    for (const line of browserFailureLines(result.output)) console.log('     ' + line);
   }
 }
 
@@ -179,7 +175,7 @@ process.on('SIGINT', () => {
 const startedAt = Date.now();
 try {
   await startServer();
-  await Promise.all(Array.from({ length: Math.min(PARALLEL, suites.length) }, () => worker()));
+  await runBrowserSchedule(suites, PARALLEL, runOne, (name) => name === 'regressions');
 } finally {
   stopServer();
 }
