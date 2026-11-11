@@ -8,8 +8,8 @@
    * работает системный. На относительный текст пояс не влияет (длительности
    * считаются по мс), влияет на абсолютную дату старше месяца и на `title`.
    */
-  import { onMount } from 'svelte'
   import { cn } from '#components/utils.js'
+  import { subscribeLiveClock } from './live-clock.js'
   import { formatAbsoluteTime, formatTimeAgo } from './time-ago.js'
   import { siteTimeZone } from './time-zone.svelte.js'
 
@@ -25,10 +25,9 @@
 
   // Живые часы: относительный текст не должен стареть вместе со страницей.
   let tick = $state(Date.now())
-  onMount(() => {
+  $effect(() => {
     if (nowProp !== undefined) return
-    const id = setInterval(() => (tick = Date.now()), 30_000)
-    return () => clearInterval(id)
+    return subscribeLiveClock((now) => { tick = now })
   })
 
   const now = $derived(nowProp ?? tick)
