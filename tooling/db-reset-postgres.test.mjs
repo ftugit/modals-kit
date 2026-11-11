@@ -8,6 +8,17 @@ import { exclusiveReset } from './db-exclusive-lib.mjs'
 
 // Только по явному opt-in и только локальный тестовый кластер. Создаётся и
 // удаляется новая БД со случайным именем; существующие БД не модифицируются.
+// Пытается взять блокировку синхронизации схемы ровно тем выражением, что и
+// src/lib/db/sync/index.ts: pg_advisory_xact_lock(hashtext(kit)::bigint).
+async function probeLock(connectionString) {
+  const client = new pg.Client({ connectionString })
+  await client.connect()
+  try {
+    const { rows } = await client.query('SELECT pg_try_advisory_xact_lock(hashtext($1)::bigint) AS ok', ['"public"."kit_schema"'])
+    return rows[0].ok
+  } finally { await client.end() }
+}
+
 const url = process.env.KIT_TEST_PG_ADMIN_URL
 
 test('реальная PostgreSQL: межсхемная секция, конкурентный attach и rollback', { skip: !url, timeout: 30000 }, async () => {
@@ -94,41 +105,21 @@ test('реальная PostgreSQL: полный сброс поддержива�
 })
 
 
-test('реальная PostgreSQL: reset ждёт закрытия активного сеанса, не прерывая транзакцию', { skip: !url, timeout: 30000 }, async () => {
+test('реальная PostgreSQL: idle-соединение другого инстанса не мешает сбросу', { skip: !url, timeout: 30000 }, async () => {
   const config = new URL(url)
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
   const name = `kit_test_${randomBytes(12).toString('hex')}`
   const admin = new pg.Client({ connectionString: url }); await admin.connect()
   let app, created = false
   try {
-    await admin.query(`CREATE DATABASE "${name}"`); created = true
-    config.pathname = `/${name}`; app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
+    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
+    app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
     await app.query('CREATE TABLE public.old_data(id int); INSERT INTO public.old_data VALUES (1)')
-    await app.query('BEGIN')
-    await app.query('CREATE TABLE public.late_created(id int); INSERT INTO public.late_created VALUES (9)')
-    let disabled
-    const disabledReady = new Promise(resolve => { disabled = resolve })
-    const pendingReset = exclusiveReset(config.toString(), 5000, { afterDisabled: () => disabled() })
-    void pendingReset.catch(() => {})
-    await disabledReady
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, false)
-    const outsider = new pg.Client({ connectionString: config.toString(), connectionTimeoutMillis: 1000 })
-    try { await assert.rejects(outsider.connect()) } finally { await outsider.end().catch(() => {}) }
-    await assert.rejects(exclusiveReset(config.toString(), 1000), /другой сброс/)
-    assert.equal((await app.query('SELECT id FROM public.late_created')).rows[0].id, 9)
-    await app.query('COMMIT')
-    // После COMMIT соединение ещё живёт: reset должен ждать и его закрытия.
-    assert.equal((await app.query('SELECT count(*)::int n FROM public.old_data')).rows[0].n, 1)
-    await app.end(); app = undefined
-    const result = await pendingReset
-    assert.equal(result.tables, 2)
-    const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
-    try {
-      assert.equal((await verify.query("SELECT to_regclass('public.old_data') AS x")).rows[0].x, null)
-      assert.equal((await verify.query("SELECT to_regclass('public.late_created') AS x")).rows[0].x, null)
-      await verify.query('CREATE TABLE public.new_data(id int); INSERT INTO public.new_data VALUES(5)')
-      assert.equal((await verify.query('SELECT id FROM public.new_data')).rows[0].id, 5)
-    } finally { await verify.end() }
+    // Соединение остаётся открытым и простаивает: ровно состояние тёплого инстанса,
+    // который не перевыпускался. DDL это не блокирует, поэтому сброс обязан пройти.
+    const result = await exclusiveReset(config.toString(), 5000)
+    assert.equal(result.tables, 1)
+    assert.equal((await app.query("SELECT to_regclass('public.old_data') AS x")).rows[0].x, null)
   } finally {
     await app?.end().catch(() => {})
     if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
@@ -136,7 +127,48 @@ test('реальная PostgreSQL: reset ждёт закрытия активн�
   }
 })
 
-test('реальная PostgreSQL: если соединение не закрылось, reset не начинает DDL и не прерывает транзакцию', { skip: !url, timeout: 30000 }, async () => {
+test('реальная PostgreSQL: сброс держит ту же блокировку, что синхронизация схемы', { skip: !url, timeout: 30000 }, async () => {
+  const config = new URL(url)
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
+  const name = `kit_test_${randomBytes(12).toString('hex')}`
+  const admin = new pg.Client({ connectionString: url }); await admin.connect()
+  let release, created = false
+  try {
+    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
+    const setup = new pg.Client({ connectionString: config.toString() }); await setup.connect()
+    await setup.query('CREATE TABLE public.keep(id int)'); await setup.end()
+    // Негативный контроль: проверка обязана видеть чужую блокировку. Берём её
+    // сами — до запуска сброса, иначе контроль встанет в очередь за сбросом,
+    // и они взаимно заблокируют друг друга.
+    const witness = new pg.Client({ connectionString: config.toString() }); await witness.connect()
+    try {
+      await witness.query('BEGIN')
+      await witness.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', ['"public"."kit_schema"'])
+      assert.equal(await probeLock(config.toString()), false, 'контроль: чужая блокировка должна быть видна')
+      await witness.query('COMMIT')
+    } finally { await witness.end() }
+    // Второй полюс контроля: без держателя блокировка свободна.
+    assert.equal(await probeLock(config.toString()), true, 'контроль: без держателя блокировка свободна')
+
+    // afterExclusive вызывается уже после взятия блокировки — ждём именно этот момент.
+    let signal; const locked = new Promise((resolve) => { signal = resolve })
+    const gate = new Promise((resolve) => { release = resolve })
+    const pending = exclusiveReset(config.toString(), 5000, { afterExclusive: async () => { signal(); await gate } })
+    void pending.catch(() => {})
+    await locked
+    // Пока сброс не отпустил блокировку, sync ни на одном инстансе не пройдёт:
+    // иначе живой инстанс пересоздаст таблицы посреди DROP.
+    assert.equal(await probeLock(config.toString()), false, 'сброс должен удерживать блокировку синхронизации')
+    release()
+    await pending
+  } finally {
+    release?.()
+    if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
+    await admin.end()
+  }
+})
+
+test('реальная PostgreSQL: активная транзакция на сбрасываемых таблицах — сброс отказывает, данные целы', { skip: !url, timeout: 30000 }, async () => {
   const config = new URL(url)
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
   const name = `kit_test_${randomBytes(12).toString('hex')}`
@@ -147,14 +179,13 @@ test('реальная PostgreSQL: если соединение не закры
     app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
     await app.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (1)')
     await app.query('BEGIN; INSERT INTO public.keep VALUES (2)')
-    await assert.rejects(exclusiveReset(config.toString(), 300), /прежние подключения не закрылись вовремя; сброс не начат/)
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
-    // Исходная транзакция всё ещё работает: её не убили ни на idle, ни на COMMIT.
+    // lock_timeout, а не ожидание закрытия соединения: транзакция жива, DDL ждать не может.
+    await assert.rejects(exclusiveReset(config.toString(), 500), (e) => e.code === '55P03')
     assert.equal((await app.query('SELECT count(*)::int AS n FROM public.keep')).rows[0].n, 2)
     await app.query('COMMIT'); await app.end(); app = undefined
-    const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
-    try { assert.deepEqual((await verify.query('SELECT id FROM public.keep ORDER BY id')).rows.map(r => r.id), [1, 2]) }
-    finally { await verify.end() }
+    // После освобождения тот же сброс проходит.
+    const result = await exclusiveReset(config.toString(), 5000)
+    assert.equal(result.tables, 1)
   } finally {
     await app?.end().catch(() => {})
     if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
@@ -162,7 +193,7 @@ test('реальная PostgreSQL: если соединение не закры
   }
 })
 
-test('реальная PostgreSQL: сбой сброса откатывает изменения и восстанавливает подключения', { skip: !url, timeout: 30000 }, async () => {
+test('реальная PostgreSQL: сбой сброса откатывает изменения и не закрывает доступ к базе', { skip: !url, timeout: 30000 }, async () => {
   const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
   const name = `kit_test_${randomBytes(12).toString('hex')}`
   const admin = new pg.Client({ connectionString: url }); await admin.connect(); let created = false
@@ -178,7 +209,7 @@ test('реальная PostgreSQL: сбой сброса откатывает и
 })
 
 
-test('реальная PostgreSQL: SIGTERM во время эксклюзивной фазы откатывает транзакцию и открывает БД', { skip: !url, timeout: 15000 }, async () => {
+test('реальная PostgreSQL: SIGTERM во время эксклюзивной фазы откатывает транзакцию, база остаётся доступной', { skip: !url, timeout: 15000 }, async () => {
   const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
   const name = `kit_test_${randomBytes(12).toString('hex')}`; const admin = new pg.Client({ connectionString: url }); await admin.connect()
   let child, created = false
@@ -189,7 +220,6 @@ test('реальная PostgreSQL: SIGTERM во время эксклюзивн�
     child = spawn(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, KIT_ISOLATED_TARGET: config.toString() }, stdio: ['ignore', 'pipe', 'pipe'] })
     const locked = new Promise((resolve, reject) => { let out = ''; child.stdout.on('data', (chunk) => { out += chunk; if (out.includes('LOCKED')) resolve() }); child.once('exit', (code) => reject(new Error(`child exited before lock: ${code}`))) })
     await locked
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, false)
     const exit = new Promise((resolve) => child.once('exit', resolve))
     child.kill('SIGTERM'); await exit
     assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
@@ -198,30 +228,35 @@ test('реальная PostgreSQL: SIGTERM во время эксклюзивн�
   } finally { child?.kill('SIGKILL'); if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
 })
 
-test('реальная PostgreSQL: отдельный watchdog восстанавливает подключения после SIGKILL родителя', { skip: !url, timeout: 15000 }, async () => {
-  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const name = `kit_test_${randomBytes(12).toString('hex')}`; const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let child, created = false
+test('реальная PostgreSQL: сброс не требует второй БД — роль без доступа к postgres чистит свою базу', { skip: !url, timeout: 30000 }, async () => {
+  const config = new URL(url)
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
+  const admin = new pg.Client({ connectionString: url }); await admin.connect()
+  const role = `kit_no_pg_${randomBytes(6).toString('hex')}`
+  const name = `kit_test_${randomBytes(12).toString('hex')}`
+  let created = false
   try {
-    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
-    const setup = new pg.Client({ connectionString: config.toString() }); await setup.connect(); await setup.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (11)'); await setup.end()
-    const script = `import { exclusiveReset } from './tooling/db-exclusive-lib.mjs'; await exclusiveReset(process.env.KIT_ISOLATED_TARGET, 3000, { afterExclusive: async () => { console.log('LOCKED'); await new Promise(() => {}) } });`
-    child = spawn(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, KIT_ISOLATED_TARGET: config.toString() }, stdio: ['ignore', 'pipe', 'pipe'] })
-    await new Promise((resolve, reject) => { let out = ''; child.stdout.on('data', (chunk) => { out += chunk; if (out.includes('LOCKED')) resolve() }); child.once('exit', (code) => reject(new Error(`child exited before lock: ${code}`))) })
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, false)
-    const exit = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGKILL'); await exit
-    let enabled = false
-    for (let i = 0; i < 100; i++) {
-      enabled = (await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn
-      if (enabled) break
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    assert.equal(enabled, true)
-    const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
-    try { assert.equal((await verify.query('SELECT id FROM public.keep')).rows[0].id, 11) } finally { await verify.end() }
-  } finally { child?.kill('SIGKILL'); if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
+    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD '${role}_pw'`)
+    await admin.query(`CREATE DATABASE "${name}" OWNER "${role}"`); created = true
+    await admin.query('REVOKE CONNECT ON DATABASE postgres FROM PUBLIC')
+    const restricted = new URL(config.toString())
+    restricted.username = role; restricted.password = `${role}_pw`; restricted.pathname = `/${name}`
+    const setup = new pg.Client({ connectionString: restricted.toString() }); await setup.connect()
+    await setup.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (3)'); await setup.end()
+    // Именно здесь старая реализация и падала: maintenance-база postgres недоступна.
+    const denied = new pg.Client({ connectionString: restricted.toString().replace(`/${name}`, '/postgres'), connectionTimeoutMillis: 1000 })
+    try { await assert.rejects(denied.connect()) } finally { await denied.end().catch(() => {}) }
+    const result = await exclusiveReset(restricted.toString(), 5000)
+    assert.equal(result.tables, 1)
+    const verify = new pg.Client({ connectionString: restricted.toString() }); await verify.connect()
+    try { assert.equal((await verify.query("SELECT to_regclass('public.keep') AS x")).rows[0].x, null) } finally { await verify.end() }
+  } finally {
+    await admin.query('GRANT CONNECT ON DATABASE postgres TO PUBLIC')
+    if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
+    await admin.query(`DROP ROLE IF EXISTS "${role}"`)
+    await admin.end()
+  }
 })
-
 
 test('реальная PostgreSQL: включённый build reset очищает только выделенную тестовую БД', { skip: !url, timeout: 15000 }, async () => {
   const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
@@ -294,144 +329,27 @@ test('реальная PostgreSQL: подготовленная транзакц
   }
 })
 
-test('реальная PostgreSQL: PREPARE во время ожидания сеанса запрещает reset до DDL', { skip: !url, timeout: 30000 }, async (t) => {
+test('реальная PostgreSQL: build reset проходит при живом соединении другого инстанса', { skip: !url, timeout: 20000 }, async () => {
   const config = new URL(url)
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const suffix = randomBytes(8).toString('hex'), name = `kit_test_${suffix}`, gid = `kit_prepared_late_${suffix}`
+  const name = `kit_test_${randomBytes(12).toString('hex')}`
   const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let app, created = false, prepared = false, pendingReset
-  try {
-    if (Number((await admin.query('SHOW max_prepared_transactions')).rows[0].max_prepared_transactions) === 0) { t.skip('сервер выключил prepared transactions'); return }
-    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
-    app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
-    await app.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (1)')
-    await app.query('BEGIN; INSERT INTO public.keep VALUES (2)')
-    let disabled
-    const ready = new Promise(resolve => { disabled = resolve })
-    pendingReset = exclusiveReset(config.toString(), 5000, { afterDisabled: () => disabled() })
-    void pendingReset.catch(() => {})
-    await ready
-    await app.query(`PREPARE TRANSACTION '${gid}'`); prepared = true
-    await app.end(); app = undefined
-    await assert.rejects(pendingReset, /подготовленные транзакции/)
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
-    const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
-    try {
-      await verify.query(`ROLLBACK PREPARED '${gid}'`); prepared = false
-      assert.deepEqual((await verify.query('SELECT id FROM public.keep ORDER BY id')).rows.map(r => r.id), [1])
-    } finally { await verify.end() }
-  } finally {
-    await app?.end().catch(() => {})
-    await pendingReset?.catch(() => {})
-    if (prepared) { const c = new pg.Client({ connectionString: config.toString() }); await c.connect(); await c.query(`ROLLBACK PREPARED '${gid}'`); await c.end() }
-    if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
-    await admin.end()
-  }
-})
-
-test('реальная PostgreSQL: SIGTERM при ожидании не прерывает действующее соединение', { skip: !url, timeout: 30000 }, async () => {
-  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const name = `kit_test_${randomBytes(12).toString('hex')}`; const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let app, child, created = false
-  try {
-    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
-    app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
-    await app.query('CREATE TABLE public.keep(id int); BEGIN; INSERT INTO public.keep VALUES (3)')
-    const script = `import { exclusiveReset } from './tooling/db-exclusive-lib.mjs'; await exclusiveReset(process.env.KIT_ISOLATED_TARGET, 5000, { afterDisabled: () => console.log('WAITING') });`
-    child = spawn(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, KIT_ISOLATED_TARGET: config.toString() }, stdio: ['ignore', 'pipe', 'pipe'] })
-    await new Promise((resolve, reject) => { let out = ''; child.stdout.on('data', chunk => { out += chunk; if (out.includes('WAITING')) resolve() }); child.once('exit', code => reject(new Error(`child exited before drain: ${code}`))) })
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, false)
-    const exited = new Promise(resolve => child.once('exit', resolve)); child.kill('SIGTERM'); await exited
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
-    await app.query('COMMIT')
-    assert.equal((await app.query('SELECT id FROM public.keep')).rows[0].id, 3)
-  } finally {
-    child?.kill('SIGKILL'); await app?.end().catch(() => {})
-    if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
-    await admin.end()
-  }
-})
-
-test('реальная PostgreSQL: build reset с занятым соединением отказывает без уничтожения данных', { skip: !url, timeout: 30000 }, async () => {
-  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const name = `kit_test_${randomBytes(12).toString('hex')}`; const admin = new pg.Client({ connectionString: url }); await admin.connect()
   let app, created = false
   try {
     await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
     app = new pg.Client({ connectionString: config.toString() }); app.on('error', () => {}); await app.connect()
-    await app.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (5)')
-    await app.query('BEGIN; INSERT INTO public.keep VALUES (6)')
-    const result = spawnSync(process.execPath, ['tooling/db-reset.mjs'], { env: { ...process.env, DATABASE_RESET: '1', DATABASE_URL: config.toString(), HYPERDRIVE_CONNECTION_STRING: '', DB_CONNECT_TIMEOUT_MS: '300' }, encoding: 'utf8', timeout: 10000 })
-    assert.equal(result.status, 1, result.stderr)
-    assert.match(result.stderr, /прежние подключения не закрылись вовремя; сброс не начат/)
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
-    await app.query('COMMIT')
-    assert.deepEqual((await app.query('SELECT id FROM public.keep ORDER BY id')).rows.map(r => r.id), [5, 6])
+    await app.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (4)')
+    const child = spawnSync(process.execPath, ['tooling/db-reset.mjs'], {
+      env: { ...process.env, DATABASE_RESET: 'yes', DATABASE_URL: config.toString(), HYPERDRIVE_CONNECTION_STRING: '' },
+      encoding: 'utf8', timeout: 15000,
+    })
+    assert.equal(child.status, 0, child.stderr || child.stdout)
+    assert.match(child.stdout, /\[db-reset\] public очищена/)
+    // Живое соединение не убивали: оно просто видит опустевшую схему.
+    assert.equal((await app.query("SELECT to_regclass('public.keep') AS x")).rows[0].x, null)
   } finally {
     await app?.end().catch(() => {})
     if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
-    await admin.end()
-  }
-})
-
-test('реальная PostgreSQL: преждевременное включение подключений запрещает reset до DDL', { skip: !url, timeout: 30000 }, async () => {
-  const config = new URL(url); assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const name = `kit_test_${randomBytes(12).toString('hex')}`; const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let created = false
-  try {
-    await admin.query(`CREATE DATABASE "${name}"`); created = true; config.pathname = `/${name}`
-    const setup = new pg.Client({ connectionString: config.toString() }); await setup.connect()
-    await setup.query('CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(10)'); await setup.end()
-    await assert.rejects(exclusiveReset(config.toString(), 3000, { afterDisabled: () => admin.query(`ALTER DATABASE "${name}" ALLOW_CONNECTIONS true`) }), /запрет новых подключений снят/)
-    const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
-    try { assert.equal((await verify.query('SELECT id FROM public.keep')).rows[0].id, 10) } finally { await verify.end() }
-  } finally { if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
-})
-
-test('реальная PostgreSQL: непрозрачные чужие сеансы не классифицируются как системные, но обязательно должны закрыться', { skip: !url, timeout: 30000 }, async () => {
-  const config = new URL(url)
-  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
-  const suffix = randomBytes(8).toString('hex'), name = `kit_test_${suffix}`, owner = `kit_owner_${suffix}`, role = `kit_app_${suffix}`
-  const admin = new pg.Client({ connectionString: url }); await admin.connect()
-  let ownerCreated = false, appCreated = false, dbCreated = false, app, observer
-  try {
-    await admin.query(`CREATE ROLE "${owner}" LOGIN PASSWORD 'isolated-test-only'`); ownerCreated = true
-    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'isolated-test-only'`); appCreated = true
-    await admin.query(`CREATE DATABASE "${name}" OWNER "${owner}"`); dbCreated = true
-    config.pathname = `/${name}`
-    const ownerUrl = new URL(config); ownerUrl.username = owner; ownerUrl.password = 'isolated-test-only'
-    const appUrl = new URL(config); appUrl.username = role; appUrl.password = 'isolated-test-only'
-    const setup = new pg.Client({ connectionString: ownerUrl.toString() }); await setup.connect()
-    await setup.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES (1); GRANT USAGE ON SCHEMA public TO "${role}"; GRANT SELECT, INSERT ON public.keep TO "${role}"`); await setup.end()
-    app = new pg.Client({ connectionString: appUrl.toString() }); app.on('error', () => {}); await app.connect()
-    await app.query('BEGIN; INSERT INTO public.keep VALUES (2)')
-    const maintenance = new URL(ownerUrl); maintenance.pathname = '/postgres'
-    observer = new pg.Client({ connectionString: maintenance.toString() }); await observer.connect()
-    const hidden = await observer.query('SELECT backend_type FROM pg_stat_activity WHERE pid=$1', [app.processID])
-    assert.equal(hidden.rows.length, 1); assert.equal(hidden.rows[0].backend_type, null, 'чужой backend_type скрыт')
-    await observer.end(); observer = undefined
-    let signal
-    const disabled = new Promise(resolve => { signal = resolve })
-    let finished = false
-    const pending = exclusiveReset(ownerUrl.toString(), 5000, { afterDisabled: () => signal() }).finally(() => { finished = true })
-    void pending.catch(() => {})
-    await disabled
-    await new Promise(resolve => setTimeout(resolve, 150))
-    assert.equal(finished, false, 'reset ожидает чужой непрозрачный сеанс')
-    assert.equal((await app.query('SELECT count(*)::int AS n FROM public.keep')).rows[0].n, 2)
-    await app.query('COMMIT'); await app.end(); app = undefined
-    assert.equal((await pending).tables, 1)
-    const verify = new pg.Client({ connectionString: ownerUrl.toString() }); await verify.connect()
-    await verify.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(3); GRANT USAGE ON SCHEMA public TO "${role}"; GRANT SELECT ON public.keep TO "${role}"`); await verify.end()
-    app = new pg.Client({ connectionString: appUrl.toString() }); app.on('error', () => {}); await app.connect()
-    await assert.rejects(exclusiveReset(ownerUrl.toString(), 300), /прежние подключения не закрылись вовремя/)
-    assert.equal((await app.query('SELECT id FROM public.keep')).rows[0].id, 3)
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
-  } finally {
-    await observer?.end().catch(() => {}); await app?.end().catch(() => {})
-    if (dbCreated) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
-    if (appCreated) await admin.query(`DROP ROLE "${role}"`)
-    if (ownerCreated) await admin.query(`DROP ROLE "${owner}"`)
     await admin.end()
   }
 })
