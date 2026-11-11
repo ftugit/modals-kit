@@ -9,6 +9,10 @@ import { fileURLToPath } from 'node:url'
 
 // Реальный runner выполняется в отдельной папке. Preview и сьюты — заглушки:
 // эти проверки не заменяют Chromium и реальную production-сборку.
+
+/** Имена сьютов фикстуры: все, для которых runner задаёт адрес отдельно. */
+const SUITES = ['probe', 'modals', 'regressions', 'forms', 'db-demo', 'fields', 'a11y', 'url-storage.check', 'layer-back.check', 'paginate']
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'browser-runner-test-'))
   const here = fileURLToPath(new URL('..', import.meta.url))
@@ -30,10 +34,13 @@ function fixture() {
   `)
   const suite = `
     import { appendFileSync } from 'node:fs';
-    appendFileSync('trace.log', JSON.stringify({ command: 'suite', name: process.argv[1].split('/').pop(), base: process.env.MODALS_BASE, paginate: process.env.PAGINATE_BASE }) + '\\n');
+    const keys = ['MODALS_BASE', 'FORMS_BASE', 'DB_DEMO_BASE', 'FIELDS_BASE', 'A11Y_BASE', 'URL_CHECK_BASE', 'PAGINATE_BASE', 'LAYER_BACK_BASE'];
+    const env = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    env.MODALS_PORT = process.env.MODALS_PORT;
+    appendFileSync('trace.log', JSON.stringify({ command: 'suite', name: process.argv[1].split('/').pop(), env }) + '\\n');
     if (process.env.STUB_SUITE_FAIL === '1') { console.error('FAIL intentional suite failure'); process.exit(7); }
   `
-  for (const name of ['probe', 'modals', 'paginate']) writeFileSync(join(root, 'test/browser', `${name}.mjs`), suite)
+  for (const name of SUITES) writeFileSync(join(root, 'test/browser', `${name}.mjs`), suite)
   return root
 }
 
@@ -52,7 +59,9 @@ async function server() {
 
 function run(root, suites, variables) {
   const env = { ...process.env }
-  for (const key of ['MODALS_ORIGIN', 'MODALS_BASE', 'PAGINATE_BASE', 'MODALS_PORT', 'PORT', 'KT_PARALLEL', 'KT_SKIP_BUILD', 'STUB_SUITE_FAIL']) delete env[key]
+  const cleared = ['MODALS_ORIGIN', 'MODALS_PORT', 'PORT', 'KT_PARALLEL', 'KT_SKIP_BUILD', 'STUB_SUITE_FAIL',
+    'MODALS_BASE', 'FORMS_BASE', 'DB_DEMO_BASE', 'FIELDS_BASE', 'A11Y_BASE', 'URL_CHECK_BASE', 'PAGINATE_BASE', 'LAYER_BACK_BASE']
+  for (const key of cleared) delete env[key]
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['test/browser/run-all.mjs', ...suites], {
       cwd: root, env: { ...env, ...variables }, stdio: ['ignore', 'pipe', 'pipe'],
@@ -72,14 +81,14 @@ test('внешний origin: без build/preview, адреса сьютов и 
   try {
     const result = await run(root, ['modals', 'paginate'], { MODALS_ORIGIN: origin, KT_PARALLEL: '1' })
     assert.equal(result.code, 0, result.output)
-    assert.deepEqual(trace(root).map((x) => [x.command, x.name, x.base, x.paginate]), [
+    assert.deepEqual(trace(root).map((x) => [x.command, x.name, x.env.MODALS_BASE, x.env.PAGINATE_BASE]), [
       ['suite', 'modals.mjs', `${origin}/modals`, `${origin}/paginator`],
       ['suite', 'paginate.mjs', origin, `${origin}/paginator`],
     ])
     rmSync(join(root, 'trace.log'))
     const overrides = await run(root, ['probe'], { MODALS_ORIGIN: origin, MODALS_BASE: 'https://example.test/own', PAGINATE_BASE: 'https://example.test/list' })
     assert.equal(overrides.code, 0, overrides.output)
-    assert.deepEqual(trace(root).map((x) => [x.command, x.base, x.paginate]), [
+    assert.deepEqual(trace(root).map((x) => [x.command, x.env.MODALS_BASE, x.env.PAGINATE_BASE]), [
       ['suite', 'https://example.test/own', 'https://example.test/list'],
     ])
   } finally {
@@ -100,6 +109,37 @@ test('локальный preview не собирает проект и не по
       rmSync(join(root, 'trace.log'))
     }
   } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('каждому сьюту передаётся его адрес из карты runner, а не общий origin', async () => {
+  const root = fixture()
+  const external = await server()
+  const origin = `http://127.0.0.1:${external.port}`
+  try {
+    const result = await run(root, SUITES, { MODALS_ORIGIN: origin, MODALS_PORT: String(external.port), KT_PARALLEL: '1' })
+    assert.equal(result.code, 0, result.output)
+    const seen = trace(root).filter((x) => x.command === 'suite')
+    assert.deepEqual(seen.map((x) => x.name), SUITES.map((n) => `${n}.mjs`))
+    for (const entry of seen) {
+      const name = entry.name.replace(/\.mjs$/, '')
+      // Страница модалок — у modals и regressions; остальные получают origin целиком.
+      const modalsBase = name === 'modals' || name === 'regressions' ? `${origin}/modals` : origin
+      assert.deepEqual(entry.env, {
+        MODALS_BASE: modalsBase,
+        FORMS_BASE: `${origin}/form`,
+        DB_DEMO_BASE: `${origin}/db-demo`,
+        FIELDS_BASE: `${origin}/fields`,
+        A11Y_BASE: origin,
+        URL_CHECK_BASE: origin,
+        PAGINATE_BASE: `${origin}/paginator`,
+        LAYER_BACK_BASE: origin,
+        MODALS_PORT: String(external.port),
+      }, name)
+    }
+  } finally {
+    await new Promise((resolve) => external.server.close(resolve))
     rmSync(root, { recursive: true, force: true })
   }
 })
