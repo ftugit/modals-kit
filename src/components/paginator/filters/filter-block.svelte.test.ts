@@ -127,6 +127,66 @@ describe('FilterBlock', () => {
     }
   })
 
+  it('создаёт уникальный id формы и связывает поздние контролы при переносе и возврате', async () => {
+    const host = floatingDouble()
+    const { form, app } = await mountHarness(host.floating)
+    // Клонируем только оболочки настоящей тестовой формы: без дополнительных
+    // контролов и без изменения её привязки к lib/form.
+    const collision = form.cloneNode(false) as HTMLFormElement
+    collision.id = 'filter-block-form'
+    document.body.appendChild(collision)
+    const external = form.cloneNode(false) as HTMLFormElement
+    external.id = 'external-form'
+    document.body.appendChild(external)
+    form.removeAttribute('id')
+    try {
+      document.querySelector<HTMLButtonElement>('[data-filter-label="year"]')?.click()
+      flushSync()
+      await tick()
+      flushSync()
+      const moved = document.querySelector<HTMLElement>('[data-host-floating] [data-filter-block="year"]')
+      expect(moved).not.toBeNull()
+      expect(form.id).toBe('filter-block-form-1')
+      expect(form.contains(moved)).toBe(false)
+
+      const original = moved!.querySelector<HTMLInputElement>('[name="page.filters.year.min"]')
+      expect(original).not.toBeNull()
+      const late = original!.cloneNode(false) as HTMLInputElement
+      late.removeAttribute('form')
+      late.value = '2001'
+      const explicit = original!.cloneNode(false) as HTMLInputElement
+      explicit.name = 'page.filters.year.max'
+      explicit.value = 'foreign'
+      explicit.setAttribute('form', external.id)
+      moved!.append(late, explicit)
+      await Promise.resolve()
+      await tick()
+      expect(late.getAttribute('form')).toBe(form.id)
+      expect(late.form).toBe(form)
+      expect(explicit.form).toBe(external)
+      expect(new FormData(form).getAll('page.filters.year.min')).toContain('2001')
+      expect(new FormData(form).getAll('page.filters.year.max')).not.toContain('foreign')
+
+      const opts = [...host.options.values()][0]
+      expect(opts).toBeDefined()
+      opts!.onClose?.('escape')
+      flushSync()
+      await tick()
+      flushSync()
+      expect(form.contains(moved)).toBe(true)
+      expect(late.hasAttribute('form')).toBe(false)
+      expect(late.form).toBe(form)
+      // happy-dom после возврата иногда считает владельцем вложенную форму
+      // несмотря на form=external; проверяем не потерявшийся атрибут отдельно.
+      expect(explicit.getAttribute('form')).toBe(external.id)
+      expect(new FormData(form).getAll('page.filters.year.min')).toContain('2001')
+    } finally {
+      await unmount(app)
+      collision.remove()
+      external.remove()
+    }
+  })
+
   it('закрытие хоста возвращает блок в форму и не открывает поток второй раз', async () => {
     const host = floatingDouble()
     const { form, app } = await mountHarness(host.floating)
