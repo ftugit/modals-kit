@@ -21,6 +21,11 @@ test('у каждого доменного кода есть текст', () => 
   expect(codes.filter((code) => !(code in USER_MESSAGES)).sort()).toEqual([])
 })
 
+test('сообщение ключа описывает ограничение боевого пула, не обещая печатность Unicode', () => {
+  expect(USER_MESSAGES['storage.key-invalid']).toContain('без управляющих символов ASCII')
+  expect(USER_MESSAGES['storage.key-invalid']).not.toContain('печатных')
+})
+
 test('формы модуля кладут словарь в свои `messages`', () => {
   expect(codes.filter((code) => !profileForm.messages?.[code]).sort()).toEqual([])
   // у сид-формы свои только `pattern`; остальное — общий словарь
