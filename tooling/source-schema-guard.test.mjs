@@ -39,6 +39,19 @@ test('ключ фильтра в компоненте — ошибка', () => {
   assert.match(problems[0].why, /catalogFilterFieldNames/)
 })
 
+test('локальные исключения кодов ошибок не скрывают одноимённые ключи фильтров в компонентах', () => {
+  const file = 'src/content/user/ui/filter-messages.ts'
+  const component = 'src/routes/(site)/(app)/paginator/CatalogDemo.svelte'
+  for (const name of ['range', 'size', 'value']) {
+    const literal = `const code = 'filters.${name}'`
+    assert.deepEqual(checkSource(file, `${literal} // source-schema-ok: код ошибки\n`), [])
+    assert.equal(checkSource(file, `${literal}\n`).length, 1)
+    const problems = checkSource(component, `${literal}\n`)
+    assert.equal(problems.length, 1)
+    assert.equal(problems[0].rule, 'filter-key-literal')
+  }
+})
+
 test('ключ фильтра в объявлении и в серверной зоне — норма', () => {
   assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.ts', `const k = 'filters.kind'`), [])
   assert.deepEqual(checkSource('src/lib/paginate/filters/values.ts', `const p = 'filters.genres.and'`), [])
