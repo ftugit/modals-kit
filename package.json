@@ -19,7 +19,7 @@
     "build:worker": "KIT_ADAPTER=cloudflare node tooling/platform.mjs",
     "mod": "node tooling/mod.mjs",
     "preview": "node --no-liftoff ./node_modules/vite/bin/vite.js preview",
-    "prepare": "svelte-kit sync || echo ''",
+    "prepare": "svelte-kit sync || echo 'WARNING: svelte-kit sync failed; generated files may be missing or stale. Set KIT_ADAPTER and run npm run check before building.' >&2",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run && node --test tooling/*.test.mjs",

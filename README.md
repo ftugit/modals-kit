@@ -65,6 +65,8 @@ KIT_ADAPTER=node npm run check # проверка типов и Svelte
 
 `npm run build` вызывает один скрипт `tooling/platform.mjs`. Площадку задаёт только `KIT_ADAPTER=node`, `vercel` или `cloudflare`. `VERCEL`, `WORKERS_CI`, `CF_PAGES` и `NF_GIT_*` не читаются. Без `KIT_ADAPTER` сборка останавливается, а не угадывает хост. Переменная также обязательна для `npm run check` (он запускает `svelte-kit sync`) и `npm run dev`, поскольку они загружают ту же конфигурацию.
 
+`npm ci` запускает `prepare`: он пытается выполнить `svelte-kit sync`, но ради совместимости установки не прерывает её при ошибке и дополнительно печатает предупреждение. Успешный `npm ci` в таком случае **не означает**, что файлы `.svelte-kit` созданы или актуальны. Укажите адаптер и выполните `npm run check` (либо отдельно `npx svelte-kit sync`); они завершаются ошибкой, если синхронизация не удалась. В CI задавайте адаптер до установки и проверок.
+
 На Vercel задайте `KIT_ADAPTER=vercel`, на Northflank — `KIT_ADAPTER=node`. `npm run build:worker` — тот же скрипт с уже выставленным `KIT_ADAPTER=cloudflare`, чтобы текущая команда Workers Builds не менялась. На Cloudflare `DATABASE_RESET` запрещён и сборка останавливается. На Node и Vercel `db-reset.mjs` по-прежнему ничего не делает без `DATABASE_RESET=1`. После сборки скрипт проверяет, что появился файл именно этой площадки (`build/handler.js`, `.vercel/output/config.json` или `main` из `wrangler.jsonc`).
 
 `wrangler.jsonc` остаётся: его читает `wrangler deploy`, а не Vite. Там имя worker `modals-kit` и binding `ASSETS`. `Procfile` только запускает уже собранный Node-сервер. `vercel.json` только просит Vercel вызвать `npm run build`.
