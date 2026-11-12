@@ -139,15 +139,33 @@ export type SessionDeviceView = {
   readonly current: boolean
 }
 
+/**
+ * Пустая страна в фильтре: `country IS NULL`. Значение адреса — `none`,
+ * кода страны из него не собирается. Константа живёт здесь, а не в
+ * `sessions.server.ts`: её читают и клиентские файлы списка.
+ */
+export const SESSIONS_COUNTRY_NONE = 'none'
+
 /** Состояние списка устройств: живые, истёкшие, все не отозванные, отозванные. */
 export type SessionsState = 'active' | 'expired' | 'all' | 'revoked'
 
-/** Носители `/user/sessions` и модалки `user.sessions`. */
+/**
+ * Носители `/user/sessions` и модалки `user.sessions`.
+ *
+ * `snapshot` — первая порция в форме окна `#lib/paginate` (список живёт на
+ * `Listing`, а не на своём рендере). `countries` — коды стран среза без
+ * фильтра страны: из них форма строит пункты выбора.
+ */
 export type SessionsRouteData = {
   enabled: boolean
   fact: AuthErrorCode | null
-  page: SessionsPage | null
+  snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null
+  countries: readonly string[]
   notice: 'revoke-failed' | null
+  canSeeDeleted: boolean
+  canRename: boolean
+  canRevoke: boolean
+  canHardDelete: boolean
 }
 
 /** Порция списка устройств и флаги зрителя на этот срез. */
@@ -160,6 +178,8 @@ export type SessionsPage = {
   authId: string | null
   journal: boolean
   state: SessionsState
+  /** Коды стран среза без фильтра страны (`SESSIONS_COUNTRY_NONE` — без страны). */
+  countries: readonly string[]
   canSeeDeleted: boolean
   canRename: boolean
   canRevoke: boolean

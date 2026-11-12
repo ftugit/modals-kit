@@ -25,6 +25,8 @@ import {
   userListFiltersRoute,
   userListRoute,
   userMenuRoute,
+  userSessionRoute,
+  userSessionsFiltersRoute,
   userSessionsRoute,
   userPickerRoute,
   userProfileDeleteRoute,
@@ -48,7 +50,25 @@ registerModal({
   name: 'user.sessions',
   component: lazy(() => import('./ui/SessionsModal.svelte')),
   route: userSessionsRoute.href,
-  size: { width: 520, height: 560 },
+  size: { width: 560, height: 600 },
+})
+// Фильтры списка устройств: открываются кнопкой «Фильтры» в списке, результат
+// пишут в состояние пагинатора-владельца. `route` — страница-fallback
+// `/user/sessions/filters` для no-JS.
+registerModal({
+  name: 'user.sessions.filters',
+  component: lazy(() => import('./ui/SessionsFiltersModal.svelte')),
+  route: () => userSessionsFiltersRoute.href(),
+  size: { width: 440, height: 600 },
+})
+// Карточка устройства (переименование и отзыв). Пара «модалка + роут»:
+// без JS строка списка ведёт на `/user/sessions/<id>` с тем же компонентом.
+registerModal({
+  name: 'user.session',
+  component: lazy(() => import('./ui/SessionModal.svelte')),
+  route: (p: { id?: string }) =>
+    p?.id ? userSessionRoute.href({ id: String(p.id) }) : userSessionsRoute.href(),
+  size: { width: 480, height: 560 },
 })
 // Профиль: пара «модалка + роут» одного компонента. `route` нужен
 // ссылке (`asModalLink` строит из него `href` — без JS карточка ведёт

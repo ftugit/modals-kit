@@ -1,9 +1,19 @@
-// Свои устройства (`/user/sessions`) — тот же `load`, что у модалки `user.sessions`.
-// Блокировка — именованные экшены. Тело разбирает `#lib/form`, не маршрут.
+// Свои устройства (`/user/sessions`) — тот же `load`, что у модалки
+// `user.sessions`. Одна дверь данных: страница, модалка и догрузка порций идут
+// сюда. Адресные ключи — `sessions.*` (адаптер пагинатора объявил их в
+// `ui/sessions-list/source.ts`); `load` читает те же имена и умолчания.
+// Блокировка и переименование — именованные экшены. Тело разбирает `#lib/form`.
 import { redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
 import { sessionRevokeForm, sessionRevokeOthersForm } from '#content/user/sessions.form.js'
-import type { SessionsRouteData } from '#content/user/index.js'
+import type { SessionsRouteData, SessionsState } from '#content/user/index.js'
+import {
+  SESSIONS_PAGE_PARAM,
+  SESSIONS_PAGE_SIZE,
+  SESSIONS_STATES,
+  sessionsCountryCodes,
+  sessionsSnapshot,
+} from '#content/user/ui/sessions-list/source.js'
 import type { FormError } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
 import { createIpThrottle } from '#server/client-ip.server.js'
@@ -22,22 +32,99 @@ const error = (code: string, message: string, path?: string): FormError => ({
   origin: 'server',
 })
 
+const num = (raw: string | null, fallback: number, min: number, max: number): number => {
+  if (raw === null || raw === '') return fallback
+  const v = Number(raw)
+  return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.trunc(v))) : fallback
+}
+
+const dateMs = (raw: string | null): number | null => {
+  if (!raw) return null
+  const v = Date.parse(raw)
+  return Number.isFinite(v) ? v : null
+}
+
 export const load: PageServerLoad = async (event): Promise<SessionsRouteData> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const notice = event.url.searchParams.get('notice') === 'revoke-failed' ? 'revoke-failed' : null
   const u = auth(event)
   if (!u.enabled) {
-    return { enabled: false, fact: 'auth.disabled', page: null, notice }
+    return {
+      snapshot: null,
+      fact: 'auth.disabled',
+      enabled: false,
+      countries: [],
+      notice,
+      canSeeDeleted: false,
+      canRename: false,
+      canRevoke: false,
+      canHardDelete: false,
+    }
   }
-  const requestedPage = Number(event.url.searchParams.get('page') ?? 1)
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= 1_000_000
-    ? requestedPage
-    : 1
-  const r = await u.listSessionsPage({ page })
+
+  const sp = event.url.searchParams
+  const key = (k: string) => sp.get(`${SESSIONS_PAGE_PARAM}.${k}`)
+  const page = num(sp.get(SESSIONS_PAGE_PARAM), 1, 1, 100_000)
+  const pageSize = num(key('size'), SESSIONS_PAGE_SIZE, 30, 100)
+  const stateRaw = key('state')
+  const state = SESSIONS_STATES.includes(stateRaw as SessionsState) ? (stateRaw as SessionsState) : undefined
+  const country = sessionsCountryCodes(key('country'))
+  const net = key('net') === '1' || key('net') === 'on'
+  const cfrom = key('cfrom')
+  const cto = key('cto')
+  const sfrom = key('sfrom')
+  const sto = key('sto')
+  const createdFrom = dateMs(cfrom)
+  const createdTo = dateMs(cto)
+  const seenFrom = dateMs(sfrom)
+  const seenTo = dateMs(sto)
+
+  const r = await u.listSessionsPage({
+    page,
+    pageSize,
+    state,
+    country,
+    subnetChanged: net,
+    createdFrom,
+    createdTo,
+    seenFrom,
+    seenTo,
+  })
   if (!r.ok) {
-    return { enabled: true, fact: r.fact.code, page: null, notice }
+    return {
+      snapshot: null,
+      fact: r.fact.code,
+      enabled: true,
+      countries: [],
+      notice,
+      canSeeDeleted: false,
+      canRename: false,
+      canRevoke: false,
+      canHardDelete: false,
+    }
   }
-  return { enabled: true, fact: null, page: r.value, notice }
+
+  return {
+    // Срез в снапшоте — тот, который домен реально применил (права могли
+    // срезать «отозванные»), поэтому состояние берётся из ответа, а не из адреса.
+    snapshot: sessionsSnapshot(r.value, {
+      state: r.value.state,
+      net,
+      country: country.join(','),
+      cfrom: createdFrom !== null ? cfrom : null,
+      cto: createdTo !== null ? cto : null,
+      sfrom: seenFrom !== null ? sfrom : null,
+      sto: seenTo !== null ? sto : null,
+    }),
+    fact: null,
+    enabled: true,
+    countries: r.value.countries,
+    notice,
+    canSeeDeleted: r.value.canSeeDeleted,
+    canRename: r.value.canRename,
+    canRevoke: r.value.canRevoke,
+    canHardDelete: r.value.canHardDelete,
+  }
 }
 
 export const actions: Actions = {

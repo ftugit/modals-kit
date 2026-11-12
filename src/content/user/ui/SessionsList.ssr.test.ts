@@ -1,0 +1,116 @@
+import { render } from 'svelte/server'
+import { describe, expect, test, vi } from 'vitest'
+import SessionsList from './SessionsList.svelte'
+import type { SessionDeviceView, SessionsRouteData } from '../types.js'
+import { sessionsSnapshot } from './sessions-list/source.js'
+
+// Носители и механики, которые в SSR-тесте заменяются заглушками: страница
+// пагинатора, модальные ссылки и адрес. Список от них только берёт `href`.
+vi.mock('$app/navigation', () => ({
+  afterNavigate: () => {},
+  beforeNavigate: () => {},
+  goto: async () => {},
+  preloadData: async () => ({ type: 'not_found' }),
+}))
+vi.mock('$app/env', () => ({ browser: false }))
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/user/sessions'), state: {}, data: {} },
+  navigating: { to: null, from: null, type: null },
+}))
+vi.mock('#hooks/links/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#hooks/links/index.js')>()
+  return {
+    ...actual,
+    // В SSR-тесте хост модалок не смонтирован: ссылки получают адрес страницы.
+    useModalLink: () => (name: string, params: { id?: string } = {}) => ({
+      href: name === 'user.session' ? `/user/sessions/${params.id}` : '/user/sessions/filters',
+      'data-modal-link': '',
+    }),
+  }
+})
+
+vi.mock('#lib/paginate/sveltekit/router.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#lib/paginate/sveltekit/router.js')>()
+  return {
+    ...actual,
+    currentPathname: () => '/user/sessions',
+    currentSearch: () => ({}),
+  }
+})
+
+const device: SessionDeviceView = {
+  id: '11111111-1111-4111-8111-111111111111',
+  authId: '22222222-2222-4222-8222-222222222222',
+  deviceName: 'Ноутбук',
+  subnetHash: 'abcdef0123456789',
+  country: 'RU',
+  history: [],
+  createdAt: 1_700_000_000_000,
+  expiresAt: 4_000_000_000_000,
+  lastSeenAt: 1_700_000_100_000,
+  deletedAt: null,
+  current: true,
+}
+
+const other: SessionDeviceView = {
+  ...device,
+  id: '33333333-3333-4333-8333-333333333333',
+  deviceName: 'Планшет',
+  current: false,
+}
+
+function routeData(items: SessionDeviceView[], overrides: Partial<SessionsRouteData> = {}): SessionsRouteData {
+  return {
+    snapshot: sessionsSnapshot({
+      items,
+      total: items.length,
+      page: 1,
+      pageSize: 30,
+      authId: device.authId,
+      journal: false,
+      state: 'active',
+      countries: ['RU'],
+      canSeeDeleted: false,
+      canRename: true,
+      canRevoke: true,
+      canHardDelete: false,
+    }),
+    fact: null,
+    enabled: true,
+    countries: ['RU'],
+    notice: null,
+    canSeeDeleted: false,
+    canRename: true,
+    canRevoke: true,
+    canHardDelete: false,
+    ...overrides,
+  }
+}
+
+describe('SessionsList', () => {
+  test('рисует строку-ссылку в карточку и кнопку фильтров', () => {
+    const { body } = render(SessionsList, { props: { initial: routeData([device]) } })
+    expect(body).toContain('Ноутбук')
+    expect(body).toContain(`href="/user/sessions/${device.id}"`)
+    expect(body).toContain('data-testid="sessions-filters-open"')
+    expect(body).toContain('Фильтры')
+    expect(body).toContain('data-testid="session-row"')
+    expect(body).not.toContain('jti')
+  })
+
+  test('«Заблокировать остальные» есть только когда есть другие устройства', () => {
+    const many = render(SessionsList, { props: { initial: routeData([device, other]) } })
+    expect(many.body).toContain('sessions-revoke-others')
+    expect(many.body).toContain('Заблокировать остальные')
+
+    const alone = render(SessionsList, { props: { initial: routeData([device]) } })
+    expect(alone.body).not.toContain('sessions-revoke-others')
+  })
+
+  test('без права отзыва кнопки остальных нет', () => {
+    const { body } = render(SessionsList, {
+      props: { initial: routeData([device, other], { canRevoke: false }) },
+    })
+    expect(body).not.toContain('sessions-revoke-others')
+  })
+})

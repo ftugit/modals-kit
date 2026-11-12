@@ -16,6 +16,7 @@ import {
 } from '#lib/db/index.js'
 import { SERVER, fail, ok, principalOfRow, type UserResult } from './auth.js'
 import { auth as authResource, session as sessionResource } from './schema.js'
+import { SESSIONS_COUNTRY_NONE } from './types.js'
 import type {
   SessionBulkRevokeResult,
   SessionDetail,
@@ -43,12 +44,23 @@ export type SessionDeps = {
   now?: number | (() => number)
 }
 
+/** Сколько стран показывает форма фильтров. Срез шире — это уже не подсказка. */
+export const SESSIONS_COUNTRY_LIMIT = 60
+
 export type ListSessionsPageArgs = {
   /** Один аккаунт. Пусто и без `journal` — свои устройства. */
   authId?: string | null
   /** Общий журнал. Чужой аккаунт сюда не подставляется. */
   journal?: boolean
   state?: SessionsState
+  /** Коды стран (`SESSIONS_COUNTRY_NONE` — строки без страны). Пусто — фильтра нет. */
+  country?: readonly string[]
+  /** «Сеть менялась»: в истории строки есть прежние подсети. */
+  subnetChanged?: boolean
+  createdFrom?: number | null
+  createdTo?: number | null
+  seenFrom?: number | null
+  seenTo?: number | null
   page?: number
   pageSize?: number
 }
@@ -205,6 +217,30 @@ export async function listSessionsPage(
   if (state === 'active') and.push({ field: 'expires_at', op: 'gt', value: iso(now) })
   else if (state === 'expired') and.push({ field: 'expires_at', op: 'lte', value: iso(now) })
   else if (state === 'revoked') and.push({ field: 'deleted_at', op: 'gte', value: iso(0) })
+  // Страна: выбранные коды через `or`, «неизвестно» — `isNull`. Оператора `in`
+  // у поля нет (объявлены `eq`/`icontains`/пустота), новый не заводится.
+  const wanted = [...new Set((args.country ?? []).map((c) => c.trim()).filter(Boolean))].slice(0, 20)
+  const countryParts: Filter[] = []
+  for (const code of wanted) {
+    if (code === SESSIONS_COUNTRY_NONE) countryParts.push({ field: 'country', op: 'isNull' })
+    else countryParts.push({ field: 'country', op: 'eq', value: code })
+  }
+  const countryFilter: Filter | null =
+    countryParts.length === 0
+      ? null
+      : countryParts.length === 1
+        ? countryParts[0]!
+        : { or: countryParts }
+  if (countryFilter) and.push(countryFilter)
+  // «Сеть менялась» — уже существующий `ne` по истории подсетей: пустая история
+  // значит, что устройство ещё не меняло сеть. Новый оператор не изобретается.
+  if (args.subnetChanged === true) and.push({ field: 'subnet_history', op: 'ne', value: [] })
+  const range = (field: string, from?: number | null, to?: number | null): void => {
+    if (from != null && Number.isFinite(from)) and.push({ field, op: 'gte', value: iso(from) })
+    if (to != null && Number.isFinite(to)) and.push({ field, op: 'lte', value: iso(to) })
+  }
+  range('created_at', args.createdFrom, args.createdTo)
+  range('last_seen_at', args.seenFrom, args.seenTo)
   const filter: Filter | undefined = and.length === 0 ? undefined : and.length === 1 ? and[0] : { and }
   const includeDeleted = state === 'revoked'
   const api = deps.db.resource(sessionResource)
@@ -220,6 +256,31 @@ export async function listSessionsPage(
     api.count(ctx, { ...(filter ? { filter } : {}), includeDeleted }),
   ])
 
+  // Страны для формы — по срезу БЕЗ самого фильтра страны: иначе выбор одной
+  // страны стёр бы остальные пункты. Срез ограничен: это подсказка выбора, а
+  // не отчёт по всей базе.
+  const withoutCountry = countryFilter ? and.filter((f) => f !== countryFilter) : and
+  const countrySlice: Filter | undefined =
+    withoutCountry.length === 0 ? undefined : withoutCountry.length === 1 ? withoutCountry[0] : { and: withoutCountry }
+  let countryRows: unknown[] = []
+  try {
+    countryRows = await api.select(ctx, {
+      ...(countrySlice ? { filter: countrySlice } : {}),
+      includeDeleted,
+      limit: SESSIONS_COUNTRY_LIMIT,
+      fields: ['country'],
+    })
+  } catch {
+    // Подсказка стран не должна валить список: без неё фильтр остаётся,
+    // просто кодов в форме меньше.
+    countryRows = []
+  }
+  const seen = new Set<string>()
+  for (const row of countryRows as Record<string, unknown>[]) {
+    const code = typeof row.country === 'string' && row.country.trim() ? row.country.trim() : SESSIONS_COUNTRY_NONE
+    seen.add(code)
+  }
+
   return ok({
     items: (rows as unknown as Record<string, unknown>[]).map((row) => project(row, actor)),
     total,
@@ -228,6 +289,7 @@ export async function listSessionsPage(
     authId: journal ? null : target,
     journal,
     state,
+    countries: [...seen].sort((a, b) => (a === SESSIONS_COUNTRY_NONE ? 1 : b === SESSIONS_COUNTRY_NONE ? -1 : a.localeCompare(b))),
     canSeeDeleted: caps.canSeeDeleted,
     canRename: caps.canRename,
     canRevoke: caps.canRevoke,

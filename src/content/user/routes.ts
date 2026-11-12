@@ -75,6 +75,15 @@ export const userMenuRoute = kitRoute('/user/menu')
 export const userSessionsRoute = kitRoute('/user/sessions')
 
 /**
+ * Карточка одного устройства — адрес пары `user.session` (модалка/роут).
+ * Сегмент ограничен матчером `[id=uuid]`: не-UUID отсекается 404 до `load`.
+ */
+export const userSessionRoute = kitRoute('/(site)/(app)/user/sessions/[id=uuid]', {
+  dynamic: true,
+  id: '/user/sessions/[id]',
+})
+
+/**
  * Профиль аккаунта — путь с параметром сегмента. В `$app/types` у такого
  * маршрута нет «красивого» имени: идентификатор вместе с группами
  * (`/(site)/(app)/user/[id]`) — это и есть имя, группы из адреса выбрасывает
@@ -137,6 +146,18 @@ export interface BlocksFiltersSearchOutput extends ListFiltersSearchOutput {
  * списку (адрес носителя несёт параметр `from`, список может жить где угодно).
  */
 export const userListFiltersRoute = kitRoute('/users/filters', {
+  owner: 'user.filters',
+  keys: ['from'],
+  search: querySchema<ListFiltersSearchInput, ListFiltersSearchOutput>((raw) => ({
+    from: localPath(typeof raw.from === 'string' ? raw.from : null),
+  })),
+})
+
+/**
+ * Фильтры списка устройств: страница-fallback модалки `user.sessions.filters`.
+ * Как у фильтров seed-списка — адрес носителя в параметре `from`.
+ */
+export const userSessionsFiltersRoute = kitRoute('/user/sessions/filters', {
   owner: 'user.filters',
   keys: ['from'],
   search: querySchema<ListFiltersSearchInput, ListFiltersSearchOutput>((raw) => ({

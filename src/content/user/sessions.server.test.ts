@@ -8,6 +8,7 @@ import { pgliteAdapter } from '#lib/db/adapters/pglite.js'
 import { defineSchema } from '#lib/db/sync/index.js'
 import { SERVER } from './auth.js'
 import { auth, session } from './schema.js'
+import { SESSIONS_COUNTRY_NONE } from './types.js'
 import {
   listSessionsPage,
   readSessionDetail,
@@ -242,5 +243,49 @@ test('сервер пишет свой id сессии только без prote
     expect(inserted.id).toBe(id)
     const found = await db.resource(session).select(SERVER, { filter: { field: 'jti', op: 'eq', value: row.jti } })
     expect(found.map((item) => item.id)).toEqual([id])
+  })
+})
+
+test('фильтры среза: страна, смена сети, диапазоны и подсказка стран', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'g'.repeat(43))
+    const ru = await device(deps.db, me, { jti: 'filter-country-ru-001', name: 'ru', country: 'RU' })
+    await device(deps.db, me, { jti: 'filter-country-sg-001', name: 'sg', country: 'SG' })
+    await device(deps.db, me, { jti: 'filter-country-none-01', name: 'без страны' })
+    const meActor = actor(me, [], ru)
+
+    const onlyRu = await listSessionsPage(meActor, { country: ['RU'] }, deps)
+    expect(onlyRu.ok).toBe(true)
+    if (!onlyRu.ok) return
+    expect(onlyRu.value.items.map((item) => item.deviceName)).toEqual(['ru'])
+    // Пункты стран считаются по срезу БЕЗ фильтра страны, поэтому видны все три.
+    expect([...onlyRu.value.countries]).toEqual(['RU', 'SG', SESSIONS_COUNTRY_NONE])
+
+    const unknown = await listSessionsPage(meActor, { country: [SESSIONS_COUNTRY_NONE] }, deps)
+    expect(unknown.ok && unknown.value.items.map((item) => item.deviceName)).toEqual(['без страны'])
+
+    // Устройство с пустой историей подсетей «сменой сети» не считается.
+    await deps.db.resource(session).insert(SERVER, {
+      auth_id: me,
+      jti: 'filter-no-history-0001',
+      device_name: 'чистый',
+      expires_at: new Date(NOW + 60_000).toISOString(),
+      subnet_history: [],
+    })
+    const changed = await listSessionsPage(meActor, { subnetChanged: true }, deps)
+    expect(changed.ok).toBe(true)
+    if (!changed.ok) return
+    expect(new Set(changed.value.items.map((item) => item.deviceName))).toEqual(
+      new Set(['ru', 'sg', 'без страны']),
+    )
+
+    // Активность не записана — в диапазон она не попадает.
+    const seen = await listSessionsPage(meActor, { seenFrom: NOW - 60_000 }, deps)
+    expect(seen.ok && seen.value.items).toHaveLength(0)
+
+    // Начало диапазона в будущем отсекает всё созданное сейчас: `created_at`
+    // ставит часы базы, а не константа теста.
+    const future = await listSessionsPage(meActor, { createdFrom: Date.now() + 86_400_000 }, deps)
+    expect(future.ok && future.value.items).toHaveLength(0)
   })
 })
