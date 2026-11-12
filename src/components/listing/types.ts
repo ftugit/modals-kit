@@ -1,7 +1,6 @@
 import type { Snippet } from 'svelte'
 import type { SidebarPlace } from '#components/shell/index.js'
 import type { SurfaceVariant } from '#components/ui/index.js'
-import type { LinkAttrs } from '#hooks/links/index.js'
 import type { PaginatorState } from '#lib/paginate/index.js'
 
 /** Первая порция `load`. Домен может нести рядом свои флаги (`canCreate`). */
@@ -41,6 +40,16 @@ export interface ListingFilters {
   testId?: string
 }
 
+/** Что оболочка знает про строку и отдаёт хосту в сниппет `row`. */
+export interface ListingRowContext {
+  /** Строка отмеченной: смысл выбора задаёт хост через `isSelected`. */
+  selected: boolean
+  /** Номер страницы пагинатора. */
+  page: number
+  /** Позиция строки внутри страницы. */
+  index: number
+}
+
 export interface ListingFrame<Item extends { id: string }> {
   extra: Record<string, unknown>
   payload: ListingInitial<Item>
@@ -71,9 +80,16 @@ export interface ListingProps<Item extends { id: string }> {
   url?: boolean
   initial?: ListingInitial<Item> | null
   onAcl?: (fact: string) => void
-  rowAttrs: (item: Item) => LinkAttrs
+  /**
+   * Строка целиком: элемент и его атрибуты выбирает хост, оболочка не диктует,
+   * ссылка это или нет. Готовый вариант строки-ссылки — `ListingRow`.
+   */
+  row: Snippet<[Item, ListingRowContext]>
+  /**
+   * Отмеченные строки. Оболочка считает признак и отдаёт его в `row`; что с ним
+   * делать и что означает выбор — дело хоста.
+   */
   isSelected?: (id: string) => boolean
-  rowTestId?: string
   listTestId?: string
   pendingTestId?: string
   filters?: ListingFilters
@@ -92,7 +108,6 @@ export interface ListingProps<Item extends { id: string }> {
   identityKey?: string
   /** Смена актора сбрасывает ленту. Домен передаёт id, оболочка хранилище не знает. */
   actor?: string | null
-  item: Snippet<[Item, boolean]>
   skeleton?: Snippet<[Record<string, unknown>]>
   controls?: Snippet<[ListingFrame<Item>]>
 }

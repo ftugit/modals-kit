@@ -2,6 +2,7 @@
   import { renderMergeSlot, setPageContext, type SidebarPlace } from '#components/shell/index.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
   import Listing from './Listing.svelte'
+  import ListingRow from './ListingRow.svelte'
 
   let {
     zone,
@@ -19,8 +20,10 @@
   <p data-testid="sidebar-filter-form">форма</p>
 {/snippet}
 
-{#snippet item(row: { id: string })}
-  <span>{row.id}</span>
+{#snippet row(item: { id: string })}
+  <ListingRow attrs={{ href: `/probe/${item.id}` }} id={item.id}>
+    <span>{item.id}</span>
+  </ListingRow>
 {/snippet}
 
 <Listing
@@ -30,8 +33,8 @@
   ariaLabel="probe"
   title="Probe"
   url={false}
-  {item}
-  rowAttrs={() => ({ href: '/probe/1' })}
+  {row}
+
   sidebar={zone}
   filtersForm={form}
   filters={{

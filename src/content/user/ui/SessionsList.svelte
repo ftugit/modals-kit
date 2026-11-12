@@ -15,7 +15,7 @@
   import { browser } from '$app/env'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
-  import { Listing } from '#components/listing/index.js'
+  import { Listing, ListingRow } from '#components/listing/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
@@ -211,8 +211,7 @@
   {url}
   {initial}
   onAcl={onAcl ? (fact) => onAcl(fact as AuthErrorCode) : undefined}
-  rowAttrs={attrsOf}
-  rowTestId="session-row"
+
   pendingTestId="sessions-pending"
   actor={vault.principal}
   {sidebar}
@@ -267,8 +266,10 @@
       </Form>
     {/if}
   {/snippet}
-  {#snippet item(row)}
-    <SessionRow item={row} {now} />
+  {#snippet row(item)}
+    <ListingRow attrs={attrsOf(item)} id={item.id} testId="session-row">
+      <SessionRow item={item} {now} />
+    </ListingRow>
   {/snippet}
   {#snippet skeleton()}
     <div class="flex w-full flex-col gap-1 px-2 py-2" data-testid="session-skeleton">

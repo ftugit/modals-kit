@@ -13,7 +13,7 @@
   import { browser } from '$app/env'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
-  import { Listing } from '#components/listing/index.js'
+  import { Listing, ListingRow } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
   import { grants } from '#lib/db/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
@@ -193,9 +193,7 @@
   {url}
   {initial}
   onAcl={onAcl ? (fact) => onAcl(fact as AuthErrorCode) : undefined}
-  rowAttrs={attrsOf}
   {isSelected}
-  rowTestId="seed-user-row"
   pendingTestId="seed-users-pending"
   actor={vault.principal}
   {sidebar}
@@ -241,8 +239,10 @@
       </Button>
     {/if}
   {/snippet}
-  {#snippet item(user, selected)}
-    <SeedUserCard item={user} {selected} />
+  {#snippet row(user, ctx)}
+    <ListingRow attrs={attrsOf(user)} id={user.id} testId="seed-user-row" selected={ctx.selected}>
+      <SeedUserCard item={user} selected={ctx.selected} />
+    </ListingRow>
   {/snippet}
   {#snippet skeleton(extra)}
     <!--

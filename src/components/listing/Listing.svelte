@@ -53,9 +53,8 @@
     url: urlProp,
     initial = null,
     onAcl,
-    rowAttrs,
+    row,
     isSelected,
-    rowTestId,
     listTestId,
     pendingTestId,
     filters,
@@ -64,13 +63,15 @@
     search,
     identityKey,
     actor,
-    item,
     skeleton,
     controls: extraControls,
   }: Props = $props()
 
   // Имя пагинатора не меняется за жизнь экземпляра: регистрация и стор смотрят в него один раз.
   const paginatorName = untrack(() => name)
+  // Оболочка не решает, из чего сделана строка: элемент, его атрибуты и адрес
+  // приходят сниппетом `row` от носителя. Из признаков строки оболочка знает
+  // только выбор — `isSelected` считает хост, флаг уходит в тот же сниппет.
   // Реестр слота, не догадка «модалка или страница». Носитель задаёт `sidebar`.
   // Ширину решает класс на обёртке и на кнопке, не хук.
   const page = tryUsePage()
@@ -315,16 +316,8 @@
         renderDivider={null}
         class={variant === 'plain' && slotScope.store !== null ? 'min-h-0 flex-1' : 'max-h-[420px]'}
       >
-        {#snippet renderItem(row: T)}
-          <a
-            {...rowAttrs(row)}
-            class="block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            data-testid={rowTestId}
-            data-id={row.id}
-            data-selected={isSelected?.(row.id) || undefined}
-          >
-            {@render item(row, isSelected?.(row.id) ?? false)}
-          </a>
+        {#snippet renderItem(item: T, at: { page: number; index: number })}
+          {@render row(item, { selected: isSelected?.(item.id) ?? false, page: at.page, index: at.index })}
         {/snippet}
         {#snippet renderSkeleton()}
           {#if skeleton}

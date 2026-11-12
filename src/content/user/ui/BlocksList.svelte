@@ -9,7 +9,7 @@
   import { browser } from '$app/env'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
-  import { Listing } from '#components/listing/index.js'
+  import { Listing, ListingRow } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
   import { Button } from '#components/ui/index.js'
   import { grants } from '#lib/db/index.js'
@@ -200,8 +200,6 @@
   {url}
   {initial}
   onAcl={onAcl ? (fact) => onAcl(fact as AuthErrorCode) : undefined}
-  {rowAttrs}
-  rowTestId="block-row"
   listTestId="blocks-list"
   pendingTestId="blocks-list-pending"
   identityKey={BLOCKS_INTERNAL_UID_KEY}
@@ -261,8 +259,10 @@
       </Button>
     {/if}
   {/snippet}
-  {#snippet item(row)}
-    <BlockCard item={row} showTarget={!fixedUid} />
+  {#snippet row(item)}
+    <ListingRow attrs={rowAttrs(item)} id={item.id} testId="block-row">
+      <BlockCard item={item} showTarget={!fixedUid} />
+    </ListingRow>
   {/snippet}
   {#snippet skeleton()}
     <div class="flex w-full items-center gap-3 px-2 py-2" data-testid="block-skeleton">
