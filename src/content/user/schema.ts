@@ -300,6 +300,12 @@ export const config: Resource = defineResource({
     }),
   },
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  // Исключение из общего правила ядра: `update`/`delete` держат РОВНО те же
+  // роли, что разрешены в `select`, а не его надмножество. Инвариант «роль,
+  // которая пишет, умеет и читать» здесь выполняется вручную и закреплён
+  // тестом `config-policy.test.ts` — ядро (`lib/db/acl.ts`) его не проверяет.
+  // При развитии конфига (новая роль, отдельная политика на схему) нужен явный
+  // `validateResourceAcl`: тест поймает расхождение, но не подскажет правило.
   policy: {
     select: policy.ownerOrRoles('auth_id', ['config.read', ...CONFIG_WRITERS]),
     insert: policy.withGrants([...CONFIG_WRITERS], (ctx) =>
