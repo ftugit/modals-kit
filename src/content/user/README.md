@@ -12,7 +12,7 @@
 
 | Путь | Назначение |
 |---|---|
-| `schema.ts` | Пять ресурсов `#lib/db`: `user_auth` (`AUTH_ACL`: владелец читает и мягко удаляет свою строку, создаёт только `server`; `seed`, времена + soft delete, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`, пирамида `PROFILE_ACL` с расширением публичной видимости через `extend.select`), `user_session` (`SESSION_ACL`: владелец читает, меняет имя и мягко отзывает; `jti` и срок пишет только `server`; отзыв = soft delete), `user_config` (конфиг-модель на `CONFIG_ACL`: ключ/значение/`auth_id`/`schema`; уникальность пары — частичные индексы ручным SQL в `db.server.ts`), `user_block` (блокировки на `BLOCK_ACL`: цель/сфера/причина/срок/автор; подотчётный `moderator` имеет `insert` + `update` только срока `until` + мягкое `softDelete` без права менять `reason` и без `hardDelete`). Разворачиваются через `schemaSpec` в `src/server/db.server.ts`. |
+| `schema.ts` | Пять ресурсов `#lib/db`: `user_auth` (`AUTH_ACL`: владелец читает и мягко удаляет свою строку, создаёт только `server`; `seed`, времена + soft delete, соль подсетей), `user_profile` (неуникальный никнейм с запрещённым списком, `avatar_url`, пирамида `PROFILE_ACL` с расширением публичной видимости через `extend.select`), `user_session` (`SESSION_ACL`: владелец читает, меняет имя и мягко отзывает; `jti` и срок пишет только `server`; отзыв = soft delete), `user_config` (конфиг-модель: ключ/значение/`auth_id`/`schema`; уникальность пары — частичные индексы ручным SQL в `db.server.ts`; гранулярные права `assign`/`editUser`/`deleteUser`/`editDefault` живут в `ConfigKeySchema` строк умолчаний. **Исключение:** модель задана низкоуровневым `policy`, а не `acl: defineAcl(...)`, — см. «Единый слой прав»), `user_block` (блокировки на `BLOCK_ACL`: цель/сфера/причина/срок/автор; подотчётный `moderator` имеет `insert` + `update` только срока `until` + мягкое `softDelete` без права менять `reason` и без `hardDelete`). Разворачиваются через `schemaSpec` в `src/server/db.server.ts`. |
 | `grants.svelte.ts` | Доменный реактивный хук `useGrants` (`createUseGrants` поверх `vault.principal` и `vault.permissions`): синхронная проверка дескрипторов `grants(resource)` в SSR и браузере (`0` запросов в БД). |
 | `keys.ts` | Изоморфная криптография `@noble/ed25519`: `generateKeyPair`, `seedOf`, `sign`, `verify`. |
 | `types.ts` | Клеймы токенов, `SessionRecord`, `ProfileView`, `LoginOutcome`, `Blocked`. |
@@ -86,11 +86,40 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 1. **Модели (`schema.ts`)** объявляют пирамиду прав через `defineAcl` (`BLOCK_ACL`, `PROFILE_ACL`, `CONFIG_ACL`):
    - `readDeleted` всегда конъюнктивен (`select` **И** `deleted`): сервисная роль чтения удалённых никогда сама по себе не открывает чтение живых или удалённых записей.
    - На `user_block` роль `moderator` — подотчётный исполнитель: входит в `insert`, `update` и `softDelete`, но **не** входит в `edit`. Поэтому модератор не может менять защищённое поле `reason` (`update: BLOCK_ACL.roles.edit`) и не может физически стереть улику из БД (`hard: true`), даже если ему дополнительно выдали `block.readDeleted` (`hardDelete` требует круг `edit` **И** `deleted`).
-   - При инициализации `schema.ts` все ресурсы проверяются стражем `validateResourceAcl` (с явными точечными исключениями `allowAnomalies` для системных ролей вставки `'server'` и пер-ключевой модели `user_config`, где гранулярные права `assign`/`editUser`/`deleteUser`/`editDefault` живут в `ConfigKeySchema` строк умолчаний).
+   - При инициализации `schema.ts` все ресурсы с `acl` проверяются стражем `validateResourceAcl` (с явными точечными исключениями `allowAnomalies` для системных ролей вставки `'server'`).
+   - **`user_config` стоит на низкоуровневом `policy`, а не на `defineAcl`.** Для неё страж аксиом и генерация чтения из записи **не работают** (`expandAcl` отдаёт `enforceGuard: false`): `'admin'` и `'server'` попадают в чтение только потому, что вписаны в `policy.select` руками через `CONFIG_WRITERS`. Гранулярные права `assign`/`editUser`/`deleteUser`/`editDefault` живут в `ConfigKeySchema` строк умолчаний, а не в ACL модели. Инвариант «роль из записи входит в чтение» здесь держится на авторе, а не на механике — это единственная пользовательская модель-исключение в модуле.
 2. **Домен (`blocks.ts`, `accounts.ts`, `profile.ts`)** вычисляет возможности синхронно через `checkGrants(actor, grants(resource), { ownerId })` без дублирования массивов ролей.
 3. **Сессия и UI (`vault.permissions` + `useGrants`)**: короткоживущая кука `auth_tmp` несёт массив `perms`, который `readVault` / `vaultPayloadOf` отдают в `VaultSessionMeta.permissions` (`0` дополнительных запросов к БД). В компонентах `useGrants(...)` из `src/content/user/grants.svelte.ts` читает `{ id: vault.principal, permissions: vault.permissions }`:
    - на живой сессии (`vault.principal !== null`, включая SSR и клиент) `useGrants` является авторитетным реактивным источником и мгновенно перестраивает интерфейс при смене сессии/прав через `BroadcastChannel`;
    - при `vault.principal === null` (изолированные SSR-юнит-тесты с мок-пропсами `initial*` без `page.data.user`) компоненты безопасно опираются на переданные флаги данных.
+
+## Эталон вызова компонента
+
+Правило, по которому сверяются все списки и формы модуля. Оно нигде не было
+сформулировано целиком, поэтому отдельные места от него отступают.
+
+1. **Актор — только из куки.** Активный пользователь приходит из `HttpOnly`-куки
+   через `guard()` (`g.sub`, `g.perms`) или на клиенте из `vault`. Из URL он
+   не читается никогда.
+2. **Цель — из пути, не из query.** Чей объект смотрят, задаёт сегмент пути
+   (`/user/[id=uuid]/blocks`, `/user/[id=uuid]/sessions`) или аргумент серверного
+   `load`, но не `searchParams`. Так цель нельзя подменить из адресной строки.
+3. **Фильтры — из URL, но через whitelist и кламп.** Числа ограничиваются
+   (`num(raw, 1, 1, 10_000)`), перечисления сверяются с закрытым списком
+   (`BLOCKS_ORDERS.includes(...)`), списки id режутся по количеству (`.slice(0, 500)`).
+   Ни одно значение из адреса не попадает в запрос напрямую.
+4. **Права решает домен, компонент — только отрисовка.** Проверка живёт в доменной
+   функции (`checkGrants` + ACL модели); компонент получает готовые флаги
+   (`canSeeDeleted`, `canPickUsers`, `canCreate`) в ответе и по ним рисует UI.
+   `useGrants(...)` в компоненте — тот же `grants(resource)`, но для показа/скрытия,
+   а не дверь к данным.
+5. **Фильтр, требующий права, без этого права не применяется.** Флаг возможности
+   уходит наружу для отрисовки — но и сам фильтр тоже обязан проверяться.
+   Отступление: `blocks.uids` в `blocks.ts` кладётся в запрос без `canPickUsers`
+   (модель всё равно режет выдачу по ACL, так что утечки нет, но правилу место
+   не соответствует).
+6. **Всё, что домен умеет, имеет дверь в UI** — либо это зафиксировано как
+   осознанное решение. Иначе возможность есть, а попасть в неё нельзя.
 
 ## Приватность профиля (этап 8)
 

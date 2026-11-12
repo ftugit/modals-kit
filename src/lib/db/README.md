@@ -1082,7 +1082,20 @@ export const block = defineResource({
 
 Как `defineAcl` строит матрицу (монотонные правила пирамиды):
 
-1. `insert`, `update`, `softDelete` и `edit` **автоматически входят в круг чтения живых строк** (`select`): актор не может создавать, менять или удалять записи вслепую.
+1. `insert`, `update`, `softDelete` и `edit` **автоматически входят в круг чтения живых строк** (`select`): актор не может создавать, менять или удалять записи вслепую. Формула, по которой строится `select` (`defineAcl` в `src/lib/db/acl.ts`):
+
+   ```
+   updateRoles     = update ∪ edit
+   deleteRoles     = softDelete ∪ edit
+   hardDeleteRoles = edit
+   selectRoles     = read ∪ insert ∪ updateRoles ∪ deleteRoles
+   ```
+
+   То же для владельца строки: `ownerSelect = read || update || softDelete || edit`
+   — владелец, который может править или удалять, читает автоматически.
+   Практическое следствие: роль `'admin'`, вписанная только в `edit`, **уже читает**
+   модель, хотя в массиве `read` её нет. Смотреть надо на итоговый `grants(resource).select`,
+   а не на `acl.read`.
 2. `edit` раскрывается одновременно в `update`, `delete` и `hardDelete` (у моделей с `deletedAt` физическое стирание `hard: true` сработает только в паре с ролью из `deleted`, потому что движок требует `(policy.hardDelete ?? policy.delete)` **И** `readDeleted`).
 3. `softDelete` даёт только мягкое удаление (`policy.delete`), не попадая в `policy.hardDelete`: роль из `softDelete` оставляет аудиторский след даже при наличии роли `deleted`.
 4. `deleted` задаёт только `softDelete.readDeleted` и сам по себе в `select` **не входит** — видимость удалённых строк остаётся конъюнкцией `select` **И** `deleted`.
@@ -1102,6 +1115,19 @@ export const block = defineResource({
 | `soft-delete-requires-deleted-at` | Если `policy.hardDelete` уже `policy.delete` (разведены `softDelete` и `edit`), у ресурса обязан быть настроен `deletedAt` / `softDelete`. |
 
 Если нестандартной модели осознанно нужно отступить от конкретного правила (например, системная роль `'server'` в `insert` без чтения или гостевая вставка сессии), отступление объявляется явно и точечно по коду аксиомы: `allowAnomalies: ['insert-implies-select']` — все остальные 6 аксиом продолжают проверяться.
+
+**Когда гарантий нет: ручной `policy` и `SKIP_ACL_GUARD`.** Пирамида и страж работают
+только для ресурсов с `acl: defineAcl(...)`. Два случая, где они молча отключаются:
+
+- **Низкоуровневый `policy` вместо `acl`.** `expandAcl` для такого ресурса возвращает
+  `enforceGuard: false`: ни генерация чтения из записи, ни все 7 аксиом не проверяются.
+  Роль, добавленная в `policy.update`, но забытая в `policy.select`, не будет поймана
+  никем. Если ресурс остаётся на ручном `policy`, инвариант «каждая роль из `update`/
+  `delete` входит в `select`» нужно закрепить собственным тестом — страж его не проверит.
+  В этом репозитории так устроен `user.config` (`src/content/user/schema.ts`).
+- **`SKIP_ACL_GUARD`.** Символ из `src/lib/db/acl.ts`; ресурс с ним тоже получает
+  `enforceGuard: false`. Его ставит `cloneResource` (`src/lib/db/clone.ts`) на
+  клонированный ресурс, поэтому клоны не проходят страж аксиом.
 
 **Проверка прав в домене и UI без чтения строк — `grants`, `forOwner`, `checkGrants`.**
 `grants(resource)` возвращает мемоизированный в `WeakMap` дескриптор возможностей ресурса (сам `Resource` остаётся замороженным и не получает лишних перечисляемых ключей):
