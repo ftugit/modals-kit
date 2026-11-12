@@ -13,8 +13,11 @@ vi.mock('$app/navigation', () => ({
   preloadData: async () => ({ type: 'not_found' }),
 }))
 vi.mock('$app/env', () => ({ browser: false }))
+// Адрес — тот, что видит страница: шаг подтверждения компонент читает из
+// query, поэтому тест подменяет его до рендера.
+const addr = vi.hoisted(() => ({ url: new URL('http://localhost/user/sessions') }))
 vi.mock('$app/state', () => ({
-  page: { url: new URL('http://localhost/user/sessions'), state: {}, data: {} },
+  page: { get url() { return addr.url }, state: {}, data: {} },
   navigating: { to: null, from: null, type: null },
 }))
 vi.mock('#hooks/links/index.js', async (importOriginal) => {
@@ -129,6 +132,27 @@ describe('SessionsList', () => {
     expect(own.body).toContain('data-testid="sessions-journal-open"')
     expect(own.body).toContain('href="/sessions"')
     expect(own.body).toContain('sessions-revoke-others')
+  })
+
+  test('кнопка остальных ведёт на экран подтверждения, набор — строки списка', () => {
+    // Шаг живёт в адресе: без JS переход — обычная ссылка, а набор берётся из
+    // показанных строк, то есть из-под фильтра.
+    addr.url = new URL('http://localhost/user/sessions')
+    const start = render(SessionsList, { props: { initial: routeData([device, other]) } })
+    expect(start.body).toContain('href="/user/sessions?sessions.exit=confirm"')
+    expect(start.body).not.toContain('data-testid="bulk-exit"')
+
+    addr.url = new URL('http://localhost/user/sessions?sessions.exit=confirm')
+    const confirm = render(SessionsList, { props: { initial: routeData([device, other]) } })
+    expect(confirm.body).toContain('data-testid="bulk-exit"')
+    // Набор — все строки списка; текущую из него уберёт сервер по чекбоксу.
+    // Чекбокс снят, значит закрывается одна запись и удержание не нужно.
+    expect(confirm.body).toContain(`value="${device.id},${other.id}"`)
+    expect(confirm.body).not.toContain('data-mass-hold="true"')
+    expect(confirm.body).toContain('data-testid="bulk-exit-submit"')
+    expect(confirm.body).toContain('Отменить')
+    expect(confirm.body).toContain('href="/user/sessions"')
+    addr.url = new URL('http://localhost/user/sessions')
   })
 
   test('без права отзыва кнопки остальных нет', () => {

@@ -5,7 +5,7 @@
 // параметр пути, а не query-ключ. Экшены у пары роутов свои, как у блокировок.
 import { redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
-import { sessionRevokeForm, sessionRevokeOthersForm } from '#content/user/sessions.form.js'
+import { bulkExitArgs, sessionBulkExitForm, sessionRevokeForm } from '#content/user/sessions.form.js'
 import { loadSessionsRouteData, sessionsListHref, sessionsTargetOf } from '#content/user/ui/sessions-list/load.server.js'
 import type { FormError } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
@@ -51,12 +51,16 @@ export const actions: Actions = {
     const target = sessionsTargetOf(event)
     const list = sessionsListHref(target)
     const handled = await createFormHandler({
-      description: sessionRevokeOthersForm(),
+      description: sessionBulkExitForm(),
       order: SECURITY_LAYERS,
       throttle: revokeThrottle,
-      async execute({ commit, fail }) {
-        const r = await auth(event).revokeBulkSessions({ scope: 'others', authId: target })
-        if (!r.ok) return fail([error('auth.revoke', 'Не удалось заблокировать остальные сессии')])
+      async execute({ values, commit, fail }) {
+        // Набор собирает форма, а не имя экшена: «закрыть всё, что в списке»
+        // и «закрыть выбранное» — разные наборы одного действия.
+        const me = await auth(event).actor()
+        const args = bulkExitArgs(values, me.ok ? me.value.sessionId : null)
+        const r = await auth(event).revokeBulkSessions({ ...args, authId: target })
+        if (!r.ok) return fail([error('auth.revoke', 'Не удалось завершить сессии')])
         commit()
         return { redirect: r.value.current ? '/user/auth' : list }
       },

@@ -16,20 +16,16 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing, ListingRow } from '#components/listing/index.js'
-  import Field from '#components/form/Field.svelte'
-  import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
-  import HoldButton from '#components/ui/button/HoldButton.svelte'
-  import { bind, Form } from '#lib/form/svelte/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import type { AuthErrorCode } from '../error.js'
-  import { sessionRevokeOthersForm } from '../sessions.form.js'
   import { vault } from '../vault.svelte.js'
   import type { SessionDeviceView, SessionsRouteData } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
+  import ExitSteps from './sessions-list/ExitSteps.svelte'
   import SessionsFiltersForm, { type SessionsFilterValues } from './SessionsFiltersForm.svelte'
   import { sessionsFilterLabels, sessionsFilterText } from './sessions-list/filters-form.js'
   import {
@@ -182,11 +178,32 @@
     )
   }
 
-  // Экшен лежит на том же пути, что и список: цель отзыва берёт из параметра
-  // пути сервер, а не скрытое поле формы.
-  const othersForm = bind(forms, sessionRevokeOthersForm(), {
-    action: `${untrack(() => (fixedUid ? `/user/${encodeURIComponent(fixedUid)}/sessions` : '/user/sessions'))}?/others`,
-    intercept: false,
+  // Набор массового выхода — строки, которые список уже показал: иначе
+  // «закрыть всё, что в списке после фильтрации» выразить нечем, потому что
+  // фильтр живёт в `extra` пагинатора и в домен не попадает. Накопленные
+  // страницы берутся из стора пагинатора; без стора (модалка без sidebar) —
+  // первая порция снапшота.
+  const exitRows = $derived.by(() => {
+    if (filterStore) {
+      const state = getState<SessionDeviceView>(filterStore, SESSIONS_NAME)
+      return Object.values(state.pages).flat()
+    }
+    return Object.values(initial?.snapshot?.pages ?? {}).flat()
+  })
+  const exitIds = $derived(exitRows.map((row) => row.id))
+  const currentId = $derived(exitRows.find((row) => row.current)?.id ?? null)
+
+  // Шаг подтверждения — в адресе: без JS «Далее» обычная ссылка, а чекбокс и
+  // отправка стоят на одном экране, поэтому состояние не теряется.
+  const exitKey = 'sessions.exit'
+  const exitStep = $derived(
+    visibleAddress().url.searchParams.get(exitKey) === 'confirm' ? 'confirm' : 'summary',
+  )
+  const exitToggleHref = $derived.by(() => {
+    const url = new URL(listFrom, 'http://local.invalid')
+    if (exitStep === 'confirm') url.searchParams.delete(exitKey)
+    else url.searchParams.set(exitKey, 'confirm')
+    return `${url.pathname}${url.search}`
   })
 
   function othersOf(data: SessionsRouteData): boolean {
@@ -197,6 +214,22 @@
     return items.some((item) => !item.current)
   }
 </script>
+
+  {#if exitStep === 'confirm' && !journal}
+    <ExitSteps
+      ids={exitIds}
+      pick="only"
+      {currentId}
+      total={exitRows.length}
+      step="confirm"
+      backHref={exitToggleHref}
+      action={`${route}?/others`}
+      heading="Завершение сессий"
+      summary="Будут завершены все устройства, показанные в этом списке — с учётом фильтра."
+      confirmLabel="Завершить сессии"
+      testId="bulk-exit"
+    />
+  {/if}
 
 <Listing
   name={SESSIONS_NAME}
@@ -256,14 +289,9 @@
       </Button>
     {/if}
     {#if !journal && view.canRevoke && othersOf(view)}
-      <Form form={othersForm} hiddenFields={othersForm.hidden()} class="inline-flex">
-        <div hidden>
-          <Field of={othersForm.f.scope} />
-        </div>
-        <HoldButton type="submit" variant="outline" size="sm" seconds={2} data-testid="sessions-revoke-others">
-          Заблокировать остальные
-        </HoldButton>
-      </Form>
+      <Button href={exitToggleHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
+        {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
+      </Button>
     {/if}
   {/snippet}
   {#snippet row(item)}

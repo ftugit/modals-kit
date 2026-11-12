@@ -58,3 +58,76 @@ export function sessionRevokeOthersForm() {
     },
   })
 }
+
+/** Набор массового выхода: что закрываем. Пустой `pick` — весь срез цели. */
+export type SessionBulkExitShape = {
+  /** `only` — ровно перечисленные, `except` — все, кроме перечисленных. */
+  pick?: 'only' | 'except' | null
+  ids?: readonly string[]
+  /** Начальное состояние чекбокса «включая текущую»: им носитель задаёт инверсию. */
+  includeCurrent?: boolean
+}
+
+/** Предел набора: столько же, сколько принимает домен. */
+export const SESSION_BULK_IDS_MAX = 500
+
+/**
+ * Форма массового выхода. Одна на оба носителя — список сессий и экран выхода:
+ * различаются только значения по умолчанию, а не набор полей. Это и есть
+ * «инверсия себя же»: чекбокс «включая текущую» меняет набор, а не экран.
+ *
+ * Намерение теперь задаёт поле, а не имя экшена — иначе «закрыть всё, что в
+ * списке после фильтрации» выразить нечем.
+ */
+export function sessionBulkExitForm(opts: SessionBulkExitShape = {}) {
+  return defineForm({
+    id: SESSION_REVOKE_OTHERS_FORM_ID,
+    revision: 2,
+    actions: [{ id: 'bulk-exit', label: 'Завершить', validate: 'partial', relax: ['required'] }],
+    fields: {
+      /** Снимать и текущую сессию зрителя. */
+      include_current: field.checkbox({
+        label: 'Закрыть и текущую сессию',
+        defaultValue: opts.includeCurrent ?? false,
+      }),
+      pick: field.hidden({ defaultValue: opts.pick ?? '' }),
+      ids: field.hidden({ defaultValue: (opts.ids ?? []).join(',') }),
+    },
+  })
+}
+
+const TRUE_VALUES = new Set(['1', 'on', 'true', 'yes'])
+
+/**
+ * Аргументы домена из значений формы. Чистая функция: екшен её вызывает, тест
+ * гоняет без SvelteKit.
+ *
+ * Чекбокс «включая текущую» снят — текущая выходит из набора: в `only` она
+ * удаляется из списка, в `except` попадает в исключения. Отсюда же следует,
+ * что без JS форма работает: и чекбокс, и отправка на одном экране.
+ */
+export function bulkExitArgs(
+  values: Record<string, unknown>,
+  currentId: string | null,
+): { scope: 'others' | 'all'; pick: 'only' | 'except' | null; ids: readonly string[] } {
+  const raw = String(values.pick ?? '').trim().toLowerCase()
+  const pick = raw === 'only' || raw === 'except' ? raw : null
+  const include =
+    values.include_current === true || TRUE_VALUES.has(String(values.include_current ?? '').trim().toLowerCase())
+
+  const seen = new Set<string>()
+  for (const part of String(values.ids ?? '').split(',')) {
+    const id = part.trim().toLowerCase()
+    if (id) seen.add(id)
+    if (seen.size >= SESSION_BULK_IDS_MAX) break
+  }
+  // Чекбокс «включая текущую» инвертирует набор, а не экран: в `only` снятый
+  // чекбокс убирает текущую из набора, в `except` — добавляет её в исключения.
+  if (pick && currentId) {
+    if (include) {
+      if (pick === 'except') seen.delete(currentId)
+    } else if (pick === 'only') seen.delete(currentId)
+    else seen.add(currentId)
+  }
+  return { scope: pick || include ? 'all' : 'others', pick, ids: [...seen] }
+}
