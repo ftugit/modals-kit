@@ -39,6 +39,7 @@
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
+  import { parsePickedIds, parsePickerStep } from './user-picker-query.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
 
@@ -93,8 +94,7 @@
 
   const urlPicked = $derived.by(() => {
     const raw = visibleAddress().url.searchParams.get('picked')
-    if (raw === null) return [...initialPicked.filter(Boolean)]
-    return raw.split(',').map((s) => s.trim()).filter(Boolean)
+    return parsePickedIds(raw, initialPicked.filter(Boolean))
   })
 
   const activeList = $derived(isModalMode ? localPicked : urlPicked)
@@ -194,9 +194,7 @@
       { key: 'chosen', label: `Выбранные (${pickedSet.size})`, filled: pickedSet.size > 0 },
     ],
     current: () =>
-      isModalMode
-        ? localStep
-        : ((visibleAddress().url.searchParams.get('upicks') as 'pick' | 'chosen' | null) ?? 'pick'),
+      isModalMode ? localStep : parsePickerStep(visibleAddress().url.searchParams.get('upicks')),
     onSwitch: (stepKey) => switchLocalStep(stepKey as 'pick' | 'chosen'),
   })
 

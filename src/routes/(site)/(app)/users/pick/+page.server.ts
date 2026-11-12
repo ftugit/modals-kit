@@ -5,6 +5,7 @@
 import type { PageServerLoad } from './$types'
 import { localPath } from '#lib/address/index.js'
 import { auth } from '#content/user/gateway.server.js'
+import { parsePickedIds, parsePickerStep } from '#content/user/ui/user-picker-query.js'
 import type { AuthErrorCode, SeedUsersOrder, SeedUsersState } from '#content/user/index.js'
 import {
   SEED_USERS_ORDERS,
@@ -45,13 +46,10 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
   const mode = sp.get('mode') === 'single' ? 'single' : 'multiple'
   const rawParam = (sp.get('param') ?? 'blocks.uids').trim()
   const targetParam = /^[a-z0-9._-]{1,40}$/i.test(rawParam) ? rawParam : 'blocks.uids'
-  const rawPicked = (sp.get('picked') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 500)
+  // Тот же разбор, что у компонента: предел и форма id общие.
+  const rawPicked = parsePickedIds(sp.get('picked'))
   const picked = mode === 'single' ? rawPicked.slice(0, 1) : rawPicked
-  const step = sp.get('upicks') === 'chosen' ? 'chosen' : 'pick'
+  const step = parsePickerStep(sp.get('upicks'))
 
   const key = (k: string) => sp.get(`${SEED_USERS_PAGE_PARAM}.${k}`)
   const requestedPage = num(sp.get(SEED_USERS_PAGE_PARAM), 1, 1, 10_000)
