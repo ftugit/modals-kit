@@ -33,6 +33,14 @@ export const SESSIONS_PAGE_PARAM = 'sessions'
 /** Ключи формы фильтров. Живут в `extra` пагинатора и в адресе. */
 export const SESSIONS_FILTER_KEYS = ['state', 'net', 'country', 'cfrom', 'cto', 'sfrom', 'sto'] as const
 
+/**
+ * Цель списка — внутренний ключ `extra`, а НЕ ключ адреса. Чужой аккаунт задан
+ * путём (`/user/<uuid>/sessions`); `_uid` нужен только догрузке, чтобы спросить
+ * тот же путь. В `extraSearch` его нет намеренно: адресный адаптер пишет только
+ * объявленные ключи, поэтому uid не засоряет URL (как `_uid` у блокировок).
+ */
+export const SESSIONS_INTERNAL_UID_KEY = '_uid'
+
 export const SESSIONS_STATES: readonly SessionsState[] = ['active', 'expired', 'all', 'revoked']
 
 /**
@@ -71,14 +79,17 @@ async function fetchSessionsPage(
   pageSize: number,
   input?: { q?: string; filters?: Readonly<Record<string, string>> },
 ): Promise<PageResponse<SessionDeviceView>> {
+  const filters = input?.filters ?? {}
+  const target = filters[SESSIONS_INTERNAL_UID_KEY]?.trim() || ''
   const q = new URLSearchParams({
     [SESSIONS_PAGE_PARAM]: String(page),
     [`${SESSIONS_PAGE_PARAM}.size`]: String(pageSize),
   })
-  for (const [k, v] of Object.entries(input?.filters ?? {})) {
-    if (v) q.set(`${SESSIONS_PAGE_PARAM}.${k}`, v)
+  for (const [k, v] of Object.entries(filters)) {
+    if (v && (SESSIONS_FILTER_KEYS as readonly string[]).includes(k)) q.set(`${SESSIONS_PAGE_PARAM}.${k}`, v)
   }
-  const r = await preloadData(`/user/sessions?${q}`)
+  const basePath = target ? `/user/${encodeURIComponent(target)}/sessions` : '/user/sessions'
+  const r = await preloadData(`${basePath}?${q}`)
   if (r.type !== 'loaded') {
     const err = new Error('Не удалось загрузить устройства') as Error & { code: string }
     err.code = r.type === 'redirect' ? 'auth.expired' : 'load.error'
@@ -111,7 +122,7 @@ export const sessionsSource = defineSource<SessionDeviceView>({
     // по имени устройства не ищет), поэтому `search` не объявлен.
     texts: (r) => [r.deviceName ?? '', r.country ?? ''],
   },
-  filters: [...SESSIONS_FILTER_KEYS],
+  filters: [...SESSIONS_FILTER_KEYS, SESSIONS_INTERNAL_UID_KEY],
   totals: true,
   data: (look, input) => fetchSessionsPage(look.page, look.pageSize, input),
 })
@@ -121,7 +132,7 @@ export function ensureSessionsPaginator(): string {
     definePaginator({
       name: SESSIONS_NAME,
       // Любой фильтр — новая выдача с первой порции.
-      reloadKeys: [...SESSIONS_FILTER_KEYS],
+      reloadKeys: [...SESSIONS_FILTER_KEYS, SESSIONS_INTERNAL_UID_KEY],
       adapter: createUrlAdapter({
         name: SESSIONS_NAME,
         source: sessionsSource,
@@ -137,6 +148,8 @@ export function ensureSessionsPaginator(): string {
 }
 
 export interface SessionsSnapshotExtra {
+  /** Чужой аккаунт: ложится во внутренний ключ `_uid`, в адрес не пишется. */
+  uid?: string | null
   state?: string | null
   net?: boolean | string | null
   country?: string | null
@@ -157,6 +170,7 @@ export function sessionsSnapshot(p: SessionsPage, extra?: SessionsSnapshotExtra)
   const put = (key: keyof typeof SESSIONS_EXTRA_DEFAULTS, value: string | null | undefined) => {
     if (value && value !== SESSIONS_EXTRA_DEFAULTS[key]) out[key] = value
   }
+  if (extra?.uid) out[SESSIONS_INTERNAL_UID_KEY] = extra.uid
   put('state', extra?.state ?? p.state)
   put('net', extra?.net === true || extra?.net === '1' || extra?.net === 'on' ? '1' : null)
   put('country', extra?.country ?? null)

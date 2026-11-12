@@ -77,6 +77,7 @@ function routeData(items: SessionDeviceView[], overrides: Partial<SessionsRouteD
     }),
     fact: null,
     enabled: true,
+    uid: null,
     countries: ['RU'],
     notice: null,
     canSeeDeleted: false,

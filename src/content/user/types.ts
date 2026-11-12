@@ -159,6 +159,8 @@ export type SessionsState = 'active' | 'expired' | 'all' | 'revoked'
 export type SessionsRouteData = {
   enabled: boolean
   fact: AuthErrorCode | null
+  /** Аккаунт из пути (`/user/<uuid>/sessions`); `null` — свои устройства. */
+  uid: string | null
   snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null
   countries: readonly string[]
   notice: 'revoke-failed' | null

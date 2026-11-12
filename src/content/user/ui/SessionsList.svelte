@@ -41,6 +41,11 @@
   } from './sessions-list/source.js'
 
   interface Props {
+    /**
+     * Целевой аккаунт — отдельный проп, как у `BlocksList`: `null` — свои
+     * устройства (`/user/sessions`), uuid — чужие (`/user/<uuid>/sessions`).
+     */
+    uid?: string | null
     /** Данные `load` роута от носителя (страница/модалка). */
     initial?: SessionsRouteData | null
     /** Явный ключ изолированной области пагинатора (для немодальных стендов). */
@@ -56,6 +61,7 @@
   }
 
   let {
+    uid = null,
     initial = null,
     scope = null,
     url = undefined,
@@ -67,6 +73,11 @@
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSessionsPaginator()
+
+  // Цель списка: адрес `load` и адрес экшенов собираются из пропа, а не из
+  // query. `_uid` для догрузки порций едет в `extra` снапшота (см. `source.ts`).
+  const fixedUid = $derived(uid?.trim() || null)
+  const route = $derived(fixedUid ? `/user/${encodeURIComponent(fixedUid)}/sessions` : '/user/sessions')
 
   const asModalLink = useModalLink()
   const attrsOf = (item: SessionDeviceView): LinkAttrs => ({
@@ -161,8 +172,10 @@
     )
   }
 
+  // Экшен лежит на том же пути, что и список: цель отзыва берёт из параметра
+  // пути сервер, а не скрытое поле формы.
   const othersForm = bind(forms, sessionRevokeOthersForm(), {
-    action: '/user/sessions?/others',
+    action: `${untrack(() => (fixedUid ? `/user/${encodeURIComponent(fixedUid)}/sessions` : '/user/sessions'))}?/others`,
     intercept: false,
   })
 
@@ -178,10 +191,10 @@
 <Listing
   name={SESSIONS_NAME}
   pageParam={SESSIONS_PAGE_PARAM}
-  route="/user/sessions"
+  {route}
   loadError="auth.expired"
   ariaLabel="Список устройств"
-  title="Сессии"
+  title={fixedUid ? 'Сессии аккаунта' : 'Сессии'}
   {variant}
   class={className}
   {scope}

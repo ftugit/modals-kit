@@ -67,8 +67,14 @@ export const load: PageServerLoad = async (event): Promise<SessionsFiltersPageDa
   const rest = new URLSearchParams(hiddenFields.map((h) => [h.name, h.value] as [string, string]))
   const resetHref = rest.size ? `${fromUrl.pathname}?${rest}` : fromUrl.pathname
 
+  // Срез стран — того же аккаунта, что и список: цель берём из `uid`, если он
+  // передан явно, иначе из пути носителя `/user/<uuid>/sessions` (как у фильтров
+  // блокировок). Отдельного query-ключа списка нет.
+  const uidParam = sp.get('uid')?.trim() || fromSp.get('uid')?.trim() || null
+  const uidMatch = /^\/user\/([0-9a-f-]{36})\/sessions(?:\/|$)/i.exec(fromUrl.pathname)
+  const uid = uidParam ?? (uidMatch ? uidMatch[1]!.toLowerCase() : null)
   const u = auth(event)
-  const r = await u.listSessionsPage({ page: 1, pageSize: 1 })
+  const r = await u.listSessionsPage({ authId: uid, page: 1, pageSize: 1 })
 
   return {
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
