@@ -8,15 +8,16 @@
    * нет: `jti` и версию сервер не отдаёт.
    */
   import { untrack } from 'svelte'
+  import { visibleAddress } from '#lib/address/sveltekit.js'
   import { asLink } from '#hooks/links/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
-  import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { Badge, Button, TimeAgo } from '#components/ui/index.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { sessionRenameForm } from '../sessions.form.js'
   import type { SessionDetail } from '../types.js'
-  import SessionRevokeForm from './SessionRevokeForm.svelte'
+  import { vault } from '../vault.svelte.js'
+  import ExitSteps from './sessions-list/ExitSteps.svelte'
 
   interface Props {
     detail: SessionDetail
@@ -35,6 +36,28 @@
     session.deletedAt != null ? 'Завершена' : session.expiresAt > 0 && session.expiresAt <= now ? 'Истекла' : 'Активна',
   )
   const id = untrack(() => detail.session.id)
+
+  // Закрыть карточку — тот же набор, что и в списке: `only ids=[эта строка]`.
+  // Свою текущую сессию здесь не закрывают вовсе: для неё есть выход в меню,
+  // а две кнопки с одним смыслом в разных местах расходятся поведением.
+  const exitKey = 'session.exit'
+  const exitStep = $derived(
+    visibleAddress().url.searchParams.get(exitKey) === 'confirm' ? 'confirm' : 'summary',
+  )
+  const exitHref = $derived.by(() => {
+    const url = new URL(visibleAddress().url)
+    if (exitStep === 'confirm') url.searchParams.delete(exitKey)
+    else url.searchParams.set(exitKey, 'confirm')
+    return `${url.pathname}${url.search}`
+  })
+  const closable = $derived(detail.canRevoke && session.deletedAt == null && !session.current)
+  // Цель отзыва — аккаунт строки, а не зрителя: чужая сессия закрывается
+  // экшеном чужого списка, иначе набор не найдёт её в своём аккаунте.
+  const exitAction = $derived(
+    session.authId && session.authId !== vault.principal
+      ? `/user/${encodeURIComponent(session.authId)}/sessions?/others`
+      : '/user/sessions?/others',
+  )
   const form = bind(forms, sessionRenameForm(id), {
     action: `/user/sessions/${id}?/rename`,
     intercept: false,
@@ -95,15 +118,29 @@
     </Form>
   {/if}
 
-  {#if detail.canRevoke && session.deletedAt == null}
-    <div class="flex items-center justify-between gap-3 border-t border-border pt-3">
-      <SessionRevokeForm
-        id={session.id}
-        label={session.current ? 'Заблокировать это устройство' : 'Заблокировать'}
-        testId="session-card-revoke"
-      />
-      {#if detail.canHardDelete}
-        <span class="text-xs text-muted-foreground">Полное удаление доступно администратору.</span>
+  {#if closable}
+    <div class="flex flex-col gap-3 border-t border-border pt-3">
+      {#if exitStep === 'confirm'}
+        <ExitSteps
+          ids={[id]}
+          pick="only"
+          step="confirm"
+          action={exitAction}
+          backHref={exitHref}
+          heading="Завершение сессии"
+          summary="Устройство потеряет доступ: войти придётся заново."
+          confirmLabel="Завершить сессию"
+          testId="session-card-exit"
+        />
+      {:else}
+        <div class="flex items-center justify-between gap-3">
+          <Button href={exitHref} variant="outline" size="sm" data-testid="session-card-revoke">
+            Заблокировать
+          </Button>
+          {#if detail.canHardDelete}
+            <span class="text-xs text-muted-foreground">Полное удаление доступно администратору.</span>
+          {/if}
+        </div>
       {/if}
     </div>
   {/if}
