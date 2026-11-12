@@ -143,7 +143,10 @@ export async function listBlocksPage(
 
   if (fixedUid) {
     and.push({ field: 'auth_id', op: 'eq', value: fixedUid })
-  } else {
+  } else if (caps.canPickUsers) {
+    // Срез по выбранным аккаунтам — под правом читать чужие (`account.read`).
+    // Без него список аккаунтов зрителю не показывают, а значит и перечислить
+    // их здесь нельзя: иначе фильтром выбирали бы строки по известным id.
     const uids = [...new Set((args.uids ?? []).map((s) => s.trim()).filter(Boolean))]
     if (uids.length > 0) {
       and.push({ field: 'auth_id', op: 'in', value: uids })

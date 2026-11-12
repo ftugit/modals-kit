@@ -308,6 +308,27 @@ describe('blocks.ts — список, карточка просмотра/пра
     expect(fact_(await blockCreateMeta(ports, admin.access, admin.id)).code).toBe('auth.forbidden')
   })
 
+  test('фильтр `uids` действует только при праве перечислять аккаунты', async () => {
+    const { ports, auths, lastSlice } = makePorts()
+    const admin = await joined(ports, auths, ['admin'])
+    const modOnly = await joined(ports, auths, ['moderator'])
+    const target = await joined(ports, auths)
+    const other = await joined(ports, auths)
+
+    // Право есть (`account.read`): набор режет выдачу.
+    ok_(await listBlocksPage(ports, admin.access, { uids: [target.id] }))
+    const withRight = lastSlice()?.filter
+    expect(JSON.stringify(withRight)).toContain(target.id)
+
+    // Права нет: тот же запрос обязан дать ровно тот же срез, что и без фильтра,
+    // иначе фильтром выбирают строки по известным id аккаунтов.
+    ok_(await listBlocksPage(ports, modOnly.access, { uids: [target.id, other.id] }))
+    const withoutRight = lastSlice()?.filter
+    ok_(await listBlocksPage(ports, modOnly.access))
+    expect(withoutRight).toEqual(lastSlice()?.filter)
+    expect(JSON.stringify(withoutRight ?? '')).not.toContain(target.id)
+  })
+
   test('readBlockDetail: читатель открывает запись без возможности отправить; moderator правит срок без причины; block.edit правит и причину', async () => {
     const { ports, auths, blocks } = makePorts()
     const reader = await joined(ports, auths, ['block.read'])

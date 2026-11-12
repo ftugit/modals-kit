@@ -57,13 +57,17 @@ export async function loadBlocksRouteData(
     pageSize,
   })
 
+  // Срез по аккаунтам действует только с правом их перечислять: без него домен
+  // фильтр проигнорирует, а список всё равно показал бы «активный фильтр».
+  const appliedUids = r.ok && r.value.canPickUsers ? uids : []
+
   return {
     snapshot: r.ok
       ? blocksSnapshot(r.value, {
           ord: order,
           state,
           scopes: scopes.join(','),
-          uids: uids.join(','),
+          uids: appliedUids.join(','),
         })
       : null,
     fact: r.ok ? null : r.fact.code,
