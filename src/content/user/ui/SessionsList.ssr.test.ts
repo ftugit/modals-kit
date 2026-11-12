@@ -68,6 +68,7 @@ function routeData(items: SessionDeviceView[], overrides: Partial<SessionsRouteD
       pageSize: 30,
       authId: device.authId,
       journal: false,
+      canReadOthers: false,
       state: 'active',
       countries: ['RU'],
       canSeeDeleted: false,
@@ -78,6 +79,8 @@ function routeData(items: SessionDeviceView[], overrides: Partial<SessionsRouteD
     fact: null,
     enabled: true,
     uid: null,
+    journal: false,
+    canReadOthers: false,
     countries: ['RU'],
     notice: null,
     canSeeDeleted: false,
@@ -106,6 +109,26 @@ describe('SessionsList', () => {
 
     const alone = render(SessionsList, { props: { initial: routeData([device]) } })
     expect(alone.body).not.toContain('sessions-revoke-others')
+  })
+
+  test('журнал: без «Заблокировать остальные», с входом в свои устройства', () => {
+    const journal = render(SessionsList, {
+      props: {
+        journal: true,
+        initial: routeData([device, other], { journal: true, canReadOthers: true }),
+      },
+    })
+    expect(journal.body).toContain('data-testid="session-row"')
+    expect(journal.body).toContain('data-testid="sessions-own-open"')
+    expect(journal.body).not.toContain('sessions-revoke-others')
+
+    // Свои устройства: право на чужие даёт вход в журнал.
+    const own = render(SessionsList, {
+      props: { initial: routeData([device, other], { canReadOthers: true }) },
+    })
+    expect(own.body).toContain('data-testid="sessions-journal-open"')
+    expect(own.body).toContain('href="/sessions"')
+    expect(own.body).toContain('sessions-revoke-others')
   })
 
   test('без права отзыва кнопки остальных нет', () => {

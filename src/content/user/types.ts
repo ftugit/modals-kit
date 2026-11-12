@@ -161,6 +161,10 @@ export type SessionsRouteData = {
   fact: AuthErrorCode | null
   /** Аккаунт из пути (`/user/<uuid>/sessions`); `null` — свои устройства. */
   uid: string | null
+  /** Общий журнал (`/sessions`): все сессии, которые зритель вправе читать. */
+  journal: boolean
+  /** Читает ли зритель чужие устройства — вход в журнал и в чужие карточки. */
+  canReadOthers: boolean
   snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null
   countries: readonly string[]
   notice: 'revoke-failed' | null
@@ -179,6 +183,8 @@ export type SessionsPage = {
   /** Аккаунт среза; `null` — общий журнал. */
   authId: string | null
   journal: boolean
+  /** Зритель вправе читать чужие устройства (круг журнала). */
+  canReadOthers: boolean
   state: SessionsState
   /** Коды стран среза без фильтра страны (`SESSIONS_COUNTRY_NONE` — без страны). */
   countries: readonly string[]
@@ -350,6 +356,8 @@ export type PublicProfileView = {
 /** Итог чтения профиля доменом: строка (если видна) и признак «не создан». */
 export type ProfileRead = {
   profile: ProfileView | null
+  /** Зритель читает чужие устройства: кнопка «Сессии» чужого профиля. */
+  canReadSessions?: boolean
   /** Вызывающий — сам владелец цели (блок приватности показывается только ему). */
   isOwn: boolean
   /** Эффективный уровень видимости цели (конфиг: юзер → умолчание → бутстрап). */
@@ -422,6 +430,11 @@ export type ProfileRouteData = {
   /** Возможности удаления по цели (права + запреты этапа 6): гейты удаления. */
   canDeleteProfile: boolean
   canDeleteSeed: boolean
+  /**
+   * Зритель читает чужие устройства: кнопка «Сессии» чужого профиля ведёт
+   * на `/user/<uuid>/sessions`. Необязательный — старые фикстуры без флага.
+   */
+  canReadSessions?: boolean
   /** Раздел блокировок (этап 9): записи цели и право операции для компонента. */
   blocks: BlockView[]
   canReadBlocks: boolean

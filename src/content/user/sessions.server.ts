@@ -283,6 +283,10 @@ export async function listSessionsPage(
 
   return ok({
     items: (rows as unknown as Record<string, unknown>[]).map((row) => project(row, actor)),
+    // Чтение БЕЗ владельца — это тот же круг, что у журнала: по нему экран
+    // показывает вход в «Все сессии». Своих читает каждый владелец, поэтому
+    // `canRead` среза здесь не годится.
+    canReadOthers: capsOf(actor, null).canRead,
     total,
     page,
     pageSize,

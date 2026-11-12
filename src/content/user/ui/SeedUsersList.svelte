@@ -24,6 +24,8 @@
   import { auth as authResource, profile as profileResource } from '../schema.js'
   import type { SeedUserView } from '../types.js'
   import { vault } from '../vault.svelte.js'
+  import { session as sessionResource } from '../schema.js'
+  import { Button } from '#components/ui/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
   import { seedFilterLabels, seedFilterText } from './seed-users/filters-form.js'
@@ -74,6 +76,12 @@
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSeedUsersPaginator()
+
+  // Вход в журнал сессий — только тому, кто вправе читать чужие устройства
+  // (круг журнала). Право смотрит та же модель, что и сам экран.
+  const gSession = grants(sessionResource)
+  const readSessionsGrant = useGrants(gSession.select)
+  const canReadSessions = $derived(readSessionsGrant.current)
 
   const asModalLink = useModalLink()
   const attrsOf = (user: SeedUserView): LinkAttrs =>
@@ -222,6 +230,15 @@
           />
         {/key}
       </div>
+    {/if}
+  {/snippet}
+  {#snippet controls()}
+    {#if canReadSessions}
+      <!-- Журнал всех сессий: у строки уже есть ссылка (профиль), вложенную
+           ссылку ставить нельзя — вход живёт в правой зоне списка. -->
+      <Button href="/sessions" variant="outline" size="sm" data-testid="seed-users-sessions-open">
+        Все сессии
+      </Button>
     {/if}
   {/snippet}
   {#snippet item(user, selected)}

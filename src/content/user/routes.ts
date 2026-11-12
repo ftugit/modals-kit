@@ -74,6 +74,9 @@ export const userMenuRoute = kitRoute('/user/menu')
 /** Свои устройства (`/user/sessions`) — страница-fallback модалки `user.sessions`. */
 export const userSessionsRoute = kitRoute('/user/sessions')
 
+/** Общий журнал устройств (`/sessions`): все сессии, которые зритель вправе читать. */
+export const sessionsJournalRoute = kitRoute('/sessions')
+
 /**
  * Карточка одного устройства — адрес пары `user.session` (модалка/роут).
  * Сегмент ограничен матчером `[id=uuid]`: не-UUID отсекается 404 до `load`.

@@ -6,7 +6,7 @@
 import { checkGrants, forOwner, grants } from '#lib/db/index.js'
 import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
 import { canOpenUserConfig, getEffective, setUserKey } from './config-api.js'
-import { auth as authResource, block as blockResource, profile as profileResource } from './schema.js'
+import { auth as authResource, block as blockResource, profile as profileResource, session as sessionResource } from './schema.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
@@ -15,6 +15,7 @@ import type { ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } fro
 const gProfile = grants(profileResource)
 const gBlock = grants(blockResource)
 const gAuth = grants(authResource)
+const gSession = grants(sessionResource)
 
 /** Ключ конфига приватности профиля (этап 8): переопределение за юзером поверх глобального. */
 
@@ -54,6 +55,8 @@ export async function profile(
       // Глобальный круг чтения/записи блокировок (без `owner` цели — чтобы раздел в профиле открывался модерации/чтению).
       canReadBlocks: gBlock.select,
       canBlock: gBlock.insert,
+      // Чужой экран устройств (`/user/<uuid>/sessions`): круг журнала сессий.
+      canReadSessions: gSession.select,
     },
   )
   // Возможности удаления по цели (этап 6): право И нет активного запрета
@@ -85,6 +88,7 @@ export async function profile(
     blocks: [],
     canReadBlocks: scoped.canReadBlocks,
     canBlock: scoped.canBlock,
+    canReadSessions: scoped.canReadSessions,
     canOpenConfig: await canOpenUserConfig(ports, { id: g.sub, perms: g.perms }, target),
     isOwn: target === g.sub,
     visibility: await visibilityOf(ports, target),

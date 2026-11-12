@@ -73,8 +73,10 @@ export const load: PageServerLoad = async (event): Promise<SessionsFiltersPageDa
   const uidParam = sp.get('uid')?.trim() || fromSp.get('uid')?.trim() || null
   const uidMatch = /^\/user\/([0-9a-f-]{36})\/sessions(?:\/|$)/i.exec(fromUrl.pathname)
   const uid = uidParam ?? (uidMatch ? uidMatch[1]!.toLowerCase() : null)
+  // Носитель — общий журнал (`/sessions`): срез стран тоже берётся по всем сессиям.
+  const journal = /^\/sessions(?:\/|$)/.test(fromUrl.pathname)
   const u = auth(event)
-  const r = await u.listSessionsPage({ authId: uid, page: 1, pageSize: 1 })
+  const r = await u.listSessionsPage({ authId: journal ? null : uid, journal, page: 1, pageSize: 1 })
 
   return {
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,

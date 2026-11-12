@@ -532,6 +532,7 @@ describe('профиль', () => {
       fullBlock: null,
       blocks: [],
       canReadBlocks: false,
+      canReadSessions: false,
       canBlock: false,
       canOpenConfig: true,
     })
@@ -547,6 +548,7 @@ describe('профиль', () => {
       fullBlock: null,
       blocks: [],
       canReadBlocks: false,
+      canReadSessions: false,
       canBlock: false,
       canOpenConfig: false,
     })
@@ -564,6 +566,7 @@ describe('профиль', () => {
       fullBlock: null,
       blocks: [],
       canReadBlocks: false,
+      canReadSessions: false,
       canBlock: false,
       canOpenConfig: false,
     })

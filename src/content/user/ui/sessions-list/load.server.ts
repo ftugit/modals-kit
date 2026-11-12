@@ -54,9 +54,11 @@ export function sessionsTargetOf(event: RequestEvent): string | null {
 export async function loadSessionsRouteData(
   event: RequestEvent,
   fixedUid: string | null,
+  /** Общий журнал (`/sessions`): без аккаунта, нужно право на чужие. */
+  journal = false,
 ): Promise<SessionsRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
-  const uid = fixedUid?.trim().toLowerCase() || null
+  const uid = journal ? null : fixedUid?.trim().toLowerCase() || null
   const notice = event.url.searchParams.get('notice') === 'revoke-failed' ? 'revoke-failed' : null
   const u = auth(event)
   if (!u.enabled) {
@@ -65,6 +67,8 @@ export async function loadSessionsRouteData(
       fact: 'auth.disabled',
       enabled: false,
       uid,
+      journal,
+      canReadOthers: false,
       countries: [],
       notice,
       canSeeDeleted: false,
@@ -93,6 +97,7 @@ export async function loadSessionsRouteData(
 
   const r = await u.listSessionsPage({
     authId: uid,
+    journal,
     page,
     pageSize,
     state,
@@ -109,6 +114,8 @@ export async function loadSessionsRouteData(
       fact: r.fact.code,
       enabled: true,
       uid,
+      journal,
+      canReadOthers: false,
       countries: [],
       notice,
       canSeeDeleted: false,
@@ -123,6 +130,7 @@ export async function loadSessionsRouteData(
     // срезать «отозванные»), поэтому состояние берётся из ответа, а не из адреса.
     snapshot: sessionsSnapshot(r.value, {
       uid,
+      journal,
       state: r.value.state,
       net,
       country: country.join(','),
@@ -134,6 +142,8 @@ export async function loadSessionsRouteData(
     fact: null,
     enabled: true,
     uid,
+    journal,
+    canReadOthers: r.value.canReadOthers,
     countries: r.value.countries,
     notice,
     canSeeDeleted: r.value.canSeeDeleted,

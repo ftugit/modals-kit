@@ -18,6 +18,7 @@
   import { Listing } from '#components/listing/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
+  import { Button } from '#components/ui/index.js'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
@@ -46,6 +47,8 @@
      * устройства (`/user/sessions`), uuid — чужие (`/user/<uuid>/sessions`).
      */
     uid?: string | null
+    /** Общий журнал (`/sessions`): без аккаунта, все читаемые сессии. */
+    journal?: boolean
     /** Данные `load` роута от носителя (страница/модалка). */
     initial?: SessionsRouteData | null
     /** Явный ключ изолированной области пагинатора (для немодальных стендов). */
@@ -62,6 +65,7 @@
 
   let {
     uid = null,
+    journal = false,
     initial = null,
     scope = null,
     url = undefined,
@@ -77,7 +81,13 @@
   // Цель списка: адрес `load` и адрес экшенов собираются из пропа, а не из
   // query. `_uid` для догрузки порций едет в `extra` снапшота (см. `source.ts`).
   const fixedUid = $derived(uid?.trim() || null)
-  const route = $derived(fixedUid ? `/user/${encodeURIComponent(fixedUid)}/sessions` : '/user/sessions')
+  const route = $derived(
+    journal
+      ? '/sessions'
+      : fixedUid
+        ? `/user/${encodeURIComponent(fixedUid)}/sessions`
+        : '/user/sessions',
+  )
 
   const asModalLink = useModalLink()
   const attrsOf = (item: SessionDeviceView): LinkAttrs => ({
@@ -194,7 +204,7 @@
   {route}
   loadError="auth.expired"
   ariaLabel="Список устройств"
-  title={fixedUid ? 'Сессии аккаунта' : 'Сессии'}
+  title={journal ? 'Все сессии' : fixedUid ? 'Сессии аккаунта' : 'Сессии'}
   {variant}
   class={className}
   {scope}
@@ -236,7 +246,17 @@
   {/snippet}
   {#snippet controls({ payload })}
     {@const view = payload as unknown as SessionsRouteData}
-    {#if view.canRevoke && othersOf(view)}
+    {#if !journal && !fixedUid && view.canReadOthers}
+      <Button href="/sessions" variant="outline" size="sm" data-testid="sessions-journal-open">
+        Все сессии
+      </Button>
+    {/if}
+    {#if journal}
+      <Button href="/user/sessions" variant="outline" size="sm" data-testid="sessions-own-open">
+        Свои устройства
+      </Button>
+    {/if}
+    {#if !journal && view.canRevoke && othersOf(view)}
       <Form form={othersForm} hiddenFields={othersForm.hidden()} class="inline-flex">
         <div hidden>
           <Field of={othersForm.f.scope} />

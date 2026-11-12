@@ -29,6 +29,7 @@
     block as blockResource,
     config as configResource,
     profile as profileResource,
+    session as sessionResource,
   } from '../schema.js'
   import { specProfile } from '../spec-profile.js'
   import type { AuthErrorCode } from '../error.js'
@@ -38,6 +39,7 @@
   const gProfile = grants(profileResource)
   const gBlock = grants(blockResource)
   const gConfig = grants(configResource)
+  const gSession = grants(sessionResource)
 
   interface Props {
     /** id аккаунта, чей профиль показать. */
@@ -71,6 +73,7 @@
   const asModalLink = useModalLink()
   const editProfileGrant = useGrants(gProfile.update, { ownerId: () => uid })
   const readBlocksGrant = useGrants(gBlock.select)
+  const readSessionsGrant = useGrants(gSession.select)
   const readConfigGrant = useGrants(gConfig.select, { ownerId: () => uid })
 
   let data = $state<ProfileRead | null>(untrack(() => initial))
@@ -78,6 +81,9 @@
     vault.principal !== null ? vault.principal === uid : Boolean(data?.isOwn),
   )
   const canEdit = $derived(vault.principal !== null ? editProfileGrant.current : Boolean(data?.canEdit))
+  const canReadSessions = $derived(
+    vault.principal !== null ? readSessionsGrant.current : Boolean(data?.canReadSessions),
+  )
   const canReadBlocks = $derived(
     vault.principal !== null ? readBlocksGrant.current : Boolean(data?.canReadBlocks),
   )
@@ -193,6 +199,17 @@
   {#if isOwnLive}
     <Button
       {...asModalLink('user.sessions')}
+      variant="outline"
+      size="sm"
+      data-testid="profile-sessions-open"
+    >
+      Сессии
+    </Button>
+  {:else if canReadSessions}
+    <!-- Чужой профиль: устройства этого аккаунта отдельным экраном
+         (`/user/<uuid>/sessions`), как блокировки уходят в `/user/[id]/blocks`. -->
+    <Button
+      href={`/user/${encodeURIComponent(uid)}/sessions`}
       variant="outline"
       size="sm"
       data-testid="profile-sessions-open"
