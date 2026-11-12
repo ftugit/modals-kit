@@ -91,10 +91,6 @@
         : userSessionsRoute.href(),
   )
 
-  // Вход в журнал — из реестра адресов: строка `/sessions` больше не вшита в
-  // разметку, иначе правка пути расходится с роутом.
-  const journalHref = $derived(sessionsJournalRoute.href())
-
   const asModalLink = useModalLink()
   // Цель аккаунта едет в карточку строки: иначе `user.session` дал бы
   // fallback на свой путь `/user/sessions/<id>` и строка чужого списка
@@ -296,12 +292,25 @@
   {#snippet controls({ payload })}
     {@const view = payload as unknown as SessionsRouteData}
     {#if !journal && !fixedUid && view.canReadOthers}
-      <Button href={journalHref} variant="outline" size="sm" data-testid="sessions-journal-open">
+      <!-- Журнал — своя пара `user.sessions.journal`: вход слоем, а не переходом.
+           Адрес без JS приходит из реестра через пару, не из разметки. -->
+      <Button
+        {...asModalLink('user.sessions.journal')}
+        variant="outline"
+        size="sm"
+        data-testid="sessions-journal-open"
+      >
         Все сессии
       </Button>
     {/if}
     {#if journal}
-      <Button href="/user/sessions" variant="outline" size="sm" data-testid="sessions-own-open">
+      <!-- Обратно к своим — той же механикой: слой `user.sessions` поверх журнала. -->
+      <Button
+        {...asModalLink('user.sessions')}
+        variant="outline"
+        size="sm"
+        data-testid="sessions-own-open"
+      >
         Свои устройства
       </Button>
     {/if}

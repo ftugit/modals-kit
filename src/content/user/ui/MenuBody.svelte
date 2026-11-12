@@ -13,6 +13,7 @@
   import { Button, Separator } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { useGrants } from '../grants.svelte.js'
+  import { session as sessionResource } from '../schema.js'
   import { specProfile } from '../spec-profile.js'
   import { vault } from '../vault.svelte.js'
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
@@ -44,6 +45,7 @@
   )
   const configLink = $derived(asModalLink('user.config.edit'))
   const storageServersGrant = useGrants(grants(storageServer).select)
+  const readSessionsGrant = useGrants(grants(sessionResource).select)
   const storageServersLink = $derived(asModalLink('storage.servers'))
 </script>
 
@@ -83,6 +85,18 @@
       >
         Сессии
       </Button>
+      {#if readSessionsGrant.current}
+        <!-- Журнал — своя пара: тот же слой, а не уход со стопкой. -->
+        <Button
+          {...asModalLink('user.sessions.journal')}
+          variant="ghost"
+          size="sm"
+          class="w-full justify-start font-normal"
+          data-testid="menu-journal-open"
+        >
+          Все сессии
+        </Button>
+      {/if}
       <Button {...profileLink} variant="ghost" size="sm" class="w-full justify-start font-normal">
         Изменить профиль
       </Button>

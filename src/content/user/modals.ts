@@ -25,6 +25,7 @@ import {
   userListFiltersRoute,
   userListRoute,
   userLogoutRoute,
+  sessionsJournalRoute,
   userMenuRoute,
   userSessionRoute,
   userSessionsFiltersRoute,
@@ -57,6 +58,16 @@ registerModal({
   component: lazy(() => import('./ui/SessionsModal.svelte')),
   route: (p: { id?: string }) =>
     p?.id ? userAccountSessionsRoute.href({ id: String(p.id) }) : userSessionsRoute.href(),
+  size: { width: 560, height: 600 },
+})
+// Журнал сессий (`/sessions`) — самостоятельная единица: свой роут и свой
+// ключ модалки, а не «список с флагом, до которого надо перейти». Параметра
+// цели у пары нет: журнал и есть «все читаемые сессии», цель внутри задаёт
+// флаг носителя, а не адрес.
+registerModal({
+  name: 'user.sessions.journal',
+  component: lazy(() => import('./ui/SessionsJournalModal.svelte')),
+  route: sessionsJournalRoute.href,
   size: { width: 560, height: 600 },
 })
 // Фильтры списка устройств: открываются кнопкой «Фильтры» в списке, результат

@@ -238,7 +238,12 @@
     {#if canReadSessions}
       <!-- Журнал всех сессий: у строки уже есть ссылка (профиль), вложенную
            ссылку ставить нельзя — вход живёт в правой зоне списка. -->
-      <Button href={journalHref} variant="outline" size="sm" data-testid="seed-users-sessions-open">
+      <Button
+        {...asModalLink('user.sessions.journal')}
+        variant="outline"
+        size="sm"
+        data-testid="seed-users-sessions-open"
+      >
         Все сессии
       </Button>
     {/if}

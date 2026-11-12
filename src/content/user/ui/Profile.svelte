@@ -213,6 +213,18 @@
       Сессии
     </Button>
   {/if}
+  {#if canReadSessions}
+    <!-- Журнал — отдельная единица (`user.sessions.journal`): слой поверх
+         профиля, а не переход на страницу журнала со сбросом стопки. -->
+    <Button
+      {...asModalLink('user.sessions.journal')}
+      variant="outline"
+      size="sm"
+      data-testid="profile-journal-open"
+    >
+      Все сессии
+    </Button>
+  {/if}
   {#if data?.profile || data?.notCreated}
     {#if canOpenConfig}
       <Button

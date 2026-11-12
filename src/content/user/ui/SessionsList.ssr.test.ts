@@ -41,6 +41,14 @@ vi.mock('#hooks/links/index.js', async (importOriginal) => {
           'data-modal-link': '',
         }
       }
+      // Журнал и свои устройства — свои пары: адрес фолбэка тот же, что у
+      // `modals.ts`, но без механики модалок (хоста в SSR нет).
+      if (name === 'user.sessions.journal') {
+        return { href: routes.sessionsJournalRoute.href(), 'data-modal-link': '' }
+      }
+      if (name === 'user.sessions') {
+        return { href: routes.userSessionsRoute.href(), 'data-modal-link': '' }
+      }
       return {
         href: params.uid
           ? `${routes.userSessionsFiltersRoute.href()}?uid=${encodeURIComponent(params.uid)}`
@@ -202,6 +210,37 @@ describe('SessionsList', () => {
     const filters = links.calls.find((c) => c.name === 'user.sessions.filters')
     expect(filters?.params).toEqual({ uid })
     expect(body).toContain(`href="/user/sessions/filters?uid=${uid}"`)
+  })
+
+  test('вход в журнал и возврат к своим — модалками, а не переходами', () => {
+    // Атрибуты одной кнопки: по `data-testid` находим её ссылку и смотрим,
+    // что это механика модалок (`data-modal-link`), а не простой `href`.
+    const attrsOf = (body: string, testId: string): string =>
+      new RegExp(`<a(?=[^>]*data-testid="${testId}")[^>]*>`).exec(body)?.[0] ?? ''
+
+    links.calls.length = 0
+    // `body` — геттер: SSR-рендер ленивый, разметка (и вызовы модалок)
+    // появляются только при обращении к нему.
+    const { body: ownBody } = render(SessionsList, {
+      props: { initial: routeData([device, other], { canReadOthers: true }) },
+    })
+    const open = links.calls.find((c) => c.name === 'user.sessions.journal')
+    expect(open).toBeDefined()
+    const openAttrs = attrsOf(ownBody, 'sessions-journal-open')
+    expect(openAttrs).toContain('data-modal-link')
+    expect(openAttrs).toContain('href="/sessions"')
+
+    // Внутри журнала входа в журнал нет, а возврат к своим — тоже модалкой.
+    links.calls.length = 0
+    const { body: journalBody } = render(SessionsList, {
+      props: { journal: true, initial: routeData([device, other], { journal: true, canReadOthers: true }) },
+    })
+    expect(journalBody).not.toContain('sessions-journal-open')
+    expect(links.calls.some((c) => c.name === 'user.sessions.journal')).toBe(false)
+    expect(links.calls.some((c) => c.name === 'user.sessions')).toBe(true)
+    const backAttrs = attrsOf(journalBody, 'sessions-own-open')
+    expect(backAttrs).toContain('data-modal-link')
+    expect(backAttrs).toContain('href="/user/sessions"')
   })
 
   test('вход в журнал только по праву на чужие устройства', () => {
