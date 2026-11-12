@@ -7,13 +7,17 @@ import type { ProfileView } from '../types.js'
 
 // Кнопка редактирования — механика модальной ссылки: в SSR-тесте без
 // ModalHost её заменяет заглушка с тем же видимым итогом (`href` пары).
+// Заглушка повторяет видимый итог механики: `href` — страница пары, а
+// присутствие `data-modal-link` и есть отличие модалки от обычной ссылки.
 vi.mock('#hooks/links/index.js', () => ({
-  useModalLink: () => (name: string, params: { id?: string }) => ({
+  useModalLink: () => (name: string, params: { id?: string } = {}) => ({
     href:
       name === 'user.profile.edit'
         ? `/user/${params.id}/edit`
         : name === 'user.sessions'
-          ? '/user/sessions'
+          ? params.id
+            ? `/user/${params.id}/sessions`
+            : '/user/sessions'
           : '/',
     'data-modal-link': '',
   }),
@@ -50,6 +54,49 @@ describe('ProfileCard', () => {
     })
     expect(body).toContain(specProfile.nicknameMissing)
     expect(body).toContain(specProfile.avatarMissing)
+  })
+})
+
+describe('Profile: устройства аккаунта — одна кнопка на своих и чужих', () => {
+  const foreign = '22222222-2222-4222-8222-222222222222'
+  const props = (isOwn: boolean) => ({
+    uid: foreign,
+    initial: {
+      profile: base,
+      isOwn,
+      visibility: 'nobody' as const,
+      notCreated: false,
+      canEdit: false,
+      canDeleteProfile: false,
+      canDeleteSeed: false,
+      fullBlock: null,
+      blocks: [],
+      canReadSessions: true,
+      canReadBlocks: false,
+      canBlock: false,
+    },
+  })
+
+  test('чужой аккаунт открывается модалкой со своей страницей-fallback', () => {
+    const { body } = render(Profile, { props: props(false) })
+    expect(body).toContain(`href="/user/${foreign}/sessions"`)
+    // Модалка, а не переход: иначе тот же смысл получал другой носитель.
+    expect(body).toContain('data-modal-link')
+    expect(body).toContain('data-testid="profile-sessions-open"')
+  })
+
+  test('свой аккаунт — та же модалка без id', () => {
+    const { body } = render(Profile, { props: props(true) })
+    expect(body).toContain('href="/user/sessions"')
+    expect(body).not.toContain(`href="/user/${foreign}/sessions"`)
+    expect(body).toContain('data-testid="profile-sessions-open"')
+  })
+
+  test('без права читать чужие устройства кнопки нет', () => {
+    const { body } = render(Profile, {
+      props: { uid: foreign, initial: { ...props(false).initial, canReadSessions: false } },
+    })
+    expect(body).not.toContain('data-testid="profile-sessions-open"')
   })
 })
 

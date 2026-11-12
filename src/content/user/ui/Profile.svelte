@@ -102,7 +102,10 @@
   // для пустого профиля — первое заполнение создаёт строку, это же ждёт SSR-тест.
   const showProfileActions = $derived(
     Boolean(data && (canEdit || isOwnLive)) ||
-      Boolean((data?.profile || data?.notCreated) && (canOpenConfig || canReadBlocks)),
+      Boolean(
+        (data?.profile || data?.notCreated) &&
+          (canOpenConfig || canReadBlocks || canReadSessions),
+      ),
   )
 
   const project = (d: ProfileRouteData, notify = true) => {
@@ -196,20 +199,13 @@
       Редактировать
     </Button>
   {/if}
-  {#if isOwnLive}
+  {#if isOwnLive || canReadSessions}
+    <!-- Одна кнопка на свои и чужие устройства: модалка `user.sessions`
+         принимает `id` аккаунта, её страница-fallback без JS — `/user/[id]/sessions`.
+         Раньше чужой аккаунт вёл на страницу, и один и тот же смысл имел
+         два разных носителя. -->
     <Button
-      {...asModalLink('user.sessions')}
-      variant="outline"
-      size="sm"
-      data-testid="profile-sessions-open"
-    >
-      Сессии
-    </Button>
-  {:else if canReadSessions}
-    <!-- Чужой профиль: устройства этого аккаунта отдельным экраном
-         (`/user/<uuid>/sessions`), как блокировки уходят в `/user/[id]/blocks`. -->
-    <Button
-      href={`/user/${encodeURIComponent(uid)}/sessions`}
+      {...asModalLink('user.sessions', isOwnLive ? {} : { id: uid })}
       variant="outline"
       size="sm"
       data-testid="profile-sessions-open"

@@ -75,6 +75,17 @@ export const userMenuRoute = kitRoute('/user/menu')
 export const userSessionsRoute = kitRoute('/user/sessions')
 
 /**
+ * Устройства конкретного аккаунта (`/user/[id]/sessions`) — та же модалка
+ * `user.sessions` с параметром `id`, только со своей страницей-fallback.
+ * Один компонент на оба случая: иначе «свои» открывались модалкой, а чужие —
+ * страницей, и один и тот же смысл имел два разных носителя.
+ */
+export const userAccountSessionsRoute = kitRoute('/(site)/(app)/user/[id=uuid]/sessions', {
+  dynamic: true,
+  id: '/user/[id]/sessions',
+})
+
+/**
  * Выход (`/user/logout`) — страница-fallback модалки `user.logout`. Здесь же
  * живут экшены набора: компонент один, POST уходит на этот адрес.
  */

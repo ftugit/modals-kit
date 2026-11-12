@@ -33,6 +33,7 @@ import {
   userProfileDeleteRoute,
   userProfileEditRoute,
   userProfileRoute,
+  userAccountSessionsRoute,
 } from './routes.js'
 
 registerModal({
@@ -47,10 +48,14 @@ registerModal({
   route: userMenuRoute.href,
   size: { width: 320, height: 360 },
 })
+// Устройства аккаунта: один компонент на свои и чужие. `id` аккаунта задаёт
+// и цель внутри списка, и страницу-fallback без JS (`/user/[id]/sessions`);
+// без `id` — свои устройства и `/user/sessions`.
 registerModal({
   name: 'user.sessions',
   component: lazy(() => import('./ui/SessionsModal.svelte')),
-  route: userSessionsRoute.href,
+  route: (p: { id?: string }) =>
+    p?.id ? userAccountSessionsRoute.href({ id: String(p.id) }) : userSessionsRoute.href(),
   size: { width: 560, height: 600 },
 })
 // Фильтры списка устройств: открываются кнопкой «Фильтры» в списке, результат
