@@ -271,7 +271,7 @@ test('реальная PostgreSQL: включённый build reset очищае
   } finally { if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end() }
 })
 
-test('реальная PostgreSQL: роль без прав владельца не изменяет данные и не закрывает доступ', { skip: !url, timeout: 30000 }, async () => {
+test('реальная PostgreSQL: роль без права CREATE на public не изменяет данные', { skip: !url, timeout: 30000 }, async () => {
   const config = new URL(url)
   assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
   const suffix = randomBytes(8).toString('hex')
@@ -283,21 +283,99 @@ test('реальная PostgreSQL: роль без прав владельца �
     await admin.query(`CREATE DATABASE "${name}"`); dbCreated = true
     config.pathname = `/${name}`
     const setup = new pg.Client({ connectionString: config.toString() }); await setup.connect()
+    // Право CREATE на схему НЕ выдаём — именно это теперь обязательное условие.
     await setup.query(`CREATE TABLE public.keep(id int); INSERT INTO public.keep VALUES(42); GRANT USAGE ON SCHEMA public TO "${role}"`)
     await setup.end()
     const restricted = new URL(config); restricted.username = role; restricted.password = 'isolated-test-only'
-    await assert.rejects(exclusiveReset(restricted.toString(), 3000), /роль сброса не владеет целевой БД/)
+    await assert.rejects(exclusiveReset(restricted.toString(), 3000), /нет права CREATE на схему public/)
     const child = spawnSync(process.execPath, ['tooling/db-reset.mjs'], { env: { ...process.env, DATABASE_RESET: '1', DATABASE_URL: restricted.toString(), HYPERDRIVE_CONNECTION_STRING: '' }, encoding: 'utf8', timeout: 10000 })
     assert.equal(child.status, 1)
-    assert.match(child.stderr, /роль сброса не владеет целевой БД/)
+    assert.match(child.stderr, /нет права CREATE на схему public/)
     assert.doesNotMatch(child.stderr, /isolated-test-only/)
-    assert.equal((await admin.query('SELECT datallowconn FROM pg_database WHERE datname=$1', [name])).rows[0].datallowconn, true)
     const verify = new pg.Client({ connectionString: config.toString() }); await verify.connect()
     assert.equal((await verify.query('SELECT id FROM public.keep')).rows[0].id, 42)
     await verify.end()
   } finally {
     if (dbCreated) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
     if (roleCreated) await admin.query(`DROP ROLE "${role}"`)
+    await admin.end()
+  }
+})
+
+test('реальная PostgreSQL: managed-провайдер — роль не владеет БД, в public стоит расширение', { skip: !url, timeout: 30000 }, async (t) => {
+  // Ровно конфигурация Clever Cloud: приложение подключается ролью, которая не
+  // владеет базой и не суперпользователь, а в public живут объекты расширений,
+  // принадлежащие другой роли. Сброс должен очистить только свои объекты.
+  const config = new URL(url)
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(config.hostname)); assert.equal(config.search, '')
+  const suffix = randomBytes(8).toString('hex')
+  const name = `kit_test_${suffix}`, role = `kit_role_${suffix}`, owner = `kit_owner_${suffix}`
+  const admin = new pg.Client({ connectionString: url }); await admin.connect()
+  let dbCreated = false
+  try {
+    // Роль приложения НЕ входит в роль-владельца: иначе pg_has_role(...'USAGE')
+    // вернёт true и фикстура перестанет воспроизводить managed-провайдера.
+    await admin.query(`CREATE ROLE "${owner}" NOLOGIN`)
+    await admin.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'isolated-test-only'`)
+    await admin.query(`CREATE DATABASE "${name}" OWNER "${owner}"`); dbCreated = true
+    config.pathname = `/${name}`
+    const setup = new pg.Client({ connectionString: config.toString() }); await setup.connect()
+    // Расширение ставим в public: так же, как pg_stat_statements у провайдера.
+    try { await setup.query('CREATE EXTENSION IF NOT EXISTS hstore SCHEMA public') }
+    catch { t.skip('расширение hstore недоступно на сервере'); return }
+    await setup.query(`GRANT CREATE, USAGE ON SCHEMA public TO "${role}"`)
+    await setup.query(`SET ROLE "${role}"; CREATE TABLE public.app_data(id int); INSERT INTO public.app_data VALUES(7); CREATE VIEW public.app_view AS SELECT * FROM public.app_data; RESET ROLE`)
+    await setup.end()
+
+    const app = new URL(config); app.username = role; app.password = 'isolated-test-only'
+    const probe = new pg.Client({ connectionString: app.toString() }); await probe.connect()
+    // Негативный контроль фикстуры: роль действительно не владеет базой.
+    const rights = await probe.query("SELECT (SELECT pg_has_role(current_user, datdba, 'USAGE') FROM pg_database WHERE datname=current_database()) AS is_owner, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser")
+    assert.equal(rights.rows[0].is_owner, false, 'фикстура: роль не должна владеть базой')
+    assert.equal(rights.rows[0].superuser, false)
+    await probe.end()
+
+    // Объекты расширения фиксируем до сброса, чтобы сверить после по именам.
+    const before = new pg.Client({ connectionString: app.toString() }); await before.connect()
+    let extensionObjects = [], schemaOwner
+    try {
+      const { rows } = await before.query(`SELECT p.proname FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public'
+          AND EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid='pg_catalog.pg_proc'::regclass
+            AND d.objid=p.oid AND d.refclassid='pg_catalog.pg_extension'::regclass AND d.deptype='e')
+        ORDER BY 1`)
+      extensionObjects = rows.map((r) => r.proname)
+      const meta = await before.query("SELECT pg_get_userbyid(nspowner) AS o FROM pg_namespace WHERE nspname='public'")
+      schemaOwner = meta.rows[0].o
+    } finally { await before.end() }
+    assert.ok(extensionObjects.length > 0, 'фикстура: расширение должно создать объекты в public')
+
+    const result = await exclusiveReset(app.toString(), 5000)
+    assert.equal(result.tables, 1, 'удалена только своя таблица')
+    assert.equal(result.views, 1)
+    // Счётчики считают только свои объекты: объекты расширения в них не входят.
+    assert.equal(result.routines, 0, 'процедуры расширения не должны попадать в счётчик удаления')
+
+    const verify = new pg.Client({ connectionString: app.toString() }); await verify.connect()
+    try {
+      assert.equal((await verify.query("SELECT to_regclass('public.app_data') AS x")).rows[0].x, null)
+      assert.equal((await verify.query("SELECT to_regclass('public.app_view') AS x")).rows[0].x, null)
+      // Расширение и его объекты должны остаться нетронутыми: hstore — это тип,
+      // а его функции лежат в public и принадлежат расширению.
+      assert.equal((await verify.query("SELECT to_regtype('public.hstore')::text AS x")).rows[0].x, 'hstore')
+      const { rows: after } = await verify.query(`SELECT p.proname FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' ORDER BY 1`)
+      assert.deepEqual(after.map((r) => r.proname), extensionObjects, 'объекты расширения должны сохраниться')
+      // Схема public и её владелец не изменились. В PostgreSQL 15+ схема public
+      // принадлежит служебной роли pg_database_owner, поэтому имя не угадываем,
+      // а сверяем с тем, что было до сброса.
+      assert.equal((await verify.query("SELECT pg_get_userbyid(nspowner) AS o FROM pg_namespace WHERE nspname='public'")).rows[0].o, schemaOwner)
+    } finally { await verify.end() }
+  } finally {
+    if (dbCreated) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`)
+    await admin.query(`DROP OWNED BY "${owner}"`).catch(() => {})
+    await admin.query(`DROP ROLE IF EXISTS "${role}"`); await admin.query(`DROP ROLE IF EXISTS "${owner}"`)
     await admin.end()
   }
 })

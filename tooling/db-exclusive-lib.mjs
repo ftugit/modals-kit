@@ -70,10 +70,19 @@ export async function exclusiveReset(connectionString, connectionTimeoutMillis, 
   process.once('SIGTERM', onSignal); process.once('SIGINT', onSignal)
   try {
     control = new pg.Client(config(targetUrl.toString())); control.on('error', () => {}); await control.connect()
-    const info = await control.query("SELECT oid::text, datallowconn, pg_has_role(current_user, datdba, 'USAGE') AS can_alter FROM pg_database WHERE datname=$1", [database])
+    // Владение БД больше не требуется: `ALTER DATABASE` из сброса убран, а на
+    // managed-провайдерах (Clever Cloud, Neon, Supabase) приложение подключается
+    // ролью, которая базой не владеет. Нужно право менять объекты в public —
+    // ровно то, что сброс и делает. Владение каждым удаляемым объектом
+    // дополнительно проверяется перед DROP в db-reset-lib.mjs.
+    const info = await control.query(`SELECT oid::text, datallowconn,
+      to_regnamespace('public') IS NOT NULL AS has_public,
+      COALESCE(has_schema_privilege(current_user, 'public', 'CREATE'), false) AS can_ddl_public
+      FROM pg_database WHERE datname=$1`, [database])
     if (info.rows.length !== 1) throw new Error('целевая БД не найдена')
     if (!info.rows[0].datallowconn) throw new Error('подключения к целевой БД отключены; требуется восстановление владельцем')
-    if (!info.rows[0].can_alter) throw new Error('роль сброса не владеет целевой БД; безопасный сброс невозможен')
+    if (!info.rows[0].has_public) throw new Error('схема public отсутствует; её должен создать владелец базы или провайдер')
+    if (!info.rows[0].can_ddl_public) throw new Error('у роли сброса нет права CREATE на схему public; безопасный сброс невозможен')
 
     target = new pg.Client(config(targetUrl.toString())); target.on('error', () => {}); await target.connect()
     hooks.onTarget?.(target)
