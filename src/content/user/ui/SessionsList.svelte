@@ -21,6 +21,7 @@
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import type { AuthErrorCode } from '../error.js'
+  import { sessionsJournalRoute } from '../routes.js'
   import { vault } from '../vault.svelte.js'
   import type { SessionDeviceView, SessionsRouteData } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
@@ -79,11 +80,15 @@
   const fixedUid = $derived(uid?.trim() || null)
   const route = $derived(
     journal
-      ? '/sessions'
+      ? sessionsJournalRoute.href()
       : fixedUid
         ? `/user/${encodeURIComponent(fixedUid)}/sessions`
         : '/user/sessions',
   )
+
+  // Вход в журнал — из реестра адресов: строка `/sessions` больше не вшита в
+  // разметку, иначе правка пути расходится с роутом.
+  const journalHref = $derived(sessionsJournalRoute.href())
 
   const asModalLink = useModalLink()
   const attrsOf = (item: SessionDeviceView): LinkAttrs => ({
@@ -279,7 +284,7 @@
   {#snippet controls({ payload })}
     {@const view = payload as unknown as SessionsRouteData}
     {#if !journal && !fixedUid && view.canReadOthers}
-      <Button href="/sessions" variant="outline" size="sm" data-testid="sessions-journal-open">
+      <Button href={journalHref} variant="outline" size="sm" data-testid="sessions-journal-open">
         Все сессии
       </Button>
     {/if}

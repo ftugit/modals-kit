@@ -22,6 +22,7 @@ import {
   type PaginatorState,
 } from '#lib/paginate/index.js'
 import { AUTH_MESSAGES } from '../../messages.js'
+import { sessionsJournalRoute } from '../../routes.js'
 import { SESSIONS_COUNTRY_NONE, type SessionDeviceView, type SessionsPage, type SessionsState } from '../../types.js'
 
 export const SESSIONS_NAME = 'user-sessions'
@@ -97,7 +98,7 @@ async function fetchSessionsPage(
     if (v && (SESSIONS_FILTER_KEYS as readonly string[]).includes(k)) q.set(`${SESSIONS_PAGE_PARAM}.${k}`, v)
   }
   const basePath = journal
-    ? '/sessions'
+    ? sessionsJournalRoute.href()
     : target
       ? `/user/${encodeURIComponent(target)}/sessions`
       : '/user/sessions'
@@ -212,6 +213,27 @@ export function sessionsSnapshot(p: SessionsPage, extra?: SessionsSnapshotExtra)
     reqId: 0,
     capabilities: sessionsSource.capabilitiesFor({}),
   }
+}
+
+/**
+ * Цель среза страницы фильтров: из адреса носителя, а не из query.
+ *
+ * Общий журнал (`/sessions`) — срез по всем сессиям без `authId`; чужие
+ * устройства (`/user/<uuid>/sessions`) — по аккаунту из пути; свои — без цели.
+ * Раньше эта тройка была инлайном в `load`, из-за чего «фильтр журнала»
+ * проверять было нечем.
+ */
+export function sessionsFiltersTarget(from: string): { journal: boolean; uid: string | null } {
+  // Абсолютный адрес носителем не бывает: иначе `https://зло.example/sessions`
+  // открыл бы срез по всем сессиям. `load` отсекает его раньше (`localPath`),
+  // но разбор не должен надеяться на вызывающего.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(from.trim()) || from.trim().startsWith('//')) {
+    return { journal: false, uid: null }
+  }
+  const url = new URL(from, 'http://local.invalid')
+  if (/^\/sessions(?:\/|$)/.test(url.pathname)) return { journal: true, uid: null }
+  const match = /^\/user\/([0-9a-f-]{36})\/sessions(?:\/|$)/i.exec(url.pathname)
+  return { journal: false, uid: match ? match[1]!.toLowerCase() : null }
 }
 
 /** Код страны из адреса: `none` — «без страны», иначе код из справочника. */

@@ -19,6 +19,7 @@
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
     import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
+  import { sessionsJournalRoute } from '../routes.js'
   import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, profile as profileResource } from '../schema.js'
@@ -81,6 +82,9 @@
   // (круг журнала). Право смотрит та же модель, что и сам экран.
   const gSession = grants(sessionResource)
   const readSessionsGrant = useGrants(gSession.select)
+  // Адрес журнала — из реестра: вшитая строка расходится с роутом при его правке.
+  const journalHref = $derived(sessionsJournalRoute.href())
+
   const canReadSessions = $derived(readSessionsGrant.current)
 
   const asModalLink = useModalLink()
@@ -234,7 +238,7 @@
     {#if canReadSessions}
       <!-- Журнал всех сессий: у строки уже есть ссылка (профиль), вложенную
            ссылку ставить нельзя — вход живёт в правой зоне списка. -->
-      <Button href="/sessions" variant="outline" size="sm" data-testid="seed-users-sessions-open">
+      <Button href={journalHref} variant="outline" size="sm" data-testid="seed-users-sessions-open">
         Все сессии
       </Button>
     {/if}

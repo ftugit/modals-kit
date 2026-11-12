@@ -155,6 +155,26 @@ describe('SessionsList', () => {
     addr.url = new URL('http://localhost/user/sessions')
   })
 
+  test('вход в журнал только по праву на чужие устройства', () => {
+    // Кнопка журнала ведёт на чужие сессии: без права на них её быть не должно,
+    // в противном случае ссылка показывает заведомый отказ.
+    const own = render(SessionsList, { props: { initial: routeData([device, other]) } })
+    expect(own.body).not.toContain('data-testid="sessions-journal-open"')
+    expect(own.body).not.toContain('href="/sessions"')
+
+    const journal = render(SessionsList, {
+      props: { journal: true, initial: routeData([device, other], { journal: true }) },
+    })
+    expect(journal.body).not.toContain('data-testid="sessions-journal-open"')
+
+    // Позитивный контроль: право есть — вход появляется.
+    const allowed = render(SessionsList, {
+      props: { initial: routeData([device, other], { canReadOthers: true }) },
+    })
+    expect(allowed.body).toContain('data-testid="sessions-journal-open"')
+    expect(allowed.body).toContain('href="/sessions"')
+  })
+
   test('без права отзыва кнопки остальных нет', () => {
     const { body } = render(SessionsList, {
       props: { initial: routeData([device, other], { canRevoke: false }) },

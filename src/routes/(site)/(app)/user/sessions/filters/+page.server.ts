@@ -11,7 +11,7 @@ import { localPath } from '#lib/address/index.js'
 import { auth } from '#content/user/gateway.server.js'
 import type { AuthErrorCode } from '#content/user/index.js'
 import type { SessionsFilterValues } from '#content/user/ui/SessionsFiltersForm.svelte'
-import { sessionsCountryCodes } from '#content/user/ui/sessions-list/source.js'
+import { sessionsCountryCodes, sessionsFiltersTarget } from '#content/user/ui/sessions-list/source.js'
 
 export interface SessionsFiltersPageData {
   canSeeDeleted: boolean
@@ -71,10 +71,11 @@ export const load: PageServerLoad = async (event): Promise<SessionsFiltersPageDa
   // передан явно, иначе из пути носителя `/user/<uuid>/sessions` (как у фильтров
   // блокировок). Отдельного query-ключа списка нет.
   const uidParam = sp.get('uid')?.trim() || fromSp.get('uid')?.trim() || null
-  const uidMatch = /^\/user\/([0-9a-f-]{36})\/sessions(?:\/|$)/i.exec(fromUrl.pathname)
-  const uid = uidParam ?? (uidMatch ? uidMatch[1]!.toLowerCase() : null)
-  // Носитель — общий журнал (`/sessions`): срез стран тоже берётся по всем сессиям.
-  const journal = /^\/sessions(?:\/|$)/.test(fromUrl.pathname)
+  // Носитель решает цель среза: журнал (`/sessions`) — все сессии без цели,
+  // путь `/user/<uuid>/sessions` — чужой аккаунт. Явный `uid` перекрывает путь.
+  const target = sessionsFiltersTarget(from)
+  const journal = target.journal
+  const uid = uidParam ?? target.uid
   const u = auth(event)
   const r = await u.listSessionsPage({ authId: journal ? null : uid, journal, page: 1, pageSize: 1 })
 

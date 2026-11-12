@@ -88,6 +88,25 @@ test('владелец видит свои живые, не видит jti и н
   })
 })
 
+test('журнал: `admin` читает чужие устройства, актор без прав — нет', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'a'.repeat(43))
+    await device(deps.db, me, { jti: 'journal-admin-token-01', name: 'чужое для админа' })
+    const admin = actor('admin-account', ['admin'])
+
+    // Круг журнала — права без владельца строки: `admin` в него входит.
+    const journalAdmin = await listSessionsPage(admin, { journal: true, state: 'all' }, deps)
+    expect(journalAdmin.ok).toBe(true)
+    if (!journalAdmin.ok) return
+    expect(journalAdmin.value.items.map((item) => item.deviceName)).toEqual(['чужое для админа'])
+
+    // Негативный контроль: без права журнал отказа, а не пустого списка.
+    const journalNobody = await listSessionsPage(actor('plain-account', []), { journal: true }, deps)
+    expect(journalNobody.ok).toBe(false)
+    if (!journalNobody.ok) expect(journalNobody.fact.code).toBe('auth.forbidden')
+  })
+})
+
 test('страницы возвращают все 31 активную сессию без пересечений', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'f'.repeat(43))

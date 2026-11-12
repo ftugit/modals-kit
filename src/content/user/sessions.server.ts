@@ -183,6 +183,15 @@ async function accountExists(deps: SessionDeps, authId: string): Promise<boolean
   }
 }
 
+/**
+ * Права круга журнала: без владельца строки. У `checkGrants` `ownerId` —
+ * необязательная опция (`options?.ownerId ?? null`), а атом владельца требует
+ * `ownerId !== null`, то есть чтение без владельца — штатный режим модели, а не
+ * обход. Голый `checkGrants` без обёртки здесь не пишут: `capsOf` — местное
+ * соглашение модуля (то же в `blocks.ts`).
+ */
+const journalCapsOf = (actor: SessionActor) => capsOf(actor, null)
+
 const capsOf = (actor: SessionActor, ownerId: string | null) => {
   const principal = ctxOf(actor).principal
   return checkGrants(
@@ -320,7 +329,7 @@ export async function listSessionsPage(
     // Чтение БЕЗ владельца — это тот же круг, что у журнала: по нему экран
     // показывает вход в «Все сессии». Своих читает каждый владелец, поэтому
     // `canRead` среза здесь не годится.
-    canReadOthers: capsOf(actor, null).canRead,
+    canReadOthers: journalCapsOf(actor).canRead,
     total,
     page,
     pageSize,
@@ -340,7 +349,7 @@ export async function readSessionDetail(
   id: string,
   deps: SessionDeps,
 ): Promise<UserResult<SessionDetail>> {
-  const canSeeDeleted = capsOf(actor, null).canSeeDeleted
+  const canSeeDeleted = journalCapsOf(actor).canSeeDeleted
   const loaded = await loadRow(deps, actor, id, canSeeDeleted)
   if (!loaded) return unknownSession()
   const session = project(loaded, actor)
@@ -384,7 +393,7 @@ export async function revokeSessionById(
   opts?: { hard?: boolean },
 ): Promise<UserResult<SessionRevokeResult>> {
   const hard = opts?.hard === true
-  const canSeeDeleted = capsOf(actor, null).canSeeDeleted
+  const canSeeDeleted = journalCapsOf(actor).canSeeDeleted
   const loaded = await loadRow(deps, actor, id, hard && canSeeDeleted)
   if (!loaded) return unknownSession()
   const session = project(loaded, actor)
