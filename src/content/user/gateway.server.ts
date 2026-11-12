@@ -689,6 +689,8 @@ export function auth(event: AuthEvent): {
   refreshAccess(): Promise<UserResult<string>>
   logout(): Promise<UserResult<null>>
   logoutAll(): Promise<UserResult<null>>
+  /** Только снять куки, без отзыва строки: обход для недоступного хранилища. */
+  logoutLocal(): Promise<UserResult<null>>
   listSessionsPage(args?: ListSessionsPageArgs): Promise<UserResult<SessionsPage>>
   readSessionDetail(id: string): Promise<UserResult<SessionDetail>>
   renameSessionDevice(id: string, deviceName: string | null): Promise<UserResult<SessionDeviceView>>
@@ -858,6 +860,13 @@ export function auth(event: AuthEvent): {
       clearCookies()
       return r
     },
+    logoutLocal: async () => {
+      // Явный обход для случая недоступного хранилища: куки снимаются без
+      // отзыва, строка остаётся живой до истечения токена. Это единственное
+      // место, где куки снимаются без отзыва.
+      clearCookies()
+      return { ok: true, value: null }
+    },
     listSessionsPage: async (args) => {
       const g = await coreGuard(ports, await freshAccessOrCurrent())
       if ('code' in g) return { ok: false, fact: g }
@@ -1005,6 +1014,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'config.rule-forbidden':
       return 403
     case 'auth.disabled':
+    case 'auth.unavailable':
     case 'storage.pool-empty':
     case 'storage.unavailable':
       return 503

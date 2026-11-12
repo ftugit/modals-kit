@@ -15,6 +15,7 @@ import {
   renameSessionDevice,
   revokeBulkSessions,
   revokeSessionById,
+  SESSIONS_BULK_IDS_LIMIT,
   type SessionActor,
   type SessionDeps,
 } from './sessions.server.js'
@@ -219,6 +220,142 @@ test('all без известной текущей сессии доступен
     const all = await revokeBulkSessions(noSession, { scope: 'all' }, deps)
     expect(all.ok).toBe(true)
     if (all.ok) expect(all.value.revoked).toBe(1)
+  })
+})
+
+test('пакетный отзыв по набору id: only закрывает перечисленное, пустой набор — отказ', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'e'.repeat(43))
+    const them = await account(deps.db, 'f'.repeat(43))
+    const current = await device(deps.db, me, { jti: 'set-current-token-0021', name: 'эта' })
+    const other = await device(deps.db, me, { jti: 'set-other-token-00211', name: 'та' })
+    const third = await device(deps.db, me, { jti: 'set-third-token-00211', name: 'третья' })
+    const foreign = await device(deps.db, them, { jti: 'set-foreign-token-0021', name: 'чужая' })
+    const meActor = actor(me, [], current)
+
+    // Пустой `only` — не «закрыть всё», а отказ. Это главная ловушка набора.
+    const empty = await revokeBulkSessions(meActor, { scope: 'all', pick: 'only', ids: [] }, deps)
+    expect(empty).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
+    const survivedEmpty = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(survivedEmpty.ok && survivedEmpty.value.items).toHaveLength(3)
+
+    // Мусор не проходит в набор и не роняет вызов: один годный id — закрыт один.
+    const one = await revokeBulkSessions(meActor, {
+      scope: 'all',
+      pick: 'only',
+      ids: ['мусор', '', '  ', other, other],
+    }, deps)
+    expect(one.ok).toBe(true)
+    if (!one.ok) return
+    expect(one.value.revoked).toBe(1)
+    expect(one.value.requested).toBe(1)
+
+    // Чужой id не закрывается: набор ограничен `auth_id` цели.
+    const withForeign = await revokeBulkSessions(meActor, {
+      scope: 'all',
+      pick: 'only',
+      ids: [foreign, third],
+    }, deps)
+    expect(withForeign.ok).toBe(true)
+    if (!withForeign.ok) return
+    expect(withForeign.value.requested).toBe(2)
+    expect(withForeign.value.revoked).toBe(1)
+
+    const left = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(left.ok).toBe(true)
+    if (!left.ok) return
+    expect(left.value.items.map((item) => item.id)).toEqual([current])
+
+    const foreignLeft = await deps.db.resource(session).select(SERVER, {
+      filter: { field: 'id', op: 'eq', value: foreign },
+    })
+    expect(foreignLeft).toHaveLength(1)
+  })
+})
+
+test('пакетный отзыв по набору id: except закрывает всё, кроме перечисленного', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'a'.repeat(43))
+    const current = await device(deps.db, me, { jti: 'exc-current-token-0021', name: 'эта' })
+    const other = await device(deps.db, me, { jti: 'exc-other-token-00211', name: 'та' })
+    const meActor = actor(me, [], current)
+
+    // Исключили текущую — закрылась одна, `current` не поднимался.
+    const keepCurrent = await revokeBulkSessions(meActor, {
+      scope: 'others',
+      pick: 'except',
+      ids: [current],
+    }, deps)
+    expect(keepCurrent.ok).toBe(true)
+    if (!keepCurrent.ok) return
+    expect(keepCurrent.value.revoked).toBe(1)
+    expect(keepCurrent.value.current).toBe(false)
+
+    // Исключений нет — закрывается и текущая: набор полностью заменяет `scope`.
+    const all = await revokeBulkSessions(meActor, { scope: 'others', pick: 'except', ids: [] }, deps)
+    expect(all.ok).toBe(true)
+    if (!all.ok) return
+    expect(all.value.revoked).toBe(1)
+    expect(all.value.current).toBe(true)
+
+    const left = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(left.ok && left.value.items).toHaveLength(0)
+    expect(other).not.toBe(current)
+  })
+})
+
+test('пакетный отзыв по набору id: предел набора — отказ, а не усечение', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'b'.repeat(43))
+    const current = await device(deps.db, me, { jti: 'lim-current-token-0021', name: 'эта' })
+    const meActor = actor(me, [], current)
+    const over = Array.from({ length: SESSIONS_BULK_IDS_LIMIT + 1 }, () => crypto.randomUUID())
+
+    for (const pick of ['only', 'except'] as const) {
+      const denied = await revokeBulkSessions(meActor, { scope: 'all', pick, ids: over }, deps)
+      expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
+    }
+
+    // Негативный контроль: при отказе ничего не закрылось.
+    const left = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(left.ok && left.value.items).toHaveLength(1)
+  })
+})
+
+test('пакетный отзыв по набору id: набор важнее scope и прав на чужой аккаунт не даёт', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'c'.repeat(43))
+    const them = await account(deps.db, 'd'.repeat(43))
+    const mine = await device(deps.db, me, { jti: 'scope-mine-token-00211', name: 'моя' })
+    const theirs = await device(deps.db, them, { jti: 'scope-their-token-0021', name: 'их' })
+
+    // `pick` задан — он и определяет набор, `scope: 'others'` не исключает ничего сам.
+    const meActor = actor(me, [])
+    const picked = await revokeBulkSessions(meActor, {
+      scope: 'others',
+      authId: them,
+      pick: 'only',
+      ids: [theirs],
+    }, deps)
+    expect(picked).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
+
+    // Админ с правом на чужой аккаунт закрывает перечисленную строку цели.
+    const admin = await revokeBulkSessions(actor(me, ['admin']), {
+      scope: 'all',
+      authId: them,
+      pick: 'only',
+      ids: [theirs],
+    }, deps)
+    expect(admin.ok).toBe(true)
+    if (!admin.ok) return
+    expect(admin.value.revoked).toBe(1)
+    // При `uid` текущей считается только своя строка: чужая не поднимает `current`.
+    expect(admin.value.current).toBe(false)
+
+    const mineLeft = await deps.db.resource(session).select(SERVER, {
+      filter: { field: 'id', op: 'eq', value: mine },
+    })
+    expect(mineLeft).toHaveLength(1)
   })
 })
 

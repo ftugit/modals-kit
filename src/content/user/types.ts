@@ -213,6 +213,12 @@ export type SessionRevokeResult = {
 export type SessionBulkRevokeResult = {
   revoked: number
   current: boolean
+  /**
+   * Сколько идентификаторов принято в наборе (`pick`). Без набора — `undefined`:
+   * срез считает база, сравнивать не с чем. Вызывающий сверяет с `revoked`:
+   * расхождение значит, что часть строк уже закрыта или чужая.
+   */
+  requested?: number
 }
 
 /** Строка блокировки глазами домена и показа (этап 9): времена — миллисекунды. */

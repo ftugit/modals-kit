@@ -22,6 +22,7 @@ export const AUTH_MESSAGES: Record<string, string> = {
   'auth.deleted': 'Аккаунт удалён — его можно восстановить, пока seed не стёрт',
   'auth.confirm': 'Что-то пошло не так — попробуйте ещё раз',
   'auth.forbidden': 'Нужны права администратора',
+  'auth.unavailable': 'Хранилище недоступно — попробуйте ещё раз',
   'profile.delete-blocked': 'Удаление профиля запрещено на этом аккаунте',
   'account.delete-blocked': 'Удаление seed-аккаунта запрещено на этом аккаунте',
 }

@@ -47,6 +47,29 @@ export type SessionDeps = {
 /** Сколько стран показывает форма фильтров. Срез шире — это уже не подсказка. */
 export const SESSIONS_COUNTRY_LIMIT = 60
 
+/**
+ * Сколько идентификаторов принимает пакетный отзыв за один вызов. Тот же
+ * порядок, что у среза списка аккаунтов (`.slice(0, 500)` в
+ * `routes/(site)/(app)/users/pick/+page.server.ts`).
+ */
+export const SESSIONS_BULK_IDS_LIMIT = 500
+
+/** Идентификатор строки: 36 символов, как у всех uuid в проекте. */
+const SESSION_ID_RE = /^[0-9a-f-]{36}$/i
+
+/**
+ * Годные идентификаторы из адреса: обрезка, строчные, повторы вон, мусор не
+ * проходит. Мусор не роняет вызов — он просто не попадает в набор.
+ */
+function normalizeSessionIds(ids: readonly string[] | undefined): string[] {
+  const out = new Set<string>()
+  for (const raw of ids ?? []) {
+    const id = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+    if (SESSION_ID_RE.test(id)) out.add(id)
+  }
+  return [...out]
+}
+
 export type ListSessionsPageArgs = {
   /** Один аккаунт. Пусто и без `journal` — свои устройства. */
   authId?: string | null
@@ -69,6 +92,17 @@ export type RevokeBulkArgs = {
   scope: 'others' | 'all'
   /** Пусто — свой аккаунт. */
   authId?: string | null
+  /**
+   * Набор по идентификаторам строк. `only` — закрыть ровно перечисленные,
+   * `except` — все строки цели, кроме перечисленных.
+   *
+   * Заданный `pick` важнее `scope`: `scope` выражает то же намерение в двух
+   * частных случаях (`others` ≡ `except ids=[своя текущая]`, `all` ≡ весь срез),
+   * а набор уточняет его. Пустой `only` — не «закрыть всё», а отказ.
+   */
+  pick?: 'except' | 'only' | null
+  /** Идентификаторы строк для `pick`. Мусор и повторы отбрасываются. */
+  ids?: readonly string[]
 }
 
 const ctxOf = (actor: SessionActor): DataContext =>
@@ -374,8 +408,13 @@ export async function revokeBulkSessions(
   deps: SessionDeps,
 ): Promise<UserResult<SessionBulkRevokeResult>> {
   if (args.scope !== 'others' && args.scope !== 'all') return fail({ code: 'auth.forbidden' })
-  // Без идентификатора нельзя отличить текущую сессию от остальных.
-  if (args.scope === 'others' && !actor.sessionId?.trim()) return fail({ code: 'auth.session-unknown' })
+  const pick = args.pick ?? null
+  // Без идентификатора нельзя отличить текущую сессию от остальных — но только
+  // когда множество вычисляет `scope`. При явном наборе `pick` текущую ищут
+  // сравнением, а не исключением, и знать её заранее не нужно.
+  if (!pick && args.scope === 'others' && !actor.sessionId?.trim()) {
+    return fail({ code: 'auth.session-unknown' })
+  }
   const requested = args.authId?.trim() || null
   const own = requested === null || requested === actor.id
   const target = own ? actor.id : requested
@@ -384,8 +423,20 @@ export async function revokeBulkSessions(
   if (!caps.canRevoke) return fail({ code: 'auth.forbidden' })
   if (!own && !(await accountExists(deps, target))) return fail({ code: 'auth.identity-unknown' })
 
+  // Набор по id. Оператора `in` у `session.id` нет (объявлены `eq` и `ne`,
+  // `schema.ts:201-203`), поэтому список собирается из объявленных — так же,
+  // как набор стран в срезе: `or` из `eq` для `only`, `and` из `ne` для `except`.
+  const picked = pick ? normalizeSessionIds(args.ids) : []
+  // Усечение набора молча менять намерение не должно: для `except` обрезанный
+  // список исключений закрыл бы строки, которые просили оставить.
+  if (pick && picked.length > SESSIONS_BULK_IDS_LIMIT) return fail({ code: 'auth.forbidden' })
+  // Пустой `only` — не «весь срез», а отказ: набор не выбрал ни одной строки.
+  if (pick === 'only' && picked.length === 0) return fail({ code: 'auth.session-unknown' })
+
   const and: Filter[] = [{ field: 'auth_id', op: 'eq', value: target }]
-  if (args.scope === 'others' && actor.sessionId) and.push({ field: 'id', op: 'ne', value: actor.sessionId })
+  if (pick === 'only') and.push({ or: picked.map((id) => ({ field: 'id', op: 'eq', value: id })) })
+  else if (pick === 'except') for (const id of picked) and.push({ field: 'id', op: 'ne', value: id })
+  else if (args.scope === 'others' && actor.sessionId) and.push({ field: 'id', op: 'ne', value: actor.sessionId })
   const filter: Filter = and.length === 1 ? and[0]! : { and }
   const ctx = ctxOf(actor)
 
@@ -404,5 +455,5 @@ export async function revokeBulkSessions(
       }
     }
   })
-  return ok({ revoked, current })
+  return ok({ revoked, current, requested: pick ? picked.length : undefined })
 }

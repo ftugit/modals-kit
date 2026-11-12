@@ -30,6 +30,7 @@ export type AuthErrorCode =
   | 'auth.deleted'            // аккаунт удалён (seed ещё не стёрт): шаг восстановления, сессии нет
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'auth.forbidden'          // нет права: действие доступно только администратору
+  | 'auth.unavailable'        // хранилище недоступно: домен бросил исключение, а не факт
   | 'permissions.unknown'     // в списке прав незнакомое значение (не из каталога)
   | 'permissions.self'        // попытка изменить свои права (защита от самоблокировки)
   | 'profile.nickname-forbidden' // никнейм из запрещённого списка (конфиг)
@@ -86,6 +87,8 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.deleted': () => [generalError('auth.deleted')],
   'auth.confirm': (f) => [fieldError(f)],
   'auth.forbidden': () => [generalError('auth.forbidden')],
+  // Хранилище легло — повторить можно: это не отказ и не вина пользователя.
+  'auth.unavailable': () => [generalError('auth.unavailable', { retryable: true })],
   'permissions.unknown': (f) => [fieldError(f, { path: f.path ?? 'permissions' })],
   'permissions.self': (f) => [fieldError(f, { path: f.path ?? 'permissions' })],
   'profile.nickname-forbidden': () => [error({ code: 'profile.nickname-forbidden' }, 'nickname')],
