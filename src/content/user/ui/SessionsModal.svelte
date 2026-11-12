@@ -17,6 +17,12 @@
   // Цель списка — `id` модалки, а не только данные `load`: ответ мог задержаться,
   // а экшены и адреса порций собираются из пропа. Без `id` — свои устройства.
   const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? null)
+  // Данные `load` — только своей цели: чужой срез (ещё не сменённый `uid`) не
+  // должен на один тик показать устройства другого аккаунта. Так же в
+  // `BlocksModal`.
+  const initial = $derived(
+    ldr.data && (ldr.data.uid ?? null) === (uid ?? null) ? ldr.data : null,
+  )
 </script>
 
 <Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
@@ -24,7 +30,7 @@
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
     {#key uid}
-      <SessionsList {uid} initial={ldr.data} variant="plain" class="min-h-0 flex-1" />
+      <SessionsList {uid} {initial} variant="plain" class="min-h-0 flex-1" />
     {/key}
   {/if}
 </Surface>

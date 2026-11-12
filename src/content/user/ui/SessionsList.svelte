@@ -21,7 +21,12 @@
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
   import type { AuthErrorCode } from '../error.js'
-  import { sessionsJournalRoute } from '../routes.js'
+  import {
+    sessionsJournalRoute,
+    userAccountSessionsRoute,
+    userSessionsFiltersRoute,
+    userSessionsRoute,
+  } from '../routes.js'
   import { vault } from '../vault.svelte.js'
   import type { SessionDeviceView, SessionsRouteData } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
@@ -82,8 +87,8 @@
     journal
       ? sessionsJournalRoute.href()
       : fixedUid
-        ? `/user/${encodeURIComponent(fixedUid)}/sessions`
-        : '/user/sessions',
+        ? userAccountSessionsRoute.href({ id: fixedUid })
+        : userSessionsRoute.href(),
   )
 
   // Вход в журнал — из реестра адресов: строка `/sessions` больше не вшита в
@@ -91,8 +96,11 @@
   const journalHref = $derived(sessionsJournalRoute.href())
 
   const asModalLink = useModalLink()
+  // Цель аккаунта едет в карточку строки: иначе `user.session` дал бы
+  // fallback на свой путь `/user/sessions/<id>` и строка чужого списка
+  // потеряла бы цель (без JS и при открытии модалки как страницы).
   const attrsOf = (item: SessionDeviceView): LinkAttrs => ({
-    ...asModalLink('user.session', { id: item.id }),
+    ...asModalLink('user.session', fixedUid ? { id: item.id, uid: fixedUid } : { id: item.id }),
     title: 'Открыть устройство',
   })
 
@@ -255,7 +263,11 @@
   {sidebar}
   filters={{
     modal: 'user.sessions.filters',
-    path: '/user/sessions/filters',
+    path: userSessionsFiltersRoute.href(),
+    // Цель среза — параметром: в модалке `from` равен адресу страницы-
+    // носителя (`/user/<uuid>`), из него цель не разобрать.
+    query: fixedUid ? { uid: fixedUid } : undefined,
+    params: fixedUid ? { uid: fixedUid } : {},
     keys: SESSIONS_FILTER_KEYS,
     defaults: SESSIONS_EXTRA_DEFAULTS,
     pageSize: SESSIONS_PAGE_SIZE,

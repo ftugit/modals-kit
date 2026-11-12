@@ -16,19 +16,38 @@ vi.mock('$app/env', () => ({ browser: false }))
 // Адрес — тот, что видит страница: шаг подтверждения компонент читает из
 // query, поэтому тест подменяет его до рендера.
 const addr = vi.hoisted(() => ({ url: new URL('http://localhost/user/sessions') }))
+// Параметры, с которыми список просит модалку: цель аккаунта обязана доезжать
+// и до карточки строки, и до фильтров.
+const links = vi.hoisted(() => ({ calls: [] as { name: string; params: Record<string, unknown> }[] }))
 vi.mock('$app/state', () => ({
   page: { get url() { return addr.url }, state: {}, data: {} },
   navigating: { to: null, from: null, type: null },
 }))
 vi.mock('#hooks/links/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('#hooks/links/index.js')>()
+  // Адреса — из реестра, как их собирает `modals.ts`: тест проверяет не строку
+  // заглушки, а те же `href()` реестра.
+  const routes = await import('../routes.js')
   return {
     ...actual,
     // В SSR-тесте хост модалок не смонтирован: ссылки получают адрес страницы.
-    useModalLink: () => (name: string, params: { id?: string } = {}) => ({
-      href: name === 'user.session' ? `/user/sessions/${params.id}` : '/user/sessions/filters',
-      'data-modal-link': '',
-    }),
+    useModalLink: () => (name: string, params: { id?: string; uid?: string } = {}) => {
+      links.calls.push({ name, params })
+      if (name === 'user.session') {
+        return {
+          href: params.uid
+            ? routes.userAccountSessionRoute.href({ id: params.uid, sessionId: params.id ?? '' })
+            : routes.userSessionRoute.href({ id: params.id ?? '' }),
+          'data-modal-link': '',
+        }
+      }
+      return {
+        href: params.uid
+          ? `${routes.userSessionsFiltersRoute.href()}?uid=${encodeURIComponent(params.uid)}`
+          : routes.userSessionsFiltersRoute.href(),
+        'data-modal-link': '',
+      }
+    },
   }
 })
 
@@ -153,6 +172,36 @@ describe('SessionsList', () => {
     expect(confirm.body).toContain('Отменить')
     expect(confirm.body).toContain('href="/user/sessions"')
     addr.url = new URL('http://localhost/user/sessions')
+  })
+
+  test('свой список: карточка строки и фильтры — без цели', () => {
+    links.calls.length = 0
+    const { body } = render(SessionsList, { props: { initial: routeData([device]) } })
+    const session = links.calls.find((c) => c.name === 'user.session')
+    expect(session?.params).toEqual({ id: device.id })
+    expect(body).toContain(`href="/user/sessions/${device.id}"`)
+
+    const filters = links.calls.find((c) => c.name === 'user.sessions.filters')
+    expect(filters?.params).toEqual({})
+    expect(body).toContain('href="/user/sessions/filters"')
+    expect(body).not.toContain('uid=')
+  })
+
+  test('чужой список: карточка строки и фильтры несут цель аккаунта', () => {
+    // Иначе `user.session` дал бы fallback на свой путь, а фильтры в модалке
+    // разрезали бы свои устройства: `from` там — адрес страницы-носителя.
+    links.calls.length = 0
+    const uid = device.authId
+    const { body } = render(SessionsList, {
+      props: { uid, initial: routeData([device], { uid }) },
+    })
+    const session = links.calls.find((c) => c.name === 'user.session')
+    expect(session?.params).toEqual({ id: device.id, uid })
+    expect(body).toContain(`href="/user/${uid}/sessions/${device.id}"`)
+
+    const filters = links.calls.find((c) => c.name === 'user.sessions.filters')
+    expect(filters?.params).toEqual({ uid })
+    expect(body).toContain(`href="/user/sessions/filters?uid=${uid}"`)
   })
 
   test('вход в журнал только по праву на чужие устройства', () => {

@@ -104,6 +104,16 @@ export const userSessionRoute = kitRoute('/(site)/(app)/user/sessions/[id=uuid]'
 })
 
 /**
+ * Карточка устройства чужого аккаунта (`/user/[id]/sessions/[id]`) — та же
+ * пара `user.session`, что и у своих, но с целью в адресе: без JS строка
+ * чужого списка ведёт сюда, а не на `/user/sessions/<id>`.
+ */
+export const userAccountSessionRoute = kitRoute('/(site)/(app)/user/[id=uuid]/sessions/[sessionId=uuid]', {
+  dynamic: true,
+  id: '/user/[id]/sessions/[sessionId]',
+})
+
+/**
  * Профиль аккаунта — путь с параметром сегмента. В `$app/types` у такого
  * маршрута нет «красивого» имени: идентификатор вместе с группами
  * (`/(site)/(app)/user/[id]`) — это и есть имя, группы из адреса выбрасывает
@@ -159,6 +169,14 @@ export interface BlocksFiltersSearchOutput extends ListFiltersSearchOutput {
   uid: string | null
 }
 
+export interface SessionsFiltersSearchInput extends ListFiltersSearchInput {
+  uid?: string | null
+}
+
+export interface SessionsFiltersSearchOutput extends ListFiltersSearchOutput {
+  uid: string | null
+}
+
 /**
  * Фильтры списка seed-юзеров: страница-fallback модалки `user.list.filters`
  * (канон «модалка + страница», как `user.menu`): с JS кнопка над списком
@@ -179,9 +197,10 @@ export const userListFiltersRoute = kitRoute('/users/filters', {
  */
 export const userSessionsFiltersRoute = kitRoute('/user/sessions/filters', {
   owner: 'user.filters',
-  keys: ['from'],
-  search: querySchema<ListFiltersSearchInput, ListFiltersSearchOutput>((raw) => ({
+  keys: ['from', 'uid'],
+  search: querySchema<SessionsFiltersSearchInput, SessionsFiltersSearchOutput>((raw) => ({
     from: localPath(typeof raw.from === 'string' ? raw.from : null),
+    uid: typeof raw.uid === 'string' && raw.uid ? raw.uid : null,
   })),
 })
 

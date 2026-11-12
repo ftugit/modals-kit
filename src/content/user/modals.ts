@@ -33,6 +33,7 @@ import {
   userProfileDeleteRoute,
   userProfileEditRoute,
   userProfileRoute,
+  userAccountSessionRoute,
   userAccountSessionsRoute,
 } from './routes.js'
 
@@ -61,19 +62,31 @@ registerModal({
 // Фильтры списка устройств: открываются кнопкой «Фильтры» в списке, результат
 // пишут в состояние пагинатора-владельца. `route` — страница-fallback
 // `/user/sessions/filters` для no-JS.
+// `uid` — цель среза: без него `load` страницы разобрал бы адрес носителя
+// (`from`) и в модалке чужого аккаунта взял бы страны и права **своих**
+// сессий. Так же устроены фильтры блокировок (`user.blocks.filters`).
 registerModal({
   name: 'user.sessions.filters',
   component: lazy(() => import('./ui/SessionsFiltersModal.svelte')),
-  route: () => userSessionsFiltersRoute.href(),
+  defaultParams: { uid: '' },
+  route: (p: { uid?: string }) => userSessionsFiltersRoute.href({ uid: p?.uid ? String(p.uid) : null }),
   size: { width: 440, height: 600 },
 })
 // Карточка устройства (переименование и отзыв). Пара «модалка + роут»:
 // без JS строка списка ведёт на `/user/sessions/<id>` с тем же компонентом.
+// С `uid` — карточка устройства чужого аккаунта: тот же компонент, но адрес
+// `/user/[id]/sessions/[sessionId]`, иначе строка чужого списка падала бы на
+// свой путь и теряла цель.
 registerModal({
   name: 'user.session',
   component: lazy(() => import('./ui/SessionModal.svelte')),
-  route: (p: { id?: string }) =>
-    p?.id ? userSessionRoute.href({ id: String(p.id) }) : userSessionsRoute.href(),
+  route: (p: { id?: string; uid?: string }) => {
+    const uid = p?.uid ? String(p.uid) : null
+    const id = p?.id ? String(p.id) : null
+    if (uid && id) return userAccountSessionRoute.href({ id: uid, sessionId: id })
+    if (id) return userSessionRoute.href({ id })
+    return uid ? userAccountSessionsRoute.href({ id: uid }) : userSessionsRoute.href()
+  },
   size: { width: 480, height: 560 },
 })
 // Выход: та же пара — модалка и страница `/user/logout`. Данные приносит
