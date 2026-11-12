@@ -1,0 +1,72 @@
+// Изоморфное описание: его читают и страница (bind), и сервер
+// (createFormHandler). Разъезда «клиент проверяет одно, сервер другое» здесь
+// быть не может — валидация одна на оба пути.
+import { defineForm, field, v } from '#lib/form/index.js'
+import { formParams } from '#hooks/db-form.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
+
+/** Параметры полей из модели: правила `title` описаны там, здесь — только показ. */
+const post = formParams(posts)
+
+/**
+ * Запись в таблицу демо. Валидаторы `title` форма получает из модели (`...post.title`:
+ * обязательное, 3–120 символов) и ничего не пишет руками. `agree` — поле только формы:
+ * в базу оно не идёт (сервер отдаёт базе `pick(['title'])`).
+ */
+export const dbCreate = defineForm({
+  // Имя формы попадает в `__form_instance`, а его сверяет INSTANCE_RE
+  // (envelope.ts): `[a-z][a-z0-9_-]{0,31}:…` — точек и заглавных там нет. Форма с
+  // id вида `db-demo.create` роняет каждую отправку на 400 envelope.invalid,
+  // поэтому id только в этом алфавите.
+  id: 'db_demo_create',
+  revision: 2,
+  // Единственное действие = `submit`: у страницы нет SvelteKit-действий — нативный
+  //  POST идёт на её адрес с конвертом `__form_id` (`db_demo_create`), описание
+  //  находит серверный приёмник по реестру, а имя действия внутри формы — `submit`.
+  actions: [{ id: 'submit', label: 'Добавить', validate: 'full' }],
+  fields: post.fields({
+    title: field.text({
+      label: 'заголовок (от 3 до 120 символов)',
+      placeholder: 'например: заметка из превью',
+      ...post.title,
+    }),
+    agree: field.checkbox({
+      label: 'Согласен с правилами публикации',
+      validate: [v.required()],
+      messages: { required: 'Подтвердите согласие с правилами' },
+    }),
+  }),
+})
+
+/**
+ * Удаление по id. Поле видимое и текстовое: id строки таблицы показан целиком,
+ * его можно скопировать. Скрытой парой делать нечего — тогда страница
+ * заводит собственный путь передачи значения мимо связки.
+ */
+/**
+ * Правка заголовка по id. Нужна не только людям: без неё `updated_at` в демо
+ * никто не меняет, и опрос изменённых (docs/design/live-update.md §5.2) нечем
+ * проверить в браузере. Поле `title` — те же правила модели, что у создания.
+ */
+export const dbRename = defineForm({
+  id: 'db_demo_rename',
+  revision: 1,
+  actions: [{ id: 'submit', label: 'переименовать', validate: 'full' }],
+  fields: post.fields({
+    id: field.text({ label: 'id записи', placeholder: 'скопируйте id из таблицы ниже', validate: [v.required()] }),
+    title: field.text({ label: 'новый заголовок', ...post.title }),
+  }),
+})
+
+export const dbRemove = defineForm({
+  id: 'db_demo_remove',
+  revision: 1,
+  actions: [{ id: 'submit', label: 'удалить', validate: 'full' }],
+  fields: {
+    ids: field.text({
+      label: 'id записей (через запятую)',
+      placeholder: 'например: 0f9c1a2e',
+      validate: [v.required()],
+    }),
+  },
+})
