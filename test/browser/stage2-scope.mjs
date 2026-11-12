@@ -173,12 +173,14 @@ try {
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await observer.waitForFunction(() => !document.querySelector('[data-testid=seed-user-row]'), null, { timeout: 15000 })
   assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'logout from MenuModal hides private list')
-  // Повторный вход теперь возвращает step=done, а не обязательный профиль.
+  // Выход уводит на шаг входа (`/user/auth`): список аккаунтов открываем сами,
+  // но приватный срез должен прийти данными, а не перезагрузкой — это и проверяем.
   await observer.locator('[data-testid=header-auth]').click()
   await authModal.locator('input[name=seed]').waitFor({ state: 'visible', timeout: 15000 })
   await authModal.locator('input[name=seed]').fill(secret)
   await submitAuth(authModal.getByRole('button', { name: 'Авторизация', exact: true }), observer)
   await observer.locator('[role=dialog]').waitFor({ state: 'hidden', timeout: 15000 })
+  await observer.goto(`${BASE}/users`, { waitUntil: 'networkidle' })
   await observer.locator('[data-testid=seed-user-row]').first().waitFor({ state: 'visible', timeout: 15000 })
   await observer.getByRole('link', { name: 'Главная', exact: true }).first().click()
   await observer.waitForURL((url) => url.pathname === '/', { timeout: 15000 })
@@ -187,9 +189,12 @@ try {
   await popover.locator('[data-testid=menu-logout-open]').waitFor({ state: 'visible', timeout: 15000 })
   await submitAuth(await openLogoutConfirm(observer), observer)
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
+  // Назад со шага входа ведёт на страницу выхода, а не в список: список
+  // открываем сами и требуем, чтобы частных строк в нём не было.
   await observer.goBack({ waitUntil: 'networkidle' })
-  await observer.waitForURL((url) => url.pathname === '/users', { timeout: 15000 })
-  assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'popover logout prevents stale users on Back')
+  assert.equal(await observer.locator('[data-testid=header-user]').count(), 0, 'после выхода назад не возвращает вошедшего')
+  await observer.goto(`${BASE}/users`, { waitUntil: 'networkidle' })
+  assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'popover logout prevents stale users')
   console.log('  ok: AuthModal profile and done login, MenuModal and popover logout refresh the users page')
 } catch (error) {
   console.error('❌ observer:', observer.url(), JSON.stringify((await observer.locator('[role=dialog]').allTextContents().catch(() => [])).map((s) => s.replace(/\s+/g, ' ').slice(0, 100))))

@@ -319,8 +319,9 @@ async function run() {
       // Выход через меню и возврат на шаг входа
       await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
       await logoutViaMenu(page)
-      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
-      await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
+      // Выход уводит на шаг входа сам: набор закрыл и текущую сессию, поэтому
+      // адрес назначения задаёт сервер (`doneHref`), а не страница-носитель.
+      await page.waitForURL((u) => u.pathname === '/user/auth', { timeout: 15000 })
       await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).waitFor({ state: 'visible' })
       ok('выход через меню: /user/auth снова открывает шаг входа')
 
@@ -466,7 +467,9 @@ async function run() {
       await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
       assert.ok((await page.locator('span').filter({ hasText: 'e2e-nojs-258' }).count()) > 0, 'ник на странице меню')
       await logoutViaMenu(page)
-      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      // Адрес назначения задаёт сервер (`doneHref`): выход закрыл и текущую
+      // сессию, поэтому уводит на шаг входа — и с JS, и без него.
+      await page.waitForURL((u) => u.pathname === '/user/auth', { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'после выхода — «Авторизация»')
 
       await page.goto(BASE + '/user/auth', { waitUntil: 'load' })
@@ -485,7 +488,7 @@ async function run() {
       assert.ok(savedSid, 'auth_sid присутствует')
       await ctx.clearCookies({ name: 'auth_tmp' })
       await logoutViaMenu(page)
-      await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
+      await page.waitForURL((u) => u.pathname === '/user/auth', { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'вышел даже с мёртвым auth_tmp')
       // Возвращаем старую куку auth_sid вручную — БД обязана отказать (сессия реально отозвана!):
       await ctx.addCookies([savedSid])
