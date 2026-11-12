@@ -27,6 +27,17 @@ const ok = (name) => {
 const JPEG_1X1 =
   '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
 
+// Выход больше не мгновенный: кнопка меню открывает экран выхода, а намерение
+// подтверждается на нём отдельным шагом (набор сессий, а не режим).
+async function logoutViaMenu(page) {
+  await page.locator('[data-testid=menu-logout-open]').click()
+  await page.locator('[data-testid=logout-exit]').waitFor({ state: 'visible', timeout: 15000 })
+  await page.locator('[data-testid=logout-exit-next]').click()
+  const submit = page.locator('[data-testid=logout-exit-submit]')
+  await submit.waitFor({ state: 'visible', timeout: 15000 })
+  await submit.click()
+}
+
 async function waitPreview() {
   for (let i = 0; i < 60; i++) {
     try {
@@ -307,7 +318,7 @@ async function run() {
 
       // Выход через меню и возврат на шаг входа
       await page.goto(BASE + '/user/menu', { waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await logoutViaMenu(page)
       await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       await page.goto(BASE + '/user/auth', { waitUntil: 'networkidle' })
       await page.getByRole('link', { name: 'Создать аккаунт', exact: true }).waitFor({ state: 'visible' })
@@ -328,7 +339,7 @@ async function run() {
       ok('после входа: в шапке аватар (не пустое место)')
       await userBtn.click()
       const popover = page.locator('[data-user-menu-popover]')
-      await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      await popover.locator('[data-testid=menu-logout-open]').waitFor({ state: 'visible', timeout: 5000 })
       assert.ok(!page.url().includes('modal='), 'всплывашка меню не трогает адрес')
       assert.equal(await page.locator('[data-modal-popup]').count(), 0, 'модалка меню на десктопе не открывается')
       ok('клик аватара открывает всплывашку меню (без URL и без модалки)')
@@ -348,11 +359,11 @@ async function run() {
       await modalProfile.getByRole('button', { name: 'Сохранить' }).click()
       await page.locator('[data-modal-popup]').waitFor({ state: 'detached', timeout: 10000 })
       await userBtn.click()
-      await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 5000 })
+      await popover.locator('[data-testid=menu-logout-open]').waitFor({ state: 'visible', timeout: 5000 })
       assert.ok((await popover.textContent()).includes('e2e-ram-nick'), 'обновлённый ник сразу виден во всплывашке RAM')
 
       // Выходим прямо из всплывашки и проверяем мгновенную смену шапки на гостя
-      await popover.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await logoutViaMenu(page)
       await page.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 10000 })
       assert.equal(await page.locator('[data-testid=header-user]').count(), 0, 'кнопка аватара сразу скрыта без reload')
       ok('выход из модального меню мгновенно переключает шапку в гостя без перезагрузки страницы')
@@ -454,7 +465,7 @@ async function run() {
       // 13. Выход на /user/menu → повторный вход без JS тем же seed → снова выход
       await page.goto(BASE + '/user/menu', { waitUntil: 'load' })
       assert.ok((await page.locator('span').filter({ hasText: 'e2e-nojs-258' }).count()) > 0, 'ник на странице меню')
-      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await logoutViaMenu(page)
       await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'после выхода — «Авторизация»')
 
@@ -473,7 +484,7 @@ async function run() {
       const savedSid = (await ctx.cookies(BASE)).find((c) => c.name === 'auth_sid')
       assert.ok(savedSid, 'auth_sid присутствует')
       await ctx.clearCookies({ name: 'auth_tmp' })
-      await page.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await logoutViaMenu(page)
       await page.waitForURL((u) => u.pathname === '/', { timeout: 15000 })
       assert.equal(await page.locator('[data-testid=header-auth]').count(), 1, 'вышел даже с мёртвым auth_tmp')
       // Возвращаем старую куку auth_sid вручную — БД обязана отказать (сессия реально отозвана!):
@@ -534,7 +545,7 @@ async function run() {
       )
 
       // Нажимаем «Выйти» во вкладке A — вкладка B БЕЗ перезагрузки переключает шапку на «Авторизация»:
-      await tabA.getByRole('button', { name: 'Выйти', exact: true }).click()
+      await logoutViaMenu(tabA)
       await tabB.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 5000 })
       ok('с JS: спящая вкладка (без auth_tmp) сохраняет форму с 1 клика, а BroadcastChannel синхронизирует ник и выход во 2-ю вкладку')
 

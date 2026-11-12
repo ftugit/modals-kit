@@ -10,6 +10,19 @@ const browser = await chromium.launch({ headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
 const actor = await ctx.newPage()
 const observer = await ctx.newPage()
+// Выход — два шага: меню открывает экран выхода, намерение подтверждается
+// на нём (набор сессий, а не мгновенное действие). Возвращает кнопку
+// подтверждения, чтобы отправить её через `submitAuth` с теми же
+// ожиданиями POST и повторами на 429.
+async function openLogoutConfirm(page) {
+  await page.locator('[data-testid=menu-logout-open]').click()
+  await page.locator('[data-testid=logout-exit]').waitFor({ state: 'visible', timeout: 15000 })
+  await page.locator('[data-testid=logout-exit-next]').click()
+  const submit = page.locator('[data-testid=logout-exit-submit]')
+  await submit.waitFor({ state: 'visible', timeout: 15000 })
+  return submit
+}
+
 async function submitAuth(button, target = actor) {
   for (let attempt = 0; ; attempt++) {
     const [response] = await Promise.all([
@@ -70,7 +83,7 @@ try {
 
   await actor.goto(`${BASE}/user/menu`, { waitUntil: 'networkidle' })
   holdNextRefresh()
-  await submitAuth(actor.getByRole('button', { name: 'Выйти', exact: true }))
+  await submitAuth(await openLogoutConfirm(actor))
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await waitStarted('logout refresh did not start')
   assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'private list hidden while guest refresh is blocked')
@@ -89,7 +102,7 @@ try {
 
   await actor.goto(`${BASE}/user/menu`, { waitUntil: 'networkidle' })
   holdNextRefresh()
-  await submitAuth(actor.getByRole('button', { name: 'Выйти', exact: true }))
+  await submitAuth(await openLogoutConfirm(actor))
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await waitStarted('second logout refresh did not start')
   assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'private list hidden on second logout')
@@ -109,7 +122,7 @@ try {
   await observer.getByRole('link', { name: 'Главная', exact: true }).first().click()
   await observer.waitForURL((url) => url.pathname === '/', { timeout: 15000 })
   await actor.goto(`${BASE}/user/menu`, { waitUntil: 'networkidle' })
-  await submitAuth(actor.getByRole('button', { name: 'Выйти', exact: true }))
+  await submitAuth(await openLogoutConfirm(actor))
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await observer.goBack({ waitUntil: 'networkidle' })
   await observer.waitForURL((url) => url.pathname === '/users', { timeout: 15000 })
@@ -125,7 +138,7 @@ try {
   await actor.goto(`${BASE}/user/menu`, { waitUntil: 'networkidle' })
   trackedPath = '/blocks/__data.json'
   holdNextRefresh()
-  await submitAuth(actor.getByRole('button', { name: 'Выйти', exact: true }))
+  await submitAuth(await openLogoutConfirm(actor))
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await waitStarted('blocks logout refresh did not start')
   assert.equal(await observer.locator('[data-testid=blocks-list]:visible').count(), 0, 'blocks hidden while refresh is blocked')
@@ -155,8 +168,8 @@ try {
   await observer.locator('[data-testid=seed-user-row]').first().waitFor({ state: 'visible', timeout: 15000 })
   await observer.goto(`${BASE}/users?modal=user.menu`, { waitUntil: 'networkidle' })
   const menu = observer.locator('[role=dialog]')
-  await menu.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 15000 })
-  await submitAuth(menu.getByRole('button', { name: 'Выйти', exact: true }), observer)
+  await menu.locator('[data-testid=menu-logout-open]').waitFor({ state: 'visible', timeout: 15000 })
+  await submitAuth(await openLogoutConfirm(observer), observer)
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await observer.waitForFunction(() => !document.querySelector('[data-testid=seed-user-row]'), null, { timeout: 15000 })
   assert.equal(await observer.locator('[data-testid=seed-user-row]:visible').count(), 0, 'logout from MenuModal hides private list')
@@ -171,8 +184,8 @@ try {
   await observer.waitForURL((url) => url.pathname === '/', { timeout: 15000 })
   await observer.locator('[data-testid=header-user]').click()
   const popover = observer.locator('[data-user-menu-popover]')
-  await popover.getByRole('button', { name: 'Выйти', exact: true }).waitFor({ state: 'visible', timeout: 15000 })
-  await submitAuth(popover.getByRole('button', { name: 'Выйти', exact: true }), observer)
+  await popover.locator('[data-testid=menu-logout-open]').waitFor({ state: 'visible', timeout: 15000 })
+  await submitAuth(await openLogoutConfirm(observer), observer)
   await observer.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await observer.goBack({ waitUntil: 'networkidle' })
   await observer.waitForURL((url) => url.pathname === '/users', { timeout: 15000 })

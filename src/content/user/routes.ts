@@ -74,6 +74,12 @@ export const userMenuRoute = kitRoute('/user/menu')
 /** Свои устройства (`/user/sessions`) — страница-fallback модалки `user.sessions`. */
 export const userSessionsRoute = kitRoute('/user/sessions')
 
+/**
+ * Выход (`/user/logout`) — страница-fallback модалки `user.logout`. Здесь же
+ * живут экшены набора: компонент один, POST уходит на этот адрес.
+ */
+export const userLogoutRoute = kitRoute('/user/logout')
+
 /** Общий журнал устройств (`/sessions`): все сессии, которые зритель вправе читать. */
 export const sessionsJournalRoute = kitRoute('/sessions')
 

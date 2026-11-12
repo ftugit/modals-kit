@@ -86,6 +86,37 @@ describe('ExitSteps: набор, чекбокс и удержание', () => {
     expect(body).toContain('name="include_current"')
   })
 
+  test('`spread`: снятый чекбокс — одна текущая сессия, отмеченный — весь аккаунт', () => {
+    // Экран выхода: тот же компонент, чекбокс раздвигает набор, а не впускает
+    // в него текущую сессию. Размер решает удержание.
+    const one = render(ExitSteps, {
+      props: { ids: [A], pick: 'only', currentId: A, total: 3, spread: true, step: 'confirm' },
+    })
+    expect(one.body).not.toContain('data-mass-hold="true"')
+    expect(one.body).toContain('data-testid="bulk-exit-submit"')
+
+    const all = render(ExitSteps, {
+      props: {
+        ids: [A],
+        pick: 'only',
+        currentId: A,
+        total: 3,
+        spread: true,
+        includeCurrent: true,
+        step: 'confirm',
+      },
+    })
+    expect(all.body).toContain('data-mass-hold="true"')
+
+    // Негативный контроль: одна сессия в аккаунте — удержания нет и при
+    // отмеченном чекбоксе.
+    const single = render(ExitSteps, {
+      props: { ids: [A], pick: 'only', currentId: A, total: 1, spread: true, includeCurrent: true, step: 'summary' },
+    })
+    expect(count(single.body)).toBe('1')
+    expect(single.body).not.toContain('data-mass-hold')
+  })
+
   test('без текущей сессии чекбокса нет', () => {
     const { body } = render(ExitSteps, { props: { ids: [A, B], pick: 'only', step: 'confirm' } })
     expect(body).not.toContain('name="include_current"')

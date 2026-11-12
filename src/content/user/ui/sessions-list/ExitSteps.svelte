@@ -36,6 +36,11 @@
     total?: number
     /** Чекбокс «включая текущую» отмечен: инверсия того же набора. */
     includeCurrent?: boolean
+    /**
+     * Чекбокс расширяет набор до всего аккаунта (экран выхода), а не впускает
+     * в него текущую сессию (список). Набор в обоих случаях считает сервер.
+     */
+    spread?: boolean
     /** Шаг из адреса, не из состояния компонента. */
     step?: 'summary' | 'confirm'
     confirmHref?: string
@@ -45,8 +50,12 @@
     holdSeconds?: number
     heading?: string
     confirmLabel?: string
+    /** Подпись чекбокса. По умолчанию — по роли: набор или весь аккаунт. */
+    checkboxLabel?: string
     summary?: string
     testId?: string
+    /** Успешная отправка: носитель решает, что делать с сессией в RAM. */
+    onDone?: () => void
     form?: { result?: import('#lib/form/index.js').Result } | null
     class?: string
   }
@@ -57,6 +66,7 @@
     currentId = null,
     total = 0,
     includeCurrent = false,
+    spread = false,
     step = 'summary',
     confirmHref,
     backHref,
@@ -64,13 +74,17 @@
     holdSeconds = 2,
     heading = 'Завершение сессий',
     confirmLabel = 'Завершить сессии',
+    checkboxLabel,
     summary = '',
     testId = 'bulk-exit',
+    onDone,
     form = null,
     class: className,
   }: Props = $props()
 
-  const bound = bindComponentForm(forms, untrack(() => sessionBulkExitForm({ pick, ids, includeCurrent })), {
+  const checkboxText = $derived(checkboxLabel ?? (spread ? 'Выйти на всех устройствах' : undefined))
+  const shape = $derived({ pick, ids, includeCurrent, spread, checkboxLabel: checkboxText })
+  const bound = bindComponentForm(forms, untrack(() => sessionBulkExitForm(shape)), {
     action: untrack(() => action) ?? './?/others',
     continuation: untrack(() => form?.result ?? undefined),
     session: userSession,
@@ -82,6 +96,9 @@
   )
   /** Сколько строк закроет набор при текущем состоянии чекбокса. */
   const size = $derived.by(() => {
+    // Экран выхода: снятый чекбокс — одна текущая сессия, отмеченный — весь
+    // аккаунт. Число строк среза знает носитель, `ids` тут роли не играют.
+    if (spread) return checked ? Math.max(1, total ?? ids.length) : 1
     const base = new Set(ids)
     if (currentId) {
       if (checked) {
@@ -92,6 +109,16 @@
     return pick === 'only' ? base.size : Math.max(0, total - base.size)
   })
   const withHold = $derived(size > 1)
+
+  // Успех формы: куки снял гейтвей, но сессия в памяти ещё жива — решать
+  // носителю (модалка закрывается, страница чистит хранилище).
+  let lastHandled: string | undefined
+  $effect(() => {
+    const result = bound.state.result
+    if (!result?.ok || result.submissionId === lastHandled) return
+    lastHandled = result.submissionId
+    untrack(() => onDone?.())
+  })
 </script>
 
 {#if step === 'confirm'}
@@ -105,6 +132,7 @@
     <div hidden>
       <Field of={bound.f.pick} />
       <Field of={bound.f.ids} />
+      <Field of={bound.f.spread} />
     </div>
 
     <Common errors={bound.common} title="Не получилось завершить сессии" />
@@ -118,7 +146,13 @@
       {#if currentId}
         <Field of={bound.f.include_current} />
         <p class="text-xs text-muted-foreground">
-          {#if checked}
+          {#if spread}
+            {#if checked}
+              Все устройства аккаунта выйдут из него, включая это.
+            {:else}
+              Выйдет только это устройство: остальные сессии останутся живы.
+            {/if}
+          {:else if checked}
             Текущая сессия тоже завершится — вход на этом устройстве закроется.
           {:else}
             Текущая сессия останется жива: выйти из неё можно будет позже.

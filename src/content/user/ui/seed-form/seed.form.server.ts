@@ -127,7 +127,10 @@ registerComponentForm({
         return { data: { step: 'done' } }
       }
       case 'logout': {
-        await u.logout()
+        // Тот же исход, что у экрана `/user/logout`: отказ наружу, а не молча.
+        // Кнопка на экране входа остаётся — это аварийный путь без JS.
+        const r = await u.logout()
+        if (!r.ok) return gone(r.fact)
         commit()
         return { data: { step: 'entry' } }
       }

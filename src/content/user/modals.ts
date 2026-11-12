@@ -24,6 +24,7 @@ import {
   userConfigRoute,
   userListFiltersRoute,
   userListRoute,
+  userLogoutRoute,
   userMenuRoute,
   userSessionRoute,
   userSessionsFiltersRoute,
@@ -69,6 +70,15 @@ registerModal({
   route: (p: { id?: string }) =>
     p?.id ? userSessionRoute.href({ id: String(p.id) }) : userSessionsRoute.href(),
   size: { width: 480, height: 560 },
+})
+// Выход: та же пара — модалка и страница `/user/logout`. Данные приносит
+// загрузчик записи (тот же `load`): номер своей сессии и сколько их всего,
+// чтобы чекбокс знал, что он раздвигает.
+registerModal({
+  name: 'user.logout',
+  component: lazy(() => import('./ui/LogoutModal.svelte')),
+  route: userLogoutRoute.href,
+  size: { width: 440, height: 480 },
 })
 // Профиль: пара «модалка + роут» одного компонента. `route` нужен
 // ссылке (`asModalLink` строит из него `href` — без JS карточка ведёт

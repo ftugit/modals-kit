@@ -156,6 +156,19 @@ export type SessionsState = 'active' | 'expired' | 'all' | 'revoked'
  * `Listing`, а не на своём рендере). `countries` — коды стран среза без
  * фильтра страны: из них форма строит пункты выбора.
  */
+/**
+ * Выход (`/user/logout`). `sessionId` — своя текущая сессия: без неё набор
+ * собрать нельзя, поэтому экрану остаётся локальный выход (куки без отзыва).
+ * `total` — сколько активных сессий у аккаунта: им решается удержание.
+ */
+export type LogoutRouteData = {
+  enabled: boolean
+  sessionId: string | null
+  total: number
+  /** `true` — актор известен и набор выхода выразим. */
+  canRevoke: boolean
+}
+
 export type SessionsRouteData = {
   enabled: boolean
   fact: AuthErrorCode | null

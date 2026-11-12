@@ -41,6 +41,17 @@ async function submitModalLogin(page, auth, seed, uid) {
     await page.waitForTimeout(Math.ceil(Number(error.params?.retryAfterMs ?? 60_000) / 1000) * 1000 + 1000)
   }
 }
+// Выход — два шага: меню открывает экран выхода, подтверждение на нём и есть
+// POST. Раньше кнопка меню выходила сразу.
+async function logoutConfirmButton(page) {
+  await page.locator('[data-testid=menu-logout-open]').click()
+  await page.locator('[data-testid=logout-exit]').waitFor({ state: 'visible', timeout: 15000 })
+  await page.locator('[data-testid=logout-exit-next]').click()
+  const submit = page.locator('[data-testid=logout-exit-submit]')
+  await submit.waitFor({ state: 'visible', timeout: 15000 })
+  return submit
+}
+
 async function submitAction(page, button) {
   for (let attempt = 0; ; attempt++) {
     const [response] = await Promise.all([
@@ -97,7 +108,7 @@ try {
   // носителе, в том числе пока его loader перезапрашивается.
   const other = await ctx.newPage()
   await other.goto(`${BASE}/user/menu`, { waitUntil: 'networkidle' })
-  await submitAction(other, other.getByRole('button', { name: 'Выйти', exact: true }))
+  await submitAction(other, await logoutConfirmButton(other))
   await page.locator('[data-testid=header-auth]').waitFor({ state: 'visible', timeout: 15000 })
   await dialog.getByText('Тест ограничения входа', { exact: false }).waitFor({ state: 'hidden', timeout: 15000 })
   await auth.locator('input[name=seed]').waitFor({ state: 'visible', timeout: 15000 })

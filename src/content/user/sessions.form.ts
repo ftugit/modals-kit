@@ -66,6 +66,15 @@ export type SessionBulkExitShape = {
   ids?: readonly string[]
   /** Начальное состояние чекбокса «включая текущую»: им носитель задаёт инверсию. */
   includeCurrent?: boolean
+  /**
+   * Чекбокс расширяет набор, а не впускает текущую сессию. Список сессий
+   * закрывает показанные строки и чекбоксом добавляет к ним текущую; экран
+   * выхода закрывает одну текущую сессию и чекбоксом раздвигает набор до
+   * всего аккаунта. Один компонент, две инверсии — разница только в этом флаге.
+   */
+  spread?: boolean
+  /** Подпись чекбокса: у списка и у экрана выхода он разный. */
+  checkboxLabel?: string
 }
 
 /** Предел набора: столько же, сколько принимает домен. */
@@ -87,11 +96,13 @@ export function sessionBulkExitForm(opts: SessionBulkExitShape = {}) {
     fields: {
       /** Снимать и текущую сессию зрителя. */
       include_current: field.checkbox({
-        label: 'Закрыть и текущую сессию',
+        label: opts.checkboxLabel ?? 'Закрыть и текущую сессию',
         defaultValue: opts.includeCurrent ?? false,
       }),
       pick: field.hidden({ defaultValue: opts.pick ?? '' }),
       ids: field.hidden({ defaultValue: (opts.ids ?? []).join(',') }),
+      /** `1` — чекбокс раздвигает набор до всего аккаунта (экран выхода). */
+      spread: field.hidden({ defaultValue: opts.spread ? '1' : '' }),
     },
   })
 }
@@ -114,6 +125,15 @@ export function bulkExitArgs(
   const pick = raw === 'only' || raw === 'except' ? raw : null
   const include =
     values.include_current === true || TRUE_VALUES.has(String(values.include_current ?? '').trim().toLowerCase())
+  const spread = TRUE_VALUES.has(String(values.spread ?? '').trim().toLowerCase())
+
+  // Экран выхода: отмеченный чекбокс — весь аккаунт, снятый — одна текущая
+  // сессия. Набор считает сервер, поэтому no-JS (без JS скрытые поля не
+  // переписываются по чекбоксу) получает тот же исход, что и браузер.
+  if (spread) {
+    if (!include) return { scope: 'all', pick: 'only', ids: currentId ? [currentId] : [] }
+    return { scope: 'all', pick: 'except', ids: [] }
+  }
 
   const seen = new Set<string>()
   for (const part of String(values.ids ?? '').split(',')) {

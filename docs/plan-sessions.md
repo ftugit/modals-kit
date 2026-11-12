@@ -94,7 +94,7 @@ README `src/content/user`: строка схемы обновляется в э�
 - `readSessionDetail` — `get` по `id`. Отказ и чужая строка дают `auth.session-unknown`.
 - `renameSessionDevice` — `update` только `device_name`. Пустая строка становится `null`.
 - `revokeSessionById` — мягкое `delete`, либо жёсткое, если у актора есть `hardDelete`. Отзыв текущей сессии возвращает признак, по которому обработчик чистит куки.
-- `revokeBulkSessions` — в одной транзакции, scope `others` или `all`. Текущая строка исключается только в `others`.
+- `revokeBulkSessions` — в одной транзакции. Намерение задаёт набор: `pick: 'only' | 'except'` + `ids` (`only` — ровно перечисленные, `except` — все строки цели, кроме перечисленных). `scope` остался частным случаем набора (`others` ≡ `except [текущая]`, `all` ≡ `except []`), а заданный `pick` важнее него: при явном наборе `others` не требует знать текущую сессию. Текущая строка исключается только в `others` и только когда набора нет. Оператора `in` у `session.id` нет, поэтому список собран из объявленных `eq`/`ne` (`or` для `only`, `and` для `except` — как набор стран). Пустой `only` — отказ, а не «весь срез»; больше 500 id — отказ, а не усечение.
 
 `listSessions`, `revokeSession` и `SessionView` с полем `jti` удаляются из `auth.ts` и фасада. `SessionStorePort.listByAuth` остаётся у фаервола, экраны его не зовут.
 

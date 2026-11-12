@@ -71,6 +71,31 @@ describe('bulkExitArgs: намерение набора', () => {
 })
 
 /** Поля описаны массивом: порядок объявления, у каждого есть `name`. */
+describe('bulkExitArgs: чекбокс экрана выхода расширяет набор (spread)', () => {
+  // Тот же компонент, другая инверсия: на экране выхода снятый чекбокс —
+  // одна текущая сессия, отмеченный — весь аккаунт. Список сессий работает
+  // наоборот: набор задан строками, чекбокс впускает в него текущую.
+  it('снят — только текущая сессия, отмечен — весь аккаунт', () => {
+    const values = { pick: 'only', ids: CURRENT, spread: '1', include_current: false }
+    expect(bulkExitArgs(values, CURRENT)).toEqual({ scope: 'all', pick: 'only', ids: [CURRENT] })
+
+    const all = { ...values, include_current: 'on' }
+    expect(bulkExitArgs(all, CURRENT)).toEqual({ scope: 'all', pick: 'except', ids: [] })
+    // Негативный контроль: «весь аккаунт» — это исключений нет, а не «всё перечислить».
+    expect(bulkExitArgs(all, CURRENT).ids).not.toEqual([CURRENT])
+  })
+
+  it('набор считает сервер, а не разметка: переданные ids не меняют исхода', () => {
+    const values = { pick: 'except', ids: [CURRENT, OTHER].join(','), spread: '1', include_current: false }
+    expect(bulkExitArgs(values, CURRENT)).toEqual({ scope: 'all', pick: 'only', ids: [CURRENT] })
+  })
+
+  it('без известной текущей сессии снятый чекбокс даёт пустой набор — домен откажет', () => {
+    const values = { pick: 'only', ids: '', spread: '1', include_current: false }
+    expect(bulkExitArgs(values, null)).toEqual({ scope: 'all', pick: 'only', ids: [] })
+  })
+})
+
 function valueOf(form: ReturnType<typeof sessionBulkExitForm>, name: string): unknown {
   const field = form.fields.find((f) => f.name === name)
   return field?.defaultValue
@@ -89,5 +114,12 @@ describe('sessionBulkExitForm: одна форма на оба носителя'
     expect(valueOf(form, 'pick')).toBe('')
     expect(valueOf(form, 'ids')).toBe('')
     expect(valueOf(form, 'include_current')).toBe(false)
+    expect(valueOf(form, 'spread')).toBe('')
+  })
+
+  it('носитель выхода помечает форму флагом `spread`', () => {
+    expect(valueOf(sessionBulkExitForm({ spread: true }), 'spread')).toBe('1')
+    // Негативный контроль: список сессий флага не несёт.
+    expect(valueOf(sessionBulkExitForm({ pick: 'only', ids: [CURRENT] }), 'spread')).toBe('')
   })
 })
