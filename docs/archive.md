@@ -3,9 +3,39 @@
 Место для разговоров, которые закончились решением. Новые записи — сверху.
 Код здесь не живёт: это след того, о чём договорились, чтобы не переспрашивать.
 
-Сверено с кодом 2026-11-05. Первые два разговора реализованы: профиль — один компонент на страницу и модалку, отказ приходит данными (`fact`), а не броском. Третий разговор остановлен и откачен; текущий контракт прав — `defineAcl` / `useGrants`, не черновик `requiredGrants` из той записи. Открытых работ в этом файле нет.
+Запись 2026-11-12 сверена с кодом на `5486c17` (ядро) и `9a56df6` (модуль). Сверено с кодом 2026-11-05. Первые два разговора реализованы: профиль — один компонент на страницу и модалку, отказ приходит данными (`fact`), а не броском. Третий разговор остановлен и откачен; текущий контракт прав — `defineAcl` / `useGrants`, не черновик `requiredGrants` из той записи. Открытых работ в этом файле нет.
 
 ---
+
+## 2026-11-12 · Сняты как закрытые: план аудита и четыре записи передачи
+
+Из дерева сняты `docs/plan-audit-fixes.md`, `docs/tmp-bind-form-stage.md`, `docs/tmp-page-merge.md`,
+`docs/tmp-listing-sidebar.md`, `docs/checklist-theme-sessions.md`. Основание — правило `docs/pending.md`:
+закрытые планы и аудиты рядом с кодом не лежат, контракт живёт в README и в коде, текст — в git.
+
+- `plan-audit-fixes.md` — замечания аудита 2026-11-10. Закрыто: тексты `storage.key-invalid` разведены
+  (общий — «от 8 до 256 символов», у пула — тот же текст с хвостом «без управляющих символов ASCII», слово
+  «печатных» запрещено тестами в обоих), совместимость ранее допустимых ключей сохранена, сейф не показывает
+  правило пула. Контракт — в `src/content/user/messages.ts`, `src/content/storage-servers/form.ts`,
+  `src/hooks/storage-server-form/` и их тестах; на стороне демо — `modules/demo/files/src/content/storage-vault/schema.test.ts`.
+- `tmp-bind-form-stage.md` — поиск и фильтры без GET. Реализовано: `70aeb2e` в ядре, `a029a5a` в модуле;
+  проверено сьютами `search-nojs` и `search-cold` в релизе модуля.
+- `tmp-page-merge.md` — `mergeSlot` / `isMergeSlot` / `applySlot` в `src/components/shell/page.svelte.ts`
+  (строки 86, 91, 105); `PopupSteps` открыт через хост модалок (`src/components/steps/PopupSteps.svelte`,
+  `Floating`), своей absolute-панели и фолбэка без хоста нет.
+- `tmp-listing-sidebar.md` — положение фильтра задаётся текущим рендером, а не догадкой `Listing`:
+  `useHeaderSlot('top.end', …, { offset: 999 })` в `src/routes/(site)/+layout.svelte:61`, сверка в
+  `src/components/shell/merge-slot.test.ts` и `src/components/listing/ListingSidebarHost.test.svelte`.
+- `checklist-theme-sessions.md` — кнопка темы рядом с профилем (`src/components/shell/ui/header/ThemeToggleSlot.svelte`,
+  та же зона `top.end`, offset 888), свои сессии (`src/content/user/sessions.*`, маршрут `/user/sessions`),
+  повтор клика после ошибки preload (`d7f55e96`, плюс `test/browser/modal-retry.mjs` в модуле). Прочее, что
+  файл помечал непроверенным, с тех пор прогнано: `check` 0/0, полный Chromium 27 сьютов без падений.
+
+Того же дня ревизия указателей: на GitHub удалены 13 тегов (`stage1`…`stage4`, `stage-0*`, `stage-q1-start`,
+`modules-listing-20261101`, `modules-edge-ip-20261105`), релизы не создавались и не создаются. Остался
+`refs/tags/modules` = `9a56df6` — снимок модулей и единственный ref с кодом демки: ветка `demo/storage-server-form`
+снята по решению владельца, поэтому «до» и «после» модуля надо сверять по тегу (`README.md`, раздел про `MODULES_REF`),
+а следующие правки модуля начинать с новой ветки линии модулей.
 
 ## 2026-10-26 · Профиль: один экран на страницу и модалку
 
