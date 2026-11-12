@@ -8,7 +8,7 @@
 // текст или `{ message }`), оформляется Result'ом с `origin: 'external'`
 // и исходом `unknown`: запрос мог дожить до записи, и врать «не применилось»
 // здесь честнее, чем молча проглотить сбой.
-import type { Result, Transport } from '#lib/form/index.js'
+import type { Envelope, Result, Transport } from '#lib/form/index.js'
 import { fetchWithTask, type StreamTask } from '#lib/fetch/index.js'
 import { parse } from 'devalue'
 
@@ -92,6 +92,37 @@ export function jsonTransport(path: string): Transport {
  * `{ result }`. Распаковка — тем же devalue, что уже в бандле Kit; не-обёртка
  * (свой API-эндпоинт) проходит насквозь.
  */
+/**
+ * Адрес из Kit-редиректа экшена (`{ type: 'redirect', location }`).
+ *
+ * Только свой относительный путь: внешний адрес в ответе — не маршрут, а
+ * подмена, и вести туда форму нечего. `//хост` тоже не пропускаем.
+ */
+export function kitRedirectLocation(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const shaped = body as { type?: unknown; location?: unknown }
+  if (shaped.type !== 'redirect') return null
+  const location = typeof shaped.location === 'string' ? shaped.location.trim() : ''
+  return /^\/(?!\/)/.test(location) ? location : null
+}
+
+/** Успех, собранный на месте: действие применено, показать нечего. */
+export function appliedResult(envelope: Envelope, status: number): Result {
+  return {
+    v: 1,
+    formId: envelope.formId,
+    instance: envelope.instance,
+    submissionId: envelope.submissionId,
+    revision: envelope.revision,
+    values: {},
+    ok: true,
+    status,
+    outcome: 'committed',
+    errors: [],
+    from: 'fetch',
+  }
+}
+
 export function unwrapKitAction(body: unknown): { result?: Result } | undefined {
   if (!body || typeof body !== 'object') return undefined
   const shaped = body as { type?: string; data?: unknown }
@@ -144,6 +175,19 @@ export function kitActionTransport(
     }
     const ct = res.headers.get('content-type') ?? ''
     const body = ct.includes('application/json') ? await res.json().catch(() => null) : null
+
+    // Редирект экшена — не отказ и не «неизвестный ответ». Без JS браузер
+    // пошёл бы по нему сам; с JS его раньше никто не применял, и форма
+    // показывала «сервер ответил HTTP 200» там, где действие уже выполнено.
+    // Переход делает клиент, адрес остаётся за сервером: тот же исход, что
+    // без JS, и `invalidateAll` — чтобы страница перечитала свои данные.
+    const redirect = kitRedirectLocation(body)
+    if (redirect) {
+      const { goto } = await import('$app/navigation')
+      await goto(redirect, { invalidateAll: true })
+      return { kind: 'result', result: appliedResult(req.envelope, res.status) }
+    }
+
     const result = unwrapKitAction(body)?.result
     if (result) return { kind: 'result', result }
     return {
