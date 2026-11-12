@@ -25,7 +25,7 @@
   import { vault } from '../vault.svelte.js'
 
   let MenuBodyComp = $state.raw<
-    Component<{ variant?: UserSurfaceVariant; onDone?: () => void }> | null
+    Component<{ variant?: UserSurfaceVariant }> | null
   >(null)
   let menuBodyLoading: Promise<void> | null = null
   let menuBusy = $state(false)
@@ -171,7 +171,7 @@
         {#snippet render()}
           <div data-user-menu-popover="">
             {#if MenuBodyComp}
-              <MenuBodyComp variant="plain" onDone={() => (menuOpen = false)} />
+              <MenuBodyComp variant="plain" />
             {/if}
           </div>
         {/snippet}

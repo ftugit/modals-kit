@@ -18,8 +18,6 @@
   import Acl, { userSurfaceVariants, type UserSurfaceVariant } from './Acl.svelte'
 
   interface Props {
-    /** Клик по выходу: закрыть поповер, экран выхода откроется поверх. */
-    onDone?: () => void
     /** Вариант поверхности (`'card'` | `'plain'`). */
     variant?: UserSurfaceVariant
     /** Классы корневого блока (применяются через `cn` и к `Acl`, и к блоку меню). */
@@ -27,7 +25,6 @@
   }
 
   let {
-    onDone,
     variant = 'plain',
     class: className,
   }: Props = $props()
@@ -111,9 +108,13 @@
       {/if}
     </div>
     <Separator />
+    <!-- Без своего `onclick`: всплывашка закрывается, когда открывается
+         модалка, — так же, как у остальных пунктов меню. Свой обработчик
+         закрывал поповер первым (делегированный клик срабатывает раньше
+         вложения ссылки), элемент размонтировался, и выход не открывался
+         вовсе. -->
     <Button
       {...asModalLink('user.logout')}
-      onclick={onDone}
       variant="ghost"
       size="sm"
       class="w-full justify-start font-normal"

@@ -6,14 +6,16 @@
    * модалки открывает всплывашку с тем же телом и адрес не трогает (см.
    * `UserMenu`). Тело рисуется сразу: профиль берёт из реактивного `vault`,
    * данные маршрута меню не нужны.
+   *
+   * Пункты меню не закрывают модалку сами: открытый поверх экран складывается
+   * в цепочку (`?modal=user.menu,user.logout`), а снятая цепочка возвращает
+   * всё как было. Прежний «закрыть меню по клику на выход» снимал элемент до
+   * того, как ссылка успевала открыть модалку.
    */
-  import { useModals } from '#lib/modals/svelte/index.js'
   import MenuBody from './MenuBody.svelte'
   import { Surface } from '#components/ui/index.js'
-
-  const m = useModals()
 </script>
 
 <Surface variant="plain" class="w-full p-6">
-  <MenuBody variant="plain" onDone={() => m.modals.close()} />
+  <MenuBody variant="plain" />
 </Surface>
