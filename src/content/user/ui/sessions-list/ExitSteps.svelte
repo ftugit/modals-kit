@@ -45,8 +45,13 @@
     step?: 'summary' | 'confirm'
     confirmHref?: string
     backHref?: string
-    /** Куда уходит POST. */
-    action?: string
+    /**
+     * Куда уходит POST. Обязателен: набор закрывают экшены конкретных роутов
+     * (`?/others` у списков сессий, `?/exit` у выхода), а не текущая страница —
+     * модалка открывается поверх любого адреса, и относительный `./` ушёл бы
+     * не туда.
+     */
+    action: string
     holdSeconds?: number
     heading?: string
     confirmLabel?: string
@@ -85,7 +90,7 @@
   const checkboxText = $derived(checkboxLabel ?? (spread ? 'Выйти на всех устройствах' : undefined))
   const shape = $derived({ pick, ids, includeCurrent, spread, checkboxLabel: checkboxText })
   const bound = bindComponentForm(forms, untrack(() => sessionBulkExitForm(shape)), {
-    action: untrack(() => action) ?? './?/others',
+    action: untrack(() => action),
     continuation: untrack(() => form?.result ?? undefined),
     session: userSession,
   })

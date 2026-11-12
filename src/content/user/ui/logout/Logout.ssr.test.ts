@@ -61,6 +61,28 @@ describe('Logout: выход как набор сессий', () => {
     addr.url = new URL('http://localhost/user/logout')
   })
 
+  test('адрес экшена абсолютный и не зависит от страницы-носителя', () => {
+    // Модалка `user.logout` открывается поверх любого маршрута, поэтому POST
+    // уходит на экшен роута выхода, а не на `./` текущей страницы: у носителя
+    // своих экшенов нет, и относительный адрес давал бы 405.
+    for (const base of [
+      'http://localhost/user/logout',
+      'http://localhost/user/menu?modal=user.logout',
+      'http://localhost/',
+    ]) {
+      const confirm = new URL(base)
+      confirm.searchParams.set('logout.step', 'confirm')
+      addr.url = confirm
+      const { body } = render(Logout, { props: { sessionId: SESSION, total: 3 } })
+      expect(body, `подтверждение на ${base}`).toContain('action="/user/logout?/exit"')
+
+      addr.url = new URL(base)
+      const local = render(Logout, { props: { sessionId: SESSION, total: 3 } })
+      expect(local.body, `локальный выход на ${base}`).toContain('action="/user/logout?/local"')
+    }
+    addr.url = new URL('http://localhost/user/logout')
+  })
+
   test('без актора набор не рисуется — остаётся локальный выход', () => {
     addr.url = new URL('http://localhost/user/logout')
     const { body } = render(Logout, { props: { sessionId: null, total: 0, canRevoke: false } })

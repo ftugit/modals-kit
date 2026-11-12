@@ -19,6 +19,10 @@
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import { userSession, vault } from '../../vault.svelte.js'
+  // Адрес экшена — из реестра, не от текущей страницы: модалка `user.logout`
+  // открывается поверх любого маршрута, и относительный `./?/exit` ушёл бы
+  // на страницу-носитель, где такого экшена нет (405).
+  import { userLogoutRoute } from '../../routes.js'
   import { userSurfaceVariants, type UserSurfaceVariant } from '../Acl.svelte'
   import ExitSteps from '../sessions-list/ExitSteps.svelte'
   import { logoutLocalForm } from './form.js'
@@ -66,7 +70,7 @@
   })
 
   const local = bindComponentForm(forms, logoutLocalForm, {
-    action: untrack(() => localAction) ?? './?/local',
+    action: untrack(() => localAction) ?? `${userLogoutRoute.href()}?/local`,
     session: userSession,
   })
 
@@ -82,6 +86,8 @@
   })
 
   const ids = $derived(sessionId ? [sessionId] : [])
+  // Набор уходит на экшен роута выхода, а не на страницу, где модалка открыта.
+  const exitAction = $derived(action ?? `${userLogoutRoute.href()}?/exit`)
 </script>
 
 <div
@@ -113,7 +119,7 @@
       {step}
       {confirmHref}
       {backHref}
-      {action}
+      action={exitAction}
       {holdSeconds}
       heading={step === 'confirm' ? 'Подтверждение выхода' : 'Выход'}
       summary="Здесь и сейчас: завершение сессии нельзя отменить."
